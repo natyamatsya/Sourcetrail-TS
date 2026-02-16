@@ -1,8 +1,9 @@
 #ifndef FILE_PATH_FILTER_H
 #define FILE_PATH_FILTER_H
 
-#include <regex>
 #include <string>
+
+#include <QRegularExpression>
 
 #include "FilePath.h"
 
@@ -22,10 +23,10 @@ public:
 	bool operator<(const FilePathFilter& other) const;
 
 private:
-	static std::regex convertFilterStringToRegex(const std::string& filterString);
+	static QRegularExpression convertFilterStringToRegex(const std::string& filterString);
 
 	std::string m_filterString;
-	std::regex m_filterRegex;
+	QRegularExpression m_filterRegex;
 };
 
 template<typename ContainerType>

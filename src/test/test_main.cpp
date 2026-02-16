@@ -31,7 +31,6 @@ struct EventListener : Catch2::EventListenerBase
 		FilePath settingsFilePath = UserPaths::getAppSettingsFilePath();
 		cout << "Loading settings from " << settingsFilePath.str() << endl;
 		ApplicationSettings::getInstance()->load(settingsFilePath, true);
-#endif
 	}
 };
 

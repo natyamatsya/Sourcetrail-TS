@@ -1,5 +1,7 @@
 #include "FilePathFilter.h"
 
+#include <QString>
+
 FilePathFilter::FilePathFilter(const std::string& filterString)
 	: m_filterString(filterString), m_filterRegex(convertFilterStringToRegex(filterString))
 {
@@ -17,7 +19,7 @@ bool FilePathFilter::isMatching(const FilePath& filePath) const
 
 bool FilePathFilter::isMatching(const std::string& fileStr) const
 {
-	return std::regex_match(fileStr, m_filterRegex);
+	return m_filterRegex.match(QString::fromStdString(fileStr)).hasMatch();
 }
 
 bool FilePathFilter::operator<(const FilePathFilter& other) const
@@ -25,79 +27,33 @@ bool FilePathFilter::operator<(const FilePathFilter& other) const
 	return m_filterString.compare(other.m_filterString) < 0;
 }
 
-std::regex FilePathFilter::convertFilterStringToRegex(const std::string& filterString)
+QRegularExpression FilePathFilter::convertFilterStringToRegex(const std::string& filterString)
 {
-	std::string regexFilterString = filterString;
+	// Replace backslashes with forward slashes first, then escape for regex
+	QString filter = QString::fromStdString(filterString);
 
-	{
-		std::regex regex("[\\\\/]");
-		regexFilterString = std::regex_replace(regexFilterString, regex, "[\\\\/]");
-	}
+	// Normalize path separators to forward slash before processing
+	filter.replace('\\', '/');
 
-	{
-		std::regex regex("([^\\\\])([^/])([\\]])");
-		regexFilterString = std::regex_replace(regexFilterString, regex, "$1$2[\\]]");
-	}
+	// Use a placeholder for ** and * before escaping
+	static const QString doubleStarPlaceholder = QStringLiteral("\x01\x01");
+	static const QString singleStarPlaceholder = QStringLiteral("\x01");
 
-	{
-		std::regex regex("([\\[])([^\\\\])");
-		regexFilterString = std::regex_replace(regexFilterString, regex, "[\\[]$2");
-	}
+	filter.replace(QStringLiteral("**"), doubleStarPlaceholder);
+	filter.replace(QStringLiteral("*"), singleStarPlaceholder);
 
-	{
-		std::regex regex("[\\(]");
-		regexFilterString = std::regex_replace(regexFilterString, regex, "[\\(]");
-	}
+	// Escape all regex special characters
+	filter = QRegularExpression::escape(filter);
 
-	{
-		std::regex regex("[\\)]");
-		regexFilterString = std::regex_replace(regexFilterString, regex, "[\\)]");
-	}
+	// Replace path separators with pattern matching both / and backslash
+	filter.replace(QStringLiteral("/"), QStringLiteral("[\\\\/]"));
 
-	{
-		std::regex regex("[\\{]");
-		regexFilterString = std::regex_replace(regexFilterString, regex, "[\\{]");
-	}
+	// Restore glob patterns: ** matches anything, * matches within one path segment
+	filter.replace(doubleStarPlaceholder, QStringLiteral(".*"));
+	filter.replace(singleStarPlaceholder, QStringLiteral("[^\\\\/]*"));
 
-	{
-		std::regex regex("[\\}]");
-		regexFilterString = std::regex_replace(regexFilterString, regex, "[\\}]");
-	}
+	// Anchor the pattern to match the entire string
+	filter = QStringLiteral("\\A") + filter + QStringLiteral("\\z");
 
-	{
-		std::regex regex("[\\+]");
-		regexFilterString = std::regex_replace(regexFilterString, regex, "[\\+]");
-	}
-
-	{
-		std::regex regex("[\\-]");
-		regexFilterString = std::regex_replace(regexFilterString, regex, "[\\-]");
-	}
-
-	{
-		std::regex regex("[\\$]");
-		regexFilterString = std::regex_replace(regexFilterString, regex, "[\\$]");
-	}
-
-	{
-		std::regex regex("[\\.]");
-		regexFilterString = std::regex_replace(regexFilterString, regex, "[\\.]");
-	}
-
-	{
-		std::regex regex("[\\^]");
-		regexFilterString = std::regex_replace(regexFilterString, regex, "[\\^]");
-	}
-
-	{
-		std::regex regex("[\\*][\\*]");
-		regexFilterString = std::regex_replace(regexFilterString, regex, ".{0,}");
-	}
-
-	{
-		std::regex regex("[\\*]");
-		regexFilterString = std::regex_replace(regexFilterString, regex, "[^\\\\/]*");
-	}
-
-	return std::regex(regexFilterString, std::regex::optimize);
+	return QRegularExpression(filter);
 }

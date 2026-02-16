@@ -1,5 +1,8 @@
 #include "SourceGroupSettingsWithExcludeFilters.h"
 
+#include <QRegularExpression>
+#include <QString>
+
 #include "FilePathFilter.h"
 #include "FileSystem.h"
 #include "ProjectSettings.h"
@@ -55,20 +58,21 @@ std::vector<FilePathFilter> SourceGroupSettingsWithExcludeFilters::getFiltersExp
 			const size_t wildcardPos = filterString.find("*");
 			if (wildcardPos != std::string::npos)
 			{
-				std::smatch match;
-				if (std::regex_search(filterString, match, std::regex("[\\\\/]")) &&
-					!match.empty() && match.position(0) < int(wildcardPos))
+				QString qFilter = QString::fromStdString(filterString);
+				QRegularExpressionMatch match = QRegularExpression(QStringLiteral("[\\\\/]")).match(qFilter);
+				if (match.hasMatch() && match.capturedStart(0) < int(wildcardPos))
 				{
 					const FilePath p = utility::getExpandedAndAbsolutePath(
-						FilePath(match.prefix().str()), projectDirectoryPath);
+						FilePath(qFilter.left(match.capturedStart(0)).toStdString()), projectDirectoryPath);
 					std::set<FilePath> symLinkPaths = FileSystem::getSymLinkedDirectories(p);
 					symLinkPaths.insert(p);
 
+					std::string suffix = qFilter.mid(match.capturedEnd(0)).toStdString();
 					utility::append(
 						result,
 						utility::convert<FilePath, FilePathFilter>(
-							utility::toVector(symLinkPaths), [match](const FilePath& filePath) {
-								return FilePathFilter(filePath.str() + "/" + match.suffix().str());
+							utility::toVector(symLinkPaths), [&suffix](const FilePath& filePath) {
+								return FilePathFilter(filePath.str() + "/" + suffix);
 							}));
 				}
 				else

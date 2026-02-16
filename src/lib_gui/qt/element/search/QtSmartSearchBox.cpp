@@ -2,7 +2,7 @@
 
 #include <cstdlib>
 #include <deque>
-#include <regex>
+#include <QRegularExpression>
 
 #include <QApplication>
 #include <QClipboard>
@@ -317,20 +317,22 @@ void QtSmartSearchBox::keyPressEvent(QKeyEvent* event)
 		}
 		else if (event->matches(QKeySequence::DeleteStartOfWord))
 		{
-			std::string str = text().toStdString();
-			std::smatch match;
-			std::regex regExp(".\\b");
+			QString qStr = text();
+			static const QRegularExpression regExp(QStringLiteral(".\\b"));
 
 			std::deque<std::string> parts;
-			while (std::regex_search(str, match, regExp))
+			qsizetype offset = 0;
+			QRegularExpressionMatch match;
+			while ((match = regExp.match(qStr, offset)).hasMatch())
 			{
-				parts.push_back(str.substr(0, match.position(0) + match.length(0)));
-				str = match.suffix();
+				parts.push_back(qStr.mid(offset, match.capturedEnd() - offset).toStdString());
+				offset = match.capturedEnd();
 			}
 
-			if (str.size())
+			std::string str;
+			if (offset < qStr.size())
 			{
-				parts.push_back(str);
+				parts.push_back(qStr.mid(offset).toStdString());
 			}
 
 			str.clear();

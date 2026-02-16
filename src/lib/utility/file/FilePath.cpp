@@ -10,7 +10,7 @@
 #include <boost/filesystem.hpp>
 #include <boost/filesystem/path.hpp>
 
-#include <regex>
+#include <QRegularExpression>
 
 using namespace utility;
 using namespace std;
@@ -220,24 +220,25 @@ FilePath FilePath::getCanonical() const
 std::vector<FilePath> FilePath::expandEnvironmentVariables() const
 {
 	std::vector<FilePath> paths;
-	std::string text = str();
+	QString text = QString::fromStdString(str());
 
-	static std::regex env("\\$\\{([^}]+)\\}|%([^%]+)%");	// ${VARIABLE_NAME} or %VARIABLE_NAME%
-	std::smatch match;
-	while (std::regex_search(text, match, env))
+	static const QRegularExpression env(QStringLiteral("\\$\\{([^}]+)\\}|%([^%]+)%"));
+	QRegularExpressionMatch match;
+	while ((match = env.match(text)).hasMatch())
 	{
-		const QByteArray s = match[1].matched ? qgetenv(match[1].str().c_str()) : qgetenv(match[2].str().c_str());
+		const QString captured = match.captured(1).isEmpty() ? match.captured(2) : match.captured(1);
+		const QByteArray s = qgetenv(captured.toUtf8().constData());
 		if (s.isNull())
 		{
-			LOG_ERROR_STREAM(<< match[1].str() << " is not an environment variable in: " << text);
+			LOG_ERROR_STREAM(<< captured.toStdString() << " is not an environment variable in: " << text.toStdString());
 			return paths;
 		}
-		text.replace(match.position(0), match.length(0), s);
+		text.replace(match.capturedStart(0), match.capturedLength(0), QString::fromUtf8(s));
 	}
 
 
 
-	for (const std::string& str: utility::splitToVector(text, getEnvironmentVariablePathSeparator()))
+	for (const std::string& str: utility::splitToVector(text.toStdString(), getEnvironmentVariablePathSeparator()))
 	{
 		if (str.size())
 		{
