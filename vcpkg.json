@@ -21,14 +21,6 @@
 		"sqlite3",
 		"tinyxml",
 		"icu",
-		{
-			"name": "llvm",
-			"default-features": false,
-			"features": [
-				"clang",
-				"enable-rtti"
-			]
-		},
 		"catch2",
 		"gtest"
 	]

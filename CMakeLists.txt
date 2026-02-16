@@ -333,7 +333,7 @@ if (BUILD_CXX_LANGUAGE_PACKAGE)
 	# For further details see https://llvm.org/docs/CMake.html#embedding-llvm-in-your-project
 
 	set(CLANG_MIN_VERSION 18)
-	set(CLANG_MAX_VERSION 21)
+	set(CLANG_MAX_VERSION 22)
 	
 	find_package(Clang CONFIG REQUIRED) # Minimum version and/or version range xx...<yy doesn't work.
 	message(STATUS "Found LLVM ${LLVM_VERSION}: ${LLVM_INCLUDE_DIRS}")
@@ -392,9 +392,9 @@ if (BUILD_CXX_LANGUAGE_PACKAGE)
 	
 	# Copy required headers:
 	if (isVcpkgBuild)
-		set(headerSourceDir "${LLVM_TOOLS_BINARY_DIR}/lib/clang/${LLVM_VERSION_MAJOR}/include/")
+		set(headerSourceDir "${LLVM_INSTALL_PREFIX}/lib/clang/${LLVM_VERSION_MAJOR}/include")
 	else()
-		set(headerSourceDir "${LLVM_TOOLS_BINARY_DIR}/../lib/clang/${LLVM_VERSION_MAJOR}/include/")
+		set(headerSourceDir "${LLVM_INSTALL_PREFIX}/lib/clang/${LLVM_VERSION_MAJOR}/include")
 	endif()
 	set(headerTargetDir "${CMAKE_BINARY_DIR}/app/data/cxx/include/")
 
