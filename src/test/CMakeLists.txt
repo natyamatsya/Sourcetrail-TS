@@ -19,8 +19,6 @@ add_executable(Sourcetrail_test
 	FileSystemTestSuite.cpp
 	GraphTestSuite.cpp
 	HierarchyCacheTestSuite.cpp
-	JavaIndexSampleProjectsTestSuite.cpp
-	JavaParserTestSuite.cpp
 	LogManagerTestSuite.cpp
 	LowMemoryStringMapTestSuite.cpp
 	MatrixBaseTestSuite.cpp
@@ -43,8 +41,6 @@ add_executable(Sourcetrail_test
 	TextAccessTestSuite.cpp
 	TextCodecTestSuite.cpp
 	UtilityEnumTestSuite.cpp
-	UtilityGradleTestSuite.cpp
-	UtilityMavenTestSuite.cpp
 	ToolChainTestSuite.cpp
 	UtilityStringTestSuite.cpp
 	Vector2TestSuite.cpp
