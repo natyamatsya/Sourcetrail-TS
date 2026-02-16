@@ -29,31 +29,41 @@ bool FilePathFilter::operator<(const FilePathFilter& other) const
 
 QRegularExpression FilePathFilter::convertFilterStringToRegex(const std::string& filterString)
 {
-	// Replace backslashes with forward slashes first, then escape for regex
 	QString filter = QString::fromStdString(filterString);
 
-	// Normalize path separators to forward slash before processing
+	// Normalize path separators to forward slash
 	filter.replace('\\', '/');
 
-	// Use a placeholder for ** and * before escaping
-	static const QString doubleStarPlaceholder = QStringLiteral("\x01\x01");
-	static const QString singleStarPlaceholder = QStringLiteral("\x01");
+	// Build the regex pattern character by character
+	QString pattern;
+	int i = 0;
+	while (i < filter.size())
+	{
+		QChar c = filter[i];
+		if (c == '*')
+		{
+			if (i + 1 < filter.size() && filter[i + 1] == '*')
+			{
+				pattern += QStringLiteral(".*");
+				i += 2;
+			}
+			else
+			{
+				pattern += QStringLiteral("[^\\\\/]*");
+				i++;
+			}
+		}
+		else if (c == '/')
+		{
+			pattern += QStringLiteral("[\\\\/]");
+			i++;
+		}
+		else
+		{
+			pattern += QRegularExpression::escape(QString(c));
+			i++;
+		}
+	}
 
-	filter.replace(QStringLiteral("**"), doubleStarPlaceholder);
-	filter.replace(QStringLiteral("*"), singleStarPlaceholder);
-
-	// Escape all regex special characters
-	filter = QRegularExpression::escape(filter);
-
-	// Replace path separators with pattern matching both / and backslash
-	filter.replace(QStringLiteral("/"), QStringLiteral("[\\\\/]"));
-
-	// Restore glob patterns: ** matches anything, * matches within one path segment
-	filter.replace(doubleStarPlaceholder, QStringLiteral(".*"));
-	filter.replace(singleStarPlaceholder, QStringLiteral("[^\\\\/]*"));
-
-	// Anchor the pattern to match the entire string
-	filter = QStringLiteral("\\A") + filter + QStringLiteral("\\z");
-
-	return QRegularExpression(filter);
+	return QRegularExpression(QStringLiteral("\\A") + pattern + QStringLiteral("\\z"));
 }
