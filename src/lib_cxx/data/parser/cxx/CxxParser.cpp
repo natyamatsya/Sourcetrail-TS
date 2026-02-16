@@ -211,7 +211,7 @@ std::shared_ptr<CxxDiagnosticConsumer> CxxParser::getDiagnostics(
 	std::shared_ptr<CanonicalFilePathCache> canonicalFilePathCache,
 	bool logErrors) const
 {
-	llvm::IntrusiveRefCntPtr<clang::DiagnosticOptions> options = new clang::DiagnosticOptions();
+	auto options = std::make_shared<clang::DiagnosticOptions>();
 	return std::make_shared<CxxDiagnosticConsumer>(
-		llvm::errs(), &*options, m_client, canonicalFilePathCache, sourceFilePath, logErrors);
+		llvm::errs(), *options, m_client, canonicalFilePathCache, sourceFilePath, logErrors);
 }
