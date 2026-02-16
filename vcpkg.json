@@ -7,7 +7,6 @@
 		"boost-date-time",
 		"boost-filesystem",
 		"boost-program-options",
-
 		"boost-dll",
 		"boost-interprocess",
 		"boost-uuid",
@@ -19,16 +18,9 @@
 				"icu"
 			]
 		},
-
 		"sqlite3",
-
 		"tinyxml",
-
 		"icu",
-
-		"qtsvg",
-		"qtbase",
-		"qtimageformats",
 		{
 			"name": "llvm",
 			"default-features": false,
