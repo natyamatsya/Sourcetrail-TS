@@ -174,7 +174,6 @@ set(BOOST_MAX_VERSION 1.91)
 find_package(Boost CONFIG REQUIRED 
 	COMPONENTS
 		date_time 
-		filesystem 
 		locale
 		program_options 
 )
@@ -188,8 +187,6 @@ target_compile_definitions(External_lib_boost
 		# Try to detect deprecations early:
 		#BOOST_ASIO_NO_DEPRECATED
 		#BOOST_PROCESS_NO_DEPRECATED
-		#BOOST_FILESYSTEM_NO_DEPRECATED
-		
 		# Use the same linking approach on all platforms:
 		#BOOST_ALL_NO_LIB
 		
@@ -197,8 +194,8 @@ target_compile_definitions(External_lib_boost
 		# (https://github.com/microsoft/vcpkg/issues/4481)
 		BOOST_UUID_FORCE_AUTO_LINK
 
-		# If boost::filesystem gets replaced with std::filesystem, then this symbol must be defined:
-		#BOOST_DLL_USE_STD_FS
+		# Use std::filesystem instead of boost::filesystem:
+		BOOST_DLL_USE_STD_FS
 )
 
 target_link_libraries(External_lib_boost
@@ -206,7 +203,6 @@ target_link_libraries(External_lib_boost
 		Boost::headers
 		
 		Boost::date_time
-		Boost::filesystem
 		Boost::locale
 		Boost::program_options
 		

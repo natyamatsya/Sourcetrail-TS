@@ -18,17 +18,23 @@
 	#include <boost/process/v1/child.hpp>
 	#include <boost/process/v1/env.hpp>
 	#include <boost/process/v1/io.hpp>
-	#include <boost/process/v1/search_path.hpp>
 	#include <boost/process/v1/start_dir.hpp>
 
 	namespace process_v1 = boost::process::v1;
 #else
-	#include <boost/process.hpp>
+	#include <boost/process/args.hpp>
+	#include <boost/process/async_pipe.hpp>
+	#include <boost/process/child.hpp>
+	#include <boost/process/env.hpp>
+	#include <boost/process/io.hpp>
+	#include <boost/process/start_dir.hpp>
 
 	namespace process_v1 = boost::process;
 #endif
 
 #include <algorithm>
+#include <cstdlib>
+#include <filesystem>
 #include <mutex>
 #include <set>
 
@@ -48,11 +54,19 @@ std::string getDocumentationLink()
 std::string searchPath(const std::string& bin, bool& ok)
 {
 	ok = false;
-	std::string r = process_v1::search_path(bin).generic_string();
-	if (!r.empty())
+
+	if (const char* pathEnv = std::getenv("PATH"))
 	{
-		ok = true;
-		return r;
+		for (const auto& dir : splitToVector(pathEnv, ":"))
+		{
+			std::filesystem::path candidate = std::filesystem::path(dir) / bin;
+			std::error_code ec;
+			if (std::filesystem::is_regular_file(candidate, ec))
+			{
+				ok = true;
+				return candidate.generic_string();
+			}
+		}
 	}
 	return bin;
 }

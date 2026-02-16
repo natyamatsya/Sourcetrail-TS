@@ -5,7 +5,6 @@
 	"dependencies": [
 		"boost-system",
 		"boost-date-time",
-		"boost-filesystem",
 		"boost-program-options",
 		"boost-dll",
 		"boost-interprocess",
