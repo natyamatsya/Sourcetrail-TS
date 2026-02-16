@@ -31,21 +31,6 @@ struct EventListener : Catch2::EventListenerBase
 		FilePath settingsFilePath = UserPaths::getAppSettingsFilePath();
 		cout << "Loading settings from " << settingsFilePath.str() << endl;
 		ApplicationSettings::getInstance()->load(settingsFilePath, true);
-
-#if BUILD_JAVA_LANGUAGE_PACKAGE
-		if (ApplicationSettings::getInstance()->getJavaPath().empty())
-		{
-			vector<FilePath> javaPaths = utility::getJavaRuntimePathDetector()->getPaths();
-			if (!javaPaths.empty())
-			{
-				ApplicationSettings::getInstance()->setJavaPath(javaPaths.front());
-				cout << "Java path written to settings: " << ApplicationSettings::getInstance()->getJavaPath().str() << endl;
-			}
-			else
-				cout << "Java path not found in settings or PATH/JAVA_HOME environment variable!" << endl;
-		}
-		else
-			cout << "Java path read from settings: " << ApplicationSettings::getInstance()->getJavaPath().str() << endl;
 #endif
 	}
 };

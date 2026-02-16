@@ -11,45 +11,23 @@
 #	include "ToolChain.h"
 #endif
 
-#if BUILD_JAVA_LANGUAGE_PACKAGE
-#	include "JavaPathDetectorLinuxWindowsMac.h"
-#	include "JreSystemLibraryPathDetector.h"
-#	include "MavenPathDetectorUnixWindows.h"
-#endif
-
 using namespace std;
 
 std::shared_ptr<CombinedPathDetector> utility::getJavaRuntimePathDetector()
 {
 	std::shared_ptr<CombinedPathDetector> combinedDetector = std::make_shared<CombinedPathDetector>();
-
-#if BUILD_JAVA_LANGUAGE_PACKAGE
-	combinedDetector->addDetector(std::make_shared<JavaPathDetectorLinuxWindowsMac>("Java for " + Platform::getName()));
-#endif
-
 	return combinedDetector;
 }
 
 std::shared_ptr<CombinedPathDetector> utility::getJreSystemLibraryPathsDetector()
 {
 	std::shared_ptr<CombinedPathDetector> combinedDetector = std::make_shared<CombinedPathDetector>();
-
-#if BUILD_JAVA_LANGUAGE_PACKAGE
-	combinedDetector->addDetector(std::make_shared<JreSystemLibraryPathDetector>(
-		std::make_shared<JavaPathDetectorLinuxWindowsMac>("Java for " + Platform::getName())));
-#endif
-
 	return combinedDetector;
 }
 
 std::shared_ptr<CombinedPathDetector> utility::getMavenExecutablePathDetector()
 {
 	std::shared_ptr<CombinedPathDetector> combinedDetector = std::make_shared<CombinedPathDetector>();
-
-#if BUILD_JAVA_LANGUAGE_PACKAGE
-	combinedDetector->addDetector(std::make_shared<MavenPathDetectorUnixWindows>("Maven for " + Platform::getName()));
-#endif
-
 	return combinedDetector;
 }
 

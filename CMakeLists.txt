@@ -41,7 +41,6 @@ cmake_print_variables(CMAKE_CXX_COMPILER)
 
 # Configure which language(s)/package(s) should be supported:
 option(BUILD_CXX_LANGUAGE_PACKAGE  "Add C/C++ support to the Sourcetrail indexer." OFF)
-option(BUILD_JAVA_LANGUAGE_PACKAGE "Add Java support to the Sourcetrail indexer." OFF)
 option(BUILD_UNIT_TESTS_PACKAGE    "Build the corresponding language unit tests." OFF)
 
 configure_file(cmake/language_packages.h.in src/lib/language_packages.h)
@@ -407,30 +406,6 @@ else()
 	message(STATUS "Building the C++ indexer is disabled. You can enable it by setting 'BUILD_CXX_LANGUAGE_PACKAGE' to 'ON'.")
 endif()
 
-# Lib Java ---------------------------------------------------------------------
-
-# To set the `JAVA_HOME` environment variable automatically on Linux, you can use this line:
-# export JAVA_HOME=$(dirname $(dirname $(readlink -f $(which javac))))
-# See https://www.xmodulo.com/set-java_home-environment-variable-linux.html for further details
-
-if (BUILD_JAVA_LANGUAGE_PACKAGE)
-	# Java (Latest LTS version):
-	find_package(Java 21 REQUIRED)
-	message(STATUS "Found Java ${Java_VERSION}: ${Java_JAVAC_EXECUTABLE}")
-
-	# JNI:
-	find_package(JNI REQUIRED)
-	message(STATUS "Found JNI ${JNI_VERSION}: ${JNI_INCLUDE_DIRS}")
-
-	# Maven:
-	find_program(MVN_COMMAND NAMES "mvn" REQUIRED)
-	message(STATUS "Found Maven: ${MVN_COMMAND}")
-
-	add_subdirectory(src/lib_java)
-	add_subdirectory(java_indexer)
-else()
-	message(STATUS "Building the Java indexer is disabled. You can enable it by setting 'BUILD_JAVA_LANGUAGE_PACKAGE' to 'ON'.")
-endif()
 
 # Indexer App ------------------------------------------------------------------
 
@@ -475,7 +450,7 @@ configureLicenseFile(src/lib_gui/licenses.h)
 # Some sanity checks:
 # Note: We doing these checks last so the messages are at the end of a possible long output from cmake.
 
-if (NOT BUILD_CXX_LANGUAGE_PACKAGE AND NOT BUILD_JAVA_LANGUAGE_PACKAGE)
+if (NOT BUILD_CXX_LANGUAGE_PACKAGE)
 	message(WARNING "Building ONLY the GUI, because all language indexers are disabled!")
 endif()
 

@@ -14,12 +14,6 @@
 #	include "SourceGroupSettingsCxxCodeblocks.h"
 #endif	  // BUILD_CXX_LANGUAGE_PACKAGE
 
-#if BUILD_JAVA_LANGUAGE_PACKAGE
-#	include "SourceGroupSettingsJavaEmpty.h"
-#	include "SourceGroupSettingsJavaGradle.h"
-#	include "SourceGroupSettingsJavaMaven.h"
-#endif	  // BUILD_JAVA_LANGUAGE_PACKAGE
-
 const std::string ProjectSettings::PROJECT_FILE_EXTENSION = ".srctrlprj";
 const std::string ProjectSettings::BOOKMARK_DB_FILE_EXTENSION = ".srctrlbm";
 const std::string ProjectSettings::INDEX_DB_FILE_EXTENSION = ".srctrldb";
@@ -172,17 +166,6 @@ std::vector<std::shared_ptr<SourceGroupSettings>> ProjectSettings::getAllSourceG
 			settings = std::make_shared<SourceGroupSettingsCxxCodeblocks>(id, this);
 			break;
 #endif	  // BUILD_CXX_LANGUAGE_PACKAGE
-#if BUILD_JAVA_LANGUAGE_PACKAGE
-		case SourceGroupType::JAVA_EMPTY:
-			settings = std::make_shared<SourceGroupSettingsJavaEmpty>(id, this);
-			break;
-		case SourceGroupType::JAVA_MAVEN:
-			settings = std::make_shared<SourceGroupSettingsJavaMaven>(id, this);
-			break;
-		case SourceGroupType::JAVA_GRADLE:
-			settings = std::make_shared<SourceGroupSettingsJavaGradle>(id, this);
-			break;
-#endif	  // BUILD_JAVA_LANGUAGE_PACKAGE
 		case SourceGroupType::CUSTOM_COMMAND:
 			settings = std::make_shared<SourceGroupSettingsCustomCommand>(id, this);
 			break;

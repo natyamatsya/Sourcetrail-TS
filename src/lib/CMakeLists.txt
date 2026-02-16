@@ -702,29 +702,6 @@ if (BUILD_CXX_LANGUAGE_PACKAGE)
 	)
 endif()
 
-if (BUILD_JAVA_LANGUAGE_PACKAGE)
-	target_sources(Sourcetrail_lib
-		PRIVATE
-			settings/source_group/component/java/SourceGroupSettingsWithClasspath.cpp
-			settings/source_group/component/java/SourceGroupSettingsWithClasspath.h
-			settings/source_group/component/java/SourceGroupSettingsWithJavaGradle.cpp
-			settings/source_group/component/java/SourceGroupSettingsWithJavaGradle.h
-			settings/source_group/component/java/SourceGroupSettingsWithJavaMaven.cpp
-			settings/source_group/component/java/SourceGroupSettingsWithJavaMaven.h
-			settings/source_group/component/java/SourceGroupSettingsWithJavaStandard.cpp
-			settings/source_group/component/java/SourceGroupSettingsWithJavaStandard.h
-			settings/source_group/component/java/SourceGroupSettingsWithSourceExtensionsJava.h
-
-			settings/source_group/type/SourceGroupSettingsJavaEmpty.h
-			settings/source_group/type/SourceGroupSettingsJavaGradle.h
-			settings/source_group/type/SourceGroupSettingsJavaMaven.h
-	)
-	target_include_directories(Sourcetrail_lib
-		PUBLIC
-			settings/source_group/component/java
-			settings/source_group/type
-	)
-endif()
 
 target_include_directories(Sourcetrail_lib
 	PUBLIC
@@ -739,7 +716,6 @@ target_link_libraries(Sourcetrail_lib
 		Sourcetrail_lib_gui
 
 		$<$<BOOL:${BUILD_CXX_LANGUAGE_PACKAGE}>:Sourcetrail_lib_cxx>
-		$<$<BOOL:${BUILD_JAVA_LANGUAGE_PACKAGE}>:Sourcetrail_lib_java>
 
 		External_lib_tinyxml
 		External_lib_cppsqlite3

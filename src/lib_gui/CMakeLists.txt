@@ -404,44 +404,6 @@ if (BUILD_CXX_LANGUAGE_PACKAGE)
 	)
 endif()
 
-if (BUILD_JAVA_LANGUAGE_PACKAGE)
-	target_sources(Sourcetrail_lib_gui
-		PRIVATE
-			qt/project_wizard/content/path/QtProjectWizardContentPathSettingsMaven.cpp
-			qt/project_wizard/content/path/QtProjectWizardContentPathSettingsMaven.h
-			qt/project_wizard/content/path/QtProjectWizardContentPathSourceGradle.cpp
-			qt/project_wizard/content/path/QtProjectWizardContentPathSourceGradle.h
-			qt/project_wizard/content/path/QtProjectWizardContentPathSourceMaven.cpp
-			qt/project_wizard/content/path/QtProjectWizardContentPathSourceMaven.h
-
-			qt/project_wizard/content/paths/QtProjectWizardContentPathsClassJava.cpp
-			qt/project_wizard/content/paths/QtProjectWizardContentPathsClassJava.h
-
-			qt/project_wizard/content/QtProjectWizardContentJavaStandard.cpp
-			qt/project_wizard/content/QtProjectWizardContentJavaStandard.h
-
-			utility/path_detector/java_runtime/JavaPathDetector.cpp
-			utility/path_detector/java_runtime/JavaPathDetector.h
-			utility/path_detector/java_runtime/JavaPathDetectorLinuxWindowsMac.h
-			utility/path_detector/java_runtime/JavaPathDetectorLinuxWindowsMac.cpp
-
-			utility/path_detector/jre_system_library/JreSystemLibraryPathDetector.cpp
-			utility/path_detector/jre_system_library/JreSystemLibraryPathDetector.h
-
-			utility/path_detector/maven_executable/MavenPathDetectorUnixWindows.cpp
-			utility/path_detector/maven_executable/MavenPathDetectorUnixWindows.h
-	)
-
-	target_include_directories(Sourcetrail_lib_gui
-		PUBLIC
-			qt/project_wizard/content/path
-			qt/project_wizard/content/paths
-			qt/project_wizard/content
-			utility/path_detector/java_runtime
-			utility/path_detector/jre_system_library
-			utility/path_detector/maven_executable
-	)
-endif()
 
 setDefaultTargetOptions(Sourcetrail_lib_gui)
 

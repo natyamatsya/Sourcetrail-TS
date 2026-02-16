@@ -74,7 +74,6 @@
 			"name": "sourcetrail-presets",
 			"cacheVariables": {
 				"BUILD_CXX_LANGUAGE_PACKAGE": "ON",
-				"BUILD_JAVA_LANGUAGE_PACKAGE": "ON",
 				"BUILD_UNIT_TESTS_PACKAGE": "ON"
 			}
 		},

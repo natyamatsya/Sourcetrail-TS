@@ -14,9 +14,6 @@ enum class LanguageType
 	CXX,
 	C,
 #endif
-#if BUILD_JAVA_LANGUAGE_PACKAGE
-	JAVA,
-#endif
 	CUSTOM
 };
 
