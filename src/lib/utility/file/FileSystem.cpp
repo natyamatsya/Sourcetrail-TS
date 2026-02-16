@@ -15,26 +15,28 @@ std::vector<FilePath> FileSystem::getFilePathsFromDirectory(const FilePath &path
 
 	if (path.isDirectory())
 	{
-		boost::filesystem::recursive_directory_iterator it(path.getPath());
+		boost::system::error_code ec;
+		boost::filesystem::recursive_directory_iterator it(path.getPath(), ec);
 		boost::filesystem::recursive_directory_iterator endit;
-		while (it != endit)
+		for (; it != endit; it.increment(ec))
 		{
-			if (boost::filesystem::is_symlink(*it))
+			if (ec)
 			{
-				// check for self-referencing symlinks
-				boost::filesystem::path p = boost::filesystem::read_symlink(*it);
-				if (p.filename() == p.string() && p.filename() == it->path().filename())
-				{
-					++it;
-					continue;
-				}
+				ec.clear();
+				continue;
 			}
 
-			if (boost::filesystem::is_regular_file(*it) && (ext.empty() || ext.find(it->path().extension().string()) != ext.end()))
+			boost::system::error_code symlinkEc;
+			if (boost::filesystem::is_symlink(*it, symlinkEc))
 			{
-				files.push_back(FilePath(it->path().generic_string()));
+				// check for self-referencing symlinks
+				boost::filesystem::path p = boost::filesystem::read_symlink(*it, symlinkEc);
+				if (!symlinkEc && p.filename() == p.string() && p.filename() == it->path().filename())
+					continue;
 			}
-			++it;
+
+			if (boost::filesystem::is_regular_file(*it, ec) && (ext.empty() || ext.find(it->path().extension().string()) != ext.end()))
+				files.push_back(FilePath(it->path().generic_string()));
 		}
 	}
 	return files;
@@ -67,12 +69,19 @@ std::vector<FileInfo> FileSystem::getFileInfosFromPaths(const std::vector<FilePa
 	{
 		if (path.isDirectory())
 		{
-			boost::filesystem::recursive_directory_iterator it(path.getPath(), boost::filesystem::directory_options::follow_directory_symlink);
-			boost::filesystem::recursive_directory_iterator endit;
 			boost::system::error_code ec;
+			boost::filesystem::recursive_directory_iterator it(path.getPath(), boost::filesystem::directory_options::follow_directory_symlink, ec);
+			boost::filesystem::recursive_directory_iterator endit;
 			for (; it != endit; it.increment(ec))
 			{
-				if (boost::filesystem::is_symlink(*it))
+				if (ec)
+				{
+					ec.clear();
+					continue;
+				}
+
+				boost::system::error_code symlinkEc;
+				if (boost::filesystem::is_symlink(*it, symlinkEc))
 				{
 					if (!followSymLinks)
 					{
@@ -81,16 +90,17 @@ std::vector<FileInfo> FileSystem::getFileInfosFromPaths(const std::vector<FilePa
 					}
 
 					// check for self-referencing symlinks
-					boost::filesystem::path p = boost::filesystem::read_symlink(*it);
-					if (p.filename() == p.string() && p.filename() == it->path().filename())
-					{
+					boost::filesystem::path p = boost::filesystem::read_symlink(*it, symlinkEc);
+					if (!symlinkEc && p.filename() == p.string() && p.filename() == it->path().filename())
 						continue;
-					}
 
 					// check for duplicates when following directory symlinks
-					if (boost::filesystem::is_directory(*it))
+					boost::system::error_code dirEc;
+					if (boost::filesystem::is_directory(*it, dirEc))
 					{
-						boost::filesystem::path absDir = boost::filesystem::canonical(p, it->path().parent_path());
+						boost::filesystem::path absDir = boost::filesystem::canonical(p, it->path().parent_path(), dirEc);
+						if (dirEc)
+							continue;
 
 						if (symlinkDirs.find(absDir) != symlinkDirs.end())
 						{
@@ -102,13 +112,11 @@ std::vector<FileInfo> FileSystem::getFileInfosFromPaths(const std::vector<FilePa
 					}
 				}
 
-				if (boost::filesystem::is_regular_file(*it) && (ext.empty() || ext.find(utility::toLowerCase(it->path().extension().string())) != ext.end()))
+				if (boost::filesystem::is_regular_file(*it, ec) && (ext.empty() || ext.find(utility::toLowerCase(it->path().extension().string())) != ext.end()))
 				{
 					const FilePath canonicalPath = FilePath(it->path().string()).getCanonical();
 					if (filePaths.find(canonicalPath) != filePaths.end())
-					{
 						continue;
-					}
 					filePaths.insert(canonicalPath);
 					files.push_back(getFileInfoForPath(canonicalPath));
 				}
@@ -142,24 +150,32 @@ std::set<FilePath> FileSystem::getSymLinkedDirectories(const std::vector<FilePat
 	{
 		if (path.isDirectory())
 		{
-			boost::filesystem::recursive_directory_iterator it(path.getPath(), boost::filesystem::directory_options::follow_directory_symlink);
-			boost::filesystem::recursive_directory_iterator endit;
 			boost::system::error_code ec;
+			boost::filesystem::recursive_directory_iterator it(path.getPath(), boost::filesystem::directory_options::follow_directory_symlink, ec);
+			boost::filesystem::recursive_directory_iterator endit;
 			for (; it != endit; it.increment(ec))
 			{
-				if (boost::filesystem::is_symlink(*it))
+				if (ec)
+				{
+					ec.clear();
+					continue;
+				}
+
+				boost::system::error_code symlinkEc;
+				if (boost::filesystem::is_symlink(*it, symlinkEc))
 				{
 					// check for self-referencing symlinks
-					boost::filesystem::path p = boost::filesystem::read_symlink(*it);
-					if (p.filename() == p.string() && p.filename() == it->path().filename())
-					{
+					boost::filesystem::path p = boost::filesystem::read_symlink(*it, symlinkEc);
+					if (!symlinkEc && p.filename() == p.string() && p.filename() == it->path().filename())
 						continue;
-					}
 
 					// check for duplicates when following directory symlinks
-					if (boost::filesystem::is_directory(*it))
+					boost::system::error_code dirEc;
+					if (boost::filesystem::is_directory(*it, dirEc))
 					{
-						boost::filesystem::path absDir = boost::filesystem::canonical(p, it->path().parent_path());
+						boost::filesystem::path absDir = boost::filesystem::canonical(p, it->path().parent_path(), dirEc);
+						if (dirEc)
+							continue;
 
 						if (symlinkDirs.find(absDir) != symlinkDirs.end())
 						{
