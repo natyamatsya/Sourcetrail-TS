@@ -3,8 +3,6 @@
 
 #include <QCheckBox>
 #include <QLineEdit>
-#include <boost/filesystem/path.hpp>
-
 #include "FileSystem.h"
 #include "ProjectSettings.h"
 #include "SourceGroupSettingsCustomCommand.h"

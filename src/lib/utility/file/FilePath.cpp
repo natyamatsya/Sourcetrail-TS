@@ -7,8 +7,7 @@
 #include <QByteArray>
 #include <QtEnvironmentVariables>
 
-#include <boost/filesystem.hpp>
-#include <boost/filesystem/path.hpp>
+#include <filesystem>
 
 #include <QRegularExpression>
 
@@ -33,7 +32,7 @@ string FilePath::getExecutableExtension()
 }
 
 FilePath::FilePath()
-	: m_path(std::make_unique<boost::filesystem::path>(""))
+	: m_path(std::make_unique<std::filesystem::path>(""))
 	, m_exists(false)
 	, m_checkedExists(false)
 	, m_isDirectory(false)
@@ -48,7 +47,7 @@ FilePath::FilePath(const char filePath[])
 }
 
 FilePath::FilePath(const std::string& filePath)
-	: m_path(std::make_unique<boost::filesystem::path>(filePath))
+	: m_path(std::make_unique<std::filesystem::path>(filePath))
 	, m_exists(false)
 	, m_checkedExists(false)
 	, m_isDirectory(false)
@@ -58,7 +57,7 @@ FilePath::FilePath(const std::string& filePath)
 }
 
 FilePath::FilePath(const FilePath& other)
-	: m_path(std::make_unique<boost::filesystem::path>(other.getPath()))
+	: m_path(std::make_unique<std::filesystem::path>(other.getPath()))
 	, m_exists(other.m_exists)
 	, m_checkedExists(other.m_checkedExists)
 	, m_isDirectory(other.m_isDirectory)
@@ -78,7 +77,7 @@ FilePath::FilePath(FilePath&& other)
 }
 
 FilePath::FilePath(const std::string& filePath, const std::string& base)
-	: m_path(std::make_unique<boost::filesystem::path>(boost::filesystem::absolute(filePath, base)))
+	: m_path(std::make_unique<std::filesystem::path>(std::filesystem::absolute(std::filesystem::path(base) / filePath)))
 	, m_exists(false)
 	, m_checkedExists(false)
 	, m_isDirectory(false)
@@ -89,7 +88,7 @@ FilePath::FilePath(const std::string& filePath, const std::string& base)
 
 FilePath::~FilePath() = default;
 
-const boost::filesystem::path &FilePath::getPath() const
+const std::filesystem::path &FilePath::getPath() const
 {
 	return *m_path;
 }
@@ -103,7 +102,7 @@ bool FilePath::exists() const noexcept
 {
 	if (!m_checkedExists)
 	{
-		m_exists = boost::filesystem::exists(getPath());
+		m_exists = std::filesystem::exists(getPath());
 		m_checkedExists = true;
 	}
 
@@ -120,7 +119,7 @@ bool FilePath::isDirectory() const
 {
 	if (!m_checkedIsDirectory)
 	{
-		m_isDirectory = boost::filesystem::is_directory(getPath());
+		m_isDirectory = std::filesystem::is_directory(getPath());
 		m_checkedIsDirectory = true;
 	}
 
@@ -134,7 +133,7 @@ bool FilePath::isAbsolute() const
 
 bool FilePath::isValid() const
 {
-	boost::filesystem::path::iterator it = m_path->begin();
+	auto it = m_path->begin();
 
 	if (isAbsolute() && m_path->has_root_path())
 	{
@@ -147,12 +146,15 @@ bool FilePath::isValid() const
 		}
 	}
 
+	// Check each path component for characters invalid on Windows
 	for (; it != m_path->end(); ++it)
 	{
-		if (!boost::filesystem::windows_name(it->string()))
-		{
-			return false;
-		}
+		const std::string s = it->string();
+		if (s.empty() || s == "." || s == "..")
+			continue;
+		for (char c : s)
+			if (c < 0x20 || std::string_view("\"*:<>?|/\\").find(c) != std::string_view::npos)
+				return false;
 	}
 
 	return true;
@@ -179,7 +181,7 @@ FilePath FilePath::getParentDirectory() const
 
 FilePath& FilePath::makeAbsolute()
 {
-	m_path = std::make_unique<boost::filesystem::path>(boost::filesystem::absolute(getPath()));
+	m_path = std::make_unique<std::filesystem::path>(std::filesystem::absolute(getPath()));
 	return *this;
 }
 
@@ -198,12 +200,12 @@ FilePath& FilePath::makeCanonical()
 	}
 	try
 	{
-		boost::filesystem::path canonicalPath = boost::filesystem::canonical(getPath());
-		m_path = std::make_unique<boost::filesystem::path>(canonicalPath);
+		std::filesystem::path canonicalPath = std::filesystem::canonical(getPath());
+		m_path = std::make_unique<std::filesystem::path>(canonicalPath);
 		m_canonicalized = true;
 		return *this;
 	}
-	catch (const boost::filesystem::filesystem_error &e)
+	catch (const std::filesystem::filesystem_error &e)
 	{
 		LOG_ERROR_STREAM(<< e.what());
 		return *this;
@@ -251,16 +253,16 @@ std::vector<FilePath> FilePath::expandEnvironmentVariables() const
 
 FilePath& FilePath::makeRelativeTo(const FilePath& other)
 {
-	const boost::filesystem::path a = this->getCanonical().getPath();
-	const boost::filesystem::path b = other.getCanonical().getPath();
+	const std::filesystem::path a = this->getCanonical().getPath();
+	const std::filesystem::path b = other.getCanonical().getPath();
 
 	if (a.root_path() != b.root_path())
 	{
 		return *this;
 	}
 
-	boost::filesystem::path::const_iterator itA = a.begin();
-	boost::filesystem::path::const_iterator itB = b.begin();
+	auto itA = a.begin();
+	auto itB = b.begin();
 
 	while (*itA == *itB && itA != a.end() && itB != b.end())
 	{
@@ -268,11 +270,11 @@ FilePath& FilePath::makeRelativeTo(const FilePath& other)
 		itB++;
 	}
 
-	boost::filesystem::path r;
+	std::filesystem::path r;
 
 	if (itB != b.end())
 	{
-		if (!boost::filesystem::is_directory(b))
+		if (!std::filesystem::is_directory(b))
 		{
 			itB++;
 		}
@@ -293,7 +295,7 @@ FilePath& FilePath::makeRelativeTo(const FilePath& other)
 		r = "./";
 	}
 
-	m_path = std::make_unique<boost::filesystem::path>(r);
+	m_path = std::make_unique<std::filesystem::path>(r);
 	return *this;
 }
 
@@ -307,7 +309,7 @@ FilePath FilePath::getRelativeTo(const FilePath& other) const
 
 FilePath& FilePath::concatenate(const FilePath& other)
 {
-	m_path->operator/=(other.getPath());
+	*m_path /= other.getPath().relative_path();
 	m_exists = false;
 	m_checkedExists = false;
 	m_isDirectory = false;
@@ -326,7 +328,7 @@ FilePath FilePath::getConcatenated(const FilePath& other) const
 
 FilePath& FilePath::concatenate(const char other[])
 {
-	m_path->operator/=(other);
+	*m_path /= std::filesystem::path(other).relative_path();
 	m_exists = false;
 	m_checkedExists = false;
 	m_isDirectory = false;
@@ -355,8 +357,8 @@ bool FilePath::contains(const FilePath& other) const
 		return false;
 	}
 
-	boost::filesystem::path dir = getPath();
-	const std::unique_ptr<boost::filesystem::path>& dir2 = other.m_path;
+	std::filesystem::path dir = getPath();
+	const std::unique_ptr<std::filesystem::path>& dir2 = other.m_path;
 
 	if (dir.filename() == ".")
 	{
@@ -402,13 +404,13 @@ std::string FilePath::extension() const
 
 FilePath FilePath::withoutExtension() const
 {
-	boost::filesystem::path tmpPath(getPath());
+	std::filesystem::path tmpPath(getPath());
 	return FilePath(tmpPath.replace_extension().string());
 }
 
 FilePath FilePath::replaceExtension(const std::string& extension) const
 {
-	boost::filesystem::path tmpPath(getPath());
+	std::filesystem::path tmpPath(getPath());
 	return FilePath(tmpPath.replace_extension(extension).string());
 }
 
@@ -427,7 +429,7 @@ bool FilePath::hasExtension(const std::vector<std::string>& extensions) const
 
 FilePath& FilePath::operator=(const FilePath& other)
 {
-	m_path = std::make_unique<boost::filesystem::path>(other.getPath());
+	m_path = std::make_unique<std::filesystem::path>(other.getPath());
 	m_exists = other.m_exists;
 	m_checkedExists = other.m_checkedExists;
 	m_isDirectory = other.m_isDirectory;
@@ -451,7 +453,7 @@ bool FilePath::operator==(const FilePath& other) const
 {
 	if (exists() && other.exists())
 	{
-		return boost::filesystem::equivalent(getPath(), other.getPath());
+		return std::filesystem::equivalent(getPath(), other.getPath());
 	}
 
 	return m_path->compare(other.getPath()) == 0;

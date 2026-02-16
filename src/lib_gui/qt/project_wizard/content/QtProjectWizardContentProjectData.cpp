@@ -2,7 +2,6 @@
 #include "QtMessageBox.h"
 
 #include <QRegularExpression>
-#include <boost/filesystem/path.hpp>
 
 #include "FileSystem.h"
 #include "ProjectSettings.h"
@@ -76,7 +75,8 @@ bool QtProjectWizardContentProjectData::check()
 		return false;
 	}
 
-	if (!boost::filesystem::portable_file_name(m_projectName->text().toStdString()))
+	static const QRegularExpression portableName(QStringLiteral("^[a-zA-Z0-9._][a-zA-Z0-9._-]*$"));
+	if (!portableName.match(m_projectName->text()).hasMatch())
 	{
 		QtMessageBox msgBox(m_window);
 		msgBox.setText(

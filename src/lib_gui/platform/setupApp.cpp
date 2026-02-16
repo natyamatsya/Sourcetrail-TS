@@ -21,8 +21,7 @@
 using namespace std;
 using namespace utility;
 using namespace boost::locale;
-using namespace boost::system;
-using namespace boost::filesystem;
+using namespace std::filesystem;
 
 void setupDefaultLocale()
 {

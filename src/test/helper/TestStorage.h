@@ -5,8 +5,6 @@
 #include <Storage.h>
 #include <StorageSourceLocation.h>
 
-#include <boost/filesystem.hpp>
-
 #include <memory>
 #include <string>
 #include <vector>

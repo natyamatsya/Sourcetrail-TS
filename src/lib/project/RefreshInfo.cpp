@@ -1,5 +1,7 @@
 #include "RefreshInfo.h"
 
+#include <ostream>
+
 using namespace std;
 
 ostream &operator << (ostream &stream, RefreshMode mode)

@@ -1,7 +1,7 @@
 #ifndef FILE_PATH_H
 #define FILE_PATH_H
 
-#include <boost/filesystem.hpp>
+#include <filesystem>
 #include <memory>
 #include <string>
 #include <vector>
@@ -20,7 +20,7 @@ public:
 	FilePath(const std::string& filePath, const std::string& base);
 	~FilePath();
 
-	const boost::filesystem::path &getPath() const;
+	const std::filesystem::path &getPath() const;
 
 	bool empty() const;
 	bool exists() const noexcept;
@@ -61,7 +61,7 @@ public:
 	bool operator<(const FilePath& other) const;
 
 private:
-	std::unique_ptr<boost::filesystem::path> m_path;
+	std::unique_ptr<std::filesystem::path> m_path;
 
 	mutable bool m_exists;
 	mutable bool m_checkedExists;

@@ -7,12 +7,11 @@
 #include <UserPaths.h>
 #include <setupApp.h>
 
-#include <boost/filesystem.hpp>
-
+#include <filesystem>
 #include <iostream>
 
 using namespace std;
-using namespace boost::filesystem;
+using namespace std::filesystem;
 using namespace utility;
 
 struct EventListener : Catch2::EventListenerBase
