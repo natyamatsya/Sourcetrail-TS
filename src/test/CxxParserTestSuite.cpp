@@ -3875,8 +3875,7 @@ TEST_CASE(
 		"};\n");
 
 	REQUIRE(utility::containsElement<std::string>(
-		client->typeUses, "A<&g_p, q> -> P g_p <8:10 8:12>"	// TODO: this is completely wrong?
-																// should be a normal usage
+		client->typeUses, "A<&g_p, q> -> P g_p <8:10 8:12>"
 		));
 	REQUIRE(utility::containsElement<std::string>(
 		client->localSymbols, "input.cc<7:14> <8:15 8:15>"));
