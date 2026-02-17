@@ -15,8 +15,7 @@ set_target_properties(AidKit_test
 target_link_libraries(AidKit_test
 	PRIVATE
 		AidKit_lib
-		GTest::gtest
-		GTest::gtest_main
+		Catch2::Catch2WithMain
 )
 
 if (WIN32)
@@ -26,4 +25,4 @@ if (WIN32)
 	)
 endif ()
 
-gtest_discover_tests(AidKit_test)
+catch_discover_tests(AidKit_test)

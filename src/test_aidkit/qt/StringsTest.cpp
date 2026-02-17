@@ -15,7 +15,7 @@
 // You should have received a copy of the GNU Lesser General Public License
 // along with CppAidKit. If not, see <http://www.gnu.org/licenses/>.
 
-#include <gtest/gtest.h>
+#include <catch2/catch_all.hpp>
 
 #include <aidkit/qt/Strings.hpp>
 
@@ -24,26 +24,26 @@
 using namespace std;
 using namespace aidkit::qt;
 
-TEST(QStringsTest, charLiteralOperator)
+TEST_CASE("QStrings: char literal operator")
 {
 	QChar c = 'z'_qc;
 
-	ASSERT_EQ(c, 'z');
+	REQUIRE(c == 'z');
 }
 
-TEST(QStringsTest, stringLiteralOperator)
+TEST_CASE("QStrings: string literal operator")
 {
 	QString s = "string"_qs;
 
-	ASSERT_EQ(s, "string");
+	REQUIRE(s == "string");
 }
 
-TEST(QStringsTest, streamOperator)
+TEST_CASE("QStrings: stream operator")
 {
 	ostringstream stream;
 	stream << "QString"_qs;
 
-	ASSERT_EQ(stream.str(), "QString");
+	REQUIRE(stream.str() == "QString");
 }
 
 

@@ -15,7 +15,7 @@
 // You should have received a copy of the GNU Lesser General Public License
 // along with CppAidKit. If not, see <http://www.gnu.org/licenses/>.
 
-#include <gtest/gtest.h>
+#include <catch2/catch_all.hpp>
 #include <aidkit/enum_class.hpp>
 
 using namespace std;
@@ -47,68 +47,68 @@ static void colorFunction(Color)
 
 template class aidkit::enum_class<Color>;
 
-TEST(ColorEnumTest, testCallByValue)
+TEST_CASE("ColorEnum: call by value")
 {
 	colorFunction(Color::Blue);
 }
 
-TEST(ColorEnumTest, testValue)
+TEST_CASE("ColorEnum: value")
 {
-	ASSERT_EQ(Color::Red.value(), 0);
-	ASSERT_EQ(Color::Green.value(), 1);
-	ASSERT_EQ(Color::Blue.value(), 2);
+	REQUIRE(Color::Red.value() == 0);
+	REQUIRE(Color::Green.value() == 1);
+	REQUIRE(Color::Blue.value() == 2);
 }
 
-TEST(ColorEnumTest, testValues)
+TEST_CASE("ColorEnum: values")
 {
 	vector<Color> colors;
 	Color::for_each([&](const Color &color) {
 		colors.push_back(color);
 	});
-	ASSERT_EQ(colors.size(), static_cast<size_t>(3));
+	REQUIRE(colors.size() == 3);
 }
 
-TEST(ColorEnumTest, testName)
+TEST_CASE("ColorEnum: name")
 {
-	ASSERT_EQ(Color::Red.name(), "Red");
-	ASSERT_EQ(Color::Green.name(), "Green");
-	ASSERT_EQ(Color::Blue.name(), "Blue");
+	REQUIRE(Color::Red.name() == "Red");
+	REQUIRE(Color::Green.name() == "Green");
+	REQUIRE(Color::Blue.name() == "Blue");
 }
 
-TEST(ColorEnumTest, testFindByValue)
+TEST_CASE("ColorEnum: find by value")
 {
 	vector<Color> result = Color::find(2);
-	ASSERT_EQ(result.size(), static_cast<size_t>(1));
-	ASSERT_EQ(result[0], Color::Blue);
+	REQUIRE(result.size() == 1);
+	REQUIRE(result[0] == Color::Blue);
 }
 
-TEST(ColorEnumTest, testFindByName)
+TEST_CASE("ColorEnum: find by name")
 {
 	vector<Color> result = Color::find("Green");
-	ASSERT_EQ(result.size(), static_cast<size_t>(1));
-	ASSERT_EQ(result[0], Color::Green);
+	REQUIRE(result.size() == 1);
+	REQUIRE(result[0] == Color::Green);
 }
 
-TEST(ColorEnumTest, testEquality)
+TEST_CASE("ColorEnum: equality")
 {
-	ASSERT_EQ(Color::Red, Color::Red);
-	ASSERT_EQ(Color::Green, Color::Green);
-	ASSERT_EQ(Color::Blue, Color::Blue);
+	REQUIRE(Color::Red == Color::Red);
+	REQUIRE(Color::Green == Color::Green);
+	REQUIRE(Color::Blue == Color::Blue);
 }
 
-TEST(ColorEnumTest, testLessThan)
+TEST_CASE("ColorEnum: less than")
 {
-	ASSERT_LT(Color::Red, Color::Green);
-	ASSERT_LT(Color::Green, Color::Blue);
+	REQUIRE(Color::Red < Color::Green);
+	REQUIRE(Color::Green < Color::Blue);
 }
 
-TEST(ColorEnumTest, testAssignment)
+TEST_CASE("ColorEnum: assignment")
 {
 	Color color = Color::Red;
-	ASSERT_EQ(color, Color::Red);
+	REQUIRE(color == Color::Red);
 
 	color = Color::Blue;
-	ASSERT_EQ(color, Color::Blue);
+	REQUIRE(color == Color::Blue);
 }
 
 //##################################################################################################
@@ -131,20 +131,20 @@ const Number Number::Twenty(20, "Twenty");
 const Number Number::Thirty(30, "Thirty");
 const Number Number::TwentyToo(20, "TwentyToo");
 
-TEST(NumberEnumTest, testValue)
+TEST_CASE("NumberEnum: value")
 {
-	ASSERT_EQ(Number::Ten.value(), 10);
-	ASSERT_EQ(Number::Twenty.value(), 20);
-	ASSERT_EQ(Number::Thirty.value(), 30);
-	ASSERT_EQ(Number::TwentyToo.value(), 20);
+	REQUIRE(Number::Ten.value() == 10);
+	REQUIRE(Number::Twenty.value() == 20);
+	REQUIRE(Number::Thirty.value() == 30);
+	REQUIRE(Number::TwentyToo.value() == 20);
 }
 
-TEST(NumberEnumTest, testFindDuplicates)
+TEST_CASE("NumberEnum: find duplicates")
 {
 	vector<Number> numbers = Number::find(20);
-	ASSERT_EQ(numbers.size(), static_cast<size_t>(2));
-	ASSERT_EQ(numbers[0], Number::Twenty);
-	ASSERT_EQ(numbers[1], Number::TwentyToo);
+	REQUIRE(numbers.size() == 2);
+	REQUIRE(numbers[0] == Number::Twenty);
+	REQUIRE(numbers[1] == Number::TwentyToo);
 }
 
 //#########################################################################################################
@@ -163,14 +163,14 @@ class Animal : public enum_class<Animal> {
 const Animal Animal::Cat(10);
 const Animal Animal::Dog;
 
-TEST(AnimalEnumTest, testValue)
+TEST_CASE("AnimalEnum: value")
 {
-	ASSERT_EQ(Animal::Cat.value(), 10);
-	ASSERT_EQ(Animal::Dog.value(), 11);
+	REQUIRE(Animal::Cat.value() == 10);
+	REQUIRE(Animal::Dog.value() == 11);
 }
 
-TEST(AnimalEnumTest, testName)
+TEST_CASE("AnimalEnum: name")
 {
-	ASSERT_EQ(Animal::Cat.name(), "");
-	ASSERT_EQ(Animal::Dog.name(), "");
+	REQUIRE(Animal::Cat.name() == "");
+	REQUIRE(Animal::Dog.name() == "");
 }

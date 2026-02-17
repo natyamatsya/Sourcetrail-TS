@@ -7,7 +7,6 @@
 		"flatbuffers",
 		"sqlite3",
 		"tinyxml",
-		"catch2",
-		"gtest"
+		"catch2"
 	]
 }

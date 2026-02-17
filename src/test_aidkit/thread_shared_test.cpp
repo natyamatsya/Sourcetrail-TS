@@ -15,7 +15,7 @@
 // You should have received a copy of the GNU Lesser General Public License
 // along with CppAidKit. If not, see <http://www.gnu.org/licenses/>.
 
-#include <gtest/gtest.h>
+#include <catch2/catch_all.hpp>
 
 #include <aidkit/thread_shared.hpp>
 
@@ -55,23 +55,23 @@ class Data {
 // Explicit template instantiation to detect syntax errors early:
 template class aidkit::thread_shared<Data>;
 
-TEST(ThreadSharedTest, testAccess)
+TEST_CASE("ThreadShared: access")
 {
 	thread_shared<Data> sharedData(20);
 
 	auto dataAccess = sharedData.access();
-	ASSERT_EQ(dataAccess->get(), 20);
+	REQUIRE(dataAccess->get() == 20);
 
 	dataAccess->set(10);
-	ASSERT_EQ(dataAccess->get(), 10);
+	REQUIRE(dataAccess->get() == 10);
 }
 
-TEST(ThreadSharedTest, testConstAccess)
+TEST_CASE("ThreadShared: const access")
 {
 	const thread_shared<Data> constSharedData(20);
 
 	auto dataAccess = constSharedData.access();
-	ASSERT_EQ(dataAccess->get(), 20);
+	REQUIRE(dataAccess->get() == 20);
 
 	dataAccess.unlock();
 	dataAccess.lock();
@@ -79,24 +79,24 @@ TEST(ThreadSharedTest, testConstAccess)
 	// /* Must not compile: */ dataAccess->set(10);
 }
 
-TEST(ThreadSharedTest, testAccessFunction)
+TEST_CASE("ThreadShared: access function")
 {
 	thread_shared<Data> sharedData(20);
-	ASSERT_EQ(sharedData.access()->get(), 20);
+	REQUIRE(sharedData.access()->get() == 20);
 
 	access([](Data &c)
 	{
-		ASSERT_EQ(c.get(), 20);
+		REQUIRE(c.get() == 20);
 	}, sharedData);
 
 	access([](Data &c)
 	{
 		c.set(10);
 	}, sharedData);
-	ASSERT_EQ(sharedData.access()->get(), 10);
+	REQUIRE(sharedData.access()->get() == 10);
 }
 
-TEST(ThreadSharedTest, testMultipleAccessFunction)
+TEST_CASE("ThreadShared: multiple access function")
 {
 	thread_shared<Data> sharedData10(10);
 	thread_shared<Data> sharedData20(20);
@@ -106,18 +106,18 @@ TEST(ThreadSharedTest, testMultipleAccessFunction)
 		std::swap(d1, d2);
 	}, sharedData20, sharedData10);
 
-	ASSERT_EQ(sharedData10.access()->get(), 20);
-	ASSERT_EQ(sharedData20.access()->get(), 10);
+	REQUIRE(sharedData10.access()->get() == 20);
+	REQUIRE(sharedData20.access()->get() == 10);
 }
 
-TEST(ThreadSharedTest, testConstAccessFunction)
+TEST_CASE("ThreadShared: const access function")
 {
 	const thread_shared<Data> sharedData(20);
-	ASSERT_EQ(sharedData.access()->get(), 20);
+	REQUIRE(sharedData.access()->get() == 20);
 
 	access([](const Data &c)
 	{
-		ASSERT_EQ(c.get(), 20);
+		REQUIRE(c.get() == 20);
 	}, sharedData);
 
 	// Must not compile:
@@ -127,7 +127,7 @@ TEST(ThreadSharedTest, testConstAccessFunction)
 	// }, sharedData);
 }
 
-TEST(ThreadSharedTest, testAssignConversion)
+TEST_CASE("ThreadShared: assign conversion")
 {
 	thread_shared<Data> sharedData(15);
 	Data otherData(30);
@@ -135,5 +135,5 @@ TEST(ThreadSharedTest, testAssignConversion)
 	sharedData = otherData;
 	Data copyData = sharedData;
 
-	ASSERT_EQ(copyData, otherData);
+	REQUIRE(copyData == otherData);
 }
