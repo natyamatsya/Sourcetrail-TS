@@ -3,7 +3,6 @@
 	"name": "sourcetrail",
 	"version": "1.0.0",
 	"dependencies": [
-		"boost-interprocess",
 		"cli11",
 		"flatbuffers",
 		"sqlite3",

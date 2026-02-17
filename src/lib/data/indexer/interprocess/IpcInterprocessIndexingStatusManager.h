@@ -4,9 +4,9 @@
 #include <string>
 #include <vector>
 
-#include "BaseInterprocessDataManager.h"
 #include "FilePath.h"
 #include "IpcSharedMemory.h"
+#include "ProcessId.h"
 
 class IpcInterprocessIndexingStatusManager
 {

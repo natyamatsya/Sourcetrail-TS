@@ -34,7 +34,6 @@ add_executable(Sourcetrail_test
 	RefreshInfoGeneratorTestSuite.cpp
 	SearchIndexTestSuite.cpp
 	SettingsTestSuite.cpp
-	SharedMemoryTestSuite.cpp
 	SourceGroupTestSuite.cpp
 	SourceLocationCollectionTestSuite.cpp
 	SqliteBookmarkStorageTestSuite.cpp

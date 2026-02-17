@@ -103,11 +103,6 @@ void InterprocessIndexer::work()
 			LOG_INFO_STREAM(<< m_processId << " all done");
 		}
 	}
-	catch (boost::interprocess::interprocess_exception& e)
-	{
-		LOG_ERROR_STREAM(<< m_processId << " error: " << e.what());
-		throw e;
-	}
 	catch (std::exception& e)
 	{
 		LOG_ERROR_STREAM(<< m_processId << " error: " << e.what());

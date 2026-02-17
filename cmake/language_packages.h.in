@@ -5,6 +5,5 @@
 
 #cmakedefine01 BUILD_CXX_LANGUAGE_PACKAGE
 #cmakedefine01 BUILD_JAVA_LANGUAGE_PACKAGE
-#cmakedefine01 USE_CPP_IPC
 
 #endif // LANGUAGE_PACKAGES_H

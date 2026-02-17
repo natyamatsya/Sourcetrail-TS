@@ -42,7 +42,6 @@ cmake_print_variables(CMAKE_CXX_COMPILER)
 # Configure which language(s)/package(s) should be supported:
 option(BUILD_CXX_LANGUAGE_PACKAGE  "Add C/C++ support to the Sourcetrail indexer." OFF)
 option(BUILD_UNIT_TESTS_PACKAGE    "Build the corresponding language unit tests." OFF)
-option(USE_CPP_IPC                 "Use cpp-ipc + FlatBuffers instead of boost::interprocess." OFF)
 
 configure_file(cmake/language_packages.h.in src/lib/language_packages.h)
 
@@ -160,32 +159,6 @@ target_link_libraries(External_lib_icu
 		${ICU_LIBRARIES}
 )
 		
-# Boost ------------------------------------------------------------------------
-
-set(Boost_NO_WARN_NEW_VERSIONS ON)
-
-if (isVcpkgBuild)
-	# Associated bug entry: https://gitlab.kitware.com/cmake/cmake/-/issues/21200 has been closed.
-	set(Boost_NO_SYSTEM_PATHS ON)
-endif()
-
-set(BOOST_MIN_VERSION 1.83)
-set(BOOST_MAX_VERSION 1.91)
-
-find_package(Boost CONFIG REQUIRED)
-message(STATUS "Found Boost ${Boost_VERSION}: ${Boost_INCLUDE_DIRS}") # ${Boost_DIR} contains the path to BoostConfig.cmake|boost-config.cmake.
-checkVersionRange("Boost" ${Boost_VERSION} ${BOOST_MIN_VERSION} ${BOOST_MAX_VERSION})
-
-add_library(External_lib_boost INTERFACE)
-
-target_link_libraries(External_lib_boost
-	INTERFACE
-		Boost::headers
-		
-		# Prevent linker error in vcpkg build:
-		External_lib_icu
-)
-
 # CLI11 -------------------------------------------------------------------------
 
 find_package(CLI11 CONFIG REQUIRED)

@@ -183,30 +183,16 @@ add_library(Sourcetrail_lib
 	data/indexer/interprocess/serialization/IntermediateStorageSerializer.cpp
 	data/indexer/interprocess/serialization/IntermediateStorageSerializer.h
 
-	data/indexer/interprocess/shared_types/SharedIndexerCommand.cpp
-	data/indexer/interprocess/shared_types/SharedIndexerCommand.h
-	data/indexer/interprocess/shared_types/SharedIntermediateStorage.cpp
-	data/indexer/interprocess/shared_types/SharedIntermediateStorage.h
-	data/indexer/interprocess/shared_types/SharedStorageTypes.h
-
-	data/indexer/interprocess/BaseInterprocessDataManager.cpp
-	data/indexer/interprocess/BaseInterprocessDataManager.h
 	data/indexer/interprocess/InterprocessBackend.h
-	data/indexer/interprocess/InterprocessConcepts.h
 	data/indexer/interprocess/InterprocessIndexer.cpp
 	data/indexer/interprocess/InterprocessIndexer.h
-	data/indexer/interprocess/InterprocessIndexerCommandManager.cpp
-	data/indexer/interprocess/InterprocessIndexerCommandManager.h
-	data/indexer/interprocess/InterprocessIndexingStatusManager.cpp
-	data/indexer/interprocess/InterprocessIndexingStatusManager.h
-	data/indexer/interprocess/InterprocessIntermediateStorageManager.cpp
-	data/indexer/interprocess/InterprocessIntermediateStorageManager.h
 	data/indexer/interprocess/IpcInterprocessIndexerCommandManager.cpp
 	data/indexer/interprocess/IpcInterprocessIndexerCommandManager.h
 	data/indexer/interprocess/IpcInterprocessIntermediateStorageManager.cpp
 	data/indexer/interprocess/IpcInterprocessIntermediateStorageManager.h
 	data/indexer/interprocess/IpcInterprocessIndexingStatusManager.cpp
 	data/indexer/interprocess/IpcInterprocessIndexingStatusManager.h
+	data/indexer/interprocess/ProcessId.h
 
 	data/indexer/CombinedIndexerCommandProvider.cpp
 	data/indexer/CombinedIndexerCommandProvider.h
@@ -423,10 +409,6 @@ add_library(Sourcetrail_lib
 	utility/interprocess/IpcSharedMemory.h
 	utility/interprocess/IpcSharedMemoryGarbageCollector.cpp
 	utility/interprocess/IpcSharedMemoryGarbageCollector.h
-	utility/interprocess/SharedMemory.cpp
-	utility/interprocess/SharedMemory.h
-	utility/interprocess/SharedMemoryGarbageCollector.cpp
-	utility/interprocess/SharedMemoryGarbageCollector.h
 
 	utility/logging/ConsoleLogger.cpp
 	utility/logging/ConsoleLogger.h
@@ -652,7 +634,6 @@ target_include_directories(Sourcetrail_lib
 		data/graph/token_component
 		data/graph
 		data/indexer/interprocess/serialization
-		data/indexer/interprocess/shared_types
 		data/indexer/interprocess
 		data/indexer
 		data/location
@@ -779,7 +760,6 @@ target_link_libraries(Sourcetrail_lib
 
 		External_lib_tinyxml
 		External_lib_cppsqlite3
-		External_lib_boost
 		External_lib_cli11
 		External_lib_flatbuffers
 		External_lib_ipc

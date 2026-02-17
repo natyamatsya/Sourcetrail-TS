@@ -5,8 +5,8 @@
 #include <string>
 #include <vector>
 
-#include "BaseInterprocessDataManager.h"
 #include "IpcSharedMemory.h"
+#include "ProcessId.h"
 
 class IndexerCommand;
 

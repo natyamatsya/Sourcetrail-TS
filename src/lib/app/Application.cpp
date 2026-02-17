@@ -491,22 +491,5 @@ void Application::updateTitle()
 
 bool Application::checkSharedMemory()
 {
-	std::string error = SharedMemory::checkSharedMemory(getUUID());
-	if (error.size() != 0)
-	{
-		MessageStatus(
-			"Error on accessing shared memory. Indexing not possible. "
-			"Please restart computer or run as admin: " +
-				error,
-			true)
-			.dispatch();
-		handleDialog(
-			"There was an error accessing shared memory on your computer: " + error +
-			"\n\n"
-			"Project indexing is not possible. Please restart your computer or try running "
-			"Sourcetrail as admin.");
-		return false;
-	}
-
 	return true;
 }

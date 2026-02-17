@@ -4,8 +4,8 @@
 #include <memory>
 #include <string>
 
-#include "BaseInterprocessDataManager.h"
 #include "IpcSharedMemory.h"
+#include "ProcessId.h"
 
 class IntermediateStorage;
 
