@@ -39,11 +39,11 @@ void CommandlineCommandConfig::setup()
 	m_app.add_option("-t,--indexer-threads", m_indexerThreads,
 		"Set the number of threads used for indexing (0 uses ideal thread count)");
 	m_app.add_option("-p,--use-processes", m_useProcesses,
-		"Enable C/C++ Indexer threads to run in different processes. <true/false>");
+		"Enable C/C++ Indexer threads to run in different processes. <true/false>")->expected(1);
 	m_app.add_option("-l,--logging-enabled", m_loggingEnabled,
-		"Enable file/console logging <true/false>");
+		"Enable file/console logging <true/false>")->expected(1);
 	m_app.add_option("-L,--verbose-indexer-logging-enabled", m_verboseIndexerLogging,
-		"Enable additional log of abstract syntax tree during the indexing. <true/false> WARNING Slows down indexing speed");
+		"Enable additional log of abstract syntax tree during the indexing. <true/false> WARNING Slows down indexing speed")->expected(1);
 	m_app.add_option("-j,--jvm-path", m_jvmPath,
 		"Path to the location of the jvm library");
 	m_app.add_option("-m,--maven-path", m_mavenPath,
@@ -60,9 +60,23 @@ void CommandlineCommandConfig::setup()
 
 CommandlineCommand::ReturnStatus CommandlineCommandConfig::parse(std::vector<std::string>& args)
 {
+	// Check before parsing — CLI11 modifies args
+	const bool showHelp = args.empty() || args[0] == "help";
+
+	if (showHelp)
+	{
+		printHelp();
+		return ReturnStatus::CMD_QUIT;
+	}
+
 	try
 	{
-		m_app.parse(args);
+		std::vector<std::string> fullArgs{m_name};
+		fullArgs.insert(fullArgs.end(), args.begin(), args.end());
+		std::vector<const char*> argv;
+		for (const auto& a : fullArgs)
+			argv.push_back(a.c_str());
+		m_app.parse(static_cast<int>(argv.size()), argv.data());
 	}
 	catch (const CLI::ParseError& e)
 	{
@@ -73,14 +87,6 @@ CommandlineCommand::ReturnStatus CommandlineCommandConfig::parse(std::vector<std
 		}
 		std::cerr << "ERROR: " << e.what() << std::endl;
 		return ReturnStatus::CMD_FAILURE;
-	}
-
-	// when "sourcetrail config" without any options is started,
-	// show help since configure nothing wont help
-	if (args.empty() || args[0] == "help")
-	{
-		printHelp();
-		return ReturnStatus::CMD_QUIT;
 	}
 
 	ApplicationSettings* settings = ApplicationSettings::getInstance().get();

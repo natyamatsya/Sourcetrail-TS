@@ -22,9 +22,20 @@ void CommandlineCommandIndex::setup()
 
 CommandlineCommand::ReturnStatus CommandlineCommandIndex::parse(std::vector<std::string>& args)
 {
+	if (args.empty() || args[0] == "help")
+	{
+		printHelp();
+		return ReturnStatus::CMD_QUIT;
+	}
+
 	try
 	{
-		m_app.parse(args);
+		std::vector<std::string> fullArgs{m_name};
+		fullArgs.insert(fullArgs.end(), args.begin(), args.end());
+		std::vector<const char*> argv;
+		for (const auto& a : fullArgs)
+			argv.push_back(a.c_str());
+		m_app.parse(static_cast<int>(argv.size()), argv.data());
 	}
 	catch (const CLI::ParseError& e)
 	{
@@ -35,12 +46,6 @@ CommandlineCommand::ReturnStatus CommandlineCommandIndex::parse(std::vector<std:
 		}
 		std::cerr << "ERROR: " << e.what() << std::endl;
 		return ReturnStatus::CMD_FAILURE;
-	}
-
-	if (args.empty() || args[0] == "help")
-	{
-		printHelp();
-		return ReturnStatus::CMD_QUIT;
 	}
 
 	if (m_app.count("--full"))
