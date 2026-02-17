@@ -5,12 +5,6 @@
 	"dependencies": [
 		"boost-program-options",
 		"boost-interprocess",
-		{
-			"name": "boost-locale",
-			"features": [
-				"icu"
-			]
-		},
 		"sqlite3",
 		"tinyxml",
 		"icu",

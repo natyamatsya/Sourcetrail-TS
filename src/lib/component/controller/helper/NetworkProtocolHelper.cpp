@@ -3,9 +3,8 @@
 #include <sstream>
 #include <string>
 
-#include <boost/algorithm/string.hpp>
-
 #include "logging.h"
+#include "utilityString.h"
 
 std::string NetworkProtocolHelper::s_divider = ">>";
 std::string NetworkProtocolHelper::s_setActiveTokenPrefix = "setActiveToken";
@@ -148,10 +147,7 @@ NetworkProtocolHelper::CreateCDBProjectMessage NetworkProtocolHelper::parseCreat
 				const std::string ideId = subMessages[subMessageCount - 2];
 				if (!ideId.empty())
 				{
-					std::string nonConstId = ideId;
-					boost::algorithm::to_lower(nonConstId);
-
-					networkMessage.ideId = nonConstId;
+						networkMessage.ideId = utility::toLowerCase(ideId);
 				}
 				else
 				{
@@ -195,10 +191,7 @@ NetworkProtocolHelper::PingMessage NetworkProtocolHelper::parsePingMessage(const
 
 				if (!ideId.empty())
 				{
-					std::string nonConstId = ideId;
-					boost::algorithm::to_lower(nonConstId);
-
-					pingMessage.ideId = ideId;
+					pingMessage.ideId = utility::toLowerCase(ideId);
 
 					pingMessage.valid = true;
 				}

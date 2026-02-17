@@ -17,21 +17,25 @@
 #include <QStandardPaths>
 
 #include <iostream>
-
-#include <boost/locale/generator.hpp>
+#include <locale>
 
 using namespace std;
 using namespace utility;
-using namespace boost::locale;
 using namespace std::filesystem;
 
 void setupDefaultLocale()
 {
-	locale defaultLocale = generator().generate("");
-
-	locale::global(defaultLocale);
-	cout.imbue(defaultLocale);
-	cerr.imbue(defaultLocale);
+	try
+	{
+		locale defaultLocale("");
+		locale::global(defaultLocale);
+		cout.imbue(defaultLocale);
+		cerr.imbue(defaultLocale);
+	}
+	catch (const runtime_error&)
+	{
+		// Fall back to classic locale if the system locale is unavailable
+	}
 }
 
 

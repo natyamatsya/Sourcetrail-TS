@@ -173,7 +173,6 @@ set(BOOST_MAX_VERSION 1.91)
 
 find_package(Boost CONFIG REQUIRED 
 	COMPONENTS
-		locale
 		program_options 
 )
 message(STATUS "Found Boost ${Boost_VERSION}: ${Boost_INCLUDE_DIRS}") # ${Boost_DIR} contains the path to BoostConfig.cmake|boost-config.cmake.
@@ -191,7 +190,6 @@ target_link_libraries(External_lib_boost
 	INTERFACE
 		Boost::headers
 		
-		Boost::locale
 		Boost::program_options
 		
 		# Prevent linker error in vcpkg build:

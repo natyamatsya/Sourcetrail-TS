@@ -1,19 +1,13 @@
 #include "utilityString.h"
 
-#include <boost/locale/boundary.hpp>
-#include <boost/locale/conversion.hpp>
-#include <boost/locale/encoding_utf.hpp>
-#include <boost/locale/util.hpp>
-
 #include <algorithm>
 #include <cctype>
 #include <iterator>
 #include <string>
 
+#include <QString>
+
 using namespace std;
-using namespace boost::locale;
-using namespace boost::locale::util;
-using namespace boost::locale::boundary;
 
 namespace
 {
@@ -554,7 +548,7 @@ std::string convertWhiteSpacesToSingleSpaces(const std::string& str)
 
 std::string toLowerCase(const std::string& in)
 {
-    return boost::locale::to_lower(in);
+    return QString::fromStdString(in).toLower().toStdString();
 }
 
 bool isCaseInsensitiveEqual(const std::string &a, const std::string &b)
@@ -567,25 +561,23 @@ bool isCaseInsensitiveLess(const std::string& s1, const std::string& s2)
 	return toLowerCase(s1) < toLowerCase(s2);
 }
 
-static inline utf::code_point doConvertToUtf32(base_converter *converter, const std::string &utf8chars)
-{
-	const char *utf8CharsBegin = utf8chars.data();
-	const char *utf8CharsEnd = utf8chars.data() + utf8chars.size();
-	utf::code_point utf32char = converter->to_unicode(utf8CharsBegin, utf8CharsEnd);
-
-	return (utf32char != base_converter::incomplete && utf32char != base_converter::illegal) ? utf32char : 0;
-}
-
 std::u32string convertToUtf32(const std::string &utf8chars)
 {
-	std::u32string utf32chars;
-	auto converter = create_utf8_converter();
-
-	ssegment_index characters(boundary_type::character, utf8chars.begin(), utf8chars.end());
-	for (const auto &c : characters)
-		utf32chars.push_back(doConvertToUtf32(converter.get(), c));
-
-	return utf32chars;
+	QString qs = QString::fromUtf8(utf8chars.data(), static_cast<int>(utf8chars.size()));
+	std::u32string result;
+	result.reserve(static_cast<size_t>(qs.size()));
+	for (auto it = qs.cbegin(); it != qs.cend(); )
+	{
+		char32_t cp = it->unicode();
+		if (it->isHighSurrogate() && (it + 1) != qs.cend() && (it + 1)->isLowSurrogate())
+		{
+			cp = QChar::surrogateToUcs4(it->unicode(), (it + 1)->unicode());
+			++it;
+		}
+		result.push_back(cp);
+		++it;
+	}
+	return result;
 }
 
 } // namespace utility
