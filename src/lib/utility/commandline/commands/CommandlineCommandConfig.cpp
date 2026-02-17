@@ -44,13 +44,6 @@ void CommandlineCommandConfig::setup()
 		"Enable file/console logging <true/false>")->expected(1);
 	m_app.add_option("-L,--verbose-indexer-logging-enabled", m_verboseIndexerLogging,
 		"Enable additional log of abstract syntax tree during the indexing. <true/false> WARNING Slows down indexing speed")->expected(1);
-	m_app.add_option("-j,--jvm-path", m_jvmPath,
-		"Path to the location of the jvm library");
-	m_app.add_option("-m,--maven-path", m_mavenPath,
-		"Path to the maven binary");
-	m_app.add_option("-J,--jre-system-library-paths", m_jreSystemLibraryPaths,
-		"paths to the jars of the JRE system library. "
-		"These jars can be found inside your JRE install directory (once per path or comma separated)");
 	m_app.add_option("-g,--global-header-search-paths", m_globalHeaderSearchPaths,
 		"Global include paths (once per path or comma separated)");
 	m_app.add_option("-F,--global-framework-search-paths", m_globalFrameworkSearchPaths,
@@ -103,12 +96,9 @@ CommandlineCommand::ReturnStatus CommandlineCommandConfig::parse(std::vector<std
 				  << "\n  use-processes: " << settings->getMultiProcessIndexingEnabled()
 				  << "\n  logging-enabled: " << settings->getLoggingEnabled()
 				  << "\n  verbose-indexer-logging-enabled: "
-				  << settings->getVerboseIndexerLoggingEnabled()
-				  << "\n  jvm-path: " << settings->getJavaPath().str()
-				  << "\n  maven-path: " << settings->getMavenPath().str();
+				  << settings->getVerboseIndexerLoggingEnabled();
 		printVector("global-header-search-paths", settings->getHeaderSearchPaths());
 		printVector("global-framework-search-paths", settings->getFrameworkSearchPaths());
-		printVector("jre-system-library-paths", settings->getJreSystemLibraryPaths());
 		return ReturnStatus::CMD_QUIT;
 	}
 
@@ -121,23 +111,6 @@ CommandlineCommand::ReturnStatus CommandlineCommandConfig::parse(std::vector<std
 	if (m_verboseIndexerLogging.has_value())
 		settings->setVerboseIndexerLoggingEnabled(*m_verboseIndexerLogging);
 
-	if (!m_jvmPath.empty())
-	{
-		FilePath path(m_jvmPath);
-		if (!path.exists())
-			std::cout << "\nWARNING: " << path.str() << " does not exist." << std::endl;
-		settings->setJavaPath(path);
-	}
-	if (!m_mavenPath.empty())
-	{
-		FilePath path(m_mavenPath);
-		if (!path.exists())
-			std::cout << "\nWARNING: " << path.str() << " does not exist." << std::endl;
-		settings->setMavenPath(path);
-	}
-
-	if (!m_jreSystemLibraryPaths.empty())
-		settings->setJreSystemLibraryPaths(extractPaths(m_jreSystemLibraryPaths));
 	if (!m_globalHeaderSearchPaths.empty())
 		settings->setHeaderSearchPaths(extractPaths(m_globalHeaderSearchPaths));
 	if (!m_globalFrameworkSearchPaths.empty())
