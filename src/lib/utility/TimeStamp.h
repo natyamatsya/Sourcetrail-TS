@@ -1,18 +1,21 @@
 #ifndef TIME_STAMP_H
 #define TIME_STAMP_H
 
-#include <boost/date_time/posix_time/posix_time.hpp>
+#include <chrono>
+#include <string>
 
 class TimeStamp
 {
 public:
+	using time_point = std::chrono::system_clock::time_point;
+
 	static TimeStamp now();
 
 	static double durationSeconds(const TimeStamp& start);
 	static std::string secondsToString(double seconds);
 
 	TimeStamp();
-	TimeStamp(boost::posix_time::ptime t);
+	TimeStamp(time_point t);
 	TimeStamp(std::string s);
 
 	bool isValid() const;
@@ -24,11 +27,11 @@ public:
 
 	inline bool operator==(const TimeStamp& rhs)
 	{
-		return m_time == rhs.m_time;
+		return m_valid == rhs.m_valid && m_time == rhs.m_time;
 	}
 	inline bool operator!=(const TimeStamp& rhs)
 	{
-		return m_time != rhs.m_time;
+		return !(*this == rhs);
 	}
 	inline bool operator<(const TimeStamp& rhs)
 	{
@@ -58,7 +61,8 @@ public:
 	size_t deltaHours(const TimeStamp& other) const;
 
 private:
-	boost::posix_time::ptime m_time;
+	time_point m_time;
+	bool m_valid = false;
 };
 
 #endif	  // TIME_STAMP_H

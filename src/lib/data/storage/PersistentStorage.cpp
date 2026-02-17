@@ -423,11 +423,9 @@ std::vector<FileInfo> PersistentStorage::getFileInfoForAllFiles() const
 	std::vector<FileInfo> fileInfos;
 
 	m_sqliteIndexStorage.forEach<StorageFile>([&](StorageFile&& file) {
-		boost::posix_time::ptime modificationTime = boost::posix_time::not_a_date_time;
+		TimeStamp modificationTime;
 		if (file.modificationTime != "not-a-date-time")
-		{
-			modificationTime = boost::posix_time::time_from_string(file.modificationTime);
-		}
+			modificationTime = TimeStamp(file.modificationTime);
 
 		fileInfos.emplace_back(FilePath(file.filePath), modificationTime);
 	});

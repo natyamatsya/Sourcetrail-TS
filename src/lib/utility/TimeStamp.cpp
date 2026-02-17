@@ -1,10 +1,40 @@
 #include "TimeStamp.h"
 
+#include <cmath>
+#include <cstdlib>
+#include <ctime>
+#include <iomanip>
+#include <sstream>
+
 using namespace std;
+using namespace std::chrono;
+
+namespace
+{
+std::tm toLocalTm(system_clock::time_point tp)
+{
+	std::time_t t = system_clock::to_time_t(tp);
+	std::tm tm{};
+#ifdef _WIN32
+	localtime_s(&tm, &t);
+#else
+	localtime_r(&t, &tm);
+#endif
+	return tm;
+}
+
+std::string formatLocal(system_clock::time_point tp, const char* fmt)
+{
+	std::tm tm = toLocalTm(tp);
+	char buf[64];
+	std::strftime(buf, sizeof(buf), fmt, &tm);
+	return buf;
+}
+}	 // namespace
 
 TimeStamp TimeStamp::now()
 {
-	return TimeStamp(boost::posix_time::microsec_clock::local_time());
+	return TimeStamp(system_clock::now());
 }
 
 double TimeStamp::durationSeconds(const TimeStamp& start)
@@ -46,46 +76,56 @@ std::string TimeStamp::secondsToString(double secs)
 	return ss.str();
 }
 
-TimeStamp::TimeStamp(): m_time(boost::posix_time::not_a_date_time) {}
+TimeStamp::TimeStamp() {}
 
-TimeStamp::TimeStamp(boost::posix_time::ptime t): m_time(t) {}
+TimeStamp::TimeStamp(time_point t): m_time(t), m_valid(true) {}
 
-TimeStamp::TimeStamp(std::string s): m_time(boost::posix_time::not_a_date_time)
+TimeStamp::TimeStamp(std::string s)
 {
-	if (s.size())
+	if (s.empty())
+		return;
+
+	std::tm tm{};
+	tm.tm_isdst = -1;
+	std::istringstream ss(s);
+	ss >> std::get_time(&tm, "%Y-%m-%d %H:%M:%S");
+	if (!ss.fail())
 	{
-		m_time = boost::posix_time::time_from_string(s);
+		std::time_t t = std::mktime(&tm);
+		if (t != -1)
+		{
+			m_time = system_clock::from_time_t(t);
+			m_valid = true;
+		}
 	}
 }
 
 bool TimeStamp::isValid() const
 {
-	return m_time != boost::posix_time::not_a_date_time;
+	return m_valid;
 }
 
 std::string TimeStamp::toString() const
 {
-	std::stringstream stream;
-	boost::posix_time::time_facet* facet = new boost::posix_time::time_facet();
-	facet->format("%Y-%m-%d %H:%M:%S");
-	stream.imbue(std::locale(std::locale::classic(), facet));
-	stream << m_time;
-	return stream.str();
+	if (!m_valid)
+		return "not-a-date-time";
+	return formatLocal(m_time, "%Y-%m-%d %H:%M:%S");
 }
 
 std::string TimeStamp::getDDMMYYYYString() const
 {
-	std::stringstream stream;
-	boost::posix_time::time_facet* facet = new boost::posix_time::time_facet();
-	facet->format("%d-%m-%Y");
-	stream.imbue(std::locale(std::locale::classic(), facet));
-	stream << m_time;
-	return stream.str();
+	if (!m_valid)
+		return "not-a-date-time";
+	return formatLocal(m_time, "%d-%m-%Y");
 }
 
 std::string TimeStamp::dayOfWeek() const
 {
-	switch (m_time.date().day_of_week())
+	if (!m_valid)
+		return "none";
+
+	std::tm tm = toLocalTm(m_time);
+	switch (tm.tm_wday)
 	{
 	case 0:
 		return "Sunday";
@@ -112,29 +152,35 @@ std::string TimeStamp::dayOfWeekShort() const
 
 size_t TimeStamp::deltaMS(const TimeStamp& other) const
 {
-	return static_cast<size_t>(abs((m_time - other.m_time).total_milliseconds()));
+	auto d = duration_cast<milliseconds>(m_time - other.m_time);
+	return static_cast<size_t>(std::abs(d.count()));
 }
 
 size_t TimeStamp::deltaS(const TimeStamp& other) const
 {
-	return static_cast<size_t>(abs((m_time - other.m_time).total_seconds()));
+	auto d = duration_cast<seconds>(m_time - other.m_time);
+	return static_cast<size_t>(std::abs(d.count()));
 }
 
 bool TimeStamp::isSameDay(const TimeStamp& other) const
 {
-	return m_time.date().day() == other.m_time.date().day() &&
-		m_time.date().month() == other.m_time.date().month() &&
-		m_time.date().year() == other.m_time.date().year();
+	std::tm a = toLocalTm(m_time);
+	std::tm b = toLocalTm(other.m_time);
+	return a.tm_mday == b.tm_mday && a.tm_mon == b.tm_mon && a.tm_year == b.tm_year;
 }
 
 size_t TimeStamp::deltaDays(const TimeStamp& other) const
 {
-	boost::gregorian::date_duration deltaDate = m_time.date() - other.m_time.date();
-	return abs(deltaDate.days());
+	std::tm a = toLocalTm(m_time);
+	std::tm b = toLocalTm(other.m_time);
+	a.tm_hour = a.tm_min = a.tm_sec = 0;
+	b.tm_hour = b.tm_min = b.tm_sec = 0;
+	double diff = std::difftime(std::mktime(&a), std::mktime(&b));
+	return static_cast<size_t>(std::abs(std::lround(diff / 86400.0)));
 }
 
 size_t TimeStamp::deltaHours(const TimeStamp& other) const
 {
-	boost::posix_time::time_duration delta = m_time - other.m_time;
-	return static_cast<size_t>(abs(delta.total_seconds() / 3600));
+	auto d = duration_cast<hours>(m_time - other.m_time);
+	return static_cast<size_t>(std::abs(d.count()));
 }

@@ -3,8 +3,6 @@
 
 #include <string>
 
-#include <boost/date_time.hpp>
-
 #include "FilePath.h"
 #include "TimeStamp.h"
 

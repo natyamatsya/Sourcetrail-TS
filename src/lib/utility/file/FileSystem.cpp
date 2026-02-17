@@ -6,9 +6,6 @@
 #include <filesystem>
 #include <system_error>
 
-#include <boost/date_time.hpp>
-#include <boost/date_time/c_local_time_adjustor.hpp>
-
 #include "utilityString.h"
 
 std::vector<FilePath> FileSystem::getFilePathsFromDirectory(const FilePath &path, const std::vector<std::string> &extensions)
@@ -214,17 +211,14 @@ unsigned long long FileSystem::getFileByteSize(const FilePath &filePath)
 
 TimeStamp FileSystem::getLastWriteTime(const FilePath &filePath)
 {
-	boost::posix_time::ptime lastWriteTime;
 	if (filePath.exists())
 	{
 		auto ft = std::filesystem::last_write_time(filePath.getPath());
 		auto sysTime = std::chrono::time_point_cast<std::chrono::system_clock::duration>(
 			std::chrono::file_clock::to_sys(ft));
-		std::time_t t = std::chrono::system_clock::to_time_t(sysTime);
-		lastWriteTime = boost::posix_time::from_time_t(t);
-		lastWriteTime = boost::date_time::c_local_adjustor<boost::posix_time::ptime>::utc_to_local(lastWriteTime);
+		return TimeStamp(sysTime);
 	}
-	return TimeStamp(lastWriteTime);
+	return TimeStamp();
 }
 
 bool FileSystem::remove(const FilePath &path)

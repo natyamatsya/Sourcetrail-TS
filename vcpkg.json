@@ -3,7 +3,6 @@
 	"name": "sourcetrail",
 	"version": "1.0.0",
 	"dependencies": [
-		"boost-date-time",
 		"boost-program-options",
 		"boost-interprocess",
 		"boost-uuid",

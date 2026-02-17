@@ -173,7 +173,6 @@ set(BOOST_MAX_VERSION 1.91)
 
 find_package(Boost CONFIG REQUIRED 
 	COMPONENTS
-		date_time 
 		locale
 		program_options 
 )
@@ -197,7 +196,6 @@ target_link_libraries(External_lib_boost
 	INTERFACE
 		Boost::headers
 		
-		Boost::date_time
 		Boost::locale
 		Boost::program_options
 		
