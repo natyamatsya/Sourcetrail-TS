@@ -174,6 +174,15 @@ add_library(Sourcetrail_lib
 	data/indexer/interprocess/schemas/indexing_status.fbs
 	data/indexer/interprocess/schemas/garbage_collector.fbs
 
+	data/indexer/interprocess/serialization/GarbageCollectorSerializer.cpp
+	data/indexer/interprocess/serialization/GarbageCollectorSerializer.h
+	data/indexer/interprocess/serialization/IndexerCommandSerializer.cpp
+	data/indexer/interprocess/serialization/IndexerCommandSerializer.h
+	data/indexer/interprocess/serialization/IndexingStatusSerializer.cpp
+	data/indexer/interprocess/serialization/IndexingStatusSerializer.h
+	data/indexer/interprocess/serialization/IntermediateStorageSerializer.cpp
+	data/indexer/interprocess/serialization/IntermediateStorageSerializer.h
+
 	data/indexer/interprocess/shared_types/SharedIndexerCommand.cpp
 	data/indexer/interprocess/shared_types/SharedIndexerCommand.h
 	data/indexer/interprocess/shared_types/SharedIntermediateStorage.cpp
@@ -632,6 +641,7 @@ target_include_directories(Sourcetrail_lib
 		data/fulltextsearch
 		data/graph/token_component
 		data/graph
+		data/indexer/interprocess/serialization
 		data/indexer/interprocess/shared_types
 		data/indexer/interprocess
 		data/indexer

@@ -19,6 +19,7 @@ add_executable(Sourcetrail_test
 	FileSystemTestSuite.cpp
 	GraphTestSuite.cpp
 	HierarchyCacheTestSuite.cpp
+	IpcSerializerTestSuite.cpp
 	IpcSharedMemoryTestSuite.cpp
 	LogManagerTestSuite.cpp
 	LowMemoryStringMapTestSuite.cpp
