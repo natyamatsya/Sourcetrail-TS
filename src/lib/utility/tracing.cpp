@@ -1,5 +1,6 @@
 #include "tracing.h"
 
+#include <iostream>
 #include <set>
 
 std::shared_ptr<Tracer> Tracer::s_instance;

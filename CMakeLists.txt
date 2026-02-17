@@ -185,11 +185,6 @@ target_compile_definitions(External_lib_boost
 	INTERFACE
 		# Use the same linking approach on all platforms:
 		#BOOST_ALL_NO_LIB
-		
-		# Fix "Boost-uuid should link against bcrypt on windows"
-		# (https://github.com/microsoft/vcpkg/issues/4481)
-		BOOST_UUID_FORCE_AUTO_LINK
-
 )
 
 target_link_libraries(External_lib_boost

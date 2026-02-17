@@ -1,5 +1,7 @@
 #include "Catch2.hpp"
 
+#include <fstream>
+
 #include <QDateTime>
 
 #include "FileSystem.h"

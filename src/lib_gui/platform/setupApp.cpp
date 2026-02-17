@@ -16,6 +16,8 @@
 #include <QDirIterator>
 #include <QStandardPaths>
 
+#include <iostream>
+
 #include <boost/locale/generator.hpp>
 
 using namespace std;

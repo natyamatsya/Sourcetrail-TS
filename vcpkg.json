@@ -5,7 +5,6 @@
 	"dependencies": [
 		"boost-program-options",
 		"boost-interprocess",
-		"boost-uuid",
 		{
 			"name": "boost-locale",
 			"features": [

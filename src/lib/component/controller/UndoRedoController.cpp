@@ -1,5 +1,7 @@
 #include "UndoRedoController.h"
 
+#include <iostream>
+
 #include "MessageFlushUpdates.h"
 #include "utility.h"
 #include "utilityMainFunction.h"
