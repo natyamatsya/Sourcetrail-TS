@@ -5,6 +5,7 @@
 	"dependencies": [
 		"boost-interprocess",
 		"cli11",
+		"flatbuffers",
 		"sqlite3",
 		"tinyxml",
 		"icu",

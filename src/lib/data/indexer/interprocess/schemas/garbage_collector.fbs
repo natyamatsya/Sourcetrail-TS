@@ -1,0 +1,20 @@
+// FlatBuffer schema for SharedMemoryGarbageCollector IPC exchange.
+// Mirrors: SharedMemoryGarbageCollector.cpp
+//
+// The garbage collector tracks:
+//   - Running instances (uuid -> timestamp)
+//   - Shared memory segments (name -> timestamp)
+
+namespace Sourcetrail.Ipc;
+
+table NameTimestamp {
+    name:      string;
+    timestamp: string;
+}
+
+table GarbageCollectorState {
+    instances:         [NameTimestamp];
+    memory_timestamps: [NameTimestamp];
+}
+
+root_type GarbageCollectorState;

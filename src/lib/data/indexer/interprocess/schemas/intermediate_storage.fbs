@@ -1,0 +1,90 @@
+// FlatBuffer schema for IntermediateStorage IPC exchange.
+// Mirrors: SharedIntermediateStorage.h, SharedStorageTypes.h
+//
+// C++ type mapping:
+//   Id          = long long (int64)
+//   NodeKind    = int       (bitmask, stored as int32)
+//   Edge::EdgeType = int    (bitmask, stored as int32)
+//   DefinitionKind = int    (enum 0-2)
+//   AccessKind  = int       (enum 0-6)
+//   LocationType = int      (enum 0-9)
+
+namespace Sourcetrail.Ipc;
+
+table StorageNode {
+    id:              int64;
+    type:            int32;  // NodeKind bitmask
+    serialized_name: string;
+}
+
+table StorageFile {
+    id:                  int64;
+    file_path:           string;
+    language_identifier: string;
+    indexed:             bool;
+    complete:            bool;
+}
+
+table StorageEdge {
+    id:             int64;
+    type:           int32;  // Edge::EdgeType bitmask
+    source_node_id: int64;
+    target_node_id: int64;
+}
+
+table StorageSymbol {
+    id:              int64;
+    definition_kind: int32;  // DefinitionKind
+}
+
+table StorageSourceLocation {
+    id:           int64;
+    file_node_id: int64;
+    start_line:   uint32;
+    start_col:    uint32;
+    end_line:     uint32;
+    end_col:      uint32;
+    type:         int32;  // LocationType
+}
+
+table StorageLocalSymbol {
+    id:   int64;
+    name: string;
+}
+
+table StorageOccurrence {
+    element_id:          int64;
+    source_location_id:  int64;
+}
+
+table StorageComponentAccess {
+    node_id: int64;
+    type:    int32;  // AccessKind
+}
+
+table StorageError {
+    id:               int64;
+    message:          string;
+    translation_unit: string;
+    fatal:            bool;
+    indexed:          bool;
+}
+
+table IntermediateStorage {
+    next_id:            int64;
+    nodes:              [StorageNode];
+    files:              [StorageFile];
+    edges:              [StorageEdge];
+    symbols:            [StorageSymbol];
+    source_locations:   [StorageSourceLocation];
+    local_symbols:      [StorageLocalSymbol];
+    occurrences:        [StorageOccurrence];
+    component_accesses: [StorageComponentAccess];
+    errors:             [StorageError];
+}
+
+table IntermediateStorageQueue {
+    storages: [IntermediateStorage];
+}
+
+root_type IntermediateStorageQueue;

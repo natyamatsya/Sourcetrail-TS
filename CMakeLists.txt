@@ -193,6 +193,14 @@ message(STATUS "Found CLI11 ${CLI11_VERSION}")
 add_library(External_lib_cli11 INTERFACE)
 target_link_libraries(External_lib_cli11 INTERFACE CLI11::CLI11)
 
+# FlatBuffers ------------------------------------------------------------------
+
+find_package(flatbuffers CONFIG REQUIRED)
+message(STATUS "Found FlatBuffers ${flatbuffers_VERSION}")
+
+add_library(External_lib_flatbuffers INTERFACE)
+target_link_libraries(External_lib_flatbuffers INTERFACE flatbuffers::flatbuffers)
+
 # Qt ---------------------------------------------------------------------------
 
 set(QT_NO_PRIVATE_MODULE_WARNING ON)

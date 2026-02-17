@@ -168,6 +168,12 @@ add_library(Sourcetrail_lib
 	data/graph/Token.cpp
 	data/graph/Token.h
 
+	# FlatBuffer schemas — compiled via flatc into generated headers
+	data/indexer/interprocess/schemas/indexer_command.fbs
+	data/indexer/interprocess/schemas/intermediate_storage.fbs
+	data/indexer/interprocess/schemas/indexing_status.fbs
+	data/indexer/interprocess/schemas/garbage_collector.fbs
+
 	data/indexer/interprocess/shared_types/SharedIndexerCommand.cpp
 	data/indexer/interprocess/shared_types/SharedIndexerCommand.h
 	data/indexer/interprocess/shared_types/SharedIntermediateStorage.cpp
@@ -703,10 +709,42 @@ if (BUILD_CXX_LANGUAGE_PACKAGE)
 endif()
 
 
+# FlatBuffer schema compilation ------------------------------------------------
+
+set(FLATBUFFERS_SCHEMA_DIR ${CMAKE_CURRENT_SOURCE_DIR}/data/indexer/interprocess/schemas)
+set(FLATBUFFERS_GENERATED_DIR ${CMAKE_CURRENT_BINARY_DIR}/generated/flatbuffers)
+file(MAKE_DIRECTORY ${FLATBUFFERS_GENERATED_DIR})
+
+set(FLATBUFFERS_SCHEMAS
+	${FLATBUFFERS_SCHEMA_DIR}/indexer_command.fbs
+	${FLATBUFFERS_SCHEMA_DIR}/intermediate_storage.fbs
+	${FLATBUFFERS_SCHEMA_DIR}/indexing_status.fbs
+	${FLATBUFFERS_SCHEMA_DIR}/garbage_collector.fbs
+)
+
+set(FLATBUFFERS_GENERATED_HEADERS)
+foreach(SCHEMA_FILE ${FLATBUFFERS_SCHEMAS})
+	get_filename_component(SCHEMA_NAME ${SCHEMA_FILE} NAME_WE)
+	set(GENERATED_HEADER ${FLATBUFFERS_GENERATED_DIR}/${SCHEMA_NAME}_generated.h)
+	list(APPEND FLATBUFFERS_GENERATED_HEADERS ${GENERATED_HEADER})
+	add_custom_command(
+		OUTPUT ${GENERATED_HEADER}
+		COMMAND flatbuffers::flatc --cpp -o ${FLATBUFFERS_GENERATED_DIR} ${SCHEMA_FILE}
+		DEPENDS ${SCHEMA_FILE}
+		COMMENT "Compiling FlatBuffer schema ${SCHEMA_NAME}.fbs"
+	)
+endforeach()
+
+add_custom_target(flatbuffers_schemas DEPENDS ${FLATBUFFERS_GENERATED_HEADERS})
+add_dependencies(Sourcetrail_lib flatbuffers_schemas)
+
+# ------------------------------------------------------------------------------
+
 target_include_directories(Sourcetrail_lib
 	PUBLIC
 		.
 		"${CMAKE_BINARY_DIR}/src/lib"
+		${FLATBUFFERS_GENERATED_DIR}
 )
 
 target_link_libraries(Sourcetrail_lib
@@ -721,6 +759,7 @@ target_link_libraries(Sourcetrail_lib
 		External_lib_cppsqlite3
 		External_lib_boost
 		External_lib_cli11
+		External_lib_flatbuffers
 )
 
 if (UNIX)

@@ -1,0 +1,25 @@
+// FlatBuffer schema for IndexerCommand IPC exchange.
+// Mirrors: SharedIndexerCommand.h
+
+namespace Sourcetrail.Ipc;
+
+enum IndexerCommandType : ubyte {
+    Unknown = 0,
+    Cxx = 1
+}
+
+table IndexerCommand {
+    type:               IndexerCommandType;
+    source_file_path:   string;
+    indexed_paths:      [string];
+    exclude_filters:    [string];
+    include_filters:    [string];
+    working_directory:  string;
+    compiler_flags:     [string];
+}
+
+table IndexerCommandQueue {
+    commands: [IndexerCommand];
+}
+
+root_type IndexerCommandQueue;

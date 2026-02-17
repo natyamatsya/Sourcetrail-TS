@@ -1,0 +1,26 @@
+// FlatBuffer schema for IndexingStatus IPC exchange.
+// Mirrors: InterprocessIndexingStatusManager.cpp
+//
+// The status manager tracks:
+//   - Queue of file paths currently being indexed (drain-on-read)
+//   - Map of process_id -> current file (for crash detection)
+//   - Vector of crashed file paths
+//   - Queue of finished process IDs (drain-on-read)
+//   - Indexing-interrupted flag
+
+namespace Sourcetrail.Ipc;
+
+table ProcessFile {
+    process_id: uint64;
+    file_path:  string;
+}
+
+table IndexingStatus {
+    indexing_file_paths:    [string];
+    current_files:          [ProcessFile];
+    crashed_file_paths:     [string];
+    finished_process_ids:   [uint64];
+    indexing_interrupted:   bool;
+}
+
+root_type IndexingStatus;
