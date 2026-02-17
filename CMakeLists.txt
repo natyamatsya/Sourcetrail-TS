@@ -171,30 +171,27 @@ endif()
 set(BOOST_MIN_VERSION 1.83)
 set(BOOST_MAX_VERSION 1.91)
 
-find_package(Boost CONFIG REQUIRED 
-	COMPONENTS
-		program_options 
-)
+find_package(Boost CONFIG REQUIRED)
 message(STATUS "Found Boost ${Boost_VERSION}: ${Boost_INCLUDE_DIRS}") # ${Boost_DIR} contains the path to BoostConfig.cmake|boost-config.cmake.
 checkVersionRange("Boost" ${Boost_VERSION} ${BOOST_MIN_VERSION} ${BOOST_MAX_VERSION})
 
 add_library(External_lib_boost INTERFACE)
 
-target_compile_definitions(External_lib_boost
-	INTERFACE
-		# Use the same linking approach on all platforms:
-		#BOOST_ALL_NO_LIB
-)
-
 target_link_libraries(External_lib_boost
 	INTERFACE
 		Boost::headers
 		
-		Boost::program_options
-		
 		# Prevent linker error in vcpkg build:
 		External_lib_icu
 )
+
+# CLI11 -------------------------------------------------------------------------
+
+find_package(CLI11 CONFIG REQUIRED)
+message(STATUS "Found CLI11 ${CLI11_VERSION}")
+
+add_library(External_lib_cli11 INTERFACE)
+target_link_libraries(External_lib_cli11 INTERFACE CLI11::CLI11)
 
 # Qt ---------------------------------------------------------------------------
 

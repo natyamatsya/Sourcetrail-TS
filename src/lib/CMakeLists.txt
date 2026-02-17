@@ -720,6 +720,7 @@ target_link_libraries(Sourcetrail_lib
 		External_lib_tinyxml
 		External_lib_cppsqlite3
 		External_lib_boost
+		External_lib_cli11
 )
 
 if (UNIX)

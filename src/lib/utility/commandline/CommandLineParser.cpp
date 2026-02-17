@@ -2,35 +2,25 @@
 
 #include <iostream>
 
-#include <boost/program_options.hpp>
-
 #include "CommandlineCommandConfig.h"
 #include "CommandlineCommandIndex.h"
-#include "CommandlineHelper.h"
 #include "ConfigManager.h"
 #include "TextAccess.h"
 
-namespace po = boost::program_options;
-
 namespace commandline
 {
-CommandLineParser::CommandLineParser(const std::string& version): m_version(version)
+CommandLineParser::CommandLineParser(const std::string& version)
+	: m_app("Sourcetrail"), m_version(version)
 {
-	po::options_description options("Options");
-	options.add_options()("help,h", "Print this help message")(
-		"version,v", "Version of Sourcetrail")(
-		"project-file", po::value<std::string>(), "Open Sourcetrail with this project (.srctrlprj)");
-
-	m_options.add(options);
-	m_positional.add("project-file", 1);
+	m_app.add_flag("-v,--version", "Version of Sourcetrail");
+	m_app.add_option("project-file", m_projectFileArg, "Open Sourcetrail with this project (.srctrlprj)");
+	m_app.allow_extras();
 
 	m_commands.push_back(std::make_unique<commandline::CommandlineCommandConfig>(this));
 	m_commands.push_back(std::make_unique<commandline::CommandlineCommandIndex>(this));
 
 	for (auto& command: m_commands)
-	{
 		command->setup();
-	}
 }
 
 CommandLineParser::~CommandLineParser() = default;
@@ -39,19 +29,15 @@ void CommandLineParser::preparse(int argc, char** argv)
 {
 	std::vector<std::string> args;
 	for (int i = 1; i < argc; i++)
-	{
 		args.push_back(std::string(argv[i]));
-	}
 
 	preparse(args);
 }
 
 void CommandLineParser::preparse(std::vector<std::string>& args)
 {
-	if (args.size() < 1)
-	{
+	if (args.empty())
 		return;
-	}
 
 	m_args = args;
 
@@ -66,54 +52,49 @@ void CommandLineParser::preparse(std::vector<std::string>& args)
 			}
 		}
 
-		po::variables_map vm;
-		po::positional_options_description positional;
-		positional.add("project-file", 1);
-		po::store(
-			po::command_line_parser(m_args)
-				.options(m_options)
-				.positional(positional)
-				.allow_unregistered()
-				.run(),
-			vm);
-		po::notify(vm);
+		m_app.parse(m_args);
 
-		if (vm.count("version"))
+		if (m_app.count("--version"))
 		{
 			std::cout << "Sourcetrail Version " << m_version << std::endl;
 			m_quit = true;
 			return;
 		}
 
-		if (vm.count("help"))
+		if (m_app.count("--help"))
 		{
 			printHelp();
 			m_quit = true;
 		}
 
-		if (vm.count("project-file"))
+		if (!m_projectFileArg.empty())
 		{
-			m_projectFile = FilePath(vm["project-file"].as<std::string>());
+			m_projectFile = FilePath(m_projectFileArg);
 			processProjectfile();
 		}
 	}
-	catch (boost::program_options::error& e)
+	catch (const CLI::ParseError& e)
 	{
-		std::cerr << "ERROR: " << e.what() << std::endl << std::endl;
-		std::cerr << m_options << std::endl;
+		if (e.get_exit_code() == 0)
+		{
+			// --help was invoked
+			printHelp();
+			m_quit = true;
+		}
+		else
+		{
+			std::cerr << "ERROR: " << e.what() << std::endl;
+		}
 	}
 }
 
 void CommandLineParser::parse()
 {
-	if (m_args.size() < 1)
-	{
+	if (m_args.empty())
 		return;
-	}
 
 	try
 	{
-		// parsing for all commands
 		for (auto& command: m_commands)
 		{
 			if (m_args[0] == command->name())
@@ -122,16 +103,13 @@ void CommandLineParser::parse()
 				CommandlineCommand::ReturnStatus status = command->parse(m_args);
 
 				if (status != CommandlineCommand::ReturnStatus::CMD_OK)
-				{
 					m_quit = true;
-				}
 			}
 		}
 	}
-	catch (boost::program_options::error& e)
+	catch (const CLI::ParseError& e)
 	{
-		std::cerr << "ERROR: " << e.what() << std::endl << std::endl;
-		std::cerr << m_options << std::endl;
+		std::cerr << "ERROR: " << e.what() << std::endl;
 	}
 }
 
@@ -145,7 +123,6 @@ void CommandLineParser::printHelp() const
 {
 	std::cout << "Usage:\n  Sourcetrail [command] [option...] [positional arguments]\n\n";
 
-	// Commands
 	std::cout << "Commands:\n";
 	for (const auto& command: m_commands)
 	{
@@ -153,19 +130,9 @@ void CommandLineParser::printHelp() const
 		std::cout << std::string(std::max(23 - command->name().size(), size_t(2)), ' ');
 		std::cout << command->description() << (command->hasHelp() ? "*" : "") << "\n";
 	}
-	std::cout << "\n  * has its own --help\n";
+	std::cout << "\n  * has its own --help\n\n";
 
-	std::cout << m_options << std::endl;
-
-	if (m_positional.max_total_count() > 0)
-	{
-		std::cout << "Positional Arguments: ";
-		for (unsigned int i = 0; i < m_positional.max_total_count(); i++)
-		{
-			std::cout << "\n  " << i + 1 << ": " << m_positional.name_for_position(i);
-		}
-		std::cout << std::endl;
-	}
+	std::cout << m_app.help() << std::endl;
 }
 
 bool CommandLineParser::runWithoutGUI() const

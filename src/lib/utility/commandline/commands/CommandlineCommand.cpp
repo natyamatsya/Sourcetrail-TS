@@ -6,8 +6,9 @@ namespace commandline
 {
 CommandlineCommand::CommandlineCommand(
 	const std::string& name, const std::string& description, CommandLineParser* parser)
-	: m_name(name), m_description(description), m_parser(parser)
+	: m_name(name), m_description(description), m_parser(parser), m_app(description)
 {
+	m_app.name(name);
 }
 
 CommandlineCommand::~CommandlineCommand() = default;
@@ -24,19 +25,7 @@ const std::string& CommandlineCommand::description()
 
 void CommandlineCommand::printHelp()
 {
-	std::cout << "Usage:\n\n  Sourcetrail " << m_name << " [option...]\n\n";
-	std::cout << m_description << "\n\n";
-	std::cout << m_options << std::endl;
-
-	if (m_positional.max_total_count() > 0)
-	{
-		std::cout << "Positional Arguments: ";
-		for (unsigned int i = 0; i < m_positional.max_total_count(); i++)
-		{
-			std::cout << "\n  " << i + 1 << ": " << m_positional.name_for_position(i);
-		}
-		std::cout << std::endl;
-	}
+	std::cout << m_app.help() << std::endl;
 }
 
 }	 // namespace commandline

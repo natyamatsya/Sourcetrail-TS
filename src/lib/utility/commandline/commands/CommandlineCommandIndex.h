@@ -18,6 +18,9 @@ public:
 	{
 		return true;
 	}
+
+private:
+	std::string m_projectFileArg;
 };
 
 }	 // namespace commandline

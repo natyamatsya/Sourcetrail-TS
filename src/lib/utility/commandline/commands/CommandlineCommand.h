@@ -2,10 +2,10 @@
 #define COMMANDLINE_COMMAND_H
 
 #include <memory>
+#include <string>
+#include <vector>
 
-#include <boost/program_options.hpp>
-
-namespace po = boost::program_options;
+#include <CLI/CLI.hpp>
 
 namespace commandline
 {
@@ -39,8 +39,7 @@ protected:
 	const std::string m_description;
 	CommandLineParser* m_parser;
 
-	po::options_description m_options;
-	po::positional_options_description m_positional;
+	CLI::App m_app;
 };
 
 }	 // namespace commandline

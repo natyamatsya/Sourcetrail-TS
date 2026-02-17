@@ -1,6 +1,8 @@
 #ifndef COMMANDLINE_COMMAND_CONFIG_H
 #define COMMANDLINE_COMMAND_CONFIG_H
 
+#include <optional>
+
 #include "CommandlineCommand.h"
 
 namespace commandline
@@ -18,6 +20,18 @@ public:
 	{
 		return true;
 	}
+
+private:
+	std::optional<int> m_indexerThreads;
+	std::optional<bool> m_useProcesses;
+	std::optional<bool> m_loggingEnabled;
+	std::optional<bool> m_verboseIndexerLogging;
+	std::string m_jvmPath;
+	std::string m_mavenPath;
+	std::vector<std::string> m_jreSystemLibraryPaths;
+	std::vector<std::string> m_globalHeaderSearchPaths;
+	std::vector<std::string> m_globalFrameworkSearchPaths;
+	bool m_show = false;
 };
 
 }	 // namespace commandline

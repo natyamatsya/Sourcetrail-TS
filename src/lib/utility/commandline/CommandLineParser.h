@@ -5,12 +5,10 @@
 #include <string>
 #include <vector>
 
-#include <boost/program_options.hpp>
+#include <CLI/CLI.hpp>
 
 #include "FilePath.h"
 #include "RefreshInfo.h"
-
-namespace po = boost::program_options;
 
 namespace commandline
 {
@@ -44,13 +42,13 @@ private:
 	void processProjectfile();
 	void printHelp() const;
 
-	boost::program_options::options_description m_options;
-	boost::program_options::positional_options_description m_positional;
+	CLI::App m_app;
 
 	std::vector<std::shared_ptr<CommandlineCommand>> m_commands;
 	std::vector<std::string> m_args;
 
 	const std::string m_version;
+	std::string m_projectFileArg;
 	FilePath m_projectFile;
 	RefreshMode m_refreshMode = RefreshMode::UPDATED_FILES;
 

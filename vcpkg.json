@@ -3,8 +3,8 @@
 	"name": "sourcetrail",
 	"version": "1.0.0",
 	"dependencies": [
-		"boost-program-options",
 		"boost-interprocess",
+		"cli11",
 		"sqlite3",
 		"tinyxml",
 		"icu",
