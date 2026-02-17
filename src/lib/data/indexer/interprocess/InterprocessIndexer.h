@@ -1,9 +1,7 @@
 #ifndef INTERPROCESS_INDEXER_H
 #define INTERPROCESS_INDEXER_H
 
-#include "InterprocessIndexerCommandManager.h"
-#include "InterprocessIndexingStatusManager.h"
-#include "InterprocessIntermediateStorageManager.h"
+#include "InterprocessBackend.h"
 
 class InterprocessIndexer
 {
@@ -13,9 +11,9 @@ public:
 	void work();
 
 private:
-	InterprocessIndexerCommandManager m_interprocessIndexerCommandManager;
-	InterprocessIndexingStatusManager m_interprocessIndexingStatusManager;
-	InterprocessIntermediateStorageManager m_interprocessIntermediateStorageManager;
+	IndexerCommandManagerImpl m_interprocessIndexerCommandManager;
+	IndexingStatusManagerImpl m_interprocessIndexingStatusManager;
+	IntermediateStorageManagerImpl m_interprocessIntermediateStorageManager;
 
 	const std::string m_uuid;
 	const ProcessId m_processId;

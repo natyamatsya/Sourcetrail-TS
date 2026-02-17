@@ -1,0 +1,200 @@
+#include "IpcSharedMemoryGarbageCollector.h"
+
+#include <cstring>
+
+#include "GarbageCollectorSerializer.h"
+#include "TimeStamp.h"
+#include "logging.h"
+
+const std::string IpcSharedMemoryGarbageCollector::s_memoryName = "gc_ipc";
+const size_t IpcSharedMemoryGarbageCollector::s_updateIntervalSeconds = 1;
+const size_t IpcSharedMemoryGarbageCollector::s_deleteThresholdSeconds = 10;
+
+std::shared_ptr<IpcSharedMemoryGarbageCollector> IpcSharedMemoryGarbageCollector::s_instance;
+
+IpcSharedMemoryGarbageCollector* IpcSharedMemoryGarbageCollector::createInstance()
+{
+	try
+	{
+		if (!s_instance)
+			s_instance = std::shared_ptr<IpcSharedMemoryGarbageCollector>(
+				new IpcSharedMemoryGarbageCollector());
+	}
+	catch (std::exception& e)
+	{
+		LOG_ERROR_STREAM(<< "exception at IPC garbage collector: " << e.what());
+	}
+
+	return s_instance.get();
+}
+
+IpcSharedMemoryGarbageCollector* IpcSharedMemoryGarbageCollector::getInstance()
+{
+	return s_instance.get();
+}
+
+IpcSharedMemoryGarbageCollector::IpcSharedMemoryGarbageCollector()
+	: m_shm{s_memoryName, 65536, IpcSharedMemory::OPEN_OR_CREATE}
+	, m_loopIsRunning{false}
+{
+}
+
+IpcSharedMemoryGarbageCollector::~IpcSharedMemoryGarbageCollector() = default;
+
+void IpcSharedMemoryGarbageCollector::run(const std::string& uuid)
+{
+	LOG_INFO_STREAM(<< "start IPC shared memory garbage collection");
+
+	m_uuid = uuid;
+
+	m_thread = std::make_shared<std::thread>([this]() {
+		m_loopIsRunning = true;
+
+		while (m_loopIsRunning)
+		{
+			update();
+			std::this_thread::sleep_for(std::chrono::seconds(s_updateIntervalSeconds));
+		}
+	});
+}
+
+void IpcSharedMemoryGarbageCollector::stop()
+{
+	LOG_INFO_STREAM(<< "stop IPC shared memory garbage collection");
+
+	m_loopIsRunning = false;
+
+	m_thread->join();
+	m_thread.reset();
+
+	{
+		std::lock_guard<std::mutex> lock(m_sharedMemoryNamesMutex);
+		m_removedSharedMemoryNames.insert(m_sharedMemoryNames.begin(), m_sharedMemoryNames.end());
+	}
+
+	update();
+
+	m_sharedMemoryNames.clear();
+	m_removedSharedMemoryNames.clear();
+
+	// Remove ourselves from the instance list
+	{
+		IpcSharedMemory::ScopedAccess access(&m_shm);
+		std::size_t len = 0;
+		const uint8_t* buf = access.read(&len);
+
+		IpcSerializer::GarbageCollectorData data;
+		if (len >= 4 && std::memcmp(buf, "\0\0\0\0", 4) != 0)
+			data = IpcSerializer::deserializeGarbageCollector(buf, len);
+
+		// Remove our uuid from instances
+		std::erase_if(data.instances, [&](const auto& p) { return p.first == m_uuid; });
+
+		// Check if other instances are still alive
+		bool otherRunning = false;
+		TimeStamp now = TimeStamp::now();
+		for (const auto& [uuid, ts] : data.instances)
+		{
+			if (now.deltaS(TimeStamp(ts)) <= s_deleteThresholdSeconds)
+			{
+				otherRunning = true;
+				break;
+			}
+		}
+
+		auto fbBuf = IpcSerializer::serializeGarbageCollector(data);
+		access.write(fbBuf.data(), fbBuf.size());
+
+		if (!otherRunning)
+		{
+			LOG_INFO_STREAM(<< "delete IPC garbage collector memory: " << s_memoryName);
+			// Memory will be cleaned up by the IpcSharedMemory destructor
+		}
+	}
+}
+
+void IpcSharedMemoryGarbageCollector::registerSharedMemory(const std::string& sharedMemoryName)
+{
+	{
+		std::lock_guard<std::mutex> lock(m_sharedMemoryNamesMutex);
+		m_sharedMemoryNames.insert(sharedMemoryName);
+	}
+	update();
+}
+
+void IpcSharedMemoryGarbageCollector::unregisterSharedMemory(const std::string& sharedMemoryName)
+{
+	{
+		std::lock_guard<std::mutex> lock(m_sharedMemoryNamesMutex);
+		if (m_sharedMemoryNames.erase(sharedMemoryName) > 0)
+			m_removedSharedMemoryNames.insert(sharedMemoryName);
+	}
+	update();
+}
+
+void IpcSharedMemoryGarbageCollector::update()
+{
+	std::lock_guard<std::mutex> lock(m_sharedMemoryNamesMutex);
+
+	IpcSharedMemory::ScopedAccess access(&m_shm);
+	std::size_t len = 0;
+	const uint8_t* buf = access.read(&len);
+
+	IpcSerializer::GarbageCollectorData data;
+	if (len >= 4 && std::memcmp(buf, "\0\0\0\0", 4) != 0)
+		data = IpcSerializer::deserializeGarbageCollector(buf, len);
+
+	std::string now = TimeStamp::now().toString();
+
+	// Update our instance timestamp
+	bool found = false;
+	for (auto& [uuid, ts] : data.instances)
+	{
+		if (uuid == m_uuid)
+		{
+			ts = now;
+			found = true;
+			break;
+		}
+	}
+	if (!found)
+		data.instances.emplace_back(m_uuid, now);
+
+	// Remove unregistered shared memories
+	for (const auto& name : m_removedSharedMemoryNames)
+		std::erase_if(data.memoryTimestamps, [&](const auto& p) { return p.first == name; });
+	m_removedSharedMemoryNames.clear();
+
+	// Add or update registered shared memories
+	for (const auto& name : m_sharedMemoryNames)
+	{
+		bool updated = false;
+		for (auto& [n, ts] : data.memoryTimestamps)
+		{
+			if (n == name)
+			{
+				ts = now;
+				updated = true;
+				break;
+			}
+		}
+		if (!updated)
+			data.memoryTimestamps.emplace_back(name, now);
+	}
+
+	// Delete stale shared memories
+	TimeStamp nowTs = TimeStamp::now();
+	std::erase_if(data.memoryTimestamps, [&](const auto& p) {
+		TimeStamp ts(p.second);
+		if (nowTs.deltaS(ts) > s_deleteThresholdSeconds)
+		{
+			LOG_INFO_STREAM(<< "IPC collect garbage: " << p.first);
+			IpcSharedMemory::deleteSharedMemory(p.first);
+			return true;
+		}
+		return false;
+	});
+
+	auto fbBuf = IpcSerializer::serializeGarbageCollector(data);
+	access.write(fbBuf.data(), fbBuf.size());
+}

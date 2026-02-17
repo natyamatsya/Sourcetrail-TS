@@ -191,6 +191,8 @@ add_library(Sourcetrail_lib
 
 	data/indexer/interprocess/BaseInterprocessDataManager.cpp
 	data/indexer/interprocess/BaseInterprocessDataManager.h
+	data/indexer/interprocess/InterprocessBackend.h
+	data/indexer/interprocess/InterprocessConcepts.h
 	data/indexer/interprocess/InterprocessIndexer.cpp
 	data/indexer/interprocess/InterprocessIndexer.h
 	data/indexer/interprocess/InterprocessIndexerCommandManager.cpp
@@ -199,6 +201,12 @@ add_library(Sourcetrail_lib
 	data/indexer/interprocess/InterprocessIndexingStatusManager.h
 	data/indexer/interprocess/InterprocessIntermediateStorageManager.cpp
 	data/indexer/interprocess/InterprocessIntermediateStorageManager.h
+	data/indexer/interprocess/IpcInterprocessIndexerCommandManager.cpp
+	data/indexer/interprocess/IpcInterprocessIndexerCommandManager.h
+	data/indexer/interprocess/IpcInterprocessIntermediateStorageManager.cpp
+	data/indexer/interprocess/IpcInterprocessIntermediateStorageManager.h
+	data/indexer/interprocess/IpcInterprocessIndexingStatusManager.cpp
+	data/indexer/interprocess/IpcInterprocessIndexingStatusManager.h
 
 	data/indexer/CombinedIndexerCommandProvider.cpp
 	data/indexer/CombinedIndexerCommandProvider.h
@@ -413,6 +421,8 @@ add_library(Sourcetrail_lib
 
 	utility/interprocess/IpcSharedMemory.cpp
 	utility/interprocess/IpcSharedMemory.h
+	utility/interprocess/IpcSharedMemoryGarbageCollector.cpp
+	utility/interprocess/IpcSharedMemoryGarbageCollector.h
 	utility/interprocess/SharedMemory.cpp
 	utility/interprocess/SharedMemory.h
 	utility/interprocess/SharedMemoryGarbageCollector.cpp

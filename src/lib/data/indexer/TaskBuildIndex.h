@@ -5,8 +5,7 @@
 #include "MessageIndexingInterrupted.h"
 #include "MessageListener.h"
 #include "Task.h"
-#include "InterprocessIndexingStatusManager.h"
-#include "InterprocessIntermediateStorageManager.h"
+#include "InterprocessBackend.h"
 
 #include <atomic>
 #include <thread>
@@ -50,7 +49,7 @@ protected:
 	const std::string m_appUUID;
 	bool m_multiProcessIndexing;
 
-	InterprocessIndexingStatusManager m_interprocessIndexingStatusManager;
+	IndexingStatusManagerImpl m_interprocessIndexingStatusManager;
 	bool m_indexerCommandQueueStopped = false;
 	size_t m_processCount;
 	bool m_interrupted = false;
@@ -58,7 +57,7 @@ protected:
 
 	// store as plain pointers to avoid deallocation issues when closing app during indexing
 	std::vector<std::thread*> m_processThreads;
-	std::vector<std::shared_ptr<InterprocessIntermediateStorageManager>>
+	std::vector<std::shared_ptr<IntermediateStorageManagerImpl>>
 		m_interprocessIntermediateStorageManagers;
 
 	std::atomic<size_t> m_runningThreadCount = 0;

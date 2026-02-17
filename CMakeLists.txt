@@ -42,6 +42,7 @@ cmake_print_variables(CMAKE_CXX_COMPILER)
 # Configure which language(s)/package(s) should be supported:
 option(BUILD_CXX_LANGUAGE_PACKAGE  "Add C/C++ support to the Sourcetrail indexer." OFF)
 option(BUILD_UNIT_TESTS_PACKAGE    "Build the corresponding language unit tests." OFF)
+option(USE_CPP_IPC                 "Use cpp-ipc + FlatBuffers instead of boost::interprocess." OFF)
 
 configure_file(cmake/language_packages.h.in src/lib/language_packages.h)
 

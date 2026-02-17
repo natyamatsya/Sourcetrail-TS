@@ -19,7 +19,7 @@
 #include "MessageTextEncodingChanged.h"
 #include "NetworkFactory.h"
 #include "ProjectSettings.h"
-#include "SharedMemoryGarbageCollector.h"
+#include "InterprocessBackend.h"
 #include "StorageCache.h"
 #include "TabIds.h"
 #include "TaskManager.h"
@@ -46,7 +46,7 @@ void Application::createInstance(const Version& version, ViewFactory* viewFactor
 
 	loadSettings();
 
-	SharedMemoryGarbageCollector* collector = SharedMemoryGarbageCollector::createInstance();
+	GarbageCollectorImpl* collector = GarbageCollectorImpl::createInstance();
 	if (collector != nullptr)
 	{
 		collector->run(Application::getUUID());
@@ -135,7 +135,7 @@ Application::~Application()
 		m_mainView->saveLayout();
 	}
 
-	SharedMemoryGarbageCollector* collector = SharedMemoryGarbageCollector::getInstance();
+	GarbageCollectorImpl* collector = GarbageCollectorImpl::getInstance();
 	if (collector != nullptr)
 	{
 		collector->stop();

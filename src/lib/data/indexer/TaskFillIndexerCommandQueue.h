@@ -7,7 +7,7 @@
 #include "MessageListener.h"
 #include "Task.h"
 
-#include "InterprocessIndexerCommandManager.h"
+#include "InterprocessBackend.h"
 
 class IndexerCommandProvider;
 
@@ -34,7 +34,7 @@ protected:
 
 private:
 	std::unique_ptr<IndexerCommandProvider> m_indexerCommandProvider;
-	InterprocessIndexerCommandManager m_indexerCommandManager;
+	IndexerCommandManagerImpl m_indexerCommandManager;
 
 	const size_t m_maximumQueueSize;
 

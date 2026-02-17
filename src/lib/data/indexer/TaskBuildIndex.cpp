@@ -52,7 +52,7 @@ void TaskBuildIndex::doEnter(std::shared_ptr<Blackboard> blackboard)
 
 		const ProcessId processId = static_cast<ProcessId>(i + 1);	// 0 remains reserved for the main process
 
-		m_interprocessIntermediateStorageManagers.push_back(std::make_shared<InterprocessIntermediateStorageManager>(m_appUUID, processId, true));
+		m_interprocessIntermediateStorageManagers.push_back(std::make_shared<IntermediateStorageManagerImpl>(m_appUUID, processId, true));
 
 		if (m_multiProcessIndexing)
 		{
@@ -240,7 +240,7 @@ bool TaskBuildIndex::fetchIntermediateStorages(std::shared_ptr<Blackboard> black
 			break;
 		}
 
-		std::shared_ptr<InterprocessIntermediateStorageManager> storageManager =
+		std::shared_ptr<IntermediateStorageManagerImpl> storageManager =
 			m_interprocessIntermediateStorageManagers[static_cast<size_t>(finishedProcessId) - 1];
 
 		const size_t storageCount = storageManager->getIntermediateStorageCount();
