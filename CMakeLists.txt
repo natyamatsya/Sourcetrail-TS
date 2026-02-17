@@ -194,8 +194,6 @@ target_compile_definitions(External_lib_boost
 		# (https://github.com/microsoft/vcpkg/issues/4481)
 		BOOST_UUID_FORCE_AUTO_LINK
 
-		# Use std::filesystem instead of boost::filesystem:
-		BOOST_DLL_USE_STD_FS
 )
 
 target_link_libraries(External_lib_boost
