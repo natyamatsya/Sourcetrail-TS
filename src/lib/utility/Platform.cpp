@@ -20,12 +20,11 @@ string Platform::getName()
 
 Platform::Architecture Platform::getArchitecture()
 {
-	// Can't use BOOST_ARCH_WORD_BITS_32/BOOST_ARCH_WORD_BITS_64 because they are *both* defined!
-	static_assert(BOOST_ARCH_WORD_BITS == 32 || BOOST_ARCH_WORD_BITS == 64, "Unknown architecture!");
+	static_assert(sizeof(void*) == 4 || sizeof(void*) == 8, "Unknown architecture!");
 
-	if constexpr (BOOST_ARCH_WORD_BITS == 32)
+	if constexpr (sizeof(void*) == 4)
 		return Architecture::BITS_32;
-	else if constexpr (BOOST_ARCH_WORD_BITS == 64)
+	else if constexpr (sizeof(void*) == 8)
 		return Architecture::BITS_64;
 }
 

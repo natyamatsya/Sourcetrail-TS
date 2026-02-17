@@ -1,7 +1,7 @@
 #ifndef PLATFORM_H
 #define PLATFORM_H
 
-#include <boost/predef.h>
+#include <cstddef>
 #include <string>
 
 namespace utility
@@ -21,17 +21,29 @@ class Platform final
 			// These Unix implementations are similar enough for our purpose, so we don't
 			// distinguish them further for now:
 
-			return BOOST_OS_LINUX || BOOST_OS_BSD_FREE;
+#if defined(__linux__) || defined(__FreeBSD__)
+			return true;
+#else
+			return false;
+#endif
 		}
 
 		static constexpr bool isWindows()
 		{
-			return BOOST_OS_WINDOWS;
+#if defined(_WIN32)
+			return true;
+#else
+			return false;
+#endif
 		}
 
 		static constexpr bool isMac()
 		{
-			return BOOST_OS_MACOS;
+#if defined(__APPLE__)
+			return true;
+#else
+			return false;
+#endif
 		}
 
 		static std::string getName();
