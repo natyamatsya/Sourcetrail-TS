@@ -127,38 +127,6 @@ else()
 	endif()
 endif()
 
-# ICU --------------------------------------------------------------------------
-
-find_package(ICU REQUIRED 
-	COMPONENTS 
-		i18n uc data
-)
-message(STATUS "Found ICU ${ICU_VERSION}: ${ICU_INCLUDE_DIRS}, ${ICU_LIBRARIES}")
-
-add_library(External_lib_icu INTERFACE)
-
-target_compile_definitions(External_lib_icu
-	INTERFACE
-		U_CHARSET_IS_UTF8=1
-)
-
-# The documented imported targets:
-# ICU::i18n
-# ICU::uc
-# ICU::data
-# lead to a linker error: "undefined reference to `icudt74_dat'", 
-# so use the provided result variables:
-
-target_include_directories(External_lib_icu
-	INTERFACE
-		${ICU_INCLUDE_DIRS}
-)
-
-target_link_libraries(External_lib_icu
-	INTERFACE
-		${ICU_LIBRARIES}
-)
-		
 # CLI11 -------------------------------------------------------------------------
 
 find_package(CLI11 CONFIG REQUIRED)
