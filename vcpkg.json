@@ -3,14 +3,10 @@
 	"name": "sourcetrail",
 	"version": "1.0.0",
 	"dependencies": [
-		"boost-system",
 		"boost-date-time",
 		"boost-program-options",
-		"boost-dll",
 		"boost-interprocess",
 		"boost-uuid",
-		"boost-asio",
-		"boost-process",
 		{
 			"name": "boost-locale",
 			"features": [

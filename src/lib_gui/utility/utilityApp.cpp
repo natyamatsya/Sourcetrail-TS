@@ -4,46 +4,24 @@
 #include "logging.h"
 #include "utilityString.h"
 
+#include <QProcess>
+#include <QProcessEnvironment>
 #include <QThread>
 
-#include <boost/asio/buffer.hpp>
-#include <boost/asio/io_context.hpp>
-#include <boost/asio/read.hpp>
-#include <chrono>
-#include <thread>
-
-#if BOOST_VERSION >= 108600
-	#include <boost/process/v1/args.hpp>
-	#include <boost/process/v1/async_pipe.hpp>
-	#include <boost/process/v1/child.hpp>
-	#include <boost/process/v1/env.hpp>
-	#include <boost/process/v1/io.hpp>
-	#include <boost/process/v1/start_dir.hpp>
-
-	namespace process_v1 = boost::process::v1;
-#else
-	#include <boost/process/args.hpp>
-	#include <boost/process/async_pipe.hpp>
-	#include <boost/process/child.hpp>
-	#include <boost/process/env.hpp>
-	#include <boost/process/io.hpp>
-	#include <boost/process/start_dir.hpp>
-
-	namespace process_v1 = boost::process;
-#endif
-
 #include <algorithm>
+#include <chrono>
 #include <cstdlib>
 #include <filesystem>
 #include <mutex>
 #include <set>
+#include <thread>
 
 using namespace std::chrono;
 
 namespace utility
 {
 std::mutex s_runningProcessesMutex;
-std::set<std::shared_ptr<process_v1::child>> s_runningProcesses;
+std::set<std::shared_ptr<QProcess>> s_runningProcesses;
 
 std::string getDocumentationLink()
 {
@@ -78,186 +56,152 @@ std::string searchPath(const std::string& bin)
 
 namespace
 {
-bool wait_for_process(process_v1::child *process, milliseconds timeout)
+void logOutputLines(const std::string& text, std::string& logBuffer)
 {
-	// This function used to call 'process::child::wait_for()' which issued the warning "wait_for is unreliable".
-	// See these tickets for further information:
-	// https://github.com/klemens-morgenstern/boost-process/issues/99
-	// https://github.com/klemens-morgenstern/boost-process/issues/112
+	logBuffer += text;
+	if (logBuffer.empty())
+		return;
 
-	constexpr milliseconds POLL_INTERVAL(100);
+	const bool isEndOfLine = (logBuffer.back() == '\n');
+	const std::vector<std::string> lines = splitToVector(logBuffer, "\n");
+	for (size_t i = 0; i < lines.size() - (isEndOfLine ? 0 : 1); i++)
+		LOG_INFO_BARE("Process output: " + lines[i]);
 
-	while (process->running() && timeout > milliseconds::zero())
-	{
-		std::this_thread::sleep_for(POLL_INTERVAL);
-		timeout -= std::min(timeout, POLL_INTERVAL);
-	}
-	return process->running();
+	if (isEndOfLine)
+		logBuffer.clear();
+	else
+		logBuffer = lines.back();
 }
 }	 // namespace
 
 ProcessOutput executeProcess(const std::string& command, const std::vector<std::string>& arguments, const FilePath& workingDirectory,
 	const bool waitUntilNoOutput, const milliseconds &timeout, bool logProcessOutput)
 {
-	std::string output;
-	int exitCode = 255;
-	try
-	{
-		boost::asio::io_context ctx;
-		process_v1::async_pipe ap(ctx);
+	auto process = std::make_shared<QProcess>();
 
-		std::shared_ptr<process_v1::child> process;
+	// Set up environment with extra PATH entries
+	QProcessEnvironment env = QProcessEnvironment::systemEnvironment();
+	QString path = env.value(QStringLiteral("PATH"));
+	path = QStringLiteral("/opt/local/bin:/usr/local/bin:") + path;
+	env.insert(QStringLiteral("PATH"), path);
+	process->setProcessEnvironment(env);
 
-		process_v1::environment env = boost::this_process::environment();
-		std::vector<std::string> previousPath = env["PATH"].to_vector();
-		env["PATH"] = {"/opt/local/bin", "/usr/local/bin", "$HOME/bin"};
-		for (const std::string& entry: previousPath)
-		{
-			env["PATH"].append(entry);
-		}
+	if (!workingDirectory.empty())
+		process->setWorkingDirectory(QString::fromStdString(workingDirectory.str()));
 
-		if (workingDirectory.empty())
-		{
-			process = std::make_shared<process_v1::child>(
-				searchPath(command),
-				process_v1::args(arguments),
-				env,
-				process_v1::std_in.close(),
-				(process_v1::std_out & process_v1::std_err) > ap);
-		}
-		else
-		{
-			process = std::make_shared<process_v1::child>(
-				searchPath(command),
-				process_v1::args(arguments),
-				process_v1::start_dir(workingDirectory.str()),
-				env,
-				process_v1::std_in.close(),
-				(process_v1::std_out & process_v1::std_err) > ap);
-		}
+	// Merge stdout and stderr into one channel
+	process->setProcessChannelMode(QProcess::MergedChannels);
 
-		{
-			std::lock_guard<std::mutex> lock(s_runningProcessesMutex);
-			s_runningProcesses.insert(process);
-		}
+	// Convert arguments to QStringList
+	QStringList qArgs;
+	qArgs.reserve(static_cast<int>(arguments.size()));
+	for (const auto& arg : arguments)
+		qArgs << QString::fromStdString(arg);
 
-		[[maybe_unused]]
-		ScopedFunctor remover([process]()
-		{
-			std::lock_guard<std::mutex> lock(s_runningProcessesMutex);
-			s_runningProcesses.erase(process);
-		});
+	// Start process
+	process->start(QString::fromStdString(searchPath(command)), qArgs);
+	process->closeWriteChannel();
 
-		bool outputReceived = false;
-		std::vector<char> buf(128);
-		auto stdOutBuffer = boost::asio::buffer(buf);
-		std::string logBuffer;
-
-		std::function<void(const boost::system::error_code& ec, std::size_t n)> onStdOut =
-			[&output, &buf, &stdOutBuffer, &ap, &onStdOut, &outputReceived, &logBuffer, logProcessOutput](
-				const boost::system::error_code& ec, std::size_t size)
-		{
-			std::string text;
-			text.reserve(size);
-			text.insert(text.end(), buf.begin(), buf.begin() + size);
-
-			if (!text.empty())
-			{
-				outputReceived = true;
-			}
-
-			output += text;
-			if (logProcessOutput)
-			{
-				logBuffer += text;
-				const bool isEndOfLine = (logBuffer.back() == '\n');
-				const std::vector<std::string> lines = splitToVector(logBuffer, "\n");
-				for (size_t i = 0; i < lines.size() - (isEndOfLine ? 0 : 1); i++)
-				{
-					LOG_INFO_BARE("Process output: " + lines[i]);
-				}
-				if (isEndOfLine)
-				{
-					logBuffer.clear();
-				}
-				else
-				{
-					logBuffer = lines.back();
-				}
-			}
-			if (!ec)
-			{
-				boost::asio::async_read(ap, stdOutBuffer, onStdOut);
-			}
-		};
-
-		boost::asio::async_read(ap, stdOutBuffer, onStdOut);
-		ctx.run();
-
-		if (timeout != INFINITE_TIMEOUT)
-		{
-			if (waitUntilNoOutput)
-			{
-				while (!wait_for_process(process.get(), timeout))
-				{
-					if (!outputReceived)
-					{
-						LOG_WARNING("Canceling process because it did not generate any output during the "
-							"last " + std::to_string(duration_cast<seconds>(timeout).count()) + " seconds.");
-						process->terminate();
-						break;
-					}
-					outputReceived = false;
-				}
-			}
-			else
-			{
-				if (!wait_for_process(process.get(), timeout))
-				{
-					LOG_WARNING("Canceling process because it timed out after " +
-						std::to_string(duration_cast<seconds>(timeout).count()) + " seconds.");
-					process->terminate();
-				}
-			}
-		}
-		else
-		{
-			process->wait();
-		}
-
-		if (logProcessOutput)
-		{
-			for (const std::string& line: splitToVector(logBuffer, "\n"))
-			{
-				LOG_INFO_BARE("Process output: " + line);
-			}
-		}
-
-		exitCode = process->exit_code();
-	}
-	catch (const process_v1::process_error& e)
+	if (!process->waitForStarted())
 	{
 		ProcessOutput ret;
-		ret.error = e.code().message();
-		ret.exitCode = e.code().value();
+		ret.error = process->errorString().toStdString();
+		ret.exitCode = -1;
 		LOG_ERROR_BARE("Process error: " + ret.error);
-
 		return ret;
+	}
+
+	// Track running process
+	{
+		std::lock_guard<std::mutex> lock(s_runningProcessesMutex);
+		s_runningProcesses.insert(process);
+	}
+
+	[[maybe_unused]]
+	ScopedFunctor remover([process]()
+	{
+		std::lock_guard<std::mutex> lock(s_runningProcessesMutex);
+		s_runningProcesses.erase(process);
+	});
+
+	// Read output
+	std::string output;
+	std::string logBuffer;
+
+	if (timeout == INFINITE_TIMEOUT)
+	{
+		process->waitForFinished(-1);
+		output = process->readAllStandardOutput().toStdString();
+		if (logProcessOutput)
+			logOutputLines(output, logBuffer);
+	}
+	else
+	{
+		auto deadline = steady_clock::now() + timeout;
+		bool outputReceived = false;
+
+		while (process->state() != QProcess::NotRunning)
+		{
+			auto remaining = duration_cast<milliseconds>(deadline - steady_clock::now());
+			if (remaining <= milliseconds::zero())
+			{
+				if (waitUntilNoOutput && outputReceived)
+				{
+					outputReceived = false;
+					deadline = steady_clock::now() + timeout;
+					continue;
+				}
+				LOG_WARNING("Canceling process because it " +
+					std::string(waitUntilNoOutput
+						? "did not generate any output during the last "
+						: "timed out after ") +
+					std::to_string(duration_cast<seconds>(timeout).count()) + " seconds.");
+				process->kill();
+				process->waitForFinished(1000);
+				break;
+			}
+
+			int waitMs = static_cast<int>(std::min(remaining, milliseconds(100)).count());
+			if (process->waitForReadyRead(waitMs))
+			{
+				std::string chunk = process->readAllStandardOutput().toStdString();
+				if (!chunk.empty())
+				{
+					outputReceived = true;
+					output += chunk;
+					if (logProcessOutput)
+						logOutputLines(chunk, logBuffer);
+				}
+			}
+		}
+
+		// Read any remaining buffered output
+		std::string remaining = process->readAllStandardOutput().toStdString();
+		if (!remaining.empty())
+		{
+			output += remaining;
+			if (logProcessOutput)
+				logOutputLines(remaining, logBuffer);
+		}
+	}
+
+	if (logProcessOutput && !logBuffer.empty())
+	{
+		for (const std::string& line : splitToVector(logBuffer, "\n"))
+			LOG_INFO_BARE("Process output: " + line);
 	}
 
 	ProcessOutput ret;
 	ret.output = trim(output);
-	ret.exitCode = exitCode;
+	ret.exitCode = process->exitCode();
 	return ret;
 }
 
 void killRunningProcesses()
 {
 	std::lock_guard<std::mutex> lock(s_runningProcessesMutex);
-	for (std::shared_ptr<process_v1::child> process: s_runningProcesses)
-	{
-		process->terminate();
-	}
+	for (const auto& process : s_runningProcesses)
+		process->kill();
 }
 
 int getIdealThreadCount()

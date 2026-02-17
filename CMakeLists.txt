@@ -184,9 +184,6 @@ add_library(External_lib_boost INTERFACE)
 
 target_compile_definitions(External_lib_boost
 	INTERFACE
-		# Try to detect deprecations early:
-		#BOOST_ASIO_NO_DEPRECATED
-		#BOOST_PROCESS_NO_DEPRECATED
 		# Use the same linking approach on all platforms:
 		#BOOST_ALL_NO_LIB
 		
