@@ -10,7 +10,7 @@
 
 using namespace std;
 using namespace utility;
-using namespace boost::chrono;
+using namespace std::chrono;
 
 CxxVs17ToLatestHeaderPathDetector::CxxVs17ToLatestHeaderPathDetector(const string &versionRange)
 	: PathDetector(getVsWhereProperty(versionRange, "displayName"))

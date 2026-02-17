@@ -3,15 +3,15 @@
 
 #include <string>
 
-#include <boost/chrono/duration.hpp>
+#include <chrono>
 
 #include "FilePath.h"
 #include <Platform.h>
 
 namespace utility
 {
-constexpr boost::chrono::milliseconds DEFAULT_TIMEOUT(30000);
-constexpr boost::chrono::milliseconds INFINITE_TIMEOUT(boost::chrono::milliseconds::max());
+constexpr std::chrono::milliseconds DEFAULT_TIMEOUT(30000);
+constexpr std::chrono::milliseconds INFINITE_TIMEOUT(std::chrono::milliseconds::max());
 
 struct ProcessOutput
 {
@@ -31,7 +31,7 @@ ProcessOutput executeProcess(
 	const std::vector<std::string>& arguments,
 	const FilePath& workingDirectory = FilePath(),
 	const bool waitUntilNoOutput = false,
-	const boost::chrono::milliseconds &timeout = DEFAULT_TIMEOUT,
+	const std::chrono::milliseconds &timeout = DEFAULT_TIMEOUT,
 	bool logProcessOutput = false);
 
 void killRunningProcesses();

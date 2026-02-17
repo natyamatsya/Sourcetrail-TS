@@ -9,8 +9,8 @@
 #include <boost/asio/buffer.hpp>
 #include <boost/asio/io_context.hpp>
 #include <boost/asio/read.hpp>
-#include <boost/chrono.hpp>
-#include <boost/thread.hpp>
+#include <chrono>
+#include <thread>
 
 #if BOOST_VERSION >= 108600
 	#include <boost/process/v1/args.hpp>
@@ -38,8 +38,7 @@
 #include <mutex>
 #include <set>
 
-using namespace boost;
-using namespace boost::chrono;
+using namespace std::chrono;
 
 namespace utility
 {
@@ -90,7 +89,7 @@ bool wait_for_process(process_v1::child *process, milliseconds timeout)
 
 	while (process->running() && timeout > milliseconds::zero())
 	{
-		this_thread::sleep_for(POLL_INTERVAL);
+		std::this_thread::sleep_for(POLL_INTERVAL);
 		timeout -= std::min(timeout, POLL_INTERVAL);
 	}
 	return process->running();
@@ -204,7 +203,7 @@ ProcessOutput executeProcess(const std::string& command, const std::vector<std::
 					if (!outputReceived)
 					{
 						LOG_WARNING("Canceling process because it did not generate any output during the "
-							"last " + boost::chrono::to_string(duration_cast<seconds>(timeout)) + " seconds.");
+							"last " + std::to_string(duration_cast<seconds>(timeout).count()) + " seconds.");
 						process->terminate();
 						break;
 					}
@@ -216,7 +215,7 @@ ProcessOutput executeProcess(const std::string& command, const std::vector<std::
 				if (!wait_for_process(process.get(), timeout))
 				{
 					LOG_WARNING("Canceling process because it timed out after " +
-						boost::chrono::to_string(duration_cast<seconds>(timeout)) + " seconds.");
+						std::to_string(duration_cast<seconds>(timeout).count()) + " seconds.");
 					process->terminate();
 				}
 			}
