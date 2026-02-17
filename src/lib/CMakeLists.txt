@@ -402,6 +402,8 @@ add_library(Sourcetrail_lib
 	utility/file/utilityFile.cpp
 	utility/file/utilityFile.h
 
+	utility/interprocess/IpcSharedMemory.cpp
+	utility/interprocess/IpcSharedMemory.h
 	utility/interprocess/SharedMemory.cpp
 	utility/interprocess/SharedMemory.h
 	utility/interprocess/SharedMemoryGarbageCollector.cpp
@@ -760,6 +762,7 @@ target_link_libraries(Sourcetrail_lib
 		External_lib_boost
 		External_lib_cli11
 		External_lib_flatbuffers
+		External_lib_ipc
 )
 
 if (UNIX)

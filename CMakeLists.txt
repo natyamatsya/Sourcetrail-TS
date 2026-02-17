@@ -201,6 +201,24 @@ message(STATUS "Found FlatBuffers ${flatbuffers_VERSION}")
 add_library(External_lib_flatbuffers INTERFACE)
 target_link_libraries(External_lib_flatbuffers INTERFACE flatbuffers::flatbuffers)
 
+# cpp-ipc ----------------------------------------------------------------------
+
+include(FetchContent)
+FetchContent_Declare(
+	cpp-ipc
+	GIT_REPOSITORY https://github.com/natyamatsya/cpp-ipc.git
+	GIT_TAG        master
+)
+set(LIBIPC_BUILD_TESTS      OFF CACHE BOOL "" FORCE)
+set(LIBIPC_BUILD_DEMOS      OFF CACHE BOOL "" FORCE)
+set(LIBIPC_BUILD_BENCHMARKS OFF CACHE BOOL "" FORCE)
+set(LIBIPC_BUILD_PROTO      OFF CACHE BOOL "" FORCE)
+FetchContent_MakeAvailable(cpp-ipc)
+message(STATUS "Fetched cpp-ipc (libipc)")
+
+add_library(External_lib_ipc INTERFACE)
+target_link_libraries(External_lib_ipc INTERFACE ipc)
+
 # Qt ---------------------------------------------------------------------------
 
 set(QT_NO_PRIVATE_MODULE_WARNING ON)
