@@ -1,54 +1,21 @@
-add_executable(Sourcetrail_test
-	helper/TestFileRegister.cpp
-	helper/TestFileRegister.h
-	helper/TestStorage.h
-	helper/TestStorage.cpp
-
-	Catch2.hpp
-	Catch2.cpp
-	test_main.cpp
-
-	CommandlineTestSuite.cpp
-	ConfigManagerTestSuite.cpp
-	CxxIncludeProcessingTestSuite.cpp
-	CxxParserTestSuite.cpp
-	CxxTypeNameTestSuite.cpp
-	FileManagerTestSuite.cpp
-	FilePathFilterTestSuite.cpp
-	FilePathTestSuite.cpp
-	FileSystemTestSuite.cpp
-	GraphTestSuite.cpp
-	HierarchyCacheTestSuite.cpp
-	IpcIntegrationTestSuite.cpp
-	IpcSerializerTestSuite.cpp
-	IpcSharedMemoryTestSuite.cpp
-	LogManagerTestSuite.cpp
-	LowMemoryStringMapTestSuite.cpp
-	MatrixBaseTestSuite.cpp
-	MatrixDynamicBaseTestSuite.cpp
-	MessageQueueTestSuite.cpp
-	NetworkProtocolHelperTestSuite.cpp
-	PlatformTestSuite.cpp
-	QtActionsTestSuite.cpp
-	QtResourcesTestSuite.cpp
-	RefreshInfoGeneratorTestSuite.cpp
-	SearchIndexTestSuite.cpp
-	SettingsTestSuite.cpp
-	SourceGroupTestSuite.cpp
-	SourceLocationCollectionTestSuite.cpp
-	SqliteBookmarkStorageTestSuite.cpp
-	SqliteIndexStorageTestSuite.cpp
-	StorageTestSuite.cpp
-	TaskSchedulerTestSuite.cpp
-	TextAccessTestSuite.cpp
-	TextCodecTestSuite.cpp
-	UtilityEnumTestSuite.cpp
-	ToolChainTestSuite.cpp
-	UtilityStringTestSuite.cpp
-	Vector2TestSuite.cpp
-
-	Snippet.cpp
+file(GLOB_RECURSE Sourcetrail_test_SOURCES CONFIGURE_DEPENDS
+	"${CMAKE_CURRENT_SOURCE_DIR}/*.cpp"
+	"${CMAKE_CURRENT_SOURCE_DIR}/*.h"
 )
+
+# CMakeFileAPIReaderTestSuite requires BUILD_CXX_LANGUAGE_PACKAGE; exclude it
+# from the unconditional glob and add it back conditionally.
+list(FILTER Sourcetrail_test_SOURCES EXCLUDE REGEX ".*/CMakeFileAPIReaderTestSuite\\.cpp")
+
+add_executable(Sourcetrail_test ${Sourcetrail_test_SOURCES})
+
+if (BUILD_CXX_LANGUAGE_PACKAGE)
+	target_sources(Sourcetrail_test
+		PRIVATE
+			"${CMAKE_CURRENT_SOURCE_DIR}/CMakeFileAPIReaderTestSuite.cpp"
+	)
+endif()
+
 setDefaultTargetOptions(Sourcetrail_test)
 
 target_include_directories(Sourcetrail_test
@@ -68,6 +35,13 @@ target_link_libraries(Sourcetrail_test
 		Sourcetrail_res_gui
 		Catch2::Catch2
 )
+
+if (BUILD_CXX_LANGUAGE_PACKAGE)
+	target_link_libraries(Sourcetrail_test
+		PRIVATE
+			Sourcetrail_lib_cxx
+	)
+endif()
 
 if (WIN32)
 	set_target_properties(Sourcetrail_test

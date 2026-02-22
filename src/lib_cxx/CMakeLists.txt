@@ -1,115 +1,22 @@
-add_library(Sourcetrail_lib_cxx
-	data/indexer/CxxIndexerCommandProvider.cpp
-	data/indexer/CxxIndexerCommandProvider.h
-	data/indexer/IndexerCommandCxx.cpp
-	data/indexer/IndexerCommandCxx.h
-	data/indexer/IndexerCxx.cpp
-	data/indexer/IndexerCxx.h
-
-	data/parser/cxx/name/CxxDeclName.cpp
-	data/parser/cxx/name/CxxDeclName.h
-	data/parser/cxx/name/CxxFunctionDeclName.cpp
-	data/parser/cxx/name/CxxFunctionDeclName.h
-	data/parser/cxx/name/CxxName.cpp
-	data/parser/cxx/name/CxxName.h
-	data/parser/cxx/name/CxxQualifierFlags.cpp
-	data/parser/cxx/name/CxxQualifierFlags.h
-	data/parser/cxx/name/CxxStaticFunctionDeclName.cpp
-	data/parser/cxx/name/CxxStaticFunctionDeclName.h
-	data/parser/cxx/name/CxxTypeName.cpp
-	data/parser/cxx/name/CxxTypeName.h
-	data/parser/cxx/name/CxxVariableDeclName.cpp
-	data/parser/cxx/name/CxxVariableDeclName.h
-
-	data/parser/cxx/name_resolver/CxxDeclNameResolver.cpp
-	data/parser/cxx/name_resolver/CxxDeclNameResolver.h
-	data/parser/cxx/name_resolver/CxxNameResolver.cpp
-	data/parser/cxx/name_resolver/CxxNameResolver.h
-	data/parser/cxx/name_resolver/CxxSpecifierNameResolver.cpp
-	data/parser/cxx/name_resolver/CxxSpecifierNameResolver.h
-	data/parser/cxx/name_resolver/CxxTemplateArgumentNameResolver.cpp
-	data/parser/cxx/name_resolver/CxxTemplateArgumentNameResolver.h
-	data/parser/cxx/name_resolver/CxxTemplateParameterStringResolver.cpp
-	data/parser/cxx/name_resolver/CxxTemplateParameterStringResolver.h
-	data/parser/cxx/name_resolver/CxxTypeNameResolver.cpp
-	data/parser/cxx/name_resolver/CxxTypeNameResolver.h
-
-	data/parser/cxx/ASTAction.cpp
-	data/parser/cxx/ASTAction.h
-	data/parser/cxx/ASTConsumer.cpp
-	data/parser/cxx/ASTConsumer.h
-	data/parser/cxx/CanonicalFilePathCache.cpp
-	data/parser/cxx/CanonicalFilePathCache.h
-	data/parser/cxx/CommentHandler.cpp
-	data/parser/cxx/CommentHandler.h
-	data/parser/cxx/ClangInvocationInfo.cpp
-	data/parser/cxx/ClangInvocationInfo.h
-	data/parser/cxx/CxxAstVisitor.cpp
-	data/parser/cxx/CxxAstVisitor.h
-	data/parser/cxx/CxxAstVisitorComponent.cpp
-	data/parser/cxx/CxxAstVisitorComponent.h
-	data/parser/cxx/CxxAstVisitorComponentBraceRecorder.cpp
-	data/parser/cxx/CxxAstVisitorComponentBraceRecorder.h
-	data/parser/cxx/CxxAstVisitorComponentContext.cpp
-	data/parser/cxx/CxxAstVisitorComponentContext.h
-	data/parser/cxx/CxxAstVisitorComponentDeclRefKind.cpp
-	data/parser/cxx/CxxAstVisitorComponentDeclRefKind.h
-	data/parser/cxx/CxxAstVisitorComponentImplicitCode.cpp
-	data/parser/cxx/CxxAstVisitorComponentImplicitCode.h
-	data/parser/cxx/CxxAstVisitorComponentIndexer.cpp
-	data/parser/cxx/CxxAstVisitorComponentIndexer.h
-	data/parser/cxx/CxxAstVisitorComponentTypeRefKind.cpp
-	data/parser/cxx/CxxAstVisitorComponentTypeRefKind.h
-	data/parser/cxx/CxxCompilationDatabaseSingle.cpp
-	data/parser/cxx/CxxCompilationDatabaseSingle.h
-	data/parser/cxx/CxxContext.cpp
-	data/parser/cxx/CxxContext.h
-	data/parser/cxx/CxxDiagnosticConsumer.cpp
-	data/parser/cxx/CxxDiagnosticConsumer.h
-	data/parser/cxx/CxxParser.cpp
-	data/parser/cxx/CxxParser.h
-	data/parser/cxx/CxxVerboseAstVisitor.cpp
-	data/parser/cxx/CxxVerboseAstVisitor.h
-	data/parser/cxx/GeneratePCHAction.cpp
-	data/parser/cxx/GeneratePCHAction.h
-	data/parser/cxx/PreprocessorCallbacks.cpp
-	data/parser/cxx/PreprocessorCallbacks.h
-	data/parser/cxx/SingleFrontendActionFactory.cpp
-	data/parser/cxx/SingleFrontendActionFactory.h
-	data/parser/cxx/utilityClang.cpp
-	data/parser/cxx/utilityClang.h
-
-	project/SourceGroupCxxCdb.cpp
-	project/SourceGroupCxxCdb.h
-	project/SourceGroupCxxCMakeFileAPI.cpp
-	project/SourceGroupCxxCMakeFileAPI.h
-	project/SourceGroupCxxEmpty.cpp
-	project/SourceGroupCxxEmpty.h
-	project/SourceGroupFactoryModuleCxx.cpp
-	project/SourceGroupFactoryModuleCxx.h
-	project/utilitySourceGroupCxx.cpp
-	project/utilitySourceGroupCxx.h
-
-	utility/CompilationDatabase.cpp
-	utility/CompilationDatabase.h
-	utility/IncludeDirective.cpp
-	utility/IncludeDirective.h
-	utility/IncludeProcessing.cpp
-	utility/IncludeProcessing.h
-
-	LanguagePackageCxx.cpp
-	LanguagePackageCxx.h
+file(GLOB_RECURSE Sourcetrail_lib_cxx_SOURCES CONFIGURE_DEPENDS
+	"${CMAKE_CURRENT_SOURCE_DIR}/*.cpp"
+	"${CMAKE_CURRENT_SOURCE_DIR}/*.h"
 )
+
+add_library(Sourcetrail_lib_cxx ${Sourcetrail_lib_cxx_SOURCES})
 setDefaultTargetOptions(Sourcetrail_lib_cxx)
+
+# Derive include directories automatically from the source tree.
+set(_cxx_include_dirs "")
+foreach(_f ${Sourcetrail_lib_cxx_SOURCES})
+	get_filename_component(_d "${_f}" DIRECTORY)
+	list(APPEND _cxx_include_dirs "${_d}")
+endforeach()
+list(REMOVE_DUPLICATES _cxx_include_dirs)
 
 target_include_directories(Sourcetrail_lib_cxx
 	PUBLIC
-		data/indexer
-		data/parser/cxx/name
-		data/parser/cxx/name_resolver
-		data/parser/cxx
-		project
-		utility/
+		${_cxx_include_dirs}
 		.
 )
 

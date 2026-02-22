@@ -1,0 +1,10 @@
+# Ignore all cmake build artifacts except the File API reply fixtures.
+*
+!.gitignore
+!.cmake/
+!.cmake/api/
+!.cmake/api/v1/
+!.cmake/api/v1/query/
+!.cmake/api/v1/query/**
+!.cmake/api/v1/reply/
+!.cmake/api/v1/reply/**

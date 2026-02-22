@@ -823,25 +823,6 @@ void QtProjectWizard::newSourceGroup()
 	window->updateSubTitle(QStringLiteral("Type Selection"));
 }
 
-void QtProjectWizard::newSourceGroupFromVS()
-{
-#if BUILD_CXX_LANGUAGE_PACKAGE
-	QtProjectWizardWindow* window = createWindowWithContent([](QtProjectWizardWindow* window) {
-		window->setPreferredSize(QSize(560, 320));
-		return new QtProjectWizardContentVS(window);
-	});
-	window->resize(QSize(560, 320));
-
-	connect(window, &QtProjectWizardWindow::next, [this]() {
-		selectedProjectType(SourceGroupType::CXX_CDB);
-	});
-
-	window->show();
-	window->setNextEnabled(true);
-	window->setPreviousEnabled(true);
-	window->updateSubTitle(QStringLiteral("C/C++ from Visual Studio"));
-#endif	  // BUILD_CXX_LANGUAGE_PACKAGE
-}
 
 void QtProjectWizard::selectedProjectType(SourceGroupType sourceGroupType)
 {

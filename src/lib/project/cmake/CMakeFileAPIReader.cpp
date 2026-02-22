@@ -274,7 +274,7 @@ std::vector<CMakeFileAPIReader::SourceEntry> CMakeFileAPIReader::getSources(
 
 	// Find the codemodel-v2 reply filename via JSONPath.
 	const auto pathResult{
-		JSONPath::create(u"$.reply[?(@.kind == \"codemodel\" && @.version.major >= 2)].jsonFile")};
+		JSONPath::create(u"$.objects[?(@.kind == \"codemodel\")].jsonFile")};
 	if (!pathResult)
 	{
 		LOG_ERROR(
@@ -312,6 +312,11 @@ std::vector<CMakeFileAPIReader::SourceEntry> CMakeFileAPIReader::getSources(
 				err.message.toStdString());
 		return {};
 	}
+
+	// The codemodel top-level paths.source is the absolute source directory;
+	// relative source file paths in target replies are relative to it.
+	const FilePath sourceDir{
+		codemodelDoc.object()["paths"].toObject()["source"].toString().toStdString()};
 
 	// Pick the configuration to use.
 	const auto configs{codemodelDoc.object()["configurations"].toArray()};
@@ -385,10 +390,10 @@ std::vector<CMakeFileAPIReader::SourceEntry> CMakeFileAPIReader::getSources(
 			const auto rawPath{src["path"].toString().toStdString()};
 
 			SourceEntry entry{};
-			// Paths in the reply are relative to the build dir if not absolute.
+			// Per CMake File API spec, relative paths are relative to the source dir.
 			entry.path = FilePath{rawPath}.isAbsolute()
 				? FilePath{rawPath}
-				: m_buildDir.getConcatenated("/" + rawPath);
+				: sourceDir.getConcatenated("/" + rawPath);
 			entry.isGenerated = src["isGenerated"].toBool(false);
 			entry.targetName = targetName;
 			entry.targetType = targetType;
@@ -438,7 +443,7 @@ std::vector<FilePath> CMakeFileAPIReader::getCMakeInputFiles() const
 
 	// Find the cmakeFiles-v1 reply filename.
 	const auto pathResult{
-		JSONPath::create(u"$.reply[?(@.kind == \"cmakeFiles\")].jsonFile")};
+		JSONPath::create(u"$.objects[?(@.kind == \"cmakeFiles\")].jsonFile")};
 	if (!pathResult)
 		return {};
 
@@ -451,6 +456,11 @@ std::vector<FilePath> CMakeFileAPIReader::getCMakeInputFiles() const
 	const auto cmakeFilesDoc{readJsonFile(cmakeFilesPath)};
 	if (cmakeFilesDoc.isNull())
 		return {};
+
+	// Relative paths in the cmakeFiles reply are relative to paths.source.
+	const FilePath sourceDir{
+		cmakeFilesDoc.object()["paths"].toObject()["source"].toString().toStdString()};
+	const FilePath& baseDir{sourceDir.empty() ? m_buildDir : sourceDir};
 
 	// Extract all input file paths using JSONPath.
 	const auto inputsPath{JSONPath::create(u"$.inputs[*].path")};
@@ -468,7 +478,7 @@ std::vector<FilePath> CMakeFileAPIReader::getCMakeInputFiles() const
 		const auto rawPath{v.toString().toStdString()};
 		result.push_back(
 			FilePath{rawPath}.isAbsolute() ? FilePath{rawPath}
-										   : m_buildDir.getConcatenated("/" + rawPath));
+										   : baseDir.getConcatenated("/" + rawPath));
 	}
 	return result;
 }
