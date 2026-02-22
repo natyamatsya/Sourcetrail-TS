@@ -81,6 +81,36 @@ impl IpcShm {
     pub fn clear_locked(&self) -> io::Result<()> {
         self.write_locked(&[0u8; 4])
     }
+
+    /// Read the current SHM contents, pass them to `f` which returns a new buffer, then write it back.
+    /// The entire operation is performed under the mutex.
+    pub fn read_modify_write<F>(&self, f: F) -> io::Result<()>
+    where
+        F: FnOnce(&[u8]) -> Vec<u8>,
+    {
+        self.mtx.lock()?;
+        let new_buf = {
+            let data =
+                unsafe { std::slice::from_raw_parts(self.shm.as_ptr(), self.shm.user_size()) };
+            f(data)
+        };
+        if new_buf.len() > self.shm.user_size() {
+            self.mtx.unlock()?;
+            return Err(io::Error::new(
+                io::ErrorKind::InvalidInput,
+                format!(
+                    "IpcShm::read_modify_write: {} bytes > shm size {}",
+                    new_buf.len(),
+                    self.shm.user_size()
+                ),
+            ));
+        }
+        unsafe {
+            std::ptr::copy_nonoverlapping(new_buf.as_ptr(), self.shm.as_mut_ptr(), new_buf.len());
+        }
+        self.mtx.unlock()?;
+        Ok(())
+    }
 }
 
 /// Returns true when the raw SHM bytes represent an "empty" slot.

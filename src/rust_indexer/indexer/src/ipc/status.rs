@@ -22,7 +22,7 @@ pub struct StatusChannel {
 
 impl StatusChannel {
     pub fn open(uuid: &str, process_id: u64) -> io::Result<Self> {
-        let name = format!("istatus_ipc_{uuid}");
+        let name = format!("ists_ipc_{uuid}");
         Ok(Self {
             shm: IpcShm::open(&name, SHM_SIZE)?,
             process_id,

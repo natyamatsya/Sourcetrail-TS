@@ -1,14 +1,15 @@
 // StorageChannel: pushes IntermediateStorage results back to the app.
 //
-// SHM name: istorage_ipc_<uuid>  (C++: IpcInterprocessIntermediateStorageManager)
-// Size: 16 MiB (larger than command channel — results can be big)
+// SHM name: iist_ipc_<processId>_<uuid>  (C++: IpcInterprocessIntermediateStorageManager)
+// Wire format: [u32 count][u32 size0][FlatBuffers bytes0][u32 size1][FlatBuffers bytes1]...
+// This matches the C++ implementation exactly.
+// Size: 3 MiB (matches C++ constant of 3 * 1048576)
 
 use std::io;
 
-use crate::ipc::shm::{is_empty, IpcShm};
+use crate::ipc::shm::IpcShm;
 use crate::schemas::intermediate_storage::sourcetrail::ipc::{
-    root_as_intermediate_storage_queue, IntermediateStorage, IntermediateStorageArgs,
-    IntermediateStorageQueue, IntermediateStorageQueueArgs, StorageComponentAccess,
+    IntermediateStorage, IntermediateStorageArgs, StorageComponentAccess,
     StorageComponentAccessArgs, StorageEdge, StorageEdgeArgs, StorageError, StorageErrorArgs,
     StorageFile, StorageFileArgs, StorageLocalSymbol, StorageLocalSymbolArgs, StorageNode,
     StorageNodeArgs, StorageOccurrence, StorageOccurrenceArgs, StorageSourceLocation,
@@ -16,15 +17,15 @@ use crate::schemas::intermediate_storage::sourcetrail::ipc::{
 };
 use flatbuffers::FlatBufferBuilder;
 
-const SHM_SIZE: usize = 16 * 1024 * 1024; // 16 MiB
+const SHM_SIZE: usize = 3 * 1024 * 1024; // 3 MiB, matches C++
 
 pub struct StorageChannel {
     shm: IpcShm,
 }
 
 impl StorageChannel {
-    pub fn open(uuid: &str) -> io::Result<Self> {
-        let name = format!("istorage_ipc_{uuid}");
+    pub fn open(uuid: &str, process_id: u64) -> io::Result<Self> {
+        let name = format!("iist_ipc_{process_id}_{uuid}");
         Ok(Self {
             shm: IpcShm::open(&name, SHM_SIZE)?,
         })
@@ -34,38 +35,56 @@ impl StorageChannel {
     /// The C++ app uses this for back-pressure (waits when count >= 2).
     pub fn storage_count(&self) -> io::Result<usize> {
         self.shm.read_locked(|data| {
-            if is_empty(data) {
+            if data.len() < 4 {
                 return 0;
             }
-            root_as_intermediate_storage_queue(data)
-                .ok()
-                .and_then(|q| q.storages())
-                .map(|v| v.len())
-                .unwrap_or(0)
+            let count = u32::from_ne_bytes([data[0], data[1], data[2], data[3]]);
+            count as usize
         })
     }
 
     /// Append one `IntermediateStorage` to the queue in shared memory.
+    /// Wire format: [u32 count][u32 size0][bytes0]...
     pub fn push(&self, storage: &OwnedIntermediateStorage) -> io::Result<()> {
-        // Read existing queue, append, write back.
-        let mut existing: Vec<OwnedIntermediateStorage> = self.shm.read_locked(|data| {
-            if is_empty(data) {
-                return Vec::new();
-            }
-            root_as_intermediate_storage_queue(data)
-                .ok()
-                .and_then(|q| q.storages())
-                .map(|v| {
-                    (0..v.len())
-                        .map(|i| OwnedIntermediateStorage::from_fbs(v.get(i)))
-                        .collect()
-                })
-                .unwrap_or_default()
-        })?;
+        let entry_bytes = serialize_one_storage(storage);
+        let entry_size = entry_bytes.len() as u32;
 
-        existing.push(storage.clone());
-        let buf = serialize_queue(&existing);
-        self.shm.write_locked(&buf)
+        self.shm.read_modify_write(|data| {
+            // Read current count and existing payload.
+            let count = if data.len() >= 4 {
+                u32::from_ne_bytes([data[0], data[1], data[2], data[3]])
+            } else {
+                0
+            };
+
+            // Calculate existing payload size by walking entries.
+            let mut existing_payload_end = 4usize; // after count header
+            let mut remaining = count;
+            while remaining > 0 && existing_payload_end + 4 <= data.len() {
+                let sz = u32::from_ne_bytes([
+                    data[existing_payload_end],
+                    data[existing_payload_end + 1],
+                    data[existing_payload_end + 2],
+                    data[existing_payload_end + 3],
+                ]) as usize;
+                existing_payload_end += 4 + sz;
+                remaining -= 1;
+            }
+
+            // Build new buffer.
+            let new_count = count + 1;
+            let existing_payload_len = existing_payload_end - 4;
+            let total = 4 + existing_payload_len + 4 + entry_bytes.len();
+
+            let mut buf = Vec::with_capacity(total);
+            buf.extend_from_slice(&new_count.to_ne_bytes());
+            if existing_payload_len > 0 {
+                buf.extend_from_slice(&data[4..existing_payload_end]);
+            }
+            buf.extend_from_slice(&entry_size.to_ne_bytes());
+            buf.extend_from_slice(&entry_bytes);
+            buf
+        })
     }
 }
 
@@ -324,33 +343,6 @@ impl OwnedIntermediateStorage {
 // ---------------------------------------------------------------------------
 // Serialization
 // ---------------------------------------------------------------------------
-
-fn serialize_queue(storages: &[OwnedIntermediateStorage]) -> Vec<u8> {
-    let mut fbb = FlatBufferBuilder::with_capacity(64 * 1024);
-
-    let mut raw_offsets: Vec<u32> = Vec::with_capacity(storages.len());
-    for s in storages {
-        let offset = build_storage_inline(&mut fbb, s);
-        raw_offsets.push(offset.value());
-    }
-
-    let typed: Vec<flatbuffers::WIPOffset<IntermediateStorage>> = raw_offsets
-        .iter()
-        .map(|&v| flatbuffers::WIPOffset::new(v))
-        .collect();
-
-    let storages_v = fbb.create_vector(&typed);
-    drop(typed);
-
-    let queue = IntermediateStorageQueue::create(
-        &mut fbb,
-        &IntermediateStorageQueueArgs {
-            storages: Some(storages_v),
-        },
-    );
-    fbb.finish(queue, None);
-    fbb.finished_data().to_vec()
-}
 
 fn serialize_one_storage(s: &OwnedIntermediateStorage) -> Vec<u8> {
     let mut fbb = FlatBufferBuilder::with_capacity(16 * 1024);

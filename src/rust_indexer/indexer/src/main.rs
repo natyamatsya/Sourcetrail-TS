@@ -47,7 +47,7 @@ fn main() {
             std::process::exit(1);
         }
     };
-    let storage_ch = match StorageChannel::open(&uuid) {
+    let storage_ch = match StorageChannel::open(&uuid, process_id) {
         Ok(c) => c,
         Err(e) => {
             log::error!("Failed to open storage channel: {e}");

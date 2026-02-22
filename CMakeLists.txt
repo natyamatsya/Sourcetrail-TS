@@ -378,6 +378,35 @@ endif()
 
 add_subdirectory(src/indexer)
 
+# Rust Indexer -----------------------------------------------------------------
+
+if (BUILD_RUST_LANGUAGE_PACKAGE)
+	FetchContent_Declare(
+		corrosion
+		GIT_REPOSITORY https://github.com/corrosion-rs/corrosion.git
+		GIT_TAG        v0.5
+		GIT_SUBMODULES ""
+	)
+	FetchContent_MakeAvailable(corrosion)
+
+	corrosion_import_crate(
+		MANIFEST_PATH "${CMAKE_SOURCE_DIR}/src/rust_indexer/Cargo.toml"
+		CRATES sourcetrail-rust-indexer
+	)
+
+	# Copy the Rust indexer binary to app/ so AppPath::getRustIndexerFilePath() finds it.
+	# Corrosion produces an IMPORTED target, so we use a custom target with add_dependencies.
+	add_custom_target(copy_rust_indexer ALL
+		COMMAND ${CMAKE_COMMAND} -E copy_if_different
+			$<TARGET_FILE:sourcetrail_rust_indexer>
+			"${CMAKE_BINARY_DIR}/app/$<TARGET_FILE_NAME:sourcetrail_rust_indexer>"
+		COMMENT "Copying sourcetrail_rust_indexer to app/"
+		DEPENDS sourcetrail_rust_indexer
+	)
+
+	message(STATUS "Rust language package enabled — building sourcetrail_rust_indexer via Corrosion")
+endif()
+
 # App --------------------------------------------------------------------------
 
 configure_file(src/app/Sourcetrail.ico app/Sourcetrail.ico COPYONLY)
@@ -457,31 +486,6 @@ else()
 	else()
 		set(CPACK_GENERATOR ZIP)
 	endif()
-endif()
-
-# Rust indexer (corrosion) ---------------------------------------------------
-
-if (BUILD_RUST_LANGUAGE_PACKAGE)
-	FetchContent_Declare(
-		corrosion
-		GIT_REPOSITORY https://github.com/corrosion-rs/corrosion.git
-		GIT_TAG        v0.5
-		GIT_SUBMODULES ""
-	)
-	FetchContent_MakeAvailable(corrosion)
-
-	corrosion_import_crate(
-		MANIFEST_PATH "${CMAKE_SOURCE_DIR}/src/rust_indexer/Cargo.toml"
-		CRATES sourcetrail-rust-indexer
-	)
-
-	# Install the Rust indexer binary alongside the C++ indexer.
-	install(
-		PROGRAMS $<TARGET_FILE:sourcetrail_rust_indexer>
-		DESTINATION bin
-	)
-
-	message(STATUS "Rust language package enabled")
 endif()
 
 include(CPack)

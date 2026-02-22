@@ -66,12 +66,16 @@ void TaskBuildIndex::doEnter(std::shared_ptr<Blackboard> blackboard)
 	}
 
 	// Start the Rust indexer process (one instance handles all Rust-typed commands).
+	// It gets the next processId after the CXX indexers so it has its own storage channel.
 #if BUILD_RUST_LANGUAGE_PACKAGE
 	if (m_multiProcessIndexing)
 	{
+		const ProcessId rustProcessId = static_cast<ProcessId>(m_processCount + 1);
+		m_rustStorageManager = std::make_shared<IntermediateStorageManagerImpl>(
+			m_appUUID, rustProcessId, true);
 		m_runningThreadCount++;
 		m_processThreads.push_back(
-			new std::thread(&TaskBuildIndex::runRustIndexerProcess, this, logFilePath));
+			new std::thread(&TaskBuildIndex::runRustIndexerProcess, this, rustProcessId, logFilePath));
 	}
 #endif
 
@@ -211,7 +215,7 @@ void TaskBuildIndex::runIndexerProcess(ProcessId processId, const std::string& l
 }
 
 #if BUILD_RUST_LANGUAGE_PACKAGE
-void TaskBuildIndex::runRustIndexerProcess(const std::string& logFilePath)
+void TaskBuildIndex::runRustIndexerProcess(ProcessId processId, const std::string& logFilePath)
 {
 	const FilePath rustIndexerPath = AppPath::getRustIndexerFilePath();
 	if (!rustIndexerPath.exists())
@@ -223,11 +227,8 @@ void TaskBuildIndex::runRustIndexerProcess(const std::string& logFilePath)
 		return;
 	}
 
-	// Use ProcessId::NONE (0) as the process ID for the Rust indexer.
-	// It shares the same command/status/storage SHM channels as the C++ indexers
-	// but only pops commands of type Rust.
 	std::vector<std::string> args;
-	args.push_back("0"); // processId = 0 (NONE)
+	args.push_back(to_string(processId));
 	args.push_back(m_appUUID);
 	args.push_back(AppPath::getSharedDataDirectoryPath().getAbsolute().str());
 	args.push_back(UserPaths::getUserDataDirectoryPath().getAbsolute().str());
@@ -282,14 +283,29 @@ bool TaskBuildIndex::fetchIntermediateStorages(std::shared_ptr<Blackboard> black
 	do
 	{
 		ProcessId finishedProcessId = m_interprocessIndexingStatusManager.getNextFinishedProcessId();
-		if (finishedProcessId == ProcessId::NONE 
-			|| static_cast<size_t>(finishedProcessId) > m_interprocessIntermediateStorageManagers.size())
+		if (finishedProcessId == ProcessId::NONE)
 		{
 			break;
 		}
 
-		std::shared_ptr<IntermediateStorageManagerImpl> storageManager =
-			m_interprocessIntermediateStorageManagers[static_cast<size_t>(finishedProcessId) - 1];
+		std::shared_ptr<IntermediateStorageManagerImpl> storageManager;
+#if BUILD_RUST_LANGUAGE_PACKAGE
+		const ProcessId rustProcessId = static_cast<ProcessId>(m_processCount + 1);
+		if (finishedProcessId == rustProcessId && m_rustStorageManager)
+		{
+			storageManager = m_rustStorageManager;
+		}
+		else
+#endif
+		if (static_cast<size_t>(finishedProcessId) <= m_interprocessIntermediateStorageManagers.size())
+		{
+			storageManager =
+				m_interprocessIntermediateStorageManagers[static_cast<size_t>(finishedProcessId) - 1];
+		}
+		if (!storageManager)
+		{
+			break;
+		}
 
 		const size_t storageCount = storageManager->getIntermediateStorageCount();
 		if (storageCount == 0)

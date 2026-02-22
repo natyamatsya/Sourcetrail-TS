@@ -38,7 +38,7 @@ protected:
 	void runIndexerProcess(ProcessId processId, const std::string& logFilePath);
 	void runIndexerThread(ProcessId processId);
 #if BUILD_RUST_LANGUAGE_PACKAGE
-	void runRustIndexerProcess(const std::string& logFilePath);
+	void runRustIndexerProcess(ProcessId processId, const std::string& logFilePath);
 #endif
 	bool fetchIntermediateStorages(std::shared_ptr<Blackboard> blackboard);
 	void updateIndexingDialog(
@@ -62,6 +62,9 @@ protected:
 	std::vector<std::thread*> m_processThreads;
 	std::vector<std::shared_ptr<IntermediateStorageManagerImpl>>
 		m_interprocessIntermediateStorageManagers;
+#if BUILD_RUST_LANGUAGE_PACKAGE
+	std::shared_ptr<IntermediateStorageManagerImpl> m_rustStorageManager;
+#endif
 
 	std::atomic<size_t> m_runningThreadCount = 0;
 };
