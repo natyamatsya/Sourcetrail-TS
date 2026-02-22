@@ -10,8 +10,13 @@ path = "src/main.rs"
 [dependencies]
 libipc = { git = "https://github.com/natyamatsya/cpp-ipc.git", rev = "32b772d" }
 flatbuffers = "24.3.25"
-syn = { version = "2", features = ["full", "visit"] }
-proc-macro2 = { version = "1", features = ["span-locations"] }
+ra_ap_syntax = "0.0.320"
+ra_ap_hir = "0.0.320"
+ra_ap_ide_db = "0.0.320"
+ra_ap_project_model = "0.0.320"
+ra_ap_load-cargo = "0.0.320"
+ra_ap_vfs = "0.0.320"
+tempfile = "3"
 log = "0.4"
 env_logger = "0.11"
 
@@ -19,4 +24,3 @@ env_logger = "0.11"
 libc = "0.2"
 
 [dev-dependencies]
-tempfile = "3"

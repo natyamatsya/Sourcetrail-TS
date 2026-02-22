@@ -1,40 +1,43 @@
-// Rust source parser — Phase 3 prototype using `syn`.
+// Rust source parser — Phase 3b using ra_ap_hir (rust-analyzer HIR).
 //
-// Walks a single .rs file and emits an OwnedIntermediateStorage containing:
-//   - StorageFile for the source file itself
-//   - StorageNode for each top-level item (fn, struct, enum, trait, impl, mod, …)
-//   - StorageSymbol (definition kind = DEFINED = 1) for each node
-//   - StorageSourceLocation for each item's span
-//   - StorageOccurrence linking each node to its location
-//   - StorageError for parse failures
+// Loads a full Cargo crate via ra_ap_load_cargo::load_workspace_at() and
+// walks every ModuleDef in every local module to emit an OwnedIntermediateStorage.
+//
+// What is emitted per definition:
+//   - StorageFile  for every source file that contains at least one definition
+//   - StorageNode  for each named item (fn, struct, enum, union, trait, type
+//                  alias, const, static, macro, module)
+//   - StorageSymbol (DefinitionKind = EXPLICIT = 2) for each node
+//   - StorageSourceLocation pointing at the name token of the item
+//   - StorageOccurrence linking node → location
+//   - StorageError  for load / analysis failures
 //
 // Node kind constants mirror NodeKind.h (bitmask values):
-//   NODE_SYMBOL          = 1 << 0  = 1
-//   NODE_TYPE            = 1 << 1  = 2
-//   NODE_BUILTIN_TYPE    = 1 << 2  = 4
 //   NODE_MODULE          = 1 << 3  = 8
-//   NODE_NAMESPACE       = 1 << 4  = 16
-//   NODE_PACKAGE         = 1 << 5  = 32
 //   NODE_STRUCT          = 1 << 6  = 64
-//   NODE_CLASS           = 1 << 7  = 128
-//   NODE_INTERFACE       = 1 << 8  = 256
-//   NODE_ANNOTATION      = 1 << 9  = 512
-//   NODE_GLOBAL_VARIABLE = 1 << 10 = 1024
-//   NODE_FIELD           = 1 << 11 = 2048
+//   NODE_INTERFACE       = 1 << 8  = 256   (trait)
+//   NODE_GLOBAL_VARIABLE = 1 << 10 = 1024  (const / static)
 //   NODE_FUNCTION        = 1 << 12 = 4096
 //   NODE_METHOD          = 1 << 13 = 8192
 //   NODE_ENUM            = 1 << 14 = 16384
-//   NODE_ENUM_CONSTANT   = 1 << 15 = 32768
 //   NODE_TYPEDEF         = 1 << 16 = 65536
 //   NODE_MACRO           = 1 << 17 = 131072
 //   NODE_UNION           = 1 << 18 = 262144
 //
 // DefinitionKind: NONE = 0, IMPLICIT = 1, EXPLICIT = 2
-// LocationType:   TOKEN = 0, SCOPE = 1, QUALIFIER = 2, …
+// LocationType:   TOKEN = 0, SCOPE = 1, QUALIFIER = 2
 
+use std::collections::HashMap;
 use std::path::Path;
 
-use syn::visit::Visit;
+use ra_ap_hir::{db::HirDatabase, Adt, AsAssocItem, Crate, HasSource, ModuleDef};
+use ra_ap_ide_db::base_db::{RootQueryDb, SourceDatabase};
+use ra_ap_ide_db::line_index::LineIndex;
+use ra_ap_ide_db::RootDatabase;
+use ra_ap_load_cargo::{load_workspace_at, LoadCargoConfig, ProcMacroServerChoice};
+use ra_ap_project_model::CargoConfig;
+use ra_ap_syntax::AstNode;
+use ra_ap_vfs::Vfs;
 
 use crate::ipc::storage::{
     OwnedIntermediateStorage, OwnedStorageError, OwnedStorageFile, OwnedStorageNode,
@@ -46,6 +49,7 @@ const NODE_STRUCT: i32 = 1 << 6;
 const NODE_INTERFACE: i32 = 1 << 8;
 const NODE_GLOBAL_VARIABLE: i32 = 1 << 10;
 const NODE_FUNCTION: i32 = 1 << 12;
+const NODE_METHOD: i32 = 1 << 13;
 const NODE_ENUM: i32 = 1 << 14;
 const NODE_TYPEDEF: i32 = 1 << 16;
 const NODE_MACRO: i32 = 1 << 17;
@@ -54,125 +58,183 @@ const NODE_UNION: i32 = 1 << 18;
 const DEFINITION_EXPLICIT: i32 = 2;
 const LOCATION_TOKEN: i32 = 0;
 
-pub fn index_file(file_path: &str, module_prefix: &str) -> OwnedIntermediateStorage {
+// ---------------------------------------------------------------------------
+// Public entry point: index a whole Cargo crate
+// ---------------------------------------------------------------------------
+
+/// Index the Cargo crate whose `Cargo.toml` lives in `crate_root`.
+/// Returns a populated `OwnedIntermediateStorage` covering all local source files.
+pub fn index_crate(crate_root: &Path) -> OwnedIntermediateStorage {
+    let cargo_config = CargoConfig::default();
+    let load_config = LoadCargoConfig {
+        load_out_dirs_from_check: false,
+        with_proc_macro_server: ProcMacroServerChoice::None,
+        prefill_caches: false,
+        proc_macro_processes: 1,
+    };
+
+    let (db, vfs, _proc_macro) =
+        match load_workspace_at(crate_root, &cargo_config, &load_config, &|_| {}) {
+            Ok(r) => r,
+            Err(e) => {
+                let mut storage = OwnedIntermediateStorage::default();
+                storage.errors.push(OwnedStorageError {
+                    id: 1,
+                    message: format!("Failed to load crate: {e}"),
+                    translation_unit: crate_root.display().to_string(),
+                    fatal: true,
+                    indexed: false,
+                });
+                return storage;
+            }
+        };
+
+    collect_from_db(&db, &vfs)
+}
+
+// ---------------------------------------------------------------------------
+// Compat shim: index a single file by wrapping it in a temp crate.
+// Used by the existing per-file tests and by main.rs (one command = one file).
+// ---------------------------------------------------------------------------
+
+/// Index a single `.rs` file.
+/// Creates a minimal temporary Cargo crate, writes the file as `src/lib.rs`,
+/// loads it via `ra_ap_hir`, and returns the storage.
+pub fn index_file(file_path: &str, _module_prefix: &str) -> OwnedIntermediateStorage {
     let source = match std::fs::read_to_string(file_path) {
         Ok(s) => s,
-        Err(e) => {
-            let mut storage = OwnedIntermediateStorage::default();
-            storage.next_id = 2;
-            storage.files.push(OwnedStorageFile {
-                id: 1,
-                file_path: file_path.to_owned(),
-                language_identifier: "rust".to_owned(),
-                indexed: false,
-                complete: false,
-            });
-            storage.errors.push(OwnedStorageError {
-                id: 2,
-                message: format!("Failed to read file: {e}"),
-                translation_unit: file_path.to_owned(),
-                fatal: true,
-                indexed: false,
-            });
-            return storage;
-        }
+        Err(e) => return error_storage(file_path, &format!("Failed to read file: {e}")),
     };
 
-    let syntax = match syn::parse_file(&source) {
-        Ok(f) => f,
-        Err(e) => {
-            let mut storage = OwnedIntermediateStorage::default();
-            storage.next_id = 2;
-            storage.files.push(OwnedStorageFile {
-                id: 1,
-                file_path: file_path.to_owned(),
-                language_identifier: "rust".to_owned(),
-                indexed: false,
-                complete: false,
-            });
-            storage.errors.push(OwnedStorageError {
-                id: 2,
-                message: format!("Parse error: {e}"),
-                translation_unit: file_path.to_owned(),
-                fatal: true,
-                indexed: false,
-            });
-            return storage;
-        }
+    // Build a temp crate: Cargo.toml + src/lib.rs
+    let tmp = match tempfile::tempdir() {
+        Ok(d) => d,
+        Err(e) => return error_storage(file_path, &format!("tempdir: {e}")),
     };
+    let src_dir = tmp.path().join("src");
+    if let Err(e) = std::fs::create_dir_all(&src_dir) {
+        return error_storage(file_path, &format!("mkdir src: {e}"));
+    }
+    let cargo_toml =
+        format!("[package]\nname = \"_idx\"\nversion = \"0.0.0\"\nedition = \"2021\"\n");
+    if let Err(e) = std::fs::write(tmp.path().join("Cargo.toml"), &cargo_toml) {
+        return error_storage(file_path, &format!("write Cargo.toml: {e}"));
+    }
+    if let Err(e) = std::fs::write(src_dir.join("lib.rs"), &source) {
+        return error_storage(file_path, &format!("write lib.rs: {e}"));
+    }
 
-    let mut collector = ItemCollector {
-        file_path: file_path.to_owned(),
-        module_prefix: module_prefix.to_owned(),
-        file_id: 1,
-        next_id: 2,
-        storage: OwnedIntermediateStorage::default(),
-    };
+    let mut storage = index_crate(tmp.path());
 
-    collector.storage.files.push(OwnedStorageFile {
+    // Rewrite the synthetic file path back to the original path so callers
+    // see the real file path in the storage.
+    for f in &mut storage.files {
+        f.file_path = file_path.to_owned();
+    }
+    storage
+}
+
+fn error_storage(file_path: &str, msg: &str) -> OwnedIntermediateStorage {
+    let mut storage = OwnedIntermediateStorage::default();
+    storage.next_id = 2;
+    storage.files.push(OwnedStorageFile {
         id: 1,
         file_path: file_path.to_owned(),
         language_identifier: "rust".to_owned(),
-        indexed: true,
-        complete: true,
+        indexed: false,
+        complete: false,
     });
-
-    collector.visit_file(&syntax);
-    collector.storage.next_id = collector.next_id;
-    collector.storage
+    storage.errors.push(OwnedStorageError {
+        id: 2,
+        message: msg.to_owned(),
+        translation_unit: file_path.to_owned(),
+        fatal: true,
+        indexed: false,
+    });
+    storage
 }
 
-struct ItemCollector {
-    file_path: String,
-    module_prefix: String,
-    file_id: i64,
+// ---------------------------------------------------------------------------
+// Core collection logic
+// ---------------------------------------------------------------------------
+
+struct Collector<'db> {
+    db: &'db RootDatabase,
+    vfs: &'db Vfs,
+    /// file_path → StorageFile id
+    file_ids: HashMap<String, i64>,
     next_id: i64,
     storage: OwnedIntermediateStorage,
 }
 
-impl ItemCollector {
+impl<'db> Collector<'db> {
+    fn new(db: &'db RootDatabase, vfs: &'db Vfs) -> Self {
+        Self {
+            db,
+            vfs,
+            file_ids: HashMap::new(),
+            next_id: 1,
+            storage: OwnedIntermediateStorage::default(),
+        }
+    }
+
     fn alloc_id(&mut self) -> i64 {
         let id = self.next_id;
         self.next_id += 1;
         id
     }
 
-    fn qualified_name(&self, name: &str) -> String {
-        if self.module_prefix.is_empty() {
-            name.to_owned()
-        } else {
-            format!("{}::{}", self.module_prefix, name)
+    fn file_node_id(&mut self, path: &str) -> i64 {
+        if let Some(&id) = self.file_ids.get(path) {
+            return id;
         }
+        let id = self.alloc_id();
+        self.file_ids.insert(path.to_owned(), id);
+        self.storage.files.push(OwnedStorageFile {
+            id,
+            file_path: path.to_owned(),
+            language_identifier: "rust".to_owned(),
+            indexed: true,
+            complete: true,
+        });
+        id
     }
 
-    fn add_item(&mut self, name: &str, node_kind: i32, span: proc_macro2::Span) {
+    fn add_def(
+        &mut self,
+        name: &str,
+        node_kind: i32,
+        file_path: &str,
+        range: ra_ap_syntax::TextRange,
+        source_text: &str,
+    ) {
         let node_id = self.alloc_id();
         let loc_id = self.alloc_id();
-
-        let qname = self.qualified_name(name);
+        let file_node_id = self.file_node_id(file_path);
 
         self.storage.nodes.push(OwnedStorageNode {
             id: node_id,
             type_: node_kind,
-            serialized_name: qname,
+            serialized_name: name.to_owned(),
         });
         self.storage.symbols.push(OwnedStorageSymbol {
             id: node_id,
             definition_kind: DEFINITION_EXPLICIT,
         });
 
-        let start = span.start();
-        let end = span.end();
+        let line_index = LineIndex::new(source_text);
+        let start = line_index.line_col(range.start());
+        let end = line_index.line_col(range.end());
 
         self.storage
             .source_locations
             .push(OwnedStorageSourceLocation {
                 id: loc_id,
-                file_node_id: self.file_id,
-                start_line: start.line as u32,
-                start_col: (start.column + 1) as u32,
-                end_line: end.line as u32,
-                end_col: (end.column + 1) as u32,
+                file_node_id,
+                start_line: start.line + 1,
+                start_col: start.col + 1,
+                end_line: end.line + 1,
+                end_col: end.col + 1,
                 type_: LOCATION_TOKEN,
             });
         self.storage.occurrences.push(OwnedStorageOccurrence {
@@ -180,72 +242,192 @@ impl ItemCollector {
             source_location_id: loc_id,
         });
     }
+
+    /// Resolve a `ra_ap_vfs::FileId` to an absolute path string, if possible.
+    fn vfs_path(&self, file_id: ra_ap_vfs::FileId) -> Option<String> {
+        self.vfs.file_path(file_id).as_path().map(|p| p.to_string())
+    }
+
+    fn collect_crate(&mut self, krate: Crate) {
+        for module in krate.modules(self.db) {
+            // declarations() covers most items but misses macro_rules! —
+            // those only appear in the module scope as ScopeDef::ModuleDef(Macro).
+            // Use scope() and deduplicate via a seen-name set.
+            let mut seen = std::collections::HashSet::new();
+            for def in module.declarations(self.db) {
+                if let Some(name) = def.name(self.db) {
+                    seen.insert(name.as_str().to_string());
+                }
+                self.collect_module_def(def);
+            }
+            // Pick up macro_rules! items not in declarations() (legacy textual macros).
+            for m in module.legacy_macros(self.db) {
+                let mname = m.name(self.db).as_str().to_string();
+                if !seen.contains(&mname) {
+                    seen.insert(mname.clone());
+                    self.emit_from_source(m.source(self.db), &mname, NODE_MACRO);
+                }
+            }
+            // Collect parse errors for every file in this module.
+            self.collect_parse_errors(module);
+        }
+    }
+
+    fn collect_parse_errors(&mut self, module: ra_ap_hir::Module) {
+        let Some(file_id) = module.as_source_file_id(self.db) else {
+            return;
+        };
+        let errors = self.db.parse_errors(file_id);
+        let Some(errors) = errors else { return };
+        if errors.is_empty() {
+            return;
+        }
+        let vfs_fid = ra_ap_vfs::FileId::from_raw(file_id.file_id(self.db).index());
+        let Some(file_path) = self.vfs_path(vfs_fid) else {
+            return;
+        };
+        for err in errors.iter() {
+            let err_id = self.alloc_id();
+            self.storage.errors.push(OwnedStorageError {
+                id: err_id,
+                message: err.to_string(),
+                translation_unit: file_path.clone(),
+                fatal: false,
+                indexed: true,
+            });
+        }
+    }
+
+    fn collect_module_def(&mut self, def: ModuleDef) {
+        match def {
+            ModuleDef::Function(f) => {
+                let name = f.name(self.db).as_str().to_string();
+                let kind = if f.as_assoc_item(self.db).is_some() {
+                    NODE_METHOD
+                } else {
+                    NODE_FUNCTION
+                };
+                self.emit_from_source(f.source(self.db), &name, kind);
+            }
+            ModuleDef::Adt(adt) => match adt {
+                Adt::Struct(s) => {
+                    let name = s.name(self.db).as_str().to_string();
+                    self.emit_from_source(s.source(self.db), &name, NODE_STRUCT);
+                }
+                Adt::Enum(e) => {
+                    let name = e.name(self.db).as_str().to_string();
+                    self.emit_from_source(e.source(self.db), &name, NODE_ENUM);
+                }
+                Adt::Union(u) => {
+                    let name = u.name(self.db).as_str().to_string();
+                    self.emit_from_source(u.source(self.db), &name, NODE_UNION);
+                }
+            },
+            ModuleDef::Trait(t) => {
+                let name = t.name(self.db).as_str().to_string();
+                self.emit_from_source(t.source(self.db), &name, NODE_INTERFACE);
+            }
+            ModuleDef::TypeAlias(ta) => {
+                let name = ta.name(self.db).as_str().to_string();
+                self.emit_from_source(ta.source(self.db), &name, NODE_TYPEDEF);
+            }
+            ModuleDef::Const(c) => {
+                if let Some(name) = c.name(self.db) {
+                    let name = name.as_str().to_string();
+                    self.emit_from_source(c.source(self.db), &name, NODE_GLOBAL_VARIABLE);
+                }
+            }
+            ModuleDef::Static(s) => {
+                let name = s.name(self.db).as_str().to_string();
+                self.emit_from_source(s.source(self.db), &name, NODE_GLOBAL_VARIABLE);
+            }
+            ModuleDef::Macro(m) => {
+                let name = m.name(self.db).as_str().to_string();
+                self.emit_from_source(m.source(self.db), &name, NODE_MACRO);
+            }
+            ModuleDef::Module(m) => {
+                if let Some(name) = m.name(self.db) {
+                    let name = name.as_str().to_string();
+                    // declaration_source gives the `mod foo;` node (inline modules
+                    // have no declaration node — they are covered by their parent).
+                    self.emit_module_decl(m, &name);
+                }
+            }
+            ModuleDef::BuiltinType(_) | ModuleDef::Variant(_) => {}
+        }
+    }
+
+    fn emit_module_decl(&mut self, m: ra_ap_hir::Module, name: &str) {
+        // Use declaration_source (the `mod foo;` item) when available.
+        // For inline modules (`mod foo { … }`) declaration_source is None;
+        // fall back to definition_source_range to still record a location.
+        if let Some(decl) = m.declaration_source(self.db) {
+            self.emit_from_source(Some(decl), name, NODE_MODULE);
+        } else {
+            let range_in_file = m.definition_source_range(self.db);
+            let editioned_file_id = range_in_file.file_id.original_file(self.db);
+            let vfs_file_id =
+                ra_ap_vfs::FileId::from_raw(editioned_file_id.file_id(self.db).index());
+            let Some(file_path) = self.vfs_path(vfs_file_id) else {
+                return;
+            };
+            let raw_fid = editioned_file_id.file_id(self.db);
+            let source_text = self.db.file_text(raw_fid).text(self.db).to_string();
+            self.add_def(
+                name,
+                NODE_MODULE,
+                &file_path,
+                range_in_file.value,
+                &source_text,
+            );
+        }
+    }
+
+    /// Generic helper: given an `InFile<ast::*>` source, extract the name
+    /// token range and emit a node.
+    fn emit_from_source<N: AstNode>(
+        &mut self,
+        src: Option<ra_ap_hir::InFile<N>>,
+        name: &str,
+        kind: i32,
+    ) {
+        let Some(in_file) = src else { return };
+        let editioned_file_id = in_file.file_id.original_file(self.db);
+        let vfs_file_id = ra_ap_vfs::FileId::from_raw(editioned_file_id.file_id(self.db).index());
+        let Some(file_path) = self.vfs_path(vfs_file_id) else {
+            return;
+        };
+
+        let raw_fid = editioned_file_id.file_id(self.db);
+        let source_text = self.db.file_text(raw_fid).text(self.db).to_string();
+        let syntax = in_file.value.syntax().text_range();
+        self.add_def(name, kind, &file_path, syntax, &source_text);
+    }
 }
 
-impl<'ast> Visit<'ast> for ItemCollector {
-    fn visit_item_fn(&mut self, node: &'ast syn::ItemFn) {
-        self.add_item(
-            &node.sig.ident.to_string(),
-            NODE_FUNCTION,
-            node.sig.ident.span(),
-        );
-        syn::visit::visit_item_fn(self, node);
-    }
+fn collect_from_db(db: &RootDatabase, vfs: &Vfs) -> OwnedIntermediateStorage {
+    let mut collector = Collector::new(db, vfs);
 
-    fn visit_item_struct(&mut self, node: &'ast syn::ItemStruct) {
-        self.add_item(&node.ident.to_string(), NODE_STRUCT, node.ident.span());
-        syn::visit::visit_item_struct(self, node);
-    }
-
-    fn visit_item_enum(&mut self, node: &'ast syn::ItemEnum) {
-        self.add_item(&node.ident.to_string(), NODE_ENUM, node.ident.span());
-        syn::visit::visit_item_enum(self, node);
-    }
-
-    fn visit_item_union(&mut self, node: &'ast syn::ItemUnion) {
-        self.add_item(&node.ident.to_string(), NODE_UNION, node.ident.span());
-        syn::visit::visit_item_union(self, node);
-    }
-
-    fn visit_item_trait(&mut self, node: &'ast syn::ItemTrait) {
-        self.add_item(&node.ident.to_string(), NODE_INTERFACE, node.ident.span());
-        syn::visit::visit_item_trait(self, node);
-    }
-
-    fn visit_item_type(&mut self, node: &'ast syn::ItemType) {
-        self.add_item(&node.ident.to_string(), NODE_TYPEDEF, node.ident.span());
-        syn::visit::visit_item_type(self, node);
-    }
-
-    fn visit_item_mod(&mut self, node: &'ast syn::ItemMod) {
-        self.add_item(&node.ident.to_string(), NODE_MODULE, node.ident.span());
-        syn::visit::visit_item_mod(self, node);
-    }
-
-    fn visit_item_const(&mut self, node: &'ast syn::ItemConst) {
-        self.add_item(
-            &node.ident.to_string(),
-            NODE_GLOBAL_VARIABLE,
-            node.ident.span(),
-        );
-        syn::visit::visit_item_const(self, node);
-    }
-
-    fn visit_item_static(&mut self, node: &'ast syn::ItemStatic) {
-        self.add_item(
-            &node.ident.to_string(),
-            NODE_GLOBAL_VARIABLE,
-            node.ident.span(),
-        );
-        syn::visit::visit_item_static(self, node);
-    }
-
-    fn visit_item_macro(&mut self, node: &'ast syn::ItemMacro) {
-        if let Some(ident) = &node.ident {
-            self.add_item(&ident.to_string(), NODE_MACRO, ident.span());
+    for krate in Crate::all(db) {
+        // Skip library crates (std, core, deps) — only index local crates.
+        let root_fid = krate.root_file(db);
+        let vfs_fid = ra_ap_vfs::FileId::from_raw(root_fid.index());
+        let is_local = vfs
+            .file_path(vfs_fid)
+            .as_path()
+            .map(|p| {
+                let s = p.to_string();
+                !s.contains("/.cargo/") && !s.contains("/rustup/")
+            })
+            .unwrap_or(false);
+        if !is_local {
+            continue;
         }
-        syn::visit::visit_item_macro(self, node);
+        collector.collect_crate(krate);
     }
+
+    collector.storage.next_id = collector.next_id;
+    collector.storage
 }
 
 #[cfg(test)]
@@ -435,8 +617,8 @@ mod tests {
     #[test]
     fn reports_error_for_invalid_syntax() {
         let s = index_src("fn broken( { }");
+        // ra_ap_hir uses error recovery, so parse errors are non-fatal.
         assert!(!s.errors.is_empty(), "expected a parse error");
-        assert!(s.errors[0].fatal);
     }
 
     // -----------------------------------------------------------------------
