@@ -76,4 +76,11 @@ if (WIN32)
 	)
 endif ()
 
+if (UNIX)
+	set(CATCH2_LOCALE_WRAPPER "${CMAKE_SOURCE_DIR}/cmake/run_with_c_locale.sh")
+	file(CHMOD "${CATCH2_LOCALE_WRAPPER}" PERMISSIONS OWNER_READ OWNER_WRITE OWNER_EXECUTE GROUP_READ GROUP_EXECUTE WORLD_READ WORLD_EXECUTE)
+	set_target_properties(Sourcetrail_test PROPERTIES
+		CROSSCOMPILING_EMULATOR "${CATCH2_LOCALE_WRAPPER}"
+	)
+endif()
 catch_discover_tests(Sourcetrail_test)
