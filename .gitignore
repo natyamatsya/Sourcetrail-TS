@@ -13,4 +13,9 @@ CMakeLists.txt.user
 # Sourcetrail databases, bookmarks
 *.srctrlbm
 *.srctrldb
+*.toml
 /build/
+
+# Rust / Cargo
+src/rust_indexer/target/
+src/rust_indexer/Cargo.lock

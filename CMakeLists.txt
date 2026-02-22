@@ -41,6 +41,7 @@ cmake_print_variables(CMAKE_CXX_COMPILER)
 
 # Configure which language(s)/package(s) should be supported:
 option(BUILD_CXX_LANGUAGE_PACKAGE  "Add C/C++ support to the Sourcetrail indexer." OFF)
+option(BUILD_RUST_LANGUAGE_PACKAGE "Add Rust support to the Sourcetrail indexer." OFF)
 option(BUILD_UNIT_TESTS_PACKAGE    "Build the corresponding language unit tests." OFF)
 
 configure_file(cmake/language_packages.h.in src/lib/language_packages.h)
@@ -148,8 +149,9 @@ target_link_libraries(External_lib_flatbuffers INTERFACE flatbuffers::flatbuffer
 include(FetchContent)
 FetchContent_Declare(
 	cpp-ipc
-	GIT_REPOSITORY https://github.com/natyamatsya/cpp-ipc.git
-	GIT_TAG        master
+	GIT_REPOSITORY  https://github.com/natyamatsya/cpp-ipc.git
+	GIT_TAG         master
+	GIT_SUBMODULES  ""
 )
 set(LIBIPC_BUILD_TESTS      OFF CACHE BOOL "" FORCE)
 set(LIBIPC_BUILD_DEMOS      OFF CACHE BOOL "" FORCE)
@@ -437,6 +439,31 @@ else()
 	else()
 		set(CPACK_GENERATOR ZIP)
 	endif()
+endif()
+
+# Rust indexer (corrosion) ---------------------------------------------------
+
+if (BUILD_RUST_LANGUAGE_PACKAGE)
+	FetchContent_Declare(
+		corrosion
+		GIT_REPOSITORY https://github.com/corrosion-rs/corrosion.git
+		GIT_TAG        v0.5
+		GIT_SUBMODULES ""
+	)
+	FetchContent_MakeAvailable(corrosion)
+
+	corrosion_import_crate(
+		MANIFEST_PATH "${CMAKE_SOURCE_DIR}/src/rust_indexer/Cargo.toml"
+		CRATES sourcetrail-rust-indexer
+	)
+
+	# Install the Rust indexer binary alongside the C++ indexer.
+	install(
+		PROGRAMS $<TARGET_FILE:sourcetrail_rust_indexer>
+		DESTINATION bin
+	)
+
+	message(STATUS "Rust language package enabled")
 endif()
 
 include(CPack)

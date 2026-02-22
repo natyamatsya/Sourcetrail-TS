@@ -5,7 +5,8 @@ namespace Sourcetrail.Ipc;
 
 enum IndexerCommandType : ubyte {
     Unknown = 0,
-    Cxx = 1
+    Cxx = 1,
+    Rust = 2
 }
 
 table IndexerCommand {
