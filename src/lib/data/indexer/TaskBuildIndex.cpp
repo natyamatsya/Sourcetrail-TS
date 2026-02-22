@@ -1,5 +1,6 @@
 #include "TaskBuildIndex.h"
 
+#include "language_packages.h"
 #include "AppPath.h"
 #include "Blackboard.h"
 #include "DialogView.h"
@@ -63,6 +64,16 @@ void TaskBuildIndex::doEnter(std::shared_ptr<Blackboard> blackboard)
 			m_processThreads.push_back(new std::thread(&TaskBuildIndex::runIndexerThread, this, processId));
 		}
 	}
+
+	// Start the Rust indexer process (one instance handles all Rust-typed commands).
+#if BUILD_RUST_LANGUAGE_PACKAGE
+	if (m_multiProcessIndexing)
+	{
+		m_runningThreadCount++;
+		m_processThreads.push_back(
+			new std::thread(&TaskBuildIndex::runRustIndexerProcess, this, logFilePath));
+	}
+#endif
 
 	blackboard->set<bool>("indexer_threads_started", true);
 }
@@ -198,6 +209,43 @@ void TaskBuildIndex::runIndexerProcess(ProcessId processId, const std::string& l
 
 	m_runningThreadCount--;
 }
+
+#if BUILD_RUST_LANGUAGE_PACKAGE
+void TaskBuildIndex::runRustIndexerProcess(const std::string& logFilePath)
+{
+	const FilePath rustIndexerPath = AppPath::getRustIndexerFilePath();
+	if (!rustIndexerPath.exists())
+	{
+		LOG_WARNING(
+			"Rust indexer not found at \"" + rustIndexerPath.str() +
+			"\" — Rust files will not be indexed");
+		m_runningThreadCount--;
+		return;
+	}
+
+	// Use ProcessId::NONE (0) as the process ID for the Rust indexer.
+	// It shares the same command/status/storage SHM channels as the C++ indexers
+	// but only pops commands of type Rust.
+	std::vector<std::string> args;
+	args.push_back("0"); // processId = 0 (NONE)
+	args.push_back(m_appUUID);
+	args.push_back(AppPath::getSharedDataDirectoryPath().getAbsolute().str());
+	args.push_back(UserPaths::getUserDataDirectoryPath().getAbsolute().str());
+	if (!logFilePath.empty())
+		args.push_back(logFilePath);
+
+	int result = 1;
+	while ((!m_indexerCommandQueueStopped || result != 0) && !m_interrupted)
+	{
+		result = utility::executeProcess(
+					 rustIndexerPath.str(), args, FilePath(), false, INFINITE_TIMEOUT)
+					 .exitCode;
+		LOG_INFO_STREAM(<< "Rust indexer process returned with " << result);
+	}
+
+	m_runningThreadCount--;
+}
+#endif
 
 void TaskBuildIndex::runIndexerThread(ProcessId processId)
 {

@@ -29,3 +29,13 @@ void AppPath::setCxxIndexerDirectoryPath(const FilePath& path)
 {
 	s_cxxIndexerDirectoryPath = path;
 }
+
+FilePath AppPath::getRustIndexerFilePath()
+{
+	std::string name("sourcetrail_rust_indexer" + FilePath::getExecutableExtension());
+
+	if (!s_cxxIndexerDirectoryPath.empty())
+		return s_cxxIndexerDirectoryPath.getConcatenated(name);
+	else
+		return s_sharedDataDirectoryPath.getConcatenated(name);
+}

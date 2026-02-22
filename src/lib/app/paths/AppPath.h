@@ -12,6 +12,8 @@ public:
 	static FilePath getCxxIndexerFilePath();
 	static void setCxxIndexerDirectoryPath(const FilePath& path);
 
+	static FilePath getRustIndexerFilePath();
+
 private:
 	static FilePath s_sharedDataDirectoryPath;
 	static FilePath s_cxxIndexerDirectoryPath;

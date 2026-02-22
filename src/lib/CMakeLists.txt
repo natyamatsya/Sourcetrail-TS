@@ -203,6 +203,8 @@ add_library(Sourcetrail_lib
 	data/indexer/IndexerCommand.h
 	data/indexer/IndexerCommandCustom.cpp
 	data/indexer/IndexerCommandCustom.h
+	data/indexer/IndexerCommandRust.cpp
+	data/indexer/IndexerCommandRust.h
 	data/indexer/IndexerCommandProvider.cpp
 	data/indexer/IndexerCommandProvider.h
 	data/indexer/IndexerCommandType.cpp
@@ -710,7 +712,6 @@ if (BUILD_CXX_LANGUAGE_PACKAGE)
 			settings/source_group/type
 	)
 endif()
-
 
 # FlatBuffer schema compilation ------------------------------------------------
 

@@ -1,7 +1,7 @@
 #ifndef TASK_BUILD_INDEX_H
 #define TASK_BUILD_INDEX_H
 
-
+#include "language_packages.h"
 #include "MessageIndexingInterrupted.h"
 #include "MessageListener.h"
 #include "Task.h"
@@ -37,6 +37,9 @@ protected:
 	
 	void runIndexerProcess(ProcessId processId, const std::string& logFilePath);
 	void runIndexerThread(ProcessId processId);
+#if BUILD_RUST_LANGUAGE_PACKAGE
+	void runRustIndexerProcess(const std::string& logFilePath);
+#endif
 	bool fetchIntermediateStorages(std::shared_ptr<Blackboard> blackboard);
 	void updateIndexingDialog(
 		std::shared_ptr<Blackboard> blackboard, const std::vector<FilePath>& sourcePaths);

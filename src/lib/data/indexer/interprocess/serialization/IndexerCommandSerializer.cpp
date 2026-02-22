@@ -6,6 +6,9 @@
 #if BUILD_CXX_LANGUAGE_PACKAGE
 #include "IndexerCommandCxx.h"
 #endif
+#if BUILD_RUST_LANGUAGE_PACKAGE
+#include "IndexerCommandRust.h"
+#endif
 #include "logging.h"
 
 #include "indexer_command_generated.h"
@@ -59,6 +62,19 @@ flatbuffers::DetachedBuffer serializeIndexerCommands(
 			for (const auto& flag : cxxCmd->getCompilerFlags())
 				flags.push_back(builder.CreateString(flag));
 			compilerFlags = builder.CreateVector(flags);
+		}
+#endif
+#if BUILD_RUST_LANGUAGE_PACKAGE
+		if (auto* rustCmd = dynamic_cast<IndexerCommandRust*>(cmd.get()))
+		{
+			type = Sourcetrail::Ipc::IndexerCommandType_Rust;
+
+			std::vector<flatbuffers::Offset<flatbuffers::String>> paths;
+			for (const auto& p : rustCmd->getIndexedPaths())
+				paths.push_back(builder.CreateString(p.str()));
+			indexedPaths = builder.CreateVector(paths);
+
+			workingDirectory = builder.CreateString(rustCmd->getWorkingDirectory().str());
 		}
 #endif
 
@@ -121,6 +137,24 @@ std::vector<std::shared_ptr<IndexerCommand>> deserializeIndexerCommands(
 				FilePath(fbCmd->source_file_path()->c_str()),
 				indexedPaths, excludeFilters, includeFilters,
 				workingDir, compilerFlags));
+			break;
+		}
+#endif
+#if BUILD_RUST_LANGUAGE_PACKAGE
+		case Sourcetrail::Ipc::IndexerCommandType_Rust:
+		{
+			std::set<FilePath> indexedPaths;
+			if (fbCmd->indexed_paths())
+				for (const auto* p : *fbCmd->indexed_paths())
+					indexedPaths.insert(FilePath(p->c_str()));
+
+			FilePath workingDir;
+			if (fbCmd->working_directory())
+				workingDir = FilePath(fbCmd->working_directory()->c_str());
+
+			result.push_back(std::make_shared<IndexerCommandRust>(
+				FilePath(fbCmd->source_file_path()->c_str()),
+				indexedPaths, workingDir));
 			break;
 		}
 #endif
