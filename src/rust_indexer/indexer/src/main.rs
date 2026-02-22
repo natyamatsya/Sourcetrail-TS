@@ -110,10 +110,9 @@ fn main() {
             log::warn!("start_indexing status update failed: {e}");
         }
 
-        // Index the file.
-        let module_prefix =
-            parser::module_prefix_from_path(&cmd.source_file_path, &cmd.working_directory);
-        let storage = parser::index_file(&cmd.source_file_path, &module_prefix);
+        // Index the whole crate rooted at working_directory (contains Cargo.toml).
+        // index_crate() loads the full HIR via rust-analyzer and covers all source files.
+        let storage = parser::index_crate(std::path::Path::new(&cmd.working_directory));
 
         log::info!(
             "indexed \"{}\" — {} nodes, {} edges, {} errors",
