@@ -211,6 +211,7 @@ void TaskBuildIndex::runIndexerProcess(ProcessId processId, const std::string& l
 		LOG_INFO_STREAM(<< "Indexer process " << processId << " returned with " + std::to_string(result));
 	}
 
+	m_interprocessIndexingStatusManager.setQueueStopped(true);
 	m_runningThreadCount--;
 }
 

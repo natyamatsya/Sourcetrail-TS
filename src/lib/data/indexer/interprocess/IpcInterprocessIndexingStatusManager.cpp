@@ -100,6 +100,20 @@ bool IpcInterprocessIndexingStatusManager::getIndexingInterrupted()
 	return readStatus(access).indexingInterrupted;
 }
 
+void IpcInterprocessIndexingStatusManager::setQueueStopped(bool stopped)
+{
+	IpcSharedMemory::ScopedAccess access(&m_shm);
+	auto data = readStatus(access);
+	data.queueStopped = stopped;
+	writeStatus(access, data);
+}
+
+bool IpcInterprocessIndexingStatusManager::getQueueStopped()
+{
+	IpcSharedMemory::ScopedAccess access(&m_shm);
+	return readStatus(access).queueStopped;
+}
+
 ProcessId IpcInterprocessIndexingStatusManager::getNextFinishedProcessId()
 {
 	IpcSharedMemory::ScopedAccess access(&m_shm);

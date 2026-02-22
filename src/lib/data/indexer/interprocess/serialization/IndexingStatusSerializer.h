@@ -19,6 +19,7 @@ struct IndexingStatusData
 	std::vector<std::string> crashedFilePaths;
 	std::vector<std::size_t> finishedProcessIds;
 	bool indexingInterrupted = false;
+	bool queueStopped = false;
 };
 
 flatbuffers::DetachedBuffer serializeIndexingStatus(const IndexingStatusData& status);

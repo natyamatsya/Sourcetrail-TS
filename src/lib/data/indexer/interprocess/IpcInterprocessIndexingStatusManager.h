@@ -21,6 +21,9 @@ public:
 	void setIndexingInterrupted(bool interrupted);
 	bool getIndexingInterrupted();
 
+	void setQueueStopped(bool stopped);
+	bool getQueueStopped();
+
 	ProcessId getNextFinishedProcessId();
 
 	std::vector<FilePath> getCurrentlyIndexedSourceFilePaths();

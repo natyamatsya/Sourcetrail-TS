@@ -21,6 +21,7 @@ table IndexingStatus {
     crashed_file_paths:     [string];
     finished_process_ids:   [uint64];
     indexing_interrupted:   bool;
+    queue_stopped:          bool;
 }
 
 root_type IndexingStatus;

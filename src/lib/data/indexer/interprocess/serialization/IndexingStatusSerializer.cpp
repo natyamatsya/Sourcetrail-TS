@@ -32,7 +32,8 @@ flatbuffers::DetachedBuffer serializeIndexingStatus(const IndexingStatusData& st
 		builder.CreateVector(fbCurrent),
 		builder.CreateVector(fbCrashed),
 		fbFinished,
-		status.indexingInterrupted);
+		status.indexingInterrupted,
+		status.queueStopped);
 
 	builder.Finish(fbStatus);
 	return builder.Release();
@@ -65,6 +66,7 @@ IndexingStatusData deserializeIndexingStatus(const uint8_t* buf, std::size_t /*l
 			result.finishedProcessIds.push_back(static_cast<std::size_t>(id));
 
 	result.indexingInterrupted = fb->indexing_interrupted();
+	result.queueStopped = fb->queue_stopped();
 
 	return result;
 }
