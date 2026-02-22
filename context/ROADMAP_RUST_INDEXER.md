@@ -178,7 +178,10 @@ for a first working prototype.
       `syn` for a prototype (single-file, no cross-file resolution).
 - [x] Wire up source locations (`start_line`, `start_col`, `end_line`,
       `end_col`) from `proc_macro2::Span` (with `span-locations` feature).
-- [ ] Upgrade to `ra_ap_*` for cross-file resolution (Phase 3b — future).
+- [x] Upgrade to `ra_ap_*` for cross-file resolution (Phase 3b — complete).
+      `load_workspace_at()` + `Module::declarations()` + `Module::legacy_macros()`
+      + `RootQueryDb::parse_errors()`. Self-indexing verified: 11 files, 64 nodes,
+      0 errors. `index_crate(working_directory)` used in production binary.
 - [x] Handle `StorageError` entries for parse failures.
 
 ---
@@ -248,16 +251,16 @@ files.
 
 ## Open Questions
 
-1. **Cross-crate resolution** — should the indexer operate per-file (like the
-   C++ indexer) or per-crate? Per-crate gives better resolution but requires
-   batching all files of a crate into one indexer invocation.
-2. **Cargo metadata** — the indexer needs `cargo metadata` output to discover
-   crate members, edition, and feature flags before invoking `ra_ap_*`.
-3. **Proc-macro expansion** — `ra_ap_hir` can expand proc-macros but requires
-   a running proc-macro server. Decide whether to support this in v1.
-4. **`libipc` crate location** — currently at
-   `inspiration/cpp-ipc/rust/libipc/` inside the Sourcetrail repo. Should it
-   be moved to `src/rust_indexer/` or kept as a path dependency?
+1. **Cross-crate resolution** — ✅ resolved: indexer operates per-crate via
+   `index_crate(working_directory)`. The C++ app sends one command per crate
+   root (`working_directory` = directory containing `Cargo.toml`).
+2. **Cargo metadata** — ✅ resolved: `ra_ap_load_cargo::load_workspace_at()`
+   runs `cargo metadata` internally via `ra_ap_project_model::CargoConfig`.
+3. **Proc-macro expansion** — deferred to v2. Currently using
+   `ProcMacroServerChoice::None`; proc-macro bodies are skipped but their
+   definitions are still indexed.
+4. **`libipc` crate location** — resolved: fetched as a git dependency from
+   `github.com/natyamatsya/cpp-ipc` (rev `32b772d`), no local path dep.
 
 ---
 
@@ -266,10 +269,12 @@ files.
 | Crate | Purpose |
 | --- | --- |
 | `flatbuffers` | FlatBuffers Rust runtime |
-| `libipc` (path dep) | cpp-ipc SHM channels |
-| `syn` | Rust AST parsing (prototype) |
-| `ra_ap_syntax` | Rust CST (production) |
-| `ra_ap_hir` | Name resolution / type inference |
-| `ra_ap_ide` | High-level IDE queries |
-| `clap` | CLI argument parsing |
+| `libipc` (git dep, `natyamatsya/cpp-ipc`) | cpp-ipc SHM channels |
+| `ra_ap_syntax` | Rust CST |
+| `ra_ap_hir` | Name resolution, HIR walk (`ModuleDef`, `HasSource`, `AsAssocItem`) |
+| `ra_ap_ide_db` | `RootDatabase`, `LineIndex`, `SourceDatabase`, `RootQueryDb` |
+| `ra_ap_project_model` | `CargoConfig` (drives `cargo metadata`) |
+| `ra_ap_load-cargo` | `load_workspace_at()` — loads full crate graph into DB |
+| `ra_ap_vfs` | `Vfs` + `FileId` — maps file IDs to paths |
+| `tempfile` | Temp crate creation in `index_file()` shim |
 | `log` + `env_logger` | Logging (mirrors C++ `LOG_INFO` macros) |
