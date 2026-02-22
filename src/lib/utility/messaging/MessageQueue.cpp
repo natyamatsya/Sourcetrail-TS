@@ -23,6 +23,8 @@ std::shared_ptr<MessageQueue> MessageQueue::getInstance()
 
 MessageQueue::~MessageQueue()
 {
+	stopMessageLoop();
+
 	std::lock_guard<std::mutex> lock(m_listenersMutex);
 	for (size_t i = 0; i < m_listeners.size(); i++)
 	{

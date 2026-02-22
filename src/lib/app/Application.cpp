@@ -87,6 +87,9 @@ void Application::destroyInstance()
 	TaskManager::destroyScheduler(TabIds::background());
 	TaskManager::destroyScheduler(TabIds::app());
 
+	if (GarbageCollectorImpl* gc = GarbageCollectorImpl::getInstance())
+		gc->stop();
+
 	s_instance.reset();
 }
 
@@ -133,12 +136,6 @@ Application::~Application()
 	if (m_hasGUI)
 	{
 		m_mainView->saveLayout();
-	}
-
-	GarbageCollectorImpl* collector = GarbageCollectorImpl::getInstance();
-	if (collector != nullptr)
-	{
-		collector->stop();
 	}
 }
 

@@ -39,7 +39,15 @@ IpcSharedMemoryGarbageCollector::IpcSharedMemoryGarbageCollector()
 {
 }
 
-IpcSharedMemoryGarbageCollector::~IpcSharedMemoryGarbageCollector() = default;
+IpcSharedMemoryGarbageCollector::~IpcSharedMemoryGarbageCollector()
+{
+	// Signal the thread to stop and join it without touching any IPC resources.
+	// IPC resources (m_shm, m_mutex) may already be invalid during static
+	// destruction — stop() handles the full cleanup when called explicitly.
+	m_loopIsRunning = false;
+	if (m_thread && m_thread->joinable())
+		m_thread->join();
+}
 
 void IpcSharedMemoryGarbageCollector::run(const std::string& uuid)
 {
@@ -64,8 +72,11 @@ void IpcSharedMemoryGarbageCollector::stop()
 
 	m_loopIsRunning = false;
 
-	m_thread->join();
-	m_thread.reset();
+	if (m_thread && m_thread->joinable())
+	{
+		m_thread->join();
+		m_thread.reset();
+	}
 
 	{
 		std::lock_guard<std::mutex> lock(m_sharedMemoryNamesMutex);
