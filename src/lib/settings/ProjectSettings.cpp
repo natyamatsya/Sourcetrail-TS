@@ -13,6 +13,9 @@
 #	include "SourceGroupSettingsCxxCdb.h"
 #	include "SourceGroupSettingsCxxCodeblocks.h"
 #endif	  // BUILD_CXX_LANGUAGE_PACKAGE
+#if BUILD_RUST_LANGUAGE_PACKAGE
+#	include "SourceGroupSettingsRustEmpty.h"
+#endif	  // BUILD_RUST_LANGUAGE_PACKAGE
 
 const std::string ProjectSettings::PROJECT_FILE_EXTENSION = ".srctrlprj";
 const std::string ProjectSettings::BOOKMARK_DB_FILE_EXTENSION = ".srctrlbm";
@@ -166,6 +169,11 @@ std::vector<std::shared_ptr<SourceGroupSettings>> ProjectSettings::getAllSourceG
 			settings = std::make_shared<SourceGroupSettingsCxxCodeblocks>(id, this);
 			break;
 #endif	  // BUILD_CXX_LANGUAGE_PACKAGE
+#if BUILD_RUST_LANGUAGE_PACKAGE
+		case SourceGroupType::RUST_EMPTY:
+			settings = std::make_shared<SourceGroupSettingsRustEmpty>(id, this);
+			break;
+#endif	  // BUILD_RUST_LANGUAGE_PACKAGE
 		case SourceGroupType::CUSTOM_COMMAND:
 			settings = std::make_shared<SourceGroupSettingsCustomCommand>(id, this);
 			break;

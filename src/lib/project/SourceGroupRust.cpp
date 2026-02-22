@@ -4,6 +4,7 @@
 #include "IndexerCommandRust.h"
 #include "RefreshInfo.h"
 #include "SourceGroupSettingsRustEmpty.h"
+#include "utility.h"
 
 SourceGroupRust::SourceGroupRust(std::shared_ptr<SourceGroupSettingsRustEmpty> settings)
 	: m_settings(std::move(settings))
