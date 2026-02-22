@@ -167,6 +167,24 @@ target_include_directories(External_lib_ipc SYSTEM INTERFACE
 	"${cpp-ipc_SOURCE_DIR}/cpp/libipc/include"
 )
 
+# qt-json-query ----------------------------------------------------------------
+
+set(BUILD_TESTING_SAVED ${BUILD_TESTING})
+set(BUILD_TESTING         OFF CACHE BOOL "" FORCE)
+set(BUILD_BENCHMARKING    OFF CACHE BOOL "" FORCE)
+set(JSON_QUERY_BUILD_EXAMPLES OFF CACHE BOOL "" FORCE)
+set(JSON_QUERY_BUILD_PERF     OFF CACHE BOOL "" FORCE)
+FetchContent_Declare(
+	qt-json-query
+	SOURCE_DIR "${CMAKE_SOURCE_DIR}/inspiration/qt-json-query"
+)
+FetchContent_MakeAvailable(qt-json-query)
+set(BUILD_TESTING ${BUILD_TESTING_SAVED} CACHE BOOL "" FORCE)
+message(STATUS "Integrated qt-json-query from inspiration/")
+
+add_library(External_lib_json_query INTERFACE)
+target_link_libraries(External_lib_json_query INTERFACE json_query)
+
 # Qt ---------------------------------------------------------------------------
 
 set(QT_NO_PRIVATE_MODULE_WARNING ON)

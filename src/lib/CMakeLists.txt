@@ -103,6 +103,7 @@ target_link_libraries(Sourcetrail_lib
 		External_lib_cli11
 		External_lib_flatbuffers
 		External_lib_ipc
+		External_lib_json_query
 )
 
 if (UNIX)

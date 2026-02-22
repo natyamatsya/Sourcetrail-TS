@@ -1,0 +1,365 @@
+// CMakeFileAPIReader.cpp
+//
+// Reads the CMake File-based API (cmake.org/cmake/help/latest/manual/cmake-file-api.7.html)
+// reply from a configured build directory.
+//
+// Query/reply directory layout:
+//   <build>/.cmake/api/v1/query/client-sourcetrail/query.json   (written by us)
+//   <build>/.cmake/api/v1/reply/index-<hash>.json               (written by cmake)
+//   <build>/.cmake/api/v1/reply/codemodel-v2-<hash>.json
+//   <build>/.cmake/api/v1/reply/target-v2-<name>-<hash>.json
+//   <build>/.cmake/api/v1/reply/cmakeFiles-v1-<hash>.json
+
+#include "CMakeFileAPIReader.h"
+
+#include <QDir>
+#include <QFile>
+#include <QJsonArray>
+#include <QJsonDocument>
+#include <QJsonObject>
+#include <QProcess>
+#include <QRegularExpression>
+
+#include "json-query/JSONQuery"
+#include "logging.h"
+
+using namespace json_query;
+
+namespace
+{
+
+// ---------------------------------------------------------------------------
+// Helpers
+// ---------------------------------------------------------------------------
+
+QJsonDocument readJsonFile(const FilePath& path)
+{
+	QFile file{QString::fromStdString(path.str())};
+	if (!file.open(QIODevice::ReadOnly))
+	{
+		LOG_WARNING("CMakeFileAPIReader: cannot open " + path.str());
+		return {};
+	}
+	QJsonParseError err{};
+	const auto doc{QJsonDocument::fromJson(file.readAll(), &err)};
+	if (err.error != QJsonParseError::NoError)
+	{
+		LOG_WARNING(
+			"CMakeFileAPIReader: JSON parse error in " + path.str() + ": " +
+			err.errorString().toStdString());
+		return {};
+	}
+	return doc;
+}
+
+// Returns the first file in dir matching the given prefix, or empty FilePath.
+FilePath findFileWithPrefix(const FilePath& dir, const std::string& prefix)
+{
+	const QDir qdir{QString::fromStdString(dir.str())};
+	const auto entries{qdir.entryList(
+		{QString::fromStdString(prefix + "*.json")}, QDir::Files, QDir::Name)};
+	if (entries.isEmpty())
+		return {};
+	return dir.getConcatenated("/" + entries.first().toStdString());
+}
+
+// Glob match: empty pattern matches everything, otherwise simple wildcard.
+bool matchesGlob(const std::string& name, const std::string& glob)
+{
+	if (glob.empty())
+		return true;
+	const auto pattern{
+		QRegularExpression::wildcardToRegularExpression(QString::fromStdString(glob))};
+	return QRegularExpression{pattern}.match(QString::fromStdString(name)).hasMatch();
+}
+
+// ---------------------------------------------------------------------------
+// JSON Schema for codemodel-v2 (minimal — validates kind and version)
+// ---------------------------------------------------------------------------
+
+const QJsonObject k_codemodelSchema{
+	{"type", "object"},
+	{"required", QJsonArray{"kind", "version", "configurations"}},
+	{"properties",
+	 QJsonObject{
+		 {"kind", QJsonObject{{"type", "string"}, {"const", "codemodel"}}},
+		 {"version",
+		  QJsonObject{
+			  {"type", "object"},
+			  {"required", QJsonArray{"major"}},
+			  {"properties",
+			   QJsonObject{{"major", QJsonObject{{"type", "integer"}, {"minimum", 2}}}}}}},
+		 {"configurations", QJsonObject{{"type", "array"}}},
+	 }}};
+
+}	 // namespace
+
+// ---------------------------------------------------------------------------
+// CMakeFileAPIReader
+// ---------------------------------------------------------------------------
+
+CMakeFileAPIReader::CMakeFileAPIReader(const FilePath& buildDir)
+	: m_buildDir{buildDir}
+	, m_queryDir{buildDir.getConcatenated("/.cmake/api/v1/query/client-sourcetrail")}
+	, m_replyDir{buildDir.getConcatenated("/.cmake/api/v1/reply")}
+{
+}
+
+const FilePath& CMakeFileAPIReader::buildDir() const
+{
+	return m_buildDir;
+}
+
+bool CMakeFileAPIReader::hasReply() const
+{
+	return !findIndexFile().empty();
+}
+
+bool CMakeFileAPIReader::ensureReply(std::function<void(const std::string&)> progress)
+{
+	// 1. Write the query file so CMake knows what to generate.
+	{
+		const QString queryPath{
+			QString::fromStdString(m_queryDir.str()) + "/query.json"};
+		QDir{}.mkpath(QString::fromStdString(m_queryDir.str()));
+		QFile f{queryPath};
+		if (!f.open(QIODevice::WriteOnly | QIODevice::Truncate))
+		{
+			LOG_ERROR("CMakeFileAPIReader: cannot write query file: " + queryPath.toStdString());
+			return false;
+		}
+		f.write(R"({"requests":[{"kind":"codemodel","version":2},{"kind":"cmakeFiles","version":1},{"kind":"toolchains","version":1}]})"
+				"\n");
+	}
+
+	if (hasReply())
+		return true;
+
+	// 2. No reply yet — run cmake to generate it.
+	if (progress)
+		progress("Running cmake to generate File API reply...");
+
+	QProcess proc{};
+	proc.setWorkingDirectory(QString::fromStdString(m_buildDir.str()));
+	proc.start("cmake", {QString::fromStdString(m_buildDir.str())});
+	if (!proc.waitForFinished(60'000))
+	{
+		LOG_ERROR("CMakeFileAPIReader: cmake timed out or failed to start");
+		return false;
+	}
+	if (proc.exitCode() != 0)
+	{
+		LOG_WARNING(
+			"CMakeFileAPIReader: cmake exited with code " +
+			std::to_string(proc.exitCode()) + ": " +
+			proc.readAllStandardError().toStdString());
+		return false;
+	}
+
+	if (progress)
+		progress("CMake File API reply generated.");
+
+	return hasReply();
+}
+
+FilePath CMakeFileAPIReader::findIndexFile() const
+{
+	return findFileWithPrefix(m_replyDir, "index-");
+}
+
+std::vector<CMakeFileAPIReader::SourceEntry> CMakeFileAPIReader::getSources(
+	const std::string& configuration, const std::string& targetGlob) const
+{
+	const auto indexPath{findIndexFile()};
+	if (indexPath.empty())
+	{
+		LOG_WARNING("CMakeFileAPIReader: no reply index found in " + m_replyDir.str());
+		return {};
+	}
+
+	const auto indexDoc{readJsonFile(indexPath)};
+	if (indexDoc.isNull())
+		return {};
+
+	// Find the codemodel-v2 reply filename via JSONPath.
+	const auto pathResult{
+		JSONPath::create(u"$.reply[?(@.kind == \"codemodel\" && @.version.major >= 2)].jsonFile")};
+	if (!pathResult)
+	{
+		LOG_ERROR(
+			"CMakeFileAPIReader: JSONPath parse error: " +
+			pathResult.error().formatted_message().toStdString());
+		return {};
+	}
+	const auto codemodelFiles{pathResult->evaluate(indexDoc)};
+	if (!codemodelFiles || codemodelFiles->isEmpty())
+	{
+		LOG_WARNING("CMakeFileAPIReader: no codemodel-v2 entry in reply index");
+		return {};
+	}
+	const auto codemodelFilename{codemodelFiles->first().toString().toStdString()};
+	const auto codemodelPath{m_replyDir.getConcatenated("/" + codemodelFilename)};
+	const auto codemodelDoc{readJsonFile(codemodelPath)};
+	if (codemodelDoc.isNull())
+		return {};
+
+	// Validate the codemodel document against our schema.
+	const auto schema{JSONSchema::create(QJsonValue{k_codemodelSchema})};
+	if (!schema)
+	{
+		LOG_ERROR(
+			"CMakeFileAPIReader: schema compile error: " +
+			schema.error().formatted_message().toStdString());
+		return {};
+	}
+	const auto validation{schema->validate(codemodelDoc.object())};
+	if (!validation.isValid())
+	{
+		for (const auto& err : validation.errors())
+			LOG_WARNING(
+				"CMakeFileAPIReader: codemodel schema violation: " +
+				err.message.toStdString());
+		return {};
+	}
+
+	// Pick the configuration to use.
+	const auto configs{codemodelDoc.object()["configurations"].toArray()};
+	QJsonObject chosenConfig{};
+	for (const auto& c : configs)
+	{
+		const auto name{c.toObject()["name"].toString().toStdString()};
+		if (configuration.empty() || name == configuration)
+		{
+			chosenConfig = c.toObject();
+			break;
+		}
+	}
+	if (chosenConfig.isEmpty())
+	{
+		LOG_WARNING("CMakeFileAPIReader: configuration '" + configuration + "' not found");
+		return {};
+	}
+
+	// Collect sources from each target.
+	std::vector<SourceEntry> result{};
+	const auto targets{chosenConfig["targets"].toArray()};
+	for (const auto& tRef : targets)
+	{
+		const auto tObj{tRef.toObject()};
+		const auto targetName{tObj["name"].toString().toStdString()};
+		if (!matchesGlob(targetName, targetGlob))
+			continue;
+
+		const auto targetFilename{tObj["jsonFile"].toString().toStdString()};
+		const auto targetPath{m_replyDir.getConcatenated("/" + targetFilename)};
+		const auto targetDoc{readJsonFile(targetPath)};
+		if (targetDoc.isNull())
+			continue;
+
+		const auto targetObj{targetDoc.object()};
+		const auto targetType{targetObj["type"].toString().toStdString()};
+
+		// Build compile groups: index → CompileGroup.
+		std::vector<CompileGroup> compileGroups{};
+		for (const auto& cgVal : targetObj["compileGroups"].toArray())
+		{
+			const auto cg{cgVal.toObject()};
+			CompileGroup group{};
+			group.language = cg["language"].toString().toStdString();
+
+			for (const auto& incVal : cg["includes"].toArray())
+			{
+				const auto inc{incVal.toObject()};
+				const auto incPath{FilePath{inc["path"].toString().toStdString()}};
+				if (inc["isSystem"].toBool(false))
+					group.systemIncludes.push_back(incPath);
+				else
+					group.includes.push_back(incPath);
+			}
+
+			for (const auto& defVal : cg["defines"].toArray())
+				group.defines.push_back(defVal.toObject()["define"].toString().toStdString());
+
+			for (const auto& fragVal : cg["compileCommandFragments"].toArray())
+				group.compileFlags.push_back(
+					fragVal.toObject()["fragment"].toString().toStdString());
+
+			compileGroups.push_back(std::move(group));
+		}
+
+		// Map sources to their compile groups.
+		for (const auto& srcVal : targetObj["sources"].toArray())
+		{
+			const auto src{srcVal.toObject()};
+			const auto rawPath{src["path"].toString().toStdString()};
+
+			SourceEntry entry{};
+			// Paths in the reply are relative to the build dir if not absolute.
+			entry.path = FilePath{rawPath}.isAbsolute()
+				? FilePath{rawPath}
+				: m_buildDir.getConcatenated("/" + rawPath);
+			entry.isGenerated = src["isGenerated"].toBool(false);
+			entry.targetName = targetName;
+			entry.targetType = targetType;
+
+			const auto cgIdx{src["compileGroupIndex"]};
+			if (!cgIdx.isUndefined())
+			{
+				const auto idx{static_cast<std::size_t>(cgIdx.toInt())};
+				if (idx < compileGroups.size())
+					entry.compileGroup = compileGroups[idx];
+			}
+
+			result.push_back(std::move(entry));
+		}
+	}
+
+	return result;
+}
+
+std::vector<FilePath> CMakeFileAPIReader::getCMakeInputFiles() const
+{
+	const auto indexPath{findIndexFile()};
+	if (indexPath.empty())
+		return {};
+
+	const auto indexDoc{readJsonFile(indexPath)};
+	if (indexDoc.isNull())
+		return {};
+
+	// Find the cmakeFiles-v1 reply filename.
+	const auto pathResult{
+		JSONPath::create(u"$.reply[?(@.kind == \"cmakeFiles\")].jsonFile")};
+	if (!pathResult)
+		return {};
+
+	const auto files{pathResult->evaluate(indexDoc)};
+	if (!files || files->isEmpty())
+		return {};
+
+	const auto cmakeFilesPath{
+		m_replyDir.getConcatenated("/" + files->first().toString().toStdString())};
+	const auto cmakeFilesDoc{readJsonFile(cmakeFilesPath)};
+	if (cmakeFilesDoc.isNull())
+		return {};
+
+	// Extract all input file paths using JSONPath.
+	const auto inputsPath{JSONPath::create(u"$.inputs[*].path")};
+	if (!inputsPath)
+		return {};
+
+	const auto inputs{inputsPath->evaluate(cmakeFilesDoc)};
+	if (!inputs)
+		return {};
+
+	std::vector<FilePath> result{};
+	result.reserve(static_cast<std::size_t>(inputs->size()));
+	for (const auto& v : *inputs)
+	{
+		const auto rawPath{v.toString().toStdString()};
+		result.push_back(
+			FilePath{rawPath}.isAbsolute() ? FilePath{rawPath}
+										   : m_buildDir.getConcatenated("/" + rawPath));
+	}
+	return result;
+}

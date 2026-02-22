@@ -1,0 +1,84 @@
+#pragma once
+
+#include <functional>
+#include <optional>
+#include <string>
+#include <vector>
+
+#include "FilePath.h"
+
+// Reads the CMake File-based API reply from a configured build directory.
+//
+// Usage:
+//   1. Construct with the build directory path.
+//   2. Call ensureReply() to write the query file and (optionally) trigger
+//      a CMake reconfigure so the reply is generated.
+//   3. Call getSources() to get the list of source files with compile info.
+//   4. Call getCMakeInputFiles() to get files to watch for staleness.
+//
+// The query file is written to:
+//   <buildDir>/.cmake/api/v1/query/client-sourcetrail/query.json
+//
+// The reply is read from:
+//   <buildDir>/.cmake/api/v1/reply/
+//
+// Requires CMake >= 3.14.
+class CMakeFileAPIReader
+{
+public:
+	struct CompileGroup
+	{
+		std::string language;					// "CXX", "C"
+		std::vector<FilePath> includes;			// non-system include paths
+		std::vector<FilePath> systemIncludes;	// system include paths
+		std::vector<std::string> defines;		// preprocessor defines
+		std::vector<std::string> compileFlags;	// extra compiler flags
+	};
+
+	struct SourceEntry
+	{
+		FilePath path;
+		bool isGenerated{false};
+		std::optional<CompileGroup> compileGroup;
+		std::string targetName;
+		std::string targetType;	// EXECUTABLE, STATIC_LIBRARY, SHARED_LIBRARY, ...
+	};
+
+	explicit CMakeFileAPIReader(const FilePath& buildDir);
+
+	// Returns true if a valid File API reply already exists in the build dir.
+	bool hasReply() const;
+
+	// Writes the query file. If the reply does not yet exist, runs
+	//   cmake <buildDir>
+	// to trigger a reconfigure. Returns true on success.
+	// progress() is called with status messages during the cmake run.
+	bool ensureReply(std::function<void(const std::string&)> progress = {});
+
+	// Returns all source entries across all targets in the given configuration.
+	// Pass an empty string to use the first available configuration.
+	// Returns an empty vector if the reply is absent or malformed.
+	std::vector<SourceEntry> getSources(
+		const std::string& configuration = {},
+		const std::string& targetGlob = {}) const;
+
+	// Returns all CMake input files (CMakeLists.txt, .cmake files) listed in
+	// the cmakeFiles-v1 reply. Watch these for staleness detection.
+	std::vector<FilePath> getCMakeInputFiles() const;
+
+	// Returns the build directory this reader was constructed with.
+	const FilePath& buildDir() const;
+
+private:
+	FilePath m_buildDir;
+	FilePath m_queryDir;
+	FilePath m_replyDir;
+
+	// Returns the path to the index-*.json reply file, or empty if absent.
+	FilePath findIndexFile() const;
+
+	// Reads a JSON file from the reply directory and returns its contents.
+	// Returns a null QJsonObject on failure.
+	struct ReplyIndex;
+	std::optional<ReplyIndex> readIndex() const;
+};
