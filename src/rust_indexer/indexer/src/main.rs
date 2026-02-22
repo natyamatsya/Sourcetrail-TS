@@ -9,14 +9,11 @@
 //   3. For each command: update status → index file → push storage → finalise status.
 //   4. Exit when the queue is empty or indexing_interrupted is set.
 
-mod ipc;
-mod parser;
-mod schemas;
-
 use std::thread;
 use std::time::Duration;
 
-use ipc::{CommandChannel, StatusChannel, StorageChannel};
+use sourcetrail_rust_indexer_lib::ipc::{CommandChannel, StatusChannel, StorageChannel};
+use sourcetrail_rust_indexer_lib::parser;
 
 fn main() {
     env_logger::init();

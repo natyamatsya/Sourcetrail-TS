@@ -3,9 +3,17 @@ name = "sourcetrail-rust-indexer"
 version = "0.1.0"
 edition = "2021"
 
+[lib]
+name = "sourcetrail_rust_indexer_lib"
+path = "src/lib.rs"
+
 [[bin]]
 name = "sourcetrail_rust_indexer"
 path = "src/main.rs"
+
+[[bin]]
+name = "index_self"
+path = "src/bin/index_self.rs"
 
 [dependencies]
 libipc = { git = "https://github.com/natyamatsya/cpp-ipc.git", rev = "32b772d" }
