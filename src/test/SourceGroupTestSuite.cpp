@@ -21,12 +21,10 @@
 #if BUILD_CXX_LANGUAGE_PACKAGE
 #	include "IndexerCommandCxx.h"
 #	include "SourceGroupCxxCdb.h"
-#	include "SourceGroupCxxCodeblocks.h"
 #	include "SourceGroupCxxEmpty.h"
 #	include "SourceGroupSettingsCEmpty.h"
 #	include "SourceGroupSettingsCppEmpty.h"
 #	include "SourceGroupSettingsCxxCdb.h"
-#	include "SourceGroupSettingsCxxCodeblocks.h"
 #endif	  // BUILD_CXX_LANGUAGE_PACKAGE
 
 using namespace std;
@@ -291,61 +289,6 @@ TEST_CASE("source group cxx cpp empty generates expected output")
 
 	applicationSettings->setHeaderSearchPaths(storedHeaderSearchPaths);
 	applicationSettings->setFrameworkSearchPaths(storedFrameworkSearchPaths);
-}
-
-TEST_CASE("source group cxx codeblocks generates expected output")
-{
-	SharedDataDirectorySwitcher sharedDataDirectorySwitcher((FilePath()));
-
-	const std::string projectName = "cxx_codeblocks";
-	const FilePath cbpPath = getInputDirectoryPath(projectName).concatenate("project.cbp");
-	const FilePath sourceCbpPath =
-		getInputDirectoryPath(projectName).concatenate("project.cbp.in");
-
-	FileSystem::remove(cbpPath);
-
-	{
-		std::ofstream fileStream;
-		fileStream.open(cbpPath.str(), std::ios::app);
-		fileStream << utility::replace(
-			TextAccess::createFromFile(sourceCbpPath)->getText(),
-			"<source_path>",
-			getInputDirectoryPath(projectName).concatenate("src").getAbsolute().str());
-		fileStream.close();
-	}
-
-	ProjectSettings projectSettings;
-	projectSettings.setProjectFilePath("non_existent_project", getInputDirectoryPath(projectName));
-
-	std::shared_ptr<SourceGroupSettingsCxxCodeblocks> sourceGroupSettings =
-		std::make_shared<SourceGroupSettingsCxxCodeblocks>("fake_id", &projectSettings);
-	sourceGroupSettings->setCodeblocksProjectPath(cbpPath);
-	sourceGroupSettings->setCppStandard("c++11");
-	sourceGroupSettings->setCStandard("c11");
-	sourceGroupSettings->setExcludeFilterStrings({"**/excluded/**"});
-	sourceGroupSettings->setIndexedHeaderPaths({FilePath("test/indexed/header/path")});
-	sourceGroupSettings->setSourceExtensions({".cpp", ".c"});
-	sourceGroupSettings->setHeaderSearchPaths(
-		{getInputDirectoryPath(projectName).concatenate("header_search/local")});
-	sourceGroupSettings->setFrameworkSearchPaths(
-		{getInputDirectoryPath(projectName).concatenate("framework_search/local")});
-	sourceGroupSettings->setCompilerFlags({"-local-flag"});
-
-	std::shared_ptr<ApplicationSettings> applicationSettings = ApplicationSettings::getInstance();
-
-	std::vector<FilePath> storedHeaderSearchPaths = applicationSettings->getHeaderSearchPaths();
-	std::vector<FilePath> storedFrameworkSearchPaths = applicationSettings->getFrameworkSearchPaths();
-
-	applicationSettings->setHeaderSearchPaths({FilePath("test/header/search/path")});
-	applicationSettings->setFrameworkSearchPaths({FilePath("test/framework/search/path")});
-
-	generateAndCompareExpectedOutput(
-		projectName, std::make_shared<SourceGroupCxxCodeblocks>(sourceGroupSettings));
-
-	applicationSettings->setHeaderSearchPaths(storedHeaderSearchPaths);
-	applicationSettings->setFrameworkSearchPaths(storedFrameworkSearchPaths);
-
-	FileSystem::remove(cbpPath);
 }
 
 TEST_CASE("source group cxx cdb generates expected output")

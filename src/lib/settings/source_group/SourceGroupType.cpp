@@ -11,8 +11,8 @@ std::string sourceGroupTypeToString(SourceGroupType v)
 		return "C++ Source Group";
 	case SourceGroupType::CXX_CDB:
 		return "C/C++ from Compilation Database";
-	case SourceGroupType::CXX_CODEBLOCKS:
-		return "C/C++ from Code::Blocks";
+	case SourceGroupType::CXX_CMAKE_FILE_API:
+		return "C/C++ from CMake File API";
 	case SourceGroupType::CXX_VS:
 		return "C/C++ from Visual Studio";
 #endif	  // BUILD_CXX_LANGUAGE_PACKAGE
@@ -39,8 +39,8 @@ std::string sourceGroupTypeToProjectSetupString(SourceGroupType v)
 		return "Empty C++ Source Group";
 	case SourceGroupType::CXX_CDB:
 		return "C/C++ from Compilation Database";
-	case SourceGroupType::CXX_CODEBLOCKS:
-		return "C/C++ from Code::Blocks";
+	case SourceGroupType::CXX_CMAKE_FILE_API:
+		return "C/C++ from CMake File API";
 	case SourceGroupType::CXX_VS:
 		return "C/C++ from Visual Studio";
 #endif	  // BUILD_CXX_LANGUAGE_PACKAGE
@@ -71,9 +71,9 @@ SourceGroupType stringToSourceGroupType(const std::string& v)
 	{
 		return SourceGroupType::CXX_CDB;
 	}
-	if (v == sourceGroupTypeToString(SourceGroupType::CXX_CODEBLOCKS))
+	if (v == sourceGroupTypeToString(SourceGroupType::CXX_CMAKE_FILE_API))
 	{
-		return SourceGroupType::CXX_CODEBLOCKS;
+		return SourceGroupType::CXX_CMAKE_FILE_API;
 	}
 	if (v == sourceGroupTypeToString(SourceGroupType::CXX_VS))
 	{

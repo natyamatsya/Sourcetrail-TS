@@ -4,15 +4,12 @@
 #include "QtProjectWizardContentPaths.h"
 
 class SourceGroupSettingsCxxCdb;
-class SourceGroupSettingsCxxCodeblocks;
 
 class QtProjectWizardContentPathsIndexedHeaders: public QtProjectWizardContentPaths
 {
 	Q_OBJECT
 
 public:
-	static std::vector<FilePath> getIndexedPathsDerivedFromCodeblocksProject(
-		std::shared_ptr<const SourceGroupSettingsCxxCodeblocks> settings);
 	static std::vector<FilePath> getIndexedPathsDerivedFromCDB(
 		std::shared_ptr<const SourceGroupSettingsCxxCdb> settings);
 

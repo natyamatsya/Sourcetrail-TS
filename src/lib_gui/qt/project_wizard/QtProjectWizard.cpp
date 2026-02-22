@@ -39,7 +39,6 @@
 #	include "QtProjectWizardContentCxxPchFlags.h"
 #	include "QtProjectWizardContentFlags.h"
 #	include "QtProjectWizardContentPathCDB.h"
-#	include "QtProjectWizardContentPathCodeblocksProject.h"
 #	include "QtProjectWizardContentPathCxxPch.h"
 #	include "QtProjectWizardContentPathsFrameworkSearch.h"
 #	include "QtProjectWizardContentPathsFrameworkSearchGlobal.h"
@@ -50,7 +49,6 @@
 #	include "SourceGroupSettingsCEmpty.h"
 #	include "SourceGroupSettingsCppEmpty.h"
 #	include "SourceGroupSettingsCxxCdb.h"
-#	include "SourceGroupSettingsCxxCodeblocks.h"
 #endif	  // BUILD_CXX_LANGUAGE_PACKAGE
 
 #if BUILD_RUST_LANGUAGE_PACKAGE
@@ -202,37 +200,6 @@ void addSourceGroupContents<SourceGroupSettingsCxxCdb>(
 	group->addContent(new QtProjectWizardContentFlags(settings, window, true));
 	group->addContent(new QtProjectWizardContentPathCxxPch(settings, settings, window));
 	group->addContent(new QtProjectWizardContentCxxPchFlags(settings, window, true));
-}
-
-template <>
-void addSourceGroupContents<SourceGroupSettingsCxxCodeblocks>(
-	QtProjectWizardContentGroup* group,
-	std::shared_ptr<SourceGroupSettingsCxxCodeblocks> settings,
-	QtProjectWizardWindow* window)
-{
-	group->addContent(new QtProjectWizardContentCppStandard(settings, window));
-	group->addContent(new QtProjectWizardContentCStandard(settings, window));
-	group->addContent(new QtProjectWizardContentPathCodeblocksProject(settings, window));
-	group->addSpace();
-
-	group->addContent(
-		new QtProjectWizardContentPathsIndexedHeaders(settings, window, "Code::Blocks Project"));
-	group->addContent(new QtProjectWizardContentPathsExclude(settings, window));
-	group->addContent(new QtProjectWizardContentExtensions(settings, window));
-	group->addSpace();
-
-	group->addContent(new QtProjectWizardContentPathsHeaderSearch(settings, window, true));
-	group->addContent(new QtProjectWizardContentPathsHeaderSearchGlobal(window));
-	group->addSpace();
-
-	if constexpr (utility::Platform::isMac())
-	{
-		group->addContent(new QtProjectWizardContentPathsFrameworkSearch(settings, window, true));
-		group->addContent(new QtProjectWizardContentPathsFrameworkSearchGlobal(window));
-		group->addSpace();
-	}
-
-	group->addContent(new QtProjectWizardContentFlags(settings, window, true));
 }
 
 #endif	  // BUILD_CXX_LANGUAGE_PACKAGE
@@ -642,12 +609,6 @@ void QtProjectWizard::selectedSourceGroupChanged(int index)
 	{
 		addSourceGroupContents(summary, settings, this);
 	}
-	else if (
-		std::shared_ptr<SourceGroupSettingsCxxCodeblocks> settings =
-			std::dynamic_pointer_cast<SourceGroupSettingsCxxCodeblocks>(group))
-	{
-		addSourceGroupContents(summary, settings, this);
-	}
 #endif	  // BUILD_CXX_LANGUAGE_PACKAGE
 #if BUILD_RUST_LANGUAGE_PACKAGE
 	else if (
@@ -878,15 +839,6 @@ void QtProjectWizard::selectedProjectType(SourceGroupType sourceGroupType)
 		settings = std::make_shared<SourceGroupSettingsCxxCdb>(
 			sourceGroupId, m_projectSettings.get());
 		break;
-	case SourceGroupType::CXX_CODEBLOCKS:
-	{
-		std::shared_ptr<SourceGroupSettingsCxxCodeblocks> cxxSettings =
-			std::make_shared<SourceGroupSettingsCxxCodeblocks>(
-				sourceGroupId, m_projectSettings.get());
-		addMsvcCompatibilityFlagsOnDemand(cxxSettings);
-		settings = cxxSettings;
-	}
-	break;
 	case SourceGroupType::CXX_VS:
 		newSourceGroupFromVS();
 		return;

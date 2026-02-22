@@ -33,8 +33,6 @@ LanguageType getLanguageTypeForSourceGroupType(SourceGroupType t)
 		return LanguageType::CXX;
 	case SourceGroupType::CXX_CDB:
 		return LanguageType::CXX;
-	case SourceGroupType::CXX_CODEBLOCKS:
-		return LanguageType::CXX;
 	case SourceGroupType::CXX_VS:
 		return LanguageType::CXX;
 #endif	  // BUILD_CXX_LANGUAGE_PACKAGE

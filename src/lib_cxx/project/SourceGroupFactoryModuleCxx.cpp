@@ -1,12 +1,10 @@
 #include "SourceGroupFactoryModuleCxx.h"
 
 #include "SourceGroupCxxCdb.h"
-#include "SourceGroupCxxCodeblocks.h"
 #include "SourceGroupCxxEmpty.h"
 #include "SourceGroupSettingsCEmpty.h"
 #include "SourceGroupSettingsCppEmpty.h"
 #include "SourceGroupSettingsCxxCdb.h"
-#include "SourceGroupSettingsCxxCodeblocks.h"
 
 bool SourceGroupFactoryModuleCxx::supports(SourceGroupType type) const
 {
@@ -15,7 +13,6 @@ bool SourceGroupFactoryModuleCxx::supports(SourceGroupType type) const
 	case SourceGroupType::C_EMPTY:
 	case SourceGroupType::CXX_EMPTY:
 	case SourceGroupType::CXX_CDB:
-	case SourceGroupType::CXX_CODEBLOCKS:
 		return true;
 	default:
 		break;
@@ -31,12 +28,6 @@ std::shared_ptr<SourceGroup> SourceGroupFactoryModuleCxx::createSourceGroup(
 			std::dynamic_pointer_cast<SourceGroupSettingsCxxCdb>(settings))
 	{
 		sourceGroup = std::shared_ptr<SourceGroup>(new SourceGroupCxxCdb(cxxSettings));
-	}
-	else if (
-		std::shared_ptr<SourceGroupSettingsCxxCodeblocks> cxxSettings =
-			std::dynamic_pointer_cast<SourceGroupSettingsCxxCodeblocks>(settings))
-	{
-		sourceGroup = std::shared_ptr<SourceGroup>(new SourceGroupCxxCodeblocks(cxxSettings));
 	}
 	else if (
 		std::shared_ptr<SourceGroupSettingsCEmpty> cxxSettings =
