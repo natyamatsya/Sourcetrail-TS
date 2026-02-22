@@ -46,14 +46,30 @@ public:
 
 	explicit CMakeFileAPIReader(const FilePath& buildDir);
 
+	// Returns the non-hidden configure preset names from CMakePresets.json and
+	// CMakeUserPresets.json found in sourceDir. Returns an empty vector if no
+	// presets file exists or none are visible.
+	static std::vector<std::string> discoverPresets(const FilePath& sourceDir);
+
+	// Resolves the binary directory for a named configure preset by running
+	//   cmake -S <sourceDir> --preset <presetName> -N
+	// and parsing the "Build directory:" line from its output.
+	// Returns an empty FilePath on failure.
+	static FilePath resolveBinaryDir(const FilePath& sourceDir, const std::string& presetName);
+
 	// Returns true if a valid File API reply already exists in the build dir.
 	bool hasReply() const;
 
-	// Writes the query file. If the reply does not yet exist, runs
+	// Writes the query file. If the reply does not yet exist, triggers a
+	// reconfigure. When sourceDir and presetName are provided, runs:
+	//   cmake -S <sourceDir> --preset <presetName>
+	// Otherwise falls back to:
 	//   cmake <buildDir>
-	// to trigger a reconfigure. Returns true on success.
 	// progress() is called with status messages during the cmake run.
-	bool ensureReply(std::function<void(const std::string&)> progress = {});
+	bool ensureReply(
+		std::function<void(const std::string&)> progress = {},
+		const FilePath& sourceDir = {},
+		const std::string& presetName = {});
 
 	// Returns all source entries across all targets in the given configuration.
 	// Pass an empty string to use the first available configuration.

@@ -22,12 +22,34 @@ SourceGroupCxxCMakeFileAPI::SourceGroupCxxCMakeFileAPI(
 
 bool SourceGroupCxxCMakeFileAPI::prepareIndexing()
 {
-	const FilePath buildDir{m_settings->getBuildDirectoryExpandedAndAbsolute()};
-	if (buildDir.empty() || !buildDir.exists())
+	const FilePath sourceDir{m_settings->getSourceDirectoryExpandedAndAbsolute()};
+	const std::string& presetName{m_settings->getPresetName()};
+
+	if (sourceDir.empty() || !sourceDir.exists())
 	{
-		const std::string error{
-			"Can't refresh project. The CMake build directory does not exist: " + buildDir.str()};
-		MessageStatus(error, true).dispatch();
+		MessageStatus(
+			"Can't refresh project. The CMake source directory does not exist: " + sourceDir.str(),
+			true)
+			.dispatch();
+		return false;
+	}
+
+	if (presetName.empty())
+	{
+		MessageStatus("Can't refresh project. No CMake preset configured.", true).dispatch();
+		return false;
+	}
+
+	MessageStatus("Resolving CMake build directory for preset '" + presetName + "'...", false, true)
+		.dispatch();
+	const FilePath buildDir{getCachedBuildDir()};
+	if (buildDir.empty())
+	{
+		MessageStatus(
+			"Can't refresh project. Failed to resolve build directory for preset '" + presetName +
+			"'.",
+			true)
+			.dispatch();
 		return false;
 	}
 
@@ -35,14 +57,16 @@ bool SourceGroupCxxCMakeFileAPI::prepareIndexing()
 	if (!reader.hasReply())
 	{
 		MessageStatus("Writing CMake File API query and running cmake...", false, true).dispatch();
-		if (!reader.ensureReply([](const std::string& msg) {
-				MessageStatus(msg, false, true).dispatch();
-			}))
+		if (!reader.ensureReply(
+				[](const std::string& msg) { MessageStatus(msg, false, true).dispatch(); },
+				sourceDir,
+				presetName))
 		{
-			const std::string error{
+			MessageStatus(
 				"Can't refresh project. Failed to generate CMake File API reply in: " +
-				buildDir.str()};
-			MessageStatus(error, true).dispatch();
+					buildDir.str(),
+				true)
+				.dispatch();
 			return false;
 		}
 	}
@@ -61,7 +85,7 @@ std::set<FilePath> SourceGroupCxxCMakeFileAPI::filterToContainedFilePaths(
 
 std::set<FilePath> SourceGroupCxxCMakeFileAPI::getAllSourceFilePaths() const
 {
-	const FilePath buildDir{m_settings->getBuildDirectoryExpandedAndAbsolute()};
+	const FilePath buildDir{getCachedBuildDir()};
 	if (buildDir.empty() || !buildDir.exists())
 		return {};
 
@@ -91,7 +115,7 @@ std::shared_ptr<IndexerCommandProvider> SourceGroupCxxCMakeFileAPI::getIndexerCo
 {
 	auto provider{std::make_shared<CxxIndexerCommandProvider>()};
 
-	const FilePath buildDir{m_settings->getBuildDirectoryExpandedAndAbsolute()};
+	const FilePath buildDir{getCachedBuildDir()};
 	if (buildDir.empty() || !buildDir.exists())
 		return provider;
 
@@ -177,6 +201,13 @@ std::vector<std::shared_ptr<IndexerCommand>> SourceGroupCxxCMakeFileAPI::getInde
 	const RefreshInfo& info) const
 {
 	return getIndexerCommandProvider(info)->consumeAllCommands();
+}
+
+FilePath SourceGroupCxxCMakeFileAPI::getCachedBuildDir() const
+{
+	if (m_cachedBuildDir.empty())
+		m_cachedBuildDir = m_settings->resolveBuildDirectory();
+	return m_cachedBuildDir;
 }
 
 std::shared_ptr<SourceGroupSettings> SourceGroupCxxCMakeFileAPI::getSourceGroupSettings()

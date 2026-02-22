@@ -115,7 +115,84 @@ bool CMakeFileAPIReader::hasReply() const
 	return !findIndexFile().empty();
 }
 
-bool CMakeFileAPIReader::ensureReply(std::function<void(const std::string&)> progress)
+std::vector<std::string> CMakeFileAPIReader::discoverPresets(const FilePath& sourceDir)
+{
+	std::vector<std::string> result{};
+
+	// Read both CMakePresets.json and CMakeUserPresets.json; merge results.
+	const std::array<std::string, 2> filenames{
+		"CMakePresets.json", "CMakeUserPresets.json"};
+
+	for (const auto& filename : filenames)
+	{
+		const auto presetsPath{sourceDir.getConcatenated("/" + filename)};
+		if (!presetsPath.exists())
+			continue;
+
+		const auto doc{readJsonFile(presetsPath)};
+		if (doc.isNull())
+			continue;
+
+		for (const auto& val : doc.object()["configurePresets"].toArray())
+		{
+			const auto preset{val.toObject()};
+			if (preset["hidden"].toBool(false))
+				continue;
+			const auto name{preset["name"].toString().toStdString()};
+			if (!name.empty())
+				result.push_back(name);
+		}
+	}
+
+	return result;
+}
+
+FilePath CMakeFileAPIReader::resolveBinaryDir(
+	const FilePath& sourceDir, const std::string& presetName)
+{
+	// Run: cmake -S <sourceDir> --preset <presetName> -N
+	// CMake prints "Build directory: <path>" to stdout when -N (no-build) is used.
+	QProcess proc{};
+	proc.setWorkingDirectory(QString::fromStdString(sourceDir.str()));
+	proc.start(
+		"cmake",
+		{QStringLiteral("-S"),
+		 QString::fromStdString(sourceDir.str()),
+		 QStringLiteral("--preset"),
+		 QString::fromStdString(presetName),
+		 QStringLiteral("-N")});
+
+	if (!proc.waitForFinished(30'000))
+	{
+		LOG_ERROR(
+			"CMakeFileAPIReader: cmake -N timed out for preset '" + presetName + "'");
+		return {};
+	}
+
+	// Parse "Build directory: <path>" from stdout.
+	const auto output{QString::fromUtf8(proc.readAllStandardOutput())};
+	for (const auto& line : output.split('\n'))
+	{
+		const auto trimmed{line.trimmed()};
+		if (trimmed.startsWith(QStringLiteral("Build directory:")))
+		{
+			const auto path{trimmed.mid(
+				QStringLiteral("Build directory:").length()).trimmed()};
+			if (!path.isEmpty())
+				return FilePath{path.toStdString()};
+		}
+	}
+
+	LOG_WARNING(
+		"CMakeFileAPIReader: could not parse build directory for preset '" +
+		presetName + "'. cmake output: " + output.toStdString());
+	return {};
+}
+
+bool CMakeFileAPIReader::ensureReply(
+	std::function<void(const std::string&)> progress,
+	const FilePath& sourceDir,
+	const std::string& presetName)
 {
 	// 1. Write the query file so CMake knows what to generate.
 	{
@@ -140,8 +217,22 @@ bool CMakeFileAPIReader::ensureReply(std::function<void(const std::string&)> pro
 		progress("Running cmake to generate File API reply...");
 
 	QProcess proc{};
-	proc.setWorkingDirectory(QString::fromStdString(m_buildDir.str()));
-	proc.start("cmake", {QString::fromStdString(m_buildDir.str())});
+	QStringList args{};
+	if (!sourceDir.empty() && !presetName.empty())
+	{
+		// Preset-aware invocation.
+		proc.setWorkingDirectory(QString::fromStdString(sourceDir.str()));
+		args << QStringLiteral("-S") << QString::fromStdString(sourceDir.str())
+			 << QStringLiteral("--preset") << QString::fromStdString(presetName);
+	}
+	else
+	{
+		// Legacy fallback: cmake <buildDir>
+		proc.setWorkingDirectory(QString::fromStdString(m_buildDir.str()));
+		args << QString::fromStdString(m_buildDir.str());
+	}
+
+	proc.start("cmake", args);
 	if (!proc.waitForFinished(60'000))
 	{
 		LOG_ERROR("CMakeFileAPIReader: cmake timed out or failed to start");

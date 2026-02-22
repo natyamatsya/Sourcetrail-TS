@@ -5,6 +5,7 @@
 #include <set>
 #include <vector>
 
+#include "FilePath.h"
 #include "SourceGroup.h"
 
 class SourceGroupSettingsCxxCMakeFileAPI;
@@ -30,7 +31,12 @@ private:
 
 	std::vector<std::string> getBaseCompilerFlags() const;
 
+	// Cached result of resolveBuildDirectory() for the lifetime of this object.
+	// Populated on first use; avoids repeated cmake -N invocations per indexing session.
+	FilePath getCachedBuildDir() const;
+
 	std::shared_ptr<SourceGroupSettingsCxxCMakeFileAPI> m_settings;
+	mutable FilePath m_cachedBuildDir;
 };
 
 #endif	  // SOURCE_GROUP_CXX_CMAKE_FILE_API_H
