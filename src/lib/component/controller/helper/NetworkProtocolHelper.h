@@ -61,7 +61,6 @@ public:
 
 	static std::string buildSetIDECursorMessage(
 		const FilePath& fileLocation, const unsigned int row, const unsigned int column);
-	static std::string buildCreateCDBMessage();
 	static std::string buildPingMessage();
 
 private:
@@ -74,7 +73,6 @@ private:
 	static std::string s_endOfMessageToken;
 	static std::string s_createProjectPrefix;
 	static std::string s_createCDBProjectPrefix;
-	static std::string s_createCDBPrefix;
 	static std::string s_pingPrefix;
 };
 

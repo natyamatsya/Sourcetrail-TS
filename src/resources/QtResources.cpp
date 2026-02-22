@@ -87,7 +87,6 @@ const char QtResources::ICON_EMPTY_ICON[]      = ":/icon/empty_icon.png";
 const char QtResources::ICON_LOGO_1024_1024[]  = ":/icon/logo_1024_1024.png";
 const char QtResources::ICON_PROJECT_256_256[] = ":/icon/project_256_256.png";
 const char QtResources::ICON_PROJECT[]         = ":/icon/project.ico";
-const char QtResources::ICON_VS_ICON[]         = ":/icon/vs_icon.png";
 
 const char QtResources::INDEXING_DIALOG_CSS[]                  = ":/indexing_dialog/indexing_dialog.css";
 const char QtResources::INDEXING_DIALOG_ERROR[]                = ":/indexing_dialog/error.png";

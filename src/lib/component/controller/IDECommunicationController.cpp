@@ -181,15 +181,6 @@ void IDECommunicationController::handleMessage(MessageWindowFocus* message)
 	}
 }
 
-void IDECommunicationController::handleMessage(MessageIDECreateCDB*  /*message*/)
-{
-	std::string networkMessage = NetworkProtocolHelper::buildCreateCDBMessage();
-
-	MessageStatus("Requesting IDE to create Compilation Database via plug-in.").dispatch();
-
-	sendMessage(networkMessage);
-}
-
 void IDECommunicationController::handleMessage(MessageMoveIDECursor* message)
 {
 	std::string networkMessage = NetworkProtocolHelper::buildSetIDECursorMessage(

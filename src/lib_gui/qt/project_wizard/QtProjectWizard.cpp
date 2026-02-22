@@ -46,7 +46,6 @@
 #	include "QtProjectWizardContentPathsHeaderSearch.h"
 #	include "QtProjectWizardContentPathsHeaderSearchGlobal.h"
 #	include "QtProjectWizardContentPathsIndexedHeaders.h"
-#	include "QtProjectWizardContentVS.h"
 #	include "SourceGroupSettingsCEmpty.h"
 #	include "SourceGroupSettingsCppEmpty.h"
 #	include "SourceGroupSettingsCxxCdb.h"
@@ -876,9 +875,6 @@ void QtProjectWizard::selectedProjectType(SourceGroupType sourceGroupType)
 		settings = std::make_shared<SourceGroupSettingsCxxCMakeFileAPI>(
 			sourceGroupId, m_projectSettings.get());
 		break;
-	case SourceGroupType::CXX_VS:
-		newSourceGroupFromVS();
-		return;
 #endif	  // BUILD_CXX_LANGUAGE_PACKAGE
 
 #if BUILD_RUST_LANGUAGE_PACKAGE

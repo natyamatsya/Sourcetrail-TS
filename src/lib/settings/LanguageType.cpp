@@ -34,8 +34,6 @@ LanguageType getLanguageTypeForSourceGroupType(SourceGroupType t)
 	case SourceGroupType::CXX_CDB:
 	case SourceGroupType::CXX_CMAKE_FILE_API:
 		return LanguageType::CXX;
-	case SourceGroupType::CXX_VS:
-		return LanguageType::CXX;
 #endif	  // BUILD_CXX_LANGUAGE_PACKAGE
 #if BUILD_RUST_LANGUAGE_PACKAGE
 	case SourceGroupType::RUST_EMPTY:

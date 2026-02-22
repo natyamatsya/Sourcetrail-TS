@@ -13,19 +13,17 @@ std::string sourceGroupTypeToString(SourceGroupType v)
 		return "C/C++ from Compilation Database";
 	case SourceGroupType::CXX_CMAKE_FILE_API:
 		return "C/C++ from CMake File API";
-	case SourceGroupType::CXX_VS:
-		return "C/C++ from Visual Studio";
 #endif	  // BUILD_CXX_LANGUAGE_PACKAGE
 #if BUILD_RUST_LANGUAGE_PACKAGE
 	case SourceGroupType::RUST_EMPTY:
-		return "Rust Source Group";
+		return "Rust Empty";
 #endif	  // BUILD_RUST_LANGUAGE_PACKAGE
 	case SourceGroupType::CUSTOM_COMMAND:
-		return "Custom Command Source Group";
+		return "Custom Command";
 	case SourceGroupType::UNKNOWN:
 		break;
 	}
-	return "unknown";
+	return "";
 }
 
 std::string sourceGroupTypeToProjectSetupString(SourceGroupType v)
@@ -41,8 +39,6 @@ std::string sourceGroupTypeToProjectSetupString(SourceGroupType v)
 		return "C/C++ from Compilation Database";
 	case SourceGroupType::CXX_CMAKE_FILE_API:
 		return "C/C++ from CMake File API";
-	case SourceGroupType::CXX_VS:
-		return "C/C++ from Visual Studio";
 #endif	  // BUILD_CXX_LANGUAGE_PACKAGE
 #if BUILD_RUST_LANGUAGE_PACKAGE
 	case SourceGroupType::RUST_EMPTY:
@@ -60,36 +56,20 @@ SourceGroupType stringToSourceGroupType(const std::string& v)
 {
 #if BUILD_CXX_LANGUAGE_PACKAGE
 	if (v == sourceGroupTypeToString(SourceGroupType::C_EMPTY))
-	{
 		return SourceGroupType::C_EMPTY;
-	}
 	if (v == sourceGroupTypeToString(SourceGroupType::CXX_EMPTY))
-	{
 		return SourceGroupType::CXX_EMPTY;
-	}
 	if (v == sourceGroupTypeToString(SourceGroupType::CXX_CDB))
-	{
 		return SourceGroupType::CXX_CDB;
-	}
 	if (v == sourceGroupTypeToString(SourceGroupType::CXX_CMAKE_FILE_API))
-	{
 		return SourceGroupType::CXX_CMAKE_FILE_API;
-	}
-	if (v == sourceGroupTypeToString(SourceGroupType::CXX_VS))
-	{
-		return SourceGroupType::CXX_VS;
-	}
 #endif	  // BUILD_CXX_LANGUAGE_PACKAGE
 #if BUILD_RUST_LANGUAGE_PACKAGE
 	if (v == sourceGroupTypeToString(SourceGroupType::RUST_EMPTY))
-	{
 		return SourceGroupType::RUST_EMPTY;
-	}
 #endif	  // BUILD_RUST_LANGUAGE_PACKAGE
 	if (v == sourceGroupTypeToString(SourceGroupType::CUSTOM_COMMAND))
-	{
 		return SourceGroupType::CUSTOM_COMMAND;
-	}
 
 	return SourceGroupType::UNKNOWN;
 }

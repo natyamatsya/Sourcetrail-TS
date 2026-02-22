@@ -80,7 +80,6 @@ public:
 	static const char ICON_LOGO_1024_1024[];
 	static const char ICON_PROJECT_256_256[];
 	static const char ICON_PROJECT[];
-	static const char ICON_VS_ICON[];
 
 	static const char INDEXING_DIALOG_CSS[];
 	static const char INDEXING_DIALOG_ERROR[];

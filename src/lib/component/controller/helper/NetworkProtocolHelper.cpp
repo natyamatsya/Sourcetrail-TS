@@ -12,7 +12,6 @@ std::string NetworkProtocolHelper::s_moveCursorPrefix = "moveCursor";
 std::string NetworkProtocolHelper::s_endOfMessageToken = "<EOM>";
 std::string NetworkProtocolHelper::s_createProjectPrefix = "createProject";
 std::string NetworkProtocolHelper::s_createCDBProjectPrefix = "createCDBProject";
-std::string NetworkProtocolHelper::s_createCDBPrefix = "createCDB";
 std::string NetworkProtocolHelper::s_pingPrefix = "ping";
 
 NetworkProtocolHelper::MESSAGE_TYPE NetworkProtocolHelper::getMessageType(const std::string& message)
@@ -224,16 +223,6 @@ std::string NetworkProtocolHelper::buildSetIDECursorMessage(
 	messageStream << row;
 	messageStream << s_divider;
 	messageStream << column;
-	messageStream << s_endOfMessageToken;
-
-	return messageStream.str();
-}
-
-std::string NetworkProtocolHelper::buildCreateCDBMessage()
-{
-	std::stringstream messageStream;
-
-	messageStream << s_createCDBPrefix;
 	messageStream << s_endOfMessageToken;
 
 	return messageStream.str();
