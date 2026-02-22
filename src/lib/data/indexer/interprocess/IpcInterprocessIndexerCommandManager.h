@@ -5,7 +5,10 @@
 #include <string>
 #include <vector>
 
+#include "language_packages.h"
+
 #include "IpcSharedMemory.h"
+#include "IndexerCommandType.h"
 #include "ProcessId.h"
 
 class IndexerCommand;
@@ -18,7 +21,11 @@ public:
 	~IpcInterprocessIndexerCommandManager();
 
 	void pushIndexerCommands(const std::vector<std::shared_ptr<IndexerCommand>>& indexerCommands);
-	std::shared_ptr<IndexerCommand> popIndexerCommand();
+
+	// Pop the next command, optionally skipping commands of a specific type.
+	// Pass INDEXER_COMMAND_UNKNOWN (default) to accept any type.
+	std::shared_ptr<IndexerCommand> popIndexerCommand(
+		IndexerCommandType skipType = INDEXER_COMMAND_UNKNOWN);
 
 	void clearIndexerCommands();
 	size_t indexerCommandCount();

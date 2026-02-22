@@ -13,6 +13,8 @@ class SourceGroupSettingsRustEmpty
 	, public SourceGroupSettingsWithSourceExtensions
 {
 public:
+	std::vector<std::string> getDefaultSourceExtensions() const override;
+
 	SourceGroupSettingsRustEmpty(const std::string& id, const ProjectSettings* projectSettings);
 
 	std::shared_ptr<SourceGroupSettings> createCopy() const override;

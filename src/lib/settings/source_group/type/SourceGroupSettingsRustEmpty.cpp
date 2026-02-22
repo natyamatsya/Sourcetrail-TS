@@ -2,6 +2,11 @@
 
 #include "ConfigManager.h"
 
+std::vector<std::string> SourceGroupSettingsRustEmpty::getDefaultSourceExtensions() const
+{
+	return {".rs"};
+}
+
 SourceGroupSettingsRustEmpty::SourceGroupSettingsRustEmpty(
 	const std::string& id, const ProjectSettings* projectSettings)
 	: SourceGroupSettings(SourceGroupType::RUST_EMPTY, id, projectSettings)

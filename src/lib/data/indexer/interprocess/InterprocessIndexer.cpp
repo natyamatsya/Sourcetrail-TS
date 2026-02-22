@@ -3,8 +3,10 @@
 #include "FileRegister.h"
 #include "IndexerCommand.h"
 #include "IndexerComposite.h"
+#include "IndexerCommandType.h"
 #include "LanguagePackageManager.h"
 #include "ScopedFunctor.h"
+#include "language_packages.h"
 #include "logging.h"
 
 InterprocessIndexer::InterprocessIndexer(const std::string& uuid, ProcessId processId)
@@ -55,8 +57,14 @@ void InterprocessIndexer::work()
 			}
 		});
 
+		const IndexerCommandType skipType =
+#if BUILD_RUST_LANGUAGE_PACKAGE
+			INDEXER_COMMAND_RUST;
+#else
+			INDEXER_COMMAND_UNKNOWN;
+#endif
 		while (std::shared_ptr<IndexerCommand> indexerCommand =
-				   m_interprocessIndexerCommandManager.popIndexerCommand())
+				   m_interprocessIndexerCommandManager.popIndexerCommand(skipType))
 		{
 			LOG_INFO_STREAM(
 				<< m_processId << " fetched indexer command for \""

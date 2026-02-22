@@ -1,9 +1,11 @@
 #include "IpcInterprocessIndexerCommandManager.h"
 
+#include <algorithm>
 #include <cstring>
 
 #include "IndexerCommand.h"
 #include "IndexerCommandSerializer.h"
+#include "IndexerCommandType.h"
 #include "logging.h"
 
 const char* IpcInterprocessIndexerCommandManager::s_sharedMemoryNamePrefix = "icmd_ipc_";
@@ -47,7 +49,8 @@ void IpcInterprocessIndexerCommandManager::pushIndexerCommands(
 	LOG_INFO(access.logString());
 }
 
-std::shared_ptr<IndexerCommand> IpcInterprocessIndexerCommandManager::popIndexerCommand()
+std::shared_ptr<IndexerCommand> IpcInterprocessIndexerCommandManager::popIndexerCommand(
+	IndexerCommandType skipType)
 {
 	IpcSharedMemory::ScopedAccess access(&m_shm);
 	std::size_t len = 0;
@@ -60,12 +63,23 @@ std::shared_ptr<IndexerCommand> IpcInterprocessIndexerCommandManager::popIndexer
 	if (all.empty())
 		return nullptr;
 
-	auto result = all.front();
-	all.erase(all.begin());
+	// Find the first command that is NOT of the skipped type.
+	// INDEXER_COMMAND_UNKNOWN means no filtering — accept the first command.
+	auto it = all.begin();
+	if (skipType != INDEXER_COMMAND_UNKNOWN)
+	{
+		it = std::find_if(all.begin(), all.end(), [skipType](const auto& cmd) {
+			return cmd->getIndexerCommandType() != skipType;
+		});
+		if (it == all.end())
+			return nullptr;
+	}
+
+	auto result = *it;
+	all.erase(it);
 
 	if (all.empty())
 	{
-		// Clear the buffer
 		uint8_t zero[4] = {0, 0, 0, 0};
 		access.write(zero, 4);
 	}
