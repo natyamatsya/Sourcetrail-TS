@@ -37,7 +37,7 @@
 use std::collections::HashMap;
 use std::path::Path;
 
-use ra_ap_hir::{db::HirDatabase, Adt, AsAssocItem, Crate, HasSource, ModuleDef};
+use ra_ap_hir::{Adt, AsAssocItem, Crate, HasSource, ModuleDef};
 use ra_ap_ide_db::base_db::{RootQueryDb, SourceDatabase};
 use ra_ap_ide_db::line_index::LineIndex;
 use ra_ap_ide_db::RootDatabase;

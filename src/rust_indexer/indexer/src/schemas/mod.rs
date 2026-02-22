@@ -7,7 +7,8 @@
     unused_imports,
     non_camel_case_types,
     non_snake_case,
-    non_upper_case_globals
+    non_upper_case_globals,
+    mismatched_lifetime_syntaxes
 )]
 pub mod indexer_command {
     include!(concat!(env!("OUT_DIR"), "/indexer_command_generated.rs"));
@@ -19,10 +20,14 @@ pub mod indexer_command {
     unused_imports,
     non_camel_case_types,
     non_snake_case,
-    non_upper_case_globals
+    non_upper_case_globals,
+    mismatched_lifetime_syntaxes
 )]
 pub mod intermediate_storage {
-    include!(concat!(env!("OUT_DIR"), "/intermediate_storage_generated.rs"));
+    include!(concat!(
+        env!("OUT_DIR"),
+        "/intermediate_storage_generated.rs"
+    ));
 }
 
 #[allow(
@@ -31,7 +36,8 @@ pub mod intermediate_storage {
     unused_imports,
     non_camel_case_types,
     non_snake_case,
-    non_upper_case_globals
+    non_upper_case_globals,
+    mismatched_lifetime_syntaxes
 )]
 pub mod indexing_status {
     include!(concat!(env!("OUT_DIR"), "/indexing_status_generated.rs"));
@@ -43,7 +49,8 @@ pub mod indexing_status {
     unused_imports,
     non_camel_case_types,
     non_snake_case,
-    non_upper_case_globals
+    non_upper_case_globals,
+    mismatched_lifetime_syntaxes
 )]
 pub mod garbage_collector {
     include!(concat!(env!("OUT_DIR"), "/garbage_collector_generated.rs"));

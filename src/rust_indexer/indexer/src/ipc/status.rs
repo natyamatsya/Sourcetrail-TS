@@ -169,8 +169,6 @@ impl StatusChannel {
 
 #[derive(Default)]
 struct IndexingStatusOwned {
-    indexing_file_paths: Vec<String>,
-    current_files: Vec<(u64, String)>,
     crashed_file_paths: Vec<String>,
     finished_process_ids: Vec<u64>,
     indexing_interrupted: bool,
@@ -182,54 +180,14 @@ impl IndexingStatusOwned {
             v.map(|vec| (0..vec.len()).map(|i| vec.get(i).to_owned()).collect())
                 .unwrap_or_default()
         };
-        let current_files = s
-            .current_files()
-            .map(|v| {
-                (0..v.len())
-                    .map(|i| {
-                        let pf = v.get(i);
-                        (pf.process_id(), pf.file_path().unwrap_or("").to_owned())
-                    })
-                    .collect()
-            })
-            .unwrap_or_default();
         let finished = s
             .finished_process_ids()
             .map(|v| (0..v.len()).map(|i| v.get(i)).collect())
             .unwrap_or_default();
         Self {
-            indexing_file_paths: str_vec(s.indexing_file_paths()),
-            current_files,
             crashed_file_paths: str_vec(s.crashed_file_paths()),
             finished_process_ids: finished,
             indexing_interrupted: s.indexing_interrupted(),
         }
     }
-}
-
-// ---------------------------------------------------------------------------
-// FlatBuffers vector helpers
-// ---------------------------------------------------------------------------
-
-fn build_str_vec<'fbb>(
-    fbb: &'fbb mut FlatBufferBuilder,
-    strings: &[String],
-) -> Option<
-    flatbuffers::WIPOffset<flatbuffers::Vector<'fbb, flatbuffers::ForwardsUOffset<&'fbb str>>>,
-> {
-    if strings.is_empty() {
-        return None;
-    }
-    let offsets: Vec<_> = strings.iter().map(|s| fbb.create_string(s)).collect();
-    Some(fbb.create_vector(&offsets))
-}
-
-fn build_u64_vec<'fbb>(
-    fbb: &'fbb mut FlatBufferBuilder,
-    values: &[u64],
-) -> Option<flatbuffers::WIPOffset<flatbuffers::Vector<'fbb, u64>>> {
-    if values.is_empty() {
-        return None;
-    }
-    Some(fbb.create_vector(values))
 }

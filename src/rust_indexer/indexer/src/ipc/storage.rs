@@ -175,6 +175,7 @@ pub struct OwnedStorageError {
 }
 
 impl OwnedIntermediateStorage {
+    #[cfg(test)]
     pub(crate) fn from_fbs(s: IntermediateStorage<'_>) -> Self {
         let nodes = s
             .nodes()
