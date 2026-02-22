@@ -63,9 +63,19 @@ void InterprocessIndexer::work()
 #else
 			INDEXER_COMMAND_UNKNOWN;
 #endif
-		while (std::shared_ptr<IndexerCommand> indexerCommand =
-				   m_interprocessIndexerCommandManager.popIndexerCommand(skipType))
+		while (true)
 		{
+			std::shared_ptr<IndexerCommand> indexerCommand =
+				m_interprocessIndexerCommandManager.popIndexerCommand(skipType);
+
+			if (!indexerCommand)
+			{
+				if (m_interprocessIndexingStatusManager.getIndexingInterrupted())
+					break;
+				std::this_thread::sleep_for(std::chrono::milliseconds(100));
+				continue;
+			}
+
 			LOG_INFO_STREAM(
 				<< m_processId << " fetched indexer command for \""
 				<< indexerCommand->getSourceFilePath().str() << "\"");
@@ -78,9 +88,7 @@ void InterprocessIndexer::work()
 				const size_t storageCount =
 					m_interprocessIntermediateStorageManager.getIntermediateStorageCount();
 				if (storageCount < 2)
-				{
 					break;
-				}
 
 				LOG_INFO_STREAM(<< m_processId << " waits, too many intermediate storages: " << storageCount);
 
@@ -88,9 +96,7 @@ void InterprocessIndexer::work()
 			}
 
 			if (!updaterThreadRunning)
-			{
 				break;
-			}
 
 			LOG_INFO_STREAM(<< m_processId << " updating indexer status with currently indexed filepath");
 			m_interprocessIndexingStatusManager.startIndexingSourceFile(
