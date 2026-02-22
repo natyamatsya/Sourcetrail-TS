@@ -13,7 +13,7 @@ CMakeLists.txt.user
 # Sourcetrail databases, bookmarks
 *.srctrlbm
 *.srctrldb
-*.toml
+*.srctrlprj
 /build/
 
 # Rust / Cargo

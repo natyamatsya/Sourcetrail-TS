@@ -1,0 +1,22 @@
+[package]
+name = "sourcetrail-rust-indexer"
+version = "0.1.0"
+edition = "2021"
+
+[[bin]]
+name = "sourcetrail_rust_indexer"
+path = "src/main.rs"
+
+[dependencies]
+libipc = { path = "../../../inspiration/cpp-ipc/rust/libipc" }
+flatbuffers = "24.3.25"
+syn = { version = "2", features = ["full", "visit"] }
+proc-macro2 = { version = "1", features = ["span-locations"] }
+log = "0.4"
+env_logger = "0.11"
+
+[target.'cfg(unix)'.dependencies]
+libc = "0.2"
+
+[dev-dependencies]
+tempfile = "3"

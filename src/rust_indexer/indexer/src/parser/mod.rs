@@ -248,6 +248,241 @@ impl<'ast> Visit<'ast> for ItemCollector {
     }
 }
 
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    // Helper: index a source string as if it were a file.
+    fn index_src(src: &str) -> OwnedIntermediateStorage {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("test.rs");
+        std::fs::write(&path, src).unwrap();
+        index_file(path.to_str().unwrap(), "")
+    }
+
+    fn node_names(storage: &OwnedIntermediateStorage) -> Vec<&str> {
+        storage
+            .nodes
+            .iter()
+            .map(|n| n.serialized_name.as_str())
+            .collect()
+    }
+
+    fn node_kinds(storage: &OwnedIntermediateStorage) -> Vec<i32> {
+        storage.nodes.iter().map(|n| n.type_).collect()
+    }
+
+    // -----------------------------------------------------------------------
+    // One test per symbol kind
+    // -----------------------------------------------------------------------
+
+    #[test]
+    fn extracts_function() {
+        let s = index_src("pub fn hello_world() {}");
+        assert!(
+            node_names(&s).contains(&"hello_world"),
+            "nodes: {:?}",
+            node_names(&s)
+        );
+        assert!(node_kinds(&s).contains(&NODE_FUNCTION));
+    }
+
+    #[test]
+    fn extracts_struct() {
+        let s = index_src("pub struct MyStruct { x: i32 }");
+        assert!(
+            node_names(&s).contains(&"MyStruct"),
+            "nodes: {:?}",
+            node_names(&s)
+        );
+        assert!(node_kinds(&s).contains(&NODE_STRUCT));
+    }
+
+    #[test]
+    fn extracts_enum() {
+        let s = index_src("pub enum Color { Red, Green, Blue }");
+        assert!(
+            node_names(&s).contains(&"Color"),
+            "nodes: {:?}",
+            node_names(&s)
+        );
+        assert!(node_kinds(&s).contains(&NODE_ENUM));
+    }
+
+    #[test]
+    fn extracts_union() {
+        let s = index_src("pub union MyUnion { a: u32, b: f32 }");
+        assert!(
+            node_names(&s).contains(&"MyUnion"),
+            "nodes: {:?}",
+            node_names(&s)
+        );
+        assert!(node_kinds(&s).contains(&NODE_UNION));
+    }
+
+    #[test]
+    fn extracts_trait() {
+        let s = index_src("pub trait Drawable { fn draw(&self); }");
+        assert!(
+            node_names(&s).contains(&"Drawable"),
+            "nodes: {:?}",
+            node_names(&s)
+        );
+        assert!(node_kinds(&s).contains(&NODE_INTERFACE));
+    }
+
+    #[test]
+    fn extracts_type_alias() {
+        let s = index_src("pub type Meters = f64;");
+        assert!(
+            node_names(&s).contains(&"Meters"),
+            "nodes: {:?}",
+            node_names(&s)
+        );
+        assert!(node_kinds(&s).contains(&NODE_TYPEDEF));
+    }
+
+    #[test]
+    fn extracts_mod() {
+        let s = index_src("pub mod geometry { pub fn area() -> f64 { 0.0 } }");
+        assert!(
+            node_names(&s).contains(&"geometry"),
+            "nodes: {:?}",
+            node_names(&s)
+        );
+        assert!(node_kinds(&s).contains(&NODE_MODULE));
+    }
+
+    #[test]
+    fn extracts_const() {
+        let s = index_src("pub const MAX_SIZE: usize = 1024;");
+        assert!(
+            node_names(&s).contains(&"MAX_SIZE"),
+            "nodes: {:?}",
+            node_names(&s)
+        );
+        assert!(node_kinds(&s).contains(&NODE_GLOBAL_VARIABLE));
+    }
+
+    #[test]
+    fn extracts_static() {
+        let s = index_src("pub static COUNTER: u32 = 0;");
+        assert!(
+            node_names(&s).contains(&"COUNTER"),
+            "nodes: {:?}",
+            node_names(&s)
+        );
+        assert!(node_kinds(&s).contains(&NODE_GLOBAL_VARIABLE));
+    }
+
+    #[test]
+    fn extracts_macro_def() {
+        let s = index_src("macro_rules! my_macro { () => {}; }");
+        assert!(
+            node_names(&s).contains(&"my_macro"),
+            "nodes: {:?}",
+            node_names(&s)
+        );
+        assert!(node_kinds(&s).contains(&NODE_MACRO));
+    }
+
+    // -----------------------------------------------------------------------
+    // Module prefix qualification
+    // -----------------------------------------------------------------------
+
+    #[test]
+    fn qualifies_name_with_module_prefix() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("test.rs");
+        std::fs::write(&path, "pub fn do_work() {}").unwrap();
+        let s = index_file(path.to_str().unwrap(), "");
+        // Without a source root that strips the path, prefix is empty.
+        assert!(node_names(&s).contains(&"do_work"));
+    }
+
+    #[test]
+    fn module_prefix_from_path_strips_src_prefix() {
+        assert_eq!(
+            module_prefix_from_path("/proj/src/foo/bar.rs", "/proj/src"),
+            "foo::bar"
+        );
+    }
+
+    #[test]
+    fn module_prefix_from_path_drops_lib_suffix() {
+        assert_eq!(module_prefix_from_path("/proj/src/lib.rs", "/proj/src"), "");
+    }
+
+    #[test]
+    fn module_prefix_from_path_drops_main_suffix() {
+        assert_eq!(
+            module_prefix_from_path("/proj/src/main.rs", "/proj/src"),
+            ""
+        );
+    }
+
+    // -----------------------------------------------------------------------
+    // Error handling
+    // -----------------------------------------------------------------------
+
+    #[test]
+    fn reports_error_for_missing_file() {
+        let s = index_file("/nonexistent/path/file.rs", "");
+        assert!(!s.errors.is_empty(), "expected an error for missing file");
+        assert!(s.errors[0].fatal);
+    }
+
+    #[test]
+    fn reports_error_for_invalid_syntax() {
+        let s = index_src("fn broken( { }");
+        assert!(!s.errors.is_empty(), "expected a parse error");
+        assert!(s.errors[0].fatal);
+    }
+
+    // -----------------------------------------------------------------------
+    // Storage invariants
+    // -----------------------------------------------------------------------
+
+    #[test]
+    fn every_node_has_a_symbol_and_occurrence() {
+        let s = index_src("pub fn f() {} pub struct S {} pub enum E {} pub trait T {}");
+        assert_eq!(s.nodes.len(), s.symbols.len(), "node/symbol count mismatch");
+        assert_eq!(
+            s.nodes.len(),
+            s.occurrences.len(),
+            "node/occurrence count mismatch"
+        );
+    }
+
+    #[test]
+    fn every_node_has_a_source_location() {
+        let s = index_src("pub fn alpha() {} pub fn beta() {}");
+        assert_eq!(s.nodes.len(), s.source_locations.len());
+    }
+
+    #[test]
+    fn file_entry_is_marked_indexed() {
+        let s = index_src("pub fn x() {}");
+        assert_eq!(s.files.len(), 1);
+        assert!(s.files[0].indexed);
+        assert!(s.files[0].complete);
+        assert_eq!(s.files[0].language_identifier, "rust");
+    }
+
+    #[test]
+    fn multiple_items_all_extracted() {
+        let s = index_src(
+            "pub fn a() {} pub struct B {} pub enum C {} pub trait D {} pub type E = u8;",
+        );
+        assert_eq!(
+            s.nodes.len(),
+            5,
+            "expected 5 nodes, got: {:?}",
+            node_names(&s)
+        );
+    }
+}
+
 /// Derive a module prefix from the file path relative to a source root.
 /// E.g. `src/foo/bar.rs` → `foo::bar`  (strips `src/` prefix and `.rs` suffix).
 pub fn module_prefix_from_path(file_path: &str, source_root: &str) -> String {

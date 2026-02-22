@@ -1,0 +1,3 @@
+[workspace]
+members = ["indexer"]
+resolver = "2"

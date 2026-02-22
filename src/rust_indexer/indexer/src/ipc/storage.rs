@@ -156,7 +156,7 @@ pub struct OwnedStorageError {
 }
 
 impl OwnedIntermediateStorage {
-    fn from_fbs(s: IntermediateStorage<'_>) -> Self {
+    pub(crate) fn from_fbs(s: IntermediateStorage<'_>) -> Self {
         let nodes = s
             .nodes()
             .map(|v| {
