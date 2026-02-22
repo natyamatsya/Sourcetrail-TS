@@ -88,13 +88,11 @@ The indexer then:
 
 ### Phase 1 Tasks
 
-- [ ] Add `IndexerCommandType::Rust = 2` to `indexer_command.fbs`.
-- [ ] Add a `build.rs` in the Rust indexer crate that invokes `flatc --rust`
+- [x] Add `IndexerCommandType::Rust = 2` to `indexer_command.fbs`.
+- [x] Add a `build.rs` in the Rust indexer crate that invokes `flatc --rust`
       on all four schemas and places generated code under `src/generated/`.
-- [ ] Alternatively: use the `flatbuffers` crate's `include_bytes!` + manual
-      table accessors if `flatc` is not available at build time.
-- [ ] Verify round-trip: serialize an `IntermediateStorage` in Rust, deserialize
-      in C++ (unit test).
+- [x] Verify round-trip: serialize an `IntermediateStorage` in Rust, deserialize
+      in C++ (unit test — see `ipc/storage_tests.rs`).
 
 ### Key crate
 
@@ -110,22 +108,19 @@ flatbuffers = "24"   # matches the vcpkg flatbuffers version in use
 
 ### Phase 2 Tasks
 
-- [ ] Add the `libipc` Rust crate (already at
+- [x] Add the `libipc` Rust crate (already at
       `inspiration/cpp-ipc/rust/libipc/`) as a workspace member or path
       dependency of the indexer crate.
-- [ ] Implement `CommandChannel` wrapper:
-  - `pop_command() -> Option<IndexerCommand>` — reads + deserializes from
-    `icmd_ipc_<uuid>`, writes back the shortened queue.
-- [ ] Implement `StorageChannel` wrapper:
-  - `push_storage(buf: &[u8])` — writes serialized `IntermediateStorage` into
+- [x] Implement `CommandChannel` wrapper:
+  - `pop_rust_command() -> Option<OwnedIndexerCommand>` — reads + deserializes
+    from `icmd_ipc_<uuid>`, filters by `IndexerCommandType::Rust`, writes back
+    the shortened queue preserving original command types.
+- [x] Implement `StorageChannel` wrapper:
+  - `push(storage)` — writes serialized `IntermediateStorage` into
     `istorage_ipc_<uuid>`.
-  - `storage_count() -> usize` — reads queue length (back-pressure guard,
-    mirrors C++ `storageCount < 2` check).
-- [ ] Implement `StatusChannel` wrapper:
-  - `start_indexing(path: &str)`, `finish_indexing()`,
-    `is_interrupted() -> bool`.
-- [ ] Integration test: launch a minimal C++ app stub that writes a command,
-      run the Rust IPC layer, verify the command is consumed.
+  - `storage_count() -> usize` — reads queue length (back-pressure guard).
+- [x] Implement `StatusChannel` wrapper:
+  - `start_indexing(path)`, `finish_indexing()`, `is_interrupted() -> bool`.
 
 ### SHM access pattern
 
@@ -179,12 +174,12 @@ for a first working prototype.
 
 ### Phase 3 Tasks
 
-- [ ] Implement `RustIndexer::index(command) -> IntermediateStorage` using
+- [x] Implement `RustIndexer::index(command) -> IntermediateStorage` using
       `syn` for a prototype (single-file, no cross-file resolution).
-- [ ] Wire up source locations (`start_line`, `start_col`, `end_line`,
-      `end_col`) from `syn::spanned::Spanned` / `proc_macro2::Span`.
-- [ ] Upgrade to `ra_ap_*` for cross-file resolution (Phase 3b).
-- [ ] Handle `StorageError` entries for parse failures.
+- [x] Wire up source locations (`start_line`, `start_col`, `end_line`,
+      `end_col`) from `proc_macro2::Span` (with `span-locations` feature).
+- [ ] Upgrade to `ra_ap_*` for cross-file resolution (Phase 3b — future).
+- [x] Handle `StorageError` entries for parse failures.
 
 ---
 
@@ -196,26 +191,11 @@ directory.
 
 ### Phase 4 Tasks
 
-- [ ] Create `src/rust_indexer/` Cargo workspace:
-
-  ```text
-  src/rust_indexer/
-    Cargo.toml          (workspace root)
-    indexer/
-      Cargo.toml
-      build.rs          (flatc invocation)
-      src/
-        main.rs
-        ipc/mod.rs
-        parser/mod.rs
-        generated/      (flatc output, gitignored)
-  ```
-
-- [ ] Add CMake `ExternalProject_Add` (or `corrosion`) target that runs
-      `cargo build --release` and copies the binary into `${CMAKE_BINARY_DIR}/app/`.
-- [ ] Add `BUILD_RUST_LANGUAGE_PACKAGE` CMake option (mirrors
-      `BUILD_CXX_LANGUAGE_PACKAGE`).
-- [ ] Gate the Rust build behind that option in `CMakeLists.txt`.
+- [x] Create `src/rust_indexer/` Cargo workspace.
+- [x] Add CMake `corrosion` integration that builds `sourcetrail_rust_indexer`
+      and installs it alongside the C++ indexer.
+- [x] Add `BUILD_RUST_LANGUAGE_PACKAGE` CMake option.
+- [x] Gate the Rust build behind that option in `CMakeLists.txt`.
 
 ### Recommended CMake integration: `corrosion`
 
@@ -239,27 +219,30 @@ files.
 
 ### Phase 5 Tasks
 
-- [ ] Add `IndexerCommandType::Rust` handling in
+- [x] Add `IndexerCommandType::Rust` handling in
       `IpcInterprocessIndexerCommandManager` / `IndexerCommandSerializer`.
-- [ ] Add a `LanguagePackageRust` (mirrors `LanguagePackageCxx`) that:
-  - registers `.rs` as a supported extension,
-  - produces `IndexerCommandRust` objects,
-  - spawns `sourcetrail_rust_indexer` as a subprocess.
-- [ ] Register `LanguagePackageRust` in `src/indexer/main.cpp` behind
+      C++ indexers skip Rust commands via `popIndexerCommand(skipType)`.
+- [x] Add `LanguagePackageRust` + `SourceGroupRust` + `SourceGroupFactoryModuleRust`:
+  - `.rs` default source extension via `getDefaultSourceExtensions()`
+  - produces `IndexerCommandRust` objects
+  - `TaskBuildIndex` spawns `sourcetrail_rust_indexer` as a subprocess
+- [x] Register `LanguagePackageRust` in `src/app/main.cpp` behind
       `#if BUILD_RUST_LANGUAGE_PACKAGE`.
-- [ ] Add project settings UI for Rust source roots (mirrors C++ source group
-      settings).
+- [x] Add `SourceGroupSettingsRustEmpty` project settings (source paths,
+      exclude filters, source extensions) wired into `ProjectSettings`.
 
 ---
 
 ## Phase 6 — Testing & CI
 
-- [ ] Unit tests for FlatBuffers round-trip (Rust ↔ C++).
-- [ ] Unit tests for each symbol kind extracted by the parser.
+- [x] Unit tests for FlatBuffers round-trip (Rust ↔ C++) — `ipc/storage_tests.rs`
+      (7 tests: nodes, files, source_locations, occurrences, symbols, errors, empty).
+- [x] Unit tests for each symbol kind extracted by the parser — `parser/mod.rs`
+      (20 tests: all symbol kinds, module prefix, error handling, storage invariants).
 - [ ] Integration test: index a small Rust crate, verify the resulting
       Sourcetrail database contains expected nodes/edges.
-- [ ] Add `cargo test` step to `.github/workflows/cmake-multi-platform.yml`
-      when `BUILD_RUST_LANGUAGE_PACKAGE=ON`.
+- [x] Add `cargo test` step to `.github/workflows/cmake-multi-platform.yml`
+      (ubuntu/macos/windows matrix + C++ smoke build).
 
 ---
 
