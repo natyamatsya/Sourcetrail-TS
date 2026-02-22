@@ -1,5 +1,6 @@
 #include "ConfigManager.h"
 
+#include <fstream>
 #include <set>
 #include <sstream>
 
@@ -529,6 +530,189 @@ void ConfigManager::parseTomlTable(const toml::v3::table& table, const std::stri
 			if (!val.empty())
 				m_values.emplace(fullKey, val);
 		}
+	}
+}
+
+toml::v3::table ConfigManager::buildTomlTable() const
+{
+	toml::table root;
+
+	// Collect source_group UUIDs in insertion order (preserve order from multimap).
+	std::vector<std::string> sgOrder;
+	{
+		std::set<std::string> seen;
+		for (auto& [k, v] : m_values)
+		{
+			const std::string prefix = "source_groups/source_group_";
+			if (k.rfind(prefix, 0) == 0)
+			{
+				const std::string rest = k.substr(prefix.size());
+				const std::string uuid = rest.substr(0, rest.find('/'));
+				if (seen.insert(uuid).second)
+					sgOrder.push_back(uuid);
+			}
+		}
+	}
+
+	// Helper: insert a string value into a nested toml::table by a '/'-separated path.
+	// Returns false if the path collides with an existing non-table node.
+	std::function<void(toml::table&, const std::vector<std::string>&, size_t, const std::string&)>
+		insertValue = [&](toml::table& tbl, const std::vector<std::string>& parts,
+						  size_t idx, const std::string& val)
+	{
+		if (idx == parts.size() - 1)
+		{
+			const std::string& leaf = parts[idx];
+			if (auto* existing = tbl.get(leaf))
+			{
+				if (auto* arr = existing->as_array())
+					arr->push_back(val);
+				else
+				{
+					toml::array a;
+					a.push_back(existing->as_string()->get());
+					a.push_back(val);
+					tbl.insert_or_assign(leaf, std::move(a));
+				}
+			}
+			else
+			{
+				tbl.insert_or_assign(leaf, val);
+			}
+			return;
+		}
+
+		const std::string& seg = parts[idx];
+		if (!tbl.contains(seg))
+			tbl.insert_or_assign(seg, toml::table{});
+		insertValue(*tbl.get(seg)->as_table(), parts, idx + 1, val);
+	};
+
+	// Build [[source_groups]] array of tables.
+	toml::array sgArray;
+	for (const std::string& uuid : sgOrder)
+	{
+		const std::string sgPrefix = "source_groups/source_group_" + uuid + "/";
+		toml::table entry;
+		entry.insert_or_assign("id", uuid);
+
+		// Collect all keys belonging to this source group.
+		for (auto it = m_values.begin(); it != m_values.end(); )
+		{
+			if (it->first.rfind(sgPrefix, 0) != 0)
+			{
+				++it;
+				continue;
+			}
+
+			const std::string relKey = it->first.substr(sgPrefix.size());
+			std::vector<std::string> parts = utility::splitToVector(relKey, "/");
+
+			// Gather all values for this exact key (multimap may have duplicates).
+			std::vector<std::string> vals;
+			auto range = m_values.equal_range(it->first);
+			for (auto jt = range.first; jt != range.second; ++jt)
+				vals.push_back(jt->second);
+
+			if (vals.size() == 1)
+			{
+				insertValue(entry, parts, 0, vals[0]);
+			}
+			else
+			{
+				// Multiple values → array at the leaf.
+				// Navigate to the parent table.
+				toml::table* cur = &entry;
+				for (size_t i = 0; i + 1 < parts.size(); ++i)
+				{
+					if (!cur->contains(parts[i]))
+						cur->insert_or_assign(parts[i], toml::table{});
+					cur = cur->get(parts[i])->as_table();
+				}
+				toml::array arr;
+				for (const std::string& v : vals)
+					arr.push_back(v);
+				cur->insert_or_assign(parts.back(), std::move(arr));
+			}
+
+			it = range.second;
+		}
+
+		sgArray.push_back(std::move(entry));
+	}
+
+	if (!sgArray.empty())
+		root.insert_or_assign("source_groups", std::move(sgArray));
+
+	// All non-source_group keys.
+	std::set<std::string> processedKeys;
+	for (auto it = m_values.begin(); it != m_values.end(); )
+	{
+		const std::string& key = it->first;
+
+		if (key.rfind("source_groups/source_group_", 0) == 0)
+		{
+			++it;
+			continue;
+		}
+
+		if (processedKeys.count(key))
+		{
+			++it;
+			continue;
+		}
+		processedKeys.insert(key);
+
+		std::vector<std::string> parts = utility::splitToVector(key, "/");
+
+		std::vector<std::string> vals;
+		auto range = m_values.equal_range(key);
+		for (auto jt = range.first; jt != range.second; ++jt)
+			vals.push_back(jt->second);
+
+		if (vals.size() == 1)
+		{
+			insertValue(root, parts, 0, vals[0]);
+		}
+		else
+		{
+			toml::table* cur = &root;
+			for (size_t i = 0; i + 1 < parts.size(); ++i)
+			{
+				if (!cur->contains(parts[i]))
+					cur->insert_or_assign(parts[i], toml::table{});
+				cur = cur->get(parts[i])->as_table();
+			}
+			toml::array arr;
+			for (const std::string& v : vals)
+				arr.push_back(v);
+			cur->insert_or_assign(parts.back(), std::move(arr));
+		}
+
+		it = range.second;
+	}
+
+	return root;
+}
+
+bool ConfigManager::saveToml(const std::string& filepath)
+{
+	try
+	{
+		toml::table root = buildTomlTable();
+		std::ofstream file(filepath);
+		if (!file.is_open())
+		{
+			LOG_ERROR("Could not open file for writing: " + filepath);
+			return false;
+		}
+		file << root << '\n';
+		return file.good();
+	}
+	catch (const std::exception& e)
+	{
+		LOG_ERROR(std::string("Failed to save TOML file: ") + e.what());
+		return false;
 	}
 }
 

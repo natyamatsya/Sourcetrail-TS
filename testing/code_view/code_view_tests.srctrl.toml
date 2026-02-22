@@ -1,0 +1,21 @@
+description = "Test Suites:\\n\\n\n[::\\tmCODE_AREA_TESTS\\ts\\tp]\\n\n[::\\tmLOCAL_REFERENCE_TESTS\\ts\\tp]\\n\n[::\\tmSNIPPET_LIST_TESTS\\ts\\tp]\\n\n[::\\tmSINGLE_FILE_TESTS\\ts\\tp]\\n\n[::\\tmFILE_BAR_TESTS\\ts\\tp]\\n\n[::\\tmERROR_TESTS\\ts\\tp]\\n\n[::\\tmSYNTAX_HIGHLIGHTER_TESTS\\ts\\tp]\\n"
+version = 8
+
+[[source_groups]]
+id = "475571d1-b082-4fff-81c5-d099c19f957d"
+cpp_standard = "c++17"
+exclude_filters = ""
+name = "C++ Source Group"
+source_extensions = ""
+source_paths = ""
+status = "enabled"
+type = "C++ Source Group"
+
+[source_groups.cross_compilation]
+target_options_enabled = "0"
+
+[source_groups.cross_compilation.target]
+abi = "unknown"
+arch = "x86_64"
+sys = "unknown"
+vendor = "unknown"

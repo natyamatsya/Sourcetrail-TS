@@ -58,6 +58,7 @@ public:
 
 	bool load(const std::shared_ptr<TextAccess> textAccess);
 	bool save(const std::string filepath);
+	bool saveToml(const std::string& filepath);
 	std::string toString();
 
 	void setWarnOnEmptyKey(bool warnOnEmptyKey) const;
@@ -70,6 +71,7 @@ private:
 	void parseSubtree(TiXmlNode* parentElement, const std::string& currentPath);
 	void parseTomlTable(const toml::v3::table& table, const std::string& currentPath);
 	bool createXmlDocument(bool saveAsFile, std::string filepath, std::string& output);
+	toml::v3::table buildTomlTable() const;
 
 	std::multimap<std::string, std::string> m_values;
 	mutable bool m_warnOnEmptyKey = true;

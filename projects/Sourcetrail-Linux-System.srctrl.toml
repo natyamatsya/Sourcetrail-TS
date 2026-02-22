@@ -1,0 +1,20 @@
+version = 8
+
+[[source_groups]]
+id = "01d98a69-0204-4cfc-a6b7-894adb4b5de4"
+build_file_path = ""
+header_search_paths = ""
+indexed_header_paths = ""
+name = "C/C++ from Compilation Database"
+pch_flags = ""
+status = "enabled"
+type = "C/C++ from Compilation Database"
+
+[[source_groups]]
+id = "509e6bce-8122-43b9-8db0-e38ecf6ece65"
+java_standard = 21
+maven = ""
+name = "Java Source Group from Maven"
+source_extensions = ""
+status = "enabled"
+type = "Java Source Group from Maven"

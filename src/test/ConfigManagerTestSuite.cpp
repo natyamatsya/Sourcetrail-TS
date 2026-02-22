@@ -294,3 +294,58 @@ TEST_CASE("config manager getSublevelKeys works for TOML source_groups")
 	const std::vector<std::string> keys = config->getSublevelKeys("source_groups");
 	REQUIRE(keys.size() == 2);
 }
+
+TEST_CASE("config manager TOML save and reload round-trip for simple values")
+{
+	const FilePath path("data/ConfigManagerTestSuite/temp.srctrl.toml");
+
+	std::shared_ptr<ConfigManager> config = ConfigManager::createEmpty();
+	config->setValue("version", 8);
+	config->setValue("description", std::string("My Project"));
+	config->setValue("nested/key", std::string("value"));
+	REQUIRE(config->saveToml(path.str()));
+
+	std::shared_ptr<ConfigManager> config2 =
+		ConfigManager::createAndLoad(TextAccess::createFromFile(path));
+
+	int version = 0;
+	REQUIRE(config2->getValue("version", version));
+	REQUIRE(version == 8);
+
+	std::string desc;
+	REQUIRE(config2->getValue("description", desc));
+	REQUIRE(desc == "My Project");
+
+	std::string nested;
+	REQUIRE(config2->getValue("nested/key", nested));
+	REQUIRE(nested == "value");
+}
+
+TEST_CASE("config manager TOML save and reload round-trip for source_groups")
+{
+	const FilePath path("data/ConfigManagerTestSuite/temp_sg.srctrl.toml");
+
+	std::shared_ptr<ConfigManager> config = ConfigManager::createEmpty();
+	const std::string prefix =
+		"source_groups/source_group_aaaaaaaa-0000-0000-0000-000000000001";
+	config->setValue(prefix + "/name", std::string("C++ Source Group"));
+	config->setValue(prefix + "/type", std::string("C++ Source Group"));
+	config->setValue(prefix + "/status", std::string("enabled"));
+	config->setValue(prefix + "/cpp_standard", std::string("c++20"));
+	config->setValue(prefix + "/cross_compilation/target/arch", std::string("x86_64"));
+	REQUIRE(config->saveToml(path.str()));
+
+	std::shared_ptr<ConfigManager> config2 =
+		ConfigManager::createAndLoad(TextAccess::createFromFile(path));
+
+	std::string name;
+	REQUIRE(config2->getValue(prefix + "/name", name));
+	REQUIRE(name == "C++ Source Group");
+
+	std::string arch;
+	REQUIRE(config2->getValue(prefix + "/cross_compilation/target/arch", arch));
+	REQUIRE(arch == "x86_64");
+
+	const std::vector<std::string> keys = config2->getSublevelKeys("source_groups");
+	REQUIRE(keys.size() == 1);
+}

@@ -26,10 +26,19 @@ bool Settings::load(const FilePath& filePath, bool readOnly)
 {
 	m_readOnly = readOnly;
 
-	if (filePath.exists())
+	FilePath resolvedPath = filePath;
+
+	if (!resolvedPath.exists())
 	{
-		m_config = ConfigManager::createAndLoad(TextAccess::createFromFile(filePath));
-		m_filePath = filePath;
+		const FilePath tomlPath = filePath.replaceExtension(".srctrl.toml");
+		if (tomlPath.exists())
+			resolvedPath = tomlPath;
+	}
+
+	if (resolvedPath.exists())
+	{
+		m_config = ConfigManager::createAndLoad(TextAccess::createFromFile(resolvedPath));
+		m_filePath = resolvedPath;
 		return true;
 	}
 	else
@@ -53,20 +62,19 @@ bool Settings::loadFromString(const std::string& text, bool readOnly)
 bool Settings::save()
 {
 	if (m_readOnly)
-	{
 		return false;
-	}
 
 	bool success = false;
 	if (m_config.get() && !m_filePath.empty())
 	{
-		success = m_config->save(m_filePath.str());
+		if (m_filePath.extension() == ".toml" || m_filePath.str().ends_with(".srctrl.toml"))
+			success = m_config->saveToml(m_filePath.str());
+		else
+			success = m_config->save(m_filePath.str());
 	}
 
 	if (!success)
-	{
 		LOG_WARNING("Settings were not saved: " + m_filePath.str());
-	}
 
 	return success;
 }

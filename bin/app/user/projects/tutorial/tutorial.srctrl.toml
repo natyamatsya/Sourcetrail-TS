@@ -1,0 +1,21 @@
+description = "WHAT IS THIS?\\n\n		\\tThis is a tutorial and it is one of the fastest ways to get to know Sourcetrail.\\n\n		\\n\n		WHERE AM I?\\n\n		\\tYou're looking at Sourcetrail's Code View which usually displays source code,\\n\n		\\tbut every time a new project is loaded it gives a quick summary to\\n\n		\\testimate the project's size. This is a fairly small project. It only\\n\n		\\tcontains a few hundred lines of code as you can see by the numbers below.\\n\n		\\n\n		LET'S GET STARTED!\\n\n		\\tTo keep things simple just click the \"start_tour\" symbol below to start the tour.\\n\n		\\n\n        \\n\n		[::\\tmstart_tour\\tsint\\tp()](); // <- start here\\n\n        \\n"
+version = 8
+
+[[source_groups]]
+id = "75041cb3-37c8-45c6-bb8a-1b8b79040f59"
+cpp_standard = "c++2a"
+exclude_filters = ""
+name = "Tutorial Source Group"
+source_extensions = ""
+source_paths = ""
+status = "enabled"
+type = "C++ Source Group"
+
+[source_groups.cross_compilation]
+target_options_enabled = "0"
+
+[source_groups.cross_compilation.target]
+abi = "unknown"
+arch = "x86_64"
+sys = "unknown"
+vendor = "unknown"
