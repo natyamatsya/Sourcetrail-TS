@@ -1,6 +1,10 @@
 #ifndef SOURCE_GROUP_RUST_H
 #define SOURCE_GROUP_RUST_H
 
+#include "language_packages.h"
+
+#if BUILD_RUST_LANGUAGE_PACKAGE
+
 #include <memory>
 #include <set>
 #include <vector>
@@ -29,5 +33,7 @@ protected:
 private:
 	std::shared_ptr<SourceGroupSettingsRustEmpty> m_settings;
 };
+
+#endif	  // BUILD_RUST_LANGUAGE_PACKAGE
 
 #endif	  // SOURCE_GROUP_RUST_H

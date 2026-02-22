@@ -10,6 +10,8 @@ class TextAccess;
 class TiXmlNode;
 class FilePath;
 
+namespace toml { inline namespace v3 { class table; } }
+
 class ConfigManager
 {
 public:
@@ -66,6 +68,7 @@ private:
 	void operator=(const ConfigManager&) = delete;
 
 	void parseSubtree(TiXmlNode* parentElement, const std::string& currentPath);
+	void parseTomlTable(const toml::v3::table& table, const std::string& currentPath);
 	bool createXmlDocument(bool saveAsFile, std::string filepath, std::string& output);
 
 	std::multimap<std::string, std::string> m_values;

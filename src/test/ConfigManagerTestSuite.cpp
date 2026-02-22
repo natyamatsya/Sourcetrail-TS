@@ -177,3 +177,120 @@ TEST_CASE("config manager save and load special character and compare")
 		TextAccess::createFromFile(path));
 	REQUIRE(config->toString() == config2->toString());
 }
+
+TEST_CASE("config manager loads simple TOML values")
+{
+	const std::string toml =
+		"version = 8\n"
+		"description = \"My Project\"\n";
+
+	std::shared_ptr<ConfigManager> config =
+		ConfigManager::createAndLoad(TextAccess::createFromString(toml));
+
+	int version = 0;
+	REQUIRE(config->getValue("version", version));
+	REQUIRE(version == 8);
+
+	std::string description;
+	REQUIRE(config->getValue("description", description));
+	REQUIRE(description == "My Project");
+}
+
+TEST_CASE("config manager loads TOML nested table")
+{
+	const std::string toml =
+		"[cross_compilation.target]\n"
+		"arch = \"x86_64\"\n"
+		"sys = \"linux\"\n";
+
+	std::shared_ptr<ConfigManager> config =
+		ConfigManager::createAndLoad(TextAccess::createFromString(toml));
+
+	std::string arch;
+	REQUIRE(config->getValue("cross_compilation/target/arch", arch));
+	REQUIRE(arch == "x86_64");
+
+	std::string sys;
+	REQUIRE(config->getValue("cross_compilation/target/sys", sys));
+	REQUIRE(sys == "linux");
+}
+
+TEST_CASE("config manager loads TOML plain array")
+{
+	const std::string toml =
+		"[group]\n"
+		"source_paths = [\"src/\", \"include/\"]\n";
+
+	std::shared_ptr<ConfigManager> config =
+		ConfigManager::createAndLoad(TextAccess::createFromString(toml));
+
+	std::vector<std::string> paths;
+	REQUIRE(config->getValues("group/source_paths/source_path", paths));
+	REQUIRE(paths.size() == 2);
+	REQUIRE(paths[0] == "src/");
+	REQUIRE(paths[1] == "include/");
+}
+
+TEST_CASE("config manager loads TOML source_groups array of tables with UUID key mapping")
+{
+	const std::string toml =
+		"version = 8\n"
+		"\n"
+		"[[source_groups]]\n"
+		"id = \"aaaaaaaa-0000-0000-0000-000000000001\"\n"
+		"name = \"C++ Source Group\"\n"
+		"type = \"C++ Source Group\"\n"
+		"status = \"enabled\"\n"
+		"cpp_standard = \"c++20\"\n"
+		"\n"
+		"[source_groups.cross_compilation]\n"
+		"target_options_enabled = \"0\"\n"
+		"\n"
+		"[source_groups.cross_compilation.target]\n"
+		"arch = \"x86_64\"\n"
+		"sys = \"unknown\"\n";
+
+	std::shared_ptr<ConfigManager> config =
+		ConfigManager::createAndLoad(TextAccess::createFromString(toml));
+
+	const std::string prefix =
+		"source_groups/source_group_aaaaaaaa-0000-0000-0000-000000000001";
+
+	std::string name;
+	REQUIRE(config->getValue(prefix + "/name", name));
+	REQUIRE(name == "C++ Source Group");
+
+	std::string type;
+	REQUIRE(config->getValue(prefix + "/type", type));
+	REQUIRE(type == "C++ Source Group");
+
+	std::string cppStd;
+	REQUIRE(config->getValue(prefix + "/cpp_standard", cppStd));
+	REQUIRE(cppStd == "c++20");
+
+	std::string arch;
+	REQUIRE(config->getValue(prefix + "/cross_compilation/target/arch", arch));
+	REQUIRE(arch == "x86_64");
+}
+
+TEST_CASE("config manager getSublevelKeys works for TOML source_groups")
+{
+	const std::string toml =
+		"[[source_groups]]\n"
+		"id = \"aaaaaaaa-0000-0000-0000-000000000001\"\n"
+		"name = \"Group A\"\n"
+		"type = \"C++ Source Group\"\n"
+		"status = \"enabled\"\n"
+		"\n"
+		"[[source_groups]]\n"
+		"id = \"bbbbbbbb-0000-0000-0000-000000000002\"\n"
+		"name = \"Group B\"\n"
+		"type = \"C++ Source Group\"\n"
+		"status = \"enabled\"\n";
+
+	std::shared_ptr<ConfigManager> config =
+		ConfigManager::createAndLoad(TextAccess::createFromString(toml));
+
+	const std::vector<std::string> keys = config->getSublevelKeys("source_groups");
+	REQUIRE(keys.size() == 2);
+}

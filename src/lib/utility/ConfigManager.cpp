@@ -1,8 +1,10 @@
 #include "ConfigManager.h"
 
 #include <set>
+#include <sstream>
 
 #include "tinyxml.h"
+#include <toml++/toml.hpp>
 
 #include "FilePath.h"
 #include "TextAccess.h"
@@ -309,27 +311,46 @@ std::vector<std::string> ConfigManager::getSublevelKeys(const std::string& key) 
 
 bool ConfigManager::load(const std::shared_ptr<TextAccess> textAccess)
 {
-	TiXmlDocument doc;
-	const char* pTest = doc.Parse(textAccess->getText().c_str(), nullptr, TIXML_ENCODING_UTF8);
-	if (pTest != nullptr)
+	const std::string& text = textAccess->getText();
+
+	if (text.find("<?xml") != std::string::npos)
 	{
-		TiXmlHandle docHandle(&doc);
-		TiXmlNode* rootNode = docHandle.FirstChild("config").ToNode();
-		if (rootNode == nullptr)
+		TiXmlDocument doc;
+		const char* pTest = doc.Parse(text.c_str(), nullptr, TIXML_ENCODING_UTF8);
+		if (pTest != nullptr)
 		{
-			LOG_ERROR("No rootelement 'config' in the configfile");
-			return false;
+			TiXmlHandle docHandle(&doc);
+			TiXmlNode* rootNode = docHandle.FirstChild("config").ToNode();
+			if (rootNode == nullptr)
+			{
+				LOG_ERROR("No rootelement 'config' in the configfile");
+				return false;
+			}
+			for (TiXmlNode* childNode = rootNode->FirstChild(); childNode;
+				 childNode = childNode->NextSibling())
+			{
+				parseSubtree(childNode, "");
+			}
 		}
-		for (TiXmlNode* childNode = rootNode->FirstChild(); childNode;
-			 childNode = childNode->NextSibling())
+		else
 		{
-			parseSubtree(childNode, "");
+			LOG_ERROR("Unable to load XML file.");
+			return false;
 		}
 	}
 	else
 	{
-		LOG_ERROR("Unable to load file.");
-		return false;
+		try
+		{
+			std::istringstream stream(text);
+			toml::table root = toml::parse(stream);
+			parseTomlTable(root, "");
+		}
+		catch (const toml::parse_error& e)
+		{
+			LOG_ERROR(std::string("Unable to parse TOML file: ") + e.what());
+			return false;
+		}
 	}
 	return true;
 }
@@ -417,6 +438,96 @@ void ConfigManager::parseSubtree(TiXmlNode* currentNode, const std::string& curr
 			 childNode = childNode->NextSibling())
 		{
 			parseSubtree(childNode, currentPath + std::string(currentNode->Value()) + "/");
+		}
+	}
+}
+
+void ConfigManager::parseTomlTable(const toml::v3::table& table, const std::string& currentPath)
+{
+	for (auto&& [k, v] : table)
+	{
+		const std::string key(k.str());
+		const std::string fullKey = currentPath.empty() ? key : currentPath + "/" + key;
+
+		if (const auto* arr = v.as_array())
+		{
+			if (arr->is_array_of_tables())
+			{
+				// Array of tables: each element must have an "id" field so we can
+				// reconstruct the XML-style "source_group_<UUID>" key prefix.
+				for (auto&& elem : *arr)
+				{
+					const auto* elemTable = elem.as_table();
+					if (!elemTable)
+						continue;
+
+					const auto* idNode = elemTable->get("id");
+					if (idNode && idNode->is_string())
+					{
+						const std::string id = idNode->as_string()->get();
+						const std::string groupKey = fullKey + "/source_group_" + id;
+						parseTomlTable(*elemTable, groupKey);
+					}
+					else
+					{
+						parseTomlTable(*elemTable, fullKey);
+					}
+				}
+			}
+			else
+			{
+				// Plain array: emit one entry per element using the singular key name.
+				// E.g. source_paths = ["a", "b"] -> source_paths/source_path = "a", "b"
+				const std::string singularKey = (key.size() > 1 && key.back() == 's')
+					? fullKey + "/" + key.substr(0, key.size() - 1)
+					: fullKey + "/" + key;
+
+				for (auto&& elem : *arr)
+				{
+					std::string val;
+					if (elem.is_string())
+						val = elem.as_string()->get();
+					else if (elem.is_integer())
+						val = std::to_string(elem.as_integer()->get());
+					else if (elem.is_boolean())
+						val = elem.as_boolean()->get() ? "1" : "0";
+					else if (elem.is_floating_point())
+					{
+						std::ostringstream oss;
+						oss << elem.as_floating_point()->get();
+						val = oss.str();
+					}
+					if (!val.empty())
+						m_values.emplace(singularKey, val);
+				}
+			}
+		}
+		else if (const auto* subTable = v.as_table())
+		{
+			parseTomlTable(*subTable, fullKey);
+		}
+		else
+		{
+			// Skip the "id" field itself — it was already consumed to build the key prefix.
+			if (key == "id" && currentPath.find("source_group_") != std::string::npos)
+				continue;
+
+			std::string val;
+			if (v.is_string())
+				val = v.as_string()->get();
+			else if (v.is_integer())
+				val = std::to_string(v.as_integer()->get());
+			else if (v.is_boolean())
+				val = v.as_boolean()->get() ? "1" : "0";
+			else if (v.is_floating_point())
+			{
+				std::ostringstream oss;
+				oss << v.as_floating_point()->get();
+				val = oss.str();
+			}
+
+			if (!val.empty())
+				m_values.emplace(fullKey, val);
 		}
 	}
 }

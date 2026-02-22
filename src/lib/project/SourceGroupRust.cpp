@@ -1,5 +1,7 @@
 #include "SourceGroupRust.h"
 
+#if BUILD_RUST_LANGUAGE_PACKAGE
+
 #include "FileManager.h"
 #include "IndexerCommandRust.h"
 #include "RefreshInfo.h"
@@ -60,3 +62,5 @@ std::shared_ptr<const SourceGroupSettings> SourceGroupRust::getSourceGroupSettin
 {
 	return m_settings;
 }
+
+#endif	  // BUILD_RUST_LANGUAGE_PACKAGE

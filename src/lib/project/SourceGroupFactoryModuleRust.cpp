@@ -1,5 +1,7 @@
 #include "SourceGroupFactoryModuleRust.h"
 
+#if BUILD_RUST_LANGUAGE_PACKAGE
+
 #include "SourceGroupRust.h"
 #include "SourceGroupSettingsRustEmpty.h"
 
@@ -15,3 +17,5 @@ std::shared_ptr<SourceGroup> SourceGroupFactoryModuleRust::createSourceGroup(
 		return std::make_shared<SourceGroupRust>(rustSettings);
 	return nullptr;
 }
+
+#endif	  // BUILD_RUST_LANGUAGE_PACKAGE

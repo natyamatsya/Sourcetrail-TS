@@ -152,6 +152,7 @@ FetchContent_Declare(
 	GIT_REPOSITORY  https://github.com/natyamatsya/cpp-ipc.git
 	GIT_TAG         master
 	GIT_SUBMODULES  ""
+	SOURCE_SUBDIR   cpp/libipc
 )
 set(LIBIPC_BUILD_TESTS      OFF CACHE BOOL "" FORCE)
 set(LIBIPC_BUILD_DEMOS      OFF CACHE BOOL "" FORCE)
@@ -161,7 +162,12 @@ FetchContent_MakeAvailable(cpp-ipc)
 message(STATUS "Fetched cpp-ipc (libipc)")
 
 add_library(External_lib_ipc INTERFACE)
-target_link_libraries(External_lib_ipc INTERFACE ipc)
+target_link_libraries(External_lib_ipc INTERFACE
+	"${cpp-ipc_BINARY_DIR}/lib/libipc.a"
+)
+target_include_directories(External_lib_ipc SYSTEM INTERFACE
+	"${cpp-ipc_SOURCE_DIR}/cpp/libipc/include"
+)
 
 # Qt ---------------------------------------------------------------------------
 
@@ -236,6 +242,18 @@ else()
 	add_library(External_lib_tinyxml ALIAS PkgConfig::tinyxml)
 endif()
 message(STATUS "Found tinyxml ${tinyxml_VERSION}")
+
+# toml++ ------------------------------------------------------------------------------
+
+find_package(tomlplusplus CONFIG REQUIRED)
+message(STATUS "Found toml++ ${tomlplusplus_VERSION}")
+
+add_library(External_lib_tomlplusplus INTERFACE)
+target_include_directories(External_lib_tomlplusplus SYSTEM INTERFACE
+	"${tomlplusplus_DIR}/../../include"
+)
+target_compile_definitions(External_lib_tomlplusplus INTERFACE TOML_HEADER_ONLY=1)
+target_compile_features(External_lib_tomlplusplus INTERFACE cxx_std_17)
 
 # AidKit  -----------------------------------------------------------------------------------
 

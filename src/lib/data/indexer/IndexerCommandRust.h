@@ -1,6 +1,10 @@
 #ifndef INDEXER_COMMAND_RUST_H
 #define INDEXER_COMMAND_RUST_H
 
+#include "language_packages.h"
+
+#if BUILD_RUST_LANGUAGE_PACKAGE
+
 #include <set>
 #include <string>
 
@@ -28,5 +32,7 @@ private:
 	std::set<FilePath> m_indexedPaths;
 	FilePath m_workingDirectory;
 };
+
+#endif	  // BUILD_RUST_LANGUAGE_PACKAGE
 
 #endif	  // INDEXER_COMMAND_RUST_H
