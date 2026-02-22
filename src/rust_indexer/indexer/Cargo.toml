@@ -8,7 +8,7 @@ name = "sourcetrail_rust_indexer"
 path = "src/main.rs"
 
 [dependencies]
-libipc = { path = "../../../inspiration/cpp-ipc/rust/libipc" }
+libipc = { git = "https://github.com/natyamatsya/cpp-ipc.git", rev = "32b772d" }
 flatbuffers = "24.3.25"
 syn = { version = "2", features = ["full", "visit"] }
 proc-macro2 = { version = "1", features = ["span-locations"] }
