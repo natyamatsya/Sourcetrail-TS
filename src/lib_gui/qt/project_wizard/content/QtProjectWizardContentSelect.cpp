@@ -44,6 +44,7 @@ void QtProjectWizardContentSelect::populate(QGridLayout* layout, int&  /*row*/)
 	sourceGroupInfos[LanguageType::C].push_back(SourceGroupInfo(SourceGroupType::CXX_VS));
 	sourceGroupInfos[LanguageType::C].push_back(SourceGroupInfo(SourceGroupType::C_EMPTY));
 	sourceGroupInfos[LanguageType::CXX].push_back(SourceGroupInfo(SourceGroupType::CXX_CDB, true));
+	sourceGroupInfos[LanguageType::CXX].push_back(SourceGroupInfo(SourceGroupType::CXX_CMAKE_FILE_API));
 	sourceGroupInfos[LanguageType::CXX].push_back(SourceGroupInfo(SourceGroupType::CXX_VS));
 	sourceGroupInfos[LanguageType::CXX].push_back(SourceGroupInfo(SourceGroupType::CXX_EMPTY));
 #endif	  // BUILD_CXX_LANGUAGE_PACKAGE
@@ -56,8 +57,9 @@ void QtProjectWizardContentSelect::populate(QGridLayout* layout, int&  /*row*/)
 #if BUILD_CXX_LANGUAGE_PACKAGE
 	m_sourceGroupTypeIconName[SourceGroupType::C_EMPTY]        = QtResources::ICON_EMPTY_ICON;
 	m_sourceGroupTypeIconName[SourceGroupType::CXX_EMPTY]      = QtResources::ICON_EMPTY_ICON;
-	m_sourceGroupTypeIconName[SourceGroupType::CXX_CDB]        = QtResources::ICON_CDB_ICON;
-	m_sourceGroupTypeIconName[SourceGroupType::CXX_VS]         = QtResources::ICON_VS_ICON;
+	m_sourceGroupTypeIconName[SourceGroupType::CXX_CDB]              = QtResources::ICON_CDB_ICON;
+	m_sourceGroupTypeIconName[SourceGroupType::CXX_CMAKE_FILE_API]   = QtResources::ICON_CDB_ICON;
+	m_sourceGroupTypeIconName[SourceGroupType::CXX_VS]               = QtResources::ICON_VS_ICON;
 #endif // BUILD_CXX_LANGUAGE_PACKAGE
 #if BUILD_RUST_LANGUAGE_PACKAGE
 	m_sourceGroupTypeIconName[SourceGroupType::RUST_EMPTY] = QtResources::ICON_EMPTY_ICON;
@@ -77,6 +79,12 @@ void QtProjectWizardContentSelect::populate(QGridLayout* layout, int&  /*row*/)
 		"<a href=\"" +
 		utility::getDocumentationLink() +
 		"#cc-source-group-from-compilation-database\">documentation</a>.";
+	m_sourceGroupTypeDescriptions[SourceGroupType::CXX_CMAKE_FILE_API] =
+		"Create a Source Group driven by the CMake File-based API. Select a CMake source "
+		"directory and a configure preset — Sourcetrail will resolve the binary directory "
+		"automatically and obtain per-file compile commands (include paths, defines, flags) "
+		"directly from CMake. The project is re-configured automatically when CMakeLists.txt "
+		"or .cmake files change on refresh.";
 	m_sourceGroupTypeDescriptions[SourceGroupType::CXX_VS] =
 		"<p>Create a new Source Group from an existing Visual Studio Solution file.</p>"
 		"<p><b>Note</b>: Requires a running Visual Studio instance with the "
