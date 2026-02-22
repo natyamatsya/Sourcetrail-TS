@@ -162,9 +162,7 @@ FetchContent_MakeAvailable(cpp-ipc)
 message(STATUS "Fetched cpp-ipc (libipc)")
 
 add_library(External_lib_ipc INTERFACE)
-target_link_libraries(External_lib_ipc INTERFACE
-	"${cpp-ipc_BINARY_DIR}/lib/libipc.a"
-)
+target_link_libraries(External_lib_ipc INTERFACE ipc)
 target_include_directories(External_lib_ipc SYSTEM INTERFACE
 	"${cpp-ipc_SOURCE_DIR}/cpp/libipc/include"
 )
