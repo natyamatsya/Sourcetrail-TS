@@ -17,7 +17,8 @@
 #	include "SourceGroupSettingsRustEmpty.h"
 #endif	  // BUILD_RUST_LANGUAGE_PACKAGE
 
-const std::string ProjectSettings::PROJECT_FILE_EXTENSION = ".srctrlprj";
+const std::string ProjectSettings::PROJECT_FILE_EXTENSION = ".srctrl.toml";
+const std::string ProjectSettings::LEGACY_PROJECT_FILE_EXTENSION = ".srctrlprj";
 const std::string ProjectSettings::BOOKMARK_DB_FILE_EXTENSION = ".srctrlbm";
 const std::string ProjectSettings::INDEX_DB_FILE_EXTENSION = ".srctrldb";
 const std::string ProjectSettings::TEMP_INDEX_DB_FILE_EXTENSION = ".srctrldb_tmp";
@@ -112,24 +113,35 @@ FilePath ProjectSettings::getDependenciesDirectoryPath() const
 	return getProjectDirectoryPath().concatenate("sourcetrail_dependencies");
 }
 
+static FilePath stripProjectExtension(const FilePath& path)
+{
+	FilePath p = path.withoutExtension();
+	if (p.extension() == ".srctrl")
+		p = p.withoutExtension();
+	return p;
+}
+
 FilePath ProjectSettings::getDBFilePath() const
 {
-	return getFilePath().replaceExtension(INDEX_DB_FILE_EXTENSION);
+	return stripProjectExtension(getFilePath()).replaceExtension(INDEX_DB_FILE_EXTENSION);
 }
 
 FilePath ProjectSettings::getTempDBFilePath() const
 {
-	return getFilePath().replaceExtension(TEMP_INDEX_DB_FILE_EXTENSION);
+	return stripProjectExtension(getFilePath()).replaceExtension(TEMP_INDEX_DB_FILE_EXTENSION);
 }
 
 FilePath ProjectSettings::getBookmarkDBFilePath() const
 {
-	return getFilePath().replaceExtension(BOOKMARK_DB_FILE_EXTENSION);
+	return stripProjectExtension(getFilePath()).replaceExtension(BOOKMARK_DB_FILE_EXTENSION);
 }
 
 std::string ProjectSettings::getProjectName() const
 {
-	return getFilePath().withoutExtension().fileName();
+	FilePath p = getFilePath().withoutExtension();
+	if (p.extension() == ".srctrl")
+		p = p.withoutExtension();
+	return p.fileName();
 }
 
 FilePath ProjectSettings::getProjectDirectoryPath() const

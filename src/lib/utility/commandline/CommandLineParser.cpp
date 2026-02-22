@@ -169,7 +169,7 @@ void CommandLineParser::processProjectfile()
 		return;
 	}
 
-	if (m_projectFile.extension() != ".srctrlprj")
+	if (!m_projectFile.str().ends_with(".srctrl.toml") && m_projectFile.extension() != ".srctrlprj")
 	{
 		m_errorString = errorstring + " has a wrong file ending";
 		m_projectFile = FilePath();

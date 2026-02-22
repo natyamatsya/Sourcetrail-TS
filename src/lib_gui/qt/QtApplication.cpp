@@ -31,7 +31,7 @@ bool QtApplication::event(QEvent* event)
 
 		FilePath path(fileEvent->file().toStdString());
 
-		if (path.exists() && path.extension() == ".srctrlprj")
+		if (path.exists() && (path.str().ends_with(".srctrl.toml") || path.extension() == ".srctrlprj"))
 		{
 			MessageLoadProject(path).dispatch();
 			return true;

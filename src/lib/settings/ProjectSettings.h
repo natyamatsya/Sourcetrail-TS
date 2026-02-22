@@ -13,6 +13,7 @@ class ProjectSettings: public Settings
 {
 public:
 	static const std::string PROJECT_FILE_EXTENSION;
+	static const std::string LEGACY_PROJECT_FILE_EXTENSION;
 	static const std::string BOOKMARK_DB_FILE_EXTENSION;
 	static const std::string INDEX_DB_FILE_EXTENSION;
 	static const std::string TEMP_INDEX_DB_FILE_EXTENSION;
