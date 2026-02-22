@@ -65,7 +65,7 @@
 			"hidden": true,
 			"name": "system-clang-presets",
 			"cacheVariables": {
-				"CMAKE_C_COMPILER"  : "clang",
+				"CMAKE_C_COMPILER": "clang",
 				"CMAKE_CXX_COMPILER": "clang++"
 			}
 		},
@@ -74,12 +74,10 @@
 			"name": "sourcetrail-presets",
 			"cacheVariables": {
 				"BUILD_CXX_LANGUAGE_PACKAGE": "ON",
+				"BUILD_RUST_LANGUAGE_PACKAGE": "ON",
 				"BUILD_UNIT_TESTS_PACKAGE": "ON"
 			}
 		},
-
-
-
 		{
 			"name": "system-debug",
 			"inherits": [
@@ -125,9 +123,6 @@
 				"system-clang-presets"
 			]
 		},
-
-
-
 		{
 			"name": "vcpkg-debug",
 			"inherits": [
