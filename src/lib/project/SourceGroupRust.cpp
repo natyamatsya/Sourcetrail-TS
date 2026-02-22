@@ -41,16 +41,14 @@ std::vector<std::shared_ptr<IndexerCommand>> SourceGroupRust::getIndexerCommands
 		utility::toSet(m_settings->getSourcePathsExpandedAndAbsolute());
 	const FilePath workingDir = m_settings->getProjectDirectoryPath();
 
-	std::vector<std::shared_ptr<IndexerCommand>> commands;
-	for (const FilePath& sourcePath: getAllSourceFilePaths())
+	// The Rust indexer works at crate level via working_directory (Cargo.toml).
+	// Emit one command per source group — the source file path is the working dir
+	// itself (used only as a key for status tracking), not an individual .rs file.
+	if (!info.filesToIndex.empty())
 	{
-		if (info.filesToIndex.find(sourcePath) != info.filesToIndex.end())
-		{
-			commands.push_back(
-				std::make_shared<IndexerCommandRust>(sourcePath, indexedPaths, workingDir));
-		}
+		return {std::make_shared<IndexerCommandRust>(workingDir, indexedPaths, workingDir)};
 	}
-	return commands;
+	return {};
 }
 
 std::shared_ptr<SourceGroupSettings> SourceGroupRust::getSourceGroupSettings()
