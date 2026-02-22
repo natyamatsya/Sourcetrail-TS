@@ -10,6 +10,9 @@
 //   - StorageSymbol (DefinitionKind = EXPLICIT = 2) for each node
 //   - StorageSourceLocation pointing at the name token of the item
 //   - StorageOccurrence linking node → location
+//   - StorageEdge  for impl/trait relationships:
+//       EDGE_INHERITANCE  (1<<4 = 16)  — `impl Trait for Type`
+//       EDGE_TYPE_USAGE   (1<<1 = 2)   — trait bounds on type params
 //   - StorageError  for load / analysis failures
 //
 // Node kind constants mirror NodeKind.h (bitmask values):
@@ -24,6 +27,10 @@
 //   NODE_MACRO           = 1 << 17 = 131072
 //   NODE_UNION           = 1 << 18 = 262144
 //
+// Edge type constants mirror Edge::EdgeType in Edge.h (bitmask values):
+//   EDGE_TYPE_USAGE   = 1 << 1 = 2
+//   EDGE_INHERITANCE  = 1 << 4 = 16
+//
 // DefinitionKind: NONE = 0, IMPLICIT = 1, EXPLICIT = 2
 // LocationType:   TOKEN = 0, SCOPE = 1, QUALIFIER = 2
 
@@ -36,12 +43,13 @@ use ra_ap_ide_db::line_index::LineIndex;
 use ra_ap_ide_db::RootDatabase;
 use ra_ap_load_cargo::{load_workspace_at, LoadCargoConfig, ProcMacroServerChoice};
 use ra_ap_project_model::CargoConfig;
+use ra_ap_syntax::ast::{self, HasGenericParams, HasTypeBounds};
 use ra_ap_syntax::AstNode;
 use ra_ap_vfs::Vfs;
 
 use crate::ipc::storage::{
-    OwnedIntermediateStorage, OwnedStorageError, OwnedStorageFile, OwnedStorageNode,
-    OwnedStorageOccurrence, OwnedStorageSourceLocation, OwnedStorageSymbol,
+    OwnedIntermediateStorage, OwnedStorageEdge, OwnedStorageError, OwnedStorageFile,
+    OwnedStorageNode, OwnedStorageOccurrence, OwnedStorageSourceLocation, OwnedStorageSymbol,
 };
 
 const NODE_MODULE: i32 = 1 << 3;
@@ -57,6 +65,9 @@ const NODE_UNION: i32 = 1 << 18;
 
 const DEFINITION_EXPLICIT: i32 = 2;
 const LOCATION_TOKEN: i32 = 0;
+
+const EDGE_TYPE_USAGE: i32 = 1 << 1;
+const EDGE_INHERITANCE: i32 = 1 << 4;
 
 // ---------------------------------------------------------------------------
 // Public entry point: index a whole Cargo crate
@@ -248,6 +259,33 @@ impl<'db> Collector<'db> {
         self.vfs.file_path(file_id).as_path().map(|p| p.to_string())
     }
 
+    /// Emit a directed edge between two named nodes (looked up by serialized name).
+    /// If either node hasn't been emitted yet the edge is silently dropped — this
+    /// can happen for items from external crates that we intentionally skip.
+    fn add_edge(&mut self, edge_type: i32, source_name: &str, target_name: &str) {
+        let source_id = self
+            .storage
+            .nodes
+            .iter()
+            .find(|n| n.serialized_name == source_name)
+            .map(|n| n.id);
+        let target_id = self
+            .storage
+            .nodes
+            .iter()
+            .find(|n| n.serialized_name == target_name)
+            .map(|n| n.id);
+        if let (Some(src), Some(tgt)) = (source_id, target_id) {
+            let edge_id = self.alloc_id();
+            self.storage.edges.push(OwnedStorageEdge {
+                id: edge_id,
+                type_: edge_type,
+                source_node_id: src,
+                target_node_id: tgt,
+            });
+        }
+    }
+
     fn collect_crate(&mut self, krate: Crate) {
         for module in krate.modules(self.db) {
             // declarations() covers most items but misses macro_rules! —
@@ -270,6 +308,116 @@ impl<'db> Collector<'db> {
             }
             // Collect parse errors for every file in this module.
             self.collect_parse_errors(module);
+            // Walk impl blocks for EDGE_INHERITANCE and EDGE_TYPE_USAGE.
+            for imp in module.impl_defs(self.db) {
+                self.collect_impl(imp);
+            }
+        }
+    }
+
+    /// Walk one `impl` block using the AST only — no HIR type inference.
+    ///   - `impl Trait for Type`  → EDGE_INHERITANCE from Type to Trait
+    ///   - trait bounds on the impl's type params → EDGE_TYPE_USAGE from impl self-type to bound
+    fn collect_impl(&mut self, imp: ra_ap_hir::Impl) {
+        // Use the AST source to avoid any HIR type-inference calls (Type::as_adt,
+        // Type::display, etc.) which require the salsa next-solver TLS attachment.
+        let Some(src) = imp.source(self.db) else {
+            return;
+        };
+        let ast_impl = &src.value;
+
+        // In `impl [Trait for] Type { … }`, child Type nodes appear in source order:
+        //   - with `for` token: first child = trait type, second child = self type
+        //   - without `for` token: only child = self type
+        let type_nodes: Vec<ast::Type> = ast_impl
+            .syntax()
+            .children()
+            .filter_map(ast::Type::cast)
+            .collect();
+
+        let has_for = ast_impl.for_token().is_some();
+        let (trait_ty, self_ty) = if has_for && type_nodes.len() >= 2 {
+            (Some(&type_nodes[0]), Some(&type_nodes[1]))
+        } else if !has_for && type_nodes.len() >= 1 {
+            (None, Some(&type_nodes[0]))
+        } else {
+            return;
+        };
+
+        let self_ty_name = match self_ty {
+            Some(ast::Type::PathType(pt)) => pt
+                .path()
+                .and_then(|p| p.segment())
+                .and_then(|s| s.name_ref())
+                .map(|n| n.text().to_string()),
+            _ => None,
+        };
+        let Some(self_ty_name) = self_ty_name else {
+            return;
+        };
+
+        // `impl Trait for Type` → EDGE_INHERITANCE
+        if let Some(ast::Type::PathType(pt)) = trait_ty {
+            if let Some(trait_name) = pt
+                .path()
+                .and_then(|p| p.segment())
+                .and_then(|s| s.name_ref())
+                .map(|n| n.text().to_string())
+            {
+                self.add_edge(EDGE_INHERITANCE, &self_ty_name, &trait_name);
+            }
+        }
+
+        // Trait bounds on the impl's own type parameters → EDGE_TYPE_USAGE
+        self.emit_ast_generic_bounds(&self_ty_name, ast_impl.generic_param_list());
+    }
+
+    /// Emit EDGE_TYPE_USAGE edges for trait bounds on a generic item's type params.
+    /// Uses the AST (via HasSource) to avoid the salsa next-solver TLS requirement
+    /// of TypeParam::trait_bounds(db).
+    fn collect_generic_bounds<N>(&mut self, item_name: &str, src: Option<ra_ap_hir::InFile<N>>)
+    where
+        N: ra_ap_syntax::AstNode + HasGenericParams,
+    {
+        if let Some(in_file) = src {
+            self.emit_ast_generic_bounds(item_name, in_file.value.generic_param_list());
+        }
+    }
+
+    /// Extract trait bounds from an AST `GenericParamList` and emit EDGE_TYPE_USAGE.
+    /// Handles both inline bounds (`T: Trait`) and `where` clauses.
+    fn emit_ast_generic_bounds(
+        &mut self,
+        item_name: &str,
+        param_list: Option<ast::GenericParamList>,
+    ) {
+        let Some(params) = param_list else { return };
+        for param in params.type_or_const_params() {
+            if let ast::TypeOrConstParam::Type(tp) = param {
+                if let Some(bounds) = tp.type_bound_list() {
+                    for bound in bounds.bounds() {
+                        if let Some(bound_name) = bound_trait_name(&bound) {
+                            self.add_edge(EDGE_TYPE_USAGE, item_name, &bound_name);
+                        }
+                    }
+                }
+            }
+        }
+        // Also handle `where T: Trait` clauses.
+        if let Some(where_clause) = params
+            .syntax()
+            .parent()
+            .and_then(|p| p.children().find_map(ast::WhereClause::cast))
+        {
+            for pred in where_clause.predicates() {
+                if let Some(bounds) = pred.type_bound_list() {
+                    for bound in bounds.bounds() {
+                        if let Some(bound_name) = bound_trait_name(&bound) {
+                            self.add_edge(EDGE_TYPE_USAGE, item_name, &bound_name);
+                        }
+                    }
+                }
+            }
         }
     }
 
@@ -307,29 +455,41 @@ impl<'db> Collector<'db> {
                 } else {
                     NODE_FUNCTION
                 };
-                self.emit_from_source(f.source(self.db), &name, kind);
+                let src = f.source(self.db);
+                self.emit_from_source(src.clone(), &name, kind);
+                self.collect_generic_bounds(&name, src);
             }
             ModuleDef::Adt(adt) => match adt {
                 Adt::Struct(s) => {
                     let name = s.name(self.db).as_str().to_string();
-                    self.emit_from_source(s.source(self.db), &name, NODE_STRUCT);
+                    let src = s.source(self.db);
+                    self.emit_from_source(src.clone(), &name, NODE_STRUCT);
+                    self.collect_generic_bounds(&name, src);
                 }
                 Adt::Enum(e) => {
                     let name = e.name(self.db).as_str().to_string();
-                    self.emit_from_source(e.source(self.db), &name, NODE_ENUM);
+                    let src = e.source(self.db);
+                    self.emit_from_source(src.clone(), &name, NODE_ENUM);
+                    self.collect_generic_bounds(&name, src);
                 }
                 Adt::Union(u) => {
                     let name = u.name(self.db).as_str().to_string();
-                    self.emit_from_source(u.source(self.db), &name, NODE_UNION);
+                    let src = u.source(self.db);
+                    self.emit_from_source(src.clone(), &name, NODE_UNION);
+                    self.collect_generic_bounds(&name, src);
                 }
             },
             ModuleDef::Trait(t) => {
                 let name = t.name(self.db).as_str().to_string();
-                self.emit_from_source(t.source(self.db), &name, NODE_INTERFACE);
+                let src = t.source(self.db);
+                self.emit_from_source(src.clone(), &name, NODE_INTERFACE);
+                self.collect_generic_bounds(&name, src);
             }
             ModuleDef::TypeAlias(ta) => {
                 let name = ta.name(self.db).as_str().to_string();
-                self.emit_from_source(ta.source(self.db), &name, NODE_TYPEDEF);
+                let src = ta.source(self.db);
+                self.emit_from_source(src.clone(), &name, NODE_TYPEDEF);
+                self.collect_generic_bounds(&name, src);
             }
             ModuleDef::Const(c) => {
                 if let Some(name) = c.name(self.db) {
@@ -662,6 +822,86 @@ mod tests {
             "expected 5 nodes, got: {:?}",
             node_names(&s)
         );
+    }
+
+    // -----------------------------------------------------------------------
+    // Edge tests — EDGE_INHERITANCE and EDGE_TYPE_USAGE
+    // -----------------------------------------------------------------------
+
+    fn edge_types(s: &OwnedIntermediateStorage) -> Vec<i32> {
+        s.edges.iter().map(|e| e.type_).collect()
+    }
+
+    fn has_edge(s: &OwnedIntermediateStorage, edge_type: i32, src: &str, tgt: &str) -> bool {
+        let src_id = s
+            .nodes
+            .iter()
+            .find(|n| n.serialized_name == src)
+            .map(|n| n.id);
+        let tgt_id = s
+            .nodes
+            .iter()
+            .find(|n| n.serialized_name == tgt)
+            .map(|n| n.id);
+        match (src_id, tgt_id) {
+            (Some(sid), Some(tid)) => s.edges.iter().any(|e| {
+                e.type_ == edge_type && e.source_node_id == sid && e.target_node_id == tid
+            }),
+            _ => false,
+        }
+    }
+
+    #[test]
+    fn impl_trait_emits_inheritance_edge() {
+        let s = index_src("pub trait Greet {} pub struct Person; impl Greet for Person {}");
+        assert!(
+            edge_types(&s).contains(&EDGE_INHERITANCE),
+            "expected EDGE_INHERITANCE, edges: {:?}",
+            s.edges
+        );
+    }
+
+    #[test]
+    fn trait_bound_on_struct_emits_type_usage_edge() {
+        let s = index_src("pub trait Summary {} pub struct Wrapper<T: Summary> { pub val: T }");
+        assert!(
+            edge_types(&s).contains(&EDGE_TYPE_USAGE),
+            "expected EDGE_TYPE_USAGE for trait bound, edges: {:?}",
+            s.edges
+        );
+    }
+
+    #[test]
+    fn trait_bound_on_fn_emits_type_usage_edge() {
+        let s = index_src("pub trait Display {} pub fn print<T: Display>(val: T) {}");
+        assert!(
+            edge_types(&s).contains(&EDGE_TYPE_USAGE),
+            "expected EDGE_TYPE_USAGE for fn trait bound, edges: {:?}",
+            s.edges
+        );
+    }
+
+    #[test]
+    fn plain_impl_block_emits_no_inheritance_edge() {
+        let s = index_src("pub struct Counter; impl Counter { pub fn inc(&self) {} }");
+        assert!(
+            !edge_types(&s).contains(&EDGE_INHERITANCE),
+            "plain impl should not emit EDGE_INHERITANCE"
+        );
+    }
+}
+
+/// Extract the simple trait name from an AST `TypeBound`, e.g. `T: Display + Clone`
+/// yields `"Display"` and `"Clone"` in turn. Returns `None` for lifetime bounds.
+fn bound_trait_name(bound: &ast::TypeBound) -> Option<String> {
+    let ty = bound.ty()?;
+    // The bound type is a path type like `Display` or `std::fmt::Display`.
+    // Take the last path segment as the simple name.
+    if let ast::Type::PathType(pt) = ty {
+        let segment = pt.path()?.segment()?;
+        Some(segment.name_ref()?.text().to_string())
+    } else {
+        None
     }
 }
 
