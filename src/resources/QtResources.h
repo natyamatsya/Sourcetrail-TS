@@ -73,15 +73,11 @@ public:
 	static const char HISTORY_LIST_CSS[];
 	static const char HISTORY_LIST_ARROW[];
 
-	static const char ICON_CBP_ICON[];
 	static const char ICON_CDB_ICON[];
 	static const char ICON_C_ICON[];
 	static const char ICON_CPP_ICON[];
 	static const char ICON_EMPTY_ICON[];
-	static const char ICON_GRADLE_ICON[];
-	static const char ICON_JAVA_ICON[];
 	static const char ICON_LOGO_1024_1024[];
-	static const char ICON_MVN_ICON[];
 	static const char ICON_PROJECT_256_256[];
 	static const char ICON_PROJECT[];
 	static const char ICON_VS_ICON[];

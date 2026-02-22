@@ -74,15 +74,11 @@ qt_add_resources(Sourcetrail_res_gui Sourcetrail_resources
 		history_list/history_list.css
 		history_list/images/arrow.png
 		
-		icon/cbp_icon.png
 		icon/cdb_icon.png
 		icon/c_icon.png
 		icon/cpp_icon.png
 		icon/empty_icon.png
-		icon/gradle_icon.png
-		icon/java_icon.png
 		icon/logo_1024_1024.png
-		icon/mvn_icon.png
 		icon/project_256_256.png
 		icon/project.ico
 		icon/vs_icon.png

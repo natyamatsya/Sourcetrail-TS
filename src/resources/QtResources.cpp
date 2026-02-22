@@ -80,15 +80,11 @@ const char QtResources::GRAPH_VIEW_CSS[]             = ":/graph_view/graph_view.
 const char QtResources::HISTORY_LIST_CSS[]   = ":/history_list/history_list.css";
 const char QtResources::HISTORY_LIST_ARROW[] = ":/history_list/images/arrow.png";
 
-const char QtResources::ICON_CBP_ICON[]        = ":/icon/cbp_icon.png";
 const char QtResources::ICON_CDB_ICON[]        = ":/icon/cdb_icon.png";
 const char QtResources::ICON_C_ICON[]          = ":/icon/c_icon.png";
 const char QtResources::ICON_CPP_ICON[]        = ":/icon/cpp_icon.png";
 const char QtResources::ICON_EMPTY_ICON[]      = ":/icon/empty_icon.png";
-const char QtResources::ICON_GRADLE_ICON[]     = ":/icon/gradle_icon.png";
-const char QtResources::ICON_JAVA_ICON[]       = ":/icon/java_icon.png";
 const char QtResources::ICON_LOGO_1024_1024[]  = ":/icon/logo_1024_1024.png";
-const char QtResources::ICON_MVN_ICON[]        = ":/icon/mvn_icon.png";
 const char QtResources::ICON_PROJECT_256_256[] = ":/icon/project_256_256.png";
 const char QtResources::ICON_PROJECT[]         = ":/icon/project.ico";
 const char QtResources::ICON_VS_ICON[]         = ":/icon/vs_icon.png";
