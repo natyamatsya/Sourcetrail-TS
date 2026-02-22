@@ -113,7 +113,13 @@ void IpcSharedMemory::ScopedAccess::write(const uint8_t* buf, std::size_t len)
 		throw std::runtime_error("IpcSharedMemory::write: no mapped memory");
 
 	if (len > size())
+	{
+		LOG_ERROR(
+			"IpcSharedMemory::write: buffer too large (" + std::to_string(len) +
+			" bytes) for shared memory region '" + m_memory->getMemoryName() +
+			"' (" + std::to_string(size()) + " bytes)");
 		throw std::runtime_error("IpcSharedMemory::write: buffer too large for shared memory region");
+	}
 
 	std::memcpy(mem, buf, len);
 }

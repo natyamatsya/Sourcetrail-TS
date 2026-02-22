@@ -16,7 +16,7 @@ IpcInterprocessIndexerCommandManager::IpcInterprocessIndexerCommandManager(
 	, m_processId{processId}
 	, m_shm{
 		  s_sharedMemoryNamePrefix + instanceUuid,
-		  1048576,
+		  64 * 1024 * 1024,
 		  isOwner ? IpcSharedMemory::CREATE_AND_DELETE : IpcSharedMemory::OPEN_OR_CREATE}
 {
 }
