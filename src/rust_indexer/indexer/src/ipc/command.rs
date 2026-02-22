@@ -23,49 +23,52 @@ pub struct CommandChannel {
 impl CommandChannel {
     pub fn open(uuid: &str) -> io::Result<Self> {
         let name = format!("icmd_ipc_{uuid}");
-        Ok(Self { shm: IpcShm::open(&name, SHM_SIZE)? })
+        Ok(Self {
+            shm: IpcShm::open(&name, SHM_SIZE)?,
+        })
     }
 
     /// Pop the first Rust-typed command from the queue.
     /// Returns `None` when the queue is empty or contains no Rust commands.
     pub fn pop_rust_command(&self) -> io::Result<Option<OwnedIndexerCommand>> {
-        self.shm.read_locked(|data| -> io::Result<Option<OwnedIndexerCommand>> {
-            if is_empty(data) {
-                return Ok(None);
-            }
-            let queue = match root_as_indexer_command_queue(data) {
-                Ok(q) => q,
-                Err(_) => return Ok(None),
-            };
-            let commands = match queue.commands() {
-                Some(v) => v,
-                None => return Ok(None),
-            };
-            if commands.is_empty() {
-                return Ok(None);
-            }
-            // Find the first Rust command.
-            let mut rust_idx = None;
-            for i in 0..commands.len() {
-                if commands.get(i).type_() == IndexerCommandType::Rust {
-                    rust_idx = Some(i);
-                    break;
+        self.shm
+            .read_locked(|data| -> io::Result<Option<OwnedIndexerCommand>> {
+                if is_empty(data) {
+                    return Ok(None);
                 }
-            }
-            let idx = match rust_idx {
-                Some(i) => i,
-                None => return Ok(None),
-            };
-            let cmd = OwnedIndexerCommand::from_fbs(commands.get(idx));
-            Ok(Some(cmd))
-        })?
-        .and_then(|opt| {
-            if opt.is_some() {
-                // Remove the command from the queue and write back.
-                self.remove_first_rust()?;
-            }
-            Ok(opt)
-        })
+                let queue = match root_as_indexer_command_queue(data) {
+                    Ok(q) => q,
+                    Err(_) => return Ok(None),
+                };
+                let commands = match queue.commands() {
+                    Some(v) => v,
+                    None => return Ok(None),
+                };
+                if commands.is_empty() {
+                    return Ok(None);
+                }
+                // Find the first Rust command.
+                let mut rust_idx = None;
+                for i in 0..commands.len() {
+                    if commands.get(i).type_() == IndexerCommandType::Rust {
+                        rust_idx = Some(i);
+                        break;
+                    }
+                }
+                let idx = match rust_idx {
+                    Some(i) => i,
+                    None => return Ok(None),
+                };
+                let cmd = OwnedIndexerCommand::from_fbs(commands.get(idx));
+                Ok(Some(cmd))
+            })?
+            .and_then(|opt| {
+                if opt.is_some() {
+                    // Remove the command from the queue and write back.
+                    self.remove_first_rust()?;
+                }
+                Ok(opt)
+            })
     }
 
     fn remove_first_rust(&self) -> io::Result<()> {
@@ -124,6 +127,7 @@ impl CommandChannel {
 
 #[derive(Debug, Clone)]
 pub struct OwnedIndexerCommand {
+    pub type_: IndexerCommandType,
     pub source_file_path: String,
     pub indexed_paths: Vec<String>,
     pub exclude_filters: Vec<String>,
@@ -139,6 +143,7 @@ impl OwnedIndexerCommand {
                 .unwrap_or_default()
         };
         Self {
+            type_: cmd.type_(),
             source_file_path: cmd.source_file_path().unwrap_or("").to_owned(),
             indexed_paths: str_vec(cmd.indexed_paths()),
             exclude_filters: str_vec(cmd.exclude_filters()),
@@ -161,18 +166,34 @@ fn serialize_queue(commands: &[OwnedIndexerCommand]) -> Vec<u8> {
         .map(|cmd| {
             let src = fbb.create_string(&cmd.source_file_path);
             let wdir = fbb.create_string(&cmd.working_directory);
-            let indexed: Vec<_> = cmd.indexed_paths.iter().map(|s| fbb.create_string(s)).collect();
+            let indexed: Vec<_> = cmd
+                .indexed_paths
+                .iter()
+                .map(|s| fbb.create_string(s))
+                .collect();
             let indexed_v = fbb.create_vector(&indexed);
-            let exclude: Vec<_> = cmd.exclude_filters.iter().map(|s| fbb.create_string(s)).collect();
+            let exclude: Vec<_> = cmd
+                .exclude_filters
+                .iter()
+                .map(|s| fbb.create_string(s))
+                .collect();
             let exclude_v = fbb.create_vector(&exclude);
-            let include: Vec<_> = cmd.include_filters.iter().map(|s| fbb.create_string(s)).collect();
+            let include: Vec<_> = cmd
+                .include_filters
+                .iter()
+                .map(|s| fbb.create_string(s))
+                .collect();
             let include_v = fbb.create_vector(&include);
-            let flags: Vec<_> = cmd.compiler_flags.iter().map(|s| fbb.create_string(s)).collect();
+            let flags: Vec<_> = cmd
+                .compiler_flags
+                .iter()
+                .map(|s| fbb.create_string(s))
+                .collect();
             let flags_v = fbb.create_vector(&flags);
             IndexerCommand::create(
                 &mut fbb,
                 &IndexerCommandArgs {
-                    type_: IndexerCommandType::Rust,
+                    type_: cmd.type_,
                     source_file_path: Some(src),
                     indexed_paths: Some(indexed_v),
                     exclude_filters: Some(exclude_v),
@@ -187,7 +208,9 @@ fn serialize_queue(commands: &[OwnedIndexerCommand]) -> Vec<u8> {
     let cmds_v = fbb.create_vector(&cmd_offsets);
     let queue = IndexerCommandQueue::create(
         &mut fbb,
-        &IndexerCommandQueueArgs { commands: Some(cmds_v) },
+        &IndexerCommandQueueArgs {
+            commands: Some(cmds_v),
+        },
     );
     fbb.finish(queue, None);
     fbb.finished_data().to_vec()
