@@ -54,9 +54,21 @@ bool SourceGroupCxxCMakeFileAPI::prepareIndexing()
 	}
 
 	CMakeFileAPIReader reader{buildDir};
-	if (!reader.hasReply())
+	if (!reader.hasReply() || reader.isReplyStale())
 	{
-		MessageStatus("Writing CMake File API query and running cmake...", false, true).dispatch();
+		if (reader.isReplyStale())
+		{
+			MessageStatus(
+				"CMake project has changed — regenerating File API reply...", false, true)
+				.dispatch();
+			m_cachedBuildDir = {};	// invalidate cached build dir too
+		}
+		else
+		{
+			MessageStatus("Writing CMake File API query and running cmake...", false, true)
+				.dispatch();
+		}
+
 		if (!reader.ensureReply(
 				[](const std::string& msg) { MessageStatus(msg, false, true).dispatch(); },
 				sourceDir,

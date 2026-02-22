@@ -408,6 +408,24 @@ std::vector<CMakeFileAPIReader::SourceEntry> CMakeFileAPIReader::getSources(
 	return result;
 }
 
+bool CMakeFileAPIReader::isReplyStale() const
+{
+	const FilePath indexFile{findIndexFile()};
+	if (indexFile.empty())
+		return false;
+
+	const auto indexMtime{std::filesystem::last_write_time(indexFile.getPath())};
+
+	for (const FilePath& input : getCMakeInputFiles())
+	{
+		if (!input.exists())
+			continue;
+		if (std::filesystem::last_write_time(input.getPath()) > indexMtime)
+			return true;
+	}
+	return false;
+}
+
 std::vector<FilePath> CMakeFileAPIReader::getCMakeInputFiles() const
 {
 	const auto indexPath{findIndexFile()};

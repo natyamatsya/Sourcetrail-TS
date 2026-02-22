@@ -82,6 +82,12 @@ public:
 	// the cmakeFiles-v1 reply. Watch these for staleness detection.
 	std::vector<FilePath> getCMakeInputFiles() const;
 
+	// Returns true if any CMake input file has been modified after the reply
+	// index file was written, meaning the cached reply is stale and
+	// ensureReply() should be called again before the next indexing run.
+	// Returns false if the reply is absent (caller should call ensureReply()).
+	bool isReplyStale() const;
+
 	// Returns the build directory this reader was constructed with.
 	const FilePath& buildDir() const;
 
