@@ -1,10 +1,12 @@
 #include "SourceGroupFactoryModuleCxx.h"
 
 #include "SourceGroupCxxCdb.h"
+#include "SourceGroupCxxCMakeFileAPI.h"
 #include "SourceGroupCxxEmpty.h"
 #include "SourceGroupSettingsCEmpty.h"
 #include "SourceGroupSettingsCppEmpty.h"
 #include "SourceGroupSettingsCxxCdb.h"
+#include "SourceGroupSettingsCxxCMakeFileAPI.h"
 
 bool SourceGroupFactoryModuleCxx::supports(SourceGroupType type) const
 {
@@ -13,6 +15,7 @@ bool SourceGroupFactoryModuleCxx::supports(SourceGroupType type) const
 	case SourceGroupType::C_EMPTY:
 	case SourceGroupType::CXX_EMPTY:
 	case SourceGroupType::CXX_CDB:
+	case SourceGroupType::CXX_CMAKE_FILE_API:
 		return true;
 	default:
 		break;
@@ -28,6 +31,12 @@ std::shared_ptr<SourceGroup> SourceGroupFactoryModuleCxx::createSourceGroup(
 			std::dynamic_pointer_cast<SourceGroupSettingsCxxCdb>(settings))
 	{
 		sourceGroup = std::shared_ptr<SourceGroup>(new SourceGroupCxxCdb(cxxSettings));
+	}
+	else if (
+		std::shared_ptr<SourceGroupSettingsCxxCMakeFileAPI> cxxSettings =
+			std::dynamic_pointer_cast<SourceGroupSettingsCxxCMakeFileAPI>(settings))
+	{
+		sourceGroup = std::shared_ptr<SourceGroup>(new SourceGroupCxxCMakeFileAPI(cxxSettings));
 	}
 	else if (
 		std::shared_ptr<SourceGroupSettingsCEmpty> cxxSettings =

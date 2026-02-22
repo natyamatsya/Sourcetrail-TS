@@ -11,6 +11,7 @@
 #	include "SourceGroupSettingsCEmpty.h"
 #	include "SourceGroupSettingsCppEmpty.h"
 #	include "SourceGroupSettingsCxxCdb.h"
+#	include "SourceGroupSettingsCxxCMakeFileAPI.h"
 #endif	  // BUILD_CXX_LANGUAGE_PACKAGE
 #if BUILD_RUST_LANGUAGE_PACKAGE
 #	include "SourceGroupSettingsRustEmpty.h"
@@ -175,6 +176,9 @@ std::vector<std::shared_ptr<SourceGroupSettings>> ProjectSettings::getAllSourceG
 			break;
 		case SourceGroupType::CXX_CDB:
 			settings = std::make_shared<SourceGroupSettingsCxxCdb>(id, this);
+			break;
+		case SourceGroupType::CXX_CMAKE_FILE_API:
+			settings = std::make_shared<SourceGroupSettingsCxxCMakeFileAPI>(id, this);
 			break;
 #endif	  // BUILD_CXX_LANGUAGE_PACKAGE
 #if BUILD_RUST_LANGUAGE_PACKAGE

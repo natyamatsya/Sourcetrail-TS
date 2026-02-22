@@ -81,6 +81,8 @@ add_library(Sourcetrail_lib_cxx
 
 	project/SourceGroupCxxCdb.cpp
 	project/SourceGroupCxxCdb.h
+	project/SourceGroupCxxCMakeFileAPI.cpp
+	project/SourceGroupCxxCMakeFileAPI.h
 	project/SourceGroupCxxEmpty.cpp
 	project/SourceGroupCxxEmpty.h
 	project/SourceGroupFactoryModuleCxx.cpp
