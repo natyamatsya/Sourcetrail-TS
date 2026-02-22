@@ -53,6 +53,10 @@
 #	include "SourceGroupSettingsCxxCodeblocks.h"
 #endif	  // BUILD_CXX_LANGUAGE_PACKAGE
 
+#if BUILD_RUST_LANGUAGE_PACKAGE
+#	include "SourceGroupSettingsRustEmpty.h"
+#endif	  // BUILD_RUST_LANGUAGE_PACKAGE
+
 using namespace std;
 
 namespace
@@ -232,6 +236,21 @@ void addSourceGroupContents<SourceGroupSettingsCxxCodeblocks>(
 }
 
 #endif	  // BUILD_CXX_LANGUAGE_PACKAGE
+
+#if BUILD_RUST_LANGUAGE_PACKAGE
+
+template <>
+void addSourceGroupContents<SourceGroupSettingsRustEmpty>(
+	QtProjectWizardContentGroup* group,
+	std::shared_ptr<SourceGroupSettingsRustEmpty> settings,
+	QtProjectWizardWindow* window)
+{
+	group->addContent(new QtProjectWizardContentPathsSource(settings, window));
+	group->addContent(new QtProjectWizardContentPathsExclude(settings, window));
+	group->addContent(new QtProjectWizardContentExtensions(settings, window));
+}
+
+#endif	  // BUILD_RUST_LANGUAGE_PACKAGE
 
 template <>
 void addSourceGroupContents<SourceGroupSettingsCustomCommand>(
@@ -630,6 +649,14 @@ void QtProjectWizard::selectedSourceGroupChanged(int index)
 		addSourceGroupContents(summary, settings, this);
 	}
 #endif	  // BUILD_CXX_LANGUAGE_PACKAGE
+#if BUILD_RUST_LANGUAGE_PACKAGE
+	else if (
+		std::shared_ptr<SourceGroupSettingsRustEmpty> settings =
+			std::dynamic_pointer_cast<SourceGroupSettingsRustEmpty>(group))
+	{
+		addSourceGroupContents(summary, settings, this);
+	}
+#endif	  // BUILD_RUST_LANGUAGE_PACKAGE
 
 	summary->addSpace();
 	summary->addContent(new QtProjectWizardContentRequiredLabel(this));
@@ -864,6 +891,13 @@ void QtProjectWizard::selectedProjectType(SourceGroupType sourceGroupType)
 		newSourceGroupFromVS();
 		return;
 #endif	  // BUILD_CXX_LANGUAGE_PACKAGE
+
+#if BUILD_RUST_LANGUAGE_PACKAGE
+	case SourceGroupType::RUST_EMPTY:
+		settings = std::make_shared<SourceGroupSettingsRustEmpty>(
+			sourceGroupId, m_projectSettings.get());
+		break;
+#endif	  // BUILD_RUST_LANGUAGE_PACKAGE
 
 	case SourceGroupType::CUSTOM_COMMAND:
 		settings = std::make_shared<SourceGroupSettingsCustomCommand>(
