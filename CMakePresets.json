@@ -9,7 +9,7 @@
 				"dev": false,
 				"uninitialized": false
 			},
-			"binaryDir": "${sourceParentDir}/build/${presetName}"
+			"binaryDir": "${sourceDir}/.build/${presetName}"
 		},
 		{
 			"hidden": true,

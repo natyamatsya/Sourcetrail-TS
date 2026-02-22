@@ -14,7 +14,7 @@ CMakeLists.txt.user
 *.srctrlbm
 *.srctrldb
 *.srctrlprj
-/build/
+/.build/
 
 # Rust / Cargo
 src/rust_indexer/target/
