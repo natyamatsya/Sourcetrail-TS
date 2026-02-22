@@ -10,6 +10,10 @@ std::string languageTypeToString(LanguageType t)
 	case LanguageType::CXX:
 		return "C++";
 #endif	  // BUILD_CXX_LANGUAGE_PACKAGE
+#if BUILD_RUST_LANGUAGE_PACKAGE
+	case LanguageType::RUST:
+		return "Rust";
+#endif	  // BUILD_RUST_LANGUAGE_PACKAGE
 	case LanguageType::CUSTOM:
 		return "Custom";
 	case LanguageType::UNKNOWN:
@@ -34,6 +38,10 @@ LanguageType getLanguageTypeForSourceGroupType(SourceGroupType t)
 	case SourceGroupType::CXX_VS:
 		return LanguageType::CXX;
 #endif	  // BUILD_CXX_LANGUAGE_PACKAGE
+#if BUILD_RUST_LANGUAGE_PACKAGE
+	case SourceGroupType::RUST_EMPTY:
+		return LanguageType::RUST;
+#endif	  // BUILD_RUST_LANGUAGE_PACKAGE
 	case SourceGroupType::CUSTOM_COMMAND:
 		return LanguageType::CUSTOM;
 	default:

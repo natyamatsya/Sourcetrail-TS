@@ -28,6 +28,11 @@
 	#include "SourceGroupFactoryModuleCxx.h"
 #endif	  // BUILD_CXX_LANGUAGE_PACKAGE
 
+#if BUILD_RUST_LANGUAGE_PACKAGE
+	#include "LanguagePackageRust.h"
+	#include "SourceGroupFactoryModuleRust.h"
+#endif	  // BUILD_RUST_LANGUAGE_PACKAGE
+
 #if BOOST_OS_WINDOWS
 	#include <windows.h>
 #endif
@@ -85,9 +90,17 @@ void addLanguagePackages()
 	SourceGroupFactory::getInstance()->addModule(std::make_shared<SourceGroupFactoryModuleCxx>());
 #endif	  // BUILD_CXX_LANGUAGE_PACKAGE
 
+#if BUILD_RUST_LANGUAGE_PACKAGE
+	SourceGroupFactory::getInstance()->addModule(std::make_shared<SourceGroupFactoryModuleRust>());
+#endif	  // BUILD_RUST_LANGUAGE_PACKAGE
+
 #if BUILD_CXX_LANGUAGE_PACKAGE
 	LanguagePackageManager::getInstance()->addPackage(std::make_shared<LanguagePackageCxx>());
 #endif	  // BUILD_CXX_LANGUAGE_PACKAGE
+
+#if BUILD_RUST_LANGUAGE_PACKAGE
+	LanguagePackageManager::getInstance()->addPackage(std::make_shared<LanguagePackageRust>());
+#endif	  // BUILD_RUST_LANGUAGE_PACKAGE
 }
 
 int main(int argc, char* argv[])

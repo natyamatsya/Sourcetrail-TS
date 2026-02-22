@@ -16,6 +16,10 @@ std::string sourceGroupTypeToString(SourceGroupType v)
 	case SourceGroupType::CXX_VS:
 		return "C/C++ from Visual Studio";
 #endif	  // BUILD_CXX_LANGUAGE_PACKAGE
+#if BUILD_RUST_LANGUAGE_PACKAGE
+	case SourceGroupType::RUST_EMPTY:
+		return "Rust Source Group";
+#endif	  // BUILD_RUST_LANGUAGE_PACKAGE
 	case SourceGroupType::CUSTOM_COMMAND:
 		return "Custom Command Source Group";
 	case SourceGroupType::UNKNOWN:
@@ -40,6 +44,10 @@ std::string sourceGroupTypeToProjectSetupString(SourceGroupType v)
 	case SourceGroupType::CXX_VS:
 		return "C/C++ from Visual Studio";
 #endif	  // BUILD_CXX_LANGUAGE_PACKAGE
+#if BUILD_RUST_LANGUAGE_PACKAGE
+	case SourceGroupType::RUST_EMPTY:
+		return "Empty Rust Source Group";
+#endif	  // BUILD_RUST_LANGUAGE_PACKAGE
 	case SourceGroupType::CUSTOM_COMMAND:
 		return "Custom Command Source Group";
 	case SourceGroupType::UNKNOWN:
@@ -72,6 +80,12 @@ SourceGroupType stringToSourceGroupType(const std::string& v)
 		return SourceGroupType::CXX_VS;
 	}
 #endif	  // BUILD_CXX_LANGUAGE_PACKAGE
+#if BUILD_RUST_LANGUAGE_PACKAGE
+	if (v == sourceGroupTypeToString(SourceGroupType::RUST_EMPTY))
+	{
+		return SourceGroupType::RUST_EMPTY;
+	}
+#endif	  // BUILD_RUST_LANGUAGE_PACKAGE
 	if (v == sourceGroupTypeToString(SourceGroupType::CUSTOM_COMMAND))
 	{
 		return SourceGroupType::CUSTOM_COMMAND;

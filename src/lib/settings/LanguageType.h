@@ -14,6 +14,9 @@ enum class LanguageType
 	CXX,
 	C,
 #endif
+#if BUILD_RUST_LANGUAGE_PACKAGE
+	RUST,
+#endif
 	CUSTOM
 };
 
