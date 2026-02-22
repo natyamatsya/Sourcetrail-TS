@@ -44,6 +44,58 @@ bool containsSourceWithPath(
 }	 // namespace
 
 // ---------------------------------------------------------------------------
+// resolveBinaryDir — pure CMakePresets.json parsing, no cmake subprocess
+// ---------------------------------------------------------------------------
+
+TEST_CASE("CMakeFileAPIReader resolveBinaryDir resolves debug preset")
+{
+	FilePath buildDir =
+		CMakeFileAPIReader::resolveBinaryDir(fixtureSourceDir(), "debug");
+
+	// CMakePresets.json: binaryDir = "${sourceDir}/../build"
+	FilePath expected =
+		fixtureSourceDir().getConcatenated("/../build").makeCanonical();
+	REQUIRE(buildDir.makeCanonical().str() == expected.str());
+}
+
+TEST_CASE("CMakeFileAPIReader resolveBinaryDir resolves release preset")
+{
+	FilePath buildDir =
+		CMakeFileAPIReader::resolveBinaryDir(fixtureSourceDir(), "release");
+
+	FilePath expected =
+		fixtureSourceDir().getConcatenated("/../build").makeCanonical();
+	REQUIRE(buildDir.makeCanonical().str() == expected.str());
+}
+
+TEST_CASE("CMakeFileAPIReader resolveBinaryDir returns empty for unknown preset")
+{
+	const FilePath buildDir =
+		CMakeFileAPIReader::resolveBinaryDir(fixtureSourceDir(), "nonexistent-preset");
+
+	REQUIRE(buildDir.empty());
+}
+
+TEST_CASE("CMakeFileAPIReader resolveBinaryDir follows inherits chain")
+{
+	// "inherited" has no binaryDir itself — it inherits from "hidden-base"
+	FilePath buildDir =
+		CMakeFileAPIReader::resolveBinaryDir(fixtureSourceDir(), "inherited");
+
+	FilePath expected =
+		fixtureSourceDir().getConcatenated("/../build").makeCanonical();
+	REQUIRE(buildDir.makeCanonical().str() == expected.str());
+}
+
+TEST_CASE("CMakeFileAPIReader resolveBinaryDir returns empty for missing source dir")
+{
+	const FilePath buildDir = CMakeFileAPIReader::resolveBinaryDir(
+		FilePath("/nonexistent/path"), "debug");
+
+	REQUIRE(buildDir.empty());
+}
+
+// ---------------------------------------------------------------------------
 // discoverPresets — pure JSON parsing, no cmake subprocess
 // ---------------------------------------------------------------------------
 
@@ -51,9 +103,10 @@ TEST_CASE("CMakeFileAPIReader discoverPresets finds visible presets")
 {
 	const auto presets = CMakeFileAPIReader::discoverPresets(fixtureSourceDir());
 
-	REQUIRE(presets.size() == 2);
+	REQUIRE(presets.size() == 3);
 	REQUIRE(std::find(presets.begin(), presets.end(), "debug") != presets.end());
 	REQUIRE(std::find(presets.begin(), presets.end(), "release") != presets.end());
+	REQUIRE(std::find(presets.begin(), presets.end(), "inherited") != presets.end());
 }
 
 TEST_CASE("CMakeFileAPIReader discoverPresets excludes hidden presets")

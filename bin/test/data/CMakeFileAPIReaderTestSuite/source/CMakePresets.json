@@ -21,6 +21,11 @@
       "name": "hidden-base",
       "hidden": true,
       "binaryDir": "${sourceDir}/../build"
+    },
+    {
+      "name": "inherited",
+      "displayName": "Inherited",
+      "inherits": "hidden-base"
     }
   ]
 }

@@ -1,0 +1,16 @@
+version = '8'
+
+[[source_groups]]
+id = '647fda9d-a552-479e-b9c1-4de40b3ad8e8'
+name = 'C/C++ from CMake File API'
+status = 'enabled'
+type = 'C/C++ from CMake File API'
+
+    [source_groups.cmake]
+    configuration = ''
+    preset_name = 'vcpkg-debug'
+    source_directory = '/Users/fischi/dev/github/natyamatsya/Sourcetrail'
+    target_glob = ''
+
+    [source_groups.indexed_header_paths]
+    indexed_header_path = 'src'

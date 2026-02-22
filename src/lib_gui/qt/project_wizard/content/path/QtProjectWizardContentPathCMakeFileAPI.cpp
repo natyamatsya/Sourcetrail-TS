@@ -132,13 +132,29 @@ bool QtProjectWizardContentPathCMakeFileAPI::check()
 		return false;
 	}
 
-	if (m_presetCombo->currentText().isEmpty())
+	const QString presetName = m_presetCombo->currentText();
+	if (presetName.isEmpty())
 	{
 		m_presetStatusLabel->setText(
 			QStringLiteral("<span style=\"color:red\">Please select a configure preset.</span>"));
 		return false;
 	}
 
+	const FilePath buildDir = CMakeFileAPIReader::resolveBinaryDir(
+		sourceDir, presetName.toStdString());
+	if (buildDir.empty())
+	{
+		m_presetStatusLabel->setText(QStringLiteral(
+			"<span style=\"color:red\">Could not resolve binary directory for preset <b>") +
+			presetName +
+			QStringLiteral("</b>. Check that CMakePresets.json defines a <tt>binaryDir</tt>.</span>"));
+		return false;
+	}
+
+	m_presetStatusLabel->setText(
+		QStringLiteral("Binary directory: <tt>") +
+		QString::fromStdString(buildDir.str()) +
+		QStringLiteral("</tt>"));
 	return true;
 }
 

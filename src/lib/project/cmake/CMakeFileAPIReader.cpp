@@ -147,46 +147,114 @@ std::vector<std::string> CMakeFileAPIReader::discoverPresets(const FilePath& sou
 	return result;
 }
 
+// Expand the subset of CMake preset macro variables we care about.
+// Spec: https://cmake.org/cmake/help/latest/manual/cmake-presets.7.html#macro-expansion
+static QString expandPresetMacros(
+	const QString& value, const QString& sourceDir, const QString& presetName)
+{
+	QString result{value};
+	result.replace(QStringLiteral("${sourceDir}"), sourceDir);
+	result.replace(QStringLiteral("${presetName}"), presetName);
+	// ${sourceDirName} = last path component of sourceDir
+	result.replace(
+		QStringLiteral("${sourceDirName}"), QDir{sourceDir}.dirName());
+	// ${hostSystemName} — best-effort
+#if defined(Q_OS_WIN)
+	result.replace(QStringLiteral("${hostSystemName}"), QStringLiteral("Windows"));
+#elif defined(Q_OS_MAC)
+	result.replace(QStringLiteral("${hostSystemName}"), QStringLiteral("Darwin"));
+#else
+	result.replace(QStringLiteral("${hostSystemName}"), QStringLiteral("Linux"));
+#endif
+	return result;
+}
+
+// Build a flat map of all configure presets from CMakePresets.json and
+// CMakeUserPresets.json found in sourceDir.
+static QMap<QString, QJsonObject> collectPresets(const FilePath& sourceDir)
+{
+	QMap<QString, QJsonObject> result{};
+	for (const auto& filename :
+		 {std::string{"CMakePresets.json"}, std::string{"CMakeUserPresets.json"}})
+	{
+		const auto path{sourceDir.getConcatenated("/" + filename)};
+		if (!path.exists())
+			continue;
+		const auto doc{readJsonFile(path)};
+		if (doc.isNull())
+			continue;
+		for (const auto& val : doc.object()["configurePresets"].toArray())
+		{
+			const auto obj{val.toObject()};
+			const auto name{obj["name"].toString()};
+			if (!name.isEmpty())
+				result.insert(name, obj);
+		}
+	}
+	return result;
+}
+
+// Walk the inherits chain to find the first preset that defines binaryDir.
+static QString findBinaryDirTemplate(
+	const QString& presetName,
+	const QMap<QString, QJsonObject>& presets,
+	QSet<QString>& visited)
+{
+	if (visited.contains(presetName))
+		return {};
+	visited.insert(presetName);
+
+	const auto it{presets.find(presetName)};
+	if (it == presets.end())
+		return {};
+
+	const auto& obj{*it};
+	if (obj.contains(QStringLiteral("binaryDir")))
+		return obj["binaryDir"].toString();
+
+	// Follow inherits (string or array of strings).
+	const auto inheritsVal{obj["inherits"]};
+	QStringList parents{};
+	if (inheritsVal.isString())
+		parents << inheritsVal.toString();
+	else if (inheritsVal.isArray())
+		for (const auto& v : inheritsVal.toArray())
+			parents << v.toString();
+
+	for (const auto& parent : parents)
+	{
+		const auto found{findBinaryDirTemplate(parent, presets, visited)};
+		if (!found.isEmpty())
+			return found;
+	}
+	return {};
+}
+
 FilePath CMakeFileAPIReader::resolveBinaryDir(
 	const FilePath& sourceDir, const std::string& presetName)
 {
-	// Run: cmake -S <sourceDir> --preset <presetName> -N
-	// CMake prints "Build directory: <path>" to stdout when -N (no-build) is used.
-	QProcess proc{};
-	proc.setWorkingDirectory(QString::fromStdString(sourceDir.str()));
-	proc.start(
-		"cmake",
-		{QStringLiteral("-S"),
-		 QString::fromStdString(sourceDir.str()),
-		 QStringLiteral("--preset"),
-		 QString::fromStdString(presetName),
-		 QStringLiteral("-N")});
+	const auto presets{collectPresets(sourceDir)};
+	const auto qPresetName{QString::fromStdString(presetName)};
+	const auto qSourceDir{QString::fromStdString(sourceDir.str())};
 
-	if (!proc.waitForFinished(30'000))
+	QSet<QString> visited{};
+	const auto tmpl{findBinaryDirTemplate(qPresetName, presets, visited)};
+	if (tmpl.isEmpty())
 	{
-		LOG_ERROR(
-			"CMakeFileAPIReader: cmake -N timed out for preset '" + presetName + "'");
+		LOG_WARNING(
+			"CMakeFileAPIReader: no binaryDir found for preset '" + presetName + "'");
 		return {};
 	}
 
-	// Parse "Build directory: <path>" from stdout.
-	const auto output{QString::fromUtf8(proc.readAllStandardOutput())};
-	for (const auto& line : output.split('\n'))
-	{
-		const auto trimmed{line.trimmed()};
-		if (trimmed.startsWith(QStringLiteral("Build directory:")))
-		{
-			const auto path{trimmed.mid(
-				QStringLiteral("Build directory:").length()).trimmed()};
-			if (!path.isEmpty())
-				return FilePath{path.toStdString()};
-		}
-	}
+	const auto expanded{expandPresetMacros(tmpl, qSourceDir, qPresetName)};
+	if (expanded.isEmpty())
+		return {};
 
-	LOG_WARNING(
-		"CMakeFileAPIReader: could not parse build directory for preset '" +
-		presetName + "'. cmake output: " + output.toStdString());
-	return {};
+	// binaryDir may be relative to sourceDir.
+	const FilePath result{expanded.toStdString()};
+	if (result.isAbsolute())
+		return result;
+	return sourceDir.getConcatenated("/" + expanded.toStdString());
 }
 
 bool CMakeFileAPIReader::ensureReply(
