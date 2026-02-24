@@ -35,6 +35,7 @@ TaskBuildIndex::TaskBuildIndex(
 void TaskBuildIndex::doEnter(std::shared_ptr<Blackboard> blackboard)
 {
 	m_interprocessIndexingStatusManager.setIndexingInterrupted(false);
+	m_interprocessIndexingStatusManager.setQueueStopped(false);
 
 	m_indexingFileCount = 0;
 	updateIndexingDialog(blackboard, std::vector<FilePath>());
@@ -87,6 +88,8 @@ Task::TaskState TaskBuildIndex::doUpdate(std::shared_ptr<Blackboard> blackboard)
 	size_t runningThreadCount = m_runningThreadCount;
 
 	blackboard->get<bool>("indexer_command_queue_stopped", m_indexerCommandQueueStopped);
+	if (m_indexerCommandQueueStopped && !m_interprocessIndexingStatusManager.getQueueStopped())
+		m_interprocessIndexingStatusManager.setQueueStopped(true);
 
 	const std::vector<FilePath> indexingFiles = m_interprocessIndexingStatusManager.getCurrentlyIndexedSourceFilePaths();
 	if (!indexingFiles.empty())
@@ -211,7 +214,6 @@ void TaskBuildIndex::runIndexerProcess(ProcessId processId, const std::string& l
 		LOG_INFO_STREAM(<< "Indexer process " << processId << " returned with " + std::to_string(result));
 	}
 
-	m_interprocessIndexingStatusManager.setQueueStopped(true);
 	m_runningThreadCount--;
 }
 
