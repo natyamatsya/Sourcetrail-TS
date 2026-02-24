@@ -92,6 +92,24 @@ std::shared_ptr<IndexerCommand> IpcInterprocessIndexerCommandManager::popIndexer
 	return result;
 }
 
+bool IpcInterprocessIndexerCommandManager::hasIndexerCommandType(IndexerCommandType type)
+{
+	IpcSharedMemory::ScopedAccess access(&m_shm);
+	std::size_t len = 0;
+	const uint8_t* buf = access.read(&len);
+
+	if (len < 4 || std::memcmp(buf, "\0\0\0\0", 4) == 0)
+		return false;
+
+	auto all = IpcSerializer::deserializeIndexerCommands(buf, len);
+	if (type == INDEXER_COMMAND_UNKNOWN)
+		return !all.empty();
+
+	return std::any_of(all.begin(), all.end(), [type](const std::shared_ptr<IndexerCommand>& command) {
+		return command && command->getIndexerCommandType() == type;
+	});
+}
+
 void IpcInterprocessIndexerCommandManager::clearIndexerCommands()
 {
 	IpcSharedMemory::ScopedAccess access(&m_shm);

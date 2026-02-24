@@ -19,6 +19,7 @@
 #include "MessageFocusView.h"
 #include "MessageHistoryRedo.h"
 #include "MessageHistoryUndo.h"
+#include "MessageIndexingInterrupted.h"
 #include "MessageIndexingShowDialog.h"
 #include "MessageLoadProject.h"
 #include "MessageRefresh.h"
@@ -484,6 +485,7 @@ void QtMainWindow::contextMenuEvent(QContextMenuEvent* event)
 
 void QtMainWindow::closeEvent(QCloseEvent*  /*event*/)
 {
+	MessageIndexingInterrupted().dispatchImmediately();
 	MessageWindowClosed().dispatchImmediately();
 }
 

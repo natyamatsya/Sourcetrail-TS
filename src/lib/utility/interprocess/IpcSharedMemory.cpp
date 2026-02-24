@@ -83,7 +83,22 @@ std::string IpcSharedMemory::getMutexName() const
 IpcSharedMemory::ScopedAccess::ScopedAccess(IpcSharedMemory* memory)
 	: m_memory(memory)
 {
-	m_memory->m_mutex.lock();
+	const uint32_t lockTimeoutMs = 500;
+	size_t lockAttempts = 0;
+	while (!m_memory->m_mutex.lock(lockTimeoutMs))
+	{
+		lockAttempts++;
+		if (lockAttempts % 10 == 0)
+			LOG_WARNING_STREAM(
+				<< "IpcSharedMemory::ScopedAccess waiting for lock on '" << m_memory->getMutexName()
+				<< "' (memory='" << m_memory->getMemoryName() << "', attempts=" << lockAttempts
+				<< ", timeoutMs=" << lockTimeoutMs << ")");
+	}
+
+	if (lockAttempts > 0)
+		LOG_INFO_STREAM(
+			<< "IpcSharedMemory::ScopedAccess acquired lock after " << lockAttempts
+			<< " retries on '" << m_memory->getMutexName() << "'");
 }
 
 IpcSharedMemory::ScopedAccess::~ScopedAccess()

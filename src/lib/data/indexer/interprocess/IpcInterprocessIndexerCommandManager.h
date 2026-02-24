@@ -27,6 +27,8 @@ public:
 	std::shared_ptr<IndexerCommand> popIndexerCommand(
 		IndexerCommandType skipType = INDEXER_COMMAND_UNKNOWN);
 
+	bool hasIndexerCommandType(IndexerCommandType type);
+
 	void clearIndexerCommands();
 	size_t indexerCommandCount();
 

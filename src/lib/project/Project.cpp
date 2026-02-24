@@ -585,7 +585,7 @@ void Project::buildIndex(RefreshInfo info, std::shared_ptr<DialogView> dialogVie
 
 		// add task for refilling the indexer command queue
 		taskParallelIndexing->addTask(std::make_shared<TaskFillIndexerCommandsQueue>(
-			m_appUUID, std::move(indexerCommandProvider), 20));
+			m_appUUID, std::move(indexerCommandProvider), 2));
 
 		// add task for indexing
 		bool multiProcess = ApplicationSettings::getInstance()->getMultiProcessIndexingEnabled() &&

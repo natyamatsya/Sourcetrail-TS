@@ -176,6 +176,8 @@ void TaskBuildIndex::handleMessage(MessageIndexingInterrupted*  /*message*/)
 
 	m_interprocessIndexingStatusManager.setIndexingInterrupted(true);
 	m_interrupted = true;
+	LOG_INFO("interrupt requested: killing running indexer subprocesses (debug fallback)");
+	utility::killRunningProcesses();
 
 	m_dialogView->showUnknownProgressDialog(
 		"Interrupting Indexing", "Waiting for indexer\nthreads to finish");
@@ -204,14 +206,78 @@ void TaskBuildIndex::runIndexerProcess(ProcessId processId, const std::string& l
 		commandArguments.push_back(logFilePath);
 	}
 
+	LOG_INFO_STREAM(
+		<< "CXX indexer process " << processId << " configured: executable='"
+		<< indexerProcessPath.str() << "', args=" << commandArguments.size());
+
 	int result = 1;
+	size_t launchAttempt = 0;
+	size_t consecutiveFailureCount = 0;
+	const size_t maxConsecutiveFailures = 3;
 	while ((!m_indexerCommandQueueStopped || result != 0) && !m_interrupted)
 	{
+		launchAttempt++;
+		LOG_INFO_STREAM(
+			<< "Launching CXX indexer process " << processId << " attempt " << launchAttempt
+			<< " (queueStopped=" << m_indexerCommandQueueStopped
+			<< ", interrupted=" << m_interrupted << ")");
+
 		result = utility::executeProcess(
 					 indexerProcessPath.str(), commandArguments, FilePath(), false, INFINITE_TIMEOUT)
 					 .exitCode;
 
-		LOG_INFO_STREAM(<< "Indexer process " << processId << " returned with " + std::to_string(result));
+		LOG_INFO_STREAM(
+			<< "CXX indexer process " << processId << " attempt " << launchAttempt
+			<< " returned with " + std::to_string(result));
+
+		if (result == 0)
+		{
+			consecutiveFailureCount = 0;
+			continue;
+		}
+
+		if (result != 0)
+		{
+			if (m_interrupted)
+				break;
+
+			LOG_ERROR_STREAM(
+				<< "CXX indexer process " << processId << " attempt " << launchAttempt
+				<< " failed with exit code " << result << ". interrupting indexing.");
+
+			const std::vector<FilePath> indexingFiles =
+				m_interprocessIndexingStatusManager.getCurrentlyIndexedSourceFilePaths();
+			if (indexingFiles.empty())
+				LOG_ERROR_STREAM(
+					<< "CXX indexer failure context: no currently indexed source files reported.");
+			for (const FilePath& indexingFile: indexingFiles)
+			{
+				LOG_ERROR_STREAM(
+					<< "CXX indexer failure context: currently indexed file: "
+					<< indexingFile.str());
+			}
+
+			consecutiveFailureCount++;
+			if (consecutiveFailureCount >= maxConsecutiveFailures)
+			{
+				LOG_ERROR_STREAM(
+					<< "CXX indexer process " << processId << " reached "
+					<< consecutiveFailureCount
+					<< " consecutive failures. interrupting indexing.");
+				m_interrupted = true;
+				m_indexerCommandQueueStopped = true;
+				m_interprocessIndexingStatusManager.setIndexingInterrupted(true);
+				m_interprocessIndexingStatusManager.setQueueStopped(true);
+				utility::killRunningProcesses();
+				break;
+			}
+
+			LOG_WARNING_STREAM(
+				<< "CXX indexer process " << processId << " failure " << consecutiveFailureCount
+				<< "/" << maxConsecutiveFailures
+				<< ". restarting process to continue indexing.");
+			std::this_thread::sleep_for(std::chrono::milliseconds(200));
+		}
 	}
 
 	m_runningThreadCount--;
@@ -239,12 +305,39 @@ void TaskBuildIndex::runRustIndexerProcess(ProcessId processId, const std::strin
 		args.push_back(logFilePath);
 
 	int result = 1;
+	size_t launchAttempt = 0;
+	IndexerCommandManagerImpl commandManager(m_appUUID, ProcessId::NONE, false);
 	while ((!m_indexerCommandQueueStopped || result != 0) && !m_interrupted)
 	{
+		if (!commandManager.hasIndexerCommandType(INDEXER_COMMAND_RUST))
+		{
+			std::this_thread::sleep_for(std::chrono::milliseconds(200));
+			continue;
+		}
+
+		launchAttempt++;
 		result = utility::executeProcess(
 					 rustIndexerPath.str(), args, FilePath(), false, INFINITE_TIMEOUT)
 					 .exitCode;
-		LOG_INFO_STREAM(<< "Rust indexer process returned with " << result);
+		LOG_INFO_STREAM(
+			<< "Rust indexer process " << processId << " attempt " << launchAttempt
+			<< " returned with " << result);
+
+		if (result != 0)
+		{
+			LOG_ERROR_STREAM(
+				<< "Rust indexer process " << processId << " attempt " << launchAttempt
+				<< " failed with exit code " << result << ". interrupting indexing.");
+			m_interrupted = true;
+			m_indexerCommandQueueStopped = true;
+			m_interprocessIndexingStatusManager.setIndexingInterrupted(true);
+			m_interprocessIndexingStatusManager.setQueueStopped(true);
+			utility::killRunningProcesses();
+			break;
+		}
+
+		if (!m_indexerCommandQueueStopped && !m_interrupted)
+			std::this_thread::sleep_for(std::chrono::milliseconds(200));
 	}
 
 	m_runningThreadCount--;
