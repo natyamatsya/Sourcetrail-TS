@@ -39,20 +39,6 @@ std::string buildProcessCommandLine(
 	return commandLine;
 }
 
-std::string sanitizeProcessOutput(const std::string& output)
-{
-	std::string text = output;
-	for (char& c: text)
-		if (c == '\n' || c == '\r')
-			c = ' ';
-
-	constexpr size_t maxLength = 800;
-	if (text.size() <= maxLength)
-		return text;
-
-	return text.substr(0, maxLength) + "...";
-}
-
 IndexerProcessResult validateIndexerProcessOutput(
 	const utility::ProcessOutput& processOutput,
 	const ProcessId processId,
@@ -78,7 +64,7 @@ IndexerProcessResult validateIndexerProcessOutput(
 		std::to_string(launchAttempt) + " failed with exit code " +
 		std::to_string(processOutput.exitCode) + ". command: " + commandLine + ".";
 	if (!processOutput.output.empty())
-		message += " output: " + sanitizeProcessOutput(processOutput.output);
+		message += "\nprocess output:\n" + processOutput.output;
 
 	return std::unexpected(utility::makeExpectedError(
 		IndexerProcessErrorCode::ProcessExitedWithError,
