@@ -1,4 +1,4 @@
-version = 1
+version = 8
 
 [project]
 name = "cxx_modules_test"
@@ -6,6 +6,16 @@ version = "1.0.0"
 
 [[source_groups]]
 id = "cxx_modules_test_sg"
-type = "cxx_cmake_file_api"
-build_dir = "build"
-source_dir = "."
+type = "C/C++ from CMake File API"
+name = "C++20 Modules Test"
+status = "enabled"
+
+[source_groups.cmake]
+source_directory = "."
+build_directory = "build"
+preset_name = "default"
+target_glob = ""
+configuration = ""
+
+[source_groups.compiler_flags]
+compiler_flag = []

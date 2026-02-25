@@ -8,3 +8,5 @@ cxx_modules_test
 *.srctrldb
 *.srctrldb_nodes
 *.srctrlprj
+*.srctrldb-shm
+*.srctrldb-wal
