@@ -472,13 +472,15 @@ std::vector<CMakeFileAPIReader::SourceEntry> CMakeFileAPIReader::getSources(
 			compileGroups.push_back(std::move(group));
 		}
 
-		// Map sources to their compile groups.
-		for (const auto& srcVal : targetObj["sources"].toArray())
-		{
+		auto appendSourceEntry = [&](const QJsonValue& srcVal) {
 			const auto src{srcVal.toObject()};
-			const auto rawPath{src["path"].toString().toStdString()};
+			const QString rawPathString{
+				srcVal.isString() ? srcVal.toString() : src["path"].toString()};
+			if (rawPathString.isEmpty())
+				return;
 
 			SourceEntry entry{};
+			const auto rawPath{rawPathString.toStdString()};
 			// Per CMake File API spec, relative paths are relative to the source dir.
 			entry.path = FilePath{rawPath}.isAbsolute()
 				? FilePath{rawPath}
@@ -495,7 +497,26 @@ std::vector<CMakeFileAPIReader::SourceEntry> CMakeFileAPIReader::getSources(
 					entry.compileGroup = compileGroups[idx];
 			}
 
+			for (const auto& existingEntry : result)
+				if (existingEntry.targetName == entry.targetName &&
+					existingEntry.path.str() == entry.path.str())
+					return;
+
 			result.push_back(std::move(entry));
+		};
+
+		// Map regular target sources to their compile groups.
+		for (const auto& srcVal : targetObj["sources"].toArray())
+			appendSourceEntry(srcVal);
+
+		// CMake can expose C++20 module units via FILE_SET TYPE CXX_MODULES.
+		for (const auto& fileSetVal : targetObj["fileSets"].toArray())
+		{
+			const auto fileSet{fileSetVal.toObject()};
+			if (fileSet["type"].toString() != "CXX_MODULES")
+				continue;
+			for (const auto& srcVal : fileSet["sources"].toArray())
+				appendSourceEntry(srcVal);
 		}
 	}
 

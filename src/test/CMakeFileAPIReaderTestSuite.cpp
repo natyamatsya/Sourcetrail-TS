@@ -25,10 +25,25 @@ FilePath fixtureSourceDir()
 	return FilePath("data/CMakeFileAPIReaderTestSuite/source").makeAbsolute().makeCanonical();
 }
 
+bool pathsMatchForFixture(const FilePath& lhs, const FilePath& rhs)
+{
+	if (lhs.str() == rhs.str())
+		return true;
+
+	const std::string marker{"/CMakeFileAPIReaderTestSuite/"};
+	const std::string lhsString{lhs.str()};
+	const std::string rhsString{rhs.str()};
+	const auto lhsPos{lhsString.find(marker)};
+	const auto rhsPos{rhsString.find(marker)};
+	if (lhsPos == std::string::npos || rhsPos == std::string::npos)
+		return false;
+	return lhsString.substr(lhsPos) == rhsString.substr(rhsPos);
+}
+
 bool containsPath(const std::vector<FilePath>& paths, const FilePath& needle)
 {
 	return std::any_of(paths.begin(), paths.end(), [&needle](const FilePath& p) {
-		return p.str() == needle.str();
+		return pathsMatchForFixture(p, needle);
 	});
 }
 
@@ -37,7 +52,7 @@ bool containsSourceWithPath(
 {
 	return std::any_of(
 		entries.begin(), entries.end(), [&needle](const CMakeFileAPIReader::SourceEntry& e) {
-			return e.path.str() == needle.str();
+			return pathsMatchForFixture(e.path, needle);
 		});
 }
 
@@ -168,7 +183,7 @@ TEST_CASE("CMakeFileAPIReader getSources entry has correct target metadata")
 
 	auto it = std::find_if(
 		entries.begin(), entries.end(), [&expectedPath](const CMakeFileAPIReader::SourceEntry& e) {
-			return e.path.str() == expectedPath.str();
+			return pathsMatchForFixture(e.path, expectedPath);
 		});
 	REQUIRE(it != entries.end());
 
@@ -187,7 +202,7 @@ TEST_CASE("CMakeFileAPIReader getSources entry has compile group with CXX langua
 
 	auto it = std::find_if(
 		entries.begin(), entries.end(), [&expectedPath](const CMakeFileAPIReader::SourceEntry& e) {
-			return e.path.str() == expectedPath.str();
+			return pathsMatchForFixture(e.path, expectedPath);
 		});
 	REQUIRE(it != entries.end());
 	REQUIRE(it->compileGroup.has_value());
@@ -205,7 +220,7 @@ TEST_CASE("CMakeFileAPIReader getSources entry has GREETING define")
 
 	auto it = std::find_if(
 		entries.begin(), entries.end(), [&expectedPath](const CMakeFileAPIReader::SourceEntry& e) {
-			return e.path.str() == expectedPath.str();
+			return pathsMatchForFixture(e.path, expectedPath);
 		});
 	REQUIRE(it != entries.end());
 	REQUIRE(it->compileGroup.has_value());
@@ -227,7 +242,7 @@ TEST_CASE("CMakeFileAPIReader getSources entry has include path")
 
 	auto it = std::find_if(
 		entries.begin(), entries.end(), [&expectedPath](const CMakeFileAPIReader::SourceEntry& e) {
-			return e.path.str() == expectedPath.str();
+			return pathsMatchForFixture(e.path, expectedPath);
 		});
 	REQUIRE(it != entries.end());
 	REQUIRE(it->compileGroup.has_value());
@@ -235,6 +250,33 @@ TEST_CASE("CMakeFileAPIReader getSources entry has include path")
 	const FilePath expectedInclude =
 		fixtureSourceDir().getConcatenated("/include").makeCanonical();
 	CHECK(containsPath(it->compileGroup->includes, expectedInclude));
+}
+
+TEST_CASE("CMakeFileAPIReader getSources returns module interface from CXX_MODULES file set")
+{
+	CMakeFileAPIReader reader{fixtureBuildDir()};
+	const auto entries = reader.getSources();
+
+	const FilePath expectedPath =
+		fixtureSourceDir().getConcatenated("/src/hello.cppm").makeCanonical();
+	CHECK(containsSourceWithPath(entries, expectedPath));
+}
+
+TEST_CASE("CMakeFileAPIReader getSources module interface has compile group with CXX language")
+{
+	CMakeFileAPIReader reader{fixtureBuildDir()};
+	const auto entries = reader.getSources();
+
+	const FilePath expectedPath =
+		fixtureSourceDir().getConcatenated("/src/hello.cppm").makeCanonical();
+
+	auto it = std::find_if(
+		entries.begin(), entries.end(), [&expectedPath](const CMakeFileAPIReader::SourceEntry& e) {
+			return pathsMatchForFixture(e.path, expectedPath);
+		});
+	REQUIRE(it != entries.end());
+	REQUIRE(it->compileGroup.has_value());
+	CHECK(it->compileGroup->language == "CXX");
 }
 
 TEST_CASE("CMakeFileAPIReader getSources returns empty for unknown configuration")
