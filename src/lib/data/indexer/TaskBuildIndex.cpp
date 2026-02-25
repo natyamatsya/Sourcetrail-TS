@@ -8,12 +8,115 @@
 #include "InterprocessIndexer.h"
 #include "MessageIndexingStatus.h"
 #include "ParserClientImpl.h"
+#include "ScopedFunctor.h"
 #include "StorageProvider.h"
 #include "TimeStamp.h"
 #include "UserPaths.h"
 #include "utilityApp.h"
+#include "utilityExpected.h"
 
 using namespace utility;
+
+namespace
+{
+enum class IndexerProcessErrorCode
+{
+	ExecutableMissing,
+	ProcessStartFailed,
+	ProcessExitedWithError
+};
+
+using IndexerProcessError = utility::ExpectedError<IndexerProcessErrorCode>;
+using IndexerProcessResult = std::expected<void, IndexerProcessError>;
+
+std::string buildProcessCommandLine(
+	const FilePath& executablePath,
+	const std::vector<std::string>& arguments)
+{
+	std::string commandLine = "\"" + executablePath.str() + "\"";
+	for (const std::string& argument: arguments)
+		commandLine += " \"" + argument + "\"";
+	return commandLine;
+}
+
+std::string sanitizeProcessOutput(const std::string& output)
+{
+	std::string text = output;
+	for (char& c: text)
+		if (c == '\n' || c == '\r')
+			c = ' ';
+
+	constexpr size_t maxLength = 800;
+	if (text.size() <= maxLength)
+		return text;
+
+	return text.substr(0, maxLength) + "...";
+}
+
+IndexerProcessResult validateIndexerProcessOutput(
+	const utility::ProcessOutput& processOutput,
+	const ProcessId processId,
+	const size_t launchAttempt,
+	const std::string& processLabel,
+	const std::string& commandLine)
+{
+	if (processOutput.exitCode == 0)
+		return {};
+
+	if (processOutput.exitCode == -1)
+	{
+		return std::unexpected(utility::makeExpectedError(
+			IndexerProcessErrorCode::ProcessStartFailed,
+			processLabel + " " + to_string(processId) + " attempt " +
+				std::to_string(launchAttempt) +
+				" failed to start. command: " + commandLine + ". process error: " +
+				processOutput.error));
+	}
+
+	std::string message =
+		processLabel + " " + to_string(processId) + " attempt " +
+		std::to_string(launchAttempt) + " failed with exit code " +
+		std::to_string(processOutput.exitCode) + ". command: " + commandLine + ".";
+	if (!processOutput.output.empty())
+		message += " output: " + sanitizeProcessOutput(processOutput.output);
+
+	return std::unexpected(utility::makeExpectedError(
+		IndexerProcessErrorCode::ProcessExitedWithError,
+		message));
+}
+
+void logCxxIndexerFailureContext(
+	IndexingStatusManagerImpl& indexingStatusManager,
+	const ProcessId processId)
+{
+	const auto currentFileForProcess =
+		indexingStatusManager.getCurrentSourceFilePathForProcess(processId);
+	if (currentFileForProcess)
+	{
+		LOG_ERROR_STREAM(
+			<< "CXX indexer failure context: process " << processId
+			<< " was indexing: " << currentFileForProcess->str());
+		return;
+	}
+
+	LOG_ERROR_STREAM(
+		<< "CXX indexer failure context: process " << processId
+		<< " has no tracked current source file.");
+
+	const std::vector<FilePath> currentFiles = indexingStatusManager.getCurrentSourceFilePaths();
+	if (currentFiles.empty())
+	{
+		LOG_ERROR_STREAM(
+			<< "CXX indexer failure context: no active source files are currently tracked.");
+		return;
+	}
+
+	for (const FilePath& currentFile: currentFiles)
+		LOG_ERROR_STREAM(
+			<< "CXX indexer failure context: active file in another process: "
+			<< currentFile.str());
+}
+} // namespace
 
 TaskBuildIndex::TaskBuildIndex(
 	size_t processCount,
@@ -190,11 +293,9 @@ void TaskBuildIndex::doExit(std::shared_ptr<Blackboard> blackboard)
 		{
 			Id fileId = parserClient->recordFile(path.getCanonical(), false);
 			parserClient->recordError(
-				"The translation unit threw an exception during indexing. Please check if the "
-				"source file "
-				"conforms to the specified language standard and all necessary options are defined "
-				"within your project "
-				"setup.",
+				"The indexer subprocess terminated unexpectedly while indexing this translation unit. "
+				"Please verify compile flags, language standard, and include paths for this source "
+				"file.",
 				true,
 				true,
 				path,
@@ -230,13 +331,18 @@ void TaskBuildIndex::handleMessage(MessageIndexingInterrupted*  /*message*/)
 
 void TaskBuildIndex::runIndexerProcess(ProcessId processId, const std::string& logFilePath)
 {
+	[[maybe_unused]]
+	ScopedFunctor runningThreadCounter([&]() { m_runningThreadCount--; });
+
 	const FilePath indexerProcessPath = AppPath::getCxxIndexerFilePath();
 	if (!indexerProcessPath.exists())
 	{
 		m_interrupted = true;
-		LOG_ERROR(
-			"Cannot start indexer process because executable is missing at \"" +
-			indexerProcessPath.str() + "\"");
+		const IndexerProcessError error = utility::makeExpectedError(
+			IndexerProcessErrorCode::ExecutableMissing,
+			"Cannot start CXX indexer process because executable is missing at \"" +
+				indexerProcessPath.str() + "\".");
+		LOG_ERROR_STREAM(<< error);
 		return;
 	}
 
@@ -250,6 +356,8 @@ void TaskBuildIndex::runIndexerProcess(ProcessId processId, const std::string& l
 	{
 		commandArguments.push_back(logFilePath);
 	}
+
+	const std::string commandLine = buildProcessCommandLine(indexerProcessPath, commandArguments);
 
 	LOG_INFO_STREAM(
 		<< "CXX indexer process " << processId << " configured: executable='"
@@ -267,77 +375,67 @@ void TaskBuildIndex::runIndexerProcess(ProcessId processId, const std::string& l
 			<< " (queueStopped=" << m_indexerCommandQueueStopped
 			<< ", interrupted=" << m_interrupted << ")");
 
-		result = utility::executeProcess(
-					 indexerProcessPath.str(), commandArguments, FilePath(), false, INFINITE_TIMEOUT)
-					 .exitCode;
+		const utility::ProcessOutput processOutput = utility::executeProcess(
+			indexerProcessPath.str(), commandArguments, FilePath(), false, INFINITE_TIMEOUT);
+		result = processOutput.exitCode;
 
 		LOG_INFO_STREAM(
 			<< "CXX indexer process " << processId << " attempt " << launchAttempt
 			<< " returned with " + std::to_string(result));
 
-		if (result == 0)
+		const IndexerProcessResult processResult = validateIndexerProcessOutput(
+			processOutput,
+			processId,
+			launchAttempt,
+			"CXX indexer process",
+			commandLine);
+		if (processResult)
 		{
 			consecutiveFailureCount = 0;
 			continue;
 		}
 
-		if (result != 0)
-		{
-			if (m_interrupted)
-				break;
+		if (m_interrupted)
+			break;
 
+		LOG_ERROR_STREAM(<< processResult.error());
+		logCxxIndexerFailureContext(m_interprocessIndexingStatusManager, processId);
+
+		consecutiveFailureCount++;
+		if (consecutiveFailureCount >= maxConsecutiveFailures)
+		{
 			LOG_ERROR_STREAM(
 				<< "CXX indexer process " << processId << " attempt " << launchAttempt
-				<< " failed with exit code " << result << ".");
-
-			const std::vector<FilePath> indexingFiles =
-				m_interprocessIndexingStatusManager.getCurrentlyIndexedSourceFilePaths();
-			if (indexingFiles.empty())
-				LOG_ERROR_STREAM(
-					<< "CXX indexer failure context: no currently indexed source files reported.");
-			for (const FilePath& indexingFile: indexingFiles)
-			{
-				LOG_ERROR_STREAM(
-					<< "CXX indexer failure context: currently indexed file: "
-					<< indexingFile.str());
-			}
-
-			consecutiveFailureCount++;
-			if (consecutiveFailureCount >= maxConsecutiveFailures)
-			{
-				LOG_ERROR_STREAM(
-					<< "CXX indexer process " << processId << " reached "
-					<< consecutiveFailureCount
-					<< " consecutive failures. interrupting indexing.");
-				m_interrupted = true;
-				m_indexerCommandQueueStopped = true;
-				m_interprocessIndexingStatusManager.setIndexingInterrupted(true);
-				m_interprocessIndexingStatusManager.setQueueStopped(true);
-				utility::killRunningProcesses();
-				break;
-			}
-
-			LOG_WARNING_STREAM(
-				<< "CXX indexer process " << processId << " failure " << consecutiveFailureCount
-				<< "/" << maxConsecutiveFailures
-				<< ". restarting process to continue indexing.");
-			std::this_thread::sleep_for(std::chrono::milliseconds(200));
+				<< " reached " << consecutiveFailureCount
+				<< " consecutive failures. interrupting indexing.");
+			m_interrupted = true;
+			m_indexerCommandQueueStopped = true;
+			m_interprocessIndexingStatusManager.setIndexingInterrupted(true);
+			m_interprocessIndexingStatusManager.setQueueStopped(true);
+			utility::killRunningProcesses();
+			break;
 		}
-	}
 
-	m_runningThreadCount--;
+		LOG_WARNING_STREAM(
+			<< "CXX indexer process " << processId << " failure " << consecutiveFailureCount
+			<< "/" << maxConsecutiveFailures
+			<< ". restarting process to continue indexing.");
+		std::this_thread::sleep_for(std::chrono::milliseconds(200));
+	}
 }
 
 #if BUILD_RUST_LANGUAGE_PACKAGE
 void TaskBuildIndex::runRustIndexerProcess(ProcessId processId, const std::string& logFilePath)
 {
+	[[maybe_unused]]
+	ScopedFunctor runningThreadCounter([&]() { m_runningThreadCount--; });
+
 	const FilePath rustIndexerPath = AppPath::getRustIndexerFilePath();
 	if (!rustIndexerPath.exists())
 	{
 		LOG_WARNING(
 			"Rust indexer not found at \"" + rustIndexerPath.str() +
 			"\" — Rust files will not be indexed");
-		m_runningThreadCount--;
 		return;
 	}
 
@@ -348,6 +446,7 @@ void TaskBuildIndex::runRustIndexerProcess(ProcessId processId, const std::strin
 	args.push_back(UserPaths::getUserDataDirectoryPath().getAbsolute().str());
 	if (!logFilePath.empty())
 		args.push_back(logFilePath);
+	const std::string commandLine = buildProcessCommandLine(rustIndexerPath, args);
 
 	int result = 0;
 	size_t launchAttempt = 0;
@@ -361,18 +460,23 @@ void TaskBuildIndex::runRustIndexerProcess(ProcessId processId, const std::strin
 		}
 
 		launchAttempt++;
-		result = utility::executeProcess(
-					 rustIndexerPath.str(), args, FilePath(), false, INFINITE_TIMEOUT)
-					 .exitCode;
+		const utility::ProcessOutput processOutput = utility::executeProcess(
+			rustIndexerPath.str(), args, FilePath(), false, INFINITE_TIMEOUT);
+		result = processOutput.exitCode;
 		LOG_INFO_STREAM(
 			<< "Rust indexer process " << processId << " attempt " << launchAttempt
 			<< " returned with " << result);
 
-		if (result != 0)
+		const IndexerProcessResult processResult = validateIndexerProcessOutput(
+			processOutput,
+			processId,
+			launchAttempt,
+			"Rust indexer process",
+			commandLine);
+		if (!processResult)
 		{
 			LOG_ERROR_STREAM(
-				<< "Rust indexer process " << processId << " attempt " << launchAttempt
-				<< " failed with exit code " << result << ". interrupting indexing.");
+				<< processResult.error() << " interrupting indexing.");
 			m_interrupted = true;
 			m_indexerCommandQueueStopped = true;
 			m_interprocessIndexingStatusManager.setIndexingInterrupted(true);
@@ -384,8 +488,6 @@ void TaskBuildIndex::runRustIndexerProcess(ProcessId processId, const std::strin
 		if (!m_indexerCommandQueueStopped && !m_interrupted)
 			std::this_thread::sleep_for(std::chrono::milliseconds(200));
 	}
-
-	m_runningThreadCount--;
 }
 #endif
 

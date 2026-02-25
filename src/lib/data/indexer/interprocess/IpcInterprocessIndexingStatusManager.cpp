@@ -161,6 +161,35 @@ std::vector<FilePath> IpcInterprocessIndexingStatusManager::getCurrentlyIndexedS
 	return result;
 }
 
+std::optional<FilePath> IpcInterprocessIndexingStatusManager::getCurrentSourceFilePathForProcess(
+	const ProcessId processId)
+{
+	IpcSharedMemory::ScopedAccess access(&m_shm);
+	const auto data = readStatus(access);
+
+	const auto pid = static_cast<std::size_t>(processId);
+	for (const auto& [currentPid, path]: data.currentFiles)
+	{
+		if (currentPid == pid)
+			return FilePath(path);
+	}
+
+	return std::nullopt;
+}
+
+std::vector<FilePath> IpcInterprocessIndexingStatusManager::getCurrentSourceFilePaths()
+{
+	IpcSharedMemory::ScopedAccess access(&m_shm);
+	const auto data = readStatus(access);
+
+	std::vector<FilePath> result;
+	result.reserve(data.currentFiles.size());
+	for (const auto& [pid, path]: data.currentFiles)
+		result.emplace_back(path);
+
+	return result;
+}
+
 std::vector<FilePath> IpcInterprocessIndexingStatusManager::getCrashedSourceFilePaths()
 {
 	IpcSharedMemory::ScopedAccess access(&m_shm);

@@ -1,6 +1,7 @@
 #ifndef IPC_INTERPROCESS_INDEXING_STATUS_MANAGER_H
 #define IPC_INTERPROCESS_INDEXING_STATUS_MANAGER_H
 
+#include <optional>
 #include <string>
 #include <vector>
 
@@ -27,6 +28,8 @@ public:
 	ProcessId getNextFinishedProcessId();
 
 	std::vector<FilePath> getCurrentlyIndexedSourceFilePaths();
+	std::optional<FilePath> getCurrentSourceFilePathForProcess(ProcessId processId);
+	std::vector<FilePath> getCurrentSourceFilePaths();
 	std::vector<FilePath> getCrashedSourceFilePaths();
 
 private:
