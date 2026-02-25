@@ -104,7 +104,31 @@ void InterprocessIndexer::work()
 				indexerCommand->getSourceFilePath());
 
 			LOG_INFO_STREAM(<< m_processId << " starting to index current file");
-			std::shared_ptr<IntermediateStorage> result = indexer->index(indexerCommand);
+			std::shared_ptr<IntermediateStorage> result;
+			bool commandSucceeded = false;
+			try
+			{
+				result = indexer->index(indexerCommand);
+				commandSucceeded = true;
+			}
+			catch (const std::exception& e)
+			{
+				LOG_ERROR_STREAM(
+					<< m_processId << " exception while indexing \""
+					<< indexerCommand->getSourceFilePath().str() << "\": " << e.what());
+				LOG_ERROR_STREAM(
+					<< m_processId << " failing indexer command payload: "
+					<< IndexerCommand::serialize(indexerCommand));
+			}
+			catch (...)
+			{
+				LOG_ERROR_STREAM(
+					<< m_processId << " unknown exception while indexing \""
+					<< indexerCommand->getSourceFilePath().str() << "\"");
+				LOG_ERROR_STREAM(
+					<< m_processId << " failing indexer command payload: "
+					<< IndexerCommand::serialize(indexerCommand));
+			}
 
 			if (result)
 			{
@@ -112,8 +136,17 @@ void InterprocessIndexer::work()
 				m_interprocessIntermediateStorageManager.pushIntermediateStorage(result);
 			}
 
-			LOG_INFO_STREAM(<< m_processId << " finalizing indexer status for current file");
-			m_interprocessIndexingStatusManager.finishIndexingSourceFile();
+			if (commandSucceeded)
+			{
+				LOG_INFO_STREAM(<< m_processId << " finalizing indexer status for current file");
+				m_interprocessIndexingStatusManager.finishIndexingSourceFile();
+			}
+			else
+			{
+				LOG_ERROR_STREAM(
+					<< m_processId
+					<< " keeping current file marked as crashed and continuing with next command.");
+			}
 
 			LOG_INFO_STREAM(<< m_processId << " all done");
 		}
@@ -121,7 +154,7 @@ void InterprocessIndexer::work()
 	catch (std::exception& e)
 	{
 		LOG_ERROR_STREAM(<< m_processId << " error: " << e.what());
-		throw e;
+		throw;
 	}
 	catch (...)
 	{

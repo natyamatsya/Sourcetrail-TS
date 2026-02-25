@@ -1,5 +1,6 @@
 #include "IpcInterprocessIndexingStatusManager.h"
 
+#include <algorithm>
 #include <cstring>
 
 #include "IndexingStatusSerializer.h"
@@ -51,7 +52,10 @@ void IpcInterprocessIndexingStatusManager::startIndexingSourceFile(const FilePat
 	{
 		if (it->first == pid)
 		{
-			data.crashedFilePaths.push_back(it->second);
+			if (
+				std::find(data.crashedFilePaths.begin(), data.crashedFilePaths.end(), it->second) ==
+				data.crashedFilePaths.end())
+				data.crashedFilePaths.push_back(it->second);
 			data.currentFiles.erase(it);
 			break;
 		}
@@ -69,12 +73,14 @@ void IpcInterprocessIndexingStatusManager::finishIndexingSourceFile()
 	auto data = readStatus(access);
 
 	auto pid = static_cast<std::size_t>(m_processId);
+	std::string finishedFilePath;
 
 	// Remove from current files
 	for (auto it = data.currentFiles.begin(); it != data.currentFiles.end(); ++it)
 	{
 		if (it->first == pid)
 		{
+			finishedFilePath = it->second;
 			data.currentFiles.erase(it);
 			break;
 		}
@@ -82,6 +88,15 @@ void IpcInterprocessIndexingStatusManager::finishIndexingSourceFile()
 
 	// Add to finished process IDs
 	data.finishedProcessIds.push_back(pid);
+
+	// If a file eventually finishes indexing successfully, clear previous crash marks for it.
+	if (!finishedFilePath.empty())
+	{
+		data.crashedFilePaths.erase(
+			std::remove(
+				data.crashedFilePaths.begin(), data.crashedFilePaths.end(), finishedFilePath),
+			data.crashedFilePaths.end());
+	}
 
 	writeStatus(access, data);
 }
