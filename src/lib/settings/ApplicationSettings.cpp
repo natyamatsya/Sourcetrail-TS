@@ -23,11 +23,26 @@ std::shared_ptr<ApplicationSettings> ApplicationSettings::getInstance()
 
 bool ApplicationSettings::load(const FilePath& filePath, bool readOnly)
 {
-	bool loaded = Settings::load(filePath, readOnly);
+	const bool loaded = Settings::load(filePath, readOnly);
 	if (!loaded)
-	{
 		return false;
-	}
+
+	if (!isValueDefined("application/font_name"))
+		setFontName("Source Code Pro");
+	if (!isValueDefined("application/font_size"))
+		setFontSize(14);
+	if (!isValueDefined("application/text_encoding"))
+		setTextEncoding("UTF-8");
+	if (!isValueDefined("application/use_animations"))
+		setUseAnimations(true);
+	if (!isValueDefined("application/builtin_types_in_graph"))
+		setShowBuiltinTypesInGraph(false);
+	if (!isValueDefined("application/directory_in_code_title"))
+		setShowDirectoryInCodeFileTitle(false);
+	if (!isValueDefined("application/scroll_speed"))
+		setScrollSpeed(1.0f);
+	if (!isValueDefined("code/tab_width"))
+		setCodeTabWidth(4);
 
 	return true;
 }
