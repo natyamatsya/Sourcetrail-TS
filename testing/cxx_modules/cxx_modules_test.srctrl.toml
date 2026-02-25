@@ -1,0 +1,11 @@
+version = 1
+
+[project]
+name = "cxx_modules_test"
+version = "1.0.0"
+
+[[source_groups]]
+id = "cxx_modules_test_sg"
+type = "cxx_cmake_file_api"
+build_dir = "build"
+source_dir = "."

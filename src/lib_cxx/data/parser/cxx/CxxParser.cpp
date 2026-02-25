@@ -10,6 +10,7 @@
 #include "FileRegister.h"
 #include "IndexerCommandCxx.h"
 #include "ParserClient.h"
+#include "ResourcePaths.h"
 #include "SingleFrontendActionFactory.h"
 #include "TextAccess.h"
 #include "ToolChain.h"
@@ -83,6 +84,13 @@ std::vector<std::string> CxxParser::getCommandlineArgumentsEssential(
 	const std::string& compilerPath, const std::vector<std::string>& compilerFlags)
 {
 	std::vector<std::string> args;
+
+	// Explicitly inject the bundled clang headers as resource-dir.
+	// Without this, the internal ToolInvocation / CompilerInvocation often fails
+	// to resolve builtin headers like <stdarg.h> because it infers the resource dir
+	// relative to the argv[0] path (which might be AppleClang or missing entirely).
+	args.push_back("-resource-dir");
+	args.push_back(ResourcePaths::getCxxCompilerHeaderDirectoryPath().getParentDirectory().str());
 
 	args.push_back(ClangCompiler::noDelayedTemplateParsingOption());
 	args.push_back(ClangCompiler::exceptionsOption());
@@ -169,6 +177,7 @@ void CxxParser::runTool(clang::tooling::CompilationDatabase* compilationDatabase
 		sourceFilePath, canonicalFilePathCache, true);
 
 	tool.setDiagnosticConsumer(diagnostics.get());
+	tool.clearArgumentsAdjusters();
 
 	ClangInvocationInfo info;
 	if (LogManager::getInstance()->getLoggingEnabled())

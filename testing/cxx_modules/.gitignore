@@ -1,0 +1,10 @@
+# Build directories and artifacts
+build/
+.build/
+cmake-build-*/
+cxx_modules_test
+
+# Sourcetrail index data
+*.srctrldb
+*.srctrldb_nodes
+*.srctrlprj
