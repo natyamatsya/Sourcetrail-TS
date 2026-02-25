@@ -590,6 +590,9 @@ void Project::buildIndex(RefreshInfo info, std::shared_ptr<DialogView> dialogVie
 		// add task for indexing
 		bool multiProcess = ApplicationSettings::getInstance()->getMultiProcessIndexingEnabled() &&
 			hasCxxSourceGroup();
+		const int effectiveIndexerThreadCount = multiProcess
+			? std::min<int>(adjustedIndexerThreadCount, 6)
+			: adjustedIndexerThreadCount;
 		taskParallelIndexing->addChildTasks(std::make_shared<TaskGroupSequence>()->addChildTasks(
 			// block until there are indexer commands to process
 			std::make_shared<TaskDecoratorRepeat>(
@@ -597,7 +600,7 @@ void Project::buildIndex(RefreshInfo info, std::shared_ptr<DialogView> dialogVie
 				->addChildTask(std::make_shared<TaskReturnSuccessIf<bool>>(
 					"indexer_command_queue_started", TaskReturnSuccessIf<bool>::CONDITION_EQUALS, false)),
 			std::make_shared<TaskBuildIndex>(
-				adjustedIndexerThreadCount, storageProvider, dialogView, m_appUUID, multiProcess)));
+				effectiveIndexerThreadCount, storageProvider, dialogView, m_appUUID, multiProcess)));
 
 		// add task for merging the intermediate storages
 		taskParallelIndexing->addTask(std::make_shared<TaskGroupSequence>()->addChildTasks(

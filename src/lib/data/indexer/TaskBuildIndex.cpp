@@ -38,6 +38,11 @@ void TaskBuildIndex::doEnter(std::shared_ptr<Blackboard> blackboard)
 	m_interprocessIndexingStatusManager.setQueueStopped(false);
 
 	m_indexingFileCount = 0;
+	m_lastWatchdogIndexedSourceFileCount = 0;
+	m_lastWatchdogIndexingFileCount = 0;
+	m_lastKnownIndexingFiles.clear();
+	m_lastWatchdogProgressTime = std::chrono::steady_clock::now();
+	m_lastWatchdogLogTime = m_lastWatchdogProgressTime;
 	updateIndexingDialog(blackboard, std::vector<FilePath>());
 
 	std::string logFilePath;
@@ -94,6 +99,7 @@ Task::TaskState TaskBuildIndex::doUpdate(std::shared_ptr<Blackboard> blackboard)
 	const std::vector<FilePath> indexingFiles = m_interprocessIndexingStatusManager.getCurrentlyIndexedSourceFilePaths();
 	if (!indexingFiles.empty())
 	{
+		m_lastKnownIndexingFiles = indexingFiles;
 		updateIndexingDialog(blackboard, indexingFiles);
 	}
 
@@ -112,6 +118,45 @@ Task::TaskState TaskBuildIndex::doUpdate(std::shared_ptr<Blackboard> blackboard)
 	if (fetchIntermediateStorages(blackboard))
 	{
 		updateIndexingDialog(blackboard, std::vector<FilePath>());
+	}
+
+	int indexedSourceFileCount = 0;
+	blackboard->get("indexed_source_file_count", indexedSourceFileCount);
+	const size_t currentIndexedSourceFileCount =
+		indexedSourceFileCount > 0 ? static_cast<size_t>(indexedSourceFileCount) : 0;
+	const size_t currentIndexingFileCount = m_indexingFileCount;
+	const auto now = std::chrono::steady_clock::now();
+	if (
+		currentIndexedSourceFileCount > m_lastWatchdogIndexedSourceFileCount ||
+		currentIndexingFileCount > m_lastWatchdogIndexingFileCount)
+	{
+		m_lastWatchdogIndexedSourceFileCount = currentIndexedSourceFileCount;
+		m_lastWatchdogIndexingFileCount = currentIndexingFileCount;
+		m_lastWatchdogProgressTime = now;
+	}
+	else if (
+		!m_indexerCommandQueueStopped &&
+		!m_interrupted &&
+		runningThreadCount > 0 &&
+		now - m_lastWatchdogProgressTime > std::chrono::seconds(30) &&
+		now - m_lastWatchdogLogTime > std::chrono::seconds(10))
+	{
+		int sourceFileCount = 0;
+		blackboard->get("source_file_count", sourceFileCount);
+		const auto stalledSeconds = std::chrono::duration_cast<std::chrono::seconds>(
+			now - m_lastWatchdogProgressTime)
+																 .count();
+		LOG_WARNING_STREAM(
+			<< "indexing watchdog: no progress for " << stalledSeconds
+			<< "s. indexed_source_file_count=" << currentIndexedSourceFileCount
+			<< "/" << sourceFileCount << ", indexing_file_count="
+			<< currentIndexingFileCount << ", running_threads=" << runningThreadCount);
+		if (m_lastKnownIndexingFiles.empty())
+			LOG_WARNING_STREAM(<< "indexing watchdog: no last known indexing files.");
+		for (const FilePath& path: m_lastKnownIndexingFiles)
+			LOG_WARNING_STREAM(
+				<< "indexing watchdog: last known indexing file: " << path.str());
+		m_lastWatchdogLogTime = now;
 	}
 
 	std::this_thread::sleep_for(std::chrono::milliseconds(50));
@@ -213,7 +258,7 @@ void TaskBuildIndex::runIndexerProcess(ProcessId processId, const std::string& l
 	int result = 1;
 	size_t launchAttempt = 0;
 	size_t consecutiveFailureCount = 0;
-	const size_t maxConsecutiveFailures = 3;
+	const size_t maxConsecutiveFailures = 200;
 	while ((!m_indexerCommandQueueStopped || result != 0) && !m_interrupted)
 	{
 		launchAttempt++;
@@ -243,7 +288,7 @@ void TaskBuildIndex::runIndexerProcess(ProcessId processId, const std::string& l
 
 			LOG_ERROR_STREAM(
 				<< "CXX indexer process " << processId << " attempt " << launchAttempt
-				<< " failed with exit code " << result << ". interrupting indexing.");
+				<< " failed with exit code " << result << ".");
 
 			const std::vector<FilePath> indexingFiles =
 				m_interprocessIndexingStatusManager.getCurrentlyIndexedSourceFilePaths();
@@ -304,7 +349,7 @@ void TaskBuildIndex::runRustIndexerProcess(ProcessId processId, const std::strin
 	if (!logFilePath.empty())
 		args.push_back(logFilePath);
 
-	int result = 1;
+	int result = 0;
 	size_t launchAttempt = 0;
 	IndexerCommandManagerImpl commandManager(m_appUUID, ProcessId::NONE, false);
 	while ((!m_indexerCommandQueueStopped || result != 0) && !m_interrupted)
@@ -364,13 +409,16 @@ void TaskBuildIndex::runIndexerThread(ProcessId processId)
 bool TaskBuildIndex::fetchIntermediateStorages(std::shared_ptr<Blackboard> blackboard)
 {
 	int poppedStorageCount = 0;
+	const int maxQueuedStoragesBeforePause = 30;
 
 	int providerStorageCount = m_storageProvider->getStorageCount();
-	if (providerStorageCount > 10)
+	if (providerStorageCount > maxQueuedStoragesBeforePause)
 	{
-		LOG_INFO_STREAM(<< "waiting, too many storages queued: " << providerStorageCount);
+		LOG_INFO_STREAM(
+			<< "waiting, too many storages queued: " << providerStorageCount << " (limit "
+			<< maxQueuedStoragesBeforePause << ")");
 
-		std::this_thread::sleep_for(std::chrono::milliseconds(100));
+		std::this_thread::sleep_for(std::chrono::milliseconds(50));
 
 		return true;
 	}

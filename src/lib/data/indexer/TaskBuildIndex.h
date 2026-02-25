@@ -8,6 +8,7 @@
 #include "InterprocessBackend.h"
 
 #include <atomic>
+#include <chrono>
 #include <thread>
 
 class DialogView;
@@ -57,6 +58,11 @@ protected:
 	size_t m_processCount;
 	bool m_interrupted = false;
 	size_t m_indexingFileCount = 0;
+	size_t m_lastWatchdogIndexedSourceFileCount = 0;
+	size_t m_lastWatchdogIndexingFileCount = 0;
+	std::chrono::steady_clock::time_point m_lastWatchdogProgressTime;
+	std::chrono::steady_clock::time_point m_lastWatchdogLogTime;
+	std::vector<FilePath> m_lastKnownIndexingFiles;
 
 	// store as plain pointers to avoid deallocation issues when closing app during indexing
 	std::vector<std::thread*> m_processThreads;
