@@ -31,6 +31,7 @@ public:
 		std::string language;					// "CXX", "C"
 		std::vector<FilePath> includes;			// non-system include paths
 		std::vector<FilePath> systemIncludes;	// system include paths
+		std::vector<FilePath> frameworkSearchPaths; // framework search paths
 		std::vector<std::string> defines;		// preprocessor defines
 		std::vector<std::string> compileFlags;	// extra compiler flags
 	};

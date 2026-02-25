@@ -441,12 +441,33 @@ std::vector<CMakeFileAPIReader::SourceEntry> CMakeFileAPIReader::getSources(
 					group.includes.push_back(incPath);
 			}
 
+			for (const auto& frameworkVal : cg["frameworks"].toArray())
+			{
+				const auto frameworkObj{frameworkVal.toObject()};
+				const QString frameworkPathString{frameworkObj["path"].toString()};
+				if (frameworkPathString.isEmpty())
+					continue;
+
+				FilePath frameworkSearchPath{frameworkPathString.toStdString()};
+				if (frameworkPathString.endsWith(".framework", Qt::CaseInsensitive))
+					frameworkSearchPath = frameworkSearchPath.getParentDirectory();
+
+				group.frameworkSearchPaths.push_back(frameworkSearchPath);
+			}
+
 			for (const auto& defVal : cg["defines"].toArray())
 				group.defines.push_back(defVal.toObject()["define"].toString().toStdString());
 
 			for (const auto& fragVal : cg["compileCommandFragments"].toArray())
-				group.compileFlags.push_back(
-					fragVal.toObject()["fragment"].toString().toStdString());
+			{
+				const QString fragment = fragVal.toObject()["fragment"].toString().trimmed();
+				if (fragment.isEmpty())
+					continue;
+
+				const QStringList tokens = QProcess::splitCommand(fragment);
+				for (const QString& token : tokens)
+					group.compileFlags.push_back(token.toStdString());
+			}
 
 			compileGroups.push_back(std::move(group));
 		}

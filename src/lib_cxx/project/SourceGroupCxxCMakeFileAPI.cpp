@@ -12,7 +12,42 @@
 #include "ToolChain.h"
 #include "logging.h"
 #include "utility.h"
+#include "utilityString.h"
 #include "utilitySourceGroupCxx.h"
+
+namespace
+{
+bool isHeaderFilePath(const FilePath& path)
+{
+	static const std::set<std::string> kHeaderExtensions{
+		".h", ".hh", ".hpp", ".hxx", ".inl", ".inc"};
+	return kHeaderExtensions.count(utility::toLowerCase(path.extension())) > 0;
+}
+
+bool isIndexableCxxFilePath(const FilePath& path)
+{
+	static const std::set<std::string> kIndexableExtensions{
+		".c", ".cc", ".cpp", ".cxx", ".m", ".mm", ".h", ".hh", ".hpp", ".hxx", ".inl", ".inc"};
+	return kIndexableExtensions.count(utility::toLowerCase(path.extension())) > 0;
+}
+
+bool shouldCreateCxxCommand(
+	const CMakeFileAPIReader::SourceEntry& entry,
+	const std::vector<FilePathFilter>& excludeFilters)
+{
+	if (entry.isGenerated)
+		return false;
+	if (!entry.path.exists())
+		return false;
+	if (FilePathFilter::areMatching(excludeFilters, entry.path))
+		return false;
+	if (!isIndexableCxxFilePath(entry.path))
+		return false;
+	if (isHeaderFilePath(entry.path) && !entry.compileGroup)
+		return false;
+	return true;
+}
+}
 
 SourceGroupCxxCMakeFileAPI::SourceGroupCxxCMakeFileAPI(
 	std::shared_ptr<SourceGroupSettingsCxxCMakeFileAPI> settings)
@@ -111,11 +146,7 @@ std::set<FilePath> SourceGroupCxxCMakeFileAPI::getAllSourceFilePaths() const
 	std::set<FilePath> result{};
 	for (const auto& entry : entries)
 	{
-		if (entry.isGenerated)
-			continue;
-		if (!entry.path.exists())
-			continue;
-		if (FilePathFilter::areMatching(excludeFilters, entry.path))
+		if (!shouldCreateCxxCommand(entry, excludeFilters))
 			continue;
 		result.insert(entry.path);
 	}
@@ -144,11 +175,7 @@ std::shared_ptr<IndexerCommandProvider> SourceGroupCxxCMakeFileAPI::getIndexerCo
 
 	for (const auto& entry : entries)
 	{
-		if (entry.isGenerated)
-			continue;
-		if (!entry.path.exists())
-			continue;
-		if (FilePathFilter::areMatching(excludeFilters, entry.path))
+		if (!shouldCreateCxxCommand(entry, excludeFilters))
 			continue;
 		if (info.filesToIndex.find(entry.path) == info.filesToIndex.end())
 			continue;
@@ -177,6 +204,11 @@ std::shared_ptr<IndexerCommandProvider> SourceGroupCxxCMakeFileAPI::getIndexerCo
 				commandLine.push_back("-I" + inc.str());
 			for (const auto& inc : cg.systemIncludes)
 				commandLine.push_back("-isystem" + inc.str());
+			for (const auto& frameworkPath : cg.frameworkSearchPaths)
+			{
+				commandLine.push_back(ClangCompiler::frameworkIncludeOption());
+				commandLine.push_back(frameworkPath.str());
+			}
 
 			// Preprocessor defines.
 			for (const auto& def : cg.defines)
