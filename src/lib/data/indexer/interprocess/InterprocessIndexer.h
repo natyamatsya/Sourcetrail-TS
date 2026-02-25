@@ -3,12 +3,16 @@
 
 #include "InterprocessBackend.h"
 
+#include <expected>
+
 class InterprocessIndexer
 {
 public:
+	using WorkResult = std::expected<void, std::string>;
+
 	InterprocessIndexer(const std::string& uuid, ProcessId processId);
 
-	void work();
+	WorkResult work();
 
 private:
 	IndexerCommandManagerImpl m_interprocessIndexerCommandManager;

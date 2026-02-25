@@ -98,7 +98,12 @@ int main(int argc, char* argv[])
 #endif	  // BUILD_CXX_LANGUAGE_PACKAGE
 
 	InterprocessIndexer indexer(instanceUuid, processId);
-	indexer.work();
+	const InterprocessIndexer::WorkResult workResult = indexer.work();
+	if (!workResult)
+	{
+		LOG_ERROR("Indexer worker failed: " + workResult.error());
+		return 1;
+	}
 
 	return 0;
 }

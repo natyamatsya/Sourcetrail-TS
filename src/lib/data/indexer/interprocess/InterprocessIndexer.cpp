@@ -9,6 +9,64 @@
 #include "language_packages.h"
 #include "logging.h"
 
+#include <memory>
+#include <type_traits>
+#include <typeinfo>
+
+#if defined(__GNUG__)
+#include <cxxabi.h>
+#include <cstdlib>
+#endif
+
+namespace
+{
+std::string getExceptionTypeName(const std::exception& exception)
+{
+#if defined(__GNUG__)
+	int status = 0;
+	std::unique_ptr<char, decltype(&std::free)> demangledName(
+		abi::__cxa_demangle(typeid(exception).name(), nullptr, nullptr, &status), &std::free);
+	if (status == 0 && demangledName)
+		return demangledName.get();
+#endif
+
+	return typeid(exception).name();
+}
+
+template <typename TResult, typename TCallable>
+std::expected<TResult, std::string> expectedFromExceptions(
+	const ProcessId processId,
+	const std::string& context,
+	TCallable&& callable)
+{
+	try
+	{
+		if constexpr (std::is_void_v<TResult>)
+		{
+			std::forward<TCallable>(callable)();
+			return {};
+		}
+		else
+		{
+			return std::forward<TCallable>(callable)();
+		}
+	}
+	catch (const std::exception& e)
+	{
+		const std::string message =
+			context + " [" + getExceptionTypeName(e) + "]: " + std::string(e.what());
+		LOG_ERROR_STREAM(<< processId << " " << message);
+		return std::unexpected(message);
+	}
+	catch (...)
+	{
+		const std::string message = context + " [unknown exception type]";
+		LOG_ERROR_STREAM(<< processId << " " << message);
+		return std::unexpected(message);
+	}
+}
+} // namespace
+
 InterprocessIndexer::InterprocessIndexer(const std::string& uuid, ProcessId processId)
 	: m_interprocessIndexerCommandManager(uuid, processId, false)
 	, m_interprocessIndexingStatusManager(uuid, processId, false)
@@ -18,148 +76,126 @@ InterprocessIndexer::InterprocessIndexer(const std::string& uuid, ProcessId proc
 {
 }
 
-void InterprocessIndexer::work()
+InterprocessIndexer::WorkResult InterprocessIndexer::work()
 {
 	bool updaterThreadRunning = true;
 	std::shared_ptr<std::thread> updaterThread;
 	std::shared_ptr<IndexerBase> indexer;
 
-	try
+	[[maybe_unused]]
+	ScopedFunctor threadStopper([&]()
 	{
-		LOG_INFO_STREAM(<< m_processId << " starting up indexer");
-		indexer = LanguagePackageManager::getInstance()->instantiateSupportedIndexers();
+		updaterThreadRunning = false;
+		if (!updaterThread)
+			return;
 
-		updaterThread = std::make_shared<std::thread>([&]() {
-			while (updaterThreadRunning)
-			{
-				std::this_thread::sleep_for(std::chrono::milliseconds(1000));
+		updaterThread->join();
+		updaterThread.reset();
+	});
 
-				if (m_interprocessIndexingStatusManager.getIndexingInterrupted())
+	[[maybe_unused]]
+	ScopedFunctor shutdownLogger([&]() { LOG_INFO_STREAM(<< m_processId << " shutting down indexer"); });
+
+	return expectedFromExceptions<void>(
+		m_processId,
+		"error while running indexer worker",
+		[&]()
+		{
+			LOG_INFO_STREAM(<< m_processId << " starting up indexer");
+			indexer = LanguagePackageManager::getInstance()->instantiateSupportedIndexers();
+
+			updaterThread = std::make_shared<std::thread>([&]() {
+				while (updaterThreadRunning)
 				{
+					std::this_thread::sleep_for(std::chrono::milliseconds(1000));
+
+					if (!m_interprocessIndexingStatusManager.getIndexingInterrupted())
+						continue;
+
 					LOG_INFO_STREAM(<< m_processId << " received indexer interrupt command.");
 					if (indexer)
-					{
 						indexer->interrupt();
-					}
 					updaterThreadRunning = false;
 				}
-			}
-		});
+			});
 
-		[[maybe_unused]]
-		ScopedFunctor threadStopper([&]()
-		{
-			updaterThreadRunning = false;
-			if (updaterThread)
-			{
-				updaterThread->join();
-				updaterThread.reset();
-			}
-		});
-
-		const IndexerCommandType skipType =
+			const IndexerCommandType skipType =
 #if BUILD_RUST_LANGUAGE_PACKAGE
-			INDEXER_COMMAND_RUST;
+				INDEXER_COMMAND_RUST;
 #else
-			INDEXER_COMMAND_UNKNOWN;
+				INDEXER_COMMAND_UNKNOWN;
 #endif
-		while (true)
-		{
-			std::shared_ptr<IndexerCommand> indexerCommand =
-				m_interprocessIndexerCommandManager.popIndexerCommand(skipType);
-
-			if (!indexerCommand)
+			while (true)
 			{
-				if (m_interprocessIndexingStatusManager.getIndexingInterrupted() ||
-					m_interprocessIndexingStatusManager.getQueueStopped())
-					break;
-				std::this_thread::sleep_for(std::chrono::milliseconds(100));
-				continue;
-			}
+				const std::shared_ptr<IndexerCommand> indexerCommand =
+					m_interprocessIndexerCommandManager.popIndexerCommand(skipType);
 
-			LOG_INFO_STREAM(
-				<< m_processId << " fetched indexer command for \""
-				<< indexerCommand->getSourceFilePath().str() << "\"");
-			LOG_INFO_STREAM(
-				<< m_processId << " indexer commands left: "
-				<< m_interprocessIndexerCommandManager.indexerCommandCount());
+				if (!indexerCommand)
+				{
+					if (m_interprocessIndexingStatusManager.getIndexingInterrupted() ||
+						m_interprocessIndexingStatusManager.getQueueStopped())
+						return;
+					std::this_thread::sleep_for(std::chrono::milliseconds(100));
+					continue;
+				}
 
-			while (updaterThreadRunning)
-			{
-				const size_t storageCount =
-					m_interprocessIntermediateStorageManager.getIntermediateStorageCount();
-				if (storageCount < 2)
-					break;
-
-				LOG_INFO_STREAM(<< m_processId << " waits, too many intermediate storages: " << storageCount);
-
-				std::this_thread::sleep_for(std::chrono::milliseconds(200));
-			}
-
-			if (!updaterThreadRunning)
-				break;
-
-			LOG_INFO_STREAM(<< m_processId << " updating indexer status with currently indexed filepath");
-			m_interprocessIndexingStatusManager.startIndexingSourceFile(
-				indexerCommand->getSourceFilePath());
-
-			LOG_INFO_STREAM(<< m_processId << " starting to index current file");
-			std::shared_ptr<IntermediateStorage> result;
-			bool commandSucceeded = false;
-			try
-			{
-				result = indexer->index(indexerCommand);
-				commandSucceeded = true;
-			}
-			catch (const std::exception& e)
-			{
-				LOG_ERROR_STREAM(
-					<< m_processId << " exception while indexing \""
-					<< indexerCommand->getSourceFilePath().str() << "\": " << e.what());
-				LOG_ERROR_STREAM(
-					<< m_processId << " failing indexer command payload: "
-					<< IndexerCommand::serialize(indexerCommand));
-			}
-			catch (...)
-			{
-				LOG_ERROR_STREAM(
-					<< m_processId << " unknown exception while indexing \""
+				LOG_INFO_STREAM(
+					<< m_processId << " fetched indexer command for \""
 					<< indexerCommand->getSourceFilePath().str() << "\"");
-				LOG_ERROR_STREAM(
-					<< m_processId << " failing indexer command payload: "
-					<< IndexerCommand::serialize(indexerCommand));
-			}
+				LOG_INFO_STREAM(
+					<< m_processId << " indexer commands left: "
+					<< m_interprocessIndexerCommandManager.indexerCommandCount());
 
-			if (result)
-			{
-				LOG_INFO_STREAM(<< m_processId << " pushing index to shared memory");
-				m_interprocessIntermediateStorageManager.pushIntermediateStorage(result);
-			}
+				while (updaterThreadRunning)
+				{
+					const size_t storageCount =
+						m_interprocessIntermediateStorageManager.getIntermediateStorageCount();
+					if (storageCount < 2)
+						break;
 
-			if (commandSucceeded)
-			{
+					LOG_INFO_STREAM(
+						<< m_processId << " waits, too many intermediate storages: " << storageCount);
+
+					std::this_thread::sleep_for(std::chrono::milliseconds(200));
+				}
+
+				if (!updaterThreadRunning)
+					return;
+
+				LOG_INFO_STREAM(
+					<< m_processId << " updating indexer status with currently indexed filepath");
+				m_interprocessIndexingStatusManager.startIndexingSourceFile(
+					indexerCommand->getSourceFilePath());
+
+				LOG_INFO_STREAM(<< m_processId << " starting to index current file");
+				const auto indexResult =
+					expectedFromExceptions<std::shared_ptr<IntermediateStorage>>(
+						m_processId,
+						"exception while indexing \"" + indexerCommand->getSourceFilePath().str() +
+							"\"",
+						[&]() { return indexer->index(indexerCommand); });
+				if (!indexResult)
+				{
+					LOG_ERROR_STREAM(
+						<< m_processId << " failing indexer command payload: "
+						<< IndexerCommand::serialize(indexerCommand));
+					LOG_ERROR_STREAM(
+						<< m_processId
+						<< " keeping current file marked as crashed and continuing with next command.");
+					LOG_INFO_STREAM(<< m_processId << " all done");
+					continue;
+				}
+
+				if (*indexResult)
+				{
+					LOG_INFO_STREAM(<< m_processId << " pushing index to shared memory");
+					m_interprocessIntermediateStorageManager.pushIntermediateStorage(*indexResult);
+				}
+
 				LOG_INFO_STREAM(<< m_processId << " finalizing indexer status for current file");
 				m_interprocessIndexingStatusManager.finishIndexingSourceFile();
-			}
-			else
-			{
-				LOG_ERROR_STREAM(
-					<< m_processId
-					<< " keeping current file marked as crashed and continuing with next command.");
-			}
 
-			LOG_INFO_STREAM(<< m_processId << " all done");
-		}
-	}
-	catch (std::exception& e)
-	{
-		LOG_ERROR_STREAM(<< m_processId << " error: " << e.what());
-		throw;
-	}
-	catch (...)
-	{
-		LOG_ERROR_STREAM(<< m_processId << " something went wrong while running the indexer");
-	}
-
-	LOG_INFO_STREAM(<< m_processId << " shutting down indexer");
+				LOG_INFO_STREAM(<< m_processId << " all done");
+			}
+		});
 }

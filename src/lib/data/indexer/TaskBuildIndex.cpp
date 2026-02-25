@@ -394,7 +394,10 @@ void TaskBuildIndex::runIndexerThread(ProcessId processId)
 	do
 	{
 		InterprocessIndexer indexer(m_appUUID, processId);
-		indexer.work();	   // this will only return if there are no indexer commands left in the queue
+		const InterprocessIndexer::WorkResult workResult = indexer.work();
+		if (!workResult)
+			LOG_ERROR_STREAM(
+				<< "in-process indexer worker " << processId << " failed: " << workResult.error());
 		if (!m_interrupted)
 		{
 			// sleeping if interrupted may result in a crash due to objects that are already
