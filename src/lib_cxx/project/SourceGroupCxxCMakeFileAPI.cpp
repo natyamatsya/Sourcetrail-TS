@@ -14,6 +14,7 @@
 #include "utility.h"
 #include "utilityString.h"
 #include "utilitySourceGroupCxx.h"
+#include "utilityApp.h"
 
 namespace
 {
@@ -260,7 +261,20 @@ std::shared_ptr<IndexerCommandProvider> SourceGroupCxxCMakeFileAPI::getIndexerCo
 		// Fallback: If no sysroot was explicitly provided in CMake flags but we found an implicit one, inject it.
 		// (CMake compileCommandFragments usually doesn't include -isysroot if it assumes the compiler does it natively,
 		// but since we are replacing the compiler with our indexer, we might need it explicitly.)
+		std::string sysrootToInject;
 		if (entry.compileGroup && !entry.compileGroup->sysroot.empty())
+		{
+			sysrootToInject = entry.compileGroup->sysroot.str();
+		}
+		else if constexpr (utility::Platform::isMac())
+		{
+			// If CMake didn't capture a sysroot, fallback to xcrun on macOS.
+			const utility::ProcessOutput output = utility::executeProcess("xcrun", {"--show-sdk-path"});
+			if (output.exitCode == 0 && !output.output.empty())
+				sysrootToInject = utility::trim(output.output);
+		}
+
+		if (!sysrootToInject.empty())
 		{
 			bool hasSysroot = false;
 			for (const std::string& flag: commandLine)
@@ -274,7 +288,7 @@ std::shared_ptr<IndexerCommandProvider> SourceGroupCxxCMakeFileAPI::getIndexerCo
 			if (!hasSysroot)
 			{
 				commandLine.push_back("-isysroot");
-				commandLine.push_back(entry.compileGroup->sysroot.str());
+				commandLine.push_back(sysrootToInject);
 			}
 		}
 
