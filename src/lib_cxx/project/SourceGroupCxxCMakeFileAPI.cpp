@@ -257,11 +257,34 @@ std::shared_ptr<IndexerCommandProvider> SourceGroupCxxCMakeFileAPI::getIndexerCo
 		// Append global extra flags (ApplicationSettings header/framework paths).
 		utility::append(commandLine, extraFlags);
 
+		// Fallback: If no sysroot was explicitly provided in CMake flags but we found an implicit one, inject it.
+		// (CMake compileCommandFragments usually doesn't include -isysroot if it assumes the compiler does it natively,
+		// but since we are replacing the compiler with our indexer, we might need it explicitly.)
+		if (entry.compileGroup && !entry.compileGroup->sysroot.empty())
+		{
+			bool hasSysroot = false;
+			for (const std::string& flag: commandLine)
+			{
+				if (utility::isPrefix("-isysroot", flag) || utility::isPrefix("--sysroot", flag))
+				{
+					hasSysroot = true;
+					break;
+				}
+			}
+			if (!hasSysroot)
+			{
+				commandLine.push_back("-isysroot");
+				commandLine.push_back(entry.compileGroup->sysroot.str());
+			}
+		}
+
 		// Append user-specified extra flags from settings.
 		utility::append(commandLine, m_settings->getCompilerFlags());
 
 		// Source file itself.
 		commandLine.push_back(entry.path.str());
+
+		std::string compilerPath = entry.compileGroup ? entry.compileGroup->compilerPath : "";
 
 		provider->addCommand(std::make_shared<IndexerCommandCxx>(
 			entry.path,
@@ -269,7 +292,8 @@ std::shared_ptr<IndexerCommandProvider> SourceGroupCxxCMakeFileAPI::getIndexerCo
 			utility::toSet(excludeFilters),
 			std::set<FilePathFilter>{},
 			buildDir,
-			std::move(commandLine)));
+			std::move(commandLine),
+			compilerPath));
 	}
 
 	provider->logStats();

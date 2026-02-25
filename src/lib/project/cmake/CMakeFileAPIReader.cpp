@@ -52,7 +52,8 @@ QJsonDocument readJsonFile(const FilePath& path)
 	return doc;
 }
 
-// Returns the first file in dir matching the given prefix, or empty FilePath.
+// Returns the lexicographically last file in dir matching the given prefix,
+// or empty FilePath.
 FilePath findFileWithPrefix(const FilePath& dir, const std::string& prefix)
 {
 	const QDir qdir{QString::fromStdString(dir.str())};
@@ -60,7 +61,7 @@ FilePath findFileWithPrefix(const FilePath& dir, const std::string& prefix)
 		{QString::fromStdString(prefix + "*.json")}, QDir::Files, QDir::Name)};
 	if (entries.isEmpty())
 		return {};
-	return dir.getConcatenated("/" + entries.first().toStdString());
+	return dir.getConcatenated("/" + entries.last().toStdString());
 }
 
 // Glob match: empty pattern matches everything, otherwise simple wildcard.
@@ -326,6 +327,11 @@ FilePath CMakeFileAPIReader::findIndexFile() const
 	return findFileWithPrefix(m_replyDir, "index-");
 }
 
+FilePath CMakeFileAPIReader::findToolchainsFile() const
+{
+	return findFileWithPrefix(m_replyDir, "toolchains-v1-");
+}
+
 std::vector<CMakeFileAPIReader::SourceEntry> CMakeFileAPIReader::getSources(
 	const std::string& configuration, const std::string& targetGlob) const
 {
@@ -386,6 +392,22 @@ std::vector<CMakeFileAPIReader::SourceEntry> CMakeFileAPIReader::getSources(
 	const FilePath sourceDir{
 		codemodelDoc.object()["paths"].toObject()["source"].toString().toStdString()};
 
+	// Find the toolchains-v1 reply filename via JSONPath.
+	const auto toolchainsPathResult{
+		JSONPath::create(u"$.objects[?(@.kind == \"toolchains\")].jsonFile")};
+	QJsonObject toolchainsDocObject{};
+	if (toolchainsPathResult)
+	{
+		if (const auto toolchainsFiles = toolchainsPathResult->evaluate(indexDoc); toolchainsFiles && !toolchainsFiles->isEmpty())
+		{
+			const auto toolchainsFilename{toolchainsFiles->first().toString().toStdString()};
+			const auto toolchainsPath{m_replyDir.getConcatenated("/" + toolchainsFilename)};
+			const auto toolchainsDoc{readJsonFile(toolchainsPath)};
+			if (!toolchainsDoc.isNull())
+				toolchainsDocObject = toolchainsDoc.object();
+		}
+	}
+
 	// Pick the configuration to use.
 	const auto configs{codemodelDoc.object()["configurations"].toArray()};
 	QJsonObject chosenConfig{};
@@ -430,6 +452,30 @@ std::vector<CMakeFileAPIReader::SourceEntry> CMakeFileAPIReader::getSources(
 			const auto cg{cgVal.toObject()};
 			CompileGroup group{};
 			group.language = cg["language"].toString().toStdString();
+
+			if (!toolchainsDocObject.isEmpty())
+			{
+				const auto toolchains{toolchainsDocObject["toolchains"].toArray()};
+				for (const auto& tcVal : toolchains)
+				{
+					const auto tc{tcVal.toObject()};
+					if (tc["language"].toString().toStdString() == group.language)
+					{
+						const auto compiler{tc["compiler"].toObject()};
+						group.compilerPath = compiler["path"].toString().toStdString();
+
+						const auto implicitObj{compiler["implicit"].toObject()};
+						if (implicitObj.contains("sysroot"))
+						{
+							group.sysroot = FilePath(implicitObj["sysroot"].toString().toStdString());
+						}
+						// If CMake parsed an implicit sysroot from the compiler, expose it here
+						// (typically only present if cross-compiling or if macOS with SDKROOT set)
+						// Otherwise we'll have to inject it later based on the host OS
+						break;
+					}
+				}
+			}
 
 			for (const auto& incVal : cg["includes"].toArray())
 			{

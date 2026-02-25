@@ -35,9 +35,10 @@ flatbuffers::DetachedBuffer serializeIndexerCommands(
 		flatbuffers::Offset<flatbuffers::Vector<flatbuffers::Offset<flatbuffers::String>>> includeFilters = 0;
 		flatbuffers::Offset<flatbuffers::String> workingDirectory = 0;
 		flatbuffers::Offset<flatbuffers::Vector<flatbuffers::Offset<flatbuffers::String>>> compilerFlags = 0;
+		flatbuffers::Offset<flatbuffers::String> compilerPath = 0;
 
 #if BUILD_CXX_LANGUAGE_PACKAGE
-		if (auto* cxxCmd = dynamic_cast<IndexerCommandCxx*>(cmd.get()))
+		if (auto cxxCmd = std::dynamic_pointer_cast<IndexerCommandCxx>(cmd))
 		{
 			type = Sourcetrail::Ipc::IndexerCommandType_Cxx;
 
@@ -46,22 +47,24 @@ flatbuffers::DetachedBuffer serializeIndexerCommands(
 				paths.push_back(builder.CreateString(p.str()));
 			indexedPaths = builder.CreateVector(paths);
 
-			std::vector<flatbuffers::Offset<flatbuffers::String>> excludes;
+			std::vector<flatbuffers::Offset<flatbuffers::String>> exc;
 			for (const auto& f : cxxCmd->getExcludeFilters())
-				excludes.push_back(builder.CreateString(f.str()));
-			excludeFilters = builder.CreateVector(excludes);
+				exc.push_back(builder.CreateString(f.str()));
+			excludeFilters = builder.CreateVector(exc);
 
-			std::vector<flatbuffers::Offset<flatbuffers::String>> includes;
+			std::vector<flatbuffers::Offset<flatbuffers::String>> inc;
 			for (const auto& f : cxxCmd->getIncludeFilters())
-				includes.push_back(builder.CreateString(f.str()));
-			includeFilters = builder.CreateVector(includes);
+				inc.push_back(builder.CreateString(f.str()));
+			includeFilters = builder.CreateVector(inc);
 
 			workingDirectory = builder.CreateString(cxxCmd->getWorkingDirectory().str());
 
 			std::vector<flatbuffers::Offset<flatbuffers::String>> flags;
-			for (const auto& flag : cxxCmd->getCompilerFlags())
-				flags.push_back(builder.CreateString(flag));
+			for (const auto& f : cxxCmd->getCompilerFlags())
+				flags.push_back(builder.CreateString(f));
 			compilerFlags = builder.CreateVector(flags);
+
+			compilerPath = builder.CreateString(cxxCmd->getCompilerPath());
 		}
 #endif
 #if BUILD_RUST_LANGUAGE_PACKAGE
@@ -80,7 +83,7 @@ flatbuffers::DetachedBuffer serializeIndexerCommands(
 
 		fbCommands.push_back(Sourcetrail::Ipc::CreateIndexerCommand(
 			builder, type, sourceFilePath, indexedPaths, excludeFilters,
-			includeFilters, workingDirectory, compilerFlags));
+			includeFilters, workingDirectory, compilerFlags, compilerPath));
 	}
 
 	auto queue = Sourcetrail::Ipc::CreateIndexerCommandQueue(
@@ -133,10 +136,14 @@ std::vector<std::shared_ptr<IndexerCommand>> deserializeIndexerCommands(
 				for (const auto* flag : *fbCmd->compiler_flags())
 					compilerFlags.push_back(flag->c_str());
 
+			std::string compilerPath;
+			if (fbCmd->compiler_path())
+				compilerPath = fbCmd->compiler_path()->c_str();
+
 			result.push_back(std::make_shared<IndexerCommandCxx>(
 				FilePath(fbCmd->source_file_path()->c_str()),
 				indexedPaths, excludeFilters, includeFilters,
-				workingDir, compilerFlags));
+				workingDir, compilerFlags, compilerPath));
 			break;
 		}
 #endif

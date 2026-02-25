@@ -213,5 +213,11 @@ std::shared_ptr<IndexerCommandCxx> CxxIndexerCommandProvider::representationToCo
 	}
 
 	return std::make_shared<IndexerCommandCxx>(
-		sourceFilePath, indexedPaths, excludeFilters, includeFilters, workingDirectory, compilerFlags);
+		sourceFilePath,
+		indexedPaths,
+		excludeFilters,
+		includeFilters,
+		workingDirectory,
+		compilerFlags,
+		"");
 }

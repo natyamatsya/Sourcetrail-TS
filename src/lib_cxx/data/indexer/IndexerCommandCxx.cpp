@@ -116,13 +116,15 @@ IndexerCommandCxx::IndexerCommandCxx(
 	const std::set<FilePathFilter>& excludeFilters,
 	const std::set<FilePathFilter>& includeFilters,
 	const FilePath& workingDirectory,
-	const std::vector<std::string>& compilerFlags)
+	const std::vector<std::string>& compilerFlags,
+	const std::string& compilerPath)
 	: IndexerCommand(sourceFilePath)
 	, m_indexedPaths(indexedPaths)
 	, m_excludeFilters(excludeFilters)
 	, m_includeFilters(includeFilters)
 	, m_workingDirectory(workingDirectory)
 	, m_compilerFlags(compilerFlags)
+	, m_compilerPath(compilerPath)
 {
 }
 
@@ -155,6 +157,8 @@ size_t IndexerCommandCxx::getByteSize(size_t stringSize) const
 		size += stringSize + flag.size();
 	}
 
+	size += stringSize + m_compilerPath.size();
+
 	return size;
 }
 
@@ -181,6 +185,11 @@ const std::vector<std::string>& IndexerCommandCxx::getCompilerFlags() const
 const FilePath& IndexerCommandCxx::getWorkingDirectory() const
 {
 	return m_workingDirectory;
+}
+
+const std::string& IndexerCommandCxx::getCompilerPath() const
+{
+	return m_compilerPath;
 }
 
 QJsonObject IndexerCommandCxx::doSerialize() const
@@ -221,6 +230,9 @@ QJsonObject IndexerCommandCxx::doSerialize() const
 			compilerFlagsArray.append(QString::fromStdString(compilerFlag));
 		}
 		jsonObject["compiler_flags"] = compilerFlagsArray;
+	}
+	{
+		jsonObject["compiler_path"] = QString::fromStdString(m_compilerPath);
 	}
 
 	return jsonObject;

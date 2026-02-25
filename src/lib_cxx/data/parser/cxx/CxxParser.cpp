@@ -28,9 +28,12 @@
 
 namespace
 {
-std::vector<std::string> prependSyntaxOnlyToolArgs(const std::vector<std::string>& args)
+std::vector<std::string> prependSyntaxOnlyToolArgs(
+	const std::string& compilerPath, const std::vector<std::string>& args)
 {
-	return utility::concat(std::vector<std::string>({ClangCompiler::TOOL_NAME, ClangCompiler::syntaxOnlyOption()}), args);
+	const std::string toolName =
+		compilerPath.empty() ? std::string(ClangCompiler::TOOL_NAME) : compilerPath;
+	return utility::concat(std::vector<std::string>({toolName, ClangCompiler::syntaxOnlyOption()}), args);
 }
 
 std::vector<std::string> appendFilePath(const std::vector<std::string>& args, llvm::StringRef filePath)
@@ -40,6 +43,7 @@ std::vector<std::string> appendFilePath(const std::vector<std::string>& args, ll
 
 // custom implementation of clang::runToolOnCodeWithArgs which also sets our custom DiagnosticConsumer
 bool runToolOnCodeWithArgs(
+	const std::string& compilerPath,
 	clang::DiagnosticConsumer* DiagConsumer,
 	std::unique_ptr<clang::FrontendAction> ToolAction,
 	const llvm::Twine& Code,
@@ -62,7 +66,7 @@ bool runToolOnCodeWithArgs(
 		new clang::FileManager(clang::FileSystemOptions(), OverlayFileSystem));
 
 	clang::tooling::ToolInvocation Invocation(
-		prependSyntaxOnlyToolArgs(appendFilePath(Args, FileNameRef)), std::move(ToolAction), Files.get());
+		prependSyntaxOnlyToolArgs(compilerPath, appendFilePath(Args, FileNameRef)), std::move(ToolAction), Files.get());
 
 	llvm::SmallString<1024> CodeStorage;
 	llvm::StringRef CodeRef = Code.toNullTerminatedStringRef(CodeStorage);
@@ -75,7 +79,8 @@ bool runToolOnCodeWithArgs(
 }
 }	 // namespace
 
-std::vector<std::string> CxxParser::getCommandlineArgumentsEssential(const std::vector<std::string>& compilerFlags)
+std::vector<std::string> CxxParser::getCommandlineArgumentsEssential(
+	const std::string& compilerPath, const std::vector<std::string>& compilerFlags)
 {
 	std::vector<std::string> args;
 
@@ -126,8 +131,8 @@ void CxxParser::buildIndex(std::shared_ptr<IndexerCommandCxx> indexerCommand)
 	{
 		args.erase(args.begin());
 	}
-	compileCommand.CommandLine = getCommandlineArgumentsEssential(args);
-	compileCommand.CommandLine = prependSyntaxOnlyToolArgs(compileCommand.CommandLine);
+	compileCommand.CommandLine = getCommandlineArgumentsEssential(indexerCommand->getCompilerPath(), args);
+	compileCommand.CommandLine = prependSyntaxOnlyToolArgs(indexerCommand->getCompilerPath(), compileCommand.CommandLine);
 
 	CxxCompilationDatabaseSingle compilationDatabase(compileCommand);
 	runTool(&compilationDatabase, indexerCommand->getSourceFilePath());
@@ -146,9 +151,9 @@ void CxxParser::buildIndex(
 	std::unique_ptr<clang::ASTFrontendAction> action = std::make_unique<ASTAction>(
 		m_client, canonicalFilePathCache, m_indexerStateInfo);
 
-	std::vector<std::string> args = getCommandlineArgumentsEssential(compilerFlags);
+	std::vector<std::string> args = getCommandlineArgumentsEssential("", compilerFlags);
 
-	runToolOnCodeWithArgs(diagnostics.get(), std::move(action), fileContent->getText(), args, fileName);
+	runToolOnCodeWithArgs("", diagnostics.get(), std::move(action), fileContent->getText(), args, fileName);
 }
 
 void CxxParser::runTool(clang::tooling::CompilationDatabase* compilationDatabase, const FilePath& sourceFilePath)

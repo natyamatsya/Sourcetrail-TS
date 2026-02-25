@@ -119,8 +119,14 @@ std::shared_ptr<IndexerCommandProvider> SourceGroupCxxCdb::getIndexerCommandProv
 				utility::append(commandLine, includePchFlags);
 			}
 
-			provider->addCommand(std::make_shared<IndexerCommandCxx>(sourcePath, utility::concat(indexedHeaderPaths, {sourcePath}), excludeFilters,
-				std::set<FilePathFilter>(), FilePath(command.Directory), utility::concat(commandLine, compilerFlags)));
+			provider->addCommand(std::make_shared<IndexerCommandCxx>(
+				sourcePath,
+				utility::concat(indexedHeaderPaths, {sourcePath}),
+				excludeFilters,
+				std::set<FilePathFilter>{},
+				FilePath(command.Directory),
+				utility::concat(commandLine, compilerFlags),
+				""));
 		}
 	}
 

@@ -17,6 +17,7 @@ table IndexerCommand {
     include_filters:    [string];
     working_directory:  string;
     compiler_flags:     [string];
+    compiler_path:      string;
 }
 
 table IndexerCommandQueue {

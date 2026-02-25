@@ -42,6 +42,9 @@ public:
 		std::shared_ptr<TextAccess> fileContent,
 		std::vector<std::string> compilerFlags = {});
 
+	static std::vector<std::string> getCommandlineArgumentsEssential(
+		const std::string& compilerPath, const std::vector<std::string>& compilerFlags);
+
 private:
 	void runTool(
 		clang::tooling::CompilationDatabase* compilationDatabase, const FilePath& sourceFilePath);

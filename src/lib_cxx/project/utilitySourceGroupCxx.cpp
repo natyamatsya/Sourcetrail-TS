@@ -76,7 +76,7 @@ std::shared_ptr<Task> createBuildPchTask(const SourceGroupSettingsWithCxxPchOpti
 		pchCommand.Filename = pchInputFilePath.fileName();
 		pchCommand.Directory = pchOutputFilePath.getParentDirectory().str();
 		// DON'T use "-fsyntax-only" here because it will cause the output file to be erased
-		pchCommand.CommandLine = utility::concat({ClangCompiler::TOOL_NAME}, CxxParser::getCommandlineArgumentsEssential(compilerFlags));
+		pchCommand.CommandLine = utility::concat({ClangCompiler::TOOL_NAME}, CxxParser::getCommandlineArgumentsEssential("", compilerFlags));
 		
 		CxxCompilationDatabaseSingle compilationDatabase(pchCommand);
 		clang::tooling::ClangTool tool(compilationDatabase, {pchInputFilePath.str()});

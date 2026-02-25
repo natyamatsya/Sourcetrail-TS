@@ -102,12 +102,13 @@ std::shared_ptr<IndexerCommandProvider> SourceGroupCxxEmpty::getIndexerCommandPr
 		if (info.filesToIndex.find(sourcePath) != info.filesToIndex.end())
 		{
 			provider->addCommand(std::make_shared<IndexerCommandCxx>(
-				sourcePath,
-				indexedPaths,
-				excludeFilters,
-				std::set<FilePathFilter>(),
-				m_settings->getProjectDirectoryPath(),
-				utility::concat(compilerFlags, sourcePath.str())));
+					sourcePath,
+					indexedPaths,
+					excludeFilters,
+					std::set<FilePathFilter>{},
+					FilePath(""),
+					compilerFlags,
+					""));
 		}
 	}
 

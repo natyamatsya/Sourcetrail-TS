@@ -33,7 +33,8 @@ public:
 		const std::set<FilePathFilter>& excludeFilters,
 		const std::set<FilePathFilter>& includeFilters,
 		const FilePath& workingDirectory,
-		const std::vector<std::string>& compilerFlags);
+		const std::vector<std::string>& compilerFlags,
+		const std::string& compilerPath);
 
 	IndexerCommandType getIndexerCommandType() const override;
 	size_t getByteSize(size_t stringSize) const override;
@@ -43,6 +44,7 @@ public:
 	const std::set<FilePathFilter>& getIncludeFilters() const;
 	const std::vector<std::string>& getCompilerFlags() const;
 	const FilePath& getWorkingDirectory() const;
+	const std::string& getCompilerPath() const;
 
 protected:
 	QJsonObject doSerialize() const override;
@@ -53,6 +55,7 @@ private:
 	std::set<FilePathFilter> m_includeFilters;
 	FilePath m_workingDirectory;
 	std::vector<std::string> m_compilerFlags;
+	std::string m_compilerPath;
 };
 
 #endif	  // INDEXER_COMMAND_CXXL_H

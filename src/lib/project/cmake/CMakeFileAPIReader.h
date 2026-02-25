@@ -29,6 +29,8 @@ public:
 	struct CompileGroup
 	{
 		std::string language;					// "CXX", "C"
+		std::string compilerPath;               // Path to compiler executable
+		FilePath sysroot;                       // Implicit sysroot if available
 		std::vector<FilePath> includes;			// non-system include paths
 		std::vector<FilePath> systemIncludes;	// system include paths
 		std::vector<FilePath> frameworkSearchPaths; // framework search paths
@@ -99,6 +101,9 @@ private:
 
 	// Returns the path to the index-*.json reply file, or empty if absent.
 	FilePath findIndexFile() const;
+
+	// Returns the path to the toolchains-v1-*.json reply file, or empty if absent.
+	FilePath findToolchainsFile() const;
 
 	// Reads a JSON file from the reply directory and returns its contents.
 	// Returns a null QJsonObject on failure.

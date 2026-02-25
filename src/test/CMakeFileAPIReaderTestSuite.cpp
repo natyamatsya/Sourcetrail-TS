@@ -13,16 +13,27 @@
 namespace
 {
 
+FilePath fixtureRootDir()
+{
+	return FilePath{__FILE__}
+		.makeAbsolute()
+		.makeCanonical()
+		.getParentDirectory()
+		.getParentDirectory()
+		.getParentDirectory()
+		.getConcatenated("/bin/test/data/CMakeFileAPIReaderTestSuite")
+		.makeCanonical();
+}
+
 // Returns the absolute path to the fixture build directory.
-// Tests run with CWD = <build>/test/, so "data/..." resolves correctly.
 FilePath fixtureBuildDir()
 {
-	return FilePath("data/CMakeFileAPIReaderTestSuite/build").makeAbsolute().makeCanonical();
+	return fixtureRootDir().getConcatenated("/build").makeCanonical();
 }
 
 FilePath fixtureSourceDir()
 {
-	return FilePath("data/CMakeFileAPIReaderTestSuite/source").makeAbsolute().makeCanonical();
+	return fixtureRootDir().getConcatenated("/source").makeCanonical();
 }
 
 bool pathsMatchForFixture(const FilePath& lhs, const FilePath& rhs)
