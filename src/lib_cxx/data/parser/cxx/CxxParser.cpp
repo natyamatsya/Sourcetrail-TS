@@ -179,6 +179,12 @@ void CxxParser::runTool(clang::tooling::CompilationDatabase* compilationDatabase
 	tool.setDiagnosticConsumer(diagnostics.get());
 	tool.clearArgumentsAdjusters();
 
+	// In LLVM 15+ ClangTool overrides custom sysroot/resource-dir logic with internal defaults unless explicitly injected here.
+	tool.appendArgumentsAdjuster(clang::tooling::getInsertArgumentAdjuster(
+		ResourcePaths::getCxxCompilerHeaderDirectoryPath().getParentDirectory().str().c_str(), clang::tooling::ArgumentInsertPosition::BEGIN));
+	tool.appendArgumentsAdjuster(clang::tooling::getInsertArgumentAdjuster(
+		"-resource-dir", clang::tooling::ArgumentInsertPosition::BEGIN));
+
 	ClangInvocationInfo info;
 	if (LogManager::getInstance()->getLoggingEnabled())
 	{

@@ -10,6 +10,7 @@
 #include <llvm/Support/TargetSelect.h>
 #include <llvm/TargetParser/Host.h>
 
+#include "ResourcePaths.h"
 #include "CxxCompilationDatabaseSingle.h"
 #include "CxxDiagnosticConsumer.h"
 #include "utilityString.h"
@@ -40,6 +41,23 @@ ClangInvocationInfo ClangInvocationInfo::getClangInvocationString(
 	{
 		std::vector<std::string> CommandLine =
 			compilationDatabase->getAllCompileCommands().front().CommandLine;
+
+		// Explicitly inject resource directory the same way CxxParser does,
+		// since clang::driver::Driver doesn't always automatically detect our bundled headers
+		// when it runs inside this standalone AST probe environment.
+		// Insert right after the executable (index 1) to ensure the driver parses it correctly
+		// before any "--" or source files.
+		if (CommandLine.size() > 1)
+		{
+			CommandLine.insert(CommandLine.begin() + 1, ResourcePaths::getCxxCompilerHeaderDirectoryPath().getParentDirectory().str());
+			CommandLine.insert(CommandLine.begin() + 1, "-resource-dir");
+		}
+		else
+		{
+			CommandLine.push_back("-resource-dir");
+			CommandLine.push_back(
+				ResourcePaths::getCxxCompilerHeaderDirectoryPath().getParentDirectory().str());
+		}
 
 		std::vector<const char*> Argv;
 		for (const std::string& Str: CommandLine)
