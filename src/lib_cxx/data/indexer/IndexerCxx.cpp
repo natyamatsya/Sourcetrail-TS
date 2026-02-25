@@ -4,9 +4,9 @@
 #include "FileRegister.h"
 
 void IndexerCxx::doIndex(
-	std::shared_ptr<IndexerCommandCxx> indexerCommand,
-	std::shared_ptr<ParserClientImpl> parserClient,
-	std::shared_ptr<IndexerStateInfo> m_indexerStateInfo)
+	const std::shared_ptr<IndexerCommandCxx>& indexerCommand,
+	const std::shared_ptr<ParserClientImpl>& parserClient,
+	const std::shared_ptr<IndexerStateInfo>& indexerStateInfo)
 {
 	CxxParser parser(
 		parserClient,
@@ -14,7 +14,7 @@ void IndexerCxx::doIndex(
 			indexerCommand->getSourceFilePath(),
 			indexerCommand->getIndexedPaths(),
 			indexerCommand->getExcludeFilters()),
-		m_indexerStateInfo);
+		indexerStateInfo);
 
 	parser.buildIndex(indexerCommand);
 }

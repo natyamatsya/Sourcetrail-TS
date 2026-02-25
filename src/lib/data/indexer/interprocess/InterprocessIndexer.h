@@ -2,13 +2,22 @@
 #define INTERPROCESS_INDEXER_H
 
 #include "InterprocessBackend.h"
+#include "utilityExpected.h"
 
 #include <expected>
+
+enum class InterprocessIndexerErrorCode
+{
+	ExecutionException,
+	ExecutionUnknownException
+};
+
+using InterprocessIndexerError = utility::ExpectedError<InterprocessIndexerErrorCode>;
 
 class InterprocessIndexer
 {
 public:
-	using WorkResult = std::expected<void, std::string>;
+	using WorkResult = std::expected<void, InterprocessIndexerError>;
 
 	InterprocessIndexer(const std::string& uuid, ProcessId processId);
 

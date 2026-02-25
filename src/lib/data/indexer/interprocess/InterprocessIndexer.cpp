@@ -8,64 +8,9 @@
 #include "ScopedFunctor.h"
 #include "language_packages.h"
 #include "logging.h"
+#include "utilityExpected.h"
 
 #include <memory>
-#include <type_traits>
-#include <typeinfo>
-
-#if defined(__GNUG__)
-#include <cxxabi.h>
-#include <cstdlib>
-#endif
-
-namespace
-{
-std::string getExceptionTypeName(const std::exception& exception)
-{
-#if defined(__GNUG__)
-	int status = 0;
-	std::unique_ptr<char, decltype(&std::free)> demangledName(
-		abi::__cxa_demangle(typeid(exception).name(), nullptr, nullptr, &status), &std::free);
-	if (status == 0 && demangledName)
-		return demangledName.get();
-#endif
-
-	return typeid(exception).name();
-}
-
-template <typename TResult, typename TCallable>
-std::expected<TResult, std::string> expectedFromExceptions(
-	const ProcessId processId,
-	const std::string& context,
-	TCallable&& callable)
-{
-	try
-	{
-		if constexpr (std::is_void_v<TResult>)
-		{
-			std::forward<TCallable>(callable)();
-			return {};
-		}
-		else
-		{
-			return std::forward<TCallable>(callable)();
-		}
-	}
-	catch (const std::exception& e)
-	{
-		const std::string message =
-			context + " [" + getExceptionTypeName(e) + "]: " + std::string(e.what());
-		LOG_ERROR_STREAM(<< processId << " " << message);
-		return std::unexpected(message);
-	}
-	catch (...)
-	{
-		const std::string message = context + " [unknown exception type]";
-		LOG_ERROR_STREAM(<< processId << " " << message);
-		return std::unexpected(message);
-	}
-}
-} // namespace
 
 InterprocessIndexer::InterprocessIndexer(const std::string& uuid, ProcessId processId)
 	: m_interprocessIndexerCommandManager(uuid, processId, false)
@@ -96,8 +41,9 @@ InterprocessIndexer::WorkResult InterprocessIndexer::work()
 	[[maybe_unused]]
 	ScopedFunctor shutdownLogger([&]() { LOG_INFO_STREAM(<< m_processId << " shutting down indexer"); });
 
-	return expectedFromExceptions<void>(
-		m_processId,
+	const WorkResult workResult = utility::expectedFromExceptions<void>(
+		InterprocessIndexerErrorCode::ExecutionException,
+		InterprocessIndexerErrorCode::ExecutionUnknownException,
 		"error while running indexer worker",
 		[&]()
 		{
@@ -168,14 +114,11 @@ InterprocessIndexer::WorkResult InterprocessIndexer::work()
 					indexerCommand->getSourceFilePath());
 
 				LOG_INFO_STREAM(<< m_processId << " starting to index current file");
-				const auto indexResult =
-					expectedFromExceptions<std::shared_ptr<IntermediateStorage>>(
-						m_processId,
-						"exception while indexing \"" + indexerCommand->getSourceFilePath().str() +
-							"\"",
-						[&]() { return indexer->index(indexerCommand); });
+				const IndexerBase::IndexResult indexResult = indexer->index(indexerCommand);
 				if (!indexResult)
 				{
+					LOG_ERROR_STREAM(
+						<< m_processId << " " << indexResult.error());
 					LOG_ERROR_STREAM(
 						<< m_processId << " failing indexer command payload: "
 						<< IndexerCommand::serialize(indexerCommand));
@@ -198,4 +141,9 @@ InterprocessIndexer::WorkResult InterprocessIndexer::work()
 				LOG_INFO_STREAM(<< m_processId << " all done");
 			}
 		});
+
+	if (!workResult)
+		LOG_ERROR_STREAM(<< m_processId << " " << workResult.error());
+
+	return workResult;
 }

@@ -15,7 +15,7 @@ public:
 
 	void addIndexer(std::shared_ptr<IndexerBase> indexer);
 
-	std::shared_ptr<IntermediateStorage> index(std::shared_ptr<IndexerCommand> indexerCommand) override;
+	IndexerBase::IndexResult index(const std::shared_ptr<IndexerCommand>& indexerCommand) override;
 
 	void interrupt() override;
 

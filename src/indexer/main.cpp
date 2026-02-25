@@ -101,7 +101,7 @@ int main(int argc, char* argv[])
 	const InterprocessIndexer::WorkResult workResult = indexer.work();
 	if (!workResult)
 	{
-		LOG_ERROR("Indexer worker failed: " + workResult.error());
+		LOG_ERROR_STREAM(<< "Indexer worker failed: " << workResult.error());
 		return 1;
 	}
 
