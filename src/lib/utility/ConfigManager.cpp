@@ -33,6 +33,7 @@ std::shared_ptr<ConfigManager> ConfigManager::createCopy()
 void ConfigManager::clear()
 {
 	m_values.clear();
+	m_warnedMissingKeys.clear();
 }
 
 bool ConfigManager::getValue(const std::string& key, std::string& value) const
@@ -46,10 +47,7 @@ bool ConfigManager::getValue(const std::string& key, std::string& value) const
 	}
 	else
 	{
-		if (m_warnOnEmptyKey)
-		{
-			LOG_WARNING("value " + key + " is not present in config.");
-		}
+		warnMissingKey(key);
 		return false;
 	}
 }
@@ -120,10 +118,7 @@ bool ConfigManager::getValues(const std::string& key, std::vector<std::string>& 
 	}
 	else
 	{
-		if (m_warnOnEmptyKey)
-		{
-			LOG_WARNING("value " + key + " is not present in config.");
-		}
+		warnMissingKey(key);
 		return false;
 	}
 }
@@ -367,9 +362,28 @@ void ConfigManager::setWarnOnEmptyKey(bool warnOnEmptyKey) const
 	m_warnOnEmptyKey = warnOnEmptyKey;
 }
 
+void ConfigManager::warnMissingKey(const std::string& key) const
+{
+	bool shouldWarn = false;
+	{
+		std::lock_guard<std::mutex> lock(m_warningMutex);
+		if (!m_warnOnEmptyKey)
+			return;
+
+		shouldWarn = m_warnedMissingKeys.insert(key).second;
+	}
+
+	if (shouldWarn)
+		LOG_WARNING("value " + key + " is not present in config.");
+}
+
 ConfigManager::ConfigManager() = default;
 
-ConfigManager::ConfigManager(const ConfigManager& other) = default;
+ConfigManager::ConfigManager(const ConfigManager& other)
+	: m_values(other.m_values)
+	, m_warnOnEmptyKey(other.m_warnOnEmptyKey)
+{
+}
 
 bool ConfigManager::createXmlDocument(bool saveAsFile, const std::string filepath, std::string& output)
 {

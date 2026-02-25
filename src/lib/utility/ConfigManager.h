@@ -3,6 +3,8 @@
 
 #include <map>
 #include <memory>
+#include <mutex>
+#include <set>
 #include <string>
 #include <vector>
 
@@ -72,9 +74,12 @@ private:
 	void parseTomlTable(const toml::v3::table& table, const std::string& currentPath);
 	bool createXmlDocument(bool saveAsFile, std::string filepath, std::string& output);
 	toml::v3::table buildTomlTable() const;
+	void warnMissingKey(const std::string& key) const;
 
 	std::multimap<std::string, std::string> m_values;
 	mutable bool m_warnOnEmptyKey = true;
+	mutable std::set<std::string> m_warnedMissingKeys;
+	mutable std::mutex m_warningMutex;
 };
 
 template <typename T>
