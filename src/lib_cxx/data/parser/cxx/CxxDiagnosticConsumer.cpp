@@ -13,12 +13,13 @@ using namespace clang;
 
 CxxDiagnosticConsumer::CxxDiagnosticConsumer(
 	clang::raw_ostream& os,
-	clang::DiagnosticOptions& diags,
+	std::shared_ptr<clang::DiagnosticOptions> diags,
 	std::shared_ptr<ParserClient> client,
 	std::shared_ptr<CanonicalFilePathCache> canonicalFilePathCache,
 	const FilePath& sourceFilePath,
 	bool useLogging)
-	: clang::TextDiagnosticPrinter(os, diags)
+	: clang::TextDiagnosticPrinter(os, *diags)
+	, m_diagnosticOptions(diags)
 	, m_client(client)
 	, m_canonicalFilePathCache(canonicalFilePathCache)
 	, m_sourceFilePath(sourceFilePath)

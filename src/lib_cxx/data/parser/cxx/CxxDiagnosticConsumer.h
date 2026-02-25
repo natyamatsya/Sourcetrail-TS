@@ -12,7 +12,7 @@ class CxxDiagnosticConsumer: public clang::TextDiagnosticPrinter
 public:
 	CxxDiagnosticConsumer(
 		clang::raw_ostream& os,
-		clang::DiagnosticOptions& diags,
+		std::shared_ptr<clang::DiagnosticOptions> diags,
 		std::shared_ptr<ParserClient> client,
 		std::shared_ptr<CanonicalFilePathCache> canonicalFilePathCache,
 		const FilePath& sourceFilePath,
@@ -25,6 +25,7 @@ public:
 	void HandleDiagnostic(clang::DiagnosticsEngine::Level level, const clang::Diagnostic& info) override;
 
 private:
+	std::shared_ptr<clang::DiagnosticOptions> m_diagnosticOptions;
 	std::shared_ptr<ParserClient> m_client;
 	std::shared_ptr<CanonicalFilePathCache> m_canonicalFilePathCache;
 

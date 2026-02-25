@@ -1076,6 +1076,9 @@ void CxxAstVisitorComponentIndexer::recordDeducedQualType(const QualType deduced
 
 void CxxAstVisitorComponentIndexer::recordNonTrivialDestructorCalls(const FunctionDecl *functionDecl)
 {
+	// TODO: Re-enable once clang CFG crash in destructor traversal is fixed.
+	return;
+
 	auto recordDestructorCall = [this](const FunctionDecl *functionDecl, const CXXDestructorDecl *destructorDecl)
 	{
 		Id referencedSymbolId = getOrCreateSymbolId(destructorDecl);

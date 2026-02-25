@@ -82,8 +82,13 @@ std::shared_ptr<Task> createBuildPchTask(const SourceGroupSettingsWithCxxPchOpti
 		clang::tooling::ClangTool tool(compilationDatabase, {pchInputFilePath.str()});
 		GeneratePCHAction *action = new GeneratePCHAction(client, canonicalFilePathCache); // TODO (petermost): Memory leak?
 		
-		clang::DiagnosticOptions options;
-		CxxDiagnosticConsumer diagnostics(llvm::errs(), options, client, canonicalFilePathCache, pchInputFilePath, true);
+		auto options = std::make_shared<clang::DiagnosticOptions>();
+		options->ShowCarets = false;
+		options->ShowFixits = false;
+		options->ShowSourceRanges = false;
+		options->SnippetLineLimit = 0;
+		CxxDiagnosticConsumer diagnostics(
+			llvm::errs(), options, client, canonicalFilePathCache, pchInputFilePath, true);
 		
 		tool.setDiagnosticConsumer(&diagnostics);
 		tool.clearArgumentsAdjusters();

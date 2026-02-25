@@ -212,6 +212,10 @@ std::shared_ptr<CxxDiagnosticConsumer> CxxParser::getDiagnostics(
 	bool logErrors) const
 {
 	auto options = std::make_shared<clang::DiagnosticOptions>();
+	options->ShowCarets = false;
+	options->ShowFixits = false;
+	options->ShowSourceRanges = false;
+	options->SnippetLineLimit = 0;
 	return std::make_shared<CxxDiagnosticConsumer>(
-		llvm::errs(), *options, m_client, canonicalFilePathCache, sourceFilePath, logErrors);
+		llvm::errs(), options, m_client, canonicalFilePathCache, sourceFilePath, logErrors);
 }
