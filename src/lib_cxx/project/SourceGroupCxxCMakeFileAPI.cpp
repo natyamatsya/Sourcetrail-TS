@@ -24,11 +24,44 @@ bool isHeaderFilePath(const FilePath& path)
 	return kHeaderExtensions.count(utility::toLowerCase(path.extension())) > 0;
 }
 
+bool isModuleInterfaceFilePath(const FilePath& path)
+{
+	static const std::set<std::string> kModuleInterfaceExtensions{
+		".ixx", ".cppm", ".cxxm", ".ccm", ".mxx", ".mpp"};
+	return kModuleInterfaceExtensions.count(utility::toLowerCase(path.extension())) > 0;
+}
+
 bool isIndexableCxxFilePath(const FilePath& path)
 {
 	static const std::set<std::string> kIndexableExtensions{
-		".c", ".cc", ".cpp", ".cxx", ".m", ".mm", ".h", ".hh", ".hpp", ".hxx", ".inl", ".inc"};
+		".c",
+		".cc",
+		".cpp",
+		".cxx",
+		".m",
+		".mm",
+		".h",
+		".hh",
+		".hpp",
+		".hxx",
+		".inl",
+		".inc",
+		".ixx",
+		".cppm",
+		".cxxm",
+		".ccm",
+		".mxx",
+		".mpp"};
 	return kIndexableExtensions.count(utility::toLowerCase(path.extension())) > 0;
+}
+
+bool hasExplicitLanguageFlag(const std::vector<std::string>& flags)
+{
+	const std::string languageOption{ClangCompiler::languageOption()};
+	for (const std::string& flag : flags)
+		if (utility::isPrefix(languageOption, flag))
+			return true;
+	return false;
 }
 
 bool shouldCreateCxxCommand(
@@ -43,7 +76,8 @@ bool shouldCreateCxxCommand(
 		return false;
 	if (!isIndexableCxxFilePath(entry.path))
 		return false;
-	if (isHeaderFilePath(entry.path) && !entry.compileGroup)
+	if ((isHeaderFilePath(entry.path) || isModuleInterfaceFilePath(entry.path)) &&
+		!entry.compileGroup)
 		return false;
 	return true;
 }
@@ -186,14 +220,15 @@ std::shared_ptr<IndexerCommandProvider> SourceGroupCxxCMakeFileAPI::getIndexerCo
 		if (entry.compileGroup)
 		{
 			const auto& cg{*entry.compileGroup};
+			const bool hasLanguageFlag{hasExplicitLanguageFlag(cg.compileFlags)};
 
 			// Language standard flag derived from the language reported by CMake.
-			if (cg.language == "CXX")
+			if (!hasLanguageFlag && cg.language == "CXX")
 			{
 				commandLine.push_back(ClangCompiler::languageOption());
 				commandLine.push_back(ClangCompiler::CPP_LANGUAGE);
 			}
-			else if (cg.language == "C")
+			else if (!hasLanguageFlag && cg.language == "C")
 			{
 				commandLine.push_back(ClangCompiler::languageOption());
 				commandLine.push_back(ClangCompiler::C_LANGUAGE);
