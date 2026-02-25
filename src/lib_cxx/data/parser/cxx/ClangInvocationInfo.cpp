@@ -49,8 +49,8 @@ ClangInvocationInfo ClangInvocationInfo::getClangInvocationString(
 		// before any "--" or source files.
 		if (CommandLine.size() > 1)
 		{
-			CommandLine.insert(CommandLine.begin() + 1, ResourcePaths::getCxxCompilerHeaderDirectoryPath().getParentDirectory().str());
 			CommandLine.insert(CommandLine.begin() + 1, "-resource-dir");
+			CommandLine.insert(CommandLine.begin() + 2, ResourcePaths::getCxxCompilerHeaderDirectoryPath().getParentDirectory().str());
 		}
 		else
 		{

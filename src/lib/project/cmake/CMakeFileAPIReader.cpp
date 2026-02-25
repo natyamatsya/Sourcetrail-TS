@@ -402,10 +402,22 @@ std::vector<CMakeFileAPIReader::SourceEntry> CMakeFileAPIReader::getSources(
 		{
 			const auto toolchainsFilename{toolchainsFiles->first().toString().toStdString()};
 			const auto toolchainsPath{m_replyDir.getConcatenated("/" + toolchainsFilename)};
+			LOG_INFO("CMakeFileAPIReader: loading toolchains from " + toolchainsPath.str());
 			const auto toolchainsDoc{readJsonFile(toolchainsPath)};
 			if (!toolchainsDoc.isNull())
 				toolchainsDocObject = toolchainsDoc.object();
+			else
+				LOG_WARNING("CMakeFileAPIReader: toolchains file is null");
 		}
+		else
+		{
+			LOG_WARNING("CMakeFileAPIReader: no toolchains entry in reply index");
+		}
+	}
+	else
+	{
+		LOG_WARNING("CMakeFileAPIReader: toolchains JSONPath failed: " +
+			toolchainsPathResult.error().formatted_message().toStdString());
 	}
 
 	// Pick the configuration to use.
@@ -459,7 +471,8 @@ std::vector<CMakeFileAPIReader::SourceEntry> CMakeFileAPIReader::getSources(
 				for (const auto& tcVal : toolchains)
 				{
 					const auto tc{tcVal.toObject()};
-					if (tc["language"].toString().toStdString() == group.language)
+					const auto tcLang{tc["language"].toString().toStdString()};
+					if (tcLang == group.language)
 					{
 						const auto compiler{tc["compiler"].toObject()};
 						group.compilerPath = compiler["path"].toString().toStdString();
@@ -534,6 +547,7 @@ std::vector<CMakeFileAPIReader::SourceEntry> CMakeFileAPIReader::getSources(
 			entry.isGenerated = src["isGenerated"].toBool(false);
 			entry.targetName = targetName;
 			entry.targetType = targetType;
+			entry.sourceDir = sourceDir;
 
 			const auto cgIdx{src["compileGroupIndex"]};
 			if (!cgIdx.isUndefined())

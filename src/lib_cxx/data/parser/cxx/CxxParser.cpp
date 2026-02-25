@@ -85,12 +85,21 @@ std::vector<std::string> CxxParser::getCommandlineArgumentsEssential(
 {
 	std::vector<std::string> args;
 
-	// Explicitly inject the bundled clang headers as resource-dir.
-	// Without this, the internal ToolInvocation / CompilerInvocation often fails
-	// to resolve builtin headers like <stdarg.h> because it infers the resource dir
-	// relative to the argv[0] path (which might be AppleClang or missing entirely).
-	args.push_back("-resource-dir");
-	args.push_back(ResourcePaths::getCxxCompilerHeaderDirectoryPath().getParentDirectory().str());
+	// When a real compiler is known, explicitly inject -resource-dir derived
+	// from the compiler path so the Clang driver finds its own builtin headers
+	// (stdarg.h, stdint.h, etc.) instead of the bundled ones.
+	// When no real compiler is known, inject the bundled builtin headers as
+	// a system include so Sourcetrail's embedded clang can find them.
+	if (!compilerPath.empty())
+	{
+		args.push_back("-resource-dir");
+		args.push_back(clang::driver::Driver::GetResourcesPath(compilerPath));
+	}
+	else
+	{
+		args.push_back(ClangCompiler::systemIncludeOption());
+		args.push_back(ResourcePaths::getCxxCompilerHeaderDirectoryPath().str());
+	}
 
 	args.push_back(ClangCompiler::noDelayedTemplateParsingOption());
 	args.push_back(ClangCompiler::exceptionsOption());
@@ -142,8 +151,13 @@ void CxxParser::buildIndex(std::shared_ptr<IndexerCommandCxx> indexerCommand)
 	compileCommand.CommandLine = getCommandlineArgumentsEssential(indexerCommand->getCompilerPath(), args);
 	compileCommand.CommandLine = prependSyntaxOnlyToolArgs(indexerCommand->getCompilerPath(), compileCommand.CommandLine);
 
+	LOG_INFO(
+		"buildIndex: " + indexerCommand->getSourceFilePath().fileName() +
+		" compilerPath='" + indexerCommand->getCompilerPath() +
+		"' flags=" + std::to_string(compileCommand.CommandLine.size()));
+
 	CxxCompilationDatabaseSingle compilationDatabase(compileCommand);
-	runTool(&compilationDatabase, indexerCommand->getSourceFilePath());
+	runTool(&compilationDatabase, indexerCommand->getSourceFilePath(), indexerCommand->getCompilerPath());
 }
 
 void CxxParser::buildIndex(
@@ -164,7 +178,10 @@ void CxxParser::buildIndex(
 	runToolOnCodeWithArgs("", diagnostics.get(), std::move(action), fileContent->getText(), args, fileName);
 }
 
-void CxxParser::runTool(clang::tooling::CompilationDatabase* compilationDatabase, const FilePath& sourceFilePath)
+void CxxParser::runTool(
+	clang::tooling::CompilationDatabase* compilationDatabase,
+	const FilePath& sourceFilePath,
+	const std::string& compilerPath)
 {
 	initializeLLVM();
 
@@ -179,11 +196,19 @@ void CxxParser::runTool(clang::tooling::CompilationDatabase* compilationDatabase
 	tool.setDiagnosticConsumer(diagnostics.get());
 	tool.clearArgumentsAdjusters();
 
-	// In LLVM 15+ ClangTool overrides custom sysroot/resource-dir logic with internal defaults unless explicitly injected here.
-	tool.appendArgumentsAdjuster(clang::tooling::getInsertArgumentAdjuster(
-		ResourcePaths::getCxxCompilerHeaderDirectoryPath().getParentDirectory().str().c_str(), clang::tooling::ArgumentInsertPosition::BEGIN));
-	tool.appendArgumentsAdjuster(clang::tooling::getInsertArgumentAdjuster(
-		"-resource-dir", clang::tooling::ArgumentInsertPosition::BEGIN));
+	// Only inject the bundled builtin headers when no real compiler is known.
+	// When compilerPath is set, argv[0] is that real compiler and libclang
+	// correctly infers its resource dir — injecting the bundled dir on top
+	// breaks the stdint.h __has_include_next chain on macOS SDK 26+.
+	if (compilerPath.empty())
+	{
+		tool.appendArgumentsAdjuster(clang::tooling::getInsertArgumentAdjuster(
+			ResourcePaths::getCxxCompilerHeaderDirectoryPath().str().c_str(),
+			clang::tooling::ArgumentInsertPosition::BEGIN));
+		tool.appendArgumentsAdjuster(clang::tooling::getInsertArgumentAdjuster(
+			ClangCompiler::systemIncludeOption().c_str(),
+			clang::tooling::ArgumentInsertPosition::BEGIN));
+	}
 
 	ClangInvocationInfo info;
 	if (LogManager::getInstance()->getLoggingEnabled())

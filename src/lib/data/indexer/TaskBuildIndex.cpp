@@ -49,6 +49,9 @@ IndexerProcessResult validateIndexerProcessOutput(
 	if (processOutput.exitCode == 0)
 		return {};
 
+	const std::string processInfo = processOutput.processInfo.empty() ? "" :
+		"\nprocess info:\n" + processOutput.processInfo;
+
 	if (processOutput.exitCode == -1)
 	{
 		return std::unexpected(utility::makeExpectedError(
@@ -56,7 +59,7 @@ IndexerProcessResult validateIndexerProcessOutput(
 			processLabel + " " + to_string(processId) + " attempt " +
 				std::to_string(launchAttempt) +
 				" failed to start. command: " + commandLine + ". process error: " +
-				processOutput.error));
+				processOutput.error + processInfo));
 	}
 
 	std::string message =
@@ -65,6 +68,7 @@ IndexerProcessResult validateIndexerProcessOutput(
 		std::to_string(processOutput.exitCode) + ". command: " + commandLine + ".";
 	if (!processOutput.output.empty())
 		message += "\nprocess output:\n" + processOutput.output;
+	message += processInfo;
 
 	return std::unexpected(utility::makeExpectedError(
 		IndexerProcessErrorCode::ProcessExitedWithError,

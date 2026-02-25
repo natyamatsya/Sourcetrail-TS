@@ -102,6 +102,7 @@ void CxxIndexerCommandProvider::addCommand(const std::shared_ptr<IndexerCommandC
 		}
 	}
 
+	representation->m_compilerPath = command->getCompilerPath();
 	m_commands.emplace(command->getSourceFilePath(), representation);
 }
 
@@ -219,5 +220,5 @@ std::shared_ptr<IndexerCommandCxx> CxxIndexerCommandProvider::representationToCo
 		includeFilters,
 		workingDirectory,
 		compilerFlags,
-		"");
+		representation->m_compilerPath);
 }

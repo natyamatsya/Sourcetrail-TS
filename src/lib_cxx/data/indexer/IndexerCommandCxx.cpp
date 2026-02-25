@@ -70,24 +70,10 @@ std::vector<std::string> IndexerCommandCxx::getCompilerFlagsForSystemHeaderSearc
 	std::vector<std::string> compilerFlags;
 	compilerFlags.reserve(systemHeaderSearchPaths.size() * 2);
 
-	// *Prepend* clang system includes on windows:
-	if constexpr (utility::Platform::isWindows())
-	{
-		compilerFlags.push_back(ClangCompiler::systemIncludeOption());
-		compilerFlags.push_back(ResourcePaths::getCxxCompilerHeaderDirectoryPath().str());
-	}
-
 	for (const FilePath& path: systemHeaderSearchPaths)
 	{
 		compilerFlags.push_back(ClangCompiler::systemIncludeOption());
 		compilerFlags.push_back(path.str());
-	}
-
-	// *Append* clang system includes on non-windows:
-	if constexpr (!utility::Platform::isWindows())
-	{
-		compilerFlags.push_back(ClangCompiler::systemIncludeOption());
-		compilerFlags.push_back(ResourcePaths::getCxxCompilerHeaderDirectoryPath().str());
 	}
 	return compilerFlags;
 }

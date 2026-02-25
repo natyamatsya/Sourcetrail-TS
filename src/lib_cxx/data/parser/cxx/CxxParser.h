@@ -47,7 +47,9 @@ public:
 
 private:
 	void runTool(
-		clang::tooling::CompilationDatabase* compilationDatabase, const FilePath& sourceFilePath);
+		clang::tooling::CompilationDatabase* compilationDatabase,
+		const FilePath& sourceFilePath,
+		const std::string& compilerPath = {});
 
 	std::shared_ptr<CxxDiagnosticConsumer> getDiagnostics(
 		const FilePath& sourceFilePath,

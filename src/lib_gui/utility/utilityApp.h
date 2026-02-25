@@ -18,6 +18,7 @@ struct ProcessOutput
 	std::string output;
 	std::string error;
 	int exitCode;
+	std::string processInfo;
 };
 
 std::string getDocumentationLink();

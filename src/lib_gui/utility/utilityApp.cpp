@@ -1,5 +1,6 @@
 #include "utilityApp.h"
 
+#include "ResourcePaths.h"
 #include "ScopedFunctor.h"
 #include "logging.h"
 #include "utilityString.h"
@@ -72,18 +73,100 @@ void logOutputLines(const std::string& text, std::string& logBuffer)
 	else
 		logBuffer = lines.back();
 }
+
+std::string quoteArgument(const std::string& argument)
+{
+	return "\"" + argument + "\"";
+}
+
+std::string buildCommandLineForInfo(
+	const std::string& executable,
+	const std::vector<std::string>& arguments)
+{
+	std::string commandLine = quoteArgument(executable);
+	for (const std::string& argument: arguments)
+		commandLine += " " + quoteArgument(argument);
+	return commandLine;
+}
+
+std::string processStateToString(const QProcess::ProcessState state)
+{
+	switch (state)
+	{
+	case QProcess::NotRunning:
+		return "NotRunning";
+	case QProcess::Starting:
+		return "Starting";
+	case QProcess::Running:
+		return "Running";
+	}
+	return "Unknown";
+}
+
+std::string processExitStatusToString(const QProcess::ExitStatus status)
+{
+	switch (status)
+	{
+	case QProcess::NormalExit:
+		return "NormalExit";
+	case QProcess::CrashExit:
+		return "CrashExit";
+	}
+	return "Unknown";
+}
+
+std::string envValueForLog(const QProcessEnvironment& env, const QString& variable)
+{
+	if (!env.contains(variable))
+		return "<unset>";
+	return env.value(variable).toStdString();
+}
+
+std::string buildProcessInfo(
+	const std::string& command,
+	const std::string& resolvedCommand,
+	const std::vector<std::string>& arguments,
+	const FilePath& workingDirectory,
+	const QProcessEnvironment& env,
+	const QProcess& process,
+	const bool started)
+{
+	std::string info;
+	info += "requested_command: " + command;
+	info += "\nresolved_command: " + resolvedCommand;
+	info += "\ncommand_line: " + buildCommandLineForInfo(resolvedCommand, arguments);
+	info += "\nworking_directory: " +
+		(workingDirectory.empty() ? std::string("<default>") : workingDirectory.str());
+	info += "\nstarted: " + std::string(started ? "true" : "false");
+	info += "\nprocess_id: " + std::to_string(static_cast<long long>(process.processId()));
+	info += "\nprocess_state: " + processStateToString(process.state());
+	info += "\nexit_code: " + std::to_string(process.exitCode());
+	info += "\nexit_status: " + processExitStatusToString(process.exitStatus());
+	info += "\nqt_error_code: " + std::to_string(static_cast<int>(process.error()));
+	info += "\nqt_error_string: " + process.errorString().toStdString();
+	info += "\nPATH: " + envValueForLog(env, QStringLiteral("PATH"));
+	info += "\nSDKROOT: " + envValueForLog(env, QStringLiteral("SDKROOT"));
+	info += "\nCPATH: " + envValueForLog(env, QStringLiteral("CPATH"));
+	info += "\nC_INCLUDE_PATH: " + envValueForLog(env, QStringLiteral("C_INCLUDE_PATH"));
+	info += "\nCPLUS_INCLUDE_PATH: " + envValueForLog(env, QStringLiteral("CPLUS_INCLUDE_PATH"));
+	info += "\nLIBRARY_PATH: " + envValueForLog(env, QStringLiteral("LIBRARY_PATH"));
+	info += "\nDYLD_LIBRARY_PATH: " + envValueForLog(env, QStringLiteral("DYLD_LIBRARY_PATH"));
+	return info;
+}
 }	 // namespace
 
 ProcessOutput executeProcess(const std::string& command, const std::vector<std::string>& arguments, const FilePath& workingDirectory,
 	const bool waitUntilNoOutput, const milliseconds &timeout, bool logProcessOutput)
 {
 	auto process = std::make_shared<QProcess>();
+	const std::string resolvedCommand = searchPath(command);
 
 	// Set up environment with extra PATH entries
 	QProcessEnvironment env = QProcessEnvironment::systemEnvironment();
 	QString path = env.value(QStringLiteral("PATH"));
 	path = QStringLiteral("/opt/local/bin:/usr/local/bin:") + path;
 	env.insert(QStringLiteral("PATH"), path);
+
 	process->setProcessEnvironment(env);
 
 	if (!workingDirectory.empty())
@@ -99,7 +182,7 @@ ProcessOutput executeProcess(const std::string& command, const std::vector<std::
 		qArgs << QString::fromStdString(arg);
 
 	// Start process
-	process->start(QString::fromStdString(searchPath(command)), qArgs);
+	process->start(QString::fromStdString(resolvedCommand), qArgs);
 	process->closeWriteChannel();
 
 	if (!process->waitForStarted())
@@ -107,6 +190,14 @@ ProcessOutput executeProcess(const std::string& command, const std::vector<std::
 		ProcessOutput ret;
 		ret.error = process->errorString().toStdString();
 		ret.exitCode = -1;
+		ret.processInfo = buildProcessInfo(
+			command,
+			resolvedCommand,
+			arguments,
+			workingDirectory,
+			env,
+			*process,
+			false);
 		LOG_ERROR_BARE("Process error: " + ret.error);
 		return ret;
 	}
@@ -194,6 +285,14 @@ ProcessOutput executeProcess(const std::string& command, const std::vector<std::
 	ProcessOutput ret;
 	ret.output = trim(output);
 	ret.exitCode = process->exitCode();
+	ret.processInfo = buildProcessInfo(
+		command,
+		resolvedCommand,
+		arguments,
+		workingDirectory,
+		env,
+		*process,
+		true);
 	return ret;
 }
 

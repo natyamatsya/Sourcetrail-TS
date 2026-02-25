@@ -16,6 +16,8 @@
 #include "utilitySourceGroupCxx.h"
 #include "utilityApp.h"
 
+#include <fstream>
+
 namespace
 {
 bool isHeaderFilePath(const FilePath& path)
@@ -81,6 +83,88 @@ bool shouldCreateCxxCommand(
 		!entry.compileGroup)
 		return false;
 	return true;
+}
+
+// Hybrid C++20 module dependency injection.
+//
+// CMake generates per-TU response files (<buildDir>/CMakeFiles/<target>.dir/<rel>.o.modmap)
+// containing the exact -fmodule-file= and -x c++-module flags needed to resolve module
+// dependencies.  When a build exists we parse those flags and expand relative paths to
+// absolute ones so libclang can locate the .pcm files.
+//
+// If no .modmap exists (no prior build, or build was cleaned) we fall back to injecting
+// -fprebuilt-module-path= pointing at the target's CMakeFiles directory, which lets
+// libclang pick up any .pcm files that happen to be present without hard-coding names.
+std::vector<std::string> getModuleFlags(
+	const CMakeFileAPIReader::SourceEntry& entry, const FilePath& buildDir)
+{
+	// Derive modmap path: <buildDir>/CMakeFiles/<targetName>.dir/<relSrcPath>.o.modmap
+	const FilePath relSrcPath{entry.path.getRelativeTo(entry.sourceDir)};
+	const FilePath targetDir{
+		buildDir.getConcatenated("/CMakeFiles/" + entry.targetName + ".dir")};
+	const FilePath modmapPath{
+		targetDir.getConcatenated("/" + relSrcPath.str() + ".o.modmap")};
+
+	if (modmapPath.exists())
+	{
+		// Primary path: parse the .modmap response file.
+		std::vector<std::string> flags{};
+		std::ifstream file{modmapPath.str()};
+		std::string line{};
+		while (std::getline(file, line))
+		{
+			if (line.empty())
+				continue;
+
+			// Handle space-separated two-token flags like "-x c++-module".
+			// A line is a two-token flag when it starts with '-', has a space, and
+			// the part before the space has no '=' (it's a flag name, not a value).
+			const auto spacePos{line.find(' ')};
+			if (spacePos != std::string::npos && line.find('=') == std::string::npos)
+			{
+				flags.push_back(line.substr(0, spacePos));
+				flags.push_back(line.substr(spacePos + 1));
+				continue;
+			}
+
+			// For flags of the form -ffoo=<value> (or -ffoo=name=<path> for
+			// -fmodule-file=), expand relative path values to absolute.
+			// Use the *last* '=' to find the path component so that
+			// -fmodule-file=hello=rel/path works correctly.
+			const auto lastEqPos{line.rfind('=')};
+			if (lastEqPos != std::string::npos)
+			{
+				const std::string value{line.substr(lastEqPos + 1)};
+				// Only expand if the value looks like a file path (contains a separator
+				// or ends with a known extension), not a bare name like "hello".
+				if (!value.empty() && !FilePath{value}.isAbsolute() &&
+					(value.find('/') != std::string::npos ||
+					 value.size() > 4 &&
+						 value.substr(value.size() - 4) == ".pcm"))
+				{
+					const FilePath absValue{buildDir.getConcatenated("/" + value)};
+					flags.push_back(line.substr(0, lastEqPos + 1) + absValue.str());
+					continue;
+				}
+			}
+			flags.push_back(line);
+		}
+		LOG_INFO(
+			"C++20 module flags from .modmap (" + std::to_string(flags.size()) +
+			" flags): " + modmapPath.str());
+		return flags;
+	}
+
+	// Fallback: no .modmap available.  Inject -fprebuilt-module-path= pointing
+	// at the target's CMakeFiles dir so libclang can find any pre-built .pcm files.
+	if (targetDir.exists())
+	{
+		LOG_INFO(
+			"C++20 module fallback: -fprebuilt-module-path=" + targetDir.str() +
+			" (no .modmap found at " + modmapPath.str() + ")");
+		return {"-fprebuilt-module-path=" + targetDir.str()};
+	}
+	return {};
 }
 }
 
@@ -238,12 +322,21 @@ std::shared_ptr<IndexerCommandProvider> SourceGroupCxxCMakeFileAPI::getIndexerCo
 			// Include paths.
 			for (const auto& inc : cg.includes)
 				commandLine.push_back("-I" + inc.str());
-			for (const auto& inc : cg.systemIncludes)
-				commandLine.push_back("-isystem" + inc.str());
-			for (const auto& frameworkPath : cg.frameworkSearchPaths)
+
+			// Only inject system includes and framework search paths when no real
+			// compiler is known.  When compilerPath is set, the Clang driver
+			// already knows its own implicit search paths (libc++, builtin
+			// headers, SDK).  Injecting them explicitly can cause conflicts
+			// between different SDK installations (e.g. CommandLineTools vs Xcode).
+			if (cg.compilerPath.empty())
 			{
-				commandLine.push_back(ClangCompiler::frameworkIncludeOption());
-				commandLine.push_back(frameworkPath.str());
+				for (const auto& inc : cg.systemIncludes)
+					commandLine.push_back("-isystem" + inc.str());
+				for (const auto& frameworkPath : cg.frameworkSearchPaths)
+				{
+					commandLine.push_back(ClangCompiler::frameworkIncludeOption());
+					commandLine.push_back(frameworkPath.str());
+				}
 			}
 
 			// Preprocessor defines.
@@ -255,8 +348,10 @@ std::shared_ptr<IndexerCommandProvider> SourceGroupCxxCMakeFileAPI::getIndexerCo
 				commandLine.push_back(flag);
 		}
 
-		// Append global extra flags (ApplicationSettings header/framework paths).
-		utility::append(commandLine, extraFlags);
+		// Append global extra flags (ApplicationSettings header/framework paths)
+		// only when no real compiler is known — the driver handles them implicitly.
+		if (!entry.compileGroup || entry.compileGroup->compilerPath.empty())
+			utility::append(commandLine, extraFlags);
 
 		// Fallback: If no sysroot was explicitly provided in CMake flags but we found an implicit one, inject it.
 		// (CMake compileCommandFragments usually doesn't include -isysroot if it assumes the compiler does it natively,
@@ -292,14 +387,21 @@ std::shared_ptr<IndexerCommandProvider> SourceGroupCxxCMakeFileAPI::getIndexerCo
 			}
 		}
 
+		// Inject C++20 module dependency flags (hybrid: .modmap if available, else fallback).
+		if (!entry.sourceDir.empty())
+			utility::append(commandLine, getModuleFlags(entry, buildDir));
+
 		// Append user-specified extra flags from settings.
 		utility::append(commandLine, m_settings->getCompilerFlags());
 
 		// Source file itself.
 		commandLine.push_back(entry.path.str());
 
-		std::string compilerPath = entry.compileGroup ? entry.compileGroup->compilerPath : "";
-
+		const std::string compilerPath = entry.compileGroup ? entry.compileGroup->compilerPath : "";
+		LOG_INFO(
+			"indexer command: " + entry.path.fileName() +
+			" compiler='" + compilerPath +
+			"' flags=" + std::to_string(commandLine.size()));
 		provider->addCommand(std::make_shared<IndexerCommandCxx>(
 			entry.path,
 			utility::concat(indexedHeaderPaths, {entry.path}),

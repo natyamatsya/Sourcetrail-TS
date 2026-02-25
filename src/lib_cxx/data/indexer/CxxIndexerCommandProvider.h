@@ -32,6 +32,7 @@ private:
 		std::set<Id> m_includeFilterIds;
 		Id m_workingDirectoryId;
 		std::vector<Id> m_compilerFlagIds;
+		std::string m_compilerPath;
 	};
 
 	Id getId();

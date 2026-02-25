@@ -45,6 +45,7 @@ public:
 		std::optional<CompileGroup> compileGroup;
 		std::string targetName;
 		std::string targetType;	// EXECUTABLE, STATIC_LIBRARY, SHARED_LIBRARY, ...
+		FilePath sourceDir;		// CMake source directory (paths.source from codemodel)
 	};
 
 	explicit CMakeFileAPIReader(const FilePath& buildDir);
