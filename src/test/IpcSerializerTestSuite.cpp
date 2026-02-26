@@ -26,7 +26,7 @@ TEST_CASE("ipc serializer round-trips")
 
 		auto cmd = std::make_shared<IndexerCommandCxx>(
 			FilePath("/home/user/project/main.cpp"),
-			indexedPaths, excludeFilters, includeFilters, workingDir, flags);
+			indexedPaths, excludeFilters, includeFilters, workingDir, flags, std::string{});
 
 		std::vector<std::shared_ptr<IndexerCommand>> commands = {cmd};
 

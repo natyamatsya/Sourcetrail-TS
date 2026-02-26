@@ -4534,8 +4534,8 @@ TEST_CASE("cxx parser parses multiple files")
 			ClangCompiler::targetOption("x86_64-pc-windows-msvc"),
 			ClangCompiler::stdOption(ClangCompiler::getLatestCppStandard()),
 			sourceFilePath.str()
-		}
-	);
+		},
+		std::string{});
 
 	std::shared_ptr<IntermediateStorage> storage = std::make_shared<IntermediateStorage>();
 	CxxParser parser(

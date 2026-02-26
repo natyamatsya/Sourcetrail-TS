@@ -33,14 +33,16 @@ TEST_CASE("ipc integration: full indexer workflow")
 			std::set<FilePathFilter>{},
 			std::set<FilePathFilter>{},
 			FilePath("/build"),
-			std::vector<std::string>{"-std=c++20", "-Wall"}));
+			std::vector<std::string>{"-std=c++20", "-Wall"},
+			std::string{}));
 		cmds.push_back(std::make_shared<IndexerCommandCxx>(
 			FilePath("/src/b.cpp"),
 			std::set<FilePath>{FilePath("/usr/include")},
 			std::set<FilePathFilter>{},
 			std::set<FilePathFilter>{},
 			FilePath("/build"),
-			std::vector<std::string>{"-std=c++20"}));
+			std::vector<std::string>{"-std=c++20"},
+			std::string{}));
 
 		ownerMgr.pushIndexerCommands(cmds);
 		REQUIRE(ownerMgr.indexerCommandCount() == 2);
@@ -138,7 +140,8 @@ TEST_CASE("ipc integration: full indexer workflow")
 			cmds.push_back(std::make_shared<IndexerCommandCxx>(
 				FilePath("/src/file" + std::to_string(i) + ".cpp"),
 				std::set<FilePath>{}, std::set<FilePathFilter>{}, std::set<FilePathFilter>{},
-				FilePath("/build"), std::vector<std::string>{"-std=c++20"}));
+				FilePath("/build"), std::vector<std::string>{"-std=c++20"},
+				std::string{}));
 		cmdMgr.pushIndexerCommands(cmds);
 
 		// Two worker threads
