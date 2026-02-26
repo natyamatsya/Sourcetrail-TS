@@ -8,10 +8,14 @@
 #include "CanonicalFilePathCache.h"
 #include "FilePath.h"
 #include "ParseLocation.h"
+#include "utilityApp.h"
+#include "utilityString.h"
 
 #include <clang/Driver/Driver.h>
 
 #include <filesystem>
+#include <map>
+#include <mutex>
 
 using namespace std;
 using namespace clang;
@@ -262,11 +266,50 @@ std::optional<std::filesystem::path> utility::resolveCompilerResourceDir(const s
 		return std::nullopt;
 	}
 	
-	std::filesystem::path dir(clang::driver::Driver::GetResourcesPath(compilerPath.string()));
-	if (std::filesystem::exists(dir))
+	static std::mutex cacheMutex;
+	static std::map<std::string, std::optional<std::filesystem::path>> cache;
+	
+	const std::string compilerPathStr = compilerPath.string();
+	
 	{
-		return dir;
+		std::lock_guard<std::mutex> lock(cacheMutex);
+		auto it = cache.find(compilerPathStr);
+		if (it != cache.end())
+		{
+			return it->second;
+		}
 	}
 	
-	return std::nullopt;
+	std::optional<std::filesystem::path> result = std::nullopt;
+
+	// 1. Try to invoke the compiler directly to ask for its resource dir.
+	// This correctly resolves Apple shims like /usr/bin/c++ to their true
+	// Xcode toolchain paths, which GetResourcesPath cannot deduce.
+	const utility::ProcessOutput output = utility::executeProcess(compilerPathStr, {"-print-resource-dir"});
+	if (output.exitCode == 0 && !output.output.empty())
+	{
+		std::filesystem::path dir(utility::trim(output.output));
+		if (std::filesystem::exists(dir))
+		{
+			result = dir;
+		}
+	}
+	
+	// 2. Fallback to Clang's path deduction logic if direct invocation fails
+	// (e.g., if the compiler is missing the -print-resource-dir flag).
+	if (!result)
+	{
+		std::filesystem::path dir(clang::driver::Driver::GetResourcesPath(compilerPathStr));
+		if (std::filesystem::exists(dir))
+		{
+			result = dir;
+		}
+	}
+	
+	{
+		std::lock_guard<std::mutex> lock(cacheMutex);
+		cache[compilerPathStr] = result;
+	}
+
+	return result;
 }
