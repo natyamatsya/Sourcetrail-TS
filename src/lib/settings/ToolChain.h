@@ -12,6 +12,7 @@ class ToolChain { // Just a 'marker' interface
 class ClangCompiler final : public ToolChain {
 	public:
 		static constexpr char TOOL_NAME[] = "clang-tool";
+		static constexpr char DEFAULT_COMPILER[] = "c++";
 		static constexpr char C_LANGUAGE[] = "c";
 		static constexpr char CPP_LANGUAGE[] = "c++";
 

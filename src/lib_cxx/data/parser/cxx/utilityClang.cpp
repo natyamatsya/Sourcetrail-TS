@@ -8,6 +8,7 @@
 #include "CanonicalFilePathCache.h"
 #include "FilePath.h"
 #include "ParseLocation.h"
+#include "ToolChain.h"
 #include "utilityApp.h"
 #include "utilityString.h"
 
@@ -268,15 +269,13 @@ PrintingPolicy utility::makePrintingPolicyForCPlusPlus()
 
 std::optional<std::filesystem::path> utility::resolveCompilerResourceDir(const std::filesystem::path& compilerPath)
 {
-	if (compilerPath.empty())
-	{
-		return std::nullopt;
-	}
-	
 	static std::mutex cacheMutex;
 	static std::map<std::string, std::optional<std::filesystem::path>> cache;
 	
-	const std::string compilerPathStr = compilerPath.string();
+	// When no compiler is known, probe the system default so macOS shims
+	// (e.g. /usr/bin/c++) resolve to the real Xcode toolchain resource dir.
+	const std::string compilerPathStr =
+		compilerPath.empty() ? ClangCompiler::DEFAULT_COMPILER : compilerPath.string();
 	
 	{
 		std::lock_guard<std::mutex> lock(cacheMutex);

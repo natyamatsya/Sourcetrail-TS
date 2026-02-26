@@ -325,21 +325,12 @@ std::shared_ptr<IndexerCommandProvider> SourceGroupCxxCMakeFileAPI::getIndexerCo
 			for (const auto& inc : cg.includes)
 				commandLine.push_back("-I" + inc.str());
 
-			// Only skip system includes and framework search paths when the
-			// compiler has a usable resource directory.  In that case the Clang
-			// driver resolves its own implicit search paths and injecting CMake's
-			// implicit includes can cause SDK conflicts (e.g. CLT vs Xcode).
-			// When the resource dir is absent (e.g. /usr/bin/c++ shim), we need
-			// the CMake-provided system includes for correct header resolution.
-			if (!utility::resolveCompilerResourceDir(cg.compilerPath))
+			for (const auto& inc : cg.systemIncludes)
+				commandLine.push_back("-isystem" + inc.str());
+			for (const auto& frameworkPath : cg.frameworkSearchPaths)
 			{
-				for (const auto& inc : cg.systemIncludes)
-					commandLine.push_back("-isystem" + inc.str());
-				for (const auto& frameworkPath : cg.frameworkSearchPaths)
-				{
-					commandLine.push_back(ClangCompiler::frameworkIncludeOption());
-					commandLine.push_back(frameworkPath.str());
-				}
+				commandLine.push_back(ClangCompiler::frameworkIncludeOption());
+				commandLine.push_back(frameworkPath.str());
 			}
 
 			// Preprocessor defines.
