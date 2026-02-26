@@ -68,6 +68,26 @@ const std::string& IpcSharedMemory::name() const
 	return m_name;
 }
 
+const uint8_t* IpcSharedMemory::peekMappedMemory(std::size_t* outSize) const
+{
+	if (outSize)
+		*outSize = m_size;
+	return static_cast<const uint8_t*>(m_shm.get());
+}
+
+void IpcSharedMemory::grow(std::size_t newSize)
+{
+	if (newSize <= m_size)
+		return;
+
+	m_shm.release();
+	// Do NOT unlink the backing file — we extend it in-place via ftruncate
+	// so that the other process's handle can re-mmap the same name at the new size.
+	m_size = newSize;
+	if (!m_shm.acquire(getMemoryName().c_str(), m_size, ipc::shm::create | ipc::shm::open))
+		throw std::runtime_error("IpcSharedMemory::grow: failed to re-map shared memory: " + getMemoryName());
+}
+
 std::string IpcSharedMemory::getMemoryName() const
 {
 	return s_memoryNamePrefix + m_name;

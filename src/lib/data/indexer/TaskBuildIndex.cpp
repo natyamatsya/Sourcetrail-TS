@@ -503,67 +503,77 @@ void TaskBuildIndex::runIndexerThread(ProcessId processId)
 
 bool TaskBuildIndex::fetchIntermediateStorages(std::shared_ptr<Blackboard> blackboard)
 {
-	int poppedStorageCount = 0;
-	const int maxQueuedStoragesBeforePause = 30;
+	// Always drain IPC shared memory segments into a local queue first.
+	// This prevents the subprocess back-pressure check (storageCount < 2) from
+	// deadlocking when the provider queue is full — IPC must be drained regardless.
+	std::vector<std::shared_ptr<IntermediateStorage>> drained;
 
-	int providerStorageCount = m_storageProvider->getStorageCount();
-	if (providerStorageCount > maxQueuedStoragesBeforePause)
-	{
-		LOG_INFO_STREAM(
-			<< "waiting, too many storages queued: " << providerStorageCount << " (limit "
-			<< maxQueuedStoragesBeforePause << ")");
-
-		std::this_thread::sleep_for(std::chrono::milliseconds(50));
-
-		return true;
-	}
-
+	// Drain via finished-process signals first.
 	TimeStamp t = TimeStamp::now();
-	do
+	while (TimeStamp::now().deltaMS(t) < 500)
 	{
 		ProcessId finishedProcessId = m_interprocessIndexingStatusManager.getNextFinishedProcessId();
 		if (finishedProcessId == ProcessId::NONE)
-		{
 			break;
-		}
 
 		std::shared_ptr<IntermediateStorageManagerImpl> storageManager;
 #if BUILD_RUST_LANGUAGE_PACKAGE
 		const ProcessId rustProcessId = static_cast<ProcessId>(m_processCount + 1);
 		if (finishedProcessId == rustProcessId && m_rustStorageManager)
-		{
 			storageManager = m_rustStorageManager;
-		}
 		else
 #endif
 		if (static_cast<size_t>(finishedProcessId) <= m_interprocessIntermediateStorageManagers.size())
-		{
 			storageManager =
 				m_interprocessIntermediateStorageManagers[static_cast<size_t>(finishedProcessId) - 1];
-		}
+
 		if (!storageManager)
-		{
-			break;
-		}
+			continue;
 
-		const size_t storageCount = storageManager->getIntermediateStorageCount();
-		if (storageCount == 0)
-		{
-			break;
-		}
+		if (storageManager->peekCount() == 0)
+			continue;
 
-		LOG_INFO_STREAM(<< storageManager->getProcessId() << " - storage count: " << storageCount);
-		m_storageProvider->insert(storageManager->popIntermediateStorage());
-		poppedStorageCount++;
-	} while (TimeStamp::now().deltaMS(t) < 500); // don't process all storages at once to allow for status updates in-between
-
-	if (poppedStorageCount > 0)
-	{
-		blackboard->update<int>("indexed_source_file_count", [=](int count) { return count + poppedStorageCount; });
-		return true;
+		LOG_INFO_STREAM(<< storageManager->getProcessId() << " - storage count: " << storageManager->peekCount());
+		drained.push_back(storageManager->popIntermediateStorage());
 	}
 
-	return false;
+	// Also scan all managers directly — guards against missed signals.
+	// No time gate here: we must drain even if the signal loop took >500ms.
+	{
+		for (auto& mgr: m_interprocessIntermediateStorageManagers)
+		{
+			if (!mgr || mgr->peekCount() == 0)
+				continue;
+			LOG_INFO_STREAM(<< mgr->getProcessId() << " - unsignaled storage count: " << mgr->peekCount());
+			drained.push_back(mgr->popIntermediateStorage());
+		}
+#if BUILD_RUST_LANGUAGE_PACKAGE
+		if (m_rustStorageManager && m_rustStorageManager->peekCount() > 0)
+		{
+			LOG_INFO_STREAM(<< m_rustStorageManager->getProcessId() << " - unsignaled rust storage");
+			drained.push_back(m_rustStorageManager->popIntermediateStorage());
+		}
+#endif
+	}
+
+	if (drained.empty())
+		return false;
+
+	// Now insert drained storages into the provider, throttling if it's full.
+	const int maxQueuedStoragesBeforePause = 30;
+	for (auto& storage: drained)
+	{
+		while (m_storageProvider->getStorageCount() > maxQueuedStoragesBeforePause)
+			std::this_thread::sleep_for(std::chrono::milliseconds(50));
+
+		m_storageProvider->insert(storage);
+	}
+
+	blackboard->update<int>(
+		"indexed_source_file_count",
+		[n = static_cast<int>(drained.size())](int count) { return count + n; });
+
+	return true;
 }
 
 void TaskBuildIndex::updateIndexingDialog(std::shared_ptr<Blackboard> blackboard, const std::vector<FilePath>& sourcePaths)

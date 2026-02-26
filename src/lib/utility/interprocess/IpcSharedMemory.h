@@ -52,6 +52,14 @@ public:
 
 	const std::string& name() const;
 
+	// Lock-free peek at the raw mapped memory. For approximate reads only (e.g.
+	// back-pressure checks). Do NOT use for writes or authoritative reads.
+	const uint8_t* peekMappedMemory(std::size_t* outSize) const;
+
+	// Re-create the shm segment at a larger size. The mutex is unaffected.
+	// Must NOT be called while a ScopedAccess is held.
+	void grow(std::size_t newSize);
+
 private:
 	static const char* s_memoryNamePrefix;
 	static const char* s_mutexNamePrefix;

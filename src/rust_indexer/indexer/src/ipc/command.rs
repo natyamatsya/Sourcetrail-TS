@@ -200,6 +200,7 @@ fn serialize_queue(commands: &[OwnedIndexerCommand]) -> Vec<u8> {
                     include_filters: Some(include_v),
                     working_directory: Some(wdir),
                     compiler_flags: Some(flags_v),
+                    compiler_path: None,
                 },
             )
         })

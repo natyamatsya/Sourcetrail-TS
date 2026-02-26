@@ -95,7 +95,7 @@ InterprocessIndexer::WorkResult InterprocessIndexer::work()
 				while (updaterThreadRunning)
 				{
 					const size_t storageCount =
-						m_interprocessIntermediateStorageManager.getIntermediateStorageCount();
+						m_interprocessIntermediateStorageManager.peekCount();
 					if (storageCount < 2)
 						break;
 

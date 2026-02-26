@@ -23,7 +23,13 @@ public:
 
 	size_t getIntermediateStorageCount();
 
+	// Lock-free approximate count — safe to call without holding the mutex.
+	// Use only for back-pressure checks, not authoritative reads.
+	size_t peekCount() const;
+
 private:
+	void growIfNeeded();
+
 	static const char* s_sharedMemoryNamePrefix;
 
 	std::string m_instanceUuid;

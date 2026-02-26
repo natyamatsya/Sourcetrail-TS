@@ -101,6 +101,7 @@ impl StatusChannel {
             crashed_file_paths: crashed_raw.map(flatbuffers::WIPOffset::new),
             finished_process_ids: finished_raw.map(flatbuffers::WIPOffset::new),
             indexing_interrupted: existing.indexing_interrupted,
+            queue_stopped: existing.queue_stopped,
         };
         let status = IndexingStatus::create(&mut fbb, &args);
         finish_indexing_status_buffer(&mut fbb, status);
@@ -145,6 +146,7 @@ impl StatusChannel {
             crashed_file_paths: crashed_raw.map(flatbuffers::WIPOffset::new),
             finished_process_ids: finished_raw.map(flatbuffers::WIPOffset::new),
             indexing_interrupted: existing.indexing_interrupted,
+            queue_stopped: existing.queue_stopped,
         };
         let status = IndexingStatus::create(&mut fbb, &args);
         finish_indexing_status_buffer(&mut fbb, status);
@@ -172,6 +174,7 @@ struct IndexingStatusOwned {
     crashed_file_paths: Vec<String>,
     finished_process_ids: Vec<u64>,
     indexing_interrupted: bool,
+    queue_stopped: bool,
 }
 
 impl IndexingStatusOwned {
@@ -188,6 +191,7 @@ impl IndexingStatusOwned {
             crashed_file_paths: str_vec(s.crashed_file_paths()),
             finished_process_ids: finished,
             indexing_interrupted: s.indexing_interrupted(),
+            queue_stopped: s.queue_stopped(),
         }
     }
 }
