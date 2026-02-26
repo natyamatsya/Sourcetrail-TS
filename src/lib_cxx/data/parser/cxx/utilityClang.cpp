@@ -69,43 +69,48 @@ bool utility::isImplicit(const clang::Decl* d)
 
 DefinitionKind utility::getDefinitionKind(const clang::Decl* d)
 {
-	return isImplicit(d) ? DefinitionKind::IMPLICIT : DefinitionKind::EXPLICIT;
+	using enum DefinitionKind;
+	return isImplicit(d) ? IMPLICIT : EXPLICIT;
 }
 
 AccessKind utility::convertAccessSpecifier(clang::AccessSpecifier access)
 {
+	using enum clang::AccessSpecifier;
+	using enum AccessKind;
 	switch (access)
 	{
-	case clang::AS_public:
-		return AccessKind::PUBLIC;
-	case clang::AS_protected:
-		return AccessKind::PROTECTED;
-	case clang::AS_private:
-		return AccessKind::PRIVATE;
-	case clang::AS_none:
-		return AccessKind::NONE;
+	case AS_public:
+		return PUBLIC;
+	case AS_protected:
+		return PROTECTED;
+	case AS_private:
+		return PRIVATE;
+	case AS_none:
+		return NONE;
 	default:
-		return AccessKind::NONE;
+		return NONE;
 	}
 }
 
 SymbolKind utility::convertTagKind(const clang::TagTypeKind tagKind)
 {
+	using enum SymbolKind;
+	using enum clang::TagTypeKind;
 	switch (tagKind)
 	{
-	case TagTypeKind::Struct:
-		return SymbolKind::STRUCT;
-	case TagTypeKind::Union:
-		return SymbolKind::UNION;
-	case TagTypeKind::Class:
-		return SymbolKind::CLASS;
-	case TagTypeKind::Enum:
-		return SymbolKind::ENUM;
-	case TagTypeKind::Interface:
+	case Struct:
+		return STRUCT;
+	case Union:
+		return UNION;
+	case Class:
+		return CLASS;
+	case Enum:
+		return ENUM;
+	case Interface:
 		// TODO (petermost): Is this correct or should 'SymbolKind::INTERFACE' be returned?
-		return SymbolKind::UNDEFINED;
+		return UNDEFINED;
 	default:
-		return SymbolKind::UNDEFINED;
+		return UNDEFINED;
 	}
 }
 
@@ -121,17 +126,19 @@ bool utility::isParameter(const clang::ValueDecl *d)
 
 SymbolKind utility::getSymbolKind(const clang::VarDecl* d)
 {
-	SymbolKind symbolKind = SymbolKind::UNDEFINED;
+	using enum SymbolKind;
+	SymbolKind symbolKind = UNDEFINED;
 
 	if (d->getParentFunctionOrMethod() == nullptr)
 	{
-		if (d->getAccess() == clang::AS_none)
+		using enum clang::AccessSpecifier;
+		if (d->getAccess() == AS_none)
 		{
-			symbolKind = SymbolKind::GLOBAL_VARIABLE;
+			symbolKind = GLOBAL_VARIABLE;
 		}
 		else
 		{
-			symbolKind = SymbolKind::FIELD;
+			symbolKind = FIELD;
 		}
 	}
 
