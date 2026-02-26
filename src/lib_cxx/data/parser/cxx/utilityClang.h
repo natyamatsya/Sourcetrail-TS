@@ -2,6 +2,8 @@
 #define UTILITY_CLANG_H
 
 #include <clang/AST/Decl.h>
+#include <filesystem>
+#include <optional>
 
 #include "AccessKind.h"
 #include "SymbolKind.h"
@@ -46,6 +48,11 @@ ParseLocation getParseLocation(
 	const clang::SourceManager& sourceManager,
 	clang::Preprocessor* preprocessor,
 	std::shared_ptr<CanonicalFilePathCache> canonicalFilePathCache);
+
+// Returns the compiler's resource directory if it exists on disk, or std::nullopt
+// if it doesn't (e.g. /usr/bin/c++ shim on macOS where the real resources live
+// inside the Xcode toolchain at a path GetResourcesPath cannot deduce).
+std::optional<std::filesystem::path> resolveCompilerResourceDir(const std::filesystem::path& compilerPath);
 }	 // namespace utility
 
 template <typename T>

@@ -9,6 +9,10 @@
 #include "FilePath.h"
 #include "ParseLocation.h"
 
+#include <clang/Driver/Driver.h>
+
+#include <filesystem>
+
 using namespace std;
 using namespace clang;
 
@@ -249,4 +253,20 @@ PrintingPolicy utility::makePrintingPolicyForCPlusPlus()
 	pp.adjustForCPlusPlus();
 
 	return pp;
+}
+
+std::optional<std::filesystem::path> utility::resolveCompilerResourceDir(const std::filesystem::path& compilerPath)
+{
+	if (compilerPath.empty())
+	{
+		return std::nullopt;
+	}
+	
+	std::filesystem::path dir(clang::driver::Driver::GetResourcesPath(compilerPath.string()));
+	if (std::filesystem::exists(dir))
+	{
+		return dir;
+	}
+	
+	return std::nullopt;
 }

@@ -15,11 +15,13 @@
 #include "utilityString.h"
 #include "utilitySourceGroupCxx.h"
 #include "utilityApp.h"
+#include "utilityClang.h"
 
 #include <fstream>
 
 namespace
 {
+
 bool isHeaderFilePath(const FilePath& path)
 {
 	static const std::set<std::string> kHeaderExtensions{
@@ -323,12 +325,13 @@ std::shared_ptr<IndexerCommandProvider> SourceGroupCxxCMakeFileAPI::getIndexerCo
 			for (const auto& inc : cg.includes)
 				commandLine.push_back("-I" + inc.str());
 
-			// Only inject system includes and framework search paths when no real
-			// compiler is known.  When compilerPath is set, the Clang driver
-			// already knows its own implicit search paths (libc++, builtin
-			// headers, SDK).  Injecting them explicitly can cause conflicts
-			// between different SDK installations (e.g. CommandLineTools vs Xcode).
-			if (cg.compilerPath.empty())
+			// Only skip system includes and framework search paths when the
+			// compiler has a usable resource directory.  In that case the Clang
+			// driver resolves its own implicit search paths and injecting CMake's
+			// implicit includes can cause SDK conflicts (e.g. CLT vs Xcode).
+			// When the resource dir is absent (e.g. /usr/bin/c++ shim), we need
+			// the CMake-provided system includes for correct header resolution.
+			if (!utility::resolveCompilerResourceDir(cg.compilerPath))
 			{
 				for (const auto& inc : cg.systemIncludes)
 					commandLine.push_back("-isystem" + inc.str());
@@ -349,8 +352,9 @@ std::shared_ptr<IndexerCommandProvider> SourceGroupCxxCMakeFileAPI::getIndexerCo
 		}
 
 		// Append global extra flags (ApplicationSettings header/framework paths)
-		// only when no real compiler is known — the driver handles them implicitly.
-		if (!entry.compileGroup || entry.compileGroup->compilerPath.empty())
+		// only when the compiler lacks a usable resource dir — the driver
+		// handles them implicitly when it has one.
+		if (!entry.compileGroup || !utility::resolveCompilerResourceDir(entry.compileGroup->compilerPath))
 			utility::append(commandLine, extraFlags);
 
 		// Fallback: If no sysroot was explicitly provided in CMake flags but we found an implicit one, inject it.

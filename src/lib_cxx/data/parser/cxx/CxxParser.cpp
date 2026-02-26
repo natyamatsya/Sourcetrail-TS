@@ -16,6 +16,7 @@
 #include "ToolChain.h"
 #include "logging.h"
 #include "utility.h"
+#include "utilityClang.h"
 #include "utilityString.h"
 
 #include <clang/Driver/Compilation.h>
@@ -85,15 +86,15 @@ std::vector<std::string> CxxParser::getCommandlineArgumentsEssential(
 {
 	std::vector<std::string> args;
 
-	// When a real compiler is known, explicitly inject -resource-dir derived
-	// from the compiler path so the Clang driver finds its own builtin headers
-	// (stdarg.h, stdint.h, etc.) instead of the bundled ones.
-	// When no real compiler is known, inject the bundled builtin headers as
-	// a system include so Sourcetrail's embedded clang can find them.
-	if (!compilerPath.empty())
+	// When the compiler has a usable resource directory on disk, inject it
+	// explicitly so the Clang driver finds the correct builtin headers
+	// (stdarg.h, stdint.h, etc.).  Otherwise fall back to the bundled
+	// builtin headers shipped with Sourcetrail.
+	std::optional<std::filesystem::path> resourceDir = utility::resolveCompilerResourceDir(compilerPath);
+	if (resourceDir)
 	{
 		args.push_back("-resource-dir");
-		args.push_back(clang::driver::Driver::GetResourcesPath(compilerPath));
+		args.push_back(resourceDir->string());
 	}
 	else
 	{
@@ -196,11 +197,12 @@ void CxxParser::runTool(
 	tool.setDiagnosticConsumer(diagnostics.get());
 	tool.clearArgumentsAdjusters();
 
-	// Only inject the bundled builtin headers when no real compiler is known.
-	// When compilerPath is set, argv[0] is that real compiler and libclang
-	// correctly infers its resource dir — injecting the bundled dir on top
+	// Only inject the bundled builtin headers when the compiler doesn't have
+	// a usable resource directory on disk.  When it does, -resource-dir was
+	// already injected in getCommandlineArgumentsEssential and the driver
+	// finds its own builtin headers.  Injecting the bundled dir on top
 	// breaks the stdint.h __has_include_next chain on macOS SDK 26+.
-	if (compilerPath.empty())
+	if (!utility::resolveCompilerResourceDir(compilerPath))
 	{
 		tool.appendArgumentsAdjuster(clang::tooling::getInsertArgumentAdjuster(
 			ResourcePaths::getCxxCompilerHeaderDirectoryPath().str().c_str(),
