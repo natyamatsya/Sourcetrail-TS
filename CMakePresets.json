@@ -63,10 +63,18 @@
 		},
 		{
 			"hidden": true,
-			"name": "clang-presets",
+			"name": "apple-clang-presets",
 			"cacheVariables": {
 				"CMAKE_C_COMPILER": "clang",
 				"CMAKE_CXX_COMPILER": "clang++"
+			}
+		},
+		{
+			"hidden": true,
+			"name": "llvm-clang-presets",
+			"cacheVariables": {
+				"CMAKE_C_COMPILER": "/opt/homebrew/opt/llvm/bin/clang",
+				"CMAKE_CXX_COMPILER": "/opt/homebrew/opt/llvm/bin/clang++"
 			}
 		},
 		{
@@ -103,24 +111,45 @@
 			]
 		},
 		{
-			"name": "sys-clang-dbg",
+			"name": "sys-apple-clang-dbg",
 			"inherits": [
 				"sys-dbg",
-				"clang-presets"
+				"apple-clang-presets"
 			]
 		},
 		{
-			"name": "sys-clang-rel",
+			"name": "sys-apple-clang-rel",
 			"inherits": [
 				"sys-rel",
-				"clang-presets"
+				"apple-clang-presets"
 			]
 		},
 		{
-			"name": "sys-clang-reldbg",
+			"name": "sys-apple-clang-reldbg",
 			"inherits": [
 				"sys-reldbg",
-				"clang-presets"
+				"apple-clang-presets"
+			]
+		},
+		{
+			"name": "sys-llvm-clang-dbg",
+			"inherits": [
+				"sys-dbg",
+				"llvm-clang-presets"
+			]
+		},
+		{
+			"name": "sys-llvm-clang-rel",
+			"inherits": [
+				"sys-rel",
+				"llvm-clang-presets"
+			]
+		},
+		{
+			"name": "sys-llvm-clang-reldbg",
+			"inherits": [
+				"sys-reldbg",
+				"llvm-clang-presets"
 			]
 		},
 		{
@@ -148,24 +177,45 @@
 			]
 		},
 		{
-			"name": "clang-dbg",
+			"name": "apple-clang-dbg",
 			"inherits": [
 				"dbg",
-				"clang-presets"
+				"apple-clang-presets"
 			]
 		},
 		{
-			"name": "clang-rel",
+			"name": "apple-clang-rel",
 			"inherits": [
 				"rel",
-				"clang-presets"
+				"apple-clang-presets"
 			]
 		},
 		{
-			"name": "clang-reldbg",
+			"name": "apple-clang-reldbg",
 			"inherits": [
 				"reldbg",
-				"clang-presets"
+				"apple-clang-presets"
+			]
+		},
+		{
+			"name": "llvm-clang-dbg",
+			"inherits": [
+				"dbg",
+				"llvm-clang-presets"
+			]
+		},
+		{
+			"name": "llvm-clang-rel",
+			"inherits": [
+				"rel",
+				"llvm-clang-presets"
+			]
+		},
+		{
+			"name": "llvm-clang-reldbg",
+			"inherits": [
+				"reldbg",
+				"llvm-clang-presets"
 			]
 		}
 	]
