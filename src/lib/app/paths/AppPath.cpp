@@ -39,3 +39,13 @@ FilePath AppPath::getRustIndexerFilePath()
 	else
 		return s_sharedDataDirectoryPath.getConcatenated(name);
 }
+
+FilePath AppPath::getSwiftIndexerFilePath()
+{
+	std::string name("sourcetrail_swift_indexer" + FilePath::getExecutableExtension());
+
+	if (!s_cxxIndexerDirectoryPath.empty())
+		return s_cxxIndexerDirectoryPath.getConcatenated(name);
+	else
+		return s_sharedDataDirectoryPath.getConcatenated(name);
+}

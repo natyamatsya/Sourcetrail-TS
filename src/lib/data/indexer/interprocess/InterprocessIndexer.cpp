@@ -10,6 +10,7 @@
 #include "logging.h"
 #include "utilityExpected.h"
 
+#include <set>
 #include <memory>
 
 InterprocessIndexer::InterprocessIndexer(const std::string& uuid, ProcessId processId)
@@ -65,16 +66,17 @@ InterprocessIndexer::WorkResult InterprocessIndexer::work()
 				}
 			});
 
-			const IndexerCommandType skipType =
+			std::set<IndexerCommandType> skipTypes;
 #if BUILD_RUST_LANGUAGE_PACKAGE
-				INDEXER_COMMAND_RUST;
-#else
-				INDEXER_COMMAND_UNKNOWN;
+			skipTypes.insert(INDEXER_COMMAND_RUST);
+#endif
+#if BUILD_SWIFT_LANGUAGE_PACKAGE
+			skipTypes.insert(INDEXER_COMMAND_SWIFT);
 #endif
 			while (true)
 			{
 				const std::shared_ptr<IndexerCommand> indexerCommand =
-					m_interprocessIndexerCommandManager.popIndexerCommand(skipType);
+					m_interprocessIndexerCommandManager.popIndexerCommand(skipTypes);
 
 				if (!indexerCommand)
 				{

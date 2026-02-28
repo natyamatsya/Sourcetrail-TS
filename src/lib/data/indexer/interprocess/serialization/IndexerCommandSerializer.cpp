@@ -9,6 +9,9 @@
 #if BUILD_RUST_LANGUAGE_PACKAGE
 #include "IndexerCommandRust.h"
 #endif
+#if BUILD_SWIFT_LANGUAGE_PACKAGE
+#include "IndexerCommandSwift.h"
+#endif
 #include "logging.h"
 
 #include "indexer_command_generated.h"
@@ -78,6 +81,19 @@ flatbuffers::DetachedBuffer serializeIndexerCommands(
 			indexedPaths = builder.CreateVector(paths);
 
 			workingDirectory = builder.CreateString(rustCmd->getWorkingDirectory().str());
+		}
+#endif
+#if BUILD_SWIFT_LANGUAGE_PACKAGE
+		if (auto* swiftCmd = dynamic_cast<IndexerCommandSwift*>(cmd.get()))
+		{
+			type = Sourcetrail::Ipc::IndexerCommandType_Swift;
+
+			std::vector<flatbuffers::Offset<flatbuffers::String>> paths;
+			for (const auto& p : swiftCmd->getIndexedPaths())
+				paths.push_back(builder.CreateString(p.str()));
+			indexedPaths = builder.CreateVector(paths);
+
+			workingDirectory = builder.CreateString(swiftCmd->getWorkingDirectory().str());
 		}
 #endif
 
@@ -160,6 +176,24 @@ std::vector<std::shared_ptr<IndexerCommand>> deserializeIndexerCommands(
 				workingDir = FilePath(fbCmd->working_directory()->c_str());
 
 			result.push_back(std::make_shared<IndexerCommandRust>(
+				FilePath(fbCmd->source_file_path()->c_str()),
+				indexedPaths, workingDir));
+			break;
+		}
+#endif
+#if BUILD_SWIFT_LANGUAGE_PACKAGE
+		case Sourcetrail::Ipc::IndexerCommandType_Swift:
+		{
+			std::set<FilePath> indexedPaths;
+			if (fbCmd->indexed_paths())
+				for (const auto* p : *fbCmd->indexed_paths())
+					indexedPaths.insert(FilePath(p->c_str()));
+
+			FilePath workingDir;
+			if (fbCmd->working_directory())
+				workingDir = FilePath(fbCmd->working_directory()->c_str());
+
+			result.push_back(std::make_shared<IndexerCommandSwift>(
 				FilePath(fbCmd->source_file_path()->c_str()),
 				indexedPaths, workingDir));
 			break;

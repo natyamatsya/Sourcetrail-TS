@@ -39,6 +39,9 @@ protected:
 #if BUILD_RUST_LANGUAGE_PACKAGE
 	void runRustIndexerProcess(ProcessId processId, const std::string& logFilePath);
 #endif
+#if BUILD_SWIFT_LANGUAGE_PACKAGE
+	void runSwiftIndexerProcess(ProcessId processId, const std::string& logFilePath);
+#endif
 	bool fetchIntermediateStorages(std::shared_ptr<Blackboard> blackboard);
 	void updateIndexingDialog(
 		std::shared_ptr<Blackboard> blackboard, const std::vector<FilePath>& sourcePaths);
@@ -67,6 +70,9 @@ protected:
 		m_interprocessIntermediateStorageManagers;
 #if BUILD_RUST_LANGUAGE_PACKAGE
 	std::shared_ptr<IntermediateStorageManagerImpl> m_rustStorageManager;
+#endif
+#if BUILD_SWIFT_LANGUAGE_PACKAGE
+	std::shared_ptr<IntermediateStorageManagerImpl> m_swiftStorageManager;
 #endif
 
 	std::atomic<size_t> m_runningThreadCount = 0;

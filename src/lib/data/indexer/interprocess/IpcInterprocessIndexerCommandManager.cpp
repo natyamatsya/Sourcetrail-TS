@@ -52,6 +52,14 @@ void IpcInterprocessIndexerCommandManager::pushIndexerCommands(
 std::shared_ptr<IndexerCommand> IpcInterprocessIndexerCommandManager::popIndexerCommand(
 	IndexerCommandType skipType)
 {
+	if (skipType == INDEXER_COMMAND_UNKNOWN)
+		return popIndexerCommand(std::set<IndexerCommandType> {});
+	return popIndexerCommand(std::set<IndexerCommandType> {skipType});
+}
+
+std::shared_ptr<IndexerCommand> IpcInterprocessIndexerCommandManager::popIndexerCommand(
+	const std::set<IndexerCommandType>& skipTypes)
+{
 	IpcSharedMemory::ScopedAccess access(&m_shm);
 	std::size_t len = 0;
 	const uint8_t* buf = access.read(&len);
@@ -63,13 +71,12 @@ std::shared_ptr<IndexerCommand> IpcInterprocessIndexerCommandManager::popIndexer
 	if (all.empty())
 		return nullptr;
 
-	// Find the first command that is NOT of the skipped type.
-	// INDEXER_COMMAND_UNKNOWN means no filtering — accept the first command.
+	// Find the first command that is not one of the skipped types.
 	auto it = all.begin();
-	if (skipType != INDEXER_COMMAND_UNKNOWN)
+	if (!skipTypes.empty())
 	{
-		it = std::find_if(all.begin(), all.end(), [skipType](const auto& cmd) {
-			return cmd->getIndexerCommandType() != skipType;
+		it = std::find_if(all.begin(), all.end(), [&skipTypes](const auto& cmd) {
+			return skipTypes.find(cmd->getIndexerCommandType()) == skipTypes.end();
 		});
 		if (it == all.end())
 			return nullptr;

@@ -3,6 +3,8 @@
 #include "FilePath.h"
 #include "FileSystem.h"
 
+#include <filesystem>
+
 #include "logging.h"
 #include "utility.h"
 
@@ -12,13 +14,22 @@ std::vector<FilePath> utility::partitionFilePathsBySize(std::vector<FilePath> fi
 	std::vector<PairType> sourceFileSizesToCommands;
 	for (const FilePath& path: filePaths)
 	{
-		if (path.exists())
+		if (!path.exists() || path.isDirectory())
+		{
+			sourceFileSizesToCommands.push_back(std::make_pair(1, path));
+			continue;
+		}
+
+		try
 		{
 			sourceFileSizesToCommands.push_back(
 				std::make_pair(FileSystem::getFileByteSize(path), path));
 		}
-		else
+		catch (const std::filesystem::filesystem_error& e)
 		{
+			LOG_ERROR_STREAM(
+				<< "cannot read file size for partitioning: " << path.str() << " ("
+				<< e.what() << ")");
 			sourceFileSizesToCommands.push_back(std::make_pair(1, path));
 		}
 	}

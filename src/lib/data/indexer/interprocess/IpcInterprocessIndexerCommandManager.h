@@ -2,6 +2,7 @@
 #define IPC_INTERPROCESS_INDEXER_COMMAND_MANAGER_H
 
 #include <memory>
+#include <set>
 #include <string>
 #include <vector>
 
@@ -26,6 +27,8 @@ public:
 	// Pass INDEXER_COMMAND_UNKNOWN (default) to accept any type.
 	std::shared_ptr<IndexerCommand> popIndexerCommand(
 		IndexerCommandType skipType = INDEXER_COMMAND_UNKNOWN);
+	std::shared_ptr<IndexerCommand> popIndexerCommand(
+		const std::set<IndexerCommandType>& skipTypes);
 
 	bool hasIndexerCommandType(IndexerCommandType type);
 

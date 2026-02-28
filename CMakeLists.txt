@@ -42,6 +42,7 @@ cmake_print_variables(CMAKE_CXX_COMPILER)
 # Configure which language(s)/package(s) should be supported:
 option(BUILD_CXX_LANGUAGE_PACKAGE  "Add C/C++ support to the Sourcetrail indexer." OFF)
 option(BUILD_RUST_LANGUAGE_PACKAGE "Add Rust support to the Sourcetrail indexer." OFF)
+option(BUILD_SWIFT_LANGUAGE_PACKAGE "Add Swift support to the Sourcetrail indexer." OFF)
 option(BUILD_UNIT_TESTS_PACKAGE    "Build the corresponding language unit tests." OFF)
 
 configure_file(cmake/language_packages.h.in src/lib/language_packages.h)
@@ -430,6 +431,50 @@ if (BUILD_RUST_LANGUAGE_PACKAGE)
 	)
 
 	message(STATUS "Rust language package enabled — building sourcetrail_rust_indexer via Corrosion")
+endif()
+
+# Swift Indexer ----------------------------------------------------------------
+
+if (BUILD_SWIFT_LANGUAGE_PACKAGE)
+	find_program(SWIFT_EXECUTABLE swift)
+	if (NOT SWIFT_EXECUTABLE)
+		message(FATAL_ERROR "Swift language package enabled but no 'swift' executable was found in PATH.")
+	endif()
+
+	set(SWIFT_INDEXER_PACKAGE_DIR "${CMAKE_SOURCE_DIR}/src/swift_indexer")
+	set(SWIFT_INDEXER_BUILD_DIR "${CMAKE_BINARY_DIR}/swift_indexer")
+	set(SWIFT_INDEXER_BINARY_NAME "sourcetrail_swift_indexer${CMAKE_EXECUTABLE_SUFFIX}")
+	set(SWIFT_INDEXER_BINARY_PATH "${SWIFT_INDEXER_BUILD_DIR}/release/${SWIFT_INDEXER_BINARY_NAME}")
+	set(SWIFT_INDEXER_APP_BINARY_PATH "${CMAKE_BINARY_DIR}/app/${SWIFT_INDEXER_BINARY_NAME}")
+
+	file(GLOB_RECURSE SWIFT_INDEXER_SOURCES CONFIGURE_DEPENDS
+		"${SWIFT_INDEXER_PACKAGE_DIR}/Package.swift"
+		"${SWIFT_INDEXER_PACKAGE_DIR}/Sources/*.swift"
+	)
+
+	add_custom_command(
+		OUTPUT "${SWIFT_INDEXER_BINARY_PATH}"
+		COMMAND ${SWIFT_EXECUTABLE} build
+			--configuration release
+			--package-path "${SWIFT_INDEXER_PACKAGE_DIR}"
+			--build-path "${SWIFT_INDEXER_BUILD_DIR}"
+			--product sourcetrail_swift_indexer
+		DEPENDS ${SWIFT_INDEXER_SOURCES}
+		COMMENT "Building sourcetrail_swift_indexer via Swift Package Manager"
+		VERBATIM
+	)
+
+	add_custom_target(sourcetrail_swift_indexer DEPENDS "${SWIFT_INDEXER_BINARY_PATH}")
+
+	add_custom_target(copy_swift_indexer ALL
+		COMMAND ${CMAKE_COMMAND} -E copy_if_different
+			"${SWIFT_INDEXER_BINARY_PATH}"
+			"${SWIFT_INDEXER_APP_BINARY_PATH}"
+		COMMENT "Copying sourcetrail_swift_indexer to app/"
+		DEPENDS sourcetrail_swift_indexer
+	)
+
+	message(STATUS "Swift language package enabled — building sourcetrail_swift_indexer via Swift Package Manager")
 endif()
 
 # App --------------------------------------------------------------------------

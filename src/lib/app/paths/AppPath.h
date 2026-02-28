@@ -13,6 +13,7 @@ public:
 	static void setCxxIndexerDirectoryPath(const FilePath& path);
 
 	static FilePath getRustIndexerFilePath();
+	static FilePath getSwiftIndexerFilePath();
 
 private:
 	static FilePath s_sharedDataDirectoryPath;
