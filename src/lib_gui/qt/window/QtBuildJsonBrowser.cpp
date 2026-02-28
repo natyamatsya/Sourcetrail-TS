@@ -352,6 +352,10 @@ void QtBuildJsonBrowser::populateTargetTree(const std::optional<BuildModelSnapsh
 	for (const auto& file : snapshot->files)
 		filesByTarget[file.targetName].push_back(&file);
 
+	std::unordered_map<std::string, const BuildTargetSnapshot*> targetsByName{};
+	for (const auto& target : snapshot->targets)
+		targetsByName[target.name] = &target;
+
 	std::vector<const BuildTargetSnapshot*> targets{};
 	targets.reserve(snapshot->targets.size());
 	for (const auto& target : snapshot->targets)
@@ -376,6 +380,9 @@ void QtBuildJsonBrowser::populateTargetTree(const std::optional<BuildModelSnapsh
 		targetDetails.push_back(QStringLiteral("Kind: ") + targetKindToString(target->kind));
 		targetDetails.push_back(
 			QStringLiteral("File Count: ") + QString::number(static_cast<qlonglong>(target->fileCount)));
+		targetDetails.push_back(
+			QStringLiteral("Dependency Count: ") +
+			QString::number(static_cast<qlonglong>(target->dependencies.size())));
 		if (!target->sourceDir.empty())
 			targetDetails.push_back(
 				QStringLiteral("Source Dir: ") + QString::fromStdString(target->sourceDir.str()));
@@ -384,6 +391,74 @@ void QtBuildJsonBrowser::populateTargetTree(const std::optional<BuildModelSnapsh
 		QList<QStandardItem*> targetRow{};
 		targetRow << targetNameItem << targetKindItem << targetInfoItem;
 		m_targetModel->invisibleRootItem()->appendRow(targetRow);
+
+		if (!target->dependencies.empty())
+		{
+			auto* dependencyGroupNameItem{new QStandardItem(QStringLiteral("Dependencies"))};
+			auto* dependencyGroupKindItem{new QStandardItem(QStringLiteral("group"))};
+			auto* dependencyGroupInfoItem{new QStandardItem(
+				QStringLiteral("%1 targets")
+					.arg(static_cast<qlonglong>(target->dependencies.size())))};
+
+			QStringList dependencyGroupDetails{};
+			dependencyGroupDetails.push_back(
+				QStringLiteral("Target: ") + QString::fromStdString(target->name));
+			dependencyGroupDetails.push_back(
+				QStringLiteral("Dependency Count: ") +
+				QString::number(static_cast<qlonglong>(target->dependencies.size())));
+			dependencyGroupNameItem->setData(
+				dependencyGroupDetails.join(QStringLiteral("\n")), TARGET_DETAILS_ROLE);
+
+			QList<QStandardItem*> dependencyGroupRow{};
+			dependencyGroupRow << dependencyGroupNameItem << dependencyGroupKindItem
+							   << dependencyGroupInfoItem;
+			targetNameItem->appendRow(dependencyGroupRow);
+
+			auto dependencyNames{target->dependencies};
+			std::sort(dependencyNames.begin(), dependencyNames.end());
+			for (const std::string& dependencyName : dependencyNames)
+			{
+				const auto dependencyTargetIt{targetsByName.find(dependencyName)};
+				const BuildTargetSnapshot* dependencyTarget{dependencyTargetIt != targetsByName.end()
+					? dependencyTargetIt->second
+					: nullptr};
+
+				auto* dependencyNameItem{new QStandardItem(QString::fromStdString(dependencyName))};
+				auto* dependencyKindItem{new QStandardItem(
+					dependencyTarget ? targetKindToString(dependencyTarget->kind) : QStringLiteral("external"))};
+				auto* dependencyInfoItem{new QStandardItem(
+					dependencyTarget
+						? QStringLiteral("%1 files")
+							  .arg(static_cast<qlonglong>(dependencyTarget->fileCount))
+						: QStringLiteral("not in snapshot"))};
+
+				QStringList dependencyDetails{};
+				dependencyDetails.push_back(
+					QStringLiteral("Dependency: ") + QString::fromStdString(dependencyName));
+				dependencyDetails.push_back(
+					QStringLiteral("Required By: ") + QString::fromStdString(target->name));
+				if (dependencyTarget)
+				{
+					dependencyDetails.push_back(
+						QStringLiteral("Kind: ") + targetKindToString(dependencyTarget->kind));
+					dependencyDetails.push_back(
+						QStringLiteral("File Count: ") +
+						QString::number(static_cast<qlonglong>(dependencyTarget->fileCount)));
+					if (!dependencyTarget->sourceDir.empty())
+						dependencyDetails.push_back(
+							QStringLiteral("Source Dir: ") +
+							QString::fromStdString(dependencyTarget->sourceDir.str()));
+				}
+				else
+					dependencyDetails.push_back(QStringLiteral("Kind: external or filtered target"));
+				dependencyNameItem->setData(
+					dependencyDetails.join(QStringLiteral("\n")), TARGET_DETAILS_ROLE);
+
+				QList<QStandardItem*> dependencyRow{};
+				dependencyRow << dependencyNameItem << dependencyKindItem << dependencyInfoItem;
+				dependencyGroupNameItem->appendRow(dependencyRow);
+			}
+		}
 
 		const auto filesIt{filesByTarget.find(target->name)};
 		if (filesIt == filesByTarget.end())
@@ -397,6 +472,21 @@ void QtBuildJsonBrowser::populateTargetTree(const std::optional<BuildModelSnapsh
 			{
 				return lhs->path.str() < rhs->path.str();
 			});
+
+		auto* filesGroupNameItem{new QStandardItem(QStringLiteral("Files"))};
+		auto* filesGroupKindItem{new QStandardItem(QStringLiteral("group"))};
+		auto* filesGroupInfoItem{
+			new QStandardItem(QStringLiteral("%1 files").arg(static_cast<qlonglong>(files.size())))};
+
+		QStringList filesGroupDetails{};
+		filesGroupDetails.push_back(QStringLiteral("Target: ") + QString::fromStdString(target->name));
+		filesGroupDetails.push_back(
+			QStringLiteral("File Count: ") + QString::number(static_cast<qlonglong>(files.size())));
+		filesGroupNameItem->setData(filesGroupDetails.join(QStringLiteral("\n")), TARGET_DETAILS_ROLE);
+
+		QList<QStandardItem*> filesGroupRow{};
+		filesGroupRow << filesGroupNameItem << filesGroupKindItem << filesGroupInfoItem;
+		targetNameItem->appendRow(filesGroupRow);
 
 		for (const BuildFileSnapshot* const file : files)
 		{
@@ -444,7 +534,7 @@ void QtBuildJsonBrowser::populateTargetTree(const std::optional<BuildModelSnapsh
 
 			QList<QStandardItem*> fileRow{};
 			fileRow << fileNameItem << fileKindItem << fileInfoItem;
-			targetNameItem->appendRow(fileRow);
+			filesGroupNameItem->appendRow(fileRow);
 		}
 	}
 

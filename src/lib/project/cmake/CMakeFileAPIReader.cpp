@@ -23,6 +23,7 @@
 #include <nlohmann/json.hpp>
 
 #include <sstream>
+#include <unordered_map>
 
 #include "json-query/JSONQuery"
 #include "logging.h"
@@ -697,6 +698,7 @@ CMakeFileAPIReader::GetSourcesExpected CMakeFileAPIReader::getSourcesDetailed(
 
 	// Collect sources from each target.
 	auto& result{detailedResult.entries};
+	auto& targets{detailedResult.targets};
 	auto& warnings{detailedResult.warnings};
 	std::vector<nlohmann::json> normalizedTargetReferences{};
 	std::size_t nestedTargetReferenceArrayCount{0};
@@ -721,6 +723,31 @@ CMakeFileAPIReader::GetSourcesExpected CMakeFileAPIReader::getSourcesDetailed(
 		warnings.push_back(
 			{GetSourcesWarningCode::NestedTargetReferenceArraysFlattened, {}, m_replyDir});
 	}
+
+	std::unordered_map<std::string, std::string> targetNameById{};
+	for (const auto& targetReference : normalizedTargetReferences)
+	{
+		if (!targetReference.is_object())
+			continue;
+		const auto targetId{targetReference.value("id", std::string{})};
+		const auto targetName{targetReference.value("name", std::string{})};
+		if (targetId.empty() || targetName.empty())
+			continue;
+		targetNameById[targetId] = targetName;
+	}
+
+	const auto appendUniqueDependency = [](
+		std::vector<std::string>& dependencyNames, const std::string& dependencyName)
+	{
+		if (dependencyName.empty())
+			return;
+		for (const std::string& existingDependencyName : dependencyNames)
+			if (existingDependencyName == dependencyName)
+				return;
+		dependencyNames.push_back(dependencyName);
+	};
+
+	std::unordered_map<std::string, std::size_t> targetIndexByName{};
 
 	std::size_t matchedTargetCount{0};
 	std::size_t malformedTargetReferenceCount{0};
@@ -816,10 +843,76 @@ CMakeFileAPIReader::GetSourcesExpected CMakeFileAPIReader::getSourcesDetailed(
 				" first_array_element_type='" + firstArrayElementType + "'");
 			warnings.push_back(
 				{GetSourcesWarningCode::TargetReplyUnreadable, targetName, targetReplyPath});
+
+			const auto targetIndexIt{targetIndexByName.find(targetName)};
+			if (targetIndexIt == targetIndexByName.end())
+			{
+				TargetEntry targetEntry{};
+				targetEntry.name = targetName;
+				targetIndexByName[targetName] = targets.size();
+				targets.push_back(std::move(targetEntry));
+			}
 			continue;
 		}
 
 		const auto targetType{targetNl->value("type", std::string{})};
+
+		std::vector<std::string> dependencyNames{};
+		const auto appendDependencyIdsFromArray = [&](const nlohmann::json& dependenciesNl)
+		{
+			for (const auto& dependency : dependenciesNl)
+			{
+				const std::string dependencyId{dependency.is_string()
+					? dependency.get<std::string>()
+					: dependency.value("id", std::string{})};
+				if (dependencyId.empty())
+					continue;
+
+				std::string dependencyName{};
+				const auto dependencyNameIt{targetNameById.find(dependencyId)};
+				if (dependencyNameIt != targetNameById.end())
+					dependencyName = dependencyNameIt->second;
+				else
+				{
+					dependencyName = dependencyId;
+					const std::string targetIdSuffix{"::@"};
+					const auto suffixPos{dependencyName.rfind(targetIdSuffix)};
+					if (suffixPos != std::string::npos)
+						dependencyName = dependencyName.substr(0, suffixPos);
+				}
+
+				if (dependencyName == targetName)
+					continue;
+				appendUniqueDependency(dependencyNames, dependencyName);
+			}
+		};
+
+		appendDependencyIdsFromArray(targetNl->value("dependencies", nlohmann::json::array()));
+		appendDependencyIdsFromArray(targetNl->value("orderDependencies", nlohmann::json::array()));
+		if (dependencyNames.empty())
+			appendDependencyIdsFromArray(targetNl->value("linkLibraries", nlohmann::json::array()));
+
+		const auto targetIndexIt{targetIndexByName.find(targetName)};
+		if (targetIndexIt == targetIndexByName.end())
+		{
+			TargetEntry targetEntry{};
+			targetEntry.name = targetName;
+			targetEntry.type = targetType;
+			targetEntry.sourceDir = sourceDir;
+			targetEntry.dependencies = std::move(dependencyNames);
+			targetIndexByName[targetName] = targets.size();
+			targets.push_back(std::move(targetEntry));
+		}
+		else
+		{
+			auto& targetEntry{targets[targetIndexIt->second]};
+			if (targetEntry.type.empty())
+				targetEntry.type = targetType;
+			if (targetEntry.sourceDir.empty())
+				targetEntry.sourceDir = sourceDir;
+			for (const std::string& dependencyName : dependencyNames)
+				appendUniqueDependency(targetEntry.dependencies, dependencyName);
+		}
 
 		// Build compile groups: index → CompileGroup.
 		std::vector<CompileGroup> compileGroups{};

@@ -50,6 +50,14 @@ public:
 		FilePath sourceDir;		// CMake source directory (paths.source from codemodel)
 	};
 
+	struct TargetEntry
+	{
+		std::string name;
+		std::string type;	// EXECUTABLE, STATIC_LIBRARY, SHARED_LIBRARY, ...
+		FilePath sourceDir;
+		std::vector<std::string> dependencies;
+	};
+
 	struct JsonEntryPoint
 	{
 		std::string kind;
@@ -89,6 +97,7 @@ public:
 	struct GetSourcesResult
 	{
 		std::vector<SourceEntry> entries;
+		std::vector<TargetEntry> targets;
 		std::vector<GetSourcesWarning> warnings;
 		std::size_t targetCount{0};
 		std::size_t normalizedTargetCount{0};

@@ -332,6 +332,28 @@ TEST_CASE("CMakeFileAPIReader getSourcesDetailed returns entries")
 	CHECK_FALSE(sourcesResult->entries.empty());
 }
 
+TEST_CASE("CMakeFileAPIReader getSourcesDetailed returns target metadata")
+{
+	CMakeFileAPIReader reader{fixtureBuildDir()};
+	const auto sourcesResult{reader.getSourcesDetailed()};
+
+	REQUIRE(sourcesResult.has_value());
+	REQUIRE_FALSE(sourcesResult->targets.empty());
+
+	const auto targetIt = std::find_if(
+		sourcesResult->targets.begin(),
+		sourcesResult->targets.end(),
+		[](const CMakeFileAPIReader::TargetEntry& target)
+		{
+			return target.name == "hello";
+		});
+	REQUIRE(targetIt != sourcesResult->targets.end());
+
+	CHECK(targetIt->type == "EXECUTABLE");
+	CHECK(pathsMatchForFixture(targetIt->sourceDir, fixtureSourceDir()));
+	CHECK(targetIt->dependencies.empty());
+}
+
 TEST_CASE("CMakeFileAPIReader getSourcesDetailed returns typed configuration error")
 {
 	CMakeFileAPIReader reader{fixtureBuildDir()};

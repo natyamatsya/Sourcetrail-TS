@@ -100,6 +100,7 @@ struct BuildTargetSnapshot
 	BuildTargetKind kind{BuildTargetKind::UNKNOWN};
 	FilePath sourceDir;
 	std::size_t fileCount{0};
+	std::vector<std::string> dependencies;
 };
 
 struct BuildJsonEntryPoint

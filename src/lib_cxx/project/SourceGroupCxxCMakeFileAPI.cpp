@@ -18,6 +18,7 @@
 #include "utilityClang.h"
 
 #include <fstream>
+#include <unordered_map>
 
 namespace
 {
@@ -429,6 +430,25 @@ std::optional<BuildModelSnapshot> SourceGroupCxxCMakeFileAPI::getBuildModelSnaps
 				warning.path,
 				CMakeFileAPIReader::getSourcesWarningCodeToString(warning.code)});
 
+	std::unordered_map<std::string, std::size_t> targetIndexByName{};
+	for (const auto& targetEntry : detailedResult.targets)
+	{
+		if (targetEntry.name.empty())
+			continue;
+
+		const auto targetIndexIt{targetIndexByName.find(targetEntry.name)};
+		if (targetIndexIt != targetIndexByName.end())
+			continue;
+
+		BuildTargetSnapshot target{};
+		target.name = targetEntry.name;
+		target.kind = toBuildTargetKind(targetEntry.type);
+		target.sourceDir = targetEntry.sourceDir;
+		target.dependencies = targetEntry.dependencies;
+		targetIndexByName[target.name] = snapshot.targets.size();
+		snapshot.targets.push_back(std::move(target));
+	}
+
 	for (const auto& entry : detailedResult.entries)
 	{
 		BuildFileSnapshot file{};
@@ -440,22 +460,24 @@ std::optional<BuildModelSnapshot> SourceGroupCxxCMakeFileAPI::getBuildModelSnaps
 		file.compileGroup = toBuildCompileGroupSnapshot(entry.compileGroup);
 		snapshot.files.push_back(std::move(file));
 
-		bool foundTarget{false};
-		for (auto& target : snapshot.targets)
-			if (target.name == entry.targetName)
-			{
-				++target.fileCount;
-				foundTarget = true;
-				break;
-			}
-		if (foundTarget)
+		const auto targetIndexIt{targetIndexByName.find(entry.targetName)};
+		if (targetIndexIt != targetIndexByName.end())
+		{
+			auto& target{snapshot.targets[targetIndexIt->second]};
+			++target.fileCount;
+			if (target.kind == BuildTargetKind::UNKNOWN)
+				target.kind = toBuildTargetKind(entry.targetType);
+			if (target.sourceDir.empty())
+				target.sourceDir = entry.sourceDir;
 			continue;
+		}
 
 		BuildTargetSnapshot target{};
 		target.name = entry.targetName;
 		target.kind = toBuildTargetKind(entry.targetType);
 		target.sourceDir = entry.sourceDir;
 		target.fileCount = 1;
+		targetIndexByName[target.name] = snapshot.targets.size();
 		snapshot.targets.push_back(std::move(target));
 	}
 
