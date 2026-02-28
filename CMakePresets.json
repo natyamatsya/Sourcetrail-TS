@@ -13,7 +13,7 @@
 		},
 		{
 			"hidden": true,
-			"name": "system-default-presets",
+			"name": "sys-default-presets",
 			"inherits": [
 				"default-presets"
 			],
@@ -25,7 +25,7 @@
 		},
 		{
 			"hidden": true,
-			"name": "debug-presets",
+			"name": "dbg-presets",
 			"cacheVariables": {
 				"CMAKE_BUILD_TYPE": "Debug",
 				"CMAKE_VERBOSE_MAKEFILE": "TRUE",
@@ -34,7 +34,7 @@
 		},
 		{
 			"hidden": true,
-			"name": "release-presets",
+			"name": "rel-presets",
 			"cacheVariables": {
 				"CMAKE_BUILD_TYPE": "Release",
 				"CMAKE_VERBOSE_MAKEFILE": "FALSE",
@@ -43,7 +43,7 @@
 		},
 		{
 			"hidden": true,
-			"name": "relwithdebinfo-presets",
+			"name": "reldbg-presets",
 			"cacheVariables": {
 				"CMAKE_BUILD_TYPE": "RelWithDebInfo",
 				"CMAKE_VERBOSE_MAKEFILE": "FALSE",
@@ -63,7 +63,7 @@
 		},
 		{
 			"hidden": true,
-			"name": "system-clang-presets",
+			"name": "clang-presets",
 			"cacheVariables": {
 				"CMAKE_C_COMPILER": "clang",
 				"CMAKE_CXX_COMPILER": "clang++"
@@ -79,93 +79,93 @@
 			}
 		},
 		{
-			"name": "system-debug",
+			"name": "sys-dbg",
 			"inherits": [
-				"debug-presets",
-				"system-default-presets",
+				"dbg-presets",
+				"sys-default-presets",
 				"sourcetrail-presets"
 			]
 		},
 		{
-			"name": "system-release",
+			"name": "sys-rel",
 			"inherits": [
-				"release-presets",
-				"system-default-presets",
+				"rel-presets",
+				"sys-default-presets",
 				"sourcetrail-presets"
 			]
 		},
 		{
-			"name": "system-relwithdebinfo",
+			"name": "sys-reldbg",
 			"inherits": [
-				"relwithdebinfo-presets",
-				"system-default-presets",
+				"reldbg-presets",
+				"sys-default-presets",
 				"sourcetrail-presets"
 			]
 		},
 		{
-			"name": "system-clang-debug",
+			"name": "sys-clang-dbg",
 			"inherits": [
-				"system-debug",
-				"system-clang-presets"
+				"sys-dbg",
+				"clang-presets"
 			]
 		},
 		{
-			"name": "system-clang-release",
+			"name": "sys-clang-rel",
 			"inherits": [
-				"system-release",
-				"system-clang-presets"
+				"sys-rel",
+				"clang-presets"
 			]
 		},
 		{
-			"name": "system-clang-relwithdebinfo",
+			"name": "sys-clang-reldbg",
 			"inherits": [
-				"system-relwithdebinfo",
-				"system-clang-presets"
+				"sys-reldbg",
+				"clang-presets"
 			]
 		},
 		{
-			"name": "vcpkg-debug",
+			"name": "dbg",
 			"inherits": [
-				"debug-presets",
+				"dbg-presets",
 				"vcpkg-default-presets",
 				"sourcetrail-presets"
 			]
 		},
 		{
-			"name": "vcpkg-release",
+			"name": "rel",
 			"inherits": [
-				"release-presets",
+				"rel-presets",
 				"vcpkg-default-presets",
 				"sourcetrail-presets"
 			]
 		},
 		{
-			"name": "vcpkg-relwithdebinfo",
+			"name": "reldbg",
 			"inherits": [
-				"relwithdebinfo-presets",
+				"reldbg-presets",
 				"vcpkg-default-presets",
 				"sourcetrail-presets"
 			]
 		},
 		{
-			"name": "vcpkg-clang-debug",
+			"name": "clang-dbg",
 			"inherits": [
-				"vcpkg-debug",
-				"system-clang-presets"
+				"dbg",
+				"clang-presets"
 			]
 		},
 		{
-			"name": "vcpkg-clang-release",
+			"name": "clang-rel",
 			"inherits": [
-				"vcpkg-release",
-				"system-clang-presets"
+				"rel",
+				"clang-presets"
 			]
 		},
 		{
-			"name": "vcpkg-clang-relwithdebinfo",
+			"name": "clang-reldbg",
 			"inherits": [
-				"vcpkg-relwithdebinfo",
-				"system-clang-presets"
+				"reldbg",
+				"clang-presets"
 			]
 		}
 	]
