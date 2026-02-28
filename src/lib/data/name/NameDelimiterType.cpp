@@ -5,8 +5,7 @@
 static const std::array allDelimiters
 {
 	NameDelimiterType::FILE,
-	NameDelimiterType::CXX,
-	NameDelimiterType::JAVA
+	NameDelimiterType::CXX
 };
 
 std::string nameDelimiterTypeToString(NameDelimiterType delimiter)
@@ -17,8 +16,6 @@ std::string nameDelimiterTypeToString(NameDelimiterType delimiter)
 			return "/";
 		case NameDelimiterType::CXX:
 			return "::";
-		case NameDelimiterType::JAVA:
-			return ".";
 		default:
 			break;
 	}
@@ -34,10 +31,6 @@ NameDelimiterType stringToNameDelimiterType(const std::string &s)
 	if (s == nameDelimiterTypeToString(NameDelimiterType::CXX))
 	{
 		return NameDelimiterType::CXX;
-	}
-	if (s == nameDelimiterTypeToString(NameDelimiterType::JAVA))
-	{
-		return NameDelimiterType::JAVA;
 	}
 	return NameDelimiterType::UNKNOWN;
 }

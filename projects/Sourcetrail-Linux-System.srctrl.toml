@@ -2,10 +2,20 @@ version = 8
 
 [[source_groups]]
 id = "01d98a69-0204-4cfc-a6b7-894adb4b5de4"
-build_file_path = ""
-header_search_paths = ""
-indexed_header_paths = ""
+header_search_paths = []
+indexed_header_paths = [
+    "/usr/include/x86_64-linux-gnu/qt6",
+    "/usr/lib/llvm-20/include",
+    "..",
+    "/usr/lib/x86_64-linux-gnu/qt6/mkspecs/linux-g++",
+    "../../build/system-release",
+]
 name = "C/C++ from Compilation Database"
-pch_flags = ""
 status = "enabled"
 type = "C/C++ from Compilation Database"
+
+[source_groups.build_file_path]
+compilation_db_path = "../../build/system-release/compile_commands.json"
+
+[source_groups.pch_flags]
+use_compiler_flags = "0"

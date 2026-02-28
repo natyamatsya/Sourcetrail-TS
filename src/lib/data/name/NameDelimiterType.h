@@ -7,8 +7,7 @@ enum class NameDelimiterType
 {
 	UNKNOWN,
 	FILE,
-	CXX,
-	JAVA
+	CXX
 };
 
 std::string nameDelimiterTypeToString(NameDelimiterType delimiter);

@@ -258,7 +258,6 @@ private:
 	void buildFilePathMaps();
 	void buildSearchIndex();
 	void buildFullTextSearchIndex() const;
-	void buildMemberEdgeIdOrderMap();
 	void buildHierarchyCache();
 
 	bool m_preIndexingErrorCountSet = false;
@@ -284,11 +283,8 @@ private:
 	std::map<Id, std::string> m_fileNodeLanguage;
 
 	std::unordered_map<Id, DefinitionKind> m_symbolDefinitionKinds;
-	std::map<Id, Id> m_memberEdgeIdOrderMap;
 
 	HierarchyCache m_hierarchyCache;
-
-	bool m_hasJavaFiles = false;
 };
 
 #endif	  // PERSISTENT_STORAGE_H
