@@ -583,15 +583,15 @@ bool TaskBuildIndex::fetchIntermediateStorages(std::shared_ptr<Blackboard> black
 #endif
 		if (finishedProcessId == swiftProcessId && m_swiftStorageManager)
 			storageManager = m_swiftStorageManager;
-		else
 #endif
 #if BUILD_RUST_LANGUAGE_PACKAGE
-		const ProcessId rustProcessId = static_cast<ProcessId>(m_processCount + 1);
-		if (finishedProcessId == rustProcessId && m_rustStorageManager)
+		const ProcessId rustProcessId{static_cast<ProcessId>(m_processCount + 1)};
+		if (!storageManager && finishedProcessId == rustProcessId && m_rustStorageManager)
 			storageManager = m_rustStorageManager;
-		else
 #endif
-		if (static_cast<size_t>(finishedProcessId) <= m_interprocessIntermediateStorageManagers.size())
+		if (
+			!storageManager &&
+			static_cast<size_t>(finishedProcessId) <= m_interprocessIntermediateStorageManagers.size())
 			storageManager =
 				m_interprocessIntermediateStorageManagers[static_cast<size_t>(finishedProcessId) - 1];
 
