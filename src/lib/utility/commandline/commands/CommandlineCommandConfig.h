@@ -23,7 +23,6 @@ public:
 
 private:
 	std::optional<int> m_indexerThreads;
-	std::optional<bool> m_useProcesses;
 	std::optional<bool> m_loggingEnabled;
 	std::optional<bool> m_verboseIndexerLogging;
 	std::vector<std::string> m_globalHeaderSearchPaths;

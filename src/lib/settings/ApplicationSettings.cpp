@@ -295,16 +295,6 @@ void ApplicationSettings::setIndexerThreadCount(const int count)
 	setValue<int>("indexing/indexer_thread_count", count);
 }
 
-bool ApplicationSettings::getMultiProcessIndexingEnabled() const
-{
-	return getValue<bool>("indexing/multi_process_indexing", true);
-}
-
-void ApplicationSettings::setMultiProcessIndexingEnabled(bool enabled)
-{
-	setValue<bool>("indexing/multi_process_indexing", enabled);
-}
-
 std::vector<FilePath> ApplicationSettings::getHeaderSearchPaths() const
 {
 	return getPathValues("indexing/cxx/header_search_paths/header_search_path");

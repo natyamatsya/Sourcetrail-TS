@@ -42,7 +42,6 @@
 
 	<indexing>
 		<indexer_thread_count><!-- INTEGER: number of threads indexing the source code --></indexer_thread_count>
-		<multi_process_indexing><!-- BOOL: use different processes instead of threads during indexing --></multi_process_indexing>
 
 		<cxx>
 			<compiler_flags>

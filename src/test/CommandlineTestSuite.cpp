@@ -61,25 +61,5 @@ TEST_CASE("command line")
 		REQUIRE(paths[3].str() == "/opt/include");
 	}
 
-	SECTION("command config bool options")
-	{
-		std::vector<std::string> args({"config", "--use-processes", "false"});
-
-		commandline::CommandLineParser parser("2");
-		parser.preparse(args);
-		parser.parse();
-
-		bool processes = ApplicationSettings::getInstance()->getMultiProcessIndexingEnabled();
-		REQUIRE(processes == false);
-
-		std::vector<std::string> args1({"config", "--use-processes", "true"});
-
-		parser.preparse(args1);
-		parser.parse();
-
-		processes = ApplicationSettings::getInstance()->getMultiProcessIndexingEnabled();
-		REQUIRE(processes == true);
-	}
-
 	ApplicationSettings::getInstance()->load(appSettingsPath);
 }

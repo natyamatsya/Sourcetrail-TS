@@ -38,8 +38,6 @@ void CommandlineCommandConfig::setup()
 {
 	m_app.add_option("-t,--indexer-threads", m_indexerThreads,
 		"Set the number of threads used for indexing (0 uses ideal thread count)");
-	m_app.add_option("-p,--use-processes", m_useProcesses,
-		"Enable C/C++ Indexer threads to run in different processes. <true/false>")->expected(1);
 	m_app.add_option("-l,--logging-enabled", m_loggingEnabled,
 		"Enable file/console logging <true/false>")->expected(1);
 	m_app.add_option("-L,--verbose-indexer-logging-enabled", m_verboseIndexerLogging,
@@ -93,7 +91,6 @@ CommandlineCommand::ReturnStatus CommandlineCommandConfig::parse(std::vector<std
 	{
 		std::cout << "Sourcetrail Settings:\n"
 				  << "\n  indexer-threads: " << settings->getIndexerThreadCount()
-				  << "\n  use-processes: " << settings->getMultiProcessIndexingEnabled()
 				  << "\n  logging-enabled: " << settings->getLoggingEnabled()
 				  << "\n  verbose-indexer-logging-enabled: "
 				  << settings->getVerboseIndexerLoggingEnabled();
@@ -104,8 +101,6 @@ CommandlineCommand::ReturnStatus CommandlineCommandConfig::parse(std::vector<std
 
 	if (m_indexerThreads.has_value())
 		settings->setIndexerThreadCount(*m_indexerThreads);
-	if (m_useProcesses.has_value())
-		settings->setMultiProcessIndexingEnabled(*m_useProcesses);
 	if (m_loggingEnabled.has_value())
 		settings->setLoggingEnabled(*m_loggingEnabled);
 	if (m_verboseIndexerLogging.has_value())

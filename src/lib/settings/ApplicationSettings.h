@@ -95,9 +95,6 @@ public:
 	int getIndexerThreadCount() const;
 	void setIndexerThreadCount(const int count);
 
-	bool getMultiProcessIndexingEnabled() const;
-	void setMultiProcessIndexingEnabled(bool enabled);
-
 	std::vector<FilePath> getHeaderSearchPaths() const;
 	std::vector<FilePath> getHeaderSearchPathsExpanded() const;
 	bool setHeaderSearchPaths(const std::vector<FilePath>& headerSearchPaths);

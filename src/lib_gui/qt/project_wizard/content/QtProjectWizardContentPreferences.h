@@ -121,8 +121,6 @@ private:
 
 	QComboBox* m_threads;
 	QLabel* m_threadsInfoLabel;
-
-	QCheckBox* m_multiProcessIndexing;
 };
 
 #endif	  // QT_PROJECT_WIZARD_CONTENT_PREFERENCES_H
