@@ -1,9 +1,6 @@
 #include "QtJsonTreeModel.h"
 
 #include <QFile>
-#include <QJsonArray>
-#include <QJsonDocument>
-#include <QJsonObject>
 #include <QStringList>
 
 namespace
@@ -14,6 +11,35 @@ QString jsonPointerForChild(const QString& parentPointer, const QString& token)
 	if (parentPointer.isEmpty() || parentPointer == "/")
 		return "/" + token;
 	return parentPointer + "/" + token;
+}
+
+nlohmann::json normalizeRootJson(const nlohmann::json& input)
+{
+	const nlohmann::json* current{&input};
+	while (current->is_array() && current->size() == 1)
+		current = &(*current)[0];
+
+	if (current->is_array())
+	{
+		bool looksLikeKeyValuePairs{!current->empty()};
+		for (const auto& entry : *current)
+		{
+			if (!entry.is_array() || entry.size() != 2 || !entry[0].is_string())
+			{
+				looksLikeKeyValuePairs = false;
+				break;
+			}
+		}
+		if (looksLikeKeyValuePairs)
+		{
+			nlohmann::json object = nlohmann::json::object();
+			for (const auto& entry : *current)
+				object[entry[0].get<std::string>()] = entry[1];
+			return object;
+		}
+	}
+
+	return *current;
 }
 
 }
@@ -253,7 +279,7 @@ bool QtJsonTreeModel::nodeCanLoadChildren(const Node& node) const
 		return true;
 	if (!node.value)
 		return false;
-	return node.value->isObject() || node.value->isArray();
+	return node.value->is_object() || node.value->is_array();
 }
 
 std::vector<std::unique_ptr<QtJsonTreeModel::Node>> QtJsonTreeModel::loadChildren(Node& node)
@@ -261,7 +287,7 @@ std::vector<std::unique_ptr<QtJsonTreeModel::Node>> QtJsonTreeModel::loadChildre
 	node.childrenLoaded = true;
 	std::vector<std::unique_ptr<Node>> children{};
 
-	QJsonValue sourceValue{};
+	nlohmann::json sourceValue{};
 	if (node.referenceFile)
 	{
 		const auto rootValue{readJsonRootValue(*node.referenceFile)};
@@ -286,29 +312,28 @@ std::vector<std::unique_ptr<QtJsonTreeModel::Node>> QtJsonTreeModel::loadChildre
 
 void QtJsonTreeModel::appendChildrenForValue(
 	const Node& parentNode,
-	const QJsonValue& value,
+	const nlohmann::json& value,
 	std::vector<std::unique_ptr<Node>>& children)
 {
-	if (value.isObject())
+	if (value.is_object())
 	{
-		const QJsonObject object{value.toObject()};
-		for (auto it = object.begin(); it != object.end(); ++it)
+		for (auto it = value.begin(); it != value.end(); ++it)
 		{
 			auto child{std::make_unique<Node>()};
-			child->key = it.key();
+			child->key = QString::fromStdString(it.key());
 			child->typeName = typeNameForValue(it.value());
 			child->preview = previewForValue(it.value());
 			child->jsonPointer = jsonPointerForChild(
 				parentNode.jsonPointer,
-				escapeJsonPointerToken(it.key()));
+				escapeJsonPointerToken(child->key));
 			child->sourceFile = parentNode.sourceFile;
 			child->value = it.value();
-			child->childrenLoaded = !(it.value().isArray() || it.value().isObject());
+			child->childrenLoaded = !(it.value().is_array() || it.value().is_object());
 			child->parent = const_cast<Node*>(&parentNode);
-			if (it.key() == QStringLiteral("jsonFile") && it.value().isString())
+			if (it.key() == "jsonFile" && it.value().is_string())
 			{
 				const FilePath referencePath{
-					parentNode.sourceFile.getParentDirectory().getConcatenated("/" + it.value().toString().toStdString())};
+					parentNode.sourceFile.getParentDirectory().getConcatenated("/" + it.value().get<std::string>())};
 				child->referenceFile = referencePath;
 				child->childrenLoaded = false;
 			}
@@ -317,27 +342,27 @@ void QtJsonTreeModel::appendChildrenForValue(
 		return;
 	}
 
-	if (!value.isArray())
+	if (!value.is_array())
 		return;
 
-	const QJsonArray array{value.toArray()};
-	for (int index{0}; index < array.size(); ++index)
+	for (std::size_t index{0}; index < value.size(); ++index)
 	{
-		const QJsonValue element{array[index]};
+		const auto& element{value[index]};
 		auto child{std::make_unique<Node>()};
-		child->key = QStringLiteral("[%1]").arg(index);
+		child->key = QStringLiteral("[%1]").arg(static_cast<qlonglong>(index));
 		child->typeName = typeNameForValue(element);
 		child->preview = previewForValue(element);
-		child->jsonPointer = jsonPointerForChild(parentNode.jsonPointer, QString::number(index));
+		child->jsonPointer = jsonPointerForChild(
+			parentNode.jsonPointer, QString::number(static_cast<qlonglong>(index)));
 		child->sourceFile = parentNode.sourceFile;
 		child->value = element;
-		child->childrenLoaded = !(element.isArray() || element.isObject());
+		child->childrenLoaded = !(element.is_array() || element.is_object());
 		child->parent = const_cast<Node*>(&parentNode);
 		children.push_back(std::move(child));
 	}
 }
 
-std::optional<QJsonValue> QtJsonTreeModel::readJsonRootValue(const FilePath& path)
+std::optional<nlohmann::json> QtJsonTreeModel::readJsonRootValue(const FilePath& path)
 {
 	const auto cacheIt{m_jsonRootCache.find(path.str())};
 	if (cacheIt != m_jsonRootCache.end())
@@ -347,66 +372,61 @@ std::optional<QJsonValue> QtJsonTreeModel::readJsonRootValue(const FilePath& pat
 	if (!file.open(QIODevice::ReadOnly))
 		return std::nullopt;
 
-	QJsonParseError error{};
-	const QJsonDocument document{QJsonDocument::fromJson(file.readAll(), &error)};
-	if (error.error != QJsonParseError::NoError)
+	const QByteArray bytes{file.readAll()};
+	if (bytes.isEmpty())
 		return std::nullopt;
 
-	QJsonValue value{};
-	if (document.isObject())
-		value = QJsonValue{document.object()};
-	else if (document.isArray())
-		value = QJsonValue{document.array()};
-	else
-		value = QJsonValue::Null;
-
-	m_jsonRootCache.emplace(path.str(), value);
-	return value;
+	try
+	{
+		const std::string jsonText{
+			bytes.constData(), static_cast<std::size_t>(bytes.size())};
+		const nlohmann::json parsed{nlohmann::json::parse(jsonText)};
+		const nlohmann::json normalized{normalizeRootJson(parsed)};
+		m_jsonRootCache.emplace(path.str(), normalized);
+		return std::optional<nlohmann::json>{normalized};
+	}
+	catch (const std::exception&)
+	{
+		return std::nullopt;
+	}
 }
 
-QString QtJsonTreeModel::typeNameForValue(const QJsonValue& value)
+QString QtJsonTreeModel::typeNameForValue(const nlohmann::json& value)
 {
-	switch (value.type())
-	{
-	case QJsonValue::Null:
+	if (value.is_null())
 		return QStringLiteral("null");
-	case QJsonValue::Bool:
+	if (value.is_boolean())
 		return QStringLiteral("bool");
-	case QJsonValue::Double:
+	if (value.is_number())
 		return QStringLiteral("number");
-	case QJsonValue::String:
+	if (value.is_string())
 		return QStringLiteral("string");
-	case QJsonValue::Array:
+	if (value.is_array())
 		return QStringLiteral("array");
-	case QJsonValue::Object:
+	if (value.is_object())
 		return QStringLiteral("object");
-	case QJsonValue::Undefined:
-		return QStringLiteral("undefined");
-	}
 	return QStringLiteral("unknown");
 }
 
-QString QtJsonTreeModel::previewForValue(const QJsonValue& value)
+QString QtJsonTreeModel::previewForValue(const nlohmann::json& value)
 {
-	if (value.isString())
+	if (value.is_string())
 	{
-		QString preview{value.toString()};
+		QString preview{QString::fromStdString(value.get<std::string>())};
 		if (preview.size() > 120)
 			preview = preview.left(117) + QStringLiteral("...");
 		return QStringLiteral("\"") + preview + QStringLiteral("\"");
 	}
-	if (value.isBool())
-		return value.toBool() ? QStringLiteral("true") : QStringLiteral("false");
-	if (value.isDouble())
-		return QString::number(value.toDouble(), 'g', 16);
-	if (value.isArray())
-		return QStringLiteral("[%1]").arg(value.toArray().size());
-	if (value.isObject())
-		return QStringLiteral("{%1}").arg(value.toObject().size());
-	if (value.isNull())
+	if (value.is_boolean())
+		return value.get<bool>() ? QStringLiteral("true") : QStringLiteral("false");
+	if (value.is_number())
+		return QString::fromStdString(value.dump());
+	if (value.is_array())
+		return QStringLiteral("[%1]").arg(static_cast<qlonglong>(value.size()));
+	if (value.is_object())
+		return QStringLiteral("{%1}").arg(static_cast<qlonglong>(value.size()));
+	if (value.is_null())
 		return QStringLiteral("null");
-	if (value.isUndefined())
-		return QStringLiteral("<undefined>");
 	return {};
 }
 

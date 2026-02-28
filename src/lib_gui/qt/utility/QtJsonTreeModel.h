@@ -7,7 +7,8 @@
 #include <vector>
 
 #include <QAbstractItemModel>
-#include <QJsonValue>
+
+#include <nlohmann/json.hpp>
 
 #include "BuildModelSnapshot.h"
 
@@ -54,7 +55,7 @@ private:
 		QString jsonPointer;
 		FilePath sourceFile;
 		std::optional<FilePath> referenceFile;
-		std::optional<QJsonValue> value;
+		std::optional<nlohmann::json> value;
 		bool childrenLoaded{false};
 		Node* parent{nullptr};
 		std::vector<std::unique_ptr<Node>> children;
@@ -71,16 +72,16 @@ private:
 	std::vector<std::unique_ptr<Node>> loadChildren(Node& node);
 	void appendChildrenForValue(
 		const Node& parentNode,
-		const QJsonValue& value,
+		const nlohmann::json& value,
 		std::vector<std::unique_ptr<Node>>& children);
-	std::optional<QJsonValue> readJsonRootValue(const FilePath& path);
+	std::optional<nlohmann::json> readJsonRootValue(const FilePath& path);
 
-	static QString typeNameForValue(const QJsonValue& value);
-	static QString previewForValue(const QJsonValue& value);
+	static QString typeNameForValue(const nlohmann::json& value);
+	static QString previewForValue(const nlohmann::json& value);
 	static QString escapeJsonPointerToken(const QString& token);
 
 	std::unique_ptr<Node> m_root;
-	std::unordered_map<std::string, QJsonValue> m_jsonRootCache;
+	std::unordered_map<std::string, nlohmann::json> m_jsonRootCache;
 };
 
 #endif	  // QT_JSON_TREE_MODEL_H
