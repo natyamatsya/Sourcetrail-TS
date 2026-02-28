@@ -1,6 +1,7 @@
 #include "QtBuildJsonBrowser.h"
 
 #include <algorithm>
+#include <unordered_map>
 
 #include <QApplication>
 #include <QHBoxLayout>
@@ -10,7 +11,10 @@
 #include <QLineEdit>
 #include <QPlainTextEdit>
 #include <QProgressBar>
+#include <QStandardItem>
+#include <QStandardItemModel>
 #include <QSplitter>
+#include <QTabWidget>
 #include <QTreeView>
 #include <QVBoxLayout>
 
@@ -21,24 +25,71 @@ namespace
 {
 
 constexpr std::size_t MAX_AUTO_EXPANDED_MATCHES{2000};
+constexpr int TARGET_DETAILS_ROLE{Qt::UserRole + 100};
+
+QString targetKindToString(const BuildTargetKind kind)
+{
+	switch (kind)
+	{
+	case BuildTargetKind::EXECUTABLE:
+		return QStringLiteral("executable");
+	case BuildTargetKind::STATIC_LIBRARY:
+		return QStringLiteral("static_library");
+	case BuildTargetKind::SHARED_LIBRARY:
+		return QStringLiteral("shared_library");
+	case BuildTargetKind::MODULE_LIBRARY:
+		return QStringLiteral("module_library");
+	case BuildTargetKind::OBJECT_LIBRARY:
+		return QStringLiteral("object_library");
+	case BuildTargetKind::INTERFACE_LIBRARY:
+		return QStringLiteral("interface_library");
+	case BuildTargetKind::UTILITY:
+		return QStringLiteral("utility");
+	case BuildTargetKind::CUSTOM:
+		return QStringLiteral("custom");
+	case BuildTargetKind::UNKNOWN:
+		return QStringLiteral("unknown");
+	}
+	return QStringLiteral("unknown");
+}
+
+QString buildLanguageToString(const BuildLanguage language)
+{
+	switch (language)
+	{
+	case BuildLanguage::C:
+		return QStringLiteral("C");
+	case BuildLanguage::CXX:
+		return QStringLiteral("C++");
+	case BuildLanguage::RUST:
+		return QStringLiteral("Rust");
+	case BuildLanguage::UNKNOWN:
+		return QStringLiteral("Unknown");
+	}
+	return QStringLiteral("Unknown");
+}
 
 }
 
 QtBuildJsonBrowser::QtBuildJsonBrowser(QWidget* parent)
 	: QWidget(parent)
+	, m_tabWidget{new QTabWidget(this)}
 	, m_model{new QtJsonTreeModel(this)}
 	, m_treeView{new QTreeView(this)}
 	, m_searchEdit{new QLineEdit(this)}
 	, m_searchStatusLabel{new QLabel(this)}
 	, m_searchProgressBar{new QProgressBar(this)}
 	, m_detailsView{new QPlainTextEdit(this)}
+	, m_targetTreeView{new QTreeView(this)}
+	, m_targetModel{new QStandardItemModel(this)}
+	, m_targetDetailsView{new QPlainTextEdit(this)}
 {
 	setWindowFlags(
 		Qt::Window |
 		Qt::WindowCloseButtonHint |
 		Qt::WindowMinimizeButtonHint |
 		Qt::WindowMaximizeButtonHint);
-	setWindowTitle(QStringLiteral("Build JSON Browser"));
+	setWindowTitle(QStringLiteral("Build Browser"));
 	setMinimumSize(700, 450);
 	setMaximumSize(QWIDGETSIZE_MAX, QWIDGETSIZE_MAX);
 	resize(1100, 700);
@@ -66,6 +117,22 @@ QtBuildJsonBrowser::QtBuildJsonBrowser(QWidget* parent)
 	m_detailsView->setReadOnly(true);
 	m_detailsView->setPlaceholderText(QStringLiteral("Select a JSON node to inspect details."));
 
+	m_targetModel->setHorizontalHeaderLabels(
+		{QStringLiteral("Target / File"), QStringLiteral("Kind"), QStringLiteral("Info")});
+	m_targetTreeView->setModel(m_targetModel);
+	m_targetTreeView->setAlternatingRowColors(true);
+	m_targetTreeView->setUniformRowHeights(true);
+	m_targetTreeView->setExpandsOnDoubleClick(true);
+	m_targetTreeView->setSelectionBehavior(QAbstractItemView::SelectRows);
+	m_targetTreeView->setSelectionMode(QAbstractItemView::SingleSelection);
+	m_targetTreeView->header()->setStretchLastSection(true);
+	m_targetTreeView->header()->setSectionResizeMode(0, QHeaderView::ResizeToContents);
+	m_targetTreeView->header()->setSectionResizeMode(1, QHeaderView::ResizeToContents);
+	m_targetTreeView->header()->setSectionResizeMode(2, QHeaderView::Stretch);
+
+	m_targetDetailsView->setReadOnly(true);
+	m_targetDetailsView->setPlaceholderText(QStringLiteral("Select a target or file to inspect details."));
+
 	auto* splitter{new QSplitter(Qt::Vertical, this)};
 	splitter->addWidget(m_treeView);
 	splitter->addWidget(m_detailsView);
@@ -78,10 +145,32 @@ QtBuildJsonBrowser::QtBuildJsonBrowser(QWidget* parent)
 	searchLayout->addWidget(m_searchStatusLabel);
 	searchLayout->addWidget(m_searchProgressBar);
 
+	auto* jsonTab{new QWidget(this)};
+	auto* jsonTabLayout{new QVBoxLayout()};
+	jsonTabLayout->setContentsMargins(0, 0, 0, 0);
+	jsonTabLayout->addLayout(searchLayout);
+	jsonTabLayout->addWidget(splitter);
+	jsonTab->setLayout(jsonTabLayout);
+
+	auto* targetSplitter{new QSplitter(Qt::Vertical, this)};
+	targetSplitter->addWidget(m_targetTreeView);
+	targetSplitter->addWidget(m_targetDetailsView);
+	targetSplitter->setStretchFactor(0, 4);
+	targetSplitter->setStretchFactor(1, 1);
+
+	auto* targetTab{new QWidget(this)};
+	auto* targetTabLayout{new QVBoxLayout()};
+	targetTabLayout->setContentsMargins(0, 0, 0, 0);
+	targetTabLayout->addWidget(targetSplitter);
+	targetTab->setLayout(targetTabLayout);
+
+	m_tabWidget->addTab(targetTab, QStringLiteral("Targets"));
+	m_tabWidget->addTab(jsonTab, QStringLiteral("Raw JSON"));
+	m_tabWidget->setCurrentWidget(targetTab);
+
 	auto* layout{new QVBoxLayout()};
 	layout->setContentsMargins(0, 0, 0, 0);
-	layout->addLayout(searchLayout);
-	layout->addWidget(splitter);
+	layout->addWidget(m_tabWidget);
 	setLayout(layout);
 
 	connect(
@@ -102,6 +191,15 @@ QtBuildJsonBrowser::QtBuildJsonBrowser(QWidget* parent)
 		[this](const QModelIndex& current, const QModelIndex&  /*previous*/)
 		{
 			m_detailsView->setPlainText(formatSelectionDetails(current));
+		});
+
+	connect(
+		m_targetTreeView->selectionModel(),
+		&QItemSelectionModel::currentChanged,
+		this,
+		[this](const QModelIndex& current, const QModelIndex&  /*previous*/)
+		{
+			m_targetDetailsView->setPlainText(formatTargetSelectionDetails(current));
 		});
 
 	connect(
@@ -167,6 +265,7 @@ void QtBuildJsonBrowser::setSourceGroup(const std::shared_ptr<const SourceGroup>
 	if (!sourceGroup)
 	{
 		setEntryPoints({});
+		populateTargetTree(std::nullopt);
 		return;
 	}
 
@@ -174,13 +273,19 @@ void QtBuildJsonBrowser::setSourceGroup(const std::shared_ptr<const SourceGroup>
 	if (!snapshot.has_value())
 	{
 		setEntryPoints({});
+		populateTargetTree(std::nullopt);
 		return;
 	}
 
 	setEntryPoints(snapshot->jsonEntryPoints);
+	populateTargetTree(snapshot);
+	if (!snapshot->targets.empty())
+		m_tabWidget->setCurrentIndex(0);
+	else
+		m_tabWidget->setCurrentIndex(1);
 	if (!snapshot->buildDir.empty())
 		setWindowTitle(
-			QStringLiteral("Build JSON Browser — ") +
+			QStringLiteral("Build Browser — ") +
 			QString::fromStdString(snapshot->buildDir.str()));
 }
 
@@ -210,6 +315,140 @@ QString QtBuildJsonBrowser::formatSelectionDetails(const QModelIndex& index) con
 	if (!referenceFile.isEmpty())
 		lines.push_back(QStringLiteral("Reference File: ") + referenceFile);
 	return lines.join(QStringLiteral("\n"));
+}
+
+QString QtBuildJsonBrowser::formatTargetSelectionDetails(const QModelIndex& index) const
+{
+	if (!index.isValid())
+		return {};
+
+	const QModelIndex keyIndex{index.siblingAtColumn(0)};
+	const QString details{m_targetModel->data(keyIndex, TARGET_DETAILS_ROLE).toString()};
+	if (!details.isEmpty())
+		return details;
+
+	const QString key{m_targetModel->data(keyIndex, Qt::DisplayRole).toString()};
+	const QString type{m_targetModel->data(index.siblingAtColumn(1), Qt::DisplayRole).toString()};
+	const QString value{m_targetModel->data(index.siblingAtColumn(2), Qt::DisplayRole).toString()};
+
+	QStringList lines{};
+	lines.push_back(QStringLiteral("Name: ") + key);
+	lines.push_back(QStringLiteral("Kind: ") + type);
+	lines.push_back(QStringLiteral("Info: ") + value);
+	return lines.join(QStringLiteral("\n"));
+}
+
+void QtBuildJsonBrowser::populateTargetTree(const std::optional<BuildModelSnapshot>& snapshot)
+{
+	m_targetModel->clear();
+	m_targetModel->setHorizontalHeaderLabels(
+		{QStringLiteral("Target / File"), QStringLiteral("Kind"), QStringLiteral("Info")});
+	m_targetDetailsView->clear();
+
+	if (!snapshot.has_value())
+		return;
+
+	std::unordered_map<std::string, std::vector<const BuildFileSnapshot*>> filesByTarget{};
+	for (const auto& file : snapshot->files)
+		filesByTarget[file.targetName].push_back(&file);
+
+	std::vector<const BuildTargetSnapshot*> targets{};
+	targets.reserve(snapshot->targets.size());
+	for (const auto& target : snapshot->targets)
+		targets.push_back(&target);
+	std::sort(
+		targets.begin(),
+		targets.end(),
+		[](const BuildTargetSnapshot* lhs, const BuildTargetSnapshot* rhs)
+		{
+			return lhs->name < rhs->name;
+		});
+
+	for (const BuildTargetSnapshot* const target : targets)
+	{
+		auto* targetNameItem{new QStandardItem(QString::fromStdString(target->name))};
+		auto* targetKindItem{new QStandardItem(targetKindToString(target->kind))};
+		auto* targetInfoItem{
+			new QStandardItem(QStringLiteral("%1 files").arg(static_cast<qlonglong>(target->fileCount)))};
+
+		QStringList targetDetails{};
+		targetDetails.push_back(QStringLiteral("Target: ") + QString::fromStdString(target->name));
+		targetDetails.push_back(QStringLiteral("Kind: ") + targetKindToString(target->kind));
+		targetDetails.push_back(
+			QStringLiteral("File Count: ") + QString::number(static_cast<qlonglong>(target->fileCount)));
+		if (!target->sourceDir.empty())
+			targetDetails.push_back(
+				QStringLiteral("Source Dir: ") + QString::fromStdString(target->sourceDir.str()));
+		targetNameItem->setData(targetDetails.join(QStringLiteral("\n")), TARGET_DETAILS_ROLE);
+
+		QList<QStandardItem*> targetRow{};
+		targetRow << targetNameItem << targetKindItem << targetInfoItem;
+		m_targetModel->invisibleRootItem()->appendRow(targetRow);
+
+		const auto filesIt{filesByTarget.find(target->name)};
+		if (filesIt == filesByTarget.end())
+			continue;
+
+		auto files{filesIt->second};
+		std::sort(
+			files.begin(),
+			files.end(),
+			[](const BuildFileSnapshot* lhs, const BuildFileSnapshot* rhs)
+			{
+				return lhs->path.str() < rhs->path.str();
+			});
+
+		for (const BuildFileSnapshot* const file : files)
+		{
+			auto* fileNameItem{new QStandardItem(QString::fromStdString(file->path.str()))};
+
+			QString fileKind{file->isGenerated ? QStringLiteral("generated") : QStringLiteral("source")};
+			if (file->compileGroup.has_value())
+				fileKind += QStringLiteral(" / ") + buildLanguageToString(file->compileGroup->language);
+			auto* fileKindItem{new QStandardItem(fileKind)};
+			auto* fileInfoItem{new QStandardItem(QString::fromStdString(file->targetType))};
+
+			QStringList fileDetails{};
+			fileDetails.push_back(QStringLiteral("File: ") + QString::fromStdString(file->path.str()));
+			fileDetails.push_back(QStringLiteral("Target: ") + QString::fromStdString(file->targetName));
+			fileDetails.push_back(
+				QStringLiteral("Target Type: ") + QString::fromStdString(file->targetType));
+			fileDetails.push_back(
+				QStringLiteral("Generated: ") +
+				(file->isGenerated ? QStringLiteral("yes") : QStringLiteral("no")));
+			if (!file->sourceDir.empty())
+				fileDetails.push_back(
+					QStringLiteral("Source Dir: ") + QString::fromStdString(file->sourceDir.str()));
+			if (file->compileGroup.has_value())
+			{
+				const BuildCompileGroupSnapshot& compileGroup{*file->compileGroup};
+				fileDetails.push_back(
+					QStringLiteral("Language: ") + buildLanguageToString(compileGroup.language));
+				if (!compileGroup.compilerPath.empty())
+					fileDetails.push_back(
+						QStringLiteral("Compiler: ") + QString::fromStdString(compileGroup.compilerPath));
+				if (!compileGroup.sysroot.empty())
+					fileDetails.push_back(
+						QStringLiteral("Sysroot: ") + QString::fromStdString(compileGroup.sysroot.str()));
+				fileDetails.push_back(
+					QStringLiteral("Includes: ") +
+					QString::number(static_cast<qlonglong>(compileGroup.includes.size())));
+				fileDetails.push_back(
+					QStringLiteral("Defines: ") +
+					QString::number(static_cast<qlonglong>(compileGroup.defines.size())));
+				fileDetails.push_back(
+					QStringLiteral("Flags: ") +
+					QString::number(static_cast<qlonglong>(compileGroup.flags.size())));
+			}
+			fileNameItem->setData(fileDetails.join(QStringLiteral("\n")), TARGET_DETAILS_ROLE);
+
+			QList<QStandardItem*> fileRow{};
+			fileRow << fileNameItem << fileKindItem << fileInfoItem;
+			targetNameItem->appendRow(fileRow);
+		}
+	}
+
+	m_targetTreeView->collapseAll();
 }
 
 void QtBuildJsonBrowser::applySearch(const QString& text)
