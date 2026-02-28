@@ -16,7 +16,7 @@ Sourcetrail is an interactive source explorer that simplifies navigation in exis
 * **Graph:** The graph displays the structure of your source code. It focuses on the currently selected symbol and directly shows all incoming and outgoing dependencies to other symbols.
 * **Code:** The Code view displays all source locations of the currently selected symbol in a list of code snippets. Clicking on a different source location allows you to change the selection and dig deeper.
 
-Note: Sourcetrail currently supports the languages C/C++, Java and Python. Much of the UI design is therefore based on these languages and might change as soon as other languages are supported. For more information have a look at [supported languages](#supported-languages).
+Note: Sourcetrail currently supports C/C++ indexing. For more information have a look at [supported languages](#supported-languages).
 
 ## Supported Languages
 
@@ -28,14 +28,9 @@ C support is powered by [Clang 11.0.0](https://clang.llvm.org/). For issues load
 
 C++ support is powered by [Clang 11.0.0](https://clang.llvm.org/). For more Information please visit [Clang C++ Status](https://clang.llvm.org/cxx_status.html). For issues loading C++ code, please have a look at [Clang language compatibility](https://clang.llvm.org/compatibility.html) or report a bug in our [bug tracker](https://github.com/CoatiSoftware/SourcetrailBugTracker).
 
-### Java
-
-Sourcetrail includes support for Java 12 and lower which is powered by [Eclipse JDT](https://github.com/eclipse/eclipse.jdt.core). If you encounter any issues while using Sourcetrail on a Java project, please let us know by providing a minimal example in our [bug tracker](https://github.com/CoatiSoftware/SourcetrailBugTracker).
-
 ### Python
 
 Sourcetrail includes support for Python 2 and Python 3 which is powered by our open-source [SourcetrailPythonIndexer](https://github.com/CoatiSoftware/SourcetrailPythonIndexer). If you encounter any issues while using Sourcetrail on a Python project, please let us know by providing a minimal example in our [bug tracker](https://github.com/CoatiSoftware/SourcetrailPythonIndexer/issues).
-
 
 # Getting Started
 
@@ -46,11 +41,13 @@ This short introduction will briefly guide you through the project setup and the
 Once you've [downloaded](https://github.com/CoatiSoftware/Sourcetrail/releases) Sourcetrail successfully you are ready to run the application. For assistance wth installation, visit the [installation](#installation) section.
 
 > **Tasks:**
+>
 > * Launch Sourcetrail.
 
 After launching Sourcetrail you will see the [Start Window](#start-window). From here you can create your own project or choose a pre-indexed one.
 
 > **Tasks:**
+>
 > * Click **New Project** to create a new project.
 > * or select one from the **Recent Projects** _(ex: TicTacToe)_ and continue with the [UI Intro](#ui-intro)
 
@@ -61,6 +58,7 @@ After launching Sourcetrail you will see the [Start Window](#start-window). From
 When creating a new Sourcetrail project you will use the [Project Setup Wizard](#project-setup-wizard). This wizard splits the setup process into several subsequent steps. Depending on your project's structure and the used build system, there are different types for project setup. Choosing the correct setup method is important and can make the setup process a lot easier.
 
 > **Tasks:**
+>
 > * Give your project a **Name** and select a **Location** for your Sourcetrail project to live.
 > * Click **Add Source Group** to add source files to the project.
 
@@ -68,11 +66,12 @@ When creating a new Sourcetrail project you will use the [Project Setup Wizard](
 
 ### Add Source Group
 
-Sourcetrail projects consist of multiple *Source Groups*. Each Source Group uses a certain language, a set of files, and all configurations to index these files. There are different types of Source Groups for each supported programming language. In addition, creating a single Source Group is sufficient for most projects.
+Sourcetrail projects consist of multiple _Source Groups_. Each Source Group uses a certain language, a set of files, and all configurations to index these files. There are different types of Source Groups for each supported programming language. In addition, creating a single Source Group is sufficient for most projects.
 
 Scroll past the image for detailed instructions on setting this up.
 
 > **Tasks:**
+>
 > * Select your chosen **Source Group** setup type and come back here as soon as the project is created.
 
 <img src="docs/documentation/project_setup_wizard_source_group_type.png" height="600" alt="Project Setup Wizard Source Group Type">
@@ -86,6 +85,7 @@ The Source Group setup types for C & C++ are the same.
 If you are using [CMake](https://cmake.org/) or [Make](https://www.gnu.org/software/make/) as build environment you can export a [clang JSON Compilation Database](https://clang.llvm.org/docs/JSONCompilationDatabase.html) as `compile_commands.json` file. A Compilation Database holds all information necessary for building the project, such as source files, include paths and compiler flags. Having a Compilation Database makes project setup within Sourcetrail a lot easier. We recommend using this approach if possible.
 
 Exporting a Compilation Database:
+
 * From **CMake** by defining the `CMAKE_EXPORT_COMPILE_COMMANDS` flag. (not supported on for Visual Studio CMake generators)
 * For **Make** projects use [Bear](https://github.com/rizsotto/Bear). Bear generates a `compile_commands.json` file during a simulated build process. Bear has been tested on FreeBSD, GNU/Linux and OS X.
 * From **Qt Creator since version 4.8** by selecting the "Generate Compilation Database" from the "Build" menu.
@@ -106,26 +106,6 @@ If neither of the above options apply to your project, please continue at [creat
 
 <img src="docs/documentation/project_setup_wizard_source_group_type.png" height="600" alt="Project Setup Wizard Source Group Type">
 
-#### Source Group Setup for Java
-
-**Are you using Gradle?**
-
-If you are using Gradle you can continue at [Source Group creation from Gradle](#create-a-project-from-gradle-configuration) to automatically setup your Source Group using your Gradle build configuration.
-
-<img src="docs/documentation/project_setup_wizard_start_java_gradle.png" height="600" alt="Project Setup Wizard Start Java Gradle">
-
-**Are you using Maven?**
-
-If you are using Maven please continue at [Source Group creation from Maven](#create-a-project-from-maven-configuration) to automatically setup your Source Group using your Maven build configuration.
-
-<img src="docs/documentation/project_setup_wizard_start_java_maven.png" height="600" alt="Project Setup Wizard Start Java Maven">
-
-**Create Empty**
-
-If you do not have your project configured using Gradle or Maven, please continue at [Create an Empty Java Source Group](#create-an-empty-java-project) and come back here as soon as the project is created.
-
-<img src="docs/documentation/project_setup_wizard_start_java_empty.png" height="600" alt="Project Setup Wizard Start Java Empty">
-
 #### Source Group Setup for Python
 
 **Create empty**
@@ -139,6 +119,7 @@ If you want to browse your Python source code with Sourcetrail, please continue 
 After the project is created, Sourcetrail will ask you whether you want to start indexing. Click **Start** and wait for the indexing to complete. This may take a bit of time. The [Indexing Dialog](#indexing-dialogs) and the [Status Bar](#status-bar) will give you information about the progress. Otherwise the UI will be empty. Sourcetrail indexes all named symbols and their relationships throughout the provided source files.
 
 > **Tasks:**
+>
 > * Click **Start** when asked whether to start indexing.
 > * Wait until the indexing of your source files has finished.
 > * or Click **Stop** or press ESC to stop indexing (Sourcetrail will provide all information gathered so far and the indexing can be continued later by [refreshing](#refresh)).
@@ -152,6 +133,7 @@ After indexing is completed, Sourcetrail will show an overview of all indexed sy
 If the indexing yields errors, the status view will be shown with a list of errors. You can click on the errors label on the right side of the status bar or on one of the errors in the table to see their location.
 
 > **Tasks:**
+>
 > * Fix your errors and [refresh](#refresh) to re-index the files with errors (Open Issue: As long as there was no change in the specific file, Sourcetrail won't reindex it, use the **Force Refresh** option from the [Edit Menu](#edit)).
 > * or ignore them and continue with an incomplete index.
 
@@ -184,7 +166,8 @@ The [graph visualization](#graph-view) displays the currently selected symbol in
 
 !["Graph View Graph"](docs/documentation/graph_view_graph.png "Graph View Graph")
 
-#### Colors:
+#### Colors
+
 The different node and edge types are also displayed using different colors. The default color scheme uses this convention:
 
 | Color | Node | Edge
@@ -193,12 +176,13 @@ The different node and edge types are also displayed using different colors. The
 | yellow | functions and methods | calls
 | blue | variables and fields | variable access
 
-#### Hatching:
+#### Hatching
+
 Nodes displayed with a striped hatching, are nodes that were used within your indexed source files, but were not defined. Clicking them shows all locations where they are used, without providing their declaration.
 
 !["Node Non Indexed"](docs/documentation/node_non_indexed.png "Node Non Indexed")
 
-#### Legend:
+#### Legend
 
 For a full list on all existing nodes and edges take a look at the integrated [Graph Legend](#graph-legend) by clicking the `?`-button in the bottom right corner of the [Graph View](#graph-view).
 
@@ -226,7 +210,7 @@ The source locations are displayed as code snippets, containing the line of inte
 
 For more information, please visit the [Code View Files](#files) section.
 
-## Start Exploring!
+## Start Exploring
 
 At this point, you should have an understanding of the basics of Sourcetrail's user interface and can begin exploring your codebase. Sourcetrail will allow you to see your source code from a whole new perspective, by giving you a concise overview of its parts and a faster way of drilling down to its internals, while always maintaining the connection to the implementation details of the actual source code.
 
@@ -235,8 +219,8 @@ Please take look at the much more extensive instruction manual below for detaile
 The Sourcetrail team wishes you a good start with our product, lots of saved time, increased productivity and much cleaner code.
 
 > **Tasks:**
+>
 > * Start exploring and have fun!
-
 
 # Installation
 
@@ -245,6 +229,7 @@ The Sourcetrail team wishes you a good start with our product, lots of saved tim
 Download and open the zip file and extract its contents into a temporary folder of your choice. Run the `setup.exe` and go through the wizard. You can now launch Sourcetrail from your start menu.
 
 ## macOS
+
 Download and open the Sourcetrail.dmg file and drag Sourcetrail.app into the applications folder. You can now launch Sourcetrail from your Applications.
 
 <img src="docs/documentation/installation_mac.png" width="800" alt="Installation macOS">
@@ -256,9 +241,11 @@ Download and open the Sourcetrail.dmg file and drag Sourcetrail.app into the app
 Download the `.tar.gz` file and extract it. To start Sourcetrail run the `Sourcetrail.sh` script. Sourcetrail creates a folder `~/.config/sourcetrail` at the first run, this is the folder for Sourcetrail settings.
 
 #### Install
+
 To install Sourcetrail run the `install.sh` script with `sudo`. It will install Sourcetrail to `/opt/sourcetrail` and create the `/usr/bin/sourcetrail` symlink.
 
 #### Uninstall
+
 To uninstall Sourcetrail run the `/opt/sourcetrail/uninstall.sh` script with `sudo`.
 
 ### AppImage
@@ -314,29 +301,6 @@ You will find the header search paths your compiler uses in the output between t
 .
 End of search list.
 ```
-
-
-## Finding Java Runtime Library Location
-
-The current version of Sourcetrail requires an installation of the Java runtime environment to index any Java project. Make sure that Sourcetrail and your JRE share the same kind or architecture (a 32 bit Sourcetrail requires a 32 bit JRE). To locate the required library file, please refer to the applicable description below.
-
-### Windows
-
-The Java Runtime Library (called `jvm.dll`) can be found inside of your JDK install folder and looks like this:
-`<jre_path>/bin/server/jvm.dll`
-
-### macOS
-
-The Java Runtime Library (called `libjvm.dylib`) can be found inside of your JDK install folder. Run the following command in your terminal to find the location of your default Java installation:
-`/usr/libexec/java_home`
-
-This should give you a path looking like this:
-`<jre_path>/lib/server/libjvm.dylib`
-
-### Linux
-
-The Java Runtime Library (called `libjvm.so`) can be found inside of your JDK install folder and looks like this:
-`<jre_path>/lib/server/libjvm.so`
 
 # Interface
 
@@ -415,7 +379,6 @@ On every start of Sourcetrail you are shown the start window. It allows for crea
 * Pressing `ESC` will close the window.
 * Click `Check for new version` to connect to [https://sourcetrail.com](https://sourcetrail.com) and check if a new version is available.
 
-
 ### Path List Box
 
 The Path List Box is a user interface element that is used within the [Preferences Window](#preferences-window) and the [Project Setup Wizard](#project-setup-wizard). It allows for entering a list of file and directory paths.
@@ -473,14 +436,12 @@ The Preferences window lets you define settings for all projects. You can open t
 | Plugin Port | Port number that Sourcetrail sends outgoing messages to.
 | Indexer threads | Define how many parallel threads are used during indexing. Setting this value to `default` will cause Sourcetrail to detect the ideal number of threads based on the CPU and use as many threads for indexing.
 | Multi process C/C++ indexing | Enable C/C++ indexer threads to run in a different process. This prevents the application from crashing due to unforeseen exceptions while indexing.
-| Java Path | If you want to use Sourcetrail on Java source code, please specify a path to your Java runtime library. Please keep in mind that a 32 bit Sourcetrail requires a 32 bit version of Java while a 64 bit Sourcetrail requires a 64 bit Java to be working correctly. You can either use the button below for automatic detection or add the path manually. For instructions on how to find your Java runtime path see (Finding Java Runtime Library Location](#finding-java-runtime-library-location).
-| JRE System Library | Add the jar files of your JRE System Library. These jars can be found inside your JRE install directory. You can either use the button below for automatic detection or add the paths manually.
-| Maven Path | Only required for indexing projects using Maven. Provide the location of your installed Maven executable. You can also use the auto detection.
 | Post Processing | Enable a post processing step to solve unsolved references after the indexing is done. These references will be marked "ambiguous" to indicate that some of these edges may never be encountered during runtime of the indexed code because the post processing only relies on symbol names and types.
 | Global Include Paths | Set header search paths that are used for **all** of your projects (e.g. std headers). An option for automatic detection of these paths is available for Clang, GCC and the Visual Studio compiler. For instructions on how to add paths manually see [Path List Box](#path-list-box). For instructions on how to find the system header paths see [Finding System Header Locations](#finding-system-header-locations).
 | Global Framework Search Paths | **(macOS only)** Define the search paths for `.framework` files for all of your projects. An option for automatic detection of these paths is available for Clang and GCC. <br />For instructions on how to add paths see [Path List Box](#path-list-box).
 
 ### Project Setup Wizard
+
 The Project Setup Wizard lets you create a new Sourcetrail project. It allows for defining name and location of your project Sourcetrail and adding several **Source Groups**, that define which source files will be indexed. There are several ways to create Source Groups. It is sufficient to add only one Source Group for most projects.
 
 For detailed information continue at [PROJECT SETUP](#project-setup).
@@ -495,11 +456,9 @@ These dialogs will be used while Sourcetrail indexes your project. The whole use
 
 This dialog displays the number of files for indexing and clearing before indexing starts. There are different refresh modes:
 
-
 * **Updated files:** Reindexes all files that were modified since the last indexing, all files depending on those and new files.
 * **Incomplete & updated files:** Reindexes all files that had errors during last indexing, all files depending on those and all updated files.
 * **All files:** Deletes the previous index and reindexes all files.
-
 
 <img src="docs/documentation/start_indexing_dialog.png" width="600" alt="Start Indexing Dialog">
 
@@ -552,129 +511,128 @@ This dialog is shown after indexing was stopped, giving you information about in
 ### Project
 
 * **New Project**
-    * Shortcut: [New Project](#shortcuts)
-    * Opens the [New Project](#project-setup-wizard) Dialog to define a new project and loads it after creation.
+  * Shortcut: [New Project](#shortcuts)
+  * Opens the [New Project](#project-setup-wizard) Dialog to define a new project and loads it after creation.
 * **Open Project**
-    * Shortcut: [Open Project](#shortcuts)
-    * Opens a file dialog to choose an existing Sourcetrail project file from your system's hard drive.
+  * Shortcut: [Open Project](#shortcuts)
+  * Opens a file dialog to choose an existing Sourcetrail project file from your system's hard drive.
 * **Recent Projects**
-    * Opens a submenu to choose recent opened Sourcetrail projects.
+  * Opens a submenu to choose recent opened Sourcetrail projects.
 * **Edit Project**
-    * Opens the [Edit Project Dialog](#project-setup-wizard) prefilled with your project settings and allows for changing them.
+  * Opens the [Edit Project Dialog](#project-setup-wizard) prefilled with your project settings and allows for changing them.
 * **Exit**
-    * Quits Sourcetrail.
+  * Quits Sourcetrail.
 
 ### Edit
 
 * **Refresh**
-    * Shortcut: [Refresh](#shorcuts)
-    * Refresh will check all indexed source files for updates and reindex the ones that changed and their depending ones.
+  * Shortcut: [Refresh](#shorcuts)
+  * Refresh will check all indexed source files for updates and reindex the ones that changed and their depending ones.
 * **Full Refresh**
-    * Shortcut: [Full Refresh](#shorcuts)
-    * Full Refresh will reindex the whole project.
+  * Shortcut: [Full Refresh](#shorcuts)
+  * Full Refresh will reindex the whole project.
 * **Find Symbol**
-    * Shortcut: [Find Symbol](#shorcuts)
-    * This option will put the focus into the search field, so you can start typing your search query. Alternatively you can click the search field.
+  * Shortcut: [Find Symbol](#shorcuts)
+  * This option will put the focus into the search field, so you can start typing your search query. Alternatively you can click the search field.
 * **Find Text**
-    * Shortcut: [Find Text](#shorcuts)
-    * This option will put the focus into the search field and start a new full text search query
+  * Shortcut: [Find Text](#shorcuts)
+  * This option will put the focus into the search field and start a new full text search query
 * **Find On-Screen**
-    * Shortcut: [Find On-Screen](#shorcuts)
-    * Display the [On-Screen Search Bar](#on-screen-search-bar) to search visible contents of the [Graph View](#graph-view) and [Code View](#code-view)
+  * Shortcut: [Find On-Screen](#shorcuts)
+  * Display the [On-Screen Search Bar](#on-screen-search-bar) to search visible contents of the [Graph View](#graph-view) and [Code View](#code-view)
 * **Next Reference**
-    * Shortcut: [Next Reference](#shorcuts)
-    * Use this option to iterate to the next source location of the active symbol in the code view.
+  * Shortcut: [Next Reference](#shorcuts)
+  * Use this option to iterate to the next source location of the active symbol in the code view.
 * **Previous Reference**
-    * Shortcut: [Previous Reference](#shorcuts)
-    * Use this option to iterate to the previous source location of the active symbol in the code view.
+  * Shortcut: [Previous Reference](#shorcuts)
+  * Use this option to iterate to the previous source location of the active symbol in the code view.
 * **Next Local Reference**
-    * Shortcut: [Next Local Reference](#shorcuts)
-    * Use this option to iterate to the next source location of the active local symbol or edge in the code view.
+  * Shortcut: [Next Local Reference](#shorcuts)
+  * Use this option to iterate to the next source location of the active local symbol or edge in the code view.
 * **Previous Local Reference**
-    * Shortcut: [Previous Local Reference](#shorcuts)
-    * Use this option to iterate to the previous source location of the active local symbol or edge in the code view.
+  * Shortcut: [Previous Local Reference](#shorcuts)
+  * Use this option to iterate to the previous source location of the active local symbol or edge in the code view.
 * **To overview**
-    * Shortcut: [To overview](#shorcuts)
-    * This option will display the overview of the project.
+  * Shortcut: [To overview](#shorcuts)
+  * This option will display the overview of the project.
 * **Preferences**
-    * Shortcut: [Preferences](#shorcuts)
-    * Opens the [Preferences Window](#preferences-window).
+  * Shortcut: [Preferences](#shorcuts)
+  * Opens the [Preferences Window](#preferences-window).
 
 ### View
 
 * **New Tab**
-    * Opens a new tab.
+  * Opens a new tab.
 * **Close Tab**
-    * Closes the current tab.
+  * Closes the current tab.
 * **Select Next Tab**
-    * Switch to the tab to the right of the current tab.
+  * Switch to the tab to the right of the current tab.
 * **Select Previous Tab**
-    * Switch to the tab to the left of the current tab.
+  * Switch to the tab to the left of the current tab.
 * **Show Start Window**
-    * Shows the [Start Window](#start-window).
+  * Shows the [Start Window](#start-window).
 * **Show Title Bars**
-    * Toggle the visibility of the bars above each [Window Widget](#widget-windows).
+  * Toggle the visibility of the bars above each [Window Widget](#widget-windows).
 * **Reset window layout**
-    * Resets all the dock widgets to their original layout.
+  * Resets all the dock widgets to their original layout.
 * **Search Window**
-    * Toggle the visibility of the Search Window. This can also be done by closing the Search Window on clicking the "x" icon in it's title bar. (See [Window Widgets](#widget-windows))
+  * Toggle the visibility of the Search Window. This can also be done by closing the Search Window on clicking the "x" icon in it's title bar. (See [Window Widgets](#widget-windows))
 * **Graph Window**
-    * Toggle the visibility of the Graph Window. This can also be done by closing the Graph Window on clicking the "x" icon in it's title bar. (See [Window Widgets](#widget-windows))
+  * Toggle the visibility of the Graph Window. This can also be done by closing the Graph Window on clicking the "x" icon in it's title bar. (See [Window Widgets](#widget-windows))
 * **Code Window**
-    * Toggle the visibility of the Code Window. This can also be done by closing the Code Window on clicking the "x" icon in it's title bar. (See [Window Widgets](#widget-windows))
+  * Toggle the visibility of the Code Window. This can also be done by closing the Code Window on clicking the "x" icon in it's title bar. (See [Window Widgets](#widget-windows))
 * **Status Window**
-    * Toggle the visibility of the Status Window. This can also be done by closing the Status Window on clicking the "x" icon in it's title bar. (See [Window Widgets](#widget-windows))
+  * Toggle the visibility of the Status Window. This can also be done by closing the Status Window on clicking the "x" icon in it's title bar. (See [Window Widgets](#widget-windows))
 * **Larger Font**
-    * Shortcut: [Larger Font](#shortcuts)
-    * Increase the font size within the Main Window's user interface.
+  * Shortcut: [Larger Font](#shortcuts)
+  * Increase the font size within the Main Window's user interface.
 * **Smaller Font**
-    * Shortcut: [Smaller Font](#shortcuts)
-    * Decrease the font size within the Main Window's user interface.
+  * Shortcut: [Smaller Font](#shortcuts)
+  * Decrease the font size within the Main Window's user interface.
 * **Reset font size**
-    * Shortcut: [Reset font size](#shortcuts)
-    * Resets the font size to the original size.
+  * Shortcut: [Reset font size](#shortcuts)
+  * Resets the font size to the original size.
 
 ### History
 
 * **Back**
-    * Shortcut: [Back](#shortcuts)
-    * Undoes the last navigation action.
+  * Shortcut: [Back](#shortcuts)
+  * Undoes the last navigation action.
 * **Forward**
-    * Shortcut: [Forward](#shortcuts)
-    * Redoes an undone navigation action.
+  * Shortcut: [Forward](#shortcuts)
+  * Redoes an undone navigation action.
 * **Recently Active Symbols**
-    * List the history of active symbols in chronologic order.
+  * List the history of active symbols in chronologic order.
 
 ### Bookmarks
 
 * **Bookmark Active Symbol**
-    * Shortcut: Bookmark Active Symbol](#shortcuts)
-    * Opens the [Bookmark Creator](#bookmark-creator) dialog create a new bookmark.
+  * Shortcut: Bookmark Active Symbol](#shortcuts)
+  * Opens the [Bookmark Creator](#bookmark-creator) dialog create a new bookmark.
 * **Bookmark Manager**
-    * Shortcut: Bookmark Manager](#shortcuts)
-    * Opens the [Bookmark Manager](#bookmark-manager) dialog for viewing all bookmarks.
+  * Shortcut: Bookmark Manager](#shortcuts)
+  * Opens the [Bookmark Manager](#bookmark-manager) dialog for viewing all bookmarks.
 * **Recent Bookmarks**
-    * List of recently added bookmarks for quick activation.
+  * List of recently added bookmarks for quick activation.
 
 ### Help
 
 * **About**
-    * Shows copyright information about Sourcetrail.
+  * Shows copyright information about Sourcetrail.
 * **Keyboard Shortcuts**
-    * Shows table of keyboard shortcuts for Sourcetrail.
+  * Shows table of keyboard shortcuts for Sourcetrail.
 * **Documentation**
-    * Opens this documentation of Sourcetrail in your web browser by URL.
+  * Opens this documentation of Sourcetrail in your web browser by URL.
 * **Changelog**
-    * Opens the [changelog](https://github.com/CoatiSoftware/SourcetrailBugTracker#changelog) of Sourcetrail in your web browser by URL.
+  * Opens the [changelog](https://github.com/CoatiSoftware/SourcetrailBugTracker#changelog) of Sourcetrail in your web browser by URL.
 * **Bug Tracker**
-    * Opens Sourcetrail's bug tracker in your web browser by URL.
+  * Opens Sourcetrail's bug tracker in your web browser by URL.
 * **License**
-    * Opens a window containing the Sourcetrail license and all 3rd party licenses.
+  * Opens a window containing the Sourcetrail license and all 3rd party licenses.
 * **Show Data Folder**
-    * Opens the file explorer showing the [data folder](#datafolder).
+  * Opens the file explorer showing the [data folder](#datafolder).
 * **Show Log Folder**
-    * Opens the file explorer in the directory [data](#datafolder)/logs where all log files are saved to. You can enable file logging in the [Preferences Window](#preferences-window).
-
+  * Opens the file explorer in the directory [data](#datafolder)/logs where all log files are saved to. You can enable file logging in the [Preferences Window](#preferences-window).
 
 ### Shortcuts
 
@@ -736,11 +694,12 @@ This dialog is shown after indexing was stopped, giving you information about in
 | Scroll | `Ctrl + Arrows` | `Cmd + Arrows` | `Ctrl + Arrows`
 
 ## Graph View
+
 The graph view visualizes the currently selected symbol and all its relationships to other symbols as an interactive graph visualization. You can also display whole call graphs, inheritance chains or include trees by using the toolbar in the top left. Read more about that at [Custom Trail](#custom-trail).
 
 <img src="docs/documentation/graph_view.png" width="750" alt="Graph View">
 
-#### Interactions:
+#### Interactions
 
 **Buttons:**
 
@@ -755,13 +714,11 @@ The graph view visualizes the currently selected symbol and all its relationship
 * Scroll left-right and up-down on the mouse pad.
 * Use the keys `W` `A` `S` `D`.
 
-
 **Zooming:**
 
 * Hold `Ctrl/Cmd` and scroll with mouse wheel or mouse pad.
 * Press `Shift + W` or `Shift + S`.
 * Press `0` to reset zoom.
-
 
 **Context Menu:**
 
@@ -781,8 +738,8 @@ The graph view visualizes the currently selected symbol and all its relationship
 * **Copy Full Path:** Copy file path for file node under mouse cursor to clipboard.
 * **Open Containing Folder:** Show the file in your file explorer for file node under mouse cursor.
 
-
 ### Nodes
+
 Colors are corresponding to the default color scheme.
 
 | Node Type | Image
@@ -808,6 +765,7 @@ Colors are corresponding to the default color scheme.
 * Hover a node to see a tooltip that displays the node’s type.
 
 ### Edges
+
 Colors are corresponding to the default color scheme.
 
 | Edge Type | Image
@@ -829,6 +787,7 @@ Colors are corresponding to the default color scheme.
 * Hover an edge to see a tooltip that displays the edge’s type.
 
 ### Custom Trail
+
 Using the toolbar in the top left you can display whole call graphs, inheritance chains or include trees for the currently active symbol if the right symbol type is currently active. Or you can use the Custom Trail Dialog to display graphs based on custom criteria.
 
 !["Call Graph"](docs/documentation/call_graph.png "Call Graph")
@@ -842,8 +801,8 @@ Using the toolbar in the top left you can display whole call graphs, inheritance
 * Click on a node to activate it.
 * Click on an edge to show it's source location in the [Code View](#code-view).
 
-
 #### Custom Trail Dialog
+
 The Custom Trail Dialog can be accessed within the trail controls in the top left of the graph view. It allows to display Custom Trails based on certain criteria.
 
 <img src="docs/documentation/custom_trail.png" width="700" alt="Custom Trail">
@@ -894,7 +853,6 @@ All nodes defined in the same source or header file are grouped together in a se
 **Interactions:**
 
 * Click on the group name to activate the corresponding namespace/package or file node.
-
 
 ### Graph Legend
 
@@ -1022,7 +980,6 @@ The search bar allows you to enter search requests to find one of Sourcetrail's 
 * Enter your search request by typing on your keyboard.
 * By pressing enter or clicking on the search icon on the right you send your request.
 * The search field allows for most interactions known from other text fields such as moving the cursor, copy&paste and text selection.
-
 
 ### Autocompletion Popup
 
@@ -1283,47 +1240,9 @@ C/C++ Source Groups from Code::Blocks offer the following configuration options:
 | Global Framework Search Paths (macOS only) | These Framework Search Paths will be used in all your projects. (<br />For instructions on how to add paths see [Path List Box](#path-list-box). For instructions on how to find the system header paths see [Finding System Header Locations](#finding-system-header-locations))
 | Additional Compiler Flags | Define additional compiler flags used during indexing including the dash (e.g. use `-DRELEASE` to add a `#define` for `RELEASE`).<br /><br />For instructions on how to add paths see [Path List Box](#path-list-box).
 
-## Empty Java Source Group
+## Java Source Groups (Removed)
 
-Choose this option if you want to index Java files using Sourcetrail.
-Empty Java Source Groups offer the following configuration options:
-
-| Setting | Description
-| --- | ---
-| Standard | Select the language standard that should be used for indexing your the Source Group. Usually the most recent language standard is preselected here. (See [Language Support](#supported-languages))
-| Files & Directories to Index | These paths define the files and directories that will be indexed by Sourcetrail. Provide a directory to recursively add all contained source and header files. If your project's source code resides in one location, but generated source files are kept at a different location, you will also need to add that directory. You can make use of environment variables with ${ENV_VAR}.<br /><br />For instructions on how to add paths see [Path List Box](#path-list-box).
-| Excluded Files & Directories | These paths define the files and directories that will be left out from indexing.<br />Hints:<br /><ul><li>You can use the wildcard `*` which represents characters except `\` or `/` (e.g. `src/*/test.h` matches `src/app/test.h` but does not match `src/app/widget/test.h` or `src/test.h`)</li><li>You can use the wildcard `**` which represents arbitrary characters (e.g. `src**test.h` matches `src/app/test.h` as well as `src/app/widget/test.h` or `src/test.h`)</li><li>You can make use of environment variables with `${ENV_VAR}`<br /><br />For instructions on how to add paths see [Path List Box](#path-list-box).</li></ul>
-| Source File Extensions | Define the valid extensions for source files including the dot e.g. `.java`. Sourcetrail will only try to index files that match one of these extensions.
-| Class Path | Enter all the .jar files your project depends on. If your project depends on uncompiled java code that should not be indexed, please add the root directory of those .java files here (the one where all the package names are relative to). You can make use of environment variables with ${ENV_VAR}.
-| JRE System Library | Tick this box to use the JRE System library jars specified in your application settings. Disable this setting if you want to use another JRE System library for this project and add the respective jars to the project's Class Path.
-
-## Java Source Group from Gradle
-
-If you are using a Gradle configuration to manage and build your project use this approach to create a Sourcetrail Source Group.
-Java Source Groups from Gradle offer the following configuration options:
-
-| Setting | Description
-| --- | ---
-| Standard | Select the language standard that should be used for indexing your the Source Group. Usually the most recent language standard is preselected here. (See [Language Support](#supported-languages))
-| Gradle Project File |  The path to the `build.gradle` file in the root folder of your Gradle project.
-| Should Index Tests |  This checkbox indicates whether or not Sourcetrail indexes the test code that is part of your Gradle project.
-| Intermediate Dependencies Directory | Directory where Sourcetrail stores all of the project's `.jar` dependencies.
-| Excluded Files & Directories | These paths define the files and directories that will be left out from indexing.<br />Hints:<br /><ul><li>You can use the wildcard `*` which represents characters except `\` or `/` (e.g. `src/*/test.h` matches `src/app/test.h` but does not match `src/app/widget/test.h` or `src/test.h`)</li><li>You can use the wildcard `**` which represents arbitrary characters (e.g. `src**test.h` matches `src/app/test.h` as well as `src/app/widget/test.h` or `src/test.h`)</li><li>You can make use of environment variables with `${ENV_VAR}`<br /><br />For instructions on how to add paths see [Path List Box](#path-list-box).</li></ul>
-| Source File Extensions | Define the valid extensions for source files including the dot e.g. `.java`. Sourcetrail will only try to index files that match one of these extensions.
-
-## Java Source Group from Maven
-
-If you are using a Maven configuration to manage and build your project use this approach to create a Sourcetrail Source Group.
-Java Source Groups from Maven offer the following configuration options:
-
-| Setting | Description
-| --- | ---
-| Standard | Select the language standard that should be used for indexing your the Source Group. Usually the most recent language standard is preselected here. (See [Language Support](#supported-languages))
-| Maven Project File |  The path to the `pom.xml` file in the root folder of your Maven project.
-| Should Index Tests |  This checkbox indicates whether or not Sourcetrail indexes the test code that is part of your Maven project.
-| Intermediate Dependencies Directory | Directory where Sourcetrail stores all of the project's `.jar` dependencies.
-| Excluded Files & Directories | These paths define the files and directories that will be left out from indexing.<br />Hints:<br /><ul><li>You can use the wildcard `*` which represents characters except `\` or `/` (e.g. `src/*/test.h` matches `src/app/test.h` but does not match `src/app/widget/test.h` or `src/test.h`)</li><li>You can use the wildcard `**` which represents arbitrary characters (e.g. `src**test.h` matches `src/app/test.h` as well as `src/app/widget/test.h` or `src/test.h`)</li><li>You can make use of environment variables with `${ENV_VAR}`<br /><br />For instructions on how to add paths see [Path List Box](#path-list-box).</li></ul>
-| Source File Extensions | Define the valid extensions for source files including the dot e.g. `.java`. Sourcetrail will only try to index files that match one of these extensions.
+Java/Gradle/Maven source-group workflows have been removed from Sourcetrail.
 
 ## Empty Python Source Group
 
@@ -1433,19 +1352,24 @@ bring up the context menu and choose the “Sent Location” option.
 **Installation**
 
 * Updatesite:
-	1. In Eclipse go in the menu to `Help -> Install new Software...`
-	1. Add the Sourcetrail Updatesite
-		* type [https://CoatiSoftware.github.io/eSourcetrail/updatesite](https://CoatiSoftware.github.io/eSourcetrail/updatesite) into the `Work with:` field
-		* or press `Add...` and add the address above
-	1. Select all and finish the next step.
-	1. Eclipse needs to restart and can now communicate with Eclipse.
+
+ 1. In Eclipse go in the menu to `Help -> Install new Software...`
+ 1. Add the Sourcetrail Updatesite
+
+* type [https://CoatiSoftware.github.io/eSourcetrail/updatesite](https://CoatiSoftware.github.io/eSourcetrail/updatesite) into the `Work with:` field
+* or press `Add...` and add the address above
+
+ 1. Select all and finish the next step.
+ 1. Eclipse needs to restart and can now communicate with Eclipse.
+
 * Manually:
-	1. Download this [eSourcetrail-gh-pages.zip](https://github.com/CoatiSoftware/eSourcetrail/archive/gh-pages.zip) and unzip it.
-	1. In Eclipse go in the menu to `Help -> Install new Software...`
-	1. Click the `Add...` Button
-	1. Click the `Local...` Button select the updatesite folder in the unzipped folder
-	1. Select all and finish the next step.
-	1. Eclipse needs to restart and can now communicate with Eclipse.
+
+ 1. Download this [eSourcetrail-gh-pages.zip](https://github.com/CoatiSoftware/eSourcetrail/archive/gh-pages.zip) and unzip it.
+ 1. In Eclipse go in the menu to `Help -> Install new Software...`
+ 1. Click the `Add...` Button
+ 1. Click the `Local...` Button select the updatesite folder in the unzipped folder
+ 1. Select all and finish the next step.
+ 1. Eclipse needs to restart and can now communicate with Eclipse.
 
 **Use**
 
@@ -1460,13 +1384,16 @@ If you want Eclipse to activate a certain element in Sourcetrail, right-click th
 **Installation**
 
 * Manually
-	1. Download the sourcetrail.el from [https://github.com/CoatiSoftware/emacs-sourcetrail](https://github.com/CoatiSoftware/emacs-sourcetrail)
-	1. In Emacs press `M` + `x` and type in `package-install-file`
-	1. Type in the path to the downloaded sourcetrail.el file
+
+ 1. Download the sourcetrail.el from [https://github.com/CoatiSoftware/emacs-sourcetrail](https://github.com/CoatiSoftware/emacs-sourcetrail)
+ 1. In Emacs press `M` + `x` and type in `package-install-file`
+ 1. Type in the path to the downloaded sourcetrail.el file
+
 * Melpa
-	1. Add Melpa to your package-archives
-	1. Press `M` + `x` and type `list-packages`
-	1. Search for sourcetrail and mark sourcetrail with `i` then press `x` and the confirm with yes
+
+ 1. Add Melpa to your package-archives
+ 1. Press `M` + `x` and type `list-packages`
+ 1. Search for sourcetrail and mark sourcetrail with `i` then press `x` and the confirm with yes
 
 **Use**
 
@@ -1483,7 +1410,8 @@ press `M` + `x` and type in `sourcetrail-mode`
 
 1. Download the plugin for your system from [here](https://github.com/CoatiSoftware/qtc-sourcetrail/releases).
 1. Copy the files into the plugin folder where the QtCreator is installed(eg. /usr/lib/qtcreator/plugins)
-	* the plugin path can be found at Help -> System Information... -> PluginsPath
+
+* the plugin path can be found at Help -> System Information... -> PluginsPath
 
 **Use**
 
@@ -1496,13 +1424,16 @@ If you want QtCreator to activate a certain element in Sourcetrail, click a loca
 **Installation**
 
 * Manually
-	1. To install the Sourcetrail plugin for Sublime Text copy the SourcetrailPlugin folder located in your `ide_plugins/sublime_text` to your `SublimeText/Packages` folder
-	1. restart Sublime
+
+ 1. To install the Sourcetrail plugin for Sublime Text copy the SourcetrailPlugin folder located in your `ide_plugins/sublime_text` to your `SublimeText/Packages` folder
+ 1. restart Sublime
+
 * Package Control
-	1. If you don't have Package Control for Sublime go to https://packagecontrol.io and install it
-	1. Open Command Palette  with `Ctrl` + `Shift` + `P`
-	1. Select `Package Control: Install Package`
-	1. Install `sourcetrail`
+
+ 1. If you don't have Package Control for Sublime go to <https://packagecontrol.io> and install it
+ 1. Open Command Palette  with `Ctrl` + `Shift` + `P`
+ 1. Select `Package Control: Install Package`
+ 1. Install `sourcetrail`
 
 **Use**
 

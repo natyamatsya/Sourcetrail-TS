@@ -77,8 +77,7 @@ Version setupAppDirectories(const FilePath &appPath)
 	QCoreApplication::setApplicationVersion(QString::fromStdString(version.toDisplayString()));
 
 	// Note: This functions is called from main in 'main.cpp' *AND* the main in 'test_main.cpp'.
-	// If the appPath is incorrect then most of the Java tests will fail because the
-	// 'app/data/java/lib/java-indexer.jar' will not be found!
+	// If the appPath is incorrect then resource and user-data initialization will fail.
 	AppPath::setSharedDataDirectoryPath(appPath);
 	AppPath::setCxxIndexerDirectoryPath(appPath);
 

@@ -15,8 +15,8 @@
 
 namespace
 {
-FilePath m_indexDbPath = FilePath("data/RefreshInfoGeneratorTestSuite/project.srctrldb");
-FilePath m_bookmarkDbPath = FilePath("data/RefreshInfoGeneratorTestSuite/project.srctrlbm");
+FilePath m_indexDbPath = FilePath("data/RefreshInfoGeneratorTestSuite/project.srctrl.db");
+FilePath m_bookmarkDbPath = FilePath("data/RefreshInfoGeneratorTestSuite/project.srctrl.bm");
 FilePath m_sourceFolder = FilePath("data/RefreshInfoGeneratorTestSuite/src");
 
 class SourceGroupSettingsTest: public SourceGroupSettings

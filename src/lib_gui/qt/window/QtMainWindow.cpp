@@ -626,7 +626,7 @@ void QtMainWindow::newProjectFromCDB(const FilePath& filePath)
 void QtMainWindow::openProject()
 {
 	QString fileName = QtFileDialog::getOpenFileName(
-		this, tr("Open File"), FilePath(), QStringLiteral("Sourcetrail Project Files (*.srctrl.toml *.srctrlprj)"));
+		this, tr("Open File"), FilePath(), QStringLiteral("Sourcetrail Project Files (*.srctrl.toml)"));
 
 	if (!fileName.isEmpty())
 	{

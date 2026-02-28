@@ -4,7 +4,7 @@ Sourcetrail is a free and open-source cross-platform source explorer that helps 
 
 * Free
 * Working offline
-* Supporting C/C++ and Java
+* Supporting C/C++
 * Operating on Linux, Windows (and macOS)
 * Offering a SDK ([SourcetrailDB](https://github.com/CoatiSoftware/SourcetrailDB)) to write custom language extensions
 
@@ -53,14 +53,6 @@ By sponsoring me with **$10 per month**, you will gain access to the following *
 |----------|------|------|
 |Clang/LLVM|20.1.8|18.1.6|
 
-**Java**
-
-|Name       |System/Vcpkg|
-|-----------|------------|
-|Eclipse JDT|3.42        |
-|Maven      |3.9.9       |
-|Gradle     |9.3.1       |
-
 **Miscellaneous**
 
 |Name   |System|Vcpkg |
@@ -81,7 +73,8 @@ By sponsoring me with **$10 per month**, you will gain access to the following *
 
 #### 2025.12.8
 
-- C++: Add indexing of structured binding declarations
+* C++: Add indexing of structured binding declarations
+
 * C++: Add indexing of `auto` prvalue casts
 * GUI: Fix error/status view not cleared between indexing ([#51](https://github.com/petermost/Sourcetrail/issues/51))
 * C/C++: Replace msvc mulitithreading library switches with corresponding clang switch
@@ -92,20 +85,23 @@ By sponsoring me with **$10 per month**, you will gain access to the following *
 
 #### 2025.10.13
 
-- C/C++: Add indexing of `concept` type constraints
+* C/C++: Add indexing of `concept` type constraints
+
 * C/C++: Add indexing of abbreviated function templates
 * C/C++: Use correct keyword for template template parameters (clang/LLVM >= 20)
 
 #### 2025.9.9
 
-- C/C++: Add indexing of `auto` return types
+* C/C++: Add indexing of `auto` return types
+
 * GUI: Allow tab closing with middle mouse click
 * GUI: Improve layout of license window content
 * GUI: Add `Open` to context menu of start window
 
 #### 2025.7.11
 
-- C/C++: Add indexing of `constexpr`
+* C/C++: Add indexing of `constexpr`
+
 * C/C++: Replace most `msvc` compiler switches with the correct `clang` switches (Fixes a long standing issue ["no such file or directory (sourcetrail is treating MSVC options as file/dir)"](https://github.com/CoatiSoftware/Sourcetrail/issues/744)
 * Java: Add support for Java 24
 * C/C++/Java: Revised the list of keywords for syntax highlighting
@@ -228,11 +224,8 @@ git pull --recurse-submodules
 
 ## Vcpkg Build
 
-Depending on the platform and the selected indexer, additional software/packages must be installed.
+Depending on the platform, additional software/packages must be installed.
 
-* **Java Indexer:**
-  * [OpenJDK](https://jdk.java.net/)
-  * [Maven](https://maven.apache.org/)
 * **Linux:**
   * Install additional packages with `scripts/install-vcpkg-dependencies.sh`.
 * **Windows:**
@@ -269,8 +262,6 @@ To compile it under (K)ubuntu 25.04, "Questing Quokka", install the following pa
 **General packages:** cmake, ninja-build, libboost1.88-all-dev, libboost-charconv1.88-dev, qt6-base-dev, qt6-svg-dev, libsqlite3-dev, libtinyxml-dev
 
 **C++ packages:** clang-20, libclang-20-dev
-
-**Java packages:** maven, openjdk-25-jdk
 
 **Unit test packages:** catch2, libgtest-dev
 

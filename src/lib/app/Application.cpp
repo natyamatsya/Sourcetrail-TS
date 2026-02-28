@@ -263,17 +263,6 @@ void Application::handleMessage(MessageLoadProject* message)
 	{
 		MessageStatus("Loading Project: " + projectSettingsFilePath.str(), false, true).dispatch();
 
-		if (projectSettingsFilePath.extension() == ".srctrlprj")
-		{
-			MessageStatus(
-				"Warning: \"" + projectSettingsFilePath.fileName() +
-					"\" uses the legacy XML format (.srctrlprj). "
-					"Please convert it to the new TOML format (.srctrl.toml) "
-					"using Tools > Convert Project to TOML.",
-				true)
-				.dispatch();
-		}
-
 		m_project.reset();
 
 		if (m_hasGUI)

@@ -6,6 +6,7 @@
 #include "LogManager.h"
 #include "MessageLoadProject.h"
 #include "MessageWindowFocus.h"
+#include "ProjectSettings.h"
 #include "utilityApp.h"
 
 QtApplication::QtApplication(int& argc, char** argv): QApplication(argc, argv)
@@ -31,7 +32,7 @@ bool QtApplication::event(QEvent* event)
 
 		FilePath path(fileEvent->file().toStdString());
 
-		if (path.exists() && (path.str().ends_with(".srctrl.toml") || path.extension() == ".srctrlprj"))
+		if (path.exists() && ProjectSettings::isProjectFilePath(path))
 		{
 			MessageLoadProject(path).dispatch();
 			return true;

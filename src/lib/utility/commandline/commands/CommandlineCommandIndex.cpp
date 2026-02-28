@@ -17,7 +17,10 @@ void CommandlineCommandIndex::setup()
 {
 	m_app.add_flag("-i,--incomplete", "Also reindex incomplete files (files with errors)");
 	m_app.add_flag("-f,--full", "Index full project (omit to only index new/changed files)");
-	m_app.add_option("project-file", m_projectFileArg, "Project file to index (.srctrlprj)");
+	m_app.add_option(
+		"project-file",
+		m_projectFileArg,
+		"Project file to index (.srctrl.toml)");
 }
 
 CommandlineCommand::ReturnStatus CommandlineCommandIndex::parse(std::vector<std::string>& args)

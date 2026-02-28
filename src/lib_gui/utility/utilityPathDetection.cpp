@@ -13,24 +13,6 @@
 
 using namespace std;
 
-std::shared_ptr<CombinedPathDetector> utility::getJavaRuntimePathDetector()
-{
-	std::shared_ptr<CombinedPathDetector> combinedDetector = std::make_shared<CombinedPathDetector>();
-	return combinedDetector;
-}
-
-std::shared_ptr<CombinedPathDetector> utility::getJreSystemLibraryPathsDetector()
-{
-	std::shared_ptr<CombinedPathDetector> combinedDetector = std::make_shared<CombinedPathDetector>();
-	return combinedDetector;
-}
-
-std::shared_ptr<CombinedPathDetector> utility::getMavenExecutablePathDetector()
-{
-	std::shared_ptr<CombinedPathDetector> combinedDetector = std::make_shared<CombinedPathDetector>();
-	return combinedDetector;
-}
-
 std::shared_ptr<CombinedPathDetector> utility::getCxxVsHeaderPathDetector()
 {
 	std::shared_ptr<CombinedPathDetector> combinedDetector = std::make_shared<CombinedPathDetector>();

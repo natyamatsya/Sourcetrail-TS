@@ -92,12 +92,6 @@ class ClangCompiler final : public ToolChain {
 		static std::vector<std::string> getAvailableEnvironmentTypes();
 };
 
-class EclipseCompiler final : public ToolChain {
-	public:
-		static std::string getLatestJavaStandard();
-		static std::vector<std::string> getAvailableJavaStandards();
-};
-
 class VisualStudio final : public ToolChain {
 	public:
 		static std::vector<std::string> getVersionRanges();

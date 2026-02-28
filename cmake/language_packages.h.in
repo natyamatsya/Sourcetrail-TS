@@ -4,7 +4,6 @@
 // This is a generated file, DO NOT EDIT!
 
 #cmakedefine01 BUILD_CXX_LANGUAGE_PACKAGE
-#cmakedefine01 BUILD_JAVA_LANGUAGE_PACKAGE
 #cmakedefine01 BUILD_RUST_LANGUAGE_PACKAGE
 
 #endif // LANGUAGE_PACKAGES_H

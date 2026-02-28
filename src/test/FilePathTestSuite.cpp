@@ -216,8 +216,8 @@ TEST_CASE("file path is valid for absolute and relative existing files and direc
 {
 	REQUIRE(FilePath("data/FilePathTestSuite/a.cpp").isValid());
 	REQUIRE(FilePath("data/FilePathTestSuite/a.cpp").makeAbsolute().isValid());
-	REQUIRE(FilePath("data/FilePathTestSuite/with space/s.srctrlprj").isValid());
-	REQUIRE(FilePath("data/FilePathTestSuite/with space/s.srctrlprj").makeAbsolute().isValid());
+	REQUIRE(FilePath("data/FilePathTestSuite/with space/s.srctrl.toml").isValid());
+	REQUIRE(FilePath("data/FilePathTestSuite/with space/s.srctrl.toml").makeAbsolute().isValid());
 	REQUIRE(FilePath("data/FilePathTestSuite").isValid());
 	REQUIRE(FilePath("data/FilePathTestSuite").makeAbsolute().isValid());
 	REQUIRE(FilePath("data/FilePathTestSuite/container.app").isValid());

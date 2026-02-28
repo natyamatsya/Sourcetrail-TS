@@ -10,7 +10,6 @@ public:
 	static FilePath getSyntaxHighlightingRulesDirectoryPath();
 	static FilePath getFallbackDirectoryPath();
 	static FilePath getFontsDirectoryPath();
-	static FilePath getJavaDirectoryPath();
 	static FilePath getCxxCompilerHeaderDirectoryPath();
 };
 

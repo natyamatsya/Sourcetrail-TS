@@ -13,13 +13,14 @@ class ProjectSettings: public Settings
 {
 public:
 	static const std::string PROJECT_FILE_EXTENSION;
-	static const std::string LEGACY_PROJECT_FILE_EXTENSION;
 	static const std::string BOOKMARK_DB_FILE_EXTENSION;
 	static const std::string INDEX_DB_FILE_EXTENSION;
 	static const std::string TEMP_INDEX_DB_FILE_EXTENSION;
 
 	static const size_t VERSION;
 	static LanguageType getLanguageOfProject(const FilePath& filePath);
+	static bool isProjectFilePath(const FilePath& filePath);
+	static bool isTomlProjectFilePath(const FilePath& filePath);
 
 	ProjectSettings();
 	ProjectSettings(const FilePath& projectFilePath);

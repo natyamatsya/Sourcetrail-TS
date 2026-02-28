@@ -9,12 +9,3 @@ name = "C/C++ from Compilation Database"
 pch_flags = ""
 status = "enabled"
 type = "C/C++ from Compilation Database"
-
-[[source_groups]]
-id = "3a6e8447-75e7-4eac-8c06-ca19854c5631"
-java_standard = 21
-maven = ""
-name = "Java Source Group from Maven"
-source_extensions = ""
-status = "enabled"
-type = "Java Source Group from Maven"

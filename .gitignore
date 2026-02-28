@@ -11,9 +11,17 @@ vcpkg_installed/
 CMakeLists.txt.user
 
 # Sourcetrail databases, bookmarks
+*.srctrl.bm
+*.srctrl.db
+*.srctrl.db-*
+*.srctrl.db_tmp
+*.srctrl.db_tmp-*
+# Legacy artifacts (no runtime compatibility, ignore only for local cleanliness)
 *.srctrlbm
 *.srctrldb
-*.srctrlprj
+*.srctrldb-*
+*.srctrldb_tmp
+*.srctrldb_tmp-*
 /.build/
 
 # Rust / Cargo

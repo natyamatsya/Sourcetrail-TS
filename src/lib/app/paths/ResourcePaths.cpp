@@ -22,11 +22,6 @@ FilePath ResourcePaths::getFontsDirectoryPath()
 	return AppPath::getSharedDataDirectoryPath().concatenate("data/fonts/");
 }
 
-FilePath ResourcePaths::getJavaDirectoryPath()
-{
-	return AppPath::getSharedDataDirectoryPath().concatenate("data/java/");
-}
-
 FilePath ResourcePaths::getCxxCompilerHeaderDirectoryPath()
 {
 	return AppPath::getSharedDataDirectoryPath().concatenate("data/cxx/include/").getCanonical();

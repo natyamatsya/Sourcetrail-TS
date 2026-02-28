@@ -493,52 +493,6 @@ std::vector<std::string> ClangCompiler::getAvailableEnvironmentTypes()
 
 ///////////////////////////////////////////////////////////////////////////////
 //
-// Eclipse:
-//
-///////////////////////////////////////////////////////////////////////////////
-
-string EclipseCompiler::getLatestJavaStandard()
-{
-	return getAvailableJavaStandards()[0];
-}
-
-vector<string> EclipseCompiler::getAvailableJavaStandards()
-{
-	// See org.eclipse.jdt.core.JavaCore for the VERSION_?? values
-	// https://github.com/eclipse-jdt/eclipse.jdt.core/blob/master/org.eclipse.jdt.core/model/org/eclipse/jdt/core/JavaCore.java
-	const vector<string> availableStandards = {
-		"26",  // VERSION_26 = "26"
-		"25",  // VERSION_25 = "25"
-		"24",  // VERSION_24 = "24"
-		"23",  // VERSION_23 = "23"
-		"22",  // VERSION_22 = "22"
-		"21",  // VERSION_21 = "21"
-		"20",  // VERSION_20 = "20"
-		"19",  // VERSION_19 = "19"
-		"18",  // VERSION_18 = "18"
-		"17",  // VERSION_17 = "17"
-		"16",  // VERSION_16 = "16"
-		"15",  // VERSION_15 = "15"
-		"14",  // VERSION_14 = "14"
-		"13",  // VERSION_13 = "13"
-		"12",  // VERSION_12 = "12"
-		"11",  // VERSION_11 = "11"
-		"10",  // VERSION_10 = "10"
-		"9",   // VERSION_9 = "9"
-		"1.8", // VERSION_1_8 = "1.8"
-		"1.7", // VERSION_1_7 = "1.7"
-		"1.6", // VERSION_1_6 = "1.6"
-		"1.5", // VERSION_1_5 = "1.5"
-		"1.4", // VERSION_1_4 = "1.4"
-		"1.3", // VERSION_1_3 = "1.3"
-		"1.2", // VERSION_1_2 = "1.2"
-		"1.1"  // VERSION_1_1 = "1.1"
-	};
-	return availableStandards;
-}
-
-///////////////////////////////////////////////////////////////////////////////
-//
 // Visual Studio:
 //
 ///////////////////////////////////////////////////////////////////////////////

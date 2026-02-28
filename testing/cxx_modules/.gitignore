@@ -5,8 +5,9 @@ cmake-build-*/
 cxx_modules_test
 
 # Sourcetrail index data
-*.srctrldb
-*.srctrldb_nodes
-*.srctrlprj
-*.srctrldb-shm
-*.srctrldb-wal
+*.srctrl.db
+*.srctrl.db_nodes
+*.srctrl.db-shm
+*.srctrl.db-wal
+*.srctrl.db_tmp-shm
+*.srctrl.db_tmp-wal

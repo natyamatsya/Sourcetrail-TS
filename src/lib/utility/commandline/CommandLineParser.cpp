@@ -5,6 +5,7 @@
 #include "CommandlineCommandConfig.h"
 #include "CommandlineCommandIndex.h"
 #include "ConfigManager.h"
+#include "ProjectSettings.h"
 #include "TextAccess.h"
 
 namespace commandline
@@ -13,7 +14,10 @@ CommandLineParser::CommandLineParser(const std::string& version)
 	: m_app("Sourcetrail"), m_version(version)
 {
 	m_app.add_flag("-v,--version", "Version of Sourcetrail");
-	m_app.add_option("project-file", m_projectFileArg, "Open Sourcetrail with this project (.srctrlprj)");
+	m_app.add_option(
+		"project-file",
+		m_projectFileArg,
+		"Open Sourcetrail with this project (.srctrl.toml)");
 	m_app.allow_extras();
 
 	m_commands.push_back(std::make_unique<commandline::CommandlineCommandConfig>(this));
@@ -169,7 +173,7 @@ void CommandLineParser::processProjectfile()
 		return;
 	}
 
-	if (!m_projectFile.str().ends_with(".srctrl.toml") && m_projectFile.extension() != ".srctrlprj")
+	if (!ProjectSettings::isProjectFilePath(m_projectFile))
 	{
 		m_errorString = errorstring + " has a wrong file ending";
 		m_projectFile = FilePath();

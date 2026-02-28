@@ -7,6 +7,8 @@
 #include "utilityString.h"
 #include "utilityUuid.h"
 
+#include <filesystem>
+
 #if BUILD_CXX_LANGUAGE_PACKAGE
 #	include "SourceGroupSettingsCEmpty.h"
 #	include "SourceGroupSettingsCppEmpty.h"
@@ -17,11 +19,21 @@
 #	include "SourceGroupSettingsRustEmpty.h"
 #endif	  // BUILD_RUST_LANGUAGE_PACKAGE
 
+namespace
+{
+bool hasTomlProjectExtension(const std::filesystem::path& path)
+{
+	if (path.extension() != ".toml")
+		return false;
+
+	return path.stem().extension() == ".srctrl";
+}
+}	 // namespace
+
 const std::string ProjectSettings::PROJECT_FILE_EXTENSION = ".srctrl.toml";
-const std::string ProjectSettings::LEGACY_PROJECT_FILE_EXTENSION = ".srctrlprj";
-const std::string ProjectSettings::BOOKMARK_DB_FILE_EXTENSION = ".srctrlbm";
-const std::string ProjectSettings::INDEX_DB_FILE_EXTENSION = ".srctrldb";
-const std::string ProjectSettings::TEMP_INDEX_DB_FILE_EXTENSION = ".srctrldb_tmp";
+const std::string ProjectSettings::BOOKMARK_DB_FILE_EXTENSION = ".srctrl.bm";
+const std::string ProjectSettings::INDEX_DB_FILE_EXTENSION = ".srctrl.db";
+const std::string ProjectSettings::TEMP_INDEX_DB_FILE_EXTENSION = ".srctrl.db_tmp";
 
 const size_t ProjectSettings::VERSION = 8;
 
@@ -49,6 +61,16 @@ LanguageType ProjectSettings::getLanguageOfProject(const FilePath& filePath)
 	}
 
 	return languageType;
+}
+
+bool ProjectSettings::isProjectFilePath(const FilePath& filePath)
+{
+	return isTomlProjectFilePath(filePath);
+}
+
+bool ProjectSettings::isTomlProjectFilePath(const FilePath& filePath)
+{
+	return hasTomlProjectExtension(filePath.getPath());
 }
 
 ProjectSettings::ProjectSettings() = default;

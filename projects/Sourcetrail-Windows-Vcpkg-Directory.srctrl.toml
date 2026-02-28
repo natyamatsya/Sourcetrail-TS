@@ -1,15 +1,6 @@
 version = 8
 
 [[source_groups]]
-id = "3a6e8447-75e7-4eac-8c06-ca19854c5631"
-java_standard = 20
-maven = ""
-name = "Java Source Group from Maven"
-source_extensions = ""
-status = "enabled"
-type = "Java Source Group from Maven"
-
-[[source_groups]]
 id = "73e47663-298d-46c5-a617-7011d6a9b0ba"
 cpp_standard = "c++20"
 header_search_paths = ""
