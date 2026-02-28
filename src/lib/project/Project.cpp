@@ -392,6 +392,14 @@ RefreshInfo Project::getRefreshInfo(RefreshMode mode) const
 	}
 }
 
+std::vector<std::shared_ptr<const SourceGroup>> Project::getSourceGroups() const
+{
+	std::vector<std::shared_ptr<const SourceGroup>> sourceGroups{};
+	for (const auto& sourceGroup : m_sourceGroups)
+		sourceGroups.push_back(sourceGroup);
+	return sourceGroups;
+}
+
 void Project::buildIndex(RefreshInfo info, std::shared_ptr<DialogView> dialogView)
 {
 	if (m_refreshStage == RefreshStageType::INDEXING)

@@ -16,7 +16,15 @@ QtBuildJsonBrowser::QtBuildJsonBrowser(QWidget* parent)
 	, m_treeView{new QTreeView(this)}
 	, m_detailsView{new QPlainTextEdit(this)}
 {
+	setWindowFlags(
+		Qt::Window |
+		Qt::WindowCloseButtonHint |
+		Qt::WindowMinimizeButtonHint |
+		Qt::WindowMaximizeButtonHint);
 	setWindowTitle(QStringLiteral("Build JSON Browser"));
+	setMinimumSize(700, 450);
+	setMaximumSize(QWIDGETSIZE_MAX, QWIDGETSIZE_MAX);
+	resize(1100, 700);
 
 	m_treeView->setModel(m_model);
 	m_treeView->setAlternatingRowColors(true);

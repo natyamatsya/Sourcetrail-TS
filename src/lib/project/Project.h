@@ -40,6 +40,7 @@ public:
 	void refresh(std::shared_ptr<DialogView> dialogView, RefreshMode refreshMode);
 
 	RefreshInfo getRefreshInfo(RefreshMode mode) const;
+	std::vector<std::shared_ptr<const SourceGroup>> getSourceGroups() const;
 
 	void buildIndex(RefreshInfo info, std::shared_ptr<DialogView> dialogView);
 

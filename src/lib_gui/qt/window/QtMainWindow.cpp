@@ -26,6 +26,7 @@
 #include "MessageRefreshUI.h"
 #include "MessageResetZoom.h"
 #include "MessageSaveAsImage.h"
+#include "MessageStatus.h"
 #include "MessageTabClose.h"
 #include "MessageTabOpen.h"
 #include "MessageTabSelect.h"
@@ -33,6 +34,7 @@
 #include "MessageZoom.h"
 #include "QtAbout.h"
 #include "QtActions.h"
+#include "QtBuildJsonBrowser.h"
 #include "QtContextMenu.h"
 #include "QtFileDialog.h"
 #include "QtKeyboardShortcuts.h"
@@ -827,6 +829,47 @@ void QtMainWindow::showBookmarkBrowser()
 	MessageBookmarkBrowse().dispatch();
 }
 
+void QtMainWindow::showBuildJsonBrowser()
+{
+	const auto app{Application::getInstance()};
+	if (!app)
+		return;
+
+	const auto project{app->getCurrentProject()};
+	if (!project)
+	{
+		MessageStatus("No project loaded.", true).dispatch();
+		return;
+	}
+
+	std::shared_ptr<const SourceGroup> sourceGroupWithJson{};
+	for (const auto& sourceGroup : project->getSourceGroups())
+	{
+		const auto snapshot{sourceGroup->getBuildModelSnapshot()};
+		if (!snapshot.has_value())
+			continue;
+		if (snapshot->jsonEntryPoints.empty())
+			continue;
+
+		sourceGroupWithJson = sourceGroup;
+		break;
+	}
+
+	if (!sourceGroupWithJson)
+	{
+		MessageStatus("No build JSON entry points are available for this project.", true).dispatch();
+		return;
+	}
+
+	if (!m_buildJsonBrowser)
+		m_buildJsonBrowser = new QtBuildJsonBrowser(this);
+
+	m_buildJsonBrowser->setSourceGroup(sourceGroupWithJson);
+	m_buildJsonBrowser->show();
+	m_buildJsonBrowser->raise();
+	m_buildJsonBrowser->activateWindow();
+}
+
 void QtMainWindow::openHistoryAction()
 {
 	QAction* action = qobject_cast<QAction*>(sender());
@@ -922,6 +965,7 @@ void QtMainWindow::setupViewMenu()
 	menu->addSeparator();
 
 	menu->addAction(tr("Show Start Window"), this, &QtMainWindow::showStartScreen);
+	menu->addAction(tr("Show Build JSON Browser"), this, &QtMainWindow::showBuildJsonBrowser);
 
 	m_showTitleBarsAction = new QAction(tr("Show Title Bars"), this);
 	m_showTitleBarsAction->setCheckable(true);

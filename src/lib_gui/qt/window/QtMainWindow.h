@@ -13,6 +13,7 @@
 class Bookmark;
 class MessageBase;
 class QDockWidget;
+class QtBuildJsonBrowser;
 class View;
 
 class QtViewToggle: public QWidget
@@ -157,6 +158,7 @@ public slots:
 
 private slots:
 	void toggleShowDockWidgetTitleBars();
+	void showBuildJsonBrowser();
 
 	static void showBookmarkCreator();
 	static void showBookmarkBrowser();
@@ -205,6 +207,7 @@ private:
 	bool m_showDockWidgetTitleBars = true;
 
 	QtWindowStack m_windowStack;
+	QtBuildJsonBrowser* m_buildJsonBrowser = nullptr;
 
 	QtWindowTitleProgress m_windowTitleProgress;
 };
