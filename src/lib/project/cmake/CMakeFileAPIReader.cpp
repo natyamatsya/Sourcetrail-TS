@@ -609,11 +609,8 @@ CMakeFileAPIReader::GetSourcesExpected CMakeFileAPIReader::getSourcesDetailed(
 			{
 				const auto qtArray{qtDoc.array()};
 				if (qtArray.size() == 1 && qtArray.first().isObject())
-				{
-					LOG_WARNING(
-						"CMakeFileAPIReader: normalized array-wrapped target JSON: " + path.str());
 					return toNlohmannJson(qtArray.first().toObject());
-				}
+
 
 				LOG_WARNING(
 					"CMakeFileAPIReader: Qt parsed target JSON as array in " + path.str() +
@@ -629,12 +626,8 @@ CMakeFileAPIReader::GetSourcesExpected CMakeFileAPIReader::getSourcesDetailed(
 				if (parsed.is_array())
 				{
 					if (parsed.size() == 1 && parsed[0].is_object())
-					{
-						LOG_WARNING(
-							"CMakeFileAPIReader: normalized nlohmann array-wrapped target JSON: " +
-							path.str());
 						return parsed[0];
-					}
+
 
 					bool looksLikeKeyValuePairs{!parsed.empty()};
 					for (const auto& entry : parsed)
@@ -650,10 +643,6 @@ CMakeFileAPIReader::GetSourcesExpected CMakeFileAPIReader::getSourcesDetailed(
 						nlohmann::json normalizedObject = nlohmann::json::object();
 						for (const auto& entry : parsed)
 							normalizedObject[entry[0].get<std::string>()] = entry[1];
-
-						LOG_WARNING(
-							"CMakeFileAPIReader: normalized nlohmann key/value target JSON: " +
-							path.str());
 						return normalizedObject;
 					}
 				}
@@ -747,7 +736,37 @@ CMakeFileAPIReader::GetSourcesExpected CMakeFileAPIReader::getSourcesDetailed(
 		dependencyNames.push_back(dependencyName);
 	};
 
+	const auto appendSampleTargetName = [](
+		std::vector<std::string>& targetNames, const std::string& targetName)
+	{
+		if (targetName.empty())
+			return;
+		if (targetNames.size() >= 5)
+			return;
+		targetNames.push_back(targetName);
+	};
+
+	const auto sampleTargetNamesToString = [](
+		const std::vector<std::string>& targetNames) -> std::string
+	{
+		if (targetNames.empty())
+			return {};
+
+		std::string result{};
+		for (std::size_t i{0}; i < targetNames.size(); ++i)
+		{
+			if (i > 0)
+				result += ", ";
+			result += targetNames[i];
+		}
+		return result;
+	};
+
 	std::unordered_map<std::string, std::size_t> targetIndexByName{};
+	std::size_t targetRootArrayNormalizedCount{0};
+	std::size_t targetKeyValueArrayNormalizedCount{0};
+	std::vector<std::string> targetRootArrayNormalizedSampleNames{};
+	std::vector<std::string> targetKeyValueArrayNormalizedSampleNames{};
 
 	std::size_t matchedTargetCount{0};
 	std::size_t malformedTargetReferenceCount{0};
@@ -791,9 +810,8 @@ CMakeFileAPIReader::GetSourcesExpected CMakeFileAPIReader::getSourcesDetailed(
 		{
 			normalizedTargetNl = targetNlRaw[0];
 			targetNl = &normalizedTargetNl;
-			LOG_WARNING(
-				"CMakeFileAPIReader: normalized target root array for '" + targetName +
-				"' from " + targetReplyPath.str());
+			++targetRootArrayNormalizedCount;
+			appendSampleTargetName(targetRootArrayNormalizedSampleNames, targetName);
 			warnings.push_back(
 				{GetSourcesWarningCode::TargetRootArrayNormalized, targetName, targetReplyPath});
 		}
@@ -815,9 +833,8 @@ CMakeFileAPIReader::GetSourcesExpected CMakeFileAPIReader::getSourcesDetailed(
 				for (const auto& entry : targetNlRaw)
 					normalizedTargetNl[entry[0].get<std::string>()] = entry[1];
 				targetNl = &normalizedTargetNl;
-				LOG_WARNING(
-					"CMakeFileAPIReader: normalized target key/value array for '" + targetName +
-					"' from " + targetReplyPath.str());
+				++targetKeyValueArrayNormalizedCount;
+				appendSampleTargetName(targetKeyValueArrayNormalizedSampleNames, targetName);
 				warnings.push_back(
 					{GetSourcesWarningCode::TargetKeyValueArrayNormalized, targetName, targetReplyPath});
 			}
@@ -1019,6 +1036,26 @@ CMakeFileAPIReader::GetSourcesExpected CMakeFileAPIReader::getSourcesDetailed(
 			for (const auto& src : fileSet.value("sources", nlohmann::json::array()))
 				appendSourceEntry(src);
 		}
+	}
+
+	if (targetRootArrayNormalizedCount > 0)
+	{
+		const std::string sampleNames{
+			sampleTargetNamesToString(targetRootArrayNormalizedSampleNames)};
+		LOG_WARNING(
+			"CMakeFileAPIReader: normalized target root arrays for " +
+			std::to_string(targetRootArrayNormalizedCount) + " targets" +
+			(sampleNames.empty() ? std::string{} : " (examples: " + sampleNames + ")"));
+	}
+
+	if (targetKeyValueArrayNormalizedCount > 0)
+	{
+		const std::string sampleNames{
+			sampleTargetNamesToString(targetKeyValueArrayNormalizedSampleNames)};
+		LOG_WARNING(
+			"CMakeFileAPIReader: normalized target key/value arrays for " +
+			std::to_string(targetKeyValueArrayNormalizedCount) + " targets" +
+			(sampleNames.empty() ? std::string{} : " (examples: " + sampleNames + ")"));
 	}
 
 	LOG_INFO(

@@ -4,18 +4,23 @@
 #include <unordered_map>
 
 #include <QApplication>
+#include <QClipboard>
+#include <QDesktopServices>
+#include <QFileInfo>
 #include <QHBoxLayout>
 #include <QHeaderView>
 #include <QItemSelectionModel>
 #include <QLabel>
 #include <QLineEdit>
 #include <QPlainTextEdit>
+#include <QPushButton>
 #include <QProgressBar>
 #include <QStandardItem>
 #include <QStandardItemModel>
 #include <QSplitter>
 #include <QTabWidget>
 #include <QTreeView>
+#include <QUrl>
 #include <QVBoxLayout>
 
 #include "QtJsonTreeModel.h"
@@ -26,6 +31,50 @@ namespace
 
 constexpr std::size_t MAX_AUTO_EXPANDED_MATCHES{2000};
 constexpr int TARGET_DETAILS_ROLE{Qt::UserRole + 100};
+constexpr int TARGET_PATH_ROLE{Qt::UserRole + 101};
+constexpr std::size_t DETAIL_LIST_PREVIEW_LIMIT{12};
+
+void appendStringListPreview(
+	QStringList& lines,
+	const QString& title,
+	const std::vector<std::string>& values,
+	const std::size_t maxEntries = DETAIL_LIST_PREVIEW_LIMIT)
+{
+	if (values.empty())
+		return;
+
+	lines.push_back(title + QStringLiteral(":"));
+	const std::size_t shownCount{std::min(values.size(), maxEntries)};
+	for (std::size_t i{0}; i < shownCount; ++i)
+		lines.push_back(QStringLiteral("  - ") + QString::fromStdString(values[i]));
+
+	if (values.size() <= shownCount)
+		return;
+	lines.push_back(
+		QStringLiteral("  ... (%1 more)")
+			.arg(static_cast<qlonglong>(values.size() - shownCount)));
+}
+
+void appendPathListPreview(
+	QStringList& lines,
+	const QString& title,
+	const std::vector<FilePath>& values,
+	const std::size_t maxEntries = DETAIL_LIST_PREVIEW_LIMIT)
+{
+	if (values.empty())
+		return;
+
+	lines.push_back(title + QStringLiteral(":"));
+	const std::size_t shownCount{std::min(values.size(), maxEntries)};
+	for (std::size_t i{0}; i < shownCount; ++i)
+		lines.push_back(QStringLiteral("  - ") + QString::fromStdString(values[i].str()));
+
+	if (values.size() <= shownCount)
+		return;
+	lines.push_back(
+		QStringLiteral("  ... (%1 more)")
+			.arg(static_cast<qlonglong>(values.size() - shownCount)));
+}
 
 QString targetKindToString(const BuildTargetKind kind)
 {
@@ -81,8 +130,13 @@ QtBuildJsonBrowser::QtBuildJsonBrowser(QWidget* parent)
 	, m_searchProgressBar{new QProgressBar(this)}
 	, m_detailsView{new QPlainTextEdit(this)}
 	, m_targetTreeView{new QTreeView(this)}
+	, m_targetSearchEdit{new QLineEdit(this)}
+	, m_targetSearchStatusLabel{new QLabel(this)}
 	, m_targetModel{new QStandardItemModel(this)}
 	, m_targetDetailsView{new QPlainTextEdit(this)}
+	, m_targetCopyDetailsButton{new QPushButton(this)}
+	, m_targetCopyPathButton{new QPushButton(this)}
+	, m_targetOpenPathButton{new QPushButton(this)}
 {
 	setWindowFlags(
 		Qt::Window |
@@ -129,9 +183,20 @@ QtBuildJsonBrowser::QtBuildJsonBrowser(QWidget* parent)
 	m_targetTreeView->header()->setSectionResizeMode(0, QHeaderView::ResizeToContents);
 	m_targetTreeView->header()->setSectionResizeMode(1, QHeaderView::ResizeToContents);
 	m_targetTreeView->header()->setSectionResizeMode(2, QHeaderView::Stretch);
+	m_targetSearchEdit->setClearButtonEnabled(true);
+	m_targetSearchEdit->setPlaceholderText(
+		QStringLiteral("Filter targets/files/dependencies..."));
+	m_targetSearchStatusLabel->setText(QStringLiteral("Showing all targets."));
+	m_targetSearchStatusLabel->setMinimumWidth(180);
 
 	m_targetDetailsView->setReadOnly(true);
 	m_targetDetailsView->setPlaceholderText(QStringLiteral("Select a target or file to inspect details."));
+	m_targetCopyDetailsButton->setText(QStringLiteral("Copy Details"));
+	m_targetCopyPathButton->setText(QStringLiteral("Copy Path"));
+	m_targetOpenPathButton->setText(QStringLiteral("Open Path"));
+	m_targetCopyDetailsButton->setEnabled(false);
+	m_targetCopyPathButton->setEnabled(false);
+	m_targetOpenPathButton->setEnabled(false);
 
 	auto* splitter{new QSplitter(Qt::Vertical, this)};
 	splitter->addWidget(m_treeView);
@@ -152,15 +217,35 @@ QtBuildJsonBrowser::QtBuildJsonBrowser(QWidget* parent)
 	jsonTabLayout->addWidget(splitter);
 	jsonTab->setLayout(jsonTabLayout);
 
+	auto* targetSearchLayout{new QHBoxLayout()};
+	targetSearchLayout->setContentsMargins(0, 0, 0, 0);
+	targetSearchLayout->addWidget(m_targetSearchEdit, 1);
+	targetSearchLayout->addWidget(m_targetSearchStatusLabel);
+
+	auto* targetActionsLayout{new QHBoxLayout()};
+	targetActionsLayout->setContentsMargins(0, 0, 0, 0);
+	targetActionsLayout->addWidget(m_targetCopyDetailsButton);
+	targetActionsLayout->addWidget(m_targetCopyPathButton);
+	targetActionsLayout->addWidget(m_targetOpenPathButton);
+	targetActionsLayout->addStretch(1);
+
+	auto* targetDetailsPanel{new QWidget(this)};
+	auto* targetDetailsPanelLayout{new QVBoxLayout()};
+	targetDetailsPanelLayout->setContentsMargins(0, 0, 0, 0);
+	targetDetailsPanelLayout->addLayout(targetActionsLayout);
+	targetDetailsPanelLayout->addWidget(m_targetDetailsView);
+	targetDetailsPanel->setLayout(targetDetailsPanelLayout);
+
 	auto* targetSplitter{new QSplitter(Qt::Vertical, this)};
 	targetSplitter->addWidget(m_targetTreeView);
-	targetSplitter->addWidget(m_targetDetailsView);
+	targetSplitter->addWidget(targetDetailsPanel);
 	targetSplitter->setStretchFactor(0, 4);
 	targetSplitter->setStretchFactor(1, 1);
 
 	auto* targetTab{new QWidget(this)};
 	auto* targetTabLayout{new QVBoxLayout()};
 	targetTabLayout->setContentsMargins(0, 0, 0, 0);
+	targetTabLayout->addLayout(targetSearchLayout);
 	targetTabLayout->addWidget(targetSplitter);
 	targetTab->setLayout(targetTabLayout);
 
@@ -200,6 +285,56 @@ QtBuildJsonBrowser::QtBuildJsonBrowser(QWidget* parent)
 		[this](const QModelIndex& current, const QModelIndex&  /*previous*/)
 		{
 			m_targetDetailsView->setPlainText(formatTargetSelectionDetails(current));
+			updateTargetActionButtons(current);
+		});
+
+	connect(
+		m_targetSearchEdit,
+		&QLineEdit::textChanged,
+		this,
+		[this](const QString& text)
+		{
+			applyTargetFilter(text);
+		});
+
+	connect(
+		m_targetCopyDetailsButton,
+		&QPushButton::clicked,
+		this,
+		[this]()
+		{
+			const QString details{m_targetDetailsView->toPlainText()};
+			if (details.isEmpty())
+				return;
+			QApplication::clipboard()->setText(details);
+		});
+
+	connect(
+		m_targetCopyPathButton,
+		&QPushButton::clicked,
+		this,
+		[this]()
+		{
+			const QString path{currentTargetPath()};
+			if (path.isEmpty())
+				return;
+			QApplication::clipboard()->setText(path);
+		});
+
+	connect(
+		m_targetOpenPathButton,
+		&QPushButton::clicked,
+		this,
+		[this]()
+		{
+			const QString path{currentTargetPath()};
+			if (path.isEmpty())
+				return;
+
+			const QFileInfo fileInfo{path};
+			if (!fileInfo.exists())
+				return;
+			QDesktopServices::openUrl(QUrl::fromLocalFile(fileInfo.absoluteFilePath()));
 		});
 
 	connect(
@@ -338,15 +473,121 @@ QString QtBuildJsonBrowser::formatTargetSelectionDetails(const QModelIndex& inde
 	return lines.join(QStringLiteral("\n"));
 }
 
+QString QtBuildJsonBrowser::currentTargetPath() const
+{
+	const QModelIndex currentIndex{m_targetTreeView->currentIndex()};
+	if (!currentIndex.isValid())
+		return {};
+
+	const QModelIndex keyIndex{currentIndex.siblingAtColumn(0)};
+	return m_targetModel->data(keyIndex, TARGET_PATH_ROLE).toString();
+}
+
+void QtBuildJsonBrowser::updateTargetActionButtons(const QModelIndex& index)
+{
+	const bool hasDetails{index.isValid() && !m_targetDetailsView->toPlainText().isEmpty()};
+	m_targetCopyDetailsButton->setEnabled(hasDetails);
+
+	const QString path{index.isValid()
+		? m_targetModel->data(index.siblingAtColumn(0), TARGET_PATH_ROLE).toString()
+		: QString{}};
+	const bool hasPath{!path.isEmpty()};
+	m_targetCopyPathButton->setEnabled(hasPath);
+	m_targetOpenPathButton->setEnabled(hasPath && QFileInfo{path}.exists());
+}
+
+bool QtBuildJsonBrowser::targetIndexMatchesQuery(const QModelIndex& index, const QString& query) const
+{
+	if (!index.isValid())
+		return false;
+	if (query.isEmpty())
+		return true;
+
+	for (int column{0}; column < m_targetModel->columnCount(); ++column)
+	{
+		const QModelIndex columnIndex{index.siblingAtColumn(column)};
+		const QString text{m_targetModel->data(columnIndex, Qt::DisplayRole).toString()};
+		if (text.contains(query, Qt::CaseInsensitive))
+			return true;
+	}
+
+	const QString details{m_targetModel->data(index, TARGET_DETAILS_ROLE).toString()};
+	if (details.contains(query, Qt::CaseInsensitive))
+		return true;
+
+	const QString path{m_targetModel->data(index, TARGET_PATH_ROLE).toString()};
+	if (path.contains(query, Qt::CaseInsensitive))
+		return true;
+
+	return false;
+}
+
+bool QtBuildJsonBrowser::filterTargetRow(
+	const QModelIndex& parent, const int row, const QString& query)
+{
+	const QModelIndex index{m_targetModel->index(row, 0, parent)};
+
+	bool childMatches{false};
+	for (int childRow{0}; childRow < m_targetModel->rowCount(index); ++childRow)
+		if (filterTargetRow(index, childRow, query))
+			childMatches = true;
+
+	const bool selfMatches{targetIndexMatchesQuery(index, query)};
+	const bool isVisible{query.isEmpty() || selfMatches || childMatches};
+	m_targetTreeView->setRowHidden(row, parent, !isVisible);
+	if (!query.isEmpty() && childMatches)
+		m_targetTreeView->setExpanded(index, true);
+	return isVisible;
+}
+
+void QtBuildJsonBrowser::applyTargetFilter(const QString& text)
+{
+	const QString query{text.trimmed()};
+	const int targetCount{m_targetModel->rowCount()};
+
+	int visibleTargetCount{0};
+	for (int row{0}; row < targetCount; ++row)
+		if (filterTargetRow({}, row, query))
+			++visibleTargetCount;
+
+	if (targetCount == 0)
+	{
+		m_targetSearchStatusLabel->setText(QStringLiteral("No targets."));
+		return;
+	}
+	if (query.isEmpty())
+	{
+		m_targetSearchStatusLabel->setText(
+			QStringLiteral("Showing %1 targets.").arg(targetCount));
+		return;
+	}
+	if (visibleTargetCount == 0)
+	{
+		m_targetSearchStatusLabel->setText(
+			QStringLiteral("No matches for \"%1\".").arg(query));
+		return;
+	}
+
+	m_targetSearchStatusLabel->setText(
+		QStringLiteral("Filter \"%1\": %2 / %3 targets")
+			.arg(query)
+			.arg(visibleTargetCount)
+			.arg(targetCount));
+}
+
 void QtBuildJsonBrowser::populateTargetTree(const std::optional<BuildModelSnapshot>& snapshot)
 {
 	m_targetModel->clear();
 	m_targetModel->setHorizontalHeaderLabels(
 		{QStringLiteral("Target / File"), QStringLiteral("Kind"), QStringLiteral("Info")});
 	m_targetDetailsView->clear();
+	updateTargetActionButtons({});
 
 	if (!snapshot.has_value())
+	{
+		m_targetSearchStatusLabel->setText(QStringLiteral("No targets."));
 		return;
+	}
 
 	std::unordered_map<std::string, std::vector<const BuildFileSnapshot*>> filesByTarget{};
 	for (const auto& file : snapshot->files)
@@ -383,10 +624,14 @@ void QtBuildJsonBrowser::populateTargetTree(const std::optional<BuildModelSnapsh
 		targetDetails.push_back(
 			QStringLiteral("Dependency Count: ") +
 			QString::number(static_cast<qlonglong>(target->dependencies.size())));
+		appendStringListPreview(targetDetails, QStringLiteral("Dependencies"), target->dependencies);
 		if (!target->sourceDir.empty())
 			targetDetails.push_back(
 				QStringLiteral("Source Dir: ") + QString::fromStdString(target->sourceDir.str()));
 		targetNameItem->setData(targetDetails.join(QStringLiteral("\n")), TARGET_DETAILS_ROLE);
+		if (!target->sourceDir.empty())
+			targetNameItem->setData(
+				QString::fromStdString(target->sourceDir.str()), TARGET_PATH_ROLE);
 
 		QList<QStandardItem*> targetRow{};
 		targetRow << targetNameItem << targetKindItem << targetInfoItem;
@@ -453,6 +698,9 @@ void QtBuildJsonBrowser::populateTargetTree(const std::optional<BuildModelSnapsh
 					dependencyDetails.push_back(QStringLiteral("Kind: external or filtered target"));
 				dependencyNameItem->setData(
 					dependencyDetails.join(QStringLiteral("\n")), TARGET_DETAILS_ROLE);
+				if (dependencyTarget && !dependencyTarget->sourceDir.empty())
+					dependencyNameItem->setData(
+						QString::fromStdString(dependencyTarget->sourceDir.str()), TARGET_PATH_ROLE);
 
 				QList<QStandardItem*> dependencyRow{};
 				dependencyRow << dependencyNameItem << dependencyKindItem << dependencyInfoItem;
@@ -523,14 +771,36 @@ void QtBuildJsonBrowser::populateTargetTree(const std::optional<BuildModelSnapsh
 				fileDetails.push_back(
 					QStringLiteral("Includes: ") +
 					QString::number(static_cast<qlonglong>(compileGroup.includes.size())));
+				appendPathListPreview(
+					fileDetails, QStringLiteral("Include Paths"), compileGroup.includes);
+				fileDetails.push_back(
+					QStringLiteral("System Includes: ") +
+					QString::number(static_cast<qlonglong>(compileGroup.systemIncludes.size())));
+				appendPathListPreview(
+					fileDetails,
+					QStringLiteral("System Include Paths"),
+					compileGroup.systemIncludes);
+				fileDetails.push_back(
+					QStringLiteral("Framework Search Paths: ") +
+					QString::number(static_cast<qlonglong>(compileGroup.frameworkSearchPaths.size())));
+				appendPathListPreview(
+					fileDetails,
+					QStringLiteral("Framework Search Paths"),
+					compileGroup.frameworkSearchPaths);
 				fileDetails.push_back(
 					QStringLiteral("Defines: ") +
 					QString::number(static_cast<qlonglong>(compileGroup.defines.size())));
+				appendStringListPreview(
+					fileDetails, QStringLiteral("Definitions"), compileGroup.defines);
 				fileDetails.push_back(
 					QStringLiteral("Flags: ") +
 					QString::number(static_cast<qlonglong>(compileGroup.flags.size())));
+				appendStringListPreview(
+					fileDetails, QStringLiteral("Flags Preview"), compileGroup.flags);
 			}
 			fileNameItem->setData(fileDetails.join(QStringLiteral("\n")), TARGET_DETAILS_ROLE);
+			fileNameItem->setData(
+				QString::fromStdString(file->path.str()), TARGET_PATH_ROLE);
 
 			QList<QStandardItem*> fileRow{};
 			fileRow << fileNameItem << fileKindItem << fileInfoItem;
@@ -539,6 +809,7 @@ void QtBuildJsonBrowser::populateTargetTree(const std::optional<BuildModelSnapsh
 	}
 
 	m_targetTreeView->collapseAll();
+	applyTargetFilter(m_targetSearchEdit->text());
 }
 
 void QtBuildJsonBrowser::applySearch(const QString& text)
