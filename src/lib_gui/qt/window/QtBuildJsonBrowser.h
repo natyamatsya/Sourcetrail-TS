@@ -33,6 +33,8 @@ private:
 	QString formatSelectionDetails(const QModelIndex& index) const;
 	QString formatTargetSelectionDetails(const QModelIndex& index) const;
 	QString currentTargetPath() const;
+	QModelIndex findTopLevelTargetIndexByName(const QString& targetName) const;
+	bool selectTopLevelTargetForDependency(const QModelIndex& index);
 	void populateTargetTree(const std::optional<BuildModelSnapshot>& snapshot);
 	void applySearch(const QString& text);
 	void applyTargetFilter(const QString& text);
@@ -65,6 +67,7 @@ private:
 	QPushButton* m_targetCopyDetailsButton;
 	QPushButton* m_targetCopyPathButton;
 	QPushButton* m_targetOpenPathButton;
+	bool m_syncingTargetSelection{false};
 };
 
 #endif	  // QT_BUILD_JSON_BROWSER_H

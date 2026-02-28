@@ -32,6 +32,7 @@ namespace
 constexpr std::size_t MAX_AUTO_EXPANDED_MATCHES{2000};
 constexpr int TARGET_DETAILS_ROLE{Qt::UserRole + 100};
 constexpr int TARGET_PATH_ROLE{Qt::UserRole + 101};
+constexpr int TARGET_LINK_TARGET_NAME_ROLE{Qt::UserRole + 102};
 constexpr std::size_t DETAIL_LIST_PREVIEW_LIMIT{12};
 
 void appendStringListPreview(
@@ -284,6 +285,8 @@ QtBuildJsonBrowser::QtBuildJsonBrowser(QWidget* parent)
 		this,
 		[this](const QModelIndex& current, const QModelIndex&  /*previous*/)
 		{
+			if (selectTopLevelTargetForDependency(current))
+				return;
 			m_targetDetailsView->setPlainText(formatTargetSelectionDetails(current));
 			updateTargetActionButtons(current);
 		});
@@ -483,6 +486,48 @@ QString QtBuildJsonBrowser::currentTargetPath() const
 	return m_targetModel->data(keyIndex, TARGET_PATH_ROLE).toString();
 }
 
+QModelIndex QtBuildJsonBrowser::findTopLevelTargetIndexByName(const QString& targetName) const
+{
+	if (targetName.isEmpty())
+		return {};
+
+	for (int row{0}; row < m_targetModel->rowCount(); ++row)
+	{
+		const QModelIndex candidate{m_targetModel->index(row, 0)};
+		if (m_targetModel->data(candidate, Qt::DisplayRole).toString() == targetName)
+			return candidate;
+	}
+
+	return {};
+}
+
+bool QtBuildJsonBrowser::selectTopLevelTargetForDependency(const QModelIndex& index)
+{
+	if (!index.isValid())
+		return false;
+	if (m_syncingTargetSelection)
+		return false;
+
+	const QModelIndex keyIndex{index.siblingAtColumn(0)};
+	const QString linkedTargetName{
+		m_targetModel->data(keyIndex, TARGET_LINK_TARGET_NAME_ROLE).toString()};
+	if (linkedTargetName.isEmpty())
+		return false;
+
+	const QModelIndex linkedTargetIndex{findTopLevelTargetIndexByName(linkedTargetName)};
+	if (!linkedTargetIndex.isValid())
+		return false;
+	if (linkedTargetIndex == keyIndex)
+		return false;
+
+	m_syncingTargetSelection = true;
+	m_targetTreeView->expand(linkedTargetIndex);
+	m_targetTreeView->setCurrentIndex(linkedTargetIndex);
+	m_targetTreeView->scrollTo(linkedTargetIndex, QAbstractItemView::PositionAtCenter);
+	m_syncingTargetSelection = false;
+	return true;
+}
+
 void QtBuildJsonBrowser::updateTargetActionButtons(const QModelIndex& index)
 {
 	const bool hasDetails{index.isValid() && !m_targetDetailsView->toPlainText().isEmpty()};
@@ -517,6 +562,11 @@ bool QtBuildJsonBrowser::targetIndexMatchesQuery(const QModelIndex& index, const
 
 	const QString path{m_targetModel->data(index, TARGET_PATH_ROLE).toString()};
 	if (path.contains(query, Qt::CaseInsensitive))
+		return true;
+
+	const QString linkedTargetName{
+		m_targetModel->data(index, TARGET_LINK_TARGET_NAME_ROLE).toString()};
+	if (linkedTargetName.contains(query, Qt::CaseInsensitive))
 		return true;
 
 	return false;
@@ -689,6 +739,7 @@ void QtBuildJsonBrowser::populateTargetTree(const std::optional<BuildModelSnapsh
 					dependencyDetails.push_back(
 						QStringLiteral("File Count: ") +
 						QString::number(static_cast<qlonglong>(dependencyTarget->fileCount)));
+					dependencyDetails.push_back(QStringLiteral("Action: select row to jump to target"));
 					if (!dependencyTarget->sourceDir.empty())
 						dependencyDetails.push_back(
 							QStringLiteral("Source Dir: ") +
@@ -698,6 +749,10 @@ void QtBuildJsonBrowser::populateTargetTree(const std::optional<BuildModelSnapsh
 					dependencyDetails.push_back(QStringLiteral("Kind: external or filtered target"));
 				dependencyNameItem->setData(
 					dependencyDetails.join(QStringLiteral("\n")), TARGET_DETAILS_ROLE);
+				if (dependencyTarget)
+					dependencyNameItem->setData(
+						QString::fromStdString(dependencyTarget->name),
+						TARGET_LINK_TARGET_NAME_ROLE);
 				if (dependencyTarget && !dependencyTarget->sourceDir.empty())
 					dependencyNameItem->setData(
 						QString::fromStdString(dependencyTarget->sourceDir.str()), TARGET_PATH_ROLE);
