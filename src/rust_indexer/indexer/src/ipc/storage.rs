@@ -1,9 +1,10 @@
 // StorageChannel: pushes IntermediateStorage results back to the app.
 //
 // SHM name: iist_ipc_<processId>_<uuid>  (C++: IpcInterprocessIntermediateStorageManager)
-// Wire format: [u32 count][u32 size0][FlatBuffers bytes0][u32 size1][FlatBuffers bytes1]...
-// This matches the C++ implementation exactly.
-// Size: 3 MiB (matches C++ constant of 3 * 1048576)
+// Wire format:
+//   [u64 needed_capacity][u32 count][u32 size0][FlatBuffers bytes0]...
+// Header layout and queue encoding mirror the current C++ implementation.
+// Size: 16 MiB (matches C++ owner segment size)
 
 use std::io;
 
@@ -17,7 +18,10 @@ use crate::schemas::intermediate_storage::sourcetrail::ipc::{
 };
 use flatbuffers::FlatBufferBuilder;
 
-const SHM_SIZE: usize = 3 * 1024 * 1024; // 3 MiB, matches C++
+const SHM_SIZE: usize = 16 * 1024 * 1024; // 16 MiB, matches C++
+const CAP_FIELD_SIZE: usize = std::mem::size_of::<u64>();
+const COUNT_FIELD_SIZE: usize = std::mem::size_of::<u32>();
+const HEADER_SIZE: usize = CAP_FIELD_SIZE + COUNT_FIELD_SIZE;
 
 pub struct StorageChannel {
     shm: IpcShm,
@@ -34,58 +38,144 @@ impl StorageChannel {
     /// How many IntermediateStorage entries are currently queued.
     /// The C++ app uses this for back-pressure (waits when count >= 2).
     pub fn storage_count(&self) -> io::Result<usize> {
-        self.shm.read_locked(|data| {
-            if data.len() < 4 {
-                return 0;
-            }
-            let count = u32::from_ne_bytes([data[0], data[1], data[2], data[3]]);
-            count as usize
-        })
+        self.shm.read_locked(|data| read_count(data) as usize)
     }
 
     /// Append one `IntermediateStorage` to the queue in shared memory.
-    /// Wire format: [u32 count][u32 size0][bytes0]...
+    /// Wire format: [u64 needed_capacity][u32 count][u32 size0][bytes0]...
     pub fn push(&self, storage: &OwnedIntermediateStorage) -> io::Result<()> {
         let entry_bytes = serialize_one_storage(storage);
-        let entry_size = entry_bytes.len() as u32;
-
-        self.shm.read_modify_write(|data| {
-            // Read current count and existing payload.
-            let count = if data.len() >= 4 {
-                u32::from_ne_bytes([data[0], data[1], data[2], data[3]])
-            } else {
-                0
-            };
-
-            // Calculate existing payload size by walking entries.
-            let mut existing_payload_end = 4usize; // after count header
-            let mut remaining = count;
-            while remaining > 0 && existing_payload_end + 4 <= data.len() {
-                let sz = u32::from_ne_bytes([
-                    data[existing_payload_end],
-                    data[existing_payload_end + 1],
-                    data[existing_payload_end + 2],
-                    data[existing_payload_end + 3],
-                ]) as usize;
-                existing_payload_end += 4 + sz;
-                remaining -= 1;
-            }
-
-            // Build new buffer.
-            let new_count = count + 1;
-            let existing_payload_len = existing_payload_end - 4;
-            let total = 4 + existing_payload_len + 4 + entry_bytes.len();
-
-            let mut buf = Vec::with_capacity(total);
-            buf.extend_from_slice(&new_count.to_ne_bytes());
-            if existing_payload_len > 0 {
-                buf.extend_from_slice(&data[4..existing_payload_end]);
-            }
-            buf.extend_from_slice(&entry_size.to_ne_bytes());
-            buf.extend_from_slice(&entry_bytes);
-            buf
+        self.shm.read_modify_write_with_result(|data| {
+            let rewritten = append_storage_entry(data, &entry_bytes)?;
+            Ok((Some(rewritten), ()))
         })
     }
+}
+
+fn read_u64_at(data: &[u8], offset: usize) -> Option<u64> {
+    let bytes: [u8; 8] = data.get(offset..offset + CAP_FIELD_SIZE)?.try_into().ok()?;
+    Some(u64::from_ne_bytes(bytes))
+}
+
+fn read_u32_at(data: &[u8], offset: usize) -> Option<u32> {
+    let bytes: [u8; 4] = data
+        .get(offset..offset + COUNT_FIELD_SIZE)?
+        .try_into()
+        .ok()?;
+    Some(u32::from_ne_bytes(bytes))
+}
+
+fn write_u64_at(data: &mut [u8], offset: usize, value: u64) {
+    data[offset..offset + CAP_FIELD_SIZE].copy_from_slice(&value.to_ne_bytes());
+}
+
+fn write_u32_at(data: &mut [u8], offset: usize, value: u32) {
+    data[offset..offset + COUNT_FIELD_SIZE].copy_from_slice(&value.to_ne_bytes());
+}
+
+fn read_count(data: &[u8]) -> u32 {
+    if data.len() < HEADER_SIZE {
+        return 0;
+    }
+    read_u32_at(data, CAP_FIELD_SIZE).unwrap_or(0)
+}
+
+fn queue_payload_end(data: &[u8], count: u32) -> io::Result<usize> {
+    let mut cursor = HEADER_SIZE;
+
+    for _ in 0..count {
+        let size = read_u32_at(data, cursor).ok_or_else(|| {
+            io::Error::new(
+                io::ErrorKind::InvalidData,
+                "invalid storage queue: truncated entry size",
+            )
+        })? as usize;
+
+        cursor = cursor.checked_add(COUNT_FIELD_SIZE).ok_or_else(|| {
+            io::Error::new(
+                io::ErrorKind::InvalidData,
+                "invalid storage queue: size overflow",
+            )
+        })?;
+
+        cursor = cursor.checked_add(size).ok_or_else(|| {
+            io::Error::new(
+                io::ErrorKind::InvalidData,
+                "invalid storage queue: size overflow",
+            )
+        })?;
+
+        if cursor > data.len() {
+            return Err(io::Error::new(
+                io::ErrorKind::InvalidData,
+                "invalid storage queue: truncated entry payload",
+            ));
+        }
+    }
+
+    Ok(cursor)
+}
+
+fn append_storage_entry(queue_bytes: &[u8], entry_bytes: &[u8]) -> io::Result<Vec<u8>> {
+    let count = read_count(queue_bytes);
+    let payload_end = queue_payload_end(queue_bytes, count)?;
+    let existing_payload_size = payload_end.saturating_sub(HEADER_SIZE);
+
+    let entry_size = u32::try_from(entry_bytes.len()).map_err(|_| {
+        io::Error::new(
+            io::ErrorKind::InvalidInput,
+            "intermediate storage payload exceeds u32 size field",
+        )
+    })?;
+
+    let new_count = count.checked_add(1).ok_or_else(|| {
+        io::Error::new(
+            io::ErrorKind::InvalidInput,
+            "storage queue count overflow while appending entry",
+        )
+    })?;
+
+    let total_size = HEADER_SIZE
+        .checked_add(existing_payload_size)
+        .and_then(|n| n.checked_add(COUNT_FIELD_SIZE))
+        .and_then(|n| n.checked_add(entry_bytes.len()))
+        .ok_or_else(|| {
+            io::Error::new(
+                io::ErrorKind::InvalidInput,
+                "storage queue size overflow while appending entry",
+            )
+        })?;
+
+    if total_size > queue_bytes.len() {
+        return Err(io::Error::new(
+            io::ErrorKind::InvalidInput,
+            format!(
+                "storage queue requires {total_size} bytes, but shared memory has {} bytes",
+                queue_bytes.len()
+            ),
+        ));
+    }
+
+    let mut rewritten = vec![0u8; total_size];
+    let needed_capacity = if queue_bytes.len() < CAP_FIELD_SIZE {
+        0
+    } else {
+        read_u64_at(queue_bytes, 0).unwrap_or(0)
+    };
+    write_u64_at(&mut rewritten, 0, needed_capacity);
+    write_u32_at(&mut rewritten, CAP_FIELD_SIZE, new_count);
+
+    if existing_payload_size > 0 {
+        rewritten[HEADER_SIZE..HEADER_SIZE + existing_payload_size]
+            .copy_from_slice(&queue_bytes[HEADER_SIZE..payload_end]);
+    }
+
+    let size_offset = HEADER_SIZE + existing_payload_size;
+    write_u32_at(&mut rewritten, size_offset, entry_size);
+    let payload_offset = size_offset + COUNT_FIELD_SIZE;
+    rewritten[payload_offset..payload_offset + entry_bytes.len()].copy_from_slice(entry_bytes);
+
+    Ok(rewritten)
 }
 
 // ---------------------------------------------------------------------------
@@ -509,4 +599,66 @@ fn build_storage_inline<'bldr>(
             errors: Some(errs_v),
         },
     )
+}
+
+#[cfg(test)]
+mod queue_tests {
+    use super::*;
+
+    #[test]
+    fn append_storage_entry_writes_cpp_compatible_header() {
+        let queue = vec![0u8; 256];
+        let entry = vec![1u8, 2u8, 3u8];
+
+        let rewritten = append_storage_entry(&queue, &entry).unwrap();
+
+        assert_eq!(
+            rewritten.len(),
+            HEADER_SIZE + COUNT_FIELD_SIZE + entry.len()
+        );
+        assert_eq!(read_u64_at(&rewritten, 0), Some(0));
+        assert_eq!(read_count(&rewritten), 1);
+        assert_eq!(
+            read_u32_at(&rewritten, HEADER_SIZE),
+            Some(entry.len() as u32)
+        );
+        assert_eq!(
+            &rewritten
+                [HEADER_SIZE + COUNT_FIELD_SIZE..HEADER_SIZE + COUNT_FIELD_SIZE + entry.len()],
+            entry.as_slice()
+        );
+    }
+
+    #[test]
+    fn append_storage_entry_preserves_existing_payload_and_increments_count() {
+        let first = append_storage_entry(&vec![0u8; 256], &[9u8, 8u8]).unwrap();
+
+        let mut queue = vec![0u8; 256];
+        queue[..first.len()].copy_from_slice(&first);
+
+        let rewritten = append_storage_entry(&queue, &[7u8]).unwrap();
+
+        assert_eq!(read_count(&rewritten), 2);
+
+        let first_size = read_u32_at(&rewritten, HEADER_SIZE).unwrap() as usize;
+        assert_eq!(first_size, 2);
+        assert_eq!(
+            &rewritten[HEADER_SIZE + COUNT_FIELD_SIZE..HEADER_SIZE + COUNT_FIELD_SIZE + first_size],
+            &[9u8, 8u8]
+        );
+
+        let second_size_offset = HEADER_SIZE + COUNT_FIELD_SIZE + first_size;
+        assert_eq!(read_u32_at(&rewritten, second_size_offset), Some(1));
+    }
+
+    #[test]
+    fn append_storage_entry_rejects_truncated_existing_payload() {
+        let mut invalid = vec![0u8; HEADER_SIZE + COUNT_FIELD_SIZE + 1];
+        write_u32_at(&mut invalid, CAP_FIELD_SIZE, 1);
+        write_u32_at(&mut invalid, HEADER_SIZE, 4);
+
+        let err = append_storage_entry(&invalid, &[1u8]).unwrap_err();
+
+        assert_eq!(err.kind(), io::ErrorKind::InvalidData);
+    }
 }

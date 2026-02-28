@@ -2,7 +2,7 @@
 // and writes back the shortened queue after each pop.
 //
 // SHM name: icmd_ipc_<uuid>  (C++: IpcInterprocessIndexerCommandManager)
-// Size: 1 MiB (matches C++ constant)
+// Size: 64 MiB (matches C++ constant)
 
 use std::io;
 
@@ -14,7 +14,7 @@ use crate::schemas::indexer_command::sourcetrail::ipc::{
     IndexerCommandQueueArgs, IndexerCommandType,
 };
 
-const SHM_SIZE: usize = 1024 * 1024; // 1 MiB, matches C++
+const SHM_SIZE: usize = 64 * 1024 * 1024; // 64 MiB, matches C++
 
 pub struct CommandChannel {
     shm: IpcShm,
