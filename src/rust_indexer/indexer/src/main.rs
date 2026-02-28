@@ -11,6 +11,7 @@
 
 use std::thread;
 use std::time::Duration;
+use std::{collections::HashMap, path::Path};
 
 use sourcetrail_rust_indexer_lib::ipc::{CommandChannel, StatusChannel, StorageChannel};
 use sourcetrail_rust_indexer_lib::parser;
@@ -54,6 +55,13 @@ fn main() {
             std::process::exit(1);
         }
     };
+
+    // Many Rust commands can point to the same crate root. Cache the indexed
+    // crate result and reuse it to avoid repeated rust-analyzer workspace loads.
+    let mut storage_cache: HashMap<
+        String,
+        sourcetrail_rust_indexer_lib::ipc::storage::OwnedIntermediateStorage,
+    > = HashMap::new();
 
     loop {
         // Check for interrupt before doing any work.
@@ -109,7 +117,17 @@ fn main() {
 
         // Index the whole crate rooted at working_directory (contains Cargo.toml).
         // index_crate() loads the full HIR via rust-analyzer and covers all source files.
-        let storage = parser::index_crate(std::path::Path::new(&cmd.working_directory));
+        let storage = if let Some(cached) = storage_cache.get(&cmd.working_directory) {
+            log::info!(
+                "reusing cached crate index for \"{}\"",
+                cmd.working_directory
+            );
+            cached.clone()
+        } else {
+            let indexed = parser::index_crate(Path::new(&cmd.working_directory));
+            storage_cache.insert(cmd.working_directory.clone(), indexed.clone());
+            indexed
+        };
 
         log::info!(
             "indexed \"{}\" — {} nodes, {} edges, {} errors",

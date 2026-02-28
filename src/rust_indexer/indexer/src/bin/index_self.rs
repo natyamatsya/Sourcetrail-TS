@@ -29,17 +29,17 @@ fn main() {
     println!("\nNodes (first 60):");
     for node in storage.nodes.iter().take(60) {
         let kind_name = match node.type_ {
-            8      => "mod",
-            64     => "struct",
-            256    => "trait",
-            1024   => "const/static",
-            4096   => "fn",
-            8192   => "method",
-            16384  => "enum",
-            65536  => "type",
+            8 => "mod",
+            64 => "struct",
+            256 => "trait",
+            1024 => "const/static",
+            4096 => "fn",
+            8192 => "method",
+            16384 => "enum",
+            65536 => "type",
             131072 => "macro",
             262144 => "union",
-            _      => "?",
+            _ => "?",
         };
         println!("  [{kind_name:12}] {}", node.serialized_name);
     }

@@ -24,8 +24,7 @@ public:
 		size_t processCount,
 		std::shared_ptr<StorageProvider> storageProvider,
 		std::shared_ptr<DialogView> dialogView,
-		const std::string& appUUID,
-		bool multiProcessIndexing);
+		const std::string& appUUID);
 
 protected:
 	void doEnter(std::shared_ptr<Blackboard> blackboard) override;
@@ -37,7 +36,6 @@ protected:
 	void handleMessage(MessageIndexingInterrupted* message) override;
 	
 	void runIndexerProcess(ProcessId processId, const std::string& logFilePath);
-	void runIndexerThread(ProcessId processId);
 #if BUILD_RUST_LANGUAGE_PACKAGE
 	void runRustIndexerProcess(ProcessId processId, const std::string& logFilePath);
 #endif
@@ -51,7 +49,6 @@ protected:
 	std::shared_ptr<StorageProvider> m_storageProvider;
 	std::shared_ptr<DialogView> m_dialogView;
 	const std::string m_appUUID;
-	bool m_multiProcessIndexing;
 
 	IndexingStatusManagerImpl m_interprocessIndexingStatusManager;
 	bool m_indexerCommandQueueStopped = false;

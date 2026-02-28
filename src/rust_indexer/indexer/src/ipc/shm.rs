@@ -111,6 +111,49 @@ impl IpcShm {
         self.mtx.unlock()?;
         Ok(())
     }
+
+    /// Read current SHM bytes, let `f` decide whether to write replacement bytes,
+    /// and return a caller-defined result — all under one mutex lock.
+    pub fn read_modify_write_with_result<F, R>(&self, f: F) -> io::Result<R>
+    where
+        F: FnOnce(&[u8]) -> io::Result<(Option<Vec<u8>>, R)>,
+    {
+        self.mtx.lock()?;
+
+        let outcome = {
+            let data =
+                unsafe { std::slice::from_raw_parts(self.shm.as_ptr(), self.shm.user_size()) };
+            f(data)
+        };
+
+        let (new_buf, result) = match outcome {
+            Ok(v) => v,
+            Err(err) => {
+                self.mtx.unlock()?;
+                return Err(err);
+            }
+        };
+
+        if let Some(buf) = new_buf {
+            if buf.len() > self.shm.user_size() {
+                self.mtx.unlock()?;
+                return Err(io::Error::new(
+                    io::ErrorKind::InvalidInput,
+                    format!(
+                        "IpcShm::read_modify_write_with_result: {} bytes > shm size {}",
+                        buf.len(),
+                        self.shm.user_size()
+                    ),
+                ));
+            }
+            unsafe {
+                std::ptr::copy_nonoverlapping(buf.as_ptr(), self.shm.as_mut_ptr(), buf.len());
+            }
+        }
+
+        self.mtx.unlock()?;
+        Ok(result)
+    }
 }
 
 /// Returns true when the raw SHM bytes represent an "empty" slot.

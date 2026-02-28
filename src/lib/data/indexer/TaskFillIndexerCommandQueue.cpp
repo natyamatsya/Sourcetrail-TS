@@ -2,9 +2,14 @@
 
 #include "Blackboard.h"
 #include "FileSystem.h"
+#include "IndexerCommand.h"
 #include "IndexerCommandProvider.h"
 #include "logging.h"
 #include "utilityFile.h"
+
+#if BUILD_RUST_LANGUAGE_PACKAGE
+#include "IndexerCommandRust.h"
+#endif
 
 TaskFillIndexerCommandsQueue::TaskFillIndexerCommandsQueue(
 	const std::string& appUUID,
@@ -20,6 +25,12 @@ void TaskFillIndexerCommandsQueue::doEnter(std::shared_ptr<Blackboard> blackboar
 {
 	{
 		std::lock_guard<std::mutex> lock(m_commandsMutex);
+
+#if BUILD_RUST_LANGUAGE_PACKAGE
+		m_seenRustWorkingDirectories.clear();
+		m_skippedRustCommandCount = 0;
+#endif
+
 		for (const FilePath& filePath:
 			 utility::partitionFilePathsBySize(m_indexerCommandProvider->getAllSourceFilePaths(), 2))
 		{
@@ -27,19 +38,19 @@ void TaskFillIndexerCommandsQueue::doEnter(std::shared_ptr<Blackboard> blackboar
 		}
 	}
 
-	fillCommandQueue();
+	fillCommandQueue(blackboard);
 
 	blackboard->set<bool>("indexer_command_queue_started", true);
 }
 
-Task::TaskState TaskFillIndexerCommandsQueue::doUpdate(std::shared_ptr<Blackboard>  /*blackboard*/)
+Task::TaskState TaskFillIndexerCommandsQueue::doUpdate(std::shared_ptr<Blackboard> blackboard)
 {
 	if (m_interrupted)
 	{
 		return STATE_FAILURE;
 	}
 
-	if (!fillCommandQueue())
+	if (!fillCommandQueue(blackboard))
 	{
 		std::lock_guard<std::mutex> lock(m_commandsMutex);
 
@@ -56,12 +67,24 @@ Task::TaskState TaskFillIndexerCommandsQueue::doUpdate(std::shared_ptr<Blackboar
 
 void TaskFillIndexerCommandsQueue::doExit(std::shared_ptr<Blackboard> blackboard)
 {
+#if BUILD_RUST_LANGUAGE_PACKAGE
+	if (m_skippedRustCommandCount)
+		LOG_INFO_STREAM(
+			<< "Skipped " << m_skippedRustCommandCount
+			<< " duplicate Rust crate commands in this indexing run.");
+#endif
+
 	blackboard->set<bool>("indexer_command_queue_stopped", true);
 }
 
 void TaskFillIndexerCommandsQueue::doReset(std::shared_ptr<Blackboard>  /*blackboard*/)
 {
 	m_interrupted = false;
+
+#if BUILD_RUST_LANGUAGE_PACKAGE
+	m_seenRustWorkingDirectories.clear();
+	m_skippedRustCommandCount = 0;
+#endif
 }
 
 void TaskFillIndexerCommandsQueue::terminate()
@@ -92,7 +115,7 @@ void TaskFillIndexerCommandsQueue::handleMessage(MessageIndexingInterrupted*  /*
 		".");
 }
 
-bool TaskFillIndexerCommandsQueue::fillCommandQueue()
+bool TaskFillIndexerCommandsQueue::fillCommandQueue(std::shared_ptr<Blackboard> blackboard)
 {
 	size_t refillAmount = m_maximumQueueSize - m_indexerCommandManager.indexerCommandCount();
 	if (!refillAmount)
@@ -102,26 +125,64 @@ bool TaskFillIndexerCommandsQueue::fillCommandQueue()
 
 	std::lock_guard<std::mutex> lock(m_commandsMutex);
 	std::vector<std::shared_ptr<IndexerCommand>> commands;
+	size_t skippedRustCommands = 0;
 
 	while (!m_indexerCommandProvider->empty() && commands.size() < refillAmount)
 	{
+		std::shared_ptr<IndexerCommand> command;
 		if (!m_filePathQueue.empty())
 		{
-			commands.push_back(
-				m_indexerCommandProvider->consumeCommandForSourceFilePath(m_filePathQueue.front()));
+			command = m_indexerCommandProvider->consumeCommandForSourceFilePath(m_filePathQueue.front());
 			m_filePathQueue.pop();
 		}
 		else
 		{
-			commands.push_back(m_indexerCommandProvider->consumeCommand());
+			command = m_indexerCommandProvider->consumeCommand();
 		}
+
+		if (!command)
+			continue;
+
+#if BUILD_RUST_LANGUAGE_PACKAGE
+		if (command->getIndexerCommandType() == INDEXER_COMMAND_RUST)
+		{
+			const auto* rustCommand = dynamic_cast<const IndexerCommandRust*>(command.get());
+			if (rustCommand)
+			{
+				const std::string workingDirectory = rustCommand->getWorkingDirectory().str();
+				if (!m_seenRustWorkingDirectories.insert(workingDirectory).second)
+				{
+					skippedRustCommands++;
+					continue;
+				}
+			}
+		}
+#endif
+
+		commands.push_back(command);
 	}
 
-	if (commands.size())
+	if (skippedRustCommands)
 	{
-		m_indexerCommandManager.pushIndexerCommands(commands);
-		return true;
+#if BUILD_RUST_LANGUAGE_PACKAGE
+		m_skippedRustCommandCount += skippedRustCommands;
+#endif
+		if (blackboard)
+			blackboard->update<int>(
+				"source_file_count",
+				[n = static_cast<int>(skippedRustCommands)](int count)
+				{
+					const int newCount = count - n;
+					return newCount >= 0 ? newCount : 0;
+				});
+		LOG_INFO_STREAM(
+			<< "Skipping " << skippedRustCommands
+			<< " duplicate Rust crate commands while filling queue.");
 	}
 
-	return false;
+	if (commands.empty())
+		return false;
+
+	m_indexerCommandManager.pushIndexerCommands(commands);
+	return true;
 }

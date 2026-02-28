@@ -2,6 +2,10 @@
 #define TASK_FILL_INDEXER_COMMAND_QUEUE_H
 
 #include <queue>
+#include <string>
+#include <unordered_set>
+
+#include "language_packages.h"
 
 #include "MessageIndexingInterrupted.h"
 #include "MessageListener.h"
@@ -30,7 +34,7 @@ protected:
 
 	void handleMessage(MessageIndexingInterrupted* message) override;
 
-	bool fillCommandQueue();
+	bool fillCommandQueue(std::shared_ptr<Blackboard> blackboard);
 
 private:
 	std::unique_ptr<IndexerCommandProvider> m_indexerCommandProvider;
@@ -40,6 +44,11 @@ private:
 
 	std::queue<FilePath> m_filePathQueue;
 	std::mutex m_commandsMutex;
+
+#if BUILD_RUST_LANGUAGE_PACKAGE
+	std::unordered_set<std::string> m_seenRustWorkingDirectories;
+	size_t m_skippedRustCommandCount = 0;
+#endif
 
 	bool m_interrupted = false;
 };

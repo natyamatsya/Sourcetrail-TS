@@ -5,7 +5,6 @@
 #include "Blackboard.h"
 #include "DialogView.h"
 #include "FileLogger.h"
-#include "InterprocessIndexer.h"
 #include "MessageIndexingStatus.h"
 #include "ParserClientImpl.h"
 #include "ScopedFunctor.h"
@@ -112,15 +111,12 @@ TaskBuildIndex::TaskBuildIndex(
 	size_t processCount,
 	std::shared_ptr<StorageProvider> storageProvider,
 	std::shared_ptr<DialogView> dialogView,
-	const std::string& appUUID,
-	bool multiProcessIndexing)
+	const std::string& appUUID)
 	: m_storageProvider(storageProvider)
 	, m_dialogView(dialogView)
 	, m_appUUID(appUUID)
-	, m_multiProcessIndexing(multiProcessIndexing)
 	, m_interprocessIndexingStatusManager(appUUID, ProcessId::NONE, true)
-	,
-	 m_processCount(processCount)
+	, m_processCount(processCount)
 
 {
 }
@@ -153,29 +149,19 @@ void TaskBuildIndex::doEnter(std::shared_ptr<Blackboard> blackboard)
 		const ProcessId processId = static_cast<ProcessId>(i + 1);	// 0 remains reserved for the main process
 
 		m_interprocessIntermediateStorageManagers.push_back(std::make_shared<IntermediateStorageManagerImpl>(m_appUUID, processId, true));
-
-		if (m_multiProcessIndexing)
-		{
-			m_processThreads.push_back(new std::thread(&TaskBuildIndex::runIndexerProcess, this, processId, logFilePath));
-		}
-		else
-		{
-			m_processThreads.push_back(new std::thread(&TaskBuildIndex::runIndexerThread, this, processId));
-		}
+		m_processThreads.push_back(
+			new std::thread(&TaskBuildIndex::runIndexerProcess, this, processId, logFilePath));
 	}
 
 	// Start the Rust indexer process (one instance handles all Rust-typed commands).
 	// It gets the next processId after the CXX indexers so it has its own storage channel.
 #if BUILD_RUST_LANGUAGE_PACKAGE
-	if (m_multiProcessIndexing)
-	{
-		const ProcessId rustProcessId = static_cast<ProcessId>(m_processCount + 1);
-		m_rustStorageManager = std::make_shared<IntermediateStorageManagerImpl>(
-			m_appUUID, rustProcessId, true);
-		m_runningThreadCount++;
-		m_processThreads.push_back(
-			new std::thread(&TaskBuildIndex::runRustIndexerProcess, this, rustProcessId, logFilePath));
-	}
+	const ProcessId rustProcessId = static_cast<ProcessId>(m_processCount + 1);
+	m_rustStorageManager = std::make_shared<IntermediateStorageManagerImpl>(
+		m_appUUID, rustProcessId, true);
+	m_runningThreadCount++;
+	m_processThreads.push_back(
+		new std::thread(&TaskBuildIndex::runRustIndexerProcess, this, rustProcessId, logFilePath));
 #endif
 
 	blackboard->set<bool>("indexer_threads_started", true);
@@ -480,26 +466,6 @@ void TaskBuildIndex::runRustIndexerProcess(ProcessId processId, const std::strin
 	}
 }
 #endif
-
-void TaskBuildIndex::runIndexerThread(ProcessId processId)
-{
-	do
-	{
-		InterprocessIndexer indexer(m_appUUID, processId);
-		const InterprocessIndexer::WorkResult workResult = indexer.work();
-		if (!workResult)
-			LOG_ERROR_STREAM(
-				<< "in-process indexer worker " << processId << " failed: " << workResult.error());
-		if (!m_interrupted)
-		{
-			// sleeping if interrupted may result in a crash due to objects that are already
-			// destroyed after waking up again
-			std::this_thread::sleep_for(std::chrono::milliseconds(200));
-		}
-	} while (!m_indexerCommandQueueStopped && !m_interrupted);
-
-	m_runningThreadCount--;
-}
 
 bool TaskBuildIndex::fetchIntermediateStorages(std::shared_ptr<Blackboard> blackboard)
 {

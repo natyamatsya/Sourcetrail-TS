@@ -32,78 +32,7 @@ impl CommandChannel {
     /// Returns `None` when the queue is empty or contains no Rust commands.
     pub fn pop_rust_command(&self) -> io::Result<Option<OwnedIndexerCommand>> {
         self.shm
-            .read_locked(|data| -> io::Result<Option<OwnedIndexerCommand>> {
-                if is_empty(data) {
-                    return Ok(None);
-                }
-                let queue = match root_as_indexer_command_queue(data) {
-                    Ok(q) => q,
-                    Err(_) => return Ok(None),
-                };
-                let commands = match queue.commands() {
-                    Some(v) => v,
-                    None => return Ok(None),
-                };
-                if commands.is_empty() {
-                    return Ok(None);
-                }
-                // Find the first Rust command.
-                let mut rust_idx = None;
-                for i in 0..commands.len() {
-                    if commands.get(i).type_() == IndexerCommandType::Rust {
-                        rust_idx = Some(i);
-                        break;
-                    }
-                }
-                let idx = match rust_idx {
-                    Some(i) => i,
-                    None => return Ok(None),
-                };
-                let cmd = OwnedIndexerCommand::from_fbs(commands.get(idx));
-                Ok(Some(cmd))
-            })?
-            .and_then(|opt| {
-                if opt.is_some() {
-                    // Remove the command from the queue and write back.
-                    self.remove_first_rust()?;
-                }
-                Ok(opt)
-            })
-    }
-
-    fn remove_first_rust(&self) -> io::Result<()> {
-        // Read all commands, drop the first Rust one, write back.
-        let remaining: Vec<OwnedIndexerCommand> = self.shm.read_locked(|data| {
-            if is_empty(data) {
-                return Vec::new();
-            }
-            let queue = match root_as_indexer_command_queue(data) {
-                Ok(q) => q,
-                Err(_) => return Vec::new(),
-            };
-            let commands = match queue.commands() {
-                Some(v) => v,
-                None => return Vec::new(),
-            };
-            let mut removed = false;
-            let mut out = Vec::with_capacity(commands.len());
-            for i in 0..commands.len() {
-                let c = commands.get(i);
-                if !removed && c.type_() == IndexerCommandType::Rust {
-                    removed = true;
-                    continue;
-                }
-                out.push(OwnedIndexerCommand::from_fbs(c));
-            }
-            out
-        })?;
-
-        if remaining.is_empty() {
-            self.shm.clear_locked()
-        } else {
-            let buf = serialize_queue(&remaining);
-            self.shm.write_locked(&buf)
-        }
+            .read_modify_write_with_result(|data| pop_first_rust_from_queue_bytes(data))
     }
 
     /// How many commands are currently in the queue.
@@ -134,6 +63,7 @@ pub struct OwnedIndexerCommand {
     pub include_filters: Vec<String>,
     pub working_directory: String,
     pub compiler_flags: Vec<String>,
+    pub compiler_path: String,
 }
 
 impl OwnedIndexerCommand {
@@ -150,8 +80,58 @@ impl OwnedIndexerCommand {
             include_filters: str_vec(cmd.include_filters()),
             working_directory: cmd.working_directory().unwrap_or("").to_owned(),
             compiler_flags: str_vec(cmd.compiler_flags()),
+            compiler_path: cmd.compiler_path().unwrap_or("").to_owned(),
         }
     }
+}
+
+fn pop_first_rust_from_queue_bytes(
+    data: &[u8],
+) -> io::Result<(Option<Vec<u8>>, Option<OwnedIndexerCommand>)> {
+    if is_empty(data) {
+        return Ok((None, None));
+    }
+
+    let queue = match root_as_indexer_command_queue(data) {
+        Ok(q) => q,
+        Err(_) => return Ok((None, None)),
+    };
+    let commands = match queue.commands() {
+        Some(v) => v,
+        None => return Ok((None, None)),
+    };
+    if commands.is_empty() {
+        return Ok((None, None));
+    }
+
+    let mut rust_idx = None;
+    for i in 0..commands.len() {
+        if commands.get(i).type_() == IndexerCommandType::Rust {
+            rust_idx = Some(i);
+            break;
+        }
+    }
+    let idx = match rust_idx {
+        Some(i) => i,
+        None => return Ok((None, None)),
+    };
+
+    let popped = OwnedIndexerCommand::from_fbs(commands.get(idx));
+
+    let mut remaining = Vec::with_capacity(commands.len().saturating_sub(1));
+    for i in 0..commands.len() {
+        if i == idx {
+            continue;
+        }
+        remaining.push(OwnedIndexerCommand::from_fbs(commands.get(i)));
+    }
+
+    let rewritten = if remaining.is_empty() {
+        vec![0u8; 4]
+    } else {
+        serialize_queue(&remaining)
+    };
+    Ok((Some(rewritten), Some(popped)))
 }
 
 // ---------------------------------------------------------------------------
@@ -190,6 +170,11 @@ fn serialize_queue(commands: &[OwnedIndexerCommand]) -> Vec<u8> {
                 .map(|s| fbb.create_string(s))
                 .collect();
             let flags_v = fbb.create_vector(&flags);
+            let compiler_path = if cmd.compiler_path.is_empty() {
+                None
+            } else {
+                Some(fbb.create_string(&cmd.compiler_path))
+            };
             IndexerCommand::create(
                 &mut fbb,
                 &IndexerCommandArgs {
@@ -200,7 +185,7 @@ fn serialize_queue(commands: &[OwnedIndexerCommand]) -> Vec<u8> {
                     include_filters: Some(include_v),
                     working_directory: Some(wdir),
                     compiler_flags: Some(flags_v),
-                    compiler_path: None,
+                    compiler_path,
                 },
             )
         })
@@ -215,4 +200,58 @@ fn serialize_queue(commands: &[OwnedIndexerCommand]) -> Vec<u8> {
     );
     fbb.finish(queue, None);
     fbb.finished_data().to_vec()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn cmd(kind: IndexerCommandType, src: &str, compiler_path: &str) -> OwnedIndexerCommand {
+        OwnedIndexerCommand {
+            type_: kind,
+            source_file_path: src.to_owned(),
+            indexed_paths: vec![src.to_owned()],
+            exclude_filters: Vec::new(),
+            include_filters: Vec::new(),
+            working_directory: "/tmp/project".to_owned(),
+            compiler_flags: vec!["-std=c++20".to_owned()],
+            compiler_path: compiler_path.to_owned(),
+        }
+    }
+
+    #[test]
+    fn pop_first_rust_preserves_compiler_path_on_remaining_cxx_commands() {
+        let input = vec![
+            cmd(IndexerCommandType::Cxx, "a.cpp", "/usr/bin/clang++"),
+            cmd(IndexerCommandType::Rust, "crate", ""),
+            cmd(IndexerCommandType::Cxx, "b.cpp", "/opt/clang/bin/clang++"),
+        ];
+        let bytes = serialize_queue(&input);
+
+        let (rewritten, popped) = pop_first_rust_from_queue_bytes(&bytes).unwrap();
+        let popped = popped.unwrap();
+        assert_eq!(popped.type_, IndexerCommandType::Rust);
+
+        let rewritten = rewritten.unwrap();
+        let queue = root_as_indexer_command_queue(&rewritten).unwrap();
+        let commands = queue.commands().unwrap();
+        assert_eq!(commands.len(), 2);
+        assert_eq!(commands.get(0).type_(), IndexerCommandType::Cxx);
+        assert_eq!(commands.get(0).compiler_path().unwrap(), "/usr/bin/clang++");
+        assert_eq!(commands.get(1).type_(), IndexerCommandType::Cxx);
+        assert_eq!(
+            commands.get(1).compiler_path().unwrap(),
+            "/opt/clang/bin/clang++"
+        );
+    }
+
+    #[test]
+    fn pop_first_rust_returns_none_and_does_not_rewrite_when_no_rust_command_exists() {
+        let input = vec![cmd(IndexerCommandType::Cxx, "only.cpp", "/usr/bin/clang++")];
+        let bytes = serialize_queue(&input);
+
+        let (rewritten, popped) = pop_first_rust_from_queue_bytes(&bytes).unwrap();
+        assert!(rewritten.is_none());
+        assert!(popped.is_none());
+    }
 }

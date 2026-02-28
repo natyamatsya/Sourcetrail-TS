@@ -43,124 +43,33 @@ impl StatusChannel {
 
     /// Record that this process has started indexing `file_path`.
     pub fn start_indexing(&self, file_path: &str) -> io::Result<()> {
-        let existing = self.read_existing()?;
-        let mut fbb = FlatBufferBuilder::with_capacity(4096);
+        self.shm.read_modify_write_with_result(|data| {
+            let mut existing = if is_empty(data) {
+                IndexingStatusOwned::default()
+            } else {
+                root_as_indexing_status(data)
+                    .map(IndexingStatusOwned::from_fbs)
+                    .unwrap_or_default()
+            };
 
-        // Build all leaf objects first, collecting raw u32 offsets to avoid
-        // WIPOffset<T<'_>> borrowing fbb across multiple calls.
-        let path_raw = fbb.create_string(file_path).value();
-        let pf_raw = {
-            let path_off = flatbuffers::WIPOffset::new(path_raw);
-            ProcessFile::create(
-                &mut fbb,
-                &ProcessFileArgs {
-                    process_id: self.process_id,
-                    file_path: Some(path_off),
-                },
-            )
-            .value()
-        };
-
-        let crashed_raws: Vec<u32> = existing
-            .crashed_file_paths
-            .iter()
-            .map(|s| fbb.create_string(s).value())
-            .collect();
-        let finished_ids: Vec<u64> = existing.finished_process_ids.clone();
-
-        // Reconstruct typed offsets and build vectors.
-        let path_off: flatbuffers::WIPOffset<&str> = flatbuffers::WIPOffset::new(path_raw);
-        let indexing_v = fbb.create_vector(&[path_off]);
-        let indexing_raw = indexing_v.value();
-
-        let pf_off: flatbuffers::WIPOffset<ProcessFile> = flatbuffers::WIPOffset::new(pf_raw);
-        let current_v = fbb.create_vector(&[pf_off]);
-        let current_raw = current_v.value();
-
-        let crashed_offs: Vec<flatbuffers::WIPOffset<&str>> = crashed_raws
-            .iter()
-            .map(|&v| flatbuffers::WIPOffset::new(v))
-            .collect();
-        let crashed_v = if crashed_offs.is_empty() {
-            None
-        } else {
-            Some(fbb.create_vector(&crashed_offs))
-        };
-        let crashed_raw = crashed_v.map(|v| v.value());
-
-        let finished_v = if finished_ids.is_empty() {
-            None
-        } else {
-            Some(fbb.create_vector(&finished_ids))
-        };
-        let finished_raw = finished_v.map(|v| v.value());
-
-        let args = IndexingStatusArgs {
-            indexing_file_paths: Some(flatbuffers::WIPOffset::new(indexing_raw)),
-            current_files: Some(flatbuffers::WIPOffset::new(current_raw)),
-            crashed_file_paths: crashed_raw.map(flatbuffers::WIPOffset::new),
-            finished_process_ids: finished_raw.map(flatbuffers::WIPOffset::new),
-            indexing_interrupted: existing.indexing_interrupted,
-            queue_stopped: existing.queue_stopped,
-        };
-        let status = IndexingStatus::create(&mut fbb, &args);
-        finish_indexing_status_buffer(&mut fbb, status);
-        self.shm.write_locked(fbb.finished_data())
+            existing.apply_start_indexing(self.process_id, file_path);
+            Ok((Some(existing.to_bytes()), ()))
+        })
     }
 
     /// Record that this process has finished indexing the current file.
     pub fn finish_indexing(&self) -> io::Result<()> {
-        let existing = self.read_existing()?;
-        let mut fbb = FlatBufferBuilder::with_capacity(4096);
+        self.shm.read_modify_write_with_result(|data| {
+            let mut existing = if is_empty(data) {
+                IndexingStatusOwned::default()
+            } else {
+                root_as_indexing_status(data)
+                    .map(IndexingStatusOwned::from_fbs)
+                    .unwrap_or_default()
+            };
 
-        let mut finished_ids = existing.finished_process_ids.clone();
-        finished_ids.push(self.process_id);
-
-        let crashed_raws: Vec<u32> = existing
-            .crashed_file_paths
-            .iter()
-            .map(|s| fbb.create_string(s).value())
-            .collect();
-
-        let finished_v = if finished_ids.is_empty() {
-            None
-        } else {
-            Some(fbb.create_vector(&finished_ids))
-        };
-        let finished_raw = finished_v.map(|v| v.value());
-
-        let crashed_offs: Vec<flatbuffers::WIPOffset<&str>> = crashed_raws
-            .iter()
-            .map(|&v| flatbuffers::WIPOffset::new(v))
-            .collect();
-        let crashed_v = if crashed_offs.is_empty() {
-            None
-        } else {
-            Some(fbb.create_vector(&crashed_offs))
-        };
-        let crashed_raw = crashed_v.map(|v| v.value());
-
-        let args = IndexingStatusArgs {
-            indexing_file_paths: None,
-            current_files: None,
-            crashed_file_paths: crashed_raw.map(flatbuffers::WIPOffset::new),
-            finished_process_ids: finished_raw.map(flatbuffers::WIPOffset::new),
-            indexing_interrupted: existing.indexing_interrupted,
-            queue_stopped: existing.queue_stopped,
-        };
-        let status = IndexingStatus::create(&mut fbb, &args);
-        finish_indexing_status_buffer(&mut fbb, status);
-        self.shm.write_locked(fbb.finished_data())
-    }
-
-    fn read_existing(&self) -> io::Result<IndexingStatusOwned> {
-        self.shm.read_locked(|data| {
-            if is_empty(data) {
-                return IndexingStatusOwned::default();
-            }
-            root_as_indexing_status(data)
-                .map(IndexingStatusOwned::from_fbs)
-                .unwrap_or_default()
+            existing.apply_finish_indexing(self.process_id);
+            Ok((Some(existing.to_bytes()), ()))
         })
     }
 }
@@ -171,6 +80,8 @@ impl StatusChannel {
 
 #[derive(Default)]
 struct IndexingStatusOwned {
+    indexing_file_paths: Vec<String>,
+    current_files: Vec<(u64, String)>,
     crashed_file_paths: Vec<String>,
     finished_process_ids: Vec<u64>,
     indexing_interrupted: bool,
@@ -187,11 +98,206 @@ impl IndexingStatusOwned {
             .finished_process_ids()
             .map(|v| (0..v.len()).map(|i| v.get(i)).collect())
             .unwrap_or_default();
+        let current_files = s
+            .current_files()
+            .map(|v| {
+                (0..v.len())
+                    .map(|i| {
+                        let pf = v.get(i);
+                        (pf.process_id(), pf.file_path().unwrap_or("").to_owned())
+                    })
+                    .collect()
+            })
+            .unwrap_or_default();
         Self {
+            indexing_file_paths: str_vec(s.indexing_file_paths()),
+            current_files,
             crashed_file_paths: str_vec(s.crashed_file_paths()),
             finished_process_ids: finished,
             indexing_interrupted: s.indexing_interrupted(),
             queue_stopped: s.queue_stopped(),
         }
+    }
+
+    fn to_bytes(&self) -> Vec<u8> {
+        let mut fbb = FlatBufferBuilder::with_capacity(4096);
+
+        let indexing_paths: Vec<flatbuffers::WIPOffset<&str>> = self
+            .indexing_file_paths
+            .iter()
+            .map(|s| fbb.create_string(s))
+            .collect();
+        let indexing_v = if indexing_paths.is_empty() {
+            None
+        } else {
+            Some(fbb.create_vector(&indexing_paths))
+        };
+
+        let current_files: Vec<flatbuffers::WIPOffset<ProcessFile>> = self
+            .current_files
+            .iter()
+            .map(|(pid, path)| {
+                let path = fbb.create_string(path);
+                ProcessFile::create(
+                    &mut fbb,
+                    &ProcessFileArgs {
+                        process_id: *pid,
+                        file_path: Some(path),
+                    },
+                )
+            })
+            .collect();
+        let current_v = if current_files.is_empty() {
+            None
+        } else {
+            Some(fbb.create_vector(&current_files))
+        };
+
+        let crashed_paths: Vec<flatbuffers::WIPOffset<&str>> = self
+            .crashed_file_paths
+            .iter()
+            .map(|s| fbb.create_string(s))
+            .collect();
+        let crashed_v = if crashed_paths.is_empty() {
+            None
+        } else {
+            Some(fbb.create_vector(&crashed_paths))
+        };
+
+        let finished_v = if self.finished_process_ids.is_empty() {
+            None
+        } else {
+            Some(fbb.create_vector(&self.finished_process_ids))
+        };
+
+        let status = IndexingStatus::create(
+            &mut fbb,
+            &IndexingStatusArgs {
+                indexing_file_paths: indexing_v,
+                current_files: current_v,
+                crashed_file_paths: crashed_v,
+                finished_process_ids: finished_v,
+                indexing_interrupted: self.indexing_interrupted,
+                queue_stopped: self.queue_stopped,
+            },
+        );
+        finish_indexing_status_buffer(&mut fbb, status);
+        fbb.finished_data().to_vec()
+    }
+
+    fn apply_start_indexing(&mut self, process_id: u64, file_path: &str) {
+        self.indexing_file_paths.push(file_path.to_owned());
+
+        if let Some(idx) = self
+            .current_files
+            .iter()
+            .position(|(pid, _)| *pid == process_id)
+        {
+            let (_, previous_file_path) = self.current_files.remove(idx);
+            if !self
+                .crashed_file_paths
+                .iter()
+                .any(|p| p == &previous_file_path)
+            {
+                self.crashed_file_paths.push(previous_file_path);
+            }
+        }
+
+        self.current_files.push((process_id, file_path.to_owned()));
+    }
+
+    fn apply_finish_indexing(&mut self, process_id: u64) {
+        let mut finished_file_path = String::new();
+        if let Some(idx) = self
+            .current_files
+            .iter()
+            .position(|(pid, _)| *pid == process_id)
+        {
+            let (_, path) = self.current_files.remove(idx);
+            finished_file_path = path;
+        }
+
+        self.finished_process_ids.push(process_id);
+
+        if finished_file_path.is_empty() {
+            return;
+        }
+
+        self.crashed_file_paths.retain(|p| p != &finished_file_path);
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn start_indexing_preserves_other_process_state() {
+        let mut status = IndexingStatusOwned {
+            indexing_file_paths: vec!["cxx_a.cpp".to_owned()],
+            current_files: vec![(1, "cxx_a.cpp".to_owned())],
+            crashed_file_paths: vec![],
+            finished_process_ids: vec![],
+            indexing_interrupted: false,
+            queue_stopped: false,
+        };
+
+        status.apply_start_indexing(7, "crate_root");
+
+        assert_eq!(
+            status.indexing_file_paths,
+            vec!["cxx_a.cpp".to_owned(), "crate_root".to_owned()]
+        );
+        assert!(status
+            .current_files
+            .iter()
+            .any(|(pid, path)| *pid == 1 && path == "cxx_a.cpp"));
+        assert!(status
+            .current_files
+            .iter()
+            .any(|(pid, path)| *pid == 7 && path == "crate_root"));
+    }
+
+    #[test]
+    fn start_indexing_marks_previous_file_as_crashed_for_same_process() {
+        let mut status = IndexingStatusOwned {
+            current_files: vec![(7, "old.rs".to_owned())],
+            ..Default::default()
+        };
+
+        status.apply_start_indexing(7, "new.rs");
+
+        assert!(status.crashed_file_paths.iter().any(|p| p == "old.rs"));
+        assert_eq!(
+            status
+                .current_files
+                .iter()
+                .filter(|(pid, _)| *pid == 7)
+                .count(),
+            1
+        );
+        assert!(status
+            .current_files
+            .iter()
+            .any(|(pid, path)| *pid == 7 && path == "new.rs"));
+    }
+
+    #[test]
+    fn finish_indexing_clears_current_file_and_unmarks_crash() {
+        let mut status = IndexingStatusOwned {
+            current_files: vec![(7, "crate/src/lib.rs".to_owned())],
+            crashed_file_paths: vec!["crate/src/lib.rs".to_owned(), "other.rs".to_owned()],
+            ..Default::default()
+        };
+
+        status.apply_finish_indexing(7);
+
+        assert!(!status.current_files.iter().any(|(pid, _)| *pid == 7));
+        assert!(status.finished_process_ids.iter().any(|pid| *pid == 7));
+        assert!(!status
+            .crashed_file_paths
+            .iter()
+            .any(|p| p == "crate/src/lib.rs"));
+        assert!(status.crashed_file_paths.iter().any(|p| p == "other.rs"));
     }
 }
