@@ -174,6 +174,23 @@ TEST_CASE("CMakeFileAPIReader hasReply returns false for empty dir")
 	REQUIRE_FALSE(reader.hasReply());
 }
 
+TEST_CASE("CMakeFileAPIReader getJsonEntryPoints returns codemodel entry")
+{
+	CMakeFileAPIReader reader{fixtureBuildDir()};
+	const auto entryPoints{reader.getJsonEntryPoints()};
+
+	REQUIRE_FALSE(entryPoints.empty());
+
+	const bool hasCodemodel{std::any_of(
+		entryPoints.begin(), entryPoints.end(), [](const CMakeFileAPIReader::JsonEntryPoint& entryPoint)
+		{
+			if (entryPoint.kind != "codemodel")
+				return false;
+			return entryPoint.path.exists();
+		})};
+	CHECK(hasCodemodel);
+}
+
 // ---------------------------------------------------------------------------
 // getSources — reads the pre-baked codemodel reply
 // ---------------------------------------------------------------------------

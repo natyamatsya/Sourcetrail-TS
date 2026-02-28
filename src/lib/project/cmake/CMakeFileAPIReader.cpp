@@ -159,6 +159,31 @@ bool CMakeFileAPIReader::hasReply() const
 	return !findIndexFile().empty();
 }
 
+std::vector<CMakeFileAPIReader::JsonEntryPoint> CMakeFileAPIReader::getJsonEntryPoints() const
+{
+	const FilePath indexPath{findIndexFile()};
+	if (indexPath.empty())
+		return {};
+
+	const QJsonDocument indexDoc{readJsonFile(indexPath)};
+	if (indexDoc.isNull())
+		return {};
+
+	std::vector<JsonEntryPoint> result{};
+	for (const QJsonValue& objectValue : indexDoc.object()["objects"].toArray())
+	{
+		const QJsonObject object{objectValue.toObject()};
+		const std::string jsonFile{object["jsonFile"].toString().toStdString()};
+		if (jsonFile.empty())
+			continue;
+
+		result.push_back(
+			{object["kind"].toString().toStdString(), m_replyDir.getConcatenated("/" + jsonFile)});
+	}
+
+	return result;
+}
+
 std::vector<std::string> CMakeFileAPIReader::discoverPresets(const FilePath& sourceDir)
 {
 	std::vector<std::string> result{};

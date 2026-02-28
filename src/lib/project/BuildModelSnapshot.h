@@ -102,6 +102,12 @@ struct BuildTargetSnapshot
 	std::size_t fileCount{0};
 };
 
+struct BuildJsonEntryPoint
+{
+	std::string kind;
+	FilePath path;
+};
+
 struct BuildModelSnapshot
 {
 	BuildModelProvider provider{BuildModelProvider::UNKNOWN};
@@ -109,6 +115,7 @@ struct BuildModelSnapshot
 	std::string configuration;
 	std::string targetGlob;
 	FilePath buildDir;
+	std::vector<BuildJsonEntryPoint> jsonEntryPoints;
 
 	std::vector<BuildFileSnapshot> files;
 	std::vector<BuildTargetSnapshot> targets;

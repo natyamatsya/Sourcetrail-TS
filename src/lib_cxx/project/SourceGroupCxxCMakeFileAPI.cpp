@@ -394,6 +394,9 @@ std::optional<BuildModelSnapshot> SourceGroupCxxCMakeFileAPI::getBuildModelSnaps
 	snapshot.buildDir = buildDir;
 
 	CMakeFileAPIReader reader{buildDir};
+	for (const auto& entryPoint : reader.getJsonEntryPoints())
+		snapshot.jsonEntryPoints.push_back({entryPoint.kind, entryPoint.path});
+
 	const auto entriesResult{reader.getSourcesDetailed(snapshot.configuration, snapshot.targetGlob)};
 	if (!entriesResult.has_value())
 	{

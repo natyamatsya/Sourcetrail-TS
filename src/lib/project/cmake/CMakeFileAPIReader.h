@@ -50,6 +50,12 @@ public:
 		FilePath sourceDir;		// CMake source directory (paths.source from codemodel)
 	};
 
+	struct JsonEntryPoint
+	{
+		std::string kind;
+		FilePath path;
+	};
+
 	enum class GetSourcesErrorCode
 	{
 		ReplyIndexNotFound,
@@ -112,6 +118,9 @@ public:
 
 	// Returns true if a valid File API reply already exists in the build dir.
 	bool hasReply() const;
+
+	// Returns the JSON entry points listed in index-*.json (kind + resolved file path).
+	std::vector<JsonEntryPoint> getJsonEntryPoints() const;
 
 	// Writes the query file. If the reply does not yet exist, triggers a
 	// reconfigure. When sourceDir and presetName are provided, runs:
