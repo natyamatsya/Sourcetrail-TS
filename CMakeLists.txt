@@ -271,6 +271,15 @@ target_include_directories(External_lib_tomlplusplus SYSTEM INTERFACE
 target_compile_definitions(External_lib_tomlplusplus INTERFACE TOML_HEADER_ONLY=1)
 target_compile_features(External_lib_tomlplusplus INTERFACE cxx_std_17)
 
+# nlohmann-json -----------------------------------------------------------------------
+
+find_package(nlohmann_json CONFIG REQUIRED)
+message(STATUS "Found nlohmann_json ${nlohmann_json_VERSION}")
+
+add_library(External_lib_nlohmann_json INTERFACE)
+target_link_libraries(External_lib_nlohmann_json INTERFACE nlohmann_json::nlohmann_json)
+target_compile_features(External_lib_nlohmann_json INTERFACE cxx_std_17)
+
 # AidKit  -----------------------------------------------------------------------------------
 
 add_subdirectory(src/lib_aidkit)

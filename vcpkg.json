@@ -5,6 +5,7 @@
 	"dependencies": [
 		"cli11",
 		"flatbuffers",
+		"nlohmann-json",
 		"sqlite3",
 		"tinyxml",
 		"tomlplusplus",

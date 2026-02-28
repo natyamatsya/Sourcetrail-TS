@@ -1,0 +1,13 @@
+version = '8'
+
+[[source_groups]]
+id = 'c1c52368-3e98-4457-8a7c-aa0d1f135b2f'
+name = 'C/C++ from CMake File API'
+status = 'enabled'
+type = 'C/C++ from CMake File API'
+
+[source_groups.cmake]
+configuration = ''
+preset_name = 'llvm-clang-dbg'
+source_directory = '/Users/fischi/dev/github/natyamatsya/Sourcetrail'
+target_glob = ''

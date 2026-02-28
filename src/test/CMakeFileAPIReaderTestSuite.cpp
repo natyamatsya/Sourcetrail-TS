@@ -3,6 +3,14 @@
 #include <algorithm>
 #include <filesystem>
 
+#include <QDir>
+#include <QFile>
+#include <QJsonDocument>
+#include <QJsonObject>
+#include <QJsonArray>
+
+#include "json-query/JSONQuery"
+
 #include "CMakeFileAPIReader.h"
 #include "FilePath.h"
 
@@ -351,4 +359,83 @@ TEST_CASE("CMakeFileAPIReader isReplyStale returns false for missing reply")
 	CMakeFileAPIReader reader{FilePath("/nonexistent/build/dir")};
 	// No reply → not stale (caller should call ensureReply first).
 	CHECK_FALSE(reader.isReplyStale());
+}
+
+// ---------------------------------------------------------------------------
+// Regression: JSONPath evaluate must not corrupt subsequent QJsonObject reads
+// ---------------------------------------------------------------------------
+
+// Reproduces the bug where json-query's JSONPath::evaluate() on one document
+// corrupts Qt's CBOR shared-data pool, causing QJsonValue::type() to report
+// Array instead of Object for elements of a separately-parsed document's array.
+TEST_CASE("JSONPath evaluate does not corrupt codemodel configurations array")
+{
+	using namespace json_query;
+
+	const FilePath replyDir =
+		fixtureBuildDir().getConcatenated("/.cmake/api/v1/reply");
+
+	// Step 1: read the index and evaluate JSONPath on it (the corrupting op).
+	const FilePath indexPath = [&]
+	{
+		const QDir qdir{QString::fromStdString(replyDir.str())};
+		const auto entries = qdir.entryList({"index-*.json"}, QDir::Files, QDir::Name);
+		REQUIRE_FALSE(entries.isEmpty());
+		return replyDir.getConcatenated("/" + entries.last().toStdString());
+	}();
+
+	QFile indexFile{QString::fromStdString(indexPath.str())};
+	REQUIRE(indexFile.open(QIODevice::ReadOnly));
+	const auto indexDoc = QJsonDocument::fromJson(indexFile.readAll());
+	REQUIRE(indexDoc.isObject());
+
+	const auto pathResult = JSONPath::create(u"$.objects[?(@.kind == \"codemodel\")].jsonFile");
+	REQUIRE(pathResult.has_value());
+	const auto codemodelFiles = pathResult->evaluate(indexDoc);
+	REQUIRE(codemodelFiles.has_value());
+	REQUIRE_FALSE(codemodelFiles->isEmpty());
+	const auto codemodelFilename = codemodelFiles->first().toString().toStdString();
+	REQUIRE_FALSE(codemodelFilename.empty());
+
+	// Step 2: read the codemodel document (parsed after JSONPath ran).
+	const FilePath codemodelPath = replyDir.getConcatenated("/" + codemodelFilename);
+	QFile cmFile{QString::fromStdString(codemodelPath.str())};
+	REQUIRE(cmFile.open(QIODevice::ReadOnly));
+	const auto codemodelDoc = QJsonDocument::fromJson(cmFile.readAll());
+	REQUIRE(codemodelDoc.isObject());
+
+	// Step 3: snapshot root before schema validation.
+	const QJsonObject codemodelRoot = codemodelDoc.object();
+	const QJsonArray configs = codemodelRoot["configurations"].toArray();
+	REQUIRE(configs.size() >= 1);
+
+	// Step 4: validate with JSONSchema (this is the other corrupting op).
+	const QJsonObject schema{
+		{"type", "object"},
+		{"required", QJsonArray{"kind", "version", "configurations"}},
+		{"properties",
+		 QJsonObject{
+			 {"kind", QJsonObject{{"type", "string"}, {"const", "codemodel"}}},
+			 {"version",
+			  QJsonObject{
+				  {"type", "object"},
+				  {"required", QJsonArray{"major"}},
+				  {"properties",
+				   QJsonObject{{"major", QJsonObject{{"type", "integer"}, {"minimum", 2}}}}}}},
+			 {"configurations", QJsonObject{{"type", "array"}}},
+		 }}};
+	const auto jsonSchema = JSONSchema::create(QJsonValue{schema});
+	REQUIRE(jsonSchema.has_value());
+	const auto validation = jsonSchema->validate(codemodelRoot);
+	CHECK(validation.isValid());
+
+	// Step 5: verify the pre-snapshotted configs array is still intact.
+	// Before the fix, configs[0].type() would return 4 (Array) instead of
+	// 5 (Object) after JSONPath/JSONSchema had run.
+	for (int i = 0; i < configs.size(); ++i)
+	{
+		INFO("configurations[" << i << "] type=" << static_cast<int>(configs.at(i).type()));
+		CHECK(configs.at(i).type() == QJsonValue::Object);
+		CHECK_FALSE(configs.at(i).toObject().isEmpty());
+	}
 }

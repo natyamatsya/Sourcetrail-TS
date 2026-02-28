@@ -20,6 +20,10 @@
 #include <QProcess>
 #include <QRegularExpression>
 
+#include <nlohmann/json.hpp>
+
+#include <sstream>
+
 #include "json-query/JSONQuery"
 #include "logging.h"
 
@@ -50,6 +54,45 @@ QJsonDocument readJsonFile(const FilePath& path)
 		return {};
 	}
 	return doc;
+}
+
+nlohmann::json toNlohmannJson(const QJsonValue& value);
+
+nlohmann::json toNlohmannJson(const QJsonObject& object)
+{
+	nlohmann::json result = nlohmann::json::object();
+	for (auto it = object.begin(); it != object.end(); ++it)
+		result[it.key().toStdString()] = toNlohmannJson(it.value());
+	return result;
+}
+
+nlohmann::json toNlohmannJson(const QJsonArray& array)
+{
+	nlohmann::json result = nlohmann::json::array();
+	for (const auto& entry : array)
+		result.push_back(toNlohmannJson(entry));
+	return result;
+}
+
+nlohmann::json toNlohmannJson(const QJsonValue& value)
+{
+	switch (value.type())
+	{
+	case QJsonValue::Null:
+	case QJsonValue::Undefined:
+		return nullptr;
+	case QJsonValue::Bool:
+		return value.toBool();
+	case QJsonValue::Double:
+		return value.toDouble();
+	case QJsonValue::String:
+		return value.toString().toStdString();
+	case QJsonValue::Array:
+		return toNlohmannJson(value.toArray());
+	case QJsonValue::Object:
+		return toNlohmannJson(value.toObject());
+	}
+	return nullptr;
 }
 
 // Returns the lexicographically last file in dir matching the given prefix,
@@ -342,217 +385,465 @@ std::vector<CMakeFileAPIReader::SourceEntry> CMakeFileAPIReader::getSources(
 		return {};
 	}
 
-	const auto indexDoc{readJsonFile(indexPath)};
-	if (indexDoc.isNull())
-		return {};
+	// Read the codemodel bytes before parsing any other JSON document.
+	// Qt's CBOR pool state is sensitive to parse order: parsing the small index
+	// document first leaves the pool in a state where QJsonValue::type() returns
+	// Array instead of Object for elements of large (160KB+) documents parsed
+	// afterwards.  Reading raw bytes first and deferring parse until after the
+	// index doc is destroyed avoids the corruption.
+	QByteArray codemodelBytes{};
+	QByteArray toolchainsBytes{};
+	{
+		// Parse index in a nested scope so indexDoc is destroyed before we
+		// parse the codemodel, releasing its CBOR nodes back to the pool.
+		const auto indexDoc{readJsonFile(indexPath)};
+		if (indexDoc.isNull())
+			return {};
 
-	// Find the codemodel-v2 reply filename via JSONPath.
-	const auto pathResult{
-		JSONPath::create(u"$.objects[?(@.kind == \"codemodel\")].jsonFile")};
-	if (!pathResult)
-	{
-		LOG_ERROR(
-			"CMakeFileAPIReader: JSONPath parse error: " +
-			pathResult.error().formatted_message().toStdString());
-		return {};
-	}
-	const auto codemodelFiles{pathResult->evaluate(indexDoc)};
-	if (!codemodelFiles || codemodelFiles->isEmpty())
-	{
-		LOG_WARNING("CMakeFileAPIReader: no codemodel-v2 entry in reply index");
-		return {};
-	}
-	const auto codemodelFilename{codemodelFiles->first().toString().toStdString()};
-	const auto codemodelPath{m_replyDir.getConcatenated("/" + codemodelFilename)};
-	const auto codemodelDoc{readJsonFile(codemodelPath)};
-	if (codemodelDoc.isNull())
-		return {};
+		std::string codemodelFilename{};
+		std::string toolchainsFilename{};
+		for (const auto& obj : indexDoc.object()["objects"].toArray())
+		{
+			const auto kind{obj.toObject()["kind"].toString()};
+			const auto file{obj.toObject()["jsonFile"].toString().toStdString()};
+			if (kind == QLatin1String("codemodel"))
+				codemodelFilename = file;
+			else if (kind == QLatin1String("toolchains"))
+				toolchainsFilename = file;
+		}
+		if (codemodelFilename.empty())
+		{
+			LOG_WARNING("CMakeFileAPIReader: no codemodel-v2 entry in reply index");
+			return {};
+		}
 
-	// Validate the codemodel document against our schema.
-	const auto schema{JSONSchema::create(QJsonValue{k_codemodelSchema})};
-	if (!schema)
+		const auto readBytes = [](const FilePath& path) -> QByteArray
+		{
+			QFile f{QString::fromStdString(path.str())};
+			if (!f.open(QIODevice::ReadOnly))
+				return {};
+			return f.readAll();
+		};
+
+		codemodelBytes = readBytes(m_replyDir.getConcatenated("/" + codemodelFilename));
+		if (!toolchainsFilename.empty())
+			toolchainsBytes = readBytes(m_replyDir.getConcatenated("/" + toolchainsFilename));
+	}
+	// indexDoc is now destroyed.  Parse codemodel with nlohmann/json to bypass
+	// Qt's CBOR pool, which misreports QJsonValue::type() in the LLVM clang
+	// build due to an interaction between Homebrew LLVM 21 and Qt's internal
+	// CBOR allocator.  nlohmann/json has no such shared state.
+	if (codemodelBytes.isEmpty())
 	{
-		LOG_ERROR(
-			"CMakeFileAPIReader: schema compile error: " +
-			schema.error().formatted_message().toStdString());
+		LOG_WARNING("CMakeFileAPIReader: failed to read codemodel bytes");
 		return {};
 	}
-	const auto validation{schema->validate(codemodelDoc.object())};
-	if (!validation.isValid())
+	nlohmann::json codemodelNlohmann;
+	try
 	{
-		for (const auto& err : validation.errors())
-			LOG_WARNING(
-				"CMakeFileAPIReader: codemodel schema violation: " +
-				err.message.toStdString());
+		const std::string codemodelText{
+			codemodelBytes.constData(), static_cast<std::size_t>(codemodelBytes.size())};
+		codemodelNlohmann = nlohmann::json::parse(codemodelText);
+	}
+	catch (const nlohmann::json::parse_error& e)
+	{
+		LOG_WARNING("CMakeFileAPIReader: codemodel parse error: " + std::string(e.what()));
+		return {};
+	}
+	if (!codemodelNlohmann.is_object())
+	{
+		LOG_WARNING("CMakeFileAPIReader: codemodel root is not an object");
 		return {};
 	}
 
-	// The codemodel top-level paths.source is the absolute source directory;
-	// relative source file paths in target replies are relative to it.
+	// Structural validation.
+	const auto kind{codemodelNlohmann.value("kind", std::string{})};
+	const int  major{codemodelNlohmann.value("version", nlohmann::json::object())
+		.value("major", 0)};
+	if (kind != "codemodel" || major < 2)
+	{
+		LOG_WARNING("CMakeFileAPIReader: unexpected codemodel kind='" + kind
+			+ "' major=" + std::to_string(major));
+		return {};
+	}
+
 	const FilePath sourceDir{
-		codemodelDoc.object()["paths"].toObject()["source"].toString().toStdString()};
+		codemodelNlohmann.value("paths", nlohmann::json::object())
+			.value("source", std::string{})};
 
-	// Find the toolchains-v1 reply filename via JSONPath.
-	const auto toolchainsPathResult{
-		JSONPath::create(u"$.objects[?(@.kind == \"toolchains\")].jsonFile")};
-	QJsonObject toolchainsDocObject{};
-	if (toolchainsPathResult)
+	// Parse toolchains (also bypassing Qt JSON).
+	nlohmann::json toolchainsNl;
+	if (!toolchainsBytes.isEmpty())
 	{
-		if (const auto toolchainsFiles = toolchainsPathResult->evaluate(indexDoc); toolchainsFiles && !toolchainsFiles->isEmpty())
+		try
 		{
-			const auto toolchainsFilename{toolchainsFiles->first().toString().toStdString()};
-			const auto toolchainsPath{m_replyDir.getConcatenated("/" + toolchainsFilename)};
-			LOG_INFO("CMakeFileAPIReader: loading toolchains from " + toolchainsPath.str());
-			const auto toolchainsDoc{readJsonFile(toolchainsPath)};
-			if (!toolchainsDoc.isNull())
-				toolchainsDocObject = toolchainsDoc.object();
-			else
-				LOG_WARNING("CMakeFileAPIReader: toolchains file is null");
+			const std::string toolchainsText{
+				toolchainsBytes.constData(), static_cast<std::size_t>(toolchainsBytes.size())};
+			toolchainsNl = nlohmann::json::parse(toolchainsText);
 		}
-		else
+		catch (const nlohmann::json::parse_error& e)
 		{
-			LOG_WARNING("CMakeFileAPIReader: no toolchains entry in reply index");
+			LOG_WARNING("CMakeFileAPIReader: toolchains parse error: " + std::string(e.what()));
 		}
-	}
-	else
-	{
-		LOG_WARNING("CMakeFileAPIReader: toolchains JSONPath failed: " +
-			toolchainsPathResult.error().formatted_message().toStdString());
 	}
 
-	// Pick the configuration to use.
-	const auto configs{codemodelDoc.object()["configurations"].toArray()};
-	QJsonObject chosenConfig{};
-	for (const auto& c : configs)
+	// Pick the configuration.
+	static const nlohmann::json s_emptyArray = nlohmann::json::array();
+	const auto& configsNl = codemodelNlohmann.contains("configurations")
+		? codemodelNlohmann.at("configurations")
+		: s_emptyArray;
+	nlohmann::json chosenConfigNl{};
+	bool hasChosenConfig{false};
+	std::vector<std::string> configNames{};
+	for (const auto& c : configsNl)
 	{
-		const auto name{c.toObject()["name"].toString().toStdString()};
-		if (configuration.empty() || name == configuration)
+		const auto name{c.value("name", std::string{})};
+		configNames.push_back(name.empty() ? "<empty>" : name);
+		if (!hasChosenConfig && (configuration.empty() || name == configuration))
 		{
-			chosenConfig = c.toObject();
-			break;
+			chosenConfigNl = c;
+			hasChosenConfig = true;
 		}
 	}
-	if (chosenConfig.isEmpty())
+	LOG_INFO(
+		"CMakeFileAPIReader: getSources configuration='" + configuration +
+		"' targetGlob='" + targetGlob +
+		"' configurations=" + std::to_string(configNames.size()));
+	if (!hasChosenConfig)
 	{
-		LOG_WARNING("CMakeFileAPIReader: configuration '" + configuration + "' not found");
+		std::string availableConfigurations{};
+		for (std::size_t i{0}; i < configNames.size(); ++i)
+		{
+			if (i > 0)
+				availableConfigurations += ", ";
+			availableConfigurations += configNames[i];
+		}
+		LOG_WARNING(
+			"CMakeFileAPIReader: configuration '" + configuration +
+			"' not found. available: [" + availableConfigurations + "]");
 		return {};
 	}
+	const auto chosenConfigurationName{chosenConfigNl.value("name", std::string{})};
+	const auto targetsNl{chosenConfigNl.value("targets", nlohmann::json::array())};
+	LOG_INFO(
+		"CMakeFileAPIReader: selected configuration '" + chosenConfigurationName +
+		"' with " + std::to_string(targetsNl.size()) + " targets");
+
+	const auto parseJsonBytes = [](const QByteArray& bytes) -> nlohmann::json
+	{
+		const std::string jsonText{bytes.constData(), static_cast<std::size_t>(bytes.size())};
+		return nlohmann::json::parse(jsonText);
+	};
+
+	// Helper: read a file to bytes and parse with nlohmann.
+	const auto readNlohmann = [&](const FilePath& path) -> nlohmann::json
+	{
+		QFile f{QString::fromStdString(path.str())};
+		if (!f.open(QIODevice::ReadOnly))
+		{
+			LOG_WARNING("CMakeFileAPIReader: cannot open target JSON file: " + path.str());
+			return {};
+		}
+		const QByteArray bytes{f.readAll()};
+		if (bytes.isEmpty())
+		{
+			LOG_WARNING("CMakeFileAPIReader: empty target JSON file: " + path.str());
+			return {};
+		}
+
+		QJsonParseError qtParseError{};
+		const auto qtDoc{QJsonDocument::fromJson(bytes, &qtParseError)};
+		if (qtParseError.error == QJsonParseError::NoError)
+		{
+			if (qtDoc.isObject())
+				return toNlohmannJson(qtDoc.object());
+
+			if (qtDoc.isArray())
+			{
+				const auto qtArray{qtDoc.array()};
+				if (qtArray.size() == 1 && qtArray.first().isObject())
+				{
+					LOG_WARNING(
+						"CMakeFileAPIReader: normalized array-wrapped target JSON: " + path.str());
+					return toNlohmannJson(qtArray.first().toObject());
+				}
+
+				LOG_WARNING(
+					"CMakeFileAPIReader: Qt parsed target JSON as array in " + path.str() +
+					" (size=" + std::to_string(qtArray.size()) + ")");
+				return toNlohmannJson(qtArray);
+			}
+		}
+		try
+		{
+			const auto parsed{parseJsonBytes(bytes)};
+			if (!parsed.is_object())
+			{
+				if (parsed.is_array())
+				{
+					if (parsed.size() == 1 && parsed[0].is_object())
+					{
+						LOG_WARNING(
+							"CMakeFileAPIReader: normalized nlohmann array-wrapped target JSON: " +
+							path.str());
+						return parsed[0];
+					}
+
+					bool looksLikeKeyValuePairs{!parsed.empty()};
+					for (const auto& entry : parsed)
+					{
+						if (!entry.is_array() || entry.size() != 2 || !entry[0].is_string())
+						{
+							looksLikeKeyValuePairs = false;
+							break;
+						}
+					}
+					if (looksLikeKeyValuePairs)
+					{
+						nlohmann::json normalizedObject = nlohmann::json::object();
+						for (const auto& entry : parsed)
+							normalizedObject[entry[0].get<std::string>()] = entry[1];
+
+						LOG_WARNING(
+							"CMakeFileAPIReader: normalized nlohmann key/value target JSON: " +
+							path.str());
+						return normalizedObject;
+					}
+				}
+
+				static bool s_loggedNonObjectTargetPreview{false};
+				if (!s_loggedNonObjectTargetPreview)
+				{
+					s_loggedNonObjectTargetPreview = true;
+
+					char firstNonWhitespace{'?'};
+					for (char c : bytes)
+					{
+						if (c == ' ' || c == '\n' || c == '\r' || c == '\t')
+							continue;
+						firstNonWhitespace = c;
+						break;
+					}
+
+					const int previewLength{std::min<int>(bytes.size(), 96)};
+					QString preview{
+						QString::fromUtf8(bytes.constData(), previewLength)};
+					preview.replace("\n", "\\n");
+					preview.replace("\r", "\\r");
+					preview.replace("\t", "\\t");
+
+					LOG_WARNING(
+						"CMakeFileAPIReader: non-object target parse sample: " + path.str() +
+						" first_non_ws='" + std::string(1, firstNonWhitespace) +
+						"' preview='" + preview.toStdString() + "'");
+				}
+			}
+			return parsed;
+		}
+		catch (const std::exception& e)
+		{
+			LOG_WARNING(
+				"CMakeFileAPIReader: parse error in " + path.str() +
+				" (bytes=" + std::to_string(bytes.size()) + "): " + std::string(e.what()));
+			return {};
+		}
+	};
 
 	// Collect sources from each target.
 	std::vector<SourceEntry> result{};
-	const auto targets{chosenConfig["targets"].toArray()};
-	for (const auto& tRef : targets)
+	std::vector<nlohmann::json> normalizedTargetReferences{};
+	std::size_t nestedTargetReferenceArrayCount{0};
+	for (const auto& targetReference : targetsNl)
 	{
-		const auto tObj{tRef.toObject()};
-		const auto targetName{tObj["name"].toString().toStdString()};
+		if (!targetReference.is_array())
+		{
+			normalizedTargetReferences.push_back(targetReference);
+			continue;
+		}
+
+		++nestedTargetReferenceArrayCount;
+		for (const auto& nestedTargetReference : targetReference)
+			normalizedTargetReferences.push_back(nestedTargetReference);
+	}
+	if (nestedTargetReferenceArrayCount > 0)
+	{
+		LOG_WARNING(
+			"CMakeFileAPIReader: flattened " + std::to_string(nestedTargetReferenceArrayCount) +
+			" nested target reference arrays into " +
+			std::to_string(normalizedTargetReferences.size()) + " target references");
+	}
+
+	std::size_t matchedTargetCount{0};
+	std::size_t malformedTargetReferenceCount{0};
+	std::size_t emptyTargetReplyCount{0};
+	std::size_t unreadableTargetReplyCount{0};
+	std::size_t sourceObjectCount{0};
+	std::size_t duplicateSourceCount{0};
+	for (const auto& tRef : normalizedTargetReferences)
+	{
+		if (!tRef.is_object())
+		{
+			++malformedTargetReferenceCount;
+			LOG_WARNING(
+				"CMakeFileAPIReader: non-object target reference type='" +
+				std::string{tRef.type_name()} + "'");
+			continue;
+		}
+
+		const auto targetName{tRef.value("name", std::string{})};
 		if (!matchesGlob(targetName, targetGlob))
 			continue;
+		++matchedTargetCount;
 
-		const auto targetFilename{tObj["jsonFile"].toString().toStdString()};
-		const auto targetPath{m_replyDir.getConcatenated("/" + targetFilename)};
-		const auto targetDoc{readJsonFile(targetPath)};
-		if (targetDoc.isNull())
-			continue;
-
-		const auto targetObj{targetDoc.object()};
-		const auto targetType{targetObj["type"].toString().toStdString()};
-
-		// Build compile groups: index → CompileGroup.
-		std::vector<CompileGroup> compileGroups{};
-		for (const auto& cgVal : targetObj["compileGroups"].toArray())
+		const auto targetFilename{tRef.value("jsonFile", std::string{})};
+		if (targetFilename.empty())
 		{
-			const auto cg{cgVal.toObject()};
-			CompileGroup group{};
-			group.language = cg["language"].toString().toStdString();
+			++emptyTargetReplyCount;
+			LOG_WARNING(
+				"CMakeFileAPIReader: target '" + targetName +
+				"' has no jsonFile in codemodel");
+			continue;
+		}
+		const FilePath targetReplyPath{m_replyDir.getConcatenated("/" + targetFilename)};
+		const auto targetNlRaw{readNlohmann(targetReplyPath)};
+		nlohmann::json normalizedTargetNl{};
+		const nlohmann::json* targetNl{&targetNlRaw};
 
-			if (!toolchainsDocObject.isEmpty())
+		if (targetNlRaw.is_array() && targetNlRaw.size() == 1 && targetNlRaw[0].is_object())
+		{
+			normalizedTargetNl = targetNlRaw[0];
+			targetNl = &normalizedTargetNl;
+			LOG_WARNING(
+				"CMakeFileAPIReader: normalized target root array for '" + targetName +
+				"' from " + targetReplyPath.str());
+		}
+		else if (targetNlRaw.is_array())
+		{
+			bool looksLikeKeyValuePairs{!targetNlRaw.empty()};
+			for (const auto& entry : targetNlRaw)
 			{
-				const auto toolchains{toolchainsDocObject["toolchains"].toArray()};
-				for (const auto& tcVal : toolchains)
+				if (!entry.is_array() || entry.size() != 2 || !entry[0].is_string())
 				{
-					const auto tc{tcVal.toObject()};
-					const auto tcLang{tc["language"].toString().toStdString()};
-					if (tcLang == group.language)
-					{
-						const auto compiler{tc["compiler"].toObject()};
-						group.compilerPath = compiler["path"].toString().toStdString();
-
-						const auto implicitObj{compiler["implicit"].toObject()};
-						if (implicitObj.contains("sysroot"))
-						{
-							group.sysroot = FilePath(implicitObj["sysroot"].toString().toStdString());
-						}
-						// If CMake parsed an implicit sysroot from the compiler, expose it here
-						// (typically only present if cross-compiling or if macOS with SDKROOT set)
-						// Otherwise we'll have to inject it later based on the host OS
-						break;
-					}
+					looksLikeKeyValuePairs = false;
+					break;
 				}
 			}
 
-			for (const auto& incVal : cg["includes"].toArray())
+			if (looksLikeKeyValuePairs)
 			{
-				const auto inc{incVal.toObject()};
-				const auto incPath{FilePath{inc["path"].toString().toStdString()}};
-				if (inc["isSystem"].toBool(false))
+				normalizedTargetNl = nlohmann::json::object();
+				for (const auto& entry : targetNlRaw)
+					normalizedTargetNl[entry[0].get<std::string>()] = entry[1];
+				targetNl = &normalizedTargetNl;
+				LOG_WARNING(
+					"CMakeFileAPIReader: normalized target key/value array for '" + targetName +
+					"' from " + targetReplyPath.str());
+			}
+		}
+
+		if (targetNl->is_null() || !targetNl->is_object())
+		{
+			++unreadableTargetReplyCount;
+			const std::string targetArraySize{targetNl->is_array()
+				? std::to_string(targetNl->size())
+				: std::string{"n/a"}};
+			const std::string firstArrayElementType{targetNl->is_array() && !targetNl->empty()
+				? std::string{(*targetNl)[0].type_name()}
+				: std::string{"n/a"}};
+			LOG_WARNING(
+				"CMakeFileAPIReader: invalid target JSON for '" + targetName +
+				"': " + targetReplyPath.str() +
+				" type='" + targetNl->type_name() + "'" +
+				" is_null=" + std::to_string(targetNl->is_null()) +
+				" is_object=" + std::to_string(targetNl->is_object()) +
+				" is_discarded=" + std::to_string(targetNl->is_discarded()) +
+				" array_size=" + targetArraySize +
+				" first_array_element_type='" + firstArrayElementType + "'");
+			continue;
+		}
+
+		const auto targetType{targetNl->value("type", std::string{})};
+
+		// Build compile groups: index → CompileGroup.
+		std::vector<CompileGroup> compileGroups{};
+		for (const auto& cg : targetNl->value("compileGroups", nlohmann::json::array()))
+		{
+			CompileGroup group{};
+			group.language = cg.value("language", std::string{});
+
+			if (!toolchainsNl.is_null())
+			{
+				for (const auto& tc : toolchainsNl.value("toolchains", nlohmann::json::array()))
+				{
+					if (tc.value("language", std::string{}) != group.language)
+						continue;
+					const auto& compiler{tc.value("compiler", nlohmann::json::object())};
+					group.compilerPath = compiler.value("path", std::string{});
+					const auto& implicit{compiler.value("implicit", nlohmann::json::object())};
+					const auto sysroot{implicit.value("sysroot", std::string{})};
+					if (!sysroot.empty())
+						group.sysroot = FilePath{sysroot};
+					break;
+				}
+			}
+
+			for (const auto& inc : cg.value("includes", nlohmann::json::array()))
+			{
+				const FilePath incPath{inc.value("path", std::string{})};
+				if (inc.value("isSystem", false))
 					group.systemIncludes.push_back(incPath);
 				else
 					group.includes.push_back(incPath);
 			}
 
-			for (const auto& frameworkVal : cg["frameworks"].toArray())
+			for (const auto& fw : cg.value("frameworks", nlohmann::json::array()))
 			{
-				const auto frameworkObj{frameworkVal.toObject()};
-				const QString frameworkPathString{frameworkObj["path"].toString()};
-				if (frameworkPathString.isEmpty())
+				const std::string fwPath{fw.value("path", std::string{})};
+				if (fwPath.empty())
 					continue;
-
-				FilePath frameworkSearchPath{frameworkPathString.toStdString()};
-				if (frameworkPathString.endsWith(".framework", Qt::CaseInsensitive))
-					frameworkSearchPath = frameworkSearchPath.getParentDirectory();
-
-				group.frameworkSearchPaths.push_back(frameworkSearchPath);
+				FilePath fwSearchPath{fwPath};
+				if (QString::fromStdString(fwPath).endsWith(".framework", Qt::CaseInsensitive))
+					fwSearchPath = fwSearchPath.getParentDirectory();
+				group.frameworkSearchPaths.push_back(fwSearchPath);
 			}
 
-			for (const auto& defVal : cg["defines"].toArray())
-				group.defines.push_back(defVal.toObject()["define"].toString().toStdString());
+			for (const auto& def : cg.value("defines", nlohmann::json::array()))
+				group.defines.push_back(def.value("define", std::string{}));
 
-			for (const auto& fragVal : cg["compileCommandFragments"].toArray())
+			for (const auto& frag : cg.value("compileCommandFragments", nlohmann::json::array()))
 			{
-				const QString fragment = fragVal.toObject()["fragment"].toString().trimmed();
+				const QString fragment =
+					QString::fromStdString(frag.value("fragment", std::string{})).trimmed();
 				if (fragment.isEmpty())
 					continue;
-
-				const QStringList tokens = QProcess::splitCommand(fragment);
-				for (const QString& token : tokens)
+				for (const QString& token : QProcess::splitCommand(fragment))
 					group.compileFlags.push_back(token.toStdString());
 			}
 
 			compileGroups.push_back(std::move(group));
 		}
 
-		auto appendSourceEntry = [&](const QJsonValue& srcVal) {
-			const auto src{srcVal.toObject()};
-			const QString rawPathString{
-				srcVal.isString() ? srcVal.toString() : src["path"].toString()};
-			if (rawPathString.isEmpty())
+		auto appendSourceEntry = [&](const nlohmann::json& src)
+		{
+			++sourceObjectCount;
+			const std::string rawPath{src.is_string()
+				? src.get<std::string>()
+				: src.value("path", std::string{})};
+			if (rawPath.empty())
 				return;
 
 			SourceEntry entry{};
-			const auto rawPath{rawPathString.toStdString()};
-			// Per CMake File API spec, relative paths are relative to the source dir.
 			entry.path = FilePath{rawPath}.isAbsolute()
 				? FilePath{rawPath}
 				: sourceDir.getConcatenated("/" + rawPath);
-			entry.isGenerated = src["isGenerated"].toBool(false);
+			entry.isGenerated = src.value("isGenerated", false);
 			entry.targetName = targetName;
 			entry.targetType = targetType;
 			entry.sourceDir = sourceDir;
 
-			const auto cgIdx{src["compileGroupIndex"]};
-			if (!cgIdx.isUndefined())
+			if (src.contains("compileGroupIndex"))
 			{
-				const auto idx{static_cast<std::size_t>(cgIdx.toInt())};
+				const auto idx{static_cast<std::size_t>(src["compileGroupIndex"].get<int>())};
 				if (idx < compileGroups.size())
 					entry.compileGroup = compileGroups[idx];
 			}
@@ -560,25 +851,37 @@ std::vector<CMakeFileAPIReader::SourceEntry> CMakeFileAPIReader::getSources(
 			for (const auto& existingEntry : result)
 				if (existingEntry.targetName == entry.targetName &&
 					existingEntry.path.str() == entry.path.str())
+				{
+					++duplicateSourceCount;
 					return;
+				}
 
 			result.push_back(std::move(entry));
 		};
 
-		// Map regular target sources to their compile groups.
-		for (const auto& srcVal : targetObj["sources"].toArray())
-			appendSourceEntry(srcVal);
+		for (const auto& src : targetNl->value("sources", nlohmann::json::array()))
+			appendSourceEntry(src);
 
-		// CMake can expose C++20 module units via FILE_SET TYPE CXX_MODULES.
-		for (const auto& fileSetVal : targetObj["fileSets"].toArray())
+		for (const auto& fileSet : targetNl->value("fileSets", nlohmann::json::array()))
 		{
-			const auto fileSet{fileSetVal.toObject()};
-			if (fileSet["type"].toString() != "CXX_MODULES")
+			if (fileSet.value("type", std::string{}) != "CXX_MODULES")
 				continue;
-			for (const auto& srcVal : fileSet["sources"].toArray())
-				appendSourceEntry(srcVal);
+			for (const auto& src : fileSet.value("sources", nlohmann::json::array()))
+				appendSourceEntry(src);
 		}
 	}
+
+	LOG_INFO(
+		"CMakeFileAPIReader: getSources summary targets=" + std::to_string(targetsNl.size()) +
+		", normalized_targets=" + std::to_string(normalizedTargetReferences.size()) +
+		", nested_target_ref_arrays=" + std::to_string(nestedTargetReferenceArrayCount) +
+		", matched=" + std::to_string(matchedTargetCount) +
+		", malformed_target_ref=" + std::to_string(malformedTargetReferenceCount) +
+		", empty_reply=" + std::to_string(emptyTargetReplyCount) +
+		", unreadable_reply=" + std::to_string(unreadableTargetReplyCount) +
+		", source_objects=" + std::to_string(sourceObjectCount) +
+		", duplicates=" + std::to_string(duplicateSourceCount) +
+		", result_entries=" + std::to_string(result.size()));
 
 	return result;
 }
@@ -607,48 +910,66 @@ std::vector<FilePath> CMakeFileAPIReader::getCMakeInputFiles() const
 	if (indexPath.empty())
 		return {};
 
-	const auto indexDoc{readJsonFile(indexPath)};
-	if (indexDoc.isNull())
+	const auto readNlohmannFile = [](const FilePath& path) -> nlohmann::json
+	{
+		QFile file{QString::fromStdString(path.str())};
+		if (!file.open(QIODevice::ReadOnly))
+			return {};
+
+		const QByteArray bytes{file.readAll()};
+		if (bytes.isEmpty())
+			return {};
+
+		try
+		{
+			const std::string jsonText{bytes.constData(), static_cast<std::size_t>(bytes.size())};
+			return nlohmann::json::parse(jsonText);
+		}
+		catch (const std::exception&)
+		{
+			return {};
+		}
+	};
+
+	const auto indexNl{readNlohmannFile(indexPath)};
+	if (!indexNl.is_object())
 		return {};
 
-	// Find the cmakeFiles-v1 reply filename.
-	const auto pathResult{
-		JSONPath::create(u"$.objects[?(@.kind == \"cmakeFiles\")].jsonFile")};
-	if (!pathResult)
+	std::string cmakeFilesFilename{};
+	for (const auto& obj : indexNl.value("objects", nlohmann::json::array()))
+	{
+		if (!obj.is_object())
+			continue;
+		if (obj.value("kind", std::string{}) != "cmakeFiles")
+			continue;
+		cmakeFilesFilename = obj.value("jsonFile", std::string{});
+		if (!cmakeFilesFilename.empty())
+			break;
+	}
+	if (cmakeFilesFilename.empty())
 		return {};
 
-	const auto files{pathResult->evaluate(indexDoc)};
-	if (!files || files->isEmpty())
+	const auto cmakeFilesPath{m_replyDir.getConcatenated("/" + cmakeFilesFilename)};
+	const auto cmakeFilesNl{readNlohmannFile(cmakeFilesPath)};
+	if (!cmakeFilesNl.is_object())
 		return {};
 
-	const auto cmakeFilesPath{
-		m_replyDir.getConcatenated("/" + files->first().toString().toStdString())};
-	const auto cmakeFilesDoc{readJsonFile(cmakeFilesPath)};
-	if (cmakeFilesDoc.isNull())
-		return {};
-
-	// Relative paths in the cmakeFiles reply are relative to paths.source.
 	const FilePath sourceDir{
-		cmakeFilesDoc.object()["paths"].toObject()["source"].toString().toStdString()};
+		cmakeFilesNl.value("paths", nlohmann::json::object()).value("source", std::string{})};
 	const FilePath& baseDir{sourceDir.empty() ? m_buildDir : sourceDir};
 
-	// Extract all input file paths using JSONPath.
-	const auto inputsPath{JSONPath::create(u"$.inputs[*].path")};
-	if (!inputsPath)
-		return {};
-
-	const auto inputs{inputsPath->evaluate(cmakeFilesDoc)};
-	if (!inputs)
-		return {};
-
 	std::vector<FilePath> result{};
-	result.reserve(static_cast<std::size_t>(inputs->size()));
-	for (const auto& v : *inputs)
+	for (const auto& input : cmakeFilesNl.value("inputs", nlohmann::json::array()))
 	{
-		const auto rawPath{v.toString().toStdString()};
+		const std::string rawPath{input.is_string()
+			? input.get<std::string>()
+			: input.value("path", std::string{})};
+		if (rawPath.empty())
+			continue;
+
 		result.push_back(
 			FilePath{rawPath}.isAbsolute() ? FilePath{rawPath}
-										   : baseDir.getConcatenated("/" + rawPath));
+									   : baseDir.getConcatenated("/" + rawPath));
 	}
 	return result;
 }
