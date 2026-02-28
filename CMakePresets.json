@@ -73,13 +73,7 @@
 			"hidden": true,
 			"name": "llvm-clang-presets",
 			"cacheVariables": {
-				"CMAKE_C_COMPILER": "/opt/homebrew/opt/llvm/bin/clang",
-				"CMAKE_CXX_COMPILER": "/opt/homebrew/opt/llvm/bin/clang++",
-				"CMAKE_AR": "/usr/bin/ar",
-				"CMAKE_RANLIB": "/usr/bin/ranlib",
-				"CMAKE_CXX_FLAGS": "-stdlib=libc++ -D_LIBCPP_NO_ABI_TAG",
-				"CMAKE_EXE_LINKER_FLAGS": "-stdlib=libc++",
-				"CMAKE_SHARED_LINKER_FLAGS": "-stdlib=libc++"
+				"VCPKG_CHAINLOAD_TOOLCHAIN_FILE": "${sourceDir}/cmake-toolchains/llvm-clang-macos.cmake"
 			}
 		},
 		{
