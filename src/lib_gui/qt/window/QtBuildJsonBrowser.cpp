@@ -6,15 +6,18 @@
 #include <QApplication>
 #include <QClipboard>
 #include <QDesktopServices>
+#include <QDir>
 #include <QFileInfo>
 #include <QHBoxLayout>
 #include <QHeaderView>
 #include <QItemSelectionModel>
 #include <QLabel>
 #include <QLineEdit>
+#include <QListWidget>
 #include <QPlainTextEdit>
 #include <QPushButton>
 #include <QProgressBar>
+#include <QStackedWidget>
 #include <QStandardItem>
 #include <QStandardItemModel>
 #include <QSplitter>
@@ -33,7 +36,32 @@ constexpr std::size_t MAX_AUTO_EXPANDED_MATCHES{2000};
 constexpr int TARGET_DETAILS_ROLE{Qt::UserRole + 100};
 constexpr int TARGET_PATH_ROLE{Qt::UserRole + 101};
 constexpr int TARGET_LINK_TARGET_NAME_ROLE{Qt::UserRole + 102};
+constexpr int TARGET_NODE_TYPE_ROLE{Qt::UserRole + 103};
+constexpr int TARGET_FILE_SUMMARY_ROLE{Qt::UserRole + 104};
+constexpr int TARGET_FILE_INCLUDES_ROLE{Qt::UserRole + 105};
+constexpr int TARGET_FILE_SYSTEM_INCLUDES_ROLE{Qt::UserRole + 106};
+constexpr int TARGET_FILE_FRAMEWORK_PATHS_ROLE{Qt::UserRole + 107};
+constexpr int TARGET_FILE_DEFINES_ROLE{Qt::UserRole + 108};
+constexpr int TARGET_FILE_FLAGS_ROLE{Qt::UserRole + 109};
 constexpr std::size_t DETAIL_LIST_PREVIEW_LIMIT{12};
+
+QStringList toQStringList(const std::vector<std::string>& values)
+{
+	QStringList result{};
+	result.reserve(static_cast<qsizetype>(values.size()));
+	for (const std::string& value : values)
+		result.push_back(QString::fromStdString(value));
+	return result;
+}
+
+QStringList toQStringList(const std::vector<FilePath>& values)
+{
+	QStringList result{};
+	result.reserve(static_cast<qsizetype>(values.size()));
+	for (const FilePath& value : values)
+		result.push_back(QString::fromStdString(value.str()));
+	return result;
+}
 
 void appendStringListPreview(
 	QStringList& lines,
@@ -135,6 +163,15 @@ QtBuildJsonBrowser::QtBuildJsonBrowser(QWidget* parent)
 	, m_targetSearchStatusLabel{new QLabel(this)}
 	, m_targetModel{new QStandardItemModel(this)}
 	, m_targetDetailsView{new QPlainTextEdit(this)}
+	, m_targetDetailsStack{new QStackedWidget(this)}
+	, m_fileDetailsSummaryLabel{new QLabel(this)}
+	, m_fileDetailsFilterEdit{new QLineEdit(this)}
+	, m_fileDetailsTabWidget{new QTabWidget(this)}
+	, m_fileIncludesList{new QListWidget(this)}
+	, m_fileSystemIncludesList{new QListWidget(this)}
+	, m_fileFrameworkPathsList{new QListWidget(this)}
+	, m_fileDefinesList{new QListWidget(this)}
+	, m_fileFlagsList{new QListWidget(this)}
 	, m_targetCopyDetailsButton{new QPushButton(this)}
 	, m_targetCopyPathButton{new QPushButton(this)}
 	, m_targetOpenPathButton{new QPushButton(this)}
@@ -192,6 +229,33 @@ QtBuildJsonBrowser::QtBuildJsonBrowser(QWidget* parent)
 
 	m_targetDetailsView->setReadOnly(true);
 	m_targetDetailsView->setPlaceholderText(QStringLiteral("Select a target or file to inspect details."));
+	m_fileDetailsSummaryLabel->setWordWrap(true);
+	m_fileDetailsSummaryLabel->setText(QStringLiteral("Select a file to browse compile details."));
+	m_fileDetailsFilterEdit->setClearButtonEnabled(true);
+	m_fileDetailsFilterEdit->setPlaceholderText(
+		QStringLiteral("Filter includes/defines/flags in this file..."));
+	m_fileIncludesList->setSelectionMode(QAbstractItemView::ExtendedSelection);
+	m_fileSystemIncludesList->setSelectionMode(QAbstractItemView::ExtendedSelection);
+	m_fileFrameworkPathsList->setSelectionMode(QAbstractItemView::ExtendedSelection);
+	m_fileDefinesList->setSelectionMode(QAbstractItemView::ExtendedSelection);
+	m_fileFlagsList->setSelectionMode(QAbstractItemView::ExtendedSelection);
+	m_fileDetailsTabWidget->addTab(m_fileIncludesList, QStringLiteral("Includes"));
+	m_fileDetailsTabWidget->addTab(m_fileSystemIncludesList, QStringLiteral("System Includes"));
+	m_fileDetailsTabWidget->addTab(m_fileFrameworkPathsList, QStringLiteral("Framework Paths"));
+	m_fileDetailsTabWidget->addTab(m_fileDefinesList, QStringLiteral("Defines"));
+	m_fileDetailsTabWidget->addTab(m_fileFlagsList, QStringLiteral("Flags"));
+
+	auto* fileDetailsWidget{new QWidget(this)};
+	auto* fileDetailsLayout{new QVBoxLayout()};
+	fileDetailsLayout->setContentsMargins(0, 0, 0, 0);
+	fileDetailsLayout->addWidget(m_fileDetailsSummaryLabel);
+	fileDetailsLayout->addWidget(m_fileDetailsFilterEdit);
+	fileDetailsLayout->addWidget(m_fileDetailsTabWidget);
+	fileDetailsWidget->setLayout(fileDetailsLayout);
+
+	m_targetDetailsStack->addWidget(m_targetDetailsView);
+	m_targetDetailsStack->addWidget(fileDetailsWidget);
+	m_targetDetailsStack->setCurrentWidget(m_targetDetailsView);
 	m_targetCopyDetailsButton->setText(QStringLiteral("Copy Details"));
 	m_targetCopyPathButton->setText(QStringLiteral("Copy Path"));
 	m_targetOpenPathButton->setText(QStringLiteral("Open Path"));
@@ -234,7 +298,7 @@ QtBuildJsonBrowser::QtBuildJsonBrowser(QWidget* parent)
 	auto* targetDetailsPanelLayout{new QVBoxLayout()};
 	targetDetailsPanelLayout->setContentsMargins(0, 0, 0, 0);
 	targetDetailsPanelLayout->addLayout(targetActionsLayout);
-	targetDetailsPanelLayout->addWidget(m_targetDetailsView);
+	targetDetailsPanelLayout->addWidget(m_targetDetailsStack);
 	targetDetailsPanel->setLayout(targetDetailsPanelLayout);
 
 	auto* targetSplitter{new QSplitter(Qt::Vertical, this)};
@@ -287,7 +351,7 @@ QtBuildJsonBrowser::QtBuildJsonBrowser(QWidget* parent)
 		{
 			if (selectTopLevelTargetForDependency(current))
 				return;
-			m_targetDetailsView->setPlainText(formatTargetSelectionDetails(current));
+			updateTargetDetailsView(current);
 			updateTargetActionButtons(current);
 		});
 
@@ -298,6 +362,15 @@ QtBuildJsonBrowser::QtBuildJsonBrowser(QWidget* parent)
 		[this](const QString& text)
 		{
 			applyTargetFilter(text);
+		});
+
+	connect(
+		m_fileDetailsFilterEdit,
+		&QLineEdit::textChanged,
+		this,
+		[this](const QString&  /*text*/)
+		{
+			updateFileDetailsView(m_targetTreeView->currentIndex());
 		});
 
 	connect(
@@ -402,6 +475,7 @@ void QtBuildJsonBrowser::setSourceGroup(const std::shared_ptr<const SourceGroup>
 {
 	if (!sourceGroup)
 	{
+		m_projectRootPath.clear();
 		setEntryPoints({});
 		populateTargetTree(std::nullopt);
 		return;
@@ -410,10 +484,35 @@ void QtBuildJsonBrowser::setSourceGroup(const std::shared_ptr<const SourceGroup>
 	const auto snapshot{sourceGroup->getBuildModelSnapshot()};
 	if (!snapshot.has_value())
 	{
+		m_projectRootPath.clear();
 		setEntryPoints({});
 		populateTargetTree(std::nullopt);
 		return;
 	}
+
+	m_projectRootPath.clear();
+	const auto setProjectRootFromPath = [this](const FilePath& path)
+	{
+		if (path.empty())
+			return false;
+
+		const QString normalizedPath{QDir::cleanPath(QString::fromStdString(path.str()))};
+		if (normalizedPath.isEmpty())
+			return false;
+		if (!normalizedPath.startsWith('/'))
+			return false;
+
+		m_projectRootPath = normalizedPath;
+		return true;
+	};
+
+	for (const BuildTargetSnapshot& target : snapshot->targets)
+		if (setProjectRootFromPath(target.sourceDir))
+			break;
+	if (m_projectRootPath.isEmpty())
+		for (const BuildFileSnapshot& file : snapshot->files)
+			if (setProjectRootFromPath(file.sourceDir))
+				break;
 
 	setEntryPoints(snapshot->jsonEntryPoints);
 	populateTargetTree(snapshot);
@@ -486,6 +585,186 @@ QString QtBuildJsonBrowser::currentTargetPath() const
 	return m_targetModel->data(keyIndex, TARGET_PATH_ROLE).toString();
 }
 
+QString QtBuildJsonBrowser::shortenProjectPath(const QString& path) const
+{
+	if (path.isEmpty())
+		return path;
+	if (m_projectRootPath.isEmpty())
+		return path;
+
+	const QString normalizedPath{QDir::cleanPath(path)};
+	if (normalizedPath == m_projectRootPath)
+		return QStringLiteral("<Project>");
+
+	const QString projectPathPrefix{m_projectRootPath + QStringLiteral("/")};
+	if (!normalizedPath.startsWith(projectPathPrefix))
+		return path;
+
+	return QStringLiteral("<Project>/") + normalizedPath.mid(projectPathPrefix.size());
+}
+
+QString QtBuildJsonBrowser::shortenProjectPathInText(const QString& text) const
+{
+	if (text.isEmpty())
+		return text;
+	if (m_projectRootPath.isEmpty())
+		return text;
+
+	QString shortened{text};
+	shortened.replace(
+		m_projectRootPath + QStringLiteral("/"), QStringLiteral("<Project>/"));
+	shortened.replace(m_projectRootPath, QStringLiteral("<Project>"));
+	return shortened;
+}
+
+void QtBuildJsonBrowser::updateTargetDetailsView(const QModelIndex& index)
+{
+	if (!index.isValid())
+	{
+		m_targetDetailsView->clear();
+		m_targetDetailsStack->setCurrentWidget(m_targetDetailsView);
+		updateFileDetailsView({});
+		return;
+	}
+
+	const QModelIndex keyIndex{index.siblingAtColumn(0)};
+	const QString nodeType{m_targetModel->data(keyIndex, TARGET_NODE_TYPE_ROLE).toString()};
+
+	m_targetDetailsView->setPlainText(
+		shortenProjectPathInText(formatTargetSelectionDetails(index)));
+	if (nodeType != QStringLiteral("file"))
+	{
+		m_targetDetailsStack->setCurrentWidget(m_targetDetailsView);
+		updateFileDetailsView({});
+		return;
+	}
+
+	m_targetDetailsStack->setCurrentIndex(1);
+	updateFileDetailsView(index);
+}
+
+int QtBuildJsonBrowser::populateFileDetailsList(
+	QListWidget* const listWidget,
+	const QStringList& values,
+	const QString& filterText,
+	const QString& noEntriesText,
+	const bool shortenPathEntries) const
+{
+	listWidget->clear();
+
+	int visibleCount{0};
+	for (const QString& value : values)
+	{
+		const QString fullValue{shortenPathEntries ? QDir::cleanPath(value) : value};
+		const QString displayValue{shortenPathEntries ? shortenProjectPath(fullValue) : fullValue};
+		if (!filterText.isEmpty() &&
+			!fullValue.contains(filterText, Qt::CaseInsensitive) &&
+			!displayValue.contains(filterText, Qt::CaseInsensitive))
+			continue;
+
+		auto* item{new QListWidgetItem(displayValue)};
+		if (shortenPathEntries && displayValue != fullValue)
+			item->setToolTip(fullValue);
+		listWidget->addItem(item);
+		++visibleCount;
+	}
+
+	if (visibleCount > 0)
+		return visibleCount;
+
+	auto* placeholderItem{new QListWidgetItem(filterText.isEmpty()
+		? noEntriesText
+		: QStringLiteral("No matches for current filter."))};
+	placeholderItem->setFlags(Qt::NoItemFlags);
+	listWidget->addItem(placeholderItem);
+	return 0;
+}
+
+void QtBuildJsonBrowser::updateFileDetailsView(const QModelIndex& index)
+{
+	const QModelIndex keyIndex{index.isValid() ? index.siblingAtColumn(0) : QModelIndex{}};
+	const QString nodeType{index.isValid()
+		? m_targetModel->data(keyIndex, TARGET_NODE_TYPE_ROLE).toString()
+		: QString{}};
+
+	if (nodeType != QStringLiteral("file"))
+	{
+		m_fileDetailsSummaryLabel->setText(QStringLiteral("Select a file to browse compile details."));
+		m_fileDetailsSummaryLabel->setToolTip({});
+		m_fileDetailsFilterEdit->setEnabled(false);
+		m_fileIncludesList->clear();
+		m_fileSystemIncludesList->clear();
+		m_fileFrameworkPathsList->clear();
+		m_fileDefinesList->clear();
+		m_fileFlagsList->clear();
+		m_fileDetailsTabWidget->setTabText(0, QStringLiteral("Includes"));
+		m_fileDetailsTabWidget->setTabText(1, QStringLiteral("System Includes"));
+		m_fileDetailsTabWidget->setTabText(2, QStringLiteral("Framework Paths"));
+		m_fileDetailsTabWidget->setTabText(3, QStringLiteral("Defines"));
+		m_fileDetailsTabWidget->setTabText(4, QStringLiteral("Flags"));
+		return;
+	}
+
+	m_fileDetailsFilterEdit->setEnabled(true);
+	const QString filterText{m_fileDetailsFilterEdit->text().trimmed()};
+	const QString summary{m_targetModel->data(keyIndex, TARGET_FILE_SUMMARY_ROLE).toString()};
+	m_fileDetailsSummaryLabel->setText(shortenProjectPathInText(summary));
+	m_fileDetailsSummaryLabel->setToolTip(summary);
+
+	const QStringList includes{
+		m_targetModel->data(keyIndex, TARGET_FILE_INCLUDES_ROLE).toStringList()};
+	const QStringList systemIncludes{
+		m_targetModel->data(keyIndex, TARGET_FILE_SYSTEM_INCLUDES_ROLE).toStringList()};
+	const QStringList frameworkPaths{
+		m_targetModel->data(keyIndex, TARGET_FILE_FRAMEWORK_PATHS_ROLE).toStringList()};
+	const QStringList defines{
+		m_targetModel->data(keyIndex, TARGET_FILE_DEFINES_ROLE).toStringList()};
+	const QStringList flags{
+		m_targetModel->data(keyIndex, TARGET_FILE_FLAGS_ROLE).toStringList()};
+
+	const int includeCount{populateFileDetailsList(
+		m_fileIncludesList,
+		includes,
+		filterText,
+		QStringLiteral("No include paths."),
+		true)};
+	const int systemIncludeCount{populateFileDetailsList(
+		m_fileSystemIncludesList,
+		systemIncludes,
+		filterText,
+		QStringLiteral("No system include paths."),
+		true)};
+	const int frameworkCount{populateFileDetailsList(
+		m_fileFrameworkPathsList,
+		frameworkPaths,
+		filterText,
+		QStringLiteral("No framework search paths."),
+		true)};
+	const int defineCount{populateFileDetailsList(
+		m_fileDefinesList,
+		defines,
+		filterText,
+		QStringLiteral("No defines."),
+		false)};
+	const int flagCount{populateFileDetailsList(
+		m_fileFlagsList,
+		flags,
+		filterText,
+		QStringLiteral("No flags."),
+		false)};
+
+	m_fileDetailsTabWidget->setTabText(
+		0, QStringLiteral("Includes (%1)").arg(includeCount));
+	m_fileDetailsTabWidget->setTabText(
+		1, QStringLiteral("System Includes (%1)").arg(systemIncludeCount));
+	m_fileDetailsTabWidget->setTabText(
+		2, QStringLiteral("Framework Paths (%1)").arg(frameworkCount));
+	m_fileDetailsTabWidget->setTabText(
+		3, QStringLiteral("Defines (%1)").arg(defineCount));
+	m_fileDetailsTabWidget->setTabText(
+		4, QStringLiteral("Flags (%1)").arg(flagCount));
+}
+
 QModelIndex QtBuildJsonBrowser::findTopLevelTargetIndexByName(const QString& targetName) const
 {
 	if (targetName.isEmpty())
@@ -530,7 +809,7 @@ bool QtBuildJsonBrowser::selectTopLevelTargetForDependency(const QModelIndex& in
 
 void QtBuildJsonBrowser::updateTargetActionButtons(const QModelIndex& index)
 {
-	const bool hasDetails{index.isValid() && !m_targetDetailsView->toPlainText().isEmpty()};
+	const bool hasDetails{index.isValid() && !formatTargetSelectionDetails(index).isEmpty()};
 	m_targetCopyDetailsButton->setEnabled(hasDetails);
 
 	const QString path{index.isValid()
@@ -563,11 +842,23 @@ bool QtBuildJsonBrowser::targetIndexMatchesQuery(const QModelIndex& index, const
 	const QString path{m_targetModel->data(index, TARGET_PATH_ROLE).toString()};
 	if (path.contains(query, Qt::CaseInsensitive))
 		return true;
+	if (shortenProjectPath(path).contains(query, Qt::CaseInsensitive))
+		return true;
 
 	const QString linkedTargetName{
 		m_targetModel->data(index, TARGET_LINK_TARGET_NAME_ROLE).toString()};
 	if (linkedTargetName.contains(query, Qt::CaseInsensitive))
 		return true;
+
+	for (const int role : {TARGET_FILE_INCLUDES_ROLE,
+			 TARGET_FILE_SYSTEM_INCLUDES_ROLE,
+			 TARGET_FILE_FRAMEWORK_PATHS_ROLE,
+			 TARGET_FILE_DEFINES_ROLE,
+			 TARGET_FILE_FLAGS_ROLE})
+		for (const QString& value : m_targetModel->data(index, role).toStringList())
+			if (value.contains(query, Qt::CaseInsensitive) ||
+				shortenProjectPath(value).contains(query, Qt::CaseInsensitive))
+				return true;
 
 	return false;
 }
@@ -631,6 +922,9 @@ void QtBuildJsonBrowser::populateTargetTree(const std::optional<BuildModelSnapsh
 	m_targetModel->setHorizontalHeaderLabels(
 		{QStringLiteral("Target / File"), QStringLiteral("Kind"), QStringLiteral("Info")});
 	m_targetDetailsView->clear();
+	m_targetDetailsStack->setCurrentWidget(m_targetDetailsView);
+	m_fileDetailsFilterEdit->clear();
+	updateFileDetailsView({});
 	updateTargetActionButtons({});
 
 	if (!snapshot.has_value())
@@ -678,7 +972,10 @@ void QtBuildJsonBrowser::populateTargetTree(const std::optional<BuildModelSnapsh
 		if (!target->sourceDir.empty())
 			targetDetails.push_back(
 				QStringLiteral("Source Dir: ") + QString::fromStdString(target->sourceDir.str()));
-		targetNameItem->setData(targetDetails.join(QStringLiteral("\n")), TARGET_DETAILS_ROLE);
+		targetNameItem->setData(
+			shortenProjectPathInText(targetDetails.join(QStringLiteral("\n"))),
+			TARGET_DETAILS_ROLE);
+		targetNameItem->setData(QStringLiteral("target"), TARGET_NODE_TYPE_ROLE);
 		if (!target->sourceDir.empty())
 			targetNameItem->setData(
 				QString::fromStdString(target->sourceDir.str()), TARGET_PATH_ROLE);
@@ -702,7 +999,9 @@ void QtBuildJsonBrowser::populateTargetTree(const std::optional<BuildModelSnapsh
 				QStringLiteral("Dependency Count: ") +
 				QString::number(static_cast<qlonglong>(target->dependencies.size())));
 			dependencyGroupNameItem->setData(
-				dependencyGroupDetails.join(QStringLiteral("\n")), TARGET_DETAILS_ROLE);
+				shortenProjectPathInText(dependencyGroupDetails.join(QStringLiteral("\n"))),
+				TARGET_DETAILS_ROLE);
+			dependencyGroupNameItem->setData(QStringLiteral("group"), TARGET_NODE_TYPE_ROLE);
 
 			QList<QStandardItem*> dependencyGroupRow{};
 			dependencyGroupRow << dependencyGroupNameItem << dependencyGroupKindItem
@@ -748,7 +1047,9 @@ void QtBuildJsonBrowser::populateTargetTree(const std::optional<BuildModelSnapsh
 				else
 					dependencyDetails.push_back(QStringLiteral("Kind: external or filtered target"));
 				dependencyNameItem->setData(
-					dependencyDetails.join(QStringLiteral("\n")), TARGET_DETAILS_ROLE);
+					shortenProjectPathInText(dependencyDetails.join(QStringLiteral("\n"))),
+					TARGET_DETAILS_ROLE);
+				dependencyNameItem->setData(QStringLiteral("dependency"), TARGET_NODE_TYPE_ROLE);
 				if (dependencyTarget)
 					dependencyNameItem->setData(
 						QString::fromStdString(dependencyTarget->name),
@@ -785,7 +1086,10 @@ void QtBuildJsonBrowser::populateTargetTree(const std::optional<BuildModelSnapsh
 		filesGroupDetails.push_back(QStringLiteral("Target: ") + QString::fromStdString(target->name));
 		filesGroupDetails.push_back(
 			QStringLiteral("File Count: ") + QString::number(static_cast<qlonglong>(files.size())));
-		filesGroupNameItem->setData(filesGroupDetails.join(QStringLiteral("\n")), TARGET_DETAILS_ROLE);
+		filesGroupNameItem->setData(
+			shortenProjectPathInText(filesGroupDetails.join(QStringLiteral("\n"))),
+			TARGET_DETAILS_ROLE);
+		filesGroupNameItem->setData(QStringLiteral("group"), TARGET_NODE_TYPE_ROLE);
 
 		QList<QStandardItem*> filesGroupRow{};
 		filesGroupRow << filesGroupNameItem << filesGroupKindItem << filesGroupInfoItem;
@@ -793,7 +1097,11 @@ void QtBuildJsonBrowser::populateTargetTree(const std::optional<BuildModelSnapsh
 
 		for (const BuildFileSnapshot* const file : files)
 		{
-			auto* fileNameItem{new QStandardItem(QString::fromStdString(file->path.str()))};
+			const QString fullFilePath{QDir::cleanPath(QString::fromStdString(file->path.str()))};
+			const QString shortFilePath{shortenProjectPath(fullFilePath)};
+			auto* fileNameItem{new QStandardItem(shortFilePath)};
+			if (shortFilePath != fullFilePath)
+				fileNameItem->setToolTip(fullFilePath);
 
 			QString fileKind{file->isGenerated ? QStringLiteral("generated") : QStringLiteral("source")};
 			if (file->compileGroup.has_value())
@@ -853,9 +1161,73 @@ void QtBuildJsonBrowser::populateTargetTree(const std::optional<BuildModelSnapsh
 				appendStringListPreview(
 					fileDetails, QStringLiteral("Flags Preview"), compileGroup.flags);
 			}
-			fileNameItem->setData(fileDetails.join(QStringLiteral("\n")), TARGET_DETAILS_ROLE);
+
+			QStringList fileSummary{};
+			fileSummary.push_back(QStringLiteral("File: ") + QString::fromStdString(file->path.str()));
+			fileSummary.push_back(QStringLiteral("Target: ") + QString::fromStdString(file->targetName));
+			fileSummary.push_back(
+				QStringLiteral("Target Type: ") + QString::fromStdString(file->targetType));
+			if (!file->sourceDir.empty())
+				fileSummary.push_back(
+					QStringLiteral("Source Dir: ") + QString::fromStdString(file->sourceDir.str()));
+			if (file->compileGroup.has_value())
+			{
+				const BuildCompileGroupSnapshot& compileGroup{*file->compileGroup};
+				fileSummary.push_back(
+					QStringLiteral("Language: ") + buildLanguageToString(compileGroup.language));
+				if (!compileGroup.compilerPath.empty())
+					fileSummary.push_back(
+						QStringLiteral("Compiler: ") + QString::fromStdString(compileGroup.compilerPath));
+				if (!compileGroup.sysroot.empty())
+					fileSummary.push_back(
+						QStringLiteral("Sysroot: ") + QString::fromStdString(compileGroup.sysroot.str()));
+				fileSummary.push_back(
+					QStringLiteral("Includes: %1")
+						.arg(static_cast<qlonglong>(compileGroup.includes.size())));
+				fileSummary.push_back(
+					QStringLiteral("System Includes: %1")
+						.arg(static_cast<qlonglong>(compileGroup.systemIncludes.size())));
+				fileSummary.push_back(
+					QStringLiteral("Framework Paths: %1")
+						.arg(static_cast<qlonglong>(compileGroup.frameworkSearchPaths.size())));
+				fileSummary.push_back(
+					QStringLiteral("Defines: %1")
+						.arg(static_cast<qlonglong>(compileGroup.defines.size())));
+				fileSummary.push_back(
+					QStringLiteral("Flags: %1")
+						.arg(static_cast<qlonglong>(compileGroup.flags.size())));
+			}
+			else
+				fileSummary.push_back(QStringLiteral("No compile group metadata available."));
+
 			fileNameItem->setData(
-				QString::fromStdString(file->path.str()), TARGET_PATH_ROLE);
+				shortenProjectPathInText(fileDetails.join(QStringLiteral("\n"))),
+				TARGET_DETAILS_ROLE);
+			fileNameItem->setData(QStringLiteral("file"), TARGET_NODE_TYPE_ROLE);
+			fileNameItem->setData(fileSummary.join(QStringLiteral("\n")), TARGET_FILE_SUMMARY_ROLE);
+			if (file->compileGroup.has_value())
+			{
+				const BuildCompileGroupSnapshot& compileGroup{*file->compileGroup};
+				fileNameItem->setData(
+					toQStringList(compileGroup.includes), TARGET_FILE_INCLUDES_ROLE);
+				fileNameItem->setData(
+					toQStringList(compileGroup.systemIncludes), TARGET_FILE_SYSTEM_INCLUDES_ROLE);
+				fileNameItem->setData(
+					toQStringList(compileGroup.frameworkSearchPaths), TARGET_FILE_FRAMEWORK_PATHS_ROLE);
+				fileNameItem->setData(
+					toQStringList(compileGroup.defines), TARGET_FILE_DEFINES_ROLE);
+				fileNameItem->setData(
+					toQStringList(compileGroup.flags), TARGET_FILE_FLAGS_ROLE);
+			}
+			else
+			{
+				fileNameItem->setData(QStringList{}, TARGET_FILE_INCLUDES_ROLE);
+				fileNameItem->setData(QStringList{}, TARGET_FILE_SYSTEM_INCLUDES_ROLE);
+				fileNameItem->setData(QStringList{}, TARGET_FILE_FRAMEWORK_PATHS_ROLE);
+				fileNameItem->setData(QStringList{}, TARGET_FILE_DEFINES_ROLE);
+				fileNameItem->setData(QStringList{}, TARGET_FILE_FLAGS_ROLE);
+			}
+			fileNameItem->setData(fullFilePath, TARGET_PATH_ROLE);
 
 			QList<QStandardItem*> fileRow{};
 			fileRow << fileNameItem << fileKindItem << fileInfoItem;
@@ -865,6 +1237,7 @@ void QtBuildJsonBrowser::populateTargetTree(const std::optional<BuildModelSnapsh
 
 	m_targetTreeView->collapseAll();
 	applyTargetFilter(m_targetSearchEdit->text());
+	updateTargetDetailsView(m_targetTreeView->currentIndex());
 }
 
 void QtBuildJsonBrowser::applySearch(const QString& text)

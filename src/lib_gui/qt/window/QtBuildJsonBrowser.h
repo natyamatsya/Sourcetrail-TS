@@ -13,8 +13,10 @@ class QModelIndex;
 class QLabel;
 class QPlainTextEdit;
 class QLineEdit;
+class QListWidget;
 class QPushButton;
 class QProgressBar;
+class QStackedWidget;
 class QStandardItemModel;
 class QTabWidget;
 class QTreeView;
@@ -33,6 +35,16 @@ private:
 	QString formatSelectionDetails(const QModelIndex& index) const;
 	QString formatTargetSelectionDetails(const QModelIndex& index) const;
 	QString currentTargetPath() const;
+	QString shortenProjectPath(const QString& path) const;
+	QString shortenProjectPathInText(const QString& text) const;
+	void updateTargetDetailsView(const QModelIndex& index);
+	void updateFileDetailsView(const QModelIndex& index);
+	int populateFileDetailsList(
+		QListWidget* listWidget,
+		const QStringList& values,
+		const QString& filterText,
+		const QString& noEntriesText,
+		bool shortenPathEntries) const;
 	QModelIndex findTopLevelTargetIndexByName(const QString& targetName) const;
 	bool selectTopLevelTargetForDependency(const QModelIndex& index);
 	void populateTargetTree(const std::optional<BuildModelSnapshot>& snapshot);
@@ -64,9 +76,19 @@ private:
 	QLabel* m_targetSearchStatusLabel;
 	QStandardItemModel* m_targetModel;
 	QPlainTextEdit* m_targetDetailsView;
+	QStackedWidget* m_targetDetailsStack;
+	QLabel* m_fileDetailsSummaryLabel;
+	QLineEdit* m_fileDetailsFilterEdit;
+	QTabWidget* m_fileDetailsTabWidget;
+	QListWidget* m_fileIncludesList;
+	QListWidget* m_fileSystemIncludesList;
+	QListWidget* m_fileFrameworkPathsList;
+	QListWidget* m_fileDefinesList;
+	QListWidget* m_fileFlagsList;
 	QPushButton* m_targetCopyDetailsButton;
 	QPushButton* m_targetCopyPathButton;
 	QPushButton* m_targetOpenPathButton;
+	QString m_projectRootPath;
 	bool m_syncingTargetSelection{false};
 };
 
