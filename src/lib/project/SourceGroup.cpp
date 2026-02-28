@@ -18,6 +18,11 @@ std::shared_ptr<Task> SourceGroup::getPreIndexTask(
 	return std::make_shared<TaskLambda>([]() {});
 }
 
+std::optional<BuildModelSnapshot> SourceGroup::getBuildModelSnapshot() const
+{
+	return std::nullopt;
+}
+
 SourceGroupType SourceGroup::getType() const
 {
 	return getSourceGroupSettings()->getType();

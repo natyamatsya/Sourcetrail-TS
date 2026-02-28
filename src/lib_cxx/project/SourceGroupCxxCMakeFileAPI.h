@@ -20,6 +20,7 @@ public:
 	std::set<FilePath> filterToContainedFilePaths(
 		const std::set<FilePath>& filePaths) const override;
 	std::set<FilePath> getAllSourceFilePaths() const override;
+	std::optional<BuildModelSnapshot> getBuildModelSnapshot() const override;
 	std::shared_ptr<IndexerCommandProvider> getIndexerCommandProvider(
 		const RefreshInfo& info) const override;
 	std::vector<std::shared_ptr<IndexerCommand>> getIndexerCommands(

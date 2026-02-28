@@ -69,6 +69,96 @@ bool hasExplicitLanguageFlag(const std::vector<std::string>& flags)
 	return false;
 }
 
+BuildLanguage toBuildLanguage(const std::string& language)
+{
+	if (language == "C")
+		return BuildLanguage::C;
+	if (language == "CXX")
+		return BuildLanguage::CXX;
+	if (language == "RUST")
+		return BuildLanguage::RUST;
+	return BuildLanguage::UNKNOWN;
+}
+
+BuildTargetKind toBuildTargetKind(const std::string& targetType)
+{
+	if (targetType == "EXECUTABLE")
+		return BuildTargetKind::EXECUTABLE;
+	if (targetType == "STATIC_LIBRARY")
+		return BuildTargetKind::STATIC_LIBRARY;
+	if (targetType == "SHARED_LIBRARY")
+		return BuildTargetKind::SHARED_LIBRARY;
+	if (targetType == "MODULE_LIBRARY")
+		return BuildTargetKind::MODULE_LIBRARY;
+	if (targetType == "OBJECT_LIBRARY")
+		return BuildTargetKind::OBJECT_LIBRARY;
+	if (targetType == "INTERFACE_LIBRARY")
+		return BuildTargetKind::INTERFACE_LIBRARY;
+	if (targetType == "UTILITY")
+		return BuildTargetKind::UTILITY;
+	if (targetType == "CUSTOM")
+		return BuildTargetKind::CUSTOM;
+	return BuildTargetKind::UNKNOWN;
+}
+
+BuildModelIssueCode toBuildModelIssueCode(const CMakeFileAPIReader::GetSourcesErrorCode& code)
+{
+	switch (code)
+	{
+	case CMakeFileAPIReader::GetSourcesErrorCode::ReplyIndexNotFound:
+		return BuildModelIssueCode::BUILD_REPLY_NOT_FOUND;
+	case CMakeFileAPIReader::GetSourcesErrorCode::ReplyIndexUnreadable:
+	case CMakeFileAPIReader::GetSourcesErrorCode::CodemodelUnreadable:
+		return BuildModelIssueCode::BUILD_REPLY_UNREADABLE;
+	case CMakeFileAPIReader::GetSourcesErrorCode::CodemodelReferenceMissing:
+	case CMakeFileAPIReader::GetSourcesErrorCode::CodemodelParseError:
+	case CMakeFileAPIReader::GetSourcesErrorCode::CodemodelRootNotObject:
+	case CMakeFileAPIReader::GetSourcesErrorCode::CodemodelUnexpectedSchema:
+		return BuildModelIssueCode::BUILD_REPLY_MALFORMED;
+	case CMakeFileAPIReader::GetSourcesErrorCode::ConfigurationNotFound:
+		return BuildModelIssueCode::CONFIGURATION_NOT_FOUND;
+	case CMakeFileAPIReader::GetSourcesErrorCode::AllMatchedTargetsUnreadable:
+		return BuildModelIssueCode::SOURCES_UNAVAILABLE;
+	}
+	return BuildModelIssueCode::UNKNOWN;
+}
+
+BuildModelIssueCode toBuildModelIssueCode(const CMakeFileAPIReader::GetSourcesWarningCode& code)
+{
+	switch (code)
+	{
+	case CMakeFileAPIReader::GetSourcesWarningCode::NestedTargetReferenceArraysFlattened:
+	case CMakeFileAPIReader::GetSourcesWarningCode::TargetRootArrayNormalized:
+	case CMakeFileAPIReader::GetSourcesWarningCode::TargetKeyValueArrayNormalized:
+		return BuildModelIssueCode::DATA_NORMALIZED;
+	case CMakeFileAPIReader::GetSourcesWarningCode::MalformedTargetReference:
+		return BuildModelIssueCode::TARGET_REFERENCE_MALFORMED;
+	case CMakeFileAPIReader::GetSourcesWarningCode::TargetMissingJsonFile:
+		return BuildModelIssueCode::TARGET_METADATA_MISSING;
+	case CMakeFileAPIReader::GetSourcesWarningCode::TargetReplyUnreadable:
+		return BuildModelIssueCode::TARGET_METADATA_UNREADABLE;
+	}
+	return BuildModelIssueCode::UNKNOWN;
+}
+
+std::optional<BuildCompileGroupSnapshot> toBuildCompileGroupSnapshot(
+	const std::optional<CMakeFileAPIReader::CompileGroup>& compileGroup)
+{
+	if (!compileGroup)
+		return std::nullopt;
+
+	BuildCompileGroupSnapshot snapshot{};
+	snapshot.language = toBuildLanguage(compileGroup->language);
+	snapshot.compilerPath = compileGroup->compilerPath;
+	snapshot.sysroot = compileGroup->sysroot;
+	snapshot.includes = compileGroup->includes;
+	snapshot.systemIncludes = compileGroup->systemIncludes;
+	snapshot.frameworkSearchPaths = compileGroup->frameworkSearchPaths;
+	snapshot.defines = compileGroup->defines;
+	snapshot.flags = compileGroup->compileFlags;
+	return snapshot;
+}
+
 bool shouldCreateCxxCommand(
 	const CMakeFileAPIReader::SourceEntry& entry,
 	const std::vector<FilePathFilter>& excludeFilters)
@@ -289,6 +379,87 @@ std::set<FilePath> SourceGroupCxxCMakeFileAPI::getAllSourceFilePaths() const
 		result.insert(entry.path);
 	}
 	return result;
+}
+
+std::optional<BuildModelSnapshot> SourceGroupCxxCMakeFileAPI::getBuildModelSnapshot() const
+{
+	const FilePath buildDir{getCachedBuildDir()};
+	if (buildDir.empty() || !buildDir.exists())
+		return std::nullopt;
+
+	BuildModelSnapshot snapshot{};
+	snapshot.provider = BuildModelProvider::CMAKE_FILE_API;
+	snapshot.configuration = m_settings->getConfiguration();
+	snapshot.targetGlob = m_settings->getTargetGlob();
+	snapshot.buildDir = buildDir;
+
+	CMakeFileAPIReader reader{buildDir};
+	const auto entriesResult{reader.getSourcesDetailed(snapshot.configuration, snapshot.targetGlob)};
+	if (!entriesResult.has_value())
+	{
+		const auto& error{entriesResult.error()};
+		snapshot.health = BuildModelHealth::FAILED;
+		snapshot.issues.push_back(
+			{BuildModelIssueSeverity::ERROR,
+				toBuildModelIssueCode(error.code),
+				{},
+				buildDir,
+				error.message});
+		return snapshot;
+	}
+
+	const auto& detailedResult{entriesResult.value()};
+	snapshot.targetCount = detailedResult.targetCount;
+	snapshot.normalizedTargetCount = detailedResult.normalizedTargetCount;
+	snapshot.matchedTargetCount = detailedResult.matchedTargetCount;
+	snapshot.malformedTargetReferenceCount = detailedResult.malformedTargetReferenceCount;
+	snapshot.emptyTargetReplyCount = detailedResult.emptyTargetReplyCount;
+	snapshot.unreadableTargetReplyCount = detailedResult.unreadableTargetReplyCount;
+	snapshot.sourceObjectCount = detailedResult.sourceObjectCount;
+	snapshot.duplicateSourceCount = detailedResult.duplicateSourceCount;
+
+	for (const auto& warning : detailedResult.warnings)
+		snapshot.issues.push_back(
+			{BuildModelIssueSeverity::WARNING,
+				toBuildModelIssueCode(warning.code),
+				warning.targetName,
+				warning.path,
+				CMakeFileAPIReader::getSourcesWarningCodeToString(warning.code)});
+
+	for (const auto& entry : detailedResult.entries)
+	{
+		BuildFileSnapshot file{};
+		file.path = entry.path;
+		file.isGenerated = entry.isGenerated;
+		file.targetName = entry.targetName;
+		file.targetType = entry.targetType;
+		file.sourceDir = entry.sourceDir;
+		file.compileGroup = toBuildCompileGroupSnapshot(entry.compileGroup);
+		snapshot.files.push_back(std::move(file));
+
+		bool foundTarget{false};
+		for (auto& target : snapshot.targets)
+			if (target.name == entry.targetName)
+			{
+				++target.fileCount;
+				foundTarget = true;
+				break;
+			}
+		if (foundTarget)
+			continue;
+
+		BuildTargetSnapshot target{};
+		target.name = entry.targetName;
+		target.kind = toBuildTargetKind(entry.targetType);
+		target.sourceDir = entry.sourceDir;
+		target.fileCount = 1;
+		snapshot.targets.push_back(std::move(target));
+	}
+
+	if (!snapshot.issues.empty())
+		snapshot.health = BuildModelHealth::PARTIAL;
+
+	return snapshot;
 }
 
 std::shared_ptr<IndexerCommandProvider> SourceGroupCxxCMakeFileAPI::getIndexerCommandProvider(

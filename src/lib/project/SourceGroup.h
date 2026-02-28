@@ -2,9 +2,11 @@
 #define SOURCE_GROUP_H
 
 #include <memory>
+#include <optional>
 #include <set>
 #include <vector>
 
+#include "BuildModelSnapshot.h"
 #include "LanguageType.h"
 #include "SourceGroupStatusType.h"
 #include "SourceGroupType.h"
@@ -37,6 +39,7 @@ public:
 	virtual std::shared_ptr<Task> getPreIndexTask(
 		std::shared_ptr<StorageProvider> storageProvider,
 		std::shared_ptr<DialogView> dialogView) const;
+	virtual std::optional<BuildModelSnapshot> getBuildModelSnapshot() const;
 
 	SourceGroupType getType() const;
 	LanguageType getLanguage() const;
