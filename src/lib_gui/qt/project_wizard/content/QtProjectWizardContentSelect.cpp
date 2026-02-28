@@ -49,6 +49,10 @@ void QtProjectWizardContentSelect::populate(QGridLayout* layout, int&  /*row*/)
 #if BUILD_RUST_LANGUAGE_PACKAGE
 	sourceGroupInfos[LanguageType::RUST].push_back(SourceGroupInfo(SourceGroupType::RUST_EMPTY, true));
 #endif	  // BUILD_RUST_LANGUAGE_PACKAGE
+#if BUILD_SWIFT_LANGUAGE_PACKAGE
+	sourceGroupInfos[LanguageType::SWIFT].push_back(
+		SourceGroupInfo(SourceGroupType::SWIFT_EMPTY, true));
+#endif	  // BUILD_SWIFT_LANGUAGE_PACKAGE
 	sourceGroupInfos[LanguageType::CUSTOM].push_back(SourceGroupInfo(SourceGroupType::CUSTOM_COMMAND));
 
 	// define which icons should be used for which kind of source group
@@ -61,6 +65,9 @@ void QtProjectWizardContentSelect::populate(QGridLayout* layout, int&  /*row*/)
 #if BUILD_RUST_LANGUAGE_PACKAGE
 	m_sourceGroupTypeIconName[SourceGroupType::RUST_EMPTY] = QtResources::ICON_EMPTY_ICON;
 #endif	  // BUILD_RUST_LANGUAGE_PACKAGE
+#if BUILD_SWIFT_LANGUAGE_PACKAGE
+	m_sourceGroupTypeIconName[SourceGroupType::SWIFT_EMPTY] = QtResources::ICON_EMPTY_ICON;
+#endif	  // BUILD_SWIFT_LANGUAGE_PACKAGE
 	m_sourceGroupTypeIconName[SourceGroupType::CUSTOM_COMMAND] = QtResources::ICON_EMPTY_ICON;
 
 	// define descriptions for each kind of Source Group
@@ -87,6 +94,10 @@ void QtProjectWizardContentSelect::populate(QGridLayout* layout, int&  /*row*/)
 	m_sourceGroupTypeDescriptions[SourceGroupType::RUST_EMPTY] =
 		"Create a new Source Group by defining which Rust source files will be indexed.";
 #endif	  // BUILD_RUST_LANGUAGE_PACKAGE
+#if BUILD_SWIFT_LANGUAGE_PACKAGE
+	m_sourceGroupTypeDescriptions[SourceGroupType::SWIFT_EMPTY] =
+		"Create a new Source Group by defining which Swift source files will be indexed.";
+#endif	  // BUILD_SWIFT_LANGUAGE_PACKAGE
 	m_sourceGroupTypeDescriptions[SourceGroupType::CUSTOM_COMMAND] =
 		"Create a new Source Group executing a custom command on each source file. "
 		"This Source Group type can be used on <a "

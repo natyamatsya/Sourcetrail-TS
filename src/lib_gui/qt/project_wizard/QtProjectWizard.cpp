@@ -56,6 +56,10 @@
 #	include "SourceGroupSettingsRustEmpty.h"
 #endif	  // BUILD_RUST_LANGUAGE_PACKAGE
 
+#if BUILD_SWIFT_LANGUAGE_PACKAGE
+#	include "SourceGroupSettingsSwiftEmpty.h"
+#endif	  // BUILD_SWIFT_LANGUAGE_PACKAGE
+
 using namespace std;
 
 namespace
@@ -244,6 +248,21 @@ void addSourceGroupContents<SourceGroupSettingsRustEmpty>(
 }
 
 #endif	  // BUILD_RUST_LANGUAGE_PACKAGE
+
+#if BUILD_SWIFT_LANGUAGE_PACKAGE
+
+template <>
+void addSourceGroupContents<SourceGroupSettingsSwiftEmpty>(
+	QtProjectWizardContentGroup* group,
+	std::shared_ptr<SourceGroupSettingsSwiftEmpty> settings,
+	QtProjectWizardWindow* window)
+{
+	group->addContent(new QtProjectWizardContentPathsSource(settings, window));
+	group->addContent(new QtProjectWizardContentPathsExclude(settings, window));
+	group->addContent(new QtProjectWizardContentExtensions(settings, window));
+}
+
+#endif	  // BUILD_SWIFT_LANGUAGE_PACKAGE
 
 template <>
 void addSourceGroupContents<SourceGroupSettingsCustomCommand>(
@@ -650,6 +669,14 @@ void QtProjectWizard::selectedSourceGroupChanged(int index)
 		addSourceGroupContents(summary, settings, this);
 	}
 #endif	  // BUILD_RUST_LANGUAGE_PACKAGE
+#if BUILD_SWIFT_LANGUAGE_PACKAGE
+	else if (
+		std::shared_ptr<SourceGroupSettingsSwiftEmpty> settings =
+			std::dynamic_pointer_cast<SourceGroupSettingsSwiftEmpty>(group))
+	{
+		addSourceGroupContents(summary, settings, this);
+	}
+#endif	  // BUILD_SWIFT_LANGUAGE_PACKAGE
 
 	summary->addSpace();
 	summary->addContent(new QtProjectWizardContentRequiredLabel(this));
@@ -864,6 +891,13 @@ void QtProjectWizard::selectedProjectType(SourceGroupType sourceGroupType)
 			sourceGroupId, m_projectSettings.get());
 		break;
 #endif	  // BUILD_RUST_LANGUAGE_PACKAGE
+
+#if BUILD_SWIFT_LANGUAGE_PACKAGE
+	case SourceGroupType::SWIFT_EMPTY:
+		settings = std::make_shared<SourceGroupSettingsSwiftEmpty>(
+			sourceGroupId, m_projectSettings.get());
+		break;
+#endif	  // BUILD_SWIFT_LANGUAGE_PACKAGE
 
 	case SourceGroupType::CUSTOM_COMMAND:
 		settings = std::make_shared<SourceGroupSettingsCustomCommand>(

@@ -18,6 +18,9 @@
 #if BUILD_RUST_LANGUAGE_PACKAGE
 #	include "SourceGroupSettingsRustEmpty.h"
 #endif	  // BUILD_RUST_LANGUAGE_PACKAGE
+#if BUILD_SWIFT_LANGUAGE_PACKAGE
+#	include "SourceGroupSettingsSwiftEmpty.h"
+#endif	  // BUILD_SWIFT_LANGUAGE_PACKAGE
 
 namespace
 {
@@ -208,6 +211,11 @@ std::vector<std::shared_ptr<SourceGroupSettings>> ProjectSettings::getAllSourceG
 			settings = std::make_shared<SourceGroupSettingsRustEmpty>(id, this);
 			break;
 #endif	  // BUILD_RUST_LANGUAGE_PACKAGE
+#if BUILD_SWIFT_LANGUAGE_PACKAGE
+		case SourceGroupType::SWIFT_EMPTY:
+			settings = std::make_shared<SourceGroupSettingsSwiftEmpty>(id, this);
+			break;
+#endif	  // BUILD_SWIFT_LANGUAGE_PACKAGE
 		case SourceGroupType::CUSTOM_COMMAND:
 			settings = std::make_shared<SourceGroupSettingsCustomCommand>(id, this);
 			break;

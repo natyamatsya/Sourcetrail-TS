@@ -18,6 +18,10 @@ std::string sourceGroupTypeToString(SourceGroupType v)
 	case SourceGroupType::RUST_EMPTY:
 		return "Rust Empty";
 #endif	  // BUILD_RUST_LANGUAGE_PACKAGE
+#if BUILD_SWIFT_LANGUAGE_PACKAGE
+	case SourceGroupType::SWIFT_EMPTY:
+		return "Swift Empty";
+#endif	  // BUILD_SWIFT_LANGUAGE_PACKAGE
 	case SourceGroupType::CUSTOM_COMMAND:
 		return "Custom Command";
 	case SourceGroupType::UNKNOWN:
@@ -44,6 +48,10 @@ std::string sourceGroupTypeToProjectSetupString(SourceGroupType v)
 	case SourceGroupType::RUST_EMPTY:
 		return "Empty Rust Source Group";
 #endif	  // BUILD_RUST_LANGUAGE_PACKAGE
+#if BUILD_SWIFT_LANGUAGE_PACKAGE
+	case SourceGroupType::SWIFT_EMPTY:
+		return "Empty Swift Source Group";
+#endif	  // BUILD_SWIFT_LANGUAGE_PACKAGE
 	case SourceGroupType::CUSTOM_COMMAND:
 		return "Custom Command Source Group";
 	case SourceGroupType::UNKNOWN:
@@ -68,6 +76,10 @@ SourceGroupType stringToSourceGroupType(const std::string& v)
 	if (v == sourceGroupTypeToString(SourceGroupType::RUST_EMPTY))
 		return SourceGroupType::RUST_EMPTY;
 #endif	  // BUILD_RUST_LANGUAGE_PACKAGE
+#if BUILD_SWIFT_LANGUAGE_PACKAGE
+	if (v == sourceGroupTypeToString(SourceGroupType::SWIFT_EMPTY))
+		return SourceGroupType::SWIFT_EMPTY;
+#endif	  // BUILD_SWIFT_LANGUAGE_PACKAGE
 	if (v == sourceGroupTypeToString(SourceGroupType::CUSTOM_COMMAND))
 		return SourceGroupType::CUSTOM_COMMAND;
 

@@ -17,6 +17,9 @@ enum class LanguageType
 #if BUILD_RUST_LANGUAGE_PACKAGE
 	RUST,
 #endif
+#if BUILD_SWIFT_LANGUAGE_PACKAGE
+	SWIFT,
+#endif
 	CUSTOM
 };
 

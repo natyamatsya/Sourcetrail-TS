@@ -14,6 +14,10 @@ std::string languageTypeToString(LanguageType t)
 	case LanguageType::RUST:
 		return "Rust";
 #endif	  // BUILD_RUST_LANGUAGE_PACKAGE
+#if BUILD_SWIFT_LANGUAGE_PACKAGE
+	case LanguageType::SWIFT:
+		return "Swift";
+#endif	  // BUILD_SWIFT_LANGUAGE_PACKAGE
 	case LanguageType::CUSTOM:
 		return "Custom";
 	case LanguageType::UNKNOWN:
@@ -39,6 +43,10 @@ LanguageType getLanguageTypeForSourceGroupType(SourceGroupType t)
 	case SourceGroupType::RUST_EMPTY:
 		return LanguageType::RUST;
 #endif	  // BUILD_RUST_LANGUAGE_PACKAGE
+#if BUILD_SWIFT_LANGUAGE_PACKAGE
+	case SourceGroupType::SWIFT_EMPTY:
+		return LanguageType::SWIFT;
+#endif	  // BUILD_SWIFT_LANGUAGE_PACKAGE
 	case SourceGroupType::CUSTOM_COMMAND:
 		return LanguageType::CUSTOM;
 	default:
