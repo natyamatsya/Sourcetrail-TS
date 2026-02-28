@@ -258,8 +258,25 @@ std::set<FilePath> SourceGroupCxxCMakeFileAPI::getAllSourceFilePaths() const
 		return {};
 
 	CMakeFileAPIReader reader{buildDir};
-	const auto entries{reader.getSources(
+	const auto entriesResult{reader.getSourcesDetailed(
 		m_settings->getConfiguration(), m_settings->getTargetGlob())};
+	if (!entriesResult.has_value())
+	{
+		const auto& error{entriesResult.error()};
+		const std::string errorCode{
+			CMakeFileAPIReader::getSourcesErrorCodeToString(error.code)};
+		MessageStatus(
+			"Can't refresh project. Failed to read CMake File API sources (" +
+				errorCode + "): " + error.message,
+			true)
+			.dispatch();
+		LOG_WARNING(
+			"SourceGroupCxxCMakeFileAPI: getSourcesDetailed failed code='" + errorCode +
+			"' message='" + error.message + "'");
+		return {};
+	}
+
+	const auto& entries{entriesResult->entries};
 
 	const std::vector<FilePathFilter> excludeFilters{
 		m_settings->getExcludeFiltersExpandedAndAbsolute()};
@@ -284,8 +301,20 @@ std::shared_ptr<IndexerCommandProvider> SourceGroupCxxCMakeFileAPI::getIndexerCo
 		return provider;
 
 	CMakeFileAPIReader reader{buildDir};
-	const auto entries{reader.getSources(
+	const auto entriesResult{reader.getSourcesDetailed(
 		m_settings->getConfiguration(), m_settings->getTargetGlob())};
+	if (!entriesResult.has_value())
+	{
+		const auto& error{entriesResult.error()};
+		const std::string errorCode{
+			CMakeFileAPIReader::getSourcesErrorCodeToString(error.code)};
+		LOG_WARNING(
+			"SourceGroupCxxCMakeFileAPI: getSourcesDetailed failed code='" + errorCode +
+			"' message='" + error.message + "'");
+		return provider;
+	}
+
+	const auto& entries{entriesResult->entries};
 
 	const std::vector<FilePathFilter> excludeFilters{
 		m_settings->getExcludeFiltersExpandedAndAbsolute()};

@@ -1,11 +1,13 @@
 #pragma once
 
+#include <expected>
 #include <functional>
 #include <optional>
 #include <string>
 #include <vector>
 
 #include "FilePath.h"
+#include "utilityExpected.h"
 
 // Reads the CMake File-based API reply from a configured build directory.
 //
@@ -48,6 +50,53 @@ public:
 		FilePath sourceDir;		// CMake source directory (paths.source from codemodel)
 	};
 
+	enum class GetSourcesErrorCode
+	{
+		ReplyIndexNotFound,
+		ReplyIndexUnreadable,
+		CodemodelReferenceMissing,
+		CodemodelUnreadable,
+		CodemodelParseError,
+		CodemodelRootNotObject,
+		CodemodelUnexpectedSchema,
+		ConfigurationNotFound,
+		AllMatchedTargetsUnreadable,
+	};
+
+	enum class GetSourcesWarningCode
+	{
+		NestedTargetReferenceArraysFlattened,
+		MalformedTargetReference,
+		TargetMissingJsonFile,
+		TargetRootArrayNormalized,
+		TargetKeyValueArrayNormalized,
+		TargetReplyUnreadable,
+	};
+
+	struct GetSourcesWarning
+	{
+		GetSourcesWarningCode code;
+		std::string targetName;
+		FilePath path;
+	};
+
+	struct GetSourcesResult
+	{
+		std::vector<SourceEntry> entries;
+		std::vector<GetSourcesWarning> warnings;
+		std::size_t targetCount{0};
+		std::size_t normalizedTargetCount{0};
+		std::size_t matchedTargetCount{0};
+		std::size_t malformedTargetReferenceCount{0};
+		std::size_t emptyTargetReplyCount{0};
+		std::size_t unreadableTargetReplyCount{0};
+		std::size_t sourceObjectCount{0};
+		std::size_t duplicateSourceCount{0};
+	};
+
+	using GetSourcesError = utility::ExpectedError<GetSourcesErrorCode>;
+	using GetSourcesExpected = std::expected<GetSourcesResult, GetSourcesError>;
+
 	explicit CMakeFileAPIReader(const FilePath& buildDir);
 
 	// Returns the non-hidden configure preset names from CMakePresets.json and
@@ -81,6 +130,14 @@ public:
 	std::vector<SourceEntry> getSources(
 		const std::string& configuration = {},
 		const std::string& targetGlob = {}) const;
+
+	// Detailed getSources API with typed errors and warning metadata.
+	GetSourcesExpected getSourcesDetailed(
+		const std::string& configuration = {},
+		const std::string& targetGlob = {}) const;
+
+	static std::string getSourcesErrorCodeToString(const GetSourcesErrorCode& code);
+	static std::string getSourcesWarningCodeToString(const GetSourcesWarningCode& code);
 
 	// Returns all CMake input files (CMakeLists.txt, .cmake files) listed in
 	// the cmakeFiles-v1 reply. Watch these for staleness detection.

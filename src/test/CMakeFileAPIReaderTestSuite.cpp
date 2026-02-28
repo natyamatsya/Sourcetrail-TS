@@ -306,6 +306,27 @@ TEST_CASE("CMakeFileAPIReader getSources returns empty for unknown configuration
 	CHECK(entries.empty());
 }
 
+TEST_CASE("CMakeFileAPIReader getSourcesDetailed returns entries")
+{
+	CMakeFileAPIReader reader{fixtureBuildDir()};
+	const auto sourcesResult{reader.getSourcesDetailed()};
+
+	REQUIRE(sourcesResult.has_value());
+	CHECK_FALSE(sourcesResult->entries.empty());
+}
+
+TEST_CASE("CMakeFileAPIReader getSourcesDetailed returns typed configuration error")
+{
+	CMakeFileAPIReader reader{fixtureBuildDir()};
+	const auto sourcesResult{reader.getSourcesDetailed("NonExistentConfig")};
+
+	REQUIRE_FALSE(sourcesResult.has_value());
+	CHECK(
+		sourcesResult.error().code ==
+		CMakeFileAPIReader::GetSourcesErrorCode::ConfigurationNotFound);
+	CHECK_FALSE(sourcesResult.error().message.empty());
+}
+
 TEST_CASE("CMakeFileAPIReader getSources target glob filters by name")
 {
 	CMakeFileAPIReader reader{fixtureBuildDir()};

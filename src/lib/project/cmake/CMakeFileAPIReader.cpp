@@ -375,14 +375,17 @@ FilePath CMakeFileAPIReader::findToolchainsFile() const
 	return findFileWithPrefix(m_replyDir, "toolchains-v1-");
 }
 
-std::vector<CMakeFileAPIReader::SourceEntry> CMakeFileAPIReader::getSources(
+CMakeFileAPIReader::GetSourcesExpected CMakeFileAPIReader::getSourcesDetailed(
 	const std::string& configuration, const std::string& targetGlob) const
 {
+	GetSourcesResult detailedResult{};
 	const auto indexPath{findIndexFile()};
 	if (indexPath.empty())
 	{
 		LOG_WARNING("CMakeFileAPIReader: no reply index found in " + m_replyDir.str());
-		return {};
+		return std::unexpected(utility::makeExpectedError(
+			GetSourcesErrorCode::ReplyIndexNotFound,
+			"No CMake File API index found in " + m_replyDir.str()));
 	}
 
 	// Read the codemodel bytes before parsing any other JSON document.
@@ -398,7 +401,11 @@ std::vector<CMakeFileAPIReader::SourceEntry> CMakeFileAPIReader::getSources(
 		// parse the codemodel, releasing its CBOR nodes back to the pool.
 		const auto indexDoc{readJsonFile(indexPath)};
 		if (indexDoc.isNull())
-			return {};
+		{
+			return std::unexpected(utility::makeExpectedError(
+				GetSourcesErrorCode::ReplyIndexUnreadable,
+				"Failed to read CMake File API index: " + indexPath.str()));
+		}
 
 		std::string codemodelFilename{};
 		std::string toolchainsFilename{};
@@ -414,7 +421,9 @@ std::vector<CMakeFileAPIReader::SourceEntry> CMakeFileAPIReader::getSources(
 		if (codemodelFilename.empty())
 		{
 			LOG_WARNING("CMakeFileAPIReader: no codemodel-v2 entry in reply index");
-			return {};
+			return std::unexpected(utility::makeExpectedError(
+				GetSourcesErrorCode::CodemodelReferenceMissing,
+				"No codemodel-v2 entry in CMake File API index: " + indexPath.str()));
 		}
 
 		const auto readBytes = [](const FilePath& path) -> QByteArray
@@ -436,7 +445,9 @@ std::vector<CMakeFileAPIReader::SourceEntry> CMakeFileAPIReader::getSources(
 	if (codemodelBytes.isEmpty())
 	{
 		LOG_WARNING("CMakeFileAPIReader: failed to read codemodel bytes");
-		return {};
+		return std::unexpected(utility::makeExpectedError(
+			GetSourcesErrorCode::CodemodelUnreadable,
+			"Failed to read codemodel bytes from CMake File API reply in " + m_replyDir.str()));
 	}
 	nlohmann::json codemodelNlohmann;
 	try
@@ -448,12 +459,16 @@ std::vector<CMakeFileAPIReader::SourceEntry> CMakeFileAPIReader::getSources(
 	catch (const nlohmann::json::parse_error& e)
 	{
 		LOG_WARNING("CMakeFileAPIReader: codemodel parse error: " + std::string(e.what()));
-		return {};
+		return std::unexpected(utility::makeExpectedError(
+			GetSourcesErrorCode::CodemodelParseError,
+			"Failed to parse codemodel JSON: " + std::string(e.what())));
 	}
 	if (!codemodelNlohmann.is_object())
 	{
 		LOG_WARNING("CMakeFileAPIReader: codemodel root is not an object");
-		return {};
+		return std::unexpected(utility::makeExpectedError(
+			GetSourcesErrorCode::CodemodelRootNotObject,
+			"Codemodel root is not a JSON object"));
 	}
 
 	// Structural validation.
@@ -464,7 +479,10 @@ std::vector<CMakeFileAPIReader::SourceEntry> CMakeFileAPIReader::getSources(
 	{
 		LOG_WARNING("CMakeFileAPIReader: unexpected codemodel kind='" + kind
 			+ "' major=" + std::to_string(major));
-		return {};
+		return std::unexpected(utility::makeExpectedError(
+			GetSourcesErrorCode::CodemodelUnexpectedSchema,
+			"Unexpected codemodel schema: kind='" + kind +
+			"' major=" + std::to_string(major)));
 	}
 
 	const FilePath sourceDir{
@@ -521,7 +539,10 @@ std::vector<CMakeFileAPIReader::SourceEntry> CMakeFileAPIReader::getSources(
 		LOG_WARNING(
 			"CMakeFileAPIReader: configuration '" + configuration +
 			"' not found. available: [" + availableConfigurations + "]");
-		return {};
+		return std::unexpected(utility::makeExpectedError(
+			GetSourcesErrorCode::ConfigurationNotFound,
+			"CMake configuration '" + configuration + "' not found. available: [" +
+				availableConfigurations + "]"));
 	}
 	const auto chosenConfigurationName{chosenConfigNl.value("name", std::string{})};
 	const auto targetsNl{chosenConfigNl.value("targets", nlohmann::json::array())};
@@ -650,7 +671,8 @@ std::vector<CMakeFileAPIReader::SourceEntry> CMakeFileAPIReader::getSources(
 	};
 
 	// Collect sources from each target.
-	std::vector<SourceEntry> result{};
+	auto& result{detailedResult.entries};
+	auto& warnings{detailedResult.warnings};
 	std::vector<nlohmann::json> normalizedTargetReferences{};
 	std::size_t nestedTargetReferenceArrayCount{0};
 	for (const auto& targetReference : targetsNl)
@@ -671,6 +693,8 @@ std::vector<CMakeFileAPIReader::SourceEntry> CMakeFileAPIReader::getSources(
 			"CMakeFileAPIReader: flattened " + std::to_string(nestedTargetReferenceArrayCount) +
 			" nested target reference arrays into " +
 			std::to_string(normalizedTargetReferences.size()) + " target references");
+		warnings.push_back(
+			{GetSourcesWarningCode::NestedTargetReferenceArraysFlattened, {}, m_replyDir});
 	}
 
 	std::size_t matchedTargetCount{0};
@@ -687,6 +711,7 @@ std::vector<CMakeFileAPIReader::SourceEntry> CMakeFileAPIReader::getSources(
 			LOG_WARNING(
 				"CMakeFileAPIReader: non-object target reference type='" +
 				std::string{tRef.type_name()} + "'");
+			warnings.push_back({GetSourcesWarningCode::MalformedTargetReference, {}, {}});
 			continue;
 		}
 
@@ -702,6 +727,7 @@ std::vector<CMakeFileAPIReader::SourceEntry> CMakeFileAPIReader::getSources(
 			LOG_WARNING(
 				"CMakeFileAPIReader: target '" + targetName +
 				"' has no jsonFile in codemodel");
+			warnings.push_back({GetSourcesWarningCode::TargetMissingJsonFile, targetName, {}});
 			continue;
 		}
 		const FilePath targetReplyPath{m_replyDir.getConcatenated("/" + targetFilename)};
@@ -716,6 +742,8 @@ std::vector<CMakeFileAPIReader::SourceEntry> CMakeFileAPIReader::getSources(
 			LOG_WARNING(
 				"CMakeFileAPIReader: normalized target root array for '" + targetName +
 				"' from " + targetReplyPath.str());
+			warnings.push_back(
+				{GetSourcesWarningCode::TargetRootArrayNormalized, targetName, targetReplyPath});
 		}
 		else if (targetNlRaw.is_array())
 		{
@@ -738,6 +766,8 @@ std::vector<CMakeFileAPIReader::SourceEntry> CMakeFileAPIReader::getSources(
 				LOG_WARNING(
 					"CMakeFileAPIReader: normalized target key/value array for '" + targetName +
 					"' from " + targetReplyPath.str());
+				warnings.push_back(
+					{GetSourcesWarningCode::TargetKeyValueArrayNormalized, targetName, targetReplyPath});
 			}
 		}
 
@@ -759,6 +789,8 @@ std::vector<CMakeFileAPIReader::SourceEntry> CMakeFileAPIReader::getSources(
 				" is_discarded=" + std::to_string(targetNl->is_discarded()) +
 				" array_size=" + targetArraySize +
 				" first_array_element_type='" + firstArrayElementType + "'");
+			warnings.push_back(
+				{GetSourcesWarningCode::TargetReplyUnreadable, targetName, targetReplyPath});
 			continue;
 		}
 
@@ -883,7 +915,84 @@ std::vector<CMakeFileAPIReader::SourceEntry> CMakeFileAPIReader::getSources(
 		", duplicates=" + std::to_string(duplicateSourceCount) +
 		", result_entries=" + std::to_string(result.size()));
 
-	return result;
+	detailedResult.targetCount = targetsNl.size();
+	detailedResult.normalizedTargetCount = normalizedTargetReferences.size();
+	detailedResult.matchedTargetCount = matchedTargetCount;
+	detailedResult.malformedTargetReferenceCount = malformedTargetReferenceCount;
+	detailedResult.emptyTargetReplyCount = emptyTargetReplyCount;
+	detailedResult.unreadableTargetReplyCount = unreadableTargetReplyCount;
+	detailedResult.sourceObjectCount = sourceObjectCount;
+	detailedResult.duplicateSourceCount = duplicateSourceCount;
+
+	if (matchedTargetCount > 0 && unreadableTargetReplyCount == matchedTargetCount)
+	{
+		return std::unexpected(utility::makeExpectedError(
+			GetSourcesErrorCode::AllMatchedTargetsUnreadable,
+			"All matched target replies were unreadable for configuration '" +
+				chosenConfigurationName + "'"));
+	}
+
+	return detailedResult;
+}
+
+std::vector<CMakeFileAPIReader::SourceEntry> CMakeFileAPIReader::getSources(
+	const std::string& configuration, const std::string& targetGlob) const
+{
+	const auto sourcesResult{getSourcesDetailed(configuration, targetGlob)};
+	if (sourcesResult.has_value())
+		return sourcesResult->entries;
+
+	const auto& error{sourcesResult.error()};
+	LOG_WARNING(
+		"CMakeFileAPIReader: getSources failed code='" +
+		getSourcesErrorCodeToString(error.code) + "' message='" + error.message + "'");
+	return {};
+}
+
+std::string CMakeFileAPIReader::getSourcesErrorCodeToString(const GetSourcesErrorCode& code)
+{
+	switch (code)
+	{
+	case GetSourcesErrorCode::ReplyIndexNotFound:
+		return "reply_index_not_found";
+	case GetSourcesErrorCode::ReplyIndexUnreadable:
+		return "reply_index_unreadable";
+	case GetSourcesErrorCode::CodemodelReferenceMissing:
+		return "codemodel_reference_missing";
+	case GetSourcesErrorCode::CodemodelUnreadable:
+		return "codemodel_unreadable";
+	case GetSourcesErrorCode::CodemodelParseError:
+		return "codemodel_parse_error";
+	case GetSourcesErrorCode::CodemodelRootNotObject:
+		return "codemodel_root_not_object";
+	case GetSourcesErrorCode::CodemodelUnexpectedSchema:
+		return "codemodel_unexpected_schema";
+	case GetSourcesErrorCode::ConfigurationNotFound:
+		return "configuration_not_found";
+	case GetSourcesErrorCode::AllMatchedTargetsUnreadable:
+		return "all_matched_targets_unreadable";
+	}
+	return "unknown";
+}
+
+std::string CMakeFileAPIReader::getSourcesWarningCodeToString(const GetSourcesWarningCode& code)
+{
+	switch (code)
+	{
+	case GetSourcesWarningCode::NestedTargetReferenceArraysFlattened:
+		return "nested_target_reference_arrays_flattened";
+	case GetSourcesWarningCode::MalformedTargetReference:
+		return "malformed_target_reference";
+	case GetSourcesWarningCode::TargetMissingJsonFile:
+		return "target_missing_json_file";
+	case GetSourcesWarningCode::TargetRootArrayNormalized:
+		return "target_root_array_normalized";
+	case GetSourcesWarningCode::TargetKeyValueArrayNormalized:
+		return "target_key_value_array_normalized";
+	case GetSourcesWarningCode::TargetReplyUnreadable:
+		return "target_reply_unreadable";
+	}
+	return "unknown";
 }
 
 bool CMakeFileAPIReader::isReplyStale() const
