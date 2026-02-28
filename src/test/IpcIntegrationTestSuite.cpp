@@ -20,6 +20,9 @@
 #if BUILD_RUST_LANGUAGE_PACKAGE
 #include "IndexerCommandRust.h"
 #endif
+#if BUILD_SWIFT_LANGUAGE_PACKAGE
+#include "IndexerCommandSwift.h"
+#endif
 
 TEST_CASE("ipc integration: full indexer workflow")
 {
@@ -181,6 +184,59 @@ TEST_CASE("ipc integration: full indexer workflow")
 		REQUIRE(cmdMgr.indexerCommandCount() == 0);
 #endif
 	}
+
+#if BUILD_CXX_LANGUAGE_PACKAGE && (BUILD_RUST_LANGUAGE_PACKAGE || BUILD_SWIFT_LANGUAGE_PACKAGE)
+	SECTION("pop with skip types leaves rust/swift commands in queue")
+	{
+		const std::string skipUuid = "ipc_integ_skip_test";
+		IpcInterprocessIndexerCommandManager ownerMgr(skipUuid, mainPid, true);
+		ownerMgr.clearIndexerCommands();
+
+		std::vector<std::shared_ptr<IndexerCommand>> commands;
+#if BUILD_RUST_LANGUAGE_PACKAGE
+		commands.push_back(std::make_shared<IndexerCommandRust>(
+			FilePath("/rust/pkg"),
+			std::set<FilePath>{FilePath("/rust/pkg")},
+			FilePath("/rust/pkg")));
+#endif
+#if BUILD_SWIFT_LANGUAGE_PACKAGE
+		commands.push_back(std::make_shared<IndexerCommandSwift>(
+			FilePath("/swift/pkg"),
+			std::set<FilePath>{FilePath("/swift/pkg")},
+			FilePath("/swift/pkg")));
+#endif
+		commands.push_back(std::make_shared<IndexerCommandCxx>(
+			FilePath("/src/main.cpp"),
+			std::set<FilePath>{},
+			std::set<FilePathFilter>{},
+			std::set<FilePathFilter>{},
+			FilePath("/build"),
+			std::vector<std::string>{"-std=c++20"},
+			std::string{}));
+
+		ownerMgr.pushIndexerCommands(commands);
+
+		IpcInterprocessIndexerCommandManager workerMgr(skipUuid, workerPid, false);
+		std::set<IndexerCommandType> skipTypes;
+#if BUILD_RUST_LANGUAGE_PACKAGE
+		skipTypes.insert(INDEXER_COMMAND_RUST);
+#endif
+#if BUILD_SWIFT_LANGUAGE_PACKAGE
+		skipTypes.insert(INDEXER_COMMAND_SWIFT);
+#endif
+
+		const std::shared_ptr<IndexerCommand> popped = workerMgr.popIndexerCommand(skipTypes);
+		REQUIRE(popped != nullptr);
+		REQUIRE(popped->getIndexerCommandType() == INDEXER_COMMAND_CXX);
+		REQUIRE(workerMgr.indexerCommandCount() == commands.size() - 1);
+#if BUILD_RUST_LANGUAGE_PACKAGE
+		REQUIRE(workerMgr.hasIndexerCommandType(INDEXER_COMMAND_RUST));
+#endif
+#if BUILD_SWIFT_LANGUAGE_PACKAGE
+		REQUIRE(workerMgr.hasIndexerCommandType(INDEXER_COMMAND_SWIFT));
+#endif
+	}
+#endif
 
 #if BUILD_RUST_LANGUAGE_PACKAGE
 	SECTION("task fill queue deduplicates rust commands by working directory")
