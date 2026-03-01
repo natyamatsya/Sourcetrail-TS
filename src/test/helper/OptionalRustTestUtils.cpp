@@ -1,0 +1,62 @@
+#include "OptionalRustTestUtils.h"
+
+#include "Catch2.hpp"
+
+#include <set>
+#include <vector>
+
+#include "IndexerCommandRust.h"
+#include "IndexerCommandSerializer.h"
+
+std::shared_ptr<IndexerCommand> makeOptionalRustCommand(const std::string& workingDirectory)
+{
+	const FilePath workingDirectoryPath{workingDirectory};
+	return std::make_shared<IndexerCommandRust>(
+		workingDirectoryPath,
+		std::set<FilePath>{workingDirectoryPath},
+		workingDirectoryPath);
+}
+
+bool isOptionalRustCommand(const std::shared_ptr<IndexerCommand>& command)
+{
+	if (!command)
+		return false;
+
+	return command->getIndexerCommandType() == IndexerCommandType::INDEXER_COMMAND_RUST;
+}
+
+std::string getOptionalRustWorkingDirectory(const std::shared_ptr<IndexerCommand>& command)
+{
+	if (!isOptionalRustCommand(command))
+		return {};
+
+	const auto* rustCommand = dynamic_cast<const IndexerCommandRust*>(command.get());
+	if (!rustCommand)
+		return {};
+
+	return rustCommand->getWorkingDirectory().str();
+}
+
+void assertOptionalRustSerializerRoundTrip()
+{
+	const std::set<FilePath> indexedPaths{FilePath{"/rust/pkg"}, FilePath{"/rust/pkg/deps"}};
+	const FilePath sourceFilePath{"/rust/pkg/src/main.rs"};
+	const FilePath workingDirectory{"/rust/pkg"};
+
+	const auto command = std::make_shared<IndexerCommandRust>(
+		sourceFilePath,
+		indexedPaths,
+		workingDirectory);
+	const std::vector<std::shared_ptr<IndexerCommand>> commands{command};
+
+	const auto buffer = IpcSerializer::serializeIndexerCommands(commands);
+	const auto deserializedCommands =
+		IpcSerializer::deserializeIndexerCommands(buffer.data(), buffer.size());
+
+	REQUIRE(deserializedCommands.size() == 1);
+	const auto* rustCommand = dynamic_cast<const IndexerCommandRust*>(deserializedCommands.front().get());
+	REQUIRE(rustCommand != nullptr);
+	REQUIRE(rustCommand->getSourceFilePath().str() == sourceFilePath.str());
+	REQUIRE(rustCommand->getIndexedPaths() == indexedPaths);
+	REQUIRE(rustCommand->getWorkingDirectory().str() == workingDirectory.str());
+}

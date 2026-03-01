@@ -15,6 +15,8 @@
 #include "IpcSharedMemoryGarbageCollector.h"
 #include "MemoryIndexerCommandProvider.h"
 #include "OptionalCxxTestUtils.h"
+#include "OptionalRustTestUtils.h"
+#include "OptionalSwiftTestUtils.h"
 #include "StorageProvider.h"
 #include "TaskBuildIndex.h"
 #include "TaskFillIndexerCommandQueue.h"
@@ -22,7 +24,6 @@
 
 #include "IntermediateStorage.h"
 
-#include "IndexerCommandRust.h"
 #include "IndexerCommandSwift.h"
 
 namespace
@@ -32,6 +33,80 @@ int withOptionalCxxCount(const int& count)
 	if constexpr (language_packages::buildCxxLanguagePackage)
 		return count + 1;
 	return count;
+}
+
+using MakeLanguageCommandFn = std::shared_ptr<IndexerCommand> (*)(const std::string&);
+using IsLanguageCommandFn = bool (*)(const std::shared_ptr<IndexerCommand>&);
+using GetLanguageWorkingDirectoryFn = std::string (*)(const std::shared_ptr<IndexerCommand>&);
+
+void assertTaskFillQueueDeduplicatesLanguageCommandsByWorkingDirectory(
+	const std::string& dedupUuid,
+	const ProcessId& mainPid,
+	const ProcessId& workerPid,
+	const MakeLanguageCommandFn makeLanguageCommand,
+	const IsLanguageCommandFn isLanguageCommand,
+	const GetLanguageWorkingDirectoryFn getLanguageWorkingDirectory,
+	const std::string& firstWorkingDirectory,
+	const std::string& secondWorkingDirectory,
+	const std::string& optionalCxxSourcePath)
+{
+	using enum Task::TaskState;
+
+	IpcInterprocessIndexerCommandManager ownerMgr(dedupUuid, mainPid, true);
+	ownerMgr.clearIndexerCommands();
+
+	auto provider = std::make_unique<CombinedIndexerCommandProvider>();
+
+	std::vector<std::shared_ptr<IndexerCommand>> providerACommands;
+	providerACommands.push_back(makeLanguageCommand(firstWorkingDirectory));
+	if (const std::shared_ptr<IndexerCommand> cxxCommand = makeOptionalCxxCommand(
+			optionalCxxSourcePath,
+			std::set<FilePath>{},
+			"/build",
+			std::vector<std::string>{"-std=c++20"});
+		cxxCommand)
+		providerACommands.push_back(cxxCommand);
+	provider->addProvider(std::make_shared<MemoryIndexerCommandProvider>(providerACommands));
+
+	provider->addProvider(std::make_shared<MemoryIndexerCommandProvider>(
+		std::vector<std::shared_ptr<IndexerCommand>>{
+			makeLanguageCommand(firstWorkingDirectory),
+			makeLanguageCommand(secondWorkingDirectory)}));
+
+	auto blackboard = std::make_shared<Blackboard>();
+	blackboard->set<int>("source_file_count", static_cast<int>(provider->size()));
+
+	TaskFillIndexerCommandsQueue task(dedupUuid, std::move(provider), 16);
+	REQUIRE(task.update(blackboard) == STATE_SUCCESS);
+
+	int sourceFileCount = 0;
+	REQUIRE(blackboard->get<int>("source_file_count", sourceFileCount));
+	REQUIRE(sourceFileCount == withOptionalCxxCount(2));
+
+	IpcInterprocessIndexerCommandManager reader(dedupUuid, workerPid, false);
+
+	size_t languageCount = 0;
+	size_t cxxCount = 0;
+	std::set<std::string> languageWorkingDirectories;
+	while (std::shared_ptr<IndexerCommand> command = reader.popIndexerCommand())
+	{
+		if (isLanguageCommand(command))
+		{
+			languageCount++;
+			const std::string workingDirectory = getLanguageWorkingDirectory(command);
+			REQUIRE(!workingDirectory.empty());
+			languageWorkingDirectories.insert(workingDirectory);
+			continue;
+		}
+
+		if (isOptionalCxxCommand(command))
+			cxxCount++;
+	}
+
+	REQUIRE(languageCount == 2);
+	REQUIRE(languageWorkingDirectories.size() == 2);
+	REQUIRE(cxxCount == static_cast<size_t>(withOptionalCxxCount(0)));
+	REQUIRE(reader.indexerCommandCount() == 0);
 }
 }
 
@@ -209,15 +284,9 @@ TEST_CASE("ipc integration: full indexer workflow")
 
 			std::vector<std::shared_ptr<IndexerCommand>> commands;
 			if constexpr (language_packages::buildRustLanguagePackage)
-				commands.push_back(std::make_shared<IndexerCommandRust>(
-					FilePath("/rust/pkg"),
-					std::set<FilePath>{FilePath("/rust/pkg")},
-					FilePath("/rust/pkg")));
+				commands.push_back(makeOptionalRustCommand("/rust/pkg"));
 			if constexpr (language_packages::buildSwiftLanguagePackage)
-				commands.push_back(std::make_shared<IndexerCommandSwift>(
-					FilePath("/swift/pkg"),
-					std::set<FilePath>{FilePath("/swift/pkg")},
-					FilePath("/swift/pkg")));
+				commands.push_back(makeOptionalSwiftCommand("/swift/pkg"));
 			commands.push_back(makeOptionalCxxCommand(
 				"/src/main.cpp",
 				std::set<FilePath>{},
@@ -409,161 +478,41 @@ TEST_CASE("ipc integration: full indexer workflow")
 
 	SECTION("task fill queue deduplicates rust commands by working directory")
 	{
-		if constexpr (language_packages::buildRustLanguagePackage)
+		if constexpr (!language_packages::buildRustLanguagePackage)
 		{
-			using enum Task::TaskState;
-			const std::string dedupUuid = "ipc_fill_rust_dedup_test";
-			IpcInterprocessIndexerCommandManager ownerMgr(dedupUuid, mainPid, true);
-			ownerMgr.clearIndexerCommands();
-
-			auto makeRustCommand = [](const std::string& workingDirectory) {
-				const FilePath workingDirPath(workingDirectory);
-				return std::make_shared<IndexerCommandRust>(
-					workingDirPath,
-					std::set<FilePath>{workingDirPath},
-					workingDirPath);
-			};
-
-			auto provider = std::make_unique<CombinedIndexerCommandProvider>();
-
-			std::vector<std::shared_ptr<IndexerCommand>> providerACommands;
-			providerACommands.push_back(makeRustCommand("/crate/a"));
-			if (const std::shared_ptr<IndexerCommand> cxxCommand =
-				makeOptionalCxxCommand(
-					"/src/a.cpp",
-					std::set<FilePath>{},
-					"/build",
-					std::vector<std::string>{"-std=c++20"});
-				cxxCommand)
-				providerACommands.push_back(cxxCommand);
-			provider->addProvider(
-				std::make_shared<MemoryIndexerCommandProvider>(providerACommands));
-
-			provider->addProvider(std::make_shared<MemoryIndexerCommandProvider>(
-				std::vector<std::shared_ptr<IndexerCommand>>{
-					makeRustCommand("/crate/a"),
-					makeRustCommand("/crate/b")}));
-
-			auto blackboard = std::make_shared<Blackboard>();
-			blackboard->set<int>("source_file_count", static_cast<int>(provider->size()));
-
-			TaskFillIndexerCommandsQueue task(dedupUuid, std::move(provider), 16);
-			REQUIRE(task.update(blackboard) == STATE_SUCCESS);
-
-			int sourceFileCount = 0;
-			REQUIRE(blackboard->get<int>("source_file_count", sourceFileCount));
-			REQUIRE(
-				sourceFileCount ==
-				withOptionalCxxCount(2));
-
-			IpcInterprocessIndexerCommandManager reader(dedupUuid, workerPid, false);
-
-			size_t rustCount = 0;
-			size_t cxxCount = 0;
-			std::set<std::string> rustWorkingDirectories;
-			while (std::shared_ptr<IndexerCommand> command = reader.popIndexerCommand())
-			{
-				if (command->getIndexerCommandType() == INDEXER_COMMAND_RUST)
-				{
-					rustCount++;
-					const auto* rustCommand = dynamic_cast<const IndexerCommandRust*>(command.get());
-					REQUIRE(rustCommand != nullptr);
-					rustWorkingDirectories.insert(rustCommand->getWorkingDirectory().str());
-					continue;
-				}
-
-				if (isOptionalCxxCommand(command))
-					cxxCount++;
-			}
-
-			REQUIRE(rustCount == 2);
-			REQUIRE(rustWorkingDirectories.size() == 2);
-			REQUIRE(
-				cxxCount ==
-				static_cast<size_t>(withOptionalCxxCount(0)));
-			REQUIRE(reader.indexerCommandCount() == 0);
-		}
-		else
 			SUCCEED("Rust language package disabled.");
+			return;
+		}
+
+		assertTaskFillQueueDeduplicatesLanguageCommandsByWorkingDirectory(
+			"ipc_fill_rust_dedup_test",
+			mainPid,
+			workerPid,
+			makeOptionalRustCommand,
+			isOptionalRustCommand,
+			getOptionalRustWorkingDirectory,
+			"/crate/a",
+			"/crate/b",
+			"/src/a.cpp");
 	}
 
 	SECTION("task fill queue deduplicates swift commands by working directory")
 	{
-		if constexpr (language_packages::buildSwiftLanguagePackage)
+		if constexpr (!language_packages::buildSwiftLanguagePackage)
 		{
-			using enum Task::TaskState;
-			const std::string dedupUuid = "ipc_fill_swift_dedup_test";
-			IpcInterprocessIndexerCommandManager ownerMgr(dedupUuid, mainPid, true);
-			ownerMgr.clearIndexerCommands();
-
-			auto makeSwiftCommand = [](const std::string& workingDirectory) {
-				const FilePath workingDirPath(workingDirectory);
-				return std::make_shared<IndexerCommandSwift>(
-					workingDirPath,
-					std::set<FilePath>{workingDirPath},
-					workingDirPath);
-			};
-
-			auto provider = std::make_unique<CombinedIndexerCommandProvider>();
-
-			std::vector<std::shared_ptr<IndexerCommand>> providerACommands;
-			providerACommands.push_back(makeSwiftCommand("/swift/pkg/a"));
-			if (const std::shared_ptr<IndexerCommand> cxxCommand =
-				makeOptionalCxxCommand(
-					"/src/swift_bridge.cpp",
-					std::set<FilePath>{},
-					"/build",
-					std::vector<std::string>{"-std=c++20"});
-				cxxCommand)
-				providerACommands.push_back(cxxCommand);
-			provider->addProvider(
-				std::make_shared<MemoryIndexerCommandProvider>(providerACommands));
-
-			provider->addProvider(std::make_shared<MemoryIndexerCommandProvider>(
-				std::vector<std::shared_ptr<IndexerCommand>>{
-					makeSwiftCommand("/swift/pkg/a"),
-					makeSwiftCommand("/swift/pkg/b")}));
-
-			auto blackboard = std::make_shared<Blackboard>();
-			blackboard->set<int>("source_file_count", static_cast<int>(provider->size()));
-
-			TaskFillIndexerCommandsQueue task(dedupUuid, std::move(provider), 16);
-			REQUIRE(task.update(blackboard) == STATE_SUCCESS);
-
-			int sourceFileCount = 0;
-			REQUIRE(blackboard->get<int>("source_file_count", sourceFileCount));
-			REQUIRE(
-				sourceFileCount ==
-				withOptionalCxxCount(2));
-
-			IpcInterprocessIndexerCommandManager reader(dedupUuid, workerPid, false);
-
-			size_t swiftCount = 0;
-			size_t cxxCount = 0;
-			std::set<std::string> swiftWorkingDirectories;
-			while (std::shared_ptr<IndexerCommand> command = reader.popIndexerCommand())
-			{
-				if (command->getIndexerCommandType() == INDEXER_COMMAND_SWIFT)
-				{
-					swiftCount++;
-					const auto* swiftCommand = dynamic_cast<const IndexerCommandSwift*>(command.get());
-					REQUIRE(swiftCommand != nullptr);
-					swiftWorkingDirectories.insert(swiftCommand->getWorkingDirectory().str());
-					continue;
-				}
-
-				if (isOptionalCxxCommand(command))
-					cxxCount++;
-			}
-
-			REQUIRE(swiftCount == 2);
-			REQUIRE(swiftWorkingDirectories.size() == 2);
-			REQUIRE(
-				cxxCount ==
-				static_cast<size_t>(withOptionalCxxCount(0)));
-			REQUIRE(reader.indexerCommandCount() == 0);
-		}
-		else
 			SUCCEED("Swift language package disabled.");
+			return;
+		}
+
+		assertTaskFillQueueDeduplicatesLanguageCommandsByWorkingDirectory(
+			"ipc_fill_swift_dedup_test",
+			mainPid,
+			workerPid,
+			makeOptionalSwiftCommand,
+			isOptionalSwiftCommand,
+			getOptionalSwiftWorkingDirectory,
+			"/swift/pkg/a",
+			"/swift/pkg/b",
+			"/src/swift_bridge.cpp");
 	}
 }

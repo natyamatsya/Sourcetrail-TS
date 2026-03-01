@@ -7,6 +7,8 @@
 #include "IndexingStatusSerializer.h"
 #include "GarbageCollectorSerializer.h"
 #include "OptionalCxxTestUtils.h"
+#include "OptionalRustTestUtils.h"
+#include "OptionalSwiftTestUtils.h"
 
 #include "IntermediateStorage.h"
 #include "IndexerCommand.h"
@@ -19,6 +21,22 @@ TEST_CASE("ipc serializer round-trips")
 			assertOptionalCxxSerializerRoundTrip();
 		else
 			SUCCEED("CXX language package disabled.");
+	}
+
+	SECTION("IndexerCommand Rust round-trip")
+	{
+		if constexpr (language_packages::buildRustLanguagePackage)
+			assertOptionalRustSerializerRoundTrip();
+		else
+			SUCCEED("Rust language package disabled.");
+	}
+
+	SECTION("IndexerCommand Swift round-trip")
+	{
+		if constexpr (language_packages::buildSwiftLanguagePackage)
+			assertOptionalSwiftSerializerRoundTrip();
+		else
+			SUCCEED("Swift language package disabled.");
 	}
 
 	SECTION("IntermediateStorage round-trip")
