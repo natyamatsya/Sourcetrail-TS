@@ -12,7 +12,7 @@
 #include "ResourcePaths.h"
 #include "CxxCompilationDatabaseSingle.h"
 #include "CxxDiagnosticConsumer.h"
-#include "clang_compat/ClangCompatibility.h"
+#include "clang_compat/ClangCompat.h"
 #include "utilityString.h"
 
 namespace

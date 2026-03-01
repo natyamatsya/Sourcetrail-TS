@@ -2,7 +2,7 @@
 
 #include "CxxDeclNameResolver.h"
 #include "CxxTypeNameResolver.h"
-#include "clang_compat/ClangCompatibility.h"
+#include "clang_compat/ClangCompat.h"
 
 #include <clang/AST/ASTContext.h>
 #include <clang/AST/DeclTemplate.h>

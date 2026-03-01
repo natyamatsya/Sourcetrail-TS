@@ -8,7 +8,7 @@
 #include "CxxDeclNameResolver.h"
 #include "CxxTypeNameResolver.h"
 #include "ParserClient.h"
-#include "clang_compat/ClangCompatibility.h"
+#include "clang_compat/ClangCompat.h"
 #include "utilityClang.h"
 #include "utilityMainFunction.h"
 

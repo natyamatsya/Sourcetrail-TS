@@ -8,7 +8,7 @@
 #include "IndexerStateInfo.h"
 #include "ParseLocation.h"
 #include "ParserClient.h"
-#include "clang_compat/ClangCompatibility.h"
+#include "clang_compat/ClangCompat.h"
 #include "logging.h"
 #include "utilityClang.h"
 

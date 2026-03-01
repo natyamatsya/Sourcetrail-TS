@@ -9,7 +9,7 @@
 #include "FilePath.h"
 #include "ParseLocation.h"
 #include "ToolChain.h"
-#include "clang_compat/ClangCompatibility.h"
+#include "clang_compat/ClangCompat.h"
 #include "utilityApp.h"
 #include "utilityString.h"
 

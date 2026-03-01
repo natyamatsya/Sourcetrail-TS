@@ -5,7 +5,7 @@
 #include <clang/Lex/PreprocessorOptions.h>
 #include <clang/Serialization/ASTWriter.h>
 
-#include "clang_compat/ClangCompatibility.h"
+#include "clang_compat/ClangCompat.h"
 #include "PreprocessorCallbacks.h"
 
 GeneratePCHAction::GeneratePCHAction(
