@@ -113,6 +113,10 @@ std::unique_ptr<CxxTypeName> CxxTypeNameResolver::getName(const clang::Type* typ
 			}
 			return typeName;
 		}
+#if LLVM_VERSION_MAJOR < 22
+		case clang::Type::Elaborated:
+			return getName(clang::dyn_cast<clang::ElaboratedType>(type)->getNamedType());
+#endif
 		case clang::Type::Enum:
 		case clang::Type::Record:
 		{
@@ -244,6 +248,28 @@ std::unique_ptr<CxxTypeName> CxxTypeNameResolver::getName(const clang::Type* typ
 				std::vector<std::string>(),
 				std::move(specifierName));
 		}
+#if LLVM_VERSION_MAJOR < 22
+		case clang::Type::DependentTemplateSpecialization:
+		{
+			const clang::DependentTemplateSpecializationType* dependentType =
+				clang::dyn_cast<clang::DependentTemplateSpecializationType>(type);
+			const auto& depName = dependentType->getDependentTemplateName();
+			std::unique_ptr<CxxName> specifierName =
+				CxxSpecifierNameResolver(this).getName(depName.getQualifier());
+
+			std::vector<std::string> templateArguments;
+			CxxTemplateArgumentNameResolver resolver(this);
+			for (const clang::TemplateArgument& templateArgument : dependentType->template_arguments())
+				templateArguments.push_back(resolver.getTemplateArgumentName(templateArgument));
+
+			if (const clang::IdentifierInfo* id = depName.getName().getIdentifier())
+			{
+				return std::make_unique<CxxTypeName>(
+					id->getName().str(), std::move(templateArguments), std::move(specifierName));
+			}
+			break;
+		}
+#endif
 		case clang::Type::PackExpansion:
 		{
 			return getName(clang::dyn_cast<clang::PackExpansionType>(type)->getPattern());

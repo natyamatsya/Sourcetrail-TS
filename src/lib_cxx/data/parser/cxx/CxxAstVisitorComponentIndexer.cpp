@@ -41,6 +41,7 @@ void CxxAstVisitorComponentIndexer::beginTraverseNestedNameSpecifierLoc(
 	{
 	case clang_compat::NestedNameSpecifierKind::Null:
 	case clang_compat::NestedNameSpecifierKind::Global:
+	case clang_compat::NestedNameSpecifierKind::Identifier:
 	case clang_compat::NestedNameSpecifierKind::MicrosoftSuper:
 		break;
 

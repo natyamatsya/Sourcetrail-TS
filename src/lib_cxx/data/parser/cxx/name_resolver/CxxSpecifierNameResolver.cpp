@@ -31,6 +31,24 @@ std::unique_ptr<CxxName> CxxSpecifierNameResolver::getName(
 		// no context name hierarchy needed.
 		break;
 
+#if LLVM_VERSION_MAJOR < 22
+	case clang_compat::NestedNameSpecifierKind::Identifier:
+	{
+		if (const clang::IdentifierInfo* id = nestedNameSpecifier->getAsIdentifier())
+		{
+			std::unique_ptr<CxxName> name = std::make_unique<CxxDeclName>(id->getName().str());
+
+			std::unique_ptr<CxxName> parentName =
+				getName(nestedNameSpecifier->getPrefix());
+			if (parentName)
+				name->setParent(std::move(parentName));
+
+			return name;
+		}
+		break;
+	}
+#endif
+
 	case clang_compat::NestedNameSpecifierKind::Namespace:
 	{
 		const clang::NamedDecl* namespaceDecl =

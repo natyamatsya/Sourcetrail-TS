@@ -45,6 +45,7 @@ enum class NestedNameSpecifierKind
 {
 	Null,
 	Global,
+	Identifier,
 	Namespace,
 	Type,
 	MicrosoftSuper

@@ -55,6 +55,7 @@ NestedNameSpecifierKind getNestedNameSpecifierKind(const NestedNameSpecifierRef 
 	switch (nestedNameSpecifier->getKind())
 	{
 	case clang::NestedNameSpecifier::Identifier:
+		return NestedNameSpecifierKind::Identifier;
 	case clang::NestedNameSpecifier::TypeSpec:
 	case clang::NestedNameSpecifier::TypeSpecWithTemplate:
 		return NestedNameSpecifierKind::Type;
