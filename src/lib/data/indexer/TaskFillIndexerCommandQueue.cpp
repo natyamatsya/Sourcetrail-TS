@@ -10,6 +10,9 @@
 #if BUILD_RUST_LANGUAGE_PACKAGE
 #include "IndexerCommandRust.h"
 #endif
+#if BUILD_SWIFT_LANGUAGE_PACKAGE
+#include "IndexerCommandSwift.h"
+#endif
 
 TaskFillIndexerCommandsQueue::TaskFillIndexerCommandsQueue(
 	const std::string& appUUID,
@@ -29,6 +32,10 @@ void TaskFillIndexerCommandsQueue::doEnter(std::shared_ptr<Blackboard> blackboar
 #if BUILD_RUST_LANGUAGE_PACKAGE
 		m_seenRustWorkingDirectories.clear();
 		m_skippedRustCommandCount = 0;
+#endif
+#if BUILD_SWIFT_LANGUAGE_PACKAGE
+		m_seenSwiftWorkingDirectories.clear();
+		m_skippedSwiftCommandCount = 0;
 #endif
 
 		for (const FilePath& filePath:
@@ -73,6 +80,12 @@ void TaskFillIndexerCommandsQueue::doExit(std::shared_ptr<Blackboard> blackboard
 			<< "Skipped " << m_skippedRustCommandCount
 			<< " duplicate Rust crate commands in this indexing run.");
 #endif
+#if BUILD_SWIFT_LANGUAGE_PACKAGE
+	if (m_skippedSwiftCommandCount)
+		LOG_INFO_STREAM(
+			<< "Skipped " << m_skippedSwiftCommandCount
+			<< " duplicate Swift package commands in this indexing run.");
+#endif
 
 	blackboard->set<bool>("indexer_command_queue_stopped", true);
 }
@@ -84,6 +97,10 @@ void TaskFillIndexerCommandsQueue::doReset(std::shared_ptr<Blackboard>  /*blackb
 #if BUILD_RUST_LANGUAGE_PACKAGE
 	m_seenRustWorkingDirectories.clear();
 	m_skippedRustCommandCount = 0;
+#endif
+#if BUILD_SWIFT_LANGUAGE_PACKAGE
+	m_seenSwiftWorkingDirectories.clear();
+	m_skippedSwiftCommandCount = 0;
 #endif
 }
 
@@ -126,6 +143,7 @@ bool TaskFillIndexerCommandsQueue::fillCommandQueue(std::shared_ptr<Blackboard> 
 	std::lock_guard<std::mutex> lock(m_commandsMutex);
 	std::vector<std::shared_ptr<IndexerCommand>> commands;
 	size_t skippedRustCommands = 0;
+	size_t skippedSwiftCommands = 0;
 
 	while (!m_indexerCommandProvider->empty() && commands.size() < refillAmount)
 	{
@@ -159,25 +177,54 @@ bool TaskFillIndexerCommandsQueue::fillCommandQueue(std::shared_ptr<Blackboard> 
 		}
 #endif
 
+#if BUILD_SWIFT_LANGUAGE_PACKAGE
+		if (command->getIndexerCommandType() == INDEXER_COMMAND_SWIFT)
+		{
+			const auto* swiftCommand = dynamic_cast<const IndexerCommandSwift*>(command.get());
+			if (swiftCommand)
+			{
+				const std::string workingDirectory = swiftCommand->getWorkingDirectory().str();
+				if (!m_seenSwiftWorkingDirectories.insert(workingDirectory).second)
+				{
+					skippedSwiftCommands++;
+					continue;
+				}
+			}
+		}
+#endif
+
 		commands.push_back(command);
 	}
 
-	if (skippedRustCommands)
+	const size_t skippedCommands = skippedRustCommands + skippedSwiftCommands;
+	if (skippedCommands)
 	{
 #if BUILD_RUST_LANGUAGE_PACKAGE
 		m_skippedRustCommandCount += skippedRustCommands;
 #endif
+#if BUILD_SWIFT_LANGUAGE_PACKAGE
+		m_skippedSwiftCommandCount += skippedSwiftCommands;
+#endif
 		if (blackboard)
 			blackboard->update<int>(
 				"source_file_count",
-				[n = static_cast<int>(skippedRustCommands)](int count)
+				[n = static_cast<int>(skippedCommands)](int count)
 				{
 					const int newCount = count - n;
 					return newCount >= 0 ? newCount : 0;
 				});
-		LOG_INFO_STREAM(
-			<< "Skipping " << skippedRustCommands
-			<< " duplicate Rust crate commands while filling queue.");
+#if BUILD_RUST_LANGUAGE_PACKAGE
+		if (skippedRustCommands)
+			LOG_INFO_STREAM(
+				<< "Skipping " << skippedRustCommands
+				<< " duplicate Rust crate commands while filling queue.");
+#endif
+#if BUILD_SWIFT_LANGUAGE_PACKAGE
+		if (skippedSwiftCommands)
+			LOG_INFO_STREAM(
+				<< "Skipping " << skippedSwiftCommands
+				<< " duplicate Swift package commands while filling queue.");
+#endif
 	}
 
 	if (commands.empty())
