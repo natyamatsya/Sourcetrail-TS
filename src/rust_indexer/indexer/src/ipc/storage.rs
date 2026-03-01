@@ -45,11 +45,30 @@ impl StorageChannel {
     /// Wire format: [u64 needed_capacity][u32 count][u32 size0][bytes0]...
     pub fn push(&self, storage: &OwnedIntermediateStorage) -> io::Result<()> {
         let entry_bytes = serialize_one_storage(storage);
-        self.shm.read_modify_write_with_result(|data| {
-            let rewritten = append_storage_entry(data, &entry_bytes)?;
-            Ok((Some(rewritten), ()))
-        })
+        loop {
+            let outcome = self.shm.read_modify_write_with_result(|data| {
+                let required_size = required_queue_size_for_append(data, entry_bytes.len())?;
+                if required_size > data.len() {
+                    let grow_to = growth_target(required_size);
+                    let signaled = with_needed_capacity_signal(data, grow_to)?;
+                    return Ok((Some(signaled), PushOutcome::NeedsGrow(grow_to)));
+                }
+
+                let rewritten = append_storage_entry(data, &entry_bytes)?;
+                Ok((Some(rewritten), PushOutcome::Written))
+            })?;
+
+            match outcome {
+                PushOutcome::Written => return Ok(()),
+                PushOutcome::NeedsGrow(grow_to) => self.shm.grow(grow_to)?,
+            }
+        }
     }
+}
+
+enum PushOutcome {
+    Written,
+    NeedsGrow(usize),
 }
 
 fn read_u64_at(data: &[u8], offset: usize) -> Option<u64> {
@@ -78,6 +97,36 @@ fn read_count(data: &[u8]) -> u32 {
         return 0;
     }
     read_u32_at(data, CAP_FIELD_SIZE).unwrap_or(0)
+}
+
+fn growth_target(required_size: usize) -> usize {
+    required_size.checked_mul(2).unwrap_or(required_size)
+}
+
+fn with_needed_capacity_signal(queue_bytes: &[u8], needed_capacity: usize) -> io::Result<Vec<u8>> {
+    let needed_capacity = u64::try_from(needed_capacity).map_err(|_| {
+        io::Error::new(
+            io::ErrorKind::InvalidInput,
+            "needed capacity does not fit into u64 signal field",
+        )
+    })?;
+
+    let mut signaled = if queue_bytes.len() >= HEADER_SIZE {
+        queue_bytes.to_vec()
+    } else {
+        vec![0u8; HEADER_SIZE]
+    };
+
+    if signaled.len() < HEADER_SIZE {
+        signaled.resize(HEADER_SIZE, 0);
+    }
+
+    if queue_bytes.len() < HEADER_SIZE {
+        write_u32_at(&mut signaled, CAP_FIELD_SIZE, 0);
+    }
+
+    write_u64_at(&mut signaled, 0, needed_capacity);
+    Ok(signaled)
 }
 
 fn queue_payload_end(data: &[u8], count: u32) -> io::Result<usize> {
@@ -116,6 +165,23 @@ fn queue_payload_end(data: &[u8], count: u32) -> io::Result<usize> {
     Ok(cursor)
 }
 
+fn required_queue_size_for_append(queue_bytes: &[u8], entry_size: usize) -> io::Result<usize> {
+    let count = read_count(queue_bytes);
+    let payload_end = queue_payload_end(queue_bytes, count)?;
+    let existing_payload_size = payload_end.saturating_sub(HEADER_SIZE);
+
+    HEADER_SIZE
+        .checked_add(existing_payload_size)
+        .and_then(|n| n.checked_add(COUNT_FIELD_SIZE))
+        .and_then(|n| n.checked_add(entry_size))
+        .ok_or_else(|| {
+            io::Error::new(
+                io::ErrorKind::InvalidInput,
+                "storage queue size overflow while appending entry",
+            )
+        })
+}
+
 fn append_storage_entry(queue_bytes: &[u8], entry_bytes: &[u8]) -> io::Result<Vec<u8>> {
     let count = read_count(queue_bytes);
     let payload_end = queue_payload_end(queue_bytes, count)?;
@@ -135,16 +201,7 @@ fn append_storage_entry(queue_bytes: &[u8], entry_bytes: &[u8]) -> io::Result<Ve
         )
     })?;
 
-    let total_size = HEADER_SIZE
-        .checked_add(existing_payload_size)
-        .and_then(|n| n.checked_add(COUNT_FIELD_SIZE))
-        .and_then(|n| n.checked_add(entry_bytes.len()))
-        .ok_or_else(|| {
-            io::Error::new(
-                io::ErrorKind::InvalidInput,
-                "storage queue size overflow while appending entry",
-            )
-        })?;
+    let total_size = required_queue_size_for_append(queue_bytes, entry_bytes.len())?;
 
     if total_size > queue_bytes.len() {
         return Err(io::Error::new(
@@ -660,5 +717,22 @@ mod queue_tests {
         let err = append_storage_entry(&invalid, &[1u8]).unwrap_err();
 
         assert_eq!(err.kind(), io::ErrorKind::InvalidData);
+    }
+
+    #[test]
+    fn needed_capacity_signal_preserves_queue_count_and_entries() {
+        let first = append_storage_entry(&vec![0u8; 256], &[1u8, 2u8, 3u8]).unwrap();
+        let mut queue = vec![0u8; 256];
+        queue[..first.len()].copy_from_slice(&first);
+
+        let signaled = with_needed_capacity_signal(&queue, 512).unwrap();
+
+        assert_eq!(read_u64_at(&signaled, 0), Some(512));
+        assert_eq!(read_count(&signaled), 1);
+        assert_eq!(read_u32_at(&signaled, HEADER_SIZE), Some(3));
+        assert_eq!(
+            &signaled[HEADER_SIZE + COUNT_FIELD_SIZE..HEADER_SIZE + COUNT_FIELD_SIZE + 3],
+            &[1u8, 2u8, 3u8]
+        );
     }
 }

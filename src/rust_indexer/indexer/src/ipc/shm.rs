@@ -9,6 +9,7 @@
 // prepending the prefixes, so we do the same.
 
 use std::io;
+use std::sync::Mutex;
 
 use libipc::{IpcMutex, ShmHandle, ShmOpenMode};
 
@@ -26,7 +27,7 @@ fn truncate(name: &str) -> &str {
 }
 
 pub struct IpcShm {
-    shm: ShmHandle,
+    shm: Mutex<ShmHandle>,
     mtx: IpcMutex,
 }
 
@@ -36,7 +37,11 @@ impl IpcShm {
         let mem_name = format!("{MEM_PREFIX}{short}");
         let mtx_name = format!("{MTX_PREFIX}{short}");
 
-        let shm = ShmHandle::acquire(&mem_name, size, ShmOpenMode::CreateOrOpen)?;
+        let shm = Mutex::new(ShmHandle::acquire(
+            &mem_name,
+            size,
+            ShmOpenMode::CreateOrOpen,
+        )?);
         let mtx = IpcMutex::open(&mtx_name)?;
 
         Ok(Self { shm, mtx })
@@ -48,31 +53,39 @@ impl IpcShm {
         F: FnOnce(&[u8]) -> R,
     {
         self.mtx.lock()?;
+        let shm = match self.shm.lock() {
+            Ok(guard) => guard,
+            Err(poisoned) => poisoned.into_inner(),
+        };
         let result = {
-            let data =
-                unsafe { std::slice::from_raw_parts(self.shm.as_ptr(), self.shm.user_size()) };
+            let data = unsafe { std::slice::from_raw_parts(shm.as_ptr(), shm.user_size()) };
             f(data)
         };
+        drop(shm);
         self.mtx.unlock()?;
         Ok(result)
     }
 
     /// Write `buf` into the SHM region under the mutex.
     pub fn write_locked(&self, buf: &[u8]) -> io::Result<()> {
-        if buf.len() > self.shm.user_size() {
+        self.mtx.lock()?;
+        let shm = match self.shm.lock() {
+            Ok(guard) => guard,
+            Err(poisoned) => poisoned.into_inner(),
+        };
+        if buf.len() > shm.user_size() {
+            let shm_size = shm.user_size();
+            drop(shm);
+            self.mtx.unlock()?;
             return Err(io::Error::new(
                 io::ErrorKind::InvalidInput,
-                format!(
-                    "IpcShm::write: {} bytes > shm size {}",
-                    buf.len(),
-                    self.shm.user_size()
-                ),
+                format!("IpcShm::write: {} bytes > shm size {}", buf.len(), shm_size),
             ));
         }
-        self.mtx.lock()?;
         unsafe {
-            std::ptr::copy_nonoverlapping(buf.as_ptr(), self.shm.as_mut_ptr(), buf.len());
+            std::ptr::copy_nonoverlapping(buf.as_ptr(), shm.as_ptr() as *mut u8, buf.len());
         }
+        drop(shm);
         self.mtx.unlock()?;
         Ok(())
     }
@@ -89,25 +102,31 @@ impl IpcShm {
         F: FnOnce(&[u8]) -> Vec<u8>,
     {
         self.mtx.lock()?;
+        let shm = match self.shm.lock() {
+            Ok(guard) => guard,
+            Err(poisoned) => poisoned.into_inner(),
+        };
         let new_buf = {
-            let data =
-                unsafe { std::slice::from_raw_parts(self.shm.as_ptr(), self.shm.user_size()) };
+            let data = unsafe { std::slice::from_raw_parts(shm.as_ptr(), shm.user_size()) };
             f(data)
         };
-        if new_buf.len() > self.shm.user_size() {
+        if new_buf.len() > shm.user_size() {
+            let shm_size = shm.user_size();
+            drop(shm);
             self.mtx.unlock()?;
             return Err(io::Error::new(
                 io::ErrorKind::InvalidInput,
                 format!(
                     "IpcShm::read_modify_write: {} bytes > shm size {}",
                     new_buf.len(),
-                    self.shm.user_size()
+                    shm_size
                 ),
             ));
         }
         unsafe {
-            std::ptr::copy_nonoverlapping(new_buf.as_ptr(), self.shm.as_mut_ptr(), new_buf.len());
+            std::ptr::copy_nonoverlapping(new_buf.as_ptr(), shm.as_ptr() as *mut u8, new_buf.len());
         }
+        drop(shm);
         self.mtx.unlock()?;
         Ok(())
     }
@@ -119,40 +138,55 @@ impl IpcShm {
         F: FnOnce(&[u8]) -> io::Result<(Option<Vec<u8>>, R)>,
     {
         self.mtx.lock()?;
+        let shm = match self.shm.lock() {
+            Ok(guard) => guard,
+            Err(poisoned) => poisoned.into_inner(),
+        };
 
         let outcome = {
-            let data =
-                unsafe { std::slice::from_raw_parts(self.shm.as_ptr(), self.shm.user_size()) };
+            let data = unsafe { std::slice::from_raw_parts(shm.as_ptr(), shm.user_size()) };
             f(data)
         };
 
         let (new_buf, result) = match outcome {
             Ok(v) => v,
             Err(err) => {
+                drop(shm);
                 self.mtx.unlock()?;
                 return Err(err);
             }
         };
 
         if let Some(buf) = new_buf {
-            if buf.len() > self.shm.user_size() {
+            if buf.len() > shm.user_size() {
+                let shm_size = shm.user_size();
+                drop(shm);
                 self.mtx.unlock()?;
                 return Err(io::Error::new(
                     io::ErrorKind::InvalidInput,
                     format!(
                         "IpcShm::read_modify_write_with_result: {} bytes > shm size {}",
                         buf.len(),
-                        self.shm.user_size()
+                        shm_size
                     ),
                 ));
             }
             unsafe {
-                std::ptr::copy_nonoverlapping(buf.as_ptr(), self.shm.as_mut_ptr(), buf.len());
+                std::ptr::copy_nonoverlapping(buf.as_ptr(), shm.as_ptr() as *mut u8, buf.len());
             }
         }
 
+        drop(shm);
         self.mtx.unlock()?;
         Ok(result)
+    }
+
+    pub fn grow(&self, new_user_size: usize) -> io::Result<()> {
+        let mut shm = match self.shm.lock() {
+            Ok(guard) => guard,
+            Err(poisoned) => poisoned.into_inner(),
+        };
+        shm.grow(new_user_size)
     }
 }
 

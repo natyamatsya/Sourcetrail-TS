@@ -1,7 +1,7 @@
 [package]
 name = "sourcetrail-rust-indexer"
 version = "0.1.0"
-edition = "2021"
+edition = "2024"
 
 [lib]
 name = "sourcetrail_rust_indexer_lib"
@@ -16,14 +16,14 @@ name = "index_self"
 path = "src/bin/index_self.rs"
 
 [dependencies]
-libipc = { git = "https://github.com/natyamatsya/cpp-ipc.git", rev = "32b772d" }
-flatbuffers = "24.3.25"
-ra_ap_syntax = "0.0.320"
-ra_ap_hir = "0.0.320"
-ra_ap_ide_db = "0.0.320"
-ra_ap_project_model = "0.0.320"
-ra_ap_load-cargo = "0.0.320"
-ra_ap_vfs = "0.0.320"
+libipc = { git = "https://github.com/natyamatsya/cpp-ipc.git", branch = "master" }
+flatbuffers = "25.12.19"
+ra_ap_syntax = "0.0.321"
+ra_ap_hir = "0.0.321"
+ra_ap_ide_db = "0.0.321"
+ra_ap_project_model = "0.0.321"
+ra_ap_load-cargo = "0.0.321"
+ra_ap_vfs = "0.0.321"
 tempfile = "3"
 log = "0.4"
 env_logger = "0.11"
