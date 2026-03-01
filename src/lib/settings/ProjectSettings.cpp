@@ -1,5 +1,6 @@
 #include "ProjectSettings.h"
 
+#include "language_package_flags.h"
 #include "SourceGroupSettingsCustomCommand.h"
 #include "SourceGroupSettingsUnloadable.h"
 #include "logging.h"
@@ -15,12 +16,8 @@
 #	include "SourceGroupSettingsCxxCdb.h"
 #	include "SourceGroupSettingsCxxCMakeFileAPI.h"
 #endif	  // BUILD_CXX_LANGUAGE_PACKAGE
-#if BUILD_RUST_LANGUAGE_PACKAGE
 #	include "SourceGroupSettingsRustEmpty.h"
-#endif	  // BUILD_RUST_LANGUAGE_PACKAGE
-#if BUILD_SWIFT_LANGUAGE_PACKAGE
 #	include "SourceGroupSettingsSwiftEmpty.h"
-#endif	  // BUILD_SWIFT_LANGUAGE_PACKAGE
 
 namespace
 {
@@ -206,16 +203,18 @@ std::vector<std::shared_ptr<SourceGroupSettings>> ProjectSettings::getAllSourceG
 			settings = std::make_shared<SourceGroupSettingsCxxCMakeFileAPI>(id, this);
 			break;
 #endif	  // BUILD_CXX_LANGUAGE_PACKAGE
-#if BUILD_RUST_LANGUAGE_PACKAGE
 		case SourceGroupType::RUST_EMPTY:
-			settings = std::make_shared<SourceGroupSettingsRustEmpty>(id, this);
+			if constexpr (language_packages::buildRustLanguagePackage)
+				settings = std::make_shared<SourceGroupSettingsRustEmpty>(id, this);
+			else
+				settings = std::make_shared<SourceGroupSettingsUnloadable>(id, this);
 			break;
-#endif	  // BUILD_RUST_LANGUAGE_PACKAGE
-#if BUILD_SWIFT_LANGUAGE_PACKAGE
 		case SourceGroupType::SWIFT_EMPTY:
-			settings = std::make_shared<SourceGroupSettingsSwiftEmpty>(id, this);
+			if constexpr (language_packages::buildSwiftLanguagePackage)
+				settings = std::make_shared<SourceGroupSettingsSwiftEmpty>(id, this);
+			else
+				settings = std::make_shared<SourceGroupSettingsUnloadable>(id, this);
 			break;
-#endif	  // BUILD_SWIFT_LANGUAGE_PACKAGE
 		case SourceGroupType::CUSTOM_COMMAND:
 			settings = std::make_shared<SourceGroupSettingsCustomCommand>(id, this);
 			break;

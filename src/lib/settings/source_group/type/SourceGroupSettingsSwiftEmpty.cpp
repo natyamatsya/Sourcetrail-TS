@@ -1,7 +1,5 @@
 #include "SourceGroupSettingsSwiftEmpty.h"
 
-#if BUILD_SWIFT_LANGUAGE_PACKAGE
-
 #include "ConfigManager.h"
 
 std::vector<std::string> SourceGroupSettingsSwiftEmpty::getDefaultSourceExtensions() const
@@ -50,5 +48,3 @@ bool SourceGroupSettingsSwiftEmpty::equalsSettings(const SourceGroupSettingsBase
 		return false;
 	return true;
 }
-
-#endif	  // BUILD_SWIFT_LANGUAGE_PACKAGE

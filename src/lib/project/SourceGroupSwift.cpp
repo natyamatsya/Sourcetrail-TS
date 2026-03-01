@@ -1,7 +1,5 @@
 #include "SourceGroupSwift.h"
 
-#if BUILD_SWIFT_LANGUAGE_PACKAGE
-
 #include "FileManager.h"
 #include "IndexerCommandSwift.h"
 #include "RefreshInfo.h"
@@ -55,5 +53,3 @@ std::shared_ptr<const SourceGroupSettings> SourceGroupSwift::getSourceGroupSetti
 {
 	return m_settings;
 }
-
-#endif	  // BUILD_SWIFT_LANGUAGE_PACKAGE

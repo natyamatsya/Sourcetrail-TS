@@ -1,7 +1,5 @@
 #include "SourceGroupFactoryModuleSwift.h"
 
-#if BUILD_SWIFT_LANGUAGE_PACKAGE
-
 #include "SourceGroupSettingsSwiftEmpty.h"
 #include "SourceGroupSwift.h"
 
@@ -17,5 +15,3 @@ std::shared_ptr<SourceGroup> SourceGroupFactoryModuleSwift::createSourceGroup(
 		return std::make_shared<SourceGroupSwift>(swiftSettings);
 	return nullptr;
 }
-
-#endif	  // BUILD_SWIFT_LANGUAGE_PACKAGE

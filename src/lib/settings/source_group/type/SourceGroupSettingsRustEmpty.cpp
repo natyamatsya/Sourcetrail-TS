@@ -1,7 +1,5 @@
 #include "SourceGroupSettingsRustEmpty.h"
 
-#if BUILD_RUST_LANGUAGE_PACKAGE
-
 #include "ConfigManager.h"
 
 std::vector<std::string> SourceGroupSettingsRustEmpty::getDefaultSourceExtensions() const
@@ -50,5 +48,3 @@ bool SourceGroupSettingsRustEmpty::equalsSettings(const SourceGroupSettingsBase*
 		return false;
 	return true;
 }
-
-#endif	  // BUILD_RUST_LANGUAGE_PACKAGE

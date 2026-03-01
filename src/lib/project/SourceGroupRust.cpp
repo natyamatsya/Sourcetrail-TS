@@ -1,15 +1,13 @@
 #include "SourceGroupRust.h"
 
-#if BUILD_RUST_LANGUAGE_PACKAGE
-
 #include "FileManager.h"
 #include "IndexerCommandRust.h"
 #include "RefreshInfo.h"
 #include "SourceGroupSettingsRustEmpty.h"
 #include "utility.h"
 
-SourceGroupRust::SourceGroupRust(std::shared_ptr<SourceGroupSettingsRustEmpty> settings)
-	: m_settings(std::move(settings))
+SourceGroupRust::SourceGroupRust(const std::shared_ptr<SourceGroupSettingsRustEmpty>& settings)
+	: m_settings{settings}
 {
 }
 
@@ -60,5 +58,3 @@ std::shared_ptr<const SourceGroupSettings> SourceGroupRust::getSourceGroupSettin
 {
 	return m_settings;
 }
-
-#endif	  // BUILD_RUST_LANGUAGE_PACKAGE

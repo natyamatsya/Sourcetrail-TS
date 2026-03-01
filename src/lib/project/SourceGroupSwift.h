@@ -1,10 +1,6 @@
 #ifndef SOURCE_GROUP_SWIFT_H
 #define SOURCE_GROUP_SWIFT_H
 
-#include "language_packages.h"
-
-#if BUILD_SWIFT_LANGUAGE_PACKAGE
-
 #include <memory>
 #include <set>
 #include <vector>
@@ -33,7 +29,5 @@ protected:
 private:
 	std::shared_ptr<SourceGroupSettingsSwiftEmpty> m_settings;
 };
-
-#endif	  // BUILD_SWIFT_LANGUAGE_PACKAGE
 
 #endif	  // SOURCE_GROUP_SWIFT_H

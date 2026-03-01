@@ -1,10 +1,6 @@
 #ifndef SOURCE_GROUP_RUST_H
 #define SOURCE_GROUP_RUST_H
 
-#include "language_packages.h"
-
-#if BUILD_RUST_LANGUAGE_PACKAGE
-
 #include <memory>
 #include <set>
 #include <vector>
@@ -16,7 +12,7 @@ class SourceGroupSettingsRustEmpty;
 class SourceGroupRust: public SourceGroup
 {
 public:
-	explicit SourceGroupRust(std::shared_ptr<SourceGroupSettingsRustEmpty> settings);
+	explicit SourceGroupRust(const std::shared_ptr<SourceGroupSettingsRustEmpty>& settings);
 
 	bool prepareIndexing() override;
 
@@ -33,7 +29,5 @@ protected:
 private:
 	std::shared_ptr<SourceGroupSettingsRustEmpty> m_settings;
 };
-
-#endif	  // BUILD_RUST_LANGUAGE_PACKAGE
 
 #endif	  // SOURCE_GROUP_RUST_H

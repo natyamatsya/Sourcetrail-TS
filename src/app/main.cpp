@@ -28,19 +28,12 @@
 	#include "SourceGroupFactoryModuleCxx.h"
 #endif	  // BUILD_CXX_LANGUAGE_PACKAGE
 
-#if BUILD_RUST_LANGUAGE_PACKAGE
-	#include "LanguagePackageRust.h"
-	#include "SourceGroupFactoryModuleRust.h"
-#endif	  // BUILD_RUST_LANGUAGE_PACKAGE
+#include "LanguagePackageRust.h"
+#include "SourceGroupFactoryModuleRust.h"
 
-#if BUILD_SWIFT_LANGUAGE_PACKAGE
-	#include "LanguagePackageSwift.h"
-	#include "SourceGroupFactoryModuleSwift.h"
-#endif	  // BUILD_SWIFT_LANGUAGE_PACKAGE
+#include "LanguagePackageSwift.h"
+#include "SourceGroupFactoryModuleSwift.h"
 
-#if BOOST_OS_WINDOWS
-	#include <windows.h>
-#endif
 
 #include <QByteArray>
 #include <QtEnvironmentVariables>
@@ -95,25 +88,21 @@ void addLanguagePackages()
 	SourceGroupFactory::getInstance()->addModule(std::make_shared<SourceGroupFactoryModuleCxx>());
 #endif	  // BUILD_CXX_LANGUAGE_PACKAGE
 
-#if BUILD_RUST_LANGUAGE_PACKAGE
-	SourceGroupFactory::getInstance()->addModule(std::make_shared<SourceGroupFactoryModuleRust>());
-#endif	  // BUILD_RUST_LANGUAGE_PACKAGE
+ 	if constexpr (language_packages::buildRustLanguagePackage)
+		SourceGroupFactory::getInstance()->addModule(std::make_shared<SourceGroupFactoryModuleRust>());
 
-#if BUILD_SWIFT_LANGUAGE_PACKAGE
-	SourceGroupFactory::getInstance()->addModule(std::make_shared<SourceGroupFactoryModuleSwift>());
-#endif	  // BUILD_SWIFT_LANGUAGE_PACKAGE
+	if constexpr (language_packages::buildSwiftLanguagePackage)
+		SourceGroupFactory::getInstance()->addModule(std::make_shared<SourceGroupFactoryModuleSwift>());
 
 #if BUILD_CXX_LANGUAGE_PACKAGE
 	LanguagePackageManager::getInstance()->addPackage(std::make_shared<LanguagePackageCxx>());
 #endif	  // BUILD_CXX_LANGUAGE_PACKAGE
 
-#if BUILD_RUST_LANGUAGE_PACKAGE
-	LanguagePackageManager::getInstance()->addPackage(std::make_shared<LanguagePackageRust>());
-#endif	  // BUILD_RUST_LANGUAGE_PACKAGE
+	if constexpr (language_packages::buildRustLanguagePackage)
+		LanguagePackageManager::getInstance()->addPackage(std::make_shared<LanguagePackageRust>());
 
-#if BUILD_SWIFT_LANGUAGE_PACKAGE
-	LanguagePackageManager::getInstance()->addPackage(std::make_shared<LanguagePackageSwift>());
-#endif	  // BUILD_SWIFT_LANGUAGE_PACKAGE
+	if constexpr (language_packages::buildSwiftLanguagePackage)
+		LanguagePackageManager::getInstance()->addPackage(std::make_shared<LanguagePackageSwift>());
 }
 
 int main(int argc, char* argv[])
