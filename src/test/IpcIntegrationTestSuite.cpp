@@ -2,16 +2,20 @@
 
 #include "language_packages.h"
 
+#include <chrono>
 #include <thread>
 
 #include "AppPath.h"
 #include "Blackboard.h"
 #include "CombinedIndexerCommandProvider.h"
+#include "DialogView.h"
 #include "IpcInterprocessIndexerCommandManager.h"
 #include "IpcInterprocessIntermediateStorageManager.h"
 #include "IpcInterprocessIndexingStatusManager.h"
 #include "IpcSharedMemoryGarbageCollector.h"
 #include "MemoryIndexerCommandProvider.h"
+#include "StorageProvider.h"
+#include "TaskBuildIndex.h"
 #include "TaskFillIndexerCommandQueue.h"
 #include "utilityApp.h"
 
@@ -334,6 +338,64 @@ TEST_CASE("ipc integration: full indexer workflow")
 		REQUIRE(storage->getComponentAccesses().empty());
 		REQUIRE(storage->getErrors().empty());
 		REQUIRE(storageOwner.getIntermediateStorageCount() == 0);
+	}
+
+	SECTION("task build index runs swift subprocess and drains storage")
+	{
+		using enum Task::TaskState;
+		const std::string taskUuid = "ipc_task_build_swift_subprocess_test";
+
+		IpcInterprocessIndexerCommandManager commandOwner(taskUuid, mainPid, true);
+		commandOwner.clearIndexerCommands();
+		commandOwner.pushIndexerCommands({
+			std::make_shared<IndexerCommandSwift>(
+				FilePath("/swift/pkg/task_main.swift"),
+				std::set<FilePath>{FilePath("/swift/pkg")},
+				FilePath("/swift/pkg"))
+		});
+		REQUIRE(commandOwner.indexerCommandCount() == 1);
+
+		auto storageProvider = std::make_shared<StorageProvider>();
+		auto dialogView = std::make_shared<DialogView>(DialogView::UseCase::INDEXING, nullptr);
+		TaskBuildIndex task(0, storageProvider, dialogView, taskUuid);
+
+		auto blackboard = std::make_shared<Blackboard>();
+		blackboard->set<int>("source_file_count", 1);
+		blackboard->set<int>("indexed_source_file_count", 0);
+		blackboard->set<bool>("indexer_command_queue_stopped", true);
+
+		Task::TaskState taskState = STATE_RUNNING;
+		const auto deadline = std::chrono::steady_clock::now() + std::chrono::seconds(20);
+		while (
+			taskState == STATE_RUNNING &&
+			std::chrono::steady_clock::now() < deadline)
+			taskState = task.update(blackboard);
+
+		REQUIRE(taskState == STATE_SUCCESS);
+		REQUIRE(commandOwner.indexerCommandCount() == 0);
+
+		bool threadsStopped = false;
+		REQUIRE(blackboard->get<bool>("indexer_threads_stopped", threadsStopped));
+		REQUIRE(threadsStopped == true);
+
+		int indexedSourceFileCount = 0;
+		REQUIRE(blackboard->get<int>("indexed_source_file_count", indexedSourceFileCount));
+		REQUIRE(indexedSourceFileCount == 1);
+
+		REQUIRE(storageProvider->getStorageCount() == 1);
+		const std::shared_ptr<IntermediateStorage> storage = storageProvider->consumeLargestStorage();
+		REQUIRE(storage != nullptr);
+		REQUIRE(storage->getNextId() == 1);
+		REQUIRE(storage->getStorageNodes().empty());
+		REQUIRE(storage->getStorageFiles().empty());
+		REQUIRE(storage->getStorageEdges().empty());
+		REQUIRE(storage->getStorageSymbols().empty());
+		REQUIRE(storage->getStorageLocalSymbols().empty());
+		REQUIRE(storage->getStorageSourceLocations().empty());
+		REQUIRE(storage->getStorageOccurrences().empty());
+		REQUIRE(storage->getComponentAccesses().empty());
+		REQUIRE(storage->getErrors().empty());
+		REQUIRE(storageProvider->getStorageCount() == 0);
 	}
 #endif
 
