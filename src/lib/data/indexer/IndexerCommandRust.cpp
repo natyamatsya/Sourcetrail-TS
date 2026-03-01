@@ -1,7 +1,5 @@
 #include "IndexerCommandRust.h"
 
-#if BUILD_RUST_LANGUAGE_PACKAGE
-
 #include <QJsonArray>
 #include <QJsonObject>
 
@@ -47,5 +45,3 @@ QJsonObject IndexerCommandRust::doSerialize() const
 
 	return obj;
 }
-
-#endif	  // BUILD_RUST_LANGUAGE_PACKAGE

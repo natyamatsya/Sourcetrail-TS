@@ -67,12 +67,10 @@ InterprocessIndexer::WorkResult InterprocessIndexer::work()
 			});
 
 			std::set<IndexerCommandType> skipTypes;
-#if BUILD_RUST_LANGUAGE_PACKAGE
-			skipTypes.insert(INDEXER_COMMAND_RUST);
-#endif
-#if BUILD_SWIFT_LANGUAGE_PACKAGE
-			skipTypes.insert(INDEXER_COMMAND_SWIFT);
-#endif
+			if constexpr (language_packages::buildRustLanguagePackage)
+				skipTypes.insert(INDEXER_COMMAND_RUST);
+			if constexpr (language_packages::buildSwiftLanguagePackage)
+				skipTypes.insert(INDEXER_COMMAND_SWIFT);
 			while (true)
 			{
 				const std::shared_ptr<IndexerCommand> indexerCommand =

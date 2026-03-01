@@ -1,10 +1,6 @@
 #ifndef INDEXER_COMMAND_SWIFT_H
 #define INDEXER_COMMAND_SWIFT_H
 
-#include "language_packages.h"
-
-#if BUILD_SWIFT_LANGUAGE_PACKAGE
-
 #include <set>
 #include <string>
 
@@ -32,7 +28,5 @@ private:
 	std::set<FilePath> m_indexedPaths;
 	FilePath m_workingDirectory;
 };
-
-#endif	  // BUILD_SWIFT_LANGUAGE_PACKAGE
 
 #endif	  // INDEXER_COMMAND_SWIFT_H

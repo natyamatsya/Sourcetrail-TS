@@ -45,14 +45,10 @@ private:
 	std::queue<FilePath> m_filePathQueue;
 	std::mutex m_commandsMutex;
 
-#if BUILD_RUST_LANGUAGE_PACKAGE
 	std::unordered_set<std::string> m_seenRustWorkingDirectories;
 	size_t m_skippedRustCommandCount = 0;
-#endif
-#if BUILD_SWIFT_LANGUAGE_PACKAGE
 	std::unordered_set<std::string> m_seenSwiftWorkingDirectories;
 	size_t m_skippedSwiftCommandCount = 0;
-#endif
 
 	bool m_interrupted = false;
 };

@@ -1,7 +1,5 @@
 #include "IndexerCommandSwift.h"
 
-#if BUILD_SWIFT_LANGUAGE_PACKAGE
-
 #include <QJsonArray>
 #include <QJsonObject>
 
@@ -47,5 +45,3 @@ QJsonObject IndexerCommandSwift::doSerialize() const
 
 	return obj;
 }
-
-#endif	  // BUILD_SWIFT_LANGUAGE_PACKAGE
