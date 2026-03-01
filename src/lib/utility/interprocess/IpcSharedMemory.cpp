@@ -5,6 +5,22 @@
 
 #include "logging.h"
 
+namespace
+{
+template <typename ShmHandle>
+bool growSharedMemoryHandle(
+	ShmHandle& shm,
+	const std::string& memoryName,
+	const std::size_t newSize)
+{
+	if constexpr (requires(ShmHandle& handle) { handle.grow(newSize); })
+		return shm.grow(newSize);
+
+	shm.release();
+	return shm.acquire(memoryName.c_str(), newSize, ipc::shm::create | ipc::shm::open);
+}
+} // namespace
+
 const char* IpcSharedMemory::s_memoryNamePrefix = "srctrl_ipc_mem_";
 const char* IpcSharedMemory::s_mutexNamePrefix = "srctrl_ipc_mtx_";
 
@@ -80,12 +96,10 @@ void IpcSharedMemory::grow(std::size_t newSize)
 	if (newSize <= m_size)
 		return;
 
-	m_shm.release();
-	// Do NOT unlink the backing file — we extend it in-place via ftruncate
-	// so that the other process's handle can re-mmap the same name at the new size.
+	if (!growSharedMemoryHandle(m_shm, getMemoryName(), newSize))
+		throw std::runtime_error("IpcSharedMemory::grow: failed to grow shared memory: " + getMemoryName());
+
 	m_size = newSize;
-	if (!m_shm.acquire(getMemoryName().c_str(), m_size, ipc::shm::create | ipc::shm::open))
-		throw std::runtime_error("IpcSharedMemory::grow: failed to re-map shared memory: " + getMemoryName());
 }
 
 std::string IpcSharedMemory::getMemoryName() const
