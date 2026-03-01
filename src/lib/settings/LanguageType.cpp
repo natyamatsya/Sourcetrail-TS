@@ -4,12 +4,10 @@ std::string languageTypeToString(LanguageType t)
 {
 	switch (t)
 	{
-#if BUILD_CXX_LANGUAGE_PACKAGE
 	case LanguageType::C:
 		return "C";
 	case LanguageType::CXX:
 		return "C++";
-#endif	  // BUILD_CXX_LANGUAGE_PACKAGE
 	case LanguageType::RUST:
 		return "Rust";
 	case LanguageType::SWIFT:
@@ -26,7 +24,6 @@ LanguageType getLanguageTypeForSourceGroupType(SourceGroupType t)
 {
 	switch (t)
 	{
-#if BUILD_CXX_LANGUAGE_PACKAGE
 	case SourceGroupType::C_EMPTY:
 		return LanguageType::C;
 	case SourceGroupType::CXX_EMPTY:
@@ -34,7 +31,6 @@ LanguageType getLanguageTypeForSourceGroupType(SourceGroupType t)
 	case SourceGroupType::CXX_CDB:
 	case SourceGroupType::CXX_CMAKE_FILE_API:
 		return LanguageType::CXX;
-#endif	  // BUILD_CXX_LANGUAGE_PACKAGE
 	case SourceGroupType::RUST_EMPTY:
 		return LanguageType::RUST;
 	case SourceGroupType::SWIFT_EMPTY:

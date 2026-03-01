@@ -10,10 +10,8 @@
 enum class LanguageType
 {
 	UNKNOWN,
-#if BUILD_CXX_LANGUAGE_PACKAGE
 	CXX,
 	C,
-#endif
 	RUST,
 	SWIFT,
 	CUSTOM

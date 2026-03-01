@@ -41,6 +41,7 @@
 #include "TaskReturnSuccessIf.h"
 #include "TaskSetValue.h"
 #include "TextAccess.h"
+#include "language_package_flags.h"
 #include "utility.h"
 #include "utilityApp.h"
 #include "utilityFile.h"
@@ -785,17 +786,17 @@ void Project::discardTempStorage()
 
 bool Project::hasCxxSourceGroup() const
 {
-#if BUILD_CXX_LANGUAGE_PACKAGE
-	for (const std::shared_ptr<SourceGroup>& sourceGroup: m_sourceGroups)
+	if constexpr (language_packages::buildCxxLanguagePackage)
 	{
-		if (sourceGroup->getStatus() == SourceGroupStatusType::ENABLED)
+		for (const std::shared_ptr<SourceGroup>& sourceGroup: m_sourceGroups)
 		{
-			if (sourceGroup->getLanguage() == LanguageType::C || sourceGroup->getLanguage() == LanguageType::CXX)
+			if (sourceGroup->getStatus() == SourceGroupStatusType::ENABLED)
 			{
-				return true;
+				if (sourceGroup->getLanguage() == LanguageType::C || sourceGroup->getLanguage() == LanguageType::CXX)
+					return true;
 			}
 		}
 	}
-#endif	  // BUILD_CXX_LANGUAGE_PACKAGE
+
 	return false;
 }

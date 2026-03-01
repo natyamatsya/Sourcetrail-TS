@@ -1,0 +1,13 @@
+version = '8'
+
+[[source_groups]]
+id = '9f72bbc9-ab3f-4f95-abef-224bf0fd51c9'
+name = 'Rust Empty'
+status = 'enabled'
+type = 'Rust Empty'
+
+    [source_groups.source_extensions]
+    source_extension = '.rs'
+
+    [source_groups.source_paths]
+    source_path = './'
