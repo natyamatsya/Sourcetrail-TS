@@ -505,26 +505,63 @@ impl<'db> Collector<'db> {
     ) {
         let Some(params) = param_list else { return };
         for param in params.type_or_const_params() {
-            if let ast::TypeOrConstParam::Type(tp) = param {
-                if let Some(bounds) = tp.type_bound_list() {
-                    for bound in bounds.bounds() {
-                        match bound_target(&bound) {
-                            Some(BoundTarget::Type(bound_name)) => {
-                                self.add_edge(EDGE_TYPE_USAGE, item_name, &bound_name);
-                            }
-                            Some(BoundTarget::Lifetime(lifetime_name)) => {
-                                let Some(ctx) = source_context else { continue };
-                                let lifetime_node_name = self.ensure_type_parameter_node(
-                                    item_name,
-                                    &lifetime_name,
-                                    bound.syntax().text_range(),
-                                    ctx,
-                                );
-                                self.add_edge(EDGE_TYPE_USAGE, item_name, &lifetime_node_name);
-                            }
-                            None => {}
+            match param {
+                ast::TypeOrConstParam::Type(tp) => {
+                    if let Some(ctx) = source_context {
+                        if let Some(name) = tp.name() {
+                            self.ensure_type_parameter_node(
+                                item_name,
+                                &name.text().to_string(),
+                                tp.syntax().text_range(),
+                                ctx,
+                            );
                         }
                     }
+
+                    if let Some(bounds) = tp.type_bound_list() {
+                        for bound in bounds.bounds() {
+                            match bound_target(&bound) {
+                                Some(BoundTarget::Type(bound_name)) => {
+                                    self.add_edge(EDGE_TYPE_USAGE, item_name, &bound_name);
+                                }
+                                Some(BoundTarget::Lifetime(lifetime_name)) => {
+                                    let Some(ctx) = source_context else { continue };
+                                    let lifetime_node_name = self.ensure_type_parameter_node(
+                                        item_name,
+                                        &lifetime_name,
+                                        bound.syntax().text_range(),
+                                        ctx,
+                                    );
+                                    self.add_edge(EDGE_TYPE_USAGE, item_name, &lifetime_node_name);
+                                }
+                                None => {}
+                            }
+                        }
+                    }
+                }
+                ast::TypeOrConstParam::Const(cp) => {
+                    let const_param_name = if let Some(ctx) = source_context {
+                        cp.name().map(|name| {
+                            self.ensure_type_parameter_node(
+                                item_name,
+                                &name.text().to_string(),
+                                cp.syntax().text_range(),
+                                ctx,
+                            )
+                        })
+                    } else {
+                        None
+                    };
+
+                    let Some(type_name) = cp.ty().as_ref().and_then(type_target_name) else {
+                        continue;
+                    };
+
+                    if let Some(parameter_name) = const_param_name {
+                        self.add_edge(EDGE_TYPE_USAGE, &parameter_name, &type_name);
+                        continue;
+                    }
+                    self.add_edge(EDGE_TYPE_USAGE, item_name, &type_name);
                 }
             }
         }
@@ -1139,6 +1176,30 @@ mod tests {
     }
 
     #[test]
+    fn type_generic_parameter_emits_member_node() {
+        let s = index_src("pub struct Wrapper<T> { pub value: T }");
+
+        assert!(
+            node_names(&s).contains(&"Wrapper::T"),
+            "nodes: {:?}",
+            node_names(&s)
+        );
+        assert!(has_edge(&s, EDGE_MEMBER, "Wrapper", "Wrapper::T"));
+    }
+
+    #[test]
+    fn const_generic_parameter_emits_member_node() {
+        let s = index_src("pub struct Buffer<const N: usize> { pub bytes: [u8; N] }");
+
+        assert!(
+            node_names(&s).contains(&"Buffer::N"),
+            "nodes: {:?}",
+            node_names(&s)
+        );
+        assert!(has_edge(&s, EDGE_MEMBER, "Buffer", "Buffer::N"));
+    }
+
+    #[test]
     fn lifetime_bound_emits_type_parameter_node_and_usage_edge() {
         let s = index_src("pub struct Holder<'a, T: 'a> { pub t: T }");
 
@@ -1196,6 +1257,14 @@ fn extract_lifetime_name(text: &str) -> Option<String> {
 
     if out.len() > 1 {
         return Some(out);
+    }
+    None
+}
+
+fn type_target_name(ty: &ast::Type) -> Option<String> {
+    if let ast::Type::PathType(pt) = ty {
+        let segment = pt.path()?.segment()?;
+        return Some(segment.name_ref()?.text().to_string());
     }
     None
 }
