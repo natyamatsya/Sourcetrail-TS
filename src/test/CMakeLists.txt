@@ -46,6 +46,14 @@ target_link_libraries(Sourcetrail_test
 		Catch2::Catch2
 )
 
+if (BUILD_RUST_LANGUAGE_PACKAGE)
+	add_dependencies(Sourcetrail_test copy_rust_indexer)
+endif()
+
+if (BUILD_SWIFT_LANGUAGE_PACKAGE)
+	add_dependencies(Sourcetrail_test copy_swift_indexer)
+endif()
+
 if (BUILD_CXX_LANGUAGE_PACKAGE)
 	target_link_libraries(Sourcetrail_test
 		PRIVATE

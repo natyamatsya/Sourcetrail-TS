@@ -24,17 +24,19 @@
 //   NODE_METHOD          = 1 << 13 = 8192
 //   NODE_ENUM            = 1 << 14 = 16384
 //   NODE_TYPEDEF         = 1 << 16 = 65536
-//   NODE_MACRO           = 1 << 17 = 131072
-//   NODE_UNION           = 1 << 18 = 262144
+//   NODE_TYPE_PARAMETER  = 1 << 17 = 131072
+//   NODE_MACRO           = 1 << 19 = 524288
+//   NODE_UNION           = 1 << 20 = 1048576
 //
 // Edge type constants mirror Edge::EdgeType in Edge.h (bitmask values):
+//   EDGE_MEMBER       = 1 << 0 = 1
 //   EDGE_TYPE_USAGE   = 1 << 1 = 2
 //   EDGE_INHERITANCE  = 1 << 4 = 16
 //
 // DefinitionKind: NONE = 0, IMPLICIT = 1, EXPLICIT = 2
 // LocationType:   TOKEN = 0, SCOPE = 1, QUALIFIER = 2
 
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::path::Path;
 
 use ra_ap_hir::{Adt, AsAssocItem, Crate, HasSource, ModuleDef};
@@ -43,7 +45,7 @@ use ra_ap_ide_db::line_index::LineIndex;
 use ra_ap_ide_db::RootDatabase;
 use ra_ap_load_cargo::{load_workspace_at, LoadCargoConfig, ProcMacroServerChoice};
 use ra_ap_project_model::CargoConfig;
-use ra_ap_syntax::ast::{self, HasGenericParams, HasTypeBounds};
+use ra_ap_syntax::ast::{self, HasGenericParams, HasName, HasTypeBounds};
 use ra_ap_syntax::AstNode;
 use ra_ap_vfs::Vfs;
 
@@ -60,12 +62,14 @@ const NODE_FUNCTION: i32 = 1 << 12;
 const NODE_METHOD: i32 = 1 << 13;
 const NODE_ENUM: i32 = 1 << 14;
 const NODE_TYPEDEF: i32 = 1 << 16;
-const NODE_MACRO: i32 = 1 << 17;
-const NODE_UNION: i32 = 1 << 18;
+const NODE_TYPE_PARAMETER: i32 = 1 << 17;
+const NODE_MACRO: i32 = 1 << 19;
+const NODE_UNION: i32 = 1 << 20;
 
 const DEFINITION_EXPLICIT: i32 = 2;
 const LOCATION_TOKEN: i32 = 0;
 
+const EDGE_MEMBER: i32 = 1 << 0;
 const EDGE_TYPE_USAGE: i32 = 1 << 1;
 const EDGE_INHERITANCE: i32 = 1 << 4;
 
@@ -169,6 +173,18 @@ fn error_storage(file_path: &str, msg: &str) -> OwnedIntermediateStorage {
 // Core collection logic
 // ---------------------------------------------------------------------------
 
+#[derive(Debug, Clone)]
+struct SourceContext {
+    file_path: String,
+    source_text: String,
+}
+
+#[derive(Debug, Clone)]
+enum BoundTarget {
+    Type(String),
+    Lifetime(String),
+}
+
 struct Collector<'db> {
     db: &'db RootDatabase,
     vfs: &'db Vfs,
@@ -263,18 +279,8 @@ impl<'db> Collector<'db> {
     /// If either node hasn't been emitted yet the edge is silently dropped — this
     /// can happen for items from external crates that we intentionally skip.
     fn add_edge(&mut self, edge_type: i32, source_name: &str, target_name: &str) {
-        let source_id = self
-            .storage
-            .nodes
-            .iter()
-            .find(|n| n.serialized_name == source_name)
-            .map(|n| n.id);
-        let target_id = self
-            .storage
-            .nodes
-            .iter()
-            .find(|n| n.serialized_name == target_name)
-            .map(|n| n.id);
+        let source_id = self.resolve_node_id(source_name);
+        let target_id = self.resolve_node_id(target_name);
         if let (Some(src), Some(tgt)) = (source_id, target_id) {
             let edge_id = self.alloc_id();
             self.storage.edges.push(OwnedStorageEdge {
@@ -286,31 +292,124 @@ impl<'db> Collector<'db> {
         }
     }
 
+    fn resolve_node_id(&self, query: &str) -> Option<i64> {
+        if let Some(id) = self
+            .storage
+            .nodes
+            .iter()
+            .find(|n| n.serialized_name == query)
+            .map(|n| n.id)
+        {
+            return Some(id);
+        }
+
+        let suffix = format!("::{query}");
+        let mut matches = self
+            .storage
+            .nodes
+            .iter()
+            .filter(|n| n.serialized_name.ends_with(&suffix))
+            .map(|n| n.id);
+
+        let first = matches.next()?;
+        if matches.next().is_some() {
+            return None;
+        }
+        Some(first)
+    }
+
+    fn qualify_in_module(module_prefix: &str, name: &str) -> String {
+        if module_prefix.is_empty() {
+            return name.to_owned();
+        }
+        format!("{module_prefix}::{name}")
+    }
+
+    fn module_prefix(&self, module: ra_ap_hir::Module) -> String {
+        let mut parts = Vec::new();
+        let mut cursor = Some(module);
+        while let Some(m) = cursor {
+            if let Some(name) = m.name(self.db) {
+                parts.push(name.as_str().to_string());
+            }
+            cursor = m.parent(self.db);
+        }
+        parts.reverse();
+        parts.join("::")
+    }
+
+    fn source_context_from_in_file<N: AstNode>(
+        &self,
+        in_file: &ra_ap_hir::InFile<N>,
+    ) -> Option<SourceContext> {
+        let editioned_file_id = in_file.file_id.original_file(self.db);
+        let vfs_file_id = ra_ap_vfs::FileId::from_raw(editioned_file_id.file_id(self.db).index());
+        let file_path = self.vfs_path(vfs_file_id)?;
+        let raw_fid = editioned_file_id.file_id(self.db);
+        let source_text = self.db.file_text(raw_fid).text(self.db).to_string();
+        Some(SourceContext {
+            file_path,
+            source_text,
+        })
+    }
+
+    fn add_def_with_context(
+        &mut self,
+        name: &str,
+        node_kind: i32,
+        range: ra_ap_syntax::TextRange,
+        ctx: &SourceContext,
+    ) {
+        self.add_def(name, node_kind, &ctx.file_path, range, &ctx.source_text);
+    }
+
+    fn ensure_type_parameter_node(
+        &mut self,
+        owner_name: &str,
+        parameter_name: &str,
+        range: ra_ap_syntax::TextRange,
+        ctx: &SourceContext,
+    ) -> String {
+        let qualified_parameter_name = format!("{owner_name}::{parameter_name}");
+        let exists = self
+            .storage
+            .nodes
+            .iter()
+            .any(|n| n.serialized_name == qualified_parameter_name);
+        if !exists {
+            self.add_def_with_context(&qualified_parameter_name, NODE_TYPE_PARAMETER, range, ctx);
+            self.add_edge(EDGE_MEMBER, owner_name, &qualified_parameter_name);
+        }
+        qualified_parameter_name
+    }
+
     fn collect_crate(&mut self, krate: Crate) {
         for module in krate.modules(self.db) {
+            let module_prefix = self.module_prefix(module);
             // declarations() covers most items but misses macro_rules! —
             // those only appear in the module scope as ScopeDef::ModuleDef(Macro).
             // Use scope() and deduplicate via a seen-name set.
-            let mut seen = std::collections::HashSet::new();
+            let mut seen = HashSet::new();
             for def in module.declarations(self.db) {
                 if let Some(name) = def.name(self.db) {
                     seen.insert(name.as_str().to_string());
                 }
-                self.collect_module_def(def);
+                self.collect_module_def(&module_prefix, def);
             }
             // Pick up macro_rules! items not in declarations() (legacy textual macros).
             for m in module.legacy_macros(self.db) {
                 let mname = m.name(self.db).as_str().to_string();
                 if !seen.contains(&mname) {
                     seen.insert(mname.clone());
-                    self.emit_from_source(m.source(self.db), &mname, NODE_MACRO);
+                    let qualified_name = Self::qualify_in_module(&module_prefix, &mname);
+                    self.emit_from_source(m.source(self.db), &qualified_name, NODE_MACRO);
                 }
             }
             // Collect parse errors for every file in this module.
             self.collect_parse_errors(module);
             // Walk impl blocks for EDGE_INHERITANCE and EDGE_TYPE_USAGE.
             for imp in module.impl_defs(self.db) {
-                self.collect_impl(imp);
+                self.collect_impl(&module_prefix, imp);
             }
         }
     }
@@ -318,13 +417,14 @@ impl<'db> Collector<'db> {
     /// Walk one `impl` block using the AST only — no HIR type inference.
     ///   - `impl Trait for Type`  → EDGE_INHERITANCE from Type to Trait
     ///   - trait bounds on the impl's type params → EDGE_TYPE_USAGE from impl self-type to bound
-    fn collect_impl(&mut self, imp: ra_ap_hir::Impl) {
+    fn collect_impl(&mut self, module_prefix: &str, imp: ra_ap_hir::Impl) {
         // Use the AST source to avoid any HIR type-inference calls (Type::as_adt,
         // Type::display, etc.) which require the salsa next-solver TLS attachment.
         let Some(src) = imp.source(self.db) else {
             return;
         };
         let ast_impl = &src.value;
+        let source_context = self.source_context_from_in_file(&src);
 
         // In `impl [Trait for] Type { … }`, child Type nodes appear in source order:
         //   - with `for` token: first child = trait type, second child = self type
@@ -355,6 +455,7 @@ impl<'db> Collector<'db> {
         let Some(self_ty_name) = self_ty_name else {
             return;
         };
+        let self_ty_name = Self::qualify_in_module(module_prefix, &self_ty_name);
 
         // `impl Trait for Type` → EDGE_INHERITANCE
         if let Some(ast::Type::PathType(pt)) = trait_ty {
@@ -364,12 +465,17 @@ impl<'db> Collector<'db> {
                 .and_then(|s| s.name_ref())
                 .map(|n| n.text().to_string())
             {
+                let trait_name = Self::qualify_in_module(module_prefix, &trait_name);
                 self.add_edge(EDGE_INHERITANCE, &self_ty_name, &trait_name);
             }
         }
 
         // Trait bounds on the impl's own type parameters → EDGE_TYPE_USAGE
-        self.emit_ast_generic_bounds(&self_ty_name, ast_impl.generic_param_list());
+        self.emit_ast_generic_bounds(
+            &self_ty_name,
+            ast_impl.generic_param_list(),
+            source_context.as_ref(),
+        );
     }
 
     /// Emit EDGE_TYPE_USAGE edges for trait bounds on a generic item's type params.
@@ -380,7 +486,12 @@ impl<'db> Collector<'db> {
         N: ra_ap_syntax::AstNode + HasGenericParams,
     {
         if let Some(in_file) = src {
-            self.emit_ast_generic_bounds(item_name, in_file.value.generic_param_list());
+            let source_context = self.source_context_from_in_file(&in_file);
+            self.emit_ast_generic_bounds(
+                item_name,
+                in_file.value.generic_param_list(),
+                source_context.as_ref(),
+            );
         }
     }
 
@@ -390,14 +501,28 @@ impl<'db> Collector<'db> {
         &mut self,
         item_name: &str,
         param_list: Option<ast::GenericParamList>,
+        source_context: Option<&SourceContext>,
     ) {
         let Some(params) = param_list else { return };
         for param in params.type_or_const_params() {
             if let ast::TypeOrConstParam::Type(tp) = param {
                 if let Some(bounds) = tp.type_bound_list() {
                     for bound in bounds.bounds() {
-                        if let Some(bound_name) = bound_trait_name(&bound) {
-                            self.add_edge(EDGE_TYPE_USAGE, item_name, &bound_name);
+                        match bound_target(&bound) {
+                            Some(BoundTarget::Type(bound_name)) => {
+                                self.add_edge(EDGE_TYPE_USAGE, item_name, &bound_name);
+                            }
+                            Some(BoundTarget::Lifetime(lifetime_name)) => {
+                                let Some(ctx) = source_context else { continue };
+                                let lifetime_node_name = self.ensure_type_parameter_node(
+                                    item_name,
+                                    &lifetime_name,
+                                    bound.syntax().text_range(),
+                                    ctx,
+                                );
+                                self.add_edge(EDGE_TYPE_USAGE, item_name, &lifetime_node_name);
+                            }
+                            None => {}
                         }
                     }
                 }
@@ -412,10 +537,103 @@ impl<'db> Collector<'db> {
             for pred in where_clause.predicates() {
                 if let Some(bounds) = pred.type_bound_list() {
                     for bound in bounds.bounds() {
-                        if let Some(bound_name) = bound_trait_name(&bound) {
-                            self.add_edge(EDGE_TYPE_USAGE, item_name, &bound_name);
+                        match bound_target(&bound) {
+                            Some(BoundTarget::Type(bound_name)) => {
+                                self.add_edge(EDGE_TYPE_USAGE, item_name, &bound_name);
+                            }
+                            Some(BoundTarget::Lifetime(lifetime_name)) => {
+                                let Some(ctx) = source_context else { continue };
+                                let lifetime_node_name = self.ensure_type_parameter_node(
+                                    item_name,
+                                    &lifetime_name,
+                                    bound.syntax().text_range(),
+                                    ctx,
+                                );
+                                self.add_edge(EDGE_TYPE_USAGE, item_name, &lifetime_node_name);
+                            }
+                            None => {}
                         }
                     }
+                }
+            }
+        }
+    }
+
+    fn collect_trait_details(
+        &mut self,
+        trait_name: &str,
+        src: Option<ra_ap_hir::InFile<ast::Trait>>,
+    ) {
+        let Some(in_file) = src else {
+            return;
+        };
+        let Some(ctx) = self.source_context_from_in_file(&in_file) else {
+            return;
+        };
+
+        let ast_trait = in_file.value;
+
+        if let Some(bounds) = ast_trait.type_bound_list() {
+            for bound in bounds.bounds() {
+                match bound_target(&bound) {
+                    Some(BoundTarget::Type(bound_name)) => {
+                        self.add_edge(EDGE_INHERITANCE, trait_name, &bound_name);
+                    }
+                    Some(BoundTarget::Lifetime(lifetime_name)) => {
+                        let lifetime_node_name = self.ensure_type_parameter_node(
+                            trait_name,
+                            &lifetime_name,
+                            bound.syntax().text_range(),
+                            &ctx,
+                        );
+                        self.add_edge(EDGE_TYPE_USAGE, trait_name, &lifetime_node_name);
+                    }
+                    None => {}
+                }
+            }
+        }
+
+        if let Some(assoc_items) = ast_trait.assoc_item_list() {
+            for assoc in assoc_items.assoc_items() {
+                match assoc {
+                    ast::AssocItem::Fn(fn_item) => {
+                        let Some(name) = fn_item.name() else { continue };
+                        let qualified_name = format!("{trait_name}::{}", name.text().to_string());
+                        self.add_def_with_context(
+                            &qualified_name,
+                            NODE_METHOD,
+                            fn_item.syntax().text_range(),
+                            &ctx,
+                        );
+                        self.add_edge(EDGE_MEMBER, trait_name, &qualified_name);
+                    }
+                    ast::AssocItem::TypeAlias(type_alias) => {
+                        let Some(name) = type_alias.name() else {
+                            continue;
+                        };
+                        let qualified_name = format!("{trait_name}::{}", name.text().to_string());
+                        self.add_def_with_context(
+                            &qualified_name,
+                            NODE_TYPEDEF,
+                            type_alias.syntax().text_range(),
+                            &ctx,
+                        );
+                        self.add_edge(EDGE_MEMBER, trait_name, &qualified_name);
+                    }
+                    ast::AssocItem::Const(const_item) => {
+                        let Some(name) = const_item.name() else {
+                            continue;
+                        };
+                        let qualified_name = format!("{trait_name}::{}", name.text().to_string());
+                        self.add_def_with_context(
+                            &qualified_name,
+                            NODE_GLOBAL_VARIABLE,
+                            const_item.syntax().text_range(),
+                            &ctx,
+                        );
+                        self.add_edge(EDGE_MEMBER, trait_name, &qualified_name);
+                    }
+                    _ => {}
                 }
             }
         }
@@ -446,71 +664,82 @@ impl<'db> Collector<'db> {
         }
     }
 
-    fn collect_module_def(&mut self, def: ModuleDef) {
+    fn collect_module_def(&mut self, module_prefix: &str, def: ModuleDef) {
         match def {
             ModuleDef::Function(f) => {
                 let name = f.name(self.db).as_str().to_string();
+                let qualified_name = Self::qualify_in_module(module_prefix, &name);
                 let kind = if f.as_assoc_item(self.db).is_some() {
                     NODE_METHOD
                 } else {
                     NODE_FUNCTION
                 };
                 let src = f.source(self.db);
-                self.emit_from_source(src.clone(), &name, kind);
-                self.collect_generic_bounds(&name, src);
+                self.emit_from_source(src.clone(), &qualified_name, kind);
+                self.collect_generic_bounds(&qualified_name, src);
             }
             ModuleDef::Adt(adt) => match adt {
                 Adt::Struct(s) => {
                     let name = s.name(self.db).as_str().to_string();
+                    let qualified_name = Self::qualify_in_module(module_prefix, &name);
                     let src = s.source(self.db);
-                    self.emit_from_source(src.clone(), &name, NODE_STRUCT);
-                    self.collect_generic_bounds(&name, src);
+                    self.emit_from_source(src.clone(), &qualified_name, NODE_STRUCT);
+                    self.collect_generic_bounds(&qualified_name, src);
                 }
                 Adt::Enum(e) => {
                     let name = e.name(self.db).as_str().to_string();
+                    let qualified_name = Self::qualify_in_module(module_prefix, &name);
                     let src = e.source(self.db);
-                    self.emit_from_source(src.clone(), &name, NODE_ENUM);
-                    self.collect_generic_bounds(&name, src);
+                    self.emit_from_source(src.clone(), &qualified_name, NODE_ENUM);
+                    self.collect_generic_bounds(&qualified_name, src);
                 }
                 Adt::Union(u) => {
                     let name = u.name(self.db).as_str().to_string();
+                    let qualified_name = Self::qualify_in_module(module_prefix, &name);
                     let src = u.source(self.db);
-                    self.emit_from_source(src.clone(), &name, NODE_UNION);
-                    self.collect_generic_bounds(&name, src);
+                    self.emit_from_source(src.clone(), &qualified_name, NODE_UNION);
+                    self.collect_generic_bounds(&qualified_name, src);
                 }
             },
             ModuleDef::Trait(t) => {
                 let name = t.name(self.db).as_str().to_string();
+                let qualified_name = Self::qualify_in_module(module_prefix, &name);
                 let src = t.source(self.db);
-                self.emit_from_source(src.clone(), &name, NODE_INTERFACE);
-                self.collect_generic_bounds(&name, src);
+                self.emit_from_source(src.clone(), &qualified_name, NODE_INTERFACE);
+                self.collect_generic_bounds(&qualified_name, src.clone());
+                self.collect_trait_details(&qualified_name, src);
             }
             ModuleDef::TypeAlias(ta) => {
                 let name = ta.name(self.db).as_str().to_string();
+                let qualified_name = Self::qualify_in_module(module_prefix, &name);
                 let src = ta.source(self.db);
-                self.emit_from_source(src.clone(), &name, NODE_TYPEDEF);
-                self.collect_generic_bounds(&name, src);
+                self.emit_from_source(src.clone(), &qualified_name, NODE_TYPEDEF);
+                self.collect_generic_bounds(&qualified_name, src);
             }
             ModuleDef::Const(c) => {
                 if let Some(name) = c.name(self.db) {
                     let name = name.as_str().to_string();
-                    self.emit_from_source(c.source(self.db), &name, NODE_GLOBAL_VARIABLE);
+                    let qualified_name = Self::qualify_in_module(module_prefix, &name);
+                    self.emit_from_source(c.source(self.db), &qualified_name, NODE_GLOBAL_VARIABLE);
                 }
             }
             ModuleDef::Static(s) => {
                 let name = s.name(self.db).as_str().to_string();
-                self.emit_from_source(s.source(self.db), &name, NODE_GLOBAL_VARIABLE);
+                let qualified_name = Self::qualify_in_module(module_prefix, &name);
+                self.emit_from_source(s.source(self.db), &qualified_name, NODE_GLOBAL_VARIABLE);
             }
             ModuleDef::Macro(m) => {
                 let name = m.name(self.db).as_str().to_string();
-                self.emit_from_source(m.source(self.db), &name, NODE_MACRO);
+                let qualified_name = Self::qualify_in_module(module_prefix, &name);
+                self.emit_from_source(m.source(self.db), &qualified_name, NODE_MACRO);
             }
             ModuleDef::Module(m) => {
                 if let Some(name) = m.name(self.db) {
                     let name = name.as_str().to_string();
+                    let qualified_name = Self::qualify_in_module(module_prefix, &name);
                     // declaration_source gives the `mod foo;` node (inline modules
                     // have no declaration node — they are covered by their parent).
-                    self.emit_module_decl(m, &name);
+                    self.emit_module_decl(m, &qualified_name);
                 }
             }
             ModuleDef::BuiltinType(_) | ModuleDef::Variant(_) => {}
@@ -552,16 +781,11 @@ impl<'db> Collector<'db> {
         kind: i32,
     ) {
         let Some(in_file) = src else { return };
-        let editioned_file_id = in_file.file_id.original_file(self.db);
-        let vfs_file_id = ra_ap_vfs::FileId::from_raw(editioned_file_id.file_id(self.db).index());
-        let Some(file_path) = self.vfs_path(vfs_file_id) else {
+        let Some(ctx) = self.source_context_from_in_file(&in_file) else {
             return;
         };
-
-        let raw_fid = editioned_file_id.file_id(self.db);
-        let source_text = self.db.file_text(raw_fid).text(self.db).to_string();
         let syntax = in_file.value.syntax().text_range();
-        self.add_def(name, kind, &file_path, syntax, &source_text);
+        self.add_def_with_context(name, kind, syntax, &ctx);
     }
 }
 
@@ -763,6 +987,22 @@ mod tests {
         );
     }
 
+    #[test]
+    fn disambiguates_same_symbol_name_across_modules() {
+        let s = index_src("pub mod a { pub struct Item; } pub mod b { pub struct Item; }");
+
+        assert!(
+            node_names(&s).contains(&"a::Item"),
+            "nodes: {:?}",
+            node_names(&s)
+        );
+        assert!(
+            node_names(&s).contains(&"b::Item"),
+            "nodes: {:?}",
+            node_names(&s)
+        );
+    }
+
     // -----------------------------------------------------------------------
     // Error handling
     // -----------------------------------------------------------------------
@@ -859,6 +1099,22 @@ mod tests {
             "expected EDGE_INHERITANCE, edges: {:?}",
             s.edges
         );
+        assert!(has_edge(&s, EDGE_INHERITANCE, "Person", "Greet"));
+    }
+
+    #[test]
+    fn trait_supertrait_emits_inheritance_edge() {
+        let s = index_src("pub trait Base {} pub trait Child: Base {}");
+        assert!(has_edge(&s, EDGE_INHERITANCE, "Child", "Base"));
+    }
+
+    #[test]
+    fn trait_associated_items_emit_member_edges() {
+        let s = index_src("pub trait Api { type Item; const ID: usize; fn run(&self); }");
+
+        assert!(has_edge(&s, EDGE_MEMBER, "Api", "Api::Item"));
+        assert!(has_edge(&s, EDGE_MEMBER, "Api", "Api::ID"));
+        assert!(has_edge(&s, EDGE_MEMBER, "Api", "Api::run"));
     }
 
     #[test]
@@ -879,6 +1135,20 @@ mod tests {
             "expected EDGE_TYPE_USAGE for fn trait bound, edges: {:?}",
             s.edges
         );
+        assert!(has_edge(&s, EDGE_TYPE_USAGE, "print", "Display"));
+    }
+
+    #[test]
+    fn lifetime_bound_emits_type_parameter_node_and_usage_edge() {
+        let s = index_src("pub struct Holder<'a, T: 'a> { pub t: T }");
+
+        assert!(
+            node_names(&s).contains(&"Holder::'a"),
+            "nodes: {:?}",
+            node_names(&s)
+        );
+        assert!(has_edge(&s, EDGE_MEMBER, "Holder", "Holder::'a"));
+        assert!(has_edge(&s, EDGE_TYPE_USAGE, "Holder", "Holder::'a"));
     }
 
     #[test]
@@ -891,18 +1161,43 @@ mod tests {
     }
 }
 
-/// Extract the simple trait name from an AST `TypeBound`, e.g. `T: Display + Clone`
-/// yields `"Display"` and `"Clone"` in turn. Returns `None` for lifetime bounds.
-fn bound_trait_name(bound: &ast::TypeBound) -> Option<String> {
-    let ty = bound.ty()?;
-    // The bound type is a path type like `Display` or `std::fmt::Display`.
-    // Take the last path segment as the simple name.
-    if let ast::Type::PathType(pt) = ty {
-        let segment = pt.path()?.segment()?;
-        Some(segment.name_ref()?.text().to_string())
-    } else {
-        None
+/// Extract a bound target from an AST `TypeBound`.
+/// - type bounds (e.g. `Display`, `std::fmt::Display`) map to `BoundTarget::Type`
+/// - lifetime bounds (e.g. `'a`) map to `BoundTarget::Lifetime`
+fn bound_target(bound: &ast::TypeBound) -> Option<BoundTarget> {
+    if let Some(ty) = bound.ty() {
+        if let ast::Type::PathType(pt) = ty {
+            let segment = pt.path()?.segment()?;
+            return Some(BoundTarget::Type(segment.name_ref()?.text().to_string()));
+        }
+        return None;
     }
+
+    let text = bound.syntax().text().to_string();
+    let lifetime = extract_lifetime_name(&text)?;
+    Some(BoundTarget::Lifetime(lifetime))
+}
+
+fn extract_lifetime_name(text: &str) -> Option<String> {
+    let trimmed = text.trim();
+    let mut chars = trimmed.chars();
+    if chars.next()? != '\'' {
+        return None;
+    }
+
+    let mut out = String::from("'");
+    for c in chars {
+        if c.is_ascii_alphanumeric() || c == '_' {
+            out.push(c);
+        } else {
+            break;
+        }
+    }
+
+    if out.len() > 1 {
+        return Some(out);
+    }
+    None
 }
 
 /// Derive a module prefix from the file path relative to a source root.
