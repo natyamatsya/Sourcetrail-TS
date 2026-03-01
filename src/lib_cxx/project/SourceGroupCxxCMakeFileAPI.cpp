@@ -232,8 +232,8 @@ std::vector<std::string> getModuleFlags(
 				// or ends with a known extension), not a bare name like "hello".
 				if (!value.empty() && !FilePath{value}.isAbsolute() &&
 					(value.find('/') != std::string::npos ||
-					 value.size() > 4 &&
-						 value.substr(value.size() - 4) == ".pcm"))
+					 (value.size() > 4 &&
+						 value.substr(value.size() - 4) == ".pcm")))
 				{
 					const FilePath absValue{buildDir.getConcatenated("/" + value)};
 					flags.push_back(line.substr(0, lastEqPos + 1) + absValue.str());

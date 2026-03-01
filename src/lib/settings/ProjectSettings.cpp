@@ -28,7 +28,7 @@ bool hasTomlProjectExtension(const std::filesystem::path& path)
 }
 
 template <bool Enabled, typename T>
-std::shared_ptr<SourceGroupSettings> makeIfEnabled(const std::string& id, ProjectSettings* owner)
+std::shared_ptr<SourceGroupSettings> makeIfEnabled(const std::string& id, const ProjectSettings* owner)
 {
 	if constexpr (Enabled)
 		return std::make_shared<T>(id, owner);

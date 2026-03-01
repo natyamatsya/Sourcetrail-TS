@@ -29,7 +29,7 @@ ProcessId rustIndexerProcessId(const size_t processCount)
 	return static_cast<ProcessId>(processCount + 1);
 }
 
-ProcessId swiftIndexerProcessId(const size_t processCount)
+[[maybe_unused]] ProcessId swiftIndexerProcessId(const size_t processCount)
 {
 	if constexpr (hasRustLanguagePackage)
 		return static_cast<ProcessId>(processCount + 2);

@@ -48,7 +48,9 @@ void IpcInterprocessIndexerCommandManager::pushIndexerCommands(
 	IpcSharedMemory::ScopedAccess access(&m_shm);
 	access.write(fbBuf.data(), fbBuf.size());
 
-	LOG_INFO(access.logString());
+	LOG_INFO_STREAM(<< "[pid=" << static_cast<int>(m_processId) << "] pushed "
+		<< indexerCommands.size() << " command(s), queue size now " << all.size()
+		<< " - " << access.logString());
 }
 
 std::shared_ptr<IndexerCommand> IpcInterprocessIndexerCommandManager::popIndexerCommand(
@@ -100,6 +102,10 @@ std::shared_ptr<IndexerCommand> IpcInterprocessIndexerCommandManager::popIndexer
 		access.write(fbBuf.data(), fbBuf.size());
 	}
 
+	LOG_INFO_STREAM(<< "[pid=" << static_cast<int>(m_processId) << "] popped command of type "
+		<< indexerCommandTypeToString(result->getIndexerCommandType())
+		<< ", " << all.size() << " command(s) remaining");
+
 	return result;
 }
 
@@ -128,6 +134,7 @@ void IpcInterprocessIndexerCommandManager::clearIndexerCommands()
 	IpcSharedMemory::ScopedAccess access(&m_shm);
 	uint8_t zero[4] = {0, 0, 0, 0};
 	access.write(zero, 4);
+	LOG_INFO_STREAM(<< "[pid=" << static_cast<int>(m_processId) << "] cleared all indexer commands");
 }
 
 size_t IpcInterprocessIndexerCommandManager::indexerCommandCount()
