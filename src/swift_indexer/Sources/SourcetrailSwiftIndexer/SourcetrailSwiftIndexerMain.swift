@@ -1,5 +1,4 @@
 import Foundation
-import LibIPC
 
 @main
 struct SourcetrailSwiftIndexer {
@@ -28,15 +27,60 @@ struct SourcetrailSwiftIndexer {
 		_ = logFilePath
 
 		do {
-			let probeMutexName = "swift_indexer_probe_\(instanceUuid)_\(processId)"
-			let probeMutex = try await IpcMutex.open(name: probeMutexName)
-			try probeMutex.lock()
-			try probeMutex.unlock()
+			let commandChannel = try await SwiftIndexerCommandChannel.open(instanceUuid: instanceUuid)
+			let statusChannel = try await SwiftIndexerStatusChannel.open(
+				instanceUuid: instanceUuid,
+				processId: processId
+			)
+			let storageChannel = try await SwiftIndexerStorageChannel.open(
+				instanceUuid: instanceUuid,
+				processId: processId
+			)
+
+			while true {
+				if (try? statusChannel.isInterrupted()) == true {
+					break
+				}
+
+				guard let command = try commandChannel.popSwiftCommand() else {
+					if (try? statusChannel.isQueueStopped()) == true {
+						break
+					}
+					try? await Task.sleep(nanoseconds: 100_000_000)
+					continue
+				}
+
+				while true {
+					let currentStorageCount = (try? storageChannel.storageCount()) ?? 0
+					if currentStorageCount < 2 {
+						break
+					}
+
+					if (try? statusChannel.isInterrupted()) == true {
+						return
+					}
+
+					try? await Task.sleep(nanoseconds: 200_000_000)
+				}
+
+				do {
+					try? statusChannel.startIndexing(filePath: command.sourceFilePath)
+					defer {
+						try? statusChannel.finishIndexing()
+					}
+
+					try storageChannel.pushEmptyStorage()
+				} catch {
+					writeStderr(
+						"sourcetrail_swift_indexer: failed to process command for \(command.sourceFilePath): \(error)\n"
+					)
+				}
+			}
 		} catch {
 			writeStderr("sourcetrail_swift_indexer: IPC bootstrap failed: \(error)\n")
 			exit(1)
 		}
 
-		print("sourcetrail_swift_indexer initialized (command processing to be implemented)")
+		print("sourcetrail_swift_indexer shutting down")
 	}
 }
