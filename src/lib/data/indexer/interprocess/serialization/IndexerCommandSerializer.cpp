@@ -112,46 +112,45 @@ std::vector<std::shared_ptr<IndexerCommand>> deserializeIndexerCommands(
 		if (!fbCmd)
 			continue;
 
-		if constexpr (language_packages::buildCxxLanguagePackage)
-		if (fbCmd->type() == Sourcetrail::Ipc::IndexerCommandType_Cxx)
-		{
-			std::set<FilePath> indexedPaths;
-			if (fbCmd->indexed_paths())
-				for (const auto* p : *fbCmd->indexed_paths())
-					indexedPaths.insert(FilePath(p->c_str()));
-
-			std::set<FilePathFilter> excludeFilters;
-			if (fbCmd->exclude_filters())
-				for (const auto* f : *fbCmd->exclude_filters())
-					excludeFilters.insert(FilePathFilter(f->c_str()));
-
-			std::set<FilePathFilter> includeFilters;
-			if (fbCmd->include_filters())
-				for (const auto* f : *fbCmd->include_filters())
-					includeFilters.insert(FilePathFilter(f->c_str()));
-
-			FilePath workingDir;
-			if (fbCmd->working_directory())
-				workingDir = FilePath(fbCmd->working_directory()->c_str());
-
-			std::vector<std::string> compilerFlags;
-			if (fbCmd->compiler_flags())
-				for (const auto* flag : *fbCmd->compiler_flags())
-					compilerFlags.push_back(flag->c_str());
-
-			std::string compilerPath;
-			if (fbCmd->compiler_path())
-				compilerPath = fbCmd->compiler_path()->c_str();
-
-			result.push_back(std::make_shared<IndexerCommandCxx>(
-				FilePath(fbCmd->source_file_path()->c_str()),
-				indexedPaths, excludeFilters, includeFilters,
-				workingDir, compilerFlags, compilerPath));
-			continue;
-		}
-
 		switch (fbCmd->type())
 		{
+		case Sourcetrail::Ipc::IndexerCommandType_Cxx:
+			if constexpr (language_packages::buildCxxLanguagePackage)
+			{
+				std::set<FilePath> indexedPaths;
+				if (fbCmd->indexed_paths())
+					for (const auto* p : *fbCmd->indexed_paths())
+						indexedPaths.insert(FilePath(p->c_str()));
+
+				std::set<FilePathFilter> excludeFilters;
+				if (fbCmd->exclude_filters())
+					for (const auto* f : *fbCmd->exclude_filters())
+						excludeFilters.insert(FilePathFilter(f->c_str()));
+
+				std::set<FilePathFilter> includeFilters;
+				if (fbCmd->include_filters())
+					for (const auto* f : *fbCmd->include_filters())
+						includeFilters.insert(FilePathFilter(f->c_str()));
+
+				FilePath workingDir;
+				if (fbCmd->working_directory())
+					workingDir = FilePath(fbCmd->working_directory()->c_str());
+
+				std::vector<std::string> compilerFlags;
+				if (fbCmd->compiler_flags())
+					for (const auto* flag : *fbCmd->compiler_flags())
+						compilerFlags.push_back(flag->c_str());
+
+				std::string compilerPath;
+				if (fbCmd->compiler_path())
+					compilerPath = fbCmd->compiler_path()->c_str();
+
+				result.push_back(std::make_shared<IndexerCommandCxx>(
+					FilePath(fbCmd->source_file_path()->c_str()),
+					indexedPaths, excludeFilters, includeFilters,
+					workingDir, compilerFlags, compilerPath));
+			}
+			break;
 		case Sourcetrail::Ipc::IndexerCommandType_Rust:
 		{
 			std::set<FilePath> indexedPaths;

@@ -50,8 +50,8 @@
 #include "SourceGroupSettingsCxxCdb.h"
 #include "SourceGroupSettingsCxxCMakeFileAPI.h"
 
-#	include "SourceGroupSettingsRustEmpty.h"
-#	include "SourceGroupSettingsSwiftEmpty.h"
+#include "SourceGroupSettingsRustEmpty.h"
+#include "SourceGroupSettingsSwiftEmpty.h"
 
 using namespace std;
 

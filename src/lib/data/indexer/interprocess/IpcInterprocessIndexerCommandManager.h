@@ -6,8 +6,6 @@
 #include <string>
 #include <vector>
 
-#include "language_packages.h"
-
 #include "IpcSharedMemory.h"
 #include "IndexerCommandType.h"
 #include "ProcessId.h"
