@@ -93,6 +93,12 @@ void CxxAstVisitorComponentContext::beginTraverseTypeLoc(const clang::TypeLoc& t
 				recordContext = false;
 			}
 		}
+#if LLVM_VERSION_MAJOR < 22
+		else if (tl.getAs<clang::DependentTemplateSpecializationTypeLoc>())
+		{
+			recordContext = false;
+		}
+#endif
 		if (recordContext)
 		{
 			context = std::make_shared<CxxContextType>(tl.getTypePtr());

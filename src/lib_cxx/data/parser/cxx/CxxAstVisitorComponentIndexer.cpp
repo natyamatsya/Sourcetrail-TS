@@ -800,6 +800,13 @@ void CxxAstVisitorComponentIndexer::visitTypeLoc(clang::TypeLoc tl)
 			{
 				loc = dntl.getNameLoc();
 			}
+#if LLVM_VERSION_MAJOR < 22
+			else if (const clang::DependentTemplateSpecializationTypeLoc &dtstl =
+						 tl.getAs<clang::DependentTemplateSpecializationTypeLoc>())
+			{
+				loc = dtstl.getTemplateNameLoc();
+			}
+#endif
 			else
 			{
 				loc = tl.getBeginLoc();

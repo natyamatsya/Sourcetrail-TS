@@ -19,7 +19,7 @@ CxxSpecifierNameResolver::CxxSpecifierNameResolver(const CxxNameResolver* other)
 }
 
 std::unique_ptr<CxxName> CxxSpecifierNameResolver::getName(
-	clang::NestedNameSpecifier nestedNameSpecifier)
+	clang_compat::NestedNameSpecifierRef nestedNameSpecifier)
 {
 	if (!nestedNameSpecifier)
 		return nullptr;

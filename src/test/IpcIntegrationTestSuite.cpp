@@ -315,6 +315,143 @@ TEST_CASE("ipc integration: full indexer workflow")
 			SUCCEED("Requires CXX plus Rust or Swift language package.");
 	}
 
+	SECTION("rust indexer subprocess processes rust command")
+	{
+		if constexpr (language_packages::buildRustLanguagePackage)
+		{
+			const std::string subprocessUuid = "ipc_rust_subprocess_test";
+			const ProcessId rustProcessId = static_cast<ProcessId>(16);
+			const std::string rustWorkingDirectory =
+				"/__sourcetrail_nonexistent_rust_crate__";
+
+			IpcInterprocessIndexerCommandManager commandOwner(subprocessUuid, mainPid, true);
+			commandOwner.clearIndexerCommands();
+
+			IpcInterprocessIndexingStatusManager statusOwner(subprocessUuid, mainPid, true);
+			statusOwner.setIndexingInterrupted(false);
+			statusOwner.setQueueStopped(true);
+
+			IpcInterprocessIntermediateStorageManager storageOwner(subprocessUuid, rustProcessId, true);
+
+			commandOwner.pushIndexerCommands({makeOptionalRustCommand(rustWorkingDirectory)});
+			REQUIRE(commandOwner.indexerCommandCount() == 1);
+
+			const std::string rustIndexerName =
+				"sourcetrail_rust_indexer" + FilePath::getExecutableExtension();
+
+			std::vector<FilePath> rustIndexerCandidates;
+			rustIndexerCandidates.push_back(AppPath::getRustIndexerFilePath());
+			rustIndexerCandidates.push_back(
+				FilePath("../../app").getAbsolute().getConcatenated(rustIndexerName));
+			rustIndexerCandidates.push_back(
+				FilePath("../app").getAbsolute().getConcatenated(rustIndexerName));
+			rustIndexerCandidates.push_back(
+				FilePath("app").getAbsolute().getConcatenated(rustIndexerName));
+
+			FilePath rustIndexerPath;
+			for (const FilePath& candidate: rustIndexerCandidates)
+			{
+				if (!candidate.exists())
+					continue;
+
+				rustIndexerPath = candidate;
+				break;
+			}
+
+			INFO("Rust indexer candidate paths:");
+			for (const FilePath& candidate: rustIndexerCandidates)
+				INFO("  - " + candidate.str());
+
+			REQUIRE(!rustIndexerPath.empty());
+
+			const utility::ProcessOutput processOutput = utility::executeProcess(
+				rustIndexerPath.str(),
+				{
+					std::to_string(static_cast<std::size_t>(rustProcessId)),
+					subprocessUuid,
+					std::string{},
+					std::string{},
+					std::string{}
+				},
+				FilePath(),
+				false,
+				std::chrono::seconds(15));
+
+			INFO("Rust indexer stdout:\n" + processOutput.output);
+			INFO("Rust indexer stderr:\n" + processOutput.error);
+			INFO("Rust indexer process info:\n" + processOutput.processInfo);
+			REQUIRE(processOutput.exitCode == 0);
+
+			REQUIRE(commandOwner.indexerCommandCount() == 0);
+
+			const std::vector<FilePath> indexedFiles = statusOwner.getCurrentlyIndexedSourceFilePaths();
+			REQUIRE(indexedFiles.size() == 1);
+			REQUIRE(indexedFiles.front().str() == rustWorkingDirectory);
+
+			REQUIRE(statusOwner.getNextFinishedProcessId() == rustProcessId);
+			REQUIRE(statusOwner.getCurrentSourceFilePathForProcess(rustProcessId).has_value() == false);
+
+			REQUIRE(storageOwner.getIntermediateStorageCount() == 1);
+			const std::shared_ptr<IntermediateStorage> storage = storageOwner.popIntermediateStorage();
+			REQUIRE(storage != nullptr);
+			REQUIRE(storage->getErrors().empty() == false);
+			REQUIRE(storageOwner.getIntermediateStorageCount() == 0);
+		}
+		else
+			SUCCEED("Rust language package disabled.");
+	}
+
+	SECTION("task build index runs rust subprocess and drains storage")
+	{
+		if constexpr (language_packages::buildRustLanguagePackage)
+		{
+			using enum Task::TaskState;
+			const std::string taskUuid = "ipc_task_build_rust_subprocess_test";
+			const std::string rustWorkingDirectory =
+				"/__sourcetrail_nonexistent_rust_task_crate__";
+
+			IpcInterprocessIndexerCommandManager commandOwner(taskUuid, mainPid, true);
+			commandOwner.clearIndexerCommands();
+			commandOwner.pushIndexerCommands({makeOptionalRustCommand(rustWorkingDirectory)});
+			REQUIRE(commandOwner.indexerCommandCount() == 1);
+
+			auto storageProvider = std::make_shared<StorageProvider>();
+			auto dialogView = std::make_shared<DialogView>(DialogView::UseCase::INDEXING, nullptr);
+			TaskBuildIndex task(0, storageProvider, dialogView, taskUuid);
+
+			auto blackboard = std::make_shared<Blackboard>();
+			blackboard->set<int>("source_file_count", 1);
+			blackboard->set<int>("indexed_source_file_count", 0);
+			blackboard->set<bool>("indexer_command_queue_stopped", true);
+
+			Task::TaskState taskState = STATE_RUNNING;
+			const auto deadline = std::chrono::steady_clock::now() + std::chrono::seconds(20);
+			while (
+				taskState == STATE_RUNNING &&
+				std::chrono::steady_clock::now() < deadline)
+				taskState = task.update(blackboard);
+
+			REQUIRE(taskState == STATE_SUCCESS);
+			REQUIRE(commandOwner.indexerCommandCount() == 0);
+
+			bool threadsStopped = false;
+			REQUIRE(blackboard->get<bool>("indexer_threads_stopped", threadsStopped));
+			REQUIRE(threadsStopped == true);
+
+			int indexedSourceFileCount = 0;
+			REQUIRE(blackboard->get<int>("indexed_source_file_count", indexedSourceFileCount));
+			REQUIRE(indexedSourceFileCount == 1);
+
+			REQUIRE(storageProvider->getStorageCount() == 1);
+			const std::shared_ptr<IntermediateStorage> storage = storageProvider->consumeLargestStorage();
+			REQUIRE(storage != nullptr);
+			REQUIRE(storage->getErrors().empty() == false);
+			REQUIRE(storageProvider->getStorageCount() == 0);
+		}
+		else
+			SUCCEED("Rust language package disabled.");
+	}
+
 	SECTION("swift indexer subprocess processes swift command")
 	{
 		if constexpr (language_packages::buildSwiftLanguagePackage)

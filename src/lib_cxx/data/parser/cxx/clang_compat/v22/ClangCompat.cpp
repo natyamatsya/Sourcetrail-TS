@@ -12,6 +12,8 @@
 #include <clang/Serialization/ASTWriter.h>
 #include <llvm/Support/Casting.h>
 
+#include <optional>
+
 namespace clang_compat
 {
 const llvm::opt::OptTable& getDriverOptTable()
@@ -50,8 +52,11 @@ std::unique_ptr<clang::ASTConsumer> createPchGenerator(
 		+compilerInstance.getLangOpts().CacheGeneratedPCH);
 }
 
-NestedNameSpecifierKind getNestedNameSpecifierKind(const clang::NestedNameSpecifier nestedNameSpecifier)
+NestedNameSpecifierKind getNestedNameSpecifierKind(const NestedNameSpecifierRef nestedNameSpecifier)
 {
+	if (nestedNameSpecifier == clang::NestedNameSpecifier::getInvalid())
+		return NestedNameSpecifierKind::Null;
+
 	if (!nestedNameSpecifier)
 		return NestedNameSpecifierKind::Null;
 
@@ -73,8 +78,11 @@ NestedNameSpecifierKind getNestedNameSpecifierKind(const clang::NestedNameSpecif
 }
 
 const clang::NamedDecl* getNestedNameSpecifierNamespaceDecl(
-	const clang::NestedNameSpecifier nestedNameSpecifier)
+	const NestedNameSpecifierRef nestedNameSpecifier)
 {
+	if (getNestedNameSpecifierKind(nestedNameSpecifier) != NestedNameSpecifierKind::Namespace)
+		return nullptr;
+
 	const auto namespaceAndPrefix = nestedNameSpecifier.getAsNamespaceAndPrefix();
 	if (!namespaceAndPrefix.Namespace)
 		return nullptr;
@@ -82,24 +90,34 @@ const clang::NamedDecl* getNestedNameSpecifierNamespaceDecl(
 	return clang::dyn_cast_or_null<clang::NamedDecl>(namespaceAndPrefix.Namespace);
 }
 
-clang::NestedNameSpecifier getNestedNameSpecifierPrefix(
-	const clang::NestedNameSpecifier nestedNameSpecifier)
+NestedNameSpecifierRef getNestedNameSpecifierPrefix(
+	const NestedNameSpecifierRef nestedNameSpecifier)
 {
+	if (getNestedNameSpecifierKind(nestedNameSpecifier) != NestedNameSpecifierKind::Namespace)
+		return std::nullopt;
+
 	const auto namespaceAndPrefix = nestedNameSpecifier.getAsNamespaceAndPrefix();
 	if (!namespaceAndPrefix.Namespace)
-		return {};
+		return std::nullopt;
 
 	return namespaceAndPrefix.Prefix;
 }
 
-const clang::Type* getNestedNameSpecifierType(const clang::NestedNameSpecifier nestedNameSpecifier)
+const clang::Type* getNestedNameSpecifierType(const NestedNameSpecifierRef nestedNameSpecifier)
 {
+	if (getNestedNameSpecifierKind(nestedNameSpecifier) != NestedNameSpecifierKind::Type)
+		return nullptr;
+
 	return nestedNameSpecifier.getAsType();
 }
 
 const clang::CXXRecordDecl* getNestedNameSpecifierRecordDecl(
-	const clang::NestedNameSpecifier nestedNameSpecifier)
+	const NestedNameSpecifierRef nestedNameSpecifier)
 {
+	const NestedNameSpecifierKind kind = getNestedNameSpecifierKind(nestedNameSpecifier);
+	if (kind != NestedNameSpecifierKind::Type && kind != NestedNameSpecifierKind::MicrosoftSuper)
+		return nullptr;
+
 	return nestedNameSpecifier.getAsRecordDecl();
 }
 
@@ -108,6 +126,10 @@ bool getNestedNameSpecifierLocPrefix(
 	clang::NestedNameSpecifierLoc* const prefixOut)
 {
 	if (!prefixOut)
+		return false;
+
+	if (getNestedNameSpecifierKind(nestedNameSpecifierLoc.getNestedNameSpecifier()) !=
+		NestedNameSpecifierKind::Namespace)
 		return false;
 
 	const auto namespaceAndPrefix = nestedNameSpecifierLoc.getAsNamespaceAndPrefix();

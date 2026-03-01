@@ -79,7 +79,11 @@ bool CxxAstVisitor::shouldHandleTypeLoc(const clang::TypeLoc& tl)
 		tl.getAs<clang::InjectedClassNameTypeLoc>() ||
 		tl.getAs<clang::DependentNameTypeLoc>() ||
 		tl.getAs<clang::SubstTemplateTypeParmTypeLoc>() ||
-		tl.getAs<clang::BuiltinTypeLoc>();
+		tl.getAs<clang::BuiltinTypeLoc>()
+#if LLVM_VERSION_MAJOR < 22
+		|| tl.getAs<clang::DependentTemplateSpecializationTypeLoc>()
+#endif
+		;
 }
 
 #define FOREACH_COMPONENT(__METHOD_CALL__)                                                         \

@@ -23,6 +23,17 @@ class Type;
 class TypeLoc;
 }
 
+namespace clang_compat
+{
+#if CLANG_VERSION_MAJOR >= 22
+// In LLVM 22+, NestedNameSpecifier is a value type.
+using NestedNameSpecifierRef = clang::NestedNameSpecifier;
+#else
+// In LLVM <22, NestedNameSpecifier is a heap-allocated class used via pointer.
+using NestedNameSpecifierRef = clang::NestedNameSpecifier*;
+#endif
+}
+
 namespace llvm::opt
 {
 class OptTable;
@@ -50,18 +61,18 @@ std::unique_ptr<clang::ASTConsumer> createPchGenerator(
 	const std::shared_ptr<clang::PCHBuffer>& buffer,
 	bool allowAstWithErrors);
 
-NestedNameSpecifierKind getNestedNameSpecifierKind(clang::NestedNameSpecifier nestedNameSpecifier);
+NestedNameSpecifierKind getNestedNameSpecifierKind(NestedNameSpecifierRef nestedNameSpecifier);
 
 const clang::NamedDecl* getNestedNameSpecifierNamespaceDecl(
-	clang::NestedNameSpecifier nestedNameSpecifier);
+	NestedNameSpecifierRef nestedNameSpecifier);
 
-clang::NestedNameSpecifier getNestedNameSpecifierPrefix(
-	clang::NestedNameSpecifier nestedNameSpecifier);
+NestedNameSpecifierRef getNestedNameSpecifierPrefix(
+	NestedNameSpecifierRef nestedNameSpecifier);
 
-const clang::Type* getNestedNameSpecifierType(clang::NestedNameSpecifier nestedNameSpecifier);
+const clang::Type* getNestedNameSpecifierType(NestedNameSpecifierRef nestedNameSpecifier);
 
 const clang::CXXRecordDecl* getNestedNameSpecifierRecordDecl(
-	clang::NestedNameSpecifier nestedNameSpecifier);
+	NestedNameSpecifierRef nestedNameSpecifier);
 
 bool getNestedNameSpecifierLocPrefix(
 	const clang::NestedNameSpecifierLoc& nestedNameSpecifierLoc,

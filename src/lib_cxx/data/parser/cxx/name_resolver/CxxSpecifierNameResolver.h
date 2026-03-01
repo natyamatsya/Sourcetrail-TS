@@ -4,6 +4,7 @@
 #include <memory>
 
 #include "CxxNameResolver.h"
+#include "clang_compat/ClangCompat.h"
 
 class CxxName;
 
@@ -13,7 +14,7 @@ public:
 	CxxSpecifierNameResolver(CanonicalFilePathCache* canonicalFilePathCache);
 	CxxSpecifierNameResolver(const CxxNameResolver* other);
 
-	std::unique_ptr<CxxName> getName(clang::NestedNameSpecifier nestedNameSpecifier);
+	std::unique_ptr<CxxName> getName(clang_compat::NestedNameSpecifierRef nestedNameSpecifier);
 };
 
 #endif	  // CXX_SPECIFIER_NAME_RESOLVER_H

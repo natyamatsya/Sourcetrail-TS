@@ -465,6 +465,8 @@ void TaskBuildIndex::runRustIndexerProcess(ProcessId processId, const std::strin
 
 	int result = 0;
 	size_t launchAttempt = 0;
+	size_t consecutiveFailureCount = 0;
+	const size_t maxConsecutiveFailures = 200;
 	IndexerCommandManagerImpl commandManager(m_appUUID, ProcessId::NONE, false);
 	while (!m_interrupted)
 	{
@@ -493,10 +495,26 @@ void TaskBuildIndex::runRustIndexerProcess(ProcessId processId, const std::strin
 			launchAttempt,
 			"Rust indexer process",
 			commandLine);
-		if (!processResult)
+		if (processResult)
+		{
+			consecutiveFailureCount = 0;
+			if (!m_indexerCommandQueueStopped && !m_interrupted)
+				std::this_thread::sleep_for(std::chrono::milliseconds(200));
+			continue;
+		}
+
+		if (m_interrupted)
+			break;
+
+		LOG_ERROR_STREAM(<< processResult.error());
+
+		consecutiveFailureCount++;
+		if (consecutiveFailureCount >= maxConsecutiveFailures)
 		{
 			LOG_ERROR_STREAM(
-				<< processResult.error() << " interrupting indexing.");
+				<< "Rust indexer process " << processId << " attempt " << launchAttempt
+				<< " reached " << consecutiveFailureCount
+				<< " consecutive failures. interrupting indexing.");
 			m_interrupted = true;
 			m_indexerCommandQueueStopped = true;
 			m_interprocessIndexingStatusManager.setIndexingInterrupted(true);
@@ -505,8 +523,11 @@ void TaskBuildIndex::runRustIndexerProcess(ProcessId processId, const std::strin
 			break;
 		}
 
-		if (!m_indexerCommandQueueStopped && !m_interrupted)
-			std::this_thread::sleep_for(std::chrono::milliseconds(200));
+		LOG_WARNING_STREAM(
+			<< "Rust indexer process " << processId << " failure " << consecutiveFailureCount
+			<< "/" << maxConsecutiveFailures
+			<< ". restarting process to continue indexing.");
+		std::this_thread::sleep_for(std::chrono::milliseconds(200));
 	}
 }
 
