@@ -1,6 +1,6 @@
 #include "IndexerCommandSerializer.h"
 
-#include "language_packages.h"
+#include "language_package_flags.h"
 
 #include "IndexerCommand.h"
 #if BUILD_CXX_LANGUAGE_PACKAGE

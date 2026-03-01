@@ -1,7 +1,7 @@
 #ifndef TASK_BUILD_INDEX_H
 #define TASK_BUILD_INDEX_H
 
-#include "language_packages.h"
+#include "language_package_flags.h"
 #include "MessageIndexingInterrupted.h"
 #include "MessageListener.h"
 #include "Task.h"

@@ -1,7 +1,7 @@
 #ifndef SOURCE_GROUP_TYPE_H
 #define SOURCE_GROUP_TYPE_H
 
-#include "language_packages.h"
+#include "language_package_flags.h"
 
 #include <QMetaType>
 

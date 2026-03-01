@@ -1,7 +1,7 @@
 #ifndef INDEXER_COMMAND_TYPE_H
 #define INDEXER_COMMAND_TYPE_H
 
-#include "language_packages.h"
+#include "language_package_flags.h"
 
 #include <string>
 

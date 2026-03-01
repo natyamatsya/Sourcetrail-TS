@@ -6,7 +6,7 @@
 #include "IndexerCommandType.h"
 #include "LanguagePackageManager.h"
 #include "ScopedFunctor.h"
-#include "language_packages.h"
+#include "language_package_flags.h"
 #include "logging.h"
 #include "utilityExpected.h"
 

@@ -20,7 +20,7 @@
 #include "ScopedFunctor.h"
 #include "SourceGroupFactory.h"
 #include "SourceGroupFactoryModuleCustom.h"
-#include "language_packages.h"
+#include "language_package_flags.h"
 #include "utilityQt.h"
 
 #if BUILD_CXX_LANGUAGE_PACKAGE

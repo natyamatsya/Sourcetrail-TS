@@ -5,7 +5,7 @@
 #include <string>
 #include <unordered_set>
 
-#include "language_packages.h"
+#include "language_package_flags.h"
 
 #include "MessageIndexingInterrupted.h"
 #include "MessageListener.h"

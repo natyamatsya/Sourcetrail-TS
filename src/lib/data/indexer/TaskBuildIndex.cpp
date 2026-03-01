@@ -1,6 +1,6 @@
 #include "TaskBuildIndex.h"
 
-#include "language_packages.h"
+#include "language_package_flags.h"
 #include "AppPath.h"
 #include "Blackboard.h"
 #include "DialogView.h"
