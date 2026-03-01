@@ -65,9 +65,9 @@ public:
 
 	// Traversal methods. These specify how to traverse the AST and record context info.
 	virtual bool TraverseDecl(clang::Decl* d);
-	bool TraverseQualifiedTypeLoc(clang::QualifiedTypeLoc tl);
-	virtual bool TraverseTypeLoc(clang::TypeLoc tl);
-	bool TraverseType(clang::QualType t);
+	bool TraverseQualifiedTypeLoc(clang::QualifiedTypeLoc tl, bool TraverseQualifier = true);
+	virtual bool TraverseTypeLoc(clang::TypeLoc tl, bool TraverseQualifier = true);
+	bool TraverseType(clang::QualType t, bool TraverseQualifier = true);
 	virtual bool TraverseStmt(clang::Stmt* stmt);
 
 	bool TraverseCXXRecordDecl(clang::CXXRecordDecl* d);
@@ -88,7 +88,8 @@ public:
 	bool TraverseClassTemplatePartialSpecializationDecl(clang::ClassTemplatePartialSpecializationDecl* d);
 	bool TraverseDeclRefExpr(clang::DeclRefExpr* s);
 	bool TraverseCXXForRangeStmt(clang::CXXForRangeStmt* s);
-	bool TraverseTemplateSpecializationTypeLoc(clang::TemplateSpecializationTypeLoc loc);
+	bool TraverseTemplateSpecializationTypeLoc(
+		clang::TemplateSpecializationTypeLoc loc, bool TraverseQualifier = true);
 	bool TraverseUnresolvedLookupExpr(clang::UnresolvedLookupExpr* s);
 	bool TraverseUnresolvedMemberExpr(clang::UnresolvedMemberExpr* S);
 	bool TraverseTemplateArgumentLoc(const clang::TemplateArgumentLoc& loc);

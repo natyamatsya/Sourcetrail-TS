@@ -12,6 +12,7 @@
 #include "utilityMainFunction.h"
 
 #include <clang/AST/ASTContext.h>
+#include <clang/AST/DeclTemplate.h>
 #include <clang/Analysis/CFG.h>
 #include <clang/Basic/SourceLocation.h>
 #include <clang/Basic/SourceManager.h>
@@ -34,33 +35,36 @@ void CxxAstVisitorComponentIndexer::beginTraverseNestedNameSpecifierLoc(
 		return;
 	}
 
-	switch (loc.getNestedNameSpecifier()->getKind())
+	const auto nestedNameSpecifier = loc.getNestedNameSpecifier();
+	switch (nestedNameSpecifier.getKind())
 	{
-	case clang::NestedNameSpecifier::Identifier:
+	case clang::NestedNameSpecifier::Kind::Null:
+	case clang::NestedNameSpecifier::Kind::Global:
+	case clang::NestedNameSpecifier::Kind::MicrosoftSuper:
 		break;
-	case clang::NestedNameSpecifier::Namespace:
+
+	case clang::NestedNameSpecifier::Kind::Namespace:
 	{
-		Id symbolId = getOrCreateSymbolId(loc.getNestedNameSpecifier()->getAsNamespace());
+		const auto namespaceAndPrefix = nestedNameSpecifier.getAsNamespaceAndPrefix();
+		if (!namespaceAndPrefix.Namespace)
+			break;
+
+		Id symbolId = getOrCreateSymbolId(namespaceAndPrefix.Namespace);
 		m_client->recordSymbolKind(symbolId, SymbolKind::NAMESPACE);
 		m_client->recordLocation(
 			symbolId, getParseLocation(loc.getLocalBeginLoc()), ParseLocationType::QUALIFIER);
-	}
-	break;
-	case clang::NestedNameSpecifier::NamespaceAlias:
-	{
-		Id symbolId = getOrCreateSymbolId(loc.getNestedNameSpecifier()->getAsNamespaceAlias());
-		m_client->recordSymbolKind(symbolId, SymbolKind::NAMESPACE);
 
-		symbolId = getOrCreateSymbolId(
-			loc.getNestedNameSpecifier()->getAsNamespaceAlias()->getAliasedNamespace());
-		m_client->recordSymbolKind(symbolId, SymbolKind::NAMESPACE);
+		if (const auto* namespaceAliasDecl =
+				clang::dyn_cast<clang::NamespaceAliasDecl>(namespaceAndPrefix.Namespace))
+		{
+			symbolId = getOrCreateSymbolId(namespaceAliasDecl->getAliasedNamespace());
+			m_client->recordSymbolKind(symbolId, SymbolKind::NAMESPACE);
+		}
 	}
 	break;
-	case clang::NestedNameSpecifier::Global:
-	case clang::NestedNameSpecifier::Super:
-		break;
-	case clang::NestedNameSpecifier::TypeSpec:
-		if (const clang::CXXRecordDecl* recordDecl = loc.getNestedNameSpecifier()->getAsRecordDecl())
+
+	case clang::NestedNameSpecifier::Kind::Type:
+		if (const clang::CXXRecordDecl* recordDecl = nestedNameSpecifier.getAsRecordDecl())
 		{
 			SymbolKind symbolKind = SymbolKind::UNDEFINED;
 			if (recordDecl->isClass())
@@ -84,7 +88,7 @@ void CxxAstVisitorComponentIndexer::beginTraverseNestedNameSpecifierLoc(
 					symbolId, getParseLocation(loc.getLocalBeginLoc()), ParseLocationType::QUALIFIER);
 			}
 		}
-		else if (const clang::Type* type = loc.getNestedNameSpecifier()->getAsType())
+		else if (const clang::Type* type = nestedNameSpecifier.getAsType())
 		{
 			const ParseLocation parseLocation = getParseLocation(loc.getLocalBeginLoc());
 
@@ -292,7 +296,8 @@ void CxxAstVisitorComponentIndexer::visitVarDecl(clang::VarDecl* d)
 				{
 					if (const AutoType *autoVariableType = dyn_cast<AutoType>(autoTypeLoc.getTypePtr()))
 					{
-						if (const ConceptDecl *conceptDecl = autoVariableType->getTypeConstraintConcept())
+						if (const auto* conceptDecl = clang::dyn_cast_or_null<clang::ConceptDecl>(
+								autoVariableType->getTypeConstraintConcept()))
 						{
 							// Record concept name location:
 							const ParseLocation conceptNameLocation = getParseLocation(autoTypeLoc.getConceptNameLoc());
@@ -493,7 +498,8 @@ void CxxAstVisitorComponentIndexer::visitFunctionDecl(clang::FunctionDecl* d)
 			{
 				const Id contextSymbolId = getOrCreateSymbolId(d);
 
-				if (const ConceptDecl *conceptDecl = autoReturnType->getTypeConstraintConcept())
+				if (const auto* conceptDecl = clang::dyn_cast_or_null<clang::ConceptDecl>(
+						autoReturnType->getTypeConstraintConcept()))
 				{
 					// Record the concept reference:
 					const ParseLocation conceptNameLocation = getParseLocation(returnTypeSourceRange.getBegin());
@@ -1047,7 +1053,8 @@ void CxxAstVisitorComponentIndexer::recordConceptReference(const T *d)
 
 void CxxAstVisitorComponentIndexer::recordNamedConceptReference(const ConceptReference *conceptReference)
 {
-	if (const ConceptDecl *conceptDecl = conceptReference->getNamedConcept())
+	if (const auto* conceptDecl = clang::dyn_cast_or_null<clang::ConceptDecl>(
+			conceptReference->getNamedConcept()))
 	{
 		const Id conceptDeclId = getOrCreateSymbolId(conceptDecl);
 		const Id contextSymbolId = getOrCreateSymbolId(getAstVisitor()->getContextComponent()->getContext());

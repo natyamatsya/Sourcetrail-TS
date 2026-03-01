@@ -12,7 +12,7 @@
 #include "utilityApp.h"
 #include "utilityString.h"
 
-#include <clang/Driver/Driver.h>
+#include <clang/Options/OptionUtils.h>
 
 #include <filesystem>
 #include <map>
@@ -305,7 +305,7 @@ std::optional<std::filesystem::path> utility::resolveCompilerResourceDir(const s
 	// (e.g., if the compiler is missing the -print-resource-dir flag).
 	if (!result)
 	{
-		std::filesystem::path dir(clang::driver::Driver::GetResourcesPath(compilerPathStr));
+		std::filesystem::path dir{clang::GetResourcesPath(compilerPathStr)};
 		if (std::filesystem::exists(dir))
 		{
 			result = dir;

@@ -326,7 +326,7 @@ if (BUILD_CXX_LANGUAGE_PACKAGE)
 	# For further details see https://llvm.org/docs/CMake.html#embedding-llvm-in-your-project
 
 	set(CLANG_MIN_VERSION 18)
-	set(CLANG_MAX_VERSION 22)
+	set(CLANG_MAX_VERSION 23)
 	
 	find_package(Clang CONFIG REQUIRED) # Minimum version and/or version range xx...<yy doesn't work.
 	message(STATUS "Found LLVM ${LLVM_VERSION}: ${LLVM_INCLUDE_DIRS}")

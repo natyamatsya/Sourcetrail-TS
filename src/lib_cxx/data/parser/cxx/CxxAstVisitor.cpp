@@ -77,7 +77,6 @@ bool CxxAstVisitor::shouldHandleTypeLoc(const clang::TypeLoc& tl)
 		tl.getAs<clang::TemplateSpecializationTypeLoc>() ||
 		tl.getAs<clang::InjectedClassNameTypeLoc>() ||
 		tl.getAs<clang::DependentNameTypeLoc>() ||
-		tl.getAs<clang::DependentTemplateSpecializationTypeLoc>() ||
 		tl.getAs<clang::SubstTemplateTypeParmTypeLoc>() ||
 		tl.getAs<clang::BuiltinTypeLoc>();
 }
@@ -109,14 +108,15 @@ bool CxxAstVisitor::shouldHandleTypeLoc(const clang::TypeLoc& tl)
 	}
 
 #define DEF_TRAVERSE_CUSTOM_TYPE(__NAME_TYPE__, __PARAM_TYPE__, CODE_BEFORE, CODE_AFTER)           \
-	bool CxxAstVisitor::Traverse##__NAME_TYPE__(clang::__PARAM_TYPE__ v)                           \
+	bool CxxAstVisitor::Traverse##__NAME_TYPE__(                                                 \
+		clang::__PARAM_TYPE__ v, bool TraverseQualifier)                                           \
 	{                                                                                              \
 		FOREACH_COMPONENT(beginTraverse##__NAME_TYPE__(v));                                        \
 		bool ret = true;                                                                           \
 		{                                                                                          \
 			CODE_BEFORE;                                                                           \
 		}                                                                                          \
-		Base::Traverse##__NAME_TYPE__(v);                                                          \
+		Base::Traverse##__NAME_TYPE__(v, TraverseQualifier);                                      \
 		{                                                                                          \
 			CODE_AFTER;                                                                            \
 		}                                                                                          \
@@ -178,9 +178,10 @@ bool CxxAstVisitor::TraverseDecl(clang::Decl* decl)
 }
 
 // same as Base::TraverseQualifiedTypeLoc(..) but we need to make sure to call this.TraverseTypeLoc(..)
-bool CxxAstVisitor::TraverseQualifiedTypeLoc(clang::QualifiedTypeLoc tl)
+bool CxxAstVisitor::TraverseQualifiedTypeLoc(
+	clang::QualifiedTypeLoc tl, bool TraverseQualifier)
 {
-	return TraverseTypeLoc(tl.getUnqualifiedLoc());
+	return TraverseTypeLoc(tl.getUnqualifiedLoc(), TraverseQualifier);
 }
 
 DEF_TRAVERSE_TYPE(TypeLoc, {}, {})
@@ -311,9 +312,10 @@ bool CxxAstVisitor::TraverseNestedNameSpecifierLoc(clang::NestedNameSpecifierLoc
 		FOREACH_COMPONENT(beginTraverseNestedNameSpecifierLoc(loc));
 
 		// todo: call method of base class...
-		if (clang::NestedNameSpecifierLoc prefix = loc.getPrefix())
+		auto namespaceAndPrefix = loc.getAsNamespaceAndPrefix();
+		if (namespaceAndPrefix)
 		{
-			ret = TraverseNestedNameSpecifierLoc(prefix);
+			ret = TraverseNestedNameSpecifierLoc(namespaceAndPrefix.Prefix);
 		}
 
 		FOREACH_COMPONENT(endTraverseNestedNameSpecifierLoc(loc));

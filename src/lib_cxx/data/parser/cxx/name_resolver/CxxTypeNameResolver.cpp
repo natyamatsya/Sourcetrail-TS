@@ -50,8 +50,16 @@ std::unique_ptr<CxxTypeName> CxxTypeNameResolver::getName(const clang::Type* typ
 		}
 		case clang::Type::InjectedClassName:
 		{
-			return getName(
-				type->getAs<clang::InjectedClassNameType>()->getInjectedSpecializationType());
+			std::unique_ptr<CxxDeclName> declName = CxxDeclNameResolver(this).getName(
+				type->getAs<clang::InjectedClassNameType>()->getDecl());
+			if (declName)
+			{
+				return std::make_unique<CxxTypeName>(
+					declName->getName(),
+					declName->getTemplateParameterNames(),
+					declName->getParent());
+			}
+			break;
 		}
 		case clang::Type::Typedef:
 		{
@@ -105,10 +113,6 @@ std::unique_ptr<CxxTypeName> CxxTypeNameResolver::getName(const clang::Type* typ
 			}
 			return typeName;
 		}
-		case clang::Type::Elaborated:
-		{
-			return getName(clang::dyn_cast<clang::ElaboratedType>(type)->getNamedType());
-		}
 		case clang::Type::Enum:
 		case clang::Type::Record:
 		{
@@ -154,8 +158,10 @@ std::unique_ptr<CxxTypeName> CxxTypeNameResolver::getName(const clang::Type* typ
 			{
 				const clang::TemplateSpecializationType* templateSpecializationType =
 					type->getAs<clang::TemplateSpecializationType>();
-				const std::unique_ptr<CxxDeclName> declName = CxxDeclNameResolver(this).getName(
-					templateSpecializationType->getTemplateName().getAsTemplateDecl());
+				const clang::TemplateName templateName =
+					templateSpecializationType->getTemplateName();
+				const std::unique_ptr<CxxDeclName> declName =
+					CxxDeclNameResolver(this).getName(templateName.getAsTemplateDecl());
 
 				if (declName)
 				{
@@ -182,6 +188,31 @@ std::unique_ptr<CxxTypeName> CxxTypeNameResolver::getName(const clang::Type* typ
 				}
 				else
 				{
+					if (const clang::DependentTemplateName* dependentTemplateName =
+							templateName.getAsDependentTemplateName())
+					{
+						std::vector<std::string> templateArguments;
+						CxxTemplateArgumentNameResolver resolver(this);
+						for (const clang::TemplateArgument& templateArgument:
+							 templateSpecializationType->template_arguments())
+						{
+							templateArguments.push_back(
+								resolver.getTemplateArgumentName(templateArgument));
+						}
+
+						std::unique_ptr<CxxName> specifierName =
+							CxxSpecifierNameResolver(this).getName(dependentTemplateName->getQualifier());
+
+						if (const clang::IdentifierInfo* identifier =
+								dependentTemplateName->getName().getIdentifier())
+						{
+							return std::make_unique<CxxTypeName>(
+								identifier->getName().str(),
+								std::move(templateArguments),
+								std::move(specifierName));
+						}
+					}
+
 					LOG_WARNING("no decl found");
 				}
 			}
@@ -211,27 +242,6 @@ std::unique_ptr<CxxTypeName> CxxTypeNameResolver::getName(const clang::Type* typ
 			return std::make_unique<CxxTypeName>(
 				dependentType->getIdentifier()->getName().str(),
 				std::vector<std::string>(),
-				std::move(specifierName));
-		}
-		case clang::Type::DependentTemplateSpecialization:
-		{
-			const clang::DependentTemplateSpecializationType* dependentType =
-			clang::dyn_cast<clang::DependentTemplateSpecializationType>(type);
-			const auto& depName = dependentType->getDependentTemplateName();
-			std::unique_ptr<CxxName> specifierName = CxxSpecifierNameResolver(this).getName(
-				depName.getQualifier());
-
-			std::vector<std::string> templateArguments;
-			CxxTemplateArgumentNameResolver resolver(this);
-			for (const clang::TemplateArgument &templateArgument : dependentType->template_arguments())
-			{
-				templateArguments.push_back(
-					resolver.getTemplateArgumentName(templateArgument));
-			}
-
-			return std::make_unique<CxxTypeName>(
-				depName.getName().getIdentifier()->getName().str(),
-				std::move(templateArguments),
 				std::move(specifierName));
 		}
 		case clang::Type::PackExpansion:

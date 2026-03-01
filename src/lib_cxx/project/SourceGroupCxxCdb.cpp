@@ -14,8 +14,19 @@
 #include "utilitySourceGroupCxx.h"
 #include "utilityString.h"
 
+#ifdef emit
+#pragma push_macro("emit")
+#undef emit
+#define SOURCETRAIL_RESTORE_QT_EMIT
+#endif
+
 #include <clang/Tooling/JSONCompilationDatabase.h>
 #include <clang/Tooling/Tooling.h>
+
+#ifdef SOURCETRAIL_RESTORE_QT_EMIT
+#pragma pop_macro("emit")
+#undef SOURCETRAIL_RESTORE_QT_EMIT
+#endif
 
 SourceGroupCxxCdb::SourceGroupCxxCdb(std::shared_ptr<SourceGroupSettingsCxxCdb> settings)
 	: m_settings(settings)
