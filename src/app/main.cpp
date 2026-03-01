@@ -78,27 +78,23 @@ void setupLogging()
 	logManager->addLogger(fileLogger);
 }
 
+template <bool Enabled, typename Module, typename Package>
+void addLanguagePackage()
+{
+	if constexpr (Enabled)
+	{
+		SourceGroupFactory::getInstance()->addModule(std::make_shared<Module>());
+		LanguagePackageManager::getInstance()->addPackage(std::make_shared<Package>());
+	}
+}
+
 void addLanguagePackages()
 {
 	SourceGroupFactory::getInstance()->addModule(std::make_shared<SourceGroupFactoryModuleCustom>());
 
-	if constexpr (language_packages::buildCxxLanguagePackage)
-		SourceGroupFactory::getInstance()->addModule(std::make_shared<SourceGroupFactoryModuleCxx>());
-
-	if constexpr (language_packages::buildRustLanguagePackage)
-		SourceGroupFactory::getInstance()->addModule(std::make_shared<SourceGroupFactoryModuleRust>());
-
-	if constexpr (language_packages::buildSwiftLanguagePackage)
-		SourceGroupFactory::getInstance()->addModule(std::make_shared<SourceGroupFactoryModuleSwift>());
-
-	if constexpr (language_packages::buildCxxLanguagePackage)
-		LanguagePackageManager::getInstance()->addPackage(std::make_shared<LanguagePackageCxx>());
-
-	if constexpr (language_packages::buildRustLanguagePackage)
-		LanguagePackageManager::getInstance()->addPackage(std::make_shared<LanguagePackageRust>());
-
-	if constexpr (language_packages::buildSwiftLanguagePackage)
-		LanguagePackageManager::getInstance()->addPackage(std::make_shared<LanguagePackageSwift>());
+	addLanguagePackage<language_packages::buildCxxLanguagePackage,   SourceGroupFactoryModuleCxx,   LanguagePackageCxx>();
+	addLanguagePackage<language_packages::buildRustLanguagePackage,  SourceGroupFactoryModuleRust,  LanguagePackageRust>();
+	addLanguagePackage<language_packages::buildSwiftLanguagePackage, SourceGroupFactoryModuleSwift, LanguagePackageSwift>();
 }
 
 int main(int argc, char* argv[])

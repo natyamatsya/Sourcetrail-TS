@@ -10,12 +10,12 @@
 
 #include <filesystem>
 
-#	include "SourceGroupSettingsCEmpty.h"
-#	include "SourceGroupSettingsCppEmpty.h"
-#	include "SourceGroupSettingsCxxCdb.h"
-#	include "SourceGroupSettingsCxxCMakeFileAPI.h"
-#	include "SourceGroupSettingsRustEmpty.h"
-#	include "SourceGroupSettingsSwiftEmpty.h"
+#include "SourceGroupSettingsCEmpty.h"
+#include "SourceGroupSettingsCppEmpty.h"
+#include "SourceGroupSettingsCxxCdb.h"
+#include "SourceGroupSettingsCxxCMakeFileAPI.h"
+#include "SourceGroupSettingsRustEmpty.h"
+#include "SourceGroupSettingsSwiftEmpty.h"
 
 namespace
 {
@@ -25,6 +25,15 @@ bool hasTomlProjectExtension(const std::filesystem::path& path)
 		return false;
 
 	return path.stem().extension() == ".srctrl";
+}
+
+template <bool Enabled, typename T>
+std::shared_ptr<SourceGroupSettings> makeIfEnabled(const std::string& id, ProjectSettings* owner)
+{
+	if constexpr (Enabled)
+		return std::make_shared<T>(id, owner);
+	else
+		return std::make_shared<SourceGroupSettingsUnloadable>(id, owner);
 }
 }	 // namespace
 
@@ -188,40 +197,22 @@ std::vector<std::shared_ptr<SourceGroupSettings>> ProjectSettings::getAllSourceG
 		switch (type)
 		{
 		case SourceGroupType::C_EMPTY:
-			if constexpr (language_packages::buildCxxLanguagePackage)
-				settings = std::make_shared<SourceGroupSettingsCEmpty>(id, this);
-			else
-				settings = std::make_shared<SourceGroupSettingsUnloadable>(id, this);
+			settings = makeIfEnabled<language_packages::buildCxxLanguagePackage, SourceGroupSettingsCEmpty>(id, this);
 			break;
 		case SourceGroupType::CXX_EMPTY:
-			if constexpr (language_packages::buildCxxLanguagePackage)
-				settings = std::make_shared<SourceGroupSettingsCppEmpty>(id, this);
-			else
-				settings = std::make_shared<SourceGroupSettingsUnloadable>(id, this);
+			settings = makeIfEnabled<language_packages::buildCxxLanguagePackage, SourceGroupSettingsCppEmpty>(id, this);
 			break;
 		case SourceGroupType::CXX_CDB:
-			if constexpr (language_packages::buildCxxLanguagePackage)
-				settings = std::make_shared<SourceGroupSettingsCxxCdb>(id, this);
-			else
-				settings = std::make_shared<SourceGroupSettingsUnloadable>(id, this);
+			settings = makeIfEnabled<language_packages::buildCxxLanguagePackage, SourceGroupSettingsCxxCdb>(id, this);
 			break;
 		case SourceGroupType::CXX_CMAKE_FILE_API:
-			if constexpr (language_packages::buildCxxLanguagePackage)
-				settings = std::make_shared<SourceGroupSettingsCxxCMakeFileAPI>(id, this);
-			else
-				settings = std::make_shared<SourceGroupSettingsUnloadable>(id, this);
+			settings = makeIfEnabled<language_packages::buildCxxLanguagePackage, SourceGroupSettingsCxxCMakeFileAPI>(id, this);
 			break;
 		case SourceGroupType::RUST_EMPTY:
-			if constexpr (language_packages::buildRustLanguagePackage)
-				settings = std::make_shared<SourceGroupSettingsRustEmpty>(id, this);
-			else
-				settings = std::make_shared<SourceGroupSettingsUnloadable>(id, this);
+			settings = makeIfEnabled<language_packages::buildRustLanguagePackage, SourceGroupSettingsRustEmpty>(id, this);
 			break;
 		case SourceGroupType::SWIFT_EMPTY:
-			if constexpr (language_packages::buildSwiftLanguagePackage)
-				settings = std::make_shared<SourceGroupSettingsSwiftEmpty>(id, this);
-			else
-				settings = std::make_shared<SourceGroupSettingsUnloadable>(id, this);
+			settings = makeIfEnabled<language_packages::buildSwiftLanguagePackage, SourceGroupSettingsSwiftEmpty>(id, this);
 			break;
 		case SourceGroupType::CUSTOM_COMMAND:
 			settings = std::make_shared<SourceGroupSettingsCustomCommand>(id, this);
