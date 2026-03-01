@@ -1,5 +1,7 @@
 #include "QtProjectWizardContentSelect.h"
 
+#include "language_package_flags.h"
+
 #include "LanguageType.h"
 #include "QtFlowLayout.h"
 #include "QtMessageBox.h"
@@ -39,13 +41,14 @@ void QtProjectWizardContentSelect::populate(QGridLayout* layout, int&  /*row*/)
 
 	// define which kind of source groups are available for each language
 	std::map<LanguageType, std::vector<SourceGroupInfo>> sourceGroupInfos;
-#if BUILD_CXX_LANGUAGE_PACKAGE
-	sourceGroupInfos[LanguageType::C].push_back(SourceGroupInfo(SourceGroupType::CXX_CDB, true));
-	sourceGroupInfos[LanguageType::C].push_back(SourceGroupInfo(SourceGroupType::C_EMPTY));
-	sourceGroupInfos[LanguageType::CXX].push_back(SourceGroupInfo(SourceGroupType::CXX_CDB, true));
-	sourceGroupInfos[LanguageType::CXX].push_back(SourceGroupInfo(SourceGroupType::CXX_CMAKE_FILE_API));
-	sourceGroupInfos[LanguageType::CXX].push_back(SourceGroupInfo(SourceGroupType::CXX_EMPTY));
-#endif	  // BUILD_CXX_LANGUAGE_PACKAGE
+	if constexpr (language_packages::buildCxxLanguagePackage)
+	{
+		sourceGroupInfos[LanguageType::C].push_back(SourceGroupInfo(SourceGroupType::CXX_CDB, true));
+		sourceGroupInfos[LanguageType::C].push_back(SourceGroupInfo(SourceGroupType::C_EMPTY));
+		sourceGroupInfos[LanguageType::CXX].push_back(SourceGroupInfo(SourceGroupType::CXX_CDB, true));
+		sourceGroupInfos[LanguageType::CXX].push_back(SourceGroupInfo(SourceGroupType::CXX_CMAKE_FILE_API));
+		sourceGroupInfos[LanguageType::CXX].push_back(SourceGroupInfo(SourceGroupType::CXX_EMPTY));
+	}
 	if constexpr (language_packages::buildRustLanguagePackage)
 		sourceGroupInfos[LanguageType::RUST].push_back(SourceGroupInfo(SourceGroupType::RUST_EMPTY, true));
 	if constexpr (language_packages::buildSwiftLanguagePackage)
@@ -54,12 +57,13 @@ void QtProjectWizardContentSelect::populate(QGridLayout* layout, int&  /*row*/)
 	sourceGroupInfos[LanguageType::CUSTOM].push_back(SourceGroupInfo(SourceGroupType::CUSTOM_COMMAND));
 
 	// define which icons should be used for which kind of source group
-#if BUILD_CXX_LANGUAGE_PACKAGE
-	m_sourceGroupTypeIconName[SourceGroupType::C_EMPTY]        = QtResources::ICON_EMPTY_ICON;
-	m_sourceGroupTypeIconName[SourceGroupType::CXX_EMPTY]      = QtResources::ICON_EMPTY_ICON;
-	m_sourceGroupTypeIconName[SourceGroupType::CXX_CDB]              = QtResources::ICON_CDB_ICON;
-	m_sourceGroupTypeIconName[SourceGroupType::CXX_CMAKE_FILE_API]   = QtResources::ICON_CDB_ICON;
-#endif // BUILD_CXX_LANGUAGE_PACKAGE
+	if constexpr (language_packages::buildCxxLanguagePackage)
+	{
+		m_sourceGroupTypeIconName[SourceGroupType::C_EMPTY]            = QtResources::ICON_EMPTY_ICON;
+		m_sourceGroupTypeIconName[SourceGroupType::CXX_EMPTY]          = QtResources::ICON_EMPTY_ICON;
+		m_sourceGroupTypeIconName[SourceGroupType::CXX_CDB]            = QtResources::ICON_CDB_ICON;
+		m_sourceGroupTypeIconName[SourceGroupType::CXX_CMAKE_FILE_API] = QtResources::ICON_CDB_ICON;
+	}
 	if constexpr (language_packages::buildRustLanguagePackage)
 		m_sourceGroupTypeIconName[SourceGroupType::RUST_EMPTY] = QtResources::ICON_EMPTY_ICON;
 	if constexpr (language_packages::buildSwiftLanguagePackage)
@@ -67,25 +71,26 @@ void QtProjectWizardContentSelect::populate(QGridLayout* layout, int&  /*row*/)
 	m_sourceGroupTypeIconName[SourceGroupType::CUSTOM_COMMAND] = QtResources::ICON_EMPTY_ICON;
 
 	// define descriptions for each kind of Source Group
-#if BUILD_CXX_LANGUAGE_PACKAGE
-	m_sourceGroupTypeDescriptions[SourceGroupType::C_EMPTY] =
-		"Create a new Source Group by defining which C files will be indexed.";
-	m_sourceGroupTypeDescriptions[SourceGroupType::CXX_EMPTY] =
-		"Create a new Source Group by defining which C++ files will be indexed.";
-	m_sourceGroupTypeDescriptions[SourceGroupType::CXX_CDB] =
-		"Create a Source Group from an existing Compilation Database file (compile_commands.json). "
-		"It can be exported from CMake<br />(-DCMAKE_EXPORT_COMPILE_COMMANDS=ON) and Make projects "
-		"or from the Qt Creator since version 4.8. Have a look at the "
-		"<a href=\"" +
-		utility::getDocumentationLink() +
-		"#cc-source-group-from-compilation-database\">documentation</a>.";
-	m_sourceGroupTypeDescriptions[SourceGroupType::CXX_CMAKE_FILE_API] =
-		"Create a Source Group driven by the CMake File-based API. Select a CMake source "
-		"directory and a configure preset — Sourcetrail will resolve the binary directory "
-		"automatically and obtain per-file compile commands (include paths, defines, flags) "
-		"directly from CMake. The project is re-configured automatically when CMakeLists.txt "
-		"or .cmake files change on refresh.";
-#endif	  // BUILD_CXX_LANGUAGE_PACKAGE
+	if constexpr (language_packages::buildCxxLanguagePackage)
+	{
+		m_sourceGroupTypeDescriptions[SourceGroupType::C_EMPTY] =
+			"Create a new Source Group by defining which C files will be indexed.";
+		m_sourceGroupTypeDescriptions[SourceGroupType::CXX_EMPTY] =
+			"Create a new Source Group by defining which C++ files will be indexed.";
+		m_sourceGroupTypeDescriptions[SourceGroupType::CXX_CDB] =
+			"Create a Source Group from an existing Compilation Database file (compile_commands.json). "
+			"It can be exported from CMake<br />(-DCMAKE_EXPORT_COMPILE_COMMANDS=ON) and Make projects "
+			"or from the Qt Creator since version 4.8. Have a look at the "
+			"<a href=\"" +
+			utility::getDocumentationLink() +
+			"#cc-source-group-from-compilation-database\">documentation</a>.";
+		m_sourceGroupTypeDescriptions[SourceGroupType::CXX_CMAKE_FILE_API] =
+			"Create a Source Group driven by the CMake File-based API. Select a CMake source "
+			"directory and a configure preset — Sourcetrail will resolve the binary directory "
+			"automatically and obtain per-file compile commands (include paths, defines, flags) "
+			"directly from CMake. The project is re-configured automatically when CMakeLists.txt "
+			"or .cmake files change on refresh.";
+	}
 	if constexpr (language_packages::buildRustLanguagePackage)
 		m_sourceGroupTypeDescriptions[SourceGroupType::RUST_EMPTY] =
 			"Create a new Source Group by defining which Rust source files will be indexed.";

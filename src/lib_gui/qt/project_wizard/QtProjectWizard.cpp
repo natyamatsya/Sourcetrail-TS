@@ -32,25 +32,23 @@
 #include <QSysInfo>
 #include <QTimer>
 
-#if BUILD_CXX_LANGUAGE_PACKAGE
-#	include "QtProjectWizardContentCStandard.h"
-#	include "QtProjectWizardContentCppStandard.h"
-#	include "QtProjectWizardContentCrossCompilationOptions.h"
-#	include "QtProjectWizardContentCxxPchFlags.h"
-#	include "QtProjectWizardContentFlags.h"
-#	include "QtProjectWizardContentPathCDB.h"
-#	include "QtProjectWizardContentPathCMakeFileAPI.h"
-#	include "QtProjectWizardContentPathCxxPch.h"
-#	include "QtProjectWizardContentPathsFrameworkSearch.h"
-#	include "QtProjectWizardContentPathsFrameworkSearchGlobal.h"
-#	include "QtProjectWizardContentPathsHeaderSearch.h"
-#	include "QtProjectWizardContentPathsHeaderSearchGlobal.h"
-#	include "QtProjectWizardContentPathsIndexedHeaders.h"
-#	include "SourceGroupSettingsCEmpty.h"
-#	include "SourceGroupSettingsCppEmpty.h"
-#	include "SourceGroupSettingsCxxCdb.h"
-#	include "SourceGroupSettingsCxxCMakeFileAPI.h"
-#endif	  // BUILD_CXX_LANGUAGE_PACKAGE
+#include "QtProjectWizardContentCStandard.h"
+#include "QtProjectWizardContentCppStandard.h"
+#include "QtProjectWizardContentCrossCompilationOptions.h"
+#include "QtProjectWizardContentCxxPchFlags.h"
+#include "QtProjectWizardContentFlags.h"
+#include "QtProjectWizardContentPathCDB.h"
+#include "QtProjectWizardContentPathCMakeFileAPI.h"
+#include "QtProjectWizardContentPathCxxPch.h"
+#include "QtProjectWizardContentPathsFrameworkSearch.h"
+#include "QtProjectWizardContentPathsFrameworkSearchGlobal.h"
+#include "QtProjectWizardContentPathsHeaderSearch.h"
+#include "QtProjectWizardContentPathsHeaderSearchGlobal.h"
+#include "QtProjectWizardContentPathsIndexedHeaders.h"
+#include "SourceGroupSettingsCEmpty.h"
+#include "SourceGroupSettingsCppEmpty.h"
+#include "SourceGroupSettingsCxxCdb.h"
+#include "SourceGroupSettingsCxxCMakeFileAPI.h"
 
 #	include "SourceGroupSettingsRustEmpty.h"
 #	include "SourceGroupSettingsSwiftEmpty.h"
@@ -59,8 +57,6 @@ using namespace std;
 
 namespace
 {
-#if BUILD_CXX_LANGUAGE_PACKAGE
-
 bool applicationSettingsContainVisualStudioHeaderSearchPaths()
 {
 	std::vector<FilePath> expandedPaths;
@@ -90,7 +86,7 @@ bool applicationSettingsContainVisualStudioHeaderSearchPaths()
 	return false;
 }
 
-void addMsvcCompatibilityFlagsOnDemand(std::shared_ptr<SourceGroupSettingsWithCxxPathsAndFlags> settings)
+void addMsvcCompatibilityFlagsOnDemand(const std::shared_ptr<SourceGroupSettingsWithCxxPathsAndFlags>& settings)
 {
 	if (applicationSettingsContainVisualStudioHeaderSearchPaths())
 	{
@@ -102,15 +98,11 @@ void addMsvcCompatibilityFlagsOnDemand(std::shared_ptr<SourceGroupSettingsWithCx
 	}
 }
 
-#endif	  // BUILD_CXX_LANGUAGE_PACKAGE
-
 template <typename SettingsType>
 void addSourceGroupContents(
 	QtProjectWizardContentGroup* group,
 	std::shared_ptr<SettingsType> settings,
 	QtProjectWizardWindow* window);
-
-#if BUILD_CXX_LANGUAGE_PACKAGE
 
 template <>
 void addSourceGroupContents<SourceGroupSettingsCEmpty>(
@@ -227,8 +219,6 @@ void addSourceGroupContents<SourceGroupSettingsCxxCdb>(
 	group->addContent(new QtProjectWizardContentCxxPchFlags(settings, window, true));
 }
 
-#endif	  // BUILD_CXX_LANGUAGE_PACKAGE
-
 template <>
 void addSourceGroupContents<SourceGroupSettingsRustEmpty>(
 	QtProjectWizardContentGroup* group,
@@ -302,11 +292,11 @@ void QtProjectWizard::newProject()
 
 void QtProjectWizard::newProjectFromCDB(const FilePath& filePath)
 {
-#if BUILD_CXX_LANGUAGE_PACKAGE
+	if constexpr (!language_packages::buildCxxLanguagePackage)
+		return;
+
 	if (!m_projectSettings)
-	{
 		m_projectSettings = std::make_shared<ProjectSettings>();
-	}
 
 	if (m_projectSettings->getProjectFilePath().empty())
 	{
@@ -315,13 +305,9 @@ void QtProjectWizard::newProjectFromCDB(const FilePath& filePath)
 	}
 
 	if (!m_contentWidget)
-	{
 		setup();
-	}
 	else
-	{
 		loadContent();
-	}
 
 	cancelSourceGroup();
 
@@ -331,7 +317,6 @@ void QtProjectWizard::newProjectFromCDB(const FilePath& filePath)
 	sourceGroupSettings->setCompilationDatabasePath(filePath);
 
 	createSourceGroup(sourceGroupSettings);
-#endif	  // BUILD_CXX_LANGUAGE_PACKAGE
 }
 
 void QtProjectWizard::editProject(const FilePath& settingsPath)
@@ -622,8 +607,9 @@ void QtProjectWizard::selectedSourceGroupChanged(int index)
 	{
 		addSourceGroupContents(summary, settings, this);
 	}
-#if BUILD_CXX_LANGUAGE_PACKAGE
-	else if (
+
+	if constexpr (language_packages::buildCxxLanguagePackage)
+	if (
 		std::shared_ptr<SourceGroupSettingsCEmpty> settings =
 			std::dynamic_pointer_cast<SourceGroupSettingsCEmpty>(group))
 	{
@@ -647,8 +633,8 @@ void QtProjectWizard::selectedSourceGroupChanged(int index)
 	{
 		addSourceGroupContents(summary, settings, this);
 	}
-#endif	  // BUILD_CXX_LANGUAGE_PACKAGE
-	else if (
+
+	if (
 		std::shared_ptr<SourceGroupSettingsRustEmpty> settings =
 			std::dynamic_pointer_cast<SourceGroupSettingsRustEmpty>(group))
 	{
@@ -841,32 +827,34 @@ void QtProjectWizard::selectedProjectType(SourceGroupType sourceGroupType)
 
 	switch (sourceGroupType)
 	{
-#if BUILD_CXX_LANGUAGE_PACKAGE
 	case SourceGroupType::C_EMPTY:
-	{
-		std::shared_ptr<SourceGroupSettingsCEmpty> cxxSettings =
-			std::make_shared<SourceGroupSettingsCEmpty>(sourceGroupId, m_projectSettings.get());
-		addMsvcCompatibilityFlagsOnDemand(cxxSettings);
-		settings = cxxSettings;
-	}
-	break;
+		if constexpr (language_packages::buildCxxLanguagePackage)
+		{
+			std::shared_ptr<SourceGroupSettingsCEmpty> cxxSettings =
+				std::make_shared<SourceGroupSettingsCEmpty>(sourceGroupId, m_projectSettings.get());
+			addMsvcCompatibilityFlagsOnDemand(cxxSettings);
+			settings = cxxSettings;
+		}
+		break;
 	case SourceGroupType::CXX_EMPTY:
-	{
-		std::shared_ptr<SourceGroupSettingsCppEmpty> cxxSettings =
-			std::make_shared<SourceGroupSettingsCppEmpty>(sourceGroupId, m_projectSettings.get());
-		addMsvcCompatibilityFlagsOnDemand(cxxSettings);
-		settings = cxxSettings;
-	}
-	break;
+		if constexpr (language_packages::buildCxxLanguagePackage)
+		{
+			std::shared_ptr<SourceGroupSettingsCppEmpty> cxxSettings =
+				std::make_shared<SourceGroupSettingsCppEmpty>(sourceGroupId, m_projectSettings.get());
+			addMsvcCompatibilityFlagsOnDemand(cxxSettings);
+			settings = cxxSettings;
+		}
+		break;
 	case SourceGroupType::CXX_CDB:
-		settings = std::make_shared<SourceGroupSettingsCxxCdb>(
-			sourceGroupId, m_projectSettings.get());
+		if constexpr (language_packages::buildCxxLanguagePackage)
+			settings = std::make_shared<SourceGroupSettingsCxxCdb>(
+				sourceGroupId, m_projectSettings.get());
 		break;
 	case SourceGroupType::CXX_CMAKE_FILE_API:
-		settings = std::make_shared<SourceGroupSettingsCxxCMakeFileAPI>(
-			sourceGroupId, m_projectSettings.get());
+		if constexpr (language_packages::buildCxxLanguagePackage)
+			settings = std::make_shared<SourceGroupSettingsCxxCMakeFileAPI>(
+				sourceGroupId, m_projectSettings.get());
 		break;
-#endif	  // BUILD_CXX_LANGUAGE_PACKAGE
 
 	case SourceGroupType::RUST_EMPTY:
 		if constexpr (language_packages::buildRustLanguagePackage)

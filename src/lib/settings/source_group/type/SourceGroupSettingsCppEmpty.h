@@ -1,10 +1,6 @@
 #ifndef SOURCE_GROUP_SETTINGS_CPP_EMPTY_H
 #define SOURCE_GROUP_SETTINGS_CPP_EMPTY_H
 
-#include "language_packages.h"
-
-#if BUILD_CXX_LANGUAGE_PACKAGE
-
 #	include "SourceGroupSettingsWithComponents.h"
 #	include "SourceGroupSettingsWithCppStandard.h"
 #	include "SourceGroupSettingsWithCxxCrossCompilationOptions.h"
@@ -35,7 +31,5 @@ public:
 		return std::make_shared<SourceGroupSettingsCppEmpty>(*this);
 	}
 };
-
-#endif	  // BUILD_CXX_LANGUAGE_PACKAGE
 
 #endif	  // SOURCE_GROUP_SETTINGS_CPP_EMPTY_H

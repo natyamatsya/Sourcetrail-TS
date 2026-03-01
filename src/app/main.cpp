@@ -23,10 +23,8 @@
 #include "language_package_flags.h"
 #include "utilityQt.h"
 
-#if BUILD_CXX_LANGUAGE_PACKAGE
-	#include "LanguagePackageCxx.h"
-	#include "SourceGroupFactoryModuleCxx.h"
-#endif	  // BUILD_CXX_LANGUAGE_PACKAGE
+#include "LanguagePackageCxx.h"
+#include "SourceGroupFactoryModuleCxx.h"
 
 #include "LanguagePackageRust.h"
 #include "SourceGroupFactoryModuleRust.h"
@@ -84,19 +82,17 @@ void addLanguagePackages()
 {
 	SourceGroupFactory::getInstance()->addModule(std::make_shared<SourceGroupFactoryModuleCustom>());
 
-#if BUILD_CXX_LANGUAGE_PACKAGE
-	SourceGroupFactory::getInstance()->addModule(std::make_shared<SourceGroupFactoryModuleCxx>());
-#endif	  // BUILD_CXX_LANGUAGE_PACKAGE
+	if constexpr (language_packages::buildCxxLanguagePackage)
+		SourceGroupFactory::getInstance()->addModule(std::make_shared<SourceGroupFactoryModuleCxx>());
 
- 	if constexpr (language_packages::buildRustLanguagePackage)
+	if constexpr (language_packages::buildRustLanguagePackage)
 		SourceGroupFactory::getInstance()->addModule(std::make_shared<SourceGroupFactoryModuleRust>());
 
 	if constexpr (language_packages::buildSwiftLanguagePackage)
 		SourceGroupFactory::getInstance()->addModule(std::make_shared<SourceGroupFactoryModuleSwift>());
 
-#if BUILD_CXX_LANGUAGE_PACKAGE
-	LanguagePackageManager::getInstance()->addPackage(std::make_shared<LanguagePackageCxx>());
-#endif	  // BUILD_CXX_LANGUAGE_PACKAGE
+	if constexpr (language_packages::buildCxxLanguagePackage)
+		LanguagePackageManager::getInstance()->addPackage(std::make_shared<LanguagePackageCxx>());
 
 	if constexpr (language_packages::buildRustLanguagePackage)
 		LanguagePackageManager::getInstance()->addPackage(std::make_shared<LanguagePackageRust>());

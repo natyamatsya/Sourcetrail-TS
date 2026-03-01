@@ -1,7 +1,7 @@
 #include "QtProjectWizardContentPathsSource.h"
 #include "QtMessageBox.h"
 
-#include "language_packages.h"
+#include "language_package_flags.h"
 
 #include "SourceGroupCustomCommand.h"
 #include "SourceGroupSettingsCustomCommand.h"
@@ -9,10 +9,8 @@
 #include "utility.h"
 #include "utilityFile.h"
 
-#if BUILD_CXX_LANGUAGE_PACKAGE
-#	include "SourceGroupCxxEmpty.h"
-#	include "SourceGroupSettingsWithCxxPathsAndFlags.h"
-#endif	  // BUILD_CXX_LANGUAGE_PACKAGE
+#include "SourceGroupCxxEmpty.h"
+#include "SourceGroupSettingsWithCxxPathsAndFlags.h"
 
 QtProjectWizardContentPathsSource::QtProjectWizardContentPathsSource(
 	std::shared_ptr<SourceGroupSettings> settings, QtProjectWizardWindow* window)
@@ -82,12 +80,9 @@ std::vector<FilePath> QtProjectWizardContentPathsSource::getFilePaths() const
 {
 	std::set<FilePath> allSourceFilePaths;
 
-#if BUILD_CXX_LANGUAGE_PACKAGE
+	if constexpr (language_packages::buildCxxLanguagePackage)
 	if (std::dynamic_pointer_cast<SourceGroupSettingsWithCxxPathsAndFlags>(m_settings))
-	{
 		allSourceFilePaths = SourceGroupCxxEmpty(m_settings).getAllSourceFilePaths();
-	}
-#endif	  // BUILD_CXX_LANGUAGE_PACKAGE
 
 	if (std::shared_ptr<SourceGroupSettingsCustomCommand> settings =
 			std::dynamic_pointer_cast<SourceGroupSettingsCustomCommand>(m_settings))

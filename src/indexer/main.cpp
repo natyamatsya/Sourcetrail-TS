@@ -10,9 +10,7 @@
 #include "logging.h"
 #include "setupApp.h"
 
-#if BUILD_CXX_LANGUAGE_PACKAGE
-#	include "LanguagePackageCxx.h"
-#endif	  // BUILD_CXX_LANGUAGE_PACKAGE
+#include "LanguagePackageCxx.h"
 
 #if BOOST_OS_WINDOWS
 	#include <Windows.h>
@@ -93,9 +91,8 @@ int main(int argc, char* argv[])
 	LOG_INFO("userDataPath: " + UserPaths::getUserDataDirectoryPath().str());
 
 
-#if BUILD_CXX_LANGUAGE_PACKAGE
-	LanguagePackageManager::getInstance()->addPackage(std::make_shared<LanguagePackageCxx>());
-#endif	  // BUILD_CXX_LANGUAGE_PACKAGE
+	if constexpr (language_packages::buildCxxLanguagePackage)
+		LanguagePackageManager::getInstance()->addPackage(std::make_shared<LanguagePackageCxx>());
 
 	InterprocessIndexer indexer(instanceUuid, processId);
 	const InterprocessIndexer::WorkResult workResult = indexer.work();

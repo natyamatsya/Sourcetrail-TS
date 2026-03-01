@@ -10,12 +10,10 @@
 
 #include <filesystem>
 
-#if BUILD_CXX_LANGUAGE_PACKAGE
 #	include "SourceGroupSettingsCEmpty.h"
 #	include "SourceGroupSettingsCppEmpty.h"
 #	include "SourceGroupSettingsCxxCdb.h"
 #	include "SourceGroupSettingsCxxCMakeFileAPI.h"
-#endif	  // BUILD_CXX_LANGUAGE_PACKAGE
 #	include "SourceGroupSettingsRustEmpty.h"
 #	include "SourceGroupSettingsSwiftEmpty.h"
 
@@ -189,20 +187,30 @@ std::vector<std::shared_ptr<SourceGroupSettings>> ProjectSettings::getAllSourceG
 
 		switch (type)
 		{
-#if BUILD_CXX_LANGUAGE_PACKAGE
 		case SourceGroupType::C_EMPTY:
-			settings = std::make_shared<SourceGroupSettingsCEmpty>(id, this);
+			if constexpr (language_packages::buildCxxLanguagePackage)
+				settings = std::make_shared<SourceGroupSettingsCEmpty>(id, this);
+			else
+				settings = std::make_shared<SourceGroupSettingsUnloadable>(id, this);
 			break;
 		case SourceGroupType::CXX_EMPTY:
-			settings = std::make_shared<SourceGroupSettingsCppEmpty>(id, this);
+			if constexpr (language_packages::buildCxxLanguagePackage)
+				settings = std::make_shared<SourceGroupSettingsCppEmpty>(id, this);
+			else
+				settings = std::make_shared<SourceGroupSettingsUnloadable>(id, this);
 			break;
 		case SourceGroupType::CXX_CDB:
-			settings = std::make_shared<SourceGroupSettingsCxxCdb>(id, this);
+			if constexpr (language_packages::buildCxxLanguagePackage)
+				settings = std::make_shared<SourceGroupSettingsCxxCdb>(id, this);
+			else
+				settings = std::make_shared<SourceGroupSettingsUnloadable>(id, this);
 			break;
 		case SourceGroupType::CXX_CMAKE_FILE_API:
-			settings = std::make_shared<SourceGroupSettingsCxxCMakeFileAPI>(id, this);
+			if constexpr (language_packages::buildCxxLanguagePackage)
+				settings = std::make_shared<SourceGroupSettingsCxxCMakeFileAPI>(id, this);
+			else
+				settings = std::make_shared<SourceGroupSettingsUnloadable>(id, this);
 			break;
-#endif	  // BUILD_CXX_LANGUAGE_PACKAGE
 		case SourceGroupType::RUST_EMPTY:
 			if constexpr (language_packages::buildRustLanguagePackage)
 				settings = std::make_shared<SourceGroupSettingsRustEmpty>(id, this);

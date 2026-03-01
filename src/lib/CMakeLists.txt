@@ -1,12 +1,10 @@
 # Sources: collected with GLOB_RECURSE + CONFIGURE_DEPENDS so CMake re-runs
 # automatically when files are added or removed.
-#
-# The cxx-only settings subtree is excluded here and added conditionally below.
 file(GLOB_RECURSE Sourcetrail_lib_SOURCES CONFIGURE_DEPENDS
 	"${CMAKE_CURRENT_SOURCE_DIR}/*.cpp"
 	"${CMAKE_CURRENT_SOURCE_DIR}/*.h"
 )
-list(FILTER Sourcetrail_lib_SOURCES EXCLUDE REGEX ".*/settings/source_group/component/cxx/.*")
+# CXX settings sources are always included; lib_cxx itself is still optional.
 
 # FlatBuffer schema files — included so IDEs show them in the project tree.
 file(GLOB Sourcetrail_lib_FBS CONFIGURE_DEPENDS
@@ -40,21 +38,18 @@ target_include_directories(Sourcetrail_lib
 		"${CMAKE_BINARY_DIR}/src/lib"
 )
 
-# CXX language package — optional sources and include dirs.
-if (BUILD_CXX_LANGUAGE_PACKAGE)
-	file(GLOB_RECURSE _cxx_settings_sources CONFIGURE_DEPENDS
-		"${CMAKE_CURRENT_SOURCE_DIR}/settings/source_group/component/cxx/*.cpp"
-		"${CMAKE_CURRENT_SOURCE_DIR}/settings/source_group/component/cxx/*.h"
-		"${CMAKE_CURRENT_SOURCE_DIR}/settings/source_group/type/SourceGroupSettingsC*.h"
-		"${CMAKE_CURRENT_SOURCE_DIR}/settings/source_group/type/SourceGroupSettingsCustomCommand.h"
-	)
-	target_sources(Sourcetrail_lib PRIVATE ${_cxx_settings_sources})
-	target_include_directories(Sourcetrail_lib
-		PUBLIC
-			settings/source_group/component/cxx
-			settings/source_group/type
-	)
-endif()
+# CXX settings component sources — always compiled so the settings types are
+# unconditionally available (matching the Rust/Swift stabilization approach).
+file(GLOB_RECURSE _cxx_settings_sources CONFIGURE_DEPENDS
+	"${CMAKE_CURRENT_SOURCE_DIR}/settings/source_group/component/cxx/*.cpp"
+	"${CMAKE_CURRENT_SOURCE_DIR}/settings/source_group/component/cxx/*.h"
+)
+target_sources(Sourcetrail_lib PRIVATE ${_cxx_settings_sources})
+target_include_directories(Sourcetrail_lib
+	PUBLIC
+		settings/source_group/component/cxx
+		settings/source_group/type
+)
 
 # FlatBuffer schema compilation ------------------------------------------------
 

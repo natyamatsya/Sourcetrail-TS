@@ -3,9 +3,7 @@
 #include "language_package_flags.h"
 
 #include "IndexerCommand.h"
-#if BUILD_CXX_LANGUAGE_PACKAGE
 #include "IndexerCommandCxx.h"
-#endif
 #include "IndexerCommandRust.h"
 #include "IndexerCommandSwift.h"
 #include "logging.h"
@@ -36,7 +34,7 @@ flatbuffers::DetachedBuffer serializeIndexerCommands(
 		flatbuffers::Offset<flatbuffers::Vector<flatbuffers::Offset<flatbuffers::String>>> compilerFlags = 0;
 		flatbuffers::Offset<flatbuffers::String> compilerPath = 0;
 
-#if BUILD_CXX_LANGUAGE_PACKAGE
+		if constexpr (language_packages::buildCxxLanguagePackage)
 		if (auto cxxCmd = std::dynamic_pointer_cast<IndexerCommandCxx>(cmd))
 		{
 			type = Sourcetrail::Ipc::IndexerCommandType_Cxx;
@@ -65,7 +63,6 @@ flatbuffers::DetachedBuffer serializeIndexerCommands(
 
 			compilerPath = builder.CreateString(cxxCmd->getCompilerPath());
 		}
-#endif
 		if (auto* rustCmd = dynamic_cast<IndexerCommandRust*>(cmd.get()))
 		{
 			type = Sourcetrail::Ipc::IndexerCommandType_Rust;
@@ -115,10 +112,8 @@ std::vector<std::shared_ptr<IndexerCommand>> deserializeIndexerCommands(
 		if (!fbCmd)
 			continue;
 
-		switch (fbCmd->type())
-		{
-#if BUILD_CXX_LANGUAGE_PACKAGE
-		case Sourcetrail::Ipc::IndexerCommandType_Cxx:
+		if constexpr (language_packages::buildCxxLanguagePackage)
+		if (fbCmd->type() == Sourcetrail::Ipc::IndexerCommandType_Cxx)
 		{
 			std::set<FilePath> indexedPaths;
 			if (fbCmd->indexed_paths())
@@ -152,9 +147,11 @@ std::vector<std::shared_ptr<IndexerCommand>> deserializeIndexerCommands(
 				FilePath(fbCmd->source_file_path()->c_str()),
 				indexedPaths, excludeFilters, includeFilters,
 				workingDir, compilerFlags, compilerPath));
-			break;
+			continue;
 		}
-#endif
+
+		switch (fbCmd->type())
+		{
 		case Sourcetrail::Ipc::IndexerCommandType_Rust:
 		{
 			std::set<FilePath> indexedPaths;

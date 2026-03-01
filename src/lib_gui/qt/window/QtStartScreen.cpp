@@ -1,5 +1,7 @@
 #include "QtStartScreen.h"
 
+#include "language_package_flags.h"
+
 #include "ApplicationSettings.h"
 #include "MessageLoadProject.h"
 #include "ProjectSettings.h"
@@ -247,14 +249,14 @@ void QtStartScreen::setButtonIcon(QtRecentProjectButton *button, LanguageType la
 {
 	switch (languageType)
 	{
-#if BUILD_CXX_LANGUAGE_PACKAGE
 	case LanguageType::C:
-		button->setIcon(m_cIcon);
+		if constexpr (language_packages::buildCxxLanguagePackage)
+			button->setIcon(m_cIcon);
 		break;
 	case LanguageType::CXX:
-		button->setIcon(m_cppIcon);
+		if constexpr (language_packages::buildCxxLanguagePackage)
+			button->setIcon(m_cppIcon);
 		break;
-#endif // BUILD_CXX_LANGUAGE_PACKAGE
 	case LanguageType::CUSTOM:
 	default:
 		button->setIcon(m_projectIcon);

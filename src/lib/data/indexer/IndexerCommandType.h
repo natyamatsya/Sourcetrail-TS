@@ -5,7 +5,7 @@
 
 #include <string>
 
-enum IndexerCommandType
+enum class IndexerCommandType
 {
 	INDEXER_COMMAND_UNKNOWN,
 	INDEXER_COMMAND_CXX,
@@ -13,6 +13,14 @@ enum IndexerCommandType
 	INDEXER_COMMAND_SWIFT,
 	INDEXER_COMMAND_CUSTOM
 };
+
+// Transitional aliases to keep existing unscoped call sites compiling while
+// migrating incrementally to explicit IndexerCommandType:: qualifiers.
+constexpr auto INDEXER_COMMAND_UNKNOWN = IndexerCommandType::INDEXER_COMMAND_UNKNOWN;
+constexpr auto INDEXER_COMMAND_CXX = IndexerCommandType::INDEXER_COMMAND_CXX;
+constexpr auto INDEXER_COMMAND_RUST = IndexerCommandType::INDEXER_COMMAND_RUST;
+constexpr auto INDEXER_COMMAND_SWIFT = IndexerCommandType::INDEXER_COMMAND_SWIFT;
+constexpr auto INDEXER_COMMAND_CUSTOM = IndexerCommandType::INDEXER_COMMAND_CUSTOM;
 
 std::string indexerCommandTypeToString(IndexerCommandType type);
 IndexerCommandType stringToIndexerCommandType(const std::string& s);

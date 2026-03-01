@@ -1,6 +1,6 @@
 #include "QtPreferencesWindow.h"
 
-#include "language_packages.h"
+#include "language_package_flags.h"
 
 #include "MessageLoadProject.h"
 #include "MessagePluginPortChange.h"
@@ -32,13 +32,12 @@ QtPreferencesWindow::QtPreferencesWindow(QWidget* parent): QtProjectWizardWindow
 	QtProjectWizardContentGroup* summary = new QtProjectWizardContentGroup(this);
 	summary->addContent(new QtProjectWizardContentPreferences(this));
 
-#if BUILD_CXX_LANGUAGE_PACKAGE
-	summary->addContent(new QtProjectWizardContentPathsHeaderSearchGlobal(this));
-	if constexpr (utility::Platform::isMac())
+	if constexpr (language_packages::buildCxxLanguagePackage)
 	{
-		summary->addContent(new QtProjectWizardContentPathsFrameworkSearchGlobal(this));
+		summary->addContent(new QtProjectWizardContentPathsHeaderSearchGlobal(this));
+		if constexpr (utility::Platform::isMac())
+			summary->addContent(new QtProjectWizardContentPathsFrameworkSearchGlobal(this));
 	}
-#endif	  // BUILD_CXX_LANGUAGE_PACKAGE
 
 	setPreferredSize(QSize(750, 500));
 	setContent(summary);
