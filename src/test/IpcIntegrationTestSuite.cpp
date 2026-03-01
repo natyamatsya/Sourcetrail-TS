@@ -14,6 +14,7 @@
 #include "IpcInterprocessIndexingStatusManager.h"
 #include "IpcSharedMemoryGarbageCollector.h"
 #include "MemoryIndexerCommandProvider.h"
+#include "OptionalCxxTestUtils.h"
 #include "StorageProvider.h"
 #include "TaskBuildIndex.h"
 #include "TaskFillIndexerCommandQueue.h"
@@ -21,49 +22,14 @@
 
 #include "IntermediateStorage.h"
 
-#if BUILD_CXX_LANGUAGE_PACKAGE
-#include "IndexerCommandCxx.h"
-#endif
 #include "IndexerCommandRust.h"
 #include "IndexerCommandSwift.h"
 
 namespace
 {
-template <bool Enabled>
-std::shared_ptr<IndexerCommand> makeCxxCommand(
-	const std::string& sourceFilePath,
-	const std::set<FilePath>& indexedPaths,
-	const std::string& workingDirectory,
-	const std::vector<std::string>& compilerFlags)
+int withOptionalCxxCount(const int& count)
 {
-	if constexpr (!Enabled)
-		return nullptr;
-#if BUILD_CXX_LANGUAGE_PACKAGE
-	return std::make_shared<IndexerCommandCxx>(
-		FilePath(sourceFilePath),
-		indexedPaths,
-		std::set<FilePathFilter>{},
-		std::set<FilePathFilter>{},
-		FilePath(workingDirectory),
-		compilerFlags,
-		std::string{});
-#else
-	return nullptr;
-#endif
-}
-
-template <bool Enabled>
-void countCxxCommandIfPresent(const std::shared_ptr<IndexerCommand>& command, size_t& cxxCount)
-{
-	if constexpr (Enabled)
-		if (command->getIndexerCommandType() == IndexerCommandType::INDEXER_COMMAND_CXX)
-			cxxCount++;
-}
-
-template <bool Enabled>
-int withOptionalCxxCount(const int count)
-{
-	if constexpr (Enabled)
+	if constexpr (language_packages::buildCxxLanguagePackage)
 		return count + 1;
 	return count;
 }
@@ -84,12 +50,12 @@ TEST_CASE("ipc integration: full indexer workflow")
 			ownerMgr.clearIndexerCommands();
 
 			std::vector<std::shared_ptr<IndexerCommand>> cmds;
-			cmds.push_back(makeCxxCommand<language_packages::buildCxxLanguagePackage>(
+			cmds.push_back(makeOptionalCxxCommand(
 				"/src/a.cpp",
 				std::set<FilePath>{FilePath("/usr/include")},
 				"/build",
 				std::vector<std::string>{"-std=c++20", "-Wall"}));
-			cmds.push_back(makeCxxCommand<language_packages::buildCxxLanguagePackage>(
+			cmds.push_back(makeOptionalCxxCommand(
 				"/src/b.cpp",
 				std::set<FilePath>{FilePath("/usr/include")},
 				"/build",
@@ -191,7 +157,7 @@ TEST_CASE("ipc integration: full indexer workflow")
 			// Main pushes 4 commands
 			std::vector<std::shared_ptr<IndexerCommand>> cmds;
 			for (int i = 0; i < 4; i++)
-				cmds.push_back(makeCxxCommand<language_packages::buildCxxLanguagePackage>(
+				cmds.push_back(makeOptionalCxxCommand(
 					"/src/file" + std::to_string(i) + ".cpp",
 					std::set<FilePath>{},
 					"/build",
@@ -252,7 +218,7 @@ TEST_CASE("ipc integration: full indexer workflow")
 					FilePath("/swift/pkg"),
 					std::set<FilePath>{FilePath("/swift/pkg")},
 					FilePath("/swift/pkg")));
-			commands.push_back(makeCxxCommand<language_packages::buildCxxLanguagePackage>(
+			commands.push_back(makeOptionalCxxCommand(
 				"/src/main.cpp",
 				std::set<FilePath>{},
 				"/build",
@@ -463,7 +429,7 @@ TEST_CASE("ipc integration: full indexer workflow")
 			std::vector<std::shared_ptr<IndexerCommand>> providerACommands;
 			providerACommands.push_back(makeRustCommand("/crate/a"));
 			if (const std::shared_ptr<IndexerCommand> cxxCommand =
-				makeCxxCommand<language_packages::buildCxxLanguagePackage>(
+				makeOptionalCxxCommand(
 					"/src/a.cpp",
 					std::set<FilePath>{},
 					"/build",
@@ -488,7 +454,7 @@ TEST_CASE("ipc integration: full indexer workflow")
 			REQUIRE(blackboard->get<int>("source_file_count", sourceFileCount));
 			REQUIRE(
 				sourceFileCount ==
-				withOptionalCxxCount<language_packages::buildCxxLanguagePackage>(2));
+				withOptionalCxxCount(2));
 
 			IpcInterprocessIndexerCommandManager reader(dedupUuid, workerPid, false);
 
@@ -506,16 +472,15 @@ TEST_CASE("ipc integration: full indexer workflow")
 					continue;
 				}
 
-				countCxxCommandIfPresent<language_packages::buildCxxLanguagePackage>(
-					command,
-					cxxCount);
+				if (isOptionalCxxCommand(command))
+					cxxCount++;
 			}
 
 			REQUIRE(rustCount == 2);
 			REQUIRE(rustWorkingDirectories.size() == 2);
 			REQUIRE(
 				cxxCount ==
-				static_cast<size_t>(withOptionalCxxCount<language_packages::buildCxxLanguagePackage>(0)));
+				static_cast<size_t>(withOptionalCxxCount(0)));
 			REQUIRE(reader.indexerCommandCount() == 0);
 		}
 		else
@@ -544,7 +509,7 @@ TEST_CASE("ipc integration: full indexer workflow")
 			std::vector<std::shared_ptr<IndexerCommand>> providerACommands;
 			providerACommands.push_back(makeSwiftCommand("/swift/pkg/a"));
 			if (const std::shared_ptr<IndexerCommand> cxxCommand =
-				makeCxxCommand<language_packages::buildCxxLanguagePackage>(
+				makeOptionalCxxCommand(
 					"/src/swift_bridge.cpp",
 					std::set<FilePath>{},
 					"/build",
@@ -569,7 +534,7 @@ TEST_CASE("ipc integration: full indexer workflow")
 			REQUIRE(blackboard->get<int>("source_file_count", sourceFileCount));
 			REQUIRE(
 				sourceFileCount ==
-				withOptionalCxxCount<language_packages::buildCxxLanguagePackage>(2));
+				withOptionalCxxCount(2));
 
 			IpcInterprocessIndexerCommandManager reader(dedupUuid, workerPid, false);
 
@@ -587,16 +552,15 @@ TEST_CASE("ipc integration: full indexer workflow")
 					continue;
 				}
 
-				countCxxCommandIfPresent<language_packages::buildCxxLanguagePackage>(
-					command,
-					cxxCount);
+				if (isOptionalCxxCommand(command))
+					cxxCount++;
 			}
 
 			REQUIRE(swiftCount == 2);
 			REQUIRE(swiftWorkingDirectories.size() == 2);
 			REQUIRE(
 				cxxCount ==
-				static_cast<size_t>(withOptionalCxxCount<language_packages::buildCxxLanguagePackage>(0)));
+				static_cast<size_t>(withOptionalCxxCount(0)));
 			REQUIRE(reader.indexerCommandCount() == 0);
 		}
 		else

@@ -9,6 +9,7 @@ list(FILTER Sourcetrail_test_SOURCES EXCLUDE REGEX ".*/CMakeFileAPIReaderTestSui
 list(FILTER Sourcetrail_test_SOURCES EXCLUDE REGEX ".*/CxxParserTestSuite\\.cpp")
 list(FILTER Sourcetrail_test_SOURCES EXCLUDE REGEX ".*/CxxIncludeProcessingTestSuite\\.cpp")
 list(FILTER Sourcetrail_test_SOURCES EXCLUDE REGEX ".*/CxxTypeNameTestSuite\\.cpp")
+list(FILTER Sourcetrail_test_SOURCES EXCLUDE REGEX ".*/SourceGroupCxxTestSuite\\.cpp")
 
 add_executable(Sourcetrail_test ${Sourcetrail_test_SOURCES})
 
@@ -19,6 +20,7 @@ if (BUILD_CXX_LANGUAGE_PACKAGE)
 			"${CMAKE_CURRENT_SOURCE_DIR}/CxxParserTestSuite.cpp"
 			"${CMAKE_CURRENT_SOURCE_DIR}/CxxIncludeProcessingTestSuite.cpp"
 			"${CMAKE_CURRENT_SOURCE_DIR}/CxxTypeNameTestSuite.cpp"
+			"${CMAKE_CURRENT_SOURCE_DIR}/SourceGroupCxxTestSuite.cpp"
 	)
 endif()
 
