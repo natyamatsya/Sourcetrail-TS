@@ -11,12 +11,14 @@ let package = Package(
 	],
 	dependencies: [
 		.package(path: "../../inspiration/cpp-ipc/swift/libipc"),
+		.package(url: "https://github.com/google/flatbuffers.git", from: "25.2.10"),
 	],
 	targets: [
 		.executableTarget(
 			name: "SourcetrailSwiftIndexer",
 			dependencies: [
 				.product(name: "LibIPC", package: "libipc"),
+				.product(name: "FlatBuffers", package: "flatbuffers"),
 			],
 			path: "Sources/SourcetrailSwiftIndexer"
 		),

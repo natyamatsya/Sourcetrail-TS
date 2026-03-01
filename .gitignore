@@ -27,3 +27,7 @@ CMakeLists.txt.user
 # Rust / Cargo
 src/rust_indexer/target/
 src/rust_indexer/Cargo.lock
+
+# Swift Package Manager (Swift indexer)
+src/swift_indexer/Package.resolved
+src/swift_indexer/Sources/SourcetrailSwiftIndexer/GeneratedFromCMake
