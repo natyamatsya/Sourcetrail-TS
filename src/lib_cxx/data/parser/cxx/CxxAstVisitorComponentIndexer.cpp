@@ -37,26 +37,27 @@ void CxxAstVisitorComponentIndexer::beginTraverseNestedNameSpecifierLoc(
 	}
 
 	const auto nestedNameSpecifier = loc.getNestedNameSpecifier();
-	switch (nestedNameSpecifier.getKind())
+	switch (clang_compat::getNestedNameSpecifierKind(nestedNameSpecifier))
 	{
-	case clang::NestedNameSpecifier::Kind::Null:
-	case clang::NestedNameSpecifier::Kind::Global:
-	case clang::NestedNameSpecifier::Kind::MicrosoftSuper:
+	case clang_compat::NestedNameSpecifierKind::Null:
+	case clang_compat::NestedNameSpecifierKind::Global:
+	case clang_compat::NestedNameSpecifierKind::MicrosoftSuper:
 		break;
 
-	case clang::NestedNameSpecifier::Kind::Namespace:
+	case clang_compat::NestedNameSpecifierKind::Namespace:
 	{
-		const auto namespaceAndPrefix = nestedNameSpecifier.getAsNamespaceAndPrefix();
-		if (!namespaceAndPrefix.Namespace)
+		const clang::NamedDecl* namespaceDecl =
+			clang_compat::getNestedNameSpecifierNamespaceDecl(nestedNameSpecifier);
+		if (!namespaceDecl)
 			break;
 
-		Id symbolId = getOrCreateSymbolId(namespaceAndPrefix.Namespace);
+		Id symbolId = getOrCreateSymbolId(namespaceDecl);
 		m_client->recordSymbolKind(symbolId, SymbolKind::NAMESPACE);
 		m_client->recordLocation(
 			symbolId, getParseLocation(loc.getLocalBeginLoc()), ParseLocationType::QUALIFIER);
 
 		if (const auto* namespaceAliasDecl =
-				clang::dyn_cast<clang::NamespaceAliasDecl>(namespaceAndPrefix.Namespace))
+				clang::dyn_cast<clang::NamespaceAliasDecl>(namespaceDecl))
 		{
 			symbolId = getOrCreateSymbolId(namespaceAliasDecl->getAliasedNamespace());
 			m_client->recordSymbolKind(symbolId, SymbolKind::NAMESPACE);
@@ -64,8 +65,9 @@ void CxxAstVisitorComponentIndexer::beginTraverseNestedNameSpecifierLoc(
 	}
 	break;
 
-	case clang::NestedNameSpecifier::Kind::Type:
-		if (const clang::CXXRecordDecl* recordDecl = nestedNameSpecifier.getAsRecordDecl())
+	case clang_compat::NestedNameSpecifierKind::Type:
+		if (const clang::CXXRecordDecl* recordDecl =
+				clang_compat::getNestedNameSpecifierRecordDecl(nestedNameSpecifier))
 		{
 			SymbolKind symbolKind = SymbolKind::UNDEFINED;
 			if (recordDecl->isClass())
@@ -89,7 +91,8 @@ void CxxAstVisitorComponentIndexer::beginTraverseNestedNameSpecifierLoc(
 					symbolId, getParseLocation(loc.getLocalBeginLoc()), ParseLocationType::QUALIFIER);
 			}
 		}
-		else if (const clang::Type* type = nestedNameSpecifier.getAsType())
+		else if (
+			const clang::Type* type = clang_compat::getNestedNameSpecifierType(nestedNameSpecifier))
 		{
 			const ParseLocation parseLocation = getParseLocation(loc.getLocalBeginLoc());
 
@@ -108,6 +111,7 @@ void CxxAstVisitorComponentIndexer::beginTraverseNestedNameSpecifierLoc(
 				m_client->recordLocation(symbolId, parseLocation, ParseLocationType::QUALIFIER);
 			}
 		}
+		break;
 	}
 }
 

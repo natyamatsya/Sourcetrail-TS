@@ -8,6 +8,7 @@
 #include "IndexerStateInfo.h"
 #include "ParseLocation.h"
 #include "ParserClient.h"
+#include "clang_compat/ClangCompatibility.h"
 #include "logging.h"
 #include "utilityClang.h"
 
@@ -184,9 +185,21 @@ bool CxxAstVisitor::TraverseQualifiedTypeLoc(
 	return TraverseTypeLoc(tl.getUnqualifiedLoc(), TraverseQualifier);
 }
 
-DEF_TRAVERSE_TYPE(TypeLoc, {}, {})
+bool CxxAstVisitor::TraverseTypeLoc(clang::TypeLoc v, bool TraverseQualifier)
+{
+	FOREACH_COMPONENT(beginTraverseTypeLoc(v));
+	clang_compat::traverseTypeLoc(static_cast<Base&>(*this), v, TraverseQualifier);
+	FOREACH_COMPONENT(endTraverseTypeLoc(v));
+	return true;
+}
 
-DEF_TRAVERSE_CUSTOM_TYPE(Type, QualType, {}, {})
+bool CxxAstVisitor::TraverseType(clang::QualType v, bool TraverseQualifier)
+{
+	FOREACH_COMPONENT(beginTraverseType(v));
+	clang_compat::traverseType(static_cast<Base&>(*this), v, TraverseQualifier);
+	FOREACH_COMPONENT(endTraverseType(v));
+	return true;
+}
 
 DEF_TRAVERSE_TYPE_PTR(Stmt, {}, {})
 
@@ -311,11 +324,10 @@ bool CxxAstVisitor::TraverseNestedNameSpecifierLoc(clang::NestedNameSpecifierLoc
 	{
 		FOREACH_COMPONENT(beginTraverseNestedNameSpecifierLoc(loc));
 
-		// todo: call method of base class...
-		auto namespaceAndPrefix = loc.getAsNamespaceAndPrefix();
-		if (namespaceAndPrefix)
+		clang::NestedNameSpecifierLoc prefix;
+		if (clang_compat::getNestedNameSpecifierLocPrefix(loc, &prefix))
 		{
-			ret = TraverseNestedNameSpecifierLoc(namespaceAndPrefix.Prefix);
+			ret = TraverseNestedNameSpecifierLoc(prefix);
 		}
 
 		FOREACH_COMPONENT(endTraverseNestedNameSpecifierLoc(loc));

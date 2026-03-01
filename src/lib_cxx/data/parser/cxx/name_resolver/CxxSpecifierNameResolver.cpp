@@ -2,6 +2,7 @@
 
 #include "CxxDeclNameResolver.h"
 #include "CxxTypeNameResolver.h"
+#include "clang_compat/ClangCompatibility.h"
 
 #include <clang/AST/ASTContext.h>
 #include <clang/AST/DeclTemplate.h>
@@ -23,37 +24,41 @@ std::unique_ptr<CxxName> CxxSpecifierNameResolver::getName(
 	if (!nestedNameSpecifier)
 		return nullptr;
 
-	switch (nestedNameSpecifier.getKind())
+	switch (clang_compat::getNestedNameSpecifierKind(nestedNameSpecifier))
 	{
-	case clang::NestedNameSpecifier::Kind::Null:
-	case clang::NestedNameSpecifier::Kind::Global:
+	case clang_compat::NestedNameSpecifierKind::Null:
+	case clang_compat::NestedNameSpecifierKind::Global:
 		// no context name hierarchy needed.
 		break;
 
-	case clang::NestedNameSpecifier::Kind::Namespace:
+	case clang_compat::NestedNameSpecifierKind::Namespace:
 	{
-		const auto namespaceAndPrefix = nestedNameSpecifier.getAsNamespaceAndPrefix();
-		if (!namespaceAndPrefix.Namespace)
+		const clang::NamedDecl* namespaceDecl =
+			clang_compat::getNestedNameSpecifierNamespaceDecl(nestedNameSpecifier);
+		if (!namespaceDecl)
 			return nullptr;
 
 		std::unique_ptr<CxxName> name =
-			CxxDeclNameResolver(this).getName(namespaceAndPrefix.Namespace);
+			CxxDeclNameResolver(this).getName(namespaceDecl);
 		if (!name)
 			return nullptr;
 
-		std::unique_ptr<CxxName> parentName = getName(namespaceAndPrefix.Prefix);
+		std::unique_ptr<CxxName> parentName =
+			getName(clang_compat::getNestedNameSpecifierPrefix(nestedNameSpecifier));
 		if (parentName)
 			name->setParent(std::move(parentName));
 
 		return name;
 	}
 
-	case clang::NestedNameSpecifier::Kind::Type:
+	case clang_compat::NestedNameSpecifierKind::Type:
 		return CxxTypeName::makeUnsolvedIfNull(
-			CxxTypeNameResolver(this).getName(nestedNameSpecifier.getAsType()));
+			CxxTypeNameResolver(this).getName(
+				clang_compat::getNestedNameSpecifierType(nestedNameSpecifier)));
 
-	case clang::NestedNameSpecifier::Kind::MicrosoftSuper:
-		return CxxDeclNameResolver(this).getName(nestedNameSpecifier.getAsRecordDecl());
+	case clang_compat::NestedNameSpecifierKind::MicrosoftSuper:
+		return CxxDeclNameResolver(this).getName(
+			clang_compat::getNestedNameSpecifierRecordDecl(nestedNameSpecifier));
 	}
 
 	return nullptr;
