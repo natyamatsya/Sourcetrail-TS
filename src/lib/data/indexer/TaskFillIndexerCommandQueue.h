@@ -20,6 +20,18 @@ class TaskFillIndexerCommandsQueue
 	, public MessageListener<MessageIndexingInterrupted>
 {
 public:
+	struct DeduplicationState
+	{
+		std::unordered_set<std::string> seenWorkingDirectories;
+		size_t skippedCount = 0;
+
+		void reset()
+		{
+			seenWorkingDirectories.clear();
+			skippedCount = 0;
+		}
+	};
+
 	TaskFillIndexerCommandsQueue(
 		const std::string& appUUID,
 		std::unique_ptr<IndexerCommandProvider> indexerCommandProvider,
@@ -45,10 +57,8 @@ private:
 	std::queue<FilePath> m_filePathQueue;
 	std::mutex m_commandsMutex;
 
-	std::unordered_set<std::string> m_seenRustWorkingDirectories;
-	size_t m_skippedRustCommandCount = 0;
-	std::unordered_set<std::string> m_seenSwiftWorkingDirectories;
-	size_t m_skippedSwiftCommandCount = 0;
+	DeduplicationState m_rustDedup;
+	DeduplicationState m_swiftDedup;
 
 	bool m_interrupted = false;
 };

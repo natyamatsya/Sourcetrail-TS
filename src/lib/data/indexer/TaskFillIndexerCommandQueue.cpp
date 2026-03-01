@@ -9,6 +9,28 @@
 #include "logging.h"
 #include "utilityFile.h"
 
+namespace
+{
+template <bool Enabled, typename CmdType>
+bool deduplicateByWorkingDir(
+	TaskFillIndexerCommandsQueue::DeduplicationState& state,
+	const std::shared_ptr<IndexerCommand>& cmd,
+	size_t& skipped)
+{
+	if constexpr (!Enabled)
+		return false;
+	const auto* typed = dynamic_cast<const CmdType*>(cmd.get());
+	if (!typed)
+		return false;
+	if (!state.seenWorkingDirectories.insert(typed->getWorkingDirectory().str()).second)
+	{
+		skipped++;
+		return true;
+	}
+	return false;
+}
+}  // namespace
+
 TaskFillIndexerCommandsQueue::TaskFillIndexerCommandsQueue(
 	const std::string& appUUID,
 	std::unique_ptr<IndexerCommandProvider> indexerCommandProvider,
@@ -25,15 +47,9 @@ void TaskFillIndexerCommandsQueue::doEnter(std::shared_ptr<Blackboard> blackboar
 		std::lock_guard<std::mutex> lock(m_commandsMutex);
 
 		if constexpr (language_packages::buildRustLanguagePackage)
-		{
-			m_seenRustWorkingDirectories.clear();
-			m_skippedRustCommandCount = 0;
-		}
+			m_rustDedup.reset();
 		if constexpr (language_packages::buildSwiftLanguagePackage)
-		{
-			m_seenSwiftWorkingDirectories.clear();
-			m_skippedSwiftCommandCount = 0;
-		}
+			m_swiftDedup.reset();
 
 		for (const FilePath& filePath:
 			 utility::partitionFilePathsBySize(m_indexerCommandProvider->getAllSourceFilePaths(), 2))
@@ -72,19 +88,13 @@ Task::TaskState TaskFillIndexerCommandsQueue::doUpdate(std::shared_ptr<Blackboar
 void TaskFillIndexerCommandsQueue::doExit(std::shared_ptr<Blackboard> blackboard)
 {
 	if constexpr (language_packages::buildRustLanguagePackage)
-	{
-		if (m_skippedRustCommandCount)
-			LOG_INFO_STREAM(
-				<< "Skipped " << m_skippedRustCommandCount
+		if (m_rustDedup.skippedCount)
+			LOG_INFO_STREAM(<< "Skipped " << m_rustDedup.skippedCount
 				<< " duplicate Rust crate commands in this indexing run.");
-	}
 	if constexpr (language_packages::buildSwiftLanguagePackage)
-	{
-		if (m_skippedSwiftCommandCount)
-			LOG_INFO_STREAM(
-				<< "Skipped " << m_skippedSwiftCommandCount
+		if (m_swiftDedup.skippedCount)
+			LOG_INFO_STREAM(<< "Skipped " << m_swiftDedup.skippedCount
 				<< " duplicate Swift package commands in this indexing run.");
-	}
 
 	blackboard->set<bool>("indexer_command_queue_stopped", true);
 }
@@ -94,15 +104,9 @@ void TaskFillIndexerCommandsQueue::doReset(std::shared_ptr<Blackboard>  /*blackb
 	m_interrupted = false;
 
 	if constexpr (language_packages::buildRustLanguagePackage)
-	{
-		m_seenRustWorkingDirectories.clear();
-		m_skippedRustCommandCount = 0;
-	}
+		m_rustDedup.reset();
 	if constexpr (language_packages::buildSwiftLanguagePackage)
-	{
-		m_seenSwiftWorkingDirectories.clear();
-		m_skippedSwiftCommandCount = 0;
-	}
+		m_swiftDedup.reset();
 }
 
 void TaskFillIndexerCommandsQueue::terminate()
@@ -143,8 +147,8 @@ bool TaskFillIndexerCommandsQueue::fillCommandQueue(std::shared_ptr<Blackboard> 
 
 	std::lock_guard<std::mutex> lock(m_commandsMutex);
 	std::vector<std::shared_ptr<IndexerCommand>> commands;
-	size_t skippedRustCommands = 0;
-	size_t skippedSwiftCommands = 0;
+	size_t skippedRust = 0;
+	size_t skippedSwift = 0;
 
 	while (!m_indexerCommandProvider->empty() && commands.size() < refillAmount)
 	{
@@ -162,50 +166,21 @@ bool TaskFillIndexerCommandsQueue::fillCommandQueue(std::shared_ptr<Blackboard> 
 		if (!command)
 			continue;
 
-		if constexpr (language_packages::buildRustLanguagePackage)
-		{
-			if (command->getIndexerCommandType() == INDEXER_COMMAND_RUST)
-			{
-				const auto* rustCommand = dynamic_cast<const IndexerCommandRust*>(command.get());
-				if (rustCommand)
-				{
-					const std::string workingDirectory = rustCommand->getWorkingDirectory().str();
-					if (!m_seenRustWorkingDirectories.insert(workingDirectory).second)
-					{
-						skippedRustCommands++;
-						continue;
-					}
-				}
-			}
-		}
-
-		if constexpr (language_packages::buildSwiftLanguagePackage)
-		{
-			if (command->getIndexerCommandType() == INDEXER_COMMAND_SWIFT)
-			{
-				const auto* swiftCommand = dynamic_cast<const IndexerCommandSwift*>(command.get());
-				if (swiftCommand)
-				{
-					const std::string workingDirectory = swiftCommand->getWorkingDirectory().str();
-					if (!m_seenSwiftWorkingDirectories.insert(workingDirectory).second)
-					{
-						skippedSwiftCommands++;
-						continue;
-					}
-				}
-			}
-		}
+		if (deduplicateByWorkingDir<language_packages::buildRustLanguagePackage, IndexerCommandRust>(
+			m_rustDedup, command, skippedRust))
+			continue;
+		if (deduplicateByWorkingDir<language_packages::buildSwiftLanguagePackage, IndexerCommandSwift>(
+			m_swiftDedup, command, skippedSwift))
+			continue;
 
 		commands.push_back(command);
 	}
 
-	const size_t skippedCommands = skippedRustCommands + skippedSwiftCommands;
+	const size_t skippedCommands = skippedRust + skippedSwift;
 	if (skippedCommands)
 	{
-		if constexpr (language_packages::buildRustLanguagePackage)
-			m_skippedRustCommandCount += skippedRustCommands;
-		if constexpr (language_packages::buildSwiftLanguagePackage)
-			m_skippedSwiftCommandCount += skippedSwiftCommands;
+		m_rustDedup.skippedCount  += skippedRust;
+		m_swiftDedup.skippedCount += skippedSwift;
 		if (blackboard)
 			blackboard->update<int>(
 				"source_file_count",
@@ -214,20 +189,12 @@ bool TaskFillIndexerCommandsQueue::fillCommandQueue(std::shared_ptr<Blackboard> 
 					const int newCount = count - n;
 					return newCount >= 0 ? newCount : 0;
 				});
-		if constexpr (language_packages::buildRustLanguagePackage)
-		{
-			if (skippedRustCommands)
-				LOG_INFO_STREAM(
-					<< "Skipping " << skippedRustCommands
-					<< " duplicate Rust crate commands while filling queue.");
-		}
-		if constexpr (language_packages::buildSwiftLanguagePackage)
-		{
-			if (skippedSwiftCommands)
-				LOG_INFO_STREAM(
-					<< "Skipping " << skippedSwiftCommands
-					<< " duplicate Swift package commands while filling queue.");
-		}
+		if (skippedRust)
+			LOG_INFO_STREAM(<< "Skipping " << skippedRust
+				<< " duplicate Rust crate commands while filling queue.");
+		if (skippedSwift)
+			LOG_INFO_STREAM(<< "Skipping " << skippedSwift
+				<< " duplicate Swift package commands while filling queue.");
 	}
 
 	if (commands.empty())
