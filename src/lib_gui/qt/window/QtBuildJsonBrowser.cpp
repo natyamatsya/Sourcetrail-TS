@@ -538,9 +538,9 @@ QString QtBuildJsonBrowser::formatSelectionDetails(const QModelIndex& index) con
 	const QString key{m_model->data(keyIndex, Qt::DisplayRole).toString()};
 	const QString type{m_model->data(typeIndex, Qt::DisplayRole).toString()};
 	const QString value{m_model->data(valueIndex, Qt::DisplayRole).toString()};
-	const QString pointer{m_model->data(keyIndex, QtJsonTreeModel::JSON_POINTER_ROLE).toString()};
-	const QString sourceFile{m_model->data(keyIndex, QtJsonTreeModel::SOURCE_FILE_ROLE).toString()};
-	const QString referenceFile{m_model->data(keyIndex, QtJsonTreeModel::REFERENCE_FILE_ROLE).toString()};
+	const QString pointer{m_model->data(keyIndex, std::to_underlying(QtJsonTreeModel::Role::JSON_POINTER_ROLE)).toString()};
+	const QString sourceFile{m_model->data(keyIndex, std::to_underlying(QtJsonTreeModel::Role::SOURCE_FILE_ROLE)).toString()};
+	const QString referenceFile{m_model->data(keyIndex, std::to_underlying(QtJsonTreeModel::Role::REFERENCE_FILE_ROLE)).toString()};
 
 	QStringList lines{};
 	lines.push_back(QStringLiteral("Key: ") + key);
@@ -1395,15 +1395,15 @@ bool QtBuildJsonBrowser::indexMatchesQuery(const QModelIndex& index, const QStri
 	if (value.contains(query, Qt::CaseInsensitive))
 		return true;
 
-	const QString pointer{m_model->data(keyIndex, QtJsonTreeModel::JSON_POINTER_ROLE).toString()};
+	const QString pointer{m_model->data(keyIndex, std::to_underlying(QtJsonTreeModel::Role::JSON_POINTER_ROLE)).toString()};
 	if (pointer.contains(query, Qt::CaseInsensitive))
 		return true;
 
-	const QString sourceFile{m_model->data(keyIndex, QtJsonTreeModel::SOURCE_FILE_ROLE).toString()};
+	const QString sourceFile{m_model->data(keyIndex, std::to_underlying(QtJsonTreeModel::Role::SOURCE_FILE_ROLE)).toString()};
 	if (sourceFile.contains(query, Qt::CaseInsensitive))
 		return true;
 
-	const QString referenceFile{m_model->data(keyIndex, QtJsonTreeModel::REFERENCE_FILE_ROLE).toString()};
+	const QString referenceFile{m_model->data(keyIndex, std::to_underlying(QtJsonTreeModel::Role::REFERENCE_FILE_ROLE)).toString()};
 	if (referenceFile.contains(query, Qt::CaseInsensitive))
 		return true;
 

@@ -32,7 +32,7 @@ QtStatusView::QtStatusView(ViewLayout* viewLayout): StatusView(viewLayout)
 	m_table->setModel(m_model);
 
 	m_model->setColumnCount(2);
-	m_table->setColumnWidth(STATUSVIEW_COLUMN::TYPE, 100);
+	m_table->setColumnWidth(static_cast<int>(STATUSVIEW_COLUMN::TYPE), 100);
 	// m_table->setColumnWidth(STATUSVIEW_COLUMN::STATUS, 150);
 
 	QStringList headers;
@@ -110,15 +110,15 @@ void QtStatusView::addStatus(const std::vector<Status>& status)
 			QString statusType =
 				(s.type == StatusType::STATUS_ERROR ? QStringLiteral("ERROR")
 													: QStringLiteral("INFO"));
-			m_model->setItem(rowNumber, STATUSVIEW_COLUMN::TYPE, new QStandardItem(statusType));
+			m_model->setItem(rowNumber, static_cast<int>(STATUSVIEW_COLUMN::TYPE), new QStandardItem(statusType));
 			m_model->setItem(
 				rowNumber,
-				STATUSVIEW_COLUMN::STATUS,
+				static_cast<int>(STATUSVIEW_COLUMN::STATUS),
 				new QStandardItem(QString::fromStdString(s.message)));
 
 			if (s.type == StatusType::STATUS_ERROR)
 			{
-				m_model->item(rowNumber, STATUSVIEW_COLUMN::TYPE)->setForeground(QBrush(Qt::red));
+				m_model->item(rowNumber, static_cast<int>(STATUSVIEW_COLUMN::TYPE))->setForeground(QBrush(Qt::red));
 			}
 		}
 
@@ -139,8 +139,9 @@ QCheckBox* QtStatusView::createFilterCheckbox(const QString& name, QBoxLayout* l
 	connect(checkbox, &QCheckBox::checkStateChanged, [=, this](int) {
 		m_table->selectionModel()->clearSelection();
 
-		const StatusFilter statusMask = (m_showInfo->isChecked() ? StatusType::STATUS_INFO : 0) +
-			(m_showErrors->isChecked() ? StatusType::STATUS_ERROR : 0);
+		const StatusFilter statusMask =
+			(m_showInfo->isChecked() ? std::to_underlying(StatusType::STATUS_INFO) : 0) +
+			(m_showErrors->isChecked() ? std::to_underlying(StatusType::STATUS_ERROR) : 0);
 
 		MessageStatusFilterChanged(statusMask).dispatch();
 	});

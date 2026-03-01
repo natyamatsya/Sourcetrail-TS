@@ -92,10 +92,11 @@ void QtCodeView::showSnippets(
 	const CodeParams& params,
 	const CodeScrollParams& scrollParams)
 {
+	using enum QtCodeNavigator::Mode;
 	m_onQtThread([=, this]() {
 		TRACE("show snippets");
 
-		m_widget->setMode(QtCodeNavigator::MODE_LIST);
+		m_widget->setMode(MODE_LIST);
 
 		if (params.clearSnippets)
 		{
@@ -118,12 +119,13 @@ void QtCodeView::showSnippets(
 void QtCodeView::showSingleFile(
 	const CodeFileParams& file, const CodeParams& params, const CodeScrollParams& scrollParams)
 {
+	using enum QtCodeNavigator::Mode;
 	m_onQtThread([=, this]() {
 		TRACE("show single file");
 
 		bool animatedScroll = !m_widget->isInListMode();
 
-		m_widget->setMode(QtCodeNavigator::MODE_SINGLE);
+		m_widget->setMode(MODE_SINGLE);
 
 		if (params.clearSnippets)
 		{
@@ -197,7 +199,8 @@ bool QtCodeView::isInListMode() const
 
 void QtCodeView::setMode(bool listMode)
 {
-	m_widget->setMode(listMode ? QtCodeNavigator::MODE_LIST : QtCodeNavigator::MODE_SINGLE);
+	using enum QtCodeNavigator::Mode;
+	m_widget->setMode(listMode ? MODE_LIST : MODE_SINGLE);
 }
 
 bool QtCodeView::hasSingleFileCached(const FilePath& filePath) const

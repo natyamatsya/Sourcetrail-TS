@@ -37,7 +37,7 @@ private:
 	QtSearchBarButton* m_createBookmarkButton;
 	QtSearchBarButton* m_showBookmarksButton;
 
-	MessageBookmarkButtonState::ButtonState m_createButtonState = MessageBookmarkButtonState::CANNOT_CREATE;
+	MessageBookmarkButtonState::ButtonState m_createButtonState = MessageBookmarkButtonState::ButtonState::CANNOT_CREATE;
 };
 
 #endif	  // QT_BOOKMARK_BUTTONS_VIEW_H

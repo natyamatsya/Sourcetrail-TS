@@ -988,6 +988,7 @@ void QtMainWindow::setupViewMenu()
 
 void QtMainWindow::setupHistoryMenu()
 {
+	using enum utility::ElideMode;
 	if (!m_historyMenu)
 	{
 		m_historyMenu = new QMenu(tr("&History"), this);
@@ -1010,7 +1011,7 @@ void QtMainWindow::setupHistoryMenu()
 		}
 
 		const SearchMatch match = msg->getSearchMatches()[0];
-		const std::string name = utility::elide(match.getFullName(), utility::ELIDE_RIGHT, 50);
+		const std::string name = utility::elide(match.getFullName(), ELIDE_RIGHT, 50);
 
 		QAction* action = new QAction();
 		action->setText(QString::fromStdString(name));
@@ -1023,6 +1024,7 @@ void QtMainWindow::setupHistoryMenu()
 
 void QtMainWindow::setupBookmarksMenu()
 {
+	using enum utility::ElideMode;
 	if (!m_bookmarksMenu)
 	{
 		m_bookmarksMenu = new QMenu(tr("&Bookmarks"), this);
@@ -1039,7 +1041,7 @@ void QtMainWindow::setupBookmarksMenu()
 	for (size_t i = 0; i < m_bookmarks.size(); i++)
 	{
 		Bookmark* bookmark = m_bookmarks[i].get();
-		std::string name = utility::elide(bookmark->getName(), utility::ELIDE_RIGHT, 50);
+		std::string name = utility::elide(bookmark->getName(), ELIDE_RIGHT, 50);
 
 		QAction* action = new QAction();
 		action->setText(QString::fromStdString(name));

@@ -226,6 +226,7 @@ void QtTabsView::removeTab(int index)
 
 void QtTabsView::setTabState(int idx, const std::vector<SearchMatch>& matches)
 {
+	using enum SearchMatch::SearchType;
 	ColorScheme* scheme = ColorScheme::getInstance().get();
 	std::string name;
 	std::string color;
@@ -236,7 +237,7 @@ void QtTabsView::setTabState(int idx, const std::vector<SearchMatch>& matches)
 		const SearchMatch& match = matches[0];
 		name = match.getFullName();
 
-		if (match.searchType == SearchMatch::SEARCH_TOKEN)
+		if (match.searchType == SEARCH_TOKEN)
 		{
 			color = GraphViewStyle::getNodeColor(match.nodeType.getUnderscoredTypeString(), false).fill;
 			activeColor = GraphViewStyle::getNodeColor(match.nodeType.getUnderscoredTypeString(), true).fill;

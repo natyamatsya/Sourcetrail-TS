@@ -4,6 +4,7 @@
 
 #include <thread>
 
+#include "AppPath.h"
 #include "Blackboard.h"
 #include "CombinedIndexerCommandProvider.h"
 #include "IpcInterprocessIndexerCommandManager.h"
@@ -12,6 +13,7 @@
 #include "IpcSharedMemoryGarbageCollector.h"
 #include "MemoryIndexerCommandProvider.h"
 #include "TaskFillIndexerCommandQueue.h"
+#include "utilityApp.h"
 
 #include "IntermediateStorage.h"
 
@@ -240,9 +242,105 @@ TEST_CASE("ipc integration: full indexer workflow")
 	}
 #endif
 
+#if BUILD_SWIFT_LANGUAGE_PACKAGE
+	SECTION("swift indexer subprocess processes swift command")
+	{
+		const std::string subprocessUuid = "ipc_swift_subprocess_test";
+		const ProcessId swiftProcessId = static_cast<ProcessId>(17);
+
+		IpcInterprocessIndexerCommandManager commandOwner(subprocessUuid, mainPid, true);
+		commandOwner.clearIndexerCommands();
+
+		IpcInterprocessIndexingStatusManager statusOwner(subprocessUuid, mainPid, true);
+		statusOwner.setIndexingInterrupted(false);
+		statusOwner.setQueueStopped(true);
+
+		IpcInterprocessIntermediateStorageManager storageOwner(subprocessUuid, swiftProcessId, true);
+
+		commandOwner.pushIndexerCommands({
+			std::make_shared<IndexerCommandSwift>(
+				FilePath("/swift/pkg/main.swift"),
+				std::set<FilePath>{FilePath("/swift/pkg")},
+				FilePath("/swift/pkg"))
+		});
+		REQUIRE(commandOwner.indexerCommandCount() == 1);
+
+		const std::string swiftIndexerName =
+			"sourcetrail_swift_indexer" + FilePath::getExecutableExtension();
+
+		std::vector<FilePath> swiftIndexerCandidates;
+		swiftIndexerCandidates.push_back(AppPath::getSwiftIndexerFilePath());
+		swiftIndexerCandidates.push_back(
+			FilePath("../../app").getAbsolute().getConcatenated(swiftIndexerName));
+		swiftIndexerCandidates.push_back(
+			FilePath("../app").getAbsolute().getConcatenated(swiftIndexerName));
+		swiftIndexerCandidates.push_back(
+			FilePath("app").getAbsolute().getConcatenated(swiftIndexerName));
+
+		FilePath swiftIndexerPath;
+		for (const FilePath& candidate: swiftIndexerCandidates)
+		{
+			if (!candidate.exists())
+				continue;
+
+			swiftIndexerPath = candidate;
+			break;
+		}
+
+		INFO("Swift indexer candidate paths:");
+		for (const FilePath& candidate: swiftIndexerCandidates)
+			INFO("  - " + candidate.str());
+
+		REQUIRE(!swiftIndexerPath.empty());
+
+		const utility::ProcessOutput processOutput = utility::executeProcess(
+			swiftIndexerPath.str(),
+			{
+				std::to_string(static_cast<std::size_t>(swiftProcessId)),
+				subprocessUuid,
+				std::string{},
+				std::string{},
+				std::string{}
+			},
+			FilePath(),
+			false,
+			std::chrono::seconds(15));
+
+		INFO("Swift indexer stdout:\n" + processOutput.output);
+		INFO("Swift indexer stderr:\n" + processOutput.error);
+		INFO("Swift indexer process info:\n" + processOutput.processInfo);
+		REQUIRE(processOutput.exitCode == 0);
+
+		REQUIRE(commandOwner.indexerCommandCount() == 0);
+
+		const std::vector<FilePath> indexedFiles = statusOwner.getCurrentlyIndexedSourceFilePaths();
+		REQUIRE(indexedFiles.size() == 1);
+		REQUIRE(indexedFiles.front().str() == "/swift/pkg/main.swift");
+
+		REQUIRE(statusOwner.getNextFinishedProcessId() == swiftProcessId);
+		REQUIRE(statusOwner.getCurrentSourceFilePathForProcess(swiftProcessId).has_value() == false);
+
+		REQUIRE(storageOwner.getIntermediateStorageCount() == 1);
+		const std::shared_ptr<IntermediateStorage> storage = storageOwner.popIntermediateStorage();
+		REQUIRE(storage != nullptr);
+		REQUIRE(storage->getNextId() == 1);
+		REQUIRE(storage->getStorageNodes().empty());
+		REQUIRE(storage->getStorageFiles().empty());
+		REQUIRE(storage->getStorageEdges().empty());
+		REQUIRE(storage->getStorageSymbols().empty());
+		REQUIRE(storage->getStorageLocalSymbols().empty());
+		REQUIRE(storage->getStorageSourceLocations().empty());
+		REQUIRE(storage->getStorageOccurrences().empty());
+		REQUIRE(storage->getComponentAccesses().empty());
+		REQUIRE(storage->getErrors().empty());
+		REQUIRE(storageOwner.getIntermediateStorageCount() == 0);
+	}
+#endif
+
 #if BUILD_RUST_LANGUAGE_PACKAGE
 	SECTION("task fill queue deduplicates rust commands by working directory")
 	{
+		using enum Task::TaskState;
 		const std::string dedupUuid = "ipc_fill_rust_dedup_test";
 		IpcInterprocessIndexerCommandManager ownerMgr(dedupUuid, mainPid, true);
 		ownerMgr.clearIndexerCommands();
@@ -281,7 +379,7 @@ TEST_CASE("ipc integration: full indexer workflow")
 		blackboard->set<int>("source_file_count", static_cast<int>(provider->size()));
 
 		TaskFillIndexerCommandsQueue task(dedupUuid, std::move(provider), 16);
-		REQUIRE(task.update(blackboard) == Task::STATE_SUCCESS);
+		REQUIRE(task.update(blackboard) == STATE_SUCCESS);
 
 		int sourceFileCount = 0;
 		REQUIRE(blackboard->get<int>("source_file_count", sourceFileCount));
@@ -363,7 +461,7 @@ TEST_CASE("ipc integration: full indexer workflow")
 		blackboard->set<int>("source_file_count", static_cast<int>(provider->size()));
 
 		TaskFillIndexerCommandsQueue task(dedupUuid, std::move(provider), 16);
-		REQUIRE(task.update(blackboard) == Task::STATE_SUCCESS);
+		REQUIRE(task.update(blackboard) == STATE_SUCCESS);
 
 		int sourceFileCount = 0;
 		REQUIRE(blackboard->get<int>("source_file_count", sourceFileCount));

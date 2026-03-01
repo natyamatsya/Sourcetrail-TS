@@ -12,6 +12,7 @@
 
 TEST_CASE("ipc shared memory")
 {
+	using enum IpcSharedMemory::AccessMode;
 	const std::string memName = "ipc_test";
 
 	// Ensure clean state
@@ -19,7 +20,7 @@ TEST_CASE("ipc shared memory")
 
 	SECTION("create and open")
 	{
-		IpcSharedMemory creator(memName, 4096, IpcSharedMemory::CREATE_AND_DELETE);
+		IpcSharedMemory creator(memName, 4096, CREATE_AND_DELETE);
 
 		{
 			IpcSharedMemory::ScopedAccess access(&creator);
@@ -30,7 +31,7 @@ TEST_CASE("ipc shared memory")
 
 	SECTION("write and read raw bytes")
 	{
-		IpcSharedMemory memory(memName, 4096, IpcSharedMemory::CREATE_AND_DELETE);
+		IpcSharedMemory memory(memName, 4096, CREATE_AND_DELETE);
 
 		const std::string payload = "hello shared memory";
 
@@ -51,7 +52,7 @@ TEST_CASE("ipc shared memory")
 
 	SECTION("mutex guards concurrent access")
 	{
-		IpcSharedMemory creator(memName, 4096, IpcSharedMemory::CREATE_AND_DELETE);
+		IpcSharedMemory creator(memName, 4096, CREATE_AND_DELETE);
 
 		// Initialize counter to 0
 		{
@@ -64,7 +65,7 @@ TEST_CASE("ipc shared memory")
 		for (int i = 0; i < 4; i++)
 		{
 			threads.push_back(std::make_shared<std::thread>([&memName]() {
-				IpcSharedMemory opener(memName, 4096, IpcSharedMemory::OPEN_OR_CREATE);
+				IpcSharedMemory opener(memName, 4096, OPEN_OR_CREATE);
 				IpcSharedMemory::ScopedAccess access(&opener);
 
 				int32_t* counter = static_cast<int32_t*>(access.data());
@@ -82,7 +83,7 @@ TEST_CASE("ipc shared memory")
 
 	SECTION("flatbuffer round-trip through shared memory")
 	{
-		IpcSharedMemory memory(memName, 65536, IpcSharedMemory::CREATE_AND_DELETE);
+		IpcSharedMemory memory(memName, 65536, CREATE_AND_DELETE);
 
 		// Build a FlatBuffer IntermediateStorage
 		flatbuffers::FlatBufferBuilder builder(1024);
@@ -144,9 +145,9 @@ TEST_CASE("ipc shared memory")
 	SECTION("cleanup removes shared memory")
 	{
 		{
-			IpcSharedMemory memory(memName, 4096, IpcSharedMemory::CREATE_AND_DELETE);
+			IpcSharedMemory memory(memName, 4096, CREATE_AND_DELETE);
 		}
 		// After destructor, creating with OPEN_ONLY should fail
-		REQUIRE_THROWS(IpcSharedMemory(memName, 4096, IpcSharedMemory::OPEN_ONLY));
+		REQUIRE_THROWS(IpcSharedMemory(memName, 4096, OPEN_ONLY));
 	}
 }

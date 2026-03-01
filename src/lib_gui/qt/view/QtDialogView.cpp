@@ -252,6 +252,7 @@ DatabasePolicy QtDialogView::finishedIndexingDialog(
 	ErrorCountInfo errorInfo,
 	bool interrupted)
 {
+	using enum DatabasePolicy;
 	DatabasePolicy policy = DATABASE_POLICY_UNKNOWN;
 	m_resultReady = false;
 

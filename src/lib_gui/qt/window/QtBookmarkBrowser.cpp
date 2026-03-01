@@ -197,43 +197,45 @@ void QtBookmarkBrowser::treeItemClicked(QTreeWidgetItem* item, int  /*column*/)
 
 Bookmark::BookmarkFilter QtBookmarkBrowser::getSelectedFilter()
 {
+	using enum Bookmark::BookmarkFilter;
 	QString text = m_filterComboBox->currentText();
 
 	if (text == "Nodes")
 	{
-		return Bookmark::FILTER_NODES;
+		return FILTER_NODES;
 	}
 	else if (text == "Edges")
 	{
-		return Bookmark::FILTER_EDGES;
+		return FILTER_EDGES;
 	}
 
-	return Bookmark::FILTER_ALL;
+	return FILTER_ALL;
 }
 
 Bookmark::BookmarkOrder QtBookmarkBrowser::getSelectedOrder()
 {
+	using enum Bookmark::BookmarkOrder;
 	QString orderString = m_orderComboBox->currentText();
 
 	if (orderString == m_orderNames[0])
 	{
-		return Bookmark::ORDER_NAME_ASCENDING;
+		return ORDER_NAME_ASCENDING;
 	}
 	else if (orderString == m_orderNames[1])
 	{
-		return Bookmark::ORDER_NAME_DESCENDING;
+		return ORDER_NAME_DESCENDING;
 	}
 	else if (orderString == m_orderNames[2])
 	{
-		return Bookmark::ORDER_DATE_ASCENDING;
+		return ORDER_DATE_ASCENDING;
 	}
 	else if (orderString == m_orderNames[3])
 	{
-		return Bookmark::ORDER_DATE_DESCENDING;
+		return ORDER_DATE_DESCENDING;
 	}
 	else
 	{
-		return Bookmark::ORDER_NONE;
+		return ORDER_NONE;
 	}
 }
 

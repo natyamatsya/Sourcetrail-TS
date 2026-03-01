@@ -165,15 +165,17 @@ QVariant QtJsonTreeModel::data(const QModelIndex& index, int role) const
 	}
 	if (role == Qt::ToolTipRole)
 		return node->preview;
-	if (role == JSON_POINTER_ROLE)
+
+	const auto typedRole = static_cast<Role>(role);
+	if (typedRole == JSON_POINTER_ROLE)
 		return node->jsonPointer;
-	if (role == SOURCE_FILE_ROLE)
+	if (typedRole == SOURCE_FILE_ROLE)
 		return QString::fromStdString(node->sourceFile.str());
-	if (role == REFERENCE_FILE_ROLE)
+	if (typedRole == REFERENCE_FILE_ROLE)
 		return node->referenceFile
 			? QString::fromStdString(node->referenceFile->str())
 			: QVariant{};
-	if (role == IS_REFERENCE_ROLE)
+	if (typedRole == IS_REFERENCE_ROLE)
 		return node->referenceFile.has_value();
 
 	return {};

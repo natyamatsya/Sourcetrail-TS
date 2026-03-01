@@ -59,20 +59,21 @@ void QtBookmarkButtonsView::refreshView()
 
 void QtBookmarkButtonsView::setCreateButtonState(const MessageBookmarkButtonState::ButtonState& state)
 {
+	using enum MessageBookmarkButtonState::ButtonState;
 	m_onQtThread([=, this]() {
 		m_createButtonState = state;
 
 		m_createBookmarkButton->setIconPath(QtResources::BOOKMARK_VIEW_BOOKMARK_EDIT_BOOKMARK_ICON);
 
-		if (state == MessageBookmarkButtonState::CAN_CREATE)
+		if (state == CAN_CREATE)
 		{
 			m_createBookmarkButton->setEnabled(true);
 		}
-		else if (state == MessageBookmarkButtonState::CANNOT_CREATE)
+		else if (state == CANNOT_CREATE)
 		{
 			m_createBookmarkButton->setEnabled(false);
 		}
-		else if (state == MessageBookmarkButtonState::ALREADY_CREATED)
+		else if (state == ALREADY_CREATED)
 		{
 			m_createBookmarkButton->setEnabled(true);
 
@@ -87,11 +88,12 @@ void QtBookmarkButtonsView::setCreateButtonState(const MessageBookmarkButtonStat
 
 void QtBookmarkButtonsView::createBookmarkClicked()
 {
-	if (m_createButtonState == MessageBookmarkButtonState::CAN_CREATE)
+	using enum MessageBookmarkButtonState::ButtonState;
+	if (m_createButtonState == CAN_CREATE)
 	{
 		MessageBookmarkCreate().dispatch();
 	}
-	else if (m_createButtonState == MessageBookmarkButtonState::ALREADY_CREATED)
+	else if (m_createButtonState == ALREADY_CREATED)
 	{
 		QtMessageBox msgBox;
 		msgBox.setText(tr("Edit Bookmark"));

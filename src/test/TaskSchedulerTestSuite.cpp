@@ -9,6 +9,8 @@
 #include "TaskGroupSequence.h"
 #include "TaskScheduler.h"
 
+using enum Task::TaskState;
+
 namespace
 {
 void executeTask(Task& task)
@@ -16,7 +18,7 @@ void executeTask(Task& task)
 	std::shared_ptr<Blackboard> blackboard = std::make_shared<Blackboard>();
 	while (true)
 	{
-		if (task.update(blackboard) != Task::STATE_RUNNING)
+		if (task.update(blackboard) != STATE_RUNNING)
 		{
 			return;
 		}
@@ -45,13 +47,13 @@ public:
 		if (updateCount < 0)
 		{
 			std::this_thread::sleep_for(std::chrono::milliseconds(10));
-			return Task::STATE_RUNNING;
+			return STATE_RUNNING;
 		}
 
 		updateCount--;
 		if (updateCount)
 		{
-			return Task::STATE_RUNNING;
+			return STATE_RUNNING;
 		}
 
 		return returnState;
@@ -196,7 +198,7 @@ TEST_CASE("sequential task group does not evaluate tasks after failure")
 	scheduler.startSchedulerLoopThreaded();
 
 	int order = 0;
-	std::shared_ptr<TestTask> task1 = std::make_shared<TestTask>(&order, 1, Task::STATE_FAILURE);
+	std::shared_ptr<TestTask> task1 = std::make_shared<TestTask>(&order, 1, STATE_FAILURE);
 	std::shared_ptr<TestTask> task2 = std::make_shared<TestTask>(&order, -1);
 
 	std::shared_ptr<TaskGroupSequence> taskGroup = std::make_shared<TaskGroupSequence>();
@@ -224,8 +226,8 @@ TEST_CASE("sequential task group does not evaluate tasks after success")
 	scheduler.startSchedulerLoopThreaded();
 
 	int order = 0;
-	std::shared_ptr<TestTask> task1 = std::make_shared<TestTask>(&order, 1, Task::STATE_FAILURE);
-	std::shared_ptr<TestTask> task2 = std::make_shared<TestTask>(&order, 1, Task::STATE_SUCCESS);
+	std::shared_ptr<TestTask> task1 = std::make_shared<TestTask>(&order, 1, STATE_FAILURE);
+	std::shared_ptr<TestTask> task2 = std::make_shared<TestTask>(&order, 1, STATE_SUCCESS);
 	std::shared_ptr<TestTask> task3 = std::make_shared<TestTask>(&order, -1);
 
 	std::shared_ptr<TaskGroupSelector> taskGroup = std::make_shared<TaskGroupSelector>();

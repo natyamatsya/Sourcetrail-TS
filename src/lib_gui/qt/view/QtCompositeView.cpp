@@ -10,6 +10,7 @@ QtCompositeView::QtCompositeView(
 	ViewLayout* viewLayout, CompositeDirection direction, const std::string& name, TabId tabId)
 	: CompositeView(viewLayout, direction, name, tabId)
 {
+	using enum CompositeView::CompositeDirection;
 	QBoxLayout* topLayout = new QVBoxLayout();
 	topLayout->setSpacing(0);
 	topLayout->setContentsMargins(0, 0, 0, 0);
@@ -24,7 +25,7 @@ QtCompositeView::QtCompositeView(
 		topLayout->addWidget(m_focusIndicator);
 	}
 
-	if (getDirection() == CompositeView::DIRECTION_HORIZONTAL)
+	if (getDirection() == DIRECTION_HORIZONTAL)
 	{
 		m_layout = new QHBoxLayout();
 	}

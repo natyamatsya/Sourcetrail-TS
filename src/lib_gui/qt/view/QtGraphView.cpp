@@ -308,6 +308,7 @@ void QtGraphView::clearMatches()
 void QtGraphView::rebuildGraph(std::shared_ptr<Graph> graph, const std::vector<std::shared_ptr<DummyNode>> &nodes,
 	const std::vector<std::shared_ptr<DummyEdge>> &edges, const GraphParams params)
 {
+	using enum Graph::TrailMode;
 	m_onQtThread([=, this]()
 	{
 		if (isTransitioning())
@@ -370,7 +371,7 @@ void QtGraphView::rebuildGraph(std::shared_ptr<Graph> graph, const std::vector<s
 		QtGraphEdge::clearFocusedEdges();
 
 		// create edges
-		Graph::TrailMode trailMode = m_graph ? m_graph->getTrailMode() : Graph::TRAIL_NONE;
+		Graph::TrailMode trailMode = m_graph ? m_graph->getTrailMode() : TRAIL_NONE;
 		std::set<Id> visibleEdgeIds;
 		for (const std::shared_ptr<DummyEdge> &edge : edges)
 		{
@@ -698,6 +699,7 @@ void QtGraphView::finishedTransition()
 
 void QtGraphView::clickedInEmptySpace()
 {
+	using enum Graph::TrailMode;
 	std::vector<QtGraphEdge *> activeEdges;
 	for (QtGraphEdge *edge : m_oldEdges)
 	{
@@ -707,7 +709,7 @@ void QtGraphView::clickedInEmptySpace()
 		}
 	}
 
-	if (m_graph && m_graph->getTrailMode() != Graph::TRAIL_NONE)
+	if (m_graph && m_graph->getTrailMode() != TRAIL_NONE)
 	{
 		for (QtGraphEdge *edge : activeEdges)
 		{
@@ -751,7 +753,8 @@ void QtGraphView::trailDepthChanged(int)
 
 void QtGraphView::trailDepthUpdated()
 {
-	if (m_oldGraph->getTrailMode() != Graph::TRAIL_NONE)
+	using enum Graph::TrailMode;
+	if (m_oldGraph->getTrailMode() != TRAIL_NONE)
 	{
 		activateTrail(m_oldGraph->hasTrailOrigin());
 	}
@@ -916,6 +919,7 @@ void QtGraphView::updateTrailButtons()
 
 void QtGraphView::switchToNewGraphData()
 {
+	using enum Graph::TrailMode;
 	m_focusHandler.refocusNode(m_nodes, 0, 0);
 
 	m_oldGraph = m_graph;
@@ -975,7 +979,7 @@ void QtGraphView::switchToNewGraphData()
 
 	updateTrailButtons();
 
-	if (m_oldGraph && m_oldGraph->getTrailMode() != Graph::TRAIL_NONE)
+	if (m_oldGraph && m_oldGraph->getTrailMode() != TRAIL_NONE)
 	{
 		MessageStatus("Finished graph display").dispatch();
 	}
@@ -1087,6 +1091,7 @@ QtGraphNode *QtGraphView::createNodeRecursive(QGraphicsView *view, QtGraphNode *
 QtGraphEdge *QtGraphView::createEdge(QGraphicsView *view, const DummyEdge *edge, std::set<Id> *visibleEdgeIds, Graph::TrailMode trailMode,
 	QPointF pathOffset, bool useBezier, bool interactive)
 {
+	using enum Graph::TrailMode;
 	if (!edge->visible)
 	{
 		return nullptr;
@@ -1100,7 +1105,7 @@ QtGraphEdge *QtGraphView::createEdge(QGraphicsView *view, const DummyEdge *edge,
 		QtGraphEdge *qtEdge = new QtGraphEdge(&m_focusHandler, owner, target, edge->data, edge->getWeight(), edge->active, interactive,
 			edge->layoutHorizontal, edge->getDirection());
 
-		if (trailMode != Graph::TRAIL_NONE)
+		if (trailMode != TRAIL_NONE)
 		{
 			std::vector<Vec4i> path = edge->path;
 			for (size_t i = 0; i < path.size(); i++)
@@ -1116,7 +1121,7 @@ QtGraphEdge *QtGraphView::createEdge(QGraphicsView *view, const DummyEdge *edge,
 				m_virtualNodeRects.push_back(QRectF(QPointF(rect.x(), rect.y()), QPointF(rect.z(), rect.w())));
 			}
 
-			qtEdge->setIsTrailEdge(path, trailMode == Graph::TRAIL_HORIZONTAL);
+			qtEdge->setIsTrailEdge(path, trailMode == TRAIL_HORIZONTAL);
 		}
 		else if (useBezier)
 		{
@@ -1145,6 +1150,7 @@ QtGraphEdge *QtGraphView::createEdge(QGraphicsView *view, const DummyEdge *edge,
 
 QtGraphEdge *QtGraphView::createBundledEdgesEdge(QGraphicsView *view, const DummyEdge *edge, std::set<Id> *visibleEdgeIds, bool interactive)
 {
+	using enum Graph::TrailMode;
 	if (!edge->visible)
 	{
 		return nullptr;
@@ -1166,7 +1172,7 @@ QtGraphEdge *QtGraphView::createBundledEdgesEdge(QGraphicsView *view, const Dumm
 		return nullptr;
 	}
 
-	return createEdge(view, edge, visibleEdgeIds, Graph::TRAIL_NONE, QPointF(), false, interactive);
+	return createEdge(view, edge, visibleEdgeIds, TRAIL_NONE, QPointF(), false, interactive);
 }
 
 QRectF QtGraphView::itemsBoundingRect(const std::list<QtGraphNode *> &items)

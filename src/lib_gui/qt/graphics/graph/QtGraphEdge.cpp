@@ -63,6 +63,7 @@ QtGraphEdge::QtGraphEdge(
 {
 	using enum QtLineItemBase::Route;
 	using enum TooltipOrigin;
+	using enum TokenComponentBundledEdges::Direction;
 	this->setCursor(Qt::PointingHandCursor);
 
 	if (m_direction == DIRECTION_BACKWARD)
@@ -104,6 +105,7 @@ void QtGraphEdge::updateLine()
 {
 	using enum QtLineItemBase::Route;
 	using enum TooltipOrigin;
+	using enum TokenComponentBundledEdges::Direction;
 	const QtGraphNode* owner = m_owner;
 	const QtGraphNode* target = m_target;
 
@@ -334,6 +336,7 @@ void QtGraphEdge::onClick()
 {
 	using enum QtLineItemBase::Route;
 	using enum TooltipOrigin;
+	using enum TokenComponentBundledEdges::Direction;
 	if (isExpandable())
 	{
 		QtGraphNode* node =
@@ -397,6 +400,7 @@ void QtGraphEdge::coFocusIn()
 {
 	using enum QtLineItemBase::Route;
 	using enum TooltipOrigin;
+	using enum TokenComponentBundledEdges::Direction;
 	if (!m_isCoFocused)
 	{
 		m_isCoFocused = true;
