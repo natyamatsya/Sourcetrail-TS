@@ -8,6 +8,7 @@
 #include "CxxDeclNameResolver.h"
 #include "CxxTypeNameResolver.h"
 #include "ParserClient.h"
+#include "clang_compat/ClangCompatibility.h"
 #include "utilityClang.h"
 #include "utilityMainFunction.h"
 
@@ -296,8 +297,8 @@ void CxxAstVisitorComponentIndexer::visitVarDecl(clang::VarDecl* d)
 				{
 					if (const AutoType *autoVariableType = dyn_cast<AutoType>(autoTypeLoc.getTypePtr()))
 					{
-						if (const auto* conceptDecl = clang::dyn_cast_or_null<clang::ConceptDecl>(
-								autoVariableType->getTypeConstraintConcept()))
+						if (const auto* conceptDecl = clang_compat::getTypeConstraintConceptDecl(
+								autoVariableType))
 						{
 							// Record concept name location:
 							const ParseLocation conceptNameLocation = getParseLocation(autoTypeLoc.getConceptNameLoc());
@@ -498,8 +499,8 @@ void CxxAstVisitorComponentIndexer::visitFunctionDecl(clang::FunctionDecl* d)
 			{
 				const Id contextSymbolId = getOrCreateSymbolId(d);
 
-				if (const auto* conceptDecl = clang::dyn_cast_or_null<clang::ConceptDecl>(
-						autoReturnType->getTypeConstraintConcept()))
+				if (const auto* conceptDecl = clang_compat::getTypeConstraintConceptDecl(
+						autoReturnType))
 				{
 					// Record the concept reference:
 					const ParseLocation conceptNameLocation = getParseLocation(returnTypeSourceRange.getBegin());
@@ -1053,8 +1054,7 @@ void CxxAstVisitorComponentIndexer::recordConceptReference(const T *d)
 
 void CxxAstVisitorComponentIndexer::recordNamedConceptReference(const ConceptReference *conceptReference)
 {
-	if (const auto* conceptDecl = clang::dyn_cast_or_null<clang::ConceptDecl>(
-			conceptReference->getNamedConcept()))
+	if (const auto* conceptDecl = clang_compat::getNamedConceptDecl(conceptReference))
 	{
 		const Id conceptDeclId = getOrCreateSymbolId(conceptDecl);
 		const Id contextSymbolId = getOrCreateSymbolId(getAstVisitor()->getContextComponent()->getContext());

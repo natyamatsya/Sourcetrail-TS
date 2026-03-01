@@ -5,6 +5,7 @@
 #include <clang/Lex/PreprocessorOptions.h>
 #include <clang/Serialization/ASTWriter.h>
 
+#include "clang_compat/ClangCompatibility.h"
 #include "PreprocessorCallbacks.h"
 
 GeneratePCHAction::GeneratePCHAction(
@@ -34,21 +35,14 @@ std::unique_ptr<clang::ASTConsumer> GeneratePCHAction::CreateASTConsumer(
 	if (!CI.getFrontendOpts().RelocatablePCH)
 		Sysroot.clear();
 
-	const auto& FrontendOpts = CI.getFrontendOpts();
 	auto Buffer = std::make_shared<clang::PCHBuffer>();
 	std::vector<std::unique_ptr<clang::ASTConsumer>> Consumers;
-	Consumers.push_back(std::make_unique<clang::PCHGenerator>(
-		CI.getPreprocessor(),
-		CI.getModuleCache(),
+	Consumers.push_back(clang_compat::createPchGenerator(
+		CI,
 		OutputFile,
 		Sysroot,
 		Buffer,
-		CI.getCodeGenOpts(),
-		FrontendOpts.ModuleFileExtensions,
-		true,	 // always allow errors in the PCH
-		FrontendOpts.IncludeTimestamps,
-		false,
-		+CI.getLangOpts().CacheGeneratedPCH));
+		true));
 	Consumers.push_back(CI.getPCHContainerWriter().CreatePCHContainerGenerator(
 		CI, InFile.str(), OutputFile, std::move(OS), Buffer));
 

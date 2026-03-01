@@ -9,10 +9,9 @@
 #include "FilePath.h"
 #include "ParseLocation.h"
 #include "ToolChain.h"
+#include "clang_compat/ClangCompatibility.h"
 #include "utilityApp.h"
 #include "utilityString.h"
-
-#include <clang/Options/OptionUtils.h>
 
 #include <filesystem>
 #include <map>
@@ -305,7 +304,7 @@ std::optional<std::filesystem::path> utility::resolveCompilerResourceDir(const s
 	// (e.g., if the compiler is missing the -print-resource-dir flag).
 	if (!result)
 	{
-		std::filesystem::path dir{clang::GetResourcesPath(compilerPathStr)};
+		std::filesystem::path dir{clang_compat::getResourcesPath(compilerPathStr)};
 		if (std::filesystem::exists(dir))
 		{
 			result = dir;

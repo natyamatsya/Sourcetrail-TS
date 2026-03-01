@@ -4,7 +4,6 @@
 #include <clang/Driver/Compilation.h>
 #include <clang/Driver/Driver.h>
 #include <clang/Frontend/CompilerInvocation.h>
-#include <clang/Options/Options.h>
 #include <clang/Tooling/Tooling.h>
 #include <llvm/Option/ArgList.h>
 #include <llvm/Support/TargetSelect.h>
@@ -13,6 +12,7 @@
 #include "ResourcePaths.h"
 #include "CxxCompilationDatabaseSingle.h"
 #include "CxxDiagnosticConsumer.h"
+#include "clang_compat/ClangCompatibility.h"
 #include "utilityString.h"
 
 namespace
@@ -65,7 +65,7 @@ ClangInvocationInfo ClangInvocationInfo::getClangInvocationString(
 		const char* const BinaryName = Argv[0];
 		clang::DiagnosticOptions DiagOpts;
 		unsigned MissingArgIndex, MissingArgCount;
-		const llvm::opt::OptTable& Opts = clang::getDriverOptTable();
+		const llvm::opt::OptTable& Opts = clang_compat::getDriverOptTable();
 		llvm::opt::InputArgList ParsedArgs = Opts.ParseArgs(
 			clang::ArrayRef<const char*>(Argv).slice(1), MissingArgIndex, MissingArgCount);
 		clang::ParseDiagnosticArgs(DiagOpts, ParsedArgs);
