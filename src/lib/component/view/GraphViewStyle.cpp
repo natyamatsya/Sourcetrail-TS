@@ -78,6 +78,8 @@ GraphViewStyle::EdgeStyle::EdgeStyle() = default;
 
 std::shared_ptr<GraphViewStyleImpl> GraphViewStyle::getImpl()
 {
+	using enum NodeType::StyleType;
+	using enum ColorScheme::ColorState;
 	if (!s_impl)
 	{
 		LOG_ERROR("No GraphViewStyleImpl instance set.");
@@ -94,6 +96,8 @@ void GraphViewStyle::setImpl(std::shared_ptr<GraphViewStyleImpl> impl)
 
 void GraphViewStyle::loadStyleSettings()
 {
+	using enum NodeType::StyleType;
+	using enum ColorScheme::ColorState;
 	if (!s_impl)
 	{
 		return;
@@ -114,19 +118,21 @@ void GraphViewStyle::loadStyleSettings()
 	s_edgeColors.clear();
 	s_screenMatchColors.clear();
 
-	s_gridCellPadding = static_cast<int>(getCharHeight(NodeType::STYLE_BIG_NODE) - 8);
+	s_gridCellPadding = static_cast<int>(getCharHeight(STYLE_BIG_NODE) - 8);
 	s_gridCellSize = s_gridCellPadding / 2;
 }
 
 size_t GraphViewStyle::getFontSizeForStyleType(NodeType::StyleType type)
 {
+	using enum NodeType::StyleType;
+	using enum ColorScheme::ColorState;
 	switch (type)
 	{
-	case NodeType::STYLE_PACKAGE:
-	case NodeType::STYLE_SMALL_NODE:
+	case STYLE_PACKAGE:
+	case STYLE_SMALL_NODE:
 		return s_fontSize - 3;
 
-	case NodeType::STYLE_GROUP:
+	case STYLE_GROUP:
 		return s_fontSize - 2;
 
 	default:
@@ -161,7 +167,9 @@ size_t GraphViewStyle::getFontSizeOfTextNode(int fontSizeDiff)
 
 size_t GraphViewStyle::getFontSizeOfGroupNode()
 {
-	return getFontSizeForStyleType(NodeType::STYLE_GROUP);
+	using enum NodeType::StyleType;
+	using enum ColorScheme::ColorState;
+	return getFontSizeForStyleType(STYLE_GROUP);
 }
 
 std::string GraphViewStyle::getFontNameForDataNode()
@@ -192,19 +200,21 @@ std::string GraphViewStyle::getFontNameOfGroupNode()
 GraphViewStyle::NodeMargins GraphViewStyle::getMarginsForDataNode(
 	NodeType::StyleType type, bool hasIcon, bool hasChildren)
 {
+	using enum NodeType::StyleType;
+	using enum ColorScheme::ColorState;
 	NodeMargins margins;
 	margins.spacingX = 6;
 	margins.spacingY = 8;
 
 	switch (type)
 	{
-	case NodeType::STYLE_PACKAGE:
-	case NodeType::STYLE_GROUP:
+	case STYLE_PACKAGE:
+	case STYLE_GROUP:
 		margins.left = margins.right = 5;
 		margins.top = margins.bottom = 3;
 		margins.iconWidth = s_fontSize - 3;
 		break;
-	case NodeType::STYLE_BIG_NODE:
+	case STYLE_BIG_NODE:
 		if (hasIcon)
 		{
 			margins.iconWidth = s_fontSize + 11;
@@ -222,7 +232,7 @@ GraphViewStyle::NodeMargins GraphViewStyle::getMarginsForDataNode(
 			margins.top = margins.bottom = 8;
 		}
 		break;
-	case NodeType::STYLE_SMALL_NODE:
+	case STYLE_SMALL_NODE:
 		if (hasChildren)
 		{
 			margins.top = margins.bottom = 5;
@@ -246,6 +256,8 @@ GraphViewStyle::NodeMargins GraphViewStyle::getMarginsForDataNode(
 
 GraphViewStyle::NodeMargins GraphViewStyle::getMarginsOfAccessNode(AccessKind access)
 {
+	using enum NodeType::StyleType;
+	using enum ColorScheme::ColorState;
 	NodeMargins margins;
 	margins.spacingX = margins.spacingY = 8;
 
@@ -293,7 +305,9 @@ GraphViewStyle::NodeMargins GraphViewStyle::getMarginsOfExpandToggleNode()
 
 GraphViewStyle::NodeMargins GraphViewStyle::getMarginsOfBundleNode()
 {
-	return getMarginsForDataNode(NodeType::STYLE_BIG_NODE, true, false);
+	using enum NodeType::StyleType;
+	using enum ColorScheme::ColorState;
+	return getMarginsForDataNode(STYLE_BIG_NODE, true, false);
 }
 
 GraphViewStyle::NodeMargins GraphViewStyle::getMarginsOfTextNode(int fontSizeDiff)
@@ -312,6 +326,8 @@ GraphViewStyle::NodeMargins GraphViewStyle::getMarginsOfTextNode(int fontSizeDif
 
 GraphViewStyle::NodeMargins GraphViewStyle::getMarginsOfGroupNode(GroupType type, bool hasName)
 {
+	using enum NodeType::StyleType;
+	using enum ColorScheme::ColorState;
 	NodeMargins margins;
 	margins.spacingX = margins.spacingY = GraphViewStyle::s_gridCellPadding;
 
@@ -332,7 +348,7 @@ GraphViewStyle::NodeMargins GraphViewStyle::getMarginsOfGroupNode(GroupType type
 		margins.minWidth = static_cast<int>(margins.charHeight);
 	}
 
-	margins.charWidth = getCharWidth(NodeType::STYLE_GROUP);
+	margins.charWidth = getCharWidth(STYLE_GROUP);
 
 	return margins;
 }
@@ -369,6 +385,8 @@ GraphViewStyle::NodeStyle GraphViewStyle::getStyleForNodeType(
 	bool hasChildren,
 	bool hasQualifier)
 {
+	using enum NodeType::StyleType;
+	using enum ColorScheme::ColorState;
 	NodeStyle style;
 
 	style.color = getNodeColor(underscoredTypeString, isActive || isCoFocused);
@@ -392,14 +410,14 @@ GraphViewStyle::NodeStyle GraphViewStyle::getStyleForNodeType(
 
 	switch (type)
 	{
-	case NodeType::STYLE_PACKAGE:
-	case NodeType::STYLE_GROUP:
+	case STYLE_PACKAGE:
+	case STYLE_GROUP:
 		style.cornerRadius = 0;
 		style.textOffset.x = 5;
 		style.textOffset.y = 3;
 		break;
 
-	case NodeType::STYLE_BIG_NODE:
+	case STYLE_BIG_NODE:
 		if (hasChildren)
 		{
 			style.cornerRadius = 20;
@@ -414,7 +432,7 @@ GraphViewStyle::NodeStyle GraphViewStyle::getStyleForNodeType(
 		}
 		break;
 
-	case NodeType::STYLE_SMALL_NODE:
+	case STYLE_SMALL_NODE:
 		style.cornerRadius = 8;
 		style.textOffset.x = 5;
 		style.textOffset.y = 3;
@@ -426,7 +444,7 @@ GraphViewStyle::NodeStyle GraphViewStyle::getStyleForNodeType(
 	if (!iconPath.empty())
 	{
 		style.iconPath = iconPath;
-		if (type == NodeType::STYLE_PACKAGE)
+		if (type == STYLE_PACKAGE)
 		{
 			style.iconSize = s_fontSize - 4;
 			style.iconOffset.x = -1;
@@ -517,8 +535,10 @@ GraphViewStyle::NodeStyle GraphViewStyle::getStyleOfCountCircle()
 
 GraphViewStyle::NodeStyle GraphViewStyle::getStyleOfBundleNode(bool isFocused)
 {
+	using enum NodeType::StyleType;
+	using enum ColorScheme::ColorState;
 	return getStyleForNodeType(
-		NodeType::STYLE_BIG_NODE,
+		STYLE_BIG_NODE,
 		"bundle",
 		QtResources::GRAPH_VIEW_BUNDLE,
 		true,
@@ -556,6 +576,8 @@ GraphViewStyle::NodeStyle GraphViewStyle::getStyleOfTextNode(int fontSizeDiff)
 
 GraphViewStyle::NodeStyle GraphViewStyle::getStyleOfGroupNode(GroupType type, bool isCoFocused)
 {
+	using enum NodeType::StyleType;
+	using enum ColorScheme::ColorState;
 	NodeStyle style;
 
 	style.cornerRadius = 15;
@@ -603,6 +625,8 @@ GraphViewStyle::NodeStyle GraphViewStyle::getStyleOfGroupNode(GroupType type, bo
 GraphViewStyle::EdgeStyle GraphViewStyle::getStyleForEdgeType(
 	Edge::EdgeType type, bool isActive, bool isFocused, bool isTrailEdge, bool isAmbiguous)
 {
+	using enum NodeType::StyleType;
+	using enum ColorScheme::ColorState;
 	EdgeStyle style;
 
 	bool active = isActive || isFocused;
@@ -795,6 +819,8 @@ const std::string& GraphViewStyle::getEdgeColor(const std::string& type)
 
 const GraphViewStyle::NodeColor& GraphViewStyle::getScreenMatchColor(bool focus)
 {
+	using enum NodeType::StyleType;
+	using enum ColorScheme::ColorState;
 	auto it = s_screenMatchColors.find(focus);
 	if (it != s_screenMatchColors.end())
 	{
@@ -804,7 +830,7 @@ const GraphViewStyle::NodeColor& GraphViewStyle::getScreenMatchColor(bool focus)
 	NodeColor color;
 	ColorScheme* scheme = ColorScheme::getInstance().get();
 
-	ColorScheme::ColorState state = focus ? ColorScheme::FOCUS : ColorScheme::NORMAL;
+	ColorScheme::ColorState state = focus ? FOCUS : NORMAL;
 
 	color.fill = scheme->getCodeAnnotationTypeColor("screen_search", "fill", state);
 	color.border = scheme->getCodeAnnotationTypeColor("screen_search", "border", state);

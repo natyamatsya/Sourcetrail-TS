@@ -1,5 +1,7 @@
 #include "QtStatusView.h"
 
+#include <utility>
+
 #include <QBoxLayout>
 #include <QCheckBox>
 #include <QFrame>
@@ -46,9 +48,9 @@ QtStatusView::QtStatusView(ViewLayout* viewLayout): StatusView(viewLayout)
 
 	const StatusFilter filter = ApplicationSettings::getInstance()->getStatusFilter();
 	m_showInfo = createFilterCheckbox(
-		QStringLiteral("Info"), filters, filter & StatusType::STATUS_INFO);
+		QStringLiteral("Info"), filters, filter & std::to_underlying(StatusType::STATUS_INFO));
 	m_showErrors = createFilterCheckbox(
-		QStringLiteral("Error"), filters, filter & StatusType::STATUS_ERROR);
+		QStringLiteral("Error"), filters, filter & std::to_underlying(StatusType::STATUS_ERROR));
 
 	filters->addStretch();
 

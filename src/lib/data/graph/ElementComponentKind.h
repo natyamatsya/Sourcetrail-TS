@@ -3,7 +3,7 @@
 
 #include "utilityEnum.h"
 
-enum ElementComponentKind
+enum class ElementComponentKind
 {
 	ELEMENT_COMPONENT_NONE = 0,
 	ELEMENT_COMPONENT_IS_AMBIGUOUS = 1

@@ -22,7 +22,7 @@ public:
 
 	std::vector<SearchMatch> getSearchMatches() const override
 	{
-		return {SearchMatch::createCommand(SearchMatch::COMMAND_LEGEND)};
+		return {SearchMatch::createCommand(SearchMatch::CommandType::COMMAND_LEGEND)};
 	}
 };
 

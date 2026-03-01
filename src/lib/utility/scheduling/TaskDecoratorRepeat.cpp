@@ -12,17 +12,19 @@ void TaskDecoratorRepeat::doEnter(std::shared_ptr<Blackboard>  /*blackboard*/) {
 
 Task::TaskState TaskDecoratorRepeat::doUpdate(std::shared_ptr<Blackboard> blackboard)
 {
+	using enum Task::TaskState;
+	using enum TaskDecoratorRepeat::ConditionType;
 	TaskState state = m_taskRunner->update(blackboard);
 
 	switch (m_condition)
 	{
 	case CONDITION_WHILE_SUCCESS:
-		if (state == Task::STATE_SUCCESS)
+		if (state == STATE_SUCCESS)
 		{
 			m_taskRunner->reset();
-			state = Task::STATE_RUNNING;
+			state = STATE_RUNNING;
 		}
-		else if (state == Task::STATE_FAILURE)
+		else if (state == STATE_FAILURE)
 		{
 			return m_exitState;
 		}

@@ -57,7 +57,7 @@ QtProjectWizardContentPathsIndexedHeaders::QtProjectWizardContentPathsIndexedHea
 	QtProjectWizardWindow* window,
 	const std::string& projectKindName)
 	: QtProjectWizardContentPaths(
-		  settings, window, QtPathListBox::SELECTION_POLICY_FILES_AND_DIRECTORIES, true)
+		  settings, window, QtPathListBox::SelectionPolicyType::SELECTION_POLICY_FILES_AND_DIRECTORIES, true)
 	, m_projectKindName(projectKindName)
 {
 	m_showFilesString = QLatin1String("");

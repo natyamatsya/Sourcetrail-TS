@@ -11,7 +11,7 @@
 class TokenComponentBundledEdges: public TokenComponent
 {
 public:
-	enum Direction
+	enum class Direction
 	{
 		DIRECTION_NONE,
 		DIRECTION_FORWARD,
@@ -36,7 +36,7 @@ public:
 
 private:
 	std::map<Id, Direction> m_ids;
-	Direction m_direction = DIRECTION_INVALID;
+	Direction m_direction = Direction::DIRECTION_INVALID;
 };
 
 #endif	  // TOKEN_COMPONENT_BUNDLED_EDGES_H

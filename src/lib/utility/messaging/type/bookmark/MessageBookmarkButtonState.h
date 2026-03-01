@@ -6,7 +6,7 @@
 class MessageBookmarkButtonState: public Message<MessageBookmarkButtonState>
 {
 public:
-	enum ButtonState
+	enum class ButtonState
 	{
 		CAN_CREATE = 0,
 		CANNOT_CREATE,

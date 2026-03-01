@@ -7,7 +7,7 @@
 
 IndexerCommandType IndexerCommandCustom::getStaticIndexerCommandType()
 {
-	return INDEXER_COMMAND_CUSTOM;
+	return IndexerCommandType::INDEXER_COMMAND_CUSTOM;
 }
 
 IndexerCommandCustom::IndexerCommandCustom(

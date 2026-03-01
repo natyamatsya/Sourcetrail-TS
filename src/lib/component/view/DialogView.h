@@ -11,7 +11,7 @@
 class Project;
 class StorageAccess;
 
-enum DatabasePolicy
+enum class DatabasePolicy
 {
 	DATABASE_POLICY_KEEP,
 	DATABASE_POLICY_DISCARD,

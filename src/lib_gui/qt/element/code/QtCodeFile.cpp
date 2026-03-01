@@ -169,12 +169,15 @@ std::pair<QtCodeSnippet*, Id> QtCodeFile::getFirstSnippetWithActiveLocationId(Id
 
 void QtCodeFile::requestWholeFileContent(size_t targetLineNumber)
 {
+	using enum MessageChangeFileView::FileState;
+	using enum MessageChangeFileView::ViewMode;
+	using enum QtCodeNavigator::Mode;
 	if (!m_isWholeFile)
 	{
 		MessageChangeFileView msg(
 			m_filePath,
-			MessageChangeFileView::FILE_MAXIMIZED,
-			MessageChangeFileView::VIEW_LIST,
+			FILE_MAXIMIZED,
+			VIEW_LIST,
 			CodeScrollParams::toLine(m_filePath, targetLineNumber, CodeScrollParams::Target::VISIBLE));
 		msg.setSchedulerId(m_navigator->getSchedulerId());
 		msg.dispatch();
@@ -344,6 +347,9 @@ bool QtCodeFile::setFocus(Id locationId)
 
 bool QtCodeFile::moveFocus(const CodeFocusHandler::Focus& focus, CodeFocusHandler::Direction direction)
 {
+	using enum MessageChangeFileView::FileState;
+	using enum MessageChangeFileView::ViewMode;
+	using enum QtCodeNavigator::Mode;
 	if (direction == CodeFocusHandler::Direction::DOWN && focus.file == this && !isCollapsed() &&
 		m_snippets.size())
 	{
@@ -414,10 +420,13 @@ void QtCodeFile::copySelection()
 
 void QtCodeFile::clickedMinimizeButton()
 {
+	using enum MessageChangeFileView::FileState;
+	using enum MessageChangeFileView::ViewMode;
+	using enum QtCodeNavigator::Mode;
 	MessageChangeFileView msg(
 		m_filePath,
-		MessageChangeFileView::FILE_MINIMIZED,
-		MessageChangeFileView::VIEW_LIST,
+		FILE_MINIMIZED,
+		VIEW_LIST,
 		CodeScrollParams::toFile(m_filePath, CodeScrollParams::Target::VISIBLE));
 	msg.setSchedulerId(m_navigator->getSchedulerId());
 	msg.dispatch();
@@ -425,10 +434,13 @@ void QtCodeFile::clickedMinimizeButton()
 
 void QtCodeFile::clickedSnippetButton()
 {
+	using enum MessageChangeFileView::FileState;
+	using enum MessageChangeFileView::ViewMode;
+	using enum QtCodeNavigator::Mode;
 	MessageChangeFileView msg(
 		m_filePath,
-		MessageChangeFileView::FILE_SNIPPETS,
-		MessageChangeFileView::VIEW_LIST,
+		FILE_SNIPPETS,
+		VIEW_LIST,
 		CodeScrollParams::toFile(m_filePath, CodeScrollParams::Target::VISIBLE));
 	msg.setSchedulerId(m_navigator->getSchedulerId());
 	msg.dispatch();
@@ -436,6 +448,9 @@ void QtCodeFile::clickedSnippetButton()
 
 void QtCodeFile::clickedMaximizeButton()
 {
+	using enum MessageChangeFileView::FileState;
+	using enum MessageChangeFileView::ViewMode;
+	using enum QtCodeNavigator::Mode;
 	size_t lineNumber = 0;
 	Id locationId = 0;
 
@@ -455,7 +470,7 @@ void QtCodeFile::clickedMaximizeButton()
 		}
 	}
 
-	m_navigator->setMode(QtCodeNavigator::MODE_SINGLE);
+	m_navigator->setMode(MODE_SINGLE);
 
 	CodeScrollParams scrollParams = locationId
 		? CodeScrollParams::toReference(m_filePath, locationId, 0, CodeScrollParams::Target::CENTER)
@@ -463,8 +478,8 @@ void QtCodeFile::clickedMaximizeButton()
 
 	MessageChangeFileView msg(
 		m_filePath,
-		MessageChangeFileView::FILE_MAXIMIZED,
-		MessageChangeFileView::VIEW_SINGLE,
+		FILE_MAXIMIZED,
+		VIEW_SINGLE,
 		scrollParams,
 		true);
 	msg.setSchedulerId(m_navigator->getSchedulerId());

@@ -20,6 +20,7 @@ TaskCleanStorage::TaskCleanStorage(
 
 void TaskCleanStorage::doEnter(std::shared_ptr<Blackboard>  /*blackboard*/)
 {
+	using enum Task::TaskState;
 	m_dialogView->showUnknownProgressDialog(
 		"Clearing Files", std::to_string(m_filePaths.size()) + " Files");
 
@@ -29,13 +30,14 @@ void TaskCleanStorage::doEnter(std::shared_ptr<Blackboard>  /*blackboard*/)
 	{
 		if (std::shared_ptr<PersistentStorage> storage = m_storage.lock())
 		{
-			storage->setMode(SqliteIndexStorage::STORAGE_MODE_CLEAR);
+			storage->setMode(SqliteIndexStorage::StorageModeType::STORAGE_MODE_CLEAR);
 		}
 	}
 }
 
 Task::TaskState TaskCleanStorage::doUpdate(std::shared_ptr<Blackboard>  /*blackboard*/)
 {
+	using enum Task::TaskState;
 	if (std::shared_ptr<PersistentStorage> storage = m_storage.lock())
 	{
 		if (m_clearAllErrors)

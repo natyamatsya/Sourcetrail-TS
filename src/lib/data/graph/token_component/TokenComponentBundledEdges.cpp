@@ -2,6 +2,7 @@
 
 TokenComponentBundledEdges::Direction TokenComponentBundledEdges::opposite(Direction direction)
 {
+	using enum TokenComponentBundledEdges::Direction;
 	if (direction == DIRECTION_FORWARD)
 	{
 		return DIRECTION_BACKWARD;
@@ -42,6 +43,7 @@ std::set<Id> TokenComponentBundledEdges::getBundledEdgesIds() const
 
 void TokenComponentBundledEdges::addBundledEdgesId(Id id, bool forward)
 {
+	using enum TokenComponentBundledEdges::Direction;
 	m_ids.emplace(id, forward ? DIRECTION_FORWARD : DIRECTION_BACKWARD);
 
 	m_direction = DIRECTION_INVALID;
@@ -49,6 +51,7 @@ void TokenComponentBundledEdges::addBundledEdgesId(Id id, bool forward)
 
 void TokenComponentBundledEdges::removeBundledEdgesId(Id id)
 {
+	using enum TokenComponentBundledEdges::Direction;
 	m_ids.erase(id);
 
 	m_direction = DIRECTION_INVALID;
@@ -56,6 +59,7 @@ void TokenComponentBundledEdges::removeBundledEdgesId(Id id)
 
 TokenComponentBundledEdges::Direction TokenComponentBundledEdges::getDirection()
 {
+	using enum TokenComponentBundledEdges::Direction;
 	if (m_direction != DIRECTION_INVALID)
 	{
 		return m_direction;

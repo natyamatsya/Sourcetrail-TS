@@ -30,7 +30,7 @@ public:
 	void addStatus(const std::vector<Status>& status) override;
 
 private:
-	enum STATUSVIEW_COLUMN
+	enum class STATUSVIEW_COLUMN
 	{
 		TYPE = 0,
 		STATUS = 1,

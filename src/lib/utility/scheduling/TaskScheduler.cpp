@@ -46,6 +46,7 @@ void TaskScheduler::startSchedulerLoopThreaded()
 
 void TaskScheduler::startSchedulerLoop()
 {
+	using enum Task::TaskState;
 	{
 		std::lock_guard<std::mutex> lock(m_loopMutex);
 
@@ -85,6 +86,7 @@ void TaskScheduler::startSchedulerLoop()
 
 void TaskScheduler::stopSchedulerLoop()
 {
+	using enum Task::TaskState;
 	{
 		std::lock_guard<std::mutex> lock(m_loopMutex);
 
@@ -129,12 +131,13 @@ void TaskScheduler::terminateRunningTasks()
 
 void TaskScheduler::processTasks()
 {
+	using enum Task::TaskState;
 	std::lock_guard<std::mutex> lock(m_tasksMutex);
 
 	while (m_taskRunners.size())
 	{
 		std::shared_ptr<TaskRunner> runner = m_taskRunners.front();
-		Task::TaskState state = Task::STATE_RUNNING;
+		Task::TaskState state = STATE_RUNNING;
 
 		{
 			m_tasksMutex.unlock();
@@ -158,7 +161,7 @@ void TaskScheduler::processTasks()
 				}
 
 				state = runner->update(m_schedulerId);
-				if (state != Task::STATE_RUNNING)
+				if (state != STATE_RUNNING)
 				{
 					break;
 				}
@@ -167,7 +170,7 @@ void TaskScheduler::processTasks()
 
 		m_taskRunners.pop_front();
 
-		if (state == Task::STATE_HOLD)
+		if (state == STATE_HOLD)
 		{
 			m_taskRunners.push_back(runner);
 		}

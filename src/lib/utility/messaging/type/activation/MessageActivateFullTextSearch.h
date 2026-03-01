@@ -30,7 +30,7 @@ public:
 	{
 		std::string prefix(caseSensitive ? 2 : 1, SearchMatch::FULLTEXT_SEARCH_CHARACTER);
 		SearchMatch match(prefix + searchTerm);
-		match.searchType = SearchMatch::SEARCH_FULLTEXT;
+		match.searchType = SearchMatch::SearchType::SEARCH_FULLTEXT;
 		return {match};
 	}
 

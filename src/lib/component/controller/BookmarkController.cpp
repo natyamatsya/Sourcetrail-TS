@@ -46,16 +46,17 @@ void BookmarkController::undisplayBookmarks()
 	getView<BookmarkView>()->undisplayBookmarkBrowser();
 }
 
-
 void BookmarkController::displayBookmarksFor(
 	Bookmark::BookmarkFilter filter, Bookmark::BookmarkOrder order)
 {
-	if (filter != Bookmark::FILTER_UNKNOWN)
+	using enum Bookmark::BookmarkFilter;
+	using enum Bookmark::BookmarkOrder;
+	if (filter != FILTER_UNKNOWN)
 	{
 		m_filter = filter;
 	}
 
-	if (order != Bookmark::ORDER_NONE)
+	if (order != ORDER_NONE)
 	{
 		m_order = order;
 	}
@@ -66,6 +67,9 @@ void BookmarkController::displayBookmarksFor(
 void BookmarkController::createBookmark(
 	const std::string& name, const std::string& comment, const std::string& category, Id nodeId)
 {
+	using enum Bookmark::BookmarkFilter;
+	using enum Bookmark::BookmarkOrder;
+	using enum MessageBookmarkButtonState::ButtonState;
 	LOG_INFO("Attempting to create new bookmark");
 
 	TabId tabId = TabIds::currentTab();
@@ -113,7 +117,7 @@ void BookmarkController::createBookmark(
 		(m_activeNodeIds[TabIds::currentTab()].size() == 1 &&
 		 m_activeNodeIds[TabIds::currentTab()][0] == nodeId))
 	{
-		MessageBookmarkButtonState(TabIds::currentTab(), MessageBookmarkButtonState::ALREADY_CREATED)
+		MessageBookmarkButtonState(TabIds::currentTab(), ALREADY_CREATED)
 			.dispatch();
 	}
 
@@ -123,6 +127,8 @@ void BookmarkController::createBookmark(
 void BookmarkController::editBookmark(
 	BookmarkId bookmarkId, const std::string& name, const std::string& comment, const std::string& category)
 {
+	using enum Bookmark::BookmarkFilter;
+	using enum Bookmark::BookmarkOrder;
 	LOG_INFO_STREAM(<< "Attempting to update Bookmark " << bookmarkId);
 
 	m_storageAccess->updateBookmark(
@@ -135,6 +141,9 @@ void BookmarkController::editBookmark(
 
 void BookmarkController::deleteBookmark(BookmarkId bookmarkId)
 {
+	using enum Bookmark::BookmarkFilter;
+	using enum Bookmark::BookmarkOrder;
+	using enum MessageBookmarkButtonState::ButtonState;
 	LOG_INFO_STREAM(<< "Attempting to delete Bookmark " << bookmarkId);
 
 	m_storageAccess->removeBookmark(bookmarkId);
@@ -143,7 +152,7 @@ void BookmarkController::deleteBookmark(BookmarkId bookmarkId)
 
 	if (!getBookmarkForActiveToken(TabIds::currentTab()))
 	{
-		MessageBookmarkButtonState(TabIds::currentTab(), MessageBookmarkButtonState::CAN_CREATE)
+		MessageBookmarkButtonState(TabIds::currentTab(), CAN_CREATE)
 			.dispatch();
 	}
 
@@ -152,13 +161,16 @@ void BookmarkController::deleteBookmark(BookmarkId bookmarkId)
 
 void BookmarkController::deleteBookmarkCategory(Id categoryId)
 {
+	using enum Bookmark::BookmarkFilter;
+	using enum Bookmark::BookmarkOrder;
+	using enum MessageBookmarkButtonState::ButtonState;
 	m_storageAccess->removeBookmarkCategory(categoryId);
 
 	m_bookmarkCache.clear();
 
 	if (!getBookmarkForActiveToken(TabIds::currentTab()))
 	{
-		MessageBookmarkButtonState(TabIds::currentTab(), MessageBookmarkButtonState::CAN_CREATE)
+		MessageBookmarkButtonState(TabIds::currentTab(), CAN_CREATE)
 			.dispatch();
 	}
 
@@ -167,6 +179,9 @@ void BookmarkController::deleteBookmarkCategory(Id categoryId)
 
 void BookmarkController::deleteBookmarkForActiveTokens()
 {
+	using enum Bookmark::BookmarkFilter;
+	using enum Bookmark::BookmarkOrder;
+	using enum MessageBookmarkButtonState::ButtonState;
 	if (std::shared_ptr<Bookmark> bookmark = getBookmarkForActiveToken(TabIds::currentTab()))
 	{
 		LOG_INFO("Deleting bookmark " + bookmark->getName());
@@ -175,7 +190,7 @@ void BookmarkController::deleteBookmarkForActiveTokens()
 
 		cleanBookmarkCategories();
 
-		MessageBookmarkButtonState(TabIds::currentTab(), MessageBookmarkButtonState::CAN_CREATE)
+		MessageBookmarkButtonState(TabIds::currentTab(), CAN_CREATE)
 			.dispatch();
 		update();
 	}
@@ -187,6 +202,8 @@ void BookmarkController::deleteBookmarkForActiveTokens()
 
 void BookmarkController::activateBookmark(const std::shared_ptr<Bookmark> bookmark)
 {
+	using enum Bookmark::BookmarkFilter;
+	using enum Bookmark::BookmarkOrder;
 	LOG_INFO("Attempting to activate Bookmark");
 
 	if (std::shared_ptr<EdgeBookmark> edgeBookmark = std::dynamic_pointer_cast<EdgeBookmark>(bookmark))
@@ -318,6 +335,9 @@ void BookmarkController::handleActivation(const MessageActivateBase*  /*message*
 
 void BookmarkController::handleMessage(MessageActivateTokens* message)
 {
+	using enum Bookmark::BookmarkFilter;
+	using enum Bookmark::BookmarkOrder;
+	using enum MessageBookmarkButtonState::ButtonState;
 	TabId tabId = message->getSchedulerId();
 	m_activeEdgeIds[tabId].clear();
 
@@ -327,11 +347,11 @@ void BookmarkController::handleMessage(MessageActivateTokens* message)
 
 		if (getBookmarkForActiveToken(tabId))
 		{
-			MessageBookmarkButtonState(tabId, MessageBookmarkButtonState::ALREADY_CREATED).dispatch();
+			MessageBookmarkButtonState(tabId, ALREADY_CREATED).dispatch();
 		}
 		else
 		{
-			MessageBookmarkButtonState(tabId, MessageBookmarkButtonState::CAN_CREATE).dispatch();
+			MessageBookmarkButtonState(tabId, CAN_CREATE).dispatch();
 		}
 	}
 	else if (!message->isEdge)
@@ -340,11 +360,11 @@ void BookmarkController::handleMessage(MessageActivateTokens* message)
 
 		if (getBookmarkForActiveToken(tabId))
 		{
-			MessageBookmarkButtonState(tabId, MessageBookmarkButtonState::ALREADY_CREATED).dispatch();
+			MessageBookmarkButtonState(tabId, ALREADY_CREATED).dispatch();
 		}
 		else
 		{
-			MessageBookmarkButtonState(tabId, MessageBookmarkButtonState::CAN_CREATE).dispatch();
+			MessageBookmarkButtonState(tabId, CAN_CREATE).dispatch();
 		}
 	}
 }
@@ -446,6 +466,8 @@ std::shared_ptr<Bookmark> BookmarkController::getBookmarkForNodeId(Id nodeId) co
 
 std::vector<std::shared_ptr<Bookmark>> BookmarkController::getAllBookmarks() const
 {
+	using enum Bookmark::BookmarkFilter;
+	using enum Bookmark::BookmarkOrder;
 	LOG_INFO("Retrieving all bookmarks");
 
 	std::vector<std::shared_ptr<Bookmark>> bookmarks;
@@ -485,6 +507,8 @@ std::vector<std::shared_ptr<EdgeBookmark>> BookmarkController::getAllEdgeBookmar
 std::vector<std::shared_ptr<Bookmark>> BookmarkController::getBookmarks(
 	Bookmark::BookmarkFilter filter, Bookmark::BookmarkOrder order) const
 {
+	using enum Bookmark::BookmarkFilter;
+	using enum Bookmark::BookmarkOrder;
 	LOG_INFO_STREAM(
 		<< "Retrieving bookmarks with filter \"" << filter << "\" and order \"" << order << "\"");
 
@@ -533,13 +557,15 @@ std::string BookmarkController::getNodeDisplayName(const Id nodeId) const
 std::vector<std::shared_ptr<Bookmark>> BookmarkController::getFilteredBookmarks(
 	const std::vector<std::shared_ptr<Bookmark>>& bookmarks, Bookmark::BookmarkFilter filter)
 {
+	using enum Bookmark::BookmarkFilter;
+	using enum Bookmark::BookmarkOrder;
 	std::vector<std::shared_ptr<Bookmark>> result;
 
-	if (filter == Bookmark::FILTER_ALL)
+	if (filter == FILTER_ALL)
 	{
 		return bookmarks;
 	}
-	else if (filter == Bookmark::FILTER_NODES)
+	else if (filter == FILTER_NODES)
 	{
 		for (const std::shared_ptr<Bookmark>& bookmark: bookmarks)
 		{
@@ -549,7 +575,7 @@ std::vector<std::shared_ptr<Bookmark>> BookmarkController::getFilteredBookmarks(
 			}
 		}
 	}
-	else if (filter == Bookmark::FILTER_EDGES)
+	else if (filter == FILTER_EDGES)
 	{
 		for (const std::shared_ptr<Bookmark>& bookmark: bookmarks)
 		{
@@ -566,21 +592,23 @@ std::vector<std::shared_ptr<Bookmark>> BookmarkController::getFilteredBookmarks(
 std::vector<std::shared_ptr<Bookmark>> BookmarkController::getOrderedBookmarks(
 	const std::vector<std::shared_ptr<Bookmark>>& bookmarks, Bookmark::BookmarkOrder order)
 {
+	using enum Bookmark::BookmarkFilter;
+	using enum Bookmark::BookmarkOrder;
 	std::vector<std::shared_ptr<Bookmark>> result = bookmarks;
 
-	if (order == Bookmark::ORDER_DATE_ASCENDING)
+	if (order == ORDER_DATE_ASCENDING)
 	{
 		return getDateOrderedBookmarks(result, true);
 	}
-	else if (order == Bookmark::ORDER_DATE_DESCENDING)
+	else if (order == ORDER_DATE_DESCENDING)
 	{
 		return getDateOrderedBookmarks(result, false);
 	}
-	else if (order == Bookmark::ORDER_NAME_ASCENDING)
+	else if (order == ORDER_NAME_ASCENDING)
 	{
 		return getNameOrderedBookmarks(result, true);
 	}
-	else if (order == Bookmark::ORDER_NAME_DESCENDING)
+	else if (order == ORDER_NAME_DESCENDING)
 	{
 		return getNameOrderedBookmarks(result, false);
 	}
@@ -656,6 +684,8 @@ bool BookmarkController::bookmarkNameCompare(const std::shared_ptr<Bookmark> a, 
 
 void BookmarkController::update()
 {
+	using enum Bookmark::BookmarkFilter;
+	using enum Bookmark::BookmarkOrder;
 	BookmarkView* view = getView<BookmarkView>();
 	if (view->bookmarkBrowserIsVisible())
 	{
@@ -663,7 +693,7 @@ void BookmarkController::update()
 	}
 
 	std::vector<std::shared_ptr<Bookmark>> bookmarks = getBookmarks(
-		Bookmark::FILTER_ALL, Bookmark::ORDER_DATE_DESCENDING);
+		FILTER_ALL, ORDER_DATE_DESCENDING);
 
 	const size_t maxBookmarkMenuCount = 20;
 	if (bookmarks.size() > maxBookmarkMenuCount)

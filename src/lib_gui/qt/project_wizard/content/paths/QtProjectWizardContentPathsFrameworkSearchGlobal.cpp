@@ -9,7 +9,7 @@ QtProjectWizardContentPathsFrameworkSearchGlobal::QtProjectWizardContentPathsFra
 	: QtProjectWizardContentPaths(
 		  std::shared_ptr<SourceGroupSettings>(),
 		  window,
-		  QtPathListBox::SELECTION_POLICY_DIRECTORIES_ONLY,
+		  QtPathListBox::SelectionPolicyType::SELECTION_POLICY_DIRECTORIES_ONLY,
 		  true)
 {
 	setTitleString(QStringLiteral("Global Framework Search Paths"));

@@ -6,7 +6,7 @@
 class QtPathListBox: public QtListBox
 {
 public:
-	enum SelectionPolicyType
+	enum class SelectionPolicyType
 	{
 		SELECTION_POLICY_FILES_ONLY,
 		SELECTION_POLICY_DIRECTORIES_ONLY,

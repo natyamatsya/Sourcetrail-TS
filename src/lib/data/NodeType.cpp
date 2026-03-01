@@ -5,6 +5,7 @@
 
 std::vector<NodeType> NodeType::getOverviewBundleNodes()
 {
+	using enum NodeType::StyleType;
 	// Defines the order of the bundles on the 'overview' view:
 	return {
 		NodeType(NODE_FILE),
@@ -56,24 +57,28 @@ Id NodeType::getId() const
 
 bool NodeType::isFile() const
 {
+	using enum NodeType::StyleType;
 	const NodeKindMask mask = NODE_FILE;
 	return ((m_kind & mask) > 0);
 }
 
 bool NodeType::isBuiltin() const
 {
+	using enum NodeType::StyleType;
 	const NodeKindMask mask = NODE_BUILTIN_TYPE;
 	return ((m_kind & mask) > 0);
 }
 
 bool NodeType::isUnknownSymbol() const
 {
+	using enum NodeType::StyleType;
 	const NodeKindMask mask = NODE_SYMBOL;
 	return ((m_kind & mask) > 0);
 }
 
 bool NodeType::isInheritable() const
 {
+	using enum NodeType::StyleType;
 	// TODO: what about java enums? Cannot inherit from!
 	const NodeKindMask mask = NODE_SYMBOL | NODE_BUILTIN_TYPE | NODE_TYPE | NODE_STRUCT |
 		NODE_CLASS | NODE_INTERFACE;
@@ -83,24 +88,28 @@ bool NodeType::isInheritable() const
 
 bool NodeType::isPackage() const
 {
+	using enum NodeType::StyleType;
 	const NodeKindMask mask = NODE_MODULE | NODE_NAMESPACE | NODE_PACKAGE;
 	return ((m_kind & mask) > 0);
 }
 
 bool NodeType::isCallable() const
 {
+	using enum NodeType::StyleType;
 	const NodeKindMask mask = NODE_FUNCTION | NODE_METHOD;
 	return ((m_kind & mask) > 0);
 }
 
 bool NodeType::isVariable() const
 {
+	using enum NodeType::StyleType;
 	const NodeKindMask mask = NODE_GLOBAL_VARIABLE | NODE_FIELD;
 	return ((m_kind & mask) > 0);
 }
 
 bool NodeType::isUsable() const
 {
+	using enum NodeType::StyleType;
 	const NodeKindMask mask = NODE_SYMBOL | NODE_BUILTIN_TYPE | NODE_STRUCT | NODE_CLASS |
 		NODE_ENUM | NODE_UNION | NODE_INTERFACE | NODE_ANNOTATION | NODE_TYPEDEF | NODE_RECORD | NODE_CONCEPT;
 	return ((m_kind & mask) > 0);
@@ -108,6 +117,7 @@ bool NodeType::isUsable() const
 
 bool NodeType::isPotentialMember() const
 {
+	using enum NodeType::StyleType;
 	const NodeKindMask mask = NODE_METHOD | NODE_FIELD | NODE_CLASS | NODE_INTERFACE |
 		NODE_ANNOTATION | NODE_STRUCT | NODE_UNION | NODE_TYPEDEF | NODE_ENUM | NODE_RECORD;
 
@@ -116,6 +126,7 @@ bool NodeType::isPotentialMember() const
 
 bool NodeType::isCollapsible() const
 {
+	using enum NodeType::StyleType;
 	const NodeKindMask mask = NODE_SYMBOL | NODE_TYPE | NODE_BUILTIN_TYPE | NODE_STRUCT |
 		NODE_CLASS | NODE_INTERFACE | NODE_ANNOTATION | NODE_ENUM | NODE_UNION | NODE_FILE | NODE_RECORD;
 	return ((m_kind & mask) > 0);
@@ -128,6 +139,7 @@ bool NodeType::isVisibleAsParentInGraph() const
 
 bool NodeType::hasSearchFilter() const
 {
+	using enum NodeType::StyleType;
 	const NodeKindMask mask = NODE_BUILTIN_TYPE | NODE_MODULE | NODE_NAMESPACE | NODE_PACKAGE |
 		NODE_STRUCT | NODE_CLASS | NODE_INTERFACE | NODE_ANNOTATION | NODE_GLOBAL_VARIABLE |
 		NODE_FIELD | NODE_FUNCTION | NODE_METHOD | NODE_ENUM | NODE_ENUM_CONSTANT | NODE_TYPEDEF |
@@ -137,6 +149,7 @@ bool NodeType::hasSearchFilter() const
 
 Tree<NodeType::BundleInfo> NodeType::getOverviewBundleTree() const
 {
+	using enum NodeType::StyleType;
 	switch (m_kind)
 	{
 	case NODE_FILE:
@@ -189,6 +202,7 @@ Tree<NodeType::BundleInfo> NodeType::getOverviewBundleTree() const
 
 FilePath NodeType::getIconPath() const
 {
+	using enum NodeType::StyleType;
 	if (isPackage())
 	{
 		// this icon cannot be changed
@@ -214,6 +228,7 @@ FilePath NodeType::getIconPath() const
 
 bool NodeType::hasIcon() const
 {
+	using enum NodeType::StyleType;
 	if (isPackage())
 	{
 		return true;
@@ -225,6 +240,7 @@ bool NodeType::hasIcon() const
 
 NodeType::StyleType NodeType::getNodeStyle() const
 {
+	using enum NodeType::StyleType;
 	switch (m_kind)
 	{
 	case NODE_MODULE:

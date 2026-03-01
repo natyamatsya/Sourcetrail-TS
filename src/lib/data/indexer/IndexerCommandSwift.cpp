@@ -5,7 +5,7 @@
 
 IndexerCommandType IndexerCommandSwift::getStaticIndexerCommandType()
 {
-	return INDEXER_COMMAND_SWIFT;
+	return IndexerCommandType::INDEXER_COMMAND_SWIFT;
 }
 
 IndexerCommandSwift::IndexerCommandSwift(

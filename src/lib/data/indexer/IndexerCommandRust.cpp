@@ -5,7 +5,7 @@
 
 IndexerCommandType IndexerCommandRust::getStaticIndexerCommandType()
 {
-	return INDEXER_COMMAND_RUST;
+	return IndexerCommandType::INDEXER_COMMAND_RUST;
 }
 
 IndexerCommandRust::IndexerCommandRust(

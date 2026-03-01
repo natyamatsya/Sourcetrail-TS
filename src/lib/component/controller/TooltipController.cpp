@@ -42,6 +42,7 @@ void TooltipController::handleMessage(MessageActivateLocalSymbols*  /*message*/)
 
 void TooltipController::handleMessage(MessageFocusIn* message)
 {
+	using enum TooltipOrigin;
 	if (!message->tokenIds.size() || message->origin == TOOLTIP_ORIGIN_NONE)
 	{
 		return;
@@ -118,6 +119,7 @@ TooltipView* TooltipController::getView() const
 
 View* TooltipController::getViewForOrigin(TooltipOrigin origin) const
 {
+	using enum TooltipOrigin;
 	std::string viewName =
 		(origin == TOOLTIP_ORIGIN_CODE ? CodeView::VIEW_NAME : GraphView::VIEW_NAME);
 	return getView()->getViewLayout()->findFloatingView(viewName);

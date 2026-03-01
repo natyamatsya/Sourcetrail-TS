@@ -61,9 +61,11 @@ QtGraphEdge::QtGraphEdge(
 	, m_direction(direction)
 	, m_isInteractive(isInteractive)
 {
+	using enum QtLineItemBase::Route;
+	using enum TooltipOrigin;
 	this->setCursor(Qt::PointingHandCursor);
 
-	if (m_direction == TokenComponentBundledEdges::DIRECTION_BACKWARD)
+	if (m_direction == DIRECTION_BACKWARD)
 	{
 		QtGraphNode* temp = m_owner;
 		m_owner = m_target;
@@ -100,6 +102,8 @@ Id QtGraphEdge::getTokenId() const
 
 void QtGraphEdge::updateLine()
 {
+	using enum QtLineItemBase::Route;
+	using enum TooltipOrigin;
 	const QtGraphNode* owner = m_owner;
 	const QtGraphNode* target = m_target;
 
@@ -130,8 +134,8 @@ void QtGraphEdge::updateLine()
 		targetParentRect = targetParent->getBoundingRect();
 	}
 
-	QtLineItemBase::Route route = m_isHorizontal ? QtLineItemBase::ROUTE_HORIZONTAL
-												 : QtLineItemBase::ROUTE_VERTICAL;
+	QtLineItemBase::Route route = m_isHorizontal ? ROUTE_HORIZONTAL
+												 : ROUTE_VERTICAL;
 
 	if (m_useBezier)
 	{
@@ -151,7 +155,7 @@ void QtGraphEdge::updateLine()
 			bezier->setRoute(route);
 
 			QtLineItemStraight* line = new QtLineItemStraight(this);
-			if (route == QtLineItemBase::ROUTE_HORIZONTAL)
+			if (route == ROUTE_HORIZONTAL)
 			{
 				line->updateLine(
 					Vec2i(rect.x(), (rect.y() + rect.w()) / 2),
@@ -170,7 +174,7 @@ void QtGraphEdge::updateLine()
 			ownerParentRect = rect;
 		}
 
-		bool showArrow = m_direction != TokenComponentBundledEdges::DIRECTION_NONE;
+		bool showArrow = m_direction != DIRECTION_NONE;
 
 		QtLineItemBezier* bezier = new QtLineItemBezier(this);
 		m_child = bezier;
@@ -252,7 +256,7 @@ void QtGraphEdge::updateLine()
 			(type == Edge::EDGE_TEMPLATE_SPECIALIZATION && owner == ownerNonGroupParent &&
 			 target == targetNonGroupParent))
 		{
-			route = QtLineItemBase::ROUTE_VERTICAL;
+			route = ROUTE_VERTICAL;
 
 			if (target->hasActiveChild())
 			{
@@ -261,7 +265,7 @@ void QtGraphEdge::updateLine()
 		}
 		else if (type != Edge::EDGE_BUNDLED_EDGES || owner != ownerNonGroupParent || target != targetNonGroupParent)
 		{
-			route = QtLineItemBase::ROUTE_HORIZONTAL;
+			route = ROUTE_HORIZONTAL;
 		}
 
 		child->setRoute(route);
@@ -269,7 +273,7 @@ void QtGraphEdge::updateLine()
 		bool showArrow = true;
 		if (type == Edge::EDGE_BUNDLED_EDGES)
 		{
-			showArrow = m_direction != TokenComponentBundledEdges::DIRECTION_NONE;
+			showArrow = m_direction != DIRECTION_NONE;
 		}
 
 		if (getData())
@@ -328,10 +332,12 @@ bool QtGraphEdge::isFocusable() const
 
 void QtGraphEdge::onClick()
 {
+	using enum QtLineItemBase::Route;
+	using enum TooltipOrigin;
 	if (isExpandable())
 	{
 		QtGraphNode* node =
-			(m_direction == TokenComponentBundledEdges::DIRECTION_BACKWARD ? m_owner : m_target);
+			(m_direction == DIRECTION_BACKWARD ? m_owner : m_target);
 		if (m_owner->isGroupNode())
 		{
 			node = m_owner;
@@ -389,6 +395,8 @@ void QtGraphEdge::onHide()
 
 void QtGraphEdge::coFocusIn()
 {
+	using enum QtLineItemBase::Route;
+	using enum TooltipOrigin;
 	if (!m_isCoFocused)
 	{
 		m_isCoFocused = true;
@@ -407,7 +415,7 @@ void QtGraphEdge::coFocusIn()
 			}
 
 			if (type == Edge::EDGE_BUNDLED_EDGES &&
-				m_direction == TokenComponentBundledEdges::DIRECTION_NONE)
+				m_direction == DIRECTION_NONE)
 			{
 				info.title = "bidirectional " + info.title;
 			}
@@ -483,6 +491,8 @@ void QtGraphEdge::mouseReleaseEvent(QGraphicsSceneMouseEvent* event)
 
 void QtGraphEdge::hoverEnterEvent(QGraphicsSceneHoverEvent*  /*event*/)
 {
+	using enum QtLineItemBase::Route;
+	using enum TooltipOrigin;
 	m_focusHandler->focusEdge(this);
 
 	if (m_useBezier)

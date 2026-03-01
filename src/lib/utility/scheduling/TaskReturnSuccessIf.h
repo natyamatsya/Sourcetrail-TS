@@ -8,7 +8,7 @@ template <typename T>
 class TaskReturnSuccessIf: public Task
 {
 public:
-	enum ConditionType
+	enum class ConditionType
 	{
 		CONDITION_GREATER_THAN,
 		CONDITION_EQUALS
@@ -47,20 +47,20 @@ Task::TaskState TaskReturnSuccessIf<T>::doUpdate(std::shared_ptr<Blackboard> bla
 
 	switch (m_condition)
 	{
-	case CONDITION_GREATER_THAN:
+	case ConditionType::CONDITION_GREATER_THAN:
 		if (lhsValue > m_rhsValue)
 		{
-			return STATE_SUCCESS;
+			return Task::TaskState::STATE_SUCCESS;
 		}
 		break;
-	case CONDITION_EQUALS:
+	case ConditionType::CONDITION_EQUALS:
 		if (lhsValue == m_rhsValue)
 		{
-			return STATE_SUCCESS;
+			return Task::TaskState::STATE_SUCCESS;
 		}
 		break;
 	}
-	return STATE_FAILURE;
+	return Task::TaskState::STATE_FAILURE;
 }
 
 template <typename T>

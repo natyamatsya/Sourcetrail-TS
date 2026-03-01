@@ -237,7 +237,6 @@ int Bucket::getMiddleGapX() const
 	return middleGapX;
 }
 
-
 BucketLayouter::BucketLayouter(Vec2i viewSize)
 	: m_viewSize(viewSize) 
 {
@@ -248,6 +247,7 @@ void BucketLayouter::createBuckets(
 	std::vector<std::shared_ptr<DummyNode>>& nodes,
 	const std::vector<std::shared_ptr<DummyEdge>>& edges)
 {
+	using enum TokenComponentBundledEdges::Direction;
 	if (!nodes.size())
 	{
 		return;
@@ -310,9 +310,9 @@ void BucketLayouter::createBuckets(
 				}
 			}
 			else if (
-				edge->getDirection() == TokenComponentBundledEdges::DIRECTION_BACKWARD ||
+				edge->getDirection() == DIRECTION_BACKWARD ||
 				// put nodes with bidirectional edges on the left
-				(edge->getDirection() == TokenComponentBundledEdges::DIRECTION_NONE &&
+				(edge->getDirection() == DIRECTION_NONE &&
 				 !target->bundleInfo.isReferencing && !target->bundleInfo.isReferenced))
 			{
 				std::swap(owner, target);

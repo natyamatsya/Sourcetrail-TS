@@ -20,6 +20,7 @@ void Task::setIsBackgroundTask(bool background)
 
 Task::TaskState Task::update(std::shared_ptr<Blackboard> blackboard)
 {
+	using enum Task::TaskState;
 	if (!m_enterCalled)
 	{
 		doEnter(blackboard);

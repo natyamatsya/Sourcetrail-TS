@@ -15,7 +15,7 @@ IpcInterprocessIndexingStatusManager::IpcInterprocessIndexingStatusManager(
 	, m_shm{
 		  s_sharedMemoryNamePrefix + instanceUuid,
 		  1048576,
-		  isOwner ? IpcSharedMemory::CREATE_AND_DELETE : IpcSharedMemory::OPEN_OR_CREATE}
+		  isOwner ? IpcSharedMemory::AccessMode::CREATE_AND_DELETE : IpcSharedMemory::AccessMode::OPEN_OR_CREATE}
 {
 }
 
@@ -131,6 +131,7 @@ bool IpcInterprocessIndexingStatusManager::getQueueStopped()
 
 ProcessId IpcInterprocessIndexingStatusManager::getNextFinishedProcessId()
 {
+	using enum IpcSharedMemory::AccessMode;
 	IpcSharedMemory::ScopedAccess access(&m_shm);
 	auto data = readStatus(access);
 

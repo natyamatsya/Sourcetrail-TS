@@ -11,6 +11,7 @@ void TaskMergeStorages::doEnter(std::shared_ptr<Blackboard>  /*blackboard*/) {}
 
 Task::TaskState TaskMergeStorages::doUpdate(std::shared_ptr<Blackboard>  /*blackboard*/)
 {
+	using enum Task::TaskState;
 	if (m_storageProvider->getStorageCount() > 2)	 // largest storage won't be touched here
 	{
 		std::shared_ptr<IntermediateStorage> target = m_storageProvider->consumeSecondLargestStorage();

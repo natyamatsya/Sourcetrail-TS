@@ -93,7 +93,7 @@ std::vector<std::string> IndexerCommandCxx::getCompilerFlagsForFrameworkSearchPa
 
 IndexerCommandType IndexerCommandCxx::getStaticIndexerCommandType()
 {
-	return INDEXER_COMMAND_CXX;
+	return IndexerCommandType::INDEXER_COMMAND_CXX;
 }
 
 IndexerCommandCxx::IndexerCommandCxx(

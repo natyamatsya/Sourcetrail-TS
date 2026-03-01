@@ -14,6 +14,7 @@ void TaskGroupSelector::doEnter(std::shared_ptr<Blackboard>  /*blackboard*/)
 
 Task::TaskState TaskGroupSelector::doUpdate(std::shared_ptr<Blackboard> blackboard)
 {
+	using enum Task::TaskState;
 	if (m_taskIndex >= int(m_taskRunners.size()))
 	{
 		return STATE_FAILURE;

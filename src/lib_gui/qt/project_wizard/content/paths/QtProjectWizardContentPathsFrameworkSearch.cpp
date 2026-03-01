@@ -8,7 +8,7 @@ QtProjectWizardContentPathsFrameworkSearch::QtProjectWizardContentPathsFramework
 	QtProjectWizardWindow* window,
 	bool indicateAsAdditional)
 	: QtProjectWizardContentPaths(
-		  settings, window, QtPathListBox::SELECTION_POLICY_DIRECTORIES_ONLY, true)
+		  settings, window, QtPathListBox::SelectionPolicyType::SELECTION_POLICY_DIRECTORIES_ONLY, true)
 {
 	setTitleString(
 		indicateAsAdditional ? QStringLiteral("Additional Framework Search Paths")

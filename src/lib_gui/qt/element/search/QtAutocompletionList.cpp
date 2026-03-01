@@ -22,12 +22,14 @@ void QtAutocompletionModel::setMatchList(const std::vector<SearchMatch>& matchLi
 
 int QtAutocompletionModel::rowCount(const QModelIndex& parent) const
 {
+	using enum SearchMatch::SearchType;
 	Q_UNUSED(parent);
 	return static_cast<int>(m_matchList.size());
 }
 
 int QtAutocompletionModel::columnCount(const QModelIndex& parent) const
 {
+	using enum SearchMatch::SearchType;
 	Q_UNUSED(parent);
 	return 6;
 }
@@ -116,7 +118,6 @@ QString QtAutocompletionModel::longestType() const
 	return QString::fromStdString(str);
 }
 
-
 QtAutocompletionDelegate::QtAutocompletionDelegate(QtAutocompletionModel* model, QObject* parent)
 	: QStyledItemDelegate(parent), m_model(model)
 {
@@ -128,6 +129,7 @@ QtAutocompletionDelegate::~QtAutocompletionDelegate() = default;
 void QtAutocompletionDelegate::paint(
 	QPainter* painter, const QStyleOptionViewItem& option, const QModelIndex& index) const
 {
+	using enum SearchMatch::SearchType;
 	painter->save();
 
 	// get data
@@ -152,8 +154,8 @@ void QtAutocompletionDelegate::paint(
 	}
 	else
 	{
-		fillColor = QColor(scheme->getSearchTypeColor(SearchMatch::getSearchTypeName(SearchMatch::SEARCH_COMMAND), "fill").c_str());
-		textColor = QColor(scheme->getSearchTypeColor(SearchMatch::getSearchTypeName(SearchMatch::SEARCH_COMMAND), "text").c_str());
+		fillColor = QColor(scheme->getSearchTypeColor(SearchMatch::getSearchTypeName(SEARCH_COMMAND), "fill").c_str());
+		textColor = QColor(scheme->getSearchTypeColor(SearchMatch::getSearchTypeName(SEARCH_COMMAND), "text").c_str());
 	}
 
 	int top1 = 6;
@@ -317,6 +319,7 @@ QSize QtAutocompletionDelegate::sizeHint(const QStyleOptionViewItem& option, con
 
 void QtAutocompletionDelegate::calculateCharSizes(QFont font)
 {
+	using enum SearchMatch::SearchType;
 	if (m_charWidth1 > 0)
 	{
 		return;
@@ -368,7 +371,6 @@ void QtAutocompletionDelegate::resetCharSizes()
 {
 	m_charWidth1 = m_charHeight1 = m_charWidth2 = m_charHeight2 = 0.0f;
 }
-
 
 QtAutocompletionList::QtAutocompletionList(QWidget* parent): QCompleter(parent)
 {

@@ -1,6 +1,5 @@
 #include "ColorScheme.h"
 
-
 std::shared_ptr<ColorScheme> ColorScheme::s_instance;
 
 std::shared_ptr<ColorScheme> ColorScheme::getInstance()
@@ -101,6 +100,7 @@ std::string ColorScheme::getSyntaxColor(const std::string& key) const
 std::string ColorScheme::getCodeAnnotationTypeColor(
 	const std::string& typeStr, const std::string& key, ColorState state) const
 {
+	using enum ColorScheme::ColorState;
 	disableWarnings();
 	std::string color = getValue<std::string>(
 		"code/snippet/annotation/" + typeStr + "/" + stateToString(state) + "/" + key, "");
@@ -131,6 +131,7 @@ ColorScheme::ColorScheme() = default;
 
 std::string ColorScheme::stateToString(ColorState state)
 {
+	using enum ColorScheme::ColorState;
 	switch (state)
 	{
 	case NORMAL:

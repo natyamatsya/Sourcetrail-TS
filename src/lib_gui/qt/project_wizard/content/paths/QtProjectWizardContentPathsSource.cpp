@@ -15,7 +15,7 @@
 QtProjectWizardContentPathsSource::QtProjectWizardContentPathsSource(
 	std::shared_ptr<SourceGroupSettings> settings, QtProjectWizardWindow* window)
 	: QtProjectWizardContentPaths(
-		  settings, window, QtPathListBox::SELECTION_POLICY_FILES_AND_DIRECTORIES, true)
+		  settings, window, QtPathListBox::SelectionPolicyType::SELECTION_POLICY_FILES_AND_DIRECTORIES, true)
 {
 	m_showFilesString = QStringLiteral("show files");
 

@@ -18,6 +18,7 @@
 #include "TokenComponentInheritanceChain.h"
 #include "TrailLayouter.h"
 #include "logging.h"
+
 #include "tracing.h"
 #include "utility.h"
 #include "utilityString.h"
@@ -59,6 +60,10 @@ void GraphController::handleMessage(MessageActivateLegend* message)
 
 void GraphController::handleMessage(MessageActivateOverview* message)
 {
+	using enum Graph::TrailMode;
+	using enum DummyNode::Type;
+	using enum utility::ElideMode;
+	using enum TrailLayouter::LayoutDirection;
 	TRACE("graph all");
 
 	clear();
@@ -93,6 +98,10 @@ void GraphController::handleMessage(MessageActivateOverview* message)
 
 void GraphController::handleMessage(MessageActivateTokens* message)
 {
+	using enum Graph::TrailMode;
+	using enum DummyNode::Type;
+	using enum utility::ElideMode;
+	using enum TrailLayouter::LayoutDirection;
 	TRACE("graph activate");
 
 	if (message->isEdge || message->keepContent())
@@ -209,6 +218,10 @@ void GraphController::handleMessage(MessageActivateTokens* message)
 
 void GraphController::handleMessage(MessageActivateTrail* message)
 {
+	using enum Graph::TrailMode;
+	using enum DummyNode::Type;
+	using enum utility::ElideMode;
+	using enum TrailLayouter::LayoutDirection;
 	TRACE("trail activate");
 
 	MessageStatus("Retrieving graph data", false, true).dispatch();
@@ -273,7 +286,7 @@ void GraphController::handleMessage(MessageActivateTrail* message)
 	}
 
 	createDummyGraph(graph);
-	m_graph->setTrailMode(message->horizontalLayout ? Graph::TRAIL_HORIZONTAL : Graph::TRAIL_VERTICAL);
+	m_graph->setTrailMode(message->horizontalLayout ? TRAIL_HORIZONTAL : TRAIL_VERTICAL);
 	m_graph->setHasTrailOrigin(message->originId != 0);
 
 	m_activeNodeIds = {message->originId ? message->originId : message->targetId};
@@ -308,6 +321,10 @@ void GraphController::handleMessage(MessageActivateTrail* message)
 
 void GraphController::handleMessage(MessageActivateTrailEdge* message)
 {
+	using enum Graph::TrailMode;
+	using enum DummyNode::Type;
+	using enum utility::ElideMode;
+	using enum TrailLayouter::LayoutDirection;
 	TRACE("trail edge activate");
 
 	m_activeEdgeIds = message->edgeIds;
@@ -318,6 +335,10 @@ void GraphController::handleMessage(MessageActivateTrailEdge* message)
 
 void GraphController::handleMessage(MessageDeactivateEdge*  /*message*/)
 {
+	using enum Graph::TrailMode;
+	using enum DummyNode::Type;
+	using enum utility::ElideMode;
+	using enum TrailLayouter::LayoutDirection;
 	TRACE("edge deactivate");
 
 	m_activeEdgeIds.clear();
@@ -438,12 +459,16 @@ void GraphController::handleMessage(MessageGraphNodeBundleSplit* message)
 
 void GraphController::handleMessage(MessageGraphNodeExpand* message)
 {
+	using enum Graph::TrailMode;
+	using enum DummyNode::Type;
+	using enum utility::ElideMode;
+	using enum TrailLayouter::LayoutDirection;
 	if (message->ignoreIfNotReplayed && !message->isReplayed())
 	{
 		return;
 	}
 
-	if (m_graph && m_graph->getTrailMode() != Graph::TRAIL_NONE)
+	if (m_graph && m_graph->getTrailMode() != TRAIL_NONE)
 	{
 		if (!message->isReplayed())
 		{
@@ -481,7 +506,6 @@ void GraphController::handleMessage(MessageGraphNodeExpand* message)
 
 			// move all newer and older dummy graph nodes into the old dummy node
 			dummyNode->replaceAccessNodes(newDummyNode->getAccessNodes());
-
 
 			if (!dummyNode->active && message->expand)
 			{
@@ -572,12 +596,16 @@ void GraphController::handleMessage(MessageGraphNodeHide* message)
 
 void GraphController::handleMessage(MessageGraphNodeMove* message)
 {
+	using enum Graph::TrailMode;
+	using enum DummyNode::Type;
+	using enum utility::ElideMode;
+	using enum TrailLayouter::LayoutDirection;
 	DummyNode* node = getDummyGraphNodeById(message->tokenId).get();
 	if (node)
 	{
 		node->position += message->delta;
 
-		if (m_graph->getTrailMode() != Graph::TRAIL_NONE)
+		if (m_graph->getTrailMode() != TRAIL_NONE)
 		{
 			std::set<Id> childNodeIds;
 			for (const auto &p: m_topLevelAncestorIds)
@@ -650,6 +678,10 @@ void GraphController::clear()
 
 void GraphController::createDummyGraph(const std::shared_ptr<Graph> graph)
 {
+	using enum Graph::TrailMode;
+	using enum DummyNode::Type;
+	using enum utility::ElideMode;
+	using enum TrailLayouter::LayoutDirection;
 	TRACE();
 
 	GraphView* view = getView();
@@ -725,9 +757,13 @@ void GraphController::createDummyGraphAndSetActiveAndVisibility(
 
 std::vector<std::shared_ptr<DummyNode>> GraphController::createDummyNodeTopDown(Node* node, Id ancestorId)
 {
+	using enum Graph::TrailMode;
+	using enum DummyNode::Type;
+	using enum utility::ElideMode;
+	using enum TrailLayouter::LayoutDirection;
 	std::vector<std::shared_ptr<DummyNode>> nodes;
 
-	std::shared_ptr<DummyNode> result = std::make_shared<DummyNode>(DummyNode::DUMMY_DATA);
+	std::shared_ptr<DummyNode> result = std::make_shared<DummyNode>(DUMMY_DATA);
 	result->data = node;
 	result->name = node->getName();
 
@@ -768,7 +804,7 @@ std::vector<std::shared_ptr<DummyNode>> GraphController::createDummyNodeTopDown(
 		if (!parent)
 		{
 			std::shared_ptr<DummyNode> accessNode = std::make_shared<DummyNode>(
-				DummyNode::DUMMY_ACCESS);
+				DUMMY_ACCESS);
 			accessNode->accessKind = accessKind;
 			result->subNodes.push_back(accessNode);
 			parent = accessNode.get();
@@ -783,6 +819,10 @@ std::vector<std::shared_ptr<DummyNode>> GraphController::createDummyNodeTopDown(
 void GraphController::updateDummyNodeNamesAndAddQualifiers(
 	const std::vector<std::shared_ptr<DummyNode>>& dummyNodes)
 {
+	using enum Graph::TrailMode;
+	using enum DummyNode::Type;
+	using enum utility::ElideMode;
+	using enum TrailLayouter::LayoutDirection;
 	for (const std::shared_ptr<DummyNode>& node: dummyNodes)
 	{
 		if (node->isGroupNode() || !node->data || node->data->getType().isFile())
@@ -803,7 +843,7 @@ void GraphController::updateDummyNodeNamesAndAddQualifiers(
 			if (qualifier.size())
 			{
 				std::shared_ptr<DummyNode> qualifierNode = std::make_shared<DummyNode>(
-					DummyNode::DUMMY_QUALIFIER);
+					DUMMY_QUALIFIER);
 				qualifierNode->qualifierName = qualifier;
 				qualifierNode->visible = true;
 
@@ -816,6 +856,10 @@ void GraphController::updateDummyNodeNamesAndAddQualifiers(
 
 std::vector<Id> GraphController::getExpandedNodeIds() const
 {
+	using enum Graph::TrailMode;
+	using enum DummyNode::Type;
+	using enum utility::ElideMode;
+	using enum TrailLayouter::LayoutDirection;
 	std::vector<Id> nodeIds;
 	for (const auto &p: m_dummyGraphNodes)
 	{
@@ -859,6 +903,10 @@ void GraphController::autoExpandActiveNode(const std::vector<Id>& activeTokenIds
 
 bool GraphController::setActive(const std::vector<Id>& activeTokenIds, bool showAllEdges)
 {
+	using enum Graph::TrailMode;
+	using enum DummyNode::Type;
+	using enum utility::ElideMode;
+	using enum TrailLayouter::LayoutDirection;
 	TRACE();
 
 	bool noActive = !activeTokenIds.size();
@@ -914,6 +962,10 @@ bool GraphController::setActive(const std::vector<Id>& activeTokenIds, bool show
 
 void GraphController::setVisibility(bool noActive)
 {
+	using enum Graph::TrailMode;
+	using enum DummyNode::Type;
+	using enum utility::ElideMode;
+	using enum TrailLayouter::LayoutDirection;
 	TRACE();
 
 	for (const std::shared_ptr<DummyNode>& node: m_dummyNodes)
@@ -924,6 +976,10 @@ void GraphController::setVisibility(bool noActive)
 
 void GraphController::setActiveAndVisibility(const std::vector<Id>& activeTokenIds)
 {
+	using enum Graph::TrailMode;
+	using enum DummyNode::Type;
+	using enum utility::ElideMode;
+	using enum TrailLayouter::LayoutDirection;
 	TRACE();
 
 	setVisibility(setActive(activeTokenIds, false));
@@ -958,6 +1014,10 @@ bool GraphController::setNodeActiveRecursive(DummyNode* node, const std::vector<
 
 bool GraphController::setNodeVisibilityRecursiveBottomUp(DummyNode* node, bool noActive) const
 {
+	using enum Graph::TrailMode;
+	using enum DummyNode::Type;
+	using enum utility::ElideMode;
+	using enum TrailLayouter::LayoutDirection;
 	node->visible = false;
 	node->childVisible = false;
 
@@ -1003,6 +1063,10 @@ bool GraphController::setNodeVisibilityRecursiveBottomUp(DummyNode* node, bool n
 
 void GraphController::setNodeVisibilityRecursiveTopDown(DummyNode* node, bool parentExpanded) const
 {
+	using enum Graph::TrailMode;
+	using enum DummyNode::Type;
+	using enum utility::ElideMode;
+	using enum TrailLayouter::LayoutDirection;
 	if (node->isGraphNode() && node->data->getType().getKind() == NODE_ENUM && !node->isExpanded())
 	{
 		node->visible = true;
@@ -1048,6 +1112,11 @@ void GraphController::hideBuiltinTypes()
 
 void GraphController::bundleNodes()
 {
+	using enum Graph::TrailMode;
+	using enum DummyNode::Type;
+	using enum utility::ElideMode;
+	using enum TrailLayouter::LayoutDirection;
+	using enum TokenComponentBundledEdges::Direction;
 	TRACE();
 
 	// evaluate top level nodes
@@ -1090,20 +1159,20 @@ void GraphController::bundleNodes()
 					TokenComponentBundledEdges::Direction dir =
 						e->getComponent<TokenComponentBundledEdges>()->getDirection();
 
-					if (dir == TokenComponentBundledEdges::DIRECTION_NONE)
+					if (dir == DIRECTION_NONE)
 					{
 						bundleInfo->isReferenced = true;
 						bundleInfo->isReferencing = true;
 					}
 					else if (
-						(dir == TokenComponentBundledEdges::DIRECTION_FORWARD && e->getFrom() == n) ||
-						(dir == TokenComponentBundledEdges::DIRECTION_BACKWARD && e->getTo() == n))
+						(dir == DIRECTION_FORWARD && e->getFrom() == n) ||
+						(dir == DIRECTION_BACKWARD && e->getTo() == n))
 					{
 						bundleInfo->isReferencing = true;
 					}
 					else if (
-						(dir == TokenComponentBundledEdges::DIRECTION_FORWARD && e->getTo() == n) ||
-						(dir == TokenComponentBundledEdges::DIRECTION_BACKWARD && e->getFrom() == n))
+						(dir == DIRECTION_FORWARD && e->getTo() == n) ||
+						(dir == DIRECTION_BACKWARD && e->getFrom() == n))
 					{
 						bundleInfo->isReferenced = true;
 					}
@@ -1245,6 +1314,10 @@ void GraphController::bundleNodesAndEdgesMatching(
 	bool countConnectedNodes,
 	const std::string& name)
 {
+	using enum Graph::TrailMode;
+	using enum DummyNode::Type;
+	using enum utility::ElideMode;
+	using enum TrailLayouter::LayoutDirection;
 	std::vector<size_t> matchedNodeIndices;
 	size_t connectedNodeCount = 0;
 	for (size_t i = 0; i < m_dummyNodes.size(); i++)
@@ -1273,7 +1346,7 @@ void GraphController::bundleNodesAndEdgesMatching(
 		return;
 	}
 
-	std::shared_ptr<DummyNode> bundleNode = std::make_shared<DummyNode>(DummyNode::DUMMY_BUNDLE);
+	std::shared_ptr<DummyNode> bundleNode = std::make_shared<DummyNode>(DUMMY_BUNDLE);
 	bundleNode->name = name;
 	bundleNode->visible = true;
 
@@ -1356,6 +1429,10 @@ std::shared_ptr<DummyNode> GraphController::bundleNodesMatching(
 	std::function<bool(const DummyNode*)> matcher,
 	const std::string& name)
 {
+	using enum Graph::TrailMode;
+	using enum DummyNode::Type;
+	using enum utility::ElideMode;
+	using enum TrailLayouter::LayoutDirection;
 	std::vector<std::list<std::shared_ptr<DummyNode>>::iterator> matchedNodes;
 	for (std::list<std::shared_ptr<DummyNode>>::iterator it = nodes.begin(); it != nodes.end(); it++)
 	{
@@ -1370,7 +1447,7 @@ std::shared_ptr<DummyNode> GraphController::bundleNodesMatching(
 		return nullptr;
 	}
 
-	std::shared_ptr<DummyNode> bundleNode = std::make_shared<DummyNode>(DummyNode::DUMMY_BUNDLE);
+	std::shared_ptr<DummyNode> bundleNode = std::make_shared<DummyNode>(DUMMY_BUNDLE);
 	bundleNode->name = name;
 	bundleNode->visible = true;
 
@@ -1433,6 +1510,10 @@ std::shared_ptr<DummyNode> GraphController::bundleByType(
 
 void GraphController::bundleNodesByType()
 {
+	using enum Graph::TrailMode;
+	using enum DummyNode::Type;
+	using enum utility::ElideMode;
+	using enum TrailLayouter::LayoutDirection;
 	TRACE();
 
 	std::list<std::shared_ptr<DummyNode>> nodes(m_dummyNodes.begin(), m_dummyNodes.end());
@@ -1478,6 +1559,10 @@ void GraphController::bundleNodesByType()
 
 void GraphController::addCharacterIndex()
 {
+	using enum Graph::TrailMode;
+	using enum DummyNode::Type;
+	using enum utility::ElideMode;
+	using enum TrailLayouter::LayoutDirection;
 	// Remove index characters from last time
 	DummyNode::BundledNodesSet newNodes;
 	for (const std::shared_ptr<DummyNode>& node: m_dummyNodes)
@@ -1503,7 +1588,7 @@ void GraphController::addCharacterIndex()
 		{
 			character = toupper(m_dummyNodes[i]->name[0]);
 
-			std::shared_ptr<DummyNode> textNode = std::make_shared<DummyNode>(DummyNode::DUMMY_TEXT);
+			std::shared_ptr<DummyNode> textNode = std::make_shared<DummyNode>(DUMMY_TEXT);
 			textNode->name = character;
 			textNode->visible = true;
 
@@ -1526,6 +1611,10 @@ bool GraphController::hasCharacterIndex() const
 
 void GraphController::groupNodesByParents(GroupType groupType)
 {
+	using enum Graph::TrailMode;
+	using enum DummyNode::Type;
+	using enum utility::ElideMode;
+	using enum TrailLayouter::LayoutDirection;
 	TRACE();
 
 	if (groupType != GroupType::FILE && groupType != GroupType::NAMESPACE)
@@ -1617,7 +1706,7 @@ void GraphController::groupNodesByParents(GroupType groupType)
 		}
 		else
 		{
-			groupNode = std::make_shared<DummyNode>(DummyNode::DUMMY_GROUP);
+			groupNode = std::make_shared<DummyNode>(DUMMY_GROUP);
 			groupNode->visible = true;
 			groupNode->groupType = groupType;
 			groupNode->groupLayout = GroupLayout::BUCKET;
@@ -1666,9 +1755,13 @@ void GraphController::groupNodesByParents(GroupType groupType)
 
 DummyNode* GraphController::groupAllNodes(GroupType groupType, Id groupNodeId)
 {
+	using enum Graph::TrailMode;
+	using enum DummyNode::Type;
+	using enum utility::ElideMode;
+	using enum TrailLayouter::LayoutDirection;
 	TRACE();
 
-	std::shared_ptr<DummyNode> groupNode = std::make_shared<DummyNode>(DummyNode::DUMMY_GROUP);
+	std::shared_ptr<DummyNode> groupNode = std::make_shared<DummyNode>(DUMMY_GROUP);
 	groupNode->visible = true;
 	groupNode->groupType = groupType;
 	groupNode->tokenId = groupNodeId;
@@ -1690,6 +1783,10 @@ DummyNode* GraphController::groupAllNodes(GroupType groupType, Id groupNodeId)
 
 void GraphController::groupTrailNodes(GroupType groupType)
 {
+	using enum Graph::TrailMode;
+	using enum DummyNode::Type;
+	using enum utility::ElideMode;
+	using enum TrailLayouter::LayoutDirection;
 	TRACE();
 
 	struct TrailNode
@@ -1760,7 +1857,7 @@ void GraphController::groupTrailNodes(GroupType groupType)
 			continue;
 		}
 
-		std::shared_ptr<DummyNode> groupNode = std::make_shared<DummyNode>(DummyNode::DUMMY_GROUP);
+		std::shared_ptr<DummyNode> groupNode = std::make_shared<DummyNode>(DUMMY_GROUP);
 		groupNode->visible = true;
 		groupNode->groupType = groupType;
 		groupNode->groupLayout = GroupLayout::SQUARE;
@@ -1851,6 +1948,10 @@ void GraphController::groupTrailNodes(GroupType groupType)
 
 void GraphController::layoutNesting()
 {
+	using enum Graph::TrailMode;
+	using enum DummyNode::Type;
+	using enum utility::ElideMode;
+	using enum TrailLayouter::LayoutDirection;
 	TRACE();
 
 	extendEqualFunctionNames(m_dummyNodes);
@@ -1868,6 +1969,10 @@ void GraphController::layoutNesting()
 
 void GraphController::extendEqualFunctionNames(const std::vector<std::shared_ptr<DummyNode>>& nodes) const
 {
+	using enum Graph::TrailMode;
+	using enum DummyNode::Type;
+	using enum utility::ElideMode;
+	using enum TrailLayouter::LayoutDirection;
 	std::multimap<std::string, std::shared_ptr<DummyNode>> functionNames;
 	for (const auto& node: nodes)
 	{
@@ -1903,6 +2008,10 @@ void GraphController::extendEqualFunctionNames(const std::vector<std::shared_ptr
 
 Vec4i GraphController::layoutNestingRecursive(DummyNode* node, int relayoutAccessMaxWidth) const
 {
+	using enum Graph::TrailMode;
+	using enum DummyNode::Type;
+	using enum utility::ElideMode;
+	using enum TrailLayouter::LayoutDirection;
 	if (!node->visible)
 	{
 		return Vec4i(0, 0, 0, 0);
@@ -1953,7 +2062,7 @@ Vec4i GraphController::layoutNestingRecursive(DummyNode* node, int relayoutAcces
 
 	if (node->isGraphNode())
 	{
-		node->name = utility::elide(node->name, utility::ELIDE_RIGHT, node->active ? 100 : 50);
+		node->name = utility::elide(node->name, ELIDE_RIGHT, node->active ? 100 : 50);
 		width = static_cast<int>(margins.charWidth * node->name.size());
 
 		if (node->data->getType().isCollapsible() && node->data->getChildCount() > 0)
@@ -2101,8 +2210,12 @@ Vec4i GraphController::layoutNestingRecursive(DummyNode* node, int relayoutAcces
 
 void GraphController::addExpandToggleNode(DummyNode* node)
 {
+	using enum Graph::TrailMode;
+	using enum DummyNode::Type;
+	using enum utility::ElideMode;
+	using enum TrailLayouter::LayoutDirection;
 	std::shared_ptr<DummyNode> expandNode = std::make_shared<DummyNode>(
-		DummyNode::DUMMY_EXPAND_TOGGLE);
+		DUMMY_EXPAND_TOGGLE);
 	expandNode->expanded = node->expanded;
 	expandNode->visible = true;
 
@@ -2193,6 +2306,10 @@ void GraphController::layoutToGrid(DummyNode* node)
 
 void GraphController::layoutGraph(bool getSortedNodes)
 {
+	using enum Graph::TrailMode;
+	using enum DummyNode::Type;
+	using enum utility::ElideMode;
+	using enum TrailLayouter::LayoutDirection;
 	TRACE();
 
 	std::vector<std::shared_ptr<DummyNode>> visibleNodes;
@@ -2216,6 +2333,10 @@ void GraphController::layoutGraph(bool getSortedNodes)
 
 void GraphController::layoutList()
 {
+	using enum Graph::TrailMode;
+	using enum DummyNode::Type;
+	using enum utility::ElideMode;
+	using enum TrailLayouter::LayoutDirection;
 	TRACE();
 
 	ListLayouter::layoutMultiColumn(getView()->getViewSize(), &m_dummyNodes);
@@ -2223,27 +2344,31 @@ void GraphController::layoutList()
 
 void GraphController::layoutTrail(bool horizontal, bool hasOrigin)
 {
+	using enum Graph::TrailMode;
+	using enum DummyNode::Type;
+	using enum utility::ElideMode;
+	using enum TrailLayouter::LayoutDirection;
 	TrailLayouter::LayoutDirection direction;
 	if (horizontal)
 	{
 		if (hasOrigin)
 		{
-			direction = TrailLayouter::LAYOUT_LEFT_RIGHT;
+			direction = LAYOUT_LEFT_RIGHT;
 		}
 		else
 		{
-			direction = TrailLayouter::LAYOUT_RIGHT_LEFT;
+			direction = LAYOUT_RIGHT_LEFT;
 		}
 	}
 	else
 	{
 		if (hasOrigin)
 		{
-			direction = TrailLayouter::LAYOUT_TOP_BOTTOM;
+			direction = LAYOUT_TOP_BOTTOM;
 		}
 		else
 		{
-			direction = TrailLayouter::LAYOUT_BOTTOM_TOP;
+			direction = LAYOUT_BOTTOM_TOP;
 		}
 	}
 
@@ -2307,7 +2432,11 @@ void GraphController::relayoutGraph(
 	bool withCharacterIndex,
 	const std::string& groupName)
 {
-	bool showsTrail = m_graph->getTrailMode() != Graph::TRAIL_NONE;
+	using enum Graph::TrailMode;
+	using enum DummyNode::Type;
+	using enum utility::ElideMode;
+	using enum TrailLayouter::LayoutDirection;
+	bool showsTrail = m_graph->getTrailMode() != TRAIL_NONE;
 
 	setVisibility(setActive(utility::concat(m_activeNodeIds, m_activeEdgeIds), showsTrail));
 
@@ -2341,7 +2470,7 @@ void GraphController::relayoutGraph(
 		if (showsTrail)
 		{
 			layoutTrail(
-				m_graph->getTrailMode() == Graph::TRAIL_HORIZONTAL, m_graph->hasTrailOrigin());
+				m_graph->getTrailMode() == TRAIL_HORIZONTAL, m_graph->hasTrailOrigin());
 		}
 		else
 		{
@@ -2385,13 +2514,17 @@ void GraphController::forEachDummyEdge(std::function<void(DummyEdge*)> func)
 
 void GraphController::createLegendGraph()
 {
+	using enum Graph::TrailMode;
+	using enum DummyNode::Type;
+	using enum utility::ElideMode;
+	using enum TrailLayouter::LayoutDirection;
 	Id id = Id(0) | Id::FirstBits::ONE;
 
 	std::map<Id, Vec2i> nodePositions;
 	std::shared_ptr<Graph> graph = std::make_shared<Graph>();
 
 	auto addText = [this](std::string text, int fontSizeDiff, Vec2i position) {
-		std::shared_ptr<DummyNode> node = std::make_shared<DummyNode>(DummyNode::DUMMY_TEXT);
+		std::shared_ptr<DummyNode> node = std::make_shared<DummyNode>(DUMMY_TEXT);
 		node->name = text;
 		node->visible = true;
 		node->fontSizeDiff = fontSizeDiff;
@@ -2571,7 +2704,7 @@ void GraphController::createLegendGraph()
 
 		y += 10;
 
-		std::shared_ptr<DummyNode> groupNode = std::make_shared<DummyNode>(DummyNode::DUMMY_GROUP);
+		std::shared_ptr<DummyNode> groupNode = std::make_shared<DummyNode>(DUMMY_GROUP);
 		groupNode->name = "Group Node";
 		groupNode->visible = true;
 		groupNode->groupType = GroupType::DEFAULT;
@@ -2579,7 +2712,7 @@ void GraphController::createLegendGraph()
 		m_dummyNodes.push_back(groupNode);
 		y += 25;
 
-		std::shared_ptr<DummyNode> bundleNode = std::make_shared<DummyNode>(DummyNode::DUMMY_BUNDLE);
+		std::shared_ptr<DummyNode> bundleNode = std::make_shared<DummyNode>(DUMMY_BUNDLE);
 		bundleNode->name = "Bundle Node";
 		bundleNode->visible = true;
 		bundleNode->position = Vec2i(x, y + dy * ++i);

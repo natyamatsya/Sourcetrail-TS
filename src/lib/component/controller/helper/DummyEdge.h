@@ -21,7 +21,7 @@ struct DummyEdge
 		, active(false)
 		, layoutHorizontal(true)
 		, weight(0)
-		, direction(TokenComponentBundledEdges::DIRECTION_INVALID)
+		, direction(TokenComponentBundledEdges::Direction::DIRECTION_INVALID)
 	{
 	}
 
@@ -34,7 +34,7 @@ struct DummyEdge
 		, active(false)
 		, layoutHorizontal(true)
 		, weight(0)
-		, direction(TokenComponentBundledEdges::DIRECTION_INVALID)
+		, direction(TokenComponentBundledEdges::Direction::DIRECTION_INVALID)
 	{
 	}
 
@@ -59,13 +59,13 @@ struct DummyEdge
 			dir = TokenComponentBundledEdges::opposite(dir);
 		}
 
-		if (direction == TokenComponentBundledEdges::DIRECTION_INVALID)
+		if (direction == TokenComponentBundledEdges::Direction::DIRECTION_INVALID)
 		{
 			direction = dir;
 		}
 		else if (direction != dir)
 		{
-			direction = TokenComponentBundledEdges::DIRECTION_NONE;
+			direction = TokenComponentBundledEdges::Direction::DIRECTION_NONE;
 		}
 	}
 
@@ -80,7 +80,7 @@ struct DummyEdge
 			return data->getComponent<TokenComponentBundledEdges>()->getDirection();
 		}
 
-		return TokenComponentBundledEdges::DIRECTION_FORWARD;
+		return TokenComponentBundledEdges::Direction::DIRECTION_FORWARD;
 	}
 
 	Id ownerId;

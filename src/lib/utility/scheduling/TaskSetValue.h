@@ -35,7 +35,7 @@ template <typename T>
 Task::TaskState TaskSetValue<T>::doUpdate(std::shared_ptr<Blackboard> blackboard)
 {
 	blackboard->set<T>(m_valueName, m_value);
-	return STATE_SUCCESS;
+	return Task::TaskState::STATE_SUCCESS;
 }
 
 template <typename T>

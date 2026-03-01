@@ -33,6 +33,7 @@ void QtSearchElement::onChecked(bool)
 
 void QtSmartSearchBox::startSearch()
 {
+	using enum SearchMatch::SearchType;
 	editTextToElement();
 
 	if (m_matches.empty())
@@ -44,7 +45,7 @@ void QtSmartSearchBox::startSearch()
 	if (m_matches.size() == 1)
 	{
 		SearchMatch& match = m_matches.front();
-		if (match.searchType == SearchMatch::SEARCH_NONE && !match.name.empty())
+		if (match.searchType == SEARCH_NONE && !match.name.empty())
 		{
 			if (m_oldMatch.name == match.name)
 			{
@@ -172,6 +173,7 @@ void QtSmartSearchBox::setFocus()
 
 void QtSmartSearchBox::findFulltext()
 {
+	using enum SearchMatch::SearchType;
 	QLineEdit::setFocus(Qt::ShortcutFocusReason);
 	selectAllElementsWith(true);
 	deleteSelectedElements();
@@ -229,6 +231,7 @@ void QtSmartSearchBox::resizeEvent(QResizeEvent* event)
 
 void QtSmartSearchBox::focusInEvent(QFocusEvent* event)
 {
+	using enum SearchMatch::SearchType;
 	QLineEdit::focusInEvent(event);
 	MessageFocusedSearchView(true).dispatch();
 
@@ -250,7 +253,7 @@ void QtSmartSearchBox::focusInEvent(QFocusEvent* event)
 		if (m_elements.size() == 1)
 		{
 			SearchMatch match = editElement(m_elements[0]);
-			if (match.searchType != SearchMatch::SEARCH_NONE)
+			if (match.searchType != SEARCH_NONE)
 			{
 				m_oldMatch = match;
 			}
@@ -272,6 +275,7 @@ void QtSmartSearchBox::focusOutEvent(QFocusEvent* event)
 
 void QtSmartSearchBox::keyPressEvent(QKeyEvent* event)
 {
+	using enum SearchMatch::SearchType;
 	m_shiftKeyDown = event->modifiers() & Qt::ShiftModifier;
 	bool layout = false;
 
@@ -735,7 +739,6 @@ void QtSmartSearchBox::moveCursorTo(int target)
 	}
 }
 
-
 void QtSmartSearchBox::addMatch(const SearchMatch& match)
 {
 	if (match.name.empty())
@@ -823,6 +826,7 @@ SearchMatch QtSmartSearchBox::editElement(QtSearchElement* element)
 
 void QtSmartSearchBox::updateElements()
 {
+	using enum SearchMatch::SearchType;
 	for (auto *e: m_elements)
 	{
 		e->hide();
@@ -851,7 +855,7 @@ void QtSmartSearchBox::updateElements()
 		std::string textColor = searchTextColor;
 		std::string textHoverColor = searchTextColor;
 		
-		if (match.searchType == SearchMatch::SEARCH_TOKEN)
+		if (match.searchType == SEARCH_TOKEN)
 		{
 			backgroundColor = GraphViewStyle::getNodeColor(match.nodeType.getUnderscoredTypeString(), false).fill;
 			backgroundHoverColor = GraphViewStyle::getNodeColor(match.nodeType.getUnderscoredTypeString(), true).fill;
@@ -1071,6 +1075,7 @@ void QtSmartSearchBox::clearLineEdit()
 
 void QtSmartSearchBox::requestAutoCompletions()
 {
+	using enum SearchMatch::SearchType;
 	if (!text().isEmpty() && !text().startsWith(SearchMatch::FULLTEXT_SEARCH_CHARACTER))
 	{
 		emit autocomplete(text().toStdString(), getMatchAcceptedNodeTypes());
@@ -1088,6 +1093,7 @@ void QtSmartSearchBox::hideAutoCompletions()
 
 void QtSmartSearchBox::startFullTextSearch()
 {
+	using enum SearchMatch::SearchType;
 	if (!m_supportsFullTextSearch)
 		return;
 

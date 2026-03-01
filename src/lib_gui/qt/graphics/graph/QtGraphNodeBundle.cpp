@@ -52,6 +52,7 @@ void QtGraphNodeBundle::onClick()
 
 void QtGraphNodeBundle::updateStyle()
 {
+	using enum NodeType::StyleType;
 	GraphViewStyle::NodeStyle style;
 	if (!m_type.isUnknownSymbol())
 	{
@@ -66,7 +67,7 @@ void QtGraphNodeBundle::updateStyle()
 
 	Vec2f pos(
 		static_cast<float>(m_rect->rect().right()), static_cast<float>(m_rect->rect().top() - 2));
-	if (m_type.getNodeStyle() == NodeType::STYLE_BIG_NODE)
+	if (m_type.getNodeStyle() == STYLE_BIG_NODE)
 	{
 		pos += Vec2f(-2, 2);
 	}
@@ -79,7 +80,6 @@ void QtGraphNodeBundle::updateStyle()
 		accessStyle.color.border.c_str(),
 		style.borderWidth);
 }
-
 
 void QtGraphNodeBundle::hoverEnterEvent(QGraphicsSceneHoverEvent*  /*event*/)
 {

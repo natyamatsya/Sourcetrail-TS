@@ -25,7 +25,7 @@ QtProjectWizardContentPathsHeaderSearch::QtProjectWizardContentPathsHeaderSearch
 	std::shared_ptr<SourceGroupSettings> settings,
 	QtProjectWizardWindow* window,
 	bool indicateAsAdditional)
-	: QtProjectWizardContentPaths(settings, window, QtPathListBox::SELECTION_POLICY_DIRECTORIES_ONLY, true)
+	: QtProjectWizardContentPaths(settings, window, QtPathListBox::SelectionPolicyType::SELECTION_POLICY_DIRECTORIES_ONLY, true)
 	, m_showDetectedIncludesResultFunctor([this](const std::set<FilePath> &detectedHeaderSearchPaths)
 		{ showDetectedIncludesResult(detectedHeaderSearchPaths); })
 	, m_showValidationResultFunctor([this](const std::vector<IncludeDirective> &unresolvedIncludes)
@@ -120,7 +120,7 @@ void QtProjectWizardContentPathsHeaderSearch::detectIncludesButtonClicked()
 		"<p>The \"Files & Directories to Index\" will be searched by default, but you can add "
 		"further paths, such "
 		"as directories of third-party libraries, if required.</p>",
-		QtPathListBox::SELECTION_POLICY_DIRECTORIES_ONLY);
+		QtPathListBox::SelectionPolicyType::SELECTION_POLICY_DIRECTORIES_ONLY);
 
 	m_pathsDialog->setup();
 	m_pathsDialog->updateNextButton(QStringLiteral("Start"));

@@ -17,7 +17,7 @@ IpcInterprocessIndexerCommandManager::IpcInterprocessIndexerCommandManager(
 	, m_shm{
 		  s_sharedMemoryNamePrefix + instanceUuid,
 		  64 * 1024 * 1024,
-		  isOwner ? IpcSharedMemory::CREATE_AND_DELETE : IpcSharedMemory::OPEN_OR_CREATE}
+		  isOwner ? IpcSharedMemory::AccessMode::CREATE_AND_DELETE : IpcSharedMemory::AccessMode::OPEN_OR_CREATE}
 {
 }
 
@@ -26,6 +26,8 @@ IpcInterprocessIndexerCommandManager::~IpcInterprocessIndexerCommandManager() = 
 void IpcInterprocessIndexerCommandManager::pushIndexerCommands(
 	const std::vector<std::shared_ptr<IndexerCommand>>& indexerCommands)
 {
+	using enum IpcSharedMemory::AccessMode;
+	using enum IndexerCommandType;
 	// Deserialize existing queue, append, re-serialize
 	std::vector<std::shared_ptr<IndexerCommand>> all;
 
@@ -52,6 +54,8 @@ void IpcInterprocessIndexerCommandManager::pushIndexerCommands(
 std::shared_ptr<IndexerCommand> IpcInterprocessIndexerCommandManager::popIndexerCommand(
 	IndexerCommandType skipType)
 {
+	using enum IpcSharedMemory::AccessMode;
+	using enum IndexerCommandType;
 	if (skipType == INDEXER_COMMAND_UNKNOWN)
 		return popIndexerCommand(std::set<IndexerCommandType> {});
 	return popIndexerCommand(std::set<IndexerCommandType> {skipType});
@@ -101,6 +105,8 @@ std::shared_ptr<IndexerCommand> IpcInterprocessIndexerCommandManager::popIndexer
 
 bool IpcInterprocessIndexerCommandManager::hasIndexerCommandType(IndexerCommandType type)
 {
+	using enum IpcSharedMemory::AccessMode;
+	using enum IndexerCommandType;
 	IpcSharedMemory::ScopedAccess access(&m_shm);
 	std::size_t len = 0;
 	const uint8_t* buf = access.read(&len);

@@ -19,12 +19,14 @@ using namespace utility;
 QtHistoryItem::QtHistoryItem(const SearchMatch& match, size_t index, bool isCurrent)
 	: index(index), m_match(match)
 {
+	using enum utility::ElideMode;
+	using enum SearchMatch::SearchType;
 	QBoxLayout* layout = new QHBoxLayout();
 	layout->setSpacing(0);
 	layout->setContentsMargins(0, 0, 0, 0);
 	layout->setAlignment(Qt::AlignTop);
 
-	const std::string name = utility::elide(match.getFullName(), utility::ELIDE_RIGHT, 100);
+	const std::string name = utility::elide(match.getFullName(), ELIDE_RIGHT, 100);
 
 	m_name = new QLabel(QString::fromStdString(name), this);
 	m_name->setAttribute(Qt::WA_MacShowFocusRect, false);
@@ -44,7 +46,7 @@ QtHistoryItem::QtHistoryItem(const SearchMatch& match, size_t index, bool isCurr
 	m_indicator->show();
 
 	ColorScheme* scheme = ColorScheme::getInstance().get();
-	if (match.searchType == SearchMatch::SEARCH_TOKEN)
+	if (match.searchType == SEARCH_TOKEN)
 	{
 		m_indicatorColor = GraphViewStyle::getNodeColor(match.nodeType.getUnderscoredTypeString(), false).fill;
 		m_indicatorHoverColor = GraphViewStyle::getNodeColor(match.nodeType.getUnderscoredTypeString(), true).fill;
@@ -120,7 +122,6 @@ void QtHistoryItem::leaveEvent(QEvent* event)
 	m_name->setFont(f);
 }
 
-
 QtHistoryListWidget::QtHistoryListWidget(QWidget* parent): QListWidget(parent) {}
 
 void QtHistoryListWidget::mouseReleaseEvent(QMouseEvent* event)
@@ -141,6 +142,8 @@ void QtHistoryListWidget::mouseReleaseEvent(QMouseEvent* event)
 QtHistoryList::QtHistoryList(const std::vector<SearchMatch> &history, size_t currentIndex)
 	: m_currentIndex(currentIndex)
 {
+	using enum utility::ElideMode;
+	using enum SearchMatch::SearchType;
 	setWindowFlags(Qt::Popup);
 	setObjectName(QStringLiteral("history"));
 

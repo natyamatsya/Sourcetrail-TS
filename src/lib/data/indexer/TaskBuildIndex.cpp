@@ -2,6 +2,7 @@
 
 #include "language_package_flags.h"
 #include "AppPath.h"
+#include "IndexerCommandType.h"
 #include "Blackboard.h"
 #include "DialogView.h"
 #include "FileLogger.h"
@@ -18,6 +19,8 @@ using namespace utility;
 
 namespace
 {
+	using enum Task::TaskState;
+	using enum IndexerCommandType;
 constexpr bool hasRustLanguagePackage{language_packages::buildRustLanguagePackage};
 constexpr bool hasSwiftLanguagePackage{language_packages::buildSwiftLanguagePackage};
 
@@ -196,6 +199,8 @@ void TaskBuildIndex::doEnter(std::shared_ptr<Blackboard> blackboard)
 
 Task::TaskState TaskBuildIndex::doUpdate(std::shared_ptr<Blackboard> blackboard)
 {
+	using enum Task::TaskState;
+	using enum IndexerCommandType;
 	size_t runningThreadCount = m_runningThreadCount;
 
 	blackboard->get<bool>("indexer_command_queue_stopped", m_indexerCommandQueueStopped);
@@ -272,6 +277,8 @@ Task::TaskState TaskBuildIndex::doUpdate(std::shared_ptr<Blackboard> blackboard)
 
 void TaskBuildIndex::doExit(std::shared_ptr<Blackboard> blackboard)
 {
+	using enum Task::TaskState;
+	using enum IndexerCommandType;
 	for (auto *processThread: m_processThreads)
 	{
 		processThread->join();
@@ -321,6 +328,8 @@ void TaskBuildIndex::terminate()
 
 void TaskBuildIndex::handleMessage(MessageIndexingInterrupted*  /*message*/)
 {
+	using enum Task::TaskState;
+	using enum IndexerCommandType;
 	LOG_INFO("sending indexer interrupt command.");
 
 	m_interprocessIndexingStatusManager.setIndexingInterrupted(true);
@@ -334,6 +343,8 @@ void TaskBuildIndex::handleMessage(MessageIndexingInterrupted*  /*message*/)
 
 void TaskBuildIndex::runIndexerProcess(ProcessId processId, const std::string& logFilePath)
 {
+	using enum Task::TaskState;
+	using enum IndexerCommandType;
 	[[maybe_unused]]
 	ScopedFunctor runningThreadCounter([&]() { m_runningThreadCount--; });
 
@@ -429,6 +440,8 @@ void TaskBuildIndex::runIndexerProcess(ProcessId processId, const std::string& l
 
 void TaskBuildIndex::runRustIndexerProcess(ProcessId processId, const std::string& logFilePath)
 {
+	using enum Task::TaskState;
+	using enum IndexerCommandType;
 	[[maybe_unused]]
 	ScopedFunctor runningThreadCounter([&]() { m_runningThreadCount--; });
 
@@ -499,6 +512,8 @@ void TaskBuildIndex::runRustIndexerProcess(ProcessId processId, const std::strin
 
 void TaskBuildIndex::runSwiftIndexerProcess(ProcessId processId, const std::string& logFilePath)
 {
+	using enum Task::TaskState;
+	using enum IndexerCommandType;
 	[[maybe_unused]]
 	ScopedFunctor runningThreadCounter([&]() { m_runningThreadCount--; });
 
@@ -569,6 +584,8 @@ void TaskBuildIndex::runSwiftIndexerProcess(ProcessId processId, const std::stri
 
 bool TaskBuildIndex::fetchIntermediateStorages(std::shared_ptr<Blackboard> blackboard)
 {
+	using enum Task::TaskState;
+	using enum IndexerCommandType;
 	// Always drain IPC shared memory segments into a local queue first.
 	// This prevents the subprocess back-pressure check (storageCount < 2) from
 	// deadlocking when the provider queue is full — IPC must be drained regardless.

@@ -20,6 +20,7 @@ Task::TaskState TaskRunner::update(TabId schedulerId)
 
 Task::TaskState TaskRunner::update(std::shared_ptr<Blackboard> blackboard)
 {
+	using enum Task::TaskState;
 	if (!blackboard)
 	{
 		if (!m_blackboard)
@@ -55,7 +56,7 @@ Task::TaskState TaskRunner::update(std::shared_ptr<Blackboard> blackboard)
 		TaskManager::getScheduler(schedulerId)->terminateRunningTasks();
 	}
 
-	return Task::STATE_FAILURE;
+	return STATE_FAILURE;
 }
 
 void TaskRunner::reset()

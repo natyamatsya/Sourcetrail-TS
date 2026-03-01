@@ -14,6 +14,7 @@ std::shared_ptr<IpcSharedMemoryGarbageCollector> IpcSharedMemoryGarbageCollector
 
 IpcSharedMemoryGarbageCollector* IpcSharedMemoryGarbageCollector::createInstance()
 {
+	using enum IpcSharedMemory::AccessMode;
 	try
 	{
 		if (!s_instance)
@@ -34,7 +35,7 @@ IpcSharedMemoryGarbageCollector* IpcSharedMemoryGarbageCollector::getInstance()
 }
 
 IpcSharedMemoryGarbageCollector::IpcSharedMemoryGarbageCollector()
-	: m_shm{s_memoryName, 65536, IpcSharedMemory::OPEN_OR_CREATE}
+	: m_shm{s_memoryName, 65536, IpcSharedMemory::AccessMode::OPEN_OR_CREATE}
 	, m_loopIsRunning{false}
 {
 }
@@ -51,6 +52,7 @@ IpcSharedMemoryGarbageCollector::~IpcSharedMemoryGarbageCollector()
 
 void IpcSharedMemoryGarbageCollector::run(const std::string& uuid)
 {
+	using enum IpcSharedMemory::AccessMode;
 	LOG_INFO_STREAM(<< "start IPC shared memory garbage collection");
 
 	m_uuid = uuid;
@@ -68,6 +70,7 @@ void IpcSharedMemoryGarbageCollector::run(const std::string& uuid)
 
 void IpcSharedMemoryGarbageCollector::stop()
 {
+	using enum IpcSharedMemory::AccessMode;
 	LOG_INFO_STREAM(<< "stop IPC shared memory garbage collection");
 
 	m_loopIsRunning = false;
@@ -145,6 +148,7 @@ void IpcSharedMemoryGarbageCollector::unregisterSharedMemory(const std::string& 
 
 void IpcSharedMemoryGarbageCollector::update()
 {
+	using enum IpcSharedMemory::AccessMode;
 	std::lock_guard<std::mutex> lock(m_sharedMemoryNamesMutex);
 
 	IpcSharedMemory::ScopedAccess access(&m_shm);

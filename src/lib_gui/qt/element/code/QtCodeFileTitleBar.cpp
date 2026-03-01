@@ -15,6 +15,7 @@
 QtCodeFileTitleBar::QtCodeFileTitleBar(QWidget* parent, bool isHovering, bool isSingle)
 	: QtHoverButton(parent)
 {
+	using enum QtIconStateButton::ButtonState;
 	setObjectName(QStringLiteral("title_bar"));
 	setProperty("hovering", isHovering);
 	setAttribute(Qt::WA_LayoutUsesWidgetRect);	  // fixes layouting on Mac
@@ -90,24 +91,24 @@ QtCodeFileTitleBar::QtCodeFileTitleBar(QWidget* parent, bool isHovering, bool is
 
 	m_snippetButton = new QtIconStateButton(this);
 	m_snippetButton->addState(
-		QtIconStateButton::STATE_DEFAULT, QtResources::CODE_VIEW_SNIPPET_ACTIVE);
+		STATE_DEFAULT, QtResources::CODE_VIEW_SNIPPET_ACTIVE);
 	m_snippetButton->addState(
-		QtIconStateButton::STATE_HOVERED,
+		STATE_HOVERED,
 		QtResources::CODE_VIEW_SNIPPET_INACTIVE,
 		inactiveColor);
 	m_snippetButton->addState(
-		QtIconStateButton::STATE_DISABLED, QtResources::CODE_VIEW_SNIPPET_INACTIVE);
+		STATE_DISABLED, QtResources::CODE_VIEW_SNIPPET_INACTIVE);
 	m_snippetButton->setToolTip(QStringLiteral("show snippets"));
 
 	m_maximizeButton = new QtIconStateButton(this);
 	m_maximizeButton->addState(
-		QtIconStateButton::STATE_DEFAULT, QtResources::CODE_VIEW_MAXIMIZE_ACTIVE);
+		STATE_DEFAULT, QtResources::CODE_VIEW_MAXIMIZE_ACTIVE);
 	m_maximizeButton->addState(
-		QtIconStateButton::STATE_HOVERED,
+		STATE_HOVERED,
 		QtResources::CODE_VIEW_MAXIMIZE_INACTIVE,
 		inactiveColor);
 	m_maximizeButton->addState(
-		QtIconStateButton::STATE_DISABLED, QtResources::CODE_VIEW_MAXIMIZE_INACTIVE);
+		STATE_DISABLED, QtResources::CODE_VIEW_MAXIMIZE_INACTIVE);
 	m_maximizeButton->setToolTip(QStringLiteral("maximize"));
 
 	for (QtIconStateButton* button: {m_snippetButton, m_maximizeButton})

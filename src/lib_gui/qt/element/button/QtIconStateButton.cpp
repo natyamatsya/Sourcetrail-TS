@@ -17,6 +17,7 @@ QtIconStateButton::QtIconStateButton(QWidget* parent): QPushButton(QLatin1String
 
 void QtIconStateButton::addState(ButtonState buttonState, const FilePath& iconPath, QColor color)
 {
+	using enum QtIconStateButton::ButtonState;
 	State state;
 	state.iconPath = iconPath;
 	state.color = color;
@@ -40,6 +41,7 @@ void QtIconStateButton::hoverOut()
 
 void QtIconStateButton::changeEvent(QEvent* event)
 {
+	using enum QtIconStateButton::ButtonState;
 	if (event->type() != QEvent::EnabledChange)
 	{
 		return;
@@ -54,6 +56,7 @@ void QtIconStateButton::changeEvent(QEvent* event)
 
 void QtIconStateButton::enterEvent(QEnterEvent *event)
 {
+	using enum QtIconStateButton::ButtonState;
 	if (!isEnabled())
 	{
 		return;
@@ -73,6 +76,7 @@ void QtIconStateButton::enterEvent(QEnterEvent *event)
 
 void QtIconStateButton::leaveEvent(QEvent* event)
 {
+	using enum QtIconStateButton::ButtonState;
 	if (!isEnabled())
 	{
 		return;

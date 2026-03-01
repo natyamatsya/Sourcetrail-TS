@@ -68,6 +68,7 @@ DatabasePolicy DialogView::finishedIndexingDialog(
 	ErrorCountInfo  /*errorInfo*/,
 	bool  /*interrupted*/)
 {
+	using enum DatabasePolicy;
 	return DATABASE_POLICY_KEEP;	// used in non-gui mode
 }
 

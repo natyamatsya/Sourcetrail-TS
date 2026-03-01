@@ -74,9 +74,9 @@ bool Project::isLoaded() const
 {
 	switch (m_state)
 	{
-	case PROJECT_STATE_EMPTY:
-	case PROJECT_STATE_LOADED:
-	case PROJECT_STATE_OUTDATED:
+	case ProjectStateType::PROJECT_STATE_EMPTY:
+	case ProjectStateType::PROJECT_STATE_LOADED:
+	case ProjectStateType::PROJECT_STATE_OUTDATED:
 		return true;
 
 	default:
@@ -98,9 +98,9 @@ bool Project::settingsEqualExceptNameAndLocation(const ProjectSettings& otherSet
 
 void Project::setStateOutdated()
 {
-	if (m_state == PROJECT_STATE_LOADED)
+	if (m_state == ProjectStateType::PROJECT_STATE_LOADED)
 	{
-		m_state = PROJECT_STATE_OUTDATED;
+		m_state = ProjectStateType::PROJECT_STATE_OUTDATED;
 	}
 }
 
@@ -141,7 +141,7 @@ void Project::load(std::shared_ptr<DialogView> dialogView)
 					LOG_INFO("Switching to temporary indexing data on user's decision");
 					if (!swapToTempStorageFile(dbPath, tempDbPath, dialogView))
 					{
-						m_state = PROJECT_STATE_NOT_LOADED;
+						m_state = ProjectStateType::PROJECT_STATE_NOT_LOADED;
 						MessageStatus("Unable to load project", true, false).dispatch();
 						return;
 					}
@@ -168,11 +168,11 @@ void Project::load(std::shared_ptr<DialogView> dialogView)
 
 	if (m_storage->isEmpty())
 	{
-		m_state = PROJECT_STATE_EMPTY;
+		m_state = ProjectStateType::PROJECT_STATE_EMPTY;
 	}
 	else if (m_storage->isIncompatible())
 	{
-		m_state = PROJECT_STATE_OUTVERSIONED;
+		m_state = ProjectStateType::PROJECT_STATE_OUTVERSIONED;
 	}
 	else
 	{
@@ -180,12 +180,12 @@ void Project::load(std::shared_ptr<DialogView> dialogView)
 		if (storedSettings.loadFromString(m_storage->getProjectSettingsText()) &&
 			m_settings->equalsExceptNameAndLocation(storedSettings))
 		{
-			m_state = PROJECT_STATE_LOADED;
+			m_state = ProjectStateType::PROJECT_STATE_LOADED;
 			canLoad = true;
 		}
 		else
 		{
-			m_state = PROJECT_STATE_OUTDATED;
+			m_state = ProjectStateType::PROJECT_STATE_OUTDATED;
 			canLoad = true;
 		}
 	}
@@ -199,7 +199,7 @@ void Project::load(std::shared_ptr<DialogView> dialogView)
 		LOG_ERROR("Exception has been encountered while loading the project.");
 
 		canLoad = false;
-		m_state = PROJECT_STATE_DB_CORRUPTED;
+		m_state = ProjectStateType::PROJECT_STATE_DB_CORRUPTED;
 	}
 
 	m_sourceGroups = SourceGroupFactory::getInstance()->createSourceGroups(
@@ -207,7 +207,7 @@ void Project::load(std::shared_ptr<DialogView> dialogView)
 
 	if (canLoad)
 	{
-		m_storage->setMode(SqliteIndexStorage::STORAGE_MODE_READ);
+		m_storage->setMode(SqliteIndexStorage::StorageModeType::STORAGE_MODE_READ);
 		m_storage->buildCaches();
 		m_storageCache->setSubject(m_storage);
 
@@ -221,7 +221,7 @@ void Project::load(std::shared_ptr<DialogView> dialogView)
 	{
 		switch (m_state)
 		{
-		case PROJECT_STATE_EMPTY:
+		case ProjectStateType::PROJECT_STATE_EMPTY:
 			MessageStatus(
 				"Project could not load any symbols because the index database is empty. Please "
 				"re-index the "
@@ -230,7 +230,7 @@ void Project::load(std::shared_ptr<DialogView> dialogView)
 				false)
 				.dispatch();
 			break;
-		case PROJECT_STATE_OUTVERSIONED:
+		case ProjectStateType::PROJECT_STATE_OUTVERSIONED:
 			MessageStatus(
 				"Project could not be loaded because the indexed data format is incompatible to "
 				"the current "
@@ -244,7 +244,7 @@ void Project::load(std::shared_ptr<DialogView> dialogView)
 		}
 	}
 
-	if (m_state != PROJECT_STATE_LOADED && m_hasGUI)
+	if (m_state != ProjectStateType::PROJECT_STATE_LOADED && m_hasGUI)
 	{
 		MessageRefresh().dispatch();
 	}
@@ -257,7 +257,7 @@ void Project::refresh(std::shared_ptr<DialogView> dialogView, RefreshMode refres
 		return;
 	}
 
-	if (m_state == PROJECT_STATE_NOT_LOADED)
+	if (m_state == ProjectStateType::PROJECT_STATE_NOT_LOADED)
 	{
 		return;
 	}
@@ -268,14 +268,14 @@ void Project::refresh(std::shared_ptr<DialogView> dialogView, RefreshMode refres
 
 	switch (m_state)
 	{
-	case PROJECT_STATE_EMPTY:
+	case ProjectStateType::PROJECT_STATE_EMPTY:
 		needsFullRefresh = true;
 		break;
 
-	case PROJECT_STATE_LOADED:
+	case ProjectStateType::PROJECT_STATE_LOADED:
 		break;
 
-	case PROJECT_STATE_OUTDATED:
+	case ProjectStateType::PROJECT_STATE_OUTDATED:
 		question =
 			"The project file was changed after the last indexing. The project needs to get fully "
 			"reindexed to "
@@ -285,7 +285,7 @@ void Project::refresh(std::shared_ptr<DialogView> dialogView, RefreshMode refres
 		fullRefresh = true;
 		break;
 
-	case PROJECT_STATE_OUTVERSIONED:
+	case ProjectStateType::PROJECT_STATE_OUTVERSIONED:
 		question =
 			"This project was indexed with a different version of Sourcetrail. It needs to be "
 			"fully reindexed to "
@@ -293,7 +293,7 @@ void Project::refresh(std::shared_ptr<DialogView> dialogView, RefreshMode refres
 		needsFullRefresh = true;
 		break;
 
-	case PROJECT_STATE_DB_CORRUPTED:
+	case ProjectStateType::PROJECT_STATE_DB_CORRUPTED:
 		question =
 			"There was a problem loading the index of this project. The project needs to get "
 			"fully reindexed. "
@@ -603,9 +603,9 @@ void Project::buildIndex(RefreshInfo info, std::shared_ptr<DialogView> dialogVie
 		taskParallelIndexing->addChildTasks(std::make_shared<TaskGroupSequence>()->addChildTasks(
 			// block until there are indexer commands to process
 			std::make_shared<TaskDecoratorRepeat>(
-				TaskDecoratorRepeat::CONDITION_WHILE_SUCCESS, Task::STATE_SUCCESS, 25)
+				TaskDecoratorRepeat::ConditionType::CONDITION_WHILE_SUCCESS, Task::TaskState::STATE_SUCCESS, 25)
 				->addChildTask(std::make_shared<TaskReturnSuccessIf<bool>>(
-					"indexer_command_queue_started", TaskReturnSuccessIf<bool>::CONDITION_EQUALS, false)),
+					"indexer_command_queue_started", TaskReturnSuccessIf<bool>::ConditionType::CONDITION_EQUALS, false)),
 			std::make_shared<TaskBuildIndex>(
 				effectiveIndexerThreadCount, storageProvider, dialogView, m_appUUID)));
 
@@ -613,34 +613,34 @@ void Project::buildIndex(RefreshInfo info, std::shared_ptr<DialogView> dialogVie
 		taskParallelIndexing->addTask(std::make_shared<TaskGroupSequence>()->addChildTasks(
 			// block until there are indexers running
 			std::make_shared<TaskDecoratorRepeat>(
-				TaskDecoratorRepeat::CONDITION_WHILE_SUCCESS, Task::STATE_SUCCESS, 25)
+				TaskDecoratorRepeat::ConditionType::CONDITION_WHILE_SUCCESS, Task::TaskState::STATE_SUCCESS, 25)
 				->addChildTask(std::make_shared<TaskReturnSuccessIf<bool>>(
-					"indexer_threads_started", TaskReturnSuccessIf<bool>::CONDITION_EQUALS, false)),
+					"indexer_threads_started", TaskReturnSuccessIf<bool>::ConditionType::CONDITION_EQUALS, false)),
 			// merge until all indexers stopped and nothing left to merge
 			std::make_shared<TaskDecoratorRepeat>(
-				TaskDecoratorRepeat::CONDITION_WHILE_SUCCESS, Task::STATE_SUCCESS, 250)
+				TaskDecoratorRepeat::ConditionType::CONDITION_WHILE_SUCCESS, Task::TaskState::STATE_SUCCESS, 250)
 				->addChildTask(std::make_shared<TaskGroupSelector>()->addChildTasks(
 					std::make_shared<TaskMergeStorages>(storageProvider),
 					std::make_shared<TaskReturnSuccessIf<bool>>(
 						"indexer_threads_stopped",
-						TaskReturnSuccessIf<bool>::CONDITION_EQUALS,
+						TaskReturnSuccessIf<bool>::ConditionType::CONDITION_EQUALS,
 						false)))));
 
 		// add task for injecting the intermediate storages into the persistent storage
 		taskParallelIndexing->addTask(std::make_shared<TaskGroupSequence>()->addChildTasks(
 			// block until there are indexers running
 			std::make_shared<TaskDecoratorRepeat>(
-				TaskDecoratorRepeat::CONDITION_WHILE_SUCCESS, Task::STATE_SUCCESS, 25)
+				TaskDecoratorRepeat::ConditionType::CONDITION_WHILE_SUCCESS, Task::TaskState::STATE_SUCCESS, 25)
 				->addChildTask(std::make_shared<TaskReturnSuccessIf<bool>>(
-					"indexer_threads_started", TaskReturnSuccessIf<bool>::CONDITION_EQUALS, false)),
+					"indexer_threads_started", TaskReturnSuccessIf<bool>::ConditionType::CONDITION_EQUALS, false)),
 			std::make_shared<TaskDecoratorRepeat>(
-				TaskDecoratorRepeat::CONDITION_WHILE_SUCCESS, Task::STATE_SUCCESS, 25)
+				TaskDecoratorRepeat::ConditionType::CONDITION_WHILE_SUCCESS, Task::TaskState::STATE_SUCCESS, 25)
 				->addChildTask(std::make_shared<TaskGroupSelector>()->addChildTasks(
 					std::make_shared<TaskInjectStorage>(storageProvider, tempStorage),
 					// continuing when indexers still running, even if there are no storages right now.
 					std::make_shared<TaskReturnSuccessIf<bool>>(
 						"indexer_threads_stopped",
-						TaskReturnSuccessIf<bool>::CONDITION_EQUALS,
+						TaskReturnSuccessIf<bool>::ConditionType::CONDITION_EQUALS,
 						false)))));
 
 		// add task that notifies the user of what's going on
@@ -653,7 +653,7 @@ void Project::buildIndex(RefreshInfo info, std::shared_ptr<DialogView> dialogVie
 		// add task that injects the remaining intermediate storages into the persistent storage
 		taskSequential->addTask(
 			std::make_shared<TaskDecoratorRepeat>(
-				TaskDecoratorRepeat::CONDITION_WHILE_SUCCESS, Task::STATE_SUCCESS, 25)
+				TaskDecoratorRepeat::ConditionType::CONDITION_WHILE_SUCCESS, Task::TaskState::STATE_SUCCESS, 25)
 				->addChildTask(std::make_shared<TaskInjectStorage>(storageProvider, tempStorage)));
 	}
 	else
@@ -731,7 +731,7 @@ void Project::swapToTempStorage(std::shared_ptr<DialogView> dialogView)
 
 	if (!swapToTempStorageFile(indexDbFilePath, tempIndexDbFilePath, dialogView))
 	{
-		m_state = PROJECT_STATE_NOT_LOADED;
+		m_state = ProjectStateType::PROJECT_STATE_NOT_LOADED;
 		return;
 	}
 
@@ -745,7 +745,7 @@ void Project::swapToTempStorage(std::shared_ptr<DialogView> dialogView)
 	// dialogView->hideUnknownProgressDialog();
 
 	m_storageCache->setSubject(m_storage);
-	m_state = PROJECT_STATE_LOADED;
+	m_state = ProjectStateType::PROJECT_STATE_LOADED;
 }
 
 bool Project::swapToTempStorageFile(

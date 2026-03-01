@@ -45,7 +45,7 @@ std::string breakSignature(std::string returnPart, std::string namePart, std::st
 
 std::string trim(const std::string& str);
 
-enum ElideMode
+enum class ElideMode
 {
 	ELIDE_LEFT,
 	ELIDE_MIDDLE,

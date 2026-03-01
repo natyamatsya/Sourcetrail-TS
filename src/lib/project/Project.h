@@ -45,7 +45,7 @@ public:
 	void buildIndex(RefreshInfo info, std::shared_ptr<DialogView> dialogView);
 
 private:
-	enum ProjectStateType
+	enum class ProjectStateType
 	{
 		PROJECT_STATE_NOT_LOADED,
 		PROJECT_STATE_EMPTY,
@@ -76,7 +76,7 @@ private:
 	std::shared_ptr<ProjectSettings> m_settings;
 	StorageCache* const m_storageCache;
 
-	ProjectStateType m_state = PROJECT_STATE_NOT_LOADED;
+	ProjectStateType m_state = ProjectStateType::PROJECT_STATE_NOT_LOADED;
 	RefreshStageType m_refreshStage = RefreshStageType::NONE;
 
 	std::shared_ptr<PersistentStorage> m_storage;

@@ -9,7 +9,7 @@
 class TaskDecoratorRepeat: public TaskDecorator
 {
 public:
-	enum ConditionType
+	enum class ConditionType
 	{
 		CONDITION_WHILE_SUCCESS
 	};

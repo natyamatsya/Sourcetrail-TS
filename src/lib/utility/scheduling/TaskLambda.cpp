@@ -6,6 +6,7 @@ void TaskLambda::doEnter(std::shared_ptr<Blackboard>  /*blackboard*/) {}
 
 Task::TaskState TaskLambda::doUpdate(std::shared_ptr<Blackboard>  /*blackboard*/)
 {
+	using enum Task::TaskState;
 	m_func();
 	return STATE_SUCCESS;
 }

@@ -34,6 +34,7 @@ static void writeNeededCapacity(uint8_t* buf, uint64_t cap)
 
 static uint32_t readCount(const uint8_t* buf)
 {
+	using enum IpcSharedMemory::AccessMode;
 	uint32_t count = 0;
 	std::memcpy(&count, buf + CAP_FIELD_SIZE, sizeof(count));
 	return count;
@@ -41,6 +42,7 @@ static uint32_t readCount(const uint8_t* buf)
 
 static void writeCount(uint8_t* buf, uint32_t count)
 {
+	using enum IpcSharedMemory::AccessMode;
 	std::memcpy(buf + CAP_FIELD_SIZE, &count, sizeof(count));
 }
 
@@ -51,14 +53,14 @@ IpcInterprocessIntermediateStorageManager::IpcInterprocessIntermediateStorageMan
 	, m_shm{
 		  s_sharedMemoryNamePrefix + to_string(processId) + "_" + instanceUuid,
 		  16 * 1048576,
-		  isOwner ? IpcSharedMemory::CREATE_AND_DELETE : IpcSharedMemory::OPEN_OR_CREATE}
+		  isOwner ? IpcSharedMemory::AccessMode::CREATE_AND_DELETE : IpcSharedMemory::AccessMode::OPEN_OR_CREATE}
 {
 }
-
 
 void IpcInterprocessIntermediateStorageManager::pushIntermediateStorage(
 	const std::shared_ptr<IntermediateStorage>& intermediateStorage)
 {
+	using enum IpcSharedMemory::AccessMode;
 	auto fbBuf = IpcSerializer::serializeIntermediateStorage(*intermediateStorage);
 
 	// Phase 1: probe existing queue size (under lock), release lock, then grow if needed.
@@ -147,6 +149,7 @@ void IpcInterprocessIntermediateStorageManager::pushIntermediateStorage(
 // so this field can be read safely without holding the lock.
 void IpcInterprocessIntermediateStorageManager::growIfNeeded()
 {
+	using enum IpcSharedMemory::AccessMode;
 	std::size_t shmLen = 0;
 	const uint8_t* shmBuf = m_shm.peekMappedMemory(&shmLen);
 	if (!shmBuf || shmLen < CAP_FIELD_SIZE)
@@ -162,6 +165,7 @@ void IpcInterprocessIntermediateStorageManager::growIfNeeded()
 
 std::shared_ptr<IntermediateStorage> IpcInterprocessIntermediateStorageManager::popIntermediateStorage()
 {
+	using enum IpcSharedMemory::AccessMode;
 	growIfNeeded();
 
 	IpcSharedMemory::ScopedAccess access(&m_shm);
@@ -212,6 +216,7 @@ std::shared_ptr<IntermediateStorage> IpcInterprocessIntermediateStorageManager::
 
 size_t IpcInterprocessIntermediateStorageManager::getIntermediateStorageCount()
 {
+	using enum IpcSharedMemory::AccessMode;
 	growIfNeeded();
 
 	IpcSharedMemory::ScopedAccess access(&m_shm);
@@ -224,6 +229,7 @@ size_t IpcInterprocessIntermediateStorageManager::getIntermediateStorageCount()
 
 size_t IpcInterprocessIntermediateStorageManager::peekCount() const
 {
+	using enum IpcSharedMemory::AccessMode;
 	std::size_t shmLen = 0;
 	const uint8_t* shmBuf = m_shm.peekMappedMemory(&shmLen);
 	if (!shmBuf || shmLen < HEADER_SIZE)

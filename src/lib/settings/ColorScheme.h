@@ -8,7 +8,7 @@
 class ColorScheme: public Settings
 {
 public:
-	enum ColorState
+	enum class ColorState
 	{
 		NORMAL,
 		FOCUS,

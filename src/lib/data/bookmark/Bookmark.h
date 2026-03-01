@@ -14,7 +14,7 @@ enum class BookmarkId : std::size_t
 class Bookmark
 {
 public:
-	enum BookmarkFilter
+	enum class BookmarkFilter
 	{
 		FILTER_UNKNOWN = 0,
 		FILTER_ALL,
@@ -22,7 +22,7 @@ public:
 		FILTER_EDGES
 	};
 
-	enum BookmarkOrder
+	enum class BookmarkOrder
 	{
 		ORDER_NONE = 0,
 		ORDER_DATE_ASCENDING,

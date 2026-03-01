@@ -64,6 +64,7 @@ void QtLineItemBase::setEarlyBend(bool earlyBend)
 
 QPolygon QtLineItemBase::getPath() const
 {
+	using enum QtLineItemBase::Route;
 	if (m_polygon.size() > 0)
 	{
 		return m_polygon;

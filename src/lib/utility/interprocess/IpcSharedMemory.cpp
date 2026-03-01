@@ -41,6 +41,7 @@ void IpcSharedMemory::deleteSharedMemory(const std::string& name)
 IpcSharedMemory::IpcSharedMemory(const std::string& name, std::size_t size, AccessMode mode)
 	: m_name(checkName(name)), m_size(size), m_mode(mode)
 {
+	using enum IpcSharedMemory::AccessMode;
 	unsigned shmMode = 0;
 	switch (mode)
 	{
@@ -65,6 +66,7 @@ IpcSharedMemory::IpcSharedMemory(const std::string& name, std::size_t size, Acce
 
 IpcSharedMemory::~IpcSharedMemory()
 {
+	using enum IpcSharedMemory::AccessMode;
 	try
 	{
 		m_mutex.close();
@@ -117,6 +119,7 @@ std::string IpcSharedMemory::getMutexName() const
 IpcSharedMemory::ScopedAccess::ScopedAccess(IpcSharedMemory* memory)
 	: m_memory(memory)
 {
+	using enum IpcSharedMemory::AccessMode;
 	const uint32_t lockTimeoutMs = 500;
 	size_t lockAttempts = 0;
 	while (!m_memory->m_mutex.lock(lockTimeoutMs))
@@ -157,6 +160,7 @@ std::size_t IpcSharedMemory::ScopedAccess::size() const
 
 void IpcSharedMemory::ScopedAccess::write(const uint8_t* buf, std::size_t len)
 {
+	using enum IpcSharedMemory::AccessMode;
 	void* mem = data();
 	if (!mem)
 		throw std::runtime_error("IpcSharedMemory::write: no mapped memory");

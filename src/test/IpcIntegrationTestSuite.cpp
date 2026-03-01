@@ -14,6 +14,7 @@
 #include "TaskFillIndexerCommandQueue.h"
 
 #include "IntermediateStorage.h"
+
 #if BUILD_CXX_LANGUAGE_PACKAGE
 #include "IndexerCommandCxx.h"
 #endif
@@ -26,6 +27,7 @@
 
 TEST_CASE("ipc integration: full indexer workflow")
 {
+	using enum IndexerCommandType;
 	const std::string uuid = "ipc_integ_test";
 	const ProcessId mainPid = ProcessId::NONE;
 	const ProcessId workerPid = static_cast<ProcessId>(1);

@@ -117,8 +117,8 @@ private:
 	mutable std::map<TabId, std::vector<Id>> m_activeNodeIds;
 	mutable std::map<TabId, std::vector<Id>> m_activeEdgeIds;
 
-	Bookmark::BookmarkFilter m_filter = Bookmark::FILTER_ALL;
-	Bookmark::BookmarkOrder m_order = Bookmark::ORDER_DATE_DESCENDING;
+	Bookmark::BookmarkFilter m_filter = Bookmark::BookmarkFilter::FILTER_ALL;
+	Bookmark::BookmarkOrder m_order = Bookmark::BookmarkOrder::ORDER_DATE_DESCENDING;
 };
 
 #endif	  // BOOKMARK_CONTROLLER_H

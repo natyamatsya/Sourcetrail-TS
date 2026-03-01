@@ -7,6 +7,8 @@
 
 void SearchMatch::log(const std::vector<SearchMatch>& matches, const std::string& query)
 {
+	using enum SearchMatch::SearchType;
+	using enum SearchMatch::CommandType;
 	std::stringstream ss;
 	ss << std::endl << matches.size() << " matches for \"" << query << "\":" << std::endl;
 
@@ -20,6 +22,8 @@ void SearchMatch::log(const std::vector<SearchMatch>& matches, const std::string
 
 std::string SearchMatch::getSearchTypeName(SearchType type)
 {
+	using enum SearchMatch::SearchType;
+	using enum SearchMatch::CommandType;
 	switch (type)
 	{
 	case SEARCH_NONE:
@@ -52,6 +56,8 @@ std::string SearchMatch::searchMatchesToString(const std::vector<SearchMatch>& m
 
 SearchMatch SearchMatch::createCommand(CommandType type)
 {
+	using enum SearchMatch::SearchType;
+	using enum SearchMatch::CommandType;
 	SearchMatch match;
 	match.name = getCommandName(type);
 	match.text = match.name;
@@ -62,6 +68,8 @@ SearchMatch SearchMatch::createCommand(CommandType type)
 
 std::vector<SearchMatch> SearchMatch::createCommandsForNodeTypes(NodeTypeSet types)
 {
+	using enum SearchMatch::SearchType;
+	using enum SearchMatch::CommandType;
 	std::vector<SearchMatch> matches;
 
 	for (const NodeType& type: types.getNodeTypes())
@@ -80,6 +88,8 @@ std::vector<SearchMatch> SearchMatch::createCommandsForNodeTypes(NodeTypeSet typ
 
 std::string SearchMatch::getCommandName(CommandType type)
 {
+	using enum SearchMatch::SearchType;
+	using enum SearchMatch::CommandType;
 	switch (type)
 	{
 	case COMMAND_ALL:
@@ -96,7 +106,7 @@ std::string SearchMatch::getCommandName(CommandType type)
 }
 
 SearchMatch::SearchMatch()
-	:  nodeType(NODE_SYMBOL), searchType(SEARCH_NONE)
+	:  nodeType(NODE_SYMBOL), searchType(SearchMatch::SearchType::SEARCH_NONE)
 {
 }
 
@@ -105,12 +115,13 @@ SearchMatch::SearchMatch(const std::string& query)
 	, text(query)
 	,
 	 nodeType(NODE_SYMBOL)
-	, searchType(SEARCH_NONE)
+	, searchType(SearchMatch::SearchType::SEARCH_NONE)
 
 {
+	using enum SearchMatch::SearchType;
+	using enum SearchMatch::CommandType;
 	tokenNames.emplace_back(query, NameDelimiterType::UNKNOWN);
 }
-
 
 bool SearchMatch::operator<(const SearchMatch& other) const
 {
@@ -196,11 +207,15 @@ size_t SearchMatch::getTextSizeForSorting(const std::string* str)
 
 bool SearchMatch::isValid() const
 {
+	using enum SearchMatch::SearchType;
+	using enum SearchMatch::CommandType;
 	return searchType != SEARCH_NONE;
 }
 
 bool SearchMatch::isFilterCommand() const
 {
+	using enum SearchMatch::SearchType;
+	using enum SearchMatch::CommandType;
 	return searchType == SEARCH_COMMAND && getCommandType() == COMMAND_NODE_FILTER;
 }
 
@@ -223,6 +238,8 @@ void SearchMatch::print(std::ostream& ostream) const
 
 std::string SearchMatch::getFullName() const
 {
+	using enum SearchMatch::SearchType;
+	using enum SearchMatch::CommandType;
 	if (searchType == SEARCH_TOKEN && nodeType.isFile())
 	{
 		return text;
@@ -238,6 +255,8 @@ std::string SearchMatch::getSearchTypeName() const
 
 SearchMatch::CommandType SearchMatch::getCommandType() const
 {
+	using enum SearchMatch::SearchType;
+	using enum SearchMatch::CommandType;
 	if (name == "overview")
 	{
 		return COMMAND_ALL;

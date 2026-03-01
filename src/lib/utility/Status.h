@@ -3,7 +3,7 @@
 
 #include <string>
 
-enum StatusType
+enum class StatusType
 {
 	STATUS_INFO = 1,
 	STATUS_ERROR = 2,

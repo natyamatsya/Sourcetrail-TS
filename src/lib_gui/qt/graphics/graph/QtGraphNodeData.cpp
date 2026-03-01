@@ -74,6 +74,7 @@ void QtGraphNodeData::onMiddleClick()
 
 void QtGraphNodeData::updateStyle()
 {
+	using enum TooltipOrigin;
 	GraphViewStyle::NodeStyle style = GraphViewStyle::getStyleForNodeType(
 		m_data->getType(),
 		m_data->isExplicit(),
@@ -94,6 +95,7 @@ void QtGraphNodeData::updateStyle()
 
 void QtGraphNodeData::hoverEnterEvent(QGraphicsSceneHoverEvent*  /*event*/)
 {
+	using enum TooltipOrigin;
 	focusIn();
 
 	if (m_isInteractive)

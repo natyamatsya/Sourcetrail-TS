@@ -63,6 +63,9 @@ void QtCodeFileSingle::clearCache()
 
 bool QtCodeFileSingle::addFile(const CodeFileParams& params, bool useSingleFileCache)
 {
+	using enum MessageChangeFileView::FileState;
+	using enum MessageChangeFileView::ViewMode;
+	using enum QtCodeNavigator::Mode;
 	if (!params.fileParams)
 	{
 		LOG_ERROR("File params have missing information.");
@@ -302,12 +305,15 @@ Id QtCodeFileSingle::getLocationIdOfFirstActiveLocationOfTokenId(Id tokenId) con
 
 void QtCodeFileSingle::clickedSnippetButton()
 {
-	m_navigator->setMode(QtCodeNavigator::MODE_LIST);
+	using enum MessageChangeFileView::FileState;
+	using enum MessageChangeFileView::ViewMode;
+	using enum QtCodeNavigator::Mode;
+	m_navigator->setMode(MODE_LIST);
 
 	MessageChangeFileView(
 		m_currentFilePath,
-		MessageChangeFileView::FILE_SNIPPETS,
-		MessageChangeFileView::VIEW_LIST,
+		FILE_SNIPPETS,
+		VIEW_LIST,
 		CodeScrollParams::toFile(m_currentFilePath, CodeScrollParams::Target::TOP),
 		true)
 		.dispatch();

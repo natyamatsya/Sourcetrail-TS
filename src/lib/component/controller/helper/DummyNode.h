@@ -15,7 +15,7 @@
 struct DummyNode
 {
 public:
-	enum Type
+	enum class Type
 	{
 		DUMMY_DATA,
 		DUMMY_ACCESS,
@@ -103,36 +103,43 @@ public:
 
 	bool isGraphNode() const
 	{
+		using enum Type;
 		return type == DUMMY_DATA;
 	}
 
 	bool isAccessNode() const
 	{
+		using enum Type;
 		return type == DUMMY_ACCESS;
 	}
 
 	bool isExpandToggleNode() const
 	{
+		using enum Type;
 		return type == DUMMY_EXPAND_TOGGLE;
 	}
 
 	bool isBundleNode() const
 	{
+		using enum Type;
 		return type == DUMMY_BUNDLE;
 	}
 
 	bool isQualifierNode() const
 	{
+		using enum Type;
 		return type == DUMMY_QUALIFIER;
 	}
 
 	bool isTextNode() const
 	{
+		using enum Type;
 		return type == DUMMY_TEXT;
 	}
 
 	bool isGroupNode() const
 	{
+		using enum Type;
 		return type == DUMMY_GROUP;
 	}
 

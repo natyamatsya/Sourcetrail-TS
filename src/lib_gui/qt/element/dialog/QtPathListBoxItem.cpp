@@ -12,6 +12,7 @@
 QtPathListBoxItem::QtPathListBoxItem(QtPathListBox* listBox, QListWidgetItem* item, QWidget* parent)
 	: QtListBoxItem(item, parent), m_listBox(listBox)
 {
+	using enum QtPathListBox::SelectionPolicyType;
 	m_button = new QtIconButton(QtResources::WINDOW_DOTS, QtResources::WINDOW_DOTS_HOVER);
 	m_button->setIconSize(QSize(16, 16));
 	m_button->setObjectName(QStringLiteral("dotsButton"));
@@ -27,21 +28,22 @@ QtListBox* QtPathListBoxItem::getListBox()
 
 void QtPathListBoxItem::handleButtonPress()
 {
+	using enum QtPathListBox::SelectionPolicyType;
 	FilePath path(getText().toStdString());
 	m_listBox->makeAbsolute(path);
 
 	QStringList list;
 	switch (m_listBox->getSelectionPolicy())
 	{
-	case QtPathListBox::SELECTION_POLICY_FILES_ONLY:
+	case SELECTION_POLICY_FILES_ONLY:
 		list.append(QtFileDialog::getOpenFileName(
 			this, QStringLiteral("Select Directory"), path, QLatin1String("")));
 		break;
-	case QtPathListBox::SELECTION_POLICY_DIRECTORIES_ONLY:
+	case SELECTION_POLICY_DIRECTORIES_ONLY:
 		list.append(
 			QtFileDialog::getExistingDirectory(this, QStringLiteral("Select Directory"), path));
 		break;
-	case QtPathListBox::SELECTION_POLICY_FILES_AND_DIRECTORIES:
+	case SELECTION_POLICY_FILES_AND_DIRECTORIES:
 		list = QtFileDialog::getFileNamesAndDirectories(this, path);
 		break;
 	}

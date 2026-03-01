@@ -4,6 +4,7 @@
 #include "DialogView.h"
 #include "PersistentStorage.h"
 
+
 TaskParseWrapper::TaskParseWrapper(
 	std::weak_ptr<PersistentStorage> storage, std::shared_ptr<DialogView> dialogView)
 	: m_storage(storage), m_dialogView(dialogView)
@@ -24,7 +25,7 @@ void TaskParseWrapper::doEnter(std::shared_ptr<Blackboard> blackboard)
 	{
 		if (std::shared_ptr<PersistentStorage> storage = m_storage.lock())
 		{
-			storage->setMode(SqliteIndexStorage::STORAGE_MODE_WRITE);
+			storage->setMode(SqliteIndexStorage::StorageModeType::STORAGE_MODE_WRITE);
 		}
 	}
 }

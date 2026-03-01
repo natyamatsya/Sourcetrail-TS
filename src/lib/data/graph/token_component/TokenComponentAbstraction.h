@@ -8,7 +8,7 @@
 class TokenComponentAbstraction: public TokenComponent
 {
 public:
-	enum AbstractionType
+	enum class AbstractionType
 	{
 		ABSTRACTION_VIRTUAL,
 		ABSTRACTION_PURE_VIRTUAL,

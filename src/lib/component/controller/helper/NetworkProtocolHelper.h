@@ -43,7 +43,7 @@ public:
 		bool valid = false;
 	};
 
-	enum MESSAGE_TYPE
+	enum class MESSAGE_TYPE
 	{
 		UNKNOWN = 0,
 		SET_ACTIVE_TOKEN,

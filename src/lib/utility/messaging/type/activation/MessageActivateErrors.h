@@ -25,12 +25,12 @@ public:
 
 	std::vector<SearchMatch> getSearchMatches() const override
 	{
-		std::vector<SearchMatch> matches = {SearchMatch::createCommand(SearchMatch::COMMAND_ERROR)};
+		std::vector<SearchMatch> matches = {SearchMatch::createCommand(SearchMatch::CommandType::COMMAND_ERROR)};
 		if (!file.empty())
 		{
 			SearchMatch match;
 			match.name = match.text = file.fileName();
-			match.searchType = SearchMatch::SEARCH_TOKEN;
+			match.searchType = SearchMatch::SearchType::SEARCH_TOKEN;
 			match.nodeType = NodeType(NODE_FILE);
 			matches.push_back(match);
 		}

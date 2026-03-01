@@ -46,7 +46,7 @@ private slots:
 	void errorFilterChanged(int i = 0);
 
 private:
-	enum Column
+	enum class Column
 	{
 		ID = 0,
 		TYPE = 1,

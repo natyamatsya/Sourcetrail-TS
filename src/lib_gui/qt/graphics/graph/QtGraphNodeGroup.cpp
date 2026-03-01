@@ -16,6 +16,7 @@ QtGraphNodeGroup::QtGraphNodeGroup(
 	GraphFocusHandler* focusHandler, Id tokenId, const std::string& name, GroupType type, bool interactive)
 	: QtGraphNode(focusHandler), m_tokenId(tokenId), m_type(type)
 {
+	using enum TooltipOrigin;
 	m_isInteractive = interactive;
 	if (interactive)
 	{
@@ -73,6 +74,7 @@ Id QtGraphNodeGroup::getTokenId() const
 
 void QtGraphNodeGroup::onClick()
 {
+	using enum TooltipOrigin;
 	if (!m_isInteractive || !m_isFocused)
 	{
 		return;
@@ -118,6 +120,7 @@ QPainterPath QtGraphNodeGroup::shape() const
 
 void QtGraphNodeGroup::hoverLeaveEvent(QGraphicsSceneHoverEvent*  /*event*/)
 {
+	using enum TooltipOrigin;
 	if (m_type == GroupType::FILE || m_type == GroupType::NAMESPACE)
 	{
 		MessageFocusOut({m_tokenId}).dispatch();
@@ -128,6 +131,7 @@ void QtGraphNodeGroup::hoverLeaveEvent(QGraphicsSceneHoverEvent*  /*event*/)
 
 void QtGraphNodeGroup::hoverMoveEvent(QGraphicsSceneHoverEvent* event)
 {
+	using enum TooltipOrigin;
 	if (!m_background || m_background->contains(event->pos()))
 	{
 		if (!m_isCoFocused)

@@ -19,6 +19,7 @@ TokenComponentAbstraction::AbstractionType TokenComponentAbstraction::getAbstrac
 
 std::string TokenComponentAbstraction::getAbstractionString() const
 {
+	using enum TokenComponentAbstraction::AbstractionType;
 	switch (m_abstraction)
 	{
 	case ABSTRACTION_VIRTUAL:

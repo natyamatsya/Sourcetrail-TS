@@ -11,7 +11,7 @@ class Blackboard;
 class Task
 {
 public:
-	enum TaskState
+	enum class TaskState
 	{
 		STATE_RUNNING,
 		STATE_HOLD,

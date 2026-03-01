@@ -1,5 +1,7 @@
 #include "SqliteIndexStorage.h"
 
+#include <utility>
+
 #include "FileSystem.h"
 #include "LocationType.h"
 #include "SourceLocationCollection.h"
@@ -7,6 +9,7 @@
 #include "TextAccess.h"
 #include "logging.h"
 #include "utilityString.h"
+
 
 const size_t SqliteIndexStorage::s_storageVersion = 25;
 
@@ -51,7 +54,7 @@ void SqliteIndexStorage::setMode(const StorageModeType mode)
 	std::vector<std::pair<int, SqliteDatabaseIndex>> indices = getIndices();
 	for (size_t i = 0; i < indices.size(); i++)
 	{
-		if (indices[i].first & mode)
+		if (indices[i].first & std::to_underlying(mode))
 		{
 			indices[i].second.createOnDatabase(m_database);
 		}
@@ -406,7 +409,7 @@ bool SqliteIndexStorage::addComponentAccesses(const std::vector<StorageComponent
 void SqliteIndexStorage::addElementComponent(const StorageElementComponent& component)
 {
 	m_insertElementComponentStmt.bind(1, static_cast<Id::type>(component.elementId));
-	m_insertElementComponentStmt.bind(2, component.type);
+	m_insertElementComponentStmt.bind(2, static_cast<int>(component.type));
 	m_insertElementComponentStmt.bind(3, component.data);
 	executeStatement(m_insertElementComponentStmt);
 	m_insertElementComponentStmt.reset();
@@ -1150,20 +1153,20 @@ int SqliteIndexStorage::getErrorCount() const
 std::vector<std::pair<int, SqliteDatabaseIndex>> SqliteIndexStorage::getIndices() 
 {
 	std::vector<std::pair<int, SqliteDatabaseIndex>> indices;
-	indices.push_back({STORAGE_MODE_CLEAR, SqliteDatabaseIndex("edge_source_node_id_index", "edge(source_node_id)")});
-	indices.push_back({STORAGE_MODE_CLEAR, SqliteDatabaseIndex("edge_target_node_id_index", "edge(target_node_id)")});
-	indices.push_back({STORAGE_MODE_READ | STORAGE_MODE_CLEAR, SqliteDatabaseIndex("node_serialized_name_index", "node(serialized_name)")});
-	indices.push_back({STORAGE_MODE_READ | STORAGE_MODE_CLEAR, SqliteDatabaseIndex("source_location_file_node_id_index", "source_location(file_node_id)")});
-	indices.push_back({STORAGE_MODE_WRITE, SqliteDatabaseIndex("error_all_data_index", "error(message, fatal)")});
-	indices.push_back({STORAGE_MODE_WRITE, SqliteDatabaseIndex("file_path_index", "file(path)")});
-	indices.push_back({STORAGE_MODE_READ | STORAGE_MODE_CLEAR, SqliteDatabaseIndex("occurrence_element_id_index", "occurrence(element_id)")});
-	indices.push_back({STORAGE_MODE_READ | STORAGE_MODE_CLEAR, SqliteDatabaseIndex( "occurrence_source_location_id_index", "occurrence(source_location_id)")});
-	indices.push_back({STORAGE_MODE_CLEAR, SqliteDatabaseIndex( "element_component_foreign_key_index", "element_component(element_id)")});
-	indices.push_back({STORAGE_MODE_CLEAR, SqliteDatabaseIndex("edge_source_foreign_key_index", "edge(source_node_id)")});
-	indices.push_back({STORAGE_MODE_CLEAR, SqliteDatabaseIndex("edge_target_foreign_key_index", "edge(target_node_id)")});
-	indices.push_back({STORAGE_MODE_CLEAR, SqliteDatabaseIndex("source_location_foreign_key_index", "source_location(file_node_id)")});
-	indices.push_back({STORAGE_MODE_CLEAR, SqliteDatabaseIndex("occurrence_element_foreign_key_index", "occurrence(element_id)")});
-	indices.push_back({STORAGE_MODE_CLEAR, SqliteDatabaseIndex( "occurrence_source_location_foreign_key_index", "occurrence(source_location_id)")});
+	indices.push_back({std::to_underlying(StorageModeType::STORAGE_MODE_CLEAR), SqliteDatabaseIndex("edge_source_node_id_index", "edge(source_node_id)")});
+	indices.push_back({std::to_underlying(StorageModeType::STORAGE_MODE_CLEAR), SqliteDatabaseIndex("edge_target_node_id_index", "edge(target_node_id)")});
+	indices.push_back({std::to_underlying(StorageModeType::STORAGE_MODE_READ) | std::to_underlying(StorageModeType::STORAGE_MODE_CLEAR), SqliteDatabaseIndex("node_serialized_name_index", "node(serialized_name)")});
+	indices.push_back({std::to_underlying(StorageModeType::STORAGE_MODE_READ) | std::to_underlying(StorageModeType::STORAGE_MODE_CLEAR), SqliteDatabaseIndex("source_location_file_node_id_index", "source_location(file_node_id)")});
+	indices.push_back({std::to_underlying(StorageModeType::STORAGE_MODE_WRITE), SqliteDatabaseIndex("error_all_data_index", "error(message, fatal)")});
+	indices.push_back({std::to_underlying(StorageModeType::STORAGE_MODE_WRITE), SqliteDatabaseIndex("file_path_index", "file(path)")});
+	indices.push_back({std::to_underlying(StorageModeType::STORAGE_MODE_READ) | std::to_underlying(StorageModeType::STORAGE_MODE_CLEAR), SqliteDatabaseIndex("occurrence_element_id_index", "occurrence(element_id)")});
+	indices.push_back({std::to_underlying(StorageModeType::STORAGE_MODE_READ) | std::to_underlying(StorageModeType::STORAGE_MODE_CLEAR), SqliteDatabaseIndex( "occurrence_source_location_id_index", "occurrence(source_location_id)")});
+	indices.push_back({std::to_underlying(StorageModeType::STORAGE_MODE_CLEAR), SqliteDatabaseIndex( "element_component_foreign_key_index", "element_component(element_id)")});
+	indices.push_back({std::to_underlying(StorageModeType::STORAGE_MODE_CLEAR), SqliteDatabaseIndex("edge_source_foreign_key_index", "edge(source_node_id)")});
+	indices.push_back({std::to_underlying(StorageModeType::STORAGE_MODE_CLEAR), SqliteDatabaseIndex("edge_target_foreign_key_index", "edge(target_node_id)")});
+	indices.push_back({std::to_underlying(StorageModeType::STORAGE_MODE_CLEAR), SqliteDatabaseIndex("source_location_foreign_key_index", "source_location(file_node_id)")});
+	indices.push_back({std::to_underlying(StorageModeType::STORAGE_MODE_CLEAR), SqliteDatabaseIndex("occurrence_element_foreign_key_index", "occurrence(element_id)")});
+	indices.push_back({std::to_underlying(StorageModeType::STORAGE_MODE_CLEAR), SqliteDatabaseIndex( "occurrence_source_location_foreign_key_index", "occurrence(source_location_id)")});
 
 	return indices;
 }

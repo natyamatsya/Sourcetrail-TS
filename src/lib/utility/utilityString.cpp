@@ -66,7 +66,7 @@ std::string doReplaceBetween(const std::string& str, typename std::string::value
 
 namespace utility
 {
-
+	using enum utility::ElideMode;
 
 std::deque<std::string> split(const std::string& str, char delimiter)
 {
@@ -232,8 +232,6 @@ std::string substrBetween(const std::string &str, const std::string &delimiter1,
 	return std::string();
 }
 
-
-
 bool isPrefix(const string_view prefix, const string_view text)
 {
 	return text.starts_with(prefix);
@@ -243,7 +241,6 @@ bool isPostfix(const string_view postfix, const string_view text)
 {
 	return text.ends_with(postfix);
 }
-
 
 std::string replace(std::string str, const std::string& from, const std::string& to)
 {

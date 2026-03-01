@@ -1,7 +1,7 @@
 #ifndef TOOLTIP_ORIGIN_H
 #define TOOLTIP_ORIGIN_H
 
-enum TooltipOrigin
+enum class TooltipOrigin
 {
 	TOOLTIP_ORIGIN_NONE,
 	TOOLTIP_ORIGIN_GRAPH,

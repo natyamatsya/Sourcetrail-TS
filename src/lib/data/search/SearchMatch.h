@@ -15,7 +15,7 @@ struct SearchMatch
 {
 	static constexpr char FULLTEXT_SEARCH_CHARACTER = '?';
 	
-	enum SearchType
+	enum class SearchType
 	{
 		SEARCH_NONE,
 		SEARCH_TOKEN,
@@ -24,7 +24,7 @@ struct SearchMatch
 		SEARCH_FULLTEXT
 	};
 	
-	enum CommandType
+	enum class CommandType
 	{
 		COMMAND_ALL,
 		COMMAND_ERROR,

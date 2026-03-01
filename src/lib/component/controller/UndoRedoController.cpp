@@ -55,7 +55,7 @@ void UndoRedoController::handleMessage(MessageActivateErrors* message)
 		return;
 	}
 
-	Command command(std::make_shared<MessageActivateErrors>(*message), Command::ORDER_ACTIVATE);
+	Command command(std::make_shared<MessageActivateErrors>(*message), Command::Order::ORDER_ACTIVATE);
 	processCommand(command);
 }
 
@@ -70,7 +70,7 @@ void UndoRedoController::handleMessage(MessageActivateFullTextSearch* message)
 	}
 
 	Command command(
-		std::make_shared<MessageActivateFullTextSearch>(*message), Command::ORDER_ACTIVATE);
+		std::make_shared<MessageActivateFullTextSearch>(*message), Command::Order::ORDER_ACTIVATE);
 	processCommand(command);
 }
 
@@ -81,7 +81,7 @@ void UndoRedoController::handleMessage(MessageActivateLegend* message)
 		return;
 	}
 
-	Command command(std::make_shared<MessageActivateLegend>(*message), Command::ORDER_ACTIVATE);
+	Command command(std::make_shared<MessageActivateLegend>(*message), Command::Order::ORDER_ACTIVATE);
 	processCommand(command);
 }
 
@@ -94,7 +94,7 @@ void UndoRedoController::handleMessage(MessageActivateLocalSymbols* message)
 	}
 
 	Command command(
-		std::make_shared<MessageActivateLocalSymbols>(*message), Command::ORDER_VIEW, true);
+		std::make_shared<MessageActivateLocalSymbols>(*message), Command::Order::ORDER_VIEW, true);
 	processCommand(command);
 }
 
@@ -107,7 +107,7 @@ void UndoRedoController::handleMessage(MessageActivateOverview* message)
 		return;
 	}
 
-	Command command(std::make_shared<MessageActivateOverview>(*message), Command::ORDER_ACTIVATE);
+	Command command(std::make_shared<MessageActivateOverview>(*message), Command::Order::ORDER_ACTIVATE);
 	processCommand(command);
 }
 
@@ -121,7 +121,7 @@ void UndoRedoController::handleMessage(MessageActivateTokens* message)
 
 	Command command(
 		std::make_shared<MessageActivateTokens>(*message),
-		message->isEdge ? Command::ORDER_ADAPT : Command::ORDER_ACTIVATE);
+		message->isEdge ? Command::Order::ORDER_ADAPT : Command::Order::ORDER_ACTIVATE);
 	processCommand(command);
 }
 
@@ -136,7 +136,7 @@ void UndoRedoController::handleMessage(MessageActivateTrail* message)
 
 	Command command(
 		std::make_shared<MessageActivateTrail>(*message),
-		message->custom ? Command::ORDER_ACTIVATE : Command::ORDER_ADAPT);
+		message->custom ? Command::Order::ORDER_ACTIVATE : Command::Order::ORDER_ADAPT);
 	processCommand(command);
 }
 
@@ -148,7 +148,7 @@ void UndoRedoController::handleMessage(MessageActivateTrailEdge* message)
 		return;
 	}
 
-	Command command(std::make_shared<MessageActivateTrailEdge>(*message), Command::ORDER_ADAPT, true);
+	Command command(std::make_shared<MessageActivateTrailEdge>(*message), Command::Order::ORDER_ADAPT, true);
 	processCommand(command);
 }
 
@@ -156,7 +156,7 @@ void UndoRedoController::handleMessage(MessageChangeFileView* message)
 {
 	Command command(
 		std::make_shared<MessageChangeFileView>(*message),
-		message->switchesViewMode ? Command::ORDER_ADAPT : Command::ORDER_VIEW);
+		message->switchesViewMode ? Command::Order::ORDER_ADAPT : Command::Order::ORDER_VIEW);
 	processCommand(command);
 }
 
@@ -168,7 +168,7 @@ void UndoRedoController::handleMessage(MessageCodeShowDefinition* message)
 		return;
 	}
 
-	Command command(std::make_shared<MessageCodeShowDefinition>(*message), Command::ORDER_ADAPT);
+	Command command(std::make_shared<MessageCodeShowDefinition>(*message), Command::Order::ORDER_ADAPT);
 	processCommand(command);
 }
 
@@ -181,7 +181,7 @@ void UndoRedoController::handleMessage(MessageDeactivateEdge* message)
 		return;
 	}
 
-	Command command(std::make_shared<MessageDeactivateEdge>(*message), Command::ORDER_ADAPT);
+	Command command(std::make_shared<MessageDeactivateEdge>(*message), Command::Order::ORDER_ADAPT);
 	processCommand(command);
 }
 
@@ -194,31 +194,31 @@ void UndoRedoController::handleMessage(MessageFocusChanged* message)
 		return;
 	}
 
-	Command command(std::make_shared<MessageFocusChanged>(*message), Command::ORDER_VIEW, true);
+	Command command(std::make_shared<MessageFocusChanged>(*message), Command::Order::ORDER_VIEW, true);
 	processCommand(command);
 }
 
 void UndoRedoController::handleMessage(MessageGraphNodeBundleSplit* message)
 {
-	Command command(std::make_shared<MessageGraphNodeBundleSplit>(*message), Command::ORDER_ADAPT);
+	Command command(std::make_shared<MessageGraphNodeBundleSplit>(*message), Command::Order::ORDER_ADAPT);
 	processCommand(command);
 }
 
 void UndoRedoController::handleMessage(MessageGraphNodeExpand* message)
 {
-	Command command(std::make_shared<MessageGraphNodeExpand>(*message), Command::ORDER_VIEW);
+	Command command(std::make_shared<MessageGraphNodeExpand>(*message), Command::Order::ORDER_VIEW);
 	processCommand(command);
 }
 
 void UndoRedoController::handleMessage(MessageGraphNodeHide* message)
 {
-	Command command(std::make_shared<MessageGraphNodeHide>(*message), Command::ORDER_ADAPT);
+	Command command(std::make_shared<MessageGraphNodeHide>(*message), Command::Order::ORDER_ADAPT);
 	processCommand(command);
 }
 
 void UndoRedoController::handleMessage(MessageGraphNodeMove* message)
 {
-	Command command(std::make_shared<MessageGraphNodeMove>(*message), Command::ORDER_VIEW);
+	Command command(std::make_shared<MessageGraphNodeMove>(*message), Command::Order::ORDER_VIEW);
 	processCommand(command);
 }
 
@@ -232,7 +232,7 @@ void UndoRedoController::handleMessage(MessageHistoryRedo*  /*message*/)
 	std::list<Command>::iterator oldIterator = m_iterator;
 
 	std::advance(m_iterator, 1);
-	while (m_iterator != m_list.end() && m_iterator->order == Command::ORDER_VIEW)
+	while (m_iterator != m_list.end() && m_iterator->order == Command::Order::ORDER_VIEW)
 	{
 		std::advance(m_iterator, 1);
 	}
@@ -255,7 +255,7 @@ void UndoRedoController::handleMessage(MessageHistoryToPosition* message)
 
 	for (std::list<Command>::reverse_iterator rit = m_list.rbegin(); rit != m_list.rend(); rit++)
 	{
-		if (rit->order == Command::ORDER_ACTIVATE)
+		if (rit->order == Command::Order::ORDER_ACTIVATE)
 		{
 			if (index == activeIndex)
 			{
@@ -265,7 +265,7 @@ void UndoRedoController::handleMessage(MessageHistoryToPosition* message)
 				do
 				{
 					std::advance(it, 1);
-				} while (it != m_list.end() && it->order != Command::ORDER_ACTIVATE);
+				} while (it != m_list.end() && it->order != Command::Order::ORDER_ACTIVATE);
 
 				m_iterator = it;
 
@@ -294,7 +294,7 @@ void UndoRedoController::handleMessage(MessageHistoryToPosition* message)
 
 	getView()->setUndoButtonEnabled(index > activeIndex + 1);
 	getView()->setRedoButtonEnabled(
-		m_iterator != m_list.end() && m_iterator->order == Command::ORDER_ACTIVATE);
+		m_iterator != m_list.end() && m_iterator->order == Command::Order::ORDER_ACTIVATE);
 
 	updateHistory();
 }
@@ -308,7 +308,7 @@ void UndoRedoController::handleMessage(MessageHistoryUndo*  /*message*/)
 
 	// return to last non view command
 	std::list<Command>::iterator it = m_iterator;
-	while (std::prev(it)->order == Command::ORDER_VIEW)
+	while (std::prev(it)->order == Command::Order::ORDER_VIEW)
 	{
 		std::advance(it, -1);
 	}
@@ -316,7 +316,7 @@ void UndoRedoController::handleMessage(MessageHistoryUndo*  /*message*/)
 
 	// disable undo button if there is no non view command till the first command
 	std::list<Command>::iterator it2 = std::prev(it);
-	while (it2->order == Command::ORDER_VIEW)
+	while (it2->order == Command::Order::ORDER_VIEW)
 	{
 		std::advance(it2, -1);
 	}
@@ -346,7 +346,7 @@ void UndoRedoController::handleMessage(MessageIndexingFinished*  /*message*/)
 
 	for (const Command& command: m_list)
 	{
-		if (command.order == Command::ORDER_ACTIVATE)
+		if (command.order == Command::Order::ORDER_ACTIVATE)
 		{
 			MessageActivateTokens* msg = dynamic_cast<MessageActivateTokens*>(command.message.get());
 			if (msg)
@@ -372,7 +372,7 @@ void UndoRedoController::handleMessage(MessageRefreshUIState* message)
 	do
 	{
 		std::advance(startIterator, -1);
-	} while (startIterator != m_list.begin() && startIterator->order != Command::ORDER_ACTIVATE);
+	} while (startIterator != m_list.begin() && startIterator->order != Command::Order::ORDER_ACTIVATE);
 
 	if (startIterator == m_list.begin() ||
 		(message->isAfterIndexing &&
@@ -397,7 +397,7 @@ void UndoRedoController::handleMessage(MessageScrollCode* message)
 		return;
 	}
 
-	Command command(std::make_shared<MessageScrollCode>(*message), Command::ORDER_VIEW, true);
+	Command command(std::make_shared<MessageScrollCode>(*message), Command::Order::ORDER_VIEW, true);
 	processCommand(command);
 }
 
@@ -410,7 +410,7 @@ void UndoRedoController::handleMessage(MessageScrollGraph* message)
 		return;
 	}
 
-	Command command(std::make_shared<MessageScrollGraph>(*message), Command::ORDER_VIEW, true);
+	Command command(std::make_shared<MessageScrollGraph>(*message), Command::Order::ORDER_VIEW, true);
 	processCommand(command);
 }
 
@@ -422,7 +422,7 @@ void UndoRedoController::handleMessage(MessageShowError* message)
 		return;
 	}
 
-	Command command(std::make_shared<MessageShowError>(*message), Command::ORDER_ADAPT);
+	Command command(std::make_shared<MessageShowError>(*message), Command::Order::ORDER_ADAPT);
 	processCommand(command);
 }
 
@@ -434,13 +434,13 @@ void UndoRedoController::handleMessage(MessageShowReference* message)
 		return;
 	}
 
-	Command command(std::make_shared<MessageShowReference>(*message), Command::ORDER_VIEW, true);
+	Command command(std::make_shared<MessageShowReference>(*message), Command::Order::ORDER_VIEW, true);
 	processCommand(command);
 }
 
 void UndoRedoController::handleMessage(MessageShowScope* message)
 {
-	Command command(std::make_shared<MessageShowScope>(*message), Command::ORDER_VIEW);
+	Command command(std::make_shared<MessageShowScope>(*message), Command::Order::ORDER_VIEW);
 	processCommand(command);
 }
 
@@ -451,7 +451,7 @@ void UndoRedoController::replayCommands()
 	do
 	{
 		std::advance(startIterator, -1);
-	} while (startIterator != m_list.begin() && startIterator->order != Command::ORDER_ACTIVATE);
+	} while (startIterator != m_list.begin() && startIterator->order != Command::Order::ORDER_ACTIVATE);
 
 	replayCommands(startIterator);
 }
@@ -560,26 +560,26 @@ void UndoRedoController::processCommand(Command command)
 {
 	if (!command.message->isReplayed())
 	{
-		if (command.order != Command::ORDER_ACTIVATE && m_iterator == m_list.begin())
+		if (command.order != Command::Order::ORDER_ACTIVATE && m_iterator == m_list.begin())
 		{
 			return;
 		}
 
-		if (command.order == Command::ORDER_ACTIVATE && command.message->keepContent())
+		if (command.order == Command::Order::ORDER_ACTIVATE && command.message->keepContent())
 		{
-			command.order = Command::ORDER_ADAPT;
+			command.order = Command::Order::ORDER_ADAPT;
 		}
 
-		if (command.order == Command::ORDER_ACTIVATE)
+		if (command.order == Command::Order::ORDER_ACTIVATE)
 		{
 			m_iterator = m_list.erase(m_iterator, m_list.end());
 		}
-		else if (command.order == Command::ORDER_ADAPT)
+		else if (command.order == Command::Order::ORDER_ADAPT)
 		{
 			std::list<Command>::iterator end = m_iterator;
 			while (end != m_list.end())
 			{
-				if (end->order == Command::ORDER_ACTIVATE)
+				if (end->order == Command::Order::ORDER_ACTIVATE)
 				{
 					break;
 				}
@@ -591,7 +591,7 @@ void UndoRedoController::processCommand(Command command)
 
 		m_list.insert(m_iterator, command);
 
-		if (command.order != Command::ORDER_VIEW)
+		if (command.order != Command::Order::ORDER_VIEW)
 		{
 			if (m_list.begin() != std::prev(m_iterator))
 			{
@@ -605,7 +605,7 @@ void UndoRedoController::processCommand(Command command)
 		}
 	}
 
-	if (command.order == Command::ORDER_ACTIVATE)
+	if (command.order == Command::Order::ORDER_ACTIVATE)
 	{
 		updateHistoryMenu(command.message);
 		updateHistory();
@@ -653,7 +653,7 @@ void UndoRedoController::updateHistory()
 			currentIndex = index;
 		}
 
-		if (it->order == Command::ORDER_ACTIVATE &&
+		if (it->order == Command::Order::ORDER_ACTIVATE &&
 			dynamic_cast<MessageActivateBase*>(it->message.get()))
 		{
 			index++;
@@ -693,11 +693,11 @@ void UndoRedoController::dump() const
 	{
 		switch (it->order)
 		{
-		case Command::ORDER_VIEW:
+		case Command::Order::ORDER_VIEW:
 			std::cout << "\t";
-		case Command::ORDER_ADAPT:
+		case Command::Order::ORDER_ADAPT:
 			std::cout << "\t";
-		case Command::ORDER_ACTIVATE:
+		case Command::Order::ORDER_ACTIVATE:
 			break;
 		}
 

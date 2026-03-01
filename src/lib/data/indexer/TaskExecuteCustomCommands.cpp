@@ -76,6 +76,7 @@ void TaskExecuteCustomCommands::doEnter(std::shared_ptr<Blackboard>  /*blackboar
 
 Task::TaskState TaskExecuteCustomCommands::doUpdate(std::shared_ptr<Blackboard> blackboard)
 {
+	using enum Task::TaskState;
 	if (m_interrupted)
 	{
 		return STATE_SUCCESS;
@@ -114,13 +115,13 @@ Task::TaskState TaskExecuteCustomCommands::doUpdate(std::shared_ptr<Blackboard> 
 	{
 		PersistentStorage targetStorage(m_targetDatabaseFilePath, FilePath());
 		targetStorage.setup();
-		targetStorage.setMode(SqliteIndexStorage::STORAGE_MODE_WRITE);
+		targetStorage.setMode(SqliteIndexStorage::StorageModeType::STORAGE_MODE_WRITE);
 		targetStorage.buildCaches();
 		for (const FilePath& sourceDatabaseFilePath: m_sourceDatabaseFilePaths)
 		{
 			{
 				PersistentStorage sourceStorage(sourceDatabaseFilePath, FilePath());
-				sourceStorage.setMode(SqliteIndexStorage::STORAGE_MODE_READ);
+				sourceStorage.setMode(SqliteIndexStorage::StorageModeType::STORAGE_MODE_READ);
 				sourceStorage.buildCaches();
 				targetStorage.inject(&sourceStorage);
 			}
@@ -143,6 +144,7 @@ void TaskExecuteCustomCommands::doReset(std::shared_ptr<Blackboard>  /*blackboar
 
 void TaskExecuteCustomCommands::handleMessage(MessageIndexingInterrupted*  /*message*/)
 {
+	using enum Task::TaskState;
 	LOG_INFO("Interrupting custom command execution.");
 
 	m_interrupted = true;
@@ -154,6 +156,7 @@ void TaskExecuteCustomCommands::handleMessage(MessageIndexingInterrupted*  /*mes
 void TaskExecuteCustomCommands::executeParallelIndexerCommands(
 	int threadId, std::shared_ptr<Blackboard> blackboard)
 {
+	using enum Task::TaskState;
 	std::shared_ptr<PersistentStorage> storage;
 	while (!m_interrupted)
 	{
@@ -201,7 +204,7 @@ void TaskExecuteCustomCommands::executeParallelIndexerCommands(
 				}
 				storage = std::make_shared<PersistentStorage>(databaseFilePath, FilePath());
 				storage->setup();
-				storage->setMode(SqliteIndexStorage::STORAGE_MODE_WRITE);
+				storage->setMode(SqliteIndexStorage::StorageModeType::STORAGE_MODE_WRITE);
 				storage->buildCaches();
 			}
 
@@ -217,6 +220,7 @@ void TaskExecuteCustomCommands::runIndexerCommand(
 	std::shared_ptr<Blackboard> blackboard,
 	std::shared_ptr<PersistentStorage> storage)
 {
+	using enum Task::TaskState;
 	if (indexerCommand)
 	{
 		int indexedSourceFileCount = 0;

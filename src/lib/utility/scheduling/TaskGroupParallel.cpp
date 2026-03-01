@@ -34,6 +34,7 @@ void TaskGroupParallel::doEnter(std::shared_ptr<Blackboard> blackboard)
 
 Task::TaskState TaskGroupParallel::doUpdate(std::shared_ptr<Blackboard>  /*blackboard*/)
 {
+	using enum Task::TaskState;
 	std::this_thread::sleep_for(std::chrono::milliseconds(25));
 
 	if (m_tasks.size() != 0 && m_activeTaskCount > 0)
@@ -93,6 +94,7 @@ void TaskGroupParallel::doTerminate()
 void TaskGroupParallel::processTaskThreaded(std::shared_ptr<TaskInfo> taskInfo,
 	std::shared_ptr<Blackboard> blackboard)
 {
+	using enum Task::TaskState;
 	[[maybe_unused]]
 	ScopedFunctor functor([&]()
 	{

@@ -22,9 +22,9 @@ public:
 	void pushIndexerCommands(const std::vector<std::shared_ptr<IndexerCommand>>& indexerCommands);
 
 	// Pop the next command, optionally skipping commands of a specific type.
-	// Pass INDEXER_COMMAND_UNKNOWN (default) to accept any type.
+	// Pass IndexerCommandType::INDEXER_COMMAND_UNKNOWN (default) to accept any type.
 	std::shared_ptr<IndexerCommand> popIndexerCommand(
-		IndexerCommandType skipType = INDEXER_COMMAND_UNKNOWN);
+		IndexerCommandType skipType = IndexerCommandType::INDEXER_COMMAND_UNKNOWN);
 	std::shared_ptr<IndexerCommand> popIndexerCommand(
 		const std::set<IndexerCommandType>& skipTypes);
 

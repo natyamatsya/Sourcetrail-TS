@@ -31,6 +31,7 @@ QIcon QtErrorView::s_errorIcon;
 QtErrorView::QtErrorView(ViewLayout* viewLayout)
 	: ErrorView(viewLayout), m_controllerProxy(this, TabIds::app())
 {
+	using enum Column;
 	s_errorIcon = QIcon(QString::fromUtf8(QtResources::INDEXING_DIALOG_ERROR));
 
 	setWidgetWrapper(std::make_shared<QtViewWidgetWrapper>(new QFrame()));
@@ -246,6 +247,7 @@ void QtErrorView::setErrorFilter(const ErrorFilter& filter)
 
 void QtErrorView::errorFilterChanged(int i)
 {
+	using enum Column;
 	Q_UNUSED(i)
 	m_table->selectionModel()->clearSelection();
 
@@ -280,6 +282,7 @@ void QtErrorView::setStyleSheet() const
 
 void QtErrorView::addErrorToTable(const ErrorInfo& error)
 {
+	using enum Column;
 	if (!isShownError(error))
 	{
 		return;

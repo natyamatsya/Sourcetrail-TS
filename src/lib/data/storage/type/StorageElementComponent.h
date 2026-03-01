@@ -8,7 +8,7 @@
 
 struct StorageElementComponent
 {
-	StorageElementComponent(): elementId(0), type(ELEMENT_COMPONENT_NONE) {}
+	StorageElementComponent(): elementId(0), type(ElementComponentKind::ELEMENT_COMPONENT_NONE) {}
 
 	StorageElementComponent(Id elementId, ElementComponentKind type, std::string data)
 		: elementId(elementId), type(type), data(std::move(data))

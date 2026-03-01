@@ -24,11 +24,15 @@ void TaskFinishParsing::terminate()
 
 void TaskFinishParsing::doEnter(std::shared_ptr<Blackboard>  /*blackboard*/)
 {
-	m_storage->setMode(SqliteIndexStorage::STORAGE_MODE_READ);
+	using enum Task::TaskState;
+	using enum DatabasePolicy;
+	m_storage->setMode(SqliteIndexStorage::StorageModeType::STORAGE_MODE_READ);
 }
 
 Task::TaskState TaskFinishParsing::doUpdate(std::shared_ptr<Blackboard> blackboard)
 {
+	using enum Task::TaskState;
+	using enum DatabasePolicy;
 	TimeStamp start = TimeStamp::now();
 
 	m_dialogView->showUnknownProgressDialog("Finish Indexing", "Optimizing database");

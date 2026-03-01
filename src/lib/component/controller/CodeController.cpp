@@ -28,6 +28,8 @@ TabId CodeController::getSchedulerId() const
 
 void CodeController::handleMessage(MessageActivateErrors* message)
 {
+	using enum MessageChangeFileView::FileState;
+	using enum MessageChangeFileView::ViewMode;
 	TRACE("code errors");
 
 	saveOrRestoreViewMode(message);
@@ -61,6 +63,8 @@ void CodeController::handleMessage(MessageActivateErrors* message)
 
 void CodeController::handleMessage(MessageActivateFullTextSearch* message)
 {
+	using enum MessageChangeFileView::FileState;
+	using enum MessageChangeFileView::ViewMode;
 	TRACE("code fulltext");
 
 	saveOrRestoreViewMode(message);
@@ -85,6 +89,8 @@ void CodeController::handleMessage(MessageActivateLegend*  /*message*/)
 
 void CodeController::handleMessage(MessageActivateLocalSymbols* message)
 {
+	using enum MessageChangeFileView::FileState;
+	using enum MessageChangeFileView::ViewMode;
 	createLocalReferences(utility::toSet(message->symbolIds));
 	m_codeParams.activeLocalSymbolIds = message->symbolIds;
 	m_codeParams.activeLocalSymbolType = LocationType::LOCAL_SYMBOL;
@@ -95,6 +101,8 @@ void CodeController::handleMessage(MessageActivateLocalSymbols* message)
 
 void CodeController::handleMessage(MessageActivateOverview* message)
 {
+	using enum MessageChangeFileView::FileState;
+	using enum MessageChangeFileView::ViewMode;
 	TRACE("code all");
 
 	saveOrRestoreViewMode(message);
@@ -183,6 +191,8 @@ void CodeController::handleMessage(MessageActivateOverview* message)
 
 void CodeController::handleMessage(MessageActivateTokens* message)
 {
+	using enum MessageChangeFileView::FileState;
+	using enum MessageChangeFileView::ViewMode;
 	TRACE("code activate");
 
 	saveOrRestoreViewMode(message);
@@ -264,6 +274,8 @@ void CodeController::handleMessage(MessageActivateTrail* message)
 
 void CodeController::handleMessage(MessageActivateTrailEdge* message)
 {
+	using enum MessageChangeFileView::FileState;
+	using enum MessageChangeFileView::ViewMode;
 	TRACE("trail edge activate");
 
 	saveOrRestoreViewMode(message);
@@ -280,6 +292,8 @@ void CodeController::handleMessage(MessageActivateTrailEdge* message)
 
 void CodeController::handleMessage(MessageChangeFileView* message)
 {
+	using enum MessageChangeFileView::FileState;
+	using enum MessageChangeFileView::ViewMode;
 	TRACE("code change file");
 
 	saveOrRestoreViewMode(message);
@@ -291,8 +305,8 @@ void CodeController::handleMessage(MessageChangeFileView* message)
 			setFileState(file, message->state, m_codeParams.useSingleFileCache);
 
 			// maximize within snippet list
-			if (message->viewMode == MessageChangeFileView::VIEW_LIST &&
-				message->state == MessageChangeFileView::FILE_MAXIMIZED)
+			if (message->viewMode == VIEW_LIST &&
+				message->state == FILE_MAXIMIZED)
 			{
 				file.snippetParams = {*file.fileParams};
 			}
@@ -306,6 +320,8 @@ void CodeController::handleMessage(MessageChangeFileView* message)
 
 void CodeController::handleMessage(MessageCodeReference* message)
 {
+	using enum MessageChangeFileView::FileState;
+	using enum MessageChangeFileView::ViewMode;
 	bool next = (message->type == MessageCodeReference::Type::NEXT);
 	bool local = message->localReference;
 
@@ -323,6 +339,8 @@ void CodeController::handleMessage(MessageCodeReference* message)
 
 void CodeController::handleMessage(MessageCodeShowDefinition* message)
 {
+	using enum MessageChangeFileView::FileState;
+	using enum MessageChangeFileView::ViewMode;
 	TRACE("code show definition");
 
 	Id nodeId = message->nodeId;
@@ -486,6 +504,8 @@ void CodeController::handleMessage(MessageShowError* message)
 
 void CodeController::handleMessage(MessageShowReference* message)
 {
+	using enum MessageChangeFileView::FileState;
+	using enum MessageChangeFileView::ViewMode;
 	m_referenceIndex = static_cast<int>(message->refIndex);
 	// bool replayed = message->isReplayed();
 
@@ -496,8 +516,8 @@ void CodeController::handleMessage(MessageShowReference* message)
 
 		setFileState(
 			ref.filePath,
-			getView()->isInListMode() ? MessageChangeFileView::FILE_SNIPPETS
-									  : MessageChangeFileView::FILE_MAXIMIZED,
+			getView()->isInListMode() ? FILE_SNIPPETS
+									  : FILE_MAXIMIZED,
 			m_codeParams.useSingleFileCache);
 
 		showFiles(m_codeParams, toReferenceScrollParams(ref), !message->isReplayed());
@@ -511,6 +531,8 @@ void CodeController::handleMessage(MessageShowReference* message)
 
 void CodeController::handleMessage(MessageShowScope* message)
 {
+	using enum MessageChangeFileView::FileState;
+	using enum MessageChangeFileView::ViewMode;
 	TRACE("code scope");
 
 	std::shared_ptr<SourceLocationCollection> collection =
@@ -666,6 +688,8 @@ void CodeController::clear()
 std::vector<CodeFileParams> CodeController::getFilesForActiveSourceLocations(
 	const SourceLocationCollection* collection, Id declarationId) 
 {
+	using enum MessageChangeFileView::FileState;
+	using enum MessageChangeFileView::ViewMode;
 	TRACE();
 
 	std::vector<CodeFileParams> files;
@@ -704,6 +728,8 @@ std::vector<CodeFileParams> CodeController::getFilesForActiveSourceLocations(
 std::vector<CodeFileParams> CodeController::getFilesForCollection(
 	std::shared_ptr<SourceLocationCollection> collection) 
 {
+	using enum MessageChangeFileView::FileState;
+	using enum MessageChangeFileView::ViewMode;
 	TRACE();
 
 	std::vector<CodeFileParams> files;
@@ -717,10 +743,11 @@ std::vector<CodeFileParams> CodeController::getFilesForCollection(
 	return files;
 }
 
-
 CodeSnippetParams CodeController::getSnippetParamsForWholeFile(
 	std::shared_ptr<SourceLocationFile> locationFile, bool useSingleFileCache) const
 {
+	using enum MessageChangeFileView::FileState;
+	using enum MessageChangeFileView::ViewMode;
 	CodeSnippetParams snippet;
 	snippet.startLineNumber = 1;
 
@@ -757,6 +784,8 @@ CodeSnippetParams CodeController::getSnippetParamsForWholeFile(
 std::vector<CodeSnippetParams> CodeController::getSnippetsForFile(
 	std::shared_ptr<SourceLocationFile> activeSourceLocations) const
 {
+	using enum MessageChangeFileView::FileState;
+	using enum MessageChangeFileView::ViewMode;
 	TRACE();
 
 	bool showsErrors = false;
@@ -906,6 +935,8 @@ const SourceLocation* CodeController::getSourceLocationOfParentScope(
 
 std::vector<std::string> CodeController::getProjectDescription(SourceLocationFile* locationFile) const
 {
+	using enum MessageChangeFileView::FileState;
+	using enum MessageChangeFileView::ViewMode;
 	std::shared_ptr<const Project> currentProject = Application::getInstance()->getCurrentProject();
 	if (!currentProject)
 	{
@@ -983,6 +1014,8 @@ void CodeController::clearReferences()
 
 void CodeController::createReferences()
 {
+	using enum MessageChangeFileView::FileState;
+	using enum MessageChangeFileView::ViewMode;
 	clearReferences();
 
 	for (CodeFileParams& file: m_files)
@@ -1172,6 +1205,8 @@ void CodeController::showCurrentReference()
 
 void CodeController::showCurrentLocalReference(bool updateView)
 {
+	using enum MessageChangeFileView::FileState;
+	using enum MessageChangeFileView::ViewMode;
 	const Reference& ref = m_localReferences[m_localReferenceIndex];
 	m_codeParams.currentActiveLocalLocationIds = {ref.locationId};
 
@@ -1255,6 +1290,8 @@ std::pair<int, int> CodeController::findClosestReferenceIndex(
 
 void CodeController::expandVisibleFiles(bool useSingleFileCache)
 {
+	using enum MessageChangeFileView::FileState;
+	using enum MessageChangeFileView::ViewMode;
 	TRACE();
 
 	if (!m_files.size())
@@ -1264,8 +1301,8 @@ void CodeController::expandVisibleFiles(bool useSingleFileCache)
 
 	bool inListMode = getView()->isInListMode();
 	size_t filesToExpand = inListMode ? std::min(int(m_files.size()), 3) : 1;
-	MessageChangeFileView::FileState state = inListMode ? MessageChangeFileView::FILE_SNIPPETS
-														: MessageChangeFileView::FILE_MAXIMIZED;
+	MessageChangeFileView::FileState state = inListMode ? FILE_SNIPPETS
+														: FILE_MAXIMIZED;
 
 	for (size_t i = 0; i < filesToExpand; i++)
 	{
@@ -1275,6 +1312,8 @@ void CodeController::expandVisibleFiles(bool useSingleFileCache)
 
 CodeFileParams* CodeController::addSourceLocations(std::shared_ptr<SourceLocationFile> locationFile)
 {
+	using enum MessageChangeFileView::FileState;
+	using enum MessageChangeFileView::ViewMode;
 	if (!m_collection)
 	{
 		m_collection = std::make_shared<SourceLocationCollection>();
@@ -1349,8 +1388,8 @@ CodeFileParams* CodeController::addSourceLocations(std::shared_ptr<SourceLocatio
 
 	setFileState(
 		*file,
-		getView()->isInListMode() ? MessageChangeFileView::FILE_SNIPPETS
-								  : MessageChangeFileView::FILE_MAXIMIZED,
+		getView()->isInListMode() ? FILE_SNIPPETS
+								  : FILE_MAXIMIZED,
 		m_codeParams.useSingleFileCache);
 	return file;
 }
@@ -1371,15 +1410,17 @@ void CodeController::setFileState(
 void CodeController::setFileState(
 	CodeFileParams& file, MessageChangeFileView::FileState state, bool useSingleFileCache)
 {
+	using enum MessageChangeFileView::FileState;
+	using enum MessageChangeFileView::ViewMode;
 	TRACE();
 
 	switch (state)
 	{
-	case MessageChangeFileView::FILE_MINIMIZED:
+	case FILE_MINIMIZED:
 		file.isMinimized = true;
 		break;
 
-	case MessageChangeFileView::FILE_SNIPPETS:
+	case FILE_SNIPPETS:
 		file.isMinimized = false;
 		if (!file.snippetParams.size())
 		{
@@ -1395,7 +1436,7 @@ void CodeController::setFileState(
 		}
 		break;
 
-	case MessageChangeFileView::FILE_MAXIMIZED:
+	case FILE_MAXIMIZED:
 		if (!file.fileParams)
 		{
 			file.fileParams = std::make_shared<CodeSnippetParams>(
@@ -1412,6 +1453,8 @@ void CodeController::setFileState(
 
 bool CodeController::addAllSourceLocations()
 {
+	using enum MessageChangeFileView::FileState;
+	using enum MessageChangeFileView::ViewMode;
 	TRACE();
 
 	bool addedNewLocations = false;
@@ -1476,6 +1519,8 @@ bool CodeController::addAllSourceLocations()
 
 void CodeController::addModificationTimes()
 {
+	using enum MessageChangeFileView::FileState;
+	using enum MessageChangeFileView::ViewMode;
 	TRACE();
 
 	std::vector<FilePath> filePaths;
@@ -1539,6 +1584,8 @@ CodeScrollParams CodeController::definitionReferenceScrollParams(const std::vect
 
 CodeScrollParams CodeController::toReferenceScrollParams(const Reference& ref) 
 {
+	using enum MessageChangeFileView::FileState;
+	using enum MessageChangeFileView::ViewMode;
 	return CodeScrollParams::toReference(
 		ref.filePath, ref.locationId, ref.scopeLocationId, CodeScrollParams::Target::CENTER);
 }
@@ -1561,6 +1608,8 @@ void CodeController::saveOrRestoreViewMode(MessageBase* message)
 
 void CodeController::showFirstActiveReference(Id tokenId, bool updateView)
 {
+	using enum MessageChangeFileView::FileState;
+	using enum MessageChangeFileView::ViewMode;
 	// iterate local references when same tokenId get reactivated (consecutive edge clicks)
 	if (m_codeParams.activeLocalSymbolIds.size() == 1 &&
 		m_codeParams.activeLocalSymbolIds[0] == tokenId && m_localReferences.size())
@@ -1630,14 +1679,14 @@ void CodeController::showFirstActiveReference(Id tokenId, bool updateView)
 		for (const FilePath& filePath: filePathsToExpand)
 		{
 			setFileState(
-				filePath, MessageChangeFileView::FILE_SNIPPETS, m_codeParams.useSingleFileCache);
+				filePath, FILE_SNIPPETS, m_codeParams.useSingleFileCache);
 		}
 	}
 	else if (firstReference.tokenId)
 	{
 		setFileState(
 			firstReference.filePath,
-			MessageChangeFileView::FILE_MAXIMIZED,
+			FILE_MAXIMIZED,
 			m_codeParams.useSingleFileCache);
 	}
 
@@ -1659,6 +1708,8 @@ void CodeController::showFirstActiveReference(Id tokenId, bool updateView)
 
 void CodeController::showFiles(CodeView::CodeParams params, CodeScrollParams scrollParams, bool updateView)
 {
+	using enum MessageChangeFileView::FileState;
+	using enum MessageChangeFileView::ViewMode;
 	if (updateView)
 	{
 		addModificationTimes();

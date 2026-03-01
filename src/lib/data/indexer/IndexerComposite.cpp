@@ -8,7 +8,7 @@ IndexerComposite::~IndexerComposite() = default;
 
 IndexerCommandType IndexerComposite::getSupportedIndexerCommandType() const
 {
-	return INDEXER_COMMAND_UNKNOWN;
+	return IndexerCommandType::INDEXER_COMMAND_UNKNOWN;
 }
 
 void IndexerComposite::addIndexer(std::shared_ptr<IndexerBase> indexer)

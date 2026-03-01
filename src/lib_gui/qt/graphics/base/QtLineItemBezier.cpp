@@ -35,6 +35,7 @@ void QtLineItemBezier::paint(QPainter* painter, const QStyleOptionGraphicsItem* 
 
 QPolygon QtLineItemBezier::getPath() const
 {
+	using enum QtLineItemBase::Route;
 	QPolygon poly = QtLineItemBase::getPath();
 	QPolygon newPoly;
 

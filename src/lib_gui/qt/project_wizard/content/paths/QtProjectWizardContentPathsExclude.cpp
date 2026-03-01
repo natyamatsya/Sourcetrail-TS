@@ -7,7 +7,7 @@
 QtProjectWizardContentPathsExclude::QtProjectWizardContentPathsExclude(
 	std::shared_ptr<SourceGroupSettings> settings, QtProjectWizardWindow* window)
 	: QtProjectWizardContentPaths(
-		  settings, window, QtPathListBox::SELECTION_POLICY_FILES_AND_DIRECTORIES, false)
+		  settings, window, QtPathListBox::SelectionPolicyType::SELECTION_POLICY_FILES_AND_DIRECTORIES, false)
 {
 	setTitleString(QStringLiteral("Excluded Files & Directories"));
 	setHelpString(

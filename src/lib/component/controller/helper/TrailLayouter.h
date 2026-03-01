@@ -13,7 +13,7 @@
 class TrailLayouter
 {
 public:
-	enum LayoutDirection
+	enum class LayoutDirection
 	{
 		LAYOUT_LEFT_RIGHT,
 		LAYOUT_RIGHT_LEFT,

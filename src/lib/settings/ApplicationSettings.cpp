@@ -1,5 +1,7 @@
 #include "ApplicationSettings.h"
 
+#include <utility>
+
 #include "Logger.h"
 #include "ResourcePaths.h"
 #include "Status.h"
@@ -277,7 +279,8 @@ void ApplicationSettings::setStatusFilter(int mask)
 int ApplicationSettings::getStatusFilter() const
 {
 	return getValue<int>(
-		"application/status_filter", StatusType::STATUS_INFO | StatusType::STATUS_ERROR);
+		"application/status_filter",
+		std::to_underlying(StatusType::STATUS_INFO) | std::to_underlying(StatusType::STATUS_ERROR));
 }
 
 int ApplicationSettings::getLogFilter() const

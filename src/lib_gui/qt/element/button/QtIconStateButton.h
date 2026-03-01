@@ -10,7 +10,7 @@ class QtIconStateButton: public QPushButton
 	Q_OBJECT
 
 public:
-	enum ButtonState
+	enum class ButtonState
 	{
 		STATE_DEFAULT,
 		STATE_HOVERED,

@@ -34,6 +34,7 @@
 #include <QToolTip>
 
 #include <algorithm>
+
 using namespace utility::compatibility;
 
 MouseWheelOverScrollbarFilter::MouseWheelOverScrollbarFilter() = default;
@@ -74,7 +75,6 @@ void QtLineNumberArea::paintEvent(QPaintEvent* event)
 {
 	m_codeArea->lineNumberAreaPaintEvent(event);
 }
-
 
 QtCodeArea::QtCodeArea(
 	size_t startLineNumber,
@@ -138,6 +138,7 @@ QSize QtCodeArea::sizeHint() const
 
 void QtCodeArea::lineNumberAreaPaintEvent(QPaintEvent* event)
 {
+	using enum TooltipOrigin;
 	QPainter painter(m_lineNumberArea);
 
 	utility::setWidgetBackgroundColor(
@@ -378,6 +379,7 @@ size_t QtCodeArea::getColumnNumberForLocationId(Id locationId) const
 
 Id QtCodeArea::getLocationIdOfFirstActiveLocation(Id tokenId) const
 {
+	using enum TooltipOrigin;
 	for (const Annotation& annotation: m_annotations)
 	{
 		if (annotation.locationType == LocationType::TOKEN && annotation.isActive &&
@@ -392,6 +394,7 @@ Id QtCodeArea::getLocationIdOfFirstActiveLocation(Id tokenId) const
 
 Id QtCodeArea::getLocationIdOfFirstActiveScopeLocation(Id tokenId) const
 {
+	using enum TooltipOrigin;
 	for (const Annotation& annotation: m_annotations)
 	{
 		if (annotation.locationType == LocationType::SCOPE && annotation.isActive &&
@@ -406,6 +409,7 @@ Id QtCodeArea::getLocationIdOfFirstActiveScopeLocation(Id tokenId) const
 
 Id QtCodeArea::getLocationIdOfFirstHighlightedLocation() const
 {
+	using enum TooltipOrigin;
 	for (const Annotation& annotation: m_annotations)
 	{
 		if ((annotation.locationType == LocationType::TOKEN && annotation.isActive) ||
@@ -421,6 +425,7 @@ Id QtCodeArea::getLocationIdOfFirstHighlightedLocation() const
 
 size_t QtCodeArea::getActiveLocationCount() const
 {
+	using enum TooltipOrigin;
 	size_t count = 0;
 
 	for (const Annotation& annotation: m_annotations)
@@ -466,6 +471,7 @@ QRectF QtCodeArea::getLineRectForLineNumber(size_t lineNumber) const
 void QtCodeArea::findScreenMatches(
 	const std::string& queryText, std::vector<std::pair<QtCodeArea*, Id>>* screenMatches)
 {
+	using enum TooltipOrigin;
 	TextCodec codec(ApplicationSettings::getInstance()->getTextEncoding());
 
 	const QString query = QString::fromStdString(queryText);
@@ -510,6 +516,7 @@ void QtCodeArea::findScreenMatches(
 
 void QtCodeArea::clearScreenMatches()
 {
+	using enum TooltipOrigin;
 	size_t i = m_annotations.size();
 	while (i > 0 && m_annotations[i - 1].locationType == LocationType::SCREEN_SEARCH)
 	{
@@ -607,6 +614,7 @@ void QtCodeArea::ensureLocationIdVisible(Id locationId, int parentWidth, bool an
 
 bool QtCodeArea::setFocus(Id locationId)
 {
+	using enum TooltipOrigin;
 	for (const Annotation& annotation: m_annotations)
 	{
 		const LocationType& type = annotation.locationType;
@@ -624,6 +632,7 @@ bool QtCodeArea::setFocus(Id locationId)
 
 bool QtCodeArea::moveFocus(CodeFocusHandler::Direction direction, size_t lineNumber, Id locationId)
 {
+	using enum TooltipOrigin;
 	switch (direction)
 	{
 	case CodeFocusHandler::Direction::UP:
@@ -728,6 +737,7 @@ bool QtCodeArea::moveFocusInLine(size_t lineNumber, Id locationId, bool forward)
 
 void QtCodeArea::activateLocationId(Id locationId, bool fromMouse)
 {
+	using enum TooltipOrigin;
 	const Annotation* annotation = getAnnotationForLocationId(locationId);
 	if (!annotation)
 	{
@@ -850,6 +860,7 @@ void QtCodeArea::mouseReleaseEvent(QMouseEvent* event)
 
 void QtCodeArea::mouseMoveEvent(QMouseEvent* event)
 {
+	using enum TooltipOrigin;
 	const QPoint currentMousePosition = event->pos();
 	const int delta = (currentMousePosition - m_oldMousePosition).manhattanLength();
 	const int deltaX = currentMousePosition.x() - m_oldMousePosition.x();
@@ -964,6 +975,7 @@ void QtCodeArea::contextMenuEvent(QContextMenuEvent* event)
 
 void QtCodeArea::focusTokenIds(const std::vector<Id>& tokenIds)
 {
+	using enum TooltipOrigin;
 	MessageFocusIn(tokenIds, TOOLTIP_ORIGIN_CODE).dispatch();
 }
 
@@ -1050,6 +1062,7 @@ bool QtCodeArea::isSelectionPosition(const QPoint positionPoint) const
 void QtCodeArea::activateAnnotationsOrErrors(
 	const std::vector<const Annotation*>& annotations, bool fromMouse)
 {
+	using enum TooltipOrigin;
 	if (m_navigator->hasErrors())
 	{
 		std::vector<Id> errorIds;

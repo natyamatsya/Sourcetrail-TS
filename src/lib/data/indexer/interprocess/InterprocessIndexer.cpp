@@ -24,6 +24,7 @@ InterprocessIndexer::InterprocessIndexer(const std::string& uuid, ProcessId proc
 
 InterprocessIndexer::WorkResult InterprocessIndexer::work()
 {
+	using enum IndexerCommandType;
 	bool updaterThreadRunning = true;
 	std::shared_ptr<std::thread> updaterThread;
 	std::shared_ptr<IndexerBase> indexer;

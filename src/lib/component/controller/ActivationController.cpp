@@ -43,6 +43,11 @@ void ActivationController::handleMessage(MessageActivateEdge* message)
 
 void ActivationController::handleMessage(MessageActivateFile* message)
 {
+	using enum MessageChangeFileView::FileState;
+	using enum MessageChangeFileView::ViewMode;
+	using enum TooltipOrigin;
+	using enum SearchMatch::SearchType;
+	using enum SearchMatch::CommandType;
 	Id fileId = m_storageAccess->getNodeIdForFileNode(message->filePath);
 
 	if (fileId)
@@ -56,8 +61,8 @@ void ActivationController::handleMessage(MessageActivateFile* message)
 	{
 		MessageChangeFileView msg(
 			message->filePath,
-			MessageChangeFileView::FILE_MAXIMIZED,
-			MessageChangeFileView::VIEW_CURRENT,
+			FILE_MAXIMIZED,
+			VIEW_CURRENT,
 			CodeScrollParams::toFile(message->filePath, CodeScrollParams::Target::VISIBLE));
 		msg.setSchedulerId(message->getSchedulerId());
 		msg.dispatchImmediately();
@@ -101,6 +106,11 @@ void ActivationController::handleMessage(MessageActivateTokenIds* message)
 
 void ActivationController::handleMessage(MessageActivateSourceLocations* message)
 {
+	using enum MessageChangeFileView::FileState;
+	using enum MessageChangeFileView::ViewMode;
+	using enum TooltipOrigin;
+	using enum SearchMatch::SearchType;
+	using enum SearchMatch::CommandType;
 	MessageActivateNodes msg;
 	for (Id nodeId: m_storageAccess->getNodeIdsForLocationIds(message->locationIds))
 	{
@@ -111,7 +121,7 @@ void ActivationController::handleMessage(MessageActivateSourceLocations* message
 		m_storageAccess->getNameHierarchyForNodeId(msg.nodes[0].nodeId).getQualifiedName() ==
 			"unsolved symbol")
 	{
-		MessageTooltipShow m(message->locationIds, {}, TOOLTIP_ORIGIN_CODE);
+		MessageTooltipShow m(message->locationIds, {}, TooltipOrigin::TOOLTIP_ORIGIN_CODE);
 		m.force = true;
 		m.dispatch();
 		return;
@@ -139,14 +149,19 @@ void ActivationController::handleMessage(MessageResetZoom*  /*message*/)
 
 void ActivationController::handleMessage(MessageSearch* message)
 {
+	using enum MessageChangeFileView::FileState;
+	using enum MessageChangeFileView::ViewMode;
+	using enum TooltipOrigin;
+	using enum SearchMatch::SearchType;
+	using enum SearchMatch::CommandType;
 	const std::vector<SearchMatch>& matches = message->getMatches();
 
-	if (matches.size() && matches.back().searchType == SearchMatch::SEARCH_COMMAND)
+	if (matches.size() && matches.back().searchType == SEARCH_COMMAND)
 	{
 		switch (matches.back().getCommandType())
 		{
-		case SearchMatch::COMMAND_ALL:
-		case SearchMatch::COMMAND_NODE_FILTER:
+		case COMMAND_ALL:
+		case COMMAND_NODE_FILTER:
 		{
 			MessageActivateOverview msg(message->acceptedNodeTypes);
 			msg.setSchedulerId(message->getSchedulerId());
@@ -154,7 +169,7 @@ void ActivationController::handleMessage(MessageSearch* message)
 			return;
 		}
 
-		case SearchMatch::COMMAND_ERROR:
+		case COMMAND_ERROR:
 		{
 			MessageErrorsAll msg;
 			msg.setSchedulerId(message->getSchedulerId());
@@ -162,7 +177,7 @@ void ActivationController::handleMessage(MessageSearch* message)
 			return;
 		}
 
-		case SearchMatch::COMMAND_LEGEND:
+		case COMMAND_LEGEND:
 		{
 			MessageActivateLegend msg;
 			msg.setSchedulerId(message->getSchedulerId());

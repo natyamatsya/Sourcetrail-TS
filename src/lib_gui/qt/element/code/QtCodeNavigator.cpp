@@ -1,6 +1,5 @@
 #include "QtCodeNavigator.h"
 
-
 #include "ApplicationSettings.h"
 #include "CodeFocusHandler.h"
 #include "MessageCodeReference.h"
@@ -33,6 +32,7 @@
 QtCodeNavigator::QtCodeNavigator(QWidget* parent)
 	: QWidget(parent),  m_schedulerId(TabIds::ignore())
 {
+	using enum QtCodeNavigator::Mode;
 	QVBoxLayout* layout = new QVBoxLayout();
 	layout->setSpacing(0);
 	layout->setContentsMargins(0, 0, 0, 0);
@@ -205,7 +205,6 @@ void QtCodeNavigator::updateReferenceCount(
 	m_prevReferenceButton->setEnabled(referenceCount > 1);
 	m_nextReferenceButton->setEnabled(referenceCount > 1);
 
-
 	if (localReferenceIndex != localReferenceCount)
 	{
 		m_localRefLabel->setText(tr("%1/%2 local references").arg(localReferenceIndex + 1).arg(localReferenceCount));
@@ -266,6 +265,7 @@ void QtCodeNavigator::clearSnippetReferences()
 
 void QtCodeNavigator::setMode(Mode mode)
 {
+	using enum QtCodeNavigator::Mode;
 	m_mode = mode;
 
 	if (mode == MODE_LIST)
@@ -307,6 +307,7 @@ const std::set<Id>& QtCodeNavigator::getCurrentActiveLocationIds() const
 
 void QtCodeNavigator::setCurrentActiveLocationIds(const std::vector<Id>& currentActiveLocationIds)
 {
+	using enum QtCodeNavigator::Mode;
 	setActiveLocalTokenIds({}, LocationType::TOKEN);
 
 	m_currentActiveLocationIds = std::set<Id>(
@@ -332,6 +333,7 @@ const std::set<Id>& QtCodeNavigator::getActiveTokenIds() const
 
 void QtCodeNavigator::setActiveTokenIds(const std::vector<Id>& activeTokenIds)
 {
+	using enum QtCodeNavigator::Mode;
 	setActiveLocalTokenIds({}, LocationType::TOKEN);
 	setCurrentActiveTokenIds(activeTokenIds);
 
@@ -404,6 +406,7 @@ size_t QtCodeNavigator::getFatalErrorCountForFile(const FilePath& filePath) cons
 
 bool QtCodeNavigator::isInListMode() const
 {
+	using enum QtCodeNavigator::Mode;
 	return m_mode == MODE_LIST;
 }
 
@@ -443,6 +446,7 @@ void QtCodeNavigator::setNavigationFocus(bool focus)
 
 void QtCodeNavigator::focusInitialLocation(Id locationId)
 {
+	using enum QtCodeNavigator::Mode;
 	if (locationId)
 	{
 		if (!isFocused())
@@ -483,6 +487,7 @@ void QtCodeNavigator::focusInitialLocation(Id locationId)
 
 void QtCodeNavigator::updateFiles()
 {
+	using enum QtCodeNavigator::Mode;
 	m_current->updateFiles();
 
 	if (m_oldMode != m_mode)
@@ -527,6 +532,7 @@ size_t QtCodeNavigator::findScreenMatches(const std::string& query)
 
 void QtCodeNavigator::activateScreenMatch(size_t matchIndex)
 {
+	using enum QtCodeNavigator::Mode;
 	if (matchIndex >= m_screenMatches.size())
 	{
 		return;
@@ -580,6 +586,7 @@ void QtCodeNavigator::clearScreenMatches()
 
 void QtCodeNavigator::scrollTo(const CodeScrollParams& params, bool animated, bool focusTarget)
 {
+	using enum QtCodeNavigator::Mode;
 	if (!isVisible())
 	{
 		m_scrollParams = params;
@@ -643,6 +650,7 @@ void QtCodeNavigator::scrollTo(const CodeScrollParams& params, bool animated, bo
 
 void QtCodeNavigator::scrollToFocus()
 {
+	using enum QtCodeNavigator::Mode;
 	const CodeFocusHandler::Focus& focus = getCurrentFocus();
 
 	if (focus.file)
@@ -672,6 +680,7 @@ void QtCodeNavigator::scrollToFocus()
 
 void QtCodeNavigator::scrolled(int value)
 {
+	using enum QtCodeNavigator::Mode;
 	MessageScrollCode(value, m_mode == MODE_LIST).dispatch();
 }
 
@@ -682,6 +691,7 @@ void QtCodeNavigator::showEvent(QShowEvent*  /*event*/)
 
 void QtCodeNavigator::keyPressEvent(QKeyEvent *event)
 {
+	using enum QtCodeNavigator::Mode;
 	const CodeFocusHandler::Focus &currentFocus = getCurrentFocus();
 
 	FilePath currentFilePath;
@@ -856,26 +866,31 @@ void QtCodeNavigator::focusChanged(QWidget*  /*from*/, QWidget* to)
 
 void QtCodeNavigator::previousReference()
 {
+	using enum QtCodeNavigator::Mode;
 	MessageCodeReference(MessageCodeReference::Type::PREVIOUS, false).dispatch();
 }
 
 void QtCodeNavigator::nextReference()
 {
+	using enum QtCodeNavigator::Mode;
 	MessageCodeReference(MessageCodeReference::Type::NEXT, false).dispatch();
 }
 
 void QtCodeNavigator::previousLocalReference()
 {
+	using enum QtCodeNavigator::Mode;
 	MessageCodeReference(MessageCodeReference::Type::PREVIOUS, true).dispatch();
 }
 
 void QtCodeNavigator::nextLocalReference()
 {
+	using enum QtCodeNavigator::Mode;
 	MessageCodeReference(MessageCodeReference::Type::NEXT, true).dispatch();
 }
 
 void QtCodeNavigator::setModeList()
 {
+	using enum QtCodeNavigator::Mode;
 	if (m_mode == MODE_LIST)
 	{
 		return;
@@ -889,6 +904,7 @@ void QtCodeNavigator::setModeList()
 
 void QtCodeNavigator::setModeSingle()
 {
+	using enum QtCodeNavigator::Mode;
 	if (m_mode == MODE_SINGLE)
 	{
 		return;

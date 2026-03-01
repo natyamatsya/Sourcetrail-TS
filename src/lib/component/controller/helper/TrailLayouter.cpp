@@ -285,7 +285,6 @@ void TrailLayouter::addVirtualNodes()
 			m_allNodes.push_back(virtualNode);
 			edge->virtualNodes.push_back(virtualNode.get());
 
-
 			std::shared_ptr<TrailEdge> virtualEdge = std::make_shared<TrailEdge>();
 			virtualEdge->id = 0;
 
@@ -510,7 +509,6 @@ void TrailLayouter::moveNodesToAveragePosition(std::vector<TrailNode*> nodes, bo
 	}
 	averagePosition /= static_cast<int>(averagePositions.size());
 
-
 	std::multimap<int, int> distanceFromAveragePosition;
 	for (std::pair<int, std::vector<TrailNode*>> p: averagePositions)
 	{
@@ -676,6 +674,7 @@ void TrailLayouter::addNode(const std::shared_ptr<DummyNode>& dummyNode)
 void TrailLayouter::addEdge(
 	const std::shared_ptr<DummyEdge> dummyEdge, const std::map<Id, Id>& topLevelAncestorIds)
 {
+	using enum TrailLayouter::LayoutDirection;
 	std::shared_ptr<TrailEdge> edge = std::make_shared<TrailEdge>();
 	if (!dummyEdge->data)
 	{
@@ -734,10 +733,12 @@ void TrailLayouter::switchEdge(TrailEdge* edge)
 
 bool TrailLayouter::horizontalLayout() const
 {
+	using enum TrailLayouter::LayoutDirection;
 	return m_direction == LAYOUT_LEFT_RIGHT || m_direction == LAYOUT_RIGHT_LEFT;
 }
 
 bool TrailLayouter::invertedLayout() const
 {
+	using enum TrailLayouter::LayoutDirection;
 	return m_direction == LAYOUT_RIGHT_LEFT || m_direction == LAYOUT_BOTTOM_TOP;
 }

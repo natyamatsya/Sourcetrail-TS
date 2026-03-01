@@ -79,7 +79,7 @@ public:
 private:
 	struct Command
 	{
-		enum Order
+		enum class Order
 		{
 			ORDER_ACTIVATE,
 			ORDER_ADAPT,

@@ -81,6 +81,7 @@ void TabsController::addTab(TabId tabId, SearchMatch match)
 
 void TabsController::showTab(TabId tabId)
 {
+	using enum SearchMatch::CommandType;
 	std::lock_guard<std::mutex> lock(m_tabsMutex);
 
 	auto it = m_tabs.find(tabId);
@@ -132,6 +133,7 @@ void TabsController::destroyTab(TabId tabId)
 
 void TabsController::onClearTabs()
 {
+	using enum SearchMatch::CommandType;
 	TabIds::setCurrentTabId(TabId::NONE);
 	m_mainLayout->showOriginalViews();
 }
@@ -143,17 +145,19 @@ TabsView* TabsController::getView() const
 
 void TabsController::handleMessage(MessageActivateErrors*  /*message*/)
 {
+	using enum SearchMatch::CommandType;
 	if (m_tabs.empty() && Application::getInstance()->isProjectLoaded())
 	{
-		MessageTabOpenWith(SearchMatch::createCommand(SearchMatch::COMMAND_ERROR)).dispatch();
+		MessageTabOpenWith(SearchMatch::createCommand(COMMAND_ERROR)).dispatch();
 	}
 }
 
 void TabsController::handleMessage(MessageIndexingFinished*  /*message*/)
 {
+	using enum SearchMatch::CommandType;
 	if (m_tabs.empty() && Application::getInstance()->isProjectLoaded())
 	{
-		MessageTabOpenWith(SearchMatch::createCommand(SearchMatch::COMMAND_ALL)).dispatch();
+		MessageTabOpenWith(SearchMatch::createCommand(COMMAND_ALL)).dispatch();
 	}
 }
 

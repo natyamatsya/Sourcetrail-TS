@@ -12,7 +12,7 @@
 class IpcSharedMemory
 {
 public:
-	enum AccessMode
+	enum class AccessMode
 	{
 		CREATE_AND_DELETE,
 		OPEN_ONLY,

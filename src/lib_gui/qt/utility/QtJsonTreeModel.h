@@ -23,7 +23,7 @@ public:
 		COUNT
 	};
 
-	enum Role
+	enum class Role
 	{
 		JSON_POINTER_ROLE = Qt::UserRole + 1,
 		SOURCE_FILE_ROLE,

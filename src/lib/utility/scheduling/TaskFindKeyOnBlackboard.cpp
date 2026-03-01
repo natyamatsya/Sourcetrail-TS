@@ -8,6 +8,7 @@ void TaskFindKeyOnBlackboard::doEnter(std::shared_ptr<Blackboard>  /*blackboard*
 
 Task::TaskState TaskFindKeyOnBlackboard::doUpdate(std::shared_ptr<Blackboard> blackboard)
 {
+	using enum Task::TaskState;
 	return (blackboard->exists(m_key)) ? STATE_SUCCESS : STATE_FAILURE;
 }
 

@@ -10,14 +10,14 @@
 class MessageChangeFileView: public Message<MessageChangeFileView>
 {
 public:
-	enum FileState
+	enum class FileState
 	{
 		FILE_MINIMIZED,
 		FILE_SNIPPETS,
 		FILE_MAXIMIZED
 	};
 
-	enum ViewMode
+	enum class ViewMode
 	{
 		VIEW_LIST,
 		VIEW_SINGLE,
@@ -46,6 +46,8 @@ public:
 
 	void print(std::ostream& os) const override
 	{
+		using enum FileState;
+		using enum ViewMode;
 		os << filePath.str();
 
 		switch (state)

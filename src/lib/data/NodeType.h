@@ -15,7 +15,7 @@
 class NodeType
 {
 public:
-	enum StyleType
+	enum class StyleType
 	{
 		STYLE_PACKAGE = 0,
 		STYLE_SMALL_NODE = 1,

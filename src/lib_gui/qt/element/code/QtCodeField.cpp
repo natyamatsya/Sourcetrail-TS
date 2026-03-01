@@ -40,6 +40,8 @@ QtCodeField::QtCodeField(
 	, m_startLineNumber(startLineNumber)
 	, m_code(code)
 {
+	using enum TooltipOrigin;
+	using enum ColorScheme::ColorState;
 	TRACE();
 
 	setObjectName(QStringLiteral("code_area"));
@@ -171,6 +173,8 @@ void QtCodeField::annotateText()
 
 void QtCodeField::paintEvent(QPaintEvent* event)
 {
+	using enum TooltipOrigin;
+	using enum ColorScheme::ColorState;
 	QPainter painter(viewport());
 
 	QTextBlock block = firstVisibleBlock();
@@ -364,6 +368,8 @@ bool QtCodeField::annotateText(
 	const std::set<Id>& coFocusedSymbolIds,
 	Id focusedLocationId)
 {
+	using enum TooltipOrigin;
+	using enum ColorScheme::ColorState;
 	for (size_t i = 0; i < m_annotations.size(); i++)
 	{
 		Annotation& annotation = m_annotations[i];
@@ -417,6 +423,8 @@ bool QtCodeField::annotateText(
 
 void QtCodeField::createAnnotations(std::shared_ptr<SourceLocationFile> locationFile)
 {
+	using enum TooltipOrigin;
+	using enum ColorScheme::ColorState;
 	TRACE();
 
 	m_locationFile = locationFile;
@@ -490,6 +498,8 @@ void QtCodeField::createAnnotations(std::shared_ptr<SourceLocationFile> location
 void QtCodeField::activateAnnotations(
 	const std::vector<const Annotation*>& annotations, bool fromMouse, int mouseOffsetX)
 {
+	using enum TooltipOrigin;
+	using enum ColorScheme::ColorState;
 	std::vector<Id> locationIds;
 	std::set<Id> tokenIds;
 	std::set<Id> localSymbolIds;
@@ -687,13 +697,15 @@ std::vector<QRect> QtCodeField::getCursorRectsForAnnotation(const Annotation& an
 const QtCodeField::AnnotationColor& QtCodeField::getAnnotationColorForAnnotation(
 	const Annotation& annotation)
 {
+	using enum TooltipOrigin;
+	using enum ColorScheme::ColorState;
 	if (!s_annotationColors.size())
 	{
 		ColorScheme* scheme = ColorScheme::getInstance().get();
 		std::vector<std::string> types = {
 			"token", "local_symbol", "scope", "error", "fulltext_search", "screen_search"};
 		std::vector<ColorScheme::ColorState> states = {
-			ColorScheme::NORMAL, ColorScheme::FOCUS, ColorScheme::ACTIVE};
+			NORMAL, FOCUS, ACTIVE};
 
 		for (const std::string& type: types)
 		{
@@ -776,6 +788,8 @@ const QtCodeField::Annotation* QtCodeField::getAnnotationForLocationId(Id locati
 std::vector<const QtCodeField::Annotation*> QtCodeField::getInteractiveAnnotationsForLineNumber(
 	size_t lineNumber) const
 {
+	using enum TooltipOrigin;
+	using enum ColorScheme::ColorState;
 	std::vector<const QtCodeField::Annotation*> annotations;
 
 	for (const Annotation& annotation: m_annotations)
@@ -796,6 +810,8 @@ std::vector<const QtCodeField::Annotation*> QtCodeField::getInteractiveAnnotatio
 std::vector<const QtCodeField::Annotation*> QtCodeField::getInteractiveAnnotationsForPosition(
 	QPoint position) const
 {
+	using enum TooltipOrigin;
+	using enum ColorScheme::ColorState;
 	std::vector<const QtCodeField::Annotation*> annotations;
 
 	QTextCursor cursor = this->cursorForPosition(position);
@@ -817,6 +833,8 @@ std::vector<const QtCodeField::Annotation*> QtCodeField::getInteractiveAnnotatio
 
 void QtCodeField::checkOpenInTabActionEnabled(QPoint position)
 {
+	using enum TooltipOrigin;
+	using enum ColorScheme::ColorState;
 	std::vector<Id> locationIds;
 	for (const Annotation* annotation: getInteractiveAnnotationsForPosition(position))
 	{

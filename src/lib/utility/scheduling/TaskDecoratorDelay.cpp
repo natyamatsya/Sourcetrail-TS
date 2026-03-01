@@ -14,6 +14,7 @@ void TaskDecoratorDelay::doEnter(std::shared_ptr<Blackboard>  /*blackboard*/)
 
 Task::TaskState TaskDecoratorDelay::doUpdate(std::shared_ptr<Blackboard> blackboard)
 {
+	using enum Task::TaskState;
 	if (m_delayComplete)
 	{
 		return m_taskRunner->update(blackboard);
@@ -23,7 +24,7 @@ Task::TaskState TaskDecoratorDelay::doUpdate(std::shared_ptr<Blackboard> blackbo
 
 	m_delayComplete = (TimeStamp::now().deltaMS(m_start) >= m_delayMS);
 
-	return Task::STATE_HOLD;
+	return STATE_HOLD;
 }
 
 void TaskDecoratorDelay::doExit(std::shared_ptr<Blackboard>  /*blackboard*/) {}

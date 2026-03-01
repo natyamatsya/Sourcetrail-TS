@@ -135,11 +135,13 @@ int QtJsonTreeModel::rowCount(const QModelIndex& parent) const
 
 int QtJsonTreeModel::columnCount(const QModelIndex&  /*parent*/) const
 {
+	using enum Role;
 	return static_cast<int>(Column::COUNT);
 }
 
 QVariant QtJsonTreeModel::data(const QModelIndex& index, int role) const
 {
+	using enum Role;
 	if (!index.isValid())
 		return {};
 
@@ -179,6 +181,7 @@ QVariant QtJsonTreeModel::data(const QModelIndex& index, int role) const
 
 QVariant QtJsonTreeModel::headerData(int section, Qt::Orientation orientation, int role) const
 {
+	using enum Role;
 	if (orientation != Qt::Horizontal || role != Qt::DisplayRole)
 		return {};
 

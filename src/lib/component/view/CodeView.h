@@ -21,7 +21,7 @@ class CodeView
 public:
 	static const char* VIEW_NAME;
 
-	enum FileState
+	enum class FileState
 	{
 		FILE_MINIMIZED,
 		FILE_SNIPPETS,

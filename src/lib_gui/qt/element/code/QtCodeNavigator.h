@@ -26,7 +26,7 @@ class QtCodeNavigator
 	Q_OBJECT
 
 public:
-	enum Mode
+	enum class Mode
 	{
 		MODE_NONE,
 		MODE_LIST,
@@ -137,8 +137,8 @@ private:
 	QtCodeFileList* m_list;
 	QtCodeFileSingle* m_single;
 
-	Mode m_mode = MODE_NONE;
-	Mode m_oldMode = MODE_NONE;
+	Mode m_mode = Mode::MODE_NONE;
+	Mode m_oldMode = Mode::MODE_NONE;
 
 	TabId m_schedulerId;
 

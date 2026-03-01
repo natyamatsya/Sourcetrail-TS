@@ -14,7 +14,7 @@ class CompositeView
 	, public MessageListener<MessageFocusedSearchView>
 {
 public:
-	enum CompositeDirection
+	enum class CompositeDirection
 	{
 		DIRECTION_HORIZONTAL,
 		DIRECTION_VERTICAL

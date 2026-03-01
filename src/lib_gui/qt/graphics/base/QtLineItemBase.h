@@ -10,7 +10,7 @@
 class QtLineItemBase: public QGraphicsLineItem
 {
 public:
-	enum Route
+	enum class Route
 	{
 		ROUTE_ANY,
 		ROUTE_HORIZONTAL,
@@ -51,7 +51,7 @@ protected:
 	bool m_onBack = false;
 	bool m_earlyBend = false;
 
-	Route m_route = ROUTE_ANY;
+	Route m_route = Route::ROUTE_ANY;
 
 private:
 	Vec4i m_ownerRect;

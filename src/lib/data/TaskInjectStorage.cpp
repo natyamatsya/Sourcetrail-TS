@@ -13,6 +13,7 @@ void TaskInjectStorage::doEnter(std::shared_ptr<Blackboard>  /*blackboard*/) {}
 
 Task::TaskState TaskInjectStorage::doUpdate(std::shared_ptr<Blackboard>  /*blackboard*/)
 {
+	using enum Task::TaskState;
 	if (m_storageProvider->getStorageCount() > 0)
 	{
 		std::shared_ptr<IntermediateStorage> source = m_storageProvider->consumeLargestStorage();

@@ -34,9 +34,13 @@ using namespace utility;
 PersistentStorage::PersistentStorage(const FilePath& dbPath, const FilePath& bookmarkPath)
 	: m_sqliteIndexStorage(dbPath), m_sqliteBookmarkStorage(bookmarkPath)
 {
-	m_commandIndex.addNode(0, SearchMatch::getCommandName(SearchMatch::COMMAND_ALL));
-	m_commandIndex.addNode(0, SearchMatch::getCommandName(SearchMatch::COMMAND_ERROR));
-	m_commandIndex.addNode(0, SearchMatch::getCommandName(SearchMatch::COMMAND_LEGEND));
+	using enum SearchMatch::CommandType;
+	using enum SearchMatch::SearchType;
+	using enum TooltipOrigin;
+	using enum ElementComponentKind;
+	m_commandIndex.addNode(0, SearchMatch::getCommandName(COMMAND_ALL));
+	m_commandIndex.addNode(0, SearchMatch::getCommandName(COMMAND_ERROR));
+	m_commandIndex.addNode(0, SearchMatch::getCommandName(COMMAND_LEGEND));
 
 	for (const NodeType& nodeType: NodeTypeSet::all().getNodeTypes())
 	{
@@ -368,6 +372,10 @@ void PersistentStorage::clearCaches()
 
 std::set<FilePath> PersistentStorage::getReferenced(const std::set<FilePath>& filePaths) const
 {
+	using enum SearchMatch::CommandType;
+	using enum SearchMatch::SearchType;
+	using enum TooltipOrigin;
+	using enum ElementComponentKind;
 	TRACE();
 	std::set<FilePath> referenced;
 
@@ -379,6 +387,10 @@ std::set<FilePath> PersistentStorage::getReferenced(const std::set<FilePath>& fi
 
 std::set<FilePath> PersistentStorage::getReferencing(const std::set<FilePath>& filePaths) const
 {
+	using enum SearchMatch::CommandType;
+	using enum SearchMatch::SearchType;
+	using enum TooltipOrigin;
+	using enum ElementComponentKind;
 	TRACE();
 	std::set<FilePath> referencing;
 
@@ -390,6 +402,10 @@ std::set<FilePath> PersistentStorage::getReferencing(const std::set<FilePath>& f
 
 void PersistentStorage::clearAllErrors()
 {
+	using enum SearchMatch::CommandType;
+	using enum SearchMatch::SearchType;
+	using enum TooltipOrigin;
+	using enum ElementComponentKind;
 	TRACE();
 
 	m_sqliteIndexStorage.removeAllErrors();
@@ -398,6 +414,10 @@ void PersistentStorage::clearAllErrors()
 void PersistentStorage::clearFileElements(
 	const std::vector<FilePath>& filePaths, std::function<void(int)> updateStatusCallback)
 {
+	using enum SearchMatch::CommandType;
+	using enum SearchMatch::SearchType;
+	using enum TooltipOrigin;
+	using enum ElementComponentKind;
 	TRACE();
 
 	std::vector<Id> fileNodeIds;
@@ -418,6 +438,10 @@ void PersistentStorage::clearFileElements(
 
 std::vector<FileInfo> PersistentStorage::getFileInfoForAllFiles() const
 {
+	using enum SearchMatch::CommandType;
+	using enum SearchMatch::SearchType;
+	using enum TooltipOrigin;
+	using enum ElementComponentKind;
 	TRACE();
 
 	std::vector<FileInfo> fileInfos;
@@ -435,6 +459,10 @@ std::vector<FileInfo> PersistentStorage::getFileInfoForAllFiles() const
 
 std::set<FilePath> PersistentStorage::getIncompleteFiles() const
 {
+	using enum SearchMatch::CommandType;
+	using enum SearchMatch::SearchType;
+	using enum TooltipOrigin;
+	using enum ElementComponentKind;
 	TRACE();
 
 	std::set<FilePath> incompleteFiles;
@@ -462,6 +490,10 @@ bool PersistentStorage::getFilePathIndexed(const FilePath& path) const
 
 void PersistentStorage::buildCaches()
 {
+	using enum SearchMatch::CommandType;
+	using enum SearchMatch::SearchType;
+	using enum TooltipOrigin;
+	using enum ElementComponentKind;
 	TRACE();
 
 	clearCaches();
@@ -473,6 +505,10 @@ void PersistentStorage::buildCaches()
 
 void PersistentStorage::optimizeMemory()
 {
+	using enum SearchMatch::CommandType;
+	using enum SearchMatch::SearchType;
+	using enum TooltipOrigin;
+	using enum ElementComponentKind;
 	TRACE();
 
 	m_sqliteIndexStorage.setTime();
@@ -508,6 +544,10 @@ std::vector<Id> PersistentStorage::getNodeIdsForNameHierarchies(
 
 NameHierarchy PersistentStorage::getNameHierarchyForNodeId(Id nodeId) const
 {
+	using enum SearchMatch::CommandType;
+	using enum SearchMatch::SearchType;
+	using enum TooltipOrigin;
+	using enum ElementComponentKind;
 	TRACE();
 
 	return NameHierarchy::deserialize(
@@ -517,6 +557,10 @@ NameHierarchy PersistentStorage::getNameHierarchyForNodeId(Id nodeId) const
 std::vector<NameHierarchy> PersistentStorage::getNameHierarchiesForNodeIds(
 	const std::vector<Id>& nodeIds) const
 {
+	using enum SearchMatch::CommandType;
+	using enum SearchMatch::SearchType;
+	using enum TooltipOrigin;
+	using enum ElementComponentKind;
 	TRACE();
 
 	std::vector<NameHierarchy> nameHierarchies;
@@ -530,6 +574,10 @@ std::vector<NameHierarchy> PersistentStorage::getNameHierarchiesForNodeIds(
 std::map<Id, std::pair<Id, NameHierarchy>> PersistentStorage::getNodeIdToParentFileMap(
 	const std::vector<Id>& nodeIds) const
 {
+	using enum SearchMatch::CommandType;
+	using enum SearchMatch::SearchType;
+	using enum TooltipOrigin;
+	using enum ElementComponentKind;
 	std::map<Id, std::pair<Id, NameHierarchy>> nodeIdToParentFileMap;
 
 	std::shared_ptr<SourceLocationCollection> locations =
@@ -586,6 +634,10 @@ StorageEdge PersistentStorage::getEdgeById(Id edgeId) const
 std::shared_ptr<SourceLocationCollection> PersistentStorage::getFullTextSearchLocations(
 	const std::string& searchTerm, bool caseSensitive) const
 {
+	using enum SearchMatch::CommandType;
+	using enum SearchMatch::SearchType;
+	using enum TooltipOrigin;
+	using enum ElementComponentKind;
 	TRACE();
 
 	std::shared_ptr<SourceLocationCollection> collection =
@@ -708,6 +760,10 @@ std::shared_ptr<SourceLocationCollection> PersistentStorage::getFullTextSearchLo
 std::vector<SearchMatch> PersistentStorage::getAutocompletionMatches(
 	const std::string& query, NodeTypeSet acceptedNodeTypes, bool acceptCommands) const
 {
+	using enum SearchMatch::CommandType;
+	using enum SearchMatch::SearchType;
+	using enum TooltipOrigin;
+	using enum ElementComponentKind;
 	TRACE();
 
 	// search in indices
@@ -806,6 +862,10 @@ std::vector<SearchMatch> PersistentStorage::getAutocompletionSymbolMatches(
 	size_t maxResultsCount,
 	size_t maxBestScoredResultsLength) const
 {
+	using enum SearchMatch::CommandType;
+	using enum SearchMatch::SearchType;
+	using enum TooltipOrigin;
+	using enum ElementComponentKind;
 	// search in indices
 	const std::vector<SearchResult> results = m_symbolIndex.search(
 		query, acceptedNodeTypes, maxResultsCount, maxBestScoredResultsLength);
@@ -879,7 +939,7 @@ std::vector<SearchMatch> PersistentStorage::getAutocompletionSymbolMatches(
 		match.score = result.score;
 		match.nodeType = NodeType(firstNode->type);
 		match.typeName = match.nodeType.getReadableTypeString();
-		match.searchType = SearchMatch::SEARCH_TOKEN;
+		match.searchType = SEARCH_TOKEN;
 
 		if (m_symbolDefinitionKinds.find(firstNode->id) == m_symbolDefinitionKinds.end())
 		{
@@ -895,6 +955,10 @@ std::vector<SearchMatch> PersistentStorage::getAutocompletionSymbolMatches(
 std::vector<SearchMatch> PersistentStorage::getAutocompletionFileMatches(
 	const std::string& query, size_t maxResultsCount) const
 {
+	using enum SearchMatch::CommandType;
+	using enum SearchMatch::SearchType;
+	using enum TooltipOrigin;
+	using enum ElementComponentKind;
 	const std::vector<SearchResult> results = m_fileIndex.search(
 		query,
 		NodeTypeSet::all().getWithMatchingKept([](const NodeType& type) { return type.isFile(); }),
@@ -930,7 +994,7 @@ std::vector<SearchMatch> PersistentStorage::getAutocompletionFileMatches(
 		match.nodeType = NodeType(NODE_FILE);
 		match.typeName = match.nodeType.getReadableTypeString();
 
-		match.searchType = SearchMatch::SEARCH_TOKEN;
+		match.searchType = SEARCH_TOKEN;
 
 		matches.push_back(match);
 	}
@@ -941,6 +1005,10 @@ std::vector<SearchMatch> PersistentStorage::getAutocompletionFileMatches(
 std::vector<SearchMatch> PersistentStorage::getAutocompletionCommandMatches(
 	const std::string& query, NodeTypeSet acceptedNodeTypes) const
 {
+	using enum SearchMatch::CommandType;
+	using enum SearchMatch::SearchType;
+	using enum TooltipOrigin;
+	using enum ElementComponentKind;
 	// search in indices
 	const std::vector<SearchResult> results = m_commandIndex.search(query, NodeTypeSet::all(), 0);
 
@@ -956,17 +1024,17 @@ std::vector<SearchMatch> PersistentStorage::getAutocompletionCommandMatches(
 		match.indices = result.indices;
 		match.score = result.score;
 
-		match.searchType = SearchMatch::SEARCH_COMMAND;
+		match.searchType = SEARCH_COMMAND;
 		match.typeName = "command";
 
-		if (match.getCommandType() == SearchMatch::COMMAND_NODE_FILTER)
+		if (match.getCommandType() == COMMAND_NODE_FILTER)
 		{
 			match.nodeType = NodeType(getNodeKindForReadableNodeKindString(match.name));
 			match.typeName = "filter";
 		}
 
 		if (acceptedNodeTypes == NodeTypeSet::all() ||
-			(match.getCommandType() == SearchMatch::COMMAND_NODE_FILTER &&
+			(match.getCommandType() == COMMAND_NODE_FILTER &&
 			 !(acceptedNodeTypes.contains(match.nodeType))))
 		{
 			matches.push_back(match);
@@ -979,6 +1047,10 @@ std::vector<SearchMatch> PersistentStorage::getAutocompletionCommandMatches(
 std::vector<SearchMatch> PersistentStorage::getSearchMatchesForTokenIds(
 	const std::vector<Id>& elementIds) const
 {
+	using enum SearchMatch::CommandType;
+	using enum SearchMatch::SearchType;
+	using enum TooltipOrigin;
+	using enum ElementComponentKind;
 	TRACE();
 
 	// todo: what if all these elements share the same node in the searchindex?
@@ -1009,7 +1081,7 @@ std::vector<SearchMatch> PersistentStorage::getSearchMatchesForTokenIds(
 		match.tokenIds.push_back(elementId);
 		match.tokenNames.push_back(nameHierarchy);
 		match.nodeType = NodeType(node.type);
-		match.searchType = SearchMatch::SEARCH_TOKEN;
+		match.searchType = SEARCH_TOKEN;
 
 		if (match.nodeType.isFile())
 		{
@@ -1024,6 +1096,10 @@ std::vector<SearchMatch> PersistentStorage::getSearchMatchesForTokenIds(
 
 std::shared_ptr<Graph> PersistentStorage::getGraphForAll() const
 {
+	using enum SearchMatch::CommandType;
+	using enum SearchMatch::SearchType;
+	using enum TooltipOrigin;
+	using enum ElementComponentKind;
 	TRACE();
 
 	std::shared_ptr<Graph> graph = std::make_shared<Graph>();
@@ -1059,6 +1135,10 @@ std::shared_ptr<Graph> PersistentStorage::getGraphForAll() const
 
 std::shared_ptr<Graph> PersistentStorage::getGraphForNodeTypes(NodeTypeSet nodeTypes) const
 {
+	using enum SearchMatch::CommandType;
+	using enum SearchMatch::SearchType;
+	using enum TooltipOrigin;
+	using enum ElementComponentKind;
 	TRACE();
 
 	std::vector<Id> tokenIds;
@@ -1091,6 +1171,10 @@ std::shared_ptr<Graph> PersistentStorage::getGraphForNodeTypes(NodeTypeSet nodeT
 std::shared_ptr<Graph> PersistentStorage::getGraphForActiveTokenIds(
 	const std::vector<Id>& tokenIds, const std::vector<Id>& expandedNodeIds, bool* isActiveNamespace) const
 {
+	using enum SearchMatch::CommandType;
+	using enum SearchMatch::SearchType;
+	using enum TooltipOrigin;
+	using enum ElementComponentKind;
 	TRACE();
 
 	std::vector<Id> ids(tokenIds);
@@ -1262,6 +1346,10 @@ std::shared_ptr<Graph> PersistentStorage::getGraphForActiveTokenIds(
 
 std::shared_ptr<Graph> PersistentStorage::getGraphForChildrenOfNodeId(Id nodeId) const
 {
+	using enum SearchMatch::CommandType;
+	using enum SearchMatch::SearchType;
+	using enum TooltipOrigin;
+	using enum ElementComponentKind;
 	TRACE();
 
 	std::vector<Id> nodeIds;
@@ -1287,6 +1375,10 @@ std::shared_ptr<Graph> PersistentStorage::getGraphForTrail(
 	size_t depth,
 	bool directed) const
 {
+	using enum SearchMatch::CommandType;
+	using enum SearchMatch::SearchType;
+	using enum TooltipOrigin;
+	using enum ElementComponentKind;
 	TRACE();
 
 	std::set<Id> nodeIds;
@@ -1501,6 +1593,10 @@ std::shared_ptr<Graph> PersistentStorage::getGraphForTrail(
 
 NodeKindMask PersistentStorage::getAvailableNodeTypes() const
 {
+	using enum SearchMatch::CommandType;
+	using enum SearchMatch::SearchType;
+	using enum TooltipOrigin;
+	using enum ElementComponentKind;
 	TRACE();
 
 	NodeKindMask mask = 0;
@@ -1513,6 +1609,10 @@ NodeKindMask PersistentStorage::getAvailableNodeTypes() const
 
 Edge::TypeMask PersistentStorage::getAvailableEdgeTypes() const
 {
+	using enum SearchMatch::CommandType;
+	using enum SearchMatch::SearchType;
+	using enum TooltipOrigin;
+	using enum ElementComponentKind;
 	TRACE();
 
 	Edge::TypeMask mask = 0;
@@ -1526,6 +1626,10 @@ Edge::TypeMask PersistentStorage::getAvailableEdgeTypes() const
 // TODO: rename: getActiveElementIdsForId; TODO: make separate function for declarationId
 std::vector<Id> PersistentStorage::getActiveTokenIdsForId(Id tokenId, Id* declarationId) const
 {
+	using enum SearchMatch::CommandType;
+	using enum SearchMatch::SearchType;
+	using enum TooltipOrigin;
+	using enum ElementComponentKind;
 	TRACE();
 
 	std::vector<Id> activeTokenIds;
@@ -1555,6 +1659,10 @@ std::vector<Id> PersistentStorage::getActiveTokenIdsForId(Id tokenId, Id* declar
 
 std::vector<Id> PersistentStorage::getNodeIdsForLocationIds(const std::vector<Id>& locationIds) const
 {
+	using enum SearchMatch::CommandType;
+	using enum SearchMatch::SearchType;
+	using enum TooltipOrigin;
+	using enum ElementComponentKind;
 	TRACE();
 
 	std::set<Id> nodeIds;
@@ -1594,6 +1702,10 @@ std::vector<Id> PersistentStorage::getNodeIdsForLocationIds(const std::vector<Id
 std::shared_ptr<SourceLocationCollection> PersistentStorage::getSourceLocationsForTokenIds(
 	const std::vector<Id>& tokenIds) const
 {
+	using enum SearchMatch::CommandType;
+	using enum SearchMatch::SearchType;
+	using enum TooltipOrigin;
+	using enum ElementComponentKind;
 	TRACE();
 
 	std::map<Id, FilePath> filePaths;
@@ -1700,6 +1812,10 @@ std::shared_ptr<SourceLocationCollection> PersistentStorage::getSourceLocationsF
 std::shared_ptr<SourceLocationCollection> PersistentStorage::getSourceLocationsForLocationIds(
 	const std::vector<Id>& locationIds) const
 {
+	using enum SearchMatch::CommandType;
+	using enum SearchMatch::SearchType;
+	using enum TooltipOrigin;
+	using enum ElementComponentKind;
 	TRACE();
 
 	std::shared_ptr<SourceLocationCollection> collection =
@@ -1741,6 +1857,10 @@ std::shared_ptr<SourceLocationCollection> PersistentStorage::getSourceLocationsF
 std::shared_ptr<SourceLocationFile> PersistentStorage::getSourceLocationsForFile(
 	const FilePath& filePath) const
 {
+	using enum SearchMatch::CommandType;
+	using enum SearchMatch::SearchType;
+	using enum TooltipOrigin;
+	using enum ElementComponentKind;
 	TRACE();
 
 	return m_sqliteIndexStorage.getSourceLocationsForFile(filePath)->getFilteredByTypes(
@@ -1750,6 +1870,10 @@ std::shared_ptr<SourceLocationFile> PersistentStorage::getSourceLocationsForFile
 std::shared_ptr<SourceLocationFile> PersistentStorage::getSourceLocationsForLinesInFile(
 	const FilePath& filePath, size_t startLine, size_t endLine) const
 {
+	using enum SearchMatch::CommandType;
+	using enum SearchMatch::SearchType;
+	using enum TooltipOrigin;
+	using enum ElementComponentKind;
 	TRACE();
 
 	return m_sqliteIndexStorage.getSourceLocationsForLinesInFile(filePath, startLine, endLine)
@@ -1765,6 +1889,10 @@ std::shared_ptr<SourceLocationFile> PersistentStorage::getSourceLocationsForLine
 std::shared_ptr<SourceLocationFile> PersistentStorage::getSourceLocationsOfTypeInFile(
 	const FilePath& filePath, LocationType type) const
 {
+	using enum SearchMatch::CommandType;
+	using enum SearchMatch::SearchType;
+	using enum TooltipOrigin;
+	using enum ElementComponentKind;
 	TRACE();
 
 	return m_sqliteIndexStorage.getSourceLocationsOfTypeInFile(filePath, type);
@@ -1773,6 +1901,10 @@ std::shared_ptr<SourceLocationFile> PersistentStorage::getSourceLocationsOfTypeI
 std::shared_ptr<TextAccess> PersistentStorage::getFileContent(
 	const FilePath& filePath, bool  /*showsErrors*/) const
 {
+	using enum SearchMatch::CommandType;
+	using enum SearchMatch::SearchType;
+	using enum TooltipOrigin;
+	using enum ElementComponentKind;
 	TRACE();
 
 	std::shared_ptr<TextAccess> fileContent = m_sqliteIndexStorage.getFileContentByPath(
@@ -1817,6 +1949,10 @@ std::vector<FileInfo> PersistentStorage::getFileInfosForFilePaths(
 
 StorageStats PersistentStorage::getStorageStats() const
 {
+	using enum SearchMatch::CommandType;
+	using enum SearchMatch::SearchType;
+	using enum TooltipOrigin;
+	using enum ElementComponentKind;
 	TRACE();
 
 	StorageStats stats;
@@ -1912,6 +2048,10 @@ std::vector<ErrorInfo> PersistentStorage::getErrorsForFileLimited(
 std::shared_ptr<SourceLocationCollection> PersistentStorage::getErrorSourceLocations(
 	const std::vector<ErrorInfo>& errors) const
 {
+	using enum SearchMatch::CommandType;
+	using enum SearchMatch::SearchType;
+	using enum TooltipOrigin;
+	using enum ElementComponentKind;
 	TRACE();
 
 	std::shared_ptr<SourceLocationCollection> collection =
@@ -2132,6 +2272,10 @@ std::vector<BookmarkCategory> PersistentStorage::getAllBookmarkCategories() cons
 TooltipInfo PersistentStorage::getTooltipInfoForTokenIds(
 	const std::vector<Id>& tokenIds, TooltipOrigin origin) const
 {
+	using enum SearchMatch::CommandType;
+	using enum SearchMatch::SearchType;
+	using enum TooltipOrigin;
+	using enum ElementComponentKind;
 	TRACE();
 
 	TooltipInfo info;
@@ -2223,6 +2367,10 @@ TooltipInfo PersistentStorage::getTooltipInfoForTokenIds(
 
 TooltipSnippet PersistentStorage::getTooltipSnippetForNode(const StorageNode& node) const
 {
+	using enum SearchMatch::CommandType;
+	using enum SearchMatch::SearchType;
+	using enum TooltipOrigin;
+	using enum ElementComponentKind;
 	TRACE();
 
 	const NameHierarchy nameHierarchy = NameHierarchy::deserialize(node.serializedName);
@@ -2478,6 +2626,10 @@ TooltipSnippet PersistentStorage::getTooltipSnippetForNode(const StorageNode& no
 TooltipInfo PersistentStorage::getTooltipInfoForSourceLocationIdsAndLocalSymbolIds(
 	const std::vector<Id>& locationIds, const std::vector<Id>& localSymbolIds) const
 {
+	using enum SearchMatch::CommandType;
+	using enum SearchMatch::SearchType;
+	using enum TooltipOrigin;
+	using enum ElementComponentKind;
 	TRACE();
 
 	TooltipInfo info;
@@ -2535,6 +2687,10 @@ TooltipInfo PersistentStorage::getTooltipInfoForSourceLocationIdsAndLocalSymbolI
 
 Id PersistentStorage::getFileNodeId(const FilePath& filePath) const
 {
+	using enum SearchMatch::CommandType;
+	using enum SearchMatch::SearchType;
+	using enum TooltipOrigin;
+	using enum ElementComponentKind;
 	if (filePath.empty())
 	{
 		LOG_ERROR("No file path set");
@@ -2582,6 +2738,10 @@ std::set<Id> PersistentStorage::getFileNodeIds(const std::set<FilePath>& filePat
 
 FilePath PersistentStorage::getFileNodePath(Id fileId) const
 {
+	using enum SearchMatch::CommandType;
+	using enum SearchMatch::SearchType;
+	using enum TooltipOrigin;
+	using enum ElementComponentKind;
 	if (fileId == 0)
 	{
 		LOG_ERROR("No file id set");
@@ -2633,6 +2793,10 @@ std::string PersistentStorage::getFileNodeLanguage(Id fileId) const
 
 std::unordered_map<Id, std::set<Id>> PersistentStorage::getFileIdToIncludingFileIdMap() const
 {
+	using enum SearchMatch::CommandType;
+	using enum SearchMatch::SearchType;
+	using enum TooltipOrigin;
+	using enum ElementComponentKind;
 	std::unordered_map<Id, std::set<Id>> fileIdToIncludingFileIdMap;
 
 	m_sqliteIndexStorage.forEachOfType<StorageEdge>(
@@ -2645,6 +2809,10 @@ std::unordered_map<Id, std::set<Id>> PersistentStorage::getFileIdToIncludingFile
 
 std::unordered_map<Id, std::set<Id>> PersistentStorage::getFileIdToIncludedFileIdMap() const
 {
+	using enum SearchMatch::CommandType;
+	using enum SearchMatch::SearchType;
+	using enum TooltipOrigin;
+	using enum ElementComponentKind;
 	std::unordered_map<Id, std::set<Id>> fileIdToIncludingFileIdMap;
 
 	m_sqliteIndexStorage.forEachOfType<StorageEdge>(
@@ -2657,6 +2825,10 @@ std::unordered_map<Id, std::set<Id>> PersistentStorage::getFileIdToIncludedFileI
 
 std::unordered_map<Id, std::set<Id>> PersistentStorage::getFileIdToImportingFileIdMap() const
 {
+	using enum SearchMatch::CommandType;
+	using enum SearchMatch::SearchType;
+	using enum TooltipOrigin;
+	using enum ElementComponentKind;
 	std::unordered_map<Id, std::set<Id>> fileIdToImportingFileIdMap;
 	{
 		std::vector<Id> importedElementIds;
@@ -2808,6 +2980,10 @@ std::set<FilePath> PersistentStorage::getReferencingByImports(const std::set<Fil
 void PersistentStorage::addNodesToGraph(
 	const std::vector<Id>& newNodeIds, Graph* graph, bool addChildCount) const
 {
+	using enum SearchMatch::CommandType;
+	using enum SearchMatch::SearchType;
+	using enum TooltipOrigin;
+	using enum ElementComponentKind;
 	TRACE();
 
 	std::vector<Id> nodeIds;
@@ -2847,6 +3023,10 @@ void PersistentStorage::addNodesToGraph(
 
 void PersistentStorage::addFileNodeToGraph(const StorageNode& storageNode, Graph* const graph) const
 {
+	using enum SearchMatch::CommandType;
+	using enum SearchMatch::SearchType;
+	using enum TooltipOrigin;
+	using enum ElementComponentKind;
 	NameHierarchy nameHierarchy = NameHierarchy::deserialize(storageNode.serializedName);
 	const FilePath filePath(nameHierarchy.getRawName());
 
@@ -2864,6 +3044,10 @@ void PersistentStorage::addFileNodeToGraph(const StorageNode& storageNode, Graph
 void PersistentStorage::addNodeToGraph(
 	const StorageNode& newNode, const NodeType& type, Graph* graph, bool addChildCount) const
 {
+	using enum SearchMatch::CommandType;
+	using enum SearchMatch::SearchType;
+	using enum TooltipOrigin;
+	using enum ElementComponentKind;
 	NameHierarchy nameHierarchy = NameHierarchy::deserialize(newNode.serializedName);
 	DefinitionKind defKind = DefinitionKind::NONE;
 	auto it = m_symbolDefinitionKinds.find(newNode.id);
@@ -2882,6 +3066,10 @@ void PersistentStorage::addNodeToGraph(
 
 void PersistentStorage::addEdgesToGraph(const std::vector<Id>& newEdgeIds, Graph* graph) const
 {
+	using enum SearchMatch::CommandType;
+	using enum SearchMatch::SearchType;
+	using enum TooltipOrigin;
+	using enum ElementComponentKind;
 	TRACE();
 
 	std::vector<Id> edgeIds;
@@ -2918,6 +3106,10 @@ void PersistentStorage::addEdgesToGraph(const std::vector<Id>& newEdgeIds, Graph
 void PersistentStorage::addNodesWithParentsAndEdgesToGraph(
 	const std::vector<Id>& nodeIds, const std::vector<Id>& edgeIds, Graph* graph, bool addChildCount) const
 {
+	using enum SearchMatch::CommandType;
+	using enum SearchMatch::SearchType;
+	using enum TooltipOrigin;
+	using enum ElementComponentKind;
 	TRACE();
 
 	std::set<Id> allNodeIds(nodeIds.begin(), nodeIds.end());
@@ -2947,6 +3139,10 @@ void PersistentStorage::addNodesWithParentsAndEdgesToGraph(
 void PersistentStorage::addBundledEdgesToGraph(
 	Id nodeId, const std::vector<StorageEdge>& edgesToBundle, Graph* graph) const
 {
+	using enum SearchMatch::CommandType;
+	using enum SearchMatch::SearchType;
+	using enum TooltipOrigin;
+	using enum ElementComponentKind;
 	TRACE();
 
 	struct EdgeInfo
@@ -3051,6 +3247,10 @@ void PersistentStorage::addBundledEdgesToGraph(
 
 void PersistentStorage::addFileContentsToGraph(Id fileId, Graph* graph) const
 {
+	using enum SearchMatch::CommandType;
+	using enum SearchMatch::SearchType;
+	using enum TooltipOrigin;
+	using enum ElementComponentKind;
 	FilePath path = getFileNodePath(fileId);
 	if (path.empty())
 	{
@@ -3101,6 +3301,10 @@ void PersistentStorage::addFileContentsToGraph(Id fileId, Graph* graph) const
 
 void PersistentStorage::addComponentAccessToGraph(Graph* graph) const
 {
+	using enum SearchMatch::CommandType;
+	using enum SearchMatch::SearchType;
+	using enum TooltipOrigin;
+	using enum ElementComponentKind;
 	TRACE();
 
 	std::vector<Id> nodeIds;
@@ -3119,6 +3323,10 @@ void PersistentStorage::addComponentAccessToGraph(Graph* graph) const
 
 void PersistentStorage::addComponentIsAmbiguousToGraph(Graph* graph) const
 {
+	using enum SearchMatch::CommandType;
+	using enum SearchMatch::SearchType;
+	using enum TooltipOrigin;
+	using enum ElementComponentKind;
 	TRACE();
 
 	std::vector<Id> edgeIds;
@@ -3139,6 +3347,10 @@ void PersistentStorage::addComponentIsAmbiguousToGraph(Graph* graph) const
 void PersistentStorage::addCompleteFlagsToSourceLocationCollection(
 	SourceLocationCollection* collection) const
 {
+	using enum SearchMatch::CommandType;
+	using enum SearchMatch::SearchType;
+	using enum TooltipOrigin;
+	using enum ElementComponentKind;
 	TRACE();
 
 	collection->forEachSourceLocationFile([this](std::shared_ptr<SourceLocationFile> file) {
@@ -3151,6 +3363,10 @@ void PersistentStorage::addCompleteFlagsToSourceLocationCollection(
 
 void PersistentStorage::addInheritanceChainsToGraph(const std::vector<Id>& activeNodeIds, Graph* graph) const
 {
+	using enum SearchMatch::CommandType;
+	using enum SearchMatch::SearchType;
+	using enum TooltipOrigin;
+	using enum ElementComponentKind;
 	TRACE();
 
 	std::set<Id> activeNodeIdsSet;
@@ -3219,6 +3435,10 @@ void PersistentStorage::addInheritanceChainsToGraph(const std::vector<Id>& activ
 
 void PersistentStorage::buildFilePathMaps()
 {
+	using enum SearchMatch::CommandType;
+	using enum SearchMatch::SearchType;
+	using enum TooltipOrigin;
+	using enum ElementComponentKind;
 	TRACE();
 
 	m_sqliteIndexStorage.forEach<StorageFile>([&](StorageFile&& file) {
@@ -3239,6 +3459,10 @@ void PersistentStorage::buildFilePathMaps()
 
 void PersistentStorage::buildSearchIndex()
 {
+	using enum SearchMatch::CommandType;
+	using enum SearchMatch::SearchType;
+	using enum TooltipOrigin;
+	using enum ElementComponentKind;
 	TRACE();
 
 	const FilePath dbPath = getIndexDbFilePath();
@@ -3298,6 +3522,10 @@ void PersistentStorage::buildSearchIndex()
 
 void PersistentStorage::buildFullTextSearchIndex() const
 {
+	using enum SearchMatch::CommandType;
+	using enum SearchMatch::SearchType;
+	using enum TooltipOrigin;
+	using enum ElementComponentKind;
 	TRACE();
 
 	TextCodec codec(ApplicationSettings::getInstance()->getTextEncoding());
@@ -3340,6 +3568,10 @@ void PersistentStorage::buildFullTextSearchIndex() const
 
 void PersistentStorage::buildHierarchyCache()
 {
+	using enum SearchMatch::CommandType;
+	using enum SearchMatch::SearchType;
+	using enum TooltipOrigin;
+	using enum ElementComponentKind;
 	TRACE();
 
 	std::vector<Id> sourceNodeIds;

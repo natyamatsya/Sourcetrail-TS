@@ -65,6 +65,7 @@ void TaskFillIndexerCommandsQueue::doEnter(std::shared_ptr<Blackboard> blackboar
 
 Task::TaskState TaskFillIndexerCommandsQueue::doUpdate(std::shared_ptr<Blackboard> blackboard)
 {
+	using enum Task::TaskState;
 	if (m_interrupted)
 	{
 		return STATE_FAILURE;
@@ -87,6 +88,7 @@ Task::TaskState TaskFillIndexerCommandsQueue::doUpdate(std::shared_ptr<Blackboar
 
 void TaskFillIndexerCommandsQueue::doExit(std::shared_ptr<Blackboard> blackboard)
 {
+	using enum Task::TaskState;
 	if constexpr (language_packages::buildRustLanguagePackage)
 		if (m_rustDedup.skippedCount)
 			LOG_INFO_STREAM(<< "Skipped " << m_rustDedup.skippedCount
@@ -116,6 +118,7 @@ void TaskFillIndexerCommandsQueue::terminate()
 
 void TaskFillIndexerCommandsQueue::handleMessage(MessageIndexingInterrupted*  /*message*/)
 {
+	using enum Task::TaskState;
 	std::lock_guard<std::mutex> lock(m_commandsMutex);
 
 	LOG_INFO(
@@ -139,6 +142,7 @@ void TaskFillIndexerCommandsQueue::handleMessage(MessageIndexingInterrupted*  /*
 
 bool TaskFillIndexerCommandsQueue::fillCommandQueue(std::shared_ptr<Blackboard> blackboard)
 {
+	using enum Task::TaskState;
 	size_t refillAmount = m_maximumQueueSize - m_indexerCommandManager.indexerCommandCount();
 	if (!refillAmount)
 	{

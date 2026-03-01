@@ -43,7 +43,8 @@ void ComponentManager::clear()
 
 void ComponentManager::setupMain(ViewLayout* viewLayout, TabId appId)
 {
-	std::shared_ptr<CompositeView> compositeView = m_componentFactory.getViewFactory()->createCompositeView(viewLayout, CompositeView::DIRECTION_HORIZONTAL, "Search", TabId::NONE);
+	using enum CompositeView::CompositeDirection;
+	std::shared_ptr<CompositeView> compositeView = m_componentFactory.getViewFactory()->createCompositeView(viewLayout, DIRECTION_HORIZONTAL, "Search", TabId::NONE);
 	m_singleViews.push_back(compositeView);
 
 	std::shared_ptr<UndoRedoView> undoRedoView = m_componentFactory.getViewFactory()->createUndoRedoView(compositeView.get());
@@ -104,9 +105,10 @@ void ComponentManager::setupMain(ViewLayout* viewLayout, TabId appId)
 
 void ComponentManager::setupTab(ViewLayout* viewLayout, TabId tabId, ScreenSearchSender* screenSearchSender)
 {
+	using enum CompositeView::CompositeDirection;
 	std::shared_ptr<CompositeView> compositeView =
 		m_componentFactory.getViewFactory()->createCompositeView(
-			viewLayout, CompositeView::DIRECTION_HORIZONTAL, "Search", tabId);
+			viewLayout, DIRECTION_HORIZONTAL, "Search", tabId);
 	m_singleViews.push_back(compositeView);
 
 	std::shared_ptr<Component> undoRedoComponent = m_componentFactory.createUndoRedoComponent(
@@ -206,6 +208,7 @@ View* ComponentManager::getView(const std::string& name) const
 
 std::shared_ptr<DialogView> ComponentManager::getDialogView(DialogView::UseCase useCase) const
 {
+	using enum CompositeView::CompositeDirection;
 	auto it = m_dialogViews.find(useCase);
 	if (it == m_dialogViews.end())
 	{
