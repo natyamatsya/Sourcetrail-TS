@@ -3,11 +3,6 @@ file(GLOB_RECURSE Sourcetrail_lib_cxx_SOURCES CONFIGURE_DEPENDS
 	"${CMAKE_CURRENT_SOURCE_DIR}/*.h"
 )
 
-# clang_compat now has version-specific implementations in clang_compat/v*/.
-# Keep the legacy single-file implementation out of the build.
-list(FILTER Sourcetrail_lib_cxx_SOURCES EXCLUDE REGEX
-	".*/data/parser/cxx/clang_compat/ClangCompatibility\\.cpp")
-
 add_library(Sourcetrail_lib_cxx ${Sourcetrail_lib_cxx_SOURCES})
 setDefaultTargetOptions(Sourcetrail_lib_cxx)
 
