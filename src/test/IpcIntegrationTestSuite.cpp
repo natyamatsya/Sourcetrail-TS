@@ -319,4 +319,86 @@ TEST_CASE("ipc integration: full indexer workflow")
 		REQUIRE(reader.indexerCommandCount() == 0);
 	}
 #endif
+
+#if BUILD_SWIFT_LANGUAGE_PACKAGE
+	SECTION("task fill queue deduplicates swift commands by working directory")
+	{
+		const std::string dedupUuid = "ipc_fill_swift_dedup_test";
+		IpcInterprocessIndexerCommandManager ownerMgr(dedupUuid, mainPid, true);
+		ownerMgr.clearIndexerCommands();
+
+		auto makeSwiftCommand = [](const std::string& workingDirectory) {
+			const FilePath workingDirPath(workingDirectory);
+			return std::make_shared<IndexerCommandSwift>(
+				workingDirPath,
+				std::set<FilePath>{workingDirPath},
+				workingDirPath);
+		};
+
+		auto provider = std::make_unique<CombinedIndexerCommandProvider>();
+
+		std::vector<std::shared_ptr<IndexerCommand>> providerACommands;
+		providerACommands.push_back(makeSwiftCommand("/swift/pkg/a"));
+#if BUILD_CXX_LANGUAGE_PACKAGE
+		providerACommands.push_back(std::make_shared<IndexerCommandCxx>(
+			FilePath("/src/swift_bridge.cpp"),
+			std::set<FilePath>{},
+			std::set<FilePathFilter>{},
+			std::set<FilePathFilter>{},
+			FilePath("/build"),
+			std::vector<std::string>{"-std=c++20"},
+			std::string{}));
+#endif
+		provider->addProvider(
+			std::make_shared<MemoryIndexerCommandProvider>(providerACommands));
+
+		provider->addProvider(std::make_shared<MemoryIndexerCommandProvider>(
+			std::vector<std::shared_ptr<IndexerCommand>>{
+				makeSwiftCommand("/swift/pkg/a"),
+				makeSwiftCommand("/swift/pkg/b")}));
+
+		auto blackboard = std::make_shared<Blackboard>();
+		blackboard->set<int>("source_file_count", static_cast<int>(provider->size()));
+
+		TaskFillIndexerCommandsQueue task(dedupUuid, std::move(provider), 16);
+		REQUIRE(task.update(blackboard) == Task::STATE_SUCCESS);
+
+		int sourceFileCount = 0;
+		REQUIRE(blackboard->get<int>("source_file_count", sourceFileCount));
+#if BUILD_CXX_LANGUAGE_PACKAGE
+		REQUIRE(sourceFileCount == 3);
+#else
+		REQUIRE(sourceFileCount == 2);
+#endif
+
+		IpcInterprocessIndexerCommandManager reader(dedupUuid, workerPid, false);
+
+		size_t swiftCount = 0;
+		size_t cxxCount = 0;
+		std::set<std::string> swiftWorkingDirectories;
+		while (std::shared_ptr<IndexerCommand> command = reader.popIndexerCommand())
+		{
+			if (command->getIndexerCommandType() == INDEXER_COMMAND_SWIFT)
+			{
+				swiftCount++;
+				const auto* swiftCommand = dynamic_cast<const IndexerCommandSwift*>(command.get());
+				REQUIRE(swiftCommand != nullptr);
+				swiftWorkingDirectories.insert(swiftCommand->getWorkingDirectory().str());
+				continue;
+			}
+
+#if BUILD_CXX_LANGUAGE_PACKAGE
+			if (command->getIndexerCommandType() == INDEXER_COMMAND_CXX)
+				cxxCount++;
+#endif
+		}
+
+		REQUIRE(swiftCount == 2);
+		REQUIRE(swiftWorkingDirectories.size() == 2);
+#if BUILD_CXX_LANGUAGE_PACKAGE
+		REQUIRE(cxxCount == 1);
+#endif
+		REQUIRE(reader.indexerCommandCount() == 0);
+	}
+#endif
 }
