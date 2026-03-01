@@ -1,9 +1,5 @@
 #include "Catch2.hpp"
 
-#include "language_packages.h"
-
-#if BUILD_CXX_LANGUAGE_PACKAGE
-
 #	include "IncludeDirective.h"
 #	include "IncludeProcessing.h"
 #	include "TextAccess.h"
@@ -175,5 +171,3 @@ TEST_CASE("header search path detection finds path included in future header sea
 				 "path/include_b")
 			.makeAbsolute()));
 }
-
-#endif	  // BUILD_CXX_LANGUAGE_PACKAGE

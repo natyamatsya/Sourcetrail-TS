@@ -1,9 +1,5 @@
 #include "Catch2.hpp"
 
-#include "language_packages.h"
-
-#if BUILD_CXX_LANGUAGE_PACKAGE
-
 #	include "CxxTypeName.h"
 
 TEST_CASE("type name created with name has no qualifiers or modifiers")
@@ -48,5 +44,3 @@ TEST_CASE("type name created with name and pointer pointer modifier has pointer 
 	typeName.addModifier(CxxTypeName::Modifier("*"));
 	REQUIRE("int * *" == typeName.toString());
 }
-
-#endif	  // BUILD_CXX_LANGUAGE_PACKAGE

@@ -3,9 +3,12 @@ file(GLOB_RECURSE Sourcetrail_test_SOURCES CONFIGURE_DEPENDS
 	"${CMAKE_CURRENT_SOURCE_DIR}/*.h"
 )
 
-# CMakeFileAPIReaderTestSuite requires BUILD_CXX_LANGUAGE_PACKAGE; exclude it
-# from the unconditional glob and add it back conditionally.
+# CXX-only suites: exclude them from the unconditional glob and add them back
+# only when BUILD_CXX_LANGUAGE_PACKAGE is enabled.
 list(FILTER Sourcetrail_test_SOURCES EXCLUDE REGEX ".*/CMakeFileAPIReaderTestSuite\\.cpp")
+list(FILTER Sourcetrail_test_SOURCES EXCLUDE REGEX ".*/CxxParserTestSuite\\.cpp")
+list(FILTER Sourcetrail_test_SOURCES EXCLUDE REGEX ".*/CxxIncludeProcessingTestSuite\\.cpp")
+list(FILTER Sourcetrail_test_SOURCES EXCLUDE REGEX ".*/CxxTypeNameTestSuite\\.cpp")
 
 add_executable(Sourcetrail_test ${Sourcetrail_test_SOURCES})
 
@@ -13,6 +16,9 @@ if (BUILD_CXX_LANGUAGE_PACKAGE)
 	target_sources(Sourcetrail_test
 		PRIVATE
 			"${CMAKE_CURRENT_SOURCE_DIR}/CMakeFileAPIReaderTestSuite.cpp"
+			"${CMAKE_CURRENT_SOURCE_DIR}/CxxParserTestSuite.cpp"
+			"${CMAKE_CURRENT_SOURCE_DIR}/CxxIncludeProcessingTestSuite.cpp"
+			"${CMAKE_CURRENT_SOURCE_DIR}/CxxTypeNameTestSuite.cpp"
 	)
 endif()
 

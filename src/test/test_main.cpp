@@ -1,7 +1,6 @@
 #include "Catch2.hpp"
 
 #include "ApplicationSettings.h"
-#include "language_packages.h"
 #include "utilityPathDetection.h"
 #include <AppPath.h>
 #include <UserPaths.h>

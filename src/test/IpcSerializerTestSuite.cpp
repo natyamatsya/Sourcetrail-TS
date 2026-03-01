@@ -1,6 +1,6 @@
 #include "Catch2.hpp"
 
-#include "language_packages.h"
+#include "language_package_flags.h"
 
 #include "IndexerCommandSerializer.h"
 #include "IntermediateStorageSerializer.h"
@@ -13,37 +13,51 @@
 #include "IndexerCommandCxx.h"
 #endif
 
+namespace
+{
+template <bool Enabled>
+void runCxxRoundTripAssertions()
+{
+	if constexpr (!Enabled)
+		return;
+#if BUILD_CXX_LANGUAGE_PACKAGE
+	std::set<FilePath> indexedPaths = {FilePath("/usr/include"), FilePath("/opt/include")};
+	std::set<FilePathFilter> excludeFilters = {FilePathFilter("build/*")};
+	std::set<FilePathFilter> includeFilters = {FilePathFilter("src/*")};
+	FilePath workingDir("/home/user/project");
+	std::vector<std::string> flags = {"-std=c++17", "-Wall", "-DFOO=1"};
+
+	auto cmd = std::make_shared<IndexerCommandCxx>(
+		FilePath("/home/user/project/main.cpp"),
+		indexedPaths, excludeFilters, includeFilters, workingDir, flags, std::string{});
+
+	std::vector<std::shared_ptr<IndexerCommand>> commands = {cmd};
+
+	auto buf = IpcSerializer::serializeIndexerCommands(commands);
+	auto result = IpcSerializer::deserializeIndexerCommands(buf.data(), buf.size());
+
+	REQUIRE(result.size() == 1);
+	auto* cxx = dynamic_cast<IndexerCommandCxx*>(result[0].get());
+	REQUIRE(cxx != nullptr);
+	REQUIRE(cxx->getSourceFilePath().str() == "/home/user/project/main.cpp");
+	REQUIRE(cxx->getIndexedPaths() == indexedPaths);
+	REQUIRE(cxx->getWorkingDirectory().str() == "/home/user/project");
+	REQUIRE(cxx->getCompilerFlags() == flags);
+	REQUIRE(cxx->getExcludeFilters().size() == 1);
+	REQUIRE(cxx->getIncludeFilters().size() == 1);
+#endif
+}
+}
+
 TEST_CASE("ipc serializer round-trips")
 {
-#if BUILD_CXX_LANGUAGE_PACKAGE
 	SECTION("IndexerCommand CXX round-trip")
 	{
-		std::set<FilePath> indexedPaths = {FilePath("/usr/include"), FilePath("/opt/include")};
-		std::set<FilePathFilter> excludeFilters = {FilePathFilter("build/*")};
-		std::set<FilePathFilter> includeFilters = {FilePathFilter("src/*")};
-		FilePath workingDir("/home/user/project");
-		std::vector<std::string> flags = {"-std=c++17", "-Wall", "-DFOO=1"};
-
-		auto cmd = std::make_shared<IndexerCommandCxx>(
-			FilePath("/home/user/project/main.cpp"),
-			indexedPaths, excludeFilters, includeFilters, workingDir, flags, std::string{});
-
-		std::vector<std::shared_ptr<IndexerCommand>> commands = {cmd};
-
-		auto buf = IpcSerializer::serializeIndexerCommands(commands);
-		auto result = IpcSerializer::deserializeIndexerCommands(buf.data(), buf.size());
-
-		REQUIRE(result.size() == 1);
-		auto* cxx = dynamic_cast<IndexerCommandCxx*>(result[0].get());
-		REQUIRE(cxx != nullptr);
-		REQUIRE(cxx->getSourceFilePath().str() == "/home/user/project/main.cpp");
-		REQUIRE(cxx->getIndexedPaths() == indexedPaths);
-		REQUIRE(cxx->getWorkingDirectory().str() == "/home/user/project");
-		REQUIRE(cxx->getCompilerFlags() == flags);
-		REQUIRE(cxx->getExcludeFilters().size() == 1);
-		REQUIRE(cxx->getIncludeFilters().size() == 1);
+		if constexpr (language_packages::buildCxxLanguagePackage)
+			runCxxRoundTripAssertions<language_packages::buildCxxLanguagePackage>();
+		else
+			SUCCEED("CXX language package disabled.");
 	}
-#endif
 
 	SECTION("IntermediateStorage round-trip")
 	{

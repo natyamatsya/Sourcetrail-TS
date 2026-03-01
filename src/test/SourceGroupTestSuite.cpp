@@ -2,7 +2,7 @@
 
 #include <fstream>
 
-#include "language_packages.h"
+#include "language_package_flags.h"
 
 #include "AppPath.h"
 #include "Application.h"
@@ -95,6 +95,21 @@ std::string indexerCommandCxxToString(
 }
 #endif	  // BUILD_CXX_LANGUAGE_PACKAGE
 
+template <bool Enabled>
+std::string optionalIndexerCommandCxxToString(
+	const std::shared_ptr<IndexerCommand>& indexerCommand,
+	const FilePath& baseDirectory)
+{
+	if constexpr (!Enabled)
+		return std::string{};
+#if BUILD_CXX_LANGUAGE_PACKAGE
+	if (std::shared_ptr<const IndexerCommandCxx> indexerCommandCxx =
+			std::dynamic_pointer_cast<const IndexerCommandCxx>(indexerCommand))
+		return indexerCommandCxxToString(indexerCommandCxx, baseDirectory);
+#endif	  // BUILD_CXX_LANGUAGE_PACKAGE
+	return std::string{};
+}
+
 std::string indexerCommandCustomToString(
 	std::shared_ptr<const IndexerCommandCustom> indexerCommand, const FilePath& baseDirectory)
 {
@@ -116,13 +131,12 @@ std::string indexerCommandToString(
 {
 	if (indexerCommand)
 	{
-#if BUILD_CXX_LANGUAGE_PACKAGE
-		if (std::shared_ptr<const IndexerCommandCxx> indexerCommandCxx =
-				std::dynamic_pointer_cast<const IndexerCommandCxx>(indexerCommand))
-		{
-			return indexerCommandCxxToString(indexerCommandCxx, baseDirectory);
-		}
-#endif	  // BUILD_CXX_LANGUAGE_PACKAGE
+		if (const std::string cxxString =
+			optionalIndexerCommandCxxToString<language_packages::buildCxxLanguagePackage>(
+				indexerCommand,
+				baseDirectory);
+			!cxxString.empty())
+			return cxxString;
 		if (std::shared_ptr<const IndexerCommandCustom> indexerCommandCustom =
 				std::dynamic_pointer_cast<const IndexerCommandCustom>(indexerCommand))
 		{
