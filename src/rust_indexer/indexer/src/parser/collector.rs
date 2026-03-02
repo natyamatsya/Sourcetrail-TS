@@ -5,7 +5,7 @@ use ra_ap_ide_db::base_db::{RootQueryDb, SourceDatabase};
 use ra_ap_ide_db::line_index::LineIndex;
 use ra_ap_ide_db::RootDatabase;
 use ra_ap_syntax::ast::{self, HasGenericParams, HasName, HasTypeBounds};
-use ra_ap_syntax::AstNode;
+use ra_ap_syntax::{AstNode, SyntaxKind};
 use ra_ap_vfs::Vfs;
 
 use crate::ipc::storage::{
@@ -14,10 +14,10 @@ use crate::ipc::storage::{
 };
 
 use super::{
-    DEFINITION_EXPLICIT, EDGE_INHERITANCE, EDGE_MEMBER, EDGE_TYPE_USAGE, LOCATION_TOKEN, NODE_ENUM,
-    NODE_ENUM_CONSTANT, NODE_FIELD, NODE_FILE, NODE_FUNCTION, NODE_GLOBAL_VARIABLE, NODE_INTERFACE,
-    NODE_MACRO, NODE_METHOD, NODE_MODULE, NODE_STRUCT, NODE_TYPEDEF, NODE_TYPE_PARAMETER,
-    NODE_UNION,
+    DEFINITION_EXPLICIT, EDGE_CALL, EDGE_INHERITANCE, EDGE_MEMBER, EDGE_TYPE_USAGE, EDGE_USAGE,
+    LOCATION_TOKEN, NODE_ENUM, NODE_ENUM_CONSTANT, NODE_FIELD, NODE_FILE, NODE_FUNCTION,
+    NODE_GLOBAL_VARIABLE, NODE_INTERFACE, NODE_MACRO, NODE_METHOD, NODE_MODULE, NODE_STRUCT,
+    NODE_TYPEDEF, NODE_TYPE_PARAMETER, NODE_UNION,
 };
 
 #[derive(Debug, Clone)]
@@ -37,8 +37,42 @@ struct Collector<'db> {
     vfs: &'db Vfs,
     /// file_path → StorageFile id
     file_ids: HashMap<String, i64>,
+    /// plain qualified name → node id (for edge resolution)
+    node_ids: HashMap<String, i64>,
     next_id: i64,
     storage: OwnedIntermediateStorage,
+}
+
+/// Encode a `::` -delimited qualified name into the `NameHierarchy` wire format:
+///   `"::\tm" + parts.join("\tn" + each_part + "\ts\tp") + "\ts\tp"`
+/// where `\t` is a literal tab.
+fn serialize_name(qualified: &str) -> String {
+    let mut out = String::from("::\tm");
+    let parts: Vec<&str> = qualified.split("::").collect();
+    for (i, part) in parts.iter().enumerate() {
+        if i > 0 {
+            out.push('\t');
+            out.push('n');
+        }
+        out.push_str(part);
+        out.push('\t');
+        out.push('s');
+        out.push('\t');
+        out.push('p');
+    }
+    out
+}
+
+/// Encode a file path into the `NameHierarchy` wire format using "/" delimiter:
+///   `"/\tm" + path + "\ts\tp"`
+fn serialize_file_name(path: &str) -> String {
+    let mut out = String::from("/\tm");
+    out.push_str(path);
+    out.push('\t');
+    out.push('s');
+    out.push('\t');
+    out.push('p');
+    out
 }
 
 impl<'db> Collector<'db> {
@@ -47,6 +81,7 @@ impl<'db> Collector<'db> {
             db,
             vfs,
             file_ids: HashMap::new(),
+            node_ids: HashMap::new(),
             next_id: 1,
             storage: OwnedIntermediateStorage::default(),
         }
@@ -67,7 +102,7 @@ impl<'db> Collector<'db> {
         self.storage.nodes.push(OwnedStorageNode {
             id,
             type_: NODE_FILE,
-            serialized_name: path.to_owned(),
+            serialized_name: serialize_file_name(path),
         });
         self.storage.files.push(OwnedStorageFile {
             id,
@@ -91,10 +126,11 @@ impl<'db> Collector<'db> {
         let loc_id = self.alloc_id();
         let file_node_id = self.file_node_id(file_path);
 
+        self.node_ids.insert(name.to_owned(), node_id);
         self.storage.nodes.push(OwnedStorageNode {
             id: node_id,
             type_: node_kind,
-            serialized_name: name.to_owned(),
+            serialized_name: serialize_name(name),
         });
         self.storage.symbols.push(OwnedStorageSymbol {
             id: node_id,
@@ -145,23 +181,16 @@ impl<'db> Collector<'db> {
     }
 
     fn resolve_node_id(&self, query: &str) -> Option<i64> {
-        if let Some(id) = self
-            .storage
-            .nodes
-            .iter()
-            .find(|n| n.serialized_name == query)
-            .map(|n| n.id)
-        {
+        if let Some(&id) = self.node_ids.get(query) {
             return Some(id);
         }
 
         let suffix = format!("::{query}");
         let mut matches = self
-            .storage
-            .nodes
+            .node_ids
             .iter()
-            .filter(|n| n.serialized_name.ends_with(&suffix))
-            .map(|n| n.id);
+            .filter(|(k, _)| k.ends_with(&suffix))
+            .map(|(_, &v)| v);
 
         let first = matches.next()?;
         if matches.next().is_some() {
@@ -223,11 +252,7 @@ impl<'db> Collector<'db> {
         ctx: &SourceContext,
     ) -> String {
         let qualified_parameter_name = format!("{owner_name}::{parameter_name}");
-        let exists = self
-            .storage
-            .nodes
-            .iter()
-            .any(|n| n.serialized_name == qualified_parameter_name);
+        let exists = self.node_ids.contains_key(&qualified_parameter_name);
         if !exists {
             self.add_def_with_context(&qualified_parameter_name, NODE_TYPE_PARAMETER, range, ctx);
             self.add_edge(EDGE_MEMBER, owner_name, &qualified_parameter_name);
@@ -263,6 +288,74 @@ impl<'db> Collector<'db> {
             for imp in module.impl_defs(self.db) {
                 self.collect_impl(&module_prefix, imp);
                 self.collect_impl_items(&module_prefix, imp);
+            }
+        }
+        // Second pass: emit EDGE_CALL edges by walking function bodies.
+        // Must be done after all nodes are collected so node_ids is fully populated.
+        let fns: Vec<(ra_ap_hir::Function, String)> = krate
+            .modules(self.db)
+            .into_iter()
+            .flat_map(|m| m.declarations(self.db))
+            .filter_map(|def| {
+                if let ModuleDef::Function(f) = def {
+                    let name = f.name(self.db).as_str().to_string();
+                    Some((f, name))
+                } else {
+                    None
+                }
+            })
+            .collect();
+        for (f, caller_name) in &fns {
+            let caller_qualified = self
+                .node_ids
+                .keys()
+                .find(|k| k.as_str() == caller_name || k.ends_with(&format!("::{caller_name}")))
+                .cloned();
+            if let Some(caller_qualified) = caller_qualified {
+                self.collect_fn_call_edges(*f, &caller_qualified);
+            }
+        }
+        // Also collect call edges for impl methods.
+        for module in krate.modules(self.db) {
+            for imp in module.impl_defs(self.db) {
+                let module_prefix = self.module_prefix(module);
+                let Some(src) = imp.source(self.db) else {
+                    continue;
+                };
+                let type_nodes: Vec<ast::Type> = src
+                    .value
+                    .syntax()
+                    .children()
+                    .filter_map(ast::Type::cast)
+                    .collect();
+                let has_for = src.value.for_token().is_some();
+                let self_ty = if has_for && type_nodes.len() >= 2 {
+                    Some(&type_nodes[1])
+                } else if !has_for && !type_nodes.is_empty() {
+                    Some(&type_nodes[0])
+                } else {
+                    continue;
+                };
+                let owner_name = match self_ty {
+                    Some(ast::Type::PathType(pt)) => pt
+                        .path()
+                        .and_then(|p| p.segment())
+                        .and_then(|s| s.name_ref())
+                        .map(|n| Self::qualify_in_module(&module_prefix, &n.text().to_string())),
+                    _ => None,
+                };
+                let Some(owner_name) = owner_name else {
+                    continue;
+                };
+                for item in imp.items(self.db) {
+                    if let AssocItem::Function(f) = item {
+                        let fname = f.name(self.db).as_str().to_string();
+                        let qualified = format!("{owner_name}::{fname}");
+                        if self.node_ids.contains_key(&qualified) {
+                            self.collect_fn_call_edges(f, &qualified);
+                        }
+                    }
+                }
             }
         }
     }
@@ -587,10 +680,11 @@ impl<'db> Collector<'db> {
             let file_node_id = self.file_node_id(&file_path);
             let node_id = self.alloc_id();
             let loc_id = self.alloc_id();
+            self.node_ids.insert(qualified_name.clone(), node_id);
             self.storage.nodes.push(OwnedStorageNode {
                 id: node_id,
                 type_: NODE_FIELD,
-                serialized_name: qualified_name.clone(),
+                serialized_name: serialize_name(&qualified_name),
             });
             self.storage.symbols.push(OwnedStorageSymbol {
                 id: node_id,
@@ -676,11 +770,7 @@ impl<'db> Collector<'db> {
                 AssocItem::Function(f) => {
                     let fname = f.name(self.db).as_str().to_string();
                     let qualified_name = format!("{owner_name}::{fname}");
-                    let exists = self
-                        .storage
-                        .nodes
-                        .iter()
-                        .any(|n| n.serialized_name == qualified_name);
+                    let exists = self.node_ids.contains_key(&qualified_name);
                     if !exists {
                         let fsrc = f.source(self.db);
                         self.emit_from_source(fsrc.clone(), &qualified_name, NODE_METHOD);
@@ -692,11 +782,7 @@ impl<'db> Collector<'db> {
                     if let Some(cname) = c.name(self.db) {
                         let cname = cname.as_str().to_string();
                         let qualified_name = format!("{owner_name}::{cname}");
-                        let exists = self
-                            .storage
-                            .nodes
-                            .iter()
-                            .any(|n| n.serialized_name == qualified_name);
+                        let exists = self.node_ids.contains_key(&qualified_name);
                         if !exists {
                             self.emit_from_source(
                                 c.source(self.db),
@@ -710,14 +796,68 @@ impl<'db> Collector<'db> {
                 AssocItem::TypeAlias(ta) => {
                     let taname = ta.name(self.db).as_str().to_string();
                     let qualified_name = format!("{owner_name}::{taname}");
-                    let exists = self
-                        .storage
-                        .nodes
-                        .iter()
-                        .any(|n| n.serialized_name == qualified_name);
+                    let exists = self.node_ids.contains_key(&qualified_name);
                     if !exists {
                         self.emit_from_source(ta.source(self.db), &qualified_name, NODE_TYPEDEF);
                         self.add_edge(EDGE_MEMBER, &owner_name, &qualified_name);
+                    }
+                }
+            }
+        }
+    }
+
+    /// Walk a function's AST body and emit EDGE_CALL for every call site whose
+    /// callee resolves to a known node in `node_ids`.
+    /// Uses AST only — no HIR type inference.
+    fn collect_fn_call_edges(&mut self, f: ra_ap_hir::Function, caller_name: &str) {
+        let Some(src) = f.source(self.db) else { return };
+        let fn_node = src.value.syntax();
+
+        // Collect all callee name strings from call expressions in the body.
+        let mut callees: Vec<String> = Vec::new();
+
+        for node in fn_node.descendants() {
+            match node.kind() {
+                SyntaxKind::CALL_EXPR => {
+                    if let Some(call) = ast::CallExpr::cast(node) {
+                        if let Some(expr) = call.expr() {
+                            if let ast::Expr::PathExpr(pe) = expr {
+                                if let Some(name) = pe
+                                    .path()
+                                    .and_then(|p| p.segment())
+                                    .and_then(|s| s.name_ref())
+                                {
+                                    callees.push(name.text().to_string());
+                                }
+                            }
+                        }
+                    }
+                }
+                SyntaxKind::METHOD_CALL_EXPR => {
+                    if let Some(call) = ast::MethodCallExpr::cast(node) {
+                        if let Some(name_ref) = call.name_ref() {
+                            callees.push(name_ref.text().to_string());
+                        }
+                    }
+                }
+                _ => {}
+            }
+        }
+
+        let caller_name = caller_name.to_owned();
+        for callee in callees {
+            let callee_id = self.resolve_node_id(&callee);
+            if let Some(callee_id) = callee_id {
+                let caller_id = self.node_ids.get(&caller_name).copied();
+                if let Some(caller_id) = caller_id {
+                    if caller_id != callee_id {
+                        let edge_id = self.alloc_id();
+                        self.storage.edges.push(OwnedStorageEdge {
+                            id: edge_id,
+                            type_: EDGE_CALL,
+                            source_node_id: caller_id,
+                            target_node_id: callee_id,
+                        });
                     }
                 }
             }

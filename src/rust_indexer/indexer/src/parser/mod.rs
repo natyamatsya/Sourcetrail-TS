@@ -63,6 +63,8 @@ const LOCATION_TOKEN: i32 = 0;
 
 const EDGE_MEMBER: i32 = 1 << 0;
 const EDGE_TYPE_USAGE: i32 = 1 << 1;
+const EDGE_USAGE: i32 = 1 << 2;
+const EDGE_CALL: i32 = 1 << 3;
 const EDGE_INHERITANCE: i32 = 1 << 4;
 
 // ---------------------------------------------------------------------------

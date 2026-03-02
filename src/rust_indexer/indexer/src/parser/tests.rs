@@ -8,12 +8,36 @@ fn index_src(src: &str) -> OwnedIntermediateStorage {
     index_file(path.to_str().unwrap(), "")
 }
 
-fn node_names(storage: &OwnedIntermediateStorage) -> Vec<&str> {
+/// Decode the NameHierarchy wire format back to a plain `::` qualified name for test assertions.
+/// Wire format: `<delim>\tm<part1>\ts\tp[\tn<part2>\ts\tp...]`
+fn decode_name(serialized: &str) -> String {
+    let meta = "\tm";
+    let name_sep = "\tn";
+    let part_end = "\ts";
+    if let Some(rest) = serialized.split_once(meta).map(|(_, r)| r) {
+        let parts: Vec<&str> = rest.split(name_sep).collect();
+        let decoded: Vec<&str> = parts
+            .iter()
+            .map(|p| p.split(part_end).next().unwrap_or(p))
+            .collect();
+        return decoded.join("::");
+    }
+    serialized.to_owned()
+}
+
+fn node_names(storage: &OwnedIntermediateStorage) -> Vec<String> {
     storage
         .nodes
         .iter()
-        .map(|n| n.serialized_name.as_str())
+        .map(|n| decode_name(&n.serialized_name))
         .collect()
+}
+
+fn has_node(storage: &OwnedIntermediateStorage, name: &str) -> bool {
+    storage
+        .nodes
+        .iter()
+        .any(|n| decode_name(&n.serialized_name) == name)
 }
 
 fn node_kinds(storage: &OwnedIntermediateStorage) -> Vec<i32> {
@@ -27,110 +51,70 @@ fn node_kinds(storage: &OwnedIntermediateStorage) -> Vec<i32> {
 #[test]
 fn extracts_function() {
     let s = index_src("pub fn hello_world() {}");
-    assert!(
-        node_names(&s).contains(&"hello_world"),
-        "nodes: {:?}",
-        node_names(&s)
-    );
+    assert!(has_node(&s, "hello_world"), "nodes: {:?}", node_names(&s));
     assert!(node_kinds(&s).contains(&NODE_FUNCTION));
 }
 
 #[test]
 fn extracts_struct() {
     let s = index_src("pub struct MyStruct { x: i32 }");
-    assert!(
-        node_names(&s).contains(&"MyStruct"),
-        "nodes: {:?}",
-        node_names(&s)
-    );
+    assert!(has_node(&s, "MyStruct"), "nodes: {:?}", node_names(&s));
     assert!(node_kinds(&s).contains(&NODE_STRUCT));
 }
 
 #[test]
 fn extracts_enum() {
     let s = index_src("pub enum Color { Red, Green, Blue }");
-    assert!(
-        node_names(&s).contains(&"Color"),
-        "nodes: {:?}",
-        node_names(&s)
-    );
+    assert!(has_node(&s, "Color"), "nodes: {:?}", node_names(&s));
     assert!(node_kinds(&s).contains(&NODE_ENUM));
 }
 
 #[test]
 fn extracts_union() {
     let s = index_src("pub union MyUnion { a: u32, b: f32 }");
-    assert!(
-        node_names(&s).contains(&"MyUnion"),
-        "nodes: {:?}",
-        node_names(&s)
-    );
+    assert!(has_node(&s, "MyUnion"), "nodes: {:?}", node_names(&s));
     assert!(node_kinds(&s).contains(&NODE_UNION));
 }
 
 #[test]
 fn extracts_trait() {
     let s = index_src("pub trait Drawable { fn draw(&self); }");
-    assert!(
-        node_names(&s).contains(&"Drawable"),
-        "nodes: {:?}",
-        node_names(&s)
-    );
+    assert!(has_node(&s, "Drawable"), "nodes: {:?}", node_names(&s));
     assert!(node_kinds(&s).contains(&NODE_INTERFACE));
 }
 
 #[test]
 fn extracts_type_alias() {
     let s = index_src("pub type Meters = f64;");
-    assert!(
-        node_names(&s).contains(&"Meters"),
-        "nodes: {:?}",
-        node_names(&s)
-    );
+    assert!(has_node(&s, "Meters"), "nodes: {:?}", node_names(&s));
     assert!(node_kinds(&s).contains(&NODE_TYPEDEF));
 }
 
 #[test]
 fn extracts_mod() {
     let s = index_src("pub mod geometry { pub fn area() -> f64 { 0.0 } }");
-    assert!(
-        node_names(&s).contains(&"geometry"),
-        "nodes: {:?}",
-        node_names(&s)
-    );
+    assert!(has_node(&s, "geometry"), "nodes: {:?}", node_names(&s));
     assert!(node_kinds(&s).contains(&NODE_MODULE));
 }
 
 #[test]
 fn extracts_const() {
     let s = index_src("pub const MAX_SIZE: usize = 1024;");
-    assert!(
-        node_names(&s).contains(&"MAX_SIZE"),
-        "nodes: {:?}",
-        node_names(&s)
-    );
+    assert!(has_node(&s, "MAX_SIZE"), "nodes: {:?}", node_names(&s));
     assert!(node_kinds(&s).contains(&NODE_GLOBAL_VARIABLE));
 }
 
 #[test]
 fn extracts_static() {
     let s = index_src("pub static COUNTER: u32 = 0;");
-    assert!(
-        node_names(&s).contains(&"COUNTER"),
-        "nodes: {:?}",
-        node_names(&s)
-    );
+    assert!(has_node(&s, "COUNTER"), "nodes: {:?}", node_names(&s));
     assert!(node_kinds(&s).contains(&NODE_GLOBAL_VARIABLE));
 }
 
 #[test]
 fn extracts_macro_def() {
     let s = index_src("macro_rules! my_macro { () => {}; }");
-    assert!(
-        node_names(&s).contains(&"my_macro"),
-        "nodes: {:?}",
-        node_names(&s)
-    );
+    assert!(has_node(&s, "my_macro"), "nodes: {:?}", node_names(&s));
     assert!(node_kinds(&s).contains(&NODE_MACRO));
 }
 
@@ -145,7 +129,7 @@ fn qualifies_name_with_module_prefix() {
     std::fs::write(&path, "pub fn do_work() {}").unwrap();
     let s = index_file(path.to_str().unwrap(), "");
     // Without a source root that strips the path, prefix is empty.
-    assert!(node_names(&s).contains(&"do_work"));
+    assert!(has_node(&s, "do_work"));
 }
 
 #[test]
@@ -173,16 +157,8 @@ fn module_prefix_from_path_drops_main_suffix() {
 fn disambiguates_same_symbol_name_across_modules() {
     let s = index_src("pub mod a { pub struct Item; } pub mod b { pub struct Item; }");
 
-    assert!(
-        node_names(&s).contains(&"a::Item"),
-        "nodes: {:?}",
-        node_names(&s)
-    );
-    assert!(
-        node_names(&s).contains(&"b::Item"),
-        "nodes: {:?}",
-        node_names(&s)
-    );
+    assert!(has_node(&s, "a::Item"), "nodes: {:?}", node_names(&s));
+    assert!(has_node(&s, "b::Item"), "nodes: {:?}", node_names(&s));
 }
 
 // -----------------------------------------------------------------------
@@ -260,12 +236,12 @@ fn has_edge(s: &OwnedIntermediateStorage, edge_type: i32, src: &str, tgt: &str) 
     let src_id = s
         .nodes
         .iter()
-        .find(|n| n.serialized_name == src)
+        .find(|n| decode_name(&n.serialized_name) == src)
         .map(|n| n.id);
     let tgt_id = s
         .nodes
         .iter()
-        .find(|n| n.serialized_name == tgt)
+        .find(|n| decode_name(&n.serialized_name) == tgt)
         .map(|n| n.id);
     match (src_id, tgt_id) {
         (Some(sid), Some(tid)) => s
@@ -327,11 +303,7 @@ fn trait_bound_on_fn_emits_type_usage_edge() {
 fn type_generic_parameter_emits_member_node() {
     let s = index_src("pub struct Wrapper<T> { pub value: T }");
 
-    assert!(
-        node_names(&s).contains(&"Wrapper::T"),
-        "nodes: {:?}",
-        node_names(&s)
-    );
+    assert!(has_node(&s, "Wrapper::T"), "nodes: {:?}", node_names(&s));
     assert!(has_edge(&s, EDGE_MEMBER, "Wrapper", "Wrapper::T"));
 }
 
@@ -339,11 +311,7 @@ fn type_generic_parameter_emits_member_node() {
 fn const_generic_parameter_emits_member_node() {
     let s = index_src("pub struct Buffer<const N: usize> { pub bytes: [u8; N] }");
 
-    assert!(
-        node_names(&s).contains(&"Buffer::N"),
-        "nodes: {:?}",
-        node_names(&s)
-    );
+    assert!(has_node(&s, "Buffer::N"), "nodes: {:?}", node_names(&s));
     assert!(has_edge(&s, EDGE_MEMBER, "Buffer", "Buffer::N"));
 }
 
@@ -351,11 +319,7 @@ fn const_generic_parameter_emits_member_node() {
 fn lifetime_bound_emits_type_parameter_node_and_usage_edge() {
     let s = index_src("pub struct Holder<'a, T: 'a> { pub t: T }");
 
-    assert!(
-        node_names(&s).contains(&"Holder::'a"),
-        "nodes: {:?}",
-        node_names(&s)
-    );
+    assert!(has_node(&s, "Holder::'a"), "nodes: {:?}", node_names(&s));
     assert!(has_edge(&s, EDGE_MEMBER, "Holder", "Holder::'a"));
     assert!(has_edge(&s, EDGE_TYPE_USAGE, "Holder", "Holder::'a"));
 }
@@ -380,22 +344,14 @@ const NODE_METHOD: i32 = 1 << 13;
 #[test]
 fn struct_fields_are_collected() {
     let s = index_src("pub struct Point { pub x: f32, pub y: f32 }");
-    assert!(
-        node_names(&s).contains(&"Point::x"),
-        "nodes: {:?}",
-        node_names(&s)
-    );
-    assert!(
-        node_names(&s).contains(&"Point::y"),
-        "nodes: {:?}",
-        node_names(&s)
-    );
+    assert!(has_node(&s, "Point::x"), "nodes: {:?}", node_names(&s));
+    assert!(has_node(&s, "Point::y"), "nodes: {:?}", node_names(&s));
     assert!(has_edge(&s, EDGE_MEMBER, "Point", "Point::x"));
     assert!(has_edge(&s, EDGE_MEMBER, "Point", "Point::y"));
     let field_x = s
         .nodes
         .iter()
-        .find(|n| n.serialized_name == "Point::x")
+        .find(|n| decode_name(&n.serialized_name) == "Point::x")
         .unwrap();
     assert_eq!(field_x.type_, NODE_FIELD);
 }
@@ -403,26 +359,14 @@ fn struct_fields_are_collected() {
 #[test]
 fn enum_variants_are_collected() {
     let s = index_src("pub enum Color { Red, Green, Blue }");
-    assert!(
-        node_names(&s).contains(&"Color::Red"),
-        "nodes: {:?}",
-        node_names(&s)
-    );
-    assert!(
-        node_names(&s).contains(&"Color::Green"),
-        "nodes: {:?}",
-        node_names(&s)
-    );
-    assert!(
-        node_names(&s).contains(&"Color::Blue"),
-        "nodes: {:?}",
-        node_names(&s)
-    );
+    assert!(has_node(&s, "Color::Red"), "nodes: {:?}", node_names(&s));
+    assert!(has_node(&s, "Color::Green"), "nodes: {:?}", node_names(&s));
+    assert!(has_node(&s, "Color::Blue"), "nodes: {:?}", node_names(&s));
     assert!(has_edge(&s, EDGE_MEMBER, "Color", "Color::Red"));
     let variant = s
         .nodes
         .iter()
-        .find(|n| n.serialized_name == "Color::Red")
+        .find(|n| decode_name(&n.serialized_name) == "Color::Red")
         .unwrap();
     assert_eq!(variant.type_, NODE_ENUM_CONSTANT);
 }
@@ -430,22 +374,46 @@ fn enum_variants_are_collected() {
 #[test]
 fn impl_methods_are_collected() {
     let s = index_src("pub struct Counter(u32); impl Counter { pub fn inc(&mut self) {} pub fn get(&self) -> u32 { self.0 } }");
-    assert!(
-        node_names(&s).contains(&"Counter::inc"),
-        "nodes: {:?}",
-        node_names(&s)
-    );
-    assert!(
-        node_names(&s).contains(&"Counter::get"),
-        "nodes: {:?}",
-        node_names(&s)
-    );
+    assert!(has_node(&s, "Counter::inc"), "nodes: {:?}", node_names(&s));
+    assert!(has_node(&s, "Counter::get"), "nodes: {:?}", node_names(&s));
     assert!(has_edge(&s, EDGE_MEMBER, "Counter", "Counter::inc"));
     assert!(has_edge(&s, EDGE_MEMBER, "Counter", "Counter::get"));
     let method = s
         .nodes
         .iter()
-        .find(|n| n.serialized_name == "Counter::inc")
+        .find(|n| decode_name(&n.serialized_name) == "Counter::inc")
         .unwrap();
     assert_eq!(method.type_, NODE_METHOD);
+}
+
+// -----------------------------------------------------------------------
+// Call edges
+// -----------------------------------------------------------------------
+
+const EDGE_CALL: i32 = 1 << 3;
+
+#[test]
+fn call_edge_emitted_between_functions() {
+    let s = index_src("pub fn bar() {} pub fn foo() { bar(); }");
+    assert!(has_node(&s, "foo"), "nodes: {:?}", node_names(&s));
+    assert!(has_node(&s, "bar"), "nodes: {:?}", node_names(&s));
+    assert!(
+        has_edge(&s, EDGE_CALL, "foo", "bar"),
+        "expected EDGE_CALL from foo to bar, edges: {:?}",
+        s.edges
+    );
+}
+
+#[test]
+fn call_edge_emitted_for_method_call() {
+    let s = index_src(
+        "pub struct S; impl S { pub fn helper(&self) {} pub fn run(&self) { self.helper(); } }",
+    );
+    assert!(has_node(&s, "S::helper"), "nodes: {:?}", node_names(&s));
+    assert!(has_node(&s, "S::run"), "nodes: {:?}", node_names(&s));
+    assert!(
+        has_edge(&s, EDGE_CALL, "S::run", "S::helper"),
+        "expected EDGE_CALL from S::run to S::helper, edges: {:?}",
+        s.edges
+    );
 }
