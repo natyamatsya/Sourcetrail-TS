@@ -7,7 +7,7 @@ fn main() {
     let crate_root = std::path::Path::new(env!("CARGO_MANIFEST_DIR"));
     println!("Indexing: {}", crate_root.display());
 
-    let storage = parser::index_crate(crate_root);
+    let storage = parser::index_crate(crate_root, |_| {});
 
     println!(
         "\nResults:\n  files:       {}\n  nodes:       {}\n  symbols:     {}\n  locations:   {}\n  occurrences: {}\n  errors:      {}",

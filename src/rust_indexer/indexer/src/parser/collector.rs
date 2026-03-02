@@ -41,6 +41,8 @@ struct Collector<'db> {
     node_ids: HashMap<String, i64>,
     next_id: i64,
     storage: OwnedIntermediateStorage,
+    /// Called whenever we start processing a new source file. Receives the file path.
+    on_file: Box<dyn FnMut(&str) + 'db>,
 }
 
 /// Encode a `::` -delimited qualified name into the `NameHierarchy` wire format:
@@ -77,6 +79,14 @@ fn serialize_file_name(path: &str) -> String {
 
 impl<'db> Collector<'db> {
     fn new(db: &'db RootDatabase, vfs: &'db Vfs) -> Self {
+        Self::with_callback(db, vfs, |_| {})
+    }
+
+    fn with_callback(
+        db: &'db RootDatabase,
+        vfs: &'db Vfs,
+        on_file: impl FnMut(&str) + 'db,
+    ) -> Self {
         Self {
             db,
             vfs,
@@ -84,6 +94,7 @@ impl<'db> Collector<'db> {
             node_ids: HashMap::new(),
             next_id: 1,
             storage: OwnedIntermediateStorage::default(),
+            on_file: Box::new(on_file),
         }
     }
 
@@ -261,8 +272,22 @@ impl<'db> Collector<'db> {
     }
 
     fn collect_crate(&mut self, krate: Crate) {
+        let mut reported_files: HashSet<String> = HashSet::new();
         for module in krate.modules(self.db) {
             let module_prefix = self.module_prefix(module);
+            // Report per-file progress via the callback.
+            {
+                let def_src = module.definition_source(self.db);
+                let editioned = def_src.file_id.original_file(self.db);
+                let vfs_fid = ra_ap_vfs::FileId::from_raw(editioned.file_id(self.db).index());
+                if let Some(file_path) =
+                    self.vfs.file_path(vfs_fid).as_path().map(|p| p.to_string())
+                {
+                    if reported_files.insert(file_path.clone()) {
+                        (self.on_file)(&file_path);
+                    }
+                }
+            }
             // declarations() covers most items but misses macro_rules! —
             // those only appear in the module scope as ScopeDef::ModuleDef(Macro).
             // Use scope() and deduplicate via a seen-name set.
@@ -1013,8 +1038,12 @@ impl<'db> Collector<'db> {
     }
 }
 
-pub(super) fn collect_from_db(db: &RootDatabase, vfs: &Vfs) -> OwnedIntermediateStorage {
-    let mut collector = Collector::new(db, vfs);
+pub(super) fn collect_from_db<'db>(
+    db: &'db RootDatabase,
+    vfs: &'db Vfs,
+    on_file: impl FnMut(&str) + 'db,
+) -> OwnedIntermediateStorage {
+    let mut collector = Collector::with_callback(db, vfs, on_file);
 
     for krate in Crate::all(db) {
         // Skip library crates (std, core, deps) — only index local crates.

@@ -110,7 +110,7 @@ fn main() {
             }
         }
 
-        // Update status: this process is now indexing the file.
+        // Update status: this process is now indexing the crate root.
         if let Err(e) = status_ch.start_indexing(&cmd.source_file_path) {
             log::warn!("start_indexing status update failed: {e}");
         }
@@ -124,7 +124,14 @@ fn main() {
             );
             cached.clone()
         } else {
-            let indexed = parser::index_crate(Path::new(&cmd.working_directory));
+            // Pass a per-file progress callback so the status bar updates as each
+            // source file is processed.
+            let status_ch_ref = &status_ch;
+            let indexed = parser::index_crate(Path::new(&cmd.working_directory), move |path| {
+                if let Err(e) = status_ch_ref.start_indexing(path) {
+                    log::warn!("per-file start_indexing failed: {e}");
+                }
+            });
             storage_cache.insert(cmd.working_directory.clone(), indexed.clone());
             indexed
         };

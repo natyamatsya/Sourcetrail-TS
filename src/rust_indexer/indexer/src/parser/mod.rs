@@ -72,8 +72,9 @@ const EDGE_INHERITANCE: i32 = 1 << 4;
 // ---------------------------------------------------------------------------
 
 /// Index the Cargo crate whose `Cargo.toml` lives in `crate_root`.
+/// `on_file` is called with each source file path as it begins processing.
 /// Returns a populated `OwnedIntermediateStorage` covering all local source files.
-pub fn index_crate(crate_root: &Path) -> OwnedIntermediateStorage {
+pub fn index_crate(crate_root: &Path, mut on_file: impl FnMut(&str)) -> OwnedIntermediateStorage {
     let cargo_config = CargoConfig::default();
     let load_config = LoadCargoConfig {
         load_out_dirs_from_check: false,
@@ -98,7 +99,7 @@ pub fn index_crate(crate_root: &Path) -> OwnedIntermediateStorage {
             }
         };
 
-    collector::collect_from_db(&db, &vfs)
+    collector::collect_from_db(&db, &vfs, on_file)
 }
 
 // ---------------------------------------------------------------------------
@@ -133,7 +134,7 @@ pub fn index_file(file_path: &str, _module_prefix: &str) -> OwnedIntermediateSto
         return error_storage(file_path, &format!("write lib.rs: {e}"));
     }
 
-    let mut storage = index_crate(tmp.path());
+    let mut storage = index_crate(tmp.path(), |_| {});
 
     // Rewrite the synthetic file path back to the original path so callers
     // see the real file path in the storage.

@@ -1576,26 +1576,24 @@ void GraphController::addCharacterIndex()
 	m_dummyNodes.clear();
 	m_dummyNodes.insert(m_dummyNodes.end(), newNodes.begin(), newNodes.end());
 
-	// Add index characters
+	// Add index characters — build into a separate list to avoid iterator invalidation.
 	char character = 0;
-	for (size_t i = 0; i < m_dummyNodes.size(); i++)
+	std::vector<std::shared_ptr<DummyNode>> indexed;
+	indexed.reserve(m_dummyNodes.size());
+	for (const std::shared_ptr<DummyNode>& node: m_dummyNodes)
 	{
-		if (!m_dummyNodes[i]->visible || !m_dummyNodes[i]->name.size())
+		if (node->visible && node->name.size() && toupper(node->name[0]) != character)
 		{
-			continue;
-		}
-
-		if (toupper(m_dummyNodes[i]->name[0]) != character)
-		{
-			character = toupper(m_dummyNodes[i]->name[0]);
+			character = toupper(node->name[0]);
 
 			std::shared_ptr<DummyNode> textNode = std::make_shared<DummyNode>(DUMMY_TEXT);
 			textNode->name = character;
 			textNode->visible = true;
-
-			m_dummyNodes.insert(m_dummyNodes.begin() + i, textNode);
+			indexed.push_back(textNode);
 		}
+		indexed.push_back(node);
 	}
+	m_dummyNodes = std::move(indexed);
 }
 
 bool GraphController::hasCharacterIndex() const
