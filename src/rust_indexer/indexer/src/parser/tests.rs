@@ -368,3 +368,84 @@ fn plain_impl_block_emits_no_inheritance_edge() {
         "plain impl should not emit EDGE_INHERITANCE"
     );
 }
+
+// -----------------------------------------------------------------------
+// Struct fields, enum variants, impl methods
+// -----------------------------------------------------------------------
+
+const NODE_FIELD: i32 = 1 << 11;
+const NODE_ENUM_CONSTANT: i32 = 1 << 15;
+const NODE_METHOD: i32 = 1 << 13;
+
+#[test]
+fn struct_fields_are_collected() {
+    let s = index_src("pub struct Point { pub x: f32, pub y: f32 }");
+    assert!(
+        node_names(&s).contains(&"Point::x"),
+        "nodes: {:?}",
+        node_names(&s)
+    );
+    assert!(
+        node_names(&s).contains(&"Point::y"),
+        "nodes: {:?}",
+        node_names(&s)
+    );
+    assert!(has_edge(&s, EDGE_MEMBER, "Point", "Point::x"));
+    assert!(has_edge(&s, EDGE_MEMBER, "Point", "Point::y"));
+    let field_x = s
+        .nodes
+        .iter()
+        .find(|n| n.serialized_name == "Point::x")
+        .unwrap();
+    assert_eq!(field_x.type_, NODE_FIELD);
+}
+
+#[test]
+fn enum_variants_are_collected() {
+    let s = index_src("pub enum Color { Red, Green, Blue }");
+    assert!(
+        node_names(&s).contains(&"Color::Red"),
+        "nodes: {:?}",
+        node_names(&s)
+    );
+    assert!(
+        node_names(&s).contains(&"Color::Green"),
+        "nodes: {:?}",
+        node_names(&s)
+    );
+    assert!(
+        node_names(&s).contains(&"Color::Blue"),
+        "nodes: {:?}",
+        node_names(&s)
+    );
+    assert!(has_edge(&s, EDGE_MEMBER, "Color", "Color::Red"));
+    let variant = s
+        .nodes
+        .iter()
+        .find(|n| n.serialized_name == "Color::Red")
+        .unwrap();
+    assert_eq!(variant.type_, NODE_ENUM_CONSTANT);
+}
+
+#[test]
+fn impl_methods_are_collected() {
+    let s = index_src("pub struct Counter(u32); impl Counter { pub fn inc(&mut self) {} pub fn get(&self) -> u32 { self.0 } }");
+    assert!(
+        node_names(&s).contains(&"Counter::inc"),
+        "nodes: {:?}",
+        node_names(&s)
+    );
+    assert!(
+        node_names(&s).contains(&"Counter::get"),
+        "nodes: {:?}",
+        node_names(&s)
+    );
+    assert!(has_edge(&s, EDGE_MEMBER, "Counter", "Counter::inc"));
+    assert!(has_edge(&s, EDGE_MEMBER, "Counter", "Counter::get"));
+    let method = s
+        .nodes
+        .iter()
+        .find(|n| n.serialized_name == "Counter::inc")
+        .unwrap();
+    assert_eq!(method.type_, NODE_METHOD);
+}

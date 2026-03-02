@@ -1,6 +1,6 @@
 use std::collections::{HashMap, HashSet};
 
-use ra_ap_hir::{Adt, AsAssocItem, Crate, HasSource, ModuleDef};
+use ra_ap_hir::{Adt, AsAssocItem, AssocItem, Crate, FieldSource, HasSource, ModuleDef};
 use ra_ap_ide_db::base_db::{RootQueryDb, SourceDatabase};
 use ra_ap_ide_db::line_index::LineIndex;
 use ra_ap_ide_db::RootDatabase;
@@ -15,8 +15,9 @@ use crate::ipc::storage::{
 
 use super::{
     DEFINITION_EXPLICIT, EDGE_INHERITANCE, EDGE_MEMBER, EDGE_TYPE_USAGE, LOCATION_TOKEN, NODE_ENUM,
-    NODE_FILE, NODE_FUNCTION, NODE_GLOBAL_VARIABLE, NODE_INTERFACE, NODE_MACRO, NODE_METHOD,
-    NODE_MODULE, NODE_STRUCT, NODE_TYPEDEF, NODE_TYPE_PARAMETER, NODE_UNION,
+    NODE_ENUM_CONSTANT, NODE_FIELD, NODE_FILE, NODE_FUNCTION, NODE_GLOBAL_VARIABLE, NODE_INTERFACE,
+    NODE_MACRO, NODE_METHOD, NODE_MODULE, NODE_STRUCT, NODE_TYPEDEF, NODE_TYPE_PARAMETER,
+    NODE_UNION,
 };
 
 #[derive(Debug, Clone)]
@@ -258,9 +259,10 @@ impl<'db> Collector<'db> {
             }
             // Collect parse errors for every file in this module.
             self.collect_parse_errors(module);
-            // Walk impl blocks for EDGE_INHERITANCE and EDGE_TYPE_USAGE.
+            // Walk impl blocks for EDGE_INHERITANCE, EDGE_TYPE_USAGE, and method collection.
             for imp in module.impl_defs(self.db) {
                 self.collect_impl(&module_prefix, imp);
+                self.collect_impl_items(&module_prefix, imp);
             }
         }
     }
@@ -552,6 +554,176 @@ impl<'db> Collector<'db> {
         }
     }
 
+    /// Collect HIR fields (struct/union/enum-variant). Handles both
+    /// `FieldSource::Named` (named record field) and `FieldSource::Pos`
+    /// (positional tuple field — no name token, use full syntax range).
+    fn collect_hir_fields(&mut self, owner_name: &str, fields: Vec<ra_ap_hir::Field>) {
+        for field in fields {
+            let fname = field.name(self.db).as_str().to_string();
+            let qualified_name = format!("{owner_name}::{fname}");
+            let Some(field_src) = field.source(self.db) else {
+                continue;
+            };
+            let eid = field_src.file_id.original_file(self.db);
+            let raw_fid = eid.file_id(self.db).index();
+            let range = match &field_src.value {
+                FieldSource::Named(rf) => rf
+                    .name()
+                    .map(|n| n.syntax().text_range())
+                    .unwrap_or_else(|| rf.syntax().text_range()),
+                FieldSource::Pos(tf) => tf.syntax().text_range(),
+            };
+            let (file_id_raw, range) = (raw_fid, range);
+            let vfs_fid = ra_ap_vfs::FileId::from_raw(file_id_raw);
+            let Some(file_path) = self.vfs_path(vfs_fid) else {
+                continue;
+            };
+            let editioned = field_src.file_id.original_file(self.db);
+            let source_text = self
+                .db
+                .file_text(editioned.file_id(self.db))
+                .text(self.db)
+                .to_string();
+            let file_node_id = self.file_node_id(&file_path);
+            let node_id = self.alloc_id();
+            let loc_id = self.alloc_id();
+            self.storage.nodes.push(OwnedStorageNode {
+                id: node_id,
+                type_: NODE_FIELD,
+                serialized_name: qualified_name.clone(),
+            });
+            self.storage.symbols.push(OwnedStorageSymbol {
+                id: node_id,
+                definition_kind: DEFINITION_EXPLICIT,
+            });
+            let line_index = LineIndex::new(&source_text);
+            let start = line_index.line_col(range.start());
+            let end = line_index.line_col(range.end());
+            self.storage
+                .source_locations
+                .push(OwnedStorageSourceLocation {
+                    id: loc_id,
+                    file_node_id,
+                    start_line: start.line + 1,
+                    start_col: start.col + 1,
+                    end_line: end.line + 1,
+                    end_col: end.col + 1,
+                    type_: LOCATION_TOKEN,
+                });
+            self.storage.occurrences.push(OwnedStorageOccurrence {
+                element_id: node_id,
+                source_location_id: loc_id,
+            });
+            self.add_edge(EDGE_MEMBER, owner_name, &qualified_name);
+        }
+    }
+
+    fn collect_struct_fields(&mut self, struct_name: &str, s: ra_ap_hir::Struct) {
+        self.collect_hir_fields(struct_name, s.fields(self.db));
+    }
+
+    fn collect_union_fields(&mut self, union_name: &str, u: ra_ap_hir::Union) {
+        self.collect_hir_fields(union_name, u.fields(self.db));
+    }
+
+    fn collect_enum_variants(&mut self, enum_name: &str, e: ra_ap_hir::Enum) {
+        for variant in e.variants(self.db) {
+            let vname = variant.name(self.db).as_str().to_string();
+            let qualified_variant = format!("{enum_name}::{vname}");
+            self.emit_from_source(
+                variant.source(self.db),
+                &qualified_variant,
+                NODE_ENUM_CONSTANT,
+            );
+            self.add_edge(EDGE_MEMBER, enum_name, &qualified_variant);
+            self.collect_hir_fields(&qualified_variant, variant.fields(self.db));
+        }
+    }
+
+    fn collect_impl_items(&mut self, module_prefix: &str, imp: ra_ap_hir::Impl) {
+        let Some(src) = imp.source(self.db) else {
+            return;
+        };
+        let ast_impl = &src.value;
+        let type_nodes: Vec<ast::Type> = ast_impl
+            .syntax()
+            .children()
+            .filter_map(ast::Type::cast)
+            .collect();
+        let has_for = ast_impl.for_token().is_some();
+        let self_ty = if has_for && type_nodes.len() >= 2 {
+            Some(&type_nodes[1])
+        } else if !has_for && !type_nodes.is_empty() {
+            Some(&type_nodes[0])
+        } else {
+            return;
+        };
+        let self_ty_name = match self_ty {
+            Some(ast::Type::PathType(pt)) => pt
+                .path()
+                .and_then(|p| p.segment())
+                .and_then(|s| s.name_ref())
+                .map(|n| n.text().to_string()),
+            _ => None,
+        };
+        let Some(self_ty_name) = self_ty_name else {
+            return;
+        };
+        let owner_name = Self::qualify_in_module(module_prefix, &self_ty_name);
+
+        for item in imp.items(self.db) {
+            match item {
+                AssocItem::Function(f) => {
+                    let fname = f.name(self.db).as_str().to_string();
+                    let qualified_name = format!("{owner_name}::{fname}");
+                    let exists = self
+                        .storage
+                        .nodes
+                        .iter()
+                        .any(|n| n.serialized_name == qualified_name);
+                    if !exists {
+                        let fsrc = f.source(self.db);
+                        self.emit_from_source(fsrc.clone(), &qualified_name, NODE_METHOD);
+                        self.collect_generic_bounds(&qualified_name, fsrc);
+                        self.add_edge(EDGE_MEMBER, &owner_name, &qualified_name);
+                    }
+                }
+                AssocItem::Const(c) => {
+                    if let Some(cname) = c.name(self.db) {
+                        let cname = cname.as_str().to_string();
+                        let qualified_name = format!("{owner_name}::{cname}");
+                        let exists = self
+                            .storage
+                            .nodes
+                            .iter()
+                            .any(|n| n.serialized_name == qualified_name);
+                        if !exists {
+                            self.emit_from_source(
+                                c.source(self.db),
+                                &qualified_name,
+                                NODE_GLOBAL_VARIABLE,
+                            );
+                            self.add_edge(EDGE_MEMBER, &owner_name, &qualified_name);
+                        }
+                    }
+                }
+                AssocItem::TypeAlias(ta) => {
+                    let taname = ta.name(self.db).as_str().to_string();
+                    let qualified_name = format!("{owner_name}::{taname}");
+                    let exists = self
+                        .storage
+                        .nodes
+                        .iter()
+                        .any(|n| n.serialized_name == qualified_name);
+                    if !exists {
+                        self.emit_from_source(ta.source(self.db), &qualified_name, NODE_TYPEDEF);
+                        self.add_edge(EDGE_MEMBER, &owner_name, &qualified_name);
+                    }
+                }
+            }
+        }
+    }
+
     fn collect_module_def(&mut self, module_prefix: &str, def: ModuleDef) {
         match def {
             ModuleDef::Function(f) => {
@@ -573,6 +745,7 @@ impl<'db> Collector<'db> {
                     let src = s.source(self.db);
                     self.emit_from_source(src.clone(), &qualified_name, NODE_STRUCT);
                     self.collect_generic_bounds(&qualified_name, src);
+                    self.collect_struct_fields(&qualified_name, s);
                 }
                 Adt::Enum(e) => {
                     let name = e.name(self.db).as_str().to_string();
@@ -580,6 +753,7 @@ impl<'db> Collector<'db> {
                     let src = e.source(self.db);
                     self.emit_from_source(src.clone(), &qualified_name, NODE_ENUM);
                     self.collect_generic_bounds(&qualified_name, src);
+                    self.collect_enum_variants(&qualified_name, e);
                 }
                 Adt::Union(u) => {
                     let name = u.name(self.db).as_str().to_string();
@@ -587,6 +761,7 @@ impl<'db> Collector<'db> {
                     let src = u.source(self.db);
                     self.emit_from_source(src.clone(), &qualified_name, NODE_UNION);
                     self.collect_generic_bounds(&qualified_name, src);
+                    self.collect_union_fields(&qualified_name, u);
                 }
             },
             ModuleDef::Trait(t) => {
@@ -662,7 +837,7 @@ impl<'db> Collector<'db> {
 
     /// Generic helper: given an `InFile<ast::*>` source, extract the name
     /// token range and emit a node.
-    fn emit_from_source<N: AstNode>(
+    fn emit_from_source<N: AstNode + HasName>(
         &mut self,
         src: Option<ra_ap_hir::InFile<N>>,
         name: &str,
@@ -672,8 +847,29 @@ impl<'db> Collector<'db> {
         let Some(ctx) = self.source_context_from_in_file(&in_file) else {
             return;
         };
-        let syntax = in_file.value.syntax().text_range();
-        self.add_def_with_context(name, kind, syntax, &ctx);
+        let range = in_file
+            .value
+            .name()
+            .map(|n| n.syntax().text_range())
+            .unwrap_or_else(|| in_file.value.syntax().text_range());
+        self.add_def_with_context(name, kind, range, &ctx);
+    }
+
+    /// Emit a node from a raw `InFile<N>` without requiring `HasName` — uses
+    /// the whole syntax node range. Used for items that don't implement HasName
+    /// (e.g. macro_rules! via legacy_macros, module decls).
+    fn emit_from_source_no_name<N: AstNode>(
+        &mut self,
+        src: Option<ra_ap_hir::InFile<N>>,
+        name: &str,
+        kind: i32,
+    ) {
+        let Some(in_file) = src else { return };
+        let Some(ctx) = self.source_context_from_in_file(&in_file) else {
+            return;
+        };
+        let range = in_file.value.syntax().text_range();
+        self.add_def_with_context(name, kind, range, &ctx);
     }
 }
 
