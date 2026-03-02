@@ -3,6 +3,7 @@
 
 #include <cstddef>
 #include <cstdint>
+#include <atomic>
 #include <mutex>
 #include <string>
 
@@ -48,6 +49,7 @@ public:
 
 	private:
 		IpcSharedMemory* m_memory;
+		bool m_locked = false;
 	};
 
 	const std::string& name() const;
@@ -73,6 +75,7 @@ private:
 
 	ipc::shm::handle m_shm;
 	ipc::sync::mutex m_mutex;
+	std::atomic<bool> m_lockBroken{false};
 };
 
 #endif // IPC_SHARED_MEMORY_H

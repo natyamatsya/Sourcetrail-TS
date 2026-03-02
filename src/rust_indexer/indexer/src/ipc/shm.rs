@@ -31,6 +31,57 @@ pub struct IpcShm {
     mtx: IpcMutex,
 }
 
+struct IpcMutexLockGuard<'a> {
+    mtx: &'a IpcMutex,
+    locked: bool,
+}
+
+impl<'a> IpcMutexLockGuard<'a> {
+    fn lock(mtx: &'a IpcMutex) -> io::Result<Self> {
+        const TIMEOUT_MS: u64 = 500;
+        const MAX_ATTEMPTS: u32 = 60; // 30s total
+        for attempt in 0..MAX_ATTEMPTS {
+            match mtx.lock_timeout(TIMEOUT_MS) {
+                Ok(true) => return Ok(Self { mtx, locked: true }),
+                Ok(false) => {
+                    if attempt > 0 && attempt % 10 == 0 {
+                        log::warn!(
+                            "IpcMutexLockGuard: still waiting for mutex (attempt {})",
+                            attempt
+                        );
+                    }
+                }
+                Err(e) => return Err(e),
+            }
+        }
+        Err(io::Error::new(
+            io::ErrorKind::TimedOut,
+            format!(
+                "IpcMutexLockGuard: lock timed out after {}ms",
+                TIMEOUT_MS * MAX_ATTEMPTS as u64
+            ),
+        ))
+    }
+
+    fn unlock(mut self) -> io::Result<()> {
+        let result = self.mtx.unlock();
+        if result.is_ok() {
+            self.locked = false;
+        }
+        result
+    }
+}
+
+impl Drop for IpcMutexLockGuard<'_> {
+    fn drop(&mut self) {
+        if !self.locked {
+            return;
+        }
+
+        let _ = self.mtx.unlock();
+    }
+}
+
 impl IpcShm {
     pub fn open(name: &str, size: usize) -> io::Result<Self> {
         let short = truncate(name);
@@ -52,7 +103,7 @@ impl IpcShm {
     where
         F: FnOnce(&[u8]) -> R,
     {
-        self.mtx.lock()?;
+        let mtx_guard = IpcMutexLockGuard::lock(&self.mtx)?;
         let shm = match self.shm.lock() {
             Ok(guard) => guard,
             Err(poisoned) => poisoned.into_inner(),
@@ -62,21 +113,19 @@ impl IpcShm {
             f(data)
         };
         drop(shm);
-        self.mtx.unlock()?;
+        mtx_guard.unlock()?;
         Ok(result)
     }
 
     /// Write `buf` into the SHM region under the mutex.
     pub fn write_locked(&self, buf: &[u8]) -> io::Result<()> {
-        self.mtx.lock()?;
+        let mtx_guard = IpcMutexLockGuard::lock(&self.mtx)?;
         let shm = match self.shm.lock() {
             Ok(guard) => guard,
             Err(poisoned) => poisoned.into_inner(),
         };
         if buf.len() > shm.user_size() {
             let shm_size = shm.user_size();
-            drop(shm);
-            self.mtx.unlock()?;
             return Err(io::Error::new(
                 io::ErrorKind::InvalidInput,
                 format!("IpcShm::write: {} bytes > shm size {}", buf.len(), shm_size),
@@ -86,7 +135,7 @@ impl IpcShm {
             std::ptr::copy_nonoverlapping(buf.as_ptr(), shm.as_ptr() as *mut u8, buf.len());
         }
         drop(shm);
-        self.mtx.unlock()?;
+        mtx_guard.unlock()?;
         Ok(())
     }
 
@@ -101,7 +150,7 @@ impl IpcShm {
     where
         F: FnOnce(&[u8]) -> Vec<u8>,
     {
-        self.mtx.lock()?;
+        let mtx_guard = IpcMutexLockGuard::lock(&self.mtx)?;
         let shm = match self.shm.lock() {
             Ok(guard) => guard,
             Err(poisoned) => poisoned.into_inner(),
@@ -112,8 +161,6 @@ impl IpcShm {
         };
         if new_buf.len() > shm.user_size() {
             let shm_size = shm.user_size();
-            drop(shm);
-            self.mtx.unlock()?;
             return Err(io::Error::new(
                 io::ErrorKind::InvalidInput,
                 format!(
@@ -127,7 +174,7 @@ impl IpcShm {
             std::ptr::copy_nonoverlapping(new_buf.as_ptr(), shm.as_ptr() as *mut u8, new_buf.len());
         }
         drop(shm);
-        self.mtx.unlock()?;
+        mtx_guard.unlock()?;
         Ok(())
     }
 
@@ -137,7 +184,7 @@ impl IpcShm {
     where
         F: FnOnce(&[u8]) -> io::Result<(Option<Vec<u8>>, R)>,
     {
-        self.mtx.lock()?;
+        let mtx_guard = IpcMutexLockGuard::lock(&self.mtx)?;
         let shm = match self.shm.lock() {
             Ok(guard) => guard,
             Err(poisoned) => poisoned.into_inner(),
@@ -151,8 +198,6 @@ impl IpcShm {
         let (new_buf, result) = match outcome {
             Ok(v) => v,
             Err(err) => {
-                drop(shm);
-                self.mtx.unlock()?;
                 return Err(err);
             }
         };
@@ -160,8 +205,6 @@ impl IpcShm {
         if let Some(buf) = new_buf {
             if buf.len() > shm.user_size() {
                 let shm_size = shm.user_size();
-                drop(shm);
-                self.mtx.unlock()?;
                 return Err(io::Error::new(
                     io::ErrorKind::InvalidInput,
                     format!(
@@ -177,7 +220,7 @@ impl IpcShm {
         }
 
         drop(shm);
-        self.mtx.unlock()?;
+        mtx_guard.unlock()?;
         Ok(result)
     }
 

@@ -43,6 +43,7 @@ use ra_ap_project_model::CargoConfig;
 
 use crate::ipc::storage::{OwnedIntermediateStorage, OwnedStorageError, OwnedStorageFile};
 
+const NODE_FILE: i32 = 1 << 18;
 const NODE_MODULE: i32 = 1 << 3;
 const NODE_STRUCT: i32 = 1 << 6;
 const NODE_INTERFACE: i32 = 1 << 8;

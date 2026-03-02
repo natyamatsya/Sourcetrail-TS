@@ -15,8 +15,8 @@ use crate::ipc::storage::{
 
 use super::{
     DEFINITION_EXPLICIT, EDGE_INHERITANCE, EDGE_MEMBER, EDGE_TYPE_USAGE, LOCATION_TOKEN, NODE_ENUM,
-    NODE_FUNCTION, NODE_GLOBAL_VARIABLE, NODE_INTERFACE, NODE_MACRO, NODE_METHOD, NODE_MODULE,
-    NODE_STRUCT, NODE_TYPEDEF, NODE_TYPE_PARAMETER, NODE_UNION,
+    NODE_FILE, NODE_FUNCTION, NODE_GLOBAL_VARIABLE, NODE_INTERFACE, NODE_MACRO, NODE_METHOD,
+    NODE_MODULE, NODE_STRUCT, NODE_TYPEDEF, NODE_TYPE_PARAMETER, NODE_UNION,
 };
 
 #[derive(Debug, Clone)]
@@ -63,6 +63,11 @@ impl<'db> Collector<'db> {
         }
         let id = self.alloc_id();
         self.file_ids.insert(path.to_owned(), id);
+        self.storage.nodes.push(OwnedStorageNode {
+            id,
+            type_: NODE_FILE,
+            serialized_name: path.to_owned(),
+        });
         self.storage.files.push(OwnedStorageFile {
             id,
             file_path: path.to_owned(),

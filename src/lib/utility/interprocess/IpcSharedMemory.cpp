@@ -119,8 +119,12 @@ std::string IpcSharedMemory::getMutexName() const
 IpcSharedMemory::ScopedAccess::ScopedAccess(IpcSharedMemory* memory)
 	: m_memory(memory)
 {
-	using enum IpcSharedMemory::AccessMode;
+	if (m_memory->m_lockBroken.load())
+		throw std::runtime_error(
+			"IpcSharedMemory::ScopedAccess lock previously failed for " + m_memory->getMutexName());
+
 	const uint32_t lockTimeoutMs = 500;
+	const size_t maxLockAttempts = 20;
 	size_t lockAttempts = 0;
 	while (!m_memory->m_mutex.lock(lockTimeoutMs))
 	{
@@ -130,7 +134,20 @@ IpcSharedMemory::ScopedAccess::ScopedAccess(IpcSharedMemory* memory)
 				<< "IpcSharedMemory::ScopedAccess waiting for lock on '" << m_memory->getMutexName()
 				<< "' (memory='" << m_memory->getMemoryName() << "', attempts=" << lockAttempts
 				<< ", timeoutMs=" << lockTimeoutMs << ")");
+
+		if (lockAttempts >= maxLockAttempts)
+		{
+			m_memory->m_lockBroken.store(true);
+			LOG_ERROR_STREAM(
+				<< "IpcSharedMemory::ScopedAccess lock timeout on '" << m_memory->getMutexName()
+				<< "' (memory='" << m_memory->getMemoryName() << "', attempts=" << lockAttempts
+				<< ", timeoutMs=" << lockTimeoutMs << ")");
+			throw std::runtime_error(
+				"IpcSharedMemory::ScopedAccess lock timeout on " + m_memory->getMutexName());
+		}
 	}
+	m_locked = true;
+	m_memory->m_lockBroken.store(false);
 
 	if (lockAttempts > 0)
 		LOG_INFO_STREAM(
@@ -140,7 +157,13 @@ IpcSharedMemory::ScopedAccess::ScopedAccess(IpcSharedMemory* memory)
 
 IpcSharedMemory::ScopedAccess::~ScopedAccess()
 {
-	m_memory->m_mutex.unlock();
+	if (!m_locked)
+		return;
+
+	if (!m_memory->m_mutex.unlock())
+		LOG_ERROR_STREAM(
+			<< "IpcSharedMemory::ScopedAccess failed to unlock '" << m_memory->getMutexName() << "'");
+	m_locked = false;
 }
 
 void* IpcSharedMemory::ScopedAccess::data()

@@ -207,21 +207,24 @@ fn reports_error_for_invalid_syntax() {
 // Storage invariants
 // -----------------------------------------------------------------------
 
+const NODE_FILE: i32 = 1 << 18;
+
+fn non_file_nodes(s: &OwnedIntermediateStorage) -> usize {
+    s.nodes.iter().filter(|n| n.type_ != NODE_FILE).count()
+}
+
 #[test]
 fn every_node_has_a_symbol_and_occurrence() {
     let s = index_src("pub fn f() {} pub struct S {} pub enum E {} pub trait T {}");
-    assert_eq!(s.nodes.len(), s.symbols.len(), "node/symbol count mismatch");
-    assert_eq!(
-        s.nodes.len(),
-        s.occurrences.len(),
-        "node/occurrence count mismatch"
-    );
+    let nf = non_file_nodes(&s);
+    assert_eq!(nf, s.symbols.len(), "node/symbol count mismatch");
+    assert_eq!(nf, s.occurrences.len(), "node/occurrence count mismatch");
 }
 
 #[test]
 fn every_node_has_a_source_location() {
     let s = index_src("pub fn alpha() {} pub fn beta() {}");
-    assert_eq!(s.nodes.len(), s.source_locations.len());
+    assert_eq!(non_file_nodes(&s), s.source_locations.len());
 }
 
 #[test]
@@ -235,11 +238,12 @@ fn file_entry_is_marked_indexed() {
 
 #[test]
 fn multiple_items_all_extracted() {
-    let s = index_src("pub fn a() {} pub struct B {} pub enum C {} pub trait D {} pub type E = u8;");
+    let s =
+        index_src("pub fn a() {} pub struct B {} pub enum C {} pub trait D {} pub type E = u8;");
     assert_eq!(
-        s.nodes.len(),
+        non_file_nodes(&s),
         5,
-        "expected 5 nodes, got: {:?}",
+        "expected 5 non-file nodes, got: {:?}",
         node_names(&s)
     );
 }

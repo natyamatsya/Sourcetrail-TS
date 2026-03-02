@@ -201,78 +201,90 @@ Task::TaskState TaskBuildIndex::doUpdate(std::shared_ptr<Blackboard> blackboard)
 {
 	using enum Task::TaskState;
 	using enum IndexerCommandType;
-	size_t runningThreadCount = m_runningThreadCount;
+	try
+	{
+		size_t runningThreadCount = m_runningThreadCount;
 
-	blackboard->get<bool>("indexer_command_queue_stopped", m_indexerCommandQueueStopped);
-	if (m_indexerCommandQueueStopped && !m_interprocessIndexingStatusManager.getQueueStopped())
-		m_interprocessIndexingStatusManager.setQueueStopped(true);
+		blackboard->get<bool>("indexer_command_queue_stopped", m_indexerCommandQueueStopped);
+		if (m_indexerCommandQueueStopped && !m_interprocessIndexingStatusManager.getQueueStopped())
+			m_interprocessIndexingStatusManager.setQueueStopped(true);
 
-	const std::vector<FilePath> indexingFiles = m_interprocessIndexingStatusManager.getCurrentlyIndexedSourceFilePaths();
-	if (!indexingFiles.empty())
-	{
-		m_lastKnownIndexingFiles = indexingFiles;
-		updateIndexingDialog(blackboard, indexingFiles);
-	}
+		const std::vector<FilePath> indexingFiles = m_interprocessIndexingStatusManager.getCurrentlyIndexedSourceFilePaths();
+		if (!indexingFiles.empty())
+		{
+			m_lastKnownIndexingFiles = indexingFiles;
+			updateIndexingDialog(blackboard, indexingFiles);
+		}
 
-	if (m_indexerCommandQueueStopped && runningThreadCount == 0)
-	{
-		LOG_INFO_STREAM(<< "command queue stopped and no running threads. done.");
-		return STATE_SUCCESS;
-	}
-	else if (m_interrupted)
-	{
-		LOG_INFO_STREAM(<< "interrupted indexing.");
-		blackboard->set("interrupted_indexing", true);
-		return STATE_SUCCESS;
-	}
+		if (m_indexerCommandQueueStopped && runningThreadCount == 0)
+		{
+			LOG_INFO_STREAM(<< "command queue stopped and no running threads. done.");
+			return STATE_SUCCESS;
+		}
+		else if (m_interrupted)
+		{
+			LOG_INFO_STREAM(<< "interrupted indexing.");
+			blackboard->set("interrupted_indexing", true);
+			return STATE_SUCCESS;
+		}
 
-	if (fetchIntermediateStorages(blackboard))
-	{
-		updateIndexingDialog(blackboard, std::vector<FilePath>());
-	}
+		if (fetchIntermediateStorages(blackboard))
+		{
+			updateIndexingDialog(blackboard, std::vector<FilePath>());
+		}
 
-	int indexedSourceFileCount = 0;
-	blackboard->get("indexed_source_file_count", indexedSourceFileCount);
-	const size_t currentIndexedSourceFileCount =
-		indexedSourceFileCount > 0 ? static_cast<size_t>(indexedSourceFileCount) : 0;
-	const size_t currentIndexingFileCount = m_indexingFileCount;
-	const auto now = std::chrono::steady_clock::now();
-	if (
-		currentIndexedSourceFileCount > m_lastWatchdogIndexedSourceFileCount ||
-		currentIndexingFileCount > m_lastWatchdogIndexingFileCount)
-	{
-		m_lastWatchdogIndexedSourceFileCount = currentIndexedSourceFileCount;
-		m_lastWatchdogIndexingFileCount = currentIndexingFileCount;
-		m_lastWatchdogProgressTime = now;
-	}
-	else if (
-		!m_indexerCommandQueueStopped &&
-		!m_interrupted &&
-		runningThreadCount > 0 &&
-		now - m_lastWatchdogProgressTime > std::chrono::seconds(30) &&
-		now - m_lastWatchdogLogTime > std::chrono::seconds(10))
-	{
-		int sourceFileCount = 0;
-		blackboard->get("source_file_count", sourceFileCount);
-		const auto stalledSeconds = std::chrono::duration_cast<std::chrono::seconds>(
-			now - m_lastWatchdogProgressTime)
-																 .count();
-		LOG_WARNING_STREAM(
-			<< "indexing watchdog: no progress for " << stalledSeconds
-			<< "s. indexed_source_file_count=" << currentIndexedSourceFileCount
-			<< "/" << sourceFileCount << ", indexing_file_count="
-			<< currentIndexingFileCount << ", running_threads=" << runningThreadCount);
-		if (m_lastKnownIndexingFiles.empty())
-			LOG_WARNING_STREAM(<< "indexing watchdog: no last known indexing files.");
-		for (const FilePath& path: m_lastKnownIndexingFiles)
+		int indexedSourceFileCount = 0;
+		blackboard->get("indexed_source_file_count", indexedSourceFileCount);
+		const size_t currentIndexedSourceFileCount =
+			indexedSourceFileCount > 0 ? static_cast<size_t>(indexedSourceFileCount) : 0;
+		const size_t currentIndexingFileCount = m_indexingFileCount;
+		const auto now = std::chrono::steady_clock::now();
+		if (
+			currentIndexedSourceFileCount > m_lastWatchdogIndexedSourceFileCount ||
+			currentIndexingFileCount > m_lastWatchdogIndexingFileCount)
+		{
+			m_lastWatchdogIndexedSourceFileCount = currentIndexedSourceFileCount;
+			m_lastWatchdogIndexingFileCount = currentIndexingFileCount;
+			m_lastWatchdogProgressTime = now;
+		}
+		else if (
+			!m_indexerCommandQueueStopped &&
+			!m_interrupted &&
+			runningThreadCount > 0 &&
+			now - m_lastWatchdogProgressTime > std::chrono::seconds(30) &&
+			now - m_lastWatchdogLogTime > std::chrono::seconds(10))
+		{
+			int sourceFileCount = 0;
+			blackboard->get("source_file_count", sourceFileCount);
+			const auto stalledSeconds = std::chrono::duration_cast<std::chrono::seconds>(
+				now - m_lastWatchdogProgressTime)
+											 .count();
 			LOG_WARNING_STREAM(
-				<< "indexing watchdog: last known indexing file: " << path.str());
-		m_lastWatchdogLogTime = now;
+				<< "indexing watchdog: no progress for " << stalledSeconds
+				<< "s. indexed_source_file_count=" << currentIndexedSourceFileCount
+				<< "/" << sourceFileCount << ", indexing_file_count="
+				<< currentIndexingFileCount << ", running_threads=" << runningThreadCount);
+			if (m_lastKnownIndexingFiles.empty())
+				LOG_WARNING_STREAM(<< "indexing watchdog: no last known indexing files.");
+			for (const FilePath& path: m_lastKnownIndexingFiles)
+				LOG_WARNING_STREAM(
+					<< "indexing watchdog: last known indexing file: " << path.str());
+			m_lastWatchdogLogTime = now;
+		}
+
+		std::this_thread::sleep_for(std::chrono::milliseconds(50));
+
+		return STATE_RUNNING;
 	}
-
-	std::this_thread::sleep_for(std::chrono::milliseconds(50));
-
-	return STATE_RUNNING;
+	catch (const std::exception& e)
+	{
+		LOG_ERROR_STREAM(<< "TaskBuildIndex::doUpdate exception: " << e.what());
+		m_interrupted = true;
+		m_indexerCommandQueueStopped = true;
+		blackboard->set("interrupted_indexing", true);
+		utility::killRunningProcesses();
+		return STATE_FAILURE;
+	}
 }
 
 void TaskBuildIndex::doExit(std::shared_ptr<Blackboard> blackboard)
@@ -286,11 +298,14 @@ void TaskBuildIndex::doExit(std::shared_ptr<Blackboard> blackboard)
 	}
 	m_processThreads.clear();
 
-	if (!m_interrupted)
+	if (m_interrupted)
 	{
-		while (fetchIntermediateStorages(blackboard))
-			;
+		blackboard->set<bool>("indexer_threads_stopped", true);
+		return;
 	}
+
+	while (fetchIntermediateStorages(blackboard))
+		;
 
 	std::vector<FilePath> crashedFiles =
 		m_interprocessIndexingStatusManager.getCrashedSourceFilePaths();
@@ -444,6 +459,8 @@ void TaskBuildIndex::runRustIndexerProcess(ProcessId processId, const std::strin
 	using enum IndexerCommandType;
 	[[maybe_unused]]
 	ScopedFunctor runningThreadCounter([&]() { m_runningThreadCount--; });
+	try
+	{
 
 	const FilePath rustIndexerPath = AppPath::getRustIndexerFilePath();
 	if (!rustIndexerPath.exists())
@@ -488,6 +505,12 @@ void TaskBuildIndex::runRustIndexerProcess(ProcessId processId, const std::strin
 		LOG_INFO_STREAM(
 			<< "Rust indexer process " << processId << " attempt " << launchAttempt
 			<< " returned with " << result);
+		LOG_INFO_STREAM(
+			<< "Rust indexer process " << processId << " attempt " << launchAttempt
+			<< " stdout:\n" << processOutput.output);
+		LOG_INFO_STREAM(
+			<< "Rust indexer process " << processId << " attempt " << launchAttempt
+			<< " stderr:\n" << processOutput.error);
 
 		const IndexerProcessResult processResult = validateIndexerProcessOutput(
 			processOutput,
@@ -528,6 +551,15 @@ void TaskBuildIndex::runRustIndexerProcess(ProcessId processId, const std::strin
 			<< "/" << maxConsecutiveFailures
 			<< ". restarting process to continue indexing.");
 		std::this_thread::sleep_for(std::chrono::milliseconds(200));
+	}
+	}
+	catch (const std::exception& e)
+	{
+		LOG_ERROR_STREAM(
+			<< "TaskBuildIndex::runRustIndexerProcess exception: " << e.what());
+		m_interrupted = true;
+		m_indexerCommandQueueStopped = true;
+		utility::killRunningProcesses();
 	}
 }
 

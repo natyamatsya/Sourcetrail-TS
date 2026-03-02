@@ -10,11 +10,12 @@ use std::io;
 
 use crate::ipc::shm::IpcShm;
 use crate::schemas::intermediate_storage::sourcetrail::ipc::{
-    IntermediateStorage, IntermediateStorageArgs, StorageComponentAccess,
-    StorageComponentAccessArgs, StorageEdge, StorageEdgeArgs, StorageError, StorageErrorArgs,
-    StorageFile, StorageFileArgs, StorageLocalSymbol, StorageLocalSymbolArgs, StorageNode,
-    StorageNodeArgs, StorageOccurrence, StorageOccurrenceArgs, StorageSourceLocation,
-    StorageSourceLocationArgs, StorageSymbol, StorageSymbolArgs,
+    IntermediateStorage, IntermediateStorageArgs, IntermediateStorageQueue,
+    IntermediateStorageQueueArgs, StorageComponentAccess, StorageComponentAccessArgs, StorageEdge,
+    StorageEdgeArgs, StorageError, StorageErrorArgs, StorageFile, StorageFileArgs,
+    StorageLocalSymbol, StorageLocalSymbolArgs, StorageNode, StorageNodeArgs, StorageOccurrence,
+    StorageOccurrenceArgs, StorageSourceLocation, StorageSourceLocationArgs, StorageSymbol,
+    StorageSymbolArgs,
 };
 use flatbuffers::FlatBufferBuilder;
 
@@ -494,22 +495,13 @@ impl OwnedIntermediateStorage {
 
 fn serialize_one_storage(s: &OwnedIntermediateStorage) -> Vec<u8> {
     let mut fbb = FlatBufferBuilder::with_capacity(16 * 1024);
-    let raw = build_storage_inline(&mut fbb, s).value();
-    let offset: flatbuffers::WIPOffset<IntermediateStorage> = flatbuffers::WIPOffset::new(raw);
-    fbb.finish(offset, None);
-    fbb.finished_data().to_vec()
-}
 
-fn build_storage_inline<'bldr>(
-    fbb: &'bldr mut FlatBufferBuilder,
-    s: &OwnedIntermediateStorage,
-) -> flatbuffers::WIPOffset<IntermediateStorage<'bldr>> {
     let mut node_offsets: Vec<flatbuffers::WIPOffset<StorageNode>> =
         Vec::with_capacity(s.nodes.len());
     for n in &s.nodes {
         let name = fbb.create_string(&n.serialized_name);
         node_offsets.push(StorageNode::create(
-            fbb,
+            &mut fbb,
             &StorageNodeArgs {
                 id: n.id,
                 type_: n.type_,
@@ -525,7 +517,7 @@ fn build_storage_inline<'bldr>(
         let path = fbb.create_string(&f.file_path);
         let lang = fbb.create_string(&f.language_identifier);
         file_offsets.push(StorageFile::create(
-            fbb,
+            &mut fbb,
             &StorageFileArgs {
                 id: f.id,
                 file_path: Some(path),
@@ -541,7 +533,7 @@ fn build_storage_inline<'bldr>(
         Vec::with_capacity(s.edges.len());
     for e in &s.edges {
         edge_offsets.push(StorageEdge::create(
-            fbb,
+            &mut fbb,
             &StorageEdgeArgs {
                 id: e.id,
                 type_: e.type_,
@@ -556,7 +548,7 @@ fn build_storage_inline<'bldr>(
         Vec::with_capacity(s.symbols.len());
     for sym in &s.symbols {
         sym_offsets.push(StorageSymbol::create(
-            fbb,
+            &mut fbb,
             &StorageSymbolArgs {
                 id: sym.id,
                 definition_kind: sym.definition_kind,
@@ -569,7 +561,7 @@ fn build_storage_inline<'bldr>(
         Vec::with_capacity(s.source_locations.len());
     for loc in &s.source_locations {
         loc_offsets.push(StorageSourceLocation::create(
-            fbb,
+            &mut fbb,
             &StorageSourceLocationArgs {
                 id: loc.id,
                 file_node_id: loc.file_node_id,
@@ -588,7 +580,7 @@ fn build_storage_inline<'bldr>(
     for ls in &s.local_symbols {
         let name = fbb.create_string(&ls.name);
         ls_offsets.push(StorageLocalSymbol::create(
-            fbb,
+            &mut fbb,
             &StorageLocalSymbolArgs {
                 id: ls.id,
                 name: Some(name),
@@ -601,7 +593,7 @@ fn build_storage_inline<'bldr>(
         Vec::with_capacity(s.occurrences.len());
     for o in &s.occurrences {
         occ_offsets.push(StorageOccurrence::create(
-            fbb,
+            &mut fbb,
             &StorageOccurrenceArgs {
                 element_id: o.element_id,
                 source_location_id: o.source_location_id,
@@ -614,7 +606,7 @@ fn build_storage_inline<'bldr>(
         Vec::with_capacity(s.component_accesses.len());
     for ca in &s.component_accesses {
         ca_offsets.push(StorageComponentAccess::create(
-            fbb,
+            &mut fbb,
             &StorageComponentAccessArgs {
                 node_id: ca.node_id,
                 type_: ca.type_,
@@ -629,7 +621,7 @@ fn build_storage_inline<'bldr>(
         let msg = fbb.create_string(&e.message);
         let tu = fbb.create_string(&e.translation_unit);
         err_offsets.push(StorageError::create(
-            fbb,
+            &mut fbb,
             &StorageErrorArgs {
                 id: e.id,
                 message: Some(msg),
@@ -641,8 +633,8 @@ fn build_storage_inline<'bldr>(
     }
     let errs_v = fbb.create_vector(&err_offsets);
 
-    IntermediateStorage::create(
-        fbb,
+    let storage = IntermediateStorage::create(
+        &mut fbb,
         &IntermediateStorageArgs {
             next_id: s.next_id,
             nodes: Some(nodes_v),
@@ -655,7 +647,16 @@ fn build_storage_inline<'bldr>(
             component_accesses: Some(cas_v),
             errors: Some(errs_v),
         },
-    )
+    );
+    let storages_vec = fbb.create_vector(&[storage]);
+    let queue = IntermediateStorageQueue::create(
+        &mut fbb,
+        &IntermediateStorageQueueArgs {
+            storages: Some(storages_vec),
+        },
+    );
+    fbb.finish(queue, None);
+    fbb.finished_data().to_vec()
 }
 
 #[cfg(test)]

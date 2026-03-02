@@ -838,7 +838,8 @@ void GraphController::updateDummyNodeNamesAndAddQualifiers(
 			node->name = node->data->getName();
 
 			NameHierarchy qualifier = node->data->getNameHierarchy();
-			qualifier.pop();
+			if (qualifier.size())
+				qualifier.pop();
 
 			if (qualifier.size())
 			{
