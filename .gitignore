@@ -31,3 +31,6 @@ src/rust_indexer/Cargo.lock
 # Swift Package Manager (Swift indexer)
 src/swift_indexer/Package.resolved
 src/swift_indexer/Sources/SourcetrailSwiftIndexer/GeneratedFromCMake
+
+# Sourcetrail bookmark-DB WAL sidecars (mirror of the *.srctrl.db-* rule)
+*.srctrl.bm-*
