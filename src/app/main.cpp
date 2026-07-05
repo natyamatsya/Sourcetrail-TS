@@ -17,6 +17,7 @@
 #include "QtNetworkFactory.h"
 #include "QtViewFactory.h"
 #include "ResourcePaths.h"
+#include "Schedulers.h"
 #include "ScopedFunctor.h"
 #include "SourceGroupFactory.h"
 #include "SourceGroupFactoryModuleCustom.h"
@@ -177,7 +178,8 @@ int main(int argc, char* argv[])
 		QtViewFactory viewFactory;
 		QtNetworkFactory networkFactory;
 
-		Application::createInstance(version, &viewFactory, &networkFactory);
+		Application::createInstance(
+			version, &viewFactory, &networkFactory, &execution::qt::Schedulers::getInstance());
 		
 		[[maybe_unused]]
 		ScopedFunctor f([]()

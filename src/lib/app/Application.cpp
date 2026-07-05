@@ -33,7 +33,11 @@
 std::shared_ptr<Application> Application::s_instance;
 std::string Application::s_uuid;
 
-void Application::createInstance(const Version& version, ViewFactory* viewFactory, NetworkFactory* networkFactory)
+void Application::createInstance(
+	const Version& version,
+	ViewFactory* viewFactory,
+	NetworkFactory* networkFactory,
+	execution::ISchedulers* schedulers)
 {
 	bool hasGui = (viewFactory != nullptr);
 
@@ -58,6 +62,8 @@ void Application::createInstance(const Version& version, ViewFactory* viewFactor
 
 	s_instance = std::shared_ptr<Application>(new Application(hasGui));
 
+	s_instance->m_schedulers = schedulers;
+
 	s_instance->m_storageCache = std::make_shared<StorageCache>();
 
 	if (hasGui)
@@ -79,6 +85,11 @@ void Application::createInstance(const Version& version, ViewFactory* viewFactor
 std::shared_ptr<Application> Application::getInstance()
 {
 	return s_instance;
+}
+
+execution::ISchedulers* Application::getSchedulers() const
+{
+	return m_schedulers;
 }
 
 void Application::destroyInstance()

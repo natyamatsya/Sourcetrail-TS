@@ -14,6 +14,11 @@
 #include "MessageSwitchColorScheme.h"
 #include "Project.h"
 
+namespace execution
+{
+class ISchedulers;
+}
+
 class Bookmark;
 class IDECommunicationController;
 class MainView;
@@ -34,9 +39,16 @@ class Application
 {
 public:
 	static void createInstance(
-		const Version& version, ViewFactory* viewFactory, NetworkFactory* networkFactory);
+		const Version& version,
+		ViewFactory* viewFactory,
+		NetworkFactory* networkFactory,
+		execution::ISchedulers* schedulers = nullptr);
 	static std::shared_ptr<Application> getInstance();
 	static void destroyInstance();
+
+	//! Process I/O / Compute / UI schedulers, injected at createInstance() (the
+	//! GUI bootstrap passes execution::qt::Schedulers; null in headless/tests).
+	execution::ISchedulers* getSchedulers() const;
 
 	static std::string getUUID();
 
@@ -87,6 +99,10 @@ private:
 
 	const bool m_hasGUI;
 	bool m_loadedWindow = false;
+
+	// Non-owning: the concrete schedulers are a process-wide singleton owned by
+	// the GUI bootstrap; null in headless/test contexts.
+	execution::ISchedulers* m_schedulers = nullptr;
 
 	std::shared_ptr<Project> m_project;
 	std::shared_ptr<StorageCache> m_storageCache;
