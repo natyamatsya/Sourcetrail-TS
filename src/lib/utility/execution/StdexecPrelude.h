@@ -30,7 +30,7 @@
 #include <exec/any_sender_of.hpp>
 #include <exec/async_scope.hpp>
 #include <exec/static_thread_pool.hpp>
-#include <stdexec/execution.hpp>
+#include <stdexec/execution.hpp> // provides stdexec::run_loop
 
 #if defined(_MSC_VER)
 #pragma warning(pop)

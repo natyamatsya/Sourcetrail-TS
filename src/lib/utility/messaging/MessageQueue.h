@@ -1,6 +1,7 @@
 #ifndef MESSAGE_QUEUE_H
 #define MESSAGE_QUEUE_H
 
+#include <atomic>
 #include <deque>
 #include <memory>
 #include <mutex>
@@ -51,6 +52,15 @@ private:
 	void sendMessage(std::shared_ptr<MessageBase> message);
 	void sendMessageAsTask(std::shared_ptr<MessageBase> message, bool asNextTask) const;
 
+	//! Wake the (event-driven) message loop to drain the buffer. Coalesced so
+	//! that a burst of pushMessage() calls schedules at most one pending drain.
+	void wakeLoop();
+
+	// Event-driven loop backing (exec::run_loop + its worker thread), kept behind
+	// a pimpl so stdexec stays out of this widely-included header.
+	struct MessageLoop;
+	std::unique_ptr<MessageLoop> m_messageLoop;
+
 	MessageBufferType m_messageBuffer;
 	std::vector<MessageListenerBase*> m_listeners;
 	std::vector<std::shared_ptr<MessageFilter>> m_filters;
@@ -58,13 +68,10 @@ private:
 	size_t m_currentListenerIndex = 0;
 	size_t m_listenersLength = 0;
 
-	bool m_loopIsRunning = false;
-	bool m_threadIsRunning = false;
+	std::atomic<bool> m_loopIsRunning = false;
 
 	mutable std::mutex m_messageBufferMutex;
 	mutable std::mutex m_listenersMutex;
-	mutable std::mutex m_loopMutex;
-	mutable std::mutex m_threadMutex;
 
 	bool m_sendMessagesAsTasks = false;
 };

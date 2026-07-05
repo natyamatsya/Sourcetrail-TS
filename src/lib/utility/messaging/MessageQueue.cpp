@@ -1,16 +1,27 @@
 #include "MessageQueue.h"
 
-#include <chrono>
 #include <thread>
 
 #include "MessageBase.h"
 #include "MessageFilter.h"
 #include "MessageListenerBase.h"
+#include "StdexecPrelude.h"
 #include "TabIds.h"
 #include "TaskGroupParallel.h"
 #include "TaskGroupSequence.h"
 #include "TaskLambda.h"
 #include "logging.h"
+
+// Event-driven loop backing: a single-threaded stdexec run_loop drained on its
+// own worker thread. pushMessage() schedules a drain onto the run_loop (instead
+// of the loop polling every 25 ms); stopMessageLoop() finishes the run_loop and
+// joins the worker (instead of busy-waiting).
+struct MessageQueue::MessageLoop
+{
+	stdexec::run_loop runLoop;
+	std::thread thread;
+	std::atomic<bool> drainScheduled = false;
+};
 
 std::shared_ptr<MessageQueue> MessageQueue::getInstance()
 {
@@ -87,8 +98,12 @@ void MessageQueue::addMessageFilter(std::shared_ptr<MessageFilter> filter)
 
 void MessageQueue::pushMessage(std::shared_ptr<MessageBase> message)
 {
-	std::lock_guard<std::mutex> lock(m_messageBufferMutex);
-	m_messageBuffer.push_back(message);
+	{
+		std::lock_guard<std::mutex> lock(m_messageBufferMutex);
+		m_messageBuffer.push_back(message);
+	}
+
+	wakeLoop();
 }
 
 void MessageQueue::processMessage(std::shared_ptr<MessageBase> message, bool asNextTask)
@@ -110,82 +125,75 @@ void MessageQueue::processMessage(std::shared_ptr<MessageBase> message, bool asN
 
 void MessageQueue::startMessageLoopThreaded()
 {
-	std::thread(&MessageQueue::startMessageLoop, this).detach();
-
-	std::lock_guard<std::mutex> lock(m_threadMutex);
-	m_threadIsRunning = true;
+	m_messageLoop->thread = std::thread(&MessageQueue::startMessageLoop, this);
 }
 
 void MessageQueue::startMessageLoop()
 {
+	if (m_loopIsRunning.exchange(true))
 	{
-		std::lock_guard<std::mutex> lock(m_loopMutex);
-
-		if (m_loopIsRunning)
-		{
-			LOG_ERROR("Loop is already running");
-			return;
-		}
-
-		m_loopIsRunning = true;
+		LOG_ERROR("Loop is already running");
+		return;
 	}
 
-	while (true)
-	{
-		processMessages();
-
-		{
-			std::lock_guard<std::mutex> lock(m_loopMutex);
-
-			if (!m_loopIsRunning)
-			{
-				break;
-			}
-		}
-
-		std::this_thread::sleep_for(std::chrono::milliseconds(25));
-	}
-
-	{
-		std::lock_guard<std::mutex> lock(m_threadMutex);
-		if (m_threadIsRunning)
-		{
-			m_threadIsRunning = false;
-		}
-	}
+	// Drain anything enqueued before the loop started, then block in the
+	// run_loop processing scheduled drains until stopMessageLoop() finishes it.
+	processMessages();
+	m_messageLoop->runLoop.run();
 }
 
 void MessageQueue::stopMessageLoop()
 {
+	if (!m_loopIsRunning.exchange(false))
 	{
-		std::lock_guard<std::mutex> lock(m_loopMutex);
-
-		if (!m_loopIsRunning)
-		{
-			LOG_WARNING("Loop is not running");
-		}
-
-		m_loopIsRunning = false;
+		LOG_WARNING("Loop is not running");
+		return;
 	}
 
-	while (true)
+	m_messageLoop->runLoop.finish();
+
+	if (m_messageLoop->thread.joinable())
 	{
-		{
-			std::lock_guard<std::mutex> lock(m_threadMutex);
-			if (!m_threadIsRunning)
+		m_messageLoop->thread.join();
+	}
+}
+
+void MessageQueue::wakeLoop()
+{
+	// Only wake once the loop is running (otherwise the message stays buffered
+	// and startMessageLoop()'s initial drain picks it up). Coalesce: if a drain
+	// is already pending it will process this message too, so schedule at most
+	// one. drainScheduled is reset at the start of the drain, so a message that
+	// arrives mid-drain schedules a fresh one.
+	if (!m_loopIsRunning.load() || m_messageLoop->drainScheduled.exchange(true))
+	{
+		return;
+	}
+
+	stdexec::start_detached(
+		stdexec::schedule(m_messageLoop->runLoop.get_scheduler()) |
+		stdexec::then(
+			[this]() noexcept
 			{
-				break;
-			}
-		}
-
-		std::this_thread::sleep_for(std::chrono::milliseconds(25));
-	}
+				m_messageLoop->drainScheduled.store(false);
+				try
+				{
+					processMessages();
+				}
+				catch (const std::exception& e)
+				{
+					LOG_ERROR(std::string("message handling threw: ") + e.what());
+				}
+				catch (...)
+				{
+					LOG_ERROR("message handling threw an unknown exception");
+				}
+			}));
 }
 
 bool MessageQueue::loopIsRunning() const
 {
-	std::lock_guard<std::mutex> lock(m_loopMutex);
-	return m_loopIsRunning;
+	return m_loopIsRunning.load();
 }
 
 bool MessageQueue::hasMessagesQueued() const
@@ -201,7 +209,7 @@ void MessageQueue::setSendMessagesAsTasks(bool sendMessagesAsTasks)
 
 std::shared_ptr<MessageQueue> MessageQueue::s_instance;
 
-MessageQueue::MessageQueue() = default;
+MessageQueue::MessageQueue(): m_messageLoop(std::make_unique<MessageLoop>()) {}
 
 void MessageQueue::processMessages()
 {
