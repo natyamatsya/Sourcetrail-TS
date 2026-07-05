@@ -3,7 +3,6 @@
 
 #include "DialogView.h"
 
-#include "QtThreadedFunctor.h"
 #include "QtWindowStack.h"
 
 #include "MessageErrorCountUpdate.h"
@@ -87,10 +86,6 @@ private:
 	QtWindow* m_parentWindow = nullptr;
 
 	QtWindowStack m_windowStack;
-
-	QtThreadedLambdaFunctor m_onQtThread;
-	QtThreadedLambdaFunctor m_onQtThread2;
-	QtThreadedLambdaFunctor m_onQtThread3;
 
 	std::map<RefreshMode, RefreshInfo> m_refreshInfos;
 

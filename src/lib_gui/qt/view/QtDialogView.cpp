@@ -19,6 +19,7 @@
 #include "QtUnknownProgressDialog.h"
 #include "QtWindow.h"
 #include "StorageAccess.h"
+#include "UiPost.h"
 #include "TabIds.h"
 #include "TaskLambda.h"
 #include "utility.h"
@@ -42,7 +43,7 @@ bool QtDialogView::dialogsHidden() const
 
 void QtDialogView::clearDialogs()
 {
-	m_onQtThread2([=, this]() {
+	execution::qt::onUi(m_mainWindow, [=, this]() {
 		m_windowStack.clearWindows();
 
 		setUIBlocked(false);
@@ -55,14 +56,14 @@ void QtDialogView::showUnknownProgressDialog(const std::string& title, const std
 {
 	MessageStatus(title + ": " + message, false, true).dispatch();
 
-	m_onQtThread2([=, this]() { showUnknownProgress(title, message, false); });
+	execution::qt::onUi(m_mainWindow, [=, this]() { showUnknownProgress(title, message, false); });
 }
 
 void QtDialogView::hideUnknownProgressDialog()
 {
 	MessageStatus("", false, false).dispatch();
 
-	m_onQtThread2([=, this]() { hideUnknownProgress(); });
+	execution::qt::onUi(m_mainWindow, [=, this]() { hideUnknownProgress(); });
 
 	setParentWindow(nullptr);
 }
@@ -70,7 +71,7 @@ void QtDialogView::hideUnknownProgressDialog()
 void QtDialogView::showProgressDialog(
 	const std::string& title, const std::string& message, size_t progress)
 {
-	m_onQtThread([=, this]() {
+	execution::qt::onUi(m_mainWindow, [=, this]() {
 		bool sendStatusMessage = true;
 		QtKnownProgressDialog* window = dynamic_cast<QtKnownProgressDialog*>(
 			m_windowStack.getTopWindow());
@@ -103,7 +104,7 @@ void QtDialogView::showProgressDialog(
 
 void QtDialogView::hideProgressDialog()
 {
-	m_onQtThread([=, this]() {
+	execution::qt::onUi(m_mainWindow, [=, this]() {
 		QtKnownProgressDialog* window = dynamic_cast<QtKnownProgressDialog*>(
 			m_windowStack.getTopWindow());
 		if (window)
@@ -128,7 +129,7 @@ void QtDialogView::startIndexingDialog(
 {
 	m_refreshInfos.clear();
 
-	m_onQtThread([=, this]() {
+	execution::qt::onUi(m_mainWindow, [=, this]() {
 		m_dialogsVisible = true;
 		m_windowStack.clearWindows();
 
@@ -154,7 +155,7 @@ void QtDialogView::startIndexingDialog(
 			Task::dispatch(TabIds::app(), std::make_shared<TaskLambda>([=, this]() {
 							   RefreshInfo info = project->getRefreshInfo(refreshMode);
 
-							   m_onQtThread2([=, this]() {
+							   execution::qt::onUi(m_mainWindow, [=, this]() {
 								   m_dialogsVisible = true;
 								   m_refreshInfos.emplace(info.mode, info);
 								   window->updateRefreshInfo(info);
@@ -195,7 +196,7 @@ void QtDialogView::updateIndexingDialog(
 	size_t totalFileCount,
 	const std::vector<FilePath>& sourcePaths)
 {
-	m_onQtThread([=, this]() {
+	execution::qt::onUi(m_mainWindow, [=, this]() {
 		if (!sourcePaths.empty())
 		{
 			std::vector<std::string> stati;
@@ -233,7 +234,7 @@ void QtDialogView::updateCustomIndexingDialog(
 {
 	updateIndexingDialog(startedFileCount, finishedFileCount, totalFileCount, sourcePaths);
 
-	m_onQtThread([=, this]() {
+	execution::qt::onUi(m_mainWindow, [=, this]() {
 		QtIndexingProgressDialog* window = dynamic_cast<QtIndexingProgressDialog*>(
 			m_windowStack.getTopWindow());
 		if (window)
@@ -256,7 +257,7 @@ DatabasePolicy QtDialogView::finishedIndexingDialog(
 	DatabasePolicy policy = DATABASE_POLICY_UNKNOWN;
 	m_resultReady = false;
 
-	m_onQtThread([=, this, &policy]() {
+	execution::qt::onUi(m_mainWindow, [=, this, &policy]() {
 		m_dialogsVisible = true;
 		m_windowStack.clearWindows();
 
@@ -303,7 +304,7 @@ int QtDialogView::confirm(const std::string& message, const std::vector<std::str
 	int result = -1;
 	m_resultReady = false;
 
-	m_onQtThread2([=, this, &result]() {
+	execution::qt::onUi(m_mainWindow, [=, this, &result]() {
 		QtMessageBox msgBox;
 		msgBox.setText(QString::fromStdString(message));
 
@@ -336,7 +337,7 @@ int QtDialogView::confirm(const std::string& message, const std::vector<std::str
 
 void QtDialogView::setParentWindow(QtWindow* window)
 {
-	m_onQtThread([=, this]() { m_parentWindow = window; });
+	execution::qt::onUi(m_mainWindow, [=, this]() { m_parentWindow = window; });
 }
 
 void QtDialogView::showUnknownProgress(const std::string& title, const std::string& message, bool stacked)
@@ -428,14 +429,14 @@ void QtDialogView::dialogVisibilityChanged(bool visible)
 
 void QtDialogView::handleMessage(MessageIndexingShowDialog*  /*message*/)
 {
-	m_onQtThread3([=, this]() { dialogVisibilityChanged(true); });
+	execution::qt::onUi(m_mainWindow, [=, this]() { dialogVisibilityChanged(true); });
 }
 
 void QtDialogView::handleMessage(MessageErrorCountUpdate* message)
 {
 	ErrorCountInfo errorInfo = message->errorCount;
 
-	m_onQtThread3([=, this]() { updateErrorCount(errorInfo.total, errorInfo.fatal); });
+	execution::qt::onUi(m_mainWindow, [=, this]() { updateErrorCount(errorInfo.total, errorInfo.fatal); });
 }
 
 void QtDialogView::handleMessage(MessageWindowClosed*  /*message*/)
