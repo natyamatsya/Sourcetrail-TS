@@ -3,7 +3,6 @@
 
 #include <QObject>
 
-#include "QtThreadedFunctor.h"
 #include "TabsController.h"
 #include "TabsView.h"
 
@@ -43,7 +42,6 @@ private:
 
 	void setStyleSheet();
 
-	QtThreadedLambdaFunctor m_onQtThread;
 
 	QWidget* m_widget = nullptr;
 	QtTabBar* m_tabBar;

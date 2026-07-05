@@ -1,8 +1,9 @@
 #ifndef QT_SCREEN_SEARCH_VIEW_H
 #define QT_SCREEN_SEARCH_VIEW_H
 
+#include <QObject>
+
 #include "ControllerProxy.h"
-#include "QtThreadedFunctor.h"
 #include "ScreenSearchController.h"
 #include "ScreenSearchView.h"
 
@@ -35,7 +36,6 @@ public slots:
 
 private:
 	ControllerProxy<ScreenSearchController> m_controllerProxy;
-	QtThreadedLambdaFunctor m_onQtThread;
 
 	QtScreenSearchBox* m_widget;
 	QToolBar* m_bar;

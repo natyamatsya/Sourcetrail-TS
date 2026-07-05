@@ -6,7 +6,6 @@
 #include "ControllerProxy.h"
 #include "CustomTrailController.h"
 #include "CustomTrailView.h"
-#include "QtThreadedFunctor.h"
 
 class QCheckBox;
 class QHBoxLayout;
@@ -58,7 +57,6 @@ private:
 	static const size_t INITIAL_GRAPH_DEPTH = 5;
 	static const size_t FILTERS_PER_COLUMN = 10;
 
-	QtThreadedLambdaFunctor m_onQtThread;
 
 	ControllerProxy<CustomTrailController> m_controllerProxy;
 

@@ -1,4 +1,5 @@
 #include "QtBookmarkButtonsView.h"
+#include "UiPost.h"
 #include "MessageBookmarkBrowse.h"
 #include "MessageBookmarkCreate.h"
 #include "MessageBookmarkDelete.h"
@@ -51,7 +52,7 @@ void QtBookmarkButtonsView::createWidgetWrapper()
 
 void QtBookmarkButtonsView::refreshView()
 {
-	m_onQtThread([=, this]()
+	execution::qt::onUi(QtViewWidgetWrapper::getWidgetOfView(this), [=, this]()
 	{
 		m_widget->setStyleSheet(QtResources::loadStyleSheet(QtResources::BOOKMARK_VIEW_CSS));
 	});
@@ -60,7 +61,7 @@ void QtBookmarkButtonsView::refreshView()
 void QtBookmarkButtonsView::setCreateButtonState(const MessageBookmarkButtonState::ButtonState& state)
 {
 	using enum MessageBookmarkButtonState::ButtonState;
-	m_onQtThread([=, this]() {
+	execution::qt::onUi(QtViewWidgetWrapper::getWidgetOfView(this), [=, this]() {
 		m_createButtonState = state;
 
 		m_createBookmarkButton->setIconPath(QtResources::BOOKMARK_VIEW_BOOKMARK_EDIT_BOOKMARK_ICON);

@@ -1,4 +1,5 @@
 #include "QtRefreshView.h"
+#include "UiPost.h"
 
 #include "MessageIndexingShowDialog.h"
 #include "MessageRefresh.h"
@@ -43,7 +44,7 @@ void QtRefreshView::createWidgetWrapper()
 
 void QtRefreshView::refreshView()
 {
-	m_onQtThread([this]()
+	execution::qt::onUi(QtViewWidgetWrapper::getWidgetOfView(this), [this]()
 	{
 		m_widget->setStyleSheet(QtResources::loadStyleSheet(QtResources::REFRESH_VIEW_CSS));
 	});

@@ -3,7 +3,6 @@
 
 #include <QWidget>
 
-#include "QtThreadedFunctor.h"
 #include "StatusView.h"
 
 class QBoxLayout;
@@ -38,7 +37,6 @@ private:
 
 	QCheckBox* createFilterCheckbox(const QString& name, QBoxLayout* layout, bool checked = false);
 
-	QtThreadedLambdaFunctor m_onQtThread;
 
 	QtTable* m_table;
 	QStandardItemModel* m_model;

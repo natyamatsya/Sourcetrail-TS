@@ -7,7 +7,6 @@
 #include "ErrorController.h"
 #include "ErrorFilter.h"
 #include "ErrorView.h"
-#include "QtThreadedFunctor.h"
 
 class QBoxLayout;
 class QCheckBox;
@@ -68,7 +67,6 @@ private:
 	static QIcon s_errorIcon;
 
 	ControllerProxy<ErrorController> m_controllerProxy;
-	QtThreadedLambdaFunctor m_onQtThread;
 
 	ErrorFilter m_errorFilter;
 

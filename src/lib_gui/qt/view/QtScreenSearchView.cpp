@@ -1,4 +1,5 @@
 #include "QtScreenSearchView.h"
+#include "UiPost.h"
 
 #include "QtMainView.h"
 #include "QtMainWindow.h"
@@ -40,7 +41,7 @@ void QtScreenSearchView::createWidgetWrapper()
 
 void QtScreenSearchView::refreshView()
 {
-	m_onQtThread([=, this]()
+	execution::qt::onUi(QtViewWidgetWrapper::getWidgetOfView(this), [=, this]()
 	{
 		m_bar->setStyleSheet(QtResources::loadStyleSheet(QtResources::SCREEN_SEARCH_VIEW_CSS));
 	});
@@ -48,12 +49,12 @@ void QtScreenSearchView::refreshView()
 
 void QtScreenSearchView::setMatchCount(size_t matchCount)
 {
-	m_onQtThread([=, this]() { m_widget->setMatchCount(matchCount); });
+	execution::qt::onUi(QtViewWidgetWrapper::getWidgetOfView(this), [=, this]() { m_widget->setMatchCount(matchCount); });
 }
 
 void QtScreenSearchView::setMatchIndex(size_t matchIndex)
 {
-	m_onQtThread([=, this]() { m_widget->setMatchIndex(matchIndex); });
+	execution::qt::onUi(QtViewWidgetWrapper::getWidgetOfView(this), [=, this]() { m_widget->setMatchIndex(matchIndex); });
 }
 
 void QtScreenSearchView::addResponder(const std::string& name)

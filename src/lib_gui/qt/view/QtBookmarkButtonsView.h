@@ -1,9 +1,10 @@
 #ifndef QT_BOOKMARK_BUTTONS_VIEW_H
 #define QT_BOOKMARK_BUTTONS_VIEW_H
 
+#include <QObject>
+
 #include "BookmarkButtonsView.h"
 
-#include "QtThreadedFunctor.h"
 
 class QFrame;
 class QtSearchBarButton;
@@ -30,7 +31,6 @@ private slots:
 	static void showBookmarksClicked();
 
 private:
-	QtThreadedLambdaFunctor m_onQtThread;
 
 	QFrame* m_widget;
 

@@ -2,7 +2,6 @@
 #define QT_CODE_VIEW_H
 
 #include "CodeView.h"
-#include "QtThreadedFunctor.h"
 
 class QtCodeNavigator;
 
@@ -59,7 +58,6 @@ private:
 	// void performScroll(const CodeScrollParams& scrollParams);
 	void setStyleSheet() const;
 
-	QtThreadedLambdaFunctor m_onQtThread;
 
 	QtCodeNavigator* m_widget;
 

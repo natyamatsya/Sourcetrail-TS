@@ -1,4 +1,5 @@
 #include "QtSelfRefreshIconButton.h"
+#include "UiPost.h"
 
 #include <QResizeEvent>
 
@@ -44,7 +45,7 @@ void QtSelfRefreshIconButton::setAutoElide(bool autoElide)
 
 void QtSelfRefreshIconButton::handleMessage(MessageRefreshUI*  /*message*/)
 {
-	m_onQtThread([this]() { refresh(); });
+	execution::qt::onUi(this, [this]() { refresh(); });
 }
 
 void QtSelfRefreshIconButton::refresh()

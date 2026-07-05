@@ -9,7 +9,6 @@
 #include "FilePath.h"
 #include "QtHelpButton.h"
 #include "QtProjectWizardWindow.h"
-#include "QtThreadedFunctor.h"
 
 class QtTextEditDialog;
 
@@ -57,7 +56,6 @@ protected slots:
 private:
 	void showFilesDialog(const std::vector<FilePath>& filePaths);
 
-	QtThreadedFunctor<const std::vector<FilePath>&> m_showFilesFunctor;
 
 	bool m_isRequired = false;
 };

@@ -1,4 +1,5 @@
 #include "QtUndoRedoView.h"
+#include "UiPost.h"
 
 #include "utilityQt.h"
 #include "QtViewWidgetWrapper.h"
@@ -19,7 +20,7 @@ void QtUndoRedoView::createWidgetWrapper()
 
 void QtUndoRedoView::refreshView()
 {
-	m_onQtThread([=, this]()
+	execution::qt::onUi(QtViewWidgetWrapper::getWidgetOfView(this), [=, this]()
 	{
 		m_widget->setStyleSheet(QtResources::loadStyleSheet(QtResources::UNDOREDO_VIEW_CSS));
 	});
@@ -27,7 +28,7 @@ void QtUndoRedoView::refreshView()
 
 void QtUndoRedoView::setRedoButtonEnabled(bool enabled)
 {
-	m_onQtThread([=, this]()
+	execution::qt::onUi(QtViewWidgetWrapper::getWidgetOfView(this), [=, this]()
 	{
 		m_widget->setRedoButtonEnabled(enabled);
 	});
@@ -35,7 +36,7 @@ void QtUndoRedoView::setRedoButtonEnabled(bool enabled)
 
 void QtUndoRedoView::setUndoButtonEnabled(bool enabled)
 {
-	m_onQtThread([=, this]()
+	execution::qt::onUi(QtViewWidgetWrapper::getWidgetOfView(this), [=, this]()
 	{
 		m_widget->setUndoButtonEnabled(enabled);
 	});
@@ -43,7 +44,7 @@ void QtUndoRedoView::setUndoButtonEnabled(bool enabled)
 
 void QtUndoRedoView::updateHistory(const std::vector<SearchMatch> &searchMatches, size_t currentIndex)
 {
-	m_onQtThread([=, this]()
+	execution::qt::onUi(QtViewWidgetWrapper::getWidgetOfView(this), [=, this]()
 	{
 		m_widget->updateHistory(searchMatches, currentIndex);
 	});

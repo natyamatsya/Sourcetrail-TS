@@ -1,4 +1,5 @@
 #include "QtTabsView.h"
+#include "UiPost.h"
 
 #include "Application.h"
 #include "ColorScheme.h"
@@ -68,12 +69,12 @@ void QtTabsView::createWidgetWrapper()
 
 void QtTabsView::refreshView()
 {
-	m_onQtThread([=, this]() { setStyleSheet(); });
+	execution::qt::onUi(QtViewWidgetWrapper::getWidgetOfView(this), [=, this]() { setStyleSheet(); });
 }
 
 void QtTabsView::clear()
 {
-	m_onQtThread([=, this]() {
+	execution::qt::onUi(QtViewWidgetWrapper::getWidgetOfView(this), [=, this]() {
 		getController<TabsController>()->onClearTabs();
 
 		m_tabBar->blockSignals(true);
@@ -90,22 +91,22 @@ void QtTabsView::clear()
 
 void QtTabsView::openTab(bool showTab, const SearchMatch& match)
 {
-	m_onQtThread([=, this]() { insertTab(showTab, match); });
+	execution::qt::onUi(QtViewWidgetWrapper::getWidgetOfView(this), [=, this]() { insertTab(showTab, match); });
 }
 
 void QtTabsView::closeTab()
 {
-	m_onQtThread([=, this]() { removeTab(m_tabBar->currentIndex()); });
+	execution::qt::onUi(QtViewWidgetWrapper::getWidgetOfView(this), [=, this]() { removeTab(m_tabBar->currentIndex()); });
 }
 
 void QtTabsView::destroyTab(TabId tabId)
 {
-	m_onQtThread([=, this]() { getController<TabsController>()->destroyTab(tabId); });
+	execution::qt::onUi(QtViewWidgetWrapper::getWidgetOfView(this), [=, this]() { getController<TabsController>()->destroyTab(tabId); });
 }
 
 void QtTabsView::selectTab(bool next)
 {
-	m_onQtThread([=, this]() {
+	execution::qt::onUi(QtViewWidgetWrapper::getWidgetOfView(this), [=, this]() {
 		int idx = m_tabBar->currentIndex();
 		if (idx != -1)
 		{
@@ -117,7 +118,7 @@ void QtTabsView::selectTab(bool next)
 
 void QtTabsView::updateTab(TabId tabId, const std::vector<SearchMatch>& matches)
 {
-	m_onQtThread([=, this]() {
+	execution::qt::onUi(QtViewWidgetWrapper::getWidgetOfView(this), [=, this]() {
 		for (int i = 0; i < m_tabBar->count(); i++)
 		{
 			if (tabId == qt_variant_cast<TabId>(m_tabBar->tabData(i)))

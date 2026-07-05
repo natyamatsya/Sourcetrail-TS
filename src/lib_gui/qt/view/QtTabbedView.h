@@ -3,7 +3,6 @@
 
 #include <QObject>
 
-#include "QtThreadedFunctor.h"
 #include "TabbedView.h"
 
 class QTabWidget;
@@ -29,7 +28,6 @@ private:
 	void setStyleSheet();
 	bool eventFilter(QObject* obj, QEvent* event) override;
 
-	QtThreadedLambdaFunctor m_onQtThread;
 	QTabWidget* m_widget;
 	QtSelfRefreshIconButton* m_closeButton;
 };

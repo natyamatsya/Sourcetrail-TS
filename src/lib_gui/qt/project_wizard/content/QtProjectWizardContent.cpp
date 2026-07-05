@@ -3,13 +3,13 @@
 #include <thread>
 
 #include "QtTextEditDialog.h"
+#include "UiPost.h"
 #include "utility.h"
 #include "utilityString.h"
 
 QtProjectWizardContent::QtProjectWizardContent(QtProjectWizardWindow* window)
 	: QWidget(window)
 	, m_window(window)
-	, m_showFilesFunctor([this](const std::vector<FilePath> &filePaths) { showFilesDialog(filePaths); })
 {
 }
 
@@ -135,9 +135,9 @@ void QtProjectWizardContent::filesButtonClicked()
 	m_window->saveContent();
 	m_window->refreshContent();
 
-	std::thread([&]() {
+	std::thread([this]() {
 		const std::vector<FilePath> filePaths = getFilePaths();
-		m_showFilesFunctor(filePaths);
+		execution::qt::onUi(this, [this, filePaths]() { showFilesDialog(filePaths); });
 	}).detach();
 }
 

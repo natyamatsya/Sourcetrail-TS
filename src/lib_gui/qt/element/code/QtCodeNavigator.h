@@ -10,7 +10,6 @@
 #include "MessageWindowFocus.h"
 #include "QtCodeFileList.h"
 #include "QtCodeFileSingle.h"
-#include "QtThreadedFunctor.h"
 
 class QLabel;
 class QPushButton;
@@ -131,7 +130,6 @@ private slots:
 private:
 	void handleMessage(MessageWindowFocus* message) override;
 
-	QtThreadedLambdaFunctor m_onQtThread;
 
 	QtCodeNavigable* m_current;
 	QtCodeFileList* m_list;

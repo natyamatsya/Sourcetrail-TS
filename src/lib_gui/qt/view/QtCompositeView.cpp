@@ -1,4 +1,5 @@
 #include "QtCompositeView.h"
+#include "UiPost.h"
 
 #include <QBoxLayout>
 
@@ -53,7 +54,7 @@ void QtCompositeView::createWidgetWrapper()
 
 void QtCompositeView::refreshView()
 {
-	m_onQtThread([=, this]() {
+	execution::qt::onUi(QtViewWidgetWrapper::getWidgetOfView(this), [=, this]() {
 		utility::setWidgetBackgroundColor(
 			m_widget, ColorScheme::getInstance()->getColor("search/background"));
 	});
@@ -68,7 +69,7 @@ void QtCompositeView::addViewWidget(View* view)
 
 void QtCompositeView::showFocusIndicator(bool focus)
 {
-	m_onQtThread([=, this]() {
+	execution::qt::onUi(QtViewWidgetWrapper::getWidgetOfView(this), [=, this]() {
 		const std::string& colorName = focus ? "window/focus" : "search/background";
 		utility::setWidgetBackgroundColor(
 			m_focusIndicator, ColorScheme::getInstance()->getColor(colorName));

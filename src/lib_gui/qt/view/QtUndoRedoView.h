@@ -4,7 +4,6 @@
 #include <memory>
 #include <string>
 
-#include "QtThreadedFunctor.h"
 #include "QtUndoRedo.h"
 #include "UndoRedoView.h"
 
@@ -25,7 +24,6 @@ public:
 	void updateHistory(const std::vector<SearchMatch>& searchMatches, size_t currentIndex) override;
 
 private:
-	QtThreadedLambdaFunctor m_onQtThread;
 
 	QtUndoRedo* m_widget;
 };

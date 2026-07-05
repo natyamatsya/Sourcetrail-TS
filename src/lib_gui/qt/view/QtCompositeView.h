@@ -2,7 +2,6 @@
 #define QT_COMPOSITE_VIEW
 
 #include "CompositeView.h"
-#include "QtThreadedFunctor.h"
 
 class QBoxLayout;
 class QWidget;
@@ -23,7 +22,6 @@ public:
 	void showFocusIndicator(bool focus) override;
 
 private:
-	QtThreadedLambdaFunctor m_onQtThread;
 	QWidget* m_focusIndicator;
 	QWidget* m_widget;
 	QBoxLayout* m_layout;

@@ -1,4 +1,5 @@
 #include "QtSearchView.h"
+#include "UiPost.h"
 
 #include "QtSearchBar.h"
 #include "QtViewWidgetWrapper.h"
@@ -19,7 +20,7 @@ void QtSearchView::createWidgetWrapper()
 
 void QtSearchView::refreshView()
 {
-	m_onQtThread([this]() {
+	execution::qt::onUi(QtViewWidgetWrapper::getWidgetOfView(this), [this]() {
 		setStyleSheet();
 		m_widget->refreshStyle();
 	});
@@ -32,12 +33,12 @@ std::string QtSearchView::getQuery() const
 
 void QtSearchView::setMatches(const std::vector<SearchMatch>& matches)
 {
-	m_onQtThread([=, this]() { m_widget->setMatches(matches); });
+	execution::qt::onUi(QtViewWidgetWrapper::getWidgetOfView(this), [=, this]() { m_widget->setMatches(matches); });
 }
 
 void QtSearchView::setFocus()
 {
-	m_onQtThread([this]() {
+	execution::qt::onUi(QtViewWidgetWrapper::getWidgetOfView(this), [this]() {
 		getViewLayout()->showView(this);
 		m_widget->setFocus();
 	});
@@ -45,7 +46,7 @@ void QtSearchView::setFocus()
 
 void QtSearchView::findFulltext()
 {
-	m_onQtThread([this]() {
+	execution::qt::onUi(QtViewWidgetWrapper::getWidgetOfView(this), [this]() {
 		getViewLayout()->showView(this);
 		m_widget->findFulltext();
 	});
@@ -53,7 +54,7 @@ void QtSearchView::findFulltext()
 
 void QtSearchView::setAutocompletionList(const std::vector<SearchMatch>& autocompletionList)
 {
-	m_onQtThread([=, this]() { m_widget->setAutocompletionList(autocompletionList); });
+	execution::qt::onUi(QtViewWidgetWrapper::getWidgetOfView(this), [=, this]() { m_widget->setAutocompletionList(autocompletionList); });
 }
 
 void QtSearchView::setStyleSheet()

@@ -4,7 +4,6 @@
 #include "BookmarkController.h"
 #include "BookmarkView.h"
 #include "ControllerProxy.h"
-#include "QtThreadedFunctor.h"
 
 class QFrame;
 class QtBookmarkBrowser;
@@ -32,7 +31,6 @@ public:
 
 private:
 	ControllerProxy<BookmarkController> m_controllerProxy;
-	QtThreadedLambdaFunctor m_onQtThread;
 
 	QtBookmarkBrowser* m_bookmarkBrowser = nullptr;
 };

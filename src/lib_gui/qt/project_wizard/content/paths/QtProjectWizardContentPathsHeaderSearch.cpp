@@ -2,6 +2,7 @@
 #include "QtMessageBox.h"
 
 #include <cmath>
+#include <thread>
 
 #include "Application.h"
 #include "ApplicationSettings.h"
@@ -10,6 +11,7 @@
 #include "IncludeProcessing.h"
 #include "QtDialogView.h"
 #include "QtPathListDialog.h"
+#include "UiPost.h"
 #include "QtTextEditDialog.h"
 #include "ScopedFunctor.h"
 #include "SourceGroupSettings.h"
@@ -26,10 +28,6 @@ QtProjectWizardContentPathsHeaderSearch::QtProjectWizardContentPathsHeaderSearch
 	QtProjectWizardWindow* window,
 	bool indicateAsAdditional)
 	: QtProjectWizardContentPaths(settings, window, QtPathListBox::SelectionPolicyType::SELECTION_POLICY_DIRECTORIES_ONLY, true)
-	, m_showDetectedIncludesResultFunctor([this](const std::set<FilePath> &detectedHeaderSearchPaths)
-		{ showDetectedIncludesResult(detectedHeaderSearchPaths); })
-	, m_showValidationResultFunctor([this](const std::vector<IncludeDirective> &unresolvedIncludes)
-		{ showValidationResult(unresolvedIncludes); })
 	, m_indicateAsAdditional(indicateAsAdditional)
 {
 	setTitleString(m_indicateAsAdditional ? "Additional Include Paths" : "Include Paths");
@@ -224,7 +222,7 @@ void QtProjectWizardContentPathsHeaderSearch::validateIncludesButtonClicked()
 						});
 				}
 			}
-			m_showValidationResultFunctor(unresolvedIncludes);
+			execution::qt::onUi(this, [this, unresolvedIncludes]() { showValidationResult(unresolvedIncludes); });
 		}
 	}).detach();
 }
@@ -305,7 +303,7 @@ void QtProjectWizardContentPathsHeaderSearch::finishedSelectDetectIncludesRootPa
 				}
 			}
 
-			m_showDetectedIncludesResultFunctor(detectedHeaderSearchPaths);
+			execution::qt::onUi(this, [this, detectedHeaderSearchPaths]() { showDetectedIncludesResult(detectedHeaderSearchPaths); });
 		}
 	}).detach();
 }

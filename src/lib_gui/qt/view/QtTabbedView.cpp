@@ -1,4 +1,5 @@
 #include "QtTabbedView.h"
+#include "UiPost.h"
 
 #include "ColorScheme.h"
 #include "QtSelfRefreshIconButton.h"
@@ -41,7 +42,7 @@ void QtTabbedView::createWidgetWrapper() {}
 
 void QtTabbedView::refreshView()
 {
-	m_onQtThread([=, this]() { setStyleSheet(); });
+	execution::qt::onUi(QtViewWidgetWrapper::getWidgetOfView(this), [=, this]() { setStyleSheet(); });
 }
 
 void QtTabbedView::addViewWidget(View* view)

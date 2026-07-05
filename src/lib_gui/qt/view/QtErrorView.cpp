@@ -1,4 +1,5 @@
 #include "QtErrorView.h"
+#include "UiPost.h"
 
 #include "ColorScheme.h"
 #include "MessageProjectEdit.h"
@@ -146,12 +147,12 @@ void QtErrorView::createWidgetWrapper() {}
 
 void QtErrorView::refreshView()
 {
-	m_onQtThread([=, this]() { setStyleSheet(); });
+	execution::qt::onUi(this, [=, this]() { setStyleSheet(); });
 }
 
 void QtErrorView::clear()
 {
-	m_onQtThread([=, this]()
+	execution::qt::onUi(this, [=, this]()
 	{
 		m_model->removeRows(0, m_model->rowCount());
 		m_table->updateRows();
@@ -165,7 +166,7 @@ void QtErrorView::clear()
 void QtErrorView::addErrors(
 	const std::vector<ErrorInfo>& errors, const ErrorCountInfo& errorCount, bool scrollTo)
 {
-	m_onQtThread([=, this]() {
+	execution::qt::onUi(this, [=, this]() {
 		for (const ErrorInfo& error: errors)
 		{
 			addErrorToTable(error);
@@ -202,7 +203,7 @@ void QtErrorView::addErrors(
 
 void QtErrorView::setErrorId(Id errorId)
 {
-	m_onQtThread([=, this]() {
+	execution::qt::onUi(this, [=, this]() {
 		QList<QStandardItem*> items = m_model->findItems(QString::fromStdString(to_string(errorId)), 
 			Qt::MatchExactly, static_cast<int>(Column::ID));
 
@@ -227,7 +228,7 @@ void QtErrorView::setErrorFilter(const ErrorFilter& filter)
 
 	m_errorFilter = filter;
 
-	m_onQtThread([=, this]() {
+	execution::qt::onUi(this, [=, this]() {
 		m_showErrors->blockSignals(true);
 		m_showFatals->blockSignals(true);
 		m_showNonIndexedErrors->blockSignals(true);

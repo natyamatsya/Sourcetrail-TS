@@ -3,7 +3,6 @@
 
 #include <vector>
 
-#include "QtThreadedFunctor.h"
 #include "SearchView.h"
 
 class QtSearchBar;
@@ -28,7 +27,6 @@ public:
 private:
 	void setStyleSheet();
 
-	QtThreadedLambdaFunctor m_onQtThread;
 
 	QtSearchBar* m_widget;
 };

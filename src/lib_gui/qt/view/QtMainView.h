@@ -9,7 +9,6 @@
 #include "MessageProjectEdit.h"
 #include "MessageProjectNew.h"
 #include "MessageWindowChanged.h"
-#include "QtThreadedFunctor.h"
 
 class QtMainWindow;
 class QStatusBar;
@@ -73,7 +72,6 @@ private:
 	QtMainWindow* m_window;
 	std::vector<View*> m_views;
 
-	QtThreadedLambdaFunctor m_onQtThread;
 };
 
 #endif	  // QT_MAIN_VIEW_H

@@ -1,4 +1,5 @@
 #include "QtTooltipView.h"
+#include "UiPost.h"
 
 #include "QtMainView.h"
 #include "QtMainWindow.h"
@@ -21,7 +22,7 @@ void QtTooltipView::createWidgetWrapper()
 
 void QtTooltipView::refreshView()
 {
-	m_onQtThread([=, this]()
+	execution::qt::onUi(QtViewWidgetWrapper::getWidgetOfView(this), [=, this]()
 	{
 		m_widget->setStyleSheet(QtResources::loadStyleSheet(QtResources::TOOLTIP_VIEW_CSS));
 	});
@@ -29,7 +30,7 @@ void QtTooltipView::refreshView()
 
 void QtTooltipView::showTooltip(const TooltipInfo& info, const View* parent)
 {
-	m_onQtThread([=, this]() {
+	execution::qt::onUi(QtViewWidgetWrapper::getWidgetOfView(this), [=, this]() {
 		if (m_widget->isHovered())
 		{
 			return;
@@ -49,7 +50,7 @@ void QtTooltipView::showTooltip(const TooltipInfo& info, const View* parent)
 
 void QtTooltipView::hideTooltip(bool force)
 {
-	m_onQtThread([=, this]() { m_widget->hide(force); });
+	execution::qt::onUi(QtViewWidgetWrapper::getWidgetOfView(this), [=, this]() { m_widget->hide(force); });
 }
 
 bool QtTooltipView::tooltipVisible() const

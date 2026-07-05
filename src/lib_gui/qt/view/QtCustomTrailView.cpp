@@ -1,4 +1,5 @@
 #include "QtCustomTrailView.h"
+#include "UiPost.h"
 
 #include "ColorScheme.h"
 #include "MessageActivateTrail.h"
@@ -360,7 +361,7 @@ void QtCustomTrailView::createWidgetWrapper() {}
 
 void QtCustomTrailView::refreshView()
 {
-	m_onQtThread([this]() {
+	execution::qt::onUi(this, [this]() {
 		updateStyleSheet();
 		m_searchBoxFrom->refreshStyle();
 		m_searchBoxTo->refreshStyle();
@@ -369,7 +370,7 @@ void QtCustomTrailView::refreshView()
 
 void QtCustomTrailView::clearView()
 {
-	m_onQtThread([this]() {
+	execution::qt::onUi(this, [this]() {
 		m_searchBoxFrom->setMatches({});
 		m_searchBoxTo->setMatches({});
 	});
@@ -377,7 +378,7 @@ void QtCustomTrailView::clearView()
 
 void QtCustomTrailView::setAvailableNodeAndEdgeTypes(NodeKindMask nodeTypes, Edge::TypeMask edgeTypes)
 {
-	m_onQtThread([this, nodeTypes, edgeTypes]() {
+	execution::qt::onUi(this, [this, nodeTypes, edgeTypes]() {
 		for (QCheckBox* filter: m_nodeFilters)
 		{
 			if (filter == m_nodeNonIndexed)
@@ -412,7 +413,7 @@ void QtCustomTrailView::setAvailableNodeAndEdgeTypes(NodeKindMask nodeTypes, Edg
 
 void QtCustomTrailView::showView()
 {
-	m_onQtThread([this]() {
+	execution::qt::onUi(this, [this]() {
 		show();
 		raise();
 	});
@@ -420,12 +421,12 @@ void QtCustomTrailView::showView()
 
 void QtCustomTrailView::hideView()
 {
-	m_onQtThread([this]() { hide(); });
+	execution::qt::onUi(this, [this]() { hide(); });
 }
 
 void QtCustomTrailView::showAutocompletions(const std::vector<SearchMatch>& autocompletions, bool from)
 {
-	m_onQtThread([this, autocompletions, from]() {
+	execution::qt::onUi(this, [this, autocompletions, from]() {
 		if (from)
 		{
 			m_searchBoxFrom->setAutocompletionList(autocompletions);

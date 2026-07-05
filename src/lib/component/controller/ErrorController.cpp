@@ -1,4 +1,6 @@
 #include "ErrorController.h"
+#include "UiPost.h"
+#include "QtViewWidgetWrapper.h"
 
 #include "Application.h"
 #include "ApplicationSettings.h"
@@ -141,7 +143,7 @@ void ErrorController::handleMessage(MessageErrorsHelpMessage* message)
 	appSettings->setSeenErrorHelpMessage(true);
 	appSettings->save();
 
-	m_onQtThread([=]() { createErrorHelpButtonInfo().displayMessage(nullptr); });
+	execution::qt::onUi(QtViewWidgetWrapper::getWidgetOfView(getView()), [=]() { createErrorHelpButtonInfo().displayMessage(nullptr); });
 }
 
 void ErrorController::handleMessage(MessageIndexingFinished*  /*message*/)

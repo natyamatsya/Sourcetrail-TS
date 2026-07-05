@@ -1,7 +1,6 @@
 #ifndef QT_TOOLTIP_VIEW
 #define QT_TOOLTIP_VIEW
 
-#include "QtThreadedFunctor.h"
 #include "TooltipView.h"
 
 class QTimer;
@@ -24,7 +23,6 @@ public:
 	bool tooltipVisible() const override;
 
 private:
-	QtThreadedLambdaFunctor m_onQtThread;
 
 	QtTooltip* m_widget;
 };

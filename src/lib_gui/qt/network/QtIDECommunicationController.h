@@ -6,7 +6,6 @@
 #include "QtTcpWrapper.h"
 
 #include "IDECommunicationController.h"
-#include "QtThreadedFunctor.h"
 
 class StorageAccess;
 
@@ -26,7 +25,6 @@ private:
 
 	QtTcpWrapper m_tcpWrapper;
 
-	QtThreadedLambdaFunctor m_onQtThread;
 };
 
 #endif	  // QT_IDE_COMMUNICATION_CONTROLLER

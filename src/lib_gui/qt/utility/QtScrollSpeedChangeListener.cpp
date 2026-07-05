@@ -5,11 +5,9 @@
 #include <QScrollBar>
 
 #include "ApplicationSettings.h"
+#include "UiPost.h"
 
-QtScrollSpeedChangeListener::QtScrollSpeedChangeListener()
-	: m_changeScrollSpeedFunctor([this](float scrollSpeed) { doChangeScrollSpeed(scrollSpeed); })
-{
-}
+QtScrollSpeedChangeListener::QtScrollSpeedChangeListener() = default;
 
 void QtScrollSpeedChangeListener::setScrollBar(QScrollBar* scrollbar)
 {
@@ -21,7 +19,7 @@ void QtScrollSpeedChangeListener::setScrollBar(QScrollBar* scrollbar)
 
 void QtScrollSpeedChangeListener::handleMessage(MessageScrollSpeedChange* message)
 {
-	m_changeScrollSpeedFunctor(message->scrollSpeed);
+	execution::qt::onUi(m_scrollBar, [this, scrollSpeed = message->scrollSpeed]() { doChangeScrollSpeed(scrollSpeed); });
 }
 
 void QtScrollSpeedChangeListener::doChangeScrollSpeed(float scrollSpeed)

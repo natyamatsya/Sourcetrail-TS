@@ -1,4 +1,5 @@
 #include "QtCodeNavigator.h"
+#include "UiPost.h"
 
 #include "ApplicationSettings.h"
 #include "CodeFocusHandler.h"
@@ -928,6 +929,6 @@ void QtCodeNavigator::handleMessage(MessageWindowFocus* message)
 {
 	if (message->focusIn)
 	{
-		m_onQtThread([=, this]() { m_current->onWindowFocus(); });
+		execution::qt::onUi(this, [=, this]() { m_current->onWindowFocus(); });
 	}
 }

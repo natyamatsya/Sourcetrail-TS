@@ -1,4 +1,5 @@
 #include "QtCodeView.h"
+#include "UiPost.h"
 
 #include "CodeController.h"
 #include "tracing.h"
@@ -32,7 +33,7 @@ void QtCodeView::refreshView()
 		m_widget->setSchedulerId(getController()->getTabId());
 	}
 
-	m_onQtThread([=, this]() {
+	execution::qt::onUi(QtViewWidgetWrapper::getWidgetOfView(this), [=, this]() {
 		TRACE("refresh");
 
 		setStyleSheet();
@@ -51,7 +52,7 @@ bool QtCodeView::isVisible() const
 
 void QtCodeView::findMatches(ScreenSearchSender* sender, const std::string& query)
 {
-	m_onQtThread([sender, query, this]() {
+	execution::qt::onUi(QtViewWidgetWrapper::getWidgetOfView(this), [sender, query, this]() {
 		size_t matchCount = m_widget->findScreenMatches(query);
 		sender->foundMatches(this, matchCount);
 	});
@@ -59,12 +60,12 @@ void QtCodeView::findMatches(ScreenSearchSender* sender, const std::string& quer
 
 void QtCodeView::activateMatch(size_t matchIndex)
 {
-	m_onQtThread([matchIndex, this]() { m_widget->activateScreenMatch(matchIndex); });
+	execution::qt::onUi(QtViewWidgetWrapper::getWidgetOfView(this), [matchIndex, this]() { m_widget->activateScreenMatch(matchIndex); });
 }
 
 void QtCodeView::deactivateMatch(size_t matchIndex)
 {
-	m_onQtThread([matchIndex, this]() { m_widget->deactivateScreenMatch(matchIndex); });
+	execution::qt::onUi(QtViewWidgetWrapper::getWidgetOfView(this), [matchIndex, this]() { m_widget->deactivateScreenMatch(matchIndex); });
 }
 
 void QtCodeView::clearMatches()
@@ -74,12 +75,12 @@ void QtCodeView::clearMatches()
 		return;
 	}
 
-	m_onQtThread([this]() { m_widget->clearScreenMatches(); });
+	execution::qt::onUi(QtViewWidgetWrapper::getWidgetOfView(this), [this]() { m_widget->clearScreenMatches(); });
 }
 
 void QtCodeView::clear()
 {
-	m_onQtThread([=, this]() { m_widget->clear(); });
+	execution::qt::onUi(QtViewWidgetWrapper::getWidgetOfView(this), [=, this]() { m_widget->clear(); });
 }
 
 bool QtCodeView::showsErrors() const
@@ -93,7 +94,7 @@ void QtCodeView::showSnippets(
 	const CodeScrollParams& scrollParams)
 {
 	using enum QtCodeNavigator::Mode;
-	m_onQtThread([=, this]() {
+	execution::qt::onUi(QtViewWidgetWrapper::getWidgetOfView(this), [=, this]() {
 		TRACE("show snippets");
 
 		m_widget->setMode(MODE_LIST);
@@ -120,7 +121,7 @@ void QtCodeView::showSingleFile(
 	const CodeFileParams& file, const CodeParams& params, const CodeScrollParams& scrollParams)
 {
 	using enum QtCodeNavigator::Mode;
-	m_onQtThread([=, this]() {
+	execution::qt::onUi(QtViewWidgetWrapper::getWidgetOfView(this), [=, this]() {
 		TRACE("show single file");
 
 		bool animatedScroll = !m_widget->isInListMode();
@@ -154,7 +155,7 @@ void QtCodeView::showSingleFile(
 
 void QtCodeView::updateSourceLocations(const std::vector<CodeFileParams>& files)
 {
-	m_onQtThread([=, this]() {
+	execution::qt::onUi(QtViewWidgetWrapper::getWidgetOfView(this), [=, this]() {
 		TRACE("update source locations");
 
 		for (const CodeFileParams& file: files)
@@ -179,17 +180,17 @@ void QtCodeView::updateSourceLocations(const std::vector<CodeFileParams>& files)
 
 void QtCodeView::scrollTo(const CodeScrollParams& params, bool animated)
 {
-	m_onQtThread([=, this]() { m_widget->scrollTo(params, animated, true); });
+	execution::qt::onUi(QtViewWidgetWrapper::getWidgetOfView(this), [=, this]() { m_widget->scrollTo(params, animated, true); });
 }
 
 void QtCodeView::coFocusTokenIds(const std::vector<Id>& coFocusedTokenIds)
 {
-	m_onQtThread([=, this]() { m_widget->coFocusTokenIds(coFocusedTokenIds); });
+	execution::qt::onUi(QtViewWidgetWrapper::getWidgetOfView(this), [=, this]() { m_widget->coFocusTokenIds(coFocusedTokenIds); });
 }
 
 void QtCodeView::deCoFocusTokenIds()
 {
-	m_onQtThread([=, this]() { m_widget->deCoFocusTokenIds(); });
+	execution::qt::onUi(QtViewWidgetWrapper::getWidgetOfView(this), [=, this]() { m_widget->deCoFocusTokenIds(); });
 }
 
 bool QtCodeView::isInListMode() const
@@ -217,7 +218,7 @@ void QtCodeView::setNavigationFocus(bool focus)
 
 	m_hasFocus = focus;
 
-	m_onQtThread([this, focus]() {
+	execution::qt::onUi(QtViewWidgetWrapper::getWidgetOfView(this), [this, focus]() {
 		m_widget->blockSignals(true);
 		m_widget->setNavigationFocus(focus);
 		m_widget->blockSignals(false);

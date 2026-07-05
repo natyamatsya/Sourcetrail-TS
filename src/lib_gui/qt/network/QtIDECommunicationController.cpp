@@ -1,4 +1,5 @@
 #include "QtIDECommunicationController.h"
+#include "UiPost.h"
 
 #include <functional>
 
@@ -14,7 +15,7 @@ QtIDECommunicationController::~QtIDECommunicationController() = default;
 
 void QtIDECommunicationController::startListening()
 {
-	m_onQtThread([=, this]() {
+	execution::qt::onUi(&m_tcpWrapper, [=, this]() {
 		ApplicationSettings* appSettings = ApplicationSettings::getInstance().get();
 		m_tcpWrapper.setServerPort(appSettings->getSourcetrailPort());
 		m_tcpWrapper.setClientPort(appSettings->getPluginPort());
@@ -26,7 +27,7 @@ void QtIDECommunicationController::startListening()
 
 void QtIDECommunicationController::stopListening()
 {
-	m_onQtThread([=, this]() { m_tcpWrapper.stopListening(); });
+	execution::qt::onUi(&m_tcpWrapper, [=, this]() { m_tcpWrapper.stopListening(); });
 }
 
 bool QtIDECommunicationController::isListening() const

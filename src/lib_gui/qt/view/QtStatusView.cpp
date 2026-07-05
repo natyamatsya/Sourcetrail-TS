@@ -1,4 +1,5 @@
 #include "QtStatusView.h"
+#include "UiPost.h"
 
 #include <utility>
 
@@ -68,7 +69,7 @@ void QtStatusView::createWidgetWrapper() {}
 
 void QtStatusView::refreshView()
 {
-	m_onQtThread([this]() {
+	execution::qt::onUi(this, [this]() {
 		QWidget* widget = QtViewWidgetWrapper::getWidgetOfView(this);
 		utility::setWidgetBackgroundColor(
 			widget, ColorScheme::getInstance()->getColor("window/background"));
@@ -87,7 +88,7 @@ void QtStatusView::refreshView()
 
 void QtStatusView::clear()
 {
-	m_onQtThread([this]()
+	execution::qt::onUi(this, [this]()
 	{
 		m_model->removeRows(0, m_model->rowCount());
 		m_table->showFirstRow();
@@ -98,7 +99,7 @@ void QtStatusView::clear()
 
 void QtStatusView::addStatus(const std::vector<Status>& status)
 {
-	m_onQtThread([=, this]() {
+	execution::qt::onUi(this, [=, this]() {
 		for (const Status& s: status)
 		{
 			const int rowNumber = m_table->getFilledRowCount();

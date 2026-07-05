@@ -7,7 +7,6 @@
 #include "FilePath.h"
 #include "MessageListener.h"
 #include "MessageRefreshUI.h"
-#include "QtThreadedFunctor.h"
 
 class QtSelfRefreshIconButton
 	: public QPushButton
@@ -36,7 +35,6 @@ protected:
 private:
 	void updateText(int width);
 
-	QtThreadedLambdaFunctor m_onQtThread;
 
 	QString m_text;
 	FilePath m_iconPath;
