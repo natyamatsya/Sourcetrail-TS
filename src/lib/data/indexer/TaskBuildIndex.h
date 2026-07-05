@@ -4,11 +4,13 @@
 #include "language_package_flags.h"
 #include "MessageIndexingInterrupted.h"
 #include "MessageListener.h"
+#include "StdexecPrelude.h"	// stdexec::inplace_stop_source / inplace_stop_callback
 #include "Task.h"
 #include "InterprocessBackend.h"
 
 #include <atomic>
 #include <chrono>
+#include <optional>
 #include <thread>
 
 class DialogView;
@@ -25,6 +27,8 @@ public:
 		std::shared_ptr<StorageProvider> storageProvider,
 		std::shared_ptr<DialogView> dialogView,
 		const std::string& appUUID);
+
+	~TaskBuildIndex() override;
 
 protected:
 	void doEnter(std::shared_ptr<Blackboard> blackboard) override;
@@ -50,9 +54,14 @@ protected:
 	const std::string m_appUUID;
 
 	IndexingStatusManagerImpl m_interprocessIndexingStatusManager;
-	bool m_indexerCommandQueueStopped = false;
+	std::atomic<bool> m_indexerCommandQueueStopped = false;
 	size_t m_processCount;
-	bool m_interrupted = false;
+
+	// Cooperative cancellation: request_stop() replaces the old racy `m_interrupted`
+	// bool. A stop callback (registered in doEnter) raises the IPC interrupt flag so
+	// subprocesses exit gracefully; the babysitter loops observe stop_requested().
+	stdexec::inplace_stop_source m_stopSource;
+
 	size_t m_indexingFileCount = 0;
 	size_t m_lastWatchdogIndexedSourceFileCount = 0;
 	size_t m_lastWatchdogIndexingFileCount = 0;
@@ -60,14 +69,35 @@ protected:
 	std::chrono::steady_clock::time_point m_lastWatchdogLogTime;
 	std::vector<FilePath> m_lastKnownIndexingFiles;
 
-	// store as plain pointers to avoid deallocation issues when closing app during indexing
-	std::vector<std::thread*> m_processThreads;
+	// Supervisor threads (one per indexer subprocess), auto-joined on destruction.
+	// Deterministic teardown relies on cooperative stop (m_stopSource) + the kill
+	// fallback in doExit/dtor so these joins always complete promptly.
+	std::vector<std::jthread> m_processThreads;
 	std::vector<std::shared_ptr<IntermediateStorageManagerImpl>>
 		m_interprocessIntermediateStorageManagers;
 	std::shared_ptr<IntermediateStorageManagerImpl> m_rustStorageManager;
 	std::shared_ptr<IntermediateStorageManagerImpl> m_swiftStorageManager;
 
 	std::atomic<size_t> m_runningThreadCount = 0;
+
+	// Fires when m_stopSource is stopped: raise the IPC interrupt flag so the indexer
+	// subprocesses stop gracefully. Declared last so it unregisters before m_stopSource
+	// is destroyed.
+	struct StopCallback
+	{
+		IndexingStatusManagerImpl* statusManager;
+		void operator()() const noexcept
+		{
+			try
+			{
+				statusManager->setIndexingInterrupted(true);
+			}
+			catch (...)
+			{
+			}
+		}
+	};
+	std::optional<stdexec::inplace_stop_callback<StopCallback>> m_stopCallback;
 };
 
 #endif	  // TASK_PARSE_H
