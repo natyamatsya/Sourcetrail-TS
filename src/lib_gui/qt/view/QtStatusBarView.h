@@ -5,7 +5,6 @@
 
 #include "ErrorCountInfo.h"
 #include "QtStatusBar.h"
-#include "QtThreadedFunctor.h"
 #include "StatusBarView.h"
 
 class QtStatusBarView: public StatusBarView
@@ -30,8 +29,6 @@ public:
 	void showTextEncoding(const std::string &encoding) override;
 	
 private:
-	QtThreadedLambdaFunctor m_onQtThread;
-
 	QtStatusBar* m_statusBar;
 };
 
