@@ -5,7 +5,6 @@
 #include "GraphFocusHandler.h"
 #include "GraphView.h"
 #include "QtScrollSpeedChangeListener.h"
-#include "QtThreadedFunctor.h"
 
 #include <QGraphicsView>
 #include <QPointF>
@@ -126,7 +125,6 @@ private:
 	GraphFocusHandler m_focusHandler;
 	bool m_hasFocus = false;
 
-	QtThreadedLambdaFunctor m_onQtThread;
 
 	std::shared_ptr<Graph> m_graph;
 	std::shared_ptr<Graph> m_oldGraph;

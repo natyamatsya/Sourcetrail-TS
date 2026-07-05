@@ -24,6 +24,7 @@
 #include "QtResources.h"
 #include "QtSelfRefreshIconButton.h"
 #include "QtViewWidgetWrapper.h"
+#include "UiPost.h"
 #include "utilityQt.h"
 
 #include <QBoxLayout>
@@ -217,7 +218,7 @@ void QtGraphView::createWidgetWrapper()
 
 void QtGraphView::refreshView()
 {
-	m_onQtThread([this]()
+	execution::qt::onUi(QtViewWidgetWrapper::getWidgetOfView(this), [this]()
 	{
 		doResize();
 
@@ -241,7 +242,7 @@ bool QtGraphView::isVisible() const
 
 void QtGraphView::findMatches(ScreenSearchSender *sender, const std::string &query)
 {
-	m_onQtThread([sender, query, this]()
+	execution::qt::onUi(QtViewWidgetWrapper::getWidgetOfView(this), [sender, query, this]()
 	{
 		m_matchedNodes.clear();
 
@@ -256,7 +257,7 @@ void QtGraphView::findMatches(ScreenSearchSender *sender, const std::string &que
 
 void QtGraphView::activateMatch(size_t matchIndex)
 {
-	m_onQtThread([matchIndex, this]()
+	execution::qt::onUi(QtViewWidgetWrapper::getWidgetOfView(this), [matchIndex, this]()
 	{
 		if (matchIndex >= m_matchedNodes.size())
 		{
@@ -274,7 +275,7 @@ void QtGraphView::activateMatch(size_t matchIndex)
 
 void QtGraphView::deactivateMatch(size_t matchIndex)
 {
-	m_onQtThread([matchIndex, this]()
+	execution::qt::onUi(QtViewWidgetWrapper::getWidgetOfView(this), [matchIndex, this]()
 	{
 		if (matchIndex >= m_matchedNodes.size())
 		{
@@ -294,7 +295,7 @@ void QtGraphView::clearMatches()
 		return;
 	}
 
-	m_onQtThread([this]()
+	execution::qt::onUi(QtViewWidgetWrapper::getWidgetOfView(this), [this]()
 	{
 		for (QtGraphNode *node : m_matchedNodes)
 		{
@@ -309,7 +310,7 @@ void QtGraphView::rebuildGraph(std::shared_ptr<Graph> graph, const std::vector<s
 	const std::vector<std::shared_ptr<DummyEdge>> &edges, const GraphParams params)
 {
 	using enum Graph::TrailMode;
-	m_onQtThread([=, this]()
+	execution::qt::onUi(QtViewWidgetWrapper::getWidgetOfView(this), [=, this]()
 	{
 		if (isTransitioning())
 		{
@@ -419,7 +420,7 @@ void QtGraphView::rebuildGraph(std::shared_ptr<Graph> graph, const std::vector<s
 
 void QtGraphView::clear()
 {
-	m_onQtThread([this]()
+	execution::qt::onUi(QtViewWidgetWrapper::getWidgetOfView(this), [this]()
 	{
 		m_focusHandler.clear();
 
@@ -453,7 +454,7 @@ void QtGraphView::clear()
 
 void QtGraphView::coFocusTokenIds(const std::vector<Id> &focusedTokenIds)
 {
-	m_onQtThread([=, this]()
+	execution::qt::onUi(QtViewWidgetWrapper::getWidgetOfView(this), [=, this]()
 	{
 		for (const Id &tokenId : focusedTokenIds)
 		{
@@ -478,7 +479,7 @@ void QtGraphView::coFocusTokenIds(const std::vector<Id> &focusedTokenIds)
 
 void QtGraphView::deCoFocusTokenIds(const std::vector<Id> &defocusedTokenIds)
 {
-	m_onQtThread([=, this]()
+	execution::qt::onUi(QtViewWidgetWrapper::getWidgetOfView(this), [=, this]()
 	{
 		for (const Id &tokenId : defocusedTokenIds)
 		{
@@ -503,7 +504,7 @@ void QtGraphView::deCoFocusTokenIds(const std::vector<Id> &defocusedTokenIds)
 
 void QtGraphView::resizeView()
 {
-	m_onQtThread([this]()
+	execution::qt::onUi(QtViewWidgetWrapper::getWidgetOfView(this), [this]()
 	{
 		doResize();
 	});
@@ -539,7 +540,7 @@ void QtGraphView::scrollToValues(int xValue, int yValue)
 
 void QtGraphView::activateEdge(Id edgeId)
 {
-	m_onQtThread([=, this]()
+	execution::qt::onUi(QtViewWidgetWrapper::getWidgetOfView(this), [=, this]()
 	{
 		if (isTransitioning())
 		{
@@ -573,7 +574,7 @@ void QtGraphView::setNavigationFocus(bool focusIn)
 
 	m_hasFocus = focusIn;
 
-	m_onQtThread([this, focusIn]()
+	execution::qt::onUi(QtViewWidgetWrapper::getWidgetOfView(this), [this, focusIn]()
 	{
 		focusView(focusIn);
 		m_focusHandler.focus(focusIn);
