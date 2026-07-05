@@ -1,6 +1,5 @@
 #include "QtBookmarkView.h"
 #include "UiPost.h"
-#include "QtViewWidgetWrapper.h"
 
 #include "QtBookmarkBrowser.h"
 #include "QtBookmarkCreator.h"
@@ -26,7 +25,7 @@ void QtBookmarkView::refreshView()
 
 void QtBookmarkView::displayBookmarkCreator(const std::vector<std::string>& names, const std::vector<BookmarkCategory>& categories, Id nodeId)
 {
-	execution::qt::onUi(QtViewWidgetWrapper::getWidgetOfView(this), [=, this]() 
+	execution::qt::onUi(getMainWindowforMainView(getViewLayout()), [=, this]() 
 	{
 		QtBookmarkCreator* bookmarkCreator = new QtBookmarkCreator(&m_controllerProxy, getMainWindowforMainView(getViewLayout()));
 
@@ -53,7 +52,7 @@ void QtBookmarkView::displayBookmarkCreator(const std::vector<std::string>& name
 
 void QtBookmarkView::displayBookmarkCreator(std::shared_ptr<Bookmark> bookmark, const std::vector<BookmarkCategory>& categories)
 {
-	execution::qt::onUi(QtViewWidgetWrapper::getWidgetOfView(this), [=, this]() 
+	execution::qt::onUi(getMainWindowforMainView(getViewLayout()), [=, this]() 
 	{
 		QtBookmarkCreator* bookmarkCreator = new QtBookmarkCreator(&m_controllerProxy, getMainWindowforMainView(getViewLayout()), bookmark->getId());
 
@@ -69,7 +68,7 @@ void QtBookmarkView::displayBookmarkCreator(std::shared_ptr<Bookmark> bookmark, 
 
 void QtBookmarkView::displayBookmarkBrowser(const std::vector<std::shared_ptr<Bookmark>>& bookmarks)
 {
-	execution::qt::onUi(QtViewWidgetWrapper::getWidgetOfView(this), [=, this]() 
+	execution::qt::onUi(getMainWindowforMainView(getViewLayout()), [=, this]() 
 	{
 		if (m_bookmarkBrowser == nullptr)
 			m_bookmarkBrowser = new QtBookmarkBrowser(&m_controllerProxy, getMainWindowforMainView(getViewLayout()));
@@ -82,7 +81,7 @@ void QtBookmarkView::displayBookmarkBrowser(const std::vector<std::shared_ptr<Bo
 
 void QtBookmarkView::undisplayBookmarkBrowser()
 {
-	execution::qt::onUi(QtViewWidgetWrapper::getWidgetOfView(this), [=, this]() 
+	execution::qt::onUi(getMainWindowforMainView(getViewLayout()), [=, this]() 
 	{
 		if (m_bookmarkBrowser != nullptr)
 			m_bookmarkBrowser->hide();

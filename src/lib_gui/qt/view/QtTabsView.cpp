@@ -202,7 +202,16 @@ void QtTabsView::changedTab(int index)
 {
 	m_insertedTabCount = 0;
 
-	getController<TabsController>()->showTab(qt_variant_cast<TabId>(m_tabBar->tabData(index)));
+	const QVariant tabData = m_tabBar->tabData(index);
+	if (!tabData.canConvert<TabId>())
+	{
+		// No current tab carrying a valid id -- e.g. index == -1 while the last
+		// tab has just been removed and its replacement has not been inserted
+		// yet. Nothing to show; avoid asserting in qt_variant_cast<TabId>.
+		return;
+	}
+
+	getController<TabsController>()->showTab(qt_variant_cast<TabId>(tabData));
 
 	for (int i = 0; i < m_tabBar->count(); i++)
 	{
