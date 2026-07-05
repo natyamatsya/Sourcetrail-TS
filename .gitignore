@@ -34,3 +34,7 @@ src/swift_indexer/Sources/SourcetrailSwiftIndexer/GeneratedFromCMake
 
 # Sourcetrail bookmark-DB WAL sidecars (mirror of the *.srctrl.db-* rule)
 *.srctrl.bm-*
+
+# Temporary reference extraction
+/inspiration/download/
+/inspiration/download.zip

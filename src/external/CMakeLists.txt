@@ -15,3 +15,9 @@ target_link_libraries(External_lib_cppsqlite3
 	PUBLIC
 		External_lib_sqlite3
 )
+
+# Vendored stdcompat: header-only std backport/extension types.
+# Provides the INTERFACE targets stdext::expected (C++23 std::expected extension
+# with reference-value support) and stdcompat::optional (beman std::optional).
+# Copied verbatim from inspiration/download; install() is gated off by default.
+add_subdirectory(stdcompat)

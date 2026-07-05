@@ -9,6 +9,8 @@
 		"sqlite3",
 		"tinyxml",
 		"tomlplusplus",
-		"catch2"
-	]
+		"catch2",
+		"stdexec"
+	],
+	"builtin-baseline": "4556e1a3c9e2d1c4a7344cac5d045a9d87b2e77f"
 }

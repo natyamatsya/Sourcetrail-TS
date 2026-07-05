@@ -70,4 +70,7 @@ target_link_libraries(Sourcetrail_lib_gui
 		Sourcetrail_lib
 		External_lib_qt
 		Sourcetrail_res_gui
+
+		# Qt<->stdexec bridge in qt/execution/ needs stdexec directly.
+		STDEXEC::stdexec
 )
