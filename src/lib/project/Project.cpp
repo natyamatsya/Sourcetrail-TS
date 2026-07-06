@@ -600,13 +600,15 @@ void Project::buildIndex(RefreshInfo info, std::shared_ptr<DialogView> dialogVie
 			m_appUUID, std::move(indexerCommandProvider), 2));
 
 		// add task for indexing.
-		// Cap raised 6 -> 12 (B2 experiment): at cap 6 the serial storage writer ran
-		// at 82% utilization with zero back-pressure stalls, i.e. parsing was the
-		// wall-time limiter on a 12-core machine. The writer stall counter in the
-		// indexing summary shows when the writer becomes the binding constraint.
-		const int effectiveIndexerThreadCount = hasCxxSourceGroup()
-			? std::min<int>(adjustedIndexerThreadCount, 12)
-			: 0;
+		// No hardcoded subprocess cap (was 6, then 12): the user setting /
+		// hardware-concurrency default is the knob, and the pipeline self-regulates
+		// (subprocess outbox + provider back-pressure). Measured on a 12-core/32GB
+		// machine indexing this repo: 6 -> 12 subprocesses cut wall time 21% (writer
+		// at 95.5% utilization, zero stalls); peak RSS 8.4GB total (~0.8GB per
+		// indexer). The indexing-summary stall counter is the tripwire: stalls > 0
+		// means the serial writer became the ceiling (-> roadmap B3, sharded ingest).
+		const int effectiveIndexerThreadCount = hasCxxSourceGroup() ? adjustedIndexerThreadCount
+																	: 0;
 		taskParallelIndexing->addChildTasks(std::make_shared<TaskGroupSequence>()->addChildTasks(
 			// block until there are indexer commands to process
 			std::make_shared<TaskDecoratorRepeat>(
