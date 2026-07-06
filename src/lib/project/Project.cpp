@@ -599,9 +599,13 @@ void Project::buildIndex(RefreshInfo info, std::shared_ptr<DialogView> dialogVie
 		taskParallelIndexing->addTask(std::make_shared<TaskFillIndexerCommandsQueue>(
 			m_appUUID, std::move(indexerCommandProvider), 2));
 
-		// add task for indexing
+		// add task for indexing.
+		// Cap raised 6 -> 12 (B2 experiment): at cap 6 the serial storage writer ran
+		// at 82% utilization with zero back-pressure stalls, i.e. parsing was the
+		// wall-time limiter on a 12-core machine. The writer stall counter in the
+		// indexing summary shows when the writer becomes the binding constraint.
 		const int effectiveIndexerThreadCount = hasCxxSourceGroup()
-			? std::min<int>(adjustedIndexerThreadCount, 6)
+			? std::min<int>(adjustedIndexerThreadCount, 12)
 			: 0;
 		taskParallelIndexing->addChildTasks(std::make_shared<TaskGroupSequence>()->addChildTasks(
 			// block until there are indexer commands to process
