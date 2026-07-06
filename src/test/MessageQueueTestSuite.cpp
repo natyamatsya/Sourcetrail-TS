@@ -237,3 +237,59 @@ TEST_CASE("listener registration to front and back within message handling")
 	REQUIRE(2 == listener.m_listeners[3]->m_messageCount);
 	REQUIRE(2 == listener.m_listeners[4]->m_messageCount);
 }
+
+// Regression tests for the event-driven message loop (stdexec::run_loop):
+// pushMessage() schedules a coalesced drain instead of the old 25 ms poll.
+
+TEST_CASE("messages dispatched before loop start are delivered at start")
+{
+	TestMessageListener listener;
+
+	// No loop running: dispatch only buffers (no wake is scheduled).
+	TestMessage().dispatch();
+	TestMessage().dispatch();
+	TestMessage().dispatch();
+
+	REQUIRE(MessageQueue::getInstance()->hasMessagesQueued());
+	REQUIRE(0 == listener.m_messageCount);
+
+	// startMessageLoop() must drain the pre-existing buffer before blocking.
+	MessageQueue::getInstance()->startMessageLoopThreaded();
+
+	waitForThread();
+
+	MessageQueue::getInstance()->stopMessageLoop();
+
+	REQUIRE(3 == listener.m_messageCount);
+}
+
+TEST_CASE("concurrent burst dispatch is fully delivered despite coalesced wakeups")
+{
+	MessageQueue::getInstance()->startMessageLoopThreaded();
+
+	TestMessageListener listener;
+
+	// Two producers race pushMessage() against the drain; the coalescing flag
+	// (at most one pending drain) must never drop a message pushed mid-drain.
+	constexpr int MESSAGES_PER_PRODUCER = 50;
+	std::thread producerA([]() {
+		for (int i = 0; i < MESSAGES_PER_PRODUCER; i++)
+		{
+			TestMessage().dispatch();
+		}
+	});
+	std::thread producerB([]() {
+		for (int i = 0; i < MESSAGES_PER_PRODUCER; i++)
+		{
+			TestMessage().dispatch();
+		}
+	});
+	producerA.join();
+	producerB.join();
+
+	waitForThread();
+
+	MessageQueue::getInstance()->stopMessageLoop();
+
+	REQUIRE(2 * MESSAGES_PER_PRODUCER == listener.m_messageCount);
+}

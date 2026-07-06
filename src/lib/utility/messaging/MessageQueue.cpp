@@ -16,10 +16,15 @@
 // own worker thread. pushMessage() schedules a drain onto the run_loop (instead
 // of the loop polling every 25 ms); stopMessageLoop() finishes the run_loop and
 // joins the worker (instead of busy-waiting).
+//
+// stdexec::run_loop is single-shot: finish() sets a terminal flag that run()
+// never resets, so a stopped loop cannot be restarted. startMessageLoop()
+// therefore constructs a fresh MessageLoop per session (which also resets
+// drainScheduled, so a drain orphaned by a racing stop cannot leak a stale
+// "already scheduled" state into the next session).
 struct MessageQueue::MessageLoop
 {
 	stdexec::run_loop runLoop;
-	std::thread thread;
 	std::atomic<bool> drainScheduled = false;
 };
 
@@ -125,11 +130,33 @@ void MessageQueue::processMessage(std::shared_ptr<MessageBase> message, bool asN
 
 void MessageQueue::startMessageLoopThreaded()
 {
-	m_messageLoop->thread = std::thread(&MessageQueue::startMessageLoop, this);
+	if (m_loopIsRunning.load())
+	{
+		LOG_ERROR("Loop is already running");
+		return;
+	}
+
+	if (m_loopThread.joinable())
+	{
+		m_loopThread.join();	// reclaim a previous session's fully-stopped worker
+	}
+
+	m_loopThread = std::thread(&MessageQueue::startMessageLoop, this);
 }
 
 void MessageQueue::startMessageLoop()
 {
+	if (m_loopIsRunning.load())
+	{
+		LOG_ERROR("Loop is already running");
+		return;
+	}
+
+	// Fresh single-shot run_loop per session (see MessageLoop). Swapping is safe
+	// while the flag is false: producers only touch m_messageLoop after seeing
+	// m_loopIsRunning == true in wakeLoop().
+	m_messageLoop = std::make_unique<MessageLoop>();
+
 	if (m_loopIsRunning.exchange(true))
 	{
 		LOG_ERROR("Loop is already running");
@@ -152,9 +179,9 @@ void MessageQueue::stopMessageLoop()
 
 	m_messageLoop->runLoop.finish();
 
-	if (m_messageLoop->thread.joinable())
+	if (m_loopThread.joinable())
 	{
-		m_messageLoop->thread.join();
+		m_loopThread.join();
 	}
 }
 

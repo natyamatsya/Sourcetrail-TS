@@ -5,6 +5,7 @@
 #include <deque>
 #include <memory>
 #include <mutex>
+#include <thread>
 #include <vector>
 
 #include "types.h"
@@ -56,10 +57,15 @@ private:
 	//! that a burst of pushMessage() calls schedules at most one pending drain.
 	void wakeLoop();
 
-	// Event-driven loop backing (exec::run_loop + its worker thread), kept behind
-	// a pimpl so stdexec stays out of this widely-included header.
+	// Event-driven loop backing (stdexec::run_loop + drain coalescing flag), kept
+	// behind a pimpl so stdexec stays out of this widely-included header.
+	// stdexec::run_loop is single-shot (finish() is terminal), so startMessageLoop()
+	// creates a FRESH MessageLoop per session; the worker thread handle lives
+	// outside the pimpl so the swap cannot destroy the object owning the running
+	// thread.
 	struct MessageLoop;
 	std::unique_ptr<MessageLoop> m_messageLoop;
+	std::thread m_loopThread;
 
 	MessageBufferType m_messageBuffer;
 	std::vector<MessageListenerBase*> m_listeners;
