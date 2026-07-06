@@ -36,6 +36,7 @@ Task::TaskState TaskFinishParsing::doUpdate(std::shared_ptr<Blackboard> blackboa
 	TimeStamp start = TimeStamp::now();
 
 	m_dialogView->showUnknownProgressDialog("Finish Indexing", "Optimizing database");
+	m_storage->setBulkWritePragmas(false);	  // restore SYNCHRONOUS=NORMAL before the DB goes live
 	m_storage->optimizeMemory();
 	m_dialogView->hideUnknownProgressDialog();
 

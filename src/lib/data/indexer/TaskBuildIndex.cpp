@@ -164,6 +164,7 @@ void TaskBuildIndex::doEnter(std::shared_ptr<Blackboard> blackboard)
 	m_lastKnownIndexingFiles.clear();
 	m_lastWatchdogProgressTime = std::chrono::steady_clock::now();
 	m_lastWatchdogLogTime = m_lastWatchdogProgressTime;
+	m_indexingStartTime = m_lastWatchdogProgressTime;
 	updateIndexingDialog(blackboard, std::vector<FilePath>());
 
 	std::string logFilePath;
@@ -303,6 +304,24 @@ Task::TaskState TaskBuildIndex::doUpdate(std::shared_ptr<Blackboard> blackboard)
 	}
 }
 
+void TaskBuildIndex::logIndexingSummary(const std::shared_ptr<Blackboard>& blackboard) const
+{
+	// B2-gate numbers: indexing wall time vs writer back-pressure stalls. The
+	// storage writer / pre-merge log their busy totals separately (TaskInjectStorage
+	// / TaskMergeStorages summaries).
+	const auto wallMs = std::chrono::duration_cast<std::chrono::milliseconds>(
+							std::chrono::steady_clock::now() - m_indexingStartTime)
+							.count();
+
+	int indexedSourceFileCount = 0;
+	blackboard->get("indexed_source_file_count", indexedSourceFileCount);
+
+	LOG_INFO_STREAM(
+		<< "indexing summary: wall " << wallMs << " ms, " << indexedSourceFileCount
+		<< " source files, writer back-pressure stalls " << m_throttleStallCount << " ("
+		<< m_throttleStallMs << " ms)");
+}
+
 void TaskBuildIndex::doExit(std::shared_ptr<Blackboard> blackboard)
 {
 	using enum Task::TaskState;
@@ -332,6 +351,8 @@ void TaskBuildIndex::doExit(std::shared_ptr<Blackboard> blackboard)
 	if (m_stopSource.stop_requested())
 	{
 		blackboard->set<bool>("indexer_threads_stopped", true);
+		m_storageProvider->setDone();	 // release the merge/inject waiters
+		logIndexingSummary(blackboard);
 		return;
 	}
 
@@ -362,6 +383,8 @@ void TaskBuildIndex::doExit(std::shared_ptr<Blackboard> blackboard)
 	}
 
 	blackboard->set<bool>("indexer_threads_stopped", true);
+	m_storageProvider->setDone();	 // release the merge/inject waiters
+	logIndexingSummary(blackboard);
 }
 
 void TaskBuildIndex::doReset(std::shared_ptr<Blackboard>  /*blackboard*/) {}
@@ -746,7 +769,13 @@ bool TaskBuildIndex::fetchIntermediateStorages(std::shared_ptr<Blackboard> black
 	for (auto& storage: drained)
 	{
 		while (m_storageProvider->getStorageCount() > maxQueuedStoragesBeforePause)
+		{
+			// Writer back-pressure: the (serial) storage writer is behind. Counted
+			// as B2-gate evidence for the sharded-ingest decision.
+			m_throttleStallCount++;
+			m_throttleStallMs += 50;
 			std::this_thread::sleep_for(std::chrono::milliseconds(50));
+		}
 
 		m_storageProvider->insert(storage);
 	}

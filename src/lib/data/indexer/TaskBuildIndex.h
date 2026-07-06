@@ -43,6 +43,7 @@ protected:
 	void runRustIndexerProcess(ProcessId processId, const std::string& logFilePath);
 	void runSwiftIndexerProcess(ProcessId processId, const std::string& logFilePath);
 	bool fetchIntermediateStorages(std::shared_ptr<Blackboard> blackboard);
+	void logIndexingSummary(const std::shared_ptr<Blackboard>& blackboard) const;
 	void updateIndexingDialog(
 		std::shared_ptr<Blackboard> blackboard, const std::vector<FilePath>& sourcePaths);
 
@@ -68,6 +69,11 @@ protected:
 	std::chrono::steady_clock::time_point m_lastWatchdogProgressTime;
 	std::chrono::steady_clock::time_point m_lastWatchdogLogTime;
 	std::vector<FilePath> m_lastKnownIndexingFiles;
+
+	// instrumentation for the B2 sharding gate (see logIndexingSummary)
+	std::chrono::steady_clock::time_point m_indexingStartTime;
+	size_t m_throttleStallCount = 0;
+	long long m_throttleStallMs = 0;
 
 	// Supervisor threads (one per indexer subprocess), auto-joined on destruction.
 	// Deterministic teardown relies on cooperative stop (m_stopSource) + the kill

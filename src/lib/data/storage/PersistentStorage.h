@@ -75,6 +75,7 @@ public:
 	void setProjectSettingsText(std::string text);
 
 	void setup();
+	void setBulkWritePragmas(bool enabled);
 	void updateVersion();
 	void clear();
 	void clearCaches();

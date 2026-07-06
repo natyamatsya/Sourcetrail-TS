@@ -330,6 +330,11 @@ void PersistentStorage::setProjectSettingsText(std::string text)
 	m_sqliteIndexStorage.setProjectSettingsText(text);
 }
 
+void PersistentStorage::setBulkWritePragmas(bool enabled)
+{
+	m_sqliteIndexStorage.setBulkWritePragmas(enabled);
+}
+
 void PersistentStorage::setup()
 {
 	m_sqliteIndexStorage.setup();

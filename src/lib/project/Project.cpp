@@ -504,6 +504,9 @@ void Project::buildIndex(RefreshInfo info, std::shared_ptr<DialogView> dialogVie
 	std::shared_ptr<PersistentStorage> tempStorage = std::make_shared<PersistentStorage>(
 		tempIndexDbFilePath, m_storage->getBookmarkDbFilePath());
 	tempStorage->setup();
+	// Indexing target is throwaway until the final swap: skip fsync per commit.
+	// Restored to NORMAL in TaskFinishParsing before optimize/swap.
+	tempStorage->setBulkWritePragmas(true);
 
 	std::shared_ptr<TaskGroupSequence> taskSequential = std::make_shared<TaskGroupSequence>();
 
@@ -609,24 +612,23 @@ void Project::buildIndex(RefreshInfo info, std::shared_ptr<DialogView> dialogVie
 			std::make_shared<TaskBuildIndex>(
 				effectiveIndexerThreadCount, storageProvider, dialogView, m_appUUID)));
 
-		// add task for merging the intermediate storages
+		// add task for merging the intermediate storages.
+		// Event-driven: TaskMergeStorages blocks on the StorageProvider until enough
+		// storages exist or the producers are done (SUCCESS per merge, FAILURE once
+		// done) -- no repeat delay, no blackboard-polling fallback needed.
 		taskParallelIndexing->addTask(std::make_shared<TaskGroupSequence>()->addChildTasks(
 			// block until there are indexers running
 			std::make_shared<TaskDecoratorRepeat>(
 				TaskDecoratorRepeat::ConditionType::CONDITION_WHILE_SUCCESS, Task::TaskState::STATE_SUCCESS, 25)
 				->addChildTask(std::make_shared<TaskReturnSuccessIf<bool>>(
 					"indexer_threads_started", TaskReturnSuccessIf<bool>::ConditionType::CONDITION_EQUALS, false)),
-			// merge until all indexers stopped and nothing left to merge
 			std::make_shared<TaskDecoratorRepeat>(
-				TaskDecoratorRepeat::ConditionType::CONDITION_WHILE_SUCCESS, Task::TaskState::STATE_SUCCESS, 250)
-				->addChildTask(std::make_shared<TaskGroupSelector>()->addChildTasks(
-					std::make_shared<TaskMergeStorages>(storageProvider),
-					std::make_shared<TaskReturnSuccessIf<bool>>(
-						"indexer_threads_stopped",
-						TaskReturnSuccessIf<bool>::ConditionType::CONDITION_EQUALS,
-						false)))));
+				TaskDecoratorRepeat::ConditionType::CONDITION_WHILE_SUCCESS, Task::TaskState::STATE_SUCCESS, 0)
+				->addChildTask(std::make_shared<TaskMergeStorages>(storageProvider))));
 
-		// add task for injecting the intermediate storages into the persistent storage
+		// add task for injecting the intermediate storages into the persistent storage.
+		// Event-driven like the merge stream: TaskInjectStorage blocks on the provider,
+		// drains the remainder once producers are done, and ends via FAILURE.
 		taskParallelIndexing->addTask(std::make_shared<TaskGroupSequence>()->addChildTasks(
 			// block until there are indexers running
 			std::make_shared<TaskDecoratorRepeat>(
@@ -634,14 +636,8 @@ void Project::buildIndex(RefreshInfo info, std::shared_ptr<DialogView> dialogVie
 				->addChildTask(std::make_shared<TaskReturnSuccessIf<bool>>(
 					"indexer_threads_started", TaskReturnSuccessIf<bool>::ConditionType::CONDITION_EQUALS, false)),
 			std::make_shared<TaskDecoratorRepeat>(
-				TaskDecoratorRepeat::ConditionType::CONDITION_WHILE_SUCCESS, Task::TaskState::STATE_SUCCESS, 25)
-				->addChildTask(std::make_shared<TaskGroupSelector>()->addChildTasks(
-					std::make_shared<TaskInjectStorage>(storageProvider, tempStorage),
-					// continuing when indexers still running, even if there are no storages right now.
-					std::make_shared<TaskReturnSuccessIf<bool>>(
-						"indexer_threads_stopped",
-						TaskReturnSuccessIf<bool>::ConditionType::CONDITION_EQUALS,
-						false)))));
+				TaskDecoratorRepeat::ConditionType::CONDITION_WHILE_SUCCESS, Task::TaskState::STATE_SUCCESS, 0)
+				->addChildTask(std::make_shared<TaskInjectStorage>(storageProvider, tempStorage))));
 
 		// add task that notifies the user of what's going on
 		taskSequential->addTask(	// we don't need to hide this dialog again, because it's
@@ -650,10 +646,12 @@ void Project::buildIndex(RefreshInfo info, std::shared_ptr<DialogView> dialogVie
 				dialogView->showUnknownProgressDialog("Finish Indexing", "Saving\nRemaining Data");
 			}));
 
-		// add task that injects the remaining intermediate storages into the persistent storage
+		// add task that injects the remaining intermediate storages into the persistent
+		// storage (producers are done by now, so the inject task never blocks: it
+		// drains the remainder and ends via FAILURE when the provider is empty)
 		taskSequential->addTask(
 			std::make_shared<TaskDecoratorRepeat>(
-				TaskDecoratorRepeat::ConditionType::CONDITION_WHILE_SUCCESS, Task::TaskState::STATE_SUCCESS, 25)
+				TaskDecoratorRepeat::ConditionType::CONDITION_WHILE_SUCCESS, Task::TaskState::STATE_SUCCESS, 0)
 				->addChildTask(std::make_shared<TaskInjectStorage>(storageProvider, tempStorage)));
 	}
 	else

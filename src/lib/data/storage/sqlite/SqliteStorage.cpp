@@ -301,3 +301,13 @@ void SqliteStorage::disablePragmas() const
 {
 	executeStatement("PRAGMA FOREIGN_KEYS=OFF;");
 }
+
+void SqliteStorage::setBulkWritePragmas(bool enabled) const
+{
+	// For the throwaway indexing target: skip the fsync per committed transaction.
+	// An app crash cannot corrupt the DB with SYNCHRONOUS=OFF (SQLite guarantee);
+	// only an OS/power failure can -- and the temp DB is discarded and indexing
+	// restarted in that case anyway. Restore NORMAL before the DB becomes the
+	// live one (TaskFinishParsing, before optimizeMemory/swap).
+	executeStatement(enabled ? "PRAGMA SYNCHRONOUS=OFF;" : "PRAGMA SYNCHRONOUS=NORMAL;");
+}

@@ -61,7 +61,7 @@ kill_strays
 #   - a stack-smashing segfault (vector<FilePath> copy, corrupted backtrace)
 #     somewhere in the shard with logger/searchindex/matrix tests - needs an
 #     ASan build to pinpoint; it hid a tail of ~40 never-run failing tests
-UNIT_FILTER='message*,listener*,messages*,concurrent*,scheduler*,task*,scheduled*,sequential*'
+UNIT_FILTER='message*,listener*,messages*,concurrent*,scheduler*,task*,scheduled*,sequential*,storage provider*'
 note "stage 1: unit tests (concurrency-relevant subset)"
 "$TEST_BIN" "$UNIT_FILTER" > "$SCRATCH/unit.log" 2>&1 &
 UNIT_PID=$!

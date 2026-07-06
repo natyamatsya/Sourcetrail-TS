@@ -15,6 +15,10 @@ public:
 	virtual ~SqliteStorage();
 
 	void setup();
+
+	//! Toggle write-heavy indexing pragmas (currently SYNCHRONOUS=OFF) on the
+	//! throwaway indexing target; restore before the DB becomes the live one.
+	void setBulkWritePragmas(bool enabled) const;
 	void clear();
 
 	size_t getVersion() const;
