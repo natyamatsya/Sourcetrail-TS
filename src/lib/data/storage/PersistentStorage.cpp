@@ -320,6 +320,16 @@ bool PersistentStorage::isIncompatible() const
 	return m_sqliteIndexStorage.isIncompatible();
 }
 
+std::string PersistentStorage::getMetaValue(const std::string& key) const
+{
+	return m_sqliteIndexStorage.getMetaValue(key);
+}
+
+void PersistentStorage::setMetaValue(const std::string& key, const std::string& value)
+{
+	m_sqliteIndexStorage.insertOrUpdateMetaValue(key, value);
+}
+
 std::string PersistentStorage::getProjectSettingsText() const
 {
 	return m_sqliteIndexStorage.getProjectSettingsText();

@@ -5,6 +5,7 @@
 
 #include "FilePath.h"
 #include "Message.h"
+#include "ShardConfig.h"
 #include "utilityEnum.h"
 
 class MessageLoadProject: public Message<MessageLoadProject>
@@ -13,10 +14,12 @@ public:
 	MessageLoadProject(
 		const FilePath& filePath,
 		bool settingsChanged = false,
-		RefreshMode refreshMode = RefreshMode::NONE)
+		RefreshMode refreshMode = RefreshMode::NONE,
+		const ShardConfig& shardConfig = ShardConfig())
 		: projectSettingsFilePath(filePath)
 		, settingsChanged(settingsChanged)
 		, refreshMode(refreshMode)
+		, shardConfig(shardConfig)
 	{
 	}
 
@@ -35,6 +38,7 @@ public:
 	const FilePath projectSettingsFilePath;
 	const bool settingsChanged;
 	const RefreshMode refreshMode;
+	const ShardConfig shardConfig;
 };
 
 #endif	  // MESSAGE_LOAD_PROJECT_H

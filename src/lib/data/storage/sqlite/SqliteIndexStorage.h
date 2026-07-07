@@ -110,6 +110,10 @@ public:
 	std::shared_ptr<TextAccess> getFileContentById(Id fileId) const;
 
 	void setFileIndexed(Id fileId, bool indexed);
+
+	// generic meta k/v access (shard manifests etc.)
+	using SqliteStorage::getMetaValue;
+	using SqliteStorage::insertOrUpdateMetaValue;
 	void setFileCompleteIfNoError(Id fileId, const std::string& filePath, bool complete);
 	void setNodeType(int type, Id nodeId);
 

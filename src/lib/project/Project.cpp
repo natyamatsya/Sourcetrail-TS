@@ -60,6 +60,11 @@ Project::Project(
 
 Project::~Project() = default;
 
+void Project::setShardConfig(const ShardConfig& config)
+{
+	m_shardConfig = config;
+}
+
 FilePath Project::getProjectSettingsFilePath() const
 {
 	return m_settings->getFilePath();
@@ -370,6 +375,20 @@ void Project::refresh(std::shared_ptr<DialogView> dialogView, RefreshMode refres
 	else
 	{
 		RefreshInfo info = getRefreshInfo(refreshMode);
+
+		if (m_shardConfig.isActive())
+		{
+			// Distributed indexing: keep only this process's deterministic stripe.
+			// The CLI enforces --full, so info holds the complete sorted TU set --
+			// identical on every shard producer, making the stripes disjoint and
+			// complete across producers.
+			const size_t totalFileCount = info.filesToIndex.size();
+			shard::stripeFilter(&info.filesToIndex, m_shardConfig.index, m_shardConfig.count);
+			LOG_INFO_STREAM(
+				<< "shard " << m_shardConfig.index << "/" << m_shardConfig.count << ": indexing "
+				<< info.filesToIndex.size() << " of " << totalFileCount << " source files");
+		}
+
 		buildIndex(info, dialogView);
 	}
 }
@@ -492,9 +511,27 @@ void Project::buildIndex(RefreshInfo info, std::shared_ptr<DialogView> dialogVie
 	m_storageCache->setSubject(m_storage);
 
 	const FilePath indexDbFilePath = m_settings->getDBFilePath();
-	const FilePath tempIndexDbFilePath = m_settings->getTempDBFilePath();
+	FilePath tempIndexDbFilePath = m_settings->getTempDBFilePath();
+	FilePath bookmarkDbFilePath = m_storage->getBookmarkDbFilePath();
 
-	if (info.mode != RefreshMode::ALL_FILES)
+	if (m_shardConfig.isActive())
+	{
+		// Shard runs write a standalone shard DB and never touch the live project
+		// DB or the bookmarks; the swap at the end is skipped (see below).
+		tempIndexDbFilePath = m_shardConfig.outputPath.empty()
+			? indexDbFilePath.getParentDirectory().getConcatenated(FilePath(
+				  m_settings->getFilePath().withoutExtension().fileName() + ".shard" +
+				  std::to_string(m_shardConfig.index) + "of" +
+				  std::to_string(m_shardConfig.count) + ".srctrl.db"))
+			: m_shardConfig.outputPath;
+		bookmarkDbFilePath = FilePath();
+
+		if (tempIndexDbFilePath.exists())
+		{
+			FileSystem::remove(tempIndexDbFilePath);
+		}
+	}
+	else if (info.mode != RefreshMode::ALL_FILES)
 	{
 		// store the indexed data into the temp db but keep the current state to allow browsing
 		// while indexing
@@ -502,7 +539,7 @@ void Project::buildIndex(RefreshInfo info, std::shared_ptr<DialogView> dialogVie
 	}
 
 	std::shared_ptr<PersistentStorage> tempStorage = std::make_shared<PersistentStorage>(
-		tempIndexDbFilePath, m_storage->getBookmarkDbFilePath());
+		tempIndexDbFilePath, bookmarkDbFilePath);
 	tempStorage->setup();
 	// Indexing target is throwaway until the final swap: skip fsync per commit.
 	// Restored to NORMAL in TaskFinishParsing before optimize/swap.
@@ -680,20 +717,38 @@ void Project::buildIndex(RefreshInfo info, std::shared_ptr<DialogView> dialogVie
 
 	taskSequential->addTask(std::make_shared<TaskFinishParsing>(tempStorage, dialogView));
 
-	taskSequential->addTask(std::make_shared<TaskGroupSelector>()->addChildTasks(
-		std::make_shared<TaskGroupSequence>()->addChildTasks(
-			std::make_shared<TaskFindKeyOnBlackboard>("keep_database"),
-			std::make_shared<TaskLambda>([dialogView, this]() {
-				Task::dispatch(TabIds::app(), std::make_shared<TaskLambda>([dialogView, this]() {
-								   swapToTempStorage(dialogView);
-							   }));
-			})),
-		std::make_shared<TaskGroupSequence>()->addChildTasks(
-			std::make_shared<TaskFindKeyOnBlackboard>("discard_database"),
-			std::make_shared<TaskLambda>([this]() {
-				Task::dispatch(
-					TabIds::app(), std::make_shared<TaskLambda>([this]() { discardTempStorage(); }));
-			}))));
+	if (m_shardConfig.isActive())
+	{
+		// Shard run: no swap/discard -- the shard DB stays at its output path.
+		// Record the manifest so `merge` can verify stripe consistency.
+		const size_t stripedFileCount = info.filesToIndex.size();
+		taskSequential->addTask(std::make_shared<TaskLambda>(
+			[tempStorage, tempIndexDbFilePath, stripedFileCount, this]() {
+				tempStorage->setMetaValue("shard_index", std::to_string(m_shardConfig.index));
+				tempStorage->setMetaValue("shard_count", std::to_string(m_shardConfig.count));
+				tempStorage->setMetaValue("shard_file_count", std::to_string(stripedFileCount));
+				LOG_INFO_STREAM(
+					<< "shard " << m_shardConfig.index << "/" << m_shardConfig.count
+					<< " written to " << tempIndexDbFilePath.str());
+			}));
+	}
+	else
+	{
+		taskSequential->addTask(std::make_shared<TaskGroupSelector>()->addChildTasks(
+			std::make_shared<TaskGroupSequence>()->addChildTasks(
+				std::make_shared<TaskFindKeyOnBlackboard>("keep_database"),
+				std::make_shared<TaskLambda>([dialogView, this]() {
+					Task::dispatch(TabIds::app(), std::make_shared<TaskLambda>([dialogView, this]() {
+									   swapToTempStorage(dialogView);
+								   }));
+				})),
+			std::make_shared<TaskGroupSequence>()->addChildTasks(
+				std::make_shared<TaskFindKeyOnBlackboard>("discard_database"),
+				std::make_shared<TaskLambda>([this]() {
+					Task::dispatch(
+						TabIds::app(), std::make_shared<TaskLambda>([this]() { discardTempStorage(); }));
+				}))));
+	}
 
 	taskSequential->addTask(std::make_shared<TaskLambda>([dialogView, this]() {
 		m_refreshStage = RefreshStageType::NONE;

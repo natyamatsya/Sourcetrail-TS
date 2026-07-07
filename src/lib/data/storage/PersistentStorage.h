@@ -71,6 +71,9 @@ public:
 
 	bool isEmpty() const;
 	bool isIncompatible() const;
+	std::string getMetaValue(const std::string& key) const;
+	void setMetaValue(const std::string& key, const std::string& value);
+
 	std::string getProjectSettingsText() const;
 	void setProjectSettingsText(std::string text);
 

@@ -92,6 +92,35 @@ Stalls > 0 on a real workload = producers outran the writer = B3 starts paying.
 Currently 0 even with 12 producers. **Effort:** high. **Risk:** medium (data-critical
 path).
 
+### P4b — Distributed sharded indexing (SHIPPED 2026-07-07)
+Reframed from local wall-time (P4, still gated) to **fanning a large codebase across
+machines**: N producers each index a deterministic stripe of the sorted TU set into a
+standalone shard DB; one `merge` command combines them. Each producer is the *unmodified*
+single-writer pipeline in its own process, so there is no concurrent-writer redesign —
+the parallelism is across processes/machines, not writer lanes.
+
+- **Producer:** `Sourcetrail index --full --shard <i>/<N> [--shard-output <db>]`.
+  `shard::stripeFilter` (ShardConfig.h) keeps TUs whose position in the sorted
+  `RefreshInfo::filesToIndex` set satisfies `pos % N == i-1`. `Project::buildIndex` writes
+  the shard DB at the output path with an empty bookmark DB and skips the swap/discard step;
+  a manifest (`shard_index`/`shard_count`/`shard_file_count`) is written to the meta table.
+- **Merge:** `Sourcetrail merge <project.toml> <shard1.db> <shard2.db>... [--output <db>] [--allow-partial]`.
+  Guards version compatibility + a complete, distinct stripe set, then `inject`s each shard
+  into a fresh target and finalizes (project-settings meta, `buildCaches`, `optimizeMemory`).
+- **Cross-shard dedup is automatic** at inject: nodes by serialized name, source locations by
+  position, and occurrences via the occurrence table's composite PK + `INSERT OR IGNORE`.
+  (The plan expected occurrences to need a post-merge dedup pass; the composite PK already
+  handles it — verified, no dedup pass shipped.)
+- **v1 constraints:** shard runs use `--full` (ALL_FILES); all producers + the merge host share
+  the same checkout root (paths are stored absolute, no remap); same storage version.
+- **Acceptance:** `scripts/smoke-distributed.sh` proves `shard 1/2 + shard 2/2 + merge` equals a
+  direct full index on all of node/edge/file/source_location/occurrence counts, using a CDB
+  fixture whose two TUs share a header (so the merge genuinely collapses overlapping shard rows
+  — 8+9 shard nodes → 11 merged). `ShardConfigTestSuite` covers stripe determinism/disjointness/
+  completeness/balance.
+- **Follow-ups:** path remapping (index and merge on different roots), size-balanced striping
+  (by TU cost, not position), and a parallel merge tree for very large N.
+
 ### P5 — Not worth it (recorded so we don't re-litigate)
 - **Ninja `.ninja_deps` for invalidation:** our stored include graph is equivalent after
   the first index.

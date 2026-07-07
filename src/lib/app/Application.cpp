@@ -297,6 +297,7 @@ void Application::handleMessage(MessageLoadProject* message)
 
 			if (m_project)
 			{
+				m_project->setShardConfig(message->shardConfig);
 				m_project->load(getDialogView(DialogView::UseCase::GENERAL));
 			}
 			else

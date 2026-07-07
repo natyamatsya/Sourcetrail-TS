@@ -4,6 +4,7 @@
 
 #include "CommandlineCommandConfig.h"
 #include "CommandlineCommandIndex.h"
+#include "CommandlineCommandMerge.h"
 #include "ConfigManager.h"
 #include "ProjectSettings.h"
 #include "TextAccess.h"
@@ -22,6 +23,7 @@ CommandLineParser::CommandLineParser(const std::string& version)
 
 	m_commands.push_back(std::make_unique<commandline::CommandlineCommandConfig>(this));
 	m_commands.push_back(std::make_unique<commandline::CommandlineCommandIndex>(this));
+	m_commands.push_back(std::make_unique<commandline::CommandlineCommandMerge>(this));
 
 	for (auto& command: m_commands)
 		command->setup();
@@ -202,6 +204,16 @@ void CommandLineParser::incompleteRefresh()
 const FilePath& CommandLineParser::getProjectFilePath() const
 {
 	return m_projectFile;
+}
+
+const ShardConfig& CommandLineParser::getShardConfig() const
+{
+	return m_shardConfig;
+}
+
+void CommandLineParser::setShardConfig(const ShardConfig& config)
+{
+	m_shardConfig = config;
 }
 
 RefreshMode CommandLineParser::getRefreshMode() const

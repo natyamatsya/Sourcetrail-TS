@@ -9,6 +9,7 @@
 
 #include "FilePath.h"
 #include "RefreshInfo.h"
+#include "ShardConfig.h"
 
 namespace commandline
 {
@@ -38,6 +39,9 @@ public:
 
 	RefreshMode getRefreshMode() const;
 
+	const ShardConfig& getShardConfig() const;
+	void setShardConfig(const ShardConfig& config);
+
 private:
 	void processProjectfile();
 	void printHelp() const;
@@ -51,6 +55,7 @@ private:
 	std::string m_projectFileArg;
 	FilePath m_projectFile;
 	RefreshMode m_refreshMode = RefreshMode::UPDATED_FILES;
+	ShardConfig m_shardConfig;
 
 	bool m_quit = false;
 	bool m_withoutGUI = false;

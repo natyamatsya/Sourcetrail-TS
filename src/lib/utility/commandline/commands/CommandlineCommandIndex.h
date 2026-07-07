@@ -21,6 +21,8 @@ public:
 
 private:
 	std::string m_projectFileArg;
+	std::string m_shardArg;
+	std::string m_shardOutputArg;
 };
 
 }	 // namespace commandline

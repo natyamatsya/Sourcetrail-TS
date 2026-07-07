@@ -8,6 +8,7 @@
 
 #include "RefreshInfo.h"
 #include "SourceGroup.h"
+#include "ShardConfig.h"
 
 struct FileInfo;
 class DialogView;
@@ -39,12 +40,18 @@ public:
 
 	void refresh(std::shared_ptr<DialogView> dialogView, RefreshMode refreshMode);
 
+	//! Distributed indexing: when active, refresh() indexes only this process's
+	//! stripe into a standalone shard DB (see ShardConfig). Set before load().
+	void setShardConfig(const ShardConfig& config);
+
 	RefreshInfo getRefreshInfo(RefreshMode mode) const;
 	std::vector<std::shared_ptr<const SourceGroup>> getSourceGroups() const;
 
 	void buildIndex(RefreshInfo info, std::shared_ptr<DialogView> dialogView);
 
 private:
+	ShardConfig m_shardConfig;
+
 	enum class ProjectStateType
 	{
 		PROJECT_STATE_NOT_LOADED,
