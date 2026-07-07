@@ -588,6 +588,7 @@ void Project::buildIndex(RefreshInfo info, std::shared_ptr<DialogView> dialogVie
 	taskSequential->addTask(std::make_shared<TaskSetValue<bool>>("interrupted_indexing", false));
 	taskSequential->addTask(std::make_shared<TaskSetValue<float>>("index_time", 0.0f));
 
+
 	int indexerThreadCount = ApplicationSettings::getInstance()->getIndexerThreadCount();
 	if (indexerThreadCount <= 0)
 	{
@@ -796,6 +797,28 @@ void Project::swapToTempStorage(std::shared_ptr<DialogView> dialogView)
 
 	m_storage = std::make_shared<PersistentStorage>(indexDbFilePath, bookmarkDbFilePath);
 	m_storage->setup();
+
+	// Persist the compile-command hash of every current source file, so a later
+	// incremental refresh can detect flag changes that leave the source mtime
+	// untouched (flag-aware refresh). Written to the freshly swapped-in database
+	// here -- there is no further swap, so the connection stays consistent (writing
+	// to the pre-swap temp database instead corrupts the rename/WAL handoff).
+	m_storage->setMode(SqliteIndexStorage::StorageModeType::STORAGE_MODE_WRITE);
+	m_storage->startInjection();
+	for (const std::shared_ptr<SourceGroup>& sourceGroup: m_sourceGroups)
+	{
+		if (sourceGroup->getStatus() != SourceGroupStatusType::ENABLED)
+		{
+			continue;
+		}
+		for (const auto& [path, hash]: sourceGroup->getAllSourceFileCommandHashes())
+		{
+			m_storage->setFileCommandHash(path.str(), hash);
+		}
+	}
+	m_storage->finishInjection();
+
+	m_storage->setMode(SqliteIndexStorage::StorageModeType::STORAGE_MODE_READ);
 
 	// std::shared_ptr<DialogView> dialogView =
 	// Application::getInstance()->getDialogView(DialogView::UseCase::INDEXING);

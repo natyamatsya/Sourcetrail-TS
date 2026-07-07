@@ -7,6 +7,7 @@
 #include "MessageStatus.h"
 #include "PersistentStorage.h"
 #include "TimeStamp.h"
+#include "logging.h"
 
 TaskFinishParsing::TaskFinishParsing(
 	std::shared_ptr<PersistentStorage> storage, std::shared_ptr<DialogView> dialogView)
@@ -81,6 +82,23 @@ Task::TaskState TaskFinishParsing::doUpdate(std::shared_ptr<Blackboard> blackboa
 	MessageStatus(status, false, false).dispatch();
 
 	StorageStats stats = m_storage->getStorageStats();
+
+	// Indexing health signal: a run can "finish" while silently dropping whole
+	// translation units to fatal errors (e.g. a misconfigured toolchain/sysroot,
+	// or a source group with no indexed paths). The success-styled status above
+	// hides that, so emit a distinct warning when the index is degraded -- with a
+	// concrete count of fatal errors and files left incomplete.
+	const int incompleteFileCount = static_cast<int>(stats.fileCount) -
+		static_cast<int>(stats.completedFileCount);
+	if (errorInfo.fatal > 0)
+	{
+		LOG_WARNING(
+			"Indexing health: " + std::to_string(errorInfo.fatal) +
+			" fatal error(s); " + std::to_string(incompleteFileCount) +
+			" file(s) left incomplete. Parts of the code base are likely missing from "
+			"the index -- verify the compile flags and toolchain setup (on macOS, an "
+			"unresolved SDK sysroot is a common cause).");
+	}
 	DatabasePolicy policy = m_dialogView->finishedIndexingDialog(
 		indexedSourceFileCount,
 		sourceFileCount,

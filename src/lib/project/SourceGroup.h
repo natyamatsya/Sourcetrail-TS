@@ -1,9 +1,11 @@
 #ifndef SOURCE_GROUP_H
 #define SOURCE_GROUP_H
 
+#include <map>
 #include <memory>
 #include <optional>
 #include <set>
+#include <string>
 #include <vector>
 
 #include "BuildModelSnapshot.h"
@@ -36,6 +38,16 @@ public:
 		const RefreshInfo& info) const;
 	virtual std::vector<std::shared_ptr<IndexerCommand>> getIndexerCommands(
 		const RefreshInfo& info) const = 0;
+
+	//! Maps each source file in `info.filesToIndex` to a stable hash of its
+	//! effective compile command. Used by the flag-aware incremental refresh to
+	//! detect compile-flag changes that leave the source mtime untouched. Files
+	//! whose command yields no hash (non-cxx groups) are omitted.
+	std::map<FilePath, std::string> getSourceFileCommandHashes(const RefreshInfo& info) const;
+	//! Same, for every source file currently in the group (the refresh side needs
+	//! the full current set to compare against the stored hashes).
+	std::map<FilePath, std::string> getAllSourceFileCommandHashes() const;
+
 	virtual std::shared_ptr<Task> getPreIndexTask(
 		std::shared_ptr<StorageProvider> storageProvider,
 		std::shared_ptr<DialogView> dialogView) const;

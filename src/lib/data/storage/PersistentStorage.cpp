@@ -330,6 +330,21 @@ void PersistentStorage::setMetaValue(const std::string& key, const std::string& 
 	m_sqliteIndexStorage.insertOrUpdateMetaValue(key, value);
 }
 
+void PersistentStorage::setFileCommandHash(const std::string& filePath, const std::string& hash)
+{
+	m_sqliteIndexStorage.setFileCommandHash(filePath, hash);
+}
+
+void PersistentStorage::removeFileCommandHash(const std::string& filePath)
+{
+	m_sqliteIndexStorage.removeFileCommandHash(filePath);
+}
+
+std::map<std::string, std::string> PersistentStorage::getFileCommandHashes() const
+{
+	return m_sqliteIndexStorage.getFileCommandHashes();
+}
+
 std::string PersistentStorage::getProjectSettingsText() const
 {
 	return m_sqliteIndexStorage.getProjectSettingsText();

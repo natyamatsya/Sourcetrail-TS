@@ -73,6 +73,34 @@ RefreshInfo RefreshInfoGenerator::getRefreshInfoForUpdatedFiles(
 
 	const std::set<FilePath> allSourceFilePathsFromSourcegroups = getAllSourceFilePaths(sourceGroups);
 
+	// 1b) Flag-aware refresh: a compile-command change (new define/include/std)
+	// alters a translation unit without touching its source mtime, so the mtime/
+	// content check above misses it. Compare the stored per-file command hash with
+	// the current one and treat a mismatch exactly like a content change. Files
+	// without a stored hash (older databases, never-indexed files) are skipped, so
+	// upgrading never triggers a spurious full re-index.
+	{
+		const std::map<std::string, std::string> storedHashes = storage->getFileCommandHashes();
+		if (!storedHashes.empty())
+		{
+			for (const std::shared_ptr<SourceGroup>& sourceGroup: sourceGroups)
+			{
+				if (sourceGroup->getStatus() != SourceGroupStatusType::ENABLED)
+				{
+					continue;
+				}
+				for (const auto& [path, currentHash]: sourceGroup->getAllSourceFileCommandHashes())
+				{
+					const auto it = storedHashes.find(path.str());
+					if (it != storedHashes.end() && it->second != currentHash && path.exists())
+					{
+						changedFilePaths.insert(path);
+					}
+				}
+			}
+		}
+	}
+
 	// 2) Figure out which files need to be cleared
 	// 2.1) Add all changed files
 	std::set<FilePath> filesToClear = changedFilePaths;

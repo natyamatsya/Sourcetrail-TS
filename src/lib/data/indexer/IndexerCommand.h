@@ -25,6 +25,12 @@ public:
 
 	const FilePath& getSourceFilePath() const;
 
+	//! Stable hash of the effective compile command for this translation unit.
+	//! Empty for command types with no meaningful compile command. Used by the
+	//! incremental refresh to detect flag changes that leave the source mtime
+	//! untouched (e.g. an edited define/include in CMakeLists or the CDB).
+	virtual std::string getIndexerCommandHash() const { return std::string(); }
+
 protected:
 	virtual QJsonObject doSerialize() const;
 

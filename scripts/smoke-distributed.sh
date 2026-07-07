@@ -102,15 +102,13 @@ version = 8
 
 [[source_groups]]
 id = "aaaaaaaa-bbbb-4ccc-8ddd-eeeeeeeeeeee"
+indexed_header_paths = ["./src"]
 name = "Shard Fixture (Compilation Database)"
 status = "enabled"
 type = "C/C++ from Compilation Database"
 
 [source_groups.build_file_path]
 compilation_db_path = "./compile_commands.json"
-
-[source_groups.indexed_header_paths]
-indexed_header_path = ["./src"]
 
 [source_groups.pch_flags]
 use_compiler_flags = "0"

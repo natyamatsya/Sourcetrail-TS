@@ -16,6 +16,7 @@
 #include <QJsonArray>
 #include <QJsonObject>
 
+#include <cstdint>
 #include <mutex>
 
 std::vector<FilePath> IndexerCommandCxx::getSourceFilesFromCDB(const FilePath& cdbPath)
@@ -107,6 +108,39 @@ std::vector<std::string> IndexerCommandCxx::getCompilerFlagsForSysroot(
 		return {};
 	}
 	return {"-isysroot", sysroot};
+}
+
+std::string IndexerCommandCxx::hashCompilerFlags(const std::vector<std::string>& compilerFlags)
+{
+	// FNV-1a over the flags joined by '\n'. Deterministic across processes/runs
+	// (unlike std::hash), so the value can be persisted and compared on refresh.
+	uint64_t hash = 1469598103934665603ULL;	// FNV offset basis
+	const auto mix = [&hash](unsigned char c) {
+		hash ^= c;
+		hash *= 1099511628211ULL;	// FNV prime
+	};
+	for (const std::string& flag: compilerFlags)
+	{
+		for (const char c: flag)
+		{
+			mix(static_cast<unsigned char>(c));
+		}
+		mix('\n');
+	}
+
+	// hex string
+	std::string out(16, '0');
+	for (int i = 15; i >= 0; --i)
+	{
+		out[i] = "0123456789abcdef"[hash & 0xF];
+		hash >>= 4;
+	}
+	return out;
+}
+
+std::string IndexerCommandCxx::getIndexerCommandHash() const
+{
+	return hashCompilerFlags(getCompilerFlags());
 }
 
 std::vector<std::string> IndexerCommandCxx::getCompilerFlagsForSystemHeaderSearchPaths(

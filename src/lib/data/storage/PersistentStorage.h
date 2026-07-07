@@ -3,6 +3,7 @@
 
 #include <memory>
 #include <vector>
+#include <map>
 
 #include "FullTextSearchIndex.h"
 #include "HierarchyCache.h"
@@ -73,6 +74,11 @@ public:
 	bool isIncompatible() const;
 	std::string getMetaValue(const std::string& key) const;
 	void setMetaValue(const std::string& key, const std::string& value);
+
+	// Per-source-file compile-command hash (flag-aware incremental refresh).
+	void setFileCommandHash(const std::string& filePath, const std::string& hash);
+	void removeFileCommandHash(const std::string& filePath);
+	std::map<std::string, std::string> getFileCommandHashes() const;
 
 	std::string getProjectSettingsText() const;
 	void setProjectSettingsText(std::string text);

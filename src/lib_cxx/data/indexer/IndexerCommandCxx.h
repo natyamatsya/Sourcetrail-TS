@@ -48,6 +48,11 @@ public:
 
 	IndexerCommandType getIndexerCommandType() const override;
 	size_t getByteSize(size_t stringSize) const override;
+	std::string getIndexerCommandHash() const override;
+
+	//! Stable (FNV-1a) hash of a compile command's flags. Deterministic across
+	//! processes so it can be persisted and compared on a later refresh.
+	static std::string hashCompilerFlags(const std::vector<std::string>& compilerFlags);
 
 	const std::set<FilePath>& getIndexedPaths() const;
 	const std::set<FilePathFilter>& getExcludeFilters() const;

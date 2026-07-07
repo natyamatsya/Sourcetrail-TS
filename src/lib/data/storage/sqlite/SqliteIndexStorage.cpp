@@ -885,6 +885,39 @@ void SqliteIndexStorage::setFileIndexed(Id fileId, bool indexed)
 		" WHERE id == " + to_string(fileId) + ";");
 }
 
+void SqliteIndexStorage::setFileCommandHash(const std::string& filePath, const std::string& hash)
+{
+	CppSQLite3Statement stmt = m_database.compileStatement(
+		"INSERT OR REPLACE INTO file_command_hash(path, hash) VALUES(?, ?);");
+	stmt.bind(1, filePath);
+	stmt.bind(2, hash);
+	executeStatement(stmt);
+}
+
+void SqliteIndexStorage::removeFileCommandHash(const std::string& filePath)
+{
+	CppSQLite3Statement stmt = m_database.compileStatement(
+		"DELETE FROM file_command_hash WHERE path == ?;");
+	stmt.bind(1, filePath);
+	executeStatement(stmt);
+}
+
+std::map<std::string, std::string> SqliteIndexStorage::getFileCommandHashes() const
+{
+	std::map<std::string, std::string> hashes;
+	if (!hasTable("file_command_hash"))
+	{
+		return hashes;
+	}
+	CppSQLite3Query q = executeQuery("SELECT path, hash FROM file_command_hash;");
+	while (!q.eof())
+	{
+		hashes.emplace(q.getStringField(0, ""), q.getStringField(1, ""));
+		q.nextRow();
+	}
+	return hashes;
+}
+
 void SqliteIndexStorage::setFileCompleteIfNoError(Id fileId, const std::string&  /*filePath*/, bool complete)
 {
 	bool fileHasErrors = doGetFirst<StorageSourceLocation>("WHERE file_node_id == " + to_string(fileId) +
@@ -1260,6 +1293,17 @@ void SqliteIndexStorage::setupTables()
 			"FOREIGN KEY(id) REFERENCES file(id)"
 			"ON DELETE CASCADE "
 			"ON UPDATE CASCADE);");
+
+		// Per-source-file hash of the effective compile command, for flag-aware
+		// incremental refresh. Keyed by path (not file id) so the refresh generator
+		// can compare without a node-id join. Added via CREATE IF NOT EXISTS so old
+		// databases upgrade seamlessly: an absent hash means "unknown", which the
+		// refresh treats as "no flag-change signal" rather than forcing a re-index.
+		m_database.execDML(
+			"CREATE TABLE IF NOT EXISTS file_command_hash("
+			"path TEXT NOT NULL, "
+			"hash TEXT, "
+			"PRIMARY KEY(path));");
 
 		m_database.execDML(
 			"CREATE TABLE IF NOT EXISTS local_symbol("

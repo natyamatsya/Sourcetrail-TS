@@ -3,6 +3,7 @@
 
 #include <memory>
 #include <string>
+#include <map>
 #include <vector>
 
 #include "ErrorInfo.h"
@@ -110,6 +111,11 @@ public:
 	std::shared_ptr<TextAccess> getFileContentById(Id fileId) const;
 
 	void setFileIndexed(Id fileId, bool indexed);
+
+	// Per-source-file compile-command hash (flag-aware incremental refresh).
+	void setFileCommandHash(const std::string& filePath, const std::string& hash);
+	void removeFileCommandHash(const std::string& filePath);
+	std::map<std::string, std::string> getFileCommandHashes() const;
 
 	// generic meta k/v access (shard manifests etc.)
 	using SqliteStorage::getMetaValue;

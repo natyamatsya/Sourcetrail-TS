@@ -2,14 +2,38 @@
 
 #include "FilePath.h"
 #include "FilePathFilter.h"
+#include "IndexerCommand.h"
 #include "MemoryIndexerCommandProvider.h"
 #include "ProjectSettings.h"
+#include "RefreshInfo.h"
 #include "SourceGroupSettings.h"
 #include "TaskLambda.h"
 
 std::shared_ptr<IndexerCommandProvider> SourceGroup::getIndexerCommandProvider(const RefreshInfo& info) const
 {
 	return std::make_shared<MemoryIndexerCommandProvider>(getIndexerCommands(info));
+}
+
+std::map<FilePath, std::string> SourceGroup::getSourceFileCommandHashes(const RefreshInfo& info) const
+{
+	std::map<FilePath, std::string> hashes;
+	for (const std::shared_ptr<IndexerCommand>& command: getIndexerCommands(info))
+	{
+		std::string hash = command->getIndexerCommandHash();
+		if (!hash.empty())
+		{
+			hashes.emplace(command->getSourceFilePath(), std::move(hash));
+		}
+	}
+	return hashes;
+}
+
+std::map<FilePath, std::string> SourceGroup::getAllSourceFileCommandHashes() const
+{
+	RefreshInfo info;
+	info.filesToIndex = getAllSourceFilePaths();
+	info.mode = RefreshMode::ALL_FILES;
+	return getSourceFileCommandHashes(info);
 }
 
 std::shared_ptr<Task> SourceGroup::getPreIndexTask(
