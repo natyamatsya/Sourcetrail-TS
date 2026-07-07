@@ -6,13 +6,17 @@
 #include "ResourcePaths.h"
 #include "ToolChain.h"
 #include "logging.h"
+#include "utilityApp.h"
 #include "utilitySourceGroupCxx.h"
+#include "utilityString.h"
 
 #include <clang/Tooling/CompilationDatabase.h>
 #include <clang/Tooling/JSONCompilationDatabase.h>
 
 #include <QJsonArray>
 #include <QJsonObject>
+
+#include <mutex>
 
 std::vector<FilePath> IndexerCommandCxx::getSourceFilesFromCDB(const FilePath& cdbPath)
 {
@@ -64,6 +68,47 @@ std::string IndexerCommandCxx::getCompilerFlagLanguageStandard(const std::string
 	return ClangCompiler::stdOption(languageStandard);
 }
 
+const std::string& IndexerCommandCxx::getMacOSSysrootPath()
+{
+	static std::once_flag onceFlag;
+	static std::string cachedSysroot;
+	std::call_once(onceFlag, []() {
+		if constexpr (utility::Platform::isMac())
+		{
+			const utility::ProcessOutput output = utility::executeProcess("xcrun", {"--show-sdk-path"});
+			if (output.exitCode == 0 && !output.output.empty())
+			{
+				cachedSysroot = utility::trim(output.output);
+			}
+		}
+	});
+	return cachedSysroot;
+}
+
+std::vector<std::string> IndexerCommandCxx::getCompilerFlagsForSysroot(
+	const std::vector<std::string>& existingFlags)
+{
+	if constexpr (!utility::Platform::isMac())
+	{
+		return {};
+	}
+
+	for (const std::string& flag: existingFlags)
+	{
+		if (utility::isPrefix("-isysroot", flag) || utility::isPrefix("--sysroot", flag))
+		{
+			return {};	// a sysroot is already specified; don't override it
+		}
+	}
+
+	const std::string& sysroot = getMacOSSysrootPath();
+	if (sysroot.empty())
+	{
+		return {};
+	}
+	return {"-isysroot", sysroot};
+}
+
 std::vector<std::string> IndexerCommandCxx::getCompilerFlagsForSystemHeaderSearchPaths(
 	const std::vector<FilePath>& systemHeaderSearchPaths)
 {
@@ -72,6 +117,20 @@ std::vector<std::string> IndexerCommandCxx::getCompilerFlagsForSystemHeaderSearc
 
 	for (const FilePath& path: systemHeaderSearchPaths)
 	{
+		// On macOS the SDK C headers must come from -isysroot alone. An explicit
+		// "-isystem <SDK>/usr/include" places that directory ahead of the sysroot's
+		// own copy and breaks libc++'s #include_next chain (<cctype> can no longer
+		// reach the C <ctype.h>). Drop any SDK usr/include path -- the sysroot
+		// provides it in the correct position. Matches both the Xcode and the
+		// CommandLineTools SDKs regardless of which one -isysroot points at.
+		if constexpr (utility::Platform::isMac())
+		{
+			const std::string s = path.str();
+			if (utility::isPostfix("/usr/include", s) && s.find(".sdk/") != std::string::npos)
+			{
+				continue;
+			}
+		}
 		compilerFlags.push_back(ClangCompiler::systemIncludeOption());
 		compilerFlags.push_back(path.str());
 	}

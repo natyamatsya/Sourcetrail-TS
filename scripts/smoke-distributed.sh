@@ -59,28 +59,34 @@ mkdir -p "$WORK/src"
 
 cat > "$WORK/src/shared.h" <<'EOF'
 #pragma once
+#include <string>
+#include <vector>
 namespace shared {
 struct Widget {
     int value;
+    std::string name;
     int doubled() const { return value * 2; }
 };
 inline int helper(int x) { return x + 1; }
+inline std::vector<Widget> makeWidgets(int n) { return std::vector<Widget>(n); }
 }
 EOF
 
 cat > "$WORK/src/a.cpp" <<'EOF'
 #include "shared.h"
 int computeA(int n) {
-    shared::Widget w{n};
-    return shared::helper(w.doubled());
+    shared::Widget w{n, "a"};
+    auto ws = shared::makeWidgets(n);
+    return shared::helper(w.doubled()) + static_cast<int>(ws.size());
 }
 EOF
 
 cat > "$WORK/src/b.cpp" <<'EOF'
 #include "shared.h"
 int computeB(int n) {
-    shared::Widget w{n + 10};
-    return shared::helper(w.value) + w.doubled();
+    shared::Widget w{n + 10, "b"};
+    auto ws = shared::makeWidgets(n);
+    return shared::helper(w.value) + w.doubled() + static_cast<int>(ws.size());
 }
 EOF
 
@@ -124,6 +130,16 @@ if run_bounded "$WORK/baseline.log" 180 "$APP" index --full "$FIXTURE"; then
     else
         fail "baseline produced 0 nodes -- fixture did not index (see $WORK/baseline.log)"
         tail -15 "$WORK/baseline.log"; exit 1
+    fi
+    # Clean-toolchain guard: the fixture includes <string>/<vector>, so a broken
+    # macOS sysroot setup (missing -isysroot, or a stale SDK usr/include breaking
+    # libc++ #include_next) surfaces here as header-not-found errors.
+    ERR=$(sqlite3 "$BASELINE_DB" "SELECT COUNT(*) FROM error;" 2>/dev/null)
+    if [ "${ERR:-1}" -eq 0 ]; then
+        pass "clean toolchain (0 indexing errors on STL-using fixture)"
+    else
+        fail "toolchain not clean: $ERR indexing error(s) -- check -isysroot injection / stale SDK paths"
+        sqlite3 "$BASELINE_DB" "SELECT DISTINCT substr(message,1,70) FROM error LIMIT 6;" 2>/dev/null | sed 's/^/     /'
     fi
 else
     fail "baseline index failed (see $WORK/baseline.log)"; tail -15 "$WORK/baseline.log"; exit 1

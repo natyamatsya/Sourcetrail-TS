@@ -121,7 +121,7 @@ std::shared_ptr<IndexerCommandProvider> SourceGroupCxxCdb::getIndexerCommandProv
 		if (info.filesToIndex.find(sourcePath) != info.filesToIndex.end() && sourceFilePaths.find(sourcePath) != sourceFilePaths.end())
 		{
 			std::vector<std::string> commandLine = command.CommandLine;
-			
+
 			utility::removeIncludePchFlag(commandLine);
 			replaceMsvcArguments(&commandLine);
 
@@ -129,6 +129,12 @@ std::shared_ptr<IndexerCommandProvider> SourceGroupCxxCdb::getIndexerCommandProv
 			{
 				utility::append(commandLine, includePchFlags);
 			}
+
+			// On macOS, inject the SDK sysroot unless the CDB already carries one.
+			// Sourcetrail's libclang replaces the real compiler, so the sysroot the
+			// driver would find natively (SDK C headers, frameworks, libc++ layering)
+			// must be passed explicitly -- without it <filesystem>/<map>/etc. fail.
+			utility::append(commandLine, IndexerCommandCxx::getCompilerFlagsForSysroot(command.CommandLine));
 
 			provider->addCommand(std::make_shared<IndexerCommandCxx>(
 				sourcePath,

@@ -245,5 +245,10 @@ std::vector<std::string> SourceGroupCxxEmpty::getBaseCompilerFlags() const
 				appSettings->getFrameworkSearchPathsExpanded())));
 	}
 
+	// On macOS, inject the SDK sysroot unless the user's flags already carry one.
+	// An empty C++ source group has no compilation database to provide it, so the
+	// SDK C headers, frameworks, and libc++ layering would otherwise be missing.
+	utility::append(compilerFlags, IndexerCommandCxx::getCompilerFlagsForSysroot(compilerFlags));
+
 	return compilerFlags;
 }

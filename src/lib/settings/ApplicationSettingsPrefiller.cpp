@@ -1,14 +1,17 @@
 #include "ApplicationSettingsPrefiller.h"
 
 #include "ApplicationSettings.h"
+#include "FilePath.h"
 #include "MessageStatus.h"
 #include "logging.h"
 #include "utilityPathDetection.h"
+#include "utilityString.h"
 
 void ApplicationSettingsPrefiller::prefillPaths(ApplicationSettings* settings)
 {
 	bool updated = false;
 
+	updated |= migrateStaleSdkHeaderPaths(settings);
 	updated |= prefillCxxHeaderPaths(settings);
 	updated |= prefillCxxFrameworkPaths(settings);
 
@@ -16,6 +19,35 @@ void ApplicationSettingsPrefiller::prefillPaths(ApplicationSettings* settings)
 	{
 		settings->save();
 	}
+}
+
+bool ApplicationSettingsPrefiller::migrateStaleSdkHeaderPaths(ApplicationSettings* settings)
+{
+	const std::vector<FilePath> paths = settings->getHeaderSearchPaths();
+	std::vector<FilePath> cleaned;
+	cleaned.reserve(paths.size());
+	for (const FilePath& path: paths)
+	{
+		const std::string s = path.str();
+		// Drop any SDK usr/include: it is provided by -isysroot, and keeping it as an
+		// explicit -isystem breaks libc++'s #include_next chain during indexing.
+		if (utility::isPostfix("/usr/include", s) && s.find(".sdk/") != std::string::npos)
+		{
+			continue;
+		}
+		cleaned.push_back(path);
+	}
+
+	if (cleaned.size() == paths.size())
+	{
+		return false;
+	}
+
+	LOG_INFO(
+		"Removed " + std::to_string(paths.size() - cleaned.size()) +
+		" stale SDK usr/include header search path(s); the SDK sysroot supplies them.");
+	settings->setHeaderSearchPaths(cleaned);
+	return true;
 }
 
 bool ApplicationSettingsPrefiller::prefillCxxHeaderPaths(ApplicationSettings* settings)

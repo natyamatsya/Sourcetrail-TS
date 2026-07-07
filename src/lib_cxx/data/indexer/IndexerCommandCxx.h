@@ -25,6 +25,16 @@ public:
 	static std::vector<std::string> getCompilerFlagsForFrameworkSearchPaths(
 		const std::vector<FilePath>& frameworkSearchPaths);
 
+	//! macOS SDK sysroot (via `xcrun --show-sdk-path`), memoized; empty on non-mac
+	//! or if detection fails. Sourcetrail's libclang replaces the real compiler, so
+	//! the SDK the driver would find natively must be passed explicitly.
+	static const std::string& getMacOSSysrootPath();
+
+	//! Returns {"-isysroot", <SDK>} on macOS when `existingFlags` carries no sysroot,
+	//! otherwise {}. Injected per translation unit so a CDB-provided sysroot wins.
+	static std::vector<std::string> getCompilerFlagsForSysroot(
+		const std::vector<std::string>& existingFlags);
+
 	static IndexerCommandType getStaticIndexerCommandType();
 
 	IndexerCommandCxx(
