@@ -9,6 +9,7 @@
 #include "SourceGroupSettingsCxxCMakeFileAPI.h"
 #include "SourceGroupSettingsWithCxxCMakeBuildDirectory.h"
 #include "TaskLambda.h"
+#include "TaskGroupSequence.h"
 #include "ToolChain.h"
 #include "logging.h"
 #include "utility.h"
@@ -160,11 +161,63 @@ std::optional<BuildCompileGroupSnapshot> toBuildCompileGroupSnapshot(
 	return snapshot;
 }
 
+// Removes CMake's own precompiled-header fragments from a compile command.
+// CMake injects a PCH built by the real compiler (which Sourcetrail's libclang
+// cannot load) plus the generated cmake_pch.hxx wrapper; both are replaced by a
+// Sourcetrail-generated PCH. A user's own -include of some other header is kept.
+void stripCMakePchFragments(std::vector<std::string>& flags)
+{
+	std::vector<std::string> out;
+	out.reserve(flags.size());
+	for (std::size_t i = 0; i < flags.size();)
+	{
+		const std::string& token = flags[i];
+		if (token == "-Winvalid-pch" || token == "-fpch-instantiate-templates")
+		{
+			++i;
+			continue;
+		}
+		if (token == "-Xclang" && i + 1 < flags.size())
+		{
+			const std::string& next = flags[i + 1];
+			if (next == "-emit-pch")
+			{
+				i += 2;
+				continue;
+			}
+			if ((next == "-include-pch" || next == "-include") && i + 3 < flags.size() &&
+				flags[i + 2] == "-Xclang")
+			{
+				// -include-pch is always CMake's PCH; -include only when it targets
+				// the generated cmake_pch.hxx wrapper (keep a user's real -include).
+				if (next == "-include-pch" ||
+					flags[i + 3].find("cmake_pch") != std::string::npos)
+				{
+					i += 4;
+					continue;
+				}
+			}
+		}
+		if (token == "-x" && i + 1 < flags.size() && flags[i + 1] == "c++-header")
+		{
+			i += 2;
+			continue;
+		}
+		out.push_back(token);
+		++i;
+	}
+	flags = std::move(out);
+}
+
 bool shouldCreateCxxCommand(
 	const CMakeFileAPIReader::SourceEntry& entry,
 	const std::vector<FilePathFilter>& excludeFilters)
 {
 	if (entry.isGenerated)
+		return false;
+	// CMake's generated PCH wrapper/driver (cmake_pch.hxx, cmake_pch.hxx.cxx) is
+	// a build artifact, not project source; never index it.
+	if (entry.path.fileName().find("cmake_pch") != std::string::npos)
 		return false;
 	if (!entry.path.exists())
 		return false;
@@ -526,93 +579,19 @@ std::shared_ptr<IndexerCommandProvider> SourceGroupCxxCMakeFileAPI::getIndexerCo
 		if (info.filesToIndex.find(entry.path) == info.filesToIndex.end())
 			continue;
 
-		// Build the compiler command line from the CMake File API compile group.
-		std::vector<std::string> commandLine{};
+		// Build the compiler command line from the CMake File API compile group
+		// (CMake's own PCH fragments already removed).
+		std::vector<std::string> commandLine{buildCompilerFlagsForEntry(entry, buildDir, extraFlags)};
 
-		if (entry.compileGroup)
+		// Zero-config PCH: if this compile group has a target_precompile_headers
+		// input, feed the Sourcetrail-generated PCH (built in getPreIndexTask with
+		// the same flags, so clang accepts it).
+		if (entry.compileGroup && !entry.compileGroup->precompiledHeaders.empty())
 		{
-			const auto& cg{*entry.compileGroup};
-			const bool hasLanguageFlag{hasExplicitLanguageFlag(cg.compileFlags)};
-
-			// Language standard flag derived from the language reported by CMake.
-			if (!hasLanguageFlag && cg.language == "CXX")
-			{
-				commandLine.push_back(ClangCompiler::languageOption());
-				commandLine.push_back(ClangCompiler::CPP_LANGUAGE);
-			}
-			else if (!hasLanguageFlag && cg.language == "C")
-			{
-				commandLine.push_back(ClangCompiler::languageOption());
-				commandLine.push_back(ClangCompiler::C_LANGUAGE);
-			}
-
-			// Include paths.
-			for (const auto& inc : cg.includes)
-				commandLine.push_back("-I" + inc.str());
-
-			for (const auto& inc : cg.systemIncludes)
-				commandLine.push_back("-isystem" + inc.str());
-			for (const auto& frameworkPath : cg.frameworkSearchPaths)
-			{
-				commandLine.push_back(ClangCompiler::frameworkIncludeOption());
-				commandLine.push_back(frameworkPath.str());
-			}
-
-			// Preprocessor defines.
-			for (const auto& def : cg.defines)
-				commandLine.push_back("-D" + def);
-
-			// Extra compiler fragments from CMake (e.g. -std=c++17, -fPIC).
-			for (const auto& flag : cg.compileFlags)
-				commandLine.push_back(flag);
+			const FilePath pchOutput = pchOutputPathFor(
+				entry.compileGroup->precompiledHeaders.front(), commandLine);
+			utility::append(commandLine, utility::getIncludePchFlagsForOutput(pchOutput));
 		}
-
-		// Append global extra flags (ApplicationSettings header/framework paths)
-		// only when the compiler lacks a usable resource dir — the driver
-		// handles them implicitly when it has one.
-		if (!entry.compileGroup || !utility::resolveCompilerResourceDir(entry.compileGroup->compilerPath))
-			utility::append(commandLine, extraFlags);
-
-		// Fallback: If no sysroot was explicitly provided in CMake flags but we found an implicit one, inject it.
-		// (CMake compileCommandFragments usually doesn't include -isysroot if it assumes the compiler does it natively,
-		// but since we are replacing the compiler with our indexer, we might need it explicitly.)
-		std::string sysrootToInject;
-		if (entry.compileGroup && !entry.compileGroup->sysroot.empty())
-		{
-			sysrootToInject = entry.compileGroup->sysroot.str();
-		}
-		else if constexpr (utility::Platform::isMac())
-		{
-			// If CMake didn't capture a sysroot, fallback to xcrun on macOS.
-			const utility::ProcessOutput output = utility::executeProcess("xcrun", {"--show-sdk-path"});
-			if (output.exitCode == 0 && !output.output.empty())
-				sysrootToInject = utility::trim(output.output);
-		}
-
-		if (!sysrootToInject.empty())
-		{
-			bool hasSysroot = false;
-			for (const std::string& flag: commandLine)
-			{
-				if (utility::isPrefix("-isysroot", flag) || utility::isPrefix("--sysroot", flag))
-				{
-					hasSysroot = true;
-					break;
-				}
-			}
-			if (!hasSysroot)
-			{
-				commandLine.push_back("-isysroot");
-				commandLine.push_back(sysrootToInject);
-			}
-		}
-
-		// Inject C++20 module dependency flags (hybrid: .modmap if available, else fallback).
-		if (!entry.sourceDir.empty())
-			utility::append(commandLine, getModuleFlags(entry, buildDir));
-
-		// Append user-specified extra flags from settings.
-		utility::append(commandLine, m_settings->getCompilerFlags());
 
 		// Source file itself.
 		commandLine.push_back(entry.path.str());
@@ -634,6 +613,164 @@ std::shared_ptr<IndexerCommandProvider> SourceGroupCxxCMakeFileAPI::getIndexerCo
 
 	provider->logStats();
 	return provider;
+}
+
+std::vector<std::string> SourceGroupCxxCMakeFileAPI::buildCompilerFlagsForEntry(
+	const CMakeFileAPIReader::SourceEntry& entry,
+	const FilePath& buildDir,
+	const std::vector<std::string>& extraFlags) const
+{
+	std::vector<std::string> commandLine{};
+
+	if (entry.compileGroup)
+	{
+		const auto& cg{*entry.compileGroup};
+		const bool hasLanguageFlag{hasExplicitLanguageFlag(cg.compileFlags)};
+
+		// Language standard flag derived from the language reported by CMake.
+		if (!hasLanguageFlag && cg.language == "CXX")
+		{
+			commandLine.push_back(ClangCompiler::languageOption());
+			commandLine.push_back(ClangCompiler::CPP_LANGUAGE);
+		}
+		else if (!hasLanguageFlag && cg.language == "C")
+		{
+			commandLine.push_back(ClangCompiler::languageOption());
+			commandLine.push_back(ClangCompiler::C_LANGUAGE);
+		}
+
+		// Include paths.
+		for (const auto& inc : cg.includes)
+			commandLine.push_back("-I" + inc.str());
+
+		for (const auto& inc : cg.systemIncludes)
+			commandLine.push_back("-isystem" + inc.str());
+		for (const auto& frameworkPath : cg.frameworkSearchPaths)
+		{
+			commandLine.push_back(ClangCompiler::frameworkIncludeOption());
+			commandLine.push_back(frameworkPath.str());
+		}
+
+		// Preprocessor defines.
+		for (const auto& def : cg.defines)
+			commandLine.push_back("-D" + def);
+
+		// Extra compiler fragments from CMake (e.g. -std=c++17, -fPIC).
+		for (const auto& flag : cg.compileFlags)
+			commandLine.push_back(flag);
+	}
+
+	// Append global extra flags (ApplicationSettings header/framework paths)
+	// only when the compiler lacks a usable resource dir — the driver
+	// handles them implicitly when it has one.
+	if (!entry.compileGroup || !utility::resolveCompilerResourceDir(entry.compileGroup->compilerPath))
+		utility::append(commandLine, extraFlags);
+
+	// Fallback: If no sysroot was explicitly provided in CMake flags but we found an implicit one, inject it.
+	// (CMake compileCommandFragments usually doesn't include -isysroot if it assumes the compiler does it natively,
+	// but since we are replacing the compiler with our indexer, we might need it explicitly.)
+	std::string sysrootToInject;
+	if (entry.compileGroup && !entry.compileGroup->sysroot.empty())
+	{
+		sysrootToInject = entry.compileGroup->sysroot.str();
+	}
+	else if constexpr (utility::Platform::isMac())
+	{
+		// If CMake didn't capture a sysroot, fallback to xcrun on macOS.
+		const utility::ProcessOutput output = utility::executeProcess("xcrun", {"--show-sdk-path"});
+		if (output.exitCode == 0 && !output.output.empty())
+			sysrootToInject = utility::trim(output.output);
+	}
+
+	if (!sysrootToInject.empty())
+	{
+		bool hasSysroot = false;
+		for (const std::string& flag: commandLine)
+		{
+			if (utility::isPrefix("-isysroot", flag) || utility::isPrefix("--sysroot", flag))
+			{
+				hasSysroot = true;
+				break;
+			}
+		}
+		if (!hasSysroot)
+		{
+			commandLine.push_back("-isysroot");
+			commandLine.push_back(sysrootToInject);
+		}
+	}
+
+	// Inject C++20 module dependency flags (hybrid: .modmap if available, else fallback).
+	if (!entry.sourceDir.empty())
+		utility::append(commandLine, getModuleFlags(entry, buildDir));
+
+	// Append user-specified extra flags from settings.
+	utility::append(commandLine, m_settings->getCompilerFlags());
+
+	// Drop CMake's own PCH fragments -- Sourcetrail supplies its own PCH instead.
+	stripCMakePchFragments(commandLine);
+
+	return commandLine;
+}
+
+FilePath SourceGroupCxxCMakeFileAPI::pchOutputPathFor(
+	const FilePath& pchHeader, const std::vector<std::string>& flags) const
+{
+	// Key by header + effective flags so groups with differing flags get distinct,
+	// clang-compatible PCHs and identical ones are deduplicated.
+	const std::string key =
+		IndexerCommandCxx::hashCompilerFlags(utility::concat({pchHeader.str()}, flags));
+	return m_settings->getSourceGroupDependenciesDirectoryPath()
+		.getConcatenated("pch")
+		.getConcatenated(key + ".pch");
+}
+
+std::shared_ptr<Task> SourceGroupCxxCMakeFileAPI::getPreIndexTask(
+	std::shared_ptr<StorageProvider> storageProvider, std::shared_ptr<DialogView> dialogView) const
+{
+	auto sequence{std::make_shared<TaskGroupSequence>()};
+
+	const FilePath buildDir{getCachedBuildDir()};
+	if (buildDir.empty() || !buildDir.exists())
+		return sequence;
+
+	CMakeFileAPIReader reader{buildDir};
+	const auto entriesResult{
+		reader.getSourcesDetailed(m_settings->getConfiguration(), m_settings->getTargetGlob())};
+	if (!entriesResult.has_value())
+		return sequence;
+
+	const std::vector<FilePathFilter> excludeFilters{
+		m_settings->getExcludeFiltersExpandedAndAbsolute()};
+	const std::vector<std::string> extraFlags{getBaseCompilerFlags()};
+
+	// One PCH build per distinct (header, flags). Built for all matching source
+	// entries regardless of the current refresh scope, since any re-indexed TU in
+	// the group needs the PCH; the freshness check skips unchanged ones.
+	std::set<FilePath> builtPchOutputs;
+	int pchCount = 0;
+	for (const auto& entry : entriesResult->entries)
+	{
+		if (!shouldCreateCxxCommand(entry, excludeFilters))
+			continue;
+		if (!entry.compileGroup || entry.compileGroup->precompiledHeaders.empty())
+			continue;
+
+		const std::vector<std::string> flags{buildCompilerFlagsForEntry(entry, buildDir, extraFlags)};
+		const FilePath& header{entry.compileGroup->precompiledHeaders.front()};
+		const FilePath pchOutput{pchOutputPathFor(header, flags)};
+		if (!builtPchOutputs.insert(pchOutput).second)
+			continue;
+
+		sequence->addTask(utility::createBuildPchTaskForInput(
+			header, pchOutput, flags, entry.compileGroup->compilerPath, storageProvider, dialogView));
+		++pchCount;
+	}
+
+	if (pchCount > 0)
+		LOG_INFO("Zero-config PCH: preparing " + std::to_string(pchCount) + " precompiled header(s)");
+
+	return sequence;
 }
 
 std::vector<std::shared_ptr<IndexerCommand>> SourceGroupCxxCMakeFileAPI::getIndexerCommands(

@@ -58,16 +58,29 @@ only TUs whose flags moved re-index).
 on large code bases. **Effort:** moderate (schema + generator + File API plumb-through).
 **Risk:** low; worst case an unnecessary re-index.
 
-### P2 — Zero-config PCH from the codemodel (+ freshness check)
-**Problem:** PCH is the only lever against per-TU header re-parsing, but it needs manual
-per-source-group setup, and `createBuildPchTask` regenerates unconditionally every run.
-**Approach:** parse the `precompileHeaders` field of codemodel-v2 compile groups (the
-reader currently drops it); auto-feed the existing PCH machinery when a project uses
-`target_precompile_headers`. Add a freshness check (PCH input mtime + flags hash vs the
-existing `.pch`) so unchanged PCHs are reused across runs.
-**Payoff:** large parse-time win on header-heavy projects, zero config. **Effort:**
-moderate (reader schema + settings plumbing + freshness). **Risk:** low (falls back to
-no-PCH behavior).
+### P2 — Zero-config PCH from the codemodel (SHIPPED 2026-07-08)
+Auto-precompiled headers for the CMake File API source group, from
+`target_precompile_headers` — no per-source-group configuration.
+- **Reader:** `CMakeFileAPIReader` now captures codemodel-v2
+  `compileGroups[].precompileHeaders[].header` → `CompileGroup.precompiledHeaders`.
+- **Source group:** one Sourcetrail PCH per distinct (header, effective flags), built in
+  `getPreIndexTask` and fed to the matching TUs via `-include-pch`. CMake's own PCH
+  fragments — an incompatible `.pch` built by the real compiler plus the generated
+  `cmake_pch.hxx` wrapper — are stripped (`stripCMakePchFragments`); the `cmake_pch`
+  artifacts are never indexed.
+- **Shared PCH core** (`createBuildPchTaskForInput`): builds with the compile group's real
+  compiler path (so the resource dir matches the TUs — otherwise clang rejects the PCH) and
+  a **freshness stamp** (flags hash + `.pch` newer than the header) so an up-to-date PCH is
+  reused across runs instead of regenerated. Same limitation as CMake's PCH: a change to a
+  transitively-included header that leaves the top header's mtime untouched isn't detected.
+- **Flag fix (benefits the pre-existing settings-based PCH too):** `-emit-pch` and
+  `-fallow-pch-with-compiler-errors` are cc1 flags — now passed via `-Xclang` so the driver
+  no longer errors on them.
+- **Measured:** 20–40 TUs sharing a heavy STL header — identical index, **~40% faster**
+  (e.g. 9.7 s → 5.5 s on 40 TUs); even the cold run (incl. PCH generation) beats no-PCH.
+  Regression: `scripts/smoke-pch.sh`.
+- **Scope:** CMake File API groups only (CDB/CMake don't expose PCH headers; CDB users still
+  configure PCH manually). Multi-target projects get one PCH per distinct header+flags.
 
 ### P3 — Content-hash change detection
 **Problem:** mtime-based change detection makes `git checkout` / branch switches trigger

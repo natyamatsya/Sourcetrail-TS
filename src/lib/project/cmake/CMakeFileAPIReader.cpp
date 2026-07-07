@@ -977,6 +977,15 @@ CMakeFileAPIReader::GetSourcesExpected CMakeFileAPIReader::getSourcesDetailed(
 			for (const auto& def : cg.value("defines", nlohmann::json::array()))
 				group.defines.push_back(def.value("define", std::string{}));
 
+			// target_precompile_headers() inputs (the original headers, not CMake's
+			// generated cmake_pch.hxx wrapper). Fed to zero-config PCH generation.
+			for (const auto& pch : cg.value("precompileHeaders", nlohmann::json::array()))
+			{
+				const std::string header{pch.value("header", std::string{})};
+				if (!header.empty())
+					group.precompiledHeaders.push_back(FilePath{header});
+			}
+
 			for (const auto& frag : cg.value("compileCommandFragments", nlohmann::json::array()))
 			{
 				const QString fragment =

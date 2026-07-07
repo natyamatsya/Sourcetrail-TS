@@ -38,6 +38,7 @@ public:
 		std::vector<FilePath> frameworkSearchPaths; // framework search paths
 		std::vector<std::string> defines;		// preprocessor defines
 		std::vector<std::string> compileFlags;	// extra compiler flags
+		std::vector<FilePath> precompiledHeaders; // target_precompile_headers inputs
 	};
 
 	struct SourceEntry

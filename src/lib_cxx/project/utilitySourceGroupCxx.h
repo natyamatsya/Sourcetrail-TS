@@ -15,6 +15,18 @@ class Task;
 
 namespace utility
 {
+//! Builds a Sourcetrail precompiled header for `pchInputFilePath` at
+//! `pchOutputFilePath` using the given flags + compiler (so the resource dir
+//! matches the translation units). Reuses an up-to-date PCH across runs via a
+//! freshness stamp. Consumed via getIncludePchFlagsForOutput.
+std::shared_ptr<Task> createBuildPchTaskForInput(
+	const FilePath& pchInputFilePath,
+	const FilePath& pchOutputFilePath,
+	std::vector<std::string> compilerFlags,
+	const std::string& compilerPath,
+	std::shared_ptr<StorageProvider> storageProvider,
+	std::shared_ptr<DialogView> dialogView);
+
 std::shared_ptr<Task> createBuildPchTask(
 	const SourceGroupSettingsWithCxxPchOptions* settings,
 	std::vector<std::string> compilerFlags,
@@ -31,6 +43,7 @@ bool containsIncludePchFlag(const std::vector<std::string>& args);
 std::vector<std::string> getWithRemoveIncludePchFlag(const std::vector<std::string>& args);
 void removeIncludePchFlag(std::vector<std::string>& args);
 std::vector<std::string> getIncludePchFlags(const SourceGroupSettingsWithCxxPchOptions* settings);
+std::vector<std::string> getIncludePchFlagsForOutput(const FilePath& pchOutputFilePath);
 }
 
 #endif
