@@ -20,6 +20,11 @@ RefreshInfo RefreshInfoGenerator::getRefreshInfoForUpdatedFiles(
 	std::set<FilePath> unchangedIndexedFilePaths;
 	std::set<FilePath> unchangedNonindexedFilePaths;
 	std::set<FilePath> changedFilePaths;
+	std::set<FilePath> removedIndexedFilePaths;
+
+	// The source files the project would index right now. Used both to (re-)index a known
+	// source that is not yet indexed and, in step 2.3, to protect referenced headers.
+	const std::set<FilePath> allSourceFilePathsFromSourcegroups = getAllSourceFilePaths(sourceGroups);
 
 	{
 		const std::vector<FileInfo> fileInfosFromStorage = storage->getFileInfoForAllFiles();
@@ -27,6 +32,28 @@ RefreshInfo RefreshInfoGenerator::getRefreshInfoForUpdatedFiles(
 		// Files left incomplete by an interrupted index (complete = 0) must be
 		// re-indexed even though their content is unchanged.
 		const std::set<FilePath> incompleteFilePaths = storage->getIncompleteFiles();
+
+		// Files still claimed by an enabled source group (as a source or a contained
+		// header). A previously indexed file that is no longer claimed by any group has
+		// been removed from the project and must be cleared (step 2.4) -- unless it is
+		// still referenced by an unchanged in-scope source (e.g. a precompiled or shared
+		// header kept for its includers), which the reference check in step 2.3 spares.
+		std::set<FilePath> containedFilePaths;
+		{
+			std::set<FilePath> storedFilePaths;
+			for (const FileInfo& info: fileInfosFromStorage)
+			{
+				storedFilePaths.insert(info.path);
+			}
+			for (const std::shared_ptr<SourceGroup>& sourceGroup: sourceGroups)
+			{
+				if (sourceGroup->getStatus() == SourceGroupStatusType::ENABLED)
+				{
+					utility::append(
+						containedFilePaths, sourceGroup->filterToContainedFilePaths(storedFilePaths));
+				}
+			}
+		}
 
 		// A stored file needs (re-)indexing only when it no longer exists (removed from
 		// disk), its content actually changed, or a previous index left it incomplete.
@@ -48,16 +75,32 @@ RefreshInfo RefreshInfoGenerator::getRefreshInfoForUpdatedFiles(
 			}
 			else if (storage->getFilePathIndexed(info.path))
 			{
-				unchangedIndexedFilePaths.insert(info.path);
+				if (containedFilePaths.find(info.path) != containedFilePaths.end())
+				{
+					unchangedIndexedFilePaths.insert(info.path);
+				}
+				else
+				{
+					// Indexed but no longer part of the project -> a removal candidate.
+					removedIndexedFilePaths.insert(info.path);
+				}
+			}
+			else if (allSourceFilePathsFromSourcegroups.find(info.path) !=
+					 allSourceFilePathsFromSourcegroups.end())
+			{
+				// A known source that is not yet indexed will be indexed now; route it
+				// through the "changed" path so its stale non-indexed record is cleared
+				// first. (A source is a leaf translation unit, so this does not cascade.)
+				changedFilePaths.insert(info.path);
 			}
 			else
 			{
+				// A non-indexed header (indexed on demand via its includers) or a file no
+				// longer part of the project -- keep the record as-is.
 				unchangedNonindexedFilePaths.insert(info.path);
 			}
 		}
 	}
-
-	const std::set<FilePath> allSourceFilePathsFromSourcegroups = getAllSourceFilePaths(sourceGroups);
 
 	// 1b) Flag-aware refresh: a compile-command change (new define/include/std)
 	// alters a translation unit without touching its source mtime, so the mtime/
@@ -112,14 +155,28 @@ RefreshInfo RefreshInfoGenerator::getRefreshInfoForUpdatedFiles(
 		staticSourceFiles.erase(path);
 	}
 
-	// 2.3.2) Get sets of referenced files
+	// 2.3.2) Get the files referenced by the sources that will NOT be cleared.
 	const std::set<FilePath> staticReferencedFilePaths = storage->getReferenced(staticSourceFiles);
-	const std::set<FilePath> dynamicReferencedFilePaths = storage->getReferenced(filesToClear);
+
+	// 2.4) Clear files that were indexed but are no longer part of the project, unless
+	// they are still referenced by an unchanged in-scope source. A precompiled or shared
+	// header is not enumerated as a source, so it counts as "removed" here, but its
+	// includers still need it -- clearing it would drop their symbols until a full
+	// re-index. staticReferencedFilePaths holds exactly the files kept alive that way.
+	// Done before 2.3.3 so a removed file's own referenced-only headers are cleared with it.
+	for (const FilePath& path: removedIndexedFilePaths)
+	{
+		if (staticReferencedFilePaths.find(path) == staticReferencedFilePaths.end())
+		{
+			filesToClear.insert(path);
+		}
+	}
 
 	// 2.3.3) Add "dynamicReferencedFilePaths" to "filesToClear" that are not referenced by static
 	// paths, because these files may not be
 	//        referenced anymore. If they still are, they will be re-added when encountered during
 	//        re-indexing.
+	const std::set<FilePath> dynamicReferencedFilePaths = storage->getReferenced(filesToClear);
 	for (const FilePath& path: dynamicReferencedFilePaths)
 	{
 		if (staticReferencedFilePaths.find(path) == staticReferencedFilePaths.end() &&

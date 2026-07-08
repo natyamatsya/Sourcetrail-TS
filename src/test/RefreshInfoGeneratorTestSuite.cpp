@@ -544,10 +544,12 @@ TEST_CASE("nonindexed unchanged headerfile that is toindex")
 {
 	const RefreshInfo refreshInfo = getRefreshInfo(NON_INDEXED, UNCHANGED, HEADER_FILE, TO_INDEX);
 	REQUIRE(RefreshMode::UPDATED_FILES == refreshInfo.mode);
-	REQUIRE(1 == refreshInfo.nonIndexedFilesToClear.size());
+	// A present, unchanged, non-indexed header still claimed by the project is kept as-is
+	// and indexed on demand. Clearing its record here used to route it through the
+	// "changed" path, cascading getReferencing() into a full re-index of every includer.
+	REQUIRE(0 == refreshInfo.nonIndexedFilesToClear.size());
 	REQUIRE(0 == refreshInfo.filesToClear.size());
 	REQUIRE(0 == refreshInfo.filesToIndex.size());
-	;	 // the header file will only be indexed on demand
 }
 
 TEST_CASE("nonindexed changed sourcefile that is nottoindex")
