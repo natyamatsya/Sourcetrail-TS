@@ -149,9 +149,13 @@ jobs:
             export CC=clang-22 CXX=clang++-22
             EXTRA="-DClang_DIR=/usr/lib/llvm-22/lib/cmake/clang -DLLVM_DIR=/usr/lib/llvm-22/lib/cmake/llvm"
           fi
+          # The project triplet carries per-port customizations (e.g. catch2 is
+          # built with CATCH_CONFIG_NO_POSIX_SIGNALS, which src/test/Catch2.cpp
+          # asserts on Linux); without it vcpkg builds plain ports.
           cmake -S . -B build -G Ninja \
             -DCMAKE_BUILD_TYPE=Release \
             -DCMAKE_TOOLCHAIN_FILE="$PWD/vcpkg/scripts/buildsystems/vcpkg.cmake" \
+            -DVCPKG_TARGET_TRIPLET=x64-arm64-linux-windows-osx-static-md \
             -DBUILD_CXX_LANGUAGE_PACKAGE=ON \
             -DBUILD_RUST_LANGUAGE_PACKAGE=OFF \
             -DBUILD_UNIT_TESTS_PACKAGE=ON \
