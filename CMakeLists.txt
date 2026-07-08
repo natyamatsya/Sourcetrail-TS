@@ -170,7 +170,12 @@ target_include_directories(External_lib_ipc SYSTEM INTERFACE
 
 # qt-json-query ----------------------------------------------------------------
 
-set(BUILD_TESTING_SAVED ${BUILD_TESTING})
+# Suppress qt-json-query's own tests. BUILD_TESTING is not defined yet at this
+# point (include(CTest) further down defines it, defaulting to ON), so "saving"
+# it would restore an empty value into the cache -- which include(CTest) then
+# treats as OFF, silently disabling enable_testing() and leaving ctest with no
+# tests. Force it OFF only for the FetchContent scope and drop it from the cache
+# afterwards so include(CTest) can establish its normal default.
 set(BUILD_TESTING         OFF CACHE BOOL "" FORCE)
 set(BUILD_BENCHMARKING    OFF CACHE BOOL "" FORCE)
 set(JSON_QUERY_BUILD_EXAMPLES OFF CACHE BOOL "" FORCE)
@@ -180,7 +185,7 @@ FetchContent_Declare(
 	SOURCE_DIR "${CMAKE_SOURCE_DIR}/submodules/qt-json-query"
 )
 FetchContent_MakeAvailable(qt-json-query)
-set(BUILD_TESTING ${BUILD_TESTING_SAVED} CACHE BOOL "" FORCE)
+unset(BUILD_TESTING CACHE)
 message(STATUS "Integrated qt-json-query from submodules/")
 
 add_library(External_lib_json_query INTERFACE)
