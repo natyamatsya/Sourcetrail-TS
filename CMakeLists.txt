@@ -353,9 +353,45 @@ if (BUILD_CXX_LANGUAGE_PACKAGE)
 	set(CLANG_MIN_VERSION 18)
 	set(CLANG_MAX_VERSION 23)
 	
+	if (DEFINED CMAKE_MSVC_RUNTIME_LIBRARY)
+		set(savedMsvcRuntimeLibrary "${CMAKE_MSVC_RUNTIME_LIBRARY}")
+	endif()
+
 	find_package(Clang CONFIG REQUIRED) # Minimum version and/or version range xx...<yy doesn't work.
 	message(STATUS "Found LLVM ${LLVM_VERSION}: ${LLVM_INCLUDE_DIRS}")
 	checkVersionRange("Clang" ${LLVM_VERSION} ${CLANG_MIN_VERSION} ${CLANG_MAX_VERSION})
+
+	# LLVMConfig.cmake leaks the CRT selection of LLVM's own build into the including
+	# scope via set(CMAKE_MSVC_RUNTIME_LIBRARY ...), which would silently switch every
+	# target defined after this point to LLVM's CRT. Restore our own selection:
+	if (DEFINED savedMsvcRuntimeLibrary)
+		set(CMAKE_MSVC_RUNTIME_LIBRARY "${savedMsvcRuntimeLibrary}")
+	else()
+		unset(CMAKE_MSVC_RUNTIME_LIBRARY)
+	endif()
+
+	if (WIN32 AND TARGET LLVMDebugInfoPDB)
+		# The prebuilt LLVM archives (clang+llvm-*-x86_64-pc-windows-msvc.tar.xz) hard-code
+		# the absolute diaguids.lib path of the Visual Studio installation LLVM was built
+		# with (e.g. ".../2022/Enterprise/DIA SDK/..."). Remap it to the active Visual
+		# Studio installation (VSINSTALLDIR is set by vcvars64.bat):
+		get_target_property(llvmDebugInfoPdbLibraries LLVMDebugInfoPDB INTERFACE_LINK_LIBRARIES)
+		set(remappedLibraries "")
+		foreach(library IN LISTS llvmDebugInfoPdbLibraries)
+			if (library MATCHES "DIA SDK.*diaguids\\.lib$" AND NOT EXISTS "${library}")
+				file(TO_CMAKE_PATH "$ENV{VSINSTALLDIR}" vsInstallDir)
+				set(localDiaGuidsLib "${vsInstallDir}/DIA SDK/lib/amd64/diaguids.lib")
+				if (EXISTS "${localDiaGuidsLib}")
+					message(STATUS "Remapping diaguids.lib: ${library} -> ${localDiaGuidsLib}")
+					set(library "${localDiaGuidsLib}")
+				else()
+					message(WARNING "diaguids.lib not found at '${localDiaGuidsLib}' - is VSINSTALLDIR set (vcvars64.bat)?")
+				endif()
+			endif()
+			list(APPEND remappedLibraries "${library}")
+		endforeach()
+		set_target_properties(LLVMDebugInfoPDB PROPERTIES INTERFACE_LINK_LIBRARIES "${remappedLibraries}")
+	endif()
 
 	add_library(External_lib_clang INTERFACE)
 	

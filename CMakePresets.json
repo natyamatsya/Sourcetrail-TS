@@ -152,6 +152,13 @@
 			]
 		},
 		{
+			"hidden": true,
+			"name": "vcpkg-llvm-presets",
+			"cacheVariables": {
+				"VCPKG_MANIFEST_FEATURES": "cxx-indexer"
+			}
+		},
+		{
 			"name": "dbg",
 			"inherits": [
 				"dbg-presets",
@@ -165,6 +172,13 @@
 				"rel-presets",
 				"vcpkg-default-presets",
 				"sourcetrail-presets"
+			]
+		},
+		{
+			"name": "rel-cxx",
+			"inherits": [
+				"rel",
+				"vcpkg-llvm-presets"
 			]
 		},
 		{

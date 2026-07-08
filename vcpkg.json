@@ -12,5 +12,13 @@
 		"catch2",
 		"stdexec"
 	],
+	"features": {
+		"cxx-indexer": {
+			"description": "Build LLVM/Clang for the C/C++ indexer via the overlay port (Windows; Linux/macOS use a system LLVM instead)",
+			"dependencies": [
+				"llvm"
+			]
+		}
+	},
 	"builtin-baseline": "4556e1a3c9e2d1c4a7344cac5d045a9d87b2e77f"
 }

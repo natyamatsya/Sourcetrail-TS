@@ -17,6 +17,13 @@ set(VCPKG_LIBRARY_LINKAGE static)
 # Set dynamic linking for the C runtime library (CRT):
 set(VCPKG_CRT_LINKAGE dynamic)
 
+# LLVM is huge; only build the release configuration (a debug LLVM roughly
+# doubles a multi-hour build and tens of GB of libraries). Remove this if you
+# need to debug into LLVM/Clang itself:
+if ("${PORT}" STREQUAL "llvm")
+	set(VCPKG_BUILD_TYPE release)
+endif()
+
 # Prevent Catch2 from intercepting JVM signals:
 # https://github.com/catchorg/Catch2/blob/devel/docs/cmake-integration.md#catch_config_-customization-options-in-cmake
 if ("${PORT}" STREQUAL "catch2")
