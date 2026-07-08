@@ -6,6 +6,7 @@
 #include <clang/AST/DeclTemplate.h>
 #include <clang/AST/NestedNameSpecifier.h>
 #include <clang/AST/Type.h>
+#include <clang/AST/TypeLoc.h>
 #include <clang/Frontend/CompilerInstance.h>
 #include <clang/Options/OptionUtils.h>
 #include <clang/Options/Options.h>
@@ -128,16 +129,51 @@ bool getNestedNameSpecifierLocPrefix(
 	if (!prefixOut)
 		return false;
 
-	if (getNestedNameSpecifierKind(nestedNameSpecifierLoc.getNestedNameSpecifier()) !=
-		NestedNameSpecifierKind::Namespace)
+	// Every specifier kind can have a prefix ("A::B::" -> "A::"); pre-22 clang
+	// exposed it uniformly via getPrefix(). In 22+ a Namespace specifier carries
+	// it alongside the namespace, while a Type specifier's prefix moved into the
+	// type itself and is reached through its TypeLoc.
+	switch (getNestedNameSpecifierKind(nestedNameSpecifierLoc.getNestedNameSpecifier()))
+	{
+	case NestedNameSpecifierKind::Namespace:
+	{
+		const auto namespaceAndPrefix = nestedNameSpecifierLoc.getAsNamespaceAndPrefix();
+		if (!namespaceAndPrefix)
+			return false;
+		*prefixOut = namespaceAndPrefix.Prefix;
+		return static_cast<bool>(*prefixOut);
+	}
+	case NestedNameSpecifierKind::Type:
+		*prefixOut = nestedNameSpecifierLoc.castAsTypeLoc().getPrefix();
+		return static_cast<bool>(*prefixOut);
+	default:
 		return false;
+	}
+}
 
-	const auto namespaceAndPrefix = nestedNameSpecifierLoc.getAsNamespaceAndPrefix();
-	if (!namespaceAndPrefix)
-		return false;
-
-	*prefixOut = namespaceAndPrefix.Prefix;
-	return static_cast<bool>(*prefixOut);
+clang::SourceLocation getNestedNameSpecifierLocalNameLoc(
+	const clang::NestedNameSpecifierLoc& nestedNameSpecifierLoc)
+{
+	if (getNestedNameSpecifierKind(nestedNameSpecifierLoc.getNestedNameSpecifier()) ==
+		NestedNameSpecifierKind::Type)
+	{
+		const clang::TypeLoc typeLoc = nestedNameSpecifierLoc.castAsTypeLoc();
+		if (const auto tagLoc = typeLoc.getAs<clang::TagTypeLoc>())
+			return tagLoc.getNameLoc();
+		if (const auto typedefLoc = typeLoc.getAs<clang::TypedefTypeLoc>())
+			return typedefLoc.getNameLoc();
+		if (const auto usingLoc = typeLoc.getAs<clang::UsingTypeLoc>())
+			return usingLoc.getNameLoc();
+		if (const auto unresolvedLoc = typeLoc.getAs<clang::UnresolvedUsingTypeLoc>())
+			return unresolvedLoc.getNameLoc();
+		if (const auto templateLoc = typeLoc.getAs<clang::TemplateSpecializationTypeLoc>())
+			return templateLoc.getTemplateNameLoc();
+		if (const auto dependentLoc = typeLoc.getAs<clang::DependentNameTypeLoc>())
+			return dependentLoc.getNameLoc();
+		if (const auto parmLoc = typeLoc.getAs<clang::TemplateTypeParmTypeLoc>())
+			return parmLoc.getNameLoc();
+	}
+	return nestedNameSpecifierLoc.getLocalBeginLoc();
 }
 
 const clang::ConceptDecl* getTypeConstraintConceptDecl(const clang::AutoType* const autoType)

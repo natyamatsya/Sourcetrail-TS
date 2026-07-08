@@ -120,16 +120,22 @@ bool getNestedNameSpecifierLocPrefix(
 	if (!prefixOut)
 		return false;
 
-	if (getNestedNameSpecifierKind(nestedNameSpecifierLoc.getNestedNameSpecifier()) !=
-		NestedNameSpecifierKind::Namespace)
-		return false;
-
+	// Every specifier kind can have a prefix ("A::B::" -> "A::"); pre-22 clang
+	// exposes it uniformly via getPrefix(). Restricting the walk to Namespace
+	// specifiers dropped the qualifier records of class/struct prefixes.
 	const clang::NestedNameSpecifierLoc prefix = nestedNameSpecifierLoc.getPrefix();
 	if (!prefix)
 		return false;
 
 	*prefixOut = prefix;
 	return true;
+}
+
+clang::SourceLocation getNestedNameSpecifierLocalNameLoc(
+	const clang::NestedNameSpecifierLoc& nestedNameSpecifierLoc)
+{
+	// Pre-22, the local range of a specifier already excludes its prefix.
+	return nestedNameSpecifierLoc.getLocalBeginLoc();
 }
 
 const clang::ConceptDecl* getTypeConstraintConceptDecl(const clang::AutoType* const autoType)

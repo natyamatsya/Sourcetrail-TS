@@ -1,6 +1,7 @@
 #ifndef CLANG_COMPAT_H
 #define CLANG_COMPAT_H
 
+#include <clang/Basic/SourceLocation.h>
 #include <clang/Basic/Version.h>
 
 #include <memory>
@@ -78,6 +79,13 @@ const clang::CXXRecordDecl* getNestedNameSpecifierRecordDecl(
 bool getNestedNameSpecifierLocPrefix(
 	const clang::NestedNameSpecifierLoc& nestedNameSpecifierLoc,
 	clang::NestedNameSpecifierLoc* prefixOut);
+
+// The location of the specifier's own name token, excluding its prefix.
+// In LLVM 22+ a Type specifier's TypeLoc spans the whole qualified-id (the
+// prefix moved inside the type), so getLocalBeginLoc() would point at the
+// outermost qualifier instead of the specifier's name.
+clang::SourceLocation getNestedNameSpecifierLocalNameLoc(
+	const clang::NestedNameSpecifierLoc& nestedNameSpecifierLoc);
 
 const clang::ConceptDecl* getTypeConstraintConceptDecl(const clang::AutoType* autoType);
 const clang::ConceptDecl* getNamedConceptDecl(const clang::ConceptReference* conceptReference);

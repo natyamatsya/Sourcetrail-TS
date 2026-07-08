@@ -55,7 +55,7 @@ void CxxAstVisitorComponentIndexer::beginTraverseNestedNameSpecifierLoc(
 		Id symbolId = getOrCreateSymbolId(namespaceDecl);
 		m_client->recordSymbolKind(symbolId, SymbolKind::NAMESPACE);
 		m_client->recordLocation(
-			symbolId, getParseLocation(loc.getLocalBeginLoc()), ParseLocationType::QUALIFIER);
+			symbolId, getParseLocation(clang_compat::getNestedNameSpecifierLocalNameLoc(loc)), ParseLocationType::QUALIFIER);
 
 		if (const auto* namespaceAliasDecl =
 				clang::dyn_cast<clang::NamespaceAliasDecl>(namespaceDecl))
@@ -89,13 +89,13 @@ void CxxAstVisitorComponentIndexer::beginTraverseNestedNameSpecifierLoc(
 				const Id symbolId = getOrCreateSymbolId(recordDecl);
 				m_client->recordSymbolKind(symbolId, symbolKind);
 				m_client->recordLocation(
-					symbolId, getParseLocation(loc.getLocalBeginLoc()), ParseLocationType::QUALIFIER);
+					symbolId, getParseLocation(clang_compat::getNestedNameSpecifierLocalNameLoc(loc)), ParseLocationType::QUALIFIER);
 			}
 		}
 		else if (
 			const clang::Type* type = clang_compat::getNestedNameSpecifierType(nestedNameSpecifier))
 		{
-			const ParseLocation parseLocation = getParseLocation(loc.getLocalBeginLoc());
+			const ParseLocation parseLocation = getParseLocation(clang_compat::getNestedNameSpecifierLocalNameLoc(loc));
 
 			if (const clang::TemplateTypeParmType* tpt =
 					clang::dyn_cast_or_null<clang::TemplateTypeParmType>(type))
