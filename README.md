@@ -210,13 +210,25 @@ There are 2 ways to build the project:
 
 ## Cloning
 
-It is important to clone the repository with the **submodules** and the **symlinks**:
+It is important to clone the repository with the **submodules**. On Linux/macOS also enable
+the **symlinks**:
 
 ```
 git clone https://github.com/petermost/Sourcetrail.git --recurse-submodules --config core.symlinks=true
 ```
 
-and get the updates with:
+On **Windows** no symlink support is needed (the build relies on directory junctions
+instead, which require no special privileges or Developer Mode) — a plain clone is fine:
+
+```
+git clone https://github.com/petermost/Sourcetrail.git
+python init_repository.py
+```
+
+The `init_repository.py` script initializes the submodules and bootstraps vcpkg. It can be
+re-run at any time (e.g. after a pull that moved the submodules).
+
+Get the updates with:
 
 ```
 git pull --recurse-submodules

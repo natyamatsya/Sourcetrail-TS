@@ -119,27 +119,25 @@ else()
 			message(STATUS "Copying: ${testDataSourceDir} -> ${testDataTargetDir}")
 			file(COPY "${testDataSourceDir}" DESTINATION "${testDataTargetDir}")
 		else()
-			# Under Windows the symlinks are *not* copied correctly (results in invalid files), so
-			# symlink the data.
+			# Under Windows the symlinks are *not* copied correctly (results in invalid files)
+			# and creating symbolic links requires Developer Mode or an elevated process. A
+			# directory junction behaves like a directory symlink for our purposes and needs
+			# no privileges, so the Windows build relies on junctions exclusively (see also
+			# init_repository.py).
 			# Note: Temporary test files will show up in version control!
-			message(STATUS "Linking: ${testDataSourceDir} -> ${testDataTargetDir}")
+			message(STATUS "Linking (junction): ${testDataSourceDir} -> ${testDataTargetDir}")
 			file(MAKE_DIRECTORY "${testDataTargetParentDir}")
 			if (NOT EXISTS "${testDataTargetDir}")
-				file(CREATE_LINK "${testDataSourceDir}" "${testDataTargetDir}" SYMBOLIC RESULT createLinkResult)
-				if (NOT createLinkResult EQUAL 0)
-					# Symbolic links require Developer Mode or an elevated process, so
-					# fall back to a directory junction which needs no privileges:
-					string(REGEX REPLACE "/+$" "" testDataSourceDirNoSlash "${testDataSourceDir}")
-					file(TO_NATIVE_PATH "${testDataSourceDirNoSlash}" nativeTestDataSourceDir)
-					file(TO_NATIVE_PATH "${testDataTargetDir}" nativeTestDataTargetDir)
-					execute_process(
-						COMMAND cmd /c mklink /J "${nativeTestDataTargetDir}" "${nativeTestDataSourceDir}"
-						RESULT_VARIABLE createJunctionResult
-						OUTPUT_QUIET
-					)
-					if (NOT createJunctionResult EQUAL 0)
-						message(FATAL_ERROR "Could not link the test data: ${createLinkResult}")
-					endif()
+				string(REGEX REPLACE "/+$" "" testDataSourceDirNoSlash "${testDataSourceDir}")
+				file(TO_NATIVE_PATH "${testDataSourceDirNoSlash}" nativeTestDataSourceDir)
+				file(TO_NATIVE_PATH "${testDataTargetDir}" nativeTestDataTargetDir)
+				execute_process(
+					COMMAND cmd /c mklink /J "${nativeTestDataTargetDir}" "${nativeTestDataSourceDir}"
+					RESULT_VARIABLE createJunctionResult
+					OUTPUT_QUIET
+				)
+				if (NOT createJunctionResult EQUAL 0)
+					message(FATAL_ERROR "Could not create the test data junction: ${createJunctionResult}")
 				endif()
 			endif()
 		endif()
