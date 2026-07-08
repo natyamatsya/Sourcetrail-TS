@@ -45,7 +45,7 @@ std::shared_ptr<TestStorage> TestStorage::create(std::shared_ptr<const Storage> 
 	for (const StorageSourceLocation& location: storage->getStorageSourceLocations())
 	{
 		std::vector<Id> elementIds;
-		for (auto it = occurrenceMap.find(location.id);
+		for (auto it = occurrenceMap.lower_bound(location.id);
 			 it != occurrenceMap.end() && it->first == location.id;
 			 it++)
 		{
@@ -120,7 +120,7 @@ std::shared_ptr<TestStorage> TestStorage::create(std::shared_ptr<const Storage> 
 		std::string nameStr =
 			NameHierarchy::deserialize(node.serializedName).getQualifiedNameWithSignature();
 
-		for (auto qualifierLocationIt = qualifierLocationMap.find(node.id);
+		for (auto qualifierLocationIt = qualifierLocationMap.lower_bound(node.id);
 			 qualifierLocationIt != qualifierLocationMap.end() &&
 			 qualifierLocationIt->first == node.id;
 			 qualifierLocationIt++)
@@ -146,21 +146,22 @@ std::shared_ptr<TestStorage> TestStorage::create(std::shared_ptr<const Storage> 
 			}
 
 			bool added = false;
-			for (auto tokenLocationIt = tokenLocationMap.find(node.id);
+			for (auto tokenLocationIt = tokenLocationMap.lower_bound(node.id);
 				 tokenLocationIt != tokenLocationMap.end() && tokenLocationIt->first == node.id;
 				 tokenLocationIt++)
 			{
 				added = false;
 				std::string locationStr = addLocationStr("", tokenLocationIt->second);
 
-				auto signatureLocationIt = signatureLocationMap.find(node.id);
+				auto signatureLocationIt = signatureLocationMap.lower_bound(node.id);
 				if (signatureLocationIt != signatureLocationMap.end() &&
+					signatureLocationIt->first == node.id &&
 					containsLocation(signatureLocationIt->second, tokenLocationIt->second))
 				{
 					locationStr = addLocationStr(locationStr, signatureLocationIt->second);
 				}
 
-				for (auto scopeLocationIt = scopeLocationMap.find(node.id);
+				for (auto scopeLocationIt = scopeLocationMap.lower_bound(node.id);
 					 scopeLocationIt != scopeLocationMap.end() &&
 					 scopeLocationIt->first == node.id;
 					 scopeLocationIt++)
@@ -234,7 +235,7 @@ std::shared_ptr<TestStorage> TestStorage::create(std::shared_ptr<const Storage> 
 			std::string nameStr = sourceName + " -> " + targetName;
 
 			bool added = false;
-			for (auto tokenLocationIt = tokenLocationMap.find(edge.id);
+			for (auto tokenLocationIt = tokenLocationMap.lower_bound(edge.id);
 				 tokenLocationIt != tokenLocationMap.end() && tokenLocationIt->first == edge.id;
 				 tokenLocationIt++)
 			{
@@ -257,7 +258,7 @@ std::shared_ptr<TestStorage> TestStorage::create(std::shared_ptr<const Storage> 
 	for (const StorageLocalSymbol& localSymbol: storage->getStorageLocalSymbols())
 	{
 		bool added = false;
-		for (auto localSymbolLocationIt = localSymbolLocationMap.find(localSymbol.id);
+		for (auto localSymbolLocationIt = localSymbolLocationMap.lower_bound(localSymbol.id);
 			 localSymbolLocationIt != localSymbolLocationMap.end() &&
 			 localSymbolLocationIt->first == localSymbol.id;
 			 localSymbolLocationIt++)
@@ -287,7 +288,7 @@ std::shared_ptr<TestStorage> TestStorage::create(std::shared_ptr<const Storage> 
 
 	for (const StorageError& error: storage->getErrors())
 	{
-		for (auto errorLocationIt = errorLocationMap.find(error.id);
+		for (auto errorLocationIt = errorLocationMap.lower_bound(error.id);
 			 errorLocationIt != errorLocationMap.end() && errorLocationIt->first == error.id;
 			 errorLocationIt++)
 		{
