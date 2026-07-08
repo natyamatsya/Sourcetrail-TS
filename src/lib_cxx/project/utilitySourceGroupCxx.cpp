@@ -44,40 +44,6 @@ using namespace clang::tooling;
 
 namespace utility
 {
-namespace
-{
-// Freshness stamp next to the .pch: the flags hash the PCH was built with. The
-// PCH is reused across runs when it is newer than its input header and the flags
-// are unchanged. (Like CMake's own PCH, a change to a transitively-included
-// header that leaves the top PCH header's mtime untouched is not detected.)
-FilePath pchStampPath(const FilePath& pchOutputFilePath)
-{
-	// Sibling file, not a child path -- getConcatenated appends a path segment.
-	return FilePath(pchOutputFilePath.str() + ".stamp");
-}
-
-bool isPchFresh(
-	const FilePath& pchInputFilePath,
-	const FilePath& pchOutputFilePath,
-	const std::string& flagsHash)
-{
-	if (!pchOutputFilePath.exists())
-	{
-		return false;
-	}
-	const FilePath stamp = pchStampPath(pchOutputFilePath);
-	if (!stamp.exists())
-	{
-		return false;
-	}
-	if (FileSystem::getFileInfoForPath(pchInputFilePath).lastWriteTime >
-		FileSystem::getFileInfoForPath(pchOutputFilePath).lastWriteTime)
-	{
-		return false;
-	}
-	return utility::trim(TextAccess::createFromFile(stamp)->getText()) == flagsHash;
-}
-}	 // namespace
 
 std::shared_ptr<Task> createBuildPchTaskForInput(
 	const FilePath& pchInputFilePath,
@@ -107,18 +73,14 @@ std::shared_ptr<Task> createBuildPchTaskForInput(
 	compilerFlags.push_back(ClangCompiler::outputOption());
 	compilerFlags.push_back(pchOutputFilePath.str());
 
-	// Reuse an up-to-date PCH across runs instead of regenerating unconditionally.
-	const std::string flagsHash = IndexerCommandCxx::hashCompilerFlags(compilerFlags);
-	if (isPchFresh(pchInputFilePath, pchOutputFilePath, flagsHash))
-	{
-		LOG_INFO(
-			"Reusing up-to-date precompiled header \"" + pchOutputFilePath.str() + "\" for input \"" +
-			pchInputFilePath.str() + "\"");
-		return pchTask;
-	}
-
+	// Always (re)build and index the PCH -- never short-circuit on a freshness
+	// check. Building indexes the header's symbols into storageProvider exactly once
+	// (translation units skip re-recording PCH-loaded declarations), so reusing a
+	// prebuilt PCH would drop every precompiled-header symbol whenever the database
+	// was rebuilt from empty: a full refresh, or an incremental refresh that
+	// re-indexes all of the header's dependents (which orphans and clears it).
 	pchTask = std::make_shared<TaskLambda>(
-		[dialogView, storageProvider, pchInputFilePath, pchOutputFilePath, compilerFlags, compilerPath, flagsHash]()
+		[dialogView, storageProvider, pchInputFilePath, pchOutputFilePath, compilerFlags, compilerPath]()
 	{
 		dialogView->showUnknownProgressDialog("Preparing Indexing", "Processing Precompiled Headers");
 		LOG_INFO("Generating precompiled header output for input file \"" + pchInputFilePath.str() + "\" at location \"" + pchOutputFilePath.str() + "\"");
@@ -160,15 +122,6 @@ std::shared_ptr<Task> createBuildPchTaskForInput(
 		tool.setDiagnosticConsumer(&diagnostics);
 		tool.clearArgumentsAdjusters();
 		tool.run(new SingleFrontendActionFactory(action)); // TODO (petermost): Memory leak?
-
-		// Record the freshness stamp only when the PCH was actually produced.
-		// Re-check existence freshly -- FilePath::exists() caches, and this path was
-		// evaluated as "missing" before generation.
-		if (std::filesystem::exists(pchOutputFilePath.str()))
-		{
-			std::ofstream stampFile(pchStampPath(pchOutputFilePath).str());
-			stampFile << flagsHash;
-		}
 
 		storageProvider->insert(storage);
 	});

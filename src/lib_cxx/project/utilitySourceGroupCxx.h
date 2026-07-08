@@ -17,8 +17,12 @@ namespace utility
 {
 //! Builds a Sourcetrail precompiled header for `pchInputFilePath` at
 //! `pchOutputFilePath` using the given flags + compiler (so the resource dir
-//! matches the translation units). Reuses an up-to-date PCH across runs via a
-//! freshness stamp. Consumed via getIncludePchFlagsForOutput.
+//! matches the translation units). Consumed via getIncludePchFlagsForOutput.
+//!
+//! The PCH is (re)built on every index, never reused across runs: building also
+//! indexes the header's symbols into `storageProvider` exactly once (translation
+//! units skip re-recording PCH-loaded declarations), so a reused PCH would leave
+//! those symbols missing whenever the database was rebuilt from empty.
 std::shared_ptr<Task> createBuildPchTaskForInput(
 	const FilePath& pchInputFilePath,
 	const FilePath& pchOutputFilePath,

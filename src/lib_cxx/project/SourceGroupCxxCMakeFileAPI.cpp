@@ -746,7 +746,8 @@ std::shared_ptr<Task> SourceGroupCxxCMakeFileAPI::getPreIndexTask(
 
 	// One PCH build per distinct (header, flags). Built for all matching source
 	// entries regardless of the current refresh scope, since any re-indexed TU in
-	// the group needs the PCH; the freshness check skips unchanged ones.
+	// the group needs the PCH. Rebuilt on every index so its symbols are re-indexed
+	// into the (possibly cleared) database -- see createBuildPchTaskForInput.
 	std::set<FilePath> builtPchOutputs;
 	int pchCount = 0;
 	for (const auto& entry : entriesResult->entries)

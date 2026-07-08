@@ -108,9 +108,7 @@ note "index (cold: PCH generated)"
 (cd "$WORK/pch" && "$APP" index --full "$WORK/pch/p.srctrl.toml" > "$WORK/pch/cold.log" 2>&1)
 PCHDB="$WORK/pch/p.srctrl.db"
 PCH_COUNT=$(find "$WORK/pch" -name '*.pch' | wc -l | tr -d ' ')
-STAMP_COUNT=$(find "$WORK/pch" -name '*.stamp' | wc -l | tr -d ' ')
 [ "$PCH_COUNT" -ge 1 ] && pass "PCH generated ($PCH_COUNT)" || fail "no PCH generated"
-[ "$STAMP_COUNT" -ge 1 ] && pass "freshness stamp written" || fail "no freshness stamp"
 ERR=$(sqlite3 "$PCHDB" "SELECT COUNT(*) FROM error;" 2>/dev/null)
 [ "${ERR:-1}" -eq 0 ] && pass "clean indexing (0 errors)" \
     || { fail "$ERR indexing error(s)"; sqlite3 "$PCHDB" "SELECT DISTINCT substr(message,1,70) FROM error LIMIT 5;" | sed 's/^/     /'; }
@@ -119,12 +117,19 @@ WIDGETS=$(sqlite3 "$PCHDB" "SELECT COUNT(*) FROM node WHERE serialized_name LIKE
 CMPCH=$(sqlite3 "$PCHDB" "SELECT COUNT(*) FROM file WHERE path LIKE '%cmake_pch%';" 2>/dev/null)
 [ "${CMPCH:-1}" -eq 0 ] && pass "CMake's cmake_pch artifact excluded" || fail "cmake_pch was indexed"
 
-note "second run reuses the PCH (freshness)"
+COLD_COUNTS=$(sqlite3 "$PCHDB" "SELECT (SELECT COUNT(*) FROM node),(SELECT COUNT(*) FROM edge),(SELECT COUNT(*) FROM file);" 2>/dev/null)
+
+# Regression guard: a full re-index rebuilds the DB from empty, and the PCH's
+# header symbols are indexed as part of building the PCH. If the PCH were reused
+# (rebuild skipped) those symbols would silently vanish. The second full index
+# must reproduce the first exactly.
+note "second full index reproduces the same index (PCH symbols not dropped)"
 (cd "$WORK/pch" && "$APP" index --full "$WORK/pch/p.srctrl.toml" > "$WORK/pch/warm.log" 2>&1)
-if grep -q 'Reusing up-to-date' "$WORK/pch/warm.log"; then
-    pass "PCH reused on second run"
+WARM_COUNTS=$(sqlite3 "$PCHDB" "SELECT (SELECT COUNT(*) FROM node),(SELECT COUNT(*) FROM edge),(SELECT COUNT(*) FROM file);" 2>/dev/null)
+if [ -n "$COLD_COUNTS" ] && [ "$WARM_COUNTS" = "$COLD_COUNTS" ]; then
+    pass "warm full re-index identical to cold (node,edge,file = $WARM_COUNTS)"
 else
-    fail "PCH regenerated instead of reused"
+    fail "warm full re-index differs: cold=($COLD_COUNTS) warm=($WARM_COUNTS) -- PCH symbols dropped?"
 fi
 
 note "PCH is faster than the same project without target_precompile_headers"
