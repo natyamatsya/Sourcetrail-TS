@@ -24,8 +24,10 @@
 #include "language_package_flags.h"
 #include "utilityQt.h"
 
-#include "LanguagePackageCxx.h"
-#include "SourceGroupFactoryModuleCxx.h"
+#if BUILD_CXX_LANGUAGE_PACKAGE
+	#include "LanguagePackageCxx.h"
+	#include "SourceGroupFactoryModuleCxx.h"
+#endif
 
 #include "LanguagePackageRust.h"
 #include "SourceGroupFactoryModuleRust.h"
@@ -93,7 +95,9 @@ void addLanguagePackages()
 {
 	SourceGroupFactory::getInstance()->addModule(std::make_shared<SourceGroupFactoryModuleCustom>());
 
+#if BUILD_CXX_LANGUAGE_PACKAGE
 	addLanguagePackage<language_packages::buildCxxLanguagePackage,   SourceGroupFactoryModuleCxx,   LanguagePackageCxx>();
+#endif
 	addLanguagePackage<language_packages::buildRustLanguagePackage,  SourceGroupFactoryModuleRust,  LanguagePackageRust>();
 	addLanguagePackage<language_packages::buildSwiftLanguagePackage, SourceGroupFactoryModuleSwift, LanguagePackageSwift>();
 }

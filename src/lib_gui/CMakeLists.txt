@@ -18,6 +18,10 @@ file(GLOB_RECURSE _lib_gui_base_SOURCES CONFIGURE_DEPENDS
 # Exclude the CXX-only wizard content and path-detector subdirectory from the
 # base glob — they are added under the BUILD_CXX_LANGUAGE_PACKAGE guard below.
 list(FILTER _lib_gui_base_SOURCES EXCLUDE REGEX ".*/utility/path_detector/cxx_header/.*")
+list(FILTER _lib_gui_base_SOURCES EXCLUDE REGEX ".*/QtProjectWizardContentPathCDB\\.(cpp|h)")
+list(FILTER _lib_gui_base_SOURCES EXCLUDE REGEX ".*/QtProjectWizardContentPathCxxPch\\.(cpp|h)")
+list(FILTER _lib_gui_base_SOURCES EXCLUDE REGEX ".*/QtProjectWizardContentPathsHeaderSearch\\.(cpp|h)")
+list(FILTER _lib_gui_base_SOURCES EXCLUDE REGEX ".*/QtProjectWizardContentPathsIndexedHeaders\\.(cpp|h)")
 
 add_library(Sourcetrail_lib_gui
 	${CMAKE_CURRENT_BINARY_DIR}/productVersion.h
@@ -45,7 +49,18 @@ if (BUILD_CXX_LANGUAGE_PACKAGE)
 		"${CMAKE_CURRENT_SOURCE_DIR}/utility/path_detector/cxx_header/*.cpp"
 		"${CMAKE_CURRENT_SOURCE_DIR}/utility/path_detector/cxx_header/*.h"
 	)
-	target_sources(Sourcetrail_lib_gui PRIVATE ${_lib_gui_cxx_SOURCES})
+	target_sources(Sourcetrail_lib_gui
+		PRIVATE
+			${_lib_gui_cxx_SOURCES}
+			qt/project_wizard/content/path/QtProjectWizardContentPathCDB.cpp
+			qt/project_wizard/content/path/QtProjectWizardContentPathCDB.h
+			qt/project_wizard/content/path/QtProjectWizardContentPathCxxPch.cpp
+			qt/project_wizard/content/path/QtProjectWizardContentPathCxxPch.h
+			qt/project_wizard/content/paths/QtProjectWizardContentPathsHeaderSearch.cpp
+			qt/project_wizard/content/paths/QtProjectWizardContentPathsHeaderSearch.h
+			qt/project_wizard/content/paths/QtProjectWizardContentPathsIndexedHeaders.cpp
+			qt/project_wizard/content/paths/QtProjectWizardContentPathsIndexedHeaders.h
+	)
 	target_include_directories(Sourcetrail_lib_gui
 		PUBLIC
 			utility/path_detector/cxx_header

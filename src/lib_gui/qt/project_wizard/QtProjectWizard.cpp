@@ -37,14 +37,18 @@
 #include "QtProjectWizardContentCrossCompilationOptions.h"
 #include "QtProjectWizardContentCxxPchFlags.h"
 #include "QtProjectWizardContentFlags.h"
-#include "QtProjectWizardContentPathCDB.h"
 #include "QtProjectWizardContentPathCMakeFileAPI.h"
-#include "QtProjectWizardContentPathCxxPch.h"
 #include "QtProjectWizardContentPathsFrameworkSearch.h"
 #include "QtProjectWizardContentPathsFrameworkSearchGlobal.h"
-#include "QtProjectWizardContentPathsHeaderSearch.h"
 #include "QtProjectWizardContentPathsHeaderSearchGlobal.h"
-#include "QtProjectWizardContentPathsIndexedHeaders.h"
+#if BUILD_CXX_LANGUAGE_PACKAGE
+	// These wizard contents depend on lib_cxx and are only compiled when the
+	// C/C++ language package is enabled:
+	#include "QtProjectWizardContentPathCDB.h"
+	#include "QtProjectWizardContentPathCxxPch.h"
+	#include "QtProjectWizardContentPathsHeaderSearch.h"
+	#include "QtProjectWizardContentPathsIndexedHeaders.h"
+#endif
 #include "SourceGroupSettingsCEmpty.h"
 #include "SourceGroupSettingsCppEmpty.h"
 #include "SourceGroupSettingsCxxCdb.h"
@@ -103,6 +107,8 @@ void addSourceGroupContents(
 	QtProjectWizardContentGroup* group,
 	std::shared_ptr<SettingsType> settings,
 	QtProjectWizardWindow* window);
+
+#if BUILD_CXX_LANGUAGE_PACKAGE
 
 template <>
 void addSourceGroupContents<SourceGroupSettingsCEmpty>(
@@ -218,6 +224,8 @@ void addSourceGroupContents<SourceGroupSettingsCxxCdb>(
 	group->addContent(new QtProjectWizardContentPathCxxPch(settings, settings, window));
 	group->addContent(new QtProjectWizardContentCxxPchFlags(settings, window, true));
 }
+
+#endif	  // BUILD_CXX_LANGUAGE_PACKAGE
 
 template <>
 void addSourceGroupContents<SourceGroupSettingsRustEmpty>(
@@ -608,7 +616,7 @@ void QtProjectWizard::selectedSourceGroupChanged(int index)
 		addSourceGroupContents(summary, settings, this);
 	}
 
-	if constexpr (language_packages::buildCxxLanguagePackage)
+#if BUILD_CXX_LANGUAGE_PACKAGE
 	if (
 		std::shared_ptr<SourceGroupSettingsCEmpty> settings =
 			std::dynamic_pointer_cast<SourceGroupSettingsCEmpty>(group))
@@ -633,6 +641,7 @@ void QtProjectWizard::selectedSourceGroupChanged(int index)
 	{
 		addSourceGroupContents(summary, settings, this);
 	}
+#endif	  // BUILD_CXX_LANGUAGE_PACKAGE
 
 	if (
 		std::shared_ptr<SourceGroupSettingsRustEmpty> settings =
