@@ -20,7 +20,7 @@ jobs:
         os: [ubuntu-latest, macos-latest, windows-latest]
 
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
         with:
           submodules: recursive
 
@@ -28,7 +28,7 @@ jobs:
         uses: dtolnay/rust-toolchain@stable
 
       - name: Cache Cargo registry + build
-        uses: actions/cache@v4
+        uses: actions/cache@v6
         with:
           path: |
             ~/.cargo/registry
@@ -39,7 +39,7 @@ jobs:
 
       - name: Install flatc (Ubuntu)
         if: runner.os == 'Linux'
-        run: sudo apt-get install -y flatbuffers-compiler
+        run: sudo apt-get update && sudo apt-get install -y flatbuffers-compiler
 
       - name: Install flatc (macOS)
         if: runner.os == 'macOS'
@@ -58,36 +58,87 @@ jobs:
         run: cargo test -- --nocapture
 
   # ---------------------------------------------------------------------------
-  # C++ build (Linux only for now — mirrors the existing build setup)
+  # C++ build on Linux / macOS / Windows.
+  #
+  # Dependencies come from the vcpkg manifest (vcpkg.json) -- stdexec/tomlplusplus/
+  # etc. are find_package()'d unconditionally, so a system-package build cannot
+  # satisfy them; the pinned vcpkg submodule is the single cross-platform source.
+  # Qt6 is not in the manifest and is installed separately.
+  #
+  # This is a "smoke build": the language packages and unit tests are OFF, so it
+  # exercises configure + the base library/app compile without libclang.
   # ---------------------------------------------------------------------------
   cpp-build:
-    name: C++ build (ubuntu-latest)
-    runs-on: ubuntu-latest
+    name: C++ build (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest, windows-latest]
 
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
         with:
           submodules: recursive
 
-      - name: Install system dependencies
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y \
-            cmake ninja-build \
-            qt6-base-dev qt6-base-private-dev \
-            libboost-filesystem-dev libboost-program-options-dev \
-            flatbuffers-compiler libflatbuffers-dev \
-            clang
+      - name: Install Qt 6
+        uses: jurplel/install-qt-action@v4
+        with:
+          version: "6.8.3"
+          modules: "qtsvg"
+          cache: true
 
-      - name: Configure (no language packages — fast smoke build)
+      - name: Install build tools (Linux)
+        if: runner.os == 'Linux'
+        run: sudo apt-get update && sudo apt-get install -y ninja-build
+
+      - name: Install build tools (macOS)
+        if: runner.os == 'macOS'
+        run: brew install ninja llvm
+
+      - name: Install build tools (Windows)
+        if: runner.os == 'Windows'
+        run: choco install ninja --no-progress
+
+      - name: Set up MSVC (Windows)
+        if: runner.os == 'Windows'
+        uses: ilammy/msvc-dev-cmd@v1
+
+      - name: Bootstrap vcpkg
+        shell: bash
         run: |
-          cmake -S . -B build \
-            -G Ninja \
+          if [ "${{ runner.os }}" = "Windows" ]; then
+            ./vcpkg/bootstrap-vcpkg.bat -disableMetrics
+          else
+            ./vcpkg/bootstrap-vcpkg.sh -disableMetrics
+          fi
+
+      - name: Cache vcpkg build artifacts
+        uses: actions/cache@v6
+        with:
+          path: |
+            build/vcpkg_installed
+            ~/.cache/vcpkg/archives
+          key: ${{ runner.os }}-vcpkg-${{ hashFiles('vcpkg.json') }}
+          restore-keys: ${{ runner.os }}-vcpkg-
+
+      - name: Configure
+        shell: bash
+        run: |
+          # macOS builds with Homebrew LLVM (Apple Clang lacks the C++23/26 features
+          # stdexec and the libc++ ABI handling the project relies on); chainload the
+          # project toolchain through vcpkg so both the deps and the app use it.
+          EXTRA=""
+          if [ "${{ runner.os }}" = "macOS" ]; then
+            EXTRA="-DVCPKG_CHAINLOAD_TOOLCHAIN_FILE=$PWD/cmake-toolchains/llvm-clang-macos.cmake"
+          fi
+          cmake -S . -B build -G Ninja \
             -DCMAKE_BUILD_TYPE=Release \
+            -DCMAKE_TOOLCHAIN_FILE="$PWD/vcpkg/scripts/buildsystems/vcpkg.cmake" \
             -DBUILD_CXX_LANGUAGE_PACKAGE=OFF \
             -DBUILD_RUST_LANGUAGE_PACKAGE=OFF \
-            -DBUILD_UNIT_TESTS_PACKAGE=OFF
+            -DBUILD_UNIT_TESTS_PACKAGE=OFF \
+            $EXTRA
 
       - name: Build
         run: cmake --build build --parallel
-
