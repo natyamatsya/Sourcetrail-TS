@@ -214,8 +214,15 @@ TimeStamp FileSystem::getLastWriteTime(const FilePath &filePath)
 	if (filePath.exists())
 	{
 		auto ft = std::filesystem::last_write_time(filePath.getPath());
+#if defined(_LIBCPP_VERSION)
+		// libc++ does not implement std::chrono::clock_cast yet; file_clock::to_sys
+		// is the spelling it provides. MSVC conversely lacks file_clock::to_sys.
+		auto sysTime = std::chrono::time_point_cast<std::chrono::system_clock::duration>(
+			std::chrono::file_clock::to_sys(ft));
+#else
 		auto sysTime = std::chrono::time_point_cast<std::chrono::system_clock::duration>(
 			std::chrono::clock_cast<std::chrono::system_clock>(ft));
+#endif
 		return TimeStamp(sysTime);
 	}
 	return TimeStamp();
