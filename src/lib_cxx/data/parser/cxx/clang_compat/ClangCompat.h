@@ -80,6 +80,12 @@ bool getNestedNameSpecifierLocPrefix(
 	const clang::NestedNameSpecifierLoc& nestedNameSpecifierLoc,
 	clang::NestedNameSpecifierLoc* prefixOut);
 
+// The location of a type's own name token. Pre-22 a TypeLoc never includes a
+// qualifier (that lived in the separately-traversed ElaboratedTypeLoc), so the
+// begin location is the name; in 22+ the qualifier is part of the TypeLoc and
+// the name must be resolved per TypeLoc class.
+clang::SourceLocation getTypeLocNameLocation(const clang::TypeLoc& typeLoc);
+
 // The location of the specifier's own name token, excluding its prefix.
 // In LLVM 22+ a Type specifier's TypeLoc spans the whole qualified-id (the
 // prefix moved inside the type), so getLocalBeginLoc() would point at the

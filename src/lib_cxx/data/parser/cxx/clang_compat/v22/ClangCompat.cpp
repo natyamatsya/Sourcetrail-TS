@@ -151,27 +151,32 @@ bool getNestedNameSpecifierLocPrefix(
 	}
 }
 
+clang::SourceLocation getTypeLocNameLocation(const clang::TypeLoc& typeLoc)
+{
+	if (const auto tagLoc = typeLoc.getAs<clang::TagTypeLoc>())
+		return tagLoc.getNameLoc();
+	if (const auto typedefLoc = typeLoc.getAs<clang::TypedefTypeLoc>())
+		return typedefLoc.getNameLoc();
+	if (const auto usingLoc = typeLoc.getAs<clang::UsingTypeLoc>())
+		return usingLoc.getNameLoc();
+	if (const auto unresolvedLoc = typeLoc.getAs<clang::UnresolvedUsingTypeLoc>())
+		return unresolvedLoc.getNameLoc();
+	if (const auto templateLoc = typeLoc.getAs<clang::TemplateSpecializationTypeLoc>())
+		return templateLoc.getTemplateNameLoc();
+	if (const auto dependentLoc = typeLoc.getAs<clang::DependentNameTypeLoc>())
+		return dependentLoc.getNameLoc();
+	if (const auto parmLoc = typeLoc.getAs<clang::TemplateTypeParmTypeLoc>())
+		return parmLoc.getNameLoc();
+	return typeLoc.getBeginLoc();
+}
+
 clang::SourceLocation getNestedNameSpecifierLocalNameLoc(
 	const clang::NestedNameSpecifierLoc& nestedNameSpecifierLoc)
 {
 	if (getNestedNameSpecifierKind(nestedNameSpecifierLoc.getNestedNameSpecifier()) ==
 		NestedNameSpecifierKind::Type)
 	{
-		const clang::TypeLoc typeLoc = nestedNameSpecifierLoc.castAsTypeLoc();
-		if (const auto tagLoc = typeLoc.getAs<clang::TagTypeLoc>())
-			return tagLoc.getNameLoc();
-		if (const auto typedefLoc = typeLoc.getAs<clang::TypedefTypeLoc>())
-			return typedefLoc.getNameLoc();
-		if (const auto usingLoc = typeLoc.getAs<clang::UsingTypeLoc>())
-			return usingLoc.getNameLoc();
-		if (const auto unresolvedLoc = typeLoc.getAs<clang::UnresolvedUsingTypeLoc>())
-			return unresolvedLoc.getNameLoc();
-		if (const auto templateLoc = typeLoc.getAs<clang::TemplateSpecializationTypeLoc>())
-			return templateLoc.getTemplateNameLoc();
-		if (const auto dependentLoc = typeLoc.getAs<clang::DependentNameTypeLoc>())
-			return dependentLoc.getNameLoc();
-		if (const auto parmLoc = typeLoc.getAs<clang::TemplateTypeParmTypeLoc>())
-			return parmLoc.getNameLoc();
+		return getTypeLocNameLocation(nestedNameSpecifierLoc.castAsTypeLoc());
 	}
 	return nestedNameSpecifierLoc.getLocalBeginLoc();
 }

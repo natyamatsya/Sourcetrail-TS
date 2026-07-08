@@ -6,6 +6,7 @@
 #include <clang/AST/DeclTemplate.h>
 #include <clang/AST/NestedNameSpecifier.h>
 #include <clang/AST/Type.h>
+#include <clang/AST/TypeLoc.h>
 #include <clang/Driver/Driver.h>
 #include <clang/Driver/Options.h>
 #include <clang/Frontend/CompilerInstance.h>
@@ -129,6 +130,17 @@ bool getNestedNameSpecifierLocPrefix(
 
 	*prefixOut = prefix;
 	return true;
+}
+
+clang::SourceLocation getTypeLocNameLocation(const clang::TypeLoc& typeLoc)
+{
+	// Pre-22 a TypeLoc carries no qualifier; keep the historical locations.
+	if (const auto dependentLoc = typeLoc.getAs<clang::DependentNameTypeLoc>())
+		return dependentLoc.getNameLoc();
+	if (const auto dependentTemplateLoc =
+			typeLoc.getAs<clang::DependentTemplateSpecializationTypeLoc>())
+		return dependentTemplateLoc.getTemplateNameLoc();
+	return typeLoc.getBeginLoc();
 }
 
 clang::SourceLocation getNestedNameSpecifierLocalNameLoc(

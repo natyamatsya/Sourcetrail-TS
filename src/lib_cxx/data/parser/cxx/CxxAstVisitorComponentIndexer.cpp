@@ -796,22 +796,10 @@ void CxxAstVisitorComponentIndexer::visitTypeLoc(clang::TypeLoc tl)
 				m_client->recordDefinitionKind(symbolId, DefinitionKind::EXPLICIT);
 			}
 
-			clang::SourceLocation loc;
-			if (const clang::DependentNameTypeLoc &dntl = tl.getAs<clang::DependentNameTypeLoc>())
-			{
-				loc = dntl.getNameLoc();
-			}
-#if LLVM_VERSION_MAJOR < 22
-			else if (const clang::DependentTemplateSpecializationTypeLoc &dtstl =
-						 tl.getAs<clang::DependentTemplateSpecializationTypeLoc>())
-			{
-				loc = dtstl.getTemplateNameLoc();
-			}
-#endif
-			else
-			{
-				loc = tl.getBeginLoc();
-			}
+			// The type's own name token: in LLVM 22+ the TypeLoc includes any
+			// qualifier ("test::TestStruct"), so getBeginLoc() would point at the
+			// qualifier instead of the name and misplace the type-use location.
+			const clang::SourceLocation loc = clang_compat::getTypeLocNameLocation(tl);
 
 			const ParseLocation parseLocation = getParseLocation(loc);
 
