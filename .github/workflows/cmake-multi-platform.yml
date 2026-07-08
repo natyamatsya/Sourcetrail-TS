@@ -47,7 +47,14 @@ jobs:
 
       - name: Install flatc (Windows)
         if: runner.os == 'Windows'
-        run: choco install flatc --no-progress
+        shell: pwsh
+        run: |
+          # choco's flatc is an unmaintained v1.12.0 whose install script fails;
+          # fetch the official prebuilt flatc matching the flatbuffers crate.
+          $url = "https://github.com/google/flatbuffers/releases/download/v25.12.19-2026-02-06-03fffb2/Windows.flatc.binary.zip"
+          Invoke-WebRequest -Uri $url -OutFile "$env:RUNNER_TEMP\flatc.zip"
+          Expand-Archive "$env:RUNNER_TEMP\flatc.zip" -DestinationPath "$env:RUNNER_TEMP\flatc"
+          "$env:RUNNER_TEMP\flatc" | Out-File -FilePath $env:GITHUB_PATH -Append
 
       - name: cargo build
         working-directory: src/rust_indexer
