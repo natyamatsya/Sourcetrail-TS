@@ -24,51 +24,35 @@ RefreshInfo RefreshInfoGenerator::getRefreshInfoForUpdatedFiles(
 	{
 		const std::vector<FileInfo> fileInfosFromStorage = storage->getFileInfoForAllFiles();
 
-		std::set<FilePath> alreadyKnownPaths;
-		{
-			const std::set<FilePath> filePathsFromStorage = utility::toSet(
-				utility::convert<FileInfo, FilePath>(
-					fileInfosFromStorage, [](const FileInfo& info) { return info.path; }));
+		// Files left incomplete by an interrupted index (complete = 0) must be
+		// re-indexed even though their content is unchanged.
+		const std::set<FilePath> incompleteFilePaths = storage->getIncompleteFiles();
 
-			for (const std::shared_ptr<SourceGroup> &sourceGroup: sourceGroups)
-			{
-				if (sourceGroup->getStatus() == SourceGroupStatusType::ENABLED)
-				{
-					utility::append(
-						alreadyKnownPaths,
-						sourceGroup->filterToContainedFilePaths(filePathsFromStorage));
-				}
-			}
-		}
-
-		// checking source and header files
+		// A stored file needs (re-)indexing only when it no longer exists (removed from
+		// disk), its content actually changed, or a previous index left it incomplete.
+		// Otherwise it is unchanged and kept -- whether it is a source-group source or a
+		// header (e.g. a precompiled header) that is indexed only transitively via the
+		// files that include it. Treating a present, unchanged header as changed here
+		// would cascade through getReferencing() below and re-index every file that
+		// includes it on every incremental refresh (a header is indexed=0 and stores no
+		// content, and a precompiled header is indexed=1 but is not enumerated as a
+		// source -- both previously fell through to the "changed" branches).
 		for (const FileInfo& info: fileInfosFromStorage)
 		{
-			if (alreadyKnownPaths.find(info.path) != alreadyKnownPaths.end() && info.path.exists())
-			{
-				if (storage->getFilePathIndexed(info.path))
-				{
-					if (didFileChange(info, storage))
-					{
-						changedFilePaths.insert(info.path);
-					}
-					else
-					{
-						unchangedIndexedFilePaths.insert(info.path);
-					}
-				}
-				else
-				{
-					changedFilePaths.insert(info.path);
-				}
-			}
-			else if (!storage->getFilePathIndexed(info.path) && !didFileChange(info, storage))
-			{
-				unchangedNonindexedFilePaths.insert(info.path);
-			}
-			else	// file has been removed
+			const bool changed = !info.path.exists() ||
+				incompleteFilePaths.find(info.path) != incompleteFilePaths.end() ||
+				didFileChange(info, storage);
+			if (changed)
 			{
 				changedFilePaths.insert(info.path);
+			}
+			else if (storage->getFilePathIndexed(info.path))
+			{
+				unchangedIndexedFilePaths.insert(info.path);
+			}
+			else
+			{
+				unchangedNonindexedFilePaths.insert(info.path);
 			}
 		}
 	}
@@ -264,7 +248,12 @@ bool RefreshInfoGenerator::didFileChange(
 	const FileInfo& info, std::shared_ptr<const PersistentStorage> storage)
 {
 	FileInfo diskFileInfo = FileSystem::getFileInfoForPath(info.path);
-	if (diskFileInfo.lastWriteTime > info.lastWriteTime)
+	// The stored mtime is second-precision (persisted via TimeStamp::toString), while
+	// the disk mtime carries sub-seconds. Compare at the stored precision, otherwise a
+	// sub-second difference on an otherwise-unchanged file reads as newer -- and for a
+	// content-less file (a header, whose content is not stored) the branch below then
+	// assumes it changed, cascading a re-index through every file that includes it.
+	if (TimeStamp(diskFileInfo.lastWriteTime.toString()) > info.lastWriteTime)
 	{
 		if (!storage->hasContentForFile(info.path))
 		{

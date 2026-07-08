@@ -132,6 +132,19 @@ else
     fail "warm full re-index differs: cold=($COLD_COUNTS) warm=($WARM_COUNTS) -- PCH symbols dropped?"
 fi
 
+# Regression guard: an incremental refresh with nothing changed must re-index
+# nothing. A project header is legitimately non-indexed; if the refresh treated it
+# as changed it would cascade through every including TU and re-index the whole
+# project on every incremental (the CMake File API over-clearing bug).
+note "incremental no-op re-indexes nothing"
+(cd "$WORK/pch" && "$APP" index "$WORK/pch/p.srctrl.toml" > "$WORK/pch/noop.log" 2>&1)
+NOOP_N=$(grep -oE 'Finished indexing: [0-9]+/[0-9]+' "$WORK/pch/noop.log" | tail -1 | grep -oE '^Finished indexing: [0-9]+' | grep -oE '[0-9]+$')
+if [ -z "$NOOP_N" ] || [ "$NOOP_N" -eq 0 ]; then
+    pass "incremental no-op re-indexed nothing"
+else
+    fail "incremental no-op re-indexed $NOOP_N file(s) -- over-clearing regressed"
+fi
+
 note "PCH is faster than the same project without target_precompile_headers"
 gen_project "$WORK/nopch" nopch
 (cd "$WORK/nopch" && "$APP" index --full "$WORK/nopch/p.srctrl.toml" > "$WORK/nopch/run.log" 2>&1)
