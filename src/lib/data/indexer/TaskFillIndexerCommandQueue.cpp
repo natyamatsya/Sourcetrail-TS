@@ -99,6 +99,11 @@ void TaskFillIndexerCommandsQueue::doExit(std::shared_ptr<Blackboard> blackboard
 				<< " duplicate Swift package commands in this indexing run.");
 
 	blackboard->set<bool>("indexer_command_queue_stopped", true);
+
+	// The command queue won't grow any further: wake subprocesses blocked waiting
+	// for a command so they observe the stop and exit promptly, rather than waiting
+	// out their poll-timeout backstop.
+	m_indexerCommandManager.notifyWaiters();
 }
 
 void TaskFillIndexerCommandsQueue::doReset(std::shared_ptr<Blackboard>  /*blackboard*/)

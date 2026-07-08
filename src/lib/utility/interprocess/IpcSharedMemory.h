@@ -7,8 +7,9 @@
 #include <mutex>
 #include <string>
 
-#include <libipc/shm.h>
+#include <libipc/condition.h>
 #include <libipc/mutex.h>
+#include <libipc/shm.h>
 
 class IpcSharedMemory
 {
@@ -45,6 +46,13 @@ public:
 		void write(const uint8_t* buf, std::size_t len);
 		const uint8_t* read(std::size_t* outLen) const;
 
+		//! Atomically release the lock, wait until another process calls
+		//! notifyAll() on this segment (or the timeout elapses), then re-acquire
+		//! the lock. Must be called with the access held; on return the lock is
+		//! held again. Returns true if woken by a notify, false on timeout.
+		//! Callers must re-check their predicate in a loop after waking.
+		bool wait(uint32_t timeoutMs);
+
 		std::string logString() const;
 
 	private:
@@ -53,6 +61,12 @@ public:
 	};
 
 	const std::string& name() const;
+
+	//! Wake every process currently blocked in ScopedAccess::wait() on this
+	//! segment. Safe to call without holding the lock (the underlying condition
+	//! is sequence-based, so a notify racing a not-yet-sleeping waiter is not
+	//! lost). Call it after the state a waiter is waiting for has been written.
+	void notifyAll();
 
 	// Lock-free peek at the raw mapped memory. For approximate reads only (e.g.
 	// back-pressure checks). Do NOT use for writes or authoritative reads.
@@ -65,9 +79,11 @@ public:
 private:
 	static const char* s_memoryNamePrefix;
 	static const char* s_mutexNamePrefix;
+	static const char* s_conditionNamePrefix;
 
 	std::string getMemoryName() const;
 	std::string getMutexName() const;
+	std::string getConditionName() const;
 
 	std::string m_name;
 	std::size_t m_size;
@@ -75,6 +91,7 @@ private:
 
 	ipc::shm::handle m_shm;
 	ipc::sync::mutex m_mutex;
+	ipc::sync::condition m_condition;
 	std::atomic<bool> m_lockBroken{false};
 };
 

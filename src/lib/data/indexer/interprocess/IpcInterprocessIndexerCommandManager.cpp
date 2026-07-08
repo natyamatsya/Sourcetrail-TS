@@ -45,12 +45,22 @@ void IpcInterprocessIndexerCommandManager::pushIndexerCommands(
 
 	auto fbBuf = IpcSerializer::serializeIndexerCommands(all);
 
-	IpcSharedMemory::ScopedAccess access(&m_shm);
-	access.write(fbBuf.data(), fbBuf.size());
+	{
+		IpcSharedMemory::ScopedAccess access(&m_shm);
+		access.write(fbBuf.data(), fbBuf.size());
 
-	LOG_INFO_STREAM(<< "[pid=" << static_cast<int>(m_processId) << "] pushed "
-		<< indexerCommands.size() << " command(s), queue size now " << all.size()
-		<< " - " << access.logString());
+		LOG_INFO_STREAM(<< "[pid=" << static_cast<int>(m_processId) << "] pushed "
+			<< indexerCommands.size() << " command(s), queue size now " << all.size()
+			<< " - " << access.logString());
+	}
+
+	// Wake subprocesses blocked in popIndexerCommandBlocking now that work exists.
+	m_shm.notifyAll();
+}
+
+void IpcInterprocessIndexerCommandManager::notifyWaiters()
+{
+	m_shm.notifyAll();
 }
 
 std::shared_ptr<IndexerCommand> IpcInterprocessIndexerCommandManager::popIndexerCommand(
@@ -63,10 +73,9 @@ std::shared_ptr<IndexerCommand> IpcInterprocessIndexerCommandManager::popIndexer
 	return popIndexerCommand(std::set<IndexerCommandType> {skipType});
 }
 
-std::shared_ptr<IndexerCommand> IpcInterprocessIndexerCommandManager::popIndexerCommand(
-	const std::set<IndexerCommandType>& skipTypes)
+std::shared_ptr<IndexerCommand> IpcInterprocessIndexerCommandManager::tryPopLocked(
+	IpcSharedMemory::ScopedAccess& access, const std::set<IndexerCommandType>& skipTypes)
 {
-	IpcSharedMemory::ScopedAccess access(&m_shm);
 	std::size_t len = 0;
 	const uint8_t* buf = access.read(&len);
 
@@ -107,6 +116,30 @@ std::shared_ptr<IndexerCommand> IpcInterprocessIndexerCommandManager::popIndexer
 		<< ", " << all.size() << " command(s) remaining");
 
 	return result;
+}
+
+std::shared_ptr<IndexerCommand> IpcInterprocessIndexerCommandManager::popIndexerCommand(
+	const std::set<IndexerCommandType>& skipTypes)
+{
+	IpcSharedMemory::ScopedAccess access(&m_shm);
+	return tryPopLocked(access, skipTypes);
+}
+
+std::shared_ptr<IndexerCommand> IpcInterprocessIndexerCommandManager::popIndexerCommandBlocking(
+	const std::set<IndexerCommandType>& skipTypes, uint32_t timeoutMs)
+{
+	IpcSharedMemory::ScopedAccess access(&m_shm);
+
+	// The predicate check and the wait share one continuous lock hold, so a push
+	// (write + notify) cannot slip in between and be lost.
+	if (std::shared_ptr<IndexerCommand> command = tryPopLocked(access, skipTypes))
+		return command;
+
+	access.wait(timeoutMs);
+
+	// Woken by a push/notify or the timeout elapsed; try once more. If another
+	// subprocess took the command, the caller loops and blocks again.
+	return tryPopLocked(access, skipTypes);
 }
 
 bool IpcInterprocessIndexerCommandManager::hasIndexerCommandType(IndexerCommandType type)

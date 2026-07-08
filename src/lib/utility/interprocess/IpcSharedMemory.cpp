@@ -23,6 +23,7 @@ bool growSharedMemoryHandle(
 
 const char* IpcSharedMemory::s_memoryNamePrefix = "srctrl_ipc_mem_";
 const char* IpcSharedMemory::s_mutexNamePrefix = "srctrl_ipc_mtx_";
+const char* IpcSharedMemory::s_conditionNamePrefix = "srctrl_ipc_cnd_";
 
 std::string IpcSharedMemory::checkName(const std::string& name)
 {
@@ -62,6 +63,9 @@ IpcSharedMemory::IpcSharedMemory(const std::string& name, std::size_t size, Acce
 
 	if (!m_mutex.open(getMutexName().c_str()))
 		throw std::runtime_error("IpcSharedMemory: failed to open mutex: " + getMutexName());
+
+	if (!m_condition.open(getConditionName().c_str()))
+		throw std::runtime_error("IpcSharedMemory: failed to open condition: " + getConditionName());
 }
 
 IpcSharedMemory::~IpcSharedMemory()
@@ -69,6 +73,7 @@ IpcSharedMemory::~IpcSharedMemory()
 	using enum IpcSharedMemory::AccessMode;
 	try
 	{
+		m_condition.close();
 		m_mutex.close();
 		m_shm.release();
 
@@ -112,6 +117,17 @@ std::string IpcSharedMemory::getMemoryName() const
 std::string IpcSharedMemory::getMutexName() const
 {
 	return s_mutexNamePrefix + m_name;
+}
+
+std::string IpcSharedMemory::getConditionName() const
+{
+	return s_conditionNamePrefix + m_name;
+}
+
+void IpcSharedMemory::notifyAll()
+{
+	// broadcast() is sequence-based and does not require the mutex to be held.
+	m_condition.broadcast(m_mutex);
 }
 
 // --- ScopedAccess ---
@@ -164,6 +180,18 @@ IpcSharedMemory::ScopedAccess::~ScopedAccess()
 		LOG_ERROR_STREAM(
 			<< "IpcSharedMemory::ScopedAccess failed to unlock '" << m_memory->getMutexName() << "'");
 	m_locked = false;
+}
+
+bool IpcSharedMemory::ScopedAccess::wait(uint32_t timeoutMs)
+{
+	if (!m_locked)
+		throw std::runtime_error(
+			"IpcSharedMemory::ScopedAccess::wait called without holding the lock on " +
+			m_memory->getMutexName());
+
+	// Releases the mutex, waits on the condition (or until timeout), reacquires.
+	// The lock is held again on return; the caller re-checks its predicate.
+	return m_memory->m_condition.wait(m_memory->m_mutex, timeoutMs);
 }
 
 void* IpcSharedMemory::ScopedAccess::data()

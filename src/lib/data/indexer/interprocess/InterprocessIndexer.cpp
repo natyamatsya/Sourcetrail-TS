@@ -97,15 +97,18 @@ InterprocessIndexer::WorkResult InterprocessIndexer::work()
 				skipTypes.insert(INDEXER_COMMAND_SWIFT);
 			while (true)
 			{
+				// Block until a command is pushed (immediate wake) instead of
+				// polling. The 500ms timeout is a liveness backstop so the loop
+				// re-checks the stop flags even if a notify is ever missed; the
+				// main process also notifies on stop/interrupt for a prompt exit.
 				const std::shared_ptr<IndexerCommand> indexerCommand =
-					m_interprocessIndexerCommandManager.popIndexerCommand(skipTypes);
+					m_interprocessIndexerCommandManager.popIndexerCommandBlocking(skipTypes, 500);
 
 				if (!indexerCommand)
 				{
 					if (m_interprocessIndexingStatusManager.getIndexingInterrupted() ||
 						m_interprocessIndexingStatusManager.getQueueStopped())
 						return;
-					std::this_thread::sleep_for(std::chrono::milliseconds(100));
 					continue;
 				}
 
