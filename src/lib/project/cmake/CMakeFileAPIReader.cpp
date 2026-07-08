@@ -571,7 +571,10 @@ CMakeFileAPIReader::GetSourcesExpected CMakeFileAPIReader::getSourcesDetailed(
 				availableConfigurations + "]"));
 	}
 	const auto chosenConfigurationName{chosenConfigNl.value("name", std::string{})};
-	const auto targetsNl{chosenConfigNl.value("targets", nlohmann::json::array())};
+	// NOTE: nlohmann::json must not be brace-initialized from another json value:
+	// `auto x{jsonValue}` selects the initializer_list constructor and silently wraps
+	// the value in a one-element ARRAY (x.is_object() becomes false). Use `=` init.
+	const auto targetsNl = chosenConfigNl.value("targets", nlohmann::json::array());
 	LOG_INFO(
 		"CMakeFileAPIReader: selected configuration '" + chosenConfigurationName +
 		"' with " + std::to_string(targetsNl.size()) + " targets");
@@ -620,7 +623,7 @@ CMakeFileAPIReader::GetSourcesExpected CMakeFileAPIReader::getSourcesDetailed(
 		}
 		try
 		{
-			const auto parsed{parseJsonBytes(bytes)};
+			const auto parsed = parseJsonBytes(bytes);
 			if (!parsed.is_object())
 			{
 				if (parsed.is_array())
@@ -802,7 +805,7 @@ CMakeFileAPIReader::GetSourcesExpected CMakeFileAPIReader::getSourcesDetailed(
 			continue;
 		}
 		const FilePath targetReplyPath{m_replyDir.getConcatenated("/" + targetFilename)};
-		const auto targetNlRaw{readNlohmann(targetReplyPath)};
+		const auto targetNlRaw = readNlohmann(targetReplyPath);
 		nlohmann::json normalizedTargetNl{};
 		const nlohmann::json* targetNl{&targetNlRaw};
 
@@ -1204,7 +1207,7 @@ std::vector<FilePath> CMakeFileAPIReader::getCMakeInputFiles() const
 		}
 	};
 
-	const auto indexNl{readNlohmannFile(indexPath)};
+	const auto indexNl = readNlohmannFile(indexPath);
 	if (!indexNl.is_object())
 		return {};
 
@@ -1223,7 +1226,7 @@ std::vector<FilePath> CMakeFileAPIReader::getCMakeInputFiles() const
 		return {};
 
 	const auto cmakeFilesPath{m_replyDir.getConcatenated("/" + cmakeFilesFilename)};
-	const auto cmakeFilesNl{readNlohmannFile(cmakeFilesPath)};
+	const auto cmakeFilesNl = readNlohmannFile(cmakeFilesPath);
 	if (!cmakeFilesNl.is_object())
 		return {};
 

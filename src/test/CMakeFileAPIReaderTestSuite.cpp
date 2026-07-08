@@ -2,6 +2,7 @@
 
 #include <algorithm>
 #include <filesystem>
+#include <fstream>
 
 #include <QDir>
 #include <QFile>
@@ -407,11 +408,40 @@ TEST_CASE("CMakeFileAPIReader getCMakeInputFiles returns empty for missing reply
 // isReplyStale — mtime-based staleness detection
 // ---------------------------------------------------------------------------
 
-TEST_CASE("CMakeFileAPIReader isReplyStale returns false for fresh reply")
+TEST_CASE("CMakeFileAPIReader isReplyStale compares input mtimes against the index")
 {
-	// The fixture reply was just generated; no input file is newer than the index.
-	CMakeFileAPIReader reader{fixtureBuildDir()};
+	// The checked-in fixture has uncontrolled mtimes (git checkout order, absolute
+	// paths into the generating machine), so build a minimal hermetic reply where
+	// the relative mtimes are set explicitly.
+	namespace fs = std::filesystem;
+	const fs::path root = fs::temp_directory_path() / "sourcetrail_isReplyStale_test";
+	fs::remove_all(root);
+	const fs::path replyDir = root / "build/.cmake/api/v1/reply";
+	fs::create_directories(replyDir);
+	const fs::path sourceDir = root / "source";
+	fs::create_directories(sourceDir);
+
+	const fs::path input = sourceDir / "CMakeLists.txt";
+	std::ofstream{input} << "project(hermetic)\n";
+
+	std::ofstream{replyDir / "cmakeFiles-v1-test.json"}
+		<< R"({"kind":"cmakeFiles","paths":{"source":")" << sourceDir.string()
+		<< R"("},"inputs":[{"path":"CMakeLists.txt"}]})";
+	std::ofstream{replyDir / "index-test.json"}
+		<< R"({"objects":[{"kind":"cmakeFiles","jsonFile":"cmakeFiles-v1-test.json"}]})";
+
+	const fs::path index = replyDir / "index-test.json";
+	CMakeFileAPIReader reader{FilePath{(root / "build").string()}};
+
+	// Index newer than the input -> fresh.
+	fs::last_write_time(index, fs::last_write_time(input) + std::chrono::seconds{2});
 	CHECK_FALSE(reader.isReplyStale());
+
+	// Input newer than the index -> stale.
+	fs::last_write_time(input, fs::last_write_time(index) + std::chrono::seconds{2});
+	CHECK(reader.isReplyStale());
+
+	fs::remove_all(root);
 }
 
 TEST_CASE("CMakeFileAPIReader isReplyStale returns false for missing reply")
