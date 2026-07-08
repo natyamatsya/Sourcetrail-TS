@@ -215,7 +215,7 @@ TimeStamp FileSystem::getLastWriteTime(const FilePath &filePath)
 	{
 		auto ft = std::filesystem::last_write_time(filePath.getPath());
 		auto sysTime = std::chrono::time_point_cast<std::chrono::system_clock::duration>(
-			std::chrono::file_clock::to_sys(ft));
+			std::chrono::clock_cast<std::chrono::system_clock>(ft));
 		return TimeStamp(sysTime);
 	}
 	return TimeStamp();

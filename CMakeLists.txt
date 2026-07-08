@@ -119,12 +119,29 @@ else()
 			message(STATUS "Copying: ${testDataSourceDir} -> ${testDataTargetDir}")
 			file(COPY "${testDataSourceDir}" DESTINATION "${testDataTargetDir}")
 		else()
-			# Under Windows the symlinks are *not* copied correctly (results in invalid files), so 
+			# Under Windows the symlinks are *not* copied correctly (results in invalid files), so
 			# symlink the data.
 			# Note: Temporary test files will show up in version control!
 			message(STATUS "Linking: ${testDataSourceDir} -> ${testDataTargetDir}")
 			file(MAKE_DIRECTORY "${testDataTargetParentDir}")
-			file(CREATE_LINK "${testDataSourceDir}" "${testDataTargetDir}" SYMBOLIC)
+			if (NOT EXISTS "${testDataTargetDir}")
+				file(CREATE_LINK "${testDataSourceDir}" "${testDataTargetDir}" SYMBOLIC RESULT createLinkResult)
+				if (NOT createLinkResult EQUAL 0)
+					# Symbolic links require Developer Mode or an elevated process, so
+					# fall back to a directory junction which needs no privileges:
+					string(REGEX REPLACE "/+$" "" testDataSourceDirNoSlash "${testDataSourceDir}")
+					file(TO_NATIVE_PATH "${testDataSourceDirNoSlash}" nativeTestDataSourceDir)
+					file(TO_NATIVE_PATH "${testDataTargetDir}" nativeTestDataTargetDir)
+					execute_process(
+						COMMAND cmd /c mklink /J "${nativeTestDataTargetDir}" "${nativeTestDataSourceDir}"
+						RESULT_VARIABLE createJunctionResult
+						OUTPUT_QUIET
+					)
+					if (NOT createJunctionResult EQUAL 0)
+						message(FATAL_ERROR "Could not link the test data: ${createLinkResult}")
+					endif()
+				endif()
+			endif()
 		endif()
 	endif()
 endif()
@@ -429,6 +446,10 @@ if (BUILD_RUST_LANGUAGE_PACKAGE)
 		MANIFEST_PATH "${CMAKE_SOURCE_DIR}/src/rust_indexer/Cargo.toml"
 		CRATES sourcetrail-rust-indexer
 	)
+
+	# The crate's build.rs needs flatc, which is not on PATH (especially on
+	# Windows), so point it at the vcpkg-provided host tool:
+	corrosion_set_env_vars(sourcetrail_rust_indexer "FLATC=$<TARGET_FILE:flatbuffers::flatc>")
 
 	# Copy the Rust indexer binary to app/ so AppPath::getRustIndexerFilePath() finds it.
 	# Corrosion produces an IMPORTED target, so we use a custom target with add_dependencies.

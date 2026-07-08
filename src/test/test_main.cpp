@@ -60,7 +60,18 @@ static int catch2_main(int argc, char *argv[])
 
 int main(int argc, char* argv[])
 {
-	setupDefaultLocale();
+	// Catch2 writes its machine readable listings (used by catch_discover_tests()) to the
+	// possibly locale imbued cout, which makes the emitted JSON unparsable with a locale
+	// that uses digit grouping (e.g. "rng-seed": 2,022,882,781 with a German locale). The
+	// UNIX builds prevent this with the run_with_c_locale.sh wrapper, but MSVC ignores
+	// LC_ALL, so skip the locale setup when only a listing was requested:
+	bool isListing = false;
+	for (int i = 1; i < argc; ++i)
+		if (string_view(argv[i]).starts_with("--list-"))
+			isListing = true;
+
+	if (!isListing)
+		setupDefaultLocale();
 
 	// Set the 'working directory' manually, as a workaround for "Unable to configure working directory
 	// in CMake/Catch" (https://github.com/catchorg/Catch2/issues/2249)
