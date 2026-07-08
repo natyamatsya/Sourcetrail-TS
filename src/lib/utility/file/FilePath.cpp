@@ -264,7 +264,11 @@ FilePath& FilePath::makeRelativeTo(const FilePath& other)
 	auto itA = a.begin();
 	auto itB = b.begin();
 
-	while (*itA == *itB && itA != a.end() && itB != b.end())
+	// Check the bounds BEFORE dereferencing: when one path is a prefix of the
+	// other (or they are equal), the lockstep walk reaches end() and the old
+	// dereference-first order read past the end -- benign on libc++, a segfault
+	// on libstdc++ (Linux).
+	while (itA != a.end() && itB != b.end() && *itA == *itB)
 	{
 		itA++;
 		itB++;
