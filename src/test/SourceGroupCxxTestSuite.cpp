@@ -78,8 +78,18 @@ std::string indexerCommandCxxToString(
 		indexerCommand->getSourceFilePath().getRelativeTo(baseDirectory).str() + "\"\n";
 	for (const FilePath& indexedPath: indexerCommand->getIndexedPaths())
 		result += "\tIndexedPath: \"" + indexedPath.getRelativeTo(baseDirectory).str() + "\"\n";
+	bool previousFlagWasSysroot = false;
 	for (std::string compilerFlag: indexerCommand->getCompilerFlags())
 	{
+		if (previousFlagWasSysroot)
+		{
+			// The SDK path is machine-specific (local Xcode installation).
+			result += "\tCompilerFlag: \"<sysroot>\"\n";
+			previousFlagWasSysroot = false;
+			continue;
+		}
+		previousFlagWasSysroot = compilerFlag == "-isysroot";
+
 		FilePath flagAsPath(compilerFlag);
 		if (flagAsPath.exists())
 			compilerFlag = flagAsPath.getRelativeTo(baseDirectory).str();
@@ -134,6 +144,10 @@ std::string getOutputFilename()
 {
 	if constexpr (Platform::isWindows())
 		return "output_windows.txt";
+	else if constexpr (Platform::isMac())
+		// macOS output differs from Linux: the source groups inject the local
+		// SDK via "-isysroot" (sanitized to "<sysroot>" above).
+		return "output_macos.txt";
 	else
 		return "output_unix.txt";
 }
