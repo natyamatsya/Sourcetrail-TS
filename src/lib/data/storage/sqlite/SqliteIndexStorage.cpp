@@ -902,9 +902,9 @@ void SqliteIndexStorage::removeFileCommandHash(const std::string& filePath)
 	executeStatement(stmt);
 }
 
-std::map<std::string, std::string> SqliteIndexStorage::getFileCommandHashes() const
+std::unordered_map<std::string, std::string> SqliteIndexStorage::getFileCommandHashes() const
 {
-	std::map<std::string, std::string> hashes;
+	std::unordered_map<std::string, std::string> hashes;
 	if (!hasTable("file_command_hash"))
 	{
 		return hashes;

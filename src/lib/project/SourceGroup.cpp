@@ -14,21 +14,25 @@ std::shared_ptr<IndexerCommandProvider> SourceGroup::getIndexerCommandProvider(c
 	return std::make_shared<MemoryIndexerCommandProvider>(getIndexerCommands(info));
 }
 
-std::map<FilePath, std::string> SourceGroup::getSourceFileCommandHashes(const RefreshInfo& info) const
+std::vector<std::pair<FilePath, std::string>> SourceGroup::getSourceFileCommandHashes(
+	const RefreshInfo& info) const
 {
-	std::map<FilePath, std::string> hashes;
+	// Consumed by iteration only (never point-looked-up), so a flat vector is
+	// cheaper to build and iterate than a node-based map. One command per source
+	// file within a group keeps the paths unique.
+	std::vector<std::pair<FilePath, std::string>> hashes;
 	for (const std::shared_ptr<IndexerCommand>& command: getIndexerCommands(info))
 	{
 		std::string hash = command->getIndexerCommandHash();
 		if (!hash.empty())
 		{
-			hashes.emplace(command->getSourceFilePath(), std::move(hash));
+			hashes.emplace_back(command->getSourceFilePath(), std::move(hash));
 		}
 	}
 	return hashes;
 }
 
-std::map<FilePath, std::string> SourceGroup::getAllSourceFileCommandHashes() const
+std::vector<std::pair<FilePath, std::string>> SourceGroup::getAllSourceFileCommandHashes() const
 {
 	RefreshInfo info;
 	info.filesToIndex = getAllSourceFilePaths();

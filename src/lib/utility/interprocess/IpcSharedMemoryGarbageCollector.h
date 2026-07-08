@@ -2,6 +2,7 @@
 #define IPC_SHARED_MEMORY_GARBAGE_COLLECTOR_H
 
 #include <atomic>
+#include <condition_variable>
 #include <memory>
 #include <mutex>
 #include <set>
@@ -37,6 +38,9 @@ private:
 	IpcSharedMemory m_shm;
 	std::atomic<bool> m_loopIsRunning;
 	std::shared_ptr<std::thread> m_thread;
+	// Wakes the collector thread's interval sleep so stop()/shutdown is immediate.
+	std::mutex m_loopMutex;
+	std::condition_variable m_loopCondition;
 
 	std::string m_uuid;
 

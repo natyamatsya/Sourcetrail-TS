@@ -340,7 +340,7 @@ void PersistentStorage::removeFileCommandHash(const std::string& filePath)
 	m_sqliteIndexStorage.removeFileCommandHash(filePath);
 }
 
-std::map<std::string, std::string> PersistentStorage::getFileCommandHashes() const
+std::unordered_map<std::string, std::string> PersistentStorage::getFileCommandHashes() const
 {
 	return m_sqliteIndexStorage.getFileCommandHashes();
 }

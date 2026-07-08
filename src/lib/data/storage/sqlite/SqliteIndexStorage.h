@@ -4,6 +4,7 @@
 #include <memory>
 #include <string>
 #include <map>
+#include <unordered_map>
 #include <vector>
 
 #include "ErrorInfo.h"
@@ -115,7 +116,7 @@ public:
 	// Per-source-file compile-command hash (flag-aware incremental refresh).
 	void setFileCommandHash(const std::string& filePath, const std::string& hash);
 	void removeFileCommandHash(const std::string& filePath);
-	std::map<std::string, std::string> getFileCommandHashes() const;
+	std::unordered_map<std::string, std::string> getFileCommandHashes() const;
 
 	// generic meta k/v access (shard manifests etc.)
 	using SqliteStorage::getMetaValue;

@@ -9,6 +9,8 @@
 #include "TextAccess.h"
 #include "utility.h"
 
+#include <unordered_map>
+
 RefreshInfo RefreshInfoGenerator::getRefreshInfoForUpdatedFiles(
 	const std::vector<std::shared_ptr<SourceGroup>>& sourceGroups,
 	std::shared_ptr<const PersistentStorage> storage)
@@ -80,7 +82,7 @@ RefreshInfo RefreshInfoGenerator::getRefreshInfoForUpdatedFiles(
 	// without a stored hash (older databases, never-indexed files) are skipped, so
 	// upgrading never triggers a spurious full re-index.
 	{
-		const std::map<std::string, std::string> storedHashes = storage->getFileCommandHashes();
+		const std::unordered_map<std::string, std::string> storedHashes = storage->getFileCommandHashes();
 		if (!storedHashes.empty())
 		{
 			for (const std::shared_ptr<SourceGroup>& sourceGroup: sourceGroups)

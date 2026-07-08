@@ -46,6 +46,7 @@ IpcSharedMemoryGarbageCollector::~IpcSharedMemoryGarbageCollector()
 	// IPC resources (m_shm, m_mutex) may already be invalid during static
 	// destruction — stop() handles the full cleanup when called explicitly.
 	m_loopIsRunning = false;
+	m_loopCondition.notify_all();
 	if (m_thread && m_thread->joinable())
 		m_thread->join();
 }
@@ -63,7 +64,13 @@ void IpcSharedMemoryGarbageCollector::run(const std::string& uuid)
 		while (m_loopIsRunning)
 		{
 			update();
-			std::this_thread::sleep_for(std::chrono::seconds(s_updateIntervalSeconds));
+			// Interruptible sleep: stop() notifies the condition so shutdown returns
+			// immediately instead of blocking up to s_updateIntervalSeconds on join.
+			std::unique_lock<std::mutex> lock(m_loopMutex);
+			m_loopCondition.wait_for(
+				lock,
+				std::chrono::seconds(s_updateIntervalSeconds),
+				[this]() { return !m_loopIsRunning.load(); });
 		}
 	});
 }
@@ -74,6 +81,7 @@ void IpcSharedMemoryGarbageCollector::stop()
 	LOG_INFO_STREAM(<< "stop IPC shared memory garbage collection");
 
 	m_loopIsRunning = false;
+	m_loopCondition.notify_all();
 
 	if (m_thread && m_thread->joinable())
 	{
