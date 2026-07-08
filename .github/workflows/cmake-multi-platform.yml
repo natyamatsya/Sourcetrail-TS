@@ -71,23 +71,26 @@ jobs:
         run: cargo test -- --nocapture
 
   # ---------------------------------------------------------------------------
-  # C++ build on Linux / macOS / Windows.
+  # C++ build + unit tests on Linux / macOS.
   #
-  # Dependencies come from the vcpkg manifest (vcpkg.json) -- stdexec/tomlplusplus/
-  # etc. are find_package()'d unconditionally, so a system-package build cannot
-  # satisfy them; the pinned vcpkg submodule is the single cross-platform source.
-  # Qt6 is not in the manifest and is installed separately.
+  # Builds the full application WITH the C++ language package (libclang) and the
+  # Catch2 unit tests, then runs them via ctest. Dependencies come from the vcpkg
+  # manifest (stdexec/tomlplusplus/... are find_package()'d unconditionally); Qt6
+  # and LLVM/Clang 18-23 (for the C++ indexer) are installed separately.
   #
-  # This is a "smoke build": the language packages and unit tests are OFF, so it
-  # exercises configure + the base library/app compile without libclang.
+  # ctest runs each Catch2 case in its own process, which also isolates any single
+  # crashing test from the rest of the suite.
+  #
+  # Windows C++ is a follow-up: libclang-cpp on MSVC needs its own setup. The rust
+  # indexer is already covered on all three platforms by the job above.
   # ---------------------------------------------------------------------------
   cpp-build:
-    name: C++ build (${{ matrix.os }})
+    name: C++ build + tests (${{ matrix.os }})
     runs-on: ${{ matrix.os }}
     strategy:
       fail-fast: false
       matrix:
-        os: [ubuntu-latest, macos-latest, windows-latest]
+        os: [ubuntu-latest, macos-latest]
 
     steps:
       - uses: actions/checkout@v7
@@ -100,30 +103,18 @@ jobs:
           version: "6.8.3"
           cache: true
 
-      - name: Install build tools (Linux)
+      - name: Install build tools + LLVM (Linux)
         if: runner.os == 'Linux'
-        run: sudo apt-get update && sudo apt-get install -y ninja-build
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y ninja-build clang-18 llvm-18-dev libclang-18-dev libclang-cpp18-dev
 
-      - name: Install build tools (macOS)
+      - name: Install build tools + LLVM (macOS)
         if: runner.os == 'macOS'
         run: brew install ninja llvm
 
-      - name: Install build tools (Windows)
-        if: runner.os == 'Windows'
-        run: choco install ninja --no-progress
-
-      - name: Set up MSVC (Windows)
-        if: runner.os == 'Windows'
-        uses: ilammy/msvc-dev-cmd@v1
-
       - name: Bootstrap vcpkg
-        shell: bash
-        run: |
-          if [ "${{ runner.os }}" = "Windows" ]; then
-            ./vcpkg/bootstrap-vcpkg.bat -disableMetrics
-          else
-            ./vcpkg/bootstrap-vcpkg.sh -disableMetrics
-          fi
+        run: ./vcpkg/bootstrap-vcpkg.sh -disableMetrics
 
       - name: Cache vcpkg build artifacts
         uses: actions/cache@v6
@@ -131,26 +122,33 @@ jobs:
           path: |
             build/vcpkg_installed
             ~/.cache/vcpkg/archives
-          key: ${{ runner.os }}-vcpkg-${{ hashFiles('vcpkg.json') }}
-          restore-keys: ${{ runner.os }}-vcpkg-
+          key: ${{ runner.os }}-vcpkg-cxx-${{ hashFiles('vcpkg.json') }}
+          restore-keys: ${{ runner.os }}-vcpkg-cxx-
 
       - name: Configure
         shell: bash
         run: |
-          # macOS builds with Homebrew LLVM (Apple Clang lacks the C++23/26 features
-          # stdexec and the libc++ ABI handling the project relies on); chainload the
-          # project toolchain through vcpkg so both the deps and the app use it.
           EXTRA=""
           if [ "${{ runner.os }}" = "macOS" ]; then
-            EXTRA="-DVCPKG_CHAINLOAD_TOOLCHAIN_FILE=$PWD/cmake-toolchains/llvm-clang-macos.cmake"
+            # Build with Homebrew LLVM (Apple Clang lacks the C++23/26 features stdexec
+            # and the libc++ ABI handling rely on); point find_package(Clang) at it too.
+            LLVM_PREFIX="$(brew --prefix llvm)"
+            EXTRA="-DVCPKG_CHAINLOAD_TOOLCHAIN_FILE=$PWD/cmake-toolchains/llvm-clang-macos.cmake -DCMAKE_PREFIX_PATH=$LLVM_PREFIX"
+          else
+            export CC=clang-18 CXX=clang++-18
+            EXTRA="-DClang_DIR=/usr/lib/llvm-18/lib/cmake/clang -DLLVM_DIR=/usr/lib/llvm-18/lib/cmake/llvm"
           fi
           cmake -S . -B build -G Ninja \
             -DCMAKE_BUILD_TYPE=Release \
             -DCMAKE_TOOLCHAIN_FILE="$PWD/vcpkg/scripts/buildsystems/vcpkg.cmake" \
-            -DBUILD_CXX_LANGUAGE_PACKAGE=OFF \
+            -DBUILD_CXX_LANGUAGE_PACKAGE=ON \
             -DBUILD_RUST_LANGUAGE_PACKAGE=OFF \
-            -DBUILD_UNIT_TESTS_PACKAGE=OFF \
+            -DBUILD_UNIT_TESTS_PACKAGE=ON \
             $EXTRA
 
       - name: Build
         run: cmake --build build --parallel
+
+      - name: Test
+        working-directory: build
+        run: ctest --output-on-failure --no-tests=error
