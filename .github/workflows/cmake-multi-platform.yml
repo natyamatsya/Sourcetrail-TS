@@ -107,7 +107,9 @@ jobs:
         if: runner.os == 'Linux'
         run: |
           sudo apt-get update
-          sudo apt-get install -y ninja-build clang-18 llvm-18-dev libclang-18-dev libclang-cpp18-dev
+          # clang 19+: libstdc++ disables std::expected for clang 18 (incomplete
+          # C++23 concepts support), and qt-json-query needs std::expected.
+          sudo apt-get install -y ninja-build clang-19 llvm-19-dev libclang-19-dev libclang-cpp19-dev
 
       - name: Install build tools + LLVM (macOS)
         if: runner.os == 'macOS'
@@ -135,8 +137,8 @@ jobs:
             LLVM_PREFIX="$(brew --prefix llvm)"
             EXTRA="-DVCPKG_CHAINLOAD_TOOLCHAIN_FILE=$PWD/cmake-toolchains/llvm-clang-macos.cmake -DCMAKE_PREFIX_PATH=$LLVM_PREFIX"
           else
-            export CC=clang-18 CXX=clang++-18
-            EXTRA="-DClang_DIR=/usr/lib/llvm-18/lib/cmake/clang -DLLVM_DIR=/usr/lib/llvm-18/lib/cmake/llvm"
+            export CC=clang-19 CXX=clang++-19
+            EXTRA="-DClang_DIR=/usr/lib/llvm-19/lib/cmake/clang -DLLVM_DIR=/usr/lib/llvm-19/lib/cmake/llvm"
           fi
           cmake -S . -B build -G Ninja \
             -DCMAKE_BUILD_TYPE=Release \
