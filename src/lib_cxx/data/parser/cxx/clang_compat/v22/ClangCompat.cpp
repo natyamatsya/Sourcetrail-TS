@@ -162,7 +162,15 @@ clang::SourceLocation getTypeLocNameLocation(const clang::TypeLoc& typeLoc)
 	if (const auto unresolvedLoc = typeLoc.getAs<clang::UnresolvedUsingTypeLoc>())
 		return unresolvedLoc.getNameLoc();
 	if (const auto templateLoc = typeLoc.getAs<clang::TemplateSpecializationTypeLoc>())
+	{
+		// A dependent specialization (pre-22 DependentTemplateSpecializationType,
+		// e.g. "typename A<U>::template type<float>") was historically recorded at
+		// the begin of the whole construct; a regular specialization at its name.
+		const auto* type = templateLoc.getTypePtr();
+		if (type && type->getTemplateName().isDependent())
+			return typeLoc.getBeginLoc();
 		return templateLoc.getTemplateNameLoc();
+	}
 	if (const auto dependentLoc = typeLoc.getAs<clang::DependentNameTypeLoc>())
 		return dependentLoc.getNameLoc();
 	if (const auto parmLoc = typeLoc.getAs<clang::TemplateTypeParmTypeLoc>())

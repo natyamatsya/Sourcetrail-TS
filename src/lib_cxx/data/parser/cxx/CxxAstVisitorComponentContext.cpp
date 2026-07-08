@@ -88,17 +88,22 @@ void CxxAstVisitorComponentContext::beginTraverseTypeLoc(const clang::TypeLoc& t
 			const clang::TemplateSpecializationTypeLoc& tstl =
 				tl.castAs<clang::TemplateSpecializationTypeLoc>();
 			const clang::TemplateSpecializationType* tst = tstl.getTypePtr();
-			if (tst && tst->getTemplateName().isDependent())
+			if (tst && tst->getTemplateName().isDependent()
+#if LLVM_VERSION_MAJOR >= 22
+				// In 22+ the former DependentTemplateSpecializationType (a member
+				// template of a dependent base, "A<U>::template type<float>") is a
+				// TemplateSpecializationType with a dependent name too; it names a
+				// real symbol and keeps its context (as upstream did for the
+				// separate class). Only a template template PARAMETER ("T<int>")
+				// is a local symbol without a context of its own.
+				&& clang::isa_and_nonnull<clang::TemplateTemplateParmDecl>(
+					   tst->getTemplateName().getAsTemplateDecl())
+#endif
+			)
 			{
 				recordContext = false;
 			}
 		}
-#if LLVM_VERSION_MAJOR < 22
-		else if (tl.getAs<clang::DependentTemplateSpecializationTypeLoc>())
-		{
-			recordContext = false;
-		}
-#endif
 		if (recordContext)
 		{
 			context = std::make_shared<CxxContextType>(tl.getTypePtr());

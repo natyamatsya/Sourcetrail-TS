@@ -774,15 +774,18 @@ void CxxAstVisitorComponentIndexer::visitTypeLoc(clang::TypeLoc tl)
 				if (tst)
 				{
 					const clang::TemplateName tln = tst->getTemplateName();
-					if (tln.isDependent()) // e.g. T<int> where the template name T depends on a template parameter
+					// T<int> where T is a template template PARAMETER is a local
+					// symbol of the enclosing template, not a type usage. Other
+					// dependent template names (a member template of a dependent
+					// base, pre-22 a separate DependentTemplateSpecializationType)
+					// resolve to a real symbol and fall through to the recording.
+					if (tln.isDependent() &&
+						clang::isa_and_nonnull<clang::TemplateTemplateParmDecl>(
+							tln.getAsTemplateDecl()))
 					{
-						clang::TemplateDecl* decl = tln.getAsTemplateDecl();
-						if (decl)
-						{
-							m_client->recordLocalSymbol(
-								getLocalSymbolName(decl->getLocation()),
-								getParseLocation(tl.getBeginLoc()));
-						}
+						m_client->recordLocalSymbol(
+							getLocalSymbolName(tln.getAsTemplateDecl()->getLocation()),
+							getParseLocation(tl.getBeginLoc()));
 						return;
 					}
 				}
@@ -1083,9 +1086,6 @@ void CxxAstVisitorComponentIndexer::recordDeducedQualType(const QualType deduced
 
 void CxxAstVisitorComponentIndexer::recordNonTrivialDestructorCalls(const FunctionDecl *functionDecl)
 {
-	// TODO: Re-enable once clang CFG crash in destructor traversal is fixed.
-	return;
-
 	auto recordDestructorCall = [this](const FunctionDecl *functionDecl, const CXXDestructorDecl *destructorDecl)
 	{
 		Id referencedSymbolId = getOrCreateSymbolId(destructorDecl);
