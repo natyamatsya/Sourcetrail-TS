@@ -18,7 +18,9 @@ class CXXRecordDecl;
 class NamedDecl;
 class NestedNameSpecifier;
 class NestedNameSpecifierLoc;
-class PCHBuffer;
+// PCHBuffer is a struct; forward-declaring it as a class breaks MSVC linking,
+// because MSVC mangles the class-key into symbol names (Itanium does not):
+struct PCHBuffer;
 class QualType;
 class Type;
 class TypeLoc;

@@ -424,8 +424,9 @@ TEST_CASE("CMakeFileAPIReader isReplyStale compares input mtimes against the ind
 	const fs::path input = sourceDir / "CMakeLists.txt";
 	std::ofstream{input} << "project(hermetic)\n";
 
+	// generic_string(): a Windows path's backslashes would be invalid JSON escapes.
 	std::ofstream{replyDir / "cmakeFiles-v1-test.json"}
-		<< R"({"kind":"cmakeFiles","paths":{"source":")" << sourceDir.string()
+		<< R"({"kind":"cmakeFiles","paths":{"source":")" << sourceDir.generic_string()
 		<< R"("},"inputs":[{"path":"CMakeLists.txt"}]})";
 	std::ofstream{replyDir / "index-test.json"}
 		<< R"({"objects":[{"kind":"cmakeFiles","jsonFile":"cmakeFiles-v1-test.json"}]})";
