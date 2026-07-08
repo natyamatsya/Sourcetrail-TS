@@ -171,10 +171,18 @@ TEST_CASE("load project settings from file")
 TEST_CASE("load source path from file")
 {
 	ProjectSettings projectSettings;
-	projectSettings.load(FilePath("data/SettingsTestSuite/settings.xml"));
+	REQUIRE(projectSettings.load(FilePath("data/SettingsTestSuite/settings.xml")));
+
+	const std::vector<std::shared_ptr<SourceGroupSettings>> allSettings =
+		projectSettings.getAllSourceGroupSettings();
+	REQUIRE(1 == allSettings.size());
+
+	// If the type string in the fixture no longer maps, the factory returns a
+	// SourceGroupSettingsUnloadable and this cast yields null -- fail, don't crash.
 	std::shared_ptr<SourceGroupSettingsWithSourcePaths> sourceGroupSettings =
-		std::dynamic_pointer_cast<SourceGroupSettingsWithSourcePaths>(
-			projectSettings.getAllSourceGroupSettings().front());
+		std::dynamic_pointer_cast<SourceGroupSettingsWithSourcePaths>(allSettings.front());
+	REQUIRE(sourceGroupSettings != nullptr);
+
 	std::vector<FilePath> paths = sourceGroupSettings->getSourcePaths();
 
 	REQUIRE(paths.size() == 2);

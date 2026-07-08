@@ -17,7 +17,10 @@ std::string sourceGroupTypeToString(SourceGroupType v)
 	case SourceGroupType::SWIFT_EMPTY:
 		return "Swift Empty";
 	case SourceGroupType::CUSTOM_COMMAND:
-		return "Custom Command";
+		// This is the serialization string stored in project files; upstream projects
+		// use exactly this value, so it must not change. (That it matches the
+		// project-setup string below is coincidence, not a requirement.)
+		return "Custom Command Source Group";
 	case SourceGroupType::UNKNOWN:
 		break;
 	}
@@ -64,6 +67,13 @@ SourceGroupType stringToSourceGroupType(const std::string& v)
 		return SourceGroupType::SWIFT_EMPTY;
 	if (v == sourceGroupTypeToString(SourceGroupType::CUSTOM_COMMAND))
 		return SourceGroupType::CUSTOM_COMMAND;
+
+	// Read-aliases for serialization strings that shipped briefly on this fork
+	// (changed in 9f096c3fb6, reverted): projects saved in that window still load.
+	if (v == "Custom Command")
+		return SourceGroupType::CUSTOM_COMMAND;
+	if (v == "Rust Source Group")
+		return SourceGroupType::RUST_EMPTY;
 
 	return SourceGroupType::UNKNOWN;
 }
