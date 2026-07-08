@@ -58,7 +58,11 @@ NestedNameSpecifierKind getNestedNameSpecifierKind(const NestedNameSpecifierRef 
 	case clang::NestedNameSpecifier::Identifier:
 		return NestedNameSpecifierKind::Identifier;
 	case clang::NestedNameSpecifier::TypeSpec:
+#if CLANG_VERSION_MAJOR < 21
+	// Clang 21 folded TypeSpecWithTemplate into TypeSpec; without this guard a
+	// real Clang 21 install cannot compile lib_cxx at all.
 	case clang::NestedNameSpecifier::TypeSpecWithTemplate:
+#endif
 		return NestedNameSpecifierKind::Type;
 	case clang::NestedNameSpecifier::Namespace:
 	case clang::NestedNameSpecifier::NamespaceAlias:
