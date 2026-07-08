@@ -153,7 +153,7 @@ Ordered oldest→newest within each topic. Hashes are 9-char prefixes on `develo
 - `c7e1ff9bc` feat: wire SourceGroupSettingsRustEmpty into ProjectSettings (Phase 3 cont.)
 - `503ceac1d` test: add parser unit tests, FlatBuffers round-trip tests, and CI workflow (Phase 6)
 - `335cb2144` docs: mark completed phases in ROADMAP_RUST_INDEXER.md
-- `a4821b7e6` chore: fetch libipc from github.com/natyamatsya/cpp-ipc (rev 32b772d)
+- `a4821b7e6` chore: fetch libipc from github.com/natyamatsya/thoth-ipc (rev 32b772d)
 - `0d0bba1b3` feat(parser): upgrade to ra_ap_hir for full HIR-based analysis
 - `faa414ca7` feat(main): switch to index_crate() for crate-level HIR indexing
 - `8dad16ca7` feat: add lib target + index_self binary; indexer indexes itself
@@ -208,15 +208,15 @@ Ordered oldest→newest within each topic. Hashes are 9-char prefixes on `develo
 - `1a4ce1892` cmake: aggregate target normalization warnings and add target tree filtering with path act
 
 ### boost-ipc-to-cppipc (18)
-- `d41965618` docs: Add roadmap for migrating from boost::interprocess to cpp-ipc with FlatBuffers
+- `d41965618` docs: Add roadmap for migrating from boost::interprocess to thoth-ipc with FlatBuffers
 - `e96b143bb` refactor: Add FlatBuffers dependency and schema compilation infrastructure for IPC migrati
-- `1c5453ed5` refactor: Add cpp-ipc library integration with IpcSharedMemory wrapper and comprehensive t
+- `1c5453ed5` refactor: Add thoth-ipc library integration with IpcSharedMemory wrapper and comprehensive t
 - `481e20892` refactor: Add FlatBuffers serialization layer for IPC data structures
-- `e11430d99` refactor: Add compile-time backend selection for IPC with cpp-ipc/FlatBuffers support
-- `92212f82e` refactor: Add IPC integration test suite for cpp-ipc backend workflow validation
+- `e11430d99` refactor: Add compile-time backend selection for IPC with thoth-ipc/FlatBuffers support
+- `92212f82e` refactor: Add IPC integration test suite for thoth-ipc backend workflow validation
 - `052500fea` docs: Update README formatting and add IPC backend performance comparison
-- `7862bcde6` refactor: Remove boost::interprocess backend and make cpp-ipc + FlatBuffers the default IP
-- `ba0d5fa08` docs: Remove completed boost::interprocess to cpp-ipc migration roadmap
+- `7862bcde6` refactor: Remove boost::interprocess backend and make thoth-ipc + FlatBuffers the default IP
+- `ba0d5fa08` docs: Remove completed boost::interprocess to thoth-ipc migration roadmap
 - `84dfcaa77` fix: link External_lib_ipc against 'ipc' target instead of hardcoded .a path
 - `966ae5609` fix: increase IPC command queue shm from 1 MB to 64 MB; log overflow errors
 - `d23d51a08` fix: InterprocessIndexer waits for commands instead of exiting immediately

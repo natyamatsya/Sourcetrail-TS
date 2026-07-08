@@ -4,7 +4,7 @@
 
 Add first-class Rust source indexing to Sourcetrail by implementing a standalone
 `sourcetrail_rust_indexer` binary that communicates with the main app over the
-existing cpp-ipc / FlatBuffers IPC protocol — the same protocol used by the C++
+existing thoth-ipc / FlatBuffers IPC protocol — the same protocol used by the C++
 indexer today.
 
 ---
@@ -19,7 +19,7 @@ indexer today.
 │  InterprocessIntermediateStorageManager  ◄─push──  SHM: istorage_ipc_<uuid> │
 │  InterprocessIndexingStatusManager  ◄──────►  SHM: istatus_ipc_<uuid> │
 └─────────────────────────────────────────────────────────────┘
-         shared memory (cpp-ipc channels, FlatBuffers payload)
+         shared memory (thoth-ipc channels, FlatBuffers payload)
 ┌─────────────────────────────────────────────────────────────┐
 │  sourcetrail_rust_indexer  (new, Rust)                      │
 │                                                             │
@@ -104,12 +104,12 @@ flatbuffers = "24"   # matches the vcpkg flatbuffers version in use
 
 ## Phase 2 — IPC layer (Rust side)
 
-**Goal:** open and use the cpp-ipc SHM channels from Rust.
+**Goal:** open and use the thoth-ipc SHM channels from Rust.
 
 ### Phase 2 Tasks
 
 - [x] Add the `libipc` Rust crate (already at
-      `inspiration/cpp-ipc/rust/libipc/`) as a workspace member or path
+      `submodules/thoth-ipc/rust/libipc/`) as a workspace member or path
       dependency of the indexer crate.
 - [x] Implement `CommandChannel` wrapper:
   - `pop_rust_command() -> Option<OwnedIndexerCommand>` — reads + deserializes
@@ -125,7 +125,7 @@ flatbuffers = "24"   # matches the vcpkg flatbuffers version in use
 ### SHM access pattern
 
 Use `libipc::Channel` / `libipc::Route` with the same name prefix strings as
-the C++ managers. The SHM mutex/lock protocol is already handled by cpp-ipc
+the C++ managers. The SHM mutex/lock protocol is already handled by thoth-ipc
 internally.
 
 ---
@@ -260,7 +260,7 @@ files.
    `ProcMacroServerChoice::None`; proc-macro bodies are skipped but their
    definitions are still indexed.
 4. **`libipc` crate location** — resolved: fetched as a git dependency from
-   `github.com/natyamatsya/cpp-ipc` (rev `32b772d`), no local path dep.
+   `github.com/natyamatsya/thoth-ipc` (rev `32b772d`), no local path dep.
 
 ---
 
@@ -269,7 +269,7 @@ files.
 | Crate | Purpose |
 | --- | --- |
 | `flatbuffers` | FlatBuffers Rust runtime |
-| `libipc` (git dep, `natyamatsya/cpp-ipc`) | cpp-ipc SHM channels |
+| `libipc` (git dep, `natyamatsya/thoth-ipc`) | thoth-ipc SHM channels |
 | `ra_ap_syntax` | Rust CST |
 | `ra_ap_hir` | Name resolution, HIR walk (`ModuleDef`, `HasSource`, `AsAssocItem`) |
 | `ra_ap_ide_db` | `RootDatabase`, `LineIndex`, `SourceDatabase`, `RootQueryDb` |

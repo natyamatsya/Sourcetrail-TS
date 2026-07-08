@@ -191,7 +191,7 @@ By sponsoring me with **$10 per month**, you will gain access to the following *
 
 Sourcetrail supports two interprocess communication backends, selectable via the CMake option `USE_CPP_IPC`:
 
-| Metric | boost::interprocess | cpp-ipc + FlatBuffers | Delta |
+| Metric | boost::interprocess | thoth-ipc + FlatBuffers | Delta |
 |---|---|---|---|
 | **Wall time** | 5.56s | 3.57s | **-36%** |
 | **User time** | 3.48s | 0.89s | **-74%** |

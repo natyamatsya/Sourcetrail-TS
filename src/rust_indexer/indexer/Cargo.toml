@@ -16,7 +16,7 @@ name = "index_self"
 path = "src/bin/index_self.rs"
 
 [dependencies]
-libipc = { package = "thoth-ipc", path = "../../../inspiration/cpp-ipc/rust/libipc" }
+libipc = { package = "thoth-ipc", path = "../../../submodules/thoth-ipc/rust/libipc" }
 flatbuffers = "25.12.19"
 ra_ap_syntax = "0.0.321"
 ra_ap_hir = "0.0.321"

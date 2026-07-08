@@ -1,3 +1,9 @@
 [submodule "vcpkg"]
 	path = vcpkg
 	url = https://github.com/Microsoft/vcpkg.git
+[submodule "submodules/thoth-ipc"]
+	path = submodules/thoth-ipc
+	url = https://github.com/natyamatsya/thoth-ipc.git
+[submodule "submodules/qt-json-query"]
+	path = submodules/qt-json-query
+	url = https://github.com/natyamatsya/qt-json-query.git

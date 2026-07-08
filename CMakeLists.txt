@@ -145,12 +145,12 @@ message(STATUS "Found FlatBuffers ${flatbuffers_VERSION}")
 add_library(External_lib_flatbuffers INTERFACE)
 target_link_libraries(External_lib_flatbuffers INTERFACE flatbuffers::flatbuffers)
 
-# cpp-ipc ----------------------------------------------------------------------
+# thoth-ipc ----------------------------------------------------------------------
 
 include(FetchContent)
 FetchContent_Declare(
-	cpp-ipc
-	GIT_REPOSITORY  https://github.com/natyamatsya/cpp-ipc.git
+	thoth-ipc
+	GIT_REPOSITORY  https://github.com/natyamatsya/thoth-ipc.git
 	GIT_TAG         master
 	GIT_SUBMODULES  ""
 	SOURCE_SUBDIR   cpp/libipc
@@ -159,13 +159,13 @@ set(LIBIPC_BUILD_TESTS      OFF CACHE BOOL "" FORCE)
 set(LIBIPC_BUILD_DEMOS      OFF CACHE BOOL "" FORCE)
 set(LIBIPC_BUILD_BENCHMARKS OFF CACHE BOOL "" FORCE)
 set(LIBIPC_BUILD_PROTO      OFF CACHE BOOL "" FORCE)
-FetchContent_MakeAvailable(cpp-ipc)
-message(STATUS "Fetched cpp-ipc (libipc)")
+FetchContent_MakeAvailable(thoth-ipc)
+message(STATUS "Fetched thoth-ipc (libipc)")
 
 add_library(External_lib_ipc INTERFACE)
 target_link_libraries(External_lib_ipc INTERFACE ipc)
 target_include_directories(External_lib_ipc SYSTEM INTERFACE
-	"${cpp-ipc_SOURCE_DIR}/cpp/libipc/include"
+	"${thoth-ipc_SOURCE_DIR}/cpp/libipc/include"
 )
 
 # qt-json-query ----------------------------------------------------------------
@@ -177,11 +177,11 @@ set(JSON_QUERY_BUILD_EXAMPLES OFF CACHE BOOL "" FORCE)
 set(JSON_QUERY_BUILD_PERF     OFF CACHE BOOL "" FORCE)
 FetchContent_Declare(
 	qt-json-query
-	SOURCE_DIR "${CMAKE_SOURCE_DIR}/inspiration/qt-json-query"
+	SOURCE_DIR "${CMAKE_SOURCE_DIR}/submodules/qt-json-query"
 )
 FetchContent_MakeAvailable(qt-json-query)
 set(BUILD_TESTING ${BUILD_TESTING_SAVED} CACHE BOOL "" FORCE)
-message(STATUS "Integrated qt-json-query from inspiration/")
+message(STATUS "Integrated qt-json-query from submodules/")
 
 add_library(External_lib_json_query INTERFACE)
 target_link_libraries(External_lib_json_query INTERFACE json_query)
