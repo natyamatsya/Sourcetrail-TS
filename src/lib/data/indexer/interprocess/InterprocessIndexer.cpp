@@ -10,8 +10,12 @@
 #include "logging.h"
 #include "utilityExpected.h"
 
-#include <set>
+#include <atomic>
+#include <chrono>
+#include <condition_variable>
 #include <memory>
+#include <mutex>
+#include <set>
 
 InterprocessIndexer::InterprocessIndexer(const std::string& uuid, ProcessId processId)
 	: m_interprocessIndexerCommandManager(uuid, processId, false)
@@ -25,14 +29,22 @@ InterprocessIndexer::InterprocessIndexer(const std::string& uuid, ProcessId proc
 InterprocessIndexer::WorkResult InterprocessIndexer::work()
 {
 	using enum IndexerCommandType;
-	bool updaterThreadRunning = true;
+	std::atomic<bool> updaterThreadRunning = true;
+	// Wakes the updater thread's poll so shutdown returns at once instead of
+	// blocking on its interval, and makes the flag access race-free.
+	std::mutex updaterMutex;
+	std::condition_variable updaterCondition;
 	std::shared_ptr<std::thread> updaterThread;
 	std::shared_ptr<IndexerBase> indexer;
 
 	[[maybe_unused]]
 	ScopedFunctor threadStopper([&]()
 	{
-		updaterThreadRunning = false;
+		{
+			std::lock_guard<std::mutex> lock(updaterMutex);
+			updaterThreadRunning = false;
+		}
+		updaterCondition.notify_all();
 		if (!updaterThread)
 			return;
 
@@ -55,7 +67,18 @@ InterprocessIndexer::WorkResult InterprocessIndexer::work()
 			updaterThread = std::make_shared<std::thread>([&]() {
 				while (updaterThreadRunning)
 				{
-					std::this_thread::sleep_for(std::chrono::milliseconds(1000));
+					// Poll the cross-process interrupt flag, but wake immediately on
+					// shutdown. 100ms keeps interrupt/cancel latency low (was 1s) while
+					// staying negligible on CPU.
+					{
+						std::unique_lock<std::mutex> lock(updaterMutex);
+						updaterCondition.wait_for(
+							lock,
+							std::chrono::milliseconds(100),
+							[&]() { return !updaterThreadRunning; });
+					}
+					if (!updaterThreadRunning)
+						break;
 
 					if (!m_interprocessIndexingStatusManager.getIndexingInterrupted())
 						continue;
