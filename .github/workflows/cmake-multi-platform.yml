@@ -39,7 +39,13 @@ jobs:
 
       - name: Install flatc (Ubuntu)
         if: runner.os == 'Linux'
-        run: sudo apt-get update && sudo apt-get install -y flatbuffers-compiler
+        run: |
+          # apt's flatbuffers-compiler is too old and generates code incompatible
+          # with the flatbuffers crate; use the release build matching the crate.
+          curl -fsSL -o /tmp/flatc.zip \
+            https://github.com/google/flatbuffers/releases/download/v25.12.19-2026-02-06-03fffb2/Linux.flatc.binary.g++-13.zip
+          sudo unzip -o /tmp/flatc.zip -d /usr/local/bin
+          flatc --version
 
       - name: Install flatc (macOS)
         if: runner.os == 'macOS'
