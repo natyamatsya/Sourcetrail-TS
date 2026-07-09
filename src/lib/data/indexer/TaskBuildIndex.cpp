@@ -24,7 +24,7 @@ namespace
 constexpr bool hasRustLanguagePackage{language_packages::buildRustLanguagePackage};
 constexpr bool hasSwiftLanguagePackage{language_packages::buildSwiftLanguagePackage};
 
-ProcessId rustIndexerProcessId(const size_t processCount)
+[[maybe_unused]] ProcessId rustIndexerProcessId(const size_t processCount)
 {
 	return static_cast<ProcessId>(processCount + 1);
 }

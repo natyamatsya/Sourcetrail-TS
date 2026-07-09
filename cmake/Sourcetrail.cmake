@@ -117,6 +117,9 @@ function(setClangTargetOptions targetName)
 			-Wno-overloaded-virtual
 			-Wno-unknown-pragmas
 			-Wno-unused-lambda-capture
+			# Catch2's TEST_CASE/REQUIRE use __COUNTER__, which -Wpedantic flags at
+			# every expansion (~1500 warnings across the test suite):
+			-Wno-c2y-extensions
 		)
 	target_compile_definitions(${targetName}
 		PRIVATE

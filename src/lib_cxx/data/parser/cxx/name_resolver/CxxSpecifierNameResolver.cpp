@@ -47,6 +47,10 @@ std::unique_ptr<CxxName> CxxSpecifierNameResolver::getName(
 		}
 		break;
 	}
+#else
+	case clang_compat::NestedNameSpecifierKind::Identifier:
+		// Pre-22 specifier kind; cannot occur with Clang 22+.
+		break;
 #endif
 
 	case clang_compat::NestedNameSpecifierKind::Namespace:

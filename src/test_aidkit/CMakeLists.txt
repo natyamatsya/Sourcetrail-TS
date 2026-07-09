@@ -4,6 +4,7 @@ add_executable(AidKit_test
 	
 	qt/StringsTest.cpp
 )
+
 setDefaultTargetOptions(AidKit_test)
 
 set_target_properties(AidKit_test
