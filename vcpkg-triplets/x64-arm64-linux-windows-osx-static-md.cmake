@@ -9,6 +9,26 @@ elseif (WIN32)
 elseif (APPLE)
 	set(VCPKG_CMAKE_SYSTEM_NAME Darwin)
 	set(VCPKG_TARGET_ARCHITECTURE arm64)
+
+	# Align the deployment target with the application build. Without this vcpkg
+	# defaults to the SDK's version while CMake defaults to the HOST's version, so
+	# every link step warns "object file was built for newer macOS than being
+	# linked" (the SDK usually runs ahead of the OS, e.g. 26.4 vs 26.0). Honor an
+	# explicit MACOSX_DEPLOYMENT_TARGET (which CMake honors natively on its side),
+	# otherwise pin to the host's major version -- the same value CMake picks.
+	# Note: brew-provided Qt/LLVM target the host version anyway, so an older
+	# floor here would not make the resulting binaries any more portable.
+	if (DEFINED ENV{MACOSX_DEPLOYMENT_TARGET})
+		set(VCPKG_OSX_DEPLOYMENT_TARGET "$ENV{MACOSX_DEPLOYMENT_TARGET}")
+	else()
+		execute_process(
+			COMMAND sw_vers -productVersion
+			OUTPUT_VARIABLE hostOsVersion
+			OUTPUT_STRIP_TRAILING_WHITESPACE
+		)
+		string(REGEX MATCH "^[0-9]+" hostOsMajorVersion "${hostOsVersion}")
+		set(VCPKG_OSX_DEPLOYMENT_TARGET "${hostOsMajorVersion}.0")
+	endif()
 endif()
 
 # Set static linking for the libraries:
