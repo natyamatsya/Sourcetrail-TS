@@ -82,6 +82,20 @@ set(CMAKE_CXX_EXTENSIONS OFF)
 
 set(CMAKE_FIND_PACKAGE_SORT_ORDER NATURAL)
 
+if (APPLE)
+	# Sourcetrail_lib and Sourcetrail_lib_gui (plus lib_cxx/res_gui) form a declared
+	# dependency cycle, so CMake repeats the static archives on the link line for
+	# single-pass linkers. Apple's linker resolves archives in multiple passes and
+	# instead warns about every repetition ("ignoring duplicate libraries") on each
+	# executable link. Silence it where the flag exists (Xcode 15+); untangling the
+	# library cycle itself is a larger layering refactor.
+	include(CheckLinkerFlag)
+	check_linker_flag(CXX "-Wl,-no_warn_duplicate_libraries" linkerSupportsNoWarnDuplicateLibraries)
+	if (linkerSupportsNoWarnDuplicateLibraries)
+		add_link_options("-Wl,-no_warn_duplicate_libraries")
+	endif()
+endif()
+
 # Prepare Data ----------------------------------------------------------------
 
 if (UNIX)
