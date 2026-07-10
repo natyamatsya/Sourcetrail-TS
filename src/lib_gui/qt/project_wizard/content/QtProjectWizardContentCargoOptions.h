@@ -6,6 +6,7 @@
 #include "QtProjectWizardContent.h"
 
 class QCheckBox;
+class QComboBox;
 class QLineEdit;
 class SourceGroupSettingsWithCargoOptions;
 
@@ -33,6 +34,7 @@ private:
 	QCheckBox* m_allFeatures = nullptr;
 	QCheckBox* m_noDefaultFeatures = nullptr;
 	QLineEdit* m_targetTriple = nullptr;
+	QComboBox* m_specializationScope = nullptr;
 };
 
 #endif	  // QT_PROJECT_WIZARD_CONTENT_CARGO_OPTIONS_H

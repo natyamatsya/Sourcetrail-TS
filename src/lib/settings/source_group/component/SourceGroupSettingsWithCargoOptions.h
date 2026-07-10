@@ -26,6 +26,11 @@ public:
 	const std::string& getCargoTargetTriple() const;
 	void setCargoTargetTriple(const std::string& targetTriple);
 
+	// Implicit generic-specialization node scope ("off"/"local"/"all";
+	// §7 of context/DESIGN_RUST_TYPE_SYSTEM_EDGES.md). Default "local".
+	const std::string& getRustSpecializationScope() const;
+	void setRustSpecializationScope(const std::string& scope);
+
 protected:
 	bool equals(const SourceGroupSettingsBase* other) const override;
 
@@ -37,6 +42,7 @@ private:
 	bool m_cargoAllFeatures = false;
 	bool m_cargoNoDefaultFeatures = false;
 	std::string m_cargoTargetTriple;
+	std::string m_rustSpecializationScope = "local";
 };
 
 #endif	  // SOURCE_GROUP_SETTINGS_WITH_CARGO_OPTIONS_H

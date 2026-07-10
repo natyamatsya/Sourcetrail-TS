@@ -70,6 +70,9 @@ pub struct OwnedIndexerCommand {
     pub no_default_features: bool,
     /// rustc target triple; empty = host.
     pub target_triple: String,
+    /// Implicit generic-specialization node scope ("off"/"local"/"all";
+    /// empty = default "local"). See DESIGN_RUST_TYPE_SYSTEM_EDGES.md §7.
+    pub specialization_scope: String,
     pub compiler_flags: Vec<String>,
     pub compiler_path: String,
 }
@@ -91,6 +94,7 @@ impl OwnedIndexerCommand {
             all_features: cmd.all_features(),
             no_default_features: cmd.no_default_features(),
             target_triple: cmd.target_triple().unwrap_or("").to_owned(),
+            specialization_scope: cmd.specialization_scope().unwrap_or("").to_owned(),
             compiler_flags: str_vec(cmd.compiler_flags()),
             compiler_path: cmd.compiler_path().unwrap_or("").to_owned(),
         }
@@ -194,6 +198,11 @@ fn serialize_queue(commands: &[OwnedIndexerCommand]) -> Vec<u8> {
             } else {
                 Some(fbb.create_string(&cmd.target_triple))
             };
+            let specialization_scope = if cmd.specialization_scope.is_empty() {
+                None
+            } else {
+                Some(fbb.create_string(&cmd.specialization_scope))
+            };
             IndexerCommand::create(
                 &mut fbb,
                 &IndexerCommandArgs {
@@ -209,6 +218,7 @@ fn serialize_queue(commands: &[OwnedIndexerCommand]) -> Vec<u8> {
                     all_features: cmd.all_features,
                     no_default_features: cmd.no_default_features,
                     target_triple,
+                    specialization_scope,
                 },
             )
         })
@@ -243,6 +253,7 @@ mod tests {
             all_features: false,
             no_default_features: false,
             target_triple: String::new(),
+            specialization_scope: String::new(),
         }
     }
 

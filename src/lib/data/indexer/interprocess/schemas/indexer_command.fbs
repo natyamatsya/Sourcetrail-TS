@@ -24,6 +24,9 @@ table IndexerCommand {
     all_features:        bool;
     no_default_features: bool;
     target_triple:       string;   // empty = host
+    // Implicit generic-specialization node scope (Rust; §7).
+    // "off" / "local" / "all"; empty = default "local".
+    specialization_scope: string;
 }
 
 table IndexerCommandQueue {

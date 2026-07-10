@@ -286,6 +286,10 @@ to rust-analyzer's semantic layer:
 - [x] Type-system edges: bounds from param nodes, lifetime outlives lattice,
       `EDGE_TYPE_ARGUMENT`, `EDGE_OVERRIDE` —
       see `context/DESIGN_RUST_TYPE_SYSTEM_EDGES.md`.
+- [x] Implicit generic-specialization nodes (`Base<Arg>` bubbles, §7):
+      `EDGE_TEMPLATE_SPECIALIZATION` + retargeted `EDGE_TYPE_ARGUMENT`,
+      configurable scope `rust_specialization_scope` (off/local/all,
+      default local).
 - [x] `EDGE_IMPORT` for `use` items; local symbols (function-local bindings);
       `EDGE_MACRO_USAGE` for bang-macro invocations of local `macro_rules!`.
 

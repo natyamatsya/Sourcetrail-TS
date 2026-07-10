@@ -46,7 +46,12 @@ void assertOptionalRustSerializerRoundTrip()
 	const auto command = std::make_shared<IndexerCommandRust>(
 		sourceFilePath,
 		indexedPaths,
-		workingDirectory);
+		workingDirectory,
+		std::vector<std::string>{},
+		false,
+		false,
+		"",
+		"all");
 	const std::vector<std::shared_ptr<IndexerCommand>> commands{command};
 
 	const auto buffer = IpcSerializer::serializeIndexerCommands(commands);
@@ -59,4 +64,6 @@ void assertOptionalRustSerializerRoundTrip()
 	REQUIRE(rustCommand->getSourceFilePath().str() == sourceFilePath.str());
 	REQUIRE(rustCommand->getIndexedPaths() == indexedPaths);
 	REQUIRE(rustCommand->getWorkingDirectory().str() == workingDirectory.str());
+	// Implicit-specialization node scope survives the round-trip (§7).
+	REQUIRE(rustCommand->getSpecializationScope() == "all");
 }

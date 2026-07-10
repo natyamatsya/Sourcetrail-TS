@@ -176,7 +176,10 @@ q "SELECT 'nodes: ' || count(*) FROM node;
    SELECT 'edges: ' || count(*) FROM edge;
    SELECT 'occurrences: ' || count(*) FROM occurrence;
    SELECT 'source locations: ' || count(*) FROM source_location;
-   SELECT 'macro-usage edges: ' || count(*) FROM edge WHERE type = 2048;"
+   SELECT 'macro-usage edges: ' || count(*) FROM edge WHERE type = 2048;
+   SELECT 'template-specialization edges: ' || count(*) FROM edge WHERE type = 128;
+   SELECT 'implicit specialization nodes: ' || count(*) FROM node n JOIN symbol s
+     ON s.id = n.id WHERE s.definition_kind = 1 AND n.serialized_name LIKE '%<%';"
 
 if [ "$FAILURES" -eq 0 ]; then
     echo "ALL PASS"

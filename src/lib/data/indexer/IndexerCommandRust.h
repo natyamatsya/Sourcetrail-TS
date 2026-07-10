@@ -19,7 +19,8 @@ public:
 		const std::vector<std::string>& features = {},
 		bool allFeatures = false,
 		bool noDefaultFeatures = false,
-		const std::string& targetTriple = "");
+		const std::string& targetTriple = "",
+		const std::string& specializationScope = "local");
 
 	IndexerCommandType getIndexerCommandType() const override;
 
@@ -33,6 +34,10 @@ public:
 	bool getNoDefaultFeatures() const;
 	const std::string& getTargetTriple() const;
 
+	// Implicit generic-specialization node scope ("off"/"local"/"all"; §7 of
+	// context/DESIGN_RUST_TYPE_SYSTEM_EDGES.md). Empty maps to the default.
+	const std::string& getSpecializationScope() const;
+
 protected:
 	QJsonObject doSerialize() const override;
 
@@ -43,6 +48,7 @@ private:
 	bool m_allFeatures;
 	bool m_noDefaultFeatures;
 	std::string m_targetTriple;
+	std::string m_specializationScope;
 };
 
 #endif	  // INDEXER_COMMAND_RUST_H

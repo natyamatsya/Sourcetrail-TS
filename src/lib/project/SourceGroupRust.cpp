@@ -51,7 +51,8 @@ std::vector<std::shared_ptr<IndexerCommand>> SourceGroupRust::getIndexerCommands
 			m_settings->getCargoFeatures(),
 			m_settings->getCargoAllFeatures(),
 			m_settings->getCargoNoDefaultFeatures(),
-			m_settings->getCargoTargetTriple())};
+			m_settings->getCargoTargetTriple(),
+			m_settings->getRustSpecializationScope())};
 	}
 	return {};
 }
