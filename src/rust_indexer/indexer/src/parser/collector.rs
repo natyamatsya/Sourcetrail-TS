@@ -19,9 +19,9 @@ use crate::ipc::storage::{
 
 use super::{
     DEFINITION_EXPLICIT, EDGE_CALL, EDGE_INHERITANCE, EDGE_MEMBER, EDGE_TYPE_USAGE, EDGE_USAGE,
-    LOCATION_TOKEN, NODE_ENUM, NODE_ENUM_CONSTANT, NODE_FIELD, NODE_FILE, NODE_FUNCTION,
-    NODE_GLOBAL_VARIABLE, NODE_INTERFACE, NODE_MACRO, NODE_METHOD, NODE_MODULE, NODE_STRUCT,
-    NODE_TYPE_PARAMETER, NODE_TYPEDEF, NODE_UNION,
+    LOCATION_SCOPE, LOCATION_TOKEN, NODE_ENUM, NODE_ENUM_CONSTANT, NODE_FIELD, NODE_FILE,
+    NODE_FUNCTION, NODE_GLOBAL_VARIABLE, NODE_INTERFACE, NODE_MACRO, NODE_METHOD, NODE_MODULE,
+    NODE_STRUCT, NODE_TYPE_PARAMETER, NODE_TYPEDEF, NODE_UNION,
 };
 
 #[derive(Debug, Clone)]
@@ -1201,7 +1201,8 @@ impl<'db> Collector<'db> {
     }
 
     /// Generic helper: given an `InFile<ast::*>` source, extract the name
-    /// token range and emit a node.
+    /// token range and emit a node, plus a SCOPE location spanning the whole
+    /// item (drives snippet extents in the code view).
     fn emit_from_source<N: AstNode + HasName>(
         &mut self,
         src: Option<ra_ap_hir::InFile<N>>,
@@ -1212,12 +1213,48 @@ impl<'db> Collector<'db> {
         let Some(ctx) = self.source_context_from_in_file(&in_file) else {
             return;
         };
+        let full_range = in_file.value.syntax().text_range();
         let range = in_file
             .value
             .name()
             .map(|n| n.syntax().text_range())
-            .unwrap_or_else(|| in_file.value.syntax().text_range());
+            .unwrap_or(full_range);
         self.add_def_with_context(name, kind, range, &ctx);
+        if full_range != range {
+            self.add_scope_location(name, full_range, &ctx);
+        }
+    }
+
+    /// Record a SCOPE location for the already-emitted node `name`.
+    fn add_scope_location(
+        &mut self,
+        name: &str,
+        range: ra_ap_syntax::TextRange,
+        ctx: &SourceContext,
+    ) {
+        let Some(&node_id) = self.node_ids.get(name) else {
+            return;
+        };
+        let file_node_id = self.file_node_id(&ctx.file_path);
+        let loc_id = self.alloc_id();
+        let line_index = LineIndex::new(&ctx.source_text);
+        let start = line_index.line_col(range.start());
+        let end = line_index.line_col(range.end());
+        self.storage
+            .source_locations
+            .push(OwnedStorageSourceLocation {
+                id: loc_id,
+                file_node_id,
+                start_line: start.line + 1,
+                start_col: start.col + 1,
+                end_line: end.line + 1,
+                end_col: end.col + 1,
+                type_: LOCATION_SCOPE,
+            });
+        self.storage.occurrences.push(OwnedStorageOccurrence {
+            element_id: node_id,
+            source_location_id: loc_id,
+        });
     }
 
     /// Emit a node from a raw `InFile<N>` without requiring `HasName` — uses

@@ -194,13 +194,21 @@ fn every_node_has_a_symbol_and_occurrence() {
     let s = index_src("pub fn f() {} pub struct S {} pub enum E {} pub trait T {}");
     let nf = non_file_nodes(&s);
     assert_eq!(nf, s.symbols.len(), "node/symbol count mismatch");
-    assert_eq!(nf, s.occurrences.len(), "node/occurrence count mismatch");
+    // Every node has at least its name-token occurrence (plus scope locations).
+    for n in s.nodes.iter().filter(|n| n.type_ != NODE_FILE) {
+        assert!(
+            s.occurrences.iter().any(|o| o.element_id == n.id),
+            "node without occurrence: {}",
+            decode_name(&n.serialized_name)
+        );
+    }
 }
 
 #[test]
-fn every_node_has_a_source_location() {
+fn every_node_has_a_token_source_location() {
     let s = index_src("pub fn alpha() {} pub fn beta() {}");
-    assert_eq!(non_file_nodes(&s), s.source_locations.len());
+    let token_locations = s.source_locations.iter().filter(|l| l.type_ == 0).count();
+    assert_eq!(non_file_nodes(&s), token_locations);
 }
 
 #[test]
@@ -628,4 +636,56 @@ fn struct_field_type_emits_type_usage_from_owner() {
         "expected EDGE_TYPE_USAGE Outer -> Inner, edges: {:?}",
         s.edges
     );
+}
+
+// -----------------------------------------------------------------------
+// Scope locations — full item extents for snippet display
+// -----------------------------------------------------------------------
+
+const LOCATION_SCOPE_T: i32 = 1;
+
+fn scope_locations_of(s: &OwnedIntermediateStorage, name: &str) -> Vec<(u32, u32, u32, u32)> {
+    let Some(node_id) = s
+        .nodes
+        .iter()
+        .find(|n| decode_name(&n.serialized_name) == name)
+        .map(|n| n.id)
+    else {
+        return Vec::new();
+    };
+    s.occurrences
+        .iter()
+        .filter(|o| o.element_id == node_id)
+        .filter_map(|o| {
+            s.source_locations
+                .iter()
+                .find(|l| l.id == o.source_location_id && l.type_ == LOCATION_SCOPE_T)
+                .map(|l| (l.start_line, l.start_col, l.end_line, l.end_col))
+        })
+        .collect()
+}
+
+#[test]
+fn function_gets_scope_location_spanning_the_body() {
+    let s = index_src("pub fn f() {\n    let _x = 1;\n}");
+    let scopes = scope_locations_of(&s, "f");
+    assert_eq!(
+        scopes,
+        vec![(1, 1, 3, 2)],
+        "scope spans fn signature through closing brace"
+    );
+}
+
+#[test]
+fn struct_gets_scope_location() {
+    let s = index_src("pub struct S {\n    pub x: i32,\n}");
+    let scopes = scope_locations_of(&s, "S");
+    assert_eq!(scopes, vec![(1, 1, 3, 2)]);
+}
+
+#[test]
+fn impl_method_gets_scope_location() {
+    let s = index_src("pub struct S;\nimpl S {\n    pub fn m(&self) {\n    }\n}");
+    let scopes = scope_locations_of(&s, "S::m");
+    assert_eq!(scopes, vec![(3, 5, 4, 6)]);
 }

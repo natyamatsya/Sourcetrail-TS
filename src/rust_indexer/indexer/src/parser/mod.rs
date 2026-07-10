@@ -62,6 +62,7 @@ const NODE_UNION: i32 = 1 << 20;
 
 const DEFINITION_EXPLICIT: i32 = 2;
 const LOCATION_TOKEN: i32 = 0;
+const LOCATION_SCOPE: i32 = 1;
 
 const EDGE_MEMBER: i32 = 1 << 0;
 const EDGE_TYPE_USAGE: i32 = 1 << 1;
