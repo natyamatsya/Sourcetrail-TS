@@ -4,7 +4,12 @@
 use sourcetrail_rust_indexer_lib::parser;
 
 fn main() {
-    let crate_root = std::path::Path::new(env!("CARGO_MANIFEST_DIR"));
+    // Optional argument: index an arbitrary crate/workspace root instead.
+    let arg = std::env::args().nth(1);
+    let crate_root = arg
+        .as_deref()
+        .map(std::path::Path::new)
+        .unwrap_or_else(|| std::path::Path::new(env!("CARGO_MANIFEST_DIR")));
     println!("Indexing: {}", crate_root.display());
 
     let storage = parser::index_crate(crate_root, |_| {});
