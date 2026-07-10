@@ -128,6 +128,11 @@ expect "type-parameter nodes (131072)" "SELECT count(*) FROM node WHERE type = 1
 expect "known symbol collect_semantic_edges" \
     "SELECT count(*) FROM node WHERE serialized_name LIKE '%collect_semantic_edges%';"
 
+# Local symbols (LocationType::LOCAL_SYMBOL = 3)
+expect "local symbols"              "SELECT count(*) FROM local_symbol;"
+expect "local-symbol locations (type 3)" \
+    "SELECT count(*) FROM source_location WHERE type = 3;"
+
 # Edge kinds (Edge.h bitmask values)
 expect "MEMBER edges (1)"           "SELECT count(*) FROM edge WHERE type = 1;"
 expect "TYPE_USAGE edges (2)"       "SELECT count(*) FROM edge WHERE type = 2;"

@@ -1054,3 +1054,81 @@ fn feature_gated_item_present_with_all_features() {
         node_names(&s)
     );
 }
+
+// -----------------------------------------------------------------------
+// Local symbols
+// -----------------------------------------------------------------------
+
+const LOCATION_LOCAL_SYMBOL_T: i32 = 3;
+
+/// Sorted per-local-symbol occurrence counts (LOCAL_SYMBOL locations only).
+fn local_symbol_occurrence_counts(s: &OwnedIntermediateStorage) -> Vec<usize> {
+    let local_loc_ids: std::collections::HashSet<i64> = s
+        .source_locations
+        .iter()
+        .filter(|l| l.type_ == LOCATION_LOCAL_SYMBOL_T)
+        .map(|l| l.id)
+        .collect();
+    let mut counts: Vec<usize> = s
+        .local_symbols
+        .iter()
+        .map(|ls| {
+            s.occurrences
+                .iter()
+                .filter(|o| o.element_id == ls.id && local_loc_ids.contains(&o.source_location_id))
+                .count()
+        })
+        .collect();
+    counts.sort_unstable();
+    counts
+}
+
+#[test]
+fn distinct_locals_with_same_name_do_not_merge() {
+    let s = index_src("pub fn a() { let v = 1; let _ = v; } pub fn b() { let v = 2; let _ = v; }");
+    assert_eq!(
+        s.local_symbols.len(),
+        2,
+        "same-named locals in sibling fns must stay distinct: {:?}",
+        s.local_symbols
+    );
+    assert_eq!(local_symbol_occurrence_counts(&s), vec![2, 2]);
+}
+
+#[test]
+fn local_decl_plus_two_uses_record_three_locations() {
+    let s = index_src("pub fn f() { let x = 1; let y = x + x; let _ = y; }");
+    // x: declaration + two uses; y: declaration + one use.
+    assert_eq!(
+        local_symbol_occurrence_counts(&s),
+        vec![2, 3],
+        "local symbols: {:?}",
+        s.local_symbols
+    );
+}
+
+#[test]
+fn shadowing_creates_distinct_local_symbols() {
+    let s = index_src("pub fn f() { let x = 1; let x = x + 1; let _ = x; }");
+    assert_eq!(
+        s.local_symbols.len(),
+        2,
+        "shadowed binding must be a fresh local symbol: {:?}",
+        s.local_symbols
+    );
+    // each x: its declaration + one use
+    assert_eq!(local_symbol_occurrence_counts(&s), vec![2, 2]);
+}
+
+#[test]
+fn local_symbol_names_follow_cxx_position_convention() {
+    let s = index_src("pub fn f() { let x = 1; let _ = x; }");
+    assert_eq!(s.local_symbols.len(), 1);
+    // C++ convention (CxxAstVisitorComponentIndexer::getLocalSymbolName):
+    // fileName<line:col> of the declaration. `let x` puts x at line 1 col 18.
+    let name = &s.local_symbols[0].name;
+    assert!(
+        name.ends_with("<1:18>"),
+        "expected declaration-position suffix <1:18>, got {name}"
+    );
+}

@@ -40,7 +40,7 @@
 //   EDGE_INHERITANCE  = 1 << 4 = 16
 //
 // DefinitionKind: NONE = 0, IMPLICIT = 1, EXPLICIT = 2
-// LocationType:   TOKEN = 0, SCOPE = 1, QUALIFIER = 2
+// LocationType:   TOKEN = 0, SCOPE = 1, QUALIFIER = 2, LOCAL_SYMBOL = 3
 
 use std::path::Path;
 
@@ -68,6 +68,7 @@ const DEFINITION_IMPLICIT: i32 = 1;
 const DEFINITION_EXPLICIT: i32 = 2;
 const LOCATION_TOKEN: i32 = 0;
 const LOCATION_SCOPE: i32 = 1;
+const LOCATION_LOCAL_SYMBOL: i32 = 3;
 
 const EDGE_MEMBER: i32 = 1 << 0;
 const EDGE_TYPE_USAGE: i32 = 1 << 1;

@@ -15,15 +15,16 @@ use ra_ap_vfs::Vfs;
 
 use crate::ipc::storage::{
     OwnedIntermediateStorage, OwnedStorageEdge, OwnedStorageError, OwnedStorageFile,
-    OwnedStorageNode, OwnedStorageOccurrence, OwnedStorageSourceLocation, OwnedStorageSymbol,
+    OwnedStorageLocalSymbol, OwnedStorageNode, OwnedStorageOccurrence, OwnedStorageSourceLocation,
+    OwnedStorageSymbol,
 };
 
 use super::{
     DEFINITION_EXPLICIT, DEFINITION_IMPLICIT, EDGE_CALL, EDGE_IMPORT, EDGE_INHERITANCE,
-    EDGE_MEMBER, EDGE_OVERRIDE, EDGE_TYPE_ARGUMENT, EDGE_TYPE_USAGE, EDGE_USAGE, LOCATION_SCOPE,
-    LOCATION_TOKEN, NODE_ENUM, NODE_ENUM_CONSTANT, NODE_FIELD, NODE_FILE, NODE_FUNCTION,
-    NODE_GLOBAL_VARIABLE, NODE_INTERFACE, NODE_MACRO, NODE_METHOD, NODE_MODULE, NODE_STRUCT,
-    NODE_TYPE_PARAMETER, NODE_TYPEDEF, NODE_UNION,
+    EDGE_MEMBER, EDGE_OVERRIDE, EDGE_TYPE_ARGUMENT, EDGE_TYPE_USAGE, EDGE_USAGE,
+    LOCATION_LOCAL_SYMBOL, LOCATION_SCOPE, LOCATION_TOKEN, NODE_ENUM, NODE_ENUM_CONSTANT,
+    NODE_FIELD, NODE_FILE, NODE_FUNCTION, NODE_GLOBAL_VARIABLE, NODE_INTERFACE, NODE_MACRO,
+    NODE_METHOD, NODE_MODULE, NODE_STRUCT, NODE_TYPE_PARAMETER, NODE_TYPEDEF, NODE_UNION,
 };
 
 /// Identity key for an emitted definition, so that semantically resolved
@@ -80,6 +81,25 @@ struct ReferenceRow {
     range: Option<ra_ap_syntax::TextRange>,
 }
 
+/// One occurrence of a function-local binding. `decl_start` identifies the
+/// local within its file: the start offset of the declaration's name token —
+/// the apply step turns it into the C++ local-symbol naming convention
+/// (`file<line:col>` of the declaration, see
+/// CxxAstVisitorComponentIndexer::getLocalSymbolName), which the GUI's
+/// same-symbol highlighting keys on.
+struct LocalSymbolRow {
+    decl_start: ra_ap_syntax::TextSize,
+    /// Occurrence token range (the declaration itself or a use).
+    range: ra_ap_syntax::TextRange,
+}
+
+/// Everything the pure resolution step produces for one file.
+#[derive(Default)]
+struct FileRows {
+    references: Vec<ReferenceRow>,
+    local_symbols: Vec<LocalSymbolRow>,
+}
+
 /// The pure resolution half of the semantic reference pass: turns one file's
 /// syntax into `ReferenceRow`s using only shared read access to the database
 /// and the definition maps — safe to fan out across worker threads.
@@ -108,6 +128,9 @@ struct Collector<'db> {
     local_files_seen: HashSet<ra_ap_vfs::FileId>,
     /// (edge type, source, target) → edge id, for dedup and occurrence linking
     emitted_edges: HashMap<(i32, i64, i64), i64>,
+    /// local symbol name (C++ convention: `file<line:col>` of the
+    /// declaration) → local symbol id
+    local_symbol_ids: HashMap<String, i64>,
     next_id: i64,
     storage: OwnedIntermediateStorage,
     /// Called whenever we start processing a new source file. Receives the file path.
@@ -162,6 +185,7 @@ impl<'db> Collector<'db> {
             local_files: Vec::new(),
             local_files_seen: HashSet::new(),
             emitted_edges: HashMap::new(),
+            local_symbol_ids: HashMap::new(),
             next_id: 1,
             storage: OwnedIntermediateStorage::default(),
             on_file: Box::new(on_file),
@@ -781,11 +805,7 @@ impl<'db> Collector<'db> {
 
     /// Apply one file's resolution outcome: either its reference rows or the
     /// panic marker of a failed resolution (recorded as a non-fatal error).
-    fn apply_file_result(
-        &mut self,
-        vfs_fid: ra_ap_vfs::FileId,
-        result: Result<Vec<ReferenceRow>, String>,
-    ) {
+    fn apply_file_result(&mut self, vfs_fid: ra_ap_vfs::FileId, result: Result<FileRows, String>) {
         match result {
             Ok(rows) => {
                 // Prime the per-file cache (allocating the file node, like
@@ -794,7 +814,8 @@ impl<'db> Collector<'db> {
                 if self.file_info(vfs_fid).is_none() {
                     return;
                 }
-                self.apply_reference_rows(vfs_fid, rows);
+                self.apply_reference_rows(vfs_fid, rows.references);
+                self.apply_local_symbol_rows(vfs_fid, rows.local_symbols);
             }
             Err(panic_message) => {
                 let file_path = self
@@ -835,6 +856,70 @@ impl<'db> Collector<'db> {
             if let Some(range) = row.range {
                 self.add_reference_location(edge_id, range, vfs_fid);
             }
+        }
+    }
+
+    /// Apply one file's local-symbol occurrences: allocate/dedup the local
+    /// symbol per declaration position (name = `file<line:col>`, mirroring
+    /// CxxAstVisitorComponentIndexer::getLocalSymbolName so GUI highlighting
+    /// behaves identically) and record a LOCAL_SYMBOL location + occurrence
+    /// per site. Id allocation stays here, in the single-threaded apply step.
+    fn apply_local_symbol_rows(&mut self, vfs_fid: ra_ap_vfs::FileId, rows: Vec<LocalSymbolRow>) {
+        if rows.is_empty() {
+            return;
+        }
+        let Some(file_path) = self.vfs_path(vfs_fid) else {
+            return;
+        };
+        let file_name = std::path::Path::new(&file_path)
+            .file_name()
+            .map(|n| n.to_string_lossy().into_owned())
+            .unwrap_or(file_path);
+
+        for row in rows {
+            let Some(info) = self.file_info(vfs_fid) else {
+                return;
+            };
+            let file_node_id = info.file_node_id;
+            let Some(decl) = info.line_index.try_line_col(row.decl_start) else {
+                continue;
+            };
+            let (Some(start), Some(end)) = (
+                info.line_index.try_line_col(row.range.start()),
+                info.line_index.try_line_col(row.range.end()),
+            ) else {
+                continue;
+            };
+
+            let name = format!("{file_name}<{}:{}>", decl.line + 1, decl.col + 1);
+            let symbol_id = match self.local_symbol_ids.get(&name) {
+                Some(&id) => id,
+                None => {
+                    let id = self.alloc_id();
+                    self.local_symbol_ids.insert(name.clone(), id);
+                    self.storage
+                        .local_symbols
+                        .push(OwnedStorageLocalSymbol { id, name });
+                    id
+                }
+            };
+
+            let loc_id = self.alloc_id();
+            self.storage
+                .source_locations
+                .push(OwnedStorageSourceLocation {
+                    id: loc_id,
+                    file_node_id,
+                    start_line: start.line + 1,
+                    start_col: start.col + 1,
+                    end_line: end.line + 1,
+                    end_col: end.col + 1,
+                    type_: LOCATION_LOCAL_SYMBOL,
+                });
+            self.storage.occurrences.push(OwnedStorageOccurrence {
+                element_id: symbol_id,
+                source_location_id: loc_id,
+            });
         }
     }
 
@@ -1162,19 +1247,20 @@ impl RefResolver<'_> {
         &self,
         sema: &Semantics<'_, RootDatabase>,
         file_id: ra_ap_vfs::FileId,
-    ) -> Vec<ReferenceRow> {
-        let mut rows = Vec::new();
+    ) -> FileRows {
+        let mut out = FileRows::default();
+        let rows = &mut out.references;
         let source_file = sema.parse_guess_edition(file_id);
         for node in source_file.syntax().descendants() {
             match node.kind() {
                 SyntaxKind::IMPL => {
                     if let Some(impl_ast) = ast::Impl::cast(node) {
-                        self.resolve_impl_inheritance(sema, &impl_ast, &mut rows);
-                        self.resolve_impl_overrides(sema, &impl_ast, &mut rows);
+                        self.resolve_impl_inheritance(sema, &impl_ast, rows);
+                        self.resolve_impl_overrides(sema, &impl_ast, rows);
                     }
                 }
                 SyntaxKind::LIFETIME => {
-                    self.resolve_lifetime_bound_reference(sema, &node, &mut rows);
+                    self.resolve_lifetime_bound_reference(sema, &node, rows);
                 }
                 SyntaxKind::CALL_EXPR => {
                     let Some(call) = ast::CallExpr::cast(node) else {
@@ -1193,14 +1279,7 @@ impl RefResolver<'_> {
                         self.resolve_node_id(&name)
                     });
                     let range = path_name_range(&path);
-                    self.resolve_reference(
-                        sema,
-                        EDGE_CALL,
-                        call.syntax(),
-                        target,
-                        range,
-                        &mut rows,
-                    );
+                    self.resolve_reference(sema, EDGE_CALL, call.syntax(), target, range, rows);
                 }
                 SyntaxKind::METHOD_CALL_EXPR => {
                     let Some(call) = ast::MethodCallExpr::cast(node) else {
@@ -1214,14 +1293,7 @@ impl RefResolver<'_> {
                             self.resolve_node_id(&name)
                         });
                     let range = call.name_ref().map(|n| n.syntax().text_range());
-                    self.resolve_reference(
-                        sema,
-                        EDGE_CALL,
-                        call.syntax(),
-                        target,
-                        range,
-                        &mut rows,
-                    );
+                    self.resolve_reference(sema, EDGE_CALL, call.syntax(), target, range, rows);
                 }
                 SyntaxKind::PATH_EXPR => {
                     // Callees are handled by the CALL_EXPR arm.
@@ -1235,19 +1307,38 @@ impl RefResolver<'_> {
                         continue;
                     };
                     let Some(path) = pe.path() else { continue };
-                    // Only definition references; locals are future work.
-                    let Some(PathResolution::Def(def)) = sema.resolve_path(&path) else {
-                        continue;
-                    };
-                    let target = self.def_id(DefKey::Def(def));
-                    let range = path_name_range(&path);
-                    self.resolve_reference(sema, EDGE_USAGE, pe.syntax(), target, range, &mut rows);
+                    match sema.resolve_path(&path) {
+                        Some(PathResolution::Def(def)) => {
+                            let target = self.def_id(DefKey::Def(def));
+                            let range = path_name_range(&path);
+                            self.resolve_reference(
+                                sema,
+                                EDGE_USAGE,
+                                pe.syntax(),
+                                target,
+                                range,
+                                rows,
+                            );
+                        }
+                        // Use of a function-local binding.
+                        Some(PathResolution::Local(local)) => {
+                            if let Some(range) = path_name_range(&path) {
+                                self.push_local_occurrence(
+                                    local,
+                                    range,
+                                    file_id,
+                                    &mut out.local_symbols,
+                                );
+                            }
+                        }
+                        _ => {}
+                    }
                 }
                 SyntaxKind::PATH_TYPE => {
                     let Some(pt) = ast::PathType::cast(node) else {
                         continue;
                     };
-                    self.resolve_type_reference(sema, &pt, &mut rows);
+                    self.resolve_type_reference(sema, &pt, rows);
                 }
                 SyntaxKind::FIELD_EXPR => {
                     let Some(fe) = ast::FieldExpr::cast(node) else {
@@ -1258,11 +1349,31 @@ impl RefResolver<'_> {
                         _ => None,
                     };
                     let range = fe.name_ref().map(|n| n.syntax().text_range());
-                    self.resolve_reference(sema, EDGE_USAGE, fe.syntax(), target, range, &mut rows);
+                    self.resolve_reference(sema, EDGE_USAGE, fe.syntax(), target, range, rows);
+                }
+                SyntaxKind::IDENT_PAT => {
+                    // Declaration site of a function-local binding (`let x`,
+                    // params, match/closure patterns). `to_def` filters out
+                    // patterns that actually resolve to constants.
+                    let Some(ident_pat) = ast::IdentPat::cast(node) else {
+                        continue;
+                    };
+                    let Some(local) = sema.to_def(&ident_pat) else {
+                        continue;
+                    };
+                    let Some(name) = ident_pat.name() else {
+                        continue;
+                    };
+                    self.push_local_occurrence(
+                        local,
+                        name.syntax().text_range(),
+                        file_id,
+                        &mut out.local_symbols,
+                    );
                 }
                 SyntaxKind::USE_TREE => {
                     if let Some(use_tree) = ast::UseTree::cast(node) {
-                        self.resolve_use_tree(sema, &use_tree, &mut rows);
+                        self.resolve_use_tree(sema, &use_tree, rows);
                     }
                 }
                 SyntaxKind::RECORD_EXPR_FIELD => {
@@ -1279,13 +1390,56 @@ impl RefResolver<'_> {
                         ref_field.syntax(),
                         target,
                         range,
-                        &mut rows,
+                        rows,
                     );
                 }
                 _ => {}
             }
         }
-        rows
+        out
+    }
+
+    /// Record one occurrence of `local` at `range`, keyed by the start
+    /// offset of the local's declaration name token. Locals declared inside
+    /// macro expansions or in a different file are skipped — their position
+    /// cannot form a stable per-file name.
+    fn push_local_occurrence(
+        &self,
+        local: ra_ap_hir::Local,
+        range: ra_ap_syntax::TextRange,
+        file_id: ra_ap_vfs::FileId,
+        out: &mut Vec<LocalSymbolRow>,
+    ) {
+        let Some(decl_range) = self.local_decl_name_range(local, file_id) else {
+            return;
+        };
+        out.push(LocalSymbolRow {
+            decl_start: decl_range.start(),
+            range,
+        });
+    }
+
+    /// Name-token range of `local`'s primary declaration, if it lives in
+    /// `current_file` (not in a macro expansion). Or-patterns have several
+    /// sources; keying every occurrence to the primary one keeps them one
+    /// symbol, mirroring the C++ declaration-position convention.
+    fn local_decl_name_range(
+        &self,
+        local: ra_ap_hir::Local,
+        current_file: ra_ap_vfs::FileId,
+    ) -> Option<ra_ap_syntax::TextRange> {
+        let src = local.primary_source(self.db);
+        let file_id = src.source.file_id;
+        if file_id.is_macro() {
+            return None;
+        }
+        if file_id.original_file(self.db).file_id(self.db) != current_file {
+            return None;
+        }
+        match &src.source.value {
+            Either::Left(ident_pat) => Some(ident_pat.name()?.syntax().text_range()),
+            Either::Right(self_param) => Some(self_param.syntax().text_range()),
+        }
     }
 
     /// `use` item → EDGE_IMPORT from the importing scope to each imported
@@ -1743,7 +1897,7 @@ fn resolve_files_parallel(
     node_ids: &HashMap<String, i64>,
     files: &[ra_ap_vfs::FileId],
     workers: usize,
-) -> Vec<Result<Vec<ReferenceRow>, String>> {
+) -> Vec<Result<FileRows, String>> {
     let next_file = AtomicUsize::new(0);
     let (tx, rx) = std::sync::mpsc::channel();
     std::thread::scope(|scope| {
@@ -1778,8 +1932,7 @@ fn resolve_files_parallel(
         drop(tx);
     });
     // All workers have joined; drain the buffered results into file order.
-    let mut slots: Vec<Option<Result<Vec<ReferenceRow>, String>>> =
-        files.iter().map(|_| None).collect();
+    let mut slots: Vec<Option<Result<FileRows, String>>> = files.iter().map(|_| None).collect();
     for (index, result) in rx {
         slots[index] = Some(result);
     }
