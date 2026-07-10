@@ -18,17 +18,17 @@ path = "src/bin/index_self.rs"
 [dependencies]
 libipc = { package = "thoth-ipc", path = "../../../submodules/thoth-ipc/rust/libipc" }
 flatbuffers = "25.12.19"
-ra_ap_syntax = "0.0.321"
-ra_ap_hir = "0.0.321"
-ra_ap_ide_db = "0.0.321"
-ra_ap_project_model = "0.0.321"
-ra_ap_load-cargo = "0.0.321"
-ra_ap_vfs = "0.0.321"
-tempfile = "3"
-log = "0.4"
-env_logger = "0.11"
+ra_ap_syntax = "0.0.341"
+ra_ap_hir = "0.0.341"
+ra_ap_ide_db = "0.0.341"
+ra_ap_project_model = "0.0.341"
+ra_ap_load-cargo = "0.0.341"
+ra_ap_vfs = "0.0.341"
+tempfile = "3.27"
+log = "0.4.33"
+env_logger = "0.11.11"
 
 [target.'cfg(unix)'.dependencies]
-libc = "0.2"
+libc = "0.2.186"
 
 [dev-dependencies]

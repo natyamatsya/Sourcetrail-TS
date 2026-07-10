@@ -1,7 +1,7 @@
 use std::collections::{HashMap, HashSet};
 
 use ra_ap_hir::{Adt, AsAssocItem, AssocItem, Crate, FieldSource, HasSource, ModuleDef};
-use ra_ap_ide_db::base_db::{RootQueryDb, SourceDatabase};
+use ra_ap_ide_db::base_db::SourceDatabase;
 use ra_ap_ide_db::line_index::LineIndex;
 use ra_ap_ide_db::RootDatabase;
 use ra_ap_syntax::ast::{self, HasGenericParams, HasName, HasTypeBounds};
@@ -235,10 +235,9 @@ impl<'db> Collector<'db> {
         in_file: &ra_ap_hir::InFile<N>,
     ) -> Option<SourceContext> {
         let editioned_file_id = in_file.file_id.original_file(self.db);
-        let vfs_file_id = ra_ap_vfs::FileId::from_raw(editioned_file_id.file_id(self.db).index());
+        let vfs_file_id = editioned_file_id.file_id(self.db);
         let file_path = self.vfs_path(vfs_file_id)?;
-        let raw_fid = editioned_file_id.file_id(self.db);
-        let source_text = self.db.file_text(raw_fid).text(self.db).to_string();
+        let source_text = self.db.file_text(vfs_file_id).text(self.db).to_string();
         Some(SourceContext {
             file_path,
             source_text,
@@ -279,7 +278,7 @@ impl<'db> Collector<'db> {
             {
                 let def_src = module.definition_source(self.db);
                 let editioned = def_src.file_id.original_file(self.db);
-                let vfs_fid = ra_ap_vfs::FileId::from_raw(editioned.file_id(self.db).index());
+                let vfs_fid = editioned.file_id(self.db);
                 if let Some(file_path) =
                     self.vfs.file_path(vfs_fid).as_path().map(|p| p.to_string())
                 {
@@ -651,12 +650,12 @@ impl<'db> Collector<'db> {
         let Some(file_id) = module.as_source_file_id(self.db) else {
             return;
         };
-        let errors = self.db.parse_errors(file_id);
+        let errors = file_id.parse_errors(self.db);
         let Some(errors) = errors else { return };
         if errors.is_empty() {
             return;
         }
-        let vfs_fid = ra_ap_vfs::FileId::from_raw(file_id.file_id(self.db).index());
+        let vfs_fid = file_id.file_id(self.db);
         let Some(file_path) = self.vfs_path(vfs_fid) else {
             return;
         };
@@ -683,7 +682,7 @@ impl<'db> Collector<'db> {
                 continue;
             };
             let eid = field_src.file_id.original_file(self.db);
-            let raw_fid = eid.file_id(self.db).index();
+            let vfs_fid = eid.file_id(self.db);
             let range = match &field_src.value {
                 FieldSource::Named(rf) => rf
                     .name()
@@ -691,17 +690,10 @@ impl<'db> Collector<'db> {
                     .unwrap_or_else(|| rf.syntax().text_range()),
                 FieldSource::Pos(tf) => tf.syntax().text_range(),
             };
-            let (file_id_raw, range) = (raw_fid, range);
-            let vfs_fid = ra_ap_vfs::FileId::from_raw(file_id_raw);
             let Some(file_path) = self.vfs_path(vfs_fid) else {
                 continue;
             };
-            let editioned = field_src.file_id.original_file(self.db);
-            let source_text = self
-                .db
-                .file_text(editioned.file_id(self.db))
-                .text(self.db)
-                .to_string();
+            let source_text = self.db.file_text(vfs_fid).text(self.db).to_string();
             let file_node_id = self.file_node_id(&file_path);
             let node_id = self.alloc_id();
             let loc_id = self.alloc_id();
@@ -970,7 +962,7 @@ impl<'db> Collector<'db> {
                     self.emit_module_decl(m, &qualified_name);
                 }
             }
-            ModuleDef::BuiltinType(_) | ModuleDef::Variant(_) => {}
+            ModuleDef::BuiltinType(_) | ModuleDef::EnumVariant(_) => {}
         }
     }
 
@@ -983,13 +975,11 @@ impl<'db> Collector<'db> {
         } else {
             let range_in_file = m.definition_source_range(self.db);
             let editioned_file_id = range_in_file.file_id.original_file(self.db);
-            let vfs_file_id =
-                ra_ap_vfs::FileId::from_raw(editioned_file_id.file_id(self.db).index());
+            let vfs_file_id = editioned_file_id.file_id(self.db);
             let Some(file_path) = self.vfs_path(vfs_file_id) else {
                 return;
             };
-            let raw_fid = editioned_file_id.file_id(self.db);
-            let source_text = self.db.file_text(raw_fid).text(self.db).to_string();
+            let source_text = self.db.file_text(vfs_file_id).text(self.db).to_string();
             self.add_def(
                 name,
                 NODE_MODULE,
@@ -1047,8 +1037,7 @@ pub(super) fn collect_from_db<'db>(
 
     for krate in Crate::all(db) {
         // Skip library crates (std, core, deps) — only index local crates.
-        let root_fid = krate.root_file(db);
-        let vfs_fid = ra_ap_vfs::FileId::from_raw(root_fid.index());
+        let vfs_fid = krate.root_file(db);
         let is_local = vfs
             .file_path(vfs_fid)
             .as_path()

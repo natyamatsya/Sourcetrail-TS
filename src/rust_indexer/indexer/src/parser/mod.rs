@@ -81,6 +81,7 @@ pub fn index_crate(crate_root: &Path, mut on_file: impl FnMut(&str)) -> OwnedInt
         with_proc_macro_server: ProcMacroServerChoice::None,
         prefill_caches: false,
         proc_macro_processes: 1,
+        num_worker_threads: 1,
     };
 
     let (db, vfs, _proc_macro) =
