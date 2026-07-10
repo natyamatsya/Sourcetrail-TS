@@ -26,6 +26,12 @@ jobs:
 
       - name: Install Rust stable
         uses: dtolnay/rust-toolchain@stable
+        with:
+          # rust-src is required for the macro-expansion tests: without
+          # sysroot sources, core is absent from the crate graph and
+          # #[derive(...)] does not resolve (expansion degrades gracefully,
+          # but the derive tests assert the expanded items).
+          components: rust-src
 
       - name: Cache Cargo registry + build
         uses: actions/cache@v6
