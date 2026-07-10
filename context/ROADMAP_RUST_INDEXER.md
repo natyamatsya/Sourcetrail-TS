@@ -97,7 +97,7 @@ The indexer then:
 ### Key crate
 
 ```toml
-flatbuffers = "24"   # matches the vcpkg flatbuffers version in use
+flatbuffers = "25.12.19"   # matches the vcpkg flatbuffers version in use
 ```
 
 ---
@@ -155,22 +155,35 @@ syn = { version = "2", features = ["full", "visit"] }
 `syn` is easier to integrate but has no cross-file name resolution. Suitable
 for a first working prototype.
 
-### Symbol mapping to Sourcetrail node/edge kinds
+### Symbol mapping to Sourcetrail node/edge kinds (as implemented)
 
 | Rust construct | `NodeKind` | `EdgeType` |
 | --- | --- | --- |
 | `mod` | `NODE_MODULE` | — |
 | `struct` / `enum` / `union` | `NODE_STRUCT` / `NODE_ENUM` / `NODE_UNION` | — |
+| field / enum variant | `NODE_FIELD` / `NODE_ENUM_CONSTANT` | `EDGE_MEMBER` from owner |
 | `trait` | `NODE_INTERFACE` | — |
-| `impl Trait for Type` | — | `EDGE_INHERITANCE` |
+| `impl Trait for Type` | — | `EDGE_INHERITANCE` (Type → Trait) |
+| supertrait (`trait A: B`) | — | `EDGE_INHERITANCE` (A → B) |
+| impl method of a trait | — | `EDGE_OVERRIDE` (impl fn → trait fn) |
 | `fn` (free / method) | `NODE_FUNCTION` / `NODE_METHOD` | — |
-| `use` item | — | `EDGE_IMPORT` |
-| function call | — | `EDGE_CALL` |
-| field access | — | `EDGE_MEMBER` |
-| type reference | — | `EDGE_TYPE_USAGE` |
+| generic param (`T`, `'a`, `const N`) | `NODE_TYPE_PARAMETER` | `EDGE_MEMBER` from owner |
+| trait/lifetime bound (`T: Trait`, `'b: 'a`) | — | `EDGE_TYPE_USAGE` from the *param* node |
+| function / method call | — | `EDGE_CALL` + occurrence at call site |
+| value ref (const/static/variant), field access | — | `EDGE_USAGE` + occurrence |
+| type reference | — | `EDGE_TYPE_USAGE` + occurrence |
+| generic argument (`Holder<Foo>`) | — | `EDGE_TYPE_ARGUMENT` + occurrence |
 | `const` / `static` | `NODE_GLOBAL_VARIABLE` | — |
 | `type` alias | `NODE_TYPEDEF` | — |
-| macro invocation | `NODE_MACRO` | `EDGE_MACRO_USAGE` |
+| `macro_rules!` definition | `NODE_MACRO` | — |
+| `use` item | — | `EDGE_IMPORT` — **not yet implemented** |
+| macro invocation | — | `EDGE_MACRO_USAGE` — **not yet implemented** |
+
+Reference occurrences attach to the **edge id** (mirroring the C++
+`ParserClientImpl::recordReference`); definitions carry a name-token
+location plus a `LOCATION_SCOPE` spanning the full item.
+See `context/DESIGN_RUST_TYPE_SYSTEM_EDGES.md` for the bound/lifetime/
+type-argument/override model.
 
 ### Phase 3 Tasks
 
@@ -180,8 +193,9 @@ for a first working prototype.
       `end_col`) from `proc_macro2::Span` (with `span-locations` feature).
 - [x] Upgrade to `ra_ap_*` for cross-file resolution (Phase 3b — complete).
       `load_workspace_at()` + `Module::declarations()` + `Module::legacy_macros()`
-      + `RootQueryDb::parse_errors()`. Self-indexing verified: 11 files, 64 nodes,
-      0 errors. `index_crate(working_directory)` used in production binary.
+      + `EditionedFileId::parse_errors()`. `index_crate(working_directory)`
+      used in production binary. Self-indexing (2026-07-10): 46 files,
+      1012 nodes, 3832 locations, 0 errors.
 - [x] Handle `StorageError` entries for parse failures.
 
 ---
@@ -238,14 +252,41 @@ files.
 
 ## Phase 6 — Testing & CI
 
-- [x] Unit tests for FlatBuffers round-trip (Rust ↔ C++) — `ipc/storage_tests.rs`
-      (7 tests: nodes, files, source_locations, occurrences, symbols, errors, empty).
-- [x] Unit tests for each symbol kind extracted by the parser — `parser/mod.rs`
-      (20 tests: all symbol kinds, module prefix, error handling, storage invariants).
+- [x] Unit tests for FlatBuffers round-trip (Rust ↔ C++) — `ipc/storage_tests.rs`.
+- [x] Unit tests for the parser — `parser/tests.rs` (73 tests as of 2026-07-10:
+      all symbol kinds, semantic disambiguation, reference occurrences with
+      exact line/col assertions, scope extents, type-system edges, storage
+      invariants, error handling).
 - [ ] Integration test: index a small Rust crate, verify the resulting
       Sourcetrail database contains expected nodes/edges.
 - [x] Add `cargo test` step to `.github/workflows/cmake-multi-platform.yml`
-      (ubuntu/macos/windows matrix + C++ smoke build).
+      (ubuntu/macos/windows matrix + C++ build with full ctest suite).
+
+---
+
+## Phase 7 — Semantic fidelity (complete, 2026-07-10)
+
+Commits `e311fd05..ea9f27d6` upgraded the parser from name-based heuristics
+to rust-analyzer's semantic layer:
+
+- [x] Dependency bump `ra_ap_* 0.0.321 → 0.0.341` (clears the
+      `ra_ap_hir_def` future-incompatibility lint; `span::FileId` is now
+      `vfs::FileId`, `parse_errors` moved onto `EditionedFileId`).
+- [x] Semantic edge resolution: definitions register under HIR identity
+      (`DefKey` → node id); references resolve via `Semantics`
+      (`resolve_path` / `resolve_method_call` / `resolve_field`) inside
+      `hir::attach_db` (next-trait-solver TLS). Name-suffix lookup remains
+      only as per-site fallback (unexpanded macros).
+- [x] Reference occurrences at usage sites, attached to the edge id —
+      calls, value refs, field access, record literals, type refs.
+- [x] `LOCATION_SCOPE` extents for definitions (snippet display).
+- [x] Type-system edges: bounds from param nodes, lifetime outlives lattice,
+      `EDGE_TYPE_ARGUMENT`, `EDGE_OVERRIDE` —
+      see `context/DESIGN_RUST_TYPE_SYSTEM_EDGES.md`.
+
+Remaining gaps (tracked in the design doc / proc-macro roadmap): `use`
+imports, macro invocation edges, local symbols, lifetime usage occurrences
+in types, implicit specialization nodes, proc-macro expansion.
 
 ---
 
@@ -259,22 +300,28 @@ files.
 3. **Proc-macro expansion** — deferred to v2. Currently using
    `ProcMacroServerChoice::None`; proc-macro bodies are skipped but their
    definitions are still indexed.
-4. **`libipc` crate location** — resolved: fetched as a git dependency from
-   `github.com/natyamatsya/thoth-ipc` (rev `32b772d`), no local path dep.
+4. **`libipc` crate location** — resolved: path dependency on the vendored
+   submodule `submodules/thoth-ipc/rust/libipc` (package `thoth-ipc`);
+   the earlier git-dependency setup was replaced when thoth-ipc became a
+   submodule.
 
 ---
 
 ## Dependencies Summary
 
+All `ra_ap_*` crates are pinned to one version (`0.0.341` as of 2026-07-10);
+they must be bumped in lockstep.
+
 | Crate | Purpose |
 | --- | --- |
 | `flatbuffers` | FlatBuffers Rust runtime |
-| `libipc` (git dep, `natyamatsya/thoth-ipc`) | thoth-ipc SHM channels |
-| `ra_ap_syntax` | Rust CST |
-| `ra_ap_hir` | Name resolution, HIR walk (`ModuleDef`, `HasSource`, `AsAssocItem`) |
-| `ra_ap_ide_db` | `RootDatabase`, `LineIndex`, `SourceDatabase`, `RootQueryDb` |
+| `libipc` (path dep, `submodules/thoth-ipc/rust/libipc`) | thoth-ipc SHM channels |
+| `ra_ap_syntax` | Rust CST (`ast`, `SyntaxKind`, `TextRange`) |
+| `ra_ap_hir` | HIR walk + `Semantics` resolution, `GenericDef`, `attach_db` |
+| `ra_ap_ide_db` | `RootDatabase`, `LineIndex`, `SourceDatabase` |
 | `ra_ap_project_model` | `CargoConfig` (drives `cargo metadata`) |
 | `ra_ap_load-cargo` | `load_workspace_at()` — loads full crate graph into DB |
 | `ra_ap_vfs` | `Vfs` + `FileId` — maps file IDs to paths |
+| `either` | `Either` in rust-analyzer public APIs (fields, param sources) |
 | `tempfile` | Temp crate creation in `index_file()` shim |
 | `log` + `env_logger` | Logging (mirrors C++ `LOG_INFO` macros) |

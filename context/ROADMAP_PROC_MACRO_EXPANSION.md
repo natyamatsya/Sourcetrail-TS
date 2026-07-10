@@ -41,12 +41,13 @@ standalone via `rustup component add rust-analyzer`.
 ## Current State
 
 ```rust
-// src/rust_indexer/indexer/src/parser/mod.rs
+// src/rust_indexer/indexer/src/parser/mod.rs (ra_ap_* 0.0.341)
 let load_config = LoadCargoConfig {
     load_out_dirs_from_check: false,
     with_proc_macro_server: ProcMacroServerChoice::None,  // ← expansion disabled
     prefill_caches: false,
     proc_macro_processes: 1,
+    num_worker_threads: 1,
 };
 ```
 

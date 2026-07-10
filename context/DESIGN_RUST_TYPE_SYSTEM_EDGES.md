@@ -4,6 +4,18 @@ Bounds, lifetimes, generic arguments, and trait-method implementations —
 mapping the type-system-encoded relationships of Rust onto Sourcetrail's
 graph vocabulary.
 
+**Status: implemented** (`ea9f27d6`, 2026-07-10) — all six design points
+shipped as specified; CI green on ubuntu/macos/windows (run `29092989697`).
+Implementation notes that go beyond the letter of the sections below:
+
+- `TypeBoundList` also appears under `dyn Trait` / `impl Trait` types; those
+  classify as plain type positions (`BoundOwner::Item`), not param bounds.
+- HRTB binders (`T: for<'a> Fn(&'a u8)`) declare lifetimes that are not
+  `GenericDef` params; the lifetime walk stops at the `for<>` binder's
+  `GENERIC_PARAM_LIST` so they are skipped rather than misattributed.
+- Associated-type bounds in traits (`type Item: Debug`) attach to the alias
+  node (`Trait::Item —type_use→ Debug`).
+
 ## Background
 
 Rust encodes a large amount of structural information in the type system
@@ -128,17 +140,19 @@ deleted (git history preserves it): `BoundTarget`, `bound_target()`,
 `emit_ast_generic_bounds()`, `collect_generic_bounds()`, and the AST
 supertrait walk in `collect_trait_details()`.
 
-## Verification
+## Verification (results)
 
-- Unit tests assert the re-sourced edges: bound edges originate at
-  `Owner::T`, not `Owner`; `'a: 'b` and `T: 'a` produce edges between
-  parameter nodes; `impl two::Marker for S` overrides land on the right
-  trait's method; `Vec<Foo>`-style arguments produce `EDGE_TYPE_ARGUMENT`.
-- `index_self` (the indexer indexing itself) stays at 0 errors; node and
-  edge counts are expected to grow (lifetime params previously appeared only
-  when bounded).
+- 73 unit tests pass, 7 of them added for this design: bound edges originate
+  at `Owner::T`, not `Owner` (inline and where-clause); `'b: 'a` and `T: 'a`
+  produce edges between parameter nodes; `Holder<Foo>` produces
+  `EDGE_TYPE_ARGUMENT f → Foo` while `Holder` stays TYPE_USAGE;
+  `Circle::draw —override→ Draw::draw`; supertraits with qualified paths
+  (`trait Special: two::Marker`) resolve exactly; impl-block param bounds
+  (`impl<T: Clean> W<T>`) attach to the param node.
+- `index_self`: 1012 nodes, 3832 locations/occurrences, 0 errors, 0 compiler
+  warnings.
 - Existing disambiguation tests (same-named traits/functions across modules)
-  keep passing — the string fallback only fires when semantic resolution
+  kept passing — the string fallback only fires when semantic resolution
   fails.
 
 ## Out of scope / follow-ups

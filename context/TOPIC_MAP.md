@@ -2,7 +2,7 @@
 
 ## Purpose
 
-This fork (`natyamatsya/Sourcetrail`, branch `develop`) carries **168 commits** on top of
+This fork (`natyamatsya/Sourcetrail`, branch `develop`) carries **237 commits** on top of
 Peter Most's upstream (`petermost/Sourcetrail`). This document maps those commits to
 coherent topics, records how tightly they are interwoven, and defines the workflow for
 staying in sync with upstream and forward-porting individual topics.
@@ -10,11 +10,29 @@ staying in sync with upstream and forward-porting individual topics.
 It is descriptive, not a plan of record — regenerate the numbers with the commands in the
 [Reproducing this analysis](#reproducing-this-analysis) section if the branch moves.
 
-## Fork geometry (as of 2026-07-04)
+## Fork geometry (as of 2026-07-10)
 
 - **Last common commit (fork point):** `2c0b0418` — *"logic: Use `em` for the `View` buttons size"* (upstream, 2026-02-11)
-- **Fork ahead:** 168 commits · **Upstream ahead:** 78 commits (upstream tip `master@upstream`, 2026-06-30)
+- **Fork ahead:** 237 commits · **Upstream ahead:** 78 commits (upstream tip `master@upstream`, 2026-06-30)
 - Tooling: repo is **colocated jj + git** (`jj git init --colocate`). `trunk()` resolves to `master@upstream`.
+
+The topic classification and per-commit appendix below are a **snapshot of the
+first 168 commits (2026-07-04)**. The 69 commits since then continue the same
+Tier-B supercluster and add one new peripheral topic:
+
+- `ci-pipeline` (~15, new Tier-A topic) — 3-platform GitHub Actions matrix
+  (rust indexer + C++ build/tests), vcpkg binary caching for the Windows LLVM
+  build (cold ~3h18m / warm ~28min), warning hygiene to 0 on ubuntu/macos.
+- `rust-indexer` (+5) — semantic fidelity stack `e311fd05..ea9f27d6`:
+  ra_ap 0.0.341 bump, Semantics-based edge resolution, reference occurrences,
+  scope locations, type-system edges (`DESIGN_RUST_TYPE_SYSTEM_EDGES.md`).
+- `indexer-runtime` / `cmake-file-api` (~20) — flag-aware refresh, zero-config
+  PCH, CDB sysroot fixes, execution/refresh fixes, subprocess-cap changes.
+- `boost-ipc-to-cppipc` (~8) — event-driven IPC (`ipc::sync::condition`),
+  storage writer instrumentation, messaging run_loop fix.
+- Portability/build fixes (~15) — libc++/libstdc++/MSVC traps
+  (`multimap::find`, path-iterator UB, `clock_cast`), macOS deployment
+  target, duplicate-libraries link hygiene, Clang 21/22 compat layering.
 
 ## Headline finding: the history does not support clean topic extraction
 
@@ -143,7 +161,9 @@ for c in $(git rev-list $MB..develop); do git show --name-only --format= $c; don
 
 ## Appendix: full commit listing per topic
 
-Ordered oldest→newest within each topic. Hashes are 9-char prefixes on `develop`.
+Snapshot of the first 168 commits (2026-07-04); see the fork-geometry note for
+what has landed since. Ordered oldest→newest within each topic. Hashes are
+9-char prefixes on `develop`.
 
 ### rust-indexer (37)
 - `fdf99ae7b` feat: remove support for java

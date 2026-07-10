@@ -1,5 +1,14 @@
 # Design: Rust Project Model Integration via rust-analyzer
 
+**Status: proposal, not yet implemented.** Orthogonal to the parser-layer
+work that has since landed (semantic resolution, reference occurrences,
+type-system edges — see `context/DESIGN_RUST_TYPE_SYSTEM_EDGES.md` and
+`ROADMAP_RUST_INDEXER.md` Phase 7): this document is about *which code gets
+loaded* (features, targets, proc-macros), not how loaded code is analyzed.
+Note when implementing: the `ra_ap_*` API surface referenced below moves
+quickly — re-verify signatures against the pinned version (0.0.341+), e.g.
+`LoadCargoConfig` has grown `num_worker_threads` and `proc_macro_processes`.
+
 ## Background
 
 When the Rust indexer was first designed for Sourcetrail, the project model
@@ -108,8 +117,8 @@ SourceGroupRust::getIndexerCommands()
   └─ emits one IndexerCommandRust per source group
        └─ working_directory = Cargo.toml directory
 
-sourcetrail_rust_indexer <processId> <uuid> <appPath> <userDataPath>
-  └─ reads IndexerCommandRust from SHM
+sourcetrail_rust_indexer <processId> <uuid> <appPath> <userDataPath> <logFilePath>
+  └─ reads IndexerCommandRust from SHM (results cached per working_directory)
        └─ calls index_crate(working_directory)
             └─ load_workspace_at(working_directory, &CargoConfig::default(), ...)
                  └─ indexes ALL targets with DEFAULT features
