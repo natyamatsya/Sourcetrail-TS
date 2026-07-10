@@ -40,7 +40,7 @@
 
 use std::path::Path;
 
-use ra_ap_load_cargo::{load_workspace_at, LoadCargoConfig, ProcMacroServerChoice};
+use ra_ap_load_cargo::{LoadCargoConfig, ProcMacroServerChoice, load_workspace_at};
 use ra_ap_project_model::CargoConfig;
 
 use crate::ipc::storage::{OwnedIntermediateStorage, OwnedStorageError, OwnedStorageFile};
@@ -76,7 +76,7 @@ const EDGE_INHERITANCE: i32 = 1 << 4;
 /// Index the Cargo crate whose `Cargo.toml` lives in `crate_root`.
 /// `on_file` is called with each source file path as it begins processing.
 /// Returns a populated `OwnedIntermediateStorage` covering all local source files.
-pub fn index_crate(crate_root: &Path, mut on_file: impl FnMut(&str)) -> OwnedIntermediateStorage {
+pub fn index_crate(crate_root: &Path, on_file: impl FnMut(&str)) -> OwnedIntermediateStorage {
     let cargo_config = CargoConfig::default();
     let load_config = LoadCargoConfig {
         load_out_dirs_from_check: false,

@@ -373,7 +373,9 @@ fn enum_variants_are_collected() {
 
 #[test]
 fn impl_methods_are_collected() {
-    let s = index_src("pub struct Counter(u32); impl Counter { pub fn inc(&mut self) {} pub fn get(&self) -> u32 { self.0 } }");
+    let s = index_src(
+        "pub struct Counter(u32); impl Counter { pub fn inc(&mut self) {} pub fn get(&self) -> u32 { self.0 } }",
+    );
     assert!(has_node(&s, "Counter::inc"), "nodes: {:?}", node_names(&s));
     assert!(has_node(&s, "Counter::get"), "nodes: {:?}", node_names(&s));
     assert!(has_edge(&s, EDGE_MEMBER, "Counter", "Counter::inc"));
@@ -493,6 +495,137 @@ fn call_edges_are_deduplicated() {
         call_edges.len(),
         1,
         "expected exactly one deduplicated EDGE_CALL, edges: {:?}",
+        s.edges
+    );
+}
+
+// -----------------------------------------------------------------------
+// Reference occurrences — locations recorded at usage sites, on the edge
+// -----------------------------------------------------------------------
+
+const EDGE_USAGE_T: i32 = 1 << 2;
+const EDGE_TYPE_USAGE_T: i32 = 1 << 1;
+
+fn edge_id_between(
+    s: &OwnedIntermediateStorage,
+    edge_type: i32,
+    src: &str,
+    tgt: &str,
+) -> Option<i64> {
+    let node_id = |name: &str| {
+        s.nodes
+            .iter()
+            .find(|n| decode_name(&n.serialized_name) == name)
+            .map(|n| n.id)
+    };
+    let (sid, tid) = (node_id(src)?, node_id(tgt)?);
+    s.edges
+        .iter()
+        .find(|e| e.type_ == edge_type && e.source_node_id == sid && e.target_node_id == tid)
+        .map(|e| e.id)
+}
+
+fn edge_occurrence_positions(s: &OwnedIntermediateStorage, edge_id: i64) -> Vec<(u32, u32)> {
+    s.occurrences
+        .iter()
+        .filter(|o| o.element_id == edge_id)
+        .filter_map(|o| {
+            s.source_locations
+                .iter()
+                .find(|l| l.id == o.source_location_id)
+                .map(|l| (l.start_line, l.start_col))
+        })
+        .collect()
+}
+
+#[test]
+fn const_usage_emits_usage_edge_with_occurrence() {
+    let s = index_src("pub const LIMIT: usize = 3;\npub fn f() -> usize { LIMIT }");
+    let edge = edge_id_between(&s, EDGE_USAGE_T, "f", "LIMIT");
+    assert!(
+        edge.is_some(),
+        "expected EDGE_USAGE f -> LIMIT, edges: {:?}",
+        s.edges
+    );
+    let positions = edge_occurrence_positions(&s, edge.unwrap());
+    assert_eq!(positions, vec![(2, 23)], "occurrence at the LIMIT token");
+}
+
+#[test]
+fn type_in_signature_emits_type_usage_with_occurrence() {
+    let s = index_src("pub struct S;\npub fn f(s: S) {}");
+    let edge = edge_id_between(&s, EDGE_TYPE_USAGE_T, "f", "S");
+    assert!(
+        edge.is_some(),
+        "expected EDGE_TYPE_USAGE f -> S, edges: {:?}",
+        s.edges
+    );
+    let positions = edge_occurrence_positions(&s, edge.unwrap());
+    assert_eq!(
+        positions,
+        vec![(2, 13)],
+        "occurrence at the S token in the signature"
+    );
+}
+
+#[test]
+fn field_access_emits_usage_edge_to_field() {
+    let s = index_src("pub struct P { pub x: i32 }\npub fn f(p: P) -> i32 { p.x }");
+    let edge = edge_id_between(&s, EDGE_USAGE_T, "f", "P::x");
+    assert!(
+        edge.is_some(),
+        "expected EDGE_USAGE f -> P::x, edges: {:?}",
+        s.edges
+    );
+    assert_eq!(edge_occurrence_positions(&s, edge.unwrap()), vec![(2, 27)]);
+}
+
+#[test]
+fn record_literal_field_emits_usage_edge() {
+    let s = index_src("pub struct P { pub x: i32 }\npub fn make() -> P { P { x: 1 } }");
+    let edge = edge_id_between(&s, EDGE_USAGE_T, "make", "P::x");
+    assert!(
+        edge.is_some(),
+        "expected EDGE_USAGE make -> P::x, edges: {:?}",
+        s.edges
+    );
+}
+
+#[test]
+fn call_edge_has_occurrence_at_call_site() {
+    let s = index_src("pub fn bar() {}\npub fn foo() { bar(); }");
+    let edge = edge_id_between(&s, EDGE_CALL, "foo", "bar");
+    assert!(edge.is_some());
+    assert_eq!(edge_occurrence_positions(&s, edge.unwrap()), vec![(2, 16)]);
+}
+
+#[test]
+fn repeated_calls_record_one_edge_with_two_occurrences() {
+    let s = index_src("pub fn bar() {}\npub fn foo() { bar(); bar(); }");
+    let edge = edge_id_between(&s, EDGE_CALL, "foo", "bar").unwrap();
+    let positions = edge_occurrence_positions(&s, edge);
+    assert_eq!(positions.len(), 2, "one deduplicated edge, two occurrences");
+}
+
+#[test]
+fn enum_variant_use_emits_usage_edge() {
+    let s = index_src("pub enum E { A }\npub fn f() -> E { E::A }");
+    let edge = edge_id_between(&s, EDGE_USAGE_T, "f", "E::A");
+    assert!(
+        edge.is_some(),
+        "expected EDGE_USAGE f -> E::A, edges: {:?}",
+        s.edges
+    );
+}
+
+#[test]
+fn struct_field_type_emits_type_usage_from_owner() {
+    // The reference context of a field's type is the owning struct.
+    let s = index_src("pub struct Inner;\npub struct Outer { pub i: Inner }");
+    let edge = edge_id_between(&s, EDGE_TYPE_USAGE_T, "Outer", "Inner");
+    assert!(
+        edge.is_some(),
+        "expected EDGE_TYPE_USAGE Outer -> Inner, edges: {:?}",
         s.edges
     );
 }

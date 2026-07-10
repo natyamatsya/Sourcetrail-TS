@@ -1,12 +1,13 @@
 use std::collections::{HashMap, HashSet};
 
+use either::Either;
 use ra_ap_hir::{
     Adt, AsAssocItem, AssocItem, Crate, FieldSource, HasSource, ModuleDef, PathResolution,
     Semantics,
 };
+use ra_ap_ide_db::RootDatabase;
 use ra_ap_ide_db::base_db::SourceDatabase;
 use ra_ap_ide_db::line_index::LineIndex;
-use ra_ap_ide_db::RootDatabase;
 use ra_ap_syntax::ast::{self, HasGenericParams, HasName, HasTypeBounds};
 use ra_ap_syntax::{AstNode, SyntaxKind};
 use ra_ap_vfs::Vfs;
@@ -20,7 +21,7 @@ use super::{
     DEFINITION_EXPLICIT, EDGE_CALL, EDGE_INHERITANCE, EDGE_MEMBER, EDGE_TYPE_USAGE, EDGE_USAGE,
     LOCATION_TOKEN, NODE_ENUM, NODE_ENUM_CONSTANT, NODE_FIELD, NODE_FILE, NODE_FUNCTION,
     NODE_GLOBAL_VARIABLE, NODE_INTERFACE, NODE_MACRO, NODE_METHOD, NODE_MODULE, NODE_STRUCT,
-    NODE_TYPEDEF, NODE_TYPE_PARAMETER, NODE_UNION,
+    NODE_TYPE_PARAMETER, NODE_TYPEDEF, NODE_UNION,
 };
 
 #[derive(Debug, Clone)]
@@ -44,6 +45,17 @@ enum DefKey {
     Field(ra_ap_hir::Field),
 }
 
+/// Per-file context for recording reference locations.
+struct RefFile {
+    file_node_id: i64,
+    line_index: LineIndex,
+}
+
+/// Text range of a path's last segment name token — the clickable reference token.
+fn path_name_range(path: &ast::Path) -> Option<ra_ap_syntax::TextRange> {
+    Some(path.segment()?.name_ref()?.syntax().text_range())
+}
+
 struct Collector<'db> {
     db: &'db RootDatabase,
     vfs: &'db Vfs,
@@ -56,8 +68,8 @@ struct Collector<'db> {
     /// local source files, in discovery order, for the semantic reference pass
     local_files: Vec<ra_ap_vfs::FileId>,
     local_files_seen: HashSet<ra_ap_vfs::FileId>,
-    /// (edge type, source, target) triples already emitted
-    emitted_edges: HashSet<(i32, i64, i64)>,
+    /// (edge type, source, target) → edge id, for dedup and occurrence linking
+    emitted_edges: HashMap<(i32, i64, i64), i64>,
     next_id: i64,
     storage: OwnedIntermediateStorage,
     /// Called whenever we start processing a new source file. Receives the file path.
@@ -97,6 +109,10 @@ fn serialize_file_name(path: &str) -> String {
 }
 
 impl<'db> Collector<'db> {
+    #[expect(
+        dead_code,
+        reason = "convenience ctor for future callers without a progress callback"
+    )]
     fn new(db: &'db RootDatabase, vfs: &'db Vfs) -> Self {
         Self::with_callback(db, vfs, |_| {})
     }
@@ -114,7 +130,7 @@ impl<'db> Collector<'db> {
             def_ids: HashMap::new(),
             local_files: Vec::new(),
             local_files_seen: HashSet::new(),
-            emitted_edges: HashSet::new(),
+            emitted_edges: HashMap::new(),
             next_id: 1,
             storage: OwnedIntermediateStorage::default(),
             on_file: Box::new(on_file),
@@ -216,18 +232,22 @@ impl<'db> Collector<'db> {
     }
 
     /// Emit a directed edge between two node ids, deduplicating identical
-    /// (type, source, target) triples.
-    fn push_edge(&mut self, edge_type: i32, source_id: i64, target_id: i64) {
-        if !self.emitted_edges.insert((edge_type, source_id, target_id)) {
-            return;
+    /// (type, source, target) triples. Returns the edge id (existing on dedup),
+    /// so reference occurrences can attach to it.
+    fn push_edge(&mut self, edge_type: i32, source_id: i64, target_id: i64) -> i64 {
+        if let Some(&id) = self.emitted_edges.get(&(edge_type, source_id, target_id)) {
+            return id;
         }
         let edge_id = self.alloc_id();
+        self.emitted_edges
+            .insert((edge_type, source_id, target_id), edge_id);
         self.storage.edges.push(OwnedStorageEdge {
             id: edge_id,
             type_: edge_type,
             source_node_id: source_id,
             target_node_id: target_id,
         });
+        edge_id
     }
 
     /// Emit a directed edge between two named nodes (looked up by serialized name).
@@ -562,7 +582,9 @@ impl<'db> Collector<'db> {
                     self.add_edge(EDGE_MEMBER, trait_name, &qualified_name);
                 }
                 AssocItem::Const(c) => {
-                    let Some(cname) = c.name(self.db) else { continue };
+                    let Some(cname) = c.name(self.db) else {
+                        continue;
+                    };
                     let qualified_name = format!("{trait_name}::{}", cname.as_str());
                     self.emit_from_source(c.source(self.db), &qualified_name, NODE_GLOBAL_VARIABLE);
                     self.register_def(DefKey::Def(ModuleDef::Const(c)), &qualified_name);
@@ -673,7 +695,10 @@ impl<'db> Collector<'db> {
                 &qualified_variant,
                 NODE_ENUM_CONSTANT,
             );
-            self.register_def(DefKey::Def(ModuleDef::EnumVariant(variant)), &qualified_variant);
+            self.register_def(
+                DefKey::Def(ModuleDef::EnumVariant(variant)),
+                &qualified_variant,
+            );
             self.add_edge(EDGE_MEMBER, enum_name, &qualified_variant);
             self.collect_hir_fields(&qualified_variant, variant.fields(self.db));
         }
@@ -737,19 +762,29 @@ impl<'db> Collector<'db> {
     // Semantic reference pass
     // -----------------------------------------------------------------------
 
-    /// Walk every collected local file through `Semantics` and emit edges whose
-    /// targets are resolved semantically (exact def identity). Falls back to
-    /// name-based lookup (`resolve_node_id`) per site when resolution fails,
-    /// e.g. inside unexpanded macros.
+    /// Walk every collected local file through `Semantics` and emit reference
+    /// edges whose targets are resolved semantically (exact def identity), plus
+    /// a TOKEN source location + occurrence per reference site, attached to the
+    /// edge — mirroring the C++ side (ParserClientImpl::recordReference).
+    /// Falls back to name-based lookup (`resolve_node_id`) per site when
+    /// resolution fails, e.g. inside unexpanded macros.
     fn collect_semantic_edges(&mut self, sema: &Semantics<'db, RootDatabase>) {
         let files: Vec<ra_ap_vfs::FileId> = self.local_files.clone();
         for vfs_fid in files {
+            let Some(file_path) = self.vfs_path(vfs_fid) else {
+                continue;
+            };
+            let source_text = self.db.file_text(vfs_fid).text(self.db).to_string();
+            let file = RefFile {
+                file_node_id: self.file_node_id(&file_path),
+                line_index: LineIndex::new(&source_text),
+            };
             let source_file = sema.parse_guess_edition(vfs_fid);
             for node in source_file.syntax().descendants() {
                 match node.kind() {
                     SyntaxKind::IMPL => {
                         if let Some(impl_ast) = ast::Impl::cast(node) {
-                            self.emit_impl_inheritance(sema, &impl_ast);
+                            self.emit_impl_inheritance(sema, &impl_ast, &file);
                         }
                     }
                     SyntaxKind::CALL_EXPR => {
@@ -768,7 +803,8 @@ impl<'db> Collector<'db> {
                             let name = path.segment()?.name_ref()?.text().to_string();
                             self.resolve_node_id(&name)
                         });
-                        self.emit_call_edge(sema, call.syntax(), target);
+                        let range = path_name_range(&path);
+                        self.emit_reference(sema, EDGE_CALL, call.syntax(), target, range, &file);
                     }
                     SyntaxKind::METHOD_CALL_EXPR => {
                         let Some(call) = ast::MethodCallExpr::cast(node) else {
@@ -781,12 +817,157 @@ impl<'db> Collector<'db> {
                                 let name = call.name_ref()?.text().to_string();
                                 self.resolve_node_id(&name)
                             });
-                        self.emit_call_edge(sema, call.syntax(), target);
+                        let range = call.name_ref().map(|n| n.syntax().text_range());
+                        self.emit_reference(sema, EDGE_CALL, call.syntax(), target, range, &file);
+                    }
+                    SyntaxKind::PATH_EXPR => {
+                        // Callees are handled by the CALL_EXPR arm.
+                        if node
+                            .parent()
+                            .is_some_and(|p| p.kind() == SyntaxKind::CALL_EXPR)
+                        {
+                            continue;
+                        }
+                        let Some(pe) = ast::PathExpr::cast(node) else {
+                            continue;
+                        };
+                        let Some(path) = pe.path() else { continue };
+                        // Only definition references; locals are future work.
+                        let Some(PathResolution::Def(def)) = sema.resolve_path(&path) else {
+                            continue;
+                        };
+                        let target = self.def_id(DefKey::Def(def));
+                        let range = path_name_range(&path);
+                        self.emit_reference(sema, EDGE_USAGE, pe.syntax(), target, range, &file);
+                    }
+                    SyntaxKind::PATH_TYPE => {
+                        let Some(pt) = ast::PathType::cast(node) else {
+                            continue;
+                        };
+                        self.emit_type_reference(sema, &pt, &file);
+                    }
+                    SyntaxKind::FIELD_EXPR => {
+                        let Some(fe) = ast::FieldExpr::cast(node) else {
+                            continue;
+                        };
+                        let target = match sema.resolve_field(&fe) {
+                            Some(Either::Left(field)) => self.def_id(DefKey::Field(field)),
+                            _ => None,
+                        };
+                        let range = fe.name_ref().map(|n| n.syntax().text_range());
+                        self.emit_reference(sema, EDGE_USAGE, fe.syntax(), target, range, &file);
+                    }
+                    SyntaxKind::RECORD_EXPR_FIELD => {
+                        let Some(ref_field) = ast::RecordExprField::cast(node) else {
+                            continue;
+                        };
+                        let target = sema
+                            .resolve_record_field(&ref_field)
+                            .and_then(|(field, _, _)| self.def_id(DefKey::Field(field)));
+                        let range = ref_field.name_ref().map(|n| n.syntax().text_range());
+                        self.emit_reference(
+                            sema,
+                            EDGE_USAGE,
+                            ref_field.syntax(),
+                            target,
+                            range,
+                            &file,
+                        );
                     }
                     _ => {}
                 }
             }
         }
+    }
+
+    /// Type reference (`PathType`) → EDGE_TYPE_USAGE from the enclosing item.
+    /// Types in an `impl` header are skipped: the inheritance/bounds handling
+    /// covers them, and the header itself is not an emitted node.
+    fn emit_type_reference(
+        &mut self,
+        sema: &Semantics<'db, RootDatabase>,
+        pt: &ast::PathType,
+        file: &RefFile,
+    ) {
+        let Some(path) = pt.path() else { return };
+        let target = match sema.resolve_path(&path) {
+            Some(PathResolution::Def(def)) => self.def_id(DefKey::Def(def)),
+            _ => None,
+        };
+        let range = path_name_range(&path);
+        self.emit_reference_edge(
+            sema,
+            EDGE_TYPE_USAGE,
+            pt.syntax(),
+            target,
+            range,
+            file,
+            /*allow_impl_context=*/ false,
+        );
+    }
+
+    /// Emit a reference edge + occurrence from the enclosing context of
+    /// `ref_site` to `target`, recording a TOKEN location at `range`.
+    fn emit_reference(
+        &mut self,
+        sema: &Semantics<'db, RootDatabase>,
+        edge_type: i32,
+        ref_site: &ra_ap_syntax::SyntaxNode,
+        target: Option<i64>,
+        range: Option<ra_ap_syntax::TextRange>,
+        file: &RefFile,
+    ) {
+        self.emit_reference_edge(sema, edge_type, ref_site, target, range, file, true);
+    }
+
+    fn emit_reference_edge(
+        &mut self,
+        sema: &Semantics<'db, RootDatabase>,
+        edge_type: i32,
+        ref_site: &ra_ap_syntax::SyntaxNode,
+        target: Option<i64>,
+        range: Option<ra_ap_syntax::TextRange>,
+        file: &RefFile,
+        allow_impl_context: bool,
+    ) {
+        let Some(target) = target else { return };
+        let Some(context) = self.enclosing_context_id(sema, ref_site, allow_impl_context) else {
+            return;
+        };
+        if context == target {
+            return;
+        }
+        let edge_id = self.push_edge(edge_type, context, target);
+        if let Some(range) = range {
+            self.add_reference_location(edge_id, range, file);
+        }
+    }
+
+    /// Record a TOKEN source location + occurrence for `element_id` (an edge).
+    fn add_reference_location(
+        &mut self,
+        element_id: i64,
+        range: ra_ap_syntax::TextRange,
+        file: &RefFile,
+    ) {
+        let loc_id = self.alloc_id();
+        let start = file.line_index.line_col(range.start());
+        let end = file.line_index.line_col(range.end());
+        self.storage
+            .source_locations
+            .push(OwnedStorageSourceLocation {
+                id: loc_id,
+                file_node_id: file.file_node_id,
+                start_line: start.line + 1,
+                start_col: start.col + 1,
+                end_line: end.line + 1,
+                end_col: end.col + 1,
+                type_: LOCATION_TOKEN,
+            });
+        self.storage.occurrences.push(OwnedStorageOccurrence {
+            element_id,
+            source_location_id: loc_id,
+        });
     }
 
     /// `impl Trait for Type` → EDGE_INHERITANCE from Type to Trait.
@@ -796,6 +977,7 @@ impl<'db> Collector<'db> {
         &mut self,
         sema: &Semantics<'db, RootDatabase>,
         impl_ast: &ast::Impl,
+        file: &RefFile,
     ) {
         // Only `impl Trait for Type` produces an inheritance edge.
         if impl_ast.for_token().is_none() {
@@ -812,7 +994,12 @@ impl<'db> Collector<'db> {
         let trait_id = self.resolve_type_node(sema, &type_nodes[0]);
         let self_id = self.resolve_type_node(sema, &type_nodes[1]);
         if let (Some(self_id), Some(trait_id)) = (self_id, trait_id) {
-            self.push_edge(EDGE_INHERITANCE, self_id, trait_id);
+            let edge_id = self.push_edge(EDGE_INHERITANCE, self_id, trait_id);
+            if let ast::Type::PathType(pt) = &type_nodes[0] {
+                if let Some(range) = pt.path().as_ref().and_then(path_name_range) {
+                    self.add_reference_location(edge_id, range, file);
+                }
+            }
         }
     }
 
@@ -837,31 +1024,61 @@ impl<'db> Collector<'db> {
         })
     }
 
-    /// Emit an EDGE_CALL from the function enclosing `call_site` to `target`.
-    fn emit_call_edge(
-        &mut self,
-        sema: &Semantics<'db, RootDatabase>,
-        call_site: &ra_ap_syntax::SyntaxNode,
-        target: Option<i64>,
-    ) {
-        let Some(target) = target else { return };
-        let Some(caller) = self.enclosing_fn_id(sema, call_site) else {
-            return;
-        };
-        if caller != target {
-            self.push_edge(EDGE_CALL, caller, target);
-        }
-    }
-
-    /// Node id of the nearest enclosing named function of `node`, if emitted.
-    fn enclosing_fn_id(
+    /// Node id of the nearest enclosing emitted item of `node` — the reference
+    /// context. Walks outwards through functions, ADTs, traits, type aliases,
+    /// consts and statics; an `impl` header (reached without hitting an assoc
+    /// item first) yields the impl's self type when `allow_impl_context`,
+    /// otherwise no context.
+    fn enclosing_context_id(
         &self,
         sema: &Semantics<'db, RootDatabase>,
         node: &ra_ap_syntax::SyntaxNode,
+        allow_impl_context: bool,
     ) -> Option<i64> {
-        let fn_ast = node.ancestors().find_map(ast::Fn::cast)?;
-        let f = sema.to_def(&fn_ast)?;
-        self.def_id(DefKey::Def(ModuleDef::Function(f)))
+        for anc in node.ancestors().skip(1) {
+            let candidate = match anc.kind() {
+                SyntaxKind::FN => ast::Fn::cast(anc)
+                    .and_then(|it| sema.to_def(&it))
+                    .and_then(|f| self.def_id(DefKey::Def(ModuleDef::Function(f)))),
+                SyntaxKind::STRUCT => ast::Struct::cast(anc)
+                    .and_then(|it| sema.to_def(&it))
+                    .and_then(|s| self.def_id(DefKey::Def(ModuleDef::Adt(Adt::Struct(s))))),
+                SyntaxKind::ENUM => ast::Enum::cast(anc)
+                    .and_then(|it| sema.to_def(&it))
+                    .and_then(|e| self.def_id(DefKey::Def(ModuleDef::Adt(Adt::Enum(e))))),
+                SyntaxKind::UNION => ast::Union::cast(anc)
+                    .and_then(|it| sema.to_def(&it))
+                    .and_then(|u| self.def_id(DefKey::Def(ModuleDef::Adt(Adt::Union(u))))),
+                SyntaxKind::TRAIT => ast::Trait::cast(anc)
+                    .and_then(|it| sema.to_def(&it))
+                    .and_then(|t| self.def_id(DefKey::Def(ModuleDef::Trait(t)))),
+                SyntaxKind::TYPE_ALIAS => ast::TypeAlias::cast(anc)
+                    .and_then(|it| sema.to_def(&it))
+                    .and_then(|ta| self.def_id(DefKey::Def(ModuleDef::TypeAlias(ta)))),
+                SyntaxKind::CONST => ast::Const::cast(anc)
+                    .and_then(|it| sema.to_def(&it))
+                    .and_then(|c| self.def_id(DefKey::Def(ModuleDef::Const(c)))),
+                SyntaxKind::STATIC => ast::Static::cast(anc)
+                    .and_then(|it| sema.to_def(&it))
+                    .and_then(|s| self.def_id(DefKey::Def(ModuleDef::Static(s)))),
+                SyntaxKind::IMPL => {
+                    if !allow_impl_context {
+                        return None;
+                    }
+                    ast::Impl::cast(anc)
+                        .and_then(|it| sema.to_def(&it))
+                        .and_then(|i| i.self_ty(self.db).as_adt())
+                        .and_then(|adt| self.def_id(DefKey::Def(ModuleDef::Adt(adt))))
+                }
+                _ => continue,
+            };
+            if candidate.is_some() {
+                return candidate;
+            }
+            // Item ancestor found but not emitted (e.g. a nested fn) — keep
+            // walking outwards to attribute the reference to its parent.
+        }
+        None
     }
 
     fn collect_module_def(&mut self, module_prefix: &str, def: ModuleDef) {
@@ -1006,6 +1223,10 @@ impl<'db> Collector<'db> {
     /// Emit a node from a raw `InFile<N>` without requiring `HasName` — uses
     /// the whole syntax node range. Used for items that don't implement HasName
     /// (e.g. macro_rules! via legacy_macros, module decls).
+    #[expect(
+        dead_code,
+        reason = "staged for indexing name-less items (macro invocations)"
+    )]
     fn emit_from_source_no_name<N: AstNode>(
         &mut self,
         src: Option<ra_ap_hir::InFile<N>>,

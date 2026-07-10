@@ -1,8 +1,8 @@
 #[cfg(test)]
 mod tests {
     use crate::ipc::storage::{
-        OwnedIntermediateStorage, OwnedStorageEdge, OwnedStorageError, OwnedStorageFile,
-        OwnedStorageNode, OwnedStorageOccurrence, OwnedStorageSourceLocation, OwnedStorageSymbol,
+        OwnedIntermediateStorage, OwnedStorageError, OwnedStorageFile, OwnedStorageNode,
+        OwnedStorageOccurrence, OwnedStorageSourceLocation, OwnedStorageSymbol,
     };
     use crate::schemas::intermediate_storage::sourcetrail::ipc::root_as_intermediate_storage_queue;
 
