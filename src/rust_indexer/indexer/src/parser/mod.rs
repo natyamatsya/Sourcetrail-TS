@@ -10,9 +10,11 @@
 //   - StorageSymbol (DefinitionKind = EXPLICIT = 2) for each node
 //   - StorageSourceLocation pointing at the name token of the item
 //   - StorageOccurrence linking node → location
-//   - StorageEdge  for impl/trait relationships:
-//       EDGE_INHERITANCE  (1<<4 = 16)  — `impl Trait for Type`
+//   - StorageEdge  for relationships:
+//       EDGE_MEMBER       (1<<0 = 1)   — owner → field/method/assoc item
 //       EDGE_TYPE_USAGE   (1<<1 = 2)   — trait bounds on type params
+//       EDGE_CALL         (1<<3 = 8)   — call sites, resolved via Semantics
+//       EDGE_INHERITANCE  (1<<4 = 16)  — `impl Trait for Type`, supertraits
 //   - StorageError  for load / analysis failures
 //
 // Node kind constants mirror NodeKind.h (bitmask values):

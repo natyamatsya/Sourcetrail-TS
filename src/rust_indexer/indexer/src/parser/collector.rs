@@ -1,6 +1,9 @@
 use std::collections::{HashMap, HashSet};
 
-use ra_ap_hir::{Adt, AsAssocItem, AssocItem, Crate, FieldSource, HasSource, ModuleDef};
+use ra_ap_hir::{
+    Adt, AsAssocItem, AssocItem, Crate, FieldSource, HasSource, ModuleDef, PathResolution,
+    Semantics,
+};
 use ra_ap_ide_db::base_db::SourceDatabase;
 use ra_ap_ide_db::line_index::LineIndex;
 use ra_ap_ide_db::RootDatabase;
@@ -32,13 +35,29 @@ enum BoundTarget {
     Lifetime(String),
 }
 
+/// Identity key for an emitted definition, so that semantically resolved
+/// references (Semantics::resolve_path / resolve_method_call) can be mapped
+/// back to the exact node — no string matching involved.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+enum DefKey {
+    Def(ModuleDef),
+    Field(ra_ap_hir::Field),
+}
+
 struct Collector<'db> {
     db: &'db RootDatabase,
     vfs: &'db Vfs,
     /// file_path → StorageFile id
     file_ids: HashMap<String, i64>,
-    /// plain qualified name → node id (for edge resolution)
+    /// plain qualified name → node id (fallback edge resolution)
     node_ids: HashMap<String, i64>,
+    /// HIR definition identity → node id (exact edge resolution)
+    def_ids: HashMap<DefKey, i64>,
+    /// local source files, in discovery order, for the semantic reference pass
+    local_files: Vec<ra_ap_vfs::FileId>,
+    local_files_seen: HashSet<ra_ap_vfs::FileId>,
+    /// (edge type, source, target) triples already emitted
+    emitted_edges: HashSet<(i32, i64, i64)>,
     next_id: i64,
     storage: OwnedIntermediateStorage,
     /// Called whenever we start processing a new source file. Receives the file path.
@@ -92,9 +111,31 @@ impl<'db> Collector<'db> {
             vfs,
             file_ids: HashMap::new(),
             node_ids: HashMap::new(),
+            def_ids: HashMap::new(),
+            local_files: Vec::new(),
+            local_files_seen: HashSet::new(),
+            emitted_edges: HashSet::new(),
             next_id: 1,
             storage: OwnedIntermediateStorage::default(),
             on_file: Box::new(on_file),
+        }
+    }
+
+    /// Remember an emitted definition under its HIR identity so references can
+    /// be resolved exactly. Call right after the node was emitted under `name`.
+    fn register_def(&mut self, key: DefKey, name: &str) {
+        if let Some(&id) = self.node_ids.get(name) {
+            self.def_ids.insert(key, id);
+        }
+    }
+
+    fn def_id(&self, key: DefKey) -> Option<i64> {
+        self.def_ids.get(&key).copied()
+    }
+
+    fn record_local_file(&mut self, file_id: ra_ap_vfs::FileId) {
+        if self.local_files_seen.insert(file_id) {
+            self.local_files.push(file_id);
         }
     }
 
@@ -174,6 +215,21 @@ impl<'db> Collector<'db> {
         self.vfs.file_path(file_id).as_path().map(|p| p.to_string())
     }
 
+    /// Emit a directed edge between two node ids, deduplicating identical
+    /// (type, source, target) triples.
+    fn push_edge(&mut self, edge_type: i32, source_id: i64, target_id: i64) {
+        if !self.emitted_edges.insert((edge_type, source_id, target_id)) {
+            return;
+        }
+        let edge_id = self.alloc_id();
+        self.storage.edges.push(OwnedStorageEdge {
+            id: edge_id,
+            type_: edge_type,
+            source_node_id: source_id,
+            target_node_id: target_id,
+        });
+    }
+
     /// Emit a directed edge between two named nodes (looked up by serialized name).
     /// If either node hasn't been emitted yet the edge is silently dropped — this
     /// can happen for items from external crates that we intentionally skip.
@@ -181,13 +237,7 @@ impl<'db> Collector<'db> {
         let source_id = self.resolve_node_id(source_name);
         let target_id = self.resolve_node_id(target_name);
         if let (Some(src), Some(tgt)) = (source_id, target_id) {
-            let edge_id = self.alloc_id();
-            self.storage.edges.push(OwnedStorageEdge {
-                id: edge_id,
-                type_: edge_type,
-                source_node_id: src,
-                target_node_id: tgt,
-            });
+            self.push_edge(edge_type, src, tgt);
         }
     }
 
@@ -282,6 +332,7 @@ impl<'db> Collector<'db> {
                 if let Some(file_path) =
                     self.vfs.file_path(vfs_fid).as_path().map(|p| p.to_string())
                 {
+                    self.record_local_file(vfs_fid);
                     if reported_files.insert(file_path.clone()) {
                         (self.on_file)(&file_path);
                     }
@@ -304,6 +355,7 @@ impl<'db> Collector<'db> {
                     seen.insert(mname.clone());
                     let qualified_name = Self::qualify_in_module(&module_prefix, &mname);
                     self.emit_from_source(m.source(self.db), &qualified_name, NODE_MACRO);
+                    self.register_def(DefKey::Def(ModuleDef::Macro(m)), &qualified_name);
                 }
             }
             // Collect parse errors for every file in this module.
@@ -314,131 +366,26 @@ impl<'db> Collector<'db> {
                 self.collect_impl_items(&module_prefix, imp);
             }
         }
-        // Second pass: emit EDGE_CALL edges by walking function bodies.
-        // Must be done after all nodes are collected so node_ids is fully populated.
-        let fns: Vec<(ra_ap_hir::Function, String)> = krate
-            .modules(self.db)
-            .into_iter()
-            .flat_map(|m| m.declarations(self.db))
-            .filter_map(|def| {
-                if let ModuleDef::Function(f) = def {
-                    let name = f.name(self.db).as_str().to_string();
-                    Some((f, name))
-                } else {
-                    None
-                }
-            })
-            .collect();
-        for (f, caller_name) in &fns {
-            let caller_qualified = self
-                .node_ids
-                .keys()
-                .find(|k| k.as_str() == caller_name || k.ends_with(&format!("::{caller_name}")))
-                .cloned();
-            if let Some(caller_qualified) = caller_qualified {
-                self.collect_fn_call_edges(*f, &caller_qualified);
-            }
-        }
-        // Also collect call edges for impl methods.
-        for module in krate.modules(self.db) {
-            for imp in module.impl_defs(self.db) {
-                let module_prefix = self.module_prefix(module);
-                let Some(src) = imp.source(self.db) else {
-                    continue;
-                };
-                let type_nodes: Vec<ast::Type> = src
-                    .value
-                    .syntax()
-                    .children()
-                    .filter_map(ast::Type::cast)
-                    .collect();
-                let has_for = src.value.for_token().is_some();
-                let self_ty = if has_for && type_nodes.len() >= 2 {
-                    Some(&type_nodes[1])
-                } else if !has_for && !type_nodes.is_empty() {
-                    Some(&type_nodes[0])
-                } else {
-                    continue;
-                };
-                let owner_name = match self_ty {
-                    Some(ast::Type::PathType(pt)) => pt
-                        .path()
-                        .and_then(|p| p.segment())
-                        .and_then(|s| s.name_ref())
-                        .map(|n| Self::qualify_in_module(&module_prefix, &n.text().to_string())),
-                    _ => None,
-                };
-                let Some(owner_name) = owner_name else {
-                    continue;
-                };
-                for item in imp.items(self.db) {
-                    if let AssocItem::Function(f) = item {
-                        let fname = f.name(self.db).as_str().to_string();
-                        let qualified = format!("{owner_name}::{fname}");
-                        if self.node_ids.contains_key(&qualified) {
-                            self.collect_fn_call_edges(f, &qualified);
-                        }
-                    }
-                }
-            }
-        }
+        // Call and inheritance edges are emitted afterwards by the semantic
+        // reference pass (collect_semantic_edges), once all crates' nodes are
+        // registered in def_ids.
     }
 
-    /// Walk one `impl` block using the AST only — no HIR type inference.
-    ///   - `impl Trait for Type`  → EDGE_INHERITANCE from Type to Trait
-    ///   - trait bounds on the impl's type params → EDGE_TYPE_USAGE from impl self-type to bound
+    /// Walk one `impl` block's generic bounds:
+    ///   trait bounds on the impl's type params → EDGE_TYPE_USAGE from impl self-type to bound.
+    /// (`impl Trait for Type` inheritance edges are emitted semantically in
+    /// collect_semantic_edges.)
     fn collect_impl(&mut self, module_prefix: &str, imp: ra_ap_hir::Impl) {
-        // Use the AST source to avoid any HIR type-inference calls (Type::as_adt,
-        // Type::display, etc.) which require the salsa next-solver TLS attachment.
         let Some(src) = imp.source(self.db) else {
             return;
         };
         let ast_impl = &src.value;
         let source_context = self.source_context_from_in_file(&src);
 
-        // In `impl [Trait for] Type { … }`, child Type nodes appear in source order:
-        //   - with `for` token: first child = trait type, second child = self type
-        //   - without `for` token: only child = self type
-        let type_nodes: Vec<ast::Type> = ast_impl
-            .syntax()
-            .children()
-            .filter_map(ast::Type::cast)
-            .collect();
-
-        let has_for = ast_impl.for_token().is_some();
-        let (trait_ty, self_ty) = if has_for && type_nodes.len() >= 2 {
-            (Some(&type_nodes[0]), Some(&type_nodes[1]))
-        } else if !has_for && type_nodes.len() >= 1 {
-            (None, Some(&type_nodes[0]))
-        } else {
-            return;
-        };
-
-        let self_ty_name = match self_ty {
-            Some(ast::Type::PathType(pt)) => pt
-                .path()
-                .and_then(|p| p.segment())
-                .and_then(|s| s.name_ref())
-                .map(|n| n.text().to_string()),
-            _ => None,
-        };
-        let Some(self_ty_name) = self_ty_name else {
+        let Some(self_ty_name) = impl_self_type_segment_name(ast_impl) else {
             return;
         };
         let self_ty_name = Self::qualify_in_module(module_prefix, &self_ty_name);
-
-        // `impl Trait for Type` → EDGE_INHERITANCE
-        if let Some(ast::Type::PathType(pt)) = trait_ty {
-            if let Some(trait_name) = pt
-                .path()
-                .and_then(|p| p.segment())
-                .and_then(|s| s.name_ref())
-                .map(|n| n.text().to_string())
-            {
-                let trait_name = Self::qualify_in_module(module_prefix, &trait_name);
-                self.add_edge(EDGE_INHERITANCE, &self_ty_name, &trait_name);
-            }
-        }
 
         // Trait bounds on the impl's own type parameters → EDGE_TYPE_USAGE
         self.emit_ast_generic_bounds(
@@ -449,8 +396,7 @@ impl<'db> Collector<'db> {
     }
 
     /// Emit EDGE_TYPE_USAGE edges for trait bounds on a generic item's type params.
-    /// Uses the AST (via HasSource) to avoid the salsa next-solver TLS requirement
-    /// of TypeParam::trait_bounds(db).
+    /// Works on the AST (via HasSource); bound targets resolve by name.
     fn collect_generic_bounds<N>(&mut self, item_name: &str, src: Option<ra_ap_hir::InFile<N>>)
     where
         N: ra_ap_syntax::AstNode + HasGenericParams,
@@ -569,78 +515,58 @@ impl<'db> Collector<'db> {
     fn collect_trait_details(
         &mut self,
         trait_name: &str,
+        t: ra_ap_hir::Trait,
         src: Option<ra_ap_hir::InFile<ast::Trait>>,
     ) {
-        let Some(in_file) = src else {
-            return;
-        };
-        let Some(ctx) = self.source_context_from_in_file(&in_file) else {
-            return;
-        };
-
-        let ast_trait = in_file.value;
-
-        if let Some(bounds) = ast_trait.type_bound_list() {
-            for bound in bounds.bounds() {
-                match bound_target(&bound) {
-                    Some(BoundTarget::Type(bound_name)) => {
-                        self.add_edge(EDGE_INHERITANCE, trait_name, &bound_name);
+        // Supertrait bounds from the AST (`trait A: B`).
+        if let Some(in_file) = src {
+            if let Some(ctx) = self.source_context_from_in_file(&in_file) {
+                let ast_trait = in_file.value;
+                if let Some(bounds) = ast_trait.type_bound_list() {
+                    for bound in bounds.bounds() {
+                        match bound_target(&bound) {
+                            Some(BoundTarget::Type(bound_name)) => {
+                                self.add_edge(EDGE_INHERITANCE, trait_name, &bound_name);
+                            }
+                            Some(BoundTarget::Lifetime(lifetime_name)) => {
+                                let lifetime_node_name = self.ensure_type_parameter_node(
+                                    trait_name,
+                                    &lifetime_name,
+                                    bound.syntax().text_range(),
+                                    &ctx,
+                                );
+                                self.add_edge(EDGE_TYPE_USAGE, trait_name, &lifetime_node_name);
+                            }
+                            None => {}
+                        }
                     }
-                    Some(BoundTarget::Lifetime(lifetime_name)) => {
-                        let lifetime_node_name = self.ensure_type_parameter_node(
-                            trait_name,
-                            &lifetime_name,
-                            bound.syntax().text_range(),
-                            &ctx,
-                        );
-                        self.add_edge(EDGE_TYPE_USAGE, trait_name, &lifetime_node_name);
-                    }
-                    None => {}
                 }
             }
         }
 
-        if let Some(assoc_items) = ast_trait.assoc_item_list() {
-            for assoc in assoc_items.assoc_items() {
-                match assoc {
-                    ast::AssocItem::Fn(fn_item) => {
-                        let Some(name) = fn_item.name() else { continue };
-                        let qualified_name = format!("{trait_name}::{}", name.text().to_string());
-                        self.add_def_with_context(
-                            &qualified_name,
-                            NODE_METHOD,
-                            fn_item.syntax().text_range(),
-                            &ctx,
-                        );
-                        self.add_edge(EDGE_MEMBER, trait_name, &qualified_name);
-                    }
-                    ast::AssocItem::TypeAlias(type_alias) => {
-                        let Some(name) = type_alias.name() else {
-                            continue;
-                        };
-                        let qualified_name = format!("{trait_name}::{}", name.text().to_string());
-                        self.add_def_with_context(
-                            &qualified_name,
-                            NODE_TYPEDEF,
-                            type_alias.syntax().text_range(),
-                            &ctx,
-                        );
-                        self.add_edge(EDGE_MEMBER, trait_name, &qualified_name);
-                    }
-                    ast::AssocItem::Const(const_item) => {
-                        let Some(name) = const_item.name() else {
-                            continue;
-                        };
-                        let qualified_name = format!("{trait_name}::{}", name.text().to_string());
-                        self.add_def_with_context(
-                            &qualified_name,
-                            NODE_GLOBAL_VARIABLE,
-                            const_item.syntax().text_range(),
-                            &ctx,
-                        );
-                        self.add_edge(EDGE_MEMBER, trait_name, &qualified_name);
-                    }
-                    _ => {}
+        // Associated items via HIR, so each gets a DefKey registration.
+        for item in t.items(self.db) {
+            match item {
+                AssocItem::Function(f) => {
+                    let fname = f.name(self.db).as_str().to_string();
+                    let qualified_name = format!("{trait_name}::{fname}");
+                    self.emit_from_source(f.source(self.db), &qualified_name, NODE_METHOD);
+                    self.register_def(DefKey::Def(ModuleDef::Function(f)), &qualified_name);
+                    self.add_edge(EDGE_MEMBER, trait_name, &qualified_name);
+                }
+                AssocItem::TypeAlias(ta) => {
+                    let taname = ta.name(self.db).as_str().to_string();
+                    let qualified_name = format!("{trait_name}::{taname}");
+                    self.emit_from_source(ta.source(self.db), &qualified_name, NODE_TYPEDEF);
+                    self.register_def(DefKey::Def(ModuleDef::TypeAlias(ta)), &qualified_name);
+                    self.add_edge(EDGE_MEMBER, trait_name, &qualified_name);
+                }
+                AssocItem::Const(c) => {
+                    let Some(cname) = c.name(self.db) else { continue };
+                    let qualified_name = format!("{trait_name}::{}", cname.as_str());
+                    self.emit_from_source(c.source(self.db), &qualified_name, NODE_GLOBAL_VARIABLE);
+                    self.register_def(DefKey::Def(ModuleDef::Const(c)), &qualified_name);
+                    self.add_edge(EDGE_MEMBER, trait_name, &qualified_name);
                 }
             }
         }
@@ -725,6 +651,7 @@ impl<'db> Collector<'db> {
                 element_id: node_id,
                 source_location_id: loc_id,
             });
+            self.def_ids.insert(DefKey::Field(field), node_id);
             self.add_edge(EDGE_MEMBER, owner_name, &qualified_name);
         }
     }
@@ -746,6 +673,7 @@ impl<'db> Collector<'db> {
                 &qualified_variant,
                 NODE_ENUM_CONSTANT,
             );
+            self.register_def(DefKey::Def(ModuleDef::EnumVariant(variant)), &qualified_variant);
             self.add_edge(EDGE_MEMBER, enum_name, &qualified_variant);
             self.collect_hir_fields(&qualified_variant, variant.fields(self.db));
         }
@@ -756,28 +684,7 @@ impl<'db> Collector<'db> {
             return;
         };
         let ast_impl = &src.value;
-        let type_nodes: Vec<ast::Type> = ast_impl
-            .syntax()
-            .children()
-            .filter_map(ast::Type::cast)
-            .collect();
-        let has_for = ast_impl.for_token().is_some();
-        let self_ty = if has_for && type_nodes.len() >= 2 {
-            Some(&type_nodes[1])
-        } else if !has_for && !type_nodes.is_empty() {
-            Some(&type_nodes[0])
-        } else {
-            return;
-        };
-        let self_ty_name = match self_ty {
-            Some(ast::Type::PathType(pt)) => pt
-                .path()
-                .and_then(|p| p.segment())
-                .and_then(|s| s.name_ref())
-                .map(|n| n.text().to_string()),
-            _ => None,
-        };
-        let Some(self_ty_name) = self_ty_name else {
+        let Some(self_ty_name) = impl_self_type_segment_name(ast_impl) else {
             return;
         };
         let owner_name = Self::qualify_in_module(module_prefix, &self_ty_name);
@@ -794,6 +701,7 @@ impl<'db> Collector<'db> {
                         self.collect_generic_bounds(&qualified_name, fsrc);
                         self.add_edge(EDGE_MEMBER, &owner_name, &qualified_name);
                     }
+                    self.register_def(DefKey::Def(ModuleDef::Function(f)), &qualified_name);
                 }
                 AssocItem::Const(c) => {
                     if let Some(cname) = c.name(self.db) {
@@ -808,6 +716,7 @@ impl<'db> Collector<'db> {
                             );
                             self.add_edge(EDGE_MEMBER, &owner_name, &qualified_name);
                         }
+                        self.register_def(DefKey::Def(ModuleDef::Const(c)), &qualified_name);
                     }
                 }
                 AssocItem::TypeAlias(ta) => {
@@ -818,67 +727,141 @@ impl<'db> Collector<'db> {
                         self.emit_from_source(ta.source(self.db), &qualified_name, NODE_TYPEDEF);
                         self.add_edge(EDGE_MEMBER, &owner_name, &qualified_name);
                     }
+                    self.register_def(DefKey::Def(ModuleDef::TypeAlias(ta)), &qualified_name);
                 }
             }
         }
     }
 
-    /// Walk a function's AST body and emit EDGE_CALL for every call site whose
-    /// callee resolves to a known node in `node_ids`.
-    /// Uses AST only — no HIR type inference.
-    fn collect_fn_call_edges(&mut self, f: ra_ap_hir::Function, caller_name: &str) {
-        let Some(src) = f.source(self.db) else { return };
-        let fn_node = src.value.syntax();
+    // -----------------------------------------------------------------------
+    // Semantic reference pass
+    // -----------------------------------------------------------------------
 
-        // Collect all callee name strings from call expressions in the body.
-        let mut callees: Vec<String> = Vec::new();
-
-        for node in fn_node.descendants() {
-            match node.kind() {
-                SyntaxKind::CALL_EXPR => {
-                    if let Some(call) = ast::CallExpr::cast(node) {
-                        if let Some(expr) = call.expr() {
-                            if let ast::Expr::PathExpr(pe) = expr {
-                                if let Some(name) = pe
-                                    .path()
-                                    .and_then(|p| p.segment())
-                                    .and_then(|s| s.name_ref())
-                                {
-                                    callees.push(name.text().to_string());
-                                }
-                            }
+    /// Walk every collected local file through `Semantics` and emit edges whose
+    /// targets are resolved semantically (exact def identity). Falls back to
+    /// name-based lookup (`resolve_node_id`) per site when resolution fails,
+    /// e.g. inside unexpanded macros.
+    fn collect_semantic_edges(&mut self, sema: &Semantics<'db, RootDatabase>) {
+        let files: Vec<ra_ap_vfs::FileId> = self.local_files.clone();
+        for vfs_fid in files {
+            let source_file = sema.parse_guess_edition(vfs_fid);
+            for node in source_file.syntax().descendants() {
+                match node.kind() {
+                    SyntaxKind::IMPL => {
+                        if let Some(impl_ast) = ast::Impl::cast(node) {
+                            self.emit_impl_inheritance(sema, &impl_ast);
                         }
                     }
-                }
-                SyntaxKind::METHOD_CALL_EXPR => {
-                    if let Some(call) = ast::MethodCallExpr::cast(node) {
-                        if let Some(name_ref) = call.name_ref() {
-                            callees.push(name_ref.text().to_string());
+                    SyntaxKind::CALL_EXPR => {
+                        let Some(call) = ast::CallExpr::cast(node) else {
+                            continue;
+                        };
+                        let Some(ast::Expr::PathExpr(pe)) = call.expr() else {
+                            continue;
+                        };
+                        let Some(path) = pe.path() else { continue };
+                        let target = match sema.resolve_path(&path) {
+                            Some(PathResolution::Def(def)) => self.def_id(DefKey::Def(def)),
+                            _ => None,
                         }
-                    }
-                }
-                _ => {}
-            }
-        }
-
-        let caller_name = caller_name.to_owned();
-        for callee in callees {
-            let callee_id = self.resolve_node_id(&callee);
-            if let Some(callee_id) = callee_id {
-                let caller_id = self.node_ids.get(&caller_name).copied();
-                if let Some(caller_id) = caller_id {
-                    if caller_id != callee_id {
-                        let edge_id = self.alloc_id();
-                        self.storage.edges.push(OwnedStorageEdge {
-                            id: edge_id,
-                            type_: EDGE_CALL,
-                            source_node_id: caller_id,
-                            target_node_id: callee_id,
+                        .or_else(|| {
+                            let name = path.segment()?.name_ref()?.text().to_string();
+                            self.resolve_node_id(&name)
                         });
+                        self.emit_call_edge(sema, call.syntax(), target);
                     }
+                    SyntaxKind::METHOD_CALL_EXPR => {
+                        let Some(call) = ast::MethodCallExpr::cast(node) else {
+                            continue;
+                        };
+                        let target = sema
+                            .resolve_method_call(&call)
+                            .and_then(|f| self.def_id(DefKey::Def(ModuleDef::Function(f))))
+                            .or_else(|| {
+                                let name = call.name_ref()?.text().to_string();
+                                self.resolve_node_id(&name)
+                            });
+                        self.emit_call_edge(sema, call.syntax(), target);
+                    }
+                    _ => {}
                 }
             }
         }
+    }
+
+    /// `impl Trait for Type` → EDGE_INHERITANCE from Type to Trait.
+    /// Trait and self type are resolved via `Semantics::resolve_path`; each side
+    /// independently falls back to name lookup on the path segment text.
+    fn emit_impl_inheritance(
+        &mut self,
+        sema: &Semantics<'db, RootDatabase>,
+        impl_ast: &ast::Impl,
+    ) {
+        // Only `impl Trait for Type` produces an inheritance edge.
+        if impl_ast.for_token().is_none() {
+            return;
+        }
+        let type_nodes: Vec<ast::Type> = impl_ast
+            .syntax()
+            .children()
+            .filter_map(ast::Type::cast)
+            .collect();
+        if type_nodes.len() < 2 {
+            return;
+        }
+        let trait_id = self.resolve_type_node(sema, &type_nodes[0]);
+        let self_id = self.resolve_type_node(sema, &type_nodes[1]);
+        if let (Some(self_id), Some(trait_id)) = (self_id, trait_id) {
+            self.push_edge(EDGE_INHERITANCE, self_id, trait_id);
+        }
+    }
+
+    /// Resolve a path-shaped AST type to an emitted node id: semantically first,
+    /// then by segment-name fallback.
+    fn resolve_type_node(
+        &self,
+        sema: &Semantics<'db, RootDatabase>,
+        ty: &ast::Type,
+    ) -> Option<i64> {
+        let ast::Type::PathType(pt) = ty else {
+            return None;
+        };
+        let path = pt.path()?;
+        match sema.resolve_path(&path) {
+            Some(PathResolution::Def(def)) => self.def_id(DefKey::Def(def)),
+            _ => None,
+        }
+        .or_else(|| {
+            let name = path.segment()?.name_ref()?.text().to_string();
+            self.resolve_node_id(&name)
+        })
+    }
+
+    /// Emit an EDGE_CALL from the function enclosing `call_site` to `target`.
+    fn emit_call_edge(
+        &mut self,
+        sema: &Semantics<'db, RootDatabase>,
+        call_site: &ra_ap_syntax::SyntaxNode,
+        target: Option<i64>,
+    ) {
+        let Some(target) = target else { return };
+        let Some(caller) = self.enclosing_fn_id(sema, call_site) else {
+            return;
+        };
+        if caller != target {
+            self.push_edge(EDGE_CALL, caller, target);
+        }
+    }
+
+    /// Node id of the nearest enclosing named function of `node`, if emitted.
+    fn enclosing_fn_id(
+        &self,
+        sema: &Semantics<'db, RootDatabase>,
+        node: &ra_ap_syntax::SyntaxNode,
+    ) -> Option<i64> {
+        let fn_ast = node.ancestors().find_map(ast::Fn::cast)?;
+        let f = sema.to_def(&fn_ast)?;
+        self.def_id(DefKey::Def(ModuleDef::Function(f)))
     }
 
     fn collect_module_def(&mut self, module_prefix: &str, def: ModuleDef) {
@@ -893,6 +876,7 @@ impl<'db> Collector<'db> {
                 };
                 let src = f.source(self.db);
                 self.emit_from_source(src.clone(), &qualified_name, kind);
+                self.register_def(DefKey::Def(def), &qualified_name);
                 self.collect_generic_bounds(&qualified_name, src);
             }
             ModuleDef::Adt(adt) => match adt {
@@ -901,6 +885,7 @@ impl<'db> Collector<'db> {
                     let qualified_name = Self::qualify_in_module(module_prefix, &name);
                     let src = s.source(self.db);
                     self.emit_from_source(src.clone(), &qualified_name, NODE_STRUCT);
+                    self.register_def(DefKey::Def(def), &qualified_name);
                     self.collect_generic_bounds(&qualified_name, src);
                     self.collect_struct_fields(&qualified_name, s);
                 }
@@ -909,6 +894,7 @@ impl<'db> Collector<'db> {
                     let qualified_name = Self::qualify_in_module(module_prefix, &name);
                     let src = e.source(self.db);
                     self.emit_from_source(src.clone(), &qualified_name, NODE_ENUM);
+                    self.register_def(DefKey::Def(def), &qualified_name);
                     self.collect_generic_bounds(&qualified_name, src);
                     self.collect_enum_variants(&qualified_name, e);
                 }
@@ -917,6 +903,7 @@ impl<'db> Collector<'db> {
                     let qualified_name = Self::qualify_in_module(module_prefix, &name);
                     let src = u.source(self.db);
                     self.emit_from_source(src.clone(), &qualified_name, NODE_UNION);
+                    self.register_def(DefKey::Def(def), &qualified_name);
                     self.collect_generic_bounds(&qualified_name, src);
                     self.collect_union_fields(&qualified_name, u);
                 }
@@ -926,14 +913,16 @@ impl<'db> Collector<'db> {
                 let qualified_name = Self::qualify_in_module(module_prefix, &name);
                 let src = t.source(self.db);
                 self.emit_from_source(src.clone(), &qualified_name, NODE_INTERFACE);
+                self.register_def(DefKey::Def(def), &qualified_name);
                 self.collect_generic_bounds(&qualified_name, src.clone());
-                self.collect_trait_details(&qualified_name, src);
+                self.collect_trait_details(&qualified_name, t, src);
             }
             ModuleDef::TypeAlias(ta) => {
                 let name = ta.name(self.db).as_str().to_string();
                 let qualified_name = Self::qualify_in_module(module_prefix, &name);
                 let src = ta.source(self.db);
                 self.emit_from_source(src.clone(), &qualified_name, NODE_TYPEDEF);
+                self.register_def(DefKey::Def(def), &qualified_name);
                 self.collect_generic_bounds(&qualified_name, src);
             }
             ModuleDef::Const(c) => {
@@ -941,17 +930,20 @@ impl<'db> Collector<'db> {
                     let name = name.as_str().to_string();
                     let qualified_name = Self::qualify_in_module(module_prefix, &name);
                     self.emit_from_source(c.source(self.db), &qualified_name, NODE_GLOBAL_VARIABLE);
+                    self.register_def(DefKey::Def(def), &qualified_name);
                 }
             }
             ModuleDef::Static(s) => {
                 let name = s.name(self.db).as_str().to_string();
                 let qualified_name = Self::qualify_in_module(module_prefix, &name);
                 self.emit_from_source(s.source(self.db), &qualified_name, NODE_GLOBAL_VARIABLE);
+                self.register_def(DefKey::Def(def), &qualified_name);
             }
             ModuleDef::Macro(m) => {
                 let name = m.name(self.db).as_str().to_string();
                 let qualified_name = Self::qualify_in_module(module_prefix, &name);
                 self.emit_from_source(m.source(self.db), &qualified_name, NODE_MACRO);
+                self.register_def(DefKey::Def(def), &qualified_name);
             }
             ModuleDef::Module(m) => {
                 if let Some(name) = m.name(self.db) {
@@ -960,6 +952,7 @@ impl<'db> Collector<'db> {
                     // declaration_source gives the `mod foo;` node (inline modules
                     // have no declaration node — they are covered by their parent).
                     self.emit_module_decl(m, &qualified_name);
+                    self.register_def(DefKey::Def(def), &qualified_name);
                 }
             }
             ModuleDef::BuiltinType(_) | ModuleDef::EnumVariant(_) => {}
@@ -1033,27 +1026,64 @@ pub(super) fn collect_from_db<'db>(
     vfs: &'db Vfs,
     on_file: impl FnMut(&str) + 'db,
 ) -> OwnedIntermediateStorage {
-    let mut collector = Collector::with_callback(db, vfs, on_file);
+    // HIR type inference (Semantics::resolve_method_call, Impl::self_ty, …)
+    // runs on the next-trait-solver, which requires the database to be
+    // attached to the current thread via hir_ty's TLS.
+    ra_ap_hir::attach_db(db, || {
+        let mut collector = Collector::with_callback(db, vfs, on_file);
 
-    for krate in Crate::all(db) {
-        // Skip library crates (std, core, deps) — only index local crates.
-        let vfs_fid = krate.root_file(db);
-        let is_local = vfs
-            .file_path(vfs_fid)
-            .as_path()
-            .map(|p| {
-                let s = p.to_string();
-                !s.contains("/.cargo/") && !s.contains("/rustup/")
-            })
-            .unwrap_or(false);
-        if !is_local {
-            continue;
+        for krate in Crate::all(db) {
+            // Skip library crates (std, core, deps) — only index local crates.
+            let vfs_fid = krate.root_file(db);
+            let is_local = vfs
+                .file_path(vfs_fid)
+                .as_path()
+                .map(|p| {
+                    let s = p.to_string();
+                    !s.contains("/.cargo/") && !s.contains("/rustup/")
+                })
+                .unwrap_or(false);
+            if !is_local {
+                continue;
+            }
+            collector.collect_crate(krate);
         }
-        collector.collect_crate(krate);
-    }
 
-    collector.storage.next_id = collector.next_id;
-    collector.storage
+        // Second pass: reference edges, resolved semantically across all crates.
+        let sema = Semantics::new(db);
+        collector.collect_semantic_edges(&sema);
+
+        collector.storage.next_id = collector.next_id;
+        collector.storage
+    })
+}
+
+/// In `impl [Trait for] Type { … }`, child Type nodes appear in source order:
+///   - with `for` token: first child = trait type, second child = self type
+///   - without `for` token: only child = self type
+/// Returns the last path segment name of the self type, if path-shaped.
+fn impl_self_type_segment_name(ast_impl: &ast::Impl) -> Option<String> {
+    let type_nodes: Vec<ast::Type> = ast_impl
+        .syntax()
+        .children()
+        .filter_map(ast::Type::cast)
+        .collect();
+    let has_for = ast_impl.for_token().is_some();
+    let self_ty = if has_for && type_nodes.len() >= 2 {
+        &type_nodes[1]
+    } else if !has_for && !type_nodes.is_empty() {
+        &type_nodes[0]
+    } else {
+        return None;
+    };
+    match self_ty {
+        ast::Type::PathType(pt) => pt
+            .path()
+            .and_then(|p| p.segment())
+            .and_then(|s| s.name_ref())
+            .map(|n| n.text().to_string()),
+        _ => None,
+    }
 }
 
 fn bound_target(bound: &ast::TypeBound) -> Option<BoundTarget> {

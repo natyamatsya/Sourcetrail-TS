@@ -417,3 +417,82 @@ fn call_edge_emitted_for_method_call() {
         s.edges
     );
 }
+
+// -----------------------------------------------------------------------
+// Semantic resolution — cases string matching cannot disambiguate
+// -----------------------------------------------------------------------
+
+#[test]
+fn method_call_resolves_to_the_right_type() {
+    // Two types with the same method name: name-based matching is ambiguous
+    // (and used to drop the edge); semantic resolution picks the right one.
+    let s = index_src(
+        "pub struct A; impl A { pub fn go(&self) {} }
+         pub struct B; impl B { pub fn go(&self) {} }
+         pub fn run(a: A) { a.go(); }",
+    );
+    assert!(
+        has_edge(&s, EDGE_CALL, "run", "A::go"),
+        "expected EDGE_CALL from run to A::go, edges: {:?}",
+        s.edges
+    );
+    assert!(
+        !has_edge(&s, EDGE_CALL, "run", "B::go"),
+        "must not link run to B::go, edges: {:?}",
+        s.edges
+    );
+}
+
+#[test]
+fn call_resolves_to_the_right_module() {
+    // Same function name in two modules; the use-import decides.
+    let s = index_src(
+        "pub mod first { pub fn work() {} }
+         pub mod second { pub fn work() {} }
+         pub fn run() { second::work(); }",
+    );
+    assert!(
+        has_edge(&s, EDGE_CALL, "run", "second::work"),
+        "expected EDGE_CALL from run to second::work, edges: {:?}",
+        s.edges
+    );
+    assert!(
+        !has_edge(&s, EDGE_CALL, "run", "first::work"),
+        "must not link run to first::work, edges: {:?}",
+        s.edges
+    );
+}
+
+#[test]
+fn impl_trait_with_qualified_path_resolves_to_the_right_trait() {
+    // Two traits with the same name in different modules.
+    let s = index_src(
+        "pub mod one { pub trait Marker {} }
+         pub mod two { pub trait Marker {} }
+         pub struct S;
+         impl two::Marker for S {}",
+    );
+    assert!(
+        has_edge(&s, EDGE_INHERITANCE, "S", "two::Marker"),
+        "expected EDGE_INHERITANCE from S to two::Marker, edges: {:?}",
+        s.edges
+    );
+    assert!(
+        !has_edge(&s, EDGE_INHERITANCE, "S", "one::Marker"),
+        "must not link S to one::Marker, edges: {:?}",
+        s.edges
+    );
+}
+
+#[test]
+fn call_edges_are_deduplicated() {
+    // Two calls to the same function from the same caller → one edge.
+    let s = index_src("pub fn bar() {} pub fn foo() { bar(); bar(); }");
+    let call_edges: Vec<_> = s.edges.iter().filter(|e| e.type_ == EDGE_CALL).collect();
+    assert_eq!(
+        call_edges.len(),
+        1,
+        "expected exactly one deduplicated EDGE_CALL, edges: {:?}",
+        s.edges
+    );
+}
