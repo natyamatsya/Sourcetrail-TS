@@ -103,6 +103,25 @@ jobs:
         with:
           submodules: recursive
 
+      # The Rust language package builds the indexer through Corrosion, and
+      # the smoke test loads the sysroot at runtime (rust-src, same reason
+      # as in the rust-indexer job).
+      - name: Install Rust stable
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          components: rust-src
+
+      - name: Cache Cargo registry + build
+        uses: actions/cache@v6
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            src/rust_indexer/target
+            build/cargo
+          key: ${{ runner.os }}-cargo-${{ hashFiles('src/rust_indexer/**/Cargo.toml') }}
+          restore-keys: ${{ runner.os }}-cargo-
+
       - name: Install Qt 6 (Linux)
         if: runner.os == 'Linux'
         uses: jurplel/install-qt-action@v4
@@ -163,7 +182,7 @@ jobs:
             -DCMAKE_TOOLCHAIN_FILE="$PWD/vcpkg/scripts/buildsystems/vcpkg.cmake" \
             -DVCPKG_TARGET_TRIPLET=x64-arm64-linux-windows-osx-static-md \
             -DBUILD_CXX_LANGUAGE_PACKAGE=ON \
-            -DBUILD_RUST_LANGUAGE_PACKAGE=OFF \
+            -DBUILD_RUST_LANGUAGE_PACKAGE=ON \
             -DBUILD_UNIT_TESTS_PACKAGE=ON \
             $EXTRA
 
@@ -173,6 +192,15 @@ jobs:
       - name: Test
         working-directory: build
         run: ctest --output-on-failure --no-tests=error
+
+      # Headless end-to-end: index the rust_indexer crate through the real
+      # app pipeline (CLI -> IPC -> subprocess -> PersistentStorage) and
+      # verify the resulting database. The script takes the build dir; the
+      # app + indexer binaries land in build/app (copy_rust_indexer).
+      - name: Rust smoke (headless end-to-end)
+        env:
+          QT_QPA_PLATFORM: offscreen
+        run: ./scripts/smoke-rust.sh build
 
   # ---------------------------------------------------------------------------
   # C++ build + unit tests on Windows.
