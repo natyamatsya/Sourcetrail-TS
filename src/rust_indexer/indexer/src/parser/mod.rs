@@ -17,6 +17,7 @@
 //       EDGE_INHERITANCE   (1<<4 = 16)  — `impl Trait for Type`, supertraits
 //       EDGE_OVERRIDE      (1<<5 = 32)  — impl method → trait method
 //       EDGE_TYPE_ARGUMENT (1<<6 = 64)  — generic arguments at use sites
+//       EDGE_IMPORT        (1<<9 = 512) — `use` items → imported definition
 //   (see context/DESIGN_RUST_TYPE_SYSTEM_EDGES.md)
 //   - StorageError  for load / analysis failures
 //
@@ -75,6 +76,7 @@ const EDGE_CALL: i32 = 1 << 3;
 const EDGE_INHERITANCE: i32 = 1 << 4;
 const EDGE_OVERRIDE: i32 = 1 << 5;
 const EDGE_TYPE_ARGUMENT: i32 = 1 << 6;
+const EDGE_IMPORT: i32 = 1 << 9;
 
 // ---------------------------------------------------------------------------
 // Public entry point: index a whole Cargo crate

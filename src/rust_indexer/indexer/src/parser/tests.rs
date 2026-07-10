@@ -895,3 +895,96 @@ fn handwritten_items_stay_explicit() {
         Some(DEFINITION_IMPLICIT_T)
     );
 }
+
+// -----------------------------------------------------------------------
+// Import edges — `use` items
+// -----------------------------------------------------------------------
+
+const EDGE_IMPORT_T: i32 = 1 << 9;
+const NODE_FILE_T: i32 = 1 << 18;
+
+/// EDGE_IMPORT edges whose source is the indexed file's own node,
+/// returning the decoded target names.
+fn file_import_targets(s: &OwnedIntermediateStorage) -> Vec<String> {
+    let file_ids: Vec<i64> = s
+        .nodes
+        .iter()
+        .filter(|n| n.type_ == NODE_FILE_T)
+        .map(|n| n.id)
+        .collect();
+    s.edges
+        .iter()
+        .filter(|e| e.type_ == EDGE_IMPORT_T && file_ids.contains(&e.source_node_id))
+        .filter_map(|e| {
+            s.nodes
+                .iter()
+                .find(|n| n.id == e.target_node_id)
+                .map(|n| decode_name(&n.serialized_name))
+        })
+        .collect()
+}
+
+#[test]
+fn use_item_emits_import_edge_from_module() {
+    let s = index_src("pub mod a { pub fn f() {} } pub mod b { use crate::a::f; }");
+    assert!(
+        has_edge(&s, EDGE_IMPORT_T, "b", "a::f"),
+        "expected EDGE_IMPORT from b to a::f, edges: {:?}",
+        s.edges
+    );
+}
+
+#[test]
+fn grouped_and_aliased_imports_resolve_each_leaf() {
+    let s = index_src(
+        "pub mod a { pub fn f() {} pub struct G; } pub mod b { use crate::a::{f, G as H}; }",
+    );
+    assert!(
+        has_edge(&s, EDGE_IMPORT_T, "b", "a::f"),
+        "expected EDGE_IMPORT b -> a::f, edges: {:?}",
+        s.edges
+    );
+    assert!(
+        has_edge(&s, EDGE_IMPORT_T, "b", "a::G"),
+        "expected EDGE_IMPORT b -> a::G (aliased), edges: {:?}",
+        s.edges
+    );
+}
+
+#[test]
+fn qualified_top_level_import_attaches_to_file_node() {
+    // The crate-root module is unnamed and has no node — the import edge
+    // starts at the file's own node.
+    let s = index_src("pub mod a { pub fn f() {} } use a::f;");
+    assert_eq!(file_import_targets(&s), vec!["a::f".to_owned()]);
+}
+
+#[test]
+fn glob_import_targets_the_module() {
+    let s = index_src("pub mod a { pub fn f() {} } pub mod b { use crate::a::*; }");
+    assert!(
+        has_edge(&s, EDGE_IMPORT_T, "b", "a"),
+        "expected EDGE_IMPORT b -> a for glob, edges: {:?}",
+        s.edges
+    );
+}
+
+#[test]
+fn external_imports_drop_silently() {
+    let s = index_src("use std::collections::HashMap;\npub fn f() {}");
+    assert!(
+        !edge_types(&s).contains(&EDGE_IMPORT_T),
+        "external import must not emit an edge, edges: {:?}",
+        s.edges
+    );
+}
+
+#[test]
+fn function_local_import_attaches_to_the_function() {
+    let s = index_src("pub mod a { pub fn f() {} } pub fn g() { use crate::a::f; }");
+    assert!(
+        has_edge(&s, EDGE_IMPORT_T, "g", "a::f"),
+        "expected EDGE_IMPORT g -> a::f, edges: {:?}",
+        s.edges
+    );
+}

@@ -19,11 +19,11 @@ use crate::ipc::storage::{
 };
 
 use super::{
-    DEFINITION_EXPLICIT, DEFINITION_IMPLICIT, EDGE_CALL, EDGE_INHERITANCE, EDGE_MEMBER,
-    EDGE_OVERRIDE, EDGE_TYPE_ARGUMENT, EDGE_TYPE_USAGE, EDGE_USAGE, LOCATION_SCOPE, LOCATION_TOKEN,
-    NODE_ENUM, NODE_ENUM_CONSTANT, NODE_FIELD, NODE_FILE, NODE_FUNCTION, NODE_GLOBAL_VARIABLE,
-    NODE_INTERFACE, NODE_MACRO, NODE_METHOD, NODE_MODULE, NODE_STRUCT, NODE_TYPE_PARAMETER,
-    NODE_TYPEDEF, NODE_UNION,
+    DEFINITION_EXPLICIT, DEFINITION_IMPLICIT, EDGE_CALL, EDGE_IMPORT, EDGE_INHERITANCE,
+    EDGE_MEMBER, EDGE_OVERRIDE, EDGE_TYPE_ARGUMENT, EDGE_TYPE_USAGE, EDGE_USAGE, LOCATION_SCOPE,
+    LOCATION_TOKEN, NODE_ENUM, NODE_ENUM_CONSTANT, NODE_FIELD, NODE_FILE, NODE_FUNCTION,
+    NODE_GLOBAL_VARIABLE, NODE_INTERFACE, NODE_MACRO, NODE_METHOD, NODE_MODULE, NODE_STRUCT,
+    NODE_TYPE_PARAMETER, NODE_TYPEDEF, NODE_UNION,
 };
 
 /// Identity key for an emitted definition, so that semantically resolved
@@ -65,8 +65,14 @@ fn path_name_range(path: &ast::Path) -> Option<ra_ap_syntax::TextRange> {
 /// One resolved reference from the (parallelizable) resolution step: an edge
 /// plus an optional TOKEN occurrence range in the file being resolved.
 /// Applying a row = `Collector::push_edge` (dedup) + occurrence location.
+/// Sentinel for `ReferenceRow::source_id`: the edge starts at the node of
+/// the file being resolved (used for top-level imports — the crate-root
+/// module is unnamed and has no emitted node). Real ids start at 1.
+const ROW_SOURCE_CURRENT_FILE: i64 = 0;
+
 struct ReferenceRow {
     edge_type: i32,
+    /// Source node id, or `ROW_SOURCE_CURRENT_FILE` for the file's own node.
     source_id: i64,
     target_id: i64,
     /// Reference-site token range, when the reference has a clickable token
@@ -814,7 +820,18 @@ impl<'db> Collector<'db> {
     /// apply order (= `local_files` order) defines the deterministic output.
     fn apply_reference_rows(&mut self, vfs_fid: ra_ap_vfs::FileId, rows: Vec<ReferenceRow>) {
         for row in rows {
-            let edge_id = self.push_edge(row.edge_type, row.source_id, row.target_id);
+            let source_id = if row.source_id == ROW_SOURCE_CURRENT_FILE {
+                // The apply step owns the file cache, so the "current file"
+                // sentinel resolves here (the resolver never sees node ids
+                // of files).
+                match self.file_info(vfs_fid) {
+                    Some(info) => info.file_node_id,
+                    None => continue,
+                }
+            } else {
+                row.source_id
+            };
+            let edge_id = self.push_edge(row.edge_type, source_id, row.target_id);
             if let Some(range) = row.range {
                 self.add_reference_location(edge_id, range, vfs_fid);
             }
@@ -1243,6 +1260,11 @@ impl RefResolver<'_> {
                     let range = fe.name_ref().map(|n| n.syntax().text_range());
                     self.resolve_reference(sema, EDGE_USAGE, fe.syntax(), target, range, &mut rows);
                 }
+                SyntaxKind::USE_TREE => {
+                    if let Some(use_tree) = ast::UseTree::cast(node) {
+                        self.resolve_use_tree(sema, &use_tree, &mut rows);
+                    }
+                }
                 SyntaxKind::RECORD_EXPR_FIELD => {
                     let Some(ref_field) = ast::RecordExprField::cast(node) else {
                         continue;
@@ -1264,6 +1286,70 @@ impl RefResolver<'_> {
             }
         }
         rows
+    }
+
+    /// `use` item → EDGE_IMPORT from the importing scope to each imported
+    /// definition, with a TOKEN occurrence at the imported name.
+    ///
+    /// Only leaf use-trees emit (`use a::b::{c, d as e}` resolves `c` and
+    /// `d`; the `a::b` prefix tree is skipped). A glob (`use a::*`) imports
+    /// the module `a` itself. Imports of definitions we did not index
+    /// (external crates) drop silently. The edge source is the innermost
+    /// enclosing item (function-local `use`), else the enclosing module
+    /// node, else the file's own node (the unnamed crate-root module has no
+    /// emitted node).
+    fn resolve_use_tree(
+        &self,
+        sema: &Semantics<'_, RootDatabase>,
+        use_tree: &ast::UseTree,
+        rows: &mut Vec<ReferenceRow>,
+    ) {
+        // Prefix trees (`a::b` in `use a::b::{..}`) are covered by their
+        // leaves, which descendants() visits separately.
+        if use_tree.use_tree_list().is_some() {
+            return;
+        }
+        let Some(path) = use_tree.path() else { return };
+        let target = match sema.resolve_path(&path) {
+            Some(PathResolution::Def(def)) => self.def_id(DefKey::Def(def)),
+            _ => None,
+        };
+        let Some(target) = target else { return };
+        let range = path_name_range(&path);
+
+        let source_id = self
+            .enclosing_context_id(sema, use_tree.syntax(), /*allow_impl_context=*/ false)
+            .or_else(|| self.enclosing_module_id(sema, use_tree.syntax()))
+            .unwrap_or(ROW_SOURCE_CURRENT_FILE);
+        if source_id == target {
+            return;
+        }
+        rows.push(ReferenceRow {
+            edge_type: EDGE_IMPORT,
+            source_id,
+            target_id: target,
+            range,
+        });
+    }
+
+    /// Node id of the innermost enclosing named module, if it was indexed.
+    fn enclosing_module_id(
+        &self,
+        sema: &Semantics<'_, RootDatabase>,
+        node: &ra_ap_syntax::SyntaxNode,
+    ) -> Option<i64> {
+        for anc in node.ancestors().skip(1) {
+            if anc.kind() != SyntaxKind::MODULE {
+                continue;
+            }
+            let id = ast::Module::cast(anc)
+                .and_then(|m| sema.to_def(&m))
+                .and_then(|m| self.def_id(DefKey::Def(ModuleDef::Module(m))));
+            if id.is_some() {
+                return id;
+            }
+        }
+        None
     }
 
     /// Type reference (`PathType`) → edge from the bound owner or enclosing
