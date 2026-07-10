@@ -63,6 +63,7 @@ const NODE_TYPE_PARAMETER: i32 = 1 << 17;
 const NODE_MACRO: i32 = 1 << 19;
 const NODE_UNION: i32 = 1 << 20;
 
+const DEFINITION_IMPLICIT: i32 = 1;
 const DEFINITION_EXPLICIT: i32 = 2;
 const LOCATION_TOKEN: i32 = 0;
 const LOCATION_SCOPE: i32 = 1;
@@ -82,11 +83,69 @@ const EDGE_TYPE_ARGUMENT: i32 = 1 << 6;
 /// Index the Cargo crate whose `Cargo.toml` lives in `crate_root`.
 /// `on_file` is called with each source file path as it begins processing.
 /// Returns a populated `OwnedIntermediateStorage` covering all local source files.
+///
+/// Proc-macro expansion is enabled: the proc-macro server is discovered from
+/// the active toolchain's sysroot (`rustup component add rust-analyzer`), and
+/// build scripts run via `cargo check` so dependency proc-macro dylibs and
+/// OUT_DIR includes resolve. Both degrade gracefully when unavailable.
 pub fn index_crate(crate_root: &Path, on_file: impl FnMut(&str)) -> OwnedIntermediateStorage {
-    let cargo_config = CargoConfig::default();
+    index_crate_with(crate_root, LoadProfile::FULL, on_file)
+}
+
+/// Which parts of the (expensive) load machinery to enable.
+#[derive(Clone, Copy)]
+pub(crate) struct LoadProfile {
+    /// Load the toolchain sysroot. Required for ANY macro expansion: without
+    /// core in the extern prelude, `#[derive(...)]` does not even resolve.
+    /// Sysroot crates themselves are excluded from collection (Lang-origin +
+    /// is_local filters).
+    pub sysroot: bool,
+    /// Spawn rust-analyzer-proc-macro-srv from the sysroot (third-party
+    /// derive/attribute macros; builtin derives expand without it).
+    pub proc_macro_server: bool,
+    /// Run `cargo check` to collect build-script output (OUT_DIR includes,
+    /// dependency proc-macro dylib paths).
+    pub out_dirs: bool,
+}
+
+impl LoadProfile {
+    /// Production: everything on, each degrading gracefully when unavailable.
+    pub const FULL: Self = Self {
+        sysroot: true,
+        proc_macro_server: true,
+        out_dirs: true,
+    };
+    /// Dependency-free temp crates (tests, index_file shim): fast.
+    pub const FAST: Self = Self {
+        sysroot: false,
+        proc_macro_server: false,
+        out_dirs: false,
+    };
+    /// FAST plus sysroot, so builtin derives (`Clone`, `Debug`, …) expand.
+    pub const SYSROOT: Self = Self {
+        sysroot: true,
+        ..Self::FAST
+    };
+}
+
+pub(crate) fn index_crate_with(
+    crate_root: &Path,
+    profile: LoadProfile,
+    on_file: impl FnMut(&str),
+) -> OwnedIntermediateStorage {
+    let cargo_config = CargoConfig {
+        sysroot: profile
+            .sysroot
+            .then_some(ra_ap_project_model::RustLibSource::Discover),
+        ..CargoConfig::default()
+    };
     let load_config = LoadCargoConfig {
-        load_out_dirs_from_check: false,
-        with_proc_macro_server: ProcMacroServerChoice::None,
+        load_out_dirs_from_check: profile.out_dirs,
+        with_proc_macro_server: if profile.proc_macro_server {
+            ProcMacroServerChoice::Sysroot
+        } else {
+            ProcMacroServerChoice::None
+        },
         prefill_caches: false,
         proc_macro_processes: 1,
         num_worker_threads: 1,
@@ -119,6 +178,10 @@ pub fn index_crate(crate_root: &Path, on_file: impl FnMut(&str)) -> OwnedInterme
 /// Index a single `.rs` file.
 /// Creates a minimal temporary Cargo crate, writes the file as `src/lib.rs`,
 /// loads it via `ra_ap_hir`, and returns the storage.
+///
+/// Uses the fast load config (no proc-macro server, no `cargo check`) — the
+/// temp crate has no dependencies, and builtin derives (`Debug`, `Clone`, …)
+/// expand natively in rust-analyzer without a server.
 pub fn index_file(file_path: &str, _module_prefix: &str) -> OwnedIntermediateStorage {
     let source = match std::fs::read_to_string(file_path) {
         Ok(s) => s,
@@ -143,7 +206,7 @@ pub fn index_file(file_path: &str, _module_prefix: &str) -> OwnedIntermediateSto
         return error_storage(file_path, &format!("write lib.rs: {e}"));
     }
 
-    let mut storage = index_crate(tmp.path(), |_| {});
+    let mut storage = index_crate_with(tmp.path(), LoadProfile::FAST, |_| {});
 
     // Rewrite the synthetic file path back to the original path so callers
     // see the real file path in the storage.

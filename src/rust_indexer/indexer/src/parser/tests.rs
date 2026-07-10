@@ -8,6 +8,22 @@ fn index_src(src: &str) -> OwnedIntermediateStorage {
     index_file(path.to_str().unwrap(), "")
 }
 
+// Helper: like index_src, but with the sysroot loaded so builtin derives
+// (`Clone`, `Debug`, …) resolve and expand. Noticeably slower — use only in
+// tests that need macro expansion.
+fn index_src_with_sysroot(src: &str) -> OwnedIntermediateStorage {
+    let tmp = tempfile::tempdir().unwrap();
+    let src_dir = tmp.path().join("src");
+    std::fs::create_dir_all(&src_dir).unwrap();
+    std::fs::write(
+        tmp.path().join("Cargo.toml"),
+        "[package]\nname = \"_idx\"\nversion = \"0.0.0\"\nedition = \"2021\"\n",
+    )
+    .unwrap();
+    std::fs::write(src_dir.join("lib.rs"), src).unwrap();
+    index_crate_with(tmp.path(), LoadProfile::SYSROOT, |_| {})
+}
+
 /// Decode the NameHierarchy wire format back to a plain `::` qualified name for test assertions.
 /// Wire format: `<delim>\tm<part1>\ts\tp[\tn<part2>\ts\tp...]`
 fn decode_name(serialized: &str) -> String {
@@ -790,5 +806,99 @@ fn impl_block_generic_params_attach_to_the_type() {
         has_edge(&s, EDGE_TYPE_USAGE, "W::T", "Clean"),
         "expected EDGE_TYPE_USAGE W::T -> Clean, edges: {:?}",
         s.edges
+    );
+}
+
+// -----------------------------------------------------------------------
+// Macro-expanded items (builtin derives expand without a proc-macro server)
+// -----------------------------------------------------------------------
+
+const DEFINITION_IMPLICIT_T: i32 = 1;
+
+fn definition_kind_of(s: &OwnedIntermediateStorage, name: &str) -> Option<i32> {
+    let node_id = s
+        .nodes
+        .iter()
+        .find(|n| decode_name(&n.serialized_name) == name)
+        .map(|n| n.id)?;
+    s.symbols
+        .iter()
+        .find(|sym| sym.id == node_id)
+        .map(|sym| sym.definition_kind)
+}
+
+#[test]
+fn derive_clone_generates_implicit_method() {
+    let s = index_src_with_sysroot("#[derive(Clone)]\npub struct P { pub x: i32 }");
+    assert!(has_node(&s, "P::clone"), "nodes: {:?}", node_names(&s));
+    assert_eq!(
+        definition_kind_of(&s, "P::clone"),
+        Some(DEFINITION_IMPLICIT_T),
+        "derive-generated method must be IMPLICIT"
+    );
+    assert!(has_edge(&s, EDGE_MEMBER, "P", "P::clone"));
+}
+
+#[test]
+fn derive_method_location_maps_to_the_attribute_site() {
+    let s = index_src_with_sysroot("#[derive(Clone)]\npub struct P { pub x: i32 }");
+    let node_id = s
+        .nodes
+        .iter()
+        .find(|n| decode_name(&n.serialized_name) == "P::clone")
+        .map(|n| n.id)
+        .expect("P::clone node");
+    let lines: Vec<u32> = s
+        .occurrences
+        .iter()
+        .filter(|o| o.element_id == node_id)
+        .filter_map(|o| {
+            s.source_locations
+                .iter()
+                .find(|l| l.id == o.source_location_id)
+                .map(|l| l.start_line)
+        })
+        .collect();
+    assert_eq!(
+        lines,
+        vec![1],
+        "location must map to the derive attribute on line 1"
+    );
+}
+
+#[test]
+fn call_to_derived_method_resolves() {
+    let s = index_src_with_sysroot(
+        "#[derive(Clone)]\npub struct P { pub x: i32 }\npub fn dup(p: &P) -> P { p.clone() }",
+    );
+    assert!(
+        has_edge(&s, EDGE_CALL, "dup", "P::clone"),
+        "expected EDGE_CALL dup -> P::clone, edges: {:?}",
+        s.edges
+    );
+}
+
+#[test]
+fn multiple_derives_generate_all_methods() {
+    let s =
+        index_src_with_sysroot("#[derive(Clone, Debug, PartialEq)]\npub struct P { pub x: i32 }");
+    assert!(has_node(&s, "P::clone"), "nodes: {:?}", node_names(&s));
+    assert!(has_node(&s, "P::fmt"), "nodes: {:?}", node_names(&s));
+    assert!(has_node(&s, "P::eq"), "nodes: {:?}", node_names(&s));
+}
+
+#[test]
+fn handwritten_items_stay_explicit() {
+    let s =
+        index_src_with_sysroot("#[derive(Clone)]\npub struct P;\nimpl P { pub fn go(&self) {} }");
+    assert_eq!(definition_kind_of(&s, "P"), Some(2), "struct is EXPLICIT");
+    assert_eq!(
+        definition_kind_of(&s, "P::go"),
+        Some(2),
+        "handwritten method is EXPLICIT"
+    );
+    assert_eq!(
+        definition_kind_of(&s, "P::clone"),
+        Some(DEFINITION_IMPLICIT_T)
     );
 }

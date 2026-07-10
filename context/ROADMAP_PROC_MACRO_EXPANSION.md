@@ -1,5 +1,17 @@
 # Roadmap: Proc-Macro Expansion for the Rust Indexer
 
+**Status: v1 shipped (2026-07-10).** The production load profile
+(`LoadProfile::FULL` in `parser/mod.rs`) enables the sysroot (required for
+any macro resolution), the sysroot proc-macro server, and
+`load_out_dirs_from_check` — each degrading gracefully when unavailable.
+Expanded items are emitted as `DefinitionKind::IMPLICIT` with locations
+mapped to the macro call site (`original_node_file_range_rooted`); builtin
+derives (`Clone`, `Debug`, …) expand even without the server. Self-index:
+879 implicit definitions, methods 361 → 731. Still open: PATH/CLI server
+discovery (PM-1), build-script output caching (PM-2), `EDGE_MACRO_USAGE`
+(PM-3), third-party-macro test fixture + CI component install (PM-5),
+project-settings UI (PM-4).
+
 ## Goal
 
 Enable the Rust indexer to expand procedural macros during HIR analysis so that
@@ -66,15 +78,15 @@ requiring the user to install rust-analyzer separately.
 
 ### PM-1 Tasks
 
-- [ ] Try `ProcMacroServerChoice::Sysroot` first — `ProjectWorkspace::find_sysroot_proc_macro_srv()`
-      searches the active toolchain's sysroot for `rust-analyzer-proc-macro-srv`.
-      This works if the user has `rustup component add rust-analyzer` installed.
+- [x] Try `ProcMacroServerChoice::Sysroot` first — searches the active
+      toolchain's sysroot for `rust-analyzer-proc-macro-srv`.
+      Works when `rustup component add rust-analyzer` is installed.
 - [ ] Fall back to searching `PATH` for `rust-analyzer-proc-macro-srv` (the
       standalone binary from a system rust-analyzer install).
 - [ ] Add a CLI flag `--proc-macro-srv <path>` to `sourcetrail_rust_indexer`
       so the C++ app can pass an explicit path (set in project settings UI).
-- [ ] If no server is found, log a warning and continue with
-      `ProcMacroServerChoice::None` (graceful degradation — current behaviour).
+- [x] If no server is found, expansion degrades gracefully (builtin derives
+      still expand natively; third-party macros stay opaque).
 
 ### Discovery Logic (sketch)
 
@@ -114,9 +126,8 @@ discover these automatically when `load_out_dirs_from_check: true`.
 
 ### PM-2 Tasks
 
-- [ ] Set `load_out_dirs_from_check: true` in `LoadCargoConfig`.
-      This runs `cargo check --message-format=json` internally and collects
-      `OUT_DIR` values and artifact paths for all build scripts.
+- [x] Set `load_out_dirs_from_check: true` in `LoadCargoConfig`
+      (production profile only — the fast test profile skips it).
 - [ ] Handle the case where `cargo check` fails (e.g. missing dependencies):
       log the error from `workspace.run_build_scripts()` and continue without
       proc-macro expansion rather than aborting indexing.
@@ -157,15 +168,16 @@ them into `IntermediateStorage`.
 
 ### PM-3 Tasks
 
-- [ ] In `collect_crate()`, also walk `Module::impl_defs(db)` to pick up
-      `impl` blocks (including derive-generated ones). For each `Impl`:
-  - Emit an `EDGE_INHERITANCE` if it is a trait impl (`impl Trait for Type`).
-  - Walk `Impl::items(db)` for associated functions/types/consts and emit them
-    as `NODE_METHOD` / `NODE_TYPEDEF` / `NODE_GLOBAL_VARIABLE` nodes.
-- [ ] Distinguish macro-generated impls from hand-written ones:
-      check `Impl::source(db)` — if `in_file.file_id` is a macro file
-      (`HirFileId::macro_file().is_some()`), tag the node with
-      `DefinitionKind::IMPLICIT` (= 1) instead of `EXPLICIT` (= 2).
+- [x] `Module::impl_defs(db)` includes builtin-derive impls (`AnyImplId::
+      BuiltinDeriveImplId`, source-less); owner resolved via HIR self type.
+      Synthesized methods use `source_with_range` — plain `source()` falls
+      back to the TRAIT method's declaration in the sysroot and must not be
+      used for locations.
+- [x] Macro-generated items (impls, fields, params, module-level items from
+      bang macros) are tagged `DefinitionKind::IMPLICIT` and their locations
+      map to the real file via `original_node_file_range_rooted` (call-site
+      fallback). Location math is non-panicking (`try_line_col`) so a bad
+      range can never kill the indexing subprocess.
 - [ ] Emit `EDGE_MACRO_USAGE` occurrences linking the derive attribute site
       (e.g. `#[derive(Debug)]` token range) to the `Debug` trait node.
 - [ ] Add `EDGE_CALL` edges from expanded macro bodies to the functions they

@@ -18,11 +18,11 @@ use crate::ipc::storage::{
 };
 
 use super::{
-    DEFINITION_EXPLICIT, EDGE_CALL, EDGE_INHERITANCE, EDGE_MEMBER, EDGE_OVERRIDE,
-    EDGE_TYPE_ARGUMENT, EDGE_TYPE_USAGE, EDGE_USAGE, LOCATION_SCOPE, LOCATION_TOKEN, NODE_ENUM,
-    NODE_ENUM_CONSTANT, NODE_FIELD, NODE_FILE, NODE_FUNCTION, NODE_GLOBAL_VARIABLE, NODE_INTERFACE,
-    NODE_MACRO, NODE_METHOD, NODE_MODULE, NODE_STRUCT, NODE_TYPE_PARAMETER, NODE_TYPEDEF,
-    NODE_UNION,
+    DEFINITION_EXPLICIT, DEFINITION_IMPLICIT, EDGE_CALL, EDGE_INHERITANCE, EDGE_MEMBER,
+    EDGE_OVERRIDE, EDGE_TYPE_ARGUMENT, EDGE_TYPE_USAGE, EDGE_USAGE, LOCATION_SCOPE, LOCATION_TOKEN,
+    NODE_ENUM, NODE_ENUM_CONSTANT, NODE_FIELD, NODE_FILE, NODE_FUNCTION, NODE_GLOBAL_VARIABLE,
+    NODE_INTERFACE, NODE_MACRO, NODE_METHOD, NODE_MODULE, NODE_STRUCT, NODE_TYPE_PARAMETER,
+    NODE_TYPEDEF, NODE_UNION,
 };
 
 #[derive(Debug, Clone)]
@@ -199,6 +199,25 @@ impl<'db> Collector<'db> {
         range: ra_ap_syntax::TextRange,
         source_text: &str,
     ) {
+        self.add_def_kind(
+            name,
+            node_kind,
+            file_path,
+            range,
+            source_text,
+            DEFINITION_EXPLICIT,
+        );
+    }
+
+    fn add_def_kind(
+        &mut self,
+        name: &str,
+        node_kind: i32,
+        file_path: &str,
+        range: ra_ap_syntax::TextRange,
+        source_text: &str,
+        definition_kind: i32,
+    ) {
         let node_id = self.alloc_id();
         let loc_id = self.alloc_id();
         let file_node_id = self.file_node_id(file_path);
@@ -211,12 +230,19 @@ impl<'db> Collector<'db> {
         });
         self.storage.symbols.push(OwnedStorageSymbol {
             id: node_id,
-            definition_kind: DEFINITION_EXPLICIT,
+            definition_kind,
         });
 
+        // A range that does not fit the file text (e.g. an unmapped macro
+        // expansion) must not kill the whole indexing run — emit the node
+        // without a location instead.
         let line_index = LineIndex::new(source_text);
-        let start = line_index.line_col(range.start());
-        let end = line_index.line_col(range.end());
+        let (Some(start), Some(end)) = (
+            line_index.try_line_col(range.start()),
+            line_index.try_line_col(range.end()),
+        ) else {
+            return;
+        };
 
         self.storage
             .source_locations
@@ -233,6 +259,29 @@ impl<'db> Collector<'db> {
             element_id: node_id,
             source_location_id: loc_id,
         });
+    }
+
+    /// Map a (possibly macro-expansion) range to real-file coordinates.
+    /// For real files this is the identity; for macro files the range maps up
+    /// through the expansion, falling back to the macro call site (e.g. the
+    /// `#[derive(…)]` attribute) when the token has no real-source equivalent.
+    fn original_location(
+        &self,
+        file_id: ra_ap_hir::HirFileId,
+        range: ra_ap_syntax::TextRange,
+    ) -> Option<(SourceContext, ra_ap_syntax::TextRange)> {
+        let mapped =
+            ra_ap_hir::InFile::new(file_id, range).original_node_file_range_rooted(self.db);
+        let vfs_fid = mapped.file_id.file_id(self.db);
+        let file_path = self.vfs_path(vfs_fid)?;
+        let source_text = self.db.file_text(vfs_fid).text(self.db).to_string();
+        Some((
+            SourceContext {
+                file_path,
+                source_text,
+            },
+            mapped.range,
+        ))
     }
 
     /// Resolve a `ra_ap_vfs::FileId` to an absolute path string, if possible.
@@ -287,6 +336,14 @@ impl<'db> Collector<'db> {
             return None;
         }
         Some(first)
+    }
+
+    /// Qualified name of an ADT exactly as the definition pass emits it:
+    /// its defining module's prefix + its name.
+    fn adt_qualified_name(&self, adt: Adt) -> String {
+        let prefix = self.module_prefix(adt.module(self.db));
+        let name = adt.name(self.db).as_str().to_string();
+        Self::qualify_in_module(&prefix, &name)
     }
 
     fn qualify_in_module(module_prefix: &str, name: &str) -> String {
@@ -346,17 +403,13 @@ impl<'db> Collector<'db> {
             let Either::Left(ast_param) = src.value.clone() else {
                 continue;
             };
-            let in_file = src.with_value(ast_param.clone());
-            let Some(ctx) = self.source_context_from_in_file(&in_file) else {
-                continue;
-            };
             let range = ast_param
                 .name()
                 .map(|n| n.syntax().text_range())
                 .unwrap_or_else(|| ast_param.syntax().text_range());
             let qualified = format!("{owner_name}::{name}");
             if !self.node_ids.contains_key(&qualified) {
-                self.add_def_with_context(&qualified, NODE_TYPE_PARAMETER, range, &ctx);
+                self.emit_param_node(&qualified, src.file_id, range);
                 self.add_edge(EDGE_MEMBER, owner_name, &qualified);
             }
             let key = match p.split(self.db) {
@@ -370,9 +423,6 @@ impl<'db> Collector<'db> {
             let Some(src) = lp.source(self.db) else {
                 continue;
             };
-            let Some(ctx) = self.source_context_from_in_file(&src) else {
-                continue;
-            };
             let range = src
                 .value
                 .lifetime()
@@ -380,11 +430,37 @@ impl<'db> Collector<'db> {
                 .unwrap_or_else(|| src.value.syntax().text_range());
             let qualified = format!("{owner_name}::{name}");
             if !self.node_ids.contains_key(&qualified) {
-                self.add_def_with_context(&qualified, NODE_TYPE_PARAMETER, range, &ctx);
+                self.emit_param_node(&qualified, src.file_id, range);
                 self.add_edge(EDGE_MEMBER, owner_name, &qualified);
             }
             self.register_def(DefKey::LifetimeParam(lp), &qualified);
         }
+    }
+
+    /// Emit one NODE_TYPE_PARAMETER with its location mapped to real-file
+    /// coordinates (macro-generated params become IMPLICIT).
+    fn emit_param_node(
+        &mut self,
+        qualified: &str,
+        file_id: ra_ap_hir::HirFileId,
+        range: ra_ap_syntax::TextRange,
+    ) {
+        let is_macro = file_id.is_macro();
+        let Some((ctx, mapped)) = self.original_location(file_id, range) else {
+            return;
+        };
+        self.add_def_kind(
+            qualified,
+            NODE_TYPE_PARAMETER,
+            &ctx.file_path,
+            mapped,
+            &ctx.source_text,
+            if is_macro {
+                DEFINITION_IMPLICIT
+            } else {
+                DEFINITION_EXPLICIT
+            },
+        );
     }
 
     fn collect_crate(&mut self, krate: Crate) {
@@ -506,8 +582,6 @@ impl<'db> Collector<'db> {
             let Some(field_src) = field.source(self.db) else {
                 continue;
             };
-            let eid = field_src.file_id.original_file(self.db);
-            let vfs_fid = eid.file_id(self.db);
             let range = match &field_src.value {
                 FieldSource::Named(rf) => rf
                     .name()
@@ -515,42 +589,23 @@ impl<'db> Collector<'db> {
                     .unwrap_or_else(|| rf.syntax().text_range()),
                 FieldSource::Pos(tf) => tf.syntax().text_range(),
             };
-            let Some(file_path) = self.vfs_path(vfs_fid) else {
+            let is_macro = field_src.file_id.is_macro();
+            let Some((ctx, mapped)) = self.original_location(field_src.file_id, range) else {
                 continue;
             };
-            let source_text = self.db.file_text(vfs_fid).text(self.db).to_string();
-            let file_node_id = self.file_node_id(&file_path);
-            let node_id = self.alloc_id();
-            let loc_id = self.alloc_id();
-            self.node_ids.insert(qualified_name.clone(), node_id);
-            self.storage.nodes.push(OwnedStorageNode {
-                id: node_id,
-                type_: NODE_FIELD,
-                serialized_name: serialize_name(&qualified_name),
-            });
-            self.storage.symbols.push(OwnedStorageSymbol {
-                id: node_id,
-                definition_kind: DEFINITION_EXPLICIT,
-            });
-            let line_index = LineIndex::new(&source_text);
-            let start = line_index.line_col(range.start());
-            let end = line_index.line_col(range.end());
-            self.storage
-                .source_locations
-                .push(OwnedStorageSourceLocation {
-                    id: loc_id,
-                    file_node_id,
-                    start_line: start.line + 1,
-                    start_col: start.col + 1,
-                    end_line: end.line + 1,
-                    end_col: end.col + 1,
-                    type_: LOCATION_TOKEN,
-                });
-            self.storage.occurrences.push(OwnedStorageOccurrence {
-                element_id: node_id,
-                source_location_id: loc_id,
-            });
-            self.def_ids.insert(DefKey::Field(field), node_id);
+            self.add_def_kind(
+                &qualified_name,
+                NODE_FIELD,
+                &ctx.file_path,
+                mapped,
+                &ctx.source_text,
+                if is_macro {
+                    DEFINITION_IMPLICIT
+                } else {
+                    DEFINITION_EXPLICIT
+                },
+            );
+            self.register_def(DefKey::Field(field), &qualified_name);
             self.add_edge(EDGE_MEMBER, owner_name, &qualified_name);
         }
     }
@@ -582,19 +637,30 @@ impl<'db> Collector<'db> {
     }
 
     fn collect_impl_items(&mut self, module_prefix: &str, imp: ra_ap_hir::Impl) {
-        let Some(src) = imp.source(self.db) else {
-            return;
+        let src = imp.source(self.db);
+        let owner_name = match &src {
+            Some(src) => {
+                let Some(self_ty_name) = impl_self_type_segment_name(&src.value) else {
+                    return;
+                };
+                Self::qualify_in_module(module_prefix, &self_ty_name)
+            }
+            // Synthesized impl without AST (builtin derives like Clone/Debug):
+            // derive the owner from the HIR self type.
+            None => {
+                let Some(adt) = imp.self_ty(self.db).as_adt() else {
+                    return;
+                };
+                self.adt_qualified_name(adt)
+            }
         };
-        let ast_impl = &src.value;
-        let Some(self_ty_name) = impl_self_type_segment_name(ast_impl) else {
-            return;
-        };
-        let owner_name = Self::qualify_in_module(module_prefix, &self_ty_name);
 
         // The impl block's own generic parameters (`impl<T> …`) attach to the
         // self type's owner name; same-named params on the type definition
-        // merge by serialized name on inject.
-        self.collect_generic_params(&owner_name, imp.into());
+        // merge by serialized name on inject. (Synthesized impls have none.)
+        if src.is_some() {
+            self.collect_generic_params(&owner_name, imp.into());
+        }
 
         for item in imp.items(self.db) {
             match item {
@@ -603,10 +669,38 @@ impl<'db> Collector<'db> {
                     let qualified_name = format!("{owner_name}::{fname}");
                     let exists = self.node_ids.contains_key(&qualified_name);
                     if !exists {
-                        let fsrc = f.source(self.db);
-                        self.emit_from_source(fsrc, &qualified_name, NODE_METHOD);
-                        self.collect_generic_params(&qualified_name, f.into());
-                        self.add_edge(EDGE_MEMBER, &owner_name, &qualified_name);
+                        // For synthesized derive methods, f.source() falls back
+                        // to the TRAIT method's declaration (in the sysroot!) —
+                        // use source_with_range, whose None-AST case carries the
+                        // derive attribute range instead.
+                        match f.source_with_range(self.db) {
+                            Some(swr) if swr.value.1.is_some() => {
+                                self.emit_from_source(
+                                    f.source(self.db),
+                                    &qualified_name,
+                                    NODE_METHOD,
+                                );
+                                self.collect_generic_params(&qualified_name, f.into());
+                                self.add_edge(EDGE_MEMBER, &owner_name, &qualified_name);
+                            }
+                            Some(swr) => {
+                                let (range, _) = swr.value;
+                                if let Some((ctx, mapped)) =
+                                    self.original_location(swr.file_id, range)
+                                {
+                                    self.add_def_kind(
+                                        &qualified_name,
+                                        NODE_METHOD,
+                                        &ctx.file_path,
+                                        mapped,
+                                        &ctx.source_text,
+                                        DEFINITION_IMPLICIT,
+                                    );
+                                    self.add_edge(EDGE_MEMBER, &owner_name, &qualified_name);
+                                }
+                            }
+                            None => {}
+                        }
                     }
                     self.register_def(DefKey::Def(ModuleDef::Function(f)), &qualified_name);
                 }
@@ -1062,8 +1156,12 @@ impl<'db> Collector<'db> {
         file: &RefFile,
     ) {
         let loc_id = self.alloc_id();
-        let start = file.line_index.line_col(range.start());
-        let end = file.line_index.line_col(range.end());
+        let (Some(start), Some(end)) = (
+            file.line_index.try_line_col(range.start()),
+            file.line_index.try_line_col(range.end()),
+        ) else {
+            return;
+        };
         self.storage
             .source_locations
             .push(OwnedStorageSourceLocation {
@@ -1295,18 +1393,23 @@ impl<'db> Collector<'db> {
             self.emit_from_source(Some(decl), name, NODE_MODULE);
         } else {
             let range_in_file = m.definition_source_range(self.db);
-            let editioned_file_id = range_in_file.file_id.original_file(self.db);
-            let vfs_file_id = editioned_file_id.file_id(self.db);
-            let Some(file_path) = self.vfs_path(vfs_file_id) else {
+            let is_macro = range_in_file.file_id.is_macro();
+            let Some((ctx, mapped)) =
+                self.original_location(range_in_file.file_id, range_in_file.value)
+            else {
                 return;
             };
-            let source_text = self.db.file_text(vfs_file_id).text(self.db).to_string();
-            self.add_def(
+            self.add_def_kind(
                 name,
                 NODE_MODULE,
-                &file_path,
-                range_in_file.value,
-                &source_text,
+                &ctx.file_path,
+                mapped,
+                &ctx.source_text,
+                if is_macro {
+                    DEFINITION_IMPLICIT
+                } else {
+                    DEFINITION_EXPLICIT
+                },
             );
         }
     }
@@ -1314,6 +1417,10 @@ impl<'db> Collector<'db> {
     /// Generic helper: given an `InFile<ast::*>` source, extract the name
     /// token range and emit a node, plus a SCOPE location spanning the whole
     /// item (drives snippet extents in the code view).
+    ///
+    /// Macro-generated items (source in an expansion) are emitted as
+    /// DefinitionKind::IMPLICIT with their location mapped to the real file
+    /// (falling back to the macro call site); no scope location.
     fn emit_from_source<N: AstNode + HasName>(
         &mut self,
         src: Option<ra_ap_hir::InFile<N>>,
@@ -1321,15 +1428,29 @@ impl<'db> Collector<'db> {
         kind: i32,
     ) {
         let Some(in_file) = src else { return };
-        let Some(ctx) = self.source_context_from_in_file(&in_file) else {
-            return;
-        };
         let full_range = in_file.value.syntax().text_range();
         let range = in_file
             .value
             .name()
             .map(|n| n.syntax().text_range())
             .unwrap_or(full_range);
+        if in_file.file_id.is_macro() {
+            let Some((ctx, mapped)) = self.original_location(in_file.file_id, range) else {
+                return;
+            };
+            self.add_def_kind(
+                name,
+                kind,
+                &ctx.file_path,
+                mapped,
+                &ctx.source_text,
+                DEFINITION_IMPLICIT,
+            );
+            return;
+        }
+        let Some(ctx) = self.source_context_from_in_file(&in_file) else {
+            return;
+        };
         self.add_def_with_context(name, kind, range, &ctx);
         if full_range != range {
             self.add_scope_location(name, full_range, &ctx);
@@ -1349,8 +1470,12 @@ impl<'db> Collector<'db> {
         let file_node_id = self.file_node_id(&ctx.file_path);
         let loc_id = self.alloc_id();
         let line_index = LineIndex::new(&ctx.source_text);
-        let start = line_index.line_col(range.start());
-        let end = line_index.line_col(range.end());
+        let (Some(start), Some(end)) = (
+            line_index.try_line_col(range.start()),
+            line_index.try_line_col(range.end()),
+        ) else {
+            return;
+        };
         self.storage
             .source_locations
             .push(OwnedStorageSourceLocation {
@@ -1402,14 +1527,25 @@ pub(super) fn collect_from_db<'db>(
         let mut collector = Collector::with_callback(db, vfs, on_file);
 
         for krate in Crate::all(db) {
-            // Skip library crates (std, core, deps) — only index local crates.
+            // Skip library crates (std, core, registry deps) — only index
+            // local crates. Lang crates are identified by origin; registry
+            // and toolchain crates by path as a second net.
+            if matches!(
+                krate.origin(db),
+                ra_ap_ide_db::base_db::CrateOrigin::Lang(_)
+            ) {
+                continue;
+            }
             let vfs_fid = krate.root_file(db);
             let is_local = vfs
                 .file_path(vfs_fid)
                 .as_path()
                 .map(|p| {
                     let s = p.to_string();
-                    !s.contains("/.cargo/") && !s.contains("/rustup/")
+                    !s.contains("/.cargo/")
+                        && !s.contains("/.rustup/")
+                        && !s.contains("/rustup/")
+                        && !s.contains("/lib/rustlib/")
                 })
                 .unwrap_or(false);
             if !is_local {

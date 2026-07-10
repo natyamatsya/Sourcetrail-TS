@@ -143,6 +143,9 @@ expect "occurrences on edges" \
 # Definitions carry SCOPE locations (type 1) for snippet extents
 expect "SCOPE locations (type 1)" \
     "SELECT count(*) FROM source_location WHERE type = 1;"
+# Macro-expanded items (e.g. #[derive] methods) land as IMPLICIT definitions
+expect "implicit (macro-generated) definitions" \
+    "SELECT count(*) FROM symbol WHERE definition_kind = 1;"
 # Bounds originate at parameter nodes: a type-parameter node with an
 # outgoing TYPE_USAGE edge must exist
 expect "bound edge from a type-parameter node" \
