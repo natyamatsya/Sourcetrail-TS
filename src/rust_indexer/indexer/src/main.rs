@@ -91,24 +91,7 @@ fn main() {
         log::info!("indexing \"{}\"", cmd.source_file_path);
 
         // Back-pressure: wait until the app has consumed enough results.
-        loop {
-            match storage_ch.storage_count() {
-                Ok(n) if n < 2 => break,
-                Ok(n) => {
-                    log::info!("waiting — {n} storages pending");
-                    thread::sleep(Duration::from_millis(200));
-                }
-                Err(e) => {
-                    log::warn!("storage count error: {e}");
-                    break;
-                }
-            }
-            // Re-check interrupt while waiting.
-            if matches!(status_ch.is_interrupted(), Ok(true)) {
-                log::info!("interrupted while waiting for back-pressure — exiting");
-                std::process::exit(0);
-            }
-        }
+        wait_for_storage_slot(&storage_ch, &status_ch);
 
         // Update status: this process is now indexing the crate root.
         if let Err(e) = status_ch.start_indexing(&cmd.source_file_path) {
@@ -144,9 +127,18 @@ fn main() {
             storage.errors.len(),
         );
 
-        // Push results.
-        if let Err(e) = storage_ch.push(&storage) {
-            log::error!("Failed to push storage: {e}");
+        // Push results. Large results are split into self-contained chunks so
+        // one queue entry never outgrows the fixed 16 MiB SHM segment —
+        // growing POSIX shared memory is impossible on macOS (ftruncate on an
+        // already-sized object fails with EINVAL), so the grow protocol can
+        // never deliver an oversized payload. The app merges the chunks via
+        // PersistentStorage inject; back-pressure applies between pushes.
+        for chunk in storage.chunks() {
+            wait_for_storage_slot(&storage_ch, &status_ch);
+            if let Err(e) = storage_ch.push(&chunk) {
+                log::error!("Failed to push storage: {e}");
+                break;
+            }
         }
 
         // Update status: done with this file.
@@ -156,4 +148,28 @@ fn main() {
     }
 
     log::info!("process_id={process_id} shutting down");
+}
+
+/// Back-pressure: wait until the app has consumed enough queued results
+/// (fewer than 2 pending). Exits the process if indexing is interrupted
+/// while waiting — matching the previous inline behavior.
+fn wait_for_storage_slot(storage_ch: &StorageChannel, status_ch: &StatusChannel) {
+    loop {
+        match storage_ch.storage_count() {
+            Ok(n) if n < 2 => break,
+            Ok(n) => {
+                log::info!("waiting — {n} storages pending");
+                thread::sleep(Duration::from_millis(200));
+            }
+            Err(e) => {
+                log::warn!("storage count error: {e}");
+                break;
+            }
+        }
+        // Re-check interrupt while waiting.
+        if matches!(status_ch.is_interrupted(), Ok(true)) {
+            log::info!("interrupted while waiting for back-pressure — exiting");
+            std::process::exit(0);
+        }
+    }
 }

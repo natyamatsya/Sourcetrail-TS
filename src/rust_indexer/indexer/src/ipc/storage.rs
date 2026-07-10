@@ -322,6 +322,318 @@ pub struct OwnedStorageError {
     pub indexed: bool,
 }
 
+// ---------------------------------------------------------------------------
+// Chunking: split a large storage into self-contained queue entries.
+//
+// The SHM segment backing the storage queue has a fixed size: growing POSIX
+// shared memory is impossible on macOS (ftruncate on an already-sized object
+// fails with EINVAL), so the grow protocol cannot deliver a payload that
+// exceeds the initial 16 MiB segment. Instead, a large result is split into
+// multiple IntermediateStorage queue entries that the app merges via
+// `PersistentStorage` inject.
+//
+// Each chunk must be self-contained because inject remaps ids per injected
+// storage: edges need their endpoint node rows, source locations need their
+// file node (+ file) rows, occurrences need their element (node/edge) and
+// location rows within the same chunk. Repeated rows merge on inject —
+// nodes dedup by serialized name, edges by (type, source, target), files by
+// path, locations by (file, position, type). Occurrences are not deduped,
+// so each occurrence is emitted in exactly one chunk; symbol rows are not
+// deduped either, so they only accompany their node's home chunk.
+// ---------------------------------------------------------------------------
+
+/// Budget for one chunk's (over-)estimated serialized size. Back-pressure
+/// keeps at most two entries queued, and two chunks plus queue headers must
+/// stay comfortably below the fixed 16 MiB segment.
+const CHUNK_BUDGET_BYTES: usize = 7 * 1024 * 1024;
+
+// Conservative per-row estimates of the serialized FlatBuffers footprint
+// (table fields + vtable/table overhead + per-row vector offset + padding).
+const EDGE_COST: usize = 56;
+const SYMBOL_COST: usize = 32;
+const LOCATION_COST: usize = 64;
+const OCCURRENCE_COST: usize = 32;
+const COMPONENT_ACCESS_COST: usize = 32;
+
+fn node_cost(n: &OwnedStorageNode) -> usize {
+    48 + n.serialized_name.len()
+}
+
+fn file_cost(f: &OwnedStorageFile) -> usize {
+    64 + f.file_path.len() + f.language_identifier.len()
+}
+
+fn local_symbol_cost(ls: &OwnedStorageLocalSymbol) -> usize {
+    48 + ls.name.len()
+}
+
+fn error_cost(e: &OwnedStorageError) -> usize {
+    64 + e.message.len() + e.translation_unit.len()
+}
+
+impl OwnedIntermediateStorage {
+    /// Over-estimated serialized size of the whole storage.
+    fn estimated_size(&self) -> usize {
+        let mut total = 1024;
+        total += self.nodes.iter().map(node_cost).sum::<usize>();
+        total += self.files.iter().map(file_cost).sum::<usize>();
+        total += self.edges.len() * EDGE_COST;
+        total += self.symbols.len() * SYMBOL_COST;
+        total += self.source_locations.len() * LOCATION_COST;
+        total += self
+            .local_symbols
+            .iter()
+            .map(local_symbol_cost)
+            .sum::<usize>();
+        total += self.occurrences.len() * OCCURRENCE_COST;
+        total += self.component_accesses.len() * COMPONENT_ACCESS_COST;
+        total += self.errors.iter().map(error_cost).sum::<usize>();
+        total
+    }
+
+    /// Split this storage into self-contained chunks that each serialize to
+    /// well under the SHM segment size. Small storages pass through as a
+    /// single chunk unchanged.
+    pub fn chunks(&self) -> Vec<OwnedIntermediateStorage> {
+        if self.estimated_size() <= CHUNK_BUDGET_BYTES {
+            return vec![self.clone()];
+        }
+        Chunker::new(self).run()
+    }
+}
+
+struct Chunker<'a> {
+    src: &'a OwnedIntermediateStorage,
+    nodes_by_id: std::collections::HashMap<i64, &'a OwnedStorageNode>,
+    files_by_node_id: std::collections::HashMap<i64, &'a OwnedStorageFile>,
+    symbols_by_node_id: std::collections::HashMap<i64, &'a OwnedStorageSymbol>,
+    locations_by_id: std::collections::HashMap<i64, &'a OwnedStorageSourceLocation>,
+    /// element id → indices into `src.occurrences`, in original order
+    occ_indices_by_element: std::collections::HashMap<i64, Vec<usize>>,
+    /// locations already emitted into some chunk (for the orphan pass)
+    emitted_locations: std::collections::HashSet<i64>,
+    chunks: Vec<OwnedIntermediateStorage>,
+    cur: OwnedIntermediateStorage,
+    cur_cost: usize,
+    /// node ids present in the current chunk
+    cur_node_ids: std::collections::HashSet<i64>,
+    /// location ids present in the current chunk
+    cur_location_ids: std::collections::HashSet<i64>,
+}
+
+impl<'a> Chunker<'a> {
+    fn new(src: &'a OwnedIntermediateStorage) -> Self {
+        let nodes_by_id = src.nodes.iter().map(|n| (n.id, n)).collect();
+        let files_by_node_id = src.files.iter().map(|f| (f.id, f)).collect();
+        let symbols_by_node_id = src.symbols.iter().map(|s| (s.id, s)).collect();
+        let locations_by_id = src.source_locations.iter().map(|l| (l.id, l)).collect();
+        let mut occ_indices_by_element: std::collections::HashMap<i64, Vec<usize>> =
+            std::collections::HashMap::new();
+        for (i, o) in src.occurrences.iter().enumerate() {
+            occ_indices_by_element
+                .entry(o.element_id)
+                .or_default()
+                .push(i);
+        }
+        Self {
+            src,
+            nodes_by_id,
+            files_by_node_id,
+            symbols_by_node_id,
+            locations_by_id,
+            occ_indices_by_element,
+            emitted_locations: std::collections::HashSet::new(),
+            chunks: Vec::new(),
+            cur: OwnedIntermediateStorage {
+                next_id: src.next_id,
+                ..OwnedIntermediateStorage::default()
+            },
+            cur_cost: 0,
+            cur_node_ids: std::collections::HashSet::new(),
+            cur_location_ids: std::collections::HashSet::new(),
+        }
+    }
+
+    fn run(mut self) -> Vec<OwnedIntermediateStorage> {
+        let src = self.src;
+        // Element groups in stable source order: every group is emitted
+        // atomically into one chunk, together with the rows it references.
+        for node in &src.nodes {
+            let occs = self
+                .occ_indices_by_element
+                .remove(&node.id)
+                .unwrap_or_default();
+            self.ensure_budget(self.node_group_cost(node.id, &occs));
+            self.add_node(node.id, /*with_symbol=*/ true);
+            self.add_occurrences(&occs);
+        }
+        for edge in &src.edges {
+            let occs = self
+                .occ_indices_by_element
+                .remove(&edge.id)
+                .unwrap_or_default();
+            self.ensure_budget(self.edge_group_cost(edge, &occs));
+            self.add_node(edge.source_node_id, false);
+            self.add_node(edge.target_node_id, false);
+            self.cur.edges.push(edge.clone());
+            self.cur_cost += EDGE_COST;
+            self.add_occurrences(&occs);
+        }
+        for ls in &src.local_symbols {
+            let occs = self
+                .occ_indices_by_element
+                .remove(&ls.id)
+                .unwrap_or_default();
+            self.ensure_budget(local_symbol_cost(ls) + self.occurrences_cost(&occs));
+            self.cur.local_symbols.push(ls.clone());
+            self.cur_cost += local_symbol_cost(ls);
+            self.add_occurrences(&occs);
+        }
+        // Dangling occurrences (element not in this storage) — keep them so
+        // chunked inject behaves like monolithic inject (warn + drop).
+        let dangling: Vec<usize> = {
+            let mut v: Vec<usize> = self
+                .occ_indices_by_element
+                .values()
+                .flatten()
+                .copied()
+                .collect();
+            v.sort_unstable();
+            v
+        };
+        for idx in dangling {
+            self.ensure_budget(OCCURRENCE_COST + LOCATION_COST + self.stub_cost_max());
+            self.add_occurrences(&[idx]);
+        }
+        // Locations with no occurrence at all.
+        for loc in &src.source_locations {
+            if self.emitted_locations.contains(&loc.id) {
+                continue;
+            }
+            self.ensure_budget(LOCATION_COST + self.stub_cost_max());
+            self.add_location(loc.id);
+        }
+        for ca in &src.component_accesses {
+            self.ensure_budget(COMPONENT_ACCESS_COST + self.stub_cost_max());
+            self.add_node(ca.node_id, false);
+            self.cur.component_accesses.push(ca.clone());
+            self.cur_cost += COMPONENT_ACCESS_COST;
+        }
+        for err in &src.errors {
+            self.ensure_budget(error_cost(err));
+            self.cur.errors.push(err.clone());
+            self.cur_cost += error_cost(err);
+        }
+        self.flush();
+        self.chunks
+    }
+
+    /// Upper bound for one node stub (node row + potential file row).
+    fn stub_cost_max(&self) -> usize {
+        512
+    }
+
+    fn node_group_cost(&self, node_id: i64, occs: &[usize]) -> usize {
+        let mut cost = self
+            .nodes_by_id
+            .get(&node_id)
+            .map(|n| node_cost(n))
+            .unwrap_or(0)
+            + SYMBOL_COST;
+        if let Some(f) = self.files_by_node_id.get(&node_id) {
+            cost += file_cost(f);
+        }
+        cost + self.occurrences_cost(occs)
+    }
+
+    fn edge_group_cost(&self, edge: &OwnedStorageEdge, occs: &[usize]) -> usize {
+        EDGE_COST
+            + self.node_group_cost(edge.source_node_id, &[])
+            + self.node_group_cost(edge.target_node_id, &[])
+            + self.occurrences_cost(occs)
+    }
+
+    /// Pessimistic cost of occurrence rows plus their location rows and the
+    /// locations' file stubs.
+    fn occurrences_cost(&self, occs: &[usize]) -> usize {
+        occs.len() * (OCCURRENCE_COST + LOCATION_COST) + occs.len().min(4) * self.stub_cost_max()
+    }
+
+    /// Start a new chunk if adding `group_cost` would exceed the budget.
+    /// A single over-budget group still goes into one (oversized) chunk —
+    /// in practice groups are tiny compared to the budget.
+    fn ensure_budget(&mut self, group_cost: usize) {
+        if self.cur_cost > 0 && self.cur_cost + group_cost > CHUNK_BUDGET_BYTES {
+            self.flush();
+        }
+    }
+
+    fn flush(&mut self) {
+        if self.cur_cost == 0 {
+            return;
+        }
+        let full = std::mem::replace(
+            &mut self.cur,
+            OwnedIntermediateStorage {
+                next_id: self.src.next_id,
+                ..OwnedIntermediateStorage::default()
+            },
+        );
+        self.chunks.push(full);
+        self.cur_cost = 0;
+        self.cur_node_ids.clear();
+        self.cur_location_ids.clear();
+    }
+
+    /// Add a node row (plus its file row for file nodes) to the current
+    /// chunk if not present. `with_symbol` adds the node's symbol row —
+    /// only the node's home group does this (symbols are not deduped on
+    /// inject).
+    fn add_node(&mut self, node_id: i64, with_symbol: bool) {
+        if self.cur_node_ids.insert(node_id) {
+            if let Some(node) = self.nodes_by_id.get(&node_id).copied() {
+                self.cur.nodes.push(node.clone());
+                self.cur_cost += node_cost(node);
+            }
+            if let Some(file) = self.files_by_node_id.get(&node_id).copied() {
+                self.cur.files.push(file.clone());
+                self.cur_cost += file_cost(file);
+            }
+        }
+        if with_symbol {
+            if let Some(sym) = self.symbols_by_node_id.get(&node_id).copied() {
+                self.cur.symbols.push(sym.clone());
+                self.cur_cost += SYMBOL_COST;
+            }
+        }
+    }
+
+    /// Add a location row (plus its file node stub) to the current chunk if
+    /// not present. Locations dedup by position on inject, so a location
+    /// repeated in a later chunk merges onto the same id.
+    fn add_location(&mut self, location_id: i64) {
+        let Some(loc) = self.locations_by_id.get(&location_id).copied() else {
+            return;
+        };
+        if !self.cur_location_ids.insert(location_id) {
+            return;
+        }
+        self.add_node(loc.file_node_id, false);
+        self.cur.source_locations.push(loc.clone());
+        self.cur_cost += LOCATION_COST;
+        self.emitted_locations.insert(location_id);
+    }
+
+    fn add_occurrences(&mut self, occ_indices: &[usize]) {
+        for &idx in occ_indices {
+            let occ = self.src.occurrences[idx].clone();
+            self.add_location(occ.source_location_id);
+            self.cur.occurrences.push(occ);
+            self.cur_cost += OCCURRENCE_COST;
+        }
+    }
+}
+
 impl OwnedIntermediateStorage {
     #[cfg(test)]
     pub(crate) fn from_fbs(s: IntermediateStorage<'_>) -> Self {
@@ -657,6 +969,229 @@ fn serialize_one_storage(s: &OwnedIntermediateStorage) -> Vec<u8> {
     );
     fbb.finish(queue, None);
     fbb.finished_data().to_vec()
+}
+
+#[cfg(test)]
+mod chunk_tests {
+    use super::*;
+    use std::collections::{HashMap, HashSet};
+
+    /// Synthetic storage: one file node (id 1) + `n` item nodes, each with a
+    /// symbol, a token location + occurrence, and a USAGE edge to the next
+    /// node with its own location + occurrence. `name_len` inflates node
+    /// names to force multi-chunk splits.
+    fn synthetic(n: i64, name_len: usize) -> OwnedIntermediateStorage {
+        let mut s = OwnedIntermediateStorage::default();
+        s.nodes.push(OwnedStorageNode {
+            id: 1,
+            type_: 1 << 18,
+            serialized_name: "/\tm/tmp/f.rs\ts\tp".to_owned(),
+        });
+        s.files.push(OwnedStorageFile {
+            id: 1,
+            file_path: "/tmp/f.rs".to_owned(),
+            language_identifier: "rust".to_owned(),
+            indexed: true,
+            complete: true,
+        });
+        let mut next = 2;
+        let mut node_ids = Vec::new();
+        for i in 0..n {
+            let id = next;
+            next += 1;
+            s.nodes.push(OwnedStorageNode {
+                id,
+                type_: 64,
+                serialized_name: format!("n{i}_{}", "x".repeat(name_len)),
+            });
+            s.symbols.push(OwnedStorageSymbol {
+                id,
+                definition_kind: 2,
+            });
+            let loc = next;
+            next += 1;
+            s.source_locations.push(OwnedStorageSourceLocation {
+                id: loc,
+                file_node_id: 1,
+                start_line: i as u32 + 1,
+                start_col: 1,
+                end_line: i as u32 + 1,
+                end_col: 5,
+                type_: 0,
+            });
+            s.occurrences.push(OwnedStorageOccurrence {
+                element_id: id,
+                source_location_id: loc,
+            });
+            node_ids.push(id);
+        }
+        for w in node_ids.windows(2) {
+            let edge = next;
+            next += 1;
+            s.edges.push(OwnedStorageEdge {
+                id: edge,
+                type_: 4,
+                source_node_id: w[0],
+                target_node_id: w[1],
+            });
+            let loc = next;
+            next += 1;
+            s.source_locations.push(OwnedStorageSourceLocation {
+                id: loc,
+                file_node_id: 1,
+                start_line: 1,
+                start_col: 9,
+                end_line: 1,
+                end_col: 12,
+                type_: 0,
+            });
+            s.occurrences.push(OwnedStorageOccurrence {
+                element_id: edge,
+                source_location_id: loc,
+            });
+        }
+        s.errors.push(OwnedStorageError {
+            id: next,
+            message: "m".to_owned(),
+            translation_unit: "/tmp/f.rs".to_owned(),
+            fatal: false,
+            indexed: true,
+        });
+        s.next_id = next + 1;
+        s
+    }
+
+    #[test]
+    fn small_storage_passes_through_as_single_chunk() {
+        let s = synthetic(10, 8);
+        let chunks = s.chunks();
+        assert_eq!(chunks.len(), 1);
+        let c = &chunks[0];
+        assert_eq!(c.nodes.len(), s.nodes.len());
+        assert_eq!(c.edges.len(), s.edges.len());
+        assert_eq!(c.occurrences.len(), s.occurrences.len());
+        assert_eq!(c.source_locations.len(), s.source_locations.len());
+        assert_eq!(c.next_id, s.next_id);
+    }
+
+    #[test]
+    fn large_storage_chunks_are_self_contained_and_cover_everything() {
+        // ~2600 nodes x 4 KiB names -> estimate well above the chunk budget.
+        let s = synthetic(2600, 4096);
+        assert!(s.estimated_size() > CHUNK_BUDGET_BYTES);
+
+        let chunks = s.chunks();
+        assert!(chunks.len() > 1, "expected a multi-chunk split");
+
+        let mut seen_occurrences = 0usize;
+        let mut seen_edge_ids: HashSet<i64> = HashSet::new();
+        let mut seen_symbol_ids: HashSet<i64> = HashSet::new();
+        let mut seen_node_names: HashSet<String> = HashSet::new();
+        let mut seen_errors = 0usize;
+
+        for chunk in &chunks {
+            // Serialized size must stay under the 8 MiB target so two chunks
+            // plus queue headers always fit the 16 MiB segment.
+            let serialized = serialize_one_storage(chunk);
+            assert!(
+                serialized.len() < 8 * 1024 * 1024,
+                "chunk serializes to {} bytes",
+                serialized.len()
+            );
+
+            // Self-containment: all intra-chunk references resolve.
+            let node_ids: HashSet<i64> = chunk.nodes.iter().map(|n| n.id).collect();
+            let edge_ids: HashSet<i64> = chunk.edges.iter().map(|e| e.id).collect();
+            let loc_ids: HashSet<i64> = chunk.source_locations.iter().map(|l| l.id).collect();
+            for e in &chunk.edges {
+                assert!(node_ids.contains(&e.source_node_id));
+                assert!(node_ids.contains(&e.target_node_id));
+            }
+            for l in &chunk.source_locations {
+                assert!(node_ids.contains(&l.file_node_id));
+            }
+            for sym in &chunk.symbols {
+                assert!(node_ids.contains(&sym.id));
+            }
+            for f in &chunk.files {
+                assert!(node_ids.contains(&f.id));
+            }
+            for o in &chunk.occurrences {
+                assert!(node_ids.contains(&o.element_id) || edge_ids.contains(&o.element_id));
+                assert!(loc_ids.contains(&o.source_location_id));
+            }
+            assert_eq!(chunk.next_id, s.next_id);
+
+            seen_occurrences += chunk.occurrences.len();
+            for e in &chunk.edges {
+                assert!(seen_edge_ids.insert(e.id), "edge duplicated across chunks");
+            }
+            for sym in &chunk.symbols {
+                assert!(
+                    seen_symbol_ids.insert(sym.id),
+                    "symbol duplicated across chunks"
+                );
+            }
+            for n in &chunk.nodes {
+                seen_node_names.insert(n.serialized_name.clone());
+            }
+            seen_errors += chunk.errors.len();
+        }
+
+        // Coverage: occurrences exactly once, edges/symbols/errors complete,
+        // every node name present somewhere.
+        assert_eq!(seen_occurrences, s.occurrences.len());
+        assert_eq!(seen_edge_ids.len(), s.edges.len());
+        assert_eq!(seen_symbol_ids.len(), s.symbols.len());
+        assert_eq!(seen_errors, s.errors.len());
+        let original_names: HashSet<String> =
+            s.nodes.iter().map(|n| n.serialized_name.clone()).collect();
+        assert_eq!(seen_node_names, original_names);
+
+        // Locations must cover every original position exactly (dedup by
+        // position on inject makes repeats legal but the synthetic data has
+        // unique def positions).
+        let original_positions: HashSet<(i64, u32, u32, u32, u32, i32)> = s
+            .source_locations
+            .iter()
+            .map(|l| {
+                (
+                    l.file_node_id,
+                    l.start_line,
+                    l.start_col,
+                    l.end_line,
+                    l.end_col,
+                    l.type_,
+                )
+            })
+            .collect();
+        let mut chunk_positions: HashSet<(i64, u32, u32, u32, u32, i32)> = HashSet::new();
+        for chunk in &chunks {
+            for l in &chunk.source_locations {
+                chunk_positions.insert((
+                    l.file_node_id,
+                    l.start_line,
+                    l.start_col,
+                    l.end_line,
+                    l.end_col,
+                    l.type_,
+                ));
+            }
+        }
+        assert_eq!(chunk_positions, original_positions);
+
+        // The chunker only clones rows — verify nothing was invented.
+        let original_node_by_id: HashMap<i64, &OwnedStorageNode> =
+            s.nodes.iter().map(|n| (n.id, n)).collect();
+        for chunk in &chunks {
+            for n in &chunk.nodes {
+                assert_eq!(
+                    original_node_by_id[&n.id].serialized_name,
+                    n.serialized_name
+                );
+            }
+        }
+    }
 }
 
 #[cfg(test)]
