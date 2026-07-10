@@ -95,9 +95,16 @@ becomes visible through ordinary edges:
 
 Lifetime *references* are resolved without a dedicated `Semantics` API: the
 enclosing generic item is mapped `to_def`, its `GenericDef::lifetime_params`
-are matched by name text, and the hit is looked up via
-`DefKey::LifetimeParam`. Only bound positions emit edges; plain uses in
-types (`&'a T`) are deliberately not recorded in v1 to control noise.
+are matched by name text, and the hit is looked up via `DefKey::LifetimeParam`.
+
+Plain lifetime uses in type positions (`&'a T`, `Foo<'a>`) are recorded too,
+symmetric with type-parameter uses: `Owner —type_use→ Owner::'a` with an
+occurrence at each use token. The (owner, param) edge deduplicates, so many
+`&'a` sites collapse to one edge carrying many occurrences — clicking `'a`
+shows everywhere the lifetime flows through the signature. The declaration
+site (`'a` in `<'a>`) is skipped (the param node already carries that
+location); `'static` and unresolved lifetimes resolve to no param node and
+are dropped.
 
 ### 4. What deliberately stays INHERITANCE — and what never becomes it
 
@@ -187,8 +194,6 @@ supertrait walk in `collect_trait_details()`.
 
 ## Out of scope / follow-ups
 
-- Lifetime usage occurrences in types (`&'a T`) — revisit once noise
-  tolerance is known.
 - Deep nesting of specialization bubbles (§7): only the outermost
   eligible level and its direct args bubble; `A<B<C<Foo>>>` does not
   produce a bubble per level.

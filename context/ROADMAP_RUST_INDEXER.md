@@ -293,8 +293,7 @@ to rust-analyzer's semantic layer:
 - [x] `EDGE_IMPORT` for `use` items; local symbols (function-local bindings);
       `EDGE_MACRO_USAGE` for bang-macro invocations of local `macro_rules!`.
 
-Remaining gaps: lifetime usage occurrences in types, attribute/derive-macro
-usage edges (their targets
+Remaining gaps: attribute/derive-macro usage edges (their targets
 — proc-macros and builtin derives — are not indexed today). (Proc-macro
 expansion shipped — see `ROADMAP_PROC_MACRO_EXPANSION.md`.)
 

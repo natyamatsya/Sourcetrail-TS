@@ -1345,7 +1345,7 @@ impl RefResolver<'_> {
                     }
                 }
                 SyntaxKind::LIFETIME => {
-                    self.resolve_lifetime_bound_reference(sema, &node, rows);
+                    self.resolve_lifetime_reference(sema, &node, rows);
                 }
                 SyntaxKind::CALL_EXPR => {
                     let Some(call) = ast::CallExpr::cast(node) else {
@@ -1959,18 +1959,28 @@ impl RefResolver<'_> {
     /// Lifetime reference in a bound position (`'a: 'b`, `T: 'a`) →
     /// EDGE_TYPE_USAGE from the bound owner to the lifetime parameter node.
     /// Declaration sites and plain uses in types are not recorded (v1).
-    fn resolve_lifetime_bound_reference(
+    /// Resolve a lifetime reference (`'a`) to its parameter node and record an
+    /// `EDGE_TYPE_USAGE` occurrence, mirroring how a type-parameter use in a
+    /// type is handled. Three positions:
+    ///   - declaration (`'a` in `<'a>`) — skipped; the param node already
+    ///     carries its name-token location from the definition pass;
+    ///   - bound (`'a: 'b`, `T: 'a`) — source is the bound owner (the outlives
+    ///     lattice, §3), occurrence at the bound token;
+    ///   - plain use in a type (`&'a T`, `Foo<'a>`) — source is the enclosing
+    ///     item, occurrence at the use token.
+    /// `'static` and unresolved lifetimes resolve to no param node and are
+    /// dropped. The (enclosing, param) edge dedups; each site adds an occurrence.
+    fn resolve_lifetime_reference(
         &self,
         sema: &Semantics<'_, RootDatabase>,
         node: &ra_ap_syntax::SyntaxNode,
         rows: &mut Vec<ReferenceRow>,
     ) {
-        // Only lifetimes that are themselves a bound (inside a TypeBoundList).
-        if !node
-            .ancestors()
-            .skip(1)
-            .take_while(|a| a.kind() != SyntaxKind::GENERIC_PARAM_LIST)
-            .any(|a| a.kind() == SyntaxKind::TYPE_BOUND_LIST)
+        // The declaration site's `'a` sits directly in a LifetimeParam; the
+        // param node already has that location, so skip it here.
+        if node
+            .parent()
+            .is_some_and(|p| p.kind() == SyntaxKind::LIFETIME_PARAM)
         {
             return;
         }
@@ -1978,10 +1988,21 @@ impl RefResolver<'_> {
         let Some(target) = self.lifetime_param_id(sema, node, &name) else {
             return;
         };
-        let source = match self.bound_owner(sema, node) {
-            BoundOwner::Param(id) => Some(id),
-            BoundOwner::Trait(id) => Some(id),
-            BoundOwner::Item => self.enclosing_context_id(sema, node, false),
+
+        let in_bound = node
+            .ancestors()
+            .skip(1)
+            .take_while(|a| a.kind() != SyntaxKind::GENERIC_PARAM_LIST)
+            .any(|a| a.kind() == SyntaxKind::TYPE_BOUND_LIST);
+        let source = if in_bound {
+            match self.bound_owner(sema, node) {
+                BoundOwner::Param(id) => Some(id),
+                BoundOwner::Trait(id) => Some(id),
+                BoundOwner::Item => self.enclosing_context_id(sema, node, false),
+            }
+        } else {
+            // Plain use in a type position.
+            self.enclosing_context_id(sema, node, false)
         };
         let Some(source) = source else { return };
         if source == target {

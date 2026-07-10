@@ -1380,3 +1380,55 @@ fn external_std_macro_emits_no_usage_edge() {
         s.edges
     );
 }
+
+// -----------------------------------------------------------------------
+// Lifetime usage occurrences in types (`&'a T`, `Foo<'a>`)
+// -----------------------------------------------------------------------
+
+// All EDGE_TYPE_USAGE occurrence positions on the edge from `src` to `tgt`.
+fn type_usage_occurrences(s: &OwnedIntermediateStorage, src: &str, tgt: &str) -> Vec<(u32, u32)> {
+    match edge_id_between(s, EDGE_TYPE_USAGE_T, src, tgt) {
+        Some(id) => edge_occurrence_positions(s, id),
+        None => Vec::new(),
+    }
+}
+
+#[test]
+fn lifetime_use_in_ref_type_records_occurrences() {
+    let s = index_src("pub struct S;\npub fn f<'a>(x: &'a S) -> &'a S { x }");
+    assert!(has_node(&s, "f::'a"), "nodes: {:?}", node_names(&s));
+    // One deduplicated f -> f::'a edge, an occurrence at each `&'a` (param + return).
+    let occ = type_usage_occurrences(&s, "f", "f::'a");
+    assert_eq!(
+        occ.len(),
+        2,
+        "expected two lifetime-use occurrences, got {:?}",
+        occ
+    );
+}
+
+#[test]
+fn lifetime_declaration_is_not_a_use() {
+    // `<'a>` alone (declaration) plus one use = one use occurrence, not two.
+    let s = index_src("pub struct S;\npub fn g<'a>(x: &'a S) { let _ = x; }");
+    assert_eq!(type_usage_occurrences(&s, "g", "g::'a").len(), 1);
+}
+
+#[test]
+fn lifetime_use_in_generic_arg_records_occurrence() {
+    let s =
+        index_src("pub struct Holder<'a>(pub &'a u8);\npub fn h<'a>(x: Holder<'a>) { let _ = x; }");
+    // The `'a` in `Holder<'a>` (a generic argument position) is a use of h::'a.
+    assert!(
+        !type_usage_occurrences(&s, "h", "h::'a").is_empty(),
+        "expected a lifetime-use occurrence for Holder<'a>, edges: {:?}",
+        s.edges
+    );
+}
+
+#[test]
+fn static_lifetime_records_no_use_edge() {
+    let s = index_src("pub struct S;\npub fn s(x: &'static S) { let _ = x; }");
+    // 'static is not a declared parameter → no node, no edge.
+    assert!(!has_node(&s, "s::'static"));
+}
