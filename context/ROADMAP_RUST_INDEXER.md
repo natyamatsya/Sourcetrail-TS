@@ -296,7 +296,12 @@ see `ROADMAP_PROC_MACRO_EXPANSION.md`.)
 The pipeline is single-threaded on all three layers today; CPU sits idle
 during large-crate indexing. In expected-payoff order:
 
-- [ ] **Parallel semantic reference pass via salsa snapshots.** Pass 2
+- [x] **Parallel semantic reference pass via salsa snapshots.** (2026-07-10:
+      RefResolver + ReferenceRow pure/apply split; scoped-thread fan-out with
+      per-worker db clone + attach_db + Semantics; single-threaded ordered
+      assembly; RUST_INDEXER_SERIAL=1 escape hatch. Output byte-identical to
+      serial. Pass itself 1.27x on the self-index — analysis-bound crates
+      scale further; load/cargo-check dominate small ones.) Pass 2
       (`collect_semantic_edges`) walks files independently — fan out with one
       `db.snapshot()` + `Semantics` per worker (the same pattern as
       rust-analyzer's `parallel_prime_caches`), resolving references per file
@@ -306,9 +311,8 @@ during large-crate indexing. In expected-payoff order:
       which pass 2 only reads, so the barrier between the passes is already
       in the right place. Determinism: assemble in file-discovery order
       (collect per-file row batches, then append in `local_files` order).
-- [ ] Raise `num_worker_threads` / `proc_macro_processes` in
-      `LoadProfile::FULL` alongside (only meaningful once something consumes
-      the parallelism).
+- [x] `num_worker_threads` (min(cores, 8)) and `proc_macro_processes` (2)
+      raised in `LoadProfile::FULL`.
 - [ ] **Multiple rust indexer subprocesses** for multi-source-group projects:
       `TaskBuildIndex` spawns exactly one Rust process (C++ gets N); K rust
       supervisor threads would parallelize across crates/source groups.

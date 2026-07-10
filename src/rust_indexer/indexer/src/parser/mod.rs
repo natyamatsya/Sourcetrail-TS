@@ -150,8 +150,17 @@ pub(crate) fn index_crate_with(
             ProcMacroServerChoice::None
         },
         prefill_caches: false,
-        proc_macro_processes: 1,
-        num_worker_threads: 1,
+        // Only the full profile (real workspaces, proc-macro server on) has
+        // enough load work to benefit from parallelism; the temp-crate
+        // profiles stay single-threaded.
+        proc_macro_processes: if profile.proc_macro_server { 2 } else { 1 },
+        num_worker_threads: if profile.proc_macro_server {
+            std::thread::available_parallelism()
+                .map_or(1, |n| n.get())
+                .min(8)
+        } else {
+            1
+        },
     };
 
     let (db, vfs, _proc_macro) =

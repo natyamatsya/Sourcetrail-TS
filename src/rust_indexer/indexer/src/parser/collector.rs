@@ -1,4 +1,5 @@
 use std::collections::{HashMap, HashSet};
+use std::sync::atomic::{AtomicUsize, Ordering};
 
 use either::Either;
 use ra_ap_hir::{
@@ -59,6 +60,29 @@ struct FileInfo {
 /// Text range of a path's last segment name token — the clickable reference token.
 fn path_name_range(path: &ast::Path) -> Option<ra_ap_syntax::TextRange> {
     Some(path.segment()?.name_ref()?.syntax().text_range())
+}
+
+/// One resolved reference from the (parallelizable) resolution step: an edge
+/// plus an optional TOKEN occurrence range in the file being resolved.
+/// Applying a row = `Collector::push_edge` (dedup) + occurrence location.
+struct ReferenceRow {
+    edge_type: i32,
+    source_id: i64,
+    target_id: i64,
+    /// Reference-site token range, when the reference has a clickable token
+    /// (impl overrides do not).
+    range: Option<ra_ap_syntax::TextRange>,
+}
+
+/// The pure resolution half of the semantic reference pass: turns one file's
+/// syntax into `ReferenceRow`s using only shared read access to the database
+/// and the definition maps — safe to fan out across worker threads.
+struct RefResolver<'a> {
+    db: &'a RootDatabase,
+    /// HIR definition identity → node id (exact resolution)
+    def_ids: &'a HashMap<DefKey, i64>,
+    /// plain qualified name → node id (fallback resolution)
+    node_ids: &'a HashMap<String, i64>,
 }
 
 struct Collector<'db> {
@@ -146,8 +170,14 @@ impl<'db> Collector<'db> {
         }
     }
 
-    fn def_id(&self, key: DefKey) -> Option<i64> {
-        self.def_ids.get(&key).copied()
+    /// Read-only resolver over the definition maps — used by the semantic
+    /// reference pass and by pass-1 name-fallback edge resolution.
+    fn resolver(&self) -> RefResolver<'_> {
+        RefResolver {
+            db: self.db,
+            def_ids: &self.def_ids,
+            node_ids: &self.node_ids,
+        }
     }
 
     fn record_local_file(&mut self, file_id: ra_ap_vfs::FileId) {
@@ -316,30 +346,12 @@ impl<'db> Collector<'db> {
     /// If either node hasn't been emitted yet the edge is silently dropped — this
     /// can happen for items from external crates that we intentionally skip.
     fn add_edge(&mut self, edge_type: i32, source_name: &str, target_name: &str) {
-        let source_id = self.resolve_node_id(source_name);
-        let target_id = self.resolve_node_id(target_name);
+        let resolver = self.resolver();
+        let source_id = resolver.resolve_node_id(source_name);
+        let target_id = resolver.resolve_node_id(target_name);
         if let (Some(src), Some(tgt)) = (source_id, target_id) {
             self.push_edge(edge_type, src, tgt);
         }
-    }
-
-    fn resolve_node_id(&self, query: &str) -> Option<i64> {
-        if let Some(&id) = self.node_ids.get(query) {
-            return Some(id);
-        }
-
-        let suffix = format!("::{query}");
-        let mut matches = self
-            .node_ids
-            .iter()
-            .filter(|(k, _)| k.ends_with(&suffix))
-            .map(|(_, &v)| v);
-
-        let first = matches.next()?;
-        if matches.next().is_some() {
-            return None;
-        }
-        Some(first)
     }
 
     /// Qualified name of an ADT exactly as the definition pass emits it:
@@ -720,30 +732,72 @@ impl<'db> Collector<'db> {
     // Semantic reference pass
     // -----------------------------------------------------------------------
 
-    /// Walk every collected local file through `Semantics` and emit reference
-    /// edges whose targets are resolved semantically (exact def identity), plus
-    /// a TOKEN source location + occurrence per reference site, attached to the
-    /// edge — mirroring the C++ side (ParserClientImpl::recordReference).
-    /// Falls back to name-based lookup (`resolve_node_id`) per site when
-    /// resolution fails, e.g. inside unexpanded macros.
+    /// Walk every collected local file and emit reference edges whose targets
+    /// are resolved semantically (exact def identity), plus a TOKEN source
+    /// location + occurrence per reference site, attached to the edge —
+    /// mirroring the C++ side (ParserClientImpl::recordReference).
+    ///
+    /// The pass is split in two: pure per-file resolution
+    /// (`RefResolver::resolve_file`) that fans out across worker threads for
+    /// multi-file workspaces, and a single-threaded apply step that owns id
+    /// allocation and edge dedup. Rows are applied strictly in `local_files`
+    /// order, so the parallel path produces byte-identical output to the
+    /// inline path. Set `RUST_INDEXER_SERIAL=1` to force the inline path —
+    /// an operational escape hatch, and the reference for parity checks.
     fn collect_semantic_edges(&mut self, sema: &Semantics<'db, RootDatabase>) {
         let files: Vec<ra_ap_vfs::FileId> = self.local_files.clone();
-        for vfs_fid in files {
-            // A panic inside rust-analyzer on one file must not lose the
-            // references of all the others — record it as a non-fatal error
-            // and continue with the next file.
-            let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
-                self.collect_file_references(sema, vfs_fid)
-            }));
-            if let Err(payload) = result {
+        let workers = std::thread::available_parallelism()
+            .map_or(1, |n| n.get())
+            .min(files.len())
+            .min(16);
+        let force_serial = std::env::var_os("RUST_INDEXER_SERIAL").is_some_and(|v| v == "1");
+
+        if files.len() < 2 || workers <= 1 || force_serial {
+            for vfs_fid in files {
+                // A panic inside rust-analyzer on one file must not lose the
+                // references of all the others — record it as a non-fatal
+                // error and continue with the next file.
+                let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+                    self.resolver().resolve_file(sema, vfs_fid)
+                }))
+                .map_err(|payload| panic_payload_message(payload.as_ref()).to_owned());
+                self.apply_file_result(vfs_fid, result);
+            }
+            return;
+        }
+
+        let results =
+            resolve_files_parallel(self.db, &self.def_ids, &self.node_ids, &files, workers);
+        for (vfs_fid, result) in files.into_iter().zip(results) {
+            self.apply_file_result(vfs_fid, result);
+        }
+    }
+
+    /// Apply one file's resolution outcome: either its reference rows or the
+    /// panic marker of a failed resolution (recorded as a non-fatal error).
+    fn apply_file_result(
+        &mut self,
+        vfs_fid: ra_ap_vfs::FileId,
+        result: Result<Vec<ReferenceRow>, String>,
+    ) {
+        match result {
+            Ok(rows) => {
+                // Prime the per-file cache (allocating the file node, like
+                // the pre-split per-file setup did); skip files that do not
+                // resolve to a path.
+                if self.file_info(vfs_fid).is_none() {
+                    return;
+                }
+                self.apply_reference_rows(vfs_fid, rows);
+            }
+            Err(panic_message) => {
                 let file_path = self
                     .vfs_path(vfs_fid)
                     .unwrap_or_else(|| "<unknown file>".to_owned());
                 let error = OwnedStorageError {
                     id: self.alloc_id(),
                     message: format!(
-                        "indexer panicked while collecting references in {file_path}: {}",
-                        panic_payload_message(payload.as_ref())
+                        "indexer panicked while resolving references in {file_path}: {panic_message}"
                     ),
                     translation_unit: file_path,
                     fatal: false,
@@ -754,376 +808,16 @@ impl<'db> Collector<'db> {
         }
     }
 
-    /// Reference pass over a single file — the per-file body of
-    /// `collect_semantic_edges`.
-    fn collect_file_references(
-        &mut self,
-        sema: &Semantics<'db, RootDatabase>,
-        vfs_fid: ra_ap_vfs::FileId,
-    ) {
-        // Prime the per-file cache up front (allocating the file node,
-        // like the previous per-file setup did); skip files that do not
-        // resolve to a path.
-        if self.file_info(vfs_fid).is_none() {
-            return;
-        }
-        let source_file = sema.parse_guess_edition(vfs_fid);
-        for node in source_file.syntax().descendants() {
-            match node.kind() {
-                SyntaxKind::IMPL => {
-                    if let Some(impl_ast) = ast::Impl::cast(node) {
-                        self.emit_impl_inheritance(sema, &impl_ast, vfs_fid);
-                        self.emit_impl_overrides(sema, &impl_ast);
-                    }
-                }
-                SyntaxKind::LIFETIME => {
-                    self.emit_lifetime_bound_reference(sema, &node, vfs_fid);
-                }
-                SyntaxKind::CALL_EXPR => {
-                    let Some(call) = ast::CallExpr::cast(node) else {
-                        continue;
-                    };
-                    let Some(ast::Expr::PathExpr(pe)) = call.expr() else {
-                        continue;
-                    };
-                    let Some(path) = pe.path() else { continue };
-                    let target = match sema.resolve_path(&path) {
-                        Some(PathResolution::Def(def)) => self.def_id(DefKey::Def(def)),
-                        _ => None,
-                    }
-                    .or_else(|| {
-                        let name = path.segment()?.name_ref()?.text().to_string();
-                        self.resolve_node_id(&name)
-                    });
-                    let range = path_name_range(&path);
-                    self.emit_reference(sema, EDGE_CALL, call.syntax(), target, range, vfs_fid);
-                }
-                SyntaxKind::METHOD_CALL_EXPR => {
-                    let Some(call) = ast::MethodCallExpr::cast(node) else {
-                        continue;
-                    };
-                    let target = sema
-                        .resolve_method_call(&call)
-                        .and_then(|f| self.def_id(DefKey::Def(ModuleDef::Function(f))))
-                        .or_else(|| {
-                            let name = call.name_ref()?.text().to_string();
-                            self.resolve_node_id(&name)
-                        });
-                    let range = call.name_ref().map(|n| n.syntax().text_range());
-                    self.emit_reference(sema, EDGE_CALL, call.syntax(), target, range, vfs_fid);
-                }
-                SyntaxKind::PATH_EXPR => {
-                    // Callees are handled by the CALL_EXPR arm.
-                    if node
-                        .parent()
-                        .is_some_and(|p| p.kind() == SyntaxKind::CALL_EXPR)
-                    {
-                        continue;
-                    }
-                    let Some(pe) = ast::PathExpr::cast(node) else {
-                        continue;
-                    };
-                    let Some(path) = pe.path() else { continue };
-                    // Only definition references; locals are future work.
-                    let Some(PathResolution::Def(def)) = sema.resolve_path(&path) else {
-                        continue;
-                    };
-                    let target = self.def_id(DefKey::Def(def));
-                    let range = path_name_range(&path);
-                    self.emit_reference(sema, EDGE_USAGE, pe.syntax(), target, range, vfs_fid);
-                }
-                SyntaxKind::PATH_TYPE => {
-                    let Some(pt) = ast::PathType::cast(node) else {
-                        continue;
-                    };
-                    self.emit_type_reference(sema, &pt, vfs_fid);
-                }
-                SyntaxKind::FIELD_EXPR => {
-                    let Some(fe) = ast::FieldExpr::cast(node) else {
-                        continue;
-                    };
-                    let target = match sema.resolve_field(&fe) {
-                        Some(Either::Left(field)) => self.def_id(DefKey::Field(field)),
-                        _ => None,
-                    };
-                    let range = fe.name_ref().map(|n| n.syntax().text_range());
-                    self.emit_reference(sema, EDGE_USAGE, fe.syntax(), target, range, vfs_fid);
-                }
-                SyntaxKind::RECORD_EXPR_FIELD => {
-                    let Some(ref_field) = ast::RecordExprField::cast(node) else {
-                        continue;
-                    };
-                    let target = sema
-                        .resolve_record_field(&ref_field)
-                        .and_then(|(field, _, _)| self.def_id(DefKey::Field(field)));
-                    let range = ref_field.name_ref().map(|n| n.syntax().text_range());
-                    self.emit_reference(
-                        sema,
-                        EDGE_USAGE,
-                        ref_field.syntax(),
-                        target,
-                        range,
-                        vfs_fid,
-                    );
-                }
-                _ => {}
+    /// The single-threaded half of the reference pass: edge dedup via
+    /// `push_edge` plus the occurrence location per row. Id allocation and
+    /// `emitted_edges` dedup live here and must never move into the workers —
+    /// apply order (= `local_files` order) defines the deterministic output.
+    fn apply_reference_rows(&mut self, vfs_fid: ra_ap_vfs::FileId, rows: Vec<ReferenceRow>) {
+        for row in rows {
+            let edge_id = self.push_edge(row.edge_type, row.source_id, row.target_id);
+            if let Some(range) = row.range {
+                self.add_reference_location(edge_id, range, vfs_fid);
             }
-        }
-    }
-
-    /// Type reference (`PathType`) → edge from the bound owner or enclosing
-    /// item (see context/DESIGN_RUST_TYPE_SYSTEM_EDGES.md):
-    ///   - inside a generic-param bound: from the *parameter* node
-    ///   - supertrait bound: EDGE_INHERITANCE from the trait
-    ///   - inside a generic-arg list: EDGE_TYPE_ARGUMENT instead of TYPE_USAGE
-    ///   - plain type position: EDGE_TYPE_USAGE from the enclosing item;
-    ///     impl headers are skipped (covered by inheritance handling).
-    fn emit_type_reference(
-        &mut self,
-        sema: &Semantics<'db, RootDatabase>,
-        pt: &ast::PathType,
-        vfs_fid: ra_ap_vfs::FileId,
-    ) {
-        let Some(path) = pt.path() else { return };
-        let target = match sema.resolve_path(&path) {
-            Some(PathResolution::Def(def)) => self.def_id(DefKey::Def(def)),
-            Some(PathResolution::TypeParam(tp)) => self.def_id(DefKey::TypeParam(tp)),
-            Some(PathResolution::ConstParam(cp)) => self.def_id(DefKey::ConstParam(cp)),
-            _ => None,
-        };
-        let Some(target) = target else { return };
-        let range = path_name_range(&path);
-
-        let in_generic_args = pt
-            .syntax()
-            .ancestors()
-            .any(|a| a.kind() == SyntaxKind::GENERIC_ARG_LIST);
-        let edge_kind = if in_generic_args {
-            EDGE_TYPE_ARGUMENT
-        } else {
-            EDGE_TYPE_USAGE
-        };
-
-        let source = match self.bound_owner(sema, pt.syntax()) {
-            BoundOwner::Param(param_id) => Some(param_id),
-            // `trait A: B` — the top-level bound path is the supertrait.
-            BoundOwner::Trait(trait_id) if !in_generic_args => {
-                if trait_id != target {
-                    let edge_id = self.push_edge(EDGE_INHERITANCE, trait_id, target);
-                    if let Some(range) = range {
-                        self.add_reference_location(edge_id, range, vfs_fid);
-                    }
-                }
-                return;
-            }
-            BoundOwner::Trait(trait_id) => Some(trait_id),
-            BoundOwner::Item => {
-                self.enclosing_context_id(sema, pt.syntax(), /*allow_impl_context=*/ false)
-            }
-        };
-        let Some(source) = source else { return };
-        if source == target {
-            return;
-        }
-        let edge_id = self.push_edge(edge_kind, source, target);
-        if let Some(range) = range {
-            self.add_reference_location(edge_id, range, vfs_fid);
-        }
-    }
-
-    /// Classify the bound context of a node inside a `TypeBoundList`.
-    fn bound_owner(
-        &self,
-        sema: &Semantics<'db, RootDatabase>,
-        node: &ra_ap_syntax::SyntaxNode,
-    ) -> BoundOwner {
-        let Some(bound_list) = node
-            .ancestors()
-            .find(|a| a.kind() == SyntaxKind::TYPE_BOUND_LIST)
-        else {
-            return BoundOwner::Item;
-        };
-        let Some(parent) = bound_list.parent() else {
-            return BoundOwner::Item;
-        };
-        match parent.kind() {
-            SyntaxKind::TYPE_PARAM => ast::TypeParam::cast(parent)
-                .and_then(|tp| sema.to_def(&tp))
-                .and_then(|tp| self.def_id(DefKey::TypeParam(tp)))
-                .map_or(BoundOwner::Item, BoundOwner::Param),
-            SyntaxKind::LIFETIME_PARAM => ast::LifetimeParam::cast(parent)
-                .and_then(|lp| sema.to_def(&lp))
-                .and_then(|lp| self.def_id(DefKey::LifetimeParam(lp)))
-                .map_or(BoundOwner::Item, BoundOwner::Param),
-            SyntaxKind::WHERE_PRED => {
-                let Some(pred) = ast::WherePred::cast(parent) else {
-                    return BoundOwner::Item;
-                };
-                // `where T: Trait` — attach to T if the subject is a parameter.
-                if let Some(ast::Type::PathType(subject)) = pred.ty() {
-                    if let Some(path) = subject.path() {
-                        match sema.resolve_path(&path) {
-                            Some(PathResolution::TypeParam(tp)) => {
-                                return self
-                                    .def_id(DefKey::TypeParam(tp))
-                                    .map_or(BoundOwner::Item, BoundOwner::Param);
-                            }
-                            Some(PathResolution::ConstParam(cp)) => {
-                                return self
-                                    .def_id(DefKey::ConstParam(cp))
-                                    .map_or(BoundOwner::Item, BoundOwner::Param);
-                            }
-                            _ => {}
-                        }
-                    }
-                }
-                // `where 'a: 'b` — attach to 'a.
-                if let Some(lt) = pred.lifetime() {
-                    if let Some(id) = self.lifetime_param_id(sema, pred.syntax(), &lt.text()) {
-                        return BoundOwner::Param(id);
-                    }
-                }
-                BoundOwner::Item
-            }
-            SyntaxKind::TRAIT => ast::Trait::cast(parent)
-                .and_then(|t| sema.to_def(&t))
-                .and_then(|t| self.def_id(DefKey::Def(ModuleDef::Trait(t))))
-                .map_or(BoundOwner::Item, BoundOwner::Trait),
-            // Associated type bounds (`type Item: Debug`) attach to the alias.
-            SyntaxKind::TYPE_ALIAS => ast::TypeAlias::cast(parent)
-                .and_then(|ta| sema.to_def(&ta))
-                .and_then(|ta| self.def_id(DefKey::Def(ModuleDef::TypeAlias(ta))))
-                .map_or(BoundOwner::Item, BoundOwner::Param),
-            // `dyn Trait` / `impl Trait` positions are ordinary type usage.
-            _ => BoundOwner::Item,
-        }
-    }
-
-    /// Lifetime reference in a bound position (`'a: 'b`, `T: 'a`) →
-    /// EDGE_TYPE_USAGE from the bound owner to the lifetime parameter node.
-    /// Declaration sites and plain uses in types are not recorded (v1).
-    fn emit_lifetime_bound_reference(
-        &mut self,
-        sema: &Semantics<'db, RootDatabase>,
-        node: &ra_ap_syntax::SyntaxNode,
-        vfs_fid: ra_ap_vfs::FileId,
-    ) {
-        // Only lifetimes that are themselves a bound (inside a TypeBoundList).
-        if !node
-            .ancestors()
-            .skip(1)
-            .take_while(|a| a.kind() != SyntaxKind::GENERIC_PARAM_LIST)
-            .any(|a| a.kind() == SyntaxKind::TYPE_BOUND_LIST)
-        {
-            return;
-        }
-        let name = node.text().to_string();
-        let Some(target) = self.lifetime_param_id(sema, node, &name) else {
-            return;
-        };
-        let source = match self.bound_owner(sema, node) {
-            BoundOwner::Param(id) => Some(id),
-            BoundOwner::Trait(id) => Some(id),
-            BoundOwner::Item => self.enclosing_context_id(sema, node, false),
-        };
-        let Some(source) = source else { return };
-        if source == target {
-            return;
-        }
-        let edge_id = self.push_edge(EDGE_TYPE_USAGE, source, target);
-        self.add_reference_location(edge_id, node.text_range(), vfs_fid);
-    }
-
-    /// Resolve a lifetime name (`'a`) to its parameter node by walking the
-    /// enclosing generic items and matching their `lifetime_params` by name.
-    fn lifetime_param_id(
-        &self,
-        sema: &Semantics<'db, RootDatabase>,
-        node: &ra_ap_syntax::SyntaxNode,
-        name: &str,
-    ) -> Option<i64> {
-        for anc in node.ancestors() {
-            let Some(gdef) = generic_def_of(sema, &anc) else {
-                continue;
-            };
-            let hit = gdef
-                .lifetime_params(self.db)
-                .into_iter()
-                .find(|lp| lp.name(self.db).as_str() == name)
-                .and_then(|lp| self.def_id(DefKey::LifetimeParam(lp)));
-            if hit.is_some() {
-                return hit;
-            }
-        }
-        None
-    }
-
-    /// `impl Trait for Type` — every impl function overrides its trait
-    /// counterpart (matched by name, guaranteed by the language):
-    ///   Type::method —override→ Trait::method
-    fn emit_impl_overrides(&mut self, sema: &Semantics<'db, RootDatabase>, impl_ast: &ast::Impl) {
-        let Some(hir_impl) = sema.to_def(impl_ast) else {
-            return;
-        };
-        let Some(trait_) = hir_impl.trait_(self.db) else {
-            return;
-        };
-        for item in hir_impl.items(self.db) {
-            let AssocItem::Function(f) = item else {
-                continue;
-            };
-            let Some(impl_fn_id) = self.def_id(DefKey::Def(ModuleDef::Function(f))) else {
-                continue;
-            };
-            let fname = f.name(self.db);
-            let trait_fn_id = trait_.items(self.db).into_iter().find_map(|ti| {
-                if let AssocItem::Function(tf) = ti {
-                    if tf.name(self.db) == fname {
-                        return self.def_id(DefKey::Def(ModuleDef::Function(tf)));
-                    }
-                }
-                None
-            });
-            if let Some(trait_fn_id) = trait_fn_id {
-                self.push_edge(EDGE_OVERRIDE, impl_fn_id, trait_fn_id);
-            }
-        }
-    }
-
-    /// Emit a reference edge + occurrence from the enclosing context of
-    /// `ref_site` to `target`, recording a TOKEN location at `range`.
-    fn emit_reference(
-        &mut self,
-        sema: &Semantics<'db, RootDatabase>,
-        edge_type: i32,
-        ref_site: &ra_ap_syntax::SyntaxNode,
-        target: Option<i64>,
-        range: Option<ra_ap_syntax::TextRange>,
-        vfs_fid: ra_ap_vfs::FileId,
-    ) {
-        self.emit_reference_edge(sema, edge_type, ref_site, target, range, vfs_fid, true);
-    }
-
-    fn emit_reference_edge(
-        &mut self,
-        sema: &Semantics<'db, RootDatabase>,
-        edge_type: i32,
-        ref_site: &ra_ap_syntax::SyntaxNode,
-        target: Option<i64>,
-        range: Option<ra_ap_syntax::TextRange>,
-        vfs_fid: ra_ap_vfs::FileId,
-        allow_impl_context: bool,
-    ) {
-        let Some(target) = target else { return };
-        let Some(context) = self.enclosing_context_id(sema, ref_site, allow_impl_context) else {
-            return;
-        };
-        if context == target {
-            return;
-        }
-        let edge_id = self.push_edge(edge_type, context, target);
-        if let Some(range) = range {
-            self.add_reference_location(edge_id, range, vfs_fid);
         }
     }
 
@@ -1162,117 +856,6 @@ impl<'db> Collector<'db> {
             element_id,
             source_location_id: loc_id,
         });
-    }
-
-    /// `impl Trait for Type` → EDGE_INHERITANCE from Type to Trait.
-    /// Trait and self type are resolved via `Semantics::resolve_path`; each side
-    /// independently falls back to name lookup on the path segment text.
-    fn emit_impl_inheritance(
-        &mut self,
-        sema: &Semantics<'db, RootDatabase>,
-        impl_ast: &ast::Impl,
-        vfs_fid: ra_ap_vfs::FileId,
-    ) {
-        // Only `impl Trait for Type` produces an inheritance edge.
-        if impl_ast.for_token().is_none() {
-            return;
-        }
-        let type_nodes: Vec<ast::Type> = impl_ast
-            .syntax()
-            .children()
-            .filter_map(ast::Type::cast)
-            .collect();
-        if type_nodes.len() < 2 {
-            return;
-        }
-        let trait_id = self.resolve_type_node(sema, &type_nodes[0]);
-        let self_id = self.resolve_type_node(sema, &type_nodes[1]);
-        if let (Some(self_id), Some(trait_id)) = (self_id, trait_id) {
-            let edge_id = self.push_edge(EDGE_INHERITANCE, self_id, trait_id);
-            if let ast::Type::PathType(pt) = &type_nodes[0] {
-                if let Some(range) = pt.path().as_ref().and_then(path_name_range) {
-                    self.add_reference_location(edge_id, range, vfs_fid);
-                }
-            }
-        }
-    }
-
-    /// Resolve a path-shaped AST type to an emitted node id: semantically first,
-    /// then by segment-name fallback.
-    fn resolve_type_node(
-        &self,
-        sema: &Semantics<'db, RootDatabase>,
-        ty: &ast::Type,
-    ) -> Option<i64> {
-        let ast::Type::PathType(pt) = ty else {
-            return None;
-        };
-        let path = pt.path()?;
-        match sema.resolve_path(&path) {
-            Some(PathResolution::Def(def)) => self.def_id(DefKey::Def(def)),
-            _ => None,
-        }
-        .or_else(|| {
-            let name = path.segment()?.name_ref()?.text().to_string();
-            self.resolve_node_id(&name)
-        })
-    }
-
-    /// Node id of the nearest enclosing emitted item of `node` — the reference
-    /// context. Walks outwards through functions, ADTs, traits, type aliases,
-    /// consts and statics; an `impl` header (reached without hitting an assoc
-    /// item first) yields the impl's self type when `allow_impl_context`,
-    /// otherwise no context.
-    fn enclosing_context_id(
-        &self,
-        sema: &Semantics<'db, RootDatabase>,
-        node: &ra_ap_syntax::SyntaxNode,
-        allow_impl_context: bool,
-    ) -> Option<i64> {
-        for anc in node.ancestors().skip(1) {
-            let candidate = match anc.kind() {
-                SyntaxKind::FN => ast::Fn::cast(anc)
-                    .and_then(|it| sema.to_def(&it))
-                    .and_then(|f| self.def_id(DefKey::Def(ModuleDef::Function(f)))),
-                SyntaxKind::STRUCT => ast::Struct::cast(anc)
-                    .and_then(|it| sema.to_def(&it))
-                    .and_then(|s| self.def_id(DefKey::Def(ModuleDef::Adt(Adt::Struct(s))))),
-                SyntaxKind::ENUM => ast::Enum::cast(anc)
-                    .and_then(|it| sema.to_def(&it))
-                    .and_then(|e| self.def_id(DefKey::Def(ModuleDef::Adt(Adt::Enum(e))))),
-                SyntaxKind::UNION => ast::Union::cast(anc)
-                    .and_then(|it| sema.to_def(&it))
-                    .and_then(|u| self.def_id(DefKey::Def(ModuleDef::Adt(Adt::Union(u))))),
-                SyntaxKind::TRAIT => ast::Trait::cast(anc)
-                    .and_then(|it| sema.to_def(&it))
-                    .and_then(|t| self.def_id(DefKey::Def(ModuleDef::Trait(t)))),
-                SyntaxKind::TYPE_ALIAS => ast::TypeAlias::cast(anc)
-                    .and_then(|it| sema.to_def(&it))
-                    .and_then(|ta| self.def_id(DefKey::Def(ModuleDef::TypeAlias(ta)))),
-                SyntaxKind::CONST => ast::Const::cast(anc)
-                    .and_then(|it| sema.to_def(&it))
-                    .and_then(|c| self.def_id(DefKey::Def(ModuleDef::Const(c)))),
-                SyntaxKind::STATIC => ast::Static::cast(anc)
-                    .and_then(|it| sema.to_def(&it))
-                    .and_then(|s| self.def_id(DefKey::Def(ModuleDef::Static(s)))),
-                SyntaxKind::IMPL => {
-                    if !allow_impl_context {
-                        return None;
-                    }
-                    ast::Impl::cast(anc)
-                        .and_then(|it| sema.to_def(&it))
-                        .and_then(|i| i.self_ty(self.db).as_adt())
-                        .and_then(|adt| self.def_id(DefKey::Def(ModuleDef::Adt(adt))))
-                }
-                _ => continue,
-            };
-            if candidate.is_some() {
-                return candidate;
-            }
-            // Item ancestor found but not emitted (e.g. a nested fn) — keep
-            // walking outwards to attribute the reference to its parent.
-        }
-        None
     }
 
     fn collect_module_def(&mut self, module_prefix: &str, def: ModuleDef) {
@@ -1525,6 +1108,599 @@ fn generic_def_of(
             .map(Into::into),
         _ => None,
     }
+}
+
+impl RefResolver<'_> {
+    fn def_id(&self, key: DefKey) -> Option<i64> {
+        self.def_ids.get(&key).copied()
+    }
+
+    /// Resolve a plain name to an emitted node id: exact qualified-name hit
+    /// first, then a unique `::name` suffix match.
+    fn resolve_node_id(&self, query: &str) -> Option<i64> {
+        if let Some(&id) = self.node_ids.get(query) {
+            return Some(id);
+        }
+
+        let suffix = format!("::{query}");
+        let mut matches = self
+            .node_ids
+            .iter()
+            .filter(|(k, _)| k.ends_with(&suffix))
+            .map(|(_, &v)| v);
+
+        let first = matches.next()?;
+        if matches.next().is_some() {
+            return None;
+        }
+        Some(first)
+    }
+
+    /// Resolve every reference site in `file_id` into rows, in syntax-tree
+    /// order. Pure: reads the database and the definition maps, allocates no
+    /// ids and dedups nothing — that is the apply step's job. Falls back to
+    /// name-based lookup (`resolve_node_id`) per site when semantic
+    /// resolution fails, e.g. inside unexpanded macros.
+    fn resolve_file(
+        &self,
+        sema: &Semantics<'_, RootDatabase>,
+        file_id: ra_ap_vfs::FileId,
+    ) -> Vec<ReferenceRow> {
+        let mut rows = Vec::new();
+        let source_file = sema.parse_guess_edition(file_id);
+        for node in source_file.syntax().descendants() {
+            match node.kind() {
+                SyntaxKind::IMPL => {
+                    if let Some(impl_ast) = ast::Impl::cast(node) {
+                        self.resolve_impl_inheritance(sema, &impl_ast, &mut rows);
+                        self.resolve_impl_overrides(sema, &impl_ast, &mut rows);
+                    }
+                }
+                SyntaxKind::LIFETIME => {
+                    self.resolve_lifetime_bound_reference(sema, &node, &mut rows);
+                }
+                SyntaxKind::CALL_EXPR => {
+                    let Some(call) = ast::CallExpr::cast(node) else {
+                        continue;
+                    };
+                    let Some(ast::Expr::PathExpr(pe)) = call.expr() else {
+                        continue;
+                    };
+                    let Some(path) = pe.path() else { continue };
+                    let target = match sema.resolve_path(&path) {
+                        Some(PathResolution::Def(def)) => self.def_id(DefKey::Def(def)),
+                        _ => None,
+                    }
+                    .or_else(|| {
+                        let name = path.segment()?.name_ref()?.text().to_string();
+                        self.resolve_node_id(&name)
+                    });
+                    let range = path_name_range(&path);
+                    self.resolve_reference(
+                        sema,
+                        EDGE_CALL,
+                        call.syntax(),
+                        target,
+                        range,
+                        &mut rows,
+                    );
+                }
+                SyntaxKind::METHOD_CALL_EXPR => {
+                    let Some(call) = ast::MethodCallExpr::cast(node) else {
+                        continue;
+                    };
+                    let target = sema
+                        .resolve_method_call(&call)
+                        .and_then(|f| self.def_id(DefKey::Def(ModuleDef::Function(f))))
+                        .or_else(|| {
+                            let name = call.name_ref()?.text().to_string();
+                            self.resolve_node_id(&name)
+                        });
+                    let range = call.name_ref().map(|n| n.syntax().text_range());
+                    self.resolve_reference(
+                        sema,
+                        EDGE_CALL,
+                        call.syntax(),
+                        target,
+                        range,
+                        &mut rows,
+                    );
+                }
+                SyntaxKind::PATH_EXPR => {
+                    // Callees are handled by the CALL_EXPR arm.
+                    if node
+                        .parent()
+                        .is_some_and(|p| p.kind() == SyntaxKind::CALL_EXPR)
+                    {
+                        continue;
+                    }
+                    let Some(pe) = ast::PathExpr::cast(node) else {
+                        continue;
+                    };
+                    let Some(path) = pe.path() else { continue };
+                    // Only definition references; locals are future work.
+                    let Some(PathResolution::Def(def)) = sema.resolve_path(&path) else {
+                        continue;
+                    };
+                    let target = self.def_id(DefKey::Def(def));
+                    let range = path_name_range(&path);
+                    self.resolve_reference(sema, EDGE_USAGE, pe.syntax(), target, range, &mut rows);
+                }
+                SyntaxKind::PATH_TYPE => {
+                    let Some(pt) = ast::PathType::cast(node) else {
+                        continue;
+                    };
+                    self.resolve_type_reference(sema, &pt, &mut rows);
+                }
+                SyntaxKind::FIELD_EXPR => {
+                    let Some(fe) = ast::FieldExpr::cast(node) else {
+                        continue;
+                    };
+                    let target = match sema.resolve_field(&fe) {
+                        Some(Either::Left(field)) => self.def_id(DefKey::Field(field)),
+                        _ => None,
+                    };
+                    let range = fe.name_ref().map(|n| n.syntax().text_range());
+                    self.resolve_reference(sema, EDGE_USAGE, fe.syntax(), target, range, &mut rows);
+                }
+                SyntaxKind::RECORD_EXPR_FIELD => {
+                    let Some(ref_field) = ast::RecordExprField::cast(node) else {
+                        continue;
+                    };
+                    let target = sema
+                        .resolve_record_field(&ref_field)
+                        .and_then(|(field, _, _)| self.def_id(DefKey::Field(field)));
+                    let range = ref_field.name_ref().map(|n| n.syntax().text_range());
+                    self.resolve_reference(
+                        sema,
+                        EDGE_USAGE,
+                        ref_field.syntax(),
+                        target,
+                        range,
+                        &mut rows,
+                    );
+                }
+                _ => {}
+            }
+        }
+        rows
+    }
+
+    /// Type reference (`PathType`) → edge from the bound owner or enclosing
+    /// item (see context/DESIGN_RUST_TYPE_SYSTEM_EDGES.md):
+    ///   - inside a generic-param bound: from the *parameter* node
+    ///   - supertrait bound: EDGE_INHERITANCE from the trait
+    ///   - inside a generic-arg list: EDGE_TYPE_ARGUMENT instead of TYPE_USAGE
+    ///   - plain type position: EDGE_TYPE_USAGE from the enclosing item;
+    ///     impl headers are skipped (covered by inheritance handling).
+    fn resolve_type_reference(
+        &self,
+        sema: &Semantics<'_, RootDatabase>,
+        pt: &ast::PathType,
+        rows: &mut Vec<ReferenceRow>,
+    ) {
+        let Some(path) = pt.path() else { return };
+        let target = match sema.resolve_path(&path) {
+            Some(PathResolution::Def(def)) => self.def_id(DefKey::Def(def)),
+            Some(PathResolution::TypeParam(tp)) => self.def_id(DefKey::TypeParam(tp)),
+            Some(PathResolution::ConstParam(cp)) => self.def_id(DefKey::ConstParam(cp)),
+            _ => None,
+        };
+        let Some(target) = target else { return };
+        let range = path_name_range(&path);
+
+        let in_generic_args = pt
+            .syntax()
+            .ancestors()
+            .any(|a| a.kind() == SyntaxKind::GENERIC_ARG_LIST);
+        let edge_kind = if in_generic_args {
+            EDGE_TYPE_ARGUMENT
+        } else {
+            EDGE_TYPE_USAGE
+        };
+
+        let source = match self.bound_owner(sema, pt.syntax()) {
+            BoundOwner::Param(param_id) => Some(param_id),
+            // `trait A: B` — the top-level bound path is the supertrait.
+            BoundOwner::Trait(trait_id) if !in_generic_args => {
+                if trait_id != target {
+                    rows.push(ReferenceRow {
+                        edge_type: EDGE_INHERITANCE,
+                        source_id: trait_id,
+                        target_id: target,
+                        range,
+                    });
+                }
+                return;
+            }
+            BoundOwner::Trait(trait_id) => Some(trait_id),
+            BoundOwner::Item => {
+                self.enclosing_context_id(sema, pt.syntax(), /*allow_impl_context=*/ false)
+            }
+        };
+        let Some(source) = source else { return };
+        if source == target {
+            return;
+        }
+        rows.push(ReferenceRow {
+            edge_type: edge_kind,
+            source_id: source,
+            target_id: target,
+            range,
+        });
+    }
+
+    /// Classify the bound context of a node inside a `TypeBoundList`.
+    fn bound_owner(
+        &self,
+        sema: &Semantics<'_, RootDatabase>,
+        node: &ra_ap_syntax::SyntaxNode,
+    ) -> BoundOwner {
+        let Some(bound_list) = node
+            .ancestors()
+            .find(|a| a.kind() == SyntaxKind::TYPE_BOUND_LIST)
+        else {
+            return BoundOwner::Item;
+        };
+        let Some(parent) = bound_list.parent() else {
+            return BoundOwner::Item;
+        };
+        match parent.kind() {
+            SyntaxKind::TYPE_PARAM => ast::TypeParam::cast(parent)
+                .and_then(|tp| sema.to_def(&tp))
+                .and_then(|tp| self.def_id(DefKey::TypeParam(tp)))
+                .map_or(BoundOwner::Item, BoundOwner::Param),
+            SyntaxKind::LIFETIME_PARAM => ast::LifetimeParam::cast(parent)
+                .and_then(|lp| sema.to_def(&lp))
+                .and_then(|lp| self.def_id(DefKey::LifetimeParam(lp)))
+                .map_or(BoundOwner::Item, BoundOwner::Param),
+            SyntaxKind::WHERE_PRED => {
+                let Some(pred) = ast::WherePred::cast(parent) else {
+                    return BoundOwner::Item;
+                };
+                // `where T: Trait` — attach to T if the subject is a parameter.
+                if let Some(ast::Type::PathType(subject)) = pred.ty() {
+                    if let Some(path) = subject.path() {
+                        match sema.resolve_path(&path) {
+                            Some(PathResolution::TypeParam(tp)) => {
+                                return self
+                                    .def_id(DefKey::TypeParam(tp))
+                                    .map_or(BoundOwner::Item, BoundOwner::Param);
+                            }
+                            Some(PathResolution::ConstParam(cp)) => {
+                                return self
+                                    .def_id(DefKey::ConstParam(cp))
+                                    .map_or(BoundOwner::Item, BoundOwner::Param);
+                            }
+                            _ => {}
+                        }
+                    }
+                }
+                // `where 'a: 'b` — attach to 'a.
+                if let Some(lt) = pred.lifetime() {
+                    if let Some(id) = self.lifetime_param_id(sema, pred.syntax(), &lt.text()) {
+                        return BoundOwner::Param(id);
+                    }
+                }
+                BoundOwner::Item
+            }
+            SyntaxKind::TRAIT => ast::Trait::cast(parent)
+                .and_then(|t| sema.to_def(&t))
+                .and_then(|t| self.def_id(DefKey::Def(ModuleDef::Trait(t))))
+                .map_or(BoundOwner::Item, BoundOwner::Trait),
+            // Associated type bounds (`type Item: Debug`) attach to the alias.
+            SyntaxKind::TYPE_ALIAS => ast::TypeAlias::cast(parent)
+                .and_then(|ta| sema.to_def(&ta))
+                .and_then(|ta| self.def_id(DefKey::Def(ModuleDef::TypeAlias(ta))))
+                .map_or(BoundOwner::Item, BoundOwner::Param),
+            // `dyn Trait` / `impl Trait` positions are ordinary type usage.
+            _ => BoundOwner::Item,
+        }
+    }
+
+    /// Lifetime reference in a bound position (`'a: 'b`, `T: 'a`) →
+    /// EDGE_TYPE_USAGE from the bound owner to the lifetime parameter node.
+    /// Declaration sites and plain uses in types are not recorded (v1).
+    fn resolve_lifetime_bound_reference(
+        &self,
+        sema: &Semantics<'_, RootDatabase>,
+        node: &ra_ap_syntax::SyntaxNode,
+        rows: &mut Vec<ReferenceRow>,
+    ) {
+        // Only lifetimes that are themselves a bound (inside a TypeBoundList).
+        if !node
+            .ancestors()
+            .skip(1)
+            .take_while(|a| a.kind() != SyntaxKind::GENERIC_PARAM_LIST)
+            .any(|a| a.kind() == SyntaxKind::TYPE_BOUND_LIST)
+        {
+            return;
+        }
+        let name = node.text().to_string();
+        let Some(target) = self.lifetime_param_id(sema, node, &name) else {
+            return;
+        };
+        let source = match self.bound_owner(sema, node) {
+            BoundOwner::Param(id) => Some(id),
+            BoundOwner::Trait(id) => Some(id),
+            BoundOwner::Item => self.enclosing_context_id(sema, node, false),
+        };
+        let Some(source) = source else { return };
+        if source == target {
+            return;
+        }
+        rows.push(ReferenceRow {
+            edge_type: EDGE_TYPE_USAGE,
+            source_id: source,
+            target_id: target,
+            range: Some(node.text_range()),
+        });
+    }
+
+    /// Resolve a lifetime name (`'a`) to its parameter node by walking the
+    /// enclosing generic items and matching their `lifetime_params` by name.
+    fn lifetime_param_id(
+        &self,
+        sema: &Semantics<'_, RootDatabase>,
+        node: &ra_ap_syntax::SyntaxNode,
+        name: &str,
+    ) -> Option<i64> {
+        for anc in node.ancestors() {
+            let Some(gdef) = generic_def_of(sema, &anc) else {
+                continue;
+            };
+            let hit = gdef
+                .lifetime_params(self.db)
+                .into_iter()
+                .find(|lp| lp.name(self.db).as_str() == name)
+                .and_then(|lp| self.def_id(DefKey::LifetimeParam(lp)));
+            if hit.is_some() {
+                return hit;
+            }
+        }
+        None
+    }
+
+    /// `impl Trait for Type` — every impl function overrides its trait
+    /// counterpart (matched by name, guaranteed by the language):
+    ///   Type::method —override→ Trait::method
+    fn resolve_impl_overrides(
+        &self,
+        sema: &Semantics<'_, RootDatabase>,
+        impl_ast: &ast::Impl,
+        rows: &mut Vec<ReferenceRow>,
+    ) {
+        let Some(hir_impl) = sema.to_def(impl_ast) else {
+            return;
+        };
+        let Some(trait_) = hir_impl.trait_(self.db) else {
+            return;
+        };
+        for item in hir_impl.items(self.db) {
+            let AssocItem::Function(f) = item else {
+                continue;
+            };
+            let Some(impl_fn_id) = self.def_id(DefKey::Def(ModuleDef::Function(f))) else {
+                continue;
+            };
+            let fname = f.name(self.db);
+            let trait_fn_id = trait_.items(self.db).into_iter().find_map(|ti| {
+                if let AssocItem::Function(tf) = ti {
+                    if tf.name(self.db) == fname {
+                        return self.def_id(DefKey::Def(ModuleDef::Function(tf)));
+                    }
+                }
+                None
+            });
+            if let Some(trait_fn_id) = trait_fn_id {
+                rows.push(ReferenceRow {
+                    edge_type: EDGE_OVERRIDE,
+                    source_id: impl_fn_id,
+                    target_id: trait_fn_id,
+                    range: None,
+                });
+            }
+        }
+    }
+
+    /// Reference row from the enclosing context of `ref_site` to `target`,
+    /// with a TOKEN occurrence at `range`.
+    fn resolve_reference(
+        &self,
+        sema: &Semantics<'_, RootDatabase>,
+        edge_type: i32,
+        ref_site: &ra_ap_syntax::SyntaxNode,
+        target: Option<i64>,
+        range: Option<ra_ap_syntax::TextRange>,
+        rows: &mut Vec<ReferenceRow>,
+    ) {
+        let Some(target) = target else { return };
+        let Some(context) =
+            self.enclosing_context_id(sema, ref_site, /*allow_impl_context=*/ true)
+        else {
+            return;
+        };
+        if context == target {
+            return;
+        }
+        rows.push(ReferenceRow {
+            edge_type,
+            source_id: context,
+            target_id: target,
+            range,
+        });
+    }
+
+    /// `impl Trait for Type` → EDGE_INHERITANCE from Type to Trait.
+    /// Trait and self type are resolved via `Semantics::resolve_path`; each side
+    /// independently falls back to name lookup on the path segment text.
+    fn resolve_impl_inheritance(
+        &self,
+        sema: &Semantics<'_, RootDatabase>,
+        impl_ast: &ast::Impl,
+        rows: &mut Vec<ReferenceRow>,
+    ) {
+        // Only `impl Trait for Type` produces an inheritance edge.
+        if impl_ast.for_token().is_none() {
+            return;
+        }
+        let type_nodes: Vec<ast::Type> = impl_ast
+            .syntax()
+            .children()
+            .filter_map(ast::Type::cast)
+            .collect();
+        if type_nodes.len() < 2 {
+            return;
+        }
+        let trait_id = self.resolve_type_node(sema, &type_nodes[0]);
+        let self_id = self.resolve_type_node(sema, &type_nodes[1]);
+        if let (Some(self_id), Some(trait_id)) = (self_id, trait_id) {
+            let range = if let ast::Type::PathType(pt) = &type_nodes[0] {
+                pt.path().as_ref().and_then(path_name_range)
+            } else {
+                None
+            };
+            rows.push(ReferenceRow {
+                edge_type: EDGE_INHERITANCE,
+                source_id: self_id,
+                target_id: trait_id,
+                range,
+            });
+        }
+    }
+
+    /// Resolve a path-shaped AST type to an emitted node id: semantically first,
+    /// then by segment-name fallback.
+    fn resolve_type_node(&self, sema: &Semantics<'_, RootDatabase>, ty: &ast::Type) -> Option<i64> {
+        let ast::Type::PathType(pt) = ty else {
+            return None;
+        };
+        let path = pt.path()?;
+        match sema.resolve_path(&path) {
+            Some(PathResolution::Def(def)) => self.def_id(DefKey::Def(def)),
+            _ => None,
+        }
+        .or_else(|| {
+            let name = path.segment()?.name_ref()?.text().to_string();
+            self.resolve_node_id(&name)
+        })
+    }
+
+    /// Node id of the nearest enclosing emitted item of `node` — the reference
+    /// context. Walks outwards through functions, ADTs, traits, type aliases,
+    /// consts and statics; an `impl` header (reached without hitting an assoc
+    /// item first) yields the impl's self type when `allow_impl_context`,
+    /// otherwise no context.
+    fn enclosing_context_id(
+        &self,
+        sema: &Semantics<'_, RootDatabase>,
+        node: &ra_ap_syntax::SyntaxNode,
+        allow_impl_context: bool,
+    ) -> Option<i64> {
+        for anc in node.ancestors().skip(1) {
+            let candidate = match anc.kind() {
+                SyntaxKind::FN => ast::Fn::cast(anc)
+                    .and_then(|it| sema.to_def(&it))
+                    .and_then(|f| self.def_id(DefKey::Def(ModuleDef::Function(f)))),
+                SyntaxKind::STRUCT => ast::Struct::cast(anc)
+                    .and_then(|it| sema.to_def(&it))
+                    .and_then(|s| self.def_id(DefKey::Def(ModuleDef::Adt(Adt::Struct(s))))),
+                SyntaxKind::ENUM => ast::Enum::cast(anc)
+                    .and_then(|it| sema.to_def(&it))
+                    .and_then(|e| self.def_id(DefKey::Def(ModuleDef::Adt(Adt::Enum(e))))),
+                SyntaxKind::UNION => ast::Union::cast(anc)
+                    .and_then(|it| sema.to_def(&it))
+                    .and_then(|u| self.def_id(DefKey::Def(ModuleDef::Adt(Adt::Union(u))))),
+                SyntaxKind::TRAIT => ast::Trait::cast(anc)
+                    .and_then(|it| sema.to_def(&it))
+                    .and_then(|t| self.def_id(DefKey::Def(ModuleDef::Trait(t)))),
+                SyntaxKind::TYPE_ALIAS => ast::TypeAlias::cast(anc)
+                    .and_then(|it| sema.to_def(&it))
+                    .and_then(|ta| self.def_id(DefKey::Def(ModuleDef::TypeAlias(ta)))),
+                SyntaxKind::CONST => ast::Const::cast(anc)
+                    .and_then(|it| sema.to_def(&it))
+                    .and_then(|c| self.def_id(DefKey::Def(ModuleDef::Const(c)))),
+                SyntaxKind::STATIC => ast::Static::cast(anc)
+                    .and_then(|it| sema.to_def(&it))
+                    .and_then(|s| self.def_id(DefKey::Def(ModuleDef::Static(s)))),
+                SyntaxKind::IMPL => {
+                    if !allow_impl_context {
+                        return None;
+                    }
+                    ast::Impl::cast(anc)
+                        .and_then(|it| sema.to_def(&it))
+                        .and_then(|i| i.self_ty(self.db).as_adt())
+                        .and_then(|adt| self.def_id(DefKey::Def(ModuleDef::Adt(adt))))
+                }
+                _ => continue,
+            };
+            if candidate.is_some() {
+                return candidate;
+            }
+            // Item ancestor found but not emitted (e.g. a nested fn) — keep
+            // walking outwards to attribute the reference to its parent.
+        }
+        None
+    }
+}
+
+/// Fan the resolution step out across `workers` scoped threads. Each worker
+/// owns a cheap clone of the database (a handle onto the same salsa storage,
+/// so the ids inside `def_ids` stay valid) and attaches it to its thread —
+/// the next-trait-solver keeps per-thread database TLS, so `attach_db` is
+/// mandatory before any type queries run on a worker. Files are pulled off a
+/// shared counter; results come back per file as rows or a panic message and
+/// are returned in `files` order for the deterministic apply step.
+fn resolve_files_parallel(
+    db: &RootDatabase,
+    def_ids: &HashMap<DefKey, i64>,
+    node_ids: &HashMap<String, i64>,
+    files: &[ra_ap_vfs::FileId],
+    workers: usize,
+) -> Vec<Result<Vec<ReferenceRow>, String>> {
+    let next_file = AtomicUsize::new(0);
+    let (tx, rx) = std::sync::mpsc::channel();
+    std::thread::scope(|scope| {
+        for _ in 0..workers {
+            let worker_db = db.clone();
+            let tx = tx.clone();
+            let next_file = &next_file;
+            scope.spawn(move || {
+                ra_ap_hir::attach_db(&worker_db, || {
+                    let sema = Semantics::new(&worker_db);
+                    let resolver = RefResolver {
+                        db: &worker_db,
+                        def_ids,
+                        node_ids,
+                    };
+                    loop {
+                        let index = next_file.fetch_add(1, Ordering::Relaxed);
+                        let Some(&file_id) = files.get(index) else {
+                            break;
+                        };
+                        let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+                            resolver.resolve_file(&sema, file_id)
+                        }))
+                        .map_err(|payload| panic_payload_message(payload.as_ref()).to_owned());
+                        if tx.send((index, result)).is_err() {
+                            break;
+                        }
+                    }
+                });
+            });
+        }
+        drop(tx);
+    });
+    // All workers have joined; drain the buffered results into file order.
+    let mut slots: Vec<Option<Result<Vec<ReferenceRow>, String>>> =
+        files.iter().map(|_| None).collect();
+    for (index, result) in rx {
+        slots[index] = Some(result);
+    }
+    slots
+        .into_iter()
+        .map(|slot| slot.unwrap_or_else(|| Err("file skipped by all workers".to_owned())))
+        .collect()
 }
 
 pub(super) fn collect_from_db<'db>(
