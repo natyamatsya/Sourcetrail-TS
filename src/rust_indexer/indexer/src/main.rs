@@ -133,10 +133,10 @@ fn main() {
 
         // Push results. Large results are split into self-contained chunks so
         // one queue entry never outgrows the fixed 16 MiB SHM segment —
-        // growing POSIX shared memory is impossible on macOS (ftruncate on an
-        // already-sized object fails with EINVAL), so the grow protocol can
-        // never deliver an oversized payload. The app merges the chunks via
-        // PersistentStorage inject; back-pressure applies between pushes.
+        // segment growth is a Linux-only capability and portable code must
+        // chunk instead (docs/adr/ADR-0002-no-shm-growth.md). The app merges
+        // the chunks via PersistentStorage inject; back-pressure applies
+        // between pushes.
         for chunk in storage.chunks() {
             wait_for_storage_slot(&storage_ch, &status_ch);
             if let Err(e) = storage_ch.push(&chunk) {

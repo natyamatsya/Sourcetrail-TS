@@ -223,14 +223,6 @@ impl IpcShm {
         mtx_guard.unlock()?;
         Ok(result)
     }
-
-    pub fn grow(&self, new_user_size: usize) -> io::Result<()> {
-        let mut shm = match self.shm.lock() {
-            Ok(guard) => guard,
-            Err(poisoned) => poisoned.into_inner(),
-        };
-        shm.grow(new_user_size)
-    }
 }
 
 /// Returns true when the raw SHM bytes represent an "empty" slot.

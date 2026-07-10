@@ -98,6 +98,25 @@ const uint8_t* IpcSharedMemory::peekMappedMemory(std::size_t* outSize) const
 	return static_cast<const uint8_t*>(m_shm.get());
 }
 
+namespace
+{
+// Dependent context so this compiles against thoth-ipc revisions with and
+// without the capability query (mirrors growSharedMemoryHandle above).
+template <typename ShmHandle>
+bool canGrowSharedMemoryHandle()
+{
+	if constexpr (requires { ShmHandle::can_grow(); })
+		return ShmHandle::can_grow();
+	else
+		return true;	// older/foreign backends: the grow path re-creates by name
+}
+} // namespace
+
+bool IpcSharedMemory::canGrow() noexcept
+{
+	return canGrowSharedMemoryHandle<ipc::shm::handle>();
+}
+
 void IpcSharedMemory::grow(std::size_t newSize)
 {
 	if (newSize <= m_size)

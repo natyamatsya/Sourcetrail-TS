@@ -72,8 +72,14 @@ public:
 	// back-pressure checks). Do NOT use for writes or authoritative reads.
 	const uint8_t* peekMappedMemory(std::size_t* outSize) const;
 
+	// Whether this platform can grow an existing segment (Linux only —
+	// macOS and Windows shared memory is fixed at creation; see
+	// docs/adr/ADR-0002-no-shm-growth.md). Check this before calling grow().
+	static bool canGrow() noexcept;
+
 	// Re-create the shm segment at a larger size. The mutex is unaffected.
-	// Must NOT be called while a ScopedAccess is held.
+	// Must NOT be called while a ScopedAccess is held. Throws where
+	// canGrow() is false.
 	void grow(std::size_t newSize);
 
 private:

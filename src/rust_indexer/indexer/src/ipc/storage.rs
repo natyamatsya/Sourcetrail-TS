@@ -44,32 +44,33 @@ impl StorageChannel {
 
     /// Append one `IntermediateStorage` to the queue in shared memory.
     /// Wire format: [u64 needed_capacity][u32 count][u32 size0][bytes0]...
+    ///
+    /// The segment is fixed-size — growth is a Linux-only shared-memory
+    /// capability (docs/adr/ADR-0002-no-shm-growth.md), so the portable path
+    /// never depends on it: oversized results must be split with
+    /// `OwnedIntermediateStorage::chunks()` before pushing. The
+    /// `needed_capacity` header field is kept for wire compatibility and is
+    /// always written as 0.
     pub fn push(&self, storage: &OwnedIntermediateStorage) -> io::Result<()> {
         let entry_bytes = serialize_one_storage(storage);
-        loop {
-            let outcome = self.shm.read_modify_write_with_result(|data| {
-                let required_size = required_queue_size_for_append(data, entry_bytes.len())?;
-                if required_size > data.len() {
-                    let grow_to = growth_target(required_size);
-                    let signaled = with_needed_capacity_signal(data, grow_to)?;
-                    return Ok((Some(signaled), PushOutcome::NeedsGrow(grow_to)));
-                }
-
-                let rewritten = append_storage_entry(data, &entry_bytes)?;
-                Ok((Some(rewritten), PushOutcome::Written))
-            })?;
-
-            match outcome {
-                PushOutcome::Written => return Ok(()),
-                PushOutcome::NeedsGrow(grow_to) => self.shm.grow(grow_to)?,
+        self.shm.read_modify_write_with_result(|data| {
+            let required_size = required_queue_size_for_append(data, entry_bytes.len())?;
+            if required_size > data.len() {
+                return Err(io::Error::new(
+                    io::ErrorKind::InvalidInput,
+                    format!(
+                        "storage payload needs {required_size} bytes but the fixed \
+                         segment holds {}; oversized payloads must be chunked \
+                         (OwnedIntermediateStorage::chunks) before pushing",
+                        data.len()
+                    ),
+                ));
             }
-        }
-    }
-}
 
-enum PushOutcome {
-    Written,
-    NeedsGrow(usize),
+            let rewritten = append_storage_entry(data, &entry_bytes)?;
+            Ok((Some(rewritten), ()))
+        })
+    }
 }
 
 fn read_u64_at(data: &[u8], offset: usize) -> Option<u64> {
@@ -98,36 +99,6 @@ fn read_count(data: &[u8]) -> u32 {
         return 0;
     }
     read_u32_at(data, CAP_FIELD_SIZE).unwrap_or(0)
-}
-
-fn growth_target(required_size: usize) -> usize {
-    required_size.checked_mul(2).unwrap_or(required_size)
-}
-
-fn with_needed_capacity_signal(queue_bytes: &[u8], needed_capacity: usize) -> io::Result<Vec<u8>> {
-    let needed_capacity = u64::try_from(needed_capacity).map_err(|_| {
-        io::Error::new(
-            io::ErrorKind::InvalidInput,
-            "needed capacity does not fit into u64 signal field",
-        )
-    })?;
-
-    let mut signaled = if queue_bytes.len() >= HEADER_SIZE {
-        queue_bytes.to_vec()
-    } else {
-        vec![0u8; HEADER_SIZE]
-    };
-
-    if signaled.len() < HEADER_SIZE {
-        signaled.resize(HEADER_SIZE, 0);
-    }
-
-    if queue_bytes.len() < HEADER_SIZE {
-        write_u32_at(&mut signaled, CAP_FIELD_SIZE, 0);
-    }
-
-    write_u64_at(&mut signaled, 0, needed_capacity);
-    Ok(signaled)
 }
 
 fn queue_payload_end(data: &[u8], count: u32) -> io::Result<usize> {
@@ -325,10 +296,9 @@ pub struct OwnedStorageError {
 // ---------------------------------------------------------------------------
 // Chunking: split a large storage into self-contained queue entries.
 //
-// The SHM segment backing the storage queue has a fixed size: growing POSIX
-// shared memory is impossible on macOS (ftruncate on an already-sized object
-// fails with EINVAL), so the grow protocol cannot deliver a payload that
-// exceeds the initial 16 MiB segment. Instead, a large result is split into
+// The SHM segment backing the storage queue has a fixed size: growth is a
+// Linux-only shared-memory capability (docs/adr/ADR-0002-no-shm-growth.md),
+// so the portable path never relies on it. A large result is split into
 // multiple IntermediateStorage queue entries that the app merges via
 // `PersistentStorage` inject.
 //
@@ -1256,19 +1226,14 @@ mod queue_tests {
     }
 
     #[test]
-    fn needed_capacity_signal_preserves_queue_count_and_entries() {
-        let first = append_storage_entry(&vec![0u8; 256], &[1u8, 2u8, 3u8]).unwrap();
-        let mut queue = vec![0u8; 256];
-        queue[..first.len()].copy_from_slice(&first);
+    fn append_storage_entry_rejects_entry_larger_than_segment() {
+        // The segment cannot grow (ADR-0002): an entry that does not fit is
+        // a hard error — oversized payloads must be chunked before pushing.
+        let queue = vec![0u8; 64];
+        let entry = vec![7u8; 128];
 
-        let signaled = with_needed_capacity_signal(&queue, 512).unwrap();
+        let err = append_storage_entry(&queue, &entry).unwrap_err();
 
-        assert_eq!(read_u64_at(&signaled, 0), Some(512));
-        assert_eq!(read_count(&signaled), 1);
-        assert_eq!(read_u32_at(&signaled, HEADER_SIZE), Some(3));
-        assert_eq!(
-            &signaled[HEADER_SIZE + COUNT_FIELD_SIZE..HEADER_SIZE + COUNT_FIELD_SIZE + 3],
-            &[1u8, 2u8, 3u8]
-        );
+        assert_eq!(err.kind(), io::ErrorKind::InvalidInput);
     }
 }

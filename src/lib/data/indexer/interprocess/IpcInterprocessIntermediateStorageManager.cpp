@@ -15,6 +15,12 @@ const char* IpcInterprocessIntermediateStorageManager::s_sharedMemoryNamePrefix 
 //   Zero means "no grow requested". The parent reads this field after acquiring
 //   the lock; if it exceeds the current mapped size the parent grows its own
 //   handle to match before reading the payload.
+//
+//   Growth is a Linux-only capability (docs/adr/ADR-0002-no-shm-growth.md):
+//   where IpcSharedMemory::canGrow() is false the field is never written to a
+//   non-zero value and never acted upon — writers must chunk oversized
+//   payloads instead (the Rust indexer chunks unconditionally and always
+//   writes 0). The field stays in the header for wire compatibility.
 
 static const size_t CAP_FIELD_SIZE  = sizeof(uint64_t);
 static const size_t COUNT_FIELD_SIZE = sizeof(uint32_t);
@@ -84,7 +90,7 @@ void IpcInterprocessIntermediateStorageManager::pushIntermediateStorage(
 		}
 
 		const size_t totalNeeded = HEADER_SIZE + existingPayload + sizeof(uint32_t) + fbBuf.size();
-		if (totalNeeded > shmLen)
+		if (totalNeeded > shmLen && IpcSharedMemory::canGrow())
 		{
 			growTo = totalNeeded * 2;
 			// Signal the parent: write needed capacity into the cap field before growing.
@@ -124,7 +130,9 @@ void IpcInterprocessIntermediateStorageManager::pushIntermediateStorage(
 	const size_t needed = HEADER_SIZE + existingPayload + sizeof(uint32_t) + fbBuf.size();
 	if (needed > shmLen)
 		throw std::runtime_error(
-			"IpcIntermediateStorageManager: shared memory too small even after grow attempt");
+			"IpcIntermediateStorageManager: payload does not fit the shared memory segment "
+			"(growth unsupported on this platform or grow attempt failed) — oversized "
+			"results must be chunked (docs/adr/ADR-0002-no-shm-growth.md)");
 
 	std::vector<uint8_t> newBuf(shmLen, 0);
 	// Preserve the cap signal — only the parent clears it after re-mapping.
@@ -150,6 +158,10 @@ void IpcInterprocessIntermediateStorageManager::pushIntermediateStorage(
 void IpcInterprocessIntermediateStorageManager::growIfNeeded()
 {
 	using enum IpcSharedMemory::AccessMode;
+	// Segments are fixed-size where growth is unsupported; subprocesses chunk
+	// their payloads there and never request capacity (ADR-0002).
+	if (!IpcSharedMemory::canGrow())
+		return;
 	std::size_t shmLen = 0;
 	const uint8_t* shmBuf = m_shm.peekMappedMemory(&shmLen);
 	if (!shmBuf || shmLen < CAP_FIELD_SIZE)
