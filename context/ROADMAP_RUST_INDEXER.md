@@ -176,12 +176,15 @@ for a first working prototype.
 | `const` / `static` | `NODE_GLOBAL_VARIABLE` | — |
 | `type` alias | `NODE_TYPEDEF` | — |
 | `macro_rules!` definition | `NODE_MACRO` | — |
-| `use` item | — | `EDGE_IMPORT` — **not yet implemented** |
-| macro invocation | — | `EDGE_MACRO_USAGE` — **not yet implemented** |
+| `use` item | — | `EDGE_IMPORT` (importing scope → imported def) |
+| bang-macro invocation | — | `EDGE_MACRO_USAGE` (file node → macro def) |
 
 Reference occurrences attach to the **edge id** (mirroring the C++
 `ParserClientImpl::recordReference`); definitions carry a name-token
-location plus a `LOCATION_SCOPE` spanning the full item.
+location plus a `LOCATION_SCOPE` spanning the full item. Function-local
+bindings are recorded as local symbols (`file<line:col>` name convention,
+`LOCATION_LOCAL_SYMBOL` occurrences) matching
+`CxxAstVisitorComponentIndexer::getLocalSymbolName`.
 See `context/DESIGN_RUST_TYPE_SYSTEM_EDGES.md` for the bound/lifetime/
 type-argument/override model.
 
@@ -283,11 +286,13 @@ to rust-analyzer's semantic layer:
 - [x] Type-system edges: bounds from param nodes, lifetime outlives lattice,
       `EDGE_TYPE_ARGUMENT`, `EDGE_OVERRIDE` —
       see `context/DESIGN_RUST_TYPE_SYSTEM_EDGES.md`.
+- [x] `EDGE_IMPORT` for `use` items; local symbols (function-local bindings);
+      `EDGE_MACRO_USAGE` for bang-macro invocations of local `macro_rules!`.
 
-Remaining gaps (tracked in the design doc / proc-macro roadmap): `use`
-imports, macro invocation edges, local symbols, lifetime usage occurrences
-in types, implicit specialization nodes. (Proc-macro expansion shipped —
-see `ROADMAP_PROC_MACRO_EXPANSION.md`.)
+Remaining gaps: lifetime usage occurrences in types, implicit specialization
+nodes (`Vec<Foo>` bubbles), attribute/derive-macro usage edges (their targets
+— proc-macros and builtin derives — are not indexed today). (Proc-macro
+expansion shipped — see `ROADMAP_PROC_MACRO_EXPANSION.md`.)
 
 ---
 

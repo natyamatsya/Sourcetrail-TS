@@ -1132,3 +1132,104 @@ fn local_symbol_names_follow_cxx_position_convention() {
         "expected declaration-position suffix <1:18>, got {name}"
     );
 }
+
+// -----------------------------------------------------------------------
+// EDGE_MACRO_USAGE — bang-macro invocations
+// -----------------------------------------------------------------------
+
+const EDGE_MACRO_USAGE_T: i32 = 1 << 11;
+const NODE_FILE_KIND: i32 = 1 << 18;
+
+// Find the EDGE_MACRO_USAGE edge to the named macro whose source is a file
+// node (the C++ preprocessor convention: macro usage is attributed to the
+// file, not an enclosing item). Returns the edge id.
+fn macro_usage_edge_to(s: &OwnedIntermediateStorage, macro_name: &str) -> Option<i64> {
+    let tgt = s
+        .nodes
+        .iter()
+        .find(|n| n.type_ == NODE_MACRO && decode_name(&n.serialized_name) == macro_name)
+        .map(|n| n.id)?;
+    s.edges
+        .iter()
+        .filter(|e| e.type_ == EDGE_MACRO_USAGE_T && e.target_node_id == tgt)
+        .find(|e| {
+            s.nodes
+                .iter()
+                .any(|n| n.id == e.source_node_id && n.type_ == NODE_FILE_KIND)
+        })
+        .map(|e| e.id)
+}
+
+#[test]
+fn bang_macro_invocation_emits_macro_usage_from_file() {
+    let s = index_src(
+        "macro_rules! twice { ($x:expr) => { $x + $x }; }\npub fn f() -> i32 { twice!(3) }",
+    );
+    let edge = macro_usage_edge_to(&s, "twice");
+    assert!(
+        edge.is_some(),
+        "expected EDGE_MACRO_USAGE file -> twice, edges: {:?}",
+        s.edges
+    );
+    // Occurrence at the invocation name token (line 2, the `twice` before `!`).
+    assert_eq!(
+        edge_occurrence_positions(&s, edge.unwrap()),
+        vec![(2, 21)],
+        "occurrence at the invocation token"
+    );
+}
+
+#[test]
+fn macro_invocation_at_module_level_emits_usage() {
+    // A macro that expands to an item, invoked at module scope (no enclosing fn).
+    let s = index_src("macro_rules! make_fn { () => { pub fn g() {} }; }\nmake_fn!();");
+    assert!(
+        macro_usage_edge_to(&s, "make_fn").is_some(),
+        "expected module-level EDGE_MACRO_USAGE, edges: {:?}",
+        s.edges
+    );
+}
+
+#[test]
+fn repeated_macro_invocations_dedup_edge_keep_occurrences() {
+    let s = index_src("macro_rules! m { () => { 1 }; }\npub fn f() -> i32 { m!() + m!() }");
+    let edge = macro_usage_edge_to(&s, "m").expect("macro-usage edge");
+    // One deduplicated file->macro edge, two occurrences (both call sites).
+    let n_edges = s
+        .edges
+        .iter()
+        .filter(|e| {
+            e.type_ == EDGE_MACRO_USAGE_T
+                && e.target_node_id == {
+                    let t = s
+                        .nodes
+                        .iter()
+                        .find(|n| decode_name(&n.serialized_name) == "m")
+                        .unwrap()
+                        .id;
+                    t
+                }
+        })
+        .count();
+    assert_eq!(n_edges, 1, "one deduplicated macro-usage edge");
+    assert_eq!(
+        edge_occurrence_positions(&s, edge).len(),
+        2,
+        "two occurrences"
+    );
+}
+
+#[test]
+fn external_std_macro_emits_no_usage_edge() {
+    // vec!/println! resolve to core/std macros we do not index → no edge.
+    let s = index_src("pub fn f() { let _v = vec![1, 2, 3]; }");
+    assert_eq!(
+        s.edges
+            .iter()
+            .filter(|e| e.type_ == EDGE_MACRO_USAGE_T)
+            .count(),
+        0,
+        "external macros must not emit usage edges, edges: {:?}",
+        s.edges
+    );
+}

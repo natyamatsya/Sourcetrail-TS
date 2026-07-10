@@ -142,6 +142,12 @@ expect "INHERITANCE edges (16)"     "SELECT count(*) FROM edge WHERE type = 16;"
 expect "OVERRIDE edges (32)"        "SELECT count(*) FROM edge WHERE type = 32;"
 expect "TYPE_ARGUMENT edges (64)"   "SELECT count(*) FROM edge WHERE type = 64;"
 
+# EDGE_MACRO_USAGE (1<<11 = 2048) — bang-macro invocations of a *local*
+# macro_rules. This crate uses only std macros (vec!/format!/…), which are
+# not indexed, so the self-index count is 0; the hard assertion lives in the
+# unit tests (a fixture with a local macro_rules + invocation). Reported
+# informationally in the summary below.
+
 # Reference occurrences attach to edges (recordReference model)
 expect "occurrences on edges" \
     "SELECT count(*) FROM occurrence o JOIN edge e ON o.element_id = e.id;"
@@ -162,7 +168,8 @@ note "summary"
 q "SELECT 'nodes: ' || count(*) FROM node;
    SELECT 'edges: ' || count(*) FROM edge;
    SELECT 'occurrences: ' || count(*) FROM occurrence;
-   SELECT 'source locations: ' || count(*) FROM source_location;"
+   SELECT 'source locations: ' || count(*) FROM source_location;
+   SELECT 'macro-usage edges: ' || count(*) FROM edge WHERE type = 2048;"
 
 if [ "$FAILURES" -eq 0 ]; then
     echo "ALL PASS"

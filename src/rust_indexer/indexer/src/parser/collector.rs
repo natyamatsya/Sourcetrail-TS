@@ -21,7 +21,7 @@ use crate::ipc::storage::{
 
 use super::{
     DEFINITION_EXPLICIT, DEFINITION_IMPLICIT, EDGE_CALL, EDGE_IMPORT, EDGE_INHERITANCE,
-    EDGE_MEMBER, EDGE_OVERRIDE, EDGE_TYPE_ARGUMENT, EDGE_TYPE_USAGE, EDGE_USAGE,
+    EDGE_MACRO_USAGE, EDGE_MEMBER, EDGE_OVERRIDE, EDGE_TYPE_ARGUMENT, EDGE_TYPE_USAGE, EDGE_USAGE,
     LOCATION_LOCAL_SYMBOL, LOCATION_SCOPE, LOCATION_TOKEN, NODE_ENUM, NODE_ENUM_CONSTANT,
     NODE_FIELD, NODE_FILE, NODE_FUNCTION, NODE_GLOBAL_VARIABLE, NODE_INTERFACE, NODE_MACRO,
     NODE_METHOD, NODE_MODULE, NODE_STRUCT, NODE_TYPE_PARAMETER, NODE_TYPEDEF, NODE_UNION,
@@ -1147,25 +1147,6 @@ impl<'db> Collector<'db> {
             source_location_id: loc_id,
         });
     }
-
-    /// Emit a node from a raw `InFile<N>` without requiring `HasName` — uses
-    /// the whole syntax node range. Used for items that don't implement HasName
-    /// (e.g. macro_rules! via legacy_macros, module decls).
-    #[expect(
-        dead_code,
-        reason = "staged for indexing name-less items (macro invocations)"
-    )]
-    fn emit_from_source_no_name<N: AstNode>(
-        &mut self,
-        src: Option<ra_ap_hir::InFile<N>>,
-        name: &str,
-        kind: i32,
-    ) {
-        let Some(in_file) = src else { return };
-        let vfs_fid = self.real_file_of(&in_file);
-        let range = in_file.value.syntax().text_range();
-        self.add_def(name, kind, vfs_fid, range);
-    }
 }
 
 /// Extract a human-readable message from a `catch_unwind` payload — panics
@@ -1376,6 +1357,11 @@ impl RefResolver<'_> {
                         self.resolve_use_tree(sema, &use_tree, rows);
                     }
                 }
+                SyntaxKind::MACRO_CALL => {
+                    if let Some(mac) = ast::MacroCall::cast(node) {
+                        self.resolve_macro_call(sema, &mac, rows);
+                    }
+                }
                 SyntaxKind::RECORD_EXPR_FIELD => {
                     let Some(ref_field) = ast::RecordExprField::cast(node) else {
                         continue;
@@ -1481,6 +1467,35 @@ impl RefResolver<'_> {
         rows.push(ReferenceRow {
             edge_type: EDGE_IMPORT,
             source_id,
+            target_id: target,
+            range,
+        });
+    }
+
+    /// Bang-macro invocation (`foo!(...)`) → EDGE_MACRO_USAGE to the invoked
+    /// macro definition, with a TOKEN occurrence at the macro name.
+    ///
+    /// The edge source is the file node (mirroring the C++ preprocessor
+    /// convention, PreprocessorCallbacks::onMacroUsage → recordReference with
+    /// loc.fileId as context). Only invocations resolving to a macro we
+    /// indexed emit — in practice local `macro_rules!` definitions; std/proc
+    /// macros (`vec!`, `println!`, derives) are not indexed and drop silently.
+    fn resolve_macro_call(
+        &self,
+        sema: &Semantics<'_, RootDatabase>,
+        mac: &ast::MacroCall,
+        rows: &mut Vec<ReferenceRow>,
+    ) {
+        let Some(macro_def) = sema.resolve_macro_call(mac) else {
+            return;
+        };
+        let Some(target) = self.def_id(DefKey::Def(ModuleDef::Macro(macro_def))) else {
+            return;
+        };
+        let range = mac.path().as_ref().and_then(path_name_range);
+        rows.push(ReferenceRow {
+            edge_type: EDGE_MACRO_USAGE,
+            source_id: ROW_SOURCE_CURRENT_FILE,
             target_id: target,
             range,
         });

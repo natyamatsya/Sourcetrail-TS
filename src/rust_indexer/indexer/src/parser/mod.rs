@@ -18,6 +18,7 @@
 //       EDGE_OVERRIDE      (1<<5 = 32)  — impl method → trait method
 //       EDGE_TYPE_ARGUMENT (1<<6 = 64)  — generic arguments at use sites
 //       EDGE_IMPORT        (1<<9 = 512) — `use` items → imported definition
+//       EDGE_MACRO_USAGE   (1<<11 = 2048) — bang-macro invocation → macro def
 //   (see context/DESIGN_RUST_TYPE_SYSTEM_EDGES.md)
 //   - StorageError  for load / analysis failures
 //
@@ -78,6 +79,7 @@ const EDGE_INHERITANCE: i32 = 1 << 4;
 const EDGE_OVERRIDE: i32 = 1 << 5;
 const EDGE_TYPE_ARGUMENT: i32 = 1 << 6;
 const EDGE_IMPORT: i32 = 1 << 9;
+const EDGE_MACRO_USAGE: i32 = 1 << 11;
 
 // ---------------------------------------------------------------------------
 // Public entry point: index a whole Cargo crate
