@@ -7,10 +7,10 @@ use std::io;
 
 use flatbuffers::FlatBufferBuilder;
 
-use crate::ipc::shm::{is_empty, IpcShm};
+use crate::ipc::shm::{IpcShm, is_empty};
 use crate::schemas::indexing_status::sourcetrail::ipc::{
-    finish_indexing_status_buffer, root_as_indexing_status, IndexingStatus, IndexingStatusArgs,
-    ProcessFile, ProcessFileArgs,
+    IndexingStatus, IndexingStatusArgs, ProcessFile, ProcessFileArgs,
+    finish_indexing_status_buffer, root_as_indexing_status,
 };
 
 const SHM_SIZE: usize = 1024 * 1024;
@@ -53,6 +53,30 @@ impl StatusChannel {
             };
 
             existing.apply_start_indexing(self.process_id, file_path);
+            Ok((Some(existing.to_bytes()), ()))
+        })
+    }
+
+    /// Per-file progress update within one command: replaces this process's
+    /// current file WITHOUT the crash bookkeeping of `start_indexing`.
+    ///
+    /// `current_files` means "will be reported as a crashed translation unit
+    /// if this process never finishes" (TaskBuildIndex::doExit); the GUI
+    /// progress display reads the `indexing_file_paths` queue, which this
+    /// still feeds. Calling start_indexing per file left one
+    /// started-but-unfinished entry per command, which the app reported as a
+    /// phantom crashed translation unit.
+    pub fn update_indexing(&self, file_path: &str) -> io::Result<()> {
+        self.shm.read_modify_write_with_result(|data| {
+            let mut existing = if is_empty(data) {
+                IndexingStatusOwned::default()
+            } else {
+                root_as_indexing_status(data)
+                    .map(IndexingStatusOwned::from_fbs)
+                    .unwrap_or_default()
+            };
+
+            existing.apply_update_indexing(self.process_id, file_path);
             Ok((Some(existing.to_bytes()), ()))
         })
     }
@@ -206,6 +230,15 @@ impl IndexingStatusOwned {
         self.current_files.push((process_id, file_path.to_owned()));
     }
 
+    /// Progress update: feed the GUI queue and replace the current file
+    /// without marking the previous one as crashed — it did not crash, it is
+    /// part of the same still-running command.
+    fn apply_update_indexing(&mut self, process_id: u64, file_path: &str) {
+        self.indexing_file_paths.push(file_path.to_owned());
+        self.current_files.retain(|(pid, _)| *pid != process_id);
+        self.current_files.push((process_id, file_path.to_owned()));
+    }
+
     fn apply_finish_indexing(&mut self, process_id: u64) {
         let mut finished_file_path = String::new();
         if let Some(idx) = self
@@ -248,14 +281,18 @@ mod tests {
             status.indexing_file_paths,
             vec!["cxx_a.cpp".to_owned(), "crate_root".to_owned()]
         );
-        assert!(status
-            .current_files
-            .iter()
-            .any(|(pid, path)| *pid == 1 && path == "cxx_a.cpp"));
-        assert!(status
-            .current_files
-            .iter()
-            .any(|(pid, path)| *pid == 7 && path == "crate_root"));
+        assert!(
+            status
+                .current_files
+                .iter()
+                .any(|(pid, path)| *pid == 1 && path == "cxx_a.cpp")
+        );
+        assert!(
+            status
+                .current_files
+                .iter()
+                .any(|(pid, path)| *pid == 7 && path == "crate_root")
+        );
     }
 
     #[test]
@@ -276,10 +313,40 @@ mod tests {
                 .count(),
             1
         );
-        assert!(status
-            .current_files
-            .iter()
-            .any(|(pid, path)| *pid == 7 && path == "new.rs"));
+        assert!(
+            status
+                .current_files
+                .iter()
+                .any(|(pid, path)| *pid == 7 && path == "new.rs")
+        );
+    }
+
+    #[test]
+    fn update_indexing_replaces_current_file_without_crash_mark() {
+        let mut status = IndexingStatusOwned {
+            current_files: vec![(1, "cxx_a.cpp".to_owned()), (7, "old.rs".to_owned())],
+            ..Default::default()
+        };
+
+        status.apply_update_indexing(7, "new.rs");
+
+        assert!(status.crashed_file_paths.is_empty());
+        assert_eq!(status.indexing_file_paths, vec!["new.rs".to_owned()]);
+        assert!(
+            status
+                .current_files
+                .iter()
+                .any(|(pid, path)| *pid == 1 && path == "cxx_a.cpp")
+        );
+        assert_eq!(
+            status
+                .current_files
+                .iter()
+                .filter(|(pid, _)| *pid == 7)
+                .map(|(_, p)| p.as_str())
+                .collect::<Vec<_>>(),
+            vec!["new.rs"]
+        );
     }
 
     #[test]
@@ -294,10 +361,12 @@ mod tests {
 
         assert!(!status.current_files.iter().any(|(pid, _)| *pid == 7));
         assert!(status.finished_process_ids.iter().any(|pid| *pid == 7));
-        assert!(!status
-            .crashed_file_paths
-            .iter()
-            .any(|p| p == "crate/src/lib.rs"));
+        assert!(
+            !status
+                .crashed_file_paths
+                .iter()
+                .any(|p| p == "crate/src/lib.rs")
+        );
         assert!(status.crashed_file_paths.iter().any(|p| p == "other.rs"));
     }
 }

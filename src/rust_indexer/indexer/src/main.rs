@@ -107,12 +107,16 @@ fn main() {
             );
             cached.clone()
         } else {
-            // Pass a per-file progress callback so the status bar updates as each
-            // source file is processed.
+            // Pass a per-file progress callback so the status bar updates as
+            // each source file is processed. update_indexing (not
+            // start_indexing!) replaces this process's current file without
+            // the crash bookkeeping: start/finish stay paired per command, so
+            // TaskBuildIndex::doExit no longer reports the files of a
+            // successfully finished command as crashed translation units.
             let status_ch_ref = &status_ch;
             let indexed = parser::index_crate(Path::new(&cmd.working_directory), move |path| {
-                if let Err(e) = status_ch_ref.start_indexing(path) {
-                    log::warn!("per-file start_indexing failed: {e}");
+                if let Err(e) = status_ch_ref.update_indexing(path) {
+                    log::warn!("per-file progress update failed: {e}");
                 }
             });
             storage_cache.insert(cmd.working_directory.clone(), indexed.clone());
