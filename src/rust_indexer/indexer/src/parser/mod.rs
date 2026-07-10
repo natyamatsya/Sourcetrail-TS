@@ -11,10 +11,13 @@
 //   - StorageSourceLocation pointing at the name token of the item
 //   - StorageOccurrence linking node → location
 //   - StorageEdge  for relationships:
-//       EDGE_MEMBER       (1<<0 = 1)   — owner → field/method/assoc item
-//       EDGE_TYPE_USAGE   (1<<1 = 2)   — trait bounds on type params
-//       EDGE_CALL         (1<<3 = 8)   — call sites, resolved via Semantics
-//       EDGE_INHERITANCE  (1<<4 = 16)  — `impl Trait for Type`, supertraits
+//       EDGE_MEMBER        (1<<0 = 1)   — owner → field/method/assoc item/type param
+//       EDGE_TYPE_USAGE    (1<<1 = 2)   — type refs; bounds (from the param node)
+//       EDGE_CALL          (1<<3 = 8)   — call sites, resolved via Semantics
+//       EDGE_INHERITANCE   (1<<4 = 16)  — `impl Trait for Type`, supertraits
+//       EDGE_OVERRIDE      (1<<5 = 32)  — impl method → trait method
+//       EDGE_TYPE_ARGUMENT (1<<6 = 64)  — generic arguments at use sites
+//   (see context/DESIGN_RUST_TYPE_SYSTEM_EDGES.md)
 //   - StorageError  for load / analysis failures
 //
 // Node kind constants mirror NodeKind.h (bitmask values):
@@ -69,6 +72,8 @@ const EDGE_TYPE_USAGE: i32 = 1 << 1;
 const EDGE_USAGE: i32 = 1 << 2;
 const EDGE_CALL: i32 = 1 << 3;
 const EDGE_INHERITANCE: i32 = 1 << 4;
+const EDGE_OVERRIDE: i32 = 1 << 5;
+const EDGE_TYPE_ARGUMENT: i32 = 1 << 6;
 
 // ---------------------------------------------------------------------------
 // Public entry point: index a whole Cargo crate

@@ -299,12 +299,13 @@ fn trait_bound_on_struct_emits_type_usage_edge() {
 #[test]
 fn trait_bound_on_fn_emits_type_usage_edge() {
     let s = index_src("pub trait Display {} pub fn print<T: Display>(val: T) {}");
+    // The bound edge originates at the parameter node, not the item.
     assert!(
-        edge_types(&s).contains(&EDGE_TYPE_USAGE),
-        "expected EDGE_TYPE_USAGE for fn trait bound, edges: {:?}",
+        has_edge(&s, EDGE_TYPE_USAGE, "print::T", "Display"),
+        "expected EDGE_TYPE_USAGE print::T -> Display, edges: {:?}",
         s.edges
     );
-    assert!(has_edge(&s, EDGE_TYPE_USAGE, "print", "Display"));
+    assert!(!has_edge(&s, EDGE_TYPE_USAGE, "print", "Display"));
 }
 
 #[test]
@@ -329,7 +330,12 @@ fn lifetime_bound_emits_type_parameter_node_and_usage_edge() {
 
     assert!(has_node(&s, "Holder::'a"), "nodes: {:?}", node_names(&s));
     assert!(has_edge(&s, EDGE_MEMBER, "Holder", "Holder::'a"));
-    assert!(has_edge(&s, EDGE_TYPE_USAGE, "Holder", "Holder::'a"));
+    // `T: 'a` — the edge runs between the parameter nodes.
+    assert!(
+        has_edge(&s, EDGE_TYPE_USAGE, "Holder::T", "Holder::'a"),
+        "expected EDGE_TYPE_USAGE Holder::T -> Holder::'a, edges: {:?}",
+        s.edges
+    );
 }
 
 #[test]
@@ -688,4 +694,101 @@ fn impl_method_gets_scope_location() {
     let s = index_src("pub struct S;\nimpl S {\n    pub fn m(&self) {\n    }\n}");
     let scopes = scope_locations_of(&s, "S::m");
     assert_eq!(scopes, vec![(3, 5, 4, 6)]);
+}
+
+// -----------------------------------------------------------------------
+// Type-system edges (context/DESIGN_RUST_TYPE_SYSTEM_EDGES.md)
+// -----------------------------------------------------------------------
+
+const EDGE_OVERRIDE_T: i32 = 1 << 5;
+const EDGE_TYPE_ARGUMENT_T: i32 = 1 << 6;
+
+#[test]
+fn where_clause_bound_attaches_to_the_parameter() {
+    let s = index_src("pub trait Show {} pub fn dump<T>(val: T) where T: Show {}");
+    assert!(
+        has_edge(&s, EDGE_TYPE_USAGE, "dump::T", "Show"),
+        "expected EDGE_TYPE_USAGE dump::T -> Show, edges: {:?}",
+        s.edges
+    );
+}
+
+#[test]
+fn lifetime_outlives_emits_edge_between_lifetime_params() {
+    let s = index_src("pub struct Pair<'a, 'b: 'a> { pub x: &'a u8, pub y: &'b u8 }");
+    assert!(has_node(&s, "Pair::'a"), "nodes: {:?}", node_names(&s));
+    assert!(has_node(&s, "Pair::'b"), "nodes: {:?}", node_names(&s));
+    assert!(
+        has_edge(&s, EDGE_TYPE_USAGE, "Pair::'b", "Pair::'a"),
+        "expected outlives edge Pair::'b -> Pair::'a, edges: {:?}",
+        s.edges
+    );
+}
+
+#[test]
+fn generic_argument_emits_type_argument_edge() {
+    let s = index_src(
+        "pub struct Foo;\npub struct Holder<T> { pub t: T }\npub fn f(h: Holder<Foo>) {}",
+    );
+    assert!(
+        has_edge(&s, EDGE_TYPE_ARGUMENT_T, "f", "Foo"),
+        "expected EDGE_TYPE_ARGUMENT f -> Foo, edges: {:?}",
+        s.edges
+    );
+    // The outer generic type is ordinary type usage.
+    assert!(has_edge(&s, EDGE_TYPE_USAGE, "f", "Holder"));
+}
+
+#[test]
+fn impl_method_overrides_trait_method() {
+    let s = index_src(
+        "pub trait Draw { fn draw(&self); }\npub struct Circle;\nimpl Draw for Circle { fn draw(&self) {} }",
+    );
+    assert!(
+        has_edge(&s, EDGE_OVERRIDE_T, "Circle::draw", "Draw::draw"),
+        "expected EDGE_OVERRIDE Circle::draw -> Draw::draw, edges: {:?}",
+        s.edges
+    );
+    assert!(has_edge(&s, EDGE_INHERITANCE, "Circle", "Draw"));
+}
+
+#[test]
+fn bound_in_generic_args_is_type_argument_from_param() {
+    // `T: Iterator<Item = Foo>` — Foo is a generic argument of the bound,
+    // attributed to the parameter carrying it.
+    let s = index_src(
+        "pub struct Foo;\npub trait Gen { type Item; }\npub fn f<T: Gen<Item = Foo>>(t: T) {}",
+    );
+    assert!(
+        has_edge(&s, EDGE_TYPE_ARGUMENT_T, "f::T", "Foo"),
+        "expected EDGE_TYPE_ARGUMENT f::T -> Foo, edges: {:?}",
+        s.edges
+    );
+    assert!(has_edge(&s, EDGE_TYPE_USAGE, "f::T", "Gen"));
+}
+
+#[test]
+fn supertrait_with_qualified_path_resolves_exactly() {
+    let s = index_src(
+        "pub mod one { pub trait Marker {} }\npub mod two { pub trait Marker {} }\npub trait Special: two::Marker {}",
+    );
+    assert!(
+        has_edge(&s, EDGE_INHERITANCE, "Special", "two::Marker"),
+        "expected EDGE_INHERITANCE Special -> two::Marker, edges: {:?}",
+        s.edges
+    );
+    assert!(!has_edge(&s, EDGE_INHERITANCE, "Special", "one::Marker"));
+}
+
+#[test]
+fn impl_block_generic_params_attach_to_the_type() {
+    let s = index_src(
+        "pub trait Clean {} pub struct W<T> { pub t: T }\nimpl<T: Clean> W<T> { pub fn go(&self) {} }",
+    );
+    // The impl's own param bound attaches to the param node.
+    assert!(
+        has_edge(&s, EDGE_TYPE_USAGE, "W::T", "Clean"),
+        "expected EDGE_TYPE_USAGE W::T -> Clean, edges: {:?}",
+        s.edges
+    );
 }

@@ -8,7 +8,7 @@ use ra_ap_hir::{
 use ra_ap_ide_db::RootDatabase;
 use ra_ap_ide_db::base_db::SourceDatabase;
 use ra_ap_ide_db::line_index::LineIndex;
-use ra_ap_syntax::ast::{self, HasGenericParams, HasName, HasTypeBounds};
+use ra_ap_syntax::ast::{self, HasName};
 use ra_ap_syntax::{AstNode, SyntaxKind};
 use ra_ap_vfs::Vfs;
 
@@ -18,22 +18,17 @@ use crate::ipc::storage::{
 };
 
 use super::{
-    DEFINITION_EXPLICIT, EDGE_CALL, EDGE_INHERITANCE, EDGE_MEMBER, EDGE_TYPE_USAGE, EDGE_USAGE,
-    LOCATION_SCOPE, LOCATION_TOKEN, NODE_ENUM, NODE_ENUM_CONSTANT, NODE_FIELD, NODE_FILE,
-    NODE_FUNCTION, NODE_GLOBAL_VARIABLE, NODE_INTERFACE, NODE_MACRO, NODE_METHOD, NODE_MODULE,
-    NODE_STRUCT, NODE_TYPE_PARAMETER, NODE_TYPEDEF, NODE_UNION,
+    DEFINITION_EXPLICIT, EDGE_CALL, EDGE_INHERITANCE, EDGE_MEMBER, EDGE_OVERRIDE,
+    EDGE_TYPE_ARGUMENT, EDGE_TYPE_USAGE, EDGE_USAGE, LOCATION_SCOPE, LOCATION_TOKEN, NODE_ENUM,
+    NODE_ENUM_CONSTANT, NODE_FIELD, NODE_FILE, NODE_FUNCTION, NODE_GLOBAL_VARIABLE, NODE_INTERFACE,
+    NODE_MACRO, NODE_METHOD, NODE_MODULE, NODE_STRUCT, NODE_TYPE_PARAMETER, NODE_TYPEDEF,
+    NODE_UNION,
 };
 
 #[derive(Debug, Clone)]
 struct SourceContext {
     file_path: String,
     source_text: String,
-}
-
-#[derive(Debug, Clone)]
-enum BoundTarget {
-    Type(String),
-    Lifetime(String),
 }
 
 /// Identity key for an emitted definition, so that semantically resolved
@@ -43,6 +38,20 @@ enum BoundTarget {
 enum DefKey {
     Def(ModuleDef),
     Field(ra_ap_hir::Field),
+    TypeParam(ra_ap_hir::TypeParam),
+    ConstParam(ra_ap_hir::ConstParam),
+    LifetimeParam(ra_ap_hir::LifetimeParam),
+}
+
+/// Where a type-bound reference originates (see
+/// context/DESIGN_RUST_TYPE_SYSTEM_EDGES.md §2/§4).
+enum BoundOwner {
+    /// A generic parameter carries the bound (`T: Trait`, `'a: 'b`).
+    Param(i64),
+    /// A supertrait bound (`trait A: B`) — becomes EDGE_INHERITANCE.
+    Trait(i64),
+    /// Not a generic-param bound (plain type position, `dyn`/`impl` trait).
+    Item,
 }
 
 /// Per-file context for recording reference locations.
@@ -324,20 +333,58 @@ impl<'db> Collector<'db> {
         self.add_def(name, node_kind, &ctx.file_path, range, &ctx.source_text);
     }
 
-    fn ensure_type_parameter_node(
-        &mut self,
-        owner_name: &str,
-        parameter_name: &str,
-        range: ra_ap_syntax::TextRange,
-        ctx: &SourceContext,
-    ) -> String {
-        let qualified_parameter_name = format!("{owner_name}::{parameter_name}");
-        let exists = self.node_ids.contains_key(&qualified_parameter_name);
-        if !exists {
-            self.add_def_with_context(&qualified_parameter_name, NODE_TYPE_PARAMETER, range, ctx);
-            self.add_edge(EDGE_MEMBER, owner_name, &qualified_parameter_name);
+    /// Emit `NODE_TYPE_PARAMETER` nodes for all generic parameters (type,
+    /// const, lifetime) of `gdef`, as members of `owner_name`, registered
+    /// under their HIR identity for exact bound resolution.
+    fn collect_generic_params(&mut self, owner_name: &str, gdef: ra_ap_hir::GenericDef) {
+        for p in gdef.type_or_const_params(self.db) {
+            let name = p.name(self.db).as_str().to_string();
+            let Some(src) = p.source(self.db) else {
+                continue;
+            };
+            // The implicit trait `Self` parameter has the trait as its source.
+            let Either::Left(ast_param) = src.value.clone() else {
+                continue;
+            };
+            let in_file = src.with_value(ast_param.clone());
+            let Some(ctx) = self.source_context_from_in_file(&in_file) else {
+                continue;
+            };
+            let range = ast_param
+                .name()
+                .map(|n| n.syntax().text_range())
+                .unwrap_or_else(|| ast_param.syntax().text_range());
+            let qualified = format!("{owner_name}::{name}");
+            if !self.node_ids.contains_key(&qualified) {
+                self.add_def_with_context(&qualified, NODE_TYPE_PARAMETER, range, &ctx);
+                self.add_edge(EDGE_MEMBER, owner_name, &qualified);
+            }
+            let key = match p.split(self.db) {
+                Either::Left(cp) => DefKey::ConstParam(cp),
+                Either::Right(tp) => DefKey::TypeParam(tp),
+            };
+            self.register_def(key, &qualified);
         }
-        qualified_parameter_name
+        for lp in gdef.lifetime_params(self.db) {
+            let name = lp.name(self.db).as_str().to_string();
+            let Some(src) = lp.source(self.db) else {
+                continue;
+            };
+            let Some(ctx) = self.source_context_from_in_file(&src) else {
+                continue;
+            };
+            let range = src
+                .value
+                .lifetime()
+                .map(|l| l.syntax().text_range())
+                .unwrap_or_else(|| src.value.syntax().text_range());
+            let qualified = format!("{owner_name}::{name}");
+            if !self.node_ids.contains_key(&qualified) {
+                self.add_def_with_context(&qualified, NODE_TYPE_PARAMETER, range, &ctx);
+                self.add_edge(EDGE_MEMBER, owner_name, &qualified);
+            }
+            self.register_def(DefKey::LifetimeParam(lp), &qualified);
+        }
     }
 
     fn collect_crate(&mut self, krate: Crate) {
@@ -382,189 +429,18 @@ impl<'db> Collector<'db> {
             self.collect_parse_errors(module);
             // Walk impl blocks for EDGE_INHERITANCE, EDGE_TYPE_USAGE, and method collection.
             for imp in module.impl_defs(self.db) {
-                self.collect_impl(&module_prefix, imp);
                 self.collect_impl_items(&module_prefix, imp);
             }
         }
-        // Call and inheritance edges are emitted afterwards by the semantic
-        // reference pass (collect_semantic_edges), once all crates' nodes are
-        // registered in def_ids.
+        // Reference edges (calls, inheritance, bounds, type arguments,
+        // overrides) are emitted afterwards by the semantic reference pass
+        // (collect_semantic_edges), once all crates' nodes are registered
+        // in def_ids.
     }
 
-    /// Walk one `impl` block's generic bounds:
-    ///   trait bounds on the impl's type params → EDGE_TYPE_USAGE from impl self-type to bound.
-    /// (`impl Trait for Type` inheritance edges are emitted semantically in
-    /// collect_semantic_edges.)
-    fn collect_impl(&mut self, module_prefix: &str, imp: ra_ap_hir::Impl) {
-        let Some(src) = imp.source(self.db) else {
-            return;
-        };
-        let ast_impl = &src.value;
-        let source_context = self.source_context_from_in_file(&src);
-
-        let Some(self_ty_name) = impl_self_type_segment_name(ast_impl) else {
-            return;
-        };
-        let self_ty_name = Self::qualify_in_module(module_prefix, &self_ty_name);
-
-        // Trait bounds on the impl's own type parameters → EDGE_TYPE_USAGE
-        self.emit_ast_generic_bounds(
-            &self_ty_name,
-            ast_impl.generic_param_list(),
-            source_context.as_ref(),
-        );
-    }
-
-    /// Emit EDGE_TYPE_USAGE edges for trait bounds on a generic item's type params.
-    /// Works on the AST (via HasSource); bound targets resolve by name.
-    fn collect_generic_bounds<N>(&mut self, item_name: &str, src: Option<ra_ap_hir::InFile<N>>)
-    where
-        N: ra_ap_syntax::AstNode + HasGenericParams,
-    {
-        if let Some(in_file) = src {
-            let source_context = self.source_context_from_in_file(&in_file);
-            self.emit_ast_generic_bounds(
-                item_name,
-                in_file.value.generic_param_list(),
-                source_context.as_ref(),
-            );
-        }
-    }
-
-    /// Extract trait bounds from an AST `GenericParamList` and emit EDGE_TYPE_USAGE.
-    /// Handles both inline bounds (`T: Trait`) and `where` clauses.
-    fn emit_ast_generic_bounds(
-        &mut self,
-        item_name: &str,
-        param_list: Option<ast::GenericParamList>,
-        source_context: Option<&SourceContext>,
-    ) {
-        let Some(params) = param_list else { return };
-        for param in params.type_or_const_params() {
-            match param {
-                ast::TypeOrConstParam::Type(tp) => {
-                    if let Some(ctx) = source_context {
-                        if let Some(name) = tp.name() {
-                            self.ensure_type_parameter_node(
-                                item_name,
-                                &name.text().to_string(),
-                                tp.syntax().text_range(),
-                                ctx,
-                            );
-                        }
-                    }
-
-                    if let Some(bounds) = tp.type_bound_list() {
-                        for bound in bounds.bounds() {
-                            match bound_target(&bound) {
-                                Some(BoundTarget::Type(bound_name)) => {
-                                    self.add_edge(EDGE_TYPE_USAGE, item_name, &bound_name);
-                                }
-                                Some(BoundTarget::Lifetime(lifetime_name)) => {
-                                    let Some(ctx) = source_context else { continue };
-                                    let lifetime_node_name = self.ensure_type_parameter_node(
-                                        item_name,
-                                        &lifetime_name,
-                                        bound.syntax().text_range(),
-                                        ctx,
-                                    );
-                                    self.add_edge(EDGE_TYPE_USAGE, item_name, &lifetime_node_name);
-                                }
-                                None => {}
-                            }
-                        }
-                    }
-                }
-                ast::TypeOrConstParam::Const(cp) => {
-                    let const_param_name = if let Some(ctx) = source_context {
-                        cp.name().map(|name| {
-                            self.ensure_type_parameter_node(
-                                item_name,
-                                &name.text().to_string(),
-                                cp.syntax().text_range(),
-                                ctx,
-                            )
-                        })
-                    } else {
-                        None
-                    };
-
-                    let Some(type_name) = cp.ty().as_ref().and_then(type_target_name) else {
-                        continue;
-                    };
-
-                    if let Some(parameter_name) = const_param_name {
-                        self.add_edge(EDGE_TYPE_USAGE, &parameter_name, &type_name);
-                        continue;
-                    }
-                    self.add_edge(EDGE_TYPE_USAGE, item_name, &type_name);
-                }
-            }
-        }
-        // Also handle `where T: Trait` clauses.
-        if let Some(where_clause) = params
-            .syntax()
-            .parent()
-            .and_then(|p| p.children().find_map(ast::WhereClause::cast))
-        {
-            for pred in where_clause.predicates() {
-                if let Some(bounds) = pred.type_bound_list() {
-                    for bound in bounds.bounds() {
-                        match bound_target(&bound) {
-                            Some(BoundTarget::Type(bound_name)) => {
-                                self.add_edge(EDGE_TYPE_USAGE, item_name, &bound_name);
-                            }
-                            Some(BoundTarget::Lifetime(lifetime_name)) => {
-                                let Some(ctx) = source_context else { continue };
-                                let lifetime_node_name = self.ensure_type_parameter_node(
-                                    item_name,
-                                    &lifetime_name,
-                                    bound.syntax().text_range(),
-                                    ctx,
-                                );
-                                self.add_edge(EDGE_TYPE_USAGE, item_name, &lifetime_node_name);
-                            }
-                            None => {}
-                        }
-                    }
-                }
-            }
-        }
-    }
-
-    fn collect_trait_details(
-        &mut self,
-        trait_name: &str,
-        t: ra_ap_hir::Trait,
-        src: Option<ra_ap_hir::InFile<ast::Trait>>,
-    ) {
-        // Supertrait bounds from the AST (`trait A: B`).
-        if let Some(in_file) = src {
-            if let Some(ctx) = self.source_context_from_in_file(&in_file) {
-                let ast_trait = in_file.value;
-                if let Some(bounds) = ast_trait.type_bound_list() {
-                    for bound in bounds.bounds() {
-                        match bound_target(&bound) {
-                            Some(BoundTarget::Type(bound_name)) => {
-                                self.add_edge(EDGE_INHERITANCE, trait_name, &bound_name);
-                            }
-                            Some(BoundTarget::Lifetime(lifetime_name)) => {
-                                let lifetime_node_name = self.ensure_type_parameter_node(
-                                    trait_name,
-                                    &lifetime_name,
-                                    bound.syntax().text_range(),
-                                    &ctx,
-                                );
-                                self.add_edge(EDGE_TYPE_USAGE, trait_name, &lifetime_node_name);
-                            }
-                            None => {}
-                        }
-                    }
-                }
-            }
-        }
-
-        // Associated items via HIR, so each gets a DefKey registration.
+    /// Associated items and supertraits are emitted via HIR; supertrait
+    /// INHERITANCE edges themselves come from the semantic pass.
+    fn collect_trait_details(&mut self, trait_name: &str, t: ra_ap_hir::Trait) {
         for item in t.items(self.db) {
             match item {
                 AssocItem::Function(f) => {
@@ -573,6 +449,7 @@ impl<'db> Collector<'db> {
                     self.emit_from_source(f.source(self.db), &qualified_name, NODE_METHOD);
                     self.register_def(DefKey::Def(ModuleDef::Function(f)), &qualified_name);
                     self.add_edge(EDGE_MEMBER, trait_name, &qualified_name);
+                    self.collect_generic_params(&qualified_name, f.into());
                 }
                 AssocItem::TypeAlias(ta) => {
                     let taname = ta.name(self.db).as_str().to_string();
@@ -714,6 +591,11 @@ impl<'db> Collector<'db> {
         };
         let owner_name = Self::qualify_in_module(module_prefix, &self_ty_name);
 
+        // The impl block's own generic parameters (`impl<T> …`) attach to the
+        // self type's owner name; same-named params on the type definition
+        // merge by serialized name on inject.
+        self.collect_generic_params(&owner_name, imp.into());
+
         for item in imp.items(self.db) {
             match item {
                 AssocItem::Function(f) => {
@@ -722,8 +604,8 @@ impl<'db> Collector<'db> {
                     let exists = self.node_ids.contains_key(&qualified_name);
                     if !exists {
                         let fsrc = f.source(self.db);
-                        self.emit_from_source(fsrc.clone(), &qualified_name, NODE_METHOD);
-                        self.collect_generic_bounds(&qualified_name, fsrc);
+                        self.emit_from_source(fsrc, &qualified_name, NODE_METHOD);
+                        self.collect_generic_params(&qualified_name, f.into());
                         self.add_edge(EDGE_MEMBER, &owner_name, &qualified_name);
                     }
                     self.register_def(DefKey::Def(ModuleDef::Function(f)), &qualified_name);
@@ -785,7 +667,11 @@ impl<'db> Collector<'db> {
                     SyntaxKind::IMPL => {
                         if let Some(impl_ast) = ast::Impl::cast(node) {
                             self.emit_impl_inheritance(sema, &impl_ast, &file);
+                            self.emit_impl_overrides(sema, &impl_ast);
                         }
+                    }
+                    SyntaxKind::LIFETIME => {
+                        self.emit_lifetime_bound_reference(sema, &node, &file);
                     }
                     SyntaxKind::CALL_EXPR => {
                         let Some(call) = ast::CallExpr::cast(node) else {
@@ -880,9 +766,13 @@ impl<'db> Collector<'db> {
         }
     }
 
-    /// Type reference (`PathType`) → EDGE_TYPE_USAGE from the enclosing item.
-    /// Types in an `impl` header are skipped: the inheritance/bounds handling
-    /// covers them, and the header itself is not an emitted node.
+    /// Type reference (`PathType`) → edge from the bound owner or enclosing
+    /// item (see context/DESIGN_RUST_TYPE_SYSTEM_EDGES.md):
+    ///   - inside a generic-param bound: from the *parameter* node
+    ///   - supertrait bound: EDGE_INHERITANCE from the trait
+    ///   - inside a generic-arg list: EDGE_TYPE_ARGUMENT instead of TYPE_USAGE
+    ///   - plain type position: EDGE_TYPE_USAGE from the enclosing item;
+    ///     impl headers are skipped (covered by inheritance handling).
     fn emit_type_reference(
         &mut self,
         sema: &Semantics<'db, RootDatabase>,
@@ -892,18 +782,239 @@ impl<'db> Collector<'db> {
         let Some(path) = pt.path() else { return };
         let target = match sema.resolve_path(&path) {
             Some(PathResolution::Def(def)) => self.def_id(DefKey::Def(def)),
+            Some(PathResolution::TypeParam(tp)) => self.def_id(DefKey::TypeParam(tp)),
+            Some(PathResolution::ConstParam(cp)) => self.def_id(DefKey::ConstParam(cp)),
             _ => None,
         };
+        let Some(target) = target else { return };
         let range = path_name_range(&path);
-        self.emit_reference_edge(
-            sema,
-            EDGE_TYPE_USAGE,
-            pt.syntax(),
-            target,
-            range,
-            file,
-            /*allow_impl_context=*/ false,
-        );
+
+        let in_generic_args = pt
+            .syntax()
+            .ancestors()
+            .any(|a| a.kind() == SyntaxKind::GENERIC_ARG_LIST);
+        let edge_kind = if in_generic_args {
+            EDGE_TYPE_ARGUMENT
+        } else {
+            EDGE_TYPE_USAGE
+        };
+
+        let source = match self.bound_owner(sema, pt.syntax()) {
+            BoundOwner::Param(param_id) => Some(param_id),
+            // `trait A: B` — the top-level bound path is the supertrait.
+            BoundOwner::Trait(trait_id) if !in_generic_args => {
+                if trait_id != target {
+                    let edge_id = self.push_edge(EDGE_INHERITANCE, trait_id, target);
+                    if let Some(range) = range {
+                        self.add_reference_location(edge_id, range, file);
+                    }
+                }
+                return;
+            }
+            BoundOwner::Trait(trait_id) => Some(trait_id),
+            BoundOwner::Item => {
+                self.enclosing_context_id(sema, pt.syntax(), /*allow_impl_context=*/ false)
+            }
+        };
+        let Some(source) = source else { return };
+        if source == target {
+            return;
+        }
+        let edge_id = self.push_edge(edge_kind, source, target);
+        if let Some(range) = range {
+            self.add_reference_location(edge_id, range, file);
+        }
+    }
+
+    /// Classify the bound context of a node inside a `TypeBoundList`.
+    fn bound_owner(
+        &self,
+        sema: &Semantics<'db, RootDatabase>,
+        node: &ra_ap_syntax::SyntaxNode,
+    ) -> BoundOwner {
+        let Some(bound_list) = node
+            .ancestors()
+            .find(|a| a.kind() == SyntaxKind::TYPE_BOUND_LIST)
+        else {
+            return BoundOwner::Item;
+        };
+        let Some(parent) = bound_list.parent() else {
+            return BoundOwner::Item;
+        };
+        match parent.kind() {
+            SyntaxKind::TYPE_PARAM => ast::TypeParam::cast(parent)
+                .and_then(|tp| sema.to_def(&tp))
+                .and_then(|tp| self.def_id(DefKey::TypeParam(tp)))
+                .map_or(BoundOwner::Item, BoundOwner::Param),
+            SyntaxKind::LIFETIME_PARAM => ast::LifetimeParam::cast(parent)
+                .and_then(|lp| sema.to_def(&lp))
+                .and_then(|lp| self.def_id(DefKey::LifetimeParam(lp)))
+                .map_or(BoundOwner::Item, BoundOwner::Param),
+            SyntaxKind::WHERE_PRED => {
+                let Some(pred) = ast::WherePred::cast(parent) else {
+                    return BoundOwner::Item;
+                };
+                // `where T: Trait` — attach to T if the subject is a parameter.
+                if let Some(ast::Type::PathType(subject)) = pred.ty() {
+                    if let Some(path) = subject.path() {
+                        match sema.resolve_path(&path) {
+                            Some(PathResolution::TypeParam(tp)) => {
+                                return self
+                                    .def_id(DefKey::TypeParam(tp))
+                                    .map_or(BoundOwner::Item, BoundOwner::Param);
+                            }
+                            Some(PathResolution::ConstParam(cp)) => {
+                                return self
+                                    .def_id(DefKey::ConstParam(cp))
+                                    .map_or(BoundOwner::Item, BoundOwner::Param);
+                            }
+                            _ => {}
+                        }
+                    }
+                }
+                // `where 'a: 'b` — attach to 'a.
+                if let Some(lt) = pred.lifetime() {
+                    if let Some(id) = self.lifetime_param_id(sema, pred.syntax(), &lt.text()) {
+                        return BoundOwner::Param(id);
+                    }
+                }
+                BoundOwner::Item
+            }
+            SyntaxKind::TRAIT => ast::Trait::cast(parent)
+                .and_then(|t| sema.to_def(&t))
+                .and_then(|t| self.def_id(DefKey::Def(ModuleDef::Trait(t))))
+                .map_or(BoundOwner::Item, BoundOwner::Trait),
+            // Associated type bounds (`type Item: Debug`) attach to the alias.
+            SyntaxKind::TYPE_ALIAS => ast::TypeAlias::cast(parent)
+                .and_then(|ta| sema.to_def(&ta))
+                .and_then(|ta| self.def_id(DefKey::Def(ModuleDef::TypeAlias(ta))))
+                .map_or(BoundOwner::Item, BoundOwner::Param),
+            // `dyn Trait` / `impl Trait` positions are ordinary type usage.
+            _ => BoundOwner::Item,
+        }
+    }
+
+    /// Lifetime reference in a bound position (`'a: 'b`, `T: 'a`) →
+    /// EDGE_TYPE_USAGE from the bound owner to the lifetime parameter node.
+    /// Declaration sites and plain uses in types are not recorded (v1).
+    fn emit_lifetime_bound_reference(
+        &mut self,
+        sema: &Semantics<'db, RootDatabase>,
+        node: &ra_ap_syntax::SyntaxNode,
+        file: &RefFile,
+    ) {
+        // Only lifetimes that are themselves a bound (inside a TypeBoundList).
+        if !node
+            .ancestors()
+            .skip(1)
+            .take_while(|a| a.kind() != SyntaxKind::GENERIC_PARAM_LIST)
+            .any(|a| a.kind() == SyntaxKind::TYPE_BOUND_LIST)
+        {
+            return;
+        }
+        let name = node.text().to_string();
+        let Some(target) = self.lifetime_param_id(sema, node, &name) else {
+            return;
+        };
+        let source = match self.bound_owner(sema, node) {
+            BoundOwner::Param(id) => Some(id),
+            BoundOwner::Trait(id) => Some(id),
+            BoundOwner::Item => self.enclosing_context_id(sema, node, false),
+        };
+        let Some(source) = source else { return };
+        if source == target {
+            return;
+        }
+        let edge_id = self.push_edge(EDGE_TYPE_USAGE, source, target);
+        self.add_reference_location(edge_id, node.text_range(), file);
+    }
+
+    /// Resolve a lifetime name (`'a`) to its parameter node by walking the
+    /// enclosing generic items and matching their `lifetime_params` by name.
+    fn lifetime_param_id(
+        &self,
+        sema: &Semantics<'db, RootDatabase>,
+        node: &ra_ap_syntax::SyntaxNode,
+        name: &str,
+    ) -> Option<i64> {
+        for anc in node.ancestors() {
+            let gdef: ra_ap_hir::GenericDef = match anc.kind() {
+                SyntaxKind::FN => match ast::Fn::cast(anc).and_then(|it| sema.to_def(&it)) {
+                    Some(f) => f.into(),
+                    None => continue,
+                },
+                SyntaxKind::STRUCT => {
+                    match ast::Struct::cast(anc).and_then(|it| sema.to_def(&it)) {
+                        Some(s) => ra_ap_hir::Adt::Struct(s).into(),
+                        None => continue,
+                    }
+                }
+                SyntaxKind::ENUM => match ast::Enum::cast(anc).and_then(|it| sema.to_def(&it)) {
+                    Some(e) => ra_ap_hir::Adt::Enum(e).into(),
+                    None => continue,
+                },
+                SyntaxKind::UNION => match ast::Union::cast(anc).and_then(|it| sema.to_def(&it)) {
+                    Some(u) => ra_ap_hir::Adt::Union(u).into(),
+                    None => continue,
+                },
+                SyntaxKind::TRAIT => match ast::Trait::cast(anc).and_then(|it| sema.to_def(&it)) {
+                    Some(t) => t.into(),
+                    None => continue,
+                },
+                SyntaxKind::TYPE_ALIAS => {
+                    match ast::TypeAlias::cast(anc).and_then(|it| sema.to_def(&it)) {
+                        Some(ta) => ta.into(),
+                        None => continue,
+                    }
+                }
+                SyntaxKind::IMPL => match ast::Impl::cast(anc).and_then(|it| sema.to_def(&it)) {
+                    Some(i) => i.into(),
+                    None => continue,
+                },
+                _ => continue,
+            };
+            let hit = gdef
+                .lifetime_params(self.db)
+                .into_iter()
+                .find(|lp| lp.name(self.db).as_str() == name)
+                .and_then(|lp| self.def_id(DefKey::LifetimeParam(lp)));
+            if hit.is_some() {
+                return hit;
+            }
+        }
+        None
+    }
+
+    /// `impl Trait for Type` — every impl function overrides its trait
+    /// counterpart (matched by name, guaranteed by the language):
+    ///   Type::method —override→ Trait::method
+    fn emit_impl_overrides(&mut self, sema: &Semantics<'db, RootDatabase>, impl_ast: &ast::Impl) {
+        let Some(hir_impl) = sema.to_def(impl_ast) else {
+            return;
+        };
+        let Some(trait_) = hir_impl.trait_(self.db) else {
+            return;
+        };
+        for item in hir_impl.items(self.db) {
+            let AssocItem::Function(f) = item else {
+                continue;
+            };
+            let Some(impl_fn_id) = self.def_id(DefKey::Def(ModuleDef::Function(f))) else {
+                continue;
+            };
+            let fname = f.name(self.db);
+            let trait_fn_id = trait_.items(self.db).into_iter().find_map(|ti| {
+                if let AssocItem::Function(tf) = ti {
+                    if tf.name(self.db) == fname {
+                        return self.def_id(DefKey::Def(ModuleDef::Function(tf)));
+                    }
+                }
+                None
+            });
+            if let Some(trait_fn_id) = trait_fn_id {
+                self.push_edge(EDGE_OVERRIDE, impl_fn_id, trait_fn_id);
+            }
+        }
     }
 
     /// Emit a reference edge + occurrence from the enclosing context of
@@ -1092,36 +1203,36 @@ impl<'db> Collector<'db> {
                     NODE_FUNCTION
                 };
                 let src = f.source(self.db);
-                self.emit_from_source(src.clone(), &qualified_name, kind);
+                self.emit_from_source(src, &qualified_name, kind);
                 self.register_def(DefKey::Def(def), &qualified_name);
-                self.collect_generic_bounds(&qualified_name, src);
+                self.collect_generic_params(&qualified_name, f.into());
             }
             ModuleDef::Adt(adt) => match adt {
                 Adt::Struct(s) => {
                     let name = s.name(self.db).as_str().to_string();
                     let qualified_name = Self::qualify_in_module(module_prefix, &name);
                     let src = s.source(self.db);
-                    self.emit_from_source(src.clone(), &qualified_name, NODE_STRUCT);
+                    self.emit_from_source(src, &qualified_name, NODE_STRUCT);
                     self.register_def(DefKey::Def(def), &qualified_name);
-                    self.collect_generic_bounds(&qualified_name, src);
+                    self.collect_generic_params(&qualified_name, s.into());
                     self.collect_struct_fields(&qualified_name, s);
                 }
                 Adt::Enum(e) => {
                     let name = e.name(self.db).as_str().to_string();
                     let qualified_name = Self::qualify_in_module(module_prefix, &name);
                     let src = e.source(self.db);
-                    self.emit_from_source(src.clone(), &qualified_name, NODE_ENUM);
+                    self.emit_from_source(src, &qualified_name, NODE_ENUM);
                     self.register_def(DefKey::Def(def), &qualified_name);
-                    self.collect_generic_bounds(&qualified_name, src);
+                    self.collect_generic_params(&qualified_name, e.into());
                     self.collect_enum_variants(&qualified_name, e);
                 }
                 Adt::Union(u) => {
                     let name = u.name(self.db).as_str().to_string();
                     let qualified_name = Self::qualify_in_module(module_prefix, &name);
                     let src = u.source(self.db);
-                    self.emit_from_source(src.clone(), &qualified_name, NODE_UNION);
+                    self.emit_from_source(src, &qualified_name, NODE_UNION);
                     self.register_def(DefKey::Def(def), &qualified_name);
-                    self.collect_generic_bounds(&qualified_name, src);
+                    self.collect_generic_params(&qualified_name, u.into());
                     self.collect_union_fields(&qualified_name, u);
                 }
             },
@@ -1129,18 +1240,18 @@ impl<'db> Collector<'db> {
                 let name = t.name(self.db).as_str().to_string();
                 let qualified_name = Self::qualify_in_module(module_prefix, &name);
                 let src = t.source(self.db);
-                self.emit_from_source(src.clone(), &qualified_name, NODE_INTERFACE);
+                self.emit_from_source(src, &qualified_name, NODE_INTERFACE);
                 self.register_def(DefKey::Def(def), &qualified_name);
-                self.collect_generic_bounds(&qualified_name, src.clone());
-                self.collect_trait_details(&qualified_name, t, src);
+                self.collect_generic_params(&qualified_name, t.into());
+                self.collect_trait_details(&qualified_name, t);
             }
             ModuleDef::TypeAlias(ta) => {
                 let name = ta.name(self.db).as_str().to_string();
                 let qualified_name = Self::qualify_in_module(module_prefix, &name);
                 let src = ta.source(self.db);
-                self.emit_from_source(src.clone(), &qualified_name, NODE_TYPEDEF);
+                self.emit_from_source(src, &qualified_name, NODE_TYPEDEF);
                 self.register_def(DefKey::Def(def), &qualified_name);
-                self.collect_generic_bounds(&qualified_name, src);
+                self.collect_generic_params(&qualified_name, ta.into());
             }
             ModuleDef::Const(c) => {
                 if let Some(name) = c.name(self.db) {
@@ -1342,50 +1453,6 @@ fn impl_self_type_segment_name(ast_impl: &ast::Impl) -> Option<String> {
             .map(|n| n.text().to_string()),
         _ => None,
     }
-}
-
-fn bound_target(bound: &ast::TypeBound) -> Option<BoundTarget> {
-    if let Some(ty) = bound.ty() {
-        if let ast::Type::PathType(pt) = ty {
-            let segment = pt.path()?.segment()?;
-            return Some(BoundTarget::Type(segment.name_ref()?.text().to_string()));
-        }
-        return None;
-    }
-
-    let text = bound.syntax().text().to_string();
-    let lifetime = extract_lifetime_name(&text)?;
-    Some(BoundTarget::Lifetime(lifetime))
-}
-
-fn extract_lifetime_name(text: &str) -> Option<String> {
-    let trimmed = text.trim();
-    let mut chars = trimmed.chars();
-    if chars.next()? != '\'' {
-        return None;
-    }
-
-    let mut out = String::from("'");
-    for c in chars {
-        if c.is_ascii_alphanumeric() || c == '_' {
-            out.push(c);
-        } else {
-            break;
-        }
-    }
-
-    if out.len() > 1 {
-        return Some(out);
-    }
-    None
-}
-
-fn type_target_name(ty: &ast::Type) -> Option<String> {
-    if let ast::Type::PathType(pt) = ty {
-        let segment = pt.path()?.segment()?;
-        return Some(segment.name_ref()?.text().to_string());
-    }
-    None
 }
 
 /// Derive a module prefix from the file path relative to a source root.
