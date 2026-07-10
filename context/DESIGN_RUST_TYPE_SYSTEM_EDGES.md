@@ -113,10 +113,40 @@ type parameters.
 
 A `PATH_TYPE` located inside a `GENERIC_ARG_LIST` (e.g. `Foo` in `Vec<Foo>`)
 emits `EDGE_TYPE_ARGUMENT` instead of `EDGE_TYPE_USAGE`, from the same
-source-resolution rules as above. This is the v1 of the C++ indexer's
-template-argument model. The full fidelity version — implicit specialization
-nodes (`Vec<Foo>` bubble with `EDGE_TEMPLATE_SPECIALIZATION` to `Vec`) —
-requires emitting implicit/non-indexed nodes and is out of scope here.
+source-resolution rules as above — this is the behavior when specialization
+nodes are `Off` (§7).
+
+### 7. Implicit specialization nodes (`Base<Arg>` bubbles) — configurable
+
+At a generic-type use site `Base<Arg>` an **implicit specialization node** is
+emitted, giving the concrete instantiation its own graph node:
+
+    ctx —EDGE_TYPE_USAGE→ Base<Arg>        (the bubble; occurrence at the base token)
+    Base<Arg> —EDGE_TEMPLATE_SPECIALIZATION→ Base   (1<<7, if Base is indexed)
+    Base<Arg> —EDGE_TYPE_ARGUMENT→ Arg     (per direct arg that resolves to a node)
+
+The bubble is `DefinitionKind::IMPLICIT`, deduplicated by canonical serialized
+name (`base-qualified-name<arg-short-names>`), so every use site of the same
+instantiation merges into one node. This **replaces** the §5 plain
+`ctx→Base` / `ctx→Arg` edges at bubble sites (retarget model): the direct
+arguments' `EDGE_TYPE_ARGUMENT` edges originate at the bubble, not `ctx`, and
+`ctx` points at the bubble via `EDGE_TYPE_USAGE`. Nesting is shallow — an inner
+`Base<Inner<Foo>>` produces its own bubble for the direct arg where eligible;
+deeper levels fall back to §5 edges.
+
+**Scope is configurable** (setting `rust_specialization_nodes`, default
+`local`):
+
+| scope   | behavior |
+|---------|----------|
+| `off`   | no bubbles — §5 `ctx→Base` / `ctx→Arg` edges only (pre-feature) |
+| `local` | bubble only when `Base` is a type indexed in this crate (own generic types); external bases (`Vec`, `Option`) keep §5 edges. **Default.** |
+| `all`   | bubble for every generic instantiation; external `Base` still emits the node + `TYPE_ARGUMENT` edges, the `TEMPLATE_SPECIALIZATION` edge drops (target unindexed) |
+
+`local` is the default: it focuses bubbles on the user's own generic types and
+naturally bounds node growth (no `Vec<u8>`/`Option<String>` explosion on large
+crates), while `all` is available for full fidelity and `off` restores the
+exact pre-feature graph.
 
 ### 6. Trait-method implementations → EDGE_OVERRIDE
 
@@ -157,10 +187,11 @@ supertrait walk in `collect_trait_details()`.
 
 ## Out of scope / follow-ups
 
-- Implicit specialization nodes (`Vec<Foo>` with TEMPLATE_SPECIALIZATION) —
-  needs non-indexed node emission.
 - Lifetime usage occurrences in types (`&'a T`) — revisit once noise
   tolerance is known.
+- Deep nesting of specialization bubbles (§7): only the outermost
+  eligible level and its direct args bubble; `A<B<C<Foo>>>` does not
+  produce a bubble per level.
 - Bounds on associated-type projections (`where T::Item: Debug`) attach to
   `T` in v1, not to a projection node.
 - `EDGE_OVERRIDE` for associated consts/types if the GUI proves useful for

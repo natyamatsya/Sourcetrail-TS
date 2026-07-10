@@ -18,6 +18,21 @@ fn index_src_with_sysroot(src: &str) -> OwnedIntermediateStorage {
         tmp.path(),
         LoadProfile::SYSROOT,
         CargoOptions::default(),
+        SpecializationScope::default(),
+        |_| {},
+    )
+}
+
+// Helper: index a source string with a chosen specialization-node scope (§7).
+// Uses the FAST profile, like index_src (dependency-free temp crate).
+fn index_src_with_scope(src: &str, spec_scope: SpecializationScope) -> OwnedIntermediateStorage {
+    let tmp = tempfile::tempdir().unwrap();
+    scaffold_temp_crate(tmp.path(), src).unwrap();
+    index_crate_with(
+        tmp.path(),
+        LoadProfile::FAST,
+        CargoOptions::default(),
+        spec_scope,
         |_| {},
     )
 }
@@ -716,6 +731,7 @@ fn impl_method_gets_scope_location() {
 
 const EDGE_OVERRIDE_T: i32 = 1 << 5;
 const EDGE_TYPE_ARGUMENT_T: i32 = 1 << 6;
+const EDGE_TEMPLATE_SPECIALIZATION_T: i32 = 1 << 7;
 
 #[test]
 fn where_clause_bound_attaches_to_the_parameter() {
@@ -740,17 +756,142 @@ fn lifetime_outlives_emits_edge_between_lifetime_params() {
 }
 
 #[test]
-fn generic_argument_emits_type_argument_edge() {
+fn generic_argument_over_local_base_bubbles() {
+    // Under default `Local` scope, `Holder<Foo>` over a locally-indexed base
+    // retargets to an implicit specialization node (§7 bubble): the direct
+    // arg's TYPE_ARGUMENT edge now originates at the bubble, not at `f`, and
+    // `f` points at the bubble via TYPE_USAGE.
     let s = index_src(
         "pub struct Foo;\npub struct Holder<T> { pub t: T }\npub fn f(h: Holder<Foo>) {}",
     );
+    // The bubble node exists as an implicit definition.
     assert!(
-        has_edge(&s, EDGE_TYPE_ARGUMENT_T, "f", "Foo"),
-        "expected EDGE_TYPE_ARGUMENT f -> Foo, edges: {:?}",
+        has_node(&s, "Holder<Foo>"),
+        "expected implicit bubble node Holder<Foo>, nodes: {:?}",
+        node_names(&s)
+    );
+    // Retargeted edges: bubble -> base, bubble -> arg, f -> bubble.
+    assert!(
+        has_edge(&s, EDGE_TEMPLATE_SPECIALIZATION_T, "Holder<Foo>", "Holder"),
+        "expected TEMPLATE_SPECIALIZATION Holder<Foo> -> Holder, edges: {:?}",
         s.edges
     );
-    // The outer generic type is ordinary type usage.
-    assert!(has_edge(&s, EDGE_TYPE_USAGE, "f", "Holder"));
+    assert!(
+        has_edge(&s, EDGE_TYPE_ARGUMENT_T, "Holder<Foo>", "Foo"),
+        "expected TYPE_ARGUMENT Holder<Foo> -> Foo, edges: {:?}",
+        s.edges
+    );
+    assert!(
+        has_edge(&s, EDGE_TYPE_USAGE, "f", "Holder<Foo>"),
+        "expected TYPE_USAGE f -> Holder<Foo>, edges: {:?}",
+        s.edges
+    );
+    // The §5 edges from the enclosing item are retargeted away.
+    assert!(
+        !has_edge(&s, EDGE_TYPE_ARGUMENT_T, "f", "Foo"),
+        "f -> Foo TYPE_ARGUMENT must be retargeted to the bubble, edges: {:?}",
+        s.edges
+    );
+}
+
+#[test]
+fn generic_argument_over_external_base_keeps_section5_edge_under_local() {
+    // `Vec` is external (unindexed) → no bubble under `Local`; the §5
+    // TYPE_ARGUMENT edge from the enclosing item to the resolved arg stays.
+    let s = index_src("pub struct Foo;\npub fn g(v: Vec<Foo>) {}");
+    assert!(
+        has_edge(&s, EDGE_TYPE_ARGUMENT_T, "g", "Foo"),
+        "expected §5 TYPE_ARGUMENT g -> Foo (Vec external), edges: {:?}",
+        s.edges
+    );
+    assert!(
+        !has_node(&s, "Vec<Foo>"),
+        "no bubble for an external base under Local, nodes: {:?}",
+        node_names(&s)
+    );
+}
+
+#[test]
+fn all_scope_bubbles_external_base_without_specialization_edge() {
+    // Under `All`, `Vec<Foo>` bubbles even though Vec is unindexed: the node
+    // and its TYPE_ARGUMENT edge appear, but TEMPLATE_SPECIALIZATION drops
+    // (target unindexed).
+    let s = index_src_with_scope(
+        "pub struct Foo;\npub fn g(v: Vec<Foo>) {}",
+        SpecializationScope::All,
+    );
+    assert!(
+        has_node(&s, "Vec<Foo>"),
+        "expected bubble Vec<Foo> under All, nodes: {:?}",
+        node_names(&s)
+    );
+    assert!(
+        has_edge(&s, EDGE_TYPE_ARGUMENT_T, "Vec<Foo>", "Foo"),
+        "expected TYPE_ARGUMENT Vec<Foo> -> Foo, edges: {:?}",
+        s.edges
+    );
+    assert!(
+        has_edge(&s, EDGE_TYPE_USAGE, "g", "Vec<Foo>"),
+        "expected TYPE_USAGE g -> Vec<Foo>, edges: {:?}",
+        s.edges
+    );
+    // No TEMPLATE_SPECIALIZATION edge — Vec is unindexed, so it has no node.
+    assert_eq!(
+        s.edges
+            .iter()
+            .filter(|e| e.type_ == EDGE_TEMPLATE_SPECIALIZATION_T)
+            .count(),
+        0,
+        "TEMPLATE_SPECIALIZATION must drop for an unindexed base, edges: {:?}",
+        s.edges
+    );
+}
+
+#[test]
+fn off_scope_restores_pre_feature_edges() {
+    // Under `Off`, `MyBox<Foo>` keeps the exact pre-feature graph: no bubble,
+    // f -> MyBox TYPE_USAGE and f -> Foo TYPE_ARGUMENT direct from the item.
+    let s = index_src_with_scope(
+        "pub struct Foo;\npub struct MyBox<T>(pub T);\npub fn f(b: MyBox<Foo>) {}",
+        SpecializationScope::Off,
+    );
+    assert!(
+        !has_node(&s, "MyBox<Foo>"),
+        "no bubble under Off, nodes: {:?}",
+        node_names(&s)
+    );
+    assert!(
+        has_edge(&s, EDGE_TYPE_USAGE, "f", "MyBox"),
+        "expected pre-feature TYPE_USAGE f -> MyBox, edges: {:?}",
+        s.edges
+    );
+    assert!(
+        has_edge(&s, EDGE_TYPE_ARGUMENT_T, "f", "Foo"),
+        "expected pre-feature TYPE_ARGUMENT f -> Foo, edges: {:?}",
+        s.edges
+    );
+}
+
+#[test]
+fn identical_instantiations_dedup_to_one_bubble() {
+    // Two fns both using MyBox<Foo> → exactly one implicit node, two
+    // TYPE_USAGE occurrences (one per use site) on the ctx->bubble edges.
+    let s = index_src_with_scope(
+        "pub struct Foo;\npub struct MyBox<T>(pub T);\n\
+         pub fn f(b: MyBox<Foo>) {}\npub fn g(b: MyBox<Foo>) {}",
+        SpecializationScope::Local,
+    );
+    let bubbles = s
+        .nodes
+        .iter()
+        .filter(|n| decode_name(&n.serialized_name) == "MyBox<Foo>")
+        .count();
+    assert_eq!(
+        bubbles, 1,
+        "identical instantiations must dedup to one bubble"
+    );
+    assert!(has_edge(&s, EDGE_TYPE_USAGE, "f", "MyBox<Foo>"));
+    assert!(has_edge(&s, EDGE_TYPE_USAGE, "g", "MyBox<Foo>"));
 }
 
 #[test]
@@ -1014,7 +1155,13 @@ fn index_feature_fixture(options: CargoOptions) -> OwnedIntermediateStorage {
         "#[cfg(feature = \"x\")]\npub fn gated() {}\npub fn always() {}\n",
     )
     .unwrap();
-    index_crate_with(tmp.path(), LoadProfile::FAST, options, |_| {})
+    index_crate_with(
+        tmp.path(),
+        LoadProfile::FAST,
+        options,
+        SpecializationScope::default(),
+        |_| {},
+    )
 }
 
 #[test]

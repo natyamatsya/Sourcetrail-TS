@@ -172,7 +172,7 @@ for a first working prototype.
 | function / method call | — | `EDGE_CALL` + occurrence at call site |
 | value ref (const/static/variant), field access | — | `EDGE_USAGE` + occurrence |
 | type reference | — | `EDGE_TYPE_USAGE` + occurrence |
-| generic argument (`Holder<Foo>`) | — | `EDGE_TYPE_ARGUMENT` + occurrence |
+| generic use (`Holder<Foo>`) | `Holder<Foo>` implicit node (§7, scope `local`) | `EDGE_TEMPLATE_SPECIALIZATION` → `Holder`, `EDGE_TYPE_ARGUMENT` → `Foo` |
 | `const` / `static` | `NODE_GLOBAL_VARIABLE` | — |
 | `type` alias | `NODE_TYPEDEF` | — |
 | `macro_rules!` definition | `NODE_MACRO` | — |
@@ -289,8 +289,8 @@ to rust-analyzer's semantic layer:
 - [x] `EDGE_IMPORT` for `use` items; local symbols (function-local bindings);
       `EDGE_MACRO_USAGE` for bang-macro invocations of local `macro_rules!`.
 
-Remaining gaps: lifetime usage occurrences in types, implicit specialization
-nodes (`Vec<Foo>` bubbles), attribute/derive-macro usage edges (their targets
+Remaining gaps: lifetime usage occurrences in types, attribute/derive-macro
+usage edges (their targets
 — proc-macros and builtin derives — are not indexed today). (Proc-macro
 expansion shipped — see `ROADMAP_PROC_MACRO_EXPANSION.md`.)
 

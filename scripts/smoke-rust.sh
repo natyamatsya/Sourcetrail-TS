@@ -141,6 +141,13 @@ expect "CALL edges (8)"             "SELECT count(*) FROM edge WHERE type = 8;"
 expect "INHERITANCE edges (16)"     "SELECT count(*) FROM edge WHERE type = 16;"
 expect "OVERRIDE edges (32)"        "SELECT count(*) FROM edge WHERE type = 32;"
 expect "TYPE_ARGUMENT edges (64)"   "SELECT count(*) FROM edge WHERE type = 64;"
+# Implicit specialization nodes (§7, default scope 'local'): Base<Arg> bubbles
+# for the crate's own generic types, with TEMPLATE_SPECIALIZATION (1<<7=128).
+expect "TEMPLATE_SPECIALIZATION edges (128)" \
+    "SELECT count(*) FROM edge WHERE type = 128;"
+expect "implicit specialization nodes" \
+    "SELECT count(*) FROM node n JOIN symbol s ON s.id = n.id
+     WHERE s.definition_kind = 1 AND n.serialized_name LIKE '%<%';"
 
 # EDGE_MACRO_USAGE (1<<11 = 2048) — bang-macro invocations of a *local*
 # macro_rules. This crate uses only std macros (vec!/format!/…), which are

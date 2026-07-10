@@ -9,7 +9,7 @@ use ra_ap_hir::{
 use ra_ap_ide_db::RootDatabase;
 use ra_ap_ide_db::base_db::SourceDatabase;
 use ra_ap_ide_db::line_index::{LineCol, LineIndex};
-use ra_ap_syntax::ast::{self, HasName};
+use ra_ap_syntax::ast::{self, HasGenericArgs, HasName};
 use ra_ap_syntax::{AstNode, SyntaxKind};
 use ra_ap_vfs::Vfs;
 
@@ -21,10 +21,11 @@ use crate::ipc::storage::{
 
 use super::{
     DEFINITION_EXPLICIT, DEFINITION_IMPLICIT, EDGE_CALL, EDGE_IMPORT, EDGE_INHERITANCE,
-    EDGE_MACRO_USAGE, EDGE_MEMBER, EDGE_OVERRIDE, EDGE_TYPE_ARGUMENT, EDGE_TYPE_USAGE, EDGE_USAGE,
-    LOCATION_LOCAL_SYMBOL, LOCATION_SCOPE, LOCATION_TOKEN, NODE_ENUM, NODE_ENUM_CONSTANT,
-    NODE_FIELD, NODE_FILE, NODE_FUNCTION, NODE_GLOBAL_VARIABLE, NODE_INTERFACE, NODE_MACRO,
-    NODE_METHOD, NODE_MODULE, NODE_STRUCT, NODE_TYPE_PARAMETER, NODE_TYPEDEF, NODE_UNION,
+    EDGE_MACRO_USAGE, EDGE_MEMBER, EDGE_OVERRIDE, EDGE_TEMPLATE_SPECIALIZATION, EDGE_TYPE_ARGUMENT,
+    EDGE_TYPE_USAGE, EDGE_USAGE, LOCATION_LOCAL_SYMBOL, LOCATION_SCOPE, LOCATION_TOKEN, NODE_ENUM,
+    NODE_ENUM_CONSTANT, NODE_FIELD, NODE_FILE, NODE_FUNCTION, NODE_GLOBAL_VARIABLE, NODE_INTERFACE,
+    NODE_MACRO, NODE_METHOD, NODE_MODULE, NODE_STRUCT, NODE_TYPE_PARAMETER, NODE_TYPEDEF,
+    NODE_UNION, SpecializationScope,
 };
 
 /// Identity key for an emitted definition, so that semantically resolved
@@ -93,11 +94,35 @@ struct LocalSymbolRow {
     range: ra_ap_syntax::TextRange,
 }
 
+/// One implicit generic-specialization node (`Base<Arg>` bubble, §7) produced
+/// at a use site. The apply step gets-or-creates the bubble node by
+/// `spec_name` (deterministic canonical name), wires its edges, and attaches
+/// the ctx→bubble TYPE_USAGE occurrence. The bubble carries no name-token
+/// location of its own — it is synthetic and discoverable via its edges.
+struct SpecializationRow {
+    /// Canonical serialized-name basis: base-qualified-name + "<" +
+    /// arg-short-names joined ", " + ">". Deterministic across use sites so
+    /// identical instantiations dedup to one node.
+    spec_name: String,
+    /// `TEMPLATE_SPECIALIZATION` target — the base def's node id; `None` when
+    /// the base is not indexed (possible under `All`).
+    base_id: Option<i64>,
+    /// Node kind for the implicit node (base's kind if known, else NODE_STRUCT).
+    base_kind: i32,
+    /// `TYPE_ARGUMENT` targets — direct args that resolved to an indexed node.
+    arg_ids: Vec<i64>,
+    /// Enclosing context (enclosing_context_id, or ROW_SOURCE_CURRENT_FILE).
+    use_source_id: i64,
+    /// The base-name token, for the ctx→bubble TYPE_USAGE occurrence.
+    use_range: Option<ra_ap_syntax::TextRange>,
+}
+
 /// Everything the pure resolution step produces for one file.
 #[derive(Default)]
 struct FileRows {
     references: Vec<ReferenceRow>,
     local_symbols: Vec<LocalSymbolRow>,
+    specializations: Vec<SpecializationRow>,
 }
 
 /// The pure resolution half of the semantic reference pass: turns one file's
@@ -109,6 +134,8 @@ struct RefResolver<'a> {
     def_ids: &'a HashMap<DefKey, i64>,
     /// plain qualified name → node id (fallback resolution)
     node_ids: &'a HashMap<String, i64>,
+    /// Scope of implicit generic-specialization nodes (§7).
+    spec_scope: SpecializationScope,
 }
 
 struct Collector<'db> {
@@ -133,6 +160,8 @@ struct Collector<'db> {
     local_symbol_ids: HashMap<String, i64>,
     next_id: i64,
     storage: OwnedIntermediateStorage,
+    /// Scope of implicit generic-specialization nodes (§7).
+    spec_scope: SpecializationScope,
     /// Called whenever we start processing a new source file. Receives the file path.
     on_file: Box<dyn FnMut(&str) + 'db>,
 }
@@ -173,6 +202,7 @@ impl<'db> Collector<'db> {
     fn with_callback(
         db: &'db RootDatabase,
         vfs: &'db Vfs,
+        spec_scope: SpecializationScope,
         on_file: impl FnMut(&str) + 'db,
     ) -> Self {
         Self {
@@ -188,6 +218,7 @@ impl<'db> Collector<'db> {
             local_symbol_ids: HashMap::new(),
             next_id: 1,
             storage: OwnedIntermediateStorage::default(),
+            spec_scope,
             on_file: Box::new(on_file),
         }
     }
@@ -207,6 +238,7 @@ impl<'db> Collector<'db> {
             db: self.db,
             def_ids: &self.def_ids,
             node_ids: &self.node_ids,
+            spec_scope: self.spec_scope,
         }
     }
 
@@ -796,8 +828,14 @@ impl<'db> Collector<'db> {
             return;
         }
 
-        let results =
-            resolve_files_parallel(self.db, &self.def_ids, &self.node_ids, &files, workers);
+        let results = resolve_files_parallel(
+            self.db,
+            &self.def_ids,
+            &self.node_ids,
+            self.spec_scope,
+            &files,
+            workers,
+        );
         for (vfs_fid, result) in files.into_iter().zip(results) {
             self.apply_file_result(vfs_fid, result);
         }
@@ -816,6 +854,7 @@ impl<'db> Collector<'db> {
                 }
                 self.apply_reference_rows(vfs_fid, rows.references);
                 self.apply_local_symbol_rows(vfs_fid, rows.local_symbols);
+                self.apply_specialization_rows(vfs_fid, rows.specializations);
             }
             Err(panic_message) => {
                 let file_path = self
@@ -854,6 +893,71 @@ impl<'db> Collector<'db> {
             };
             let edge_id = self.push_edge(row.edge_type, source_id, row.target_id);
             if let Some(range) = row.range {
+                self.add_reference_location(edge_id, range, vfs_fid);
+            }
+        }
+    }
+
+    /// Apply one file's implicit generic-specialization rows (§7). For each
+    /// bubble: get-or-create the implicit node by canonical `spec_name`
+    /// (reusing `node_ids` for dedup — bubble names contain `<>` and never
+    /// collide with plain qualified names), then wire the retarget edges:
+    ///   bubble —TEMPLATE_SPECIALIZATION→ base   (if base indexed)
+    ///   bubble —TYPE_ARGUMENT→ arg              (per resolved direct arg)
+    ///   ctx    —TYPE_USAGE→ bubble              (occurrence at the base token)
+    /// The bubble is a synthetic DEFINITION_IMPLICIT node with no name-token
+    /// location of its own; it is discoverable through its edges. Id
+    /// allocation stays here in the single-threaded apply step.
+    fn apply_specialization_rows(
+        &mut self,
+        vfs_fid: ra_ap_vfs::FileId,
+        rows: Vec<SpecializationRow>,
+    ) {
+        for row in rows {
+            // Get-or-create the implicit bubble node, deduped by canonical name.
+            let spec_id = match self.node_ids.get(&row.spec_name) {
+                Some(&id) => id,
+                None => {
+                    let id = self.alloc_id();
+                    self.node_ids.insert(row.spec_name.clone(), id);
+                    self.storage.nodes.push(OwnedStorageNode {
+                        id,
+                        type_: row.base_kind,
+                        serialized_name: serialize_name(&row.spec_name),
+                    });
+                    self.storage.symbols.push(OwnedStorageSymbol {
+                        id,
+                        definition_kind: DEFINITION_IMPLICIT,
+                    });
+                    id
+                }
+            };
+
+            if let Some(base_id) = row.base_id {
+                if base_id != spec_id {
+                    self.push_edge(EDGE_TEMPLATE_SPECIALIZATION, spec_id, base_id);
+                }
+            }
+            for arg_id in row.arg_ids {
+                if arg_id != spec_id {
+                    self.push_edge(EDGE_TYPE_ARGUMENT, spec_id, arg_id);
+                }
+            }
+
+            // ctx —TYPE_USAGE→ bubble, with the occurrence at the base token.
+            let use_source = if row.use_source_id == ROW_SOURCE_CURRENT_FILE {
+                match self.file_info(vfs_fid) {
+                    Some(info) => info.file_node_id,
+                    None => continue,
+                }
+            } else {
+                row.use_source_id
+            };
+            if use_source == spec_id {
+                continue;
+            }
+            let edge_id = self.push_edge(EDGE_TYPE_USAGE, use_source, spec_id);
+            if let Some(range) = row.use_range {
                 self.add_reference_location(edge_id, range, vfs_fid);
             }
         }
@@ -1319,7 +1423,7 @@ impl RefResolver<'_> {
                     let Some(pt) = ast::PathType::cast(node) else {
                         continue;
                     };
-                    self.resolve_type_reference(sema, &pt, rows);
+                    self.resolve_type_reference(sema, &pt, rows, &mut out.specializations);
                 }
                 SyntaxKind::FIELD_EXPR => {
                     let Some(fe) = ast::FieldExpr::cast(node) else {
@@ -1533,8 +1637,33 @@ impl RefResolver<'_> {
         sema: &Semantics<'_, RootDatabase>,
         pt: &ast::PathType,
         rows: &mut Vec<ReferenceRow>,
+        specs: &mut Vec<SpecializationRow>,
     ) {
         let Some(path) = pt.path() else { return };
+
+        // §7 implicit specialization nodes (`Base<Arg>` bubbles). These take
+        // priority over the plain §5 edges at bubble sites (retarget model).
+        // (a) This PathType itself carries a direct generic-arg list and is
+        //     bubble-eligible → emit the bubble and stop (no ctx→Base usage).
+        if self.spec_scope != SpecializationScope::Off {
+            if let Some(gal) = path
+                .segment()
+                .and_then(|s| s.generic_arg_list())
+                .filter(|gal| gal.generic_args().next().is_some())
+            {
+                if let Some(row) = self.build_specialization_row(sema, pt, &path, &gal) {
+                    specs.push(row);
+                    return;
+                }
+            }
+            // (b) This PathType is a DIRECT type-argument of a bubble-eligible
+            //     generic application → the bubble owns that TYPE_ARGUMENT edge,
+            //     so suppress the §5 edge here.
+            if self.is_direct_arg_of_bubble(sema, pt) {
+                return;
+            }
+        }
+
         let target = match sema.resolve_path(&path) {
             Some(PathResolution::Def(def)) => self.def_id(DefKey::Def(def)),
             Some(PathResolution::TypeParam(tp)) => self.def_id(DefKey::TypeParam(tp)),
@@ -1583,6 +1712,180 @@ impl RefResolver<'_> {
             target_id: target,
             range,
         });
+    }
+
+    /// Whether the base of `path` makes a generic application bubble-eligible
+    /// under the current scope (§7), ignoring the argument shape:
+    ///   - `All`   — always eligible;
+    ///   - `Local` — only when `Base` resolves to a def indexed in this crate;
+    ///   - `Off`   — never (callers gate on this before reaching here).
+    fn base_is_bubble_eligible(
+        &self,
+        sema: &Semantics<'_, RootDatabase>,
+        path: &ast::Path,
+    ) -> bool {
+        match self.spec_scope {
+            SpecializationScope::Off => false,
+            SpecializationScope::All => true,
+            SpecializationScope::Local => matches!(
+                sema.resolve_path(path),
+                Some(PathResolution::Def(def)) if self.def_id(DefKey::Def(def)).is_some()
+            ),
+        }
+    }
+
+    /// A generic application `Base<..>` produces a bubble iff its base is
+    /// bubble-eligible AND it carries at least one direct positional type
+    /// argument (`Base<Foo>`). Applications with only associated-type bindings
+    /// (`Gen<Item = Foo>`) or lifetime/const args stay on the §5 path — there
+    /// is no concrete type instantiation to name. Both emission (case a) and
+    /// arg-suppression (case b) gate on this so they stay consistent.
+    fn application_is_bubble(
+        &self,
+        sema: &Semantics<'_, RootDatabase>,
+        path: &ast::Path,
+        gal: &ast::GenericArgList,
+    ) -> bool {
+        self.base_is_bubble_eligible(sema, path)
+            && gal
+                .generic_args()
+                .any(|a| matches!(a, ast::GenericArg::TypeArg(_)))
+    }
+
+    /// Build a `SpecializationRow` for a bubble-eligible `Base<Arg, …>` use
+    /// site (§7 case (a)). Returns `None` when the base is not bubble-eligible
+    /// under the current scope, so the caller falls back to §5 edges.
+    fn build_specialization_row(
+        &self,
+        sema: &Semantics<'_, RootDatabase>,
+        pt: &ast::PathType,
+        path: &ast::Path,
+        gal: &ast::GenericArgList,
+    ) -> Option<SpecializationRow> {
+        if !self.application_is_bubble(sema, path, gal) {
+            return None;
+        }
+
+        // Base def (may be unindexed under `All`).
+        let base_def = match sema.resolve_path(path) {
+            Some(PathResolution::Def(def)) => Some(def),
+            _ => None,
+        };
+        let base_id = base_def.and_then(|def| self.def_id(DefKey::Def(def)));
+
+        // Base qualified name: the exact definition-pass name if indexed,
+        // else the base path's segment source text.
+        let base_segment_text = path
+            .segment()
+            .and_then(|s| s.name_ref())
+            .map(|n| n.text().to_string());
+        let base_qualified = base_def
+            .and_then(|def| self.qualified_name_of_def(def))
+            .or_else(|| base_segment_text.clone())?;
+
+        // Direct type arguments: short name (base segment text) + resolved id.
+        let mut arg_shorts: Vec<String> = Vec::new();
+        let mut arg_ids: Vec<i64> = Vec::new();
+        for arg in gal.generic_args() {
+            let ast::GenericArg::TypeArg(ta) = arg else {
+                continue;
+            };
+            let Some(ast::Type::PathType(arg_pt)) = ta.ty() else {
+                continue;
+            };
+            let Some(arg_path) = arg_pt.path() else {
+                continue;
+            };
+            if let Some(short) = arg_path
+                .segment()
+                .and_then(|s| s.name_ref())
+                .map(|n| n.text().to_string())
+            {
+                arg_shorts.push(short);
+            }
+            if let Some(PathResolution::Def(def)) = sema.resolve_path(&arg_path) {
+                if let Some(id) = self.def_id(DefKey::Def(def)) {
+                    arg_ids.push(id);
+                }
+            }
+        }
+
+        let spec_name = format!("{base_qualified}<{}>", arg_shorts.join(", "));
+        let use_source_id = self
+            .enclosing_context_id(sema, pt.syntax(), /*allow_impl_context=*/ false)
+            .unwrap_or(ROW_SOURCE_CURRENT_FILE);
+        let use_range = path_name_range(path);
+
+        Some(SpecializationRow {
+            spec_name,
+            base_id,
+            base_kind: NODE_STRUCT,
+            arg_ids,
+            use_source_id,
+            use_range,
+        })
+    }
+
+    /// Whether `pt` is a DIRECT type-argument of a bubble-eligible generic
+    /// application (§7 case (b)). Walks `pt`'s ancestors: reaching a PathType
+    /// before a GenericArgList means it is nested inside another type
+    /// (`Inner<Foo>` in `Base<Inner<Foo>>`) → not direct. Reaching a
+    /// GenericArgList first means it is a direct arg of that list's owning
+    /// PathType; report whether THAT owner is bubble-eligible.
+    fn is_direct_arg_of_bubble(
+        &self,
+        sema: &Semantics<'_, RootDatabase>,
+        pt: &ast::PathType,
+    ) -> bool {
+        for anc in pt.syntax().ancestors().skip(1) {
+            match anc.kind() {
+                SyntaxKind::PATH_TYPE => return false,
+                SyntaxKind::GENERIC_ARG_LIST => {
+                    // GENERIC_ARG_LIST → PATH_SEGMENT → PATH → PATH_TYPE
+                    let owner = anc
+                        .ancestors()
+                        .skip(1)
+                        .find(|a| a.kind() == SyntaxKind::PATH_TYPE)
+                        .and_then(ast::PathType::cast);
+                    let Some(owner_pt) = owner else {
+                        return false;
+                    };
+                    let Some(owner_path) = owner_pt.path() else {
+                        return false;
+                    };
+                    let Some(owner_gal) = owner_path.segment().and_then(|s| s.generic_arg_list())
+                    else {
+                        return false;
+                    };
+                    return self.application_is_bubble(sema, &owner_path, &owner_gal);
+                }
+                _ => {}
+            }
+        }
+        false
+    }
+
+    /// Reconstruct the qualified name of a `ModuleDef` exactly as the
+    /// definition pass emits it (defining module prefix + the def's own name),
+    /// mirroring `Collector::module_prefix` + name. Returns `None` for defs
+    /// without a name (e.g. anonymous). Used to build canonical bubble names.
+    fn qualified_name_of_def(&self, def: ModuleDef) -> Option<String> {
+        let name = def.name(self.db)?.as_str().to_string();
+        let module = def.module(self.db)?;
+        let mut parts = Vec::new();
+        let mut cursor = Some(module);
+        while let Some(m) = cursor {
+            if let Some(n) = m.name(self.db) {
+                parts.push(n.as_str().to_string());
+            }
+            cursor = m.parent(self.db);
+        }
+        parts.reverse();
+        if parts.is_empty() {
+            Some(name)
+        } else {
+            Some(format!("{}::{name}", parts.join("::")))
+        }
     }
 
     /// Classify the bound context of a node inside a `TypeBoundList`.
@@ -1910,6 +2213,7 @@ fn resolve_files_parallel(
     db: &RootDatabase,
     def_ids: &HashMap<DefKey, i64>,
     node_ids: &HashMap<String, i64>,
+    spec_scope: SpecializationScope,
     files: &[ra_ap_vfs::FileId],
     workers: usize,
 ) -> Vec<Result<FileRows, String>> {
@@ -1927,6 +2231,7 @@ fn resolve_files_parallel(
                         db: &worker_db,
                         def_ids,
                         node_ids,
+                        spec_scope,
                     };
                     loop {
                         let index = next_file.fetch_add(1, Ordering::Relaxed);
@@ -1960,13 +2265,14 @@ fn resolve_files_parallel(
 pub(super) fn collect_from_db<'db>(
     db: &'db RootDatabase,
     vfs: &'db Vfs,
+    spec_scope: SpecializationScope,
     on_file: impl FnMut(&str) + 'db,
 ) -> OwnedIntermediateStorage {
     // HIR type inference (Semantics::resolve_method_call, Impl::self_ty, …)
     // runs on the next-trait-solver, which requires the database to be
     // attached to the current thread via hir_ty's TLS.
     ra_ap_hir::attach_db(db, || {
-        let mut collector = Collector::with_callback(db, vfs, on_file);
+        let mut collector = Collector::with_callback(db, vfs, spec_scope, on_file);
 
         for krate in Crate::all(db) {
             // Skip library crates (std, core, registry deps) — only index

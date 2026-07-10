@@ -17,6 +17,7 @@
 //       EDGE_INHERITANCE   (1<<4 = 16)  — `impl Trait for Type`, supertraits
 //       EDGE_OVERRIDE      (1<<5 = 32)  — impl method → trait method
 //       EDGE_TYPE_ARGUMENT (1<<6 = 64)  — generic arguments at use sites
+//       EDGE_TEMPLATE_SPECIALIZATION (1<<7 = 128) — Base<Arg> bubble → Base
 //       EDGE_IMPORT        (1<<9 = 512) — `use` items → imported definition
 //       EDGE_MACRO_USAGE   (1<<11 = 2048) — bang-macro invocation → macro def
 //   (see context/DESIGN_RUST_TYPE_SYSTEM_EDGES.md)
@@ -78,6 +79,7 @@ const EDGE_CALL: i32 = 1 << 3;
 const EDGE_INHERITANCE: i32 = 1 << 4;
 const EDGE_OVERRIDE: i32 = 1 << 5;
 const EDGE_TYPE_ARGUMENT: i32 = 1 << 6;
+const EDGE_TEMPLATE_SPECIALIZATION: i32 = 1 << 7;
 const EDGE_IMPORT: i32 = 1 << 9;
 const EDGE_MACRO_USAGE: i32 = 1 << 11;
 
@@ -101,6 +103,23 @@ pub struct CargoOptions {
     pub target_triple: String,
 }
 
+/// Scope of implicit generic-specialization nodes (`Base<Arg>` bubbles), see
+/// context/DESIGN_RUST_TYPE_SYSTEM_EDGES.md §7.
+///
+/// - `Off`   — no bubbles; the §5 `ctx→Base` / `ctx→Arg` edges only.
+/// - `Local` — bubble only when `Base` is a type indexed in this crate
+///             (own generic types); external bases keep §5 edges. **Default.**
+/// - `All`   — bubble for every generic instantiation; an external `Base`
+///             still emits the node + `TYPE_ARGUMENT` edges, but the
+///             `TEMPLATE_SPECIALIZATION` edge drops (target unindexed).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Default)]
+pub enum SpecializationScope {
+    Off,
+    #[default]
+    Local,
+    All,
+}
+
 /// Index the Cargo crate whose `Cargo.toml` lives in `crate_root`.
 /// `on_file` is called with each source file path as it begins processing.
 /// Returns a populated `OwnedIntermediateStorage` covering all local source files.
@@ -114,7 +133,23 @@ pub fn index_crate(
     options: CargoOptions,
     on_file: impl FnMut(&str),
 ) -> OwnedIntermediateStorage {
-    index_crate_with(crate_root, LoadProfile::FULL, options, on_file)
+    index_crate_with(
+        crate_root,
+        LoadProfile::FULL,
+        options,
+        SpecializationScope::default(),
+        on_file,
+    )
+}
+
+/// Like `index_crate`, but with an explicit specialization-node scope (§7).
+pub fn index_crate_scoped(
+    crate_root: &Path,
+    options: CargoOptions,
+    spec_scope: SpecializationScope,
+    on_file: impl FnMut(&str),
+) -> OwnedIntermediateStorage {
+    index_crate_with(crate_root, LoadProfile::FULL, options, spec_scope, on_file)
 }
 
 /// Which parts of the (expensive) load machinery to enable.
@@ -160,6 +195,7 @@ pub(crate) fn index_crate_with(
     crate_root: &Path,
     profile: LoadProfile,
     options: CargoOptions,
+    spec_scope: SpecializationScope,
     on_file: impl FnMut(&str),
 ) -> OwnedIntermediateStorage {
     let cargo_config = CargoConfig {
@@ -214,7 +250,7 @@ pub(crate) fn index_crate_with(
             }
         };
 
-    collector::collect_from_db(&db, &vfs, on_file)
+    collector::collect_from_db(&db, &vfs, spec_scope, on_file)
 }
 
 // ---------------------------------------------------------------------------
@@ -248,6 +284,7 @@ pub fn index_file(file_path: &str, _module_prefix: &str) -> OwnedIntermediateSto
         tmp.path(),
         LoadProfile::FAST,
         CargoOptions::default(),
+        SpecializationScope::Local,
         |_| {},
     );
 
