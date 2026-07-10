@@ -286,7 +286,39 @@ to rust-analyzer's semantic layer:
 
 Remaining gaps (tracked in the design doc / proc-macro roadmap): `use`
 imports, macro invocation edges, local symbols, lifetime usage occurrences
-in types, implicit specialization nodes, proc-macro expansion.
+in types, implicit specialization nodes. (Proc-macro expansion shipped —
+see `ROADMAP_PROC_MACRO_EXPANSION.md`.)
+
+---
+
+## Phase 8 — Parallel indexing (planned)
+
+The pipeline is single-threaded on all three layers today; CPU sits idle
+during large-crate indexing. In expected-payoff order:
+
+- [ ] **Parallel semantic reference pass via salsa snapshots.** Pass 2
+      (`collect_semantic_edges`) walks files independently — fan out with one
+      `db.snapshot()` + `Semantics` per worker (the same pattern as
+      rust-analyzer's `parallel_prime_caches`), resolving references per file
+      concurrently and sending resolved rows to a single-threaded assembler
+      that owns id allocation, `emitted_edges` dedup, and storage row pushes.
+      Pass 1 (definition emission) stays serial — it populates `def_ids`,
+      which pass 2 only reads, so the barrier between the passes is already
+      in the right place. Determinism: assemble in file-discovery order
+      (collect per-file row batches, then append in `local_files` order).
+- [ ] Raise `num_worker_threads` / `proc_macro_processes` in
+      `LoadProfile::FULL` alongside (only meaningful once something consumes
+      the parallelism).
+- [ ] **Multiple rust indexer subprocesses** for multi-source-group projects:
+      `TaskBuildIndex` spawns exactly one Rust process (C++ gets N); K rust
+      supervisor threads would parallelize across crates/source groups.
+      Memory trade-off: each process loads its own workspace.
+
+Measure first: for small/medium crates the wall time is dominated by
+workspace resolution + `cargo check` + sysroot loading (I/O and subprocess
+bound); the parallel reference pass pays off where analysis dominates —
+big crates. `time cargo run --release --bin index_self` is the baseline
+harness (~8s as of 2026-07-10, FULL profile).
 
 ---
 

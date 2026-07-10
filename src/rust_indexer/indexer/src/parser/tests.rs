@@ -13,14 +13,7 @@ fn index_src(src: &str) -> OwnedIntermediateStorage {
 // tests that need macro expansion.
 fn index_src_with_sysroot(src: &str) -> OwnedIntermediateStorage {
     let tmp = tempfile::tempdir().unwrap();
-    let src_dir = tmp.path().join("src");
-    std::fs::create_dir_all(&src_dir).unwrap();
-    std::fs::write(
-        tmp.path().join("Cargo.toml"),
-        "[package]\nname = \"_idx\"\nversion = \"0.0.0\"\nedition = \"2021\"\n",
-    )
-    .unwrap();
-    std::fs::write(src_dir.join("lib.rs"), src).unwrap();
+    scaffold_temp_crate(tmp.path(), src).unwrap();
     index_crate_with(tmp.path(), LoadProfile::SYSROOT, |_| {})
 }
 

@@ -7,7 +7,7 @@ use ra_ap_hir::{
 };
 use ra_ap_ide_db::RootDatabase;
 use ra_ap_ide_db::base_db::SourceDatabase;
-use ra_ap_ide_db::line_index::LineIndex;
+use ra_ap_ide_db::line_index::{LineCol, LineIndex};
 use ra_ap_syntax::ast::{self, HasName};
 use ra_ap_syntax::{AstNode, SyntaxKind};
 use ra_ap_vfs::Vfs;
@@ -24,12 +24,6 @@ use super::{
     NODE_INTERFACE, NODE_MACRO, NODE_METHOD, NODE_MODULE, NODE_STRUCT, NODE_TYPE_PARAMETER,
     NODE_TYPEDEF, NODE_UNION,
 };
-
-#[derive(Debug, Clone)]
-struct SourceContext {
-    file_path: String,
-    source_text: String,
-}
 
 /// Identity key for an emitted definition, so that semantically resolved
 /// references (Semantics::resolve_path / resolve_method_call) can be mapped
@@ -54,8 +48,10 @@ enum BoundOwner {
     Item,
 }
 
-/// Per-file context for recording reference locations.
-struct RefFile {
+/// Cached per-file location context: the emitted file node plus the line
+/// index for offset → line/col conversion. Built once per file instead of
+/// per emitted item.
+struct FileInfo {
     file_node_id: i64,
     line_index: LineIndex,
 }
@@ -70,6 +66,9 @@ struct Collector<'db> {
     vfs: &'db Vfs,
     /// file_path → StorageFile id
     file_ids: HashMap<String, i64>,
+    /// vfs file → cached location context (`None` = the vfs id does not
+    /// resolve to a path; the failure is cached too)
+    file_infos: HashMap<ra_ap_vfs::FileId, Option<FileInfo>>,
     /// plain qualified name → node id (fallback edge resolution)
     node_ids: HashMap<String, i64>,
     /// HIR definition identity → node id (exact edge resolution)
@@ -118,14 +117,6 @@ fn serialize_file_name(path: &str) -> String {
 }
 
 impl<'db> Collector<'db> {
-    #[expect(
-        dead_code,
-        reason = "convenience ctor for future callers without a progress callback"
-    )]
-    fn new(db: &'db RootDatabase, vfs: &'db Vfs) -> Self {
-        Self::with_callback(db, vfs, |_| {})
-    }
-
     fn with_callback(
         db: &'db RootDatabase,
         vfs: &'db Vfs,
@@ -135,6 +126,7 @@ impl<'db> Collector<'db> {
             db,
             vfs,
             file_ids: HashMap::new(),
+            file_infos: HashMap::new(),
             node_ids: HashMap::new(),
             def_ids: HashMap::new(),
             local_files: Vec::new(),
@@ -191,36 +183,57 @@ impl<'db> Collector<'db> {
         id
     }
 
+    /// Cached per-file location context for `file_id`, populated on first
+    /// use (resolving the path, allocating the file node, and building the
+    /// `LineIndex`). `None` if the file does not resolve to a path.
+    fn file_info(&mut self, file_id: ra_ap_vfs::FileId) -> Option<&FileInfo> {
+        if !self.file_infos.contains_key(&file_id) {
+            // Resolve path and file node id before inserting: `file_node_id`
+            // mutates storage and must not overlap a cache borrow.
+            let info = self.vfs_path(file_id).map(|path| FileInfo {
+                file_node_id: self.file_node_id(&path),
+                line_index: LineIndex::new(self.db.file_text(file_id).text(self.db)),
+            });
+            self.file_infos.insert(file_id, info);
+        }
+        self.file_infos.get(&file_id)?.as_ref()
+    }
+
+    /// Convert `range` in `file_id` to line/col coordinates via the per-file
+    /// cache. Returns `None` if the file has no resolvable path or the range
+    /// does not fit the file text (e.g. an unmapped macro expansion) — the
+    /// non-panicking `try_line_col` behavior is kept.
+    fn location_of(
+        &mut self,
+        file_id: ra_ap_vfs::FileId,
+        range: ra_ap_syntax::TextRange,
+    ) -> Option<(i64, LineCol, LineCol)> {
+        let info = self.file_info(file_id)?;
+        let start = info.line_index.try_line_col(range.start())?;
+        let end = info.line_index.try_line_col(range.end())?;
+        Some((info.file_node_id, start, end))
+    }
+
     fn add_def(
         &mut self,
         name: &str,
         node_kind: i32,
-        file_path: &str,
+        vfs_file_id: ra_ap_vfs::FileId,
         range: ra_ap_syntax::TextRange,
-        source_text: &str,
     ) {
-        self.add_def_kind(
-            name,
-            node_kind,
-            file_path,
-            range,
-            source_text,
-            DEFINITION_EXPLICIT,
-        );
+        self.add_def_kind(name, node_kind, vfs_file_id, range, DEFINITION_EXPLICIT);
     }
 
     fn add_def_kind(
         &mut self,
         name: &str,
         node_kind: i32,
-        file_path: &str,
+        vfs_file_id: ra_ap_vfs::FileId,
         range: ra_ap_syntax::TextRange,
-        source_text: &str,
         definition_kind: i32,
     ) {
         let node_id = self.alloc_id();
         let loc_id = self.alloc_id();
-        let file_node_id = self.file_node_id(file_path);
 
         self.node_ids.insert(name.to_owned(), node_id);
         self.storage.nodes.push(OwnedStorageNode {
@@ -236,11 +249,7 @@ impl<'db> Collector<'db> {
         // A range that does not fit the file text (e.g. an unmapped macro
         // expansion) must not kill the whole indexing run — emit the node
         // without a location instead.
-        let line_index = LineIndex::new(source_text);
-        let (Some(start), Some(end)) = (
-            line_index.try_line_col(range.start()),
-            line_index.try_line_col(range.end()),
-        ) else {
+        let Some((file_node_id, start, end)) = self.location_of(vfs_file_id, range) else {
             return;
         };
 
@@ -269,19 +278,14 @@ impl<'db> Collector<'db> {
         &self,
         file_id: ra_ap_hir::HirFileId,
         range: ra_ap_syntax::TextRange,
-    ) -> Option<(SourceContext, ra_ap_syntax::TextRange)> {
+    ) -> Option<(ra_ap_vfs::FileId, ra_ap_syntax::TextRange)> {
         let mapped =
             ra_ap_hir::InFile::new(file_id, range).original_node_file_range_rooted(self.db);
         let vfs_fid = mapped.file_id.file_id(self.db);
-        let file_path = self.vfs_path(vfs_fid)?;
-        let source_text = self.db.file_text(vfs_fid).text(self.db).to_string();
-        Some((
-            SourceContext {
-                file_path,
-                source_text,
-            },
-            mapped.range,
-        ))
+        // Items in files without a resolvable path are skipped entirely,
+        // exactly like before the cache existed.
+        self.vfs_path(vfs_fid)?;
+        Some((vfs_fid, mapped.range))
     }
 
     /// Resolve a `ra_ap_vfs::FileId` to an absolute path string, if possible.
@@ -366,28 +370,9 @@ impl<'db> Collector<'db> {
         parts.join("::")
     }
 
-    fn source_context_from_in_file<N: AstNode>(
-        &self,
-        in_file: &ra_ap_hir::InFile<N>,
-    ) -> Option<SourceContext> {
-        let editioned_file_id = in_file.file_id.original_file(self.db);
-        let vfs_file_id = editioned_file_id.file_id(self.db);
-        let file_path = self.vfs_path(vfs_file_id)?;
-        let source_text = self.db.file_text(vfs_file_id).text(self.db).to_string();
-        Some(SourceContext {
-            file_path,
-            source_text,
-        })
-    }
-
-    fn add_def_with_context(
-        &mut self,
-        name: &str,
-        node_kind: i32,
-        range: ra_ap_syntax::TextRange,
-        ctx: &SourceContext,
-    ) {
-        self.add_def(name, node_kind, &ctx.file_path, range, &ctx.source_text);
+    /// The real (non-macro) vfs file that contains `in_file`'s original source.
+    fn real_file_of<N: AstNode>(&self, in_file: &ra_ap_hir::InFile<N>) -> ra_ap_vfs::FileId {
+        in_file.file_id.original_file(self.db).file_id(self.db)
     }
 
     /// Emit `NODE_TYPE_PARAMETER` nodes for all generic parameters (type,
@@ -446,15 +431,14 @@ impl<'db> Collector<'db> {
         range: ra_ap_syntax::TextRange,
     ) {
         let is_macro = file_id.is_macro();
-        let Some((ctx, mapped)) = self.original_location(file_id, range) else {
+        let Some((vfs_fid, mapped)) = self.original_location(file_id, range) else {
             return;
         };
         self.add_def_kind(
             qualified,
             NODE_TYPE_PARAMETER,
-            &ctx.file_path,
+            vfs_fid,
             mapped,
-            &ctx.source_text,
             if is_macro {
                 DEFINITION_IMPLICIT
             } else {
@@ -590,15 +574,14 @@ impl<'db> Collector<'db> {
                 FieldSource::Pos(tf) => tf.syntax().text_range(),
             };
             let is_macro = field_src.file_id.is_macro();
-            let Some((ctx, mapped)) = self.original_location(field_src.file_id, range) else {
+            let Some((vfs_fid, mapped)) = self.original_location(field_src.file_id, range) else {
                 continue;
             };
             self.add_def_kind(
                 &qualified_name,
                 NODE_FIELD,
-                &ctx.file_path,
+                vfs_fid,
                 mapped,
-                &ctx.source_text,
                 if is_macro {
                     DEFINITION_IMPLICIT
                 } else {
@@ -685,15 +668,14 @@ impl<'db> Collector<'db> {
                             }
                             Some(swr) => {
                                 let (range, _) = swr.value;
-                                if let Some((ctx, mapped)) =
+                                if let Some((vfs_fid, mapped)) =
                                     self.original_location(swr.file_id, range)
                                 {
                                     self.add_def_kind(
                                         &qualified_name,
                                         NODE_METHOD,
-                                        &ctx.file_path,
+                                        vfs_fid,
                                         mapped,
-                                        &ctx.source_text,
                                         DEFINITION_IMPLICIT,
                                     );
                                     self.add_edge(EDGE_MEMBER, &owner_name, &qualified_name);
@@ -747,115 +729,144 @@ impl<'db> Collector<'db> {
     fn collect_semantic_edges(&mut self, sema: &Semantics<'db, RootDatabase>) {
         let files: Vec<ra_ap_vfs::FileId> = self.local_files.clone();
         for vfs_fid in files {
-            let Some(file_path) = self.vfs_path(vfs_fid) else {
-                continue;
-            };
-            let source_text = self.db.file_text(vfs_fid).text(self.db).to_string();
-            let file = RefFile {
-                file_node_id: self.file_node_id(&file_path),
-                line_index: LineIndex::new(&source_text),
-            };
-            let source_file = sema.parse_guess_edition(vfs_fid);
-            for node in source_file.syntax().descendants() {
-                match node.kind() {
-                    SyntaxKind::IMPL => {
-                        if let Some(impl_ast) = ast::Impl::cast(node) {
-                            self.emit_impl_inheritance(sema, &impl_ast, &file);
-                            self.emit_impl_overrides(sema, &impl_ast);
-                        }
+            // A panic inside rust-analyzer on one file must not lose the
+            // references of all the others — record it as a non-fatal error
+            // and continue with the next file.
+            let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+                self.collect_file_references(sema, vfs_fid)
+            }));
+            if let Err(payload) = result {
+                let file_path = self
+                    .vfs_path(vfs_fid)
+                    .unwrap_or_else(|| "<unknown file>".to_owned());
+                let error = OwnedStorageError {
+                    id: self.alloc_id(),
+                    message: format!(
+                        "indexer panicked while collecting references in {file_path}: {}",
+                        panic_payload_message(payload.as_ref())
+                    ),
+                    translation_unit: file_path,
+                    fatal: false,
+                    indexed: true,
+                };
+                self.storage.errors.push(error);
+            }
+        }
+    }
+
+    /// Reference pass over a single file — the per-file body of
+    /// `collect_semantic_edges`.
+    fn collect_file_references(
+        &mut self,
+        sema: &Semantics<'db, RootDatabase>,
+        vfs_fid: ra_ap_vfs::FileId,
+    ) {
+        // Prime the per-file cache up front (allocating the file node,
+        // like the previous per-file setup did); skip files that do not
+        // resolve to a path.
+        if self.file_info(vfs_fid).is_none() {
+            return;
+        }
+        let source_file = sema.parse_guess_edition(vfs_fid);
+        for node in source_file.syntax().descendants() {
+            match node.kind() {
+                SyntaxKind::IMPL => {
+                    if let Some(impl_ast) = ast::Impl::cast(node) {
+                        self.emit_impl_inheritance(sema, &impl_ast, vfs_fid);
+                        self.emit_impl_overrides(sema, &impl_ast);
                     }
-                    SyntaxKind::LIFETIME => {
-                        self.emit_lifetime_bound_reference(sema, &node, &file);
+                }
+                SyntaxKind::LIFETIME => {
+                    self.emit_lifetime_bound_reference(sema, &node, vfs_fid);
+                }
+                SyntaxKind::CALL_EXPR => {
+                    let Some(call) = ast::CallExpr::cast(node) else {
+                        continue;
+                    };
+                    let Some(ast::Expr::PathExpr(pe)) = call.expr() else {
+                        continue;
+                    };
+                    let Some(path) = pe.path() else { continue };
+                    let target = match sema.resolve_path(&path) {
+                        Some(PathResolution::Def(def)) => self.def_id(DefKey::Def(def)),
+                        _ => None,
                     }
-                    SyntaxKind::CALL_EXPR => {
-                        let Some(call) = ast::CallExpr::cast(node) else {
-                            continue;
-                        };
-                        let Some(ast::Expr::PathExpr(pe)) = call.expr() else {
-                            continue;
-                        };
-                        let Some(path) = pe.path() else { continue };
-                        let target = match sema.resolve_path(&path) {
-                            Some(PathResolution::Def(def)) => self.def_id(DefKey::Def(def)),
-                            _ => None,
-                        }
+                    .or_else(|| {
+                        let name = path.segment()?.name_ref()?.text().to_string();
+                        self.resolve_node_id(&name)
+                    });
+                    let range = path_name_range(&path);
+                    self.emit_reference(sema, EDGE_CALL, call.syntax(), target, range, vfs_fid);
+                }
+                SyntaxKind::METHOD_CALL_EXPR => {
+                    let Some(call) = ast::MethodCallExpr::cast(node) else {
+                        continue;
+                    };
+                    let target = sema
+                        .resolve_method_call(&call)
+                        .and_then(|f| self.def_id(DefKey::Def(ModuleDef::Function(f))))
                         .or_else(|| {
-                            let name = path.segment()?.name_ref()?.text().to_string();
+                            let name = call.name_ref()?.text().to_string();
                             self.resolve_node_id(&name)
                         });
-                        let range = path_name_range(&path);
-                        self.emit_reference(sema, EDGE_CALL, call.syntax(), target, range, &file);
-                    }
-                    SyntaxKind::METHOD_CALL_EXPR => {
-                        let Some(call) = ast::MethodCallExpr::cast(node) else {
-                            continue;
-                        };
-                        let target = sema
-                            .resolve_method_call(&call)
-                            .and_then(|f| self.def_id(DefKey::Def(ModuleDef::Function(f))))
-                            .or_else(|| {
-                                let name = call.name_ref()?.text().to_string();
-                                self.resolve_node_id(&name)
-                            });
-                        let range = call.name_ref().map(|n| n.syntax().text_range());
-                        self.emit_reference(sema, EDGE_CALL, call.syntax(), target, range, &file);
-                    }
-                    SyntaxKind::PATH_EXPR => {
-                        // Callees are handled by the CALL_EXPR arm.
-                        if node
-                            .parent()
-                            .is_some_and(|p| p.kind() == SyntaxKind::CALL_EXPR)
-                        {
-                            continue;
-                        }
-                        let Some(pe) = ast::PathExpr::cast(node) else {
-                            continue;
-                        };
-                        let Some(path) = pe.path() else { continue };
-                        // Only definition references; locals are future work.
-                        let Some(PathResolution::Def(def)) = sema.resolve_path(&path) else {
-                            continue;
-                        };
-                        let target = self.def_id(DefKey::Def(def));
-                        let range = path_name_range(&path);
-                        self.emit_reference(sema, EDGE_USAGE, pe.syntax(), target, range, &file);
-                    }
-                    SyntaxKind::PATH_TYPE => {
-                        let Some(pt) = ast::PathType::cast(node) else {
-                            continue;
-                        };
-                        self.emit_type_reference(sema, &pt, &file);
-                    }
-                    SyntaxKind::FIELD_EXPR => {
-                        let Some(fe) = ast::FieldExpr::cast(node) else {
-                            continue;
-                        };
-                        let target = match sema.resolve_field(&fe) {
-                            Some(Either::Left(field)) => self.def_id(DefKey::Field(field)),
-                            _ => None,
-                        };
-                        let range = fe.name_ref().map(|n| n.syntax().text_range());
-                        self.emit_reference(sema, EDGE_USAGE, fe.syntax(), target, range, &file);
-                    }
-                    SyntaxKind::RECORD_EXPR_FIELD => {
-                        let Some(ref_field) = ast::RecordExprField::cast(node) else {
-                            continue;
-                        };
-                        let target = sema
-                            .resolve_record_field(&ref_field)
-                            .and_then(|(field, _, _)| self.def_id(DefKey::Field(field)));
-                        let range = ref_field.name_ref().map(|n| n.syntax().text_range());
-                        self.emit_reference(
-                            sema,
-                            EDGE_USAGE,
-                            ref_field.syntax(),
-                            target,
-                            range,
-                            &file,
-                        );
-                    }
-                    _ => {}
+                    let range = call.name_ref().map(|n| n.syntax().text_range());
+                    self.emit_reference(sema, EDGE_CALL, call.syntax(), target, range, vfs_fid);
                 }
+                SyntaxKind::PATH_EXPR => {
+                    // Callees are handled by the CALL_EXPR arm.
+                    if node
+                        .parent()
+                        .is_some_and(|p| p.kind() == SyntaxKind::CALL_EXPR)
+                    {
+                        continue;
+                    }
+                    let Some(pe) = ast::PathExpr::cast(node) else {
+                        continue;
+                    };
+                    let Some(path) = pe.path() else { continue };
+                    // Only definition references; locals are future work.
+                    let Some(PathResolution::Def(def)) = sema.resolve_path(&path) else {
+                        continue;
+                    };
+                    let target = self.def_id(DefKey::Def(def));
+                    let range = path_name_range(&path);
+                    self.emit_reference(sema, EDGE_USAGE, pe.syntax(), target, range, vfs_fid);
+                }
+                SyntaxKind::PATH_TYPE => {
+                    let Some(pt) = ast::PathType::cast(node) else {
+                        continue;
+                    };
+                    self.emit_type_reference(sema, &pt, vfs_fid);
+                }
+                SyntaxKind::FIELD_EXPR => {
+                    let Some(fe) = ast::FieldExpr::cast(node) else {
+                        continue;
+                    };
+                    let target = match sema.resolve_field(&fe) {
+                        Some(Either::Left(field)) => self.def_id(DefKey::Field(field)),
+                        _ => None,
+                    };
+                    let range = fe.name_ref().map(|n| n.syntax().text_range());
+                    self.emit_reference(sema, EDGE_USAGE, fe.syntax(), target, range, vfs_fid);
+                }
+                SyntaxKind::RECORD_EXPR_FIELD => {
+                    let Some(ref_field) = ast::RecordExprField::cast(node) else {
+                        continue;
+                    };
+                    let target = sema
+                        .resolve_record_field(&ref_field)
+                        .and_then(|(field, _, _)| self.def_id(DefKey::Field(field)));
+                    let range = ref_field.name_ref().map(|n| n.syntax().text_range());
+                    self.emit_reference(
+                        sema,
+                        EDGE_USAGE,
+                        ref_field.syntax(),
+                        target,
+                        range,
+                        vfs_fid,
+                    );
+                }
+                _ => {}
             }
         }
     }
@@ -871,7 +882,7 @@ impl<'db> Collector<'db> {
         &mut self,
         sema: &Semantics<'db, RootDatabase>,
         pt: &ast::PathType,
-        file: &RefFile,
+        vfs_fid: ra_ap_vfs::FileId,
     ) {
         let Some(path) = pt.path() else { return };
         let target = match sema.resolve_path(&path) {
@@ -900,7 +911,7 @@ impl<'db> Collector<'db> {
                 if trait_id != target {
                     let edge_id = self.push_edge(EDGE_INHERITANCE, trait_id, target);
                     if let Some(range) = range {
-                        self.add_reference_location(edge_id, range, file);
+                        self.add_reference_location(edge_id, range, vfs_fid);
                     }
                 }
                 return;
@@ -916,7 +927,7 @@ impl<'db> Collector<'db> {
         }
         let edge_id = self.push_edge(edge_kind, source, target);
         if let Some(range) = range {
-            self.add_reference_location(edge_id, range, file);
+            self.add_reference_location(edge_id, range, vfs_fid);
         }
     }
 
@@ -995,7 +1006,7 @@ impl<'db> Collector<'db> {
         &mut self,
         sema: &Semantics<'db, RootDatabase>,
         node: &ra_ap_syntax::SyntaxNode,
-        file: &RefFile,
+        vfs_fid: ra_ap_vfs::FileId,
     ) {
         // Only lifetimes that are themselves a bound (inside a TypeBoundList).
         if !node
@@ -1020,7 +1031,7 @@ impl<'db> Collector<'db> {
             return;
         }
         let edge_id = self.push_edge(EDGE_TYPE_USAGE, source, target);
-        self.add_reference_location(edge_id, node.text_range(), file);
+        self.add_reference_location(edge_id, node.text_range(), vfs_fid);
     }
 
     /// Resolve a lifetime name (`'a`) to its parameter node by walking the
@@ -1032,40 +1043,8 @@ impl<'db> Collector<'db> {
         name: &str,
     ) -> Option<i64> {
         for anc in node.ancestors() {
-            let gdef: ra_ap_hir::GenericDef = match anc.kind() {
-                SyntaxKind::FN => match ast::Fn::cast(anc).and_then(|it| sema.to_def(&it)) {
-                    Some(f) => f.into(),
-                    None => continue,
-                },
-                SyntaxKind::STRUCT => {
-                    match ast::Struct::cast(anc).and_then(|it| sema.to_def(&it)) {
-                        Some(s) => ra_ap_hir::Adt::Struct(s).into(),
-                        None => continue,
-                    }
-                }
-                SyntaxKind::ENUM => match ast::Enum::cast(anc).and_then(|it| sema.to_def(&it)) {
-                    Some(e) => ra_ap_hir::Adt::Enum(e).into(),
-                    None => continue,
-                },
-                SyntaxKind::UNION => match ast::Union::cast(anc).and_then(|it| sema.to_def(&it)) {
-                    Some(u) => ra_ap_hir::Adt::Union(u).into(),
-                    None => continue,
-                },
-                SyntaxKind::TRAIT => match ast::Trait::cast(anc).and_then(|it| sema.to_def(&it)) {
-                    Some(t) => t.into(),
-                    None => continue,
-                },
-                SyntaxKind::TYPE_ALIAS => {
-                    match ast::TypeAlias::cast(anc).and_then(|it| sema.to_def(&it)) {
-                        Some(ta) => ta.into(),
-                        None => continue,
-                    }
-                }
-                SyntaxKind::IMPL => match ast::Impl::cast(anc).and_then(|it| sema.to_def(&it)) {
-                    Some(i) => i.into(),
-                    None => continue,
-                },
-                _ => continue,
+            let Some(gdef) = generic_def_of(sema, &anc) else {
+                continue;
             };
             let hit = gdef
                 .lifetime_params(self.db)
@@ -1120,9 +1099,9 @@ impl<'db> Collector<'db> {
         ref_site: &ra_ap_syntax::SyntaxNode,
         target: Option<i64>,
         range: Option<ra_ap_syntax::TextRange>,
-        file: &RefFile,
+        vfs_fid: ra_ap_vfs::FileId,
     ) {
-        self.emit_reference_edge(sema, edge_type, ref_site, target, range, file, true);
+        self.emit_reference_edge(sema, edge_type, ref_site, target, range, vfs_fid, true);
     }
 
     fn emit_reference_edge(
@@ -1132,7 +1111,7 @@ impl<'db> Collector<'db> {
         ref_site: &ra_ap_syntax::SyntaxNode,
         target: Option<i64>,
         range: Option<ra_ap_syntax::TextRange>,
-        file: &RefFile,
+        vfs_fid: ra_ap_vfs::FileId,
         allow_impl_context: bool,
     ) {
         let Some(target) = target else { return };
@@ -1144,21 +1123,27 @@ impl<'db> Collector<'db> {
         }
         let edge_id = self.push_edge(edge_type, context, target);
         if let Some(range) = range {
-            self.add_reference_location(edge_id, range, file);
+            self.add_reference_location(edge_id, range, vfs_fid);
         }
     }
 
     /// Record a TOKEN source location + occurrence for `element_id` (an edge).
+    /// Reads the cached `FileInfo` directly (the reference pass hits this once
+    /// per site) and copies the plain values out before pushing storage rows.
     fn add_reference_location(
         &mut self,
         element_id: i64,
         range: ra_ap_syntax::TextRange,
-        file: &RefFile,
+        vfs_fid: ra_ap_vfs::FileId,
     ) {
         let loc_id = self.alloc_id();
+        let Some(info) = self.file_info(vfs_fid) else {
+            return;
+        };
+        let file_node_id = info.file_node_id;
         let (Some(start), Some(end)) = (
-            file.line_index.try_line_col(range.start()),
-            file.line_index.try_line_col(range.end()),
+            info.line_index.try_line_col(range.start()),
+            info.line_index.try_line_col(range.end()),
         ) else {
             return;
         };
@@ -1166,7 +1151,7 @@ impl<'db> Collector<'db> {
             .source_locations
             .push(OwnedStorageSourceLocation {
                 id: loc_id,
-                file_node_id: file.file_node_id,
+                file_node_id,
                 start_line: start.line + 1,
                 start_col: start.col + 1,
                 end_line: end.line + 1,
@@ -1186,7 +1171,7 @@ impl<'db> Collector<'db> {
         &mut self,
         sema: &Semantics<'db, RootDatabase>,
         impl_ast: &ast::Impl,
-        file: &RefFile,
+        vfs_fid: ra_ap_vfs::FileId,
     ) {
         // Only `impl Trait for Type` produces an inheritance edge.
         if impl_ast.for_token().is_none() {
@@ -1206,7 +1191,7 @@ impl<'db> Collector<'db> {
             let edge_id = self.push_edge(EDGE_INHERITANCE, self_id, trait_id);
             if let ast::Type::PathType(pt) = &type_nodes[0] {
                 if let Some(range) = pt.path().as_ref().and_then(path_name_range) {
-                    self.add_reference_location(edge_id, range, file);
+                    self.add_reference_location(edge_id, range, vfs_fid);
                 }
             }
         }
@@ -1394,7 +1379,7 @@ impl<'db> Collector<'db> {
         } else {
             let range_in_file = m.definition_source_range(self.db);
             let is_macro = range_in_file.file_id.is_macro();
-            let Some((ctx, mapped)) =
+            let Some((vfs_fid, mapped)) =
                 self.original_location(range_in_file.file_id, range_in_file.value)
             else {
                 return;
@@ -1402,9 +1387,8 @@ impl<'db> Collector<'db> {
             self.add_def_kind(
                 name,
                 NODE_MODULE,
-                &ctx.file_path,
+                vfs_fid,
                 mapped,
-                &ctx.source_text,
                 if is_macro {
                     DEFINITION_IMPLICIT
                 } else {
@@ -1435,25 +1419,16 @@ impl<'db> Collector<'db> {
             .map(|n| n.syntax().text_range())
             .unwrap_or(full_range);
         if in_file.file_id.is_macro() {
-            let Some((ctx, mapped)) = self.original_location(in_file.file_id, range) else {
+            let Some((vfs_fid, mapped)) = self.original_location(in_file.file_id, range) else {
                 return;
             };
-            self.add_def_kind(
-                name,
-                kind,
-                &ctx.file_path,
-                mapped,
-                &ctx.source_text,
-                DEFINITION_IMPLICIT,
-            );
+            self.add_def_kind(name, kind, vfs_fid, mapped, DEFINITION_IMPLICIT);
             return;
         }
-        let Some(ctx) = self.source_context_from_in_file(&in_file) else {
-            return;
-        };
-        self.add_def_with_context(name, kind, range, &ctx);
+        let vfs_fid = self.real_file_of(&in_file);
+        self.add_def(name, kind, vfs_fid, range);
         if full_range != range {
-            self.add_scope_location(name, full_range, &ctx);
+            self.add_scope_location(name, full_range, vfs_fid);
         }
     }
 
@@ -1462,18 +1437,13 @@ impl<'db> Collector<'db> {
         &mut self,
         name: &str,
         range: ra_ap_syntax::TextRange,
-        ctx: &SourceContext,
+        vfs_file_id: ra_ap_vfs::FileId,
     ) {
         let Some(&node_id) = self.node_ids.get(name) else {
             return;
         };
-        let file_node_id = self.file_node_id(&ctx.file_path);
         let loc_id = self.alloc_id();
-        let line_index = LineIndex::new(&ctx.source_text);
-        let (Some(start), Some(end)) = (
-            line_index.try_line_col(range.start()),
-            line_index.try_line_col(range.end()),
-        ) else {
+        let Some((file_node_id, start, end)) = self.location_of(vfs_file_id, range) else {
             return;
         };
         self.storage
@@ -1507,11 +1477,53 @@ impl<'db> Collector<'db> {
         kind: i32,
     ) {
         let Some(in_file) = src else { return };
-        let Some(ctx) = self.source_context_from_in_file(&in_file) else {
-            return;
-        };
+        let vfs_fid = self.real_file_of(&in_file);
         let range = in_file.value.syntax().text_range();
-        self.add_def_with_context(name, kind, range, &ctx);
+        self.add_def(name, kind, vfs_fid, range);
+    }
+}
+
+/// Extract a human-readable message from a `catch_unwind` payload — panics
+/// carry a `&str` (literal message) or a `String` (formatted message).
+fn panic_payload_message(payload: &(dyn std::any::Any + Send)) -> &str {
+    if let Some(s) = payload.downcast_ref::<&str>() {
+        s
+    } else if let Some(s) = payload.downcast_ref::<String>() {
+        s
+    } else {
+        "non-string panic payload"
+    }
+}
+
+/// Map one generic-item node (fn / struct / enum / union / trait / type alias
+/// / impl) to its HIR `GenericDef`, if the node resolves semantically.
+fn generic_def_of(
+    sema: &Semantics<'_, RootDatabase>,
+    node: &ra_ap_syntax::SyntaxNode,
+) -> Option<ra_ap_hir::GenericDef> {
+    match node.kind() {
+        SyntaxKind::FN => ast::Fn::cast(node.clone())
+            .and_then(|it| sema.to_def(&it))
+            .map(Into::into),
+        SyntaxKind::STRUCT => ast::Struct::cast(node.clone())
+            .and_then(|it| sema.to_def(&it))
+            .map(|s| Adt::Struct(s).into()),
+        SyntaxKind::ENUM => ast::Enum::cast(node.clone())
+            .and_then(|it| sema.to_def(&it))
+            .map(|e| Adt::Enum(e).into()),
+        SyntaxKind::UNION => ast::Union::cast(node.clone())
+            .and_then(|it| sema.to_def(&it))
+            .map(|u| Adt::Union(u).into()),
+        SyntaxKind::TRAIT => ast::Trait::cast(node.clone())
+            .and_then(|it| sema.to_def(&it))
+            .map(Into::into),
+        SyntaxKind::TYPE_ALIAS => ast::TypeAlias::cast(node.clone())
+            .and_then(|it| sema.to_def(&it))
+            .map(Into::into),
+        SyntaxKind::IMPL => ast::Impl::cast(node.clone())
+            .and_then(|it| sema.to_def(&it))
+            .map(Into::into),
+        _ => None,
     }
 }
 
@@ -1537,21 +1549,36 @@ pub(super) fn collect_from_db<'db>(
                 continue;
             }
             let vfs_fid = krate.root_file(db);
-            let is_local = vfs
-                .file_path(vfs_fid)
-                .as_path()
-                .map(|p| {
-                    let s = p.to_string();
-                    !s.contains("/.cargo/")
-                        && !s.contains("/.rustup/")
-                        && !s.contains("/rustup/")
-                        && !s.contains("/lib/rustlib/")
-                })
-                .unwrap_or(false);
+            let Some(crate_root_path) = vfs.file_path(vfs_fid).as_path().map(|p| p.to_string())
+            else {
+                continue;
+            };
+            let is_local = !crate_root_path.contains("/.cargo/")
+                && !crate_root_path.contains("/.rustup/")
+                && !crate_root_path.contains("/rustup/")
+                && !crate_root_path.contains("/lib/rustlib/");
             if !is_local {
                 continue;
             }
-            collector.collect_crate(krate);
+            // A panic inside rust-analyzer (e.g. on a pathological input) must
+            // not kill the whole indexing run — record it as a non-fatal error
+            // and continue with the next crate.
+            let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+                collector.collect_crate(krate)
+            }));
+            if let Err(payload) = result {
+                let error = OwnedStorageError {
+                    id: collector.alloc_id(),
+                    message: format!(
+                        "indexer panicked while collecting crate {crate_root_path}: {}",
+                        panic_payload_message(payload.as_ref())
+                    ),
+                    translation_unit: crate_root_path,
+                    fatal: false,
+                    indexed: true,
+                };
+                collector.storage.errors.push(error);
+            }
         }
 
         // Second pass: reference edges, resolved semantically across all crates.

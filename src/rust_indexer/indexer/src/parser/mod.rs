@@ -122,6 +122,9 @@ impl LoadProfile {
         out_dirs: false,
     };
     /// FAST plus sysroot, so builtin derives (`Clone`, `Debug`, …) expand.
+    /// Only used by macro-expansion tests; allow(dead_code) instead of
+    /// cfg(test) so the constant stays part of the non-test crate surface.
+    #[allow(dead_code)]
     pub const SYSROOT: Self = Self {
         sysroot: true,
         ..Self::FAST
@@ -193,17 +196,8 @@ pub fn index_file(file_path: &str, _module_prefix: &str) -> OwnedIntermediateSto
         Ok(d) => d,
         Err(e) => return error_storage(file_path, &format!("tempdir: {e}")),
     };
-    let src_dir = tmp.path().join("src");
-    if let Err(e) = std::fs::create_dir_all(&src_dir) {
-        return error_storage(file_path, &format!("mkdir src: {e}"));
-    }
-    let cargo_toml =
-        format!("[package]\nname = \"_idx\"\nversion = \"0.0.0\"\nedition = \"2021\"\n");
-    if let Err(e) = std::fs::write(tmp.path().join("Cargo.toml"), &cargo_toml) {
-        return error_storage(file_path, &format!("write Cargo.toml: {e}"));
-    }
-    if let Err(e) = std::fs::write(src_dir.join("lib.rs"), &source) {
-        return error_storage(file_path, &format!("write lib.rs: {e}"));
+    if let Err(e) = scaffold_temp_crate(tmp.path(), &source) {
+        return error_storage(file_path, &format!("scaffold temp crate: {e}"));
     }
 
     let mut storage = index_crate_with(tmp.path(), LoadProfile::FAST, |_| {});
@@ -214,6 +208,19 @@ pub fn index_file(file_path: &str, _module_prefix: &str) -> OwnedIntermediateSto
         f.file_path = file_path.to_owned();
     }
     storage
+}
+
+/// Scaffold a minimal temporary Cargo crate in `dir`: a `Cargo.toml`
+/// (package `_idx`, edition 2021, no dependencies) and `src/lib.rs`
+/// containing `source`.
+pub(crate) fn scaffold_temp_crate(dir: &std::path::Path, source: &str) -> std::io::Result<()> {
+    let src_dir = dir.join("src");
+    std::fs::create_dir_all(&src_dir)?;
+    std::fs::write(
+        dir.join("Cargo.toml"),
+        "[package]\nname = \"_idx\"\nversion = \"0.0.0\"\nedition = \"2021\"\n",
+    )?;
+    std::fs::write(src_dir.join("lib.rs"), source)
 }
 
 fn error_storage(file_path: &str, msg: &str) -> OwnedIntermediateStorage {

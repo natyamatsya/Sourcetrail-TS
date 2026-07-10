@@ -33,12 +33,16 @@ fn main() {
             64 => "struct",
             256 => "trait",
             1024 => "const/static",
+            2048 => "field",
             4096 => "fn",
             8192 => "method",
             16384 => "enum",
+            32768 => "enum-const",
             65536 => "type",
-            131072 => "macro",
-            262144 => "union",
+            131072 => "type-param",
+            262144 => "file",
+            524288 => "macro",
+            1048576 => "union",
             _ => "?",
         };
         println!("  [{kind_name:12}] {}", node.serialized_name);
