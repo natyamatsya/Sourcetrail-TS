@@ -14,7 +14,12 @@ fn index_src(src: &str) -> OwnedIntermediateStorage {
 fn index_src_with_sysroot(src: &str) -> OwnedIntermediateStorage {
     let tmp = tempfile::tempdir().unwrap();
     scaffold_temp_crate(tmp.path(), src).unwrap();
-    index_crate_with(tmp.path(), LoadProfile::SYSROOT, |_| {})
+    index_crate_with(
+        tmp.path(),
+        LoadProfile::SYSROOT,
+        CargoOptions::default(),
+        |_| {},
+    )
 }
 
 /// Decode the NameHierarchy wire format back to a plain `::` qualified name for test assertions.
@@ -986,5 +991,66 @@ fn function_local_import_attaches_to_the_function() {
         has_edge(&s, EDGE_IMPORT_T, "g", "a::f"),
         "expected EDGE_IMPORT g -> a::f, edges: {:?}",
         s.edges
+    );
+}
+
+// -----------------------------------------------------------------------
+// Cargo project-model options (project model v1)
+// -----------------------------------------------------------------------
+
+/// Index a temp crate that declares feature `x` gating `gated()`, with the
+/// given options.
+fn index_feature_fixture(options: CargoOptions) -> OwnedIntermediateStorage {
+    let tmp = tempfile::tempdir().unwrap();
+    let src_dir = tmp.path().join("src");
+    std::fs::create_dir_all(&src_dir).unwrap();
+    std::fs::write(
+        tmp.path().join("Cargo.toml"),
+        "[package]\nname = \"_idx\"\nversion = \"0.0.0\"\nedition = \"2021\"\n\n[features]\nx = []\n",
+    )
+    .unwrap();
+    std::fs::write(
+        src_dir.join("lib.rs"),
+        "#[cfg(feature = \"x\")]\npub fn gated() {}\npub fn always() {}\n",
+    )
+    .unwrap();
+    index_crate_with(tmp.path(), LoadProfile::FAST, options, |_| {})
+}
+
+#[test]
+fn feature_gated_item_absent_by_default() {
+    let s = index_feature_fixture(CargoOptions::default());
+    assert!(has_node(&s, "always"), "nodes: {:?}", node_names(&s));
+    assert!(
+        !has_node(&s, "gated"),
+        "feature-gated fn must be absent without the feature, nodes: {:?}",
+        node_names(&s)
+    );
+}
+
+#[test]
+fn feature_gated_item_present_with_selected_feature() {
+    let s = index_feature_fixture(CargoOptions {
+        features: vec!["x".to_owned()],
+        ..CargoOptions::default()
+    });
+    assert!(has_node(&s, "always"), "nodes: {:?}", node_names(&s));
+    assert!(
+        has_node(&s, "gated"),
+        "feature-gated fn must appear with features=[x], nodes: {:?}",
+        node_names(&s)
+    );
+}
+
+#[test]
+fn feature_gated_item_present_with_all_features() {
+    let s = index_feature_fixture(CargoOptions {
+        all_features: true,
+        ..CargoOptions::default()
+    });
+    assert!(
+        has_node(&s, "gated"),
+        "feature-gated fn must appear with --all-features, nodes: {:?}",
+        node_names(&s)
     );
 }

@@ -2,6 +2,7 @@
 #define SOURCE_GROUP_SETTINGS_RUST_EMPTY_H
 
 #include "SourceGroupSettings.h"
+#include "SourceGroupSettingsWithCargoOptions.h"
 #include "SourceGroupSettingsWithExcludeFilters.h"
 #include "SourceGroupSettingsWithSourceExtensions.h"
 #include "SourceGroupSettingsWithSourcePaths.h"
@@ -11,6 +12,7 @@ class SourceGroupSettingsRustEmpty
 	, public SourceGroupSettingsWithSourcePaths
 	, public SourceGroupSettingsWithExcludeFilters
 	, public SourceGroupSettingsWithSourceExtensions
+	, public SourceGroupSettingsWithCargoOptions
 {
 public:
 	std::vector<std::string> getDefaultSourceExtensions() const override;

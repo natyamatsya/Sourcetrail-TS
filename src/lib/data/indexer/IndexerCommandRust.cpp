@@ -11,10 +11,18 @@ IndexerCommandType IndexerCommandRust::getStaticIndexerCommandType()
 IndexerCommandRust::IndexerCommandRust(
 	const FilePath& sourceFilePath,
 	const std::set<FilePath>& indexedPaths,
-	const FilePath& workingDirectory)
+	const FilePath& workingDirectory,
+	const std::vector<std::string>& features,
+	bool allFeatures,
+	bool noDefaultFeatures,
+	const std::string& targetTriple)
 	: IndexerCommand(sourceFilePath)
 	, m_indexedPaths(indexedPaths)
 	, m_workingDirectory(workingDirectory)
+	, m_features(features)
+	, m_allFeatures(allFeatures)
+	, m_noDefaultFeatures(noDefaultFeatures)
+	, m_targetTriple(targetTriple)
 {
 }
 
@@ -33,6 +41,26 @@ const FilePath& IndexerCommandRust::getWorkingDirectory() const
 	return m_workingDirectory;
 }
 
+const std::vector<std::string>& IndexerCommandRust::getFeatures() const
+{
+	return m_features;
+}
+
+bool IndexerCommandRust::getAllFeatures() const
+{
+	return m_allFeatures;
+}
+
+bool IndexerCommandRust::getNoDefaultFeatures() const
+{
+	return m_noDefaultFeatures;
+}
+
+const std::string& IndexerCommandRust::getTargetTriple() const
+{
+	return m_targetTriple;
+}
+
 QJsonObject IndexerCommandRust::doSerialize() const
 {
 	QJsonObject obj = IndexerCommand::doSerialize();
@@ -42,6 +70,14 @@ QJsonObject IndexerCommandRust::doSerialize() const
 		paths.append(QString::fromStdString(p.str()));
 	obj["indexed_paths"] = paths;
 	obj["working_directory"] = QString::fromStdString(m_workingDirectory.str());
+
+	QJsonArray features;
+	for (const std::string& f : m_features)
+		features.append(QString::fromStdString(f));
+	obj["features"] = features;
+	obj["all_features"] = m_allFeatures;
+	obj["no_default_features"] = m_noDefaultFeatures;
+	obj["target_triple"] = QString::fromStdString(m_targetTriple);
 
 	return obj;
 }

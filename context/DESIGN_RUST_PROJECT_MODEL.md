@@ -1,6 +1,12 @@
 # Design: Rust Project Model Integration via rust-analyzer
 
-**Status: proposal, not yet implemented.** Orthogonal to the parser-layer
+**Status: v1 implemented (2026-07-10) — Cargo feature selection
+(`features`, `--all-features`, `--no-default-features`) and target triple,
+threaded end-to-end: `SourceGroupSettingsRustEmpty`/wizard →
+`IndexerCommandRust` → `indexer_command.fbs` → `CargoOptions` →
+`CargoConfig`. Per-target scoping (phase 2 below: one crate root per
+lib/bin/example/test target) and workspace-member selection remain
+deferred.** Orthogonal to the parser-layer
 work that has since landed (semantic resolution, reference occurrences,
 type-system edges — see `context/DESIGN_RUST_TYPE_SYSTEM_EDGES.md` and
 `ROADMAP_RUST_INDEXER.md` Phase 7): this document is about *which code gets

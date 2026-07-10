@@ -1,0 +1,42 @@
+#ifndef SOURCE_GROUP_SETTINGS_WITH_CARGO_OPTIONS_H
+#define SOURCE_GROUP_SETTINGS_WITH_CARGO_OPTIONS_H
+
+#include <string>
+#include <vector>
+
+#include "SourceGroupSettingsComponent.h"
+
+// Cargo project-model options for Rust source groups (project model v1:
+// feature selection and target triple — see
+// context/DESIGN_RUST_PROJECT_MODEL.md; per-target scoping is deferred).
+class SourceGroupSettingsWithCargoOptions: public SourceGroupSettingsComponent
+{
+public:
+	~SourceGroupSettingsWithCargoOptions() override = default;
+
+	const std::vector<std::string>& getCargoFeatures() const;
+	void setCargoFeatures(const std::vector<std::string>& features);
+
+	bool getCargoAllFeatures() const;
+	void setCargoAllFeatures(bool allFeatures);
+
+	bool getCargoNoDefaultFeatures() const;
+	void setCargoNoDefaultFeatures(bool noDefaultFeatures);
+
+	const std::string& getCargoTargetTriple() const;
+	void setCargoTargetTriple(const std::string& targetTriple);
+
+protected:
+	bool equals(const SourceGroupSettingsBase* other) const override;
+
+	void load(const ConfigManager* config, const std::string& key) override;
+	void save(ConfigManager* config, const std::string& key) override;
+
+private:
+	std::vector<std::string> m_cargoFeatures;
+	bool m_cargoAllFeatures = false;
+	bool m_cargoNoDefaultFeatures = false;
+	std::string m_cargoTargetTriple;
+};
+
+#endif	  // SOURCE_GROUP_SETTINGS_WITH_CARGO_OPTIONS_H

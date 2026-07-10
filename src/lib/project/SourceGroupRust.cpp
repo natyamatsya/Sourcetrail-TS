@@ -44,7 +44,14 @@ std::vector<std::shared_ptr<IndexerCommand>> SourceGroupRust::getIndexerCommands
 	// itself (used only as a key for status tracking), not an individual .rs file.
 	if (!info.filesToIndex.empty())
 	{
-		return {std::make_shared<IndexerCommandRust>(workingDir, indexedPaths, workingDir)};
+		return {std::make_shared<IndexerCommandRust>(
+			workingDir,
+			indexedPaths,
+			workingDir,
+			m_settings->getCargoFeatures(),
+			m_settings->getCargoAllFeatures(),
+			m_settings->getCargoNoDefaultFeatures(),
+			m_settings->getCargoTargetTriple())};
 	}
 	return {};
 }

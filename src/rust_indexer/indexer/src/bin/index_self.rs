@@ -5,14 +5,22 @@ use sourcetrail_rust_indexer_lib::parser;
 
 fn main() {
     // Optional argument: index an arbitrary crate/workspace root instead.
-    let arg = std::env::args().nth(1);
+    // `--all-features` widens the load to every Cargo feature (used to
+    // measure feature-gated coverage deltas).
+    let args: Vec<String> = std::env::args().skip(1).collect();
+    let all_features = args.iter().any(|a| a == "--all-features");
+    let arg = args.iter().find(|a| !a.starts_with("--")).cloned();
     let crate_root = arg
         .as_deref()
         .map(std::path::Path::new)
         .unwrap_or_else(|| std::path::Path::new(env!("CARGO_MANIFEST_DIR")));
     println!("Indexing: {}", crate_root.display());
 
-    let storage = parser::index_crate(crate_root, |_| {});
+    let options = parser::CargoOptions {
+        all_features,
+        ..parser::CargoOptions::default()
+    };
+    let storage = parser::index_crate(crate_root, options, |_| {});
 
     println!(
         "\nResults:\n  files:       {}\n  nodes:       {}\n  symbols:     {}\n  locations:   {}\n  occurrences: {}\n  errors:      {}",

@@ -35,6 +35,10 @@ flatbuffers::DetachedBuffer serializeIndexerCommands(
 		flatbuffers::Offset<flatbuffers::String> workingDirectory = 0;
 		flatbuffers::Offset<flatbuffers::Vector<flatbuffers::Offset<flatbuffers::String>>> compilerFlags = 0;
 		flatbuffers::Offset<flatbuffers::String> compilerPath = 0;
+		flatbuffers::Offset<flatbuffers::Vector<flatbuffers::Offset<flatbuffers::String>>> features = 0;
+		bool allFeatures = false;
+		bool noDefaultFeatures = false;
+		flatbuffers::Offset<flatbuffers::String> targetTriple = 0;
 
 #if BUILD_CXX_LANGUAGE_PACKAGE
 		if (auto cxxCmd = std::dynamic_pointer_cast<IndexerCommandCxx>(cmd))
@@ -76,6 +80,14 @@ flatbuffers::DetachedBuffer serializeIndexerCommands(
 			indexedPaths = builder.CreateVector(paths);
 
 			workingDirectory = builder.CreateString(rustCmd->getWorkingDirectory().str());
+
+			std::vector<flatbuffers::Offset<flatbuffers::String>> feats;
+			for (const auto& f : rustCmd->getFeatures())
+				feats.push_back(builder.CreateString(f));
+			features = builder.CreateVector(feats);
+			allFeatures = rustCmd->getAllFeatures();
+			noDefaultFeatures = rustCmd->getNoDefaultFeatures();
+			targetTriple = builder.CreateString(rustCmd->getTargetTriple());
 		}
 		if (auto* swiftCmd = dynamic_cast<IndexerCommandSwift*>(cmd.get()))
 		{
@@ -91,7 +103,8 @@ flatbuffers::DetachedBuffer serializeIndexerCommands(
 
 		fbCommands.push_back(Sourcetrail::Ipc::CreateIndexerCommand(
 			builder, type, sourceFilePath, indexedPaths, excludeFilters,
-			includeFilters, workingDirectory, compilerFlags, compilerPath));
+			includeFilters, workingDirectory, compilerFlags, compilerPath,
+			features, allFeatures, noDefaultFeatures, targetTriple));
 	}
 
 	auto queue = Sourcetrail::Ipc::CreateIndexerCommandQueue(
@@ -166,9 +179,20 @@ std::vector<std::shared_ptr<IndexerCommand>> deserializeIndexerCommands(
 			if (fbCmd->working_directory())
 				workingDir = FilePath(fbCmd->working_directory()->c_str());
 
+			std::vector<std::string> features;
+			if (fbCmd->features())
+				for (const auto* f : *fbCmd->features())
+					features.push_back(f->str());
+
+			std::string targetTriple;
+			if (fbCmd->target_triple())
+				targetTriple = fbCmd->target_triple()->str();
+
 			result.push_back(std::make_shared<IndexerCommandRust>(
 				FilePath(fbCmd->source_file_path()->c_str()),
-				indexedPaths, workingDir));
+				indexedPaths, workingDir,
+				features, fbCmd->all_features(), fbCmd->no_default_features(),
+				targetTriple));
 			break;
 		}
 		case Sourcetrail::Ipc::IndexerCommandType_Swift:

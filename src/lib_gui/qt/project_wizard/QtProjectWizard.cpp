@@ -7,6 +7,7 @@
 #include "QtMessageBox.h"
 #include "QtProjectWizardContent.h"
 #include "QtProjectWizardContentCustomCommand.h"
+#include "QtProjectWizardContentCargoOptions.h"
 #include "QtProjectWizardContentExtensions.h"
 #include "QtProjectWizardContentGroup.h"
 #include "QtProjectWizardContentPathsExclude.h"
@@ -236,6 +237,7 @@ void addSourceGroupContents<SourceGroupSettingsRustEmpty>(
 	group->addContent(new QtProjectWizardContentPathsSource(settings, window));
 	group->addContent(new QtProjectWizardContentPathsExclude(settings, window));
 	group->addContent(new QtProjectWizardContentExtensions(settings, window));
+	group->addContent(new QtProjectWizardContentCargoOptions(settings, window));
 }
 
 template <>

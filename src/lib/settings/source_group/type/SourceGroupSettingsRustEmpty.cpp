@@ -25,6 +25,7 @@ void SourceGroupSettingsRustEmpty::loadSettings(const ConfigManager* config)
 	SourceGroupSettingsWithSourcePaths::load(config, key);
 	SourceGroupSettingsWithExcludeFilters::load(config, key);
 	SourceGroupSettingsWithSourceExtensions::load(config, key);
+	SourceGroupSettingsWithCargoOptions::load(config, key);
 }
 
 void SourceGroupSettingsRustEmpty::saveSettings(ConfigManager* config)
@@ -34,6 +35,7 @@ void SourceGroupSettingsRustEmpty::saveSettings(ConfigManager* config)
 	SourceGroupSettingsWithSourcePaths::save(config, key);
 	SourceGroupSettingsWithExcludeFilters::save(config, key);
 	SourceGroupSettingsWithSourceExtensions::save(config, key);
+	SourceGroupSettingsWithCargoOptions::save(config, key);
 }
 
 bool SourceGroupSettingsRustEmpty::equalsSettings(const SourceGroupSettingsBase* other)

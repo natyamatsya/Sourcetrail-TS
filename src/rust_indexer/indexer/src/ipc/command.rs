@@ -8,10 +8,10 @@ use std::io;
 
 use flatbuffers::FlatBufferBuilder;
 
-use crate::ipc::shm::{is_empty, IpcShm};
+use crate::ipc::shm::{IpcShm, is_empty};
 use crate::schemas::indexer_command::sourcetrail::ipc::{
-    root_as_indexer_command_queue, IndexerCommand, IndexerCommandArgs, IndexerCommandQueue,
-    IndexerCommandQueueArgs, IndexerCommandType,
+    IndexerCommand, IndexerCommandArgs, IndexerCommandQueue, IndexerCommandQueueArgs,
+    IndexerCommandType, root_as_indexer_command_queue,
 };
 
 const SHM_SIZE: usize = 64 * 1024 * 1024; // 64 MiB, matches C++
@@ -62,6 +62,14 @@ pub struct OwnedIndexerCommand {
     pub exclude_filters: Vec<String>,
     pub include_filters: Vec<String>,
     pub working_directory: String,
+    /// Cargo features to enable (project model v1).
+    pub features: Vec<String>,
+    /// Enable all Cargo features (`--all-features`).
+    pub all_features: bool,
+    /// Do not enable the `default` Cargo feature.
+    pub no_default_features: bool,
+    /// rustc target triple; empty = host.
+    pub target_triple: String,
     pub compiler_flags: Vec<String>,
     pub compiler_path: String,
 }
@@ -79,6 +87,10 @@ impl OwnedIndexerCommand {
             exclude_filters: str_vec(cmd.exclude_filters()),
             include_filters: str_vec(cmd.include_filters()),
             working_directory: cmd.working_directory().unwrap_or("").to_owned(),
+            features: str_vec(cmd.features()),
+            all_features: cmd.all_features(),
+            no_default_features: cmd.no_default_features(),
+            target_triple: cmd.target_triple().unwrap_or("").to_owned(),
             compiler_flags: str_vec(cmd.compiler_flags()),
             compiler_path: cmd.compiler_path().unwrap_or("").to_owned(),
         }
@@ -175,6 +187,13 @@ fn serialize_queue(commands: &[OwnedIndexerCommand]) -> Vec<u8> {
             } else {
                 Some(fbb.create_string(&cmd.compiler_path))
             };
+            let features: Vec<_> = cmd.features.iter().map(|s| fbb.create_string(s)).collect();
+            let features_v = fbb.create_vector(&features);
+            let target_triple = if cmd.target_triple.is_empty() {
+                None
+            } else {
+                Some(fbb.create_string(&cmd.target_triple))
+            };
             IndexerCommand::create(
                 &mut fbb,
                 &IndexerCommandArgs {
@@ -186,6 +205,10 @@ fn serialize_queue(commands: &[OwnedIndexerCommand]) -> Vec<u8> {
                     working_directory: Some(wdir),
                     compiler_flags: Some(flags_v),
                     compiler_path,
+                    features: Some(features_v),
+                    all_features: cmd.all_features,
+                    no_default_features: cmd.no_default_features,
+                    target_triple,
                 },
             )
         })
@@ -216,6 +239,10 @@ mod tests {
             working_directory: "/tmp/project".to_owned(),
             compiler_flags: vec!["-std=c++20".to_owned()],
             compiler_path: compiler_path.to_owned(),
+            features: Vec::new(),
+            all_features: false,
+            no_default_features: false,
+            target_triple: String::new(),
         }
     }
 

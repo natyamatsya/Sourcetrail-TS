@@ -19,6 +19,11 @@ table IndexerCommand {
     working_directory:  string;
     compiler_flags:     [string];
     compiler_path:      string;
+    // Cargo project-model options (Rust commands; project model v1)
+    features:            [string];
+    all_features:        bool;
+    no_default_features: bool;
+    target_triple:       string;   // empty = host
 }
 
 table IndexerCommandQueue {

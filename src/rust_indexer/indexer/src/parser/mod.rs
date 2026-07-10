@@ -82,6 +82,22 @@ const EDGE_IMPORT: i32 = 1 << 9;
 // Public entry point: index a whole Cargo crate
 // ---------------------------------------------------------------------------
 
+/// Cargo project-model options (project model v1: feature selection and
+/// target triple, see context/DESIGN_RUST_PROJECT_MODEL.md; per-target
+/// scoping is deferred). `Default` reproduces the zero-config behavior:
+/// default features, host target.
+#[derive(Debug, Clone, Default, PartialEq, Eq, Hash)]
+pub struct CargoOptions {
+    /// Features to enable (ignored when `all_features` is set).
+    pub features: Vec<String>,
+    /// Enable all features (`--all-features`).
+    pub all_features: bool,
+    /// Do not enable the `default` feature.
+    pub no_default_features: bool,
+    /// rustc target triple; empty = host.
+    pub target_triple: String,
+}
+
 /// Index the Cargo crate whose `Cargo.toml` lives in `crate_root`.
 /// `on_file` is called with each source file path as it begins processing.
 /// Returns a populated `OwnedIntermediateStorage` covering all local source files.
@@ -90,8 +106,12 @@ const EDGE_IMPORT: i32 = 1 << 9;
 /// the active toolchain's sysroot (`rustup component add rust-analyzer`), and
 /// build scripts run via `cargo check` so dependency proc-macro dylibs and
 /// OUT_DIR includes resolve. Both degrade gracefully when unavailable.
-pub fn index_crate(crate_root: &Path, on_file: impl FnMut(&str)) -> OwnedIntermediateStorage {
-    index_crate_with(crate_root, LoadProfile::FULL, on_file)
+pub fn index_crate(
+    crate_root: &Path,
+    options: CargoOptions,
+    on_file: impl FnMut(&str),
+) -> OwnedIntermediateStorage {
+    index_crate_with(crate_root, LoadProfile::FULL, options, on_file)
 }
 
 /// Which parts of the (expensive) load machinery to enable.
@@ -136,12 +156,22 @@ impl LoadProfile {
 pub(crate) fn index_crate_with(
     crate_root: &Path,
     profile: LoadProfile,
+    options: CargoOptions,
     on_file: impl FnMut(&str),
 ) -> OwnedIntermediateStorage {
     let cargo_config = CargoConfig {
         sysroot: profile
             .sysroot
             .then_some(ra_ap_project_model::RustLibSource::Discover),
+        features: if options.all_features {
+            ra_ap_project_model::CargoFeatures::All
+        } else {
+            ra_ap_project_model::CargoFeatures::Selected {
+                features: options.features,
+                no_default_features: options.no_default_features,
+            }
+        },
+        target: (!options.target_triple.is_empty()).then(|| options.target_triple.clone()),
         ..CargoConfig::default()
     };
     let load_config = LoadCargoConfig {
@@ -211,7 +241,12 @@ pub fn index_file(file_path: &str, _module_prefix: &str) -> OwnedIntermediateSto
         return error_storage(file_path, &format!("scaffold temp crate: {e}"));
     }
 
-    let mut storage = index_crate_with(tmp.path(), LoadProfile::FAST, |_| {});
+    let mut storage = index_crate_with(
+        tmp.path(),
+        LoadProfile::FAST,
+        CargoOptions::default(),
+        |_| {},
+    );
 
     // Rewrite the synthetic file path back to the original path so callers
     // see the real file path in the storage.

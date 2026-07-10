@@ -59,7 +59,7 @@ fn main() {
     // Many Rust commands can point to the same crate root. Cache the indexed
     // crate result and reuse it to avoid repeated rust-analyzer workspace loads.
     let mut storage_cache: HashMap<
-        String,
+        (String, parser::CargoOptions),
         sourcetrail_rust_indexer_lib::ipc::storage::OwnedIntermediateStorage,
     > = HashMap::new();
 
@@ -98,9 +98,18 @@ fn main() {
             log::warn!("start_indexing status update failed: {e}");
         }
 
+        // Cargo project-model options travel per command (project model v1).
+        let options = parser::CargoOptions {
+            features: cmd.features.clone(),
+            all_features: cmd.all_features,
+            no_default_features: cmd.no_default_features,
+            target_triple: cmd.target_triple.clone(),
+        };
+
         // Index the whole crate rooted at working_directory (contains Cargo.toml).
         // index_crate() loads the full HIR via rust-analyzer and covers all source files.
-        let storage = if let Some(cached) = storage_cache.get(&cmd.working_directory) {
+        let cache_key = (cmd.working_directory.clone(), options.clone());
+        let storage = if let Some(cached) = storage_cache.get(&cache_key) {
             log::info!(
                 "reusing cached crate index for \"{}\"",
                 cmd.working_directory
@@ -114,12 +123,16 @@ fn main() {
             // TaskBuildIndex::doExit no longer reports the files of a
             // successfully finished command as crashed translation units.
             let status_ch_ref = &status_ch;
-            let indexed = parser::index_crate(Path::new(&cmd.working_directory), move |path| {
-                if let Err(e) = status_ch_ref.update_indexing(path) {
-                    log::warn!("per-file progress update failed: {e}");
-                }
-            });
-            storage_cache.insert(cmd.working_directory.clone(), indexed.clone());
+            let indexed = parser::index_crate(
+                Path::new(&cmd.working_directory),
+                options.clone(),
+                move |path| {
+                    if let Err(e) = status_ch_ref.update_indexing(path) {
+                        log::warn!("per-file progress update failed: {e}");
+                    }
+                },
+            );
+            storage_cache.insert(cache_key, indexed.clone());
             indexed
         };
 
