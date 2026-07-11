@@ -1,0 +1,40 @@
+# turso_shim — a firewalled C API over turso_core.
+#
+# Turso's own C bindings export the *same* `sqlite3_*` symbols as real SQLite,
+# so both cannot coexist in one binary. This crate instead re-exports a small,
+# `tsq_`-prefixed C API (the exact subset that Sourcetrail's CppSQLite3 wrapper
+# uses) built directly on `turso_core`. Prefixed symbols by construction — no
+# objcopy, no dlopen. Consumed by the C++ `turso::CppTurso3` wrapper.
+#
+# Built only when the CMake option SOURCETRAIL_TURSO_COMPARE is ON, via the same
+# Corrosion mechanism as sourcetrail-rust-indexer.
+
+[workspace]
+# Standalone: declare our own workspace root so cargo does not try to attach us
+# to any parent workspace.
+
+[package]
+name = "turso_shim"
+version = "0.1.0"
+edition = "2021"
+publish = false
+
+[lib]
+name = "turso_shim"
+crate-type = ["staticlib"]
+path = "src/lib.rs"
+
+# De-risking probe for Phase 4: proves whether turso_core supports concurrent
+# write transactions (BEGIN CONCURRENT) from multiple connections on one MVCC
+# Database — the premise of the concurrent-writer design. Not built into the C++
+# app; run manually with `cargo run --bin mvcc_probe`.
+[[bin]]
+name = "mvcc_probe"
+path = "src/bin/mvcc_probe.rs"
+
+[dependencies]
+turso_core = "=0.7.0-pre.18"
+
+[profile.release]
+# Keep debug assertions off but panics abort-safe at the FFI boundary is handled
+# in code via catch_unwind; nothing special needed here.
