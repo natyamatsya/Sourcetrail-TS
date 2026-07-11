@@ -159,6 +159,27 @@ Because the contracts are FlatBuffers, the bridge parses zero-copy and stays
 language-agnostic — no socket, no file. The agent gets a fast deterministic path
 (commands + `UiState`) for ~90% and the `frames` channel only for the rest.
 
+## Command semantics: acknowledgements + application state
+
+The message bus is already a command pattern — encapsulated, queued, with undo/redo
+(`UndoRedoController`) and replay flags on `MessageBase`; the FlatBuffers `Command`
+union is that pattern made typed + serializable. A remote-control protocol needs two
+things on top, added here (not a parallel C++ command hierarchy):
+
+- **Closed-loop acks.** Every command emits a `CommandResult` (on `st.agent.events`,
+  correlated by `request_id`): `ok`, or `ok=false` with a message. `GetUiState` also
+  replies with the `UiStateEnvelope` on `st.agent.state`. The agent's loop is thus
+  *issue command → await `CommandResult`*, not fire-and-forget.
+- **An explicit application FSM.** `AppState`
+  (`NoProject · Loading · Indexing · Ready · Busy`) is derived from Sourcetrail's
+  existing `Project::ProjectStateType` + `isIndexing()` — surfaced on
+  `UiState.app_state` and via the `AppStateChanged` event. This makes the agent
+  deterministic: *read state → issue a valid command → await the transition*. It
+  reuses the project state rather than inventing a parallel model.
+- **State-gated commands.** A command illegal in the current state is rejected via
+  `CommandResult` (`ok=false`, message `"rejected: ..."`) — e.g. `search` while
+  `NoProject`. The FSM is what makes gating possible.
+
 ## Why not lean on Layers 2/3 here
 
 - **Accessibility tree (AT-SPI/UIA/AX):** would require setting `objectName`s +

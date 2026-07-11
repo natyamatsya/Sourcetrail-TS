@@ -44,6 +44,7 @@ table UiState {
     error_total:       uint32;
     error_fatal:       uint32;
     indexing_active:   bool;
+    app_state:         AppState = NoProject;   // the coarse application FSM state
 }
 
 // One message on `st.agent.state`. `request_id` echoes the GetUiState command's id.

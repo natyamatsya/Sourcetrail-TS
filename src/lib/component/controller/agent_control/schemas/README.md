@@ -18,9 +18,14 @@ Namespace: `Sourcetrail.Agent`. One `root_type` per channel; all include
 - **`Command`** is a union mapping 1:1 onto `Message<T>` dispatches (comments name
   the target message). `CommandEnvelope.request_id` correlates async replies.
 - **`Event`** republishes message-bus changes (the controller is a
-  `MessageListener`). `seq` lets a late subscriber detect gaps.
+  `MessageListener`). `seq` lets a late subscriber detect gaps. It also carries the
+  closed-loop **`CommandResult`** (per-command ack, `request_id`-correlated; `ok=false`
+  message `"rejected: ..."` for state-gated commands) and **`AppStateChanged`** (the
+  application FSM transitioned).
 - **`UiState`** is the deterministic "what's on screen", assembled from
-  `StorageAccess` + controllers — the primary read path; frames are the fallback.
+  `StorageAccess` + controllers — the primary read path; frames are the fallback. Its
+  `app_state` field (an `AppState`: `NoProject/Loading/Indexing/Ready/Busy`, derived
+  from `Project` state) is the FSM the agent keys its control loop off.
 - **`FrameEnvelope`** carries an encoded frame (chunked per ADR-0002 when it
   exceeds a shm segment; single chunk otherwise).
 

@@ -43,6 +43,18 @@ table SearchMatch {
     score:     int32;
 }
 
+// Coarse application state — the FSM the agent's control loop keys off. Derived
+// from Sourcetrail's Project state + indexing; exposed on UiState.app_state and via
+// the AppStateChanged event. Read state -> issue a valid command -> await the
+// transition + a CommandResult.
+enum AppState : byte {
+    NoProject = 0,   // no project loaded
+    Loading   = 1,   // a project is loading (reserved)
+    Indexing  = 2,   // indexing in progress
+    Ready     = 3,   // project loaded and idle — browsable
+    Busy      = 4    // processing (reserved)
+}
+
 enum RefreshMode : byte { None = 0, UpdatedFiles = 1, AllFiles = 2 }
 
 enum ViewKind : byte { Unknown = 0, Graph = 1, Code = 2, Search = 3, Bookmarks = 4, Errors = 5 }

@@ -205,6 +205,7 @@ struct AgentControlController::Impl
 		}
 		const auto event = fb::CreateNodesActivated(builder, builder.CreateVector(nodes));
 		publishEvent(builder, fb::Event_NodesActivated, event.Union());
+		updateAppState();
 	}
 
 	void handleMessage(MessageActivateFile* message) override
@@ -213,6 +214,7 @@ struct AgentControlController::Impl
 		flatbuffers::FlatBufferBuilder builder;
 		const auto event = fb::CreateFileActivated(builder, builder.CreateString(m_currentFile));
 		publishEvent(builder, fb::Event_FileActivated, event.Union());
+		updateAppState();
 	}
 
 	void handleMessage(MessageSearch* message) override
@@ -233,6 +235,7 @@ struct AgentControlController::Impl
 		m_indexing = true;
 		flatbuffers::FlatBufferBuilder builder;
 		publishEvent(builder, fb::Event_IndexingStarted, fb::CreateIndexingStarted(builder).Union());
+		updateAppState();
 	}
 
 	void handleMessage(MessageIndexingFinished*) override
@@ -240,6 +243,7 @@ struct AgentControlController::Impl
 		m_indexing = false;
 		flatbuffers::FlatBufferBuilder builder;
 		publishEvent(builder, fb::Event_IndexingFinished, fb::CreateIndexingFinished(builder, true).Union());
+		updateAppState();
 	}
 
 	void handleMessage(MessageErrorCountUpdate* message) override
@@ -263,7 +267,18 @@ struct AgentControlController::Impl
 			return;
 		}
 		const auto* envelope = fb::GetCommandEnvelope(data);
-		switch (envelope->command_type())
+		const std::uint64_t requestId = envelope->request_id();
+		const fb::Command type = envelope->command_type();
+
+		// State gate: everything but load_project / get_ui_state needs a project.
+		const bool needsProject = !(type == fb::Command_LoadProject || type == fb::Command_GetUiState);
+		if (needsProject && computeAppState() == fb::AppState_NoProject)
+		{
+			emitResult(requestId, false, "rejected: no project loaded");
+			return;
+		}
+
+		switch (type)
 		{
 		case fb::Command_LoadProject:
 			if (const auto* c = envelope->command_as_LoadProject(); c && c->project_file_path())
@@ -314,12 +329,13 @@ struct AgentControlController::Impl
 			MessageHistoryRedo().dispatch();
 			break;
 		case fb::Command_GetUiState:
-			publishUiState(envelope->request_id());
+			publishUiState(requestId);
 			break;
 		default:
-			LOG_INFO("agent-control: unhandled command type");
-			break;
+			emitResult(requestId, false, "unknown command");
+			return;
 		}
+		emitResult(requestId, true);
 	}
 
 	// The deterministic "what's on screen", assembled from StorageAccess + the
@@ -403,7 +419,8 @@ struct AgentControlController::Impl
 			bookmarksOffset,
 			static_cast<std::uint32_t>(errors.total),
 			static_cast<std::uint32_t>(errors.fatal),
-			m_indexing);
+			m_indexing,
+			computeAppState());
 		builder.Finish(fb::CreateUiStateEnvelope(builder, requestId, uiState));
 		m_stateChannel.send(builder.GetBufferPointer(), builder.GetSize());
 	}
@@ -412,6 +429,43 @@ struct AgentControlController::Impl
 	{
 		builder.Finish(fb::CreateEventEnvelope(builder, m_eventSeq++, nowMs(), type, event));
 		m_eventsChannel.send(builder.GetBufferPointer(), builder.GetSize());
+	}
+
+	// The coarse application FSM, derived from Sourcetrail's project + indexing
+	// state. Loading/Busy are reserved (no clean signal to drive them yet).
+	fb::AppState computeAppState() const
+	{
+		if (m_indexing)
+		{
+			return fb::AppState_Indexing;
+		}
+		bool hasProject = false;
+		if (const auto app = Application::getInstance())
+		{
+			hasProject = !app->getCurrentProjectPath().empty();
+		}
+		return hasProject ? fb::AppState_Ready : fb::AppState_NoProject;
+	}
+
+	void updateAppState()
+	{
+		const fb::AppState next = computeAppState();
+		if (next != m_appState)
+		{
+			m_appState = next;
+			flatbuffers::FlatBufferBuilder builder;
+			publishEvent(
+				builder, fb::Event_AppStateChanged, fb::CreateAppStateChanged(builder, m_appState).Union());
+		}
+	}
+
+	// Closed-loop ack for a command. ok=false with a "rejected: ..." message covers
+	// state-gated rejections.
+	void emitResult(std::uint64_t requestId, bool ok, const std::string& message = "")
+	{
+		flatbuffers::FlatBufferBuilder builder;
+		const auto result = fb::CreateCommandResult(builder, requestId, ok, builder.CreateString(message));
+		publishEvent(builder, fb::Event_CommandResult, result.Union());
 	}
 
 	StorageAccess* m_storageAccess;
@@ -426,6 +480,7 @@ struct AgentControlController::Impl
 	std::string m_currentFile;
 	std::vector<SearchMatch> m_lastSearchMatches;
 	bool m_indexing = false;
+	fb::AppState m_appState = fb::AppState_NoProject;
 	std::uint64_t m_eventSeq = 0;
 
 	stdexec::inplace_stop_source m_stopSource;

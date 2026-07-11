@@ -17,6 +17,13 @@ table IndexingProgress { files_done: uint32; files_total: uint32; }  // MessageI
 table IndexingFinished { succeeded: bool; }                     // MessageIndexingFinished / Interrupted
 table ErrorCountChanged { total: uint32; fatal: uint32; }       // MessageErrorCountUpdate
 table StatusChanged    { text: string; }                        // MessageStatus
+table AppStateChanged  { state: AppState = NoProject; }         // the FSM transitioned
+
+// Closed-loop ack for a command, correlated by the command's request_id. ok=false
+// with a message covers both failures and state-gated rejections (message begins
+// "rejected: ..."). Every command emits one; GetUiState additionally replies with a
+// UiStateEnvelope on st.agent.state.
+table CommandResult { request_id: uint64; ok: bool; message: string; }
 
 union Event {
     NodesActivated,
@@ -29,6 +36,8 @@ union Event {
     IndexingFinished,
     ErrorCountChanged,
     StatusChanged,
+    AppStateChanged,
+    CommandResult,
 }
 
 // One message on `st.agent.events`. `seq` is a per-session monotonic counter so a
