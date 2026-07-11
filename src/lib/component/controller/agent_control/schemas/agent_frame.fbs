@@ -1,0 +1,31 @@
+// A rendered frame (QWidget::grab() -> encoded bytes), published on the
+// `st.agent.frames` channel (ipc::route 1->N). No filesystem: the pixels travel in
+// shared memory. See context/DESIGN_AGENT_UI_CONTROL.md.
+//
+// Chunking (ADR-0002): shared-memory segments do not grow on macOS/Windows, so a
+// frame whose encoded size exceeds the channel's segment is split into `chunk_count`
+// messages that share one `frame_seq`; the receiver concatenates `payload`s in
+// `chunk_index` order until it has `total_bytes`. A frame that fits is a single
+// chunk: chunk_index = 0, chunk_count = 1. Prefer compressed formats (Png/Jpeg) so
+// most frames are one chunk.
+
+include "agent_common.fbs";
+
+namespace Sourcetrail.Agent;
+
+table FrameEnvelope {
+    frame_seq:    uint64;             // identifies a frame across its chunks
+    timestamp_ms: uint64;
+    format:       FrameFormat = Png;
+    width:        uint32;             // pixel dimensions of the full frame
+    height:       uint32;
+    view:         ViewKind = Unknown; // captured view (Unknown = whole main window)
+
+    chunk_index:  uint32;             // 0-based
+    chunk_count:  uint32;             // 1 for an unchunked frame
+    total_bytes:  uint64;             // full encoded size across all chunks
+
+    payload:      [ubyte];            // this chunk's encoded bytes
+}
+
+root_type FrameEnvelope;

@@ -1,0 +1,44 @@
+// Agent -> app commands, sent on the `st.agent.cmd` channel (ipc::route N->1).
+// Each command maps to a Message<T> the AgentControlController dispatches onto the
+// message bus. See context/DESIGN_AGENT_UI_CONTROL.md.
+
+include "agent_common.fbs";
+
+namespace Sourcetrail.Agent;
+
+table LoadProject   { project_file_path: string; refresh_mode: RefreshMode = None; }  // MessageLoadProject
+table Search        { query: string; }                                               // MessageFind / MessageSearch
+table ActivateNode  { serialized_name: string; node_id: uint64 = 0; }                 // MessageActivateNodes
+table ActivateEdge  { source_serialized_name: string; target_serialized_name: string; edge_type: int32; }  // MessageActivateEdge
+table ActivateFile  { file_path: string; }                                            // MessageActivateFile
+table ScrollToLine  { file_path: string; line: uint32; }                              // MessageScrollToLine
+table HistoryBack    {}                                                               // MessageHistoryUndo
+table HistoryForward {}                                                               // MessageHistoryRedo
+table CreateBookmark { name: string; comment: string; node_serialized_name: string; } // MessageBookmarkCreate
+
+// Requests: the reply is published on another channel, correlated by request_id.
+table GetUiState { }                                                                  // -> UiStateEnvelope on st.agent.state
+table GetFrame   { format: FrameFormat = Png; max_width: uint32 = 0; }                // -> FrameEnvelope on st.agent.frames
+
+union Command {
+    LoadProject,
+    Search,
+    ActivateNode,
+    ActivateEdge,
+    ActivateFile,
+    ScrollToLine,
+    HistoryBack,
+    HistoryForward,
+    CreateBookmark,
+    GetUiState,
+    GetFrame,
+}
+
+// One message on `st.agent.cmd`. `request_id` correlates a later reply
+// (UiStateEnvelope / FrameEnvelope) or ack.
+table CommandEnvelope {
+    request_id: uint64;
+    command:    Command;
+}
+
+root_type CommandEnvelope;

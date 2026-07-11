@@ -1,0 +1,42 @@
+// App -> agents events, published on the `st.agent.events` channel (ipc::route
+// 1->N, pub-sub). The AgentControlController is a MessageListener that republishes
+// observed message-bus changes as Events, so an agent can react without polling.
+// See context/DESIGN_AGENT_UI_CONTROL.md.
+
+include "agent_common.fbs";
+
+namespace Sourcetrail.Agent;
+
+table NodesActivated   { nodes: [NodeRef]; }                     // MessageActivateNodes
+table EdgeActivated    { edge: EdgeRef; }                        // MessageActivateEdge
+table FileActivated    { file_path: string; }                   // MessageActivateFile
+table SearchCompleted  { matches: [SearchMatch]; }              // MessageSearch
+table FocusChanged     { view: ViewKind = Unknown; }            // MessageFocusView
+table IndexingStarted  { }                                      // MessageIndexingStarted
+table IndexingProgress { files_done: uint32; files_total: uint32; }  // MessageIndexingStatus
+table IndexingFinished { succeeded: bool; }                     // MessageIndexingFinished / Interrupted
+table ErrorCountChanged { total: uint32; fatal: uint32; }       // MessageErrorCountUpdate
+table StatusChanged    { text: string; }                        // MessageStatus
+
+union Event {
+    NodesActivated,
+    EdgeActivated,
+    FileActivated,
+    SearchCompleted,
+    FocusChanged,
+    IndexingStarted,
+    IndexingProgress,
+    IndexingFinished,
+    ErrorCountChanged,
+    StatusChanged,
+}
+
+// One message on `st.agent.events`. `seq` is a per-session monotonic counter so a
+// late-subscribing agent can detect gaps.
+table EventEnvelope {
+    seq:          uint64;
+    timestamp_ms: uint64;
+    event:        Event;
+}
+
+root_type EventEnvelope;

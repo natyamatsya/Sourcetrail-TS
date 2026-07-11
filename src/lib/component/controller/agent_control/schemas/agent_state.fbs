@@ -1,0 +1,55 @@
+// The deterministic "what's on screen" snapshot, published on `st.agent.state`
+// (ipc::channel) in reply to a GetUiState command. Assembled from StorageAccess +
+// the controllers. This is the primary read path; frames are the fallback.
+// See context/DESIGN_AGENT_UI_CONTROL.md.
+
+include "agent_common.fbs";
+
+namespace Sourcetrail.Agent;
+
+// The currently visible dependency graph (StorageAccess::getGraphForActiveTokenIds).
+table Graph {
+    nodes: [NodeRef];
+    edges: [EdgeRef];
+}
+
+// The code view (CodeController).
+table CodeViewState {
+    file_path:        string;
+    scroll_line:      uint32;
+    active_locations: [SourceLocationRef];
+}
+
+table TabInfo {
+    tab_id: uint64;
+    title:  string;
+    active: bool;
+}
+
+table BookmarkInfo {
+    bookmark_id: uint64;
+    name:        string;
+    comment:     string;
+    category:    string;
+}
+
+table UiState {
+    project_file_path: string;
+    active_nodes:      [NodeRef];   // currently activated tokens
+    graph:             Graph;       // visible dependency graph
+    code_view:         CodeViewState;
+    search_matches:    [SearchMatch];
+    tabs:              [TabInfo];
+    bookmarks:         [BookmarkInfo];
+    error_total:       uint32;
+    error_fatal:       uint32;
+    indexing_active:   bool;
+}
+
+// One message on `st.agent.state`. `request_id` echoes the GetUiState command's id.
+table UiStateEnvelope {
+    request_id: uint64;
+    state:      UiState;
+}
+
+root_type UiStateEnvelope;

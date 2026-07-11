@@ -1,0 +1,50 @@
+// Common types shared by the agent-control channels.
+// See context/DESIGN_AGENT_UI_CONTROL.md (transport: thoth-ipc + FlatBuffers).
+//
+// Sourcetrail identifies a symbol by its NameHierarchy, serialized to a stable
+// string (`serialized_name`) that survives across sessions; the numeric `*_id`
+// fields are session-local database element ids. Agents should address elements
+// by serialized_name where possible; the controller resolves names to ids via
+// StorageAccess (getNodeIdForNameHierarchy / getAutocompletionMatches).
+
+namespace Sourcetrail.Agent;
+
+// A graph node (class, function, file, ...).
+table NodeRef {
+    node_id:         uint64;   // 0 = unknown / unresolved
+    serialized_name: string;   // NameHierarchy — canonical identity
+    node_kind:       int32;    // NodeKind bitmask
+    display_name:    string;   // human-friendly label (optional)
+}
+
+// A dependency edge between two nodes.
+table EdgeRef {
+    edge_id:                uint64;
+    edge_type:              int32;   // Edge::EdgeType
+    source_serialized_name: string;
+    target_serialized_name: string;
+}
+
+// A source-code range in a file.
+table SourceLocationRef {
+    file_path:     string;
+    start_line:    uint32;
+    start_column:  uint32;
+    end_line:      uint32;
+    end_column:    uint32;
+    location_type: int32;    // LocationType
+}
+
+// A single search-result match.
+table SearchMatch {
+    text:      string;    // matched (sub)string
+    node_kind: int32;     // NodeKind
+    node_ids:  [uint64];  // elements this match resolves to
+    score:     int32;
+}
+
+enum RefreshMode : byte { None = 0, UpdatedFiles = 1, AllFiles = 2 }
+
+enum ViewKind : byte { Unknown = 0, Graph = 1, Code = 2, Search = 3, Bookmarks = 4, Errors = 5 }
+
+enum FrameFormat : byte { Png = 0, Jpeg = 1, RawRgba = 2 }
