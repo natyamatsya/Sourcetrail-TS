@@ -13,18 +13,6 @@
 		},
 		{
 			"hidden": true,
-			"name": "sys-default-presets",
-			"inherits": [
-				"default-presets"
-			],
-			"condition": {
-				"type": "equals",
-				"lhs": "${hostSystemName}",
-				"rhs": "Linux"
-			}
-		},
-		{
-			"hidden": true,
 			"name": "dbg-presets",
 			"cacheVariables": {
 				"CMAKE_BUILD_TYPE": "Debug",
@@ -84,72 +72,6 @@
 				"BUILD_RUST_LANGUAGE_PACKAGE": "ON",
 				"BUILD_UNIT_TESTS_PACKAGE": "ON"
 			}
-		},
-		{
-			"name": "sys-dbg",
-			"inherits": [
-				"dbg-presets",
-				"sys-default-presets",
-				"sourcetrail-presets"
-			]
-		},
-		{
-			"name": "sys-rel",
-			"inherits": [
-				"rel-presets",
-				"sys-default-presets",
-				"sourcetrail-presets"
-			]
-		},
-		{
-			"name": "sys-reldbg",
-			"inherits": [
-				"reldbg-presets",
-				"sys-default-presets",
-				"sourcetrail-presets"
-			]
-		},
-		{
-			"name": "sys-apple-clang-dbg",
-			"inherits": [
-				"sys-dbg",
-				"apple-clang-presets"
-			]
-		},
-		{
-			"name": "sys-apple-clang-rel",
-			"inherits": [
-				"sys-rel",
-				"apple-clang-presets"
-			]
-		},
-		{
-			"name": "sys-apple-clang-reldbg",
-			"inherits": [
-				"sys-reldbg",
-				"apple-clang-presets"
-			]
-		},
-		{
-			"name": "sys-llvm-clang-dbg",
-			"inherits": [
-				"sys-dbg",
-				"llvm-clang-presets"
-			]
-		},
-		{
-			"name": "sys-llvm-clang-rel",
-			"inherits": [
-				"sys-rel",
-				"llvm-clang-presets"
-			]
-		},
-		{
-			"name": "sys-llvm-clang-reldbg",
-			"inherits": [
-				"sys-reldbg",
-				"llvm-clang-presets"
-			]
 		},
 		{
 			"hidden": true,
