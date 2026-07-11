@@ -193,7 +193,11 @@ int main(int argc, char* argv[])
 		QtNetworkFactory networkFactory;
 
 		Application::createInstance(
-			version, &viewFactory, &networkFactory, &execution::qt::Schedulers::getInstance());
+			version,
+			&viewFactory,
+			&networkFactory,
+			&execution::qt::Schedulers::getInstance(),
+			commandLineParser.getAgentControlEnabled());
 		
 		[[maybe_unused]]
 		ScopedFunctor f([]()

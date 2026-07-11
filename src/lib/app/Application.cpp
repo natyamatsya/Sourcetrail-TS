@@ -7,6 +7,7 @@
 #include "DialogView.h"
 #include "FileLogger.h"
 #include "GraphViewStyle.h"
+#include "AgentControlController.h"
 #include "IDECommunicationController.h"
 #include "LogManager.h"
 #include "MainView.h"
@@ -37,7 +38,8 @@ void Application::createInstance(
 	const Version& version,
 	ViewFactory* viewFactory,
 	NetworkFactory* networkFactory,
-	execution::ISchedulers* schedulers)
+	execution::ISchedulers* schedulers,
+	bool enableAgentControl)
 {
 	bool hasGui = (viewFactory != nullptr);
 
@@ -79,6 +81,15 @@ void Application::createInstance(
 		s_instance->m_ideCommunicationController->startListening();
 	}
 
+	// Agent-UI control channel: needs the GUI (live views/state) and the
+	// schedulers (the ui() hop). No-op stub unless built with SOURCETRAIL_AGENT_CONTROL.
+	if (enableAgentControl && hasGui && s_instance->m_schedulers != nullptr)
+	{
+		s_instance->m_agentControlController = std::make_shared<AgentControlController>(
+			s_instance->m_storageCache.get(), s_instance->m_schedulers);
+		s_instance->m_agentControlController->startListening();
+	}
+
 	s_instance->startMessagingAndScheduling();
 }
 
@@ -94,6 +105,12 @@ execution::ISchedulers* Application::getSchedulers() const
 
 void Application::destroyInstance()
 {
+	// Stop the agent reader thread before the message loop / schedulers go away.
+	if (s_instance && s_instance->m_agentControlController)
+	{
+		s_instance->m_agentControlController->stopListening();
+	}
+
 	MessageQueue::getInstance()->stopMessageLoop();
 	TaskManager::destroyScheduler(TabIds::background());
 	TaskManager::destroyScheduler(TabIds::app());

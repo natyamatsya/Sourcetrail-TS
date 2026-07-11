@@ -20,6 +20,7 @@ class ISchedulers;
 }
 
 class Bookmark;
+class AgentControlController;
 class IDECommunicationController;
 class MainView;
 class NetworkFactory;
@@ -42,7 +43,8 @@ public:
 		const Version& version,
 		ViewFactory* viewFactory,
 		NetworkFactory* networkFactory,
-		execution::ISchedulers* schedulers = nullptr);
+		execution::ISchedulers* schedulers = nullptr,
+		bool enableAgentControl = false);
 	static std::shared_ptr<Application> getInstance();
 	static void destroyInstance();
 
@@ -110,6 +112,11 @@ private:
 	std::shared_ptr<MainView> m_mainView;
 
 	std::shared_ptr<IDECommunicationController> m_ideCommunicationController;
+
+	// Agent-UI control channel (thoth-ipc), created only when enabled at startup.
+	// A no-op stub unless built with SOURCETRAIL_AGENT_CONTROL. See
+	// context/DESIGN_AGENT_UI_CONTROL.md.
+	std::shared_ptr<AgentControlController> m_agentControlController;
 };
 
 #endif	  // APPLICATION_H
