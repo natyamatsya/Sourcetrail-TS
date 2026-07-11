@@ -1,0 +1,24 @@
+sqlpp23 provides CMake targets:
+
+    # The vendor-neutral core needs no components:
+    find_package(Sqlpp23 CONFIG REQUIRED)
+    target_link_libraries(main PRIVATE sqlpp23::core)   # sqlpp23::sqlpp23 is an alias
+
+    # Each connector must be requested as a COMPONENT (matching the enabled port
+    # feature) so its client library (SQLite3, PostgreSQL, ...) is found and linked.
+    # Without the COMPONENTS request the connector target's dependency is NOT resolved.
+    find_package(Sqlpp23 CONFIG REQUIRED COMPONENTS SQLite3)
+    target_link_libraries(main PRIVATE sqlpp23::sqlite3)
+
+    # Other connectors (component name -> target), by port feature:
+    #   COMPONENTS SQLite3      -> sqlpp23::sqlite3       (feature "sqlite3")
+    #   COMPONENTS SQLCipher    -> sqlpp23::sqlcipher     (feature "sqlcipher")
+    #   COMPONENTS MySQL        -> sqlpp23::mysql         (feature "mysql")
+    #   COMPONENTS MariaDB      -> sqlpp23::mariadb       (feature "mariadb")
+    #   COMPONENTS PostgreSQL   -> sqlpp23::postgresql    (feature "postgresql")
+
+The ddl2cpp table-header generator is installed at:
+
+    <vcpkg_installed>/<triplet>/tools/sqlpp23/sqlpp23-ddl2cpp
+
+Requires C++23 (Clang 20.1+, GCC 14.2+, or MSVC 19.44+).

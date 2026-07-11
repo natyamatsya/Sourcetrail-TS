@@ -1,0 +1,53 @@
+{
+  "name": "sqlpp23",
+  "version": "0.69",
+  "description": "A type safe embedded domain specific language for SQL queries and results in C++23 (successor to sqlpp11).",
+  "homepage": "https://github.com/rbock/sqlpp23",
+  "license": "BSD-2-Clause",
+  "supports": "!uwp",
+  "dependencies": [
+    {
+      "name": "vcpkg-cmake",
+      "host": true
+    },
+    {
+      "name": "vcpkg-cmake-config",
+      "host": true
+    }
+  ],
+  "default-features": [
+    "sqlite3"
+  ],
+  "features": {
+    "sqlite3": {
+      "description": "Build the SQLite3 connector",
+      "dependencies": [
+        "sqlite3"
+      ]
+    },
+    "sqlcipher": {
+      "description": "Build the SQLCipher connector",
+      "dependencies": [
+        "sqlcipher"
+      ]
+    },
+    "mysql": {
+      "description": "Build the MySQL connector",
+      "dependencies": [
+        "libmysql"
+      ]
+    },
+    "mariadb": {
+      "description": "Build the MariaDB connector",
+      "dependencies": [
+        "libmariadb"
+      ]
+    },
+    "postgresql": {
+      "description": "Build the PostgreSQL connector",
+      "dependencies": [
+        "libpq"
+      ]
+    }
+  }
+}
