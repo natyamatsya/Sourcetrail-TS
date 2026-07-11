@@ -42,6 +42,12 @@ public:
 	const ShardConfig& getShardConfig() const;
 	void setShardConfig(const ShardConfig& config);
 
+	// Agent/CI headless screenshot (see context/DESIGN_AGENT_UI_CONTROL.md).
+	// When set, the GUI runs (forced to QT_QPA_PLATFORM=offscreen unless already
+	// set) and captures its main window to this path after getScreenshotDelayMs().
+	const std::string& getScreenshotPath() const;
+	int getScreenshotDelayMs() const;
+
 private:
 	void processProjectfile();
 	void printHelp() const;
@@ -59,6 +65,9 @@ private:
 
 	bool m_quit = false;
 	bool m_withoutGUI = false;
+
+	std::string m_screenshotPath;
+	int m_screenshotDelayMs = 2000;
 
 	std::string m_errorString;
 };

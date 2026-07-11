@@ -19,6 +19,15 @@ CommandLineParser::CommandLineParser(const std::string& version)
 		"project-file",
 		m_projectFileArg,
 		"Open Sourcetrail with this project (.srctrl.toml)");
+	m_app.add_option(
+		"--screenshot",
+		m_screenshotPath,
+		"Headless: run the GUI (forced offscreen unless QT_QPA_PLATFORM is set), "
+		"capture the main window to this PNG path, then exit");
+	m_app.add_option(
+		"--screenshot-delay",
+		m_screenshotDelayMs,
+		"Delay in ms before the --screenshot capture, to let a project render (default 2000)");
 	m_app.allow_extras();
 
 	m_commands.push_back(std::make_unique<commandline::CommandlineCommandConfig>(this));
@@ -149,6 +158,16 @@ bool CommandLineParser::runWithoutGUI() const
 bool CommandLineParser::exitApplication() const
 {
 	return m_quit;
+}
+
+const std::string& CommandLineParser::getScreenshotPath() const
+{
+	return m_screenshotPath;
+}
+
+int CommandLineParser::getScreenshotDelayMs() const
+{
+	return m_screenshotDelayMs;
 }
 
 bool CommandLineParser::hasError() const

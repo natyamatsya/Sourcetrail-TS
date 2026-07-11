@@ -15,6 +15,7 @@
 #include "QtApplication.h"
 #include "QtCoreApplication.h"
 #include "QtNetworkFactory.h"
+#include "QtScreenshot.h"
 #include "QtViewFactory.h"
 #include "ResourcePaths.h"
 #include "Schedulers.h"
@@ -175,6 +176,14 @@ int main(int argc, char* argv[])
 	}
 	else
 	{
+		// Headless screenshot mode: render the real GUI with no display. Must be set
+		// before the QApplication is constructed. Respect an explicit override.
+		if (!commandLineParser.getScreenshotPath().empty() &&
+			qEnvironmentVariableIsEmpty("QT_QPA_PLATFORM"))
+		{
+			qputenv("QT_QPA_PLATFORM", "offscreen");
+		}
+
 		[[maybe_unused]]
 		QtApplication qtApp(argc, argv);
 
@@ -209,6 +218,12 @@ int main(int argc, char* argv[])
 		else
 		{
 			MessageLoadProject(commandLineParser.getProjectFilePath(), false, RefreshMode::NONE).dispatch();
+		}
+
+		if (!commandLineParser.getScreenshotPath().empty())
+		{
+			utility::qt::scheduleScreenshotAndQuit(
+				commandLineParser.getScreenshotPath(), commandLineParser.getScreenshotDelayMs());
 		}
 
 		return QtApplication::exec();
