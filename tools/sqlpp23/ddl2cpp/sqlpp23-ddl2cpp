@@ -191,7 +191,10 @@ class DdlParser:
         ddl_timestamp = get_type_parser("timestamp", "timestamp")
         ddl_time = get_type_parser("time", "time")
         ddl_unknown = pp.Word(pp.alphanums).set_parse_action(pp.replace_with("UNKNOWN"))
-        cls.ddl_type = (
+        # LOCAL PATCH [reserved-word-column]: the set of *recognized* data types,
+        # without the catch-all ddl_unknown. Used below to tell a real constraint
+        # from a column whose name happens to be a constraint keyword.
+        cls.ddl_known_type = (
             ddl_boolean
             | ddl_integral
             | ddl_serial
@@ -201,8 +204,8 @@ class DdlParser:
             | ddl_timestamp
             | ddl_date
             | ddl_time
-            | ddl_unknown
         )
+        cls.ddl_type = cls.ddl_known_type | ddl_unknown
 
         # Constraints parser
         ddl_unsigned = pp.CaselessKeyword("UNSIGNED").set_results_name("is_unsigned")
@@ -237,6 +240,14 @@ class DdlParser:
                 pp.CaselessKeyword,
                 sorted(ddl_ignored_keywords + ["PRIMARY"], reverse=True)
             ))
+            # LOCAL PATCH [reserved-word-column]: a table-level constraint keyword
+            # (KEY, UNIQUE, CHECK, PRIMARY, ...) is never immediately followed by a
+            # data type. A column literally named after such a keyword is
+            # (e.g. `key TEXT`, `check INTEGER`). Without this negative lookahead the
+            # DelimitedList matched such columns as constraints and silently dropped
+            # them. Two-word forms (PRIMARY KEY(...), FOREIGN KEY(...)) are unaffected
+            # because the token after the leading keyword is KEY, not a data type.
+            + ~cls.ddl_known_type
             + cls.ddl_expression
         ).set_results_name("is_constraint")
 

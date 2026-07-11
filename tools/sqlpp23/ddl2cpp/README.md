@@ -29,4 +29,32 @@ pip install -r requirements.txt   # pyparsing
 
 ## Local patches
 
-_None yet in this commit (pristine import)._
+Search the script for `LOCAL PATCH` to find every change vs. the pristine import.
+
+### `[reserved-word-column]` — columns named after SQL keywords were silently dropped
+
+A column literally named `key` (or `check`, `unique`, ...) was silently omitted
+from the generated model, with no error. `key` is a SQL keyword, so the DDL
+parser matched `key TEXT` as a table-level `KEY <expr>` constraint (which it
+suppresses) instead of a column. For a key/value table like `meta`, the column
+the table is keyed on simply vanished.
+
+Fix: a table-level constraint keyword is never immediately followed by a data
+type, so the constraint rule now has a negative lookahead (`~ddl_known_type`).
+`key TEXT` → column; `PRIMARY KEY(...)` / `FOREIGN KEY(...)` → still constraints.
+
+Regression test: `test/run_test.sh` (fixture `test/reserved_word.sql`).
+
+```bash
+pip install -r requirements.txt
+./test/run_test.sh          # -> reserved-word regression: PASS
+```
+
+### Known limitation (not yet patched): `--assume-auto-id` on FK primary keys
+
+`--assume-auto-id` marks every primary-key `id` as auto-increment. When a
+table's `id` is itself a `FOREIGN KEY` to another table's id (junction tables),
+that is wrong — the id must be supplied, not auto-assigned. ddl2cpp does not
+cross-check FK constraints against the PK, so those columns must be corrected by
+hand after generation (or via `--path-to-cpp-types`). See the `[PK-is-FK]` notes
+in the migration's generated headers.
