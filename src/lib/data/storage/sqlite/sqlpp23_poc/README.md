@@ -75,6 +75,37 @@ This matters because `SqliteStorage` is the base of *both* the bookmark and inde
 storages — converting it is what lets the whole hierarchy move to the injected
 connection.
 
+## Index storage (focused conversion of the novel parts)
+
+`SqliteIndexStorageSqlpp23` + `IndexTables.h` + `index_poc_main.cpp` cover the
+parts of `SqliteIndexStorage` that the bookmark POC did *not* already prove.
+Build/run the `index_sqlpp23_poc` target; it prints `INDEX POC PASS`.
+
+- **Batch multi-row INSERT replaces `InsertBatchStatement<T>` wholesale.** The
+  hand-rolled machinery (compile statements at batch sizes 333/166/.../1 to stay
+  under SQLite's 999 *bound-parameter* limit, plus per-column bind lambdas) becomes
+  `insert_into(t).columns(...)` + a loop of `.add_values(...)` + one `db(insert)`.
+  Direct execution **inlines** the values (properly escaped), so the 999-parameter
+  ceiling that motivated the dance does not apply. Very large batches would chunk
+  by statement length, not by a hard variable count — a much simpler constraint.
+- **Client-side id allocation** (`SOURCETRAIL_CLIENT_IDS`): `insertElement()` mints
+  ids from an in-process counter seeded via `select(max(element.id))`, reproducing
+  autoincrement (the POC asserts ids come out 1,2,3 then 4,5). No `lastRowId`
+  round-trip.
+- **`IN(id-list)` reads** — `edge.sourceNodeId.in(std::vector<int64_t>{...})`,
+  replacing `"... IN (" + join(toStrings(ids), ',') + ")"`.
+- **`INSERT OR IGNORE`** — `sqlpp::sqlite3::insert_or_ignore().into(occurrence)...`
+  for the occurrence composite-key dedup.
+- **Aggregate** — `select(count(node.id).as(cnt))`.
+
+Deliberately **out of scope** for this focused pass (all mechanical repetition of
+patterns already proven above): the ~70 remaining reads/removes/counts, the
+in-memory dedup temp-indices (`m_tempNodeNameIndex` etc. — orthogonal, backend
+independent), and the `forEach<T>` template family (maps onto the same typed
+`select(all_of(t)).from(t).where(...)` loop). Five of the 13 index tables have an
+`id` that is a foreign key; only `node`/`edge` are corrected here (see the
+`[PK-is-FK]` note in `IndexTables.h`), the rest are flagged for the full pass.
+
 ## What the tooling already caught
 
 Two silent-data-loss / latent-bug classes surfaced just from generating the

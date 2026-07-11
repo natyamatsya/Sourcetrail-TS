@@ -23,3 +23,8 @@ add_executable(bookmark_sqlpp23_poc
   SqliteBookmarkStorageSqlpp23.cpp
   SqliteStorageMetaSqlpp23.cpp)
 target_link_libraries(bookmark_sqlpp23_poc PRIVATE sqlpp23::sqlite3)
+
+add_executable(index_sqlpp23_poc
+  index_poc_main.cpp
+  SqliteIndexStorageSqlpp23.cpp)
+target_link_libraries(index_sqlpp23_poc PRIVATE sqlpp23::sqlite3)
