@@ -333,6 +333,10 @@ during large-crate indexing. In expected-payoff order:
       `TaskBuildIndex` spawns exactly one Rust process (C++ gets N); K rust
       supervisor threads would parallelize across crates/source groups.
       Memory trade-off: each process loads its own workspace.
+      The full per-source-group fan-out design (clusters + concurrent Turso as
+      sole writer) is written up in
+      [DESIGN_MULTIGROUP_FANOUT.md](DESIGN_MULTIGROUP_FANOUT.md); this Rust
+      bullet is its language-specific slice.
 
 Measure first: for small/medium crates the wall time is dominated by
 workspace resolution + `cargo check` + sysroot loading (I/O and subprocess
