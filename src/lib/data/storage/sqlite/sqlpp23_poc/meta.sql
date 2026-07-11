@@ -1,0 +1,6 @@
+CREATE TABLE IF NOT EXISTS meta(
+	id INTEGER,
+	key TEXT,
+	value TEXT,
+	PRIMARY KEY(id)
+);
