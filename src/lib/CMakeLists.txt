@@ -119,6 +119,11 @@ target_link_libraries(Sourcetrail_lib
 		STDEXEC::stdexec
 		stdext::expected
 		stdcompat::optional
+	PRIVATE
+		# Type-safe SQL DSL for the storage-layer migration. PRIVATE: only this
+		# lib's own sources include the sqlpp23 headers; SqliteStorage.h keeps the
+		# connection forward-declared. See context/DESIGN_SQLPP23_MIGRATION.md.
+		sqlpp23::sqlite3
 )
 
 if (UNIX)

@@ -322,6 +322,13 @@ else()
 endif()
 message(STATUS "Found SQLite3 ${SQLite3_VERSION}")
 
+# sqlpp23 (type-safe SQL DSL) ---------------------------------------------------
+# Vendored via the vcpkg overlay port (vcpkg-overlay-ports/sqlpp23). Used by the
+# storage layer's incremental migration off raw SQL; see
+# context/DESIGN_SQLPP23_MIGRATION.md. Header-only; the SQLite3 component pulls the
+# connector. Requires Clang >= 20.1 / GCC >= 14.2 / MSVC >= 19.44 (C++23).
+find_package(Sqlpp23 CONFIG REQUIRED COMPONENTS SQLite3)
+
 # TinyXML ----------------------------------------------------------------------
 
 if (isVcpkgBuild)

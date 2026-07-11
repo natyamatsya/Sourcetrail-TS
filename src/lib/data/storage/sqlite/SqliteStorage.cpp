@@ -1,5 +1,6 @@
 #include "SqliteStorage.h"
 
+#include "BorrowedSqliteConnection.h"
 #include "FileSystem.h"
 #include "TimeStamp.h"
 #include "logging.h"
@@ -22,6 +23,15 @@ SqliteStorage::SqliteStorage(const FilePath& dbFilePath): m_dbFilePath(dbFilePat
 	}
 
 	enablePragmas();
+
+	// Borrow the now-open handle as a sqlpp23 connection: the typed view shares
+	// this object's connection and transaction scope with the raw path.
+	m_sqlpp = std::make_unique<sourcetrail::storage::BorrowedSqliteConnection>(m_database.handle());
+}
+
+sourcetrail::storage::BorrowedSqliteConnection& SqliteStorage::db()
+{
+	return *m_sqlpp;
 }
 
 SqliteStorage::~SqliteStorage()
