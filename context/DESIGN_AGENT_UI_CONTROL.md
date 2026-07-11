@@ -52,15 +52,49 @@ pattern; it is just too narrow (4 message types, plugin-shaped) to reuse directl
 ## Architecture
 
 ```
-   Agent (Claude)                      Sourcetrail process (QT_QPA_PLATFORM=offscreen)
-   ┌────────────┐   MCP tools    ┌───────────────────────────────────────────────┐
-   │  MCP client│ ─────────────► │  MCP server ◄─JSON/socket─► AgentControlController│
-   └────────────┘  invoke_action │                              │        │          │
-                    get_ui_state │            dispatch Message<T>│        │StorageAccess
-                    find_element │                               ▼        ▼          │
-                    screenshot   │            MessageQueue ─► Controllers/Views ──► QMainWindow
-                                 └───────────────────────────────────────────────┘
+  Agent (Claude) ─ MCP tools ─►  MCP bridge         Sourcetrail (QT_QPA_PLATFORM=offscreen)
+                   invoke_action  (C++/Rust/Swift)   ┌────────────────────────────────────────┐
+                   get_ui_state        │  thoth-ipc  │ AgentControlController                  │
+                   subscribe_events    │ shared-mem  │   ├ st.agent.cmd   (route N→1) ─► dispatch Message<T>
+                   get_frame           │  channels   │   ├ st.agent.events(route 1→N) ◄─ MessageListener<T>
+                                       └─(no files)─►│   ├ st.agent.state (channel)  ◄─ StorageAccess
+                                                     │   └ st.agent.frames(route 1→N) ◄─ QWidget::grab()
+                                                     │        MessageQueue ─► Controllers/Views ─► QMainWindow
+                                                     └────────────────────────────────────────┘
 ```
+
+## Transport: thoth-ipc channels + typed contracts
+
+The control plane rides `submodules/thoth-ipc` — the same high-performance
+shared-memory IPC that already carries indexer results (`IpcSharedMemory`,
+ADR-0002). It is a strictly better fit than a TCP/JSON socket:
+
+- **Multiple named channels, no filesystem.** `ipc::route` (1 writer → N readers,
+  pub-sub) and `ipc::channel` (N ↔ N) are named shared-memory transports
+  (`submodules/thoth-ipc/cpp/libipc/include/libipc/ipc.h`). We run several in
+  parallel — `st.agent.cmd`, `st.agent.events`, `st.agent.state`, `st.agent.frames`
+  — each independent and lock-free. Nothing touches disk; the Phase-A
+  `--screenshot <file>` becomes a bootstrap/fallback, not the real path.
+- **Typed contracts, not ad-hoc JSON.** thoth-ipc's typed protocol layer uses
+  **FlatBuffers** — already Sourcetrail's serialization stack
+  (`External_lib_flatbuffers`, `FLATBUFFERS_GENERATED_DIR`). Define the wire as
+  schemas: a `Command` union, an `Event` union, a `UiState` table, a `Frame` table.
+  Schemas give versioned, evolvable, **zero-copy** messages — and because thoth-ipc
+  is binary-compatible across C++/Rust/Swift, the agent side reads the exact same
+  schema in any language.
+- **Rendered graphics in-memory.** `QWidget::grab()` → `QImage` → encode into a
+  `QByteArray` (PNG/JPEG via `QBuffer`, *not* a file) → publish a `Frame` on
+  `st.agent.frames`. The agent pulls frames straight off shared memory. For
+  canvas-heavy graph views this is the vision channel; for structured UI,
+  `st.agent.state` suffices and frames are optional/on-demand.
+- **Oversized payloads (ADR-0002).** A full-res RGBA frame (~8 MiB at 1080p) or a
+  large `UiState` can exceed a fixed shm segment, and segments do **not** grow on
+  macOS/Windows. Two mitigations already in the codebase's toolkit: send
+  **compressed** frames (PNG/JPEG shrink 1080p to ~10²–10³ KiB — usually one
+  message), and **chunk** anything still oversized via the ADR-0002 chunking pattern
+  the indexer already uses.
+- **Optional AEAD codec** (thoth-ipc secure envelope) if the control plane needs to
+  be authenticated.
 
 Three pieces, smallest-first:
 
@@ -78,9 +112,11 @@ GUI path, forces the offscreen platform if unset, and starts the control channel
 
 ### 2. `AgentControlController` — the exposed seam
 
-A new controller (debug/flag-gated), modelled on `IDECommunicationController` but with
-a JSON protocol and state queries. It is both a `MessageListener<...>` (to observe) and
-a small local socket server (to receive commands). Responsibilities:
+A new controller (debug/flag-gated), modelled on `IDECommunicationController` but
+backed by the thoth-ipc channels above instead of the plugin's TCP/`NetworkProtocolHelper`
+framing, and speaking FlatBuffers contracts instead of JSON. It consumes `st.agent.cmd`
+and is a `MessageListener<...>` that republishes observed changes onto `st.agent.events`.
+Responsibilities:
 
 - **`invoke_action`** → construct and `dispatch()` a `Message*`. Back it with a
   **command registry**: `name -> factory(json args)`. Start with a curated high-value
@@ -95,27 +131,33 @@ a small local socket server (to receive commands). Responsibilities:
   | `scroll_to_line` | `MessageScrollToLine` |
   | `back` / `forward` | `MessageHistoryUndo` / `MessageHistoryRedo` |
   | `bookmark_*` | `MessageBookmarkCreate/Activate/...` |
-- **`get_ui_state`** → serialize a snapshot as JSON: current project path
-  (`Application::getCurrentProjectPath`), active tokens as name hierarchies, the visible
-  graph (`StorageAccess::getGraphForActiveTokenIds`), current file + scroll
-  (CodeController), last search matches (SearchController), open tabs, bookmarks. This is
-  the deterministic "what's on screen" the agent reads instead of screenshotting.
+- **`get_ui_state`** → publish a `UiState` FlatBuffer on `st.agent.state`: current
+  project path (`Application::getCurrentProjectPath`), active tokens as name
+  hierarchies, the visible graph (`StorageAccess::getGraphForActiveTokenIds`), current
+  file + scroll (CodeController), last search matches (SearchController), open tabs,
+  bookmarks. This is the deterministic "what's on screen" the agent reads instead of
+  screenshotting.
 - **`find_element`** → resolve a human name to an actionable id via
   `StorageAccess::getNodeIdForNameHierarchy` / `getAutocompletionMatches`, so
   `activate_node` can target it.
-- **`screenshot`** → `QMainWindow::grab()` → PNG (vision fallback for the
-  canvas-heavy graph view the message state can't fully describe).
+- **`get_frame`** → `QWidget::grab()` → encode → publish a `Frame` on
+  `st.agent.frames` (in-memory, no file). The vision channel for the canvas-heavy graph
+  view the structured state can't fully describe.
+- **`subscribe_events`** → the `MessageListener` republishes each observed change as an
+  `Event` on `st.agent.events`, so the agent can react to activations / indexing
+  progress without polling.
 
 Gate it behind a compile flag (`SOURCETRAIL_AGENT_CONTROL`) and/or the CLI flag so it
 never ships in release input paths. It doubles as a **subcutaneous test harness**.
 
 ### 3. MCP server
 
-A small external MCP server (Python/TS, matching the `kwin-mcp` / Windows-365 templates)
-that connects to the control socket and exposes typed tools: `invoke_action`,
-`get_ui_state`, `find_element`, `screenshot`. External process = language-agnostic and
-keeps Qt/MCP dependencies out of the app. The agent gets a fast deterministic path
-(messages + state JSON) for ~90% and vision only for the rest.
+A small external MCP bridge that connects to the thoth-ipc channels via the
+**C++/Rust/Swift** binding (same binary wire format) and exposes typed tools:
+`invoke_action`, `get_ui_state`, `find_element`, `get_frame`, `subscribe_events`.
+Because the contracts are FlatBuffers, the bridge parses zero-copy and stays
+language-agnostic — no socket, no file. The agent gets a fast deterministic path
+(commands + `UiState`) for ~90% and the `frames` channel only for the rest.
 
 ## Why not lean on Layers 2/3 here
 
@@ -125,21 +167,25 @@ keeps Qt/MCP dependencies out of the app. The agent gets a fast deterministic pa
   that domain. Worth doing the `objectName`/`QAccessible` hygiene anyway (it helps real
   screen-reader users and any future vision/accessibility agent), but it is not the
   primary seam.
-- **Vision:** kept only as the `screenshot` fallback for the graph canvas.
+- **Vision:** kept only as the `st.agent.frames` channel fallback for the graph canvas.
 
 ## Phased plan
 
 - **Phase A — headless GUI.** Add the `--agent-control` CLI path that runs the GUI branch
   under `QT_QPA_PLATFORM=offscreen`. Verify: a project loads, the message loop runs, and
   `QMainWindow::grab()` produces a PNG, all with no display. No new protocol yet.
-- **Phase B — control channel.** Add `AgentControlController` + a local JSON socket with a
-  first command set (`load_project`, `search`, `activate_node`, `activate_file`) and
-  `get_ui_state`. Prove round-trips against a small indexed project.
-- **Phase C — MCP server.** Wrap the channel in an MCP server exposing the four tools;
-  wire `find_element` and `screenshot`. First end-to-end agent-driven session.
-- **Phase D — broaden.** Grow the command registry and the state schema; add the
+- **Phase B — control channels.** Add `AgentControlController` + the thoth-ipc
+  `cmd`/`events`/`state` channels with FlatBuffers `Command`/`Event`/`UiState` schemas
+  and a first command set (`load_project`, `search`, `activate_node`, `activate_file`).
+  Prove round-trips (send a `Command`, read back a `UiState`) against a small indexed
+  project — no filesystem.
+- **Phase C — frames + MCP bridge.** Add the `st.agent.frames` channel
+  (`grab()` → encode → publish, with ADR-0002 chunking) and wrap the channels in an MCP
+  bridge exposing the tools + `find_element`. First end-to-end agent-driven session.
+- **Phase D — broaden.** Grow the command union and `UiState` schema; add the
   `objectName`/`QAccessible` hygiene pass; add a golden-state test mode that replays a
-  message script and diffs `get_ui_state` (regression harness).
+  command script and diffs `UiState` (regression harness — also de-risks the stdexec
+  migration, see `ROADMAP_STDEXEC_MIGRATION.md`).
 
 Each phase is independently useful and testable; Phase A alone unlocks screenshot-based
 verification of UI changes in CI.
@@ -152,8 +198,11 @@ verification of UI changes in CI.
 | Command queue | `MessageQueue` | `src/lib/utility/messaging/MessageQueue.h` |
 | Observe state | `MessageListener<T>` | `src/lib/utility/messaging/MessageListener.h:10-35` |
 | Command vocabulary | 91 `Message*` types | `src/lib/utility/messaging/type/` |
-| Existing external control | `IDECommunicationController` | `src/lib/component/controller/IDECommunicationController.h` |
-| IPC wire format (precedent) | `NetworkProtocolHelper` | `src/lib/component/controller/helper/NetworkProtocolHelper.h` |
+| Transport (control plane) | `ipc::route` / `ipc::channel` | `submodules/thoth-ipc/cpp/libipc/include/libipc/ipc.h` |
+| shm usage precedent | `IpcSharedMemory` | `src/lib/utility/interprocess/` |
+| Typed contracts | FlatBuffers | `External_lib_flatbuffers`, `FLATBUFFERS_GENERATED_DIR` |
+| Oversized-payload chunking | ADR-0002 | `docs/adr/ADR-0002-no-shm-growth.md` |
+| Existing external control (precedent) | `IDECommunicationController` | `src/lib/component/controller/IDECommunicationController.h` |
 | GUI vs headless branch | `main()` | `src/app/main.cpp:130-215` |
 | GUI bootstrap | `Application::createInstance` | `src/lib/Application.cpp:36-83` |
 | View creation | `QtViewFactory` | `src/lib_gui/qt/view/QtViewFactory.h` |
@@ -162,16 +211,23 @@ verification of UI changes in CI.
 
 ## Open questions to resolve before Phase B
 
-1. **Protocol:** newline-delimited JSON over a local TCP/unix socket (simple, matches the
-   existing TCP IPC), or reuse the plugin `NetworkProtocolHelper` framing? Recommend fresh
-   JSON — the plugin format is too narrow.
-2. **Gating:** compile flag (`SOURCETRAIL_AGENT_CONTROL`) vs pure runtime CLI flag.
+1. **Transport — resolved:** thoth-ipc (`ipc::route`/`ipc::channel`) with FlatBuffers
+   contracts, over the existing shared-memory stack. No TCP socket, no filesystem. Reuse
+   the app's `IpcSharedMemory` wrapper vs. call `libipc` directly for the agent channels?
+   (Lean: a thin `AgentChannels` wrapper mirroring `IpcSharedMemory`.)
+2. **Channel topology:** one `channel` (N↔N) for request/response `cmd`+`state` with
+   correlation ids, or separate `route`s per direction (`cmd` N→1, `events`/`state`/
+   `frames` 1→N)? (Lean: separate routes — clean unidirectional flows, natural pub-sub
+   for multiple agent subscribers.)
+3. **Gating:** compile flag (`SOURCETRAIL_AGENT_CONTROL`) vs pure runtime CLI flag.
    Recommend compile-flag-gated so it is absent from release binaries, plus the CLI flag
    to activate it in debug builds.
-3. **Synchrony:** `get_ui_state` after an `invoke_action` must observe the *settled* state.
-   The message loop is async (`MessageQueue::startMessageLoop`), so the channel needs a
-   "quiesce" barrier (dispatch, wait for the queue to drain, then snapshot) — likely a
-   dedicated `MessageFinishedProcessing`-style signal or a queue-idle wait.
-4. **Command coverage:** which of the 91 messages to expose first (start with the table
-   above) and how to express their arguments in JSON (ids vs name hierarchies — prefer
-   human-readable name hierarchies, resolved server-side).
+4. **Synchrony:** a `get_ui_state` after an `invoke_action` must observe the *settled*
+   state. The message loop is async (`MessageQueue::startMessageLoop`), so the controller
+   needs a "quiesce" barrier (dispatch, wait for the queue to drain, then snapshot) —
+   likely a `MessageFinishedProcessing`-style signal or a queue-idle wait.
+5. **Frames:** compressed (PNG/JPEG) vs raw RGBA; on-demand (`get_frame`) vs a streamed
+   `route`; and the `frames` segment size + ADR-0002 chunk threshold.
+6. **Command coverage & argument encoding:** which of the 91 messages to expose first
+   (start with the table above); prefer human-readable name hierarchies in the `Command`
+   schema, resolved to ids server-side.
