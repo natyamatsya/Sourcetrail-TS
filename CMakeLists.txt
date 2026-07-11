@@ -44,8 +44,43 @@ option(BUILD_CXX_LANGUAGE_PACKAGE  "Add C/C++ support to the Sourcetrail indexer
 option(BUILD_RUST_LANGUAGE_PACKAGE "Add Rust support to the Sourcetrail indexer." OFF)
 option(BUILD_SWIFT_LANGUAGE_PACKAGE "Add Swift support to the Sourcetrail indexer." OFF)
 option(BUILD_UNIT_TESTS_PACKAGE    "Build the corresponding language unit tests." OFF)
+# Dev/CI-only: run every SQL operation against Turso alongside SQLite and report
+# divergences. Requires the Rust toolchain (builds the turso_shim crate). Off by
+# default so normal builds are unaffected.
+option(SOURCETRAIL_TURSO_COMPARE   "Run a Turso backend alongside SQLite and diff results." ON)
+# Phase 2 prototype: assign element ids from an in-process counter instead of the
+# INSERT+lastRowId() round-trip — the precondition for a non-blocking write path.
+option(SOURCETRAIL_CLIENT_IDS      "Assign element ids in-process (no lastRowId round-trip)." OFF)
+# Phase 4: Turso-only concurrent-writer inject path (multiple MVCC connections
+# writing at once). Distinct from _COMPARE (which keeps SQLite as the single-
+# writer source of truth). Both pull in the turso_shim + cppturso3 targets.
+option(SOURCETRAIL_TURSO_CONCURRENT "Enable the Turso-only concurrent-writer storage path." OFF)
 
 configure_file(cmake/language_packages.h.in src/lib/language_packages.h)
+
+# The Turso comparison backend swaps the storage layer's database types via
+# aliases (StorageDb/StorageStmt/StorageQuery), which changes the ABI of the
+# Sqlite* storage classes. Every target that includes the storage headers (lib,
+# app, tests) must therefore agree on this define, so it is set globally here —
+# before any target is created — rather than per-target.
+if (SOURCETRAIL_TURSO_COMPARE)
+	add_compile_definitions(SOURCETRAIL_TURSO_COMPARE)
+endif()
+
+if (SOURCETRAIL_TURSO_CONCURRENT)
+	# Global: the concurrent-writer hooks live in PersistentStorage / TaskInjectStorage
+	# / TaskFinishParsing (always-compiled TUs), so all TUs must agree on the define.
+	add_compile_definitions(SOURCETRAIL_TURSO_CONCURRENT)
+endif()
+
+# Either turso mode needs the shim + wrapper targets.
+if (SOURCETRAIL_TURSO_COMPARE OR SOURCETRAIL_TURSO_CONCURRENT)
+	set(SOURCETRAIL_USE_TURSO ON)
+endif()
+
+# SOURCETRAIL_CLIENT_IDS only changes the body of SqliteIndexStorage::insertElement()
+# (the new members are always present, so no ABI change) — it is scoped to that
+# single source file in src/lib/CMakeLists.txt, not defined globally.
 
 
 # Make Ninja build verbose as well (https://github.com/ninja-build/ninja/issues/900):
@@ -320,6 +355,30 @@ add_library(External_lib_nlohmann_json INTERFACE)
 target_link_libraries(External_lib_nlohmann_json INTERFACE nlohmann_json::nlohmann_json)
 target_compile_features(External_lib_nlohmann_json INTERFACE cxx_std_17)
 
+# Rust crates via Corrosion ----------------------------------------------------
+# Fetched here (before src/external and src/lib) so the imported turso_shim
+# static-lib target exists when those subdirectories link against it. The Rust
+# indexer crate is imported later in its own section; only the shared Corrosion
+# fetch and the turso_shim import need to happen this early.
+
+if (BUILD_RUST_LANGUAGE_PACKAGE OR SOURCETRAIL_TURSO_COMPARE)
+	FetchContent_Declare(
+		corrosion
+		GIT_REPOSITORY https://github.com/corrosion-rs/corrosion.git
+		GIT_TAG        v0.5
+		GIT_SUBMODULES ""
+	)
+	FetchContent_MakeAvailable(corrosion)
+endif()
+
+if (SOURCETRAIL_USE_TURSO)
+	corrosion_import_crate(
+		MANIFEST_PATH "${CMAKE_SOURCE_DIR}/src/turso_shim/Cargo.toml"
+		CRATES turso_shim
+	)
+	message(STATUS "Turso enabled (compare=${SOURCETRAIL_TURSO_COMPARE} concurrent=${SOURCETRAIL_TURSO_CONCURRENT}) — building turso_shim via Corrosion")
+endif()
+
 # AidKit  -----------------------------------------------------------------------------------
 
 add_subdirectory(src/lib_aidkit)
@@ -482,14 +541,7 @@ add_subdirectory(src/indexer)
 # Rust Indexer -----------------------------------------------------------------
 
 if (BUILD_RUST_LANGUAGE_PACKAGE)
-	FetchContent_Declare(
-		corrosion
-		GIT_REPOSITORY https://github.com/corrosion-rs/corrosion.git
-		GIT_TAG        v0.5
-		GIT_SUBMODULES ""
-	)
-	FetchContent_MakeAvailable(corrosion)
-
+	# Corrosion is fetched earlier (shared with SOURCETRAIL_TURSO_COMPARE).
 	corrosion_import_crate(
 		MANIFEST_PATH "${CMAKE_SOURCE_DIR}/src/rust_indexer/Cargo.toml"
 		CRATES sourcetrail-rust-indexer

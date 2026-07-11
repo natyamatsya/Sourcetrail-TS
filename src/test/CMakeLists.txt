@@ -30,6 +30,8 @@ endif()
 
 setDefaultTargetOptions(Sourcetrail_test)
 
+# SOURCETRAIL_TURSO_CONCURRENT is now a global define; no per-file scoping needed.
+
 target_include_directories(Sourcetrail_test
 	PRIVATE
 		helper

@@ -51,6 +51,18 @@ target_include_directories(Sourcetrail_lib
 		settings/source_group/type
 )
 
+# Phase 2 prototype: in-process element-id allocation. Scoped to the one file
+# whose behaviour it changes (no ABI impact), so toggling it is a 1-TU rebuild.
+if (SOURCETRAIL_CLIENT_IDS)
+	set_source_files_properties(
+		"${CMAKE_CURRENT_SOURCE_DIR}/data/storage/sqlite/SqliteIndexStorage.cpp"
+		PROPERTIES COMPILE_DEFINITIONS SOURCETRAIL_CLIENT_IDS)
+endif()
+
+# SOURCETRAIL_TURSO_CONCURRENT is a global define (set in the top-level
+# CMakeLists) because the concurrent-writer hooks live in always-compiled TUs.
+# The turso targets are linked via SOURCETRAIL_USE_TURSO.
+
 # FlatBuffer schema compilation ------------------------------------------------
 
 set(FLATBUFFERS_SCHEMA_DIR ${CMAKE_CURRENT_SOURCE_DIR}/data/indexer/interprocess/schemas)
@@ -96,6 +108,7 @@ target_link_libraries(Sourcetrail_lib
 		External_lib_tomlplusplus
 		External_lib_nlohmann_json
 		External_lib_cppsqlite3
+			$<$<BOOL:${SOURCETRAIL_USE_TURSO}>:External_lib_cppturso3>
 		External_lib_cli11
 		External_lib_flatbuffers
 		External_lib_ipc
