@@ -173,7 +173,7 @@ bool SqliteStorage::executeStatement(const std::string& statement) const
 	return true;
 }
 
-bool SqliteStorage::executeStatement(CppSQLite3Statement& statement) 
+bool SqliteStorage::executeStatement(StorageStmt& statement) 
 {
 	try
 	{
@@ -203,12 +203,12 @@ long long SqliteStorage::executeStatementScalar(const std::string& statement, co
 	return ret;
 }
 
-long long SqliteStorage::executeStatementScalar(CppSQLite3Statement& statement, const int nullValue) 
+long long SqliteStorage::executeStatementScalar(StorageStmt& statement, const int nullValue) 
 {
 	long long ret = 0;
 	try
 	{
-		CppSQLite3Query q = executeQuery(statement);
+		StorageQuery q = executeQuery(statement);
 
 		if (q.eof() || q.numFields() < 1)
 		{
@@ -225,7 +225,7 @@ long long SqliteStorage::executeStatementScalar(CppSQLite3Statement& statement, 
 	return ret;
 }
 
-CppSQLite3Query SqliteStorage::executeQuery(const std::string& statement) const
+StorageQuery SqliteStorage::executeQuery(const std::string& statement) const
 {
 	try
 	{
@@ -235,10 +235,10 @@ CppSQLite3Query SqliteStorage::executeQuery(const std::string& statement) const
 	{
 		LOG_ERROR(std::to_string(e.errorCode()) + ": " + e.errorMessage());
 	}
-	return CppSQLite3Query();
+	return StorageQuery();
 }
 
-CppSQLite3Query SqliteStorage::executeQuery(CppSQLite3Statement& statement) 
+StorageQuery SqliteStorage::executeQuery(StorageStmt& statement) 
 {
 	try
 	{
@@ -248,12 +248,12 @@ CppSQLite3Query SqliteStorage::executeQuery(CppSQLite3Statement& statement)
 	{
 		LOG_ERROR(std::to_string(e.errorCode()) + ": " + e.errorMessage());
 	}
-	return CppSQLite3Query();
+	return StorageQuery();
 }
 
 bool SqliteStorage::hasTable(const std::string& tableName) const
 {
-	CppSQLite3Query q = executeQuery("SELECT name FROM sqlite_master WHERE type='table' AND name='" + tableName + "';");
+	StorageQuery q = executeQuery("SELECT name FROM sqlite_master WHERE type='table' AND name='" + tableName + "';");
 
 	if (!q.eof())
 	{
@@ -267,7 +267,7 @@ std::string SqliteStorage::getMetaValue(const std::string& key) const
 {
 	if (hasTable("meta"))
 	{
-		CppSQLite3Query q = executeQuery("SELECT value FROM meta WHERE key = '" + key + "';");
+		StorageQuery q = executeQuery("SELECT value FROM meta WHERE key = '" + key + "';");
 
 		if (!q.eof())
 		{
@@ -280,7 +280,7 @@ std::string SqliteStorage::getMetaValue(const std::string& key) const
 
 void SqliteStorage::insertOrUpdateMetaValue(const std::string& key, const std::string& value)
 {
-	CppSQLite3Statement stmt = m_database.compileStatement("INSERT OR REPLACE INTO meta(id, key, value) VALUES((SELECT id FROM meta WHERE key = ?), ?, ?);");
+	StorageStmt stmt = m_database.compileStatement("INSERT OR REPLACE INTO meta(id, key, value) VALUES((SELECT id FROM meta WHERE key = ?), ?, ?);");
 
 	stmt.bind(1, key);
 	stmt.bind(2, key);

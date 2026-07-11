@@ -1,7 +1,7 @@
 #ifndef SQLITE_STORAGE_H
 #define SQLITE_STORAGE_H
 
-#include "CppSQLite3.h"
+#include "StorageDbTypes.h"
 
 #include "FilePath.h"
 #include "SqliteDatabaseIndex.h"
@@ -43,18 +43,18 @@ protected:
 	void clearMetaTable();
 
 	bool executeStatement(const std::string& statement) const;
-	static bool executeStatement(CppSQLite3Statement& statement);
+	static bool executeStatement(StorageStmt& statement);
 	long long executeStatementScalar(const std::string& statement, const int nullValue = 0) const;
-	static long long executeStatementScalar(CppSQLite3Statement& statement, const int nullValue = 0);
-	CppSQLite3Query executeQuery(const std::string& statement) const;
-	static CppSQLite3Query executeQuery(CppSQLite3Statement& statement);
+	static long long executeStatementScalar(StorageStmt& statement, const int nullValue = 0);
+	StorageQuery executeQuery(const std::string& statement) const;
+	static StorageQuery executeQuery(StorageStmt& statement);
 
 	bool hasTable(const std::string& tableName) const;
 
 	std::string getMetaValue(const std::string& key) const;
 	void insertOrUpdateMetaValue(const std::string& key, const std::string& value);
 
-	mutable CppSQLite3DB m_database;
+	mutable StorageDb m_database;
 	FilePath m_dbFilePath;
 
 private:

@@ -23,7 +23,7 @@ StorageBookmarkCategory SqliteBookmarkStorage::addBookmarkCategory(const Storage
 		"INSERT INTO bookmark_category(id, name) "
 		"VALUES (NULL, ?);";
 
-	CppSQLite3Statement stmt = m_database.compileStatement(statement);
+	StorageStmt stmt = m_database.compileStatement(statement);
 	stmt.bind(1, data.name);
 
 	executeStatement(stmt);
@@ -39,7 +39,7 @@ StorageBookmark SqliteBookmarkStorage::addBookmark(const StorageBookmarkData& da
 
 	try
 	{
-		CppSQLite3Statement stmt = m_database.compileStatement(statement);
+		StorageStmt stmt = m_database.compileStatement(statement);
 		stmt.bind(1, data.name);
 		stmt.bind(2, data.comment);
 		stmt.bind(3, data.timestamp);
@@ -65,7 +65,7 @@ StorageBookmarkedNode SqliteBookmarkStorage::addBookmarkedNode(const StorageBook
 		"INSERT INTO bookmarked_node(id, serialized_node_name) "
 		"VALUES (" +
 		to_string(id) + ", ?);";
-	CppSQLite3Statement stmt = m_database.compileStatement(statement);
+	StorageStmt stmt = m_database.compileStatement(statement);
 	stmt.bind(1, data.serializedNodeName);
 	executeStatement(stmt);
 
@@ -85,7 +85,7 @@ StorageBookmarkedEdge SqliteBookmarkStorage::addBookmarkedEdge(const StorageBook
 		"VALUES (" +
 		to_string(id) + ", ?, ?, " + std::to_string(data.edgeType) + ", " +
 		std::to_string(data.sourceNodeActive) + ");";
-	CppSQLite3Statement stmt = m_database.compileStatement(statement);
+	StorageStmt stmt = m_database.compileStatement(statement);
 	stmt.bind(1, data.serializedSourceNodeName);
 	stmt.bind(2, data.serializedTargetNodeName);
 	executeStatement(stmt);
@@ -233,7 +233,7 @@ template <>
 std::vector<StorageBookmarkCategory> SqliteBookmarkStorage::doGetAll<StorageBookmarkCategory>(
 	const std::string& query) const
 {
-	CppSQLite3Query q = executeQuery("SELECT id, name FROM bookmark_category " + query + ";");
+	StorageQuery q = executeQuery("SELECT id, name FROM bookmark_category " + query + ";");
 
 	std::vector<StorageBookmarkCategory> categories;
 	while (!q.eof())
@@ -254,7 +254,7 @@ std::vector<StorageBookmarkCategory> SqliteBookmarkStorage::doGetAll<StorageBook
 template <>
 std::vector<StorageBookmark> SqliteBookmarkStorage::doGetAll<StorageBookmark>(const std::string& query) const
 {
-	CppSQLite3Query q = executeQuery(
+	StorageQuery q = executeQuery(
 		"SELECT id, name, comment, timestamp, category_id FROM bookmark " + query + ";");
 
 	std::vector<StorageBookmark> bookmarks;
@@ -285,7 +285,7 @@ template <>
 std::vector<StorageBookmarkedNode> SqliteBookmarkStorage::doGetAll<StorageBookmarkedNode>(
 	const std::string& query) const
 {
-	CppSQLite3Query q = executeQuery(
+	StorageQuery q = executeQuery(
 		"SELECT "
 		"bookmarked_node.id, bookmarked_element.bookmark_id, bookmarked_node.serialized_node_name "
 		"FROM bookmarked_node "
@@ -314,7 +314,7 @@ template <>
 std::vector<StorageBookmarkedEdge> SqliteBookmarkStorage::doGetAll<StorageBookmarkedEdge>(
 	const std::string& query) const
 {
-	CppSQLite3Query q = executeQuery(
+	StorageQuery q = executeQuery(
 		"SELECT "
 		"bookmarked_edge.id, bookmarked_element.bookmark_id, "
 		"bookmarked_edge.serialized_source_node_name, bookmarked_edge.serialized_target_node_name, "

@@ -5,6 +5,7 @@
 #include <string>
 #include <map>
 #include <unordered_map>
+#include <unordered_set>
 #include <vector>
 
 #include "ErrorInfo.h"
@@ -251,6 +252,13 @@ private:
 	void setupTables() override;
 	void setupPrecompiledStatements() override;
 
+	// Mint a fresh element id. With SOURCETRAIL_CLIENT_IDS it comes from an
+	// in-process counter (seeded from MAX(id), so the sequence matches SQLite's
+	// autoincrement) — no INSERT+lastRowId() round-trip; otherwise it inserts a
+	// NULL id and reads it back as before. This is the seam that removes the
+	// read-after-write on the hot write path (Phase 2, non-blocking storage).
+	Id insertElement();
+
 	template <typename ResultType>
 	std::vector<ResultType> doGetAll(const std::string& query) const
 	{
@@ -288,8 +296,8 @@ private:
 		void compile(
 			const std::string header,
 			size_t valueCount,
-			std::function<void(CppSQLite3Statement& stmt, const StorageType&, size_t)> bindValuesFunc,
-			CppSQLite3DB& database)
+			std::function<void(StorageStmt& stmt, const StorageType&, size_t)> bindValuesFunc,
+			StorageDb& database)
 		{
 			m_bindValuesFunc = bindValuesFunc;
 
@@ -329,10 +337,10 @@ private:
 		bool execute(const std::vector<StorageType>& types, SqliteIndexStorage*  /*storage*/)
 		{
 			size_t i = 0;
-			for (std::pair<size_t, CppSQLite3Statement>& p: m_stmts)
+			for (std::pair<size_t, StorageStmt>& p: m_stmts)
 			{
 				const size_t& batchSize = p.first;
-				CppSQLite3Statement& stmt = p.second;
+				StorageStmt& stmt = p.second;
 
 				while (types.size() - i >= batchSize)
 				{
@@ -355,9 +363,9 @@ private:
 		}
 
 	private:
-		std::vector<std::pair<size_t, CppSQLite3Statement>> m_stmts;
+		std::vector<std::pair<size_t, StorageStmt>> m_stmts;
 
-		std::function<void(CppSQLite3Statement& stmt, const StorageType&, size_t)> m_bindValuesFunc;
+		std::function<void(StorageStmt& stmt, const StorageType&, size_t)> m_bindValuesFunc;
 	};
 
 	InsertBatchStatement<StorageNode> m_insertNodeBatchStatement;
@@ -368,12 +376,23 @@ private:
 	InsertBatchStatement<StorageOccurrence> m_insertOccurrenceBatchStatement;
 	InsertBatchStatement<StorageComponentAccess> m_insertComponentAccessBatchStatement;
 
-	CppSQLite3Statement m_insertElementStmt;
-	CppSQLite3Statement m_insertElementComponentStmt;
-	CppSQLite3Statement m_insertFileStmt;
-	CppSQLite3Statement m_insertFileContentStmt;
-	CppSQLite3Statement m_checkErrorExistsStmt;
-	CppSQLite3Statement m_insertErrorStmt;
+	StorageStmt m_insertElementStmt;
+	StorageStmt m_insertElementWithIdStmt;  // INSERT element(id) VALUES(?) — client-assigned id
+	Id::type m_nextElementId = 0;           // in-process element-id allocator (0 = unseeded)
+	StorageStmt m_insertElementComponentStmt;
+	StorageStmt m_insertFileStmt;
+	StorageStmt m_insertFileContentStmt;
+	StorageStmt m_checkErrorExistsStmt;
+	StorageStmt m_insertErrorStmt;
+
+	// In-memory dedup for the read-back-free write path (SOURCETRAIL_CLIENT_IDS):
+	// replaces the SELECT-before-INSERT in addFile/addError. Seeded lazily from
+	// the DB on first use, then maintained in-process. Always present (no ABI
+	// impact); only consulted under the flag.
+	std::unordered_set<std::string> m_knownFilePaths;
+	bool m_fileDedupSeeded = false;
+	std::map<std::pair<std::string, int>, Id> m_errorDedup;
+	bool m_errorDedupSeeded = false;
 };
 
 template <>

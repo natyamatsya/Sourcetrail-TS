@@ -12,7 +12,7 @@ std::string SqliteDatabaseIndex::getName() const
 	return m_indexName;
 }
 
-void SqliteDatabaseIndex::createOnDatabase(CppSQLite3DB& database)
+void SqliteDatabaseIndex::createOnDatabase(StorageDb& database)
 {
 	try
 	{
@@ -25,7 +25,7 @@ void SqliteDatabaseIndex::createOnDatabase(CppSQLite3DB& database)
 	}
 }
 
-void SqliteDatabaseIndex::removeFromDatabase(CppSQLite3DB& database)
+void SqliteDatabaseIndex::removeFromDatabase(StorageDb& database)
 {
 	try
 	{
