@@ -44,3 +44,27 @@ endif()
 # with reference-value support) and stdcompat::optional (beman std::optional).
 # Copied verbatim from inspiration/download; install() is gated off by default.
 add_subdirectory(stdcompat)
+
+# Optional Kùzu (LadybugDB) graph backend adapter. An exception-free
+# (noexcept), expected-returning wrapper over the Kùzu C++ API; the lbug headers
+# stay behind a pimpl so consumers only include LadybugConnection.h. Only built
+# when the backend is enabled. External_lib_ladybug (the vendored engine) is
+# PRIVATE — needed solely by the .cpp.
+if (SOURCETRAIL_USE_LADYBUG)
+	add_library(External_lib_cppladybug
+		ladybug/LadybugConnection.cpp
+		ladybug/LadybugConnection.h
+	)
+
+	target_include_directories(External_lib_cppladybug SYSTEM
+		PUBLIC
+			ladybug
+	)
+
+	target_link_libraries(External_lib_cppladybug
+		PUBLIC
+			stdext::expected
+		PRIVATE
+			External_lib_ladybug
+	)
+endif()

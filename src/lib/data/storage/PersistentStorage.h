@@ -19,6 +19,10 @@
 class IntermediateStorage;
 #endif
 
+#ifdef SOURCETRAIL_USE_LADYBUG
+#include "LadybugGraphStorage.h"
+#endif
+
 class PersistentStorage
 	: public Storage
 	, public StorageAccess
@@ -302,6 +306,12 @@ private:
 
 #ifdef SOURCETRAIL_TURSO_CONCURRENT
 	std::unique_ptr<ConcurrentTursoWriter> m_concurrentTursoWriter;
+#endif
+
+#ifdef SOURCETRAIL_USE_LADYBUG
+	// Optional additive graph mirror (Kùzu). SQLite stays the source of truth;
+	// mirroring is best-effort and never fails an indexing run.
+	std::unique_ptr<LadybugGraphStorage> m_ladybugGraphStorage;
 #endif
 
 	std::map<FilePath, Id> m_fileNodeIds;

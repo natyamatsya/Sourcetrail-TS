@@ -58,6 +58,19 @@ PersistentStorage::PersistentStorage(const FilePath& dbPath, const FilePath& boo
 	}
 
 	m_commandIndex.finishSetup();
+
+#ifdef SOURCETRAIL_USE_LADYBUG
+	// Best-effort: open the additive graph mirror next to the SQLite db. A
+	// failure only disables the mirror; it never blocks indexing.
+	if (auto ladybug = LadybugGraphStorage::open(FilePath(dbPath.str() + ".lbug")))
+	{
+		m_ladybugGraphStorage = std::move(*ladybug);
+	}
+	else
+	{
+		LOG_WARNING("Ladybug graph mirror disabled: " + ladybug.error());
+	}
+#endif
 }
 
 #ifdef SOURCETRAIL_TURSO_CONCURRENT
@@ -122,7 +135,23 @@ std::pair<Id, bool> PersistentStorage::addNode(const StorageNodeData& data)
 
 std::vector<Id> PersistentStorage::addNodes(const std::vector<StorageNode>& nodes)
 {
-	return m_sqliteIndexStorage.addNodes(nodes);
+	std::vector<Id> ids = m_sqliteIndexStorage.addNodes(nodes);
+#ifdef SOURCETRAIL_USE_LADYBUG
+	if (m_ladybugGraphStorage && ids.size() == nodes.size())
+	{
+		for (size_t i = 0; i < nodes.size(); ++i)
+		{
+			// Mirror with the authoritative SQLite id (correct whether or not
+			// client-assigned ids are enabled).
+			if (auto result = m_ladybugGraphStorage->addNode(ids[i], nodes[i]); !result)
+			{
+				LOG_WARNING("Ladybug node mirror failed: " + result.error());
+				break;
+			}
+		}
+	}
+#endif
+	return ids;
 }
 
 void PersistentStorage::addSymbol(const StorageSymbol& data)
@@ -165,7 +194,21 @@ Id PersistentStorage::addEdge(const StorageEdgeData& data)
 
 std::vector<Id> PersistentStorage::addEdges(const std::vector<StorageEdge>& edges)
 {
-	return m_sqliteIndexStorage.addEdges(edges);
+	std::vector<Id> ids = m_sqliteIndexStorage.addEdges(edges);
+#ifdef SOURCETRAIL_USE_LADYBUG
+	if (m_ladybugGraphStorage && ids.size() == edges.size())
+	{
+		for (size_t i = 0; i < edges.size(); ++i)
+		{
+			if (auto result = m_ladybugGraphStorage->addEdge(ids[i], edges[i]); !result)
+			{
+				LOG_WARNING("Ladybug edge mirror failed: " + result.error());
+				break;
+			}
+		}
+	}
+#endif
+	return ids;
 }
 
 Id PersistentStorage::addLocalSymbol(const StorageLocalSymbolData& data)
@@ -312,11 +355,31 @@ void PersistentStorage::startInjection()
 	beforeErrorRecording();
 
 	m_sqliteIndexStorage.beginTransaction();
+
+#ifdef SOURCETRAIL_USE_LADYBUG
+	if (m_ladybugGraphStorage)
+	{
+		if (auto result = m_ladybugGraphStorage->beginTransaction(); !result)
+		{
+			LOG_WARNING("Ladybug begin transaction failed: " + result.error());
+		}
+	}
+#endif
 }
 
 void PersistentStorage::finishInjection()
 {
 	m_sqliteIndexStorage.commitTransaction();
+
+#ifdef SOURCETRAIL_USE_LADYBUG
+	if (m_ladybugGraphStorage)
+	{
+		if (auto result = m_ladybugGraphStorage->commitTransaction(); !result)
+		{
+			LOG_WARNING("Ladybug commit failed: " + result.error());
+		}
+	}
+#endif
 
 	afterErrorRecording();
 }
@@ -324,6 +387,16 @@ void PersistentStorage::finishInjection()
 void PersistentStorage::rollbackInjection()
 {
 	m_sqliteIndexStorage.rollbackTransaction();
+
+#ifdef SOURCETRAIL_USE_LADYBUG
+	if (m_ladybugGraphStorage)
+	{
+		if (auto result = m_ladybugGraphStorage->rollbackTransaction(); !result)
+		{
+			LOG_WARNING("Ladybug rollback failed: " + result.error());
+		}
+	}
+#endif
 
 	afterErrorRecording();
 }

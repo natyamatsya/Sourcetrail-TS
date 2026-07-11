@@ -78,6 +78,17 @@ if (SOURCETRAIL_TURSO_COMPARE OR SOURCETRAIL_TURSO_CONCURRENT)
 	set(SOURCETRAIL_USE_TURSO ON)
 endif()
 
+# Optional Kùzu (LadybugDB) graph backend: mirror the node/edge graph into a
+# native property graph for deep traversals / Cypher (see
+# context/ROADMAP_ANALYSIS_ENGINES.md). Off by default. Enabling it forces
+# BUILD_LADYBUG (the vendored engine) and sets a global define, since the mirror
+# hook lives in PersistentStorage (an always-compiled TU) — every TU that sees
+# the storage headers must agree on it.
+option(SOURCETRAIL_USE_LADYBUG "Mirror the index into an optional Kùzu (LadybugDB) graph backend." OFF)
+if (SOURCETRAIL_USE_LADYBUG)
+	add_compile_definitions(SOURCETRAIL_USE_LADYBUG)
+endif()
+
 # SOURCETRAIL_CLIENT_IDS only changes the body of SqliteIndexStorage::insertElement()
 # (the new members are always present, so no ABI change) — it is scoped to that
 # single source file in src/lib/CMakeLists.txt, not defined globally.
@@ -387,7 +398,7 @@ endif()
 
 option(BUILD_LADYBUG "Build the LadybugDB (Kùzu) embedded graph database dependency." OFF)
 
-if (BUILD_LADYBUG)
+if (BUILD_LADYBUG OR SOURCETRAIL_USE_LADYBUG)
 	set(BUILD_SHELL              OFF CACHE BOOL "" FORCE)
 	set(BUILD_TESTS             OFF CACHE BOOL "" FORCE)
 	set(BUILD_BENCHMARK        OFF CACHE BOOL "" FORCE)

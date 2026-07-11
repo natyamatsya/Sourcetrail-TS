@@ -109,6 +109,7 @@ target_link_libraries(Sourcetrail_lib
 		External_lib_nlohmann_json
 		External_lib_cppsqlite3
 			$<$<BOOL:${SOURCETRAIL_USE_TURSO}>:External_lib_cppturso3>
+			$<$<BOOL:${SOURCETRAIL_USE_LADYBUG}>:External_lib_cppladybug>
 		External_lib_cli11
 		External_lib_flatbuffers
 		External_lib_ipc
