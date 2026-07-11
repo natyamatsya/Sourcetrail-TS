@@ -293,7 +293,11 @@ to rust-analyzer's semantic layer:
 - [x] `EDGE_IMPORT` for `use` items; local symbols (function-local bindings);
       `EDGE_MACRO_USAGE` for bang-macro invocations of local `macro_rules!`.
 
-Remaining gaps: attribute/derive-macro usage edges (their targets
+Remaining gaps: external-macro visibility — a configurable `all` scope that
+emits implicit nodes for unindexed macros (`Clone`/`Debug`/`tokio::main`), so
+their usages show like the specialization-node `all` scope. Attribute/derive
+AND bang-macro usage edges are implemented for indexed (workspace-local)
+macros; external targets
 — proc-macros and builtin derives — are not indexed today). (Proc-macro
 expansion shipped — see `ROADMAP_PROC_MACRO_EXPANSION.md`.)
 

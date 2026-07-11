@@ -64,6 +64,40 @@ fn path_name_range(path: &ast::Path) -> Option<ra_ap_syntax::TextRange> {
     Some(path.segment()?.name_ref()?.syntax().text_range())
 }
 
+/// Name-token ranges of each entry in a `#[derive(A, path::B)]` attribute, in
+/// source order (aligned with `Semantics::resolve_derive_macro`'s result). For
+/// a qualified entry (`serde::Serialize`) the last identifier is the name
+/// token. Returns one range per comma-separated group at the top paren level.
+fn derive_entry_name_ranges(attr: &ast::Attr) -> Vec<ra_ap_syntax::TextRange> {
+    use ra_ap_syntax::{SyntaxKind, T};
+    let Some((_, tt)) = attr.as_simple_call() else {
+        return Vec::new();
+    };
+    let mut ranges = Vec::new();
+    let mut last_ident: Option<ra_ap_syntax::TextRange> = None;
+    for tok in tt
+        .syntax()
+        .children_with_tokens()
+        .filter_map(|e| e.into_token())
+    {
+        match tok.kind() {
+            SyntaxKind::IDENT => last_ident = Some(tok.text_range()),
+            T![,] => {
+                if let Some(r) = last_ident.take() {
+                    ranges.push(r);
+                }
+            }
+            // The opening/closing parens and `::` separators are ignored;
+            // `::` leaves `last_ident` pointing at the most recent segment.
+            _ => {}
+        }
+    }
+    if let Some(r) = last_ident.take() {
+        ranges.push(r);
+    }
+    ranges
+}
+
 /// One resolved reference from the (parallelizable) resolution step: an edge
 /// plus an optional TOKEN occurrence range in the file being resolved.
 /// Applying a row = `Collector::push_edge` (dedup) + occurrence location.
@@ -1466,6 +1500,11 @@ impl RefResolver<'_> {
                         self.resolve_macro_call(sema, &mac, rows);
                     }
                 }
+                SyntaxKind::ATTR => {
+                    if let Some(attr) = ast::Attr::cast(node) {
+                        self.resolve_attr_macro(sema, &attr, rows);
+                    }
+                }
                 SyntaxKind::RECORD_EXPR_FIELD => {
                     let Some(ref_field) = ast::RecordExprField::cast(node) else {
                         continue;
@@ -1602,6 +1641,62 @@ impl RefResolver<'_> {
             source_id: ROW_SOURCE_CURRENT_FILE,
             target_id: target,
             range,
+        });
+    }
+
+    /// Attribute and derive macro invocations → EDGE_MACRO_USAGE to the macro
+    /// definition, mirroring bang-macro usage (file-node source, §
+    /// resolve_macro_call). `#[derive(A, B)]` resolves each entry; `#[my_attr]`
+    /// resolves the attribute macro applied to the annotated item. Only
+    /// invocations of a macro we indexed emit — in practice a workspace-local
+    /// proc-macro; std/derive builtins (`Clone`, `Debug`, `serde::Serialize`,
+    /// `tokio::main`) are not indexed and drop silently, exactly like std
+    /// bang macros.
+    fn resolve_attr_macro(
+        &self,
+        sema: &Semantics<'_, RootDatabase>,
+        attr: &ast::Attr,
+        rows: &mut Vec<ReferenceRow>,
+    ) {
+        let Some(meta) = attr.meta() else { return };
+
+        if attr.simple_name().as_deref() == Some("derive") {
+            let Some(resolved) = sema.resolve_derive_macro(&meta) else {
+                return;
+            };
+            // Occurrence tokens: the derive entries' name tokens, in source
+            // order, aligned with `resolved` by index.
+            let entry_ranges = derive_entry_name_ranges(attr);
+            for (i, macro_opt) in resolved.iter().enumerate() {
+                let Some(mac) = macro_opt else { continue };
+                let Some(target) = self.def_id(DefKey::Def(ModuleDef::Macro(*mac))) else {
+                    continue;
+                };
+                rows.push(ReferenceRow {
+                    edge_type: EDGE_MACRO_USAGE,
+                    source_id: ROW_SOURCE_CURRENT_FILE,
+                    target_id: target,
+                    range: entry_ranges.get(i).copied(),
+                });
+            }
+            return;
+        }
+
+        // Attribute macro: resolved against the annotated item.
+        let Some(item) = attr.syntax().parent().and_then(ast::Item::cast) else {
+            return;
+        };
+        let Some(mac) = sema.resolve_attr_macro_call(&item) else {
+            return;
+        };
+        let Some(target) = self.def_id(DefKey::Def(ModuleDef::Macro(mac))) else {
+            return;
+        };
+        rows.push(ReferenceRow {
+            edge_type: EDGE_MACRO_USAGE,
+            source_id: ROW_SOURCE_CURRENT_FILE,
+            target_id: target,
+            range: attr.path().as_ref().and_then(path_name_range),
         });
     }
 

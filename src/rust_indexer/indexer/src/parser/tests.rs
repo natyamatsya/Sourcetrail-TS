@@ -1432,3 +1432,37 @@ fn static_lifetime_records_no_use_edge() {
     // 'static is not a declared parameter → no node, no edge.
     assert!(!has_node(&s, "s::'static"));
 }
+
+// -----------------------------------------------------------------------
+// Attribute / derive macro usage (EDGE_MACRO_USAGE to the macro def)
+// -----------------------------------------------------------------------
+
+#[test]
+fn external_derive_emits_no_macro_usage_edge() {
+    // Clone/Debug are core derives we do not index → no edge, no crash.
+    // (Local proc-macro derives would link, exercised only with a real
+    // proc-macro crate; the scope-'all' path adds implicit external nodes.)
+    let s = index_src_with_sysroot("#[derive(Clone, Debug)]\npub struct P { pub x: i32 }");
+    assert_eq!(
+        s.edges
+            .iter()
+            .filter(|e| e.type_ == EDGE_MACRO_USAGE_T)
+            .count(),
+        0,
+        "external derives must not emit usage edges, edges: {:?}",
+        s.edges
+    );
+}
+
+#[test]
+fn external_attribute_macro_emits_no_edge() {
+    // A cfg attribute is not a macro invocation → no edge, no crash.
+    let s = index_src("#[allow(dead_code)]\npub fn f() {}");
+    assert_eq!(
+        s.edges
+            .iter()
+            .filter(|e| e.type_ == EDGE_MACRO_USAGE_T)
+            .count(),
+        0
+    );
+}
