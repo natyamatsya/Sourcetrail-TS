@@ -49,6 +49,12 @@ bool AgentControlController::isListening() const
 #include "StorageAccess.h"
 #include "logging.h"
 
+#include "Bookmark.h"
+#include "BookmarkCategory.h"
+#include "EdgeBookmark.h"
+#include "NodeBookmark.h"
+#include "SearchMatch.h"
+
 #include "MessageAgentCommand.h"
 #include "MessageActivateFile.h"
 #include "MessageActivateNodes.h"
@@ -97,6 +103,30 @@ flatbuffers::Offset<fb::NodeRef> makeNodeRef(
 		builder.CreateString(serializedName),
 		/*node_kind*/ 0,
 		displayName.empty() ? 0 : builder.CreateString(displayName));
+}
+
+flatbuffers::Offset<fb::SearchMatch> makeSearchMatch(
+	flatbuffers::FlatBufferBuilder& builder, const SearchMatch& match)
+{
+	std::vector<std::uint64_t> nodeIds;
+	nodeIds.reserve(match.tokenIds.size());
+	for (const Id id: match.tokenIds)
+	{
+		nodeIds.push_back(static_cast<std::uint64_t>(id));
+	}
+	return fb::CreateSearchMatch(
+		builder, builder.CreateString(match.name), /*node_kind*/ 0, builder.CreateVector(nodeIds), match.score);
+}
+
+flatbuffers::Offset<fb::BookmarkInfo> makeBookmark(
+	flatbuffers::FlatBufferBuilder& builder, const Bookmark& bookmark)
+{
+	return fb::CreateBookmarkInfo(
+		builder,
+		static_cast<std::uint64_t>(bookmark.getId()),
+		builder.CreateString(bookmark.getName()),
+		builder.CreateString(bookmark.getComment()),
+		builder.CreateString(bookmark.getCategory().getName()));
 }
 }	 // namespace
 
@@ -187,11 +217,12 @@ struct AgentControlController::Impl
 
 	void handleMessage(MessageSearch* message) override
 	{
+		m_lastSearchMatches = message->getMatches();
 		flatbuffers::FlatBufferBuilder builder;
 		std::vector<flatbuffers::Offset<fb::SearchMatch>> matches;
-		for (const SearchMatch& match: message->getMatches())
+		for (const SearchMatch& match: m_lastSearchMatches)
 		{
-			matches.push_back(fb::CreateSearchMatch(builder, builder.CreateString(match.name)));
+			matches.push_back(makeSearchMatch(builder, match));
 		}
 		const auto event = fb::CreateSearchCompleted(builder, builder.CreateVector(matches));
 		publishEvent(builder, fb::Event_SearchCompleted, event.Union());
@@ -342,6 +373,24 @@ struct AgentControlController::Impl
 			codeOffset = fb::CreateCodeViewState(builder, builder.CreateString(m_currentFile));
 		}
 
+		std::vector<flatbuffers::Offset<fb::SearchMatch>> searchMatches;
+		for (const SearchMatch& match: m_lastSearchMatches)
+		{
+			searchMatches.push_back(makeSearchMatch(builder, match));
+		}
+		const auto searchOffset = builder.CreateVector(searchMatches);
+
+		std::vector<flatbuffers::Offset<fb::BookmarkInfo>> bookmarks;
+		for (const NodeBookmark& bookmark: m_storageAccess->getAllNodeBookmarks())
+		{
+			bookmarks.push_back(makeBookmark(builder, bookmark));
+		}
+		for (const EdgeBookmark& bookmark: m_storageAccess->getAllEdgeBookmarks())
+		{
+			bookmarks.push_back(makeBookmark(builder, bookmark));
+		}
+		const auto bookmarksOffset = builder.CreateVector(bookmarks);
+
 		const ErrorCountInfo errors = m_storageAccess->getErrorCount();
 		const auto uiState = fb::CreateUiState(
 			builder,
@@ -349,9 +398,9 @@ struct AgentControlController::Impl
 			activeOffset,
 			graphOffset,
 			codeOffset,
-			/*search_matches*/ 0,
-			/*tabs*/ 0,
-			/*bookmarks*/ 0,
+			searchOffset,
+			/*tabs*/ 0,	 // tabs live in TabsController, not reachable here — follow-up
+			bookmarksOffset,
 			static_cast<std::uint32_t>(errors.total),
 			static_cast<std::uint32_t>(errors.fatal),
 			m_indexing);
@@ -375,6 +424,7 @@ struct AgentControlController::Impl
 	// State cache, touched only from the message-processing thread.
 	std::vector<Id> m_activeNodeIds;
 	std::string m_currentFile;
+	std::vector<SearchMatch> m_lastSearchMatches;
 	bool m_indexing = false;
 	std::uint64_t m_eventSeq = 0;
 
