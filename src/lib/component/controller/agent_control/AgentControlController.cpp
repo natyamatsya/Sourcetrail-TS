@@ -18,6 +18,7 @@ bool AgentControlController::isListening() const
 
 #else
 
+#include <chrono>
 #include <cstdint>
 #include <string>
 #include <thread>
@@ -28,25 +29,34 @@ bool AgentControlController::isListening() const
 #include <flatbuffers/flatbuffers.h>
 
 #include "agent_command_generated.h"
+#include "agent_event_generated.h"
 #include "agent_state_generated.h"
 
 #include "ISchedulers.h"
 #include "StdexecPrelude.h"
 
 #include "Application.h"
+#include "Edge.h"
 #include "ErrorCountInfo.h"
 #include "FilePath.h"
+#include "Graph.h"
 #include "Id.h"
+#include "MessageListener.h"
 #include "NameHierarchy.h"
+#include "Node.h"
 #include "NodeTypeSet.h"
 #include "RefreshInfo.h"
 #include "StorageAccess.h"
 #include "logging.h"
 
+#include "MessageAgentCommand.h"
 #include "MessageActivateFile.h"
 #include "MessageActivateNodes.h"
+#include "MessageErrorCountUpdate.h"
 #include "MessageHistoryRedo.h"
 #include "MessageHistoryUndo.h"
+#include "MessageIndexingFinished.h"
+#include "MessageIndexingStarted.h"
 #include "MessageLoadProject.h"
 #include "MessageScrollToLine.h"
 #include "MessageSearch.h"
@@ -67,9 +77,40 @@ namespace
 		return RefreshMode::NONE;
 	}
 }
+
+std::uint64_t nowMs()
+{
+	return static_cast<std::uint64_t>(std::chrono::duration_cast<std::chrono::milliseconds>(
+											std::chrono::system_clock::now().time_since_epoch())
+										.count());
+}
+
+flatbuffers::Offset<fb::NodeRef> makeNodeRef(
+	flatbuffers::FlatBufferBuilder& builder,
+	Id id,
+	const std::string& serializedName,
+	const std::string& displayName = "")
+{
+	return fb::CreateNodeRef(
+		builder,
+		static_cast<std::uint64_t>(id),
+		builder.CreateString(serializedName),
+		/*node_kind*/ 0,
+		displayName.empty() ? 0 : builder.CreateString(displayName));
+}
 }	 // namespace
 
+// The listeners run on the message-processing thread, consistently with every
+// other controller — so reading StorageCache and mutating the state cache below
+// need no extra synchronization (and no UI-thread hop).
 struct AgentControlController::Impl
+	: public MessageListener<MessageAgentCommand>
+	, public MessageListener<MessageActivateNodes>
+	, public MessageListener<MessageActivateFile>
+	, public MessageListener<MessageSearch>
+	, public MessageListener<MessageIndexingStarted>
+	, public MessageListener<MessageIndexingFinished>
+	, public MessageListener<MessageErrorCountUpdate>
 {
 	Impl(StorageAccess* storageAccess, execution::ISchedulers* schedulers)
 		: m_storageAccess(storageAccess)
@@ -98,9 +139,9 @@ struct AgentControlController::Impl
 		}
 	}
 
-	// Reader thread: blocking recv only. Every command is handed to the UI thread
-	// (where the message bus and StorageCache are safe) and processed there before
-	// the next recv — serialized, with no work outliving this controller.
+	// Reader thread: blocking recv only. Each command is forwarded onto the
+	// message thread via MessageAgentCommand (dispatch is thread-safe). The reader
+	// never blocks on another thread, so stop() joins it within the recv timeout.
 	void readLoop()
 	{
 		while (!m_stopSource.stop_requested())
@@ -111,14 +152,77 @@ struct AgentControlController::Impl
 				continue;
 			}
 			const auto* bytes = static_cast<const std::uint8_t*>(buffer.data());
-			std::vector<std::uint8_t> copy(bytes, bytes + buffer.size());
-			stdexec::sync_wait(
-				stdexec::schedule(m_schedulers->ui()) |
-				stdexec::then([this, copy = std::move(copy)]() { handleCommand(copy.data(), copy.size()); }));
+			MessageAgentCommand(std::vector<std::uint8_t>(bytes, bytes + buffer.size())).dispatch();
 		}
 	}
 
-	// Runs on the Qt UI thread.
+	// ---- MessageListener overrides (message-processing thread) ----------------
+
+	void handleMessage(MessageAgentCommand* message) override
+	{
+		handleCommand(message->bytes.data(), message->bytes.size());
+	}
+
+	void handleMessage(MessageActivateNodes* message) override
+	{
+		m_activeNodeIds.clear();
+		flatbuffers::FlatBufferBuilder builder;
+		std::vector<flatbuffers::Offset<fb::NodeRef>> nodes;
+		for (const auto& active: message->nodes)
+		{
+			m_activeNodeIds.push_back(active.nodeId);
+			nodes.push_back(makeNodeRef(builder, active.nodeId, NameHierarchy::serialize(active.nameHierarchy)));
+		}
+		const auto event = fb::CreateNodesActivated(builder, builder.CreateVector(nodes));
+		publishEvent(builder, fb::Event_NodesActivated, event.Union());
+	}
+
+	void handleMessage(MessageActivateFile* message) override
+	{
+		m_currentFile = message->filePath.str();
+		flatbuffers::FlatBufferBuilder builder;
+		const auto event = fb::CreateFileActivated(builder, builder.CreateString(m_currentFile));
+		publishEvent(builder, fb::Event_FileActivated, event.Union());
+	}
+
+	void handleMessage(MessageSearch* message) override
+	{
+		flatbuffers::FlatBufferBuilder builder;
+		std::vector<flatbuffers::Offset<fb::SearchMatch>> matches;
+		for (const SearchMatch& match: message->getMatches())
+		{
+			matches.push_back(fb::CreateSearchMatch(builder, builder.CreateString(match.name)));
+		}
+		const auto event = fb::CreateSearchCompleted(builder, builder.CreateVector(matches));
+		publishEvent(builder, fb::Event_SearchCompleted, event.Union());
+	}
+
+	void handleMessage(MessageIndexingStarted*) override
+	{
+		m_indexing = true;
+		flatbuffers::FlatBufferBuilder builder;
+		publishEvent(builder, fb::Event_IndexingStarted, fb::CreateIndexingStarted(builder).Union());
+	}
+
+	void handleMessage(MessageIndexingFinished*) override
+	{
+		m_indexing = false;
+		flatbuffers::FlatBufferBuilder builder;
+		publishEvent(builder, fb::Event_IndexingFinished, fb::CreateIndexingFinished(builder, true).Union());
+	}
+
+	void handleMessage(MessageErrorCountUpdate* message) override
+	{
+		flatbuffers::FlatBufferBuilder builder;
+		const auto event = fb::CreateErrorCountChanged(
+			builder,
+			static_cast<std::uint32_t>(message->errorCount.total),
+			static_cast<std::uint32_t>(message->errorCount.fatal));
+		publishEvent(builder, fb::Event_ErrorCountChanged, event.Union());
+	}
+
+	// ---- command handling (message-processing thread) -------------------------
+
 	void handleCommand(const std::uint8_t* data, std::size_t size)
 	{
 		flatbuffers::Verifier verifier(data, size);
@@ -187,42 +291,92 @@ struct AgentControlController::Impl
 		}
 	}
 
-	// Runs on the Qt UI thread (StorageCache reads must). First cut: project path +
-	// error/stat counts; the active graph, search results, code view, tabs and
-	// bookmarks are follow-ups (they need live controller state).
+	// The deterministic "what's on screen", assembled from StorageAccess + the
+	// state cache (both message-thread-local).
 	void publishUiState(std::uint64_t requestId)
 	{
 		flatbuffers::FlatBufferBuilder builder;
+
 		std::string projectPath;
 		if (const auto app = Application::getInstance())
 		{
 			projectPath = app->getCurrentProjectPath().str();
 		}
-		const ErrorCountInfo errors = m_storageAccess->getErrorCount();
-
 		const auto projectOffset = builder.CreateString(projectPath);
+
+		std::vector<flatbuffers::Offset<fb::NodeRef>> activeNodes;
+		for (const Id id: m_activeNodeIds)
+		{
+			activeNodes.push_back(
+				makeNodeRef(builder, id, NameHierarchy::serialize(m_storageAccess->getNameHierarchyForNodeId(id))));
+		}
+		const auto activeOffset = builder.CreateVector(activeNodes);
+
+		flatbuffers::Offset<fb::Graph> graphOffset = 0;
+		if (!m_activeNodeIds.empty())
+		{
+			if (const std::shared_ptr<Graph> graph =
+					m_storageAccess->getGraphForActiveTokenIds(m_activeNodeIds, {}, nullptr))
+			{
+				std::vector<flatbuffers::Offset<fb::NodeRef>> nodes;
+				std::vector<flatbuffers::Offset<fb::EdgeRef>> edges;
+				graph->forEachNode([&](Node* node) {
+					nodes.push_back(makeNodeRef(
+						builder, node->getId(), NameHierarchy::serialize(node->getNameHierarchy()), node->getName()));
+				});
+				graph->forEachEdge([&](Edge* edge) {
+					edges.push_back(fb::CreateEdgeRef(
+						builder,
+						static_cast<std::uint64_t>(edge->getId()),
+						static_cast<std::int32_t>(edge->getType()),
+						builder.CreateString(NameHierarchy::serialize(edge->getFrom()->getNameHierarchy())),
+						builder.CreateString(NameHierarchy::serialize(edge->getTo()->getNameHierarchy()))));
+				});
+				graphOffset = fb::CreateGraph(builder, builder.CreateVector(nodes), builder.CreateVector(edges));
+			}
+		}
+
+		flatbuffers::Offset<fb::CodeViewState> codeOffset = 0;
+		if (!m_currentFile.empty())
+		{
+			codeOffset = fb::CreateCodeViewState(builder, builder.CreateString(m_currentFile));
+		}
+
+		const ErrorCountInfo errors = m_storageAccess->getErrorCount();
 		const auto uiState = fb::CreateUiState(
 			builder,
 			projectOffset,
-			/*active_nodes*/ 0,
-			/*graph*/ 0,
-			/*code_view*/ 0,
+			activeOffset,
+			graphOffset,
+			codeOffset,
 			/*search_matches*/ 0,
 			/*tabs*/ 0,
 			/*bookmarks*/ 0,
 			static_cast<std::uint32_t>(errors.total),
 			static_cast<std::uint32_t>(errors.fatal),
-			/*indexing_active*/ false);
+			m_indexing);
 		builder.Finish(fb::CreateUiStateEnvelope(builder, requestId, uiState));
 		m_stateChannel.send(builder.GetBufferPointer(), builder.GetSize());
 	}
 
+	void publishEvent(flatbuffers::FlatBufferBuilder& builder, fb::Event type, flatbuffers::Offset<void> event)
+	{
+		builder.Finish(fb::CreateEventEnvelope(builder, m_eventSeq++, nowMs(), type, event));
+		m_eventsChannel.send(builder.GetBufferPointer(), builder.GetSize());
+	}
+
 	StorageAccess* m_storageAccess;
-	execution::ISchedulers* m_schedulers;
+	[[maybe_unused]] execution::ISchedulers* m_schedulers;	// reserved for Phase C frame grab (ui())
 
 	ipc::route m_cmdChannel;
 	ipc::route m_stateChannel;
 	ipc::route m_eventsChannel;
+
+	// State cache, touched only from the message-processing thread.
+	std::vector<Id> m_activeNodeIds;
+	std::string m_currentFile;
+	bool m_indexing = false;
+	std::uint64_t m_eventSeq = 0;
 
 	stdexec::inplace_stop_source m_stopSource;
 	std::jthread m_reader;
