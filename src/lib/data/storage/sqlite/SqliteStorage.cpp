@@ -1,9 +1,48 @@
 #include "SqliteStorage.h"
 
+#include <sqlpp23/sqlpp23.h>
+
 #include "BorrowedSqliteConnection.h"
 #include "FileSystem.h"
+#include "MetaTable.h"
 #include "TimeStamp.h"
 #include "logging.h"
+
+namespace
+{
+constexpr meta::Meta metaTable;
+
+// Minimal typed model of SQLite's system catalog so hasTable() binds the table
+// name instead of concatenating it into SQL. Only `type` and `name` are needed.
+struct SqliteMaster_
+{
+	struct Type
+	{
+		SQLPP_CREATE_NAME_TAG_FOR_SQL_AND_CPP(type, type);
+		using data_type = std::optional<::sqlpp::text>;
+		using has_default = std::true_type;
+	};
+	struct Name
+	{
+		SQLPP_CREATE_NAME_TAG_FOR_SQL_AND_CPP(name, name);
+		using data_type = std::optional<::sqlpp::text>;
+		using has_default = std::true_type;
+	};
+	SQLPP_CREATE_NAME_TAG_FOR_SQL_AND_CPP(sqlite_master, sqliteMaster);
+	template <typename T>
+	using _table_columns = sqlpp::table_columns<T, Type, Name>;
+	using _required_insert_columns = sqlpp::detail::type_set<>;
+};
+constexpr ::sqlpp::table_t<SqliteMaster_> sqliteMaster;
+
+// Read a nullable text column into std::string ("" when NULL) — matches the old
+// getStringField(col, "") default.
+template <typename Field>
+std::string fieldText(const Field& field)
+{
+	return field.has_value() ? std::string(field.value()) : std::string();
+}
+}	 // namespace
 
 SqliteStorage::SqliteStorage(const FilePath& dbFilePath): m_dbFilePath(dbFilePath.getCanonical())
 {
@@ -29,7 +68,7 @@ SqliteStorage::SqliteStorage(const FilePath& dbFilePath): m_dbFilePath(dbFilePat
 	m_sqlpp = std::make_unique<sourcetrail::storage::BorrowedSqliteConnection>(m_database.handle());
 }
 
-sourcetrail::storage::BorrowedSqliteConnection& SqliteStorage::db()
+sourcetrail::storage::BorrowedSqliteConnection& SqliteStorage::db() const
 {
 	return *m_sqlpp;
 }
@@ -93,17 +132,38 @@ void SqliteStorage::setVersion(size_t version)
 
 void SqliteStorage::beginTransaction()
 {
-	executeStatement("BEGIN TRANSACTION;");
+	try
+	{
+		db().start_transaction();
+	}
+	catch (const std::exception& e)
+	{
+		LOG_ERROR(e.what());
+	}
 }
 
 void SqliteStorage::commitTransaction()
 {
-	executeStatement("COMMIT TRANSACTION;");
+	try
+	{
+		db().commit_transaction();
+	}
+	catch (const std::exception& e)
+	{
+		LOG_ERROR(e.what());
+	}
 }
 
 void SqliteStorage::rollbackTransaction()
 {
-	executeStatement("ROLLBACK TRANSACTION;");
+	try
+	{
+		db().rollback_transaction();
+	}
+	catch (const std::exception& e)
+	{
+		LOG_ERROR(e.what());
+	}
 }
 
 void SqliteStorage::optimizeMemory() const
@@ -263,39 +323,74 @@ StorageQuery SqliteStorage::executeQuery(StorageStmt& statement)
 
 bool SqliteStorage::hasTable(const std::string& tableName) const
 {
-	StorageQuery q = executeQuery("SELECT name FROM sqlite_master WHERE type='table' AND name='" + tableName + "';");
-
-	if (!q.eof())
+	using namespace sqlpp;
+	try
 	{
-		return q.getStringField(0, "") == tableName;
+		for (const auto& row: db()(select(sqliteMaster.name)
+									   .from(sqliteMaster)
+									   .where(sqliteMaster.type == "table" and sqliteMaster.name == tableName)))
+		{
+			if (fieldText(row.name) == tableName)
+			{
+				return true;
+			}
+		}
 	}
-
+	catch (const std::exception& e)
+	{
+		LOG_ERROR(e.what());
+	}
 	return false;
 }
 
 std::string SqliteStorage::getMetaValue(const std::string& key) const
 {
+	using namespace sqlpp;
 	if (hasTable("meta"))
 	{
-		StorageQuery q = executeQuery("SELECT value FROM meta WHERE key = '" + key + "';");
-
-		if (!q.eof())
+		try
 		{
-			return q.getStringField(0, "");
+			for (const auto& row: db()(select(metaTable.value).from(metaTable).where(metaTable.key == key)))
+			{
+				return fieldText(row.value);
+			}
+		}
+		catch (const std::exception& e)
+		{
+			LOG_ERROR(e.what());
 		}
 	}
-
 	return "";
 }
 
 void SqliteStorage::insertOrUpdateMetaValue(const std::string& key, const std::string& value)
 {
-	StorageStmt stmt = m_database.compileStatement("INSERT OR REPLACE INTO meta(id, key, value) VALUES((SELECT id FROM meta WHERE key = ?), ?, ?);");
-
-	stmt.bind(1, key);
-	stmt.bind(2, key);
-	stmt.bind(3, value);
-	executeStatement(stmt);
+	using namespace sqlpp;
+	// The raw path faked an upsert with INSERT OR REPLACE + a (SELECT id ...)
+	// subquery, because meta has no UNIQUE(key). The typed equivalent is a plain
+	// read-then-update-or-insert.
+	try
+	{
+		bool exists = false;
+		for (const auto& row: db()(select(metaTable.id).from(metaTable).where(metaTable.key == key)))
+		{
+			static_cast<void>(row);
+			exists = true;
+			break;
+		}
+		if (exists)
+		{
+			db()(update(metaTable).set(metaTable.value = value).where(metaTable.key == key));
+		}
+		else
+		{
+			db()(insert_into(metaTable).set(metaTable.key = key, metaTable.value = value));
+		}
+	}
+	catch (const std::exception& e)
+	{
+		LOG_ERROR(e.what());
+	}
 }
 
 void SqliteStorage::enablePragmas() const

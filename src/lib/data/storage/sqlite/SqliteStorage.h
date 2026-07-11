@@ -65,9 +65,9 @@ protected:
 	void insertOrUpdateMetaValue(const std::string& key, const std::string& value);
 
 	// Typed (sqlpp23) view over m_database's handle: the SAME connection and
-	// transaction scope as the raw path above. Phase 1 exposes this; no caller
-	// uses it yet. See context/DESIGN_SQLPP23_MIGRATION.md.
-	sourcetrail::storage::BorrowedSqliteConnection& db();
+	// transaction scope as the raw path above. const like m_database is mutable —
+	// reads from const methods query through it. See DESIGN_SQLPP23_MIGRATION.md.
+	sourcetrail::storage::BorrowedSqliteConnection& db() const;
 
 	mutable StorageDb m_database;
 	FilePath m_dbFilePath;
