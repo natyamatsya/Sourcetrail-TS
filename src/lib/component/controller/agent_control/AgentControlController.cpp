@@ -20,6 +20,7 @@ bool AgentControlController::isListening() const
 
 #include <chrono>
 #include <cstdint>
+#include <functional>
 #include <string>
 #include <thread>
 #include <vector>
@@ -128,6 +129,68 @@ flatbuffers::Offset<fb::BookmarkInfo> makeBookmark(
 		builder.CreateString(bookmark.getComment()),
 		builder.CreateString(bookmark.getCategory().getName()));
 }
+
+// Receives raw CommandEnvelope frames from a thoth-ipc route and hands each to a
+// sink. This is the client-side seam for the RFC
+// (submodules/thoth-ipc/context/stdexec-async-recv-rfc.md): today it is a dedicated
+// reader jthread doing blocking recv(), because libipc has no fd/async receive yet.
+// When libipc gains async_recv, the entire migration is confined to start()/loop()
+// below — the body becomes, with no change to AgentControlController:
+//
+//   m_loop = exec::repeat_effect_until(
+//       ipc::async_recv(m_route, scheduler) | stdexec::then(m_sink),
+//       [this]{ return m_stop.stop_requested(); });
+//
+// The start()/stop()/sink contract already matches that target, so the controller
+// never learns which mechanism is underneath.
+class AgentCommandReader
+{
+public:
+	using Sink = std::function<void(std::vector<std::uint8_t>)>;
+
+	explicit AgentCommandReader(const char* channelName): m_route(channelName, ipc::receiver) {}
+
+	void start(Sink sink)
+	{
+		if (m_thread.joinable())
+		{
+			return;
+		}
+		m_sink = std::move(sink);
+		m_thread = std::jthread([this]() { loop(); });
+	}
+
+	// The reader only ever blocks on recv (never on another thread), so this joins
+	// within the recv timeout.
+	void stop()
+	{
+		m_stopSource.request_stop();
+		if (m_thread.joinable())
+		{
+			m_thread.join();
+		}
+	}
+
+private:
+	void loop()
+	{
+		while (!m_stopSource.stop_requested())
+		{
+			ipc::buff_t buffer = m_route.recv(200 /*ms; re-checks stop*/);
+			if (buffer.empty())
+			{
+				continue;
+			}
+			const auto* bytes = static_cast<const std::uint8_t*>(buffer.data());
+			m_sink(std::vector<std::uint8_t>(bytes, bytes + buffer.size()));
+		}
+	}
+
+	ipc::route m_route;
+	Sink m_sink;
+	stdexec::inplace_stop_source m_stopSource;
+	std::jthread m_thread;
+};
 }	 // namespace
 
 // The listeners run on the message-processing thread, consistently with every
@@ -145,7 +208,7 @@ struct AgentControlController::Impl
 	Impl(StorageAccess* storageAccess, execution::ISchedulers* schedulers)
 		: m_storageAccess(storageAccess)
 		, m_schedulers(schedulers)
-		, m_cmdChannel("st.agent.cmd", ipc::receiver)
+		, m_reader("st.agent.cmd")
 		, m_stateChannel("st.agent.state", ipc::sender)
 		, m_eventsChannel("st.agent.events", ipc::sender)
 	{
@@ -153,37 +216,17 @@ struct AgentControlController::Impl
 
 	void start()
 	{
-		if (m_reader.joinable())
-		{
-			return;
-		}
-		m_reader = std::jthread([this]() { readLoop(); });
+		// Each command frame is forwarded onto the message thread via
+		// MessageAgentCommand (dispatch is thread-safe), so it is handled where the
+		// non-thread-safe StorageCache is safe to query.
+		m_reader.start([](std::vector<std::uint8_t> bytes) {
+			MessageAgentCommand(std::move(bytes)).dispatch();
+		});
 	}
 
 	void stop()
 	{
-		m_stopSource.request_stop();
-		if (m_reader.joinable())
-		{
-			m_reader.join();
-		}
-	}
-
-	// Reader thread: blocking recv only. Each command is forwarded onto the
-	// message thread via MessageAgentCommand (dispatch is thread-safe). The reader
-	// never blocks on another thread, so stop() joins it within the recv timeout.
-	void readLoop()
-	{
-		while (!m_stopSource.stop_requested())
-		{
-			ipc::buff_t buffer = m_cmdChannel.recv(200 /*ms; re-checks stop*/);
-			if (buffer.empty())
-			{
-				continue;
-			}
-			const auto* bytes = static_cast<const std::uint8_t*>(buffer.data());
-			MessageAgentCommand(std::vector<std::uint8_t>(bytes, bytes + buffer.size())).dispatch();
-		}
+		m_reader.stop();
 	}
 
 	// ---- MessageListener overrides (message-processing thread) ----------------
@@ -471,7 +514,7 @@ struct AgentControlController::Impl
 	StorageAccess* m_storageAccess;
 	[[maybe_unused]] execution::ISchedulers* m_schedulers;	// reserved for Phase C frame grab (ui())
 
-	ipc::route m_cmdChannel;
+	AgentCommandReader m_reader;	// owns the st.agent.cmd route + reader thread (RFC seam)
 	ipc::route m_stateChannel;
 	ipc::route m_eventsChannel;
 
@@ -483,8 +526,6 @@ struct AgentControlController::Impl
 	fb::AppState m_appState = fb::AppState_NoProject;
 	std::uint64_t m_eventSeq = 0;
 
-	stdexec::inplace_stop_source m_stopSource;
-	std::jthread m_reader;
 	bool m_listening = false;
 };
 
