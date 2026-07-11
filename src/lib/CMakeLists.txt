@@ -89,6 +89,33 @@ foreach(SCHEMA_FILE ${FLATBUFFERS_SCHEMAS})
 	)
 endforeach()
 
+# Agent-UI control contracts (see component/controller/agent_control/schemas and
+# context/DESIGN_AGENT_UI_CONTROL.md). Only generated + compiled when the opt-in
+# flag is set; the AgentControlController.cpp stub keeps the class linkable otherwise.
+option(SOURCETRAIL_AGENT_CONTROL "Build the agent-UI control channel (thoth-ipc + FlatBuffers)" OFF)
+if (SOURCETRAIL_AGENT_CONTROL)
+	set(AGENT_SCHEMA_DIR ${CMAKE_CURRENT_SOURCE_DIR}/component/controller/agent_control/schemas)
+	set(AGENT_SCHEMAS
+		${AGENT_SCHEMA_DIR}/agent_common.fbs
+		${AGENT_SCHEMA_DIR}/agent_command.fbs
+		${AGENT_SCHEMA_DIR}/agent_event.fbs
+		${AGENT_SCHEMA_DIR}/agent_state.fbs
+		${AGENT_SCHEMA_DIR}/agent_frame.fbs
+	)
+	foreach(SCHEMA_FILE ${AGENT_SCHEMAS})
+		get_filename_component(SCHEMA_NAME ${SCHEMA_FILE} NAME_WE)
+		set(GENERATED_HEADER ${FLATBUFFERS_GENERATED_DIR}/${SCHEMA_NAME}_generated.h)
+		list(APPEND FLATBUFFERS_GENERATED_HEADERS ${GENERATED_HEADER})
+		add_custom_command(
+			OUTPUT ${GENERATED_HEADER}
+			COMMAND flatbuffers::flatc --cpp -I ${AGENT_SCHEMA_DIR} -o ${FLATBUFFERS_GENERATED_DIR} ${SCHEMA_FILE}
+			DEPENDS ${SCHEMA_FILE}
+			COMMENT "Compiling agent FlatBuffer schema ${SCHEMA_NAME}.fbs"
+		)
+	endforeach()
+	target_compile_definitions(Sourcetrail_lib PUBLIC SOURCETRAIL_AGENT_CONTROL)
+endif()
+
 add_custom_target(flatbuffers_schemas DEPENDS ${FLATBUFFERS_GENERATED_HEADERS})
 add_dependencies(Sourcetrail_lib flatbuffers_schemas)
 
