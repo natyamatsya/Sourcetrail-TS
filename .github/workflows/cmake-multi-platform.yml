@@ -1,8 +1,9 @@
 name: CI
 
 on:
-  push:
-    branches: ["main"]
+  # Push trigger deactivated to conserve CI budget. Re-enable by uncommenting.
+  # push:
+  #   branches: ["main"]
   pull_request:
     branches: ["main"]
   workflow_dispatch:
