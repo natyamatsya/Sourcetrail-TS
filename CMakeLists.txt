@@ -379,6 +379,34 @@ if (SOURCETRAIL_USE_TURSO)
 	message(STATUS "Turso enabled (compare=${SOURCETRAIL_TURSO_COMPARE} concurrent=${SOURCETRAIL_TURSO_CONCURRENT}) — building turso_shim via Corrosion")
 endif()
 
+# LadybugDB (Kùzu) — embedded graph database ------------------------------------
+# Optional dependency for a future graph storage/traversal backend (see
+# context/ROADMAP_ANALYSIS_ENGINES.md). Off by default: enabling it pulls in the
+# full Kùzu build (bundled third_party + system OpenSSL 3). Built static-only,
+# without the shell/tests/language-APIs, and exposed as External_lib_ladybug.
+
+option(BUILD_LADYBUG "Build the LadybugDB (Kùzu) embedded graph database dependency." OFF)
+
+if (BUILD_LADYBUG)
+	set(BUILD_SHELL              OFF CACHE BOOL "" FORCE)
+	set(BUILD_TESTS             OFF CACHE BOOL "" FORCE)
+	set(BUILD_BENCHMARK        OFF CACHE BOOL "" FORCE)
+	set(BUILD_SINGLE_FILE_HEADER OFF CACHE BOOL "" FORCE)
+	set(BUILD_SHARED_LBUG      OFF CACHE BOOL "" FORCE)
+	set(BUILD_STATIC_LBUG       ON CACHE BOOL "" FORCE)
+	set(AUTO_UPDATE_GRAMMAR    OFF CACHE BOOL "" FORCE)
+
+	add_subdirectory(submodules/ladybug EXCLUDE_FROM_ALL)
+
+	add_library(External_lib_ladybug INTERFACE)
+	target_link_libraries(External_lib_ladybug INTERFACE lbug)
+	target_include_directories(External_lib_ladybug SYSTEM INTERFACE
+		"${CMAKE_SOURCE_DIR}/submodules/ladybug/src/include"
+		"${CMAKE_BINARY_DIR}/submodules/ladybug/src/include")
+
+	message(STATUS "LadybugDB (Kùzu) enabled — building the lbug static library")
+endif()
+
 # AidKit  -----------------------------------------------------------------------------------
 
 add_subdirectory(src/lib_aidkit)

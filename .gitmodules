@@ -7,3 +7,6 @@
 [submodule "submodules/qt-json-query"]
 	path = submodules/qt-json-query
 	url = https://github.com/natyamatsya/qt-json-query.git
+[submodule "submodules/ladybug"]
+	path = submodules/ladybug
+	url = https://github.com/natyamatsya/ladybug.git
