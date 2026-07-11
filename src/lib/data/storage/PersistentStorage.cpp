@@ -28,6 +28,13 @@
 #include "utility.h"
 #include "utilityApp.h"
 
+#ifdef SOURCETRAIL_TURSO_CONCURRENT
+#include <algorithm>
+#include <thread>
+
+#include "IntermediateStorage.h"
+#endif
+
 using namespace std;
 using namespace utility;
 
@@ -52,6 +59,61 @@ PersistentStorage::PersistentStorage(const FilePath& dbPath, const FilePath& boo
 
 	m_commandIndex.finishSetup();
 }
+
+#ifdef SOURCETRAIL_TURSO_CONCURRENT
+void PersistentStorage::submitToConcurrentTurso(const IntermediateStorage& storage)
+{
+	if (!m_concurrentTursoWriter)
+	{
+		const std::string tursoPath = m_sqliteIndexStorage.getDbFilePath().str() + ".concurrent.turso";
+		const unsigned hc = std::thread::hardware_concurrency();
+		const int writers = static_cast<int>(hc == 0 ? 4u : std::min(hc, 12u));
+		m_concurrentTursoWriter = std::make_unique<ConcurrentTursoWriter>(tursoPath, writers);
+		LOG_INFO("Concurrent Turso writer: " + std::to_string(writers) + " writers -> " + tursoPath);
+	}
+
+	ConcurrentTursoWriter::Batch batch;
+	batch.nodes = storage.getStorageNodes();
+	batch.edges = storage.getStorageEdges();
+	batch.files = storage.getStorageFiles();
+	batch.symbols = storage.getStorageSymbols();
+	batch.errors = storage.getErrors();
+	const auto& localSymbols = storage.getStorageLocalSymbols();
+	batch.localSymbols.assign(localSymbols.begin(), localSymbols.end());
+	const auto& sourceLocations = storage.getStorageSourceLocations();
+	batch.sourceLocations.assign(sourceLocations.begin(), sourceLocations.end());
+	const auto& occurrences = storage.getStorageOccurrences();
+	batch.occurrences.assign(occurrences.begin(), occurrences.end());
+	const auto& componentAccesses = storage.getComponentAccesses();
+	batch.componentAccesses.assign(componentAccesses.begin(), componentAccesses.end());
+	const auto& elementComponents = storage.getElementComponents();
+	batch.elementComponents.assign(elementComponents.begin(), elementComponents.end());
+
+	m_concurrentTursoWriter->submit(std::move(batch));
+}
+
+void PersistentStorage::finishConcurrentTurso()
+{
+	if (m_concurrentTursoWriter)
+	{
+		m_concurrentTursoWriter->finish();
+		// Read the graph back in-process (turso pre.18 MVCC keeps committed data in
+		// its in-memory store — it is not yet durably checkpointed to the .turso
+		// file on close, so verify here rather than off-disk).
+		auto count = [&](const char* t) {
+			return m_concurrentTursoWriter->scalar(std::string("SELECT COUNT(*) FROM ") + t);
+		};
+		LOG_INFO(
+			"Concurrent Turso writer: finished (failed=" +
+			std::to_string(m_concurrentTursoWriter->failedBatches()) +
+			"). counts node=" + std::to_string(count("node")) + " edge=" + std::to_string(count("edge")) +
+			" symbol=" + std::to_string(count("symbol")) + " source_location=" +
+			std::to_string(count("source_location")) + " occurrence=" + std::to_string(count("occurrence")) +
+			" local_symbol=" + std::to_string(count("local_symbol")) + " file=" +
+			std::to_string(count("file")) + " element=" + std::to_string(count("element")));
+	}
+}
+#endif
 
 std::pair<Id, bool> PersistentStorage::addNode(const StorageNodeData& data)
 {

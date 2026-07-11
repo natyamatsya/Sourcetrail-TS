@@ -14,12 +14,26 @@
 #include "Storage.h"
 #include "StorageAccess.h"
 
+#ifdef SOURCETRAIL_TURSO_CONCURRENT
+#include "ConcurrentTursoWriter.h"
+class IntermediateStorage;
+#endif
+
 class PersistentStorage
 	: public Storage
 	, public StorageAccess
 {
 public:
 	PersistentStorage(const FilePath& dbPath, const FilePath& bookmarkPath);
+
+#ifdef SOURCETRAIL_TURSO_CONCURRENT
+	// Piggyback the concurrent-writer path: mirror each injected IntermediateStorage
+	// into a Turso database written by N concurrent MVCC writers. The writer is
+	// created lazily on first submit, so the read-only reload storage never spawns
+	// worker threads. finishConcurrentTurso() drains before the post-index reads.
+	void submitToConcurrentTurso(const IntermediateStorage& storage);
+	void finishConcurrentTurso();
+#endif
 
 	std::pair<Id, bool> addNode(const StorageNodeData& data) override;
 	std::vector<Id> addNodes(const std::vector<StorageNode>& nodes) override;
@@ -285,6 +299,10 @@ private:
 
 	SqliteIndexStorage m_sqliteIndexStorage;
 	SqliteBookmarkStorage m_sqliteBookmarkStorage;
+
+#ifdef SOURCETRAIL_TURSO_CONCURRENT
+	std::unique_ptr<ConcurrentTursoWriter> m_concurrentTursoWriter;
+#endif
 
 	std::map<FilePath, Id> m_fileNodeIds;
 	std::map<FilePath, Id> m_lowerCasefileNodeIds;

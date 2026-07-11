@@ -6,6 +6,10 @@
 #include "TimeStamp.h"
 #include "logging.h"
 
+#ifdef SOURCETRAIL_TURSO_CONCURRENT
+#include "PersistentStorage.h"
+#endif
+
 TaskInjectStorage::TaskInjectStorage(
 	std::shared_ptr<StorageProvider> storageProvider, std::weak_ptr<Storage> target)
 	: m_storageProvider(storageProvider), m_target(target)
@@ -42,6 +46,13 @@ Task::TaskState TaskInjectStorage::doUpdate(std::shared_ptr<Blackboard>  /*black
 			const size_t sourceLocationCount = source->getSourceLocationCount();
 			const TimeStamp start = TimeStamp::now();
 			target->inject(source.get());
+#ifdef SOURCETRAIL_TURSO_CONCURRENT
+			// Piggyback: also mirror this storage into the concurrent Turso writer.
+			if (auto* persistent = dynamic_cast<PersistentStorage*>(target.get()))
+			{
+				persistent->submitToConcurrentTurso(*source);
+			}
+#endif
 			m_injectBusyMs += static_cast<long long>(TimeStamp::now().deltaMS(start));
 			m_injectCount++;
 			m_injectedSourceLocationCount += sourceLocationCount;

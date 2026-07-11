@@ -27,6 +27,10 @@ void TaskFinishParsing::doEnter(std::shared_ptr<Blackboard>  /*blackboard*/)
 {
 	using enum Task::TaskState;
 	using enum DatabasePolicy;
+#ifdef SOURCETRAIL_TURSO_CONCURRENT
+	// Drain the concurrent Turso writers before any read of the finished database.
+	m_storage->finishConcurrentTurso();
+#endif
 	m_storage->setMode(SqliteIndexStorage::StorageModeType::STORAGE_MODE_READ);
 }
 
