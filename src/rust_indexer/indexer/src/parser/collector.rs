@@ -20,12 +20,12 @@ use crate::ipc::storage::{
 };
 
 use super::{
-    DEFINITION_EXPLICIT, DEFINITION_IMPLICIT, EDGE_CALL, EDGE_IMPORT, EDGE_INHERITANCE,
-    EDGE_MACRO_USAGE, EDGE_MEMBER, EDGE_OVERRIDE, EDGE_TEMPLATE_SPECIALIZATION, EDGE_TYPE_ARGUMENT,
-    EDGE_TYPE_USAGE, EDGE_USAGE, LOCATION_LOCAL_SYMBOL, LOCATION_SCOPE, LOCATION_TOKEN, NODE_ENUM,
-    NODE_ENUM_CONSTANT, NODE_FIELD, NODE_FILE, NODE_FUNCTION, NODE_GLOBAL_VARIABLE, NODE_INTERFACE,
-    NODE_MACRO, NODE_METHOD, NODE_MODULE, NODE_STRUCT, NODE_TYPE_PARAMETER, NODE_TYPEDEF,
-    NODE_UNION, SpecializationScope,
+    DEFINITION_EXPLICIT, DEFINITION_IMPLICIT, DEFINITION_NONE, EDGE_CALL, EDGE_IMPORT,
+    EDGE_INHERITANCE, EDGE_MACRO_USAGE, EDGE_MEMBER, EDGE_OVERRIDE, EDGE_TEMPLATE_SPECIALIZATION,
+    EDGE_TYPE_ARGUMENT, EDGE_TYPE_USAGE, EDGE_USAGE, LOCATION_LOCAL_SYMBOL, LOCATION_SCOPE,
+    LOCATION_TOKEN, NODE_ENUM, NODE_ENUM_CONSTANT, NODE_FIELD, NODE_FILE, NODE_FUNCTION,
+    NODE_GLOBAL_VARIABLE, NODE_INTERFACE, NODE_MACRO, NODE_METHOD, NODE_MODULE, NODE_STRUCT,
+    NODE_TYPE_PARAMETER, NODE_TYPEDEF, NODE_UNION, SpecializationScope,
 };
 
 /// Identity key for an emitted definition, so that semantically resolved
@@ -157,6 +157,18 @@ struct FileRows {
     references: Vec<ReferenceRow>,
     local_symbols: Vec<LocalSymbolRow>,
     specializations: Vec<SpecializationRow>,
+    macro_usages: Vec<MacroUsageRow>,
+}
+
+/// One usage of a macro whose definition is *not* indexed in this crate
+/// (std/derive builtins, external proc-macros). The apply step gets-or-creates
+/// an external `NODE_MACRO` node named `macro_name`, `DefinitionKind::NONE`
+/// (mirroring how the C++ indexer records referenced-but-external symbols —
+/// `recordSymbol` + NONE), and links the file node to it via EDGE_MACRO_USAGE.
+/// Usages of *indexed* macros go through `ReferenceRow` (edge to the real node).
+struct MacroUsageRow {
+    macro_name: String,
+    range: Option<ra_ap_syntax::TextRange>,
 }
 
 /// The pure resolution half of the semantic reference pass: turns one file's
@@ -849,14 +861,24 @@ impl<'db> Collector<'db> {
         let force_serial = std::env::var_os("RUST_INDEXER_SERIAL").is_some_and(|v| v == "1");
 
         if files.len() < 2 || workers <= 1 || force_serial {
-            for vfs_fid in files {
-                // A panic inside rust-analyzer on one file must not lose the
-                // references of all the others — record it as a non-fatal
-                // error and continue with the next file.
-                let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
-                    self.resolver().resolve_file(sema, vfs_fid)
-                }))
-                .map_err(|payload| panic_payload_message(payload.as_ref()).to_owned());
+            // Resolve ALL files first, then apply — matching the parallel path
+            // exactly. The apply step mutates `node_ids` (external macro nodes,
+            // specialization bubbles); resolving up front guarantees no file's
+            // resolver observes another file's apply mutations, so inline and
+            // parallel output are byte-identical.
+            let results: Vec<_> = files
+                .iter()
+                .map(|&vfs_fid| {
+                    // A panic inside rust-analyzer on one file must not lose the
+                    // references of all the others — record it as a non-fatal
+                    // error and continue with the next file.
+                    std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+                        self.resolver().resolve_file(sema, vfs_fid)
+                    }))
+                    .map_err(|payload| panic_payload_message(payload.as_ref()).to_owned())
+                })
+                .collect();
+            for (vfs_fid, result) in files.into_iter().zip(results) {
                 self.apply_file_result(vfs_fid, result);
             }
             return;
@@ -889,6 +911,7 @@ impl<'db> Collector<'db> {
                 self.apply_reference_rows(vfs_fid, rows.references);
                 self.apply_local_symbol_rows(vfs_fid, rows.local_symbols);
                 self.apply_specialization_rows(vfs_fid, rows.specializations);
+                self.apply_macro_usage_rows(vfs_fid, rows.macro_usages);
             }
             Err(panic_message) => {
                 let file_path = self
@@ -992,6 +1015,43 @@ impl<'db> Collector<'db> {
             }
             let edge_id = self.push_edge(EDGE_TYPE_USAGE, use_source, spec_id);
             if let Some(range) = row.use_range {
+                self.add_reference_location(edge_id, range, vfs_fid);
+            }
+        }
+    }
+
+    /// Apply usages of external (unindexed) macros: get-or-create an implicit
+    /// `NODE_MACRO` node per distinct macro name (`DefinitionKind::NONE`, no
+    /// definition location — it lives outside the project), then link the file
+    /// node to it via EDGE_MACRO_USAGE with an occurrence at the use token.
+    /// Deduped by name via `node_ids` (macro names never collide with plain
+    /// item names — a macro node and a same-named item would share a hierarchy,
+    /// which is the intended Sourcetrail rendering). Single-threaded, so ids
+    /// are allocated deterministically.
+    fn apply_macro_usage_rows(&mut self, vfs_fid: ra_ap_vfs::FileId, rows: Vec<MacroUsageRow>) {
+        for row in rows {
+            let macro_id = match self.node_ids.get(&row.macro_name) {
+                Some(&id) => id,
+                None => {
+                    let id = self.alloc_id();
+                    self.node_ids.insert(row.macro_name.clone(), id);
+                    self.storage.nodes.push(OwnedStorageNode {
+                        id,
+                        type_: NODE_MACRO,
+                        serialized_name: serialize_name(&row.macro_name),
+                    });
+                    self.storage.symbols.push(OwnedStorageSymbol {
+                        id,
+                        definition_kind: DEFINITION_NONE,
+                    });
+                    id
+                }
+            };
+            let Some(file_node_id) = self.file_info(vfs_fid).map(|i| i.file_node_id) else {
+                continue;
+            };
+            let edge_id = self.push_edge(EDGE_MACRO_USAGE, file_node_id, macro_id);
+            if let Some(range) = row.range {
                 self.add_reference_location(edge_id, range, vfs_fid);
             }
         }
@@ -1497,12 +1557,12 @@ impl RefResolver<'_> {
                 }
                 SyntaxKind::MACRO_CALL => {
                     if let Some(mac) = ast::MacroCall::cast(node) {
-                        self.resolve_macro_call(sema, &mac, rows);
+                        self.resolve_macro_call(sema, &mac, rows, &mut out.macro_usages);
                     }
                 }
                 SyntaxKind::ATTR => {
                     if let Some(attr) = ast::Attr::cast(node) {
-                        self.resolve_attr_macro(sema, &attr, rows);
+                        self.resolve_attr_macro(sema, &attr, rows, &mut out.macro_usages);
                     }
                 }
                 SyntaxKind::RECORD_EXPR_FIELD => {
@@ -1628,20 +1688,41 @@ impl RefResolver<'_> {
         sema: &Semantics<'_, RootDatabase>,
         mac: &ast::MacroCall,
         rows: &mut Vec<ReferenceRow>,
+        macro_rows: &mut Vec<MacroUsageRow>,
     ) {
         let Some(macro_def) = sema.resolve_macro_call(mac) else {
             return;
         };
-        let Some(target) = self.def_id(DefKey::Def(ModuleDef::Macro(macro_def))) else {
-            return;
-        };
         let range = mac.path().as_ref().and_then(path_name_range);
-        rows.push(ReferenceRow {
-            edge_type: EDGE_MACRO_USAGE,
-            source_id: ROW_SOURCE_CURRENT_FILE,
-            target_id: target,
-            range,
-        });
+        self.push_macro_usage(macro_def, range, rows, macro_rows);
+    }
+
+    /// Route a resolved macro usage: an *indexed* macro links to its real node
+    /// (ReferenceRow → EDGE_MACRO_USAGE); an *external* one (std/derive builtin
+    /// or external proc-macro) becomes an implicit `NODE_MACRO`
+    /// (`DefinitionKind::NONE`) so its usages are still visible — matching how
+    /// the C++ indexer records referenced-but-external symbols. Always records
+    /// the usage (no scope knob), consistent with the rest of Sourcetrail.
+    fn push_macro_usage(
+        &self,
+        mac: ra_ap_hir::Macro,
+        range: Option<ra_ap_syntax::TextRange>,
+        rows: &mut Vec<ReferenceRow>,
+        macro_rows: &mut Vec<MacroUsageRow>,
+    ) {
+        if let Some(target) = self.def_id(DefKey::Def(ModuleDef::Macro(mac))) {
+            rows.push(ReferenceRow {
+                edge_type: EDGE_MACRO_USAGE,
+                source_id: ROW_SOURCE_CURRENT_FILE,
+                target_id: target,
+                range,
+            });
+        } else if let Some(name) = self.qualified_name_of_def(ModuleDef::Macro(mac)) {
+            macro_rows.push(MacroUsageRow {
+                macro_name: name,
+                range,
+            });
+        }
     }
 
     /// Attribute and derive macro invocations → EDGE_MACRO_USAGE to the macro
@@ -1657,6 +1738,7 @@ impl RefResolver<'_> {
         sema: &Semantics<'_, RootDatabase>,
         attr: &ast::Attr,
         rows: &mut Vec<ReferenceRow>,
+        macro_rows: &mut Vec<MacroUsageRow>,
     ) {
         let Some(meta) = attr.meta() else { return };
 
@@ -1669,15 +1751,7 @@ impl RefResolver<'_> {
             let entry_ranges = derive_entry_name_ranges(attr);
             for (i, macro_opt) in resolved.iter().enumerate() {
                 let Some(mac) = macro_opt else { continue };
-                let Some(target) = self.def_id(DefKey::Def(ModuleDef::Macro(*mac))) else {
-                    continue;
-                };
-                rows.push(ReferenceRow {
-                    edge_type: EDGE_MACRO_USAGE,
-                    source_id: ROW_SOURCE_CURRENT_FILE,
-                    target_id: target,
-                    range: entry_ranges.get(i).copied(),
-                });
+                self.push_macro_usage(*mac, entry_ranges.get(i).copied(), rows, macro_rows);
             }
             return;
         }
@@ -1689,15 +1763,8 @@ impl RefResolver<'_> {
         let Some(mac) = sema.resolve_attr_macro_call(&item) else {
             return;
         };
-        let Some(target) = self.def_id(DefKey::Def(ModuleDef::Macro(mac))) else {
-            return;
-        };
-        rows.push(ReferenceRow {
-            edge_type: EDGE_MACRO_USAGE,
-            source_id: ROW_SOURCE_CURRENT_FILE,
-            target_id: target,
-            range: attr.path().as_ref().and_then(path_name_range),
-        });
+        let range = attr.path().as_ref().and_then(path_name_range);
+        self.push_macro_usage(mac, range, rows, macro_rows);
     }
 
     /// Node id of the innermost enclosing named module, if it was indexed.

@@ -1437,26 +1437,55 @@ fn static_lifetime_records_no_use_edge() {
 // Attribute / derive macro usage (EDGE_MACRO_USAGE to the macro def)
 // -----------------------------------------------------------------------
 
+// External macro node whose decoded name ends with `suffix`, returning its
+// definition kind (external macros are DefinitionKind::NONE = 0).
+fn external_macro_defkind(s: &OwnedIntermediateStorage, suffix: &str) -> Option<i32> {
+    let n = s
+        .nodes
+        .iter()
+        .find(|n| n.type_ == NODE_MACRO && decode_name(&n.serialized_name).ends_with(suffix))?;
+    s.symbols
+        .iter()
+        .find(|y| y.id == n.id)
+        .map(|y| y.definition_kind)
+}
+
 #[test]
-fn external_derive_emits_no_macro_usage_edge() {
-    // Clone/Debug are core derives we do not index → no edge, no crash.
-    // (Local proc-macro derives would link, exercised only with a real
-    // proc-macro crate; the scope-'all' path adds implicit external nodes.)
+fn external_derive_emits_usage_to_none_node() {
+    // Clone/Debug are core derives we do not index. They still become external
+    // NODE_MACRO nodes (DefinitionKind::NONE), like the C++ indexer records
+    // referenced-but-external symbols, with a usage edge from the file.
     let s = index_src_with_sysroot("#[derive(Clone, Debug)]\npub struct P { pub x: i32 }");
     assert_eq!(
+        external_macro_defkind(&s, "Clone"),
+        Some(0),
+        "Clone is a NONE macro node"
+    );
+    assert_eq!(external_macro_defkind(&s, "Debug"), Some(0));
+    assert!(
         s.edges
             .iter()
             .filter(|e| e.type_ == EDGE_MACRO_USAGE_T)
-            .count(),
-        0,
-        "external derives must not emit usage edges, edges: {:?}",
+            .count()
+            >= 2,
+        "expected usage edges to the external derive macros, edges: {:?}",
         s.edges
     );
 }
 
 #[test]
-fn external_attribute_macro_emits_no_edge() {
-    // A cfg attribute is not a macro invocation → no edge, no crash.
+fn external_bang_macro_emits_usage_to_none_node() {
+    let s = index_src_with_sysroot("pub fn f() { let _v = vec![1, 2, 3]; }");
+    assert_eq!(
+        external_macro_defkind(&s, "vec"),
+        Some(0),
+        "vec! is a NONE macro node"
+    );
+}
+
+#[test]
+fn builtin_attribute_is_not_a_macro_usage() {
+    // `allow` is a builtin attribute, not a proc-/attribute-macro → no edge.
     let s = index_src("#[allow(dead_code)]\npub fn f() {}");
     assert_eq!(
         s.edges

@@ -177,7 +177,7 @@ for a first working prototype.
 | `type` alias | `NODE_TYPEDEF` | — |
 | `macro_rules!` definition | `NODE_MACRO` | — |
 | `use` item | — | `EDGE_IMPORT` (importing scope → imported def) |
-| bang-macro invocation | — | `EDGE_MACRO_USAGE` (file node → macro def) |
+| macro invocation (bang / derive / attribute) | external macro → `NODE_MACRO` (`DefinitionKind::NONE`) | `EDGE_MACRO_USAGE` (file node → macro def) |
 
 Reference occurrences attach to the **edge id** (mirroring the C++
 `ParserClientImpl::recordReference`); definitions carry a name-token
@@ -291,15 +291,19 @@ to rust-analyzer's semantic layer:
       configurable scope `rust_specialization_scope` (off/local/all,
       default local).
 - [x] `EDGE_IMPORT` for `use` items; local symbols (function-local bindings);
-      `EDGE_MACRO_USAGE` for bang-macro invocations of local `macro_rules!`.
+      `EDGE_MACRO_USAGE` for bang, derive (`#[derive(..)]`) and attribute
+      (`#[my_attr]`) macro invocations. External macros (std/derive builtins,
+      external proc-macros) are recorded as `NODE_MACRO` nodes with
+      `DefinitionKind::NONE` and linked — mirroring how the C++ indexer
+      records referenced-but-external symbols (`recordSymbol` + NONE). No
+      scope knob: unlike specialization nodes (which explode per
+      instantiation), macros are few and deduped, so — per Sourcetrail's own
+      precedent — external ones are always recorded and the GUI filters.
 
-Remaining gaps: external-macro visibility — a configurable `all` scope that
-emits implicit nodes for unindexed macros (`Clone`/`Debug`/`tokio::main`), so
-their usages show like the specialization-node `all` scope. Attribute/derive
-AND bang-macro usage edges are implemented for indexed (workspace-local)
-macros; external targets
-— proc-macros and builtin derives — are not indexed today). (Proc-macro
-expansion shipped — see `ROADMAP_PROC_MACRO_EXPANSION.md`.)
+Remaining gaps: none of the deferred per-symbol items remain. Larger
+follow-ups: multi-subprocess fan-out across source groups (Phase 8, 3rd
+bullet). (Proc-macro expansion shipped — see
+`ROADMAP_PROC_MACRO_EXPANSION.md`.)
 
 ---
 

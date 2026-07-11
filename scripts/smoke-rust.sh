@@ -149,11 +149,15 @@ expect "implicit specialization nodes" \
     "SELECT count(*) FROM node n JOIN symbol s ON s.id = n.id
      WHERE s.definition_kind = 1 AND n.serialized_name LIKE '%<%';"
 
-# EDGE_MACRO_USAGE (1<<11 = 2048) — bang-macro invocations of a *local*
-# macro_rules. This crate uses only std macros (vec!/format!/…), which are
-# not indexed, so the self-index count is 0; the hard assertion lives in the
-# unit tests (a fixture with a local macro_rules + invocation). Reported
-# informationally in the summary below.
+# EDGE_MACRO_USAGE (1<<11 = 2048) — bang/derive/attribute macro invocations.
+# External macros (vec!/format!/derive builtins) are recorded as NONE-kind
+# NODE_MACRO nodes with usage edges, so this crate (which uses std macros)
+# has a positive count.
+expect "macro-usage edges (2048)" \
+    "SELECT count(*) FROM edge WHERE type = 2048;"
+expect "external macro nodes (definition_kind NONE)" \
+    "SELECT count(*) FROM node n JOIN symbol s ON s.id = n.id
+     WHERE s.definition_kind = 0 AND n.type = 524288;"
 
 # Reference occurrences attach to edges (recordReference model)
 expect "occurrences on edges" \

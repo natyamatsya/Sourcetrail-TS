@@ -66,6 +66,7 @@ const NODE_TYPE_PARAMETER: i32 = 1 << 17;
 const NODE_MACRO: i32 = 1 << 19;
 const NODE_UNION: i32 = 1 << 20;
 
+const DEFINITION_NONE: i32 = 0;
 const DEFINITION_IMPLICIT: i32 = 1;
 const DEFINITION_EXPLICIT: i32 = 2;
 const LOCATION_TOKEN: i32 = 0;
