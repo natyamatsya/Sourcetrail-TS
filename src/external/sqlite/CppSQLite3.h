@@ -148,9 +148,15 @@ public:
 	CppSQLite3Statement compileStatement(std::string_view szSQL);
 	
 	long long lastRowId();
-	
+
 	void interrupt();
-	
+
+	// Non-owning access to the underlying handle, so a sqlpp23 connection can
+	// borrow it and share this object's transaction scope during the sqlpp23
+	// migration (see context/DESIGN_SQLPP23_MIGRATION.md). The handle stays owned
+	// by this object; a borrower must not close it.
+	sqlite3 *handle() const { return mpDB; }
+
 private:
 	CppSQLite3DB(const CppSQLite3DB &db);
 	CppSQLite3DB &operator=(const CppSQLite3DB &db);

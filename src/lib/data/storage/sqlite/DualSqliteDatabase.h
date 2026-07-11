@@ -101,6 +101,11 @@ public:
 	long long lastRowId();
 	void interrupt();
 
+	// Underlying SQLite handle (the source of truth) so a sqlpp23 connection can
+	// borrow it. The Turso side is intentionally not exposed: typed queries run
+	// against SQLite only. See CppSQLite3DB::handle and DESIGN_SQLPP23_MIGRATION.md.
+	sqlite3 *handle() { return m_sqlite.handle(); }
+
 private:
 	DualCppSqlite3DB(const DualCppSqlite3DB&) = delete;
 	DualCppSqlite3DB& operator=(const DualCppSqlite3DB&) = delete;
