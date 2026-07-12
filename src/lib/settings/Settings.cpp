@@ -67,7 +67,9 @@ bool Settings::save()
 	bool success = false;
 	if (m_config.get() && !m_filePath.empty())
 	{
-		if (m_filePath.extension() == ".toml" || m_filePath.str().ends_with(".srctrl.toml"))
+		if (m_filePath.extension() == ".json")
+			success = m_config->saveJson(m_filePath.str());
+		else if (m_filePath.extension() == ".toml" || m_filePath.str().ends_with(".srctrl.toml"))
 			success = m_config->saveToml(m_filePath.str());
 		else
 			success = m_config->save(m_filePath.str());

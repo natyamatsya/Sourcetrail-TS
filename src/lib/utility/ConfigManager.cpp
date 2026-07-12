@@ -1,10 +1,12 @@
 #include "ConfigManager.h"
 
+#include <cmath>
 #include <fstream>
 #include <set>
 #include <sstream>
 
 #include "tinyxml.h"
+#include <glaze/glaze.hpp>
 #include <toml++/toml.hpp>
 
 #include "FilePath.h"
@@ -309,7 +311,17 @@ bool ConfigManager::load(const std::shared_ptr<TextAccess> textAccess)
 {
 	const std::string& text = textAccess->getText();
 
-	if (text.find("<?xml") != std::string::npos)
+	// Detect the format by the first non-whitespace character: '<' is XML (legacy),
+	// '{' is JSON (the current ApplicationSettings format), anything else is TOML
+	// (used by project .srctrl.toml files).
+	const size_t firstNonWs = text.find_first_not_of(" \t\r\n");
+	const char firstChar = (firstNonWs != std::string::npos) ? text[firstNonWs] : '\0';
+
+	if (firstChar == '{')
+	{
+		return loadJson(text);
+	}
+	else if (firstChar == '<' || text.find("<?xml") != std::string::npos)
 	{
 		TiXmlDocument doc;
 		doc.Parse(text.c_str(), nullptr, TIXML_ENCODING_UTF8);
@@ -724,6 +736,143 @@ toml::v3::table ConfigManager::buildTomlTable() const
 	}
 
 	return root;
+}
+
+namespace
+{
+// Convert a scalar JSON node to the string representation the flat value store
+// uses. Values are written as strings (see buildJsonTree), but be tolerant of a
+// hand-edited config that uses native JSON numbers/booleans.
+std::string jsonScalarToString(const glz::generic& value)
+{
+	if (value.is_string())
+		return value.get_string();
+	if (value.is_boolean())
+		return value.get<bool>() ? "1" : "0";
+	if (value.is_number())
+	{
+		const double number = value.get_number();
+		double intPart = 0.0;
+		if (std::modf(number, &intPart) == 0.0 && std::abs(number) < 1e15)
+			return std::to_string(static_cast<long long>(number));
+		std::ostringstream oss;
+		oss << number;
+		return oss.str();
+	}
+	return "";	  // null
+}
+
+// Walk a parsed JSON DOM into the flat "a/b/c" key/value store. Objects nest the
+// path; an array leaf emits one entry per element under the same key (the inverse
+// of buildJsonTree), so repeated-value lists round-trip without any singular/plural
+// renaming — the ambiguity that breaks the TOML serializer.
+void parseJsonValue(
+	const glz::generic& value,
+	const std::string& currentPath,
+	std::multimap<std::string, std::string>& values)
+{
+	if (value.is_object())
+	{
+		for (const auto& [key, child] : value.get_object())
+		{
+			const std::string fullKey = currentPath.empty() ? key : currentPath + "/" + key;
+			parseJsonValue(child, fullKey, values);
+		}
+	}
+	else if (value.is_array())
+	{
+		for (const auto& element : value.get_array())
+		{
+			const std::string str = jsonScalarToString(element);
+			if (!str.empty() && !currentPath.empty())
+				values.emplace(currentPath, str);
+		}
+	}
+	else if (!currentPath.empty())
+	{
+		const std::string str = jsonScalarToString(value);
+		if (!str.empty())
+			values.emplace(currentPath, str);
+	}
+}
+
+// Build a JSON DOM from the flat value store. A key with a single value becomes a
+// scalar leaf; a key with several values (a list) becomes an array leaf. This is
+// the exact inverse of parseJsonValue.
+glz::generic buildJsonTree(const std::multimap<std::string, std::string>& values)
+{
+	glz::generic root = glz::generic::object_t{};
+
+	std::set<std::string> processedKeys;
+	for (auto it = values.begin(); it != values.end(); ++it)
+	{
+		const std::string& key = it->first;
+		if (!processedKeys.insert(key).second)
+			continue;
+
+		std::vector<std::string> vals;
+		const auto range = values.equal_range(key);
+		for (auto jt = range.first; jt != range.second; ++jt)
+			vals.push_back(jt->second);
+
+		const std::vector<std::string> parts = utility::splitToVector(key, "/");
+		glz::generic* node = &root;
+		for (size_t i = 0; i + 1 < parts.size(); ++i)
+			node = &((*node)[parts[i]]);
+
+		glz::generic& leaf = (*node)[parts.back()];
+		if (vals.size() == 1)
+		{
+			leaf = vals.front();
+		}
+		else
+		{
+			glz::generic::array_t array;
+			for (const std::string& value : vals)
+			{
+				// Parentheses (not braces) to select the scalar-string constructor;
+				// brace-init would hit the initializer_list ctor and wrap each value
+				// in a single-element array.
+				array.push_back(glz::generic(value));
+			}
+			leaf = array;
+		}
+	}
+
+	return root;
+}
+}	 // namespace
+
+bool ConfigManager::loadJson(const std::string& text)
+{
+	const auto parsed = glz::read_json<glz::generic>(text);
+	if (!parsed)
+	{
+		LOG_ERROR("Failed to parse JSON config: " + glz::format_error(parsed, text));
+		return false;
+	}
+
+	parseJsonValue(parsed.value(), "", m_values);
+	return true;
+}
+
+bool ConfigManager::saveJson(const std::string& filepath)
+{
+	const auto written = glz::write_json(buildJsonTree(m_values));
+	if (!written)
+	{
+		LOG_ERROR("Failed to serialize JSON config: " + glz::format_error(written.error()));
+		return false;
+	}
+
+	std::ofstream file(filepath);
+	if (!file.is_open())
+	{
+		LOG_ERROR("Could not open file for writing: " + filepath);
+		return false;
+	}
+	file << glz::prettify_json(written.value()) << '\n';
+	return file.good();
 }
 
 bool ConfigManager::saveToml(const std::string& filepath)

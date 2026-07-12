@@ -137,7 +137,16 @@ void Application::loadSettings()
 	MessageStatus("Load settings: " + UserPaths::getAppSettingsFilePath().str()).dispatch();
 
 	std::shared_ptr<ApplicationSettings> settings = ApplicationSettings::getInstance();
-	settings->load(UserPaths::getAppSettingsFilePath());
+	const FilePath settingsPath = UserPaths::getAppSettingsFilePath();
+	const bool migratedFromXml = !settingsPath.exists();
+	settings->load(settingsPath);
+	if (migratedFromXml && settings->getFilePath() == settingsPath)
+	{
+		// Materialize the migrated settings in the new (JSON) format now, so the app
+		// no longer depends on the legacy XML (which is kept as a backup).
+		LOG_INFO("Migrated settings to " + settingsPath.str());
+		settings->save();
+	}
 	MessageTextEncodingChanged(settings->getTextEncoding()).dispatch();
 
 	LogManager::getInstance()->setLoggingEnabled(settings->getLoggingEnabled());

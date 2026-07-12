@@ -49,9 +49,10 @@ static void setupUserDirectory(const FilePath &appPath)
 	if (!UserPaths::getUserDataDirectoryPath().exists()) {
 		FileSystem::createDirectories(UserPaths::getUserDataDirectoryPath());
 
-		// Copy a default application settings file:
+		// Copy the default application settings as the legacy XML file; it is migrated
+		// to the current (JSON) format on first load (see ApplicationSettings::load).
 		FileSystem::copyFile(ResourcePaths::getFallbackDirectoryPath().concatenate("ApplicationSettings.xml"),
-			UserPaths::getAppSettingsFilePath());
+			UserPaths::getAppSettingsFilePath().replaceExtension("xml"));
 
 		// Copy a default windows settings file:
 		FileSystem::copyFile(ResourcePaths::getFallbackDirectoryPath().concatenate("window_settings.ini"),

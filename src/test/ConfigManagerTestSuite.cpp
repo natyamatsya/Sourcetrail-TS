@@ -349,3 +349,54 @@ TEST_CASE("config manager TOML save and reload round-trip for source_groups")
 	const std::vector<std::string> keys = config2->getSublevelKeys("source_groups");
 	REQUIRE(keys.size() == 1);
 }
+
+TEST_CASE("config manager JSON save and reload round-trip for simple and nested values")
+{
+	const FilePath path("data/ConfigManagerTestSuite/temp.json");
+
+	std::shared_ptr<ConfigManager> config = ConfigManager::createEmpty();
+	config->setValue("application/font_name", std::string("Source Code Pro"));
+	config->setValue("application/font_size", 14);
+	config->setValue("screen/scale_factor", 1.5f);
+	config->setValue("application/logging_enabled", true);
+	REQUIRE(config->saveJson(path.str()));
+
+	std::shared_ptr<ConfigManager> config2 =
+		ConfigManager::createAndLoad(TextAccess::createFromFile(path));
+
+	std::string fontName;
+	REQUIRE(config2->getValue("application/font_name", fontName));
+	REQUIRE(fontName == "Source Code Pro");
+
+	int fontSize = 0;
+	REQUIRE(config2->getValue("application/font_size", fontSize));
+	REQUIRE(fontSize == 14);
+
+	bool logging = false;
+	REQUIRE(config2->getValue("application/logging_enabled", logging));
+	REQUIRE(logging == true);
+}
+
+TEST_CASE("config manager JSON save and reload round-trip for plain list")
+{
+	// Mirrors how ApplicationSettings stores lists such as recent_projects: a plural
+	// container key ("recent_projects") holding a repeated singular child
+	// ("recent_project"). This must survive a save+reload cycle unchanged (the TOML
+	// serializer does not, which is why ApplicationSettings uses JSON).
+	const FilePath path("data/ConfigManagerTestSuite/temp_list.json");
+
+	std::shared_ptr<ConfigManager> config = ConfigManager::createEmpty();
+	config->setValues(
+		"user/recent_projects/recent_project",
+		std::vector<std::string>{"/a/first.srctrl.toml", "/b/second.srctrl.toml"});
+	REQUIRE(config->saveJson(path.str()));
+
+	std::shared_ptr<ConfigManager> config2 =
+		ConfigManager::createAndLoad(TextAccess::createFromFile(path));
+
+	std::vector<std::string> projects;
+	REQUIRE(config2->getValues("user/recent_projects/recent_project", projects));
+	REQUIRE(projects.size() == 2);
+	REQUIRE(projects[0] == "/a/first.srctrl.toml");
+	REQUIRE(projects[1] == "/b/second.srctrl.toml");
+}

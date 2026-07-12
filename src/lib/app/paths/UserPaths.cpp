@@ -14,7 +14,7 @@ void UserPaths::setUserDataDirectoryPath(const FilePath& path)
 
 FilePath UserPaths::getAppSettingsFilePath()
 {
-	return getUserDataDirectoryPath().concatenate("ApplicationSettings.xml");
+	return getUserDataDirectoryPath().concatenate("ApplicationSettings.json");
 }
 
 FilePath UserPaths::getWindowSettingsFilePath()
