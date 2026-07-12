@@ -224,6 +224,38 @@ The handshake is **best-effort**: it never fails `connect` (a down or old app mu
 still allow read-only `status`). The result is surfaced via `status()` (`protocol`
 field) and the `get_instance_info` MCP tool, so a stale checkout is diagnosable.
 
+## Registration & multi-checkout
+
+**How MCP registration works.** An MCP client launches a stdio server as a subprocess
+named by a config entry — there is no daemon to install. Registration is just that
+entry:
+
+- **Claude Code:** `claude mcp add sourcetrail -s user /path/to/sourcetrail-mcp`
+  (or a project-scoped `.mcp.json`). `-s user` makes it available in every project.
+- **Claude Desktop:** an `mcpServers` entry in `claude_desktop_config.json`
+  (`~/Library/Application Support/Claude/` on macOS, `%APPDATA%\Claude\` on Windows)
+  with `command` + `args`, then restart.
+- rmcp negotiates the MCP wire `ProtocolVersion` at `initialize`; the client spawns a
+  fresh server per session over stdio.
+
+**Install scripts.** `scripts/install-mcp.sh` (macOS/Linux) and
+`scripts/install-mcp.ps1` (Windows) build `sourcetrail-mcp` (`cargo build --release
+--features mcp`) and register it with Claude Code — idempotently (remove-then-add),
+falling back to a printed config snippet when the `claude` CLI is absent. `--prefix
+DIR` copies the binary to a stable location so the registration isn't pinned to one
+checkout's `target/`.
+
+**One server, many checkouts.** You register the server **once**, not per checkout.
+A single `sourcetrail-mcp` process manages *N* app instances through `InstanceManager`:
+`start_instance` spawns an app (its instance id defaults to `git_label(bin)`, so
+pointing at a checkout self-labels the version under test into the `st.agent.<label>.*`
+channel namespace); `list_instances` / `kill_instance` manage the set; every other
+tool takes an `instance` argument. So one agent can drive several Sourcetrail
+checkouts of differing ages side by side, disambiguated by git label — and the
+per-instance **handshake** (`get_instance_info`) reports each one's protocol skew, so
+a checkout too old for a command is diagnosed rather than silently no-ops (see
+Protocol handshake).
+
 ## Observation & synchrony — the act-and-observe contract
 
 A command's **ack is not its effect.** `handleCommand` runs on the message-processing
