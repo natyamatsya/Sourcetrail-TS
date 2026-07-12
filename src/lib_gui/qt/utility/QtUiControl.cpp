@@ -16,6 +16,7 @@
 #include <QString>
 
 #include "QtAccessibleRole.h"
+#include "QtUiHash.h"
 #endif
 
 namespace utility::qt
@@ -103,12 +104,17 @@ ControlResult invokeAction(
 	const std::string& objectName,
 	const std::vector<RefStep>& path,
 	const std::string& action,
-	const std::string& text)
+	const std::string& text,
+	std::uint64_t expectHash)
 {
 	QAccessibleInterface* iface = resolve(objectName, path);
 	if (iface == nullptr)
 	{
 		return {false, "element not found: " + pathToString(path)};
+	}
+	if (expectHash != 0 && structuralHash(iface) != expectHash)
+	{
+		return {false, "element changed since snapshot: " + pathToString(path)};
 	}
 
 	if (!action.empty())
@@ -143,12 +149,17 @@ ControlResult invokeAction(
 	return {true, ""};
 }
 
-CaptureResult captureElement(const std::string& objectName, const std::vector<RefStep>& path)
+CaptureResult captureElement(
+	const std::string& objectName, const std::vector<RefStep>& path, std::uint64_t expectHash)
 {
 	QAccessibleInterface* iface = resolve(objectName, path);
 	if (iface == nullptr)
 	{
 		return {false, "element not found: " + pathToString(path), {}, 0, 0};
+	}
+	if (expectHash != 0 && structuralHash(iface) != expectHash)
+	{
+		return {false, "element changed since snapshot: " + pathToString(path), {}, 0, 0};
 	}
 
 	QPixmap pixmap;
@@ -197,12 +208,12 @@ CaptureResult captureElement(const std::string& objectName, const std::vector<Re
 }
 #else
 ControlResult invokeAction(
-	const std::string&, const std::vector<RefStep>&, const std::string&, const std::string&)
+	const std::string&, const std::vector<RefStep>&, const std::string&, const std::string&, std::uint64_t)
 {
 	return {false, "Qt accessibility support not built"};
 }
 
-CaptureResult captureElement(const std::string&, const std::vector<RefStep>&)
+CaptureResult captureElement(const std::string&, const std::vector<RefStep>&, std::uint64_t)
 {
 	return {false, "Qt accessibility support not built", {}, 0, 0};
 }

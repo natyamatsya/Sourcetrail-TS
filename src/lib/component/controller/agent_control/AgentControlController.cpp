@@ -517,15 +517,16 @@ struct AgentControlController::Impl
 			}
 			std::string action = c->action() ? c->action()->str() : "";
 			std::string text = c->text() ? c->text()->str() : "";
+			const std::uint64_t expectHash = c->expect_hash();
 			// QAccessible touches widgets, so resolve + invoke on the GUI thread
 			// (ui()), then ack with the result. Scoped so stop() joins it. The ack is
 			// the reply (no separate Settled — the invoke is async on ui()).
 			m_uiScope.spawn(
 				stdexec::schedule(m_schedulers->ui()) |
 				stdexec::then([this, requestId, objectName = std::move(objectName), path = std::move(path),
-								  action = std::move(action), text = std::move(text)]() {
+								  action = std::move(action), text = std::move(text), expectHash]() {
 					const utility::qt::ControlResult r =
-						utility::qt::invokeAction(objectName, path, action, text);
+						utility::qt::invokeAction(objectName, path, action, text, expectHash);
 					emitResult(requestId, r.ok, r.message);
 				}));
 			return;
@@ -550,12 +551,14 @@ struct AgentControlController::Impl
 						 step->index()});
 				}
 			}
+			const std::uint64_t expectHash = c->expect_hash();
 			// Grab on the GUI thread (ui()); on success publish the FrameEnvelope on
 			// st.agent.frames, then ack with the result.
 			m_uiScope.spawn(
 				stdexec::schedule(m_schedulers->ui()) |
-				stdexec::then([this, requestId, objectName = std::move(objectName), path = std::move(path)]() {
-					const utility::qt::CaptureResult r = utility::qt::captureElement(objectName, path);
+				stdexec::then([this, requestId, objectName = std::move(objectName), path = std::move(path),
+								  expectHash]() {
+					const utility::qt::CaptureResult r = utility::qt::captureElement(objectName, path, expectHash);
 					if (r.ok)
 					{
 						publishFrame(requestId, r);

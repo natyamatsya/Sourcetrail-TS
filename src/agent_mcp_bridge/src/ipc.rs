@@ -314,9 +314,10 @@ impl Bridge {
         path: &[(String, String, u32)],
         action: &str,
         text: &str,
+        expect_hash: u64,
     ) -> Result<Value> {
         let id = self.next_id();
-        self.send(&protocol::invoke_action(id, object_name, path, action, text))?;
+        self.send(&protocol::invoke_action(id, object_name, path, action, text, expect_hash))?;
         let (ok, message, _) = self.await_ack(id, OP_TIMEOUT)?;
         Ok(json!({ "ok": ok, "message": message }))
     }
@@ -330,9 +331,10 @@ impl Bridge {
         object_name: &str,
         path: &[(String, String, u32)],
         include_properties: bool,
+        expect_hash: u64,
     ) -> Result<Value> {
         let id = self.next_id();
-        self.send(&protocol::capture_element(id, object_name, path, include_properties))?;
+        self.send(&protocol::capture_element(id, object_name, path, include_properties, expect_hash))?;
         let (ok, message, _) = self.await_ack(id, OP_TIMEOUT)?;
         if !ok {
             return Ok(json!({ "ok": false, "message": message }));

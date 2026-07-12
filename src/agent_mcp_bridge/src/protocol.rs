@@ -128,6 +128,7 @@ pub fn invoke_action(
     path: &[(String, String, u32)],
     action: &str,
     text: &str,
+    expect_hash: u64,
 ) -> Vec<u8> {
     let mut b = FlatBufferBuilder::new();
     let steps: Vec<_> = path
@@ -146,7 +147,7 @@ pub fn invoke_action(
     let txt = b.create_string(text);
     let c = fb::InvokeAction::create(
         &mut b,
-        &fb::InvokeActionArgs { target: Some(target), action: Some(act), text: Some(txt) },
+        &fb::InvokeActionArgs { target: Some(target), action: Some(act), text: Some(txt), expect_hash },
     );
     finish(b, request_id, fb::Command::InvokeAction, c.as_union_value())
 }
@@ -158,6 +159,7 @@ pub fn capture_element(
     object_name: &str,
     path: &[(String, String, u32)],
     include_properties: bool,
+    expect_hash: u64,
 ) -> Vec<u8> {
     let mut b = FlatBufferBuilder::new();
     let steps: Vec<_> = path
@@ -174,7 +176,12 @@ pub fn capture_element(
         fb::ElementRef::create(&mut b, &fb::ElementRefArgs { object_name: Some(on), path: Some(path_vec) });
     let c = fb::CaptureElement::create(
         &mut b,
-        &fb::CaptureElementArgs { target: Some(target), format: fb::FrameFormat::Png, include_properties },
+        &fb::CaptureElementArgs {
+            target: Some(target),
+            format: fb::FrameFormat::Png,
+            include_properties,
+            expect_hash,
+        },
     );
     finish(b, request_id, fb::Command::CaptureElement, c.as_union_value())
 }
@@ -397,6 +404,7 @@ pub fn parse_ui_snapshot(bytes: &[u8]) -> Result<(u64, Value)> {
     let json = json!({
         "request_id": snap.request_id(),
         "format": format,
+        "tree_hash": snap.tree_hash(),
         "roots": roots,
     });
     Ok((snap.request_id(), json))
@@ -419,6 +427,7 @@ fn ui_node_json(n: fb::UiNode) -> Value {
         "actions": actions,
         "rect": rect,
         "ref": n.ref_().map(element_ref_json),
+        "hash": n.hash(),
         "children": children,
     })
 }
@@ -712,7 +721,7 @@ mod tests {
             ("menu".to_string(), String::new(), 0u32),
             ("menuitem".to_string(), "New Project...".to_string(), 0u32),
         ];
-        let bytes = invoke_action(7, "", &path, "Press", "");
+        let bytes = invoke_action(7, "", &path, "Press", "", 0);
         let env = flatbuffers::root::<fb::CommandEnvelope>(&bytes).unwrap();
         assert_eq!(env.request_id(), 7);
         assert_eq!(env.command_type(), fb::Command::InvokeAction);
@@ -728,7 +737,7 @@ mod tests {
     fn capture_element_command_and_frame_roundtrip() {
         // command builds + decodes
         let path = vec![("button".to_string(), "OK".to_string(), 0u32)];
-        let bytes = capture_element(3, "", &path, false);
+        let bytes = capture_element(3, "", &path, false, 0);
         let env = flatbuffers::root::<fb::CommandEnvelope>(&bytes).unwrap();
         assert_eq!(env.command_type(), fb::Command::CaptureElement);
         assert_eq!(env.command_as_capture_element().unwrap().target().unwrap().path().unwrap().len(), 1);
@@ -812,7 +821,12 @@ mod tests {
         let roots = b.create_vector(&[root]);
         let snap = fb::UiSnapshot::create(
             &mut b,
-            &fb::UiSnapshotArgs { request_id: 7, format: fb::SnapshotFormat::Accessibility, roots: Some(roots) },
+            &fb::UiSnapshotArgs {
+                request_id: 7,
+                format: fb::SnapshotFormat::Accessibility,
+                roots: Some(roots),
+                tree_hash: 0,
+            },
         );
         b.finish(snap, None);
 

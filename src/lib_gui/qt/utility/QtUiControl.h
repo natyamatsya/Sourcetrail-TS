@@ -47,13 +47,15 @@ ControlResult invokeAction(
 	const std::string& objectName,
 	const std::vector<RefStep>& path,
 	const std::string& action,
-	const std::string& text);
+	const std::string& text,
+	std::uint64_t expectHash = 0);
 
 //! Resolve `objectName` + `path` and grab the element to a PNG. A QWidget-backed
 //! element is grabbed directly; a sub-element (menu item, cell) is grabbed from
 //! its window cropped to the element's rect. MUST run on the Qt GUI thread;
 //! returns `{false, ...}` when built without Qt accessibility support.
-CaptureResult captureElement(const std::string& objectName, const std::vector<RefStep>& path);
+CaptureResult captureElement(
+	const std::string& objectName, const std::vector<RefStep>& path, std::uint64_t expectHash = 0);
 }	 // namespace utility::qt
 
 #endif	  // QT_UI_CONTROL_H

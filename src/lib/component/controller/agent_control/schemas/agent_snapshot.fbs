@@ -26,6 +26,10 @@ table UiNode {
     actions:     [string];     // invokable accessible-action names
     properties:  [ubyte];      // FlexBuffer map of Q_PROPERTYs (ObjectTree route)
     children:    [UiNode];     // recursive
+    // Merkle structural hash of this node's subtree (role/name/actions/children) —
+    // a version stamp for optimistic control (pass as expect_hash on a command to
+    // drop if the element changed). See DESIGN_AGENT_UI_CONTROL.md.
+    hash:        uint64;
 }
 
 // The reply to a GetSnapshot command, correlated by request_id (0 for the CLI dump).
@@ -33,6 +37,7 @@ table UiSnapshot {
     request_id: uint64;
     format:     SnapshotFormat;
     roots:      [UiNode];
+    tree_hash:  uint64;   // whole-tree version stamp (fold of the root hashes)
 }
 
 root_type UiSnapshot;

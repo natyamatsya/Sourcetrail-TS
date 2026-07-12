@@ -50,7 +50,7 @@ fn main() -> Result<()> {
         Some("status") => bridge.status(),
         Some("events") => bridge.poll_events(arg2.parse().unwrap_or(0)),
         Some("activate") => bridge.activate_node(None, arg2.parse().unwrap_or(0))?,
-        Some("invoke") => invoke_first(&mut bridge, arg2)?,
+        Some("invoke") => invoke_first(&mut bridge, arg2, args.get(3).map(String::as_str))?,
         Some("capture") => capture_first(&mut bridge, arg2)?,
         Some("query") => bridge.query_ui(arg2)?,
         Some("load") => load_and_wait(&mut bridge, arg2)?,
@@ -89,17 +89,23 @@ fn ref_of(node: &Value) -> (String, Vec<(String, String, u32)>) {
     (object_name, path)
 }
 
-fn invoke_first(bridge: &mut Bridge, action: &str) -> Result<Value> {
+fn invoke_first(bridge: &mut Bridge, action: &str, hash_override: Option<&str>) -> Result<Value> {
     let snap = bridge.get_snapshot(false)?;
     let node = find_node_with_action(&snap, action)
         .ok_or_else(|| anyhow::anyhow!("no element advertising action '{action}' in the snapshot"))?;
     let (object_name, path) = ref_of(&node);
+    // Override to demonstrate the optimistic-control drop (a wrong hash -> "element
+    // changed since snapshot"); otherwise use the node's real hash (CAS happy path).
+    let expect_hash = match hash_override {
+        Some(h) => h.parse().unwrap_or(0),
+        None => node["hash"].as_u64().unwrap_or(0),
+    };
     eprintln!(
-        "invoking '{action}' on {} (\"{}\")",
+        "invoking '{action}' on {} (\"{}\") expect_hash={expect_hash}",
         node["role"].as_str().unwrap_or(""),
         node["name"].as_str().unwrap_or("")
     );
-    bridge.invoke_action(&object_name, &path, action, "")
+    bridge.invoke_action(&object_name, &path, action, "", expect_hash)
 }
 
 /// Screenshot the first element advertising `action`; decode + save the PNG.
@@ -109,8 +115,9 @@ fn capture_first(bridge: &mut Bridge, action: &str) -> Result<Value> {
     let node = find_node_with_action(&snap, action)
         .ok_or_else(|| anyhow::anyhow!("no element advertising action '{action}' in the snapshot"))?;
     let (object_name, path) = ref_of(&node);
+    let expect_hash = node["hash"].as_u64().unwrap_or(0);
     eprintln!("capturing {} (\"{}\")", node["role"].as_str().unwrap_or(""), node["name"].as_str().unwrap_or(""));
-    let out = bridge.capture_element(&object_name, &path, false)?;
+    let out = bridge.capture_element(&object_name, &path, false, expect_hash)?;
     if let Some(b64) = out.pointer("/frame/image_base64").and_then(Value::as_str) {
         let png = base64::engine::general_purpose::STANDARD.decode(b64).unwrap_or_default();
         std::fs::write("/tmp/element_capture.png", &png).ok();

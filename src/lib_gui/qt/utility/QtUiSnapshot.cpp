@@ -23,6 +23,7 @@
 #include <QAccessible>
 
 #include "QtAccessibleRole.h"	// shared accessibleRoleName (also used by QtUiControl)
+#include "QtUiHash.h"			// structuralHash (per-node version stamp)
 #endif
 
 namespace fb = Sourcetrail::Agent;
@@ -229,6 +230,7 @@ flatbuffers::Offset<fb::UiNode> buildAccessibleNode(
 	nb.add_state(stateBits(iface->state()));
 	nb.add_actions(actionsVec);
 	nb.add_children(kids);
+	nb.add_hash(structuralHash(iface));
 	return nb.Finish();
 }
 #endif	// QT_CONFIG(accessibility)
@@ -263,11 +265,13 @@ std::vector<std::uint8_t> captureUiSnapshot(
 	const QWidgetList topLevels = QApplication::topLevelWidgets();
 	std::vector<flatbuffers::Offset<fb::UiNode>> roots;
 	bool useAccessibility = false;
+	std::uint64_t treeHash = 0;	// whole-tree version stamp (accessibility route)
 
 #if QT_CONFIG(accessibility)
 	if (format == SnapshotFormat::Accessibility)
 	{
 		useAccessibility = true;
+		treeHash = detail::kFnvOffset;
 		std::map<std::pair<std::string, std::string>, std::uint32_t> counts;
 		for (QWidget* widget: topLevels)
 		{
@@ -277,6 +281,7 @@ std::vector<std::uint8_t> captureUiSnapshot(
 				const std::string name = iface->text(QAccessible::Name).toStdString();
 				std::vector<StepData> path{{role, name, counts[{role, name}]++}};
 				roots.push_back(buildAccessibleNode(builder, iface, path));
+				detail::hashMixU64(treeHash, structuralHash(iface));
 			}
 		}
 	}
@@ -295,7 +300,8 @@ std::vector<std::uint8_t> captureUiSnapshot(
 
 	const fb::SnapshotFormat fbFormat = useAccessibility ? fb::SnapshotFormat_Accessibility
 														 : fb::SnapshotFormat_ObjectTree;
-	builder.Finish(fb::CreateUiSnapshot(builder, requestId, fbFormat, builder.CreateVector(roots)));
+	builder.Finish(
+		fb::CreateUiSnapshot(builder, requestId, fbFormat, builder.CreateVector(roots), treeHash));
 	return {builder.GetBufferPointer(), builder.GetBufferPointer() + builder.GetSize()};
 #else
 	return {};

@@ -19,6 +19,7 @@
 #include "json-query/JSONQuery"
 
 #include "QtAccessibleRole.h"
+#include "QtUiHash.h"
 #include "agent_snapshot_generated.h"
 
 namespace fb = Sourcetrail::Agent;
@@ -79,6 +80,9 @@ QJsonObject buildJsonNode(QAccessibleInterface* iface, std::vector<Step>& path)
 		{"description", iface->text(QAccessible::Description)},
 		{"rect", QJsonObject{{"x", r.x()}, {"y", r.y()}, {"w", r.width()}, {"h", r.height()}}},
 		{"actions", actions},
+		// String so the 64-bit value survives QJsonValue's double; the agent never
+		// sees this JSON — it decodes UiNode.hash (a real u64) from the reply.
+		{"hash", QString::number(structuralHash(iface))},
 		{"children", children}};
 }
 
@@ -122,6 +126,7 @@ flatbuffers::Offset<fb::UiNode> jsonToUiNode(flatbuffers::FlatBufferBuilder& b, 
 	nb.add_description(description);
 	nb.add_rect(&rect);
 	nb.add_actions(actionsVec);
+	nb.add_hash(node.value("hash").toString().toULongLong());
 	return nb.Finish();
 }
 }	 // namespace

@@ -110,6 +110,10 @@ struct InvokeActionArgs {
     /// Optional: set the element's editable text/value (line edits, combos).
     #[serde(default)]
     text: String,
+    /// Optional optimistic-control guard: pass the snapshot node's `hash`; the
+    /// action is dropped if the element changed since (0 = no check).
+    #[serde(default)]
+    expect_hash: u64,
     #[serde(default)]
     instance: String,
 }
@@ -123,6 +127,9 @@ struct CaptureElementArgs {
     /// Also return the element's properties (name/value/actions). (Reserved.)
     #[serde(default)]
     include_properties: bool,
+    /// Optional optimistic-control guard (snapshot node `hash`); 0 = no check.
+    #[serde(default)]
+    expect_hash: u64,
     #[serde(default)]
     instance: String,
 }
@@ -279,6 +286,7 @@ impl SourcetrailServer {
                         &path,
                         &a.action,
                         &a.text,
+                        a.expect_hash,
                     )
                 })
                 .await?,
@@ -301,6 +309,7 @@ impl SourcetrailServer {
                         &a.target.object_name,
                         &path,
                         a.include_properties,
+                        a.expect_hash,
                     )
                 })
                 .await?,
