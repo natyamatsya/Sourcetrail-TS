@@ -7,7 +7,7 @@
 struct AgentControlController::Impl
 {
 };
-AgentControlController::AgentControlController(StorageAccess*, execution::ISchedulers*) {}
+AgentControlController::AgentControlController(StorageAccess*, execution::ISchedulers*, const std::string&) {}
 AgentControlController::~AgentControlController() = default;
 void AgentControlController::startListening() {}
 void AgentControlController::stopListening() {}
@@ -73,6 +73,15 @@ namespace fb = Sourcetrail::Agent;
 
 namespace
 {
+// Channel name for `base` under an instance id. Empty id -> the default
+// `st.agent.<base>`; otherwise `st.agent.<id>.<base>`, so multiple app instances
+// (e.g. two checkouts in a comparison test) don't collide. Must match the bridge.
+std::string agentChannel(const std::string& instanceId, const char* base)
+{
+	return instanceId.empty() ? (std::string("st.agent.") + base)
+							  : ("st.agent." + instanceId + "." + base);
+}
+
 ::RefreshMode toRefreshMode(fb::RefreshMode mode)
 {
 	switch (mode)
@@ -237,12 +246,13 @@ struct AgentControlController::Impl
 	, public MessageListener<MessageIndexingFinished>
 	, public MessageListener<MessageErrorCountUpdate>
 {
-	Impl(StorageAccess* storageAccess, execution::ISchedulers* schedulers)
+	Impl(StorageAccess* storageAccess, execution::ISchedulers* schedulers, std::string instanceId)
 		: m_storageAccess(storageAccess)
 		, m_schedulers(schedulers)
-		, m_reader("st.agent.cmd")
-		, m_stateChannel("st.agent.state", ipc::sender)
-		, m_eventsChannel("st.agent.events", ipc::sender)
+		, m_instanceId(std::move(instanceId))
+		, m_reader(agentChannel(m_instanceId, "cmd").c_str())
+		, m_stateChannel(agentChannel(m_instanceId, "state").c_str(), ipc::sender)
+		, m_eventsChannel(agentChannel(m_instanceId, "events").c_str(), ipc::sender)
 	{
 	}
 
@@ -546,8 +556,9 @@ struct AgentControlController::Impl
 
 	StorageAccess* m_storageAccess;
 	execution::ISchedulers* m_schedulers;	// io() drives the reader; ui() reserved for Phase C frame grab
+	std::string m_instanceId;	// channel namespace (empty = default st.agent.*)
 
-	AgentCommandReader m_reader;	// owns the st.agent.cmd route + reader thread (RFC seam)
+	AgentCommandReader m_reader;	// owns the st.agent[.<id>].cmd route + reader thread (RFC seam)
 	ipc::route m_stateChannel;
 	ipc::route m_eventsChannel;
 
@@ -562,8 +573,9 @@ struct AgentControlController::Impl
 	bool m_listening = false;
 };
 
-AgentControlController::AgentControlController(StorageAccess* storageAccess, execution::ISchedulers* schedulers)
-	: m_impl(std::make_unique<Impl>(storageAccess, schedulers))
+AgentControlController::AgentControlController(
+	StorageAccess* storageAccess, execution::ISchedulers* schedulers, const std::string& instanceId)
+	: m_impl(std::make_unique<Impl>(storageAccess, schedulers, instanceId))
 {
 }
 
@@ -576,7 +588,7 @@ void AgentControlController::startListening()
 {
 	m_impl->start();
 	m_impl->m_listening = true;
-	LOG_INFO("agent-control: listening on st.agent.cmd (thoth-ipc)");
+	LOG_INFO("agent-control: listening on " + agentChannel(m_impl->m_instanceId, "cmd") + " (thoth-ipc)");
 }
 
 void AgentControlController::stopListening()

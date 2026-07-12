@@ -33,6 +33,12 @@ CommandLineParser::CommandLineParser(const std::string& version)
 		m_agentControl,
 		"Agent-UI control channel (thoth-ipc). On by default; pass --no-agent-control to "
 		"disable. No-op unless built with SOURCETRAIL_AGENT_CONTROL");
+	m_app.add_option(
+		"--agent-instance",
+		m_agentInstanceId,
+		"Namespace the agent-control channels as st.agent.<id>.* so multiple app "
+		"instances can run side by side (e.g. baseline vs candidate). Empty = default "
+		"st.agent.* names");
 	m_app.allow_extras();
 
 	m_commands.push_back(std::make_unique<commandline::CommandlineCommandConfig>(this));
@@ -178,6 +184,11 @@ int CommandLineParser::getScreenshotDelayMs() const
 bool CommandLineParser::getAgentControlEnabled() const
 {
 	return m_agentControl;
+}
+
+const std::string& CommandLineParser::getAgentInstanceId() const
+{
+	return m_agentInstanceId;
 }
 
 bool CommandLineParser::hasError() const

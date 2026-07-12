@@ -39,7 +39,8 @@ void Application::createInstance(
 	ViewFactory* viewFactory,
 	NetworkFactory* networkFactory,
 	execution::ISchedulers* schedulers,
-	bool enableAgentControl)
+	bool enableAgentControl,
+	const std::string& agentInstanceId)
 {
 	bool hasGui = (viewFactory != nullptr);
 
@@ -86,7 +87,7 @@ void Application::createInstance(
 	if (enableAgentControl && hasGui && s_instance->m_schedulers != nullptr)
 	{
 		s_instance->m_agentControlController = std::make_shared<AgentControlController>(
-			s_instance->m_storageCache.get(), s_instance->m_schedulers);
+			s_instance->m_storageCache.get(), s_instance->m_schedulers, agentInstanceId);
 		s_instance->m_agentControlController->startListening();
 	}
 

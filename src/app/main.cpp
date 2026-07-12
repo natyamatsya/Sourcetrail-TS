@@ -197,7 +197,8 @@ int main(int argc, char* argv[])
 			&viewFactory,
 			&networkFactory,
 			&execution::qt::Schedulers::getInstance(),
-			commandLineParser.getAgentControlEnabled());
+			commandLineParser.getAgentControlEnabled(),
+			commandLineParser.getAgentInstanceId());
 		
 		[[maybe_unused]]
 		ScopedFunctor f([]()

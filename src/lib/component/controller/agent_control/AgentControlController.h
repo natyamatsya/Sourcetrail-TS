@@ -2,6 +2,7 @@
 #define AGENT_CONTROL_CONTROLLER_H
 
 #include <memory>
+#include <string>
 
 // Drives Sourcetrail's UI from an AI agent over thoth-ipc shared-memory channels
 // carrying FlatBuffers contracts (see context/DESIGN_AGENT_UI_CONTROL.md,
@@ -30,7 +31,13 @@ class ISchedulers;
 class AgentControlController
 {
 public:
-	AgentControlController(StorageAccess* storageAccess, execution::ISchedulers* schedulers);
+	// `instanceId` namespaces the thoth-ipc channels so multiple app instances can
+	// run side by side (e.g. baseline vs candidate in a comparison test). Empty ->
+	// the default `st.agent.*` names; otherwise `st.agent.<instanceId>.*`.
+	AgentControlController(
+		StorageAccess* storageAccess,
+		execution::ISchedulers* schedulers,
+		const std::string& instanceId = "");
 	~AgentControlController();
 
 	AgentControlController(const AgentControlController&) = delete;

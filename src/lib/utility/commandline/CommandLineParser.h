@@ -52,6 +52,9 @@ public:
 	// SOURCETRAIL_AGENT_CONTROL). See context/DESIGN_AGENT_UI_CONTROL.md.
 	bool getAgentControlEnabled() const;
 
+	// Instance id namespacing the agent-control channels (empty = default).
+	const std::string& getAgentInstanceId() const;
+
 private:
 	void processProjectfile();
 	void printHelp() const;
@@ -73,6 +76,7 @@ private:
 	std::string m_screenshotPath;
 	int m_screenshotDelayMs = 2000;
 	bool m_agentControl = true;
+	std::string m_agentInstanceId;
 
 	std::string m_errorString;
 };

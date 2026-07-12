@@ -2,6 +2,7 @@
 #define APPLICATION_H
 
 #include <memory>
+#include <string>
 
 #include "DialogView.h"
 #include "MessageActivateWindow.h"
@@ -44,7 +45,8 @@ public:
 		ViewFactory* viewFactory,
 		NetworkFactory* networkFactory,
 		execution::ISchedulers* schedulers = nullptr,
-		bool enableAgentControl = false);
+		bool enableAgentControl = false,
+		const std::string& agentInstanceId = "");
 	static std::shared_ptr<Application> getInstance();
 	static void destroyInstance();
 
