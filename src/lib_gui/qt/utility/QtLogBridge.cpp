@@ -10,6 +10,9 @@ namespace utility::qt
 {
 namespace
 {
+// Process-global: Qt allows one message handler. This assumes a single agent
+// controller per process (the multi-instance design spawns separate processes, so
+// that holds); a second installQtLogSink would overwrite the first's sink.
 std::mutex g_mutex;
 QtLogSink g_sink;
 QtMessageHandler g_prev = nullptr;

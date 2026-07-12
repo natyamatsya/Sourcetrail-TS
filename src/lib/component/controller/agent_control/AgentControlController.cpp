@@ -124,6 +124,37 @@ private:
 	Sink m_sink;
 };
 
+// A schema ElementRef decoded into QtUiControl's plain selector form.
+struct DecodedRef
+{
+	std::string objectName;
+	std::vector<utility::qt::RefStep> path;
+};
+
+DecodedRef decodeElementRef(const fb::ElementRef* ref)
+{
+	DecodedRef out;
+	if (ref == nullptr)
+	{
+		return out;
+	}
+	if (ref->object_name() != nullptr)
+	{
+		out.objectName = ref->object_name()->str();
+	}
+	if (const auto* steps = ref->path())
+	{
+		for (const auto* step: *steps)
+		{
+			out.path.push_back(
+				{step->role() != nullptr ? step->role()->str() : "",
+				 step->name() != nullptr ? step->name()->str() : "",
+				 step->index()});
+		}
+	}
+	return out;
+}
+
 utility::qt::SnapshotFormat toSnapshotFormat(fb::SnapshotFormat format)
 {
 	return format == fb::SnapshotFormat_ObjectTree ? utility::qt::SnapshotFormat::ObjectTree
@@ -554,19 +585,7 @@ struct AgentControlController::Impl
 				emitResult(requestId, false, "invoke_action: missing target");
 				return;
 			}
-			// Decode the ElementRef selector into QtUiControl's plain form.
-			std::string objectName = c->target()->object_name() ? c->target()->object_name()->str() : "";
-			std::vector<utility::qt::RefStep> path;
-			if (const auto* steps = c->target()->path())
-			{
-				for (const auto* step: *steps)
-				{
-					path.push_back(
-						{step->role() ? step->role()->str() : "",
-						 step->name() ? step->name()->str() : "",
-						 step->index()});
-				}
-			}
+			DecodedRef ref = decodeElementRef(c->target());
 			std::string action = c->action() ? c->action()->str() : "";
 			std::string text = c->text() ? c->text()->str() : "";
 			const std::uint64_t expectHash = c->expect_hash();
@@ -575,8 +594,9 @@ struct AgentControlController::Impl
 			// the reply (no separate Settled — the invoke is async on ui()).
 			m_uiScope.spawn(
 				stdexec::schedule(m_schedulers->ui()) |
-				stdexec::then([this, requestId, objectName = std::move(objectName), path = std::move(path),
-								  action = std::move(action), text = std::move(text), expectHash]() {
+				stdexec::then([this, requestId, objectName = std::move(ref.objectName),
+								  path = std::move(ref.path), action = std::move(action),
+								  text = std::move(text), expectHash]() {
 					const utility::qt::ControlResult r =
 						utility::qt::invokeAction(objectName, path, action, text, expectHash);
 					emitResult(requestId, r.ok, r.message);
@@ -591,25 +611,14 @@ struct AgentControlController::Impl
 				emitResult(requestId, false, "capture_element: missing target");
 				return;
 			}
-			std::string objectName = c->target()->object_name() ? c->target()->object_name()->str() : "";
-			std::vector<utility::qt::RefStep> path;
-			if (const auto* steps = c->target()->path())
-			{
-				for (const auto* step: *steps)
-				{
-					path.push_back(
-						{step->role() ? step->role()->str() : "",
-						 step->name() ? step->name()->str() : "",
-						 step->index()});
-				}
-			}
+			DecodedRef ref = decodeElementRef(c->target());
 			const std::uint64_t expectHash = c->expect_hash();
 			// Grab on the GUI thread (ui()); on success publish the FrameEnvelope on
 			// st.agent.frames, then ack with the result.
 			m_uiScope.spawn(
 				stdexec::schedule(m_schedulers->ui()) |
-				stdexec::then([this, requestId, objectName = std::move(objectName), path = std::move(path),
-								  expectHash]() {
+				stdexec::then([this, requestId, objectName = std::move(ref.objectName),
+								  path = std::move(ref.path), expectHash]() {
 					const utility::qt::CaptureResult r = utility::qt::captureElement(objectName, path, expectHash);
 					if (r.ok)
 					{
@@ -642,32 +651,33 @@ struct AgentControlController::Impl
 			const auto* c = envelope->command_as_SetLogFilter();
 			if (c != nullptr)
 			{
+				const std::string pattern = c->event_pattern() != nullptr ? c->event_pattern()->str() : "";
+				// Validate the regex *before* touching any config, so a bad pattern
+				// leaves the prior filter fully intact (no partial apply of qt_rules
+				// or min_level).
+				std::regex compiled;
+				if (!pattern.empty())
+				{
+					try
+					{
+						compiled = std::regex(pattern);
+					}
+					catch (const std::regex_error& e)
+					{
+						emitResult(requestId, false, std::string("bad event_pattern: ") + e.what());
+						return;
+					}
+				}
 				if (c->qt_rules() != nullptr)
 				{
 					utility::qt::setQtLogRules(c->qt_rules()->str());
 				}
+				// Commit all filter config under one lock; flip m_logEnabled last so a
+				// concurrent forwardLog never sees enabled with a half-updated config.
+				const std::lock_guard<std::mutex> lock(m_logConfigMutex);
+				m_logPattern = std::move(compiled);
+				m_logHasPattern = !pattern.empty();
 				m_logMinLevel.store(static_cast<int>(c->min_level()), std::memory_order_relaxed);
-				const std::string pattern = c->event_pattern() != nullptr ? c->event_pattern()->str() : "";
-				{
-					const std::lock_guard<std::mutex> lock(m_logConfigMutex);
-					if (pattern.empty())
-					{
-						m_logHasPattern = false;
-					}
-					else
-					{
-						try
-						{
-							m_logPattern = std::regex(pattern);
-							m_logHasPattern = true;
-						}
-						catch (const std::regex_error& e)
-						{
-							emitResult(requestId, false, std::string("bad event_pattern: ") + e.what());
-							return;
-						}
-					}
-				}
 				m_logEnabled.store(true, std::memory_order_relaxed);
 			}
 			break;

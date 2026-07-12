@@ -129,6 +129,19 @@ impl Bridge {
         bail!("timed out awaiting UiState for request {request_id}")
     }
 
+    /// Drop any stale `UiSnapshot` frames sitting in the channel (e.g. a reply from
+    /// a prior op that timed out and landed late). Called *before* sending a new
+    /// snapshot request, so nothing of ours is in flight yet — this can't drop the
+    /// current reply, only leftovers. GetSnapshot and QueryUi share this channel.
+    fn drain_stale_snapshots(&mut self) {
+        for _ in 0..64 {
+            match self.snapshot.try_recv() {
+                Ok(buf) if !buf.is_empty() => {}	// drop stale frame
+                _ => break,
+            }
+        }
+    }
+
     /// Read `st.agent.snapshot` until the `UiSnapshot` for `request_id`.
     fn read_snapshot(&mut self, request_id: u64, timeout: Duration) -> Result<Value> {
         let deadline = Instant::now() + timeout;
@@ -250,6 +263,7 @@ impl Bridge {
     /// app acks on events, then sends the `UiSnapshot` on st.agent.snapshot (the
     /// capture hops to the GUI thread, so allow a generous window).
     pub fn get_snapshot(&mut self, object_tree: bool) -> Result<Value> {
+        self.drain_stale_snapshots();
         let (id, _) =
             self.send_and_ack("get_snapshot", OP_TIMEOUT, |id| protocol::get_snapshot(id, object_tree))?;
         self.read_snapshot(id, Duration::from_secs(15))
@@ -359,6 +373,7 @@ impl Bridge {
     /// matched elements — the whole tree never crosses the wire. A bad JSONPath is
     /// surfaced by the ack (send_and_ack bails with the message).
     pub fn query_ui(&mut self, jsonpath: &str) -> Result<Value> {
+        self.drain_stale_snapshots();
         let (id, _) = self.send_and_ack("query_ui", OP_TIMEOUT, |id| protocol::query_ui(id, jsonpath))?;
         self.read_snapshot(id, OP_TIMEOUT)
     }

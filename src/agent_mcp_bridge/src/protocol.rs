@@ -122,6 +122,26 @@ pub fn load_project(request_id: u64, project_file_path: &str) -> Vec<u8> {
 /// Build an `InvokeAction` command. `path` is the ref's role/name/index steps
 /// (as carried by a snapshot node's `ref`); `object_name` is its anchor (usually
 /// empty today). `text` sets editable text/value when non-empty.
+/// Build an `ElementRef` (object_name anchor + role/name/index path). Shared by the
+/// commands that address an element.
+fn build_element_ref<'a>(
+    b: &mut FlatBufferBuilder<'a>,
+    object_name: &str,
+    path: &[(String, String, u32)],
+) -> WIPOffset<fb::ElementRef<'a>> {
+    let steps: Vec<_> = path
+        .iter()
+        .map(|(role, name, index)| {
+            let r = b.create_string(role);
+            let n = b.create_string(name);
+            fb::PathStep::create(b, &fb::PathStepArgs { role: Some(r), name: Some(n), index: *index })
+        })
+        .collect();
+    let path_vec = b.create_vector(&steps);
+    let on = b.create_string(object_name);
+    fb::ElementRef::create(b, &fb::ElementRefArgs { object_name: Some(on), path: Some(path_vec) })
+}
+
 pub fn invoke_action(
     request_id: u64,
     object_name: &str,
@@ -131,18 +151,7 @@ pub fn invoke_action(
     expect_hash: u64,
 ) -> Vec<u8> {
     let mut b = FlatBufferBuilder::new();
-    let steps: Vec<_> = path
-        .iter()
-        .map(|(role, name, index)| {
-            let r = b.create_string(role);
-            let n = b.create_string(name);
-            fb::PathStep::create(&mut b, &fb::PathStepArgs { role: Some(r), name: Some(n), index: *index })
-        })
-        .collect();
-    let path_vec = b.create_vector(&steps);
-    let on = b.create_string(object_name);
-    let target =
-        fb::ElementRef::create(&mut b, &fb::ElementRefArgs { object_name: Some(on), path: Some(path_vec) });
+    let target = build_element_ref(&mut b, object_name, path);
     let act = b.create_string(action);
     let txt = b.create_string(text);
     let c = fb::InvokeAction::create(
@@ -162,18 +171,7 @@ pub fn capture_element(
     expect_hash: u64,
 ) -> Vec<u8> {
     let mut b = FlatBufferBuilder::new();
-    let steps: Vec<_> = path
-        .iter()
-        .map(|(role, name, index)| {
-            let r = b.create_string(role);
-            let n = b.create_string(name);
-            fb::PathStep::create(&mut b, &fb::PathStepArgs { role: Some(r), name: Some(n), index: *index })
-        })
-        .collect();
-    let path_vec = b.create_vector(&steps);
-    let on = b.create_string(object_name);
-    let target =
-        fb::ElementRef::create(&mut b, &fb::ElementRefArgs { object_name: Some(on), path: Some(path_vec) });
+    let target = build_element_ref(&mut b, object_name, path);
     let c = fb::CaptureElement::create(
         &mut b,
         &fb::CaptureElementArgs {
