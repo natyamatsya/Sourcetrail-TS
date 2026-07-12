@@ -288,7 +288,8 @@ void writeSnapshot(const QString& path, SnapshotFormat format)
 }	 // namespace
 #endif	// SOURCETRAIL_AGENT_CONTROL
 
-std::vector<std::uint8_t> captureUiSnapshot([[maybe_unused]] SnapshotFormat format)
+std::vector<std::uint8_t> captureUiSnapshot(
+	[[maybe_unused]] SnapshotFormat format, [[maybe_unused]] std::uint64_t requestId)
 {
 #if defined(SOURCETRAIL_AGENT_CONTROL)
 	flatbuffers::FlatBufferBuilder builder;
@@ -327,7 +328,7 @@ std::vector<std::uint8_t> captureUiSnapshot([[maybe_unused]] SnapshotFormat form
 
 	const fb::SnapshotFormat fbFormat = useAccessibility ? fb::SnapshotFormat_Accessibility
 														 : fb::SnapshotFormat_ObjectTree;
-	builder.Finish(fb::CreateUiSnapshot(builder, fbFormat, builder.CreateVector(roots)));
+	builder.Finish(fb::CreateUiSnapshot(builder, requestId, fbFormat, builder.CreateVector(roots)));
 	return {builder.GetBufferPointer(), builder.GetBufferPointer() + builder.GetSize()};
 #else
 	return {};

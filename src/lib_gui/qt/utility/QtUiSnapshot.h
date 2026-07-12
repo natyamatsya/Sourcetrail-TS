@@ -22,10 +22,11 @@ enum class SnapshotFormat
 	ObjectTree,
 };
 
-//! Serialize every top-level widget to a `UiSnapshot` FlatBuffer. MUST run on the
-//! Qt GUI thread. Empty when built without SOURCETRAIL_AGENT_CONTROL (the generated
-//! schema is unavailable).
-std::vector<std::uint8_t> captureUiSnapshot(SnapshotFormat format = SnapshotFormat::Accessibility);
+//! Serialize every top-level widget to a `UiSnapshot` FlatBuffer, tagged with
+//! `requestId` for reply correlation (0 for the CLI dump). MUST run on the Qt GUI
+//! thread. Empty when built without SOURCETRAIL_AGENT_CONTROL.
+std::vector<std::uint8_t> captureUiSnapshot(
+	SnapshotFormat format = SnapshotFormat::Accessibility, std::uint64_t requestId = 0);
 
 //! One-shot for the `--ui-snapshot` CLI path: after `delayMs` (letting a loaded
 //! project render), write the FlatBuffer to `path` and quit.

@@ -78,3 +78,6 @@ enum RefreshMode : byte { None = 0, UpdatedFiles = 1, AllFiles = 2 }
 enum ViewKind : byte { Unknown = 0, Graph = 1, Code = 2, Search = 3, Bookmarks = 4, Errors = 5 }
 
 enum FrameFormat : byte { Png = 0, Jpeg = 1, RawRgba = 2 }
+
+// Structural UI snapshot format (see agent_snapshot.fbs / DESIGN_AGENT_UI_SNAPSHOT.md).
+enum SnapshotFormat : byte { Accessibility = 0, ObjectTree = 1 }

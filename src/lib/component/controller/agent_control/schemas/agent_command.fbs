@@ -20,6 +20,7 @@ table CreateBookmark { name: string; comment: string; node_serialized_name: stri
 // Requests: the reply is published on another channel, correlated by request_id.
 table GetUiState { }                                                                  // -> UiStateEnvelope on st.agent.state
 table GetFrame   { format: FrameFormat = Png; max_width: uint32 = 0; }                // -> FrameEnvelope on st.agent.frames
+table GetSnapshot { format: SnapshotFormat = Accessibility; }                         // -> UiSnapshot on st.agent.snapshot
 
 union Command {
     LoadProject,
@@ -34,6 +35,7 @@ union Command {
     CreateBookmark,
     GetUiState,
     GetFrame,
+    GetSnapshot,
 }
 
 // One message on `st.agent.cmd`. `request_id` correlates a later reply

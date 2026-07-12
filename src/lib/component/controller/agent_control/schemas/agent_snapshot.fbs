@@ -7,10 +7,7 @@ include "agent_common.fbs";
 
 namespace Sourcetrail.Agent;
 
-enum SnapshotFormat : byte {
-    Accessibility = 0,   // QAccessible tree: normalized roles, flattens model/view + scenes
-    ObjectTree    = 1,   // QObject/QMetaObject walk: class + Q_PROPERTY bag (properties)
-}
+// SnapshotFormat moved to agent_common.fbs (shared with the GetSnapshot command).
 
 // One node in the UI tree. The Accessibility route fills the typed fields; the
 // ObjectTree route additionally carries a schemaless FlexBuffer `properties` map
@@ -31,9 +28,11 @@ table UiNode {
     children:    [UiNode];     // recursive
 }
 
+// The reply to a GetSnapshot command, correlated by request_id (0 for the CLI dump).
 table UiSnapshot {
-    format: SnapshotFormat;
-    roots:  [UiNode];
+    request_id: uint64;
+    format:     SnapshotFormat;
+    roots:      [UiNode];
 }
 
 root_type UiSnapshot;

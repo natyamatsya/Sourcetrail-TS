@@ -28,6 +28,8 @@ bool AgentControlController::isListening() const
 #include <libipc/ipc.h>
 #include <libipc/async_recv.h>	// self-guards on LIBIPC_STDEXEC; empty when off
 
+#include "QtUiSnapshot.h"	// Qt-free interface; captures the widget tree on the GUI thread
+
 #include <flatbuffers/flatbuffers.h>
 
 #include "agent_command_generated.h"
@@ -82,6 +84,12 @@ std::string agentChannel(const std::string& instanceId, const char* base)
 {
 	return instanceId.empty() ? (std::string("st.agent.") + base)
 							  : ("st.agent." + instanceId + "." + base);
+}
+
+utility::qt::SnapshotFormat toSnapshotFormat(fb::SnapshotFormat format)
+{
+	return format == fb::SnapshotFormat_ObjectTree ? utility::qt::SnapshotFormat::ObjectTree
+												   : utility::qt::SnapshotFormat::Accessibility;
 }
 
 ::RefreshMode toRefreshMode(fb::RefreshMode mode)
@@ -266,6 +274,7 @@ struct AgentControlController::Impl
 		, m_reader(agentChannel(m_instanceId, "cmd").c_str())
 		, m_stateChannel(agentChannel(m_instanceId, "state").c_str(), ipc::sender)
 		, m_eventsChannel(agentChannel(m_instanceId, "events").c_str(), ipc::sender)
+		, m_snapshotChannel(agentChannel(m_instanceId, "snapshot").c_str(), ipc::sender)
 	{
 	}
 
@@ -283,6 +292,8 @@ struct AgentControlController::Impl
 	void stop()
 	{
 		m_reader.stop();
+		m_uiScope.request_stop();
+		stdexec::sync_wait(m_uiScope.on_empty());	 // join any in-flight snapshot capture
 	}
 
 	// ---- MessageListener overrides (message-processing thread) ----------------
@@ -383,7 +394,9 @@ struct AgentControlController::Impl
 		const fb::Command type = envelope->command_type();
 
 		// State gate: everything but load_project / get_ui_state needs a project.
-		const bool needsProject = !(type == fb::Command_LoadProject || type == fb::Command_GetUiState);
+		const bool needsProject = !(
+			type == fb::Command_LoadProject || type == fb::Command_GetUiState ||
+			type == fb::Command_GetSnapshot);
 		if (needsProject && computeAppState() == fb::AppState_NoProject)
 		{
 			emitResult(requestId, false, "rejected: no project loaded");
@@ -448,6 +461,23 @@ struct AgentControlController::Impl
 			break;
 		case fb::Command_GetUiState:
 			publishUiState(requestId);
+			break;
+		case fb::Command_GetSnapshot:
+			if (const auto* c = envelope->command_as_GetSnapshot())
+			{
+				// Introspection touches widgets, so capture on the GUI thread (ui()),
+				// then send the UiSnapshot on st.agent.snapshot. Scoped so stop() joins it.
+				const utility::qt::SnapshotFormat format = toSnapshotFormat(c->format());
+				m_uiScope.spawn(
+					stdexec::schedule(m_schedulers->ui()) | stdexec::then([this, requestId, format]() {
+						const std::vector<std::uint8_t> buffer =
+							utility::qt::captureUiSnapshot(format, requestId);
+						if (!buffer.empty())
+						{
+							m_snapshotChannel.send(buffer.data(), buffer.size());
+						}
+					}));
+			}
 			break;
 		default:
 			emitResult(requestId, false, "unknown command");
@@ -600,6 +630,8 @@ struct AgentControlController::Impl
 	AgentCommandReader m_reader;	// owns the st.agent[.<id>].cmd route + reader thread (RFC seam)
 	ipc::route m_stateChannel;
 	ipc::route m_eventsChannel;
+	ipc::route m_snapshotChannel;	// UiSnapshot replies to GetSnapshot
+	exec::async_scope m_uiScope;	// GUI-thread-hopped work (snapshot capture), joined on stop()
 
 	// State cache, touched only from the message-processing thread.
 	std::vector<Id> m_activeNodeIds;
