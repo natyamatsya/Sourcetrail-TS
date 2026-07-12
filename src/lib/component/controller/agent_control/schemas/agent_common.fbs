@@ -50,6 +50,17 @@ table TabInfo {
     active: bool;
 }
 
+// Screen-space rectangle (structural UI geometry).
+struct Rect { x: int32; y: int32; w: int32; h: int32; }
+
+// One step in a UI-tree selector: pick the `index`-th sibling matching (role, name).
+table PathStep { role: string; name: string; index: uint32; }
+
+// A re-resolvable address of a UI element: an optional unique objectName anchor
+// plus a role+name+index path. Emitted per node in a UI snapshot (UiNode.ref) and
+// consumed by the structural-control commands (see DESIGN_AGENT_UI_SNAPSHOT.md).
+table ElementRef { object_name: string; path: [PathStep]; }
+
 // Coarse application state — the FSM the agent's control loop keys off. Derived
 // from Sourcetrail's Project state + indexing; exposed on UiState.app_state and via
 // the AppStateChanged event. Read state -> issue a valid command -> await the

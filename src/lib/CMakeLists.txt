@@ -102,6 +102,7 @@ if (SOURCETRAIL_AGENT_CONTROL)
 		${AGENT_SCHEMA_DIR}/agent_event.fbs
 		${AGENT_SCHEMA_DIR}/agent_state.fbs
 		${AGENT_SCHEMA_DIR}/agent_frame.fbs
+		${AGENT_SCHEMA_DIR}/agent_snapshot.fbs
 	)
 	foreach(SCHEMA_FILE ${AGENT_SCHEMAS})
 		get_filename_component(SCHEMA_NAME ${SCHEMA_FILE} NAME_WE)
@@ -119,6 +120,11 @@ endif()
 
 add_custom_target(flatbuffers_schemas DEPENDS ${FLATBUFFERS_GENERATED_HEADERS})
 add_dependencies(Sourcetrail_lib flatbuffers_schemas)
+# lib_gui (QtUiSnapshot) also includes the generated agent headers, so it must wait
+# for schema generation too (src/lib_gui is add_subdirectory'd before src/lib).
+if (TARGET Sourcetrail_lib_gui)
+	add_dependencies(Sourcetrail_lib_gui flatbuffers_schemas)
+endif()
 
 target_include_directories(Sourcetrail_lib PUBLIC ${FLATBUFFERS_GENERATED_DIR})
 

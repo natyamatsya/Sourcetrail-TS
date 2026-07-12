@@ -1,0 +1,39 @@
+// Structural UI snapshot: the live Qt widget / accessibility tree as *typed* data
+// (vs. a JSON blob), so the agent gets a verifier-checked, zero-copy tree whose per-
+// node `ref` is the same ElementRef the structural-control commands consume.
+// See context/DESIGN_AGENT_UI_SNAPSHOT.md.
+
+include "agent_common.fbs";
+
+namespace Sourcetrail.Agent;
+
+enum SnapshotFormat : byte {
+    Accessibility = 0,   // QAccessible tree: normalized roles, flattens model/view + scenes
+    ObjectTree    = 1,   // QObject/QMetaObject walk: class + Q_PROPERTY bag (properties)
+}
+
+// One node in the UI tree. The Accessibility route fills the typed fields; the
+// ObjectTree route additionally carries a schemaless FlexBuffer `properties` map
+// (the Q_PROPERTY bag). `children` makes the table recursive.
+table UiNode {
+    ref:         ElementRef;   // this node's resolvable address (== a control target)
+    role:        string;       // normalized role ("button"/"row"/…) or class name
+    role_id:     int32;
+    name:        string;
+    value:       string;
+    description: string;
+    rect:        Rect;
+    // Bitmask: 0 focused, 1 focusable, 2 checked, 3 checkable, 4 disabled,
+    // 5 selected, 6 selectable, 7 invisible, 8 expandable, 9 expanded.
+    state:       uint32;
+    actions:     [string];     // invokable accessible-action names
+    properties:  [ubyte];      // FlexBuffer map of Q_PROPERTYs (ObjectTree route)
+    children:    [UiNode];     // recursive
+}
+
+table UiSnapshot {
+    format: SnapshotFormat;
+    roots:  [UiNode];
+}
+
+root_type UiSnapshot;

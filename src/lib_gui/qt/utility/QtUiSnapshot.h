@@ -1,32 +1,35 @@
 #ifndef QT_UI_SNAPSHOT_H
 #define QT_UI_SNAPSHOT_H
 
+#include <cstdint>
 #include <string>
+#include <vector>
 
-// Structural UI introspection: serialize the live Qt widget tree to JSON for an
-// AI agent — class/role, properties, geometry, and the actions each element
-// supports. Complements the semantic UiState and the pixel screenshot.
+// Structural UI introspection: serialize the live Qt widget tree to a typed
+// FlatBuffer (agent_snapshot.fbs `UiSnapshot`) for an AI agent — class/role, name,
+// geometry, state, and the actions each element supports, with each node's `ref`
+// being the same ElementRef the structural-control commands consume. Complements
+// the semantic UiState and the pixel screenshot.
 // See context/DESIGN_AGENT_UI_SNAPSHOT.md.
 namespace utility::qt
 {
 enum class SnapshotFormat
 {
-	//! QAccessible tree: normalized roles ("button"/"row"/…), and it flattens
-	//! model/view rows and QGraphicsScene items that the raw widget tree hides.
+	//! QAccessible tree: normalized roles ("button"/"row"/…); flattens model/view
+	//! rows and QGraphicsScene items that the raw widget tree hides.
 	Accessibility,
-	//! QObject/QMetaObject property walk: raw per-widget detail (every Q_PROPERTY).
+	//! QObject/QMetaObject walk: class + a FlexBuffer bag of every Q_PROPERTY.
 	ObjectTree,
 };
 
-//! Serialize every top-level widget to a compact JSON string. MUST run on the Qt
-//! GUI thread (introspection touches widgets). Falls back to ObjectTree if the Qt
-//! build has no accessibility support.
-std::string captureUiSnapshot(SnapshotFormat format = SnapshotFormat::Accessibility);
+//! Serialize every top-level widget to a `UiSnapshot` FlatBuffer. MUST run on the
+//! Qt GUI thread. Empty when built without SOURCETRAIL_AGENT_CONTROL (the generated
+//! schema is unavailable).
+std::vector<std::uint8_t> captureUiSnapshot(SnapshotFormat format = SnapshotFormat::Accessibility);
 
 //! One-shot for the `--ui-snapshot` CLI path: after `delayMs` (letting a loaded
-//! project render), capture to `jsonPath` and quit. Mirrors
-//! scheduleScreenshotAndQuit; call before entering the event loop.
-void scheduleSnapshotAndQuit(const std::string& jsonPath, SnapshotFormat format, int delayMs);
+//! project render), write the FlatBuffer to `path` and quit.
+void scheduleSnapshotAndQuit(const std::string& path, SnapshotFormat format, int delayMs);
 }	 // namespace utility::qt
 
 #endif	  // QT_UI_SNAPSHOT_H
