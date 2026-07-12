@@ -216,6 +216,11 @@ and synthesized events are escape hatches for the long tail.
 
 ### Command contract (FlatBuffers)
 
+> The canonical command contract now lives in
+> [`DESIGN_AGENT_UI_CONTROL.md` → *Structural control (`InvokeAction`)*](DESIGN_AGENT_UI_CONTROL.md#structural-control-invokeaction),
+> alongside the other commands (and the shared `QtUiControl` resolver, also used by
+> `CaptureElement`). Kept here for the mechanism rationale.
+
 ```fbs
 table PathStep  { role: string; name: string; index: uint32; }
 table ElementRef { object_name: string; path: [PathStep]; }   // anchor + steps

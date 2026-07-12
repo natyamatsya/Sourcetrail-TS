@@ -273,7 +273,11 @@ missing piece is a *visual* view of one element — "show me just this button / 
 graph node". Add a command that screenshots a single element by its `ElementRef`:
 
 ```fbs
-table CaptureElement { ref: ElementRef; format: FrameFormat = Png; }  // -> FrameEnvelope on st.agent.frames
+table CaptureElement {
+    ref:                ElementRef;
+    format:             FrameFormat = Png;
+    include_properties: bool = false;   // also reply with the element's UiNode (strings + props)
+}  // -> FrameEnvelope on st.agent.frames  (+ a single-node UiSnapshot on st.agent.snapshot)
 ```
 
 A new `Command` arm (append-only). The reply reuses the **frames channel** and
@@ -289,12 +293,25 @@ element:    ElementRef;  // echoed for CaptureElement; empty for whole-window fr
 
 `width`/`height` become the element's pixel size; `view` stays the containing view.
 
+### Also the strings, not just pixels
+
+Yes — an element's **UI-visible strings come back too**, and they need no new type. A
+`UiNode` already carries `name`/`value`/`description` (straight from
+`QAccessible::Name`/`Value`/`Description`) plus a `properties` FlexBuffer bag of
+Q_PROPERTYs (`text`, `toolTip`, `displayText`, `currentText`, …). So with
+`include_properties`, `CaptureElement` *additionally* replies with a single-node
+`UiSnapshot` — the target as a leaf `UiNode`, no children — on `st.agent.snapshot`,
+correlated by `request_id`. It is literally `GetSnapshot` scoped to one element: from one
+command the agent gets the picture on `frames` and the strings/props on `snapshot`. (If
+you find yourself wanting the element's *subtree* text too, that's the cue to add a
+`root_ref` scope to `GetSnapshot` rather than growing `CaptureElement`.)
+
 ### Resolving a ref to pixels
 
-`CaptureElement` must turn an `ElementRef` back into a live widget — the **same resolver
-`InvokeAction` needs** to dispatch an action to a target (whichever lands first introduces
-it): walk the QAccessible/QObject tree `QtUiSnapshot` builds and match by `object_name` +
-`path` (role/name/index). Then:
+`CaptureElement` must turn an `ElementRef` back into a live widget — via the shared
+`QtUiControl::resolve` helper (see *Structural control* below; `InvokeAction` uses the
+same one): walk the QAccessible/QObject tree `QtUiSnapshot` builds and match by
+`object_name` + `path` (role/name/index). Then:
 
 - The element *is* / backs a `QWidget` (`QAccessibleInterface::object()` → `QWidget`):
   `widget->grab()`.
@@ -311,6 +328,62 @@ and publish the `FrameEnvelope`(s), after a `CommandResult` ack. Failure modes a
 This closes the loop with the snapshot: **get_snapshot → pick an element (ref + actions +
 rect) → `CaptureElement(ref)` to see it, or `InvokeAction(ref)` to act on it.** Fits
 **Phase D** alongside the snapshot/structural-control work.
+
+## Structural control (`InvokeAction`)
+
+The snapshot is the *reader*; `InvokeAction` is the symmetric *sender* — "read what you
+can do (`UiNode.actions`), then do it" on an element addressed in that same tree. The full
+rationale and prior-art (GammaRay) live in
+[`DESIGN_AGENT_UI_SNAPSHOT.md`](DESIGN_AGENT_UI_SNAPSHOT.md); the **command contract lives
+here**, with the other commands.
+
+### The shared resolver — `QtUiControl`
+
+`InvokeAction` and `CaptureElement` both need to turn an `ElementRef` back into a live
+target, so both use one helper: `QtUiControl` (sibling of `QtUiSnapshot` in `lib_gui`).
+`resolve(ElementRef)` re-walks from `QApplication::topLevelWidgets()`, matching the
+`object_name` anchor + the `path` of `{role, name, index}` steps, down to the
+`QAccessibleInterface` / `QObject` / `QWidget`. A snapshot is point-in-time, so a ref is a
+**re-resolvable selector, never a pointer**: role+name paths survive unrelated reordering,
+and the `objectName` anchor (the Phase-D hygiene pass) makes them rock-solid. Runs on the
+GUI `ui()` hop, like the snapshot and the element capture.
+
+### Command contract
+
+```fbs
+table InvokeAction   { target: ElementRef; action: string; text: string; }   // primary
+table InvokeMethod   { target: ElementRef; method: string; args: [string]; }  // gated
+table SendInputEvent { target: ElementRef; kind: InputKind; x: int32; y: int32; key: string; } // gated
+```
+
+Append-only `Command` arms. Each acks via `CommandResult` and — act-and-observe — the
+agent follows with `get_ui_state`/`get_snapshot` (or a diff) to see the effect. Resolution
+failures are *data*, not transport errors: `ok=false`, `"element not found: <ref>"` /
+`"action not supported"`. `InvokeAction.text` sets the element's value where the action is
+a value edit (line edits, spin/combo) via `QAccessibleValueInterface` /
+`QAccessibleEditableTextInterface`; empty otherwise.
+
+### Three mechanisms, mirroring the three snapshot sources
+
+| Snapshot exposes | Sender uses | For |
+|---|---|---|
+| `actions` (QAccessibleActionInterface) | **`doAction(name)`** | buttons, checkboxes, menu items, list/tree rows, combos — normalized; works for model/view items + QML |
+| invokable methods (QMetaObject) | **`QMetaObject::invokeMethod`** | app-specific slots/`Q_INVOKABLE` with no accessible action |
+| geometry (`rect`) | **synthesized `QMouseEvent`/`QKeyEvent`** at a point | custom-painted widgets and the `QGraphicsScene` graph (items aren't QObjects) |
+
+Preference is top-to-bottom: the accessible action is the safe, normalized default (the
+snapshot already told the agent which names are valid); method invocation and synthesized
+events are escape hatches for the long tail.
+
+### Three tiers (this doesn't replace the semantic commands)
+
+- **Tier 1 — semantic `Command`s** (`ActivateNode`, `LoadProject`, `ActivateTab`, …):
+  curated, robust, mapped to `Message<T>` dispatches. The default and preferred path.
+- **Tier 2 — structural `InvokeAction`**: generic, accessibility-normalized; the long tail
+  of UI the semantic commands don't cover.
+- **Tier 3 — `InvokeMethod` / `SendInputEvent`**: powerful escape hatches (arbitrary slot
+  invocation, synthetic input) — **capability-gated and logged**, off unless explicitly
+  enabled for a trusted session.
 
 ## Why not lean on Layers 2/3 here
 
