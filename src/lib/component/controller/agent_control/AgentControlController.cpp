@@ -49,6 +49,7 @@ bool AgentControlController::isListening() const
 #include "MessageListener.h"
 #include "MessageQueue.h"
 #include "QtUiControl.h"
+#include "QtUiQuery.h"
 #include "TabIds.h"
 #include "TaskManager.h"
 #include "TaskScheduler.h"
@@ -410,7 +411,7 @@ struct AgentControlController::Impl
 		const bool needsProject = !(
 			type == fb::Command_LoadProject || type == fb::Command_GetUiState ||
 			type == fb::Command_GetSnapshot || type == fb::Command_InvokeAction ||
-			type == fb::Command_CaptureElement);
+			type == fb::Command_CaptureElement || type == fb::Command_QueryUi);
 		if (needsProject && computeAppState() == fb::AppState_NoProject)
 		{
 			emitResult(requestId, false, "rejected: no project loaded");
@@ -558,6 +559,24 @@ struct AgentControlController::Impl
 					if (r.ok)
 					{
 						publishFrame(requestId, r);
+					}
+					emitResult(requestId, r.ok, r.message);
+				}));
+			return;
+		}
+		case fb::Command_QueryUi:
+		{
+			const auto* c = envelope->command_as_QueryUi();
+			std::string jsonPath = (c != nullptr && c->jsonpath() != nullptr) ? c->jsonpath()->str() : "";
+			// Evaluate the JSONPath over the live tree on the GUI thread; reply with a
+			// UiSnapshot of the matched nodes on st.agent.snapshot, then ack.
+			m_uiScope.spawn(
+				stdexec::schedule(m_schedulers->ui()) |
+				stdexec::then([this, requestId, jsonPath = std::move(jsonPath)]() {
+					const utility::qt::QueryResult r = utility::qt::queryUi(jsonPath, requestId);
+					if (r.ok && !r.snapshot.empty())
+					{
+						m_snapshotChannel.send(r.snapshot.data(), r.snapshot.size());
 					}
 					emitResult(requestId, r.ok, r.message);
 				}));

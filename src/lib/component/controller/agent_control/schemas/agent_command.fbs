@@ -28,6 +28,11 @@ table InvokeAction { target: ElementRef; action: string; text: string; }
 // single-node UiSnapshot (the element's UiNode) on st.agent.snapshot.
 table CaptureElement { target: ElementRef; format: FrameFormat = Png; include_properties: bool = false; }
 
+// Server-side element selection: evaluate a JSONPath (RFC 9535, qt-json-query) over
+// the UI snapshot at the source. Reply is a UiSnapshot on st.agent.snapshot whose
+// roots are the matched elements (each with its ref) — no full-tree transfer.
+table QueryUi { jsonpath: string; }
+
 // Requests: the reply is published on another channel, correlated by request_id.
 table GetUiState { }                                                                  // -> UiStateEnvelope on st.agent.state
 table GetFrame   { format: FrameFormat = Png; max_width: uint32 = 0; }                // -> FrameEnvelope on st.agent.frames
@@ -49,6 +54,7 @@ union Command {
     GetSnapshot,
     InvokeAction,
     CaptureElement,
+    QueryUi,
 }
 
 // One message on `st.agent.cmd`. `request_id` correlates a later reply

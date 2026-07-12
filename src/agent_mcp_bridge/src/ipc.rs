@@ -341,6 +341,15 @@ impl Bridge {
         Ok(json!({ "ok": true, "frame": frame }))
     }
 
+    /// Server-side element selection: evaluate `jsonpath` over the UI snapshot in
+    /// the app (qt-json-query) and get back a `UiSnapshot` whose roots are the
+    /// matched elements — the whole tree never crosses the wire. A bad JSONPath is
+    /// surfaced by the ack (send_and_ack bails with the message).
+    pub fn query_ui(&mut self, jsonpath: &str) -> Result<Value> {
+        let (id, _) = self.send_and_ack("query_ui", OP_TIMEOUT, |id| protocol::query_ui(id, jsonpath))?;
+        self.read_snapshot(id, OP_TIMEOUT)
+    }
+
     /// Read st.agent.frames until the `FrameEnvelope` for `request_id`.
     fn read_frame(&mut self, request_id: u64, timeout: Duration) -> Result<Value> {
         let deadline = Instant::now() + timeout;

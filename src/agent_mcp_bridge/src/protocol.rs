@@ -179,6 +179,15 @@ pub fn capture_element(
     finish(b, request_id, fb::Command::CaptureElement, c.as_union_value())
 }
 
+/// Build a `QueryUi` command. Reply is a `UiSnapshot` of the matched nodes on
+/// st.agent.snapshot (so it decodes via `parse_ui_snapshot`).
+pub fn query_ui(request_id: u64, jsonpath: &str) -> Vec<u8> {
+    let mut b = FlatBufferBuilder::new();
+    let jp = b.create_string(jsonpath);
+    let c = fb::QueryUi::create(&mut b, &fb::QueryUiArgs { jsonpath: Some(jp) });
+    finish(b, request_id, fb::Command::QueryUi, c.as_union_value())
+}
+
 /// Decode a `FrameEnvelope`; returns `(request_id, frame_json)` with the payload
 /// base64-encoded for JSON transport. Single-chunk only (chunk_count == 1).
 pub fn parse_frame(bytes: &[u8]) -> Result<(u64, Value)> {
@@ -745,6 +754,15 @@ mod tests {
         assert_eq!(v["width"], 10);
         assert_eq!(v["bytes"], 4);
         assert_eq!(v["image_base64"], "AQIDBA==");
+    }
+
+    #[test]
+    fn query_ui_command_roundtrips() {
+        let bytes = query_ui(5, "$.roots..[?(@.role=='button')]");
+        let env = flatbuffers::root::<fb::CommandEnvelope>(&bytes).unwrap();
+        assert_eq!(env.request_id(), 5);
+        assert_eq!(env.command_type(), fb::Command::QueryUi);
+        assert_eq!(env.command_as_query_ui().unwrap().jsonpath().unwrap(), "$.roots..[?(@.role=='button')]");
     }
 
     #[test]

@@ -52,6 +52,7 @@ fn main() -> Result<()> {
         Some("activate") => bridge.activate_node(None, arg2.parse().unwrap_or(0))?,
         Some("invoke") => invoke_first(&mut bridge, arg2)?,
         Some("capture") => capture_first(&mut bridge, arg2)?,
+        Some("query") => bridge.query_ui(arg2)?,
         Some("load") => load_and_wait(&mut bridge, arg2)?,
         Some("search") => bridge.search(arg2)?,
         Some("find") => bridge.find_element(arg2)?,

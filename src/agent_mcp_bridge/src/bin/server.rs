@@ -285,6 +285,11 @@ impl SourcetrailServer {
         )
     }
 
+    #[tool(description = "Select UI elements by JSONPath (RFC 9535), evaluated server-side over the accessibility snapshot (same shape as get_snapshot). Returns a snapshot whose roots are the matches, each with a ref you can invoke/capture. Filters at the source — the full tree never crosses the wire. Example: $.roots..[?(@.role=='button')].")]
+    async fn query_ui(&self, Parameters(a): Parameters<QueryArgs>) -> Result<CallToolResult, McpError> {
+        ok_json(self.mgr.call(move |m| m.get_or_attach(&a.instance)?.bridge().query_ui(&a.query)).await?)
+    }
+
     #[tool(description = "Screenshot a single UI element by its `ref` (from get_snapshot). Returns { ok, frame } where frame has width/height and image_base64 (PNG). Complements get_snapshot's structure with pixels.")]
     async fn capture_element(&self, Parameters(a): Parameters<CaptureElementArgs>) -> Result<CallToolResult, McpError> {
         ok_json(
