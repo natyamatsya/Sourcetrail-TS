@@ -48,6 +48,10 @@ public:
 	const std::string& getScreenshotPath() const;
 	int getScreenshotDelayMs() const;
 
+	// Headless UI-snapshot dump (widget tree -> JSON). See DESIGN_AGENT_UI_SNAPSHOT.md.
+	const std::string& getUiSnapshotPath() const;
+	const std::string& getUiSnapshotFormat() const;
+
 	// Instance id namespacing the agent-control channels (empty = default). The
 	// channel itself is always active in agent builds (SOURCETRAIL_AGENT_CONTROL).
 	const std::string& getAgentInstanceId() const;
@@ -72,6 +76,8 @@ private:
 
 	std::string m_screenshotPath;
 	int m_screenshotDelayMs = 2000;
+	std::string m_uiSnapshotPath;
+	std::string m_uiSnapshotFormat = "accessibility";
 	std::string m_agentInstanceId;
 
 	std::string m_errorString;

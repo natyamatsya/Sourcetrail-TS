@@ -27,7 +27,17 @@ CommandLineParser::CommandLineParser(const std::string& version)
 	m_app.add_option(
 		"--screenshot-delay",
 		m_screenshotDelayMs,
-		"Delay in ms before the --screenshot capture, to let a project render (default 2000)");
+		"Delay in ms before the --screenshot/--ui-snapshot capture, to let a project render "
+		"(default 2000)");
+	m_app.add_option(
+		"--ui-snapshot",
+		m_uiSnapshotPath,
+		"Headless: dump the live Qt widget tree (roles, properties, actions) to this JSON path, "
+		"then exit (see context/DESIGN_AGENT_UI_SNAPSHOT.md)");
+	m_app.add_option(
+		"--ui-snapshot-format",
+		m_uiSnapshotFormat,
+		"Snapshot format: 'accessibility' (default) or 'object'");
 	m_app.add_option(
 		"--agent-instance",
 		m_agentInstanceId,
@@ -174,6 +184,16 @@ const std::string& CommandLineParser::getScreenshotPath() const
 int CommandLineParser::getScreenshotDelayMs() const
 {
 	return m_screenshotDelayMs;
+}
+
+const std::string& CommandLineParser::getUiSnapshotPath() const
+{
+	return m_uiSnapshotPath;
+}
+
+const std::string& CommandLineParser::getUiSnapshotFormat() const
+{
+	return m_uiSnapshotFormat;
 }
 
 const std::string& CommandLineParser::getAgentInstanceId() const

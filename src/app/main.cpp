@@ -16,6 +16,7 @@
 #include "QtCoreApplication.h"
 #include "QtNetworkFactory.h"
 #include "QtScreenshot.h"
+#include "QtUiSnapshot.h"
 #include "QtViewFactory.h"
 #include "ResourcePaths.h"
 #include "Schedulers.h"
@@ -178,7 +179,8 @@ int main(int argc, char* argv[])
 	{
 		// Headless screenshot mode: render the real GUI with no display. Must be set
 		// before the QApplication is constructed. Respect an explicit override.
-		if (!commandLineParser.getScreenshotPath().empty() &&
+		if ((!commandLineParser.getScreenshotPath().empty() ||
+			 !commandLineParser.getUiSnapshotPath().empty()) &&
 			qEnvironmentVariableIsEmpty("QT_QPA_PLATFORM"))
 		{
 			qputenv("QT_QPA_PLATFORM", "offscreen");
@@ -229,6 +231,15 @@ int main(int argc, char* argv[])
 		{
 			utility::qt::scheduleScreenshotAndQuit(
 				commandLineParser.getScreenshotPath(), commandLineParser.getScreenshotDelayMs());
+		}
+
+		if (!commandLineParser.getUiSnapshotPath().empty())
+		{
+			const auto format = (commandLineParser.getUiSnapshotFormat() == "object")
+				? utility::qt::SnapshotFormat::ObjectTree
+				: utility::qt::SnapshotFormat::Accessibility;
+			utility::qt::scheduleSnapshotAndQuit(
+				commandLineParser.getUiSnapshotPath(), format, commandLineParser.getScreenshotDelayMs());
 		}
 
 		return QtApplication::exec();
