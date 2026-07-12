@@ -13,8 +13,8 @@ The snapshot is a third read-path, alongside the two we have:
 | **snapshot (this doc)** | the **whole widget tree**: roles, properties, geometry, and the **actions the agent can invoke** | Qt meta-object / accessibility |
 
 Qt's meta-object system (moc) gives rich runtime reflection most toolkits lack: walk
-the tree, read every property, enumerate invokable methods, serialize to JSON in well
-under a hundred lines. This unblocks generic UI navigation ("what's on screen, what can
+the tree, read every property, enumerate invokable methods, and serialize the whole thing
+in well under a hundred lines. This unblocks generic UI navigation ("what's on screen, what can
 I click") without hand-curating every element into `UiState`.
 
 ## Two sources of structure
@@ -111,6 +111,48 @@ QJsonObject snapshotA11y(QAccessibleInterface* iface) {
 properties grafted on for the extra detail (dynamic properties, geometry, invokable
 methods) the agent occasionally needs.
 
+*(The `QJson…` above illustrates the **traversal**; the snapshot is actually emitted as a
+typed FlatBuffer — see [Representation](#representation--typed-flatbuffers-not-json).)*
+
+## Representation — typed FlatBuffers, not JSON
+
+The snapshot is emitted as a **typed FlatBuffer** (`agent_snapshot.fbs`), consistent with
+the rest of the control plane and with the sender's `ElementRef` — not a JSON string:
+
+- FlatBuffers tables self-reference, so the tree is a recursive `UiNode { …, children:
+  [UiNode] }`, rooted at `UiSnapshot { format, roots: [UiNode] }`.
+- **The `.fbs` is the schema** — a stronger "JSON Schema": it drives codegen, ships a
+  verifier (malformed buffers rejected), and has real forward/backward-compat rules.
+  `flatc` round-trips FlatBuffer↔JSON when a human wants to read one.
+- **Fixed-shape** fields (role, name, value, rect, `state` bitmask, actions) are typed
+  directly — the accessibility route needs nothing more. The **dynamic** `Q_PROPERTY` bag
+  (object-tree route) rides along as an embedded **FlexBuffer** (`properties: [ubyte]`,
+  FlatBuffers' schemaless companion) — typed where the shape is known, flexible where it
+  isn't, all binary. No JSON anywhere.
+- Each node's `ref: ElementRef` is the **same type** the structural-control commands take,
+  so read-output feeds write-input directly (closing the snapshot→action loop). Big trees
+  chunk per ADR-0002, like frames.
+
+```fbs
+struct Rect     { x:int32; y:int32; w:int32; h:int32; }        // agent_common
+table PathStep  { role:string; name:string; index:uint32; }    //  ″
+table ElementRef{ object_name:string; path:[PathStep]; }       //  ″  (== control target)
+
+table UiNode {                                                  // agent_snapshot
+    ref: ElementRef; role: string; role_id: int32;
+    name: string; value: string; description: string;
+    rect: Rect; state: uint32; actions: [string];
+    properties: [ubyte];   // FlexBuffer map (object-tree route)
+    children: [UiNode];    // recursive
+}
+table UiSnapshot { format: SnapshotFormat; roots: [UiNode]; }
+root_type UiSnapshot;
+```
+
+Impl: `src/lib_gui/qt/utility/QtUiSnapshot.{h,cpp}` — `captureUiSnapshot(format) ->
+std::vector<uint8_t>`; `--ui-snapshot <path>` writes the binary buffer (inspect with
+`flatc --json`).
+
 ## How it plugs into agent-control
 
 - **Where it lives:** a `lib_gui` helper `src/lib_gui/qt/utility/QtUiSnapshot.{h,cpp}`,
@@ -121,13 +163,13 @@ methods) the agent occasionally needs.
 - **Threading (must-do):** introspection runs **only on the GUI thread**. The command
   handler runs on the message thread, so marshal the snapshot call over — `ui()` /
   `execution::qt::onUi`, or `QMetaObject::invokeMethod(w, ..., Qt::BlockingQueuedConnection)`
-  — and serialize *there*, returning the finished JSON.
+  — and build the `UiSnapshot` FlatBuffer *there* (`QtUiSnapshot::captureUiSnapshot`).
 - **Contract additions** (FlatBuffers):
   - `agent_command.fbs`: `GetSnapshot { format: SnapshotFormat = Accessibility; root: string; }`
-    (`format` ∈ Accessibility/MetaObject/Hybrid; optional `root` objectName to scope).
-  - reply: `SnapshotEnvelope { request_id, format, json }` — a JSON string payload, on a
-    dedicated `st.agent.snapshot` route (or reuse `st.agent.state`). Snapshots can be large
-    → **chunk per ADR-0002**, exactly like frames.
+    (optional `root` objectName to scope the walk).
+  - reply: the `UiSnapshot` buffer itself, wrapped `SnapshotEnvelope { request_id, snapshot:
+    UiSnapshot }`, on a dedicated `st.agent.snapshot` route (or reuse `st.agent.state`).
+    Large trees → **chunk per ADR-0002**, exactly like frames.
 - **Bridge:** a `get_snapshot(format?, root?)` MCP tool returning the tree; pairs with a
   future `invoke_action(target, action)` (drive `QAccessibleActionInterface::doAction`) so
   the agent can act on *any* element, not just the curated command set.
