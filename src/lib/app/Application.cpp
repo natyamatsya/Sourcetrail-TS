@@ -32,6 +32,7 @@
 #include "utilityUuid.h"
 
 std::shared_ptr<Application> Application::s_instance;
+std::function<FilePath()> Application::s_colorSchemePathProvider;
 std::string Application::s_uuid;
 
 void Application::createInstance(
@@ -158,13 +159,28 @@ void Application::loadSettings()
 		fileLogger->setFileName(FileLogger::generateDatedFileName("log"));
 	}
 
-	loadStyle(settings->getColorSchemePath());
+	loadStyle(resolveColorSchemePath());
 }
 
 void Application::loadStyle(const FilePath& colorSchemePath)
 {
+	LOG_INFO("Loading color scheme: " + colorSchemePath.str());
 	ColorScheme::getInstance()->load(colorSchemePath);
 	GraphViewStyle::loadStyleSettings();
+}
+
+void Application::setColorSchemePathProvider(std::function<FilePath()> provider)
+{
+	s_colorSchemePathProvider = std::move(provider);
+}
+
+FilePath Application::resolveColorSchemePath()
+{
+	if (s_colorSchemePathProvider)
+	{
+		return s_colorSchemePathProvider();
+	}
+	return ApplicationSettings::getInstance()->getColorSchemePath();
 }
 
 Application::Application(bool withGUI): m_hasGUI(withGUI) {}
@@ -384,7 +400,7 @@ void Application::handleMessage(MessageRefreshUI* message)
 
 		if (message->loadStyle)
 		{
-			loadStyle(ApplicationSettings::getInstance()->getColorSchemePath());
+			loadStyle(resolveColorSchemePath());
 		}
 
 		m_mainView->refreshViews();

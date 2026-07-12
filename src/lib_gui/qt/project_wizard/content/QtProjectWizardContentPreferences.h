@@ -43,7 +43,7 @@ public:
 	bool check() override;
 
 private slots:
-	void colorSchemeChanged(int index);
+	void colorSchemeChanged();
 	void loggingEnabledChanged();
 	void indexerThreadsChanges(int index);
 	void uiAutoScalingChanges(int index);
@@ -95,9 +95,13 @@ private:
 	QComboBox* m_textEncoding;
 
 	QComboBox* m_colorSchemes;
+	QComboBox* m_colorSchemesDark;
+	QCheckBox* m_followSystemColorScheme;
 	std::vector<FilePath> m_colorSchemePaths;
-	int m_oldColorSchemeIndex = -1;
-	int m_newColorSchemeIndex = -1;
+	// The color scheme active when the dialog opened, restored on cancel.
+	FilePath m_initialColorSchemePath;
+	bool m_colorSchemeModified = false;
+	bool m_colorSchemeSaved = false;
 
 	QCheckBox* m_useAnimations;
 	QCheckBox* m_showBuiltinTypes;

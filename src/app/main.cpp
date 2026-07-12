@@ -13,6 +13,7 @@
 #include "MessageStatus.h"
 #include "Platform.h"
 #include "QtApplication.h"
+#include "QtColorSchemeWatcher.h"
 #include "QtCoreApplication.h"
 #include "QtNetworkFactory.h"
 #include "QtScreenshot.h"
@@ -190,6 +191,12 @@ int main(int argc, char* argv[])
 		QtApplication qtApp(argc, argv);
 
 		setupLogging();
+
+		// Resolve the color scheme through the system Day/Night appearance (when the
+		// user opted in). Installed before createInstance() so the very first style
+		// load already reflects the OS appearance; the watcher reacts to live changes.
+		Application::setColorSchemePathProvider(&QtColorSchemeWatcher::resolveColorSchemePath);
+		QtColorSchemeWatcher colorSchemeWatcher;
 
 		QtViewFactory viewFactory;
 		QtNetworkFactory networkFactory;

@@ -1,6 +1,7 @@
 #ifndef APPLICATION_H
 #define APPLICATION_H
 
+#include <functional>
 #include <memory>
 #include <string>
 
@@ -59,6 +60,12 @@ public:
 	static void loadSettings();
 	static void loadStyle(const FilePath& colorSchemePath);
 
+	//! Installs a callback used to resolve the color scheme path for the initial
+	//! and refresh style loads. The GUI layer installs a provider that honors the
+	//! system Day/Night appearance (see QtColorSchemeWatcher); when no provider is
+	//! set the stored ApplicationSettings color scheme is used.
+	static void setColorSchemePathProvider(std::function<FilePath()> provider);
+
 	~Application() override;
 
 	std::shared_ptr<const Project> getCurrentProject() const;
@@ -77,6 +84,11 @@ public:
 private:
 	static std::shared_ptr<Application> s_instance;
 	static std::string s_uuid;
+	static std::function<FilePath()> s_colorSchemePathProvider;
+
+	//! Resolves the color scheme path via the installed provider, falling back to
+	//! the stored ApplicationSettings color scheme.
+	static FilePath resolveColorSchemePath();
 
 	Application(bool withGUI = true);
 

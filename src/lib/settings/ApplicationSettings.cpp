@@ -147,9 +147,14 @@ std::string ApplicationSettings::getColorSchemeName() const
 
 FilePath ApplicationSettings::getColorSchemePath() const
 {
+	return getColorSchemePath(getColorSchemeName());
+}
+
+FilePath ApplicationSettings::getColorSchemePath(const std::string& colorSchemeName) const
+{
 	FilePath defaultPath(ResourcePaths::getColorSchemesDirectoryPath().concatenate("bright.xml"));
 	FilePath path(
-		ResourcePaths::getColorSchemesDirectoryPath().concatenate(getColorSchemeName() + ".xml"));
+		ResourcePaths::getColorSchemesDirectoryPath().concatenate(colorSchemeName + ".xml"));
 
 	if (path != defaultPath && !path.exists())
 	{
@@ -162,6 +167,26 @@ FilePath ApplicationSettings::getColorSchemePath() const
 void ApplicationSettings::setColorSchemeName(const std::string& colorSchemeName)
 {
 	setValue("application/color_scheme", colorSchemeName);
+}
+
+bool ApplicationSettings::getColorSchemeFollowsSystem() const
+{
+	return getValue<bool>("application/color_scheme_follows_system", false);
+}
+
+void ApplicationSettings::setColorSchemeFollowsSystem(bool followsSystem)
+{
+	setValue("application/color_scheme_follows_system", followsSystem);
+}
+
+std::string ApplicationSettings::getColorSchemeNameDark() const
+{
+	return getValue<std::string>("application/color_scheme_dark", "dark");
+}
+
+void ApplicationSettings::setColorSchemeNameDark(const std::string& colorSchemeName)
+{
+	setValue("application/color_scheme_dark", colorSchemeName);
 }
 
 int ApplicationSettings::getFontSizeMax() const

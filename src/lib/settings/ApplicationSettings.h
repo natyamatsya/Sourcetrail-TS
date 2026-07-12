@@ -36,7 +36,19 @@ public:
 
 	std::string getColorSchemeName() const;
 	FilePath getColorSchemePath() const;
+	FilePath getColorSchemePath(const std::string& colorSchemeName) const;
 	void setColorSchemeName(const std::string& colorSchemeName);
+
+	//! When enabled, the active color scheme follows the operating system's
+	//! Day/Night (light/dark) appearance: getColorSchemeName() is used while the
+	//! system is in light mode, getColorSchemeNameDark() while it is in dark mode.
+	//! The actual light/dark selection is performed in the GUI layer, which knows
+	//! the current Qt color scheme (see QtColorSchemeWatcher).
+	bool getColorSchemeFollowsSystem() const;
+	void setColorSchemeFollowsSystem(bool followsSystem);
+
+	std::string getColorSchemeNameDark() const;
+	void setColorSchemeNameDark(const std::string& colorSchemeName);
 
 	int getFontSizeMax() const;
 	void setFontSizeMax(const int fontSizeMax);

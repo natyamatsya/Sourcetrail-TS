@@ -1,0 +1,56 @@
+#include "QtColorSchemeWatcher.h"
+
+#include <memory>
+#include <string>
+
+#include <QGuiApplication>
+#include <QStyleHints>
+
+#include "ApplicationSettings.h"
+#include "MessageStatus.h"
+#include "MessageSwitchColorScheme.h"
+
+Qt::ColorScheme QtColorSchemeWatcher::systemColorScheme()
+{
+	return QGuiApplication::styleHints()->colorScheme();
+}
+
+FilePath QtColorSchemeWatcher::resolveColorSchemePath()
+{
+	std::shared_ptr<ApplicationSettings> settings = ApplicationSettings::getInstance();
+
+	if (!settings->getColorSchemeFollowsSystem())
+	{
+		return settings->getColorSchemePath();
+	}
+
+	const std::string schemeName = (systemColorScheme() == Qt::ColorScheme::Dark)
+		? settings->getColorSchemeNameDark()
+		: settings->getColorSchemeName();
+
+	return settings->getColorSchemePath(schemeName);
+}
+
+QtColorSchemeWatcher::QtColorSchemeWatcher(QObject* parent): QObject(parent)
+{
+	connect(
+		QGuiApplication::styleHints(),
+		&QStyleHints::colorSchemeChanged,
+		this,
+		&QtColorSchemeWatcher::onSystemColorSchemeChanged);
+}
+
+void QtColorSchemeWatcher::onSystemColorSchemeChanged(Qt::ColorScheme colorScheme)
+{
+	if (!ApplicationSettings::getInstance()->getColorSchemeFollowsSystem())
+	{
+		return;
+	}
+
+	const bool isDark = (colorScheme == Qt::ColorScheme::Dark);
+	MessageStatus(std::string("System appearance changed to ") + (isDark ? "dark" : "light") +
+				  " mode, switching color scheme")
+		.dispatch();
+
+	MessageSwitchColorScheme(resolveColorSchemePath()).dispatch();
+}

@@ -6,6 +6,7 @@
 #include "MessageSwitchColorScheme.h"
 #include "MessageTextEncodingChanged.h"
 #include "QtActions.h"
+#include "QtColorSchemeWatcher.h"
 #include "ResourcePaths.h"
 #include "TextCodec.h"
 #include "logging.h"
@@ -32,9 +33,10 @@ QtProjectWizardContentPreferences::QtProjectWizardContentPreferences(QtProjectWi
 
 QtProjectWizardContentPreferences::~QtProjectWizardContentPreferences()
 {
-	if (m_oldColorSchemeIndex != -1 && m_oldColorSchemeIndex != m_newColorSchemeIndex)
+	// Revert the live preview if the user dismissed the dialog without saving.
+	if (m_colorSchemeModified && !m_colorSchemeSaved)
 	{
-		colorSchemeChanged(m_oldColorSchemeIndex);
+		MessageSwitchColorScheme(m_initialColorSchemePath).dispatch();
 	}
 }
 
@@ -91,6 +93,27 @@ void QtProjectWizardContentPreferences::populate(QGridLayout* layout, int& row)
 			QString::fromStdString(m_colorSchemePaths[i].withoutExtension().fileName()));
 	}
 	connect(m_colorSchemes, qOverload<int>(&QComboBox::activated), this, &QtProjectWizardContentPreferences::colorSchemeChanged);
+
+	// follow system Day/Night appearance (Qt QStyleHints::colorScheme)
+	m_followSystemColorScheme = addCheckBox(tr("Day/Night Mode"),
+		tr("Follow system appearance"),
+		tr("<p>Automatically switch between the color scheme selected above (used while "
+		   "the system is in light mode) and the dark color scheme below (used while the "
+		   "system is in dark mode), following the operating system's Day/Night "
+		   "appearance.</p>"),
+		layout,
+		row);
+	connect(m_followSystemColorScheme, &QCheckBox::toggled, this, &QtProjectWizardContentPreferences::colorSchemeChanged);
+
+	// dark color scheme (used when following the system appearance and it is dark)
+	m_colorSchemesDark = addComboBox(tr("Dark Color Scheme"), QLatin1String(""), layout, row);
+	for (size_t i = 0; i < m_colorSchemePaths.size(); i++)
+	{
+		m_colorSchemesDark->insertItem(
+			static_cast<int>(i),
+			QString::fromStdString(m_colorSchemePaths[i].withoutExtension().fileName()));
+	}
+	connect(m_colorSchemesDark, qOverload<int>(&QComboBox::activated), this, &QtProjectWizardContentPreferences::colorSchemeChanged);
 
 	// animations
 	m_useAnimations = addCheckBox(tr("Animations"),
@@ -263,17 +286,25 @@ void QtProjectWizardContentPreferences::load()
 
 	m_textEncoding->setCurrentText(QString::fromStdString(appSettings->getTextEncoding()));
 
-	FilePath colorSchemePath = appSettings->getColorSchemePath();
-	for (int i = 0; i < static_cast<int>(m_colorSchemePaths.size()); i++)
+	const auto selectColorScheme = [this](QComboBox* comboBox, const FilePath& colorSchemePath)
 	{
-		if (colorSchemePath == m_colorSchemePaths[i])
+		for (int i = 0; i < static_cast<int>(m_colorSchemePaths.size()); i++)
 		{
-			m_colorSchemes->setCurrentIndex(i);
-			m_oldColorSchemeIndex = i;
-			m_newColorSchemeIndex = i;
-			break;
+			if (colorSchemePath == m_colorSchemePaths[i])
+			{
+				comboBox->setCurrentIndex(i);
+				break;
+			}
 		}
-	}
+	};
+	selectColorScheme(m_colorSchemes, appSettings->getColorSchemePath(appSettings->getColorSchemeName()));
+	selectColorScheme(m_colorSchemesDark, appSettings->getColorSchemePath(appSettings->getColorSchemeNameDark()));
+	m_followSystemColorScheme->setChecked(appSettings->getColorSchemeFollowsSystem());
+
+	// Remember the effective scheme so an unsaved live preview can be reverted.
+	m_initialColorSchemePath = QtColorSchemeWatcher::resolveColorSchemePath();
+	m_colorSchemeModified = false;
+	m_colorSchemeSaved = false;
 
 	m_useAnimations->setChecked(appSettings->getUseAnimations());
 	m_showBuiltinTypes->setChecked(appSettings->getShowBuiltinTypesInGraph());
@@ -326,7 +357,13 @@ void QtProjectWizardContentPreferences::save()
 	
 	appSettings->setColorSchemeName(
 		m_colorSchemePaths[m_colorSchemes->currentIndex()].withoutExtension().fileName());
-	m_oldColorSchemeIndex = -1;
+	appSettings->setColorSchemeNameDark(
+		m_colorSchemePaths[m_colorSchemesDark->currentIndex()].withoutExtension().fileName());
+	appSettings->setColorSchemeFollowsSystem(m_followSystemColorScheme->isChecked());
+	m_colorSchemeSaved = true;
+
+	// Apply the effective scheme (honoring the follow-system setting just saved).
+	MessageSwitchColorScheme(QtColorSchemeWatcher::resolveColorSchemePath()).dispatch();
 
 	appSettings->setUseAnimations(m_useAnimations->isChecked());
 	appSettings->setShowBuiltinTypesInGraph(m_showBuiltinTypes->isChecked());
@@ -380,9 +417,16 @@ bool QtProjectWizardContentPreferences::check()
 	return true;
 }
 
-void QtProjectWizardContentPreferences::colorSchemeChanged(int index)
+void QtProjectWizardContentPreferences::colorSchemeChanged()
 {
-	m_newColorSchemeIndex = index;
+	// Preview the scheme that would be active given the current dialog state: the
+	// dark scheme when following the system appearance and it is currently dark,
+	// otherwise the (day) scheme.
+	const bool dark = m_followSystemColorScheme->isChecked() &&
+		QtColorSchemeWatcher::systemColorScheme() == Qt::ColorScheme::Dark;
+	const int index = (dark ? m_colorSchemesDark : m_colorSchemes)->currentIndex();
+
+	m_colorSchemeModified = true;
 	MessageSwitchColorScheme(m_colorSchemePaths[index]).dispatch();
 }
 
