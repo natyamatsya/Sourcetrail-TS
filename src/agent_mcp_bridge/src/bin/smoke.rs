@@ -20,7 +20,10 @@ use serde_json::{json, Value};
 fn main() -> anyhow::Result<()> {
     let args: Vec<String> = std::env::args().collect();
     let arg2 = args.get(2).map(String::as_str).unwrap_or("");
-    let mut bridge = Bridge::connect()?;
+    // SOURCETRAIL_AGENT_INSTANCE mirrors the app's --agent-instance so the smoke
+    // client can target a namespaced app (empty = default st.agent.*).
+    let instance = std::env::var("SOURCETRAIL_AGENT_INSTANCE").unwrap_or_default();
+    let mut bridge = Bridge::connect_instance(&instance)?;
 
     let out = match args.get(1).map(String::as_str) {
         Some("load") => load_and_wait(&mut bridge, arg2)?,
