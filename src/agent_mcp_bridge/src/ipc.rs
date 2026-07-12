@@ -126,6 +126,26 @@ impl Bridge {
         bail!("timed out awaiting UiSnapshot for request {request_id}")
     }
 
+    /// The shared act-and-observe prefix: assign a request id, send the built
+    /// command, await its `CommandResult`, and bail with a uniform message on
+    /// rejection. Returns `(id, ack_message)` so the caller can then read its own
+    /// reply (`get_ui_state` / `read_snapshot`) or surface the ack. `search` opts
+    /// out — its result races the ack and needs a bespoke loop.
+    fn send_and_ack(
+        &mut self,
+        label: &str,
+        timeout: Duration,
+        build: impl FnOnce(u64) -> Vec<u8>,
+    ) -> Result<(u64, String)> {
+        let id = self.next_id();
+        self.send(&build(id))?;
+        let (ok, msg, _) = self.await_ack(id, timeout)?;
+        if !ok {
+            bail!("{label} rejected: {msg}");
+        }
+        Ok((id, msg))
+    }
+
     // --- operations (act + observe) -----------------------------------------
 
     pub fn get_ui_state(&mut self) -> Result<Value> {
@@ -138,12 +158,8 @@ impl Bridge {
     /// app acks on events, then sends the `UiSnapshot` on st.agent.snapshot (the
     /// capture hops to the GUI thread, so allow a generous window).
     pub fn get_snapshot(&mut self, object_tree: bool) -> Result<Value> {
-        let id = self.next_id();
-        self.send(&protocol::get_snapshot(id, object_tree))?;
-        let (ok, msg, _) = self.await_ack(id, OP_TIMEOUT)?;
-        if !ok {
-            bail!("get_snapshot rejected: {msg}");
-        }
+        let (id, _) =
+            self.send_and_ack("get_snapshot", OP_TIMEOUT, |id| protocol::get_snapshot(id, object_tree))?;
         self.read_snapshot(id, Duration::from_secs(15))
     }
 
@@ -183,44 +199,27 @@ impl Bridge {
     }
 
     pub fn activate_node(&mut self, serialized_name: Option<&str>, node_id: u64) -> Result<Value> {
-        let id = self.next_id();
-        self.send(&protocol::activate_node(id, serialized_name, node_id))?;
-        let (ok, msg, _) = self.await_ack(id, OP_TIMEOUT)?;
-        if !ok {
-            bail!("activate_node rejected: {msg}");
-        }
+        self.send_and_ack("activate_node", OP_TIMEOUT, |id| {
+            protocol::activate_node(id, serialized_name, node_id)
+        })?;
         self.get_ui_state()
     }
 
     pub fn activate_file(&mut self, path: &str) -> Result<Value> {
-        let id = self.next_id();
-        self.send(&protocol::activate_file(id, path))?;
-        let (ok, msg, _) = self.await_ack(id, OP_TIMEOUT)?;
-        if !ok {
-            bail!("activate_file rejected: {msg}");
-        }
+        self.send_and_ack("activate_file", OP_TIMEOUT, |id| protocol::activate_file(id, path))?;
         self.get_ui_state()
     }
 
     pub fn activate_tab(&mut self, tab_id: u64) -> Result<Value> {
-        let id = self.next_id();
-        self.send(&protocol::activate_tab(id, tab_id))?;
-        let (ok, msg, _) = self.await_ack(id, OP_TIMEOUT)?;
-        if !ok {
-            bail!("activate_tab rejected: {msg}");
-        }
+        self.send_and_ack("activate_tab", OP_TIMEOUT, |id| protocol::activate_tab(id, tab_id))?;
         self.get_ui_state()
     }
 
     /// Loading kicks off indexing; return on ack and let the caller poll
     /// `app_state` (or subscribe) for the transition to `Ready`.
     pub fn load_project(&mut self, path: &str) -> Result<Value> {
-        let id = self.next_id();
-        self.send(&protocol::load_project(id, path))?;
-        let (ok, msg, _) = self.await_ack(id, Duration::from_secs(10))?;
-        if !ok {
-            bail!("load_project rejected: {msg}");
-        }
+        let (_, msg) =
+            self.send_and_ack("load_project", Duration::from_secs(10), |id| protocol::load_project(id, path))?;
         Ok(json!({ "ok": true, "message": msg }))
     }
 
