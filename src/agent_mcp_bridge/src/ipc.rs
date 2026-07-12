@@ -148,6 +148,23 @@ impl Bridge {
 
     // --- operations (act + observe) -----------------------------------------
 
+    /// Read-only channel health — no side effects. `cmd`'s receiver count is the
+    /// number of apps listening (this bridge is the sender there); the reply
+    /// channels' counts include this bridge itself. Handy for "is the app up? are
+    /// there stray receivers?" without a round-trip.
+    pub fn status(&self) -> Value {
+        json!({
+            "app_listening": self.cmd.recv_count() >= 1,
+            "channel_receivers": {
+                "cmd": self.cmd.recv_count(),        // = app listeners
+                "events": self.events.recv_count(),  // reply channels: count includes this bridge
+                "state": self.state.recv_count(),
+                "snapshot": self.snapshot.recv_count(),
+                "frames": self.frames.recv_count(),
+            },
+        })
+    }
+
     pub fn get_ui_state(&mut self) -> Result<Value> {
         let id = self.next_id();
         self.send(&protocol::get_ui_state(id))?;
