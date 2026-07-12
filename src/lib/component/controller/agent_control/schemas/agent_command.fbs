@@ -23,6 +23,11 @@ table CreateBookmark { name: string; comment: string; node_serialized_name: stri
 // DESIGN_AGENT_UI_CONTROL.md (Structural control).
 table InvokeAction { target: ElementRef; action: string; text: string; }
 
+// Screenshot a single element by its ref -> FrameEnvelope on st.agent.frames,
+// correlated by request_id. include_properties additionally replies with a
+// single-node UiSnapshot (the element's UiNode) on st.agent.snapshot.
+table CaptureElement { target: ElementRef; format: FrameFormat = Png; include_properties: bool = false; }
+
 // Requests: the reply is published on another channel, correlated by request_id.
 table GetUiState { }                                                                  // -> UiStateEnvelope on st.agent.state
 table GetFrame   { format: FrameFormat = Png; max_width: uint32 = 0; }                // -> FrameEnvelope on st.agent.frames
@@ -43,6 +48,7 @@ union Command {
     GetFrame,
     GetSnapshot,
     InvokeAction,
+    CaptureElement,
 }
 
 // One message on `st.agent.cmd`. `request_id` correlates a later reply

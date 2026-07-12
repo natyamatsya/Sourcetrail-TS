@@ -116,6 +116,19 @@ struct InvokeActionArgs {
 
 #[derive(serde::Deserialize, rmcp::schemars::JsonSchema)]
 #[schemars(crate = "rmcp::schemars")]
+struct CaptureElementArgs {
+    /// The element to screenshot — pass a `ref` from get_snapshot.
+    #[serde(rename = "ref")]
+    target: ElementRefArg,
+    /// Also return the element's properties (name/value/actions). (Reserved.)
+    #[serde(default)]
+    include_properties: bool,
+    #[serde(default)]
+    instance: String,
+}
+
+#[derive(serde::Deserialize, rmcp::schemars::JsonSchema)]
+#[schemars(crate = "rmcp::schemars")]
 struct PollEventsArgs {
     /// Cursor: return events with seq greater than this. Start at 0; pass the
     /// returned `latest_seq` next time.
@@ -266,6 +279,23 @@ impl SourcetrailServer {
                         &path,
                         &a.action,
                         &a.text,
+                    )
+                })
+                .await?,
+        )
+    }
+
+    #[tool(description = "Screenshot a single UI element by its `ref` (from get_snapshot). Returns { ok, frame } where frame has width/height and image_base64 (PNG). Complements get_snapshot's structure with pixels.")]
+    async fn capture_element(&self, Parameters(a): Parameters<CaptureElementArgs>) -> Result<CallToolResult, McpError> {
+        ok_json(
+            self.mgr
+                .call(move |m| {
+                    let path: Vec<(String, String, u32)> =
+                        a.target.path.iter().map(|s| (s.role.clone(), s.name.clone(), s.index)).collect();
+                    m.get_or_attach(&a.instance)?.bridge().capture_element(
+                        &a.target.object_name,
+                        &path,
+                        a.include_properties,
                     )
                 })
                 .await?,

@@ -51,6 +51,7 @@ fn main() -> Result<()> {
         Some("events") => bridge.poll_events(arg2.parse().unwrap_or(0)),
         Some("activate") => bridge.activate_node(None, arg2.parse().unwrap_or(0))?,
         Some("invoke") => invoke_first(&mut bridge, arg2)?,
+        Some("capture") => capture_first(&mut bridge, arg2)?,
         Some("load") => load_and_wait(&mut bridge, arg2)?,
         Some("search") => bridge.search(arg2)?,
         Some("find") => bridge.find_element(arg2)?,
@@ -65,13 +66,11 @@ fn main() -> Result<()> {
 /// Snapshot the UI, find the first element advertising `action`, and invoke it on
 /// its `ref` — the full structural-control round-trip (snapshot ref -> resolve ->
 /// doAction). Demonstrates find-then-act.
-fn invoke_first(bridge: &mut Bridge, action: &str) -> Result<Value> {
-    let snap = bridge.get_snapshot(false)?;
-    let node = find_node_with_action(&snap, action)
-        .ok_or_else(|| anyhow::anyhow!("no element advertising action '{action}' in the snapshot"))?;
+/// Extract `(object_name, path)` from a snapshot node's `ref`.
+fn ref_of(node: &Value) -> (String, Vec<(String, String, u32)>) {
     let r = &node["ref"];
     let object_name = r["object_name"].as_str().unwrap_or("").to_string();
-    let path: Vec<(String, String, u32)> = r["path"]
+    let path = r["path"]
         .as_array()
         .map(|steps| {
             steps
@@ -86,12 +85,42 @@ fn invoke_first(bridge: &mut Bridge, action: &str) -> Result<Value> {
                 .collect()
         })
         .unwrap_or_default();
+    (object_name, path)
+}
+
+fn invoke_first(bridge: &mut Bridge, action: &str) -> Result<Value> {
+    let snap = bridge.get_snapshot(false)?;
+    let node = find_node_with_action(&snap, action)
+        .ok_or_else(|| anyhow::anyhow!("no element advertising action '{action}' in the snapshot"))?;
+    let (object_name, path) = ref_of(&node);
     eprintln!(
         "invoking '{action}' on {} (\"{}\")",
         node["role"].as_str().unwrap_or(""),
         node["name"].as_str().unwrap_or("")
     );
     bridge.invoke_action(&object_name, &path, action, "")
+}
+
+/// Screenshot the first element advertising `action`; decode + save the PNG.
+fn capture_first(bridge: &mut Bridge, action: &str) -> Result<Value> {
+    use base64::Engine as _;
+    let snap = bridge.get_snapshot(false)?;
+    let node = find_node_with_action(&snap, action)
+        .ok_or_else(|| anyhow::anyhow!("no element advertising action '{action}' in the snapshot"))?;
+    let (object_name, path) = ref_of(&node);
+    eprintln!("capturing {} (\"{}\")", node["role"].as_str().unwrap_or(""), node["name"].as_str().unwrap_or(""));
+    let out = bridge.capture_element(&object_name, &path, false)?;
+    if let Some(b64) = out.pointer("/frame/image_base64").and_then(Value::as_str) {
+        let png = base64::engine::general_purpose::STANDARD.decode(b64).unwrap_or_default();
+        std::fs::write("/tmp/element_capture.png", &png).ok();
+        eprintln!("saved {} PNG bytes to /tmp/element_capture.png", png.len());
+    }
+    // Drop the huge base64 blob from the printed result.
+    let mut trimmed = out.clone();
+    if let Some(f) = trimmed.get_mut("frame").and_then(Value::as_object_mut) {
+        f.remove("image_base64");
+    }
+    Ok(trimmed)
 }
 
 fn find_node_with_action(node: &Value, action: &str) -> Option<Value> {

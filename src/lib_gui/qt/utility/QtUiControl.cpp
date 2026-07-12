@@ -9,6 +9,10 @@
 #include <QAccessible>
 #include <QAccessibleActionInterface>
 #include <QApplication>
+#include <QBuffer>
+#include <QByteArray>
+#include <QPixmap>
+#include <QRect>
 #include <QString>
 
 #include "QtAccessibleRole.h"
@@ -138,11 +142,69 @@ ControlResult invokeAction(
 	}
 	return {true, ""};
 }
+
+CaptureResult captureElement(const std::string& objectName, const std::vector<RefStep>& path)
+{
+	QAccessibleInterface* iface = resolve(objectName, path);
+	if (iface == nullptr)
+	{
+		return {false, "element not found: " + pathToString(path), {}, 0, 0};
+	}
+
+	QPixmap pixmap;
+	if (QWidget* widget = qobject_cast<QWidget*>(iface->object()))
+	{
+		pixmap = widget->grab();
+	}
+	else
+	{
+		// Sub-element with no QWidget of its own (menu item, cell): grab the nearest
+		// ancestor widget cropped to the element's rect (screen -> widget coords).
+		QWidget* host = nullptr;
+		for (QAccessibleInterface* p = iface->parent(); p != nullptr; p = p->parent())
+		{
+			if (QWidget* widget = qobject_cast<QWidget*>(p->object()))
+			{
+				host = widget;
+				break;
+			}
+		}
+		if (host == nullptr)
+		{
+			return {false, "element has no grabbable widget: " + pathToString(path), {}, 0, 0};
+		}
+		const QRect r = iface->rect();
+		pixmap = host->grab(QRect(host->mapFromGlobal(r.topLeft()), r.size()));
+	}
+	if (pixmap.isNull())
+	{
+		return {false, "grab produced an empty image", {}, 0, 0};
+	}
+
+	QByteArray bytes;
+	QBuffer buffer(&bytes);
+	buffer.open(QIODevice::WriteOnly);
+	if (!pixmap.save(&buffer, "PNG"))
+	{
+		return {false, "PNG encode failed", {}, 0, 0};
+	}
+	return {
+		true,
+		"",
+		std::vector<std::uint8_t>(bytes.begin(), bytes.end()),
+		static_cast<std::uint32_t>(pixmap.width()),
+		static_cast<std::uint32_t>(pixmap.height())};
+}
 #else
 ControlResult invokeAction(
 	const std::string&, const std::vector<RefStep>&, const std::string&, const std::string&)
 {
 	return {false, "Qt accessibility support not built"};
+}
+
+CaptureResult captureElement(const std::string&, const std::vector<RefStep>&)
+{
+	return {false, "Qt accessibility support not built", {}, 0, 0};
 }
 #endif	// QT_CONFIG(accessibility)
 }	 // namespace utility::qt

@@ -28,6 +28,16 @@ struct ControlResult
 	std::string message;
 };
 
+//! Result of an element capture: PNG bytes (empty on failure) + pixel size.
+struct CaptureResult
+{
+	bool ok;
+	std::string message;
+	std::vector<std::uint8_t> png;
+	std::uint32_t width;
+	std::uint32_t height;
+};
+
 //! Invoke `action` (QAccessibleActionInterface::doAction) on the element
 //! addressed by `objectName` + `path`. When `text` is non-empty it sets the
 //! element's editable text/value (line edits, combos). At least one of
@@ -38,6 +48,12 @@ ControlResult invokeAction(
 	const std::vector<RefStep>& path,
 	const std::string& action,
 	const std::string& text);
+
+//! Resolve `objectName` + `path` and grab the element to a PNG. A QWidget-backed
+//! element is grabbed directly; a sub-element (menu item, cell) is grabbed from
+//! its window cropped to the element's rect. MUST run on the Qt GUI thread;
+//! returns `{false, ...}` when built without Qt accessibility support.
+CaptureResult captureElement(const std::string& objectName, const std::vector<RefStep>& path);
 }	 // namespace utility::qt
 
 #endif	  // QT_UI_CONTROL_H

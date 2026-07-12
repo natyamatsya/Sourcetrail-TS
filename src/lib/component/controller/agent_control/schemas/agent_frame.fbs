@@ -26,6 +26,12 @@ table FrameEnvelope {
     total_bytes:  uint64;             // full encoded size across all chunks
 
     payload:      [ubyte];            // this chunk's encoded bytes
+
+    // Appended (wire-compatible): correlate a CaptureElement reply and echo which
+    // element it captured. request_id = 0 for a GetFrame stream; element is empty
+    // for a whole-window frame. See DESIGN_AGENT_UI_CONTROL.md.
+    request_id:   uint64;
+    element:      ElementRef;
 }
 
 root_type FrameEnvelope;

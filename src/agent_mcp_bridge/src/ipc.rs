@@ -23,7 +23,6 @@ pub struct Bridge {
     cmd_name: String,
     events: Route,
     state: Route,
-    #[allow(dead_code)] // Phase C: get_frame reassembly
     frames: Route,
     snapshot: Route,
     next_id: u64,
@@ -320,6 +319,42 @@ impl Bridge {
         self.send(&protocol::invoke_action(id, object_name, path, action, text))?;
         let (ok, message, _) = self.await_ack(id, OP_TIMEOUT)?;
         Ok(json!({ "ok": ok, "message": message }))
+    }
+
+    /// Screenshot a single element by its ref. The app grabs it on the GUI thread,
+    /// acks, then sends a `FrameEnvelope` on st.agent.frames. Returns `{ ok, frame }`
+    /// with the PNG base64-encoded, or `{ ok: false, message }` if the element
+    /// couldn't be resolved/grabbed.
+    pub fn capture_element(
+        &mut self,
+        object_name: &str,
+        path: &[(String, String, u32)],
+        include_properties: bool,
+    ) -> Result<Value> {
+        let id = self.next_id();
+        self.send(&protocol::capture_element(id, object_name, path, include_properties))?;
+        let (ok, message, _) = self.await_ack(id, OP_TIMEOUT)?;
+        if !ok {
+            return Ok(json!({ "ok": false, "message": message }));
+        }
+        let frame = self.read_frame(id, OP_TIMEOUT)?;
+        Ok(json!({ "ok": true, "frame": frame }))
+    }
+
+    /// Read st.agent.frames until the `FrameEnvelope` for `request_id`.
+    fn read_frame(&mut self, request_id: u64, timeout: Duration) -> Result<Value> {
+        let deadline = Instant::now() + timeout;
+        while Instant::now() < deadline {
+            let buf = self.frames.recv(Some(RECV_POLL_MS)).context("recv frame")?;
+            if buf.is_empty() {
+                continue;
+            }
+            let (rid, json) = protocol::parse_frame(buf.data())?;
+            if rid == request_id {
+                return Ok(json);
+            }
+        }
+        bail!("timed out awaiting frame for request {request_id}")
     }
 
     /// Loading kicks off indexing; return on ack and let the caller poll

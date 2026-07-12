@@ -151,6 +151,50 @@ pub fn invoke_action(
     finish(b, request_id, fb::Command::InvokeAction, c.as_union_value())
 }
 
+/// Build a `CaptureElement` command targeting the element addressed by
+/// `object_name` + `path`. Reply is a `FrameEnvelope` on st.agent.frames.
+pub fn capture_element(
+    request_id: u64,
+    object_name: &str,
+    path: &[(String, String, u32)],
+    include_properties: bool,
+) -> Vec<u8> {
+    let mut b = FlatBufferBuilder::new();
+    let steps: Vec<_> = path
+        .iter()
+        .map(|(role, name, index)| {
+            let r = b.create_string(role);
+            let n = b.create_string(name);
+            fb::PathStep::create(&mut b, &fb::PathStepArgs { role: Some(r), name: Some(n), index: *index })
+        })
+        .collect();
+    let path_vec = b.create_vector(&steps);
+    let on = b.create_string(object_name);
+    let target =
+        fb::ElementRef::create(&mut b, &fb::ElementRefArgs { object_name: Some(on), path: Some(path_vec) });
+    let c = fb::CaptureElement::create(
+        &mut b,
+        &fb::CaptureElementArgs { target: Some(target), format: fb::FrameFormat::Png, include_properties },
+    );
+    finish(b, request_id, fb::Command::CaptureElement, c.as_union_value())
+}
+
+/// Decode a `FrameEnvelope`; returns `(request_id, frame_json)` with the payload
+/// base64-encoded for JSON transport. Single-chunk only (chunk_count == 1).
+pub fn parse_frame(bytes: &[u8]) -> Result<(u64, Value)> {
+    use base64::Engine as _;
+    let env = flatbuffers::root::<fb::FrameEnvelope>(bytes).map_err(|e| anyhow!("bad FrameEnvelope: {e}"))?;
+    let payload = env.payload().map(|p| p.bytes()).unwrap_or_default();
+    let json = json!({
+        "width": env.width(),
+        "height": env.height(),
+        "format": "png",
+        "bytes": payload.len(),
+        "image_base64": base64::engine::general_purpose::STANDARD.encode(payload),
+    });
+    Ok((env.request_id(), json))
+}
+
 // --- Event decoding (st.agent.events) ---------------------------------------
 
 /// A decoded event relevant to correlation / observation.
@@ -669,6 +713,38 @@ mod tests {
         assert_eq!(steps.len(), 2);
         assert_eq!(steps.get(1).role().unwrap(), "menuitem");
         assert_eq!(steps.get(1).name().unwrap(), "New Project...");
+    }
+
+    #[test]
+    fn capture_element_command_and_frame_roundtrip() {
+        // command builds + decodes
+        let path = vec![("button".to_string(), "OK".to_string(), 0u32)];
+        let bytes = capture_element(3, "", &path, false);
+        let env = flatbuffers::root::<fb::CommandEnvelope>(&bytes).unwrap();
+        assert_eq!(env.command_type(), fb::Command::CaptureElement);
+        assert_eq!(env.command_as_capture_element().unwrap().target().unwrap().path().unwrap().len(), 1);
+
+        // FrameEnvelope -> parse_frame (payload base64-encoded)
+        let mut b = FlatBufferBuilder::new();
+        let payload = b.create_vector(&[1u8, 2, 3, 4]);
+        let fe = fb::FrameEnvelope::create(
+            &mut b,
+            &fb::FrameEnvelopeArgs {
+                request_id: 3,
+                width: 10,
+                height: 20,
+                chunk_count: 1,
+                total_bytes: 4,
+                payload: Some(payload),
+                ..Default::default()
+            },
+        );
+        b.finish(fe, None);
+        let (rid, v) = parse_frame(b.finished_data()).unwrap();
+        assert_eq!(rid, 3);
+        assert_eq!(v["width"], 10);
+        assert_eq!(v["bytes"], 4);
+        assert_eq!(v["image_base64"], "AQIDBA==");
     }
 
     #[test]

@@ -34,6 +34,7 @@ bool AgentControlController::isListening() const
 
 #include "agent_command_generated.h"
 #include "agent_event_generated.h"
+#include "agent_frame_generated.h"
 #include "agent_state_generated.h"
 
 #include "ISchedulers.h"
@@ -280,6 +281,7 @@ struct AgentControlController::Impl
 		, m_stateChannel(agentChannel(m_instanceId, "state").c_str(), ipc::sender)
 		, m_eventsChannel(agentChannel(m_instanceId, "events").c_str(), ipc::sender)
 		, m_snapshotChannel(agentChannel(m_instanceId, "snapshot").c_str(), ipc::sender)
+		, m_framesChannel(agentChannel(m_instanceId, "frames").c_str(), ipc::sender)
 	{
 	}
 
@@ -407,7 +409,8 @@ struct AgentControlController::Impl
 		// State gate: everything but load_project / get_ui_state needs a project.
 		const bool needsProject = !(
 			type == fb::Command_LoadProject || type == fb::Command_GetUiState ||
-			type == fb::Command_GetSnapshot || type == fb::Command_InvokeAction);
+			type == fb::Command_GetSnapshot || type == fb::Command_InvokeAction ||
+			type == fb::Command_CaptureElement);
 		if (needsProject && computeAppState() == fb::AppState_NoProject)
 		{
 			emitResult(requestId, false, "rejected: no project loaded");
@@ -522,6 +525,40 @@ struct AgentControlController::Impl
 								  action = std::move(action), text = std::move(text)]() {
 					const utility::qt::ControlResult r =
 						utility::qt::invokeAction(objectName, path, action, text);
+					emitResult(requestId, r.ok, r.message);
+				}));
+			return;
+		}
+		case fb::Command_CaptureElement:
+		{
+			const auto* c = envelope->command_as_CaptureElement();
+			if (c == nullptr || c->target() == nullptr)
+			{
+				emitResult(requestId, false, "capture_element: missing target");
+				return;
+			}
+			std::string objectName = c->target()->object_name() ? c->target()->object_name()->str() : "";
+			std::vector<utility::qt::RefStep> path;
+			if (const auto* steps = c->target()->path())
+			{
+				for (const auto* step: *steps)
+				{
+					path.push_back(
+						{step->role() ? step->role()->str() : "",
+						 step->name() ? step->name()->str() : "",
+						 step->index()});
+				}
+			}
+			// Grab on the GUI thread (ui()); on success publish the FrameEnvelope on
+			// st.agent.frames, then ack with the result.
+			m_uiScope.spawn(
+				stdexec::schedule(m_schedulers->ui()) |
+				stdexec::then([this, requestId, objectName = std::move(objectName), path = std::move(path)]() {
+					const utility::qt::CaptureResult r = utility::qt::captureElement(objectName, path);
+					if (r.ok)
+					{
+						publishFrame(requestId, r);
+					}
 					emitResult(requestId, r.ok, r.message);
 				}));
 			return;
@@ -657,6 +694,28 @@ struct AgentControlController::Impl
 		m_stateChannel.send(builder.GetBufferPointer(), builder.GetSize());
 	}
 
+	// One FrameEnvelope for a CaptureElement reply, on st.agent.frames. Single
+	// chunk (thoth-ipc fragments large messages itself); correlated by request_id.
+	// Runs on the ui() thread, the sole sender on m_framesChannel.
+	void publishFrame(std::uint64_t requestId, const utility::qt::CaptureResult& result)
+	{
+		flatbuffers::FlatBufferBuilder builder;
+		const auto payload = builder.CreateVector(result.png);
+		fb::FrameEnvelopeBuilder fb_builder(builder);
+		fb_builder.add_frame_seq(requestId);
+		fb_builder.add_timestamp_ms(nowMs());
+		fb_builder.add_format(fb::FrameFormat_Png);
+		fb_builder.add_width(result.width);
+		fb_builder.add_height(result.height);
+		fb_builder.add_chunk_index(0);
+		fb_builder.add_chunk_count(1);
+		fb_builder.add_total_bytes(result.png.size());
+		fb_builder.add_payload(payload);
+		fb_builder.add_request_id(requestId);
+		builder.Finish(fb_builder.Finish());
+		m_framesChannel.send(builder.GetBufferPointer(), builder.GetSize());
+	}
+
 	void publishEvent(flatbuffers::FlatBufferBuilder& builder, fb::Event type, flatbuffers::Offset<void> event)
 	{
 		// Serialized: events are normally published from the app-scheduler thread,
@@ -712,6 +771,7 @@ struct AgentControlController::Impl
 	ipc::route m_stateChannel;
 	ipc::route m_eventsChannel;
 	ipc::route m_snapshotChannel;	// UiSnapshot replies to GetSnapshot
+	ipc::route m_framesChannel;		// FrameEnvelope replies to CaptureElement / GetFrame
 	exec::async_scope m_uiScope;	// GUI-thread-hopped work (snapshot capture), joined on stop()
 
 	// State cache, touched only from the message-processing thread.
