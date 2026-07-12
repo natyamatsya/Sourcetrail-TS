@@ -28,6 +28,7 @@ public:
 	void closeTab() override;
 	void destroyTab(TabId tabId) override;
 	void selectTab(bool next) override;
+	void showTab(TabId tabId) override;
 	void updateTab(TabId tabId, const std::vector<SearchMatch>& matches) override;
 
 private slots:

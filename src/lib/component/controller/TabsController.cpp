@@ -52,6 +52,7 @@ void TabsController::addTab(TabId tabId, SearchMatch match)
 
 	m_tabs.emplace(
 		tabId, std::make_shared<Tab>(tabId, m_viewFactory, m_storageAccess, m_screenSearchSender));
+	m_tabTitles[tabId] = match.isValid() ? match.name : std::string();
 
 	MessageWindowChanged().dispatch();
 
@@ -77,6 +78,7 @@ void TabsController::addTab(TabId tabId, SearchMatch match)
 
 	m_scrollToLine = std::make_tuple(0, FilePath(), 0);
 	m_isCreatingTab = false;
+	broadcastTabs();
 }
 
 void TabsController::showTab(TabId tabId)
@@ -95,6 +97,8 @@ void TabsController::showTab(TabId tabId)
 		TabIds::setCurrentTabId(TabId::NONE);
 		m_mainLayout->showOriginalViews();
 	}
+
+	broadcastTabs();
 
 	Task::dispatch(TabIds::app(), std::make_shared<TaskLambda>([this]() {
 					   m_screenSearchSender->clearMatches();
@@ -123,6 +127,8 @@ void TabsController::destroyTab(TabId tabId)
 
 	// destroy the tab on the qt thread to allow view destruction
 	m_tabs.erase(tabId);
+	m_tabTitles.erase(tabId);
+	broadcastTabs();
 
 	if (m_tabs.empty() && Application::getInstance()->isProjectLoaded() && !m_isCreatingTab)
 	{
@@ -223,6 +229,11 @@ void TabsController::handleMessage(MessageTabOpenWith* message)
 	}
 }
 
+void TabsController::handleMessage(MessageTabActivate* message)
+{
+	getView()->showTab(message->tabId);
+}
+
 void TabsController::handleMessage(MessageTabSelect* message)
 {
 	getView()->selectTab(message->next);
@@ -231,4 +242,31 @@ void TabsController::handleMessage(MessageTabSelect* message)
 void TabsController::handleMessage(MessageTabState* message)
 {
 	getView()->updateTab(message->tabId, message->searchMatches);
+
+	std::lock_guard<std::mutex> lock(m_tabsMutex);
+	for (const SearchMatch& match: message->searchMatches)
+	{
+		if (match.isValid())
+		{
+			m_tabTitles[message->tabId] = match.name;
+			break;
+		}
+	}
+	broadcastTabs();
+}
+
+void TabsController::broadcastTabs()
+{
+	// m_tabsMutex is held by the caller.
+	std::vector<MessageTabsChanged::TabInfo> infos;
+	infos.reserve(m_tabs.size());
+	const TabId active = TabIds::currentTab();
+	for (const auto& entry: m_tabs)
+	{
+		const TabId tabId = entry.first;
+		const auto it = m_tabTitles.find(tabId);
+		infos.push_back(
+			{tabId, it != m_tabTitles.end() ? it->second : std::string(), tabId == active});
+	}
+	MessageTabsChanged(std::move(infos)).dispatch();
 }

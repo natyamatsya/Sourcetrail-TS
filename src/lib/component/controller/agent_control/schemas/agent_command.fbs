@@ -11,6 +11,7 @@ table Search        { query: string; }                                          
 table ActivateNode  { serialized_name: string; node_id: uint64 = 0; }                 // MessageActivateNodes
 table ActivateEdge  { source_serialized_name: string; target_serialized_name: string; edge_type: int32; }  // MessageActivateEdge
 table ActivateFile  { file_path: string; }                                            // MessageActivateFile
+table ActivateTab   { tab_id: uint64; }                                               // MessageTabActivate
 table ScrollToLine  { file_path: string; line: uint32; }                              // MessageScrollToLine
 table HistoryBack    {}                                                               // MessageHistoryUndo
 table HistoryForward {}                                                               // MessageHistoryRedo
@@ -26,6 +27,7 @@ union Command {
     ActivateNode,
     ActivateEdge,
     ActivateFile,
+    ActivateTab,
     ScrollToLine,
     HistoryBack,
     HistoryForward,

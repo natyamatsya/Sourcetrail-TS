@@ -43,6 +43,13 @@ table SearchMatch {
     score:     int32;
 }
 
+// A UI tab (workspace): id, display title (primary symbol name), whether active.
+table TabInfo {
+    tab_id: uint64;
+    title:  string;
+    active: bool;
+}
+
 // Coarse application state — the FSM the agent's control loop keys off. Derived
 // from Sourcetrail's Project state + indexing; exposed on UiState.app_state and via
 // the AppStateChanged event. Read state -> issue a valid command -> await the

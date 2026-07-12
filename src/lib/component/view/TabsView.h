@@ -22,6 +22,7 @@ public:
 	virtual void closeTab() = 0;
 	virtual void destroyTab(TabId tabId) = 0;
 	virtual void selectTab(bool next) = 0;
+	virtual void showTab(TabId tabId) = 0;	// activate a specific tab by id
 	virtual void updateTab(TabId tabId, const std::vector<SearchMatch>& matches) = 0;
 };
 

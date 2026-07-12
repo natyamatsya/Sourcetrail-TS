@@ -116,6 +116,21 @@ void QtTabsView::selectTab(bool next)
 	});
 }
 
+void QtTabsView::showTab(TabId tabId)
+{
+	execution::qt::onUi(QtViewWidgetWrapper::getWidgetOfView(this), [=, this]() {
+		for (int i = 0; i < m_tabBar->count(); i++)
+		{
+			if (tabId == qt_variant_cast<TabId>(m_tabBar->tabData(i)))
+			{
+				// Emits currentChanged -> changedTab -> TabsController::showTab.
+				m_tabBar->setCurrentIndex(i);
+				return;
+			}
+		}
+	});
+}
+
 void QtTabsView::updateTab(TabId tabId, const std::vector<SearchMatch>& matches)
 {
 	execution::qt::onUi(QtViewWidgetWrapper::getWidgetOfView(this), [=, this]() {

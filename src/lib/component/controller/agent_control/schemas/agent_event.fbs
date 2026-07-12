@@ -18,6 +18,7 @@ table IndexingFinished { succeeded: bool; }                     // MessageIndexi
 table ErrorCountChanged { total: uint32; fatal: uint32; }       // MessageErrorCountUpdate
 table StatusChanged    { text: string; }                        // MessageStatus
 table AppStateChanged  { state: AppState = NoProject; }         // the FSM transitioned
+table TabsChanged      { tabs: [TabInfo]; }                     // MessageTabsChanged (full snapshot)
 
 // Closed-loop ack for a command, correlated by the command's request_id. ok=false
 // with a message covers both failures and state-gated rejections (message begins
@@ -37,6 +38,7 @@ union Event {
     ErrorCountChanged,
     StatusChanged,
     AppStateChanged,
+    TabsChanged,
     CommandResult,
 }
 

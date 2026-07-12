@@ -20,11 +20,7 @@ table CodeViewState {
     active_locations: [SourceLocationRef];
 }
 
-table TabInfo {
-    tab_id: uint64;
-    title:  string;
-    active: bool;
-}
+// TabInfo moved to agent_common.fbs (shared with the TabsChanged event).
 
 table BookmarkInfo {
     bookmark_id: uint64;

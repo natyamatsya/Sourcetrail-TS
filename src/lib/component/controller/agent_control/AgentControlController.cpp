@@ -68,6 +68,8 @@ bool AgentControlController::isListening() const
 #include "MessageLoadProject.h"
 #include "MessageScrollToLine.h"
 #include "MessageSearch.h"
+#include "MessageTabActivate.h"
+#include "MessageTabsChanged.h"
 
 namespace fb = Sourcetrail::Agent;
 
@@ -138,6 +140,16 @@ flatbuffers::Offset<fb::BookmarkInfo> makeBookmark(
 		builder.CreateString(bookmark.getName()),
 		builder.CreateString(bookmark.getComment()),
 		builder.CreateString(bookmark.getCategory().getName()));
+}
+
+flatbuffers::Offset<fb::TabInfo> makeTabInfo(
+	flatbuffers::FlatBufferBuilder& builder, const MessageTabsChanged::TabInfo& tab)
+{
+	return fb::CreateTabInfo(
+		builder,
+		static_cast<std::uint64_t>(static_cast<unsigned>(tab.tabId)),
+		builder.CreateString(tab.title),
+		tab.active);
 }
 
 // Receives raw CommandEnvelope frames from a thoth-ipc route and hands each to a
@@ -245,6 +257,7 @@ struct AgentControlController::Impl
 	, public MessageListener<MessageIndexingStarted>
 	, public MessageListener<MessageIndexingFinished>
 	, public MessageListener<MessageErrorCountUpdate>
+	, public MessageListener<MessageTabsChanged>
 {
 	Impl(StorageAccess* storageAccess, execution::ISchedulers* schedulers, std::string instanceId)
 		: m_storageAccess(storageAccess)
@@ -342,6 +355,19 @@ struct AgentControlController::Impl
 		publishEvent(builder, fb::Event_ErrorCountChanged, event.Union());
 	}
 
+	void handleMessage(MessageTabsChanged* message) override
+	{
+		m_tabsCache = message->tabs;
+		flatbuffers::FlatBufferBuilder builder;
+		std::vector<flatbuffers::Offset<fb::TabInfo>> tabs;
+		for (const auto& tab: m_tabsCache)
+		{
+			tabs.push_back(makeTabInfo(builder, tab));
+		}
+		const auto event = fb::CreateTabsChanged(builder, builder.CreateVector(tabs));
+		publishEvent(builder, fb::Event_TabsChanged, event.Union());
+	}
+
 	// ---- command handling (message-processing thread) -------------------------
 
 	void handleCommand(const std::uint8_t* data, std::size_t size)
@@ -400,6 +426,12 @@ struct AgentControlController::Impl
 			if (const auto* c = envelope->command_as_ActivateFile(); c && c->file_path())
 			{
 				MessageActivateFile(FilePath(c->file_path()->str())).dispatch();
+			}
+			break;
+		case fb::Command_ActivateTab:
+			if (const auto* c = envelope->command_as_ActivateTab())
+			{
+				MessageTabActivate(static_cast<TabId>(static_cast<unsigned>(c->tab_id()))).dispatch();
 			}
 			break;
 		case fb::Command_ScrollToLine:
@@ -493,6 +525,13 @@ struct AgentControlController::Impl
 		}
 		const auto bookmarksOffset = builder.CreateVector(bookmarks);
 
+		std::vector<flatbuffers::Offset<fb::TabInfo>> tabInfos;
+		for (const auto& tab: m_tabsCache)
+		{
+			tabInfos.push_back(makeTabInfo(builder, tab));
+		}
+		const auto tabsOffset = builder.CreateVector(tabInfos);
+
 		const ErrorCountInfo errors = m_storageAccess->getErrorCount();
 		const auto uiState = fb::CreateUiState(
 			builder,
@@ -501,7 +540,7 @@ struct AgentControlController::Impl
 			graphOffset,
 			codeOffset,
 			searchOffset,
-			/*tabs*/ 0,	 // tabs live in TabsController, not reachable here — follow-up
+			tabsOffset,
 			bookmarksOffset,
 			static_cast<std::uint32_t>(errors.total),
 			static_cast<std::uint32_t>(errors.fatal),
@@ -566,6 +605,7 @@ struct AgentControlController::Impl
 	std::vector<Id> m_activeNodeIds;
 	std::string m_currentFile;
 	std::vector<SearchMatch> m_lastSearchMatches;
+	std::vector<MessageTabsChanged::TabInfo> m_tabsCache;
 	bool m_indexing = false;
 	fb::AppState m_appState = fb::AppState_NoProject;
 	std::uint64_t m_eventSeq = 0;
