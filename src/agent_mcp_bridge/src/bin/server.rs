@@ -108,6 +108,15 @@ struct PathArgs {
 
 #[derive(serde::Deserialize, rmcp::schemars::JsonSchema)]
 #[schemars(crate = "rmcp::schemars")]
+struct TabArgs {
+    /// Tab id (from get_ui_state.tabs[].tab_id).
+    tab_id: u64,
+    #[serde(default)]
+    instance: String,
+}
+
+#[derive(serde::Deserialize, rmcp::schemars::JsonSchema)]
+#[schemars(crate = "rmcp::schemars")]
 struct StartArgs {
     /// Path to the Sourcetrail binary to launch.
     bin: String,
@@ -170,6 +179,11 @@ impl SourcetrailServer {
     #[tool(description = "Open a source file in the code view; returns the resulting UI state.")]
     async fn activate_file(&self, Parameters(a): Parameters<PathArgs>) -> Result<CallToolResult, McpError> {
         ok_json(self.mgr.call(move |m| m.get_or_attach(&a.instance)?.bridge().activate_file(&a.path)).await?)
+    }
+
+    #[tool(description = "Switch to a specific tab by id (from get_ui_state.tabs); returns the resulting UI state.")]
+    async fn activate_tab(&self, Parameters(a): Parameters<TabArgs>) -> Result<CallToolResult, McpError> {
+        ok_json(self.mgr.call(move |m| m.get_or_attach(&a.instance)?.bridge().activate_tab(a.tab_id)).await?)
     }
 
     #[tool(description = "Load a project (.srctrlprj); kicks off indexing — poll get_ui_state.app_state for Ready.")]

@@ -86,6 +86,12 @@ pub fn activate_file(request_id: u64, file_path: &str) -> Vec<u8> {
     finish(b, request_id, fb::Command::ActivateFile, c.as_union_value())
 }
 
+pub fn activate_tab(request_id: u64, tab_id: u64) -> Vec<u8> {
+    let mut b = FlatBufferBuilder::new();
+    let c = fb::ActivateTab::create(&mut b, &fb::ActivateTabArgs { tab_id });
+    finish(b, request_id, fb::Command::ActivateTab, c.as_union_value())
+}
+
 pub fn load_project(request_id: u64, project_file_path: &str) -> Vec<u8> {
     let mut b = FlatBufferBuilder::new();
     let p = b.create_string(project_file_path);
@@ -107,6 +113,7 @@ pub enum Incoming {
     CommandResult { request_id: u64, ok: bool, message: String },
     SearchCompleted(Value),
     AppStateChanged(i8),
+    TabsChanged(Value),
     Other(&'static str),
 }
 
@@ -134,6 +141,12 @@ pub fn parse_event(bytes: &[u8]) -> Result<(u64, Incoming)> {
         }
         fb::Event::AppStateChanged => {
             Incoming::AppStateChanged(env.event_as_app_state_changed().unwrap().state().0)
+        }
+        fb::Event::TabsChanged => {
+            let t = env.event_as_tabs_changed().unwrap();
+            let tabs: Vec<Value> =
+                t.tabs().map(|v| v.iter().map(tab_info_json).collect()).unwrap_or_default();
+            Incoming::TabsChanged(json!(tabs))
         }
         other => Incoming::Other(other.variant_name().unwrap_or("Unknown")),
     };
@@ -169,6 +182,8 @@ pub fn parse_ui_state(bytes: &[u8]) -> Result<(u64, Value)> {
         .map(|v| v.iter().map(search_match_json).collect())
         .unwrap_or_default();
 
+    let tabs: Vec<Value> = s.tabs().map(|v| v.iter().map(tab_info_json).collect()).unwrap_or_default();
+
     let json = json!({
         "request_id": request_id,
         "project_file_path": s.project_file_path().unwrap_or_default(),
@@ -180,6 +195,7 @@ pub fn parse_ui_state(bytes: &[u8]) -> Result<(u64, Value)> {
         "graph": graph,
         "code_view": code_view,
         "search_matches": search_matches,
+        "tabs": tabs,
     });
     Ok((request_id, json))
 }
@@ -210,6 +226,14 @@ fn search_match_json(m: fb::SearchMatch) -> Value {
         "node_kind": m.node_kind(),
         "node_ids": m.node_ids().map(|v| v.iter().collect::<Vec<u64>>()).unwrap_or_default(),
         "score": m.score(),
+    })
+}
+
+fn tab_info_json(t: fb::TabInfo) -> Value {
+    json!({
+        "tab_id": t.tab_id(),
+        "title": t.title().unwrap_or_default(),
+        "active": t.active(),
     })
 }
 

@@ -133,6 +133,16 @@ impl Bridge {
         self.get_ui_state()
     }
 
+    pub fn activate_tab(&mut self, tab_id: u64) -> Result<Value> {
+        let id = self.next_id();
+        self.send(&protocol::activate_tab(id, tab_id))?;
+        let (ok, msg, _) = self.await_ack(id, OP_TIMEOUT)?;
+        if !ok {
+            bail!("activate_tab rejected: {msg}");
+        }
+        self.get_ui_state()
+    }
+
     /// Loading kicks off indexing; return on ack and let the caller poll
     /// `app_state` (or subscribe) for the transition to `Ready`.
     pub fn load_project(&mut self, path: &str) -> Result<Value> {
