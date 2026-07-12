@@ -220,27 +220,45 @@ message(STATUS "Found FlatBuffers ${flatbuffers_VERSION}")
 add_library(External_lib_flatbuffers INTERFACE)
 target_link_libraries(External_lib_flatbuffers INTERFACE flatbuffers::flatbuffers)
 
+# Agent-control channel — declared here (before thoth-ipc) because it decides
+# whether libipc is built with its optional async-receive (senders/receivers)
+# layer below. Consumed again in src/lib for the schema/compile-definition wiring.
+option(SOURCETRAIL_AGENT_CONTROL "Build the agent-UI control channel (thoth-ipc + FlatBuffers)" OFF)
+
 # thoth-ipc ----------------------------------------------------------------------
+# Built from the vendored git submodule (submodules/thoth-ipc) rather than a
+# second FetchContent clone: the submodule commit is the single source of truth
+# and the pin. `include(FetchContent)` is retained for the blocks below.
 
 include(FetchContent)
-FetchContent_Declare(
-	thoth-ipc
-	GIT_REPOSITORY  https://github.com/natyamatsya/thoth-ipc.git
-	GIT_TAG         master
-	GIT_SUBMODULES  ""
-	SOURCE_SUBDIR   cpp/libipc
-)
+
+set(THOTH_IPC_DIR "${CMAKE_SOURCE_DIR}/submodules/thoth-ipc/cpp/libipc")
+if (NOT EXISTS "${THOTH_IPC_DIR}/CMakeLists.txt")
+	message(FATAL_ERROR
+		"thoth-ipc submodule is not checked out at ${THOTH_IPC_DIR}.\n"
+		"Run: git submodule update --init --recursive submodules/thoth-ipc")
+endif()
+
 set(LIBIPC_BUILD_TESTS      OFF CACHE BOOL "" FORCE)
 set(LIBIPC_BUILD_DEMOS      OFF CACHE BOOL "" FORCE)
 set(LIBIPC_BUILD_BENCHMARKS OFF CACHE BOOL "" FORCE)
 set(LIBIPC_BUILD_PROTO      OFF CACHE BOOL "" FORCE)
-FetchContent_MakeAvailable(thoth-ipc)
-message(STATUS "Fetched thoth-ipc (libipc)")
+# Layer 2 async_recv (senders/receivers) — only when the agent-control channel
+# needs it. It implies LIBIPC_NOTIFY_FD, which is POSIX-only for now (the Windows
+# named-event backend is not yet implemented upstream), so gate it off Windows;
+# the client falls back to a blocking reader thread there. libipc resolves its
+# stdexec dependency via find_package first (reusing our vcpkg stdexec).
+if (SOURCETRAIL_AGENT_CONTROL AND NOT WIN32)
+	set(LIBIPC_STDEXEC ON CACHE BOOL "" FORCE)
+endif()
+
+add_subdirectory("${THOTH_IPC_DIR}" "${CMAKE_BINARY_DIR}/_deps/thoth-ipc-build")
+message(STATUS "Built thoth-ipc (libipc) from submodule submodules/thoth-ipc")
 
 add_library(External_lib_ipc INTERFACE)
 target_link_libraries(External_lib_ipc INTERFACE ipc)
 target_include_directories(External_lib_ipc SYSTEM INTERFACE
-	"${thoth-ipc_SOURCE_DIR}/cpp/libipc/include"
+	"${THOTH_IPC_DIR}/include"
 )
 
 # qt-json-query ----------------------------------------------------------------

@@ -20,12 +20,14 @@ bool AgentControlController::isListening() const
 
 #include <chrono>
 #include <cstdint>
+#include <exception>
 #include <functional>
 #include <string>
 #include <thread>
 #include <vector>
 
 #include <libipc/ipc.h>
+#include <libipc/async_recv.h>	// self-guards on LIBIPC_STDEXEC; empty when off
 
 #include <flatbuffers/flatbuffers.h>
 
@@ -131,18 +133,17 @@ flatbuffers::Offset<fb::BookmarkInfo> makeBookmark(
 }
 
 // Receives raw CommandEnvelope frames from a thoth-ipc route and hands each to a
-// sink. This is the client-side seam for the RFC
-// (submodules/thoth-ipc/context/stdexec-async-recv-rfc.md): today it is a dedicated
-// reader jthread doing blocking recv(), because libipc has no fd/async receive yet.
-// When libipc gains async_recv, the entire migration is confined to start()/loop()
-// below — the body becomes, with no change to AgentControlController:
+// sink. Two implementations, selected by how libipc was built:
 //
-//   m_loop = exec::repeat_effect_until(
-//       ipc::async_recv(m_route, scheduler) | stdexec::then(m_sink),
-//       [this]{ return m_stop.stop_requested(); });
+//   * LIBIPC_STDEXEC (POSIX): ipc::async_recv — no dedicated thread. Receives are
+//     driven by libipc's process-global reactor; an exec::async_scope owns the
+//     repeating receive and joins it on stop(). This is the RFC end-state
+//     (submodules/thoth-ipc/context/stdexec-async-recv-rfc.md).
+//   * otherwise (e.g. Windows, where libipc's Layer-1 readiness fd is not yet
+//     implemented): a dedicated jthread blocking on recv().
 //
-// The start()/stop()/sink contract already matches that target, so the controller
-// never learns which mechanism is underneath.
+// Both expose the same start(sink, scheduler) / stop() contract, so
+// AgentControlController never learns which mechanism is underneath.
 class AgentCommandReader
 {
 public:
@@ -150,46 +151,77 @@ public:
 
 	explicit AgentCommandReader(const char* channelName): m_route(channelName, ipc::receiver) {}
 
-	void start(Sink sink)
+	// `on` is the scheduler each command frame is delivered on (io()).
+	void start(Sink sink, [[maybe_unused]] execution::AnyScheduler on)
 	{
-		if (m_thread.joinable())
-		{
-			return;
-		}
 		m_sink = std::move(sink);
-		m_thread = std::jthread([this]() { loop(); });
+#if defined(LIBIPC_STDEXEC)
+		// Repeat one async receive until the effect yields true; each completes on
+		// `on`. A received frame yields false (keep receiving); cancellation comes
+		// from the scope's stop token (async_recv completes set_stopped, ending the
+		// loop); a misconfigured-channel error is mapped to true so the loop tears
+		// down instead of spinning.
+		m_scope.spawn(exec::repeat_effect_until(
+			ipc::async_recv(m_route, std::move(on)) |
+			stdexec::then([this](ipc::buff_t buffer) {
+				deliver(buffer);
+				return false;
+			}) |
+			stdexec::let_error([](std::exception_ptr) {
+				LOG_ERROR("agent-control: async_recv error; stopping reader");
+				return stdexec::just(true);
+			})));
+#else
+		if (!m_thread.joinable())
+		{
+			m_thread = std::jthread([this]() { loop(); });
+		}
+#endif
 	}
 
-	// The reader only ever blocks on recv (never on another thread), so this joins
-	// within the recv timeout.
 	void stop()
 	{
+#if defined(LIBIPC_STDEXEC)
+		m_scope.request_stop();
+		stdexec::sync_wait(m_scope.on_empty());	 // join the spawned receive loop
+#else
 		m_stopSource.request_stop();
-		if (m_thread.joinable())
+		if (m_thread.joinable())	// reader only blocks on recv, so this joins within the timeout
 		{
 			m_thread.join();
 		}
+#endif
 	}
 
 private:
+	void deliver(const ipc::buff_t& buffer)
+	{
+		const auto* bytes = static_cast<const std::uint8_t*>(buffer.data());
+		m_sink(std::vector<std::uint8_t>(bytes, bytes + buffer.size()));
+	}
+
+#if !defined(LIBIPC_STDEXEC)
 	void loop()
 	{
 		while (!m_stopSource.stop_requested())
 		{
 			ipc::buff_t buffer = m_route.recv(200 /*ms; re-checks stop*/);
-			if (buffer.empty())
+			if (!buffer.empty())
 			{
-				continue;
+				deliver(buffer);
 			}
-			const auto* bytes = static_cast<const std::uint8_t*>(buffer.data());
-			m_sink(std::vector<std::uint8_t>(bytes, bytes + buffer.size()));
 		}
 	}
+#endif
 
 	ipc::route m_route;
 	Sink m_sink;
+#if defined(LIBIPC_STDEXEC)
+	exec::async_scope m_scope;
+#else
 	stdexec::inplace_stop_source m_stopSource;
 	std::jthread m_thread;
+#endif
 };
 }	 // namespace
 
@@ -218,10 +250,11 @@ struct AgentControlController::Impl
 	{
 		// Each command frame is forwarded onto the message thread via
 		// MessageAgentCommand (dispatch is thread-safe), so it is handled where the
-		// non-thread-safe StorageCache is safe to query.
-		m_reader.start([](std::vector<std::uint8_t> bytes) {
-			MessageAgentCommand(std::move(bytes)).dispatch();
-		});
+		// non-thread-safe StorageCache is safe to query. Delivery from the reader
+		// runs on io(); the dispatch() hop then lands it on the message thread.
+		m_reader.start(
+			[](std::vector<std::uint8_t> bytes) { MessageAgentCommand(std::move(bytes)).dispatch(); },
+			m_schedulers->io());
 	}
 
 	void stop()
@@ -512,7 +545,7 @@ struct AgentControlController::Impl
 	}
 
 	StorageAccess* m_storageAccess;
-	[[maybe_unused]] execution::ISchedulers* m_schedulers;	// reserved for Phase C frame grab (ui())
+	execution::ISchedulers* m_schedulers;	// io() drives the reader; ui() reserved for Phase C frame grab
 
 	AgentCommandReader m_reader;	// owns the st.agent.cmd route + reader thread (RFC seam)
 	ipc::route m_stateChannel;

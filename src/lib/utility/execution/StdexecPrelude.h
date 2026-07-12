@@ -29,6 +29,7 @@
 
 #include <exec/any_sender_of.hpp>
 #include <exec/async_scope.hpp>
+#include <exec/repeat_effect_until.hpp>
 #include <exec/static_thread_pool.hpp>
 #include <stdexec/execution.hpp> // provides stdexec::run_loop
 

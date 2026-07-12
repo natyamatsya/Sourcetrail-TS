@@ -92,7 +92,8 @@ endforeach()
 # Agent-UI control contracts (see component/controller/agent_control/schemas and
 # context/DESIGN_AGENT_UI_CONTROL.md). Only generated + compiled when the opt-in
 # flag is set; the AgentControlController.cpp stub keeps the class linkable otherwise.
-option(SOURCETRAIL_AGENT_CONTROL "Build the agent-UI control channel (thoth-ipc + FlatBuffers)" OFF)
+# The SOURCETRAIL_AGENT_CONTROL option is declared in the top-level CMakeLists.txt
+# (it also decides whether libipc is built with its async-receive layer).
 if (SOURCETRAIL_AGENT_CONTROL)
 	set(AGENT_SCHEMA_DIR ${CMAKE_CURRENT_SOURCE_DIR}/component/controller/agent_control/schemas)
 	set(AGENT_SCHEMAS
