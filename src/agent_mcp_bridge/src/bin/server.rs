@@ -117,6 +117,16 @@ struct TabArgs {
 
 #[derive(serde::Deserialize, rmcp::schemars::JsonSchema)]
 #[schemars(crate = "rmcp::schemars")]
+struct SnapshotArgs {
+    /// Raw object tree (widgets + Q_PROPERTY bag) instead of the default accessibility tree.
+    #[serde(default)]
+    object_tree: bool,
+    #[serde(default)]
+    instance: String,
+}
+
+#[derive(serde::Deserialize, rmcp::schemars::JsonSchema)]
+#[schemars(crate = "rmcp::schemars")]
 struct StartArgs {
     /// Path to the Sourcetrail binary to launch.
     bin: String,
@@ -184,6 +194,11 @@ impl SourcetrailServer {
     #[tool(description = "Switch to a specific tab by id (from get_ui_state.tabs); returns the resulting UI state.")]
     async fn activate_tab(&self, Parameters(a): Parameters<TabArgs>) -> Result<CallToolResult, McpError> {
         ok_json(self.mgr.call(move |m| m.get_or_attach(&a.instance)?.bridge().activate_tab(a.tab_id)).await?)
+    }
+
+    #[tool(description = "Capture the structural UI tree: every element's role, geometry, and supported actions, each with a ref you can target. Accessibility tree by default; object_tree=true for the raw widget/property tree.")]
+    async fn get_snapshot(&self, Parameters(a): Parameters<SnapshotArgs>) -> Result<CallToolResult, McpError> {
+        ok_json(self.mgr.call(move |m| m.get_or_attach(&a.instance)?.bridge().get_snapshot(a.object_tree)).await?)
     }
 
     #[tool(description = "Load a project (.srctrlprj); kicks off indexing — poll get_ui_state.app_state for Ready.")]

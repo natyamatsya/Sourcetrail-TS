@@ -21,6 +21,7 @@ pub struct Bridge {
     state: Route,
     #[allow(dead_code)] // Phase C: get_frame reassembly
     frames: Route,
+    snapshot: Route,
     next_id: u64,
 }
 
@@ -43,7 +44,9 @@ impl Bridge {
             .with_context(|| format!("connect {}", channel::state(instance)))?;
         let frames = Route::connect(&channel::frames(instance), Mode::Receiver)
             .with_context(|| format!("connect {}", channel::frames(instance)))?;
-        Ok(Self { cmd, events, state, frames, next_id: 1 })
+        let snapshot = Route::connect(&channel::snapshot(instance), Mode::Receiver)
+            .with_context(|| format!("connect {}", channel::snapshot(instance)))?;
+        Ok(Self { cmd, events, state, frames, snapshot, next_id: 1 })
     }
 
     fn next_id(&mut self) -> u64 {
@@ -95,12 +98,41 @@ impl Bridge {
         bail!("timed out awaiting UiState for request {request_id}")
     }
 
+    /// Read `st.agent.snapshot` until the `UiSnapshot` for `request_id`.
+    fn read_snapshot(&mut self, request_id: u64, timeout: Duration) -> Result<Value> {
+        let deadline = Instant::now() + timeout;
+        while Instant::now() < deadline {
+            let buf = self.snapshot.recv(Some(RECV_POLL_MS)).context("recv snapshot")?;
+            if buf.is_empty() {
+                continue;
+            }
+            let (rid, json) = protocol::parse_ui_snapshot(buf.data())?;
+            if rid == request_id {
+                return Ok(json);
+            }
+        }
+        bail!("timed out awaiting UiSnapshot for request {request_id}")
+    }
+
     // --- operations (act + observe) -----------------------------------------
 
     pub fn get_ui_state(&mut self) -> Result<Value> {
         let id = self.next_id();
         self.send(&protocol::get_ui_state(id))?;
         self.read_ui_state(id, OP_TIMEOUT)
+    }
+
+    /// Capture the structural UI tree (accessibility, or the raw object tree). The
+    /// app acks on events, then sends the `UiSnapshot` on st.agent.snapshot (the
+    /// capture hops to the GUI thread, so allow a generous window).
+    pub fn get_snapshot(&mut self, object_tree: bool) -> Result<Value> {
+        let id = self.next_id();
+        self.send(&protocol::get_snapshot(id, object_tree))?;
+        let (ok, msg, _) = self.await_ack(id, OP_TIMEOUT)?;
+        if !ok {
+            bail!("get_snapshot rejected: {msg}");
+        }
+        self.read_snapshot(id, Duration::from_secs(15))
     }
 
     pub fn search(&mut self, query: &str) -> Result<Value> {

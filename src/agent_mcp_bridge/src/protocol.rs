@@ -34,6 +34,9 @@ pub mod channel {
     pub fn frames(instance: &str) -> String {
         name("frames", instance)
     }
+    pub fn snapshot(instance: &str) -> String {
+        name("snapshot", instance)
+    }
 }
 
 // --- Command builders -------------------------------------------------------
@@ -60,6 +63,17 @@ pub fn get_ui_state(request_id: u64) -> Vec<u8> {
     let mut b = FlatBufferBuilder::new();
     let c = fb::GetUiState::create(&mut b, &fb::GetUiStateArgs {});
     finish(b, request_id, fb::Command::GetUiState, c.as_union_value())
+}
+
+pub fn get_snapshot(request_id: u64, object_tree: bool) -> Vec<u8> {
+    let mut b = FlatBufferBuilder::new();
+    let format = if object_tree {
+        fb::SnapshotFormat::ObjectTree
+    } else {
+        fb::SnapshotFormat::Accessibility
+    };
+    let c = fb::GetSnapshot::create(&mut b, &fb::GetSnapshotArgs { format });
+    finish(b, request_id, fb::Command::GetSnapshot, c.as_union_value())
 }
 
 pub fn search(request_id: u64, query: &str) -> Vec<u8> {
@@ -198,6 +212,62 @@ pub fn parse_ui_state(bytes: &[u8]) -> Result<(u64, Value)> {
         "tabs": tabs,
     });
     Ok((request_id, json))
+}
+
+// --- UiSnapshot decoding (st.agent.snapshot) --------------------------------
+
+/// Decode a `UiSnapshot`; returns `(request_id, tree_json)`.
+pub fn parse_ui_snapshot(bytes: &[u8]) -> Result<(u64, Value)> {
+    let snap =
+        flatbuffers::root::<fb::UiSnapshot>(bytes).map_err(|e| anyhow!("bad UiSnapshot: {e}"))?;
+    let roots: Vec<Value> = snap
+        .roots()
+        .map(|v| v.iter().map(ui_node_json).collect())
+        .unwrap_or_default();
+    let format = if snap.format() == fb::SnapshotFormat::ObjectTree {
+        "objectTree"
+    } else {
+        "accessibility"
+    };
+    let json = json!({
+        "request_id": snap.request_id(),
+        "format": format,
+        "roots": roots,
+    });
+    Ok((snap.request_id(), json))
+}
+
+fn ui_node_json(n: fb::UiNode) -> Value {
+    let children: Vec<Value> = n
+        .children()
+        .map(|v| v.iter().map(ui_node_json).collect())
+        .unwrap_or_default();
+    let actions: Vec<&str> = n.actions().map(|v| v.iter().collect()).unwrap_or_default();
+    let rect = n
+        .rect()
+        .map(|r| json!({ "x": r.x(), "y": r.y(), "w": r.w(), "h": r.h() }));
+    json!({
+        "role": n.role().unwrap_or_default(),
+        "name": n.name().unwrap_or_default(),
+        "value": n.value().unwrap_or_default(),
+        "state": n.state(),
+        "actions": actions,
+        "rect": rect,
+        "ref": n.ref_().map(element_ref_json),
+        "children": children,
+    })
+}
+
+fn element_ref_json(e: fb::ElementRef) -> Value {
+    let path: Vec<Value> = e
+        .path()
+        .map(|v| {
+            v.iter()
+                .map(|s| json!({ "role": s.role().unwrap_or_default(), "name": s.name().unwrap_or_default(), "index": s.index() }))
+                .collect()
+        })
+        .unwrap_or_default();
+    json!({ "object_name": e.object_name().unwrap_or_default(), "path": path })
 }
 
 // --- small projections ------------------------------------------------------
@@ -447,11 +517,12 @@ mod tests {
         let roots = b.create_vector(&[root]);
         let snap = fb::UiSnapshot::create(
             &mut b,
-            &fb::UiSnapshotArgs { format: fb::SnapshotFormat::Accessibility, roots: Some(roots) },
+            &fb::UiSnapshotArgs { request_id: 7, format: fb::SnapshotFormat::Accessibility, roots: Some(roots) },
         );
         b.finish(snap, None);
 
         let got = flatbuffers::root::<fb::UiSnapshot>(b.finished_data()).expect("valid UiSnapshot");
+        assert_eq!(got.request_id(), 7);
         assert_eq!(got.format(), fb::SnapshotFormat::Accessibility);
         let root = got.roots().unwrap().get(0);
         assert_eq!(root.role().unwrap(), "window");
