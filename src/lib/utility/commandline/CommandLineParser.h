@@ -1,11 +1,12 @@
 #ifndef COMMAND_LINE_PARSER_H
 #define COMMAND_LINE_PARSER_H
 
+#include <array>
 #include <memory>
 #include <string>
+#include <string_view>
+#include <utility>
 #include <vector>
-
-#include <CLI/CLI.hpp>
 
 #include "FilePath.h"
 #include "RefreshInfo.h"
@@ -14,6 +15,35 @@
 namespace commandline
 {
 class CommandlineCommand;
+
+//! Top-level (GUI) options: everything before a subcommand name. See the
+//! glz::meta specialization in CommandLineParser.cpp for the flag mapping.
+struct TopOpts
+{
+	bool version = false;
+	std::string project_file;
+	std::string screenshot;
+	int screenshot_delay = 2000;
+	std::string ui_snapshot;
+	std::string ui_snapshot_format = "accessibility";
+	std::string agent_instance;
+
+	static constexpr std::array shorts = {std::pair{'v', std::string_view{"version"}}};
+	static constexpr std::array<std::string_view, 1> positionals = {"project-file"};
+	static constexpr std::array descriptions = {
+		std::pair{std::string_view{"version"}, std::string_view{"Print the Sourcetrail version and exit"}},
+		std::pair{std::string_view{"project-file"}, std::string_view{"Open Sourcetrail with this project (.srctrl.toml)"}},
+		std::pair{std::string_view{"screenshot"},
+			std::string_view{"Headless: run the GUI (forced offscreen unless QT_QPA_PLATFORM is set), capture the main window to this PNG path, then exit"}},
+		std::pair{std::string_view{"screenshot-delay"},
+			std::string_view{"Delay in ms before the --screenshot/--ui-snapshot capture (default 2000)"}},
+		std::pair{std::string_view{"ui-snapshot"},
+			std::string_view{"Headless: dump the live Qt widget tree to this path, then exit (see context/DESIGN_AGENT_UI_SNAPSHOT.md)"}},
+		std::pair{std::string_view{"ui-snapshot-format"},
+			std::string_view{"Snapshot format: 'accessibility' (default) or 'object'"}},
+		std::pair{std::string_view{"agent-instance"},
+			std::string_view{"Namespace the agent-control channels as st.agent.<id>.* for side-by-side instances (empty = default)"}}};
+};
 
 class CommandLineParser
 {
@@ -60,25 +90,17 @@ private:
 	void processProjectfile();
 	void printHelp() const;
 
-	CLI::App m_app;
-
 	std::vector<std::shared_ptr<CommandlineCommand>> m_commands;
 	std::vector<std::string> m_args;
 
 	const std::string m_version;
-	std::string m_projectFileArg;
+	TopOpts m_top;
 	FilePath m_projectFile;
 	RefreshMode m_refreshMode = RefreshMode::UPDATED_FILES;
 	ShardConfig m_shardConfig;
 
 	bool m_quit = false;
 	bool m_withoutGUI = false;
-
-	std::string m_screenshotPath;
-	int m_screenshotDelayMs = 2000;
-	std::string m_uiSnapshotPath;
-	std::string m_uiSnapshotFormat = "accessibility";
-	std::string m_agentInstanceId;
 
 	std::string m_errorString;
 };

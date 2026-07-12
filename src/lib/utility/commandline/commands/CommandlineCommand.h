@@ -2,10 +2,14 @@
 #define COMMANDLINE_COMMAND_H
 
 #include <memory>
+#include <optional>
 #include <string>
 #include <vector>
 
-#include <CLI/CLI.hpp>
+namespace glzcli
+{
+struct ParseResult;
+}
 
 namespace commandline
 {
@@ -35,11 +39,15 @@ public:
 	virtual void printHelp();
 
 protected:
+	// Shared post-parse control flow, applied monadically at each command's
+	// parse() entry: prints help on --help, prints the message on error, and
+	// yields the matching early-exit status -- or std::nullopt to continue with a
+	// good parse. Usage: `if (auto stop = earlyExit(result)) return *stop;`
+	std::optional<ReturnStatus> earlyExit(const glzcli::ParseResult& result);
+
 	const std::string m_name;
 	const std::string m_description;
 	CommandLineParser* m_parser;
-
-	CLI::App m_app;
 };
 
 }	 // namespace commandline

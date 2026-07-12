@@ -1,13 +1,27 @@
 #include "CommandlineCommandConfig.h"
 
 #include <iostream>
-#include <optional>
+#include <span>
 
 #include "ApplicationSettings.h"
 #include "CommandLineParser.h"
 #include "CommandlineHelper.h"
 #include "FilePath.h"
+#include "GlazeCli.h"
 #include "logging.h"
+
+namespace glz
+{
+template <>
+struct meta<commandline::ConfigOpts>
+{
+	using T = commandline::ConfigOpts;
+	static constexpr auto value = object("indexer-threads", &T::indexer_threads, "logging-enabled",
+		&T::logging_enabled, "verbose-indexer-logging-enabled", &T::verbose_indexer_logging_enabled,
+		"global-header-search-paths", &T::global_header_search_paths, "global-framework-search-paths",
+		&T::global_framework_search_paths, "show", &T::show);
+};
+}	 // namespace glz
 
 namespace commandline
 {
@@ -34,51 +48,24 @@ CommandlineCommandConfig::CommandlineCommandConfig(CommandLineParser* parser)
 
 CommandlineCommandConfig::~CommandlineCommandConfig() = default;
 
-void CommandlineCommandConfig::setup()
+void CommandlineCommandConfig::setup() {}
+
+void CommandlineCommandConfig::printHelp()
 {
-	m_app.add_option("-t,--indexer-threads", m_indexerThreads,
-		"Set the number of threads used for indexing (0 uses ideal thread count)");
-	m_app.add_option("-l,--logging-enabled", m_loggingEnabled,
-		"Enable file/console logging <true/false>")->expected(1);
-	m_app.add_option("-L,--verbose-indexer-logging-enabled", m_verboseIndexerLogging,
-		"Enable additional log of abstract syntax tree during the indexing. <true/false> WARNING Slows down indexing speed")->expected(1);
-	m_app.add_option("-g,--global-header-search-paths", m_globalHeaderSearchPaths,
-		"Global include paths (once per path or comma separated)");
-	m_app.add_option("-F,--global-framework-search-paths", m_globalFrameworkSearchPaths,
-		"Global include paths (once per path or comma separated)");
-	m_app.add_flag("-s,--show", m_show, "displays all settings");
+	std::cout << "Usage: Sourcetrail config [options]\n\nOptions:\n"
+			  << glzcli::help<ConfigOpts>() << std::endl;
 }
 
 CommandlineCommand::ReturnStatus CommandlineCommandConfig::parse(std::vector<std::string>& args)
 {
-	// Check before parsing — CLI11 modifies args
-	const bool showHelp = args.empty() || args[0] == "help";
-
-	if (showHelp)
+	if (args.empty())
 	{
 		printHelp();
 		return ReturnStatus::CMD_QUIT;
 	}
 
-	try
-	{
-		std::vector<std::string> fullArgs{m_name};
-		fullArgs.insert(fullArgs.end(), args.begin(), args.end());
-		std::vector<const char*> argv;
-		for (const auto& a : fullArgs)
-			argv.push_back(a.c_str());
-		m_app.parse(static_cast<int>(argv.size()), argv.data());
-	}
-	catch (const CLI::ParseError& e)
-	{
-		if (e.get_exit_code() == 0)
-		{
-			printHelp();
-			return ReturnStatus::CMD_QUIT;
-		}
-		std::cerr << "ERROR: " << e.what() << std::endl;
-		return ReturnStatus::CMD_FAILURE;
-	}
+	if (const auto stop = earlyExit(glzcli::parse(m_opts, std::span<const std::string>(args))))
+		return *stop;
 
 	ApplicationSettings* settings = ApplicationSettings::getInstance().get();
 	if (settings == nullptr)
@@ -87,32 +74,39 @@ CommandlineCommand::ReturnStatus CommandlineCommandConfig::parse(std::vector<std
 		return ReturnStatus::CMD_QUIT;
 	}
 
-	if (m_show)
+	if (m_opts.show)
 	{
 		std::cout << "Sourcetrail Settings:\n"
 				  << "\n  indexer-threads: " << settings->getIndexerThreadCount()
 				  << "\n  logging-enabled: " << settings->getLoggingEnabled()
-				  << "\n  verbose-indexer-logging-enabled: "
-				  << settings->getVerboseIndexerLoggingEnabled();
+				  << "\n  verbose-indexer-logging-enabled: " << settings->getVerboseIndexerLoggingEnabled();
 		printVector("global-header-search-paths", settings->getHeaderSearchPaths());
 		printVector("global-framework-search-paths", settings->getFrameworkSearchPaths());
 		return ReturnStatus::CMD_QUIT;
 	}
 
-	if (m_indexerThreads.has_value())
-		settings->setIndexerThreadCount(*m_indexerThreads);
-	if (m_loggingEnabled.has_value())
-		settings->setLoggingEnabled(*m_loggingEnabled);
-	if (m_verboseIndexerLogging.has_value())
-		settings->setVerboseIndexerLoggingEnabled(*m_verboseIndexerLogging);
-
-	if (!m_globalHeaderSearchPaths.empty())
-		settings->setHeaderSearchPaths(extractPaths(m_globalHeaderSearchPaths));
-	if (!m_globalFrameworkSearchPaths.empty())
-		settings->setFrameworkSearchPaths(extractPaths(m_globalFrameworkSearchPaths));
+	if (m_opts.indexer_threads.has_value())
+	{
+		settings->setIndexerThreadCount(*m_opts.indexer_threads);
+	}
+	if (m_opts.logging_enabled.has_value())
+	{
+		settings->setLoggingEnabled(*m_opts.logging_enabled);
+	}
+	if (m_opts.verbose_indexer_logging_enabled.has_value())
+	{
+		settings->setVerboseIndexerLoggingEnabled(*m_opts.verbose_indexer_logging_enabled);
+	}
+	if (!m_opts.global_header_search_paths.empty())
+	{
+		settings->setHeaderSearchPaths(extractPaths(m_opts.global_header_search_paths));
+	}
+	if (!m_opts.global_framework_search_paths.empty())
+	{
+		settings->setFrameworkSearchPaths(extractPaths(m_opts.global_framework_search_paths));
+	}
 
 	settings->save();
-
 	return ReturnStatus::CMD_QUIT;
 }
 

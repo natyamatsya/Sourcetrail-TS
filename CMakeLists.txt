@@ -204,14 +204,6 @@ else()
 	endif()
 endif()
 
-# CLI11 -------------------------------------------------------------------------
-
-find_package(CLI11 CONFIG REQUIRED)
-message(STATUS "Found CLI11 ${CLI11_VERSION}")
-
-add_library(External_lib_cli11 INTERFACE)
-target_link_libraries(External_lib_cli11 INTERFACE CLI11::CLI11)
-
 # FlatBuffers ------------------------------------------------------------------
 
 find_package(flatbuffers CONFIG REQUIRED)

@@ -2,15 +2,28 @@
 
 #include <iostream>
 #include <set>
+#include <span>
 
 #include "CommandLineParser.h"
 #include "FilePath.h"
 #include "FileSystem.h"
+#include "GlazeCli.h"
 #include "PersistentStorage.h"
 #include "ProjectSettings.h"
 #include "StorageStats.h"
 #include "TextAccess.h"
 #include "TimeStamp.h"
+
+namespace glz
+{
+template <>
+struct meta<commandline::MergeOpts>
+{
+	using T = commandline::MergeOpts;
+	static constexpr auto value = object("project-file", &T::project_file, "shard-dbs",
+		&T::shard_dbs, "output", &T::output, "allow-partial", &T::allow_partial);
+};
+}	 // namespace glz
 
 namespace
 {
@@ -38,50 +51,26 @@ CommandlineCommandMerge::CommandlineCommandMerge(CommandLineParser* parser)
 
 CommandlineCommandMerge::~CommandlineCommandMerge() = default;
 
-void CommandlineCommandMerge::setup()
+void CommandlineCommandMerge::setup() {}
+
+void CommandlineCommandMerge::printHelp()
 {
-	m_app.add_option(
-		"project-file", m_projectFileArg, "Project file the shards were produced from (.srctrl.toml)");
-	m_app.add_option("shard-dbs", m_shardDbArgs, "Shard DB files to merge (2 or more)");
-	m_app.add_option(
-		"-o,--output",
-		m_outputArg,
-		"Output DB path (default: the project's DB, so the project opens normally afterwards)");
-	m_app.add_flag(
-		"--allow-partial",
-		m_allowPartial,
-		"Merge even if the shard set is incomplete or inconsistent (missing stripes)");
+	std::cout << "Usage: Sourcetrail merge [options] <project-file> <shard-db> <shard-db>...\n\nOptions:\n"
+			  << glzcli::help<MergeOpts>() << std::endl;
 }
 
 CommandlineCommand::ReturnStatus CommandlineCommandMerge::parse(std::vector<std::string>& args)
 {
-	if (args.empty() || args[0] == "help")
+	if (args.empty())
 	{
 		printHelp();
 		return ReturnStatus::CMD_QUIT;
 	}
 
-	try
-	{
-		std::vector<std::string> fullArgs{m_name};
-		fullArgs.insert(fullArgs.end(), args.begin(), args.end());
-		std::vector<const char*> argv;
-		for (const auto& a: fullArgs)
-			argv.push_back(a.c_str());
-		m_app.parse(static_cast<int>(argv.size()), argv.data());
-	}
-	catch (const CLI::ParseError& e)
-	{
-		if (e.get_exit_code() == 0)
-		{
-			printHelp();
-			return ReturnStatus::CMD_QUIT;
-		}
-		std::cerr << "ERROR: " << e.what() << std::endl;
-		return ReturnStatus::CMD_FAILURE;
-	}
+	if (const auto stop = earlyExit(glzcli::parse(m_opts, std::span<const std::string>(args))))
+		return *stop;
 
-	if (m_projectFileArg.empty() || m_shardDbArgs.size() < 2)
+	if (m_opts.project_file.empty() || m_opts.shard_dbs.size() < 2)
 	{
 		std::cerr << "ERROR: merge needs a project file and at least two shard DBs" << std::endl;
 		return ReturnStatus::CMD_FAILURE;
@@ -94,7 +83,7 @@ CommandlineCommand::ReturnStatus CommandlineCommandMerge::parse(std::vector<std:
 
 CommandlineCommand::ReturnStatus CommandlineCommandMerge::merge() const
 {
-	const FilePath projectFilePath(m_projectFileArg);
+	const FilePath projectFilePath(m_opts.project_file);
 	if (!projectFilePath.exists())
 	{
 		std::cerr << "ERROR: project file does not exist: " << projectFilePath.str() << std::endl;
@@ -113,7 +102,7 @@ CommandlineCommand::ReturnStatus CommandlineCommandMerge::merge() const
 	long long shardCount = -1;
 	bool manifestsConsistent = true;
 
-	for (const std::string& shardArg: m_shardDbArgs)
+	for (const std::string& shardArg: m_opts.shard_dbs)
 	{
 		const FilePath shardPath(shardArg);
 		if (!shardPath.exists())
@@ -155,7 +144,7 @@ CommandlineCommand::ReturnStatus CommandlineCommandMerge::merge() const
 
 	if (!manifestsConsistent)
 	{
-		if (!m_allowPartial)
+		if (!m_opts.allow_partial)
 		{
 			std::cerr << "ERROR: shard set is inconsistent or incomplete (expected " << shardCount
 					  << " distinct stripes, got " << shardIndices.size()
@@ -167,8 +156,8 @@ CommandlineCommand::ReturnStatus CommandlineCommandMerge::merge() const
 	}
 
 	// ---- target
-	const FilePath targetPath = m_outputArg.empty() ? settings.getDBFilePath()
-													: FilePath(m_outputArg);
+	const FilePath targetPath = m_opts.output.empty() ? settings.getDBFilePath()
+													: FilePath(m_opts.output);
 	if (targetPath.exists())
 	{
 		std::cout << "Replacing existing DB: " << targetPath.str() << std::endl;
@@ -183,7 +172,7 @@ CommandlineCommand::ReturnStatus CommandlineCommandMerge::merge() const
 
 	// ---- inject each shard (sequential; the dedup machinery collapses cross-shard duplicates)
 	const TimeStamp mergeStart = TimeStamp::now();
-	for (const std::string& shardArg: m_shardDbArgs)
+	for (const std::string& shardArg: m_opts.shard_dbs)
 	{
 		const FilePath shardPath(shardArg);
 		const TimeStamp shardStart = TimeStamp::now();
@@ -209,7 +198,7 @@ CommandlineCommand::ReturnStatus CommandlineCommandMerge::merge() const
 	target.optimizeMemory();
 
 	const StorageStats stats = target.getStorageStats();
-	std::cout << "merge complete: " << m_shardDbArgs.size() << " shards -> " << targetPath.str()
+	std::cout << "merge complete: " << m_opts.shard_dbs.size() << " shards -> " << targetPath.str()
 			  << " in " << TimeStamp::now().deltaMS(mergeStart) << " ms (" << stats.nodeCount
 			  << " nodes, " << stats.edgeCount << " edges, " << stats.fileCount << " files)"
 			  << std::endl;

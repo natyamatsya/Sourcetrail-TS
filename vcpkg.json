@@ -3,7 +3,6 @@
 	"name": "sourcetrail",
 	"version": "1.0.0",
 	"dependencies": [
-		"cli11",
 		"flatbuffers",
 		"glaze",
 		"nlohmann-json",

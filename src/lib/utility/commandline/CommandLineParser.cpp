@@ -1,51 +1,33 @@
 #include "CommandLineParser.h"
 
 #include <iostream>
+#include <span>
 
 #include "CommandlineCommandConfig.h"
 #include "CommandlineCommandIndex.h"
 #include "CommandlineCommandMerge.h"
 #include "ConfigManager.h"
+#include "GlazeCli.h"
 #include "ProjectSettings.h"
 #include "TextAccess.h"
 
+namespace glz
+{
+template <>
+struct meta<commandline::TopOpts>
+{
+	using T = commandline::TopOpts;
+	static constexpr auto value = object("version", &T::version, "project-file", &T::project_file,
+		"screenshot", &T::screenshot, "screenshot-delay", &T::screenshot_delay, "ui-snapshot",
+		&T::ui_snapshot, "ui-snapshot-format", &T::ui_snapshot_format, "agent-instance",
+		&T::agent_instance);
+};
+}	 // namespace glz
+
 namespace commandline
 {
-CommandLineParser::CommandLineParser(const std::string& version)
-	: m_app("Sourcetrail"), m_version(version)
+CommandLineParser::CommandLineParser(const std::string& version) : m_version(version)
 {
-	m_app.add_flag("-v,--version", "Version of Sourcetrail");
-	m_app.add_option(
-		"project-file",
-		m_projectFileArg,
-		"Open Sourcetrail with this project (.srctrl.toml)");
-	m_app.add_option(
-		"--screenshot",
-		m_screenshotPath,
-		"Headless: run the GUI (forced offscreen unless QT_QPA_PLATFORM is set), "
-		"capture the main window to this PNG path, then exit");
-	m_app.add_option(
-		"--screenshot-delay",
-		m_screenshotDelayMs,
-		"Delay in ms before the --screenshot/--ui-snapshot capture, to let a project render "
-		"(default 2000)");
-	m_app.add_option(
-		"--ui-snapshot",
-		m_uiSnapshotPath,
-		"Headless: dump the live Qt widget tree (roles, properties, actions) to this JSON path, "
-		"then exit (see context/DESIGN_AGENT_UI_SNAPSHOT.md)");
-	m_app.add_option(
-		"--ui-snapshot-format",
-		m_uiSnapshotFormat,
-		"Snapshot format: 'accessibility' (default) or 'object'");
-	m_app.add_option(
-		"--agent-instance",
-		m_agentInstanceId,
-		"Namespace the agent-control channels as st.agent.<id>.* so multiple app "
-		"instances can run side by side (e.g. baseline vs candidate). Empty = default "
-		"st.agent.* names");
-	m_app.allow_extras();
-
 	m_commands.push_back(std::make_unique<commandline::CommandlineCommandConfig>(this));
 	m_commands.push_back(std::make_unique<commandline::CommandlineCommandIndex>(this));
 	m_commands.push_back(std::make_unique<commandline::CommandlineCommandMerge>(this));
@@ -72,50 +54,42 @@ void CommandLineParser::preparse(std::vector<std::string>& args)
 
 	m_args = args;
 
-	try
+	for (auto& command: m_commands)
 	{
-		for (auto& command: m_commands)
+		if (m_args[0] == command->name())
 		{
-			if (m_args[0] == command->name())
-			{
-				m_withoutGUI = true;
-				return;
-			}
-		}
-
-		m_app.parse(m_args);
-
-		if (m_app.count("--version"))
-		{
-			std::cout << "Sourcetrail Version " << m_version << std::endl;
-			m_quit = true;
+			m_withoutGUI = true;
 			return;
 		}
-
-		if (m_app.count("--help"))
-		{
-			printHelp();
-			m_quit = true;
-		}
-
-		if (!m_projectFileArg.empty())
-		{
-			m_projectFile = FilePath(m_projectFileArg);
-			processProjectfile();
-		}
 	}
-	catch (const CLI::ParseError& e)
+
+	// Top-level options tolerate unknown tokens (allow_extras): a subcommand may
+	// follow, and its options are parsed later in parse().
+	const glzcli::ParseResult result =
+		glzcli::parse(m_top, std::span<const std::string>(m_args), /*allow_extras=*/true);
+	if (result.help)
 	{
-		if (e.get_exit_code() == 0)
-		{
-			// --help was invoked
-			printHelp();
-			m_quit = true;
-		}
-		else
-		{
-			std::cerr << "ERROR: " << e.what() << std::endl;
-		}
+		printHelp();
+		m_quit = true;
+		return;
+	}
+	if (result.error)
+	{
+		std::cerr << "ERROR: " << *result.error << std::endl;
+		return;
+	}
+
+	if (m_top.version)
+	{
+		std::cout << "Sourcetrail Version " << m_version << std::endl;
+		m_quit = true;
+		return;
+	}
+
+	if (!m_top.project_file.empty())
+	{
+		m_projectFile = FilePath(m_top.project_file);
+		processProjectfile();
 	}
 }
 
@@ -124,23 +98,16 @@ void CommandLineParser::parse()
 	if (m_args.empty())
 		return;
 
-	try
+	for (auto& command: m_commands)
 	{
-		for (auto& command: m_commands)
+		if (m_args[0] == command->name())
 		{
-			if (m_args[0] == command->name())
-			{
-				m_args.erase(m_args.begin());
-				CommandlineCommand::ReturnStatus status = command->parse(m_args);
+			m_args.erase(m_args.begin());
+			const CommandlineCommand::ReturnStatus status = command->parse(m_args);
 
-				if (status != CommandlineCommand::ReturnStatus::CMD_OK)
-					m_quit = true;
-			}
+			if (status != CommandlineCommand::ReturnStatus::CMD_OK)
+				m_quit = true;
 		}
-	}
-	catch (const CLI::ParseError& e)
-	{
-		std::cerr << "ERROR: " << e.what() << std::endl;
 	}
 }
 
@@ -163,7 +130,7 @@ void CommandLineParser::printHelp() const
 	}
 	std::cout << "\n  * has its own --help\n\n";
 
-	std::cout << m_app.help() << std::endl;
+	std::cout << "Options:\n" << glzcli::help<TopOpts>() << std::endl;
 }
 
 bool CommandLineParser::runWithoutGUI() const
@@ -178,27 +145,27 @@ bool CommandLineParser::exitApplication() const
 
 const std::string& CommandLineParser::getScreenshotPath() const
 {
-	return m_screenshotPath;
+	return m_top.screenshot;
 }
 
 int CommandLineParser::getScreenshotDelayMs() const
 {
-	return m_screenshotDelayMs;
+	return m_top.screenshot_delay;
 }
 
 const std::string& CommandLineParser::getUiSnapshotPath() const
 {
-	return m_uiSnapshotPath;
+	return m_top.ui_snapshot;
 }
 
 const std::string& CommandLineParser::getUiSnapshotFormat() const
 {
-	return m_uiSnapshotFormat;
+	return m_top.ui_snapshot_format;
 }
 
 const std::string& CommandLineParser::getAgentInstanceId() const
 {
-	return m_agentInstanceId;
+	return m_top.agent_instance;
 }
 
 bool CommandLineParser::hasError() const
