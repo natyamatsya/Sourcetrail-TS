@@ -1,6 +1,10 @@
-# Design: structural UI snapshot (Qt introspection)
+# Design: structural UI introspection + control (Qt)
 
-A third read-path for the agent, alongside the two we have:
+A structural read-path for the agent (the *snapshot*), plus its symmetric *sender* that
+drives targeted effects on elements addressed in that same tree (see
+[Structural control](#structural-control--the-sender-side) below).
+
+The snapshot is a third read-path, alongside the two we have:
 
 | Path | What it gives | Source |
 |---|---|---|
@@ -134,6 +138,76 @@ A snapshot is point-in-time. For a dynamic UI, push change signals instead of po
 install a `QAccessible::installUpdateHandler(...)` or an event filter, and emit a
 lightweight "structure changed" event (on `st.agent.events`) so the agent re-snapshots on
 demand. Reuses the existing event-observer pattern.
+
+## Structural control — the sender side
+
+The snapshot is the *reader*; its natural counterpart is a *sender* that causes targeted
+effects on specific elements. They are **symmetric**: the snapshot exposes, per node, the
+`actions` it supports — the sender invokes one of those actions on a node *addressed in
+the same tree*. "Read what you can do, then do it." This is exactly what a UI framework
+does internally (route an event/signal to a widget by identity); here an external agent
+drives it over the contract.
+
+### Addressing an element (the selector)
+
+A snapshot is point-in-time; the tree may shift before the action lands. So an element is
+addressed by a **re-resolvable selector**, never a pointer:
+
+- Each snapshot node carries a `ref`: a path of `{role, name, index}` steps
+  (`index` = the nth sibling matching that role+name), optionally **anchored** at the
+  nearest ancestor with a unique `objectName`. The app re-walks the live tree and resolves
+  it. Role+name paths survive unrelated reordering; the objectName anchor makes them rock-
+  solid (this is what the Phase-D `objectName` hygiene pass buys).
+- A raw child-index path (`roots[0]/3/1`) is emitted too as a fast exact-match fallback.
+
+### Three mechanisms, mirroring the three snapshot sources
+
+| Snapshot exposes | Sender uses | For |
+|---|---|---|
+| `actions` (QAccessibleActionInterface) | **`doAction(name)`** | buttons, checkboxes, menu items, list/tree rows, scrollbars, combos — normalized, and works for model/view items + QML |
+| invokable methods (QMetaObject) | **`QMetaObject::invokeMethod`** | app-specific slots/`Q_INVOKABLE` with no accessible action — precise, code-level |
+| geometry (`rect`) | **synthesized `QMouseEvent`/`QKeyEvent`** posted to the widget at a point | custom-painted widgets, and the **QGraphicsScene graph** (items aren't QObjects) — literal event delivery, the lowest level |
+
+Preference order is top-to-bottom: the **accessible action** is the safe, normalized
+default (and the snapshot already told the agent which names are valid); method invocation
+and synthesized events are escape hatches for the long tail.
+
+### Command contract (FlatBuffers)
+
+```fbs
+table PathStep  { role: string; name: string; index: uint32; }
+table ElementRef { object_name: string; path: [PathStep]; }   // anchor + steps
+
+table InvokeAction   { target: ElementRef; action: string; text: string; }  // primary
+table InvokeMethod   { target: ElementRef; method: string; args: [string]; } // gated
+table SendInputEvent { target: ElementRef; kind: InputKind; x: int32; y: int32; key: string; } // gated
+```
+
+Add each to the `Command` union; each replies with a `CommandResult` and, act-and-observe,
+a fresh snapshot (or a diff) so the agent sees the effect. Resolution failures are data,
+not errors: `ok=false` with `"element not found: <ref>"` or `"action not supported"`.
+
+### App side
+
+A `lib_gui` helper `QtUiControl` (sibling of `QtUiSnapshot`): `resolve(ElementRef)` re-walks
+from `QApplication::topLevelWidgets()` to the `QAccessibleInterface` / `QObject` / `QWidget`,
+then `invokeAction` / `invokeMethod` / `sendInputEvent`. Runs on the **GUI thread** via the
+same `ui()` hop as the snapshot. `AgentControlController` handles the new commands exactly
+like the existing ones.
+
+### Two tiers of control (this doesn't replace the semantic commands)
+
+- **Tier 1 — semantic `Command`s** (`ActivateNode`, `LoadProject`, `ActivateTab`, …):
+  curated, robust, mapped to `Message<T>` dispatches. The default and preferred path.
+- **Tier 2 — structural `InvokeAction`**: generic, accessibility-normalized; the long tail
+  of UI the semantic commands don't cover.
+- **Tier 3 — `InvokeMethod` / `SendInputEvent`**: powerful escape hatches (arbitrary slot
+  invocation, synthetic input) — **capability-gated and logged**; off unless explicitly
+  enabled for a trusted session.
+
+Net: the agent reads the tree (snapshot), sees each element's actions, and drives targeted
+effects by addressing elements in that same tree — with a graceful fall from normalized
+accessible actions down to raw event delivery.
 
 ## References / prior art
 
