@@ -204,9 +204,12 @@ things on top, added here (not a parallel C++ command hierarchy):
   (`grab()` → encode → publish, with ADR-0002 chunking) and wrap the channels in an MCP
   bridge exposing the tools + `find_element`. First end-to-end agent-driven session.
 - **Phase D — broaden.** Grow the command union and `UiState` schema; add the
-  `objectName`/`QAccessible` hygiene pass; add a golden-state test mode that replays a
-  command script and diffs `UiState` (regression harness — also de-risks the stdexec
-  migration, see `ROADMAP_STDEXEC_MIGRATION.md`).
+  `objectName`/`QAccessible` hygiene pass; add the **structural UI snapshot** (Qt
+  meta-object / accessibility tree → JSON, so the agent can navigate *any* widget/action,
+  not just curated commands) — see [`DESIGN_AGENT_UI_SNAPSHOT.md`](DESIGN_AGENT_UI_SNAPSHOT.md);
+  add a golden-state test mode that replays a command script and diffs `UiState`
+  (regression harness — also de-risks the stdexec migration, see
+  `ROADMAP_STDEXEC_MIGRATION.md`).
 
 Each phase is independently useful and testable; Phase A alone unlocks screenshot-based
 verification of UI changes in CI.
