@@ -312,25 +312,42 @@ bool ConfigManager::load(const std::shared_ptr<TextAccess> textAccess)
 	if (text.find("<?xml") != std::string::npos)
 	{
 		TiXmlDocument doc;
-		const char* pTest = doc.Parse(text.c_str(), nullptr, TIXML_ENCODING_UTF8);
-		if (pTest != nullptr)
+		doc.Parse(text.c_str(), nullptr, TIXML_ENCODING_UTF8);
+		// TiXmlDocument::Parse() returns a non-null pointer even when parsing aborts
+		// on malformed markup (e.g. a mismatched tag), so it cannot be used to detect
+		// errors. Check Error() instead, otherwise a broken config silently parses as
+		// an empty tree and every setting falls back to its default without warning.
+		if (doc.Error())
 		{
-			TiXmlHandle docHandle(&doc);
-			TiXmlNode* rootNode = docHandle.FirstChild("config").ToNode();
-			if (rootNode == nullptr)
-			{
-				LOG_ERROR("No rootelement 'config' in the configfile");
-				return false;
-			}
-			for (TiXmlNode* childNode = rootNode->FirstChild(); childNode;
-				 childNode = childNode->NextSibling())
-			{
-				parseSubtree(childNode, "");
-			}
+			LOG_ERROR(
+				"Failed to parse XML config at row " + std::to_string(doc.ErrorRow()) +
+				", column " + std::to_string(doc.ErrorCol()) + ": " + doc.ErrorDesc());
+			return false;
 		}
-		else
+
+		TiXmlHandle docHandle(&doc);
+		TiXmlNode* rootNode = docHandle.FirstChild("config").ToNode();
+		if (rootNode == nullptr)
 		{
-			LOG_ERROR("Unable to load XML file.");
+			LOG_ERROR("No rootelement 'config' in the configfile");
+			return false;
+		}
+		const bool rootHasChildren = (rootNode->FirstChild() != nullptr);
+		for (TiXmlNode* childNode = rootNode->FirstChild(); childNode;
+			 childNode = childNode->NextSibling())
+		{
+			parseSubtree(childNode, "");
+		}
+		// TiXml silently truncates the tree on some malformed markup (e.g. a
+		// mismatched closing tag) without setting Error(), which would otherwise
+		// leave every setting at its default with no indication why. Treat a
+		// non-empty <config> that yields no values as a parse failure.
+		if (rootHasChildren && m_values.empty())
+		{
+			LOG_ERROR(
+				"XML config has content but parsed to zero values; the file is likely "
+				"malformed (e.g. a mismatched tag). All settings would fall back to "
+				"their defaults.");
 			return false;
 		}
 	}
