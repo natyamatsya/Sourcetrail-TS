@@ -5,6 +5,7 @@
 	"dependencies": [
 		"cli11",
 		"flatbuffers",
+		"glaze",
 		"nlohmann-json",
 		"sqlite3",
 		"sqlpp23",

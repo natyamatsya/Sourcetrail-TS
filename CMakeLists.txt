@@ -395,6 +395,14 @@ add_library(External_lib_nlohmann_json INTERFACE)
 target_link_libraries(External_lib_nlohmann_json INTERFACE nlohmann_json::nlohmann_json)
 target_compile_features(External_lib_nlohmann_json INTERFACE cxx_std_17)
 
+# glaze (compile-time reflection + JSON) --------------------------------------------
+
+find_package(glaze CONFIG REQUIRED)
+message(STATUS "Found glaze ${glaze_VERSION}")
+
+add_library(External_lib_glaze INTERFACE)
+target_link_libraries(External_lib_glaze INTERFACE glaze::glaze)
+
 # Rust crates via Corrosion ----------------------------------------------------
 # Fetched here (before src/external and src/lib) so the imported turso_shim
 # static-lib target exists when those subdirectories link against it. The Rust
