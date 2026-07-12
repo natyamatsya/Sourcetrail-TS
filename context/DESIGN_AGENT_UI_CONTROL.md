@@ -193,7 +193,7 @@ only** as a distinct event; leave INFO/debug in the file log.
 ### Schema — `LogEvent` (a new `Event` arm)
 
 ```fbs
-enum LogLevel : byte { Warning = 0, Error = 1 }   // INFO is never sent
+enum LogLevel : byte { Info = 0, Warning = 1, Error = 2 }   // Info only if widened (SetLogLevel)
 table LogEvent {
     level:    LogLevel;
     message:  string;
@@ -233,11 +233,25 @@ publishing a `LogEvent` just queues — it can't recurse into the route.
 
 - **Connected-only.** Skip the encode+publish unless `events.recv_count() > 0`; with no
   agent attached the drain is a no-op, so logging stays free.
-- **Level.** Default `Warning|Error`. A `SetLogLevel { mask }` command lets an agent widen
-  (to INFO) for a debugging session or narrow to errors — a runtime knob, not a rebuild.
+- **Level.** Default `Warning`+above; adjustable at runtime via the `SetLogLevel` command
+  (below) — a knob, not a rebuild.
 - **Backpressure.** The broadcast ring is bounded (256 elements). Cap the drain per tick
   and coalesce consecutive duplicates (`"…" ×N`) so a log storm can't starve domain
   events; drop-with-a-counter beats blocking the message thread.
+
+### `SetLogLevel` command
+
+```fbs
+table SetLogLevel { min_level: LogLevel = Warning; }   // forward this level and above
+```
+
+A new `Command` arm (append-only). **Threshold** semantics, not a raw bitmask: `min_level`
+maps to the `Logger::LogLevelMask` the controller sets on its `AgentLogger` —
+`Error → LOG_ERRORS`, `Warning → LOG_WARNINGS|LOG_ERRORS`, `Info → LOG_ALL`. Handled
+inline in the controller (it owns the logger), *not* dispatched as a `Message`; it acks
+via `CommandResult` like any other command. Widening to `Info` is how an agent turns the
+firehose on for one debugging session; the controller resets to `Warning` on
+`startListening()` so a session never inherits a previous agent's verbosity.
 
 ### Bridge
 
@@ -249,7 +263,54 @@ polls; the smoke client can print them inline.
 
 Self-contained — schema arm + `AgentLogger` + drain + one command; no dependency on the
 frame or snapshot work. Fits **Phase D** (broadening the event/command vocabulary). Ship
-the `Warning|Error` slice first; `SetLogLevel` widening and coalescing are follow-ons.
+the `Warning`+above slice first; `SetLogLevel` widening and coalescing are follow-ons.
+
+## Per-element screenshots (`CaptureElement`)
+
+`GetFrame` grabs the whole main window (or the graph canvas); `get_snapshot` gives the
+structural tree, where every node already carries an `ElementRef` *and* its `rect`. The
+missing piece is a *visual* view of one element — "show me just this button / cell /
+graph node". Add a command that screenshots a single element by its `ElementRef`:
+
+```fbs
+table CaptureElement { ref: ElementRef; format: FrameFormat = Png; }  // -> FrameEnvelope on st.agent.frames
+```
+
+A new `Command` arm (append-only). The reply reuses the **frames channel** and
+`FrameEnvelope` — an element capture and a whole-window frame are the same kind of
+payload, so they share one transport and its ADR-0002 chunking. Two append-only fields on
+`FrameEnvelope` let it correlate and self-describe (both wire-compatible additions):
+
+```fbs
+// appended to FrameEnvelope:
+request_id: uint64;      // 0 for a GetFrame stream; the command id for CaptureElement
+element:    ElementRef;  // echoed for CaptureElement; empty for whole-window frames
+```
+
+`width`/`height` become the element's pixel size; `view` stays the containing view.
+
+### Resolving a ref to pixels
+
+`CaptureElement` must turn an `ElementRef` back into a live widget — the **same resolver
+`InvokeAction` needs** to dispatch an action to a target (whichever lands first introduces
+it): walk the QAccessible/QObject tree `QtUiSnapshot` builds and match by `object_name` +
+`path` (role/name/index). Then:
+
+- The element *is* / backs a `QWidget` (`QAccessibleInterface::object()` → `QWidget`):
+  `widget->grab()`.
+- A sub-element with no `QWidget` of its own (menu item, table cell, graph node): grab the
+  containing top-level widget and crop to the element's `QAccessibleInterface::rect()`
+  mapped into that widget's coordinates; for `QGraphicsItem`s, render the scene region.
+
+Capture runs on the **GUI thread** — the same `ui()` hop the snapshot already uses
+(`grab()`/`render()` are GUI-only) — then encode (`QPixmap` → PNG via `QBuffer`), chunk,
+and publish the `FrameEnvelope`(s), after a `CommandResult` ack. Failure modes ack
+`ok=false`: element not found, not visible, or zero-size rect. Offscreen is fine —
+`grab()` works under `QT_QPA_PLATFORM=offscreen` (same path as `--screenshot`).
+
+This closes the loop with the snapshot: **get_snapshot → pick an element (ref + actions +
+rect) → `CaptureElement(ref)` to see it, or `InvokeAction(ref)` to act on it.** Fits
+**Phase D** alongside the snapshot/structural-control work.
 
 ## Why not lean on Layers 2/3 here
 
