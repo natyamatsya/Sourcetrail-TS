@@ -180,6 +180,50 @@ things on top, added here (not a parallel C++ command hierarchy):
   `CommandResult` (`ok=false`, message `"rejected: ..."`) — e.g. `search` while
   `NoProject`. The FSM is what makes gating possible.
 
+## Protocol handshake & versioning
+
+Two version layers meet at the bridge, and only one was covered before this section:
+
+- **MCP wire protocol** (client ↔ `sourcetrail-mcp`): negotiated by rmcp
+  (`ProtocolVersion::LATEST` in `get_info`). Handled.
+- **Agent-control protocol** (bridge ↔ app, FlatBuffers): had **no version stamp**.
+  It relied purely on append-only union compatibility plus "unknown command"
+  soft-degradation. The dangerous direction is a **newer bridge → older app**: the
+  bridge sends a `Command` arm the old app's union doesn't know, and it silently
+  no-ops. This is exactly the scenario a user hits with several checkouts of
+  differing ages driven by one registered server (see the multi-checkout notes).
+
+**The stamp — one source of truth per checkout.** `agent_common.fbs` defines
+`enum ProtocolVersion : uint { Current = 1 }`. Because the same `.fbs` is compiled
+into *both* the C++ app (`fb::ProtocolVersion_Current`) and the Rust bridge
+(`protocol::AGENT_PROTOCOL_VERSION = fb::ProtocolVersion::Current.0`), a checkout
+bakes its own value into both ends. A runtime *difference* therefore means the two
+were built from different checkouts. **Bump `Current` whenever a schema arm is added.**
+
+**The handshake — `GetInfo` → `AppInfo`.** On connect the bridge issues `GetInfo`
+(a `Command` arm) and the app replies with an `AppInfo` event on `st.agent.events`,
+correlated by `request_id` like `CommandResult`/`Settled`. `AppInfo` carries the
+app's `protocol_version`, `app_version` (`Version::toDisplayString`), `build_id`
+(reserved — no git hash compiled in yet), `instance_id`, and a reserved
+`capabilities` list (future *precise* feature negotiation — the command names the
+app supports, so the bridge degrades by capability rather than guessing from an int).
+Reusing the events channel avoids a sixth shm segment.
+
+**The policy — warn, keep working** (not a hard fail; append-only compat means most
+skew still works):
+
+- `bridge == app` → healthy, silent.
+- `bridge > app` → **warn** to stderr and record `skew: app_older`; commands added
+  after the app's version are the only casualty.
+- `bridge < app` → `skew: app_newer` (forward-compatible), no warning.
+- **app predates the handshake** (rejects `GetInfo` as unknown) → treated as
+  `app_older` with a note; detected by catching the `CommandResult(ok=false)` for the
+  handshake's `request_id`.
+
+The handshake is **best-effort**: it never fails `connect` (a down or old app must
+still allow read-only `status`). The result is surfaced via `status()` (`protocol`
+field) and the `get_instance_info` MCP tool, so a stale checkout is diagnosable.
+
 ## Observation & synchrony — the act-and-observe contract
 
 A command's **ack is not its effect.** `handleCommand` runs on the message-processing

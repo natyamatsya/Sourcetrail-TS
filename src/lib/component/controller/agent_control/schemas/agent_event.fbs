@@ -47,6 +47,21 @@ table LogEvent {
     line:     uint32;
 }
 
+// Handshake reply to a GetInfo command, correlated by request_id. Carries the app's
+// agent-control protocol version (ProtocolVersion.Current from its schema copy) plus
+// human-facing build identity. The bridge compares protocol_version against its own
+// compiled-in value to detect skew. capabilities is reserved for future precise
+// feature negotiation (the command names the app supports). See
+// DESIGN_AGENT_UI_CONTROL.md (Protocol handshake).
+table AppInfo {
+    request_id:       uint64;
+    protocol_version: uint;     // the app's ProtocolVersion.Current
+    app_version:      string;   // Sourcetrail version (Version::toDisplayString)
+    build_id:         string;   // git commit / build hash (reserved)
+    instance_id:      string;   // the app's --agent-instance label
+    capabilities:     [string]; // reserved: supported command names
+}
+
 union Event {
     NodesActivated,
     EdgeActivated,
@@ -63,6 +78,7 @@ union Event {
     CommandResult,
     Settled,
     LogEvent,
+    AppInfo,
 }
 
 // One message on `st.agent.events`. `seq` is a per-session monotonic counter so a

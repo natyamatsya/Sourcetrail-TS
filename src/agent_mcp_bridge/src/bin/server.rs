@@ -255,6 +255,11 @@ impl SourcetrailServer {
         ok_json(self.mgr.call(move |m| m.get_or_attach(&a.instance)?.bridge().get_ui_state()).await?)
     }
 
+    #[tool(description = "Report the connect-time protocol handshake for an instance: the bridge's and app's agent-control protocol versions, the app's version/build/instance id, and the computed skew (match / app_older / app_newer). Use to diagnose a stale or mismatched checkout — app_older means commands this bridge added won't be understood.")]
+    async fn get_instance_info(&self, Parameters(a): Parameters<InstanceArg>) -> Result<CallToolResult, McpError> {
+        ok_json(self.mgr.call(move |m| Ok(m.get_or_attach(&a.instance)?.bridge().handshake())).await?)
+    }
+
     #[tool(
         description = "Poll app events since a cursor. Returns {events, latest_seq}; pass latest_seq back as since_seq (start at 0). Events include AppStateChanged, IndexingStarted/Progress/Finished, NodesActivated, FileActivated, SearchCompleted, ErrorCountChanged, StatusChanged, TabsChanged, CommandResult, and (after set_log_filter) LogEvent. Use to await a transition (e.g. app_state -> Ready) instead of re-polling get_ui_state. A seq jump beyond the returned events means some were dropped — poll more often."
     )]

@@ -59,10 +59,24 @@ fn finish(
     b.finished_data().to_vec()
 }
 
+/// This bridge's agent-control protocol version, compiled in from the shared schema
+/// (`ProtocolVersion.Current`). Compared against the app's value in the handshake
+/// (`GetInfo` -> `AppInfo`) to detect skew — a difference means the two were built
+/// from different checkouts. See DESIGN_AGENT_UI_CONTROL.md (Protocol handshake).
+pub const AGENT_PROTOCOL_VERSION: u32 = fb::ProtocolVersion::Current.0;
+
 pub fn get_ui_state(request_id: u64) -> Vec<u8> {
     let mut b = FlatBufferBuilder::new();
     let c = fb::GetUiState::create(&mut b, &fb::GetUiStateArgs {});
     finish(b, request_id, fb::Command::GetUiState, c.as_union_value())
+}
+
+/// Handshake request. The app replies with an `AppInfo` event (correlated by
+/// request_id) carrying its protocol version + build identity.
+pub fn get_info(request_id: u64) -> Vec<u8> {
+    let mut b = FlatBufferBuilder::new();
+    let c = fb::GetInfo::create(&mut b, &fb::GetInfoArgs {});
+    finish(b, request_id, fb::Command::GetInfo, c.as_union_value())
 }
 
 pub fn get_snapshot(request_id: u64, object_tree: bool) -> Vec<u8> {
@@ -236,6 +250,7 @@ pub enum Incoming {
     AppStateChanged(i8),
     TabsChanged(Value),
     Settled { request_id: u64 },
+    AppInfo { request_id: u64, protocol_version: u32, app_version: String, build_id: String, instance_id: String },
     Other(&'static str),
 }
 
@@ -272,6 +287,16 @@ pub fn parse_event(bytes: &[u8]) -> Result<(u64, Incoming)> {
         }
         fb::Event::Settled => {
             Incoming::Settled { request_id: env.event_as_settled().unwrap().request_id() }
+        }
+        fb::Event::AppInfo => {
+            let a = env.event_as_app_info().unwrap();
+            Incoming::AppInfo {
+                request_id: a.request_id(),
+                protocol_version: a.protocol_version(),
+                app_version: a.app_version().unwrap_or_default().to_string(),
+                build_id: a.build_id().unwrap_or_default().to_string(),
+                instance_id: a.instance_id().unwrap_or_default().to_string(),
+            }
         }
         other => Incoming::Other(other.variant_name().unwrap_or("Unknown")),
     };
@@ -362,6 +387,16 @@ pub fn event_to_json(bytes: &[u8]) -> Result<Value> {
             m.insert("log_file".into(), json!(e.file().unwrap_or_default()));
             m.insert("function".into(), json!(e.function().unwrap_or_default()));
             m.insert("log_line".into(), json!(e.line()));
+        }
+        fb::Event::AppInfo => {
+            let e = env.event_as_app_info().unwrap();
+            m.insert("request_id".into(), json!(e.request_id()));
+            m.insert("protocol_version".into(), json!(e.protocol_version()));
+            m.insert("app_version".into(), json!(e.app_version().unwrap_or_default()));
+            m.insert("build_id".into(), json!(e.build_id().unwrap_or_default()));
+            m.insert("instance_id".into(), json!(e.instance_id().unwrap_or_default()));
+            let caps: Vec<&str> = e.capabilities().map(|v| v.iter().collect()).unwrap_or_default();
+            m.insert("capabilities".into(), json!(caps));
         }
         // IndexingStarted (empty) and any future arms: type tag only.
         _ => {}
@@ -743,6 +778,58 @@ mod tests {
         let v = event_to_json(b.finished_data()).unwrap();
         assert_eq!(v["type"], "Settled");
         assert_eq!(v["request_id"], 9);
+    }
+
+    #[test]
+    fn get_info_command_and_app_info_event_roundtrip() {
+        // The command carries no fields beyond its id.
+        let bytes = get_info(3);
+        let env = flatbuffers::root::<fb::CommandEnvelope>(&bytes).unwrap();
+        assert_eq!(env.request_id(), 3);
+        assert_eq!(env.command_type(), fb::Command::GetInfo);
+
+        // The handshake reply: build an AppInfo event and decode it both ways.
+        let mut b = FlatBufferBuilder::new();
+        let app_version = b.create_string("2025.1.42");
+        let build_id = b.create_string("deadbeef");
+        let instance_id = b.create_string("main-abc1234");
+        let a = fb::AppInfo::create(
+            &mut b,
+            &fb::AppInfoArgs {
+                request_id: 3,
+                protocol_version: AGENT_PROTOCOL_VERSION,
+                app_version: Some(app_version),
+                build_id: Some(build_id),
+                instance_id: Some(instance_id),
+                capabilities: None,
+            },
+        );
+        let env = fb::EventEnvelope::create(
+            &mut b,
+            &fb::EventEnvelopeArgs {
+                seq: 11,
+                timestamp_ms: 0,
+                event_type: fb::Event::AppInfo,
+                event: Some(a.as_union_value()),
+            },
+        );
+        b.finish(env, None);
+        // correlation decode (handshake path)
+        match parse_event(b.finished_data()).unwrap().1 {
+            Incoming::AppInfo { request_id, protocol_version, app_version, instance_id, .. } => {
+                assert_eq!(request_id, 3);
+                assert_eq!(protocol_version, AGENT_PROTOCOL_VERSION);
+                assert_eq!(app_version, "2025.1.42");
+                assert_eq!(instance_id, "main-abc1234");
+            }
+            other => panic!("expected AppInfo, got {other:?}"),
+        }
+        // general decode (poll_events path)
+        let v = event_to_json(b.finished_data()).unwrap();
+        assert_eq!(v["type"], "AppInfo");
+        assert_eq!(v["request_id"], 3);
+        assert_eq!(v["protocol_version"], AGENT_PROTOCOL_VERSION);
+        assert_eq!(v["build_id"], "deadbeef");
     }
 
     #[test]

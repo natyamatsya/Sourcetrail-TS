@@ -65,6 +65,7 @@ bool AgentControlController::isListening() const
 #include "NodeTypeSet.h"
 #include "RefreshInfo.h"
 #include "StorageAccess.h"
+#include "Version.h"
 #include "logging.h"
 
 #include "Bookmark.h"
@@ -494,7 +495,7 @@ struct AgentControlController::Impl
 			type == fb::Command_LoadProject || type == fb::Command_GetUiState ||
 			type == fb::Command_GetSnapshot || type == fb::Command_InvokeAction ||
 			type == fb::Command_CaptureElement || type == fb::Command_QueryUi ||
-			type == fb::Command_SetLogFilter);
+			type == fb::Command_SetLogFilter || type == fb::Command_GetInfo);
 		if (needsProject && computeAppState() == fb::AppState_NoProject)
 		{
 			emitResult(requestId, false, "rejected: no project loaded");
@@ -559,6 +560,9 @@ struct AgentControlController::Impl
 			break;
 		case fb::Command_GetUiState:
 			publishUiState(requestId);
+			break;
+		case fb::Command_GetInfo:
+			publishAppInfo(requestId);
 			break;
 		case fb::Command_GetSnapshot:
 			if (const auto* c = envelope->command_as_GetSnapshot())
@@ -717,6 +721,25 @@ struct AgentControlController::Impl
 			publishEvent(builder, fb::Event_Settled, fb::CreateSettled(builder, requestId).Union());
 		}
 		m_pendingSettle.clear();
+	}
+
+	// Handshake reply: publish an `AppInfo` event carrying this build's protocol
+	// version + identity, so the bridge can detect skew (see the Protocol handshake
+	// section in DESIGN_AGENT_UI_CONTROL.md). protocol_version is compiled in from
+	// this checkout's schema (fb::ProtocolVersion_Current).
+	void publishAppInfo(std::uint64_t requestId)
+	{
+		flatbuffers::FlatBufferBuilder builder;
+		const auto appVersion = builder.CreateString(Version::getApplicationVersion().toDisplayString());
+		const auto buildId = builder.CreateString(std::string());	// reserved: no git hash compiled in yet
+		const auto instanceId = builder.CreateString(m_instanceId);
+		fb::AppInfoBuilder ib(builder);
+		ib.add_request_id(requestId);
+		ib.add_protocol_version(static_cast<std::uint32_t>(fb::ProtocolVersion_Current));
+		ib.add_app_version(appVersion);
+		ib.add_build_id(buildId);
+		ib.add_instance_id(instanceId);
+		publishEvent(builder, fb::Event_AppInfo, ib.Finish().Union());
 	}
 
 	// The deterministic "what's on screen", assembled from StorageAccess + the

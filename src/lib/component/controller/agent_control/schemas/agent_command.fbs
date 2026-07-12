@@ -42,6 +42,12 @@ table QueryUi { jsonpath: string; }
 // min_level). min_level is the floor across both sources. See DESIGN_AGENT_UI_CONTROL.md.
 table SetLogFilter { qt_rules: string; event_pattern: string; min_level: LogLevel = Warning; }
 
+// Handshake: reply is an AppInfo event on st.agent.events, correlated by request_id,
+// carrying the app's ProtocolVersion.Current + build identity. The bridge issues this
+// on connect to detect protocol skew (see DESIGN_AGENT_UI_CONTROL.md). Like GetUiState
+// it also emits a CommandResult ack.
+table GetInfo { }                                                                     // -> AppInfo event on st.agent.events
+
 // Requests: the reply is published on another channel, correlated by request_id.
 table GetUiState { }                                                                  // -> UiStateEnvelope on st.agent.state
 table GetFrame   { format: FrameFormat = Png; max_width: uint32 = 0; }                // -> FrameEnvelope on st.agent.frames
@@ -65,6 +71,7 @@ union Command {
     CaptureElement,
     QueryUi,
     SetLogFilter,
+    GetInfo,
 }
 
 // One message on `st.agent.cmd`. `request_id` correlates a later reply

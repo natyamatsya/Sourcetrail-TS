@@ -73,6 +73,13 @@ enum AppState : byte {
     Busy      = 4    // processing (reserved)
 }
 
+// Agent-control protocol version. Bump `Current` whenever a schema arm is added
+// (a new Command/Event). The handshake (GetInfo -> AppInfo) carries it so the bridge
+// can detect skew against the app. Both the C++ app and the Rust bridge compile in
+// the value from THIS schema copy, so a runtime difference means the two were built
+// from different checkouts. See DESIGN_AGENT_UI_CONTROL.md (Protocol handshake).
+enum ProtocolVersion : uint { Current = 1 }
+
 enum RefreshMode : byte { None = 0, UpdatedFiles = 1, AllFiles = 2 }
 
 enum ViewKind : byte { Unknown = 0, Graph = 1, Code = 2, Search = 3, Bookmarks = 4, Errors = 5 }

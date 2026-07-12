@@ -30,6 +30,11 @@ pub struct Bridge {
     // explicit drain) is recorded here as self-describing JSON, so poll_events can
     // replay it by seq cursor. Bounded; oldest dropped.
     event_log: VecDeque<Value>,
+    // Result of the connect-time protocol handshake (GetInfo -> AppInfo): the app's
+    // protocol version + build identity and the computed skew, or an error note if
+    // the handshake couldn't complete (app down / too old). Best-effort — never
+    // fails connect. Surfaced via status() and the get_instance_info tool.
+    handshake: Value,
 }
 
 impl Bridge {
@@ -54,7 +59,99 @@ impl Bridge {
             .with_context(|| format!("connect {}", channel::frames(instance)))?;
         let snapshot = Route::connect(&channel::snapshot(instance), Mode::Receiver)
             .with_context(|| format!("connect {}", channel::snapshot(instance)))?;
-        Ok(Self { cmd, cmd_name, events, state, frames, snapshot, next_id: 1, event_log: VecDeque::new() })
+        let mut bridge = Self {
+            cmd,
+            cmd_name,
+            events,
+            state,
+            frames,
+            snapshot,
+            next_id: 1,
+            event_log: VecDeque::new(),
+            handshake: Value::Null,
+        };
+        // Best-effort handshake: detect protocol skew up front, but never fail the
+        // connect over it (status/read-only use must work against a down or old app).
+        bridge.handshake = bridge.perform_handshake();
+        Ok(bridge)
+    }
+
+    /// The connect-time handshake result (see the `handshake` field).
+    pub fn handshake(&self) -> Value {
+        self.handshake.clone()
+    }
+
+    /// Issue `GetInfo` and await the app's `AppInfo`, computing protocol skew.
+    /// Returns a JSON summary regardless of outcome (never propagates an error, so
+    /// connect always succeeds). On a `bridge > app` skew, warns to stderr — the
+    /// dangerous direction, where commands the older app lacks are silently ignored.
+    fn perform_handshake(&mut self) -> Value {
+        let id = self.next_id();
+        if let Err(e) = self.send(&protocol::get_info(id)) {
+            // App not listening yet (or gone). Not fatal; report and move on.
+            return json!({ "ok": false, "error": e.to_string() });
+        }
+        let bridge_ver = protocol::AGENT_PROTOCOL_VERSION;
+        let deadline = Instant::now() + OP_TIMEOUT;
+        while Instant::now() < deadline {
+            let buf = match self.events.recv(Some(RECV_POLL_MS)) {
+                Ok(b) => b,
+                Err(e) => return json!({ "ok": false, "error": e.to_string() }),
+            };
+            if buf.is_empty() {
+                continue;
+            }
+            self.record_event(buf.data());
+            let (_seq, incoming) = match protocol::parse_event(buf.data()) {
+                Ok(v) => v,
+                Err(_) => continue,
+            };
+            match incoming {
+                Incoming::AppInfo { request_id, protocol_version, app_version, build_id, instance_id }
+                    if request_id == id =>
+                {
+                    let skew = if protocol_version == bridge_ver {
+                        "match"
+                    } else if bridge_ver > protocol_version {
+                        "app_older"
+                    } else {
+                        "app_newer"
+                    };
+                    if skew == "app_older" {
+                        eprintln!(
+                            "sourcetrail-mcp: protocol skew — app v{protocol_version} < bridge \
+                             v{bridge_ver}; commands added after v{protocol_version} will be ignored"
+                        );
+                    }
+                    return json!({
+                        "ok": true,
+                        "bridge_protocol_version": bridge_ver,
+                        "app_protocol_version": protocol_version,
+                        "app_version": app_version,
+                        "build_id": build_id,
+                        "instance_id": instance_id,
+                        "skew": skew,
+                    });
+                }
+                // The app rejected GetInfo as unknown → it predates the handshake, so
+                // its protocol is older than any version that defines GetInfo.
+                Incoming::CommandResult { request_id, ok: false, .. } if request_id == id => {
+                    eprintln!(
+                        "sourcetrail-mcp: protocol skew — app predates the handshake (GetInfo \
+                         unsupported); newer commands may be ignored"
+                    );
+                    return json!({
+                        "ok": true,
+                        "bridge_protocol_version": bridge_ver,
+                        "app_protocol_version": Value::Null,
+                        "skew": "app_older",
+                        "note": "app predates the handshake (GetInfo unsupported)",
+                    });
+                }
+                _ => {}
+            }
+        }
+        json!({ "ok": false, "error": "handshake timed out (no AppInfo)" })
     }
 
     fn next_id(&mut self) -> u64 {
@@ -216,6 +313,7 @@ impl Bridge {
     pub fn status(&self) -> Value {
         json!({
             "app_listening": self.cmd.recv_count() >= 1,
+            "protocol": self.handshake,
             "channel_receivers": {
                 "cmd": self.cmd.recv_count(),        // = app listeners
                 "events": self.events.recv_count(),  // reply channels: count includes this bridge
