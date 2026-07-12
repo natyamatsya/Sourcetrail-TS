@@ -220,10 +220,17 @@ message(STATUS "Found FlatBuffers ${flatbuffers_VERSION}")
 add_library(External_lib_flatbuffers INTERFACE)
 target_link_libraries(External_lib_flatbuffers INTERFACE flatbuffers::flatbuffers)
 
+# stdexec (senders/receivers) — found here, before thoth-ipc, so libipc's own
+# find_package(stdexec) inside add_subdirectory reuses the same (fully-defined)
+# export set. Finding it in both scopes otherwise trips stdexec's config
+# re-entrancy check ("some but not all targets already defined").
+find_package(stdexec CONFIG REQUIRED)
+message(STATUS "Found stdexec (provides STDEXEC::stdexec)")
+
 # Agent-control channel — declared here (before thoth-ipc) because it decides
 # whether libipc is built with its optional async-receive (senders/receivers)
 # layer below. Consumed again in src/lib for the schema/compile-definition wiring.
-option(SOURCETRAIL_AGENT_CONTROL "Build the agent-UI control channel (thoth-ipc + FlatBuffers)" OFF)
+option(SOURCETRAIL_AGENT_CONTROL "Build the agent-UI control channel (thoth-ipc + FlatBuffers)" ON)
 
 # thoth-ipc ----------------------------------------------------------------------
 # Built from the vendored git submodule (submodules/thoth-ipc) rather than a
@@ -382,10 +389,7 @@ target_compile_features(External_lib_tomlplusplus INTERFACE cxx_std_17)
 find_package(nlohmann_json CONFIG REQUIRED)
 message(STATUS "Found nlohmann_json ${nlohmann_json_VERSION}")
 
-# stdexec (senders/receivers) ---------------------------------------------------------
-
-find_package(stdexec CONFIG REQUIRED)
-message(STATUS "Found stdexec (provides STDEXEC::stdexec)")
+# stdexec (senders/receivers) is found earlier, before the thoth-ipc block.
 
 add_library(External_lib_nlohmann_json INTERFACE)
 target_link_libraries(External_lib_nlohmann_json INTERFACE nlohmann_json::nlohmann_json)
