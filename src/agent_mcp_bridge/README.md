@@ -1,8 +1,8 @@
 # sourcetrail-mcp — agent MCP bridge
 
-A standalone process that exposes a running Sourcetrail (`--agent-control`) as an
-**MCP server**, so an AI agent (Claude Code, or any MCP client) can drive and
-observe the UI. It translates MCP tool calls ⇄ FlatBuffers over thoth-ipc shared
+A standalone process that exposes a running Sourcetrail (agent control is on by
+default in agent builds) as an **MCP server**, so an AI agent (Claude Code, or any
+MCP client) can drive and observe the UI. It translates MCP tool calls ⇄ FlatBuffers over thoth-ipc shared
 memory — no filesystem for transport.
 
 Design: [`context/DESIGN_AGENT_MCP_BRIDGE.md`](../../context/DESIGN_AGENT_MCP_BRIDGE.md).

@@ -28,11 +28,6 @@ CommandLineParser::CommandLineParser(const std::string& version)
 		"--screenshot-delay",
 		m_screenshotDelayMs,
 		"Delay in ms before the --screenshot capture, to let a project render (default 2000)");
-	m_app.add_flag(
-		"--agent-control,!--no-agent-control",
-		m_agentControl,
-		"Agent-UI control channel (thoth-ipc). On by default; pass --no-agent-control to "
-		"disable. No-op unless built with SOURCETRAIL_AGENT_CONTROL");
 	m_app.add_option(
 		"--agent-instance",
 		m_agentInstanceId,
@@ -179,11 +174,6 @@ const std::string& CommandLineParser::getScreenshotPath() const
 int CommandLineParser::getScreenshotDelayMs() const
 {
 	return m_screenshotDelayMs;
-}
-
-bool CommandLineParser::getAgentControlEnabled() const
-{
-	return m_agentControl;
 }
 
 const std::string& CommandLineParser::getAgentInstanceId() const

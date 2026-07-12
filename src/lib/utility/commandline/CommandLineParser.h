@@ -48,11 +48,8 @@ public:
 	const std::string& getScreenshotPath() const;
 	int getScreenshotDelayMs() const;
 
-	// Activate the agent-UI control channel at startup (no-op unless the build has
-	// SOURCETRAIL_AGENT_CONTROL). See context/DESIGN_AGENT_UI_CONTROL.md.
-	bool getAgentControlEnabled() const;
-
-	// Instance id namespacing the agent-control channels (empty = default).
+	// Instance id namespacing the agent-control channels (empty = default). The
+	// channel itself is always active in agent builds (SOURCETRAIL_AGENT_CONTROL).
 	const std::string& getAgentInstanceId() const;
 
 private:
@@ -75,7 +72,6 @@ private:
 
 	std::string m_screenshotPath;
 	int m_screenshotDelayMs = 2000;
-	bool m_agentControl = true;
 	std::string m_agentInstanceId;
 
 	std::string m_errorString;

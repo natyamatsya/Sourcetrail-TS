@@ -104,8 +104,9 @@ impl InstanceManager {
             bail!("instance '{id}' already exists (kill it first or pass a distinct id)");
         }
 
+        // Agent control is always on in agent builds; only the namespace is passed.
         let mut cmd = Command::new(&opts.bin);
-        cmd.arg("--agent-control").arg("--agent-instance").arg(&id);
+        cmd.arg("--agent-instance").arg(&id);
         if opts.headless {
             cmd.env("QT_QPA_PLATFORM", "offscreen");
         }

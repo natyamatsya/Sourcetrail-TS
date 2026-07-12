@@ -197,7 +197,7 @@ int main(int argc, char* argv[])
 			&viewFactory,
 			&networkFactory,
 			&execution::qt::Schedulers::getInstance(),
-			commandLineParser.getAgentControlEnabled(),
+			/*enableAgentControl*/ true,	// always on in agent builds; namespace via --agent-instance
 			commandLineParser.getAgentInstanceId());
 		
 		[[maybe_unused]]

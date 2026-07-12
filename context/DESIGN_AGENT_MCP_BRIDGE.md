@@ -20,8 +20,9 @@ over thoth-ipc. It adds no new capability to the app — it translates and corre
         thoth-ipc shared memory + FlatBuffers (no filesystem)
 ```
 
-The bridge is a **standalone process**, not part of Sourcetrail. The app just runs with
-`--agent-control`; the bridge connects to the same named channels. This keeps the app
+The bridge is a **standalone process**, not part of Sourcetrail. The app just runs (agent
+control is on by default in agent builds); the bridge connects to the same named channels.
+This keeps the app
 free of MCP/JSON-RPC, lets the bridge restart independently, and matches how MCP clients
 expect to launch a server (a stdio subprocess).
 
@@ -135,7 +136,7 @@ several apps side by side and compare them (baseline vs candidate).
   `get_or_attach` lazily attaches on first use, preserving the simple "just call a tool"
   UX for the default app.
 - **Start/kill/list tools.** `start_instance{bin, id?, project?, headless?}` spawns
-  `Sourcetrail --agent-control --agent-instance <id>` (offscreen by default), polls until
+  `Sourcetrail --agent-instance <id>` (agent control is always on; offscreen by default), polls until
   its channels are ready (failing fast if the child exits), optionally loads a project, and
   returns the id. `kill_instance{id}` and `list_instances` manage the pool.
 - **Git-labelled ids.** If `start_instance` is given no `id`, it derives one from the
@@ -171,7 +172,7 @@ of its own — single source of truth stays in the app.
 - **Launch:** Claude Code spawns the bridge as a stdio MCP server (entry in
   `.mcp.json` / client config). The bridge connects to the fixed channel names on start.
 - **App not running / not connected:** channel connect fails or commands time out → tools
-  return a clear "Sourcetrail not reachable (is it running with --agent-control?)" error;
+  return a clear "Sourcetrail not reachable (is it running, agent build?)" error;
   the bridge retries the connection lazily.
 - **Single instance (MVP):** channel names are fixed (`st.agent.cmd`, …). Multiple app
   instances would namespace channels by an instance id passed to the bridge as an arg —
