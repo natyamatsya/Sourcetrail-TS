@@ -132,49 +132,76 @@ void TaskScheduler::terminateRunningTasks()
 void TaskScheduler::processTasks()
 {
 	using enum Task::TaskState;
-	std::lock_guard<std::mutex> lock(m_tasksMutex);
 
-	while (m_taskRunners.size())
+	bool processedAny = false;
+	std::function<void()> idleHandler;
 	{
-		std::shared_ptr<TaskRunner> runner = m_taskRunners.front();
-		Task::TaskState state = STATE_RUNNING;
+		std::lock_guard<std::mutex> lock(m_tasksMutex);
 
+		while (m_taskRunners.size())
 		{
-			m_tasksMutex.unlock();
-			
-			[[maybe_unused]]
-			ScopedFunctor functor([this]()
-			{
-				m_tasksMutex.lock();
-			});
+			processedAny = true;
+			std::shared_ptr<TaskRunner> runner = m_taskRunners.front();
+			Task::TaskState state = STATE_RUNNING;
 
-			while (true)
 			{
+				m_tasksMutex.unlock();
+
+				[[maybe_unused]]
+				ScopedFunctor functor([this]()
 				{
-					std::lock_guard<std::mutex> lock(m_loopMutex);
+					m_tasksMutex.lock();
+				});
 
-					if (!m_loopIsRunning || m_terminateRunningTasks)
+				while (true)
+				{
 					{
-						runner->terminate();
+						std::lock_guard<std::mutex> lock(m_loopMutex);
+
+						if (!m_loopIsRunning || m_terminateRunningTasks)
+						{
+							runner->terminate();
+							break;
+						}
+					}
+
+					state = runner->update(m_schedulerId);
+					if (state != STATE_RUNNING)
+					{
 						break;
 					}
 				}
+			}
 
-				state = runner->update(m_schedulerId);
-				if (state != STATE_RUNNING)
-				{
-					break;
-				}
+			m_taskRunners.pop_front();
+
+			if (state == STATE_HOLD)
+			{
+				m_taskRunners.push_back(runner);
 			}
 		}
 
-		m_taskRunners.pop_front();
+		m_terminateRunningTasks = false;
 
-		if (state == STATE_HOLD)
+		// Scheduler-idle edge: the runner queue drained after doing work. Copy the
+		// handler under the lock; invoke it below, outside the lock (it may publish
+		// an event). Runs on this scheduler thread — the same one the message
+		// handlers ran on — so the handler sees their effects and shares their
+		// thread. It must not push tasks (the drain loop has already broken).
+		if (processedAny)
 		{
-			m_taskRunners.push_back(runner);
+			idleHandler = m_idleHandler;
 		}
 	}
 
-	m_terminateRunningTasks = false;
+	if (idleHandler)
+	{
+		idleHandler();
+	}
+}
+
+void TaskScheduler::setIdleHandler(std::function<void()> handler)
+{
+	std::lock_guard<std::mutex> lock(m_tasksMutex);
+	m_idleHandler = std::move(handler);
 }

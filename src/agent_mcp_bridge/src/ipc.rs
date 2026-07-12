@@ -166,6 +166,35 @@ impl Bridge {
         Ok((id, msg))
     }
 
+    /// Read events (recording all meanwhile) until the `Settled` for `request_id`
+    /// — the queue-idle barrier that means the command's synchronous fan-out has
+    /// drained, so the next read observes the *settled* state.
+    fn await_settled(&mut self, request_id: u64, timeout: Duration) -> Result<()> {
+        let deadline = Instant::now() + timeout;
+        while Instant::now() < deadline {
+            let buf = self.events.recv(Some(RECV_POLL_MS)).context("recv event")?;
+            if buf.is_empty() {
+                continue;
+            }
+            self.record_event(buf.data());
+            if let Incoming::Settled { request_id: rid } = protocol::parse_event(buf.data())?.1 {
+                if rid == request_id {
+                    return Ok(());
+                }
+            }
+        }
+        bail!("timed out awaiting Settled for request {request_id}")
+    }
+
+    /// Full act-and-observe: send, await the ack (reject → error), await `Settled`
+    /// so the effect has landed, then read the settled `UiState`. The general
+    /// contract for mutating commands — no per-command race handling.
+    fn act_and_observe(&mut self, label: &str, build: impl FnOnce(u64) -> Vec<u8>) -> Result<Value> {
+        let (id, _) = self.send_and_ack(label, OP_TIMEOUT, build)?;
+        self.await_settled(id, OP_TIMEOUT)?;
+        self.get_ui_state()
+    }
+
     // --- operations (act + observe) -----------------------------------------
 
     /// Read-only channel health — no side effects. `cmd`'s receiver count is the
@@ -264,20 +293,15 @@ impl Bridge {
     }
 
     pub fn activate_node(&mut self, serialized_name: Option<&str>, node_id: u64) -> Result<Value> {
-        self.send_and_ack("activate_node", OP_TIMEOUT, |id| {
-            protocol::activate_node(id, serialized_name, node_id)
-        })?;
-        self.get_ui_state()
+        self.act_and_observe("activate_node", |id| protocol::activate_node(id, serialized_name, node_id))
     }
 
     pub fn activate_file(&mut self, path: &str) -> Result<Value> {
-        self.send_and_ack("activate_file", OP_TIMEOUT, |id| protocol::activate_file(id, path))?;
-        self.get_ui_state()
+        self.act_and_observe("activate_file", |id| protocol::activate_file(id, path))
     }
 
     pub fn activate_tab(&mut self, tab_id: u64) -> Result<Value> {
-        self.send_and_ack("activate_tab", OP_TIMEOUT, |id| protocol::activate_tab(id, tab_id))?;
-        self.get_ui_state()
+        self.act_and_observe("activate_tab", |id| protocol::activate_tab(id, tab_id))
     }
 
     /// Loading kicks off indexing; return on ack and let the caller poll

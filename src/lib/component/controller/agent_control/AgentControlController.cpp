@@ -46,6 +46,10 @@ bool AgentControlController::isListening() const
 #include "Graph.h"
 #include "Id.h"
 #include "MessageListener.h"
+#include "MessageQueue.h"
+#include "TabIds.h"
+#include "TaskManager.h"
+#include "TaskScheduler.h"
 #include "NameHierarchy.h"
 #include "Node.h"
 #include "NodeTypeSet.h"
@@ -287,10 +291,16 @@ struct AgentControlController::Impl
 		m_reader.start(
 			[](std::vector<std::uint8_t> bytes) { MessageAgentCommand(std::move(bytes)).dispatch(); },
 			m_schedulers->io());
+		// Settle barrier: message handlers run as tasks on the app TaskScheduler
+		// (Application sets setSendMessagesAsTasks(true)), so a command's fan-out
+		// completes when *that* scheduler goes idle — not when the message buffer
+		// drains. Hook it there; flushSettled emits Settled once things quiesce.
+		TaskManager::getScheduler(TabIds::app())->setIdleHandler([this]() { flushSettled(); });
 	}
 
 	void stop()
 	{
+		TaskManager::getScheduler(TabIds::app())->setIdleHandler(nullptr);	// before we tear down
 		m_reader.stop();
 		m_uiScope.request_stop();
 		stdexec::sync_wait(m_uiScope.on_empty());	 // join any in-flight snapshot capture
@@ -484,6 +494,36 @@ struct AgentControlController::Impl
 			return;
 		}
 		emitResult(requestId, true);
+		// Emit `Settled { requestId }` once the fan-out this command dispatched has
+		// drained (queue-idle). handleCommand runs *inside* the drain (as the
+		// MessageAgentCommand listener), so the effects are enqueued but not yet
+		// processed; the idle handler flushes this once they are.
+		m_pendingSettle.push_back(requestId);
+	}
+
+	// Publish a `Settled` for every accepted command whose fan-out has now drained.
+	// Runs on the app TaskScheduler thread (its idle handler) — the same thread the
+	// message-handler tasks ran on, so m_pendingSettle needs no synchronization and
+	// the effects are visible here.
+	void flushSettled()
+	{
+		if (m_pendingSettle.empty())
+		{
+			return;
+		}
+		// A command's effects hop message-buffer -> task: if messages are still
+		// queued, effects are mid-flight — wait for a later idle when they've all
+		// been routed and run (i.e. the whole system has quiesced).
+		if (MessageQueue::getInstance()->hasMessagesQueued())
+		{
+			return;
+		}
+		for (const std::uint64_t requestId: m_pendingSettle)
+		{
+			flatbuffers::FlatBufferBuilder builder;
+			publishEvent(builder, fb::Event_Settled, fb::CreateSettled(builder, requestId).Union());
+		}
+		m_pendingSettle.clear();
 	}
 
 	// The deterministic "what's on screen", assembled from StorageAccess + the
@@ -641,6 +681,7 @@ struct AgentControlController::Impl
 	bool m_indexing = false;
 	fb::AppState m_appState = fb::AppState_NoProject;
 	std::uint64_t m_eventSeq = 0;
+	std::vector<std::uint64_t> m_pendingSettle;	// accepted request_ids awaiting a queue-idle Settled
 
 	bool m_listening = false;
 };

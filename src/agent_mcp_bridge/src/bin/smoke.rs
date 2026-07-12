@@ -49,6 +49,7 @@ fn main() -> Result<()> {
     let out = match cmd {
         Some("status") => bridge.status(),
         Some("events") => bridge.poll_events(arg2.parse().unwrap_or(0)),
+        Some("activate") => bridge.activate_node(None, arg2.parse().unwrap_or(0))?,
         Some("load") => load_and_wait(&mut bridge, arg2)?,
         Some("search") => bridge.search(arg2)?,
         Some("find") => bridge.find_element(arg2)?,

@@ -26,6 +26,13 @@ table TabsChanged      { tabs: [TabInfo]; }                     // MessageTabsCh
 // UiStateEnvelope on st.agent.state.
 table CommandResult { request_id: uint64; ok: bool; message: string; }
 
+// The act-and-observe barrier: emitted once the synchronous message-bus fan-out a
+// command triggered has drained (the queue went idle after it), so a subsequent
+// GetUiState observes the *settled* state. Correlated by request_id. Asynchronous
+// work (indexing, project load) settles at its terminal event
+// (AppStateChanged/IndexingFinished) instead. See DESIGN_AGENT_UI_CONTROL.md.
+table Settled { request_id: uint64; }
+
 union Event {
     NodesActivated,
     EdgeActivated,
@@ -40,6 +47,7 @@ union Event {
     AppStateChanged,
     TabsChanged,
     CommandResult,
+    Settled,
 }
 
 // One message on `st.agent.events`. `seq` is a per-session monotonic counter so a

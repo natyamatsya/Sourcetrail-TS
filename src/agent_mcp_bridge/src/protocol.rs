@@ -128,6 +128,7 @@ pub enum Incoming {
     SearchCompleted(Value),
     AppStateChanged(i8),
     TabsChanged(Value),
+    Settled { request_id: u64 },
     Other(&'static str),
 }
 
@@ -161,6 +162,9 @@ pub fn parse_event(bytes: &[u8]) -> Result<(u64, Incoming)> {
             let tabs: Vec<Value> =
                 t.tabs().map(|v| v.iter().map(tab_info_json).collect()).unwrap_or_default();
             Incoming::TabsChanged(json!(tabs))
+        }
+        fb::Event::Settled => {
+            Incoming::Settled { request_id: env.event_as_settled().unwrap().request_id() }
         }
         other => Incoming::Other(other.variant_name().unwrap_or("Unknown")),
     };
@@ -233,6 +237,9 @@ pub fn event_to_json(bytes: &[u8]) -> Result<Value> {
             m.insert("request_id".into(), json!(e.request_id()));
             m.insert("ok".into(), json!(e.ok()));
             m.insert("message".into(), json!(e.message().unwrap_or_default()));
+        }
+        fb::Event::Settled => {
+            m.insert("request_id".into(), json!(env.event_as_settled().unwrap().request_id()));
         }
         // IndexingStarted (empty) and any future arms: type tag only.
         _ => {}
@@ -587,6 +594,31 @@ mod tests {
         let v = event_to_json(b.finished_data()).unwrap();
         assert_eq!(v["type"], "AppStateChanged");
         assert_eq!(v["state"], "Ready");
+    }
+
+    #[test]
+    fn settled_event_parses() {
+        let mut b = FlatBufferBuilder::new();
+        let s = fb::Settled::create(&mut b, &fb::SettledArgs { request_id: 9 });
+        let env = fb::EventEnvelope::create(
+            &mut b,
+            &fb::EventEnvelopeArgs {
+                seq: 5,
+                timestamp_ms: 0,
+                event_type: fb::Event::Settled,
+                event: Some(s.as_union_value()),
+            },
+        );
+        b.finish(env, None);
+        // correlation decode (await_settled path)
+        match parse_event(b.finished_data()).unwrap().1 {
+            Incoming::Settled { request_id } => assert_eq!(request_id, 9),
+            other => panic!("expected Settled, got {other:?}"),
+        }
+        // general decode (poll_events path)
+        let v = event_to_json(b.finished_data()).unwrap();
+        assert_eq!(v["type"], "Settled");
+        assert_eq!(v["request_id"], 9);
     }
 
     #[test]

@@ -202,14 +202,28 @@ next goes idle after the command. The agent loop becomes **send → await `Comma
 await `Settled(request_id)` → read `UiState`** — deterministic, no polling, no per-command
 race handling.
 
-### Producing `Settled` — a queue-idle signal
+### Producing `Settled` — a scheduler-idle signal
 
-`MessageQueue` exposes `hasMessagesQueued()` but no *idle notification*. Add one: after the
-loop processes a message and finds the queue empty, broadcast a lightweight
-`MessageFinishedProcessing` (or an in-process idle callback the controller registers). The
-controller tracks the in-flight `request_id`; on the first idle *after* it dispatched that
-command's messages, it emits `Settled { request_id }` and clears it. One bool + one id,
-idempotent.
+Subtlety discovered in implementation: the app runs message handlers **as tasks**
+(`Application` sets `MessageQueue::setSendMessagesAsTasks(true)`, so `sendMessageAsTask`
+wraps each listener's `handleMessageBase` in a `TaskLambda` on the app `TaskScheduler`). So
+a command's fan-out completes when *that scheduler* quiesces — **not** when the message
+buffer drains. Hooking `MessageQueue` idle fires too early (observed: `activate_node`
+returned before the activation task ran → empty `active_nodes`).
+
+The barrier therefore watches the **app `TaskScheduler` idle** edge, guarded by
+`MessageQueue::hasMessagesQueued()` (a command's effects hop buffer → task, so if messages
+are still queued the fan-out is mid-flight — wait for a later idle). The idle handler runs
+on the scheduler thread — the same one the handlers ran on — so the controller's state
+cache and `m_pendingSettle` need no extra synchronization. The controller tracks the
+in-flight `request_id`; on the first quiesced idle it emits `Settled { request_id }`.
+
+**This hooks the legacy `TaskScheduler`, which
+[`ROADMAP_STDEXEC_MIGRATION.md`](ROADMAP_STDEXEC_MIGRATION.md) is retiring.** Its "next
+increment" — route message-handler execution onto the stdexec `ISchedulers` — is the clean
+end state: with handlers running as senders on a scheduler, `Settled` becomes a natural
+`async_scope`/completion signal and the idle-handler hook goes away. The scheduler-idle
+hook is a correct **interim** that the migration supersedes.
 
 Nuance — *asynchronous* effects (indexing, project load) outlive the queue drain, so they
 don't "settle" at queue-idle; they settle at their domain event. `Settled` therefore means
