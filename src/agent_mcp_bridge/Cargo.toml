@@ -40,7 +40,11 @@ mcp = ["dep:rmcp", "dep:tokio", "dep:serde", "dep:tracing", "dep:tracing-subscri
 [dependencies]
 # thoth-ipc Rust binding (package `thoth-ipc`, crate `libipc`). Same flatbuffers
 # pin as the binding, so there is a single flatbuffers version in the graph.
-thoth-ipc = { path = "../../submodules/thoth-ipc/rust/libipc" }
+# `notify`: the Rust sender signals the per-channel readiness handle on send,
+# byte-exact with C++ LIBIPC_NOTIFY_FD, so a send() wakes the app's C++
+# async_recv reactor (macOS uses libnotify). Without it, commands land in the
+# ring but the reader never wakes.
+thoth-ipc = { path = "../../submodules/thoth-ipc/rust/libipc", features = ["notify"] }
 flatbuffers = "=25.12.19"
 serde_json = "1"
 anyhow = "1"

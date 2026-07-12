@@ -5,6 +5,7 @@
 //!   sourcetrail-mcp-smoke                  # get_ui_state
 //!   sourcetrail-mcp-smoke search <query>   # search
 //!   sourcetrail-mcp-smoke find   <query>   # find_element (ranked)
+//!   sourcetrail-mcp-smoke snapshot         # get_snapshot (accessibility tree)
 
 use agent_mcp_bridge::Bridge;
 
@@ -15,6 +16,7 @@ fn main() -> anyhow::Result<()> {
     let out = match args.get(1).map(String::as_str) {
         Some("search") => bridge.search(args.get(2).map(String::as_str).unwrap_or(""))?,
         Some("find") => bridge.find_element(args.get(2).map(String::as_str).unwrap_or(""))?,
+        Some("snapshot") => bridge.get_snapshot(false)?,
         _ => bridge.get_ui_state()?,
     };
 
