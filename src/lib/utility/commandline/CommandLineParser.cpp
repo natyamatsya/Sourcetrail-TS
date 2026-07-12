@@ -29,10 +29,10 @@ CommandLineParser::CommandLineParser(const std::string& version)
 		m_screenshotDelayMs,
 		"Delay in ms before the --screenshot capture, to let a project render (default 2000)");
 	m_app.add_flag(
-		"--agent-control",
+		"--agent-control,!--no-agent-control",
 		m_agentControl,
-		"Start the agent-UI control channel (thoth-ipc); no-op unless built with "
-		"SOURCETRAIL_AGENT_CONTROL");
+		"Agent-UI control channel (thoth-ipc). On by default; pass --no-agent-control to "
+		"disable. No-op unless built with SOURCETRAIL_AGENT_CONTROL");
 	m_app.allow_extras();
 
 	m_commands.push_back(std::make_unique<commandline::CommandlineCommandConfig>(this));

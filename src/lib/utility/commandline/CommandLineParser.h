@@ -72,7 +72,7 @@ private:
 
 	std::string m_screenshotPath;
 	int m_screenshotDelayMs = 2000;
-	bool m_agentControl = false;
+	bool m_agentControl = true;
 
 	std::string m_errorString;
 };
