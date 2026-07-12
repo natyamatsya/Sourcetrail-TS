@@ -36,6 +36,12 @@ table CaptureElement { target: ElementRef; format: FrameFormat = Png; include_pr
 // roots are the matched elements (each with its ref) — no full-tree transfer.
 table QueryUi { jsonpath: string; }
 
+// Configure agent log forwarding. qt_rules drives QLoggingCategory::setFilterRules
+// (controls Qt emission at the source). event_pattern is a regex the sink matches
+// against "category: message" before raising a LogEvent (empty = forward all at/above
+// min_level). min_level is the floor across both sources. See DESIGN_AGENT_UI_CONTROL.md.
+table SetLogFilter { qt_rules: string; event_pattern: string; min_level: LogLevel = Warning; }
+
 // Requests: the reply is published on another channel, correlated by request_id.
 table GetUiState { }                                                                  // -> UiStateEnvelope on st.agent.state
 table GetFrame   { format: FrameFormat = Png; max_width: uint32 = 0; }                // -> FrameEnvelope on st.agent.frames
@@ -58,6 +64,7 @@ union Command {
     InvokeAction,
     CaptureElement,
     QueryUi,
+    SetLogFilter,
 }
 
 // One message on `st.agent.cmd`. `request_id` correlates a later reply

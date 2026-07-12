@@ -20,7 +20,10 @@ bool AgentControlController::isListening() const
 
 #include <chrono>
 #include <cstdint>
+#include <atomic>
 #include <functional>
+#include <mutex>
+#include <regex>
 #include <string>
 #include <thread>
 #include <vector>
@@ -46,8 +49,12 @@ bool AgentControlController::isListening() const
 #include "FilePath.h"
 #include "Graph.h"
 #include "Id.h"
+#include "LogManager.h"
+#include "LogMessage.h"
+#include "Logger.h"
 #include "MessageListener.h"
 #include "MessageQueue.h"
+#include "QtLogBridge.h"
 #include "QtUiControl.h"
 #include "QtUiQuery.h"
 #include "TabIds.h"
@@ -92,6 +99,30 @@ std::string agentChannel(const std::string& instanceId, const char* base)
 	return instanceId.empty() ? (std::string("st.agent.") + base)
 							  : ("st.agent." + instanceId + "." + base);
 }
+
+// Forwards Sourcetrail LogManager messages to a level-tagged sink (0/1/2). The
+// sink applies the agent filter and publishes a LogEvent. See forwardLog().
+class AgentLogger: public Logger
+{
+public:
+	using Sink = std::function<void(int level, const LogMessage&)>;
+	explicit AgentLogger(Sink sink): Logger("AgentLogger"), m_sink(std::move(sink)) {}
+
+private:
+	void logInfo(const LogMessage& message) override
+	{
+		m_sink(0, message);
+	}
+	void logWarning(const LogMessage& message) override
+	{
+		m_sink(1, message);
+	}
+	void logError(const LogMessage& message) override
+	{
+		m_sink(2, message);
+	}
+	Sink m_sink;
+};
 
 utility::qt::SnapshotFormat toSnapshotFormat(fb::SnapshotFormat format)
 {
@@ -300,10 +331,30 @@ struct AgentControlController::Impl
 		// completes when *that* scheduler goes idle — not when the message buffer
 		// drains. Hook it there; flushSettled emits Settled once things quiesce.
 		TaskManager::getScheduler(TabIds::app())->setIdleHandler([this]() { flushSettled(); });
+
+		// Log forwarding: capture both LogManager (app) and Qt logging into one
+		// LogEvent stream. Off until the agent opts in via SetLogFilter.
+		m_agentLogger = std::make_shared<AgentLogger>([this](int level, const LogMessage& message) {
+			forwardLog(level, fb::LogSource_App, "", message.message, message.getFileName(),
+				message.functionName, static_cast<int>(message.line));
+		});
+		LogManager::getInstance()->addLogger(m_agentLogger);
+		utility::qt::installQtLogSink([this](int level, const char* category, const std::string& message,
+											 const char* file, const char* function, int line) {
+			forwardLog(level, fb::LogSource_Qt, category != nullptr ? category : "", message,
+				file != nullptr ? file : "", function != nullptr ? function : "", line);
+		});
 	}
 
 	void stop()
 	{
+		utility::qt::installQtLogSink(nullptr);
+		utility::qt::setQtLogRules("");	// restore default Qt verbosity
+		if (m_agentLogger)
+		{
+			LogManager::getInstance()->removeLogger(m_agentLogger);
+			m_agentLogger.reset();
+		}
 		TaskManager::getScheduler(TabIds::app())->setIdleHandler(nullptr);	// before we tear down
 		m_reader.stop();
 		m_uiScope.request_stop();
@@ -411,7 +462,8 @@ struct AgentControlController::Impl
 		const bool needsProject = !(
 			type == fb::Command_LoadProject || type == fb::Command_GetUiState ||
 			type == fb::Command_GetSnapshot || type == fb::Command_InvokeAction ||
-			type == fb::Command_CaptureElement || type == fb::Command_QueryUi);
+			type == fb::Command_CaptureElement || type == fb::Command_QueryUi ||
+			type == fb::Command_SetLogFilter);
 		if (needsProject && computeAppState() == fb::AppState_NoProject)
 		{
 			emitResult(requestId, false, "rejected: no project loaded");
@@ -585,6 +637,41 @@ struct AgentControlController::Impl
 				}));
 			return;
 		}
+		case fb::Command_SetLogFilter:
+		{
+			const auto* c = envelope->command_as_SetLogFilter();
+			if (c != nullptr)
+			{
+				if (c->qt_rules() != nullptr)
+				{
+					utility::qt::setQtLogRules(c->qt_rules()->str());
+				}
+				m_logMinLevel.store(static_cast<int>(c->min_level()), std::memory_order_relaxed);
+				const std::string pattern = c->event_pattern() != nullptr ? c->event_pattern()->str() : "";
+				{
+					const std::lock_guard<std::mutex> lock(m_logConfigMutex);
+					if (pattern.empty())
+					{
+						m_logHasPattern = false;
+					}
+					else
+					{
+						try
+						{
+							m_logPattern = std::regex(pattern);
+							m_logHasPattern = true;
+						}
+						catch (const std::regex_error& e)
+						{
+							emitResult(requestId, false, std::string("bad event_pattern: ") + e.what());
+							return;
+						}
+					}
+				}
+				m_logEnabled.store(true, std::memory_order_relaxed);
+			}
+			break;
+		}
 		default:
 			emitResult(requestId, false, "unknown command");
 			return;
@@ -716,6 +803,51 @@ struct AgentControlController::Impl
 		m_stateChannel.send(builder.GetBufferPointer(), builder.GetSize());
 	}
 
+	// The shared log funnel (LogManager + Qt handler both call it, on arbitrary
+	// threads): apply the agent filter and publish a LogEvent. publishEvent is
+	// mutex-serialized; a thread-local guard breaks recursion if the publish path
+	// itself logs.
+	void forwardLog(int level, fb::LogSource source, const std::string& category,
+		const std::string& message, const std::string& file, const std::string& function, int line)
+	{
+		thread_local bool inSink = false;
+		if (inSink || !m_logEnabled.load(std::memory_order_relaxed) ||
+			level < m_logMinLevel.load(std::memory_order_relaxed))
+		{
+			return;
+		}
+		if (m_eventsChannel.recv_count() == 0)
+		{
+			return;	// no agent subscribed — don't pay to encode/publish
+		}
+		{
+			const std::lock_guard<std::mutex> lock(m_logConfigMutex);
+			if (m_logHasPattern && !std::regex_search(category + ": " + message, m_logPattern))
+			{
+				return;
+			}
+		}
+		inSink = true;
+		const struct Reset
+		{
+			bool& flag;
+			~Reset()
+			{
+				flag = false;
+			}
+		} reset{inSink};
+
+		flatbuffers::FlatBufferBuilder builder;
+		const auto cat = builder.CreateString(category);
+		const auto msg = builder.CreateString(message);
+		const auto fil = builder.CreateString(file);
+		const auto fun = builder.CreateString(function);
+		const auto event = fb::CreateLogEvent(
+			builder, static_cast<fb::LogLevel>(level), source, cat, msg, fil, fun,
+			static_cast<std::uint32_t>(line));
+		publishEvent(builder, fb::Event_LogEvent, event.Union());
+	}
+
 	// One FrameEnvelope for a CaptureElement reply, on st.agent.frames. Single
 	// chunk (thoth-ipc fragments large messages itself); correlated by request_id.
 	// Runs on the ui() thread, the sole sender on m_framesChannel.
@@ -805,6 +937,15 @@ struct AgentControlController::Impl
 	fb::AppState m_appState = fb::AppState_NoProject;
 	std::uint64_t m_eventSeq = 0;
 	std::mutex m_eventMutex;	// serializes publishEvent across the app-scheduler + ui() threads
+
+	// Log forwarding (SetLogFilter). Off until the agent opts in; touched from
+	// arbitrary log threads, so config is atomic / mutex-guarded.
+	std::shared_ptr<Logger> m_agentLogger;
+	std::atomic<bool> m_logEnabled{false};
+	std::atomic<int> m_logMinLevel{1};	// 0=Info 1=Warning 2=Error
+	std::mutex m_logConfigMutex;
+	std::regex m_logPattern;
+	bool m_logHasPattern = false;
 	std::vector<std::uint64_t> m_pendingSettle;	// accepted request_ids awaiting a queue-idle Settled
 
 	bool m_listening = false;

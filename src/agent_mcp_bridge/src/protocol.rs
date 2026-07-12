@@ -195,6 +195,23 @@ pub fn query_ui(request_id: u64, jsonpath: &str) -> Vec<u8> {
     finish(b, request_id, fb::Command::QueryUi, c.as_union_value())
 }
 
+/// Build a `SetLogFilter` command. `min_level`: "info" | "warning" | "error".
+pub fn set_log_filter(request_id: u64, qt_rules: &str, event_pattern: &str, min_level: &str) -> Vec<u8> {
+    let mut b = FlatBufferBuilder::new();
+    let qr = b.create_string(qt_rules);
+    let ep = b.create_string(event_pattern);
+    let level = match min_level {
+        "info" => fb::LogLevel::Info,
+        "error" => fb::LogLevel::Error,
+        _ => fb::LogLevel::Warning,
+    };
+    let c = fb::SetLogFilter::create(
+        &mut b,
+        &fb::SetLogFilterArgs { qt_rules: Some(qr), event_pattern: Some(ep), min_level: level },
+    );
+    finish(b, request_id, fb::Command::SetLogFilter, c.as_union_value())
+}
+
 /// Decode a `FrameEnvelope`; returns `(request_id, frame_json)` with the payload
 /// base64-encoded for JSON transport. Single-chunk only (chunk_count == 1).
 pub fn parse_frame(bytes: &[u8]) -> Result<(u64, Value)> {
@@ -332,6 +349,21 @@ pub fn event_to_json(bytes: &[u8]) -> Result<Value> {
         }
         fb::Event::Settled => {
             m.insert("request_id".into(), json!(env.event_as_settled().unwrap().request_id()));
+        }
+        fb::Event::LogEvent => {
+            let e = env.event_as_log_event().unwrap();
+            let level = match e.level().0 {
+                0 => "info",
+                2 => "error",
+                _ => "warning",
+            };
+            m.insert("level".into(), json!(level));
+            m.insert("log_source".into(), json!(if e.source() == fb::LogSource::Qt { "qt" } else { "app" }));
+            m.insert("category".into(), json!(e.category().unwrap_or_default()));
+            m.insert("message".into(), json!(e.message().unwrap_or_default()));
+            m.insert("log_file".into(), json!(e.file().unwrap_or_default()));
+            m.insert("function".into(), json!(e.function().unwrap_or_default()));
+            m.insert("log_line".into(), json!(e.line()));
         }
         // IndexingStarted (empty) and any future arms: type tag only.
         _ => {}
@@ -763,6 +795,51 @@ mod tests {
         assert_eq!(v["width"], 10);
         assert_eq!(v["bytes"], 4);
         assert_eq!(v["image_base64"], "AQIDBA==");
+    }
+
+    #[test]
+    fn set_log_filter_and_log_event_roundtrip() {
+        // command
+        let bytes = set_log_filter(8, "qt.qpa.*=false", "network", "error");
+        let env = flatbuffers::root::<fb::CommandEnvelope>(&bytes).unwrap();
+        assert_eq!(env.command_type(), fb::Command::SetLogFilter);
+        let c = env.command_as_set_log_filter().unwrap();
+        assert_eq!(c.qt_rules().unwrap(), "qt.qpa.*=false");
+        assert_eq!(c.event_pattern().unwrap(), "network");
+        assert_eq!(c.min_level(), fb::LogLevel::Error);
+
+        // LogEvent -> event_to_json
+        let mut b = FlatBufferBuilder::new();
+        let msg = b.create_string("connection failed");
+        let cat = b.create_string("myapp.net");
+        let le = fb::LogEvent::create(
+            &mut b,
+            &fb::LogEventArgs {
+                level: fb::LogLevel::Error,
+                source: fb::LogSource::Qt,
+                category: Some(cat),
+                message: Some(msg),
+                line: 42,
+                ..Default::default()
+            },
+        );
+        let ev = fb::EventEnvelope::create(
+            &mut b,
+            &fb::EventEnvelopeArgs {
+                seq: 3,
+                timestamp_ms: 0,
+                event_type: fb::Event::LogEvent,
+                event: Some(le.as_union_value()),
+            },
+        );
+        b.finish(ev, None);
+        let v = event_to_json(b.finished_data()).unwrap();
+        assert_eq!(v["type"], "LogEvent");
+        assert_eq!(v["level"], "error");
+        assert_eq!(v["log_source"], "qt");
+        assert_eq!(v["category"], "myapp.net");
+        assert_eq!(v["message"], "connection failed");
+        assert_eq!(v["log_line"], 42);
     }
 
     #[test]

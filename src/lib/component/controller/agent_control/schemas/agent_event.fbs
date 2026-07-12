@@ -33,6 +33,20 @@ table CommandResult { request_id: uint64; ok: bool; message: string; }
 // (AppStateChanged/IndexingFinished) instead. See DESIGN_AGENT_UI_CONTROL.md.
 table Settled { request_id: uint64; }
 
+// Forwarded log line — from Sourcetrail's LogManager (source App) or Qt's
+// categorized logging (source Qt, via qInstallMessageHandler). Gated by the agent
+// log filter (SetLogFilter). LogLevel/LogSource live in agent_common.fbs (shared
+// with the SetLogFilter command). See DESIGN_AGENT_UI_CONTROL.md.
+table LogEvent {
+    level:    LogLevel;
+    source:   LogSource;
+    category: string;   // Qt logging category (empty for App logs)
+    message:  string;
+    file:     string;
+    function: string;
+    line:     uint32;
+}
+
 union Event {
     NodesActivated,
     EdgeActivated,
@@ -48,6 +62,7 @@ union Event {
     TabsChanged,
     CommandResult,
     Settled,
+    LogEvent,
 }
 
 // One message on `st.agent.events`. `seq` is a per-session monotonic counter so a

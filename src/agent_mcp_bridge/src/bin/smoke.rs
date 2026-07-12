@@ -53,6 +53,12 @@ fn main() -> Result<()> {
         Some("invoke") => invoke_first(&mut bridge, arg2, args.get(3).map(String::as_str))?,
         Some("capture") => capture_first(&mut bridge, arg2)?,
         Some("query") => bridge.query_ui(arg2)?,
+        // logfilter <min_level> [event_pattern]
+        Some("logfilter") => bridge.set_log_filter(
+            "",
+            args.get(3).map(String::as_str).unwrap_or(""),
+            if arg2.is_empty() { "warning" } else { arg2 },
+        )?,
         Some("load") => load_and_wait(&mut bridge, arg2)?,
         Some("search") => bridge.search(arg2)?,
         Some("find") => bridge.find_element(arg2)?,

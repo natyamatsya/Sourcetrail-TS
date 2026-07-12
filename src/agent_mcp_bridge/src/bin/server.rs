@@ -136,6 +136,28 @@ struct CaptureElementArgs {
 
 #[derive(serde::Deserialize, rmcp::schemars::JsonSchema)]
 #[schemars(crate = "rmcp::schemars")]
+struct SetLogFilterArgs {
+    /// Qt category filter rules (QLoggingCategory::setFilterRules), e.g.
+    /// "qt.qpa.*=false\nmyapp.net.debug=true". Empty leaves Qt emission as-is.
+    #[serde(default)]
+    qt_rules: String,
+    /// Regex matched against "category: message"; only matches raise a LogEvent
+    /// (empty = forward all at/above min_level).
+    #[serde(default)]
+    event_pattern: String,
+    /// Forward floor: "info" | "warning" | "error".
+    #[serde(default = "default_warning")]
+    min_level: String,
+    #[serde(default)]
+    instance: String,
+}
+
+fn default_warning() -> String {
+    "warning".to_string()
+}
+
+#[derive(serde::Deserialize, rmcp::schemars::JsonSchema)]
+#[schemars(crate = "rmcp::schemars")]
 struct PollEventsArgs {
     /// Cursor: return events with seq greater than this. Start at 0; pass the
     /// returned `latest_seq` next time.
@@ -234,10 +256,21 @@ impl SourcetrailServer {
     }
 
     #[tool(
-        description = "Poll app events since a cursor. Returns {events, latest_seq}; pass latest_seq back as since_seq (start at 0). Events include AppStateChanged, IndexingStarted/Progress/Finished, NodesActivated, FileActivated, SearchCompleted, ErrorCountChanged, StatusChanged, TabsChanged, CommandResult. Use to await a transition (e.g. app_state -> Ready) instead of re-polling get_ui_state. A seq jump beyond the returned events means some were dropped — poll more often."
+        description = "Poll app events since a cursor. Returns {events, latest_seq}; pass latest_seq back as since_seq (start at 0). Events include AppStateChanged, IndexingStarted/Progress/Finished, NodesActivated, FileActivated, SearchCompleted, ErrorCountChanged, StatusChanged, TabsChanged, CommandResult, and (after set_log_filter) LogEvent. Use to await a transition (e.g. app_state -> Ready) instead of re-polling get_ui_state. A seq jump beyond the returned events means some were dropped — poll more often."
     )]
     async fn poll_events(&self, Parameters(a): Parameters<PollEventsArgs>) -> Result<CallToolResult, McpError> {
         ok_json(self.mgr.call(move |m| Ok(m.get_or_attach(&a.instance)?.bridge().poll_events(a.since_seq))).await?)
+    }
+
+    #[tool(description = "Enable/configure log forwarding to the event stream. qt_rules controls Qt's category emission (QLoggingCategory filter rules); event_pattern is a regex over 'category: message' gating what raises a LogEvent; min_level (info/warning/error) is the floor. After this, LogEvents appear in poll_events.")]
+    async fn set_log_filter(&self, Parameters(a): Parameters<SetLogFilterArgs>) -> Result<CallToolResult, McpError> {
+        ok_json(
+            self.mgr
+                .call(move |m| {
+                    m.get_or_attach(&a.instance)?.bridge().set_log_filter(&a.qt_rules, &a.event_pattern, &a.min_level)
+                })
+                .await?,
+        )
     }
 
     #[tool(description = "Search the indexed code base; returns matches (text, node_ids, score).")]

@@ -343,6 +343,17 @@ impl Bridge {
         Ok(json!({ "ok": true, "frame": frame }))
     }
 
+    /// Configure log forwarding: `qt_rules` drives Qt's `QLoggingCategory` filter
+    /// (emission control), `event_pattern` is a regex gating which captured lines
+    /// raise a `LogEvent`, `min_level` ("info"/"warning"/"error") is the floor.
+    /// Enables forwarding; observe the `LogEvent`s via `poll_events`.
+    pub fn set_log_filter(&mut self, qt_rules: &str, event_pattern: &str, min_level: &str) -> Result<Value> {
+        let (_, msg) = self.send_and_ack("set_log_filter", OP_TIMEOUT, |id| {
+            protocol::set_log_filter(id, qt_rules, event_pattern, min_level)
+        })?;
+        Ok(json!({ "ok": true, "message": msg }))
+    }
+
     /// Server-side element selection: evaluate `jsonpath` over the UI snapshot in
     /// the app (qt-json-query) and get back a `UiSnapshot` whose roots are the
     /// matched elements — the whole tree never crosses the wire. A bad JSONPath is

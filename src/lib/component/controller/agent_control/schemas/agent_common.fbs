@@ -81,3 +81,8 @@ enum FrameFormat : byte { Png = 0, Jpeg = 1, RawRgba = 2 }
 
 // Structural UI snapshot format (see agent_snapshot.fbs / DESIGN_AGENT_UI_SNAPSHOT.md).
 enum SnapshotFormat : byte { Accessibility = 0, ObjectTree = 1 }
+
+// Log forwarding (LogEvent / SetLogFilter). Level is a floor; source distinguishes
+// Sourcetrail's LogManager from Qt's categorized logging.
+enum LogLevel  : byte { Info = 0, Warning = 1, Error = 2 }
+enum LogSource : byte { App = 0, Qt = 1 }
