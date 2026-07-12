@@ -20,7 +20,6 @@ bool AgentControlController::isListening() const
 
 #include <chrono>
 #include <cstdint>
-#include <exception>
 #include <functional>
 #include <string>
 #include <thread>
@@ -157,19 +156,20 @@ public:
 		m_sink = std::move(sink);
 #if defined(LIBIPC_STDEXEC)
 		// Repeat one async receive until the effect yields true; each completes on
-		// `on`. A received frame yields false (keep receiving); cancellation comes
-		// from the scope's stop token (async_recv completes set_stopped, ending the
-		// loop); a misconfigured-channel error is mapped to true so the loop tears
-		// down instead of spinning.
+		// `on`. async_recv delivers ipc::recv_result (a message, or a recv_errc —
+		// its error channel is pruned per ADR-0001): a message yields false (keep
+		// receiving); an error is logged and yields true (stop, rather than spin).
+		// Cancellation comes from the scope's stop token (async_recv set_stopped).
 		m_scope.spawn(exec::repeat_effect_until(
 			ipc::async_recv(m_route, std::move(on)) |
-			stdexec::then([this](ipc::buff_t buffer) {
-				deliver(buffer);
-				return false;
-			}) |
-			stdexec::let_error([](std::exception_ptr) {
-				LOG_ERROR("agent-control: async_recv error; stopping reader");
-				return stdexec::just(true);
+			stdexec::then([this](ipc::recv_result result) {
+				if (result)
+				{
+					deliver(*result);
+					return false;
+				}
+				LOG_ERROR(ipc::recv_message(result.error()));
+				return true;
 			})));
 #else
 		if (!m_thread.joinable())
