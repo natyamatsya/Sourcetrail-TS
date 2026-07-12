@@ -147,14 +147,39 @@ impl Bridge {
         self.read_snapshot(id, Duration::from_secs(15))
     }
 
+    /// Search has a two-part reply: a `CommandResult` ack (which may reject, e.g.
+    /// no project) and a `SearchCompleted` event carrying the matches. The app runs
+    /// the query on its message thread and emits the result *after* `handleCommand`
+    /// returns, so `SearchCompleted` can arrive after the ack. Read past the ack
+    /// until the matches land, rather than returning on the ack (which raced to an
+    /// empty result).
     pub fn search(&mut self, query: &str) -> Result<Value> {
         let id = self.next_id();
         self.send(&protocol::search(id, query))?;
-        let (ok, msg, matches) = self.await_ack(id, OP_TIMEOUT)?;
-        if !ok {
-            bail!("search rejected: {msg}");
+
+        let deadline = Instant::now() + OP_TIMEOUT;
+        let mut acked = false;
+        while Instant::now() < deadline {
+            let buf = self.events.recv(Some(RECV_POLL_MS)).context("recv event")?;
+            if buf.is_empty() {
+                continue;
+            }
+            let (_seq, incoming) = protocol::parse_event(buf.data())?;
+            match incoming {
+                Incoming::SearchCompleted(v) => return Ok(v),
+                Incoming::CommandResult { request_id: rid, ok, message } if rid == id => {
+                    if !ok {
+                        bail!("search rejected: {message}");
+                    }
+                    acked = true; // accepted — the SearchCompleted event is on its way
+                }
+                _ => {}
+            }
         }
-        Ok(matches.unwrap_or_else(|| json!([])))
+        if acked {
+            bail!("search accepted but no results within {OP_TIMEOUT:?} (query too broad?)");
+        }
+        bail!("timed out awaiting search reply for request {id}")
     }
 
     pub fn activate_node(&mut self, serialized_name: Option<&str>, node_id: u64) -> Result<Value> {

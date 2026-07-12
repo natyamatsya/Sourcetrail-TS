@@ -35,6 +35,11 @@ src/swift_indexer/Sources/SourcetrailSwiftIndexer/GeneratedFromCMake
 # Sourcetrail bookmark-DB WAL sidecars (mirror of the *.srctrl.db-* rule)
 *.srctrl.bm-*
 
+# Turso-shim comparison-mode DBs (generated on project load when
+# SOURCETRAIL_TURSO_COMPARE is on; not source)
+*.turso
+*.turso-wal
+
 # Temporary reference extraction
 /inspiration/download/
 /inspiration/download.zip
