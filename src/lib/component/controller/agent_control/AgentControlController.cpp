@@ -86,6 +86,22 @@ std::string agentChannel(const std::string& instanceId, const char* base)
 							  : ("st.agent." + instanceId + "." + base);
 }
 
+// Wipe any shared-memory segments left behind by a previously-killed instance on
+// this channel namespace, so a fresh start begins with a clean connection count.
+// libipc leaks a peer's receiver registration when it is SIGKILLed (no clean
+// disconnect), and the segment is named + persistent, so reusing the same channel
+// name across runs accumulates phantom receivers (observed connection count 13 on
+// a single live app). The app owns its st.agent[.<id>].* channels — the bridge is
+// a transient client that reconnects — so resetting them on startup is safe and
+// authoritative. Must run before the routes below attach.
+void clearStaleAgentChannels(const std::string& instanceId)
+{
+	for (const char* base : {"cmd", "state", "events", "snapshot"})
+	{
+		ipc::route::clear_storage(agentChannel(instanceId, base).c_str());
+	}
+}
+
 utility::qt::SnapshotFormat toSnapshotFormat(fb::SnapshotFormat format)
 {
 	return format == fb::SnapshotFormat_ObjectTree ? utility::qt::SnapshotFormat::ObjectTree
@@ -647,8 +663,11 @@ struct AgentControlController::Impl
 
 AgentControlController::AgentControlController(
 	StorageAccess* storageAccess, execution::ISchedulers* schedulers, const std::string& instanceId)
-	: m_impl(std::make_unique<Impl>(storageAccess, schedulers, instanceId))
 {
+	// Reset stale shm before the Impl's routes attach (its members connect in the
+	// initializer list, so this cannot move into Impl's own constructor).
+	clearStaleAgentChannels(instanceId);
+	m_impl = std::make_unique<Impl>(storageAccess, schedulers, instanceId);
 }
 
 AgentControlController::~AgentControlController()

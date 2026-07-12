@@ -17,6 +17,7 @@ const OP_TIMEOUT: Duration = Duration::from_secs(5);
 
 pub struct Bridge {
     cmd: Route,
+    cmd_name: String,
     events: Route,
     state: Route,
     #[allow(dead_code)] // Phase C: get_frame reassembly
@@ -35,8 +36,9 @@ impl Bridge {
     /// namespaced by `instance` (see `--agent-instance`). The bridge is the
     /// opposite end of every route: it *sends* commands and *receives* the rest.
     pub fn connect_instance(instance: &str) -> Result<Self> {
-        let cmd = Route::connect(&channel::cmd(instance), Mode::Sender).with_context(|| {
-            format!("connect {} (is Sourcetrail running with --agent-control?)", channel::cmd(instance))
+        let cmd_name = channel::cmd(instance);
+        let cmd = Route::connect(&cmd_name, Mode::Sender).with_context(|| {
+            format!("connect {cmd_name} (is Sourcetrail running with --agent-control?)")
         })?;
         let events = Route::connect(&channel::events(instance), Mode::Receiver)
             .with_context(|| format!("connect {}", channel::events(instance)))?;
@@ -46,7 +48,7 @@ impl Bridge {
             .with_context(|| format!("connect {}", channel::frames(instance)))?;
         let snapshot = Route::connect(&channel::snapshot(instance), Mode::Receiver)
             .with_context(|| format!("connect {}", channel::snapshot(instance)))?;
-        Ok(Self { cmd, events, state, frames, snapshot, next_id: 1 })
+        Ok(Self { cmd, cmd_name, events, state, frames, snapshot, next_id: 1 })
     }
 
     fn next_id(&mut self) -> u64 {
@@ -56,7 +58,17 @@ impl Bridge {
     }
 
     fn send(&mut self, bytes: &[u8]) -> Result<()> {
-        self.cmd.send(bytes, SEND_TIMEOUT_MS).context("send command")?;
+        // `send` returns Ok(false) when no receiver consumed the frame within the
+        // timeout (e.g. the app isn't listening). Surface that as a distinct error
+        // instead of proceeding to a misleading reply-wait timeout downstream.
+        let delivered = self.cmd.send(bytes, SEND_TIMEOUT_MS).context("send command")?;
+        if !delivered {
+            bail!(
+                "command not delivered on {}: no agent-control receiver consumed it \
+                 (is Sourcetrail running and listening on this channel?)",
+                self.cmd_name
+            );
+        }
         Ok(())
     }
 
