@@ -180,6 +180,77 @@ things on top, added here (not a parallel C++ command hierarchy):
   `CommandResult` (`ok=false`, message `"rejected: ..."`) — e.g. `search` while
   `NoProject`. The FSM is what makes gating possible.
 
+## Log event forwarding (WARN/ERROR)
+
+The `events` channel carries *domain* events (status, error counts, indexing,
+app-state). It deliberately does **not** carry the raw diagnostic log — that stream
+(`LOG_INFO` config warnings, etc.) is a firehose whose high-value signals are *already*
+domain events. The one thing an agent otherwise can't see is the detailed text behind a
+failure: `CommandResult` gives a terse `"rejected: ..."`, while the log holds the "why"
+(`"could not load project: ... wrong file ending"`). So forward **warnings and errors
+only** as a distinct event; leave INFO/debug in the file log.
+
+### Schema — `LogEvent` (a new `Event` arm)
+
+```fbs
+enum LogLevel : byte { Warning = 0, Error = 1 }   // INFO is never sent
+table LogEvent {
+    level:    LogLevel;
+    message:  string;
+    // Origin, from LogMessage — lets an agent attribute/dedupe without parsing text:
+    file:     string;    // LogMessage::getFileName()
+    function: string;
+    line:     uint32;
+    logger:   string;    // Logger::getType() of the emitting sink
+}
+```
+
+Appended to `union Event { … , LogEvent }` (append-only: union tags are positional, so a
+new arm at the end is wire-compatible) and rides the existing `EventEnvelope` (`seq` +
+`timestamp_ms`) — late subscribers keep gap detection, and the bridge's `parse_event`
+gains one arm.
+
+### Producer — `AgentLogger : Logger`
+
+`Logger` already has the machinery: a `LogLevelMask` with
+`setLogLevel(LOG_WARNINGS | LOG_ERRORS)` (INFO filtered for free) and the
+`logWarning`/`logError(LogMessage)` overrides. Register one via
+`LogManager::addLogger(...)` on `startListening()`, remove it on stop. `LogMessage`
+supplies everything the schema needs (`message`, `getFileName()`, `functionName`,
+`line`, `time`, `threadId`).
+
+### Threading — the one real constraint
+
+`LOG_*` fires from **any** thread (indexer pool, GUI, message thread), but
+`st.agent.events` is written only from the message-processing thread. So `AgentLogger`
+must not touch the route directly: it enqueues each record onto a mutex'd/lock-free
+queue, and the controller drains it on its own thread (the one that already publishes
+every other event via `publishEvent`) and emits the `LogEvent`s there. All route writes
+stay single-threaded (no new route synchronization), and a `LOG_*` emitted *while*
+publishing a `LogEvent` just queues — it can't recurse into the route.
+
+### Gating — free when unwatched, bounded when watched
+
+- **Connected-only.** Skip the encode+publish unless `events.recv_count() > 0`; with no
+  agent attached the drain is a no-op, so logging stays free.
+- **Level.** Default `Warning|Error`. A `SetLogLevel { mask }` command lets an agent widen
+  (to INFO) for a debugging session or narrow to errors — a runtime knob, not a rebuild.
+- **Backpressure.** The broadcast ring is bounded (256 elements). Cap the drain per tick
+  and coalesce consecutive duplicates (`"…" ×N`) so a log storm can't starve domain
+  events; drop-with-a-counter beats blocking the message thread.
+
+### Bridge
+
+`parse_event` gains a `LogEvent` arm → `Incoming::Log { level, message, … }`. The MCP
+server surfaces it as a notification/`logs` resource an agent subscribes to rather than
+polls; the smoke client can print them inline.
+
+### Phasing
+
+Self-contained — schema arm + `AgentLogger` + drain + one command; no dependency on the
+frame or snapshot work. Fits **Phase D** (broadening the event/command vocabulary). Ship
+the `Warning|Error` slice first; `SetLogLevel` widening and coalescing are follow-ons.
+
 ## Why not lean on Layers 2/3 here
 
 - **Accessibility tree (AT-SPI/UIA/AX):** would require setting `objectName`s +
