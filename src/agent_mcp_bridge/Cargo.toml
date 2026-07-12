@@ -1,0 +1,56 @@
+# Sourcetrail agent MCP bridge — a standalone process that exposes the running
+# app as an MCP server (Phase C of context/DESIGN_AGENT_MCP_BRIDGE.md).
+#
+# Layering (deliberate, so the transport is verifiable without the MCP SDK):
+#   * core lib (schema + protocol + ipc): depends only on thoth-ipc + flatbuffers
+#     + serde_json. `cargo check` verifies the wire layer offline.
+#   * `mcp` feature: adds rmcp (official Rust MCP SDK) + tokio for the stdio server.
+#
+# Standalone workspace so cargo does not attach it to any parent (matches
+# src/turso_shim). Not linked into the C++ app — it is a separate process the MCP
+# client launches; wiring it into the CMake/Corrosion build is a follow-up.
+[workspace]
+
+[package]
+name = "agent_mcp_bridge"
+version = "0.1.0"
+edition = "2021"
+publish = false
+
+[lib]
+name = "agent_mcp_bridge"
+path = "src/lib.rs"
+
+# Transport smoke test: connect to a running app and do a get_ui_state round-trip
+# (the Rust analogue of the C++ prototype/cmd_roundtrip). No MCP SDK needed.
+[[bin]]
+name = "sourcetrail-mcp-smoke"
+path = "src/bin/smoke.rs"
+
+# The MCP server proper. Requires the `mcp` feature (pulls rmcp + tokio).
+[[bin]]
+name = "sourcetrail-mcp"
+path = "src/bin/server.rs"
+required-features = ["mcp"]
+
+[features]
+default = []
+mcp = ["dep:rmcp", "dep:tokio", "dep:serde", "dep:tracing", "dep:tracing-subscriber"]
+
+[dependencies]
+# thoth-ipc Rust binding (package `thoth-ipc`, crate `libipc`). Same flatbuffers
+# pin as the binding, so there is a single flatbuffers version in the graph.
+thoth-ipc = { path = "../../submodules/thoth-ipc/rust/libipc" }
+flatbuffers = "=25.12.19"
+serde_json = "1"
+anyhow = "1"
+
+# `mcp` feature only.
+rmcp = { version = "0.8", features = ["server", "macros", "transport-io"], optional = true }
+tokio = { version = "1", features = ["rt-multi-thread", "macros", "sync", "time", "io-std"], optional = true }
+serde = { version = "1", features = ["derive"], optional = true }
+tracing = { version = "0.1", optional = true }
+tracing-subscriber = { version = "0.3", optional = true }
+
+[build-dependencies]
+# flatc is invoked directly from build.rs; no crate needed.
