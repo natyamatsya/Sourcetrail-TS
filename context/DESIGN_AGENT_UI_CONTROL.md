@@ -180,6 +180,63 @@ things on top, added here (not a parallel C++ command hierarchy):
   `CommandResult` (`ok=false`, message `"rejected: ..."`) — e.g. `search` while
   `NoProject`. The FSM is what makes gating possible.
 
+## Observation & synchrony — the act-and-observe contract
+
+A command's **ack is not its effect.** `handleCommand` runs on the message-processing
+thread and `Message<T>::dispatch()` only *enqueues* — the message is processed after
+`handleCommand` returns. So `emitResult(requestId, true)` fires *before* the
+activation/search/load actually happens. We already hit this: `search` returned `[]`
+because the ack raced ahead of the async `SearchCompleted` (fixed by reading past the ack
+for the matches). That fix was per-command; the general contract below replaces it.
+
+### Two phases: Accepted, then Settled
+
+An `act` command has two observable moments:
+
+- **Accepted** — the `CommandResult` ack: valid, and state-gated *in*. Already have it.
+- **Settled** — the message queue has drained the fan-out the command triggered, so
+  `UiState` is trustworthy. **Missing today.**
+
+Design: a **`Settled { request_id }`** event on `st.agent.events`, emitted when the queue
+next goes idle after the command. The agent loop becomes **send → await `CommandResult` →
+await `Settled(request_id)` → read `UiState`** — deterministic, no polling, no per-command
+race handling.
+
+### Producing `Settled` — a queue-idle signal
+
+`MessageQueue` exposes `hasMessagesQueued()` but no *idle notification*. Add one: after the
+loop processes a message and finds the queue empty, broadcast a lightweight
+`MessageFinishedProcessing` (or an in-process idle callback the controller registers). The
+controller tracks the in-flight `request_id`; on the first idle *after* it dispatched that
+command's messages, it emits `Settled { request_id }` and clears it. One bool + one id,
+idempotent.
+
+Nuance — *asynchronous* effects (indexing, project load) outlive the queue drain, so they
+don't "settle" at queue-idle; they settle at their domain event. `Settled` therefore means
+"the **synchronous** fan-out is done"; long-running commands additionally declare a
+**terminal event** (we already emit `IndexingFinished` and `AppStateChanged`). The
+contract: `load_project`/reindex → await `AppStateChanged(Ready)`; everything else → await
+`Settled`.
+
+### Observation model — events as subscriptions, not polling
+
+The MCP bridge is request/response only: the agent observes by calling `get_ui_state`. That
+can't express "await a transition," and it strands every push-only signal
+(`AppStateChanged`, `IndexingProgress`, `Settled`, the specced `LogEvent`). Bridge the
+`st.agent.events` channel to the agent:
+
+- The `Bridge` already runs an event-reader loop (for acks); fan decoded events to
+  subscribers instead of consuming them inline.
+- The MCP server surfaces them **two ways** (MCP supports both): a **notification stream** an
+  agent subscribes to, and a **`poll_events(since_seq)`** tool for pull-based clients. The
+  `EventEnvelope.seq` (already a per-session monotonic counter) is the cursor, so a
+  reconnecting subscriber detects gaps and catches up.
+
+This makes the FSM loop real — *read state → act → await the transition* becomes a
+subscription await — and it is the prerequisite for `LogEvent` forwarding and any progress
+UI (`IndexingProgress`). **Build the subscription first**: it's what makes `Settled`, the
+FSM events, and `LogEvent` observable at all; `Settled` then builds on it.
+
 ## Log event forwarding (WARN/ERROR)
 
 The `events` channel carries *domain* events (status, error counts, indexing,
@@ -419,6 +476,36 @@ events are escape hatches for the long tail.
 Each phase is independently useful and testable; Phase A alone unlocks screenshot-based
 verification of UI changes in CI.
 
+### Status (current)
+
+- **A** ✅ · **B** ✅ — control channels + `load_project`/`search`/`activate_node`/
+  `activate_file`/`activate_tab`/`scroll_to_line`/history/`get_ui_state`, **live-verified**
+  end to end over thoth-ipc (notify wakeup + dead-connection reaper both landed).
+- **C** — MCP bridge ✅ (tools + `find_element` + instance start/kill/list); **frames
+  channel not built** (`GetFrame` unimplemented).
+- **D** — structural **snapshot** ✅ (`GetSnapshot` + `get_snapshot` tool). Pending:
+  `objectName`/`QAccessible` hygiene pass; the golden-state replay/diff harness.
+- **Specced, not built:** `SetLogLevel`, `CaptureElement`, `InvokeAction`
+  (+`InvokeMethod`/`SendInputEvent`), `LogEvent` forwarding, and the *Observation &
+  synchrony* contract (`Settled` + event subscription) above.
+- **Coverage gaps:** commands `ActivateEdge` / `CreateBookmark` / `GetFrame` fall through to
+  "unknown command"; events `EdgeActivated` / `FocusChanged` / `IndexingProgress` /
+  `StatusChanged` are declared but never emitted.
+
+### Proposed next increment
+
+The two foundational pieces gate everything else, so do them first, in order:
+
+1. **Event subscription** (Bridge + MCP notifications/`poll_events`) — makes every push
+   signal observable; unblocks the FSM loop, `LogEvent`, and `IndexingProgress`.
+2. **`Settled` + queue-idle signal** — the general act-and-observe barrier; retires the
+   per-command race handling.
+
+Then the specced command batch rides on both, sharing the C++ `QtUiControl` resolver and
+the Rust `send_and_ack` helper: `InvokeAction` → `CaptureElement` → `SetLogLevel`/`LogEvent`.
+Close the coverage gaps (`ActivateEdge`/`CreateBookmark`/`GetFrame`; the four unemitted
+events) opportunistically alongside.
+
 ## Key seams (file references)
 
 | Concern | Symbol | File |
@@ -451,10 +538,10 @@ verification of UI changes in CI.
 3. **Gating:** compile flag (`SOURCETRAIL_AGENT_CONTROL`) vs pure runtime CLI flag.
    Recommend compile-flag-gated so it is absent from release binaries, plus the CLI flag
    to activate it in debug builds.
-4. **Synchrony:** a `get_ui_state` after an `invoke_action` must observe the *settled*
-   state. The message loop is async (`MessageQueue::startMessageLoop`), so the controller
-   needs a "quiesce" barrier (dispatch, wait for the queue to drain, then snapshot) —
-   likely a `MessageFinishedProcessing`-style signal or a queue-idle wait.
+4. **Synchrony — resolved (design):** see *Observation & synchrony* above. A `Settled
+   { request_id }` event emitted on the first queue-idle after a command (needs a
+   `MessageFinishedProcessing`/queue-idle signal on `MessageQueue`), plus terminal events
+   (`AppStateChanged`/`IndexingFinished`) for async work. Not yet implemented.
 5. **Frames:** compressed (PNG/JPEG) vs raw RGBA; on-demand (`get_frame`) vs a streamed
    `route`; and the `frames` segment size + ADR-0002 chunk threshold.
 6. **Command coverage & argument encoding:** which of the 91 messages to expose first
