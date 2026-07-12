@@ -399,4 +399,68 @@ mod tests {
             other => panic!("expected TabsChanged, got {other:?}"),
         }
     }
+
+    #[test]
+    fn ui_snapshot_roundtrips() {
+        let mut b = FlatBufferBuilder::new();
+
+        // child: button "OK" with a Press action; ref path [window/Main, button/OK]
+        let (wr, wn) = (b.create_string("window"), b.create_string("Main"));
+        let s_win = fb::PathStep::create(&mut b, &fb::PathStepArgs { role: Some(wr), name: Some(wn), index: 0 });
+        let (br, bn) = (b.create_string("button"), b.create_string("OK"));
+        let s_btn = fb::PathStep::create(&mut b, &fb::PathStepArgs { role: Some(br), name: Some(bn), index: 0 });
+        let child_path = b.create_vector(&[s_win, s_btn]);
+        let child_ref = fb::ElementRef::create(&mut b, &fb::ElementRefArgs { object_name: None, path: Some(child_path) });
+        let press = b.create_string("Press");
+        let child_actions = b.create_vector(&[press]);
+        let (crole, cname) = (b.create_string("button"), b.create_string("OK"));
+        let child_rect = fb::Rect::new(0, 0, 40, 20);
+        let child = fb::UiNode::create(
+            &mut b,
+            &fb::UiNodeArgs {
+                ref_: Some(child_ref),
+                role: Some(crole),
+                name: Some(cname),
+                actions: Some(child_actions),
+                rect: Some(&child_rect),
+                ..Default::default()
+            },
+        );
+        let children = b.create_vector(&[child]);
+
+        // root: window "Main"
+        let (rr, rn) = (b.create_string("window"), b.create_string("Main"));
+        let s_root = fb::PathStep::create(&mut b, &fb::PathStepArgs { role: Some(rr), name: Some(rn), index: 0 });
+        let root_path = b.create_vector(&[s_root]);
+        let root_ref = fb::ElementRef::create(&mut b, &fb::ElementRefArgs { object_name: None, path: Some(root_path) });
+        let (rrole, rname) = (b.create_string("window"), b.create_string("Main"));
+        let root = fb::UiNode::create(
+            &mut b,
+            &fb::UiNodeArgs {
+                ref_: Some(root_ref),
+                role: Some(rrole),
+                name: Some(rname),
+                children: Some(children),
+                ..Default::default()
+            },
+        );
+        let roots = b.create_vector(&[root]);
+        let snap = fb::UiSnapshot::create(
+            &mut b,
+            &fb::UiSnapshotArgs { format: fb::SnapshotFormat::Accessibility, roots: Some(roots) },
+        );
+        b.finish(snap, None);
+
+        let got = flatbuffers::root::<fb::UiSnapshot>(b.finished_data()).expect("valid UiSnapshot");
+        assert_eq!(got.format(), fb::SnapshotFormat::Accessibility);
+        let root = got.roots().unwrap().get(0);
+        assert_eq!(root.role().unwrap(), "window");
+        let child = root.children().unwrap().get(0);
+        assert_eq!(child.role().unwrap(), "button");
+        assert_eq!(child.actions().unwrap().get(0), "Press");
+        // the node's ref is the sender's ElementRef: its last step addresses the button.
+        let path = child.ref_().unwrap().path().unwrap();
+        assert_eq!(path.get(path.len() - 1).role().unwrap(), "button");
+        assert_eq!(path.get(path.len() - 1).name().unwrap(), "OK");
+    }
 }
