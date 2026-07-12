@@ -456,6 +456,52 @@ events are escape hatches for the long tail.
   invocation, synthetic input) — **capability-gated and logged**, off unless explicitly
   enabled for a trusted session.
 
+## Optimistic control — structural hashes (staleness detection)
+
+An `ElementRef` is resolved *at execute time* against the live tree (role/name/index
+path). Between the snapshot/query and the action the tree can shift, with two failure
+modes: **not found** (handled — the resolver returns `"element not found"`) and, worse,
+**resolved to the *wrong* element** — a sibling inserted ahead of the target shifts its
+index, or a reused name now matches elsewhere, and the action silently hits the wrong
+thing. Nothing catches that today. A hash gives the agent **compare-and-swap** semantics:
+*act only if this is still what I saw* — "drop when the tree changed under us."
+
+### The hash
+
+A per-node **structural** hash, Merkle-style, computed bottom-up in the snapshot walk:
+
+```
+h(node) = hash(role, name, actionNames, [h(child) for child in children])
+```
+
+Identity + structure, deliberately **not** volatile geometry / focus / value — so it fires
+on *meaningful* modification (element added, removed, relabeled, reordered) but survives
+cosmetic churn (a status-bar tick won't invalidate a button's token). Each `UiNode` gains a
+`hash: uint64` (its subtree hash); `UiSnapshot` gains the **root hash** as a whole-tree
+version stamp. `QueryUi` matches carry their node hashes too.
+
+**Per-node is the sweet spot.** A node's subtree hash changes only when *that* element or
+its descendants change — precise, unlike the root hash, which (given constant UI churn)
+would almost always read stale. The root hash stays available for coarse "did anything
+change" checks; per-node is what you guard an action with.
+
+### The policy — opt-in CAS
+
+`InvokeAction` and `CaptureElement` gain `expect_hash: uint64` (0 = off, the default). When
+set, the app re-resolves the ref, recomputes the target's subtree hash (a **bounded** walk,
+not a full snapshot), and on mismatch **drops** with `ok=false, "element changed since
+snapshot"` — a distinct outcome the agent retries after re-querying. Unset stays
+best-effort, so simple flows aren't burdened.
+
+Find-then-act then composes safely: `query_ui` → pick a match + its `hash` →
+`invoke_action(expect_hash=hash)`. Cheap: computed in the existing walk (one pass); the
+execute-time recompute is bounded by the target's subtree.
+
+This is the structural twin of the [`Settled`](#observation--synchrony--the-act-and-observe-contract)
+barrier — `Settled` says "the app has quiesced," the hash says "and the element you're about
+to touch is still the one you saw." It also complements the deferred `objectName`-hygiene
+pass: rather than only making refs *stable*, it makes staleness *detectable*.
+
 ## Why not lean on Layers 2/3 here
 
 - **Accessibility tree (AT-SPI/UIA/AX):** would require setting `objectName`s +
