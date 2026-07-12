@@ -251,7 +251,7 @@ subscription await — and it is the prerequisite for `LogEvent` forwarding and 
 UI (`IndexingProgress`). **Build the subscription first**: it's what makes `Settled`, the
 FSM events, and `LogEvent` observable at all; `Settled` then builds on it.
 
-## Log event forwarding (WARN/ERROR)
+## Log event forwarding (Qt logging + app `LogManager`)
 
 The `events` channel carries *domain* events (status, error counts, indexing,
 app-state). It deliberately does **not** carry the raw diagnostic log — that stream
@@ -264,15 +264,17 @@ only** as a distinct event; leave INFO/debug in the file log.
 ### Schema — `LogEvent` (a new `Event` arm)
 
 ```fbs
-enum LogLevel : byte { Info = 0, Warning = 1, Error = 2 }   // Info only if widened (SetLogLevel)
+enum LogLevel  : byte { Info = 0, Warning = 1, Error = 2 }   // Info only if widened
+enum LogSource : byte { App = 0, Qt = 1 }
 table LogEvent {
     level:    LogLevel;
+    source:   LogSource;
+    category: string;    // Qt logging category (empty for App logs)
     message:  string;
-    // Origin, from LogMessage — lets an agent attribute/dedupe without parsing text:
-    file:     string;    // LogMessage::getFileName()
+    // Origin — lets an agent attribute/dedupe without parsing text:
+    file:     string;    // LogMessage::getFileName() / QMessageLogContext::file
     function: string;
     line:     uint32;
-    logger:   string;    // Logger::getType() of the emitting sink
 }
 ```
 
@@ -304,25 +306,60 @@ publishing a `LogEvent` just queues — it can't recurse into the route.
 
 - **Connected-only.** Skip the encode+publish unless `events.recv_count() > 0`; with no
   agent attached the drain is a no-op, so logging stays free.
-- **Level.** Default `Warning`+above; adjustable at runtime via the `SetLogLevel` command
-  (below) — a knob, not a rebuild.
+- **Level.** Default `Warning`+above; adjustable at runtime via the `SetLogFilter` command
+  (below), which also drives Qt category rules — a knob, not a rebuild.
 - **Backpressure.** The broadcast ring is bounded (256 elements). Cap the drain per tick
   and coalesce consecutive duplicates (`"…" ×N`) so a log storm can't starve domain
   events; drop-with-a-counter beats blocking the message thread.
 
-### `SetLogLevel` command
+### Two sources, one stream — Qt logging + the app's `LogManager`
+
+The app has **two** logging systems: Sourcetrail's `LogManager` (`LOG_INFO/WARNING/ERROR`)
+and Qt's categorized logging (`qDebug`/`qCWarning`/… gated by `QLoggingCategory`). The
+agent sink captures **both** into one `LogEvent` stream:
+
+- **App logs** — an `AgentLogger : Logger` via `LogManager::addLogger` (as above).
+- **Qt logs** — a `qInstallMessageHandler` sink that receives *every* Qt message with its
+  `QMessageLogContext` (category, file, line, function), **chained** to the previous
+  handler so file/console logging survives.
+
+`LogEvent` therefore carries `source` (`app` / `qt`) and `category` (the Qt category, empty
+for app logs); `level` maps `QtMsgType` → `LogLevel` (`QtWarningMsg → Warning`, etc.).
+
+### `SetLogFilter` — Qt category rules + a forwarding pattern
+
+A level floor is the weak version of what Qt already offers. Replace `SetLogLevel` with two
+independent levers:
 
 ```fbs
-table SetLogLevel { min_level: LogLevel = Warning; }   // forward this level and above
+table SetLogFilter {
+    qt_rules:      string;      // QLoggingCategory::setFilterRules — controls Qt EMISSION
+    event_pattern: string;      // glob/regex over "category" (or "category: message") — which
+                                //   captured messages raise a LogEvent
+    min_level:     LogLevel = Warning;  // floor on forwarded level (both sources)
+}
 ```
 
-A new `Command` arm (append-only). **Threshold** semantics, not a raw bitmask: `min_level`
-maps to the `Logger::LogLevelMask` the controller sets on its `AgentLogger` —
-`Error → LOG_ERRORS`, `Warning → LOG_WARNINGS|LOG_ERRORS`, `Info → LOG_ALL`. Handled
-inline in the controller (it owns the logger), *not* dispatched as a `Message`; it acks
-via `CommandResult` like any other command. Widening to `Info` is how an agent turns the
-firehose on for one debugging session; the controller resets to `Warning` on
-`startListening()` so a session never inherits a previous agent's verbosity.
+- **`qt_rules`** → `QLoggingCategory::setFilterRules(qt_rules)`: turn categories on/off *at
+  the source* (`"qt.qpa.*=false\nmyapp.net.debug=true"`) — enables/silences whole subsystems,
+  the powerful lever a level can't express. Process-global, so restore the prior rules on
+  `stopListening()`.
+- **`event_pattern`** → the sink's forwarding filter: it receives everything (post
+  category-filter) and raises a `LogEvent` only for matches. Empty = forward all at/above
+  `min_level`.
+- **`min_level`** → floor across both sources.
+
+Handled inline in the controller (owns both the `AgentLogger` and the Qt handler); acks via
+`CommandResult`. Reset to defaults (`Warning`, no forwarding pattern, prior `qt_rules`) on
+`startListening()` so a session never inherits a prior agent's config.
+
+### Threading & reentrancy
+
+The Qt handler runs on **whatever thread logged** (any thread); the app `AgentLogger`
+likewise. So both funnel through a thread-safe queue drained on the message thread (the
+sole `st.agent.events` writer), exactly like the WARN/ERROR design. **Reentrancy guard:**
+publishing a `LogEvent` must not itself log through the sink (it would recurse) — gate with
+a thread-local "in sink" flag, or use a raw send off the log path.
 
 ### Bridge
 
@@ -334,7 +371,8 @@ polls; the smoke client can print them inline.
 
 Self-contained — schema arm + `AgentLogger` + drain + one command; no dependency on the
 frame or snapshot work. Fits **Phase D** (broadening the event/command vocabulary). Ship
-the `Warning`+above slice first; `SetLogLevel` widening and coalescing are follow-ons.
+the `Warning`+above slice first; the Qt `qInstallMessageHandler` capture, `SetLogFilter`
+category rules, and coalescing are follow-ons.
 
 ## Per-element screenshots (`CaptureElement`)
 
@@ -541,29 +579,28 @@ verification of UI changes in CI.
 - **A** ✅ · **B** ✅ — control channels + `load_project`/`search`/`activate_node`/
   `activate_file`/`activate_tab`/`scroll_to_line`/history/`get_ui_state`, **live-verified**
   end to end over thoth-ipc (notify wakeup + dead-connection reaper both landed).
-- **C** — MCP bridge ✅ (tools + `find_element` + instance start/kill/list); **frames
-  channel not built** (`GetFrame` unimplemented).
-- **D** — structural **snapshot** ✅ (`GetSnapshot` + `get_snapshot` tool). Pending:
-  `objectName`/`QAccessible` hygiene pass; the golden-state replay/diff harness.
-- **Specced, not built:** `SetLogLevel`, `CaptureElement`, `InvokeAction`
-  (+`InvokeMethod`/`SendInputEvent`), `LogEvent` forwarding, and the *Observation &
-  synchrony* contract (`Settled` + event subscription) above.
-- **Coverage gaps:** commands `ActivateEdge` / `CreateBookmark` / `GetFrame` fall through to
-  "unknown command"; events `EdgeActivated` / `FocusChanged` / `IndexingProgress` /
-  `StatusChanged` are declared but never emitted.
+- **C** — MCP bridge ✅ (tools + `find_element` + instance start/kill/list); frames channel
+  ✅ (built for `CaptureElement`); `GetFrame` stream still unimplemented.
+- **D** — ✅ structural **snapshot** (`GetSnapshot`), **event subscription** (`poll_events`),
+  **`Settled`** barrier (interim, TaskScheduler-idle), **`InvokeAction`** + `QtUiControl`
+  resolver, **`CaptureElement`** (pixels), **`QueryUi`** (server-side JSONPath, qt-json-query),
+  and **structural-hash CAS** (`expect_hash`). Pending: `objectName`/`QAccessible` hygiene;
+  golden-state replay/diff harness.
+- **Specced, not built:** `SetLogFilter` + `LogEvent` forwarding (Qt + app logs);
+  `CaptureElement.include_properties`; `InvokeMethod`/`SendInputEvent` (gated tiers); the
+  stdexec dispatch migration (guarded, after the harness).
+- **Coverage gaps:** commands `ActivateEdge` / `CreateBookmark` fall through to "unknown
+  command"; events `EdgeActivated` / `FocusChanged` / `IndexingProgress` / `StatusChanged`
+  are declared but never emitted.
 
 ### Proposed next increment
 
-The two foundational pieces gate everything else, so do them first, in order:
+The observation/synchrony foundations and the structural-control batch have landed. What
+remains:
 
-1. **Event subscription** (Bridge + MCP notifications/`poll_events`) — makes every push
-   signal observable; unblocks the FSM loop, `LogEvent`, and `IndexingProgress`.
-2. **`Settled` + queue-idle signal** — the general act-and-observe barrier; retires the
-   per-command race handling.
-
-Then the specced command batch rides on both, sharing the C++ `QtUiControl` resolver and
-the Rust `send_and_ack` helper: `InvokeAction` → `CaptureElement` → `SetLogLevel`/`LogEvent`.
-Close the coverage gaps (`ActivateEdge`/`CreateBookmark`/`GetFrame`; the four unemitted
+1. **`SetLogFilter` + `LogEvent`** — the last of the command batch (Qt category rules + the
+   agent log sink), above.
+2. Close the coverage gaps (`ActivateEdge`/`CreateBookmark`; the four unemitted
 events) opportunistically alongside.
 
 ## Key seams (file references)
