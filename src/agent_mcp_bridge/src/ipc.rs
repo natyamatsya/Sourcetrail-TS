@@ -7,6 +7,7 @@
 use anyhow::{bail, Context, Result};
 use libipc::channel::{Mode, Route};
 use serde_json::{json, Value};
+use std::collections::VecDeque;
 use std::time::{Duration, Instant};
 
 use crate::protocol::{self, channel, Incoming};
@@ -14,6 +15,8 @@ use crate::protocol::{self, channel, Incoming};
 const SEND_TIMEOUT_MS: u64 = 1000;
 const RECV_POLL_MS: u64 = 200;
 const OP_TIMEOUT: Duration = Duration::from_secs(5);
+/// Bound on the buffered event log (drops oldest; `seq` gaps let a poller detect it).
+const EVENT_LOG_CAP: usize = 2048;
 
 pub struct Bridge {
     cmd: Route,
@@ -24,6 +27,10 @@ pub struct Bridge {
     frames: Route,
     snapshot: Route,
     next_id: u64,
+    // Observation buffer: every event read off st.agent.events (during acks or an
+    // explicit drain) is recorded here as self-describing JSON, so poll_events can
+    // replay it by seq cursor. Bounded; oldest dropped.
+    event_log: VecDeque<Value>,
 }
 
 impl Bridge {
@@ -48,7 +55,7 @@ impl Bridge {
             .with_context(|| format!("connect {}", channel::frames(instance)))?;
         let snapshot = Route::connect(&channel::snapshot(instance), Mode::Receiver)
             .with_context(|| format!("connect {}", channel::snapshot(instance)))?;
-        Ok(Self { cmd, cmd_name, events, state, frames, snapshot, next_id: 1 })
+        Ok(Self { cmd, cmd_name, events, state, frames, snapshot, next_id: 1, event_log: VecDeque::new() })
     }
 
     fn next_id(&mut self) -> u64 {
@@ -72,6 +79,18 @@ impl Bridge {
         Ok(())
     }
 
+    /// Record one raw `EventEnvelope` into the observation log (bounded ring).
+    /// Called wherever events are read off `st.agent.events`, so nothing consumed
+    /// for reply correlation is lost to `poll_events`.
+    fn record_event(&mut self, bytes: &[u8]) {
+        if let Ok(v) = protocol::event_to_json(bytes) {
+            if self.event_log.len() >= EVENT_LOG_CAP {
+                self.event_log.pop_front();
+            }
+            self.event_log.push_back(v);
+        }
+    }
+
     /// Read `st.agent.events` until the `CommandResult` for `request_id`, keeping
     /// any `SearchCompleted` seen meanwhile. Returns `(ok, message, matches?)`.
     fn await_ack(&mut self, request_id: u64, timeout: Duration) -> Result<(bool, String, Option<Value>)> {
@@ -82,6 +101,7 @@ impl Bridge {
             if buf.is_empty() {
                 continue;
             }
+            self.record_event(buf.data());
             let (_seq, incoming) = protocol::parse_event(buf.data())?;
             match incoming {
                 Incoming::CommandResult { request_id: rid, ok, message } if rid == request_id => {
@@ -165,6 +185,33 @@ impl Bridge {
         })
     }
 
+    /// Observation stream: drain any pending events (non-blocking) into the log,
+    /// then return those with `seq > since_seq` plus `latest_seq` as the next
+    /// cursor. `{ events: [...], latest_seq }`. A jump in `seq` past the returned
+    /// events means some were dropped (the log and the shm ring are both bounded)
+    /// — poll more often. Start from `since_seq = 0`.
+    pub fn poll_events(&mut self, since_seq: u64) -> Value {
+        for _ in 0..EVENT_LOG_CAP {
+            match self.events.try_recv() {
+                Ok(buf) if !buf.is_empty() => self.record_event(buf.data()),
+                _ => break,
+            }
+        }
+        let events: Vec<Value> = self
+            .event_log
+            .iter()
+            .filter(|e| e.get("seq").and_then(Value::as_u64).is_some_and(|s| s > since_seq))
+            .cloned()
+            .collect();
+        let latest = self
+            .event_log
+            .back()
+            .and_then(|e| e.get("seq"))
+            .and_then(Value::as_u64)
+            .unwrap_or(since_seq);
+        json!({ "events": events, "latest_seq": latest })
+    }
+
     pub fn get_ui_state(&mut self) -> Result<Value> {
         let id = self.next_id();
         self.send(&protocol::get_ui_state(id))?;
@@ -197,6 +244,7 @@ impl Bridge {
             if buf.is_empty() {
                 continue;
             }
+            self.record_event(buf.data());
             let (_seq, incoming) = protocol::parse_event(buf.data())?;
             match incoming {
                 Incoming::SearchCompleted(v) => return Ok(v),

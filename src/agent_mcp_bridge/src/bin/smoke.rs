@@ -4,6 +4,8 @@
 //!
 //!   sourcetrail-mcp-smoke                  # get_ui_state
 //!   sourcetrail-mcp-smoke status           # channel health (read-only)
+//!   sourcetrail-mcp-smoke events [since]   # poll_events once (cursor = since seq)
+//!   sourcetrail-mcp-smoke watch  [secs]    # stream events for N seconds (default 10)
 //!   sourcetrail-mcp-smoke load <project>   # load_project, then wait until it opens
 //!   sourcetrail-mcp-smoke search <query>   # search
 //!   sourcetrail-mcp-smoke find   <query>   # find_element (ranked)
@@ -39,8 +41,14 @@ fn main() -> Result<()> {
 
     let mut bridge = Bridge::connect_instance(&instance)?;
 
+    // `watch` streams inline for a while (a persistent bridge, like the MCP server).
+    if cmd == Some("watch") {
+        return watch(&mut bridge, arg2.parse().unwrap_or(10));
+    }
+
     let out = match cmd {
         Some("status") => bridge.status(),
+        Some("events") => bridge.poll_events(arg2.parse().unwrap_or(0)),
         Some("load") => load_and_wait(&mut bridge, arg2)?,
         Some("search") => bridge.search(arg2)?,
         Some("find") => bridge.find_element(arg2)?,
@@ -49,6 +57,25 @@ fn main() -> Result<()> {
     };
 
     println!("{}", serde_json::to_string_pretty(&out)?);
+    Ok(())
+}
+
+/// Stream events from a persistent bridge for `seconds`, printing each new event
+/// as one JSON line and advancing the seq cursor — the observation loop the MCP
+/// server runs, but inline. Trigger commands from another invocation to see them.
+fn watch(bridge: &mut Bridge, seconds: u64) -> Result<()> {
+    let deadline = Instant::now() + Duration::from_secs(seconds);
+    let mut cursor = 0u64;
+    while Instant::now() < deadline {
+        let out = bridge.poll_events(cursor);
+        if let Some(events) = out.get("events").and_then(Value::as_array) {
+            for e in events {
+                println!("{}", serde_json::to_string(e).unwrap_or_default());
+            }
+        }
+        cursor = out.get("latest_seq").and_then(Value::as_u64).unwrap_or(cursor);
+        sleep(Duration::from_millis(300));
+    }
     Ok(())
 }
 

@@ -167,6 +167,79 @@ pub fn parse_event(bytes: &[u8]) -> Result<(u64, Incoming)> {
     Ok((seq, incoming))
 }
 
+/// Decode any `EventEnvelope` to a self-describing JSON object
+/// `{ seq, timestamp_ms, type, ...fields }` for the observation stream
+/// (`Bridge::poll_events`). Covers every `Event` union arm — unlike
+/// [`parse_event`], which decodes only the arms used for reply correlation.
+pub fn event_to_json(bytes: &[u8]) -> Result<Value> {
+    let env = flatbuffers::root::<fb::EventEnvelope>(bytes)
+        .map_err(|e| anyhow!("bad EventEnvelope: {e}"))?;
+    let mut obj = json!({
+        "seq": env.seq(),
+        "timestamp_ms": env.timestamp_ms(),
+        "type": env.event_type().variant_name().unwrap_or("Unknown"),
+    });
+    let m = obj.as_object_mut().expect("json object");
+    match env.event_type() {
+        fb::Event::NodesActivated => {
+            let e = env.event_as_nodes_activated().unwrap();
+            let nodes: Vec<Value> = e.nodes().map(|v| v.iter().map(node_ref_json).collect()).unwrap_or_default();
+            m.insert("nodes".into(), json!(nodes));
+        }
+        fb::Event::EdgeActivated => {
+            if let Some(edge) = env.event_as_edge_activated().unwrap().edge() {
+                m.insert("edge".into(), edge_ref_json(edge));
+            }
+        }
+        fb::Event::FileActivated => {
+            let e = env.event_as_file_activated().unwrap();
+            m.insert("file_path".into(), json!(e.file_path().unwrap_or_default()));
+        }
+        fb::Event::SearchCompleted => {
+            let e = env.event_as_search_completed().unwrap();
+            let matches: Vec<Value> =
+                e.matches().map(|v| v.iter().map(search_match_json).collect()).unwrap_or_default();
+            m.insert("matches".into(), json!(matches));
+        }
+        fb::Event::FocusChanged => {
+            m.insert("view".into(), json!(env.event_as_focus_changed().unwrap().view().0));
+        }
+        fb::Event::IndexingProgress => {
+            let e = env.event_as_indexing_progress().unwrap();
+            m.insert("files_done".into(), json!(e.files_done()));
+            m.insert("files_total".into(), json!(e.files_total()));
+        }
+        fb::Event::IndexingFinished => {
+            m.insert("succeeded".into(), json!(env.event_as_indexing_finished().unwrap().succeeded()));
+        }
+        fb::Event::ErrorCountChanged => {
+            let e = env.event_as_error_count_changed().unwrap();
+            m.insert("total".into(), json!(e.total()));
+            m.insert("fatal".into(), json!(e.fatal()));
+        }
+        fb::Event::StatusChanged => {
+            m.insert("text".into(), json!(env.event_as_status_changed().unwrap().text().unwrap_or_default()));
+        }
+        fb::Event::AppStateChanged => {
+            m.insert("state".into(), json!(app_state_str(env.event_as_app_state_changed().unwrap().state().0)));
+        }
+        fb::Event::TabsChanged => {
+            let e = env.event_as_tabs_changed().unwrap();
+            let tabs: Vec<Value> = e.tabs().map(|v| v.iter().map(tab_info_json).collect()).unwrap_or_default();
+            m.insert("tabs".into(), json!(tabs));
+        }
+        fb::Event::CommandResult => {
+            let e = env.event_as_command_result().unwrap();
+            m.insert("request_id".into(), json!(e.request_id()));
+            m.insert("ok".into(), json!(e.ok()));
+            m.insert("message".into(), json!(e.message().unwrap_or_default()));
+        }
+        // IndexingStarted (empty) and any future arms: type tag only.
+        _ => {}
+    }
+    Ok(obj)
+}
+
 // --- UiState decoding (st.agent.state) --------------------------------------
 
 /// Decode a `UiStateEnvelope`; returns `(request_id, ui_state_json)`.
@@ -468,6 +541,52 @@ mod tests {
             }
             other => panic!("expected TabsChanged, got {other:?}"),
         }
+    }
+
+    #[test]
+    fn event_to_json_decodes_all_arms() {
+        // IndexingProgress — a push-only event parse_event doesn't model.
+        let mut b = FlatBufferBuilder::new();
+        let ip = fb::IndexingProgress::create(
+            &mut b,
+            &fb::IndexingProgressArgs { files_done: 7, files_total: 20 },
+        );
+        let env = fb::EventEnvelope::create(
+            &mut b,
+            &fb::EventEnvelopeArgs {
+                seq: 42,
+                timestamp_ms: 1234,
+                event_type: fb::Event::IndexingProgress,
+                event: Some(ip.as_union_value()),
+            },
+        );
+        b.finish(env, None);
+        let v = event_to_json(b.finished_data()).unwrap();
+        assert_eq!(v["seq"], 42);
+        assert_eq!(v["timestamp_ms"], 1234);
+        assert_eq!(v["type"], "IndexingProgress");
+        assert_eq!(v["files_done"], 7);
+        assert_eq!(v["files_total"], 20);
+
+        // AppStateChanged — decodes the enum to its string form.
+        let mut b = FlatBufferBuilder::new();
+        let asc = fb::AppStateChanged::create(
+            &mut b,
+            &fb::AppStateChangedArgs { state: fb::AppState::Ready },
+        );
+        let env = fb::EventEnvelope::create(
+            &mut b,
+            &fb::EventEnvelopeArgs {
+                seq: 43,
+                timestamp_ms: 0,
+                event_type: fb::Event::AppStateChanged,
+                event: Some(asc.as_union_value()),
+            },
+        );
+        b.finish(env, None);
+        let v = event_to_json(b.finished_data()).unwrap();
+        assert_eq!(v["type"], "AppStateChanged");
+        assert_eq!(v["state"], "Ready");
     }
 
     #[test]

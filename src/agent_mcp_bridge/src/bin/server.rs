@@ -81,6 +81,17 @@ struct InstanceArg {
 
 #[derive(serde::Deserialize, rmcp::schemars::JsonSchema)]
 #[schemars(crate = "rmcp::schemars")]
+struct PollEventsArgs {
+    /// Cursor: return events with seq greater than this. Start at 0; pass the
+    /// returned `latest_seq` next time.
+    #[serde(default)]
+    since_seq: u64,
+    #[serde(default)]
+    instance: String,
+}
+
+#[derive(serde::Deserialize, rmcp::schemars::JsonSchema)]
+#[schemars(crate = "rmcp::schemars")]
 struct QueryArgs {
     query: String,
     #[serde(default)]
@@ -165,6 +176,13 @@ impl SourcetrailServer {
     #[tool(description = "Return the current UI state (project, app_state FSM, active nodes, graph, code view, search matches, errors) of an instance.")]
     async fn get_ui_state(&self, Parameters(a): Parameters<InstanceArg>) -> Result<CallToolResult, McpError> {
         ok_json(self.mgr.call(move |m| m.get_or_attach(&a.instance)?.bridge().get_ui_state()).await?)
+    }
+
+    #[tool(
+        description = "Poll app events since a cursor. Returns {events, latest_seq}; pass latest_seq back as since_seq (start at 0). Events include AppStateChanged, IndexingStarted/Progress/Finished, NodesActivated, FileActivated, SearchCompleted, ErrorCountChanged, StatusChanged, TabsChanged, CommandResult. Use to await a transition (e.g. app_state -> Ready) instead of re-polling get_ui_state. A seq jump beyond the returned events means some were dropped — poll more often."
+    )]
+    async fn poll_events(&self, Parameters(a): Parameters<PollEventsArgs>) -> Result<CallToolResult, McpError> {
+        ok_json(self.mgr.call(move |m| Ok(m.get_or_attach(&a.instance)?.bridge().poll_events(a.since_seq))).await?)
     }
 
     #[tool(description = "Search the indexed code base; returns matches (text, node_ids, score).")]
