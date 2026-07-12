@@ -47,6 +47,7 @@ bool AgentControlController::isListening() const
 #include "Id.h"
 #include "MessageListener.h"
 #include "MessageQueue.h"
+#include "QtUiControl.h"
 #include "TabIds.h"
 #include "TaskManager.h"
 #include "TaskScheduler.h"
@@ -406,7 +407,7 @@ struct AgentControlController::Impl
 		// State gate: everything but load_project / get_ui_state needs a project.
 		const bool needsProject = !(
 			type == fb::Command_LoadProject || type == fb::Command_GetUiState ||
-			type == fb::Command_GetSnapshot);
+			type == fb::Command_GetSnapshot || type == fb::Command_InvokeAction);
 		if (needsProject && computeAppState() == fb::AppState_NoProject)
 		{
 			emitResult(requestId, false, "rejected: no project loaded");
@@ -489,6 +490,42 @@ struct AgentControlController::Impl
 					}));
 			}
 			break;
+		case fb::Command_InvokeAction:
+		{
+			const auto* c = envelope->command_as_InvokeAction();
+			if (c == nullptr || c->target() == nullptr)
+			{
+				emitResult(requestId, false, "invoke_action: missing target");
+				return;
+			}
+			// Decode the ElementRef selector into QtUiControl's plain form.
+			std::string objectName = c->target()->object_name() ? c->target()->object_name()->str() : "";
+			std::vector<utility::qt::RefStep> path;
+			if (const auto* steps = c->target()->path())
+			{
+				for (const auto* step: *steps)
+				{
+					path.push_back(
+						{step->role() ? step->role()->str() : "",
+						 step->name() ? step->name()->str() : "",
+						 step->index()});
+				}
+			}
+			std::string action = c->action() ? c->action()->str() : "";
+			std::string text = c->text() ? c->text()->str() : "";
+			// QAccessible touches widgets, so resolve + invoke on the GUI thread
+			// (ui()), then ack with the result. Scoped so stop() joins it. The ack is
+			// the reply (no separate Settled — the invoke is async on ui()).
+			m_uiScope.spawn(
+				stdexec::schedule(m_schedulers->ui()) |
+				stdexec::then([this, requestId, objectName = std::move(objectName), path = std::move(path),
+								  action = std::move(action), text = std::move(text)]() {
+					const utility::qt::ControlResult r =
+						utility::qt::invokeAction(objectName, path, action, text);
+					emitResult(requestId, r.ok, r.message);
+				}));
+			return;
+		}
 		default:
 			emitResult(requestId, false, "unknown command");
 			return;
@@ -622,6 +659,10 @@ struct AgentControlController::Impl
 
 	void publishEvent(flatbuffers::FlatBufferBuilder& builder, fb::Event type, flatbuffers::Offset<void> event)
 	{
+		// Serialized: events are normally published from the app-scheduler thread,
+		// but InvokeAction acks from the ui() thread — the lock keeps the seq counter
+		// and the route send consistent across both.
+		const std::lock_guard<std::mutex> lock(m_eventMutex);
 		builder.Finish(fb::CreateEventEnvelope(builder, m_eventSeq++, nowMs(), type, event));
 		m_eventsChannel.send(builder.GetBufferPointer(), builder.GetSize());
 	}
@@ -681,6 +722,7 @@ struct AgentControlController::Impl
 	bool m_indexing = false;
 	fb::AppState m_appState = fb::AppState_NoProject;
 	std::uint64_t m_eventSeq = 0;
+	std::mutex m_eventMutex;	// serializes publishEvent across the app-scheduler + ui() threads
 	std::vector<std::uint64_t> m_pendingSettle;	// accepted request_ids awaiting a queue-idle Settled
 
 	bool m_listening = false;

@@ -21,6 +21,8 @@
 
 #if QT_CONFIG(accessibility)
 #include <QAccessible>
+
+#include "QtAccessibleRole.h"	// shared accessibleRoleName (also used by QtUiControl)
 #endif
 
 namespace fb = Sourcetrail::Agent;
@@ -160,41 +162,6 @@ flatbuffers::Offset<fb::UiNode> buildObjectNode(
 }
 
 #if QT_CONFIG(accessibility)
-const char* roleName(QAccessible::Role role)
-{
-	switch (role)
-	{
-	case QAccessible::PushButton: return "button";
-	case QAccessible::CheckBox: return "checkbox";
-	case QAccessible::RadioButton: return "radiobutton";
-	case QAccessible::MenuItem: return "menuitem";
-	case QAccessible::MenuBar: return "menubar";
-	case QAccessible::PopupMenu: return "menu";
-	case QAccessible::EditableText: return "textedit";
-	case QAccessible::StaticText: return "label";
-	case QAccessible::List: return "list";
-	case QAccessible::ListItem: return "listitem";
-	case QAccessible::Tree: return "tree";
-	case QAccessible::TreeItem: return "treeitem";
-	case QAccessible::Table: return "table";
-	case QAccessible::Cell: return "cell";
-	case QAccessible::Row: return "row";
-	case QAccessible::Column: return "column";
-	case QAccessible::Window: return "window";
-	case QAccessible::Dialog: return "dialog";
-	case QAccessible::PageTab: return "tab";
-	case QAccessible::PageTabList: return "tablist";
-	case QAccessible::ScrollBar: return "scrollbar";
-	case QAccessible::ComboBox: return "combobox";
-	case QAccessible::Grouping: return "group";
-	case QAccessible::ToolBar: return "toolbar";
-	case QAccessible::Graphic: return "graphic";
-	case QAccessible::Splitter: return "splitter";
-	case QAccessible::Pane: return "pane";
-	case QAccessible::Client: return "client";
-	default: return "unknown";
-	}
-}
 
 std::uint32_t stateBits(const QAccessible::State& s)
 {
@@ -226,7 +193,7 @@ flatbuffers::Offset<fb::UiNode> buildAccessibleNode(
 		{
 			continue;
 		}
-		const std::string cr = roleName(child->role());
+		const std::string cr = accessibleRoleName(child->role());
 		const std::string cn = child->text(QAccessible::Name).toStdString();
 		path.push_back({cr, cn, counts[{cr, cn}]++});
 		children.push_back(buildAccessibleNode(b, child, path));
@@ -234,7 +201,7 @@ flatbuffers::Offset<fb::UiNode> buildAccessibleNode(
 	}
 	const auto kids = b.CreateVector(children);
 	const auto ref = buildRef(b, path);
-	const auto role = b.CreateString(roleName(iface->role()));
+	const auto role = b.CreateString(accessibleRoleName(iface->role()));
 	const auto name = b.CreateString(iface->text(QAccessible::Name).toStdString());
 	const auto value = b.CreateString(iface->text(QAccessible::Value).toStdString());
 	const auto description = b.CreateString(iface->text(QAccessible::Description).toStdString());
@@ -306,7 +273,7 @@ std::vector<std::uint8_t> captureUiSnapshot(
 		{
 			if (QAccessibleInterface* iface = QAccessible::queryAccessibleInterface(widget))
 			{
-				const std::string role = roleName(iface->role());
+				const std::string role = accessibleRoleName(iface->role());
 				const std::string name = iface->text(QAccessible::Name).toStdString();
 				std::vector<StepData> path{{role, name, counts[{role, name}]++}};
 				roots.push_back(buildAccessibleNode(builder, iface, path));

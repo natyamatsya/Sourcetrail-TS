@@ -81,6 +81,41 @@ struct InstanceArg {
 
 #[derive(serde::Deserialize, rmcp::schemars::JsonSchema)]
 #[schemars(crate = "rmcp::schemars")]
+struct RefPathStep {
+    role: String,
+    #[serde(default)]
+    name: String,
+    #[serde(default)]
+    index: u32,
+}
+
+#[derive(serde::Deserialize, rmcp::schemars::JsonSchema)]
+#[schemars(crate = "rmcp::schemars")]
+struct ElementRefArg {
+    #[serde(default)]
+    object_name: String,
+    #[serde(default)]
+    path: Vec<RefPathStep>,
+}
+
+#[derive(serde::Deserialize, rmcp::schemars::JsonSchema)]
+#[schemars(crate = "rmcp::schemars")]
+struct InvokeActionArgs {
+    /// The element to act on — pass a `ref` object from get_snapshot (object_name + path).
+    #[serde(rename = "ref")]
+    target: ElementRefArg,
+    /// Accessible action name from the node's `actions` (e.g. "Press", "Toggle", "ShowMenu").
+    #[serde(default)]
+    action: String,
+    /// Optional: set the element's editable text/value (line edits, combos).
+    #[serde(default)]
+    text: String,
+    #[serde(default)]
+    instance: String,
+}
+
+#[derive(serde::Deserialize, rmcp::schemars::JsonSchema)]
+#[schemars(crate = "rmcp::schemars")]
 struct PollEventsArgs {
     /// Cursor: return events with seq greater than this. Start at 0; pass the
     /// returned `latest_seq` next time.
@@ -217,6 +252,24 @@ impl SourcetrailServer {
     #[tool(description = "Capture the structural UI tree: every element's role, geometry, and supported actions, each with a ref you can target. Accessibility tree by default; object_tree=true for the raw widget/property tree.")]
     async fn get_snapshot(&self, Parameters(a): Parameters<SnapshotArgs>) -> Result<CallToolResult, McpError> {
         ok_json(self.mgr.call(move |m| m.get_or_attach(&a.instance)?.bridge().get_snapshot(a.object_tree)).await?)
+    }
+
+    #[tool(description = "Invoke an accessible action on a UI element (structural control). Pass a `ref` from get_snapshot plus an `action` from that node's `actions` (e.g. Press, Toggle, ShowMenu), or `text` to set an editable field. Returns { ok, message } — resolution failures (element not found / action not supported) are data, not errors.")]
+    async fn invoke_action(&self, Parameters(a): Parameters<InvokeActionArgs>) -> Result<CallToolResult, McpError> {
+        ok_json(
+            self.mgr
+                .call(move |m| {
+                    let path: Vec<(String, String, u32)> =
+                        a.target.path.iter().map(|s| (s.role.clone(), s.name.clone(), s.index)).collect();
+                    m.get_or_attach(&a.instance)?.bridge().invoke_action(
+                        &a.target.object_name,
+                        &path,
+                        &a.action,
+                        &a.text,
+                    )
+                })
+                .await?,
+        )
     }
 
     #[tool(description = "Load a project (.srctrlprj); kicks off indexing — poll get_ui_state.app_state for Ready.")]

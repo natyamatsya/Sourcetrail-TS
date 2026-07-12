@@ -50,6 +50,7 @@ fn main() -> Result<()> {
         Some("status") => bridge.status(),
         Some("events") => bridge.poll_events(arg2.parse().unwrap_or(0)),
         Some("activate") => bridge.activate_node(None, arg2.parse().unwrap_or(0))?,
+        Some("invoke") => invoke_first(&mut bridge, arg2)?,
         Some("load") => load_and_wait(&mut bridge, arg2)?,
         Some("search") => bridge.search(arg2)?,
         Some("find") => bridge.find_element(arg2)?,
@@ -59,6 +60,54 @@ fn main() -> Result<()> {
 
     println!("{}", serde_json::to_string_pretty(&out)?);
     Ok(())
+}
+
+/// Snapshot the UI, find the first element advertising `action`, and invoke it on
+/// its `ref` — the full structural-control round-trip (snapshot ref -> resolve ->
+/// doAction). Demonstrates find-then-act.
+fn invoke_first(bridge: &mut Bridge, action: &str) -> Result<Value> {
+    let snap = bridge.get_snapshot(false)?;
+    let node = find_node_with_action(&snap, action)
+        .ok_or_else(|| anyhow::anyhow!("no element advertising action '{action}' in the snapshot"))?;
+    let r = &node["ref"];
+    let object_name = r["object_name"].as_str().unwrap_or("").to_string();
+    let path: Vec<(String, String, u32)> = r["path"]
+        .as_array()
+        .map(|steps| {
+            steps
+                .iter()
+                .map(|s| {
+                    (
+                        s["role"].as_str().unwrap_or("").to_string(),
+                        s["name"].as_str().unwrap_or("").to_string(),
+                        s["index"].as_u64().unwrap_or(0) as u32,
+                    )
+                })
+                .collect()
+        })
+        .unwrap_or_default();
+    eprintln!(
+        "invoking '{action}' on {} (\"{}\")",
+        node["role"].as_str().unwrap_or(""),
+        node["name"].as_str().unwrap_or("")
+    );
+    bridge.invoke_action(&object_name, &path, action, "")
+}
+
+fn find_node_with_action(node: &Value, action: &str) -> Option<Value> {
+    if let Some(roots) = node.get("roots").and_then(Value::as_array) {
+        return roots.iter().find_map(|r| find_node_with_action(r, action));
+    }
+    let has = node
+        .get("actions")
+        .and_then(Value::as_array)
+        .is_some_and(|a| a.iter().any(|x| x.as_str() == Some(action)));
+    if has {
+        return Some(node.clone());
+    }
+    node.get("children")
+        .and_then(Value::as_array)
+        .and_then(|kids| kids.iter().find_map(|c| find_node_with_action(c, action)))
 }
 
 /// Stream events from a persistent bridge for `seconds`, printing each new event

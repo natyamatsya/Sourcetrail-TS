@@ -304,6 +304,24 @@ impl Bridge {
         self.act_and_observe("activate_tab", |id| protocol::activate_tab(id, tab_id))
     }
 
+    /// Structural control: invoke an accessible `action` (or set `text`) on the
+    /// element addressed by a snapshot `ref` (object_name + role/name/index path).
+    /// The app resolves + invokes on the GUI thread; the ack **is** the result, and
+    /// resolution failures ("element not found", "action not supported") come back
+    /// as data (`{ ok, message }`), not transport errors.
+    pub fn invoke_action(
+        &mut self,
+        object_name: &str,
+        path: &[(String, String, u32)],
+        action: &str,
+        text: &str,
+    ) -> Result<Value> {
+        let id = self.next_id();
+        self.send(&protocol::invoke_action(id, object_name, path, action, text))?;
+        let (ok, message, _) = self.await_ack(id, OP_TIMEOUT)?;
+        Ok(json!({ "ok": ok, "message": message }))
+    }
+
     /// Loading kicks off indexing; return on ack and let the caller poll
     /// `app_state` (or subscribe) for the transition to `Ready`.
     pub fn load_project(&mut self, path: &str) -> Result<Value> {

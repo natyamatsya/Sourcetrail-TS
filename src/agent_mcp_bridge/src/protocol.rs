@@ -119,6 +119,38 @@ pub fn load_project(request_id: u64, project_file_path: &str) -> Vec<u8> {
     finish(b, request_id, fb::Command::LoadProject, c.as_union_value())
 }
 
+/// Build an `InvokeAction` command. `path` is the ref's role/name/index steps
+/// (as carried by a snapshot node's `ref`); `object_name` is its anchor (usually
+/// empty today). `text` sets editable text/value when non-empty.
+pub fn invoke_action(
+    request_id: u64,
+    object_name: &str,
+    path: &[(String, String, u32)],
+    action: &str,
+    text: &str,
+) -> Vec<u8> {
+    let mut b = FlatBufferBuilder::new();
+    let steps: Vec<_> = path
+        .iter()
+        .map(|(role, name, index)| {
+            let r = b.create_string(role);
+            let n = b.create_string(name);
+            fb::PathStep::create(&mut b, &fb::PathStepArgs { role: Some(r), name: Some(n), index: *index })
+        })
+        .collect();
+    let path_vec = b.create_vector(&steps);
+    let on = b.create_string(object_name);
+    let target =
+        fb::ElementRef::create(&mut b, &fb::ElementRefArgs { object_name: Some(on), path: Some(path_vec) });
+    let act = b.create_string(action);
+    let txt = b.create_string(text);
+    let c = fb::InvokeAction::create(
+        &mut b,
+        &fb::InvokeActionArgs { target: Some(target), action: Some(act), text: Some(txt) },
+    );
+    finish(b, request_id, fb::Command::InvokeAction, c.as_union_value())
+}
+
 // --- Event decoding (st.agent.events) ---------------------------------------
 
 /// A decoded event relevant to correlation / observation.
@@ -619,6 +651,24 @@ mod tests {
         let v = event_to_json(b.finished_data()).unwrap();
         assert_eq!(v["type"], "Settled");
         assert_eq!(v["request_id"], 9);
+    }
+
+    #[test]
+    fn invoke_action_command_roundtrips() {
+        let path = vec![
+            ("menu".to_string(), String::new(), 0u32),
+            ("menuitem".to_string(), "New Project...".to_string(), 0u32),
+        ];
+        let bytes = invoke_action(7, "", &path, "Press", "");
+        let env = flatbuffers::root::<fb::CommandEnvelope>(&bytes).unwrap();
+        assert_eq!(env.request_id(), 7);
+        assert_eq!(env.command_type(), fb::Command::InvokeAction);
+        let c = env.command_as_invoke_action().unwrap();
+        assert_eq!(c.action().unwrap(), "Press");
+        let steps = c.target().unwrap().path().unwrap();
+        assert_eq!(steps.len(), 2);
+        assert_eq!(steps.get(1).role().unwrap(), "menuitem");
+        assert_eq!(steps.get(1).name().unwrap(), "New Project...");
     }
 
     #[test]

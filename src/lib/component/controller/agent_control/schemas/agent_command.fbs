@@ -17,6 +17,12 @@ table HistoryBack    {}                                                         
 table HistoryForward {}                                                               // MessageHistoryRedo
 table CreateBookmark { name: string; comment: string; node_serialized_name: string; } // MessageBookmarkCreate
 
+// Structural control: invoke an accessible action (or set text) on the element
+// addressed by `target` (the same ElementRef the snapshot emits). Resolved to a
+// live QAccessibleInterface by QtUiControl on the GUI thread. See
+// DESIGN_AGENT_UI_CONTROL.md (Structural control).
+table InvokeAction { target: ElementRef; action: string; text: string; }
+
 // Requests: the reply is published on another channel, correlated by request_id.
 table GetUiState { }                                                                  // -> UiStateEnvelope on st.agent.state
 table GetFrame   { format: FrameFormat = Png; max_width: uint32 = 0; }                // -> FrameEnvelope on st.agent.frames
@@ -36,6 +42,7 @@ union Command {
     GetUiState,
     GetFrame,
     GetSnapshot,
+    InvokeAction,
 }
 
 // One message on `st.agent.cmd`. `request_id` correlates a later reply
