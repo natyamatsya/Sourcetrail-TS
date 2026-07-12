@@ -20,5 +20,7 @@ include!(concat!(env!("OUT_DIR"), "/schema_gen.rs"));
 
 pub mod protocol;
 pub mod ipc;
+pub mod instance;
 
+pub use instance::InstanceManager;
 pub use ipc::Bridge;

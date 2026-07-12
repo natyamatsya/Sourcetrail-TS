@@ -11,12 +11,29 @@ use serde_json::{json, Value};
 // to a single `schema::sourcetrail::agent`.
 use crate::schema::sourcetrail::agent as fb;
 
-/// thoth-ipc channel names (must match AgentControlController).
+/// thoth-ipc channel names, namespaced by instance id (must match the C++
+/// AgentControlController::agentChannel): empty id -> `st.agent.<base>`, otherwise
+/// `st.agent.<id>.<base>`.
 pub mod channel {
-    pub const CMD: &str = "st.agent.cmd";
-    pub const EVENTS: &str = "st.agent.events";
-    pub const STATE: &str = "st.agent.state";
-    pub const FRAMES: &str = "st.agent.frames";
+    fn name(base: &str, instance: &str) -> String {
+        if instance.is_empty() {
+            format!("st.agent.{base}")
+        } else {
+            format!("st.agent.{instance}.{base}")
+        }
+    }
+    pub fn cmd(instance: &str) -> String {
+        name("cmd", instance)
+    }
+    pub fn events(instance: &str) -> String {
+        name("events", instance)
+    }
+    pub fn state(instance: &str) -> String {
+        name("state", instance)
+    }
+    pub fn frames(instance: &str) -> String {
+        name("frames", instance)
+    }
 }
 
 // --- Command builders -------------------------------------------------------

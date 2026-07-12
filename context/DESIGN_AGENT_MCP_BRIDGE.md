@@ -120,6 +120,32 @@ tool call:
 - **Cancellation race:** documented in the app side; the bridge treats a missing
   `CommandResult` within timeout as an error, not a hang.
 
+## Lifecycle & multiple instances (implemented)
+
+The bridge manages app **processes** and a **pool of instances**, so a test can run
+several apps side by side and compare them (baseline vs candidate).
+
+- **Namespacing.** Each instance's channels are namespaced by an id:
+  `st.agent.<id>.*` (empty id → the default `st.agent.*`). Both ends agree — the app
+  takes `--agent-instance <id>` (`AgentControlController::agentChannel`) and the bridge
+  builds the same names (`protocol::channel`).
+- **`InstanceManager`** (`instance.rs`) owns the pool. Each `AppInstance` is either
+  **spawned** (the manager owns the `Child` and kills it on `kill`/drop) or **attached**
+  (connected to an already-running app; not owned). Tools take an optional `instance`;
+  `get_or_attach` lazily attaches on first use, preserving the simple "just call a tool"
+  UX for the default app.
+- **Start/kill/list tools.** `start_instance{bin, id?, project?, headless?}` spawns
+  `Sourcetrail --agent-control --agent-instance <id>` (offscreen by default), polls until
+  its channels are ready (failing fast if the child exits), optionally loads a project, and
+  returns the id. `kill_instance{id}` and `list_instances` manage the pool.
+- **Git-labelled ids.** If `start_instance` is given no `id`, it derives one from the
+  binary's enclosing **git checkout** — `<branch>-<shorthash>`, sanitized — so pointing the
+  bridge at a checkout self-identifies the version under test in the channel namespace. A
+  comparison test starts two binaries from two checkouts and gets two clearly-labelled
+  instances with no manual id bookkeeping.
+- **Threading.** `InstanceManager` owns thoth-ipc Routes + child processes (not `Sync`), so
+  it lives on one dedicated OS thread; the async rmcp handlers dispatch closures to it.
+
 ## Data mapping
 
 - **FlatBuffers → JSON.** The bridge decodes envelopes and re-encodes as MCP JSON content.

@@ -25,17 +25,24 @@ pub struct Bridge {
 }
 
 impl Bridge {
-    /// Connect to a running Sourcetrail (`--agent-control`). The bridge is the
-    /// opposite end of every route: it *sends* commands and *receives* the rest.
+    /// Connect to the default (unnamespaced) running Sourcetrail.
     pub fn connect() -> Result<Self> {
-        let cmd = Route::connect(channel::CMD, Mode::Sender)
-            .with_context(|| format!("connect {} (is Sourcetrail running with --agent-control?)", channel::CMD))?;
-        let events = Route::connect(channel::EVENTS, Mode::Receiver)
-            .with_context(|| format!("connect {}", channel::EVENTS))?;
-        let state = Route::connect(channel::STATE, Mode::Receiver)
-            .with_context(|| format!("connect {}", channel::STATE))?;
-        let frames = Route::connect(channel::FRAMES, Mode::Receiver)
-            .with_context(|| format!("connect {}", channel::FRAMES))?;
+        Self::connect_instance("")
+    }
+
+    /// Connect to a running Sourcetrail whose agent-control channels are
+    /// namespaced by `instance` (see `--agent-instance`). The bridge is the
+    /// opposite end of every route: it *sends* commands and *receives* the rest.
+    pub fn connect_instance(instance: &str) -> Result<Self> {
+        let cmd = Route::connect(&channel::cmd(instance), Mode::Sender).with_context(|| {
+            format!("connect {} (is Sourcetrail running with --agent-control?)", channel::cmd(instance))
+        })?;
+        let events = Route::connect(&channel::events(instance), Mode::Receiver)
+            .with_context(|| format!("connect {}", channel::events(instance)))?;
+        let state = Route::connect(&channel::state(instance), Mode::Receiver)
+            .with_context(|| format!("connect {}", channel::state(instance)))?;
+        let frames = Route::connect(&channel::frames(instance), Mode::Receiver)
+            .with_context(|| format!("connect {}", channel::frames(instance)))?;
         Ok(Self { cmd, events, state, frames, next_id: 1 })
     }
 
