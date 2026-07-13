@@ -7,9 +7,11 @@ SQL DSL), and — the centerpiece — the **`SqliteStorage` base-class refactor*
 lets the two concrete storages (`SqliteIndexStorage`, `SqliteBookmarkStorage`)
 move onto sqlpp23 incrementally while sharing **one** `sqlite3` handle.
 
-It is a plan of record for the refactor, not a description of shipped code. The
-enabling pieces below already exist and are proven; the base-class change is the
-next step.
+**Status: shipped.** All phases (0–5) have landed: both storages run fully on
+typed sqlpp23 statements, handle ownership lives in the injected
+`StorageConnection` facade, and the `FilePath` constructors are retired. Raw
+SQL remains only where planned: schema DDL and the `element_id_to_clear`
+maintenance dance. The sections below are kept as the design rationale.
 
 ## Groundwork already in place
 
@@ -116,31 +118,31 @@ the ~8 test instantiation sites, which move from `Storage s(path)` to
 
 ## Phased plan (build stays green at every step)
 
-**Phase 0 — expose the handle (no behavior change).**
+**Phase 0 — expose the handle (no behavior change).** ✅ shipped.
 Add `sqlite3* CppSQLite3DB::handle()` (and to `DualCppSqlite3DB`, returning its
 inner SQLite handle). Add the `common_connection<connection_base>` borrow shim
 (from the POC) as a small header. Nothing consumes it yet. *Ships independently.*
 
-**Phase 1 — dual-view without touching call sites.**
+**Phase 1 — dual-view without touching call sites.** ✅ shipped.
 Keep the `SqliteStorage(FilePath)` ctor; internally it still opens `m_database`,
 but also constructs a borrowed `sqlpp::sqlite3::connection` over
 `m_database.handle()` and exposes `sqlpp::sqlite3::connection& db()` (protected).
 All existing raw call sites are unchanged. Verifies the shared handle end-to-end
 against the existing test suites.
 
-**Phase 2 — migrate the base-class meta/version plumbing.**
+**Phase 2 — migrate the base-class meta/version plumbing.** ✅ shipped.
 Convert `getMetaValue`/`insertOrUpdateMetaValue`/`hasTable`/`setVersion`/`setTime`
 and `begin/commit/rollbackTransaction` to `db()` (typed), per the meta POC. This
 exercises the shared handle on real base-class code shared by both storages.
 Model the `meta` table with the fixed `ddl2cpp` (note: `key` is a reserved word —
 the vendored generator now keeps it).
 
-**Phase 3 — migrate `SqliteBookmarkStorage`.**
+**Phase 3 — migrate `SqliteBookmarkStorage`.** ✅ shipped.
 Port its ~11 methods to typed queries (bookmark POC is the template). Smallest
 concrete storage; low call volume; a clean full-class win to validate the pattern
 on production types.
 
-**Phase 4 — migrate `SqliteIndexStorage` (biggest payoff first).**
+**Phase 4 — migrate `SqliteIndexStorage` (biggest payoff first).** ✅ shipped.
 Lead with the **batch inserts**: `insert_into(t).columns(...)` + `add_values(...)`
 replaces the entire `InsertBatchStatement<T>` 999-parameter machinery (direct
 execution inlines values, so the bound-parameter limit that forced the dance is
@@ -148,7 +150,7 @@ moot). Then client-side id allocation, IN-list reads, `INSERT OR IGNORE`, and th
 `forEach<T>` family. Correct the FK-primary-key `id`s in the generated tables
 (`[PK-is-FK]`: edge/node/symbol/file/filecontent/local_symbol/error).
 
-**Phase 5 — flip to true injection, retire the `FilePath` ctor.**
+**Phase 5 — flip to true injection, retire the `FilePath` ctor.** ✅ shipped.
 Move handle ownership to `StorageConnection`, injected by `PersistentStorage`;
 update the ~8 test sites; drop `SqliteStorage`'s open/close from ctor/dtor. Once no
 raw call sites remain in a class, its `CppSQLite3DB` dependency can go; `CppSQLite3DB`
@@ -185,9 +187,17 @@ coexisting.
   sqlpp23 escapes them correctly (not naive concatenation). For very large batches,
   chunk by statement length rather than a hard 999. Prepared statements remain
   available where bound parameters are preferred.
-- **Toolchain.** sqlpp23 needs real Clang ≥ 20.1 / GCC ≥ 14.2 / MSVC ≥ 19.44.
-  Standardize on the `llvm-clang-*` CMake presets; Apple clang's version numbers do
-  not map to upstream Clang.
+- **Toolchain.** Upstream sqlpp23 documents Clang ≥ 20.1 / GCC ≥ 14.2 /
+  MSVC ≥ 19.44 — but that is what its CI validates (and what C++23 *modules*
+  need), not a hard floor for the header-only, non-modules consumption used
+  here. Empirically verified (2026-07): the full POC suite and the migrated
+  storage layer's query surface compile clean and pass at runtime on
+  **Apple clang 17 (Xcode 16.4), 21 (Xcode 26.5) and 21 (Xcode 27 beta)** —
+  Apple also realigned its clang versioning with upstream LLVM, so current
+  Xcodes clear the documented floor outright. Both the `llvm-clang-*` and
+  `apple-clang-*` CMake presets are viable; re-verify apple-clang when bumping
+  the sqlpp23 port, since a newer version could pull in constructs Apple's
+  older libc++ lacks.
 
 ## Testing strategy
 
@@ -200,15 +210,19 @@ coexisting.
   notes) and diff the resulting `.srctrldb` against a pre-migration build for
   byte/row equivalence.
 
-## Open questions to confirm before Phase 5
+## Open questions — resolutions
 
-1. **Facade granularity** — one `StorageConnection` per file (index vs bookmark are
-   already separate files/handles), or a shared owner? Recommendation: per file,
-   matching today's topology.
-2. **Retire `CppSQLite3DB`?** Keep it indefinitely for the Dual backend, or drop it
-   once both storages are typed and Turso-compare is reworked separately?
-3. **Prepared vs inlined** for the hot insert path at scale — measure on tokio
-   before committing to inlined multi-row inserts as the default.
+1. **Facade granularity** — resolved: one `StorageConnection` per file, matching
+   today's topology. (As shipped, the facade has a throwing constructor rather
+   than the sketched `static std::optional<...> open()`, preserving the old
+   ctor's failure behavior; close/reopen never materialized because the temp-DB
+   swap reconstructs `PersistentStorage` wholesale.)
+2. **Retire `CppSQLite3DB`?** Still open. It remains in use for schema DDL, the
+   `element_id_to_clear` maintenance statements, `SqliteDatabaseIndex`, and the
+   Dual Turso-compare backend.
+3. **Prepared vs inlined** for the hot insert path at scale — still open; the
+   shipped default is inlined multi-row inserts chunked at 500 rows. Measure on
+   tokio before revisiting.
 
 ## Effort & sequencing
 
