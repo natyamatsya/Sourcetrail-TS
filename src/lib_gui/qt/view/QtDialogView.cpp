@@ -5,6 +5,7 @@
 #include <sstream>
 #include <thread>
 
+#include <QGuiApplication>
 #include <QTimer>
 
 #include "MessageIndexingStatus.h"
@@ -254,6 +255,16 @@ DatabasePolicy QtDialogView::finishedIndexingDialog(
 	bool interrupted)
 {
 	using enum DatabasePolicy;
+
+	// Offscreen (agent-driven / headless GUI) runs have no user who could press
+	// the report dialog's buttons. Blocking here parks the task scheduler in a
+	// wait loop, which also starves agent-control commands — so keep the indexed
+	// data and continue immediately.
+	if (QGuiApplication::platformName() == QLatin1String("offscreen"))
+	{
+		return DATABASE_POLICY_KEEP;
+	}
+
 	DatabasePolicy policy = DATABASE_POLICY_UNKNOWN;
 	m_resultReady = false;
 
