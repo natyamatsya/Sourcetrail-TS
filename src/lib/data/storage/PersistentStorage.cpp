@@ -122,6 +122,7 @@ void PersistentStorage::finishConcurrentTurso()
 		LOG_INFO(
 			"Concurrent Turso writer: finished (failed=" +
 			std::to_string(m_concurrentTursoWriter->failedBatches()) +
+			", retried=" + std::to_string(m_concurrentTursoWriter->retriedBatches()) +
 			"). counts node=" + std::to_string(count("node")) + " edge=" + std::to_string(count("edge")) +
 			" symbol=" + std::to_string(count("symbol")) + " source_location=" +
 			std::to_string(count("source_location")) + " occurrence=" + std::to_string(count("occurrence")) +

@@ -17,11 +17,12 @@ use std::ptr;
 use std::sync::Arc;
 
 use turso_core::types::{Value, ValueType};
-use turso_core::{Connection, Database, PlatformIO, Statement, StepResult, IO};
+use turso_core::{Connection, Database, LimboError, PlatformIO, Statement, StepResult, IO};
 
 // ---- Result codes (mirror sqlite3.h) --------------------------------------
 pub const TSQ_OK: c_int = 0;
 pub const TSQ_ERROR: c_int = 1;
+pub const TSQ_BUSY: c_int = 5; // transient MVCC busy/conflict; retryable
 pub const TSQ_ROW: c_int = 100;
 pub const TSQ_DONE: c_int = 101;
 
@@ -34,13 +35,34 @@ const TSQ_NULL: c_int = 5;
 
 thread_local! {
     static LAST_ERR: RefCell<CString> = RefCell::new(CString::default());
+    static LAST_CODE: std::cell::Cell<c_int> = const { std::cell::Cell::new(TSQ_OK) };
 }
 
 fn set_err(msg: impl AsRef<str>) {
+    set_err_code(msg, TSQ_ERROR);
+}
+
+fn set_err_code(msg: impl AsRef<str>, code: c_int) {
     // CString cannot hold interior NULs; sanitise defensively.
     let cleaned = msg.as_ref().replace('\0', " ");
     let c = CString::new(cleaned).unwrap_or_else(|_| CString::new("error").unwrap());
     LAST_ERR.with(|e| *e.borrow_mut() = c);
+    LAST_CODE.with(|c| c.set(code));
+}
+
+/// (code, message) for a turso_core error: transient busy/conflict conditions —
+/// the ones a `BEGIN CONCURRENT` writer should roll back and retry — map to
+/// TSQ_BUSY, everything else to TSQ_ERROR.
+fn classify(e: LimboError) -> (c_int, String) {
+    let code = match &e {
+        LimboError::Busy
+        | LimboError::BusySnapshot
+        | LimboError::Conflict(_)
+        | LimboError::WriteWriteConflict
+        | LimboError::CommitDependencyAborted => TSQ_BUSY,
+        _ => TSQ_ERROR,
+    };
+    (code, e.to_string())
 }
 
 /// Owns the Turso database, a default connection, and the IO object we must
@@ -152,6 +174,14 @@ pub extern "C" fn tsq_last_error() -> *const c_char {
     LAST_ERR.with(|e| e.borrow().as_ptr())
 }
 
+/// Classifies the last error for this thread: TSQ_BUSY for transient MVCC
+/// busy/conflict errors (roll back and retry the transaction), TSQ_ERROR for
+/// everything else. Valid under the same rules as `tsq_last_error`.
+#[no_mangle]
+pub extern "C" fn tsq_last_error_code() -> c_int {
+    LAST_CODE.with(|c| c.get())
+}
+
 #[no_mangle]
 pub extern "C" fn tsq_open(path: *const c_char) -> *mut TsqDb {
     let r = catch_unwind(AssertUnwindSafe(|| {
@@ -193,13 +223,13 @@ pub extern "C" fn tsq_exec(db: *mut TsqDb, sql: *const c_char) -> c_int {
     let r = catch_unwind(AssertUnwindSafe(|| {
         let sql = unsafe { CStr::from_ptr(sql) }
             .to_str()
-            .map_err(|e| e.to_string())?;
-        db.conn.prepare_execute_batch(sql).map_err(|e| e.to_string())
+            .map_err(|e| (TSQ_ERROR, e.to_string()))?;
+        db.conn.prepare_execute_batch(sql).map_err(classify)
     }));
     match r {
         Ok(Ok(())) => TSQ_OK,
-        Ok(Err(e)) => {
-            set_err(e);
+        Ok(Err((code, msg))) => {
+            set_err_code(msg, code);
             TSQ_ERROR
         }
         Err(_) => {
@@ -298,18 +328,21 @@ pub extern "C" fn tsq_step(stmt: *mut TsqStmt) -> c_int {
     let s = unsafe { &mut *stmt };
     let r = catch_unwind(AssertUnwindSafe(|| {
         loop {
-            match s.stmt.step().map_err(|e| e.to_string())? {
+            match s.stmt.step().map_err(classify)? {
                 StepResult::Row => {
                     let n = s.stmt.num_columns();
                     let mut cols = Vec::with_capacity(n);
                     {
-                        let row = s.stmt.row().ok_or_else(|| "row missing".to_string())?;
+                        let row = s
+                            .stmt
+                            .row()
+                            .ok_or_else(|| (TSQ_ERROR, "row missing".to_string()))?;
                         for i in 0..n {
                             cols.push(decode(row.get_value(i)));
                         }
                     }
                     s.cols = cols;
-                    return Ok::<c_int, String>(TSQ_ROW);
+                    return Ok::<c_int, (c_int, String)>(TSQ_ROW);
                 }
                 StepResult::Done => {
                     s.cols.clear();
@@ -318,7 +351,7 @@ pub extern "C" fn tsq_step(stmt: *mut TsqStmt) -> c_int {
                 // Drive IO and retry. Busy is treated the same in this
                 // single-connection comparison harness.
                 StepResult::IO | StepResult::Yield | StepResult::Busy => {
-                    s.io.step().map_err(|e| e.to_string())?;
+                    s.io.step().map_err(classify)?;
                 }
                 StepResult::Interrupt => {
                     set_err("interrupted");
@@ -329,8 +362,8 @@ pub extern "C" fn tsq_step(stmt: *mut TsqStmt) -> c_int {
     }));
     match r {
         Ok(Ok(code)) => code,
-        Ok(Err(e)) => {
-            set_err(e);
+        Ok(Err((code, msg))) => {
+            set_err_code(msg, code);
             TSQ_ERROR
         }
         Err(_) => {
@@ -479,13 +512,13 @@ pub extern "C" fn tsq_conn_exec(conn: *mut TsqConn, sql: *const c_char) -> c_int
     let r = catch_unwind(AssertUnwindSafe(|| {
         let sql = unsafe { CStr::from_ptr(sql) }
             .to_str()
-            .map_err(|e| e.to_string())?;
-        c.conn.prepare_execute_batch(sql).map_err(|e| e.to_string())
+            .map_err(|e| (TSQ_ERROR, e.to_string()))?;
+        c.conn.prepare_execute_batch(sql).map_err(classify)
     }));
     match r {
         Ok(Ok(())) => TSQ_OK,
-        Ok(Err(e)) => {
-            set_err(e);
+        Ok(Err((code, msg))) => {
+            set_err_code(msg, code);
             TSQ_ERROR
         }
         Err(_) => {

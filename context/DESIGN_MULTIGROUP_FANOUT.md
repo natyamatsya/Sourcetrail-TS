@@ -1,6 +1,6 @@
 # Design: Multi-Subprocess Fan-Out Across Source Groups (Phase 8)
 
-**Status: designed, not implemented (2026-07-11).** Parallelize indexing across source
+**Status: S0 implemented (2026-07-14); S1–S5 designed, not implemented.** Parallelize indexing across source
 groups by spawning dedicated subprocess *clusters* per group and routing every group's
 results into the already-complete concurrent Turso MVCC writer as the **sole** storage
 writer during fan-out.
@@ -58,13 +58,22 @@ Two guardrails the design must respect:
 Each stage is independently buildable/verifiable. Branch from a clean `main` (the in-progress
 `ladybug` submodule add on `main` is unrelated — do not sweep it in).
 
-### S0 — MVCC conflict-retry (do first; unblocks "sole writer")
+### S0 — MVCC conflict-retry (do first; unblocks "sole writer") — **DONE (2026-07-14)**
 
 Split `ConcurrentTursoWriter::Impl::process` into **resolve** (build `sql` via the intern/remap
 loop — unchanged; ids pre-assigned in `ConcurrentStorageIndex`, INSERTs guarded by
 `created`/`markNew`) and **commit** (a bounded retry loop around `BEGIN CONCURRENT`/exec/`COMMIT`,
 ≤8 tries with small backoff; on the conflict code → `ROLLBACK` + retry; count `failedBatches`
 only after exhaustion; add `retriedBatches()` instrumentation).
+
+*As implemented:* `tryCommit`/`commitWithRetry` in `ConcurrentTursoWriter.cpp`; the retry
+trigger is a new `tsq_last_error_code()` in the turso shim, which classifies turso_core's
+`Busy`/`BusySnapshot`/`Conflict`/`WriteWriteConflict`/`CommitDependencyAborted` as `TSQ_BUSY`
+(mirroring `SQLITE_BUSY`) — no error-string matching. All INSERTs (graph tables **and**
+`filecontent`) are `OR IGNORE`; filecontent step results are now checked. Gate test:
+`ConcurrentTursoWriterTestSuite` forces a real write-write conflict between two
+`BEGIN CONCURRENT` transactions and asserts TSQ_BUSY classification + idempotent re-run
+convergence, alongside the existing serial==concurrent count equivalence.
 
 **Idempotency (the correctness argument):** a conflicted transaction rolls back and commits
 **no rows**, so re-running the *identical* `sql` inserts each row for the first time, with the

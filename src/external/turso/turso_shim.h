@@ -18,6 +18,7 @@ extern "C" {
 /* Result codes (mirror sqlite3.h). */
 #define TSQ_OK 0
 #define TSQ_ERROR 1
+#define TSQ_BUSY 5 /* transient MVCC busy/conflict; roll back and retry */
 #define TSQ_ROW 100
 #define TSQ_DONE 101
 
@@ -35,6 +36,11 @@ typedef struct TsqConn TsqConn;  /* additional connection for concurrent MVCC wr
 
 /* Last error message for the calling thread; never null. Copy immediately. */
 const char* tsq_last_error(void);
+
+/* Classification of the last error for the calling thread: TSQ_BUSY for
+ * transient MVCC busy/conflict errors (roll back and retry the transaction),
+ * TSQ_ERROR for everything else. Same validity rules as tsq_last_error. */
+int tsq_last_error_code(void);
 
 /* Connection lifecycle. Returns null on failure (see tsq_last_error). */
 TsqDb* tsq_open(const char* path);

@@ -10,6 +10,7 @@
 
 #include "ConcurrentTursoWriter.h"
 #include "FileSystem.h"
+#include "turso_shim.h"
 
 #include <array>
 #include <string>
@@ -114,6 +115,7 @@ std::vector<ConcurrentTursoWriter::Batch> makeWorkload(int batchCount, int share
 struct Counts
 {
 	long long failed = -1;
+	long long retried = -1;
 	std::array<long long, 10> t{};  // one per table below
 };
 
@@ -138,6 +140,7 @@ Counts runAndCount(const std::string& dbPath, int numWriters,
 		}
 		writer.finish();
 		c.failed = writer.failedBatches();
+		c.retried = writer.retriedBatches();
 		for (std::size_t i = 0; i < kTables.size(); ++i)
 		{
 			c.t[i] = writer.scalar(std::string("SELECT COUNT(*) FROM ") + kTables[i]);
@@ -160,6 +163,8 @@ TEST_CASE("concurrent turso writer: all kinds, concurrent result == serial resul
 
 	REQUIRE(serial.failed == 0);
 	REQUIRE(concurrent.failed == 0);
+	REQUIRE(serial.retried == 0);  // one writer cannot conflict with itself
+	INFO("concurrent retriedBatches: " << concurrent.retried);
 
 	for (std::size_t i = 0; i < kTables.size(); ++i)
 	{
@@ -170,6 +175,82 @@ TEST_CASE("concurrent turso writer: all kinds, concurrent result == serial resul
 
 	// element ids stay unique and cover every element-minting row.
 	// (node + edge + local_symbol + source_location + error all mint element ids.)
+}
+
+// The S0 correctness gate at the engine level: force a genuine MVCC write-write
+// conflict between two BEGIN CONCURRENT transactions and verify the retry
+// contract the writer relies on — the conflicted transaction commits nothing,
+// the error classifies as TSQ_BUSY (retryable), and re-running the identical
+// OR-IGNORE batch on a fresh snapshot converges to the correct final state.
+TEST_CASE("concurrent turso writer: conflicted commit rolls back and retries idempotently")
+{
+	const std::string dbPath = "data/SQLiteTestSuite/ctw_conflict.db";
+	for (const char* sfx: {"", "-wal", "-shm", "-log"})
+	{
+		FileSystem::remove(FilePath(dbPath + sfx));
+	}
+
+	TsqDb* db = tsq_open(dbPath.c_str());
+	REQUIRE(db != nullptr);
+	REQUIRE(tsq_exec(db, "PRAGMA journal_mode = 'mvcc'") == TSQ_OK);
+	REQUIRE(tsq_exec(db, "CREATE TABLE t(id INTEGER PRIMARY KEY, v TEXT)") == TSQ_OK);
+
+	TsqConn* a = tsq_new_connection(db);
+	TsqConn* b = tsq_new_connection(db);
+	REQUIRE(a != nullptr);
+	REQUIRE(b != nullptr);
+
+	// Both transactions write row id=1; snapshot isolation hides A's uncommitted
+	// row from B, so B writes too and the conflict surfaces at write or commit.
+	const char* sqlB = "INSERT OR IGNORE INTO t(id,v) VALUES(1,'b');"
+					   "INSERT OR IGNORE INTO t(id,v) VALUES(2,'b2');";
+	REQUIRE(tsq_conn_exec(a, "BEGIN CONCURRENT") == TSQ_OK);
+	REQUIRE(tsq_conn_exec(b, "BEGIN CONCURRENT") == TSQ_OK);
+	REQUIRE(tsq_conn_exec(a, "INSERT OR IGNORE INTO t(id,v) VALUES(1,'a')") == TSQ_OK);
+
+	int rcB = tsq_conn_exec(b, sqlB);
+	int codeB = (rcB == TSQ_OK) ? TSQ_OK : tsq_last_error_code();
+	REQUIRE(tsq_conn_exec(a, "COMMIT") == TSQ_OK);
+	if (rcB == TSQ_OK)
+	{
+		rcB = tsq_conn_exec(b, "COMMIT");
+		codeB = (rcB == TSQ_OK) ? TSQ_OK : tsq_last_error_code();
+	}
+
+	if (rcB != TSQ_OK)
+	{
+		INFO("conflict error: " << tsq_last_error());
+		REQUIRE(codeB == TSQ_BUSY);  // classified as retryable, not a hard error
+		tsq_conn_exec(b, "ROLLBACK");
+		// The retry loop's move: re-run the identical batch in a fresh
+		// transaction. B now sees A's row, so OR IGNORE skips id=1.
+		REQUIRE(tsq_conn_exec(b, "BEGIN CONCURRENT") == TSQ_OK);
+		REQUIRE(tsq_conn_exec(b, sqlB) == TSQ_OK);
+		REQUIRE(tsq_conn_exec(b, "COMMIT") == TSQ_OK);
+	}
+
+	tsq_conn_close(a);
+	tsq_conn_close(b);
+
+	// First committer won row 1; B's non-conflicting row 2 landed on retry.
+	auto scalar = [db](const char* sql) -> long long
+	{
+		TsqStmt* stmt = tsq_prepare(db, sql);
+		REQUIRE(stmt != nullptr);
+		REQUIRE(tsq_step(stmt) == TSQ_ROW);
+		const long long v = tsq_column_int(stmt, 0);
+		tsq_finalize(stmt);
+		return v;
+	};
+	REQUIRE(scalar("SELECT COUNT(*) FROM t") == 2);
+	REQUIRE(scalar("SELECT COUNT(*) FROM t WHERE id = 1 AND v = 'a'") == 1);
+	REQUIRE(scalar("SELECT COUNT(*) FROM t WHERE id = 2 AND v = 'b2'") == 1);
+
+	tsq_close(db);
+	for (const char* sfx: {"", "-wal", "-shm", "-log"})
+	{
+		FileSystem::remove(FilePath(dbPath + sfx));
+	}
 }
 
 #endif  // SOURCETRAIL_TURSO_CONCURRENT

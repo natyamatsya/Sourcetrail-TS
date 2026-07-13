@@ -26,9 +26,11 @@
 // read. Turso-only because concurrent writers are incompatible with the single-
 // writer SQLite (and the SQLite/Turso compare) model.
 //
-// Scope of this slice: nodes, edges, local symbols (the graph core). Deferred:
-// files, symbols, source locations, occurrences, component accesses, element
-// components, errors; node-type upgrade on re-add; FOREIGN_KEYS handling.
+// All 10 entity kinds are written (nodes, edges, local symbols, symbols, files,
+// filecontent, source locations, occurrences, component accesses, element
+// components, errors). Commits retry on transient MVCC conflicts (bounded, with
+// backoff); every INSERT is OR IGNORE and ids are pre-assigned in-process, so a
+// retried transaction is idempotent. Deferred: node-type upgrade on re-add.
 //
 // The implementation is pimpl'd so this header pulls in no Turso/stdexec headers;
 // the .cpp compiles only when SOURCETRAIL_TURSO_CONCURRENT is defined.
@@ -67,8 +69,13 @@ public:
 	//! Must be called before reading the database.
 	void finish();
 
-	//! Number of batches that failed to commit (0 on a clean run).
+	//! Number of batches that failed to commit after exhausting conflict
+	//! retries (0 on a clean run).
 	long long failedBatches() const;
+
+	//! Number of batches that needed at least one MVCC conflict retry.
+	//! Instrumentation only — retried batches commit normally.
+	long long retriedBatches() const;
 
 	//! Inspection helper: run a scalar integer query on the database.
 	long long scalar(const std::string& sql) const;
