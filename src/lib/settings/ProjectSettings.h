@@ -23,6 +23,12 @@ public:
 	static bool isProjectFilePath(const FilePath& filePath);
 	static bool isTomlProjectFilePath(const FilePath& filePath);
 
+	//! One-time migration: converts a legacy XML .srctrlprj file to .srctrl.toml,
+	//! deletes the legacy file, and returns the TOML path. Non-legacy paths pass
+	//! through unchanged; a stale legacy path whose TOML sibling exists resolves
+	//! to the sibling.
+	static FilePath migrateLegacyProjectFile(const FilePath& projectFilePath);
+
 	ProjectSettings();
 	ProjectSettings(const FilePath& projectFilePath);
 	~ProjectSettings() override;

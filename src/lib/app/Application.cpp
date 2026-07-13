@@ -291,7 +291,11 @@ void Application::handleMessage(MessageLoadProject* message)
 {
 	TRACE("app load project");
 
-	FilePath projectSettingsFilePath(message->projectSettingsFilePath);
+	// Every load path (GUI, recent projects, file-open, CLI) funnels through
+	// here, so this is the single point where legacy XML project files are
+	// converted to .srctrl.toml before anything operates on them.
+	const FilePath projectSettingsFilePath =
+		ProjectSettings::migrateLegacyProjectFile(FilePath(message->projectSettingsFilePath));
 	loadWindow(projectSettingsFilePath.empty());
 
 	if (projectSettingsFilePath.empty())

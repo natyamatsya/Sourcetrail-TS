@@ -26,19 +26,10 @@ bool Settings::load(const FilePath& filePath, bool readOnly)
 {
 	m_readOnly = readOnly;
 
-	FilePath resolvedPath = filePath;
-
-	if (!resolvedPath.exists())
+	if (filePath.exists())
 	{
-		const FilePath tomlPath = filePath.replaceExtension(".srctrl.toml");
-		if (tomlPath.exists())
-			resolvedPath = tomlPath;
-	}
-
-	if (resolvedPath.exists())
-	{
-		m_config = ConfigManager::createAndLoad(TextAccess::createFromFile(resolvedPath));
-		m_filePath = resolvedPath;
+		m_config = ConfigManager::createAndLoad(TextAccess::createFromFile(filePath));
+		m_filePath = filePath;
 		return true;
 	}
 	else
