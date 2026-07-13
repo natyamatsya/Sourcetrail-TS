@@ -38,6 +38,7 @@ std::shared_ptr<SourceGroupSettings> makeIfEnabled(const std::string& id, const 
 }	 // namespace
 
 const std::string ProjectSettings::PROJECT_FILE_EXTENSION = ".srctrl.toml";
+const std::string ProjectSettings::LEGACY_PROJECT_FILE_EXTENSION = ".srctrlprj";
 const std::string ProjectSettings::BOOKMARK_DB_FILE_EXTENSION = ".srctrl.bm";
 const std::string ProjectSettings::INDEX_DB_FILE_EXTENSION = ".srctrl.db";
 const std::string ProjectSettings::TEMP_INDEX_DB_FILE_EXTENSION = ".srctrl.db_tmp";
@@ -72,7 +73,13 @@ LanguageType ProjectSettings::getLanguageOfProject(const FilePath& filePath)
 
 bool ProjectSettings::isProjectFilePath(const FilePath& filePath)
 {
-	return isTomlProjectFilePath(filePath);
+	// Settings::load() still reads legacy XML .srctrlprj files (ConfigManager
+	// auto-detects the format and resolves a .srctrl.toml sibling), so the
+	// gatekeepers (CLI --project-file / index command, file-open) must accept
+	// both extensions — rejecting legacy here broke `Sourcetrail index` on
+	// projects that predate the TOML migration.
+	return isTomlProjectFilePath(filePath) ||
+		filePath.getPath().extension() == LEGACY_PROJECT_FILE_EXTENSION;
 }
 
 bool ProjectSettings::isTomlProjectFilePath(const FilePath& filePath)
