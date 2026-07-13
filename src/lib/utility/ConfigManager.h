@@ -9,7 +9,6 @@
 #include <vector>
 
 class TextAccess;
-class TiXmlNode;
 class FilePath;
 
 namespace toml { inline namespace v3 { class table; } }
@@ -59,10 +58,12 @@ public:
 	std::vector<std::string> getSublevelKeys(const std::string& key) const;
 
 	bool load(const std::shared_ptr<TextAccess> textAccess);
-	bool save(const std::string filepath);
 	bool saveToml(const std::string& filepath);
 	bool saveJson(const std::string& filepath);
-	std::string toString();
+
+	//! Renders the flat key/value store as sorted "key: value" lines — a
+	//! format-independent canonical form for comparisons (tests).
+	std::string toString() const;
 
 	void setWarnOnEmptyKey(bool warnOnEmptyKey) const;
 
@@ -71,10 +72,8 @@ private:
 	ConfigManager(const ConfigManager&);
 	void operator=(const ConfigManager&) = delete;
 
-	void parseSubtree(TiXmlNode* parentElement, const std::string& currentPath);
 	void parseTomlTable(const toml::v3::table& table, const std::string& currentPath);
 	bool loadJson(const std::string& text);
-	bool createXmlDocument(bool saveAsFile, std::string filepath, std::string& output);
 	toml::v3::table buildTomlTable() const;
 	void warnMissingKey(const std::string& key) const;
 

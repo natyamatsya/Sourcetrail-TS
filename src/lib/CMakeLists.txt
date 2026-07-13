@@ -138,7 +138,6 @@ target_link_libraries(Sourcetrail_lib
 
 		$<$<BOOL:${BUILD_CXX_LANGUAGE_PACKAGE}>:Sourcetrail_lib_cxx>
 
-		External_lib_tinyxml
 		External_lib_tomlplusplus
 		External_lib_nlohmann_json
 		External_lib_cppsqlite3

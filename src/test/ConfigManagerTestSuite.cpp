@@ -10,22 +10,19 @@ namespace
 std::shared_ptr<TextAccess> getConfigTextAccess()
 {
 	std::string text =
-		"<?xml version=\"1.0\" encoding=\"utf-8\" ?>\n"
-		"<config>\n"
-		"	<path>\n"
-		"		<to>\n"
-		"			<bool_that_is_false>0</bool_that_is_false>\n"
-		"			<bool_that_is_true>1</bool_that_is_true>\n"
-		"			<single_value>42</single_value>\n"
-		"		</to>\n"
-		"	</path>\n"
-		"	<paths>\n"
-		"		<nopath>4</nopath>\n"
-		"		<path>2</path>\n"
-		"		<path>5</path>\n"
-		"		<path>8</path>\n"
-		"	</paths>\n"
-		"</config>\n";
+		"{\n"
+		"	\"path\": {\n"
+		"		\"to\": {\n"
+		"			\"bool_that_is_false\": \"0\",\n"
+		"			\"bool_that_is_true\": \"1\",\n"
+		"			\"single_value\": \"42\"\n"
+		"		}\n"
+		"	},\n"
+		"	\"paths\": {\n"
+		"		\"nopath\": \"4\",\n"
+		"		\"path\": [\"2\", \"5\", \"8\"]\n"
+		"	}\n"
+		"}\n";
 	return TextAccess::createFromString(text);
 }
 
@@ -141,10 +138,10 @@ TEST_CASE("config manager returns correct list for key")
 
 TEST_CASE("config manager save and load configuration and compare")
 {
-	const FilePath path("data/ConfigManagerTestSuite/temp.xml");
+	const FilePath path("data/ConfigManagerTestSuite/temp.json");
 
 	std::shared_ptr<ConfigManager> config = ConfigManager::createAndLoad(getConfigTextAccess());
-	config->save(path.str());
+	config->saveJson(path.str());
 	std::shared_ptr<ConfigManager> config2 = ConfigManager::createAndLoad(
 		TextAccess::createFromFile(path));
 	REQUIRE(config->toString() == config2->toString());
@@ -153,7 +150,7 @@ TEST_CASE("config manager save and load configuration and compare")
 TEST_CASE("config manager loads special character")
 {
 	std::shared_ptr<ConfigManager> config = ConfigManager::createAndLoad(
-		TextAccess::createFromFile(FilePath("data/ConfigManagerTestSuite/test_data.xml")));
+		TextAccess::createFromFile(FilePath("data/ConfigManagerTestSuite/test_data.json")));
 	std::string loadedSpecialCharacter;
 	config->getValue("path/to/special_character", loadedSpecialCharacter);
 
@@ -165,13 +162,13 @@ TEST_CASE("config manager loads special character")
 
 TEST_CASE("config manager save and load special character and compare")
 {
-	const FilePath path("data/ConfigManagerTestSuite/temp.xml");
+	const FilePath path("data/ConfigManagerTestSuite/temp.json");
 	std::string specialCharacter;
 	specialCharacter = SPECIAL_CHARACTER_UTF8_LOWER_UE;
 
 	std::shared_ptr<ConfigManager> config = ConfigManager::createEmpty();
 	config->setValue("path/to/special_character", specialCharacter);
-	config->save(path.str());
+	config->saveJson(path.str());
 
 	std::shared_ptr<ConfigManager> config2 = ConfigManager::createAndLoad(
 		TextAccess::createFromFile(path));
@@ -246,8 +243,8 @@ TEST_CASE("config manager TOML round-trip preserves repeated-value keys")
 	std::shared_ptr<ConfigManager> config2 = ConfigManager::createAndLoad(
 		TextAccess::createFromFile(path));
 
-	// toString() renders the flat key/value store as XML, so equal strings mean
-	// every key/value pair — including the multi-value list — survived TOML.
+	// toString() renders the flat key/value store canonically, so equal strings
+	// mean every key/value pair — including the multi-value list — survived TOML.
 	REQUIRE(config->toString() == config2->toString());
 
 	std::vector<std::string> paths;

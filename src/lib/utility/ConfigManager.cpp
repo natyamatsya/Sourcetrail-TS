@@ -5,7 +5,6 @@
 #include <set>
 #include <sstream>
 
-#include "tinyxml.h"
 #include <glaze/glaze.hpp>
 #include <toml++/toml.hpp>
 
@@ -311,59 +310,21 @@ bool ConfigManager::load(const std::shared_ptr<TextAccess> textAccess)
 {
 	const std::string& text = textAccess->getText();
 
-	// Detect the format by the first non-whitespace character: '<' is XML (legacy),
-	// '{' is JSON (the current ApplicationSettings format), anything else is TOML
-	// (used by project .srctrl.toml files).
+	// Detect the format by the first non-whitespace character: '{' is JSON (the
+	// ApplicationSettings and color-scheme format), anything else is TOML (used
+	// by project .srctrl.toml files). XML support has been removed.
 	const size_t firstNonWs = text.find_first_not_of(" \t\r\n");
 	const char firstChar = (firstNonWs != std::string::npos) ? text[firstNonWs] : '\0';
 
+	if (firstChar == '<')
+	{
+		LOG_ERROR("XML configs are no longer supported.");
+		return false;
+	}
 	if (firstChar == '{')
 	{
 		return loadJson(text);
 	}
-	else if (firstChar == '<' || text.find("<?xml") != std::string::npos)
-	{
-		TiXmlDocument doc;
-		doc.Parse(text.c_str(), nullptr, TIXML_ENCODING_UTF8);
-		// TiXmlDocument::Parse() returns a non-null pointer even when parsing aborts
-		// on malformed markup (e.g. a mismatched tag), so it cannot be used to detect
-		// errors. Check Error() instead, otherwise a broken config silently parses as
-		// an empty tree and every setting falls back to its default without warning.
-		if (doc.Error())
-		{
-			LOG_ERROR(
-				"Failed to parse XML config at row " + std::to_string(doc.ErrorRow()) +
-				", column " + std::to_string(doc.ErrorCol()) + ": " + doc.ErrorDesc());
-			return false;
-		}
-
-		TiXmlHandle docHandle(&doc);
-		TiXmlNode* rootNode = docHandle.FirstChild("config").ToNode();
-		if (rootNode == nullptr)
-		{
-			LOG_ERROR("No rootelement 'config' in the configfile");
-			return false;
-		}
-		const bool rootHasChildren = (rootNode->FirstChild() != nullptr);
-		for (TiXmlNode* childNode = rootNode->FirstChild(); childNode;
-			 childNode = childNode->NextSibling())
-		{
-			parseSubtree(childNode, "");
-		}
-		// TiXml silently truncates the tree on some malformed markup (e.g. a
-		// mismatched closing tag) without setting Error(), which would otherwise
-		// leave every setting at its default with no indication why. Treat a
-		// non-empty <config> that yields no values as a parse failure.
-		if (rootHasChildren && m_values.empty())
-		{
-			LOG_ERROR(
-				"XML config has content but parsed to zero values; the file is likely "
-				"malformed (e.g. a mismatched tag). All settings would fall back to "
-				"their defaults.");
-			return false;
-		}
-	}
-	else
 	{
 		try
 		{
@@ -378,12 +339,6 @@ bool ConfigManager::load(const std::shared_ptr<TextAccess> textAccess)
 		}
 	}
 	return true;
-}
-
-bool ConfigManager::save(const std::string filepath)
-{
-	std::string output;
-	return createXmlDocument(true, filepath, output);
 }
 
 void ConfigManager::setWarnOnEmptyKey(bool warnOnEmptyKey) const
@@ -414,77 +369,7 @@ ConfigManager::ConfigManager(const ConfigManager& other)
 {
 }
 
-bool ConfigManager::createXmlDocument(bool saveAsFile, const std::string filepath, std::string& output)
-{
-	bool success = true;
-	TiXmlDocument doc;
-	TiXmlDeclaration* decl = new TiXmlDeclaration("1.0", "utf-8", "");
-	doc.LinkEndChild(decl);
-	TiXmlElement* root = new TiXmlElement("config");
-	doc.LinkEndChild(root);
 
-	for (std::multimap<std::string, std::string>::iterator it = m_values.begin();
-		 it != m_values.end();
-		 ++it)
-	{
-		if (!it->first.size() || !it->second.size())
-		{
-			continue;
-		}
-
-		std::vector<std::string> tokens = utility::splitToVector(it->first, "/");
-
-		TiXmlElement* element = doc.RootElement();
-		TiXmlElement* child;
-		while (tokens.size() > 1)
-		{
-			child = element->FirstChildElement(tokens.front().c_str());
-			if (!child)
-			{
-				child = new TiXmlElement(tokens.front().c_str());
-				element->LinkEndChild(child);
-			}
-			tokens.erase(tokens.begin());
-			element = child;
-		}
-
-		child = new TiXmlElement(tokens.front().c_str());
-		element->LinkEndChild(child);
-		TiXmlText* text = new TiXmlText(it->second.c_str());
-		child->LinkEndChild(text);
-	}
-
-	if (saveAsFile)
-	{
-		success = doc.SaveFile(filepath.c_str());
-	}
-	else
-	{
-		TiXmlPrinter printer;
-		doc.Accept(&printer);
-		output = printer.CStr();
-	}
-	success = doc.SaveFile(filepath.c_str());
-	doc.Clear();
-	return success;
-}
-
-void ConfigManager::parseSubtree(TiXmlNode* currentNode, const std::string& currentPath)
-{
-	if (currentNode->Type() == TiXmlNode::TINYXML_TEXT)
-	{
-		std::string key = currentPath.substr(0, currentPath.size() - 1);
-		m_values.insert(std::pair<std::string, std::string>(key, currentNode->ToText()->Value()));
-	}
-	else
-	{
-		for (TiXmlNode* childNode = currentNode->FirstChild(); childNode;
-			 childNode = childNode->NextSibling())
-		{
-			parseSubtree(childNode, currentPath + std::string(currentNode->Value()) + "/");
-		}
-	}
-}
 
 void ConfigManager::parseTomlTable(const toml::v3::table& table, const std::string& currentPath)
 {
@@ -905,9 +790,14 @@ bool ConfigManager::saveToml(const std::string& filepath)
 	}
 }
 
-std::string ConfigManager::toString()
+std::string ConfigManager::toString() const
 {
+	// The multimap is ordered, so this rendering is canonical: two stores with
+	// the same keys and values (including repeated-value lists) compare equal.
 	std::string output;
-	createXmlDocument(false, "", output);
+	for (const auto& [key, value]: m_values)
+	{
+		output += key + ": " + value + "\n";
+	}
 	return output;
 }

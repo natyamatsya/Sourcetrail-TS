@@ -346,24 +346,6 @@ message(STATUS "Found SQLite3 ${SQLite3_VERSION}")
 # connector. Requires Clang >= 20.1 / GCC >= 14.2 / MSVC >= 19.44 (C++23).
 find_package(Sqlpp23 CONFIG REQUIRED COMPONENTS SQLite3)
 
-# TinyXML ----------------------------------------------------------------------
-
-if (isVcpkgBuild)
-	find_package(tinyxml CONFIG REQUIRED)
-	if (NOT DEFINED tinyxml_VERSION)
-		# Use quotes to indicate a version literal:
-		set(tinyxml_VERSION "\"2.6.2\"")
-	endif()
-	add_library(External_lib_tinyxml ALIAS unofficial-tinyxml::unofficial-tinyxml)
-else()
-	if (UNIX)
-		find_package(PkgConfig REQUIRED)
-	endif()
-	pkg_check_modules(tinyxml tinyxml IMPORTED_TARGET REQUIRED)
-	add_library(External_lib_tinyxml ALIAS PkgConfig::tinyxml)
-endif()
-message(STATUS "Found tinyxml ${tinyxml_VERSION}")
-
 # toml++ ------------------------------------------------------------------------------
 
 find_package(tomlplusplus CONFIG REQUIRED)

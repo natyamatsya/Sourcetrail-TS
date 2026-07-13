@@ -63,7 +63,7 @@ bool Settings::save()
 		else if (m_filePath.extension() == ".toml" || m_filePath.str().ends_with(".srctrl.toml"))
 			success = m_config->saveToml(m_filePath.str());
 		else
-			success = m_config->save(m_filePath.str());
+			LOG_ERROR("Unsupported settings format (expected .json or .toml): " + m_filePath.str());
 	}
 
 	if (!success)
