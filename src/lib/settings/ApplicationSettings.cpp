@@ -132,9 +132,9 @@ FilePath ApplicationSettings::getColorSchemePath() const
 
 FilePath ApplicationSettings::getColorSchemePath(const std::string& colorSchemeName) const
 {
-	FilePath defaultPath(ResourcePaths::getColorSchemesDirectoryPath().concatenate("bright.xml"));
+	FilePath defaultPath(ResourcePaths::getColorSchemesDirectoryPath().concatenate("bright.json"));
 	FilePath path(
-		ResourcePaths::getColorSchemesDirectoryPath().concatenate(colorSchemeName + ".xml"));
+		ResourcePaths::getColorSchemesDirectoryPath().concatenate(colorSchemeName + ".json"));
 
 	if (path != defaultPath && !path.exists())
 	{

@@ -28,7 +28,7 @@ QtProjectWizardContentPreferences::QtProjectWizardContentPreferences(QtProjectWi
 	: QtProjectWizardContent(window)
 {
 	m_colorSchemePaths = FileSystem::getFilePathsFromDirectory(
-		ResourcePaths::getColorSchemesDirectoryPath(), {".xml"});
+		ResourcePaths::getColorSchemesDirectoryPath(), {".json"});
 }
 
 QtProjectWizardContentPreferences::~QtProjectWizardContentPreferences()

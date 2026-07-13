@@ -857,21 +857,31 @@ bool ConfigManager::loadJson(const std::string& text)
 
 bool ConfigManager::saveJson(const std::string& filepath)
 {
-	const auto written = glz::write_json(buildJsonTree(m_values));
-	if (!written)
+	try
 	{
-		LOG_ERROR("Failed to serialize JSON config: " + glz::format_error(written.error()));
-		return false;
-	}
+		const auto written = glz::write_json(buildJsonTree(m_values));
+		if (!written)
+		{
+			LOG_ERROR("Failed to serialize JSON config: " + glz::format_error(written.error()));
+			return false;
+		}
 
-	std::ofstream file(filepath);
-	if (!file.is_open())
+		std::ofstream file(filepath);
+		if (!file.is_open())
+		{
+			LOG_ERROR("Could not open file for writing: " + filepath);
+			return false;
+		}
+		file << glz::prettify_json(written.value()) << '\n';
+		return file.good();
+	}
+	catch (const std::exception& e)
 	{
-		LOG_ERROR("Could not open file for writing: " + filepath);
+		// buildJsonTree throws (bad_variant_access) when a key is both a leaf and
+		// a parent — e.g. a malformed source file with stray text between tags.
+		LOG_ERROR(std::string("Failed to save JSON file: ") + e.what());
 		return false;
 	}
-	file << glz::prettify_json(written.value()) << '\n';
-	return file.good();
 }
 
 bool ConfigManager::saveToml(const std::string& filepath)
