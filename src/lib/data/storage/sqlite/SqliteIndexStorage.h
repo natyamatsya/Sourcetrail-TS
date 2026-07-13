@@ -43,7 +43,7 @@ public:
 		STORAGE_MODE_CLEAR = 4
 	};
 
-	SqliteIndexStorage(const FilePath& dbFilePath);
+	explicit SqliteIndexStorage(StorageConnection& connection);
 
 	size_t getStaticVersion() const override;
 

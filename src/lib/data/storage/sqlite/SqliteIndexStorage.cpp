@@ -278,8 +278,7 @@ size_t SqliteIndexStorage::getStorageVersion()
 	return s_storageVersion;
 }
 
-SqliteIndexStorage::SqliteIndexStorage(const FilePath& dbFilePath)
-	: SqliteStorage(dbFilePath.getCanonical())
+SqliteIndexStorage::SqliteIndexStorage(StorageConnection& connection): SqliteStorage(connection)
 {
 }
 

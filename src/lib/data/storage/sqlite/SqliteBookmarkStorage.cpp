@@ -27,7 +27,7 @@ std::string fieldText(const Field& field)
 
 const size_t SqliteBookmarkStorage::s_storageVersion = 2;
 
-SqliteBookmarkStorage::SqliteBookmarkStorage(const FilePath& dbFilePath): SqliteStorage(dbFilePath)
+SqliteBookmarkStorage::SqliteBookmarkStorage(StorageConnection& connection): SqliteStorage(connection)
 {
 }
 

@@ -13,6 +13,7 @@
 #include "SqliteIndexStorage.h"
 #include "Storage.h"
 #include "StorageAccess.h"
+#include "StorageConnection.h"
 
 #ifdef SOURCETRAIL_TURSO_CONCURRENT
 #include "ConcurrentTursoWriter.h"
@@ -300,6 +301,12 @@ private:
 	mutable FullTextSearchIndex m_fullTextSearchIndex;
 	mutable std::string m_fullTextSearchCodec;
 	mutable std::mutex m_fullTextSearchMutex;
+
+	// Composition root for the storage connections: one owning connection per
+	// database file; the storages below only borrow them (declared first so they
+	// outlive the storages).
+	StorageConnection m_indexDbConnection;
+	StorageConnection m_bookmarkDbConnection;
 
 	SqliteIndexStorage m_sqliteIndexStorage;
 	SqliteBookmarkStorage m_sqliteBookmarkStorage;

@@ -39,7 +39,10 @@ using namespace std;
 using namespace utility;
 
 PersistentStorage::PersistentStorage(const FilePath& dbPath, const FilePath& bookmarkPath)
-	: m_sqliteIndexStorage(dbPath), m_sqliteBookmarkStorage(bookmarkPath)
+	: m_indexDbConnection(dbPath)
+	, m_bookmarkDbConnection(bookmarkPath)
+	, m_sqliteIndexStorage(m_indexDbConnection)
+	, m_sqliteBookmarkStorage(m_bookmarkDbConnection)
 {
 	using enum SearchMatch::CommandType;
 	using enum SearchMatch::SearchType;

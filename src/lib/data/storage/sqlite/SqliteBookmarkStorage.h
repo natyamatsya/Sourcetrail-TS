@@ -11,7 +11,7 @@
 class SqliteBookmarkStorage: public SqliteStorage
 {
 public:
-	SqliteBookmarkStorage(const FilePath& dbFilePath);
+	explicit SqliteBookmarkStorage(StorageConnection& connection);
 
 	size_t getStaticVersion() const override;
 

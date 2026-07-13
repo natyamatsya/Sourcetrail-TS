@@ -13,6 +13,7 @@
 #include "DualSqliteDatabase.h"
 #include "FileSystem.h"
 #include "SqliteIndexStorage.h"
+#include "StorageConnection.h"
 
 namespace
 {
@@ -33,7 +34,8 @@ TEST_CASE("turso matches sqlite across a representative storage workload")
 	int nodeCountAfterAdds = -1;
 	int nodeCountAfterRemove = -1;
 	{
-		SqliteIndexStorage storage(databasePath);
+		StorageConnection connection(databasePath);
+		SqliteIndexStorage storage(connection);
 		storage.setup();
 
 		storage.beginTransaction();

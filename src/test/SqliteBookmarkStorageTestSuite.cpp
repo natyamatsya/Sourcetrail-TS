@@ -2,6 +2,7 @@
 
 #include "FileSystem.h"
 #include "SqliteBookmarkStorage.h"
+#include "StorageConnection.h"
 
 TEST_CASE("add bookmarks")
 {
@@ -10,7 +11,8 @@ TEST_CASE("add bookmarks")
 	int result = -1;
 	{
 		FileSystem::remove(databasePath);
-		SqliteBookmarkStorage storage(databasePath);
+		StorageConnection connection(databasePath);
+		SqliteBookmarkStorage storage(connection);
 		storage.setup();
 
 		for (int i = 0; i < bookmarkCount; i++)
@@ -36,7 +38,8 @@ TEST_CASE("add bookmarked node")
 	int result = -1;
 	{
 		FileSystem::remove(databasePath);
-		SqliteBookmarkStorage storage(databasePath);
+		StorageConnection connection(databasePath);
+		SqliteBookmarkStorage storage(connection);
 		storage.setup();
 
 		const Id categoryId = storage.addBookmarkCategory(StorageBookmarkCategoryData("test category")).id;
@@ -61,7 +64,8 @@ TEST_CASE("remove bookmark also removes bookmarked node")
 	int result = -1;
 	{
 		FileSystem::remove(databasePath);
-		SqliteBookmarkStorage storage(databasePath);
+		StorageConnection connection(databasePath);
+		SqliteBookmarkStorage storage(connection);
 		storage.setup();
 
 		const Id categoryId = storage.addBookmarkCategory(StorageBookmarkCategoryData("test category")).id;
@@ -88,7 +92,8 @@ TEST_CASE("edit nodeBookmark")
 	StorageBookmark storageBookmark;
 	{
 		FileSystem::remove(databasePath);
-		SqliteBookmarkStorage storage(databasePath);
+		StorageConnection connection(databasePath);
+		SqliteBookmarkStorage storage(connection);
 		storage.setup();
 
 		const Id categoryId = storage.addBookmarkCategory(StorageBookmarkCategoryData("test category")).id;

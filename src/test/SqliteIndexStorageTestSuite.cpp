@@ -2,13 +2,15 @@
 
 #include "FileSystem.h"
 #include "SqliteIndexStorage.h"
+#include "StorageConnection.h"
 
 TEST_CASE("storage adds node successfully")
 {
 	FilePath databasePath("data/SQLiteTestSuite/test.sqlite");
 	int nodeCount = -1;
 	{
-		SqliteIndexStorage storage(databasePath);
+		StorageConnection connection(databasePath);
+		SqliteIndexStorage storage(connection);
 		storage.setup();
 		storage.beginTransaction();
 		storage.addNode(StorageNodeData(NODE_UNDEFINED, "a"));
@@ -25,7 +27,8 @@ TEST_CASE("storage removes node successfully")
 	FilePath databasePath("data/SQLiteTestSuite/test.sqlite");
 	int nodeCount = -1;
 	{
-		SqliteIndexStorage storage(databasePath);
+		StorageConnection connection(databasePath);
+		SqliteIndexStorage storage(connection);
 		storage.setup();
 		storage.beginTransaction();
 		Id nodeId = storage.addNode(StorageNodeData(NODE_UNDEFINED, "a"));
@@ -43,7 +46,8 @@ TEST_CASE("storage adds edge successfully")
 	FilePath databasePath("data/SQLiteTestSuite/test.sqlite");
 	int edgeCount = -1;
 	{
-		SqliteIndexStorage storage(databasePath);
+		StorageConnection connection(databasePath);
+		SqliteIndexStorage storage(connection);
 		storage.setup();
 		storage.beginTransaction();
 		Id sourceNodeId = storage.addNode(StorageNodeData(NODE_UNDEFINED, "a"));
@@ -62,7 +66,8 @@ TEST_CASE("storage removes edge successfully")
 	FilePath databasePath("data/SQLiteTestSuite/test.sqlite");
 	int edgeCount = -1;
 	{
-		SqliteIndexStorage storage(databasePath);
+		StorageConnection connection(databasePath);
+		SqliteIndexStorage storage(connection);
 		storage.setup();
 		storage.beginTransaction();
 		Id sourceNodeId = storage.addNode(StorageNodeData(NODE_UNDEFINED, "a"));
