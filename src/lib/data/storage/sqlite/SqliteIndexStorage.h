@@ -125,8 +125,7 @@ public:
 	void setFileCompleteIfNoError(Id fileId, const std::string& filePath, bool complete);
 	void setNodeType(int type, Id nodeId);
 
-	std::shared_ptr<SourceLocationFile> getSourceLocationsForFile(
-		const FilePath& filePath, const std::string& query = "") const;
+	std::shared_ptr<SourceLocationFile> getSourceLocationsForFile(const FilePath& filePath) const;
 	std::shared_ptr<SourceLocationFile> getSourceLocationsForLinesInFile(
 		const FilePath& filePath, size_t startLine, size_t endLine) const;
 	std::shared_ptr<SourceLocationFile> getSourceLocationsOfTypeInFile(
@@ -151,7 +150,10 @@ public:
 	template <typename ResultType>
 	std::vector<ResultType> getAll() const
 	{
-		return doGetAll<ResultType>("");
+		std::vector<ResultType> elements;
+		forEach<ResultType>(
+			[&elements](ResultType&& element) { elements.emplace_back(std::move(element)); });
+		return elements;
 	}
 
 	template <typename ResultType>
@@ -159,7 +161,11 @@ public:
 	{
 		if (id != 0)
 		{
-			return doGetFirst<ResultType>("WHERE id == " + to_string(id));
+			std::vector<ResultType> results = getAllByIds<ResultType>({id});
+			if (results.size() > 0)
+			{
+				return results[0];
+			}
 		}
 		return ResultType();
 	}
@@ -167,34 +173,25 @@ public:
 	template <typename ResultType>
 	std::vector<ResultType> getAllByIds(const std::vector<Id>& ids) const
 	{
-		if (ids.size())
-		{
-			return doGetAll<ResultType>(
-				"WHERE id IN (" + utility::join(utility::toStrings(ids), ',') + ")");
-		}
-		return std::vector<ResultType>();
+		std::vector<ResultType> elements;
+		forEachByIds<ResultType>(
+			ids, [&elements](ResultType&& element) { elements.emplace_back(std::move(element)); });
+		return elements;
 	}
 
+	//! Typed full-table scan; specialized per storage type in the .cpp.
 	template <typename StorageType>
-	void forEach(std::function<void(StorageType&&)> func) const
-	{
-		forEach("", func);
-	}
+	void forEach(std::function<void(StorageType&&)> func) const;
 
 	template <typename StorageType, typename T>
 	void forEachOfType(T type, std::function<void(StorageType&&)> func) const
 	{
-		forEach("WHERE type == " + std::to_string(type), func);
+		forEachOfTypeImpl<StorageType>(static_cast<int>(type), func);
 	}
 
+	//! Typed `WHERE id IN (...)`; no-op on an empty id list. Specialized in the .cpp.
 	template <typename StorageType>
-	void forEachByIds(const std::vector<Id> ids, std::function<void(StorageType&&)> func) const
-	{
-		if (ids.size())
-		{
-			forEach("WHERE id IN (" + utility::join(utility::toStrings(ids), ',') + ")", func);
-		}
-	}
+	void forEachByIds(const std::vector<Id> ids, std::function<void(StorageType&&)> func) const;
 
 	int getNodeCount() const;
 	int getEdgeCount() const;
@@ -259,28 +256,9 @@ private:
 	// read-after-write on the hot write path (Phase 2, non-blocking storage).
 	Id insertElement();
 
-	template <typename ResultType>
-	std::vector<ResultType> doGetAll(const std::string& query) const
-	{
-		std::vector<ResultType> elements;
-		forEach<ResultType>(
-			query, [&elements](ResultType&& element) { elements.emplace_back(element); });
-		return elements;
-	}
-
-	template <typename ResultType>
-	ResultType doGetFirst(const std::string& query) const
-	{
-		std::vector<ResultType> results = doGetAll<ResultType>(query + " LIMIT 1");
-		if (results.size() > 0)
-		{
-			return results[0];
-		}
-		return ResultType();
-	}
-
+	//! Typed `WHERE type == ?`; specialized in the .cpp for the types that have one.
 	template <typename StorageType>
-	void forEach(const std::string& query, std::function<void(StorageType&&)> func) const;
+	void forEachOfTypeImpl(int type, std::function<void(StorageType&&)> func) const;
 
 	LowMemoryStringMap<std::string, Id> m_tempNodeNameIndex;
 	LowMemoryStringMap<std::string, Id> m_tempWNodeNameIndex;
@@ -289,101 +267,7 @@ private:
 	std::map<std::string, std::map<std::string, Id>> m_tempLocalSymbolIndex;
 	std::map<Id, std::map<TempSourceLocation, Id>> m_tempSourceLocationIndices;
 
-	template <typename StorageType>
-	class InsertBatchStatement
-	{
-	public:
-		void compile(
-			const std::string header,
-			size_t valueCount,
-			std::function<void(StorageStmt& stmt, const StorageType&, size_t)> bindValuesFunc,
-			StorageDb& database)
-		{
-			m_bindValuesFunc = bindValuesFunc;
-
-			std::string valueStr = '(' + utility::join(std::vector<std::string>(valueCount, "?"), ',') + ')';
-
-			const size_t MAX_VARIABLE_COUNT = 999;
-			size_t batchSize = MAX_VARIABLE_COUNT / valueCount;
-
-			while (true)
-			{
-				std::stringstream stmt;
-				stmt << header;
-
-				for (size_t i = 0; i < batchSize; i++)
-				{
-					if (i != 0)
-					{
-						stmt << ',';
-					}
-					stmt << valueStr;
-				}
-				stmt << ';';
-
-				m_stmts.emplace_back(std::make_pair(batchSize, database.compileStatement(stmt.str())));
-
-				if (batchSize == 1)
-				{
-					break;
-				}
-				else
-				{
-					batchSize /= 2;
-				}
-			}
-		}
-
-		bool execute(const std::vector<StorageType>& types, SqliteIndexStorage*  /*storage*/)
-		{
-			size_t i = 0;
-			for (std::pair<size_t, StorageStmt>& p: m_stmts)
-			{
-				const size_t& batchSize = p.first;
-				StorageStmt& stmt = p.second;
-
-				while (types.size() - i >= batchSize)
-				{
-					for (size_t j = 0; j < batchSize; j++)
-					{
-						m_bindValuesFunc(stmt, types[i + j], j);
-					}
-
-					const bool success = SqliteIndexStorage::executeStatement(stmt);
-					if (!success)
-					{
-						return false;
-					}
-
-					i += batchSize;
-				}
-			}
-
-			return true;
-		}
-
-	private:
-		std::vector<std::pair<size_t, StorageStmt>> m_stmts;
-
-		std::function<void(StorageStmt& stmt, const StorageType&, size_t)> m_bindValuesFunc;
-	};
-
-	InsertBatchStatement<StorageNode> m_insertNodeBatchStatement;
-	InsertBatchStatement<StorageEdge> m_insertEdgeBatchStatement;
-	InsertBatchStatement<StorageSymbol> m_insertSymbolBatchStatement;
-	InsertBatchStatement<StorageLocalSymbol> m_insertLocalSymbolBatchStatement;
-	InsertBatchStatement<StorageSourceLocationData> m_insertSourceLocationBatchStatement;
-	InsertBatchStatement<StorageOccurrence> m_insertOccurrenceBatchStatement;
-	InsertBatchStatement<StorageComponentAccess> m_insertComponentAccessBatchStatement;
-
-	StorageStmt m_insertElementStmt;
-	StorageStmt m_insertElementWithIdStmt;  // INSERT element(id) VALUES(?) — client-assigned id
-	Id::type m_nextElementId = 0;           // in-process element-id allocator (0 = unseeded)
-	StorageStmt m_insertElementComponentStmt;
-	StorageStmt m_insertFileStmt;
-	StorageStmt m_insertFileContentStmt;
-	StorageStmt m_checkErrorExistsStmt;
-	StorageStmt m_insertErrorStmt;
+	Id::type m_nextElementId = 0;	 // in-process element-id allocator (0 = unseeded)
 
 	// In-memory dedup for the read-back-free write path (SOURCETRAIL_CLIENT_IDS):
 	// replaces the SELECT-before-INSERT in addFile/addError. Seeded lazily from
@@ -395,35 +279,53 @@ private:
 	bool m_errorDedupSeeded = false;
 };
 
+// Full-table scans — one per persisted storage type.
 template <>
-void SqliteIndexStorage::forEach<StorageEdge>(
-	const std::string& query, std::function<void(StorageEdge&&)> func) const;
+void SqliteIndexStorage::forEach<StorageEdge>(std::function<void(StorageEdge&&)> func) const;
 template <>
-void SqliteIndexStorage::forEach<StorageNode>(
-	const std::string& query, std::function<void(StorageNode&&)> func) const;
+void SqliteIndexStorage::forEach<StorageNode>(std::function<void(StorageNode&&)> func) const;
 template <>
-void SqliteIndexStorage::forEach<StorageSymbol>(
-	const std::string& query, std::function<void(StorageSymbol&&)> func) const;
+void SqliteIndexStorage::forEach<StorageSymbol>(std::function<void(StorageSymbol&&)> func) const;
 template <>
-void SqliteIndexStorage::forEach<StorageFile>(
-	const std::string& query, std::function<void(StorageFile&&)> func) const;
+void SqliteIndexStorage::forEach<StorageFile>(std::function<void(StorageFile&&)> func) const;
 template <>
 void SqliteIndexStorage::forEach<StorageLocalSymbol>(
-	const std::string& query, std::function<void(StorageLocalSymbol&&)> func) const;
+	std::function<void(StorageLocalSymbol&&)> func) const;
 template <>
 void SqliteIndexStorage::forEach<StorageSourceLocation>(
-	const std::string& query, std::function<void(StorageSourceLocation&&)> func) const;
+	std::function<void(StorageSourceLocation&&)> func) const;
 template <>
 void SqliteIndexStorage::forEach<StorageOccurrence>(
-	const std::string& query, std::function<void(StorageOccurrence&&)> func) const;
+	std::function<void(StorageOccurrence&&)> func) const;
 template <>
 void SqliteIndexStorage::forEach<StorageComponentAccess>(
-	const std::string& query, std::function<void(StorageComponentAccess&&)> func) const;
+	std::function<void(StorageComponentAccess&&)> func) const;
 template <>
 void SqliteIndexStorage::forEach<StorageElementComponent>(
-	const std::string& query, std::function<void(StorageElementComponent&&)> func) const;
+	std::function<void(StorageElementComponent&&)> func) const;
 template <>
-void SqliteIndexStorage::forEach<StorageError>(
-	const std::string& query, std::function<void(StorageError&&)> func) const;
+void SqliteIndexStorage::forEach<StorageError>(std::function<void(StorageError&&)> func) const;
+
+// `WHERE id IN (...)` — for the types addressed by element id.
+template <>
+void SqliteIndexStorage::forEachByIds<StorageEdge>(
+	const std::vector<Id> ids, std::function<void(StorageEdge&&)> func) const;
+template <>
+void SqliteIndexStorage::forEachByIds<StorageNode>(
+	const std::vector<Id> ids, std::function<void(StorageNode&&)> func) const;
+template <>
+void SqliteIndexStorage::forEachByIds<StorageSymbol>(
+	const std::vector<Id> ids, std::function<void(StorageSymbol&&)> func) const;
+template <>
+void SqliteIndexStorage::forEachByIds<StorageFile>(
+	const std::vector<Id> ids, std::function<void(StorageFile&&)> func) const;
+template <>
+void SqliteIndexStorage::forEachByIds<StorageSourceLocation>(
+	const std::vector<Id> ids, std::function<void(StorageSourceLocation&&)> func) const;
+
+// `WHERE type == ?` — only edges are filtered by type today.
+template <>
+void SqliteIndexStorage::forEachOfTypeImpl<StorageEdge>(
+	int type, std::function<void(StorageEdge&&)> func) const;
 
 #endif	  // SQLITE_INDEX_STORAGE_H

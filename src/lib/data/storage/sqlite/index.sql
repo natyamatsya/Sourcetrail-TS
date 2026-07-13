@@ -1,0 +1,108 @@
+CREATE TABLE IF NOT EXISTS element(
+	id INTEGER,
+	PRIMARY KEY(id)
+);
+
+CREATE TABLE IF NOT EXISTS element_component(
+	id INTEGER,
+	element_id INTEGER,
+	type INTEGER,
+	data TEXT,
+	PRIMARY KEY(id),
+	FOREIGN KEY(element_id) REFERENCES element(id) ON DELETE CASCADE
+);
+
+CREATE TABLE IF NOT EXISTS edge(
+	id INTEGER NOT NULL,
+	type INTEGER NOT NULL,
+	source_node_id INTEGER NOT NULL,
+	target_node_id INTEGER NOT NULL,
+	PRIMARY KEY(id),
+	FOREIGN KEY(id) REFERENCES element(id) ON DELETE CASCADE,
+	FOREIGN KEY(source_node_id) REFERENCES node(id) ON DELETE CASCADE,
+	FOREIGN KEY(target_node_id) REFERENCES node(id) ON DELETE CASCADE
+);
+
+CREATE TABLE IF NOT EXISTS node(
+	id INTEGER NOT NULL,
+	type INTEGER NOT NULL,
+	serialized_name TEXT,
+	PRIMARY KEY(id),
+	FOREIGN KEY(id) REFERENCES element(id) ON DELETE CASCADE
+);
+
+CREATE TABLE IF NOT EXISTS symbol(
+	id INTEGER NOT NULL,
+	definition_kind INTEGER NOT NULL,
+	PRIMARY KEY(id),
+	FOREIGN KEY(id) REFERENCES node(id) ON DELETE CASCADE
+);
+
+CREATE TABLE IF NOT EXISTS file(
+	id INTEGER NOT NULL,
+	path TEXT,
+	language TEXT,
+	modification_time TEXT,
+	indexed INTEGER,
+	complete INTEGER,
+	line_count INTEGER,
+	PRIMARY KEY(id),
+	FOREIGN KEY(id) REFERENCES node(id) ON DELETE CASCADE
+);
+
+CREATE TABLE IF NOT EXISTS filecontent(
+	id INTEGER,
+	content TEXT,
+	PRIMARY KEY(id),
+	FOREIGN KEY(id) REFERENCES file(id) ON DELETE CASCADE ON UPDATE CASCADE
+);
+
+CREATE TABLE IF NOT EXISTS file_command_hash(
+	path TEXT NOT NULL,
+	hash TEXT,
+	PRIMARY KEY(path)
+);
+
+CREATE TABLE IF NOT EXISTS local_symbol(
+	id INTEGER NOT NULL,
+	name TEXT,
+	PRIMARY KEY(id),
+	FOREIGN KEY(id) REFERENCES element(id) ON DELETE CASCADE
+);
+
+CREATE TABLE IF NOT EXISTS source_location(
+	id INTEGER NOT NULL,
+	file_node_id INTEGER,
+	start_line INTEGER,
+	start_column INTEGER,
+	end_line INTEGER,
+	end_column INTEGER,
+	type INTEGER,
+	PRIMARY KEY(id),
+	FOREIGN KEY(file_node_id) REFERENCES node(id) ON DELETE CASCADE
+);
+
+CREATE TABLE IF NOT EXISTS occurrence(
+	element_id INTEGER NOT NULL,
+	source_location_id INTEGER NOT NULL,
+	PRIMARY KEY(element_id, source_location_id),
+	FOREIGN KEY(element_id) REFERENCES element(id) ON DELETE CASCADE,
+	FOREIGN KEY(source_location_id) REFERENCES source_location(id) ON DELETE CASCADE
+);
+
+CREATE TABLE IF NOT EXISTS component_access(
+	node_id INTEGER NOT NULL,
+	type INTEGER NOT NULL,
+	PRIMARY KEY(node_id),
+	FOREIGN KEY(node_id) REFERENCES node(id) ON DELETE CASCADE
+);
+
+CREATE TABLE IF NOT EXISTS error(
+	id INTEGER NOT NULL,
+	message TEXT,
+	fatal INTEGER NOT NULL,
+	indexed INTEGER NOT NULL,
+	translation_unit TEXT,
+	PRIMARY KEY(id),
+	FOREIGN KEY(id) REFERENCES element(id) ON DELETE CASCADE
+);
