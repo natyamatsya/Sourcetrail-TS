@@ -138,5 +138,5 @@ cmake --build .build/llvm-clang-dbg --target Sourcetrail copy_rust_indexer
 (cd .build/llvm-clang-dbg/app && ./Sourcetrail index --full <proj>/index.srctrl.toml)
 # compare against the SQLite graph:
 src/turso_shim/target/debug/mvcc_probe compare \
-    <proj>/index.srctrl.db_tmp.concurrent.turso <proj>/index.srctrl.db
+    <proj>/index.srctrl.db.tmp.concurrent.turso <proj>/index.srctrl.db
 ```

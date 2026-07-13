@@ -14,9 +14,11 @@ CMakeLists.txt.user
 *.srctrl.bm
 *.srctrl.db
 *.srctrl.db-*
+*.srctrl.db.tmp
+*.srctrl.db.tmp-*
+# Legacy artifacts (no runtime compatibility, ignore only for local cleanliness)
 *.srctrl.db_tmp
 *.srctrl.db_tmp-*
-# Legacy artifacts (no runtime compatibility, ignore only for local cleanliness)
 *.srctrlbm
 *.srctrldb
 *.srctrldb-*

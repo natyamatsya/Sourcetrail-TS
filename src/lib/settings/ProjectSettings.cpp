@@ -40,7 +40,7 @@ std::shared_ptr<SourceGroupSettings> makeIfEnabled(const std::string& id, const 
 const std::string ProjectSettings::PROJECT_FILE_EXTENSION = ".srctrl.toml";
 const std::string ProjectSettings::BOOKMARK_DB_FILE_EXTENSION = ".srctrl.bm";
 const std::string ProjectSettings::INDEX_DB_FILE_EXTENSION = ".srctrl.db";
-const std::string ProjectSettings::TEMP_INDEX_DB_FILE_EXTENSION = ".srctrl.db_tmp";
+const std::string ProjectSettings::TEMP_INDEX_DB_FILE_EXTENSION = ".srctrl.db.tmp";
 
 const size_t ProjectSettings::VERSION = 8;
 
