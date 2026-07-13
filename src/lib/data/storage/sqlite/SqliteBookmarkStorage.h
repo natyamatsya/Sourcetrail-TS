@@ -42,33 +42,6 @@ private:
 	void setupPrecompiledStatements() override;
 
 	// void updateBookmarkMetaData(const BookmarkMetaData& metaData);
-
-	template <typename ResultType>
-	std::vector<ResultType> doGetAll(const std::string& query) const;
-
-	template <typename ResultType>
-	ResultType doGetFirst(const std::string& query) const
-	{
-		std::vector<ResultType> results = doGetAll<ResultType>(query + " LIMIT 1");
-		if (results.size() > 0)
-		{
-			return results[0];
-		}
-		return ResultType();
-	}
 };
-
-template <>
-std::vector<StorageBookmarkCategory> SqliteBookmarkStorage::doGetAll<StorageBookmarkCategory>(
-	const std::string& query) const;
-template <>
-std::vector<StorageBookmark> SqliteBookmarkStorage::doGetAll<StorageBookmark>(
-	const std::string& query) const;
-template <>
-std::vector<StorageBookmarkedNode> SqliteBookmarkStorage::doGetAll<StorageBookmarkedNode>(
-	const std::string& query) const;
-template <>
-std::vector<StorageBookmarkedEdge> SqliteBookmarkStorage::doGetAll<StorageBookmarkedEdge>(
-	const std::string& query) const;
 
 #endif	  // SQLITE_BOOKMARK_STORAGE_H
