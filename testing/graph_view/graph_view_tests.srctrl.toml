@@ -1,21 +1,27 @@
-description = "Test Suites:\\n\\n\n[::\\tmINTERACTION_TESTS\\ts\\tp]\\n\n[::\\tmCONTROLS_TESTS\\ts\\tp]\\n\n[::\\tmOVERVIEW_TESTS\\ts\\tp]\\n\n[::\\tmLAYOUT_TESTS\\ts\\tp]\\n\n[::\\tmDEPTH_GRAPH_TESTS\\ts\\tp]\\n\n[::\\tmCUSTOM_TRAIL_TESTS\\ts\\tp]\\n\n[::\\tmGROUPING_TESTS\\ts\\tp]\\n"
-version = 8
+description = 'Test Suites:\n\n [::\tmINTERACTION_TESTS\ts\tp]\n [::\tmCONTROLS_TESTS\ts\tp]\n [::\tmOVERVIEW_TESTS\ts\tp]\n [::\tmLAYOUT_TESTS\ts\tp]\n [::\tmDEPTH_GRAPH_TESTS\ts\tp]\n [::\tmCUSTOM_TRAIL_TESTS\ts\tp]\n [::\tmGROUPING_TESTS\ts\tp]\n'
+version = '8'
 
 [[source_groups]]
-id = "475571d1-b082-4fff-81c5-d099c19f957d"
-cpp_standard = "c++17"
-exclude_filters = ""
-name = "C++ Source Group"
-source_extensions = ""
-source_paths = ""
-status = "enabled"
-type = "C++ Source Group"
+cpp_standard = 'c++17'
+id = '475571d1-b082-4fff-81c5-d099c19f957d'
+name = 'C++ Source Group'
+status = 'enabled'
+type = 'C++ Source Group'
 
-[source_groups.cross_compilation]
-target_options_enabled = "0"
+    [source_groups.cross_compilation]
+    target_options_enabled = '0'
 
-[source_groups.cross_compilation.target]
-abi = "unknown"
-arch = "x86_64"
-sys = "unknown"
-vendor = "unknown"
+        [source_groups.cross_compilation.target]
+        abi = 'unknown'
+        arch = 'x86_64'
+        sys = 'unknown'
+        vendor = 'unknown'
+
+    [source_groups.exclude_filters]
+    exclude_filter = 'data/files/template.h'
+
+    [source_groups.source_extensions]
+    source_extension = [ '.cpp', '.cxx', '.cc' ]
+
+    [source_groups.source_paths]
+    source_path = 'data'

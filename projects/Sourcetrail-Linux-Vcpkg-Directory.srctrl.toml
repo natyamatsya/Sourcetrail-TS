@@ -1,127 +1,155 @@
-version = 8
+version = '8'
 
 [[source_groups]]
-id = "9cb4e696-ff4d-4625-8f00-c81e41d8204f"
-cpp_standard = "c++20"
-header_search_paths = [
-    "../src/external/sqlite",
-    "../src/lib/app",
-    "../src/lib/app/paths",
-    "../src/lib/component",
-    "../src/lib/component/controller",
-    "../src/lib/component/controller/helper",
-    "../src/lib/component/view",
-    "../src/lib/component/view/helper",
-    "../src/lib/data",
-    "../src/lib/data/bookmark",
-    "../src/lib/data/fulltextsearch",
-    "../src/lib/data/graph",
-    "../src/lib/data/graph/token_component",
-    "../src/lib/data/indexer",
-    "../src/lib/data/indexer/interprocess",
-    "../src/lib/data/indexer/interprocess/shared_types",
-    "../src/lib/data/location",
-    "../src/lib/data/name",
-    "../src/lib/data/parser",
-    "../src/lib/data/search",
-    "../src/lib/data/storage",
-    "../src/lib/data/storage/migration",
-    "../src/lib/data/storage/sqlite",
-    "../src/lib/data/storage/type",
-    "../src/lib/data/tooltip",
-    "../src/lib/project",
-    "../src/lib/settings",
-    "../src/lib/settings/migration",
-    "../src/lib/settings/source_group",
-    "../src/lib/settings/source_group/component",
-    "../src/lib/settings/source_group/component/cxx",
-    "../src/lib/settings/source_group/type",
-    "../src/lib/utility",
-    "../src/lib/utility/commandline",
-    "../src/lib/utility/commandline/commands",
-    "../src/lib/utility/file",
-    "../src/lib/utility/interprocess",
-    "../src/lib/utility/logging",
-    "../src/lib/utility/math",
-    "../src/lib/utility/messaging",
-    "../src/lib/utility/messaging/filter_types",
-    "../src/lib/utility/messaging/type",
-    "../src/lib/utility/messaging/type/activation",
-    "../src/lib/utility/messaging/type/bookmark",
-    "../src/lib/utility/messaging/type/code",
-    "../src/lib/utility/messaging/type/custom_trail",
-    "../src/lib/utility/messaging/type/error",
-    "../src/lib/utility/messaging/type/focus",
-    "../src/lib/utility/messaging/type/graph",
-    "../src/lib/utility/messaging/type/history",
-    "../src/lib/utility/messaging/type/indexing",
-    "../src/lib/utility/messaging/type/plugin",
-    "../src/lib/utility/messaging/type/search",
-    "../src/lib/utility/messaging/type/tab",
-    "../src/lib/utility/migration",
-    "../src/lib/utility/scheduling",
-    "../src/lib/utility/text",
-    "../src/lib_aidkit",
-    "../src/lib_cxx",
-    "../src/lib_cxx/data/indexer",
-    "../src/lib_cxx/data/parser/cxx",
-    "../src/lib_cxx/data/parser/cxx/name",
-    "../src/lib_cxx/data/parser/cxx/name_resolver",
-    "../src/lib_cxx/project",
-    "../src/lib_cxx/utility",
-    "../src/lib_cxx/utility/codeblocks",
-    "../src/lib_gui/platform",
-    "../src/lib_gui/qt",
-    "../src/lib_gui/qt/element",
-    "../src/lib_gui/qt/element/bookmark",
-    "../src/lib_gui/qt/element/button",
-    "../src/lib_gui/qt/element/code",
-    "../src/lib_gui/qt/element/dialog",
-    "../src/lib_gui/qt/element/history",
-    "../src/lib_gui/qt/element/search",
-    "../src/lib_gui/qt/graphics",
-    "../src/lib_gui/qt/graphics/base",
-    "../src/lib_gui/qt/graphics/component",
-    "../src/lib_gui/qt/graphics/graph",
-    "../src/lib_gui/qt/network",
-    "../src/lib_gui/qt/project_wizard",
-    "../src/lib_gui/qt/project_wizard/content",
-    "../src/lib_gui/qt/project_wizard/content/path",
-    "../src/lib_gui/qt/project_wizard/content/paths",
-    "../src/lib_gui/qt/utility",
-    "../src/lib_gui/qt/view",
-    "../src/lib_gui/qt/window",
-    "../src/lib_gui/utility",
-    "../src/lib_gui/utility/path_detector",
-    "../src/lib_gui/utility/path_detector/cxx_header",
-    "../src/test/helper",
-    "../../build/vcpkg-release/src/lib",
-    "../../build/vcpkg-release/src/lib_gui",
-    "../../build/vcpkg-release/vcpkg_installed/x64-arm64-linux-windows-osx-static-md/include",
-    "../../build/vcpkg-release/vcpkg_installed/x64-arm64-linux-windows-osx-static-md/include/Qt6",
-    "../../build/vcpkg-release/vcpkg_installed/x64-arm64-linux-windows-osx-static-md/include/Qt6/QtCore",
-    "../../build/vcpkg-release/vcpkg_installed/x64-arm64-linux-windows-osx-static-md/include/Qt6/QtWidgets",
-    "../../build/vcpkg-release/vcpkg_installed/x64-arm64-linux-windows-osx-static-md/include/Qt6/QtGui",
-    "../../build/vcpkg-release/vcpkg_installed/x64-arm64-linux-windows-osx-static-md/include/Qt6/QtSvg",
-    "../../build/vcpkg-release/vcpkg_installed/x64-arm64-linux-windows-osx-static-md/include/Qt6/QtNetwork",
-]
-name = "C++ Source Group"
-source_extensions = [".cpp", ".cxx"]
-source_paths = [
-    "../src",
-    "../../build/vcpkg-release/src/lib/language_packages.h",
-]
-status = "enabled"
-type = "C++ Source Group"
+id = '509e6bce-8122-43b9-8db0-e38ecf6ece65'
+java_standard = '20'
+name = 'Java Source Group from Maven'
+status = 'enabled'
+type = 'Java Source Group from Maven'
 
-[source_groups.pch_flags]
-use_compiler_flags = "0"
+    [source_groups.maven]
+    project_file_path = '../java_indexer/pom.xml'
+    should_index_tests = '0'
 
-[source_groups.cross_compilation]
-target_options_enabled = "0"
+    [source_groups.source_extensions]
+    source_extension = '.java'
 
-[source_groups.cross_compilation.target]
-abi = "unknown"
-arch = "x86_64"
-sys = "unknown"
-vendor = "unknown"
+[[source_groups]]
+cpp_standard = 'c++20'
+id = '9cb4e696-ff4d-4625-8f00-c81e41d8204f'
+name = 'C++ Source Group'
+status = 'enabled'
+type = 'C++ Source Group'
+
+    [source_groups.cross_compilation]
+    target_options_enabled = '0'
+
+        [source_groups.cross_compilation.target]
+        abi = 'unknown'
+        arch = 'x86_64'
+        sys = 'unknown'
+        vendor = 'unknown'
+
+    [source_groups.header_search_paths]
+    header_search_path = [
+        '../src/external/sqlite',
+        '../src/lib/app',
+        '../src/lib/app/paths',
+        '../src/lib/component',
+        '../src/lib/component/controller',
+        '../src/lib/component/controller/helper',
+        '../src/lib/component/view',
+        '../src/lib/component/view/helper',
+        '../src/lib/data',
+        '../src/lib/data/bookmark',
+        '../src/lib/data/fulltextsearch',
+        '../src/lib/data/graph',
+        '../src/lib/data/graph/token_component',
+        '../src/lib/data/indexer',
+        '../src/lib/data/indexer/interprocess',
+        '../src/lib/data/indexer/interprocess/shared_types',
+        '../src/lib/data/location',
+        '../src/lib/data/name',
+        '../src/lib/data/parser',
+        '../src/lib/data/search',
+        '../src/lib/data/storage',
+        '../src/lib/data/storage/migration',
+        '../src/lib/data/storage/sqlite',
+        '../src/lib/data/storage/type',
+        '../src/lib/data/tooltip',
+        '../src/lib/project',
+        '../src/lib/settings',
+        '../src/lib/settings/migration',
+        '../src/lib/settings/source_group',
+        '../src/lib/settings/source_group/component',
+        '../src/lib/settings/source_group/component/cxx',
+        '../src/lib/settings/source_group/component/java',
+        '../src/lib/settings/source_group/type',
+        '../src/lib/utility',
+        '../src/lib/utility/commandline',
+        '../src/lib/utility/commandline/commands',
+        '../src/lib/utility/file',
+        '../src/lib/utility/interprocess',
+        '../src/lib/utility/logging',
+        '../src/lib/utility/math',
+        '../src/lib/utility/messaging',
+        '../src/lib/utility/messaging/filter_types',
+        '../src/lib/utility/messaging/type',
+        '../src/lib/utility/messaging/type/activation',
+        '../src/lib/utility/messaging/type/bookmark',
+        '../src/lib/utility/messaging/type/code',
+        '../src/lib/utility/messaging/type/custom_trail',
+        '../src/lib/utility/messaging/type/error',
+        '../src/lib/utility/messaging/type/focus',
+        '../src/lib/utility/messaging/type/graph',
+        '../src/lib/utility/messaging/type/history',
+        '../src/lib/utility/messaging/type/indexing',
+        '../src/lib/utility/messaging/type/plugin',
+        '../src/lib/utility/messaging/type/search',
+        '../src/lib/utility/messaging/type/tab',
+        '../src/lib/utility/migration',
+        '../src/lib/utility/scheduling',
+        '../src/lib/utility/text',
+        '../src/lib_aidkit',
+        '../src/lib_cxx',
+        '../src/lib_cxx/data/indexer',
+        '../src/lib_cxx/data/parser/cxx',
+        '../src/lib_cxx/data/parser/cxx/name',
+        '../src/lib_cxx/data/parser/cxx/name_resolver',
+        '../src/lib_cxx/project',
+        '../src/lib_cxx/utility',
+        '../src/lib_cxx/utility/codeblocks',
+        '../src/lib_gui/platform',
+        '../src/lib_gui/qt',
+        '../src/lib_gui/qt/element',
+        '../src/lib_gui/qt/element/bookmark',
+        '../src/lib_gui/qt/element/button',
+        '../src/lib_gui/qt/element/code',
+        '../src/lib_gui/qt/element/dialog',
+        '../src/lib_gui/qt/element/history',
+        '../src/lib_gui/qt/element/search',
+        '../src/lib_gui/qt/graphics',
+        '../src/lib_gui/qt/graphics/base',
+        '../src/lib_gui/qt/graphics/component',
+        '../src/lib_gui/qt/graphics/graph',
+        '../src/lib_gui/qt/network',
+        '../src/lib_gui/qt/project_wizard',
+        '../src/lib_gui/qt/project_wizard/content',
+        '../src/lib_gui/qt/project_wizard/content/path',
+        '../src/lib_gui/qt/project_wizard/content/paths',
+        '../src/lib_gui/qt/utility',
+        '../src/lib_gui/qt/view',
+        '../src/lib_gui/qt/window',
+        '../src/lib_gui/utility',
+        '../src/lib_gui/utility/path_detector',
+        '../src/lib_gui/utility/path_detector/cxx_header',
+        '../src/lib_gui/utility/path_detector/java_runtime',
+        '../src/lib_gui/utility/path_detector/jre_system_library',
+        '../src/lib_gui/utility/path_detector/maven_executable',
+        '../src/lib_java',
+        '../src/lib_java/data/indexer',
+        '../src/lib_java/data/parser/java',
+        '../src/lib_java/project',
+        '../src/lib_java/utility',
+        '../src/test/helper',
+        '../../build/vcpkg-release/src/lib',
+        '../../build/vcpkg-release/src/lib_gui',
+        '../../build/vcpkg-release/vcpkg_installed/x64-arm64-linux-windows-osx-static-md/include',
+        '../../build/vcpkg-release/vcpkg_installed/x64-arm64-linux-windows-osx-static-md/include/Qt6',
+        '../../build/vcpkg-release/vcpkg_installed/x64-arm64-linux-windows-osx-static-md/include/Qt6/QtCore',
+        '../../build/vcpkg-release/vcpkg_installed/x64-arm64-linux-windows-osx-static-md/include/Qt6/QtWidgets',
+        '../../build/vcpkg-release/vcpkg_installed/x64-arm64-linux-windows-osx-static-md/include/Qt6/QtGui',
+        '../../build/vcpkg-release/vcpkg_installed/x64-arm64-linux-windows-osx-static-md/include/Qt6/QtSvg',
+        '../../build/vcpkg-release/vcpkg_installed/x64-arm64-linux-windows-osx-static-md/include/Qt6/QtNetwork',
+        '${JAVA_HOME}/include',
+        '${JAVA_HOME}/include/linux'
+    ]
+
+    [source_groups.pch_flags]
+    use_compiler_flags = '0'
+
+    [source_groups.source_extensions]
+    source_extension = [ '.cpp', '.cxx' ]
+
+    [source_groups.source_paths]
+    source_path = [ '../src', '../../build/vcpkg-release/src/lib/language_packages.h' ]

@@ -1,20 +1,26 @@
-version = 8
+version = '8'
 
 [[source_groups]]
-id = "f674ea4e-f819-492b-a753-abb139402479"
-cpp_standard = "c++23"
-name = "C++ Source Group"
-pch_flags = ""
-source_extensions = ""
-source_paths = ""
-status = "enabled"
-type = "C++ Source Group"
+cpp_standard = 'c++23'
+id = 'f674ea4e-f819-492b-a753-abb139402479'
+name = 'C++ Source Group'
+status = 'enabled'
+type = 'C++ Source Group'
 
-[source_groups.cross_compilation]
-target_options_enabled = "0"
+    [source_groups.cross_compilation]
+    target_options_enabled = '0'
 
-[source_groups.cross_compilation.target]
-abi = "unknown"
-arch = "x86_64"
-sys = "unknown"
-vendor = "unknown"
+        [source_groups.cross_compilation.target]
+        abi = 'unknown'
+        arch = 'x86_64'
+        sys = 'unknown'
+        vendor = 'unknown'
+
+    [source_groups.pch_flags]
+    use_compiler_flags = '0'
+
+    [source_groups.source_extensions]
+    source_extension = [ '.cpp', '.cxx', '.cc' ]
+
+    [source_groups.source_paths]
+    source_path = 'data'
