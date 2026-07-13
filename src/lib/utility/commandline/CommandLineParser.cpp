@@ -67,6 +67,17 @@ void CommandLineParser::preparse(std::vector<std::string>& args)
 	// follow, and its options are parsed later in parse().
 	const glzcli::ParseResult result =
 		glzcli::parse(m_top, std::span<const std::string>(m_args), /*allow_extras=*/true);
+
+	// --version wins over a trailing bare "help" token ("--version help" prints
+	// the version, not the help text); the parser stops at the help token, so
+	// only options preceding it are set.
+	if (m_top.version)
+	{
+		std::cout << "Sourcetrail Version " << m_version << std::endl;
+		m_quit = true;
+		return;
+	}
+
 	if (result.help)
 	{
 		printHelp();
@@ -76,13 +87,6 @@ void CommandLineParser::preparse(std::vector<std::string>& args)
 	if (result.error)
 	{
 		std::cerr << "ERROR: " << *result.error << std::endl;
-		return;
-	}
-
-	if (m_top.version)
-	{
-		std::cout << "Sourcetrail Version " << m_version << std::endl;
-		m_quit = true;
 		return;
 	}
 
