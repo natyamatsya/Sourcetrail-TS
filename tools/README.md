@@ -1,14 +1,11 @@
 # Sourcetrail Tools
 
-## Legacy project files (`.srctrlprj`)
+## Project files
 
-The former Python XML→TOML converter has been removed: it produced a TOML
-shape (`source_paths = [...]` plural-direct arrays) that ConfigManager's
-serializer could not round-trip. Legacy XML project files are now migrated
-by the application itself — opening a `.srctrlprj` (GUI, recent projects,
-file-open, or `Sourcetrail index`) converts it to `.srctrl.toml` in place
-and retires the legacy file. See
-`ProjectSettings::migrateLegacyProjectFile`.
+Project files are TOML (`.srctrl.toml`) only. Support for the legacy XML
+`.srctrlprj` format has been removed entirely — there is no importer or
+migration path. (ConfigManager still parses XML because the shipped color
+schemes use it; that is unrelated to project files.)
 
 ## sqlpp23
 

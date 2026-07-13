@@ -1,8 +1,5 @@
 #include "ProjectSettings.h"
 
-#include "ConfigManager.h"
-#include "FileSystem.h"
-#include "TextAccess.h"
 #include "language_package_flags.h"
 #include "SourceGroupSettingsCustomCommand.h"
 #include "SourceGroupSettingsUnloadable.h"
@@ -41,7 +38,6 @@ std::shared_ptr<SourceGroupSettings> makeIfEnabled(const std::string& id, const 
 }	 // namespace
 
 const std::string ProjectSettings::PROJECT_FILE_EXTENSION = ".srctrl.toml";
-const std::string ProjectSettings::LEGACY_PROJECT_FILE_EXTENSION = ".srctrlprj";
 const std::string ProjectSettings::BOOKMARK_DB_FILE_EXTENSION = ".srctrl.bm";
 const std::string ProjectSettings::INDEX_DB_FILE_EXTENSION = ".srctrl.db";
 const std::string ProjectSettings::TEMP_INDEX_DB_FILE_EXTENSION = ".srctrl.db_tmp";
@@ -76,51 +72,7 @@ LanguageType ProjectSettings::getLanguageOfProject(const FilePath& filePath)
 
 bool ProjectSettings::isProjectFilePath(const FilePath& filePath)
 {
-	// Legacy XML .srctrlprj paths stay accepted at the gate: they are the entry
-	// point of the one-time migration below, which converts them to .srctrl.toml
-	// before anything operates on the file.
-	return isTomlProjectFilePath(filePath) ||
-		filePath.getPath().extension() == LEGACY_PROJECT_FILE_EXTENSION;
-}
-
-FilePath ProjectSettings::migrateLegacyProjectFile(const FilePath& projectFilePath)
-{
-	if (projectFilePath.getPath().extension() != LEGACY_PROJECT_FILE_EXTENSION)
-	{
-		return projectFilePath;
-	}
-
-	const FilePath tomlPath = projectFilePath.replaceExtension(PROJECT_FILE_EXTENSION);
-
-	if (!projectFilePath.exists())
-	{
-		// Stale reference (recent-projects entry, script): the file was migrated
-		// earlier — follow the sibling.
-		return tomlPath.exists() ? tomlPath : projectFilePath;
-	}
-
-	// While the legacy file exists it is the source of truth: regenerate the
-	// TOML from it even when a sibling is already present (earlier generator
-	// versions wrote lossy TOML), then retire the legacy file so the migration
-	// runs exactly once.
-	std::shared_ptr<ConfigManager> config = ConfigManager::createEmpty();
-	if (!config->load(TextAccess::createFromFile(projectFilePath)))
-	{
-		LOG_ERROR("Cannot migrate legacy project file (parse failed): " + projectFilePath.str());
-		return projectFilePath;
-	}
-
-	if (!config->saveToml(tomlPath.str()))
-	{
-		LOG_ERROR("Cannot migrate legacy project file (write failed): " + tomlPath.str());
-		return projectFilePath;
-	}
-
-	FileSystem::remove(projectFilePath);
-	LOG_INFO(
-		"Migrated legacy project file " + projectFilePath.str() + " to " + tomlPath.str());
-
-	return tomlPath;
+	return isTomlProjectFilePath(filePath);
 }
 
 bool ProjectSettings::isTomlProjectFilePath(const FilePath& filePath)

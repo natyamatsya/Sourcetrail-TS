@@ -25,29 +25,9 @@ std::shared_ptr<ApplicationSettings> ApplicationSettings::getInstance()
 
 bool ApplicationSettings::load(const FilePath& filePath, bool readOnly)
 {
-	// Migrate legacy XML settings: if the current (JSON) settings file does not exist
-	// yet but a same-named .xml sibling does, read the XML instead so no settings are
-	// lost. The save target is retargeted to the requested (JSON) path, so the next
-	// save writes the new format (Settings::save picks it by extension) while the .xml
-	// is left untouched as a backup.
-	FilePath readPath = filePath;
-	bool migratedFromXml = false;
-	if (!filePath.exists() && filePath.extension() != ".xml")
-	{
-		const FilePath legacyXmlPath = filePath.replaceExtension("xml");
-		if (legacyXmlPath.exists())
-		{
-			readPath = legacyXmlPath;
-			migratedFromXml = true;
-		}
-	}
-
-	const bool loaded = Settings::load(readPath, readOnly);
+	const bool loaded = Settings::load(filePath, readOnly);
 	if (!loaded)
 		return false;
-
-	if (migratedFromXml)
-		setFilePath(filePath);
 
 	if (!isValueDefined("application/font_name"))
 		setFontName("Source Code Pro");

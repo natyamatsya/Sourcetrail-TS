@@ -1,6 +1,5 @@
 #include "Catch2.hpp"
 
-#include "FileSystem.h"
 #include "ProjectSettings.h"
 #include "Settings.h"
 #include "SourceGroupSettings.h"
@@ -189,48 +188,4 @@ TEST_CASE("load source path from file")
 	REQUIRE(paths.size() == 2);
 	REQUIRE(paths[0].str() == "src");
 	REQUIRE(paths[1].str() == "test");
-}
-
-TEST_CASE("migrate legacy project file to toml")
-{
-	// Stage a legacy .srctrlprj (XML) from the fixture; the fixture's source
-	// group has two source paths, so this also proves repeated-value keys
-	// survive the TOML round-trip.
-	const FilePath legacyPath("data/SettingsTestSuite/migrate_me.srctrlprj");
-	const FilePath tomlPath("data/SettingsTestSuite/migrate_me.srctrl.toml");
-	FileSystem::remove(legacyPath);
-	FileSystem::remove(tomlPath);
-	FileSystem::copyFile(FilePath("data/SettingsTestSuite/settings.xml"), legacyPath);
-
-	const FilePath migratedPath = ProjectSettings::migrateLegacyProjectFile(legacyPath);
-
-	REQUIRE(migratedPath == tomlPath);
-	// Fresh FilePath instances: FilePath caches exists(), and both paths were
-	// queried above (via FileSystem::remove) while the files were absent.
-	REQUIRE(FilePath(tomlPath.str()).exists());
-	REQUIRE(!FilePath(legacyPath.str()).exists());	  // migration runs exactly once
-
-	ProjectSettings projectSettings;
-	REQUIRE(projectSettings.load(migratedPath));
-
-	const std::vector<std::shared_ptr<SourceGroupSettings>> allSettings =
-		projectSettings.getAllSourceGroupSettings();
-	REQUIRE(1 == allSettings.size());
-
-	std::shared_ptr<SourceGroupSettingsWithSourcePaths> sourceGroupSettings =
-		std::dynamic_pointer_cast<SourceGroupSettingsWithSourcePaths>(allSettings.front());
-	REQUIRE(sourceGroupSettings != nullptr);
-
-	std::vector<FilePath> paths = sourceGroupSettings->getSourcePaths();
-	REQUIRE(paths.size() == 2);
-	REQUIRE(paths[0].str() == "src");
-	REQUIRE(paths[1].str() == "test");
-
-	// A stale legacy path (already migrated) resolves to the TOML sibling.
-	REQUIRE(ProjectSettings::migrateLegacyProjectFile(legacyPath) == tomlPath);
-
-	// Non-legacy paths pass through unchanged.
-	REQUIRE(ProjectSettings::migrateLegacyProjectFile(tomlPath) == tomlPath);
-
-	FileSystem::remove(tomlPath);
 }
