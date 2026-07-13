@@ -217,9 +217,11 @@ TEST_CASE("config manager loads TOML nested table")
 
 TEST_CASE("config manager loads TOML plain array")
 {
+	// Canonical form (what saveToml writes): an array holds the repeated values
+	// of exactly the key it sits on — no singular/plural renaming.
 	const std::string toml =
-		"[group]\n"
-		"source_paths = [\"src/\", \"include/\"]\n";
+		"[group.source_paths]\n"
+		"source_path = [\"src/\", \"include/\"]\n";
 
 	std::shared_ptr<ConfigManager> config =
 		ConfigManager::createAndLoad(TextAccess::createFromString(toml));
@@ -229,6 +231,30 @@ TEST_CASE("config manager loads TOML plain array")
 	REQUIRE(paths.size() == 2);
 	REQUIRE(paths[0] == "src/");
 	REQUIRE(paths[1] == "include/");
+}
+
+TEST_CASE("config manager TOML round-trip preserves repeated-value keys")
+{
+	const FilePath path("data/ConfigManagerTestSuite/temp.srctrl.toml");
+
+	std::shared_ptr<ConfigManager> config = ConfigManager::createAndLoad(getConfigTextAccess());
+	config->setValues(
+		"source_groups/source_group_aaaaaaaa-0000-0000-0000-000000000001/source_paths/source_path",
+		std::vector<std::string>({"src/", "include/", "third_party/"}));
+	REQUIRE(config->saveToml(path.str()));
+
+	std::shared_ptr<ConfigManager> config2 = ConfigManager::createAndLoad(
+		TextAccess::createFromFile(path));
+
+	// toString() renders the flat key/value store as XML, so equal strings mean
+	// every key/value pair — including the multi-value list — survived TOML.
+	REQUIRE(config->toString() == config2->toString());
+
+	std::vector<std::string> paths;
+	REQUIRE(config2->getValues(
+		"source_groups/source_group_aaaaaaaa-0000-0000-0000-000000000001/source_paths/source_path",
+		paths));
+	REQUIRE(paths.size() == 3);
 }
 
 TEST_CASE("config manager loads TOML source_groups array of tables with UUID key mapping")

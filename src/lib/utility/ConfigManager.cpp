@@ -520,12 +520,11 @@ void ConfigManager::parseTomlTable(const toml::v3::table& table, const std::stri
 			}
 			else
 			{
-				// Plain array: emit one entry per element using the singular key name.
-				// E.g. source_paths = ["a", "b"] -> source_paths/source_path = "a", "b"
-				const std::string singularKey = (key.size() > 1 && key.back() == 's')
-					? fullKey + "/" + key.substr(0, key.size() - 1)
-					: fullKey + "/" + key;
-
+				// Plain array: one entry per element under the SAME key — the exact
+				// inverse of buildTomlTable, mirroring the JSON scheme. (The previous
+				// singular/plural renaming heuristic made repeated-value keys lossy:
+				// the writer emitted `source_paths.source_path = [a, b]`, which the
+				// reader then mangled to `source_paths/source_path/source_path`.)
 				for (auto&& elem : *arr)
 				{
 					std::string val;
@@ -542,7 +541,7 @@ void ConfigManager::parseTomlTable(const toml::v3::table& table, const std::stri
 						val = oss.str();
 					}
 					if (!val.empty())
-						m_values.emplace(singularKey, val);
+						m_values.emplace(fullKey, val);
 				}
 			}
 		}
