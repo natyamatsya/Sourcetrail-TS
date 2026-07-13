@@ -162,17 +162,18 @@ int main(int argc, char* argv[])
 
 		if (commandLineParser.hasError())
 		{
+			// Nothing was dispatched, so nothing will ever quit the event loop —
+			// entering exec() here used to hang the headless run forever.
 			std::cout << commandLineParser.getError() << std::endl;
+			return 1;
 		}
-		else
-		{
-			MessageLoadProject(
-				commandLineParser.getProjectFilePath(),
-				false,
-				commandLineParser.getRefreshMode(),
-				commandLineParser.getShardConfig())
-				.dispatch();
-		}
+
+		MessageLoadProject(
+			commandLineParser.getProjectFilePath(),
+			false,
+			commandLineParser.getRefreshMode(),
+			commandLineParser.getShardConfig())
+			.dispatch();
 
 		return QtCoreApplication::exec();
 	}
