@@ -1,6 +1,6 @@
 # Design: Multi-Subprocess Fan-Out Across Source Groups (Phase 8)
 
-**Status: S0 implemented (2026-07-14); S1–S5 designed, not implemented.** Parallelize indexing across source
+**Status: S0+S1 implemented (2026-07-14); S2–S5 designed, not implemented.** Parallelize indexing across source
 groups by spawning dedicated subprocess *clusters* per group and routing every group's
 results into the already-complete concurrent Turso MVCC writer as the **sole** storage
 writer during fan-out.
@@ -82,7 +82,7 @@ id drift; the `created`/`markNew` guards ran once in resolve and are not re-eval
 against partial-apply with `INSERT OR IGNORE` on **all** graph tables **and `filecontent`**
 (PKs are deterministic → a no-op on a clean retry, a safety net otherwise).
 
-### S1 — Tag indexer commands with a source-group id
+### S1 — Tag indexer commands with a source-group id — **DONE (2026-07-14)**
 
 - `indexer_command.fbs`: append `source_group_id: string;` (FlatBuffers-additive). Regenerate.
 - `IndexerCommand.{h,cpp}` base: add `m_sourceGroupId` + get/set; include in `doSerialize` JSON.
@@ -92,6 +92,21 @@ against partial-apply with `INSERT OR IGNORE` on **all** graph tables **and `fil
   Swift / Custom).
 - `IndexerCommandSerializer.cpp`: append the field to the positional `CreateIndexerCommand(...)`
   write; `setSourceGroupId(...)` on each read branch.
+
+*As implemented — one deviation from the sketch above:* `SourceGroup::getIndexerCommandProvider`
+is NOT a single choke point (the three C++ groups override it with lazy
+`CxxIndexerCommandProvider`s whose commands only materialize on consume). The tag therefore
+lives on the **consumer** side: `CombinedIndexerCommandProvider::addProvider(provider, groupId)`
+(fed by `Project::buildIndex` via a new public `SourceGroup::getSourceGroupId()`) tags every
+command in its consume paths — still one place, and it covers lazy providers. Additionally the
+**Rust and Swift supervisors' pop-rewrite** paths were made lossless for the new field (their
+`OwnedIndexerCommand` copies rewrite the whole queue on every pop; a missing field there
+silently strips it from remaining commands — the Swift copy was already dropping the Rust
+cargo fields, fixed alongside). Gate tests: fbs round-trip (`IpcSerializerTestSuite`),
+end-to-end tag-through-SHM-queue (`IpcIntegrationTestSuite`), Rust pop-rewrite preservation
+(`command.rs` unit test). Note: the Swift package is not compiled in the dev build
+(`BUILD_SWIFT_LANGUAGE_PACKAGE=OFF`) and its checked-in channel code predates the current
+flatc Swift codegen API — it needs a compile pass when Swift is next enabled.
 
 ### S2 — Per-group routing — **single queue + group-id filter** (recommended)
 

@@ -569,14 +569,16 @@ void Project::buildIndex(RefreshInfo info, std::shared_ptr<DialogView> dialogVie
 	{
 		if (sourceGroup->getStatus() == SourceGroupStatusType::ENABLED)
 		{
+			const std::string sourceGroupId = sourceGroup->getSourceGroupId();
 			if (sourceGroup->getType() == SourceGroupType::CUSTOM_COMMAND)
 			{
 				customIndexerCommandProvider->addProvider(
-					sourceGroup->getIndexerCommandProvider(info));
+					sourceGroup->getIndexerCommandProvider(info), sourceGroupId);
 			}
 			else
 			{
-				indexerCommandProvider->addProvider(sourceGroup->getIndexerCommandProvider(info));
+				indexerCommandProvider->addProvider(
+					sourceGroup->getIndexerCommandProvider(info), sourceGroupId);
 			}
 		}
 	}

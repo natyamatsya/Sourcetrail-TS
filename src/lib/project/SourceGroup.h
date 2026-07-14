@@ -57,6 +57,9 @@ public:
 	SourceGroupType getType() const;
 	LanguageType getLanguage() const;
 	SourceGroupStatusType getStatus() const;
+	//! Stable id of this group's settings block; tags indexer commands for the
+	//! per-group fan-out (S1).
+	std::string getSourceGroupId() const;
 	std::set<FilePath> filterToContainedSourceFilePath(
 		const std::set<FilePath>& staticSourceFilePaths) const;
 	bool containsSourceFilePath(const FilePath& sourceFilePath) const;

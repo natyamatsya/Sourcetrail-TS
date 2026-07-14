@@ -93,6 +93,16 @@ final class SwiftIndexerCommandChannel {
 			let compilerPathOffset = command.compilerPath.isEmpty
 				? Offset()
 				: builder.create(string: command.compilerPath)
+			let featuresOffset = builder.createVector(ofStrings: command.features)
+			let targetTripleOffset = command.targetTriple.isEmpty
+				? Offset()
+				: builder.create(string: command.targetTriple)
+			let specializationScopeOffset = command.specializationScope.isEmpty
+				? Offset()
+				: builder.create(string: command.specializationScope)
+			let sourceGroupIdOffset = command.sourceGroupId.isEmpty
+				? Offset()
+				: builder.create(string: command.sourceGroupId)
 
 			return Sourcetrail_Ipc_IndexerCommand.createIndexerCommand(
 				&builder,
@@ -103,7 +113,13 @@ final class SwiftIndexerCommandChannel {
 				includeFiltersVectorOffset: includeFiltersOffset,
 				workingDirectoryOffset: workingDirectoryOffset,
 				compilerFlagsVectorOffset: compilerFlagsOffset,
-				compilerPathOffset: compilerPathOffset
+				compilerPathOffset: compilerPathOffset,
+				featuresVectorOffset: featuresOffset,
+				allFeatures: command.allFeatures,
+				noDefaultFeatures: command.noDefaultFeatures,
+				targetTripleOffset: targetTripleOffset,
+				specializationScopeOffset: specializationScopeOffset,
+				sourceGroupIdOffset: sourceGroupIdOffset
 			)
 		}
 
@@ -117,6 +133,9 @@ final class SwiftIndexerCommandChannel {
 	}
 }
 
+// Owned copy of a command for the pop-rewrite. Must carry EVERY schema field:
+// commands of other languages pass through this copy when the queue is
+// rewritten, so a missing field here silently strips it from their commands.
 private struct OwnedIndexerCommand {
 	let type: Sourcetrail_Ipc_IndexerCommandType
 	let sourceFilePath: String
@@ -126,6 +145,12 @@ private struct OwnedIndexerCommand {
 	let workingDirectory: String
 	let compilerFlags: [String]
 	let compilerPath: String
+	let features: [String]
+	let allFeatures: Bool
+	let noDefaultFeatures: Bool
+	let targetTriple: String
+	let specializationScope: String
+	let sourceGroupId: String
 
 	init(from command: Sourcetrail_Ipc_IndexerCommand) {
 		type = command.type
@@ -136,6 +161,12 @@ private struct OwnedIndexerCommand {
 		workingDirectory = command.workingDirectory ?? ""
 		compilerFlags = Self.readStrings(count: command.compilerFlagsCount, getter: command.compilerFlags)
 		compilerPath = command.compilerPath ?? ""
+		features = Self.readStrings(count: command.featuresCount, getter: command.features)
+		allFeatures = command.allFeatures
+		noDefaultFeatures = command.noDefaultFeatures
+		targetTriple = command.targetTriple ?? ""
+		specializationScope = command.specializationScope ?? ""
+		sourceGroupId = command.sourceGroupId ?? ""
 	}
 
 	private static func readStrings(

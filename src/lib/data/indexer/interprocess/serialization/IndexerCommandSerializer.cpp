@@ -28,6 +28,8 @@ flatbuffers::DetachedBuffer serializeIndexerCommands(
 		auto type = Sourcetrail::Ipc::IndexerCommandType_Unknown;
 		flatbuffers::Offset<flatbuffers::String> sourceFilePath =
 			builder.CreateString(cmd->getSourceFilePath().str());
+		flatbuffers::Offset<flatbuffers::String> sourceGroupId =
+			builder.CreateString(cmd->getSourceGroupId());
 
 		flatbuffers::Offset<flatbuffers::Vector<flatbuffers::Offset<flatbuffers::String>>> indexedPaths = 0;
 		flatbuffers::Offset<flatbuffers::Vector<flatbuffers::Offset<flatbuffers::String>>> excludeFilters = 0;
@@ -107,7 +109,7 @@ flatbuffers::DetachedBuffer serializeIndexerCommands(
 			builder, type, sourceFilePath, indexedPaths, excludeFilters,
 			includeFilters, workingDirectory, compilerFlags, compilerPath,
 			features, allFeatures, noDefaultFeatures, targetTriple,
-			specializationScope));
+			specializationScope, sourceGroupId));
 	}
 
 	auto queue = Sourcetrail::Ipc::CreateIndexerCommandQueue(
@@ -131,6 +133,7 @@ std::vector<std::shared_ptr<IndexerCommand>> deserializeIndexerCommands(
 		if (!fbCmd)
 			continue;
 
+		const size_t sizeBeforeCommand = result.size();
 		switch (fbCmd->type())
 		{
 		case Sourcetrail::Ipc::IndexerCommandType_Cxx:
@@ -224,6 +227,12 @@ std::vector<std::shared_ptr<IndexerCommand>> deserializeIndexerCommands(
 				std::string(fbCmd->source_file_path() ? fbCmd->source_file_path()->c_str() : "<null>") +
 				". Unknown type.");
 			break;
+		}
+
+		// Restore the source-group tag on whatever command the branch produced.
+		if (result.size() > sizeBeforeCommand && fbCmd->source_group_id())
+		{
+			result.back()->setSourceGroupId(fbCmd->source_group_id()->str());
 		}
 	}
 

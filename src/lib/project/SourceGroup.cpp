@@ -66,6 +66,11 @@ SourceGroupStatusType SourceGroup::getStatus() const
 	return getSourceGroupSettings()->getStatus();
 }
 
+std::string SourceGroup::getSourceGroupId() const
+{
+	return getSourceGroupSettings()->getId();
+}
+
 bool SourceGroup::prepareIndexing()
 {
 	return true;

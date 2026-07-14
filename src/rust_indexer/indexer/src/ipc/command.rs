@@ -75,6 +75,9 @@ pub struct OwnedIndexerCommand {
     pub specialization_scope: String,
     pub compiler_flags: Vec<String>,
     pub compiler_path: String,
+    /// Source group the command belongs to (fan-out S1). Must round-trip
+    /// through the pop-rewrite or remaining commands lose their group tag.
+    pub source_group_id: String,
 }
 
 impl OwnedIndexerCommand {
@@ -97,6 +100,7 @@ impl OwnedIndexerCommand {
             specialization_scope: cmd.specialization_scope().unwrap_or("").to_owned(),
             compiler_flags: str_vec(cmd.compiler_flags()),
             compiler_path: cmd.compiler_path().unwrap_or("").to_owned(),
+            source_group_id: cmd.source_group_id().unwrap_or("").to_owned(),
         }
     }
 }
@@ -203,6 +207,11 @@ fn serialize_queue(commands: &[OwnedIndexerCommand]) -> Vec<u8> {
             } else {
                 Some(fbb.create_string(&cmd.specialization_scope))
             };
+            let source_group_id = if cmd.source_group_id.is_empty() {
+                None
+            } else {
+                Some(fbb.create_string(&cmd.source_group_id))
+            };
             IndexerCommand::create(
                 &mut fbb,
                 &IndexerCommandArgs {
@@ -219,6 +228,7 @@ fn serialize_queue(commands: &[OwnedIndexerCommand]) -> Vec<u8> {
                     no_default_features: cmd.no_default_features,
                     target_triple,
                     specialization_scope,
+                    source_group_id,
                 },
             )
         })
@@ -254,6 +264,7 @@ mod tests {
             no_default_features: false,
             target_triple: String::new(),
             specialization_scope: String::new(),
+            source_group_id: format!("group-of-{src}"),
         }
     }
 
@@ -281,6 +292,12 @@ mod tests {
             commands.get(1).compiler_path().unwrap(),
             "/opt/clang/bin/clang++"
         );
+
+        // The source-group tag (fan-out S1) survives both the pop and the
+        // queue rewrite of the remaining commands.
+        assert_eq!(popped.source_group_id, "group-of-crate");
+        assert_eq!(commands.get(0).source_group_id().unwrap(), "group-of-a.cpp");
+        assert_eq!(commands.get(1).source_group_id().unwrap(), "group-of-b.cpp");
     }
 
     #[test]

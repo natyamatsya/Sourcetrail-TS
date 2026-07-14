@@ -1,13 +1,15 @@
 #include "CombinedIndexerCommandProvider.h"
 
+#include "IndexerCommand.h"
 #include "logging.h"
 #include "utility.h"
 
-void CombinedIndexerCommandProvider::addProvider(std::shared_ptr<IndexerCommandProvider> provider)
+void CombinedIndexerCommandProvider::addProvider(
+	std::shared_ptr<IndexerCommandProvider> provider, const std::string& sourceGroupId)
 {
 	if (provider)
 	{
-		m_providers.push_back(provider);
+		m_providers.emplace_back(provider, sourceGroupId);
 	}
 	else
 	{
@@ -17,16 +19,10 @@ void CombinedIndexerCommandProvider::addProvider(std::shared_ptr<IndexerCommandP
 
 std::vector<FilePath> CombinedIndexerCommandProvider::getAllSourceFilePaths() const
 {
-	size_t size = 0;
-	for (const std::shared_ptr<IndexerCommandProvider>& provider: m_providers)
-	{
-		size += provider->size();
-	}
-
 	std::vector<FilePath> paths;
-	paths.reserve(size);
+	paths.reserve(size());
 
-	for (const std::shared_ptr<IndexerCommandProvider>& provider: m_providers)
+	for (const auto& [provider, groupId]: m_providers)
 	{
 		utility::append(paths, provider->getAllSourceFilePaths());
 	}
@@ -36,11 +32,12 @@ std::vector<FilePath> CombinedIndexerCommandProvider::getAllSourceFilePaths() co
 
 std::shared_ptr<IndexerCommand> CombinedIndexerCommandProvider::consumeCommand()
 {
-	for (const std::shared_ptr<IndexerCommandProvider>& provider: m_providers)
+	for (const auto& [provider, groupId]: m_providers)
 	{
 		std::shared_ptr<IndexerCommand> command = provider->consumeCommand();
 		if (command)
 		{
+			command->setSourceGroupId(groupId);
 			return command;
 		}
 	}
@@ -50,11 +47,12 @@ std::shared_ptr<IndexerCommand> CombinedIndexerCommandProvider::consumeCommand()
 std::shared_ptr<IndexerCommand> CombinedIndexerCommandProvider::consumeCommandForSourceFilePath(
 	const FilePath& filePath)
 {
-	for (const std::shared_ptr<IndexerCommandProvider>& provider: m_providers)
+	for (const auto& [provider, groupId]: m_providers)
 	{
 		std::shared_ptr<IndexerCommand> command = provider->consumeCommandForSourceFilePath(filePath);
 		if (command)
 		{
+			command->setSourceGroupId(groupId);
 			return command;
 		}
 	}
@@ -63,25 +61,24 @@ std::shared_ptr<IndexerCommand> CombinedIndexerCommandProvider::consumeCommandFo
 
 std::vector<std::shared_ptr<IndexerCommand>> CombinedIndexerCommandProvider::consumeAllCommands()
 {
-	size_t size = 0;
-	for (const std::shared_ptr<IndexerCommandProvider>& provider: m_providers)
-	{
-		size += provider->size();
-	}
-
 	std::vector<std::shared_ptr<IndexerCommand>> commands;
-	commands.reserve(size);
+	commands.reserve(size());
 
-	for (const std::shared_ptr<IndexerCommandProvider>& provider: m_providers)
+	for (const auto& [provider, groupId]: m_providers)
 	{
-		utility::append(commands, provider->consumeAllCommands());
+		std::vector<std::shared_ptr<IndexerCommand>> providerCommands = provider->consumeAllCommands();
+		for (const std::shared_ptr<IndexerCommand>& command: providerCommands)
+		{
+			command->setSourceGroupId(groupId);
+		}
+		utility::append(commands, providerCommands);
 	}
 	return commands;
 }
 
 void CombinedIndexerCommandProvider::clear()
 {
-	for (const std::shared_ptr<IndexerCommandProvider>& provider: m_providers)
+	for (const auto& [provider, groupId]: m_providers)
 	{
 		provider->clear();
 	}
@@ -90,7 +87,7 @@ void CombinedIndexerCommandProvider::clear()
 size_t CombinedIndexerCommandProvider::size() const
 {
 	size_t size = 0;
-	for (const std::shared_ptr<IndexerCommandProvider>& provider: m_providers)
+	for (const auto& [provider, groupId]: m_providers)
 	{
 		size += provider->size();
 	}

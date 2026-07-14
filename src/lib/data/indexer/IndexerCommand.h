@@ -25,6 +25,13 @@ public:
 
 	const FilePath& getSourceFilePath() const;
 
+	//! Id of the source group this command belongs to (fan-out S1). Tagged by
+	//! CombinedIndexerCommandProvider when commands are consumed for indexing;
+	//! empty until then. Lets subprocesses filter the shared command queue by
+	//! group (fan-out S2).
+	const std::string& getSourceGroupId() const;
+	void setSourceGroupId(const std::string& sourceGroupId);
+
 	//! Stable hash of the effective compile command for this translation unit.
 	//! Empty for command types with no meaningful compile command. Used by the
 	//! incremental refresh to detect flag changes that leave the source mtime
@@ -36,6 +43,7 @@ protected:
 
 private:
 	FilePath m_sourceFilePath;
+	std::string m_sourceGroupId;
 };
 
 #endif	  // INDEXER_COMMAND_H

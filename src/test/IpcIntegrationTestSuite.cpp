@@ -66,12 +66,15 @@ void assertTaskFillQueueDeduplicatesLanguageCommandsByWorkingDirectory(
 			std::vector<std::string>{"-std=c++20"});
 		cxxCommand)
 		providerACommands.push_back(cxxCommand);
-	provider->addProvider(std::make_shared<MemoryIndexerCommandProvider>(providerACommands));
+	provider->addProvider(
+		std::make_shared<MemoryIndexerCommandProvider>(providerACommands), "group-a");
 
-	provider->addProvider(std::make_shared<MemoryIndexerCommandProvider>(
-		std::vector<std::shared_ptr<IndexerCommand>>{
-			makeLanguageCommand(firstWorkingDirectory),
-			makeLanguageCommand(secondWorkingDirectory)}));
+	provider->addProvider(
+		std::make_shared<MemoryIndexerCommandProvider>(
+			std::vector<std::shared_ptr<IndexerCommand>>{
+				makeLanguageCommand(firstWorkingDirectory),
+				makeLanguageCommand(secondWorkingDirectory)}),
+		"group-b");
 
 	auto blackboard = std::make_shared<Blackboard>();
 	blackboard->set<int>("source_file_count", static_cast<int>(provider->size()));
@@ -88,8 +91,13 @@ void assertTaskFillQueueDeduplicatesLanguageCommandsByWorkingDirectory(
 	size_t languageCount = 0;
 	size_t cxxCount = 0;
 	std::set<std::string> languageWorkingDirectories;
+	std::set<std::string> poppedGroupIds;
 	while (std::shared_ptr<IndexerCommand> command = reader.popIndexerCommand())
 	{
+		// The source-group tag (fan-out S1) survives the queue serialization.
+		REQUIRE(!command->getSourceGroupId().empty());
+		poppedGroupIds.insert(command->getSourceGroupId());
+
 		if (isLanguageCommand(command))
 		{
 			languageCount++;
@@ -100,12 +108,16 @@ void assertTaskFillQueueDeduplicatesLanguageCommandsByWorkingDirectory(
 		}
 
 		if (isOptionalCxxCommand(command))
+		{
 			cxxCount++;
+			REQUIRE(command->getSourceGroupId() == "group-a");  // only group A holds one
+		}
 	}
 
 	REQUIRE(languageCount == 2);
 	REQUIRE(languageWorkingDirectories.size() == 2);
 	REQUIRE(cxxCount == static_cast<size_t>(withOptionalCxxCount(0)));
+	REQUIRE(poppedGroupIds == std::set<std::string>{"group-a", "group-b"});
 	REQUIRE(reader.indexerCommandCount() == 0);
 }
 }

@@ -27,6 +27,9 @@ table IndexerCommand {
     // Implicit generic-specialization node scope (Rust; §7).
     // "off" / "local" / "all"; empty = default "local".
     specialization_scope: string;
+    // Source group the command belongs to (fan-out S1); lets subprocesses
+    // filter the shared queue by group. Appended field: FlatBuffers-additive.
+    source_group_id:      string;
 }
 
 table IndexerCommandQueue {
