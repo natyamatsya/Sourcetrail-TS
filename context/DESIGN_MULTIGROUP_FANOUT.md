@@ -3,8 +3,10 @@
 **Status: COMPLETE — S0–S5 implemented (2026-07-14).** Remaining follow-ups: payoff
 measurement on a genuinely skewed real-world load (the smoke fixture is balanced and
 too small to be meaningful), sole-writer support for incremental refreshes (needs
-content-dedup seeding of the in-process index, not just id seeding), and the serial
-re-inject fallback for degraded runs (currently: health warning + manual serial re-run). Parallelize indexing across source
+content-dedup seeding of the in-process index, not just id seeding), the serial
+re-inject fallback for degraded runs (currently: health warning + manual serial re-run),
+and the Rust analog — K supervisors draining the per-crate command queue
+([DESIGN_RUST_CRATE_FANOUT.md](DESIGN_RUST_CRATE_FANOUT.md)). Parallelize indexing across source
 groups by spawning dedicated subprocess *clusters* per group and routing every group's
 results into the already-complete concurrent Turso MVCC writer as the **sole** storage
 writer during fan-out.
