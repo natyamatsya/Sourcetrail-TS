@@ -163,9 +163,13 @@ ProcessOutput executeProcess(const std::string& command, const std::vector<std::
 
 	// Set up environment with extra PATH entries
 	QProcessEnvironment env = QProcessEnvironment::systemEnvironment();
+#ifndef Q_OS_WIN
+	// Unix-only: the colon-joined prefix would corrupt the semicolon-separated
+	// PATH on Windows (it splices into the first existing entry).
 	QString path = env.value(QStringLiteral("PATH"));
 	path = QStringLiteral("/opt/local/bin:/usr/local/bin:") + path;
 	env.insert(QStringLiteral("PATH"), path);
+#endif
 
 	process->setProcessEnvironment(env);
 
