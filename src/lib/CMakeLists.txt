@@ -4,6 +4,10 @@ file(GLOB_RECURSE Sourcetrail_lib_SOURCES CONFIGURE_DEPENDS
 	"${CMAKE_CURRENT_SOURCE_DIR}/*.cpp"
 	"${CMAKE_CURRENT_SOURCE_DIR}/*.h"
 )
+# The agent_control prototype files are standalone references (see their
+# README), not part of the build; they use POSIX fork()/wait() and do not
+# compile on Windows.
+list(FILTER Sourcetrail_lib_SOURCES EXCLUDE REGEX "component/controller/agent_control/prototype/")
 # CXX settings sources are always included; lib_cxx itself is still optional.
 
 # FlatBuffer schema files — included so IDEs show them in the project tree.
