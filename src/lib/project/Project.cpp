@@ -8,6 +8,8 @@
 #include "IndexerClusterPlan.h"
 #include "IndexerCommand.h"
 #include "IndexerCommandCustom.h"
+#include "IndexerCommandRust.h"
+#include "MemoryIndexerCommandProvider.h"
 #include "PersistentStorage.h"
 #include "ProjectSettings.h"
 #include "RefreshInfoGenerator.h"
@@ -569,6 +571,7 @@ void Project::buildIndex(RefreshInfo info, std::shared_ptr<DialogView> dialogVie
 	std::unique_ptr<CombinedIndexerCommandProvider> customIndexerCommandProvider =
 		std::make_unique<CombinedIndexerCommandProvider>();
 	std::vector<IndexerClusterEntry> cxxClusters;
+	size_t rustCrateCount = 0;
 	for (const std::shared_ptr<SourceGroup>& sourceGroup: m_sourceGroups)
 	{
 		if (sourceGroup->getStatus() == SourceGroupStatusType::ENABLED)
@@ -581,11 +584,39 @@ void Project::buildIndex(RefreshInfo info, std::shared_ptr<DialogView> dialogVie
 			}
 			else
 			{
+				// Rust fan-out R1: SourceGroupRust emits ONE command per group
+				// (working directory = the workspace root; the subprocess indexes
+				// all member crates in that one run). Distinct working
+				// directories therefore == parallelizable Rust commands, i.e.
+				// K > 1 only helps projects with multiple Rust groups today.
+				// Splitting a workspace into per-member-crate commands is R1b
+				// (see DESIGN_RUST_CRATE_FANOUT.md). Peeking is free — Rust
+				// groups materialize commands eagerly anyway.
+				const LanguageType language = sourceGroup->getLanguage();
+				if (language == LanguageType::RUST)
+				{
+					std::vector<std::shared_ptr<IndexerCommand>> commands =
+						sourceGroup->getIndexerCommands(info);
+					std::set<std::string> crateRoots;
+					for (const std::shared_ptr<IndexerCommand>& command: commands)
+					{
+						if (const auto* rustCommand =
+								dynamic_cast<const IndexerCommandRust*>(command.get()))
+						{
+							crateRoots.insert(rustCommand->getWorkingDirectory().str());
+						}
+					}
+					rustCrateCount += crateRoots.size();
+
+					indexerCommandProvider->addProvider(
+						std::make_shared<MemoryIndexerCommandProvider>(commands), sourceGroupId);
+					continue;
+				}
+
 				std::shared_ptr<IndexerCommandProvider> provider =
 					sourceGroup->getIndexerCommandProvider(info);
 
 				// Fan-out S3: C/C++ groups form per-group subprocess clusters.
-				const LanguageType language = sourceGroup->getLanguage();
 				if (language == LanguageType::C || language == LanguageType::CXX)
 				{
 					cxxClusters.push_back(
@@ -704,6 +735,16 @@ void Project::buildIndex(RefreshInfo info, std::shared_ptr<DialogView> dialogVie
 		}
 #endif
 
+		// Rust fan-out R1: K Rust supervisors share the command queue when the
+		// fan-out is enabled and >= 2 parallelizable Rust commands exist.
+		// Bootstrap count — hard cap 3 until R2 adds the memory/thread-budget
+		// policy.
+		size_t rustSupervisorCount = 1;
+		if (fanOutEnabled && rustCrateCount >= 2)
+		{
+			rustSupervisorCount = std::min<size_t>(rustCrateCount, 3);
+		}
+
 		taskParallelIndexing->addChildTasks(std::make_shared<TaskGroupSequence>()->addChildTasks(
 			// block until there are indexer commands to process
 			std::make_shared<TaskDecoratorRepeat>(
@@ -711,7 +752,12 @@ void Project::buildIndex(RefreshInfo info, std::shared_ptr<DialogView> dialogVie
 				->addChildTask(std::make_shared<TaskReturnSuccessIf<bool>>(
 					"indexer_command_queue_started", TaskReturnSuccessIf<bool>::ConditionType::CONDITION_EQUALS, false)),
 			std::make_shared<TaskBuildIndex>(
-				effectiveIndexerThreadCount, storageProvider, dialogView, m_appUUID, cxxClusterPlan)));
+				effectiveIndexerThreadCount,
+				storageProvider,
+				dialogView,
+				m_appUUID,
+				cxxClusterPlan,
+				rustSupervisorCount)));
 
 		// add task for merging the intermediate storages.
 		// Event-driven: TaskMergeStorages blocks on the StorageProvider until enough

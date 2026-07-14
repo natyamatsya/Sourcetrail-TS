@@ -1,9 +1,17 @@
 # Design: Crate-Level Fan-Out for the Rust Indexer (Phase 8 follow-up)
 
-**Status: designed, not implemented (2026-07-14).** The Rust analog of
-[DESIGN_MULTIGROUP_FANOUT.md](DESIGN_MULTIGROUP_FANOUT.md) (S0–S5, complete): run **K Rust
-supervisor subprocesses draining the same crate-command queue** instead of one. Named there as
-"allow K Rust supervisors is a later extension" (S3).
+**Status: R1 implemented (2026-07-14) — at GROUP granularity; R1b (per-crate commands) is the
+open core.** The Rust analog of [DESIGN_MULTIGROUP_FANOUT.md](DESIGN_MULTIGROUP_FANOUT.md)
+(S0–S5, complete): run **K Rust supervisor subprocesses draining the same command queue**
+instead of one. Named there as "allow K Rust supervisors is a later extension" (S3).
+
+**CORRECTION (found while landing R1):** this note's original premise — "a workspace already
+yields one indexer command per crate" — was wrong. `SourceGroupRust::getIndexerCommands` emits
+**one command per source group** (working directory = the workspace root), and the subprocess
+indexes **all member crates in that single run** (the benchmark's "3/10 crates" were
+per-run-internal counts, not separate commands; the queue held ONE Rust command per group).
+Consequently the landed R1 parallelizes across **Rust source groups**, not across crates of one
+workspace. Getting crate-level parallelism needs the command side split first — see **R1b**.
 
 Related: [ROADMAP_RUST_INDEXER.md](ROADMAP_RUST_INDEXER.md) (the indexer itself),
 [DESIGN_TURSO_BACKEND.md](DESIGN_TURSO_BACKEND.md) (the concurrent writer, if ingest ever
@@ -47,7 +55,7 @@ the serial SQLite writer stays sufficient — same finding as the C++ phase.
 
 ## Design
 
-### R1 — K supervisors
+### R1 — K supervisors — **DONE (2026-07-14), effective at group granularity**
 
 `TaskBuildIndex::doEnter`: spawn `rustSupervisorCount` supervisors instead of one, with
 sequential ProcessIds after the C++ range (`processCount+1 .. processCount+K`; the Swift
@@ -55,6 +63,33 @@ supervisor id shifts accordingly — it is computed relative, `swiftIndexerProce
 mechanical). One `IntermediateStorageManagerImpl` channel per supervisor;
 `fetchIntermediateStorages` is already per-ProcessId. The babysitter loop, interrupt path and
 the 200-consecutive-failure guard are reused unchanged per supervisor.
+
+*As implemented:* `TaskBuildIndex` takes `rustSupervisorCount` (default 1 = exact legacy);
+storage-manager matching is by `getProcessId()` instead of recomputed ids. `Project::buildIndex`
+counts distinct Rust command working directories and passes `min(count, 3)` when the fan-out
+tri-state is enabled. **In practice K > 1 never engages yet**: every Rust group's working
+directory is `getProjectDirectoryPath()` — the project directory, identical across groups — so
+the distinct-workdir count is ≤ 1 (and the fill task's workdir dedup would collapse
+multi-group commands anyway). R1 is the verified mechanism (K=1 byte-identical to legacy,
+full suite green); R1b supplies the per-crate commands that make K meaningful.
+
+### R1b — per-member-crate commands (the open core)
+
+Split the group-level command into one command per workspace member so the queue holds real
+crate-level parallelism:
+
+- **Enumerate members with cargo itself** — `cargo metadata --no-deps` at command-generation
+  time (exact member/glob/exclude resolution, ~100–300 ms warm) and emit one
+  `IndexerCommandRust` per member root as the working directory. C++-side TOML parsing of
+  `[workspace] members` is rejected (globs, excludes, nested workspaces).
+- **Restrict the subprocess to the commanded crate**: loading any member root via
+  `load_workspace_at` still loads the whole workspace, and the collector currently indexes
+  every local crate — without a filter, K supervisors would each re-index all members. Filter
+  the collector's local-crate set to the crate whose root matches the command's working
+  directory (needs a small collector change; no IPC schema change — the working directory
+  already carries the member root).
+- Progress accounting then counts member commands naturally (fixes R4's `"10/1"` oddity for
+  workspaces).
 
 ### R2 — supervisor count: memory-aware, not proportional
 

@@ -27,12 +27,16 @@ public:
 	//! A non-empty cxxClusterPlan (fan-out S3) overrides processCount: one C++
 	//! subprocess per planned slot, each pinned to its cluster's source group.
 	//! An empty plan gives processCount unpinned subprocesses (legacy).
+	//! rustSupervisorCount (crate fan-out R1) spawns that many Rust supervisor
+	//! threads, each babysitting one subprocess per crate command; they share
+	//! the crate queue via accept-any pops. 1 = today's exact behavior.
 	TaskBuildIndex(
 		size_t processCount,
 		std::shared_ptr<StorageProvider> storageProvider,
 		std::shared_ptr<DialogView> dialogView,
 		const std::string& appUUID,
-		const std::vector<IndexerClusterEntry>& cxxClusterPlan = {});
+		const std::vector<IndexerClusterEntry>& cxxClusterPlan = {},
+		size_t rustSupervisorCount = 1);
 
 	~TaskBuildIndex() override;
 
@@ -93,8 +97,11 @@ protected:
 	std::vector<std::jthread> m_processThreads;
 	std::vector<std::shared_ptr<IntermediateStorageManagerImpl>>
 		m_interprocessIntermediateStorageManagers;
-	std::shared_ptr<IntermediateStorageManagerImpl> m_rustStorageManager;
+	//! One per Rust supervisor (crate fan-out R1): ProcessIds
+	//! m_processCount+1 .. m_processCount+m_rustSupervisorCount.
+	std::vector<std::shared_ptr<IntermediateStorageManagerImpl>> m_rustStorageManagers;
 	std::shared_ptr<IntermediateStorageManagerImpl> m_swiftStorageManager;
+	size_t m_rustSupervisorCount = 1;
 
 	std::atomic<size_t> m_runningThreadCount = 0;
 
