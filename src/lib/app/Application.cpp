@@ -118,7 +118,15 @@ void Application::destroyInstance()
 	TaskManager::destroyScheduler(TabIds::app());
 
 	if (GarbageCollectorImpl* gc = GarbageCollectorImpl::getInstance())
+	{
 		gc->stop();
+		// Destroy NOW, while libipc's per-process statics are still alive. The
+		// collector owns an IpcSharedMemory by value; letting the static
+		// singleton die at __cxa_finalize closes its mutex against libipc's
+		// already-destroyed handle cache (observed: SIGSEGV in
+		// ipc::shm::handle::name() at exit).
+		GarbageCollectorImpl::destroyInstance();
+	}
 
 	s_instance.reset();
 }

@@ -16,6 +16,10 @@ class IpcSharedMemoryGarbageCollector
 public:
 	static IpcSharedMemoryGarbageCollector* createInstance();
 	static IpcSharedMemoryGarbageCollector* getInstance();
+	//! Destroy during orderly shutdown (after stop()): the collector owns an
+	//! IpcSharedMemory by value, and destroying that at static-teardown time
+	//! closes its mutex against libipc's already-destroyed handle cache.
+	static void destroyInstance();
 
 	IpcSharedMemoryGarbageCollector();
 	~IpcSharedMemoryGarbageCollector();

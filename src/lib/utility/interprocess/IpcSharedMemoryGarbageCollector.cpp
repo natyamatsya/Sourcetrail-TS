@@ -34,6 +34,11 @@ IpcSharedMemoryGarbageCollector* IpcSharedMemoryGarbageCollector::getInstance()
 	return s_instance.get();
 }
 
+void IpcSharedMemoryGarbageCollector::destroyInstance()
+{
+	s_instance.reset();
+}
+
 IpcSharedMemoryGarbageCollector::IpcSharedMemoryGarbageCollector()
 	: m_shm{s_memoryName, 65536, IpcSharedMemory::AccessMode::OPEN_OR_CREATE}
 	, m_loopIsRunning{false}
