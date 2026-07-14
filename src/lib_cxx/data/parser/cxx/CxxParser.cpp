@@ -146,7 +146,18 @@ void CxxParser::buildIndex(std::shared_ptr<IndexerCommandCxx> indexerCommand)
 	std::vector<std::string> args = indexerCommand->getCompilerFlags();
 	if (!args.empty() && !utility::isPrefix("-", args.front()))
 	{
+		// CDB-style command: drop the compiler executable; the input file is
+		// already among the flags (as written in the compilation database).
 		args.erase(args.begin());
+	}
+	else if (const std::string sourcePath = indexerCommand->getSourceFilePath().str();
+			 std::find(args.begin(), args.end(), sourcePath) == args.end())
+	{
+		// Bare-flags command (empty C++ source group): the flags carry no input
+		// file — append it, like the pre-merge Empty overload's appendFilePath
+		// did. Without this every TU fails with "no input files". (CMake File
+		// API commands already push the file themselves; the find() guards them.)
+		args.push_back(sourcePath);
 	}
 	compileCommand.CommandLine = getCommandlineArgumentsEssential(indexerCommand->getCompilerPath(), args);
 	compileCommand.CommandLine = prependSyntaxOnlyToolArgs(indexerCommand->getCompilerPath(), compileCommand.CommandLine);
