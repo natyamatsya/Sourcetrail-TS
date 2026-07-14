@@ -36,6 +36,9 @@ if (SOURCETRAIL_USE_TURSO)
 		PUBLIC
 			turso_shim
 			External_lib_cppsqlite3
+			# Windows system libs the Rust staticlib's crates rely on
+			# (getrandom -> BCryptGenRandom, mio/tokio -> winsock, etc.).
+			"$<$<PLATFORM_ID:Windows>:bcrypt;ntdll;userenv;ws2_32>"
 	)
 endif()
 
