@@ -29,6 +29,28 @@ TEST_CASE("ipc shared memory")
 		}
 	}
 
+	SECTION("live-handle registry tracks in-process instances per name")
+	{
+		REQUIRE(IpcSharedMemory::liveHandleCount(memName) == 0);
+		{
+			IpcSharedMemory first(memName, 4096, CREATE_AND_DELETE);
+			REQUIRE(IpcSharedMemory::liveHandleCount(memName) == 1);
+			{
+				IpcSharedMemory reader(memName, 4096, OPEN_OR_CREATE);
+				REQUIRE(IpcSharedMemory::liveHandleCount(memName) == 2);
+
+				// A second CREATE_AND_DELETE owner logs the dangling-views
+				// warning (checked by count here; the message goes to the log).
+				// Neither `first` nor `reader` is used afterwards — using them
+				// past this point is exactly the misuse the guard flags.
+				IpcSharedMemory second(memName, 4096, CREATE_AND_DELETE);
+				REQUIRE(IpcSharedMemory::liveHandleCount(memName) == 3);
+			}
+			REQUIRE(IpcSharedMemory::liveHandleCount(memName) == 1);
+		}
+		REQUIRE(IpcSharedMemory::liveHandleCount(memName) == 0);
+	}
+
 	SECTION("write and read raw bytes")
 	{
 		IpcSharedMemory memory(memName, 4096, CREATE_AND_DELETE);

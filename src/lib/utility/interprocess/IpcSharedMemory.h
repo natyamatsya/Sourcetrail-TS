@@ -23,6 +23,12 @@ public:
 
 	static void deleteSharedMemory(const std::string& name);
 
+	//! Number of IpcSharedMemory instances currently open in this process for
+	//! the given logical name. Backs the guard that warns when CREATE_AND_DELETE
+	//! re-creates or deletes a segment underneath live in-process handles
+	//! (which dangles their memory/mutex views); also a test hook.
+	static std::size_t liveHandleCount(const std::string& name);
+
 	IpcSharedMemory(const std::string& name, std::size_t size, AccessMode mode);
 	~IpcSharedMemory();
 

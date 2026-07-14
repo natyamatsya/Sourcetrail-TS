@@ -1,12 +1,39 @@
 #include "IpcSharedMemory.h"
 
 #include <cstring>
+#include <map>
+#include <mutex>
 #include <stdexcept>
 
 #include "logging.h"
 
 namespace
 {
+// Per-process registry of live IpcSharedMemory instances by logical name.
+// CREATE_AND_DELETE clears the segment's global storage; doing that underneath
+// live in-process handles dangles their mapped memory/mutex views (observed as
+// garbage mutex words and lock timeouts) — warn loudly instead of corrupting
+// silently. Deliberately leaked: IpcSharedMemory instances held by static
+// singletons destruct during static teardown, which must not touch a
+// destroyed mutex/map.
+std::mutex& liveHandleMutex()
+{
+	static std::mutex* mutex = new std::mutex();
+	return *mutex;
+}
+
+std::map<std::string, size_t>& liveHandleRegistry()
+{
+	static auto* registry = new std::map<std::string, size_t>();
+	return *registry;
+}
+
+size_t liveHandleCountLocked(const std::string& name)
+{
+	const auto it = liveHandleRegistry().find(name);
+	return it != liveHandleRegistry().end() ? it->second : 0;
+}
+
 template <typename ShmHandle>
 bool growSharedMemoryHandle(
 	ShmHandle& shm,
@@ -25,6 +52,12 @@ const char* IpcSharedMemory::s_memoryNamePrefix = "srctrl_ipc_mem_";
 const char* IpcSharedMemory::s_mutexNamePrefix = "srctrl_ipc_mtx_";
 const char* IpcSharedMemory::s_conditionNamePrefix = "srctrl_ipc_cnd_";
 
+std::size_t IpcSharedMemory::liveHandleCount(const std::string& name)
+{
+	std::lock_guard<std::mutex> lock(liveHandleMutex());
+	return liveHandleCountLocked(name);
+}
+
 void IpcSharedMemory::deleteSharedMemory(const std::string& name)
 {
 	std::string memName = s_memoryNamePrefix + name;
@@ -42,6 +75,19 @@ IpcSharedMemory::IpcSharedMemory(const std::string& name, std::size_t size, Acce
 	: m_name(name), m_size(size), m_mode(mode)
 {
 	using enum IpcSharedMemory::AccessMode;
+	if (mode == CREATE_AND_DELETE)
+	{
+		std::lock_guard<std::mutex> lock(liveHandleMutex());
+		if (const size_t liveHandles = liveHandleCountLocked(m_name); liveHandles > 0)
+		{
+			LOG_WARNING(
+				"IpcSharedMemory: re-creating segment '" + m_name + "' underneath " +
+				std::to_string(liveHandles) +
+				" live handle(s) in this process — their memory/mutex views dangle. A segment "
+				"must have exactly one CREATE_AND_DELETE owner per process.");
+		}
+	}
+
 	unsigned shmMode = 0;
 	switch (mode)
 	{
@@ -65,11 +111,31 @@ IpcSharedMemory::IpcSharedMemory(const std::string& name, std::size_t size, Acce
 
 	if (!m_condition.open(getConditionName().c_str()))
 		throw std::runtime_error("IpcSharedMemory: failed to open condition: " + getConditionName());
+
+	{
+		std::lock_guard<std::mutex> lock(liveHandleMutex());
+		liveHandleRegistry()[m_name]++;
+	}
 }
 
 IpcSharedMemory::~IpcSharedMemory()
 {
 	using enum IpcSharedMemory::AccessMode;
+	{
+		std::lock_guard<std::mutex> lock(liveHandleMutex());
+		const auto it = liveHandleRegistry().find(m_name);
+		if (it != liveHandleRegistry().end() && --(it->second) == 0)
+			liveHandleRegistry().erase(it);
+
+		if (const size_t remaining = liveHandleCountLocked(m_name);
+			m_mode == CREATE_AND_DELETE && remaining > 0)
+		{
+			LOG_WARNING(
+				"IpcSharedMemory: deleting segment '" + m_name + "' while " +
+				std::to_string(remaining) +
+				" live handle(s) remain in this process — their memory/mutex views dangle.");
+		}
+	}
 	try
 	{
 		m_condition.close();
