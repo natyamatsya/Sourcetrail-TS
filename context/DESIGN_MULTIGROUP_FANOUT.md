@@ -1,6 +1,6 @@
 # Design: Multi-Subprocess Fan-Out Across Source Groups (Phase 8)
 
-**Status: S0–S2 implemented (2026-07-14); S3–S5 designed, not implemented.** Parallelize indexing across source
+**Status: S0–S3 implemented (2026-07-14); S4–S5 designed, not implemented.** Parallelize indexing across source
 groups by spawning dedicated subprocess *clusters* per group and routing every group's
 results into the already-complete concurrent Turso MVCC writer as the **sole** storage
 writer during fan-out.
@@ -133,7 +133,7 @@ complicates the Rust supervisor and `TaskFillIndexerCommandsQueue`. Fallback onl
 contention shows up. *Trade-off:* a subprocess pinned to a slow group can't steal other groups'
 work; S3's proportional allocation + the `""` accept-any fallback mitigate this.
 
-### S3 — Subprocess allocation across groups
+### S3 — Subprocess allocation across groups — **DONE (2026-07-14)**
 
 Classify enabled non-custom groups into clusters keyed by `(languageType, sourceGroupId)`.
 Partition the `indexerThreadCount` budget across **C++ clusters** proportional to each group's
@@ -144,6 +144,23 @@ into `TaskBuildIndex`; keep ProcessId sequential + a `ProcessId → groupId` map
 passes the right `onlyGroupId`. **One group ⇒ one cluster ⇒ today's exact behavior.** Result
 routing (`fetchIntermediateStorages`, by ProcessId) is unchanged — group identity is only needed
 command-side; all groups feed one writer.
+
+*As implemented:* `IndexerClusterPlan.{h,cpp}` — `IndexerClusterEntry` + pure
+`allocateIndexerSubprocesses()` (largest-remainder proportional, min 1 per non-empty cluster,
+clamped to command count; unit-tested in `IndexerClusterPlanTestSuite`). `Project::buildIndex`
+collects `(groupId, language, provider->size())` for C/C++ groups and passes the allocated plan
+to `TaskBuildIndex` only when ≥ 2 clusters have commands; the ctor derives `m_processCount` and
+the `ProcessId → groupId` pins from it. **Plus one necessary addition the sketch missed:** the
+queue-fill task previously kept only `maximumQueueSize` (2!) commands in the SHM queue in
+file-size order — pinned consumers would starve behind another group's backlog. With ≥ 2 source
+groups, `TaskFillIndexerCommandsQueue` now fills **per group** (up to the same cap per group,
+via `CombinedIndexerCommandProvider::consumeCommandForSourceGroup` +
+`indexerCommandCountsBySourceGroup()` on the SHM manager); this also un-clogs the Rust/Swift
+supervisors from a C++-heavy queue. Single group ⇒ legacy fill, byte-for-byte. Gate test:
+`IpcIntegrationTestSuite` "group-aware queue fill" (per-group top-up, restock of a drained
+group while the other group's commands sit queued, full drain exactly-once). Test-infra gotchas
+recorded there: `IpcSharedMemory` truncates segment names to 18 chars, and two CREATE_AND_DELETE
+owners of one segment in one process dangle the first owner's mutex view.
 
 ### S4 — Storage cutover: concurrent Turso as sole writer
 

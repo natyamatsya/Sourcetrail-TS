@@ -2,6 +2,7 @@
 #define TASK_BUILD_INDEX_H
 
 #include "language_package_flags.h"
+#include "IndexerClusterPlan.h"
 #include "MessageIndexingInterrupted.h"
 #include "MessageListener.h"
 #include "StdexecPrelude.h"	// stdexec::inplace_stop_source / inplace_stop_callback
@@ -23,11 +24,15 @@ class TaskBuildIndex
 	, public MessageListener<MessageIndexingInterrupted>
 {
 public:
+	//! A non-empty cxxClusterPlan (fan-out S3) overrides processCount: one C++
+	//! subprocess per planned slot, each pinned to its cluster's source group.
+	//! An empty plan gives processCount unpinned subprocesses (legacy).
 	TaskBuildIndex(
 		size_t processCount,
 		std::shared_ptr<StorageProvider> storageProvider,
 		std::shared_ptr<DialogView> dialogView,
-		const std::string& appUUID);
+		const std::string& appUUID,
+		const std::vector<IndexerClusterEntry>& cxxClusterPlan = {});
 
 	~TaskBuildIndex() override;
 
@@ -58,7 +63,7 @@ protected:
 	//! Per-subprocess source-group pins (fan-out S2): a C++ indexer subprocess
 	//! whose ProcessId maps to a non-empty group id only pops commands of that
 	//! group. Unmapped processes accept any group (legacy behavior). Populated
-	//! by the cluster plan (S3); empty until then.
+	//! from the cluster plan (S3) in the constructor.
 	std::map<ProcessId, std::string> m_processGroupIds;
 
 	IndexingStatusManagerImpl m_interprocessIndexingStatusManager;

@@ -666,11 +666,94 @@ TEST_CASE("ipc integration: full indexer workflow")
 	}
 }
 
+// Fan-out S3 gate: with >= 2 source groups the fill task tops up the SHM queue
+// per group, so a pinned consumer's group is refilled even while another
+// group's commands sit in the queue (the legacy total-size fill would starve it).
+TEST_CASE("ipc integration: group-aware queue fill keeps every group available")
+{
+	// Note: IpcSharedMemory truncates segment names to 18 chars — keep test
+	// uuids unique within "icmd_ipc_" + 9 more chars. The task's own command
+	// manager is the sole segment OWNER here: a second CREATE_AND_DELETE
+	// manager in the same process would re-create the segment underneath it
+	// and dangle its mutex view (pre-existing IpcSharedMemory limitation).
+	const std::string uuid = "gfill_s3";
+
+	auto makeCommands = [](const std::string& prefix, int commandCount) {
+		std::vector<std::shared_ptr<IndexerCommand>> commands;
+		for (int i = 0; i < commandCount; i++)
+		{
+			// Distinct working directories: Swift commands deduplicate by
+			// working directory when the Swift package is compiled in.
+			commands.push_back(std::make_shared<IndexerCommandSwift>(
+				FilePath("/" + prefix + std::to_string(i) + ".swift"),
+				std::set<FilePath>{},
+				FilePath("/wd/" + prefix + std::to_string(i))));
+		}
+		return commands;
+	};
+
+	auto provider = std::make_unique<CombinedIndexerCommandProvider>();
+	provider->addProvider(
+		std::make_shared<MemoryIndexerCommandProvider>(makeCommands("a", 5)), "group-a");
+	provider->addProvider(
+		std::make_shared<MemoryIndexerCommandProvider>(makeCommands("b", 5)), "group-b");
+
+	auto blackboard = std::make_shared<Blackboard>();
+	blackboard->set<int>("source_file_count", 10);
+	TaskFillIndexerCommandsQueue task(uuid, std::move(provider), 2);
+	IpcInterprocessIndexerCommandManager reader(uuid, static_cast<ProcessId>(1), false);
+
+	// First fill: 2 commands per group, not 2 in total.
+	REQUIRE(task.update(blackboard) == Task::TaskState::STATE_RUNNING);
+	{
+		auto counts = reader.indexerCommandCountsBySourceGroup();
+		REQUIRE(counts["group-a"] == 2);
+		REQUIRE(counts["group-b"] == 2);
+	}
+
+	// A pinned consumer drains its group; the next fill restocks that group
+	// even though the other group's commands still occupy the queue.
+	const std::set<IndexerCommandType> noSkips;
+	REQUIRE(reader.popIndexerCommandBlocking(noSkips, 10, "group-b"));
+	REQUIRE(reader.popIndexerCommandBlocking(noSkips, 10, "group-b"));
+	REQUIRE(reader.popIndexerCommandBlocking(noSkips, 10, "group-b") == nullptr);
+
+	REQUIRE(task.update(blackboard) == Task::TaskState::STATE_RUNNING);
+	{
+		auto counts = reader.indexerCommandCountsBySourceGroup();
+		REQUIRE(counts["group-a"] == 2);
+		REQUIRE(counts["group-b"] == 2);
+	}
+
+	// Drain everything: both groups deliver all their commands exactly once.
+	std::map<std::string, int> popped;
+	popped["group-b"] = 2;	// already popped above
+	for (;;)
+	{
+		while (const std::shared_ptr<IndexerCommand> command =
+				   reader.popIndexerCommandBlocking(noSkips, 10))
+		{
+			popped[command->getSourceGroupId()]++;
+		}
+		if (task.update(blackboard) == Task::TaskState::STATE_SUCCESS)
+			break;
+	}
+	while (const std::shared_ptr<IndexerCommand> command =
+			   reader.popIndexerCommandBlocking(noSkips, 10))
+	{
+		popped[command->getSourceGroupId()]++;
+	}
+	REQUIRE(popped["group-a"] == 5);
+	REQUIRE(popped["group-b"] == 5);
+	REQUIRE(reader.indexerCommandCount() == 0);
+}
+
 // Fan-out S2 gate: a consumer pinned to a source group only pops that group's
 // commands; an unpinned consumer accepts any group (legacy behavior).
 TEST_CASE("ipc integration: per-group command pop filter")
 {
-	const std::string uuid = "ipc_group_filter_test";
+	// Short uuid: IpcSharedMemory truncates segment names to 18 chars.
+	const std::string uuid = "gpin_s2";
 	const ProcessId mainPid = ProcessId::NONE;
 	const ProcessId workerPid = static_cast<ProcessId>(1);
 

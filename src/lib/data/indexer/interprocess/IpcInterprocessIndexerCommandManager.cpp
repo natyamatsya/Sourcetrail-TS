@@ -183,3 +183,21 @@ size_t IpcInterprocessIndexerCommandManager::indexerCommandCount()
 	auto all = IpcSerializer::deserializeIndexerCommands(buf, len);
 	return all.size();
 }
+
+std::map<std::string, size_t> IpcInterprocessIndexerCommandManager::indexerCommandCountsBySourceGroup()
+{
+	std::map<std::string, size_t> counts;
+
+	IpcSharedMemory::ScopedAccess access(&m_shm);
+	std::size_t len = 0;
+	const uint8_t* buf = access.read(&len);
+
+	if (len < 4 || std::memcmp(buf, "\0\0\0\0", 4) == 0)
+		return counts;
+
+	for (const auto& command: IpcSerializer::deserializeIndexerCommands(buf, len))
+	{
+		counts[command->getSourceGroupId()]++;
+	}
+	return counts;
+}

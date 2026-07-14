@@ -1,8 +1,11 @@
 #include "Project.h"
 
+#include <algorithm>
+
 #include "ApplicationSettings.h"
 #include "CombinedIndexerCommandProvider.h"
 #include "DialogView.h"
+#include "IndexerClusterPlan.h"
 #include "IndexerCommand.h"
 #include "IndexerCommandCustom.h"
 #include "PersistentStorage.h"
@@ -565,6 +568,7 @@ void Project::buildIndex(RefreshInfo info, std::shared_ptr<DialogView> dialogVie
 		std::make_unique<CombinedIndexerCommandProvider>();
 	std::unique_ptr<CombinedIndexerCommandProvider> customIndexerCommandProvider =
 		std::make_unique<CombinedIndexerCommandProvider>();
+	std::vector<IndexerClusterEntry> cxxClusters;
 	for (const std::shared_ptr<SourceGroup>& sourceGroup: m_sourceGroups)
 	{
 		if (sourceGroup->getStatus() == SourceGroupStatusType::ENABLED)
@@ -577,8 +581,18 @@ void Project::buildIndex(RefreshInfo info, std::shared_ptr<DialogView> dialogVie
 			}
 			else
 			{
-				indexerCommandProvider->addProvider(
-					sourceGroup->getIndexerCommandProvider(info), sourceGroupId);
+				std::shared_ptr<IndexerCommandProvider> provider =
+					sourceGroup->getIndexerCommandProvider(info);
+
+				// Fan-out S3: C/C++ groups form per-group subprocess clusters.
+				const LanguageType language = sourceGroup->getLanguage();
+				if (language == LanguageType::C || language == LanguageType::CXX)
+				{
+					cxxClusters.push_back(
+						IndexerClusterEntry{sourceGroupId, language, provider->size(), 0});
+				}
+
+				indexerCommandProvider->addProvider(std::move(provider), sourceGroupId);
 			}
 		}
 	}
@@ -649,6 +663,22 @@ void Project::buildIndex(RefreshInfo info, std::shared_ptr<DialogView> dialogVie
 		// means the serial writer became the ceiling (-> roadmap B3, sharded ingest).
 		const int effectiveIndexerThreadCount = hasCxxSourceGroup() ? adjustedIndexerThreadCount
 																	: 0;
+
+		// Fan-out S3: with >= 2 non-empty C++ clusters, split the subprocess
+		// budget across them proportional to command counts (min 1 each) and pin
+		// each subprocess to its group. One cluster => empty plan => today's
+		// exact single-pool behavior.
+		std::vector<IndexerClusterEntry> cxxClusterPlan;
+		const auto nonEmptyClusterCount = std::count_if(
+			cxxClusters.begin(), cxxClusters.end(), [](const IndexerClusterEntry& cluster) {
+				return cluster.commandCount > 0;
+			});
+		if (nonEmptyClusterCount >= 2)
+		{
+			cxxClusterPlan = allocateIndexerSubprocesses(
+				std::move(cxxClusters), static_cast<size_t>(effectiveIndexerThreadCount));
+		}
+
 		taskParallelIndexing->addChildTasks(std::make_shared<TaskGroupSequence>()->addChildTasks(
 			// block until there are indexer commands to process
 			std::make_shared<TaskDecoratorRepeat>(
@@ -656,7 +686,7 @@ void Project::buildIndex(RefreshInfo info, std::shared_ptr<DialogView> dialogVie
 				->addChildTask(std::make_shared<TaskReturnSuccessIf<bool>>(
 					"indexer_command_queue_started", TaskReturnSuccessIf<bool>::ConditionType::CONDITION_EQUALS, false)),
 			std::make_shared<TaskBuildIndex>(
-				effectiveIndexerThreadCount, storageProvider, dialogView, m_appUUID)));
+				effectiveIndexerThreadCount, storageProvider, dialogView, m_appUUID, cxxClusterPlan)));
 
 		// add task for merging the intermediate storages.
 		// Event-driven: TaskMergeStorages blocks on the StorageProvider until enough

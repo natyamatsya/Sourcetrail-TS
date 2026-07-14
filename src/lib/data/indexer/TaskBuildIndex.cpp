@@ -130,7 +130,8 @@ TaskBuildIndex::TaskBuildIndex(
 	size_t processCount,
 	std::shared_ptr<StorageProvider> storageProvider,
 	std::shared_ptr<DialogView> dialogView,
-	const std::string& appUUID)
+	const std::string& appUUID,
+	const std::vector<IndexerClusterEntry>& cxxClusterPlan)
 	: m_storageProvider(storageProvider)
 	, m_dialogView(dialogView)
 	, m_appUUID(appUUID)
@@ -138,6 +139,24 @@ TaskBuildIndex::TaskBuildIndex(
 	, m_processCount(processCount)
 
 {
+	if (cxxClusterPlan.empty())
+		return;
+
+	// Fan-out S3: sequential ProcessIds cluster by cluster, each pinned to its
+	// source group. The Rust/Swift supervisor ids trail m_processCount as usual.
+	m_processCount = 0;
+	for (const IndexerClusterEntry& cluster: cxxClusterPlan)
+	{
+		for (size_t k = 0; k < cluster.subprocessCount; k++)
+		{
+			m_processCount++;
+			m_processGroupIds[static_cast<ProcessId>(m_processCount)] = cluster.sourceGroupId;
+		}
+		LOG_INFO_STREAM(
+			<< "indexer cluster plan: source group " << cluster.sourceGroupId << " ("
+			<< languageTypeToString(cluster.language) << ", " << cluster.commandCount
+			<< " commands) -> " << cluster.subprocessCount << " subprocess(es)");
+	}
 }
 
 TaskBuildIndex::~TaskBuildIndex()

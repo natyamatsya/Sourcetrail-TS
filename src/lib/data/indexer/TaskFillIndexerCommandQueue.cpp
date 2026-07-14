@@ -1,6 +1,10 @@
 #include "TaskFillIndexerCommandQueue.h"
 
+#include <algorithm>
+#include <map>
+
 #include "Blackboard.h"
+#include "CombinedIndexerCommandProvider.h"
 #include "FileSystem.h"
 #include "IndexerCommand.h"
 #include "IndexerCommandRust.h"
@@ -39,6 +43,19 @@ TaskFillIndexerCommandsQueue::TaskFillIndexerCommandsQueue(
 	, m_indexerCommandManager(appUUID, ProcessId::NONE, true)
 	, m_maximumQueueSize(maximumQueueSize)
 {
+	// With >= 2 source groups, fill group-aware (fan-out S3): the queue holds up
+	// to m_maximumQueueSize commands PER group, so subprocesses pinned to one
+	// group (and the Rust/Swift supervisors) always find their work regardless
+	// of another group's backlog.
+	if (auto* combined = dynamic_cast<CombinedIndexerCommandProvider*>(m_indexerCommandProvider.get()))
+	{
+		std::vector<std::string> groupIds = combined->getSourceGroupIds();
+		if (groupIds.size() >= 2)
+		{
+			m_combinedProvider = combined;
+			m_sourceGroupIds = std::move(groupIds);
+		}
+	}
 }
 
 void TaskFillIndexerCommandsQueue::doEnter(std::shared_ptr<Blackboard> blackboard)
@@ -51,10 +68,15 @@ void TaskFillIndexerCommandsQueue::doEnter(std::shared_ptr<Blackboard> blackboar
 		if constexpr (language_packages::buildSwiftLanguagePackage)
 			m_swiftDedup.reset();
 
-		for (const FilePath& filePath:
-			 utility::partitionFilePathsBySize(m_indexerCommandProvider->getAllSourceFilePaths(), 2))
+		// The size-partitioned path order only drives the legacy (single-group)
+		// fill; the group-aware fill consumes per group in provider order.
+		if (m_combinedProvider == nullptr)
 		{
-			m_filePathQueue.emplace(filePath);
+			for (const FilePath& filePath:
+				 utility::partitionFilePathsBySize(m_indexerCommandProvider->getAllSourceFilePaths(), 2))
+			{
+				m_filePathQueue.emplace(filePath);
+			}
 		}
 	}
 
@@ -145,21 +167,25 @@ void TaskFillIndexerCommandsQueue::handleMessage(MessageIndexingInterrupted*  /*
 		".");
 }
 
-bool TaskFillIndexerCommandsQueue::fillCommandQueue(std::shared_ptr<Blackboard> blackboard)
+bool TaskFillIndexerCommandsQueue::applyLanguageDeduplication(
+	const std::shared_ptr<IndexerCommand>& command, size_t& skippedRust, size_t& skippedSwift)
 {
-	using enum Task::TaskState;
-	size_t refillAmount = m_maximumQueueSize - m_indexerCommandManager.indexerCommandCount();
-	if (!refillAmount)
-	{
-		return false;
-	}
+	if (deduplicateByWorkingDir<language_packages::buildRustLanguagePackage, IndexerCommandRust>(
+		m_rustDedup, command, skippedRust))
+		return true;
+	if (deduplicateByWorkingDir<language_packages::buildSwiftLanguagePackage, IndexerCommandSwift>(
+		m_swiftDedup, command, skippedSwift))
+		return true;
+	return false;
+}
 
-	std::lock_guard<std::mutex> lock(m_commandsMutex);
-	std::vector<std::shared_ptr<IndexerCommand>> commands;
-	size_t skippedRust = 0;
-	size_t skippedSwift = 0;
-
-	while (!m_indexerCommandProvider->empty() && commands.size() < refillAmount)
+void TaskFillIndexerCommandsQueue::consumeCommands(
+	size_t count,
+	std::vector<std::shared_ptr<IndexerCommand>>& commands,
+	size_t& skippedRust,
+	size_t& skippedSwift)
+{
+	while (!m_indexerCommandProvider->empty() && commands.size() < count)
 	{
 		std::shared_ptr<IndexerCommand> command;
 		if (!m_filePathQueue.empty())
@@ -175,14 +201,65 @@ bool TaskFillIndexerCommandsQueue::fillCommandQueue(std::shared_ptr<Blackboard> 
 		if (!command)
 			continue;
 
-		if (deduplicateByWorkingDir<language_packages::buildRustLanguagePackage, IndexerCommandRust>(
-			m_rustDedup, command, skippedRust))
-			continue;
-		if (deduplicateByWorkingDir<language_packages::buildSwiftLanguagePackage, IndexerCommandSwift>(
-			m_swiftDedup, command, skippedSwift))
+		if (applyLanguageDeduplication(command, skippedRust, skippedSwift))
 			continue;
 
 		commands.push_back(command);
+	}
+}
+
+void TaskFillIndexerCommandsQueue::consumeCommandsGrouped(
+	std::vector<std::shared_ptr<IndexerCommand>>& commands,
+	size_t& skippedRust,
+	size_t& skippedSwift)
+{
+	const std::map<std::string, size_t> queuedCounts =
+		m_indexerCommandManager.indexerCommandCountsBySourceGroup();
+
+	for (const std::string& groupId: m_sourceGroupIds)
+	{
+		const auto queuedIt = queuedCounts.find(groupId);
+		size_t queued = queuedIt != queuedCounts.end() ? queuedIt->second : 0;
+
+		while (queued < m_maximumQueueSize)
+		{
+			const std::shared_ptr<IndexerCommand> command =
+				m_combinedProvider->consumeCommandForSourceGroup(groupId);
+			if (!command)
+				break;
+
+			if (applyLanguageDeduplication(command, skippedRust, skippedSwift))
+				continue;
+
+			commands.push_back(command);
+			queued++;
+		}
+	}
+}
+
+bool TaskFillIndexerCommandsQueue::fillCommandQueue(std::shared_ptr<Blackboard> blackboard)
+{
+	using enum Task::TaskState;
+	std::vector<std::shared_ptr<IndexerCommand>> commands;
+	size_t skippedRust = 0;
+	size_t skippedSwift = 0;
+
+	if (m_combinedProvider != nullptr)
+	{
+		std::lock_guard<std::mutex> lock(m_commandsMutex);
+		consumeCommandsGrouped(commands, skippedRust, skippedSwift);
+	}
+	else
+	{
+		const size_t refillAmount =
+			m_maximumQueueSize - std::min(m_maximumQueueSize, m_indexerCommandManager.indexerCommandCount());
+		if (refillAmount == 0)
+		{
+			return false;
+		}
+
+		std::lock_guard<std::mutex> lock(m_commandsMutex);
+		consumeCommands(refillAmount, commands, skippedRust, skippedSwift);
 	}
 
 	const size_t skippedCommands = skippedRust + skippedSwift;

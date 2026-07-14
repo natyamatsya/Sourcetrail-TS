@@ -17,6 +17,38 @@ void CombinedIndexerCommandProvider::addProvider(
 	}
 }
 
+std::vector<std::string> CombinedIndexerCommandProvider::getSourceGroupIds() const
+{
+	std::vector<std::string> groupIds;
+	for (const auto& [provider, groupId]: m_providers)
+	{
+		if (std::find(groupIds.begin(), groupIds.end(), groupId) == groupIds.end())
+		{
+			groupIds.push_back(groupId);
+		}
+	}
+	return groupIds;
+}
+
+std::shared_ptr<IndexerCommand> CombinedIndexerCommandProvider::consumeCommandForSourceGroup(
+	const std::string& sourceGroupId)
+{
+	for (const auto& [provider, groupId]: m_providers)
+	{
+		if (groupId != sourceGroupId)
+		{
+			continue;
+		}
+		std::shared_ptr<IndexerCommand> command = provider->consumeCommand();
+		if (command)
+		{
+			command->setSourceGroupId(groupId);
+			return command;
+		}
+	}
+	return std::shared_ptr<IndexerCommand>();
+}
+
 std::vector<FilePath> CombinedIndexerCommandProvider::getAllSourceFilePaths() const
 {
 	std::vector<FilePath> paths;

@@ -1,6 +1,7 @@
 #ifndef IPC_INTERPROCESS_INDEXER_COMMAND_MANAGER_H
 #define IPC_INTERPROCESS_INDEXER_COMMAND_MANAGER_H
 
+#include <map>
 #include <memory>
 #include <set>
 #include <string>
@@ -47,6 +48,10 @@ public:
 
 	void clearIndexerCommands();
 	size_t indexerCommandCount();
+
+	// Queued commands per source-group id (fan-out S3): lets the fill task keep
+	// every group's commands available so pinned subprocesses never starve.
+	std::map<std::string, size_t> indexerCommandCountsBySourceGroup();
 
 private:
 	// Pop one command from the queue using an already-held access, or null if the

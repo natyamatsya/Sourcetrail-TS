@@ -16,6 +16,13 @@ public:
 	//! materialize on consume.
 	void addProvider(std::shared_ptr<IndexerCommandProvider> provider, const std::string& sourceGroupId);
 
+	//! Distinct source-group ids in provider order (fan-out S3): lets the queue
+	//! fill task keep every group's commands available for pinned consumers.
+	std::vector<std::string> getSourceGroupIds() const;
+	//! Consume the next command of one source group; null when that group is
+	//! drained. Commands of other groups stay untouched.
+	std::shared_ptr<IndexerCommand> consumeCommandForSourceGroup(const std::string& sourceGroupId);
+
 	std::vector<FilePath> getAllSourceFilePaths() const override;
 	std::shared_ptr<IndexerCommand> consumeCommand() override;
 	std::shared_ptr<IndexerCommand> consumeCommandForSourceFilePath(const FilePath& filePath) override;
