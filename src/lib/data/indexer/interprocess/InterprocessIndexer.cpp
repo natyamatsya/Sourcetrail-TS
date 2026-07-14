@@ -4,6 +4,7 @@
 #include "IndexerCommand.h"
 #include "IndexerComposite.h"
 #include "IndexerCommandType.h"
+#include "IntermediateStorageChunker.h"
 #include "LanguagePackageManager.h"
 #include "ScopedFunctor.h"
 #include "language_package_flags.h"
@@ -16,6 +17,7 @@
 #include <memory>
 #include <mutex>
 #include <set>
+#include <thread>
 
 InterprocessIndexer::InterprocessIndexer(
 	const std::string& uuid, ProcessId processId, const std::string& onlyGroupId)
@@ -163,8 +165,20 @@ InterprocessIndexer::WorkResult InterprocessIndexer::work()
 
 				if (*indexResult)
 				{
-					LOG_INFO_STREAM(<< m_processId << " pushing index to shared memory");
-					m_interprocessIntermediateStorageManager.pushIntermediateStorage(*indexResult);
+					// Chunk oversized results instead of relying on segment
+					// growth (ADR-0002); back-pressure keeps at most two
+					// entries queued so two chunks always fit the segment.
+					const std::vector<std::shared_ptr<IntermediateStorage>> chunks =
+						utility::chunkIntermediateStorage(*indexResult);
+					LOG_INFO_STREAM(
+						<< m_processId << " pushing index to shared memory in " << chunks.size()
+						<< " chunk(s)");
+					for (const std::shared_ptr<IntermediateStorage>& chunk: chunks)
+					{
+						while (m_interprocessIntermediateStorageManager.getIntermediateStorageCount() >= 2)
+							std::this_thread::sleep_for(std::chrono::milliseconds(25));
+						m_interprocessIntermediateStorageManager.pushIntermediateStorage(chunk);
+					}
 				}
 
 				LOG_INFO_STREAM(<< m_processId << " finalizing indexer status for current file");
