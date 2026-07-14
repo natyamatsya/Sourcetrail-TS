@@ -1,0 +1,13 @@
+version = 8
+
+[[source_groups]]
+id = "3d1f7b2a-6c4e-4f8b-9a21-8e5d0c7a4b19"
+name = "agent_mcp_bridge (Rust)"
+status = "enabled"
+type = "Rust Empty"
+
+    [source_groups.source_paths]
+    source_path = [ "./src" ]
+
+    [source_groups.cargo_features]
+    cargo_feature = [ "mcp" ]
