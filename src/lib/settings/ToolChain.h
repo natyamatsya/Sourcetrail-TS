@@ -106,4 +106,9 @@ class WindowsSdk final : public ToolChain {
 
 void replaceMsvcArguments(std::vector<std::string> *args);
 
+// Same translation for bare compiler flags without an argv[0] (e.g. CMake File
+// API compileCommandFragments). The caller must ensure the flags come from the
+// Microsoft compiler.
+void translateMsvcCompilerFragments(std::vector<std::string> *compilerFlags);
+
 #endif
