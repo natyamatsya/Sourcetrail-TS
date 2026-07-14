@@ -1,6 +1,6 @@
 # Design: Multi-Subprocess Fan-Out Across Source Groups (Phase 8)
 
-**Status: S0+S1 implemented (2026-07-14); S2–S5 designed, not implemented.** Parallelize indexing across source
+**Status: S0–S2 implemented (2026-07-14); S3–S5 designed, not implemented.** Parallelize indexing across source
 groups by spawning dedicated subprocess *clusters* per group and routing every group's
 results into the already-complete concurrent Turso MVCC writer as the **sole** storage
 writer during fan-out.
@@ -108,7 +108,7 @@ end-to-end tag-through-SHM-queue (`IpcIntegrationTestSuite`), Rust pop-rewrite p
 (`BUILD_SWIFT_LANGUAGE_PACKAGE=OFF`) and its checked-in channel code predates the current
 flatc Swift codegen API — it needs a compile pass when Swift is next enabled.
 
-### S2 — Per-group routing — **single queue + group-id filter** (recommended)
+### S2 — Per-group routing — **single queue + group-id filter** (recommended) — **DONE (2026-07-14)**
 
 Keep the one SHM queue `icmd_ipc_<uuid>` and its notify/back-pressure; add an **optional
 `onlyGroupId`** to `IpcInterprocessIndexerCommandManager::popIndexerCommandBlocking` (empty =
@@ -117,6 +117,16 @@ accept any → preserves single-group/legacy behavior). The pop predicate gains
 language `skipTypes` scan, negligible vs the per-pop (de)serialize. Subprocess receives its
 `onlyGroupId` via a new CLI arg (`TaskBuildIndex::runIndexerProcess` already builds
 `commandArguments`; `InterprocessIndexer` passes it into the pop).
+
+*As implemented:* filter in `tryPopLocked` (shared by polling and blocking pops);
+`InterprocessIndexer` ctor takes `onlyGroupId` (default empty). The CLI arg is flag-style —
+`--only-group-id=<id>` — parsed out **before** the positional arguments in the indexer's
+`main()`, because the positional layout has an optional trailing `logFilePath` that an
+appended positional would collide with. `TaskBuildIndex` holds a `ProcessId → groupId` map
+(`m_processGroupIds`) consulted in `runIndexerProcess`; it stays empty until S3's cluster
+plan populates it, so behavior today is exactly legacy. Gate test:
+`IpcIntegrationTestSuite` "per-group command pop filter" (pinned pop selects across
+queue order, drained group returns null leaving others untouched, `""` accepts any).
 
 *Rejected:* per-group SHM queues (`icmd_ipc_<uuid>_<idx>`) — multiplies segment lifecycle,
 complicates the Rust supervisor and `TaskFillIndexerCommandsQueue`. Fallback only if filter

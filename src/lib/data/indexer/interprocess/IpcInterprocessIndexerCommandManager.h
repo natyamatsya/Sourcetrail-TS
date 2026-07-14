@@ -32,8 +32,12 @@ public:
 	// or notifyWaiters), or until timeoutMs elapses. Returns null on timeout so the
 	// caller can re-check its stop conditions; the timeout is a liveness backstop --
 	// a missed notify degrades to polling at that interval, never a hang.
+	// A non-empty onlyGroupId restricts the pop to commands tagged with that
+	// source-group id (fan-out S2); empty accepts any group (legacy behavior).
 	std::shared_ptr<IndexerCommand> popIndexerCommandBlocking(
-		const std::set<IndexerCommandType>& skipTypes, uint32_t timeoutMs);
+		const std::set<IndexerCommandType>& skipTypes,
+		uint32_t timeoutMs,
+		const std::string& onlyGroupId = std::string());
 
 	// Wake any process blocked in popIndexerCommandBlocking (e.g. when the queue is
 	// stopped or indexing is interrupted, so subprocesses exit promptly).
@@ -48,7 +52,9 @@ private:
 	// Pop one command from the queue using an already-held access, or null if the
 	// queue holds no acceptable command. Shared by the polling and blocking pops.
 	std::shared_ptr<IndexerCommand> tryPopLocked(
-		IpcSharedMemory::ScopedAccess& access, const std::set<IndexerCommandType>& skipTypes);
+		IpcSharedMemory::ScopedAccess& access,
+		const std::set<IndexerCommandType>& skipTypes,
+		const std::string& onlyGroupId = std::string());
 
 	static const char* s_sharedMemoryNamePrefix;
 

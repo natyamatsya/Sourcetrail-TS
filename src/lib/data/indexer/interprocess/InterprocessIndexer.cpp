@@ -17,13 +17,17 @@
 #include <mutex>
 #include <set>
 
-InterprocessIndexer::InterprocessIndexer(const std::string& uuid, ProcessId processId)
+InterprocessIndexer::InterprocessIndexer(
+	const std::string& uuid, ProcessId processId, const std::string& onlyGroupId)
 	: m_interprocessIndexerCommandManager(uuid, processId, false)
 	, m_interprocessIndexingStatusManager(uuid, processId, false)
 	, m_interprocessIntermediateStorageManager(uuid, processId, false)
 	, m_uuid(uuid)
 	, m_processId(processId)
+	, m_onlyGroupId(onlyGroupId)
 {
+	if (!m_onlyGroupId.empty())
+		LOG_INFO_STREAM(<< m_processId << " pinned to source group " << m_onlyGroupId);
 }
 
 InterprocessIndexer::WorkResult InterprocessIndexer::work()
@@ -102,7 +106,8 @@ InterprocessIndexer::WorkResult InterprocessIndexer::work()
 				// re-checks the stop flags even if a notify is ever missed; the
 				// main process also notifies on stop/interrupt for a prompt exit.
 				const std::shared_ptr<IndexerCommand> indexerCommand =
-					m_interprocessIndexerCommandManager.popIndexerCommandBlocking(skipTypes, 500);
+					m_interprocessIndexerCommandManager.popIndexerCommandBlocking(
+						skipTypes, 500, m_onlyGroupId);
 
 				if (!indexerCommand)
 				{

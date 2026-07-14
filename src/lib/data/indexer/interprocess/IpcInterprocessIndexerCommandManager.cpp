@@ -74,7 +74,9 @@ std::shared_ptr<IndexerCommand> IpcInterprocessIndexerCommandManager::popIndexer
 }
 
 std::shared_ptr<IndexerCommand> IpcInterprocessIndexerCommandManager::tryPopLocked(
-	IpcSharedMemory::ScopedAccess& access, const std::set<IndexerCommandType>& skipTypes)
+	IpcSharedMemory::ScopedAccess& access,
+	const std::set<IndexerCommandType>& skipTypes,
+	const std::string& onlyGroupId)
 {
 	std::size_t len = 0;
 	const uint8_t* buf = access.read(&len);
@@ -86,16 +88,15 @@ std::shared_ptr<IndexerCommand> IpcInterprocessIndexerCommandManager::tryPopLock
 	if (all.empty())
 		return nullptr;
 
-	// Find the first command that is not one of the skipped types.
-	auto it = all.begin();
-	if (!skipTypes.empty())
-	{
-		it = std::find_if(all.begin(), all.end(), [&skipTypes](const auto& cmd) {
-			return skipTypes.find(cmd->getIndexerCommandType()) == skipTypes.end();
-		});
-		if (it == all.end())
-			return nullptr;
-	}
+	// Find the first command that is not of a skipped type and — when a group
+	// filter is set — belongs to this consumer's source group (fan-out S2).
+	auto it = std::find_if(all.begin(), all.end(), [&skipTypes, &onlyGroupId](const auto& cmd) {
+		if (skipTypes.find(cmd->getIndexerCommandType()) != skipTypes.end())
+			return false;
+		return onlyGroupId.empty() || cmd->getSourceGroupId() == onlyGroupId;
+	});
+	if (it == all.end())
+		return nullptr;
 
 	auto result = *it;
 	all.erase(it);
@@ -126,20 +127,20 @@ std::shared_ptr<IndexerCommand> IpcInterprocessIndexerCommandManager::popIndexer
 }
 
 std::shared_ptr<IndexerCommand> IpcInterprocessIndexerCommandManager::popIndexerCommandBlocking(
-	const std::set<IndexerCommandType>& skipTypes, uint32_t timeoutMs)
+	const std::set<IndexerCommandType>& skipTypes, uint32_t timeoutMs, const std::string& onlyGroupId)
 {
 	IpcSharedMemory::ScopedAccess access(&m_shm);
 
 	// The predicate check and the wait share one continuous lock hold, so a push
 	// (write + notify) cannot slip in between and be lost.
-	if (std::shared_ptr<IndexerCommand> command = tryPopLocked(access, skipTypes))
+	if (std::shared_ptr<IndexerCommand> command = tryPopLocked(access, skipTypes, onlyGroupId))
 		return command;
 
 	access.wait(timeoutMs);
 
 	// Woken by a push/notify or the timeout elapsed; try once more. If another
 	// subprocess took the command, the caller loops and blocks again.
-	return tryPopLocked(access, skipTypes);
+	return tryPopLocked(access, skipTypes, onlyGroupId);
 }
 
 bool IpcInterprocessIndexerCommandManager::hasIndexerCommandType(IndexerCommandType type)

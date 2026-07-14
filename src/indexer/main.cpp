@@ -1,4 +1,7 @@
 
+#include <string>
+#include <vector>
+
 #include "language_package_flags.h"
 #include "AppPath.h"
 #include "ApplicationSettings.h"
@@ -49,30 +52,47 @@ int main(int argc, char* argv[])
 	std::string appPath;
 	std::string userDataPath;
 	std::string logFilePath;
+	std::string onlyGroupId;
 
-	if (argc >= 2)
+	// Split "--key=value" flags from the positional arguments, so optional flags
+	// (like the fan-out group pin) don't shift the positional layout.
+	std::vector<std::string> positional;
+	for (int i = 1; i < argc; i++)
 	{
-		processId = ProcessId(std::stoi(argv[1]));
+		const std::string arg = argv[i];
+		if (const std::string groupPrefix = "--only-group-id="; arg.starts_with(groupPrefix))
+		{
+			onlyGroupId = arg.substr(groupPrefix.size());
+		}
+		else
+		{
+			positional.push_back(arg);
+		}
 	}
 
-	if (argc >= 3)
+	if (positional.size() >= 1)
 	{
-		instanceUuid = argv[2];
+		processId = ProcessId(std::stoi(positional[0]));
 	}
 
-	if (argc >= 4)
+	if (positional.size() >= 2)
 	{
-		appPath = argv[3];
+		instanceUuid = positional[1];
 	}
 
-	if (argc >= 5)
+	if (positional.size() >= 3)
 	{
-		userDataPath = argv[4];
+		appPath = positional[2];
 	}
 
-	if (argc >= 6)
+	if (positional.size() >= 4)
 	{
-		logFilePath = argv[5];
+		userDataPath = positional[3];
+	}
+
+	if (positional.size() >= 5)
+	{
+		logFilePath = positional[4];
 	}
 
 	AppPath::setSharedDataDirectoryPath(FilePath(appPath));
@@ -97,7 +117,7 @@ int main(int argc, char* argv[])
 	LanguagePackageManager::getInstance()->addPackage(std::make_shared<LanguagePackageCxx>());
 #endif
 
-	InterprocessIndexer indexer(instanceUuid, processId);
+	InterprocessIndexer indexer(instanceUuid, processId, onlyGroupId);
 	const InterprocessIndexer::WorkResult workResult = indexer.work();
 	if (!workResult)
 	{

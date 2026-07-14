@@ -19,7 +19,10 @@ class InterprocessIndexer
 public:
 	using WorkResult = std::expected<void, InterprocessIndexerError>;
 
-	InterprocessIndexer(const std::string& uuid, ProcessId processId);
+	//! A non-empty onlyGroupId pins this indexer to commands of one source
+	//! group (fan-out S2); empty processes commands of any group.
+	InterprocessIndexer(
+		const std::string& uuid, ProcessId processId, const std::string& onlyGroupId = std::string());
 
 	WorkResult work();
 
@@ -30,6 +33,7 @@ private:
 
 	const std::string m_uuid;
 	const ProcessId m_processId;
+	const std::string m_onlyGroupId;
 };
 
 #endif	  // INTERPROCESS_INDEXER_H

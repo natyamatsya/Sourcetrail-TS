@@ -10,6 +10,7 @@
 
 #include <atomic>
 #include <chrono>
+#include <map>
 #include <optional>
 #include <thread>
 
@@ -53,6 +54,12 @@ protected:
 	std::shared_ptr<StorageProvider> m_storageProvider;
 	std::shared_ptr<DialogView> m_dialogView;
 	const std::string m_appUUID;
+
+	//! Per-subprocess source-group pins (fan-out S2): a C++ indexer subprocess
+	//! whose ProcessId maps to a non-empty group id only pops commands of that
+	//! group. Unmapped processes accept any group (legacy behavior). Populated
+	//! by the cluster plan (S3); empty until then.
+	std::map<ProcessId, std::string> m_processGroupIds;
 
 	IndexingStatusManagerImpl m_interprocessIndexingStatusManager;
 	std::atomic<bool> m_indexerCommandQueueStopped = false;

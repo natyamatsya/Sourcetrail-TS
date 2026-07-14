@@ -665,3 +665,55 @@ TEST_CASE("ipc integration: full indexer workflow")
 			"/src/swift_bridge.cpp");
 	}
 }
+
+// Fan-out S2 gate: a consumer pinned to a source group only pops that group's
+// commands; an unpinned consumer accepts any group (legacy behavior).
+TEST_CASE("ipc integration: per-group command pop filter")
+{
+	const std::string uuid = "ipc_group_filter_test";
+	const ProcessId mainPid = ProcessId::NONE;
+	const ProcessId workerPid = static_cast<ProcessId>(1);
+
+	IpcInterprocessIndexerCommandManager ownerMgr(uuid, mainPid, true);
+	ownerMgr.clearIndexerCommands();
+
+	auto makeCommand = [](const std::string& path, const std::string& groupId) {
+		auto command = std::make_shared<IndexerCommandSwift>(
+			FilePath(path), std::set<FilePath>{}, FilePath("/wd"));
+		command->setSourceGroupId(groupId);
+		return std::static_pointer_cast<IndexerCommand>(command);
+	};
+
+	ownerMgr.pushIndexerCommands({
+		makeCommand("/a1.swift", "group-a"),
+		makeCommand("/b1.swift", "group-b"),
+		makeCommand("/a2.swift", "group-a"),
+	});
+
+	IpcInterprocessIndexerCommandManager reader(uuid, workerPid, false);
+	const std::set<IndexerCommandType> noSkips;
+
+	// The pinned consumer receives its group's command even though another
+	// group's command is ahead of it in the queue.
+	const std::shared_ptr<IndexerCommand> pinned =
+		reader.popIndexerCommandBlocking(noSkips, 10, "group-b");
+	REQUIRE(pinned);
+	REQUIRE(pinned->getSourceGroupId() == "group-b");
+	REQUIRE(pinned->getSourceFilePath().str() == "/b1.swift");
+
+	// Its group drained, the pinned consumer gets nothing (after the liveness
+	// timeout) and the other group's commands stay untouched.
+	REQUIRE(reader.popIndexerCommandBlocking(noSkips, 10, "group-b") == nullptr);
+	REQUIRE(reader.indexerCommandCount() == 2);
+
+	// An unpinned consumer ("" filter) drains the remaining commands.
+	const std::shared_ptr<IndexerCommand> first = reader.popIndexerCommandBlocking(noSkips, 10);
+	const std::shared_ptr<IndexerCommand> second =
+		reader.popIndexerCommandBlocking(noSkips, 10, "");
+	REQUIRE(first);
+	REQUIRE(second);
+	REQUIRE(first->getSourceGroupId() == "group-a");
+	REQUIRE(second->getSourceGroupId() == "group-a");
+	REQUIRE(reader.indexerCommandCount() == 0);
+	ownerMgr.clearIndexerCommands();
+}

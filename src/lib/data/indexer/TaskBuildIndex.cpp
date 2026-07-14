@@ -438,6 +438,14 @@ void TaskBuildIndex::runIndexerProcess(ProcessId processId, const std::string& l
 		commandArguments.push_back(logFilePath);
 	}
 
+	// Fan-out S2: pin this subprocess to its cluster's source group. The flag is
+	// parsed out before the positional arguments in the indexer's main().
+	if (const auto groupIt = m_processGroupIds.find(processId);
+		groupIt != m_processGroupIds.end() && !groupIt->second.empty())
+	{
+		commandArguments.push_back("--only-group-id=" + groupIt->second);
+	}
+
 	const std::string commandLine = buildProcessCommandLine(indexerProcessPath, commandArguments);
 
 	LOG_INFO_STREAM(
