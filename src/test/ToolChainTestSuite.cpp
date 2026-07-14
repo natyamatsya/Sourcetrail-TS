@@ -93,19 +93,19 @@ TEST_CASE("CDB replace msvc arguments in windows database")
 	commandLine = compileCommands[0].CommandLine;
 	REQUIRE(commandLine.size() == 47);
 	replaceMsvcArguments(&commandLine);
-	REQUIRE(commandLine.size() == 17);
+	REQUIRE(commandLine.size() == 18);	  // -MD expands to -D_MT -D_DLL
 
 	commandLine = compileCommands[1].CommandLine;
 	REQUIRE(commandLine.size() == 47);
 	replaceMsvcArguments(&commandLine);
-	REQUIRE(commandLine.size() == 17);
+	REQUIRE(commandLine.size() == 18);	  // -MD expands to -D_MT -D_DLL
 
 	// CppSQLite3 command line:
 
 	commandLine = compileCommands[2].CommandLine;
 	REQUIRE(commandLine.size() == 22);
 	replaceMsvcArguments(&commandLine);
-	REQUIRE(commandLine.size() == 14);
+	REQUIRE(commandLine.size() == 14);	  // -external:W0 dropped; -MD expands to -D_MT -D_DLL
 
 	// Resource compiler (Sourcetrail.rc):
 
@@ -150,7 +150,9 @@ TEST_CASE("CDB replace msvc arguments in issue database")
 	vector<string> commandLine = compileCommands[0].CommandLine;
 	REQUIRE(commandLine.size() == 55);
 	replaceMsvcArguments(&commandLine);
-	REQUIRE(commandLine.size() == 46);
+	// -external:W0, -Zc:__cplusplus, -permissive- and -utf-8 are dropped like
+	// their '/' twins.
+	REQUIRE(commandLine.size() == 43);	  // -MD expands to -D_MT -D_DLL
 }
 
 TEST_CASE("CDB replace msvc arguments")
@@ -194,12 +196,17 @@ TEST_CASE("CDB replace msvc arguments")
 		"-std=" + ClangCompiler::getLatestCppDraft(), "-std=" + ClangCompiler::getLatestCppDraft(),
 		"-std=" + ClangCompiler::getLatestCDraft(), "-std=" + ClangCompiler::getLatestCDraft(),
 
-		"-pthread", "-pthread", "-pthread", "-pthread"
+		// Runtime selection expands to the macros MSVC predefines for it:
+		"-D_MT", "-D_DLL",				  // /MD
+		"-D_MT", "-D_DLL", "-D_DEBUG",	  // /MDd
+		"-D_MT",						  // /MT
+		"-D_MT", "-D_DEBUG"				  // /MTd
 
 		// Removed: "/SomeUnknownOption"
 	};
 	replaceMsvcArguments(&arguments);
 
+	REQUIRE(arguments.size() == expectedClangArguments.size());
 	for (size_t i = 0; i < arguments.size() && i < expectedClangArguments.size(); ++i)
 		REQUIRE(arguments[i] == expectedClangArguments[i]);
 }
