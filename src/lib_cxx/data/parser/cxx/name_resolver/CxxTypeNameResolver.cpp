@@ -300,7 +300,20 @@ std::unique_ptr<CxxTypeName> CxxTypeNameResolver::getName(const clang::Type* typ
 		}
 		case clang::Type::Decltype:
 		{
-			return getName(clang::dyn_cast<clang::DecltypeType>(type)->getUnderlyingType());
+			const clang::QualType underlyingType =
+				clang::dyn_cast<clang::DecltypeType>(type)->getUnderlyingType();
+			if (!underlyingType.isNull())
+			{
+				return getName(underlyingType);
+			}
+			// A dependent decltype (e.g. the 'decltype(void(sizeof(T)))' argument of a
+			// partial specialization) is a DependentDecltypeType, which carries no
+			// underlying type until instantiation. Print the decltype expression instead.
+			clang::PrintingPolicy pp = makePrintingPolicyForCPlusPlus();
+			clang::SmallString<64> Buf;
+			llvm::raw_svector_ostream StrOS(Buf);
+			clang::QualType::print(type, clang::Qualifiers(), StrOS, pp, clang::Twine());
+			return std::make_unique<CxxTypeName>(StrOS.str().str());
 		}
 		case clang::Type::FunctionProto:
 		{
