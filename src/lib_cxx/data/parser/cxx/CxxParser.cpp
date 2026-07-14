@@ -29,11 +29,23 @@
 
 namespace
 {
+// clang derives its driver mode from argv[0]; a name ending in 'cl' selects CL
+// mode, which cannot parse the GNU-style flags Sourcetrail assembles (MSVC
+// flags are translated to clang spellings up front, see replaceMsvcArguments /
+// translateMsvcCompilerFragments). Fall back to the neutral tool name for
+// MSVC-style compilers; their resource dir would not resolve anyway.
+bool isMsvcStyleCompiler(const std::string& compilerPath)
+{
+	const std::string fileName = utility::toLowerCase(FilePath(compilerPath).fileName());
+	return fileName == "cl.exe" || fileName == "cl" || fileName.starts_with("clang-cl");
+}
+
 std::vector<std::string> prependSyntaxOnlyToolArgs(
 	const std::string& compilerPath, const std::vector<std::string>& args)
 {
-	const std::string toolName =
-		compilerPath.empty() ? std::string(ClangCompiler::TOOL_NAME) : compilerPath;
+	const std::string toolName = (compilerPath.empty() || isMsvcStyleCompiler(compilerPath))
+		? std::string(ClangCompiler::TOOL_NAME)
+		: compilerPath;
 	return utility::concat(std::vector<std::string>({toolName, ClangCompiler::syntaxOnlyOption()}), args);
 }
 

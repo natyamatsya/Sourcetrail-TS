@@ -203,6 +203,20 @@ void stripCMakePchFragments(std::vector<std::string>& flags)
 			i += 2;
 			continue;
 		}
+		// MSVC's /FI cmake_pch.hxx arrives here translated to a concatenated
+		// '-include<path>' token (the /Yu and /Fp companions are dropped by
+		// the translation); a user's real force-include is kept.
+		if (token.starts_with("-include") && token.find("cmake_pch") != std::string::npos)
+		{
+			++i;
+			continue;
+		}
+		if (token == "-include" && i + 1 < flags.size() &&
+			flags[i + 1].find("cmake_pch") != std::string::npos)
+		{
+			i += 2;
+			continue;
+		}
 		out.push_back(token);
 		++i;
 	}

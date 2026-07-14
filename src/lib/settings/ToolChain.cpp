@@ -568,30 +568,20 @@ static bool isDashSpelledMsvcOnlyArgument(const string &argument)
 	return false;
 }
 
-void replaceMsvcArguments(vector<string> *commandLineArguments)
+// - Keep/Replace only those options which are necessary to parse the code correctly
+//
+// From https://learn.microsoft.com/en-us/cpp/build/reference/compiler-options:
+// - All compiler options are case-sensitive.
+// - You may use either a forward slash (/) or a dash (-) to specify a compiler option.
+static void translateMsvcTokens(vector<string> *commandLineArguments, vector<string>::iterator argument)
 {
-	// Replace/Remove arguments only if these are for the Microsoft compiler, otherwise the check for '/' will remove Linux paths:
-
-	if (commandLineArguments->size() >= 1 && !(*commandLineArguments)[0].ends_with("cl.exe"s))
-		return;
-
 	optional<string> argumentValue;
 
-	// - Keep/Replace only those options which are necessary to parse the code correctly
-	//
-	// From https://learn.microsoft.com/en-us/cpp/build/reference/compiler-options:
-	// - All compiler options are case-sensitive.
-	// - You may use either a forward slash (/) or a dash (-) to specify a compiler option.
-
-	auto argument = commandLineArguments->begin();
 	while (argument != commandLineArguments->end())
 	{
-		if (argument == commandLineArguments->begin())
-			++argument; // skip command
-
 		// Preprocessor symbols:
 
-		else if ((argumentValue = getArgumentValue(*argument, "/D"sv)))
+		if ((argumentValue = getArgumentValue(*argument, "/D"sv)))
 			*argument++ = ClangCompiler::defineOption(*argumentValue);
 		else if ((argumentValue = getArgumentValue(*argument, "/U"sv)))
 			*argument++ = ClangCompiler::undefineOption(*argumentValue);
@@ -651,4 +641,23 @@ void replaceMsvcArguments(vector<string> *commandLineArguments)
 		else
 			++argument;
 	}
+}
+
+void replaceMsvcArguments(vector<string> *commandLineArguments)
+{
+	// Replace/Remove arguments only if these are for the Microsoft compiler, otherwise the check for '/' will remove Linux paths:
+
+	if (commandLineArguments->empty() || !(*commandLineArguments)[0].ends_with("cl.exe"s))
+		return;
+
+	translateMsvcTokens(commandLineArguments, next(commandLineArguments->begin())); // skip command
+}
+
+void translateMsvcCompilerFragments(vector<string> *compilerFlags)
+{
+	// Same translation for bare compiler flags (no argv[0]), e.g. the
+	// compileCommandFragments of a CMake File API compile group. The caller
+	// decides whether the flags come from the Microsoft compiler.
+
+	translateMsvcTokens(compilerFlags, compilerFlags->begin());
 }

@@ -14,11 +14,13 @@
 
 #include <QDir>
 #include <QFile>
+#include <QFileInfo>
 #include <QJsonArray>
 #include <QJsonDocument>
 #include <QJsonObject>
 #include <QProcess>
 #include <QRegularExpression>
+#include <QSet>
 
 #include <nlohmann/json.hpp>
 
@@ -26,6 +28,7 @@
 #include <unordered_map>
 
 #include "json-query/JSONQuery"
+#include "ToolChain.h"
 #include "logging.h"
 
 using namespace json_query;
@@ -185,33 +188,21 @@ std::vector<CMakeFileAPIReader::JsonEntryPoint> CMakeFileAPIReader::getJsonEntry
 	return result;
 }
 
+// Defined below; shared with binary-dir resolution so both follow preset
+// `include` chains.
+static QMap<QString, QJsonObject> collectPresets(const FilePath& sourceDir);
+
 std::vector<std::string> CMakeFileAPIReader::discoverPresets(const FilePath& sourceDir)
 {
 	std::vector<std::string> result{};
 
-	// Read both CMakePresets.json and CMakeUserPresets.json; merge results.
-	const std::array<std::string, 2> filenames{
-		"CMakePresets.json", "CMakeUserPresets.json"};
-
-	for (const auto& filename : filenames)
+	// CMakePresets.json + CMakeUserPresets.json and everything they include.
+	const QMap<QString, QJsonObject> presets{collectPresets(sourceDir)};
+	for (auto it = presets.constBegin(); it != presets.constEnd(); ++it)
 	{
-		const auto presetsPath{sourceDir.getConcatenated("/" + filename)};
-		if (!presetsPath.exists())
+		if (it.value()["hidden"].toBool(false))
 			continue;
-
-		const auto doc{readJsonFile(presetsPath)};
-		if (doc.isNull())
-			continue;
-
-		for (const auto& val : doc.object()["configurePresets"].toArray())
-		{
-			const auto preset{val.toObject()};
-			if (preset["hidden"].toBool(false))
-				continue;
-			const auto name{preset["name"].toString().toStdString()};
-			if (!name.empty())
-				result.push_back(name);
-		}
+		result.push_back(it.key().toStdString());
 	}
 
 	return result;
@@ -239,27 +230,58 @@ static QString expandPresetMacros(
 	return result;
 }
 
+// Collect the configure presets of one preset file, following its `include`
+// field (schema version 4+) depth-first. Included paths are relative to the
+// directory of the including file; a canonical-path set guards against cycles.
+// Includes are processed before the file's own presets so a preset defined in
+// the including file wins on (spec-invalid) name collisions.
+static void collectPresetsFromFile(
+	const FilePath& presetsFile, QSet<QString>& visitedFiles, QMap<QString, QJsonObject>& result)
+{
+	const QFileInfo fileInfo{QString::fromStdString(presetsFile.str())};
+	const QString canonicalPath{fileInfo.canonicalFilePath()};
+	if (canonicalPath.isEmpty() || visitedFiles.contains(canonicalPath))
+		return;
+	visitedFiles.insert(canonicalPath);
+
+	const auto doc{readJsonFile(presetsFile)};
+	if (doc.isNull())
+		return;
+	const QJsonObject root{doc.object()};
+
+	const QDir baseDir{fileInfo.dir()};
+	for (const auto& included : root["include"].toArray())
+	{
+		const QString includedPath{included.toString()};
+		if (includedPath.isEmpty())
+			continue;
+		const QString absolutePath{
+			QDir::isAbsolutePath(includedPath) ? includedPath : baseDir.filePath(includedPath)};
+		collectPresetsFromFile(FilePath{absolutePath.toStdString()}, visitedFiles, result);
+	}
+
+	for (const auto& val : root["configurePresets"].toArray())
+	{
+		const auto obj{val.toObject()};
+		const auto name{obj["name"].toString()};
+		if (!name.isEmpty())
+			result.insert(name, obj);
+	}
+}
+
 // Build a flat map of all configure presets from CMakePresets.json and
-// CMakeUserPresets.json found in sourceDir.
+// CMakeUserPresets.json found in sourceDir, including everything reachable
+// through their `include` chains.
 static QMap<QString, QJsonObject> collectPresets(const FilePath& sourceDir)
 {
 	QMap<QString, QJsonObject> result{};
+	QSet<QString> visitedFiles{};
 	for (const auto& filename :
 		 {std::string{"CMakePresets.json"}, std::string{"CMakeUserPresets.json"}})
 	{
 		const auto path{sourceDir.getConcatenated("/" + filename)};
-		if (!path.exists())
-			continue;
-		const auto doc{readJsonFile(path)};
-		if (doc.isNull())
-			continue;
-		for (const auto& val : doc.object()["configurePresets"].toArray())
-		{
-			const auto obj{val.toObject()};
-			const auto name{obj["name"].toString()};
-			if (!name.isEmpty())
-				result.insert(name, obj);
-		}
+		if (path.exists())
+			collectPresetsFromFile(path, visitedFiles, result);
 	}
 	return result;
 }
@@ -381,7 +403,12 @@ bool CMakeFileAPIReader::ensureReply(
 		LOG_WARNING(
 			"CMakeFileAPIReader: cmake exited with code " +
 			std::to_string(proc.exitCode()) + ": " +
-			proc.readAllStandardError().toStdString());
+			proc.readAllStandardError().toStdString() +
+			"\nHint: the project may need its build environment (compiler on PATH, "
+			"dev shell). Either launch Sourcetrail from that environment, or run "
+			"'cmake --preset <preset>' there yourself — the Sourcetrail query file "
+			"is already in place, so any configure produces the reply and the next "
+			"refresh picks it up without running CMake.");
 		return false;
 	}
 
@@ -997,6 +1024,19 @@ CMakeFileAPIReader::GetSourcesExpected CMakeFileAPIReader::getSourcesDetailed(
 					continue;
 				for (const QString& token : QProcess::splitCommand(fragment))
 					group.compileFlags.push_back(token.toStdString());
+			}
+
+			// MSVC fragments are '/'-spelled options the clang-based indexer
+			// cannot parse; translate them (and drop the MSVC-only rest) the
+			// same way the compilation-database path does.
+			{
+				const QString compilerName =
+					QFileInfo(QString::fromStdString(group.compilerPath)).fileName().toLower();
+				if (compilerName == QStringLiteral("cl.exe") || compilerName == QStringLiteral("cl") ||
+					compilerName.startsWith(QStringLiteral("clang-cl")))
+				{
+					translateMsvcCompilerFragments(&group.compileFlags);
+				}
 			}
 
 			compileGroups.push_back(std::move(group));
