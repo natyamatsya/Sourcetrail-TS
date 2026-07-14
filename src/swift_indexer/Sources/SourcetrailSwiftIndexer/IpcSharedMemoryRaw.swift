@@ -9,16 +9,18 @@ enum SwiftIndexerIpcError: Error {
 final class IpcSharedMemoryRaw {
 	private static let memoryNamePrefix = "srctrl_ipc_mem_"
 	private static let mutexNamePrefix = "srctrl_ipc_mtx_"
-	private static let maxLogicalNameLength = 18
 
 	private let size: Int
 	private let shm: ShmHandle
 	private let mutex: IpcMutex
 
+	// Names pass through at full length, matching C++ IpcSharedMemory: libipc
+	// maps any name exceeding the OS limit (LIBIPC_SHM_NAME_MAX) to a
+	// hash-shortened form, identically on every frontend. (An earlier 18-char
+	// truncation mirrored from C++ silently collided names sharing a prefix.)
 	static func open(name: String, size: Int) async throws(IpcError) -> IpcSharedMemoryRaw {
-		let logicalName = truncatedName(name)
-		let memoryName = memoryNamePrefix + logicalName
-		let mutexName = mutexNamePrefix + logicalName
+		let memoryName = memoryNamePrefix + name
+		let mutexName = mutexNamePrefix + name
 
 		let shm = try ShmHandle.acquire(name: memoryName, size: size, mode: .createOrOpen)
 		if shm.previousRefCount == 0 {
@@ -27,14 +29,6 @@ final class IpcSharedMemoryRaw {
 
 		let mutex = try await IpcMutex.open(name: mutexName)
 		return IpcSharedMemoryRaw(size: size, shm: consume shm, mutex: consume mutex)
-	}
-
-	private static func truncatedName(_ name: String) -> String {
-		let bytes = Array(name.utf8)
-		if bytes.count <= maxLogicalNameLength {
-			return name
-		}
-		return String(decoding: bytes.prefix(maxLogicalNameLength), as: UTF8.self)
 	}
 
 	private init(size: Int, shm: consuming ShmHandle, mutex: consuming IpcMutex) {

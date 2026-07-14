@@ -25,11 +25,6 @@ const char* IpcSharedMemory::s_memoryNamePrefix = "srctrl_ipc_mem_";
 const char* IpcSharedMemory::s_mutexNamePrefix = "srctrl_ipc_mtx_";
 const char* IpcSharedMemory::s_conditionNamePrefix = "srctrl_ipc_cnd_";
 
-std::string IpcSharedMemory::checkName(const std::string& name)
-{
-	return name.size() > 18 ? name.substr(0, 18) : name;
-}
-
 void IpcSharedMemory::deleteSharedMemory(const std::string& name)
 {
 	std::string memName = s_memoryNamePrefix + name;
@@ -39,8 +34,12 @@ void IpcSharedMemory::deleteSharedMemory(const std::string& name)
 	ipc::sync::mutex::clear_storage(mtxName.c_str());
 }
 
+// Names are passed through at full length: libipc maps any name exceeding the
+// OS limit (LIBIPC_SHM_NAME_MAX) to "/<prefix>_<16-hex-FNV1a-of-full-name>",
+// consistently across acquire/open/remove — so long names stay unique. (An
+// earlier 18-char truncation here silently collided names sharing a prefix.)
 IpcSharedMemory::IpcSharedMemory(const std::string& name, std::size_t size, AccessMode mode)
-	: m_name(checkName(name)), m_size(size), m_mode(mode)
+	: m_name(name), m_size(size), m_mode(mode)
 {
 	using enum IpcSharedMemory::AccessMode;
 	unsigned shmMode = 0;

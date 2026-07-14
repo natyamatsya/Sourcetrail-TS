@@ -671,11 +671,10 @@ TEST_CASE("ipc integration: full indexer workflow")
 // group's commands sit in the queue (the legacy total-size fill would starve it).
 TEST_CASE("ipc integration: group-aware queue fill keeps every group available")
 {
-	// Note: IpcSharedMemory truncates segment names to 18 chars — keep test
-	// uuids unique within "icmd_ipc_" + 9 more chars. The task's own command
-	// manager is the sole segment OWNER here: a second CREATE_AND_DELETE
-	// manager in the same process would re-create the segment underneath it
-	// and dangle its mutex view (pre-existing IpcSharedMemory limitation).
+	// The task's own command manager is the sole segment OWNER here: a second
+	// CREATE_AND_DELETE manager in the same process would re-create the segment
+	// underneath it and dangle its mutex view (pre-existing IpcSharedMemory
+	// limitation).
 	const std::string uuid = "gfill_s3";
 
 	auto makeCommands = [](const std::string& prefix, int commandCount) {
@@ -752,7 +751,6 @@ TEST_CASE("ipc integration: group-aware queue fill keeps every group available")
 // commands; an unpinned consumer accepts any group (legacy behavior).
 TEST_CASE("ipc integration: per-group command pop filter")
 {
-	// Short uuid: IpcSharedMemory truncates segment names to 18 chars.
 	const std::string uuid = "gpin_s2";
 	const ProcessId mainPid = ProcessId::NONE;
 	const ProcessId workerPid = static_cast<ProcessId>(1);

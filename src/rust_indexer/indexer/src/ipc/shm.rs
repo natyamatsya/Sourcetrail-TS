@@ -5,8 +5,10 @@
 //   - "Empty" is indicated by the first 4 bytes all being zero.
 //   - A named mutex (srctrl_ipc_mtx_<name>) serialises all access.
 //
-// Name truncation: C++ truncates the logical name to 18 characters before
-// prepending the prefixes, so we do the same.
+// Names pass through at full length, matching C++ IpcSharedMemory: libipc maps
+// any name exceeding the OS limit (LIBIPC_SHM_NAME_MAX) to a hash-shortened
+// form, identically on every frontend. (An earlier 18-char truncation mirrored
+// from C++ silently collided names sharing a prefix.)
 
 use std::io;
 use std::sync::Mutex;
@@ -15,16 +17,6 @@ use libipc::{IpcMutex, ShmHandle, ShmOpenMode};
 
 const MEM_PREFIX: &str = "srctrl_ipc_mem_";
 const MTX_PREFIX: &str = "srctrl_ipc_mtx_";
-const NAME_MAX: usize = 18;
-
-fn truncate(name: &str) -> &str {
-    let end = name
-        .char_indices()
-        .nth(NAME_MAX)
-        .map(|(i, _)| i)
-        .unwrap_or(name.len());
-    &name[..end]
-}
 
 pub struct IpcShm {
     shm: Mutex<ShmHandle>,
@@ -84,9 +76,8 @@ impl Drop for IpcMutexLockGuard<'_> {
 
 impl IpcShm {
     pub fn open(name: &str, size: usize) -> io::Result<Self> {
-        let short = truncate(name);
-        let mem_name = format!("{MEM_PREFIX}{short}");
-        let mtx_name = format!("{MTX_PREFIX}{short}");
+        let mem_name = format!("{MEM_PREFIX}{name}");
+        let mtx_name = format!("{MTX_PREFIX}{name}");
 
         let shm = Mutex::new(ShmHandle::acquire(
             &mem_name,

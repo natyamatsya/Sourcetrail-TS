@@ -21,7 +21,6 @@ public:
 		OPEN_OR_CREATE
 	};
 
-	static std::string checkName(const std::string& name);
 	static void deleteSharedMemory(const std::string& name);
 
 	IpcSharedMemory(const std::string& name, std::size_t size, AccessMode mode);
