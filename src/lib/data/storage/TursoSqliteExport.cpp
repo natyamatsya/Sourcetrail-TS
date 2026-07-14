@@ -15,6 +15,7 @@
 #include "ConcurrentTursoWriter.h"
 #include "IndexTables.h"
 #include "StorageConnection.h"
+#include "TimeStamp.h"
 #include "logging.h"
 
 namespace
@@ -107,6 +108,8 @@ bool exportConcurrentTursoToSqlite(
 {
 	using namespace sqlpp;
 	sourcetrail::storage::BorrowedSqliteConnection& db = connection.typed();
+
+	const TimeStamp exportStart = TimeStamp::now();
 
 	try
 	{
@@ -292,6 +295,11 @@ bool exportConcurrentTursoToSqlite(
 
 		db.commit_transaction();
 
+		// The export is the sole-writer mode's serialization cost — report its
+		// duration separately so run timings can split ingest from export.
+		LOG_INFO(
+			"Turso->SQLite export took " +
+			std::to_string(static_cast<long long>(TimeStamp::now().deltaMS(exportStart))) + " ms");
 		LOG_INFO(
 			"Turso->SQLite export: element=" + std::to_string(elements) +
 			" node=" + std::to_string(nodes) + " edge=" + std::to_string(edges) +
