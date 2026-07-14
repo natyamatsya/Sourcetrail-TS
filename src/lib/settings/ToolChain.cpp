@@ -548,6 +548,26 @@ static optional<string> getArgumentValue(const string &argument, string_view arg
 	return argument.starts_with(argumentKey) ? optional(argument.substr(argumentKey.length())) : nullopt;
 }
 
+// MSVC options may be spelled with '-' as well as '/'. The translations above
+// handle the '-' forms of the options we keep; this recognizes the MSVC-only
+// rest in '-' spelling so it can be dropped like its '/' twin: warning options
+// (-wd/-we/-wo/-w1..-w4 followed by a warning number), conformance switches
+// (-Zc:...), debug info (-Zi/-Z7/-ZI), -permissive-, and -external:...
+// variants (the -external:I include form is already translated above).
+static bool isDashSpelledMsvcOnlyArgument(const string &argument)
+{
+	const string_view arg{argument};
+	if (!arg.starts_with('-'))
+		return false;
+	if (arg.starts_with("-Zc:"sv) || arg == "-Zi"sv || arg == "-Z7"sv || arg == "-ZI"sv ||
+		arg == "-permissive-"sv || arg == "-utf-8"sv || arg.starts_with("-external:"sv))
+		return true;
+	if (arg.size() > 3 && arg[1] == 'w' &&
+		(arg[2] == 'd' || arg[2] == 'e' || arg[2] == 'o' || ('1' <= arg[2] && arg[2] <= '4')))
+		return arg.find_first_not_of("0123456789"sv, 3) == string_view::npos;
+	return false;
+}
+
 void replaceMsvcArguments(vector<string> *commandLineArguments)
 {
 	// Replace/Remove arguments only if these are for the Microsoft compiler, otherwise the check for '/' will remove Linux paths:
@@ -611,11 +631,22 @@ void replaceMsvcArguments(vector<string> *commandLineArguments)
 		else if (getArgumentValue(*argument, "/MD"sv) || getArgumentValue(*argument, "/MT"sv)
 			|| getArgumentValue(*argument, "-MD"sv) || getArgumentValue(*argument, "-MT"sv))
 		{
-			*argument++ = ClangCompiler::pthreadOption();
-		}
-		// Remove unknown arguments:
+			// MSVC's runtime selection predefines macros the code may branch on:
+			// /MD[d] and /MT[d] define _MT, /MD[d] additionally _DLL, and the
+			// 'd' variants _DEBUG. Clang only sets these in cl driver mode, so
+			// spell them out for the parser.
+			const bool isDll = getArgumentValue(*argument, "/MD"sv) || getArgumentValue(*argument, "-MD"sv);
+			const bool isDebugRuntime = argument->ends_with('d');
 
-		else if (argument->starts_with('/'))
+			*argument++ = ClangCompiler::defineOption("_MT"s);
+			if (isDll)
+				argument = next(commandLineArguments->insert(argument, ClangCompiler::defineOption("_DLL"s)));
+			if (isDebugRuntime)
+				argument = next(commandLineArguments->insert(argument, ClangCompiler::defineOption("_DEBUG"s)));
+		}
+		// Remove unknown arguments (both '/' and '-' spellings of MSVC-only options):
+
+		else if (argument->starts_with('/') || isDashSpelledMsvcOnlyArgument(*argument))
 			argument = commandLineArguments->erase(argument);
 		else
 			++argument;
