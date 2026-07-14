@@ -1,6 +1,10 @@
 # Design: Multi-Subprocess Fan-Out Across Source Groups (Phase 8)
 
-**Status: S0–S4 implemented (2026-07-14); S5 designed, not implemented.** Parallelize indexing across source
+**Status: COMPLETE — S0–S5 implemented (2026-07-14).** Remaining follow-ups: payoff
+measurement on a genuinely skewed real-world load (the smoke fixture is balanced and
+too small to be meaningful), sole-writer support for incremental refreshes (needs
+content-dedup seeding of the in-process index, not just id seeding), and the serial
+re-inject fallback for degraded runs (currently: health warning + manual serial re-run). Parallelize indexing across source
 groups by spawning dedicated subprocess *clusters* per group and routing every group's
 results into the already-complete concurrent Turso MVCC writer as the **sole** storage
 writer during fan-out.
@@ -200,7 +204,7 @@ C++-source-group commands lost their input file in `CxxParser::buildIndex` (ever
 "no input files" since the Cdb/Empty overload merge), and the IPC garbage-collector singleton
 segfaulted at exit when destroyed during static teardown after libipc's handle cache.
 
-### S5 — Gating / fallback
+### S5 — Gating / fallback — **DONE (2026-07-14)**
 
 Auto-enable fan-out when `SOURCETRAIL_TURSO_CONCURRENT` is built **and** ≥2 enabled non-custom
 groups; else today's exact path. Add a tri-state `ApplicationSettings` override (auto/on/off,
@@ -209,6 +213,18 @@ SQLite inject from the retained `m_storageProvider`, or (simpler first landing) 
 degraded via the `TaskFinishParsing` health warning. Interrupt/crash reuses the existing
 200-consecutive-failure supervisor per ProcessId; a shared `m_stopSource` stops all clusters (an
 incomplete DB is useless anyway).
+
+*As implemented:* `"indexing/multi_group_fan_out"` in `ApplicationSettings` (JSON runtime
+settings; no GUI — a power-user knob): `"auto"` (default) = clusters when ≥2 non-empty C++
+groups, sole writer on full refreshes when clusters are active; `"on"` = clusters as in auto
+**plus** sole writer on single-group full refreshes (lets the concurrent ingest be measured
+without a second group); `"off"` = exact legacy path — no pins, no sole writer (the group-aware
+queue fill stays: it is a Rust/Swift-supervisor starvation fix independent of fan-out).
+Degraded runs take the simpler first landing: `PersistentStorage` records lost batches /
+export failure, `TaskFinishParsing` emits the health warning + an error-status message telling
+the user to re-run with `"off"`; the automatic serial re-inject from a retained
+`m_storageProvider` remains future work. Verified: `"off"` on the two-group smoke fixture
+produces zero cluster/sole-writer log markers and the identical graph via the legacy path.
 
 ## Verification
 

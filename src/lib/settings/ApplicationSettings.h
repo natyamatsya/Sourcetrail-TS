@@ -107,6 +107,17 @@ public:
 	int getIndexerThreadCount() const;
 	void setIndexerThreadCount(const int count);
 
+	//! Multi-group fan-out override (DESIGN_MULTIGROUP_FANOUT.md S5):
+	//! "auto" (default) — per-group subprocess clusters when >= 2 non-empty
+	//!   C/C++ groups; concurrent Turso sole writer on full refreshes when the
+	//!   clusters are active (requires a SOURCETRAIL_TURSO_CONCURRENT build).
+	//! "on"  — clusters as in auto; the sole writer additionally engages on
+	//!   single-group full refreshes.
+	//! "off" — today's exact legacy path (single pool, serial SQLite writer).
+	//! Unknown values behave like "auto".
+	std::string getMultiGroupFanOutMode() const;
+	void setMultiGroupFanOutMode(const std::string& mode);
+
 	std::vector<FilePath> getHeaderSearchPaths() const;
 	std::vector<FilePath> getHeaderSearchPathsExpanded() const;
 	bool setHeaderSearchPaths(const std::vector<FilePath>& headerSearchPaths);

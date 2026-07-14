@@ -121,6 +121,7 @@ FAN_DIR="$SCRATCH/fanout"; mkdir -p "$FAN_DIR"
 run_index() {
     local name="$1" project="$2" log="$3"
     note "indexing: $name"
+    local started; started=$(date +%s)
     (cd "$APP_DIR" && ./Sourcetrail index --full "$project" > "$log" 2>&1) &
     local wrapper=$!
     if ! wait_pid_gone "$wrapper" 300; then
@@ -129,12 +130,15 @@ run_index() {
         return 1
     fi
     wait "$wrapper"; local code=$?
+    local seconds=$(( $(date +%s) - started ))
     if [ "$code" -ne 0 ] || grep -qiE 'SIGSEGV|SIGABRT|terminate called' "$log"; then
         fail "$name: exit $code (see $log)"
         tail -10 "$log"
         return 1
     fi
-    pass "$name: indexed (exit 0)"
+    # Wall time is informational (the payoff gate needs a genuinely skewed
+    # load); the correctness gate is the count comparison below.
+    pass "$name: indexed (exit 0, ${seconds}s wall)"
     return 0
 }
 

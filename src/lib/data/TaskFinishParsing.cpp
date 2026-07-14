@@ -103,6 +103,24 @@ Task::TaskState TaskFinishParsing::doUpdate(std::shared_ptr<Blackboard> blackboa
 			"the index -- verify the compile flags and toolchain setup (on macOS, an "
 			"unresolved SDK sysroot is a common cause).");
 	}
+
+#ifdef SOURCETRAIL_TURSO_CONCURRENT
+	// Degraded fan-out run (S5): the sole-writer path lost batches after retry
+	// exhaustion, or the Turso->SQLite export failed — data is missing from the
+	// index even though the run "finished". Re-index with the fan-out disabled
+	// ("indexing/multi_group_fan_out": "off") to recover serially.
+	if (m_storage->concurrentTursoLostBatches() > 0 || m_storage->concurrentTursoExportFailed())
+	{
+		const std::string degraded =
+			"Indexing health: the concurrent ingest DEGRADED this run (" +
+			std::to_string(m_storage->concurrentTursoLostBatches()) + " lost batch(es)" +
+			(m_storage->concurrentTursoExportFailed() ? ", export FAILED" : "") +
+			"). The index is missing data — re-run with the fan-out disabled "
+			"(\"indexing/multi_group_fan_out\": \"off\") for a serial re-index.";
+		LOG_WARNING(degraded);
+		MessageStatus(degraded, true, false).dispatch();
+	}
+#endif
 	DatabasePolicy policy = m_dialogView->finishedIndexingDialog(
 		indexedSourceFileCount,
 		sourceFileCount,

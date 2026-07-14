@@ -664,6 +664,15 @@ void Project::buildIndex(RefreshInfo info, std::shared_ptr<DialogView> dialogVie
 		const int effectiveIndexerThreadCount = hasCxxSourceGroup() ? adjustedIndexerThreadCount
 																	: 0;
 
+		// Fan-out S5 gate: the tri-state override governs the whole fan-out
+		// feature — "off" forces today's exact legacy path, "auto" (default)
+		// enables it under its structural conditions, "on" additionally uses
+		// the sole writer for single-group full refreshes. (The group-aware
+		// queue fill stays active regardless: it is a starvation fix for the
+		// Rust/Swift supervisors, independent of fan-out.)
+		const std::string fanOutMode = ApplicationSettings::getInstance()->getMultiGroupFanOutMode();
+		const bool fanOutEnabled = fanOutMode != "off";
+
 		// Fan-out S3: with >= 2 non-empty C++ clusters, split the subprocess
 		// budget across them proportional to command counts (min 1 each) and pin
 		// each subprocess to its group. One cluster => empty plan => today's
@@ -673,19 +682,23 @@ void Project::buildIndex(RefreshInfo info, std::shared_ptr<DialogView> dialogVie
 			cxxClusters.begin(), cxxClusters.end(), [](const IndexerClusterEntry& cluster) {
 				return cluster.commandCount > 0;
 			});
-		if (nonEmptyClusterCount >= 2)
+		if (fanOutEnabled && nonEmptyClusterCount >= 2)
 		{
 			cxxClusterPlan = allocateIndexerSubprocesses(
 				std::move(cxxClusters), static_cast<size_t>(effectiveIndexerThreadCount));
 		}
 
 #ifdef SOURCETRAIL_TURSO_CONCURRENT
-		// Fan-out S4: with per-group clusters active and a clean target (full
-		// refresh), the concurrent Turso writer becomes the SOLE ingest writer;
-		// the result is exported back to SQLite after the drain. Incremental
-		// refreshes stay on the serial path — the writer's in-process dedup
-		// index cannot see rows already present in the copied-over database.
-		if (!cxxClusterPlan.empty() && info.mode == RefreshMode::ALL_FILES)
+		// Fan-out S4: with the fan-out active and a clean target (full refresh),
+		// the concurrent Turso writer becomes the SOLE ingest writer; the result
+		// is exported back to SQLite after the drain. Incremental refreshes stay
+		// on the serial path — the writer's in-process dedup index cannot see
+		// rows already present in the copied-over database. Mode "on" engages
+		// the sole writer even for a single C++ cluster.
+		const bool soleWriterWanted = fanOutMode == "on"
+			? hasCxxSourceGroup()
+			: !cxxClusterPlan.empty();
+		if (fanOutEnabled && soleWriterWanted && info.mode == RefreshMode::ALL_FILES)
 		{
 			tempStorage->setupConcurrentTursoSoleWriter();
 		}

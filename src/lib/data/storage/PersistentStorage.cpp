@@ -117,6 +117,16 @@ bool PersistentStorage::isConcurrentTursoSoleWriter() const
 	return m_concurrentTursoSoleWriter;
 }
 
+long long PersistentStorage::concurrentTursoLostBatches() const
+{
+	return m_concurrentTursoLostBatches;
+}
+
+bool PersistentStorage::concurrentTursoExportFailed() const
+{
+	return m_concurrentTursoExportFailed;
+}
+
 void PersistentStorage::submitToConcurrentTurso(const IntermediateStorage& storage)
 {
 	if (!m_concurrentTursoWriter)
@@ -173,17 +183,19 @@ void PersistentStorage::finishConcurrentTurso()
 			// Sole-writer mode (fan-out S4): the SQLite inject was skipped, so
 			// materialize the drained Turso ingest into SQLite now. Reads, meta,
 			// bookmarks and the temp-DB swap all continue to work on SQLite.
-			if (m_concurrentTursoWriter->failedBatches() > 0)
+			m_concurrentTursoLostBatches = m_concurrentTursoWriter->failedBatches();
+			if (m_concurrentTursoLostBatches > 0)
 			{
-				// S5 adds the degraded-run fallback; until then be loud.
+				// Surfaced as a degraded run via TaskFinishParsing (fan-out S5).
 				LOG_ERROR(
 					"Concurrent Turso writer lost " +
-					std::to_string(m_concurrentTursoWriter->failedBatches()) +
+					std::to_string(m_concurrentTursoLostBatches) +
 					" batch(es) after retries — the exported index is incomplete.");
 			}
 
 			const bool exported =
 				exportConcurrentTursoToSqlite(*m_concurrentTursoWriter, m_indexDbConnection);
+			m_concurrentTursoExportFailed = !exported;
 
 			// The ingest database is a per-run scratch file; drop it either way
 			// (a failed export leaves the loud error above, and the next run

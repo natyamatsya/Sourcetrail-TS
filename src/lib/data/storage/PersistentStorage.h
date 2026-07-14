@@ -46,6 +46,11 @@ public:
 	bool isConcurrentTursoSoleWriter() const;
 	void submitToConcurrentTurso(const IntermediateStorage& storage);
 	void finishConcurrentTurso();
+	//! Degraded-run signal (fan-out S5): batches lost after retry exhaustion
+	//! and/or a failed Turso->SQLite export mean the index is missing data.
+	//! Populated by finishConcurrentTurso() in sole-writer mode.
+	long long concurrentTursoLostBatches() const;
+	bool concurrentTursoExportFailed() const;
 #endif
 
 	std::pair<Id, bool> addNode(const StorageNodeData& data) override;
@@ -322,6 +327,8 @@ private:
 #ifdef SOURCETRAIL_TURSO_CONCURRENT
 	std::unique_ptr<ConcurrentTursoWriter> m_concurrentTursoWriter;
 	bool m_concurrentTursoSoleWriter = false;
+	long long m_concurrentTursoLostBatches = 0;
+	bool m_concurrentTursoExportFailed = false;
 #endif
 
 #ifdef SOURCETRAIL_USE_LADYBUG

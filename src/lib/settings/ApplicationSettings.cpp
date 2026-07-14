@@ -323,6 +323,16 @@ void ApplicationSettings::setIndexerThreadCount(const int count)
 	setValue<int>("indexing/indexer_thread_count", count);
 }
 
+std::string ApplicationSettings::getMultiGroupFanOutMode() const
+{
+	return getValue<std::string>("indexing/multi_group_fan_out", "auto");
+}
+
+void ApplicationSettings::setMultiGroupFanOutMode(const std::string& mode)
+{
+	setValue<std::string>("indexing/multi_group_fan_out", mode);
+}
+
 std::vector<FilePath> ApplicationSettings::getHeaderSearchPaths() const
 {
 	return getPathValues("indexing/cxx/header_search_paths/header_search_path");
