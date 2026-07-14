@@ -45,13 +45,26 @@ Task::TaskState TaskInjectStorage::doUpdate(std::shared_ptr<Blackboard>  /*black
 		{
 			const size_t sourceLocationCount = source->getSourceLocationCount();
 			const TimeStamp start = TimeStamp::now();
-			target->inject(source.get());
 #ifdef SOURCETRAIL_TURSO_CONCURRENT
-			// Piggyback: also mirror this storage into the concurrent Turso writer.
-			if (auto* persistent = dynamic_cast<PersistentStorage*>(target.get()))
+			auto* persistent = dynamic_cast<PersistentStorage*>(target.get());
+			if (persistent != nullptr && persistent->isConcurrentTursoSoleWriter())
 			{
+				// Fan-out S4: the concurrent Turso writer is the sole ingest
+				// path — the serial SQLite inject is skipped; the drained result
+				// is exported to SQLite in finishConcurrentTurso().
 				persistent->submitToConcurrentTurso(*source);
 			}
+			else
+			{
+				target->inject(source.get());
+				// Piggyback: also mirror this storage into the concurrent Turso writer.
+				if (persistent != nullptr)
+				{
+					persistent->submitToConcurrentTurso(*source);
+				}
+			}
+#else
+			target->inject(source.get());
 #endif
 			m_injectBusyMs += static_cast<long long>(TimeStamp::now().deltaMS(start));
 			m_injectCount++;

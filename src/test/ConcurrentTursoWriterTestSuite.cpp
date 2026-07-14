@@ -10,6 +10,9 @@
 
 #include "ConcurrentTursoWriter.h"
 #include "FileSystem.h"
+#include "SqliteIndexStorage.h"
+#include "StorageConnection.h"
+#include "TursoSqliteExport.h"
 #include "turso_shim.h"
 
 #include <array>
@@ -175,6 +178,67 @@ TEST_CASE("concurrent turso writer: all kinds, concurrent result == serial resul
 
 	// element ids stay unique and cover every element-minting row.
 	// (node + edge + local_symbol + source_location + error all mint element ids.)
+}
+
+// Fan-out S4 gate ("export, don't swap"): a drained concurrent-Turso ingest
+// database exports verbatim — same per-table counts, same ids — into an empty
+// SQLite index storage, which then serves all reads as usual.
+TEST_CASE("concurrent turso writer: export lands the drained result in SQLite")
+{
+	const auto work = makeWorkload(/*batches*/ 40, /*sharedPool*/ 120);
+
+	const std::string tursoPath = "data/SQLiteTestSuite/ctw_export.db";
+	const FilePath sqlitePath("data/SQLiteTestSuite/ctw_export.sqlite");
+	for (const char* sfx: {"", "-wal", "-shm", "-log"})
+	{
+		FileSystem::remove(FilePath(tursoPath + sfx));
+	}
+	FileSystem::remove(sqlitePath);
+
+	// Seed above 1 (like an incremental-continuity seed) to prove ids are
+	// taken from the writer and land verbatim in SQLite.
+	constexpr long long kFirstElementId = 5000;
+	ConcurrentTursoWriter writer(tursoPath, 8, kFirstElementId);
+	for (const auto& b: work)
+	{
+		writer.submit(b);
+	}
+	writer.finish();
+	REQUIRE(writer.failedBatches() == 0);
+
+	{
+		StorageConnection connection(sqlitePath);
+		SqliteIndexStorage storage(connection);
+		storage.setup();
+
+		REQUIRE(exportConcurrentTursoToSqlite(writer, connection));
+
+		// Every exported table matches the drained Turso database, row for row.
+		const std::array<const char*, 12> tables = {
+			"element", "node", "edge", "local_symbol", "symbol", "file", "filecontent",
+			"source_location", "occurrence", "component_access", "element_component", "error"};
+		for (const char* table: tables)
+		{
+			const std::string countSql = std::string("SELECT COUNT(*) FROM ") + table;
+			INFO("table " << table);
+			REQUIRE(connection.legacy().execScalar(countSql) == writer.scalar(countSql));
+		}
+		REQUIRE(connection.legacy().execScalar("SELECT COUNT(*) FROM node") > 0);
+
+		// Ids are preserved verbatim, including the seed offset.
+		REQUIRE(connection.legacy().execScalar("SELECT MIN(id) FROM element") >= kFirstElementId);
+		REQUIRE(
+			connection.legacy().execScalar("SELECT MAX(id) FROM element") ==
+			writer.scalar("SELECT MAX(id) FROM element"));
+		const std::string nodeIdSql = "SELECT id FROM node WHERE serialized_name = 'sym_0'";
+		REQUIRE(connection.legacy().execScalar(nodeIdSql) == writer.scalar(nodeIdSql));
+	}
+
+	for (const char* sfx: {"", "-wal", "-shm", "-log"})
+	{
+		FileSystem::remove(FilePath(tursoPath + sfx));
+	}
+	FileSystem::remove(sqlitePath);
 }
 
 // The S0 correctness gate at the engine level: force a genuine MVCC write-write

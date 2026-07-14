@@ -1,6 +1,6 @@
 # Design: Multi-Subprocess Fan-Out Across Source Groups (Phase 8)
 
-**Status: S0–S3 implemented (2026-07-14); S4–S5 designed, not implemented.** Parallelize indexing across source
+**Status: S0–S4 implemented (2026-07-14); S5 designed, not implemented.** Parallelize indexing across source
 groups by spawning dedicated subprocess *clusters* per group and routing every group's
 results into the already-complete concurrent Turso MVCC writer as the **sole** storage
 writer during fan-out.
@@ -162,7 +162,7 @@ group while the other group's commands sit queued, full drain exactly-once). Tes
 recorded there: `IpcSharedMemory` truncates segment names to 18 chars, and two CREATE_AND_DELETE
 owners of one segment in one process dangle the first owner's mutex view.
 
-### S4 — Storage cutover: concurrent Turso as sole writer
+### S4 — Storage cutover: concurrent Turso as sole writer — **DONE (2026-07-14)**
 
 Route every fetched `IntermediateStorage` to **one shared** writer (shared so
 `ConcurrentStorageIndex` dedups a symbol referenced from two groups to one id). Create the writer
@@ -180,6 +180,25 @@ Turso→SQLite export**: read the `.concurrent.turso` tables and bulk-insert int
 bookmark/swap machinery **unchanged**; the Turso writer is purely an ingest accelerator. Reading
 directly from Turso (promote `.turso`, run all read queries + meta + bookmarks against
 turso_core) is a much larger surface gated on turso read maturity — **deferred**.
+
+*As implemented:* `TursoSqliteExport.{h,cpp}` streams every table (12, incl. `filecontent` and
+`element_component`) in 500-row chunks through a new `ConcurrentTursoWriter::query()` row API
+into typed sqlpp23 multi-row inserts on the shared `StorageConnection`, one transaction,
+ids verbatim; the `.concurrent.turso*` scratch files are deleted after the drain. Sole-writer
+mode is `PersistentStorage::setupConcurrentTursoSoleWriter()` (eager writer creation on the
+main task thread, seeded `MAX(element.id)+1`), consulted by `TaskInjectStorage` (skips the
+serial inject). **Gating is narrower than sketched: fan-out sole-writer requires a FULL
+refresh** — the writer's in-process dedup index cannot see rows already present in a
+copied-over incremental database, so incremental runs stay on the serial path (id-seeding
+alone does not solve content dedup; noted for a future stage). `failedBatches > 0` currently
+logs a hard error (S5 adds the degraded-run fallback). Gate tests: export round-trip
+(`ConcurrentTursoWriterTestSuite`, counts + verbatim ids incl. seed offset) and
+`scripts/smoke-fanout.sh` — generated two-group fixture vs single-group serial baseline,
+per-table counts equal across all 12 tables, fan-out log markers asserted, no leftover
+ingest files. Landing S4 also flushed out two pre-existing bugs (fixed alongside): empty-
+C++-source-group commands lost their input file in `CxxParser::buildIndex` (every TU errored
+"no input files" since the Cdb/Empty overload merge), and the IPC garbage-collector singleton
+segfaulted at exit when destroyed during static teardown after libipc's handle cache.
 
 ### S5 — Gating / fallback
 

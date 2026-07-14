@@ -32,7 +32,9 @@
 #include <algorithm>
 #include <thread>
 
+#include "FileSystem.h"
 #include "IntermediateStorage.h"
+#include "TursoSqliteExport.h"
 #endif
 
 using namespace std;
@@ -77,15 +79,52 @@ PersistentStorage::PersistentStorage(const FilePath& dbPath, const FilePath& boo
 }
 
 #ifdef SOURCETRAIL_TURSO_CONCURRENT
+namespace
+{
+std::unique_ptr<ConcurrentTursoWriter> createConcurrentTursoWriter(
+	const std::string& tursoPath, long long firstElementId)
+{
+	// Stale ingest files from an aborted earlier run would pollute the export.
+	for (const char* suffix: {"", "-wal", "-shm", "-log"})
+	{
+		FileSystem::remove(FilePath(tursoPath + suffix));
+	}
+
+	const unsigned hc = std::thread::hardware_concurrency();
+	const int writers = static_cast<int>(hc == 0 ? 4u : std::min(hc, 12u));
+	auto writer = std::make_unique<ConcurrentTursoWriter>(tursoPath, writers, firstElementId);
+	LOG_INFO(
+		"Concurrent Turso writer: " + std::to_string(writers) + " writers (element ids from " +
+		std::to_string(firstElementId) + ") -> " + tursoPath);
+	return writer;
+}
+}  // namespace
+
+void PersistentStorage::setupConcurrentTursoSoleWriter()
+{
+	// Called on the main task thread BEFORE indexer threads start: the id seed
+	// read and the writer creation must not race the first submit.
+	const long long maxElementId =
+		m_indexDbConnection.legacy().execScalar("SELECT COALESCE(MAX(id), 0) FROM element;");
+	m_concurrentTursoWriter = createConcurrentTursoWriter(
+		m_sqliteIndexStorage.getDbFilePath().str() + ".concurrent.turso", maxElementId + 1);
+	m_concurrentTursoSoleWriter = true;
+	LOG_INFO("Concurrent Turso writer is the SOLE ingest writer for this run (fan-out).");
+}
+
+bool PersistentStorage::isConcurrentTursoSoleWriter() const
+{
+	return m_concurrentTursoSoleWriter;
+}
+
 void PersistentStorage::submitToConcurrentTurso(const IntermediateStorage& storage)
 {
 	if (!m_concurrentTursoWriter)
 	{
-		const std::string tursoPath = m_sqliteIndexStorage.getDbFilePath().str() + ".concurrent.turso";
-		const unsigned hc = std::thread::hardware_concurrency();
-		const int writers = static_cast<int>(hc == 0 ? 4u : std::min(hc, 12u));
-		m_concurrentTursoWriter = std::make_unique<ConcurrentTursoWriter>(tursoPath, writers);
-		LOG_INFO("Concurrent Turso writer: " + std::to_string(writers) + " writers -> " + tursoPath);
+		// Mirror mode: lazy creation on first submit; ids from 1 to stay
+		// comparable with a fresh serial SQLite index.
+		m_concurrentTursoWriter = createConcurrentTursoWriter(
+			m_sqliteIndexStorage.getDbFilePath().str() + ".concurrent.turso", 1);
 	}
 
 	ConcurrentTursoWriter::Batch batch;
@@ -128,6 +167,40 @@ void PersistentStorage::finishConcurrentTurso()
 			std::to_string(count("source_location")) + " occurrence=" + std::to_string(count("occurrence")) +
 			" local_symbol=" + std::to_string(count("local_symbol")) + " file=" +
 			std::to_string(count("file")) + " element=" + std::to_string(count("element")));
+
+		if (m_concurrentTursoSoleWriter)
+		{
+			// Sole-writer mode (fan-out S4): the SQLite inject was skipped, so
+			// materialize the drained Turso ingest into SQLite now. Reads, meta,
+			// bookmarks and the temp-DB swap all continue to work on SQLite.
+			if (m_concurrentTursoWriter->failedBatches() > 0)
+			{
+				// S5 adds the degraded-run fallback; until then be loud.
+				LOG_ERROR(
+					"Concurrent Turso writer lost " +
+					std::to_string(m_concurrentTursoWriter->failedBatches()) +
+					" batch(es) after retries — the exported index is incomplete.");
+			}
+
+			const bool exported =
+				exportConcurrentTursoToSqlite(*m_concurrentTursoWriter, m_indexDbConnection);
+
+			// The ingest database is a per-run scratch file; drop it either way
+			// (a failed export leaves the loud error above, and the next run
+			// starts clean).
+			const std::string tursoPath =
+				m_sqliteIndexStorage.getDbFilePath().str() + ".concurrent.turso";
+			m_concurrentTursoWriter.reset();
+			for (const char* suffix: {"", "-wal", "-shm", "-log"})
+			{
+				FileSystem::remove(FilePath(tursoPath + suffix));
+			}
+
+			if (!exported)
+			{
+				LOG_ERROR("Turso->SQLite export failed — the indexed data was NOT persisted.");
+			}
+		}
 	}
 }
 #endif

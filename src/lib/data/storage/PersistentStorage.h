@@ -32,10 +32,18 @@ public:
 	PersistentStorage(const FilePath& dbPath, const FilePath& bookmarkPath);
 
 #ifdef SOURCETRAIL_TURSO_CONCURRENT
-	// Piggyback the concurrent-writer path: mirror each injected IntermediateStorage
-	// into a Turso database written by N concurrent MVCC writers. The writer is
-	// created lazily on first submit, so the read-only reload storage never spawns
-	// worker threads. finishConcurrentTurso() drains before the post-index reads.
+	// Concurrent-writer path: route each injected IntermediateStorage into a
+	// Turso database written by N concurrent MVCC writers. Two modes:
+	//  - mirror (default): SQLite inject stays authoritative; the writer is
+	//    created lazily on first submit (the read-only reload storage never
+	//    spawns worker threads) and only compared against.
+	//  - sole writer (fan-out S4): setupConcurrentTursoSoleWriter() creates the
+	//    writer eagerly (seeded with MAX(element.id)+1) BEFORE indexer threads
+	//    start; TaskInjectStorage skips the SQLite inject; finishConcurrentTurso()
+	//    drains and then exports Turso->SQLite ("export, don't swap"), leaving
+	//    the read/meta/bookmark/swap machinery untouched.
+	void setupConcurrentTursoSoleWriter();
+	bool isConcurrentTursoSoleWriter() const;
 	void submitToConcurrentTurso(const IntermediateStorage& storage);
 	void finishConcurrentTurso();
 #endif
@@ -313,6 +321,7 @@ private:
 
 #ifdef SOURCETRAIL_TURSO_CONCURRENT
 	std::unique_ptr<ConcurrentTursoWriter> m_concurrentTursoWriter;
+	bool m_concurrentTursoSoleWriter = false;
 #endif
 
 #ifdef SOURCETRAIL_USE_LADYBUG

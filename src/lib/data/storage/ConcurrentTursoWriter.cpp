@@ -408,7 +408,8 @@ struct ConcurrentTursoWriter::Impl
 	// (ConcurrentNodeIndex) for a future, correct reconciliation.
 };
 
-ConcurrentTursoWriter::ConcurrentTursoWriter(const std::string& dbPath, int numWriters)
+ConcurrentTursoWriter::ConcurrentTursoWriter(
+	const std::string& dbPath, int numWriters, long long firstElementId)
 	: m_impl(std::make_unique<Impl>(numWriters))
 {
 	m_impl->db = tsq_open(dbPath.c_str());
@@ -433,7 +434,7 @@ ConcurrentTursoWriter::ConcurrentTursoWriter(const std::string& dbPath, int numW
 	tsq_exec(m_impl->db, "CREATE TABLE IF NOT EXISTS component_access(node_id INTEGER PRIMARY KEY, type INTEGER)");
 	tsq_exec(m_impl->db, "CREATE TABLE IF NOT EXISTS element_component(id INTEGER PRIMARY KEY, element_id INTEGER, type INTEGER, data TEXT)");
 	tsq_exec(m_impl->db, "CREATE TABLE IF NOT EXISTS error(id INTEGER PRIMARY KEY, message TEXT, fatal INTEGER, indexed INTEGER, translation_unit TEXT)");
-	m_impl->index.seed(1);
+	m_impl->index.seed(firstElementId > 0 ? static_cast<ElementId>(firstElementId) : 1);
 
 	auto sched = m_impl->pool.get_scheduler();
 	const int n = numWriters > 0 ? numWriters : 1;
@@ -529,6 +530,43 @@ long long ConcurrentTursoWriter::scalar(const std::string& sql) const
 	}
 	tsq_finalize(stmt);
 	return v;
+}
+
+void ConcurrentTursoWriter::query(
+	const std::string& sql, const std::function<void(const std::vector<QueryValue>&)>& onRow) const
+{
+	if (m_impl->db == nullptr)
+	{
+		return;
+	}
+	TsqStmt* stmt = tsq_prepare(m_impl->db, sql.c_str());
+	if (stmt == nullptr)
+	{
+		LOG_ERROR(std::string("concurrent writer query prepare failed: ") + tsq_last_error());
+		return;
+	}
+
+	std::vector<QueryValue> row;
+	while (tsq_step(stmt) == TSQ_ROW)
+	{
+		const int columns = tsq_column_count(stmt);
+		row.clear();
+		row.reserve(static_cast<size_t>(columns));
+		for (int i = 0; i < columns; i++)
+		{
+			if (tsq_column_type(stmt, i) == TSQ_INTEGER)
+			{
+				row.emplace_back(tsq_column_int(stmt, i));
+			}
+			else
+			{
+				const char* text = tsq_column_text(stmt, i);
+				row.emplace_back(std::string(text != nullptr ? text : ""));
+			}
+		}
+		onRow(row);
+	}
+	tsq_finalize(stmt);
 }
 
 #endif  // SOURCETRAIL_TURSO_CONCURRENT

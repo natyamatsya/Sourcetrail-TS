@@ -679,6 +679,18 @@ void Project::buildIndex(RefreshInfo info, std::shared_ptr<DialogView> dialogVie
 				std::move(cxxClusters), static_cast<size_t>(effectiveIndexerThreadCount));
 		}
 
+#ifdef SOURCETRAIL_TURSO_CONCURRENT
+		// Fan-out S4: with per-group clusters active and a clean target (full
+		// refresh), the concurrent Turso writer becomes the SOLE ingest writer;
+		// the result is exported back to SQLite after the drain. Incremental
+		// refreshes stay on the serial path — the writer's in-process dedup
+		// index cannot see rows already present in the copied-over database.
+		if (!cxxClusterPlan.empty() && info.mode == RefreshMode::ALL_FILES)
+		{
+			tempStorage->setupConcurrentTursoSoleWriter();
+		}
+#endif
+
 		taskParallelIndexing->addChildTasks(std::make_shared<TaskGroupSequence>()->addChildTasks(
 			// block until there are indexer commands to process
 			std::make_shared<TaskDecoratorRepeat>(

@@ -1,8 +1,10 @@
 #ifndef CONCURRENT_TURSO_WRITER_H
 #define CONCURRENT_TURSO_WRITER_H
 
+#include <functional>
 #include <memory>
 #include <string>
+#include <variant>
 #include <vector>
 
 #include "StorageComponentAccess.h"
@@ -55,8 +57,10 @@ public:
 	};
 
 	//! Opens/creates the Turso database at dbPath in MVCC mode and starts
-	//! `numWriters` worker threads.
-	ConcurrentTursoWriter(const std::string& dbPath, int numWriters);
+	//! `numWriters` worker threads. Element ids are handed out starting at
+	//! `firstElementId` (pass MAX(element.id)+1 of the target index for
+	//! id continuity; 1 for a fresh index).
+	ConcurrentTursoWriter(const std::string& dbPath, int numWriters, long long firstElementId = 1);
 	~ConcurrentTursoWriter();
 
 	ConcurrentTursoWriter(const ConcurrentTursoWriter&) = delete;
@@ -79,6 +83,17 @@ public:
 
 	//! Inspection helper: run a scalar integer query on the database.
 	long long scalar(const std::string& sql) const;
+
+	//! One column value of a query result row: INTEGER columns arrive as
+	//! long long, everything else (TEXT; NULL as empty) as std::string.
+	using QueryValue = std::variant<long long, std::string>;
+
+	//! Export/inspection: run a query on the drained database and invoke
+	//! onRow for every result row. Only call after finish() — the writer
+	//! threads are gone, so the read is single-threaded and stable.
+	void query(
+		const std::string& sql,
+		const std::function<void(const std::vector<QueryValue>&)>& onRow) const;
 
 private:
 	struct Impl;
