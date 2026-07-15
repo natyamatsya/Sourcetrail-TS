@@ -1,7 +1,27 @@
 #include "SourceGroupSettingsWithCargoOptions.h"
 
 #include "ConfigManager.h"
+#include "ProjectSettings.h"
 #include "utility.h"
+#include "utilityFile.h"
+
+const FilePath& SourceGroupSettingsWithCargoOptions::getCargoWorkspaceDirectory() const
+{
+	return m_cargoWorkspaceDirectory;
+}
+
+FilePath SourceGroupSettingsWithCargoOptions::getCargoWorkspaceDirectoryExpandedAndAbsolute() const
+{
+	if (m_cargoWorkspaceDirectory.empty())
+		return FilePath();
+	return utility::getExpandedAndAbsolutePath(
+		m_cargoWorkspaceDirectory, getProjectSettings()->getProjectDirectoryPath());
+}
+
+void SourceGroupSettingsWithCargoOptions::setCargoWorkspaceDirectory(const FilePath& path)
+{
+	m_cargoWorkspaceDirectory = path;
+}
 
 const std::vector<std::string>& SourceGroupSettingsWithCargoOptions::getCargoFeatures() const
 {
@@ -59,7 +79,8 @@ bool SourceGroupSettingsWithCargoOptions::equals(const SourceGroupSettingsBase* 
 		dynamic_cast<const SourceGroupSettingsWithCargoOptions*>(other);
 
 	return (
-		otherPtr && utility::isPermutation(m_cargoFeatures, otherPtr->m_cargoFeatures) &&
+		otherPtr && m_cargoWorkspaceDirectory == otherPtr->m_cargoWorkspaceDirectory &&
+		utility::isPermutation(m_cargoFeatures, otherPtr->m_cargoFeatures) &&
 		m_cargoAllFeatures == otherPtr->m_cargoAllFeatures &&
 		m_cargoNoDefaultFeatures == otherPtr->m_cargoNoDefaultFeatures &&
 		m_cargoTargetTriple == otherPtr->m_cargoTargetTriple &&
@@ -68,6 +89,8 @@ bool SourceGroupSettingsWithCargoOptions::equals(const SourceGroupSettingsBase* 
 
 void SourceGroupSettingsWithCargoOptions::load(const ConfigManager* config, const std::string& key)
 {
+	setCargoWorkspaceDirectory(FilePath(
+		config->getValueOrDefault(key + "/cargo_workspace_directory", std::string{})));
 	setCargoFeatures(config->getValuesOrDefaults(
 		key + "/cargo_features/cargo_feature", std::vector<std::string>()));
 	setCargoAllFeatures(config->getValueOrDefault(key + "/cargo_all_features", false));
@@ -79,6 +102,7 @@ void SourceGroupSettingsWithCargoOptions::load(const ConfigManager* config, cons
 
 void SourceGroupSettingsWithCargoOptions::save(ConfigManager* config, const std::string& key)
 {
+	config->setValue(key + "/cargo_workspace_directory", getCargoWorkspaceDirectory().str());
 	config->setValues(key + "/cargo_features/cargo_feature", getCargoFeatures());
 	config->setValue(key + "/cargo_all_features", getCargoAllFeatures());
 	config->setValue(key + "/cargo_no_default_features", getCargoNoDefaultFeatures());

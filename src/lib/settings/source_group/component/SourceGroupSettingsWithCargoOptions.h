@@ -4,6 +4,7 @@
 #include <string>
 #include <vector>
 
+#include "FilePath.h"
 #include "SourceGroupSettingsComponent.h"
 
 // Cargo project-model options for Rust source groups (project model v1:
@@ -13,6 +14,14 @@ class SourceGroupSettingsWithCargoOptions: public SourceGroupSettingsComponent
 {
 public:
 	~SourceGroupSettingsWithCargoOptions() override = default;
+
+	// The cargo project/workspace directory (contains Cargo.toml). Optional:
+	// when empty, the working directory is inferred from the project file's
+	// directory or the source paths (see SourceGroupRust::getIndexerCommands).
+	// Mirrors the CMake File API group's explicit source_directory.
+	const FilePath& getCargoWorkspaceDirectory() const;
+	FilePath getCargoWorkspaceDirectoryExpandedAndAbsolute() const;
+	void setCargoWorkspaceDirectory(const FilePath& path);
 
 	const std::vector<std::string>& getCargoFeatures() const;
 	void setCargoFeatures(const std::vector<std::string>& features);
@@ -38,6 +47,7 @@ protected:
 	void save(ConfigManager* config, const std::string& key) override;
 
 private:
+	FilePath m_cargoWorkspaceDirectory;
 	std::vector<std::string> m_cargoFeatures;
 	bool m_cargoAllFeatures = false;
 	bool m_cargoNoDefaultFeatures = false;

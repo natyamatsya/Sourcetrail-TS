@@ -4,6 +4,7 @@
 #include <QComboBox>
 #include <QLineEdit>
 
+#include "QtLocationPicker.h"
 #include "SourceGroupSettingsWithCargoOptions.h"
 #include "utilityString.h"
 
@@ -15,6 +16,30 @@ QtProjectWizardContentCargoOptions::QtProjectWizardContentCargoOptions(
 
 void QtProjectWizardContentCargoOptions::populate(QGridLayout* layout, int& row)
 {
+	m_workspaceDir = new QtLocationPicker(this);
+	m_workspaceDir->setObjectName(QStringLiteral("cargo_workspace_directory"));
+	m_workspaceDir->setPickDirectory(true);
+	m_workspaceDir->setPlaceholderText(
+		QStringLiteral("inferred from the project file / source paths"));
+
+	layout->addWidget(
+		createFormLabel(QStringLiteral("Cargo Workspace Directory")),
+		row,
+		QtProjectWizardWindow::FRONT_COL,
+		Qt::AlignRight);
+	layout->addWidget(m_workspaceDir, row, QtProjectWizardWindow::BACK_COL);
+	addHelpButton(
+		QStringLiteral("Cargo Workspace Directory"),
+		"<p>The cargo project or workspace root — the directory containing the "
+		"<b>Cargo.toml</b> the indexer runs against, mirroring the CMake source directory of a "
+		"CMake project.</p>"
+		"<p>Leave empty to infer it: Sourcetrail walks up from the project file's directory for "
+		"a <b>Cargo.toml</b>, then falls back to the first source path that is part of a cargo "
+		"project.</p>",
+		layout,
+		row);
+	row++;
+
 	m_features = new QLineEdit();
 	m_features->setObjectName(QStringLiteral("cargo_features"));
 	m_features->setAttribute(Qt::WA_MacShowFocusRect, false);
@@ -92,6 +117,8 @@ void QtProjectWizardContentCargoOptions::populate(QGridLayout* layout, int& row)
 
 void QtProjectWizardContentCargoOptions::load()
 {
+	m_workspaceDir->setText(
+		QString::fromStdString(m_settings->getCargoWorkspaceDirectory().str()));
 	m_features->setText(
 		QString::fromStdString(utility::join(m_settings->getCargoFeatures(), " ")));
 	m_allFeatures->setChecked(m_settings->getCargoAllFeatures());
@@ -122,6 +149,8 @@ void QtProjectWizardContentCargoOptions::save()
 			}
 		}
 	}
+	m_settings->setCargoWorkspaceDirectory(
+		FilePath(utility::trim(m_workspaceDir->getText().toStdString())));
 	m_settings->setCargoFeatures(features);
 	m_settings->setCargoAllFeatures(m_allFeatures->isChecked());
 	m_settings->setCargoNoDefaultFeatures(m_noDefaultFeatures->isChecked());
