@@ -8,6 +8,7 @@
 class QCheckBox;
 class QComboBox;
 class QLineEdit;
+class QtLocationPicker;
 class SourceGroupSettingsWithCargoOptions;
 
 // Cargo project-model options for Rust source groups (project model v1):
@@ -30,6 +31,7 @@ public:
 private:
 	std::shared_ptr<SourceGroupSettingsWithCargoOptions> m_settings;
 
+	QtLocationPicker* m_workspaceDir = nullptr;
 	QLineEdit* m_features = nullptr;
 	QCheckBox* m_allFeatures = nullptr;
 	QCheckBox* m_noDefaultFeatures = nullptr;

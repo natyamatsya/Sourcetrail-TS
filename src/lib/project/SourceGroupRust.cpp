@@ -62,10 +62,14 @@ std::vector<std::shared_ptr<IndexerCommand>> SourceGroupRust::getIndexerCommands
 		utility::toSet(m_settings->getSourcePathsExpandedAndAbsolute());
 
 	// The Rust indexer works at crate level via working_directory (Cargo.toml).
-	// Prefer the project file's directory when it is part of a cargo project;
-	// otherwise fall back to the first source path that is, so the .srctrl.toml
-	// does not have to live in the crate root.
-	FilePath workingDir = findCargoRootAtOrAbove(m_settings->getProjectDirectoryPath());
+	// An explicitly configured workspace directory wins (mirroring the CMake
+	// File API group's source_directory); otherwise prefer the project file's
+	// directory when it is part of a cargo project, then fall back to the
+	// first source path that is, so the .srctrl.toml does not have to live in
+	// the crate root.
+	FilePath workingDir = m_settings->getCargoWorkspaceDirectoryExpandedAndAbsolute();
+	if (workingDir.empty())
+		workingDir = findCargoRootAtOrAbove(m_settings->getProjectDirectoryPath());
 	if (workingDir.empty())
 	{
 		for (const FilePath& sourcePath : m_settings->getSourcePathsExpandedAndAbsolute())
