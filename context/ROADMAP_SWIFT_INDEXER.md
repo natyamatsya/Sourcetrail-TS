@@ -28,10 +28,11 @@ file tracks status at a glance.
 | SW7 | Package-granular shard striping (Rust + Swift) | ✅ done |
 | SW8 | GUI wizard for Swift options | ⏸ deferred (bundled with SW5 options) |
 | SW9 | `index_self` smoke binary, docs | ✅ done |
+| SW10 | Code-view parity: SCOPE locations + precise token extents via universal SwiftSyntax | ✅ done (local symbols / qualifiers follow-up) |
 
 The engine is complete and exercised end to end. `swift run index_self` on the
-indexer's own package produces 28 files / 1743 nodes / 5958 edges / 7991
-occurrences, 20/28 files semantic.
+indexer's own package produces ~30 files / ~2k nodes / ~7.8k edges / ~13k
+occurrences (the occurrence jump over pre-SW10 is the added SCOPE locations).
 
 ---
 
@@ -48,9 +49,15 @@ override).
 
 ## Known limitations / follow-ups
 
-- **Token extents** are approximated by the base-identifier length; the index
-  store carries no end column. Fine for activation, imprecise for multi-line
-  or operator names.
+- **Local symbols & qualifiers** (SW10 follow-up): function-local `let`/`var`
+  navigation (`LOCATION_LOCAL_SYMBOL`) and clickable qualified-name segments
+  (`LOCATION_QUALIFIER`) are still unemitted. Locals need `-index-include-locals`
+  on the build (semantic) or a scoped SwiftSyntax name walk; both are additive
+  on top of the SW10 `DeclScopeMap`/enrichment plumbing.
+- **Token extents for references** are still approximated by base-identifier
+  length (SW10 made *definition* name extents exact via SwiftSyntax; arbitrary
+  reference tokens would need a full per-file token map — cheap to add if the
+  approximation ever mis-highlights a real reference).
 - **Actors** map to `NODE_CLASS` (no schema/GUI churn); revisit if a distinct
   actor node kind is ever wanted.
 - **Degenerate sharding**: a shard whose file-level stripe is empty emits no

@@ -15,6 +15,9 @@ final class SemanticIndexer {
 	private var resolvedSymbols: [String: (parts: [String], kind: Int32)] = [:]
 	/// USRs currently being resolved (cycle guard for malformed stores).
 	private var resolving: Set<String> = []
+	/// SW10: per-file SwiftSyntax facts (exact name extents + declaration scope
+	/// extents), used to enrich the store's positional occurrences. Set per file.
+	private var scopeMap: DeclScopeMap?
 
 	init(storePath: URL, databasePath: URL, builder: StorageBuilder) throws {
 		let library = try IndexStoreLibrary(dylibPath: Toolchain.libIndexStorePath())
@@ -44,6 +47,10 @@ final class SemanticIndexer {
 
 	func indexFile(path: String) {
 		let fileNodeId = builder.fileNodeId(path: path, complete: true)
+		// SW10: parse the file once for exact name/scope extents. Semantic
+		// coverage means the file compiled, so it parses too.
+		scopeMap = DeclScopeMap.build(path: path)
+		defer { scopeMap = nil }
 		for occurrence in index.symbolOccurrences(inFilePath: path) {
 			process(occurrence: occurrence, filePath: path, fileNodeId: fileNodeId)
 		}
@@ -79,7 +86,7 @@ final class SemanticIndexer {
 			definitionKind: occurrence.roles.contains(.implicit)
 				? DefinitionKind.implicit : DefinitionKind.explicit
 		)
-		recordTokenOccurrence(
+		recordDefinitionLocations(
 			elementId: nodeId, occurrence: occurrence, fileNodeId: fileNodeId)
 
 		// Structure edges: module ⟶ top-level, parent ⟶ child. The parent node
@@ -153,6 +160,41 @@ final class SemanticIndexer {
 		}
 		recordTokenOccurrence(
 			elementId: elementId, occurrence: occurrence, fileNodeId: fileNodeId)
+	}
+
+	// SW10: a definition gets a precise name TOKEN plus a SCOPE spanning its
+	// whole declaration, so the code view can show and navigate the full
+	// class/function body (as it does for C++). The store gives only the name
+	// position; SwiftSyntax supplies the exact name extent and the brace-to-brace
+	// scope. Falls back to the approximate token if the syntax lookup misses
+	// (e.g. macro-synthesized members with no source decl).
+	private func recordDefinitionLocations(
+		elementId: Int64, occurrence: SymbolOccurrence, fileNodeId: Int64
+	) {
+		let line = Int(max(occurrence.location.line, 1))
+		let col = Int(max(occurrence.location.utf8Column, 1))
+		if let ext = scopeMap?.extents(line: line, column: col) {
+			recordExtent(elementId: elementId, fileNodeId: fileNodeId, extent: ext.name,
+				type: LocationKind.token)
+			recordExtent(elementId: elementId, fileNodeId: fileNodeId, extent: ext.scope,
+				type: LocationKind.scope)
+		} else {
+			recordTokenOccurrence(elementId: elementId, occurrence: occurrence, fileNodeId: fileNodeId)
+		}
+	}
+
+	private func recordExtent(
+		elementId: Int64, fileNodeId: Int64, extent: SourceExtent, type: Int32
+	) {
+		builder.recordOccurrence(
+			elementId: elementId,
+			fileNodeId: fileNodeId,
+			startLine: extent.startLine,
+			startCol: extent.startColumn,
+			endLine: extent.endLine,
+			endCol: extent.endColumn,
+			locationType: type
+		)
 	}
 
 	private func recordTokenOccurrence(

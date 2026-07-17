@@ -1,10 +1,9 @@
 # Design: Swift Indexer Parity (SW series)
 
-**Status: SW0–SW7 + SW9 implemented (2026-07-17). The engine is complete and
-exercised end to end: `swift run index_self` on this package yields 28 files,
-1743 nodes, 5958 edges, 7991 occurrences — 20/28 files semantic, the 8 test
-files correctly syntactic (not compiled by the default build). SW8 (GUI) is
-bundled with the deferred SW5 options fields.**
+**Status: SW0–SW7 + SW9 + SW10 implemented (2026-07-17). The engine is complete
+and exercised end to end, and now reaches code-view parity (SCOPE locations +
+precise definition-name extents). SW8 (GUI) is bundled with the deferred SW5
+options fields; local symbols / qualifiers are the SW10 follow-up.**
 The Swift analog of the Rust indexer track: take the transport-complete but
 analysis-empty Swift subprocess (`src/swift_indexer`) to full parity with the
 C++/Rust pipeline, staged like [DESIGN_MULTIGROUP_FANOUT.md](DESIGN_MULTIGROUP_FANOUT.md)
@@ -239,5 +238,31 @@ crate/package; merge dedup keeps it correct but wastes work).
   integration tests), which is stronger coverage than a C++ ipc-harness stub;
   a dedicated C++ ipc integration test is left as optional follow-up.
 
+- **SW10 — Code-view parity (DONE 2026-07-17).** The graph (nodes + edges)
+  reached parity at SW2; the code-view *experience* did not, because both
+  passes emitted only a single approximate `TOKEN` location per symbol. The C++
+  code view is rich because clang emits a wider location vocabulary; even the
+  Rust indexer emits `TOKEN` + `SCOPE` + `LOCAL_SYMBOL`. SW10 closes the two
+  highest-value gaps:
+  - **`SCOPE` locations** — the brace-to-brace extent of every definition, so a
+    whole class/function reads as one navigable, collapsible region and "show
+    definition" lands on the body (not just the name line).
+  - **Precise definition-name `TOKEN` extents** — exact byte ranges, replacing
+    the identifier-*character*-count approximation (wrong for multi-byte /
+    operator / backtick names).
+
+  Both are *syntactic* facts IndexStoreDB (a semantic occurrence index) doesn't
+  carry, so SW10 promotes **SwiftSyntax from fallback-only to a universal
+  enrichment layer**. `SyntaxDecls.swift` (`DeclScopeMap`) parses each file once
+  and maps a declaration's name-token position → (exact name extent, scope
+  extent), keyed by the `(line, utf8-column)` coordinate IndexStoreDB also uses.
+  The semantic pass looks up each definition and emits `TOKEN` + `SCOPE` (falling
+  back to the approximate token on a miss, e.g. macro-synthesized members with
+  no source decl); the syntactic pass emits the same pair directly from the tree.
+  Verified on both engines (a deterministic syntactic fixture asserting exact
+  extents + multi-line scope, and a semantic package build). **Follow-up**: local
+  symbols (`LOCATION_LOCAL_SYMBOL`) and qualifiers (`LOCATION_QUALIFIER`), both
+  additive on the `DeclScopeMap` plumbing — see ROADMAP.
+
 Sequencing: SW0→SW1→SW2→SW3→SW4; SW5 independent after SW0; SW6 needs SW5;
-SW7 after SW5; SW8/SW9 last.
+SW7 after SW5; SW8/SW9 last; SW10 (code-view parity) builds on SW2/SW3.
