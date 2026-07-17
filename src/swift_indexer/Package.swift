@@ -43,6 +43,13 @@ let package = Package(
 			dependencies: ["SourcetrailSwiftIndexerCore"],
 			path: "Sources/SourcetrailSwiftIndexer"
 		),
+		// Smoke/diagnostic driver: index a package and print a summary. Not
+		// built by CMake — run with `swift run index_self [path]`.
+		.executableTarget(
+			name: "index_self",
+			dependencies: ["SourcetrailSwiftIndexerCore"],
+			path: "Sources/index_self"
+		),
 		.testTarget(
 			name: "SourcetrailSwiftIndexerCoreTests",
 			dependencies: ["SourcetrailSwiftIndexerCore"],
