@@ -31,13 +31,16 @@ public:
 	//! rustSupervisorCount (crate fan-out R1) spawns that many Rust supervisor
 	//! threads, each babysitting one subprocess per crate command; they share
 	//! the crate queue via accept-any pops. 1 = today's exact behavior.
+	//! swiftSupervisorCount (SW6) is the Swift analog, one supervisor per
+	//! package command up to the cap.
 	TaskBuildIndex(
 		size_t processCount,
 		std::shared_ptr<StorageProvider> storageProvider,
 		std::shared_ptr<DialogView> dialogView,
 		const std::string& appUUID,
 		const std::vector<IndexerClusterEntry>& cxxClusterPlan = {},
-		size_t rustSupervisorCount = 1);
+		size_t rustSupervisorCount = 1,
+		size_t swiftSupervisorCount = 1);
 
 	~TaskBuildIndex() override;
 
@@ -111,8 +114,11 @@ protected:
 	//! One per Rust supervisor (crate fan-out R1): ProcessIds
 	//! m_processCount+1 .. m_processCount+m_rustSupervisorCount.
 	std::vector<std::shared_ptr<IntermediateStorageManagerImpl>> m_rustStorageManagers;
-	std::shared_ptr<IntermediateStorageManagerImpl> m_swiftStorageManager;
+	//! One Swift storage manager per supervisor (SW6), ids following the Rust
+	//! supervisors: m_processCount+m_rustSupervisorCount+1 ..
+	std::vector<std::shared_ptr<IntermediateStorageManagerImpl>> m_swiftStorageManagers;
 	size_t m_rustSupervisorCount = 1;
+	size_t m_swiftSupervisorCount = 1;
 
 	std::atomic<size_t> m_runningThreadCount = 0;
 
