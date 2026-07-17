@@ -8,6 +8,7 @@
 #include "QtProjectWizardContent.h"
 #include "QtProjectWizardContentCustomCommand.h"
 #include "QtProjectWizardContentCargoOptions.h"
+#include "QtProjectWizardContentSwiftOptions.h"
 #include "QtProjectWizardContentExtensions.h"
 #include "QtProjectWizardContentGroup.h"
 #include "QtProjectWizardContentPathsExclude.h"
@@ -249,6 +250,7 @@ void addSourceGroupContents<SourceGroupSettingsSwiftEmpty>(
 	group->addContent(new QtProjectWizardContentPathsSource(settings, window));
 	group->addContent(new QtProjectWizardContentPathsExclude(settings, window));
 	group->addContent(new QtProjectWizardContentExtensions(settings, window));
+	group->addContent(new QtProjectWizardContentSwiftOptions(settings, window));
 }
 
 template <>

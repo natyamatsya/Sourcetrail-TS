@@ -80,9 +80,16 @@ std::vector<std::shared_ptr<IndexerCommand>> SourceGroupSwift::getIndexerCommand
 	if (info.filesToIndex.empty())
 		return {};
 
+	// Swift project-model options (SW5): extra build args, a toolchain override,
+	// and an index-store override travel with every command to the subprocess.
+	const std::vector<std::string> buildArgs = m_settings->getSwiftBuildArgs();
+	const std::string toolchainPath = m_settings->getSwiftToolchainPathExpandedAndAbsolute().str();
+	const std::string indexStorePath = m_settings->getSwiftIndexStorePathExpandedAndAbsolute().str();
+
 	auto makeCommand = [&](const FilePath& packageRoot) {
 		// The source file path doubles as the status-tracking key.
-		return std::make_shared<IndexerCommandSwift>(packageRoot, indexedPaths, packageRoot);
+		return std::make_shared<IndexerCommandSwift>(
+			packageRoot, indexedPaths, packageRoot, buildArgs, toolchainPath, indexStorePath);
 	};
 
 	// One command per SPM package root, so K Swift supervisors index packages

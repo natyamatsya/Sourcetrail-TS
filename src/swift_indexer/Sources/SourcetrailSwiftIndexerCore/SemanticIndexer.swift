@@ -19,8 +19,9 @@ final class SemanticIndexer {
 	/// extents), used to enrich the store's positional occurrences. Set per file.
 	private var scopeMap: DeclScopeMap?
 
-	init(storePath: URL, databasePath: URL, builder: StorageBuilder) throws {
-		let library = try IndexStoreLibrary(dylibPath: Toolchain.libIndexStorePath())
+	init(storePath: URL, databasePath: URL, builder: StorageBuilder, toolchainPath: String = "") throws {
+		let library = try IndexStoreLibrary(
+			dylibPath: Toolchain.libIndexStorePath(toolchainPath: toolchainPath))
 		self.index = try IndexStoreDB(
 			storePath: storePath.path,
 			databasePath: databasePath.path,
@@ -316,9 +317,16 @@ final class SemanticIndexer {
 }
 
 enum Toolchain {
-	/// libIndexStore.dylib of the active toolchain (what the compiler that
-	/// produced the store links against).
-	static func libIndexStorePath() throws -> String {
+	/// libIndexStore.dylib of the toolchain that produced the store. A
+	/// configured toolchain (SW5) wins — its libIndexStore must match the store
+	/// it wrote; otherwise fall back to the default `swiftc` via xcrun.
+	static func libIndexStorePath(toolchainPath: String = "") throws -> String {
+		if !toolchainPath.isEmpty {
+			// <toolchain>/usr/lib/libIndexStore.dylib
+			return URL(fileURLWithPath: toolchainPath)
+				.appendingPathComponent("usr/lib/libIndexStore.dylib")
+				.path
+		}
 		let output = try ProcessRunner.run(
 			executable: "/usr/bin/xcrun",
 			arguments: ["--find", "swiftc"],

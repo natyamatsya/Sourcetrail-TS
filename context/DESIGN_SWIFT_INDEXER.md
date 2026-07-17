@@ -1,9 +1,11 @@
 # Design: Swift Indexer Parity (SW series)
 
-**Status: SW0–SW7 + SW9 + SW10 implemented (2026-07-17). The engine is complete
-and exercised end to end, and now reaches code-view parity (SCOPE locations +
-precise definition-name extents). SW8 (GUI) is bundled with the deferred SW5
-options fields; local symbols / qualifiers are the SW10 follow-up.**
+**Status: SW0–SW10 implemented (SW5 options fields + SW8 GUI landed 2026-07-18).
+The engine is complete and exercised end to end, reaches code-view parity (SCOPE
+locations + precise definition-name extents), and the Swift options bundle
+(`swift_build_args` / `swift_toolchain_path` / `swift_index_store_path` +
+settings mixin + `BuildDriver` consumer + GUI wizard) is wired. Local symbols /
+qualifiers are the SW10 follow-up.**
 The Swift analog of the Rust indexer track: take the transport-complete but
 analysis-empty Swift subprocess (`src/swift_indexer`) to full parity with the
 C++/Rust pipeline, staged like [DESIGN_MULTIGROUP_FANOUT.md](DESIGN_MULTIGROUP_FANOUT.md)
@@ -181,7 +183,8 @@ crate/package; merge dedup keeps it correct but wastes work).
   and avoids re-running process init / rebuild churn on each requeue; the
   Rust exit-on-empty is paired with cheap relaunch, a tradeoff that does not
   favor the heavier Swift subprocess).
-- **SW5 — Host-side project model (partial, 2026-07-17).** `SourceGroupSwift`
+- **SW5 — Host-side project model (DONE; per-package emission 2026-07-17,
+  options bundle 2026-07-18).** `SourceGroupSwift`
   now emits **one command per SPM package root**, found by a recursive
   `Package.swift` filesystem scan of the indexed paths (no subprocess needed,
   unlike cargo metadata); when no manifest is found it falls back to a single
@@ -191,14 +194,18 @@ crate/package; merge dedup keeps it correct but wastes work).
   fixed the latent `SourceGroupSettingsRustEmpty::equalsSettings` bug (it
   omitted `WithCargoOptions::equals`, so cargo-option-only edits were not
   detected as changed settings).
-  **Deferred until a consumer exists**: the `swift_build_args` /
-  `swift_toolchain_path` / `swift_index_store_path` command fields, the
-  `SourceGroupSettingsWithSwiftOptions` mixin, and the GUI wizard (SW8). The
-  subprocess's `BuildDriver` currently runs `swift build` with defaults and
-  auto-discovers the store; adding schema fields + tri-language pop-rewrites
-  that nothing reads would be dead plumbing. Land them together with the
-  BuildDriver code that consumes them (custom toolchain / read-only-checkout
-  index-store override).
+  **Options bundle (landed 2026-07-18, with its consumer):** the
+  `swift_build_args` / `swift_toolchain_path` / `swift_index_store_path` command
+  fields, the `SourceGroupSettingsWithSwiftOptions` mixin (mixed into
+  `SourceGroupSettingsSwiftEmpty`, including its `equals`/`load`/`save`), and the
+  GUI wizard (SW8). The consumer is `BuildDriver.SwiftBuildOptions`: a non-empty
+  toolchain path selects that toolchain's own `usr/bin/swift` and
+  `usr/lib/libIndexStore.dylib`; `swift_build_args` are appended to `swift build`;
+  a non-empty `swift_index_store_path` **skips the build** and indexes the
+  prebuilt store directly (read-only checkout). The three fields round-trip
+  losslessly across all three pop-rewrites (`IndexerCommandSerializer.cpp`,
+  `ipc/command.rs`, `SwiftIndexerCommandChannel.swift`), each with a round-trip
+  test.
 - **SW6 — Fan-out (DONE 2026-07-17).** `Project::buildIndex` counts distinct
   Swift package roots (`swiftPackageCount`) exactly as it counts Rust crate
   roots, and sets `swiftSupervisorCount = min(count, 3)` under the same
@@ -223,11 +230,13 @@ crate/package; merge dedup keeps it correct but wastes work).
   complete + deterministic + balanced over package keys). Note: a shard whose
   file-level stripe is empty still emits no package commands — a degenerate
   more-shards-than-files case, unchanged from before.
-- **SW8 — GUI wizard (DEFERRED, bundled with SW5 options).** A wizard would
-  configure exactly the `swift_build_args` / `swift_toolchain_path` /
-  `swift_index_store_path` options deferred in SW5 — there is nothing to
-  configure until those fields exist. Land the wizard together with the
-  option fields and the BuildDriver code that consumes them.
+- **SW8 — GUI wizard (DONE 2026-07-18).** `QtProjectWizardContentSwiftOptions`
+  (cloned from the Cargo options content) configures the SW5 options for a Swift
+  source group: a line edit for `swift_build_args` and directory pickers for the
+  toolchain and index-store overrides, each with a help button. Registered in
+  `QtProjectWizard.cpp`'s `addSourceGroupContents<SourceGroupSettingsSwiftEmpty>`
+  alongside the source/exclude/extensions content, so it appears in the Swift
+  source-group wizard page and round-trips through the settings mixin.
 - **SW9 — Close-out (DONE 2026-07-17).** `index_self` executable target
   (`swift run index_self [path]`) runs the full hybrid pipeline on a package
   and prints a summary — the Swift analog of the Rust smoke binary, and a live

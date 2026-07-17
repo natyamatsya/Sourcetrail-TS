@@ -25,26 +25,68 @@ package struct BuildResult {
 	package let rawOutputTail: String
 }
 
+// Swift project-model options (SW5) that shape the build. Carried per command
+// from the source-group settings; empty everywhere reproduces the zero-config
+// default (a plain `swift build` on the host toolchain).
+package struct SwiftBuildOptions {
+	/// Extra args appended to `swift build` (e.g. `--configuration release`).
+	package let buildArgs: [String]
+	/// Toolchain root to build with; empty = the default `swift` on PATH.
+	/// libIndexStore is taken from this toolchain too (see Toolchain).
+	package let toolchainPath: String
+	/// An existing index store to read; when set the build is SKIPPED entirely
+	/// (index a read-only or already-built checkout).
+	package let indexStorePath: String
+
+	package init(buildArgs: [String] = [], toolchainPath: String = "", indexStorePath: String = "") {
+		self.buildArgs = buildArgs
+		self.toolchainPath = toolchainPath
+		self.indexStorePath = indexStorePath
+	}
+
+	/// How to invoke `swift`: the default `/usr/bin/env swift …`, or a specific
+	/// toolchain's binary directly when a toolchain path is configured.
+	var swiftInvocation: (executable: String, prefixArgs: [String]) {
+		toolchainPath.isEmpty
+			? ("/usr/bin/env", ["swift"])
+			: ((toolchainPath as NSString).appendingPathComponent("usr/bin/swift"), [])
+	}
+}
+
 package enum BuildDriver {
-	package static func build(packageRoot: URL) -> BuildResult {
+	package static func build(packageRoot: URL, options: SwiftBuildOptions) -> BuildResult {
 		let buildPath = packageRoot.appendingPathComponent(".build")
+
+		// Index-store override (SW5): a store was supplied (e.g. Xcode's, or a
+		// prebuilt read-only checkout), so skip `swift build` and read it as-is.
+		if !options.indexStorePath.isEmpty {
+			return BuildResult(
+				succeeded: true,
+				diagnostics: [],
+				indexStorePath: URL(fileURLWithPath: options.indexStorePath),
+				rawOutputTail: "swift_index_store_path set; `swift build` skipped"
+			)
+		}
+
+		let (executable, prefix) = options.swiftInvocation
+		var arguments =
+			prefix + [
+				"build",
+				"--package-path", packageRoot.path,
+				"--enable-index-store",
+				// Build test targets too, so their sources get index units
+				// and index semantically instead of falling back to the
+				// syntactic pass. In real library packages the tests are a
+				// large share of the code (e.g. ~45% of swift-syntax), and
+				// users navigate test code as much as source.
+				"--build-tests",
+			]
+		arguments += options.buildArgs
+
 		let output: ProcessOutput
 		do {
 			output = try ProcessRunner.run(
-				executable: "/usr/bin/env",
-				arguments: [
-					"swift", "build",
-					"--package-path", packageRoot.path,
-					"--enable-index-store",
-					// Build test targets too, so their sources get index units
-					// and index semantically instead of falling back to the
-					// syntactic pass. In real library packages the tests are a
-					// large share of the code (e.g. ~45% of swift-syntax), and
-					// users navigate test code as much as source.
-					"--build-tests",
-				],
-				currentDirectory: packageRoot
-			)
+				executable: executable, arguments: arguments, currentDirectory: packageRoot)
 		} catch {
 			return BuildResult(
 				succeeded: false,
