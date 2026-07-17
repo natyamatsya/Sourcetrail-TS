@@ -29,7 +29,11 @@ package final class SwiftIndexerStorageChannel {
 	}
 
 	package func pushEmptyStorage() throws {
-		let entryBytes = Self.serializeEmptyStorage()
+		try push(storage: OwnedIntermediateStorage())
+	}
+
+	package func push(storage: OwnedIntermediateStorage) throws {
+		let entryBytes = Self.serializeStorage(storage)
 		while true {
 			let outcome: PushOutcome = try shm.readModifyWrite { queueBytes in
 				let appendResult = try Self.rewriteQueueByAppendingEntry(
@@ -199,21 +203,50 @@ package final class SwiftIndexerStorageChannel {
 	}
 
 	static func serializeEmptyStorage() -> [UInt8] {
-		var builder = FlatBufferBuilder(initialSize: 1024)
+		serializeStorage(OwnedIntermediateStorage())
+	}
+
+	static func serializeStorage(_ storage: OwnedIntermediateStorage) -> [UInt8] {
+		var builder = FlatBufferBuilder(initialSize: 4096)
+
+		let fileOffsets = storage.files.map { file in
+			let filePathOffset = builder.create(string: file.filePath)
+			let languageOffset = builder.create(string: file.languageIdentifier)
+			return Sourcetrail_Ipc_StorageFile.createStorageFile(
+				&builder,
+				id: file.id,
+				filePathOffset: filePathOffset,
+				languageIdentifierOffset: languageOffset,
+				indexed: file.indexed,
+				complete: file.complete
+			)
+		}
+		let errorOffsets = storage.errors.map { error in
+			let messageOffset = builder.create(string: error.message)
+			let translationUnitOffset = builder.create(string: error.translationUnit)
+			return Sourcetrail_Ipc_StorageError.createStorageError(
+				&builder,
+				id: error.id,
+				messageOffset: messageOffset,
+				translationUnitOffset: translationUnitOffset,
+				fatal: error.fatal,
+				indexed: error.indexed
+			)
+		}
 
 		let nodesOffset = builder.createVector(ofOffsets: [Offset]())
-		let filesOffset = builder.createVector(ofOffsets: [Offset]())
+		let filesOffset = builder.createVector(ofOffsets: fileOffsets)
 		let edgesOffset = builder.createVector(ofOffsets: [Offset]())
 		let symbolsOffset = builder.createVector(ofOffsets: [Offset]())
 		let sourceLocationsOffset = builder.createVector(ofOffsets: [Offset]())
 		let localSymbolsOffset = builder.createVector(ofOffsets: [Offset]())
 		let occurrencesOffset = builder.createVector(ofOffsets: [Offset]())
 		let componentAccessesOffset = builder.createVector(ofOffsets: [Offset]())
-		let errorsOffset = builder.createVector(ofOffsets: [Offset]())
+		let errorsOffset = builder.createVector(ofOffsets: errorOffsets)
 
 		let storageOffset = Sourcetrail_Ipc_IntermediateStorage.createIntermediateStorage(
 			&builder,
-			nextId: 1,
+			nextId: storage.nextId,
 			nodesVectorOffset: nodesOffset,
 			filesVectorOffset: filesOffset,
 			edgesVectorOffset: edgesOffset,

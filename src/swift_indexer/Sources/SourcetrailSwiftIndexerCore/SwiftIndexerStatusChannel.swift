@@ -49,6 +49,18 @@ package final class SwiftIndexerStatusChannel {
 		}
 	}
 
+	// Per-file progress within one command. Unlike startIndexing this carries
+	// no crash bookkeeping: start/finish stay paired per command, so a file
+	// replaced mid-command is never reported as a crashed translation unit
+	// (mirrors the Rust side's update_indexing).
+	package func updateIndexing(filePath: String) throws {
+		_ = try shm.readModifyWrite { bytes in
+			var status = Self.decodeStatus(from: bytes)
+			status.applyUpdateIndexing(processId: processId, filePath: filePath)
+			return (replacement: Self.serializeStatus(status), result: ())
+		}
+	}
+
 	private static func decodeStatus(from bytes: [UInt8]) -> OwnedIndexingStatus {
 		if bytes.count < 4 {
 			return OwnedIndexingStatus()
@@ -136,6 +148,12 @@ struct OwnedIndexingStatus {
 			}
 		}
 
+		currentFiles.append(ProcessFileRecord(processId: processId, filePath: filePath))
+	}
+
+	mutating func applyUpdateIndexing(processId: UInt64, filePath: String) {
+		indexingFilePaths.append(filePath)
+		currentFiles.removeAll { $0.processId == processId }
 		currentFiles.append(ProcessFileRecord(processId: processId, filePath: filePath))
 	}
 
