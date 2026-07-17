@@ -101,6 +101,35 @@ std::string agentChannel(const std::string& instanceId, const char* base)
 							  : ("st.agent." + instanceId + "." + base);
 }
 
+// The full set of agent-control channels, matched to the bridge's connect set
+// (ipc.rs: cmd/state/events/frames/snapshot). Single source of truth so the
+// startup wipe below can never drift from the routes the Impl opens.
+constexpr const char* kAgentChannelBases[] = {"cmd", "state", "events", "frames", "snapshot"};
+
+// Wipe any shared-memory left behind by a prior instance on this channel
+// namespace, so a fresh start begins with a clean connection count. This runs
+// BEFORE the routes attach.
+//
+// Why it is necessary (regression guard): a peer that is SIGKILLed — or any
+// reuse of an instance id across app runs — leaves phantom receiver bits in the
+// persistent, same-named AC_CONN segment. The dead-connection reaper
+// deliberately SKIPS owner-less bits (so it never false-reaps a live peer), so
+// those phantoms accumulate. A sender then reads a non-zero connection count
+// with no real reader and its commands are never consumed — a silent failure
+// that looks exactly like a deep transport bug. clear_storage() resets the
+// connection-info, liveness, waiter, and notify segments to a clean slate.
+//
+// Why it is safe: this runs at startup, before this app opens its own routes, so
+// there is no live LOCAL peer to evict; the only remote peer — a transient bridge
+// — is designed to reconnect, and a restarted app has fresh channels regardless.
+void clearStaleAgentChannels(const std::string& instanceId)
+{
+	for (const char* base : kAgentChannelBases)
+	{
+		ipc::route::clear_storage(agentChannel(instanceId, base).c_str());
+	}
+}
+
 // Forwards Sourcetrail LogManager messages to a level-tagged sink (0/1/2). The
 // sink applies the agent filter and publishes a LogEvent. See forwardLog().
 class AgentLogger: public Logger
@@ -986,13 +1015,14 @@ struct AgentControlController::Impl
 
 AgentControlController::AgentControlController(
 	StorageAccess* storageAccess, execution::ISchedulers* schedulers, const std::string& instanceId)
-	: m_impl(std::make_unique<Impl>(storageAccess, schedulers, instanceId))
 {
-	// No stale-channel wipe needed: libipc reaps dead-peer connection slots on
-	// connect (dead-connection reaper, thoth-ipc RFC) — the reader route reclaims
-	// phantom bits left by SIGKILLed peers when it attaches, and force_push reaps
-	// on the sender side. This keeps live peers intact (a bridge survives an app
-	// restart), unlike the earlier clear_storage() sledgehammer.
+	// Reset stale shm before the Impl's routes attach (its members connect in the
+	// initializer list, so the wipe cannot move into Impl's own constructor).
+	// Guards against phantom-receiver accumulation across instance-id reuse — see
+	// clearStaleAgentChannels. Relying on the reaper alone is not enough: it skips
+	// the owner-less phantom bits that are exactly the ones left by a killed peer.
+	clearStaleAgentChannels(instanceId);
+	m_impl = std::make_unique<Impl>(storageAccess, schedulers, instanceId);
 }
 
 AgentControlController::~AgentControlController()
