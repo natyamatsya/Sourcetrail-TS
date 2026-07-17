@@ -36,6 +36,12 @@ package enum BuildDriver {
 					"swift", "build",
 					"--package-path", packageRoot.path,
 					"--enable-index-store",
+					// Build test targets too, so their sources get index units
+					// and index semantically instead of falling back to the
+					// syntactic pass. In real library packages the tests are a
+					// large share of the code (e.g. ~45% of swift-syntax), and
+					// users navigate test code as much as source.
+					"--build-tests",
 				],
 				currentDirectory: packageRoot
 			)

@@ -75,6 +75,39 @@ If a Swift-side need ever arises, the route is C interop against
 `turso_shim`'s `tsq_`-prefixed API (same pinned turso_core, no symbol
 collisions) — recorded here so nobody reaches for a second Turso SDK.
 
+**Build test targets too.** `BuildDriver` runs `swift build --build-tests`.
+Plain `swift build` compiles only the library/executable products, so test
+targets get no index units and fall to the syntactic pass — and in real
+library packages the tests are a large share of the code. Measured on
+apple/swift-syntax: without `--build-tests`, 299/544 files were semantic (all
+245 test files syntactic); with it, 544/544. Users navigate test code as much
+as source, so the extra build time is worth it.
+
+## Validation against real projects (2026-07-17)
+
+`swift run index_self <path>` was run against four public packages. All four
+indexed with **zero crashes and 100% semantic file coverage** (after
+`--build-tests`):
+
+| Project | files | nodes | edges | occurrences | note |
+|---------|-------|-------|-------|-------------|------|
+| swift-algorithms | 56 | 1.9k | 8.9k | 15k | pure-generics baseline |
+| swift-composable-architecture | 118 | 7.6k | 33k | 49k | macro-heavy (@Reducer, @ObservableState) |
+| swift-nio | 479 | 23k | 153k | 233k | 65 modules, **84k cross-module edges** |
+| swift-syntax | 544 | 35k | 193k | 263k | generated code + wide protocol trees |
+
+Two properties confirmed with data (via `index_self` module stats + `--grep`):
+- **Cross-module resolution** (NIO): 84,237 of 153k edges cross module
+  boundaries (NIOPosix→NIOCore, NIOHTTP1→NIOCore, tests→their targets). USRs
+  resolve across the whole store, so multi-module packages link correctly.
+  The `<unknown>` module bucket (~1.5% of nodes) is the expected fallback for
+  extensions of external/stdlib types.
+- **Post-expansion macro structure** (TCA): `@ObservableState`-synthesized
+  members are real nodes under the right parent —
+  `ChildState::_$observationRegistrar`, `_$id`, `_$willModify()` and their
+  accessors (93 registrar nodes, 84 `_$id` nodes). IndexStoreDB indexes after
+  macro expansion, so the meaningful post-expansion graph is captured.
+
 **Distributed indexing (P4b) stays intact**: shard producers are whole
 processes with private DBs; this work is orthogonal. SW7 *improves* shard runs
 by striping package-granular commands (today every shard re-indexes every
