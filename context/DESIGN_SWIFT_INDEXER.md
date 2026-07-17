@@ -1,10 +1,10 @@
 # Design: Swift Indexer Parity (SW series)
 
-**Status: SW0–SW5 implemented (2026-07-17) — build revived, transport tested,
+**Status: SW0–SW6 implemented (2026-07-17) — build revived, transport tested,
 package model + build driver landed, semantic core (IndexStoreDB) emitting
 nodes/edges/occurrences, syntactic fallback (SwiftSyntax) + hybrid merge,
 robustness parity (chunking, retry budget), host-side per-package command
-emission; SW6–SW9 planned.**
+emission, K Swift supervisor fan-out; SW7–SW9 planned.**
 The Swift analog of the Rust indexer track: take the transport-complete but
 analysis-empty Swift subprocess (`src/swift_indexer`) to full parity with the
 C++/Rust pipeline, staged like [DESIGN_MULTIGROUP_FANOUT.md](DESIGN_MULTIGROUP_FANOUT.md)
@@ -167,9 +167,18 @@ crate/package; merge dedup keeps it correct but wastes work).
   that nothing reads would be dead plumbing. Land them together with the
   BuildDriver code that consumes them (custom toolchain / read-only-checkout
   index-store override).
-- **SW6 — Fan-out.** `swiftSupervisorCount = min(distinct package roots, 3)`
-  under the tri-state gate; storage-manager vector; generalized
-  `swiftIndexerProcessId = processCount + rustSupervisorCount + 1 + k`.
+- **SW6 — Fan-out (DONE 2026-07-17).** `Project::buildIndex` counts distinct
+  Swift package roots (`swiftPackageCount`) exactly as it counts Rust crate
+  roots, and sets `swiftSupervisorCount = min(count, 3)` under the same
+  tri-state fan-out gate. `TaskBuildIndex` spawns that many Swift supervisor
+  threads, each with its own `IntermediateStorageManagerImpl`
+  (`m_swiftStorageManagers` vector replaced the single manager); the fetch
+  loop iterates the vector. Process ids stay contiguous and non-overlapping:
+  C++ `1..processCount`, Rust `+1..+rustSupervisorCount`, Swift
+  `+rustSupervisorCount+1..+swiftSupervisorCount` via the generalized
+  `swiftIndexerProcessId(processCount, rustSupervisorCount, k)`. The Rust and
+  Swift babysitters already share `runExternalIndexerProcess` (SW4), so each
+  Swift supervisor also has the 200-failure retry budget.
 - **SW7 — Package-granular shard striping (Rust + Swift).** Deterministic
   `pos % N == i-1` stripe over the sorted package-root set when a ShardConfig
   is active; extend `ShardConfigTestSuite` + `scripts/smoke-distributed.sh`.

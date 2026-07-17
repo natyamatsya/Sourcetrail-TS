@@ -9,6 +9,7 @@
 #include "IndexerCommand.h"
 #include "IndexerCommandCustom.h"
 #include "IndexerCommandRust.h"
+#include "IndexerCommandSwift.h"
 #include "MemoryIndexerCommandProvider.h"
 #include "PersistentStorage.h"
 #include "ProjectSettings.h"
@@ -572,6 +573,7 @@ void Project::buildIndex(RefreshInfo info, std::shared_ptr<DialogView> dialogVie
 		std::make_unique<CombinedIndexerCommandProvider>();
 	std::vector<IndexerClusterEntry> cxxClusters;
 	size_t rustCrateCount = 0;
+	size_t swiftPackageCount = 0;
 	for (const std::shared_ptr<SourceGroup>& sourceGroup: m_sourceGroups)
 	{
 		if (sourceGroup->getStatus() == SourceGroupStatusType::ENABLED)
@@ -607,6 +609,30 @@ void Project::buildIndex(RefreshInfo info, std::shared_ptr<DialogView> dialogVie
 						}
 					}
 					rustCrateCount += crateRoots.size();
+
+					indexerCommandProvider->addProvider(
+						std::make_shared<MemoryIndexerCommandProvider>(commands), sourceGroupId);
+					continue;
+				}
+
+				// Swift fan-out (SW6): the analog of the Rust branch —
+				// SourceGroupSwift emits one command per SPM package root, so
+				// distinct working directories are parallelizable Swift
+				// commands. Materialize eagerly to count them.
+				if (language == LanguageType::SWIFT)
+				{
+					std::vector<std::shared_ptr<IndexerCommand>> commands =
+						sourceGroup->getIndexerCommands(info);
+					std::set<std::string> packageRoots;
+					for (const std::shared_ptr<IndexerCommand>& command: commands)
+					{
+						if (const auto* swiftCommand =
+								dynamic_cast<const IndexerCommandSwift*>(command.get()))
+						{
+							packageRoots.insert(swiftCommand->getWorkingDirectory().str());
+						}
+					}
+					swiftPackageCount += packageRoots.size();
 
 					indexerCommandProvider->addProvider(
 						std::make_shared<MemoryIndexerCommandProvider>(commands), sourceGroupId);
@@ -745,6 +771,14 @@ void Project::buildIndex(RefreshInfo info, std::shared_ptr<DialogView> dialogVie
 			rustSupervisorCount = std::min<size_t>(rustCrateCount, 3);
 		}
 
+		// Swift fan-out (SW6): K Swift supervisors, same policy as Rust — hard
+		// cap 3 until a memory/thread-budget policy lands.
+		size_t swiftSupervisorCount = 1;
+		if (fanOutEnabled && swiftPackageCount >= 2)
+		{
+			swiftSupervisorCount = std::min<size_t>(swiftPackageCount, 3);
+		}
+
 		taskParallelIndexing->addChildTasks(std::make_shared<TaskGroupSequence>()->addChildTasks(
 			// block until there are indexer commands to process
 			std::make_shared<TaskDecoratorRepeat>(
@@ -757,7 +791,8 @@ void Project::buildIndex(RefreshInfo info, std::shared_ptr<DialogView> dialogVie
 				dialogView,
 				m_appUUID,
 				cxxClusterPlan,
-				rustSupervisorCount)));
+				rustSupervisorCount,
+				swiftSupervisorCount)));
 
 		// add task for merging the intermediate storages.
 		// Event-driven: TaskMergeStorages blocks on the StorageProvider until enough

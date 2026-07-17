@@ -25,19 +25,20 @@ constexpr bool hasRustLanguagePackage{language_packages::buildRustLanguagePackag
 constexpr bool hasSwiftLanguagePackage{language_packages::buildSwiftLanguagePackage};
 
 // Rust supervisors take the ids right after the C++ range (crate fan-out R1):
-// processCount+1 .. processCount+rustSupervisorCount; Swift follows them.
+// processCount+1 .. processCount+rustSupervisorCount; the Swift supervisors
+// (SW6) follow them: processCount+rustSupervisorCount+1 .. +swiftSupervisorCount.
 [[maybe_unused]] ProcessId rustIndexerProcessId(const size_t processCount, const size_t supervisorIndex)
 {
 	return static_cast<ProcessId>(processCount + 1 + supervisorIndex);
 }
 
 [[maybe_unused]] ProcessId swiftIndexerProcessId(
-	const size_t processCount, const size_t rustSupervisorCount)
+	const size_t processCount, const size_t rustSupervisorCount, const size_t supervisorIndex)
 {
 	if constexpr (hasRustLanguagePackage)
-		return static_cast<ProcessId>(processCount + rustSupervisorCount + 1);
+		return static_cast<ProcessId>(processCount + rustSupervisorCount + 1 + supervisorIndex);
 
-	return static_cast<ProcessId>(processCount + 1);
+	return static_cast<ProcessId>(processCount + 1 + supervisorIndex);
 }
 
 enum class IndexerProcessErrorCode
@@ -135,18 +136,25 @@ TaskBuildIndex::TaskBuildIndex(
 	std::shared_ptr<DialogView> dialogView,
 	const std::string& appUUID,
 	const std::vector<IndexerClusterEntry>& cxxClusterPlan,
-	size_t rustSupervisorCount)
+	size_t rustSupervisorCount,
+	size_t swiftSupervisorCount)
 	: m_storageProvider(storageProvider)
 	, m_dialogView(dialogView)
 	, m_appUUID(appUUID)
 	, m_interprocessIndexingStatusManager(appUUID, ProcessId::NONE, true)
 	, m_processCount(processCount)
 	, m_rustSupervisorCount(rustSupervisorCount > 0 ? rustSupervisorCount : 1)
+	, m_swiftSupervisorCount(swiftSupervisorCount > 0 ? swiftSupervisorCount : 1)
 {
 	if (m_rustSupervisorCount > 1)
 	{
 		LOG_INFO_STREAM(
 			<< "rust crate fan-out: " << m_rustSupervisorCount << " supervisors");
+	}
+	if (m_swiftSupervisorCount > 1)
+	{
+		LOG_INFO_STREAM(
+			<< "swift package fan-out: " << m_swiftSupervisorCount << " supervisors");
 	}
 	if (cxxClusterPlan.empty())
 		return;
@@ -233,13 +241,21 @@ void TaskBuildIndex::doEnter(std::shared_ptr<Blackboard> blackboard)
 		}
 	}
 
+	// Start the Swift indexer supervisors (SW6): the analog of the Rust loop,
+	// with ids following the Rust supervisors so each has its own storage
+	// channel.
 	if constexpr (hasSwiftLanguagePackage)
 	{
-		const ProcessId swiftProcessId{swiftIndexerProcessId(m_processCount, m_rustSupervisorCount)};
-		m_swiftStorageManager = std::make_shared<IntermediateStorageManagerImpl>(
-			m_appUUID, swiftProcessId, true);
-		m_runningThreadCount++;
-		m_processThreads.emplace_back(&TaskBuildIndex::runSwiftIndexerProcess, this, swiftProcessId, logFilePath);
+		for (size_t k = 0; k < m_swiftSupervisorCount; k++)
+		{
+			const ProcessId swiftProcessId{
+				swiftIndexerProcessId(m_processCount, m_rustSupervisorCount, k)};
+			m_swiftStorageManagers.push_back(std::make_shared<IntermediateStorageManagerImpl>(
+				m_appUUID, swiftProcessId, true));
+			m_runningThreadCount++;
+			m_processThreads.emplace_back(
+				&TaskBuildIndex::runSwiftIndexerProcess, this, swiftProcessId, logFilePath);
+		}
 	}
 
 	blackboard->set<bool>("indexer_threads_started", true);
@@ -698,8 +714,12 @@ bool TaskBuildIndex::fetchIntermediateStorages(std::shared_ptr<Blackboard> black
 		std::shared_ptr<IntermediateStorageManagerImpl> storageManager;
 		if constexpr (hasSwiftLanguagePackage)
 		{
-			if (m_swiftStorageManager && finishedProcessId == m_swiftStorageManager->getProcessId())
-				storageManager = m_swiftStorageManager;
+			for (const auto& swiftManager: m_swiftStorageManagers)
+				{
+					if (!storageManager && swiftManager &&
+						finishedProcessId == swiftManager->getProcessId())
+						storageManager = swiftManager;
+				}
 		}
 		if constexpr (hasRustLanguagePackage)
 		{
@@ -749,11 +769,14 @@ bool TaskBuildIndex::fetchIntermediateStorages(std::shared_ptr<Blackboard> black
 		}
 		if constexpr (hasSwiftLanguagePackage)
 		{
-			if (m_swiftStorageManager && m_swiftStorageManager->peekCount() > 0)
-			{
-				LOG_INFO_STREAM(<< m_swiftStorageManager->getProcessId() << " - unsignaled swift storage");
-				drained.push_back(m_swiftStorageManager->popIntermediateStorage());
-			}
+			for (const auto& swiftManager: m_swiftStorageManagers)
+				{
+					if (swiftManager && swiftManager->peekCount() > 0)
+					{
+						LOG_INFO_STREAM(<< swiftManager->getProcessId() << " - unsignaled swift storage");
+						drained.push_back(swiftManager->popIntermediateStorage());
+					}
+				}
 		}
 	}
 
