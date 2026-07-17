@@ -234,13 +234,66 @@ package final class SwiftIndexerStorageChannel {
 			)
 		}
 
-		let nodesOffset = builder.createVector(ofOffsets: [Offset]())
+		let nodeOffsets = storage.nodes.map { node in
+			let nameOffset = builder.create(string: node.serializedName)
+			return Sourcetrail_Ipc_StorageNode.createStorageNode(
+				&builder,
+				id: node.id,
+				type: node.type,
+				serializedNameOffset: nameOffset
+			)
+		}
+		let edgeOffsets = storage.edges.map { edge in
+			Sourcetrail_Ipc_StorageEdge.createStorageEdge(
+				&builder,
+				id: edge.id,
+				type: edge.type,
+				sourceNodeId: edge.sourceNodeId,
+				targetNodeId: edge.targetNodeId
+			)
+		}
+		let symbolOffsets = storage.symbols.map { symbol in
+			Sourcetrail_Ipc_StorageSymbol.createStorageSymbol(
+				&builder,
+				id: symbol.id,
+				definitionKind: symbol.definitionKind
+			)
+		}
+		let locationOffsets = storage.sourceLocations.map { location in
+			Sourcetrail_Ipc_StorageSourceLocation.createStorageSourceLocation(
+				&builder,
+				id: location.id,
+				fileNodeId: location.fileNodeId,
+				startLine: location.startLine,
+				startCol: location.startCol,
+				endLine: location.endLine,
+				endCol: location.endCol,
+				type: location.type
+			)
+		}
+		let localSymbolOffsets = storage.localSymbols.map { localSymbol in
+			let nameOffset = builder.create(string: localSymbol.name)
+			return Sourcetrail_Ipc_StorageLocalSymbol.createStorageLocalSymbol(
+				&builder,
+				id: localSymbol.id,
+				nameOffset: nameOffset
+			)
+		}
+		let occurrenceOffsets = storage.occurrences.map { occurrence in
+			Sourcetrail_Ipc_StorageOccurrence.createStorageOccurrence(
+				&builder,
+				elementId: occurrence.elementId,
+				sourceLocationId: occurrence.sourceLocationId
+			)
+		}
+
+		let nodesOffset = builder.createVector(ofOffsets: nodeOffsets)
 		let filesOffset = builder.createVector(ofOffsets: fileOffsets)
-		let edgesOffset = builder.createVector(ofOffsets: [Offset]())
-		let symbolsOffset = builder.createVector(ofOffsets: [Offset]())
-		let sourceLocationsOffset = builder.createVector(ofOffsets: [Offset]())
-		let localSymbolsOffset = builder.createVector(ofOffsets: [Offset]())
-		let occurrencesOffset = builder.createVector(ofOffsets: [Offset]())
+		let edgesOffset = builder.createVector(ofOffsets: edgeOffsets)
+		let symbolsOffset = builder.createVector(ofOffsets: symbolOffsets)
+		let sourceLocationsOffset = builder.createVector(ofOffsets: locationOffsets)
+		let localSymbolsOffset = builder.createVector(ofOffsets: localSymbolOffsets)
+		let occurrencesOffset = builder.createVector(ofOffsets: occurrenceOffsets)
 		let componentAccessesOffset = builder.createVector(ofOffsets: [Offset]())
 		let errorsOffset = builder.createVector(ofOffsets: errorOffsets)
 

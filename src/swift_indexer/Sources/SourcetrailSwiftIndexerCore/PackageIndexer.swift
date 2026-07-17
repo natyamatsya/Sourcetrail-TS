@@ -1,9 +1,8 @@
 import Foundation
 
-// SW1 pipeline for one command: project model → build → files + errors.
-// The semantic (IndexStoreDB) and syntactic (SwiftSyntax) passes of the
-// hybrid engine slot in behind this in SW2/SW3; until then every source file
-// is reported incomplete so a refresh re-indexes it once the engine lands.
+// Hybrid pipeline for one command: project model → build → semantic pass
+// (IndexStoreDB) over files with fresh index units → remaining files fall
+// back (SW3: SwiftSyntax decl walk; until then: incomplete file rows).
 
 package enum PackageIndexer {
 	package static func index(
@@ -11,57 +10,62 @@ package enum PackageIndexer {
 		onFile: (String) -> Void
 	) -> OwnedIntermediateStorage {
 		let packageRoot = URL(fileURLWithPath: workingDirectory)
-		var storage = OwnedIntermediateStorage()
+		let builder = StorageBuilder()
 
 		let model = PackageModelLoader.load(packageRoot: packageRoot)
 		if let reason = model.fallbackReason {
-			storage.errors.append(
-				OwnedStorageError(
-					id: storage.allocateId(),
-					message: "package model fallback (single synthetic module): \(reason)",
-					translationUnit: workingDirectory,
-					fatal: false
-				)
+			builder.recordError(
+				message: "package model fallback (single synthetic module): \(reason)",
+				translationUnit: workingDirectory
 			)
 		}
 
 		let build = BuildDriver.build(packageRoot: packageRoot)
 		for diagnostic in build.diagnostics where diagnostic.severity == .error {
-			storage.errors.append(
-				OwnedStorageError(
-					id: storage.allocateId(),
-					message: diagnostic.message
-						+ " [\(diagnostic.filePath):\(diagnostic.line):\(diagnostic.column)]",
-					translationUnit: diagnostic.filePath,
-					fatal: false
-				)
+			builder.recordError(
+				message: diagnostic.message
+					+ " [\(diagnostic.filePath):\(diagnostic.line):\(diagnostic.column)]",
+				translationUnit: diagnostic.filePath
 			)
 		}
 		if !build.succeeded && build.diagnostics.isEmpty {
-			storage.errors.append(
-				OwnedStorageError(
-					id: storage.allocateId(),
-					message: "swift build failed: \(build.rawOutputTail.suffix(500))",
-					translationUnit: workingDirectory,
-					fatal: false
-				)
+			builder.recordError(
+				message: "swift build failed: \(build.rawOutputTail.suffix(500))",
+				translationUnit: workingDirectory
 			)
 		}
 
-		for filePath in model.allSourceFiles {
-			onFile(filePath)
-			storage.files.append(
-				OwnedStorageFile(
-					id: storage.allocateId(),
-					filePath: filePath,
-					// complete=false until the hybrid engine emits symbols
-					// (SW2/SW3): the app's refresh then re-indexes these files
-					// instead of trusting an empty result forever.
-					complete: false
-				)
+		// Semantic pass over every file with an up-to-date unit — including
+		// stale-build survivors: units from an older successful build of
+		// UNCHANGED files are still exact.
+		let allFiles = model.allSourceFiles
+		var covered: Set<String> = []
+		do {
+			let semantic = try SemanticIndexer(
+				storePath: build.indexStorePath,
+				databasePath: packageRoot
+					.appendingPathComponent(".build/sourcetrail-indexstore-db"),
+				builder: builder
+			)
+			for path in semantic.coveredFiles(of: allFiles) {
+				onFile(path)
+				semantic.indexFile(path: path)
+				covered.insert(path)
+			}
+		} catch {
+			builder.recordError(
+				message: "semantic index unavailable: \(error)",
+				translationUnit: workingDirectory
 			)
 		}
 
-		return storage
+		// Not covered semantically → SW3 syntactic fallback; until it lands,
+		// an incomplete file row keeps the app re-indexing the file later.
+		for path in allFiles where !covered.contains(path) {
+			onFile(path)
+			builder.appendPlainFile(path: path, complete: false)
+		}
+
+		return builder.storage
 	}
 }

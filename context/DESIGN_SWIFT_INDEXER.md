@@ -1,7 +1,8 @@
 # Design: Swift Indexer Parity (SW series)
 
-**Status: SW0+SW1 implemented (2026-07-17) — build revived, transport tested,
-package model + build driver + diagnostics + per-file progress landed; SW2–SW9 planned.**
+**Status: SW0–SW2 implemented (2026-07-17) — build revived, transport tested,
+package model + build driver landed, semantic core (IndexStoreDB) emitting
+nodes/edges/occurrences; SW3–SW9 planned.**
 The Swift analog of the Rust indexer track: take the transport-complete but
 analysis-empty Swift subprocess (`src/swift_indexer`) to full parity with the
 C++/Rust pipeline, staged like [DESIGN_MULTIGROUP_FANOUT.md](DESIGN_MULTIGROUP_FANOUT.md)
@@ -86,11 +87,22 @@ crate/package; merge dedup keeps it correct but wastes work).
   bookkeeping, analog of `status.rs`), StorageFile rows (`complete=false`
   until the engine lands, so refresh upgrades them). Verified end-to-end by
   an integration test that builds a broken fixture package.
-- **SW2 — Semantic core (the centerpiece).** IndexStoreDB; StorageBuilder
-  ports id allocation, node/edge dedup, and name encoders from
-  `collector.rs`. Definitions first, then references. Known hard part:
-  USR→hierarchy for parents never defined in any record (extensions of
-  external types) → module-qualified flat-name fallback.
+- **SW2 — Semantic core (DONE 2026-07-17).** `indexstore-db` pinned by
+  revision (`c993f4fb`, Swift 6.4). `StorageBuilder` ports the collector's
+  dedup discipline (nodes by serialized name with placeholder-kind upgrade,
+  edges by type+endpoints, files by path); `SemanticIndexer` walks
+  `symbolOccurrences(inFilePath:)` per covered file — definitions emit
+  node+symbol+member-edge (+override edges from relations), references emit
+  call/inheritance/type-usage/usage/import edges with the containing symbol
+  resolved from calledBy/containedBy/baseOf relations. USR→hierarchy resolves
+  parents recursively via the childOf relation on the parent's canonical
+  definition, memoized, with extensions redirected to the extended type via
+  `occurrences(relatedToUSR:.extendedBy)` and unresolvable parents degrading
+  to module-qualified names. Coverage = `dateOfLatestUnitFor(filePath:)` ≥
+  source mtime, so unchanged files keep semantic data across a broken build.
+  Token extents approximate: the store has no end column; the base identifier
+  length is used. Verified by a golden fixture test (class/protocol/
+  inheritance/conformance/call/member + occurrence locations).
 - **SW3 — Syntactic fallback + merge.** SwiftSyntax; HybridMerger implements
   the coverage set and freshness rule above. Cross-engine test: syntactic and
   semantic name spellings must match exactly or nodes fork.
