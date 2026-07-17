@@ -122,4 +122,81 @@ import Testing
 			edgeTargets(ofType: EdgeKind.typeUsage, from: s.id, in: storage)
 				.contains { $0.hasSuffix("Int") })
 	}
+
+	// SW11 (type arguments): `Base<Arg>` use sites become EDGE_TYPE_ARGUMENT,
+	// gated by specialization scope. `local` keeps only applications whose base
+	// type is defined in the package (Box), suppressing stdlib containers (Array).
+	private func typeArgFixture() throws -> URL {
+		let root = FileManager.default.temporaryDirectory
+			.appendingPathComponent("sw11-arg-\(UUID().uuidString)")
+		let sources = root.appendingPathComponent("Sources/Demo")
+		try FileManager.default.createDirectory(at: sources, withIntermediateDirectories: true)
+		try """
+			// swift-tools-version: 6.0
+			import PackageDescription
+			let package = Package(
+				name: "demo",
+				targets: [.target(name: "Demo", path: "Sources/Demo")]
+			)
+			""".write(to: root.appendingPathComponent("Package.swift"), atomically: true, encoding: .utf8)
+		try """
+			public struct Box<Wrapped> {
+				public let wrapped: Wrapped
+			}
+
+			public struct Holder {
+				public let localBox: Box<Int>
+				public let stdlib: Array<Int>
+			}
+			""".write(to: sources.appendingPathComponent("Args.swift"), atomically: true, encoding: .utf8)
+		return root
+	}
+
+	@Test func typeArgumentsLocalScopeKeepsPackageBaseOnly() throws {
+		let root = try typeArgFixture()
+		defer { try? FileManager.default.removeItem(at: root) }
+
+		let storage = PackageIndexer.index(
+			workingDirectory: root.path, specializationScope: .local) { _ in }
+		#expect(storage.errors.isEmpty)
+
+		let holder = try #require(node(named: "Demo::Holder", in: storage))
+		let localBox = try #require(node(named: "Demo::Holder::localBox", in: storage))
+		let stdlib = try #require(node(named: "Demo::Holder::stdlib", in: storage))
+		_ = holder
+
+		// Box<Int>: base Box is local → Int becomes a TYPE_ARGUMENT of `localBox`.
+		#expect(
+			edgeTargets(ofType: EdgeKind.typeArgument, from: localBox.id, in: storage)
+				.contains { $0.hasSuffix("Int") })
+		// Array<Int>: base Array is stdlib → no type-argument edge under `local`;
+		// Int stays a plain type usage.
+		#expect(edgeTargets(ofType: EdgeKind.typeArgument, from: stdlib.id, in: storage).isEmpty)
+	}
+
+	@Test func typeArgumentsAllScopeIncludesStdlibBase() throws {
+		let root = try typeArgFixture()
+		defer { try? FileManager.default.removeItem(at: root) }
+
+		let storage = PackageIndexer.index(
+			workingDirectory: root.path, specializationScope: .all) { _ in }
+		#expect(storage.errors.isEmpty)
+
+		let stdlib = try #require(node(named: "Demo::Holder::stdlib", in: storage))
+		// Under `all`, even Array<Int> emits the type-argument edge.
+		#expect(
+			edgeTargets(ofType: EdgeKind.typeArgument, from: stdlib.id, in: storage)
+				.contains { $0.hasSuffix("Int") })
+	}
+
+	@Test func typeArgumentsOffScopeEmitsNone() throws {
+		let root = try typeArgFixture()
+		defer { try? FileManager.default.removeItem(at: root) }
+
+		let storage = PackageIndexer.index(
+			workingDirectory: root.path, specializationScope: .off) { _ in }
+		#expect(storage.errors.isEmpty)
+
+		#expect(storage.edges.allSatisfy { $0.type != EdgeKind.typeArgument })
+	}
 }

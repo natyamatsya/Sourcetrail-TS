@@ -32,6 +32,11 @@ public:
 	FilePath getSwiftIndexStorePathExpandedAndAbsolute() const;
 	void setSwiftIndexStorePath(const FilePath& path);
 
+	// Type-argument edge scope for `Base<Arg>` use sites (SW11):
+	// "off" / "local" / "all" (empty defaults to "local" in the subprocess).
+	const std::string& getSwiftSpecializationScope() const;
+	void setSwiftSpecializationScope(const std::string& scope);
+
 protected:
 	bool equals(const SourceGroupSettingsBase* other) const override;
 
@@ -42,6 +47,7 @@ private:
 	std::vector<std::string> m_swiftBuildArgs;
 	FilePath m_swiftToolchainPath;
 	FilePath m_swiftIndexStorePath;
+	std::string m_swiftSpecializationScope;
 };
 
 #endif	  // SOURCE_GROUP_SETTINGS_WITH_SWIFT_OPTIONS_H

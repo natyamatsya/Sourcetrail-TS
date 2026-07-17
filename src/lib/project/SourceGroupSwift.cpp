@@ -85,11 +85,13 @@ std::vector<std::shared_ptr<IndexerCommand>> SourceGroupSwift::getIndexerCommand
 	const std::vector<std::string> buildArgs = m_settings->getSwiftBuildArgs();
 	const std::string toolchainPath = m_settings->getSwiftToolchainPathExpandedAndAbsolute().str();
 	const std::string indexStorePath = m_settings->getSwiftIndexStorePathExpandedAndAbsolute().str();
+	const std::string specializationScope = m_settings->getSwiftSpecializationScope();
 
 	auto makeCommand = [&](const FilePath& packageRoot) {
 		// The source file path doubles as the status-tracking key.
 		return std::make_shared<IndexerCommandSwift>(
-			packageRoot, indexedPaths, packageRoot, buildArgs, toolchainPath, indexStorePath);
+			packageRoot, indexedPaths, packageRoot, buildArgs, toolchainPath, indexStorePath,
+			specializationScope);
 	};
 
 	// One command per SPM package root, so K Swift supervisors index packages

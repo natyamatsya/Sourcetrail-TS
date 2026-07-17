@@ -14,13 +14,15 @@ IndexerCommandSwift::IndexerCommandSwift(
 	const FilePath& workingDirectory,
 	const std::vector<std::string>& buildArgs,
 	const std::string& toolchainPath,
-	const std::string& indexStorePath)
+	const std::string& indexStorePath,
+	const std::string& specializationScope)
 	: IndexerCommand(sourceFilePath)
 	, m_indexedPaths(indexedPaths)
 	, m_workingDirectory(workingDirectory)
 	, m_buildArgs(buildArgs)
 	, m_toolchainPath(toolchainPath)
 	, m_indexStorePath(indexStorePath)
+	, m_specializationScope(specializationScope)
 {
 }
 
@@ -54,6 +56,11 @@ const std::string& IndexerCommandSwift::getIndexStorePath() const
 	return m_indexStorePath;
 }
 
+const std::string& IndexerCommandSwift::getSpecializationScope() const
+{
+	return m_specializationScope;
+}
+
 QJsonObject IndexerCommandSwift::doSerialize() const
 {
 	QJsonObject obj = IndexerCommand::doSerialize();
@@ -70,6 +77,7 @@ QJsonObject IndexerCommandSwift::doSerialize() const
 	obj["swift_build_args"] = buildArgs;
 	obj["swift_toolchain_path"] = QString::fromStdString(m_toolchainPath);
 	obj["swift_index_store_path"] = QString::fromStdString(m_indexStorePath);
+	obj["swift_specialization_scope"] = QString::fromStdString(m_specializationScope);
 
 	return obj;
 }

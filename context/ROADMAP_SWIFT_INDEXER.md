@@ -42,7 +42,7 @@ isolation, attribute-driven relations, macros, and API-surface metadata.
 
 | Stage | What | State |
 |-------|------|-------|
-| SW11 | Generic-parameter tier + constraints (the Rust-lifetime analog) | ✅ core done (nodes + bounds); type-argument use-sites deferred |
+| SW11 | Generic-parameter tier + constraints + type-argument use-sites (the Rust-lifetime analog) | ✅ done |
 | SW12 | Protocol conformance fidelity: witnesses, conditional/retroactive, default impls | 📋 planned |
 | SW13 | Concurrency model: actor identity, global-actor isolation, `async`, `Sendable` | 📋 planned |
 | SW14 | Attribute-driven relations: property wrappers + result builders | 📋 planned |
@@ -115,7 +115,25 @@ constraint positions so the bound attaches to the parameter. Swift has no
 dedicated index symbol kind for generic params, so `StorageBuilder.setNodeType`
 forces `typeParameter` at the authoritative declaration. Covered by
 `GenericsTests` (syntactic members; semantic params + inline/where/same-type
-bounds). **Deferred within SW11:** type-argument use-sites (below).
+bounds).
+
+**Type-argument use-sites landed 2026-07-18.** `GenericArgMap` (also in
+`GenericSyntax.swift`) maps each direct type argument's base-identifier position
+to its generic base type's position. The semantic pass builds a per-file
+position→symbol index and, at a type-argument site, emits `EDGE_TYPE_ARGUMENT`
+from the enclosing declaration to the argument (replacing the plain
+`EDGE_TYPE_USAGE`) instead — gated by a tri-state **specialization scope**:
+`off` (none), `all` (every application), `local` (default — only applications
+whose base type has a non-system definition, so stdlib containers like
+`Array<Int>` don't flood the graph). The scope is a real end-to-end knob,
+plumbed exactly like the SW5 options: `swift_specialization_scope` in
+`indexer_command.fbs`, round-tripped through all three pop-rewrites (each with a
+test), a `SourceGroupSettingsWithSwiftOptions` field, host emission in
+`SourceGroupSwift`, and an Off/Local/All combo in the GUI wizard. Uses the
+existing `EDGE_TYPE_ARGUMENT` wire kind — no schema change. Covered by
+`GenericsTests` (local keeps package base only; all includes stdlib; off emits
+none). Sugar forms (`[Int]`, `T?`) have no written base token and stay plain
+type usages (documented limitation).
 
 The direct analog of Rust lifetimes, and the biggest single parity gap.
 

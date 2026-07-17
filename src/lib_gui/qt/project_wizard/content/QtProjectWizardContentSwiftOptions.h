@@ -5,6 +5,7 @@
 
 #include "QtProjectWizardContent.h"
 
+class QComboBox;
 class QLineEdit;
 class QtLocationPicker;
 class SourceGroupSettingsWithSwiftOptions;
@@ -33,6 +34,7 @@ private:
 	QLineEdit* m_buildArgs = nullptr;
 	QtLocationPicker* m_toolchainPath = nullptr;
 	QtLocationPicker* m_indexStorePath = nullptr;
+	QComboBox* m_specializationScope = nullptr;
 };
 
 #endif	  // QT_PROJECT_WIZARD_CONTENT_SWIFT_OPTIONS_H

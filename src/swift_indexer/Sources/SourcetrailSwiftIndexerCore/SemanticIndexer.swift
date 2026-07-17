@@ -26,8 +26,26 @@ final class SemanticIndexer {
 	/// SW11: resolved target of each constraint reference, keyed by position.
 	/// Reset per file.
 	private var refTargetByPos: [SyntaxPos: (parts: [String], kind: Int32)] = [:]
+	/// SW11 (type arguments): whether/where generic use sites emit
+	/// EDGE_TYPE_ARGUMENT.
+	private let specializationScope: SpecializationScope
+	/// SW11: per-file type-argument sites (arg pos → base pos). Nil when the scope
+	/// is `off`. Set per file.
+	private var genericArgMap: GenericArgMap?
+	/// SW11: symbol at each occurrence position in the current file — the base
+	/// type of a `Base<Arg>` application, for the `local` locality check. Reset
+	/// per file.
+	private var symbolByPos: [SyntaxPos: Symbol] = [:]
+	/// SW11: memoized base-type locality (non-system definition) by USR.
+	private var localityByUsr: [String: Bool] = [:]
 
-	init(storePath: URL, databasePath: URL, builder: StorageBuilder, toolchainPath: String = "") throws {
+	init(
+		storePath: URL,
+		databasePath: URL,
+		builder: StorageBuilder,
+		toolchainPath: String = "",
+		specializationScope: SpecializationScope = .local
+	) throws {
 		let library = try IndexStoreLibrary(
 			dylibPath: Toolchain.libIndexStorePath(toolchainPath: toolchainPath))
 		self.index = try IndexStoreDB(
@@ -39,6 +57,7 @@ final class SemanticIndexer {
 		)
 		index.pollForUnitChangesAndWait(isInitialScan: true)
 		self.builder = builder
+		self.specializationScope = specializationScope
 	}
 
 	/// The subset of `sourceFiles` with an up-to-date index unit.
@@ -60,13 +79,24 @@ final class SemanticIndexer {
 		// facts. Semantic coverage means the file compiled, so it parses too.
 		scopeMap = DeclScopeMap.build(path: path)
 		genericMap = GenericParamMap.build(path: path)
+		genericArgMap = specializationScope == .off ? nil : GenericArgMap.build(path: path)
 		defPartsByPos.removeAll(keepingCapacity: true)
 		refTargetByPos.removeAll(keepingCapacity: true)
+		symbolByPos.removeAll(keepingCapacity: true)
 		defer {
 			scopeMap = nil
 			genericMap = nil
+			genericArgMap = nil
 		}
-		for occurrence in index.symbolOccurrences(inFilePath: path) {
+		let occurrences = index.symbolOccurrences(inFilePath: path)
+		// SW11: index the file's occurrences by position so a type argument can
+		// look up the symbol of its generic base for the `local` scope gate.
+		if genericArgMap != nil {
+			for occurrence in occurrences {
+				symbolByPos[positionOf(occurrence.location)] = occurrence.symbol
+			}
+		}
+		for occurrence in occurrences {
 			process(occurrence: occurrence, filePath: path, fileNodeId: fileNodeId)
 		}
 		// SW11: with all definitions and constraint targets resolved for this
@@ -145,6 +175,11 @@ final class SemanticIndexer {
 		}
 		let targetId = builder.nodeId(parts: targetParts, kind: targetKind)
 
+		// SW11: a direct type argument of a generic application (`Box<Int>`) is an
+		// EDGE_TYPE_ARGUMENT rather than a plain TYPE_USAGE, gated by scope. `local`
+		// keeps it only when the base type (`Box`) is defined outside the SDK.
+		let forceTypeArgument = isTypeArgumentEdge(at: position)
+
 		// The containing symbol comes from the occurrence's relations.
 		var sourceId: Int64?
 		var isBaseOf = false
@@ -171,6 +206,8 @@ final class SemanticIndexer {
 			edgeType = EdgeKind.inheritance
 		} else if isCall {
 			edgeType = EdgeKind.call
+		} else if forceTypeArgument {
+			edgeType = EdgeKind.typeArgument
 		} else if symbol.kind == .module {
 			edgeType = EdgeKind.import_
 		} else if isTypeKind(symbol.kind) {
@@ -216,6 +253,38 @@ final class SemanticIndexer {
 	// store's positions and the SwiftSyntax maps (SW10/SW11).
 	private func positionOf(_ location: SymbolLocation) -> SyntaxPos {
 		SyntaxPos(line: Int(max(location.line, 1)), column: Int(max(location.utf8Column, 1)))
+	}
+
+	// SW11: whether a reference at `position` is a direct type argument that
+	// should become an EDGE_TYPE_ARGUMENT under the current scope. `all` accepts
+	// every application; `local` requires the generic base to be non-system.
+	private func isTypeArgumentEdge(at position: SyntaxPos) -> Bool {
+		guard let basePos = genericArgMap?.base(of: position) else {
+			return false
+		}
+		switch specializationScope {
+		case .off: return false
+		case .all: return true
+		case .local: return baseIsLocal(basePos)
+		}
+	}
+
+	// A generic base type is "local" when it has a definition outside the SDK /
+	// standard library — i.e. in the indexed package or one of its SPM deps. This
+	// keeps stdlib containers (Array, Optional, Dictionary) from emitting a type
+	// argument edge for every instantiation.
+	private func baseIsLocal(_ basePos: SyntaxPos) -> Bool {
+		guard let baseSymbol = symbolByPos[basePos] else {
+			return false
+		}
+		if let cached = localityByUsr[baseSymbol.usr] {
+			return cached
+		}
+		let local = index
+			.occurrences(ofUSR: baseSymbol.usr, roles: [.definition, .declaration])
+			.contains { !$0.location.isSystem }
+		localityByUsr[baseSymbol.usr] = local
+		return local
 	}
 
 	// SW11: materialize the generic-parameter tier for this file. Each param is a

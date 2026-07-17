@@ -28,6 +28,7 @@ enum EdgeKind {
 	static let call: Int32 = 1 << 3
 	static let inheritance: Int32 = 1 << 4
 	static let override_: Int32 = 1 << 5
+	static let typeArgument: Int32 = 1 << 6
 	static let import_: Int32 = 1 << 9
 }
 

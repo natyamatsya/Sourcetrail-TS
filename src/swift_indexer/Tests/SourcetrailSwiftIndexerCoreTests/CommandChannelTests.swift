@@ -28,7 +28,8 @@ private func makeCommand(
 		restrictToPackage: type == .rust,
 		swiftBuildArgs: type == .swift ? ["--configuration", "release"] : [],
 		swiftToolchainPath: type == .swift ? "/opt/swift-6.1" : "",
-		swiftIndexStorePath: type == .swift ? "/build/index/store" : ""
+		swiftIndexStorePath: type == .swift ? "/build/index/store" : "",
+		swiftSpecializationScope: type == .swift ? "all" : ""
 	)
 }
 
@@ -51,6 +52,7 @@ private func makeCommand(
 		#expect(poppedCommand.buildArgs == ["--configuration", "release"])
 		#expect(poppedCommand.toolchainPath == "/opt/swift-6.1")
 		#expect(poppedCommand.indexStorePath == "/build/index/store")
+		#expect(poppedCommand.specializationScope == "all")
 
 		let rewritten = try #require(replacement)
 		let queue = try #require(SwiftIndexerCommandChannel.decodeQueue(rewritten))

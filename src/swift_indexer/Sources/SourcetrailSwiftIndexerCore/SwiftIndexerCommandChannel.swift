@@ -9,19 +9,23 @@ package struct SwiftIndexerCommand {
 	package let buildArgs: [String]
 	package let toolchainPath: String
 	package let indexStorePath: String
+	// SW11 type-argument edge scope ("off"/"local"/"all"; empty = "local").
+	package let specializationScope: String
 
 	package init(
 		sourceFilePath: String,
 		workingDirectory: String,
 		buildArgs: [String] = [],
 		toolchainPath: String = "",
-		indexStorePath: String = ""
+		indexStorePath: String = "",
+		specializationScope: String = ""
 	) {
 		self.sourceFilePath = sourceFilePath
 		self.workingDirectory = workingDirectory
 		self.buildArgs = buildArgs
 		self.toolchainPath = toolchainPath
 		self.indexStorePath = indexStorePath
+		self.specializationScope = specializationScope
 	}
 }
 
@@ -88,7 +92,8 @@ package final class SwiftIndexerCommandChannel {
 			workingDirectory: selected.workingDirectory,
 			buildArgs: selected.swiftBuildArgs,
 			toolchainPath: selected.swiftToolchainPath,
-			indexStorePath: selected.swiftIndexStorePath
+			indexStorePath: selected.swiftIndexStorePath,
+			specializationScope: selected.swiftSpecializationScope
 		)
 		return (replacement: rewrittenQueue, result: swiftCommand)
 	}
@@ -136,6 +141,9 @@ package final class SwiftIndexerCommandChannel {
 			let swiftIndexStorePathOffset = command.swiftIndexStorePath.isEmpty
 				? Offset()
 				: builder.create(string: command.swiftIndexStorePath)
+			let swiftSpecializationScopeOffset = command.swiftSpecializationScope.isEmpty
+				? Offset()
+				: builder.create(string: command.swiftSpecializationScope)
 
 			return Sourcetrail_Ipc_IndexerCommand.createIndexerCommand(
 				&builder,
@@ -156,7 +164,8 @@ package final class SwiftIndexerCommandChannel {
 				restrictToPackage: command.restrictToPackage,
 				swiftBuildArgsVectorOffset: swiftBuildArgsOffset,
 				swiftToolchainPathOffset: swiftToolchainPathOffset,
-				swiftIndexStorePathOffset: swiftIndexStorePathOffset
+				swiftIndexStorePathOffset: swiftIndexStorePathOffset,
+				swiftSpecializationScopeOffset: swiftSpecializationScopeOffset
 			)
 		}
 
@@ -192,6 +201,7 @@ struct OwnedIndexerCommand {
 	let swiftBuildArgs: [String]
 	let swiftToolchainPath: String
 	let swiftIndexStorePath: String
+	let swiftSpecializationScope: String
 
 	init(
 		type: Sourcetrail_Ipc_IndexerCommandType,
@@ -211,7 +221,8 @@ struct OwnedIndexerCommand {
 		restrictToPackage: Bool = false,
 		swiftBuildArgs: [String] = [],
 		swiftToolchainPath: String = "",
-		swiftIndexStorePath: String = ""
+		swiftIndexStorePath: String = "",
+		swiftSpecializationScope: String = ""
 	) {
 		self.type = type
 		self.sourceFilePath = sourceFilePath
@@ -231,6 +242,7 @@ struct OwnedIndexerCommand {
 		self.swiftBuildArgs = swiftBuildArgs
 		self.swiftToolchainPath = swiftToolchainPath
 		self.swiftIndexStorePath = swiftIndexStorePath
+		self.swiftSpecializationScope = swiftSpecializationScope
 	}
 
 	init(from command: Sourcetrail_Ipc_IndexerCommand) {
@@ -252,5 +264,6 @@ struct OwnedIndexerCommand {
 		swiftBuildArgs = command.swiftBuildArgs.map { $0 ?? "" }
 		swiftToolchainPath = command.swiftToolchainPath ?? ""
 		swiftIndexStorePath = command.swiftIndexStorePath ?? ""
+		swiftSpecializationScope = command.swiftSpecializationScope ?? ""
 	}
 }
