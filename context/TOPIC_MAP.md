@@ -343,6 +343,8 @@ what has landed since. Ordered oldest→newest within each topic. Hashes are
 - `e6680e880` cxx: unconditionally inject system includes and use default compiler for resource-dir reso
 
 ### swift-indexer (4)
+Parity plan: [DESIGN_SWIFT_INDEXER.md](DESIGN_SWIFT_INDEXER.md) (SW series;
+SW0 build revival landed 2026-07-17).
 - `80d6e94b7` swift: add Swift language package support with external indexer process
 - `362151f04` swift: add Swift language package infrastructure with empty source group support
 - `ed521e809` swift: add FlatBuffers schema generation and Swift Package Manager integration

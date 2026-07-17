@@ -54,14 +54,16 @@
 			"name": "apple-clang-presets",
 			"cacheVariables": {
 				"CMAKE_C_COMPILER": "clang",
-				"CMAKE_CXX_COMPILER": "clang++"
+				"CMAKE_CXX_COMPILER": "clang++",
+				"BUILD_SWIFT_LANGUAGE_PACKAGE": "ON"
 			}
 		},
 		{
 			"hidden": true,
 			"name": "llvm-clang-presets",
 			"cacheVariables": {
-				"VCPKG_CHAINLOAD_TOOLCHAIN_FILE": "${sourceDir}/cmake-toolchains/llvm-clang-macos.cmake"
+				"VCPKG_CHAINLOAD_TOOLCHAIN_FILE": "${sourceDir}/cmake-toolchains/llvm-clang-macos.cmake",
+				"BUILD_SWIFT_LANGUAGE_PACKAGE": "ON"
 			}
 		},
 		{

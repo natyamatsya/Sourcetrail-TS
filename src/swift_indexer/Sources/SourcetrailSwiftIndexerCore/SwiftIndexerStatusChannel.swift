@@ -2,13 +2,13 @@ import FlatBuffers
 import Foundation
 import LibIPC
 
-final class SwiftIndexerStatusChannel {
+package final class SwiftIndexerStatusChannel {
 	private static let shmSize = 1024 * 1024
 
 	private let processId: UInt64
 	private let shm: IpcSharedMemoryRaw
 
-	static func open(instanceUuid: String, processId: UInt64) async throws(IpcError) -> SwiftIndexerStatusChannel {
+	package static func open(instanceUuid: String, processId: UInt64) async throws(IpcError) -> SwiftIndexerStatusChannel {
 		let shm = try await IpcSharedMemoryRaw.open(
 			name: "ists_ipc_\(instanceUuid)",
 			size: shmSize
@@ -21,19 +21,19 @@ final class SwiftIndexerStatusChannel {
 		self.shm = shm
 	}
 
-	func isInterrupted() throws -> Bool {
+	package func isInterrupted() throws -> Bool {
 		try shm.readLocked { bytes in
 			Self.decodeStatus(from: bytes).indexingInterrupted
 		}
 	}
 
-	func isQueueStopped() throws -> Bool {
+	package func isQueueStopped() throws -> Bool {
 		try shm.readLocked { bytes in
 			Self.decodeStatus(from: bytes).queueStopped
 		}
 	}
 
-	func startIndexing(filePath: String) throws {
+	package func startIndexing(filePath: String) throws {
 		_ = try shm.readModifyWrite { bytes in
 			var status = Self.decodeStatus(from: bytes)
 			status.applyStartIndexing(processId: processId, filePath: filePath)
@@ -41,7 +41,7 @@ final class SwiftIndexerStatusChannel {
 		}
 	}
 
-	func finishIndexing() throws {
+	package func finishIndexing() throws {
 		_ = try shm.readModifyWrite { bytes in
 			var status = Self.decodeStatus(from: bytes)
 			status.applyFinishIndexing(processId: processId)
@@ -96,7 +96,7 @@ final class SwiftIndexerStatusChannel {
 	}
 }
 
-private struct OwnedIndexingStatus {
+struct OwnedIndexingStatus {
 	struct ProcessFileRecord {
 		let processId: UInt64
 		let filePath: String
@@ -112,33 +112,15 @@ private struct OwnedIndexingStatus {
 	init() {}
 
 	init(from status: Sourcetrail_Ipc_IndexingStatus) {
-		indexingFilePaths = Self.readStrings(
-			count: status.indexingFilePathsCount,
-			getter: status.indexingFilePaths
-		)
-
-		currentFiles.reserveCapacity(Int(status.currentFilesCount))
-		for index in 0..<status.currentFilesCount {
-			guard let processFile = status.currentFiles(at: index) else {
-				continue
-			}
-			currentFiles.append(
-				ProcessFileRecord(
-					processId: processFile.processId,
-					filePath: processFile.filePath ?? ""
-				)
+		indexingFilePaths = status.indexingFilePaths.map { $0 ?? "" }
+		currentFiles = status.currentFiles.map { processFile in
+			ProcessFileRecord(
+				processId: processFile.processId,
+				filePath: processFile.filePath ?? ""
 			)
 		}
-
-		crashedFilePaths = Self.readStrings(
-			count: status.crashedFilePathsCount,
-			getter: status.crashedFilePaths
-		)
-
-		finishedProcessIds.reserveCapacity(Int(status.finishedProcessIdsCount))
-		for index in 0..<status.finishedProcessIdsCount {
-			finishedProcessIds.append(status.finishedProcessIds(at: index))
-		}
+		crashedFilePaths = status.crashedFilePaths.map { $0 ?? "" }
+		finishedProcessIds = Array(status.finishedProcessIds)
 
 		indexingInterrupted = status.indexingInterrupted
 		queueStopped = status.queueStopped
@@ -169,21 +151,5 @@ private struct OwnedIndexingStatus {
 		}
 
 		crashedFilePaths.removeAll { $0 == finishedFilePath }
-	}
-
-	private static func readStrings(
-		count: Int32,
-		getter: (Int32) -> String?
-	) -> [String] {
-		if count <= 0 {
-			return []
-		}
-
-		var strings: [String] = []
-		strings.reserveCapacity(Int(count))
-		for index in 0..<count {
-			strings.append(getter(index) ?? "")
-		}
-		return strings
 	}
 }

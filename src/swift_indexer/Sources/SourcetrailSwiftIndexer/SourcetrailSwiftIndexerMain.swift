@@ -1,4 +1,5 @@
 import Foundation
+import SourcetrailSwiftIndexerCore
 
 @main
 struct SourcetrailSwiftIndexer {

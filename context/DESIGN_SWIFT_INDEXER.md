@@ -1,0 +1,114 @@
+# Design: Swift Indexer Parity (SW series)
+
+**Status: SW0 implemented (2026-07-17) — build revived, transport tested; SW1–SW9 planned.**
+The Swift analog of the Rust indexer track: take the transport-complete but
+analysis-empty Swift subprocess (`src/swift_indexer`) to full parity with the
+C++/Rust pipeline, staged like [DESIGN_MULTIGROUP_FANOUT.md](DESIGN_MULTIGROUP_FANOUT.md)
+(S0–S5) and [DESIGN_RUST_CRATE_FANOUT.md](DESIGN_RUST_CRATE_FANOUT.md) (R1–R4).
+
+Starting point (verified 2026-07-17): the subprocess speaks all three SHM
+channels correctly — command pop with lossless queue rewrite, status with
+crash bookkeeping, storage push with back-pressure — but pushed an **empty
+IntermediateStorage** for every command. No parser of any kind. Not compiled
+in dev builds; the checked-in channel code predated the current flatc Swift
+codegen API. Host side: one command, no options, no SPM discovery, one
+supervisor with zero failure tolerance, no fan-out participation.
+
+## Engine decision: hybrid — IndexStoreDB primary, SwiftSyntax fallback
+
+Requirement: **indexing must still work on broken or partially built code**
+(incremental broken builds). Neither engine alone satisfies this:
+IndexStoreDB needs compiled index units; SwiftSyntax alone has no semantics.
+
+Per command (= one SPM package root):
+
+1. **Project model** — `swift package describe --type json` (60 s timeout) →
+   targets, module names, file→module map. Failure ⇒ all indexed `.swift`
+   files become one module named after the directory (mirrors the cargo-failure
+   fallback in `SourceGroupRust.cpp`).
+2. **Build** — `swift build` with index-store enabled, reusing the package's
+   own `.build` (incrementality + stale units that survive a broken build).
+   Compiler diagnostics → non-fatal `StorageError` rows, like Rust panics.
+3. **Semantic pass** — IndexStoreDB over the store. Unit freshness = unit
+   mtime ≥ source mtime. Occurrences → StorageOccurrence/SourceLocation; USR
+   table → NameHierarchy chains → serialized names (same `"::\tm"` wire
+   encoding as `collector.rs`). Relations → CALL / OVERRIDE / INHERITANCE
+   (class + conformance) / MEMBER / TYPE_USAGE / USAGE / IMPORT edges.
+4. **Coverage set** — files with fresh units are semantic, `complete=true`.
+5. **Syntactic fallback** — SwiftSyntax decl walk for every indexed file NOT
+   covered: nodes, MEMBER edges from nesting, definition occurrences only;
+   `complete=false` so refresh upgrades the file once the build heals; one
+   non-fatal StorageError per fallback file.
+6. **Merge rule** — per file strictly exclusive (semantic XOR syntactic).
+   **Stale semantic loses to syntactic**: stale occurrence offsets are wrong
+   after edits; `complete=false` guarantees the upgrade later. Cross-file node
+   unification happens at PersistentStorage inject via serialized-name dedup.
+
+Kind mapping: struct→STRUCT, class/actor→CLASS, enum→ENUM, case→ENUM_CONSTANT,
+protocol→INTERFACE, typealias/associatedtype→TYPEDEF, global func→FUNCTION,
+method/init/deinit/subscript→METHOD, property→FIELD, global var→GLOBAL_VARIABLE,
+generic param→TYPE_PARAMETER, module→MODULE, macro→MACRO. Extensions get no
+node of their own — members attach to the extended type.
+
+Dependencies: `indexstore-db` + `swift-syntax` as SwiftPM URL deps **pinned by
+exact revision** matching the minimum toolchain (Swift 6.0). Apache-2.0 + RLE.
+indexstore-db dlopens the toolchain's `libIndexStore.dylib` — fine for a
+macOS-only indexer (`.macOS(.v14)`).
+
+**Non-goal — Turso from the subprocess.** The app's concurrent Turso writer
+stays sole writer (S4); the subprocess pushes IntermediateStorage over SHM.
+If a Swift-side need ever arises, the route is C interop against
+`turso_shim`'s `tsq_`-prefixed API (same pinned turso_core, no symbol
+collisions) — recorded here so nobody reaches for a second Turso SDK.
+
+**Distributed indexing (P4b) stays intact**: shard producers are whole
+processes with private DBs; this work is orthogonal. SW7 *improves* shard runs
+by striping package-granular commands (today every shard re-indexes every
+crate/package; merge dedup keeps it correct but wastes work).
+
+## Stages
+
+- **SW0 — Revival (DONE 2026-07-17).** Channel code migrated to the current
+  flatc Swift API (`FlatbufferVector` collections replaced the `xCount` +
+  `x(at:)` accessors). Package restructured: `SourcetrailSwiftIndexerCore`
+  library + thin executable + `swift test` target with pop-rewrite
+  losslessness tests (every schema field incl. `source_group_id`,
+  `restrict_to_package`) and storage-framing tests. FlatBuffers now resolved
+  from the libipc-vendored checkout (identity clash with the URL dep, and the
+  runtime must match what LibIPC builds against). `BUILD_SWIFT_LANGUAGE_PACKAGE`
+  ON in the macOS toolchain presets (`apple-clang-*`, `llvm-clang-*`).
+- **SW1 — Package model + build driver.** `PackageModel.swift`,
+  `BuildDriver.swift`, diagnostics→StorageErrors, `updateIndexing` per-file
+  progress (analog of `status.rs`), StorageFile rows.
+- **SW2 — Semantic core (the centerpiece).** IndexStoreDB; StorageBuilder
+  ports id allocation, node/edge dedup, and name encoders from
+  `collector.rs`. Definitions first, then references. Known hard part:
+  USR→hierarchy for parents never defined in any record (extensions of
+  external types) → module-qualified flat-name fallback.
+- **SW3 — Syntactic fallback + merge.** SwiftSyntax; HybridMerger implements
+  the coverage set and freshness rule above. Cross-engine test: syntactic and
+  semantic name spellings must match exactly or nodes fork.
+- **SW4 — Robustness.** Chunked push for the fixed 16 MiB segment (ADR-0002,
+  port of `storage.rs` chunking), result caching keyed
+  `(workingDirectory, buildOptions)`, exit-on-empty-pop queue semantics,
+  Swift supervisor retry budget 200 via a babysitter helper shared with the
+  Rust path in `TaskBuildIndex.cpp`.
+- **SW5 — Host-side project model.** Per-package commands from a
+  `Package.swift` filesystem scan (no subprocess needed, unlike cargo);
+  FlatBuffers-additive appends `swift_build_args` / `swift_toolchain_path` /
+  `swift_index_store_path` with all THREE pop-rewrites + round-trip tests in
+  the same commit; `SourceGroupSettingsWithSwiftOptions` mixin (and fix the
+  latent `SourceGroupSettingsRustEmpty::equalsSettings` omission of
+  `WithCargoOptions::equals`).
+- **SW6 — Fan-out.** `swiftSupervisorCount = min(distinct package roots, 3)`
+  under the tri-state gate; storage-manager vector; generalized
+  `swiftIndexerProcessId = processCount + rustSupervisorCount + 1 + k`.
+- **SW7 — Package-granular shard striping (Rust + Swift).** Deterministic
+  `pos % N == i-1` stripe over the sorted package-root set when a ShardConfig
+  is active; extend `ShardConfigTestSuite` + `scripts/smoke-distributed.sh`.
+- **SW8 — GUI wizard.** Swift options content cloned from the Cargo one.
+- **SW9 — Close-out.** C++ ipc integration test with Swift commands,
+  `index_self`-style smoke binary, ROADMAP_SWIFT_INDEXER.md, TOPIC_MAP.
+
+Sequencing: SW0→SW1→SW2→SW3→SW4; SW5 independent after SW0; SW6 needs SW5;
+SW7 after SW5; SW8/SW9 last.
