@@ -102,6 +102,8 @@ final class SemanticIndexer {
 		// SW11: with all definitions and constraint targets resolved for this
 		// file, materialize the generic-parameter tier and its bound edges.
 		emitGenerics(fileNodeId: fileNodeId)
+		// SW12: conditional-conformance constraints on extensions.
+		emitExtensionConstraints(fileNodeId: fileNodeId)
 	}
 
 	// -----------------------------------------------------------------------
@@ -150,11 +152,17 @@ final class SemanticIndexer {
 			_ = builder.edgeId(type: EdgeKind.member, source: parentId, target: nodeId)
 		}
 
-		// Override edges hang off the overriding definition's relations.
+		// Override edges hang off the overriding definition's relations. This also
+		// carries protocol-requirement satisfaction (a witness overrides the
+		// requirement). SW12: a default implementation in a protocol extension
+		// resolves to the same node as the requirement it satisfies, so skip the
+		// resulting self-loop.
 		for relation in occurrence.relations where relation.roles.contains(.overrideOf) {
 			if let (targetParts, targetKind) = resolve(symbol: relation.symbol, location: nil) {
 				let targetId = builder.nodeId(parts: targetParts, kind: targetKind)
-				_ = builder.edgeId(type: EdgeKind.override_, source: nodeId, target: targetId)
+				if targetId != nodeId {
+					_ = builder.edgeId(type: EdgeKind.override_, source: nodeId, target: targetId)
+				}
 			}
 		}
 	}
@@ -169,8 +177,11 @@ final class SemanticIndexer {
 		// container→type usage — emitGenerics attaches it to the parameter node
 		// instead. Record the resolved target and suppress the default edge here.
 		let position = positionOf(occurrence.location)
+		// Remember every resolved reference by position: SW11 constraint targets
+		// and SW12 needs the extended-type reference of a conditional-conformance
+		// extension too.
+		refTargetByPos[position] = (targetParts, targetKind)
 		if genericMap?.isConstraintTarget(position) == true {
-			refTargetByPos[position] = (targetParts, targetKind)
 			return
 		}
 		let targetId = builder.nodeId(parts: targetParts, kind: targetKind)
@@ -319,6 +330,29 @@ final class SemanticIndexer {
 			else { continue }
 			let paramId = builder.nodeId(
 				parts: ownerParts + [constraint.paramName], kind: NodeKind.typeParameter)
+			let targetId = builder.nodeId(parts: target.parts, kind: target.kind)
+			let edgeId = builder.edgeId(
+				type: constraint.edgeKind, source: paramId, target: targetId)
+			recordExtent(
+				elementId: edgeId, fileNodeId: fileNodeId, extent: constraint.targetExtent,
+				type: LocationKind.token)
+		}
+	}
+
+	// SW12: conditional-conformance constraints (`extension Pair: Greeter where
+	// T: CustomStringConvertible`). The constrained parameter belongs to the
+	// extended type, so resolve the extended type at its reference position and
+	// attach the bound to its parameter node (created by SW11 when the type was
+	// defined; forced to typeParameter if the store guessed another kind).
+	private func emitExtensionConstraints(fileNodeId: Int64) {
+		guard let genericMap else { return }
+		for constraint in genericMap.extensionConstraints {
+			guard let extended = refTargetByPos[constraint.extendedTypePos],
+				let target = refTargetByPos[constraint.targetPos]
+			else { continue }
+			let paramId = builder.nodeId(
+				parts: extended.parts + [constraint.paramName], kind: NodeKind.typeParameter)
+			builder.setNodeType(nodeId: paramId, type: NodeKind.typeParameter)
 			let targetId = builder.nodeId(parts: target.parts, kind: target.kind)
 			let edgeId = builder.edgeId(
 				type: constraint.edgeKind, source: paramId, target: targetId)

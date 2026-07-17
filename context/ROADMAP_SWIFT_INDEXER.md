@@ -43,7 +43,7 @@ isolation, attribute-driven relations, macros, and API-surface metadata.
 | Stage | What | State |
 |-------|------|-------|
 | SW11 | Generic-parameter tier + constraints + type-argument use-sites (the Rust-lifetime analog) | ✅ done |
-| SW12 | Protocol conformance fidelity: witnesses, conditional/retroactive, default impls | 📋 planned |
+| SW12 | Protocol conformance fidelity: witnesses, conditional/retroactive, default impls | ✅ done |
 | SW13 | Concurrency model: actor identity, global-actor isolation, `async`, `Sendable` | 📋 planned |
 | SW14 | Attribute-driven relations: property wrappers + result builders | 📋 planned |
 | SW15 | Macros: attached + freestanding applications (+ optional expansion) | 📋 planned |
@@ -157,6 +157,33 @@ The direct analog of Rust lifetimes, and the biggest single parity gap.
   and a same-type constraint — assert param nodes + each constraint edge.
 
 ### SW12 — Protocol conformance fidelity (M)
+
+**Landed 2026-07-18.** An audit found IndexStoreDB already gives most of this via
+the relations SW2 handles: conformance base edges (type → protocol as
+`EDGE_INHERITANCE`, including the *conditional* conformance's base edge) and
+**witness edges** (a concrete member → the requirement it satisfies as
+`EDGE_OVERRIDE`, for methods *and* properties — Swift's index carries requirement
+satisfaction on the `overrideOf` relation, so no new resolution was needed). Two
+real gaps were closed, both subprocess-only (no schema/plumbing change):
+
+- **Conditional-conformance constraints:** `extension Pair: Greeter where T:
+  CustomStringConvertible` now emits the `where` bound. `GenericSyntax.swift`
+  gained `ExtensionConstraint` extraction (SW11 skipped extension `where`
+  clauses); `SemanticIndexer.emitExtensionConstraints` resolves the extended
+  type at its reference position and attaches the bound to *its* parameter node
+  (`Demo::Pair::T` → `CustomStringConvertible`, `EDGE_INHERITANCE`), reusing the
+  SW11 constraint machinery.
+- **Default-implementation self-loop suppressed:** a default `greet()` in
+  `extension Greeter` resolves to the same node as the requirement it satisfies,
+  which produced a useless `OVERRIDE: Greeter::greet() → Greeter::greet()`; the
+  override emission now skips `source == target`.
+
+Covered by `ConformanceTests` (conformance + method/property witnesses +
+conditional constraint + no self-loop). *Limitation:* the conditional bound
+attaches to the type's parameter node unconditionally — Sourcetrail has no
+conformance-scoped constraint slot, so it reads as "T is constrained" rather than
+"…for this conformance". Default impls collapse into the requirement node (a
+defensible unification: the default *is* the protocol's member).
 
 Make Swift's defining feature first-class instead of merged into inheritance.
 

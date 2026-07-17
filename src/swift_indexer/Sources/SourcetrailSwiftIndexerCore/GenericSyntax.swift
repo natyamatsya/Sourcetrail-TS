@@ -45,6 +45,19 @@ struct GenericConstraint {
 	let edgeKind: Int32
 }
 
+// SW12 (conditional conformance) — a `where` constraint on a conformance-bearing
+// extension (`extension Pair: Greeter where T: CustomStringConvertible`). The
+// constrained parameter belongs to the *extended* type (`Pair`), not the
+// extension, so the semantic pass resolves the extended type at `extendedTypePos`
+// and attaches the edge to its parameter node (`Demo::Pair::T`).
+struct ExtensionConstraint {
+	let extendedTypePos: SyntaxPos
+	let paramName: String
+	let targetPos: SyntaxPos
+	let targetExtent: SourceExtent
+	let edgeKind: Int32
+}
+
 // (SyntaxPos — the shared UTF-8 byte-column source position — lives in
 // SyntaxDecls.swift.)
 
@@ -55,6 +68,8 @@ final class GenericParamMap {
 	private(set) var paramsByOwner: [SyntaxPos: [GenericParam]] = [:]
 	// bound edges to emit once the owner + target nodes are known.
 	private(set) var constraints: [GenericConstraint] = []
+	// SW12: conditional-conformance constraints on extensions.
+	private(set) var extensionConstraints: [ExtensionConstraint] = []
 	// positions whose reference occurrence is a constraint target — the semantic
 	// pass suppresses its default container→target edge there and lets
 	// emitGenerics attach the edge to the parameter instead.
@@ -81,6 +96,11 @@ final class GenericParamMap {
 
 	fileprivate func addConstraint(_ constraint: GenericConstraint) {
 		constraints.append(constraint)
+		constraintTargetPositions.insert(constraint.targetPos)
+	}
+
+	fileprivate func addExtensionConstraint(_ constraint: ExtensionConstraint) {
+		extensionConstraints.append(constraint)
 		constraintTargetPositions.insert(constraint.targetPos)
 	}
 }
@@ -250,6 +270,55 @@ private final class GenericVisitor: SyntaxVisitor {
 	override func visit(_ node: TypeAliasDeclSyntax) -> SyntaxVisitorContinueKind {
 		record(nameToken: node.name, clause: node.genericParameterClause, whereClause: nil)
 		return .skipChildren
+	}
+
+	// SW12: an extension's `where` clause (conditional / retroactive conformance).
+	// Its constrained params belong to the extended type, resolved at the
+	// extended-type name position.
+	override func visit(_ node: ExtensionDeclSyntax) -> SyntaxVisitorContinueKind {
+		guard let whereClause = node.genericWhereClause,
+			let extendedToken = baseIdentifierToken(of: node.extendedType)
+		else {
+			return .visitChildren
+		}
+		let extendedPos = pos(of: extendedToken)
+		for requirement in whereClause.requirements {
+			switch requirement.requirement {
+			case .conformanceRequirement(let conformance):
+				guard let root = rootIdentifier(of: conformance.leftType) else { continue }
+				for target in constraintTargetTokens(of: conformance.rightType) {
+					addExtensionConstraint(
+						extendedPos: extendedPos, paramName: root, target: target,
+						edgeKind: EdgeKind.inheritance)
+				}
+			case .sameTypeRequirement(let sameType):
+				let leftType = Syntax(sameType.leftType).as(TypeSyntax.self)
+				let rightType = Syntax(sameType.rightType).as(TypeSyntax.self)
+				if let leftType, let root = rootIdentifier(of: leftType),
+					let rightType, let target = baseIdentifierToken(of: rightType)
+				{
+					addExtensionConstraint(
+						extendedPos: extendedPos, paramName: root, target: target,
+						edgeKind: EdgeKind.typeUsage)
+				}
+			default:
+				continue
+			}
+		}
+		return .visitChildren
+	}
+
+	private func addExtensionConstraint(
+		extendedPos: SyntaxPos, paramName: String, target: TokenSyntax, edgeKind: Int32
+	) {
+		let extent = tokenExtent(target, converter)
+		map.addExtensionConstraint(
+			ExtensionConstraint(
+				extendedTypePos: extendedPos,
+				paramName: paramName,
+				targetPos: SyntaxPos(line: Int(extent.startLine), column: Int(extent.startColumn)),
+				targetExtent: extent,
+				edgeKind: edgeKind))
 	}
 }
 
