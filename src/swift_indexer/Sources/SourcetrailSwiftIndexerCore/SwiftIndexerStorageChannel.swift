@@ -2,7 +2,7 @@ import FlatBuffers
 import Foundation
 import LibIPC
 
-final class SwiftIndexerStorageChannel {
+package final class SwiftIndexerStorageChannel {
 	private static let shmSize = 16 * 1024 * 1024
 	private static let neededCapacityFieldSize = 8
 	private static let countFieldSize = 4
@@ -10,7 +10,7 @@ final class SwiftIndexerStorageChannel {
 
 	private let shm: IpcSharedMemoryRaw
 
-	static func open(instanceUuid: String, processId: UInt64) async throws(IpcError) -> SwiftIndexerStorageChannel {
+	package static func open(instanceUuid: String, processId: UInt64) async throws(IpcError) -> SwiftIndexerStorageChannel {
 		let shm = try await IpcSharedMemoryRaw.open(
 			name: "iist_ipc_\(processId)_\(instanceUuid)",
 			size: shmSize
@@ -22,13 +22,13 @@ final class SwiftIndexerStorageChannel {
 		self.shm = shm
 	}
 
-	func storageCount() throws -> Int {
+	package func storageCount() throws -> Int {
 		try shm.readLocked { queueBytes in
 			Int(Self.readCount(queueBytes))
 		}
 	}
 
-	func pushEmptyStorage() throws {
+	package func pushEmptyStorage() throws {
 		let entryBytes = Self.serializeEmptyStorage()
 		while true {
 			let outcome: PushOutcome = try shm.readModifyWrite { queueBytes in
@@ -51,17 +51,17 @@ final class SwiftIndexerStorageChannel {
 		}
 	}
 
-	private enum PushOutcome {
+	enum PushOutcome {
 		case written
 		case needsGrow(Int)
 	}
 
-	private struct AppendResult {
+	struct AppendResult {
 		let rewrittenQueue: [UInt8]
 		let outcome: PushOutcome
 	}
 
-	private static func rewriteQueueByAppendingEntry(
+	static func rewriteQueueByAppendingEntry(
 		queueBytes: [UInt8],
 		entryBytes: [UInt8]
 	) throws -> AppendResult {
@@ -109,7 +109,7 @@ final class SwiftIndexerStorageChannel {
 		return total
 	}
 
-	private static func queuePayloadEnd(queueBytes: [UInt8], count: UInt32) throws -> Int {
+	static func queuePayloadEnd(queueBytes: [UInt8], count: UInt32) throws -> Int {
 		var cursor = headerSize
 		for _ in 0..<count {
 			if cursor + countFieldSize > queueBytes.count {
@@ -135,7 +135,7 @@ final class SwiftIndexerStorageChannel {
 		return requiredSize
 	}
 
-	private static func readCount(_ queueBytes: [UInt8]) -> UInt32 {
+	static func readCount(_ queueBytes: [UInt8]) -> UInt32 {
 		if queueBytes.count < headerSize {
 			return 0
 		}
@@ -198,7 +198,7 @@ final class SwiftIndexerStorageChannel {
 		bytes[offset + 7] = UInt8(truncatingIfNeeded: littleEndian >> 56)
 	}
 
-	private static func serializeEmptyStorage() -> [UInt8] {
+	static func serializeEmptyStorage() -> [UInt8] {
 		var builder = FlatBufferBuilder(initialSize: 1024)
 
 		let nodesOffset = builder.createVector(ofOffsets: [Offset]())

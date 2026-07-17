@@ -631,7 +631,7 @@ if (BUILD_SWIFT_LANGUAGE_PACKAGE)
 	set(SWIFT_INDEXER_GENERATED_DIR "${SWIFT_INDEXER_BUILD_DIR}/generated")
 	set(
 		SWIFT_INDEXER_PACKAGE_GENERATED_DIR
-		"${SWIFT_INDEXER_PACKAGE_DIR}/Sources/SourcetrailSwiftIndexer/GeneratedFromCMake"
+		"${SWIFT_INDEXER_PACKAGE_DIR}/Sources/SourcetrailSwiftIndexerCore/GeneratedFromCMake"
 	)
 
 	set(SWIFT_INDEXER_SCHEMAS
