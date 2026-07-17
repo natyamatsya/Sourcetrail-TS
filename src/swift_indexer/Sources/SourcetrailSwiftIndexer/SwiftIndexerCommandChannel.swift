@@ -119,7 +119,8 @@ final class SwiftIndexerCommandChannel {
 				noDefaultFeatures: command.noDefaultFeatures,
 				targetTripleOffset: targetTripleOffset,
 				specializationScopeOffset: specializationScopeOffset,
-				sourceGroupIdOffset: sourceGroupIdOffset
+				sourceGroupIdOffset: sourceGroupIdOffset,
+				restrictToPackage: command.restrictToPackage
 			)
 		}
 
@@ -151,6 +152,7 @@ private struct OwnedIndexerCommand {
 	let targetTriple: String
 	let specializationScope: String
 	let sourceGroupId: String
+	let restrictToPackage: Bool
 
 	init(from command: Sourcetrail_Ipc_IndexerCommand) {
 		type = command.type
@@ -167,6 +169,7 @@ private struct OwnedIndexerCommand {
 		targetTriple = command.targetTriple ?? ""
 		specializationScope = command.specializationScope ?? ""
 		sourceGroupId = command.sourceGroupId ?? ""
+		restrictToPackage = command.restrictToPackage
 	}
 
 	private static func readStrings(

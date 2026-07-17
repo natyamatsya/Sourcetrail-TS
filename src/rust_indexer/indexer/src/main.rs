@@ -59,7 +59,7 @@ fn main() {
     // Many Rust commands can point to the same crate root. Cache the indexed
     // crate result and reuse it to avoid repeated rust-analyzer workspace loads.
     let mut storage_cache: HashMap<
-        (String, parser::CargoOptions, parser::SpecializationScope),
+        (String, parser::CargoOptions, parser::SpecializationScope, bool),
         sourcetrail_rust_indexer_lib::ipc::storage::OwnedIntermediateStorage,
     > = HashMap::new();
 
@@ -119,7 +119,12 @@ fn main() {
 
         // Index the whole crate rooted at working_directory (contains Cargo.toml).
         // index_crate() loads the full HIR via rust-analyzer and covers all source files.
-        let cache_key = (cmd.working_directory.clone(), options.clone(), spec_scope);
+        let cache_key = (
+            cmd.working_directory.clone(),
+            options.clone(),
+            spec_scope,
+            cmd.restrict_to_package,
+        );
         let storage = if let Some(cached) = storage_cache.get(&cache_key) {
             log::info!(
                 "reusing cached crate index for \"{}\"",
@@ -138,6 +143,7 @@ fn main() {
                 Path::new(&cmd.working_directory),
                 options.clone(),
                 spec_scope,
+                cmd.restrict_to_package,
                 move |path| {
                     if let Err(e) = status_ch_ref.update_indexing(path) {
                         log::warn!("per-file progress update failed: {e}");

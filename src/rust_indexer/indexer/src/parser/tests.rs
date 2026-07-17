@@ -19,6 +19,7 @@ fn index_src_with_sysroot(src: &str) -> OwnedIntermediateStorage {
         LoadProfile::SYSROOT,
         CargoOptions::default(),
         SpecializationScope::default(),
+        false,
         |_| {},
     )
 }
@@ -33,6 +34,7 @@ fn index_src_with_scope(src: &str, spec_scope: SpecializationScope) -> OwnedInte
         LoadProfile::FAST,
         CargoOptions::default(),
         spec_scope,
+        false,
         |_| {},
     )
 }
@@ -1160,6 +1162,7 @@ fn index_feature_fixture(options: CargoOptions) -> OwnedIntermediateStorage {
         LoadProfile::FAST,
         options,
         SpecializationScope::default(),
+        false,
         |_| {},
     )
 }

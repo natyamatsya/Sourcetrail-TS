@@ -42,6 +42,7 @@ flatbuffers::DetachedBuffer serializeIndexerCommands(
 		bool noDefaultFeatures = false;
 		flatbuffers::Offset<flatbuffers::String> targetTriple = 0;
 		flatbuffers::Offset<flatbuffers::String> specializationScope = 0;
+		bool restrictToPackage = false;
 
 #if BUILD_CXX_LANGUAGE_PACKAGE
 		if (auto cxxCmd = std::dynamic_pointer_cast<IndexerCommandCxx>(cmd))
@@ -92,6 +93,7 @@ flatbuffers::DetachedBuffer serializeIndexerCommands(
 			noDefaultFeatures = rustCmd->getNoDefaultFeatures();
 			targetTriple = builder.CreateString(rustCmd->getTargetTriple());
 			specializationScope = builder.CreateString(rustCmd->getSpecializationScope());
+			restrictToPackage = rustCmd->getRestrictToPackage();
 		}
 		if (auto* swiftCmd = dynamic_cast<IndexerCommandSwift*>(cmd.get()))
 		{
@@ -109,7 +111,7 @@ flatbuffers::DetachedBuffer serializeIndexerCommands(
 			builder, type, sourceFilePath, indexedPaths, excludeFilters,
 			includeFilters, workingDirectory, compilerFlags, compilerPath,
 			features, allFeatures, noDefaultFeatures, targetTriple,
-			specializationScope, sourceGroupId));
+			specializationScope, sourceGroupId, restrictToPackage));
 	}
 
 	auto queue = Sourcetrail::Ipc::CreateIndexerCommandQueue(
@@ -202,7 +204,7 @@ std::vector<std::shared_ptr<IndexerCommand>> deserializeIndexerCommands(
 				FilePath(fbCmd->source_file_path()->c_str()),
 				indexedPaths, workingDir,
 				features, fbCmd->all_features(), fbCmd->no_default_features(),
-				targetTriple, specializationScope));
+				targetTriple, specializationScope, fbCmd->restrict_to_package()));
 			break;
 		}
 		case Sourcetrail::Ipc::IndexerCommandType_Swift:

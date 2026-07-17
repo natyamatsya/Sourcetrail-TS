@@ -78,6 +78,10 @@ pub struct OwnedIndexerCommand {
     /// Source group the command belongs to (fan-out S1). Must round-trip
     /// through the pop-rewrite or remaining commands lose their group tag.
     pub source_group_id: String,
+    /// Crate fan-out R1b: collect only the package rooted at
+    /// working_directory; false = whole-workspace collection. Must
+    /// round-trip through the pop-rewrite like source_group_id.
+    pub restrict_to_package: bool,
 }
 
 impl OwnedIndexerCommand {
@@ -101,6 +105,7 @@ impl OwnedIndexerCommand {
             compiler_flags: str_vec(cmd.compiler_flags()),
             compiler_path: cmd.compiler_path().unwrap_or("").to_owned(),
             source_group_id: cmd.source_group_id().unwrap_or("").to_owned(),
+            restrict_to_package: cmd.restrict_to_package(),
         }
     }
 }
@@ -229,6 +234,7 @@ fn serialize_queue(commands: &[OwnedIndexerCommand]) -> Vec<u8> {
                     target_triple,
                     specialization_scope,
                     source_group_id,
+                    restrict_to_package: cmd.restrict_to_package,
                 },
             )
         })
@@ -265,6 +271,7 @@ mod tests {
             target_triple: String::new(),
             specialization_scope: String::new(),
             source_group_id: format!("group-of-{src}"),
+            restrict_to_package: kind == IndexerCommandType::Rust,
         }
     }
 
@@ -274,6 +281,7 @@ mod tests {
             cmd(IndexerCommandType::Cxx, "a.cpp", "/usr/bin/clang++"),
             cmd(IndexerCommandType::Rust, "crate", ""),
             cmd(IndexerCommandType::Cxx, "b.cpp", "/opt/clang/bin/clang++"),
+            cmd(IndexerCommandType::Rust, "crate2", ""),
         ];
         let bytes = serialize_queue(&input);
 
@@ -284,7 +292,7 @@ mod tests {
         let rewritten = rewritten.unwrap();
         let queue = root_as_indexer_command_queue(&rewritten).unwrap();
         let commands = queue.commands().unwrap();
-        assert_eq!(commands.len(), 2);
+        assert_eq!(commands.len(), 3);
         assert_eq!(commands.get(0).type_(), IndexerCommandType::Cxx);
         assert_eq!(commands.get(0).compiler_path().unwrap(), "/usr/bin/clang++");
         assert_eq!(commands.get(1).type_(), IndexerCommandType::Cxx);
@@ -298,6 +306,15 @@ mod tests {
         assert_eq!(popped.source_group_id, "group-of-crate");
         assert_eq!(commands.get(0).source_group_id().unwrap(), "group-of-a.cpp");
         assert_eq!(commands.get(1).source_group_id().unwrap(), "group-of-b.cpp");
+
+        // The package-restriction flag (fan-out R1b) round-trips: set on the
+        // popped Rust command and preserved on the remaining Rust command
+        // through the queue rewrite.
+        assert!(popped.restrict_to_package);
+        assert!(!commands.get(0).restrict_to_package());
+        assert!(!commands.get(1).restrict_to_package());
+        assert_eq!(commands.get(2).type_(), IndexerCommandType::Rust);
+        assert!(commands.get(2).restrict_to_package());
     }
 
     #[test]
