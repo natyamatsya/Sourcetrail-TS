@@ -1,10 +1,11 @@
 # Design: Swift Indexer Parity (SW series)
 
-**Status: SW0–SW6 implemented (2026-07-17) — build revived, transport tested,
+**Status: SW0–SW7 implemented (2026-07-17) — build revived, transport tested,
 package model + build driver landed, semantic core (IndexStoreDB) emitting
 nodes/edges/occurrences, syntactic fallback (SwiftSyntax) + hybrid merge,
 robustness parity (chunking, retry budget), host-side per-package command
-emission, K Swift supervisor fan-out; SW7–SW9 planned.**
+emission, K Swift supervisor fan-out, package-granular shard striping;
+SW8–SW9 planned.**
 The Swift analog of the Rust indexer track: take the transport-complete but
 analysis-empty Swift subprocess (`src/swift_indexer`) to full parity with the
 C++/Rust pipeline, staged like [DESIGN_MULTIGROUP_FANOUT.md](DESIGN_MULTIGROUP_FANOUT.md)
@@ -179,9 +180,18 @@ crate/package; merge dedup keeps it correct but wastes work).
   `swiftIndexerProcessId(processCount, rustSupervisorCount, k)`. The Rust and
   Swift babysitters already share `runExternalIndexerProcess` (SW4), so each
   Swift supervisor also has the 200-failure retry budget.
-- **SW7 — Package-granular shard striping (Rust + Swift).** Deterministic
-  `pos % N == i-1` stripe over the sorted package-root set when a ShardConfig
-  is active; extend `ShardConfigTestSuite` + `scripts/smoke-distributed.sh`.
+- **SW7 — Package-granular shard striping (DONE 2026-07-17).** The file-level
+  `stripeFilter` (P4b) never reached Rust/Swift commands — they gate only on
+  `filesToIndex` emptiness, so every shard re-indexed every package and
+  distributed runs gave no speedup for these languages. New
+  `shard::stripeKeys` applies the same `pos % N == i-1` rule to the sorted
+  package/crate-root set; `Project::buildIndex` filters each language's
+  commands through it (keyed on `getSourceFilePath()`, which equals the
+  package root) and shrinks the root count so the SW6 supervisor count
+  reflects the striped work. Verified by `ShardConfigTestSuite` (disjoint +
+  complete + deterministic + balanced over package keys). Note: a shard whose
+  file-level stripe is empty still emits no package commands — a degenerate
+  more-shards-than-files case, unchanged from before.
 - **SW8 — GUI wizard.** Swift options content cloned from the Cargo one.
 - **SW9 — Close-out.** C++ ipc integration test with Swift commands,
   `index_self`-style smoke binary, ROADMAP_SWIFT_INDEXER.md, TOPIC_MAP.

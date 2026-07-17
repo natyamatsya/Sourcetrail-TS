@@ -574,6 +574,31 @@ void Project::buildIndex(RefreshInfo info, std::shared_ptr<DialogView> dialogVie
 	std::vector<IndexerClusterEntry> cxxClusters;
 	size_t rustCrateCount = 0;
 	size_t swiftPackageCount = 0;
+
+	// Distributed indexing (SW7): keep only this shard's stripe of package/crate
+	// commands, and shrink `roots` to match so the fan-out supervisor count
+	// reflects the striped work. A no-op when no ShardConfig is active. The
+	// per-command key is getSourceFilePath(): SourceGroupRust/Swift set both the
+	// source-file path and the working directory to the package root.
+	auto shardStripeCommands =
+		[this](
+			std::vector<std::shared_ptr<IndexerCommand>> commands,
+			std::set<std::string>& roots) -> std::vector<std::shared_ptr<IndexerCommand>>
+	{
+		if (!m_shardConfig.isActive())
+			return commands;
+
+		const std::set<std::string> kept =
+			shard::stripeKeys(roots, m_shardConfig.index, m_shardConfig.count);
+		std::vector<std::shared_ptr<IndexerCommand>> striped;
+		for (const std::shared_ptr<IndexerCommand>& command: commands)
+		{
+			if (kept.contains(command->getSourceFilePath().str()))
+				striped.push_back(command);
+		}
+		roots = kept;
+		return striped;
+	};
 	for (const std::shared_ptr<SourceGroup>& sourceGroup: m_sourceGroups)
 	{
 		if (sourceGroup->getStatus() == SourceGroupStatusType::ENABLED)
@@ -608,6 +633,12 @@ void Project::buildIndex(RefreshInfo info, std::shared_ptr<DialogView> dialogVie
 							crateRoots.insert(rustCommand->getWorkingDirectory().str());
 						}
 					}
+
+					// Distributed indexing (SW7): a Rust crate is one work unit,
+					// so stripe by crate root — otherwise every shard reindexes
+					// every crate (the file-level stripe never reaches these
+					// commands, which only gate on filesToIndex emptiness).
+					commands = shardStripeCommands(commands, crateRoots);
 					rustCrateCount += crateRoots.size();
 
 					indexerCommandProvider->addProvider(
@@ -632,6 +663,10 @@ void Project::buildIndex(RefreshInfo info, std::shared_ptr<DialogView> dialogVie
 							packageRoots.insert(swiftCommand->getWorkingDirectory().str());
 						}
 					}
+
+					// Distributed indexing (SW7): one work unit per SPM package,
+					// striped by package root like the Rust crates above.
+					commands = shardStripeCommands(commands, packageRoots);
 					swiftPackageCount += packageRoots.size();
 
 					indexerCommandProvider->addProvider(
