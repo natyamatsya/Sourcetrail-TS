@@ -22,6 +22,9 @@ let package = Package(
 			url: "https://github.com/swiftlang/indexstore-db.git",
 			revision: "c993f4fb4f321fae1945e96a2377742f24e132f4"
 		),
+		// Syntactic fallback engine (SW3): declaration structure for files
+		// without an up-to-date index unit (broken/partial builds).
+		.package(url: "https://github.com/swiftlang/swift-syntax.git", exact: "602.0.0"),
 	],
 	targets: [
 		.target(
@@ -30,6 +33,8 @@ let package = Package(
 				.product(name: "LibIPC", package: "libipc"),
 				.product(name: "FlatBuffers", package: "flatbuffers"),
 				.product(name: "IndexStoreDB", package: "indexstore-db"),
+				.product(name: "SwiftSyntax", package: "swift-syntax"),
+				.product(name: "SwiftParser", package: "swift-syntax"),
 			],
 			path: "Sources/SourcetrailSwiftIndexerCore"
 		),

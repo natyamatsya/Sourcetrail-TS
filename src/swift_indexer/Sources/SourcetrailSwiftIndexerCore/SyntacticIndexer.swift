@@ -1,0 +1,217 @@
+import Foundation
+import SwiftParser
+import SwiftSyntax
+
+// Syntactic fallback (SW3): declaration structure for files without an
+// up-to-date index unit — broken or not-yet-built code still gets nodes,
+// member edges, and definition occurrences. No cross-file references. Name
+// spelling MUST match the semantic engine's (index-store display names,
+// e.g. `greet()`, `init(x:)`) or the same symbol forks into two nodes.
+
+enum SyntacticIndexer {
+	static func indexFile(
+		path: String,
+		moduleName: String,
+		builder: StorageBuilder
+	) {
+		guard let source = try? String(contentsOfFile: path, encoding: .utf8) else {
+			builder.recordError(
+				message: "syntactic fallback could not read file",
+				translationUnit: path
+			)
+			builder.appendPlainFile(path: path, complete: false)
+			return
+		}
+
+		// complete=false: the app re-indexes once the build heals and the
+		// semantic pass takes over.
+		let fileNodeId = builder.fileNodeId(path: path, complete: false)
+		builder.recordError(
+			message: "no up-to-date index unit; declarations indexed syntactically",
+			translationUnit: path
+		)
+
+		let tree = Parser.parse(source: source)
+		let converter = SourceLocationConverter(fileName: path, tree: tree)
+		let visitor = DeclVisitor(
+			moduleName: moduleName,
+			builder: builder,
+			fileNodeId: fileNodeId,
+			converter: converter
+		)
+		visitor.walk(tree)
+	}
+
+	private final class DeclVisitor: SyntaxVisitor {
+		private let builder: StorageBuilder
+		private let fileNodeId: Int64
+		private let converter: SourceLocationConverter
+		/// Name-part stack; starts with the module.
+		private var scope: [String]
+
+		init(
+			moduleName: String,
+			builder: StorageBuilder,
+			fileNodeId: Int64,
+			converter: SourceLocationConverter
+		) {
+			self.builder = builder
+			self.fileNodeId = fileNodeId
+			self.converter = converter
+			self.scope = [moduleName]
+			super.init(viewMode: .sourceAccurate)
+			_ = builder.nodeId(parts: [moduleName], kind: NodeKind.module)
+		}
+
+		// -- shared emission ------------------------------------------------
+
+		private func emit(name: String, kind: Int32, nameToken: TokenSyntax) -> Int64 {
+			let parts = scope + [name]
+			let nodeId = builder.nodeId(parts: parts, kind: kind)
+			builder.recordSymbol(nodeId: nodeId, definitionKind: DefinitionKind.explicit)
+
+			let parentKind = scope.count == 1 ? NodeKind.module : NodeKind.symbol
+			let parentId = builder.nodeId(parts: scope, kind: parentKind)
+			_ = builder.edgeId(type: EdgeKind.member, source: parentId, target: nodeId)
+
+			let start = nameToken.startLocation(converter: converter)
+			let text = nameToken.text
+			builder.recordOccurrence(
+				elementId: nodeId,
+				fileNodeId: fileNodeId,
+				startLine: UInt32(max(start.line, 1)),
+				startCol: UInt32(max(start.column, 1)),
+				endLine: UInt32(max(start.line, 1)),
+				endCol: UInt32(max(start.column, 1)) + UInt32(max(text.count, 1)) - 1,
+				locationType: LocationKind.token
+			)
+			return nodeId
+		}
+
+		private func push(_ name: String) {
+			scope.append(name)
+		}
+
+		// Index-store display names carry parameter labels: `f(x:_:)`.
+		private func functionName(_ baseName: String, _ parameters: FunctionParameterListSyntax)
+			-> String
+		{
+			let labels = parameters.map { parameter in
+				(parameter.firstName.tokenKind == .wildcard ? "_" : parameter.firstName.text) + ":"
+			}
+			return baseName + "(" + labels.joined() + ")"
+		}
+
+		// -- types ----------------------------------------------------------
+
+		override func visit(_ node: StructDeclSyntax) -> SyntaxVisitorContinueKind {
+			_ = emit(name: node.name.text, kind: NodeKind.struct, nameToken: node.name)
+			push(node.name.text)
+			return .visitChildren
+		}
+		override func visitPost(_ node: StructDeclSyntax) { scope.removeLast() }
+
+		override func visit(_ node: ClassDeclSyntax) -> SyntaxVisitorContinueKind {
+			_ = emit(name: node.name.text, kind: NodeKind.class, nameToken: node.name)
+			push(node.name.text)
+			return .visitChildren
+		}
+		override func visitPost(_ node: ClassDeclSyntax) { scope.removeLast() }
+
+		override func visit(_ node: ActorDeclSyntax) -> SyntaxVisitorContinueKind {
+			_ = emit(name: node.name.text, kind: NodeKind.class, nameToken: node.name)
+			push(node.name.text)
+			return .visitChildren
+		}
+		override func visitPost(_ node: ActorDeclSyntax) { scope.removeLast() }
+
+		override func visit(_ node: EnumDeclSyntax) -> SyntaxVisitorContinueKind {
+			_ = emit(name: node.name.text, kind: NodeKind.enum, nameToken: node.name)
+			push(node.name.text)
+			return .visitChildren
+		}
+		override func visitPost(_ node: EnumDeclSyntax) { scope.removeLast() }
+
+		override func visit(_ node: ProtocolDeclSyntax) -> SyntaxVisitorContinueKind {
+			_ = emit(name: node.name.text, kind: NodeKind.interface, nameToken: node.name)
+			push(node.name.text)
+			return .visitChildren
+		}
+		override func visitPost(_ node: ProtocolDeclSyntax) { scope.removeLast() }
+
+		// Extension members attach to the extended type (module-qualified
+		// spelling of the extended type name), matching the semantic side's
+		// extendedBy redirection for same-module extensions.
+		override func visit(_ node: ExtensionDeclSyntax) -> SyntaxVisitorContinueKind {
+			let typeName = node.extendedType.trimmedDescription
+			let parts = typeName.components(separatedBy: ".")
+			scope = [scope[0]] + parts
+			return .visitChildren
+		}
+		override func visitPost(_ node: ExtensionDeclSyntax) {
+			scope = [scope[0]]
+		}
+
+		override func visit(_ node: TypeAliasDeclSyntax) -> SyntaxVisitorContinueKind {
+			_ = emit(name: node.name.text, kind: NodeKind.typedef, nameToken: node.name)
+			return .skipChildren
+		}
+
+		// -- members --------------------------------------------------------
+
+		override func visit(_ node: FunctionDeclSyntax) -> SyntaxVisitorContinueKind {
+			let name = functionName(node.name.text, node.signature.parameterClause.parameters)
+			let kind = scope.count == 1 ? NodeKind.function : NodeKind.method
+			_ = emit(name: name, kind: kind, nameToken: node.name)
+			push(name)
+			return .visitChildren
+		}
+		override func visitPost(_ node: FunctionDeclSyntax) { scope.removeLast() }
+
+		override func visit(_ node: InitializerDeclSyntax) -> SyntaxVisitorContinueKind {
+			let name = functionName("init", node.signature.parameterClause.parameters)
+			_ = emit(name: name, kind: NodeKind.method, nameToken: node.initKeyword)
+			push(name)
+			return .visitChildren
+		}
+		override func visitPost(_ node: InitializerDeclSyntax) { scope.removeLast() }
+
+		override func visit(_ node: SubscriptDeclSyntax) -> SyntaxVisitorContinueKind {
+			let name = functionName("subscript", node.parameterClause.parameters)
+			_ = emit(name: name, kind: NodeKind.method, nameToken: node.subscriptKeyword)
+			push(name)
+			return .visitChildren
+		}
+		override func visitPost(_ node: SubscriptDeclSyntax) { scope.removeLast() }
+
+		override func visit(_ node: VariableDeclSyntax) -> SyntaxVisitorContinueKind {
+			for binding in node.bindings {
+				guard let pattern = binding.pattern.as(IdentifierPatternSyntax.self) else {
+					continue
+				}
+				let kind = scope.count == 1 ? NodeKind.globalVariable : NodeKind.field
+				_ = emit(name: pattern.identifier.text, kind: kind, nameToken: pattern.identifier)
+			}
+			// Accessors/initializer expressions carry no declarations we index.
+			return .skipChildren
+		}
+
+		override func visit(_ node: EnumCaseDeclSyntax) -> SyntaxVisitorContinueKind {
+			for element in node.elements {
+				_ = emit(
+					name: element.name.text,
+					kind: NodeKind.enumConstant,
+					nameToken: element.name
+				)
+			}
+			return .skipChildren
+		}
+
+		// Function bodies contain no further type declarations we can name
+		// stably; local funcs/types are intentionally skipped (they are
+		// file-private detail, and the semantic pass names them properly).
+		override func visit(_ node: CodeBlockSyntax) -> SyntaxVisitorContinueKind {
+			.skipChildren
+		}
+	}
+}
