@@ -1,9 +1,10 @@
 # Design: Swift Indexer Parity (SW series)
 
-**Status: SW0–SW4 implemented (2026-07-17) — build revived, transport tested,
+**Status: SW0–SW5 implemented (2026-07-17) — build revived, transport tested,
 package model + build driver landed, semantic core (IndexStoreDB) emitting
 nodes/edges/occurrences, syntactic fallback (SwiftSyntax) + hybrid merge,
-robustness parity (chunking, retry budget); SW5–SW9 planned.**
+robustness parity (chunking, retry budget), host-side per-package command
+emission; SW6–SW9 planned.**
 The Swift analog of the Rust indexer track: take the transport-complete but
 analysis-empty Swift subprocess (`src/swift_indexer`) to full parity with the
 C++/Rust pipeline, staged like [DESIGN_MULTIGROUP_FANOUT.md](DESIGN_MULTIGROUP_FANOUT.md)
@@ -148,13 +149,24 @@ crate/package; merge dedup keeps it correct but wastes work).
   and avoids re-running process init / rebuild churn on each requeue; the
   Rust exit-on-empty is paired with cheap relaunch, a tradeoff that does not
   favor the heavier Swift subprocess).
-- **SW5 — Host-side project model.** Per-package commands from a
-  `Package.swift` filesystem scan (no subprocess needed, unlike cargo);
-  FlatBuffers-additive appends `swift_build_args` / `swift_toolchain_path` /
-  `swift_index_store_path` with all THREE pop-rewrites + round-trip tests in
-  the same commit; `SourceGroupSettingsWithSwiftOptions` mixin (and fix the
-  latent `SourceGroupSettingsRustEmpty::equalsSettings` omission of
-  `WithCargoOptions::equals`).
+- **SW5 — Host-side project model (partial, 2026-07-17).** `SourceGroupSwift`
+  now emits **one command per SPM package root**, found by a recursive
+  `Package.swift` filesystem scan of the indexed paths (no subprocess needed,
+  unlike cargo metadata); when no manifest is found it falls back to a single
+  whole-directory command that the subprocess degrades to a synthetic
+  single-module scan. This fixes multi-package repos (each `swift build` runs
+  where a manifest exists) and is the granularity SW6 fans out over. Also
+  fixed the latent `SourceGroupSettingsRustEmpty::equalsSettings` bug (it
+  omitted `WithCargoOptions::equals`, so cargo-option-only edits were not
+  detected as changed settings).
+  **Deferred until a consumer exists**: the `swift_build_args` /
+  `swift_toolchain_path` / `swift_index_store_path` command fields, the
+  `SourceGroupSettingsWithSwiftOptions` mixin, and the GUI wizard (SW8). The
+  subprocess's `BuildDriver` currently runs `swift build` with defaults and
+  auto-discovers the store; adding schema fields + tri-language pop-rewrites
+  that nothing reads would be dead plumbing. Land them together with the
+  BuildDriver code that consumes them (custom toolchain / read-only-checkout
+  index-store override).
 - **SW6 — Fan-out.** `swiftSupervisorCount = min(distinct package roots, 3)`
   under the tri-state gate; storage-manager vector; generalized
   `swiftIndexerProcessId = processCount + rustSupervisorCount + 1 + k`.

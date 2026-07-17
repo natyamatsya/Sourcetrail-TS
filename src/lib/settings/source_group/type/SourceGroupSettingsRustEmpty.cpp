@@ -48,5 +48,7 @@ bool SourceGroupSettingsRustEmpty::equalsSettings(const SourceGroupSettingsBase*
 		return false;
 	if (!SourceGroupSettingsWithSourceExtensions::equals(other))
 		return false;
+	if (!SourceGroupSettingsWithCargoOptions::equals(other))
+		return false;
 	return true;
 }
