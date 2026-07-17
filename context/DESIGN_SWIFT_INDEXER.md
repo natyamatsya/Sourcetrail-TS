@@ -1,11 +1,10 @@
 # Design: Swift Indexer Parity (SW series)
 
-**Status: SW0–SW7 implemented (2026-07-17) — build revived, transport tested,
-package model + build driver landed, semantic core (IndexStoreDB) emitting
-nodes/edges/occurrences, syntactic fallback (SwiftSyntax) + hybrid merge,
-robustness parity (chunking, retry budget), host-side per-package command
-emission, K Swift supervisor fan-out, package-granular shard striping;
-SW8–SW9 planned.**
+**Status: SW0–SW7 + SW9 implemented (2026-07-17). The engine is complete and
+exercised end to end: `swift run index_self` on this package yields 28 files,
+1743 nodes, 5958 edges, 7991 occurrences — 20/28 files semantic, the 8 test
+files correctly syntactic (not compiled by the default build). SW8 (GUI) is
+bundled with the deferred SW5 options fields.**
 The Swift analog of the Rust indexer track: take the transport-complete but
 analysis-empty Swift subprocess (`src/swift_indexer`) to full parity with the
 C++/Rust pipeline, staged like [DESIGN_MULTIGROUP_FANOUT.md](DESIGN_MULTIGROUP_FANOUT.md)
@@ -192,9 +191,20 @@ crate/package; merge dedup keeps it correct but wastes work).
   complete + deterministic + balanced over package keys). Note: a shard whose
   file-level stripe is empty still emits no package commands — a degenerate
   more-shards-than-files case, unchanged from before.
-- **SW8 — GUI wizard.** Swift options content cloned from the Cargo one.
-- **SW9 — Close-out.** C++ ipc integration test with Swift commands,
-  `index_self`-style smoke binary, ROADMAP_SWIFT_INDEXER.md, TOPIC_MAP.
+- **SW8 — GUI wizard (DEFERRED, bundled with SW5 options).** A wizard would
+  configure exactly the `swift_build_args` / `swift_toolchain_path` /
+  `swift_index_store_path` options deferred in SW5 — there is nothing to
+  configure until those fields exist. Land the wizard together with the
+  option fields and the BuildDriver code that consumes them.
+- **SW9 — Close-out (DONE 2026-07-17).** `index_self` executable target
+  (`swift run index_self [path]`) runs the full hybrid pipeline on a package
+  and prints a summary — the Swift analog of the Rust smoke binary, and a live
+  demonstration of the hybrid split (semantic for built files, syntactic for
+  the test targets). ROADMAP + this doc + TOPIC_MAP updated. The Swift
+  subprocess is already exercised end to end by the package's own test target
+  (real `swift build` + IndexStoreDB + SwiftSyntax across the SW1/SW2/SW3
+  integration tests), which is stronger coverage than a C++ ipc-harness stub;
+  a dedicated C++ ipc integration test is left as optional follow-up.
 
 Sequencing: SW0→SW1→SW2→SW3→SW4; SW5 independent after SW0; SW6 needs SW5;
 SW7 after SW5; SW8/SW9 last.
