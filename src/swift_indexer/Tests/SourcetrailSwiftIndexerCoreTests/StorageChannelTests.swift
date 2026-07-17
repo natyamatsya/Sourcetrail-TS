@@ -41,6 +41,38 @@ import Testing
 		#expect(storageQueue.storages[0].nextId == 1)
 	}
 
+	@Test func filesAndErrorsRoundTripThroughSerialization() throws {
+		var storage = OwnedIntermediateStorage()
+		storage.errors.append(
+			OwnedStorageError(
+				id: storage.allocateId(),
+				message: "cannot find 'foo' in scope [/pkg/A.swift:12:7]",
+				translationUnit: "/pkg/A.swift",
+				fatal: false
+			)
+		)
+		storage.files.append(
+			OwnedStorageFile(id: storage.allocateId(), filePath: "/pkg/A.swift", complete: false)
+		)
+
+		let bytes = SwiftIndexerStorageChannel.serializeStorage(storage)
+		var buffer = ByteBuffer(bytes: bytes)
+		let queue: Sourcetrail_Ipc_IntermediateStorageQueue = try getCheckedRoot(byteBuffer: &buffer)
+		#expect(queue.storages.count == 1)
+		let decoded = queue.storages[0]
+		#expect(decoded.nextId == 3)
+		#expect(decoded.files.count == 1)
+		#expect(decoded.files[0].filePath == "/pkg/A.swift")
+		#expect(decoded.files[0].languageIdentifier == "swift")
+		#expect(decoded.files[0].indexed == true)
+		#expect(decoded.files[0].complete == false)
+		#expect(decoded.errors.count == 1)
+		#expect(decoded.errors[0].message == "cannot find 'foo' in scope [/pkg/A.swift:12:7]")
+		#expect(decoded.errors[0].translationUnit == "/pkg/A.swift")
+		#expect(decoded.errors[0].fatal == false)
+		#expect(decoded.errors[0].indexed == true)
+	}
+
 	@Test func appendKeepsExistingEntriesIntact() throws {
 		let entry = SwiftIndexerStorageChannel.serializeEmptyStorage()
 		let empty = [UInt8](repeating: 0, count: 16 * 1024 * 1024)

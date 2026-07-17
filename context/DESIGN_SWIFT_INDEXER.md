@@ -1,6 +1,7 @@
 # Design: Swift Indexer Parity (SW series)
 
-**Status: SW0 implemented (2026-07-17) — build revived, transport tested; SW1–SW9 planned.**
+**Status: SW0+SW1 implemented (2026-07-17) — build revived, transport tested,
+package model + build driver + diagnostics + per-file progress landed; SW2–SW9 planned.**
 The Swift analog of the Rust indexer track: take the transport-complete but
 analysis-empty Swift subprocess (`src/swift_indexer`) to full parity with the
 C++/Rust pipeline, staged like [DESIGN_MULTIGROUP_FANOUT.md](DESIGN_MULTIGROUP_FANOUT.md)
@@ -77,9 +78,14 @@ crate/package; merge dedup keeps it correct but wastes work).
   from the libipc-vendored checkout (identity clash with the URL dep, and the
   runtime must match what LibIPC builds against). `BUILD_SWIFT_LANGUAGE_PACKAGE`
   ON in the macOS toolchain presets (`apple-clang-*`, `llvm-clang-*`).
-- **SW1 — Package model + build driver.** `PackageModel.swift`,
-  `BuildDriver.swift`, diagnostics→StorageErrors, `updateIndexing` per-file
-  progress (analog of `status.rs`), StorageFile rows.
+- **SW1 — Package model + build driver (DONE 2026-07-17).**
+  `PackageModel.swift` (`swift package describe --type json`, 60 s timeout,
+  synthetic-single-module fallback), `BuildDriver.swift` (`swift build
+  --enable-index-store`, `path:line:col: severity:` diagnostic parsing →
+  non-fatal StorageErrors), `updateIndexing` per-file progress (no crash
+  bookkeeping, analog of `status.rs`), StorageFile rows (`complete=false`
+  until the engine lands, so refresh upgrades them). Verified end-to-end by
+  an integration test that builds a broken fixture package.
 - **SW2 — Semantic core (the centerpiece).** IndexStoreDB; StorageBuilder
   ports id allocation, node/edge dedup, and name encoders from
   `collector.rs`. Definitions first, then references. Known hard part:

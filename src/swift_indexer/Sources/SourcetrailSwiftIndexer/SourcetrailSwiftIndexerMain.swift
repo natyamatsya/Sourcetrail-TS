@@ -70,7 +70,12 @@ struct SourcetrailSwiftIndexer {
 						try? statusChannel.finishIndexing()
 					}
 
-					try storageChannel.pushEmptyStorage()
+					let storage = PackageIndexer.index(
+						workingDirectory: command.workingDirectory
+					) { filePath in
+						try? statusChannel.updateIndexing(filePath: filePath)
+					}
+					try storageChannel.push(storage: storage)
 				} catch {
 					writeStderr(
 						"sourcetrail_swift_indexer: failed to process command for \(command.sourceFilePath): \(error)\n"
