@@ -8,13 +8,14 @@ packages over the existing thoth-ipc / FlatBuffers protocol, with a **hybrid
 engine** — semantic data from the compiler-produced index store (IndexStoreDB)
 plus a SwiftSyntax declaration fallback for code that is not (yet) buildable.
 
-The staged design and rationale live in
-[DESIGN_SWIFT_INDEXER.md](DESIGN_SWIFT_INDEXER.md) (the SW0–SW9 series). This
+The staged design and rationale for the shipped engine live in
+[DESIGN_SWIFT_INDEXER.md](DESIGN_SWIFT_INDEXER.md) (SW0–SW10). The planned
+semantic-enrichment series (SW11–SW16) is specified in this file below. This
 file tracks status at a glance.
 
 ---
 
-## Status (2026-07-17)
+## Status (2026-07-18)
 
 | Stage | What | State |
 |-------|------|-------|
@@ -33,6 +34,190 @@ file tracks status at a glance.
 The engine is complete and exercised end to end. `swift run index_self` on the
 indexer's own package produces ~30 files / ~2k nodes / ~7.8k edges / ~13k
 occurrences (the occurrence jump over pre-SW10 is the added SCOPE locations).
+
+The **SW11–SW16 series below is planned, not built** — it raises the graph from
+a generic-OO projection (which any language would produce) to one that speaks
+Swift: generics/constraints, protocol conformance fidelity, concurrency
+isolation, attribute-driven relations, macros, and API-surface metadata.
+
+| Stage | What | State |
+|-------|------|-------|
+| SW11 | Generic-parameter tier + constraints (the Rust-lifetime analog) | 📋 planned |
+| SW12 | Protocol conformance fidelity: witnesses, conditional/retroactive, default impls | 📋 planned |
+| SW13 | Concurrency model: actor identity, global-actor isolation, `async`, `Sendable` | 📋 planned |
+| SW14 | Attribute-driven relations: property wrappers + result builders | 📋 planned |
+| SW15 | Macros: attached + freestanding applications (+ optional expansion) | 📋 planned |
+| SW16 | API-surface metadata: access control (incl. `package`) + `@available` | 📋 planned |
+
+---
+
+## Semantic enrichment — SW11–SW16 (planned)
+
+### Motivation & the schema windfall
+
+The Rust indexer represents lifetimes not as a special case but as its
+**generic-parameter tier**: each lifetime and type param is a
+`NODE_TYPE_PARAMETER` member of its owner, and bounds (`T: Trait`, `'a: 'b`)
+become edges (`collector.rs` `bound_owner` → `EDGE_INHERITANCE`/usage). The
+Swift graph today has **no generic-parameter tier at all** — `baseOf` collapses
+class inheritance and protocol conformance into one `EDGE_INHERITANCE`, actors
+are bare `NODE_CLASS`, extensions vanish, and attributes are invisible. SW11–16
+close that gap along the axes that make Swift *Swift*.
+
+**Key finding that de-risks most of this:** Sourcetrail's edge/node vocabulary
+already carries the concepts, so there is **no cross-language schema migration** —
+only exposing constants that `StorageKinds.swift` mirrors from `graph/Edge.h`
+and `NodeKind.h` (wire values already agreed tri-language):
+
+| Concept | Existing wire kind | Swift-side status |
+|---------|--------------------|-------------------|
+| Type parameter node | `NODE_TYPE_PARAMETER` (`1<<17`) | defined in `StorageKinds.swift`, **unused** |
+| Type argument edge | `EDGE_TYPE_ARGUMENT` (`1<<6`) | not yet exposed |
+| Specialization edge | `EDGE_TEMPLATE_SPECIALIZATION` (`1<<7`) | not yet exposed |
+| Macro application | `EDGE_MACRO_USAGE` (`1<<11`) + `NODE_MACRO` (`1<<19`) | node exposed, edge not |
+| Attribute application | `EDGE_ANNOTATION_USAGE` (`1<<12`) | not yet exposed |
+
+Swift attributes (`@MainActor`, `@State`, `@ViewBuilder`, `@available`, attached
+macros) are literally *annotations* — `EDGE_ANNOTATION_USAGE` is the natural home
+for SW13/SW14 and the attribute half of SW15/SW16. The only genuinely new work
+is Swift-side extraction (mostly SwiftSyntax, extending the SW10
+`DeclScopeMap`/enrichment plumbing) and USR resolution of the edge targets.
+
+### Engine split (recurring theme)
+
+- **SwiftSyntax (syntactic)** owns declaration-shape facts that the index store
+  does not model as relations: generic-param lists, `where` clauses, the `actor`
+  keyword, `async`/`nonisolated`, attribute *applications*, access modifiers,
+  `@available`. Reliable even on broken builds (rides the hybrid fallback).
+- **IndexStoreDB (semantic)** owns cross-symbol resolution: the USR of a
+  constraint's target protocol, protocol-witness relations (`overrideOf`),
+  conformance (`baseOf`), macro-definition USRs and expansion roles.
+- Each stage is therefore **hybrid**: SwiftSyntax finds the site and spelling,
+  the index resolves the target node. Where the target can't be resolved
+  (external / not built), fall back to a module-qualified flat name — the same
+  degradation the USR→NameHierarchy resolver already uses.
+
+---
+
+### SW11 — Generic-parameter tier + constraints (L, centerpiece)
+
+The direct analog of Rust lifetimes, and the biggest single parity gap.
+
+- Emit `NODE_TYPE_PARAMETER` for every generic parameter of a type/func/subscript,
+  as a `MEMBER` of its owner (mirrors `collector.rs::emit generic params`), with
+  precise SwiftSyntax name extents (SW10 machinery).
+- **Constraints** from `where` clauses and inline bounds:
+  - conformance bound `T: Collection` → edge param→protocol
+    (`EDGE_INHERITANCE`, matching Rust's bound handling);
+  - same-type constraint `where T.Element == U` → `EDGE_TYPE_USAGE` between the
+    two sides (Swift-richer than Rust; no lifetime equivalent);
+  - class bound `T: SomeClass` → `EDGE_TYPE_USAGE`.
+- **Type arguments** at use sites (`Foo<Bar>`, `Array<Element>`) → `EDGE_TYPE_ARGUMENT`
+  from the enclosing decl to `Bar` — the concept Rust models with its
+  specialization scope. Gate volume behind the same tri-state
+  specialization-scope setting the Rust side exposes (off/local/all) to avoid
+  node blow-up; reuse `SourceGroupSettingsWithSwiftOptions` for the knob.
+- *Extract:* param lists + where clauses are pure SwiftSyntax; constraint/arg
+  targets resolve through the index (flat-name fallback when external).
+- *Test:* a generic type with a multi-clause `where`, a conditional extension,
+  and a same-type constraint — assert param nodes + each constraint edge.
+
+### SW12 — Protocol conformance fidelity (M)
+
+Make Swift's defining feature first-class instead of merged into inheritance.
+
+- **Witness edges** — which concrete member satisfies which protocol requirement.
+  Swift's index rides this on the `overrideOf` relation, so audit first: SW2
+  already emits `EDGE_OVERRIDE` from `overrideOf`, which likely *already* yields
+  partial requirement-satisfaction edges. Confirm coverage, then ensure protocol
+  requirements (not just class overrides) resolve as targets. "Who implements
+  this requirement?" is premium navigation.
+- **Conditional / retroactive conformance** (`extension Array: Foo where …`):
+  emit the conformance `EDGE_INHERITANCE` *plus* the constraint edges from SW11's
+  where-clause handling, so the graph shows *when* the conformance holds.
+- **Default implementations** in protocol extensions: a method in
+  `extension P { … }` that matches a requirement → `EDGE_OVERRIDE` to the
+  requirement (semantic) so defaults are discoverable from the requirement.
+- *Non-goal:* a distinct "conformance" edge kind — Sourcetrail has no such slot;
+  `EDGE_INHERITANCE` + the constraint edges carry it. Note the limitation.
+
+### SW13 — Concurrency model (M)
+
+Swift's most distinctive modern axis, and safety-critical.
+
+- **Actor identity:** keep `NODE_CLASS` (no schema slot for actors) but record
+  actor-ness so the code view / hover can label it; revisit a dedicated kind only
+  if the schema ever grows one (tracked in *Known limitations*).
+- **Global-actor isolation:** `@MainActor` and custom global actors on a decl →
+  `EDGE_ANNOTATION_USAGE` decl→actor-type. This is a genuinely new *relationship*
+  dimension (cross-cutting isolation), and it lands on an existing edge kind.
+- **`Sendable`** needs no special work — it is a protocol conformance and falls
+  out of SW12 for free (call this out so it isn't re-implemented).
+- **`async` / `nonisolated`** as decl metadata (syntactic), surfaced in the code
+  view rather than as edges.
+- *Extract:* attributes + `actor`/`async`/`nonisolated` keywords are SwiftSyntax;
+  the global-actor *type* resolves through the index.
+
+### SW14 — Attribute-driven relations: property wrappers & result builders (M)
+
+The features that make SwiftUI/Combine/SwiftData code navigable.
+
+- **Property wrappers** (`@State`, `@Published`, `@Binding`, custom
+  `@propertyWrapper`): edge wrapped-property → wrapper type via
+  `EDGE_ANNOTATION_USAGE`. Distinguishes "used as a wrapper" from an ordinary
+  type reference.
+- **Result builders** (`@ViewBuilder`, custom `@resultBuilder`) applied to a
+  param/func: `EDGE_ANNOTATION_USAGE` to the builder type.
+- Generalizes to a reusable **attribute-application walk** in SwiftSyntax
+  (shared with SW13's isolation attrs and SW16's `@available`): for each
+  attached custom attribute, resolve its type USR and emit annotation-usage. Build
+  this walker once; SW13/14/16 are then thin consumers.
+- *Extract:* attribute syntax is SwiftSyntax; wrapper/builder type USR via index.
+
+### SW15 — Macros (M/L)
+
+Swift 5.9+ macros — modern and increasingly load-bearing (`@Observable`,
+`@Model`, `#Predicate`, `@Test`).
+
+- **Attached macros** (`@Observable`, `@Model`): `EDGE_MACRO_USAGE` from the
+  macro `NODE_MACRO` to each decl it annotates (reuses the SW14 attribute walk to
+  find the site; a macro attribute is distinguishable from a wrapper by resolving
+  its symbol kind to *macro* in the index).
+- **Freestanding macros** (`#Predicate`, `#file`): `EDGE_MACRO_USAGE` at the
+  expansion site.
+- *Optional stretch:* represent **expanded members** (the peers/members a macro
+  synthesizes) as implicit nodes — the index store records macro-expansion roles,
+  but the source locations are synthetic; likely defer as its own follow-up.
+- *Risk:* macro symbols and expansion roles are the least-exercised corner of
+  IndexStoreDB; budget audit time. Falls back gracefully to "macro node with no
+  edges" (today's behavior) if resolution is thin.
+
+### SW16 — API-surface metadata (S)
+
+Cheap, high-utility decoration — no new edges.
+
+- **Access control** as a node attribute: `open` / `public` / `package` /
+  `internal` / `fileprivate` / `private`. Swift's `package` level (5.9) and the
+  `open` vs `public` (subclassable) distinction are Swift-specific. Enables a
+  "public-API-only" graph filter and honest API-surface views.
+- **`@available`** platform/version gating → metadata (the analog of Rust `cfg`
+  gating), optionally an `EDGE_ANNOTATION_USAGE` to the platform when a symbol is
+  referenced. Purely syntactic, so it works on broken builds too.
+- *Extract:* modifiers + `@available` are pure SwiftSyntax — the cheapest stage,
+  no index dependency.
+
+### Sequencing & sizing
+
+- **SW11 first** — it builds the type-parameter tier and the where-clause parser
+  that SW12's conditional conformance reuses; it is the centerpiece (L).
+- **SW14 before SW13/SW16** in practice — its attribute-application walk is the
+  shared substrate for global-actor isolation (SW13) and `@available` (SW16).
+  Land SW14's walker, then SW13/SW16 are thin (M, then S).
+- **SW12** is independent (semantic-only, M) and can slot in any time after SW11.
+- **SW15** last (M/L) — highest audit risk, and benefits from the SW14 walk.
+- Every stage stays hybrid and degrades to the current coarser graph when a
+  target USR can't be resolved, so each lands independently without regressing
+  the SW2/SW10 baseline.
 
 ---
 
@@ -64,7 +249,8 @@ with a live consumer:
   reference tokens would need a full per-file token map — cheap to add if the
   approximation ever mis-highlights a real reference).
 - **Actors** map to `NODE_CLASS` (no schema/GUI churn); revisit if a distinct
-  actor node kind is ever wanted.
+  actor node kind is ever wanted. SW13 records actor-ness as metadata without a
+  new node kind.
 - **Degenerate sharding**: a shard whose file-level stripe is empty emits no
   package commands (more shards than files) — unchanged from the file-level
   behavior.
