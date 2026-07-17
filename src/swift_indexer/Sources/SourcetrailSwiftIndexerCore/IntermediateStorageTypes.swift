@@ -46,9 +46,53 @@ package struct OwnedStorageError {
 	}
 }
 
+package struct OwnedStorageNode {
+	package let id: Int64
+	package let type: Int32
+	package let serializedName: String
+}
+
+package struct OwnedStorageEdge {
+	package let id: Int64
+	package let type: Int32
+	package let sourceNodeId: Int64
+	package let targetNodeId: Int64
+}
+
+package struct OwnedStorageSymbol {
+	package let id: Int64
+	package let definitionKind: Int32
+}
+
+package struct OwnedStorageSourceLocation {
+	package let id: Int64
+	package let fileNodeId: Int64
+	package let startLine: UInt32
+	package let startCol: UInt32
+	package let endLine: UInt32
+	package let endCol: UInt32
+	package let type: Int32
+}
+
+package struct OwnedStorageLocalSymbol {
+	package let id: Int64
+	package let name: String
+}
+
+package struct OwnedStorageOccurrence {
+	package let elementId: Int64
+	package let sourceLocationId: Int64
+}
+
 package struct OwnedIntermediateStorage {
 	package var nextId: Int64 = 1
+	package var nodes: [OwnedStorageNode] = []
 	package var files: [OwnedStorageFile] = []
+	package var edges: [OwnedStorageEdge] = []
+	package var symbols: [OwnedStorageSymbol] = []
+	package var sourceLocations: [OwnedStorageSourceLocation] = []
+	package var localSymbols: [OwnedStorageLocalSymbol] = []
+	package var occurrences: [OwnedStorageOccurrence] = []
 	package var errors: [OwnedStorageError] = []
 
 	package init() {}

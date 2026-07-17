@@ -15,6 +15,13 @@ let package = Package(
 		// would clash with it on package identity (SwiftPM warns, soon errors)
 		// and drift from the runtime the IPC layer is built against.
 		.package(path: "../../submodules/thoth-ipc/swift/libipc/vendor/flatbuffers"),
+		// Semantic engine (SW2): reads the compiler-produced index store.
+		// No semver releases upstream — pinned by exact revision (main as of
+		// 2026-07-17, builds with Swift 6.4); bump alongside toolchain updates.
+		.package(
+			url: "https://github.com/swiftlang/indexstore-db.git",
+			revision: "c993f4fb4f321fae1945e96a2377742f24e132f4"
+		),
 	],
 	targets: [
 		.target(
@@ -22,6 +29,7 @@ let package = Package(
 			dependencies: [
 				.product(name: "LibIPC", package: "libipc"),
 				.product(name: "FlatBuffers", package: "flatbuffers"),
+				.product(name: "IndexStoreDB", package: "indexstore-db"),
 			],
 			path: "Sources/SourcetrailSwiftIndexerCore"
 		),
