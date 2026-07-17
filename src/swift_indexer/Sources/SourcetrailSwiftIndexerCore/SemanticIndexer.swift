@@ -18,6 +18,14 @@ final class SemanticIndexer {
 	/// SW10: per-file SwiftSyntax facts (exact name extents + declaration scope
 	/// extents), used to enrich the store's positional occurrences. Set per file.
 	private var scopeMap: DeclScopeMap?
+	/// SW11: per-file generic parameters + constraints (syntactic). Set per file.
+	private var genericMap: GenericParamMap?
+	/// SW11: resolved name parts of each definition, keyed by its name-token
+	/// position — the owner lookup for `emitGenerics`. Reset per file.
+	private var defPartsByPos: [SyntaxPos: [String]] = [:]
+	/// SW11: resolved target of each constraint reference, keyed by position.
+	/// Reset per file.
+	private var refTargetByPos: [SyntaxPos: (parts: [String], kind: Int32)] = [:]
 
 	init(storePath: URL, databasePath: URL, builder: StorageBuilder, toolchainPath: String = "") throws {
 		let library = try IndexStoreLibrary(
@@ -48,13 +56,22 @@ final class SemanticIndexer {
 
 	func indexFile(path: String) {
 		let fileNodeId = builder.fileNodeId(path: path, complete: true)
-		// SW10: parse the file once for exact name/scope extents. Semantic
-		// coverage means the file compiled, so it parses too.
+		// SW10/SW11: parse the file once for exact name/scope extents and generic
+		// facts. Semantic coverage means the file compiled, so it parses too.
 		scopeMap = DeclScopeMap.build(path: path)
-		defer { scopeMap = nil }
+		genericMap = GenericParamMap.build(path: path)
+		defPartsByPos.removeAll(keepingCapacity: true)
+		refTargetByPos.removeAll(keepingCapacity: true)
+		defer {
+			scopeMap = nil
+			genericMap = nil
+		}
 		for occurrence in index.symbolOccurrences(inFilePath: path) {
 			process(occurrence: occurrence, filePath: path, fileNodeId: fileNodeId)
 		}
+		// SW11: with all definitions and constraint targets resolved for this
+		// file, materialize the generic-parameter tier and its bound edges.
+		emitGenerics(fileNodeId: fileNodeId)
 	}
 
 	// -----------------------------------------------------------------------
@@ -87,6 +104,9 @@ final class SemanticIndexer {
 			definitionKind: occurrence.roles.contains(.implicit)
 				? DefinitionKind.implicit : DefinitionKind.explicit
 		)
+		// SW11: remember where this definition landed so emitGenerics can find the
+		// owner's parts when attaching its type parameters.
+		defPartsByPos[positionOf(occurrence.location)] = parts
 		recordDefinitionLocations(
 			elementId: nodeId, occurrence: occurrence, fileNodeId: fileNodeId)
 
@@ -113,6 +133,14 @@ final class SemanticIndexer {
 		let symbol = occurrence.symbol
 		guard let (targetParts, targetKind) = resolve(symbol: symbol, location: occurrence.location)
 		else {
+			return
+		}
+		// SW11: a reference sitting at a generic bound's target is not a plain
+		// container→type usage — emitGenerics attaches it to the parameter node
+		// instead. Record the resolved target and suppress the default edge here.
+		let position = positionOf(occurrence.location)
+		if genericMap?.isConstraintTarget(position) == true {
+			refTargetByPos[position] = (targetParts, targetKind)
 			return
 		}
 		let targetId = builder.nodeId(parts: targetParts, kind: targetKind)
@@ -181,6 +209,53 @@ final class SemanticIndexer {
 				type: LocationKind.scope)
 		} else {
 			recordTokenOccurrence(elementId: elementId, occurrence: occurrence, fileNodeId: fileNodeId)
+		}
+	}
+
+	// The (line, utf8-column) an occurrence lands on — the join key between the
+	// store's positions and the SwiftSyntax maps (SW10/SW11).
+	private func positionOf(_ location: SymbolLocation) -> SyntaxPos {
+		SyntaxPos(line: Int(max(location.line, 1)), column: Int(max(location.utf8Column, 1)))
+	}
+
+	// SW11: materialize the generic-parameter tier for this file. Each param is a
+	// NODE_TYPE_PARAMETER member of its owner with a precise name token; each
+	// bound is an edge from the parameter to the resolved constraint target
+	// (conformance/class → INHERITANCE, same-type → TYPE_USAGE), carrying the
+	// bound type's clickable token. Owners/targets that did not resolve in this
+	// file (e.g. not semantically covered) are skipped — the graph degrades to
+	// its pre-SW11 shape rather than forking a mis-named node.
+	private func emitGenerics(fileNodeId: Int64) {
+		guard let genericMap else { return }
+		for (ownerPos, params) in genericMap.paramsByOwner {
+			guard let ownerParts = defPartsByPos[ownerPos] else { continue }
+			let ownerId = builder.nodeId(parts: ownerParts, kind: NodeKind.symbol)
+			for param in params {
+				let paramId = builder.nodeId(
+					parts: ownerParts + [param.name], kind: NodeKind.typeParameter)
+				// The store may have already emitted this param under a guessed kind
+				// (no dedicated generic-param symbol kind exists); typeParameter is
+				// authoritative at its declaration.
+				builder.setNodeType(nodeId: paramId, type: NodeKind.typeParameter)
+				builder.recordSymbol(nodeId: paramId, definitionKind: DefinitionKind.explicit)
+				_ = builder.edgeId(type: EdgeKind.member, source: ownerId, target: paramId)
+				recordExtent(
+					elementId: paramId, fileNodeId: fileNodeId, extent: param.extent,
+					type: LocationKind.token)
+			}
+		}
+		for constraint in genericMap.constraints {
+			guard let ownerParts = defPartsByPos[constraint.ownerPos],
+				let target = refTargetByPos[constraint.targetPos]
+			else { continue }
+			let paramId = builder.nodeId(
+				parts: ownerParts + [constraint.paramName], kind: NodeKind.typeParameter)
+			let targetId = builder.nodeId(parts: target.parts, kind: target.kind)
+			let edgeId = builder.edgeId(
+				type: constraint.edgeKind, source: paramId, target: targetId)
+			recordExtent(
+				elementId: edgeId, fileNodeId: fileNodeId, extent: constraint.targetExtent,
+				type: LocationKind.token)
 		}
 	}
 

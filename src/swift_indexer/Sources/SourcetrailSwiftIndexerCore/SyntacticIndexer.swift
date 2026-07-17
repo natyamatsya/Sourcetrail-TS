@@ -96,6 +96,23 @@ enum SyntacticIndexer {
 			)
 		}
 
+		// SW11: a generic owner's type parameters as NODE_TYPE_PARAMETER members
+		// with precise name tokens. Bounds are not resolved here — the syntactic
+		// fallback carries no cross-reference edges (see the semantic pass).
+		private func emitGenericParams(
+			ownerParts: [String], clause: GenericParameterClauseSyntax?
+		) {
+			guard let clause else { return }
+			let ownerId = builder.nodeId(parts: ownerParts, kind: NodeKind.symbol)
+			for parameter in clause.parameters {
+				let paramId = builder.nodeId(
+					parts: ownerParts + [parameter.name.text], kind: NodeKind.typeParameter)
+				builder.recordSymbol(nodeId: paramId, definitionKind: DefinitionKind.explicit)
+				_ = builder.edgeId(type: EdgeKind.member, source: ownerId, target: paramId)
+				record(paramId, tokenExtent(parameter.name, converter), LocationKind.token)
+			}
+		}
+
 		private func push(_ name: String) {
 			scope.append(name)
 		}
@@ -114,6 +131,7 @@ enum SyntacticIndexer {
 
 		override func visit(_ node: StructDeclSyntax) -> SyntaxVisitorContinueKind {
 			_ = emit(name: node.name.text, kind: NodeKind.struct, nameToken: node.name, decl: node)
+			emitGenericParams(ownerParts: scope + [node.name.text], clause: node.genericParameterClause)
 			push(node.name.text)
 			return .visitChildren
 		}
@@ -121,6 +139,7 @@ enum SyntacticIndexer {
 
 		override func visit(_ node: ClassDeclSyntax) -> SyntaxVisitorContinueKind {
 			_ = emit(name: node.name.text, kind: NodeKind.class, nameToken: node.name, decl: node)
+			emitGenericParams(ownerParts: scope + [node.name.text], clause: node.genericParameterClause)
 			push(node.name.text)
 			return .visitChildren
 		}
@@ -128,6 +147,7 @@ enum SyntacticIndexer {
 
 		override func visit(_ node: ActorDeclSyntax) -> SyntaxVisitorContinueKind {
 			_ = emit(name: node.name.text, kind: NodeKind.class, nameToken: node.name, decl: node)
+			emitGenericParams(ownerParts: scope + [node.name.text], clause: node.genericParameterClause)
 			push(node.name.text)
 			return .visitChildren
 		}
@@ -135,6 +155,7 @@ enum SyntacticIndexer {
 
 		override func visit(_ node: EnumDeclSyntax) -> SyntaxVisitorContinueKind {
 			_ = emit(name: node.name.text, kind: NodeKind.enum, nameToken: node.name, decl: node)
+			emitGenericParams(ownerParts: scope + [node.name.text], clause: node.genericParameterClause)
 			push(node.name.text)
 			return .visitChildren
 		}
@@ -162,6 +183,7 @@ enum SyntacticIndexer {
 
 		override func visit(_ node: TypeAliasDeclSyntax) -> SyntaxVisitorContinueKind {
 			_ = emit(name: node.name.text, kind: NodeKind.typedef, nameToken: node.name, decl: node)
+			emitGenericParams(ownerParts: scope + [node.name.text], clause: node.genericParameterClause)
 			return .skipChildren
 		}
 
@@ -171,6 +193,7 @@ enum SyntacticIndexer {
 			let name = functionName(node.name.text, node.signature.parameterClause.parameters)
 			let kind = scope.count == 1 ? NodeKind.function : NodeKind.method
 			_ = emit(name: name, kind: kind, nameToken: node.name, decl: node)
+			emitGenericParams(ownerParts: scope + [name], clause: node.genericParameterClause)
 			push(name)
 			return .visitChildren
 		}
@@ -187,6 +210,7 @@ enum SyntacticIndexer {
 		override func visit(_ node: SubscriptDeclSyntax) -> SyntaxVisitorContinueKind {
 			let name = functionName("subscript", node.parameterClause.parameters)
 			_ = emit(name: name, kind: NodeKind.method, nameToken: node.subscriptKeyword, decl: node)
+			emitGenericParams(ownerParts: scope + [name], clause: node.genericParameterClause)
 			push(name)
 			return .visitChildren
 		}
