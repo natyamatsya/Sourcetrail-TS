@@ -51,19 +51,6 @@ struct SourcetrailSwiftIndexer {
 					continue
 				}
 
-				while true {
-					let currentStorageCount = (try? storageChannel.storageCount()) ?? 0
-					if currentStorageCount < 2 {
-						break
-					}
-
-					if (try? statusChannel.isInterrupted()) == true {
-						return
-					}
-
-					try? await Task.sleep(nanoseconds: 200_000_000)
-				}
-
 				do {
 					try? statusChannel.startIndexing(filePath: command.sourceFilePath)
 					defer {
@@ -75,7 +62,28 @@ struct SourcetrailSwiftIndexer {
 					) { filePath in
 						try? statusChannel.updateIndexing(filePath: filePath)
 					}
-					try storageChannel.push(storage: storage)
+
+					// Split large results so one queue entry never outgrows the
+					// fixed 16 MiB SHM segment (ADR-0002); the app merges the
+					// chunks via PersistentStorage inject. Back-pressure applies
+					// between pushes.
+					var interruptedDuringPush = false
+					for chunk in StorageChunker.chunks(storage) {
+						while ((try? storageChannel.storageCount()) ?? 0) >= 2 {
+							if (try? statusChannel.isInterrupted()) == true {
+								interruptedDuringPush = true
+								break
+							}
+							try? await Task.sleep(nanoseconds: 200_000_000)
+						}
+						if interruptedDuringPush {
+							break
+						}
+						try storageChannel.push(storage: chunk)
+					}
+					if interruptedDuringPush {
+						return
+					}
 				} catch {
 					writeStderr(
 						"sourcetrail_swift_indexer: failed to process command for \(command.sourceFilePath): \(error)\n"

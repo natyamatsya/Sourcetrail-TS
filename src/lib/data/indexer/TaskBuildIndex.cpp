@@ -548,19 +548,41 @@ void TaskBuildIndex::runIndexerProcess(ProcessId processId, const std::string& l
 
 void TaskBuildIndex::runRustIndexerProcess(ProcessId processId, const std::string& logFilePath)
 {
-	using enum Task::TaskState;
-	using enum IndexerCommandType;
+	runExternalIndexerProcess(
+		processId,
+		logFilePath,
+		AppPath::getRustIndexerFilePath(),
+		IndexerCommandType::INDEXER_COMMAND_RUST,
+		"Rust indexer process");
+}
+
+void TaskBuildIndex::runSwiftIndexerProcess(ProcessId processId, const std::string& logFilePath)
+{
+	runExternalIndexerProcess(
+		processId,
+		logFilePath,
+		AppPath::getSwiftIndexerFilePath(),
+		IndexerCommandType::INDEXER_COMMAND_SWIFT,
+		"Swift indexer process");
+}
+
+void TaskBuildIndex::runExternalIndexerProcess(
+	ProcessId processId,
+	const std::string& logFilePath,
+	const FilePath& indexerPath,
+	IndexerCommandType commandType,
+	const std::string& humanName)
+{
 	[[maybe_unused]]
 	ScopedFunctor runningThreadCounter([&]() { m_runningThreadCount--; });
 	try
 	{
 
-	const FilePath rustIndexerPath = AppPath::getRustIndexerFilePath();
-	if (!rustIndexerPath.exists())
+	if (!indexerPath.exists())
 	{
 		LOG_WARNING(
-			"Rust indexer not found at \"" + rustIndexerPath.str() +
-			"\" — Rust files will not be indexed");
+			humanName + " not found at \"" + indexerPath.str() +
+			"\" — files of this language will not be indexed");
 		return;
 	}
 
@@ -571,18 +593,15 @@ void TaskBuildIndex::runRustIndexerProcess(ProcessId processId, const std::strin
 	args.push_back(UserPaths::getUserDataDirectoryPath().getAbsolute().str());
 	if (!logFilePath.empty())
 		args.push_back(logFilePath);
-	const std::string commandLine = buildProcessCommandLine(rustIndexerPath, args);
+	const std::string commandLine = buildProcessCommandLine(indexerPath, args);
 
-	int result = 0;
 	size_t launchAttempt = 0;
 	size_t consecutiveFailureCount = 0;
 	const size_t maxConsecutiveFailures = 200;
 	IndexerCommandManagerImpl commandManager(m_appUUID, ProcessId::NONE, false);
 	while (!m_stopSource.stop_requested())
 	{
-		const bool hasRustCommands =
-			commandManager.hasIndexerCommandType(INDEXER_COMMAND_RUST);
-		if (!hasRustCommands)
+		if (!commandManager.hasIndexerCommandType(commandType))
 		{
 			if (m_indexerCommandQueueStopped.load())
 				break;
@@ -593,23 +612,22 @@ void TaskBuildIndex::runRustIndexerProcess(ProcessId processId, const std::strin
 
 		launchAttempt++;
 		const utility::ProcessOutput processOutput = utility::executeProcess(
-			rustIndexerPath.str(), args, FilePath(), false, INFINITE_TIMEOUT);
-		result = processOutput.exitCode;
+			indexerPath.str(), args, FilePath(), false, INFINITE_TIMEOUT);
 		LOG_INFO_STREAM(
-			<< "Rust indexer process " << processId << " attempt " << launchAttempt
-			<< " returned with " << result);
+			<< humanName << " " << processId << " attempt " << launchAttempt
+			<< " returned with " << processOutput.exitCode);
 		LOG_INFO_STREAM(
-			<< "Rust indexer process " << processId << " attempt " << launchAttempt
+			<< humanName << " " << processId << " attempt " << launchAttempt
 			<< " stdout:\n" << processOutput.output);
 		LOG_INFO_STREAM(
-			<< "Rust indexer process " << processId << " attempt " << launchAttempt
+			<< humanName << " " << processId << " attempt " << launchAttempt
 			<< " stderr:\n" << processOutput.error);
 
 		const IndexerProcessResult processResult = validateIndexerProcessOutput(
 			processOutput,
 			processId,
 			launchAttempt,
-			"Rust indexer process",
+			humanName,
 			commandLine);
 		if (processResult)
 		{
@@ -624,11 +642,14 @@ void TaskBuildIndex::runRustIndexerProcess(ProcessId processId, const std::strin
 
 		LOG_ERROR_STREAM(<< processResult.error());
 
+		// A single subprocess failure must not abort the whole run — restart
+		// it and keep draining the queue, matching the Rust supervisor. Only
+		// a sustained failure streak interrupts indexing.
 		consecutiveFailureCount++;
 		if (consecutiveFailureCount >= maxConsecutiveFailures)
 		{
 			LOG_ERROR_STREAM(
-				<< "Rust indexer process " << processId << " attempt " << launchAttempt
+				<< humanName << " " << processId << " attempt " << launchAttempt
 				<< " reached " << consecutiveFailureCount
 				<< " consecutive failures. interrupting indexing.");
 			m_stopSource.request_stop();
@@ -640,7 +661,7 @@ void TaskBuildIndex::runRustIndexerProcess(ProcessId processId, const std::strin
 		}
 
 		LOG_WARNING_STREAM(
-			<< "Rust indexer process " << processId << " failure " << consecutiveFailureCount
+			<< humanName << " " << processId << " failure " << consecutiveFailureCount
 			<< "/" << maxConsecutiveFailures
 			<< ". restarting process to continue indexing.");
 		std::this_thread::sleep_for(std::chrono::milliseconds(200));
@@ -649,82 +670,11 @@ void TaskBuildIndex::runRustIndexerProcess(ProcessId processId, const std::strin
 	catch (const std::exception& e)
 	{
 		LOG_ERROR_STREAM(
-			<< "TaskBuildIndex::runRustIndexerProcess exception: " << e.what());
+			<< "TaskBuildIndex::runExternalIndexerProcess (" << humanName
+			<< ") exception: " << e.what());
 		m_stopSource.request_stop();
 		m_indexerCommandQueueStopped.store(true);
 		utility::killRunningProcesses();
-	}
-}
-
-void TaskBuildIndex::runSwiftIndexerProcess(ProcessId processId, const std::string& logFilePath)
-{
-	using enum Task::TaskState;
-	using enum IndexerCommandType;
-	[[maybe_unused]]
-	ScopedFunctor runningThreadCounter([&]() { m_runningThreadCount--; });
-
-	const FilePath swiftIndexerPath = AppPath::getSwiftIndexerFilePath();
-	if (!swiftIndexerPath.exists())
-	{
-		LOG_WARNING(
-			"Swift indexer not found at \"" + swiftIndexerPath.str() +
-			"\" — Swift files will not be indexed");
-		return;
-	}
-
-	std::vector<std::string> args;
-	args.push_back(to_string(processId));
-	args.push_back(m_appUUID);
-	args.push_back(AppPath::getSharedDataDirectoryPath().getAbsolute().str());
-	args.push_back(UserPaths::getUserDataDirectoryPath().getAbsolute().str());
-	if (!logFilePath.empty())
-		args.push_back(logFilePath);
-	const std::string commandLine = buildProcessCommandLine(swiftIndexerPath, args);
-
-	int result = 0;
-	size_t launchAttempt = 0;
-	IndexerCommandManagerImpl commandManager(m_appUUID, ProcessId::NONE, false);
-	while (!m_stopSource.stop_requested())
-	{
-		const bool hasSwiftCommands =
-			commandManager.hasIndexerCommandType(INDEXER_COMMAND_SWIFT);
-		if (!hasSwiftCommands)
-		{
-			if (m_indexerCommandQueueStopped.load())
-				break;
-
-			std::this_thread::sleep_for(std::chrono::milliseconds(200));
-			continue;
-		}
-
-		launchAttempt++;
-		const utility::ProcessOutput processOutput = utility::executeProcess(
-			swiftIndexerPath.str(), args, FilePath(), false, INFINITE_TIMEOUT);
-		result = processOutput.exitCode;
-		LOG_INFO_STREAM(
-			<< "Swift indexer process " << processId << " attempt " << launchAttempt
-			<< " returned with " << result);
-
-		const IndexerProcessResult processResult = validateIndexerProcessOutput(
-			processOutput,
-			processId,
-			launchAttempt,
-			"Swift indexer process",
-			commandLine);
-		if (!processResult)
-		{
-			LOG_ERROR_STREAM(
-				<< processResult.error() << " interrupting indexing.");
-			m_stopSource.request_stop();
-			m_indexerCommandQueueStopped.store(true);
-			m_interprocessIndexingStatusManager.setIndexingInterrupted(true);
-			m_interprocessIndexingStatusManager.setQueueStopped(true);
-			utility::killRunningProcesses();
-			break;
-		}
-
-		if (!m_indexerCommandQueueStopped.load() && !m_stopSource.stop_requested())
-			std::this_thread::sleep_for(std::chrono::milliseconds(200));
 	}
 }
 
