@@ -51,7 +51,8 @@ void assertOptionalRustSerializerRoundTrip()
 		false,
 		false,
 		"",
-		"all");
+		"all",
+		true);
 	const std::vector<std::shared_ptr<IndexerCommand>> commands{command};
 
 	const auto buffer = IpcSerializer::serializeIndexerCommands(commands);
@@ -66,4 +67,6 @@ void assertOptionalRustSerializerRoundTrip()
 	REQUIRE(rustCommand->getWorkingDirectory().str() == workingDirectory.str());
 	// Implicit-specialization node scope survives the round-trip (§7).
 	REQUIRE(rustCommand->getSpecializationScope() == "all");
+	// Package-restriction flag survives the round-trip (crate fan-out R1b).
+	REQUIRE(rustCommand->getRestrictToPackage());
 }

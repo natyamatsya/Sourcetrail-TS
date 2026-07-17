@@ -16,7 +16,8 @@ IndexerCommandRust::IndexerCommandRust(
 	bool allFeatures,
 	bool noDefaultFeatures,
 	const std::string& targetTriple,
-	const std::string& specializationScope)
+	const std::string& specializationScope,
+	bool restrictToPackage)
 	: IndexerCommand(sourceFilePath)
 	, m_indexedPaths(indexedPaths)
 	, m_workingDirectory(workingDirectory)
@@ -25,6 +26,7 @@ IndexerCommandRust::IndexerCommandRust(
 	, m_noDefaultFeatures(noDefaultFeatures)
 	, m_targetTriple(targetTriple)
 	, m_specializationScope(specializationScope)
+	, m_restrictToPackage(restrictToPackage)
 {
 }
 
@@ -68,6 +70,11 @@ const std::string& IndexerCommandRust::getSpecializationScope() const
 	return m_specializationScope;
 }
 
+bool IndexerCommandRust::getRestrictToPackage() const
+{
+	return m_restrictToPackage;
+}
+
 QJsonObject IndexerCommandRust::doSerialize() const
 {
 	QJsonObject obj = IndexerCommand::doSerialize();
@@ -86,6 +93,7 @@ QJsonObject IndexerCommandRust::doSerialize() const
 	obj["no_default_features"] = m_noDefaultFeatures;
 	obj["target_triple"] = QString::fromStdString(m_targetTriple);
 	obj["specialization_scope"] = QString::fromStdString(m_specializationScope);
+	obj["restrict_to_package"] = m_restrictToPackage;
 
 	return obj;
 }

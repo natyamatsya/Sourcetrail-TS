@@ -30,6 +30,12 @@ table IndexerCommand {
     // Source group the command belongs to (fan-out S1); lets subprocesses
     // filter the shared queue by group. Appended field: FlatBuffers-additive.
     source_group_id:      string;
+    // Collect only the package rooted at working_directory (Rust crate
+    // fan-out R1b member commands). False = collect the whole loaded
+    // workspace: legacy single-command runs and the enumeration-failure
+    // fallback, whose root may itself be a package (root Cargo.toml with
+    // [package] + [workspace]). Appended field: FlatBuffers-additive.
+    restrict_to_package:  bool;
 }
 
 table IndexerCommandQueue {

@@ -2445,10 +2445,24 @@ fn resolve_files_parallel(
         .collect()
 }
 
+/// Nearest ancestor directory of `crate_root_file` that contains a Cargo.toml
+/// — the crate's package root. Canonicalized for stable comparison (macOS
+/// mounts /tmp as a symlink to /private/tmp).
+fn package_root_of(crate_root_file: &std::path::Path) -> Option<std::path::PathBuf> {
+    let mut dir = crate_root_file.parent()?;
+    loop {
+        if dir.join("Cargo.toml").exists() {
+            return std::fs::canonicalize(dir).ok();
+        }
+        dir = dir.parent()?;
+    }
+}
+
 pub(super) fn collect_from_db<'db>(
     db: &'db RootDatabase,
     vfs: &'db Vfs,
     spec_scope: SpecializationScope,
+    restrict_to_package_root: Option<&std::path::Path>,
     on_file: impl FnMut(&str) + 'db,
 ) -> OwnedIntermediateStorage {
     // HIR type inference (Semantics::resolve_method_call, Impl::self_ty, …)
@@ -2478,6 +2492,16 @@ pub(super) fn collect_from_db<'db>(
                 && !crate_root_path.contains("/lib/rustlib/");
             if !is_local {
                 continue;
+            }
+            // Crate fan-out R1b: collect only the commanded package's crates.
+            // Exact package-root match (nearest-Cargo.toml walk) keeps sibling
+            // members with their own commands — including root packages, whose
+            // directory is a path prefix of every member's.
+            if let Some(commanded_root) = restrict_to_package_root {
+                match package_root_of(std::path::Path::new(&crate_root_path)) {
+                    Some(package_root) if package_root == commanded_root => {}
+                    _ => continue,
+                }
             }
             // A panic inside rust-analyzer (e.g. on a pathological input) must
             // not kill the whole indexing run — record it as a non-fatal error

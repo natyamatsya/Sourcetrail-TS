@@ -20,7 +20,8 @@ public:
 		bool allFeatures = false,
 		bool noDefaultFeatures = false,
 		const std::string& targetTriple = "",
-		const std::string& specializationScope = "local");
+		const std::string& specializationScope = "local",
+		bool restrictToPackage = false);
 
 	IndexerCommandType getIndexerCommandType() const override;
 
@@ -38,6 +39,11 @@ public:
 	// context/DESIGN_RUST_TYPE_SYSTEM_EDGES.md). Empty maps to the default.
 	const std::string& getSpecializationScope() const;
 
+	// Crate fan-out R1b: true = the subprocess collects only the package
+	// rooted at the working directory (per-member commands); false = it
+	// collects the whole loaded workspace (legacy / fallback commands).
+	bool getRestrictToPackage() const;
+
 protected:
 	QJsonObject doSerialize() const override;
 
@@ -49,6 +55,7 @@ private:
 	bool m_noDefaultFeatures;
 	std::string m_targetTriple;
 	std::string m_specializationScope;
+	bool m_restrictToPackage;
 };
 
 #endif	  // INDEXER_COMMAND_RUST_H

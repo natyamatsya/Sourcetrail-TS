@@ -139,18 +139,30 @@ pub fn index_crate(
         LoadProfile::FULL,
         options,
         SpecializationScope::default(),
+        false,
         on_file,
     )
 }
 
-/// Like `index_crate`, but with an explicit specialization-node scope (§7).
+/// Like `index_crate`, but with an explicit specialization-node scope (§7)
+/// and package restriction (crate fan-out R1b): `restrict_to_package` limits
+/// collection to the package rooted at `crate_root` instead of the whole
+/// loaded workspace.
 pub fn index_crate_scoped(
     crate_root: &Path,
     options: CargoOptions,
     spec_scope: SpecializationScope,
+    restrict_to_package: bool,
     on_file: impl FnMut(&str),
 ) -> OwnedIntermediateStorage {
-    index_crate_with(crate_root, LoadProfile::FULL, options, spec_scope, on_file)
+    index_crate_with(
+        crate_root,
+        LoadProfile::FULL,
+        options,
+        spec_scope,
+        restrict_to_package,
+        on_file,
+    )
 }
 
 /// Which parts of the (expensive) load machinery to enable.
@@ -197,6 +209,7 @@ pub(crate) fn index_crate_with(
     profile: LoadProfile,
     options: CargoOptions,
     spec_scope: SpecializationScope,
+    restrict_to_package: bool,
     on_file: impl FnMut(&str),
 ) -> OwnedIntermediateStorage {
     let cargo_config = CargoConfig {
@@ -251,7 +264,22 @@ pub(crate) fn index_crate_with(
             }
         };
 
-    collector::collect_from_db(&db, &vfs, spec_scope, on_file)
+    // Crate fan-out R1b: a member command (restrict_to_package set by the
+    // C++ side, which emits one command per workspace member) collects ONLY
+    // the commanded package's crates — sibling members belong to their own
+    // commands. Whole-workspace commands (legacy runs and the
+    // enumeration-failure fallback) collect everything, even when crate_root
+    // is itself a package root.
+    let restrict_to_package_root = restrict_to_package
+        .then(|| std::fs::canonicalize(crate_root).unwrap_or_else(|_| crate_root.to_path_buf()));
+
+    collector::collect_from_db(
+        &db,
+        &vfs,
+        spec_scope,
+        restrict_to_package_root.as_deref(),
+        on_file,
+    )
 }
 
 // ---------------------------------------------------------------------------
@@ -286,6 +314,7 @@ pub fn index_file(file_path: &str, _module_prefix: &str) -> OwnedIntermediateSto
         LoadProfile::FAST,
         CargoOptions::default(),
         SpecializationScope::Local,
+        false,
         |_| {},
     );
 
