@@ -58,27 +58,42 @@ package enum BuildDriver {
 		)
 	}
 
-	// SwiftPM writes the store under .build/<triple>/<config>/index/store —
-	// resolved lazily by globbing, so we neither hardcode the triple nor the
-	// configuration.
+	// The index store's location varies by build system: the native SwiftPM
+	// layout puts it at .build/<triple>/<config>/index/store, the SwiftBuild
+	// (Xcode) layout at .build/out/Products/<Config>/index/store. Rather than
+	// hardcode either, walk .build for an `index/store` directory that holds a
+	// versioned data store (`v5/units`), picking the most recently written.
 	package static func indexStorePath(buildPath: URL) -> URL {
 		let fileManager = FileManager.default
-		if let tripleDirs = try? fileManager.contentsOfDirectory(
-			at: buildPath,
-			includingPropertiesForKeys: nil
-		) {
-			for tripleDir in tripleDirs {
-				for config in ["debug", "release"] {
-					let candidate = tripleDir
-						.appendingPathComponent(config)
-						.appendingPathComponent("index/store")
-					if fileManager.fileExists(atPath: candidate.path) {
-						return candidate
-					}
-				}
+		let fallback = buildPath.appendingPathComponent("index/store")
+		guard
+			let enumerator = fileManager.enumerator(
+				at: buildPath,
+				includingPropertiesForKeys: [.contentModificationDateKey],
+				options: [.skipsHiddenFiles]
+			)
+		else {
+			return fallback
+		}
+
+		var best: (url: URL, date: Date)?
+		for case let url as URL in enumerator {
+			// A store directory contains `<version>/units`; match on that so a
+			// stray empty `index/store` dir never wins.
+			guard url.lastPathComponent == "units",
+				url.deletingLastPathComponent().lastPathComponent.hasPrefix("v")
+			else {
+				continue
+			}
+			let storeDir = url.deletingLastPathComponent().deletingLastPathComponent()
+			let date =
+				(try? url.resourceValues(forKeys: [.contentModificationDateKey])
+					.contentModificationDate) ?? Date.distantPast
+			if best == nil || date > best!.date {
+				best = (storeDir, date)
 			}
 		}
-		return buildPath.appendingPathComponent("debug/index/store")
+		return best?.url ?? fallback
 	}
 
 	// `path:line:col: error|warning: message` — one diagnostic per line;

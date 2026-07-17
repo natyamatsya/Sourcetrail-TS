@@ -59,11 +59,17 @@ package enum PackageIndexer {
 			)
 		}
 
-		// Not covered semantically → SW3 syntactic fallback; until it lands,
-		// an incomplete file row keeps the app re-indexing the file later.
+		// Hybrid merge: everything not covered semantically gets the
+		// syntactic declaration walk — strictly exclusive per file, so no
+		// duplicate occurrences. complete=false keeps refresh upgrading these
+		// files once the build heals.
 		for path in allFiles where !covered.contains(path) {
 			onFile(path)
-			builder.appendPlainFile(path: path, complete: false)
+			SyntacticIndexer.indexFile(
+				path: path,
+				moduleName: model.moduleName(forSourceFile: path) ?? model.packageName,
+				builder: builder
+			)
 		}
 
 		return builder.storage

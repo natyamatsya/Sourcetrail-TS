@@ -1,8 +1,9 @@
 # Design: Swift Indexer Parity (SW series)
 
-**Status: SW0–SW2 implemented (2026-07-17) — build revived, transport tested,
+**Status: SW0–SW3 implemented (2026-07-17) — build revived, transport tested,
 package model + build driver landed, semantic core (IndexStoreDB) emitting
-nodes/edges/occurrences; SW3–SW9 planned.**
+nodes/edges/occurrences, syntactic fallback (SwiftSyntax) + hybrid merge;
+SW4–SW9 planned.**
 The Swift analog of the Rust indexer track: take the transport-complete but
 analysis-empty Swift subprocess (`src/swift_indexer`) to full parity with the
 C++/Rust pipeline, staged like [DESIGN_MULTIGROUP_FANOUT.md](DESIGN_MULTIGROUP_FANOUT.md)
@@ -45,6 +46,16 @@ Per command (= one SPM package root):
    **Stale semantic loses to syntactic**: stale occurrence offsets are wrong
    after edits; `complete=false` guarantees the upgrade later. Cross-file node
    unification happens at PersistentStorage inject via serialized-name dedup.
+
+**Where the fallback actually engages (measured, not assumed).** swiftc's
+index-while-building emits a per-file index unit even when the *overall* build
+fails, as long as that file type-checks — so a **type error** (`let x =
+doesNotExist`) still yields fresh, exact semantic data for its file. The
+syntactic fallback therefore fires in a narrower, real set of cases: a **parse
+error** severe enough that swiftc bails before writing units (the whole
+module's units go stale), a file **not yet built**, or any file whose newest
+unit predates its source. This is a strictly better degradation curve than
+"broken build ⇒ syntactic": most broken states keep full semantics.
 
 Kind mapping: struct→STRUCT, class/actor→CLASS, enum→ENUM, case→ENUM_CONSTANT,
 protocol→INTERFACE, typealias/associatedtype→TYPEDEF, global func→FUNCTION,
@@ -103,9 +114,23 @@ crate/package; merge dedup keeps it correct but wastes work).
   Token extents approximate: the store has no end column; the base identifier
   length is used. Verified by a golden fixture test (class/protocol/
   inheritance/conformance/call/member + occurrence locations).
-- **SW3 — Syntactic fallback + merge.** SwiftSyntax; HybridMerger implements
-  the coverage set and freshness rule above. Cross-engine test: syntactic and
-  semantic name spellings must match exactly or nodes fork.
+- **SW3 — Syntactic fallback + merge (DONE 2026-07-17).** `swift-syntax`
+  pinned to 602.0.0. `SyntacticIndexer` walks the parse tree (error-tolerant,
+  so partial files still yield declarations) emitting nodes + member edges +
+  definition occurrences with `complete=false`; a per-file fallback error row
+  names the file. Function/init/subscript names carry parameter labels
+  (`added(label:)`, `init(x:)`) to match the index-store display names exactly.
+  Extension members attach to the module-qualified extended type. Merge is in
+  `PackageIndexer`: semantic pass over covered files (unit ≥ source mtime),
+  syntactic pass over the rest — strictly exclusive per file. `BuildDriver`'s
+  store-path resolution was also corrected to walk `.build` for the real
+  `index/store` (the toolchain uses the SwiftBuild layout
+  `.build/out/Products/<Config>/index/store`, not the native
+  `.build/<triple>/<config>` path). Verified: a golden test breaks a file with
+  a parse error, sees the unchanged file stay semantic while the broken one
+  degrades to syntactic declarations, then upgrades back on fix; a second test
+  asserts syntactic name spellings are a subset of the semantic ones (no
+  forked nodes).
 - **SW4 — Robustness.** Chunked push for the fixed 16 MiB segment (ADR-0002,
   port of `storage.rs` chunking), result caching keyed
   `(workingDirectory, buildOptions)`, exit-on-empty-pop queue semantics,
