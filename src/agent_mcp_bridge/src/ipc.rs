@@ -4,7 +4,7 @@
 //! matching `request_id`". The `mcp` server wraps a single `Bridge` on a dedicated
 //! thread (Route is not assumed `Sync`).
 
-use anyhow::{bail, Context, Result};
+use anyhow::{anyhow, bail, Context, Result};
 use libipc::channel::{Mode, Route};
 use serde_json::{json, Value};
 use std::collections::VecDeque;
@@ -162,17 +162,57 @@ impl Bridge {
 
     fn send(&mut self, bytes: &[u8]) -> Result<()> {
         // `send` returns Ok(false) when no receiver consumed the frame within the
-        // timeout (e.g. the app isn't listening). Surface that as a distinct error
-        // instead of proceeding to a misleading reply-wait timeout downstream.
+        // timeout. Surface that as a distinct error instead of proceeding to a
+        // misleading reply-wait timeout downstream — and say WHICH failure it is:
+        // no app listening vs an app connected but not consuming. The two need
+        // different operator responses.
         let delivered = self.cmd.send(bytes, SEND_TIMEOUT_MS).context("send command")?;
         if !delivered {
+            if self.cmd_receivers() == 0 {
+                bail!(
+                    "command not delivered on {}: no app is listening — Sourcetrail is not \
+                     running with agent control, or this is a stale channel left by a killed \
+                     instance (a live app registers on startup, so a zero count means no app)",
+                    self.cmd_name
+                );
+            }
             bail!(
-                "command not delivered on {}: no agent-control receiver consumed it \
-                 (is Sourcetrail running and listening on this channel?)",
-                self.cmd_name
+                "command not delivered on {}: {} app receiver(s) are connected but none consumed \
+                 the command within {SEND_TIMEOUT_MS}ms — the app may be blocked (e.g. a modal \
+                 dialog holding the GUI thread) or stuck",
+                self.cmd_name,
+                self.cmd_receivers()
             );
         }
         Ok(())
+    }
+
+    /// Non-destructive liveness probe: how many app receivers are on the command
+    /// channel right now (the bridge is the sender there, so this counts apps, not
+    /// itself). 0 ⇒ no app listening (down, or a stale channel a killed instance
+    /// left); ≥1 ⇒ an app is connected. Only trustworthy because the app wipes its
+    /// channels on startup (see AgentControlController) — otherwise phantom
+    /// receiver bits from killed peers would inflate this count.
+    fn cmd_receivers(&self) -> usize {
+        self.cmd.recv_count()
+    }
+
+    /// Uniform "reply never arrived" error. Reaching a reply-wait means the command
+    /// was already delivered (send succeeded), so this is the app failing to
+    /// *reply* — a different failure than a non-delivered command, and worth
+    /// distinguishing "app gone" from "app stuck" with a live liveness check.
+    fn reply_timeout(&self, what: &str, request_id: u64, timeout: Duration) -> anyhow::Error {
+        let tail = match self.cmd_receivers() {
+            0 => "the app is no longer listening — it likely crashed or exited after receiving \
+                  the command"
+                .to_string(),
+            n => format!(
+                "{n} app receiver(s) still connected — the app received the command but sent no \
+                 reply (it may be blocked on the GUI thread, e.g. a modal dialog, or its reply \
+                 raced past this window)"
+            ),
+        };
+        anyhow!("timed out after {timeout:?} awaiting {what} for request {request_id}: {tail}")
     }
 
     /// Record one raw `EventEnvelope` into the observation log (bounded ring).
@@ -207,7 +247,7 @@ impl Bridge {
                 _ => {}
             }
         }
-        bail!("timed out awaiting CommandResult for request {request_id}")
+        return Err(self.reply_timeout("CommandResult (ack)", request_id, timeout))
     }
 
     /// Read `st.agent.state` until the `UiStateEnvelope` for `request_id`.
@@ -223,7 +263,7 @@ impl Bridge {
                 return Ok(json);
             }
         }
-        bail!("timed out awaiting UiState for request {request_id}")
+        return Err(self.reply_timeout("UiState", request_id, timeout))
     }
 
     /// Drop any stale `UiSnapshot` frames sitting in the channel (e.g. a reply from
@@ -252,7 +292,7 @@ impl Bridge {
                 return Ok(json);
             }
         }
-        bail!("timed out awaiting UiSnapshot for request {request_id}")
+        return Err(self.reply_timeout("UiSnapshot", request_id, timeout))
     }
 
     /// The shared act-and-observe prefix: assign a request id, send the built
@@ -292,7 +332,7 @@ impl Bridge {
                 }
             }
         }
-        bail!("timed out awaiting Settled for request {request_id}")
+        return Err(self.reply_timeout("Settled", request_id, timeout))
     }
 
     /// Full act-and-observe: send, await the ack (reject → error), await `Settled`
@@ -400,7 +440,7 @@ impl Bridge {
         if acked {
             bail!("search accepted but no results within {OP_TIMEOUT:?} (query too broad?)");
         }
-        bail!("timed out awaiting search reply for request {id}")
+        return Err(self.reply_timeout("search reply", id, OP_TIMEOUT))
     }
 
     pub fn activate_node(&mut self, serialized_name: Option<&str>, node_id: u64) -> Result<Value> {
@@ -489,7 +529,7 @@ impl Bridge {
                 return Ok(json);
             }
         }
-        bail!("timed out awaiting frame for request {request_id}")
+        return Err(self.reply_timeout("frame", request_id, timeout))
     }
 
     /// Loading kicks off indexing; return on ack and let the caller poll
