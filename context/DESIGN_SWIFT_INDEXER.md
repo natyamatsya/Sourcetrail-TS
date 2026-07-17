@@ -1,9 +1,9 @@
 # Design: Swift Indexer Parity (SW series)
 
-**Status: SW0–SW3 implemented (2026-07-17) — build revived, transport tested,
+**Status: SW0–SW4 implemented (2026-07-17) — build revived, transport tested,
 package model + build driver landed, semantic core (IndexStoreDB) emitting
-nodes/edges/occurrences, syntactic fallback (SwiftSyntax) + hybrid merge;
-SW4–SW9 planned.**
+nodes/edges/occurrences, syntactic fallback (SwiftSyntax) + hybrid merge,
+robustness parity (chunking, retry budget); SW5–SW9 planned.**
 The Swift analog of the Rust indexer track: take the transport-complete but
 analysis-empty Swift subprocess (`src/swift_indexer`) to full parity with the
 C++/Rust pipeline, staged like [DESIGN_MULTIGROUP_FANOUT.md](DESIGN_MULTIGROUP_FANOUT.md)
@@ -131,11 +131,23 @@ crate/package; merge dedup keeps it correct but wastes work).
   degrades to syntactic declarations, then upgrades back on fix; a second test
   asserts syntactic name spellings are a subset of the semantic ones (no
   forked nodes).
-- **SW4 — Robustness.** Chunked push for the fixed 16 MiB segment (ADR-0002,
-  port of `storage.rs` chunking), result caching keyed
-  `(workingDirectory, buildOptions)`, exit-on-empty-pop queue semantics,
-  Swift supervisor retry budget 200 via a babysitter helper shared with the
-  Rust path in `TaskBuildIndex.cpp`.
+- **SW4 — Robustness (DONE 2026-07-17).** `StorageChunker` ports the Rust
+  chunker (`storage.rs`): a storage over a 7 MiB budget splits into
+  self-contained chunks (every edge endpoint, occurrence element/location,
+  and location file-node travels in the same chunk), pushed with
+  back-pressure between chunks — one queue entry never outgrows the fixed
+  16 MiB segment (ADR-0002). `TaskBuildIndex`'s Rust and Swift babysitters
+  were merged into one `runExternalIndexerProcess(path, commandType, name)`,
+  giving Swift the Rust supervisor's 200-consecutive-failure budget: a single
+  subprocess crash restarts instead of aborting the whole run.
+  **Deliberately skipped**: result caching (the Rust cache existed because
+  many file-level commands mapped to one crate; Swift emits one command per
+  package, so a `(workingDirectory, buildOptions)` cache would never hit —
+  revisit only if SW5 ever emits multiple commands per package root) and the
+  exit-on-empty-pop change (Swift's poll-until-`queueStopped` loop is correct
+  and avoids re-running process init / rebuild churn on each requeue; the
+  Rust exit-on-empty is paired with cheap relaunch, a tradeoff that does not
+  favor the heavier Swift subprocess).
 - **SW5 — Host-side project model.** Per-package commands from a
   `Package.swift` filesystem scan (no subprocess needed, unlike cargo);
   FlatBuffers-additive appends `swift_build_args` / `swift_toolchain_path` /

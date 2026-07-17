@@ -3,6 +3,7 @@
 
 #include "language_package_flags.h"
 #include "IndexerClusterPlan.h"
+#include "IndexerCommandType.h"
 #include "MessageIndexingInterrupted.h"
 #include "MessageListener.h"
 #include "StdexecPrelude.h"	// stdexec::inplace_stop_source / inplace_stop_callback
@@ -52,6 +53,16 @@ protected:
 	void runIndexerProcess(ProcessId processId, const std::string& logFilePath);
 	void runRustIndexerProcess(ProcessId processId, const std::string& logFilePath);
 	void runSwiftIndexerProcess(ProcessId processId, const std::string& logFilePath);
+	// Shared babysitter for an out-of-process language indexer (Rust, Swift):
+	// relaunches the subprocess while commands of its type remain, tolerating
+	// up to maxConsecutiveFailures transient failures before interrupting the
+	// whole run — so one crash never aborts indexing.
+	void runExternalIndexerProcess(
+		ProcessId processId,
+		const std::string& logFilePath,
+		const FilePath& indexerPath,
+		IndexerCommandType commandType,
+		const std::string& humanName);
 	bool fetchIntermediateStorages(std::shared_ptr<Blackboard> blackboard);
 	void logIndexingSummary(const std::shared_ptr<Blackboard>& blackboard) const;
 	void updateIndexingDialog(
