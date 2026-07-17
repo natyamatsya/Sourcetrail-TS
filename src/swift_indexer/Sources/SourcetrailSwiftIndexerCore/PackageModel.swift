@@ -39,12 +39,15 @@ package struct PackageModel {
 package enum PackageModelLoader {
 	static let describeTimeout: TimeInterval = 60
 
-	package static func load(packageRoot: URL) -> PackageModel {
+	package static func load(packageRoot: URL, options: SwiftBuildOptions) -> PackageModel {
 		let output: ProcessOutput
 		do {
+			// Describe with the same toolchain the build uses, so a configured
+			// toolchain's package model (targets/sources) is what we index.
+			let (executable, prefix) = options.swiftInvocation
 			output = try ProcessRunner.run(
-				executable: "/usr/bin/env",
-				arguments: ["swift", "package", "describe", "--type", "json"],
+				executable: executable,
+				arguments: prefix + ["package", "describe", "--type", "json"],
 				currentDirectory: packageRoot,
 				timeout: describeTimeout
 			)

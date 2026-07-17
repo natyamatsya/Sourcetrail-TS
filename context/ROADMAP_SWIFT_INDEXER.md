@@ -23,10 +23,10 @@ file tracks status at a glance.
 | SW2 | Semantic core: IndexStoreDB → nodes/edges/occurrences, USR→NameHierarchy resolution | ✅ done |
 | SW3 | Syntactic fallback (SwiftSyntax) + hybrid merge (freshness rule) | ✅ done |
 | SW4 | Robustness: chunked push, shared 200-failure retry budget | ✅ done |
-| SW5 | Host-side per-package command emission; Rust `equalsSettings` bugfix | ✅ done (options fields deferred) |
+| SW5 | Host-side per-package command emission; options fields (`swift_build_args` / `swift_toolchain_path` / `swift_index_store_path`) + settings mixin + BuildDriver consumer; Rust `equalsSettings` bugfix | ✅ done |
 | SW6 | K Swift supervisor fan-out | ✅ done |
 | SW7 | Package-granular shard striping (Rust + Swift) | ✅ done |
-| SW8 | GUI wizard for Swift options | ⏸ deferred (bundled with SW5 options) |
+| SW8 | GUI wizard for Swift options (`QtProjectWizardContentSwiftOptions`) | ✅ done |
 | SW9 | `index_self` smoke binary, docs | ✅ done |
 | SW10 | Code-view parity: SCOPE locations + precise token extents via universal SwiftSyntax | ✅ done (local symbols / qualifiers follow-up) |
 
@@ -36,16 +36,21 @@ occurrences (the occurrence jump over pre-SW10 is the added SCOPE locations).
 
 ---
 
-## Deferred, as one bundle
+## Swift options bundle (SW5 fields + SW8 GUI) — landed
 
 The **command option fields** (`swift_build_args`, `swift_toolchain_path`,
 `swift_index_store_path`), their **settings mixin**
-(`SourceGroupSettingsWithSwiftOptions`), and the **GUI wizard** (SW8) are held
-together until there is a consumer. Today `BuildDriver` runs `swift build` with
-defaults and auto-discovers the index store, so those fields + tri-language IPC
-pop-rewrites would be dead plumbing. Land them with the BuildDriver code that
-reads them (custom toolchain selection, read-only-checkout index-store
-override).
+(`SourceGroupSettingsWithSwiftOptions`, mixed into `SourceGroupSettingsSwiftEmpty`),
+and the **GUI wizard** (`QtProjectWizardContentSwiftOptions`, SW8) shipped together
+with a live consumer:
+
+- `BuildDriver.SwiftBuildOptions` selects the toolchain's own `swift` +
+  `libIndexStore.dylib` (toolchain override), appends `swift_build_args` to
+  `swift build`, and — when `swift_index_store_path` is set — **skips the build**
+  and indexes the prebuilt store directly (read-only checkout).
+- The three IPC fields round-trip losslessly across all three pop-rewrites
+  (C++ `IndexerCommandSerializer`, Rust `ipc/command.rs`, Swift
+  `SwiftIndexerCommandChannel`), each covered by a round-trip test.
 
 ## Known limitations / follow-ups
 

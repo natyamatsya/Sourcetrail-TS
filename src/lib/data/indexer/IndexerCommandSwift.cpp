@@ -11,10 +11,16 @@ IndexerCommandType IndexerCommandSwift::getStaticIndexerCommandType()
 IndexerCommandSwift::IndexerCommandSwift(
 	const FilePath& sourceFilePath,
 	const std::set<FilePath>& indexedPaths,
-	const FilePath& workingDirectory)
+	const FilePath& workingDirectory,
+	const std::vector<std::string>& buildArgs,
+	const std::string& toolchainPath,
+	const std::string& indexStorePath)
 	: IndexerCommand(sourceFilePath)
 	, m_indexedPaths(indexedPaths)
 	, m_workingDirectory(workingDirectory)
+	, m_buildArgs(buildArgs)
+	, m_toolchainPath(toolchainPath)
+	, m_indexStorePath(indexStorePath)
 {
 }
 
@@ -33,6 +39,21 @@ const FilePath& IndexerCommandSwift::getWorkingDirectory() const
 	return m_workingDirectory;
 }
 
+const std::vector<std::string>& IndexerCommandSwift::getBuildArgs() const
+{
+	return m_buildArgs;
+}
+
+const std::string& IndexerCommandSwift::getToolchainPath() const
+{
+	return m_toolchainPath;
+}
+
+const std::string& IndexerCommandSwift::getIndexStorePath() const
+{
+	return m_indexStorePath;
+}
+
 QJsonObject IndexerCommandSwift::doSerialize() const
 {
 	QJsonObject obj = IndexerCommand::doSerialize();
@@ -42,6 +63,13 @@ QJsonObject IndexerCommandSwift::doSerialize() const
 		paths.append(QString::fromStdString(p.str()));
 	obj["indexed_paths"] = paths;
 	obj["working_directory"] = QString::fromStdString(m_workingDirectory.str());
+
+	QJsonArray buildArgs;
+	for (const std::string& a: m_buildArgs)
+		buildArgs.append(QString::fromStdString(a));
+	obj["swift_build_args"] = buildArgs;
+	obj["swift_toolchain_path"] = QString::fromStdString(m_toolchainPath);
+	obj["swift_index_store_path"] = QString::fromStdString(m_indexStorePath);
 
 	return obj;
 }

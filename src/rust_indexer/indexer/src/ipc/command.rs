@@ -82,6 +82,12 @@ pub struct OwnedIndexerCommand {
     /// working_directory; false = whole-workspace collection. Must
     /// round-trip through the pop-rewrite like source_group_id.
     pub restrict_to_package: bool,
+    /// Swift project-model options (SW5). The Rust indexer ignores these, but
+    /// the pop-rewrite must round-trip them or a popped Swift command loses
+    /// them — see the "carry every schema field" invariant.
+    pub swift_build_args: Vec<String>,
+    pub swift_toolchain_path: String,
+    pub swift_index_store_path: String,
 }
 
 impl OwnedIndexerCommand {
@@ -106,6 +112,9 @@ impl OwnedIndexerCommand {
             compiler_path: cmd.compiler_path().unwrap_or("").to_owned(),
             source_group_id: cmd.source_group_id().unwrap_or("").to_owned(),
             restrict_to_package: cmd.restrict_to_package(),
+            swift_build_args: str_vec(cmd.swift_build_args()),
+            swift_toolchain_path: cmd.swift_toolchain_path().unwrap_or("").to_owned(),
+            swift_index_store_path: cmd.swift_index_store_path().unwrap_or("").to_owned(),
         }
     }
 }
@@ -217,6 +226,22 @@ fn serialize_queue(commands: &[OwnedIndexerCommand]) -> Vec<u8> {
             } else {
                 Some(fbb.create_string(&cmd.source_group_id))
             };
+            let swift_build_args: Vec<_> = cmd
+                .swift_build_args
+                .iter()
+                .map(|s| fbb.create_string(s))
+                .collect();
+            let swift_build_args_v = fbb.create_vector(&swift_build_args);
+            let swift_toolchain_path = if cmd.swift_toolchain_path.is_empty() {
+                None
+            } else {
+                Some(fbb.create_string(&cmd.swift_toolchain_path))
+            };
+            let swift_index_store_path = if cmd.swift_index_store_path.is_empty() {
+                None
+            } else {
+                Some(fbb.create_string(&cmd.swift_index_store_path))
+            };
             IndexerCommand::create(
                 &mut fbb,
                 &IndexerCommandArgs {
@@ -235,6 +260,9 @@ fn serialize_queue(commands: &[OwnedIndexerCommand]) -> Vec<u8> {
                     specialization_scope,
                     source_group_id,
                     restrict_to_package: cmd.restrict_to_package,
+                    swift_build_args: Some(swift_build_args_v),
+                    swift_toolchain_path,
+                    swift_index_store_path,
                 },
             )
         })
@@ -272,6 +300,21 @@ mod tests {
             specialization_scope: String::new(),
             source_group_id: format!("group-of-{src}"),
             restrict_to_package: kind == IndexerCommandType::Rust,
+            swift_build_args: if kind == IndexerCommandType::Swift {
+                vec!["--configuration".to_owned(), "release".to_owned()]
+            } else {
+                Vec::new()
+            },
+            swift_toolchain_path: if kind == IndexerCommandType::Swift {
+                "/opt/swift-6.1".to_owned()
+            } else {
+                String::new()
+            },
+            swift_index_store_path: if kind == IndexerCommandType::Swift {
+                "/build/index/store".to_owned()
+            } else {
+                String::new()
+            },
         }
     }
 
@@ -315,6 +358,33 @@ mod tests {
         assert!(!commands.get(1).restrict_to_package());
         assert_eq!(commands.get(2).type_(), IndexerCommandType::Rust);
         assert!(commands.get(2).restrict_to_package());
+    }
+
+    #[test]
+    fn pop_first_rust_preserves_swift_options_on_remaining_swift_command() {
+        // A Swift command's project-model options (SW5) must survive a Rust pop
+        // and the queue rewrite, like every other language's fields.
+        let input = vec![
+            cmd(IndexerCommandType::Rust, "crate", ""),
+            cmd(IndexerCommandType::Swift, "pkg", ""),
+        ];
+        let bytes = serialize_queue(&input);
+
+        let (rewritten, popped) = pop_first_rust_from_queue_bytes(&bytes).unwrap();
+        assert_eq!(popped.unwrap().type_, IndexerCommandType::Rust);
+
+        let rewritten = rewritten.unwrap();
+        let queue = root_as_indexer_command_queue(&rewritten).unwrap();
+        let commands = queue.commands().unwrap();
+        assert_eq!(commands.len(), 1);
+        let swift = commands.get(0);
+        assert_eq!(swift.type_(), IndexerCommandType::Swift);
+        let args = swift.swift_build_args().unwrap();
+        assert_eq!(args.len(), 2);
+        assert_eq!(args.get(0), "--configuration");
+        assert_eq!(args.get(1), "release");
+        assert_eq!(swift.swift_toolchain_path().unwrap(), "/opt/swift-6.1");
+        assert_eq!(swift.swift_index_store_path().unwrap(), "/build/index/store");
     }
 
     #[test]

@@ -1,3 +1,4 @@
+import Foundation
 import Testing
 
 @testable import SourcetrailSwiftIndexerCore
@@ -90,5 +91,33 @@ import Testing
 				packageRoot: .init(fileURLWithPath: "/pkg")
 			) == nil
 		)
+	}
+}
+
+@Suite struct SwiftBuildOptionsTests {
+	@Test func indexStoreOverrideSkipsTheBuild() {
+		// A supplied index store means "don't build" — the result points at that
+		// store and succeeds without running `swift build` (so this is instant,
+		// and works against a path that isn't even a package).
+		let options = SwiftBuildOptions(indexStorePath: "/prebuilt/index/store")
+		let result = BuildDriver.build(
+			packageRoot: URL(fileURLWithPath: "/nonexistent"), options: options)
+		#expect(result.succeeded)
+		#expect(result.diagnostics.isEmpty)
+		#expect(result.indexStorePath.path == "/prebuilt/index/store")
+	}
+
+	@Test func toolchainSelectsItsOwnSwiftAndLibIndexStore() {
+		let dflt = SwiftBuildOptions()
+		#expect(dflt.swiftInvocation.executable == "/usr/bin/env")
+		#expect(dflt.swiftInvocation.prefixArgs == ["swift"])
+
+		let toolchain = SwiftBuildOptions(toolchainPath: "/opt/swift-6.1")
+		#expect(toolchain.swiftInvocation.executable == "/opt/swift-6.1/usr/bin/swift")
+		#expect(toolchain.swiftInvocation.prefixArgs.isEmpty)
+
+		// libIndexStore comes from the same toolchain root.
+		let lib = try? Toolchain.libIndexStorePath(toolchainPath: "/opt/swift-6.1")
+		#expect(lib == "/opt/swift-6.1/usr/lib/libIndexStore.dylib")
 	}
 }

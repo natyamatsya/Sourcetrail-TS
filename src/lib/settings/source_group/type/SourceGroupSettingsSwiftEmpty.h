@@ -5,12 +5,14 @@
 #include "SourceGroupSettingsWithExcludeFilters.h"
 #include "SourceGroupSettingsWithSourceExtensions.h"
 #include "SourceGroupSettingsWithSourcePaths.h"
+#include "SourceGroupSettingsWithSwiftOptions.h"
 
 class SourceGroupSettingsSwiftEmpty
 	: public SourceGroupSettings
 	, public SourceGroupSettingsWithSourcePaths
 	, public SourceGroupSettingsWithExcludeFilters
 	, public SourceGroupSettingsWithSourceExtensions
+	, public SourceGroupSettingsWithSwiftOptions
 {
 public:
 	std::vector<std::string> getDefaultSourceExtensions() const override;

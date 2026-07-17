@@ -43,10 +43,17 @@ void assertOptionalSwiftSerializerRoundTrip()
 	const FilePath sourceFilePath{"/swift/pkg/main.swift"};
 	const FilePath workingDirectory{"/swift/pkg"};
 
+	const std::vector<std::string> buildArgs{"--configuration", "release"};
+	const std::string toolchainPath{"/opt/swift-6.1"};
+	const std::string indexStorePath{"/prebuilt/index/store"};
+
 	const auto command = std::make_shared<IndexerCommandSwift>(
 		sourceFilePath,
 		indexedPaths,
-		workingDirectory);
+		workingDirectory,
+		buildArgs,
+		toolchainPath,
+		indexStorePath);
 	const std::vector<std::shared_ptr<IndexerCommand>> commands{command};
 
 	const auto buffer = IpcSerializer::serializeIndexerCommands(commands);
@@ -59,4 +66,8 @@ void assertOptionalSwiftSerializerRoundTrip()
 	REQUIRE(swiftCommand->getSourceFilePath().str() == sourceFilePath.str());
 	REQUIRE(swiftCommand->getIndexedPaths() == indexedPaths);
 	REQUIRE(swiftCommand->getWorkingDirectory().str() == workingDirectory.str());
+	// Swift project-model options (SW5) survive the round-trip.
+	REQUIRE(swiftCommand->getBuildArgs() == buildArgs);
+	REQUIRE(swiftCommand->getToolchainPath() == toolchainPath);
+	REQUIRE(swiftCommand->getIndexStorePath() == indexStorePath);
 }

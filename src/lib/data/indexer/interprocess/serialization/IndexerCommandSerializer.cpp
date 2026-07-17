@@ -43,6 +43,9 @@ flatbuffers::DetachedBuffer serializeIndexerCommands(
 		flatbuffers::Offset<flatbuffers::String> targetTriple = 0;
 		flatbuffers::Offset<flatbuffers::String> specializationScope = 0;
 		bool restrictToPackage = false;
+		flatbuffers::Offset<flatbuffers::Vector<flatbuffers::Offset<flatbuffers::String>>> swiftBuildArgs = 0;
+		flatbuffers::Offset<flatbuffers::String> swiftToolchainPath = 0;
+		flatbuffers::Offset<flatbuffers::String> swiftIndexStorePath = 0;
 
 #if BUILD_CXX_LANGUAGE_PACKAGE
 		if (auto cxxCmd = std::dynamic_pointer_cast<IndexerCommandCxx>(cmd))
@@ -105,13 +108,21 @@ flatbuffers::DetachedBuffer serializeIndexerCommands(
 			indexedPaths = builder.CreateVector(paths);
 
 			workingDirectory = builder.CreateString(swiftCmd->getWorkingDirectory().str());
+
+			std::vector<flatbuffers::Offset<flatbuffers::String>> swiftArgs;
+			for (const auto& a : swiftCmd->getBuildArgs())
+				swiftArgs.push_back(builder.CreateString(a));
+			swiftBuildArgs = builder.CreateVector(swiftArgs);
+			swiftToolchainPath = builder.CreateString(swiftCmd->getToolchainPath());
+			swiftIndexStorePath = builder.CreateString(swiftCmd->getIndexStorePath());
 		}
 
 		fbCommands.push_back(Sourcetrail::Ipc::CreateIndexerCommand(
 			builder, type, sourceFilePath, indexedPaths, excludeFilters,
 			includeFilters, workingDirectory, compilerFlags, compilerPath,
 			features, allFeatures, noDefaultFeatures, targetTriple,
-			specializationScope, sourceGroupId, restrictToPackage));
+			specializationScope, sourceGroupId, restrictToPackage,
+			swiftBuildArgs, swiftToolchainPath, swiftIndexStorePath));
 	}
 
 	auto queue = Sourcetrail::Ipc::CreateIndexerCommandQueue(
@@ -218,9 +229,23 @@ std::vector<std::shared_ptr<IndexerCommand>> deserializeIndexerCommands(
 			if (fbCmd->working_directory())
 				workingDir = FilePath(fbCmd->working_directory()->c_str());
 
+			std::vector<std::string> swiftBuildArgs;
+			if (fbCmd->swift_build_args())
+				for (const auto* a : *fbCmd->swift_build_args())
+					swiftBuildArgs.push_back(a->str());
+
+			std::string swiftToolchainPath;
+			if (fbCmd->swift_toolchain_path())
+				swiftToolchainPath = fbCmd->swift_toolchain_path()->str();
+
+			std::string swiftIndexStorePath;
+			if (fbCmd->swift_index_store_path())
+				swiftIndexStorePath = fbCmd->swift_index_store_path()->str();
+
 			result.push_back(std::make_shared<IndexerCommandSwift>(
 				FilePath(fbCmd->source_file_path()->c_str()),
-				indexedPaths, workingDir));
+				indexedPaths, workingDir,
+				swiftBuildArgs, swiftToolchainPath, swiftIndexStorePath));
 			break;
 		}
 		default:

@@ -58,7 +58,12 @@ struct SourcetrailSwiftIndexer {
 					}
 
 					let storage = PackageIndexer.index(
-						workingDirectory: command.workingDirectory
+						workingDirectory: command.workingDirectory,
+						options: SwiftBuildOptions(
+							buildArgs: command.buildArgs,
+							toolchainPath: command.toolchainPath,
+							indexStorePath: command.indexStorePath
+						)
 					) { filePath in
 						try? statusChannel.updateIndexing(filePath: filePath)
 					}

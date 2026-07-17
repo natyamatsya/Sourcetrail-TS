@@ -25,6 +25,7 @@ void SourceGroupSettingsSwiftEmpty::loadSettings(const ConfigManager* config)
 	SourceGroupSettingsWithSourcePaths::load(config, key);
 	SourceGroupSettingsWithExcludeFilters::load(config, key);
 	SourceGroupSettingsWithSourceExtensions::load(config, key);
+	SourceGroupSettingsWithSwiftOptions::load(config, key);
 }
 
 void SourceGroupSettingsSwiftEmpty::saveSettings(ConfigManager* config)
@@ -34,6 +35,7 @@ void SourceGroupSettingsSwiftEmpty::saveSettings(ConfigManager* config)
 	SourceGroupSettingsWithSourcePaths::save(config, key);
 	SourceGroupSettingsWithExcludeFilters::save(config, key);
 	SourceGroupSettingsWithSourceExtensions::save(config, key);
+	SourceGroupSettingsWithSwiftOptions::save(config, key);
 }
 
 bool SourceGroupSettingsSwiftEmpty::equalsSettings(const SourceGroupSettingsBase* other)
@@ -45,6 +47,8 @@ bool SourceGroupSettingsSwiftEmpty::equalsSettings(const SourceGroupSettingsBase
 	if (!SourceGroupSettingsWithExcludeFilters::equals(other))
 		return false;
 	if (!SourceGroupSettingsWithSourceExtensions::equals(other))
+		return false;
+	if (!SourceGroupSettingsWithSwiftOptions::equals(other))
 		return false;
 	return true;
 }

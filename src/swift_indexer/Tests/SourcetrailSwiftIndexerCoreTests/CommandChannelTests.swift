@@ -25,7 +25,10 @@ private func makeCommand(
 		targetTriple: "arm64-apple-macosx",
 		specializationScope: "local",
 		sourceGroupId: "group-of-\(sourceFilePath)",
-		restrictToPackage: type == .rust
+		restrictToPackage: type == .rust,
+		swiftBuildArgs: type == .swift ? ["--configuration", "release"] : [],
+		swiftToolchainPath: type == .swift ? "/opt/swift-6.1" : "",
+		swiftIndexStorePath: type == .swift ? "/build/index/store" : ""
 	)
 }
 
@@ -44,6 +47,10 @@ private func makeCommand(
 		let poppedCommand = try #require(popped)
 		#expect(poppedCommand.sourceFilePath == "pkg")
 		#expect(poppedCommand.workingDirectory == "/tmp/project")
+		// SW5 project-model options reach the consumer on the popped command.
+		#expect(poppedCommand.buildArgs == ["--configuration", "release"])
+		#expect(poppedCommand.toolchainPath == "/opt/swift-6.1")
+		#expect(poppedCommand.indexStorePath == "/build/index/store")
 
 		let rewritten = try #require(replacement)
 		let queue = try #require(SwiftIndexerCommandChannel.decodeQueue(rewritten))

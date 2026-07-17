@@ -7,12 +7,13 @@ import Foundation
 package enum PackageIndexer {
 	package static func index(
 		workingDirectory: String,
+		options: SwiftBuildOptions = SwiftBuildOptions(),
 		onFile: (String) -> Void
 	) -> OwnedIntermediateStorage {
 		let packageRoot = URL(fileURLWithPath: workingDirectory)
 		let builder = StorageBuilder()
 
-		let model = PackageModelLoader.load(packageRoot: packageRoot)
+		let model = PackageModelLoader.load(packageRoot: packageRoot, options: options)
 		if let reason = model.fallbackReason {
 			builder.recordError(
 				message: "package model fallback (single synthetic module): \(reason)",
@@ -20,7 +21,7 @@ package enum PackageIndexer {
 			)
 		}
 
-		let build = BuildDriver.build(packageRoot: packageRoot)
+		let build = BuildDriver.build(packageRoot: packageRoot, options: options)
 		for diagnostic in build.diagnostics where diagnostic.severity == .error {
 			builder.recordError(
 				message: diagnostic.message
@@ -45,7 +46,8 @@ package enum PackageIndexer {
 				storePath: build.indexStorePath,
 				databasePath: packageRoot
 					.appendingPathComponent(".build/sourcetrail-indexstore-db"),
-				builder: builder
+				builder: builder,
+				toolchainPath: options.toolchainPath
 			)
 			for path in semantic.coveredFiles(of: allFiles) {
 				onFile(path)

@@ -36,6 +36,18 @@ table IndexerCommand {
     // fallback, whose root may itself be a package (root Cargo.toml with
     // [package] + [workspace]). Appended field: FlatBuffers-additive.
     restrict_to_package:  bool;
+    // Swift project-model options (Swift commands; SW5). Appended fields:
+    // FlatBuffers-additive.
+    //   swift_build_args:      extra args passed through to `swift build`.
+    //   swift_toolchain_path:  toolchain root to build with (empty = default,
+    //                          resolved via xcrun); libIndexStore is taken from
+    //                          this toolchain too.
+    //   swift_index_store_path: index store to read directly; when set the
+    //                          subprocess SKIPS `swift build` (index a
+    //                          read-only / already-built checkout).
+    swift_build_args:        [string];
+    swift_toolchain_path:    string;
+    swift_index_store_path:  string;
 }
 
 table IndexerCommandQueue {
