@@ -2,6 +2,7 @@
 #define SHARD_CONFIG_H
 
 #include <set>
+#include <string>
 
 #include "FilePath.h"
 
@@ -45,6 +46,33 @@ inline void stripeFilter(std::set<FilePath>* files, size_t index, size_t count)
 		position++;
 	}
 	*files = std::move(stripe);
+}
+
+//! Package/crate-granular analog of stripeFilter (SW7): for language indexers
+//! whose unit of work is a whole package (Rust crates, Swift SPM packages)
+//! rather than a file, the file-level stripe leaves every shard indexing every
+//! package. Keep only the (index-1)-th stripe of the sorted key set — each key
+//! is a command's working directory — so producers split packages, not files.
+//! Deterministic across machines: every shard sorts the same key set.
+inline std::set<std::string> stripeKeys(
+	const std::set<std::string>& keys, size_t index, size_t count)
+{
+	if (count <= 1)
+	{
+		return keys;
+	}
+
+	std::set<std::string> stripe;
+	size_t position = 0;
+	for (const std::string& key: keys)
+	{
+		if (position % count == index - 1)
+		{
+			stripe.insert(stripe.end(), key);
+		}
+		position++;
+	}
+	return stripe;
 }
 }	 // namespace shard
 

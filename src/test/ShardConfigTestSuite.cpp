@@ -101,3 +101,65 @@ TEST_CASE("shard ShardConfig isActive only when count exceeds one")
 	sharded.count = 2;
 	REQUIRE(sharded.isActive());
 }
+
+// SW7: package/crate-granular striping — Rust crates and Swift packages are
+// whole work units, so distributed producers must split packages, not files.
+
+namespace
+{
+std::set<std::string> makePackageKeys(int count)
+{
+	std::set<std::string> keys;
+	for (int i = 0; i < count; i++)
+	{
+		keys.insert("/repo/pkg" + std::to_string(i));
+	}
+	return keys;
+}
+}	 // namespace
+
+TEST_CASE("shard stripeKeys with count 1 returns every key")
+{
+	const std::set<std::string> keys = makePackageKeys(6);
+	REQUIRE(shard::stripeKeys(keys, 1, 1) == keys);
+}
+
+TEST_CASE("shard stripeKeys partitions packages disjointly and completely")
+{
+	const int packageCount = 23;	// uneven across the shard counts below
+	const std::set<std::string> all = makePackageKeys(packageCount);
+
+	for (size_t shardCount: {size_t(2), size_t(3), size_t(4), size_t(7)})
+	{
+		std::set<std::string> union_;
+		size_t total = 0;
+		for (size_t index = 1; index <= shardCount; index++)
+		{
+			const std::set<std::string> stripe =
+				shard::stripeKeys(all, index, shardCount);
+			total += stripe.size();
+			union_.insert(stripe.begin(), stripe.end());
+		}
+		// Complete: the union is the full set. Disjoint: sizes sum to the
+		// total with no key counted twice.
+		REQUIRE(union_ == all);
+		REQUIRE(total == all.size());
+	}
+}
+
+TEST_CASE("shard stripeKeys is deterministic and balanced")
+{
+	const std::set<std::string> all = makePackageKeys(10);
+	// Same inputs -> same stripe, every time (independent producer processes).
+	REQUIRE(shard::stripeKeys(all, 2, 3) == shard::stripeKeys(all, 2, 3));
+
+	size_t minSize = all.size();
+	size_t maxSize = 0;
+	for (size_t index = 1; index <= 3; index++)
+	{
+		const size_t size = shard::stripeKeys(all, index, 3).size();
+		minSize = std::min(minSize, size);
+		maxSize = std::max(maxSize, size);
+	}
+	REQUIRE(maxSize - minSize <= 1);
+}
