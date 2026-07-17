@@ -65,7 +65,9 @@ enum SyntacticIndexer {
 
 		// -- shared emission ------------------------------------------------
 
-		private func emit(name: String, kind: Int32, nameToken: TokenSyntax) -> Int64 {
+		private func emit(
+			name: String, kind: Int32, nameToken: TokenSyntax, decl: some SyntaxProtocol
+		) -> Int64 {
 			let parts = scope + [name]
 			let nodeId = builder.nodeId(parts: parts, kind: kind)
 			builder.recordSymbol(nodeId: nodeId, definitionKind: DefinitionKind.explicit)
@@ -74,18 +76,24 @@ enum SyntacticIndexer {
 			let parentId = builder.nodeId(parts: scope, kind: parentKind)
 			_ = builder.edgeId(type: EdgeKind.member, source: parentId, target: nodeId)
 
-			let start = nameToken.startLocation(converter: converter)
-			let text = nameToken.text
-			builder.recordOccurrence(
-				elementId: nodeId,
-				fileNodeId: fileNodeId,
-				startLine: UInt32(max(start.line, 1)),
-				startCol: UInt32(max(start.column, 1)),
-				endLine: UInt32(max(start.line, 1)),
-				endCol: UInt32(max(start.column, 1)) + UInt32(max(text.count, 1)) - 1,
-				locationType: LocationKind.token
-			)
+			// SW10: precise name TOKEN (exact byte extent, not char count) plus a
+			// SCOPE spanning the whole declaration — the same pair the semantic
+			// pass emits, so the code view treats a syntactic-only file the same.
+			record(nodeId, tokenExtent(nameToken, converter), LocationKind.token)
+			record(nodeId, nodeExtent(decl, converter), LocationKind.scope)
 			return nodeId
+		}
+
+		private func record(_ elementId: Int64, _ extent: SourceExtent, _ type: Int32) {
+			builder.recordOccurrence(
+				elementId: elementId,
+				fileNodeId: fileNodeId,
+				startLine: extent.startLine,
+				startCol: extent.startColumn,
+				endLine: extent.endLine,
+				endCol: extent.endColumn,
+				locationType: type
+			)
 		}
 
 		private func push(_ name: String) {
@@ -105,35 +113,35 @@ enum SyntacticIndexer {
 		// -- types ----------------------------------------------------------
 
 		override func visit(_ node: StructDeclSyntax) -> SyntaxVisitorContinueKind {
-			_ = emit(name: node.name.text, kind: NodeKind.struct, nameToken: node.name)
+			_ = emit(name: node.name.text, kind: NodeKind.struct, nameToken: node.name, decl: node)
 			push(node.name.text)
 			return .visitChildren
 		}
 		override func visitPost(_ node: StructDeclSyntax) { scope.removeLast() }
 
 		override func visit(_ node: ClassDeclSyntax) -> SyntaxVisitorContinueKind {
-			_ = emit(name: node.name.text, kind: NodeKind.class, nameToken: node.name)
+			_ = emit(name: node.name.text, kind: NodeKind.class, nameToken: node.name, decl: node)
 			push(node.name.text)
 			return .visitChildren
 		}
 		override func visitPost(_ node: ClassDeclSyntax) { scope.removeLast() }
 
 		override func visit(_ node: ActorDeclSyntax) -> SyntaxVisitorContinueKind {
-			_ = emit(name: node.name.text, kind: NodeKind.class, nameToken: node.name)
+			_ = emit(name: node.name.text, kind: NodeKind.class, nameToken: node.name, decl: node)
 			push(node.name.text)
 			return .visitChildren
 		}
 		override func visitPost(_ node: ActorDeclSyntax) { scope.removeLast() }
 
 		override func visit(_ node: EnumDeclSyntax) -> SyntaxVisitorContinueKind {
-			_ = emit(name: node.name.text, kind: NodeKind.enum, nameToken: node.name)
+			_ = emit(name: node.name.text, kind: NodeKind.enum, nameToken: node.name, decl: node)
 			push(node.name.text)
 			return .visitChildren
 		}
 		override func visitPost(_ node: EnumDeclSyntax) { scope.removeLast() }
 
 		override func visit(_ node: ProtocolDeclSyntax) -> SyntaxVisitorContinueKind {
-			_ = emit(name: node.name.text, kind: NodeKind.interface, nameToken: node.name)
+			_ = emit(name: node.name.text, kind: NodeKind.interface, nameToken: node.name, decl: node)
 			push(node.name.text)
 			return .visitChildren
 		}
@@ -153,7 +161,7 @@ enum SyntacticIndexer {
 		}
 
 		override func visit(_ node: TypeAliasDeclSyntax) -> SyntaxVisitorContinueKind {
-			_ = emit(name: node.name.text, kind: NodeKind.typedef, nameToken: node.name)
+			_ = emit(name: node.name.text, kind: NodeKind.typedef, nameToken: node.name, decl: node)
 			return .skipChildren
 		}
 
@@ -162,7 +170,7 @@ enum SyntacticIndexer {
 		override func visit(_ node: FunctionDeclSyntax) -> SyntaxVisitorContinueKind {
 			let name = functionName(node.name.text, node.signature.parameterClause.parameters)
 			let kind = scope.count == 1 ? NodeKind.function : NodeKind.method
-			_ = emit(name: name, kind: kind, nameToken: node.name)
+			_ = emit(name: name, kind: kind, nameToken: node.name, decl: node)
 			push(name)
 			return .visitChildren
 		}
@@ -170,7 +178,7 @@ enum SyntacticIndexer {
 
 		override func visit(_ node: InitializerDeclSyntax) -> SyntaxVisitorContinueKind {
 			let name = functionName("init", node.signature.parameterClause.parameters)
-			_ = emit(name: name, kind: NodeKind.method, nameToken: node.initKeyword)
+			_ = emit(name: name, kind: NodeKind.method, nameToken: node.initKeyword, decl: node)
 			push(name)
 			return .visitChildren
 		}
@@ -178,7 +186,7 @@ enum SyntacticIndexer {
 
 		override func visit(_ node: SubscriptDeclSyntax) -> SyntaxVisitorContinueKind {
 			let name = functionName("subscript", node.parameterClause.parameters)
-			_ = emit(name: name, kind: NodeKind.method, nameToken: node.subscriptKeyword)
+			_ = emit(name: name, kind: NodeKind.method, nameToken: node.subscriptKeyword, decl: node)
 			push(name)
 			return .visitChildren
 		}
@@ -190,7 +198,7 @@ enum SyntacticIndexer {
 					continue
 				}
 				let kind = scope.count == 1 ? NodeKind.globalVariable : NodeKind.field
-				_ = emit(name: pattern.identifier.text, kind: kind, nameToken: pattern.identifier)
+				_ = emit(name: pattern.identifier.text, kind: kind, nameToken: pattern.identifier, decl: node)
 			}
 			// Accessors/initializer expressions carry no declarations we index.
 			return .skipChildren
@@ -201,7 +209,8 @@ enum SyntacticIndexer {
 				_ = emit(
 					name: element.name.text,
 					kind: NodeKind.enumConstant,
-					nameToken: element.name
+					nameToken: element.name,
+					decl: element
 				)
 			}
 			return .skipChildren
