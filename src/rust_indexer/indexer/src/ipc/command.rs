@@ -88,6 +88,7 @@ pub struct OwnedIndexerCommand {
     pub swift_build_args: Vec<String>,
     pub swift_toolchain_path: String,
     pub swift_index_store_path: String,
+    pub swift_specialization_scope: String,
 }
 
 impl OwnedIndexerCommand {
@@ -115,6 +116,10 @@ impl OwnedIndexerCommand {
             swift_build_args: str_vec(cmd.swift_build_args()),
             swift_toolchain_path: cmd.swift_toolchain_path().unwrap_or("").to_owned(),
             swift_index_store_path: cmd.swift_index_store_path().unwrap_or("").to_owned(),
+            swift_specialization_scope: cmd
+                .swift_specialization_scope()
+                .unwrap_or("")
+                .to_owned(),
         }
     }
 }
@@ -242,6 +247,11 @@ fn serialize_queue(commands: &[OwnedIndexerCommand]) -> Vec<u8> {
             } else {
                 Some(fbb.create_string(&cmd.swift_index_store_path))
             };
+            let swift_specialization_scope = if cmd.swift_specialization_scope.is_empty() {
+                None
+            } else {
+                Some(fbb.create_string(&cmd.swift_specialization_scope))
+            };
             IndexerCommand::create(
                 &mut fbb,
                 &IndexerCommandArgs {
@@ -263,6 +273,7 @@ fn serialize_queue(commands: &[OwnedIndexerCommand]) -> Vec<u8> {
                     swift_build_args: Some(swift_build_args_v),
                     swift_toolchain_path,
                     swift_index_store_path,
+                    swift_specialization_scope,
                 },
             )
         })
@@ -312,6 +323,11 @@ mod tests {
             },
             swift_index_store_path: if kind == IndexerCommandType::Swift {
                 "/build/index/store".to_owned()
+            } else {
+                String::new()
+            },
+            swift_specialization_scope: if kind == IndexerCommandType::Swift {
+                "all".to_owned()
             } else {
                 String::new()
             },
@@ -385,6 +401,7 @@ mod tests {
         assert_eq!(args.get(1), "release");
         assert_eq!(swift.swift_toolchain_path().unwrap(), "/opt/swift-6.1");
         assert_eq!(swift.swift_index_store_path().unwrap(), "/build/index/store");
+        assert_eq!(swift.swift_specialization_scope().unwrap(), "all");
     }
 
     #[test]

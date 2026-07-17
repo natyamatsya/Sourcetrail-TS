@@ -46,6 +46,7 @@ void assertOptionalSwiftSerializerRoundTrip()
 	const std::vector<std::string> buildArgs{"--configuration", "release"};
 	const std::string toolchainPath{"/opt/swift-6.1"};
 	const std::string indexStorePath{"/prebuilt/index/store"};
+	const std::string specializationScope{"all"};
 
 	const auto command = std::make_shared<IndexerCommandSwift>(
 		sourceFilePath,
@@ -53,7 +54,8 @@ void assertOptionalSwiftSerializerRoundTrip()
 		workingDirectory,
 		buildArgs,
 		toolchainPath,
-		indexStorePath);
+		indexStorePath,
+		specializationScope);
 	const std::vector<std::shared_ptr<IndexerCommand>> commands{command};
 
 	const auto buffer = IpcSerializer::serializeIndexerCommands(commands);
@@ -70,4 +72,5 @@ void assertOptionalSwiftSerializerRoundTrip()
 	REQUIRE(swiftCommand->getBuildArgs() == buildArgs);
 	REQUIRE(swiftCommand->getToolchainPath() == toolchainPath);
 	REQUIRE(swiftCommand->getIndexStorePath() == indexStorePath);
+	REQUIRE(swiftCommand->getSpecializationScope() == specializationScope);
 }

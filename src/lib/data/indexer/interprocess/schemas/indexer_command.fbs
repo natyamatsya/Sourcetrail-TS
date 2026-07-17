@@ -48,6 +48,10 @@ table IndexerCommand {
     swift_build_args:        [string];
     swift_toolchain_path:    string;
     swift_index_store_path:  string;
+    //   swift_specialization_scope: type-argument edge scope for `Base<Arg>` use
+    //                          sites — "off" | "local" | "all" (empty = "local").
+    //                          The Swift analog of specialization_scope (SW11).
+    swift_specialization_scope: string;
 }
 
 table IndexerCommandQueue {

@@ -18,7 +18,8 @@ public:
 		const FilePath& workingDirectory,
 		const std::vector<std::string>& buildArgs = {},
 		const std::string& toolchainPath = "",
-		const std::string& indexStorePath = "");
+		const std::string& indexStorePath = "",
+		const std::string& specializationScope = "");
 
 	IndexerCommandType getIndexerCommandType() const override;
 
@@ -29,6 +30,8 @@ public:
 	const std::vector<std::string>& getBuildArgs() const;
 	const std::string& getToolchainPath() const;
 	const std::string& getIndexStorePath() const;
+	// Type-argument edge scope for `Base<Arg>` use sites (SW11): "off"/"local"/"all".
+	const std::string& getSpecializationScope() const;
 
 protected:
 	QJsonObject doSerialize() const override;
@@ -39,6 +42,7 @@ private:
 	std::vector<std::string> m_buildArgs;
 	std::string m_toolchainPath;
 	std::string m_indexStorePath;
+	std::string m_specializationScope;
 };
 
 #endif	  // INDEXER_COMMAND_SWIFT_H

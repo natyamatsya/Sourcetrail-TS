@@ -11,6 +11,22 @@ import SwiftSyntax
 // or not (params ride both passes; constraints only the semantic pass, which can
 // resolve the bound's target through the index).
 
+// Whether generic use sites (`Base<Arg>`) get EDGE_TYPE_ARGUMENT edges, mirroring
+// the Rust indexer's tri-state specialization scope. `local` restricts them to
+// applications whose base type is defined outside the SDK/stdlib (the package or
+// its SPM deps) to keep stdlib containers (Array<Int>, Optional<String>) from
+// flooding the graph.
+package enum SpecializationScope: String {
+	case off
+	case local
+	case all
+
+	// Unknown / empty wire values default to `local`, matching the Rust default.
+	package static func parse(_ raw: String) -> SpecializationScope {
+		SpecializationScope(rawValue: raw) ?? .local
+	}
+}
+
 // One generic parameter: its name and the exact extent of its name token.
 struct GenericParam {
 	let name: String
@@ -234,5 +250,77 @@ private final class GenericVisitor: SyntaxVisitor {
 	override func visit(_ node: TypeAliasDeclSyntax) -> SyntaxVisitorContinueKind {
 		record(nameToken: node.name, clause: node.genericParameterClause, whereClause: nil)
 		return .skipChildren
+	}
+}
+
+// SW11 (type arguments) — direct type arguments of generic use sites in type
+// position (`Box<Int>`, `Dictionary<Key, Value>`). Maps each argument's
+// base-identifier position to its generic base type's position, so the semantic
+// pass can (a) recognize the argument as a type argument and (b) look up the
+// base type's locality for the `local` scope gate. Sugar forms (`[Int]`, `T?`)
+// have no written base token and are left as plain type usages.
+final class GenericArgMap {
+	// argument base-identifier pos → generic base-type base-identifier pos.
+	private var argToBase: [SyntaxPos: SyntaxPos] = [:]
+
+	static func build(path: String) -> GenericArgMap {
+		let map = GenericArgMap()
+		guard let source = try? String(contentsOfFile: path, encoding: .utf8) else {
+			return map
+		}
+		let tree = Parser.parse(source: source)
+		let converter = SourceLocationConverter(fileName: path, tree: tree)
+		GenericArgVisitor(map: map, converter: converter).walk(tree)
+		return map
+	}
+
+	// The generic base type of the application this position is a type argument
+	// of, or nil if the position is not a type argument.
+	func base(of pos: SyntaxPos) -> SyntaxPos? {
+		argToBase[pos]
+	}
+
+	fileprivate func add(argPos: SyntaxPos, basePos: SyntaxPos) {
+		argToBase[argPos] = basePos
+	}
+}
+
+private final class GenericArgVisitor: SyntaxVisitor {
+	private let map: GenericArgMap
+	private let converter: SourceLocationConverter
+
+	init(map: GenericArgMap, converter: SourceLocationConverter) {
+		self.map = map
+		self.converter = converter
+		super.init(viewMode: .sourceAccurate)
+	}
+
+	private func pos(of token: TokenSyntax) -> SyntaxPos {
+		let extent = tokenExtent(token, converter)
+		return SyntaxPos(line: Int(extent.startLine), column: Int(extent.startColumn))
+	}
+
+	private func record(baseName: TokenSyntax, arguments: GenericArgumentListSyntax) {
+		let basePos = pos(of: baseName)
+		for argument in arguments {
+			guard let type = Syntax(argument.argument).as(TypeSyntax.self),
+				let token = baseIdentifierToken(of: type)
+			else { continue }
+			map.add(argPos: pos(of: token), basePos: basePos)
+		}
+	}
+
+	override func visit(_ node: IdentifierTypeSyntax) -> SyntaxVisitorContinueKind {
+		if let clause = node.genericArgumentClause {
+			record(baseName: node.name, arguments: clause.arguments)
+		}
+		return .visitChildren
+	}
+
+	override func visit(_ node: MemberTypeSyntax) -> SyntaxVisitorContinueKind {
+		if let clause = node.genericArgumentClause {
+			record(baseName: node.name, arguments: clause.arguments)
+		}
+		return .visitChildren
 	}
 }

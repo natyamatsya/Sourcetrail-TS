@@ -1,5 +1,6 @@
 #include "QtProjectWizardContentSwiftOptions.h"
 
+#include <QComboBox>
 #include <QLineEdit>
 
 #include "QtLocationPicker.h"
@@ -76,6 +77,32 @@ void QtProjectWizardContentSwiftOptions::populate(QGridLayout* layout, int& row)
 		layout,
 		row);
 	row++;
+
+	m_specializationScope = new QComboBox();
+	m_specializationScope->setObjectName(QStringLiteral("swift_specialization_scope"));
+	// userData carries the wire value; the visible label is human-friendly.
+	m_specializationScope->addItem(QStringLiteral("Off"), QStringLiteral("off"));
+	m_specializationScope->addItem(QStringLiteral("Local"), QStringLiteral("local"));
+	m_specializationScope->addItem(QStringLiteral("All"), QStringLiteral("all"));
+
+	layout->addWidget(
+		createFormLabel(QStringLiteral("Type Argument Nodes")),
+		row,
+		QtProjectWizardWindow::FRONT_COL,
+		Qt::AlignRight);
+	layout->addWidget(m_specializationScope, row, QtProjectWizardWindow::BACK_COL);
+	addHelpButton(
+		QStringLiteral("Type Argument Nodes"),
+		"<p>Whether generic use sites (<b>Base&lt;Arg&gt;</b>) get a type-argument edge from "
+		"the enclosing declaration to each argument type.</p>"
+		"<p><b>Off</b>: no type-argument edges &mdash; arguments stay plain type usages.<br>"
+		"<b>Local</b> (default): edges only for generic types defined in your package or its "
+		"dependencies; stdlib containers (<b>Array</b>, <b>Optional</b>, <b>Dictionary</b>) are "
+		"skipped to keep the graph readable.<br>"
+		"<b>All</b>: edges for every generic instantiation, including the standard library.</p>",
+		layout,
+		row);
+	row++;
 }
 
 void QtProjectWizardContentSwiftOptions::load()
@@ -86,6 +113,14 @@ void QtProjectWizardContentSwiftOptions::load()
 		QString::fromStdString(m_settings->getSwiftToolchainPath().str()));
 	m_indexStorePath->setText(
 		QString::fromStdString(m_settings->getSwiftIndexStorePath().str()));
+
+	const QString scope = QString::fromStdString(m_settings->getSwiftSpecializationScope());
+	int scopeIndex = m_specializationScope->findData(scope);
+	if (scopeIndex < 0)
+	{
+		scopeIndex = m_specializationScope->findData(QStringLiteral("local"));
+	}
+	m_specializationScope->setCurrentIndex(scopeIndex);
 }
 
 void QtProjectWizardContentSwiftOptions::save()
@@ -108,4 +143,6 @@ void QtProjectWizardContentSwiftOptions::save()
 		FilePath(utility::trim(m_toolchainPath->getText().toStdString())));
 	m_settings->setSwiftIndexStorePath(
 		FilePath(utility::trim(m_indexStorePath->getText().toStdString())));
+	m_settings->setSwiftSpecializationScope(
+		m_specializationScope->currentData().toString().toStdString());
 }

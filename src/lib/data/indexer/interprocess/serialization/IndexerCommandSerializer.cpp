@@ -46,6 +46,7 @@ flatbuffers::DetachedBuffer serializeIndexerCommands(
 		flatbuffers::Offset<flatbuffers::Vector<flatbuffers::Offset<flatbuffers::String>>> swiftBuildArgs = 0;
 		flatbuffers::Offset<flatbuffers::String> swiftToolchainPath = 0;
 		flatbuffers::Offset<flatbuffers::String> swiftIndexStorePath = 0;
+		flatbuffers::Offset<flatbuffers::String> swiftSpecializationScope = 0;
 
 #if BUILD_CXX_LANGUAGE_PACKAGE
 		if (auto cxxCmd = std::dynamic_pointer_cast<IndexerCommandCxx>(cmd))
@@ -115,6 +116,7 @@ flatbuffers::DetachedBuffer serializeIndexerCommands(
 			swiftBuildArgs = builder.CreateVector(swiftArgs);
 			swiftToolchainPath = builder.CreateString(swiftCmd->getToolchainPath());
 			swiftIndexStorePath = builder.CreateString(swiftCmd->getIndexStorePath());
+			swiftSpecializationScope = builder.CreateString(swiftCmd->getSpecializationScope());
 		}
 
 		fbCommands.push_back(Sourcetrail::Ipc::CreateIndexerCommand(
@@ -122,7 +124,8 @@ flatbuffers::DetachedBuffer serializeIndexerCommands(
 			includeFilters, workingDirectory, compilerFlags, compilerPath,
 			features, allFeatures, noDefaultFeatures, targetTriple,
 			specializationScope, sourceGroupId, restrictToPackage,
-			swiftBuildArgs, swiftToolchainPath, swiftIndexStorePath));
+			swiftBuildArgs, swiftToolchainPath, swiftIndexStorePath,
+			swiftSpecializationScope));
 	}
 
 	auto queue = Sourcetrail::Ipc::CreateIndexerCommandQueue(
@@ -242,10 +245,15 @@ std::vector<std::shared_ptr<IndexerCommand>> deserializeIndexerCommands(
 			if (fbCmd->swift_index_store_path())
 				swiftIndexStorePath = fbCmd->swift_index_store_path()->str();
 
+			std::string swiftSpecializationScope;
+			if (fbCmd->swift_specialization_scope())
+				swiftSpecializationScope = fbCmd->swift_specialization_scope()->str();
+
 			result.push_back(std::make_shared<IndexerCommandSwift>(
 				FilePath(fbCmd->source_file_path()->c_str()),
 				indexedPaths, workingDir,
-				swiftBuildArgs, swiftToolchainPath, swiftIndexStorePath));
+				swiftBuildArgs, swiftToolchainPath, swiftIndexStorePath,
+				swiftSpecializationScope));
 			break;
 		}
 		default:
