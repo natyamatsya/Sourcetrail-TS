@@ -45,7 +45,9 @@ func nodeExtent(_ node: some SyntaxProtocol, _ conv: SourceLocationConverter) ->
 	)
 }
 
-private struct SyntaxPos: Hashable {
+// Shared with GenericSyntax.swift (SW11): a source position in the UTF-8
+// byte-column system SwiftSyntax and IndexStoreDB both use.
+struct SyntaxPos: Hashable {
 	let line: Int
 	let column: Int
 }

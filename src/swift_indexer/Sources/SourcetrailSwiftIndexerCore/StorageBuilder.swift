@@ -63,6 +63,20 @@ final class StorageBuilder {
 		return id
 	}
 
+	/// Force `nodeId` to `type`, regardless of its current kind — for facts the
+	/// syntactic layer knows authoritatively (SW11 generic parameters) that the
+	/// index store may have already recorded under a guessed kind (Swift has no
+	/// distinct index symbol kind for generic parameters).
+	func setNodeType(nodeId: Int64, type: Int32) {
+		if let index = storage.nodes.firstIndex(where: { $0.id == nodeId }),
+			storage.nodes[index].type != type
+		{
+			let node = storage.nodes[index]
+			storage.nodes[index] = OwnedStorageNode(
+				id: node.id, type: type, serializedName: node.serializedName)
+		}
+	}
+
 	func recordSymbol(nodeId: Int64, definitionKind: Int32) {
 		if symbolIds.insert(nodeId).inserted {
 			storage.symbols.append(

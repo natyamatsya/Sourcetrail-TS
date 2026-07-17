@@ -42,7 +42,7 @@ isolation, attribute-driven relations, macros, and API-surface metadata.
 
 | Stage | What | State |
 |-------|------|-------|
-| SW11 | Generic-parameter tier + constraints (the Rust-lifetime analog) | 📋 planned |
+| SW11 | Generic-parameter tier + constraints (the Rust-lifetime analog) | ✅ core done (nodes + bounds); type-argument use-sites deferred |
 | SW12 | Protocol conformance fidelity: witnesses, conditional/retroactive, default impls | 📋 planned |
 | SW13 | Concurrency model: actor identity, global-actor isolation, `async`, `Sendable` | 📋 planned |
 | SW14 | Attribute-driven relations: property wrappers + result builders | 📋 planned |
@@ -100,6 +100,22 @@ is Swift-side extraction (mostly SwiftSyntax, extending the SW10
 ---
 
 ### SW11 — Generic-parameter tier + constraints (L, centerpiece)
+
+**Core landed 2026-07-18** — parameter nodes + bounds. `GenericSyntax.swift`
+(`GenericParamMap`) extracts, per file, each owner's generic parameters and the
+constraints on its own params (inline bounds + `where` conformance/same-type),
+keyed to source positions. The **syntactic** pass emits `NODE_TYPE_PARAMETER`
+members with precise name tokens for every generic owner (works on broken
+builds). The **semantic** pass additionally emits the bound edges: after the
+occurrence loop, `emitGenerics` joins the syntactic params to the owner it
+resolved (`defPartsByPos`) and each constraint target to the store's already-
+resolved reference (`refTargetByPos`) — conformance/class bound → `EDGE_INHERITANCE`,
+same-type → `EDGE_TYPE_USAGE` — and suppresses the default container→type edge at
+constraint positions so the bound attaches to the parameter. Swift has no
+dedicated index symbol kind for generic params, so `StorageBuilder.setNodeType`
+forces `typeParameter` at the authoritative declaration. Covered by
+`GenericsTests` (syntactic members; semantic params + inline/where/same-type
+bounds). **Deferred within SW11:** type-argument use-sites (below).
 
 The direct analog of Rust lifetimes, and the biggest single parity gap.
 
