@@ -44,11 +44,14 @@ struct SourcetrailSwiftIndexer {
 				}
 
 				guard let command = try commandChannel.popSwiftCommand() else {
-					if (try? statusChannel.isQueueStopped()) == true {
-						break
-					}
-					try? await Task.sleep(nanoseconds: 100_000_000)
-					continue
+					// Queue empty: drain-and-exit, matching the Rust indexer
+					// (main.rs) — SW4 queue-exit alignment. The C++ supervisor
+					// (TaskBuildIndex::runExternalIndexerProcess) owns the
+					// queue-stopped decision: it relaunches this process while
+					// commands remain and stops once the queue is stopped, so the
+					// indexer must not poll queueStopped itself (doing so hangs
+					// until the supervisor's kill when the flag is never observed).
+					break
 				}
 
 				do {
