@@ -1,2 +1,3 @@
 /target
-Cargo.lock
+# Cargo.lock IS committed: this is a binary crate (sourcetrail-mcp / smoke),
+# so we pin exact dependency versions for reproducible builds.
