@@ -558,6 +558,85 @@ TEST_CASE("ipc integration: full indexer workflow")
 			SUCCEED("Swift language package disabled.");
 	}
 
+	SECTION("swift indexer honors the interrupt flag set by the app")
+	{
+		// Regression: the Swift status channel used getCheckedRoot, whose verifier
+		// rejects the app's IndexingStatus flatbuffer (an empty [uint64] vector it
+		// deems mis-aligned), so decode silently fell back to defaults and the
+		// indexer never saw indexing_interrupted. Here the app raises the interrupt
+		// BEFORE the subprocess starts and queues a command: a correct indexer must
+		// observe the interrupt at the top of its loop and exit WITHOUT popping or
+		// producing any storage.
+		if constexpr (language_packages::buildSwiftLanguagePackage)
+		{
+			const std::string subprocessUuid = "ipc_swift_interrupt_test";
+			const ProcessId swiftProcessId = static_cast<ProcessId>(17);
+
+			IpcInterprocessIndexerCommandManager commandOwner(subprocessUuid, mainPid, true);
+			commandOwner.clearIndexerCommands();
+
+			IpcInterprocessIndexingStatusManager statusOwner(subprocessUuid, mainPid, true);
+			statusOwner.setQueueStopped(false);
+			statusOwner.setIndexingInterrupted(true);
+
+			IpcInterprocessIntermediateStorageManager storageOwner(subprocessUuid, swiftProcessId, true);
+
+			commandOwner.pushIndexerCommands({
+				std::make_shared<IndexerCommandSwift>(
+					FilePath("/swift/pkg/main.swift"),
+					std::set<FilePath>{FilePath("/swift/pkg")},
+					FilePath("/swift/pkg"))
+			});
+			REQUIRE(commandOwner.indexerCommandCount() == 1);
+
+			const std::string swiftIndexerName =
+				"sourcetrail_swift_indexer" + FilePath::getExecutableExtension();
+			std::vector<FilePath> swiftIndexerCandidates;
+			swiftIndexerCandidates.push_back(AppPath::getSwiftIndexerFilePath());
+			swiftIndexerCandidates.push_back(
+				FilePath("../../app").getAbsolute().getConcatenated(swiftIndexerName));
+			swiftIndexerCandidates.push_back(
+				FilePath("../app").getAbsolute().getConcatenated(swiftIndexerName));
+			swiftIndexerCandidates.push_back(
+				FilePath("app").getAbsolute().getConcatenated(swiftIndexerName));
+
+			FilePath swiftIndexerPath;
+			for (const FilePath& candidate: swiftIndexerCandidates)
+			{
+				if (!candidate.exists())
+					continue;
+				swiftIndexerPath = candidate;
+				break;
+			}
+			REQUIRE(!swiftIndexerPath.empty());
+
+			const utility::ProcessOutput processOutput = utility::executeProcess(
+				swiftIndexerPath.str(),
+				{
+					std::to_string(static_cast<std::size_t>(swiftProcessId)),
+					subprocessUuid,
+					std::string{},
+					std::string{},
+					std::string{}
+				},
+				FilePath(),
+				false,
+				std::chrono::seconds(15));
+
+			INFO("Swift indexer stdout:\n" + processOutput.output);
+			INFO("Swift indexer stderr:\n" + processOutput.error);
+			REQUIRE(processOutput.exitCode == 0);
+
+			// The interrupt was seen: the command was NOT consumed and no storage
+			// was produced. (With the getCheckedRoot bug the interrupt was invisible,
+			// so the command was popped and an error storage pushed instead.)
+			REQUIRE(commandOwner.indexerCommandCount() == 1);
+			REQUIRE(storageOwner.getIntermediateStorageCount() == 0);
+		}
+		else
+			SUCCEED("Swift language package disabled.");
+	}
+
 	SECTION("task build index runs swift subprocess and drains storage")
 	{
 		if constexpr (language_packages::buildSwiftLanguagePackage)
