@@ -45,7 +45,7 @@ isolation, attribute-driven relations, macros, and API-surface metadata.
 | SW11 | Generic-parameter tier + constraints + type-argument use-sites (the Rust-lifetime analog) | ✅ done |
 | SW12 | Protocol conformance fidelity: witnesses, conditional/retroactive, default impls | ✅ done |
 | SW13 | Concurrency model: actor identity, global-actor isolation, `async`, `Sendable` | 📋 planned |
-| SW14 | Attribute-driven relations: property wrappers + result builders | 📋 planned |
+| SW14 | Attribute-driven relations: property wrappers + result builders | ✅ done |
 | SW15 | Macros: attached + freestanding applications (+ optional expansion) | 📋 planned |
 | SW16 | API-surface metadata: access control (incl. `package`) + `@available` | 📋 planned |
 
@@ -220,6 +220,23 @@ Swift's most distinctive modern axis, and safety-critical.
   the global-actor *type* resolves through the index.
 
 ### SW14 — Attribute-driven relations: property wrappers & result builders (M)
+
+**Landed 2026-07-18.** An audit showed the index already resolves a custom
+attribute's type reference at the attribute's name position, with the annotated
+declaration as the containing symbol — it was just emitted as a plain
+`TYPE_USAGE`. So SW14 is small: `AttributeSyntax.swift` (`AttributeMap`) marks
+every attribute-name position (the reusable walker SW13/SW16 also consume), and
+`SemanticIndexer` emits `EDGE_ANNOTATION_USAGE` there instead — but only when the
+target resolves to a *type* node (`isTypeNodeKind`), so attached macros fall
+through for SW15 and built-in attributes (`@available`, `@objc`), which name no
+type, never match. The override is scoped to the attribute position, so a
+declaration's ordinary types stay `TYPE_USAGE` (`@Clamped var level: Int` →
+annotation-usage to `Clamped`, type-usage to `Int`). Uses the existing
+`EDGE_ANNOTATION_USAGE` wire kind — no schema change. Covered by `AttributeTests`
+(property wrapper + result builder become annotation usages; ordinary types
+unaffected). Global-actor attributes (`@MainActor`, custom `@globalActor`) already
+flow through the same path — SW13 builds the actor-identity/`async` metadata on
+top.
 
 The features that make SwiftUI/Combine/SwiftData code navigable.
 

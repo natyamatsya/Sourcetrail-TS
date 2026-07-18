@@ -26,6 +26,8 @@ final class SemanticIndexer {
 	/// SW11: resolved target of each constraint reference, keyed by position.
 	/// Reset per file.
 	private var refTargetByPos: [SyntaxPos: (parts: [String], kind: Int32)] = [:]
+	/// SW14: per-file custom-attribute name positions. Set per file.
+	private var attributeMap: AttributeMap?
 	/// SW11 (type arguments): whether/where generic use sites emit
 	/// EDGE_TYPE_ARGUMENT.
 	private let specializationScope: SpecializationScope
@@ -79,6 +81,7 @@ final class SemanticIndexer {
 		// facts. Semantic coverage means the file compiled, so it parses too.
 		scopeMap = DeclScopeMap.build(path: path)
 		genericMap = GenericParamMap.build(path: path)
+		attributeMap = AttributeMap.build(path: path)
 		genericArgMap = specializationScope == .off ? nil : GenericArgMap.build(path: path)
 		defPartsByPos.removeAll(keepingCapacity: true)
 		refTargetByPos.removeAll(keepingCapacity: true)
@@ -87,6 +90,7 @@ final class SemanticIndexer {
 			scopeMap = nil
 			genericMap = nil
 			genericArgMap = nil
+			attributeMap = nil
 		}
 		let occurrences = index.symbolOccurrences(inFilePath: path)
 		// SW11: index the file's occurrences by position so a type argument can
@@ -190,6 +194,12 @@ final class SemanticIndexer {
 		// EDGE_TYPE_ARGUMENT rather than a plain TYPE_USAGE, gated by scope. `local`
 		// keeps it only when the base type (`Box`) is defined outside the SDK.
 		let forceTypeArgument = isTypeArgumentEdge(at: position)
+		// SW14: a custom-attribute application (`@Clamped var`, `@ViewBuilder func`,
+		// `@MainActor`) references a type at an attribute position — an
+		// EDGE_ANNOTATION_USAGE, not a plain type usage. Non-type targets (attached
+		// macros) fall through for SW15.
+		let forceAnnotation = attributeMap?.isAttribute(position) == true
+			&& isTypeNodeKind(targetKind)
 
 		// The containing symbol comes from the occurrence's relations.
 		var sourceId: Int64?
@@ -217,6 +227,8 @@ final class SemanticIndexer {
 			edgeType = EdgeKind.inheritance
 		} else if isCall {
 			edgeType = EdgeKind.call
+		} else if forceAnnotation {
+			edgeType = EdgeKind.annotationUsage
 		} else if forceTypeArgument {
 			edgeType = EdgeKind.typeArgument
 		} else if symbol.kind == .module {
@@ -465,6 +477,18 @@ final class SemanticIndexer {
 	private func isTypeKind(_ kind: IndexSymbolKind) -> Bool {
 		switch kind {
 		case .enum, .struct, .class, .protocol, .union, .typealias, .extension:
+			return true
+		default:
+			return false
+		}
+	}
+
+	// A resolved node kind that names a type — the target of a property wrapper /
+	// result builder / global actor attribute (SW14). Excludes macros (SW15).
+	private func isTypeNodeKind(_ kind: Int32) -> Bool {
+		switch kind {
+		case NodeKind.struct, NodeKind.class, NodeKind.interface, NodeKind.enum,
+			NodeKind.typedef, NodeKind.union:
 			return true
 		default:
 			return false
