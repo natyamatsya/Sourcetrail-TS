@@ -180,9 +180,40 @@ them — the bar is "the C++ app deserializes an object-API-packed buffer to the
 same `StorageX` values," checked on a captured corpus plus the existing
 round-trip tests.
 
-**Next action** (step 1 proper, not the spike): a contained cutover of *one*
-table in *one* language (start with Rust `StorageNode`/`StorageEdge`) behind the
-object API, with a round-trip test, before the full sweep.
+### Rust cutover executed (2026-07-18) — 110 tests green
+
+Ran the full Rust transport cutover (`--gen-object-api` is all-or-nothing per
+schema, so "one table" is really the whole Rust storage layer — still one
+language). Outcome: **it works, and it deletes the hand-written mirror.**
+
+- `build.rs`: added `--gen-object-api`. Generated `*T` object types now carry the
+  transport; `lib.rs` needed `extern crate alloc;` (flatc emits `alloc::` paths).
+- The nine `OwnedStorage*` row structs became **type aliases** to the generated
+  `*T` (`pub type OwnedStorageNode = StorageNodeT;` …) — collector/tests keep the
+  `Owned*` names. A thin hand-written `OwnedIntermediateStorage` **container**
+  (`Vec<*T>`) is kept for collection ergonomics + the chunker; it carries no
+  per-field serialize logic, so the tax is still gone (a new `.fbs` field flows
+  through with zero container changes).
+- `serialize_one_storage` (~165 lines of per-field offset building) → build an
+  `IntermediateStorageT` + `IntermediateStorageQueueT` and `.pack()` (~20 lines).
+  `from_fbs` (~165 lines) → `.unpack()` + move (~15 lines). The test's hand-rolled
+  `roundtrip()` (~150 lines replicating the serializer) collapsed to ~15.
+- Ergonomic frictions, all minor: string fields are `Option<String>` in the
+  object API (wrap collection sites in `Some(...)`, and a `decode_name(&Option…)`
+  test helper); the chunker's four string cost helpers Option-adapt; `serialize`
+  currently clones the row vectors to move them into the object type (a by-value
+  `push` signature removes the clone — deferred).
+
+Verified: `cargo test` — **110 passed, 0 failed**, including the full
+serialize→bytes→deserialize round-trip and the collector/chunker suites. The wire
+format is unchanged (same schema, vtable reader), so the C++ app reads the packed
+buffer as before.
+
+**Remaining for the full sweep:** the Swift cutover (thornier — `*T` are
+reference classes with `[T?]` arrays, so `StorageBuilder`/`StorageChunker` need
+reference-semantics rework); the `serialize` by-value optimization; and, if
+wanted, eventually retiring the hand-written container for the generated
+`IntermediateStorageT` (accepting `Option<Vec>` at the collection sites).
 
 ## Critical files
 

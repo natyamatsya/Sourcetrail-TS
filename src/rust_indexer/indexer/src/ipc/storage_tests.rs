@@ -4,180 +4,37 @@ mod tests {
         OwnedIntermediateStorage, OwnedStorageError, OwnedStorageFile, OwnedStorageNode,
         OwnedStorageOccurrence, OwnedStorageSourceLocation, OwnedStorageSymbol,
     };
-    use crate::schemas::intermediate_storage::sourcetrail::ipc::root_as_intermediate_storage_queue;
 
-    // Build a storage, serialize it through the FlatBuffers path used by
-    // StorageChannel::push(), then deserialize it back and verify all fields
-    // survive the round-trip.
+    // Serialize a storage the same way StorageChannel::push() does (object-API
+    // pack into a one-entry queue), then deserialize it back and verify all
+    // fields survive the round-trip. The whole hand-written build/read is now a
+    // pack/unpack pair (see context/DESIGN_STORAGE_CODEGEN.md).
     fn roundtrip(original: &OwnedIntermediateStorage) -> OwnedIntermediateStorage {
-        // Replicate the serialize_queue logic (it's private, so we go through
-        // the public StorageChannel::push path via a helper that exposes the
-        // serialized bytes directly).
         use crate::schemas::intermediate_storage::sourcetrail::ipc::{
-            IntermediateStorage, IntermediateStorageArgs, IntermediateStorageQueue,
-            IntermediateStorageQueueArgs, StorageEdge, StorageEdgeArgs, StorageError,
-            StorageErrorArgs, StorageFile, StorageFileArgs, StorageNode, StorageNodeArgs,
-            StorageOccurrence, StorageOccurrenceArgs, StorageSourceLocation,
-            StorageSourceLocationArgs, StorageSymbol, StorageSymbolArgs,
+            root_as_intermediate_storage_queue, IntermediateStorageQueueT, IntermediateStorageT,
         };
         use flatbuffers::FlatBufferBuilder;
 
+        let storage = IntermediateStorageT {
+            next_id: original.next_id,
+            nodes: Some(original.nodes.clone()),
+            files: Some(original.files.clone()),
+            edges: Some(original.edges.clone()),
+            symbols: Some(original.symbols.clone()),
+            source_locations: Some(original.source_locations.clone()),
+            local_symbols: Some(original.local_symbols.clone()),
+            occurrences: Some(original.occurrences.clone()),
+            component_accesses: Some(original.component_accesses.clone()),
+            errors: Some(original.errors.clone()),
+        };
+        let queue = IntermediateStorageQueueT {
+            storages: Some(vec![storage]),
+        };
         let mut fbb = FlatBufferBuilder::with_capacity(4096);
+        let off = queue.pack(&mut fbb);
+        fbb.finish(off, None);
 
-        // Build the single IntermediateStorage table.
-        let node_offsets: Vec<_> = original
-            .nodes
-            .iter()
-            .map(|n| {
-                let name = fbb.create_string(&n.serialized_name);
-                StorageNode::create(
-                    &mut fbb,
-                    &StorageNodeArgs {
-                        id: n.id,
-                        type_: n.type_,
-                        serialized_name: Some(name),
-                    },
-                )
-            })
-            .collect();
-        let nodes_v = fbb.create_vector(&node_offsets);
-
-        let file_offsets: Vec<_> = original
-            .files
-            .iter()
-            .map(|f| {
-                let path = fbb.create_string(&f.file_path);
-                let lang = fbb.create_string(&f.language_identifier);
-                StorageFile::create(
-                    &mut fbb,
-                    &StorageFileArgs {
-                        id: f.id,
-                        file_path: Some(path),
-                        language_identifier: Some(lang),
-                        indexed: f.indexed,
-                        complete: f.complete,
-                    },
-                )
-            })
-            .collect();
-        let files_v = fbb.create_vector(&file_offsets);
-
-        let edge_offsets: Vec<_> = original
-            .edges
-            .iter()
-            .map(|e| {
-                StorageEdge::create(
-                    &mut fbb,
-                    &StorageEdgeArgs {
-                        id: e.id,
-                        type_: e.type_,
-                        source_node_id: e.source_node_id,
-                        target_node_id: e.target_node_id,
-                    },
-                )
-            })
-            .collect();
-        let edges_v = fbb.create_vector(&edge_offsets);
-
-        let sym_offsets: Vec<_> = original
-            .symbols
-            .iter()
-            .map(|s| {
-                StorageSymbol::create(
-                    &mut fbb,
-                    &StorageSymbolArgs {
-                        id: s.id,
-                        definition_kind: s.definition_kind,
-                    },
-                )
-            })
-            .collect();
-        let symbols_v = fbb.create_vector(&sym_offsets);
-
-        let loc_offsets: Vec<_> = original
-            .source_locations
-            .iter()
-            .map(|l| {
-                StorageSourceLocation::create(
-                    &mut fbb,
-                    &StorageSourceLocationArgs {
-                        id: l.id,
-                        file_node_id: l.file_node_id,
-                        start_line: l.start_line,
-                        start_col: l.start_col,
-                        end_line: l.end_line,
-                        end_col: l.end_col,
-                        type_: l.type_,
-                    },
-                )
-            })
-            .collect();
-        let locs_v = fbb.create_vector(&loc_offsets);
-
-        let occ_offsets: Vec<_> = original
-            .occurrences
-            .iter()
-            .map(|o| {
-                StorageOccurrence::create(
-                    &mut fbb,
-                    &StorageOccurrenceArgs {
-                        element_id: o.element_id,
-                        source_location_id: o.source_location_id,
-                    },
-                )
-            })
-            .collect();
-        let occs_v = fbb.create_vector(&occ_offsets);
-
-        let err_offsets: Vec<_> = original
-            .errors
-            .iter()
-            .map(|e| {
-                let msg = fbb.create_string(&e.message);
-                let tu = fbb.create_string(&e.translation_unit);
-                StorageError::create(
-                    &mut fbb,
-                    &StorageErrorArgs {
-                        id: e.id,
-                        message: Some(msg),
-                        translation_unit: Some(tu),
-                        fatal: e.fatal,
-                        indexed: e.indexed,
-                    },
-                )
-            })
-            .collect();
-        let errs_v = fbb.create_vector(&err_offsets);
-
-        let raw = IntermediateStorage::create(
-            &mut fbb,
-            &IntermediateStorageArgs {
-                next_id: original.next_id,
-                nodes: Some(nodes_v),
-                files: Some(files_v),
-                edges: Some(edges_v),
-                symbols: Some(symbols_v),
-                source_locations: Some(locs_v),
-                local_symbols: None,
-                occurrences: Some(occs_v),
-                component_accesses: None,
-                errors: Some(errs_v),
-            },
-        );
-
-        let typed: Vec<flatbuffers::WIPOffset<IntermediateStorage>> =
-            vec![flatbuffers::WIPOffset::new(raw.value())];
-        let storages_v = fbb.create_vector(&typed);
-        let queue = IntermediateStorageQueue::create(
-            &mut fbb,
-            &IntermediateStorageQueueArgs {
-                storages: Some(storages_v),
-            },
-        );
-        fbb.finish(queue, None);
-        let buf = fbb.finished_data();
-
-        let q = root_as_intermediate_storage_queue(buf).unwrap();
+        let q = root_as_intermediate_storage_queue(fbb.finished_data()).unwrap();
         let storages = q.storages().unwrap();
         assert_eq!(storages.len(), 1);
         OwnedIntermediateStorage::from_fbs(storages.get(0))
@@ -191,13 +48,13 @@ mod tests {
                 OwnedStorageNode {
                     id: 2,
                     type_: 4096,
-                    serialized_name: "my_func".into(),
+                    serialized_name: Some("my_func".into()),
                     modifiers: 0,
                 },
                 OwnedStorageNode {
                     id: 3,
                     type_: 64,
-                    serialized_name: "MyStruct".into(),
+                    serialized_name: Some("MyStruct".into()),
                     modifiers: 0,
                 },
             ],
@@ -208,8 +65,8 @@ mod tests {
         assert_eq!(rt.nodes.len(), 2);
         assert_eq!(rt.nodes[0].id, 2);
         assert_eq!(rt.nodes[0].type_, 4096);
-        assert_eq!(rt.nodes[0].serialized_name, "my_func");
-        assert_eq!(rt.nodes[1].serialized_name, "MyStruct");
+        assert_eq!(rt.nodes[0].serialized_name.as_deref(), Some("my_func"));
+        assert_eq!(rt.nodes[1].serialized_name.as_deref(), Some("MyStruct"));
     }
 
     #[test]
@@ -218,8 +75,8 @@ mod tests {
             next_id: 5,
             files: vec![OwnedStorageFile {
                 id: 1,
-                file_path: "/src/lib.rs".into(),
-                language_identifier: "rust".into(),
+                file_path: Some("/src/lib.rs".into()),
+                language_identifier: Some("rust".into()),
                 indexed: true,
                 complete: true,
             }],
@@ -227,8 +84,8 @@ mod tests {
         };
         let rt = roundtrip(&original);
         assert_eq!(rt.files.len(), 1);
-        assert_eq!(rt.files[0].file_path, "/src/lib.rs");
-        assert_eq!(rt.files[0].language_identifier, "rust");
+        assert_eq!(rt.files[0].file_path.as_deref(), Some("/src/lib.rs"));
+        assert_eq!(rt.files[0].language_identifier.as_deref(), Some("rust"));
         assert!(rt.files[0].indexed);
         assert!(rt.files[0].complete);
     }
@@ -293,8 +150,8 @@ mod tests {
             next_id: 3,
             errors: vec![OwnedStorageError {
                 id: 2,
-                message: "parse error".into(),
-                translation_unit: "/src/bad.rs".into(),
+                message: Some("parse error".into()),
+                translation_unit: Some("/src/bad.rs".into()),
                 fatal: true,
                 indexed: false,
             }],
@@ -302,7 +159,7 @@ mod tests {
         };
         let rt = roundtrip(&original);
         assert_eq!(rt.errors.len(), 1);
-        assert_eq!(rt.errors[0].message, "parse error");
+        assert_eq!(rt.errors[0].message.as_deref(), Some("parse error"));
         assert!(rt.errors[0].fatal);
     }
 

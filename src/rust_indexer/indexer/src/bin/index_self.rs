@@ -35,7 +35,11 @@ fn main() {
     if !storage.errors.is_empty() {
         println!("\nErrors:");
         for e in &storage.errors {
-            println!("  [{}] {}", e.translation_unit, e.message);
+            println!(
+                "  [{}] {}",
+                e.translation_unit.as_deref().unwrap_or(""),
+                e.message.as_deref().unwrap_or("")
+            );
         }
     }
 
@@ -58,7 +62,10 @@ fn main() {
             1048576 => "union",
             _ => "?",
         };
-        println!("  [{kind_name:12}] {}", node.serialized_name);
+        println!(
+            "  [{kind_name:12}] {}",
+            node.serialized_name.as_deref().unwrap_or("")
+        );
     }
     if storage.nodes.len() > 60 {
         println!("  … and {} more", storage.nodes.len() - 60);
