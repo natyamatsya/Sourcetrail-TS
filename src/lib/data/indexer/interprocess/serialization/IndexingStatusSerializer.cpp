@@ -22,9 +22,16 @@ flatbuffers::DetachedBuffer serializeIndexingStatus(const IndexingStatusData& st
 	for (const auto& p : status.crashedFilePaths)
 		fbCrashed.push_back(builder.CreateString(p));
 
-	auto fbFinished = builder.CreateVector(
-		reinterpret_cast<const uint64_t*>(status.finishedProcessIds.data()),
-		status.finishedProcessIds.size());
+	// Omit the vector entirely when empty (null field), matching the Rust writer
+	// (ipc/status.rs). An empty [uint64] built via CreateVector is only 4-aligned,
+	// which the strict flatbuffers Swift verifier rejects as a mis-aligned uint64
+	// (8-byte element) — it made every app IndexingStatus unreadable by the Swift
+	// indexer. A null field reads back as an empty vector everywhere.
+	flatbuffers::Offset<flatbuffers::Vector<uint64_t>> fbFinished = 0;
+	if (!status.finishedProcessIds.empty())
+		fbFinished = builder.CreateVector(
+			reinterpret_cast<const uint64_t*>(status.finishedProcessIds.data()),
+			status.finishedProcessIds.size());
 
 	auto fbStatus = Sourcetrail::Ipc::CreateIndexingStatus(
 		builder,

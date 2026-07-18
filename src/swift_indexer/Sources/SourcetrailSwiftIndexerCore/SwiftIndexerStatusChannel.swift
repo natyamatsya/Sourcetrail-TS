@@ -69,18 +69,18 @@ package final class SwiftIndexerStatusChannel {
 			return OwnedIndexingStatus()
 		}
 
-		// Unchecked root, NOT getCheckedRoot: the status is written by our own C++
-		// app (IndexingStatusSerializer) under the SHM mutex — a trusted producer,
-		// same as the Rust reader (root_as_indexing_status). getCheckedRoot's
-		// verifier additionally *rejects* C++'s buffer: it flags the empty
-		// `finished_process_ids: [uint64]` vector as a mis-aligned UInt64 (C++
-		// aligns an empty scalar vector to 4, the Swift verifier demands 8 — a
-		// known cross-language flatbuffers edge case). The field values are laid
-		// out correctly and read fine unchecked; verifying here silently dropped
-		// every app->indexer flag (indexing_interrupted, queue_stopped), so a
-		// user interrupt never reached the Swift indexer.
+		// Verified read: the app's IndexingStatus is now well-formed on the wire
+		// (IndexingStatusSerializer omits the empty finished_process_ids [uint64]
+		// vector — an empty 8-byte-element vector is only 4-aligned and this strict
+		// verifier rejected it, which had silently dropped every app->indexer flag
+		// and left the Swift indexer unable to see a user interrupt). If a buffer
+		// ever fails verification we degrade to an empty status rather than trust
+		// unverified bytes — the same posture as the Rust reader's unwrap_or.
 		var buffer = ByteBuffer(bytes: bytes)
-		let status: Sourcetrail_Ipc_IndexingStatus = getRoot(byteBuffer: &buffer)
+		guard let status: Sourcetrail_Ipc_IndexingStatus = try? getCheckedRoot(byteBuffer: &buffer)
+		else {
+			return OwnedIndexingStatus()
+		}
 		return OwnedIndexingStatus(from: status)
 	}
 
