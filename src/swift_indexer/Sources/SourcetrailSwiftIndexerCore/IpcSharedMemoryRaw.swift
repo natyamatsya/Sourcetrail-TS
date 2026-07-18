@@ -4,6 +4,10 @@ import ThothIPC
 enum SwiftIndexerIpcError: Error {
 	case sharedMemoryWriteTooLarge(requested: Int, available: Int)
 	case invalidStorageQueue(String)
+	// A non-empty IndexingStatus segment that failed flatbuffers verification —
+	// surfaced rather than silently treated as an empty status, which would drop
+	// app->indexer flags (indexing_interrupted, queue_stopped).
+	case invalidIndexingStatus(String)
 }
 
 final class IpcSharedMemoryRaw {

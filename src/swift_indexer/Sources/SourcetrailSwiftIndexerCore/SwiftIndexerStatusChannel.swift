@@ -23,19 +23,19 @@ package final class SwiftIndexerStatusChannel {
 
 	package func isInterrupted() throws -> Bool {
 		try shm.readLocked { bytes in
-			Self.decodeStatus(from: bytes).indexingInterrupted
+			try Self.decodeStatus(from: bytes).indexingInterrupted
 		}
 	}
 
 	package func isQueueStopped() throws -> Bool {
 		try shm.readLocked { bytes in
-			Self.decodeStatus(from: bytes).queueStopped
+			try Self.decodeStatus(from: bytes).queueStopped
 		}
 	}
 
 	package func startIndexing(filePath: String) throws {
 		_ = try shm.readModifyWrite { bytes in
-			var status = Self.decodeStatus(from: bytes)
+			var status = try Self.decodeStatus(from: bytes)
 			status.applyStartIndexing(processId: processId, filePath: filePath)
 			return (replacement: Self.serializeStatus(status), result: ())
 		}
@@ -43,7 +43,7 @@ package final class SwiftIndexerStatusChannel {
 
 	package func finishIndexing() throws {
 		_ = try shm.readModifyWrite { bytes in
-			var status = Self.decodeStatus(from: bytes)
+			var status = try Self.decodeStatus(from: bytes)
 			status.applyFinishIndexing(processId: processId)
 			return (replacement: Self.serializeStatus(status), result: ())
 		}
@@ -55,13 +55,15 @@ package final class SwiftIndexerStatusChannel {
 	// (mirrors the Rust side's update_indexing).
 	package func updateIndexing(filePath: String) throws {
 		_ = try shm.readModifyWrite { bytes in
-			var status = Self.decodeStatus(from: bytes)
+			var status = try Self.decodeStatus(from: bytes)
 			status.applyUpdateIndexing(processId: processId, filePath: filePath)
 			return (replacement: Self.serializeStatus(status), result: ())
 		}
 	}
 
-	private static func decodeStatus(from bytes: [UInt8]) -> OwnedIndexingStatus {
+	private static func decodeStatus(from bytes: [UInt8]) throws -> OwnedIndexingStatus {
+		// An uninitialized/zeroed segment is a legitimate "no status yet" — the app
+		// simply has not written one. That is an empty status, not an error.
 		if bytes.count < 4 {
 			return OwnedIndexingStatus()
 		}
@@ -69,19 +71,21 @@ package final class SwiftIndexerStatusChannel {
 			return OwnedIndexingStatus()
 		}
 
-		// Verified read: the app's IndexingStatus is now well-formed on the wire
-		// (IndexingStatusSerializer omits the empty finished_process_ids [uint64]
-		// vector — an empty 8-byte-element vector is only 4-aligned and this strict
-		// verifier rejected it, which had silently dropped every app->indexer flag
-		// and left the Swift indexer unable to see a user interrupt). If a buffer
-		// ever fails verification we degrade to an empty status rather than trust
-		// unverified bytes — the same posture as the Rust reader's unwrap_or.
+		// A NON-empty buffer that fails verification is a real fault (a malformed
+		// or truncated write) — surface it instead of silently returning an empty
+		// status. Swallowing it here once dropped every app->indexer flag
+		// (indexing_interrupted, queue_stopped): the app wrote a mis-aligned empty
+		// finished_process_ids vector, the verifier rejected it, and a user
+		// interrupt never reached the indexer. The writer is fixed (it omits the
+		// empty vector), so this path now only fires on genuine corruption.
 		var buffer = ByteBuffer(bytes: bytes)
-		guard let status: Sourcetrail_Ipc_IndexingStatus = try? getCheckedRoot(byteBuffer: &buffer)
-		else {
-			return OwnedIndexingStatus()
+		do {
+			let status: Sourcetrail_Ipc_IndexingStatus = try getCheckedRoot(byteBuffer: &buffer)
+			return OwnedIndexingStatus(from: status)
+		} catch {
+			throw SwiftIndexerIpcError.invalidIndexingStatus(
+				"IndexingStatus failed flatbuffers verification (\(bytes.count) bytes): \(error)")
 		}
-		return OwnedIndexingStatus(from: status)
 	}
 
 	private static func serializeStatus(_ status: OwnedIndexingStatus) -> [UInt8] {

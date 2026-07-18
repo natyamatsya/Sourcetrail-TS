@@ -9,24 +9,45 @@ flatbuffers::DetachedBuffer serializeIndexingStatus(const IndexingStatusData& st
 {
 	flatbuffers::FlatBufferBuilder builder(4096);
 
-	std::vector<flatbuffers::Offset<flatbuffers::String>> fbIndexing;
-	for (const auto& p : status.indexingFilePaths)
-		fbIndexing.push_back(builder.CreateString(p));
+	// Every vector field is omitted (null offset) when empty, matching the Rust
+	// writer (ipc/status.rs) so the three frontends agree on the empty-status wire
+	// form. This is required for finished_process_ids: an empty [uint64] built via
+	// CreateVector is only 4-aligned, which the strict flatbuffers Swift verifier
+	// rejects as a mis-aligned uint64 (8-byte element) — it made every app
+	// IndexingStatus unreadable by the Swift indexer. A null field reads back as an
+	// empty vector everywhere. The offset-vector fields are 4-aligned and would
+	// verify either way, but are nulled too for consistency.
+	flatbuffers::Offset<flatbuffers::Vector<flatbuffers::Offset<flatbuffers::String>>>
+		fbIndexing = 0;
+	if (!status.indexingFilePaths.empty())
+	{
+		std::vector<flatbuffers::Offset<flatbuffers::String>> paths;
+		for (const auto& p : status.indexingFilePaths)
+			paths.push_back(builder.CreateString(p));
+		fbIndexing = builder.CreateVector(paths);
+	}
 
-	std::vector<flatbuffers::Offset<Sourcetrail::Ipc::ProcessFile>> fbCurrent;
-	for (const auto& [pid, path] : status.currentFiles)
-		fbCurrent.push_back(Sourcetrail::Ipc::CreateProcessFile(
-			builder, static_cast<uint64_t>(pid), builder.CreateString(path)));
+	flatbuffers::Offset<flatbuffers::Vector<flatbuffers::Offset<Sourcetrail::Ipc::ProcessFile>>>
+		fbCurrent = 0;
+	if (!status.currentFiles.empty())
+	{
+		std::vector<flatbuffers::Offset<Sourcetrail::Ipc::ProcessFile>> current;
+		for (const auto& [pid, path] : status.currentFiles)
+			current.push_back(Sourcetrail::Ipc::CreateProcessFile(
+				builder, static_cast<uint64_t>(pid), builder.CreateString(path)));
+		fbCurrent = builder.CreateVector(current);
+	}
 
-	std::vector<flatbuffers::Offset<flatbuffers::String>> fbCrashed;
-	for (const auto& p : status.crashedFilePaths)
-		fbCrashed.push_back(builder.CreateString(p));
+	flatbuffers::Offset<flatbuffers::Vector<flatbuffers::Offset<flatbuffers::String>>>
+		fbCrashed = 0;
+	if (!status.crashedFilePaths.empty())
+	{
+		std::vector<flatbuffers::Offset<flatbuffers::String>> crashed;
+		for (const auto& p : status.crashedFilePaths)
+			crashed.push_back(builder.CreateString(p));
+		fbCrashed = builder.CreateVector(crashed);
+	}
 
-	// Omit the vector entirely when empty (null field), matching the Rust writer
-	// (ipc/status.rs). An empty [uint64] built via CreateVector is only 4-aligned,
-	// which the strict flatbuffers Swift verifier rejects as a mis-aligned uint64
-	// (8-byte element) — it made every app IndexingStatus unreadable by the Swift
-	// indexer. A null field reads back as an empty vector everywhere.
 	flatbuffers::Offset<flatbuffers::Vector<uint64_t>> fbFinished = 0;
 	if (!status.finishedProcessIds.empty())
 		fbFinished = builder.CreateVector(
@@ -35,9 +56,9 @@ flatbuffers::DetachedBuffer serializeIndexingStatus(const IndexingStatusData& st
 
 	auto fbStatus = Sourcetrail::Ipc::CreateIndexingStatus(
 		builder,
-		builder.CreateVector(fbIndexing),
-		builder.CreateVector(fbCurrent),
-		builder.CreateVector(fbCrashed),
+		fbIndexing,
+		fbCurrent,
+		fbCrashed,
 		fbFinished,
 		status.indexingInterrupted,
 		status.queueStopped);
