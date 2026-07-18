@@ -52,7 +52,7 @@ import Testing
 		#expect(access["M::Api::priv"] == AccessKind.private_)
 		#expect(access["M::Api::plain"] == AccessKind.default_)  // implicit internal
 		#expect(access["M::Base"] == AccessKind.public_)  // open → PUBLIC
-		#expect(access["M::Pkg"] == AccessKind.default_)  // package → DEFAULT
+		#expect(access["M::Pkg"] == AccessKind.package)  // package → PACKAGE
 		#expect(access["M::Hidden"] == AccessKind.private_)
 	}
 
@@ -74,6 +74,7 @@ import Testing
 		try """
 			public struct Api {
 				public func open() {}
+				package func shared() {}
 				private func shut() {}
 			}
 			internal func hidden() {}
@@ -85,6 +86,7 @@ import Testing
 
 		#expect(access["Demo::Api"] == AccessKind.public_)
 		#expect(access["Demo::Api::open()"] == AccessKind.public_)
+		#expect(access["Demo::Api::shared()"] == AccessKind.package)
 		#expect(access["Demo::Api::shut()"] == AccessKind.private_)
 		#expect(access["Demo::hidden()"] == AccessKind.default_)
 	}

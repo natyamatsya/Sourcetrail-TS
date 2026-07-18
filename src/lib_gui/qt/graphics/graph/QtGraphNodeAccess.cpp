@@ -32,6 +32,7 @@ QtGraphNodeAccess::QtGraphNodeAccess(AccessKind accessKind)
 		iconFileName = QtResources::GRAPH_VIEW_PRIVATE;
 		break;
 	case AccessKind::DEFAULT:
+	case AccessKind::PACKAGE:
 		iconFileName = QtResources::GRAPH_VIEW_DEFAULT;
 		break;
 	case AccessKind::TEMPLATE_PARAMETER:

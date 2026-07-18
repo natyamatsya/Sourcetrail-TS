@@ -10,7 +10,8 @@ const AccessKind ACCESS_KINDS[] = {
 	AccessKind::PRIVATE,
 	AccessKind::DEFAULT,
 	AccessKind::TEMPLATE_PARAMETER,
-	AccessKind::TYPE_PARAMETER
+	AccessKind::TYPE_PARAMETER,
+	AccessKind::PACKAGE
 };
 
 }
@@ -39,6 +40,8 @@ std::string accessKindToString(AccessKind t)
 		return "template parameter";
 	case AccessKind::TYPE_PARAMETER:
 		return "type parameter";
+	case AccessKind::PACKAGE:
+		return "package";
 	}
 	return "";
 }

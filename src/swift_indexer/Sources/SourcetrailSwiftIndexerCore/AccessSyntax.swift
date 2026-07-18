@@ -7,11 +7,11 @@ import SwiftSyntax
 // Mapped to Sourcetrail's AccessKind and emitted as a StorageComponentAccess per
 // node, enabling a "public API only" graph filter.
 //
-// Swift's six levels collapse onto Sourcetrail's four: open/public → PUBLIC,
-// package/internal (and the implicit default) → DEFAULT, fileprivate/private →
-// PRIVATE. `package` has no dedicated slot and `open`/`public` are
-// indistinguishable — documented limitations. `@available` gating has no
-// representable target (a platform is not a node) and is deferred.
+// Swift's levels map onto Sourcetrail's AccessKinds: open/public → PUBLIC,
+// package → PACKAGE, internal (and the implicit default) → DEFAULT,
+// fileprivate/private → PRIVATE. `open`/`public` remain indistinguishable (the
+// subclassable distinction has no slot). `@available` gating has no representable
+// target (a platform is not a node) and is deferred.
 
 // The AccessKind for a declaration's modifier list. No access keyword means the
 // implicit default (`internal`) → DEFAULT.
@@ -19,7 +19,8 @@ func swiftAccessKind(_ modifiers: DeclModifierListSyntax) -> Int32 {
 	for modifier in modifiers {
 		switch modifier.name.text {
 		case "open", "public": return AccessKind.public_
-		case "package", "internal": return AccessKind.default_
+		case "package": return AccessKind.package
+		case "internal": return AccessKind.default_
 		case "fileprivate", "private": return AccessKind.private_
 		default: continue
 		}
