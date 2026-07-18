@@ -37,6 +37,11 @@ void CxxAstVisitorComponentIndexer::wire()
 	m_declRefKind = getAstVisitor()->getDeclRefKindComponent();
 }
 
+CxxConceptReferenceRecorder CxxAstVisitorComponentIndexer::concepts()
+{
+	return {m_client, m_symbols, m_locations, *m_context};
+}
+
 void CxxAstVisitorComponentIndexer::beginTraverseNestedNameSpecifierLoc(
 	const clang::NestedNameSpecifierLoc& loc)
 {
@@ -279,7 +284,7 @@ void CxxAstVisitorComponentIndexer::visitClassTemplateDecl(clang::ClassTemplateD
 {
 	if (getAstVisitor()->shouldVisitDecl(d))
 	{
-		recordTemplateParameterConceptReferences(d);
+		concepts().recordTemplateParameterConceptReferences(d);
 	}
 }
 
@@ -558,7 +563,7 @@ void CxxAstVisitorComponentIndexer::visitFunctionTemplateDecl(FunctionTemplateDe
 {
 	if (getAstVisitor()->shouldVisitDecl(d))
 	{
-		recordTemplateParameterConceptReferences(d);
+		concepts().recordTemplateParameterConceptReferences(d);
 	}
 }
 
@@ -727,7 +732,7 @@ void CxxAstVisitorComponentIndexer::visitTemplateTypeParmDecl(clang::TemplateTyp
 
 		if (const TypeConstraint *typeConstraint = d->getTypeConstraint())
 		{
-			recordConceptReference(typeConstraint);
+			concepts().recordConceptReference(typeConstraint);
 		}
 	}
 }
@@ -764,7 +769,7 @@ void CxxAstVisitorComponentIndexer::visitConceptSpecializationExpr(clang::Concep
 {
 	if (getAstVisitor()->shouldVisitStmt(d))
 	{
-		recordConceptReference(d);
+		concepts().recordConceptReference(d);
 	}
 }
 
@@ -772,7 +777,7 @@ void CxxAstVisitorComponentIndexer::visitConceptReference(clang::ConceptReferenc
 {
 	if (getAstVisitor()->shouldVisitReference(d->getLocation()))
 	{
-		recordNamedConceptReference(d);
+		concepts().recordNamedConceptReference(d);
 	}
 }
 
@@ -1019,7 +1024,7 @@ void CxxAstVisitorComponentIndexer::visitLambdaExpr(clang::LambdaExpr* s)
 				{
 					if (functionTemplateDecl->getTemplatedDecl() != nullptr)
 					{
-						recordTemplateParameterConceptReferences(functionTemplateDecl);
+						concepts().recordTemplateParameterConceptReferences(functionTemplateDecl);
 					}
 				}
 			}
@@ -1055,44 +1060,6 @@ void CxxAstVisitorComponentIndexer::recordTemplateMemberSpecialization(
 		Id symbolId = m_symbols.getOrCreateSymbolId(memberSpecializationInfo->getInstantiatedFrom());
 		m_client.recordSymbolKind(symbolId, symbolKind);
 		m_client.recordReference(ReferenceKind::TEMPLATE_SPECIALIZATION, symbolId, contextId, location);
-	}
-}
-
-void CxxAstVisitorComponentIndexer::recordTemplateParameterConceptReferences(const TemplateDecl *templateDecl)
-{
-	if (const TemplateParameterList *templateParameters = templateDecl->getTemplateParameters())
-	{
-		for (const NamedDecl *namedDecl : *templateParameters)
-		{
-			if (const TemplateTypeParmDecl *templateTypeParmDecl = dyn_cast<TemplateTypeParmDecl>(namedDecl))
-			{
-				if (const TypeConstraint *typeConstraint = templateTypeParmDecl->getTypeConstraint())
-				{
-					recordConceptReference(typeConstraint);
-				}
-			}
-		}
-	}
-}
-
-template <typename T>
-void CxxAstVisitorComponentIndexer::recordConceptReference(const T *d)
-{
-	if (const ConceptReference *conceptReference = d->getConceptReference())
-	{
-		recordNamedConceptReference(conceptReference);
-	}
-}
-
-void CxxAstVisitorComponentIndexer::recordNamedConceptReference(const ConceptReference *conceptReference)
-{
-	if (const auto* conceptDecl = clang_compat::getNamedConceptDecl(conceptReference))
-	{
-		const Id conceptDeclId = m_symbols.getOrCreateSymbolId(conceptDecl);
-		const Id contextSymbolId = m_symbols.getOrCreateSymbolId(m_context->getContext());
-		const ParseLocation conceptNameLocation = m_locations.getParseLocation(conceptReference->getLocation());
-
-		m_client.recordReference(ReferenceKind::USAGE, conceptDeclId, contextSymbolId, conceptNameLocation);
 	}
 }
 
