@@ -17,8 +17,8 @@ use crate::schemas::intermediate_storage::sourcetrail::ipc::IntermediateStorage;
 // context/DESIGN_STORAGE_CODEGEN.md).
 use crate::schemas::intermediate_storage::sourcetrail::ipc::{
     IntermediateStorageQueueT, IntermediateStorageT, StorageComponentAccessT, StorageEdgeT,
-    StorageErrorT, StorageFileT, StorageLocalSymbolT, StorageNodeT, StorageOccurrenceT,
-    StorageSourceLocationT, StorageSymbolT,
+    StorageErrorT, StorageFileT, StorageLocalSymbolT, StorageNodeAttributeT, StorageNodeT,
+    StorageOccurrenceT, StorageSourceLocationT, StorageSymbolT,
 };
 use flatbuffers::FlatBufferBuilder;
 
@@ -225,6 +225,7 @@ pub struct OwnedIntermediateStorage {
     pub local_symbols: Vec<OwnedStorageLocalSymbol>,
     pub occurrences: Vec<OwnedStorageOccurrence>,
     pub component_accesses: Vec<OwnedStorageComponentAccess>,
+    pub node_attributes: Vec<OwnedStorageNodeAttribute>,
     pub errors: Vec<OwnedStorageError>,
 }
 
@@ -241,6 +242,7 @@ pub type OwnedStorageSourceLocation = StorageSourceLocationT;
 pub type OwnedStorageLocalSymbol = StorageLocalSymbolT;
 pub type OwnedStorageOccurrence = StorageOccurrenceT;
 pub type OwnedStorageComponentAccess = StorageComponentAccessT;
+pub type OwnedStorageNodeAttribute = StorageNodeAttributeT;
 pub type OwnedStorageError = StorageErrorT;
 
 // ---------------------------------------------------------------------------
@@ -274,9 +276,14 @@ const SYMBOL_COST: usize = 32;
 const LOCATION_COST: usize = 64;
 const OCCURRENCE_COST: usize = 32;
 const COMPONENT_ACCESS_COST: usize = 32;
+const NODE_ATTRIBUTE_COST: usize = 40;
 
 fn str_len(s: &Option<String>) -> usize {
     s.as_deref().map_or(0, str::len)
+}
+
+fn node_attribute_cost(a: &OwnedStorageNodeAttribute) -> usize {
+    NODE_ATTRIBUTE_COST + str_len(&a.value)
 }
 
 fn node_cost(n: &OwnedStorageNode) -> usize {
@@ -311,6 +318,11 @@ impl OwnedIntermediateStorage {
             .sum::<usize>();
         total += self.occurrences.len() * OCCURRENCE_COST;
         total += self.component_accesses.len() * COMPONENT_ACCESS_COST;
+        total += self
+            .node_attributes
+            .iter()
+            .map(node_attribute_cost)
+            .sum::<usize>();
         total += self.errors.iter().map(error_cost).sum::<usize>();
         total
     }
@@ -443,6 +455,12 @@ impl<'a> Chunker<'a> {
             self.cur.component_accesses.push(ca.clone());
             self.cur_cost += COMPONENT_ACCESS_COST;
         }
+        for attr in &src.node_attributes {
+            self.ensure_budget(node_attribute_cost(attr) + self.stub_cost_max());
+            self.add_node(attr.node_id, false);
+            self.cur.node_attributes.push(attr.clone());
+            self.cur_cost += node_attribute_cost(attr);
+        }
         for err in &src.errors {
             self.ensure_budget(error_cost(err));
             self.cur.errors.push(err.clone());
@@ -573,6 +591,7 @@ impl OwnedIntermediateStorage {
             local_symbols: t.local_symbols.unwrap_or_default(),
             occurrences: t.occurrences.unwrap_or_default(),
             component_accesses: t.component_accesses.unwrap_or_default(),
+            node_attributes: t.node_attributes.unwrap_or_default(),
             errors: t.errors.unwrap_or_default(),
         }
     }
@@ -597,6 +616,7 @@ fn serialize_one_storage(s: &OwnedIntermediateStorage) -> Vec<u8> {
         local_symbols: Some(s.local_symbols.clone()),
         occurrences: Some(s.occurrences.clone()),
         component_accesses: Some(s.component_accesses.clone()),
+        node_attributes: Some(s.node_attributes.clone()),
         errors: Some(s.errors.clone()),
     };
     let queue = IntermediateStorageQueueT {

@@ -121,7 +121,7 @@ TEST_CASE("ipc shared memory")
 			builder,
 			100,
 			builder.CreateVector(std::vector<flatbuffers::Offset<Sourcetrail::Ipc::StorageNode>>{node}),
-			0, 0, 0, 0, 0, 0, 0,
+			0, 0, 0, 0, 0, 0, 0, 0,
 			builder.CreateVector(std::vector<flatbuffers::Offset<Sourcetrail::Ipc::StorageError>>{error}));
 
 		auto queue = Sourcetrail::Ipc::CreateIntermediateStorageQueue(

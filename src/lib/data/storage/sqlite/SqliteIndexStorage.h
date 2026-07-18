@@ -14,6 +14,7 @@
 #include "SqliteDatabaseIndex.h"
 #include "SqliteStorage.h"
 #include "StorageComponentAccess.h"
+#include "StorageNodeAttribute.h"
 #include "StorageEdge.h"
 #include "StorageElementComponent.h"
 #include "StorageError.h"
@@ -67,6 +68,8 @@ public:
 	bool addOccurrences(const std::vector<StorageOccurrence>& occurrences);
 	bool addComponentAccess(const StorageComponentAccess& componentAccess);
 	bool addComponentAccesses(const std::vector<StorageComponentAccess>& componentAccesses);
+	bool addNodeAttribute(const StorageNodeAttribute& nodeAttribute);
+	bool addNodeAttributes(const std::vector<StorageNodeAttribute>& nodeAttributes);
 	void addElementComponent(const StorageElementComponent& component);
 	void addElementComponents(const std::vector<StorageElementComponent>& components);
 	StorageError addError(const StorageErrorData& data);
@@ -140,6 +143,8 @@ public:
 
 	StorageComponentAccess getComponentAccessByNodeId(Id nodeId) const;
 	std::vector<StorageComponentAccess> getComponentAccessesByNodeIds(
+		const std::vector<Id>& nodeIds) const;
+	std::vector<StorageNodeAttribute> getNodeAttributesByNodeIds(
 		const std::vector<Id>& nodeIds) const;
 
 	std::vector<StorageElementComponent> getElementComponentsByElementIds(
@@ -300,6 +305,10 @@ void SqliteIndexStorage::forEach<StorageOccurrence>(
 template <>
 void SqliteIndexStorage::forEach<StorageComponentAccess>(
 	std::function<void(StorageComponentAccess&&)> func) const;
+
+template <>
+void SqliteIndexStorage::forEach<StorageNodeAttribute>(
+	std::function<void(StorageNodeAttribute&&)> func) const;
 template <>
 void SqliteIndexStorage::forEach<StorageElementComponent>(
 	std::function<void(StorageElementComponent&&)> func) const;

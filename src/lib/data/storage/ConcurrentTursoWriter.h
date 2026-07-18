@@ -14,6 +14,7 @@
 #include "StorageFile.h"
 #include "StorageLocalSymbol.h"
 #include "StorageNode.h"
+#include "StorageNodeAttribute.h"
 #include "StorageOccurrence.h"
 #include "StorageSourceLocation.h"
 #include "StorageSymbol.h"
@@ -52,6 +53,7 @@ public:
 		std::vector<StorageSourceLocation> sourceLocations;
 		std::vector<StorageOccurrence> occurrences;
 		std::vector<StorageComponentAccess> componentAccesses;
+		std::vector<StorageNodeAttribute> nodeAttributes;
 		std::vector<StorageElementComponent> elementComponents;
 		std::vector<StorageError> errors;
 	};

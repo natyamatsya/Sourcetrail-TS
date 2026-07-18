@@ -16,7 +16,7 @@
 #include "utilityString.h"
 
 
-const size_t SqliteIndexStorage::s_storageVersion = 26;
+const size_t SqliteIndexStorage::s_storageVersion = 27;
 
 namespace
 {
@@ -45,6 +45,7 @@ constexpr idx::LocalSymbol localSymbolTable;
 constexpr idx::SourceLocation sourceLocationTable;
 constexpr idx::Occurrence occurrenceTable;
 constexpr idx::ComponentAccess componentAccessTable;
+constexpr idx::NodeAttribute nodeAttributeTable;
 constexpr idx::Error errorTable;
 
 // Aggregate result aliases (SQLPP_CREATE_NAME_TAG must live at namespace scope).
@@ -161,6 +162,17 @@ constexpr auto componentAccessFromRow = [](const auto& row) -> std::optional<Sto
 	if (nodeId != 0 && type != -1)
 	{
 		return StorageComponentAccess(nodeId, intToEnum<AccessKind>(type));
+	}
+	return std::nullopt;
+};
+
+constexpr auto nodeAttributeFromRow = [](const auto& row) -> std::optional<StorageNodeAttribute> {
+	const Id nodeId = Id(row.nodeId);
+	const auto key = static_cast<int>(row.key);
+	if (nodeId != 0)
+	{
+		return StorageNodeAttribute(
+			nodeId, intToEnum<NodeAttributeKind>(key), fieldText(row.value));
 	}
 	return std::nullopt;
 };
@@ -823,6 +835,29 @@ bool SqliteIndexStorage::addComponentAccesses(const std::vector<StorageComponent
 			insert.add_values(
 				componentAccessTable.nodeId = static_cast<Id::type>(componentAccess.nodeId),
 				componentAccessTable.type = static_cast<int>(componentAccess.type));
+		});
+}
+
+bool SqliteIndexStorage::addNodeAttribute(const StorageNodeAttribute& nodeAttribute)
+{
+	return addNodeAttributes({nodeAttribute});
+}
+
+bool SqliteIndexStorage::addNodeAttributes(const std::vector<StorageNodeAttribute>& nodeAttributes)
+{
+	using namespace sqlpp;
+	return insertInChunks(
+		db(),
+		nodeAttributes,
+		[] {
+			return ::sqlpp::sqlite3::insert_or_ignore().into(nodeAttributeTable).columns(
+				nodeAttributeTable.nodeId, nodeAttributeTable.key, nodeAttributeTable.value);
+		},
+		[](auto& insert, const StorageNodeAttribute& nodeAttribute) {
+			insert.add_values(
+				nodeAttributeTable.nodeId = static_cast<Id::type>(nodeAttribute.nodeId),
+				nodeAttributeTable.key = static_cast<int>(nodeAttribute.key),
+				nodeAttributeTable.value = nodeAttribute.value);
 		});
 }
 
@@ -1853,6 +1888,24 @@ std::vector<StorageComponentAccess> SqliteIndexStorage::getComponentAccessesByNo
 	return accesses;
 }
 
+std::vector<StorageNodeAttribute> SqliteIndexStorage::getNodeAttributesByNodeIds(
+	const std::vector<Id>& nodeIds) const
+{
+	std::vector<StorageNodeAttribute> attributes;
+	if (nodeIds.size())
+	{
+		forEachRowWhere<StorageNodeAttribute>(
+			db(),
+			nodeAttributeTable,
+			nodeAttributeFromRow,
+			nodeAttributeTable.nodeId.in(toI64(nodeIds)),
+			[&attributes](StorageNodeAttribute&& attribute) {
+				attributes.emplace_back(std::move(attribute));
+			});
+	}
+	return attributes;
+}
+
 std::vector<StorageElementComponent> SqliteIndexStorage::getElementComponentsByElementIds(
 	const std::vector<Id>& elementIds) const
 {
@@ -2094,6 +2147,7 @@ void SqliteIndexStorage::clearTables()
 	try
 	{
 		m_database.execDML("DROP TABLE IF EXISTS main.error;");
+		m_database.execDML("DROP TABLE IF EXISTS main.node_attribute;");
 		m_database.execDML("DROP TABLE IF EXISTS main.component_access;");
 		m_database.execDML("DROP TABLE IF EXISTS main.occurrence;");
 		m_database.execDML("DROP TABLE IF EXISTS main.source_location;");
@@ -2235,6 +2289,14 @@ void SqliteIndexStorage::setupTables()
 			"FOREIGN KEY(node_id) REFERENCES node(id) ON DELETE CASCADE);");
 
 		m_database.execDML(
+			"CREATE TABLE IF NOT EXISTS node_attribute("
+			"node_id INTEGER NOT NULL, "
+			"key INTEGER NOT NULL, "
+			"value TEXT, "
+			"PRIMARY KEY(node_id, key, value), "
+			"FOREIGN KEY(node_id) REFERENCES node(id) ON DELETE CASCADE);");
+
+		m_database.execDML(
 			"CREATE TABLE IF NOT EXISTS error("
 			"id INTEGER NOT NULL, "
 			"message TEXT, "
@@ -2308,6 +2370,13 @@ void SqliteIndexStorage::forEach<StorageComponentAccess>(
 	std::function<void(StorageComponentAccess&&)> func) const
 {
 	forEachRowAll<StorageComponentAccess>(db(), componentAccessTable, componentAccessFromRow, func);
+}
+
+template <>
+void SqliteIndexStorage::forEach<StorageNodeAttribute>(
+	std::function<void(StorageNodeAttribute&&)> func) const
+{
+	forEachRowAll<StorageNodeAttribute>(db(), nodeAttributeTable, nodeAttributeFromRow, func);
 }
 
 template <>

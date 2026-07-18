@@ -61,6 +61,16 @@ enum AccessKind {
 	static let package: Int32 = 7
 }
 
+// Mirrors src/lib/data/parser/NodeAttributeKind.h — the key of a sparse,
+// display-only node_attribute(node_id, key, value) row. Append-only (persisted).
+enum NodeAttributeKind {
+	static let none: Int32 = 0
+	static let availability: Int32 = 1  // @available / platform gating text
+	static let deprecated: Int32 = 2  // deprecation message
+	static let cfg: Int32 = 3  // configuration guard (Rust cfg, Swift #if)
+	static let docBrief: Int32 = 4  // one-line documentation summary
+}
+
 enum LocationKind {
 	static let token: Int32 = 0
 	static let scope: Int32 = 1

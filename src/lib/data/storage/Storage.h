@@ -13,6 +13,7 @@
 #include "StorageFile.h"
 #include "StorageLocalSymbol.h"
 #include "StorageNode.h"
+#include "StorageNodeAttribute.h"
 #include "StorageOccurrence.h"
 #include "StorageSourceLocation.h"
 #include "StorageSymbol.h"
@@ -39,6 +40,8 @@ public:
 	virtual void addOccurrences(const std::vector<StorageOccurrence>& occurrences) = 0;
 	virtual void addComponentAccess(const StorageComponentAccess& componentAccess) = 0;
 	virtual void addComponentAccesses(const std::vector<StorageComponentAccess>& componentAccesses) = 0;
+	virtual void addNodeAttribute(const StorageNodeAttribute& nodeAttribute) = 0;
+	virtual void addNodeAttributes(const std::vector<StorageNodeAttribute>& nodeAttributes) = 0;
 	virtual void addElementComponent(const StorageElementComponent& component) = 0;
 	virtual void addElementComponents(const std::vector<StorageElementComponent>& components) = 0;
 	virtual Id addError(const StorageErrorData& data) = 0;
@@ -51,6 +54,7 @@ public:
 	virtual const std::set<StorageSourceLocation>& getStorageSourceLocations() const = 0;
 	virtual const std::set<StorageOccurrence>& getStorageOccurrences() const = 0;
 	virtual const std::set<StorageComponentAccess>& getComponentAccesses() const = 0;
+	virtual const std::set<StorageNodeAttribute>& getNodeAttributes() const = 0;
 	virtual const std::set<StorageElementComponent>& getElementComponents() const = 0;
 	virtual const std::vector<StorageError>& getErrors() const = 0;
 

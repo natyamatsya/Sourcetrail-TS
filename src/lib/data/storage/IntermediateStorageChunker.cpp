@@ -49,6 +49,11 @@ size_t errorCost(const StorageError& e)
 	return 64 + e.message.size() + e.translationUnit.size();
 }
 
+size_t nodeAttributeCost(const StorageNodeAttribute& a)
+{
+	return 40 + a.value.size();
+}
+
 size_t estimatedSize(const IntermediateStorage& s)
 {
 	size_t total = 1024;
@@ -63,6 +68,8 @@ size_t estimatedSize(const IntermediateStorage& s)
 		total += localSymbolCost(ls);
 	total += s.getStorageOccurrences().size() * OCCURRENCE_COST;
 	total += s.getComponentAccesses().size() * COMPONENT_ACCESS_COST;
+	for (const StorageNodeAttribute& a: s.getNodeAttributes())
+		total += nodeAttributeCost(a);
 	for (const StorageElementComponent& ec: s.getElementComponents())
 		total += elementComponentCost(ec);
 	for (const StorageError& e: s.getErrors())
@@ -153,6 +160,13 @@ public:
 			m_curComponentAccesses.insert(ca);
 			m_curCost += COMPONENT_ACCESS_COST;
 		}
+		for (const StorageNodeAttribute& a: m_src.getNodeAttributes())
+		{
+			ensureBudget(nodeAttributeCost(a) + STUB_COST_MAX);
+			addNode(a.nodeId, false);
+			m_curNodeAttributes.insert(a);
+			m_curCost += nodeAttributeCost(a);
+		}
 		for (const StorageError& err: m_src.getErrors())
 		{
 			ensureBudget(errorCost(err));
@@ -235,6 +249,7 @@ private:
 		chunk->setStorageSourceLocations(std::move(m_curLocations));
 		chunk->setStorageOccurrences(std::move(m_curOccurrences));
 		chunk->setComponentAccesses(std::move(m_curComponentAccesses));
+		chunk->setNodeAttributes(std::move(m_curNodeAttributes));
 		chunk->setElementComponents(std::move(m_curElementComponents));
 		chunk->setErrors(std::move(m_curErrors));
 		chunk->setNextId(m_src.getNextId());
@@ -248,6 +263,7 @@ private:
 		m_curLocations = {};
 		m_curOccurrences = {};
 		m_curComponentAccesses = {};
+		m_curNodeAttributes = {};
 		m_curElementComponents = {};
 		m_curErrors = {};
 		m_curCost = 0;
@@ -338,6 +354,7 @@ private:
 	std::set<StorageSourceLocation> m_curLocations;
 	std::set<StorageOccurrence> m_curOccurrences;
 	std::set<StorageComponentAccess> m_curComponentAccesses;
+	std::set<StorageNodeAttribute> m_curNodeAttributes;
 	std::set<StorageElementComponent> m_curElementComponents;
 	std::vector<StorageError> m_curErrors;
 	size_t m_curCost = 0;

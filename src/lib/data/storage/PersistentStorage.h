@@ -68,6 +68,8 @@ public:
 	void addOccurrences(const std::vector<StorageOccurrence>& occurrences) override;
 	void addComponentAccess(const StorageComponentAccess& componentAccess) override;
 	void addComponentAccesses(const std::vector<StorageComponentAccess>& componentAccesses) override;
+	void addNodeAttribute(const StorageNodeAttribute& nodeAttribute) override;
+	void addNodeAttributes(const std::vector<StorageNodeAttribute>& nodeAttributes) override;
 	void addElementComponent(const StorageElementComponent& component) override;
 	void addElementComponents(const std::vector<StorageElementComponent>& components) override;
 	Id addError(const StorageErrorData& data) override;
@@ -86,6 +88,7 @@ public:
 	const std::set<StorageSourceLocation>& getStorageSourceLocations() const override;
 	const std::set<StorageOccurrence>& getStorageOccurrences() const override;
 	const std::set<StorageComponentAccess>& getComponentAccesses() const override;
+	const std::set<StorageNodeAttribute>& getNodeAttributes() const override;
 	const std::set<StorageElementComponent>& getElementComponents() const override;
 	const std::vector<StorageError>& getErrors() const override;
 
@@ -251,6 +254,7 @@ private:
 		std::set<StorageSourceLocation> locations;
 		std::set<StorageOccurrence> occurrences;
 		std::set<StorageComponentAccess> accesses;
+		std::set<StorageNodeAttribute> nodeAttributes;
 		std::set<StorageElementComponent> components;
 		std::vector<StorageError> errors;
 	} m_storageData;

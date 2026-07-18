@@ -260,6 +260,18 @@ struct ConcurrentTursoWriter::Impl
 			}
 		}
 
+		// node attributes (remap node id; dedup by node+key+value)
+		for (const StorageNodeAttribute& a: batch.nodeAttributes)
+		{
+			const auto it = elem.find(static_cast<Id::type>(a.nodeId));
+			if (it != elem.end() &&
+				index.markNodeAttribute(it->second, static_cast<int>(a.key), a.value))
+			{
+				sql += "INSERT OR IGNORE INTO node_attribute(node_id,key,value) VALUES(" +
+					s(it->second) + "," + s(static_cast<int>(a.key)) + ",'" + esc(a.value) + "');";
+			}
+		}
+
 		// element components (remap element id; id-minting; dedup by element+type+data)
 		for (const StorageElementComponent& c: batch.elementComponents)
 		{
@@ -432,6 +444,7 @@ ConcurrentTursoWriter::ConcurrentTursoWriter(
 	tsq_exec(m_impl->db, "CREATE TABLE IF NOT EXISTS source_location(id INTEGER PRIMARY KEY, file_node_id INTEGER, start_line INTEGER, start_column INTEGER, end_line INTEGER, end_column INTEGER, type INTEGER)");
 	tsq_exec(m_impl->db, "CREATE TABLE IF NOT EXISTS occurrence(element_id INTEGER, source_location_id INTEGER, PRIMARY KEY(element_id, source_location_id))");
 	tsq_exec(m_impl->db, "CREATE TABLE IF NOT EXISTS component_access(node_id INTEGER PRIMARY KEY, type INTEGER)");
+	tsq_exec(m_impl->db, "CREATE TABLE IF NOT EXISTS node_attribute(node_id INTEGER, key INTEGER, value TEXT, PRIMARY KEY(node_id, key, value))");
 	tsq_exec(m_impl->db, "CREATE TABLE IF NOT EXISTS element_component(id INTEGER PRIMARY KEY, element_id INTEGER, type INTEGER, data TEXT)");
 	tsq_exec(m_impl->db, "CREATE TABLE IF NOT EXISTS error(id INTEGER PRIMARY KEY, message TEXT, fatal INTEGER, indexed INTEGER, translation_unit TEXT)");
 	m_impl->index.seed(firstElementId > 0 ? static_cast<ElementId>(firstElementId) : 1);

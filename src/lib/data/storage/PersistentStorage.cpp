@@ -151,6 +151,8 @@ void PersistentStorage::submitToConcurrentTurso(const IntermediateStorage& stora
 	batch.occurrences.assign(occurrences.begin(), occurrences.end());
 	const auto& componentAccesses = storage.getComponentAccesses();
 	batch.componentAccesses.assign(componentAccesses.begin(), componentAccesses.end());
+	const auto& nodeAttributes = storage.getNodeAttributes();
+	batch.nodeAttributes.assign(nodeAttributes.begin(), nodeAttributes.end());
 	const auto& elementComponents = storage.getElementComponents();
 	batch.elementComponents.assign(elementComponents.begin(), elementComponents.end());
 
@@ -340,6 +342,16 @@ void PersistentStorage::addComponentAccesses(const std::vector<StorageComponentA
 	m_sqliteIndexStorage.addComponentAccesses(componentAccesses);
 }
 
+void PersistentStorage::addNodeAttribute(const StorageNodeAttribute& nodeAttribute)
+{
+	m_sqliteIndexStorage.addNodeAttribute(nodeAttribute);
+}
+
+void PersistentStorage::addNodeAttributes(const std::vector<StorageNodeAttribute>& nodeAttributes)
+{
+	m_sqliteIndexStorage.addNodeAttributes(nodeAttributes);
+}
+
 void PersistentStorage::addElementComponent(const StorageElementComponent& component)
 {
 	m_sqliteIndexStorage.addElementComponent(component);
@@ -421,6 +433,12 @@ const std::set<StorageComponentAccess>& PersistentStorage::getComponentAccesses(
 {
 	return m_storageData.accesses = utility::toSet(
 			   m_sqliteIndexStorage.getAll<StorageComponentAccess>());
+}
+
+const std::set<StorageNodeAttribute>& PersistentStorage::getNodeAttributes() const
+{
+	return m_storageData.nodeAttributes = utility::toSet(
+			   m_sqliteIndexStorage.getAll<StorageNodeAttribute>());
 }
 
 const std::set<StorageElementComponent>& PersistentStorage::getElementComponents() const

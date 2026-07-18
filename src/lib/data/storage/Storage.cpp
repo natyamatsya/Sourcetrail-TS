@@ -270,6 +270,25 @@ void Storage::inject(Storage* injected)
 		addComponentAccesses(accesses);
 	}
 
+	{
+		// TRACE("inject node attributes");
+
+		const std::set<StorageNodeAttribute>& oldAttributes = injected->getNodeAttributes();
+		std::vector<StorageNodeAttribute> attributes;
+		attributes.reserve(oldAttributes.size());
+
+		for (const StorageNodeAttribute& attribute: oldAttributes)
+		{
+			auto it = injectedIdToOwnElementId.find(attribute.nodeId);
+			if (it != injectedIdToOwnElementId.end())
+			{
+				attributes.emplace_back(it->second, attribute.key, attribute.value);
+			}
+		}
+
+		addNodeAttributes(attributes);
+	}
+
 	finishInjection();
 }
 

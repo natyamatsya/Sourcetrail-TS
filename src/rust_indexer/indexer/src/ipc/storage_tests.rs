@@ -2,7 +2,8 @@
 mod tests {
     use crate::ipc::storage::{
         OwnedIntermediateStorage, OwnedStorageError, OwnedStorageFile, OwnedStorageNode,
-        OwnedStorageOccurrence, OwnedStorageSourceLocation, OwnedStorageSymbol,
+        OwnedStorageNodeAttribute, OwnedStorageOccurrence, OwnedStorageSourceLocation,
+        OwnedStorageSymbol,
     };
 
     // Serialize a storage the same way StorageChannel::push() does (object-API
@@ -25,6 +26,7 @@ mod tests {
             local_symbols: Some(original.local_symbols.clone()),
             occurrences: Some(original.occurrences.clone()),
             component_accesses: Some(original.component_accesses.clone()),
+            node_attributes: Some(original.node_attributes.clone()),
             errors: Some(original.errors.clone()),
         };
         let queue = IntermediateStorageQueueT {
@@ -161,6 +163,35 @@ mod tests {
         assert_eq!(rt.errors.len(), 1);
         assert_eq!(rt.errors[0].message.as_deref(), Some("parse error"));
         assert!(rt.errors[0].fatal);
+    }
+
+    #[test]
+    fn roundtrip_node_attributes_survive() {
+        let original = OwnedIntermediateStorage {
+            next_id: 9,
+            node_attributes: vec![
+                OwnedStorageNodeAttribute {
+                    node_id: 2,
+                    key: 1,
+                    value: Some("feature = \"nightly\"".into()),
+                },
+                OwnedStorageNodeAttribute {
+                    node_id: 2,
+                    key: 2,
+                    value: Some("deprecated: use bar".into()),
+                },
+            ],
+            ..Default::default()
+        };
+        let rt = roundtrip(&original);
+        assert_eq!(rt.node_attributes.len(), 2);
+        assert_eq!(rt.node_attributes[0].node_id, 2);
+        assert_eq!(rt.node_attributes[0].key, 1);
+        assert_eq!(
+            rt.node_attributes[0].value.as_deref(),
+            Some("feature = \"nightly\"")
+        );
+        assert_eq!(rt.node_attributes[1].key, 2);
     }
 
     #[test]

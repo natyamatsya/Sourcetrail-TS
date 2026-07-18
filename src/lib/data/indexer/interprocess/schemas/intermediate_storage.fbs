@@ -63,6 +63,12 @@ table StorageComponentAccess {
     type:    int32;  // AccessKind
 }
 
+table StorageNodeAttribute {
+    node_id: int64;
+    key:     int32;   // NodeAttributeKind
+    value:   string;  // display-only payload (e.g. "@available(macOS 14, *)")
+}
+
 table StorageError {
     id:               int64;
     message:          string;
@@ -81,6 +87,7 @@ table IntermediateStorage {
     local_symbols:      [StorageLocalSymbol];
     occurrences:        [StorageOccurrence];
     component_accesses: [StorageComponentAccess];
+    node_attributes:    [StorageNodeAttribute];
     errors:             [StorageError];
 }
 

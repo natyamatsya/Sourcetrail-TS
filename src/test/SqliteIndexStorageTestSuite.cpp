@@ -3,6 +3,7 @@
 #include "FileSystem.h"
 #include "SqliteIndexStorage.h"
 #include "StorageConnection.h"
+#include "StorageNodeAttribute.h"
 
 TEST_CASE("storage adds node successfully")
 {
@@ -43,6 +44,48 @@ TEST_CASE("storage round-trips node modifiers")
 
 	REQUIRE(NODE_MODIFIER_ACTOR == actorModifiers);
 	REQUIRE(NODE_MODIFIER_NONE == plainModifiers);
+}
+
+TEST_CASE("storage round-trips node attributes")
+{
+	FilePath databasePath("data/SQLiteTestSuite/test.sqlite");
+	std::vector<StorageNodeAttribute> attributes;
+	{
+		StorageConnection connection(databasePath);
+		SqliteIndexStorage storage(connection);
+		storage.setup();
+		storage.beginTransaction();
+		const Id nodeId = storage.addNode(StorageNodeData(NODE_CLASS, "Model"));
+		storage.addNodeAttribute(
+			StorageNodeAttribute(nodeId, NodeAttributeKind::AVAILABILITY, "@available(macOS 14, *)"));
+		storage.addNodeAttribute(
+			StorageNodeAttribute(nodeId, NodeAttributeKind::DEPRECATED, "use NewModel"));
+		// A repeated (node, key, value) triple is deduped by the primary key.
+		storage.addNodeAttribute(
+			StorageNodeAttribute(nodeId, NodeAttributeKind::AVAILABILITY, "@available(macOS 14, *)"));
+		storage.commitTransaction();
+		attributes = storage.getNodeAttributesByNodeIds({nodeId});
+	}
+	FileSystem::remove(databasePath);
+
+	REQUIRE(2 == attributes.size());
+	bool sawAvailability = false;
+	bool sawDeprecated = false;
+	for (const StorageNodeAttribute& attribute: attributes)
+	{
+		if (attribute.key == NodeAttributeKind::AVAILABILITY)
+		{
+			sawAvailability = true;
+			REQUIRE(attribute.value == "@available(macOS 14, *)");
+		}
+		else if (attribute.key == NodeAttributeKind::DEPRECATED)
+		{
+			sawDeprecated = true;
+			REQUIRE(attribute.value == "use NewModel");
+		}
+	}
+	REQUIRE(sawAvailability);
+	REQUIRE(sawDeprecated);
 }
 
 TEST_CASE("storage removes node successfully")

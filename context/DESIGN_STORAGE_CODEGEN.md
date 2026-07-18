@@ -240,6 +240,45 @@ clone; and eventually retiring the hand-written containers for the generated
 optional-element vectors at the collection sites). The C++ transport boundary
 (`IntermediateStorageSerializer.cpp`) stays hand-written by design.
 
+## Step 2 executed (2026-07-18) — `node_attribute` substrate landed
+
+Built the sparse side-table substrate (Decision 1 + 3.1) end-to-end. It is
+**behaviour-preserving** — the table exists and round-trips through every layer,
+but nothing emits into it yet, so a fresh index just carries an empty table. That
+is the point: the load-bearing plumbing lands proven-equivalent before any
+feature rides on it.
+
+- **Schema:** `StorageNodeAttribute { node_id:int64; key:int32; value:string }`
+  + `node_attributes:[…]` on `IntermediateStorage`. `key` is a `NodeAttributeKind`
+    enum (append-only: NONE/AVAILABILITY/DEPRECATED/CFG/DOC_BRIEF); `value` is the
+    display-only payload. The transport mirrors flowed through **for free** in
+    Rust and Swift (the object-API cutover from step 1) — one container field, one
+    chunker pass, one cost helper each; no hand-written serializer.
+- **C++ transport** (`IntermediateStorageSerializer.cpp`) is hand-written by
+  design, so it got the two directions explicitly, plus a new domain type
+  `StorageNodeAttribute` (ordered by the full `(nodeId, key, value)` triple —
+  unlike `StorageComponentAccess`, a node may carry several) and the
+  `Storage`/`IntermediateStorage` add/get/set surface.
+- **Persistence:** new `node_attribute` SQLite table (typed sqlpp23 insert;
+  hand-written DDL as the schema source of truth in `index.sql` + `setup()`); the
+  concurrent **Turso** writer path (`ConcurrentTursoWriter` + `ConcurrentStorageIndex`
+  dedup); `Storage::inject` remap; the C++ `IntermediateStorageChunker`. Storage
+  version **26 → 27** (fresh re-index; no migration, per the non-goals).
+- **The discipline held:** this is the *single* generic side table. No new
+  per-facet table — `open`/`final` (step 3) go on the `NodeModifier` bitmask,
+  `access` (step 4) moves inline. `node_attribute` never grows a sibling.
+
+Verified: Rust `cargo test` **111 passed**; Swift transport/chunker/access suites
+**12 passed** (incl. a node-attribute serialize round-trip and the chunker's
+self-containment check now carrying attributes); C++ `Sourcetrail_test` serializer
+round-trip + a new `SqliteIndexStorage` node-attribute persistence round-trip.
+
+**Not yet done (deliberately deferred):** a *producer* (Swift `@available` /
+deprecation, Rust `cfg`) and a *consumer* (node tooltip + filter). Those are the
+feature from `DESIGN_NODE_MODIFIERS.md`; the substrate now makes them cheap. The
+Swift `StorageBuilder.recordNodeAttribute` API exists and is unit-tested, so the
+producer is a one-call wiring job when wanted.
+
 ## Critical files
 
 - `src/lib/data/indexer/interprocess/schemas/intermediate_storage.fbs` — source

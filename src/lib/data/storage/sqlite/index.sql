@@ -97,6 +97,14 @@ CREATE TABLE IF NOT EXISTS component_access(
 	FOREIGN KEY(node_id) REFERENCES node(id) ON DELETE CASCADE
 );
 
+CREATE TABLE IF NOT EXISTS node_attribute(
+	node_id INTEGER NOT NULL,
+	key INTEGER NOT NULL,
+	value TEXT,
+	PRIMARY KEY(node_id, key, value),
+	FOREIGN KEY(node_id) REFERENCES node(id) ON DELETE CASCADE
+);
+
 CREATE TABLE IF NOT EXISTS error(
 	id INTEGER NOT NULL,
 	message TEXT,
