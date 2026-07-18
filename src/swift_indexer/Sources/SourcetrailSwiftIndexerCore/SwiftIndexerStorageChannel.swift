@@ -286,6 +286,13 @@ package final class SwiftIndexerStorageChannel {
 				sourceLocationId: occurrence.sourceLocationId
 			)
 		}
+		let componentAccessOffsets = storage.componentAccesses.map { access in
+			Sourcetrail_Ipc_StorageComponentAccess.createStorageComponentAccess(
+				&builder,
+				nodeId: access.nodeId,
+				type: access.type
+			)
+		}
 
 		let nodesOffset = builder.createVector(ofOffsets: nodeOffsets)
 		let filesOffset = builder.createVector(ofOffsets: fileOffsets)
@@ -294,7 +301,7 @@ package final class SwiftIndexerStorageChannel {
 		let sourceLocationsOffset = builder.createVector(ofOffsets: locationOffsets)
 		let localSymbolsOffset = builder.createVector(ofOffsets: localSymbolOffsets)
 		let occurrencesOffset = builder.createVector(ofOffsets: occurrenceOffsets)
-		let componentAccessesOffset = builder.createVector(ofOffsets: [Offset]())
+		let componentAccessesOffset = builder.createVector(ofOffsets: componentAccessOffsets)
 		let errorsOffset = builder.createVector(ofOffsets: errorOffsets)
 
 		let storageOffset = Sourcetrail_Ipc_IntermediateStorage.createIntermediateStorage(

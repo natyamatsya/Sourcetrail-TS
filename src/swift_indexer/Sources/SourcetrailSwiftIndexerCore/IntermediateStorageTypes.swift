@@ -64,6 +64,11 @@ package struct OwnedStorageSymbol {
 	package let definitionKind: Int32
 }
 
+package struct OwnedStorageComponentAccess {
+	package let nodeId: Int64
+	package let type: Int32  // AccessKind
+}
+
 package struct OwnedStorageSourceLocation {
 	package let id: Int64
 	package let fileNodeId: Int64
@@ -90,6 +95,7 @@ package struct OwnedIntermediateStorage {
 	package var files: [OwnedStorageFile] = []
 	package var edges: [OwnedStorageEdge] = []
 	package var symbols: [OwnedStorageSymbol] = []
+	package var componentAccesses: [OwnedStorageComponentAccess] = []
 	package var sourceLocations: [OwnedStorageSourceLocation] = []
 	package var localSymbols: [OwnedStorageLocalSymbol] = []
 	package var occurrences: [OwnedStorageOccurrence] = []
