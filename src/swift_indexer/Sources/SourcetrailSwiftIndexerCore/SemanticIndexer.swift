@@ -187,6 +187,21 @@ final class SemanticIndexer {
 		if genericMap?.isConstraintTarget(position) == true {
 			return
 		}
+
+		// SW15: a macro reference — an attached macro (`@Observable`) or a
+		// freestanding one (`#Predicate`) both resolve to a `.macro` symbol — is an
+		// EDGE_MACRO_USAGE from the file to the macro node, mirroring the C++/Rust
+		// convention (file → macro, deduped by macro name, macro symbol is
+		// definition-less because it lives outside the indexed sources).
+		if targetKind == NodeKind.macro {
+			let macroId = builder.nodeId(parts: targetParts, kind: NodeKind.macro)
+			builder.recordSymbol(nodeId: macroId, definitionKind: DefinitionKind.none)
+			let edgeId = builder.edgeId(
+				type: EdgeKind.macroUsage, source: fileNodeId, target: macroId)
+			recordTokenOccurrence(elementId: edgeId, occurrence: occurrence, fileNodeId: fileNodeId)
+			return
+		}
+
 		let targetId = builder.nodeId(parts: targetParts, kind: targetKind)
 
 		// SW11: a direct type argument of a generic application (`Box<Int>`) is an

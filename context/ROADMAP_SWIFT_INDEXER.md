@@ -46,7 +46,7 @@ isolation, attribute-driven relations, macros, and API-surface metadata.
 | SW12 | Protocol conformance fidelity: witnesses, conditional/retroactive, default impls | ✅ done |
 | SW13 | Concurrency model: global-actor isolation, `Sendable` (actor identity / `async` schema-deferred) | ✅ done |
 | SW14 | Attribute-driven relations: property wrappers + result builders | ✅ done |
-| SW15 | Macros: attached + freestanding applications (+ optional expansion) | 📋 planned |
+| SW15 | Macros: attached + freestanding applications | ✅ done |
 | SW16 | API-surface metadata: access control (incl. `package`) + `@available` | 📋 planned |
 
 ---
@@ -277,6 +277,24 @@ The features that make SwiftUI/Combine/SwiftData code navigable.
 - *Extract:* attribute syntax is SwiftSyntax; wrapper/builder type USR via index.
 
 ### SW15 — Macros (M/L)
+
+**Landed 2026-07-18.** An audit (`@Observable` on a class) settled the two open
+questions: IndexStoreDB *does* report macro references as `.macro` symbols
+(`NODE_MACRO`, `1<<19`), and both attached macros and freestanding macros surface
+the same way — a reference occurrence whose resolved symbol is a macro. So the
+whole feature is one check in `SemanticIndexer.processReference`: when a
+reference resolves to `NODE_MACRO`, emit `EDGE_MACRO_USAGE` **from the file node
+to the macro node** (with a token occurrence at the use site), matching the
+C++/Rust convention (`collector.rs apply_macro_usage_rows`) rather than the
+speculative macro→decl direction floated earlier — cross-language edge
+consistency wins. The macro node is definition-less (`DEFINITION_NONE`); it lives
+outside the indexed sources. Uses the existing `EDGE_MACRO_USAGE` wire kind — no
+schema change. This also reclassified what used to be a plain `USAGE` edge at
+macro sites. **Expanded members** (the peers/accessors a macro synthesizes, e.g.
+`@Observable`'s `_$observationRegistrar`, `access(keyPath:)`) already flow as
+ordinary nodes/edges from the compiler's expansion units — no extra work needed.
+Covered by `MacroTests` (attached `@Observable` → file-to-macro usage; every
+macro-usage edge is file→macro; macros never left as plain usages).
 
 Swift 5.9+ macros — modern and increasingly load-bearing (`@Observable`,
 `@Model`, `#Predicate`, `@Test`).
