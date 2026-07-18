@@ -5,7 +5,7 @@
 //! thread (Route is not assumed `Sync`).
 
 use anyhow::{anyhow, bail, Context, Result};
-use libipc::channel::{Mode, Route};
+use thoth_ipc::channel::{Mode, Route};
 use serde_json::{json, Value};
 use std::collections::VecDeque;
 use std::time::{Duration, Instant};

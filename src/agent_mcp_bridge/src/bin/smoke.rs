@@ -22,7 +22,7 @@ use std::time::{Duration, Instant};
 use agent_mcp_bridge::protocol::channel;
 use agent_mcp_bridge::Bridge;
 use anyhow::{bail, Result};
-use libipc::channel::Route;
+use thoth_ipc::channel::Route;
 use serde_json::{json, Value};
 
 fn main() -> Result<()> {
