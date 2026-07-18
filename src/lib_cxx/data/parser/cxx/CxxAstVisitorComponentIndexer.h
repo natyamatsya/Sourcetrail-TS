@@ -6,6 +6,7 @@
 #include "CxxAstVisitorComponent.h"
 #include "CxxConceptReferenceRecorder.h"
 #include "CxxContext.h"
+#include "CxxDestructorCallRecorder.h"
 #include "CxxLocationExtractor.h"
 #include "CxxSymbolRegistry.h"
 #include "ParseLocation.h"
@@ -82,7 +83,9 @@ private:
 	void recordDeducedType(const clang::DeducedType *autoType, const Id contextSymbolId, const ParseLocation &keywordLocation);
 	void recordDeducedQualType(const clang::QualType deducedQualType, const Id contextSymbolId, const ParseLocation &keywordLocation);
 
-	void recordNonTrivialDestructorCalls(const clang::FunctionDecl *d);
+	// Builds an on-demand recorder for the implicit/base destructor calls at a function body's end
+	// (CFG-based). Like concepts(), only valid at traversal time (m_context is wired post-ctor).
+	CxxDestructorCallRecorder destructorCalls();
 
 	// Axis-2/3 metadata off a decl's attributes: [[deprecated]] -> the modifier
 	// bit + an optional DEPRECATED message row (context/DESIGN_NODE_MODIFIERS.md).
