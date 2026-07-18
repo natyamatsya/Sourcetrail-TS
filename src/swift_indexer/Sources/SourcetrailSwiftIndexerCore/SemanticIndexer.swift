@@ -161,6 +161,11 @@ final class SemanticIndexer {
 			builder.recordNodeAttribute(
 				nodeId: nodeId, key: NodeAttributeKind.availability, value: availability)
 		}
+		// Deprecation message (the NODE_MODIFIER_DEPRECATED bit rode nodeModifiers above).
+		if let message = accessMap?.deprecationMessage(at: position) {
+			builder.recordNodeAttribute(
+				nodeId: nodeId, key: NodeAttributeKind.deprecated, value: message)
+		}
 		recordDefinitionLocations(
 			elementId: nodeId, occurrence: occurrence, fileNodeId: fileNodeId)
 

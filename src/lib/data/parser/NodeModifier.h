@@ -20,6 +20,10 @@ enum NodeModifierType
 	NODE_MODIFIER_ASYNC = 1 << 1,
 	// A Swift `nonisolated` member (SW13).
 	NODE_MODIFIER_NONISOLATED = 1 << 2,
+	// A deprecated declaration (the boolean of a cross-axis fact; the message/
+	// since-version rides the node_attribute table under DEPRECATED). Swift
+	// `@available(*, deprecated)`, C++ `[[deprecated]]`, Rust `#[deprecated]`.
+	NODE_MODIFIER_DEPRECATED = 1 << 3,
 };
 
 using NodeModifierMask = int;

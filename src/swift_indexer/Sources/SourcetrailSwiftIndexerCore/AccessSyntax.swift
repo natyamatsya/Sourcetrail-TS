@@ -38,6 +38,9 @@ final class AccessMap {
 	private var modifierByPos: [SyntaxPos: Int32] = [:]
 	// @available specification text per declaration name position (Axis-3 metadata).
 	private var availabilityByPos: [SyntaxPos: String] = [:]
+	// Deprecation message per declaration name position (only when non-empty; the
+	// boolean itself rides the NODE_MODIFIER_DEPRECATED bit in modifierByPos).
+	private var deprecationByPos: [SyntaxPos: String] = [:]
 
 	static func build(path: String) -> AccessMap {
 		let map = AccessMap()
@@ -64,6 +67,11 @@ final class AccessMap {
 		availabilityByPos[pos]
 	}
 
+	// The deprecation message for the declaration at `pos` (nil = none/empty).
+	func deprecationMessage(at pos: SyntaxPos) -> String? {
+		deprecationByPos[pos]
+	}
+
 	fileprivate func record(nameToken: TokenSyntax, access: Int32, converter: SourceLocationConverter) {
 		let extent = tokenExtent(nameToken, converter)
 		byPos[SyntaxPos(line: Int(extent.startLine), column: Int(extent.startColumn))] = access
@@ -72,7 +80,19 @@ final class AccessMap {
 	fileprivate func recordModifiers(nameToken: TokenSyntax, mask: Int32, converter: SourceLocationConverter) {
 		guard mask != 0 else { return }
 		let extent = tokenExtent(nameToken, converter)
-		modifierByPos[SyntaxPos(line: Int(extent.startLine), column: Int(extent.startColumn))] = mask
+		// OR (not overwrite): a declaration accumulates bits from several sources —
+		// e.g. an actor keyword, `nonisolated`/`async` modifiers, and a deprecating
+		// `@available` all land on the same name position.
+		modifierByPos[
+			SyntaxPos(line: Int(extent.startLine), column: Int(extent.startColumn)), default: 0] |= mask
+	}
+
+	fileprivate func recordDeprecation(
+		nameToken: TokenSyntax, message: String, converter: SourceLocationConverter
+	) {
+		guard !message.isEmpty else { return }  // the bit signals deprecation; the row adds the text
+		let extent = tokenExtent(nameToken, converter)
+		deprecationByPos[SyntaxPos(line: Int(extent.startLine), column: Int(extent.startColumn))] = message
 	}
 
 	fileprivate func recordAvailability(
@@ -100,6 +120,47 @@ func swiftAvailability(_ attributes: AttributeListSyntax) -> String? {
 		}
 	}
 	return specs.isEmpty ? nil : specs.joined(separator: "; ")
+}
+
+// A declaration's deprecation, if any: `@available(*, deprecated)` /
+// `@available(platform, deprecated: version, message: "…")` — the cross-axis fact
+// (DESIGN_NODE_MODIFIERS.md). The boolean drives NODE_MODIFIER_DEPRECATED; the
+// `message` (empty when the attribute carries none) rides node_attribute under
+// NodeAttributeKind.deprecated. `obsoleted` / `unavailable` count as deprecated.
+struct SwiftDeprecation {
+	let message: String
+}
+
+func swiftDeprecation(_ attributes: AttributeListSyntax) -> SwiftDeprecation? {
+	for case .attribute(let attribute) in attributes {
+		guard attribute.attributeName.as(IdentifierTypeSyntax.self)?.name.text == "available",
+			case .availability(let spec)? = attribute.arguments
+		else { continue }
+		var isDeprecated = false
+		var message = ""
+		for entry in spec {
+			switch entry.argument {
+			case .token(let token):
+				if ["deprecated", "obsoleted", "unavailable"].contains(token.text) {
+					isDeprecated = true
+				}
+			case .availabilityLabeledArgument(let labeled):
+				if ["deprecated", "obsoleted", "unavailable"].contains(labeled.label.text) {
+					isDeprecated = true
+				}
+				if labeled.label.text == "message", case .string(let literal) = labeled.value {
+					message = literal.segments.trimmedDescription
+				}
+			default:
+				break
+			}
+		}
+		if isDeprecated {
+			return SwiftDeprecation(
+				message: message.trimmingCharacters(in: .whitespacesAndNewlines))
+		}
+	}
+	return nil
 }
 
 // The NodeModifier bitmask for a declaration: `nonisolated` from its modifiers,
@@ -133,6 +194,11 @@ private final class AccessVisitor: SyntaxVisitor {
 	) {
 		map.record(nameToken: nameToken, access: swiftAccessKind(modifiers), converter: converter)
 		map.recordAvailability(nameToken: nameToken, attributes: attributes, converter: converter)
+		if let deprecation = swiftDeprecation(attributes) {
+			map.recordModifiers(nameToken: nameToken, mask: NodeModifier.deprecated, converter: converter)
+			map.recordDeprecation(
+				nameToken: nameToken, message: deprecation.message, converter: converter)
+		}
 	}
 
 	override func visit(_ node: StructDeclSyntax) -> SyntaxVisitorContinueKind {
@@ -197,6 +263,12 @@ private final class AccessVisitor: SyntaxVisitor {
 			map.record(nameToken: element.name, access: AccessKind.default_, converter: converter)
 			map.recordAvailability(
 				nameToken: element.name, attributes: node.attributes, converter: converter)
+			if let deprecation = swiftDeprecation(node.attributes) {
+				map.recordModifiers(
+					nameToken: element.name, mask: NodeModifier.deprecated, converter: converter)
+				map.recordDeprecation(
+					nameToken: element.name, message: deprecation.message, converter: converter)
+			}
 		}
 		return .skipChildren
 	}

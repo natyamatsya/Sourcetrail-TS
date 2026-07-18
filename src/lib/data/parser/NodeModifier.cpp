@@ -11,6 +11,10 @@ std::string nodeModifierToString(NodeModifierMask modifiers)
 		result += label;
 	};
 
+	if (nodeModifierHas(modifiers, NODE_MODIFIER_DEPRECATED))
+	{
+		add("deprecated");
+	}
 	if (nodeModifierHas(modifiers, NODE_MODIFIER_NONISOLATED))
 	{
 		add("nonisolated");

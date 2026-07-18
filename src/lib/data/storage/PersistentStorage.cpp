@@ -2592,16 +2592,30 @@ TooltipInfo PersistentStorage::getTooltipInfoForTokenIds(
 		}
 	}
 
-	// Axis-3 metadata (ADR-independent; DESIGN_NODE_MODIFIERS.md): show the node's
-	// sparse node_attribute facts. `@available` is the first producer (Swift); the
-	// key→value store degrades to empty for indexers that emit nothing.
-	for (const StorageNodeAttribute& attribute:
-		 m_sqliteIndexStorage.getNodeAttributesByNodeIds({node.id}))
+	// Axis-3 metadata (DESIGN_NODE_MODIFIERS.md): the node's sparse node_attribute
+	// facts, plus the deprecation flag from its modifier bit. The key→value store
+	// degrades to empty for indexers that emit nothing.
+	const std::vector<StorageNodeAttribute> nodeAttributes =
+		m_sqliteIndexStorage.getNodeAttributesByNodeIds({node.id});
+	for (const StorageNodeAttribute& attribute: nodeAttributes)
 	{
 		if (attribute.key == NodeAttributeKind::AVAILABILITY && !attribute.value.empty())
 		{
 			info.title += "  @available(" + attribute.value + ")";
 		}
+	}
+	if (nodeModifierHas(node.modifiers, NODE_MODIFIER_DEPRECATED))
+	{
+		// The bit conveys the boolean; the DEPRECATED node_attribute adds the message.
+		std::string note = "deprecated";
+		for (const StorageNodeAttribute& attribute: nodeAttributes)
+		{
+			if (attribute.key == NodeAttributeKind::DEPRECATED && !attribute.value.empty())
+			{
+				note += ": " + attribute.value;
+			}
+		}
+		info.title += "  [" + note + "]";
 	}
 
 	if (type.isFile())

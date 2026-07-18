@@ -281,10 +281,15 @@ reads `getNodeAttributesByNodeIds`). Tested end-to-end: Swift producer (syntacti
 semantic) + a C++ `StorageTestSuite` tooltip round-trip. This is the deferred
 `@available` point from SW16, now riding the substrate.
 
-**Remaining follow-ups (additive over the same table):** more producers (Rust
-`#[cfg]` / `#[deprecated]`, C++ `#ifdef` / Clang availability / `[[deprecated]]`),
-a deprecation `NODE_MODIFIER_DEPRECATED` bit (the cross-axis fact), and a graph
-*filter* over `node_attribute`.
+**Deprecation landed (Swift, 2026-07-18)** as the cross-axis fact: a
+`NODE_MODIFIER_DEPRECATED` bit (→ "deprecated" in the graph node label via
+`nodeModifierToString`) plus a `DEPRECATED` `node_attribute` for the message,
+extracted from `@available(*, deprecated[, message:])`; the tooltip shows
+`[deprecated: …]`.
+
+**Remaining follow-ups (additive over the same table):** the C++ (`#ifdef` / Clang
+availability / `[[deprecated]]`) and Rust (`#[cfg]` / `#[deprecated]`) producers,
+and a graph *filter* over `node_attribute`.
 
 ## Critical files
 

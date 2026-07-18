@@ -74,16 +74,24 @@ enum SyntacticIndexer {
 			builder.recordSymbol(nodeId: nodeId, definitionKind: DefinitionKind.explicit)
 			// SW16: declared access level (purely syntactic — works on broken builds).
 			builder.recordComponentAccess(nodeId: nodeId, access: access)
-			// SW13: node modifiers (actor / async / nonisolated).
-			if modifiers != 0 {
-				builder.addNodeModifier(nodeId: nodeId, modifier: modifiers)
+			// SW13 node modifiers (actor / async / nonisolated) plus Axis-3 metadata
+			// from attributes (@available, deprecation) — syntactic, rides the fallback.
+			var mask = modifiers
+			if let attributed = decl.asProtocol(WithAttributesSyntax.self) {
+				if let availability = swiftAvailability(attributed.attributes) {
+					builder.recordNodeAttribute(
+						nodeId: nodeId, key: NodeAttributeKind.availability, value: availability)
+				}
+				if let deprecation = swiftDeprecation(attributed.attributes) {
+					mask |= NodeModifier.deprecated
+					if !deprecation.message.isEmpty {
+						builder.recordNodeAttribute(
+							nodeId: nodeId, key: NodeAttributeKind.deprecated, value: deprecation.message)
+					}
+				}
 			}
-			// Axis-3 metadata: @available specification (syntactic; rides the fallback).
-			if let attributed = decl.asProtocol(WithAttributesSyntax.self),
-				let availability = swiftAvailability(attributed.attributes)
-			{
-				builder.recordNodeAttribute(
-					nodeId: nodeId, key: NodeAttributeKind.availability, value: availability)
+			if mask != 0 {
+				builder.addNodeModifier(nodeId: nodeId, modifier: mask)
 			}
 
 			let parentKind = scope.count == 1 ? NodeKind.module : NodeKind.symbol
