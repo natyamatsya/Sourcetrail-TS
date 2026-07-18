@@ -38,7 +38,9 @@ CxxAstVisitor::CxxAstVisitor(
 		  CxxAstVisitorComponentTypeRefKind(this),
 		  CxxAstVisitorComponentDeclRefKind(this),
 		  CxxAstVisitorComponentImplicitCode(this),
-		  CxxAstVisitorComponentIndexer(this, astContext, m_index),
+		  CxxAstVisitorComponentDeclarationIndexer(this, m_index),
+		  CxxAstVisitorComponentReferenceIndexer(this, astContext, m_index),
+		  CxxAstVisitorComponentTypeIndexer(this, m_index),
 		  CxxAstVisitorComponentBraceRecorder(this, astContext, client))
 {
 	// The context component now exists; hand it to the indexing facade (it could not be reached
