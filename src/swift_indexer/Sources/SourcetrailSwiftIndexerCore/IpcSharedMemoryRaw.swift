@@ -1,5 +1,5 @@
 import Darwin.POSIX
-import LibIPC
+import ThothIPC
 
 enum SwiftIndexerIpcError: Error {
 	case sharedMemoryWriteTooLarge(requested: Int, available: Int)
@@ -14,8 +14,8 @@ final class IpcSharedMemoryRaw {
 	private let shm: ShmHandle
 	private let mutex: IpcMutex
 
-	// Names pass through at full length, matching C++ IpcSharedMemory: libipc
-	// maps any name exceeding the OS limit (LIBIPC_SHM_NAME_MAX) to a
+	// Names pass through at full length, matching C++ IpcSharedMemory: thoth-ipc
+	// maps any name exceeding the OS limit (THOTH_IPC_SHM_NAME_MAX) to a
 	// hash-shortened form, identically on every frontend. (An earlier 18-char
 	// truncation mirrored from C++ silently collided names sharing a prefix.)
 	static func open(name: String, size: Int) async throws(IpcError) -> IpcSharedMemoryRaw {

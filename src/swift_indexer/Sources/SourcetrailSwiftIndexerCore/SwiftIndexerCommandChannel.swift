@@ -1,6 +1,6 @@
 import FlatBuffers
 import Foundation
-import LibIPC
+import ThothIPC
 
 package struct SwiftIndexerCommand {
 	package let sourceFilePath: String

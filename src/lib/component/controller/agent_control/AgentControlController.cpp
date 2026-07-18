@@ -28,8 +28,8 @@ bool AgentControlController::isListening() const
 #include <thread>
 #include <vector>
 
-#include <libipc/ipc.h>
-#include <libipc/async_recv.h>	// self-guards on LIBIPC_STDEXEC; empty when off
+#include <thoth-ipc/ipc.h>
+#include <thoth-ipc/async_recv.h>	// self-guards on THOTH_IPC_STDEXEC; empty when off
 
 #include "QtUiSnapshot.h"	// Qt-free interface; captures the widget tree on the GUI thread
 
@@ -126,7 +126,7 @@ void clearStaleAgentChannels(const std::string& instanceId)
 {
 	for (const char* base : kAgentChannelBases)
 	{
-		ipc::route::clear_storage(agentChannel(instanceId, base).c_str());
+		thoth::route::clear_storage(agentChannel(instanceId, base).c_str());
 	}
 }
 
@@ -260,13 +260,13 @@ flatbuffers::Offset<fb::TabInfo> makeTabInfo(
 }
 
 // Receives raw CommandEnvelope frames from a thoth-ipc route and hands each to a
-// sink. Two implementations, selected by how libipc was built:
+// sink. Two implementations, selected by how thoth-ipc was built:
 //
-//   * LIBIPC_STDEXEC (POSIX): ipc::async_recv — no dedicated thread. Receives are
-//     driven by libipc's process-global reactor; an exec::async_scope owns the
+//   * THOTH_IPC_STDEXEC (POSIX): thoth::async_recv — no dedicated thread. Receives are
+//     driven by thoth-ipc's process-global reactor; an exec::async_scope owns the
 //     repeating receive and joins it on stop(). This is the RFC end-state
 //     (submodules/thoth-ipc/context/stdexec-async-recv-rfc.md).
-//   * otherwise (e.g. Windows, where libipc's Layer-1 readiness fd is not yet
+//   * otherwise (e.g. Windows, where thoth-ipc's Layer-1 readiness fd is not yet
 //     implemented): a dedicated jthread blocking on recv().
 //
 // Both expose the same start(sink, scheduler) / stop() contract, so
@@ -276,27 +276,27 @@ class AgentCommandReader
 public:
 	using Sink = std::function<void(std::vector<std::uint8_t>)>;
 
-	explicit AgentCommandReader(const char* channelName): m_route(channelName, ipc::receiver) {}
+	explicit AgentCommandReader(const char* channelName): m_route(channelName, thoth::receiver) {}
 
 	// `on` is the scheduler each command frame is delivered on (io()).
 	void start(Sink sink, [[maybe_unused]] execution::AnyScheduler on)
 	{
 		m_sink = std::move(sink);
-#if defined(LIBIPC_STDEXEC)
+#if defined(THOTH_IPC_STDEXEC)
 		// Repeat one async receive until the effect yields true; each completes on
-		// `on`. async_recv delivers ipc::recv_result (a message, or a recv_errc —
+		// `on`. async_recv delivers thoth::recv_result (a message, or a recv_errc —
 		// its error channel is pruned per ADR-0001): a message yields false (keep
 		// receiving); an error is logged and yields true (stop, rather than spin).
 		// Cancellation comes from the scope's stop token (async_recv set_stopped).
 		m_scope.spawn(exec::repeat_effect_until(
-			ipc::async_recv(m_route, std::move(on)) |
-			stdexec::then([this](ipc::recv_result result) {
+			thoth::async_recv(m_route, std::move(on)) |
+			stdexec::then([this](thoth::recv_result result) {
 				if (result)
 				{
 					deliver(*result);
 					return false;
 				}
-				LOG_ERROR(ipc::recv_message(result.error()));
+				LOG_ERROR(thoth::recv_message(result.error()));
 				return true;
 			})));
 #else
@@ -309,7 +309,7 @@ public:
 
 	void stop()
 	{
-#if defined(LIBIPC_STDEXEC)
+#if defined(THOTH_IPC_STDEXEC)
 		m_scope.request_stop();
 		stdexec::sync_wait(m_scope.on_empty());	 // join the spawned receive loop
 #else
@@ -322,18 +322,18 @@ public:
 	}
 
 private:
-	void deliver(const ipc::buff_t& buffer)
+	void deliver(const thoth::buff_t& buffer)
 	{
 		const auto* bytes = static_cast<const std::uint8_t*>(buffer.data());
 		m_sink(std::vector<std::uint8_t>(bytes, bytes + buffer.size()));
 	}
 
-#if !defined(LIBIPC_STDEXEC)
+#if !defined(THOTH_IPC_STDEXEC)
 	void loop()
 	{
 		while (!m_stopSource.stop_requested())
 		{
-			ipc::buff_t buffer = m_route.recv(200 /*ms; re-checks stop*/);
+			thoth::buff_t buffer = m_route.recv(200 /*ms; re-checks stop*/);
 			if (!buffer.empty())
 			{
 				deliver(buffer);
@@ -342,9 +342,9 @@ private:
 	}
 #endif
 
-	ipc::route m_route;
+	thoth::route m_route;
 	Sink m_sink;
-#if defined(LIBIPC_STDEXEC)
+#if defined(THOTH_IPC_STDEXEC)
 	exec::async_scope m_scope;
 #else
 	stdexec::inplace_stop_source m_stopSource;
@@ -371,10 +371,10 @@ struct AgentControlController::Impl
 		, m_schedulers(schedulers)
 		, m_instanceId(std::move(instanceId))
 		, m_reader(agentChannel(m_instanceId, "cmd").c_str())
-		, m_stateChannel(agentChannel(m_instanceId, "state").c_str(), ipc::sender)
-		, m_eventsChannel(agentChannel(m_instanceId, "events").c_str(), ipc::sender)
-		, m_snapshotChannel(agentChannel(m_instanceId, "snapshot").c_str(), ipc::sender)
-		, m_framesChannel(agentChannel(m_instanceId, "frames").c_str(), ipc::sender)
+		, m_stateChannel(agentChannel(m_instanceId, "state").c_str(), thoth::sender)
+		, m_eventsChannel(agentChannel(m_instanceId, "events").c_str(), thoth::sender)
+		, m_snapshotChannel(agentChannel(m_instanceId, "snapshot").c_str(), thoth::sender)
+		, m_framesChannel(agentChannel(m_instanceId, "frames").c_str(), thoth::sender)
 	{
 	}
 
@@ -984,10 +984,10 @@ struct AgentControlController::Impl
 	std::string m_instanceId;	// channel namespace (empty = default st.agent.*)
 
 	AgentCommandReader m_reader;	// owns the st.agent[.<id>].cmd route + reader thread (RFC seam)
-	ipc::route m_stateChannel;
-	ipc::route m_eventsChannel;
-	ipc::route m_snapshotChannel;	// UiSnapshot replies to GetSnapshot
-	ipc::route m_framesChannel;		// FrameEnvelope replies to CaptureElement / GetFrame
+	thoth::route m_stateChannel;
+	thoth::route m_eventsChannel;
+	thoth::route m_snapshotChannel;	// UiSnapshot replies to GetSnapshot
+	thoth::route m_framesChannel;		// FrameEnvelope replies to CaptureElement / GetFrame
 	exec::async_scope m_uiScope;	// GUI-thread-hopped work (snapshot capture), joined on stop()
 
 	// State cache, touched only from the message-processing thread.

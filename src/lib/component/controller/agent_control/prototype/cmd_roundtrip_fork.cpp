@@ -6,7 +6,7 @@
 #include <string>
 #include <vector>
 
-#include <libipc/ipc.h>
+#include <thoth-ipc/ipc.h>
 #include <flatbuffers/flatbuffers.h>
 #include "agent_command_generated.h"
 #include "agent_state_generated.h"
@@ -16,9 +16,9 @@ static constexpr uint64_t kReqId = 7;
 static const char* kProject = "/tmp/demo.srctrl.toml";
 
 static int appProc() {  // parent
-  ipc::route cmd{"st.agent.cmd", ipc::receiver};
-  ipc::route state{"st.agent.state", ipc::sender};
-  ipc::buff_t in;
+  thoth::route cmd{"st.agent.cmd", thoth::receiver};
+  thoth::route state{"st.agent.state", thoth::sender};
+  thoth::buff_t in;
   for (int i = 0; i < 100 && in.empty(); ++i) in = cmd.recv(100);
   if (in.empty()) { std::printf("app: timeout\n"); return 1; }
   flatbuffers::Verifier v(static_cast<const uint8_t*>(in.data()), in.size());
@@ -37,14 +37,14 @@ static int appProc() {  // parent
 }
 
 static int agentProc() {  // child
-  ipc::route cmd{"st.agent.cmd", ipc::sender};
-  ipc::route state{"st.agent.state", ipc::receiver};
+  thoth::route cmd{"st.agent.cmd", thoth::sender};
+  thoth::route state{"st.agent.state", thoth::receiver};
   flatbuffers::FlatBufferBuilder b;
   auto gus = CreateGetUiState(b);
   b.Finish(CreateCommandEnvelope(b, kReqId, Command_GetUiState, gus.Union()));
   if (!cmd.wait_for_recv(1, 2000)) { std::printf("agent: no app receiver\n"); return 1; }
   cmd.send(b.GetBufferPointer(), b.GetSize());
-  ipc::buff_t in;
+  thoth::buff_t in;
   for (int i = 0; i < 100 && in.empty(); ++i) in = state.recv(100);
   if (in.empty()) { std::printf("agent: timeout\n"); return 1; }
   flatbuffers::Verifier v(static_cast<const uint8_t*>(in.data()), in.size());
@@ -57,8 +57,8 @@ static int agentProc() {  // child
 }
 
 int main() {
-  ipc::route{"st.agent.cmd", ipc::receiver}.clear();
-  ipc::route{"st.agent.state", ipc::receiver}.clear();
+  thoth::route{"st.agent.cmd", thoth::receiver}.clear();
+  thoth::route{"st.agent.state", thoth::receiver}.clear();
   pid_t pid = fork();
   if (pid == 0) { _exit(agentProc()); }
   int appRc = appProc();

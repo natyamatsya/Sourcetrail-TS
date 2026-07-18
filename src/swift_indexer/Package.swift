@@ -10,11 +10,11 @@ let package = Package(
 		.executable(name: "sourcetrail_swift_indexer", targets: ["SourcetrailSwiftIndexer"]),
 	],
 	dependencies: [
-		.package(path: "../../submodules/thoth-ipc/swift/libipc"),
-		// The same FlatBuffers checkout libipc vendors — a URL dependency here
+		.package(path: "../../submodules/thoth-ipc/swift/thoth-ipc"),
+		// The same FlatBuffers checkout thoth-ipc vendors — a URL dependency here
 		// would clash with it on package identity (SwiftPM warns, soon errors)
 		// and drift from the runtime the IPC layer is built against.
-		.package(path: "../../submodules/thoth-ipc/swift/libipc/vendor/flatbuffers"),
+		.package(path: "../../submodules/thoth-ipc/swift/thoth-ipc/vendor/flatbuffers"),
 		// Semantic engine (SW2): reads the compiler-produced index store.
 		// No semver releases upstream — pinned by exact revision (main as of
 		// 2026-07-17, builds with Swift 6.4); bump alongside toolchain updates.
@@ -30,7 +30,7 @@ let package = Package(
 		.target(
 			name: "SourcetrailSwiftIndexerCore",
 			dependencies: [
-				.product(name: "LibIPC", package: "libipc"),
+				.product(name: "ThothIPC", package: "thoth-ipc"),
 				.product(name: "FlatBuffers", package: "flatbuffers"),
 				.product(name: "IndexStoreDB", package: "indexstore-db"),
 				.product(name: "SwiftSyntax", package: "swift-syntax"),

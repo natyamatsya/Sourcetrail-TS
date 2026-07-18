@@ -5,15 +5,15 @@
 //   - "Empty" is indicated by the first 4 bytes all being zero.
 //   - A named mutex (srctrl_ipc_mtx_<name>) serialises all access.
 //
-// Names pass through at full length, matching C++ IpcSharedMemory: libipc maps
-// any name exceeding the OS limit (LIBIPC_SHM_NAME_MAX) to a hash-shortened
+// Names pass through at full length, matching C++ IpcSharedMemory: thoth-ipc maps
+// any name exceeding the OS limit (THOTH_IPC_SHM_NAME_MAX) to a hash-shortened
 // form, identically on every frontend. (An earlier 18-char truncation mirrored
 // from C++ silently collided names sharing a prefix.)
 
 use std::io;
 use std::sync::Mutex;
 
-use libipc::{IpcMutex, ShmHandle, ShmOpenMode};
+use thoth_ipc::{IpcMutex, ShmHandle, ShmOpenMode};
 
 const MEM_PREFIX: &str = "srctrl_ipc_mem_";
 const MTX_PREFIX: &str = "srctrl_ipc_mtx_";

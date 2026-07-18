@@ -1,6 +1,6 @@
 import FlatBuffers
 import Foundation
-import LibIPC
+import ThothIPC
 
 package final class SwiftIndexerStatusChannel {
 	private static let shmSize = 1024 * 1024

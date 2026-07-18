@@ -1,5 +1,5 @@
 // A rendered frame (QWidget::grab() -> encoded bytes), published on the
-// `st.agent.frames` channel (ipc::route 1->N). No filesystem: the pixels travel in
+// `st.agent.frames` channel (thoth::route 1->N). No filesystem: the pixels travel in
 // shared memory. See context/DESIGN_AGENT_UI_CONTROL.md.
 //
 // Chunking (ADR-0002): shared-memory segments do not grow on macOS/Windows, so a

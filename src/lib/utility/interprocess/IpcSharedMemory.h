@@ -7,9 +7,9 @@
 #include <mutex>
 #include <string>
 
-#include <libipc/condition.h>
-#include <libipc/mutex.h>
-#include <libipc/shm.h>
+#include <thoth-ipc/condition.h>
+#include <thoth-ipc/mutex.h>
+#include <thoth-ipc/shm.h>
 
 class IpcSharedMemory
 {
@@ -100,9 +100,9 @@ private:
 	std::size_t m_size;
 	AccessMode m_mode;
 
-	ipc::shm::handle m_shm;
-	ipc::sync::mutex m_mutex;
-	ipc::sync::condition m_condition;
+	thoth::shm::handle m_shm;
+	thoth::sync::mutex m_mutex;
+	thoth::sync::condition m_condition;
 	std::atomic<bool> m_lockBroken{false};
 };
 

@@ -1,6 +1,6 @@
 import FlatBuffers
 import Foundation
-import LibIPC
+import ThothIPC
 
 package final class SwiftIndexerStorageChannel {
 	private static let shmSize = 16 * 1024 * 1024

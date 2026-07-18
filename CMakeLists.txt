@@ -231,31 +231,34 @@ option(SOURCETRAIL_AGENT_CONTROL "Build the agent-UI control channel (thoth-ipc 
 
 include(FetchContent)
 
-set(THOTH_IPC_DIR "${CMAKE_SOURCE_DIR}/submodules/thoth-ipc/cpp/libipc")
+set(THOTH_IPC_DIR "${CMAKE_SOURCE_DIR}/submodules/thoth-ipc/cpp/thoth-ipc")
 if (NOT EXISTS "${THOTH_IPC_DIR}/CMakeLists.txt")
 	message(FATAL_ERROR
 		"thoth-ipc submodule is not checked out at ${THOTH_IPC_DIR}.\n"
 		"Run: git submodule update --init --recursive submodules/thoth-ipc")
 endif()
 
-set(LIBIPC_BUILD_TESTS      OFF CACHE BOOL "" FORCE)
-set(LIBIPC_BUILD_DEMOS      OFF CACHE BOOL "" FORCE)
-set(LIBIPC_BUILD_BENCHMARKS OFF CACHE BOOL "" FORCE)
-set(LIBIPC_BUILD_PROTO      OFF CACHE BOOL "" FORCE)
+set(THOTH_IPC_BUILD_TESTS      OFF CACHE BOOL "" FORCE)
+set(THOTH_IPC_BUILD_DEMOS      OFF CACHE BOOL "" FORCE)
+set(THOTH_IPC_BUILD_BENCHMARKS OFF CACHE BOOL "" FORCE)
+set(THOTH_IPC_BUILD_PROTO      OFF CACHE BOOL "" FORCE)
 # Layer 2 async_recv (senders/receivers) — only when the agent-control channel
-# needs it. It implies LIBIPC_NOTIFY_FD, which is POSIX-only for now (the Windows
+# needs it. It implies THOTH_IPC_NOTIFY_FD, which is POSIX-only for now (the Windows
 # named-event backend is not yet implemented upstream), so gate it off Windows;
-# the client falls back to a blocking reader thread there. libipc resolves its
+# the client falls back to a blocking reader thread there. thoth-ipc resolves its
 # stdexec dependency via find_package first (reusing our vcpkg stdexec).
 if (SOURCETRAIL_AGENT_CONTROL AND NOT WIN32)
-	set(LIBIPC_STDEXEC ON CACHE BOOL "" FORCE)
+	set(THOTH_IPC_STDEXEC ON CACHE BOOL "" FORCE)
 endif()
 
 add_subdirectory("${THOTH_IPC_DIR}" "${CMAKE_BINARY_DIR}/_deps/thoth-ipc-build")
-message(STATUS "Built thoth-ipc (libipc) from submodule submodules/thoth-ipc")
+message(STATUS "Built thoth-ipc from submodule submodules/thoth-ipc")
 
 add_library(External_lib_ipc INTERFACE)
-target_link_libraries(External_lib_ipc INTERFACE ipc)
+# The C++ library target is `thoth_ipc` (underscore): cpp/thoth-ipc/src has its
+# own project(thoth_ipc), so add_library(${PROJECT_NAME}) names it thoth_ipc and
+# produces libthoth_ipc.a — the rename of the old `ipc` target.
+target_link_libraries(External_lib_ipc INTERFACE thoth_ipc)
 target_include_directories(External_lib_ipc SYSTEM INTERFACE
 	"${THOTH_IPC_DIR}/include"
 )
