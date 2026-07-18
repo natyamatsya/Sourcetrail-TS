@@ -10,3 +10,6 @@
 [submodule "submodules/ladybug"]
 	path = submodules/ladybug
 	url = https://github.com/natyamatsya/ladybug.git
+[submodule "submodules/kddockwidgets"]
+	path = submodules/kddockwidgets
+	url = https://github.com/KDAB/KDDockWidgets.git

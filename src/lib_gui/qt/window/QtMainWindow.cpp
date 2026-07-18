@@ -57,12 +57,18 @@
 #include <QApplication>
 #include <QDesktopServices>
 #include <QDir>
-#include <QDockWidget>
 #include <QMenuBar>
+#include <QScreen>
 #include <QSettings>
 #include <QTimer>
 #include <QToolBar>
 #include <QToolTip>
+#include <QVBoxLayout>
+
+#include <kddockwidgets/Config.h>
+#include <kddockwidgets/DockWidget.h>
+#include <kddockwidgets/KDDockWidgets.h>
+#include <kddockwidgets/LayoutSaver.h>
 
 
 using namespace utility;
@@ -119,11 +125,12 @@ bool MouseReleaseFilter::eventFilter(QObject* obj, QEvent* event)
 }
 
 QtMainWindow::QtMainWindow()
-	: m_windowStack(this)
+	: Super(QStringLiteral("SourcetrailMainWindow"))
+	, m_windowStack(this)
 {
 	setObjectName(QStringLiteral("QtMainWindow"));
-	setCentralWidget(nullptr);
-	setDockNestingEnabled(true);
+	// KDDockWidgets owns the central layout area — no setCentralWidget/
+	// setDockNestingEnabled here (those are QDockWidget-era APIs KDDW replaces).
 
 	setWindowIcon(QIcon(QString::fromUtf8(QtResources::ICON_LOGO_1024_1024)));
 	setWindowFlags(Qt::Widget);
@@ -174,31 +181,32 @@ void QtMainWindow::addView(View* view)
 		return;
 	}
 
-	QDockWidget* dock = new QDockWidget(name, this);
-	dock->setObjectName("Dock" + name);
+	// The view name is unique and stable, so it doubles as the dock's uniqueName
+	// (the id LayoutSaver persists) and its user-visible title.
+	auto* dock = new KDDockWidgets::QtWidgets::DockWidget(name);
+	dock->setTitle(name);
 
-	dock->setWidget(new QWidget());
-	QVBoxLayout* layout = new QVBoxLayout(dock->widget());
+	// Host the view's widget inside a stable container that IS the dock's guest, and
+	// swap the inner widget in overrideView(). Setting the view's widget directly as
+	// the guest would leave the dock with a dangling pointer when the view replaces
+	// its widget (e.g. on a tab change), crashing KDDW's DockWidget::widget().
+	QWidget* container = new QWidget();
+	QVBoxLayout* layout = new QVBoxLayout(container);
 	layout->setContentsMargins(0, 0, 0, 0);
 	layout->setSpacing(0);
 	layout->addWidget(QtViewWidgetWrapper::getWidgetOfView(view));
+	dock->setWidget(container);
 
-	// Disable un-intended vertical growth of search widget
-	if (name == QLatin1String("Search"))
-	{
-		dock->setSizePolicy(dock->sizePolicy().horizontalPolicy(), QSizePolicy::Fixed);
-	}
-
-	if (!m_showDockWidgetTitleBars)
-	{
-		dock->setFeatures(QDockWidget::NoDockWidgetFeatures);
-		dock->setTitleBarWidget(new QWidget());
-	}
-
-	addDockWidget(Qt::TopDockWidgetArea, dock);
+	// New docks tile to the right of the current layout; the persisted KDDW layout
+	// (LayoutSaver, see loadDockWidgetLayout) overrides this on later launches.
+	addDockWidget(dock, KDDockWidgets::Location_OnRight);
 
 	QtViewToggle* toggle = new QtViewToggle(view, this);
-	connect(dock, &QDockWidget::visibilityChanged, toggle, &QtViewToggle::toggledByUI);
+	connect(
+		dock,
+		&KDDockWidgets::QtWidgets::DockWidget::isOpenChanged,
+		toggle,
+		&QtViewToggle::toggledByUI);
 
 	QAction* action = new QAction(name + " Window", this);
 	action->setCheckable(true);
@@ -222,17 +230,13 @@ void QtMainWindow::overrideView(View* view)
 		return;
 	}
 
-	QDockWidget* dock = nullptr;
+	// Docks are keyed by their view's (unique) name, so we look them up directly —
+	// no more matching on the dock title (which the old code had to guard against a
+	// stray '&' accelerator prefix).
+	KDDockWidgets::QtWidgets::DockWidget* dock = nullptr;
 	for (const DockWidget& dockWidget: m_dockWidgets)
 	{
-		// For unknown reason, the widget window title begins with an '&' (accelerator?), but none of
-		// the views are created with one, so it is not clear whether this is related to:
-		// https://bugreports.qt.io/browse/QTBUG-86407 "Accelerators in QDockWidget titles are displayed incorrectly in some styles".
-		//
-		// This workaround ensures that the views are at least found, but if the user enables 'Show Title Bars'
-		// then the '&' is still shown!
-		QString title = dockWidget.widget->windowTitle();
-		if (title == name || (title.startsWith('&') && title.endsWith(name)))
+		if (QString::fromStdString(dockWidget.view->getName()) == name)
 		{
 			dock = dockWidget.widget;
 			break;
@@ -245,18 +249,34 @@ void QtMainWindow::overrideView(View* view)
 		return;
 	}
 
-	QWidget* oldWidget = dock->widget()->layout()->itemAt(0)->widget();
-	QWidget* newWidget = QtViewWidgetWrapper::getWidgetOfView(view);
+	// Swap the inner widget inside the dock's stable container (see addView), never
+	// the dock guest itself — so KDDW never dereferences a widget the view may have
+	// destroyed. dock->widget() is the container we own, so it is always valid.
+	QWidget* container = dock->widget();
+	QLayout* layout = container ? container->layout() : nullptr;
+	if (!layout)
+	{
+		return;
+	}
 
+	QLayoutItem* item = layout->itemAt(0);
+	QWidget* oldWidget = item ? item->widget() : nullptr;
+	QWidget* newWidget = QtViewWidgetWrapper::getWidgetOfView(view);
 	if (oldWidget == newWidget)
 	{
 		return;
 	}
 
-	oldWidget = dock->widget()->layout()->takeAt(0)->widget();
-	oldWidget->hide();
-	dock->widget()->layout()->addWidget(newWidget);
-	newWidget->show();
+	if (oldWidget)
+	{
+		layout->removeWidget(oldWidget);
+		oldWidget->hide();
+	}
+	if (newWidget)
+	{
+		layout->addWidget(newWidget);
+		newWidget->show();
+	}
 }
 
 void QtMainWindow::removeView(View* view)
@@ -265,7 +285,26 @@ void QtMainWindow::removeView(View* view)
 	{
 		if (m_dockWidgets[i].view == view)
 		{
-			removeDockWidget(m_dockWidgets[i].widget);
+			KDDockWidgets::QtWidgets::DockWidget* dock = m_dockWidgets[i].widget;
+			// Reparent the view's own widget out of the dock's container first, so
+			// disposing the dock (which owns the container) doesn't also delete it —
+			// the View manages its widget's lifetime.
+			if (QWidget* container = dock->widget())
+			{
+				if (QLayout* layout = container->layout())
+				{
+					if (QLayoutItem* item = layout->itemAt(0))
+					{
+						if (QWidget* inner = item->widget())
+						{
+							layout->removeWidget(inner);
+							inner->setParent(nullptr);
+						}
+					}
+				}
+			}
+			dock->close();
+			dock->deleteLater();
 			m_dockWidgets.erase(m_dockWidgets.begin() + i);
 			return;
 		}
@@ -274,12 +313,12 @@ void QtMainWindow::removeView(View* view)
 
 void QtMainWindow::showView(View* view)
 {
-	getDockWidgetForView(view)->widget->setHidden(false);
+	getDockWidgetForView(view)->widget->open();
 }
 
 void QtMainWindow::hideView(View* view)
 {
-	getDockWidgetForView(view)->widget->setHidden(true);
+	getDockWidgetForView(view)->widget->close();
 }
 
 View* QtMainWindow::findFloatingView(const std::string& name) const
@@ -308,20 +347,94 @@ void QtMainWindow::loadLayout()
 	{
 		showMaximized();
 	}
-	setShowDockWidgetTitleBars(settings.value(QStringLiteral("showTitleBars"), true).toBool());
+	// Default OFF → thin tab-strip drag handles (see setShowDockWidgetTitleBars).
+	setShowDockWidgetTitleBars(settings.value(QStringLiteral("showTitleBars"), false).toBool());
 	settings.endGroup();
 	loadDockWidgetLayout();
+
+	// Both the MainWindow group above and the KDDW LayoutSaver restore in
+	// loadDockWidgetLayout() can bring back a degenerate main-window state — a
+	// minimized/off-screen/tiny geometry saved by a headless run or left after a
+	// monitor change — which would leave the window invisible. Repair it.
+	sanitizeWindowGeometry();
+}
+
+void QtMainWindow::sanitizeWindowGeometry()
+{
+	// A restored Qt::WindowMinimized main window never becomes visible on show().
+	if (windowState() & Qt::WindowMinimized)
+	{
+		setWindowState(windowState() & ~Qt::WindowMinimized);
+	}
+
+	if (isMaximized())
+	{
+		return;	// maximized is inherently on-screen and correctly sized
+	}
+
+	// Clamp a degenerately small window (e.g. the 82x96 an offscreen run persists)
+	// up to a usable default.
+	if (width() < 400 || height() < 300)
+	{
+		resize(1000, 700);
+	}
+
+	// Ensure the window still intersects an available screen; if a saved position
+	// is now off every display (unplugged monitor, resolution change), re-center it
+	// on the primary screen.
+	const QRect frame = frameGeometry();
+	bool onScreen = false;
+	for (const QScreen* screen: QGuiApplication::screens())
+	{
+		if (screen->availableGeometry().intersects(frame))
+		{
+			onScreen = true;
+			break;
+		}
+	}
+	if (!onScreen)
+	{
+		if (QScreen* primary = QGuiApplication::primaryScreen())
+		{
+			const QRect avail = primary->availableGeometry();
+			move(avail.center() - QPoint(width() / 2, height() / 2));
+		}
+	}
 }
 
 void QtMainWindow::loadDockWidgetLayout()
 {
 	QSettings settings(
 		QString::fromStdString(UserPaths::getWindowSettingsFilePath().str()), QSettings::IniFormat);
-	this->restoreState(settings.value(QStringLiteral("DOCK_LOCATIONS")).toByteArray());
 
-	for (DockWidget dock: m_dockWidgets)
+	// New key: KDDockWidgets serializes as JSON via LayoutSaver, which also restores
+	// floating windows and clamps their geometry to the available screens. The legacy
+	// QMainWindow::saveState() blob under "DOCK_LOCATIONS" is a different, incompatible
+	// format, so a fresh key means old settings are simply ignored (default layout).
+	const QByteArray layout = settings.value(QStringLiteral("DOCK_LAYOUT_KDDW")).toByteArray();
+	bool restored = false;
+	if (!layout.isEmpty())
 	{
-		dock.action->setChecked(!dock.widget->isHidden());
+		KDDockWidgets::LayoutSaver saver;
+		restored = saver.restoreLayout(layout);
+		if (!restored)
+		{
+			LOG_WARNING("Saved dock layout could not be restored; using the default arrangement.");
+		}
+	}
+
+	// No usable saved layout (first run, or a failed/incompatible restore) → build the
+	// classic default arrangement rather than leaving the addView() fallback tiling.
+	// (On the constructor's first loadLayout() call m_dockWidgets is still empty, so
+	// this no-ops there and runs for real on the post-createInstance() call.)
+	if (!restored && !m_dockWidgets.empty())
+	{
+		applyDefaultDockLayout();
+	}
+
+	for (const DockWidget& dock: m_dockWidgets)
+	{
+		dock.action->setChecked(dock.widget->isOpen());
 	}
 }
 
@@ -335,6 +448,14 @@ void QtMainWindow::loadWindow(bool showStartWindow)
 
 void QtMainWindow::saveLayout()
 {
+	// Never persist layout from an offscreen/headless run: it captures a degenerate
+	// geometry (minimized, near-zero size) that would leave a later native launch
+	// invisible. Headless indexing/verification runs must not poison the real config.
+	if (QGuiApplication::platformName() == QLatin1String("offscreen"))
+	{
+		return;
+	}
+
 	QSettings settings(
 		QString::fromStdString(UserPaths::getWindowSettingsFilePath().str()), QSettings::IniFormat);
 
@@ -348,7 +469,8 @@ void QtMainWindow::saveLayout()
 	settings.setValue(QStringLiteral("showTitleBars"), m_showDockWidgetTitleBars);
 	settings.endGroup();
 
-	settings.setValue(QStringLiteral("DOCK_LOCATIONS"), this->saveState());
+	KDDockWidgets::LayoutSaver saver;
+	settings.setValue(QStringLiteral("DOCK_LAYOUT_KDDW"), saver.serializeLayout());
 }
 
 void QtMainWindow::updateHistoryMenu(std::shared_ptr<MessageBase> message)
@@ -473,7 +595,7 @@ void QtMainWindow::keyPressEvent(QKeyEvent *event)
 			if (event->key() == Qt::Key_Space)
 				PRINT_TRACES();
 			else
-				QMainWindow::keyPressEvent(event);
+				Super::keyPressEvent(event);
 			break;
 	}
 }
@@ -494,7 +616,7 @@ void QtMainWindow::closeEvent(QCloseEvent*  /*event*/)
 void QtMainWindow::resizeEvent(QResizeEvent* event)
 {
 	m_windowStack.centerSubWindows();
-	QMainWindow::resizeEvent(event);
+	Super::resizeEvent(event);
 }
 
 bool QtMainWindow::focusNextPrevChild(bool  /*next*/)
@@ -765,7 +887,65 @@ void QtMainWindow::resetWindowLayout()
 	FileSystem::copyFile(
 		ResourcePaths::getFallbackDirectoryPath().concatenate("window_settings.ini"),
 		UserPaths::getWindowSettingsFilePath());
-	loadDockWidgetLayout();
+
+	applyDefaultDockLayout();
+}
+
+void QtMainWindow::applyDefaultDockLayout()
+{
+	// Classic Sourcetrail arrangement: Search across the top, Graph and Code side by
+	// side in the middle, Status across the bottom. Built middle-out — KDDW docks
+	// Location_OnTop/OnBottom against the main window (full width) and OnLeft/OnRight
+	// split the centre — so ordering Graph, Code, then Search(top), Status(bottom)
+	// yields  [ Search ] / [ Graph | Code ] / [ Status ].
+	auto dockByName = [this](const char* name) -> KDDockWidgets::QtWidgets::DockWidget* {
+		for (const DockWidget& dock: m_dockWidgets)
+		{
+			if (std::string(dock.view->getName()) == name)
+			{
+				return dock.widget;
+			}
+		}
+		return nullptr;
+	};
+
+	KDDockWidgets::QtWidgets::DockWidget* graph = dockByName("Graph");
+	KDDockWidgets::QtWidgets::DockWidget* code = dockByName("Code");
+	KDDockWidgets::QtWidgets::DockWidget* search = dockByName("Search");
+	KDDockWidgets::QtWidgets::DockWidget* status = dockByName("Status");
+
+	if (graph)
+	{
+		graph->open();
+		addDockWidget(graph, KDDockWidgets::Location_OnLeft);
+	}
+	if (code)
+	{
+		code->open();
+		addDockWidget(code, KDDockWidgets::Location_OnRight, graph);
+	}
+	if (search)
+	{
+		search->open();
+		addDockWidget(search, KDDockWidgets::Location_OnTop);
+	}
+	if (status)
+	{
+		status->open();
+		addDockWidget(status, KDDockWidgets::Location_OnBottom);
+	}
+
+	// Any other docks (e.g. plugins) tab into the centre on the right.
+	for (const DockWidget& dock: m_dockWidgets)
+	{
+		const std::string name = dock.view->getName();
+		if (name != "Graph" && name != "Code" && name != "Search" && name != "Status")
+		{
+			dock.widget->open();
+			addDockWidget(dock.widget, KDDockWidgets::Location_OnRight);
+		}
+		dock.action->setChecked(dock.widget->isOpen());
+	}
 }
 
 void QtMainWindow::openRecentProject()
@@ -806,11 +986,18 @@ void QtMainWindow::toggleView(View* view, bool fromMenu)
 
 	if (fromMenu)
 	{
-		dock->widget->setVisible(dock->action->isChecked());
+		if (dock->action->isChecked())
+		{
+			dock->widget->open();
+		}
+		else
+		{
+			dock->widget->close();
+		}
 	}
 	else
 	{
-		dock->action->setChecked(dock->widget->isVisible());
+		dock->action->setChecked(dock->widget->isOpen());
 	}
 }
 
@@ -1126,21 +1313,30 @@ void QtMainWindow::setShowDockWidgetTitleBars(bool showTitleBars)
 		m_showTitleBarsAction->setChecked(showTitleBars);
 	}
 
-	for (DockWidget& dock: m_dockWidgets)
+	// KDDW manages title bars globally through Config flags (not per-dock features as
+	// QDockWidget did). The default (title bars OFF) is the thin "tab-strip handle"
+	// look: no title bar row — each dock shows a slim tab (its name + close/float
+	// buttons) that doubles as the drag handle. AlwaysShowTabs keeps that handle on
+	// single, untabbed docks too. Toggling the View-menu action ON restores classic
+	// full title bars (and tabs only appear when docks are actually tabbed together).
+	// Flags apply cleanly when set before any dock exists — the case on the
+	// constructor's first loadLayout() call; a later toggle takes full effect next launch.
+	const KDDockWidgets::Config::Flags handleFlags =
+		KDDockWidgets::Config::Flag_HideTitleBarWhenTabsVisible |
+		KDDockWidgets::Config::Flag_AlwaysShowTabs |
+		KDDockWidgets::Config::Flag_ShowButtonsOnTabBarIfTitleBarHidden;
+
+	auto& config = KDDockWidgets::Config::self();
+	auto flags = config.flags();
+	if (showTitleBars)
 	{
-		if (showTitleBars)
-		{
-			dock.widget->setFeatures(
-				QDockWidget::DockWidgetClosable | QDockWidget::DockWidgetMovable |
-				QDockWidget::DockWidgetFloatable);
-			dock.widget->setTitleBarWidget(nullptr);
-		}
-		else
-		{
-			dock.widget->setFeatures(QDockWidget::NoDockWidgetFeatures);
-			dock.widget->setTitleBarWidget(new QWidget());
-		}
+		flags &= ~handleFlags;
 	}
+	else
+	{
+		flags |= handleFlags;
+	}
+	config.setFlags(flags);
 }
 
 template <typename T>

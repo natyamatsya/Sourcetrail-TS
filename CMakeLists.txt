@@ -432,6 +432,39 @@ if (BUILD_LADYBUG OR SOURCETRAIL_USE_LADYBUG)
 	message(STATUS "LadybugDB (Kùzu) enabled — building the lbug static library")
 endif()
 
+# KDDockWidgets — advanced docking framework (multi-monitor detach/reattach) ---
+# Built in-tree from the vendored submodule (submodules/kddockwidgets, pinned to
+# v2.4.0) so it links against the exact same Homebrew Qt as the application. A
+# vcpkg port can't do that here — Qt is external to vcpkg — and mixing a second
+# Qt copy would break the ABI. QtWidgets frontend only; static, to avoid shipping
+# a separate runtime library. Exposed as External_lib_kddockwidgets.
+if (NOT EXISTS "${CMAKE_SOURCE_DIR}/submodules/kddockwidgets/CMakeLists.txt")
+	message(FATAL_ERROR
+		"kddockwidgets submodule is not checked out at submodules/kddockwidgets.\n"
+		"Run: git submodule update --init submodules/kddockwidgets")
+endif()
+
+set(KDDockWidgets_QT6            ON        CACHE BOOL   "" FORCE)
+set(KDDockWidgets_FRONTENDS      qtwidgets CACHE STRING "" FORCE)
+set(KDDockWidgets_STATIC         ON        CACHE BOOL   "" FORCE)
+set(KDDockWidgets_EXAMPLES       OFF       CACHE BOOL   "" FORCE)
+set(KDDockWidgets_TESTS          OFF       CACHE BOOL   "" FORCE)
+set(KDDockWidgets_DOCS           OFF       CACHE BOOL   "" FORCE)
+set(KDDockWidgets_NO_SPDLOG      ON        CACHE BOOL   "" FORCE)
+set(KDDockWidgets_DEVELOPER_MODE OFF       CACHE BOOL   "" FORCE)
+# Upstream spells this option 'KDockWidgets_...' (missing D) — match it verbatim.
+# Puts <kddockwidgets/MainWindow.h> / <DockWidget.h> on the include path.
+set(KDockWidgets_PRETTY_QTWIDGETS_HEADERS ON CACHE BOOL "" FORCE)
+
+add_subdirectory(submodules/kddockwidgets EXCLUDE_FROM_ALL)
+
+# KDAB::kddockwidgets is an in-build ALIAS (src/CMakeLists.txt); it already
+# propagates its public fwd_headers include dir, so no manual include wiring.
+add_library(External_lib_kddockwidgets INTERFACE)
+target_link_libraries(External_lib_kddockwidgets INTERFACE KDAB::kddockwidgets)
+
+message(STATUS "Built KDDockWidgets (QtWidgets, static) from submodule submodules/kddockwidgets")
+
 # AidKit  -----------------------------------------------------------------------------------
 
 add_subdirectory(src/lib_aidkit)
