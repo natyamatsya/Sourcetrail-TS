@@ -17,12 +17,20 @@ struct EventListener : Catch2::EventListenerBase
 {
 	static int s_argc;
 	static char **s_argv;
+	// Absolute app directory, resolved in main() from argv[0] *before* the
+	// working directory is changed (below). Recomputing it here from the
+	// possibly-relative argv[0] would be wrong: this listener runs after main()
+	// has already cd'd into the binary's directory, so a relative argv[0] no
+	// longer resolves and getCanonical() would yield a bogus path — which left
+	// AppPath::getRustIndexerFilePath() pointing at a nonexistent location and
+	// the TaskBuildIndex subprocess tests never launching their indexer.
+	static string s_appPath;
 
 	using Catch2::EventListenerBase::EventListenerBase;	   // inherit constructor
 
 	void testRunStarting(const Catch::TestRunInfo& ) override
 	{
-		FilePath appPath = FilePath(s_argv[0]).getCanonical().getParentDirectory().getParentDirectory().getConcatenated("app");
+		FilePath appPath(s_appPath);
 		cout << "Setting 'app' directory to " << appPath.str() << endl;
 		setupAppDirectories(appPath);
 
@@ -34,6 +42,7 @@ struct EventListener : Catch2::EventListenerBase
 
 int EventListener::s_argc = 0;
 char **EventListener::s_argv = nullptr;
+string EventListener::s_appPath;
 
 CATCH_REGISTER_LISTENER(EventListener)
 
@@ -76,6 +85,12 @@ int main(int argc, char* argv[])
 	// Set the 'working directory' manually, as a workaround for "Unable to configure working directory
 	// in CMake/Catch" (https://github.com/catchorg/Catch2/issues/2249)
 	path workingDirectory = canonical(path(argv[0])).parent_path();
+
+	// Resolve the app directory (sibling of the binary's directory) to an
+	// ABSOLUTE path now, while argv[0] still resolves against the original
+	// working directory — before current_path() is changed below. The listener
+	// consumes this; recomputing it there from a relative argv[0] would break.
+	EventListener::s_appPath = (workingDirectory.parent_path() / "app").string();
 
 	// If something is printed to the screen, then this will lead to a failure in 'catch_discover_tests()'!
 	// cout << "Set working directory to '" << workingDirectory << "'" << endl;
