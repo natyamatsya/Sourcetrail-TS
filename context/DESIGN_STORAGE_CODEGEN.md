@@ -116,8 +116,10 @@ Each step is independently valuable, independently verifiable, and behaviour-
 preserving except where noted:
 
 1. **Transport codegen (Decision 2).** No schema change, no behaviour change.
-   *Verification:* the generated serializers must round-trip byte-identically
-   against the current hand-written ones on a captured corpus, plus the existing
+   *Verification:* the C++ app must deserialize an object-API-packed buffer to the
+   same `StorageX` values as today on a captured corpus — **semantic** round-trip,
+   not byte-identity (flatbuffers does not guarantee identical bytes across builder
+   paths, and the vtable reader does not need them) — plus the existing
    Rust/Swift/C++ round-trip tests stay green. This is the risky-but-mechanical
    step; it earns everything after it.
 2. **`node_attribute` table** (Decision 1 + Decision 3.1). Storage version bump +
@@ -141,14 +143,46 @@ proven equivalent, before anything rides on it.
 - **No migration tooling.** Back-compat is a non-issue; schema changes are a
   fresh re-index (the `isIncompatible()` → `PROJECT_STATE_OUTVERSIONED` path).
 
-## Open questions
+## Spike findings (2026-07-18) — resolved: adopt the object API
 
-- Does flatc's Rust/Swift object API cover in-place mutation during collection and
-  vector-of-table building well enough to delete the hand-written mirrors, or is
-  a thin custom generator the lower-friction path? (Resolve in step 1 with a
-  spike on the `StorageNode`/`StorageEdge` tables before committing.)
-- Should the chunker cost helper live in generated code or a hand-written
-  companion keyed by table name? (Prefer generated: it cannot drift.)
+Ran `flatc 25.12.19 --gen-object-api` on `intermediate_storage.fbs` for Rust and
+Swift and inspected the output. **The object API covers both languages; no custom
+generator is needed.** The hand-written `Owned*` mirrors + serializers can be
+deleted in favour of the generated object types.
+
+- **Rust — near-drop-in.** Generates `IntermediateStorageT { next_id, nodes:
+  Option<Vec<StorageNodeT>>, … }` and per-table `StorageNodeT { id, type_,
+  serialized_name: Option<String>, modifiers }` with whole-tree `pack()`/`unpack()`,
+  deriving `Debug, Clone, PartialEq, Default`. `Default` alone kills the eight
+  `OwnedStorageNode { … modifiers: 0 }` sites. The only friction is `Option`-wrapped
+  strings/vectors (ours are unwrapped), a mechanical adaptation in `collector.rs`.
+- **Swift — works, more friction.** Full object API (`Sourcetrail_Ipc_StorageNodeT:
+  NativeObject` with `pack`/`unpack`/`serialize()`), but the `*T` types are
+  **reference classes** and the container is `[StorageNodeT?]` (array of
+  optionals), where our `OwnedStorage*` are value structs in `[T]`. So
+  `StorageBuilder` (which mutates nodes in place, e.g. `nodes[i].modifiers |= x`)
+  and `StorageChunker` need a moderate rework to reference semantics + optional
+  elements. Doable, not free.
+- **C++ — largely unaffected.** The app uses hand-written *domain* types
+  (`StorageNode`, …) with behaviour, not owned transport mirrors; the single
+  `IntermediateStorageSerializer.cpp` bridges `.fbs` ↔ domain. The object API adds
+  little there (one file, not per-language mirrors), so C++ keeps its
+  hand-written serializer.
+
+**Chunker cost** stays a hand-written companion keyed by table, operating on the
+generated `*T` types — but it should be *derived* (fixed overhead + string
+lengths) so it cannot drift; it is a heuristic, not transport.
+
+**Correction to the verification bar (below):** the goal is **semantic**
+round-trip, not byte-identical. FlatBuffers does not guarantee identical bytes
+across builder code paths, and the reader is vtable-based so it does not need
+them — the bar is "the C++ app deserializes an object-API-packed buffer to the
+same `StorageX` values," checked on a captured corpus plus the existing
+round-trip tests.
+
+**Next action** (step 1 proper, not the spike): a contained cutover of *one*
+table in *one* language (start with Rust `StorageNode`/`StorageEdge`) behind the
+object API, with a round-trip test, before the full sweep.
 
 ## Critical files
 
