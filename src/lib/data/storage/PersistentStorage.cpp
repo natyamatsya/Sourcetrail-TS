@@ -2592,6 +2592,18 @@ TooltipInfo PersistentStorage::getTooltipInfoForTokenIds(
 		}
 	}
 
+	// Axis-3 metadata (ADR-independent; DESIGN_NODE_MODIFIERS.md): show the node's
+	// sparse node_attribute facts. `@available` is the first producer (Swift); the
+	// key→value store degrades to empty for indexers that emit nothing.
+	for (const StorageNodeAttribute& attribute:
+		 m_sqliteIndexStorage.getNodeAttributesByNodeIds({node.id}))
+	{
+		if (attribute.key == NodeAttributeKind::AVAILABILITY && !attribute.value.empty())
+		{
+			info.title += "  @available(" + attribute.value + ")";
+		}
+	}
+
 	if (type.isFile())
 	{
 		if (!getFileNodeIndexed(node.id))

@@ -78,6 +78,13 @@ enum SyntacticIndexer {
 			if modifiers != 0 {
 				builder.addNodeModifier(nodeId: nodeId, modifier: modifiers)
 			}
+			// Axis-3 metadata: @available specification (syntactic; rides the fallback).
+			if let attributed = decl.asProtocol(WithAttributesSyntax.self),
+				let availability = swiftAvailability(attributed.attributes)
+			{
+				builder.recordNodeAttribute(
+					nodeId: nodeId, key: NodeAttributeKind.availability, value: availability)
+			}
 
 			let parentKind = scope.count == 1 ? NodeKind.module : NodeKind.symbol
 			let parentId = builder.nodeId(parts: scope, kind: parentKind)

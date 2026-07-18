@@ -54,7 +54,7 @@ key→value metadata table), so neither is a schema blocker.
 | SW13 | Concurrency model: global-actor isolation, `Sendable`, actor identity, `async`/`nonisolated` | ✅ done |
 | SW14 | Attribute-driven relations: property wrappers + result builders | ✅ done |
 | SW15 | Macros: attached + freestanding applications | ✅ done |
-| SW16 | API-surface metadata: access control (`@available` deferred) | ✅ done |
+| SW16 | API-surface metadata: access control; `@available` → `node_attribute` (AVAILABILITY) + tooltip | ✅ done |
 
 ---
 

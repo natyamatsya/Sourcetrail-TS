@@ -156,6 +156,11 @@ final class SemanticIndexer {
 		if let modifiers = accessMap?.nodeModifiers(at: position), modifiers != 0 {
 			builder.addNodeModifier(nodeId: nodeId, modifier: modifiers)
 		}
+		// Axis-3 metadata: @available specification into the node_attribute table.
+		if let availability = accessMap?.availability(at: position) {
+			builder.recordNodeAttribute(
+				nodeId: nodeId, key: NodeAttributeKind.availability, value: availability)
+		}
 		recordDefinitionLocations(
 			elementId: nodeId, occurrence: occurrence, fileNodeId: fileNodeId)
 
