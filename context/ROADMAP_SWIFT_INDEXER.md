@@ -335,12 +335,17 @@ now carries each node's access in its home group so chunks stay self-contained.
 Enables a "public-API-only" graph filter. Covered by `AccessTests` (semantic
 + syntactic).
 
-*Limitations:* `package` has no dedicated `AccessKind` (collapses to DEFAULT,
-same as `internal`), and `open` vs `public` (the subclassable distinction) is
-lost — both need an `AccessKind` schema addition shared with the C++/Java sides.
-*Deferred:* **`@available`** gating has no representable target — a platform
-(`iOS`) is not a node, and there is no cfg-analog/metadata slot; it would need a
-new storage concept, out of scope.
+The `package` level gets a **dedicated `AccessKind::PACKAGE` (= 7)**, added to the
+enum (`AccessKind.h/.cpp`, `TokenComponentAccess`, `GraphViewStyle`,
+`QtGraphNodeAccess`) and mirrored on the Swift side — appended (never renumbered)
+because the value is persisted to the SQLite DB and the IPC wire. With the Java
+frontend gone, the enum is C++-only, so this was a clean extension.
+
+*Remaining limitations:* `open` vs `public` (the subclassable distinction) still
+collapses to PUBLIC — it is not a visibility level and does not fit the
+`AccessKind` axis. *Deferred:* **`@available`** gating has no representable target
+— a platform (`iOS`) is not a node, and there is no cfg-analog/metadata slot; it
+would need a new storage concept, out of scope.
 
 Cheap, high-utility decoration — no new edges.
 

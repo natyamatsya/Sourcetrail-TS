@@ -18,6 +18,8 @@ std::string TokenComponentAccess::getAccessString(AccessKind access)
 		return "template parameter";
 	case AccessKind::TYPE_PARAMETER:
 		return "type parameter";
+	case AccessKind::PACKAGE:
+		return "package";
 	}
 	return "";
 }
