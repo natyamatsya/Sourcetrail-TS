@@ -16,33 +16,56 @@ QToolBar {
 	border: none;
 }
 
-QDockWidget {
-	color: <color:window/dock/text>;
-	font-size: 10pt;
-	titlebar-close-icon: url(<setting:gui_path>main/images/close_<color:window/dock/icon_type>.png);
-	titlebar-normal-icon: url(<setting:gui_path>main/images/float_<color:window/dock/icon_type>.png);
-}
-
-QDockWidget::title {
-	border-bottom: 1px solid <color:window/dock/line>;
+/* KDDockWidgets docking chrome — themed with the same window/dock/* colors the
+   old QDockWidget rules used, so detachable docks match the app's day/night theme.
+   In Qt style sheets a C++ '::' scope separator is written as '--', so
+   KDDockWidgets::QtWidgets::TitleBar becomes KDDockWidgets--QtWidgets--TitleBar. */
+KDDockWidgets--QtWidgets--TitleBar {
 	background: <color:window/dock/background>;
-	text-align: center;
-	padding-top: 1px;
+	border-bottom: 1px solid <color:window/dock/line>;
+	color: <color:window/dock/text>;
+	/* Slim title bar (KDDW derives height from PM_HeaderDefaultSectionSizeVertical;
+	   min/max-height clamps that to the classic thin Sourcetrail look). */
+	min-height: 20px;
+	max-height: 20px;
 }
 
-QDockWidget::close-button, QDockWidget::float-button {
+KDDockWidgets--QtWidgets--TitleBar QLabel {
+	color: <color:window/dock/text>;
+	font-size: 9pt;
 	background: transparent;
-	border: <platform_wml:0|0|1>px solid transparent;
-	icon-size: 1.2em;
-	margin-top: <platform_wml:0|2|2>px;
+	padding: 0px 2px;
 }
 
-QDockWidget::close-button {
-	margin-left: <platform_wml:0|2|0>px;
+/* Container around one (possibly tabbed) group of docks. */
+KDDockWidgets--QtWidgets--Group {
+	border: 1px solid <color:window/dock/line>;
 }
 
-QDockWidget::float-button {
-	margin-right: <platform_wml:0|2|0>px;
+/* Draggable splitter between docks. */
+KDDockWidgets--QtWidgets--Separator {
+	background: <color:window/dock/line>;
+}
+
+/* Tab bar shown when docks are tabbed together. */
+KDDockWidgets--QtWidgets--TabBar::tab {
+	background: <color:window/dock/background>;
+	color: <color:window/dock/text>;
+	border: 1px solid <color:window/dock/line>;
+	padding: 2px 8px;
+}
+
+KDDockWidgets--QtWidgets--TabBar::tab:selected {
+	background: <color:window/dock/line>;
+}
+
+/* Title-bar close / float / auto-hide buttons — compact to fit the slim bar. */
+KDDockWidgets--QtWidgets--Button {
+	background: transparent;
+	border: none;
+	max-height: 18px;
+	max-width: 18px;
+	icon-size: 14px;
 }
 
 #screen_button {

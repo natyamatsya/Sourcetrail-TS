@@ -2,6 +2,9 @@
 
 #include <QFileOpenEvent>
 
+#include <kddockwidgets/Config.h>
+#include <kddockwidgets/KDDockWidgets.h>
+
 #include "FilePath.h"
 #include "LogManager.h"
 #include "MessageLoadProject.h"
@@ -11,6 +14,19 @@
 
 QtApplication::QtApplication(int& argc, char** argv): QApplication(argc, argv)
 {
+	// Bring up the KDDockWidgets QtWidgets frontend before any dock/main window is
+	// created (Application::createInstance() builds them). This is the GUI-only path;
+	// the headless indexer uses QtCoreApplication and never reaches here.
+	KDDockWidgets::initFrontend(KDDockWidgets::FrontendType::QtWidgets);
+
+	// Docking behaviour tuned for the multi-monitor detach/reattach workflow: floating
+	// windows are independent top-levels that can themselves host docks, tabs are
+	// reorderable, and views can be collapsed to the side bar (auto-hide).
+	auto& dockConfig = KDDockWidgets::Config::self();
+	dockConfig.setFlags(
+		dockConfig.flags() | KDDockWidgets::Config::Flag_AllowReorderTabs |
+		KDDockWidgets::Config::Flag_AutoHideSupport);
+
 	connect(
 		this,
 		&QGuiApplication::applicationStateChanged,

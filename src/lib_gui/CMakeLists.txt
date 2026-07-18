@@ -86,6 +86,9 @@ target_link_libraries(Sourcetrail_lib_gui
 		External_lib_qt
 		Sourcetrail_res_gui
 
+		# Advanced docking (QtMainWindow): detach/reattach across monitors.
+		External_lib_kddockwidgets
+
 		# Qt<->stdexec bridge in qt/execution/ needs stdexec directly.
 		STDEXEC::stdexec
 )

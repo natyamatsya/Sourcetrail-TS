@@ -5,16 +5,20 @@
 #include "QtWindowStack.h"
 #include "QtWindowTitleProgress.h"
 
-#include <QMainWindow>
+#include <kddockwidgets/MainWindow.h>
 
 #include <memory>
 #include <vector>
 
 class Bookmark;
 class MessageBase;
-class QDockWidget;
 class QtBuildJsonBrowser;
 class View;
+
+namespace KDDockWidgets::QtWidgets
+{
+class DockWidget;
+}
 
 class QtViewToggle: public QWidget
 {
@@ -49,9 +53,19 @@ private:
 };
 
 
-class QtMainWindow: public QMainWindow
+class QtMainWindow: public KDDockWidgets::QtWidgets::MainWindow
 {
 	Q_OBJECT
+
+	// KDDockWidgets::QtWidgets::MainWindow is-a QMainWindow (via View<QMainWindow>),
+	// so menus/toolbars/status bar keep working; call Super:: in event overrides so
+	// KDDW's own layouting still runs.
+	using Super = KDDockWidgets::QtWidgets::MainWindow;
+
+	// The KDDW base inherits View<QMainWindow>, whose injected-class-name 'View' would
+	// otherwise shadow Sourcetrail's ::View for every unqualified use inside this class
+	// (addView(View*), the DockWidget struct's View* member, etc.). Re-bind it.
+	using View = ::View;
 
 public:
 	QtMainWindow();
@@ -68,6 +82,14 @@ public:
 
 	void loadLayout();
 	void saveLayout();
+
+	// Repair a degenerate restored main-window geometry (minimized / off-screen /
+	// too small) so the window is always visible and usable after loadLayout().
+	void sanitizeWindowGeometry();
+
+	// Arrange the docks in the classic Sourcetrail default layout (Search top,
+	// Graph | Code middle, Status bottom). Used on first run and on reset.
+	void applyDefaultDockLayout();
 
 	void loadDockWidgetLayout();
 	void loadWindow(bool showStartWindow);
@@ -169,7 +191,7 @@ private slots:
 private:
 	struct DockWidget
 	{
-		QDockWidget* widget;
+		KDDockWidgets::QtWidgets::DockWidget* widget;
 		View* view;
 		QAction* action;
 		QtViewToggle* toggle;
@@ -204,7 +226,8 @@ private:
 
 	QAction* m_showTitleBarsAction;
 
-	bool m_showDockWidgetTitleBars = true;
+	// Default OFF: thin tab-strip drag handles instead of full title bars.
+	bool m_showDockWidgetTitleBars = false;
 
 	QtWindowStack m_windowStack;
 	QtBuildJsonBrowser* m_buildJsonBrowser = nullptr;
