@@ -5,12 +5,16 @@
 #include "CanonicalFilePathCache.h"
 #include "CxxAstVisitor.h"
 #include "CxxAstVisitorComponentContext.h"
+#include "CxxLocationExtractor.h"
 #include "ParserClient.h"
 #include "utilityClang.h"
 
 CxxAstVisitorComponentBraceRecorder::CxxAstVisitorComponentBraceRecorder(
 	CxxAstVisitor* astVisitor, clang::ASTContext* astContext, ParserClient& client)
-	: CxxAstVisitorComponent(astVisitor), m_astContext(astContext), m_client(client)
+	: CxxAstVisitorComponent(astVisitor)
+	, m_astContext(astContext)
+	, m_client(client)
+	, m_locations(astVisitor->getLocationExtractor())
 {
 }
 
@@ -98,7 +102,7 @@ void CxxAstVisitorComponentBraceRecorder::visitMSAsmStmt(clang::MSAsmStmt* s)
 
 ParseLocation CxxAstVisitorComponentBraceRecorder::getParseLocation(const clang::SourceLocation& loc) const
 {
-	return getAstVisitor()->getParseLocation(loc);
+	return m_locations.getParseLocation(loc);
 }
 
 FilePath CxxAstVisitorComponentBraceRecorder::getFilePath(const clang::SourceLocation& loc)

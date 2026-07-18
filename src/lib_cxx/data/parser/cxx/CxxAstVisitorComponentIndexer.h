@@ -5,6 +5,7 @@
 
 #include "CxxAstVisitorComponent.h"
 #include "CxxContext.h"
+#include "CxxLocationExtractor.h"
 #include "CxxSymbolRegistry.h"
 #include "ParseLocation.h"
 #include "ReferenceKind.h"
@@ -80,12 +81,6 @@ private:
 	// bit + an optional DEPRECATED message row (context/DESIGN_NODE_MODIFIERS.md).
 	void recordDeprecation(Id symbolId, const clang::Decl* d);
 
-	ParseLocation getSignatureLocation(clang::FunctionDecl* d);
-	ParseLocation getParseLocationOfTagDeclBody(clang::TagDecl* decl) const;
-	ParseLocation getParseLocationOfFunctionBody(const clang::FunctionDecl* decl) const;
-	ParseLocation getParseLocation(const clang::SourceLocation& loc) const;
-	ParseLocation getParseLocation(const clang::SourceRange& sourceRange) const;
-
 	std::string getLocalSymbolName(const clang::SourceLocation& loc) const;
 
 	ReferenceKind consumeDeclRefContextKind();
@@ -94,6 +89,7 @@ private:
 	ParserClient& m_client;
 
 	CxxSymbolRegistry m_symbols;
+	CxxLocationExtractor& m_locations;
 };
 
 #endif	  // CXX_AST_VISITOR_COMPONENT_INDEXER_H

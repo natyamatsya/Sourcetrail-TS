@@ -4,6 +4,7 @@
 #include "CxxAstVisitorComponent.h"
 #include "ParseLocation.h"
 
+class CxxLocationExtractor;
 class ParserClient;
 
 // This CxxAstVisitorComponent is responsible for recording all matching braces ["{", "}"]
@@ -33,6 +34,7 @@ private:
 
 	clang::ASTContext* m_astContext;
 	ParserClient& m_client;
+	CxxLocationExtractor& m_locations;
 };
 
 #endif	  // CXX_AST_VISITOR_COMPONENT_BRACE_RECORDER_H
