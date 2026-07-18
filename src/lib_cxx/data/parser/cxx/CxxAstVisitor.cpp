@@ -31,6 +31,7 @@ CxxAstVisitor::CxxAstVisitor(
 	, m_indexerStateInfo(indexerStateInfo)
 	, m_canonicalFilePathCache(canonicalFilePathCache)
 	, m_isVerbose(isVerbose)
+	, m_locations(*astContext, preprocessor, canonicalFilePathCache)
 	, m_components(
 		  CxxAstVisitorComponentContext(this),
 		  CxxAstVisitorComponentTypeRefKind(this),
@@ -59,6 +60,11 @@ CxxAstVisitorComponentDeclRefKind *CxxAstVisitor::getDeclRefKindComponent()
 CanonicalFilePathCache* CxxAstVisitor::getCanonicalFilePathCache() const
 {
 	return &m_canonicalFilePathCache;
+}
+
+CxxLocationExtractor& CxxAstVisitor::getLocationExtractor()
+{
+	return m_locations;
 }
 
 void CxxAstVisitor::indexDecl(clang::Decl* d)
@@ -245,7 +251,7 @@ void CxxAstVisitor::logVerboseDecl(clang::Decl* d)
 		stream << " [" << obfuscateName(namedDecl->getNameAsString()) << "]";
 	}
 
-	ParseLocation loc = getParseLocation(d->getSourceRange());
+	ParseLocation loc = m_locations.getParseLocation(d->getSourceRange());
 	stream << " <" << loc.startLineNumber << ":" << loc.startColumnNumber << ", "
 		   << loc.endLineNumber << ":" << loc.endColumnNumber << ">";
 
@@ -268,7 +274,7 @@ void CxxAstVisitor::logVerboseStmt(clang::Stmt* stmt)
 		return;
 	}
 
-	ParseLocation loc = getParseLocation(stmt->getSourceRange());
+	ParseLocation loc = m_locations.getParseLocation(stmt->getSourceRange());
 	LOG_INFO_STREAM_BARE(
 		<< "Indexer - " << getIndentString() << stmt->getStmtClassName() << " <"
 		<< loc.startLineNumber << ":" << loc.startColumnNumber << ", " << loc.endLineNumber << ":"
@@ -282,7 +288,7 @@ void CxxAstVisitor::logVerboseTypeLoc(clang::TypeLoc tl)
 		return;
 	}
 
-	ParseLocation loc = getParseLocation(tl.getSourceRange());
+	ParseLocation loc = m_locations.getParseLocation(tl.getSourceRange());
 	LOG_INFO_STREAM_BARE(
 		<< "Indexer - " << getIndentString() << typeLocClassToString(tl) << "TypeLoc <"
 		<< loc.startLineNumber << ":" << loc.startColumnNumber << ", " << loc.endLineNumber << ":"
@@ -800,59 +806,6 @@ DEF_VISIT_CUSTOM_TYPE_PTR(ConstructorInitializer, CXXCtorInitializer)
 #undef DEF_VISIT_TYPE_PTR
 #undef DEF_VISIT_TYPE
 
-
-ParseLocation CxxAstVisitor::getParseLocationOfTagDeclBody(clang::TagDecl* decl) const
-{
-	if (decl->isThisDeclarationADefinition())
-	{
-		clang::SourceRange range;
-		if (clang::CXXRecordDecl* cxxDecl = clang::dyn_cast_or_null<clang::CXXRecordDecl>(decl))
-		{
-			clang::ClassTemplateDecl* templateDecl = cxxDecl->getDescribedClassTemplate();
-			if (templateDecl)
-			{
-				range = templateDecl->getSourceRange();
-			}
-		}
-		if (range.isInvalid())
-		{
-			range = decl->getDefinition()->getSourceRange();
-		}
-		return getParseLocation(range);
-	}
-	return ParseLocation();
-}
-
-ParseLocation CxxAstVisitor::getParseLocationOfFunctionBody(const clang::FunctionDecl* decl) const
-{
-	if (decl->hasBody() && decl->isThisDeclarationADefinition())
-	{
-		clang::SourceRange range;
-		clang::FunctionTemplateDecl* templateDecl = decl->getDescribedFunctionTemplate();
-		if (templateDecl)
-		{
-			range = templateDecl->getSourceRange();
-		}
-		else
-		{
-			range = decl->getSourceRange();
-		}
-		return getParseLocation(range);
-	}
-	return ParseLocation();
-}
-
-ParseLocation CxxAstVisitor::getParseLocation(const clang::SourceLocation& sourceLocation) const
-{
-	return utility::getParseLocation(
-		sourceLocation, m_astContext->getSourceManager(), m_preprocessor, m_canonicalFilePathCache);
-}
-
-ParseLocation CxxAstVisitor::getParseLocation(const clang::SourceRange& sourceRange) const
-{
-	return utility::getParseLocation(
-		sourceRange, m_astContext->getSourceManager(), m_preprocessor, m_canonicalFilePathCache);
-}
 
 bool CxxAstVisitor::shouldVisitStmt(const clang::Stmt* stmt) const
 {

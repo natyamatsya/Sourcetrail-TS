@@ -18,6 +18,7 @@
 #include "CxxAstVisitorComponentImplicitCode.h"
 #include "CxxAstVisitorComponentIndexer.h"
 #include "CxxAstVisitorComponentTypeRefKind.h"
+#include "CxxLocationExtractor.h"
 #include "FilePath.h"
 
 class CanonicalFilePathCache;
@@ -186,10 +187,7 @@ public:
 	bool VisitMSAsmStmt(clang::MSAsmStmt* s);
 	bool VisitConstructorInitializer(clang::CXXCtorInitializer* init);
 
-	ParseLocation getParseLocationOfTagDeclBody(clang::TagDecl* decl) const;
-	ParseLocation getParseLocationOfFunctionBody(const clang::FunctionDecl* decl) const;
-	ParseLocation getParseLocation(const clang::SourceLocation& loc) const;
-	ParseLocation getParseLocation(const clang::SourceRange& sourceRange) const;
+	CxxLocationExtractor& getLocationExtractor();
 
 	bool shouldVisitStmt(const clang::Stmt* stmt) const;
 	bool shouldVisitDecl(const clang::Decl* decl) const;
@@ -216,6 +214,8 @@ protected:
 	bool m_isVerbose;
 	unsigned int m_indentation = 0;
 	FilePath m_currentFilePath;
+
+	CxxLocationExtractor m_locations;
 
 	// Invoke `function` on every registered component, in registration order.
 	template <class F>
