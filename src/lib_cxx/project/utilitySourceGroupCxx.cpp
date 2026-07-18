@@ -109,7 +109,7 @@ std::shared_ptr<Task> createBuildPchTaskForInput(
 
 		CxxCompilationDatabaseSingle compilationDatabase(pchCommand);
 		clang::tooling::ClangTool tool(compilationDatabase, {pchInputFilePath.str()});
-		GeneratePCHAction *action = new GeneratePCHAction(client, canonicalFilePathCache); // TODO (petermost): Memory leak?
+		GeneratePCHAction *action = new GeneratePCHAction(*client, *canonicalFilePathCache); // TODO (petermost): Memory leak?
 
 		auto options = std::make_shared<clang::DiagnosticOptions>();
 		options->ShowCarets = false;
@@ -117,7 +117,7 @@ std::shared_ptr<Task> createBuildPchTaskForInput(
 		options->ShowSourceRanges = false;
 		options->SnippetLineLimit = 0;
 		CxxDiagnosticConsumer diagnostics(
-			llvm::errs(), options, client, canonicalFilePathCache, pchInputFilePath, true);
+			llvm::errs(), options, *client, *canonicalFilePathCache, pchInputFilePath, true);
 
 		tool.setDiagnosticConsumer(&diagnostics);
 		tool.clearArgumentsAdjusters();

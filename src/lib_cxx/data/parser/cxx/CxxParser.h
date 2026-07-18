@@ -32,7 +32,7 @@ public:
 	static void initializeLLVM();
 
 	CxxParser(
-		std::shared_ptr<ParserClient> client,
+		ParserClient& client,
 		std::shared_ptr<FileRegister> fileRegister,
 		std::shared_ptr<IndexerStateInfo> indexerStateInfo);
 
@@ -53,7 +53,7 @@ private:
 
 	std::shared_ptr<CxxDiagnosticConsumer> getDiagnostics(
 		const FilePath& sourceFilePath,
-		std::shared_ptr<CanonicalFilePathCache> canonicalFilePathCache,
+		CanonicalFilePathCache& canonicalFilePathCache,
 		bool logErrors) const;
 
 	friend class TaskParseCxx;

@@ -15,8 +15,8 @@ class ASTAction: public clang::ASTFrontendAction
 {
 public:
 	explicit ASTAction(
-		std::shared_ptr<ParserClient> client,
-		std::shared_ptr<CanonicalFilePathCache> canonicalFilePathCache,
+		ParserClient& client,
+		CanonicalFilePathCache& canonicalFilePathCache,
 		std::shared_ptr<IndexerStateInfo> indexerStateInfo);
 
 protected:
@@ -25,8 +25,8 @@ protected:
 	bool BeginSourceFileAction(clang::CompilerInstance& compiler) override;
 
 private:
-	std::shared_ptr<ParserClient> m_client;
-	std::shared_ptr<CanonicalFilePathCache> m_canonicalFilePathCache;
+	ParserClient& m_client;
+	CanonicalFilePathCache& m_canonicalFilePathCache;
 	std::shared_ptr<IndexerStateInfo> m_indexerStateInfo;
 	CommentHandler m_commentHandler;
 };

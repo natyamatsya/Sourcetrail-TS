@@ -16,11 +16,11 @@ public:
 	CxxDeclNameResolver(CanonicalFilePathCache* canonicalFilePathCache);
 	CxxDeclNameResolver(const CxxNameResolver* other);
 
-	std::unique_ptr<CxxDeclName> getName(const clang::NamedDecl* declaration);
+	CxxName getName(const clang::NamedDecl* declaration);
 
 private:
-	std::unique_ptr<CxxName> getContextName(const clang::DeclContext* declaration);
-	std::unique_ptr<CxxDeclName> getDeclName(const clang::NamedDecl* declaration);
+	CxxName getContextName(const clang::DeclContext* declaration);
+	CxxName getDeclName(const clang::NamedDecl* declaration);
 	std::string getTranslationUnitMainFileName(const clang::Decl* declaration);
 	std::string getNameForAnonymousSymbol(
 		const std::string& symbolKindName, const clang::Decl* declaration);

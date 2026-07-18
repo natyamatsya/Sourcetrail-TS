@@ -13,7 +13,7 @@ CxxDeclName::CxxDeclName(std::string name, std::vector<std::string> templatePara
 
 NameHierarchy CxxDeclName::toNameHierarchy() const
 {
-	NameHierarchy ret = getParent() ? getParent()->toNameHierarchy()
+	NameHierarchy ret = getParent() ? getParent().toNameHierarchy()
 									: NameHierarchy(NameDelimiterType::CXX);
 	ret.push(m_name + getTemplateSuffix(m_templateParameterNames));
 	return ret;

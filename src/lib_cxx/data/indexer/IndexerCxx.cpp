@@ -9,7 +9,7 @@ void IndexerCxx::doIndex(
 	const std::shared_ptr<IndexerStateInfo>& indexerStateInfo)
 {
 	CxxParser parser(
-		parserClient,
+		*parserClient,
 		std::make_shared<FileRegister>(
 			indexerCommand->getSourceFilePath(),
 			indexerCommand->getIndexedPaths(),

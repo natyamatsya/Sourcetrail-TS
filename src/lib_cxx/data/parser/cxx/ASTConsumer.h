@@ -15,8 +15,8 @@ public:
 	explicit ASTConsumer(
 		clang::ASTContext* context,
 		clang::Preprocessor* preprocessor,
-		std::shared_ptr<ParserClient> client,
-		std::shared_ptr<CanonicalFilePathCache> canonicalFilePathCache,
+		ParserClient& client,
+		CanonicalFilePathCache& canonicalFilePathCache,
 		std::shared_ptr<IndexerStateInfo> indexerStateInfo);
 
 	~ASTConsumer() override = default;

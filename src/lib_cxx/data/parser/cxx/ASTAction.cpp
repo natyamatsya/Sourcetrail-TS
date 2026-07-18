@@ -6,8 +6,8 @@
 #include "PreprocessorCallbacks.h"
 
 ASTAction::ASTAction(
-	std::shared_ptr<ParserClient> client,
-	std::shared_ptr<CanonicalFilePathCache> canonicalFilePathCache,
+	ParserClient& client,
+	CanonicalFilePathCache& canonicalFilePathCache,
 	std::shared_ptr<IndexerStateInfo> indexerStateInfo)
 	: m_client(client)
 	, m_canonicalFilePathCache(canonicalFilePathCache)

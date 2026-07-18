@@ -27,14 +27,15 @@ CxxTypeName::CxxTypeName(std::string name, std::vector<std::string> templateArgu
 }
 
 CxxTypeName::CxxTypeName(
-	std::string name, std::vector<std::string> templateArguments, std::shared_ptr<CxxName> parent)
-	: CxxName(parent), m_name(std::move(name)), m_templateArguments(std::move(templateArguments))
+	std::string name, std::vector<std::string> templateArguments, CxxName parent)
+	: m_name(std::move(name)), m_templateArguments(std::move(templateArguments))
 {
+	setParent(std::move(parent));
 }
 
 NameHierarchy CxxTypeName::toNameHierarchy() const
 {
-	NameHierarchy ret = getParent() ? getParent()->toNameHierarchy()
+	NameHierarchy ret = getParent() ? getParent().toNameHierarchy()
 									: NameHierarchy(NameDelimiterType::CXX);
 	ret.push(m_name + getTemplateSuffix(m_templateArguments));
 	return ret;

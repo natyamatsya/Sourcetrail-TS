@@ -12,7 +12,7 @@ class CxxAstVisitorComponentBraceRecorder: public CxxAstVisitorComponent
 {
 public:
 	CxxAstVisitorComponentBraceRecorder(
-		CxxAstVisitor* astVisitor, clang::ASTContext* astContext, std::shared_ptr<ParserClient> client);
+		CxxAstVisitor* astVisitor, clang::ASTContext* astContext, ParserClient& client);
 
 	void visitTagDecl(clang::TagDecl* d);
 	void visitNamespaceDecl(clang::NamespaceDecl* d);
@@ -32,7 +32,7 @@ private:
 		clang::SourceLocation searchStartLoc, clang::SourceLocation searchEndLoc) const;
 
 	clang::ASTContext* m_astContext;
-	std::shared_ptr<ParserClient> m_client;
+	ParserClient& m_client;
 };
 
 #endif	  // CXX_AST_VISITOR_COMPONENT_BRACE_RECORDER_H

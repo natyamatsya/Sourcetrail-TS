@@ -19,7 +19,7 @@ public:
 		CxxQualifierFlags qualifierFlags,
 		const bool isStatic);
 
-	NameHierarchy toNameHierarchy() const override;
+	NameHierarchy toNameHierarchy() const;
 
 private:
 	const std::unique_ptr<CxxTypeName> m_returnTypeName;

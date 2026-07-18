@@ -163,7 +163,7 @@ ParseLocation utility::getParseLocation(
 	const clang::SourceLocation& sourceLocation,
 	const clang::SourceManager& sourceManager,
 	clang::Preprocessor* preprocessor,
-	std::shared_ptr<CanonicalFilePathCache> canonicalFilePathCache)
+	CanonicalFilePathCache& canonicalFilePathCache)
 {
 	if (sourceLocation.isValid())
 	{
@@ -190,7 +190,7 @@ ParseLocation utility::getParseLocation(
 			const unsigned int endOffset = sourceManager.getFileOffset(endSloc);
 
 			return ParseLocation(
-				canonicalFilePathCache->getFileSymbolId(fileId),
+				canonicalFilePathCache.getFileSymbolId(fileId),
 				sourceManager.getLineNumber(fileId, startOffset),
 				sourceManager.getColumnNumber(fileId, startOffset),
 				sourceManager.getLineNumber(fileId, endOffset),
@@ -199,7 +199,7 @@ ParseLocation utility::getParseLocation(
 		else
 		{
 			return ParseLocation(
-				canonicalFilePathCache->getFileSymbolId(fileId),
+				canonicalFilePathCache.getFileSymbolId(fileId),
 				sourceManager.getLineNumber(fileId, startOffset),
 				sourceManager.getColumnNumber(fileId, startOffset));
 		}
@@ -212,7 +212,7 @@ ParseLocation utility::getParseLocation(
 	const clang::SourceRange& sourceRange,
 	const clang::SourceManager& sourceManager,
 	clang::Preprocessor* preprocessor,
-	std::shared_ptr<CanonicalFilePathCache> canonicalFilePathCache)
+	CanonicalFilePathCache& canonicalFilePathCache)
 {
 	if (sourceRange.isValid())
 	{
@@ -241,10 +241,10 @@ ParseLocation utility::getParseLocation(
 		const clang::PresumedLoc presumedEnd = sourceManager.getPresumedLoc(
 			endLoc.isValid() ? endLoc : range.getEnd(), false);
 
-		Id fileSymbolId = canonicalFilePathCache->getFileSymbolId(sourceManager.getFileID(beginLoc));
+		Id fileSymbolId = canonicalFilePathCache.getFileSymbolId(sourceManager.getFileID(beginLoc));
 		if (!fileSymbolId)
 		{
-			fileSymbolId = canonicalFilePathCache->getFileSymbolId(presumedBegin.getFilename());
+			fileSymbolId = canonicalFilePathCache.getFileSymbolId(presumedBegin.getFilename());
 		}
 
 		return ParseLocation(

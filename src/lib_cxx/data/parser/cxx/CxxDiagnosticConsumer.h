@@ -13,8 +13,8 @@ public:
 	CxxDiagnosticConsumer(
 		clang::raw_ostream& os,
 		std::shared_ptr<clang::DiagnosticOptions> diags,
-		std::shared_ptr<ParserClient> client,
-		std::shared_ptr<CanonicalFilePathCache> canonicalFilePathCache,
+		ParserClient& client,
+		CanonicalFilePathCache& canonicalFilePathCache,
 		const FilePath& sourceFilePath,
 		bool useLogging = true);
 
@@ -26,8 +26,8 @@ public:
 
 private:
 	std::shared_ptr<clang::DiagnosticOptions> m_diagnosticOptions;
-	std::shared_ptr<ParserClient> m_client;
-	std::shared_ptr<CanonicalFilePathCache> m_canonicalFilePathCache;
+	ParserClient& m_client;
+	CanonicalFilePathCache& m_canonicalFilePathCache;
 
 	const FilePath m_sourceFilePath;
 	bool m_useLogging;

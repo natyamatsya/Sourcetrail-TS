@@ -38,7 +38,7 @@ FilePath CanonicalFilePathCache::getCanonicalFilePath(
 	if (fileEntry)
 	{
 		filePath = getCanonicalFilePath(*fileEntry);
-		m_fileIdMap.emplace(fileId, filePath);
+		m_fileIdMap.try_emplace(fileId, filePath);
 	}
 
 	return filePath;
@@ -85,8 +85,8 @@ FilePath CanonicalFilePathCache::getCanonicalFilePath(const Id symbolId)
 
 void CanonicalFilePathCache::addFileSymbolId(const clang::FileID& fileId, const FilePath& path, Id symbolId)
 {
-	m_fileIdSymbolIdMap.emplace(fileId, symbolId);
-	m_symbolIdFileIdMap.emplace(symbolId, fileId);
+	m_fileIdSymbolIdMap.try_emplace(fileId, symbolId);
+	m_symbolIdFileIdMap.try_emplace(symbolId, fileId);
 	m_fileStringSymbolIdMap.emplace(utility::toLowerCase(path.str()), symbolId);
 }
 
@@ -156,6 +156,6 @@ bool CanonicalFilePathCache::isProjectFile(
 	}
 
 	bool ret = m_fileRegister->hasFilePath(getCanonicalFilePath(fileId, sourceManager));
-	m_isProjectFileMap.emplace(fileId, ret);
+	m_isProjectFileMap.try_emplace(fileId, ret);
 	return ret;
 }

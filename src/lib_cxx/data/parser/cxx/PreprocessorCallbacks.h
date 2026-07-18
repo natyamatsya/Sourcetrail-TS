@@ -21,8 +21,8 @@ class PreprocessorCallbacks: public clang::PPCallbacks
 public:
 	explicit PreprocessorCallbacks(
 		clang::SourceManager& sourceManager,
-		std::shared_ptr<ParserClient> client,
-		std::shared_ptr<CanonicalFilePathCache> canonicalFilePathCache);
+		ParserClient& client,
+		CanonicalFilePathCache& canonicalFilePathCache);
 
 	void FileChanged(
 		clang::SourceLocation location,
@@ -80,8 +80,8 @@ private:
 	bool isLocatedInProjectFile(const clang::SourceLocation loc);
 
 	const clang::SourceManager& m_sourceManager;
-	std::shared_ptr<ParserClient> m_client;
-	std::shared_ptr<CanonicalFilePathCache> m_canonicalFilePathCache;
+	ParserClient& m_client;
+	CanonicalFilePathCache& m_canonicalFilePathCache;
 
 	Id m_currentFileSymbolId;
 	bool m_currentPathIsProjectFile = false;

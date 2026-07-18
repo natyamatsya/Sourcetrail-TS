@@ -4,11 +4,12 @@
 #include <map>
 
 #include "CxxAstVisitorComponent.h"
+#include "CxxContext.h"
+#include "CxxSymbolRegistry.h"
 #include "ParseLocation.h"
 #include "ReferenceKind.h"
 #include "SymbolKind.h"
 
-class CxxContext;
 class ParserClient;
 class NameHierarchy;
 
@@ -18,7 +19,7 @@ class CxxAstVisitorComponentIndexer: public CxxAstVisitorComponent
 {
 public:
 	CxxAstVisitorComponentIndexer(
-		CxxAstVisitor* astVisitor, clang::ASTContext* astContext, std::shared_ptr<ParserClient> client);
+		CxxAstVisitor* astVisitor, clang::ASTContext* astContext, ParserClient& client);
 
 	void beginTraverseNestedNameSpecifierLoc(const clang::NestedNameSpecifierLoc& loc);
 	void beginTraverseTemplateArgumentLoc(const clang::TemplateArgumentLoc& loc);
@@ -89,17 +90,10 @@ private:
 
 	ReferenceKind consumeDeclRefContextKind();
 
-	Id getOrCreateSymbolId(const clang::NamedDecl* decl);
-	Id getOrCreateSymbolId(const clang::Type* type);
-	Id getOrCreateSymbolId(const CxxContext* context);
-	Id getOrCreateSymbolId(const CxxContext* context, const NameHierarchy& fallback);
-
-
 	clang::ASTContext* m_astContext;
-	std::shared_ptr<ParserClient> m_client;
+	ParserClient& m_client;
 
-	std::map<const clang::NamedDecl*, Id> m_declSymbolIds;
-	std::map<const clang::Type*, Id> m_typeSymbolIds;
+	CxxSymbolRegistry m_symbols;
 };
 
 #endif	  // CXX_AST_VISITOR_COMPONENT_INDEXER_H

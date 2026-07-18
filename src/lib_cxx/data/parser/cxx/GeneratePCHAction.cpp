@@ -9,8 +9,8 @@
 #include "PreprocessorCallbacks.h"
 
 GeneratePCHAction::GeneratePCHAction(
-	std::shared_ptr<ParserClient> client,
-	std::shared_ptr<CanonicalFilePathCache> canonicalFilePathCache)
+	ParserClient& client,
+	CanonicalFilePathCache& canonicalFilePathCache)
 	: m_client(client), m_canonicalFilePathCache(canonicalFilePathCache)
 {
 }
