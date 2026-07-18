@@ -30,15 +30,26 @@ impl StatusChannel {
     }
 
     /// Returns true if the app has set the `indexing_interrupted` flag.
+    ///
+    /// A zeroed/uninitialized segment is a legitimate "no status yet" (empty →
+    /// not interrupted). A NON-empty buffer that fails flatbuffers verification is
+    /// surfaced as an error rather than silently read as "not interrupted" — the
+    /// caller logs it (main.rs) instead of missing a genuine app→indexer signal
+    /// (see docs/adr/ADR-0003).
     pub fn is_interrupted(&self) -> io::Result<bool> {
-        self.shm.read_locked(|data| {
+        self.shm.read_locked(|data| -> io::Result<bool> {
             if is_empty(data) {
-                return false;
+                return Ok(false);
             }
             root_as_indexing_status(data)
                 .map(|s| s.indexing_interrupted())
-                .unwrap_or(false)
-        })
+                .map_err(|e| {
+                    io::Error::new(
+                        io::ErrorKind::InvalidData,
+                        format!("IndexingStatus failed flatbuffers verification: {e}"),
+                    )
+                })
+        })?
     }
 
     /// Record that this process has started indexing `file_path`.

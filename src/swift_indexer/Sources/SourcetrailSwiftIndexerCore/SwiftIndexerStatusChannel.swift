@@ -91,7 +91,13 @@ package final class SwiftIndexerStatusChannel {
 	private static func serializeStatus(_ status: OwnedIndexingStatus) -> [UInt8] {
 		var builder = FlatBufferBuilder(initialSize: 4096)
 
-		let indexingFilePathsOffset = builder.createVector(ofStrings: status.indexingFilePaths)
+		// Omit every empty vector (leave the field null) so the wire form matches
+		// the C++ and Rust writers and no empty [uint64] is emitted mis-aligned —
+		// the robustness contract in docs/adr/ADR-0003. A null field reads back as
+		// an empty vector everywhere.
+		let indexingFilePathsOffset =
+			status.indexingFilePaths.isEmpty
+			? Offset() : builder.createVector(ofStrings: status.indexingFilePaths)
 
 		let currentFileOffsets = status.currentFiles.map { processFile in
 			let filePathOffset = builder.create(string: processFile.filePath)
@@ -101,10 +107,15 @@ package final class SwiftIndexerStatusChannel {
 				filePathOffset: filePathOffset
 			)
 		}
-		let currentFilesOffset = builder.createVector(ofOffsets: currentFileOffsets)
+		let currentFilesOffset =
+			currentFileOffsets.isEmpty ? Offset() : builder.createVector(ofOffsets: currentFileOffsets)
 
-		let crashedFilePathsOffset = builder.createVector(ofStrings: status.crashedFilePaths)
-		let finishedProcessIdsOffset = builder.createVector(status.finishedProcessIds)
+		let crashedFilePathsOffset =
+			status.crashedFilePaths.isEmpty
+			? Offset() : builder.createVector(ofStrings: status.crashedFilePaths)
+		let finishedProcessIdsOffset =
+			status.finishedProcessIds.isEmpty
+			? Offset() : builder.createVector(status.finishedProcessIds)
 
 		let statusOffset = Sourcetrail_Ipc_IndexingStatus.createIndexingStatus(
 			&builder,
