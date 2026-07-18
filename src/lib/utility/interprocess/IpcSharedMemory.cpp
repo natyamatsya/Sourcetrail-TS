@@ -44,7 +44,7 @@ bool growSharedMemoryHandle(
 		return shm.grow(newSize);
 
 	shm.release();
-	return shm.acquire(memoryName.c_str(), newSize, ipc::shm::create | ipc::shm::open);
+	return shm.acquire(memoryName.c_str(), newSize, thoth::shm::create | thoth::shm::open);
 }
 } // namespace
 
@@ -63,12 +63,12 @@ void IpcSharedMemory::deleteSharedMemory(const std::string& name)
 	std::string memName = s_memoryNamePrefix + name;
 	std::string mtxName = s_mutexNamePrefix + name;
 
-	ipc::shm::remove(memName.c_str());
-	ipc::sync::mutex::clear_storage(mtxName.c_str());
+	thoth::shm::remove(memName.c_str());
+	thoth::sync::mutex::clear_storage(mtxName.c_str());
 }
 
-// Names are passed through at full length: libipc maps any name exceeding the
-// OS limit (LIBIPC_SHM_NAME_MAX) to "/<prefix>_<16-hex-FNV1a-of-full-name>",
+// Names are passed through at full length: thoth-ipc maps any name exceeding the
+// OS limit (THOTH_IPC_SHM_NAME_MAX) to "/<prefix>_<16-hex-FNV1a-of-full-name>",
 // consistently across acquire/open/remove — so long names stay unique. (An
 // earlier 18-char truncation here silently collided names sharing a prefix.)
 IpcSharedMemory::IpcSharedMemory(const std::string& name, std::size_t size, AccessMode mode)
@@ -93,13 +93,13 @@ IpcSharedMemory::IpcSharedMemory(const std::string& name, std::size_t size, Acce
 	{
 	case CREATE_AND_DELETE:
 		deleteSharedMemory(m_name);
-		shmMode = ipc::shm::create | ipc::shm::open;
+		shmMode = thoth::shm::create | thoth::shm::open;
 		break;
 	case OPEN_ONLY:
-		shmMode = ipc::shm::open;
+		shmMode = thoth::shm::open;
 		break;
 	case OPEN_OR_CREATE:
-		shmMode = ipc::shm::create | ipc::shm::open;
+		shmMode = thoth::shm::create | thoth::shm::open;
 		break;
 	}
 
@@ -179,7 +179,7 @@ bool canGrowSharedMemoryHandle()
 
 bool IpcSharedMemory::canGrow() noexcept
 {
-	return canGrowSharedMemoryHandle<ipc::shm::handle>();
+	return canGrowSharedMemoryHandle<thoth::shm::handle>();
 }
 
 void IpcSharedMemory::grow(std::size_t newSize)

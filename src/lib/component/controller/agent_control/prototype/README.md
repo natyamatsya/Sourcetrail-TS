@@ -19,12 +19,12 @@ Standalone reference, not wired into the build. Phase B turns this into the
 
 ## Build & run (verified)
 
-Requires the thoth-ipc C++ lib built once (`submodules/thoth-ipc/cpp/libipc/build/lib/libipc.a`)
+Requires the thoth-ipc C++ lib built once (`submodules/thoth-ipc/cpp/thoth-ipc/build/lib/libthoth-ipc.a`)
 and `flatc` + FlatBuffers headers (both come with the vcpkg toolchain).
 
 ```sh
 REPO=$(git rev-parse --show-toplevel)
-IPC=$REPO/submodules/thoth-ipc/cpp/libipc
+IPC=$REPO/submodules/thoth-ipc/cpp/thoth-ipc
 FBINC=$REPO/.build/dbg/vcpkg_installed/arm64-osx/include          # flatbuffers headers
 FLATC=$REPO/.build/dbg/vcpkg_installed/arm64-osx/tools/flatbuffers/flatc
 
@@ -33,7 +33,7 @@ mkdir -p gen && "$FLATC" --cpp -I ../schemas -o gen ../schemas/*.fbs
 
 # 2. build + run (swap in cmd_roundtrip_fork.cpp for the cross-process variant)
 c++ -std=gnu++23 -I "$IPC/include" -I gen -isystem "$FBINC" \
-    cmd_roundtrip.cpp "$IPC/build/lib/libipc.a" -o cmd_roundtrip
+    cmd_roundtrip.cpp "$IPC/build/lib/libthoth-ipc.a" -o cmd_roundtrip
 ./cmd_roundtrip
 ```
 
@@ -45,5 +45,5 @@ agent: recv UiStateEnvelope request_id=7 project='/tmp/demo.srctrl.toml'
 CMD ROUND-TRIP PASS: FlatBuffers CommandEnvelope -> UiStateEnvelope over thoth-ipc shm
 ```
 
-Verified on macOS/arm64 with thoth-ipc `libipc`, flatc 25.9.23, LLVM clang, C++23 —
+Verified on macOS/arm64 with thoth-ipc `thoth-ipc`, flatc 25.9.23, LLVM clang, C++23 —
 both the two-thread and the cross-process (`fork`) variants pass.

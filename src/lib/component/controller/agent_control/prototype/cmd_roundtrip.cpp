@@ -8,7 +8,7 @@
 #include <thread>
 #include <vector>
 
-#include <libipc/ipc.h>
+#include <thoth-ipc/ipc.h>
 #include <flatbuffers/flatbuffers.h>
 
 #include "agent_command_generated.h"
@@ -19,9 +19,9 @@ static constexpr uint64_t kReqId = 7;
 static const char* kProject = "/tmp/demo.srctrl.toml";
 
 static void appSide(std::atomic<int>& ok) {
-  ipc::route cmd{"st.agent.cmd", ipc::receiver};     // agent -> app
-  ipc::route state{"st.agent.state", ipc::sender};   // app -> agent
-  ipc::buff_t in;
+  thoth::route cmd{"st.agent.cmd", thoth::receiver};     // agent -> app
+  thoth::route state{"st.agent.state", thoth::sender};   // app -> agent
+  thoth::buff_t in;
   for (int i = 0; i < 50 && in.empty(); ++i) in = cmd.recv(200);
   if (in.empty()) { std::printf("app: no command received\n"); ok = -1; return; }
 
@@ -45,8 +45,8 @@ static void appSide(std::atomic<int>& ok) {
 }
 
 static void agentSide(std::atomic<int>& ok) {
-  ipc::route cmd{"st.agent.cmd", ipc::sender};        // agent -> app
-  ipc::route state{"st.agent.state", ipc::receiver};  // app -> agent (connect before sending)
+  thoth::route cmd{"st.agent.cmd", thoth::sender};        // agent -> app
+  thoth::route state{"st.agent.state", thoth::receiver};  // app -> agent (connect before sending)
 
   flatbuffers::FlatBufferBuilder b;
   auto gus = CreateGetUiState(b);
@@ -54,7 +54,7 @@ static void agentSide(std::atomic<int>& ok) {
   cmd.wait_for_recv(1, 2000);                          // ensure app's receiver is up
   cmd.send(b.GetBufferPointer(), b.GetSize());
 
-  ipc::buff_t in;
+  thoth::buff_t in;
   for (int i = 0; i < 50 && in.empty(); ++i) in = state.recv(200);
   if (in.empty()) { std::printf("agent: no reply received\n"); ok = -1; return; }
   flatbuffers::Verifier v(static_cast<const uint8_t*>(in.data()), in.size());
@@ -68,8 +68,8 @@ static void agentSide(std::atomic<int>& ok) {
 }
 
 int main() {
-  ipc::route{"st.agent.cmd", ipc::receiver}.clear();  // clean any stale shm
-  ipc::route{"st.agent.state", ipc::receiver}.clear();
+  thoth::route{"st.agent.cmd", thoth::receiver}.clear();  // clean any stale shm
+  thoth::route{"st.agent.state", thoth::receiver}.clear();
   std::atomic<int> appOk{0}, agentOk{0};
   std::thread a(appSide, std::ref(appOk));
   std::this_thread::sleep_for(std::chrono::milliseconds(50));  // let app connect first

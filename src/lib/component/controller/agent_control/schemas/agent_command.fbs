@@ -1,4 +1,4 @@
-// Agent -> app commands, sent on the `st.agent.cmd` channel (ipc::route N->1).
+// Agent -> app commands, sent on the `st.agent.cmd` channel (thoth::route N->1).
 // Each command maps to a Message<T> the AgentControlController dispatches onto the
 // message bus. See context/DESIGN_AGENT_UI_CONTROL.md.
 
