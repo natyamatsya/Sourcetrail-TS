@@ -8,14 +8,14 @@
 #include "CxxName.h"
 #include "NameHierarchy.h"
 
-class CxxDeclName: public CxxName
+class CxxDeclName: public CxxNameParent
 {
 public:
 	CxxDeclName(std::string name);
 
 	CxxDeclName(std::string name, std::vector<std::string> templateParameterNames);
 
-	NameHierarchy toNameHierarchy() const override;
+	NameHierarchy toNameHierarchy() const;
 
 	const std::string& getName() const;
 	const std::vector<std::string>& getTemplateParameterNames() const;

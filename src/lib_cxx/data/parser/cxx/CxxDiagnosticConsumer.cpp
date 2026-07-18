@@ -14,8 +14,8 @@ using namespace clang;
 CxxDiagnosticConsumer::CxxDiagnosticConsumer(
 	clang::raw_ostream& os,
 	std::shared_ptr<clang::DiagnosticOptions> diags,
-	std::shared_ptr<ParserClient> client,
-	std::shared_ptr<CanonicalFilePathCache> canonicalFilePathCache,
+	ParserClient& client,
+	CanonicalFilePathCache& canonicalFilePathCache,
 	const FilePath& sourceFilePath,
 	bool useLogging)
 	: clang::TextDiagnosticPrinter(os, *diags)
@@ -89,7 +89,7 @@ void CxxDiagnosticConsumer::HandleDiagnostic(
 				ParseLocation location = utility::getParseLocation(
 					loc, sourceManager, nullptr, m_canonicalFilePathCache);
 				fileId = location.fileId;
-				filePath = m_canonicalFilePathCache->getCanonicalFilePath(fileId);
+				filePath = m_canonicalFilePathCache.getCanonicalFilePath(fileId);
 				lineNumber = location.startLineNumber;
 				columnNumber = location.startColumnNumber;
 			}
@@ -98,8 +98,8 @@ void CxxDiagnosticConsumer::HandleDiagnostic(
 				const OptionalFileEntryRef fileEntry = sourceManager.getFileEntryRefForID(sourceManager.getMainFileID());
 				if (fileEntry)
 				{
-					filePath = m_canonicalFilePathCache->getCanonicalFilePath(*fileEntry);
-					fileId = m_client->recordFile(
+					filePath = m_canonicalFilePathCache.getCanonicalFilePath(*fileEntry);
+					fileId = m_client.recordFile(
 						filePath, false /*keeps the "indexed" state if the file already exists*/);
 					lineNumber = 1;
 					columnNumber = 1;
@@ -109,7 +109,7 @@ void CxxDiagnosticConsumer::HandleDiagnostic(
 		else
 		{
 			filePath = m_sourceFilePath;
-			fileId = m_client->recordFile(
+			fileId = m_client.recordFile(
 				filePath, false /*keeps the "indexed" state if the file already exists*/);
 			lineNumber = 1;
 			columnNumber = 1;
@@ -117,10 +117,10 @@ void CxxDiagnosticConsumer::HandleDiagnostic(
 
 		if (fileId != 0)
 		{
-			m_client->recordError(
+			m_client.recordError(
 				message,
 				level == clang::DiagnosticsEngine::Fatal,
-				m_canonicalFilePathCache->getFileRegister()->hasFilePath(filePath),
+				m_canonicalFilePathCache.getFileRegister()->hasFilePath(filePath),
 				m_sourceFilePath,
 				ParseLocation(fileId, lineNumber, columnNumber));
 		}

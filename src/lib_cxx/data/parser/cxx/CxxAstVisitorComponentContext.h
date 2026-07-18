@@ -13,7 +13,7 @@ public:
 	CxxAstVisitorComponentContext(CxxAstVisitor* astVisitor);
 
 	const clang::NamedDecl* getTopmostContextDecl(const size_t skip = 0) const;
-	const CxxContext* getContext(const size_t skip = 0) const;
+	CxxContext getContext(const size_t skip = 0) const;
 
 	void beginTraverseDecl(clang::Decl* d);
 	void endTraverseDecl(clang::Decl* d);
@@ -48,8 +48,8 @@ public:
 	void endTraverseTemplateArgumentLoc(const clang::TemplateArgumentLoc& loc);
 
 private:
-	std::vector<std::shared_ptr<CxxContext>> m_contextStack;
-	std::vector<std::shared_ptr<CxxContext>> m_templateArgumentContext;
+	std::vector<CxxContext> m_contextStack;
+	std::vector<CxxContext> m_templateArgumentContext;
 };
 
 #endif	  // CXX_AST_VISITOR_COMPONENT_CONTEXT_H

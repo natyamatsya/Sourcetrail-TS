@@ -16,7 +16,7 @@ public:
 		std::unique_ptr<CxxTypeName> typeName,
 		bool isStatic);
 
-	NameHierarchy toNameHierarchy() const override;
+	NameHierarchy toNameHierarchy() const;
 
 private:
 	std::unique_ptr<CxxTypeName> m_typeName;

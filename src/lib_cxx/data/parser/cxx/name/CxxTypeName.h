@@ -9,7 +9,7 @@
 #include "CxxQualifierFlags.h"
 #include "NameHierarchy.h"
 
-class CxxTypeName: public CxxName
+class CxxTypeName: public CxxNameParent
 {
 public:
 	static std::unique_ptr<CxxTypeName> getUnsolved();
@@ -30,9 +30,9 @@ public:
 	CxxTypeName(
 		std::string name,
 		std::vector<std::string> templateArguments,
-		std::shared_ptr<CxxName> parent);
+		CxxName parent);
 
-	NameHierarchy toNameHierarchy() const override;
+	NameHierarchy toNameHierarchy() const;
 
 	void addQualifier(const CxxQualifierFlags::QualifierType qualifier);
 	void addModifier(Modifier modifier);

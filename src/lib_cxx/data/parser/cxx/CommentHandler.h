@@ -10,16 +10,16 @@ class CommentHandler: public clang::CommentHandler
 {
 public:
 	CommentHandler(
-		std::shared_ptr<ParserClient> client,
-		std::shared_ptr<CanonicalFilePathCache> canonicalFilePathCache);
+		ParserClient& client,
+		CanonicalFilePathCache& canonicalFilePathCache);
 
 	~CommentHandler() override = default;
 
 	bool HandleComment(clang::Preprocessor& preprocessor, clang::SourceRange sourceRange) override;
 
 private:
-	std::shared_ptr<ParserClient> m_client;
-	std::shared_ptr<CanonicalFilePathCache> m_canonicalFilePathCache;
+	ParserClient& m_client;
+	CanonicalFilePathCache& m_canonicalFilePathCache;
 };
 
 #endif	  // COMMENT_HANDLER_H

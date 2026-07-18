@@ -1,19 +1,24 @@
 #ifndef CXX_AST_VISITOR_H
 #define CXX_AST_VISITOR_H
 
+#include <concepts>
 #include <memory>
+#include <string>
+#include <tuple>
 
 #pragma warning(push)
 #pragma warning(disable: 4702) // unreachable code
 #include <clang/AST/RecursiveASTVisitor.h>
 #pragma warning(pop)
 
+#include "CxxAstVisitorComponent.h"
 #include "CxxAstVisitorComponentBraceRecorder.h"
 #include "CxxAstVisitorComponentContext.h"
 #include "CxxAstVisitorComponentDeclRefKind.h"
 #include "CxxAstVisitorComponentImplicitCode.h"
 #include "CxxAstVisitorComponentIndexer.h"
 #include "CxxAstVisitorComponentTypeRefKind.h"
+#include "FilePath.h"
 
 class CanonicalFilePathCache;
 class ParserClient;
@@ -33,18 +38,32 @@ struct ParseLocation;
 // 		|	`-	VisitFunctionDecl()
 // 		`-	TraverseChildNodes()
 
-// The "curiously recurring template pattern (CRTP)" doesn't need virtual functions. So the
-// existing virtual functions exist only for 'CxxVerboseAstVisitor'.
+// A CxxAstVisitor component hooks into the traversal by (optionally) overriding the
+// begin-/end-/visit methods that CxxAstVisitorComponent declares. This concept captures
+// exactly that contract, so the component set is checked where it is declared below.
+template <class T>
+concept CxxAstVisitorComponentC = std::derived_from<T, CxxAstVisitorComponent>;
+
+// The registered components, held by value. Adding a component is a single entry here (plus
+// its constructor argument); CxxAstVisitor::forEachComponent then fans out to it automatically.
+template <CxxAstVisitorComponentC... Components>
+using CxxAstVisitorComponents = std::tuple<Components...>;
+
+// This is a "curiously recurring template pattern (CRTP)" visitor, so it needs no virtual
+// functions. Verbose AST logging (formerly the virtual 'CxxVerboseAstVisitor' subclass) is now an
+// opt-in mode selected at construction: when isVerbose is set, the Traverse* methods log each
+// visited node before delegating to the normal traversal.
 class CxxAstVisitor: public clang::RecursiveASTVisitor<CxxAstVisitor>
 {
 public:
 	CxxAstVisitor(
 		clang::ASTContext* astContext,
 		clang::Preprocessor* preprocessor,
-		std::shared_ptr<ParserClient> client,
-		std::shared_ptr<CanonicalFilePathCache> canonicalFilePathCache,
-		std::shared_ptr<IndexerStateInfo> indexerStateInfo);
-	virtual ~CxxAstVisitor() = default;
+		ParserClient& client,
+		CanonicalFilePathCache& canonicalFilePathCache,
+		std::shared_ptr<IndexerStateInfo> indexerStateInfo,
+		bool isVerbose = false);
+	~CxxAstVisitor() = default;
 
 	CxxAstVisitorComponentDeclRefKind *getDeclRefKindComponent();
 
@@ -58,17 +77,17 @@ public:
 	void indexDecl(clang::Decl* d);
 
 	// Visitor options
-	virtual bool shouldVisitTemplateInstantiations() const;
-	virtual bool shouldVisitImplicitCode() const;
+	bool shouldVisitTemplateInstantiations() const;
+	bool shouldVisitImplicitCode() const;
 
 	static bool shouldHandleTypeLoc(const clang::TypeLoc& tl);
 
 	// Traversal methods. These specify how to traverse the AST and record context info.
-	virtual bool TraverseDecl(clang::Decl* d);
+	bool TraverseDecl(clang::Decl* d);
 	bool TraverseQualifiedTypeLoc(clang::QualifiedTypeLoc tl, bool TraverseQualifier = true);
-	virtual bool TraverseTypeLoc(clang::TypeLoc tl, bool TraverseQualifier = true);
+	bool TraverseTypeLoc(clang::TypeLoc tl, bool TraverseQualifier = true);
 	bool TraverseType(clang::QualType t, bool TraverseQualifier = true);
-	virtual bool TraverseStmt(clang::Stmt* stmt);
+	bool TraverseStmt(clang::Stmt* stmt);
 
 	bool TraverseCXXRecordDecl(clang::CXXRecordDecl* d);
 	bool traverseCXXBaseSpecifier(const clang::CXXBaseSpecifier& d);
@@ -183,16 +202,48 @@ protected:
 
 	clang::ASTContext* m_astContext;
 	clang::Preprocessor* m_preprocessor;
-	std::shared_ptr<ParserClient> m_client;
+	ParserClient& m_client;
 	std::shared_ptr<IndexerStateInfo> m_indexerStateInfo;
-	std::shared_ptr<CanonicalFilePathCache> m_canonicalFilePathCache;
+	CanonicalFilePathCache& m_canonicalFilePathCache;
 
-	CxxAstVisitorComponentContext m_contextComponent;
-	CxxAstVisitorComponentDeclRefKind m_declRefKindComponent;
-	CxxAstVisitorComponentTypeRefKind m_typeRefKindComponent;
-	CxxAstVisitorComponentImplicitCode m_implicitCodeComponent;
-	CxxAstVisitorComponentIndexer m_indexerComponent;
-	CxxAstVisitorComponentBraceRecorder m_braceRecorderComponent;
+	// Verbose AST-logging mode (see the class comment). When off, the log helpers are no-ops and
+	// the indentation counter is unused.
+	void logVerboseDecl(clang::Decl* d);
+	void logVerboseStmt(clang::Stmt* stmt);
+	void logVerboseTypeLoc(clang::TypeLoc tl);
+	std::string getIndentString() const;
+
+	bool m_isVerbose;
+	unsigned int m_indentation = 0;
+	FilePath m_currentFilePath;
+
+	// Invoke `function` on every registered component, in registration order.
+	template <class F>
+	void forEachComponent(F&& function)
+	{
+		std::apply([&](auto&... components) { (function(components), ...); }, m_components);
+	}
+
+	// Runs a node's base RecursiveASTVisitor traversal wrapped in begin/end notifications to
+	// every component. `baseTraversal` performs the Base::Traverse* call. These pass-through
+	// overrides never abort the traversal, so this always returns true.
+	template <class BeginHook, class BaseTraversal, class EndHook>
+	bool traverseWithComponents(BeginHook beginHook, BaseTraversal baseTraversal, EndHook endHook)
+	{
+		forEachComponent(beginHook);
+		baseTraversal();
+		forEachComponent(endHook);
+		return true;
+	}
+
+	CxxAstVisitorComponents<
+		CxxAstVisitorComponentContext,
+		CxxAstVisitorComponentTypeRefKind,
+		CxxAstVisitorComponentDeclRefKind,
+		CxxAstVisitorComponentImplicitCode,
+		CxxAstVisitorComponentIndexer,
+		CxxAstVisitorComponentBraceRecorder>
+		m_components;
 };
 
 

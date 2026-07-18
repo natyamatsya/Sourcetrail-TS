@@ -6,8 +6,8 @@
 #include "utilityClang.h"
 
 CommentHandler::CommentHandler(
-	std::shared_ptr<ParserClient> client,
-	std::shared_ptr<CanonicalFilePathCache> canonicalFilePathCache)
+	ParserClient& client,
+	CanonicalFilePathCache& canonicalFilePathCache)
 	: m_client(client), m_canonicalFilePathCache(canonicalFilePathCache)
 {
 }
@@ -17,16 +17,16 @@ bool CommentHandler::HandleComment(clang::Preprocessor& preprocessor, clang::Sou
 	const clang::SourceManager& sourceManager = preprocessor.getSourceManager();
 
 	const clang::FileID fileId = sourceManager.getFileID(sourceRange.getBegin());
-	Id fileSymbolId = m_canonicalFilePathCache->getFileSymbolId(fileId);
+	Id fileSymbolId = m_canonicalFilePathCache.getFileSymbolId(fileId);
 
-	if (fileSymbolId && m_canonicalFilePathCache->isProjectFile(fileId, sourceManager))
+	if (fileSymbolId && m_canonicalFilePathCache.isProjectFile(fileId, sourceManager))
 	{
 		const clang::PresumedLoc& presumedBegin = sourceManager.getPresumedLoc(
 			sourceRange.getBegin(), false);
 		const clang::PresumedLoc& presumedEnd = sourceManager.getPresumedLoc(
 			sourceRange.getEnd(), false);
 
-		m_client->recordComment(ParseLocation(
+		m_client.recordComment(ParseLocation(
 			fileSymbolId,
 			presumedBegin.getLine(),
 			presumedBegin.getColumn(),

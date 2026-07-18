@@ -23,7 +23,7 @@ CxxDeclNameResolver::CxxDeclNameResolver(const CxxNameResolver* other)
 {
 }
 
-std::unique_ptr<CxxDeclName> CxxDeclNameResolver::getName(const clang::NamedDecl* declaration)
+CxxName CxxDeclNameResolver::getName(const clang::NamedDecl* declaration)
 {
 	declaration = utility::getFirstDecl(declaration);
 
@@ -38,7 +38,7 @@ std::unique_ptr<CxxDeclName> CxxDeclNameResolver::getName(const clang::NamedDecl
 			clang::dyn_cast<clang::CXXRecordDecl>(declaration)->lookup(Name);
 		if (Calls.empty())
 		{
-			return std::make_unique<CxxDeclName>("unsolved-lambda");
+			return CxxName::make<CxxDeclName>("unsolved-lambda");
 		}
 		else
 		{
@@ -48,32 +48,31 @@ std::unique_ptr<CxxDeclName> CxxDeclNameResolver::getName(const clang::NamedDecl
 
 	if (!declaration)
 	{
-		return nullptr;
+		return {};
 	}
 
-	std::unique_ptr<CxxDeclName> declName = getDeclName(
-		clang::dyn_cast<const clang::NamedDecl>(declaration));
+	CxxName declName = getDeclName(clang::dyn_cast<const clang::NamedDecl>(declaration));
 	if (declName)
 	{
 		if (const clang::UsingDecl* usingDecl = clang::dyn_cast_or_null<clang::UsingDecl>(declaration))
 		{
-			declName->setParent(CxxSpecifierNameResolver(this).getName(usingDecl->getQualifier()));
+			declName.setParent(CxxSpecifierNameResolver(this).getName(usingDecl->getQualifier()));
 		}
 		else if (
 			!clang::isa<clang::TemplateTypeParmDecl>(declaration) &&
 			!clang::isa<clang::NonTypeTemplateParmDecl>(declaration) &&
 			!clang::isa<clang::TemplateTemplateParmDecl>(declaration))
 		{
-			declName->setParent(getContextName(declaration->getDeclContext()));
+			declName.setParent(getContextName(declaration->getDeclContext()));
 		}
 	}
 
 	return declName;
 }
 
-std::unique_ptr<CxxName> CxxDeclNameResolver::getContextName(const clang::DeclContext* declContext)
+CxxName CxxDeclNameResolver::getContextName(const clang::DeclContext* declContext)
 {
-	std::unique_ptr<CxxName> contextDeclName;
+	CxxName contextDeclName;
 
 	if (declContext && !ignoresContext(declContext))
 	{
@@ -83,7 +82,7 @@ std::unique_ptr<CxxName> CxxDeclNameResolver::getContextName(const clang::DeclCo
 			contextDeclName = getDeclName(contextNamedDecl);
 			if (contextDeclName)
 			{
-				contextDeclName->setParent(getContextName(declContext->getParent()));
+				contextDeclName.setParent(getContextName(declContext->getParent()));
 			}
 			else
 			{
@@ -94,7 +93,7 @@ std::unique_ptr<CxxName> CxxDeclNameResolver::getContextName(const clang::DeclCo
 	return contextDeclName;
 }
 
-std::unique_ptr<CxxDeclName> CxxDeclNameResolver::getDeclName(const clang::NamedDecl* declaration)
+CxxName CxxDeclNameResolver::getDeclName(const clang::NamedDecl* declaration)
 {
 	if (declaration)
 	{
@@ -130,7 +129,7 @@ std::unique_ptr<CxxDeclName> CxxDeclNameResolver::getDeclName(const clang::Named
 			if (recordDecl->isLambda())
 			{
 				// we skip this node because its child (the lambda call operator) has already been recorded.
-				return std::unique_ptr<CxxDeclName>();
+				return {};
 			}
 			else if (declNameString.empty())
 			{
@@ -144,7 +143,7 @@ std::unique_ptr<CxxDeclName> CxxDeclNameResolver::getDeclName(const clang::Named
 					symbolKindName = "union";
 				}
 
-				return std::make_unique<CxxDeclName>(
+				return CxxName::make<CxxDeclName>(
 					getNameForAnonymousSymbol(symbolKindName, declaration));
 			}
 			else if (const clang::CXXRecordDecl* cxxRecordDecl = clang::dyn_cast_or_null<clang::CXXRecordDecl>(declaration))
@@ -156,7 +155,7 @@ std::unique_ptr<CxxDeclName> CxxDeclNameResolver::getDeclName(const clang::Named
 				}
 				else if (clang::isa<clang::ClassTemplatePartialSpecializationDecl>(declaration))
 				{
-					return std::make_unique<CxxDeclName>(
+					return CxxName::make<CxxDeclName>(
 						std::move(declNameString),
 						getTemplateParameterStringsOfPartialSpecialization(
 							clang::dyn_cast<clang::ClassTemplatePartialSpecializationDecl>(
@@ -187,7 +186,7 @@ std::unique_ptr<CxxDeclName> CxxDeclNameResolver::getDeclName(const clang::Named
 
 						templateArguments.push_back(getTemplateArgumentName(templateArgumentList.get(i)));
 					}
-					return std::make_unique<CxxDeclName>(std::move(declNameString), std::move(templateArguments));
+					return CxxName::make<CxxDeclName>(std::move(declNameString), std::move(templateArguments));
 				}
 			}
 		}
@@ -275,7 +274,7 @@ std::unique_ptr<CxxDeclName> CxxDeclNameResolver::getDeclName(const clang::Named
 
 			if (!clang::isa<clang::CXXMethodDecl>(declaration) && isStatic)
 			{
-				return std::make_unique<CxxStaticFunctionDeclName>(
+				return CxxName::make<CxxStaticFunctionDeclName>(
 					std::move(functionName),
 					std::move(templateArguments),
 					std::move(returnTypeName),
@@ -283,7 +282,7 @@ std::unique_ptr<CxxDeclName> CxxDeclNameResolver::getDeclName(const clang::Named
 					getTranslationUnitMainFileName(declaration));
 			}
 
-			return std::make_unique<CxxFunctionDeclName>(
+			return CxxName::make<CxxFunctionDeclName>(
 				std::move(functionName),
 				std::move(templateArguments),
 				std::move(returnTypeName),
@@ -300,7 +299,7 @@ std::unique_ptr<CxxDeclName> CxxDeclNameResolver::getDeclName(const clang::Named
 			CxxTypeNameResolver typenNameResolver(this);
 			typenNameResolver.ignoreContextDecl(fieldDecl);
 			std::unique_ptr<CxxTypeName> typeName = CxxTypeName::makeUnsolvedIfNull(typenNameResolver.getName(fieldDecl->getType()));
-			return std::make_unique<CxxVariableDeclName>(std::move(declNameString), std::vector<std::string>(), std::move(typeName), false);
+			return CxxName::make<CxxVariableDeclName>(std::move(declNameString), std::vector<std::string>(), std::move(typeName), false);
 		}
 		else if (clang::isa<clang::NamespaceDecl>(declaration) && clang::dyn_cast<clang::NamespaceDecl>(declaration)->isAnonymousNamespace())
 		{
@@ -309,11 +308,11 @@ std::unique_ptr<CxxDeclName> CxxDeclNameResolver::getDeclName(const clang::Named
 #else
 			declaration = clang::dyn_cast<clang::NamespaceDecl>(declaration)->getOriginalNamespace();
 #endif
-			return std::make_unique<CxxDeclName>(getNameForAnonymousSymbol("namespace", declaration));
+			return CxxName::make<CxxDeclName>(getNameForAnonymousSymbol("namespace", declaration));
 		}
 		else if (clang::isa<clang::EnumDecl>(declaration) && declNameString.empty())
 		{
-			return std::make_unique<CxxDeclName>(getNameForAnonymousSymbol("enum", declaration));
+			return CxxName::make<CxxDeclName>(getNameForAnonymousSymbol("enum", declaration));
 		}
 		else if (
 			(clang::isa<clang::TemplateTypeParmDecl>(declaration) ||
@@ -321,12 +320,12 @@ std::unique_ptr<CxxDeclName> CxxDeclNameResolver::getDeclName(const clang::Named
 			 clang::isa<clang::TemplateTemplateParmDecl>(declaration)) &&
 			declNameString.empty())
 		{
-			return std::make_unique<CxxDeclName>(
+			return CxxName::make<CxxDeclName>(
 				getNameForAnonymousSymbol("template parameter", declaration));
 		}
 		else if (clang::isa<clang::ParmVarDecl>(declaration) && declNameString.empty())
 		{
-			return std::make_unique<CxxDeclName>(getNameForAnonymousSymbol("parameter", declaration));
+			return CxxName::make<CxxDeclName>(getNameForAnonymousSymbol("parameter", declaration));
 		}
 		else if (const clang::VarDecl *varDecl = clang::dyn_cast<clang::VarDecl>(declaration))
 		{
@@ -412,7 +411,7 @@ std::unique_ptr<CxxDeclName> CxxDeclNameResolver::getDeclName(const clang::Named
 					}
 				}
 
-				return std::make_unique<CxxVariableDeclName>(
+				return CxxName::make<CxxVariableDeclName>(
 					std::move(varName),
 					std::move(templateParameterNames),
 					std::move(typeName),
@@ -428,20 +427,20 @@ std::unique_ptr<CxxDeclName> CxxDeclNameResolver::getDeclName(const clang::Named
 		else if (clang::isa<clang::TemplateDecl>(
 					 declaration))	  // also triggers on TemplateTemplateParmDecl
 		{
-			return std::make_unique<CxxDeclName>(
+			return CxxName::make<CxxDeclName>(
 				std::move(declNameString),
 				getTemplateParameterStrings(clang::dyn_cast<clang::TemplateDecl>(declaration)));
 		}
 
 		if (!declNameString.empty())
 		{
-			return std::make_unique<CxxDeclName>(std::move(declNameString));
+			return CxxName::make<CxxDeclName>(std::move(declNameString));
 		}
 	}
 
 	// LOG_ERROR("could not resolve name of decl at: " +
 	// declaration->getLocation().printToString(sourceManager));
-	return std::make_unique<CxxDeclName>(getNameForAnonymousSymbol("symbol", declaration));
+	return CxxName::make<CxxDeclName>(getNameForAnonymousSymbol("symbol", declaration));
 }
 
 std::string CxxDeclNameResolver::getTranslationUnitMainFileName(const clang::Decl* declaration)

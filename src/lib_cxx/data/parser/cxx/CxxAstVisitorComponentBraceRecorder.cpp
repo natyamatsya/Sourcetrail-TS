@@ -9,7 +9,7 @@
 #include "utilityClang.h"
 
 CxxAstVisitorComponentBraceRecorder::CxxAstVisitorComponentBraceRecorder(
-	CxxAstVisitor* astVisitor, clang::ASTContext* astContext, std::shared_ptr<ParserClient> client)
+	CxxAstVisitor* astVisitor, clang::ASTContext* astContext, ParserClient& client)
 	: CxxAstVisitorComponent(astVisitor), m_astContext(astContext), m_client(client)
 {
 }
@@ -121,12 +121,12 @@ void CxxAstVisitorComponentBraceRecorder::recordBraces(
 		if (lbraceLoc.startColumnNumber == lbraceLoc.endColumnNumber &&
 			lbraceLoc.startLineNumber == lbraceLoc.endLineNumber)
 		{
-			m_client->recordLocalSymbol(name, lbraceLoc);
+			m_client.recordLocalSymbol(name, lbraceLoc);
 		}
 		if (rbraceLoc.startColumnNumber == rbraceLoc.endColumnNumber &&
 			rbraceLoc.startLineNumber == rbraceLoc.endLineNumber)
 		{
-			m_client->recordLocalSymbol(name, rbraceLoc);
+			m_client.recordLocalSymbol(name, rbraceLoc);
 		}
 	}
 }

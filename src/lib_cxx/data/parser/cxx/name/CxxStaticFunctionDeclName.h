@@ -13,7 +13,7 @@ public:
 		std::vector<std::unique_ptr<CxxTypeName>> parameterTypeNames,
 		std::string translationUnitFileName);
 
-	NameHierarchy toNameHierarchy() const override;
+	NameHierarchy toNameHierarchy() const;
 
 private:
 	std::string m_translationUnitFileName;

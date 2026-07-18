@@ -1,6 +1,9 @@
 #include "CxxAstVisitor.h"
 
+#include <sstream>
+
 #include <clang/AST/ASTContext.h>
+#include <clang/AST/TypeLoc.h>
 #include <clang/Lex/Preprocessor.h>
 
 #include "CanonicalFilePathCache.h"
@@ -8,6 +11,7 @@
 #include "IndexerStateInfo.h"
 #include "ParseLocation.h"
 #include "ParserClient.h"
+#include "ScopedSwitcher.h"
 #include "clang_compat/ClangCompat.h"
 #include "logging.h"
 #include "utilityClang.h"
@@ -17,41 +21,44 @@ using namespace clang;
 CxxAstVisitor::CxxAstVisitor(
 	clang::ASTContext* astContext,
 	clang::Preprocessor* preprocessor,
-	std::shared_ptr<ParserClient> client,
-	std::shared_ptr<CanonicalFilePathCache> canonicalFilePathCache,
-	std::shared_ptr<IndexerStateInfo> indexerStateInfo)
+	ParserClient& client,
+	CanonicalFilePathCache& canonicalFilePathCache,
+	std::shared_ptr<IndexerStateInfo> indexerStateInfo,
+	bool isVerbose)
 	: m_astContext(astContext)
 	, m_preprocessor(preprocessor)
 	, m_client(client)
 	, m_indexerStateInfo(indexerStateInfo)
 	, m_canonicalFilePathCache(canonicalFilePathCache)
-	, m_contextComponent(this)
-	, m_declRefKindComponent(this)
-	, m_typeRefKindComponent(this)
-	, m_implicitCodeComponent(this)
-	, m_indexerComponent(this, astContext, client)
-	, m_braceRecorderComponent(this, astContext, client)
+	, m_isVerbose(isVerbose)
+	, m_components(
+		  CxxAstVisitorComponentContext(this),
+		  CxxAstVisitorComponentTypeRefKind(this),
+		  CxxAstVisitorComponentDeclRefKind(this),
+		  CxxAstVisitorComponentImplicitCode(this),
+		  CxxAstVisitorComponentIndexer(this, astContext, client),
+		  CxxAstVisitorComponentBraceRecorder(this, astContext, client))
 {
 }
 
 CxxAstVisitorComponentContext *CxxAstVisitor::getContextComponent()
 {
-	return &m_contextComponent;
+	return &std::get<CxxAstVisitorComponentContext>(m_components);
 }
 
 CxxAstVisitorComponentTypeRefKind *CxxAstVisitor::getTypeRefKindComponent()
 {
-	return &m_typeRefKindComponent;
+	return &std::get<CxxAstVisitorComponentTypeRefKind>(m_components);
 }
 
 CxxAstVisitorComponentDeclRefKind *CxxAstVisitor::getDeclRefKindComponent()
 {
-	return &m_declRefKindComponent;
+	return &std::get<CxxAstVisitorComponentDeclRefKind>(m_components);
 }
 
 CanonicalFilePathCache* CxxAstVisitor::getCanonicalFilePathCache() const
 {
-	return m_canonicalFilePathCache.get();
+	return &m_canonicalFilePathCache;
 }
 
 void CxxAstVisitor::indexDecl(clang::Decl* d)
@@ -67,7 +74,7 @@ bool CxxAstVisitor::shouldVisitTemplateInstantiations() const
 
 bool CxxAstVisitor::shouldVisitImplicitCode() const
 {
-	return m_implicitCodeComponent.shouldVisitImplicitCode();
+	return std::get<CxxAstVisitorComponentImplicitCode>(m_components).shouldVisitImplicitCode();
 }
 
 bool CxxAstVisitor::shouldHandleTypeLoc(const clang::TypeLoc& tl)
@@ -86,57 +93,14 @@ bool CxxAstVisitor::shouldHandleTypeLoc(const clang::TypeLoc& tl)
 		;
 }
 
-#define FOREACH_COMPONENT(__METHOD_CALL__)                                                         \
-	{                                                                                              \
-		m_contextComponent.__METHOD_CALL__;                                                        \
-		m_typeRefKindComponent.__METHOD_CALL__;                                                    \
-		m_declRefKindComponent.__METHOD_CALL__;                                                    \
-		m_implicitCodeComponent.__METHOD_CALL__;                                                   \
-		m_indexerComponent.__METHOD_CALL__;                                                        \
-		m_braceRecorderComponent.__METHOD_CALL__;                                                  \
-	}
-
-#define DEF_TRAVERSE_CUSTOM_TYPE_PTR(__NAME_TYPE__, __PARAM_TYPE__, CODE_BEFORE, CODE_AFTER)       \
-	bool CxxAstVisitor::Traverse##__NAME_TYPE__(clang::__PARAM_TYPE__* v)                          \
-	{                                                                                              \
-		FOREACH_COMPONENT(beginTraverse##__NAME_TYPE__(v));                                        \
-		bool ret = true;                                                                           \
-		{                                                                                          \
-			CODE_BEFORE;                                                                           \
-		}                                                                                          \
-		Base::Traverse##__NAME_TYPE__(v);                                                          \
-		{                                                                                          \
-			CODE_AFTER;                                                                            \
-		}                                                                                          \
-		FOREACH_COMPONENT(endTraverse##__NAME_TYPE__(v));                                          \
-		return ret;                                                                                \
-	}
-
-#define DEF_TRAVERSE_CUSTOM_TYPE(__NAME_TYPE__, __PARAM_TYPE__, CODE_BEFORE, CODE_AFTER)           \
-	bool CxxAstVisitor::Traverse##__NAME_TYPE__(                                                 \
-		clang::__PARAM_TYPE__ v, bool TraverseQualifier)                                           \
-	{                                                                                              \
-		FOREACH_COMPONENT(beginTraverse##__NAME_TYPE__(v));                                        \
-		bool ret = true;                                                                           \
-		{                                                                                          \
-			CODE_BEFORE;                                                                           \
-		}                                                                                          \
-		Base::Traverse##__NAME_TYPE__(v, TraverseQualifier);                                      \
-		{                                                                                          \
-			CODE_AFTER;                                                                            \
-		}                                                                                          \
-		FOREACH_COMPONENT(endTraverse##__NAME_TYPE__(v));                                          \
-		return ret;                                                                                \
-	}
-
-#define DEF_TRAVERSE_TYPE_PTR(__TYPE__, CODE_BEFORE, CODE_AFTER)                                   \
-	DEF_TRAVERSE_CUSTOM_TYPE_PTR(__TYPE__, __TYPE__, CODE_BEFORE, CODE_AFTER)
-
-#define DEF_TRAVERSE_TYPE(__TYPE__, CODE_BEFORE, CODE_AFTER)                                       \
-	DEF_TRAVERSE_CUSTOM_TYPE(__TYPE__, __TYPE__, CODE_BEFORE, CODE_AFTER)
-
 bool CxxAstVisitor::TraverseDecl(clang::Decl* decl)
 {
+	if (m_isVerbose)
+	{
+		logVerboseDecl(decl);
+	}
+	const ScopedSwitcher<unsigned int> indentation(m_indentation, m_indentation + 1);
+
 	bool traverse = true;
 	if (decl)
 	{
@@ -152,15 +116,15 @@ bool CxxAstVisitor::TraverseDecl(clang::Decl* decl)
 		{
 			// record files not handled in preprocessor callbacks, e.g. files within precompiled header
 			const clang::FileID fileId = sourceManager.getFileID(loc);
-			if (fileId.isValid() && m_canonicalFilePathCache->getFileSymbolId(fileId) == 0)
+			if (fileId.isValid() && m_canonicalFilePathCache.getFileSymbolId(fileId) == 0)
 			{
-				const FilePath filePath = m_canonicalFilePathCache->getCanonicalFilePath(
+				const FilePath filePath = m_canonicalFilePathCache.getCanonicalFilePath(
 					fileId, sourceManager);
-				const bool pathIsProjectFile = m_canonicalFilePathCache->isProjectFile(
+				const bool pathIsProjectFile = m_canonicalFilePathCache.isProjectFile(
 					fileId, sourceManager);
-				const Id symbolId = m_client->recordFile(filePath, pathIsProjectFile);
-				m_client->recordFileLanguage(symbolId, "cpp");
-				m_canonicalFilePathCache->addFileSymbolId(fileId, filePath, symbolId);
+				const Id symbolId = m_client.recordFile(filePath, pathIsProjectFile);
+				m_client.recordFileLanguage(symbolId, "cpp");
+				m_canonicalFilePathCache.addFileSymbolId(fileId, filePath, symbolId);
 			}
 
 			traverse = isLocatedInProjectFile(loc);
@@ -169,9 +133,9 @@ bool CxxAstVisitor::TraverseDecl(clang::Decl* decl)
 
 	if (traverse)
 	{
-		FOREACH_COMPONENT(beginTraverseDecl(decl));
+		forEachComponent([&](auto& component) { component.beginTraverseDecl(decl); });
 		Base::TraverseDecl(decl);
-		FOREACH_COMPONENT(endTraverseDecl(decl));
+		forEachComponent([&](auto& component) { component.endTraverseDecl(decl); });
 	}
 
 	if (m_indexerStateInfo && m_indexerStateInfo->indexingInterrupted)
@@ -191,21 +155,139 @@ bool CxxAstVisitor::TraverseQualifiedTypeLoc(
 
 bool CxxAstVisitor::TraverseTypeLoc(clang::TypeLoc v, bool TraverseQualifier)
 {
-	FOREACH_COMPONENT(beginTraverseTypeLoc(v));
+	if (m_isVerbose)
+	{
+		logVerboseTypeLoc(v);
+	}
+	const ScopedSwitcher<unsigned int> indentation(m_indentation, m_indentation + 1);
+
+	forEachComponent([&](auto& component) { component.beginTraverseTypeLoc(v); });
 	clang_compat::traverseTypeLoc(static_cast<Base&>(*this), v, TraverseQualifier);
-	FOREACH_COMPONENT(endTraverseTypeLoc(v));
+	forEachComponent([&](auto& component) { component.endTraverseTypeLoc(v); });
 	return true;
 }
 
 bool CxxAstVisitor::TraverseType(clang::QualType v, bool TraverseQualifier)
 {
-	FOREACH_COMPONENT(beginTraverseType(v));
+	forEachComponent([&](auto& component) { component.beginTraverseType(v); });
 	clang_compat::traverseType(static_cast<Base&>(*this), v, TraverseQualifier);
-	FOREACH_COMPONENT(endTraverseType(v));
+	forEachComponent([&](auto& component) { component.endTraverseType(v); });
 	return true;
 }
 
-DEF_TRAVERSE_TYPE_PTR(Stmt, {}, {})
+bool CxxAstVisitor::TraverseStmt(clang::Stmt* v)
+{
+	if (m_isVerbose)
+	{
+		logVerboseStmt(v);
+	}
+	const ScopedSwitcher<unsigned int> indentation(m_indentation, m_indentation + 1);
+
+	return traverseWithComponents(
+		[&](auto& component) { component.beginTraverseStmt(v); },
+		[&] { Base::TraverseStmt(v); },
+		[&](auto& component) { component.endTraverseStmt(v); });
+}
+
+std::string CxxAstVisitor::getIndentString() const
+{
+	std::string indentString;
+	for (unsigned int i = 0; i < m_indentation; i++)
+	{
+		indentString += "| ";
+	}
+	return indentString;
+}
+
+namespace
+{
+std::string obfuscateName(const std::string& name)
+{
+	if (name.length() <= 2)
+	{
+		return name;
+	}
+	return name.substr(0, 1) + ".." + name.substr(name.length() - 1);
+}
+
+std::string typeLocClassToString(clang::TypeLoc tl)
+{
+	switch (tl.getTypeLocClass())
+	{
+#define STRINGIFY(X) #X
+#define ABSTRACT_TYPE(Class, Base)
+#define TYPE(Class, Base)                                                                          \
+	case clang::TypeLoc::Class:                                                                     \
+		return STRINGIFY(Class);
+#include <clang/AST/TypeLoc.h>
+#undef TYPE
+#undef ABSTRACT_TYPE
+#undef STRINGIFY
+	case clang::TypeLoc::TypeLocClass::Qualified:
+		return "Qualified";
+	default:
+		return "";
+	}
+}
+}	 // namespace
+
+void CxxAstVisitor::logVerboseDecl(clang::Decl* d)
+{
+	if (!d)
+	{
+		return;
+	}
+
+	std::stringstream stream;
+	stream << getIndentString() << d->getDeclKindName() << "Decl";
+	if (clang::NamedDecl* namedDecl = clang::dyn_cast_or_null<clang::NamedDecl>(d))
+	{
+		stream << " [" << obfuscateName(namedDecl->getNameAsString()) << "]";
+	}
+
+	ParseLocation loc = getParseLocation(d->getSourceRange());
+	stream << " <" << loc.startLineNumber << ":" << loc.startColumnNumber << ", "
+		   << loc.endLineNumber << ":" << loc.endColumnNumber << ">";
+
+	const clang::SourceManager& sm = m_astContext->getSourceManager();
+	FilePath currentFilePath = getCanonicalFilePathCache()->getCanonicalFilePath(
+		sm.getFileID(d->getSourceRange().getBegin()), sm);
+	if (m_currentFilePath != currentFilePath)
+	{
+		m_currentFilePath = currentFilePath;
+		LOG_INFO_BARE("Indexer - Traversing \"" + currentFilePath.str() + "\"");
+	}
+
+	LOG_INFO_STREAM_BARE(<< "Indexer - " << stream.str());
+}
+
+void CxxAstVisitor::logVerboseStmt(clang::Stmt* stmt)
+{
+	if (!stmt)
+	{
+		return;
+	}
+
+	ParseLocation loc = getParseLocation(stmt->getSourceRange());
+	LOG_INFO_STREAM_BARE(
+		<< "Indexer - " << getIndentString() << stmt->getStmtClassName() << " <"
+		<< loc.startLineNumber << ":" << loc.startColumnNumber << ", " << loc.endLineNumber << ":"
+		<< loc.endColumnNumber << ">");
+}
+
+void CxxAstVisitor::logVerboseTypeLoc(clang::TypeLoc tl)
+{
+	if (tl.isNull())
+	{
+		return;
+	}
+
+	ParseLocation loc = getParseLocation(tl.getSourceRange());
+	LOG_INFO_STREAM_BARE(
+		<< "Indexer - " << getIndentString() << typeLocClassToString(tl) << "TypeLoc <"
+		<< loc.startLineNumber << ":" << loc.startColumnNumber << ", " << loc.endLineNumber << ":"
+		<< loc.endColumnNumber << ">");
+}
 
 // same as Base::TraverseCXXRecordDecl(..) but we need to integrate the setter for the context info.
 // additionally: skip implicit CXXRecordDecls (this does not skip template specializations).
@@ -243,9 +325,9 @@ bool CxxAstVisitor::TraverseCXXRecordDecl(clang::CXXRecordDecl* d)
 
 bool CxxAstVisitor::traverseCXXBaseSpecifier(const clang::CXXBaseSpecifier& d)
 {
-	FOREACH_COMPONENT(beginTraverseCXXBaseSpecifier());
+	forEachComponent([&](auto& component) { component.beginTraverseCXXBaseSpecifier(); });
 	bool ret = TraverseTypeLoc(d.getTypeSourceInfo()->getTypeLoc());
-	FOREACH_COMPONENT(endTraverseCXXBaseSpecifier());
+	forEachComponent([&](auto& component) { component.endTraverseCXXBaseSpecifier(); });
 	return ret;
 }
 
@@ -275,13 +357,13 @@ bool CxxAstVisitor::TraverseTemplateTypeParmDecl(clang::TemplateTypeParmDecl* d)
 
 	if (d->hasDefaultArgument() && !d->defaultArgumentWasInherited())
 	{
-		FOREACH_COMPONENT(beginTraverseTemplateDefaultArgumentLoc());
+		forEachComponent([&](auto& component) { component.beginTraverseTemplateDefaultArgumentLoc(); });
 #if LLVM_VERSION_MAJOR >= 19
 		TraverseTypeLoc(d->getDefaultArgument().getTypeSourceInfo()->getTypeLoc());
 #else
 		TraverseTypeLoc(d->getDefaultArgumentInfo()->getTypeLoc());
 #endif
-		FOREACH_COMPONENT(endTraverseTemplateDefaultArgumentLoc());
+		forEachComponent([&](auto& component) { component.endTraverseTemplateDefaultArgumentLoc(); });
 	}
 
 	traverseDeclContextHelper(clang::dyn_cast<clang::DeclContext>(d));
@@ -298,9 +380,9 @@ bool CxxAstVisitor::TraverseTemplateTemplateParmDecl(clang::TemplateTemplateParm
 
 	if (d->hasDefaultArgument() && !d->defaultArgumentWasInherited())
 	{
-		FOREACH_COMPONENT(beginTraverseTemplateDefaultArgumentLoc());
+		forEachComponent([&](auto& component) { component.beginTraverseTemplateDefaultArgumentLoc(); });
 		TraverseTemplateArgumentLoc(d->getDefaultArgument());
-		FOREACH_COMPONENT(endTraverseTemplateDefaultArgumentLoc());
+		forEachComponent([&](auto& component) { component.endTraverseTemplateDefaultArgumentLoc(); });
 	}
 
 	clang::TemplateParameterList* TPL = d->getTemplateParameters();
@@ -326,7 +408,7 @@ bool CxxAstVisitor::TraverseNestedNameSpecifierLoc(clang::NestedNameSpecifierLoc
 	bool ret = true;
 	if (loc)
 	{
-		FOREACH_COMPONENT(beginTraverseNestedNameSpecifierLoc(loc));
+		forEachComponent([&](auto& component) { component.beginTraverseNestedNameSpecifierLoc(loc); });
 
 		clang::NestedNameSpecifierLoc prefix;
 		if (clang_compat::getNestedNameSpecifierLocPrefix(loc, &prefix))
@@ -334,14 +416,14 @@ bool CxxAstVisitor::TraverseNestedNameSpecifierLoc(clang::NestedNameSpecifierLoc
 			ret = TraverseNestedNameSpecifierLoc(prefix);
 		}
 
-		FOREACH_COMPONENT(endTraverseNestedNameSpecifierLoc(loc));
+		forEachComponent([&](auto& component) { component.endTraverseNestedNameSpecifierLoc(loc); });
 	}
 	return ret;
 }
 
 bool CxxAstVisitor::TraverseConstructorInitializer(clang::CXXCtorInitializer* init)
 {
-	FOREACH_COMPONENT(beginTraverseConstructorInitializer(init));
+	forEachComponent([&](auto& component) { component.beginTraverseConstructorInitializer(init); });
 
 	bool ret = VisitConstructorInitializer(init);
 	if (ret)
@@ -349,7 +431,7 @@ bool CxxAstVisitor::TraverseConstructorInitializer(clang::CXXCtorInitializer* in
 		ret = Base::TraverseConstructorInitializer(init);
 	}
 
-	FOREACH_COMPONENT(endTraverseConstructorInitializer(init));
+	forEachComponent([&](auto& component) { component.endTraverseConstructorInitializer(init); });
 
 	return ret;
 }
@@ -371,21 +453,34 @@ bool CxxAstVisitor::TraverseCXXOperatorCallExpr(clang::CXXOperatorCallExpr* s)
 
 bool CxxAstVisitor::TraverseCXXConstructExpr(clang::CXXConstructExpr* s)
 {
-	FOREACH_COMPONENT(beginTraverseCallCommonCallee());
+	forEachComponent([&](auto& component) { component.beginTraverseCallCommonCallee(); });
 	WalkUpFromCXXConstructExpr(s);
-	FOREACH_COMPONENT(endTraverseCallCommonCallee());
+	forEachComponent([&](auto& component) { component.endTraverseCallCommonCallee(); });
 
 	for (unsigned int i = 0; i < s->getNumArgs(); ++i)
 	{
-		FOREACH_COMPONENT(beginTraverseCallCommonArgument());
+		forEachComponent([&](auto& component) { component.beginTraverseCallCommonArgument(); });
 		TraverseStmt(s->getArg(i));
-		FOREACH_COMPONENT(endTraverseCallCommonArgument());
+		forEachComponent([&](auto& component) { component.endTraverseCallCommonArgument(); });
 	}
 	return true;
 }
 
-DEF_TRAVERSE_TYPE_PTR(CXXTemporaryObjectExpr, {}, {})
-DEF_TRAVERSE_TYPE_PTR(LambdaExpr, {}, {})
+bool CxxAstVisitor::TraverseCXXTemporaryObjectExpr(clang::CXXTemporaryObjectExpr* v)
+{
+	return traverseWithComponents(
+		[&](auto& component) { component.beginTraverseCXXTemporaryObjectExpr(v); },
+		[&] { Base::TraverseCXXTemporaryObjectExpr(v); },
+		[&](auto& component) { component.endTraverseCXXTemporaryObjectExpr(v); });
+}
+
+bool CxxAstVisitor::TraverseLambdaExpr(clang::LambdaExpr* v)
+{
+	return traverseWithComponents(
+		[&](auto& component) { component.beginTraverseLambdaExpr(v); },
+		[&] { Base::TraverseLambdaExpr(v); },
+		[&](auto& component) { component.endTraverseLambdaExpr(v); });
+}
 
 /*
 This code would also detect lambdas with concept usages, but it somehow breaks the detection/indexing
@@ -393,7 +488,7 @@ of captured variables!
 
 bool CxxAstVisitor::TraverseLambdaExpr(clang::LambdaExpr *s)
 {
-	FOREACH_COMPONENT(beginTraverseLambdaExpr(s));
+	forEachComponent([&](auto& component) { component.beginTraverseLambdaExpr(s); });
 
 	// Iterate/Walk/Traverse over the "closure type" to detect concept usages:
 
@@ -406,19 +501,25 @@ bool CxxAstVisitor::TraverseLambdaExpr(clang::LambdaExpr *s)
 			TraverseDecl(decl);
 		}
 	}
-	FOREACH_COMPONENT(endTraverseLambdaExpr(s));
+	forEachComponent([&](auto& component) { component.endTraverseLambdaExpr(s); });
 
 	return true;
 }
 */
 
-DEF_TRAVERSE_TYPE_PTR(FunctionDecl, {}, {})
+bool CxxAstVisitor::TraverseFunctionDecl(clang::FunctionDecl* v)
+{
+	return traverseWithComponents(
+		[&](auto& component) { component.beginTraverseFunctionDecl(v); },
+		[&] { Base::TraverseFunctionDecl(v); },
+		[&](auto& component) { component.endTraverseFunctionDecl(v); });
+}
 
 // same as base::TraverseClassTemplateSpecializationDecl but without traversing the typeloc of the
 // template specialitation itself
 bool CxxAstVisitor::TraverseClassTemplateSpecializationDecl(clang::ClassTemplateSpecializationDecl* D)
 {
-	FOREACH_COMPONENT(beginTraverseClassTemplateSpecializationDecl(D));
+	forEachComponent([&](auto& component) { component.beginTraverseClassTemplateSpecializationDecl(D); });
 
 	bool ShouldVisitChildren = true;
 	bool ReturnValue = true;
@@ -484,48 +585,91 @@ bool CxxAstVisitor::TraverseClassTemplateSpecializationDecl(clang::ClassTemplate
 		}
 	}
 
-	FOREACH_COMPONENT(endTraverseClassTemplateSpecializationDecl(D));
+	forEachComponent([&](auto& component) { component.endTraverseClassTemplateSpecializationDecl(D); });
 
 	return ReturnValue;
 }
 
-DEF_TRAVERSE_TYPE_PTR(ClassTemplatePartialSpecializationDecl, {}, {})
-DEF_TRAVERSE_TYPE_PTR(DeclRefExpr, {}, {})
-DEF_TRAVERSE_TYPE_PTR(CXXForRangeStmt, {}, {})
-DEF_TRAVERSE_TYPE(TemplateSpecializationTypeLoc, {}, {})
-DEF_TRAVERSE_TYPE_PTR(UnresolvedLookupExpr, {}, {})
-DEF_TRAVERSE_TYPE_PTR(UnresolvedMemberExpr, {}, {})
+bool CxxAstVisitor::TraverseClassTemplatePartialSpecializationDecl(
+	clang::ClassTemplatePartialSpecializationDecl* v)
+{
+	return traverseWithComponents(
+		[&](auto& component) { component.beginTraverseClassTemplatePartialSpecializationDecl(v); },
+		[&] { Base::TraverseClassTemplatePartialSpecializationDecl(v); },
+		[&](auto& component) { component.endTraverseClassTemplatePartialSpecializationDecl(v); });
+}
+
+bool CxxAstVisitor::TraverseDeclRefExpr(clang::DeclRefExpr* v)
+{
+	return traverseWithComponents(
+		[&](auto& component) { component.beginTraverseDeclRefExpr(v); },
+		[&] { Base::TraverseDeclRefExpr(v); },
+		[&](auto& component) { component.endTraverseDeclRefExpr(v); });
+}
+
+bool CxxAstVisitor::TraverseCXXForRangeStmt(clang::CXXForRangeStmt* v)
+{
+	return traverseWithComponents(
+		[&](auto& component) { component.beginTraverseCXXForRangeStmt(v); },
+		[&] { Base::TraverseCXXForRangeStmt(v); },
+		[&](auto& component) { component.endTraverseCXXForRangeStmt(v); });
+}
+
+bool CxxAstVisitor::TraverseTemplateSpecializationTypeLoc(
+	clang::TemplateSpecializationTypeLoc v, bool TraverseQualifier)
+{
+	return traverseWithComponents(
+		[&](auto& component) { component.beginTraverseTemplateSpecializationTypeLoc(v); },
+		[&] { Base::TraverseTemplateSpecializationTypeLoc(v, TraverseQualifier); },
+		[&](auto& component) { component.endTraverseTemplateSpecializationTypeLoc(v); });
+}
+
+bool CxxAstVisitor::TraverseUnresolvedLookupExpr(clang::UnresolvedLookupExpr* v)
+{
+	return traverseWithComponents(
+		[&](auto& component) { component.beginTraverseUnresolvedLookupExpr(v); },
+		[&] { Base::TraverseUnresolvedLookupExpr(v); },
+		[&](auto& component) { component.endTraverseUnresolvedLookupExpr(v); });
+}
+
+bool CxxAstVisitor::TraverseUnresolvedMemberExpr(clang::UnresolvedMemberExpr* v)
+{
+	return traverseWithComponents(
+		[&](auto& component) { component.beginTraverseUnresolvedMemberExpr(v); },
+		[&] { Base::TraverseUnresolvedMemberExpr(v); },
+		[&](auto& component) { component.endTraverseUnresolvedMemberExpr(v); });
+}
 
 bool CxxAstVisitor::TraverseTemplateArgumentLoc(const clang::TemplateArgumentLoc& loc)
 {
-	FOREACH_COMPONENT(beginTraverseTemplateArgumentLoc(loc));
+	forEachComponent([&](auto& component) { component.beginTraverseTemplateArgumentLoc(loc); });
 	bool ret = Base::TraverseTemplateArgumentLoc(loc);
-	FOREACH_COMPONENT(endTraverseTemplateArgumentLoc(loc));
+	forEachComponent([&](auto& component) { component.endTraverseTemplateArgumentLoc(loc); });
 	return ret;
 }
 
 bool CxxAstVisitor::TraverseLambdaCapture(
 	clang::LambdaExpr* lambdaExpr, const clang::LambdaCapture* capture, clang::Expr*  /*Init*/)
 {
-	FOREACH_COMPONENT(beginTraverseLambdaCapture(lambdaExpr, capture));
+	forEachComponent([&](auto& component) { component.beginTraverseLambdaCapture(lambdaExpr, capture); });
 	bool ret = true;
 	if (lambdaExpr->isInitCapture(capture))
 	{
 		ret = TraverseDecl(capture->getCapturedVar());
 	}
-	FOREACH_COMPONENT(endTraverseLambdaCapture(lambdaExpr, capture));
+	forEachComponent([&](auto& component) { component.endTraverseLambdaCapture(lambdaExpr, capture); });
 	return ret;
 }
 
 bool CxxAstVisitor::TraverseBinComma(clang::BinaryOperator* s)
 {
-	FOREACH_COMPONENT(beginTraverseBinCommaLhs());
+	forEachComponent([&](auto& component) { component.beginTraverseBinCommaLhs(); });
 	TraverseStmt(s->getLHS());
-	FOREACH_COMPONENT(endTraverseBinCommaLhs());
+	forEachComponent([&](auto& component) { component.endTraverseBinCommaLhs(); });
 
-	FOREACH_COMPONENT(beginTraverseBinCommaRhs());
+	forEachComponent([&](auto& component) { component.beginTraverseBinCommaRhs(); });
 	TraverseStmt(s->getRHS());
-	FOREACH_COMPONENT(endTraverseBinCommaRhs());
+	forEachComponent([&](auto& component) { component.endTraverseBinCommaRhs(); });
 	return true;
 }
 
@@ -555,47 +699,54 @@ void CxxAstVisitor::traverseDeclContextHelper(clang::DeclContext* d)
 
 bool CxxAstVisitor::TraverseCallCommon(clang::CallExpr* s)
 {
-	FOREACH_COMPONENT(beginTraverseCallCommonCallee());
+	forEachComponent([&](auto& component) { component.beginTraverseCallCommonCallee(); });
 	TraverseStmt(s->getCallee());
-	FOREACH_COMPONENT(endTraverseCallCommonCallee());
+	forEachComponent([&](auto& component) { component.endTraverseCallCommonCallee(); });
 
 	for (unsigned int i = 0; i < s->getNumArgs(); ++i)
 	{
-		FOREACH_COMPONENT(beginTraverseCallCommonArgument());
+		forEachComponent([&](auto& component) { component.beginTraverseCallCommonArgument(); });
 		TraverseStmt(s->getArg(i));
-		FOREACH_COMPONENT(endTraverseCallCommonArgument());
+		forEachComponent([&](auto& component) { component.endTraverseCallCommonArgument(); });
 	}
 	return true;
 }
 
 bool CxxAstVisitor::TraverseAssignCommon(clang::BinaryOperator* s)
 {
-	FOREACH_COMPONENT(beginTraverseAssignCommonLhs());
+	forEachComponent([&](auto& component) { component.beginTraverseAssignCommonLhs(); });
 	TraverseStmt(s->getLHS());
-	FOREACH_COMPONENT(endTraverseAssignCommonLhs());
+	forEachComponent([&](auto& component) { component.endTraverseAssignCommonLhs(); });
 
-	FOREACH_COMPONENT(beginTraverseAssignCommonRhs());
+	forEachComponent([&](auto& component) { component.beginTraverseAssignCommonRhs(); });
 	TraverseStmt(s->getRHS());
-	FOREACH_COMPONENT(endTraverseAssignCommonRhs());
+	forEachComponent([&](auto& component) { component.endTraverseAssignCommonRhs(); });
 	return true;
 }
 
-#undef DEF_TRAVERSE_CUSTOM_TYPE_PTR
-#undef DEF_TRAVERSE_CUSTOM_TYPE
-#undef DEF_TRAVERSE_TYPE_PTR
-#undef DEF_TRAVERSE_TYPE
-
+// Each Visit* override just fans out to the components' matching visit* hook. This is a
+// legitimate use of the preprocessor: it generates ~40 uniform member definitions whose names
+// are dictated externally. Clang's RecursiveASTVisitor finds each override by a compile-time
+// name lookup (getDerived().Visit##Type), and fires a hook at every level of the AST type
+// hierarchy, so the per-type overrides cannot be collapsed into a few root visitors. C++ has no
+// way to synthesize a member function with a computed name (templates parameterize types/values,
+// not identifiers; `##` is the only tool), so a template/enum/TypeSwitch alternative would still
+// have to spell all 40 type<->hook pairs by hand.
+//
+// TODO(C++26): replace this with reflection + token injection (P2996 + P3294) once the toolchain
+// supports it — that is the first non-preprocessor mechanism able to generate these members
+// programmatically. Until then, keep the macro.
 #define DEF_VISIT_CUSTOM_TYPE_PTR(__NAME_TYPE__, __PARAM_TYPE__)                                   \
 	bool CxxAstVisitor::Visit##__NAME_TYPE__(clang::__PARAM_TYPE__* v)                             \
 	{                                                                                              \
-		FOREACH_COMPONENT(visit##__NAME_TYPE__(v));                                                \
+		forEachComponent([&](auto& component) { component.visit##__NAME_TYPE__(v); });                                                \
 		return true;                                                                               \
 	}
 
 #define DEF_VISIT_CUSTOM_TYPE(__NAME_TYPE__, __PARAM_TYPE__)                                       \
 	bool CxxAstVisitor::Visit##__NAME_TYPE__(clang::__PARAM_TYPE__ v)                              \
 	{                                                                                              \
-		FOREACH_COMPONENT(visit##__NAME_TYPE__(v));                                                \
+		forEachComponent([&](auto& component) { component.visit##__NAME_TYPE__(v); });                                                \
 		return true;                                                                               \
 	}
 
@@ -649,7 +800,6 @@ DEF_VISIT_CUSTOM_TYPE_PTR(ConstructorInitializer, CXXCtorInitializer)
 #undef DEF_VISIT_TYPE_PTR
 #undef DEF_VISIT_TYPE
 
-#undef FOREACH_COMPONENT
 
 ParseLocation CxxAstVisitor::getParseLocationOfTagDeclBody(clang::TagDecl* decl) const
 {
@@ -766,6 +916,6 @@ bool CxxAstVisitor::isLocatedInProjectFile(clang::SourceLocation loc) const
 	}
 
 	const clang::SourceManager& sourceManager = m_astContext->getSourceManager();
-	return m_canonicalFilePathCache->isProjectFile(sourceManager.getFileID(loc), sourceManager);
+	return m_canonicalFilePathCache.isProjectFile(sourceManager.getFileID(loc), sourceManager);
 }
 

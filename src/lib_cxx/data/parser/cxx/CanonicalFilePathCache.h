@@ -1,9 +1,10 @@
 #ifndef CANONICAL_FILE_PATH_CACHE_H
 #define CANONICAL_FILE_PATH_CACHE_H
 
-#include <map>
 #include <string>
 #include <unordered_map>
+
+#include <llvm/ADT/DenseMap.h>
 
 #include <clang/AST/Decl.h>
 #include <clang/Basic/SourceManager.h>
@@ -37,14 +38,19 @@ public:
 private:
 	std::shared_ptr<FileRegister> m_fileRegister;
 
-	std::map<clang::FileID, FilePath> m_fileIdMap;
+	// clang::FileID keys are small trivial values: llvm::DenseMap (open-addressed, contiguous, no
+	// per-node allocation, O(1)) is the idiomatic Clang choice and far more cache-friendly than a
+	// node-based std::map. The Id-keyed reverse map uses std::unordered_map instead — Id is a
+	// strong type with std::hash but no llvm::DenseMapInfo, and coupling it to LLVM would leak into
+	// all of lib. String keys stay in hash maps.
+	llvm::DenseMap<clang::FileID, FilePath> m_fileIdMap;
 	std::unordered_map<std::string, FilePath> m_fileStringMap;
 
-	std::map<clang::FileID, Id> m_fileIdSymbolIdMap;
-	std::map<Id, clang::FileID> m_symbolIdFileIdMap;
+	llvm::DenseMap<clang::FileID, Id> m_fileIdSymbolIdMap;
+	std::unordered_map<Id, clang::FileID> m_symbolIdFileIdMap;
 	std::unordered_map<std::string, Id> m_fileStringSymbolIdMap;
 
-	std::map<clang::FileID, bool> m_isProjectFileMap;
+	llvm::DenseMap<clang::FileID, bool> m_isProjectFileMap;
 };
 
 #endif	  // CANONICAL_FILE_PATH_CACHE_H

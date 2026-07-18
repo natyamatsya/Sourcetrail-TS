@@ -41,13 +41,13 @@ ParseLocation getParseLocation(
 	const clang::SourceLocation& sourceLocation,
 	const clang::SourceManager& sourceManager,
 	clang::Preprocessor* preprocessor,
-	std::shared_ptr<CanonicalFilePathCache> canonicalFilePathCache);
+	CanonicalFilePathCache& canonicalFilePathCache);
 
 ParseLocation getParseLocation(
 	const clang::SourceRange& sourceRange,
 	const clang::SourceManager& sourceManager,
 	clang::Preprocessor* preprocessor,
-	std::shared_ptr<CanonicalFilePathCache> canonicalFilePathCache);
+	CanonicalFilePathCache& canonicalFilePathCache);
 
 // Returns the compiler's resource directory if it exists on disk, or std::nullopt
 // if it doesn't (e.g. /usr/bin/c++ shim on macOS where the real resources live

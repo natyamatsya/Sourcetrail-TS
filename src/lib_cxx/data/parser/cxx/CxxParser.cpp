@@ -141,7 +141,7 @@ void CxxParser::initializeLLVM()
 }
 
 CxxParser::CxxParser(
-	std::shared_ptr<ParserClient> client,
+	ParserClient& client,
 	std::shared_ptr<FileRegister> fileRegister,
 	std::shared_ptr<IndexerStateInfo> indexerStateInfo)
 	: Parser(client), m_fileRegister(fileRegister), m_indexerStateInfo(indexerStateInfo)
@@ -192,9 +192,9 @@ void CxxParser::buildIndex(
 		std::make_shared<CanonicalFilePathCache>(m_fileRegister);
 
 	std::shared_ptr<CxxDiagnosticConsumer> diagnostics = getDiagnostics(
-		FilePath(), canonicalFilePathCache, false);
+		FilePath(), *canonicalFilePathCache, false);
 	std::unique_ptr<clang::ASTFrontendAction> action = std::make_unique<ASTAction>(
-		m_client, canonicalFilePathCache, m_indexerStateInfo);
+		m_client, *canonicalFilePathCache, m_indexerStateInfo);
 
 	std::vector<std::string> args = getCommandlineArgumentsEssential("", compilerFlags);
 
@@ -214,7 +214,7 @@ void CxxParser::runTool(
 		std::make_shared<CanonicalFilePathCache>(m_fileRegister);
 
 	std::shared_ptr<CxxDiagnosticConsumer> diagnostics = getDiagnostics(
-		sourceFilePath, canonicalFilePathCache, true);
+		sourceFilePath, *canonicalFilePathCache, true);
 
 	tool.setDiagnosticConsumer(diagnostics.get());
 	tool.clearArgumentsAdjusters();
@@ -252,10 +252,10 @@ void CxxParser::runTool(
 	}
 
 	clang::ASTFrontendAction* action = new ASTAction(
-		m_client, canonicalFilePathCache, m_indexerStateInfo);
+		m_client, *canonicalFilePathCache, m_indexerStateInfo);
 	tool.run(new SingleFrontendActionFactory(action));
 
-	if (!m_client->hasContent())
+	if (!m_client.hasContent())
 	{
 		if (info.invocation.empty())
 		{
@@ -264,8 +264,8 @@ void CxxParser::runTool(
 
 		if (!info.errors.empty())
 		{
-			Id fileId = m_client->recordFile(sourceFilePath, true);
-			m_client->recordError(
+			Id fileId = m_client.recordFile(sourceFilePath, true);
+			m_client.recordError(
 				"Clang Invocation errors: " + info.errors,
 				true,
 				true,
@@ -277,7 +277,7 @@ void CxxParser::runTool(
 
 std::shared_ptr<CxxDiagnosticConsumer> CxxParser::getDiagnostics(
 	const FilePath& sourceFilePath,
-	std::shared_ptr<CanonicalFilePathCache> canonicalFilePathCache,
+	CanonicalFilePathCache& canonicalFilePathCache,
 	bool logErrors) const
 {
 	auto options = std::make_shared<clang::DiagnosticOptions>();

@@ -10,8 +10,8 @@ class GeneratePCHAction: public clang::GeneratePCHAction
 {
 public:
 	explicit GeneratePCHAction(
-		std::shared_ptr<ParserClient> client,
-		std::shared_ptr<CanonicalFilePathCache> canonicalFilePathCache);
+		ParserClient& client,
+		CanonicalFilePathCache& canonicalFilePathCache);
 
 protected:
 	// this method has been overridden to prevent erasing output file independently of provided flags
@@ -24,8 +24,8 @@ protected:
 	bool BeginSourceFileAction(clang::CompilerInstance& compiler) override;
 
 private:
-	std::shared_ptr<ParserClient> m_client;
-	std::shared_ptr<CanonicalFilePathCache> m_canonicalFilePathCache;
+	ParserClient& m_client;
+	CanonicalFilePathCache& m_canonicalFilePathCache;
 };
 
 #endif	  // GENERATE_PCH_ACTION_H
