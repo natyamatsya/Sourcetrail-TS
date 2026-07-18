@@ -324,3 +324,11 @@ TEST_CASE("graph removes nodes")
 
 	REQUIRE(1 == graph.getNodeCount());
 }
+
+TEST_CASE("node modifier readable string composes deprecated")
+{
+	REQUIRE(nodeModifierToString(NODE_MODIFIER_DEPRECATED) == "deprecated");
+	// Composes with other bits (deprecated first, then nonisolated/async/actor).
+	REQUIRE(nodeModifierToString(NODE_MODIFIER_DEPRECATED | NODE_MODIFIER_ASYNC) == "deprecated async");
+	REQUIRE(nodeModifierToString(NODE_MODIFIER_NONE).empty());
+}

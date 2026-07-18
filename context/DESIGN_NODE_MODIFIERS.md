@@ -2,10 +2,11 @@
 
 **Status: Axis 1 (visibility / `AccessKind`) and Axis 2 (capabilities /
 `NodeModifier`) are implemented. Axis 3a — the per-node metadata table
-(`node_attribute`, DESIGN_STORAGE_CODEGEN.md step 2) with its first producer
-(Swift `@available` → `NodeAttributeKind.AVAILABILITY`) and consumer (node
-tooltip) — is now implemented too. Axis 3b (config-atom nodes + guard edges) and
-the `open`/`final` Axis-2 bits remain proposed.**
+(`node_attribute`, DESIGN_STORAGE_CODEGEN.md step 2) with producers/consumers for
+Swift `@available` (→ `AVAILABILITY`) and **deprecation** (the cross-axis fact:
+`NODE_MODIFIER_DEPRECATED` bit + `DEPRECATED` message row) — is now implemented
+too. Axis 3b (config-atom nodes + guard edges), the `open`/`final` Axis-2 bits,
+and the C++/Rust deprecation/availability producers remain proposed.**
 This note names the general model behind three changes that shipped
 piecemeal — `AccessKind::PACKAGE`, the `NodeModifier` bitmask, and
 `async`/`nonisolated` — and shows that the two remaining Swift "open points"
@@ -147,6 +148,15 @@ Deprecation is worth calling out because it touches both existing axes and Axis
 
 - the boolean → a capability bit, `NODE_MODIFIER_DEPRECATED` (Axis 2);
 - the message / since-version → a `deprecated` row in the metadata table (Axis 3a).
+
+**Implemented (Swift, 2026-07-18).** `NODE_MODIFIER_DEPRECATED = 1 << 3` composes
+into `nodeModifierToString` ("deprecated" in the graph node label). The Swift
+indexer detects `@available(*, deprecated[, message:])` / `obsoleted` /
+`unavailable` (`swiftDeprecation`, both engines): it sets the bit and, when the
+attribute carries a message, records a `DEPRECATED` `node_attribute`. The node
+tooltip shows `[deprecated: <message>]` off the bit + the row. C++ `[[deprecated]]`
+and Rust `#[deprecated]` are the remaining per-indexer producers over the same
+primitive.
 
 ## Graceful degradation
 

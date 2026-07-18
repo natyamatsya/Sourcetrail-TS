@@ -113,6 +113,30 @@ TEST_CASE("storage tooltip surfaces the @available node attribute")
 	REQUIRE(info.title.find("@available(macOS 14.0, *)") != std::string::npos);
 }
 
+TEST_CASE("storage tooltip surfaces deprecation (bit + message)")
+{
+	NameHierarchy old = createNameHierarchy("Old");
+
+	TestStorage storage;
+
+	std::shared_ptr<IntermediateStorage> intermediateStorage = std::make_shared<IntermediateStorage>();
+	Id id = intermediateStorage
+				->addNode(StorageNodeData(NODE_CLASS, NameHierarchy::serialize(old), NODE_MODIFIER_DEPRECATED))
+				.first;
+	intermediateStorage->addSymbol(StorageSymbol(id, DefinitionKind::EXPLICIT));
+	intermediateStorage->addNodeAttribute(
+		StorageNodeAttribute(id, NodeAttributeKind::DEPRECATED, "use New"));
+
+	storage.inject(intermediateStorage.get());
+
+	const Id storedId = storage.getNodeIdForNameHierarchy(old);
+	REQUIRE(storedId != 0);
+
+	const TooltipInfo info =
+		storage.getTooltipInfoForTokenIds({storedId}, TooltipOrigin::TOOLTIP_ORIGIN_GRAPH);
+	REQUIRE(info.title.find("[deprecated: use New]") != std::string::npos);
+}
+
 TEST_CASE("storage saves field as member")
 {
 	NameHierarchy a = createNameHierarchy("Struct");
