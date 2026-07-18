@@ -41,7 +41,8 @@ fn index_src_with_scope(src: &str, spec_scope: SpecializationScope) -> OwnedInte
 
 /// Decode the NameHierarchy wire format back to a plain `::` qualified name for test assertions.
 /// Wire format: `<delim>\tm<part1>\ts\tp[\tn<part2>\ts\tp...]`
-fn decode_name(serialized: &str) -> String {
+fn decode_name(serialized: &Option<String>) -> String {
+    let serialized = serialized.as_deref().unwrap_or("");
     let meta = "\tm";
     let name_sep = "\tn";
     let part_end = "\ts";
@@ -248,7 +249,7 @@ fn file_entry_is_marked_indexed() {
     assert_eq!(s.files.len(), 1);
     assert!(s.files[0].indexed);
     assert!(s.files[0].complete);
-    assert_eq!(s.files[0].language_identifier, "rust");
+    assert_eq!(s.files[0].language_identifier.as_deref(), Some("rust"));
 }
 
 #[test]
@@ -1276,7 +1277,7 @@ fn local_symbol_names_follow_cxx_position_convention() {
     assert_eq!(s.local_symbols.len(), 1);
     // C++ convention (CxxAstVisitorComponentIndexer::getLocalSymbolName):
     // fileName<line:col> of the declaration. `let x` puts x at line 1 col 18.
-    let name = &s.local_symbols[0].name;
+    let name = s.local_symbols[0].name.as_deref().unwrap_or("");
     assert!(
         name.ends_with("<1:18>"),
         "expected declaration-position suffix <1:18>, got {name}"

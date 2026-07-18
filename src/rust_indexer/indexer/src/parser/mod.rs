@@ -255,8 +255,8 @@ pub(crate) fn index_crate_with(
                 let mut storage = OwnedIntermediateStorage::default();
                 storage.errors.push(OwnedStorageError {
                     id: 1,
-                    message: format!("Failed to load crate: {e}"),
-                    translation_unit: crate_root.display().to_string(),
+                    message: Some(format!("Failed to load crate: {e}")),
+                    translation_unit: Some(crate_root.display().to_string()),
                     fatal: true,
                     indexed: false,
                 });
@@ -321,7 +321,7 @@ pub fn index_file(file_path: &str, _module_prefix: &str) -> OwnedIntermediateSto
     // Rewrite the synthetic file path back to the original path so callers
     // see the real file path in the storage.
     for f in &mut storage.files {
-        f.file_path = file_path.to_owned();
+        f.file_path = Some(file_path.to_owned());
     }
     storage
 }
@@ -344,15 +344,15 @@ fn error_storage(file_path: &str, msg: &str) -> OwnedIntermediateStorage {
     storage.next_id = 2;
     storage.files.push(OwnedStorageFile {
         id: 1,
-        file_path: file_path.to_owned(),
-        language_identifier: "rust".to_owned(),
+        file_path: Some(file_path.to_owned()),
+        language_identifier: Some("rust".to_owned()),
         indexed: false,
         complete: false,
     });
     storage.errors.push(OwnedStorageError {
         id: 2,
-        message: msg.to_owned(),
-        translation_unit: file_path.to_owned(),
+        message: Some(msg.to_owned()),
+        translation_unit: Some(file_path.to_owned()),
         fatal: true,
         indexed: false,
     });

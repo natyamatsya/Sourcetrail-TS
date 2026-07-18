@@ -46,7 +46,7 @@ fn find_flatc() -> Option<PathBuf> {
 fn run_flatc(flatc: &Path, schema: &Path, out_dir: &Path) {
     println!("cargo:rerun-if-changed={}", schema.display());
     let status = Command::new(flatc)
-        .args(["--rust", "--gen-all", "-o"])
+        .args(["--rust", "--gen-all", "--gen-object-api", "-o"])
         .arg(out_dir)
         .arg(schema)
         .status()

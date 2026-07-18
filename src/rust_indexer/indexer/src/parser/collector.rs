@@ -309,13 +309,13 @@ impl<'db> Collector<'db> {
         self.storage.nodes.push(OwnedStorageNode {
             id,
             type_: NODE_FILE,
-            serialized_name: serialize_file_name(path),
+            serialized_name: Some(serialize_file_name(path)),
             modifiers: 0,
         });
         self.storage.files.push(OwnedStorageFile {
             id,
-            file_path: path.to_owned(),
-            language_identifier: "rust".to_owned(),
+            file_path: Some(path.to_owned()),
+            language_identifier: Some("rust".to_owned()),
             indexed: true,
             complete: true,
         });
@@ -378,7 +378,7 @@ impl<'db> Collector<'db> {
         self.storage.nodes.push(OwnedStorageNode {
             id: node_id,
             type_: node_kind,
-            serialized_name: serialize_name(name),
+            serialized_name: Some(serialize_name(name)),
             modifiers: 0,
         });
         self.storage.symbols.push(OwnedStorageSymbol {
@@ -670,8 +670,8 @@ impl<'db> Collector<'db> {
             let err_id = self.alloc_id();
             self.storage.errors.push(OwnedStorageError {
                 id: err_id,
-                message: err.to_string(),
-                translation_unit: file_path.clone(),
+                message: Some(err.to_string()),
+                translation_unit: Some(file_path.clone()),
                 fatal: false,
                 indexed: true,
             });
@@ -921,10 +921,10 @@ impl<'db> Collector<'db> {
                     .unwrap_or_else(|| "<unknown file>".to_owned());
                 let error = OwnedStorageError {
                     id: self.alloc_id(),
-                    message: format!(
+                    message: Some(format!(
                         "indexer panicked while resolving references in {file_path}: {panic_message}"
-                    ),
-                    translation_unit: file_path,
+                    )),
+                    translation_unit: Some(file_path),
                     fatal: false,
                     indexed: true,
                 };
@@ -982,7 +982,7 @@ impl<'db> Collector<'db> {
                     self.storage.nodes.push(OwnedStorageNode {
                         id,
                         type_: row.base_kind,
-                        serialized_name: serialize_name(&row.spec_name),
+                        serialized_name: Some(serialize_name(&row.spec_name)),
                         modifiers: 0,
                     });
                     self.storage.symbols.push(OwnedStorageSymbol {
@@ -1041,7 +1041,7 @@ impl<'db> Collector<'db> {
                     self.storage.nodes.push(OwnedStorageNode {
                         id,
                         type_: NODE_MACRO,
-                        serialized_name: serialize_name(&row.macro_name),
+                        serialized_name: Some(serialize_name(&row.macro_name)),
                         modifiers: 0,
                     });
                     self.storage.symbols.push(OwnedStorageSymbol {
@@ -1101,7 +1101,7 @@ impl<'db> Collector<'db> {
                     self.local_symbol_ids.insert(name.clone(), id);
                     self.storage
                         .local_symbols
-                        .push(OwnedStorageLocalSymbol { id, name });
+                        .push(OwnedStorageLocalSymbol { id, name: Some(name) });
                     id
                 }
             };
@@ -2516,11 +2516,11 @@ pub(super) fn collect_from_db<'db>(
             if let Err(payload) = result {
                 let error = OwnedStorageError {
                     id: collector.alloc_id(),
-                    message: format!(
+                    message: Some(format!(
                         "indexer panicked while collecting crate {crate_root_path}: {}",
                         panic_payload_message(payload.as_ref())
-                    ),
-                    translation_unit: crate_root_path,
+                    )),
+                    translation_unit: Some(crate_root_path),
                     fatal: false,
                     indexed: true,
                 };
