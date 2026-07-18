@@ -207,14 +207,7 @@ void CxxAstVisitorComponentDeclarationIndexer::visitFieldDecl(clang::FieldDecl* 
 			return;
 		}
 
-		const ParseLocation location = m_index.getParseLocation(d->getLocation());
-
-		Id fieldId = m_index.getOrCreateSymbolId(d);
-		m_index.recordSymbolKind(fieldId, SymbolKind::FIELD);
-		m_index.recordLocation(fieldId, location, ParseLocationType::TOKEN);
-		m_index.recordAccessKind(fieldId, utility::convertAccessSpecifier(d->getAccess()));
-		m_index.recordDefinitionKind(fieldId, utility::getDefinitionKind(d));
-		m_index.recordDeprecation(fieldId, d);
+		const Id fieldId = m_index.recordDeclaration(d, SymbolKind::FIELD);
 
 		if (clang::CXXRecordDecl* declaringRecordDecl =
 				clang::dyn_cast_or_null<clang::CXXRecordDecl>(d->getParent()))
@@ -231,7 +224,10 @@ void CxxAstVisitorComponentDeclarationIndexer::visitFieldDecl(clang::FieldDecl* 
 						Id templateFieldId = m_index.getOrCreateSymbolId(templateFieldDecl);
 						m_index.recordSymbolKind(templateFieldId, SymbolKind::FIELD);
 						m_index.recordReference(
-							ReferenceKind::TEMPLATE_SPECIALIZATION, templateFieldId, fieldId, location);
+							ReferenceKind::TEMPLATE_SPECIALIZATION,
+							templateFieldId,
+							fieldId,
+							m_index.getParseLocation(d->getLocation()));
 						break;
 					}
 				}
@@ -414,16 +410,10 @@ void CxxAstVisitorComponentDeclarationIndexer::visitTypedefDecl(clang::TypedefDe
 {
 	if (getAstVisitor()->shouldVisitDecl(d))
 	{
-		Id symbolId = m_index.getOrCreateSymbolId(d);
-		m_index.recordSymbolKind(
-			symbolId,
-			d->getAnonDeclWithTypedefName() == nullptr
-				? SymbolKind::TYPEDEF
-				: utility::convertTagKind(d->getAnonDeclWithTypedefName()->getTagKind()));
-		m_index.recordLocation(symbolId, m_index.getParseLocation(d->getLocation()), ParseLocationType::TOKEN);
-		m_index.recordAccessKind(symbolId, utility::convertAccessSpecifier(d->getAccess()));
-		m_index.recordDefinitionKind(symbolId, utility::getDefinitionKind(d));
-		m_index.recordDeprecation(symbolId, d);
+		const SymbolKind symbolKind = d->getAnonDeclWithTypedefName() == nullptr
+			? SymbolKind::TYPEDEF
+			: utility::convertTagKind(d->getAnonDeclWithTypedefName()->getTagKind());
+		m_index.recordDeclaration(d, symbolKind);
 	}
 }
 
@@ -431,16 +421,10 @@ void CxxAstVisitorComponentDeclarationIndexer::visitTypeAliasDecl(clang::TypeAli
 {
 	if (getAstVisitor()->shouldVisitDecl(d))
 	{
-		Id symbolId = m_index.getOrCreateSymbolId(d);
-		m_index.recordSymbolKind(
-			symbolId,
-			d->getAnonDeclWithTypedefName() == nullptr
-				? SymbolKind::TYPEDEF
-				: utility::convertTagKind(d->getAnonDeclWithTypedefName()->getTagKind()));
-		m_index.recordLocation(symbolId, m_index.getParseLocation(d->getLocation()), ParseLocationType::TOKEN);
-		m_index.recordAccessKind(symbolId, utility::convertAccessSpecifier(d->getAccess()));
-		m_index.recordDefinitionKind(symbolId, utility::getDefinitionKind(d));
-		m_index.recordDeprecation(symbolId, d);
+		const SymbolKind symbolKind = d->getAnonDeclWithTypedefName() == nullptr
+			? SymbolKind::TYPEDEF
+			: utility::convertTagKind(d->getAnonDeclWithTypedefName()->getTagKind());
+		m_index.recordDeclaration(d, symbolKind);
 	}
 }
 

@@ -118,15 +118,13 @@ void CxxAstVisitorComponentReferenceIndexer::visitMemberExpr(clang::MemberExpr* 
 {
 	if (getAstVisitor()->shouldVisitReference(s->getMemberLoc()))
 	{
-		const Id symbolId = m_index.getOrCreateSymbolId(s->getMemberDecl());
-		const Id contextSymbolId = m_index.getOrCreateSymbolId(m_index.getContext());
 		const ReferenceKind refKind = consumeDeclRefContextKind();
 
 		if (refKind == ReferenceKind::CALL)
 		{
-			m_index.recordSymbolKind(symbolId, SymbolKind::FUNCTION);
+			m_index.recordSymbolKind(m_index.getOrCreateSymbolId(s->getMemberDecl()), SymbolKind::FUNCTION);
 		}
-		m_index.recordReference(refKind, symbolId, contextSymbolId, m_index.getParseLocation(s->getMemberLoc()));
+		m_index.recordReference(s->getMemberDecl(), refKind, s->getMemberLoc());
 	}
 }
 
