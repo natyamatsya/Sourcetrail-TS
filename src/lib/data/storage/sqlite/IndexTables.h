@@ -121,12 +121,18 @@ namespace idx {
       using data_type = std::optional<::sqlpp::text>;
       using has_default = std::true_type;
     };
+    struct Modifiers {
+      SQLPP_CREATE_NAME_TAG_FOR_SQL_AND_CPP(modifiers, modifiers);
+      using data_type = ::sqlpp::integral;
+      using has_default = std::true_type;  // DEFAULT 0 (NodeModifier bitmask)
+    };
     SQLPP_CREATE_NAME_TAG_FOR_SQL_AND_CPP(node, node);
     template<typename T>
     using _table_columns = sqlpp::table_columns<T,
                Id,
                Type,
-               SerializedName>;
+               SerializedName,
+               Modifiers>;
     using _required_insert_columns = sqlpp::detail::type_set<  // [PK-is-FK] Id added
                sqlpp::column_t<sqlpp::table_t<Node_>, Id>,
                sqlpp::column_t<sqlpp::table_t<Node_>, Type>>;

@@ -40,6 +40,13 @@ enum DefinitionKind {
 	static let explicit: Int32 = 2
 }
 
+// Mirrors src/lib/data/parser/NodeModifier.h — orthogonal per-node flags stored
+// as a bitmask on StorageNode. A Swift `actor` is a class node with `actor` set.
+enum NodeModifier {
+	static let none: Int32 = 0
+	static let actor: Int32 = 1 << 0
+}
+
 // Mirrors src/lib/data/parser/AccessKind.h. Swift has no PROTECTED; `internal`
 // (and the implicit default) maps to `default_`; `open`/`public` both map to
 // `public_` (the subclassable distinction is lost). `package` has its own slot.

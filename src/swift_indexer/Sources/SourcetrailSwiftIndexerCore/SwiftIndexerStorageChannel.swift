@@ -240,7 +240,8 @@ package final class SwiftIndexerStorageChannel {
 				&builder,
 				id: node.id,
 				type: node.type,
-				serializedNameOffset: nameOffset
+				serializedNameOffset: nameOffset,
+				modifiers: node.modifiers
 			)
 		}
 		let edgeOffsets = storage.edges.map { edge in

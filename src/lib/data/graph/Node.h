@@ -9,6 +9,7 @@
 #include "DefinitionKind.h"
 #include "Edge.h"
 #include "NameHierarchy.h"
+#include "NodeModifier.h"
 #include "NodeType.h"
 #include "Token.h"
 
@@ -22,6 +23,12 @@ public:
 	NodeType getType() const;
 	void setType(NodeType type);
 	bool isType(NodeKindMask mask) const;
+
+	// Orthogonal node modifiers (SW13): e.g. a Swift `actor` is a class node with
+	// the actor modifier set.
+	NodeModifierMask getModifiers() const;
+	void setModifiers(NodeModifierMask modifiers);
+	bool isActor() const;
 
 	std::string getName() const;
 	std::string getFullName() const;
@@ -70,6 +77,7 @@ private:
 	NodeType m_type;
 	const NameHierarchy m_nameHierarchy;
 	DefinitionKind m_definitionKind;
+	NodeModifierMask m_modifiers = NODE_MODIFIER_NONE;
 
 	size_t m_childCount = 0;
 };

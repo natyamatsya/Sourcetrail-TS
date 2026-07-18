@@ -22,6 +22,29 @@ TEST_CASE("storage adds node successfully")
 	REQUIRE(1 == nodeCount);
 }
 
+TEST_CASE("storage round-trips node modifiers")
+{
+	FilePath databasePath("data/SQLiteTestSuite/test.sqlite");
+	NodeModifierMask actorModifiers = NODE_MODIFIER_NONE;
+	NodeModifierMask plainModifiers = NODE_MODIFIER_ACTOR;  // sentinel; expect it reset to NONE
+	{
+		StorageConnection connection(databasePath);
+		SqliteIndexStorage storage(connection);
+		storage.setup();
+		storage.beginTransaction();
+		const Id actorId = storage.addNode(
+			StorageNodeData(NODE_CLASS, "MyActor", NODE_MODIFIER_ACTOR));
+		const Id plainId = storage.addNode(StorageNodeData(NODE_CLASS, "MyClass"));
+		storage.commitTransaction();
+		actorModifiers = storage.getNodeById(actorId).modifiers;
+		plainModifiers = storage.getNodeById(plainId).modifiers;
+	}
+	FileSystem::remove(databasePath);
+
+	REQUIRE(NODE_MODIFIER_ACTOR == actorModifiers);
+	REQUIRE(NODE_MODIFIER_NONE == plainModifiers);
+}
+
 TEST_CASE("storage removes node successfully")
 {
 	FilePath databasePath("data/SQLiteTestSuite/test.sqlite");

@@ -16,7 +16,7 @@ flatbuffers::DetachedBuffer serializeIntermediateStorage(const IntermediateStora
 	for (const auto& n : storage.getStorageNodes())
 		fbNodes.push_back(Sourcetrail::Ipc::CreateStorageNode(
 			builder, static_cast<int64_t>(n.id), static_cast<int32_t>(n.type),
-			builder.CreateString(n.serializedName)));
+			builder.CreateString(n.serializedName), static_cast<int32_t>(n.modifiers)));
 
 	// Files
 	std::vector<flatbuffers::Offset<Sourcetrail::Ipc::StorageFile>> fbFiles;
@@ -115,7 +115,8 @@ std::shared_ptr<IntermediateStorage> deserializeIntermediateStorage(
 		std::vector<StorageNode> nodes;
 		for (const auto* n : *fb->nodes())
 			nodes.emplace_back(Id(n->id()), static_cast<NodeKind>(n->type()),
-				n->serialized_name() ? n->serialized_name()->str() : "");
+				n->serialized_name() ? n->serialized_name()->str() : "",
+				static_cast<NodeModifierMask>(n->modifiers()));
 		storage->setStorageNodes(std::move(nodes));
 	}
 

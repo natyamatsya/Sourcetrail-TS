@@ -50,6 +50,8 @@ package struct OwnedStorageNode {
 	package let id: Int64
 	package let type: Int32
 	package let serializedName: String
+	// NodeModifier bitmask (0 = none); e.g. actor (SW13).
+	package var modifiers: Int32 = 0
 }
 
 package struct OwnedStorageEdge {

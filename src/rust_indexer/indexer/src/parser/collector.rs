@@ -310,6 +310,7 @@ impl<'db> Collector<'db> {
             id,
             type_: NODE_FILE,
             serialized_name: serialize_file_name(path),
+            modifiers: 0,
         });
         self.storage.files.push(OwnedStorageFile {
             id,
@@ -378,6 +379,7 @@ impl<'db> Collector<'db> {
             id: node_id,
             type_: node_kind,
             serialized_name: serialize_name(name),
+            modifiers: 0,
         });
         self.storage.symbols.push(OwnedStorageSymbol {
             id: node_id,
@@ -981,6 +983,7 @@ impl<'db> Collector<'db> {
                         id,
                         type_: row.base_kind,
                         serialized_name: serialize_name(&row.spec_name),
+                        modifiers: 0,
                     });
                     self.storage.symbols.push(OwnedStorageSymbol {
                         id,
@@ -1039,6 +1042,7 @@ impl<'db> Collector<'db> {
                         id,
                         type_: NODE_MACRO,
                         serialized_name: serialize_name(&row.macro_name),
+                        modifiers: 0,
                     });
                     self.storage.symbols.push(OwnedStorageSymbol {
                         id,

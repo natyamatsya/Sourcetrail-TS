@@ -38,16 +38,17 @@ occurrences (the occurrence jump over pre-SW10 is the added SCOPE locations).
 The **SW11–SW16 series (all landed 2026-07-18)** raises the graph from a
 generic-OO projection (which any language would produce) to one that speaks
 Swift: generics/constraints, protocol conformance fidelity, concurrency
-isolation, attribute-driven relations, macros, and API-surface metadata. Two
-axes are schema-deferred (they need an intermediate-storage field that ripples to
-the C++/Java sides): concurrency's actor-identity / `async` (SW13) and the
-`package` access level / `open`-vs-`public` distinction / `@available` (SW16).
+isolation, attribute-driven relations, macros, and API-surface metadata. The two
+axes that needed a *new* storage field have since gained one — the `package`
+access level (`AccessKind::PACKAGE`) and actor identity (the `NodeModifier`
+bitmask). Still deferred: `async`/`nonisolated`, the `open`-vs-`public`
+distinction, and `@available`.
 
 | Stage | What | State |
 |-------|------|-------|
 | SW11 | Generic-parameter tier + constraints + type-argument use-sites (the Rust-lifetime analog) | ✅ done |
 | SW12 | Protocol conformance fidelity: witnesses, conditional/retroactive, default impls | ✅ done |
-| SW13 | Concurrency model: global-actor isolation, `Sendable` (actor identity / `async` schema-deferred) | ✅ done |
+| SW13 | Concurrency model: global-actor isolation, `Sendable`, actor identity (`async` deferred) | ✅ done |
 | SW14 | Attribute-driven relations: property wrappers + result builders | ✅ done |
 | SW15 | Macros: attached + freestanding applications | ✅ done |
 | SW16 | API-surface metadata: access control (`@available` deferred) | ✅ done |
@@ -222,12 +223,19 @@ representable and not:
   (property wrappers on any declaration) and pre-wires SW16.
 - **`Sendable`** needs no special work — it is a protocol conformance, so SW12
   already emits `Token → Sendable` as `EDGE_INHERITANCE`.
-- **Deferred (schema-bound):** *actor identity* (an `actor` is `NODE_CLASS`,
-  indistinguishable from a class — the index emits no implicit `Actor`
-  conformance, and there is no node-modifier slot) and *`async`/`nonisolated`*
-  (function modifiers with no storage slot and no type reference to hang an edge
-  on). Both need an intermediate-storage node-modifier field + PersistentStorage
-  inject + UI support — out of scope until the schema grows one.
+- **Actor identity (landed 2026-07-18).** Added the node-modifier field that was
+  missing: `StorageNode.modifiers` (a `NodeModifier` bitmask) across
+  `intermediate_storage.fbs` + C++ `StorageNodeData` + the SQLite `node` table
+  (version 25 → 26; a fresh re-index, no migration) + the tri-language serializer
+  (C++/Rust/Swift). A Swift `actor` stays a `NODE_CLASS` but carries
+  `NODE_MODIFIER_ACTOR`, set from SwiftSyntax (both passes — the index reports
+  actors as plain classes). The graph `Node` exposes `isActor()` and its readable
+  kind renders "actor". Covered by `ActorModifierTests` (Swift, both passes) and a
+  C++ SQLite round-trip test.
+- **Deferred (still schema-bound):** *`async`/`nonisolated`* — function modifiers
+  with no type reference to hang an edge on; they would ride the same
+  `NodeModifier` bitmask (e.g. an `async` flag) but need per-member modifier
+  emission and a display treatment, left as a follow-up now that the field exists.
 
 Covered by `ConcurrencyTests` (type- and function-level isolation + Sendable).
 

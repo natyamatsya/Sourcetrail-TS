@@ -151,8 +151,9 @@ enum SyntacticIndexer {
 		override func visitPost(_ node: ClassDeclSyntax) { scope.removeLast() }
 
 		override func visit(_ node: ActorDeclSyntax) -> SyntaxVisitorContinueKind {
-			_ = emit(name: node.name.text, kind: NodeKind.class, nameToken: node.name, decl: node,
+			let nodeId = emit(name: node.name.text, kind: NodeKind.class, nameToken: node.name, decl: node,
 				access: swiftAccessKind(node.modifiers))
+			builder.addNodeModifier(nodeId: nodeId, modifier: NodeModifier.actor)
 			emitGenericParams(ownerParts: scope + [node.name.text], clause: node.genericParameterClause)
 			push(node.name.text)
 			return .visitChildren

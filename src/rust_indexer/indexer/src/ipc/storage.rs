@@ -230,6 +230,9 @@ pub struct OwnedStorageNode {
     pub id: i64,
     pub type_: i32,
     pub serialized_name: String,
+    /// NodeModifier bitmask (0 = none). The Rust indexer emits no modifiers yet;
+    /// carried so the field round-trips losslessly like every other node field.
+    pub modifiers: i32,
 }
 
 #[derive(Debug, Clone)]
@@ -617,6 +620,7 @@ impl OwnedIntermediateStorage {
                             id: n.id(),
                             type_: n.type_(),
                             serialized_name: n.serialized_name().unwrap_or("").to_owned(),
+                            modifiers: n.modifiers(),
                         }
                     })
                     .collect()
@@ -788,6 +792,7 @@ fn serialize_one_storage(s: &OwnedIntermediateStorage) -> Vec<u8> {
                 id: n.id,
                 type_: n.type_,
                 serialized_name: Some(name),
+                modifiers: n.modifiers,
             },
         ));
     }
@@ -956,6 +961,7 @@ mod chunk_tests {
             id: 1,
             type_: 1 << 18,
             serialized_name: "/\tm/tmp/f.rs\ts\tp".to_owned(),
+            modifiers: 0,
         });
         s.files.push(OwnedStorageFile {
             id: 1,
@@ -973,6 +979,7 @@ mod chunk_tests {
                 id,
                 type_: 64,
                 serialized_name: format!("n{i}_{}", "x".repeat(name_len)),
+                modifiers: 0,
             });
             s.symbols.push(OwnedStorageSymbol {
                 id,

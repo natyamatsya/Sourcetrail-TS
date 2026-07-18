@@ -5,13 +5,14 @@
 
 #include "Id.h"
 #include "NodeKind.h"
+#include "NodeModifier.h"
 
 struct StorageNodeData
 {
-	StorageNodeData(): type(NODE_UNDEFINED) {}
+	StorageNodeData(): type(NODE_UNDEFINED), modifiers(NODE_MODIFIER_NONE) {}
 
-	StorageNodeData(NodeKind type, std::string serializedName)
-		: type(type), serializedName(std::move(serializedName))
+	StorageNodeData(NodeKind type, std::string serializedName, NodeModifierMask modifiers = NODE_MODIFIER_NONE)
+		: type(type), serializedName(std::move(serializedName)), modifiers(modifiers)
 	{
 	}
 
@@ -22,14 +23,15 @@ struct StorageNodeData
 
 	NodeKind type;
 	std::string serializedName;
+	NodeModifierMask modifiers;
 };
 
 struct StorageNode: public StorageNodeData
 {
 	StorageNode():  id(0) {}
 
-	StorageNode(Id id, NodeKind type, std::string serializedName)
-		: StorageNodeData(type, std::move(serializedName)), id(id)
+	StorageNode(Id id, NodeKind type, std::string serializedName, NodeModifierMask modifiers = NODE_MODIFIER_NONE)
+		: StorageNodeData(type, std::move(serializedName), modifiers), id(id)
 	{
 	}
 
