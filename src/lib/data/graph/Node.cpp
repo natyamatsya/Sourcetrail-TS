@@ -264,9 +264,15 @@ bool Node::isEdge() const
 
 std::string Node::getReadableTypeString() const
 {
-	if (const std::string modifier = nodeModifierToString(m_modifiers); !modifier.empty())
+	// An actor replaces the kind ("actor"); async/nonisolated qualify it
+	// ("async method", "nonisolated async method").
+	if (isActor())
 	{
-		return modifier;
+		return nodeModifierToString(m_modifiers);
+	}
+	if (const std::string qualifiers = nodeModifierToString(m_modifiers); !qualifiers.empty())
+	{
+		return qualifiers + " " + m_type.getReadableTypeString();
 	}
 	return m_type.getReadableTypeString();
 }

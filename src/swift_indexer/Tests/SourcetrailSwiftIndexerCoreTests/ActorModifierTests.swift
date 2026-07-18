@@ -74,4 +74,35 @@ import Testing
 		#expect(bank.modifiers & NodeModifier.actor != 0)
 		#expect(plain.modifiers & NodeModifier.actor == 0)
 	}
+
+	@Test func asyncAndNonisolatedModifiers() throws {
+		let tmp = FileManager.default.temporaryDirectory
+			.appendingPathComponent("sw13-async-\(UUID().uuidString).swift")
+		defer { try? FileManager.default.removeItem(at: tmp) }
+		try """
+			public actor Service {
+				public func fetch() async {}
+				public nonisolated func id() -> Int { 0 }
+				public nonisolated func reload() async {}
+				public func plain() {}
+			}
+			""".write(to: tmp, atomically: true, encoding: .utf8)
+
+		let builder = StorageBuilder()
+		SyntacticIndexer.indexFile(path: tmp.path, moduleName: "M", builder: builder)
+		let storage = builder.storage
+
+		let fetch = try #require(node(named: "M::Service::fetch()", in: storage))
+		let id = try #require(node(named: "M::Service::id()", in: storage))
+		let reload = try #require(node(named: "M::Service::reload()", in: storage))
+		let plain = try #require(node(named: "M::Service::plain()", in: storage))
+
+		#expect(fetch.modifiers & NodeModifier.async != 0)
+		#expect(fetch.modifiers & NodeModifier.nonisolated == 0)
+		#expect(id.modifiers & NodeModifier.nonisolated != 0)
+		#expect(id.modifiers & NodeModifier.async == 0)
+		#expect(reload.modifiers & NodeModifier.async != 0)
+		#expect(reload.modifiers & NodeModifier.nonisolated != 0)
+		#expect(plain.modifiers == NodeModifier.none)
+	}
 }

@@ -16,6 +16,10 @@ enum NodeModifierType
 	// A Swift `actor` (SW13). Modelled as a class + this flag rather than a new
 	// node kind.
 	NODE_MODIFIER_ACTOR = 1 << 0,
+	// A Swift `async` function/initializer (SW13).
+	NODE_MODIFIER_ASYNC = 1 << 1,
+	// A Swift `nonisolated` member (SW13).
+	NODE_MODIFIER_NONISOLATED = 1 << 2,
 };
 
 using NodeModifierMask = int;
@@ -25,8 +29,8 @@ inline bool nodeModifierHas(NodeModifierMask modifiers, NodeModifierType flag)
 	return (modifiers & flag) != 0;
 }
 
-// A short label for the primary modifier, for readable node-kind strings
-// ("actor"). Empty when there is nothing to add.
+// Space-joined labels for the set modifiers ("actor", "async",
+// "nonisolated async"), for readable node-kind strings. Empty when none.
 std::string nodeModifierToString(NodeModifierMask modifiers);
 
 #endif	  // NODE_MODIFIER_H

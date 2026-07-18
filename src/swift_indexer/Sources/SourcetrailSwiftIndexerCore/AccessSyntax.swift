@@ -32,9 +32,10 @@ func swiftAccessKind(_ modifiers: DeclModifierListSyntax) -> Int32 {
 // store's definition occurrences (same keying as DeclScopeMap).
 final class AccessMap {
 	private var byPos: [SyntaxPos: Int32] = [:]
-	// SW13: name positions of `actor` declarations. The index reports actors as
-	// class symbols, so SwiftSyntax is the only source of actor identity.
-	private var actorPositions: Set<SyntaxPos> = []
+	// SW13: NodeModifier bitmask per declaration name position (actor/async/
+	// nonisolated). The index reports actors as classes and carries no async
+	// modifier, so SwiftSyntax is the only source.
+	private var modifierByPos: [SyntaxPos: Int32] = [:]
 
 	static func build(path: String) -> AccessMap {
 		let map = AccessMap()
@@ -51,8 +52,9 @@ final class AccessMap {
 		byPos[pos]
 	}
 
-	func isActor(at pos: SyntaxPos) -> Bool {
-		actorPositions.contains(pos)
+	// The NodeModifier bitmask for the declaration at `pos` (0 = none).
+	func nodeModifiers(at pos: SyntaxPos) -> Int32 {
+		modifierByPos[pos] ?? 0
 	}
 
 	fileprivate func record(nameToken: TokenSyntax, access: Int32, converter: SourceLocationConverter) {
@@ -60,10 +62,25 @@ final class AccessMap {
 		byPos[SyntaxPos(line: Int(extent.startLine), column: Int(extent.startColumn))] = access
 	}
 
-	fileprivate func recordActor(nameToken: TokenSyntax, converter: SourceLocationConverter) {
+	fileprivate func recordModifiers(nameToken: TokenSyntax, mask: Int32, converter: SourceLocationConverter) {
+		guard mask != 0 else { return }
 		let extent = tokenExtent(nameToken, converter)
-		actorPositions.insert(SyntaxPos(line: Int(extent.startLine), column: Int(extent.startColumn)))
+		modifierByPos[SyntaxPos(line: Int(extent.startLine), column: Int(extent.startColumn))] = mask
 	}
+}
+
+// The NodeModifier bitmask for a declaration: `nonisolated` from its modifiers,
+// `async` from an effect specifier (functions/initializers). `actor` is added by
+// the caller from the declaration keyword.
+func swiftNodeModifiers(_ modifiers: DeclModifierListSyntax, isAsync: Bool) -> Int32 {
+	var mask: Int32 = 0
+	if isAsync {
+		mask |= NodeModifier.async
+	}
+	for modifier in modifiers where modifier.name.text == "nonisolated" {
+		mask |= NodeModifier.nonisolated
+	}
+	return mask
 }
 
 // Records each declaration's access at the same name token the index reports its
@@ -90,7 +107,7 @@ private final class AccessVisitor: SyntaxVisitor {
 	}
 	override func visit(_ node: ActorDeclSyntax) -> SyntaxVisitorContinueKind {
 		record(node.name, node.modifiers)
-		map.recordActor(nameToken: node.name, converter: converter)
+		map.recordModifiers(nameToken: node.name, mask: NodeModifier.actor, converter: converter)
 		return .visitChildren
 	}
 	override func visit(_ node: EnumDeclSyntax) -> SyntaxVisitorContinueKind {
@@ -103,18 +120,36 @@ private final class AccessVisitor: SyntaxVisitor {
 		record(node.name, node.modifiers); return .skipChildren
 	}
 	override func visit(_ node: FunctionDeclSyntax) -> SyntaxVisitorContinueKind {
-		record(node.name, node.modifiers); return .visitChildren
+		record(node.name, node.modifiers)
+		map.recordModifiers(
+			nameToken: node.name,
+			mask: swiftNodeModifiers(
+				node.modifiers, isAsync: node.signature.effectSpecifiers?.asyncSpecifier != nil),
+			converter: converter)
+		return .visitChildren
 	}
 	override func visit(_ node: InitializerDeclSyntax) -> SyntaxVisitorContinueKind {
-		record(node.initKeyword, node.modifiers); return .visitChildren
+		record(node.initKeyword, node.modifiers)
+		map.recordModifiers(
+			nameToken: node.initKeyword,
+			mask: swiftNodeModifiers(
+				node.modifiers, isAsync: node.signature.effectSpecifiers?.asyncSpecifier != nil),
+			converter: converter)
+		return .visitChildren
 	}
 	override func visit(_ node: SubscriptDeclSyntax) -> SyntaxVisitorContinueKind {
-		record(node.subscriptKeyword, node.modifiers); return .visitChildren
+		record(node.subscriptKeyword, node.modifiers)
+		map.recordModifiers(
+			nameToken: node.subscriptKeyword,
+			mask: swiftNodeModifiers(node.modifiers, isAsync: false), converter: converter)
+		return .visitChildren
 	}
 	override func visit(_ node: VariableDeclSyntax) -> SyntaxVisitorContinueKind {
+		let mask = swiftNodeModifiers(node.modifiers, isAsync: false)
 		for binding in node.bindings {
 			if let pattern = binding.pattern.as(IdentifierPatternSyntax.self) {
 				record(pattern.identifier, node.modifiers)
+				map.recordModifiers(nameToken: pattern.identifier, mask: mask, converter: converter)
 			}
 		}
 		return .skipChildren
