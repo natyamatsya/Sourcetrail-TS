@@ -56,11 +56,13 @@ kill_strays
 # ---------------------------------------------------------------- 1. unit
 # Scoped to the concurrency-relevant suites (messaging, scheduling) until the
 # PRE-EXISTING full-suite debt is cleaned up (see memory/known-issues):
-#   - "ipc integration: full indexer workflow": rust section never consumes its
-#     command (fails identically on pre-refactor code)
 #   - a stack-smashing segfault (vector<FilePath> copy, corrupted backtrace)
 #     somewhere in the shard with logger/searchindex/matrix tests - needs an
 #     ASan build to pinpoint; it hid a tail of ~40 never-run failing tests
+# ("ipc integration: full indexer workflow" was in this list — its Swift hang and
+# the relative-app-path bug that stopped TaskBuildIndex launching the indexers
+# are now fixed, so it passes; it is excluded from this fast stage only because
+# it spawns the real indexer subprocesses.)
 UNIT_FILTER='message*,listener*,messages*,concurrent*,scheduler*,task*,scheduled*,sequential*,storage provider*'
 note "stage 1: unit tests (concurrency-relevant subset)"
 "$TEST_BIN" "$UNIT_FILTER" > "$SCRATCH/unit.log" 2>&1 &
