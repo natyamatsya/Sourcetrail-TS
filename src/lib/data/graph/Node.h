@@ -29,6 +29,7 @@ public:
 	NodeModifierMask getModifiers() const;
 	void setModifiers(NodeModifierMask modifiers);
 	bool isActor() const;
+	bool isDeprecated() const;
 
 	std::string getName() const;
 	std::string getFullName() const;

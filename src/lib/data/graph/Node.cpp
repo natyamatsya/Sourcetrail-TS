@@ -65,6 +65,11 @@ bool Node::isActor() const
 	return nodeModifierHas(m_modifiers, NODE_MODIFIER_ACTOR);
 }
 
+bool Node::isDeprecated() const
+{
+	return nodeModifierHas(m_modifiers, NODE_MODIFIER_DEPRECATED);
+}
+
 std::string Node::getName() const
 {
 	return m_nameHierarchy.getRawName();

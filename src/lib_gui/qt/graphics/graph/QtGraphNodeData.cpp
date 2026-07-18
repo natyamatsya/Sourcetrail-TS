@@ -90,6 +90,19 @@ void QtGraphNodeData::updateStyle()
 		style.iconPath = QtResources::GRAPH_VIEW_FILE_INCOMPLETE;
 	}
 
+	// Deprecated declarations (NODE_MODIFIER_DEPRECATED) get an orange dashed
+	// warning outline. Kept as a border override so it survives the type fill and
+	// the active/highlight state rather than replacing them.
+	if (m_data->isDeprecated())
+	{
+		style.color.border = "#E8820C";
+		if (style.borderWidth < 2)
+		{
+			style.borderWidth = 2;
+		}
+		style.borderDashed = true;
+	}
+
 	setStyle(style);
 }
 
