@@ -93,12 +93,11 @@ final class SemanticIndexer {
 			attributeMap = nil
 		}
 		let occurrences = index.symbolOccurrences(inFilePath: path)
-		// SW11: index the file's occurrences by position so a type argument can
-		// look up the symbol of its generic base for the `local` scope gate.
-		if genericArgMap != nil {
-			for occurrence in occurrences {
-				symbolByPos[positionOf(occurrence.location)] = occurrence.symbol
-			}
+		// Index the file's occurrences by position so a reference can look up the
+		// symbol of a related token: a type argument's generic base (SW11 `local`
+		// gate) or an attribute's annotated declaration (SW14/SW13 source).
+		for occurrence in occurrences {
+			symbolByPos[positionOf(occurrence.location)] = occurrence.symbol
 		}
 		for occurrence in occurrences {
 			process(occurrence: occurrence, filePath: path, fileNodeId: fileNodeId)
@@ -194,12 +193,19 @@ final class SemanticIndexer {
 		// EDGE_TYPE_ARGUMENT rather than a plain TYPE_USAGE, gated by scope. `local`
 		// keeps it only when the base type (`Box`) is defined outside the SDK.
 		let forceTypeArgument = isTypeArgumentEdge(at: position)
-		// SW14: a custom-attribute application (`@Clamped var`, `@ViewBuilder func`,
-		// `@MainActor`) references a type at an attribute position — an
-		// EDGE_ANNOTATION_USAGE, not a plain type usage. Non-type targets (attached
-		// macros) fall through for SW15.
-		let forceAnnotation = attributeMap?.isAttribute(position) == true
-			&& isTypeNodeKind(targetKind)
+		// SW14/SW13: a custom-attribute application (`@Clamped var`, `@ViewBuilder
+		// func`, `@MainActor class`) references a type at an attribute position — an
+		// EDGE_ANNOTATION_USAGE from the annotated declaration to the attribute
+		// type, not a plain type usage. The annotated declaration comes from
+		// SwiftSyntax (the store's containing-symbol relation misses type-level
+		// attributes). Non-type targets (attached macros) fall through for SW15.
+		if attributeMap?.isAttribute(position) == true, isTypeNodeKind(targetKind),
+			emitAnnotationUsage(
+				at: position, targetParts: targetParts, targetKind: targetKind,
+				occurrence: occurrence, fileNodeId: fileNodeId)
+		{
+			return
+		}
 
 		// The containing symbol comes from the occurrence's relations.
 		var sourceId: Int64?
@@ -227,8 +233,6 @@ final class SemanticIndexer {
 			edgeType = EdgeKind.inheritance
 		} else if isCall {
 			edgeType = EdgeKind.call
-		} else if forceAnnotation {
-			edgeType = EdgeKind.annotationUsage
 		} else if forceTypeArgument {
 			edgeType = EdgeKind.typeArgument
 		} else if symbol.kind == .module {
@@ -276,6 +280,32 @@ final class SemanticIndexer {
 	// store's positions and the SwiftSyntax maps (SW10/SW11).
 	private func positionOf(_ location: SymbolLocation) -> SyntaxPos {
 		SyntaxPos(line: Int(max(location.line, 1)), column: Int(max(location.utf8Column, 1)))
+	}
+
+	// SW14/SW13: emit the annotation-usage edge for a custom-attribute application
+	// at `position`, sourced from the declaration the attribute is attached to
+	// (resolved through SwiftSyntax, since the store's containing-symbol relation
+	// misses type-level attributes). Returns false — so the caller falls through
+	// to normal handling — when the annotated declaration can't be resolved.
+	private func emitAnnotationUsage(
+		at position: SyntaxPos, targetParts: [String], targetKind: Int32,
+		occurrence: SymbolOccurrence, fileNodeId: Int64
+	) -> Bool {
+		guard let declPos = attributeMap?.annotatedDecl(of: position),
+			let declSymbol = symbolByPos[declPos],
+			let (declParts, declKind) = resolve(symbol: declSymbol, location: nil)
+		else {
+			return false
+		}
+		let sourceId = builder.nodeId(parts: declParts, kind: declKind)
+		let targetId = builder.nodeId(parts: targetParts, kind: targetKind)
+		guard sourceId != targetId else {
+			return false
+		}
+		let edgeId = builder.edgeId(
+			type: EdgeKind.annotationUsage, source: sourceId, target: targetId)
+		recordTokenOccurrence(elementId: edgeId, occurrence: occurrence, fileNodeId: fileNodeId)
+		return true
 	}
 
 	// SW11: whether a reference at `position` is a direct type argument that
