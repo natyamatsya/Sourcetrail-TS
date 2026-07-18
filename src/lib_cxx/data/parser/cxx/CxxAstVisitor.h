@@ -16,7 +16,9 @@
 #include "CxxAstVisitorComponentContext.h"
 #include "CxxAstVisitorComponentDeclRefKind.h"
 #include "CxxAstVisitorComponentImplicitCode.h"
-#include "CxxAstVisitorComponentIndexer.h"
+#include "CxxAstVisitorComponentDeclarationIndexer.h"
+#include "CxxAstVisitorComponentReferenceIndexer.h"
+#include "CxxAstVisitorComponentTypeIndexer.h"
 #include "CxxAstVisitorComponentTypeRefKind.h"
 #include "CxxIndexingContext.h"
 #include "CxxLocationExtractor.h"
@@ -247,7 +249,9 @@ protected:
 		CxxAstVisitorComponentTypeRefKind,
 		CxxAstVisitorComponentDeclRefKind,
 		CxxAstVisitorComponentImplicitCode,
-		CxxAstVisitorComponentIndexer,
+		CxxAstVisitorComponentDeclarationIndexer,
+		CxxAstVisitorComponentReferenceIndexer,
+		CxxAstVisitorComponentTypeIndexer,
 		CxxAstVisitorComponentBraceRecorder>
 		m_components;
 };
