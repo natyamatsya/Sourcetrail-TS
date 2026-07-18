@@ -12,7 +12,6 @@
 #include <clang/AST/ASTContext.h>
 #include <clang/AST/Attr.h>
 #include <clang/AST/DeclTemplate.h>
-#include <clang/Analysis/CFG.h>
 #include <clang/Basic/SourceLocation.h>
 #include <clang/Basic/SourceManager.h>
 #include <clang/Lex/Preprocessor.h>
@@ -40,6 +39,11 @@ void CxxAstVisitorComponentIndexer::wire()
 CxxConceptReferenceRecorder CxxAstVisitorComponentIndexer::concepts()
 {
 	return {m_client, m_symbols, m_locations, *m_context};
+}
+
+CxxDestructorCallRecorder CxxAstVisitorComponentIndexer::destructorCalls()
+{
+	return {*m_astContext, m_client, m_symbols, m_locations, *m_context};
 }
 
 void CxxAstVisitorComponentIndexer::beginTraverseNestedNameSpecifierLoc(
@@ -555,7 +559,7 @@ void CxxAstVisitorComponentIndexer::visitFunctionDecl(clang::FunctionDecl* d)
 			}
 		}
 
-		recordNonTrivialDestructorCalls(d);
+		destructorCalls().record(d);
 	}
 }
 
@@ -1078,71 +1082,6 @@ void CxxAstVisitorComponentIndexer::recordDeducedQualType(const QualType deduced
 
 	m_client.recordDefinitionKind(deducedTypeId, DefinitionKind::EXPLICIT);
 	m_client.recordReference(ReferenceKind::TYPE_USAGE, deducedTypeId, contextSymbolId, keywordLocation);
-}
-
-void CxxAstVisitorComponentIndexer::recordNonTrivialDestructorCalls(const FunctionDecl *functionDecl)
-{
-	auto recordDestructorCall = [this](const FunctionDecl *functionDecl, const CXXDestructorDecl *destructorDecl)
-	{
-		Id referencedSymbolId = m_symbols.getOrCreateSymbolId(destructorDecl);
-		Id contextSymbolId = m_symbols.getOrCreateSymbolId(m_context->getContext());
-		// functionDecl->getLocation: The function name
-		// functionDecl->getBeginLoc: Begin of function
-		// functionDecl->getEndLoc: End of function
-		// functionDecl->getSourceRange: The complete function
-		// functionDecl->getDefaultLoc: No location but 'call' edge
-		// destructorDecl->getSourceRange: The destructor itself
-
-		ParseLocation parseLocation = m_locations.getParseLocation(functionDecl->getEndLoc());
-		m_client.recordReference(ReferenceKind::CALL, referencedSymbolId, contextSymbolId, parseLocation);
-	};
-
-	// Adapted from:
-	// "How to get information about call to destructors in Clang LibTooling?"
-	// https://stackoverflow.com/questions/59610156/how-to-get-information-about-call-to-destructors-in-clang-libtooling
-
-	if (functionDecl->isThisDeclarationADefinition())
-	{
-		CFG::BuildOptions buildOptions;
-		buildOptions.AddImplicitDtors = true;
-		buildOptions.AddTemporaryDtors = true;
-
-		if (unique_ptr<CFG> cfg = CFG::buildCFG(functionDecl, functionDecl->getBody(), m_astContext, buildOptions))
-		{
-			for (CFGBlock *block : cfg->const_nodes())
-			{
-				for (auto ref : block->refs())
-				{
-					// It should not be necessary to special-case 'CFGBaseDtor'. But 'CFGImplicitDtor::getDestructorDecl'
-					// is simply missing the implementation of that case. See 'CFGImplicitDtor::getDestructorDecl()':
-					// https://github.com/llvm/llvm-project/blob/a0b8d548fd250c92c8f9274b57e38ad3f0b215e9/clang/lib/Analysis/CFG.cpp#L5465
-					if (optional<CFGBaseDtor> baseDtor = ref->getAs<CFGBaseDtor>())
-					{
-						const CXXBaseSpecifier *baseSpec = baseDtor->getBaseSpecifier();
-						if (const RecordType *recordType = dyn_cast<RecordType>(baseSpec->getType().getDesugaredType(*m_astContext).getTypePtr()))
-						{
-							if (const CXXRecordDecl *recordDecl = dyn_cast<CXXRecordDecl>(recordType->getDecl()))
-							{
-								if (const CXXDestructorDecl *dtorDecl = recordDecl->getDestructor())
-								{
-									recordDestructorCall(functionDecl, dtorDecl);
-								}
-							}
-						}
-					}
-					// If it were not for the above unimplemented functionality, we would only need
-					// this block.
-					else if (optional<CFGImplicitDtor> implicitDtor = ref->getAs<CFGImplicitDtor>())
-					{
-						if (const CXXDestructorDecl *dtorDecl = implicitDtor->getDestructorDecl(*m_astContext))
-						{
-							recordDestructorCall(functionDecl, dtorDecl);
-						}
-					}
-				}
-			}
-		}
-	}
 }
 
 std::string CxxAstVisitorComponentIndexer::getLocalSymbolName(const clang::SourceLocation& loc) const
