@@ -99,6 +99,29 @@ endforeach()
 # The SOURCETRAIL_AGENT_CONTROL option is declared in the top-level CMakeLists.txt
 # (it also decides whether libipc is built with its async-receive layer).
 if (SOURCETRAIL_AGENT_CONTROL)
+	# App-side build identity stamped into AppInfo.build_id so the MCP bridge can
+	# detect an app<->bridge thoth-ipc drift (mirrors the bridge's build.rs stamp:
+	# git:<hash>+thoth-ipc:<version>). Scoped as a 1-TU define on the controller,
+	# like SqliteIndexStorage.cpp above, so re-stamping is a single recompile.
+	execute_process(
+		COMMAND git -C ${CMAKE_SOURCE_DIR} rev-parse --short HEAD
+		OUTPUT_VARIABLE _agent_git OUTPUT_STRIP_TRAILING_WHITESPACE ERROR_QUIET)
+	if (NOT _agent_git)
+		set(_agent_git "unknown")
+	endif()
+	file(STRINGS "${CMAKE_SOURCE_DIR}/submodules/thoth-ipc/rust/thoth-ipc/Cargo.toml"
+		_agent_thoth_line REGEX "^version")
+	string(REGEX MATCH "\"([^\"]+)\"" _ "${_agent_thoth_line}")
+	set(_agent_thoth "${CMAKE_MATCH_1}")
+	if (NOT _agent_thoth)
+		set(_agent_thoth "unknown")
+	endif()
+	set(AGENT_APP_BUILD_ID "git:${_agent_git}+thoth-ipc:${_agent_thoth}")
+	message(STATUS "Agent app build id: ${AGENT_APP_BUILD_ID}")
+	set_source_files_properties(
+		"${CMAKE_CURRENT_SOURCE_DIR}/component/controller/agent_control/AgentControlController.cpp"
+		PROPERTIES COMPILE_DEFINITIONS "AGENT_APP_BUILD_ID=\"${AGENT_APP_BUILD_ID}\"")
+
 	set(AGENT_SCHEMA_DIR ${CMAKE_CURRENT_SOURCE_DIR}/component/controller/agent_control/schemas)
 	set(AGENT_SCHEMAS
 		${AGENT_SCHEMA_DIR}/agent_common.fbs

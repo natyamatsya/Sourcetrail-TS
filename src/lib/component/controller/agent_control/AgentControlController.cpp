@@ -35,6 +35,14 @@ bool AgentControlController::isListening() const
 
 #include <flatbuffers/flatbuffers.h>
 
+// Build identity (`git:<hash>+thoth-ipc:<version>`) stamped by src/lib/CMakeLists.txt
+// (SOURCETRAIL_AGENT_CONTROL block) into AppInfo.build_id, so the MCP bridge can
+// detect an app<->bridge thoth-ipc drift — the app-side half of the bridge's
+// build.rs stamp. Empty when not stamped (e.g. a non-CMake build).
+#ifndef AGENT_APP_BUILD_ID
+#define AGENT_APP_BUILD_ID ""
+#endif
+
 #include "agent_command_generated.h"
 #include "agent_event_generated.h"
 #include "agent_frame_generated.h"
@@ -760,7 +768,7 @@ struct AgentControlController::Impl
 	{
 		flatbuffers::FlatBufferBuilder builder;
 		const auto appVersion = builder.CreateString(Version::getApplicationVersion().toDisplayString());
-		const auto buildId = builder.CreateString(std::string());	// reserved: no git hash compiled in yet
+		const auto buildId = builder.CreateString(std::string(AGENT_APP_BUILD_ID));
 		const auto instanceId = builder.CreateString(m_instanceId);
 		fb::AppInfoBuilder ib(builder);
 		ib.add_request_id(requestId);

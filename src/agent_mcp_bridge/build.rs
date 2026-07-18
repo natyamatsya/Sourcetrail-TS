@@ -47,11 +47,44 @@ fn glob_flatc(build_dir: &Path) -> std::io::Result<Option<PathBuf>> {
     Ok(None)
 }
 
+/// Stamp a build identity into the binary so a stale-vs-fresh mismatch between the
+/// bridge and the app is diagnosable at connect (surfaced by status()/handshake()).
+/// `git:<short-hash>+thoth-ipc:<version>` — the thoth-ipc version is the wire that
+/// actually has to match the app's, so drift there is the thing worth catching.
+fn emit_build_id(manifest: &Path) {
+    let git_short = Command::new("git")
+        .arg("-C").arg(manifest)
+        .args(["rev-parse", "--short", "HEAD"])
+        .output()
+        .ok()
+        .filter(|o| o.status.success())
+        .map(|o| String::from_utf8_lossy(&o.stdout).trim().to_string())
+        .unwrap_or_else(|| "unknown".into());
+
+    // thoth-ipc version straight from the pinned submodule's Cargo manifest.
+    let thoth_manifest = manifest.join("../../submodules/thoth-ipc/rust/thoth-ipc/Cargo.toml");
+    let thoth_ver = std::fs::read_to_string(&thoth_manifest)
+        .ok()
+        .and_then(|s| {
+            s.lines()
+                .find(|l| l.trim_start().starts_with("version"))
+                .and_then(|l| l.split('"').nth(1).map(str::to_string))
+        })
+        .unwrap_or_else(|| "unknown".into());
+
+    // Re-stamp when HEAD moves or the thoth-ipc pin changes.
+    println!("cargo:rerun-if-changed={}", manifest.join("../../.git/HEAD").display());
+    println!("cargo:rerun-if-changed={}", thoth_manifest.display());
+    println!("cargo:rustc-env=AGENT_BRIDGE_BUILD_ID=git:{git_short}+thoth-ipc:{thoth_ver}");
+}
+
 fn main() {
     let manifest = PathBuf::from(std::env::var("CARGO_MANIFEST_DIR").unwrap());
     let schema_dir = manifest.join("../lib/component/controller/agent_control/schemas");
     let out = PathBuf::from(std::env::var("OUT_DIR").unwrap());
     let flatc = find_flatc(&manifest);
+
+    emit_build_id(&manifest);
 
     // flatc's Rust codegen does not inline includes, and its multi-file output
     // has namespace collisions for same-namespace includes (every file redeclares
