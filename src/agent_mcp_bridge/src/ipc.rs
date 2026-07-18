@@ -18,6 +18,12 @@ const OP_TIMEOUT: Duration = Duration::from_secs(5);
 /// Bound on the buffered event log (drops oldest; `seq` gaps let a poller detect it).
 const EVENT_LOG_CAP: usize = 2048;
 
+/// Pull the `thoth-ipc:<version>` token out of a build_id (`git:<hash>+thoth-ipc:X`).
+/// That token is the SHM wire the two sides must agree on, so it's what we compare.
+fn thoth_token(build_id: &str) -> Option<&str> {
+    build_id.split('+').find_map(|t| t.strip_prefix("thoth-ipc:"))
+}
+
 pub struct Bridge {
     cmd: Route,
     cmd_name: String,
@@ -88,8 +94,15 @@ impl Bridge {
     fn perform_handshake(&mut self) -> Value {
         let id = self.next_id();
         if let Err(e) = self.send(&protocol::get_info(id)) {
-            // App not listening yet (or gone). Not fatal; report and move on.
-            return json!({ "ok": false, "error": e.to_string() });
+            // Command not even delivered. App not listening yet (0 receivers), or an
+            // app is bound but not consuming (blocked). Not fatal; classify + report.
+            let skew = if self.cmd_receivers() == 0 { "no_app" } else { "blocked" };
+            return json!({
+                "ok": false,
+                "skew": skew,
+                "bridge_build_id": protocol::BRIDGE_BUILD_ID,
+                "error": e.to_string(),
+            });
         }
         let bridge_ver = protocol::AGENT_PROTOCOL_VERSION;
         let deadline = Instant::now() + OP_TIMEOUT;
@@ -123,14 +136,36 @@ impl Bridge {
                              v{bridge_ver}; commands added after v{protocol_version} will be ignored"
                         );
                     }
+                    // Soft two-sided wire check: the handshake round-tripped, so the
+                    // thoth-ipc wire is compatible — but a version *difference* still
+                    // signals a pending drift worth flagging (e.g. wire-compatible
+                    // patch releases now, a breaking bump later). "unknown" until the
+                    // app stamps its build_id.
+                    let wire = match thoth_token(&build_id) {
+                        None => "unknown",
+                        Some(app_t) => match thoth_token(protocol::BRIDGE_BUILD_ID) {
+                            Some(br_t) if app_t == br_t => "match",
+                            Some(_) => "drift",
+                            None => "unknown",
+                        },
+                    };
+                    if wire == "drift" {
+                        eprintln!(
+                            "sourcetrail-mcp: thoth-ipc drift — app {build_id} vs bridge {}; \
+                             still wire-compatible now, but realign before the next breaking bump",
+                            protocol::BRIDGE_BUILD_ID
+                        );
+                    }
                     return json!({
                         "ok": true,
                         "bridge_protocol_version": bridge_ver,
                         "app_protocol_version": protocol_version,
                         "app_version": app_version,
-                        "build_id": build_id,
+                        "app_build_id": build_id,
+                        "bridge_build_id": protocol::BRIDGE_BUILD_ID,
                         "instance_id": instance_id,
                         "skew": skew,
+                        "wire": wire,
                     });
                 }
                 // The app rejected GetInfo as unknown → it predates the handshake, so
@@ -151,7 +186,41 @@ impl Bridge {
                 _ => {}
             }
         }
-        json!({ "ok": false, "error": "handshake timed out (no AppInfo)" })
+        // Timed out with no AppInfo. If an app receiver IS bound, the app is up and
+        // received GetInfo but its reply never came back parseable — the classic
+        // signature of a bridge/app version skew (the low-level thoth-ipc sync-ABI
+        // still attaches, so the segment connects and recv_count>0, but the message
+        // wire no longer round-trips). Call it out loudly with the fix, instead of a
+        // bare "timed out" that sends the operator hunting (as it did on 2026-07-18).
+        let receivers = self.cmd_receivers();
+        if receivers >= 1 {
+            eprintln!(
+                "sourcetrail-mcp: cannot handshake with the app on {} — {receivers} receiver(s) \
+                 bound but no reply. Likely a version skew: this bridge ({}) and the app were \
+                 built against different thoth-ipc. Rebuild the bridge: \
+                 `cargo build --release --features mcp --bin sourcetrail-mcp`.",
+                self.cmd_name, protocol::BRIDGE_BUILD_ID
+            );
+            return json!({
+                "ok": false,
+                "skew": "unreachable",
+                "bridge_build_id": protocol::BRIDGE_BUILD_ID,
+                "cmd_receivers": receivers,
+                "error": format!(
+                    "app is listening ({receivers} receiver(s)) but did not answer the handshake \
+                     within {OP_TIMEOUT:?} — likely a bridge/app thoth-ipc version skew (rebuild \
+                     the bridge with `cargo build --release --features mcp`), or the app is blocked \
+                     on its GUI thread (e.g. a modal dialog)"
+                ),
+            });
+        }
+        json!({
+            "ok": false,
+            "skew": "no_app",
+            "bridge_build_id": protocol::BRIDGE_BUILD_ID,
+            "error": "handshake timed out (no AppInfo) and no app receiver is bound — the app is \
+                      not running with agent control, or exited before the handshake",
+        })
     }
 
     fn next_id(&mut self) -> u64 {
@@ -212,7 +281,21 @@ impl Bridge {
                  raced past this window)"
             ),
         };
-        anyhow!("timed out after {timeout:?} awaiting {what} for request {request_id}: {tail}")
+        // If the connect-time handshake ALSO failed while the app is bound, this
+        // isn't a one-off race — it's systemic, i.e. a bridge/app version skew.
+        let skew_hint = if self.cmd_receivers() >= 1
+            && self.handshake.get("ok").and_then(Value::as_bool) != Some(true)
+        {
+            format!(
+                " — NOTE: the connect-time handshake also failed, so this is systemic: suspect a \
+                 bridge/app thoth-ipc version skew. Rebuild the bridge (`cargo build --release \
+                 --features mcp`). bridge_build_id={}",
+                protocol::BRIDGE_BUILD_ID
+            )
+        } else {
+            String::new()
+        };
+        anyhow!("timed out after {timeout:?} awaiting {what} for request {request_id}: {tail}{skew_hint}")
     }
 
     /// Record one raw `EventEnvelope` into the observation log (bounded ring).
@@ -353,6 +436,7 @@ impl Bridge {
     pub fn status(&self) -> Value {
         json!({
             "app_listening": self.cmd.recv_count() >= 1,
+            "bridge_build_id": protocol::BRIDGE_BUILD_ID,
             "protocol": self.handshake,
             "channel_receivers": {
                 "cmd": self.cmd.recv_count(),        // = app listeners

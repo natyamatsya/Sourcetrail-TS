@@ -149,24 +149,43 @@ impl Default for InstanceManager {
     }
 }
 
-/// Spawn-side readiness: retry the connect until the app's channels exist, failing
-/// fast if the child process exits meanwhile.
+/// Spawn-side readiness: retry until the app can actually be *driven*, failing fast
+/// if the child exits meanwhile.
+///
+/// A successful `Bridge::connect_instance` only means the SHM segments exist — the
+/// app may not have bound its command receiver yet, so returning here let a
+/// following `load_project` (or the caller's first command) race the channel and
+/// fail. Instead we gate on the connect-time handshake (`GetInfo` -> `AppInfo`)
+/// round-tripping: that proves the receiver is bound AND replying. This closes the
+/// startup race, and a persistent handshake failure with a bound receiver surfaces
+/// a version skew with an actionable message rather than a later opaque timeout.
 fn wait_for_ready(id: &str, mut child: Child) -> Result<AppInstance> {
     let deadline = Instant::now() + READY_TIMEOUT;
+    let mut last_handshake = Value::Null;
     loop {
         if let Some(status) = child.try_wait().context("poll child")? {
             bail!("app exited before its channels were ready (status {status})");
         }
-        match Bridge::connect_instance(id) {
-            Ok(bridge) => {
+        if let Ok(bridge) = Bridge::connect_instance(id) {
+            let hs = bridge.handshake();
+            if hs.get("ok").and_then(Value::as_bool) == Some(true) {
                 return Ok(AppInstance { id: id.to_string(), child: Some(child), bridge });
             }
-            Err(_) if Instant::now() < deadline => std::thread::sleep(READY_POLL),
-            Err(e) => {
-                let _ = child.kill();
-                return Err(e.context(format!("instance '{id}' not ready within {READY_TIMEOUT:?}")));
-            }
+            last_handshake = hs;
         }
+        if Instant::now() >= deadline {
+            let _ = child.kill();
+            // If a receiver was bound but the handshake never completed, it's almost
+            // certainly a bridge/app version skew, not a slow start — say so.
+            if last_handshake.get("skew").and_then(Value::as_str) == Some("unreachable") {
+                bail!(
+                    "instance '{id}' came up but is unreachable within {READY_TIMEOUT:?}: {}",
+                    last_handshake.get("error").and_then(Value::as_str).unwrap_or("handshake failed")
+                );
+            }
+            bail!("instance '{id}' did not become driveable within {READY_TIMEOUT:?} (no successful handshake)");
+        }
+        std::thread::sleep(READY_POLL);
     }
 }
 

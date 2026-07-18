@@ -65,6 +65,11 @@ fn finish(
 /// from different checkouts. See DESIGN_AGENT_UI_CONTROL.md (Protocol handshake).
 pub const AGENT_PROTOCOL_VERSION: u32 = fb::ProtocolVersion::Current.0;
 
+/// This bridge binary's build identity (`git:<hash>+thoth-ipc:<version>`, stamped
+/// by build.rs). The thoth-ipc version is the SHM wire the app must also speak, so
+/// a mismatch here is the stale-binary drift that silently breaks driving.
+pub const BRIDGE_BUILD_ID: &str = env!("AGENT_BRIDGE_BUILD_ID");
+
 pub fn get_ui_state(request_id: u64) -> Vec<u8> {
     let mut b = FlatBufferBuilder::new();
     let c = fb::GetUiState::create(&mut b, &fb::GetUiStateArgs {});
