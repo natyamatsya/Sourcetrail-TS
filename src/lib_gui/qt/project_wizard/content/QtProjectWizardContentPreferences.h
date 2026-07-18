@@ -105,6 +105,7 @@ private:
 
 	QCheckBox* m_useAnimations;
 	QCheckBox* m_showBuiltinTypes;
+	QCheckBox* m_hideDeprecated;
 	QCheckBox* m_showDirectoryInCode;
 
 	QComboBox* m_screenAutoScaling = nullptr;

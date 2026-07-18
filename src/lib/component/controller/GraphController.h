@@ -105,6 +105,7 @@ private:
 	void setNodeVisibilityRecursiveTopDown(DummyNode* node, bool parentExpanded) const;
 
 	void hideBuiltinTypes();
+	void hideDeprecated();
 
 	void bundleNodes();
 	void bundleNodesAndEdgesMatching(

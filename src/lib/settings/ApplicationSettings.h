@@ -65,6 +65,9 @@ public:
 	bool getShowBuiltinTypesInGraph() const;
 	void setShowBuiltinTypesInGraph(bool showBuiltinTypes);
 
+	bool getHideDeprecatedInGraph() const;
+	void setHideDeprecatedInGraph(bool hideDeprecated);
+
 	bool getShowDirectoryInCodeFileTitle() const;
 	void setShowDirectoryInCodeFileTitle(bool showDirectory);
 

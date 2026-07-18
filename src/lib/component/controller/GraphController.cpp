@@ -753,6 +753,7 @@ void GraphController::createDummyGraphAndSetActiveAndVisibility(
 	setVisibility(noActive);
 
 	hideBuiltinTypes();
+	hideDeprecated();
 }
 
 std::vector<std::shared_ptr<DummyNode>> GraphController::createDummyNodeTopDown(Node* node, Id ancestorId)
@@ -1104,6 +1105,27 @@ void GraphController::hideBuiltinTypes()
 	for (const std::shared_ptr<DummyNode>& node: m_dummyNodes)
 	{
 		if (node->isGraphNode() && !node->active && node->data->getType().isBuiltin())
+		{
+			node->visible = false;
+			node->hidden = true;
+		}
+	}
+}
+
+// "Hide deprecated" graph filter: drop deprecated declarations from any graph view
+// when the setting is on. Unlike hideBuiltinTypes this applies in every view (no
+// single-active-node guard); the actively-focused node is kept so a deprecated
+// symbol you navigate to is still shown.
+void GraphController::hideDeprecated()
+{
+	if (!ApplicationSettings::getInstance()->getHideDeprecatedInGraph())
+	{
+		return;
+	}
+
+	for (const std::shared_ptr<DummyNode>& node: m_dummyNodes)
+	{
+		if (node->isGraphNode() && !node->active && node->data->isDeprecated())
 		{
 			node->visible = false;
 			node->hidden = true;

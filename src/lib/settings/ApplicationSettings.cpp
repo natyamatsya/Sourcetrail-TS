@@ -39,6 +39,9 @@ bool ApplicationSettings::load(const FilePath& filePath, bool readOnly)
 		setUseAnimations(true);
 	if (!isValueDefined("application/builtin_types_in_graph"))
 		setShowBuiltinTypesInGraph(false);
+
+	if (!isValueDefined("application/hide_deprecated_in_graph"))
+		setHideDeprecatedInGraph(false);
 	if (!isValueDefined("application/directory_in_code_title"))
 		setShowDirectoryInCodeFileTitle(false);
 	if (!isValueDefined("application/scroll_speed"))
@@ -108,6 +111,16 @@ bool ApplicationSettings::getShowBuiltinTypesInGraph() const
 void ApplicationSettings::setShowBuiltinTypesInGraph(bool showBuiltinTypes)
 {
 	setValue<bool>("application/builtin_types_in_graph", showBuiltinTypes);
+}
+
+bool ApplicationSettings::getHideDeprecatedInGraph() const
+{
+	return getValue<bool>("application/hide_deprecated_in_graph", false);
+}
+
+void ApplicationSettings::setHideDeprecatedInGraph(bool hideDeprecated)
+{
+	setValue<bool>("application/hide_deprecated_in_graph", hideDeprecated);
 }
 
 bool ApplicationSettings::getShowDirectoryInCodeFileTitle() const

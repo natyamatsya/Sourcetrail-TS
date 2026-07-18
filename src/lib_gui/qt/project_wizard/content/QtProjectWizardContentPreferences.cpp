@@ -129,6 +129,15 @@ void QtProjectWizardContentPreferences::populate(QGridLayout* layout, int& row)
 		layout,
 		row);
 
+	// hide deprecated
+	m_hideDeprecated = addCheckBox(tr("Deprecated Symbols"),
+		tr("Hide deprecated symbols in graph"),
+		tr("<p>Hide declarations marked deprecated (Swift <code>@available(*, deprecated)</code>, "
+		   "C++ <code>[[deprecated]]</code>, Rust <code>#[deprecated]</code>) from the graph view. "
+		   "The active symbol is still shown.</p>"),
+		layout,
+		row);
+
 	// directory in code
 	m_showDirectoryInCode = addCheckBox(tr("Directory in File Title"),
 		tr("Show directory of file in code title"),
@@ -308,6 +317,7 @@ void QtProjectWizardContentPreferences::load()
 
 	m_useAnimations->setChecked(appSettings->getUseAnimations());
 	m_showBuiltinTypes->setChecked(appSettings->getShowBuiltinTypesInGraph());
+	m_hideDeprecated->setChecked(appSettings->getHideDeprecatedInGraph());
 	m_showDirectoryInCode->setChecked(appSettings->getShowDirectoryInCodeFileTitle());
 
 	if (m_screenAutoScaling)
@@ -367,6 +377,7 @@ void QtProjectWizardContentPreferences::save()
 
 	appSettings->setUseAnimations(m_useAnimations->isChecked());
 	appSettings->setShowBuiltinTypesInGraph(m_showBuiltinTypes->isChecked());
+	appSettings->setHideDeprecatedInGraph(m_hideDeprecated->isChecked());
 	appSettings->setShowDirectoryInCodeFileTitle(m_showDirectoryInCode->isChecked());
 
 	if (m_screenAutoScaling)

@@ -287,9 +287,15 @@ semantic) + a C++ `StorageTestSuite` tooltip round-trip. This is the deferred
 extracted from `@available(*, deprecated[, message:])`; the tooltip shows
 `[deprecated: …]`.
 
+**Graph treatment for deprecation landed (2026-07-18):** deprecated nodes get an
+orange dashed warning outline (`QtGraphNodeData` off `Node::isDeprecated()`), and a
+"hide deprecated" graph filter (`ApplicationSettings::hide_deprecated_in_graph` +
+`GraphController::hideDeprecated` + a preferences checkbox, modelled on the
+built-in-types filter) drops them from every graph view (the active node stays).
+Both key off the `NODE_MODIFIER_DEPRECATED` bit, not the message table.
+
 **Remaining follow-ups (additive over the same table):** the C++ (`#ifdef` / Clang
-availability / `[[deprecated]]`) and Rust (`#[cfg]` / `#[deprecated]`) producers,
-and a graph *filter* over `node_attribute`.
+availability / `[[deprecated]]`) and Rust (`#[cfg]` / `#[deprecated]`) producers.
 
 ## Critical files
 
