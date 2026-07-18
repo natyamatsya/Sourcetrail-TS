@@ -37,6 +37,58 @@ std::shared_ptr<TestStorage> parseCode(const std::string &code, const std::vecto
 
 	return TestStorage::create(storage);
 }
+
+// Like parseCode, but hands back the raw IntermediateStorage so a test can
+// inspect node modifiers and node_attribute rows (TestStorage flattens both away).
+std::shared_ptr<IntermediateStorage> parseCodeToStorage(const std::string& code)
+{
+	std::shared_ptr<IntermediateStorage> storage = std::make_shared<IntermediateStorage>();
+	CxxParser parser(
+		std::make_shared<ParserClientImpl>(storage),
+		std::make_shared<TestFileRegister>(),
+		std::make_shared<IndexerStateInfo>());
+	parser.buildIndex(
+		"input.cc",
+		TextAccess::createFromString(code),
+		utility::concat(
+			std::vector<std::string>{}, ClangCompiler::stdOption(ClangCompiler::getLatestCppStandard())));
+	return storage;
+}
+
+bool hasDeprecatedNode(const std::shared_ptr<IntermediateStorage>& storage, const std::string& namePart)
+{
+	for (const StorageNode& node: storage->getStorageNodes())
+	{
+		if (node.serializedName.find(namePart) != std::string::npos &&
+			(node.modifiers & NODE_MODIFIER_DEPRECATED) != 0)
+		{
+			return true;
+		}
+	}
+	return false;
+}
+
+std::vector<std::string> deprecationMessages(
+	const std::shared_ptr<IntermediateStorage>& storage, const std::string& namePart)
+{
+	std::set<Id> ids;
+	for (const StorageNode& node: storage->getStorageNodes())
+	{
+		if (node.serializedName.find(namePart) != std::string::npos)
+		{
+			ids.insert(node.id);
+		}
+	}
+	std::vector<std::string> out;
+	for (const StorageNodeAttribute& attribute: storage->getNodeAttributes())
+	{
+		if (attribute.key == NodeAttributeKind::DEPRECATED && ids.count(attribute.nodeId))
+		{
+			out.push_back(attribute.value);
+		}
+	}
+	return out;
+}
 }
 
 TEST_CASE("cxx parser finds global variable declaration")
@@ -4789,6 +4841,40 @@ TEST_CASE("cxx parser finds location of block comment")
 		"block comment */\n");
 
 	REQUIRE(utility::containsElement<std::string>(client->comments, "comment <1:1 2:17>"));
+}
+
+TEST_CASE("cxx parser records deprecated attribute as modifier bit")
+{
+	std::shared_ptr<IntermediateStorage> storage = parseCodeToStorage("[[deprecated]] void foo() {}\n");
+
+	REQUIRE(hasDeprecatedNode(storage, "foo"));
+	REQUIRE(deprecationMessages(storage, "foo").empty());
+}
+
+TEST_CASE("cxx parser records deprecated message as node attribute")
+{
+	std::shared_ptr<IntermediateStorage> storage =
+		parseCodeToStorage("[[deprecated(\"use bar\")]] void foo() {}\n");
+
+	REQUIRE(hasDeprecatedNode(storage, "foo"));
+	REQUIRE(deprecationMessages(storage, "foo") == std::vector<std::string>{"use bar"});
+}
+
+TEST_CASE("cxx parser records deprecated attribute on a class")
+{
+	std::shared_ptr<IntermediateStorage> storage =
+		parseCodeToStorage("class [[deprecated(\"gone\")]] Old {};\n");
+
+	REQUIRE(hasDeprecatedNode(storage, "Old"));
+	REQUIRE(deprecationMessages(storage, "Old") == std::vector<std::string>{"gone"});
+}
+
+TEST_CASE("cxx parser leaves non-deprecated nodes unmarked")
+{
+	std::shared_ptr<IntermediateStorage> storage = parseCodeToStorage("void fresh() {}\n");
+
+	REQUIRE_FALSE(hasDeprecatedNode(storage, "fresh"));
+	REQUIRE(deprecationMessages(storage, "fresh").empty());
 }
 
 /*

@@ -13,6 +13,7 @@
 #include "utilityMainFunction.h"
 
 #include <clang/AST/ASTContext.h>
+#include <clang/AST/Attr.h>
 #include <clang/AST/DeclTemplate.h>
 #include <clang/Analysis/CFG.h>
 #include <clang/Basic/SourceLocation.h>
@@ -217,6 +218,21 @@ void CxxAstVisitorComponentIndexer::visitCXXFunctionalCastExpr(clang::CXXFunctio
 }
 
 
+void CxxAstVisitorComponentIndexer::recordDeprecation(Id symbolId, const clang::Decl* d)
+{
+	if (const DeprecatedAttr* attr = d->getAttr<DeprecatedAttr>())
+	{
+		m_client->recordNodeModifier(symbolId, NODE_MODIFIER_DEPRECATED);
+		// The bit carries the boolean; the message (if any) rides in a DEPRECATED
+		// node_attribute — same split the Swift/Rust producers use.
+		const std::string message = attr->getMessage().str();
+		if (!message.empty())
+		{
+			m_client->recordNodeAttribute(symbolId, NodeAttributeKind::DEPRECATED, message);
+		}
+	}
+}
+
 void CxxAstVisitorComponentIndexer::visitTagDecl(clang::TagDecl* d)
 {
 	if (getAstVisitor()->shouldVisitDecl(d))
@@ -237,6 +253,7 @@ void CxxAstVisitorComponentIndexer::visitTagDecl(clang::TagDecl* d)
 			symbolId, getParseLocationOfTagDeclBody(d), ParseLocationType::SCOPE);
 		m_client->recordAccessKind(symbolId, utility::convertAccessSpecifier(d->getAccess()));
 		m_client->recordDefinitionKind(symbolId, definitionKind);
+		recordDeprecation(symbolId, d);
 
 		if (clang::EnumDecl* enumDecl = clang::dyn_cast_or_null<clang::EnumDecl>(d))
 		{
@@ -343,6 +360,7 @@ void CxxAstVisitorComponentIndexer::visitVarDecl(clang::VarDecl* d)
 			m_client->recordLocation(symbolId, location, ParseLocationType::TOKEN);
 			m_client->recordAccessKind(symbolId, utility::convertAccessSpecifier(d->getAccess()));
 			m_client->recordDefinitionKind(symbolId, utility::getDefinitionKind(d));
+			recordDeprecation(symbolId, d);
 
 			recordTemplateMemberSpecialization(d->getMemberSpecializationInfo(), symbolId, location, symbolKind);
 		}
@@ -409,6 +427,7 @@ void CxxAstVisitorComponentIndexer::visitFieldDecl(clang::FieldDecl* d)
 		m_client->recordLocation(fieldId, location, ParseLocationType::TOKEN);
 		m_client->recordAccessKind(fieldId, utility::convertAccessSpecifier(d->getAccess()));
 		m_client->recordDefinitionKind(fieldId, utility::getDefinitionKind(d));
+		recordDeprecation(fieldId, d);
 
 		if (clang::CXXRecordDecl* declaringRecordDecl =
 				clang::dyn_cast_or_null<clang::CXXRecordDecl>(d->getParent()))
@@ -444,6 +463,7 @@ void CxxAstVisitorComponentIndexer::visitFunctionDecl(clang::FunctionDecl* d)
 		m_client->recordLocation(symbolId, getParseLocationOfFunctionBody(d), ParseLocationType::SCOPE);
 		m_client->recordAccessKind(symbolId, utility::convertAccessSpecifier(d->getAccess()));
 		m_client->recordDefinitionKind(symbolId, utility::getDefinitionKind(d));
+		recordDeprecation(symbolId, d);
 
 		if (d->isFirstDecl())
 		{
@@ -566,6 +586,7 @@ void CxxAstVisitorComponentIndexer::visitEnumConstantDecl(clang::EnumConstantDec
 		m_client->recordSymbolKind(symbolId, SymbolKind::ENUM_CONSTANT);
 		m_client->recordLocation(symbolId, getParseLocation(d->getLocation()), ParseLocationType::TOKEN);
 		m_client->recordDefinitionKind(symbolId, utility::getDefinitionKind(d));
+		recordDeprecation(symbolId, d);
 	}
 }
 
@@ -615,6 +636,7 @@ void CxxAstVisitorComponentIndexer::visitTypedefDecl(clang::TypedefDecl* d)
 		m_client->recordLocation(symbolId, getParseLocation(d->getLocation()), ParseLocationType::TOKEN);
 		m_client->recordAccessKind(symbolId, utility::convertAccessSpecifier(d->getAccess()));
 		m_client->recordDefinitionKind(symbolId, utility::getDefinitionKind(d));
+		recordDeprecation(symbolId, d);
 	}
 }
 
@@ -631,6 +653,7 @@ void CxxAstVisitorComponentIndexer::visitTypeAliasDecl(clang::TypeAliasDecl* d)
 		m_client->recordLocation(symbolId, getParseLocation(d->getLocation()), ParseLocationType::TOKEN);
 		m_client->recordAccessKind(symbolId, utility::convertAccessSpecifier(d->getAccess()));
 		m_client->recordDefinitionKind(symbolId, utility::getDefinitionKind(d));
+		recordDeprecation(symbolId, d);
 	}
 }
 

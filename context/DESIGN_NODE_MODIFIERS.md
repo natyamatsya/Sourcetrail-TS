@@ -5,8 +5,11 @@
 (`node_attribute`, DESIGN_STORAGE_CODEGEN.md step 2) with producers/consumers for
 Swift `@available` (→ `AVAILABILITY`) and **deprecation** (the cross-axis fact:
 `NODE_MODIFIER_DEPRECATED` bit + `DEPRECATED` message row) — is now implemented
-too. Axis 3b (config-atom nodes + guard edges), the `open`/`final` Axis-2 bits,
-and the C++/Rust deprecation/availability producers remain proposed.**
+too. Deprecation ships in all three primary indexers: Swift `@available(*,
+deprecated)`, Rust `#[deprecated]` (+ `#[cfg]` → `CFG`), and C++ `[[deprecated]]`.
+Axis 3b (config-atom nodes + guard edges), the `open`/`final` Axis-2 bits, and
+the availability/cfg producers for the remaining languages (C++ Clang
+`availability`, Rust `#[cfg]` is done, Zig `comptime`) remain proposed.**
 This note names the general model behind three changes that shipped
 piecemeal — `AccessKind::PACKAGE`, the `NodeModifier` bitmask, and
 `async`/`nonisolated` — and shows that the two remaining Swift "open points"
@@ -159,8 +162,19 @@ does the same for `#[deprecated]` / `#[deprecated = "msg"]` /
 `#[deprecated(note = "…")]`, and additionally records the surviving
 `#[cfg(...)]` predicate as a `CFG` `node_attribute` (Axis-3a). The node tooltip
 shows `[deprecated: <message>]` off the bit + the row, and `#[cfg(<predicate>)]`
-off the CFG row. C++ `[[deprecated]]` is the remaining per-indexer producer over
-the same primitive.
+off the CFG row.
+
+The **C++** (clang) indexer now produces it too. The clang pipeline records nodes
+through the `ParserClient` abstraction, which previously had no way to carry a
+modifier bit or a metadata row — so this added `recordNodeModifier` and
+`recordNodeAttribute` to `ParserClient`/`ParserClientImpl` (backed by a new
+`IntermediateStorage::addNodeModifier` that OR-s a bit into an existing node,
+mirroring `setNodeType`). `CxxAstVisitorComponentIndexer::recordDeprecation`
+reads `Decl::getAttr<DeprecatedAttr>()` at each named-decl site (tag, var, field,
+function/method, enum-constant, typedef, type-alias) → sets the bit and records
+the `DeprecatedAttr` message as a `DEPRECATED` row. Deprecation is now a
+uniform cross-language fact; Clang `availability` → `AVAILABILITY` is the natural
+next producer over the same seam.
 
 ## Graceful degradation
 

@@ -4,6 +4,8 @@
 #include "AccessKind.h"
 #include "DefinitionKind.h"
 #include "NameHierarchy.h"
+#include "NodeAttributeKind.h"
+#include "NodeModifier.h"
 #include "ParseLocation.h"
 #include "ReferenceKind.h"
 #include "SymbolKind.h"
@@ -24,6 +26,10 @@ public:
 	virtual void recordSymbolKind(Id symbolId, SymbolKind symbolKind) = 0;
 	virtual void recordAccessKind(Id symbolId, AccessKind accessKind) = 0;
 	virtual void recordDefinitionKind(Id symbolId, DefinitionKind definitionKind) = 0;
+	// Axis-2 capability bit(s) OR-ed into the node (e.g. NODE_MODIFIER_DEPRECATED).
+	virtual void recordNodeModifier(Id symbolId, NodeModifierMask modifier) = 0;
+	// Axis-3a sparse metadata: a display-only key->value fact on the node.
+	virtual void recordNodeAttribute(Id symbolId, NodeAttributeKind key, const std::string& value) = 0;
 	virtual Id recordReference(ReferenceKind referenceKind, Id referencedSymbolId, Id contextSymbolId, const ParseLocation& location) = 0;
 	virtual void recordLocalSymbol(const std::string& name, const ParseLocation& location) = 0;
 	virtual void recordLocation(Id elementId, const ParseLocation& location, ParseLocationType type) = 0;

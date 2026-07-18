@@ -149,6 +149,22 @@ void ParserClientImpl::recordDefinitionKind(Id symbolId, DefinitionKind definiti
 	}
 }
 
+void ParserClientImpl::recordNodeModifier(Id symbolId, NodeModifierMask modifier)
+{
+	if (modifier != NODE_MODIFIER_NONE)
+	{
+		m_storage->addNodeModifier(symbolId, modifier);
+	}
+}
+
+void ParserClientImpl::recordNodeAttribute(Id symbolId, NodeAttributeKind key, const std::string& value)
+{
+	if (key != NodeAttributeKind::NONE)
+	{
+		m_storage->addNodeAttribute(StorageNodeAttribute(symbolId, key, value));
+	}
+}
+
 Id ParserClientImpl::recordReference(
 	ReferenceKind referenceKind, Id referencedSymbolId, Id contextSymbolId, const ParseLocation& location)
 {

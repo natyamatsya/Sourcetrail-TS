@@ -24,6 +24,7 @@ public:
 	std::pair<Id, bool> addNode(const StorageNodeData& nodeData) override;
 	std::vector<Id> addNodes(const std::vector<StorageNode>& nodes) override;
 	void setNodeType(Id nodeId, NodeKind nodeType);
+	void addNodeModifier(Id nodeId, NodeModifierMask modifier);
 	void addSymbol(const StorageSymbol& symbol) override;
 	void addSymbols(const std::vector<StorageSymbol>& symbols) override;
 	void addFile(const StorageFile& file) override;
