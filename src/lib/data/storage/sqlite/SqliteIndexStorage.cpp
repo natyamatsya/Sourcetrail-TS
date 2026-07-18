@@ -16,7 +16,7 @@
 #include "utilityString.h"
 
 
-const size_t SqliteIndexStorage::s_storageVersion = 25;
+const size_t SqliteIndexStorage::s_storageVersion = 26;
 
 namespace
 {
@@ -88,7 +88,8 @@ constexpr auto nodeFromRow = [](const auto& row) -> std::optional<StorageNode> {
 	const auto type = static_cast<int>(row.type);
 	if (id != 0 && type != -1)
 	{
-		return StorageNode(id, intToEnum<NodeKind>(type), fieldText(row.serializedName));
+		return StorageNode(id, intToEnum<NodeKind>(type), fieldText(row.serializedName),
+			static_cast<NodeModifierMask>(row.modifiers));
 	}
 	return std::nullopt;
 };
@@ -428,12 +429,13 @@ std::vector<Id> SqliteIndexStorage::addNodes(const std::vector<StorageNode>& nod
 		insertInChunks(
 			db(),
 			nodesToInsert,
-			[] { return insert_into(nodeTable).columns(nodeTable.id, nodeTable.type, nodeTable.serializedName); },
+			[] { return insert_into(nodeTable).columns(nodeTable.id, nodeTable.type, nodeTable.serializedName, nodeTable.modifiers); },
 			[](auto& insert, const StorageNode& node) {
 				insert.add_values(
 					nodeTable.id = static_cast<Id::type>(node.id),
 					nodeTable.type = static_cast<int>(node.type),
-					nodeTable.serializedName = node.serializedName);
+					nodeTable.serializedName = node.serializedName,
+					nodeTable.modifiers = static_cast<int>(node.modifiers));
 			});
 	}
 
@@ -2155,6 +2157,7 @@ void SqliteIndexStorage::setupTables()
 			"id INTEGER NOT NULL, "
 			"type INTEGER NOT NULL, "
 			"serialized_name TEXT, "
+			"modifiers INTEGER NOT NULL DEFAULT 0, "
 			"PRIMARY KEY(id), "
 			"FOREIGN KEY(id) REFERENCES element(id) ON DELETE CASCADE);");
 

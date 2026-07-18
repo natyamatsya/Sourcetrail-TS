@@ -151,6 +151,11 @@ final class SemanticIndexer {
 		if let access = accessMap?.access(at: position) {
 			builder.recordComponentAccess(nodeId: nodeId, access: access)
 		}
+		// SW13: actor identity — the store reports an actor as a class, so the
+		// SwiftSyntax actor set marks it.
+		if accessMap?.isActor(at: position) == true {
+			builder.addNodeModifier(nodeId: nodeId, modifier: NodeModifier.actor)
+		}
 		recordDefinitionLocations(
 			elementId: nodeId, occurrence: occurrence, fileNodeId: fileNodeId)
 

@@ -32,6 +32,9 @@ func swiftAccessKind(_ modifiers: DeclModifierListSyntax) -> Int32 {
 // store's definition occurrences (same keying as DeclScopeMap).
 final class AccessMap {
 	private var byPos: [SyntaxPos: Int32] = [:]
+	// SW13: name positions of `actor` declarations. The index reports actors as
+	// class symbols, so SwiftSyntax is the only source of actor identity.
+	private var actorPositions: Set<SyntaxPos> = []
 
 	static func build(path: String) -> AccessMap {
 		let map = AccessMap()
@@ -48,9 +51,18 @@ final class AccessMap {
 		byPos[pos]
 	}
 
+	func isActor(at pos: SyntaxPos) -> Bool {
+		actorPositions.contains(pos)
+	}
+
 	fileprivate func record(nameToken: TokenSyntax, access: Int32, converter: SourceLocationConverter) {
 		let extent = tokenExtent(nameToken, converter)
 		byPos[SyntaxPos(line: Int(extent.startLine), column: Int(extent.startColumn))] = access
+	}
+
+	fileprivate func recordActor(nameToken: TokenSyntax, converter: SourceLocationConverter) {
+		let extent = tokenExtent(nameToken, converter)
+		actorPositions.insert(SyntaxPos(line: Int(extent.startLine), column: Int(extent.startColumn)))
 	}
 }
 
@@ -77,7 +89,9 @@ private final class AccessVisitor: SyntaxVisitor {
 		record(node.name, node.modifiers); return .visitChildren
 	}
 	override func visit(_ node: ActorDeclSyntax) -> SyntaxVisitorContinueKind {
-		record(node.name, node.modifiers); return .visitChildren
+		record(node.name, node.modifiers)
+		map.recordActor(nameToken: node.name, converter: converter)
+		return .visitChildren
 	}
 	override func visit(_ node: EnumDeclSyntax) -> SyntaxVisitorContinueKind {
 		record(node.name, node.modifiers); return .visitChildren

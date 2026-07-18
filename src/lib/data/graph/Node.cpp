@@ -50,6 +50,21 @@ bool Node::isType(NodeKindMask mask) const
 	return (m_type.getKind() & mask) > 0;
 }
 
+NodeModifierMask Node::getModifiers() const
+{
+	return m_modifiers;
+}
+
+void Node::setModifiers(NodeModifierMask modifiers)
+{
+	m_modifiers = modifiers;
+}
+
+bool Node::isActor() const
+{
+	return nodeModifierHas(m_modifiers, NODE_MODIFIER_ACTOR);
+}
+
 std::string Node::getName() const
 {
 	return m_nameHierarchy.getRawName();
@@ -249,6 +264,10 @@ bool Node::isEdge() const
 
 std::string Node::getReadableTypeString() const
 {
+	if (const std::string modifier = nodeModifierToString(m_modifiers); !modifier.empty())
+	{
+		return modifier;
+	}
 	return m_type.getReadableTypeString();
 }
 

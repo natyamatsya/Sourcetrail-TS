@@ -15,6 +15,7 @@ table StorageNode {
     id:              int64;
     type:            int32;  // NodeKind bitmask
     serialized_name: string;
+    modifiers:       int32;  // NodeModifier bitmask (0 = none); e.g. actor
 }
 
 table StorageFile {

@@ -3311,6 +3311,7 @@ void PersistentStorage::addNodeToGraph(
 	}
 
 	Node* node = graph->createNode(newNode.id, type, std::move(nameHierarchy), defKind);
+	node->setModifiers(newNode.modifiers);
 
 	if (addChildCount)
 	{

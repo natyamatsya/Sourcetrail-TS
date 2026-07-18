@@ -53,7 +53,8 @@ final class StorageBuilder {
 				storage.nodes[index].type == NodeKind.symbol
 			{
 				storage.nodes[index] = OwnedStorageNode(
-					id: id, type: kind, serializedName: name)
+					id: id, type: kind, serializedName: name,
+					modifiers: storage.nodes[index].modifiers)
 			}
 			return id
 		}
@@ -75,7 +76,15 @@ final class StorageBuilder {
 		{
 			let node = storage.nodes[index]
 			storage.nodes[index] = OwnedStorageNode(
-				id: node.id, type: type, serializedName: node.serializedName)
+				id: node.id, type: type, serializedName: node.serializedName,
+				modifiers: node.modifiers)
+		}
+	}
+
+	// SW13: OR a NodeModifier flag (e.g. actor) into the node's bitmask.
+	func addNodeModifier(nodeId: Int64, modifier: Int32) {
+		if let index = storage.nodes.firstIndex(where: { $0.id == nodeId }) {
+			storage.nodes[index].modifiers |= modifier
 		}
 	}
 

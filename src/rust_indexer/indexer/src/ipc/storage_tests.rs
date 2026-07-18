@@ -192,11 +192,13 @@ mod tests {
                     id: 2,
                     type_: 4096,
                     serialized_name: "my_func".into(),
+                    modifiers: 0,
                 },
                 OwnedStorageNode {
                     id: 3,
                     type_: 64,
                     serialized_name: "MyStruct".into(),
+                    modifiers: 0,
                 },
             ],
             ..Default::default()
