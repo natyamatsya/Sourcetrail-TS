@@ -4,6 +4,7 @@
 #include "CxxAstVisitorComponent.h"
 #include "ParseLocation.h"
 
+class CxxAstVisitorComponentContext;
 class CxxLocationExtractor;
 class ParserClient;
 
@@ -14,6 +15,8 @@ class CxxAstVisitorComponentBraceRecorder: public CxxAstVisitorComponent
 public:
 	CxxAstVisitorComponentBraceRecorder(
 		CxxAstVisitor* astVisitor, clang::ASTContext* astContext, ParserClient& client);
+
+	void wire();
 
 	void visitTagDecl(clang::TagDecl* d);
 	void visitNamespaceDecl(clang::NamespaceDecl* d);
@@ -35,6 +38,7 @@ private:
 	clang::ASTContext* m_astContext;
 	ParserClient& m_client;
 	CxxLocationExtractor& m_locations;
+	CxxAstVisitorComponentContext* m_context = nullptr;
 };
 
 #endif	  // CXX_AST_VISITOR_COMPONENT_BRACE_RECORDER_H

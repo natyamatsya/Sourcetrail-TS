@@ -40,6 +40,8 @@ CxxAstVisitor::CxxAstVisitor(
 		  CxxAstVisitorComponentIndexer(this, astContext, client),
 		  CxxAstVisitorComponentBraceRecorder(this, astContext, client))
 {
+	// All components now exist; let each cache pointers to the siblings it depends on.
+	forEachComponent([](auto& component) { component.wire(); });
 }
 
 CxxAstVisitorComponentContext *CxxAstVisitor::getContextComponent()

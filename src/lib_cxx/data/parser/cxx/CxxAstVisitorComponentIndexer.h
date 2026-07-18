@@ -13,6 +13,9 @@
 
 class ParserClient;
 class NameHierarchy;
+class CxxAstVisitorComponentContext;
+class CxxAstVisitorComponentTypeRefKind;
+class CxxAstVisitorComponentDeclRefKind;
 
 // This CxxAstVisitorComponent is responsible for recording all symbols and relations throughout the
 // visited AST.
@@ -21,6 +24,8 @@ class CxxAstVisitorComponentIndexer: public CxxAstVisitorComponent
 public:
 	CxxAstVisitorComponentIndexer(
 		CxxAstVisitor* astVisitor, clang::ASTContext* astContext, ParserClient& client);
+
+	void wire();
 
 	void beginTraverseNestedNameSpecifierLoc(const clang::NestedNameSpecifierLoc& loc);
 	void beginTraverseTemplateArgumentLoc(const clang::TemplateArgumentLoc& loc);
@@ -90,6 +95,12 @@ private:
 
 	CxxSymbolRegistry m_symbols;
 	CxxLocationExtractor& m_locations;
+
+	// Sibling components this one queries during traversal; cached in wire() (see the base class)
+	// once the component tuple is fully constructed.
+	CxxAstVisitorComponentContext* m_context = nullptr;
+	CxxAstVisitorComponentTypeRefKind* m_typeRefKind = nullptr;
+	CxxAstVisitorComponentDeclRefKind* m_declRefKind = nullptr;
 };
 
 #endif	  // CXX_AST_VISITOR_COMPONENT_INDEXER_H
