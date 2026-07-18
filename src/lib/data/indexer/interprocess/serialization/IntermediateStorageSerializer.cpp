@@ -67,6 +67,13 @@ flatbuffers::DetachedBuffer serializeIntermediateStorage(const IntermediateStora
 		fbAccesses.push_back(Sourcetrail::Ipc::CreateStorageComponentAccess(
 			builder, static_cast<int64_t>(a.nodeId), static_cast<int32_t>(a.type)));
 
+	// NodeAttributes
+	std::vector<flatbuffers::Offset<Sourcetrail::Ipc::StorageNodeAttribute>> fbNodeAttributes;
+	for (const auto& attr : storage.getNodeAttributes())
+		fbNodeAttributes.push_back(Sourcetrail::Ipc::CreateStorageNodeAttribute(
+			builder, static_cast<int64_t>(attr.nodeId), static_cast<int32_t>(attr.key),
+			builder.CreateString(attr.value)));
+
 	// Errors
 	std::vector<flatbuffers::Offset<Sourcetrail::Ipc::StorageError>> fbErrors;
 	for (const auto& err : storage.getErrors())
@@ -87,6 +94,7 @@ flatbuffers::DetachedBuffer serializeIntermediateStorage(const IntermediateStora
 		builder.CreateVector(fbLocalSyms),
 		builder.CreateVector(fbOccs),
 		builder.CreateVector(fbAccesses),
+		builder.CreateVector(fbNodeAttributes),
 		builder.CreateVector(fbErrors));
 
 	auto queue = Sourcetrail::Ipc::CreateIntermediateStorageQueue(
@@ -188,6 +196,17 @@ std::shared_ptr<IntermediateStorage> deserializeIntermediateStorage(
 		for (const auto* a : *fb->component_accesses())
 			accesses.emplace(Id(a->node_id()), static_cast<AccessKind>(a->type()));
 		storage->setComponentAccesses(std::move(accesses));
+	}
+
+	// NodeAttributes
+	if (fb->node_attributes())
+	{
+		std::set<StorageNodeAttribute> nodeAttributes;
+		for (const auto* attr : *fb->node_attributes())
+			nodeAttributes.emplace(Id(attr->node_id()),
+				static_cast<NodeAttributeKind>(attr->key()),
+				attr->value() ? attr->value()->str() : "");
+		storage->setNodeAttributes(std::move(nodeAttributes));
 	}
 
 	// Errors

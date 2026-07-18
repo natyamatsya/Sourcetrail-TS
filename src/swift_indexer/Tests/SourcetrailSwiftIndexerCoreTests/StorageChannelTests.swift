@@ -73,6 +73,31 @@ import Testing
 		#expect(decoded.errors[0].indexed == true)
 	}
 
+	@Test func nodeAttributesRoundTripThroughSerialization() throws {
+		let builder = StorageBuilder()
+		let nodeId = builder.nodeId(parts: ["Demo", "Model"], kind: NodeKind.class)
+		builder.recordNodeAttribute(
+			nodeId: nodeId, key: NodeAttributeKind.availability, value: "@available(macOS 14, *)")
+		builder.recordNodeAttribute(
+			nodeId: nodeId, key: NodeAttributeKind.deprecated, value: "use NewModel")
+		// The (node, key, value) triple deduplicates — a repeat is dropped.
+		builder.recordNodeAttribute(
+			nodeId: nodeId, key: NodeAttributeKind.availability, value: "@available(macOS 14, *)")
+
+		let bytes = SwiftIndexerStorageChannel.serializeStorage(builder.storage)
+		var buffer = ByteBuffer(bytes: bytes)
+		let queue: Sourcetrail_Ipc_IntermediateStorageQueue = try getCheckedRoot(byteBuffer: &buffer)
+		let decoded = queue.storages[0]
+		#expect(decoded.nodeAttributes.count == 2)
+		#expect(decoded.nodeAttributes.contains {
+			$0.nodeId == nodeId && $0.key == NodeAttributeKind.availability
+				&& $0.value == "@available(macOS 14, *)"
+		})
+		#expect(decoded.nodeAttributes.contains {
+			$0.nodeId == nodeId && $0.key == NodeAttributeKind.deprecated && $0.value == "use NewModel"
+		})
+	}
+
 	@Test func appendKeepsExistingEntriesIntact() throws {
 		let entry = SwiftIndexerStorageChannel.serializeEmptyStorage()
 		let empty = [UInt8](repeating: 0, count: 16 * 1024 * 1024)

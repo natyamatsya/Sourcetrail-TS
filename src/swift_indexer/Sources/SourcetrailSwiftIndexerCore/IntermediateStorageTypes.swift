@@ -10,6 +10,7 @@ package typealias OwnedStorageFile = Sourcetrail_Ipc_StorageFileT
 package typealias OwnedStorageEdge = Sourcetrail_Ipc_StorageEdgeT
 package typealias OwnedStorageSymbol = Sourcetrail_Ipc_StorageSymbolT
 package typealias OwnedStorageComponentAccess = Sourcetrail_Ipc_StorageComponentAccessT
+package typealias OwnedStorageNodeAttribute = Sourcetrail_Ipc_StorageNodeAttributeT
 package typealias OwnedStorageSourceLocation = Sourcetrail_Ipc_StorageSourceLocationT
 package typealias OwnedStorageLocalSymbol = Sourcetrail_Ipc_StorageLocalSymbolT
 package typealias OwnedStorageOccurrence = Sourcetrail_Ipc_StorageOccurrenceT
@@ -62,6 +63,15 @@ extension Sourcetrail_Ipc_StorageComponentAccessT {
 		self.init()
 		self.nodeId = nodeId
 		self.type = type
+	}
+}
+
+extension Sourcetrail_Ipc_StorageNodeAttributeT {
+	package convenience init(nodeId: Int64, key: Int32, value: String) {
+		self.init()
+		self.nodeId = nodeId
+		self.key = key
+		self.value = value
 	}
 }
 
@@ -120,6 +130,7 @@ package struct OwnedIntermediateStorage {
 	package var edges: [OwnedStorageEdge] = []
 	package var symbols: [OwnedStorageSymbol] = []
 	package var componentAccesses: [OwnedStorageComponentAccess] = []
+	package var nodeAttributes: [OwnedStorageNodeAttribute] = []
 	package var sourceLocations: [OwnedStorageSourceLocation] = []
 	package var localSymbols: [OwnedStorageLocalSymbol] = []
 	package var occurrences: [OwnedStorageOccurrence] = []

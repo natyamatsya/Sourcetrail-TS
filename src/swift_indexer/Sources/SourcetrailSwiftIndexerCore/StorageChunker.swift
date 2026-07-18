@@ -15,12 +15,17 @@ package enum StorageChunker {
 	private static let edgeCost = 56
 	private static let symbolCost = 32
 	private static let componentAccessCost = 24
+	private static let nodeAttributeCost = 40
 	private static let locationCost = 64
 	private static let occurrenceCost = 32
 	private static let stubCostMax = 512
 
 	// The object-API string fields are optional; treat nil as empty.
 	private static func len(_ s: String?) -> Int { s?.utf8.count ?? 0 }
+
+	private static func attributeCost(_ attribute: OwnedStorageNodeAttribute) -> Int {
+		nodeAttributeCost + len(attribute.value)
+	}
 
 	private static func nodeCost(_ node: OwnedStorageNode) -> Int {
 		48 + len(node.serializedName)
@@ -42,6 +47,7 @@ package enum StorageChunker {
 		total += storage.edges.count * edgeCost
 		total += storage.symbols.count * symbolCost
 		total += storage.componentAccesses.count * componentAccessCost
+		total += storage.nodeAttributes.reduce(0) { $0 + attributeCost($1) }
 		total += storage.sourceLocations.count * locationCost
 		total += storage.localSymbols.reduce(0) { $0 + localSymbolCost($1) }
 		total += storage.occurrences.count * occurrenceCost
@@ -65,6 +71,7 @@ package enum StorageChunker {
 		let filesByNodeId: [Int64: OwnedStorageFile]
 		let symbolsByNodeId: [Int64: OwnedStorageSymbol]
 		let accessesByNodeId: [Int64: OwnedStorageComponentAccess]
+		let attributesByNodeId: [Int64: [OwnedStorageNodeAttribute]]
 		let locationsById: [Int64: OwnedStorageSourceLocation]
 		var occIndicesByElement: [Int64: [Int]]
 
@@ -74,6 +81,7 @@ package enum StorageChunker {
 		var curCost = 0
 		var curNodeIds: Set<Int64> = []
 		var curAccessNodeIds: Set<Int64> = []
+		var curAttributeNodeIds: Set<Int64> = []
 		var curLocationIds: Set<Int64> = []
 
 		init(source: OwnedIntermediateStorage) {
@@ -83,6 +91,7 @@ package enum StorageChunker {
 			symbolsByNodeId = Dictionary(source.symbols.map { ($0.id, $0) }, uniquingKeysWith: { a, _ in a })
 			accessesByNodeId = Dictionary(
 				source.componentAccesses.map { ($0.nodeId, $0) }, uniquingKeysWith: { a, _ in a })
+			attributesByNodeId = Dictionary(grouping: source.nodeAttributes, by: { $0.nodeId })
 			locationsById = Dictionary(
 				source.sourceLocations.map { ($0.id, $0) }, uniquingKeysWith: { a, _ in a })
 			var occ: [Int64: [Int]] = [:]
@@ -146,6 +155,9 @@ package enum StorageChunker {
 			if accessesByNodeId[nodeId] != nil {
 				cost += componentAccessCost
 			}
+			if let attributes = attributesByNodeId[nodeId] {
+				cost += attributes.reduce(0) { $0 + attributeCost($1) }
+			}
 			return cost + occurrencesCost(occs)
 		}
 
@@ -176,6 +188,7 @@ package enum StorageChunker {
 			curCost = 0
 			curNodeIds.removeAll(keepingCapacity: true)
 			curAccessNodeIds.removeAll(keepingCapacity: true)
+			curAttributeNodeIds.removeAll(keepingCapacity: true)
 			curLocationIds.removeAll(keepingCapacity: true)
 		}
 
@@ -201,6 +214,14 @@ package enum StorageChunker {
 			{
 				cur.componentAccesses.append(access)
 				curCost += componentAccessCost
+			}
+			// A node's sparse attributes (@available, deprecation, …) likewise
+			// ride with its home group so each chunk stays self-contained.
+			if withSymbol, let attributes = attributesByNodeId[nodeId],
+				curAttributeNodeIds.insert(nodeId).inserted
+			{
+				cur.nodeAttributes.append(contentsOf: attributes)
+				curCost += attributes.reduce(0) { $0 + attributeCost($1) }
 			}
 		}
 

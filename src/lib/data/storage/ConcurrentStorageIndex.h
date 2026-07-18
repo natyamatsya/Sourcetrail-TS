@@ -427,6 +427,12 @@ public:
 	bool markSymbol(ElementId nodeId) { return m_symbols.markNew(nodeId); }
 	bool markFile(const std::string& path) { return m_files.markNew(path); }
 	bool markComponentAccess(ElementId nodeId) { return m_componentAccesses.markNew(nodeId); }
+	// A node may carry several attributes, so dedup on the (node, key, value) triple.
+	bool markNodeAttribute(ElementId nodeId, int key, const std::string& value)
+	{
+		return m_nodeAttributes.markNew(
+			std::to_string(nodeId) + '\x1f' + std::to_string(key) + '\x1f' + value);
+	}
 	bool markOccurrence(ElementId elementId, ElementId sourceLocationId)
 	{
 		return m_occurrences.markNew(OccurrenceKey{elementId, sourceLocationId});
@@ -444,6 +450,7 @@ private:
 	ConcurrentDedupSet<ElementId> m_symbols;
 	ConcurrentDedupSet<std::string> m_files;
 	ConcurrentDedupSet<ElementId> m_componentAccesses;
+	ConcurrentDedupSet<std::string> m_nodeAttributes;
 	ConcurrentDedupSet<OccurrenceKey, OccurrenceKeyHash> m_occurrences;
 };
 

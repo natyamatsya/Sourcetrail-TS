@@ -15,6 +15,9 @@ final class StorageBuilder {
 	private var symbolIds: Set<Int64> = []
 	/// node ids that already have a component-access row
 	private var componentAccessIds: Set<Int64> = []
+	/// (node id, key, value) already recorded — a node may carry several
+	/// attributes, so dedup on the whole triple rather than per node
+	private var nodeAttributeKeys: Set<String> = []
 	/// (type, source, target) → edge id
 	private var edgeIds: [String: Int64] = [:]
 	/// local symbol name → id
@@ -95,6 +98,17 @@ final class StorageBuilder {
 		if componentAccessIds.insert(nodeId).inserted {
 			storage.componentAccesses.append(
 				OwnedStorageComponentAccess(nodeId: nodeId, type: access)
+			)
+		}
+	}
+
+	// Step 2: a sparse, display-only fact about a node (@available, deprecation
+	// message, …). Keyed by NodeAttributeKind; a node may carry several. Deduped
+	// on the whole (node, key, value) triple.
+	func recordNodeAttribute(nodeId: Int64, key: Int32, value: String) {
+		if nodeAttributeKeys.insert("\(nodeId):\(key):\(value)").inserted {
+			storage.nodeAttributes.append(
+				OwnedStorageNodeAttribute(nodeId: nodeId, key: key, value: value)
 			)
 		}
 	}

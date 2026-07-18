@@ -71,6 +71,10 @@ TEST_CASE("ipc serializer round-trips")
 		original.addLocalSymbol(StorageLocalSymbolData("localVar"));
 		original.addOccurrence(StorageOccurrence(Id(1), Id(1)));
 		original.addComponentAccess(StorageComponentAccess(Id(1), AccessKind::PUBLIC));
+		original.addNodeAttribute(
+			StorageNodeAttribute(Id(1), NodeAttributeKind::AVAILABILITY, "@available(macOS 14, *)"));
+		original.addNodeAttribute(
+			StorageNodeAttribute(Id(2), NodeAttributeKind::DEPRECATED, "use doSomethingElse"));
 		original.addError(StorageErrorData("undefined reference", "main.cpp", true, false));
 
 		Id expectedNextId = original.getNextId();
@@ -88,6 +92,7 @@ TEST_CASE("ipc serializer round-trips")
 		REQUIRE(result->getStorageLocalSymbols().size() == 1);
 		REQUIRE(result->getStorageOccurrences().size() == 1);
 		REQUIRE(result->getComponentAccesses().size() == 1);
+		REQUIRE(result->getNodeAttributes().size() == 2);
 		REQUIRE(result->getErrors().size() == 1);
 
 		const auto& nodes = result->getStorageNodes();
@@ -103,6 +108,12 @@ TEST_CASE("ipc serializer round-trips")
 
 		const auto& edges = result->getStorageEdges();
 		REQUIRE(edges[0].type == Edge::EDGE_CALL);
+
+		const auto& nodeAttributes = result->getNodeAttributes();
+		const StorageNodeAttribute& firstAttribute = *nodeAttributes.begin();
+		REQUIRE(firstAttribute.nodeId == Id(1));
+		REQUIRE(firstAttribute.key == NodeAttributeKind::AVAILABILITY);
+		REQUIRE(firstAttribute.value == "@available(macOS 14, *)");
 
 		const auto& errors = result->getErrors();
 		REQUIRE(errors[0].message == "undefined reference");

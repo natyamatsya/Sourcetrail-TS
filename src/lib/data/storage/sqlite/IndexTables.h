@@ -369,6 +369,34 @@ namespace idx {
   };
   using ComponentAccess = ::sqlpp::table_t<ComponentAccess_>;
 
+  struct NodeAttribute_ {
+    struct NodeId {
+      SQLPP_CREATE_NAME_TAG_FOR_SQL_AND_CPP(node_id, nodeId);
+      using data_type = ::sqlpp::integral;
+      using has_default = std::false_type;
+    };
+    struct Key {
+      SQLPP_CREATE_NAME_TAG_FOR_SQL_AND_CPP(key, key);
+      using data_type = ::sqlpp::integral;
+      using has_default = std::false_type;
+    };
+    struct Value {
+      SQLPP_CREATE_NAME_TAG_FOR_SQL_AND_CPP(value, value);
+      using data_type = std::optional<::sqlpp::text>;
+      using has_default = std::true_type;
+    };
+    SQLPP_CREATE_NAME_TAG_FOR_SQL_AND_CPP(node_attribute, nodeAttribute);
+    template<typename T>
+    using _table_columns = sqlpp::table_columns<T,
+               NodeId,
+               Key,
+               Value>;
+    using _required_insert_columns = sqlpp::detail::type_set<
+               sqlpp::column_t<sqlpp::table_t<NodeAttribute_>, NodeId>,
+               sqlpp::column_t<sqlpp::table_t<NodeAttribute_>, Key>>;
+  };
+  using NodeAttribute = ::sqlpp::table_t<NodeAttribute_>;
+
   struct Error_ {
     struct Id {
       SQLPP_CREATE_NAME_TAG_FOR_SQL_AND_CPP(id, id);

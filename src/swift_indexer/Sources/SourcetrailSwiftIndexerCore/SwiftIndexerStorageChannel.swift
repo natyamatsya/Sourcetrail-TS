@@ -220,6 +220,7 @@ package final class SwiftIndexerStorageChannel {
 		intermediate.localSymbols = storage.localSymbols.map { Optional($0) }
 		intermediate.occurrences = storage.occurrences.map { Optional($0) }
 		intermediate.componentAccesses = storage.componentAccesses.map { Optional($0) }
+		intermediate.nodeAttributes = storage.nodeAttributes.map { Optional($0) }
 		intermediate.errors = storage.errors.map { Optional($0) }
 
 		var queue = Sourcetrail_Ipc_IntermediateStorageQueueT()

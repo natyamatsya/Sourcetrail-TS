@@ -23,6 +23,7 @@ void IntermediateStorage::clear()
 	m_sourceLocations.clear();
 	m_occurrences.clear();
 	m_componentAccesses.clear();
+	m_nodeAttributes.clear();
 
 	m_errorsIndex.clear();
 	m_errors.clear();
@@ -62,6 +63,11 @@ size_t IntermediateStorage::getByteSize(size_t stringSize) const
 
 	byteSize += sizeof(StorageEdge) * getStorageEdges().size();
 	byteSize += sizeof(StorageComponentAccess) * getComponentAccesses().size();
+	for (const StorageNodeAttribute& storageNodeAttribute: getNodeAttributes())
+	{
+		byteSize += sizeof(StorageNodeAttribute);
+		byteSize += stringSize + storageNodeAttribute.value.size();
+	}
 	byteSize += sizeof(StorageOccurrence) * getStorageOccurrences().size();
 	byteSize += sizeof(StorageSymbol) * getStorageSymbols().size();
 	byteSize += sizeof(StorageSourceLocation) * getStorageSourceLocations().size();
@@ -297,6 +303,16 @@ void IntermediateStorage::addComponentAccesses(const std::vector<StorageComponen
 	m_componentAccesses.insert(componentAccesses.begin(), componentAccesses.end());
 }
 
+void IntermediateStorage::addNodeAttribute(const StorageNodeAttribute& nodeAttribute)
+{
+	m_nodeAttributes.emplace(nodeAttribute);
+}
+
+void IntermediateStorage::addNodeAttributes(const std::vector<StorageNodeAttribute>& nodeAttributes)
+{
+	m_nodeAttributes.insert(nodeAttributes.begin(), nodeAttributes.end());
+}
+
 void IntermediateStorage::addElementComponent(const StorageElementComponent& component)
 {
 	m_elementComponents.emplace(component);
@@ -359,6 +375,11 @@ const std::set<StorageOccurrence>& IntermediateStorage::getStorageOccurrences() 
 const std::set<StorageComponentAccess>& IntermediateStorage::getComponentAccesses() const
 {
 	return m_componentAccesses;
+}
+
+const std::set<StorageNodeAttribute>& IntermediateStorage::getNodeAttributes() const
+{
+	return m_nodeAttributes;
 }
 
 const std::set<StorageElementComponent>& IntermediateStorage::getElementComponents() const
@@ -431,6 +452,11 @@ void IntermediateStorage::setStorageOccurrences(std::set<StorageOccurrence> stor
 void IntermediateStorage::setComponentAccesses(std::set<StorageComponentAccess> componentAccesses)
 {
 	m_componentAccesses = std::move(componentAccesses);
+}
+
+void IntermediateStorage::setNodeAttributes(std::set<StorageNodeAttribute> nodeAttributes)
+{
+	m_nodeAttributes = std::move(nodeAttributes);
 }
 
 void IntermediateStorage::setElementComponents(std::set<StorageElementComponent> components)
