@@ -44,7 +44,7 @@ isolation, attribute-driven relations, macros, and API-surface metadata.
 |-------|------|-------|
 | SW11 | Generic-parameter tier + constraints + type-argument use-sites (the Rust-lifetime analog) | ✅ done |
 | SW12 | Protocol conformance fidelity: witnesses, conditional/retroactive, default impls | ✅ done |
-| SW13 | Concurrency model: actor identity, global-actor isolation, `async`, `Sendable` | 📋 planned |
+| SW13 | Concurrency model: global-actor isolation, `Sendable` (actor identity / `async` schema-deferred) | ✅ done |
 | SW14 | Attribute-driven relations: property wrappers + result builders | ✅ done |
 | SW15 | Macros: attached + freestanding applications (+ optional expansion) | 📋 planned |
 | SW16 | API-surface metadata: access control (incl. `package`) + `@available` | 📋 planned |
@@ -203,6 +203,30 @@ Make Swift's defining feature first-class instead of merged into inheritance.
   `EDGE_INHERITANCE` + the constraint edges carry it. Note the limitation.
 
 ### SW13 — Concurrency model (M)
+
+**Landed 2026-07-18.** An audit against the storage model (`nodes` are only
+`id`/`type`/`serializedName` — no modifier slot) split this cleanly into
+representable and not:
+
+- **Global-actor isolation** — `@MainActor` / custom `@globalActor` on a
+  declaration is an `EDGE_ANNOTATION_USAGE` to the actor type, via the SW14
+  walker. SW13 fixed the **type-level** case (`@MainActor class ViewModel`): the
+  index emits the reference but attributes it to module scope, so no edge was
+  made. `AttributeMap` now also records each attribute's **annotated
+  declaration** (nearest declaration ancestor via SwiftSyntax), and
+  `SemanticIndexer.emitAnnotationUsage` sources the edge from it — so both
+  `ViewModel → MainActor` and `run() → MainActor` flow. This also hardened SW14
+  (property wrappers on any declaration) and pre-wires SW16.
+- **`Sendable`** needs no special work — it is a protocol conformance, so SW12
+  already emits `Token → Sendable` as `EDGE_INHERITANCE`.
+- **Deferred (schema-bound):** *actor identity* (an `actor` is `NODE_CLASS`,
+  indistinguishable from a class — the index emits no implicit `Actor`
+  conformance, and there is no node-modifier slot) and *`async`/`nonisolated`*
+  (function modifiers with no storage slot and no type reference to hang an edge
+  on). Both need an intermediate-storage node-modifier field + PersistentStorage
+  inject + UI support — out of scope until the schema grows one.
+
+Covered by `ConcurrencyTests` (type- and function-level isolation + Sendable).
 
 Swift's most distinctive modern axis, and safety-critical.
 

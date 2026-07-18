@@ -15,7 +15,11 @@ import SwiftSyntax
 // name no type and simply never resolve to a node, so marking every attribute
 // position is safe — only ones resolving to a type node produce an edge.
 final class AttributeMap {
-	private var positions: Set<SyntaxPos> = []
+	// attribute-name position → name-token position of the declaration it is
+	// attached to. The declaration is the annotation-usage edge's source — the
+	// store's containing-symbol relation is unreliable for type-level attributes
+	// (`@MainActor class …`), so SwiftSyntax supplies it.
+	private var annotatedDecl: [SyntaxPos: SyntaxPos] = [:]
 
 	static func build(path: String) -> AttributeMap {
 		let map = AttributeMap()
@@ -29,11 +33,16 @@ final class AttributeMap {
 	}
 
 	func isAttribute(_ pos: SyntaxPos) -> Bool {
-		positions.contains(pos)
+		annotatedDecl[pos] != nil
 	}
 
-	fileprivate func add(_ pos: SyntaxPos) {
-		positions.insert(pos)
+	// The declaration an attribute at `pos` is attached to.
+	func annotatedDecl(of pos: SyntaxPos) -> SyntaxPos? {
+		annotatedDecl[pos]
+	}
+
+	fileprivate func add(attributePos: SyntaxPos, declPos: SyntaxPos) {
+		annotatedDecl[attributePos] = declPos
 	}
 }
 
@@ -48,11 +57,18 @@ private final class AttributeVisitor: SyntaxVisitor {
 	}
 
 	override func visit(_ node: AttributeSyntax) -> SyntaxVisitorContinueKind {
-		if let token = attributeNameToken(node.attributeName) {
-			let extent = tokenExtent(token, converter)
-			map.add(SyntaxPos(line: Int(extent.startLine), column: Int(extent.startColumn)))
+		guard let nameToken = attributeNameToken(node.attributeName),
+			let declToken = annotatedDeclNameToken(node)
+		else {
+			return .visitChildren
 		}
+		map.add(attributePos: pos(of: nameToken), declPos: pos(of: declToken))
 		return .visitChildren
+	}
+
+	private func pos(of token: TokenSyntax) -> SyntaxPos {
+		let extent = tokenExtent(token, converter)
+		return SyntaxPos(line: Int(extent.startLine), column: Int(extent.startColumn))
 	}
 
 	// The identifier the index reports the attribute's type reference at: the bare
@@ -63,6 +79,31 @@ private final class AttributeVisitor: SyntaxVisitor {
 		}
 		if let member = type.as(MemberTypeSyntax.self) {
 			return member.name
+		}
+		return nil
+	}
+
+	// The name token of the declaration this attribute is attached to — the first
+	// declaration ancestor (attributes bind to the immediately enclosing decl).
+	// Must match the token the index reports that declaration's definition at
+	// (same selection as DeclScopeMap).
+	private func annotatedDeclNameToken(_ attribute: AttributeSyntax) -> TokenSyntax? {
+		var current: Syntax? = attribute.parent
+		while let node = current {
+			if let d = node.as(StructDeclSyntax.self) { return d.name }
+			if let d = node.as(ClassDeclSyntax.self) { return d.name }
+			if let d = node.as(ActorDeclSyntax.self) { return d.name }
+			if let d = node.as(EnumDeclSyntax.self) { return d.name }
+			if let d = node.as(ProtocolDeclSyntax.self) { return d.name }
+			if let d = node.as(TypeAliasDeclSyntax.self) { return d.name }
+			if let d = node.as(FunctionDeclSyntax.self) { return d.name }
+			if let d = node.as(InitializerDeclSyntax.self) { return d.initKeyword }
+			if let d = node.as(SubscriptDeclSyntax.self) { return d.subscriptKeyword }
+			if let d = node.as(VariableDeclSyntax.self) {
+				return d.bindings.first?.pattern.as(IdentifierPatternSyntax.self)?.identifier
+			}
+			if let d = node.as(EnumCaseDeclSyntax.self) { return d.elements.first?.name }
+			current = node.parent
 		}
 		return nil
 	}
