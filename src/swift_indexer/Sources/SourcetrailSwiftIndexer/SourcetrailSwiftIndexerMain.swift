@@ -9,6 +9,32 @@ struct SourcetrailSwiftIndexer {
 		}
 	}
 
+	// Status-channel reads/writes must never fail silently: a swallowed error once
+	// hid a malformed IndexingStatus and made the indexer miss a user interrupt.
+	// These surface the failure on stderr (captured by the C++ supervisor's log).
+
+	/// Read the interrupt flag; on a read/verification failure log it and report
+	/// "not interrupted" — the run continues (the supervisor still stops it via
+	/// queue drain / kill), but the fault is no longer invisible.
+	private static func isInterrupted(_ statusChannel: SwiftIndexerStatusChannel) -> Bool {
+		do {
+			return try statusChannel.isInterrupted()
+		} catch {
+			writeStderr("sourcetrail_swift_indexer: reading interrupt status failed: \(error)\n")
+			return false
+		}
+	}
+
+	/// Run a best-effort status update (progress reporting), logging any failure
+	/// instead of dropping it silently.
+	private static func reportingStatus(_ label: String, _ op: () throws -> Void) {
+		do {
+			try op()
+		} catch {
+			writeStderr("sourcetrail_swift_indexer: \(label) failed: \(error)\n")
+		}
+	}
+
 	static func main() async {
 		let args = CommandLine.arguments
 		let processId = args.count > 1 ? (UInt64(args[1]) ?? 0) : 0
@@ -39,7 +65,7 @@ struct SourcetrailSwiftIndexer {
 			)
 
 			while true {
-				if (try? statusChannel.isInterrupted()) == true {
+				if Self.isInterrupted(statusChannel) {
 					break
 				}
 
@@ -55,9 +81,11 @@ struct SourcetrailSwiftIndexer {
 				}
 
 				do {
-					try? statusChannel.startIndexing(filePath: command.sourceFilePath)
+					Self.reportingStatus("startIndexing") {
+						try statusChannel.startIndexing(filePath: command.sourceFilePath)
+					}
 					defer {
-						try? statusChannel.finishIndexing()
+						Self.reportingStatus("finishIndexing") { try statusChannel.finishIndexing() }
 					}
 
 					let storage = PackageIndexer.index(
@@ -69,7 +97,9 @@ struct SourcetrailSwiftIndexer {
 						),
 						specializationScope: SpecializationScope.parse(command.specializationScope)
 					) { filePath in
-						try? statusChannel.updateIndexing(filePath: filePath)
+						Self.reportingStatus("updateIndexing") {
+							try statusChannel.updateIndexing(filePath: filePath)
+						}
 					}
 
 					// Split large results so one queue entry never outgrows the
@@ -79,7 +109,7 @@ struct SourcetrailSwiftIndexer {
 					var interruptedDuringPush = false
 					for chunk in StorageChunker.chunks(storage) {
 						while ((try? storageChannel.storageCount()) ?? 0) >= 2 {
-							if (try? statusChannel.isInterrupted()) == true {
+							if Self.isInterrupted(statusChannel) {
 								interruptedDuringPush = true
 								break
 							}
