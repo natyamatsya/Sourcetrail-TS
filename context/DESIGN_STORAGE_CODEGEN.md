@@ -294,8 +294,21 @@ orange dashed warning outline (`QtGraphNodeData` off `Node::isDeprecated()`), an
 built-in-types filter) drops them from every graph view (the active node stays).
 Both key off the `NODE_MODIFIER_DEPRECATED` bit, not the message table.
 
-**Remaining follow-ups (additive over the same table):** the C++ (`#ifdef` / Clang
-availability / `[[deprecated]]`) and Rust (`#[cfg]` / `#[deprecated]`) producers.
+**Rust producers landed (2026-07-18):** `collector.rs` `scan_item_attrs` emits
+`#[deprecated]` (bit + `DEPRECATED` message) and `#[cfg(...)]` (→ `CFG` predicate);
+the tooltip gained a `#[cfg(<pred>)]` line.
+
+**C++ producer landed (2026-07-18):** the clang pipeline gained a producer seam —
+`recordNodeModifier` / `recordNodeAttribute` on `ParserClient`/`ParserClientImpl`
+(backed by `IntermediateStorage::addNodeModifier`) — and
+`CxxAstVisitorComponentIndexer::recordDeprecation` reads `[[deprecated]]` at each
+named-decl site (bit + `DEPRECATED` message). Deprecation is now cross-language
+(Swift/Rust/C++).
+
+**Remaining follow-ups (additive over the same table):** Clang `availability` →
+`AVAILABILITY`, C++ `#ifdef`/`#if` → `CFG`, `DOC_BRIEF`, and the `open`/`final`
+Axis-2 bits. The canonical open-items checklist lives in
+`context/DESIGN_NODE_MODIFIERS.md` ("Status & remaining work").
 
 ## Critical files
 
