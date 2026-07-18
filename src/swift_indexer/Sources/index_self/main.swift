@@ -42,7 +42,7 @@ func decodeQualifiedName(_ serializedName: String) -> String {
 
 if let needle = grepNeedle {
 	let matches = storage.nodes
-		.map { decodeQualifiedName($0.serializedName) }
+		.map { decodeQualifiedName($0.serializedName ?? "") }
 		.filter { $0.contains(needle) }
 		.sorted()
 	print("nodes matching \"\(needle)\": \(matches.count)")
@@ -83,7 +83,7 @@ func moduleOf(_ serializedName: String) -> String? {
 var moduleById: [Int64: String] = [:]
 var moduleCounts: [String: Int] = [:]
 for node in storage.nodes {
-	guard let module = moduleOf(node.serializedName) else { continue }
+	guard let module = moduleOf(node.serializedName ?? "") else { continue }
 	moduleById[node.id] = module
 	moduleCounts[module, default: 0] += 1
 }

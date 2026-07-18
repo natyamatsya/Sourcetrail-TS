@@ -207,124 +207,27 @@ package final class SwiftIndexerStorageChannel {
 	}
 
 	static func serializeStorage(_ storage: OwnedIntermediateStorage) -> [UInt8] {
+		// Move the collected rows into the generated object-API storage and pack
+		// the whole tree — adding a schema field never touches this again. The
+		// object API's vectors are `[T?]`, so wrap each element.
+		let intermediate = Sourcetrail_Ipc_IntermediateStorageT()
+		intermediate.nextId = storage.nextId
+		intermediate.nodes = storage.nodes.map { Optional($0) }
+		intermediate.files = storage.files.map { Optional($0) }
+		intermediate.edges = storage.edges.map { Optional($0) }
+		intermediate.symbols = storage.symbols.map { Optional($0) }
+		intermediate.sourceLocations = storage.sourceLocations.map { Optional($0) }
+		intermediate.localSymbols = storage.localSymbols.map { Optional($0) }
+		intermediate.occurrences = storage.occurrences.map { Optional($0) }
+		intermediate.componentAccesses = storage.componentAccesses.map { Optional($0) }
+		intermediate.errors = storage.errors.map { Optional($0) }
+
+		var queue = Sourcetrail_Ipc_IntermediateStorageQueueT()
+		queue.storages = [intermediate]
+
 		var builder = FlatBufferBuilder(initialSize: 4096)
-
-		let fileOffsets = storage.files.map { file in
-			let filePathOffset = builder.create(string: file.filePath)
-			let languageOffset = builder.create(string: file.languageIdentifier)
-			return Sourcetrail_Ipc_StorageFile.createStorageFile(
-				&builder,
-				id: file.id,
-				filePathOffset: filePathOffset,
-				languageIdentifierOffset: languageOffset,
-				indexed: file.indexed,
-				complete: file.complete
-			)
-		}
-		let errorOffsets = storage.errors.map { error in
-			let messageOffset = builder.create(string: error.message)
-			let translationUnitOffset = builder.create(string: error.translationUnit)
-			return Sourcetrail_Ipc_StorageError.createStorageError(
-				&builder,
-				id: error.id,
-				messageOffset: messageOffset,
-				translationUnitOffset: translationUnitOffset,
-				fatal: error.fatal,
-				indexed: error.indexed
-			)
-		}
-
-		let nodeOffsets = storage.nodes.map { node in
-			let nameOffset = builder.create(string: node.serializedName)
-			return Sourcetrail_Ipc_StorageNode.createStorageNode(
-				&builder,
-				id: node.id,
-				type: node.type,
-				serializedNameOffset: nameOffset,
-				modifiers: node.modifiers
-			)
-		}
-		let edgeOffsets = storage.edges.map { edge in
-			Sourcetrail_Ipc_StorageEdge.createStorageEdge(
-				&builder,
-				id: edge.id,
-				type: edge.type,
-				sourceNodeId: edge.sourceNodeId,
-				targetNodeId: edge.targetNodeId
-			)
-		}
-		let symbolOffsets = storage.symbols.map { symbol in
-			Sourcetrail_Ipc_StorageSymbol.createStorageSymbol(
-				&builder,
-				id: symbol.id,
-				definitionKind: symbol.definitionKind
-			)
-		}
-		let locationOffsets = storage.sourceLocations.map { location in
-			Sourcetrail_Ipc_StorageSourceLocation.createStorageSourceLocation(
-				&builder,
-				id: location.id,
-				fileNodeId: location.fileNodeId,
-				startLine: location.startLine,
-				startCol: location.startCol,
-				endLine: location.endLine,
-				endCol: location.endCol,
-				type: location.type
-			)
-		}
-		let localSymbolOffsets = storage.localSymbols.map { localSymbol in
-			let nameOffset = builder.create(string: localSymbol.name)
-			return Sourcetrail_Ipc_StorageLocalSymbol.createStorageLocalSymbol(
-				&builder,
-				id: localSymbol.id,
-				nameOffset: nameOffset
-			)
-		}
-		let occurrenceOffsets = storage.occurrences.map { occurrence in
-			Sourcetrail_Ipc_StorageOccurrence.createStorageOccurrence(
-				&builder,
-				elementId: occurrence.elementId,
-				sourceLocationId: occurrence.sourceLocationId
-			)
-		}
-		let componentAccessOffsets = storage.componentAccesses.map { access in
-			Sourcetrail_Ipc_StorageComponentAccess.createStorageComponentAccess(
-				&builder,
-				nodeId: access.nodeId,
-				type: access.type
-			)
-		}
-
-		let nodesOffset = builder.createVector(ofOffsets: nodeOffsets)
-		let filesOffset = builder.createVector(ofOffsets: fileOffsets)
-		let edgesOffset = builder.createVector(ofOffsets: edgeOffsets)
-		let symbolsOffset = builder.createVector(ofOffsets: symbolOffsets)
-		let sourceLocationsOffset = builder.createVector(ofOffsets: locationOffsets)
-		let localSymbolsOffset = builder.createVector(ofOffsets: localSymbolOffsets)
-		let occurrencesOffset = builder.createVector(ofOffsets: occurrenceOffsets)
-		let componentAccessesOffset = builder.createVector(ofOffsets: componentAccessOffsets)
-		let errorsOffset = builder.createVector(ofOffsets: errorOffsets)
-
-		let storageOffset = Sourcetrail_Ipc_IntermediateStorage.createIntermediateStorage(
-			&builder,
-			nextId: storage.nextId,
-			nodesVectorOffset: nodesOffset,
-			filesVectorOffset: filesOffset,
-			edgesVectorOffset: edgesOffset,
-			symbolsVectorOffset: symbolsOffset,
-			sourceLocationsVectorOffset: sourceLocationsOffset,
-			localSymbolsVectorOffset: localSymbolsOffset,
-			occurrencesVectorOffset: occurrencesOffset,
-			componentAccessesVectorOffset: componentAccessesOffset,
-			errorsVectorOffset: errorsOffset
-		)
-
-		let storagesOffset = builder.createVector(ofOffsets: [storageOffset])
-		let queueOffset = Sourcetrail_Ipc_IntermediateStorageQueue.createIntermediateStorageQueue(
-			&builder,
-			storagesVectorOffset: storagesOffset
-		)
-		builder.finish(offset: queueOffset)
+		let offset = Sourcetrail_Ipc_IntermediateStorageQueue.pack(&builder, obj: &queue)
+		builder.finish(offset: offset)
 		return builder.sizedByteArray
 	}
 }

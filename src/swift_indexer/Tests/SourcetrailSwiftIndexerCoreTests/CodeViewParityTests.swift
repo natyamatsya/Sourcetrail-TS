@@ -9,8 +9,8 @@ import Testing
 // and the semantic pass (real IndexStoreDB).
 
 @Suite struct CodeViewParityTests {
-	private func decodeParts(_ serializedName: String) -> [String] {
-		guard serializedName.hasPrefix("::\tm") else { return [] }
+	private func decodeParts(_ serializedName: String?) -> [String] {
+		guard let serializedName, serializedName.hasPrefix("::\tm") else { return [] }
 		return serializedName.dropFirst(4)
 			.components(separatedBy: "\tn")
 			.map { $0.replacingOccurrences(of: "\ts\tp", with: "") }

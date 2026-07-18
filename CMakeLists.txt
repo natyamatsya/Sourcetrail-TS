@@ -649,7 +649,7 @@ if (BUILD_SWIFT_LANGUAGE_PACKAGE)
 		add_custom_command(
 			OUTPUT "${GENERATED_SWIFT}"
 			COMMAND ${CMAKE_COMMAND} -E make_directory "${SWIFT_INDEXER_GENERATED_DIR}"
-			COMMAND flatbuffers::flatc --swift --gen-all -o "${SWIFT_INDEXER_GENERATED_DIR}" "${SCHEMA_FILE}"
+			COMMAND flatbuffers::flatc --swift --gen-all --gen-object-api -o "${SWIFT_INDEXER_GENERATED_DIR}" "${SCHEMA_FILE}"
 			DEPENDS "${SCHEMA_FILE}"
 			COMMENT "Compiling Swift FlatBuffer schema ${SCHEMA_NAME}.fbs"
 			VERBATIM

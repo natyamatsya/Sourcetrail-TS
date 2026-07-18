@@ -10,8 +10,8 @@ import Testing
 // are deferred (see ROADMAP_SWIFT_INDEXER.md).
 
 @Suite struct ConcurrencyTests {
-	private func decodeParts(_ serializedName: String) -> [String] {
-		guard serializedName.hasPrefix("::\tm") else { return [] }
+	private func decodeParts(_ serializedName: String?) -> [String] {
+		guard let serializedName, serializedName.hasPrefix("::\tm") else { return [] }
 		return serializedName.dropFirst(4)
 			.components(separatedBy: "\tn")
 			.map { $0.replacingOccurrences(of: "\ts\tp", with: "") }

@@ -8,8 +8,8 @@ import Testing
 // (and the implicit default) → DEFAULT, fileprivate/private → PRIVATE.
 
 @Suite struct AccessTests {
-	private func decodeParts(_ serializedName: String) -> [String] {
-		guard serializedName.hasPrefix("::\tm") else { return [] }
+	private func decodeParts(_ serializedName: String?) -> [String] {
+		guard let serializedName, serializedName.hasPrefix("::\tm") else { return [] }
 		return serializedName.dropFirst(4)
 			.components(separatedBy: "\tn")
 			.map { $0.replacingOccurrences(of: "\ts\tp", with: "") }
