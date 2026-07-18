@@ -14,6 +14,11 @@ class CxxAstVisitorComponent
 public:
 	CxxAstVisitorComponent(CxxAstVisitor* astVisitor);
 
+	// Called once by CxxAstVisitor after all components are constructed. A component overrides it
+	// to cache pointers to the sibling components it depends on (which cannot be fetched during
+	// construction, as the component tuple is not yet fully built).
+	void wire() {}
+
 #define DEF_TRAVERSE_CUSTOM_TYPE_PTR(__NAME_TYPE__, __PARAM_TYPE__)                                \
 	void beginTraverse##__NAME_TYPE__(clang::__PARAM_TYPE__* /*v*/) {}                                 \
 	void endTraverse##__NAME_TYPE__(clang::__PARAM_TYPE__* /*v*/) {}
