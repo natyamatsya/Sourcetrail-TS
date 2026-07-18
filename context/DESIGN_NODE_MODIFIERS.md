@@ -1,7 +1,11 @@
 # Design: Declaration Modifiers — A Three-Axis Model
 
 **Status: Axis 1 (visibility / `AccessKind`) and Axis 2 (capabilities /
-`NodeModifier`) are implemented; Axis 3 (configuration guards) is proposed.**
+`NodeModifier`) are implemented. Axis 3a — the per-node metadata table
+(`node_attribute`, DESIGN_STORAGE_CODEGEN.md step 2) with its first producer
+(Swift `@available` → `NodeAttributeKind.AVAILABILITY`) and consumer (node
+tooltip) — is now implemented too. Axis 3b (config-atom nodes + guard edges) and
+the `open`/`final` Axis-2 bits remain proposed.**
 This note names the general model behind three changes that shipped
 piecemeal — `AccessKind::PACKAGE`, the `NodeModifier` bitmask, and
 `async`/`nonisolated` — and shows that the two remaining Swift "open points"
@@ -163,10 +167,13 @@ what its language has and unpopulated bits/rows stay empty:
 1. **`open`/`final` now** — add `NODE_MODIFIER_OPEN` + `NODE_MODIFIER_FINAL` and
    emit them from the Swift (and later C++) indexers. Same shape as `async`;
    closes that open point immediately, zero new storage.
-2. **`node_metadata` table next** — the general Axis-3 primitive. Emit
-   `@available` / `cfg` / `#ifdef` raw guards and deprecation messages into it,
-   and surface it in the node tooltip + as a filter. Bump the storage version
-   (a fresh re-index; no migration — consistent with the `NodeModifier` field).
+2. **`node_metadata` table next** — the general Axis-3 primitive. **Done** as
+   `node_attribute` (DESIGN_STORAGE_CODEGEN.md step 2), with the first producer +
+   consumer landed: Swift extracts `@available(...)` (both engines, purely
+   syntactic so it survives broken builds) into the `AVAILABILITY` key, and the
+   node tooltip appends `@available(...)`. Remaining emitters — Rust `#[cfg]` /
+   `#[deprecated]`, C++ `#ifdef` / Clang availability / `[[deprecated]]` — and the
+   graph *filter* are additive follow-ups over the same table.
 3. **Config-atom nodes + guard edges later** — only if/when a navigable
    "configuration surface" is wanted. Reuses the synthetic-node machinery, so it
    is additive over step 2, not a rewrite.

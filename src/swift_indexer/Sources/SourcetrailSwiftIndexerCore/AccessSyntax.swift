@@ -36,6 +36,8 @@ final class AccessMap {
 	// nonisolated). The index reports actors as classes and carries no async
 	// modifier, so SwiftSyntax is the only source.
 	private var modifierByPos: [SyntaxPos: Int32] = [:]
+	// @available specification text per declaration name position (Axis-3 metadata).
+	private var availabilityByPos: [SyntaxPos: String] = [:]
 
 	static func build(path: String) -> AccessMap {
 		let map = AccessMap()
@@ -57,6 +59,11 @@ final class AccessMap {
 		modifierByPos[pos] ?? 0
 	}
 
+	// The @available spec text for the declaration at `pos` (nil = none).
+	func availability(at pos: SyntaxPos) -> String? {
+		availabilityByPos[pos]
+	}
+
 	fileprivate func record(nameToken: TokenSyntax, access: Int32, converter: SourceLocationConverter) {
 		let extent = tokenExtent(nameToken, converter)
 		byPos[SyntaxPos(line: Int(extent.startLine), column: Int(extent.startColumn))] = access
@@ -67,6 +74,32 @@ final class AccessMap {
 		let extent = tokenExtent(nameToken, converter)
 		modifierByPos[SyntaxPos(line: Int(extent.startLine), column: Int(extent.startColumn))] = mask
 	}
+
+	fileprivate func recordAvailability(
+		nameToken: TokenSyntax, attributes: AttributeListSyntax, converter: SourceLocationConverter
+	) {
+		guard let text = swiftAvailability(attributes) else { return }
+		let extent = tokenExtent(nameToken, converter)
+		availabilityByPos[SyntaxPos(line: Int(extent.startLine), column: Int(extent.startColumn))] = text
+	}
+}
+
+// The `@available` specifications on a declaration as their raw argument text
+// (e.g. `"macOS 14.0, iOS 17.0, *"`, or `"*, deprecated, message: \"use X\""`),
+// multiple `@available` attributes joined by "; ". nil when the declaration has
+// none. This is the Axis-3 metadata (docs/DESIGN_NODE_MODIFIERS.md) emitted into
+// the node_attribute table under NodeAttributeKind.availability — purely
+// syntactic, so it rides the hybrid fallback and works on broken builds.
+func swiftAvailability(_ attributes: AttributeListSyntax) -> String? {
+	var specs: [String] = []
+	for case .attribute(let attribute) in attributes {
+		guard attribute.attributeName.as(IdentifierTypeSyntax.self)?.name.text == "available"
+		else { continue }
+		if let arguments = attribute.arguments {
+			specs.append(arguments.description.trimmingCharacters(in: .whitespacesAndNewlines))
+		}
+	}
+	return specs.isEmpty ? nil : specs.joined(separator: "; ")
 }
 
 // The NodeModifier bitmask for a declaration: `nonisolated` from its modifiers,
@@ -95,32 +128,35 @@ private final class AccessVisitor: SyntaxVisitor {
 		super.init(viewMode: .sourceAccurate)
 	}
 
-	private func record(_ nameToken: TokenSyntax, _ modifiers: DeclModifierListSyntax) {
+	private func record(
+		_ nameToken: TokenSyntax, _ modifiers: DeclModifierListSyntax, _ attributes: AttributeListSyntax
+	) {
 		map.record(nameToken: nameToken, access: swiftAccessKind(modifiers), converter: converter)
+		map.recordAvailability(nameToken: nameToken, attributes: attributes, converter: converter)
 	}
 
 	override func visit(_ node: StructDeclSyntax) -> SyntaxVisitorContinueKind {
-		record(node.name, node.modifiers); return .visitChildren
+		record(node.name, node.modifiers, node.attributes); return .visitChildren
 	}
 	override func visit(_ node: ClassDeclSyntax) -> SyntaxVisitorContinueKind {
-		record(node.name, node.modifiers); return .visitChildren
+		record(node.name, node.modifiers, node.attributes); return .visitChildren
 	}
 	override func visit(_ node: ActorDeclSyntax) -> SyntaxVisitorContinueKind {
-		record(node.name, node.modifiers)
+		record(node.name, node.modifiers, node.attributes)
 		map.recordModifiers(nameToken: node.name, mask: NodeModifier.actor, converter: converter)
 		return .visitChildren
 	}
 	override func visit(_ node: EnumDeclSyntax) -> SyntaxVisitorContinueKind {
-		record(node.name, node.modifiers); return .visitChildren
+		record(node.name, node.modifiers, node.attributes); return .visitChildren
 	}
 	override func visit(_ node: ProtocolDeclSyntax) -> SyntaxVisitorContinueKind {
-		record(node.name, node.modifiers); return .visitChildren
+		record(node.name, node.modifiers, node.attributes); return .visitChildren
 	}
 	override func visit(_ node: TypeAliasDeclSyntax) -> SyntaxVisitorContinueKind {
-		record(node.name, node.modifiers); return .skipChildren
+		record(node.name, node.modifiers, node.attributes); return .skipChildren
 	}
 	override func visit(_ node: FunctionDeclSyntax) -> SyntaxVisitorContinueKind {
-		record(node.name, node.modifiers)
+		record(node.name, node.modifiers, node.attributes)
 		map.recordModifiers(
 			nameToken: node.name,
 			mask: swiftNodeModifiers(
@@ -129,7 +165,7 @@ private final class AccessVisitor: SyntaxVisitor {
 		return .visitChildren
 	}
 	override func visit(_ node: InitializerDeclSyntax) -> SyntaxVisitorContinueKind {
-		record(node.initKeyword, node.modifiers)
+		record(node.initKeyword, node.modifiers, node.attributes)
 		map.recordModifiers(
 			nameToken: node.initKeyword,
 			mask: swiftNodeModifiers(
@@ -138,7 +174,7 @@ private final class AccessVisitor: SyntaxVisitor {
 		return .visitChildren
 	}
 	override func visit(_ node: SubscriptDeclSyntax) -> SyntaxVisitorContinueKind {
-		record(node.subscriptKeyword, node.modifiers)
+		record(node.subscriptKeyword, node.modifiers, node.attributes)
 		map.recordModifiers(
 			nameToken: node.subscriptKeyword,
 			mask: swiftNodeModifiers(node.modifiers, isAsync: false), converter: converter)
@@ -148,16 +184,19 @@ private final class AccessVisitor: SyntaxVisitor {
 		let mask = swiftNodeModifiers(node.modifiers, isAsync: false)
 		for binding in node.bindings {
 			if let pattern = binding.pattern.as(IdentifierPatternSyntax.self) {
-				record(pattern.identifier, node.modifiers)
+				record(pattern.identifier, node.modifiers, node.attributes)
 				map.recordModifiers(nameToken: pattern.identifier, mask: mask, converter: converter)
 			}
 		}
 		return .skipChildren
 	}
 	override func visit(_ node: EnumCaseDeclSyntax) -> SyntaxVisitorContinueKind {
-		// A case takes the enum's access; it carries no modifiers of its own.
+		// A case takes the enum's access; it carries no modifiers of its own, but
+		// can carry its own @available (e.g. a case added in a later OS version).
 		for element in node.elements {
 			map.record(nameToken: element.name, access: AccessKind.default_, converter: converter)
+			map.recordAvailability(
+				nameToken: element.name, attributes: node.attributes, converter: converter)
 		}
 		return .skipChildren
 	}

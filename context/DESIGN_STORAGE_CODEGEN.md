@@ -273,11 +273,18 @@ Verified: Rust `cargo test` **111 passed**; Swift transport/chunker/access suite
 self-containment check now carrying attributes); C++ `Sourcetrail_test` serializer
 round-trip + a new `SqliteIndexStorage` node-attribute persistence round-trip.
 
-**Not yet done (deliberately deferred):** a *producer* (Swift `@available` /
-deprecation, Rust `cfg`) and a *consumer* (node tooltip + filter). Those are the
-feature from `DESIGN_NODE_MODIFIERS.md`; the substrate now makes them cheap. The
-Swift `StorageBuilder.recordNodeAttribute` API exists and is unit-tested, so the
-producer is a one-call wiring job when wanted.
+**First producer + consumer landed (2026-07-18).** Swift `@available` extraction
+→ `NodeAttributeKind.AVAILABILITY` (both the semantic and syntactic engines, via
+the shared `swiftAvailability` extractor keyed like SW16 access), and the C++ node
+tooltip appends `@available(...)` (`PersistentStorage::getTooltipInfoForTokenIds`
+reads `getNodeAttributesByNodeIds`). Tested end-to-end: Swift producer (syntactic +
+semantic) + a C++ `StorageTestSuite` tooltip round-trip. This is the deferred
+`@available` point from SW16, now riding the substrate.
+
+**Remaining follow-ups (additive over the same table):** more producers (Rust
+`#[cfg]` / `#[deprecated]`, C++ `#ifdef` / Clang availability / `[[deprecated]]`),
+a deprecation `NODE_MODIFIER_DEPRECATED` bit (the cross-axis fact), and a graph
+*filter* over `node_attribute`.
 
 ## Critical files
 

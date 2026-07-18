@@ -4,6 +4,7 @@
 
 #include "IntermediateStorage.h"
 #include "PersistentStorage.h"
+#include "StorageNodeAttribute.h"
 
 namespace
 {
@@ -88,6 +89,28 @@ TEST_CASE("storage saves node")
 
 	REQUIRE(storedId != 0);
 	REQUIRE(storage.getNodeTypeForNodeWithId(storedId).getKind() == NODE_TYPEDEF);
+}
+
+TEST_CASE("storage tooltip surfaces the @available node attribute")
+{
+	NameHierarchy modern = createNameHierarchy("Modern");
+
+	TestStorage storage;
+
+	std::shared_ptr<IntermediateStorage> intermediateStorage = std::make_shared<IntermediateStorage>();
+	Id id = intermediateStorage->addNode(StorageNodeData(NODE_CLASS, NameHierarchy::serialize(modern))).first;
+	intermediateStorage->addSymbol(StorageSymbol(id, DefinitionKind::EXPLICIT));
+	intermediateStorage->addNodeAttribute(
+		StorageNodeAttribute(id, NodeAttributeKind::AVAILABILITY, "macOS 14.0, *"));
+
+	storage.inject(intermediateStorage.get());
+
+	const Id storedId = storage.getNodeIdForNameHierarchy(modern);
+	REQUIRE(storedId != 0);
+
+	const TooltipInfo info =
+		storage.getTooltipInfoForTokenIds({storedId}, TooltipOrigin::TOOLTIP_ORIGIN_GRAPH);
+	REQUIRE(info.title.find("@available(macOS 14.0, *)") != std::string::npos);
 }
 
 TEST_CASE("storage saves field as member")
