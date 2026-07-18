@@ -28,7 +28,9 @@ CMakeLists.txt.user
 
 # Rust / Cargo
 src/rust_indexer/target/
-src/rust_indexer/Cargo.lock
+# Cargo.lock IS tracked: rust_indexer and agent_mcp_bridge are binaries, so we
+# commit the lock for reproducible builds (matches src/turso_shim). See the
+# note in src/agent_mcp_bridge/.gitignore.
 
 # Swift Package Manager (Swift indexer)
 src/swift_indexer/Package.resolved
