@@ -20,6 +20,8 @@ public:
 	void recordSymbolKind(Id symbolId, SymbolKind symbolKind) override;
 	void recordAccessKind(Id symbolId, AccessKind accessKind) override;
 	void recordDefinitionKind(Id symbolId, DefinitionKind definitionKind) override;
+	void recordNodeModifier(Id symbolId, NodeModifierMask modifier) override;
+	void recordNodeAttribute(Id symbolId, NodeAttributeKind key, const std::string& value) override;
 
 	Id recordReference(
 		ReferenceKind referenceKind,

@@ -161,6 +161,15 @@ void IntermediateStorage::setNodeType(Id nodeId, NodeKind nodeType)
 	}
 }
 
+void IntermediateStorage::addNodeModifier(Id nodeId, NodeModifierMask modifier)
+{
+	auto it = m_nodeIdIndex.find(nodeId);
+	if (it != m_nodeIdIndex.end())
+	{
+		m_nodes[it->second].modifiers |= modifier;
+	}
+}
+
 void IntermediateStorage::addSymbol(const StorageSymbol& symbol)
 {
 	m_symbols.push_back(symbol);

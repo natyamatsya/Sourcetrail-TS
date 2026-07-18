@@ -75,6 +75,10 @@ private:
 
 	void recordNonTrivialDestructorCalls(const clang::FunctionDecl *d);
 
+	// Axis-2/3 metadata off a decl's attributes: [[deprecated]] -> the modifier
+	// bit + an optional DEPRECATED message row (context/DESIGN_NODE_MODIFIERS.md).
+	void recordDeprecation(Id symbolId, const clang::Decl* d);
+
 	ParseLocation getSignatureLocation(clang::FunctionDecl* d);
 	ParseLocation getParseLocationOfTagDeclBody(clang::TagDecl* decl) const;
 	ParseLocation getParseLocationOfFunctionBody(const clang::FunctionDecl* decl) const;
