@@ -149,14 +149,18 @@ Deprecation is worth calling out because it touches both existing axes and Axis
 - the boolean → a capability bit, `NODE_MODIFIER_DEPRECATED` (Axis 2);
 - the message / since-version → a `deprecated` row in the metadata table (Axis 3a).
 
-**Implemented (Swift, 2026-07-18).** `NODE_MODIFIER_DEPRECATED = 1 << 3` composes
-into `nodeModifierToString` ("deprecated" in the graph node label). The Swift
-indexer detects `@available(*, deprecated[, message:])` / `obsoleted` /
+**Implemented (Swift + Rust, 2026-07-18).** `NODE_MODIFIER_DEPRECATED = 1 << 3`
+composes into `nodeModifierToString` ("deprecated" in the graph node label). The
+Swift indexer detects `@available(*, deprecated[, message:])` / `obsoleted` /
 `unavailable` (`swiftDeprecation`, both engines): it sets the bit and, when the
-attribute carries a message, records a `DEPRECATED` `node_attribute`. The node
-tooltip shows `[deprecated: <message>]` off the bit + the row. C++ `[[deprecated]]`
-and Rust `#[deprecated]` are the remaining per-indexer producers over the same
-primitive.
+attribute carries a message, records a `DEPRECATED` `node_attribute`. The **Rust**
+indexer (`collector.rs`, `scan_item_attrs` over each item's outer attributes)
+does the same for `#[deprecated]` / `#[deprecated = "msg"]` /
+`#[deprecated(note = "…")]`, and additionally records the surviving
+`#[cfg(...)]` predicate as a `CFG` `node_attribute` (Axis-3a). The node tooltip
+shows `[deprecated: <message>]` off the bit + the row, and `#[cfg(<predicate>)]`
+off the CFG row. C++ `[[deprecated]]` is the remaining per-indexer producer over
+the same primitive.
 
 ## Graceful degradation
 

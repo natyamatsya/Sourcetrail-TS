@@ -137,6 +137,28 @@ TEST_CASE("storage tooltip surfaces deprecation (bit + message)")
 	REQUIRE(info.title.find("[deprecated: use New]") != std::string::npos);
 }
 
+TEST_CASE("storage tooltip surfaces the cfg node attribute")
+{
+	NameHierarchy gated = createNameHierarchy("Gated");
+
+	TestStorage storage;
+
+	std::shared_ptr<IntermediateStorage> intermediateStorage = std::make_shared<IntermediateStorage>();
+	Id id = intermediateStorage->addNode(StorageNodeData(NODE_FUNCTION, NameHierarchy::serialize(gated))).first;
+	intermediateStorage->addSymbol(StorageSymbol(id, DefinitionKind::EXPLICIT));
+	intermediateStorage->addNodeAttribute(
+		StorageNodeAttribute(id, NodeAttributeKind::CFG, "all(unix, feature = \"serde\")"));
+
+	storage.inject(intermediateStorage.get());
+
+	const Id storedId = storage.getNodeIdForNameHierarchy(gated);
+	REQUIRE(storedId != 0);
+
+	const TooltipInfo info =
+		storage.getTooltipInfoForTokenIds({storedId}, TooltipOrigin::TOOLTIP_ORIGIN_GRAPH);
+	REQUIRE(info.title.find("#[cfg(all(unix, feature = \"serde\"))]") != std::string::npos);
+}
+
 TEST_CASE("storage saves field as member")
 {
 	NameHierarchy a = createNameHierarchy("Struct");

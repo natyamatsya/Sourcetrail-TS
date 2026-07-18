@@ -2603,6 +2603,11 @@ TooltipInfo PersistentStorage::getTooltipInfoForTokenIds(
 		{
 			info.title += "  @available(" + attribute.value + ")";
 		}
+		else if (attribute.key == NodeAttributeKind::CFG && !attribute.value.empty())
+		{
+			// The Rust indexer records the surviving #[cfg(...)] predicate.
+			info.title += "  #[cfg(" + attribute.value + ")]";
+		}
 	}
 	if (nodeModifierHas(node.modifiers, NODE_MODIFIER_DEPRECATED))
 	{
