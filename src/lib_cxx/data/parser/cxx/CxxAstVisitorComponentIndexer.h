@@ -4,6 +4,7 @@
 #include <map>
 
 #include "CxxAstVisitorComponent.h"
+#include "CxxConceptReferenceRecorder.h"
 #include "CxxContext.h"
 #include "CxxLocationExtractor.h"
 #include "CxxSymbolRegistry.h"
@@ -73,9 +74,10 @@ private:
 		const ParseLocation& location,
 		SymbolKind symbolKind);
 
-	void recordTemplateParameterConceptReferences(const clang::TemplateDecl *templateDecl);
-	template <typename T> void recordConceptReference(const T *d);
-	void recordNamedConceptReference(const clang::ConceptReference *conceptReference);
+	// Builds an on-demand recorder for C++20 concept-constraint references, borrowing the
+	// collaborators it needs (m_context is wired post-construction, so this is only valid at
+	// traversal time).
+	CxxConceptReferenceRecorder concepts();
 
 	void recordDeducedType(const clang::DeducedType *autoType, const Id contextSymbolId, const ParseLocation &keywordLocation);
 	void recordDeducedQualType(const clang::QualType deducedQualType, const Id contextSymbolId, const ParseLocation &keywordLocation);
