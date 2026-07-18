@@ -1,6 +1,7 @@
 #include "IndexingStatusSerializer.h"
 
 #include "indexing_status_generated.h"
+#include "logging.h"
 
 namespace IpcSerializer
 {
@@ -67,9 +68,20 @@ flatbuffers::DetachedBuffer serializeIndexingStatus(const IndexingStatusData& st
 	return builder.Release();
 }
 
-IndexingStatusData deserializeIndexingStatus(const uint8_t* buf, std::size_t /*len*/)
+IndexingStatusData deserializeIndexingStatus(const uint8_t* buf, std::size_t len)
 {
 	IndexingStatusData result;
+
+	// Verify before reading rather than trusting unverified bytes (ADR-0003). The
+	// caller (readStatus) has already short-circuited the zeroed/empty segment, so
+	// an unverifiable buffer here is a genuine fault, not "no status yet" — surface
+	// it (log) and degrade to an empty status instead of reading garbage silently.
+	flatbuffers::Verifier verifier(buf, len);
+	if (!Sourcetrail::Ipc::VerifyIndexingStatusBuffer(verifier))
+	{
+		LOG_ERROR("IndexingStatus failed FlatBuffers verification; treating as empty status");
+		return result;
+	}
 
 	auto fb = Sourcetrail::Ipc::GetIndexingStatus(buf);
 	if (!fb)

@@ -68,23 +68,23 @@ so this is purely a wire-form choice with no semantic cost.
 
 | Message / role | Writer: null empties | Reader: verify + surface |
 |---|---|---|
-| `IndexingStatus` — C++ (app) | ✅ `IndexingStatusSerializer` | app-side, unchecked `GetRoot` — see note |
+| `IndexingStatus` — C++ (app) | ✅ `IndexingStatusSerializer` | ✅ `deserializeIndexingStatus` verifies (`VerifyIndexingStatusBuffer`); on failure logs and degrades to empty |
 | `IndexingStatus` — Rust (indexer) | ✅ `status.rs` `to_bytes` | ✅ `is_interrupted` returns `Err`; `main.rs` logs it |
 | `IndexingStatus` — Swift (indexer) | ✅ `serializeStatus` | ✅ `decodeStatus` throws `invalidIndexingStatus`; main loop logs it |
 | `IntermediateStorage` — indexers (write only) | Rust/Swift: offset vectors only (no scalar-vector fields), so unaffected today; the null-empties rule still applies to any future scalar vector | app-side reader only |
 | `IntermediateStorage` — C++ (app, read) | — | unchecked `GetRoot` — see note |
 
-**Note on the app-side C++ readers.** `deserializeIndexingStatus` /
-`deserializeIntermediateStorage` use the unchecked `GetRoot`, not a verifier. This
-is a deliberate **trusted-consumer boundary**: the app reads only its own
-indexers' output, and rule 1 now guarantees those writers produce well-formed,
-consistently-aligned buffers. For `IntermediateStorage` it is additionally a
-performance choice — verifying every multi-megabyte chunk (ADR-0002) on the hot
-inject path is not worth it for a trusted producer. The "verify + surface" rule is
-enforced where the bug actually lived: the **cross-language readers of control
-signals** (the indexers reading the app's `IndexingStatus`). Adding a verified,
-error-surfacing read to the C++ status path is a low-cost future hardening; the
-storage path should stay unchecked by design.
+**Note on the app-side C++ readers.** The small control-message reader,
+`deserializeIndexingStatus`, **verifies** (`VerifyIndexingStatusBuffer`) and on
+failure logs and degrades to an empty status — it has no error-return channel
+(`IndexingStatusData` by value), so the log *is* the surfacing, and returning
+empty is the degraded value. The bulk-data reader,
+`deserializeIntermediateStorage`, stays on the unchecked `GetRoot` **by design**:
+verifying every multi-megabyte chunk (ADR-0002) on the hot inject path is not
+worth it for a trusted producer that rule 1 already keeps well-formed. So the
+control channel (`IndexingStatus`) is verified end-to-end in all three frontends;
+the bulk channel (`IntermediateStorage`) relies on the writer contract plus the
+trusted-consumer boundary.
 
 ## Consequences
 
