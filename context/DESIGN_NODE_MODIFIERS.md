@@ -1,21 +1,59 @@
 # Design: Declaration Modifiers — A Three-Axis Model
 
-**Status: Axis 1 (visibility / `AccessKind`) and Axis 2 (capabilities /
-`NodeModifier`) are implemented. Axis 3a — the per-node metadata table
-(`node_attribute`, DESIGN_STORAGE_CODEGEN.md step 2) with producers/consumers for
-Swift `@available` (→ `AVAILABILITY`) and **deprecation** (the cross-axis fact:
-`NODE_MODIFIER_DEPRECATED` bit + `DEPRECATED` message row) — is now implemented
-too. Deprecation ships in all three primary indexers: Swift `@available(*,
-deprecated)`, Rust `#[deprecated]` (+ `#[cfg]` → `CFG`), and C++ `[[deprecated]]`.
-Axis 3b (config-atom nodes + guard edges), the `open`/`final` Axis-2 bits, and
-the availability/cfg producers for the remaining languages (C++ Clang
-`availability`, Rust `#[cfg]` is done, Zig `comptime`) remain proposed.**
+**Status: the storage substrate is complete — Axis 1 (visibility / `AccessKind`),
+Axis 2 (capabilities / `NodeModifier` bitmask), and Axis 3a (the `node_attribute`
+metadata table, DESIGN_STORAGE_CODEGEN.md step 2) all ship with language-agnostic
+consumers. Deprecation is now a cross-language fact (Swift/Rust/C++). What remains
+is per-indexer producers — most notably the `open`/`final` Axis-2 bits — plus the
+optional Axis-3b config-atom nodes. See "Status & remaining work" below for the
+full producer matrix and the checklist of open items.**
 This note names the general model behind three changes that shipped
 piecemeal — `AccessKind::PACKAGE`, the `NodeModifier` bitmask, and
 `async`/`nonisolated` — and shows that the two remaining Swift "open points"
 (`open` vs `public`; `@available`) are not two problems but two axes of the same
 one. It is written from the perspective of C++, Rust, Swift, and Zig so the
 storage stays language-neutral as more indexers land.
+
+## Status & remaining work
+
+Substrate and consumers are done; what remains is **per-indexer producers** and
+two additive extensions. Producer coverage (✅ shipped · ⬜ open · — n/a):
+
+| Fact (axis) | C++ | Rust | Swift | Zig |
+|---|---|---|---|---|
+| Visibility — `AccessKind` (1) | ✅ | ⬜ scoped `pub(in path)` | ✅ | — no indexer yet |
+| `actor`/`async`/`nonisolated` (2) | — | — | ✅ | — |
+| `open`/`final` (2) | ⬜ `final` | — no inheritance | ⬜ `open`/`final` | — |
+| **Deprecation** — bit + `DEPRECATED` (2/3a) | ✅ `[[deprecated]]` | ✅ `#[deprecated]` | ✅ `@available(*,deprecated)` | ⬜ convention |
+| Availability — `AVAILABILITY` (3a) | ⬜ Clang `availability` | — no concept | ✅ `@available` | — |
+| Config guard — `CFG` (3a) | ⬜ `#ifdef`/`#if` | ✅ `#[cfg]` | — | ⬜ `comptime` target |
+| Doc brief — `DOC_BRIEF` (3a) | ⬜ | ⬜ | ⬜ | ⬜ |
+
+**Done:** Axis 1 (`AccessKind`), Axis 2 (`NodeModifier` bitmask), Axis 3a
+(`node_attribute` table, all serializers). Consumers are language-agnostic and
+already wired: node tooltip (`@available(...)`, `[deprecated: <msg>]`,
+`#[cfg(<pred>)]`), the orange dashed graph border for deprecated nodes, and the
+Hide-deprecated graph filter.
+
+**Open items — do not lose these:**
+
+1. **`open`/`final` Axis-2 bits** — add `NODE_MODIFIER_OPEN` + `NODE_MODIFIER_FINAL`;
+   emit from Swift (`open`/`public`/`final`) and C++ (`final`). Zero new storage,
+   same shape as `async`. This is the last unresolved Swift "open point" and the
+   recommended next step (see Staging §1). *Not yet started.*
+2. **Clang `availability` → `AVAILABILITY`** (C++) — one more `getAttr<...>()` read
+   over the `recordDeprecation` seam that already exists in
+   `CxxAstVisitorComponentIndexer`.
+3. **C++ `#ifdef`/`#if` → `CFG`** — preprocessor-level config guards; heavier,
+   needs Preprocessor integration (the AST attribute path won't see these).
+4. **`DOC_BRIEF` producer/consumer** — the key is reserved but nothing emits or
+   shows a doc-comment brief yet.
+5. **Rust scoped visibility** — `pub(in path)` is a *scope*, not a lattice point;
+   Axis 1's enum can't express it (would need an optional scope ref).
+6. **Axis 3b — config-atom nodes + guard edges** — the navigable "configuration
+   surface" (§ "Axis 3 (b)"). Additive over 3a; only build when wanted.
+7. **Zig producers** — when/if a Zig indexer lands: `pub`, `comptime`/`export`/
+   `extern`, and `comptime` target branches → the same `CFG` atoms.
 
 ## The modeling insight
 
@@ -79,9 +117,13 @@ enum is not the final word on visibility.
 A per-node bitmask, `src/lib/data/parser/NodeModifier.h`, stored in
 `StorageNode.modifiers` (`intermediate_storage.fbs` → C++ `StorageNodeData` →
 SQLite `node.modifiers`, round-tripped across all three serializers). Current
-bits: `NODE_MODIFIER_ACTOR`, `NODE_MODIFIER_ASYNC`, `NODE_MODIFIER_NONISOLATED`.
-The graph `Node` exposes them and `Node::getReadableTypeString()` composes them
-("actor", "async method", "nonisolated async method").
+bits: `NODE_MODIFIER_ACTOR`, `NODE_MODIFIER_ASYNC`, `NODE_MODIFIER_NONISOLATED`
+(Swift), `NODE_MODIFIER_DEPRECATED` (Swift/Rust/C++). The graph `Node` exposes
+them and `Node::getReadableTypeString()` composes them ("actor", "async method",
+"nonisolated async method", "deprecated").
+
+`open`/`final` are the two **not-yet-added** bits (see open item §1) — the last
+unresolved Swift "open point".
 
 **`open` vs `public` lives here.** The earlier framing — "`open` doesn't fit the
 `AccessKind` axis" — was right about the *wrong* axis. `open` is `public`
@@ -101,7 +143,7 @@ want them: `static`, `mutating`, `override`, `required`, `dynamic`, `unsafe`,
 `const`, `comptime`, `export`, `extern`, `inline`, … — each a bit, no schema
 churn.
 
-## Axis 3 — Configuration guards — proposed (the genuinely missing primitive)
+## Axis 3 — Configuration guards — table shipped (3a), navigable graph proposed (3b)
 
 The general form, common to all four languages:
 
@@ -112,13 +154,14 @@ The general form, common to all four languages:
 `if (builtin.os.tag == .windows)` are the *same fact* in four syntaxes. Two
 complementary representations, layerable:
 
-### (a) A per-node metadata table — recommended first
+### (a) A per-node metadata table — **shipped** as `node_attribute`
 
-`node_metadata(node_id, key, value)` — the raw and/or structured guard as text:
+`node_attribute(node_id, key, value)` — the raw and/or structured guard as text
+(`NodeAttributeKind` for the key):
 
-- `available = "iOS 15.0, macOS 12.0"`
-- `cfg = "all(unix, feature=serde)"`
-- `deprecated = "since iOS 16: use X instead"`
+- `AVAILABILITY = "macOS 14.0, *"`
+- `CFG = "all(unix, feature = \"serde\")"`
+- `DEPRECATED = "use X instead"`
 
 Cheap, faithful for display/tooltip, filterable. This is the **highest-leverage**
 thing to build, because it is a general escape hatch: a key→value store absorbs
@@ -192,35 +235,45 @@ what its language has and unpopulated bits/rows stay empty:
 
 ## Staging recommendation
 
-1. **`open`/`final` now** — add `NODE_MODIFIER_OPEN` + `NODE_MODIFIER_FINAL` and
-   emit them from the Swift (and later C++) indexers. Same shape as `async`;
-   closes that open point immediately, zero new storage.
-2. **`node_metadata` table next** — the general Axis-3 primitive. **Done** as
-   `node_attribute` (DESIGN_STORAGE_CODEGEN.md step 2), with the first producer +
-   consumer landed: Swift extracts `@available(...)` (both engines, purely
-   syntactic so it survives broken builds) into the `AVAILABILITY` key, and the
-   node tooltip appends `@available(...)`. Remaining emitters — Rust `#[cfg]` /
-   `#[deprecated]`, C++ `#ifdef` / Clang availability / `[[deprecated]]` — and the
-   graph *filter* are additive follow-ups over the same table.
+1. **`open`/`final` — the recommended next step, not yet started.** Add
+   `NODE_MODIFIER_OPEN` + `NODE_MODIFIER_FINAL` and emit them from the Swift (and
+   later C++) indexers. Same shape as `async`; closes the last Swift open point,
+   zero new storage. (Open item §1.)
+2. **`node_metadata` table — DONE** as `node_attribute` (DESIGN_STORAGE_CODEGEN.md
+   step 2). Producers landed: Swift `@available` → `AVAILABILITY` (both engines,
+   purely syntactic so it survives broken builds); Swift/Rust/C++ deprecation →
+   `NODE_MODIFIER_DEPRECATED` + `DEPRECATED` message; Rust `#[cfg]` → `CFG`.
+   Consumers landed: node tooltip (`@available(...)`, `[deprecated: <msg>]`,
+   `#[cfg(...)]`), the orange dashed graph border for deprecated nodes, and the
+   Hide-deprecated graph filter. Remaining emitters (Clang `availability`, C++
+   `#ifdef`, `DOC_BRIEF`) are additive follow-ups over the same table — open items
+   §2–§4.
 3. **Config-atom nodes + guard edges later** — only if/when a navigable
    "configuration surface" is wanted. Reuses the synthetic-node machinery, so it
-   is additive over step 2, not a rewrite.
+   is additive over step 2, not a rewrite. (Open item §6.)
 
 Each step is monotonic over what exists: Axis 1 = `AccessKind` (done), Axis 2 =
-`NodeModifier` (done, +2 bits), Axis 3 = one key→value table (+ optional
-synthetic-node reuse). No existing concept is disturbed.
+`NodeModifier` (done; `open`/`final` still to add), Axis 3 = one key→value table
+(done; + optional synthetic-node reuse). No existing concept is disturbed.
 
 ## Critical files
 
 - `src/lib/data/parser/AccessKind.h/.cpp` — Axis 1 enum.
-- `src/lib/data/parser/NodeModifier.h/.cpp` — Axis 2 bitmask (extend for
-  `open`/`final`/`deprecated`).
-- `src/lib/data/storage/type/StorageNode.h`, `intermediate_storage.fbs`,
-  `sqlite/IndexTables.h`, `sqlite/SqliteIndexStorage.cpp` — where a new
-  `node_metadata` table (Axis 3a) would live, mirroring `component_access`.
-- `src/lib/data/graph/Node.{h,cpp}` — graph-model consumer + readable-string
-  composition.
-- `src/swift_indexer/.../AccessSyntax.swift` — the per-position modifier/access
-  extractor to extend for `open`/`final` and `@available`.
-- `src/rust_indexer/.../parser/collector.rs` — where Rust `#[cfg]`/`#[deprecated]`
-  emission (Axis 3) would attach.
+- `src/lib/data/parser/NodeModifier.h/.cpp` — Axis 2 bitmask (has `deprecated`;
+  **extend for `open`/`final`** — open item §1).
+- `src/lib/data/parser/NodeAttributeKind.h` — Axis 3a keys (`AVAILABILITY`,
+  `DEPRECATED`, `CFG`, `DOC_BRIEF`; append-only).
+- `src/lib/data/storage/type/StorageNode.h`, `type/StorageNodeAttribute.h`,
+  `intermediate_storage.fbs`, `sqlite/SqliteIndexStorage.cpp` — the shipped
+  `node_attribute` table (Axis 3a), a side table mirroring `component_access`.
+- `src/lib/data/parser/ParserClient.h` + `ParserClientImpl.cpp` — the clang
+  producer seam: `recordNodeModifier` / `recordNodeAttribute` (backed by
+  `IntermediateStorage::addNodeModifier`).
+- `src/lib/data/graph/Node.{h,cpp}`, `src/lib/data/storage/PersistentStorage.cpp`
+  (tooltip), `src/lib_gui/qt/graphics/graph/QtGraphNodeData.cpp` (border),
+  `GraphController` + `ApplicationSettings` (Hide-deprecated filter) — the
+  language-agnostic consumers.
+- Producers: `src/lib_cxx/.../CxxAstVisitorComponentIndexer.cpp`
+  (`recordDeprecation`), `src/rust_indexer/.../parser/collector.rs`
+  (`scan_item_attrs`), `src/swift_indexer/.../AccessSyntax.swift`
+  (`swiftAvailability`/`swiftDeprecation`; **extend for `open`/`final`**).
