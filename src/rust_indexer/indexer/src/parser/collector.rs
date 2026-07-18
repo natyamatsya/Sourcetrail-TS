@@ -15,17 +15,18 @@ use ra_ap_vfs::Vfs;
 
 use crate::ipc::storage::{
     OwnedIntermediateStorage, OwnedStorageEdge, OwnedStorageError, OwnedStorageFile,
-    OwnedStorageLocalSymbol, OwnedStorageNode, OwnedStorageOccurrence, OwnedStorageSourceLocation,
-    OwnedStorageSymbol,
+    OwnedStorageLocalSymbol, OwnedStorageNode, OwnedStorageNodeAttribute, OwnedStorageOccurrence,
+    OwnedStorageSourceLocation, OwnedStorageSymbol,
 };
 
 use super::{
     DEFINITION_EXPLICIT, DEFINITION_IMPLICIT, DEFINITION_NONE, EDGE_CALL, EDGE_IMPORT,
     EDGE_INHERITANCE, EDGE_MACRO_USAGE, EDGE_MEMBER, EDGE_OVERRIDE, EDGE_TEMPLATE_SPECIALIZATION,
     EDGE_TYPE_ARGUMENT, EDGE_TYPE_USAGE, EDGE_USAGE, LOCATION_LOCAL_SYMBOL, LOCATION_SCOPE,
-    LOCATION_TOKEN, NODE_ENUM, NODE_ENUM_CONSTANT, NODE_FIELD, NODE_FILE, NODE_FUNCTION,
-    NODE_GLOBAL_VARIABLE, NODE_INTERFACE, NODE_MACRO, NODE_METHOD, NODE_MODULE, NODE_STRUCT,
-    NODE_TYPE_PARAMETER, NODE_TYPEDEF, NODE_UNION, SpecializationScope,
+    LOCATION_TOKEN, NODE_ATTRIBUTE_CFG, NODE_ATTRIBUTE_DEPRECATED, NODE_ENUM, NODE_ENUM_CONSTANT,
+    NODE_FIELD, NODE_FILE, NODE_FUNCTION, NODE_GLOBAL_VARIABLE, NODE_INTERFACE, NODE_MACRO,
+    NODE_METHOD, NODE_MODIFIER_DEPRECATED, NODE_MODULE, NODE_STRUCT, NODE_TYPE_PARAMETER,
+    NODE_TYPEDEF, NODE_UNION, SpecializationScope,
 };
 
 /// Identity key for an emitted definition, so that semantically resolved
@@ -96,6 +97,96 @@ fn derive_entry_name_ranges(attr: &ast::Attr) -> Vec<ra_ap_syntax::TextRange> {
         ranges.push(r);
     }
     ranges
+}
+
+/// Metadata facts read off an item's outer attributes — the Rust producers for
+/// the three-axis model (context/DESIGN_NODE_MODIFIERS.md): `#[deprecated]`
+/// (Axis-2 bit + Axis-3a message) and `#[cfg(...)]` (Axis-3a guard text).
+struct ItemAttrs {
+    /// `#[deprecated]` present. The inner `Option<String>` is the note/message
+    /// when the attribute carries one (`= "msg"` or `note = "msg"`).
+    deprecated: Option<Option<String>>,
+    /// `#[cfg(...)]` predicate text (inside the parens), e.g.
+    /// `all(unix, feature = "serde")`. Only present on items that *survived*
+    /// cfg-stripping — the guard held — which is exactly the display case.
+    cfg: Option<String>,
+}
+
+/// Scan an item node's outer attributes for the metadata the storage models.
+/// Reads the raw syntax children (outer attributes are direct children of the
+/// item, identical to what `ast::HasAttrs::attrs()` iterates), so it needs no
+/// `HasAttrs` trait bound and applies uniformly to every item kind.
+fn scan_item_attrs(node: &ra_ap_syntax::SyntaxNode) -> ItemAttrs {
+    let mut out = ItemAttrs {
+        deprecated: None,
+        cfg: None,
+    };
+    for attr in node.children().filter_map(ast::Attr::cast) {
+        match attr.simple_name().as_deref() {
+            Some("deprecated") => out.deprecated = Some(deprecation_note(&attr)),
+            Some("cfg") => out.cfg = cfg_predicate(&attr),
+            _ => {}
+        }
+    }
+    out
+}
+
+/// Extract the human-readable note from a `#[deprecated]` attribute, covering
+/// both `#[deprecated = "msg"]` (`KeyValueMeta`) and
+/// `#[deprecated(note = "msg", since = "…")]` (`TokenTreeMeta`). `None` when the
+/// attribute carries no message (bare `#[deprecated]` → `PathMeta`).
+fn deprecation_note(attr: &ast::Attr) -> Option<String> {
+    match attr.meta()? {
+        ast::Meta::KeyValueMeta(kv) => {
+            let text = kv.expr()?.syntax().text().to_string();
+            text.starts_with('"').then(|| string_token_value(&text))
+        }
+        ast::Meta::TokenTreeMeta(tt) => note_from_token_tree(&tt.token_tree()?),
+        _ => None,
+    }
+}
+
+/// Find the string keyed by `note` (or `reason`/`message`) inside a
+/// `#[deprecated(...)]` token tree.
+fn note_from_token_tree(tt: &ast::TokenTree) -> Option<String> {
+    use ra_ap_syntax::T;
+    let mut note_key = false;
+    for tok in tt
+        .syntax()
+        .children_with_tokens()
+        .filter_map(|e| e.into_token())
+    {
+        match tok.kind() {
+            SyntaxKind::IDENT => note_key = matches!(tok.text(), "note" | "reason" | "message"),
+            SyntaxKind::STRING if note_key => return Some(string_token_value(tok.text())),
+            // `=` and whitespace sit between the key and its string; keep going.
+            T![=] | SyntaxKind::WHITESPACE => {}
+            _ => note_key = false,
+        }
+    }
+    None
+}
+
+/// The predicate text inside a `#[cfg(...)]` attribute, e.g.
+/// `all(unix, feature = "serde")`.
+fn cfg_predicate(attr: &ast::Attr) -> Option<String> {
+    let pred = match attr.meta()? {
+        ast::Meta::CfgMeta(cfg) => cfg.cfg_predicate()?.syntax().text().to_string(),
+        _ => return None,
+    };
+    let pred = pred.trim();
+    (!pred.is_empty()).then(|| pred.to_string())
+}
+
+/// Strip the surrounding quotes from a string-literal token and unescape the
+/// two escapes that matter for display (`\"`, `\\`). Good enough for tooltip
+/// text; not a full Rust string-literal unescaper.
+fn string_token_value(text: &str) -> String {
+    let inner = text
+        .strip_prefix('"')
+        .and_then(|s| s.strip_suffix('"'))
+        .unwrap_or(text);
+    inner.replace("\\\"", "\"").replace("\\\\", "\\")
 }
 
 /// One resolved reference from the (parallelizable) resolution step: an edge
@@ -359,8 +450,9 @@ impl<'db> Collector<'db> {
         node_kind: i32,
         vfs_file_id: ra_ap_vfs::FileId,
         range: ra_ap_syntax::TextRange,
+        modifiers: i32,
     ) {
-        self.add_def_kind(name, node_kind, vfs_file_id, range, DEFINITION_EXPLICIT);
+        self.add_def_kind(name, node_kind, vfs_file_id, range, DEFINITION_EXPLICIT, modifiers);
     }
 
     fn add_def_kind(
@@ -370,6 +462,7 @@ impl<'db> Collector<'db> {
         vfs_file_id: ra_ap_vfs::FileId,
         range: ra_ap_syntax::TextRange,
         definition_kind: i32,
+        modifiers: i32,
     ) {
         let node_id = self.alloc_id();
         let loc_id = self.alloc_id();
@@ -379,7 +472,7 @@ impl<'db> Collector<'db> {
             id: node_id,
             type_: node_kind,
             serialized_name: Some(serialize_name(name)),
-            modifiers: 0,
+            modifiers,
         });
         self.storage.symbols.push(OwnedStorageSymbol {
             id: node_id,
@@ -566,6 +659,7 @@ impl<'db> Collector<'db> {
             } else {
                 DEFINITION_EXPLICIT
             },
+            0,
         );
     }
 
@@ -709,6 +803,7 @@ impl<'db> Collector<'db> {
                 } else {
                     DEFINITION_EXPLICIT
                 },
+                0,
             );
             self.register_def(DefKey::Field(field), &qualified_name);
             self.add_edge(EDGE_MEMBER, owner_name, &qualified_name);
@@ -799,6 +894,7 @@ impl<'db> Collector<'db> {
                                         vfs_fid,
                                         mapped,
                                         DEFINITION_IMPLICIT,
+                                        0,
                                     );
                                     self.add_edge(EDGE_MEMBER, &owner_name, &qualified_name);
                                 }
@@ -1281,6 +1377,7 @@ impl<'db> Collector<'db> {
                 } else {
                     DEFINITION_EXPLICIT
                 },
+                0,
             );
         }
     }
@@ -1299,6 +1396,15 @@ impl<'db> Collector<'db> {
         kind: i32,
     ) {
         let Some(in_file) = src else { return };
+        // Axis-2/3 metadata off the item's outer attributes. The deprecation bit
+        // must be known at node push (it rides in `modifiers`); the message and
+        // cfg predicate become `node_attribute` rows after emission.
+        let item_attrs = scan_item_attrs(in_file.value.syntax());
+        let modifiers = if item_attrs.deprecated.is_some() {
+            NODE_MODIFIER_DEPRECATED
+        } else {
+            0
+        };
         let full_range = in_file.value.syntax().text_range();
         let range = in_file
             .value
@@ -1309,13 +1415,43 @@ impl<'db> Collector<'db> {
             let Some((vfs_fid, mapped)) = self.original_location(in_file.file_id, range) else {
                 return;
             };
-            self.add_def_kind(name, kind, vfs_fid, mapped, DEFINITION_IMPLICIT);
+            self.add_def_kind(name, kind, vfs_fid, mapped, DEFINITION_IMPLICIT, modifiers);
+            self.apply_item_attrs(name, &item_attrs);
             return;
         }
         let vfs_fid = self.real_file_of(&in_file);
-        self.add_def(name, kind, vfs_fid, range);
+        self.add_def(name, kind, vfs_fid, range, modifiers);
         if full_range != range {
             self.add_scope_location(name, full_range, vfs_fid);
+        }
+        self.apply_item_attrs(name, &item_attrs);
+    }
+
+    /// Record `node_attribute` rows for the metadata scanned off an item's
+    /// attributes: the optional `#[deprecated]` message (`DEPRECATED`) and the
+    /// `#[cfg(...)]` predicate (`CFG`). The deprecation *bit* is set at node
+    /// emission via `modifiers`; this only stores the display strings. The node
+    /// was just emitted under `name`; a missing id means emission bailed (e.g.
+    /// an unmapped location), so there is nothing to annotate.
+    fn apply_item_attrs(&mut self, name: &str, attrs: &ItemAttrs) {
+        let Some(&node_id) = self.node_ids.get(name) else {
+            return;
+        };
+        if let Some(Some(note)) = &attrs.deprecated {
+            if !note.is_empty() {
+                self.storage.node_attributes.push(OwnedStorageNodeAttribute {
+                    node_id,
+                    key: NODE_ATTRIBUTE_DEPRECATED,
+                    value: Some(note.clone()),
+                });
+            }
+        }
+        if let Some(cfg) = &attrs.cfg {
+            self.storage.node_attributes.push(OwnedStorageNodeAttribute {
+                node_id,
+                key: NODE_ATTRIBUTE_CFG,
+                value: Some(cfg.clone()),
+            });
         }
     }
 

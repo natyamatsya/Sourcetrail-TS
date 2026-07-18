@@ -1499,3 +1499,81 @@ fn builtin_attribute_is_not_a_macro_usage() {
         0
     );
 }
+
+// --- Axis-2/3 metadata producers: #[deprecated] and #[cfg] --------------------
+
+fn modifiers_of(s: &OwnedIntermediateStorage, name: &str) -> i32 {
+    s.nodes
+        .iter()
+        .find(|n| decode_name(&n.serialized_name) == name)
+        .map(|n| n.modifiers)
+        .unwrap_or(0)
+}
+
+fn node_attr_values(s: &OwnedIntermediateStorage, name: &str, key: i32) -> Vec<String> {
+    let Some(id) = s
+        .nodes
+        .iter()
+        .find(|n| decode_name(&n.serialized_name) == name)
+        .map(|n| n.id)
+    else {
+        return Vec::new();
+    };
+    s.node_attributes
+        .iter()
+        .filter(|a| a.node_id == id && a.key == key)
+        .filter_map(|a| a.value.clone())
+        .collect()
+}
+
+#[test]
+fn deprecated_note_sets_bit_and_message() {
+    let s = index_src("#[deprecated(note = \"use bar\")]\npub fn foo() {}");
+    assert_ne!(
+        modifiers_of(&s, "foo") & NODE_MODIFIER_DEPRECATED,
+        0,
+        "deprecated bit"
+    );
+    assert_eq!(
+        node_attr_values(&s, "foo", NODE_ATTRIBUTE_DEPRECATED),
+        vec!["use bar".to_string()]
+    );
+}
+
+#[test]
+fn deprecated_shorthand_message() {
+    let s = index_src("#[deprecated = \"gone\"]\npub struct S;");
+    assert_ne!(modifiers_of(&s, "S") & NODE_MODIFIER_DEPRECATED, 0);
+    assert_eq!(
+        node_attr_values(&s, "S", NODE_ATTRIBUTE_DEPRECATED),
+        vec!["gone".to_string()]
+    );
+}
+
+#[test]
+fn deprecated_bare_sets_bit_without_message() {
+    let s = index_src("#[deprecated]\npub fn old() {}");
+    assert_ne!(modifiers_of(&s, "old") & NODE_MODIFIER_DEPRECATED, 0);
+    assert!(
+        node_attr_values(&s, "old", NODE_ATTRIBUTE_DEPRECATED).is_empty(),
+        "bare #[deprecated] carries no message row"
+    );
+}
+
+#[test]
+fn plain_item_has_no_deprecated_bit() {
+    let s = index_src("pub fn fresh() {}");
+    assert_eq!(modifiers_of(&s, "fresh") & NODE_MODIFIER_DEPRECATED, 0);
+    assert!(node_attr_values(&s, "fresh", NODE_ATTRIBUTE_DEPRECATED).is_empty());
+}
+
+#[test]
+fn cfg_predicate_recorded_as_attribute() {
+    // `all()` (empty) is unconditionally true, so the item survives cfg
+    // stripping on every host and the recorded predicate is deterministic.
+    let s = index_src("#[cfg(all())]\npub fn portable() {}");
+    assert_eq!(
+        node_attr_values(&s, "portable", NODE_ATTRIBUTE_CFG),
+        vec!["all()".to_string()]
+    );
+}
