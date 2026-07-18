@@ -42,7 +42,10 @@ isolation, attribute-driven relations, macros, and API-surface metadata. The two
 axes that needed a *new* storage field have since gained one — the `package`
 access level (`AccessKind::PACKAGE`) and the concurrency modifiers (the
 `NodeModifier` bitmask: actor / async / nonisolated). Still deferred: the
-`open`-vs-`public` distinction and `@available`.
+`open`-vs-`public` distinction and `@available` — but both are placed on a
+general model in [DESIGN_NODE_MODIFIERS.md](DESIGN_NODE_MODIFIERS.md) (`open` is
+one more `NodeModifier` bit; `@available` is the config-guard axis, a small
+key→value metadata table), so neither is a schema blocker.
 
 | Stage | What | State |
 |-------|------|-------|
