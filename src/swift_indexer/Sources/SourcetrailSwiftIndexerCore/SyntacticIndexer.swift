@@ -67,13 +67,17 @@ enum SyntacticIndexer {
 
 		private func emit(
 			name: String, kind: Int32, nameToken: TokenSyntax, decl: some SyntaxProtocol,
-			access: Int32 = AccessKind.default_
+			access: Int32 = AccessKind.default_, modifiers: Int32 = 0
 		) -> Int64 {
 			let parts = scope + [name]
 			let nodeId = builder.nodeId(parts: parts, kind: kind)
 			builder.recordSymbol(nodeId: nodeId, definitionKind: DefinitionKind.explicit)
 			// SW16: declared access level (purely syntactic — works on broken builds).
 			builder.recordComponentAccess(nodeId: nodeId, access: access)
+			// SW13: node modifiers (actor / async / nonisolated).
+			if modifiers != 0 {
+				builder.addNodeModifier(nodeId: nodeId, modifier: modifiers)
+			}
 
 			let parentKind = scope.count == 1 ? NodeKind.module : NodeKind.symbol
 			let parentId = builder.nodeId(parts: scope, kind: parentKind)
@@ -151,9 +155,8 @@ enum SyntacticIndexer {
 		override func visitPost(_ node: ClassDeclSyntax) { scope.removeLast() }
 
 		override func visit(_ node: ActorDeclSyntax) -> SyntaxVisitorContinueKind {
-			let nodeId = emit(name: node.name.text, kind: NodeKind.class, nameToken: node.name, decl: node,
-				access: swiftAccessKind(node.modifiers))
-			builder.addNodeModifier(nodeId: nodeId, modifier: NodeModifier.actor)
+			_ = emit(name: node.name.text, kind: NodeKind.class, nameToken: node.name, decl: node,
+				access: swiftAccessKind(node.modifiers), modifiers: NodeModifier.actor)
 			emitGenericParams(ownerParts: scope + [node.name.text], clause: node.genericParameterClause)
 			push(node.name.text)
 			return .visitChildren
@@ -203,7 +206,9 @@ enum SyntacticIndexer {
 			let name = functionName(node.name.text, node.signature.parameterClause.parameters)
 			let kind = scope.count == 1 ? NodeKind.function : NodeKind.method
 			_ = emit(name: name, kind: kind, nameToken: node.name, decl: node,
-				access: swiftAccessKind(node.modifiers))
+				access: swiftAccessKind(node.modifiers),
+				modifiers: swiftNodeModifiers(
+					node.modifiers, isAsync: node.signature.effectSpecifiers?.asyncSpecifier != nil))
 			emitGenericParams(ownerParts: scope + [name], clause: node.genericParameterClause)
 			push(name)
 			return .visitChildren
@@ -213,7 +218,9 @@ enum SyntacticIndexer {
 		override func visit(_ node: InitializerDeclSyntax) -> SyntaxVisitorContinueKind {
 			let name = functionName("init", node.signature.parameterClause.parameters)
 			_ = emit(name: name, kind: NodeKind.method, nameToken: node.initKeyword, decl: node,
-				access: swiftAccessKind(node.modifiers))
+				access: swiftAccessKind(node.modifiers),
+				modifiers: swiftNodeModifiers(
+					node.modifiers, isAsync: node.signature.effectSpecifiers?.asyncSpecifier != nil))
 			push(name)
 			return .visitChildren
 		}
@@ -222,7 +229,8 @@ enum SyntacticIndexer {
 		override func visit(_ node: SubscriptDeclSyntax) -> SyntaxVisitorContinueKind {
 			let name = functionName("subscript", node.parameterClause.parameters)
 			_ = emit(name: name, kind: NodeKind.method, nameToken: node.subscriptKeyword, decl: node,
-				access: swiftAccessKind(node.modifiers))
+				access: swiftAccessKind(node.modifiers),
+				modifiers: swiftNodeModifiers(node.modifiers, isAsync: false))
 			emitGenericParams(ownerParts: scope + [name], clause: node.genericParameterClause)
 			push(name)
 			return .visitChildren
@@ -236,7 +244,8 @@ enum SyntacticIndexer {
 				}
 				let kind = scope.count == 1 ? NodeKind.globalVariable : NodeKind.field
 				_ = emit(name: pattern.identifier.text, kind: kind, nameToken: pattern.identifier, decl: node,
-					access: swiftAccessKind(node.modifiers))
+					access: swiftAccessKind(node.modifiers),
+					modifiers: swiftNodeModifiers(node.modifiers, isAsync: false))
 			}
 			// Accessors/initializer expressions carry no declarations we index.
 			return .skipChildren

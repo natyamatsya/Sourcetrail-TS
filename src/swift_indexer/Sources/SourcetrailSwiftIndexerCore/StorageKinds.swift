@@ -45,6 +45,8 @@ enum DefinitionKind {
 enum NodeModifier {
 	static let none: Int32 = 0
 	static let actor: Int32 = 1 << 0
+	static let async: Int32 = 1 << 1
+	static let nonisolated: Int32 = 1 << 2
 }
 
 // Mirrors src/lib/data/parser/AccessKind.h. Swift has no PROTECTED; `internal`

@@ -40,15 +40,15 @@ generic-OO projection (which any language would produce) to one that speaks
 Swift: generics/constraints, protocol conformance fidelity, concurrency
 isolation, attribute-driven relations, macros, and API-surface metadata. The two
 axes that needed a *new* storage field have since gained one — the `package`
-access level (`AccessKind::PACKAGE`) and actor identity (the `NodeModifier`
-bitmask). Still deferred: `async`/`nonisolated`, the `open`-vs-`public`
-distinction, and `@available`.
+access level (`AccessKind::PACKAGE`) and the concurrency modifiers (the
+`NodeModifier` bitmask: actor / async / nonisolated). Still deferred: the
+`open`-vs-`public` distinction and `@available`.
 
 | Stage | What | State |
 |-------|------|-------|
 | SW11 | Generic-parameter tier + constraints + type-argument use-sites (the Rust-lifetime analog) | ✅ done |
 | SW12 | Protocol conformance fidelity: witnesses, conditional/retroactive, default impls | ✅ done |
-| SW13 | Concurrency model: global-actor isolation, `Sendable`, actor identity (`async` deferred) | ✅ done |
+| SW13 | Concurrency model: global-actor isolation, `Sendable`, actor identity, `async`/`nonisolated` | ✅ done |
 | SW14 | Attribute-driven relations: property wrappers + result builders | ✅ done |
 | SW15 | Macros: attached + freestanding applications | ✅ done |
 | SW16 | API-surface metadata: access control (`@available` deferred) | ✅ done |
@@ -232,10 +232,13 @@ representable and not:
   actors as plain classes). The graph `Node` exposes `isActor()` and its readable
   kind renders "actor". Covered by `ActorModifierTests` (Swift, both passes) and a
   C++ SQLite round-trip test.
-- **Deferred (still schema-bound):** *`async`/`nonisolated`* — function modifiers
-  with no type reference to hang an edge on; they would ride the same
-  `NodeModifier` bitmask (e.g. an `async` flag) but need per-member modifier
-  emission and a display treatment, left as a follow-up now that the field exists.
+- **`async` / `nonisolated` (landed 2026-07-18).** Once the `NodeModifier` field
+  existed, these were additive: `NODE_MODIFIER_ASYNC` (1<<1) and
+  `NODE_MODIFIER_NONISOLATED` (1<<2), emitted per member from SwiftSyntax in both
+  passes (`async` from a function/initializer effect specifier, `nonisolated` from
+  the modifier list). The graph node's readable string composes them —
+  `actor` replaces the kind, while async/nonisolated qualify it ("async method",
+  "nonisolated async method"). Covered by `ActorModifierTests`.
 
 Covered by `ConcurrencyTests` (type- and function-level isolation + Sendable).
 
