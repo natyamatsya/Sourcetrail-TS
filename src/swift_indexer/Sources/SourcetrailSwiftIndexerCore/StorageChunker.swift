@@ -14,6 +14,7 @@ package enum StorageChunker {
 
 	private static let edgeCost = 56
 	private static let symbolCost = 32
+	private static let componentAccessCost = 24
 	private static let locationCost = 64
 	private static let occurrenceCost = 32
 	private static let stubCostMax = 512
@@ -37,6 +38,7 @@ package enum StorageChunker {
 		total += storage.files.reduce(0) { $0 + fileCost($1) }
 		total += storage.edges.count * edgeCost
 		total += storage.symbols.count * symbolCost
+		total += storage.componentAccesses.count * componentAccessCost
 		total += storage.sourceLocations.count * locationCost
 		total += storage.localSymbols.reduce(0) { $0 + localSymbolCost($1) }
 		total += storage.occurrences.count * occurrenceCost
@@ -59,6 +61,7 @@ package enum StorageChunker {
 		let nodesById: [Int64: OwnedStorageNode]
 		let filesByNodeId: [Int64: OwnedStorageFile]
 		let symbolsByNodeId: [Int64: OwnedStorageSymbol]
+		let accessesByNodeId: [Int64: OwnedStorageComponentAccess]
 		let locationsById: [Int64: OwnedStorageSourceLocation]
 		var occIndicesByElement: [Int64: [Int]]
 
@@ -67,6 +70,7 @@ package enum StorageChunker {
 		var cur: OwnedIntermediateStorage
 		var curCost = 0
 		var curNodeIds: Set<Int64> = []
+		var curAccessNodeIds: Set<Int64> = []
 		var curLocationIds: Set<Int64> = []
 
 		init(source: OwnedIntermediateStorage) {
@@ -74,6 +78,8 @@ package enum StorageChunker {
 			nodesById = Dictionary(source.nodes.map { ($0.id, $0) }, uniquingKeysWith: { a, _ in a })
 			filesByNodeId = Dictionary(source.files.map { ($0.id, $0) }, uniquingKeysWith: { a, _ in a })
 			symbolsByNodeId = Dictionary(source.symbols.map { ($0.id, $0) }, uniquingKeysWith: { a, _ in a })
+			accessesByNodeId = Dictionary(
+				source.componentAccesses.map { ($0.nodeId, $0) }, uniquingKeysWith: { a, _ in a })
 			locationsById = Dictionary(
 				source.sourceLocations.map { ($0.id, $0) }, uniquingKeysWith: { a, _ in a })
 			var occ: [Int64: [Int]] = [:]
@@ -134,6 +140,9 @@ package enum StorageChunker {
 			if let file = filesByNodeId[nodeId] {
 				cost += fileCost(file)
 			}
+			if accessesByNodeId[nodeId] != nil {
+				cost += componentAccessCost
+			}
 			return cost + occurrencesCost(occs)
 		}
 
@@ -163,6 +172,7 @@ package enum StorageChunker {
 			cur.nextId = source.nextId
 			curCost = 0
 			curNodeIds.removeAll(keepingCapacity: true)
+			curAccessNodeIds.removeAll(keepingCapacity: true)
 			curLocationIds.removeAll(keepingCapacity: true)
 		}
 
@@ -180,6 +190,14 @@ package enum StorageChunker {
 			if withSymbol, let symbol = symbolsByNodeId[nodeId] {
 				cur.symbols.append(symbol)
 				curCost += symbolCost
+			}
+			// SW16: a node's declared access rides with its home group (the
+			// with-symbol emission), so each chunk stays self-contained.
+			if withSymbol, let access = accessesByNodeId[nodeId],
+				curAccessNodeIds.insert(nodeId).inserted
+			{
+				cur.componentAccesses.append(access)
+				curCost += componentAccessCost
 			}
 		}
 

@@ -28,6 +28,8 @@ final class SemanticIndexer {
 	private var refTargetByPos: [SyntaxPos: (parts: [String], kind: Int32)] = [:]
 	/// SW14: per-file custom-attribute name positions. Set per file.
 	private var attributeMap: AttributeMap?
+	/// SW16: per-file declared access levels by name position. Set per file.
+	private var accessMap: AccessMap?
 	/// SW11 (type arguments): whether/where generic use sites emit
 	/// EDGE_TYPE_ARGUMENT.
 	private let specializationScope: SpecializationScope
@@ -82,6 +84,7 @@ final class SemanticIndexer {
 		scopeMap = DeclScopeMap.build(path: path)
 		genericMap = GenericParamMap.build(path: path)
 		attributeMap = AttributeMap.build(path: path)
+		accessMap = AccessMap.build(path: path)
 		genericArgMap = specializationScope == .off ? nil : GenericArgMap.build(path: path)
 		defPartsByPos.removeAll(keepingCapacity: true)
 		refTargetByPos.removeAll(keepingCapacity: true)
@@ -91,6 +94,7 @@ final class SemanticIndexer {
 			genericMap = nil
 			genericArgMap = nil
 			attributeMap = nil
+			accessMap = nil
 		}
 		let occurrences = index.symbolOccurrences(inFilePath: path)
 		// Index the file's occurrences by position so a reference can look up the
@@ -141,7 +145,12 @@ final class SemanticIndexer {
 		)
 		// SW11: remember where this definition landed so emitGenerics can find the
 		// owner's parts when attaching its type parameters.
-		defPartsByPos[positionOf(occurrence.location)] = parts
+		let position = positionOf(occurrence.location)
+		defPartsByPos[position] = parts
+		// SW16: the declaration's access level, keyed to its name position.
+		if let access = accessMap?.access(at: position) {
+			builder.recordComponentAccess(nodeId: nodeId, access: access)
+		}
 		recordDefinitionLocations(
 			elementId: nodeId, occurrence: occurrence, fileNodeId: fileNodeId)
 

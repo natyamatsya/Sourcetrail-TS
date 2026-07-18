@@ -35,10 +35,13 @@ The engine is complete and exercised end to end. `swift run index_self` on the
 indexer's own package produces ~30 files / ~2k nodes / ~7.8k edges / ~13k
 occurrences (the occurrence jump over pre-SW10 is the added SCOPE locations).
 
-The **SW11–SW16 series below is planned, not built** — it raises the graph from
-a generic-OO projection (which any language would produce) to one that speaks
+The **SW11–SW16 series (all landed 2026-07-18)** raises the graph from a
+generic-OO projection (which any language would produce) to one that speaks
 Swift: generics/constraints, protocol conformance fidelity, concurrency
-isolation, attribute-driven relations, macros, and API-surface metadata.
+isolation, attribute-driven relations, macros, and API-surface metadata. Two
+axes are schema-deferred (they need an intermediate-storage field that ripples to
+the C++/Java sides): concurrency's actor-identity / `async` (SW13) and the
+`package` access level / `open`-vs-`public` distinction / `@available` (SW16).
 
 | Stage | What | State |
 |-------|------|-------|
@@ -47,7 +50,7 @@ isolation, attribute-driven relations, macros, and API-surface metadata.
 | SW13 | Concurrency model: global-actor isolation, `Sendable` (actor identity / `async` schema-deferred) | ✅ done |
 | SW14 | Attribute-driven relations: property wrappers + result builders | ✅ done |
 | SW15 | Macros: attached + freestanding applications | ✅ done |
-| SW16 | API-surface metadata: access control (incl. `package`) + `@available` | 📋 planned |
+| SW16 | API-surface metadata: access control (`@available` deferred) | ✅ done |
 
 ---
 
@@ -313,6 +316,31 @@ Swift 5.9+ macros — modern and increasingly load-bearing (`@Observable`,
   edges" (today's behavior) if resolution is thin.
 
 ### SW16 — API-surface metadata (S)
+
+**Landed 2026-07-18.** Unlike SW13's actor identity, access control *is*
+representable: the intermediate storage already has a `StorageComponentAccess`
+table (`node_id`, `AccessKind`), the Swift push already reserved a
+`componentAccessesVectorOffset` (previously hardcoded empty), and the app injects
+it (C++ emits it). So SW16 populated that slot — the only stage beyond C++ to do
+so, since the Rust collector leaves it empty.
+
+`AccessSyntax.swift` (`swiftAccessKind` + `AccessMap`) reads the declared access
+purely syntactically (works on broken builds), mapping Swift's six levels onto
+Sourcetrail's four `AccessKind`s: `open`/`public` → PUBLIC, `package`/`internal`
+(and the implicit default) → DEFAULT, `fileprivate`/`private` → PRIVATE. Emitted
+as a `StorageComponentAccess` per node by both passes (semantic by name-position
+join, syntactic inline from the decl modifiers). New Swift storage type
++ `StorageBuilder.recordComponentAccess` + serialization, and the `StorageChunker`
+now carries each node's access in its home group so chunks stay self-contained.
+Enables a "public-API-only" graph filter. Covered by `AccessTests` (semantic
++ syntactic).
+
+*Limitations:* `package` has no dedicated `AccessKind` (collapses to DEFAULT,
+same as `internal`), and `open` vs `public` (the subclassable distinction) is
+lost — both need an `AccessKind` schema addition shared with the C++/Java sides.
+*Deferred:* **`@available`** gating has no representable target — a platform
+(`iOS`) is not a node, and there is no cfg-analog/metadata slot; it would need a
+new storage concept, out of scope.
 
 Cheap, high-utility decoration — no new edges.
 

@@ -13,6 +13,8 @@ final class StorageBuilder {
 	private var nodeIds: [String: Int64] = [:]
 	/// node ids that already have a symbol row
 	private var symbolIds: Set<Int64> = []
+	/// node ids that already have a component-access row
+	private var componentAccessIds: Set<Int64> = []
 	/// (type, source, target) → edge id
 	private var edgeIds: [String: Int64] = [:]
 	/// local symbol name → id
@@ -81,6 +83,15 @@ final class StorageBuilder {
 		if symbolIds.insert(nodeId).inserted {
 			storage.symbols.append(
 				OwnedStorageSymbol(id: nodeId, definitionKind: definitionKind)
+			)
+		}
+	}
+
+	// SW16: the declared access level of a node, deduped per node (first wins).
+	func recordComponentAccess(nodeId: Int64, access: Int32) {
+		if componentAccessIds.insert(nodeId).inserted {
+			storage.componentAccesses.append(
+				OwnedStorageComponentAccess(nodeId: nodeId, type: access)
 			)
 		}
 	}

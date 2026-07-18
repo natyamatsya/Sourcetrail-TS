@@ -40,6 +40,17 @@ enum DefinitionKind {
 	static let explicit: Int32 = 2
 }
 
+// Mirrors src/lib/data/parser/AccessKind.h. Swift has no PROTECTED; its `package`
+// and `internal` levels have no dedicated slot and map to `default_`, and
+// `open`/`public` both map to `public_` (the subclassable distinction is lost).
+enum AccessKind {
+	static let none: Int32 = 0
+	static let public_: Int32 = 1
+	static let protected: Int32 = 2
+	static let private_: Int32 = 3
+	static let default_: Int32 = 4
+}
+
 enum LocationKind {
 	static let token: Int32 = 0
 	static let scope: Int32 = 1
