@@ -18,6 +18,7 @@
 #include "CxxAstVisitorComponentImplicitCode.h"
 #include "CxxAstVisitorComponentIndexer.h"
 #include "CxxAstVisitorComponentTypeRefKind.h"
+#include "CxxIndexingContext.h"
 #include "CxxLocationExtractor.h"
 #include "FilePath.h"
 
@@ -216,6 +217,11 @@ protected:
 	FilePath m_currentFilePath;
 
 	CxxLocationExtractor m_locations;
+
+	// The shared mid-level indexing API handed to the indexing components. Declared after
+	// m_locations (which it borrows) and before m_components (whose indexer borrows it); its
+	// context collaborator is wired in the constructor body once the tuple exists.
+	CxxIndexingContext m_index;
 
 	// Invoke `function` on every registered component, in registration order.
 	template <class F>

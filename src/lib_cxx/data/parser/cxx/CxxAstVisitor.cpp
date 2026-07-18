@@ -32,14 +32,19 @@ CxxAstVisitor::CxxAstVisitor(
 	, m_canonicalFilePathCache(canonicalFilePathCache)
 	, m_isVerbose(isVerbose)
 	, m_locations(*astContext, preprocessor, canonicalFilePathCache)
+	, m_index(*astContext, client, canonicalFilePathCache, m_locations)
 	, m_components(
 		  CxxAstVisitorComponentContext(this),
 		  CxxAstVisitorComponentTypeRefKind(this),
 		  CxxAstVisitorComponentDeclRefKind(this),
 		  CxxAstVisitorComponentImplicitCode(this),
-		  CxxAstVisitorComponentIndexer(this, astContext, client),
+		  CxxAstVisitorComponentIndexer(this, astContext, m_index),
 		  CxxAstVisitorComponentBraceRecorder(this, astContext, client))
 {
+	// The context component now exists; hand it to the indexing facade (it could not be reached
+	// during m_index's own construction, as the tuple was not yet built).
+	m_index.setContext(std::get<CxxAstVisitorComponentContext>(m_components));
+
 	// All components now exist; let each cache pointers to the siblings it depends on.
 	forEachComponent([](auto& component) { component.wire(); });
 }
