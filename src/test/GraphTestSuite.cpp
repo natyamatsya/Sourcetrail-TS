@@ -332,3 +332,16 @@ TEST_CASE("node modifier readable string composes deprecated")
 	REQUIRE(nodeModifierToString(NODE_MODIFIER_DEPRECATED | NODE_MODIFIER_ASYNC) == "deprecated async");
 	REQUIRE(nodeModifierToString(NODE_MODIFIER_NONE).empty());
 }
+
+TEST_CASE("node isDeprecated reflects the deprecated modifier bit")
+{
+	Graph graph;
+	Node* plain = graph.createNode(
+		1, NodeType(NODE_CLASS), NameHierarchy("Plain", NameDelimiterType::CXX), DefinitionKind::EXPLICIT);
+	Node* old = graph.createNode(
+		2, NodeType(NODE_CLASS), NameHierarchy("Old", NameDelimiterType::CXX), DefinitionKind::EXPLICIT);
+	old->setModifiers(NODE_MODIFIER_DEPRECATED);
+
+	REQUIRE_FALSE(plain->isDeprecated());
+	REQUIRE(old->isDeprecated());
+}
