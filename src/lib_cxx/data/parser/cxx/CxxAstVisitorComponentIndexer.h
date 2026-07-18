@@ -1,21 +1,10 @@
 #ifndef CXX_AST_VISITOR_COMPONENT_INDEXER_H
 #define CXX_AST_VISITOR_COMPONENT_INDEXER_H
 
-#include <map>
-
 #include "CxxAstVisitorComponent.h"
-#include "CxxConceptReferenceRecorder.h"
-#include "CxxContext.h"
-#include "CxxDestructorCallRecorder.h"
-#include "CxxLocationExtractor.h"
-#include "CxxSymbolRegistry.h"
-#include "ParseLocation.h"
 #include "ReferenceKind.h"
-#include "SymbolKind.h"
 
-class ParserClient;
-class NameHierarchy;
-class CxxAstVisitorComponentContext;
+class CxxIndexingContext;
 class CxxAstVisitorComponentTypeRefKind;
 class CxxAstVisitorComponentDeclRefKind;
 
@@ -25,7 +14,7 @@ class CxxAstVisitorComponentIndexer: public CxxAstVisitorComponent
 {
 public:
 	CxxAstVisitorComponentIndexer(
-		CxxAstVisitor* astVisitor, clang::ASTContext* astContext, ParserClient& client);
+		CxxAstVisitor* astVisitor, clang::ASTContext* astContext, CxxIndexingContext& index);
 
 	void wire();
 
@@ -69,41 +58,16 @@ public:
 	void visitConstructorInitializer(clang::CXXCtorInitializer* init);
 
 private:
-	void recordTemplateMemberSpecialization(
-		const clang::MemberSpecializationInfo* memberSpecializationInfo,
-		Id contextId,
-		const ParseLocation& location,
-		SymbolKind symbolKind);
-
-	// Builds an on-demand recorder for C++20 concept-constraint references, borrowing the
-	// collaborators it needs (m_context is wired post-construction, so this is only valid at
-	// traversal time).
-	CxxConceptReferenceRecorder concepts();
-
-	void recordDeducedType(const clang::DeducedType *autoType, const Id contextSymbolId, const ParseLocation &keywordLocation);
-	void recordDeducedQualType(const clang::QualType deducedQualType, const Id contextSymbolId, const ParseLocation &keywordLocation);
-
-	// Builds an on-demand recorder for the implicit/base destructor calls at a function body's end
-	// (CFG-based). Like concepts(), only valid at traversal time (m_context is wired post-ctor).
-	CxxDestructorCallRecorder destructorCalls();
-
-	// Axis-2/3 metadata off a decl's attributes: [[deprecated]] -> the modifier
-	// bit + an optional DEPRECATED message row (context/DESIGN_NODE_MODIFIERS.md).
-	void recordDeprecation(Id symbolId, const clang::Decl* d);
-
-	std::string getLocalSymbolName(const clang::SourceLocation& loc) const;
-
 	ReferenceKind consumeDeclRefContextKind();
 
 	clang::ASTContext* m_astContext;
-	ParserClient& m_client;
 
-	CxxSymbolRegistry m_symbols;
-	CxxLocationExtractor& m_locations;
+	// The mid-level indexing API: symbol identity, locations, the storage client, and the current
+	// context, plus the recordDeclaration / recordReference idioms. Owned by CxxAstVisitor.
+	CxxIndexingContext& m_index;
 
 	// Sibling components this one queries during traversal; cached in wire() (see the base class)
 	// once the component tuple is fully constructed.
-	CxxAstVisitorComponentContext* m_context = nullptr;
 	CxxAstVisitorComponentTypeRefKind* m_typeRefKind = nullptr;
 	CxxAstVisitorComponentDeclRefKind* m_declRefKind = nullptr;
 };
