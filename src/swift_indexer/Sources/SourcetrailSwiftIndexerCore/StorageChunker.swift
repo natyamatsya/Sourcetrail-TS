@@ -19,17 +19,20 @@ package enum StorageChunker {
 	private static let occurrenceCost = 32
 	private static let stubCostMax = 512
 
+	// The object-API string fields are optional; treat nil as empty.
+	private static func len(_ s: String?) -> Int { s?.utf8.count ?? 0 }
+
 	private static func nodeCost(_ node: OwnedStorageNode) -> Int {
-		48 + node.serializedName.utf8.count
+		48 + len(node.serializedName)
 	}
 	private static func fileCost(_ file: OwnedStorageFile) -> Int {
-		64 + file.filePath.utf8.count + file.languageIdentifier.utf8.count
+		64 + len(file.filePath) + len(file.languageIdentifier)
 	}
 	private static func localSymbolCost(_ localSymbol: OwnedStorageLocalSymbol) -> Int {
-		48 + localSymbol.name.utf8.count
+		48 + len(localSymbol.name)
 	}
 	private static func errorCost(_ error: OwnedStorageError) -> Int {
-		64 + error.message.utf8.count + error.translationUnit.utf8.count
+		64 + len(error.message) + len(error.translationUnit)
 	}
 
 	package static func estimatedSize(_ storage: OwnedIntermediateStorage) -> Int {

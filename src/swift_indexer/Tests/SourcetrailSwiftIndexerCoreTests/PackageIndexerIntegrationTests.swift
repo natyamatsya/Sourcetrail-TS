@@ -39,15 +39,15 @@ import Testing
 		#expect(storage.files.count == 2)
 		#expect(progressed.count == 2)
 		#expect(storage.files.allSatisfy { $0.complete == false && $0.indexed == true })
-		#expect(storage.files.contains { $0.filePath.hasSuffix("Sources/Demo/Good.swift") })
+		#expect(storage.files.contains { ($0.filePath ?? "").hasSuffix("Sources/Demo/Good.swift") })
 
 		// The broken file surfaced as a NON-fatal error naming it as the
 		// translation unit — a broken build degrades the result, never the run.
 		#expect(!storage.errors.isEmpty)
 		let brokenError = try #require(
-			storage.errors.first { $0.translationUnit.hasSuffix("Broken.swift") }
+			storage.errors.first { ($0.translationUnit ?? "").hasSuffix("Broken.swift") }
 		)
 		#expect(brokenError.fatal == false)
-		#expect(brokenError.message.contains("thisDoesNotExist"))
+		#expect((brokenError.message ?? "").contains("thisDoesNotExist"))
 	}
 }

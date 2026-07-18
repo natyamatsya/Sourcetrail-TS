@@ -209,11 +209,36 @@ serialize→bytes→deserialize round-trip and the collector/chunker suites. The
 format is unchanged (same schema, vtable reader), so the C++ app reads the packed
 buffer as before.
 
-**Remaining for the full sweep:** the Swift cutover (thornier — `*T` are
-reference classes with `[T?]` arrays, so `StorageBuilder`/`StorageChunker` need
-reference-semantics rework); the `serialize` by-value optimization; and, if
-wanted, eventually retiring the hand-written container for the generated
-`IntermediateStorageT` (accepting `Option<Vec>` at the collection sites).
+### Swift cutover executed (2026-07-18) — 40 tests green
+
+Ran the Swift transport cutover too. Same shape as Rust, with the reference-type
+frictions the spike predicted — all resolved:
+
+- CMake `flatc --swift` step gained `--gen-object-api`.
+- The nine `OwnedStorage*` row types became **typealiases** to the generated
+  `Sourcetrail_Ipc_*T` classes. Because the `*T` classes have no memberwise init,
+  `IntermediateStorageTypes.swift` adds **convenience inits** matching the old
+  value-struct signatures — so `StorageBuilder` and the tests construct rows
+  unchanged. A hand-written `OwnedIntermediateStorage` container (`[*T]`) is kept.
+- Reference semantics actually **simplified** `StorageBuilder`: the
+  replace-to-upgrade dances (`nodes[i] = OwnedStorageNode(…preserve modifiers…)`)
+  became in-place `nodes[i].type = kind`.
+- `serializeStorage` (~120 lines of per-field offset building) → map the
+  container arrays into an `IntermediateStorageT` (whose vectors are `[T?]`,
+  hence `.map { Optional($0) }`) and `pack` (~20 lines).
+- Frictions, all minor: string fields are `String?` (chunker cost helpers and a
+  handful of test reads adapt with `?? ""`; the `decodeParts` test helper widened
+  to `String?`).
+
+Verified: `swift test` — **40 passed, 0 failed**, including the serialize
+round-trip (`StorageChannelTests`) and the chunker suite. Wire format unchanged.
+
+**Codegen step 1 is now complete in both indexers.** Remaining polish (optional,
+not blocking): the Rust `serialize` by-value optimization to drop the row-vec
+clone; and eventually retiring the hand-written containers for the generated
+`IntermediateStorageT`/`IntermediateStorageQueueT` directly (accepting the
+optional-element vectors at the collection sites). The C++ transport boundary
+(`IntermediateStorageSerializer.cpp`) stays hand-written by design.
 
 ## Critical files
 

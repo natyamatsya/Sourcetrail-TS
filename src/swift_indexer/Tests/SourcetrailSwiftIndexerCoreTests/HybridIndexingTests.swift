@@ -9,8 +9,8 @@ import Testing
 // complete=false, and fixing it upgrades it back to semantic.
 
 @Suite struct HybridIndexingTests {
-	private func decodeParts(_ serializedName: String) -> [String] {
-		guard serializedName.hasPrefix("::\tm") else {
+	private func decodeParts(_ serializedName: String?) -> [String] {
+		guard let serializedName, serializedName.hasPrefix("::\tm") else {
 			return []
 		}
 		return serializedName.dropFirst(4)
@@ -70,7 +70,7 @@ import Testing
 
 		storage = PackageIndexer.index(workingDirectory: root.path) { _ in }
 		let filesByPath = Dictionary(
-			uniqueKeysWithValues: storage.files.map { ($0.filePath, $0) })
+			uniqueKeysWithValues: storage.files.map { ($0.filePath ?? "", $0) })
 
 		// Stable survives semantically off the previous build's unit.
 		#expect(filesByPath[stableFile.path]?.complete == true)

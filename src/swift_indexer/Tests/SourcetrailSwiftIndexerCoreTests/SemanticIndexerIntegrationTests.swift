@@ -7,9 +7,9 @@ import Testing
 // the semantic pass emits the expected nodes, edges, and occurrences.
 
 @Suite struct SemanticIndexerIntegrationTests {
-	private func decodeParts(_ serializedName: String) -> [String] {
+	private func decodeParts(_ serializedName: String?) -> [String] {
 		// "::\tm" + parts joined "\tn", each part suffixed "\ts\tp"
-		guard serializedName.hasPrefix("::\tm") else {
+		guard let serializedName, serializedName.hasPrefix("::\tm") else {
 			return []
 		}
 		return serializedName.dropFirst(4)

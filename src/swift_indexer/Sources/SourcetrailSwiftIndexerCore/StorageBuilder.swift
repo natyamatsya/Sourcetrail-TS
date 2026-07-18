@@ -52,9 +52,8 @@ final class StorageBuilder {
 				let index = storage.nodes.firstIndex(where: { $0.id == id }),
 				storage.nodes[index].type == NodeKind.symbol
 			{
-				storage.nodes[index] = OwnedStorageNode(
-					id: id, type: kind, serializedName: name,
-					modifiers: storage.nodes[index].modifiers)
+				// Reference type: upgrade the kind in place (modifiers stay).
+				storage.nodes[index].type = kind
 			}
 			return id
 		}
@@ -71,13 +70,8 @@ final class StorageBuilder {
 	/// index store may have already recorded under a guessed kind (Swift has no
 	/// distinct index symbol kind for generic parameters).
 	func setNodeType(nodeId: Int64, type: Int32) {
-		if let index = storage.nodes.firstIndex(where: { $0.id == nodeId }),
-			storage.nodes[index].type != type
-		{
-			let node = storage.nodes[index]
-			storage.nodes[index] = OwnedStorageNode(
-				id: node.id, type: type, serializedName: node.serializedName,
-				modifiers: node.modifiers)
+		if let index = storage.nodes.firstIndex(where: { $0.id == nodeId }) {
+			storage.nodes[index].type = type
 		}
 	}
 
