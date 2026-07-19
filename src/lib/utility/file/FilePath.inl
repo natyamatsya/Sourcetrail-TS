@@ -43,30 +43,28 @@ inline bool FilePath::empty() const
 
 inline bool FilePath::exists() const noexcept
 {
-	if (!m_checkedExists)
+	if (!m_exists)
 	{
 		m_exists = std::filesystem::exists(getPath());
-		m_checkedExists = true;
 	}
 
-	return m_exists;
+	return *m_exists;
 }
 
 inline bool FilePath::recheckExists() const
 {
-	m_checkedExists = false;
+	m_exists.reset();
 	return exists();
 }
 
 inline bool FilePath::isDirectory() const
 {
-	if (!m_checkedIsDirectory)
+	if (!m_isDirectory)
 	{
 		m_isDirectory = std::filesystem::is_directory(getPath());
-		m_checkedIsDirectory = true;
 	}
 
-	return m_isDirectory;
+	return *m_isDirectory;
 }
 
 inline bool FilePath::isAbsolute() const
@@ -109,12 +107,11 @@ inline FilePath FilePath::getParentDirectory() const
 
 	if (!parentDirectory.empty())
 	{
-		parentDirectory.m_checkedIsDirectory = true;
 		parentDirectory.m_isDirectory = true;
 
-		if (m_checkedExists && m_exists)
+		// If this path is known to exist, its parent directory does too.
+		if (m_exists == true)
 		{
-			parentDirectory.m_checkedExists = true;
 			parentDirectory.m_exists = true;
 		}
 	}
@@ -293,10 +290,8 @@ inline FilePath FilePath::getRelativeTo(const FilePath& other) const
 inline FilePath& FilePath::concatenate(const FilePath& other)
 {
 	m_path /= other.getPath().relative_path();
-	m_exists = false;
-	m_checkedExists = false;
-	m_isDirectory = false;
-	m_checkedIsDirectory = false;
+	m_exists.reset();
+	m_isDirectory.reset();
 	m_canonicalized = false;
 
 	return *this;
@@ -312,10 +307,8 @@ inline FilePath FilePath::getConcatenated(const FilePath& other) const
 inline FilePath& FilePath::concatenate(const char other[])
 {
 	m_path /= std::filesystem::path(other).relative_path();
-	m_exists = false;
-	m_checkedExists = false;
-	m_isDirectory = false;
-	m_checkedIsDirectory = false;
+	m_exists.reset();
+	m_isDirectory.reset();
 	m_canonicalized = false;
 
 	return *this;

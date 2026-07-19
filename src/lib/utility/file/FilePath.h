@@ -7,6 +7,7 @@
 #include "Platform.h"
 
 #include <filesystem>
+#include <optional>
 #include <string>
 #include <vector>
 #endif
@@ -75,10 +76,9 @@ private:
 
 	std::filesystem::path m_path;
 
-	mutable bool m_exists = false;
-	mutable bool m_checkedExists = false;
-	mutable bool m_isDirectory = false;
-	mutable bool m_checkedIsDirectory = false;
+	// Lazily-filled caches; nullopt means "not checked yet". recheckExists()/concatenate() reset them.
+	mutable std::optional<bool> m_exists;
+	mutable std::optional<bool> m_isDirectory;
 	mutable bool m_canonicalized = false;
 };
 
