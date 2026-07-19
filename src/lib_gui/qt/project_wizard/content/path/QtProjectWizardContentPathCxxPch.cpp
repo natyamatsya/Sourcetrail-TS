@@ -51,17 +51,20 @@ bool QtProjectWizardContentPathCxxPch::check()
 	if (std::shared_ptr<SourceGroupSettingsCxxCdb> cdbSettings =
 			std::dynamic_pointer_cast<SourceGroupSettingsCxxCdb>(m_settings))
 	{
-		std::string error;
 		const FilePath cdbPath = cdbSettings->getCompilationDatabasePathExpandedAndAbsolute();
-		std::shared_ptr<clang::tooling::CompilationDatabase> cdb = utility::loadCDB(cdbPath, &error);
-		if (!cdb)
+		const std::expected<std::shared_ptr<clang::tooling::CompilationDatabase>, utility::CdbLoadError>
+			loadedCdb = utility::loadCDB(cdbPath);
+		if (!loadedCdb)
 		{
 			QtMessageBox msgBox(m_window);
 			msgBox.setText(tr("Unable to open and read the provided compilation database file."));
-			msgBox.setInformativeText(QString::fromStdString(error));
+			msgBox.setInformativeText(QString::fromStdString(
+				loadedCdb.error().message.empty() ? std::string(utility::to_std_sv(loadedCdb.error().code))
+												  : loadedCdb.error().message));
 			msgBox.execModal();
 			return false;
 		}
+		const std::shared_ptr<clang::tooling::CompilationDatabase> cdb = loadedCdb.value();
 
 		if (utility::containsIncludePchFlags(cdb))
 		{

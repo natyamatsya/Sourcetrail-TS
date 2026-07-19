@@ -1,11 +1,14 @@
 #ifndef SOURCE_GROUP_H
 #define SOURCE_GROUP_H
 
+#include <cstdint>
+#include <expected>
 #include <map>
 #include <memory>
 #include <optional>
 #include <set>
 #include <string>
+#include <string_view>
 #include <utility>
 #include <vector>
 
@@ -25,12 +28,33 @@ class Task;
 
 struct RefreshInfo;
 
+//! Why a source group could not be prepared for indexing. The specific human-readable reason is
+//! dispatched via MessageStatus at the failure site; this classifies it for callers.
+enum class PrepareIndexingError : std::uint8_t
+{
+	SourcePathMissing,		  // a required source/build input no longer exists
+	ConfigurationIncomplete,  // required configuration is missing or could not be resolved
+};
+
+constexpr std::string_view to_std_sv(PrepareIndexingError error) noexcept
+{
+	using enum PrepareIndexingError;
+	switch (error)
+	{
+	case SourcePathMissing:
+		return "a required source or build path does not exist";
+	case ConfigurationIncomplete:
+		return "the source group configuration is incomplete";
+	}
+	return "unknown error";
+}
+
 class SourceGroup
 {
 public:
 	virtual ~SourceGroup() = default;
 
-	virtual bool prepareIndexing();
+	virtual std::expected<void, PrepareIndexingError> prepareIndexing();
 	virtual bool allowsPartialClearing() const;
 
 	virtual std::set<FilePath> filterToContainedFilePaths(const std::set<FilePath>& filePaths) const = 0;

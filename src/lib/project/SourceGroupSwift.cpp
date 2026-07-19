@@ -49,9 +49,9 @@ SourceGroupSwift::SourceGroupSwift(const std::shared_ptr<SourceGroupSettingsSwif
 {
 }
 
-bool SourceGroupSwift::prepareIndexing()
+std::expected<void, PrepareIndexingError> SourceGroupSwift::prepareIndexing()
 {
-	return true;
+	return {};
 }
 
 std::set<FilePath> SourceGroupSwift::filterToContainedFilePaths(

@@ -334,7 +334,7 @@ SourceGroupCxxCMakeFileAPI::SourceGroupCxxCMakeFileAPI(
 {
 }
 
-bool SourceGroupCxxCMakeFileAPI::prepareIndexing()
+std::expected<void, PrepareIndexingError> SourceGroupCxxCMakeFileAPI::prepareIndexing()
 {
 	const FilePath sourceDir{m_settings->getSourceDirectoryExpandedAndAbsolute()};
 	const std::string& presetName{m_settings->getPresetName()};
@@ -345,13 +345,13 @@ bool SourceGroupCxxCMakeFileAPI::prepareIndexing()
 			"Can't refresh project. The CMake source directory does not exist: " + sourceDir.str(),
 			true)
 			.dispatch();
-		return false;
+		return std::unexpected(PrepareIndexingError::SourcePathMissing);
 	}
 
 	if (presetName.empty())
 	{
 		MessageStatus("Can't refresh project. No CMake preset configured.", true).dispatch();
-		return false;
+		return std::unexpected(PrepareIndexingError::ConfigurationIncomplete);
 	}
 
 	MessageStatus("Resolving CMake build directory for preset '" + presetName + "'...", false, true)
@@ -364,7 +364,7 @@ bool SourceGroupCxxCMakeFileAPI::prepareIndexing()
 			"'.",
 			true)
 			.dispatch();
-		return false;
+		return std::unexpected(PrepareIndexingError::ConfigurationIncomplete);
 	}
 
 	CMakeFileAPIReader reader{buildDir};
@@ -393,10 +393,10 @@ bool SourceGroupCxxCMakeFileAPI::prepareIndexing()
 					buildDir.str(),
 				true)
 				.dispatch();
-			return false;
+			return std::unexpected(PrepareIndexingError::ConfigurationIncomplete);
 		}
 	}
-	return true;
+	return {};
 }
 
 std::set<FilePath> SourceGroupCxxCMakeFileAPI::filterToContainedFilePaths(
