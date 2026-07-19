@@ -13,6 +13,9 @@ set_target_properties(Sourcetrail_indexer
 target_link_libraries(Sourcetrail_indexer
 	PRIVATE
 		Sourcetrail_lib
+		# setupApp.h (shared main bootstrap) lives in lib_gui/platform; the indexer used it transitively via
+		# lib's old umbrella. lib is the base layer now, so name lib_gui here (as before, just explicit).
+		Sourcetrail_lib_gui
 		$<$<BOOL:${BUILD_CXX_LANGUAGE_PACKAGE}>:Sourcetrail_lib_cxx>
 )
 

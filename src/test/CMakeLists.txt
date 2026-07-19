@@ -46,6 +46,8 @@ set_target_properties(Sourcetrail_test
 target_link_libraries(Sourcetrail_test
 	PRIVATE
 		Sourcetrail_lib
+		# lib no longer re-exports lib_gui; the Qt test suites (QtActions/QtResources/...) need it directly.
+		Sourcetrail_lib_gui
 		Sourcetrail_res_gui
 		Catch2::Catch2
 )
