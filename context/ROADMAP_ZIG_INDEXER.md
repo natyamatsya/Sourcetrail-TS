@@ -232,9 +232,14 @@ can't be exercised by `zig build test` alone).
     NODE_TYPE_PARAMETER (syntactic, parser); `const T = <non-import type>` → NODE_TYPEDEF via
     a ZLS `resolveTypedefs` pass keyed on `Type.is_type_val`. 75 typedefs / 31 type params on
     ZLS. See `context/PARITY_ZIG_INDEXER.md`; only low-severity display enrichments remain.
+  - **Component access + typedef edge kind — ✅ landed** (`f2e0b5e98f`, `b3e3b86996`):
+    `pub`→public / else default / generic params→type_parameter visibility rows; typedef
+    references now EDGE_TYPE_USAGE (same-file). Parity gaps #1–#5 all done — the index runs
+    error-free with local highlighting, typedef/generic modelling, and visibility markers.
   - **Next increment:** comptime/type resolution is WIP in ZLS — degrade to the syntactic
-    result where it can't resolve. Remaining polish: component access from `pub` (#4),
-    typedef references as EDGE_TYPE_USAGE (#5).
+    result where it can't resolve. Remaining polish is minor: status omit-empty-vectors +
+    crashed-TU bookkeeping (#6); Zig has little to fill the node-attribute (#7) / modifier
+    (#9) side-tables. See `context/PARITY_ZIG_INDEXER.md`.
 
 ## Phase 4 — Per-file incremental — ✅ landed + verified
 

@@ -157,7 +157,7 @@ mirroring how the Rust indexer degrades on unexpanded macros.
 | local symbols (fn-local bindings) | ✅ | ✅ | ✅ (`file<line:col>` convention) |
 | local-symbol locations (type 3, GUI highlight) | ✅ | ✅ | ✅ |
 | errors (parse/resolve) as StorageError | ✅ | ✅ | ✅ (parse errors) |
-| component access (public/private/…) | ✅ | ✅ | ❌ (Zig `pub` unused) |
+| component access (public/private/…) | ✅ | ✅ | ✅ (`pub`→public, else default, type params→type_parameter) |
 | node modifiers bitmask | 🟡 deprecated | ✅ actor/async/… | ❌ (always 0) |
 | node attributes (deprecated/cfg/availability/doc) | ✅ | ✅ | ❌ |
 | proper `NameHierarchy` wire format | ✅ | ✅ | ✅ (`[file, …parts]`, `.`/`/` delimiters) |
@@ -171,16 +171,18 @@ mirroring how the Rust indexer degrades on unexpanded macros.
 | ~~1~~ | ~~`NameHierarchy` wire format~~ | — | — | **Done** (`f6e9529f33`): emits `[file, …parts]` with `.`/`/` delimiters; ZLS deserialize errors dropped from hundreds to 0. |
 | ~~2~~ | ~~Local symbols (fn-local bindings + type-3 locations)~~ | — | — | **Done** (`de1673c97a`): ZLS-resolved locals recorded as `file<line:col>` rows + type-3 occurrences; 10.3k locals / 39.8k occurrences on ZLS. |
 | ~~3~~ | ~~`typedef` and `type_parameter` node kinds~~ | — | — | **Done** (`ddece0e633`): `comptime T: type` params → NODE_TYPE_PARAMETER; `const T = <type>` upgraded to NODE_TYPEDEF via ZLS `is_type_val`. 75 typedefs / 31 type params on ZLS. |
-| 4 | Component access from `pub` / node modifiers | Low | S | Map `pub`→public, else default; cheap enrichment. |
+| ~~4~~ | ~~Component access from `pub`~~ | — | — | **Done** (`f2e0b5e98f`): `pub`→public, else default, generic params→type_parameter. 811/3035/31 rows on ZLS (one per symbol node). |
 | ~~5~~ | ~~Typedef references as EDGE_TYPE_USAGE~~ | — | — | **Done** (`b3e3b86996`): wireOne reads the target's actual (reclassified) node kind. Same-file typedef refs now TYPE_USAGE (486/500 on ZLS); cross-file refs still USAGE (a referencing file can't see another file's const is a typedef without a per-ref ZLS resolve). |
 | 6 | Status: omit empty vectors on write; crashed-TU bookkeeping | Low | S | Align with ADR-0003 and the `start_indexing` crash path. |
 | 7 | Node attributes (deprecated/doc) | Low | M | Display-only side table; least impactful. |
 | 8 | `implicit` definition kind | Low | S | Zig has few compiler-synthesized decls to mark. |
+| 9 | Node modifiers bitmask | Low | S | Zig has no deprecated/async modifiers to surface yet. |
 
-None block indexing. With #1–#3 and #5 done the full index runs with **zero**
-logged errors, full local-variable highlighting, typedef/generic modelling, and
-type-usage edges; only low-severity display enrichments remain (component access
-#4, status niceties #6, node attributes #7).
+None block indexing. With #1–#5 done the full index runs with **zero** logged
+errors, full local-variable highlighting, typedef/generic modelling, type-usage
+edges, and visibility markers. What remains is IPC-hardening polish (status
+niceties #6) and two display side-tables Zig has little to populate (node
+attributes #7, node modifiers #9).
 
 ---
 
@@ -206,8 +208,9 @@ type-usage edges; only low-severity display enrichments remain (component access
 The Zig indexer is a **production-shaped peer** on everything that governs
 correctness and throughput — IPC contract, chunked storage, back-pressure,
 incremental reverse-deps, the `NameHierarchy` wire format (a full index runs
-with zero logged errors), local-variable highlighting, and typedef/generic
-modelling. Its remaining distance from Rust/Swift is a handful of low-severity
-display enrichments — component-access/modifier metadata (#4), the typedef
-reference edge kind (#5), node attributes (#7). Those are additive polish on a
-foundation that is at parity, not structural rework.
+with zero logged errors), local-variable highlighting, typedef/generic
+modelling, type-usage edges, and visibility markers. Its remaining distance from
+Rust/Swift is a small amount of IPC-hardening polish (status niceties #6) and
+two display side-tables Zig has little to fill (node attributes #7, modifiers
+#9). Those are additive polish on a foundation that is at parity, not
+structural rework.
