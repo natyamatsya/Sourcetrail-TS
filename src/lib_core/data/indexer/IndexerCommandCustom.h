@@ -41,7 +41,6 @@ public:
 	bool getRunInParallel() const;
 
 protected:
-	QJsonObject doSerialize() const override;
 
 private:
 	std::string replaceVariables(std::string s) const;

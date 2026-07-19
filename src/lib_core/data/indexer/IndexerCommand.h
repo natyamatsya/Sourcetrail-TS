@@ -8,14 +8,9 @@
 #include "FilePathFilter.h"
 #include "IndexerCommandType.h"
 
-class QJsonObject;
-
 class IndexerCommand
 {
 public:
-	static std::string serialize(
-		std::shared_ptr<const IndexerCommand> indexerCommand, bool compact = true);
-
 	IndexerCommand(const FilePath& sourceFilePath);
 	virtual ~IndexerCommand() = default;
 
@@ -37,9 +32,6 @@ public:
 	//! incremental refresh to detect flag changes that leave the source mtime
 	//! untouched (e.g. an edited define/include in CMakeLists or the CDB).
 	virtual std::string getIndexerCommandHash() const { return std::string(); }
-
-protected:
-	virtual QJsonObject doSerialize() const;
 
 private:
 	FilePath m_sourceFilePath;

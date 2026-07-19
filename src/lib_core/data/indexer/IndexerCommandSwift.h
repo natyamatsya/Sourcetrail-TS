@@ -34,7 +34,6 @@ public:
 	const std::string& getSpecializationScope() const;
 
 protected:
-	QJsonObject doSerialize() const override;
 
 private:
 	std::set<FilePath> m_indexedPaths;

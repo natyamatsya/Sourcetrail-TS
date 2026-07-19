@@ -1,7 +1,5 @@
 #include "IndexerCommandCustom.h"
 
-#include <QJsonArray>
-#include <QJsonObject>
 
 #include "utilityString.h"
 
@@ -89,28 +87,6 @@ std::vector<std::string> IndexerCommandCustom::getArguments() const
 bool IndexerCommandCustom::getRunInParallel() const
 {
 	return m_runInParallel;
-}
-
-QJsonObject IndexerCommandCustom::doSerialize() const
-{
-	QJsonObject jsonObject = IndexerCommand::doSerialize();
-
-	{
-		jsonObject["command"] = QString::fromStdString(m_command);
-	}
-	{
-		QJsonArray argumentsArray;
-		for (const std::string& argument: m_arguments)
-		{
-			argumentsArray.append(QString::fromStdString(argument));
-		}
-		jsonObject["arguments"] = argumentsArray;
-	}
-	{
-		jsonObject["run_in_parallel"] = m_runInParallel;
-	}
-
-	return jsonObject;
 }
 
 std::string IndexerCommandCustom::replaceVariables(std::string s) const

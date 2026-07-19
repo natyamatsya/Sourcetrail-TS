@@ -62,7 +62,6 @@ public:
 	const std::string& getCompilerPath() const;
 
 protected:
-	QJsonObject doSerialize() const override;
 
 private:
 	std::set<FilePath> m_indexedPaths;

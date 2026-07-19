@@ -1,7 +1,5 @@
 #include "IndexerCommandRust.h"
 
-#include <QJsonArray>
-#include <QJsonObject>
 
 IndexerCommandType IndexerCommandRust::getStaticIndexerCommandType()
 {
@@ -73,27 +71,4 @@ const std::string& IndexerCommandRust::getSpecializationScope() const
 bool IndexerCommandRust::getRestrictToPackage() const
 {
 	return m_restrictToPackage;
-}
-
-QJsonObject IndexerCommandRust::doSerialize() const
-{
-	QJsonObject obj = IndexerCommand::doSerialize();
-
-	QJsonArray paths;
-	for (const FilePath& p : m_indexedPaths)
-		paths.append(QString::fromStdString(p.str()));
-	obj["indexed_paths"] = paths;
-	obj["working_directory"] = QString::fromStdString(m_workingDirectory.str());
-
-	QJsonArray features;
-	for (const std::string& f : m_features)
-		features.append(QString::fromStdString(f));
-	obj["features"] = features;
-	obj["all_features"] = m_allFeatures;
-	obj["no_default_features"] = m_noDefaultFeatures;
-	obj["target_triple"] = QString::fromStdString(m_targetTriple);
-	obj["specialization_scope"] = QString::fromStdString(m_specializationScope);
-	obj["restrict_to_package"] = m_restrictToPackage;
-
-	return obj;
 }

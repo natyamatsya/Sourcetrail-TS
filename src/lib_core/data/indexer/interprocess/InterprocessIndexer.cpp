@@ -154,8 +154,9 @@ InterprocessIndexer::WorkResult InterprocessIndexer::work()
 					LOG_ERROR_STREAM(
 						<< m_processId << " " << indexResult.error());
 					LOG_ERROR_STREAM(
-						<< m_processId << " failing indexer command payload: "
-						<< IndexerCommand::serialize(indexerCommand));
+						<< m_processId << " failing indexer command: "
+						<< indexerCommandTypeToString(indexerCommand->getIndexerCommandType())
+						<< " " << indexerCommand->getSourceFilePath().str());
 					LOG_ERROR_STREAM(
 						<< m_processId
 						<< " keeping current file marked as crashed and continuing with next command.");

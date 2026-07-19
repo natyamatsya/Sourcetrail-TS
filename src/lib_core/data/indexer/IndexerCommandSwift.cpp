@@ -1,7 +1,5 @@
 #include "IndexerCommandSwift.h"
 
-#include <QJsonArray>
-#include <QJsonObject>
 
 IndexerCommandType IndexerCommandSwift::getStaticIndexerCommandType()
 {
@@ -59,25 +57,4 @@ const std::string& IndexerCommandSwift::getIndexStorePath() const
 const std::string& IndexerCommandSwift::getSpecializationScope() const
 {
 	return m_specializationScope;
-}
-
-QJsonObject IndexerCommandSwift::doSerialize() const
-{
-	QJsonObject obj = IndexerCommand::doSerialize();
-
-	QJsonArray paths;
-	for (const FilePath& p: m_indexedPaths)
-		paths.append(QString::fromStdString(p.str()));
-	obj["indexed_paths"] = paths;
-	obj["working_directory"] = QString::fromStdString(m_workingDirectory.str());
-
-	QJsonArray buildArgs;
-	for (const std::string& a: m_buildArgs)
-		buildArgs.append(QString::fromStdString(a));
-	obj["swift_build_args"] = buildArgs;
-	obj["swift_toolchain_path"] = QString::fromStdString(m_toolchainPath);
-	obj["swift_index_store_path"] = QString::fromStdString(m_indexStorePath);
-	obj["swift_specialization_scope"] = QString::fromStdString(m_specializationScope);
-
-	return obj;
 }

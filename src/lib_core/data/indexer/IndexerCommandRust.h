@@ -45,7 +45,6 @@ public:
 	bool getRestrictToPackage() const;
 
 protected:
-	QJsonObject doSerialize() const override;
 
 private:
 	std::set<FilePath> m_indexedPaths;
