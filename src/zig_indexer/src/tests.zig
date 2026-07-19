@@ -341,3 +341,44 @@ test "chunker: oversized store splits into self-contained chunks" {
     try testing.expectEqual(store.occurrences.items.len, total_occurrences);
     try testing.expectEqual(store.edges.items.len, total_edges);
 }
+
+/// Self-index smoke test (the Rust `index_self` analog): run the parser over the
+/// indexer's own source files — real, non-trivial Zig — and assert it produces a
+/// sane graph with no parse errors. Guards against regressions the small hand-
+/// written fixtures don't exercise.
+fn hasNodeContaining(store: *storage.Storage, needle: []const u8) bool {
+    for (store.nodes.items) |n| {
+        if (std.mem.indexOf(u8, n.serialized_name, needle) != null) return true;
+    }
+    return false;
+}
+
+test "self-index: parse the indexer's own source without errors" {
+    const a = testing.allocator;
+    const Case = struct { path: []const u8, src: []const u8, needle: []const u8 };
+    const cases = [_]Case{
+        .{ .path = "storage.zig", .src = @embedFile("storage.zig"), .needle = "recordNode" },
+        .{ .path = "parser.zig", .src = @embedFile("parser.zig"), .needle = "indexSource" },
+        .{ .path = "chunker.zig", .src = @embedFile("chunker.zig"), .needle = "estimatedSize" },
+    };
+    inline for (cases) |case| {
+        var store = storage.Storage.init(a);
+        defer store.deinit();
+        const src = try a.dupeZ(u8, case.src);
+        defer a.free(src);
+        try indexer.parser.indexSource(a, &store, case.path, src);
+
+        try testing.expectEqual(@as(usize, 0), store.errors.items.len); // valid Zig
+        try testing.expect(store.nodes.items.len > 20); // many real declarations
+        try testing.expect(store.edges.items.len > 0); // member edges
+        try testing.expect(hasNodeContaining(&store, case.needle));
+        // Every symbol node got a component_access row (file nodes excepted).
+        try testing.expect(store.component_accesses.items.len > 0);
+        // A pub declaration exists (public access recorded).
+        var has_public = false;
+        for (store.component_accesses.items) |ca| {
+            if (ca.access == .public) has_public = true;
+        }
+        try testing.expect(has_public);
+    }
+}
