@@ -10,7 +10,10 @@
 
 #include <nlohmann/json.hpp>
 
+#include <clang/Basic/LangOptions.h>
+#include <clang/Basic/TokenKinds.h>
 #include <clang/Frontend/FrontendActions.h>
+#include <clang/Lex/Lexer.h>
 #include <clang/Tooling/Tooling.h>
 
 #include "CanonicalFilePathCache.h"
@@ -32,16 +35,101 @@
 
 namespace
 {
-// Directory holding clang-scan-deps: SOURCETRAIL_CLANG_BINDIR if set, else empty (rely on PATH, as
-// the codebase already does for `xcrun`). Only the dependency scan still needs an external tool; the
-// BMI is built in-process (see buildBmiInProcess).
-std::string toolPath(const std::string& name)
+struct ModuleScan
 {
-	if (const char* dir = std::getenv("SOURCETRAIL_CLANG_BINDIR"))
+	std::string provides;			  // the module this file's `export module` declares, if any
+	std::set<std::string> requires_;  // the modules this file `import`s
+};
+
+// Parse a (possibly dotted / partitioned) module name starting at token `i`: identifier, then any
+// run of `.ident` (submodules) or `:ident` (partition). Leaves `i` past the name.
+std::string parseModuleName(const std::vector<clang::Token>& toks, size_t& i)
+{
+	if (i >= toks.size() || !toks[i].is(clang::tok::raw_identifier))
 	{
-		return std::string(dir) + "/" + name;
+		return {};
+	}
+	std::string name = toks[i].getRawIdentifier().str();
+	++i;
+	while (i + 1 < toks.size() &&
+		   (toks[i].is(clang::tok::period) || toks[i].is(clang::tok::colon)) &&
+		   toks[i + 1].is(clang::tok::raw_identifier))
+	{
+		name += (toks[i].is(clang::tok::colon) ? ":" : ".") + toks[i + 1].getRawIdentifier().str();
+		i += 2;
 	}
 	return name;
+}
+
+// In-process replacement for `clang-scan-deps -format=p1689`: raw-lex the file (no preprocessing)
+// and pull the module declaration and imports out of the token stream. Robust to comments/strings
+// (the lexer handles them); the known gap vs the real scanner is module decls hidden behind macros
+// or #if, which is rare. `export module X` provides X; `import X` / `export import X` requires X;
+// header-unit imports (`import <h>` / `import "h"`) are skipped -- they aren't source-group units.
+ModuleScan scanModuleDeps(const FilePath& file)
+{
+	ModuleScan scan;
+	std::ifstream in(file.str(), std::ios::binary);
+	if (!in)
+	{
+		return scan;
+	}
+	const std::string text((std::istreambuf_iterator<char>(in)), std::istreambuf_iterator<char>());
+
+	clang::LangOptions opts;
+	opts.CPlusPlus = true;
+	opts.CPlusPlus20 = true;
+	opts.CPlusPlusModules = true;
+	clang::Lexer lexer(
+		clang::SourceLocation(), opts, text.data(), text.data(), text.data() + text.size());
+
+	std::vector<clang::Token> toks;
+	clang::Token tok;
+	while (true)
+	{
+		lexer.LexFromRawLexer(tok);
+		if (tok.is(clang::tok::eof))
+		{
+			break;
+		}
+		toks.push_back(tok);
+	}
+
+	const auto isId = [](const clang::Token& t, const char* s) {
+		return t.is(clang::tok::raw_identifier) && t.getRawIdentifier() == s;
+	};
+
+	for (size_t i = 0; i < toks.size(); ++i)
+	{
+		if (isId(toks[i], "export") && i + 1 < toks.size())
+		{
+			if (isId(toks[i + 1], "module"))
+			{
+				size_t j = i + 2;
+				if (std::string name = parseModuleName(toks, j); !name.empty())
+				{
+					scan.provides = name;
+				}
+			}
+			else if (isId(toks[i + 1], "import"))
+			{
+				size_t j = i + 2;
+				if (std::string name = parseModuleName(toks, j); !name.empty())
+				{
+					scan.requires_.insert(name);
+				}
+			}
+		}
+		else if (isId(toks[i], "import") && i + 1 < toks.size() && toks[i + 1].is(clang::tok::raw_identifier))
+		{
+			size_t j = i + 1;
+			if (std::string name = parseModuleName(toks, j); !name.empty())
+			{
+				scan.requires_.insert(name);
+			}
+		}
+	}
+	return scan;
 }
 
 bool hasStdFlag(const std::vector<std::string>& flags)
@@ -143,9 +231,6 @@ int CxxModulePrebuildRunner::run(const FilePath& requestPath)
 		return 1;
 	}
 
-	const std::string scandeps = toolPath("clang-scan-deps");
-	const std::string clangxx = toolPath("clang++");
-
 	std::vector<std::string> buildFlags = baseFlags;
 	if (!hasStdFlag(buildFlags))
 	{
@@ -159,43 +244,15 @@ int CxxModulePrebuildRunner::run(const FilePath& requestPath)
 
 	for (const FilePath& file: sourceFiles)
 	{
-		std::vector<std::string> args = {"-format=p1689", "--", clangxx};
-		utility::append(args, buildFlags);
-		utility::append(args, {"-c", file.str(), "-o", file.str() + ".o"});
-
-		const utility::ProcessOutput out = utility::executeProcess(scandeps, args, FilePath(), false);
-		if (out.exitCode != 0 || out.output.empty())
+		const ModuleScan scan = scanModuleDeps(file);
+		if (!scan.provides.empty())
 		{
-			continue;	 // not scannable (e.g. tools missing) -> treated as a non-module file
+			moduleProviderFile[scan.provides] = file;
+			providedModule[file] = scan.provides;
 		}
-
-		try
+		for (const std::string& required: scan.requires_)
 		{
-			const nlohmann::json doc = nlohmann::json::parse(out.output);
-			for (const auto& rule: doc.value("rules", nlohmann::json::array()))
-			{
-				for (const auto& provide: rule.value("provides", nlohmann::json::array()))
-				{
-					const std::string name = provide.value("logical-name", std::string());
-					if (!name.empty())
-					{
-						moduleProviderFile[name] = file;
-						providedModule[file] = name;
-					}
-				}
-				for (const auto& require: rule.value("requires", nlohmann::json::array()))
-				{
-					const std::string name = require.value("logical-name", std::string());
-					if (!name.empty())
-					{
-						fileRequires[file].insert(name);
-					}
-				}
-			}
-		}
-		catch (const nlohmann::json::exception& e)
-		{
-			LOG_WARNING(std::string("clang-scan-deps output was not valid JSON: ") + e.what());
+			fileRequires[file].insert(required);
 		}
 	}
 

@@ -84,13 +84,18 @@ the blocking spawn.
   (no spawn); a deliberately-crashing module unit degrades gracefully (app survives, error
   logged) — the property this whole design exists for.
 
-### Phase C — in-process scan (retires the last external binary)
-- Replace the `clang-scan-deps` shell-out in the runner with an in-process scan. Preferred:
-  `clang::tooling::dependencies::DependencyScanningTool` — **blocked** in this env (the
-  `libclangDependencyScanning.a` lib links but the headers aren't shipped). Fallback: a
-  `clang::Lexer` token pass over each candidate's preamble for `export module` / `module` /
-  `import` (robust to comments/strings; `#if`/macro-guarded decls are the known gap).
-- **Verify:** modules_demo indexes with no clang tools on `PATH` at all.
+### Phase C — in-process scan (retires the last external binary) — DONE
+- Replaced the `clang-scan-deps` shell-out in the runner with a `clang::Lexer` raw token pass
+  (`scanModuleDeps`): `export module X` → provides X; `import X` / `export import X` →
+  requires X; header-unit imports (`import <h>` / `import "h"`) skipped; dotted names and
+  `:partition`s parsed. Robust to comments/strings (the lexer handles them); the known gap is
+  module decls hidden behind macros / `#if`, which is rare.
+  - `clang::tooling::dependencies::DependencyScanningTool` would be the "real" scanner but is
+    **blocked** in this env — the `libclangDependencyScanning.a` lib links but the headers
+    aren't shipped. If they appear, swap `scanModuleDeps` for it; the interface is the same.
+- **Verified:** modules_demo indexes with `env -i PATH=/usr/bin:/bin` (no clang tools at all) —
+  0 errors, module/import/export recorded; a dotted-name dependency chain (`app.a`←`app.b`)
+  topo-orders and builds both BMIs.
 
 ### Phase D — future
 - Move the PCH build into the same prebuild phase (it has the identical in-main parsing
