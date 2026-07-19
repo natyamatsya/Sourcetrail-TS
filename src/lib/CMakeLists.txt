@@ -229,9 +229,13 @@ target_link_libraries(Sourcetrail_lib
 	PUBLIC
 		AidKit_lib
 
+		# `lib` no longer links `lib_cxx`: the language-specific IndexerCommand (de)serialization moved behind
+		# the type-erased IndexerCommandCodecRegistry, so the concrete Cxx command is injected at runtime by
+		# lib_cxx (see registerCxxIndexerCommandCodec). Executables that use the Cxx package link it directly.
+		# `lib_gui` is still linked here (a few lib TUs reach for utilityApp.h / QtResources.h that really
+		# belong in a shared base layer); breaking that edge -- the last inter-target cycle -- is what a future
+		# lib_base split unblocks, and with it the C++20-modules target graph.
 		Sourcetrail_lib_gui
-
-		$<$<BOOL:${BUILD_CXX_LANGUAGE_PACKAGE}>:Sourcetrail_lib_cxx>
 
 		External_lib_tomlplusplus
 		External_lib_nlohmann_json

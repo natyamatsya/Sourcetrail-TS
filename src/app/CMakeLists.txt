@@ -13,4 +13,6 @@ set_target_properties(Sourcetrail
 target_link_libraries(Sourcetrail
 	PRIVATE
 		Sourcetrail_lib
+		# lib no longer re-exports lib_cxx; link it directly for the Cxx package + command codec.
+		$<$<BOOL:${BUILD_CXX_LANGUAGE_PACKAGE}>:Sourcetrail_lib_cxx>
 )

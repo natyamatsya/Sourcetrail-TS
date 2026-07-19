@@ -21,6 +21,7 @@
 #include "setupApp.h"
 
 #if BUILD_CXX_LANGUAGE_PACKAGE
+	#include "CxxIndexerCommandCodec.h"
 	#include "LanguagePackageCxx.h"
 #endif
 
@@ -131,6 +132,7 @@ int main(int argc, char* argv[])
 
 #if BUILD_CXX_LANGUAGE_PACKAGE
 	LanguagePackageManager::getInstance()->addPackage(std::make_shared<LanguagePackageCxx>());
+	registerCxxIndexerCommandCodec();
 #endif
 
 	// Module-prebuild mode: scan + build C++20 BMIs for a source group, then exit -- a separate,

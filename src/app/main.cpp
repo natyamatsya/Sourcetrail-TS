@@ -28,6 +28,7 @@
 #include "utilityQt.h"
 
 #if BUILD_CXX_LANGUAGE_PACKAGE
+	#include "CxxIndexerCommandCodec.h"
 	#include "LanguagePackageCxx.h"
 	#include "SourceGroupFactoryModuleCxx.h"
 #endif
@@ -100,6 +101,7 @@ void addLanguagePackages()
 
 #if BUILD_CXX_LANGUAGE_PACKAGE
 	addLanguagePackage<language_packages::buildCxxLanguagePackage,   SourceGroupFactoryModuleCxx,   LanguagePackageCxx>();
+	registerCxxIndexerCommandCodec();
 #endif
 	addLanguagePackage<language_packages::buildRustLanguagePackage,  SourceGroupFactoryModuleRust,  LanguagePackageRust>();
 	addLanguagePackage<language_packages::buildSwiftLanguagePackage, SourceGroupFactoryModuleSwift, LanguagePackageSwift>();

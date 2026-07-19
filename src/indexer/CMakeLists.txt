@@ -13,6 +13,7 @@ set_target_properties(Sourcetrail_indexer
 target_link_libraries(Sourcetrail_indexer
 	PRIVATE
 		Sourcetrail_lib
+		$<$<BOOL:${BUILD_CXX_LANGUAGE_PACKAGE}>:Sourcetrail_lib_cxx>
 )
 
 # The recursive C++ AST visitor (CxxAstVisitor over clang's RecursiveASTVisitor)
