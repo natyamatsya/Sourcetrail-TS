@@ -49,8 +49,19 @@ throughout.
 5. `void`-returning status functions and out-params are replaced by `std::expected<void, E>` /
    `std::expected<T, E>` as they are touched.
 
-First applied: `utility::runIndexerPrebuildMode` →
-`std::expected<void, IndexerPrebuildError>` (was a bare exit-code `int`).
+6. **Exceptions are discouraged as the standard error channel.** Expected, recoverable failures
+   (missing file, parse error, unresolved config, subprocess failure) are returned as
+   `std::expected` — never signalled by `throw`. `throw`/exceptions are reserved for the *truly
+   exceptional*: broken invariants, programmer errors, OOM, unrecoverable conditions that should
+   unwind and abort rather than be handled inline (consistent with [ADR-0001](ADR-0001-expected-error-channel.md),
+   which keeps such throws on the sender `set_error` channel). Third-party APIs that throw (Qt,
+   LLVM/Clang, STL) are wrapped at the boundary — `try`/`catch` → `std::unexpected(...)` — where the
+   failure is a recoverable domain error.
+
+Applied to: `utility::runIndexerPrebuildMode` → `std::expected<void, IndexerPrebuildError>` (was a
+bare exit-code `int`); `utility::loadCDB` → `std::expected<…, CdbLoadError>` (was a nullable return
++ `std::string* error` out-param); `SourceGroup::prepareIndexing` →
+`std::expected<void, PrepareIndexingError>` (was a bare `bool`).
 
 ## Consequences
 
