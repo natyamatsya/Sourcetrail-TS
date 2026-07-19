@@ -21,7 +21,7 @@ public:
 	explicit SourceGroupCxxCMakeFileAPI(
 		std::shared_ptr<SourceGroupSettingsCxxCMakeFileAPI> settings);
 
-	bool prepareIndexing() override;
+	std::expected<void, PrepareIndexingError> prepareIndexing() override;
 	std::set<FilePath> filterToContainedFilePaths(
 		const std::set<FilePath>& filePaths) const override;
 	std::set<FilePath> getAllSourceFilePaths() const override;

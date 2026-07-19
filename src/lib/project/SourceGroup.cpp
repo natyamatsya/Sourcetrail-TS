@@ -71,9 +71,9 @@ std::string SourceGroup::getSourceGroupId() const
 	return getSourceGroupSettings()->getId();
 }
 
-bool SourceGroup::prepareIndexing()
+std::expected<void, PrepareIndexingError> SourceGroup::prepareIndexing()
 {
-	return true;
+	return {};
 }
 
 bool SourceGroup::allowsPartialClearing() const

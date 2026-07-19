@@ -14,7 +14,7 @@ class SourceGroupSwift: public SourceGroup
 public:
 	explicit SourceGroupSwift(const std::shared_ptr<SourceGroupSettingsSwiftEmpty>& settings);
 
-	bool prepareIndexing() override;
+	std::expected<void, PrepareIndexingError> prepareIndexing() override;
 
 	std::set<FilePath> filterToContainedFilePaths(
 		const std::set<FilePath>& filePaths) const override;

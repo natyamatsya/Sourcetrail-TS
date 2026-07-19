@@ -34,7 +34,7 @@ SourceGroupCxxCdb::SourceGroupCxxCdb(std::shared_ptr<SourceGroupSettingsCxxCdb> 
 {
 }
 
-bool SourceGroupCxxCdb::prepareIndexing()
+std::expected<void, PrepareIndexingError> SourceGroupCxxCdb::prepareIndexing()
 {
 	FilePath cdbPath = m_settings->getCompilationDatabasePathExpandedAndAbsolute();
 	if (!cdbPath.empty() && !cdbPath.exists())
@@ -45,9 +45,9 @@ bool SourceGroupCxxCdb::prepareIndexing()
 			cdbPath.str();
 		MessageStatus(error, true).dispatch();
 		Application::getInstance()->handleDialog(error, {"Ok"});
-		return false;
+		return std::unexpected(PrepareIndexingError::SourcePathMissing);
 	}
-	return true;
+	return {};
 }
 
 std::set<FilePath> SourceGroupCxxCdb::filterToContainedFilePaths(const std::set<FilePath>& filePaths) const
@@ -61,8 +61,8 @@ std::set<FilePath> SourceGroupCxxCdb::filterToContainedFilePaths(const std::set<
 
 std::set<FilePath> SourceGroupCxxCdb::getAllSourceFilePaths() const
 {
-	return getAllSourceFilePaths(
-		utility::loadCDB(m_settings->getCompilationDatabasePathExpandedAndAbsolute()));
+	const auto cdb = utility::loadCDB(m_settings->getCompilationDatabasePathExpandedAndAbsolute());
+	return cdb ? getAllSourceFilePaths(cdb.value()) : std::set<FilePath>{};
 }
 
 std::set<FilePath> SourceGroupCxxCdb::getAllSourceFilePaths(std::shared_ptr<clang::tooling::CompilationDatabase> cdb) const
@@ -92,11 +92,12 @@ std::shared_ptr<IndexerCommandProvider> SourceGroupCxxCdb::getIndexerCommandProv
 	std::shared_ptr<CxxIndexerCommandProvider> provider = std::make_shared<CxxIndexerCommandProvider>();
 
 	const FilePath cdbPath = m_settings->getCompilationDatabasePathExpandedAndAbsolute();
-	std::shared_ptr<clang::tooling::CompilationDatabase> cdb = utility::loadCDB(cdbPath);
-	if (!cdb)
+	const auto loadedCdb = utility::loadCDB(cdbPath);
+	if (!loadedCdb)
 	{
 		return provider;
 	}
+	const std::shared_ptr<clang::tooling::CompilationDatabase> cdb = loadedCdb.value();
 
 	std::vector<std::string> compilerFlags = getBaseCompilerFlags();
 	utility::append(compilerFlags, m_settings->getCompilerFlags());
@@ -224,9 +225,9 @@ std::shared_ptr<Task> SourceGroupCxxCdb::getPreIndexTask(
 	if (m_settings->getUseCompilerFlags())
 	{
 		const FilePath cdbPath = m_settings->getCompilationDatabasePathExpandedAndAbsolute();
-		std::shared_ptr<clang::tooling::CompilationDatabase> cdb = utility::loadCDB(cdbPath);
-		if (cdb)
+		if (const auto loadedCdb = utility::loadCDB(cdbPath))
 		{
+			const std::shared_ptr<clang::tooling::CompilationDatabase> cdb = loadedCdb.value();
 			const std::set<FilePath> sourceFilePaths = getAllSourceFilePaths(cdb);
 			for (const clang::tooling::CompileCommand& command: cdb->getAllCompileCommands())
 			{

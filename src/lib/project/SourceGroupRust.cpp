@@ -78,9 +78,9 @@ SourceGroupRust::SourceGroupRust(const std::shared_ptr<SourceGroupSettingsRustEm
 {
 }
 
-bool SourceGroupRust::prepareIndexing()
+std::expected<void, PrepareIndexingError> SourceGroupRust::prepareIndexing()
 {
-	return true;
+	return {};
 }
 
 std::set<FilePath> SourceGroupRust::filterToContainedFilePaths(

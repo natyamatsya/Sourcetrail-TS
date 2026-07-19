@@ -14,7 +14,7 @@ class SourceGroupRust: public SourceGroup
 public:
 	explicit SourceGroupRust(const std::shared_ptr<SourceGroupSettingsRustEmpty>& settings);
 
-	bool prepareIndexing() override;
+	std::expected<void, PrepareIndexingError> prepareIndexing() override;
 
 	std::set<FilePath> filterToContainedFilePaths(
 		const std::set<FilePath>& filePaths) const override;

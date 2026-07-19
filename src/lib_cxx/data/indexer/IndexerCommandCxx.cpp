@@ -21,17 +21,23 @@
 
 std::vector<FilePath> IndexerCommandCxx::getSourceFilesFromCDB(const FilePath& cdbPath)
 {
-	std::string error;
-	std::shared_ptr<clang::tooling::CompilationDatabase> cdb = utility::loadCDB(cdbPath, &error);
-
-	if (!error.empty())
+	const std::expected<std::shared_ptr<clang::tooling::CompilationDatabase>, utility::CdbLoadError> cdb =
+		utility::loadCDB(cdbPath);
+	if (!cdb)
 	{
-		const std::string message = "Loading Clang compilation database failed with error: \"" + error + "\"";
-		LOG_ERROR(message);
-		MessageStatus(message, true).dispatch();
+		// A missing path is the normal "no compilation database here" case; only a parse failure is
+		// worth surfacing to the user.
+		if (cdb.error().code == utility::CdbLoadError::Code::ParseFailed)
+		{
+			const std::string message =
+				"Loading Clang compilation database failed with error: \"" + cdb.error().message + "\"";
+			LOG_ERROR(message);
+			MessageStatus(message, true).dispatch();
+		}
+		return {};
 	}
 
-	return getSourceFilesFromCDB(cdb, cdbPath);
+	return getSourceFilesFromCDB(cdb.value(), cdbPath);
 }
 
 std::vector<FilePath> IndexerCommandCxx::getSourceFilesFromCDB(std::shared_ptr<clang::tooling::CompilationDatabase> cdb, const FilePath& cdbPath)
