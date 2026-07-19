@@ -2,8 +2,12 @@
 
 #pragma once
 
+// Guarded like the header's std includes: in a module build the wrapper's GMF (or `import std`) already
+// provides these, and re-including them in the purview would clash with `import std`.
+#ifndef SRCTRL_MODULE_PURVIEW
 #include <algorithm>
 #include <cctype>
+#endif
 
 namespace utility
 {
@@ -13,7 +17,7 @@ namespace detail
 
 inline std::string doReplace(std::string str, const std::string& from, const std::string& to)
 {
-	size_t pos = 0;
+	std::size_t pos = 0;
 
 	if (from.size() == 0)
 	{
@@ -31,15 +35,15 @@ inline std::string doReplace(std::string str, const std::string& from, const std
 
 inline std::string doReplaceBetween(const std::string& str, typename std::string::value_type startDelimiter, typename std::string::value_type endDelimiter, const std::string& to)
 {
-	size_t startPos = str.find(startDelimiter);
+	std::size_t startPos = str.find(startDelimiter);
 	if (startPos == std::string::npos)
 	{
 		return str;
 	}
 
-	size_t depth = 1;
+	std::size_t depth = 1;
 
-	for (size_t pos = startPos + 1; pos < str.size(); pos++)
+	for (std::size_t pos = startPos + 1; pos < str.size(); pos++)
 	{
 		if (str[pos] == endDelimiter && depth)
 		{
@@ -112,8 +116,8 @@ inline std::deque<std::string> tokenize(const std::string& str, char delimiter)
 
 inline std::deque<std::string> tokenize(const std::string& str, const std::string& delimiter)
 {
-	size_t pos = 0;
-	size_t oldPos = 0;
+	std::size_t pos = 0;
+	std::size_t oldPos = 0;
 	std::deque<std::string> c;
 
 	do
@@ -159,7 +163,7 @@ inline std::deque<std::string> tokenize(const std::deque<std::string>& list, con
 
 inline std::string substrBeforeFirst(const std::string& str, char delimiter)
 {
-	size_t pos = str.find(delimiter);
+	std::size_t pos = str.find(delimiter);
 	if (pos != std::string::npos)
 	{
 		return str.substr(0, pos);
@@ -169,7 +173,7 @@ inline std::string substrBeforeFirst(const std::string& str, char delimiter)
 
 inline std::string substrBeforeFirst(const std::string& str, const std::string& delimiter)
 {
-	size_t pos = str.find(delimiter);
+	std::size_t pos = str.find(delimiter);
 	if (pos != std::string::npos)
 	{
 		return str.substr(0, pos);
@@ -179,7 +183,7 @@ inline std::string substrBeforeFirst(const std::string& str, const std::string& 
 
 inline std::string substrBeforeLast(const std::string& str, char delimiter)
 {
-	size_t pos = str.rfind(delimiter);
+	std::size_t pos = str.rfind(delimiter);
 	if (pos != std::string::npos)
 	{
 		return str.substr(0, pos);
@@ -189,7 +193,7 @@ inline std::string substrBeforeLast(const std::string& str, char delimiter)
 
 inline std::string substrAfterLast(const std::string& str, char delimiter)
 {
-	size_t pos = str.rfind(delimiter);
+	std::size_t pos = str.rfind(delimiter);
 	if (pos != std::string::npos)
 	{
 		return str.substr(pos + 1, std::string::npos);
@@ -199,7 +203,7 @@ inline std::string substrAfterLast(const std::string& str, char delimiter)
 
 inline std::string substrAfter(const std::string& str, char delimiter)
 {
-	size_t pos = str.find(delimiter);
+	std::size_t pos = str.find(delimiter);
 	if (pos != std::string::npos)
 	{
 		return str.substr(pos + 1, std::string::npos);
@@ -209,7 +213,7 @@ inline std::string substrAfter(const std::string& str, char delimiter)
 
 inline std::string substrAfter(const std::string& str, const std::string& delimiter)
 {
-	size_t pos = str.find(delimiter);
+	std::size_t pos = str.find(delimiter);
 	if (pos != std::string::npos)
 	{
 		return str.substr(pos + delimiter.size(), str.size());
@@ -219,9 +223,9 @@ inline std::string substrAfter(const std::string& str, const std::string& delimi
 
 inline std::string substrBetween(const std::string &str, const std::string &delimiter1, const std::string &delimiter2)
 {
-	size_t found_delimiter1 = str.find(delimiter1);
+	std::size_t found_delimiter1 = str.find(delimiter1);
 	found_delimiter1 += delimiter1.length();
-	size_t found_delimiter2 = str.find(delimiter2, found_delimiter1);
+	std::size_t found_delimiter2 = str.find(delimiter2, found_delimiter1);
 	if (found_delimiter1 != str.npos && found_delimiter2 != str.npos)
 	{
 		return str.substr(found_delimiter1, found_delimiter2 - found_delimiter1);
@@ -249,7 +253,7 @@ inline std::string replaceBetween(const std::string& str, char startDelimiter, c
 	return detail::doReplaceBetween(str, startDelimiter, endDelimiter, to);
 }
 
-inline std::string insertLineBreaksAtBlankSpaces(const std::string& s, size_t maxLineLength)
+inline std::string insertLineBreaksAtBlankSpaces(const std::string& s, std::size_t maxLineLength)
 {
 	const std::vector<std::string> atoms = splitToVector(s, " ");
 
@@ -290,17 +294,17 @@ inline std::string insertLineBreaksAtBlankSpaces(const std::string& s, size_t ma
 	return ret;
 }
 
-inline std::string breakSignature(std::string signature, size_t maxLineLength, size_t tabWidth)
+inline std::string breakSignature(std::string signature, std::size_t maxLineLength, std::size_t tabWidth)
 {
 	if (signature.size() <= maxLineLength)
 	{
 		return signature;
 	}
 
-	size_t parenCount = 0;
-	size_t parenPos = 0;
-	size_t openParenPos = 0;
-	size_t closeParenPos = 0;
+	std::size_t parenCount = 0;
+	std::size_t parenPos = 0;
+	std::size_t openParenPos = 0;
+	std::size_t closeParenPos = 0;
 
 	while (true)
 	{
@@ -350,9 +354,9 @@ inline std::string breakSignature(std::string signature, size_t maxLineLength, s
 		namePart.pop_back();
 	}
 
-	size_t splitPos = std::string::npos;
+	std::size_t splitPos = std::string::npos;
 	parenCount = 0;
-	for (size_t i = namePart.size(); i > 0; i--)
+	for (std::size_t i = namePart.size(); i > 0; i--)
 	{
 		const char c = namePart[i];
 		if (c == '>' || c == ')')
@@ -379,11 +383,11 @@ inline std::string breakSignature(std::string signature, size_t maxLineLength, s
 	return breakSignature(returnPart, namePart, paramPart, maxLineLength, tabWidth);
 }
 
-inline std::string breakSignature(std::string returnPart, std::string namePart, std::string paramPart, size_t maxLineLength, size_t tabWidth)
+inline std::string breakSignature(std::string returnPart, std::string namePart, std::string paramPart, std::size_t maxLineLength, std::size_t tabWidth)
 {
 	namePart = ' ' + namePart;
 
-	size_t totalSize = returnPart.size() + namePart.size() + paramPart.size();
+	std::size_t totalSize = returnPart.size() + namePart.size() + paramPart.size();
 	if (totalSize <= maxLineLength)
 	{
 		return returnPart + namePart + paramPart;
@@ -400,7 +404,7 @@ inline std::string breakSignature(std::string returnPart, std::string namePart, 
 		}
 	}
 
-	size_t parenPos = paramPart.rfind(')');
+	std::size_t parenPos = paramPart.rfind(')');
 	std::string endPart;
 	if (parenPos == 0)
 	{
@@ -418,9 +422,9 @@ inline std::string breakSignature(std::string returnPart, std::string namePart, 
 		std::vector<std::string> paramLines;
 		while (true)
 		{
-			size_t parenCount = 0;
+			std::size_t parenCount = 0;
 			bool split = false;
-			for (size_t i = 0; i < paramPart.size(); i++)
+			for (std::size_t i = 0; i < paramPart.size(); i++)
 			{
 				const char c = paramPart[i];
 				if (parenCount == 0 && c == ',')
@@ -451,7 +455,7 @@ inline std::string breakSignature(std::string returnPart, std::string namePart, 
 		for (const std::string& str: paramLines)
 		{
 			paramPart += "\n\t" + str;
-			const size_t length = tabWidth + str.size();
+			const std::size_t length = tabWidth + str.size();
 			maxLineLength = std::max(length, maxLineLength);
 		}
 	}
@@ -495,7 +499,7 @@ inline std::string trim(const std::string& str)
 	return (wsback <= wsfront ? std::string() : std::string(wsfront, wsback));
 }
 
-inline std::string elide(const std::string& str, ElideMode mode, size_t size)
+inline std::string elide(const std::string& str, ElideMode mode, std::size_t size)
 {
 	if (str.size() <= size || str.size() <= 3)
 	{
@@ -522,7 +526,7 @@ inline std::string convertWhiteSpacesToSingleSpaces(const std::string& str)
 	res = replace(res, "\t", " ");
 
 	std::deque<std::string> parts = split<std::deque<std::string>>(res, " ");
-	for (size_t i = 1; i <= parts.size(); i++)
+	for (std::size_t i = 1; i <= parts.size(); i++)
 	{
 		if (!parts[i - 1].size())
 		{

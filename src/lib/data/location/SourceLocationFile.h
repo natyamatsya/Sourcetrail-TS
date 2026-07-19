@@ -53,17 +53,17 @@ public:
 
 	const std::multiset<std::shared_ptr<SourceLocation>, LocationComp>& getSourceLocations() const;
 
-	size_t getSourceLocationCount() const;
-	size_t getUnscopedStartLocationCount() const;
+	std::size_t getSourceLocationCount() const;
+	std::size_t getUnscopedStartLocationCount() const;
 
 	SourceLocation* addSourceLocation(
 		LocationType type,
 		Id locationId,
 		std::vector<Id> tokenIds,
-		size_t startLineNumber,
-		size_t startColumnNumber,
-		size_t endLineNumber,
-		size_t endColumnNumber);
+		std::size_t startLineNumber,
+		std::size_t startColumnNumber,
+		std::size_t endLineNumber,
+		std::size_t endColumnNumber);
 	SourceLocation* addSourceLocationCopy(const SourceLocation* location);
 
 	void copySourceLocations(std::shared_ptr<SourceLocationFile> file);
@@ -75,7 +75,7 @@ public:
 	void forEachEndSourceLocation(std::function<void(SourceLocation*)> func) const;
 
 	std::shared_ptr<SourceLocationFile> getFilteredByLines(
-		size_t firstLineNumber, size_t lastLineNumber) const;
+		std::size_t firstLineNumber, std::size_t lastLineNumber) const;
 	std::shared_ptr<SourceLocationFile> getFilteredByType(LocationType type) const;
 	std::shared_ptr<SourceLocationFile> getFilteredByTypes(const std::vector<LocationType>& types) const;
 

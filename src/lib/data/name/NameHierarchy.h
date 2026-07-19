@@ -20,7 +20,7 @@ SRCTRL_EXPORT class NameHierarchy
 {
 public:
 	static std::string serialize(const NameHierarchy &nameHierarchy);
-	static std::string serializeRange(const NameHierarchy &nameHierarchy, size_t first, size_t last);
+	static std::string serializeRange(const NameHierarchy &nameHierarchy, std::size_t first, std::size_t last);
 	static NameHierarchy deserialize(const std::string &serializedName);
 
 	NameHierarchy(const NameDelimiterType delimiterType = NameDelimiterType::UNKNOWN);
@@ -42,9 +42,9 @@ public:
 	NameElement &back();
 	const NameElement &back() const;
 
-	NameHierarchy getRange(size_t first, size_t last) const;
+	NameHierarchy getRange(std::size_t first, std::size_t last) const;
 
-	size_t size() const;
+	std::size_t size() const;
 
 	std::string getQualifiedName() const;
 	std::string getQualifiedNameWithSignature() const;
@@ -59,7 +59,7 @@ private:
 	NameHierarchy(std::string delimiter);
 	NameHierarchy(std::string name, std::string delimiter);
 
-	const NameElement &operator[](size_t pos) const;
+	const NameElement &operator[](std::size_t pos) const;
 
 	std::vector<NameElement> m_elements;
 	std::string m_delimiter;

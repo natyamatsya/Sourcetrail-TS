@@ -148,8 +148,8 @@ cycles in `lib` is prerequisite work, and a good cleanup in its own right).
   - **`.inl` convention** for inline impls kept out of headers (`Strings.inl`).
   - **`FILE_SET CXX_MODULES` must be `PUBLIC`**, not `PRIVATE`, for another target to `import` it.
   - **Scaffolding graduated** to `src/scaffolding/SrctrlModule.h` on a global include path.
-- **`SOURCETRAIL_CXX_IMPORT_STD` option — recipe proven for std-only modules; not yet a green full
-  build (see revised finding below).** A compile-time toggle so module wrappers `import std;` instead of
+- **`SOURCETRAIL_CXX_IMPORT_STD` option — GREEN for the whole first-party module set (see the
+  make-it-green finding below).** A compile-time toggle so module wrappers `import std;` instead of
   #including std headers (`SRCTRL_IMPORT_STD` → the wrapper switches; targets set `CXX_MODULE_STD ON`).
   The full recipe for brew LLVM 22 / macOS:
   1. **Experimental gate** `CMAKE_EXPERIMENTAL_CXX_IMPORT_STD = f35a9ac6-8463-4d38-8eec-5d6008153e7d`
@@ -166,22 +166,27 @@ cycles in `lib` is prerequisite work, and a good cleanup in its own right).
   uses the module's exported helpers fine. Note: a Qt-touching module (AidKit) keeps `<QString>` in the
   GMF, so `import std` there mixes with Qt's std includes; the option is really for std-only modules.
 
-- **`import std` is NOT yet green for the project-header-heavy partitions (revised finding).** Building
-  the *whole* first-party module set with `SOURCETRAIL_CXX_IMPORT_STD` on fails in
-  `srctrl.utility:cache`/`:string` (and would hit others) on two inherent import-std-with-legacy-headers
-  edges — neither introduced by any wrapper change, both pre-existing:
-  1. **Bare `::size_t`** — first-party headers (`OrderedCache.h`, `utilityString.h`, and many more) use
-     unqualified `size_t`. `import std` exports `std::size_t` but **not** the global `::size_t`, so once
-     the C++ std #includes are gone the name is undeclared (`missing '#include <uchar.h>'`). A real
-     import-std build needs either a mass `size_t`→`std::size_t` sweep or keeping the C-compat headers
-     (`<cstddef>`) unguarded.
-  2. **GMF/purview duplication** — `declaration of 'integral_constant' … in module follows declaration in
-     the global module`: libc++ internals reaching both a global-module fragment and `import std`.
-  So the honest status: the `import std` *recipe* (toolchain gate + modules.json + mach-o `ar`) is proven
-  on a std-only module, but the option is **not** a green full-build config today. The `SRCTRL_IMPORT_STD`
-  `#ifndef`/`#ifdef` guard is nonetheless applied **uniformly** across every partition wrapper (data:name/
-  location/graph brought in line with utility/types/logging) — it's a no-op in the default (green) build
-  and the correct forward pattern for when the two edges above are addressed.
+- **`import std` — now GREEN for the whole first-party module set (utility + data + logging).** Getting
+  there took fixing two real import-std-with-legacy-headers edges (both pre-existing, surfaced only when
+  the full set was actually built with the option on) — and, importantly, fixing them the *right* way
+  rather than papering over them by pulling C compatibility headers into the GMF:
+  1. **Bare `::size_t` → `std::size_t`.** First-party headers used unqualified `size_t`; `import std`
+     exports `std::size_t` but not the global `::size_t`, so once the C++ std #includes drop out the name
+     is undeclared. The clean fix is to qualify it — a 119-site `size_t`→`std::size_t` sweep across the
+     converted headers/`.inl`s (caches, utilityString, SourceLocation*, NameHierarchy, Node/Edge/Graph).
+     (The C-header workaround `#include <stddef.h>` was rejected; note `<cstddef>` is doubly wrong here —
+     it defines `std::byte`, dragging `<type_traits>` into the GMF and *causing* edge #2.)
+  2. **`.inl` std includes must be guarded too.** `utilityString.inl` had unguarded `#include <algorithm>`
+     / `<cctype>`; included in the purview, they re-declared libc++ internals that `import std` already
+     provided (`declaration of 'integral_constant' … follows declaration in the global module`). Fix:
+     guard them with `#ifndef SRCTRL_MODULE_PURVIEW` exactly like the headers — the wrapper GMF (or
+     `import std`) supplies them in a module build. **Rule: a converted `.inl`'s std includes get the same
+     `SRCTRL_MODULE_PURVIEW` guard as the header's.**
+  Verified: all 11 first-party module units compile with `SOURCETRAIL_CXX_IMPORT_STD` on (std module BMI
+  built; only app-level `FilePath`/Qt symbols unlinked in the isolated harness — identical to the
+  non-import-std harness). The `SRCTRL_IMPORT_STD` guard is applied uniformly across every wrapper, and
+  both the non-import-std module build (11/11) and the classic modules-OFF build (`Sourcetrail_lib`
+  green) are unaffected by the `std::size_t` qualification.
 - **Phase 2 — `srctrl.utility`: first `lib` module. ✅ STARTED (utilityEnum → `:enums` partition).**
   Converted `utilityEnum.h` (header-only concepts/templates) into `srctrl.utility` with an `:enums`
   partition (`srctrl_utility.cppm` primary `export import :enums;` + `srctrl_utility-enum.cppm`). Both

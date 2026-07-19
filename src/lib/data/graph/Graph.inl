@@ -72,12 +72,12 @@ inline Edge* Graph::createEdge(Id id, Edge::EdgeType type, Node* from, Node* to)
 	return edge.get();
 }
 
-inline size_t Graph::getNodeCount() const
+inline std::size_t Graph::getNodeCount() const
 {
 	return m_nodes.size();
 }
 
-inline size_t Graph::getEdgeCount() const
+inline std::size_t Graph::getEdgeCount() const
 {
 	return m_edges.size();
 }
@@ -266,7 +266,7 @@ inline Edge* Graph::addEdgeAndAllChildrenAsPlainCopy(Edge* edge)
 	return addEdgeAsPlainCopy(edge);
 }
 
-inline size_t Graph::size() const
+inline std::size_t Graph::size() const
 {
 	return getNodeCount() + getEdgeCount();
 }

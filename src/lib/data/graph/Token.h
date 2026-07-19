@@ -71,7 +71,7 @@ ComponentType* Token::getComponent() const
 template <typename ComponentType>
 std::shared_ptr<ComponentType> Token::removeComponent()
 {
-	for (size_t i = 0; i < m_components.size(); i++)
+	for (std::size_t i = 0; i < m_components.size(); i++)
 	{
 		std::shared_ptr<TokenComponent> component = m_components[i];
 		TokenComponent* componentPtr = component.get();

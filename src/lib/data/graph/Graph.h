@@ -39,8 +39,8 @@ public:
 	Node* createNode(Id id, NodeType type, NameHierarchy nameHierarchy, DefinitionKind definitionKind);
 	Edge* createEdge(Id id, Edge::EdgeType type, Node* from, Node* to);
 
-	size_t getNodeCount() const;
-	size_t getEdgeCount() const;
+	std::size_t getNodeCount() const;
+	std::size_t getEdgeCount() const;
 
 	Node* getNodeById(Id id) const;
 	Edge* getEdgeById(Id id) const;
@@ -61,7 +61,7 @@ public:
 	Node* addNodeAndAllChildrenAsPlainCopy(Node* node);
 	Edge* addEdgeAndAllChildrenAsPlainCopy(Edge* edge);
 
-	size_t size() const;
+	std::size_t size() const;
 
 	Token* getTokenById(Id id) const;
 

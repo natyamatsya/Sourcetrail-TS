@@ -15,9 +15,9 @@ inline const std::map<FilePath, std::shared_ptr<SourceLocationFile>>& SourceLoca
 	return m_files;
 }
 
-inline size_t SourceLocationCollection::getSourceLocationCount() const
+inline std::size_t SourceLocationCollection::getSourceLocationCount() const
 {
-	size_t count = 0;
+	std::size_t count = 0;
 	for (const auto& p: m_files)
 	{
 		count += p.second->getSourceLocationCount();
@@ -25,7 +25,7 @@ inline size_t SourceLocationCollection::getSourceLocationCount() const
 	return count;
 }
 
-inline size_t SourceLocationCollection::getSourceLocationFileCount() const
+inline std::size_t SourceLocationCollection::getSourceLocationFileCount() const
 {
 	return m_files.size();
 }
@@ -62,10 +62,10 @@ inline SourceLocation* SourceLocationCollection::addSourceLocation(
 	Id locationId,
 	std::vector<Id> tokenIds,
 	const FilePath& filePath,
-	size_t startLineNumber,
-	size_t startColumnNumber,
-	size_t endLineNumber,
-	size_t endColumnNumber)
+	std::size_t startLineNumber,
+	std::size_t startColumnNumber,
+	std::size_t endLineNumber,
+	std::size_t endColumnNumber)
 {
 	if (startLineNumber > endLineNumber ||
 		(startLineNumber == endLineNumber && startColumnNumber > endColumnNumber))

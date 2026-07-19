@@ -30,8 +30,8 @@ public:
 
 	const std::map<FilePath, std::shared_ptr<SourceLocationFile>>& getSourceLocationFiles() const;
 
-	size_t getSourceLocationCount() const;
-	size_t getSourceLocationFileCount() const;
+	std::size_t getSourceLocationCount() const;
+	std::size_t getSourceLocationFileCount() const;
 
 	std::shared_ptr<SourceLocationFile> getSourceLocationFileByPath(const FilePath& filePath) const;
 	SourceLocation* getSourceLocationById(Id locationId) const;
@@ -41,10 +41,10 @@ public:
 		Id locationId,
 		std::vector<Id> tokenIds,
 		const FilePath& filePath,
-		size_t startLineNumber,
-		size_t startColumnNumber,
-		size_t endLineNumber,
-		size_t endColumnNumber);
+		std::size_t startLineNumber,
+		std::size_t startColumnNumber,
+		std::size_t endLineNumber,
+		std::size_t endColumnNumber);
 
 	SourceLocation* addSourceLocationCopy(const SourceLocation* location);
 	void addSourceLocationCopies(const SourceLocationCollection* other);

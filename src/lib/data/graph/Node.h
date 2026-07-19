@@ -49,10 +49,10 @@ public:
 	bool isImplicit() const;
 	bool isExplicit() const;
 
-	size_t getChildCount() const;
-	void setChildCount(size_t childCount);
+	std::size_t getChildCount() const;
+	void setChildCount(std::size_t childCount);
 
-	size_t getEdgeCount() const;
+	std::size_t getEdgeCount() const;
 
 	void addEdge(Edge* edge);
 	void removeEdge(Edge* edge);
@@ -90,7 +90,7 @@ private:
 	DefinitionKind m_definitionKind;
 	NodeModifierMask m_modifiers = NODE_MODIFIER_NONE;
 
-	size_t m_childCount = 0;
+	std::size_t m_childCount = 0;
 };
 
 SRCTRL_EXPORT std::ostream& operator<<(std::ostream& ostream, const Node& node);

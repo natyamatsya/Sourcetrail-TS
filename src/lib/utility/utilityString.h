@@ -44,9 +44,9 @@ SRCTRL_EXPORT bool isPostfix(const std::string_view postfix, const std::string_v
 SRCTRL_EXPORT std::string replace(std::string str, const std::string& from, const std::string& to);
 SRCTRL_EXPORT std::string replaceBetween(const std::string& str, char startDelimiter, char endDelimiter, const std::string& to);
 
-SRCTRL_EXPORT std::string insertLineBreaksAtBlankSpaces(const std::string& s, size_t maxLineLength);
-SRCTRL_EXPORT std::string breakSignature(std::string signature, size_t maxLineLength, size_t tabWidth);
-SRCTRL_EXPORT std::string breakSignature(std::string returnPart, std::string namePart, std::string paramPart, size_t maxLineLength, size_t tabWidth);
+SRCTRL_EXPORT std::string insertLineBreaksAtBlankSpaces(const std::string& s, std::size_t maxLineLength);
+SRCTRL_EXPORT std::string breakSignature(std::string signature, std::size_t maxLineLength, std::size_t tabWidth);
+SRCTRL_EXPORT std::string breakSignature(std::string returnPart, std::string namePart, std::string paramPart, std::size_t maxLineLength, std::size_t tabWidth);
 
 SRCTRL_EXPORT std::string trim(const std::string& str);
 
@@ -57,7 +57,7 @@ SRCTRL_EXPORT enum class ElideMode
 	ELIDE_RIGHT
 };
 
-SRCTRL_EXPORT std::string elide(const std::string& str, ElideMode mode, size_t size);
+SRCTRL_EXPORT std::string elide(const std::string& str, ElideMode mode, std::size_t size);
 
 SRCTRL_EXPORT std::string convertWhiteSpacesToSingleSpaces(const std::string& str);
 
@@ -65,8 +65,8 @@ SRCTRL_EXPORT std::string convertWhiteSpacesToSingleSpaces(const std::string& st
 SRCTRL_EXPORT template <typename ContainerType>
 ContainerType split(const std::string& str, const std::string& delimiter)
 {
-	size_t pos = 0;
-	size_t oldPos = 0;
+	std::size_t pos = 0;
+	std::size_t oldPos = 0;
 	ContainerType c;
 
 	do

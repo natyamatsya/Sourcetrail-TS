@@ -25,10 +25,10 @@ public:
 		LocationType type,
 		Id locationId,
 		std::vector<Id> tokenIds,
-		size_t lineNumber,
-		size_t columnNumber,
+		std::size_t lineNumber,
+		std::size_t columnNumber,
 		bool isStart);
-	SourceLocation(SourceLocation* other, size_t lineNumber, size_t columnNumber);
+	SourceLocation(SourceLocation* other, std::size_t lineNumber, std::size_t columnNumber);
 	SourceLocation(const SourceLocation* other, SourceLocationFile* file);
 	virtual ~SourceLocation();
 
@@ -44,8 +44,8 @@ public:
 	const std::vector<Id>& getTokenIds() const;
 	LocationType getType() const;
 
-	size_t getColumnNumber() const;
-	size_t getLineNumber() const;
+	std::size_t getColumnNumber() const;
+	std::size_t getLineNumber() const;
 	const FilePath& getFilePath() const;
 
 	const SourceLocation* getOtherLocation() const;
@@ -67,8 +67,8 @@ private:
 	const Id m_locationId;
 	const std::vector<Id> m_tokenIds;
 
-	const size_t m_lineNumber;
-	const size_t m_columnNumber;
+	const std::size_t m_lineNumber;
+	const std::size_t m_columnNumber;
 
 	SourceLocation* m_other;
 	const bool m_isStart;

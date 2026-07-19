@@ -19,8 +19,8 @@ private:
 	std::function<ValType(const KeyType&)> m_calculator;
 	std::map<KeyType, ValType> m_map;
 
-	size_t m_hitCount = 0;
-	size_t m_missCount = 0;
+	std::size_t m_hitCount = 0;
+	std::size_t m_missCount = 0;
 };
 
 template <typename KeyType, typename ValType>

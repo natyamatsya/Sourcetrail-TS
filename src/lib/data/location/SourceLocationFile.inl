@@ -75,14 +75,14 @@ inline const std::multiset<std::shared_ptr<SourceLocation>, SourceLocationFile::
 	return m_locations;
 }
 
-inline size_t SourceLocationFile::getSourceLocationCount() const
+inline std::size_t SourceLocationFile::getSourceLocationCount() const
 {
 	return m_locationIndex.size();
 }
 
-inline size_t SourceLocationFile::getUnscopedStartLocationCount() const
+inline std::size_t SourceLocationFile::getUnscopedStartLocationCount() const
 {
-	size_t count = 0;
+	std::size_t count = 0;
 	for (const std::shared_ptr<SourceLocation>& location: m_locations)
 	{
 		if (location->isStartLocation() && !location->isScopeLocation())
@@ -97,10 +97,10 @@ inline SourceLocation* SourceLocationFile::addSourceLocation(
 	LocationType type,
 	Id locationId,
 	std::vector<Id> tokenIds,
-	size_t startLineNumber,
-	size_t startColumnNumber,
-	size_t endLineNumber,
-	size_t endColumnNumber)
+	std::size_t startLineNumber,
+	std::size_t startColumnNumber,
+	std::size_t endLineNumber,
+	std::size_t endColumnNumber)
 {
 	std::shared_ptr<SourceLocation> start = std::make_shared<SourceLocation>(
 		this, type, locationId, tokenIds, startLineNumber, startColumnNumber, true);
@@ -202,7 +202,7 @@ inline void SourceLocationFile::forEachEndSourceLocation(std::function<void(Sour
 }
 
 inline std::shared_ptr<SourceLocationFile> SourceLocationFile::getFilteredByLines(
-	size_t firstLineNumber, size_t lastLineNumber) const
+	std::size_t firstLineNumber, std::size_t lastLineNumber) const
 {
 	std::shared_ptr<SourceLocationFile> ret = std::make_shared<SourceLocationFile>(
 		getFilePath(), getLanguage(), false, isComplete(), isIndexed());
@@ -238,7 +238,7 @@ inline std::shared_ptr<SourceLocationFile> SourceLocationFile::getFilteredByType
 inline std::shared_ptr<SourceLocationFile> SourceLocationFile::getFilteredByTypes(
 	const std::vector<LocationType>& types) const
 {
-	size_t typeMask = 0;
+	std::size_t typeMask = 0;
 	for (LocationType type: types)
 	{
 		typeMask |= 1u << type;
@@ -277,7 +277,7 @@ inline std::ostream& operator<<(std::ostream& ostream, const SourceLocationFile&
 		ostream << " indexed";
 	}
 
-	size_t line = 0;
+	std::size_t line = 0;
 	file.forEachSourceLocation([&ostream, &line](SourceLocation* location) {
 		if (location->getLineNumber() != line)
 		{

@@ -10,8 +10,8 @@ inline SourceLocation::SourceLocation(
 	LocationType type,
 	Id locationId,
 	std::vector<Id> tokenIds,
-	size_t lineNumber,
-	size_t columnNumber,
+	std::size_t lineNumber,
+	std::size_t columnNumber,
 	bool isStart)
 	: m_file(file)
 	, m_type(type)
@@ -24,7 +24,7 @@ inline SourceLocation::SourceLocation(
 {
 }
 
-inline SourceLocation::SourceLocation(SourceLocation* other, size_t lineNumber, size_t columnNumber)
+inline SourceLocation::SourceLocation(SourceLocation* other, std::size_t lineNumber, std::size_t columnNumber)
 	: m_file(other->m_file)
 	, m_type(other->m_type)
 	, m_locationId(other->m_locationId)
@@ -141,12 +141,12 @@ inline LocationType SourceLocation::getType() const
 	return m_type;
 }
 
-inline size_t SourceLocation::getColumnNumber() const
+inline std::size_t SourceLocation::getColumnNumber() const
 {
 	return m_columnNumber;
 }
 
-inline size_t SourceLocation::getLineNumber() const
+inline std::size_t SourceLocation::getLineNumber() const
 {
 	return m_lineNumber;
 }

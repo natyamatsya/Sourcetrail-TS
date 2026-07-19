@@ -16,12 +16,12 @@ inline std::string NameHierarchy::serialize(const NameHierarchy &nameHierarchy)
 	return serializeRange(nameHierarchy, 0, nameHierarchy.size());
 }
 
-inline std::string NameHierarchy::serializeRange(const NameHierarchy &nameHierarchy, size_t first, size_t last)
+inline std::string NameHierarchy::serializeRange(const NameHierarchy &nameHierarchy, std::size_t first, std::size_t last)
 {
 	std::stringstream ss;
 	ss << nameHierarchy.getDelimiter();
 	ss << META_DELIMITER;
-	for (size_t i = first; i < last && i < nameHierarchy.size(); i++)
+	for (std::size_t i = first; i < last && i < nameHierarchy.size(); i++)
 	{
 		if (i > 0)
 		{
@@ -97,16 +97,16 @@ inline const NameElement &NameHierarchy::back() const
 	return m_elements.back();
 }
 
-inline const NameElement &NameHierarchy::operator[](size_t pos) const
+inline const NameElement &NameHierarchy::operator[](std::size_t pos) const
 {
 	return m_elements[pos];
 }
 
-inline NameHierarchy NameHierarchy::getRange(size_t first, size_t last) const
+inline NameHierarchy NameHierarchy::getRange(std::size_t first, std::size_t last) const
 {
 	NameHierarchy hierarchy(m_delimiter);
 
-	for (size_t i = first; i < last; i++)
+	for (std::size_t i = first; i < last; i++)
 	{
 		hierarchy.push(m_elements[i]);
 	}
@@ -114,7 +114,7 @@ inline NameHierarchy NameHierarchy::getRange(size_t first, size_t last) const
 	return hierarchy;
 }
 
-inline size_t NameHierarchy::size() const
+inline std::size_t NameHierarchy::size() const
 {
 	return m_elements.size();
 }
@@ -122,7 +122,7 @@ inline size_t NameHierarchy::size() const
 inline std::string NameHierarchy::getQualifiedName() const
 {
 	std::stringstream ss;
-	for (size_t i = 0; i < m_elements.size(); i++)
+	for (std::size_t i = 0; i < m_elements.size(); i++)
 	{
 		if (i > 0)
 		{

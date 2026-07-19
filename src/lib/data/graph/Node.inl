@@ -96,17 +96,17 @@ inline bool Node::isExplicit() const
 	return m_definitionKind == DefinitionKind::EXPLICIT;
 }
 
-inline size_t Node::getChildCount() const
+inline std::size_t Node::getChildCount() const
 {
 	return m_childCount;
 }
 
-inline void Node::setChildCount(size_t childCount)
+inline void Node::setChildCount(std::size_t childCount)
 {
 	m_childCount = childCount;
 }
 
-inline size_t Node::getEdgeCount() const
+inline std::size_t Node::getEdgeCount() const
 {
 	return m_edges.size();
 }
