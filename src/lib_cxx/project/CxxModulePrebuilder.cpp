@@ -1,6 +1,8 @@
 #include "CxxModulePrebuilder.h"
 
+#include <cctype>
 #include <fstream>
+#include <string_view>
 
 #include <nlohmann/json.hpp>
 
@@ -10,11 +12,33 @@
 
 namespace
 {
-// Cheap pre-filter: does the file's text mention a module/import at all? Avoids spawning the
-// prebuild subprocess for the common case of a source group with no C++20 modules. False positives
-// (the word appears in a comment/string) only cost a scan that finds nothing; a real module unit
-// always contains "module" or "import", so there are no false negatives. This is a plain file read
-// -- no parsing -- so it is safe to run in the main process.
+// True if `word` occurs in `line` as a whole word (not as part of a longer identifier). A plain
+// substring scan for "import" fires on the very common word "important" (and "module" on identifiers
+// like "module_count"), so we require word boundaries.
+bool containsWord(const std::string& line, std::string_view word)
+{
+	const auto isWordChar = [](char c) {
+		return std::isalnum(static_cast<unsigned char>(c)) != 0 || c == '_';
+	};
+	for (std::size_t pos = line.find(word); pos != std::string::npos; pos = line.find(word, pos + 1))
+	{
+		const bool leftOk = pos == 0 || !isWordChar(line[pos - 1]);
+		const std::size_t end = pos + word.size();
+		const bool rightOk = end >= line.size() || !isWordChar(line[end]);
+		if (leftOk && rightOk)
+		{
+			return true;
+		}
+	}
+	return false;
+}
+
+// Cheap pre-filter: does the file's text mention a module/import keyword at all? Avoids spawning the
+// prebuild subprocess for the common case of a source group with no C++20 modules. Whole-word
+// matching keeps the rare false positives (the keyword in a comment/string) -- which only cost a scan
+// that finds nothing -- while never missing a real module unit (which always has "module" or "import"
+// as a keyword), so there are no false negatives. This is a plain file read -- no parsing -- so it is
+// safe to run in the main process.
 bool mightUseModules(const FilePath& file)
 {
 	std::ifstream in(file.str());
@@ -25,7 +49,7 @@ bool mightUseModules(const FilePath& file)
 	std::string line;
 	while (std::getline(in, line))
 	{
-		if (line.find("module") != std::string::npos || line.find("import") != std::string::npos)
+		if (containsWord(line, "module") || containsWord(line, "import"))
 		{
 			return true;
 		}

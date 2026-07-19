@@ -133,6 +133,43 @@ the planned stress test.
   and `geo.pcm` built. A CDB that already carries `-fprebuilt-module-path` skips the prebuild (no
   cache). modules_demo / tictactoe / PCH / 284+6 unit cases unaffected.
 
+### Phase F — standard library module (`import std;`) — DONE
+- A source group can `import std;` (and `import std.compat;`) even though the module lives in the
+  toolchain, not the source group. After the scan, any required module with no in-group provider that
+  is `std` / `std.compat` is built from the toolchain's shipped `std.cppm` / `std.compat.cppm` into
+  the cache, **before** the source BMIs (a source module may itself `import std;`). std before
+  std.compat (which imports std).
+- **Locating `std.cppm`.** It ships at `<llvm-prefix>/share/libc++/v1/std.cppm`. To compile a BMI the
+  in-process libclang can load, it must be the `std.cppm` matching that libc++ — so we anchor on the
+  LLVM install prefix the app is *linked* against, baked in as `SOURCETRAIL_LLVM_INSTALL_PREFIX`
+  (`src/lib_cxx/CMakeLists.txt`, from CMake's `LLVM_INSTALL_PREFIX`); a resolvable compiler's resource
+  dir is a fallback.
+- **Two toolchain quirks the std build needs** (both learned the hard way):
+  - **Sysroot / libc++ path.** The std BMI is built with the flags of a file that imports std, so it
+    inherits the group's `-isysroot` and libc++ include paths. Minimal flags fail with
+    `'__config' file not found` (libc++'s internal headers aren't on the default search path).
+  - **INFINITY / NAN shim.** Xcode 27's SDK cleanup dropped the `INFINITY` / `NAN` / `HUGE_VAL*` C
+    math macros from the headers `<complex>`/`<cmath>` pull in, so `std.cppm` fails with
+    `use of undeclared identifier 'INFINITY'`. The runner writes a tiny `-include` shim
+    (`std_math_shim.h`) defining the standard builtins if absent. Plus
+    `-Wno-reserved-module-identifier` for std.cppm's reserved names.
+- The std modules are **not** added to the manifest's `interfaceUnits` (they aren't source-group
+  files the main process indexes); the built `std.pcm` just sits in the cache for
+  `-fprebuilt-module-path` resolution. The existing main-side logic already adds
+  `-fprebuilt-module-path=<cache>` and sets `anyModules` whenever the subprocess succeeds, so a
+  std-only project (no source modules) is covered.
+- **Verified:** `import std;`-only project indexes **0 errors** (was 1 fatal "module 'std' not
+  found"), with the IMPORT edge and std's own symbols (`std/string.inc`, …) in the graph. A source
+  module that itself `import std;`, imported by a `main` that also imports std, indexes 0 errors with
+  std.pcm + the module's BMI both built and 3 import edges. modules_demo / modchain unaffected.
+
+### Pre-filter precision (whole-word)
+The cheap `mightUseModules` pre-filter (decides whether to spawn the prebuild at all) matches
+`module` / `import` as **whole words**, not substrings — a substring scan fired on the very common
+word `important` (and identifiers like `module_count`), needlessly spawning a no-op prebuild for
+non-module source groups. Whole-word matching has no false negatives (a real module unit always has
+`module`/`import` as a keyword). Surfaced while stress-testing against a large non-module codebase.
+
 ## Risks / notes
 - One extra process spawn per index of a module project (one-time, not per-TU), plus the
   JSON round-trip. `getIndexerCommandProvider` blocks on it — fine, it's a pre-index step,
