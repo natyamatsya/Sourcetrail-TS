@@ -239,10 +239,20 @@ cycles in `lib` is prerequisite work, and a good cleanup in its own right).
     (undefined symbol — the exported class is module-attached, so the member is mangled differently
     than the global-module definition). Header consumers still work (both global-module), but the
     module can't leave any member out-of-line.
-- **Next — `NameHierarchy`, then the rest of `name/`/`location/`/`graph/`, then `srctrl.storage`.**
-  `NameHierarchy` needs *full* inlining (per the rule above), and its `deserialize` uses `LOG_ERROR`,
-  so `logging.h` (a macro header) must be `#include`d into the `:name` wrapper's GMF (macros can't be
-  imported) — the same seam as `LOG_*`.
+- **Phase 2 (cont.) — `NameHierarchy` folded into `srctrl.data:name`. ✅** All members inlined into
+  `NameHierarchy.inl` **except `deserialize`**, which stays out-of-line in `NameHierarchy.cpp`. Verified
+  OFF+ON (importers use `serialize`/`push`/`getQualifiedName`; the real build's `-D_LIBCPP_NO_ABI_TAG`
+  is required — an isolated test without it hits a Homebrew-libc++ `abi_tag` redeclaration error).
+  - **New finding — a member that calls a non-modularized header which forward-declares the module's
+    own type can't be inlined.** `deserialize` uses `utilityMainFunction` (`isUniquifiedMainFunction`
+    etc.), whose header contains `class NameHierarchy;`. Putting it in the wrapper GMF makes
+    `NameHierarchy` "declared in the global module," which then conflicts with the module's own
+    `NameHierarchy` (*"declaration in module … follows declaration in the global module"*). And those
+    helpers are out-of-line free functions, so they can't move to the purview either. So `deserialize`
+    stays out-of-line (with `logging.h` + `utilityMainFunction.h` in its `.cpp`) — an **include-only
+    member**: reachable via `#include`, not via `import`. Fine for now (no importer deserializes); it
+    resolves fully once `utilityMainFunction` is itself modularized.
+- **Next — the rest of `name/`/`location/`/`graph/`, then `srctrl.storage`.** Same patterns.
 - **Phase 3 — `srctrl.cxx`.** Modularize `lib_cxx` with partitions; absorb the Clang-header BMI cost.
 - **Phase 4 — the indexer binary.** `src/indexer/main.cpp` becomes a pure consumer:
   `import srctrl.cxx;` (+ optionally `import std;`).

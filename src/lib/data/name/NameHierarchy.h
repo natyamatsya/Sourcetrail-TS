@@ -1,13 +1,22 @@
 #ifndef NAME_HIERARCHY_H
 #define NAME_HIERARCHY_H
 
+#include "SrctrlModule.h"
+
+// Provided by the header in the classic build; in the module build the srctrl.data:name wrapper
+// supplies them (NameElement in the same partition, NameDelimiterType via `import :types`), so skip
+// them in the purview. (logging.h / utilityMainFunction.h are needed only by the out-of-line
+// deserialize -- they live in NameHierarchy.cpp, not here.)
+#ifndef SRCTRL_MODULE_PURVIEW
 #include "NameDelimiterType.h"
 #include "NameElement.h"
 
+#include <sstream>
 #include <string>
 #include <vector>
+#endif
 
-class NameHierarchy
+SRCTRL_EXPORT class NameHierarchy
 {
 public:
 	static std::string serialize(const NameHierarchy &nameHierarchy);
@@ -55,5 +64,7 @@ private:
 	std::vector<NameElement> m_elements;
 	std::string m_delimiter;
 };
+
+#include "NameHierarchy.inl"
 
 #endif
