@@ -78,17 +78,20 @@ test "enum members are NODE_ENUM_CONSTANT" {
     try testing.expectEqual(NodeKind.enum_constant, (nodeNamed(&store, "Color.blue") orelse return error.MissingNode).kind);
 }
 
-test "@import produces an EDGE_IMPORT to a file node" {
+test "@import binding is recorded; the resolved EDGE_IMPORT is the semantic pass's job" {
     var store = storage.Storage.init(testing.allocator);
     defer store.deinit();
     try indexString(testing.allocator, &store,
         \\const std = @import("std");
         \\const util = @import("util.zig");
     );
-    try testing.expectEqual(@as(usize, 2), countEdges(&store, .import));
-    // The imported paths are recorded as (non-indexed) file nodes.
-    try testing.expect(nodeNamed(&store, "std") != null);
-    try testing.expect(nodeNamed(&store, "util.zig") != null);
+    // The syntactic pass records the import bindings but emits NO import edge —
+    // a raw "util.zig" node would be a phantom file that breaks incremental
+    // reverse-dep. The real EDGE_IMPORT (to the resolved absolute path) is
+    // emitted by semantic.resolveImports (needs ZLS; see src/ipc smoke).
+    try testing.expectEqual(@as(usize, 0), countEdges(&store, .import));
+    try testing.expectEqual(NodeKind.global_variable, (nodeNamed(&store, "std") orelse return error.MissingNode).kind);
+    try testing.expectEqual(NodeKind.global_variable, (nodeNamed(&store, "util") orelse return error.MissingNode).kind);
 }
 
 test "container-scope const/var is a NODE_GLOBAL_VARIABLE" {

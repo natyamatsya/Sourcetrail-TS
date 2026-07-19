@@ -42,13 +42,19 @@ pub const StatusChannel = struct {
         return self.shm.readLocked({}, bool, H.run);
     }
 
-    /// Report that this process is now indexing `file_path`.
+    /// Report that this process is now indexing `file_path`. `current_files` is
+    /// a per-process "currently working on" map (one entry per process): replace
+    /// this process's entry so a *previous* file is not left dangling — a
+    /// left-over `current_files` entry is reported as a CRASHED translation unit
+    /// at TaskBuildIndex::doExit, which marks the file incomplete and forces it
+    /// to be re-indexed every refresh.
     pub fn updateIndexing(self: *StatusChannel, gpa: std.mem.Allocator, file_path: []const u8) Error!void {
         const Ctx = struct { pid: u64, path: []const u8 };
         const H = struct {
             fn run(ctx: Ctx, a: std.mem.Allocator, bytes: []u8) shm.Error!shm.IpcShm.Outcome(void) {
                 var owned = try readStatus(a, bytes);
                 defer owned.deinit(a);
+                removeCurrentFile(a, &owned, ctx.pid);
                 try owned.indexing_file_paths.append(a, try a.dupe(u8, ctx.path));
                 try owned.current_files.append(a, .{ .pid = ctx.pid, .path = try a.dupe(u8, ctx.path) });
                 return .{ .write = try serializeStatus(a, &owned), .result = {} };
@@ -57,12 +63,15 @@ pub const StatusChannel = struct {
         try self.shm.readModifyWrite(gpa, Ctx{ .pid = self.process_id, .path = file_path }, void, H.run);
     }
 
-    /// Mark this process finished (append its id to finished_process_ids).
+    /// Mark the current file finished: clear this process's `current_files`
+    /// entry (so it is not counted as crashed) and record it in
+    /// `finished_process_ids` so the app drains this process's storage.
     pub fn finishIndexing(self: *StatusChannel, gpa: std.mem.Allocator) Error!void {
         const H = struct {
             fn run(pid: u64, a: std.mem.Allocator, bytes: []u8) shm.Error!shm.IpcShm.Outcome(void) {
                 var owned = try readStatus(a, bytes);
                 defer owned.deinit(a);
+                removeCurrentFile(a, &owned, pid);
                 try owned.finished_process_ids.append(a, pid);
                 return .{ .write = try serializeStatus(a, &owned), .result = {} };
             }
@@ -95,6 +104,19 @@ const OwnedStatus = struct {
 fn strSlice(s: c.flatbuffers_string_t) []const u8 {
     if (s == null) return "";
     return s[0..c.flatbuffers_string_len(s)];
+}
+
+/// Drop all `current_files` entries owned by `pid` (freeing their paths).
+fn removeCurrentFile(a: std.mem.Allocator, owned: *OwnedStatus, pid: u64) void {
+    var k: usize = 0;
+    while (k < owned.current_files.items.len) {
+        if (owned.current_files.items[k].pid == pid) {
+            a.free(owned.current_files.items[k].path);
+            _ = owned.current_files.swapRemove(k);
+        } else {
+            k += 1;
+        }
+    }
 }
 
 fn readStatus(a: std.mem.Allocator, bytes: []u8) shm.Error!OwnedStatus {

@@ -131,12 +131,13 @@ const Walker = struct {
             const name = ast.tokenSlice(name_tok);
             const serialized = try self.qualify(scope, name);
 
-            // const X = @import("path"): an import edge, not a symbol.
+            // const X = @import("path"): record just the binding. The EDGE_IMPORT
+            // to the *resolved* absolute file is emitted by the semantic pass
+            // (src/semantic.zig) — it needs ZLS to resolve the import string to a
+            // real path, which is what makes the incremental reverse-dependency
+            // closure precise (a raw "util.zig" node is a phantom file).
             if (var_decl.ast.init_node.unwrap()) |init_node| {
-                if (self.importPath(init_node)) |path| {
-                    const target = try self.importFileId(path);
-                    _ = try self.store.recordEdge(.import, self.file_id, target);
-                    // still record the binding as a global so it can be navigated to
+                if (self.importPath(init_node)) |_| {
                     const gid = try self.recordDef(.global_variable, serialized, name_tok, node);
                     if (in_container) _ = try self.store.recordEdge(.member, owner_id, gid);
                     return;
@@ -208,12 +209,5 @@ const Walker = struct {
             }
         }
         return null;
-    }
-
-    fn importFileId(self: *Walker, path: []const u8) Error!Id {
-        // Phase 3a records the import target as a file node keyed by the raw
-        // import string. Phase 3b resolves it to the real on-disk path.
-        if (self.store.node_by_name.get(path)) |id| return id;
-        return self.store.recordFile(path, "zig", false);
     }
 };

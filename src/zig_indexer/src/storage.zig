@@ -151,6 +151,9 @@ pub const Storage = struct {
 
     pub fn recordFile(self: *Storage, path: []const u8, language: []const u8, indexed: bool) !Id {
         const a = self.alloc();
+        // Dedup by path: a file imported from several sites (or already the
+        // indexed file) is one node.
+        if (self.node_by_name.get(path)) |existing| return existing;
         const id = self.createId();
         try self.files.append(a, .{
             .id = id,

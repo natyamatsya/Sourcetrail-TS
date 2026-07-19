@@ -245,3 +245,55 @@ fn spanOfToken(tree: *const Ast, tok: Ast.TokenIndex) Span {
     const col: u32 = @intCast(loc.column + 1);
     return .{ .start_line = line, .start_col = col, .end_line = line, .end_col = col + (if (len > 0) len - 1 else 0) };
 }
+
+/// Resolve every `@import("…")` in the file to its absolute on-disk path (via
+/// ZLS) and emit `EDGE_IMPORT` from this file node to the real imported file
+/// node. This is what makes the incremental reverse-dependency closure precise:
+/// a raw "util.zig" node is a phantom file that never matches the real one, so
+/// the syntactic pass deliberately emits no import edge. Unresolvable imports
+/// (e.g. `std` with no configured zig lib dir) are skipped.
+pub fn resolveImports(session: *Session, store: *Storage, handle: *zls.DocumentStore.Handle, file_node_id: Id) !void {
+    const gpa = store.arena.allocator();
+    const tree = &handle.tree;
+    const tags = tree.tokens.items(.tag);
+
+    var i: u32 = 0;
+    while (i < tags.len) : (i += 1) {
+        if (tags[i] != .builtin) continue;
+        if (!std.mem.eql(u8, tree.tokenSlice(i), "@import")) continue;
+
+        // The import string is the next string-literal token before the ')'.
+        // NB: a labeled break — an unlabeled `break` inside the switch would
+        // break the switch, not the loop, leaving `str` always empty.
+        var j: u32 = i + 1;
+        const str: []const u8 = find: while (j < tags.len and j <= i + 3) : (j += 1) {
+            switch (tags[j]) {
+                .string_literal => {
+                    const raw = tree.tokenSlice(j);
+                    break :find if (raw.len >= 2) raw[1 .. raw.len - 1] else raw;
+                },
+                .r_paren, .semicolon => break :find "",
+                else => {},
+            }
+        } else "";
+        if (str.len == 0) continue;
+
+        const uri_raw = (session.resolveImport(handle, str) catch null) orelse continue;
+        const path = (zls.Uri{ .raw = uri_raw }).toFsPath(gpa) catch continue;
+        // Mark the imported file `indexed = true`: it is a real .zig source file
+        // (own indexer command). The C++ SqliteIndexStorage::addFile reads a
+        // file's content + line_count only on first insert AND only when
+        // indexed, so a non-indexed import target created first would leave the
+        // real file content-less — which then reads as "changed" every refresh
+        // (no content to diff), breaking incremental.
+        const target = try store.recordFile(path, "zig", true);
+        // EDGE_INCLUDE (file -> file), not EDGE_IMPORT: Sourcetrail's
+        // reverse-dependency closure (getFileIdToIncludingFileIdMap) reads
+        // EDGE_INCLUDE targets as file nodes directly, whereas EDGE_IMPORT
+        // expects a *symbol* target resolved to a file via an occurrence. Zig
+        // `@import` is a file dependency, so INCLUDE is both correct and what
+        // makes the incremental reverse-dep (edit util.zig -> reindex main.zig)
+        // actually fire.
+        _ = try store.recordEdge(.include, file_node_id, target);
+    }
+}

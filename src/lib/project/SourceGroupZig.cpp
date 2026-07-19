@@ -41,7 +41,22 @@ std::expected<void, PrepareIndexingError> SourceGroupZig::prepareIndexing()
 std::set<FilePath> SourceGroupZig::filterToContainedFilePaths(
 	const std::set<FilePath>& filePaths) const
 {
-	return filterToContainedSourceFilePath(filePaths);
+	// Return the input files that belong to this group (intersection with the
+	// group's own source files). NOTE: the base filterToContainedSourceFilePath
+	// helper has inverted semantics (it returns the group's files that are NOT
+	// in the argument), which would make RefreshInfoGenerator treat every stored
+	// file as "removed from the project" and re-index the whole group on every
+	// refresh. Compute the intersection directly instead.
+	const std::set<FilePath> groupFiles = getAllSourceFilePaths();
+	std::set<FilePath> contained;
+	for (const FilePath& path: filePaths)
+	{
+		if (groupFiles.find(path) != groupFiles.end())
+		{
+			contained.insert(path);
+		}
+	}
+	return contained;
 }
 
 std::set<FilePath> SourceGroupZig::getAllSourceFilePaths() const

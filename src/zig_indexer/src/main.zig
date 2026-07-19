@@ -99,6 +99,7 @@ fn resolveInto(gpa: std.mem.Allocator, io: std.Io, store: *indexer.Storage, path
     defer session.deinit();
     const handle = try session.openDocument(path, source);
     const file_node_id = store.node_by_name.get(path) orelse return;
+    try semantic.resolveImports(&session, store, handle, file_node_id);
     try semantic.resolveReferences(&session, store, handle, path, file_node_id);
 }
 
