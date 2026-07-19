@@ -21,6 +21,11 @@
 #include <memory>
 
 #include <sqlite3.h>
+// sqlpp23 include-only seam: this wrapper derives from common_connection<connection_base> and touches
+// connection_handle -- sqlpp23 *internals* that its C++20 module does NOT export (only the high-level
+// `connection`/`connection_config` + the query DSL are exported). So even under SOURCETRAIL_SQLPP23_MODULES
+// this header stays a textual #include, and the impl TUs import sqlpp23 for the DSL alongside it (the two
+// coexist cleanly). See DESIGN_STORAGE_MODULARIZATION.md §3.
 #include <sqlpp23/sqlite3/database/connection.h>
 #include <sqlpp23/sqlite3/database/connection_config.h>
 

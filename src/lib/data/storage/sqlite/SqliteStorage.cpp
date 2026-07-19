@@ -1,6 +1,17 @@
+// When SOURCETRAIL_SQLPP23_MODULES is on, consume sqlpp23 as a C++20 module instead of #including its
+// headers. The import must precede every other declaration in the TU, so it sits at the very top; the
+// schema headers (MetaTable.h) then get the DSL machinery from the import and only #include the tiny
+// name-tag macro header (see context/DESIGN_STORAGE_MODULARIZATION.md §3).
+#ifdef SRCTRL_SQLPP23_MODULE
+import sqlpp23.core;
+import sqlpp23.sqlite3;
+#endif
+
 #include "SqliteStorage.h"
 
+#ifndef SRCTRL_SQLPP23_MODULE
 #include <sqlpp23/sqlpp23.h>
+#endif
 
 #include "BorrowedSqliteConnection.h"
 #include "MetaTable.h"

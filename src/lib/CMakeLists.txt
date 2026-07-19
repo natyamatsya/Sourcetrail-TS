@@ -77,11 +77,20 @@ if(SOURCETRAIL_CXX_MODULES_ENABLED)
 		# toolchain std module.
 		set_target_properties(Sourcetrail_lib PROPERTIES CXX_MODULE_STD ON)
 	endif()
-	# Opt-in: compile sqlpp23's core+sqlite3 module interface units into the lib so the storage layer can
-	# `import sqlpp23.core/sqlite3` (see cmake/SourcetrailSqlpp23Modules.cmake). The storage impl's actual
-	# switch from #include to import is a later step; this just makes the modules available.
+	# Opt-in: compile sqlpp23's core+sqlite3 module interface units into the lib and have the SQLite storage
+	# impl `import sqlpp23.core/sqlite3` for the query DSL instead of #including it (SRCTRL_SQLPP23_MODULE
+	# flips the #ifdef in the schema headers + impl TUs). The impl TUs become module importers, so they must
+	# be scanned (the project-wide default is OFF -- see the top-level CMakeLists). BorrowedSqliteConnection.h
+	# stays a textual #include (sqlpp23 internals the module doesn't export -- see
+	# DESIGN_STORAGE_MODULARIZATION.md §3).
 	if(SOURCETRAIL_SQLPP23_MODULES)
 		sourcetrail_add_sqlpp23_modules(Sourcetrail_lib)
+		target_compile_definitions(Sourcetrail_lib PRIVATE SRCTRL_SQLPP23_MODULE)
+		set_source_files_properties(
+			"${CMAKE_CURRENT_SOURCE_DIR}/data/storage/sqlite/SqliteStorage.cpp"
+			"${CMAKE_CURRENT_SOURCE_DIR}/data/storage/sqlite/SqliteIndexStorage.cpp"
+			"${CMAKE_CURRENT_SOURCE_DIR}/data/storage/sqlite/SqliteBookmarkStorage.cpp"
+			PROPERTIES CXX_SCAN_FOR_MODULES ON)
 	endif()
 endif()
 

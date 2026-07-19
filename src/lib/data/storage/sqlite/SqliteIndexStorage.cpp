@@ -1,9 +1,20 @@
+// Consume sqlpp23 as a C++20 module (import) under SOURCETRAIL_SQLPP23_MODULES; the import must precede
+// every declaration, so it leads the TU. The query DSL comes from the import; the raw connection wrapper
+// (BorrowedSqliteConnection.h) stays a plain #include -- it derives from sqlpp23 internals
+// (common_connection/connection_base) the module doesn't export. See DESIGN_STORAGE_MODULARIZATION.md §3.
+#ifdef SRCTRL_SQLPP23_MODULE
+import sqlpp23.core;
+import sqlpp23.sqlite3;
+#endif
+
 #include "SqliteIndexStorage.h"
 
 #include <utility>
 
+#ifndef SRCTRL_SQLPP23_MODULE
 #include <sqlpp23/sqlite3/sqlite3.h>
 #include <sqlpp23/sqlpp23.h>
+#endif
 
 #include "BorrowedSqliteConnection.h"
 #include "FileSystem.h"

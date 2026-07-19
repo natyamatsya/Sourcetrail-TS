@@ -1,6 +1,13 @@
+#ifdef SRCTRL_SQLPP23_MODULE
+import sqlpp23.core;
+import sqlpp23.sqlite3;
+#endif
+
 #include "SqliteBookmarkStorage.h"
 
+#ifndef SRCTRL_SQLPP23_MODULE
 #include <sqlpp23/sqlpp23.h>
+#endif
 
 #include "BookmarkTables.h"
 #include "BorrowedSqliteConnection.h"

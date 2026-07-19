@@ -68,6 +68,29 @@ precompiled; we compile them ourselves, and vcpkg ships the export `cxx-modules-
 it. (ii) The "experimental / evolving (v0.67)" caveat is a watch-item, but v0.69 built clean here. **Verdict:
 S3 is unblocked** — the sqlite/ impl can `import sqlpp23.core/sqlite3` with the macro header in the GMF.
 
+### The sqlite/ impl consuming sqlpp23 (DONE — with one seam)
+
+The three impl TUs (`SqliteStorage.cpp`, `SqliteIndexStorage.cpp` [2452L], `SqliteBookmarkStorage.cpp`) now
+`import sqlpp23.core; import sqlpp23.sqlite3;` for the query DSL instead of `#include <sqlpp23/...>`, gated by
+`SRCTRL_SQLPP23_MODULE` (set when `SOURCETRAIL_SQLPP23_MODULES` is on). The generated schema headers
+(`IndexTables`/`MetaTable`/`BookmarkTables`) take the DSL machinery from the import and only textually
+`#include` the `create_name_tag.h` macro (path a). The impl is NOT itself a first-party module — it can't be
+(file-scope `constexpr` table instances + anon-namespace helpers across ~3.8k lines) and needn't be; the
+value is consuming sqlpp23 as a module.
+
+**The seam finding — `BorrowedSqliteConnection` uses non-exported sqlpp23 internals.** It derives from
+`sqlpp::common_connection<sqlpp::sqlite3::connection_base>` and touches `connection_handle`, which
+`sqlpp23.sqlite3` deliberately does **not** export (it exports only the high-level `connection` /
+`connection_config` + the DSL). So `BorrowedSqliteConnection.h` stays a textual `#include` even under the
+option — and the impl TUs `import` the DSL *alongside* that `#include`, which coexists cleanly (the spike's
+coexistence result at real scale; the earlier libc++ "redefinition" flood was cascade noise from a parse
+error, not a real conflict). This is the one genuine limit of consuming a header-wrapper module: it exposes
+the library's public surface, not the internals a custom connection wrapper reaches into.
+
+Verified: default build (option OFF → `#include` path, byte-identical) is green; with the option's toggle
+all three impl TUs compile as importers against the compiled `sqlpp23.core`/`sqlpp23.sqlite3` modules. A
+modules-ON full-lib build (option ON end-to-end) remains the final in-situ check.
+
 ### (original scope)
 
 The production `sqlite/` impls couple to two third-party libraries:
@@ -121,10 +144,14 @@ of it on the CppSQLite3 code.
 
 1. **S1** ✅ — `srctrl.storage:types` (the 15 PODs).
 2. **Spike** ✅ — `import sqlpp23.core/sqlite3` validated on clang-22; name-tag macro settled (§3).
-3. **S2** ✅ (partial) — `srctrl.storage:interface` = `Storage` (write interface) + `StorageStats`.
-   **`StorageAccess` (read interface) deferred**: it drags `ErrorInfo.h`→`StorageError` and
-   `SearchMatch.h`→`Node` into the GMF, doubling those modularized types against the imports; it needs
-   `ErrorInfo`/`SearchMatch` (a read-side/search cluster) modularized first.
+3. **S2** ✅ — `srctrl.storage:interface` (`Storage` + `StorageStats`) **and** `:access` (`StorageAccess`).
+   Unblocking `StorageAccess` required modularizing its read-side dependency chain across three modules:
+   `srctrl.utility:math` (Vector2/VectorBase) → `srctrl.data:search`/`:tooltip` (SearchMatch/TooltipInfo)
+   + `NodeTypeSet` folded into `:graph` → `srctrl.storage:error` (ErrorInfo/Count/Filter). Two findings:
+   (a) a GMF header that *forward-declares* a modularized type (NodeTypeSet's `class NodeType;`) clashes
+   with the import — such a header must itself modularize; (b) switching a header's `logging.h`→`LogFacade.h`
+   drops the legacy `LOG_*` macros for its #include-based consumers, so `LogFacade.h` now re-exposes them in
+   the classic build (drop-in). All three modes green (OFF, ON 19/19, import std 19/19).
 4. **S3 wiring** ✅ — sqlpp23 module *build integration* landed: the overlay port now ships the module
    sources (`<prefix>/modules/sqlpp23/*.cppm`), `cmake/SourcetrailSqlpp23Modules.cmake` compiles
    `sqlpp23.core`+`sqlpp23.sqlite3` into a target, and the opt-in `SOURCETRAIL_SQLPP23_MODULES` option wires

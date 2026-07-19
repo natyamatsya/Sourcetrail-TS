@@ -15,10 +15,16 @@
 
 #include <optional>
 
+// DSL machinery from `import sqlpp23.core` when the TU imports it; the SQLPP_CREATE_NAME_TAG macro is
+// always #included textually (macros don't cross import). See DESIGN_STORAGE_MODULARIZATION.md §3.
+#ifndef SRCTRL_SQLPP23_MODULE
 #include <sqlpp23/core/basic/table.h>
 #include <sqlpp23/core/basic/table_columns.h>
+#endif
 #include <sqlpp23/core/name/create_name_tag.h>
+#ifndef SRCTRL_SQLPP23_MODULE
 #include <sqlpp23/core/type_traits.h>
+#endif
 
 namespace bm {
   struct BookmarkCategory_ {

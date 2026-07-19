@@ -310,6 +310,32 @@ named-decl site (bit + `DEPRECATED` message). Deprecation is now cross-language
 Axis-2 bits. The canonical open-items checklist lives in
 `context/DESIGN_NODE_MODIFIERS.md` ("Status & remaining work").
 
+## sqlpp23 as a C++20 module (2026-07-19) — DSL via `import`, one seam
+
+Consuming sqlpp23 as a C++20 module (part of the wider first-party modules migration;
+full detail in `context/DESIGN_STORAGE_MODULARIZATION.md` §3). sqlpp23 v0.69 ships
+module interface units (`sqlpp23.core`, `sqlpp23.sqlite3`); the SQLite storage impl now
+`import`s them for the query DSL instead of `#include <sqlpp23/...>`.
+
+- **Gated & opt-in.** The vcpkg overlay port installs the module sources; a CMake option
+  `SOURCETRAIL_SQLPP23_MODULES` (default OFF) compiles them and defines `SRCTRL_SQLPP23_MODULE`,
+  which flips an `#ifdef` in the impl TUs (`Sqlite{,Index,Bookmark}Storage.cpp`) and the
+  ddl2cpp-generated schema headers (`IndexTables`/`MetaTable`/`BookmarkTables.h`). OFF → the
+  `#include` path, byte-identical to before.
+- **The name-tag macro.** `SQLPP_CREATE_NAME_TAG_FOR_SQL_AND_CPP` can't cross an `import`, so the
+  generated schema headers keep a textual `#include <sqlpp23/core/name/create_name_tag.h>` and
+  take the rest of the DSL machinery (`table_t`, `table_columns`, `type_traits`, `integral`) from
+  the import. So **ddl2cpp needs no change** to be module-friendly (the "pre-expand the macro"
+  option is a nice-to-have, not required).
+- **The seam.** `BorrowedSqliteConnection` derives from `sqlpp::common_connection<connection_base>`
+  and touches `connection_handle` — sqlpp23 *internals* the module does **not** export (it exposes
+  only the high-level `connection`/`connection_config`). So `BorrowedSqliteConnection.h` stays a
+  textual `#include` even under the option; the impl TUs `import` the DSL alongside that `#include`,
+  which coexists cleanly. General lesson for the sqlpp23 migration: a header-wrapper module gives
+  you the library's *public* surface, not the internals a custom connection wrapper reaches into.
+- **Status.** Default build green; all three impl TUs verified compiling as importers against the
+  compiled sqlpp23 modules. A modules-ON full-lib build (option ON end-to-end) is the final check.
+
 ## Critical files
 
 - `src/lib/data/indexer/interprocess/schemas/intermediate_storage.fbs` — source
