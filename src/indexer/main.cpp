@@ -6,6 +6,7 @@
 #include "AppPath.h"
 #include "ApplicationSettings.h"
 #include "CxxModulePrebuildRunner.h"
+#include "CxxPchBuildRunner.h"
 #include "FileLogger.h"
 #include "InterprocessIndexer.h"
 #include "LanguagePackageManager.h"
@@ -55,6 +56,7 @@ int main(int argc, char* argv[])
 	std::string logFilePath;
 	std::string onlyGroupId;
 	std::string prebuildModulesRequest;
+	std::string prebuildPchRequest;
 
 	// Split "--key=value" flags from the positional arguments, so optional flags
 	// (like the fan-out group pin) don't shift the positional layout.
@@ -70,6 +72,10 @@ int main(int argc, char* argv[])
 				 arg.starts_with(prebuildPrefix))
 		{
 			prebuildModulesRequest = arg.substr(prebuildPrefix.size());
+		}
+		else if (const std::string pchPrefix = "--prebuild-pch="; arg.starts_with(pchPrefix))
+		{
+			prebuildPchRequest = arg.substr(pchPrefix.size());
 		}
 		else
 		{
@@ -129,6 +135,10 @@ int main(int argc, char* argv[])
 	if (!prebuildModulesRequest.empty())
 	{
 		return CxxModulePrebuildRunner::run(FilePath(prebuildModulesRequest));
+	}
+	if (!prebuildPchRequest.empty())
+	{
+		return CxxPchBuildRunner::run(FilePath(prebuildPchRequest));
 	}
 
 	InterprocessIndexer indexer(instanceUuid, processId, onlyGroupId);

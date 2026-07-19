@@ -97,10 +97,22 @@ the blocking spawn.
   0 errors, module/import/export recorded; a dotted-name dependency chain (`app.a`←`app.b`)
   topo-orders and builds both BMIs.
 
-### Phase D — future
-- Move the PCH build into the same prebuild phase (it has the identical in-main parsing
-  risk); the request/manifest shape generalizes.
-- Extend module support to the compile-database source group (`SourceGroupCxxCdb`).
+### Phase D — PCH build moved out-of-process — DONE
+- The PCH build (`createBuildPchTaskForInput`) parsed arbitrary user code in the main process
+  via a `TaskLambda` -- the same in-app-parsing risk the module prebuild had. Moved it into a
+  `--prebuild-pch=<request>` subprocess mode (`CxxPchBuildRunner`), mirroring the module
+  prebuild. The wrinkle vs modules: the PCH build also *indexes symbols*, so the subprocess
+  serializes its `IntermediateStorage` (via `IpcSerializer::serializeIntermediateStorage`) to
+  `<pchOutput>.storage`; the main side deserializes and `storageProvider->insert`s it. The
+  `.pch` artifact itself is a plain file, as before.
+- **Verified behavior-preserving:** a PCH project (`pch_demo`) indexed before (in-main) and
+  after (out-of-process) produces a byte-identical graph (node and edge dumps `diff`-clean),
+  0 errors. modules_demo / tictactoe / 284 unit cases unaffected.
+
+### Still future
+- Extend module support to the compile-database source group (`SourceGroupCxxCdb`) -- needs
+  per-file flags (each CDB command has its own) and a guard for CDBs that already carry module
+  flags from a modules-aware build.
 
 ## Risks / notes
 - One extra process spawn per index of a module project (one-time, not per-TU), plus the
