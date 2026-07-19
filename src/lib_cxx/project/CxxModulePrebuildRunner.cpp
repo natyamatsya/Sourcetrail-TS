@@ -3,8 +3,10 @@
 #include <algorithm>
 #include <cstdlib>
 #include <deque>
+#include <expected>
 #include <filesystem>
 #include <fstream>
+#include <iostream>
 #include <map>
 #include <optional>
 #include <set>
@@ -13,11 +15,15 @@
 
 #include <nlohmann/json.hpp>
 
+#include <clang/Basic/DiagnosticOptions.h>
 #include <clang/Basic/LangOptions.h>
 #include <clang/Basic/TokenKinds.h>
 #include <clang/Frontend/FrontendActions.h>
+#include <clang/Frontend/TextDiagnosticPrinter.h>
 #include <clang/Lex/Lexer.h>
 #include <clang/Tooling/Tooling.h>
+
+#include <llvm/Support/raw_ostream.h>
 
 #include "CanonicalFilePathCache.h"
 #include "CxxCompilationDatabaseSingle.h"
@@ -166,9 +172,11 @@ bool hasStdFlag(const std::vector<std::string>& flags)
 
 // Builds one module-interface BMI in-process via a libTooling FrontendAction (the same machinery as
 // the PCH build), so the BMI is created with the exact libclang configuration the indexer later
-// loads it with -- no external clang++, and no target/resource-dir mismatch to paper over. Returns
-// true if the .pcm was produced.
-bool buildBmiInProcess(
+// loads it with -- no external clang++, and no target/resource-dir mismatch to paper over. On
+// success returns {}; on failure returns the captured clang diagnostics (the real cause -- a missing
+// header, an unresolved import, a syntax error) so the caller can surface it instead of a bare
+// "build failed".
+std::expected<void, std::string> buildBmiInProcess(
 	const FilePath& inputFile,
 	const FilePath& bmiPath,
 	const FilePath& cacheDir,
@@ -250,11 +258,29 @@ bool buildBmiInProcess(
 			clang::tooling::ArgumentInsertPosition::BEGIN));
 	}
 
+	// Capture clang's diagnostics into a string rather than letting them go to this subprocess's
+	// stderr (which the app discards when it spawns the prebuild). Declared so the printer is destroyed
+	// before the stream it writes to.
+	std::string diagnostics;
+	llvm::raw_string_ostream diagnosticStream(diagnostics);
+	const std::shared_ptr<clang::DiagnosticOptions> diagnosticOptions =
+		std::make_shared<clang::DiagnosticOptions>();
+	clang::TextDiagnosticPrinter diagnosticPrinter(diagnosticStream, *diagnosticOptions);
+	tool.setDiagnosticConsumer(&diagnosticPrinter);
+
 	// Stack-allocated factory so it isn't leaked (ClangTool::run does not take ownership); the action
 	// is adopted into a unique_ptr by SingleFrontendActionFactory::create().
 	SingleFrontendActionFactory factory(new clang::GenerateModuleInterfaceAction());
 	tool.run(&factory);
-	return bmiPath.recheckExists();
+	diagnosticStream.flush();
+
+	if (!bmiPath.recheckExists())
+	{
+		return std::unexpected(
+			diagnostics.empty() ? std::string("the compiler produced no .pcm and no diagnostics")
+								 : std::move(diagnostics));
+	}
+	return {};
 }
 
 // Locate the toolchain's standard library module source (std.cppm / std.compat.cppm). It ships next
@@ -307,9 +333,9 @@ FilePath writeStdMathShim(const FilePath& cacheDir)
 // inherits the group's sysroot and libc++ include paths -- without them std.cppm can't find libc++'s
 // internal headers ('__config' not found). Adds the reserved-identifier suppression and the
 // math-macro shim std.cppm needs, and a C++23 -std if the base flags carry none. std.compat imports
-// std, so std must be built first (buildBmiInProcess puts the cache on the module path). Returns true
-// if the .pcm was produced.
-bool buildStdModuleBmi(
+// std, so std must be built first (buildBmiInProcess puts the cache on the module path). On success
+// returns {}; on failure returns a message (a missing std.cppm, or the captured clang diagnostics).
+std::expected<void, std::string> buildStdModuleBmi(
 	const std::string& moduleName,
 	const std::string& sourceFileName,
 	const FilePath& cacheDir,
@@ -319,10 +345,8 @@ bool buildStdModuleBmi(
 	const std::optional<FilePath> source = findStdModuleSource(sourceFileName);
 	if (!source)
 	{
-		LOG_ERROR(
-			"`import " + moduleName + ";` requested but the toolchain's " + sourceFileName +
-			" was not found; the standard library module will not resolve.");
-		return false;
+		return std::unexpected(
+			"the toolchain's " + sourceFileName + " was not found (looked next to libc++)");
 	}
 	const FilePath bmiPath = cacheDir.getConcatenated("/" + moduleName + ".pcm");
 	std::vector<std::string> flags = baseFlags;
@@ -331,12 +355,7 @@ bool buildStdModuleBmi(
 		flags.push_back("-std=c++2b");
 	}
 	utility::append(flags, std::vector<std::string>{"-Wno-reserved-module-identifier", "-include", shimPath.str()});
-	if (!buildBmiInProcess(*source, bmiPath, cacheDir, flags))
-	{
-		LOG_ERROR("Failed to build the '" + moduleName + "' standard library module BMI.");
-		return false;
-	}
-	return true;
+	return buildBmiInProcess(*source, bmiPath, cacheDir, flags);
 }
 }	 // namespace
 
@@ -451,6 +470,18 @@ int CxxModulePrebuildRunner::run(const FilePath& requestPath)
 		}
 	}
 
+	// Per-module BMI build failures, captured with the real clang diagnostics. This subprocess has no
+	// logger of its own, so a failure is (a) printed here -- visible when the prebuild is run directly
+	// -- and (b) handed back to the main process via the manifest, which logs it into the index run.
+	std::vector<nlohmann::json> failures;
+	const auto recordFailure =
+		[&failures](const std::string& module, const std::string& file, const std::string& diagnostics) {
+			std::cerr << "[module-prebuild] failed to build BMI for '" << module << "'"
+					  << (file.empty() ? "" : " (" + file + ")") << ":\n"
+					  << diagnostics << std::endl;
+			failures.push_back({{"module", module}, {"file", file}, {"diagnostics", diagnostics}});
+		};
+
 	// 3a. Build the standard library module(s) if any file imports `std` / `std.compat` but no source
 	// unit in the group provides them -- the module lives in the toolchain, not the source group, so we
 	// compile its shipped std.cppm on demand. Done before the source BMIs so a source module that
@@ -481,10 +512,20 @@ int CxxModulePrebuildRunner::run(const FilePath& requestPath)
 				break;
 			}
 		}
-		buildStdModuleBmi("std", "std.cppm", cacheDir, shimPath, baseFlags);
+		if (const std::expected<void, std::string> built =
+				buildStdModuleBmi("std", "std.cppm", cacheDir, shimPath, baseFlags);
+			!built)
+		{
+			recordFailure("std", std::string(), built.error());
+		}
 		if (needStdCompat)
 		{
-			buildStdModuleBmi("std.compat", "std.compat.cppm", cacheDir, shimPath, baseFlags);
+			if (const std::expected<void, std::string> built =
+					buildStdModuleBmi("std.compat", "std.compat.cppm", cacheDir, shimPath, baseFlags);
+				!built)
+			{
+				recordFailure("std.compat", std::string(), built.error());
+			}
 		}
 	}
 
@@ -503,10 +544,18 @@ int CxxModulePrebuildRunner::run(const FilePath& requestPath)
 		{
 			buildFlags.push_back("-std=c++20");
 		}
-		if (!buildBmiInProcess(file, bmiPath, cacheDir, buildFlags))
+		if (const std::expected<void, std::string> built =
+				buildBmiInProcess(file, bmiPath, cacheDir, buildFlags);
+			!built)
 		{
-			LOG_ERROR("Failed to build BMI for module '" + logicalName + "' (" + file.str() + ")");
+			recordFailure(logicalName, file.str(), built.error());
 		}
+	}
+
+	if (!failures.empty())
+	{
+		std::cerr << "[module-prebuild] " << failures.size()
+				  << " module BMI build(s) failed; imports of them will not resolve." << std::endl;
 	}
 
 	// --- 4. write the manifest the main process reads back -----------------------------------------
@@ -516,6 +565,7 @@ int CxxModulePrebuildRunner::run(const FilePath& requestPath)
 	{
 		manifest["interfaceUnits"].push_back(file.str());
 	}
+	manifest["failures"] = failures;
 	std::ofstream manifestOut(cacheDir.getConcatenated("/manifest.json").str());
 	manifestOut << manifest.dump();
 

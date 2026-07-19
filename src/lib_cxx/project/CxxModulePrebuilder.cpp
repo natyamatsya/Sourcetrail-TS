@@ -113,6 +113,19 @@ CxxModulePrebuilder::Result CxxModulePrebuilder::prebuild(
 		{
 			result.interfaceUnits.insert(FilePath(file));
 		}
+		// Surface any BMI build failures the (loggerless) prebuild subprocess reported, with the clang
+		// diagnostics it captured -- so a broken module is debuggable from the normal index log instead
+		// of only by re-running the prebuild by hand.
+		for (const auto& failure: manifest.value("failures", nlohmann::json::array()))
+		{
+			const std::string module = failure.value("module", std::string());
+			const std::string file = failure.value("file", std::string());
+			const std::string diagnostics = failure.value("diagnostics", std::string());
+			LOG_ERROR(
+				"C++20 module prebuild: failed to build BMI for '" + module + "'" +
+				(file.empty() ? std::string() : " (" + file + ")") +
+				"; imports of it will not resolve.\n" + diagnostics);
+		}
 	}
 	catch (const nlohmann::json::exception& e)
 	{
