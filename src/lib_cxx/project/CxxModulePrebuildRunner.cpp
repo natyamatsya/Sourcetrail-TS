@@ -163,7 +163,33 @@ bool buildBmiInProcess(
 		inputFile, std::set<FilePath>{inputFile}, std::set<FilePathFilter>{});
 	auto cache = std::make_shared<CanonicalFilePathCache>(fileRegister);
 
-	std::vector<std::string> flags = essentialInputFlags;
+	// Normalize the file's flags into clean options: a compile-database command carries the compiler
+	// executable (argv[0]), -c, -o <out>, -x <lang> and the input file -- all of which we set
+	// ourselves for BMI generation. (The plain C++ Source Group passes clean options, so nothing is
+	// stripped there.)
+	std::vector<std::string> flags;
+	for (size_t i = 0; i < essentialInputFlags.size(); ++i)
+	{
+		const std::string& f = essentialInputFlags[i];
+		if (i == 0 && !f.empty() && f[0] != '-')
+		{
+			continue;	 // argv[0] (compiler executable) in a CDB command
+		}
+		if (f == "-c")
+		{
+			continue;
+		}
+		if (f == "-o" || f == "-x")
+		{
+			++i;	 // drop the flag and its argument
+			continue;
+		}
+		if (f == inputFile.str())
+		{
+			continue;	 // the input file (added explicitly below)
+		}
+		flags.push_back(f);
+	}
 	utility::append(
 		flags,
 		std::vector<std::string>{
@@ -208,16 +234,17 @@ int CxxModulePrebuildRunner::run(const FilePath& requestPath)
 	// --- read the request --------------------------------------------------------------------------
 	FilePath cacheDir;
 	std::set<FilePath> sourceFiles;
-	std::vector<std::string> baseFlags;
+	std::map<FilePath, std::vector<std::string>> fileFlags;	  // each file's own compiler flags
 	try
 	{
 		std::ifstream in(requestPath.str());
 		const nlohmann::json request = nlohmann::json::parse(in);
 		cacheDir = FilePath(request.value("cacheDir", std::string()));
-		baseFlags = request.value("baseFlags", std::vector<std::string>{});
-		for (const std::string& file: request.value("sourceFiles", std::vector<std::string>{}))
+		for (const auto& entry: request.value("files", nlohmann::json::array()))
 		{
-			sourceFiles.insert(FilePath(file));
+			const FilePath file(entry.value("path", std::string()));
+			sourceFiles.insert(file);
+			fileFlags[file] = entry.value("flags", std::vector<std::string>{});
 		}
 	}
 	catch (const nlohmann::json::exception& e)
@@ -229,12 +256,6 @@ int CxxModulePrebuildRunner::run(const FilePath& requestPath)
 	{
 		LOG_ERROR("module prebuild request has no cacheDir");
 		return 1;
-	}
-
-	std::vector<std::string> buildFlags = baseFlags;
-	if (!hasStdFlag(buildFlags))
-	{
-		buildFlags.push_back("-std=c++20");
 	}
 
 	// --- 1. scan every file for the module it provides / requires ----------------------------------
@@ -307,12 +328,17 @@ int CxxModulePrebuildRunner::run(const FilePath& requestPath)
 			"the cycle will not resolve.");
 	}
 
-	// --- 3. build each BMI into the cache, in dependency order -------------------------------------
+	// --- 3. build each BMI into the cache, in dependency order (with the file's own flags) ---------
 	FileSystem::createDirectories(cacheDir);
 	for (const FilePath& file: buildOrder)
 	{
 		const std::string logicalName = providedModule[file];
 		const FilePath bmiPath = cacheDir.getConcatenated("/" + logicalName + ".pcm");
+		std::vector<std::string> buildFlags = fileFlags[file];
+		if (!hasStdFlag(buildFlags))
+		{
+			buildFlags.push_back("-std=c++20");
+		}
 		if (!buildBmiInProcess(file, bmiPath, cacheDir, buildFlags))
 		{
 			LOG_ERROR("Failed to build BMI for module '" + logicalName + "' (" + file.str() + ")");

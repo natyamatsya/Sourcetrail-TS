@@ -97,11 +97,15 @@ std::shared_ptr<IndexerCommandProvider> SourceGroupCxxEmpty::getIndexerCommandPr
 			dynamic_cast<const SourceGroupSettingsWithCxxPchOptions*>(m_settings.get())));
 
 	// C++20 modules: scan the source group, build its BMIs in dependency order, and collect the
-	// flags libclang needs to resolve `import`s. A no-op for source groups without modules.
+	// flags libclang needs to resolve `import`s. A no-op for source groups without modules. Every
+	// file shares the same flags here (unlike a compile database).
+	std::map<FilePath, std::vector<std::string>> fileFlags;
+	for (const FilePath& sourcePath: getAllSourceFilePaths())
+	{
+		fileFlags[sourcePath] = compilerFlags;
+	}
 	const CxxModulePrebuilder::Result modules = CxxModulePrebuilder::prebuild(
-		getAllSourceFilePaths(),
-		compilerFlags,
-		m_settings->getProjectDirectoryPath().getConcatenated("/module_cache"));
+		fileFlags, m_settings->getProjectDirectoryPath().getConcatenated("/module_cache"));
 	if (modules.anyModules)
 	{
 		utility::append(compilerFlags, modules.sharedFlags);

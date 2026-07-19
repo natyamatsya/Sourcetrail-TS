@@ -5,6 +5,7 @@
 #include "ClangInvocationInfo.h"
 #include "CxxCompilationDatabaseSingle.h"
 #include "CxxIndexerCommandProvider.h"
+#include "CxxModulePrebuilder.h"
 #include "IndexerCommandCxx.h"
 #include "MessageStatus.h"
 #include "SourceGroupSettingsCxxCdb.h"
@@ -106,6 +107,16 @@ std::shared_ptr<IndexerCommandProvider> SourceGroupCxxCdb::getIndexerCommandProv
 	const std::set<FilePathFilter> excludeFilters = utility::toSet(m_settings->getExcludeFiltersExpandedAndAbsolute());
 	const std::set<FilePath> &sourceFilePaths = getAllSourceFilePaths(cdb);
 
+	// Prepare each TU's final flags first, so the module prebuild can see them (and inject its own
+	// flags back) before the IndexerCommandCxx objects are created.
+	struct PreparedCommand
+	{
+		FilePath sourcePath;
+		FilePath directory;
+		std::vector<std::string> flags;
+	};
+	std::vector<PreparedCommand> prepared;
+
 	for (const clang::tooling::CompileCommand &command : cdb->getAllCompileCommands())
 	{
 		FilePath sourcePath = FilePath(command.Filename).makeCanonical();
@@ -136,15 +147,57 @@ std::shared_ptr<IndexerCommandProvider> SourceGroupCxxCdb::getIndexerCommandProv
 			// must be passed explicitly -- without it <filesystem>/<map>/etc. fail.
 			utility::append(commandLine, IndexerCommandCxx::getCompilerFlagsForSysroot(command.CommandLine));
 
-			provider->addCommand(std::make_shared<IndexerCommandCxx>(
-				sourcePath,
-				utility::concat(indexedHeaderPaths, {sourcePath}),
-				excludeFilters,
-				std::set<FilePathFilter>{},
-				FilePath(command.Directory),
-				utility::concat(commandLine, compilerFlags),
-				""));
+			prepared.push_back({sourcePath, FilePath(command.Directory), utility::concat(commandLine, compilerFlags)});
 		}
+	}
+
+	// C++20 modules: build BMIs for the source group's module-interface units (crash-isolated in a
+	// subprocess) unless the compile commands already carry module flags -- a modules-aware build
+	// system emits `-fmodule-file=` / `-fprebuilt-module-path=` and resolves imports on its own.
+	const auto carriesModuleFlags = [](const std::vector<std::string>& flags) {
+		for (const std::string& f: flags)
+		{
+			if (f.rfind("-fmodule-file", 0) == 0 || f.rfind("-fprebuilt-module-path", 0) == 0)
+			{
+				return true;
+			}
+		}
+		return false;
+	};
+	std::map<FilePath, std::vector<std::string>> fileFlags;
+	bool cdbHandlesModules = false;
+	for (const PreparedCommand& pc: prepared)
+	{
+		fileFlags[pc.sourcePath] = pc.flags;
+		cdbHandlesModules = cdbHandlesModules || carriesModuleFlags(pc.flags);
+	}
+	CxxModulePrebuilder::Result modules;
+	if (!cdbHandlesModules)
+	{
+		modules = CxxModulePrebuilder::prebuild(
+			fileFlags, m_settings->getProjectDirectoryPath().getConcatenated("/module_cache"));
+	}
+
+	for (const PreparedCommand& pc: prepared)
+	{
+		std::vector<std::string> flags = pc.flags;
+		if (modules.anyModules)
+		{
+			utility::append(flags, modules.sharedFlags);
+			if (modules.interfaceUnits.find(pc.sourcePath) != modules.interfaceUnits.end())
+			{
+				utility::append(flags, std::vector<std::string>{"-x", "c++-module"});
+			}
+		}
+
+		provider->addCommand(std::make_shared<IndexerCommandCxx>(
+			pc.sourcePath,
+			utility::concat(indexedHeaderPaths, {pc.sourcePath}),
+			excludeFilters,
+			std::set<FilePathFilter>{},
+			pc.directory,
+			flags,
+			""));
 	}
 
 	provider->logStats();

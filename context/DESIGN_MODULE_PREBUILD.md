@@ -109,10 +109,20 @@ the blocking spawn.
   after (out-of-process) produces a byte-identical graph (node and edge dumps `diff`-clean),
   0 errors. modules_demo / tictactoe / 284 unit cases unaffected.
 
-### Still future
-- Extend module support to the compile-database source group (`SourceGroupCxxCdb`) -- needs
-  per-file flags (each CDB command has its own) and a guard for CDBs that already carry module
-  flags from a modules-aware build.
+### Phase E — compile-database source group — DONE
+- Extended module support to `SourceGroupCxxCdb`. Two things it needed vs the plain C++ Source
+  Group:
+  - **Per-file flags.** `CxxModulePrebuilder::prebuild` now takes a `map<FilePath, flags>` (each
+    compile-database command carries its own flags); the Empty group just maps every file to the
+    same set. A module-interface unit's BMI is built with that file's own flags. The runner also
+    normalizes a CDB command (drops the `argv[0]` compiler, `-c`, `-o <out>`, `-x <lang>`, and the
+    input file) before adding its BMI-generation flags -- mirroring `CxxParser::buildIndex`.
+  - **Guard.** If any compile command already carries `-fmodule-file=` / `-fprebuilt-module-path=`,
+    the build system is modules-aware and resolves imports itself, so the prebuild is skipped.
+- **Verified:** a compile-database project (`geo.cpp` module + `main.cpp` importer, no module
+  flags in the commands) indexes 0 errors with the `geo` module node, `global -> geo` import edge,
+  and `geo.pcm` built. A CDB that already carries `-fprebuilt-module-path` skips the prebuild (no
+  cache). modules_demo / tictactoe / PCH / 284+6 unit cases unaffected.
 
 ## Risks / notes
 - One extra process spawn per index of a module project (one-time, not per-TU), plus the
