@@ -170,6 +170,40 @@ word `important` (and identifiers like `module_count`), needlessly spawning a no
 non-module source groups. Whole-word matching has no false negatives (a real module unit always has
 `module`/`import` as a keyword). Surfaced while stress-testing against a large non-module codebase.
 
+### Diagnostics (surfacing BMI build failures)
+The prebuild runs in a subprocess launched **without a log-file path**, so its `LOG_*` calls go
+nowhere and, worse, a failed BMI build's clang diagnostics used to vanish to the subprocess's stderr
+(which the app discards) — a failure showed up only as a downstream "module not found", debuggable
+only by re-running the prebuild by hand. Now:
+- `buildBmiInProcess` installs a `clang::TextDiagnosticPrinter` over a string and returns
+  `std::expected<void, std::string>` — on failure the error **is** the captured clang diagnostics
+  (with source context and notes).
+- The runner collects per-module failures (`{module, file, diagnostics}`), prints them to stderr (for
+  a direct run) **and** writes them to `manifest.json` under `failures` — a channel independent of the
+  exit code (the runner returns 0 even on a partial failure).
+- The main-side `CxxModulePrebuilder` reads `manifest.failures` and `LOG_ERROR`s each, so the real
+  cause lands in the **normal index log**. Successful builds stay quiet (warnings on a good build are
+  not surfaced) — quiet on success, full diagnostics on failure.
+
+### Stress test: Vulkan-Hpp (the installed SDK's `vulkan.cppm`) — PASSED
+The largest real module we could find: the Vulkan SDK's generated `vulkan.cppm` (**10,675 lines** —
+the whole Vulkan API). It exercises three axes at once: a **module partition** (`export import :video;`,
+provided by `vulkan_video.cppm`), **`export import std;`**, and pervasive `#if`-guarded platform code.
+Result: **2/2 files, 0 errors, 6,837 symbols**; three BMIs built in dependency order — `std.pcm`
+(33 MB), the `vulkan:video` partition (`vulkan-video.pcm`, 32 MB — the `:`→`-` filename sanitization
+in action), and `vulkan.pcm` (62 MB); ~67 s wall, ~980 MB peak RSS. `std::hash<vk::…>` specializations
+resolve through both the vulkan and std modules.
+
+Two real-world snags it surfaced (both handled outside the indexer, as a user's project config would):
+- **Xcode 27 SDK header hygiene** — building `vulkan.hpp` as a BMI fails with `'getenv' must be
+  declared before it is used` (the same class as the INFINITY/NAN std-module issue): the strict module
+  build no longer sees the transitive `<cstdlib>`. Fixed by adding `#include <cstdlib>` to the module's
+  global fragment. This is exactly the failure the new diagnostics pipeline now makes visible in the
+  index log.
+- **SDK partition-name inconsistency** — the shipped `vulkan.cppm` (module `vulkan`) imports `:video`,
+  but `vulkan_video.cppm` declares `export module vulkan_hpp:video;` (mismatched base name, a mid-rename
+  packaging quirk in this SDK snapshot). Made consistent for the test.
+
 ## Risks / notes
 - One extra process spawn per index of a module project (one-time, not per-TU), plus the
   JSON round-trip. `getIndexerCommandProvider` blocks on it — fine, it's a pre-index step,
