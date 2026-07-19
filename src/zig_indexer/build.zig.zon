@@ -1,0 +1,18 @@
+.{
+    .name = .sourcetrail_zig_indexer,
+    .version = "0.1.0",
+    // Globally-unique package id for this indexer. Generated once; never changes.
+    .fingerprint = 0x8e4a5aa3bd07d12c,
+    .minimum_zig_version = "0.16.0",
+    .dependencies = .{
+        // The thoth-ipc Zig port (ShmHandle / Mutex / makeShmName). Wired in
+        // Phase 2 once the port exposes an importable module; see
+        // context/ROADMAP_ZIG_INDEXER.md.
+        // .thoth_ipc = .{ .path = "../../submodules/thoth-ipc/zig/thoth-ipc" },
+    },
+    .paths = .{
+        "build.zig",
+        "build.zig.zon",
+        "src",
+    },
+}
