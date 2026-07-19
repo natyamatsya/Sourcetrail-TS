@@ -217,10 +217,21 @@ cycles in `lib` is prerequisite work, and a good cleanup in its own right).
   and **`Sourcetrail_lib` builds ON with two modules coexisting** (`srctrl.utility` + `srctrl.data`,
   7 BMIs total). `lib/data` is mostly out-of-line and interconnected (214 files), so most components
   need the inline/`.inl` (or split) treatment before joining.
-- **Next — inter-module deps + more `srctrl.data`.** `LocationType` is the natural next step: it
-  `#include`s `utilityEnum.h`, so it introduces the first **cross-module import** (`srctrl.data`
-  importing `srctrl.utility`) plus an exported template specialization (`intToEnum<LocationType>`) —
-  worth proving carefully. Then `srctrl.storage`, bottom-up.
+- **Phase 2 (cont.) — `LocationType` + the first cross-module import. ✅** `LocationType` joins
+  `srctrl.data:types`, and the partition now `import srctrl.utility;` — the migration's **first
+  inter-module dependency**. Mechanics proven:
+  - The header toggles `#include "utilityEnum.h"` (header build) vs the wrapper's `import
+    srctrl.utility;` (module build) via `SRCTRL_MODULE_PURVIEW`, so utilityEnum isn't re-included/
+    re-exported by `srctrl.data`.
+  - `intToEnum<LocationType>` is an **explicit specialization of a template owned by another module**;
+    it's inlined into `LocationType.inl` and *not* separately `export`ed (specializations are reached
+    via the primary). `operator<<(size_t, LocationType)` is inlined + exported.
+  - CMake orders `srctrl.utility` before `srctrl.data` from the scan of the `.cppm` imports — no manual
+    dependency. Verified: `Sourcetrail_lib` builds OFF (LocationType consumers use the inline
+    specialization) and ON, and a consumer importing both modules resolves `intToEnum<LocationType>`
+    and `operator<<` across the boundary.
+- **Next — more `srctrl.data` (name/, location/, graph/), then `srctrl.storage`.** Bottom-up, same
+  inline/`.inl` + partition + cross-module-`import` patterns.
 - **Phase 3 — `srctrl.cxx`.** Modularize `lib_cxx` with partitions; absorb the Clang-header BMI cost.
 - **Phase 4 — the indexer binary.** `src/indexer/main.cpp` becomes a pure consumer:
   `import srctrl.cxx;` (+ optionally `import std;`).
