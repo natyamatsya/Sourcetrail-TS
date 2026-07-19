@@ -10,9 +10,15 @@ fn indexString(gpa: std.mem.Allocator, store: *storage.Storage, src: [:0]const u
 }
 
 /// Find the first node with the given serialized name; null if absent.
-fn nodeNamed(store: *storage.Storage, name: []const u8) ?storage.StorageNode {
+/// Match by the file-local name: exact (file nodes) or the `<file>::<local>`
+/// suffix (symbol nodes are file-qualified via storage.qualifiedName).
+fn nodeNamed(store: *storage.Storage, local: []const u8) ?storage.StorageNode {
     for (store.nodes.items) |n| {
-        if (std.mem.eql(u8, n.serialized_name, name)) return n;
+        if (std.mem.eql(u8, n.serialized_name, local)) return n;
+        if (std.mem.endsWith(u8, n.serialized_name, "::") == false and
+            n.serialized_name.len > local.len + 2 and
+            std.mem.endsWith(u8, n.serialized_name, local) and
+            std.mem.endsWith(u8, n.serialized_name[0 .. n.serialized_name.len - local.len], "::")) return n;
     }
     return null;
 }

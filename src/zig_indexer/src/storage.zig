@@ -82,6 +82,16 @@ pub const DefinitionKind = enum(i32) {
 
 pub const Id = i64;
 
+/// Globally-unique serialized name for a symbol: `"<file>::<local dotted path>"`.
+/// Zig files are anonymous structs with no global namespace, so a bare local
+/// name (`square`) collides across files; qualifying by the defining file makes
+/// it unique. BOTH the declaration pass (parser) and the ZLS reference pass must
+/// build names this way so a resolved cross-file target dedups onto the exact
+/// node the target file's declaration pass created.
+pub fn qualifiedName(a: std.mem.Allocator, file: []const u8, local: []const u8) ![]u8 {
+    return std.fmt.allocPrint(a, "{s}::{s}", .{ file, local });
+}
+
 pub const StorageNode = struct { id: Id, kind: NodeKind, serialized_name: []const u8, modifiers: i32 = 0 };
 pub const StorageFile = struct { id: Id, file_path: []const u8, language_identifier: []const u8, indexed: bool, complete: bool };
 pub const StorageEdge = struct { id: Id, kind: EdgeType, source_node_id: Id, target_node_id: Id };

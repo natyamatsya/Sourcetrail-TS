@@ -84,10 +84,22 @@ fn indexOneCommand(gpa: std.mem.Allocator, io: std.Io, storage: *StorageChannel,
     defer store.deinit();
     try indexer.indexSource(gpa, &store, path, source);
 
+    // Phase 3b: augment with ZLS-resolved cross-file references (best-effort —
+    // a semantic failure must not lose the syntactic result).
+    resolveInto(gpa, io, &store, path, source) catch {};
+
     // Back-pressure: wait for the app to drain before pushing more.
     const nap = std.c.timespec{ .sec = 0, .nsec = 2 * std.time.ns_per_ms };
     while ((try storage.count()) >= 2) _ = std.c.nanosleep(&nap, null);
     try storage.push(gpa, &store);
+}
+
+fn resolveInto(gpa: std.mem.Allocator, io: std.Io, store: *indexer.Storage, path: []const u8, source: [:0]const u8) !void {
+    var session = try semantic.Session.init(gpa, io, null);
+    defer session.deinit();
+    const handle = try session.openDocument(path, source);
+    const file_node_id = store.node_by_name.get(path) orelse return;
+    try semantic.resolveReferences(&session, store, handle, path, file_node_id);
 }
 
 fn runResolve(gpa: std.mem.Allocator, io: std.Io, path: []const u8, name: []const u8) !void {

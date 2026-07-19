@@ -99,9 +99,12 @@ const Walker = struct {
     }
 
     /// Record a definition node: a name-token TOKEN location + a full-extent
-    /// SCOPE location, mirroring ParserClientImpl.
-    fn recordDef(self: *Walker, kind: NodeKind, serialized_name: []const u8, name_tok: Ast.TokenIndex, extent: Ast.Node.Index) Error!Id {
-        const id = try self.store.recordNode(kind, serialized_name, .explicit);
+    /// SCOPE location, mirroring ParserClientImpl. `local_name` is the plain
+    /// dotted path within the file; it is file-qualified here (see
+    /// storage.qualifiedName) so the name is globally unique.
+    fn recordDef(self: *Walker, kind: NodeKind, local_name: []const u8, name_tok: Ast.TokenIndex, extent: Ast.Node.Index) Error!Id {
+        const full = try storage.qualifiedName(self.store.arena.allocator(), self.file_path, local_name);
+        const id = try self.store.recordNode(kind, full, .explicit);
         _ = try self.store.recordLocation(id, self.file_id, self.tokenSpan(name_tok), .token);
         _ = try self.store.recordLocation(id, self.file_id, self.nodeScopeSpan(extent), .scope);
         return id;

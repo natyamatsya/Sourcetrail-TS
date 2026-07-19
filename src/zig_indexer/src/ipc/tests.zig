@@ -54,7 +54,7 @@ test "IntermediateStorage FlatBuffers round-trip (build -> read back)" {
         const node = c.Sourcetrail_Ipc_StorageNode_vec_at(nodes, i);
         const name = c.Sourcetrail_Ipc_StorageNode_serialized_name(node);
         const name_slice = name[0..c.flatbuffers_string_len(name)];
-        if (std.mem.eql(u8, name_slice, "Point")) {
+        if (std.mem.endsWith(u8, name_slice, "::Point")) {
             found_point = true;
             try testing.expectEqual(@intFromEnum(storage.NodeKind.@"struct"), c.Sourcetrail_Ipc_StorageNode_type(node));
         }
