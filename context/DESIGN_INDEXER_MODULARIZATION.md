@@ -190,12 +190,21 @@ cycles in `lib` is prerequisite work, and a good cleanup in its own right).
       `QRegularExpression` + `utilityString` + `srctrl::log` + `qgetenv`, imported **directly** by the
       consumer, compiles fully (frontend green; only app-link symbols missing). So a Qt-coupled type wants
       its own leaf module (e.g. `srctrl.file`), NOT a partition re-exported by srctrl.utility.
-    - **Remaining risk for the full FilePath migration.** Types that *expose* FilePath by value
-      (`SourceLocationFile`, `StorageFile`) need it visible to *their* consumers, which may force `:location`/
-      `:types` to `export import srctrl.file` — re-introducing a re-export of Qt that could re-trigger the
-      crash. So the real migration (convert FilePath → `srctrl.file`; switch its 4 GMF-consumer wrappers —
-      data:location/graph, storage:types/access — to `import srctrl.file`) must verify the re-export path
-      end-to-end before it's committed.
+    - **Full migration attempted — BLOCKED, and the real trigger is worse than re-export.** Built the whole
+      thing (FilePath → standalone `srctrl.file`; switched its 4 GMF-consumer wrappers — data:location/graph,
+      storage:types/access — to `import srctrl.file`; dropped FilePath's use of the unexported Qt-seam
+      `utility::toLowerCase` in favor of an inline `QString(...).toLower()`). All 19 module units compile,
+      **and re-export is fine** — a consumer that `import srctrl.data` (which re-exports `:location`, which
+      imports `srctrl.file`) and uses `SourceLocationFile` compiles cleanly. But **importing `srctrl.file`
+      directly and instantiating `FilePath` at all — even the bare `FilePath p("/x");` constructor —
+      segfaults clang's frontend.** So it's not the re-export and not any specific method; it's deserializing/
+      instantiating FilePath's class from a module BMI. The synthetic mimic didn't crash because it never
+      instantiated a *real* Qt-coupled class of FilePath's shape. Since FilePath is instantiated directly by
+      countless (future module) consumers, this makes it unusable as a module. **Reverted; FilePath stays
+      classic.** `srctrl.qt` (the wrapper + the import-std coexistence) and `TimeStamp` (`:time`) stand;
+      FilePath (and by extension the GUI's Qt-heavy value types) waits on a clang fix. Minimal repro worth
+      filing upstream: a module exporting a class with a `std::unique_ptr<std::filesystem::path>`-ish member
+      whose inline ctor touches an imported-Qt type, instantiated in a consumer.
 
 - **`import std` — now GREEN for the whole first-party module set (utility + data + logging).** Getting
   there took fixing two real import-std-with-legacy-headers edges (both pre-existing, surfaced only when
