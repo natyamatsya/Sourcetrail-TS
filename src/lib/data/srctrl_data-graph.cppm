@@ -56,6 +56,7 @@ import :name;            // NameHierarchy (Node)
 // holds; Token is the base of Edge/Node; Edge forward-declares Node (SRCTRL_EXPORT'd) and Node.h needs
 // Edge complete, so Edge.h precedes Node.h. Each header's own guarded .inl include is skipped here. ----
 #include "NodeType.h"
+#include "NodeTypeSet.h"
 #include "Token.h"
 #include "Edge.h"
 #include "Node.h"

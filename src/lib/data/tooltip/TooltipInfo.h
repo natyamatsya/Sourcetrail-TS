@@ -1,20 +1,27 @@
 #ifndef TOOLTIP_INFO_H
 #define TOOLTIP_INFO_H
 
+#include "SrctrlModule.h"
+
+#ifndef SRCTRL_MODULE_PURVIEW
 #include <memory>
 
 #include "Vector2.h"
 #include "types.h"
 
+// SourceLocationFile is modularized (srctrl.data:location); the wrapper `import`s it in the module
+// build, so this forward decl is skipped in the purview. Only std::shared_ptr<SourceLocationFile> is
+// used here, so an incomplete type is sufficient.
 class SourceLocationFile;
+#endif
 
-struct TooltipSnippet
+SRCTRL_EXPORT struct TooltipSnippet
 {
 	std::string code;
 	std::shared_ptr<SourceLocationFile> locationFile;
 };
 
-struct TooltipInfo
+SRCTRL_EXPORT struct TooltipInfo
 {
 	bool isValid() const
 	{

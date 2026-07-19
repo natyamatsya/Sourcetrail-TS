@@ -7,3 +7,4 @@ export import :enums;
 export import :cache;
 export import :types;
 export import :string;
+export import :math;

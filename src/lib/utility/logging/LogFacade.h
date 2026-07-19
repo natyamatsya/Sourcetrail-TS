@@ -11,6 +11,13 @@
 #include <utility>
 
 #include "LogManager.h"
+
+// Classic build only: also expose the legacy LOG_* macros. A converted header switches
+// `#include "logging.h"` -> `#include "LogFacade.h"` for its own inline srctrl::log use; re-exposing the
+// macros here keeps that a drop-in for the header's #include-based consumers (which relied on getting
+// LOG_* transitively). In the module purview this is skipped -- macros don't cross `import`, and the
+// module surface is srctrl::log.
+#include "logging.h"
 #endif
 
 // Module-native logging front end (exported by `srctrl.logging`). It replaces the preprocessor capture

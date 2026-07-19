@@ -1,6 +1,9 @@
 #ifndef STORAGE_ACCESS_H
 #define STORAGE_ACCESS_H
 
+#include "SrctrlModule.h"
+
+#ifndef SRCTRL_MODULE_PURVIEW
 #include <memory>
 #include <string>
 #include <vector>
@@ -29,8 +32,9 @@ class SourceLocationFile;
 class TextAccess;
 
 struct FileInfo;
+#endif
 
-class StorageAccess
+SRCTRL_EXPORT class StorageAccess
 {
 public:
 	virtual ~StorageAccess() = default;
@@ -70,7 +74,7 @@ public:
 		NodeKindMask nodeTypes,
 		Edge::TypeMask edgeTypes,
 		bool nodeNonIndexed,
-		size_t depth,
+		std::size_t depth,
 		bool directed) const = 0;
 
 	virtual NodeKindMask getAvailableNodeTypes() const = 0;
@@ -87,7 +91,7 @@ public:
 	virtual std::shared_ptr<SourceLocationFile> getSourceLocationsForFile(
 		const FilePath& filePath) const = 0;
 	virtual std::shared_ptr<SourceLocationFile> getSourceLocationsForLinesInFile(
-		const FilePath& filePath, size_t startLine, size_t endLine) const = 0;
+		const FilePath& filePath, std::size_t startLine, std::size_t endLine) const = 0;
 	virtual std::shared_ptr<SourceLocationFile> getSourceLocationsOfTypeInFile(
 		const FilePath& filePath, LocationType type) const = 0;
 

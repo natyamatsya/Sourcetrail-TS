@@ -1,9 +1,13 @@
 #ifndef ERROR_FILTER_H
 #define ERROR_FILTER_H
 
-#include "ErrorInfo.h"
+#include "SrctrlModule.h"
 
-struct ErrorFilter
+#ifndef SRCTRL_MODULE_PURVIEW
+#include "ErrorInfo.h"
+#endif
+
+SRCTRL_EXPORT struct ErrorFilter
 {
 	ErrorFilter() = default;
 
@@ -53,7 +57,7 @@ struct ErrorFilter
 	bool unindexedError = true;
 	bool unindexedFatal = true;
 
-	size_t limit = 1000;
+	std::size_t limit = 1000;
 };
 
 #endif	  // ERROR_FILTER_H

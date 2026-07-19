@@ -1,20 +1,29 @@
 #ifndef SEARCH_MATCH_H
 #define SEARCH_MATCH_H
 
+#include "SrctrlModule.h"
+
+#ifndef SRCTRL_MODULE_PURVIEW
 #include <ostream>
+#include <sstream>
 #include <string>
 #include <vector>
 
+#include "LogFacade.h"
 #include "Node.h"
+#include "NodeTypeSet.h"
 #include "types.h"
 
+// NodeTypeSet is not modularized; the srctrl.data wrapper supplies it in the GMF for the module build,
+// so its forward decl (and full include above) is skipped in the purview.
 class NodeTypeSet;
+#endif
 
 // SearchMatch is used to display the search result in the UI
-struct SearchMatch
+SRCTRL_EXPORT struct SearchMatch
 {
 	static constexpr char FULLTEXT_SEARCH_CHARACTER = '?';
-	
+
 	enum class SearchType
 	{
 		SEARCH_NONE,
@@ -23,7 +32,7 @@ struct SearchMatch
 		SEARCH_OPERATOR,
 		SEARCH_FULLTEXT
 	};
-	
+
 	enum class CommandType
 	{
 		COMMAND_ALL,
@@ -31,12 +40,12 @@ struct SearchMatch
 		COMMAND_NODE_FILTER,
 		COMMAND_LEGEND
 	};
-	
+
 	static void log(const std::vector<SearchMatch>& matches, const std::string& query);
-	
+
 	static std::string getSearchTypeName(SearchType type);
 	static std::string searchMatchesToString(const std::vector<SearchMatch>& matches);
-	
+
 	static SearchMatch createCommand(CommandType type);
 	static std::vector<SearchMatch> createCommandsForNodeTypes(NodeTypeSet types);
 	static std::string getCommandName(CommandType type);
@@ -47,7 +56,7 @@ struct SearchMatch
 	bool operator<(const SearchMatch& other) const;
 	bool operator==(const SearchMatch& other) const;
 
-	static size_t getTextSizeForSorting(const std::string* str);
+	static std::size_t getTextSizeForSorting(const std::string* str);
 
 	bool isValid() const;
 	bool isFilterCommand() const;
@@ -70,10 +79,12 @@ struct SearchMatch
 
 	NodeType nodeType;
 	SearchType searchType;
-	std::vector<size_t> indices;
+	std::vector<std::size_t> indices;
 
 	int score = 0;
 	bool hasChildren = false;
 };
+
+#include "SearchMatch.inl"
 
 #endif	  // SEARCH_MATCH_H

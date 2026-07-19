@@ -8,3 +8,5 @@ export import :types;
 export import :name;
 export import :location;
 export import :graph;
+export import :search;
+export import :tooltip;

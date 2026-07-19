@@ -1,10 +1,14 @@
 #ifndef ERROR_INFO_H
 #define ERROR_INFO_H
 
+#include "SrctrlModule.h"
+
+#ifndef SRCTRL_MODULE_PURVIEW
 #include "StorageError.h"
+#endif
 
 
-struct ErrorInfo
+SRCTRL_EXPORT struct ErrorInfo
 {
 	ErrorInfo()
 		: id(0)
@@ -21,8 +25,8 @@ struct ErrorInfo
 		Id id,
 		std::string message,
 		std::string filePath,
-		size_t lineNumber,
-		size_t columnNumber,
+		std::size_t lineNumber,
+		std::size_t columnNumber,
 		std::string translationUnit,
 		bool fatal,
 		bool indexed)
@@ -42,8 +46,8 @@ struct ErrorInfo
 	std::string message;
 
 	std::string filePath;
-	size_t lineNumber;
-	size_t columnNumber;
+	std::size_t lineNumber;
+	std::size_t columnNumber;
 
 	std::string translationUnit;
 	bool fatal;

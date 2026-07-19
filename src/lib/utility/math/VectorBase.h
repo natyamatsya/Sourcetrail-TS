@@ -1,10 +1,14 @@
 #ifndef VECTOR_BASE_H
 #define VECTOR_BASE_H
 
+#include "SrctrlModule.h"
+
+#ifndef SRCTRL_MODULE_PURVIEW
 #include <cmath>
 #include <sstream>
 #include <stdexcept>
 #include <string>
+#endif
 
 #define VECTOR_CHECK_INDEX(idx)                                                                    \
 	do                                                                                             \
@@ -14,7 +18,7 @@
 	} while (false)
 
 
-template <class T, unsigned int N>
+SRCTRL_EXPORT template <class T, unsigned int N>
 class VectorBase
 {
 public:

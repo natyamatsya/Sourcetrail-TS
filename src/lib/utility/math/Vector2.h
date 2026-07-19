@@ -1,12 +1,16 @@
 #ifndef VECTOR_2_H
 #define VECTOR_2_H
 
+#include "SrctrlModule.h"
+
+#ifndef SRCTRL_MODULE_PURVIEW
 #include "Property.h"
-#include "logging.h"
+#include "LogFacade.h"
 
 #include "VectorBase.h"
+#endif
 
-template <class T>
+SRCTRL_EXPORT template <class T>
 class Vector2 final : public VectorBase<T, 2>
 {
 public:
@@ -86,7 +90,7 @@ T Vector2<T>::getValue(const unsigned int index) const
 	}
 	catch (std::exception& e)
 	{
-		LOG_ERROR(e.what());
+		srctrl::log::error(e.what());
 		return 0;
 	}
 }
@@ -100,7 +104,7 @@ void Vector2<T>::setValue(const unsigned int index, const T& value)
 	}
 	catch (std::exception& e)
 	{
-		LOG_ERROR(e.what());
+		srctrl::log::error(e.what());
 	}
 }
 
@@ -113,7 +117,7 @@ T Vector2<T>::operator[](const unsigned int index)
 	}
 	catch (std::exception& e)
 	{
-		LOG_ERROR(e.what());
+		srctrl::log::error(e.what());
 		return 0;
 	}
 }
@@ -139,7 +143,7 @@ void Vector2<T>::operator=(const Vector2<U>& other)
 	y = Property<T>(&VectorBase<T, 2>::m_values[m_yIndex]);
 }
 
-typedef Vector2<float> Vec2f;
-typedef Vector2<int> Vec2i;
+SRCTRL_EXPORT typedef Vector2<float> Vec2f;
+SRCTRL_EXPORT typedef Vector2<int> Vec2i;
 
 #endif	  // VECTOR_2_H
