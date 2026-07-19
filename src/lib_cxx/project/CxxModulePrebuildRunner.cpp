@@ -6,6 +6,7 @@
 #include <filesystem>
 #include <fstream>
 #include <map>
+#include <optional>
 #include <set>
 #include <string>
 #include <vector>
@@ -255,6 +256,88 @@ bool buildBmiInProcess(
 	tool.run(&factory);
 	return bmiPath.recheckExists();
 }
+
+// Locate the toolchain's standard library module source (std.cppm / std.compat.cppm). It ships next
+// to libc++ at <prefix>/share/libc++/v1/. We anchor on the LLVM install prefix the app is linked
+// against (baked in at build time) so the std.cppm we compile matches the in-process libclang's
+// libc++ exactly; as a fallback we derive the prefix from a resolvable compiler's resource dir
+// (<prefix>/lib/clang/<v>).
+std::optional<FilePath> findStdModuleSource(const std::string& fileName)
+{
+	std::vector<std::filesystem::path> prefixes;
+#ifdef SOURCETRAIL_LLVM_INSTALL_PREFIX
+	prefixes.emplace_back(SOURCETRAIL_LLVM_INSTALL_PREFIX);
+#endif
+	if (const std::optional<std::filesystem::path> resourceDir =
+			utility::resolveCompilerResourceDir(std::string()))
+	{
+		prefixes.push_back(resourceDir->parent_path().parent_path().parent_path());
+	}
+	for (const std::filesystem::path& prefix: prefixes)
+	{
+		const std::filesystem::path candidate = prefix / "share" / "libc++" / "v1" / fileName;
+		if (std::filesystem::exists(candidate))
+		{
+			return FilePath(candidate.string());
+		}
+	}
+	return std::nullopt;
+}
+
+// Xcode 27's SDK cleanup dropped the INFINITY / NAN / HUGE_VAL* C math macros from the headers that
+// libc++'s <complex>/<cmath> pull in while building the std module, so std.cppm fails to compile with
+// "use of undeclared identifier 'INFINITY'". Define the standard builtins ourselves if absent, via an
+// -include prefix header. Returns the shim path.
+FilePath writeStdMathShim(const FilePath& cacheDir)
+{
+	const FilePath shimPath = cacheDir.getConcatenated("/std_math_shim.h");
+	std::ofstream out(shimPath.str());
+	out << "#pragma once\n"
+		   "#ifndef INFINITY\n#define INFINITY (__builtin_inff())\n#endif\n"
+		   "#ifndef NAN\n#define NAN (__builtin_nanf(\"\"))\n#endif\n"
+		   "#ifndef HUGE_VAL\n#define HUGE_VAL (__builtin_huge_val())\n#endif\n"
+		   "#ifndef HUGE_VALF\n#define HUGE_VALF (__builtin_huge_valf())\n#endif\n"
+		   "#ifndef HUGE_VALL\n#define HUGE_VALL (__builtin_huge_vall())\n#endif\n";
+	return shimPath;
+}
+
+// Build a standard library module BMI (std / std.compat) into the cache so `import std;` resolves for
+// a source group that has no in-group provider for it. Reuses the same in-process FrontendAction as
+// source modules. The build is based on the flags of a file that imports std (`baseFlags`) so it
+// inherits the group's sysroot and libc++ include paths -- without them std.cppm can't find libc++'s
+// internal headers ('__config' not found). Adds the reserved-identifier suppression and the
+// math-macro shim std.cppm needs, and a C++23 -std if the base flags carry none. std.compat imports
+// std, so std must be built first (buildBmiInProcess puts the cache on the module path). Returns true
+// if the .pcm was produced.
+bool buildStdModuleBmi(
+	const std::string& moduleName,
+	const std::string& sourceFileName,
+	const FilePath& cacheDir,
+	const FilePath& shimPath,
+	const std::vector<std::string>& baseFlags)
+{
+	const std::optional<FilePath> source = findStdModuleSource(sourceFileName);
+	if (!source)
+	{
+		LOG_ERROR(
+			"`import " + moduleName + ";` requested but the toolchain's " + sourceFileName +
+			" was not found; the standard library module will not resolve.");
+		return false;
+	}
+	const FilePath bmiPath = cacheDir.getConcatenated("/" + moduleName + ".pcm");
+	std::vector<std::string> flags = baseFlags;
+	if (!hasStdFlag(flags))
+	{
+		flags.push_back("-std=c++2b");
+	}
+	utility::append(flags, std::vector<std::string>{"-Wno-reserved-module-identifier", "-include", shimPath.str()});
+	if (!buildBmiInProcess(*source, bmiPath, cacheDir, flags))
+	{
+		LOG_ERROR("Failed to build the '" + moduleName + "' standard library module BMI.");
+		return false;
+	}
+	return true;
+}
 }	 // namespace
 
 int CxxModulePrebuildRunner::run(const FilePath& requestPath)
@@ -367,6 +450,45 @@ int CxxModulePrebuildRunner::run(const FilePath& requestPath)
 			std::filesystem::remove(entry.path());
 		}
 	}
+
+	// 3a. Build the standard library module(s) if any file imports `std` / `std.compat` but no source
+	// unit in the group provides them -- the module lives in the toolchain, not the source group, so we
+	// compile its shipped std.cppm on demand. Done before the source BMIs so a source module that
+	// itself imports std resolves against the freshly built std.pcm.
+	std::set<std::string> externalRequires;
+	for (const auto& [file, reqs]: fileRequires)
+	{
+		for (const std::string& required: reqs)
+		{
+			if (moduleProviderFile.find(required) == moduleProviderFile.end())
+			{
+				externalRequires.insert(required);
+			}
+		}
+	}
+	const bool needStdCompat = externalRequires.count("std.compat") != 0;
+	if (externalRequires.count("std") != 0 || needStdCompat)
+	{
+		const FilePath shimPath = writeStdMathShim(cacheDir);
+		// Base the std build on a file that imports std: those flags carry the group's sysroot and
+		// libc++ include paths, which std.cppm needs to find its own internal headers.
+		std::vector<std::string> baseFlags;
+		for (const auto& [file, reqs]: fileRequires)
+		{
+			if (reqs.count("std") != 0 || reqs.count("std.compat") != 0)
+			{
+				baseFlags = fileFlags[file];
+				break;
+			}
+		}
+		buildStdModuleBmi("std", "std.cppm", cacheDir, shimPath, baseFlags);
+		if (needStdCompat)
+		{
+			buildStdModuleBmi("std.compat", "std.compat.cppm", cacheDir, shimPath, baseFlags);
+		}
+	}
+
+	// 3b. Build each source-group interface unit's BMI, in dependency order.
 	for (const FilePath& file: buildOrder)
 	{
 		const std::string logicalName = providedModule[file];

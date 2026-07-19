@@ -25,3 +25,12 @@ target_link_libraries(Sourcetrail_lib_cxx
 		Sourcetrail_lib
 		External_lib_clang
 )
+
+# The C++20 standard library module (std.cppm) ships next to the toolchain's libc++ at
+# <prefix>/share/libc++/v1/. The module prebuild builds its BMI on demand so `import std;` resolves.
+# Bake in the LLVM install prefix we link against, so the runner compiles the std.cppm that matches
+# the in-process libclang's libc++ exactly.
+target_compile_definitions(Sourcetrail_lib_cxx
+	PRIVATE
+		SOURCETRAIL_LLVM_INSTALL_PREFIX="${LLVM_INSTALL_PREFIX}"
+)
