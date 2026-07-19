@@ -214,15 +214,30 @@ can't be exercised by `zig build test` alone).
     nested enclosing scope (currently the enclosing top-level decl). Comptime/type
     resolution is WIP in ZLS; degrade to the syntactic result where it can't resolve.
 
-## Phase 4 — Per-file incremental (ships with the above)
+## Phase 4 — Per-file incremental — ✅ landed + verified
 
-No new C++ mechanism — Zig maps onto the existing model, *better* than C++ because the
-module graph is explicit:
-- One command per `.zig` file; `EDGE_IMPORT` edges give `getReferencing()` a precise
-  reverse-dependency closure (`PersistentStorage.cpp`).
-- Reuse the `file_command_hash` freshness pattern (`RefreshInfoGenerator.cpp`): store a
-  Zig-derived token (resolved import set + zig version) so a compiler/flag change
-  invalidates like a content change even when mtime is stale.
+Precise incremental re-index, verified end-to-end on the fixture: **edit nothing → 0
+files; edit a leaf (`main.zig`) → 1; edit a dependency (`util.zig`) → 2** (util + its
+importer main). Four bugs (all found by driving the real app) had to be fixed:
+- `SourceGroupZig::filterToContainedFilePaths` delegated to the base
+  `filterToContainedSourceFilePath`, whose **inverted semantics** (returns the group's
+  files *not* in the argument) made `RefreshInfoGenerator` treat every stored file as
+  "removed from project" → whole-group re-index every refresh. Fixed to a direct
+  intersection.
+- `status.zig` never cleared `current_files`, so every file was reported as a **crashed
+  translation unit** at `doExit` → incomplete → always re-indexed. Clear the entry on
+  update/finish.
+- `@import` now resolves (via ZLS) to the absolute path and emits **`EDGE_INCLUDE`
+  (file→file)** — the edge Sourcetrail's reverse-dependency closure
+  (`getFileIdToIncludingFileIdMap`) reads for file targets (`EDGE_IMPORT` needs a
+  symbol+occurrence). The imported file is recorded `indexed=true` so the C++ side stores
+  its content (read only on first insert when indexed), enabling content-diff. (Plus a
+  labeled-break fix so `resolveImports` didn't silently skip every import.)
+- `storage.recordFile` dedups by path.
+
+Deferred: a `file_command_hash` freshness token (Zig version + resolved import set) so a
+compiler/flag change invalidates even when mtime is stale — `IndexerCommandZig` currently
+returns no hash, so Zig relies on mtime+content-diff (which now works correctly).
 
 ## Phase 5 — Testing & CI
 
