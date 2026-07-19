@@ -91,6 +91,22 @@ pub fn build(b: *std.Build) void {
     });
     configureFlatcc(ipc_tests.root_module, gen_dir, flatcc_prefix);
     test_step.dependOn(&b.addRunArtifact(ipc_tests).step);
+
+    // Semantic-pass tests: drive a real ZLS Session over an in-memory document
+    // (needs the zls module; no flatcc/thoth-ipc).
+    const semantic_tests = b.addTest(.{
+        .root_module = b.createModule(.{
+            .root_source_file = b.path("src/semantic_tests.zig"),
+            .target = target,
+            .optimize = optimize,
+            .link_libc = true,
+            .imports = &.{
+                .{ .name = "indexer", .module = mod },
+                .{ .name = "zls", .module = zls },
+            },
+        }),
+    });
+    test_step.dependOn(&b.addRunArtifact(semantic_tests).step);
 }
 
 /// Add the flatcc-generated include dir, the flatcc runtime headers/lib, and
