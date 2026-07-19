@@ -148,10 +148,11 @@ the planned stress test.
   - **Sysroot / libc++ path.** The std BMI is built with the flags of a file that imports std, so it
     inherits the group's `-isysroot` and libc++ include paths. Minimal flags fail with
     `'__config' file not found` (libc++'s internal headers aren't on the default search path).
-  - **INFINITY / NAN shim.** Xcode 27's SDK cleanup dropped the `INFINITY` / `NAN` / `HUGE_VAL*` C
+  - **Module-compat shim.** Xcode 27's SDK cleanup dropped the `INFINITY` / `NAN` / `HUGE_VAL*` C
     math macros from the headers `<complex>`/`<cmath>` pull in, so `std.cppm` fails with
     `use of undeclared identifier 'INFINITY'`. The runner writes a tiny `-include` shim
-    (`std_math_shim.h`) defining the standard builtins if absent. Plus
+    (`module_compat_shim.h`) re-defining the standard builtins if absent, and `-include`s it into
+    **every** BMI build (std and source modules alike) — see "Toolchain-compat shim" below. Plus
     `-Wno-reserved-module-identifier` for std.cppm's reserved names.
 - The std modules are **not** added to the manifest's `interfaceUnits` (they aren't source-group
   files the main process indexes); the built `std.pcm` just sits in the cache for
@@ -194,15 +195,31 @@ Result: **2/2 files, 0 errors, 6,837 symbols**; three BMIs built in dependency o
 in action), and `vulkan.pcm` (62 MB); ~67 s wall, ~980 MB peak RSS. `std::hash<vk::…>` specializations
 resolve through both the vulkan and std modules.
 
-Two real-world snags it surfaced (both handled outside the indexer, as a user's project config would):
+Two real-world snags it surfaced:
 - **Xcode 27 SDK header hygiene** — building `vulkan.hpp` as a BMI fails with `'getenv' must be
   declared before it is used` (the same class as the INFINITY/NAN std-module issue): the strict module
-  build no longer sees the transitive `<cstdlib>`. Fixed by adding `#include <cstdlib>` to the module's
-  global fragment. This is exactly the failure the new diagnostics pipeline now makes visible in the
-  index log.
+  build no longer sees the transitive `<cstdlib>`. Because `getenv` is a *declaration* (not a macro), it
+  can't be fixed by the shim (see below) — it must be `#include <cstdlib>`d in the module's own global
+  fragment. This is exactly the failure the new diagnostics pipeline now makes visible in the index log.
 - **SDK partition-name inconsistency** — the shipped `vulkan.cppm` (module `vulkan`) imports `:video`,
   but `vulkan_video.cppm` declares `export module vulkan_hpp:video;` (mismatched base name, a mid-rename
   packaging quirk in this SDK snapshot). Made consistent for the test.
+
+### Toolchain-compat shim (`module_compat_shim.h`)
+`writeModuleCompatShim` writes a tiny prefix header the runner `-include`s into **every** BMI build
+(std and source modules alike). It re-defines the `INFINITY` / `NAN` / `HUGE_VAL*` C math macros Xcode
+27's SDK cleanup dropped, `#ifndef`-guarded so it's a no-op where the toolchain still provides them
+(verified redefinition-safe even under `-Werror -Wmacro-redefined` with `<cmath>` in a module's global
+fragment). The proven beneficiary is `std.cppm`; applying it to source modules too is cheap defensive
+coverage for the same macro-gap class.
+
+**Only macros can live in the shim.** A `-include` header is injected *before* the file's `module;`
+global-module-fragment marker, and a real declaration there (e.g. `#include <cstdlib>` to declare
+`getenv`) is ill-formed — `'module;' can appear only at the start of the translation unit`. Macros are
+exempt (they aren't declarations). We confirmed no compiler flag (`-fmodules`,
+`-fbuiltin-headers-in-system-modules`, `-fmodules-local-submodule-visibility`) fixes the `getenv`
+visibility either. So **declaration-class** gaps can't be generalized into the shim; they're a
+source-level fix in the offending module's global fragment, which the diagnostics pipeline points at.
 
 ## Risks / notes
 - One extra process spawn per index of a module project (one-time, not per-TU), plus the
