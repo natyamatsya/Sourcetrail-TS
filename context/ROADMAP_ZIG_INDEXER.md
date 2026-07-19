@@ -210,10 +210,26 @@ module graph is explicit:
 
 ## Phase 5 — Testing & CI
 
-- flatcc↔flatc round-trip (Zig serialize → C++ deserialize) — Rust analog `ipc/storage_tests.rs`.
-- Parser tests over a small `.zig` fixture: node/edge kinds + exact line/col + scope extents.
-- Self-index smoke (index the indexer's own sources) — Rust `index_self` analog.
-- `zig build test` step in `.github/workflows/cmake-multi-platform.yml`.
+- **Live end-to-end — ✅ verified.** Built the full app with `BUILD_ZIG_LANGUAGE_PACKAGE`
+  and ran `Sourcetrail index --full` on a two-file Zig fixture. The app launches
+  `sourcetrail_zig_indexer`, which parses the files, ships `IntermediateStorage` over the
+  thoth-ipc SHM channels, and the C++ core writes **18 nodes / 9 edges (incl. 3
+  `EDGE_IMPORT`) / 2 files** into SQLite, 0 errors — node kinds all correct
+  (struct/enum/field/method/function/enum-constant/global). Three real bugs were found and
+  fixed in the process (status segment size, flatcc string-vec frame order, scalar-vec push
+  takes a pointer — see the `fix(zig):` commits).
+- flatcc round-trip (Zig build → read-back) — done (`src/ipc/tests.zig`).
+- Parser tests over `.zig` fixtures: node/edge kinds + exact line/col + scope extents — done.
+- Self-index smoke (`zig build run -- <file.zig>`) — done.
+- TODO: `zig build test` step in `.github/workflows/cmake-multi-platform.yml`; a C++
+  ipc-harness round-trip test.
+
+### Environment notes (macOS, this checkout)
+- The full-app link needs Apple's `ar`/`ranlib`: GNU binutils `ar` on `PATH`
+  (`/opt/homebrew/opt/binutils/bin`) and `llvm-ar` both emit GNU-format archives whose `/`
+  symbol-table member the Xcode-27 `ld` rejects (`archive member '/' not a mach-o file`).
+  Configure/point the archiver at `/usr/bin/ar` + `/usr/bin/ranlib`.
+- `flatcc` must be on `PATH` (`brew install flatcc`) for the Zig indexer's CMake target.
 
 ---
 
