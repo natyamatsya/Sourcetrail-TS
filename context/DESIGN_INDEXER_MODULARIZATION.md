@@ -180,12 +180,22 @@ cycles in `lib` is prerequisite work, and a good cleanup in its own right).
     an `import`; a consumer keeps that one macro textual (replace `QStringLiteral("x")` with
     `QString::fromUtf8("x")`, or keep a minimal `<QMetaType>` for `Q_DECLARE_METATYPE`).
   - **Pilots.** `TimeStamp` (pure std, no Qt) modularized cleanly as `srctrl.utility:time`. `FilePath` —
-    the real Qt pilot — is **reverted**: the direct `srctrl.qt` consumption pattern works in isolation
-    (static `QRegularExpression` + `qgetenv` in an inline member through `srctrl.qt` compiles fine), but
-    routing `FilePath` through the *full 7-partition `srctrl.utility` re-export chain* (`:file` importing
-    srctrl.qt + srctrl.logging + :string) **segfaults clang's frontend** — a toolchain bug in a complex
-    module-merge, not a design flaw. Revisit with a newer clang, or by importing a Qt-coupled leaf module
-    directly rather than through a deep re-export chain.
+    the real Qt pilot — is **reverted for now**, because of a clang crash whose trigger is now pinned down:
+    - **The crash is `re-export`-specific.** Routing a Qt-coupled partition through a module that
+      **`export import`s** it — `srctrl.utility` re-exporting `:file` (which imports srctrl.qt) — segfaults
+      clang's frontend when a consumer `import srctrl.utility` + uses the type. The direct pattern is fine
+      (static `QRegularExpression` + `qgetenv` in an inline member imported straight from srctrl.qt compiles).
+    - **The dodge — import the Qt-coupled type as a leaf module, directly.** Verified: a leaf module that
+      `import`s srctrl.utility (all 7 partitions) + srctrl.qt + srctrl.logging and has an inline member using
+      `QRegularExpression` + `utilityString` + `srctrl::log` + `qgetenv`, imported **directly** by the
+      consumer, compiles fully (frontend green; only app-link symbols missing). So a Qt-coupled type wants
+      its own leaf module (e.g. `srctrl.file`), NOT a partition re-exported by srctrl.utility.
+    - **Remaining risk for the full FilePath migration.** Types that *expose* FilePath by value
+      (`SourceLocationFile`, `StorageFile`) need it visible to *their* consumers, which may force `:location`/
+      `:types` to `export import srctrl.file` — re-introducing a re-export of Qt that could re-trigger the
+      crash. So the real migration (convert FilePath → `srctrl.file`; switch its 4 GMF-consumer wrappers —
+      data:location/graph, storage:types/access — to `import srctrl.file`) must verify the re-export path
+      end-to-end before it's committed.
 
 - **`import std` — now GREEN for the whole first-party module set (utility + data + logging).** Getting
   there took fixing two real import-std-with-legacy-headers edges (both pre-existing, surfaced only when
