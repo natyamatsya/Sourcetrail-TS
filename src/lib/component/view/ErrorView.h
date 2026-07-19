@@ -24,6 +24,10 @@ public:
 
 	virtual ErrorFilter getErrorFilter() const = 0;
 	virtual void setErrorFilter(const ErrorFilter& filter) = 0;
+
+	//! Pop up the first-run error-help message. The presentation (widget, UI thread) is the view's
+	//! concern, so the controller drives it through this seam instead of touching Qt directly.
+	virtual void showErrorHelpMessage() = 0;
 };
 
 #endif	  // ERROR_VIEW_H

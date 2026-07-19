@@ -246,6 +246,11 @@ void QtErrorView::setErrorFilter(const ErrorFilter& filter)
 	});
 }
 
+void QtErrorView::showErrorHelpMessage()
+{
+	execution::qt::onUi(this, [=, this]() { createErrorHelpButtonInfo().displayMessage(nullptr); });
+}
+
 void QtErrorView::errorFilterChanged(int i)
 {
 	using enum Column;
