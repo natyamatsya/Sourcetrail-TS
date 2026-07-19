@@ -201,7 +201,7 @@ IndexerCommandCxx::IndexerCommandCxx(
 	const FilePath& workingDirectory,
 	const std::vector<std::string>& compilerFlags,
 	const std::string& compilerPath)
-	: IndexerCommand(sourceFilePath)
+	: m_sourceFilePath(sourceFilePath)
 	, m_indexedPaths(indexedPaths)
 	, m_excludeFilters(excludeFilters)
 	, m_includeFilters(includeFilters)
@@ -216,9 +216,14 @@ IndexerCommandType IndexerCommandCxx::getIndexerCommandType() const
 	return getStaticIndexerCommandType();
 }
 
+const FilePath& IndexerCommandCxx::getSourceFilePath() const
+{
+	return m_sourceFilePath;
+}
+
 size_t IndexerCommandCxx::getByteSize(size_t stringSize) const
 {
-	size_t size = IndexerCommand::getByteSize(stringSize);
+	size_t size = 0;
 
 	for (const FilePath& path: m_indexedPaths)
 	{

@@ -36,7 +36,7 @@ public:
 		std::shared_ptr<FileRegister> fileRegister,
 		std::shared_ptr<IndexerStateInfo> indexerStateInfo);
 
-	void buildIndex(std::shared_ptr<IndexerCommandCxx> indexerCommand);
+	void buildIndex(std::shared_ptr<const IndexerCommandCxx> indexerCommand);
 	void buildIndex(
 		const std::string& fileName,
 		std::shared_ptr<TextAccess> fileContent,

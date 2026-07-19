@@ -1,41 +1,98 @@
 #ifndef INDEXER_COMMAND_H
 #define INDEXER_COMMAND_H
 
-#include <set>
+#include <concepts>
+#include <cstddef>
+#include <memory>
 #include <string>
+#include <utility>
 
 #include "FilePath.h"
-#include "FilePathFilter.h"
 #include "IndexerCommandType.h"
 
+// Contract every language's indexer-command payload satisfies. A payload is a plain value type (NO base
+// class, NO virtuals) holding its language-specific data; it gets wrapped into the type-erased
+// IndexerCommand below. Adding a language is just writing a payload that models this -- an open set.
+template <class T>
+concept IndexerCommandC = requires(const T& command, std::size_t stringSize) {
+	{ command.getIndexerCommandType() } -> std::convertible_to<IndexerCommandType>;
+	{ command.getByteSize(stringSize) } -> std::convertible_to<std::size_t>;
+	{ command.getIndexerCommandHash() } -> std::convertible_to<std::string>;
+};
+
+// A type-erased, move-only indexer command (Iglberger-style external polymorphism): value semantics, no
+// inheritance for callers, no shared_ptr. The data common to every command (source file, source group)
+// lives here directly; the language-specific payload is erased behind Concept/Model. Model<Payload> is
+// only instantiated where Payload is complete (the construction sites), so e.g. the Cxx payload's Model
+// is emitted in lib_cxx and lib_core never names it.
 class IndexerCommand
 {
 public:
-	IndexerCommand(const FilePath& sourceFilePath);
-	virtual ~IndexerCommand() = default;
+	template <IndexerCommandC Payload>
+	IndexerCommand(const FilePath& sourceFilePath, Payload payload)
+		: m_sourceFilePath(sourceFilePath)
+		, m_self(std::make_unique<Model<Payload>>(std::move(payload)))
+	{
+	}
 
-	virtual IndexerCommandType getIndexerCommandType() const = 0;
+	IndexerCommand(IndexerCommand&&) noexcept = default;
+	IndexerCommand& operator=(IndexerCommand&&) noexcept = default;
 
-	virtual size_t getByteSize(size_t stringSize) const;
+	IndexerCommandType getIndexerCommandType() const { return m_self->getIndexerCommandType(); }
+	std::string getIndexerCommandHash() const { return m_self->getIndexerCommandHash(); }
 
-	const FilePath& getSourceFilePath() const;
+	std::size_t getByteSize(std::size_t stringSize) const
+	{
+		return m_sourceFilePath.str().size() + m_sourceGroupId.size() + m_self->getByteSize(stringSize);
+	}
+
+	const FilePath& getSourceFilePath() const { return m_sourceFilePath; }
 
 	//! Id of the source group this command belongs to (fan-out S1). Tagged by
 	//! CombinedIndexerCommandProvider when commands are consumed for indexing;
-	//! empty until then. Lets subprocesses filter the shared command queue by
-	//! group (fan-out S2).
-	const std::string& getSourceGroupId() const;
-	void setSourceGroupId(const std::string& sourceGroupId);
+	//! empty until then. Lets subprocesses filter the shared command queue by group (fan-out S2).
+	const std::string& getSourceGroupId() const { return m_sourceGroupId; }
+	void setSourceGroupId(const std::string& sourceGroupId) { m_sourceGroupId = sourceGroupId; }
 
-	//! Stable hash of the effective compile command for this translation unit.
-	//! Empty for command types with no meaningful compile command. Used by the
-	//! incremental refresh to detect flag changes that leave the source mtime
-	//! untouched (e.g. an edited define/include in CMakeLists or the CDB).
-	virtual std::string getIndexerCommandHash() const { return std::string(); }
+	//! std::function::target-style typed access to the erased payload; null if it isn't a T.
+	template <class T>
+	const T* target() const
+	{
+		const auto* model = dynamic_cast<const Model<T>*>(m_self.get());
+		return model ? &model->m_payload : nullptr;
+	}
+
+	template <class T>
+	T* target()
+	{
+		auto* model = dynamic_cast<Model<T>*>(m_self.get());
+		return model ? &model->m_payload : nullptr;
+	}
 
 private:
+	struct Concept
+	{
+		virtual ~Concept() = default;
+		virtual IndexerCommandType getIndexerCommandType() const = 0;
+		virtual std::size_t getByteSize(std::size_t stringSize) const = 0;
+		virtual std::string getIndexerCommandHash() const = 0;
+	};
+
+	template <class T>
+	struct Model final: Concept
+	{
+		explicit Model(T payload): m_payload(std::move(payload)) {}
+
+		IndexerCommandType getIndexerCommandType() const override { return m_payload.getIndexerCommandType(); }
+		std::size_t getByteSize(std::size_t stringSize) const override { return m_payload.getByteSize(stringSize); }
+		std::string getIndexerCommandHash() const override { return m_payload.getIndexerCommandHash(); }
+
+		T m_payload;
+	};
+
 	FilePath m_sourceFilePath;
 	std::string m_sourceGroupId;
+	std::unique_ptr<Concept> m_self;
 };
 
 #endif	  // INDEXER_COMMAND_H

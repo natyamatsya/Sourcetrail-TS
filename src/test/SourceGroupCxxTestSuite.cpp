@@ -5,6 +5,7 @@
 #include "AppPath.h"
 #include "Application.h"
 #include "ApplicationSettings.h"
+#include "IndexerCommand.h"
 #include "IndexerCommandCxx.h"
 #include "Platform.h"
 #include "ProjectSettings.h"
@@ -70,7 +71,7 @@ FilePath getOutputDirectoryPath(const std::string& projectName)
 }
 
 std::string indexerCommandCxxToString(
-	std::shared_ptr<const IndexerCommandCxx> indexerCommand,
+	const IndexerCommandCxx* indexerCommand,
 	const FilePath& baseDirectory)
 {
 	std::string result;
@@ -107,8 +108,7 @@ std::string indexerCommandToString(
 	if (!indexerCommand)
 		return "No IndexerCommand provided.";
 
-	if (std::shared_ptr<const IndexerCommandCxx> indexerCommandCxx =
-			std::dynamic_pointer_cast<const IndexerCommandCxx>(indexerCommand))
+	if (const IndexerCommandCxx* indexerCommandCxx = indexerCommand->target<IndexerCommandCxx>())
 		return indexerCommandCxxToString(indexerCommandCxx, baseDirectory);
 
 	return "Unsupported indexer command type: " +

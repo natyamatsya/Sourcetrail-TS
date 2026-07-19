@@ -1,4 +1,6 @@
 #include "SourceGroupSwift.h"
+#include "IndexerCommand.h"
+#include "FilePathFilter.h"
 
 #include <set>
 
@@ -89,9 +91,10 @@ std::vector<std::shared_ptr<IndexerCommand>> SourceGroupSwift::getIndexerCommand
 
 	auto makeCommand = [&](const FilePath& packageRoot) {
 		// The source file path doubles as the status-tracking key.
-		return std::make_shared<IndexerCommandSwift>(
-			packageRoot, indexedPaths, packageRoot, buildArgs, toolchainPath, indexStorePath,
-			specializationScope);
+		return std::make_shared<IndexerCommand>(
+			packageRoot,
+			IndexerCommandSwift(
+				indexedPaths, packageRoot, buildArgs, toolchainPath, indexStorePath, specializationScope));
 	};
 
 	// One command per SPM package root, so K Swift supervisors index packages

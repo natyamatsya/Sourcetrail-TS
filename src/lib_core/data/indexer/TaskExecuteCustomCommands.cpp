@@ -5,6 +5,7 @@
 #include "DialogView.h"
 #include "ElementComponentKind.h"
 #include "FileSystem.h"
+#include "IndexerCommand.h"
 #include "IndexerCommandCustom.h"
 #include "IndexerCommandProvider.h"
 #include "MessageErrorCountClear.h"
@@ -49,16 +50,17 @@ void TaskExecuteCustomCommands::doEnter(std::shared_ptr<Blackboard>  /*blackboar
 		for (const FilePath& sourceFilePath:
 			 utility::partitionFilePathsBySize(m_indexerCommandProvider->getAllSourceFilePaths(), 2))
 		{
-			if (std::shared_ptr<IndexerCommandCustom> indexerCommand =
-					std::dynamic_pointer_cast<IndexerCommandCustom>(
-						m_indexerCommandProvider->consumeCommandForSourceFilePath(sourceFilePath)))
+			std::shared_ptr<IndexerCommand> indexerCommand =
+				m_indexerCommandProvider->consumeCommandForSourceFilePath(sourceFilePath);
+			if (const IndexerCommandCustom* custom =
+					indexerCommand ? indexerCommand->target<IndexerCommandCustom>() : nullptr)
 			{
 				if (m_targetDatabaseFilePath.empty())
 				{
-					m_targetDatabaseFilePath = indexerCommand->getDatabaseFilePath();
+					m_targetDatabaseFilePath = custom->getDatabaseFilePath();
 				}
 
-				if (indexerCommand->getRunInParallel())
+				if (custom->getRunInParallel())
 				{
 					m_parallelCommands.push_back(indexerCommand);
 				}
@@ -96,7 +98,7 @@ Task::TaskState TaskExecuteCustomCommands::doUpdate(std::shared_ptr<Blackboard> 
 
 	while (!m_interrupted && !m_serialCommands.empty())
 	{
-		std::shared_ptr<IndexerCommandCustom> indexerCommand = m_serialCommands.back();
+		std::shared_ptr<IndexerCommand> indexerCommand = m_serialCommands.back();
 		m_serialCommands.pop_back();
 		runIndexerCommand(indexerCommand, blackboard, m_storage);
 	}
@@ -160,7 +162,7 @@ void TaskExecuteCustomCommands::executeParallelIndexerCommands(
 	std::shared_ptr<PersistentStorage> storage;
 	while (!m_interrupted)
 	{
-		std::shared_ptr<IndexerCommandCustom> indexerCommand;
+		std::shared_ptr<IndexerCommand> indexerCommand;
 		{
 			std::lock_guard<std::mutex> lock(m_parallelCommandsMutex);
 			if (m_parallelCommands.empty())
@@ -177,7 +179,7 @@ void TaskExecuteCustomCommands::executeParallelIndexerCommands(
 		}
 		else
 		{
-			FilePath databaseFilePath = indexerCommand->getDatabaseFilePath();
+			FilePath databaseFilePath = indexerCommand->target<IndexerCommandCustom>()->getDatabaseFilePath();
 			databaseFilePath = databaseFilePath.getParentDirectory().concatenate(
 				databaseFilePath.fileName() + "_thread" + std::to_string(threadId));
 
@@ -208,7 +210,7 @@ void TaskExecuteCustomCommands::executeParallelIndexerCommands(
 				storage->buildCaches();
 			}
 
-			indexerCommand->setDatabaseFilePath(databaseFilePath);
+			indexerCommand->target<IndexerCommandCustom>()->setDatabaseFilePath(databaseFilePath);
 		}
 
 		runIndexerCommand(indexerCommand, blackboard, storage);
@@ -216,7 +218,7 @@ void TaskExecuteCustomCommands::executeParallelIndexerCommands(
 }
 
 void TaskExecuteCustomCommands::runIndexerCommand(
-	std::shared_ptr<IndexerCommandCustom> indexerCommand,
+	std::shared_ptr<IndexerCommand> indexerCommand,
 	std::shared_ptr<Blackboard> blackboard,
 	std::shared_ptr<PersistentStorage> storage)
 {
@@ -232,8 +234,8 @@ void TaskExecuteCustomCommands::runIndexerCommand(
 			indexedSourceFileCount + 1, indexedSourceFileCount, m_indexerCommandCount, {sourcePath});
 		MessageIndexingStatus(true, indexedSourceFileCount * 100 / m_indexerCommandCount).dispatch();
 
-		const std::string command = indexerCommand->getCommand();
-		const std::vector<std::string> arguments = indexerCommand->getArguments();
+		const std::string command = indexerCommand->target<IndexerCommandCustom>()->getCommand();
+		const std::vector<std::string> arguments = indexerCommand->target<IndexerCommandCustom>()->getArguments();
 
 		LOG_INFO("Start processing command \"" +	command + " " + utility::join(arguments, " ") + "\"");
 
@@ -275,7 +277,7 @@ void TaskExecuteCustomCommands::runIndexerCommand(
 		}
 		else
 		{
-			std::string statusText = "command \"" + indexerCommand->getCommand() + " " +
+			std::string statusText = "command \"" + indexerCommand->target<IndexerCommandCustom>()->getCommand() + " " +
 				utility::join(arguments, " ") + "\" returned";
 			if (out.exitCode != 0)
 			{

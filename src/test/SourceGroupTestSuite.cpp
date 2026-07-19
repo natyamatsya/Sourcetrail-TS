@@ -5,6 +5,7 @@
 #include "AppPath.h"
 #include "Application.h"
 #include "FileSystem.h"
+#include "IndexerCommand.h"
 #include "IndexerCommandCustom.h"
 #include "Platform.h"
 #include "ProjectSettings.h"
@@ -70,15 +71,15 @@ static FilePath getOutputDirectoryPath(const std::string& projectName)
 }
 
 std::string indexerCommandCustomToString(
-	std::shared_ptr<const IndexerCommandCustom> indexerCommand, const FilePath& baseDirectory)
+	const std::shared_ptr<const IndexerCommand>& indexerCommand, const FilePath& baseDirectory)
 {
 	std::string result;
 	result += "IndexerCommandCustom\n";
 	result += "\tSourceFilePath: \"" +
 		indexerCommand->getSourceFilePath().getRelativeTo(baseDirectory).str() + "\"\n";
-	result += "\tCustom Command: \"" + indexerCommand->getCommand() + "\"\n";
+	result += "\tCustom Command: \"" + indexerCommand->target<IndexerCommandCustom>()->getCommand() + "\"\n";
 	result += "\tArguments:\n";
-	for (const std::string& argument: indexerCommand->getArguments())
+	for (const std::string& argument: indexerCommand->target<IndexerCommandCustom>()->getArguments())
 	{
 		result += "\t\t\"" + argument + "\"\n";
 	}
@@ -90,10 +91,9 @@ std::string indexerCommandToString(
 {
 	if (indexerCommand)
 	{
-		if (std::shared_ptr<const IndexerCommandCustom> indexerCommandCustom =
-				std::dynamic_pointer_cast<const IndexerCommandCustom>(indexerCommand))
+		if (indexerCommand->target<IndexerCommandCustom>())
 		{
-			return indexerCommandCustomToString(indexerCommandCustom, baseDirectory);
+			return indexerCommandCustomToString(indexerCommand, baseDirectory);
 		}
 		return "Unsupported indexer command type: " + indexerCommandTypeToString(indexerCommand->getIndexerCommandType());
 	}

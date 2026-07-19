@@ -1,21 +1,18 @@
 #include "IndexerCommandSwift.h"
 
-
 IndexerCommandType IndexerCommandSwift::getStaticIndexerCommandType()
 {
 	return IndexerCommandType::INDEXER_COMMAND_SWIFT;
 }
 
 IndexerCommandSwift::IndexerCommandSwift(
-	const FilePath& sourceFilePath,
 	const std::set<FilePath>& indexedPaths,
 	const FilePath& workingDirectory,
 	const std::vector<std::string>& buildArgs,
 	const std::string& toolchainPath,
 	const std::string& indexStorePath,
 	const std::string& specializationScope)
-	: IndexerCommand(sourceFilePath)
-	, m_indexedPaths(indexedPaths)
+	: m_indexedPaths(indexedPaths)
 	, m_workingDirectory(workingDirectory)
 	, m_buildArgs(buildArgs)
 	, m_toolchainPath(toolchainPath)
@@ -27,6 +24,16 @@ IndexerCommandSwift::IndexerCommandSwift(
 IndexerCommandType IndexerCommandSwift::getIndexerCommandType() const
 {
 	return getStaticIndexerCommandType();
+}
+
+std::size_t IndexerCommandSwift::getByteSize(std::size_t /*stringSize*/) const
+{
+	return 0;
+}
+
+std::string IndexerCommandSwift::getIndexerCommandHash() const
+{
+	return std::string();
 }
 
 const std::set<FilePath>& IndexerCommandSwift::getIndexedPaths() const

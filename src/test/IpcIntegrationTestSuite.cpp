@@ -26,6 +26,7 @@
 
 #include "IntermediateStorage.h"
 
+#include "IndexerCommand.h"
 #include "IndexerCommandSwift.h"
 
 namespace
@@ -483,10 +484,7 @@ TEST_CASE("ipc integration: full indexer workflow")
 			IpcInterprocessIntermediateStorageManager storageOwner(subprocessUuid, swiftProcessId, true);
 
 			commandOwner.pushIndexerCommands({
-				std::make_shared<IndexerCommandSwift>(
-					FilePath("/swift/pkg/main.swift"),
-					std::set<FilePath>{FilePath("/swift/pkg")},
-					FilePath("/swift/pkg"))
+				std::make_shared<IndexerCommand>(FilePath("/swift/pkg/main.swift"), IndexerCommandSwift(std::set<FilePath>{FilePath("/swift/pkg")}, FilePath("/swift/pkg")))
 			});
 			REQUIRE(commandOwner.indexerCommandCount() == 1);
 
@@ -584,10 +582,7 @@ TEST_CASE("ipc integration: full indexer workflow")
 			IpcInterprocessIntermediateStorageManager storageOwner(subprocessUuid, swiftProcessId, true);
 
 			commandOwner.pushIndexerCommands({
-				std::make_shared<IndexerCommandSwift>(
-					FilePath("/swift/pkg/main.swift"),
-					std::set<FilePath>{FilePath("/swift/pkg")},
-					FilePath("/swift/pkg"))
+				std::make_shared<IndexerCommand>(FilePath("/swift/pkg/main.swift"), IndexerCommandSwift(std::set<FilePath>{FilePath("/swift/pkg")}, FilePath("/swift/pkg")))
 			});
 			REQUIRE(commandOwner.indexerCommandCount() == 1);
 
@@ -649,10 +644,7 @@ TEST_CASE("ipc integration: full indexer workflow")
 			IpcInterprocessIndexerCommandManager commandOwner(taskUuid, mainPid, true);
 			commandOwner.clearIndexerCommands();
 			commandOwner.pushIndexerCommands({
-				std::make_shared<IndexerCommandSwift>(
-					FilePath("/swift/pkg/task_main.swift"),
-					std::set<FilePath>{FilePath("/swift/pkg")},
-					FilePath("/swift/pkg"))
+				std::make_shared<IndexerCommand>(FilePath("/swift/pkg/task_main.swift"), IndexerCommandSwift(std::set<FilePath>{FilePath("/swift/pkg")}, FilePath("/swift/pkg")))
 			});
 			REQUIRE(commandOwner.indexerCommandCount() == 1);
 
@@ -754,10 +746,7 @@ TEST_CASE("ipc integration: group-aware queue fill keeps every group available")
 		{
 			// Distinct working directories: Swift commands deduplicate by
 			// working directory when the Swift package is compiled in.
-			commands.push_back(std::make_shared<IndexerCommandSwift>(
-				FilePath("/" + prefix + std::to_string(i) + ".swift"),
-				std::set<FilePath>{},
-				FilePath("/wd/" + prefix + std::to_string(i))));
+			commands.push_back(std::make_shared<IndexerCommand>(FilePath("/" + prefix + std::to_string(i) + ".swift"), IndexerCommandSwift(std::set<FilePath>{}, FilePath("/wd/" + prefix + std::to_string(i)))));
 		}
 		return commands;
 	};
@@ -830,10 +819,9 @@ TEST_CASE("ipc integration: per-group command pop filter")
 	ownerMgr.clearIndexerCommands();
 
 	auto makeCommand = [](const std::string& path, const std::string& groupId) {
-		auto command = std::make_shared<IndexerCommandSwift>(
-			FilePath(path), std::set<FilePath>{}, FilePath("/wd"));
+		auto command = std::make_shared<IndexerCommand>(FilePath(path), IndexerCommandSwift(std::set<FilePath>{}, FilePath("/wd")));
 		command->setSourceGroupId(groupId);
-		return std::static_pointer_cast<IndexerCommand>(command);
+		return command;
 	};
 
 	ownerMgr.pushIndexerCommands({

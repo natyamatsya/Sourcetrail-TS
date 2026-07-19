@@ -1,19 +1,22 @@
 #ifndef INDEXER_COMMAND_RUST_H
 #define INDEXER_COMMAND_RUST_H
 
+#include <cstddef>
 #include <set>
 #include <string>
 #include <vector>
 
-#include "IndexerCommand.h"
+#include "FilePath.h"
+#include "IndexerCommandType.h"
 
-class IndexerCommandRust: public IndexerCommand
+// Rust indexer-command payload: a plain value satisfying IndexerCommandC (no base class). The common data
+// (source file / source group) lives in the wrapping IndexerCommand, so this holds only Rust-specific data.
+class IndexerCommandRust
 {
 public:
 	static IndexerCommandType getStaticIndexerCommandType();
 
 	IndexerCommandRust(
-		const FilePath& sourceFilePath,
 		const std::set<FilePath>& indexedPaths,
 		const FilePath& workingDirectory,
 		const std::vector<std::string>& features = {},
@@ -23,7 +26,10 @@ public:
 		const std::string& specializationScope = "local",
 		bool restrictToPackage = false);
 
-	IndexerCommandType getIndexerCommandType() const override;
+	// IndexerCommandC contract:
+	IndexerCommandType getIndexerCommandType() const;
+	std::size_t getByteSize(std::size_t stringSize) const;	// Rust historically reported only the base size
+	std::string getIndexerCommandHash() const;				// no compile-command hash for Rust
 
 	const std::set<FilePath>& getIndexedPaths() const;
 	const FilePath& getWorkingDirectory() const;
@@ -43,8 +49,6 @@ public:
 	// rooted at the working directory (per-member commands); false = it
 	// collects the whole loaded workspace (legacy / fallback commands).
 	bool getRestrictToPackage() const;
-
-protected:
 
 private:
 	std::set<FilePath> m_indexedPaths;

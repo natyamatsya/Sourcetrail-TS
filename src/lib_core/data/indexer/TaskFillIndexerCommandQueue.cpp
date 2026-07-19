@@ -23,7 +23,7 @@ bool deduplicateByWorkingDir(
 {
 	if constexpr (!Enabled)
 		return false;
-	const auto* typed = dynamic_cast<const CmdType*>(cmd.get());
+	const CmdType* typed = cmd->template target<CmdType>();
 	if (!typed)
 		return false;
 	if (!state.seenWorkingDirectories.insert(typed->getWorkingDirectory().str()).second)

@@ -5,16 +5,16 @@
 #include <set>
 #include <vector>
 
+#include "IndexerCommand.h"
 #include "IndexerCommandRust.h"
 #include "IndexerCommandSerializer.h"
 
 std::shared_ptr<IndexerCommand> makeOptionalRustCommand(const std::string& workingDirectory)
 {
 	const FilePath workingDirectoryPath{workingDirectory};
-	return std::make_shared<IndexerCommandRust>(
+	return std::make_shared<IndexerCommand>(
 		workingDirectoryPath,
-		std::set<FilePath>{workingDirectoryPath},
-		workingDirectoryPath);
+		IndexerCommandRust(std::set<FilePath>{workingDirectoryPath}, workingDirectoryPath));
 }
 
 bool isOptionalRustCommand(const std::shared_ptr<IndexerCommand>& command)
@@ -30,7 +30,7 @@ std::string getOptionalRustWorkingDirectory(const std::shared_ptr<IndexerCommand
 	if (!isOptionalRustCommand(command))
 		return {};
 
-	const auto* rustCommand = dynamic_cast<const IndexerCommandRust*>(command.get());
+	const auto* rustCommand = command->target<IndexerCommandRust>();
 	if (!rustCommand)
 		return {};
 
@@ -43,8 +43,9 @@ void assertOptionalRustSerializerRoundTrip()
 	const FilePath sourceFilePath{"/rust/pkg/src/main.rs"};
 	const FilePath workingDirectory{"/rust/pkg"};
 
-	const auto command = std::make_shared<IndexerCommandRust>(
+	const auto command = std::make_shared<IndexerCommand>(
 		sourceFilePath,
+		IndexerCommandRust(
 		indexedPaths,
 		workingDirectory,
 		std::vector<std::string>{},
@@ -52,7 +53,7 @@ void assertOptionalRustSerializerRoundTrip()
 		false,
 		"",
 		"all",
-		true);
+		true));
 	const std::vector<std::shared_ptr<IndexerCommand>> commands{command};
 
 	const auto buffer = IpcSerializer::serializeIndexerCommands(commands);
@@ -60,9 +61,9 @@ void assertOptionalRustSerializerRoundTrip()
 		IpcSerializer::deserializeIndexerCommands(buffer.data(), buffer.size());
 
 	REQUIRE(deserializedCommands.size() == 1);
-	const auto* rustCommand = dynamic_cast<const IndexerCommandRust*>(deserializedCommands.front().get());
+	const auto* rustCommand = deserializedCommands.front()->target<IndexerCommandRust>();
 	REQUIRE(rustCommand != nullptr);
-	REQUIRE(rustCommand->getSourceFilePath().str() == sourceFilePath.str());
+	REQUIRE(deserializedCommands.front()->getSourceFilePath().str() == sourceFilePath.str());
 	REQUIRE(rustCommand->getIndexedPaths() == indexedPaths);
 	REQUIRE(rustCommand->getWorkingDirectory().str() == workingDirectory.str());
 	// Implicit-specialization node scope survives the round-trip (§7).

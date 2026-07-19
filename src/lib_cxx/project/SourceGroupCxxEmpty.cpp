@@ -1,4 +1,5 @@
 #include "SourceGroupCxxEmpty.h"
+#include "IndexerCommand.h"
 
 #include "ApplicationSettings.h"
 #include "CxxIndexerCommandProvider.h"
@@ -126,14 +127,16 @@ std::shared_ptr<IndexerCommandProvider> SourceGroupCxxEmpty::getIndexerCommandPr
 				utility::append(fileFlags, std::vector<std::string>{"-x", "c++-module"});
 			}
 
-			provider->addCommand(std::make_shared<IndexerCommandCxx>(
+			provider->addCommand(std::make_shared<IndexerCommand>(
+				sourcePath,
+				IndexerCommandCxx(
 					sourcePath,
 					indexedPaths,
 					excludeFilters,
 					std::set<FilePathFilter>{},
 					FilePath(""),
 					fileFlags,
-					""));
+					"")));
 		}
 	}
 

@@ -1,5 +1,7 @@
 #include "CxxIndexerCommandCodec.h"
 
+#include "IndexerCommand.h"
+
 #include <set>
 #include <string>
 #include <vector>
@@ -23,7 +25,7 @@ struct CxxIndexerCommandCodecProvider
 		flatbuffers::FlatBufferBuilder& builder, const IndexerCommand& base) const
 	{
 		// Safe: the registry only invokes this codec for commands whose type is INDEXER_COMMAND_CXX.
-		const auto& cmd = static_cast<const IndexerCommandCxx&>(base);
+		const IndexerCommandCxx& cmd = *base.target<IndexerCommandCxx>();
 
 		std::vector<flatbuffers::Offset<flatbuffers::String>> paths;
 		for (const auto& p: cmd.getIndexedPaths())
@@ -43,12 +45,12 @@ struct CxxIndexerCommandCodecProvider
 
 		return Ipc::CreateIndexerCommand(
 			builder, Ipc::IndexerCommandType_Cxx,
-			builder.CreateString(cmd.getSourceFilePath().str()),
+			builder.CreateString(base.getSourceFilePath().str()),
 			builder.CreateVector(paths), builder.CreateVector(exc), builder.CreateVector(inc),
 			builder.CreateString(cmd.getWorkingDirectory().str()),
 			builder.CreateVector(flags), builder.CreateString(cmd.getCompilerPath()),
 			0, false, false, 0, 0,
-			builder.CreateString(cmd.getSourceGroupId()), false,
+			builder.CreateString(base.getSourceGroupId()), false,
 			0, 0, 0, 0);
 	}
 
@@ -82,9 +84,11 @@ struct CxxIndexerCommandCodecProvider
 		if (fbCmd.compiler_path())
 			compilerPath = fbCmd.compiler_path()->c_str();
 
-		return std::make_shared<IndexerCommandCxx>(
+		return std::make_shared<IndexerCommand>(
 			FilePath(fbCmd.source_file_path()->c_str()),
-			indexedPaths, excludeFilters, includeFilters, workingDir, compilerFlags, compilerPath);
+			IndexerCommandCxx(
+				FilePath(fbCmd.source_file_path()->c_str()),
+				indexedPaths, excludeFilters, includeFilters, workingDir, compilerFlags, compilerPath));
 	}
 };
 }	 // namespace

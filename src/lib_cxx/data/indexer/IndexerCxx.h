@@ -8,7 +8,7 @@ class IndexerCxx: public Indexer<IndexerCommandCxx>
 {
 private:
 	void doIndex(
-		const std::shared_ptr<IndexerCommandCxx>& indexerCommand,
+		const std::shared_ptr<const IndexerCommandCxx>& indexerCommand,
 		const std::shared_ptr<ParserClientImpl>& parserClient,
 		const std::shared_ptr<IndexerStateInfo>& indexerStateInfo) override;
 };

@@ -12,7 +12,7 @@
 #include "TimeStamp.h"
 
 class DialogView;
-class IndexerCommandCustom;
+class IndexerCommand;
 class IndexerCommandProvider;
 class PersistentStorage;
 
@@ -38,7 +38,7 @@ private:
 
 	void executeParallelIndexerCommands(int threadId, std::shared_ptr<Blackboard> blackboard);
 	void runIndexerCommand(
-		std::shared_ptr<IndexerCommandCustom> indexerCommand,
+		std::shared_ptr<IndexerCommand> indexerCommand,
 		std::shared_ptr<Blackboard> blackboard,
 		std::shared_ptr<PersistentStorage> storage);
 
@@ -51,8 +51,8 @@ private:
 	TimeStamp m_start;
 	bool m_interrupted = false;
 	size_t m_indexerCommandCount;
-	std::vector<std::shared_ptr<IndexerCommandCustom>> m_serialCommands;
-	std::vector<std::shared_ptr<IndexerCommandCustom>> m_parallelCommands;
+	std::vector<std::shared_ptr<IndexerCommand>> m_serialCommands;
+	std::vector<std::shared_ptr<IndexerCommand>> m_parallelCommands;
 	std::mutex m_parallelCommandsMutex;
 	ErrorCountInfo m_errorCount;
 	std::mutex m_errorCountMutex;

@@ -44,11 +44,9 @@ TEST_CASE("ipc serializer round-trips")
 	{
 		// The group tag (fan-out S1) rides every command type through the base
 		// class; Swift commands are compiled unconditionally, so use one.
-		auto tagged = std::make_shared<IndexerCommandSwift>(
-			FilePath("/src/main.swift"), std::set<FilePath>{FilePath("/src")}, FilePath("/src"));
+		auto tagged = std::make_shared<IndexerCommand>(FilePath("/src/main.swift"), IndexerCommandSwift(std::set<FilePath>{FilePath("/src")}, FilePath("/src")));
 		tagged->setSourceGroupId("6f0d4b2e-9c1a-4a5e-8f00-1234567890ab");
-		auto untagged = std::make_shared<IndexerCommandSwift>(
-			FilePath("/src/other.swift"), std::set<FilePath>{}, FilePath("/src"));
+		auto untagged = std::make_shared<IndexerCommand>(FilePath("/src/other.swift"), IndexerCommandSwift(std::set<FilePath>{}, FilePath("/src")));
 
 		auto buf = IpcSerializer::serializeIndexerCommands({tagged, untagged});
 		auto result = IpcSerializer::deserializeIndexerCommands(buf.data(), buf.size());

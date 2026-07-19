@@ -1,12 +1,17 @@
 #ifndef INDEXER_COMMAND_CUSTOM_H
 #define INDEXER_COMMAND_CUSTOM_H
 
+#include <cstddef>
 #include <string>
 #include <vector>
 
-#include "IndexerCommand.h"
+#include "FilePath.h"
+#include "IndexerCommandType.h"
 
-class IndexerCommandCustom: public IndexerCommand
+// Custom indexer-command payload: a plain value satisfying IndexerCommandC (no base class). Unlike the
+// other payloads it keeps its own sourceFilePath, because its %{SOURCE_FILE_PATH} variable substitution
+// needs it (the wrapping IndexerCommand still holds the canonical common copy for serialization).
+class IndexerCommandCustom
 {
 public:
 	static IndexerCommandType getStaticIndexerCommandType();
@@ -30,8 +35,10 @@ public:
 		const FilePath& sourceFilePath,
 		bool runInParallel);
 
-	IndexerCommandType getIndexerCommandType() const override;
-	size_t getByteSize(size_t stringSize) const override;
+	// IndexerCommandC contract:
+	IndexerCommandType getIndexerCommandType() const;
+	std::size_t getByteSize(std::size_t stringSize) const;	// Custom historically reported only the base size
+	std::string getIndexerCommandHash() const;				// no compile-command hash for Custom
 
 	FilePath getDatabaseFilePath() const;
 	void setDatabaseFilePath(const FilePath& databaseFilePath);
@@ -39,8 +46,6 @@ public:
 	std::string getCommand() const;
 	std::vector<std::string> getArguments() const;
 	bool getRunInParallel() const;
-
-protected:
 
 private:
 	std::string replaceVariables(std::string s) const;
@@ -51,7 +56,8 @@ private:
 	FilePath m_projectFilePath;
 	FilePath m_databaseFilePath;
 	std::string m_databaseVersion;
+	FilePath m_sourceFilePath;
 	bool m_runInParallel;
 };
 
-#endif	  // INDEXER_COMMAND_CXXL_H
+#endif	  // INDEXER_COMMAND_CUSTOM_H

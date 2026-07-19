@@ -1,19 +1,22 @@
 #ifndef INDEXER_COMMAND_SWIFT_H
 #define INDEXER_COMMAND_SWIFT_H
 
+#include <cstddef>
 #include <set>
 #include <string>
 #include <vector>
 
-#include "IndexerCommand.h"
+#include "FilePath.h"
+#include "IndexerCommandType.h"
 
-class IndexerCommandSwift: public IndexerCommand
+// Swift indexer-command payload: a plain value satisfying IndexerCommandC (no base class). The common data
+// (source file / source group) lives in the wrapping IndexerCommand, so this holds only Swift-specific data.
+class IndexerCommandSwift
 {
 public:
 	static IndexerCommandType getStaticIndexerCommandType();
 
 	IndexerCommandSwift(
-		const FilePath& sourceFilePath,
 		const std::set<FilePath>& indexedPaths,
 		const FilePath& workingDirectory,
 		const std::vector<std::string>& buildArgs = {},
@@ -21,7 +24,10 @@ public:
 		const std::string& indexStorePath = "",
 		const std::string& specializationScope = "");
 
-	IndexerCommandType getIndexerCommandType() const override;
+	// IndexerCommandC contract:
+	IndexerCommandType getIndexerCommandType() const;
+	std::size_t getByteSize(std::size_t stringSize) const;	// Swift historically reported only the base size
+	std::string getIndexerCommandHash() const;				// no compile-command hash for Swift
 
 	const std::set<FilePath>& getIndexedPaths() const;
 	const FilePath& getWorkingDirectory() const;
@@ -32,8 +38,6 @@ public:
 	const std::string& getIndexStorePath() const;
 	// Type-argument edge scope for `Base<Arg>` use sites (SW11): "off"/"local"/"all".
 	const std::string& getSpecializationScope() const;
-
-protected:
 
 private:
 	std::set<FilePath> m_indexedPaths;

@@ -150,7 +150,7 @@ CxxParser::CxxParser(
 	llvm::InitializeNativeTargetAsmParser();
 }
 
-void CxxParser::buildIndex(std::shared_ptr<IndexerCommandCxx> indexerCommand)
+void CxxParser::buildIndex(std::shared_ptr<const IndexerCommandCxx> indexerCommand)
 {
 	clang::tooling::CompileCommand compileCommand;
 	compileCommand.Filename = indexerCommand->getSourceFilePath().str();

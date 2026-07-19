@@ -1,4 +1,5 @@
 #include "SourceGroupCxxCMakeFileAPI.h"
+#include "IndexerCommand.h"
 
 #include "ApplicationSettings.h"
 #include "CMakeFileAPIReader.h"
@@ -615,14 +616,16 @@ std::shared_ptr<IndexerCommandProvider> SourceGroupCxxCMakeFileAPI::getIndexerCo
 			"indexer command: " + entry.path.fileName() +
 			" compiler='" + compilerPath +
 			"' flags=" + std::to_string(commandLine.size()));
-		provider->addCommand(std::make_shared<IndexerCommandCxx>(
+		provider->addCommand(std::make_shared<IndexerCommand>(
 			entry.path,
-			utility::concat(indexedHeaderPaths, {entry.path}),
-			utility::toSet(excludeFilters),
-			std::set<FilePathFilter>{},
-			buildDir,
-			std::move(commandLine),
-			compilerPath));
+			IndexerCommandCxx(
+				entry.path,
+				utility::concat(indexedHeaderPaths, {entry.path}),
+				utility::toSet(excludeFilters),
+				std::set<FilePathFilter>{},
+				buildDir,
+				std::move(commandLine),
+				compilerPath)));
 	}
 
 	provider->logStats();

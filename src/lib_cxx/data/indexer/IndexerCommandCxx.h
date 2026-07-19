@@ -1,19 +1,24 @@
 #ifndef INDEXER_COMMAND_CXX_H
 #define INDEXER_COMMAND_CXX_H
 
+#include <cstddef>
+#include <set>
 #include <string>
 #include <vector>
 
-#include "IndexerCommand.h"
-
-class FilePath;
+#include "FilePath.h"
+#include "FilePathFilter.h"
+#include "IndexerCommandType.h"
 
 namespace clang::tooling
 {
 class CompilationDatabase;
 }
 
-class IndexerCommandCxx: public IndexerCommand
+// Cxx indexer-command payload: a plain value satisfying IndexerCommandC (no base class). The common data
+// (source file / source group) lives in the wrapping IndexerCommand, so this holds only Cxx-specific data.
+// The static helpers below are Clang-backed utilities that build Cxx commands; they stay in lib_cxx.
+class IndexerCommandCxx
 {
 public:
 	static std::vector<FilePath> getSourceFilesFromCDB(const FilePath& cdbPath);
@@ -46,9 +51,14 @@ public:
 		const std::vector<std::string>& compilerFlags,
 		const std::string& compilerPath);
 
-	IndexerCommandType getIndexerCommandType() const override;
-	size_t getByteSize(size_t stringSize) const override;
-	std::string getIndexerCommandHash() const override;
+	// IndexerCommandC contract:
+	IndexerCommandType getIndexerCommandType() const;
+	std::size_t getByteSize(std::size_t stringSize) const;
+	std::string getIndexerCommandHash() const;
+
+	// The Cxx parser flow (IndexerCxx/CxxParser) consumes the payload directly, so it keeps its own
+	// sourceFilePath (the wrapping IndexerCommand holds the canonical common copy for serialization).
+	const FilePath& getSourceFilePath() const;
 
 	//! Stable (FNV-1a) hash of a compile command's flags. Deterministic across
 	//! processes so it can be persisted and compared on a later refresh.
@@ -61,9 +71,8 @@ public:
 	const FilePath& getWorkingDirectory() const;
 	const std::string& getCompilerPath() const;
 
-protected:
-
 private:
+	FilePath m_sourceFilePath;
 	std::set<FilePath> m_indexedPaths;
 	std::set<FilePathFilter> m_excludeFilters;
 	std::set<FilePathFilter> m_includeFilters;
@@ -72,4 +81,4 @@ private:
 	std::string m_compilerPath;
 };
 
-#endif	  // INDEXER_COMMAND_CXXL_H
+#endif	  // INDEXER_COMMAND_CXX_H

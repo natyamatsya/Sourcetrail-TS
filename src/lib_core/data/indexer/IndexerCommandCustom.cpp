@@ -1,6 +1,5 @@
 #include "IndexerCommandCustom.h"
 
-
 #include "utilityString.h"
 
 IndexerCommandType IndexerCommandCustom::getStaticIndexerCommandType()
@@ -16,13 +15,13 @@ IndexerCommandCustom::IndexerCommandCustom(
 	const std::string& databaseVersion,
 	const FilePath& sourceFilePath,
 	bool runInParallel)
-	: IndexerCommand(sourceFilePath)
-	, m_type(getStaticIndexerCommandType())
+	: m_type(getStaticIndexerCommandType())
 	, m_command(command)
 	, m_arguments(arguments)
 	, m_projectFilePath(projectFilePath)
 	, m_databaseFilePath(databaseFilePath)
 	, m_databaseVersion(databaseVersion)
+	, m_sourceFilePath(sourceFilePath)
 	, m_runInParallel(runInParallel)
 {
 }
@@ -36,13 +35,13 @@ IndexerCommandCustom::IndexerCommandCustom(
 	const std::string& databaseVersion,
 	const FilePath& sourceFilePath,
 	bool runInParallel)
-	: IndexerCommand(sourceFilePath)
-	, m_type(type)
+	: m_type(type)
 	, m_command(command)
 	, m_arguments(arguments)
 	, m_projectFilePath(projectFilePath)
 	, m_databaseFilePath(databaseFilePath)
 	, m_databaseVersion(databaseVersion)
+	, m_sourceFilePath(sourceFilePath)
 	, m_runInParallel(runInParallel)
 {
 }
@@ -52,11 +51,14 @@ IndexerCommandType IndexerCommandCustom::getIndexerCommandType() const
 	return m_type;
 }
 
-size_t IndexerCommandCustom::getByteSize(size_t stringSize) const
+std::size_t IndexerCommandCustom::getByteSize(std::size_t /*stringSize*/) const
 {
-	size_t size = IndexerCommand::getByteSize(stringSize);
+	return 0;
+}
 
-	return size;
+std::string IndexerCommandCustom::getIndexerCommandHash() const
+{
+	return std::string();
 }
 
 FilePath IndexerCommandCustom::getDatabaseFilePath() const
@@ -94,6 +96,6 @@ std::string IndexerCommandCustom::replaceVariables(std::string s) const
 	s = utility::replace(s, "%{PROJECT_FILE_PATH}", m_projectFilePath.str());
 	s = utility::replace(s, "%{DATABASE_FILE_PATH}", m_databaseFilePath.str());
 	s = utility::replace(s, "%{DATABASE_VERSION}", m_databaseVersion);
-	s = utility::replace(s, "%{SOURCE_FILE_PATH}", getSourceFilePath().str());
+	s = utility::replace(s, "%{SOURCE_FILE_PATH}", m_sourceFilePath.str());
 	return s;
 }

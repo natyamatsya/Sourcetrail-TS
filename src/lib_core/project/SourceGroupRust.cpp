@@ -1,4 +1,6 @@
 #include "SourceGroupRust.h"
+#include "IndexerCommand.h"
+#include "FilePathFilter.h"
 
 #include <nlohmann/json.hpp>
 
@@ -139,16 +141,17 @@ std::vector<std::shared_ptr<IndexerCommand>> SourceGroupRust::getIndexerCommands
 
 	auto makeCommand = [&](const FilePath& crateRoot, bool restrictToPackage) {
 		// The source file path doubles as the status-tracking key.
-		return std::make_shared<IndexerCommandRust>(
+		return std::make_shared<IndexerCommand>(
 			crateRoot,
-			indexedPaths,
-			crateRoot,
-			m_settings->getCargoFeatures(),
-			m_settings->getCargoAllFeatures(),
-			m_settings->getCargoNoDefaultFeatures(),
-			m_settings->getCargoTargetTriple(),
-			m_settings->getRustSpecializationScope(),
-			restrictToPackage);
+			IndexerCommandRust(
+				indexedPaths,
+				crateRoot,
+				m_settings->getCargoFeatures(),
+				m_settings->getCargoAllFeatures(),
+				m_settings->getCargoNoDefaultFeatures(),
+				m_settings->getCargoTargetTriple(),
+				m_settings->getRustSpecializationScope(),
+				restrictToPackage));
 	};
 
 	// Crate fan-out R1b: one command per workspace member crate, so K Rust

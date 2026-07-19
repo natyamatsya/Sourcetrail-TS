@@ -15,7 +15,7 @@ class CxxIndexerCommandProvider: public IndexerCommandProvider
 {
 public:
 	CxxIndexerCommandProvider();
-	void addCommand(const std::shared_ptr<IndexerCommandCxx>& command);
+	void addCommand(const std::shared_ptr<IndexerCommand>& command);
 	std::vector<FilePath> getAllSourceFilePaths() const override;
 	std::shared_ptr<IndexerCommand> consumeCommand() override;
 	std::shared_ptr<IndexerCommand> consumeCommandForSourceFilePath(const FilePath& filePath) override;
@@ -36,7 +36,7 @@ private:
 	};
 
 	Id getId();
-	std::shared_ptr<IndexerCommandCxx> representationToCommand(
+	std::shared_ptr<IndexerCommand> representationToCommand(
 		const FilePath& sourceFilePath, std::shared_ptr<CommandRepresentation> representation);
 
 	Id m_nextId;

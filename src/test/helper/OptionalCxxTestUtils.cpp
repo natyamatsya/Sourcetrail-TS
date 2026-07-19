@@ -5,6 +5,7 @@
 #include "IndexerCommandSerializer.h"
 
 #if BUILD_CXX_LANGUAGE_PACKAGE
+#include "IndexerCommand.h"
 #include "IndexerCommandCxx.h"
 #endif
 
@@ -15,14 +16,16 @@ std::shared_ptr<IndexerCommand> makeOptionalCxxCommand(
 	const std::vector<std::string>& compilerFlags)
 {
 #if BUILD_CXX_LANGUAGE_PACKAGE
-	return std::make_shared<IndexerCommandCxx>(
+	return std::make_shared<IndexerCommand>(
+		FilePath(sourceFilePath),
+		IndexerCommandCxx(
 		FilePath(sourceFilePath),
 		indexedPaths,
 		std::set<FilePathFilter>{},
 		std::set<FilePathFilter>{},
 		FilePath(workingDirectory),
 		compilerFlags,
-		std::string{});
+		std::string{}));
 #else
 	(void)sourceFilePath;
 	(void)indexedPaths;
@@ -54,14 +57,16 @@ void assertOptionalCxxSerializerRoundTrip()
 	FilePath workingDir("/home/user/project");
 	std::vector<std::string> flags = {"-std=c++17", "-Wall", "-DFOO=1"};
 
-	auto cmd = std::make_shared<IndexerCommandCxx>(
+	auto cmd = std::make_shared<IndexerCommand>(
+		FilePath("/home/user/project/main.cpp"),
+		IndexerCommandCxx(
 		FilePath("/home/user/project/main.cpp"),
 		indexedPaths,
 		excludeFilters,
 		includeFilters,
 		workingDir,
 		flags,
-		std::string{});
+		std::string{}));
 
 	std::vector<std::shared_ptr<IndexerCommand>> commands = {cmd};
 
@@ -69,7 +74,7 @@ void assertOptionalCxxSerializerRoundTrip()
 	auto result = IpcSerializer::deserializeIndexerCommands(buf.data(), buf.size());
 
 	REQUIRE(result.size() == 1);
-	auto* cxx = dynamic_cast<IndexerCommandCxx*>(result[0].get());
+	auto* cxx = result[0]->target<IndexerCommandCxx>();
 	REQUIRE(cxx != nullptr);
 	REQUIRE(cxx->getSourceFilePath().str() == "/home/user/project/main.cpp");
 	REQUIRE(cxx->getIndexedPaths() == indexedPaths);

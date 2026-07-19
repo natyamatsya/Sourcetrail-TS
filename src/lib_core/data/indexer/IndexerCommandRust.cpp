@@ -1,13 +1,11 @@
 #include "IndexerCommandRust.h"
 
-
 IndexerCommandType IndexerCommandRust::getStaticIndexerCommandType()
 {
 	return IndexerCommandType::INDEXER_COMMAND_RUST;
 }
 
 IndexerCommandRust::IndexerCommandRust(
-	const FilePath& sourceFilePath,
 	const std::set<FilePath>& indexedPaths,
 	const FilePath& workingDirectory,
 	const std::vector<std::string>& features,
@@ -16,8 +14,7 @@ IndexerCommandRust::IndexerCommandRust(
 	const std::string& targetTriple,
 	const std::string& specializationScope,
 	bool restrictToPackage)
-	: IndexerCommand(sourceFilePath)
-	, m_indexedPaths(indexedPaths)
+	: m_indexedPaths(indexedPaths)
 	, m_workingDirectory(workingDirectory)
 	, m_features(features)
 	, m_allFeatures(allFeatures)
@@ -31,6 +28,16 @@ IndexerCommandRust::IndexerCommandRust(
 IndexerCommandType IndexerCommandRust::getIndexerCommandType() const
 {
 	return getStaticIndexerCommandType();
+}
+
+std::size_t IndexerCommandRust::getByteSize(std::size_t /*stringSize*/) const
+{
+	return 0;
+}
+
+std::string IndexerCommandRust::getIndexerCommandHash() const
+{
+	return std::string();
 }
 
 const std::set<FilePath>& IndexerCommandRust::getIndexedPaths() const

@@ -21,7 +21,7 @@ public:
 
 private:
 	virtual void doIndex(
-		const std::shared_ptr<T>& indexerCommand,
+		const std::shared_ptr<const T>& indexerCommand,
 		const std::shared_ptr<ParserClientImpl>& parserClient,
 		const std::shared_ptr<IndexerStateInfo>& indexerStateInfo) = 0;
 
@@ -60,8 +60,8 @@ IndexerBase::IndexResult Indexer<T>::index(const std::shared_ptr<IndexerCommand>
 			utility::makeExpectedError(IndexerErrorCode::NoCommandProvided, message));
 	}
 
-	const std::shared_ptr<T> castCommand = std::dynamic_pointer_cast<T>(indexerCommand);
-	if (!castCommand)
+	const T* payload = indexerCommand->template target<T>();
+	if (!payload)
 	{
 		const std::string message =
 			"Trying to process " +
@@ -72,6 +72,10 @@ IndexerBase::IndexResult Indexer<T>::index(const std::shared_ptr<IndexerCommand>
 		return std::unexpected(
 			utility::makeExpectedError(IndexerErrorCode::UnsupportedCommand, message));
 	}
+
+	// Alias the wrapper's ownership while pointing at the erased payload: the payload lives as long as
+	// the wrapper does, so the concrete-command view stays valid without copying it out.
+	const std::shared_ptr<const T> castCommand(indexerCommand, payload);
 
 	const std::shared_ptr<IntermediateStorage> storage = std::make_shared<IntermediateStorage>();
 	const std::shared_ptr<ParserClientImpl> parserClient = std::make_shared<ParserClientImpl>(storage);

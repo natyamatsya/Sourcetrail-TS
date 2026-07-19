@@ -1,12 +1,18 @@
 #include "CxxIndexerCommandProvider.h"
 
+#include "IndexerCommand.h"
+
 #include "IndexerCommandCxx.h"
 #include "logging.h"
 
 CxxIndexerCommandProvider::CxxIndexerCommandProvider(): m_nextId(1) {}
 
-void CxxIndexerCommandProvider::addCommand(const std::shared_ptr<IndexerCommandCxx>& command)
+void CxxIndexerCommandProvider::addCommand(const std::shared_ptr<IndexerCommand>& wrapper)
 {
+	const IndexerCommandCxx* command = wrapper->target<IndexerCommandCxx>();
+	if (command == nullptr)
+		return;
+
 	std::shared_ptr<CommandRepresentation> representation = std::make_shared<CommandRepresentation>();
 
 	{
@@ -184,7 +190,7 @@ Id CxxIndexerCommandProvider::getId()
 	return m_nextId++;
 }
 
-std::shared_ptr<IndexerCommandCxx> CxxIndexerCommandProvider::representationToCommand(
+std::shared_ptr<IndexerCommand> CxxIndexerCommandProvider::representationToCommand(
 	const FilePath& sourceFilePath, std::shared_ptr<CommandRepresentation> representation)
 {
 	std::set<FilePath> indexedPaths;
@@ -213,12 +219,14 @@ std::shared_ptr<IndexerCommandCxx> CxxIndexerCommandProvider::representationToCo
 		compilerFlags.push_back(m_idsToCompilerFlags[id]);
 	}
 
-	return std::make_shared<IndexerCommandCxx>(
+	return std::make_shared<IndexerCommand>(
 		sourceFilePath,
-		indexedPaths,
-		excludeFilters,
-		includeFilters,
-		workingDirectory,
-		compilerFlags,
-		representation->m_compilerPath);
+		IndexerCommandCxx(
+			sourceFilePath,
+			indexedPaths,
+			excludeFilters,
+			includeFilters,
+			workingDirectory,
+			compilerFlags,
+			representation->m_compilerPath));
 }

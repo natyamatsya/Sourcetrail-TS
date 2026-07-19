@@ -1,5 +1,7 @@
 #include "IndexerCommandCodecRegistry.h"
 
+#include "IndexerCommand.h"
+
 #include <set>
 #include <string>
 #include <vector>
@@ -18,8 +20,8 @@ struct RustIndexerCommandCodec
 	flatbuffers::Offset<Ipc::IndexerCommand> serialize(
 		flatbuffers::FlatBufferBuilder& builder, const IndexerCommand& base) const
 	{
-		// Safe: the registry only invokes this codec for commands whose type is INDEXER_COMMAND_RUST.
-		const auto& cmd = static_cast<const IndexerCommandRust&>(base);
+		// Safe: the registry only invokes this codec for commands whose payload is IndexerCommandRust.
+		const IndexerCommandRust& cmd = *base.target<IndexerCommandRust>();
 
 		std::vector<flatbuffers::Offset<flatbuffers::String>> paths;
 		for (const auto& p: cmd.getIndexedPaths())
@@ -31,13 +33,13 @@ struct RustIndexerCommandCodec
 
 		return Ipc::CreateIndexerCommand(
 			builder, Ipc::IndexerCommandType_Rust,
-			builder.CreateString(cmd.getSourceFilePath().str()),
+			builder.CreateString(base.getSourceFilePath().str()),
 			builder.CreateVector(paths), 0, 0,
 			builder.CreateString(cmd.getWorkingDirectory().str()), 0, 0,
 			builder.CreateVector(feats), cmd.getAllFeatures(), cmd.getNoDefaultFeatures(),
 			builder.CreateString(cmd.getTargetTriple()),
 			builder.CreateString(cmd.getSpecializationScope()),
-			builder.CreateString(cmd.getSourceGroupId()), cmd.getRestrictToPackage(),
+			builder.CreateString(base.getSourceGroupId()), cmd.getRestrictToPackage(),
 			0, 0, 0, 0);
 	}
 
@@ -65,10 +67,10 @@ struct RustIndexerCommandCodec
 		if (fbCmd.specialization_scope())
 			specializationScope = fbCmd.specialization_scope()->str();
 
-		return std::make_shared<IndexerCommandRust>(
+		return std::make_shared<IndexerCommand>(
 			FilePath(fbCmd.source_file_path()->c_str()),
-			indexedPaths, workingDir, features, fbCmd.all_features(), fbCmd.no_default_features(),
-			targetTriple, specializationScope, fbCmd.restrict_to_package());
+			IndexerCommandRust(indexedPaths, workingDir, features, fbCmd.all_features(), fbCmd.no_default_features(),
+			targetTriple, specializationScope, fbCmd.restrict_to_package()));
 	}
 };
 
@@ -78,7 +80,7 @@ struct SwiftIndexerCommandCodec
 	flatbuffers::Offset<Ipc::IndexerCommand> serialize(
 		flatbuffers::FlatBufferBuilder& builder, const IndexerCommand& base) const
 	{
-		const auto& cmd = static_cast<const IndexerCommandSwift&>(base);
+		const IndexerCommandSwift& cmd = *base.target<IndexerCommandSwift>();
 
 		std::vector<flatbuffers::Offset<flatbuffers::String>> paths;
 		for (const auto& p: cmd.getIndexedPaths())
@@ -90,11 +92,11 @@ struct SwiftIndexerCommandCodec
 
 		return Ipc::CreateIndexerCommand(
 			builder, Ipc::IndexerCommandType_Swift,
-			builder.CreateString(cmd.getSourceFilePath().str()),
+			builder.CreateString(base.getSourceFilePath().str()),
 			builder.CreateVector(paths), 0, 0,
 			builder.CreateString(cmd.getWorkingDirectory().str()), 0, 0,
 			0, false, false, 0, 0,
-			builder.CreateString(cmd.getSourceGroupId()), false,
+			builder.CreateString(base.getSourceGroupId()), false,
 			builder.CreateVector(swiftArgs),
 			builder.CreateString(cmd.getToolchainPath()),
 			builder.CreateString(cmd.getIndexStorePath()),
@@ -129,10 +131,10 @@ struct SwiftIndexerCommandCodec
 		if (fbCmd.swift_specialization_scope())
 			swiftSpecializationScope = fbCmd.swift_specialization_scope()->str();
 
-		return std::make_shared<IndexerCommandSwift>(
+		return std::make_shared<IndexerCommand>(
 			FilePath(fbCmd.source_file_path()->c_str()),
-			indexedPaths, workingDir, swiftBuildArgs, swiftToolchainPath, swiftIndexStorePath,
-			swiftSpecializationScope);
+			IndexerCommandSwift(indexedPaths, workingDir, swiftBuildArgs, swiftToolchainPath, swiftIndexStorePath,
+			swiftSpecializationScope));
 	}
 };
 }	 // namespace

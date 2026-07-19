@@ -628,7 +628,7 @@ void Project::buildIndex(RefreshInfo info, std::shared_ptr<DialogView> dialogVie
 					for (const std::shared_ptr<IndexerCommand>& command: commands)
 					{
 						if (const auto* rustCommand =
-								dynamic_cast<const IndexerCommandRust*>(command.get()))
+								command->target<IndexerCommandRust>())
 						{
 							crateRoots.insert(rustCommand->getWorkingDirectory().str());
 						}
@@ -658,7 +658,7 @@ void Project::buildIndex(RefreshInfo info, std::shared_ptr<DialogView> dialogVie
 					for (const std::shared_ptr<IndexerCommand>& command: commands)
 					{
 						if (const auto* swiftCommand =
-								dynamic_cast<const IndexerCommandSwift*>(command.get()))
+								command->target<IndexerCommandSwift>())
 						{
 							packageRoots.insert(swiftCommand->getWorkingDirectory().str());
 						}

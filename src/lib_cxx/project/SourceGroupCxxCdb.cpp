@@ -1,4 +1,5 @@
 #include "SourceGroupCxxCdb.h"
+#include "IndexerCommand.h"
 
 #include "Application.h"
 #include "ApplicationSettings.h"
@@ -191,14 +192,16 @@ std::shared_ptr<IndexerCommandProvider> SourceGroupCxxCdb::getIndexerCommandProv
 			}
 		}
 
-		provider->addCommand(std::make_shared<IndexerCommandCxx>(
+		provider->addCommand(std::make_shared<IndexerCommand>(
 			pc.sourcePath,
-			utility::concat(indexedHeaderPaths, {pc.sourcePath}),
-			excludeFilters,
-			std::set<FilePathFilter>{},
-			pc.directory,
-			flags,
-			""));
+			IndexerCommandCxx(
+				pc.sourcePath,
+				utility::concat(indexedHeaderPaths, {pc.sourcePath}),
+				excludeFilters,
+				std::set<FilePathFilter>{},
+				pc.directory,
+				flags,
+				"")));
 	}
 
 	provider->logStats();

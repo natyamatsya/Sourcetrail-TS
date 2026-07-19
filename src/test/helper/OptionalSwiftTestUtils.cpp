@@ -6,15 +6,15 @@
 #include <vector>
 
 #include "IndexerCommandSerializer.h"
+#include "IndexerCommand.h"
 #include "IndexerCommandSwift.h"
 
 std::shared_ptr<IndexerCommand> makeOptionalSwiftCommand(const std::string& workingDirectory)
 {
 	const FilePath workingDirectoryPath{workingDirectory};
-	return std::make_shared<IndexerCommandSwift>(
+	return std::make_shared<IndexerCommand>(
 		workingDirectoryPath,
-		std::set<FilePath>{workingDirectoryPath},
-		workingDirectoryPath);
+		IndexerCommandSwift(std::set<FilePath>{workingDirectoryPath}, workingDirectoryPath));
 }
 
 bool isOptionalSwiftCommand(const std::shared_ptr<IndexerCommand>& command)
@@ -30,7 +30,7 @@ std::string getOptionalSwiftWorkingDirectory(const std::shared_ptr<IndexerComman
 	if (!isOptionalSwiftCommand(command))
 		return {};
 
-	const auto* swiftCommand = dynamic_cast<const IndexerCommandSwift*>(command.get());
+	const auto* swiftCommand = command->target<IndexerCommandSwift>();
 	if (!swiftCommand)
 		return {};
 
@@ -48,14 +48,10 @@ void assertOptionalSwiftSerializerRoundTrip()
 	const std::string indexStorePath{"/prebuilt/index/store"};
 	const std::string specializationScope{"all"};
 
-	const auto command = std::make_shared<IndexerCommandSwift>(
+	const auto command = std::make_shared<IndexerCommand>(
 		sourceFilePath,
-		indexedPaths,
-		workingDirectory,
-		buildArgs,
-		toolchainPath,
-		indexStorePath,
-		specializationScope);
+		IndexerCommandSwift(
+			indexedPaths, workingDirectory, buildArgs, toolchainPath, indexStorePath, specializationScope));
 	const std::vector<std::shared_ptr<IndexerCommand>> commands{command};
 
 	const auto buffer = IpcSerializer::serializeIndexerCommands(commands);
@@ -63,9 +59,9 @@ void assertOptionalSwiftSerializerRoundTrip()
 		IpcSerializer::deserializeIndexerCommands(buffer.data(), buffer.size());
 
 	REQUIRE(deserializedCommands.size() == 1);
-	const auto* swiftCommand = dynamic_cast<const IndexerCommandSwift*>(deserializedCommands.front().get());
+	const auto* swiftCommand = deserializedCommands.front()->target<IndexerCommandSwift>();
 	REQUIRE(swiftCommand != nullptr);
-	REQUIRE(swiftCommand->getSourceFilePath().str() == sourceFilePath.str());
+	REQUIRE(deserializedCommands.front()->getSourceFilePath().str() == sourceFilePath.str());
 	REQUIRE(swiftCommand->getIndexedPaths() == indexedPaths);
 	REQUIRE(swiftCommand->getWorkingDirectory().str() == workingDirectory.str());
 	// Swift project-model options (SW5) survive the round-trip.
