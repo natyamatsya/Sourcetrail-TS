@@ -62,12 +62,18 @@ std::vector<std::shared_ptr<IndexerCommand>> SourceGroupZig::getIndexerCommands(
 	const FilePath projectDir = m_settings->getProjectDirectoryPath();
 
 	// The Zig indexer parses one file per command (the natural granularity for
-	// Zig's per-file incremental model). Emit a command for each in-scope file
-	// scheduled for indexing; the working directory is the nearest build.zig
-	// root so the subprocess (Phase 3b/ZLS) can resolve @import cross-file.
+	// Zig's per-file incremental model). Emit a command for each of this group's
+	// files that is scheduled for indexing — i.e. the intersection of this
+	// group's source files with info.filesToIndex. The working directory is the
+	// nearest build.zig root so the subprocess (Phase 3b/ZLS) can resolve
+	// @import cross-file.
+	const std::set<FilePath> groupFiles = getAllSourceFilePaths();
+
 	std::vector<std::shared_ptr<IndexerCommand>> commands;
-	for (const FilePath& sourcePath: filterToContainedSourceFilePath(info.filesToIndex))
+	for (const FilePath& sourcePath: info.filesToIndex)
 	{
+		if (groupFiles.find(sourcePath) == groupFiles.end())
+			continue;
 		FilePath workingDir = findZigRootAtOrAbove(sourcePath);
 		if (workingDir.empty())
 			workingDir = projectDir;
