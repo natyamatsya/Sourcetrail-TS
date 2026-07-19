@@ -1,17 +1,15 @@
 #ifndef FILE_PATH_H
 #define FILE_PATH_H
 
+#include "Platform.h"
+
 #include <filesystem>
-#include <memory>
 #include <string>
 #include <vector>
 
 class FilePath
 {
 public:
-	static char getEnvironmentVariablePathSeparator();
-	static std::string getExecutableExtension();
-
 	FilePath();
 	FilePath(const char filePath[]);
 	FilePath(const std::string& filePath);
@@ -61,7 +59,16 @@ public:
 	bool operator<(const FilePath& other) const;
 
 private:
-	std::unique_ptr<std::filesystem::path> m_path;
+	// Internal only: the PATH-style separator used when splitting expandEnvironmentVariables() output.
+	static constexpr char getEnvironmentVariablePathSeparator()
+	{
+		if constexpr (utility::Platform::isWindows())
+			return ';';
+		else
+			return ':';
+	}
+
+	std::filesystem::path m_path;
 
 	mutable bool m_exists;
 	mutable bool m_checkedExists;

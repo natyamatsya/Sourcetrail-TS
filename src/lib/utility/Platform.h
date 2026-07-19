@@ -3,6 +3,7 @@
 
 #include <cstddef>
 #include <string>
+#include <string_view>
 
 namespace utility
 {
@@ -46,8 +47,17 @@ class Platform final
 #endif
 		}
 
+		// Compile-time filename suffix for executables on this platform (".exe" on Windows, else "").
+		static constexpr std::string_view getExecutableExtension()
+		{
+			if constexpr (isWindows())
+				return ".exe";
+			else
+				return "";
+		}
+
 		static std::string getName();
-		
+
 		static Architecture getArchitecture();
 		static std::string getArchitectureName();
 		static std::string getArchitectureName(Architecture architecture);

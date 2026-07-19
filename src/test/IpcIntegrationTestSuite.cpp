@@ -3,6 +3,7 @@
 #include "language_package_flags.h"
 
 #include <chrono>
+#include <format>
 #include <thread>
 
 #include "AppPath.h"
@@ -17,6 +18,7 @@
 #include "OptionalCxxTestUtils.h"
 #include "OptionalRustTestUtils.h"
 #include "OptionalSwiftTestUtils.h"
+#include "Platform.h"
 #include "StorageProvider.h"
 #include "TaskBuildIndex.h"
 #include "TaskFillIndexerCommandQueue.h"
@@ -349,7 +351,7 @@ TEST_CASE("ipc integration: full indexer workflow")
 			REQUIRE(commandOwner.indexerCommandCount() == 1);
 
 			const std::string rustIndexerName =
-				"sourcetrail_rust_indexer" + FilePath::getExecutableExtension();
+				std::format("sourcetrail_rust_indexer{}", utility::Platform::getExecutableExtension());
 
 			std::vector<FilePath> rustIndexerCandidates;
 			rustIndexerCandidates.push_back(AppPath::getRustIndexerFilePath());
@@ -489,7 +491,7 @@ TEST_CASE("ipc integration: full indexer workflow")
 			REQUIRE(commandOwner.indexerCommandCount() == 1);
 
 			const std::string swiftIndexerName =
-				"sourcetrail_swift_indexer" + FilePath::getExecutableExtension();
+				std::format("sourcetrail_swift_indexer{}", utility::Platform::getExecutableExtension());
 
 			std::vector<FilePath> swiftIndexerCandidates;
 			swiftIndexerCandidates.push_back(AppPath::getSwiftIndexerFilePath());
@@ -590,7 +592,7 @@ TEST_CASE("ipc integration: full indexer workflow")
 			REQUIRE(commandOwner.indexerCommandCount() == 1);
 
 			const std::string swiftIndexerName =
-				"sourcetrail_swift_indexer" + FilePath::getExecutableExtension();
+				std::format("sourcetrail_swift_indexer{}", utility::Platform::getExecutableExtension());
 			std::vector<FilePath> swiftIndexerCandidates;
 			swiftIndexerCandidates.push_back(AppPath::getSwiftIndexerFilePath());
 			swiftIndexerCandidates.push_back(

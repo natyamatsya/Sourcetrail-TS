@@ -1,6 +1,9 @@
 #include "AppPath.h"
 
+#include "Platform.h"
 #include "utilityApp.h"
+
+#include <format>
 
 FilePath AppPath::s_sharedDataDirectoryPath("");
 FilePath AppPath::s_cxxIndexerDirectoryPath("");
@@ -17,7 +20,7 @@ void AppPath::setSharedDataDirectoryPath(const FilePath& path)
 
 FilePath AppPath::getCxxIndexerFilePath()
 {
-	std::string cxxIndexerName("sourcetrail_indexer" + FilePath::getExecutableExtension());
+	std::string cxxIndexerName(std::format("sourcetrail_indexer{}", utility::Platform::getExecutableExtension()));
 
 	if (!s_cxxIndexerDirectoryPath.empty())
 		return s_cxxIndexerDirectoryPath.getConcatenated(cxxIndexerName);
@@ -32,7 +35,7 @@ void AppPath::setCxxIndexerDirectoryPath(const FilePath& path)
 
 FilePath AppPath::getRustIndexerFilePath()
 {
-	std::string name("sourcetrail_rust_indexer" + FilePath::getExecutableExtension());
+	std::string name(std::format("sourcetrail_rust_indexer{}", utility::Platform::getExecutableExtension()));
 
 	if (!s_cxxIndexerDirectoryPath.empty())
 		return s_cxxIndexerDirectoryPath.getConcatenated(name);
@@ -42,7 +45,7 @@ FilePath AppPath::getRustIndexerFilePath()
 
 FilePath AppPath::getSwiftIndexerFilePath()
 {
-	std::string name("sourcetrail_swift_indexer" + FilePath::getExecutableExtension());
+	std::string name(std::format("sourcetrail_swift_indexer{}", utility::Platform::getExecutableExtension()));
 
 	if (!s_cxxIndexerDirectoryPath.empty())
 		return s_cxxIndexerDirectoryPath.getConcatenated(name);

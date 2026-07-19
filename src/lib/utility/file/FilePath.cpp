@@ -1,6 +1,5 @@
 #include "FilePath.h"
 
-#include "Platform.h"
 #include "logging.h"
 #include "utilityString.h"
 
@@ -10,26 +9,9 @@
 
 using namespace utility;
 using namespace std;
-using namespace std::string_literals;
-
-char FilePath::getEnvironmentVariablePathSeparator()
-{
-	if constexpr (Platform::isWindows())
-		return ';';
-	else
-		return ':';
-}
-
-string FilePath::getExecutableExtension()
-{
-	if constexpr (Platform::isWindows())
-		return ".exe"s;
-	else
-		return ""s;
-}
 
 FilePath::FilePath()
-	: m_path(std::make_unique<std::filesystem::path>(""))
+	: m_path()
 	, m_exists(false)
 	, m_checkedExists(false)
 	, m_isDirectory(false)
@@ -44,7 +26,7 @@ FilePath::FilePath(const char filePath[])
 }
 
 FilePath::FilePath(const std::string& filePath)
-	: m_path(std::make_unique<std::filesystem::path>(filePath))
+	: m_path(filePath)
 	, m_exists(false)
 	, m_checkedExists(false)
 	, m_isDirectory(false)
@@ -54,7 +36,7 @@ FilePath::FilePath(const std::string& filePath)
 }
 
 FilePath::FilePath(const FilePath& other)
-	: m_path(std::make_unique<std::filesystem::path>(other.getPath()))
+	: m_path(other.getPath())
 	, m_exists(other.m_exists)
 	, m_checkedExists(other.m_checkedExists)
 	, m_isDirectory(other.m_isDirectory)
@@ -74,7 +56,7 @@ FilePath::FilePath(FilePath&& other)
 }
 
 FilePath::FilePath(const std::string& filePath, const std::string& base)
-	: m_path(std::make_unique<std::filesystem::path>(std::filesystem::absolute(std::filesystem::path(base) / filePath)))
+	: m_path(std::filesystem::absolute(std::filesystem::path(base) / filePath))
 	, m_exists(false)
 	, m_checkedExists(false)
 	, m_isDirectory(false)
@@ -87,12 +69,12 @@ FilePath::~FilePath() = default;
 
 const std::filesystem::path &FilePath::getPath() const
 {
-	return *m_path;
+	return m_path;
 }
 
 bool FilePath::empty() const
 {
-	return m_path->empty();
+	return m_path.empty();
 }
 
 bool FilePath::exists() const noexcept
@@ -125,16 +107,16 @@ bool FilePath::isDirectory() const
 
 bool FilePath::isAbsolute() const
 {
-	return m_path->is_absolute();
+	return m_path.is_absolute();
 }
 
 bool FilePath::isValid() const
 {
-	auto it = m_path->begin();
+	auto it = m_path.begin();
 
-	if (isAbsolute() && m_path->has_root_path())
+	if (isAbsolute() && m_path.has_root_path())
 	{
-		std::string root = m_path->root_path().string();
+		std::string root = m_path.root_path().string();
 		std::string current;
 		while (current.size() < root.size())
 		{
@@ -144,7 +126,7 @@ bool FilePath::isValid() const
 	}
 
 	// Check each path component for characters invalid on Windows
-	for (; it != m_path->end(); ++it)
+	for (; it != m_path.end(); ++it)
 	{
 		const std::string s = it->string();
 		if (s.empty() || s == "." || s == "..")
@@ -159,7 +141,7 @@ bool FilePath::isValid() const
 
 FilePath FilePath::getParentDirectory() const
 {
-	FilePath parentDirectory(m_path->parent_path().string());
+	FilePath parentDirectory(m_path.parent_path().string());
 
 	if (!parentDirectory.empty())
 	{
@@ -178,7 +160,7 @@ FilePath FilePath::getParentDirectory() const
 
 FilePath& FilePath::makeAbsolute()
 {
-	m_path = std::make_unique<std::filesystem::path>(std::filesystem::absolute(getPath()));
+	m_path = std::filesystem::absolute(getPath());
 	return *this;
 }
 
@@ -197,8 +179,7 @@ FilePath& FilePath::makeCanonical()
 	}
 	try
 	{
-		std::filesystem::path canonicalPath = std::filesystem::canonical(getPath());
-		m_path = std::make_unique<std::filesystem::path>(canonicalPath);
+		m_path = std::filesystem::canonical(getPath());
 		m_canonicalized = true;
 		return *this;
 	}
@@ -333,7 +314,7 @@ FilePath& FilePath::makeRelativeTo(const FilePath& other)
 		r = "./";
 	}
 
-	m_path = std::make_unique<std::filesystem::path>(r);
+	m_path = r;
 	return *this;
 }
 
@@ -347,7 +328,7 @@ FilePath FilePath::getRelativeTo(const FilePath& other) const
 
 FilePath& FilePath::concatenate(const FilePath& other)
 {
-	*m_path /= other.getPath().relative_path();
+	m_path /= other.getPath().relative_path();
 	m_exists = false;
 	m_checkedExists = false;
 	m_isDirectory = false;
@@ -366,7 +347,7 @@ FilePath FilePath::getConcatenated(const FilePath& other) const
 
 FilePath& FilePath::concatenate(const char other[])
 {
-	*m_path /= std::filesystem::path(other).relative_path();
+	m_path /= std::filesystem::path(other).relative_path();
 	m_exists = false;
 	m_checkedExists = false;
 	m_isDirectory = false;
@@ -403,7 +384,7 @@ bool FilePath::contains(const FilePath& other) const
 	}
 
 	std::filesystem::path dir = getPath();
-	const std::unique_ptr<std::filesystem::path>& dir2 = other.m_path;
+	const std::filesystem::path& dir2 = other.m_path;
 
 	if (dir.filename() == ".")
 	{
@@ -411,11 +392,11 @@ bool FilePath::contains(const FilePath& other) const
 	}
 
 	auto it = dir.begin();
-	auto it2 = dir2->begin();
+	auto it2 = dir2.begin();
 
 	while (it != dir.end())
 	{
-		if (it2 == dir2->end())
+		if (it2 == dir2.end())
 		{
 			return false;
 		}
@@ -434,17 +415,17 @@ bool FilePath::contains(const FilePath& other) const
 
 std::string FilePath::str() const
 {
-	return m_path->generic_string();
+	return m_path.generic_string();
 }
 
 std::string FilePath::fileName() const
 {
-	return m_path->filename().generic_string();
+	return m_path.filename().generic_string();
 }
 
 std::string FilePath::extension() const
 {
-	return m_path->extension().generic_string();
+	return m_path.extension().generic_string();
 }
 
 FilePath FilePath::withoutExtension() const
@@ -474,7 +455,7 @@ bool FilePath::hasExtension(const std::vector<std::string>& extensions) const
 
 FilePath& FilePath::operator=(const FilePath& other)
 {
-	m_path = std::make_unique<std::filesystem::path>(other.getPath());
+	m_path = other.getPath();
 	m_exists = other.m_exists;
 	m_checkedExists = other.m_checkedExists;
 	m_isDirectory = other.m_isDirectory;
@@ -501,7 +482,7 @@ bool FilePath::operator==(const FilePath& other) const
 		return std::filesystem::equivalent(getPath(), other.getPath());
 	}
 
-	return m_path->compare(other.getPath()) == 0;
+	return m_path.compare(other.getPath()) == 0;
 }
 
 bool FilePath::operator!=(const FilePath& other) const
@@ -511,5 +492,5 @@ bool FilePath::operator!=(const FilePath& other) const
 
 bool FilePath::operator<(const FilePath& other) const
 {
-	return m_path->compare(other.getPath()) < 0;
+	return m_path.compare(other.getPath()) < 0;
 }

@@ -210,11 +210,38 @@ cycles in `lib` is prerequisite work, and a good cleanup in its own right).
       (minimal modules with `unique_ptr<filesystem::path>` / value `filesystem::path` / `unique_ptr<string>`
       members all compile), the baseline (a stripped FilePath — ctors + `str`/`extension`/`empty` — compiles),
       and `expandEnvironmentVariables` (stripped FilePath + that method + the real srctrl.utility/logging
-      imports compiles). **It's a specific method (or a method-count threshold) in FilePath's full ~34-inline-
-      member set** — a clang BMI-deserialization bug. Pinning the exact method is a deeper bisection; FilePath
-      is now Qt-free and better positioned for a clang fix. Upstream repro shape: a class with a
-      `unique_ptr<filesystem::path>` member and ~30 inline members mixing std::filesystem ops + an imported
-      module's helpers, instantiated in a consumer.
+      imports compiles). **The deeper bisection is now done and the verdict is: there is NO single culprit
+      method — the crash is an *aggregate* BMI-deserialization bug, not reducible to one construct.** The
+      decisive pair of experiments:
+      - A **self-contained** reconstruction of FilePath (its real 6 constructors + 5 `mutable bool` members +
+        `unique_ptr<filesystem::path>` + `getPath`/`str`/`empty`), even after *adding* `import srctrl.utility` +
+        `import srctrl.logging` with methods that use them (`splitToVector`, `srctrl::log::error`) *and* a
+        GMF `#include "Platform.h"` with a `Platform::isWindows()`-driven static — **compiles fine.**
+      - The **real** FilePath reduced to that *exact same* member set but consumed through the real
+        `srctrl.file` leaf module (real headers, the `.h`+`.inl` split, the real GMF include set) — **still
+        segfaults.**
+      So every individual ingredient (member type, constructors, method bodies, the `srctrl.utility`/
+      `srctrl.logging` imports, the `Platform` GMF static) is provably innocent in isolation; the segfault
+      only emerges from the real FilePath translation unit's *combination* of them. This is characteristic of
+      a clang BMI-complexity bug that depends on the aggregate module graph, not on a single declaration —
+      which is why chopping method *definitions* (keeping declarations) never stopped the crash while
+      standalone reconstructions never triggered it. **Conclusion: FilePath is not modularizable on this
+      clang (LLVM 22.1.8) until the upstream bug is fixed; it stays a classic (now Qt-free) header.** Upstream
+      repro shape: a class with a `unique_ptr<filesystem::path>` member + ~30 inline members mixing
+      `std::filesystem` ops with an imported module's helpers, split across `.h`/`.inl`, instantiated in a
+      consumer of its owning leaf module.
+    - **Follow-up modernization (independent of modules).** With FilePath staying a classic header, it got a
+      cleanup pass: the `std::unique_ptr<std::filesystem::path>` member became a **plain `std::filesystem::path`
+      value** (kills a heap allocation on a value type instantiated constantly; the header already includes
+      `<filesystem>` and nothing treated it as nullable). The two platform statics became header-inline
+      **`constexpr`**: `getEnvironmentVariablePathSeparator()` (`char`) is now a **private** helper (its only
+      use is internal, splitting `expandEnvironmentVariables()` output); `getExecutableExtension()` was a
+      *platform* concern, not a path one, so it **moved to `utility::Platform::getExecutableExtension()`**
+      (`constexpr std::string_view`, sitting next to `isWindows`/`getName`) — leaving FilePath's public surface
+      with **no** platform statics at all. `FilePath.cpp` no longer includes `Platform.h`. The 6 call sites
+      moved to `utility::Platform::getExecutableExtension()` via `std::format` (`const char[] + string_view`
+      doesn't compose). Verified by a headless full index of `testing/usages`: 2/2 files, 0 errors, 435 indexed
+      files with all paths well-formed (0 empty / double-slash / unresolved).
 
 - **`import std` — now GREEN for the whole first-party module set (utility + data + logging).** Getting
   there took fixing two real import-std-with-legacy-headers edges (both pre-existing, surfaced only when
