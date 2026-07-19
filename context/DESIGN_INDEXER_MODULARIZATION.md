@@ -210,26 +210,43 @@ cycles in `lib` is prerequisite work, and a good cleanup in its own right).
       (minimal modules with `unique_ptr<filesystem::path>` / value `filesystem::path` / `unique_ptr<string>`
       members all compile), the baseline (a stripped FilePath — ctors + `str`/`extension`/`empty` — compiles),
       and `expandEnvironmentVariables` (stripped FilePath + that method + the real srctrl.utility/logging
-      imports compiles). **The deeper bisection is now done and the verdict is: there is NO single culprit
-      method — the crash is an *aggregate* BMI-deserialization bug, not reducible to one construct.** The
-      decisive pair of experiments:
-      - A **self-contained** reconstruction of FilePath (its real 6 constructors + 5 `mutable bool` members +
-        `unique_ptr<filesystem::path>` + `getPath`/`str`/`empty`), even after *adding* `import srctrl.utility` +
-        `import srctrl.logging` with methods that use them (`splitToVector`, `srctrl::log::error`) *and* a
-        GMF `#include "Platform.h"` with a `Platform::isWindows()`-driven static — **compiles fine.**
-      - The **real** FilePath reduced to that *exact same* member set but consumed through the real
-        `srctrl.file` leaf module (real headers, the `.h`+`.inl` split, the real GMF include set) — **still
-        segfaults.**
-      So every individual ingredient (member type, constructors, method bodies, the `srctrl.utility`/
-      `srctrl.logging` imports, the `Platform` GMF static) is provably innocent in isolation; the segfault
-      only emerges from the real FilePath translation unit's *combination* of them. This is characteristic of
-      a clang BMI-complexity bug that depends on the aggregate module graph, not on a single declaration —
-      which is why chopping method *definitions* (keeping declarations) never stopped the crash while
-      standalone reconstructions never triggered it. **Conclusion: FilePath is not modularizable on this
-      clang (LLVM 22.1.8) until the upstream bug is fixed; it stays a classic (now Qt-free) header.** Upstream
-      repro shape: a class with a `unique_ptr<filesystem::path>` member + ~30 inline members mixing
-      `std::filesystem` ops with an imported module's helpers, split across `.h`/`.inl`, instantiated in a
-      consumer of its owning leaf module.
+      imports compiles). The earlier guess that this was an "aggregate BMI-deserialization bug" was **wrong**
+      — the actual root cause is now pinned exactly, and **FilePath IS modularizable** with a one-line build flag.
+    - **ROOT CAUSE — [LLVM #166068](https://github.com/llvm/llvm-project/issues/166068): reduced-BMI drops the
+      global `operator new`/`delete`.** The crash backtrace is not in the AST reader at all — it's in **CodeGen**:
+      `CodeGenFunction::EmitBuiltinNewDeleteCall` (`CGExprCXX.cpp:1384`), reached via `EmitBuiltinExpr` →
+      `EmitCallExpr`, under `CodeGenModule::EmitDeferred()`. The clang note pinpoints it:
+      `__new/allocate.h:35: Generating code for declaration 'std::__libcpp_allocate'`. In **reduced-BMI mode**
+      (clang's default since 20) the replaceable global `operator new`/`operator delete` declarations are pruned
+      from the BMI. When a consumer instantiates FilePath, its inline members allocate via
+      `std::filesystem::path` → `std::__libcpp_allocate` → `__builtin_operator_new`, whose CodeGen looks up the
+      *predeclared* global operator — which is missing from the BMI → in a release (NDEBUG) clang the assertion
+      "predeclared global operator new/delete is missing" degrades to a **null-deref/segfault**. This is why
+      dropping the `unique_ptr` never helped (`std::filesystem::path` allocates regardless) and why
+      self-contained non-module reconstructions never crashed (no reduced BMI in the path). Upstream fix:
+      PR #167468 (adds allocation functions to the reduced BMI unconditionally).
+    - **FIX: `-fno-modules-reduced-bmi`.** With it, `import srctrl.file; FilePath p("/x");` **compiles, links,
+      and runs** (verified in isolation against the real `srctrl.file`/`srctrl.utility`/`srctrl.logging` module
+      sources). Applied in `src/lib/CMakeLists.txt` as a `PRIVATE` compile option on `Sourcetrail_lib` under
+      `SOURCETRAIL_CXX_MODULES_ENABLED` (Clang-guarded) — the flag only has to be on the BMI *producer*, so
+      consumers read the retained operators and never need it. Note this is a **general** fix for the whole
+      modules migration, not FilePath-specific: any module whose inline members allocate would hit the same bug
+      once consumers `import` it.
+    - **No source-level workaround.** Tried three ways to force the operators back into the reduced BMI from the
+      module source — an exported inline that ODR-uses `::operator new`/`delete`; explicit redeclaration in the
+      purview (ill-formed: replaceable globals can't attach to a named module); an exported inline using
+      `__builtin_operator_new`/`delete` directly. All three still crash: the pruning is in clang's ASTWriter and
+      isn't reachable from user code. So the compiler flag is the only lever until PR #167468 ships.
+    - **FilePath is now converted to `srctrl.file`** (dual-build `.h`/`.inl` + `srctrl_file.cppm`, wired into
+      the `FILE_SET CXX_MODULES`). The **classic build is unaffected** (inline members in `FilePath.inl`, `.cpp`
+      is a one-line anchor) — verified by building `Sourcetrail_lib` + a headless full index (2/2 files, 0
+      errors, 435 files, all paths well-formed).
+    - **Remaining blocker for the full-app modules-ON build (pre-existing, unrelated to FilePath).** Configuring
+      the whole project with `SOURCETRAIL_CXX_MODULES=ON` fails at CMake generate with an inter-target
+      dependency cycle (`Sourcetrail_lib` ↔ `Sourcetrail_lib_gui` ↔ `Sourcetrail_lib_cxx` ↔ `Sourcetrail_res_gui`
+      — these static libs mutually depend, and CMake's `@synth_0` module-target synthesis can't tolerate the
+      cycle). This is orthogonal to FilePath (it affects all 21 module units equally) and is the next thing to
+      untangle before an end-to-end modules-ON app build; module units remain validated in isolation meanwhile.
     - **Follow-up modernization (independent of modules).** With FilePath staying a classic header, it got a
       cleanup pass: the `std::unique_ptr<std::filesystem::path>` member became a **plain `std::filesystem::path`
       value** (kills a heap allocation on a value type instantiated constantly; the header already includes

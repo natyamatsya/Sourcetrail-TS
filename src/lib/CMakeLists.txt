@@ -62,6 +62,7 @@ if(SOURCETRAIL_CXX_MODULES_ENABLED)
 				utility/srctrl_utility-string.cppm
 				utility/srctrl_utility-math.cppm
 				utility/srctrl_utility-time.cppm
+				utility/file/srctrl_file.cppm
 				data/srctrl_data.cppm
 				data/srctrl_data-types.cppm
 				data/srctrl_data-name.cppm
@@ -74,6 +75,17 @@ if(SOURCETRAIL_CXX_MODULES_ENABLED)
 				data/storage/srctrl_storage-interface.cppm
 				data/storage/srctrl_storage-error.cppm
 				data/storage/srctrl_storage-access.cppm)
+	# Workaround for LLVM #166068: in reduced-BMI mode (clang's default since 20) the replaceable global
+	# operator new/delete declarations are pruned from the BMI, so a consumer that instantiates a module
+	# type whose inline members allocate (e.g. FilePath -> std::filesystem::path -> std::__libcpp_allocate
+	# -> __builtin_operator_new) crashes in CodeGen (EmitBuiltinNewDeleteCall, CGExprCXX.cpp:1384) because
+	# the predeclared global operator is missing. There is no source-level injection that forces those decls
+	# back in (the fix is in clang's ASTWriter, PR #167468); disable reduced BMI until our toolchain ships it.
+	# PRIVATE: the flag only has to be on the BMI *producer* -- it makes this target's BMIs full, so any
+	# consumer (here or in another target) reads the retained operator new/delete and never needs the flag.
+	if(CMAKE_CXX_COMPILER_ID MATCHES "Clang")
+		target_compile_options(Sourcetrail_lib PRIVATE -fno-modules-reduced-bmi)
+	endif()
 	# Module scanning of the regular sources is off by the project-wide default (stdexec breaks
 	# clang-scan-deps -- see the top-level CMakeLists); the .cppm interface units are still scanned.
 	if(SOURCETRAIL_CXX_IMPORT_STD)

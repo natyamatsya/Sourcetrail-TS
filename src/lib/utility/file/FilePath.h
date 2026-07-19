@@ -1,13 +1,17 @@
 #ifndef FILE_PATH_H
 #define FILE_PATH_H
 
+#include "SrctrlModule.h"
+
+#ifndef SRCTRL_MODULE_PURVIEW
 #include "Platform.h"
 
 #include <filesystem>
 #include <string>
 #include <vector>
+#endif
 
-class FilePath
+SRCTRL_EXPORT class FilePath
 {
 public:
 	FilePath();
@@ -76,5 +80,7 @@ private:
 	mutable bool m_checkedIsDirectory;
 	mutable bool m_canonicalized;
 };
+
+#include "FilePath.inl"
 
 #endif	  // FILE_PATH_H
