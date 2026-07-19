@@ -17,14 +17,18 @@
 
 #pragma once
 
+#include "SrctrlModule.h"
+
+#ifndef SRCTRL_MODULE_PURVIEW
 #include <algorithm>
 #include <functional>
 #include <string_view>
 #include <vector>
+#endif
 
 namespace aidkit {
 
-template<typename T, typename Char = char, typename Int = int>
+SRCTRL_EXPORT template<typename T, typename Char = char, typename Int = int>
 	class enum_class {
 		public:
 			enum_class(const enum_class &other) = default;

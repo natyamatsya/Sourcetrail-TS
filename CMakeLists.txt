@@ -1,5 +1,18 @@
 cmake_minimum_required(VERSION 4.4.0)
 
+# `import std` in the module build (experimental). CMake's import-std support must be gated *before*
+# project() enables CXX (the toolchain probe needs both the experimental UUID and C++23 at detection
+# time), so read the cached SOURCETRAIL_CXX_IMPORT_STD value directly here -- the option() call further
+# down just formalizes it for the cache/UI. Default off; see context/DESIGN_INDEXER_MODULARIZATION.md
+# for the toolchain caveats (on brew LLVM / macOS it currently also needs CMAKE_CXX_STDLIB_MODULES_JSON
+# pointed at lib/c++/libc++.modules.json, and CMake's std-module archive doesn't link with macOS ld).
+if(SOURCETRAIL_CXX_IMPORT_STD)
+	set(CMAKE_CXX_STANDARD 23)
+	set(CMAKE_CXX_STANDARD_REQUIRED ON)
+	# UUID is CMake-version-specific; this is the CxxImportStd gate for CMake 4.4.
+	set(CMAKE_EXPERIMENTAL_CXX_IMPORT_STD "f35a9ac6-8463-4d38-8eec-5d6008153e7d")
+endif()
+
 include(CMakePrintHelpers)
 include(cmake/Sourcetrail.cmake)
 
@@ -56,13 +69,30 @@ option(SOURCETRAIL_CLIENT_IDS      "Assign element ids in-process (no lastRowId 
 # writer source of truth). Both pull in the turso_shim + cppturso3 targets.
 option(SOURCETRAIL_TURSO_CONCURRENT "Enable the Turso-only concurrent-writer storage path." OFF)
 
+# The dual-build scaffolding header (SrctrlModule.h) is included by first-party headers in BOTH the
+# header and the module build (it just defines SRCTRL_EXPORT), so make it globally available.
+include_directories(${CMAKE_SOURCE_DIR}/src/scaffolding)
+
 # Build the first-party C++ as C++20 modules instead of headers (experimental; see
 # context/DESIGN_INDEXER_MODULARIZATION.md). Default OFF -- the classic header build is always
 # available. When ON, a capability probe auto-falls back to the header build (with a warning) on a
 # toolchain that can't build modules, so enabling this can never hard-fail a configure.
 option(SOURCETRAIL_CXX_MODULES "Build first-party C++ as C++20 modules (experimental)." OFF)
+# In the module build, `import std;` instead of #include-ing std headers. Implies SOURCETRAIL_CXX_MODULES.
+# The pre-project() gate above wires CMake's experimental import-std support; here we just formalize the
+# option and, when on, define SRCTRL_IMPORT_STD so the module wrappers switch to `import std;`.
+option(SOURCETRAIL_CXX_IMPORT_STD "Module build: `import std;` instead of #include-ing std headers (experimental; needs toolchain import-std support). Implies SOURCETRAIL_CXX_MODULES." OFF)
+if(SOURCETRAIL_CXX_IMPORT_STD AND NOT SOURCETRAIL_CXX_MODULES)
+	message(STATUS "SOURCETRAIL_CXX_IMPORT_STD implies SOURCETRAIL_CXX_MODULES; enabling it.")
+	set(SOURCETRAIL_CXX_MODULES ON)
+endif()
 include(cmake/SourcetrailCxxModules.cmake)
 sourcetrail_resolve_cxx_modules(SOURCETRAIL_CXX_MODULES_ENABLED)
+if(SOURCETRAIL_CXX_MODULES_ENABLED AND SOURCETRAIL_CXX_IMPORT_STD)
+	# Module wrappers switch their std #includes to `import std;`; targets with module interfaces must
+	# also opt in per-target with the CXX_MODULE_STD property (done in each converted library).
+	add_compile_definitions(SRCTRL_IMPORT_STD)
+endif()
 if(SOURCETRAIL_CXX_MODULES_ENABLED)
 	# The CMake 4.4 baseline defaults CMP0155 to NEW, so C++20+ sources are scanned for `import`
 	# automatically -- module consumers are ordered after the interfaces they import with no extra

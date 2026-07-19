@@ -130,9 +130,34 @@ cycles in `lib` is prerequisite work, and a good cleanup in its own right).
   `srctrl.ping.pcm` BMI), and that with the flag OFF the POC target is absent and the configure is
   unchanged. Bumped `cmake_minimum_required` to **4.4.0** (CMP0155 = NEW → automatic import scanning).
   Corrected the dual-build mechanism to the header + wrapper split (see above).
-- **Phase 1 — pilot.** Convert one leaf to dual-build: **`AidKit_lib`** (3 files, moc-free) or a
-  self-contained `lib/utility` component (`Id`, `FilePath`). Gate: builds & tests pass **both** ways,
-  and Sourcetrail indexes the module build.
+- **Phase 1 — pilot: `AidKit_lib`. ✅ DONE.** Converted all three components (`enum_class`,
+  `thread_shared`, `qt/Strings`) to dual-build. Both ways green: header build **43/43** tests, module
+  build **43/43** with the template tests genuinely `import aidkit;` (verified: `SRCTRL_MODULE_BUILD`
+  set + `enum_class_test`'s modmap binds `aidkit=…/aidkit.pcm`). Sourcetrail indexes the module build
+  0 errors, producing an `aidkit` **module node** with `enum_class`/`thread_shared` and their members
+  attached to it. Refinements Phase 1 forced (roadmap corrected accordingly):
+  - **`SRCTRL_EXPORT` gates on `SRCTRL_MODULE_PURVIEW`, not `SRCTRL_MODULE_BUILD`.** A library's own
+    `.cpp`s #include its headers as ordinary (non-module) TUs even in a module build, and `export`
+    there is ill-formed — so `export` must key off *being pulled into a wrapper's purview*, not the
+    target being a module build. `SrctrlModule.h` is deliberately un-include-guarded so it re-evaluates.
+  - **Header-consumer safety by making out-of-line code inline.** `qt/Strings`' 3 UDLs were out-of-line
+    in `Strings.cpp`; `lib_gui` (`QtActions`, `QtLicenseWindow`) uses them via `#include`. A
+    module-attached out-of-line symbol would leave those header consumers unresolved, so the impls
+    moved to `Strings.inl` as `inline` (vague linkage → each consumer self-contained). A module may
+    only replace a leaf consumed by non-module code if everything it exports is a template or inline.
+  - **`.inl` convention** for inline impls kept out of headers (`Strings.inl`).
+  - **`FILE_SET CXX_MODULES` must be `PUBLIC`**, not `PRIVATE`, for another target to `import` it.
+  - **Scaffolding graduated** to `src/scaffolding/SrctrlModule.h` on a global include path.
+- **`SOURCETRAIL_CXX_IMPORT_STD` option (added in Phase 1)** — a compile-time toggle so module wrappers
+  `import std;` instead of #including std headers (`SRCTRL_IMPORT_STD` → the wrapper switches; targets
+  set `CXX_MODULE_STD ON`). The experimental gate is set before `project()`. **Toolchain state (brew
+  LLVM 22 / macOS):** the CMake 4.4 gate UUID is `f35a9ac6-8463-4d38-8eec-5d6008153e7d`;
+  `libc++.modules.json` isn't found by `-print-file-name` (brew ships it in `lib/c++/`) so
+  `CMAKE_CXX_STDLIB_MODULES_JSON` must be pointed there — after which config + the std-module *compile*
+  succeed, but *linking* fails (`ld: archive member '/' not a mach-o file in lib@cmake_cxx_std.a` —
+  CMake's std-module archive is GNU-format, macOS `ld` rejects it). So the option ships **OFF** and
+  wired; AidKit builds with std includes. Also note: AidKit's `<QString>` (Qt, not a module) stays in
+  the GMF, so it's a poor `import std` candidate anyway — the option is really for std-only modules.
 - **Phase 2 — `srctrl.utility`, then `srctrl.data`/`srctrl.storage`.** Bottom-up through `lib`,
   one module (with its partitions) per step, each independently shippable and testable both ways.
 - **Phase 3 — `srctrl.cxx`.** Modularize `lib_cxx` with partitions; absorb the Clang-header BMI cost.
