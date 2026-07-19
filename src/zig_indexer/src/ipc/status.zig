@@ -10,7 +10,8 @@ const std = @import("std");
 const shm = @import("shm.zig");
 const c = @import("c.zig").c;
 
-const shm_size: usize = 16 * 1024 * 1024;
+// Matches the C++ IpcInterprocessIndexingStatusManager segment size (1 MiB).
+const shm_size: usize = 1048576;
 
 pub const Error = shm.Error;
 
@@ -145,9 +146,14 @@ fn serializeStatus(gpa: std.mem.Allocator, st: *const OwnedStatus) shm.Error![]u
     if (c.flatcc_builder_init(&b) != 0) return shm.Error.Shm;
     defer c.flatcc_builder_clear(&b);
 
-    // Leaf vectors first.
+    // Leaf objects (strings, ProcessFile tables) are created *before* opening
+    // any vector frame — creating a nested object inside an open vec frame is a
+    // flatcc frame violation (corrupts the builder). Refs are then pushed.
+    const ifp_refs = try gpa.alloc(c.flatbuffers_string_ref_t, st.indexing_file_paths.items.len);
+    defer gpa.free(ifp_refs);
+    for (st.indexing_file_paths.items, ifp_refs) |p, *ref| ref.* = c.flatbuffers_string_create(&b, p.ptr, p.len);
     _ = c.flatbuffers_string_vec_start(&b);
-    for (st.indexing_file_paths.items) |p| _ = c.flatbuffers_string_vec_push(&b, c.flatbuffers_string_create(&b, p.ptr, p.len));
+    for (ifp_refs) |ref| _ = c.flatbuffers_string_vec_push(&b, ref);
     const ifp = c.flatbuffers_string_vec_end(&b);
 
     const pf_refs = try gpa.alloc(c.Sourcetrail_Ipc_ProcessFile_ref_t, st.current_files.items.len);
@@ -159,12 +165,20 @@ fn serializeStatus(gpa: std.mem.Allocator, st: *const OwnedStatus) shm.Error![]u
     for (pf_refs) |ref| _ = c.Sourcetrail_Ipc_ProcessFile_vec_push(&b, ref);
     const cf = c.Sourcetrail_Ipc_ProcessFile_vec_end(&b);
 
+    const crp_refs = try gpa.alloc(c.flatbuffers_string_ref_t, st.crashed_file_paths.items.len);
+    defer gpa.free(crp_refs);
+    for (st.crashed_file_paths.items, crp_refs) |p, *ref| ref.* = c.flatbuffers_string_create(&b, p.ptr, p.len);
     _ = c.flatbuffers_string_vec_start(&b);
-    for (st.crashed_file_paths.items) |p| _ = c.flatbuffers_string_vec_push(&b, c.flatbuffers_string_create(&b, p.ptr, p.len));
+    for (crp_refs) |ref| _ = c.flatbuffers_string_vec_push(&b, ref);
     const crp = c.flatbuffers_string_vec_end(&b);
 
+    // Scalar (non-offset) vec push takes a POINTER to the element (flatcc
+    // `_vec_push(B, const T *p)`), unlike offset/string/table pushes.
     _ = c.flatbuffers_uint64_vec_start(&b);
-    for (st.finished_process_ids.items) |id| _ = c.flatbuffers_uint64_vec_push(&b, id);
+    for (st.finished_process_ids.items) |id| {
+        var v: u64 = id;
+        _ = c.flatbuffers_uint64_vec_push(&b, &v);
+    }
     const fpi = c.flatbuffers_uint64_vec_end(&b);
 
     _ = c.Sourcetrail_Ipc_IndexingStatus_start_as_root(&b);
