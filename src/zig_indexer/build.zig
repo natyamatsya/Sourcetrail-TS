@@ -24,6 +24,13 @@ pub fn build(b: *std.Build) void {
         .optimize = optimize,
     }).module("thoth-ipc");
 
+    // ZLS (0.16.0) as a library: its Analyser + DocumentStore drive cross-file
+    // semantic resolution (Phase 3b). Consumed as the "zls" module it exposes.
+    const zls = b.dependency("zls", .{
+        .target = target,
+        .optimize = optimize,
+    }).module("zls");
+
     // flatcc C bindings for the shared .fbs schemas. gen_flatcc.sh strips
     // non-ASCII (flatcc's parser rejects it) and runs flatcc into an output dir.
     const flatcc_prefix = b.option([]const u8, "flatcc-prefix", "flatcc install prefix") orelse "/opt/homebrew";
@@ -44,6 +51,7 @@ pub fn build(b: *std.Build) void {
             .imports = &.{
                 .{ .name = "indexer", .module = mod },
                 .{ .name = "thoth-ipc", .module = thoth },
+                .{ .name = "zls", .module = zls },
             },
         }),
     });

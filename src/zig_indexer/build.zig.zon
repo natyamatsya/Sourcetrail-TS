@@ -8,6 +8,10 @@
         // The thoth-ipc Zig port (ShmHandle / Mutex / makeShmName), consumed as
         // the "thoth-ipc" module it exposes via b.addModule.
         .thoth_ipc = .{ .path = "../../submodules/thoth-ipc/zig/thoth-ipc" },
+        .zls = .{
+            .url = "https://github.com/zigtools/zls/archive/refs/tags/0.16.0.tar.gz",
+            .hash = "zls-0.16.0-rmm5fs_JJgBG3dk5HwYK1FylE2_LMN0BYpX57tPzT-Xc",
+        },
     },
     .paths = .{
         "build.zig",
