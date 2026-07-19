@@ -172,15 +172,15 @@ mirroring how the Rust indexer degrades on unexpanded macros.
 | ~~2~~ | ~~Local symbols (fn-local bindings + type-3 locations)~~ | — | — | **Done** (`de1673c97a`): ZLS-resolved locals recorded as `file<line:col>` rows + type-3 occurrences; 10.3k locals / 39.8k occurrences on ZLS. |
 | ~~3~~ | ~~`typedef` and `type_parameter` node kinds~~ | — | — | **Done** (`ddece0e633`): `comptime T: type` params → NODE_TYPE_PARAMETER; `const T = <type>` upgraded to NODE_TYPEDEF via ZLS `is_type_val`. 75 typedefs / 31 type params on ZLS. |
 | 4 | Component access from `pub` / node modifiers | Low | S | Map `pub`→public, else default; cheap enrichment. |
-| 5 | Typedef references as EDGE_TYPE_USAGE (currently EDGE_USAGE) | Low | S | The reference pass reads the syntactic decl map; teach it the reclassified kind. |
+| ~~5~~ | ~~Typedef references as EDGE_TYPE_USAGE~~ | — | — | **Done** (`b3e3b86996`): wireOne reads the target's actual (reclassified) node kind. Same-file typedef refs now TYPE_USAGE (486/500 on ZLS); cross-file refs still USAGE (a referencing file can't see another file's const is a typedef without a per-ref ZLS resolve). |
 | 6 | Status: omit empty vectors on write; crashed-TU bookkeeping | Low | S | Align with ADR-0003 and the `start_indexing` crash path. |
 | 7 | Node attributes (deprecated/doc) | Low | M | Display-only side table; least impactful. |
 | 8 | `implicit` definition kind | Low | S | Zig has few compiler-synthesized decls to mark. |
 
-None block indexing. With #1–#3 done the full index runs with **zero** logged
-errors, full local-variable highlighting, and typedef/generic modelling; only
-low-severity display enrichments remain (component access #4, typedef edge kind
-#5).
+None block indexing. With #1–#3 and #5 done the full index runs with **zero**
+logged errors, full local-variable highlighting, typedef/generic modelling, and
+type-usage edges; only low-severity display enrichments remain (component access
+#4, status niceties #6, node attributes #7).
 
 ---
 
