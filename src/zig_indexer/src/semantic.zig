@@ -271,6 +271,15 @@ fn wireLocal(
 ) !void {
     const gpa = store.arena.allocator();
     if (!std.mem.eql(u8, decl.handle.uri.raw, handle.uri.raw)) return;
+    // A `comptime T: type` parameter is a NODE_TYPE_PARAMETER (recorded by the
+    // declaration pass), not a local symbol — don't double-represent it.
+    if (decl.decl == .function_parameter) {
+        if (decl.decl.function_parameter.get(&decl.handle.tree)) |param| {
+            if (param.type_expr) |te| {
+                if (indexer.parser.isMetaTypeExpr(&decl.handle.tree, te)) return;
+            }
+        }
+    }
     const decl_loc = tree.tokenLocation(0, decl.nameToken());
     const path = decl.handle.uri.toFsPath(gpa) catch return;
     const name = try std.fmt.allocPrint(gpa, "{s}<{d}:{d}>", .{ path, decl_loc.line + 1, decl_loc.column + 1 });
@@ -336,5 +345,51 @@ pub fn resolveImports(session: *Session, store: *Storage, handle: *zls.DocumentS
         // makes the incremental reverse-dep (edit util.zig -> reindex main.zig)
         // actually fire.
         _ = try store.recordEdge(.include, file_node_id, target);
+    }
+}
+
+/// Whether `node` is an `@import(...)` / `@cImport(...)` builtin call. Such a
+/// binding resolves to a type value (the imported struct) but is a module
+/// import, not a type alias, so it stays a global_variable + EDGE_INCLUDE.
+fn isImportCall(tree: *const Ast, node: Ast.Node.Index) bool {
+    const is_builtin = switch (tree.nodeTag(node)) {
+        .builtin_call, .builtin_call_comma, .builtin_call_two, .builtin_call_two_comma => true,
+        else => false,
+    };
+    if (!is_builtin) return false;
+    const name = tree.tokenSlice(tree.nodeMainToken(node));
+    return std.mem.eql(u8, name, "@import") or std.mem.eql(u8, name, "@cImport");
+}
+
+/// Upgrade `const X = <expr>` bindings the declaration pass recorded as
+/// global_variable to NODE_TYPEDEF when ZLS resolves the value to a type (Zig
+/// has no syntactic type/value distinction, so this needs semantic resolution).
+/// `@import` bindings are excluded — they resolve to a type but are module
+/// imports (kept as global_variable with an EDGE_INCLUDE). Container literals
+/// (`const T = struct {…}`) are already struct/enum/union from the parser and
+/// are not global_variable, so they are skipped here.
+pub fn resolveTypedefs(session: *Session, store: *Storage, handle: *zls.DocumentStore.Handle, file_path: []const u8) !void {
+    const gpa = store.arena.allocator();
+    const tree = &handle.tree;
+
+    var map = try indexer.parser.collectDecls(gpa, tree);
+    defer map.deinit(gpa);
+
+    var analyser = zls.Analyser.init(session.gpa, session.arena.allocator(), &session.store, &session.ip, handle);
+    defer analyser.deinit();
+
+    var it = map.iterator();
+    while (it.next()) |entry| {
+        if (entry.value_ptr.kind != .global_variable) continue;
+        const var_decl = tree.fullVarDecl(entry.key_ptr.*) orelse continue;
+        if (tree.tokenTag(var_decl.ast.mut_token) != .keyword_const) continue;
+        const init_node = var_decl.ast.init_node.unwrap() orelse continue;
+        if (isImportCall(tree, init_node)) continue;
+
+        const ty = (analyser.resolveTypeOfNode(.of(init_node, handle)) catch continue) orelse continue;
+        if (!ty.is_type_val) continue;
+
+        const name = try indexer.storage.qualifiedName(gpa, file_path, entry.value_ptr.name);
+        store.reclassifyNode(name, .typedef);
     }
 }

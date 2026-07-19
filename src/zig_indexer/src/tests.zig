@@ -160,6 +160,29 @@ test "file-as-struct: top-level fields are members of the file node" {
     try testing.expectEqual(@as(usize, 2), member_from_file);
 }
 
+test "generic function's comptime type parameter is a NODE_TYPE_PARAMETER member" {
+    const a = testing.allocator;
+    var store = storage.Storage.init(a);
+    defer store.deinit();
+    try indexString(a, &store,
+        \\pub fn List(comptime T: type, count: usize) type {
+        \\    return struct { items: [count]T };
+        \\}
+    );
+    const list = nodeNamed(&store, "List") orelse return error.MissingNode;
+    try testing.expectEqual(NodeKind.function, list.kind);
+    const tparam = nodeNamed(&store, "List.T") orelse return error.MissingNode;
+    try testing.expectEqual(NodeKind.type_parameter, tparam.kind);
+    // `count: usize` is a value parameter, not a type parameter.
+    try testing.expect(nodeNamed(&store, "List.count") == null);
+    // T is a member of List.
+    var member = false;
+    for (store.edges.items) |e| {
+        if (e.kind == .member and e.source_node_id == list.id and e.target_node_id == tparam.id) member = true;
+    }
+    try testing.expect(member);
+}
+
 test "local symbols dedup by name; each reference is a type-3 occurrence" {
     const a = testing.allocator;
     var store = storage.Storage.init(a);

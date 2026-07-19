@@ -47,6 +47,14 @@ fn qualify(a: std.mem.Allocator, scope: []const u8, name: []const u8) Error![]co
     return std.fmt.allocPrint(a, "{s}.{s}", .{ scope, name });
 }
 
+/// Whether a type-expression node is the `type` metatype (`comptime T: type`),
+/// i.e. the parameter it annotates is a generic type parameter. Mirrors ZLS's
+/// `analysis.isMetaType`.
+pub fn isMetaTypeExpr(tree: *const Ast, node: Ast.Node.Index) bool {
+    return tree.nodeTag(node) == .identifier and
+        std.mem.eql(u8, tree.tokenSlice(tree.nodeMainToken(node)), "type");
+}
+
 /// struct / enum / union / opaque keyword -> the matching container NodeKind
 /// (opaque has no distinct kind, so it maps to struct).
 fn containerKindOf(tree: *const Ast, container: Ast.full.ContainerDecl) NodeKind {
@@ -223,6 +231,29 @@ const Walker = struct {
         if (is_member) _ = try self.store.recordEdge(.member, owner_id, id);
         if (cls.container) |container| {
             for (container.ast.members) |member| try self.handleDecl(member, serialized, id, true, cls.kind);
+        }
+        // A function's `comptime T: type` parameters are generic type params.
+        if (cls.kind == .function or cls.kind == .method) {
+            var pbuf: [1]Ast.Node.Index = undefined;
+            if (self.ast.fullFnProto(&pbuf, node)) |proto| try self.recordTypeParams(proto, serialized, id);
+        }
+    }
+
+    /// Record each `comptime T: type` parameter of `proto` as a NODE_TYPE_PARAMETER
+    /// member of the function `fn_id` (dotted scope `fn_scope`). Regular
+    /// (value/`anytype`) parameters are left to the ZLS pass as local symbols.
+    fn recordTypeParams(self: *Walker, proto: Ast.full.FnProto, fn_scope: []const u8, fn_id: Id) Error!void {
+        const a = self.store.arena.allocator();
+        var it = proto.iterate(self.ast);
+        while (it.next()) |param| {
+            const name_tok = param.name_token orelse continue;
+            const type_expr = param.type_expr orelse continue;
+            if (!isMetaTypeExpr(self.ast, type_expr)) continue;
+            const local = try qualify(a, fn_scope, self.ast.tokenSlice(name_tok));
+            const full = try storage.qualifiedName(a, self.file_path, local);
+            const tp_id = try self.store.recordNode(.type_parameter, full, .explicit);
+            _ = try self.store.recordLocation(tp_id, self.file_id, self.tokenSpan(name_tok), .token);
+            _ = try self.store.recordEdge(.member, fn_id, tp_id);
         }
     }
 };

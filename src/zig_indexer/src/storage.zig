@@ -256,6 +256,19 @@ pub const Storage = struct {
         return id;
     }
 
+    /// Change the kind of an already-recorded node, found by serialized name.
+    /// Used by the semantic pass to upgrade a `const X = <type>` binding from
+    /// global_variable to typedef once ZLS confirms the value is a type.
+    pub fn reclassifyNode(self: *Storage, serialized_name: []const u8, kind: NodeKind) void {
+        const id = self.node_by_name.get(serialized_name) orelse return;
+        for (self.nodes.items) |*n| {
+            if (n.id == id) {
+                n.kind = kind;
+                return;
+            }
+        }
+    }
+
     pub fn recordEdge(self: *Storage, kind: EdgeType, source: Id, target: Id) !Id {
         const a = self.alloc();
         const id = self.createId();
