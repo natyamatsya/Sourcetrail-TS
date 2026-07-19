@@ -3,6 +3,11 @@
 //! paths (the generated dir + the flatcc runtime headers) are supplied by
 //! build.zig / CMake. Link against libflatccrt.
 pub const c = @cImport({
+    // Must precede every flatcc header: defines the FLATCC_ACCESSORS guard so
+    // flatcc's stock scalar accessors (direct `*(T*)p` casts, which translate-c
+    // turns into alignment-checked loads that abort on real unaligned buffer
+    // fields) are replaced with memcpy-based, unaligned-safe equivalents.
+    @cInclude("flatcc_accessors_shim.h");
     @cInclude("flatcc/flatcc_builder.h");
     @cInclude("indexer_command_reader.h");
     @cInclude("indexer_command_builder.h");

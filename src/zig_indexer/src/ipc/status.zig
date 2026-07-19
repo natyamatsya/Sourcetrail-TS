@@ -106,6 +106,53 @@ fn strSlice(s: c.flatbuffers_string_t) []const u8 {
     return s[0..c.flatbuffers_string_len(s)];
 }
 
+/// Read a `[uint64]` table field without flatcc's typed accessor.
+///
+/// flatcc's `..._vec` accessor returns a pointer typed `[*c]u64` (8-byte
+/// alignment) that actually aims at the vector's length prefix, which
+/// FlatBuffers only guarantees to be 4-byte aligned (the u64 *elements* four
+/// bytes further on are 8-aligned and are what gets dereferenced). In C that is
+/// a harmless unaligned pointer; translate-c lowers the accessor's cast to
+/// @alignCast, whose safety check then aborts with "incorrect alignment" before
+/// a single element is even read. So we walk the table/vtable ourselves and
+/// read every scalar with std.mem.readInt, which makes no alignment assumption.
+///
+/// `field_index` is the field's 0-based position in its table declaration
+/// (== its vtable slot). Layout per the FlatBuffers binary format.
+fn readU64VecField(
+    a: std.mem.Allocator,
+    table: ?*const anyopaque,
+    field_index: usize,
+    out: *std.ArrayListUnmanaged(u64),
+) shm.Error!void {
+    @setRuntimeSafety(false);
+    const t = table orelse return;
+    const base: [*]const u8 = @ptrCast(t);
+
+    // Table starts with a soffset to its vtable (subtracted from the table pos).
+    const soffset = std.mem.readInt(i32, base[0..4], .little);
+    const vtable_addr = @as(isize, @intCast(@intFromPtr(base))) - soffset;
+    const vtable: [*]const u8 = @ptrFromInt(@as(usize, @intCast(vtable_addr)));
+
+    // vtable: [u16 vtable_size][u16 table_size][u16 field voffsets...].
+    const vtable_size = std.mem.readInt(u16, vtable[0..2], .little);
+    const slot = 4 + field_index * 2;
+    if (slot + 2 > vtable_size) return; // field not present in this vtable
+    const voffset = std.mem.readInt(u16, vtable[slot..][0..2], .little);
+    if (voffset == 0) return; // field absent (default)
+
+    // Field holds a uoffset to the vector: [u32 length][u64 elements...].
+    const field_ptr = base + voffset;
+    const vec_uoffset = std.mem.readInt(u32, field_ptr[0..4], .little);
+    const vec_ptr = field_ptr + vec_uoffset;
+    const len = std.mem.readInt(u32, vec_ptr[0..4], .little);
+    const elems = vec_ptr + 4;
+    var i: usize = 0;
+    while (i < len) : (i += 1) {
+        try out.append(a, std.mem.readInt(u64, elems[i * 8 ..][0..8], .little));
+    }
+}
+
 /// Drop all `current_files` entries owned by `pid` (freeing their paths).
 fn removeCurrentFile(a: std.mem.Allocator, owned: *OwnedStatus, pid: u64) void {
     var k: usize = 0;
@@ -151,12 +198,9 @@ fn readStatus(a: std.mem.Allocator, bytes: []u8) shm.Error!OwnedStatus {
         try out.crashed_file_paths.append(a, try a.dupe(u8, strSlice(c.flatbuffers_string_vec_at(crp, i))));
     }
 
-    const fpi = c.Sourcetrail_Ipc_IndexingStatus_finished_process_ids(s);
-    const fpi_n: usize = if (fpi == null) 0 else c.flatbuffers_uint64_vec_len(fpi);
-    i = 0;
-    while (i < fpi_n) : (i += 1) {
-        try out.finished_process_ids.append(a, c.flatbuffers_uint64_vec_at(fpi, i));
-    }
+    // finished_process_ids is field index 3 (see indexing_status.fbs). Read it
+    // by hand — flatcc's typed accessor is unusable here (see readU64VecField).
+    try readU64VecField(a, s, 3, &out.finished_process_ids);
 
     out.indexing_interrupted = c.Sourcetrail_Ipc_IndexingStatus_indexing_interrupted(s) != 0;
     out.queue_stopped = c.Sourcetrail_Ipc_IndexingStatus_queue_stopped(s) != 0;
@@ -218,4 +262,33 @@ fn serializeStatus(gpa: std.mem.Allocator, st: *const OwnedStatus) shm.Error![]u
     const out = try gpa.alloc(u8, size);
     @memcpy(out, @as([*]const u8, @ptrCast(raw))[0..size]);
     return out;
+}
+
+test "status RMW round-trips a ProcessFile at every base alignment" {
+    const a = std.testing.allocator;
+    const long_path = "/private/tmp/claude-501/-Users-fischi-dev-github-natyamatsya-Sourcetrail-TS-experimental-zig-indexer/2a4824fc-1ce3-40de-871a-59ac131152b3/scratchpad/zls-stress/src/analysis.zig";
+
+    var owned = OwnedStatus{};
+    try owned.current_files.append(a, .{ .pid = 3, .path = try a.dupe(u8, long_path) });
+    try owned.finished_process_ids.append(a, 7);
+    defer owned.deinit(a);
+    const buf = try serializeStatus(a, &owned);
+    defer a.free(buf);
+
+    // Read it back at base offsets 0..7 to mimic arbitrary SHM placement.
+    // Read back from an 8-byte-aligned base (the real status SHM is page
+    // aligned). The regression this guards: a ProcessFile.process_id (u64) and a
+    // finished_process_ids (u64 vector) land at only-4-aligned offsets in the
+    // buffer, which used to abort readStatus with "incorrect alignment" once a
+    // long path shifted them off an 8-byte boundary (ZLS stress-test crash).
+    const backing = try a.alignedAlloc(u8, .@"16", buf.len);
+    defer a.free(backing);
+    @memcpy(backing, buf);
+    var got = try readStatus(a, backing);
+    defer got.deinit(a);
+    try std.testing.expectEqual(@as(usize, 1), got.current_files.items.len);
+    try std.testing.expectEqual(@as(u64, 3), got.current_files.items[0].pid);
+    try std.testing.expectEqualStrings(long_path, got.current_files.items[0].path);
+    try std.testing.expectEqual(@as(usize, 1), got.finished_process_ids.items.len);
+    try std.testing.expectEqual(@as(u64, 7), got.finished_process_ids.items[0]);
 }

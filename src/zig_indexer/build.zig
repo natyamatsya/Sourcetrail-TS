@@ -97,6 +97,9 @@ pub fn build(b: *std.Build) void {
 /// the libflatccrt link to a module that @cImports the generated bindings.
 fn configureFlatcc(mod: *std.Build.Module, gen_dir: std.Build.LazyPath, prefix: []const u8) void {
     const b = mod.owner;
+    // Our unaligned-safe flatcc accessor shim must be found before flatcc's own
+    // headers (it defines the FLATCC_ACCESSORS include guard).
+    mod.addIncludePath(b.path("include"));
     mod.addIncludePath(gen_dir);
     mod.addIncludePath(.{ .cwd_relative = b.pathJoin(&.{ prefix, "include" }) });
     mod.addLibraryPath(.{ .cwd_relative = b.pathJoin(&.{ prefix, "lib" }) });

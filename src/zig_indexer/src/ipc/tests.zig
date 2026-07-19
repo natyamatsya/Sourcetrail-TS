@@ -8,6 +8,7 @@ const c = @import("c.zig").c;
 // Pull in the pure framing tests.
 test {
     _ = @import("queue.zig");
+    _ = @import("status.zig");
 }
 
 test "IntermediateStorage FlatBuffers round-trip (build -> read back)" {
