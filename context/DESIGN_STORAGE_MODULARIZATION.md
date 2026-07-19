@@ -44,6 +44,32 @@ work exactly; lowest risk, highest reuse. **Recommended as the standalone next c
 
 ## 3. Phase S3 — the SQLite impl and the sqlpp23-module question (the interesting part)
 
+### Spike results (DONE — sqlpp23 modules validated on clang-22, GREEN)
+
+A 4-step isolated spike settled every open question; all green:
+1. **`sqlpp23.core` compiles as a module on clang-22** and a consumer imports it — no toolchain blocker
+   (docs only claimed clang-20/gcc-15; clang-22 is fine).
+2. **The name-tag macro is a non-issue — path (a) works and is simple.** A ddl2cpp-*generated-form* table
+   (`struct Element_ { struct Id { SQLPP_CREATE_NAME_TAG_FOR_SQL_AND_CPP(id,id); … }; … }; using Element =
+   ::sqlpp::table_t<Element_>;`) plus a real `select(all_of(e)).from(e)` query compiled with **only**
+   `import sqlpp23.core;` + a textual `#include <sqlpp23/core/name/create_name_tag.h>` (the tiny macro-only
+   header). No full sqlpp `#include`s needed — the module exports enough (`table_t`, `table_columns`,
+   `detail::type_set`, `integral`, `select`, `all_of`). So codegen path (b) is a *nice-to-have*, not
+   required: keeping the one macro header in the GMF is already clean.
+3. **The sqlite3 connector modularizes too** — a consumer that `import sqlpp23.core; import sqlpp23.sqlite3;`
+   builds a `sqlpp::sqlite3::connection_config` and a query through both boundaries.
+4. **Coexistence is CLEAN** (better than `import std`): a single TU that BOTH `import sqlpp23.core` AND
+   `#include <sqlpp23/...>` a header compiles with 0 errors — the header-wrapper module shares the same
+   global-module entities, so there's no duplicate-declaration conflict. → storage TUs need not be strictly
+   import-only; integration is low-risk.
+
+**Remaining integration work (not blockers):** (i) wire sqlpp23's `.cppm` into our build — they're not
+precompiled; we compile them ourselves, and vcpkg ships the export `cxx-modules-Sqlpp23Targets.cmake` to do
+it. (ii) The "experimental / evolving (v0.67)" caveat is a watch-item, but v0.69 built clean here. **Verdict:
+S3 is unblocked** — the sqlite/ impl can `import sqlpp23.core/sqlite3` with the macro header in the GMF.
+
+### (original scope)
+
 The production `sqlite/` impls couple to two third-party libraries:
 - **CppSQLite3** (`CppSQLite3.h`) — an ordinary header; lives in the **GMF** (global-module), like any
   non-modularized dep. Straightforward.
