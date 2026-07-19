@@ -2,6 +2,7 @@
 
 #include "ApplicationSettings.h"
 #include "CxxIndexerCommandProvider.h"
+#include "CxxModulePrebuilder.h"
 #include "FileManager.h"
 #include "IndexerCommandCxx.h"
 #include "RefreshInfo.h"
@@ -95,19 +96,37 @@ std::shared_ptr<IndexerCommandProvider> SourceGroupCxxEmpty::getIndexerCommandPr
 		utility::getIncludePchFlags(
 			dynamic_cast<const SourceGroupSettingsWithCxxPchOptions*>(m_settings.get())));
 
+	// C++20 modules: scan the source group, build its BMIs in dependency order, and collect the
+	// flags libclang needs to resolve `import`s. A no-op for source groups without modules.
+	const CxxModulePrebuilder::Result modules = CxxModulePrebuilder::prebuild(
+		getAllSourceFilePaths(),
+		compilerFlags,
+		m_settings->getProjectDirectoryPath().getConcatenated("/module_cache"));
+	if (modules.anyModules)
+	{
+		utility::append(compilerFlags, modules.sharedFlags);
+	}
+
 	std::shared_ptr<CxxIndexerCommandProvider> provider =
 		std::make_shared<CxxIndexerCommandProvider>();
 	for (const FilePath& sourcePath: getAllSourceFilePaths())
 	{
 		if (info.filesToIndex.find(sourcePath) != info.filesToIndex.end())
 		{
+			std::vector<std::string> fileFlags = compilerFlags;
+			// A module-interface unit must be parsed as such (its extension may be a plain .cpp).
+			if (modules.interfaceUnits.find(sourcePath) != modules.interfaceUnits.end())
+			{
+				utility::append(fileFlags, std::vector<std::string>{"-x", "c++-module"});
+			}
+
 			provider->addCommand(std::make_shared<IndexerCommandCxx>(
 					sourcePath,
 					indexedPaths,
 					excludeFilters,
 					std::set<FilePathFilter>{},
 					FilePath(""),
-					compilerFlags,
+					fileFlags,
 					""));
 		}
 	}
