@@ -14,13 +14,16 @@
 SRCTRL_EXPORT class FilePath
 {
 public:
-	FilePath();
+	FilePath() = default;
 	FilePath(const char filePath[]);
 	FilePath(const std::string& filePath);
-	FilePath(const FilePath& other);
-	FilePath(FilePath&& other);
 	FilePath(const std::string& filePath, const std::string& base);
-	~FilePath();
+
+	FilePath(const FilePath& other) = default;
+	FilePath(FilePath&& other) = default;
+	FilePath& operator=(const FilePath& other) = default;
+	FilePath& operator=(FilePath&& other) = default;
+	~FilePath() = default;
 
 	const std::filesystem::path &getPath() const;
 
@@ -56,8 +59,6 @@ public:
 	FilePath replaceExtension(const std::string& extension) const;
 	bool hasExtension(const std::vector<std::string>& extensions) const;
 
-	FilePath& operator=(const FilePath& other);
-	FilePath& operator=(FilePath&& other);
 	bool operator==(const FilePath& other) const;
 	bool operator!=(const FilePath& other) const;
 	bool operator<(const FilePath& other) const;
@@ -74,11 +75,11 @@ private:
 
 	std::filesystem::path m_path;
 
-	mutable bool m_exists;
-	mutable bool m_checkedExists;
-	mutable bool m_isDirectory;
-	mutable bool m_checkedIsDirectory;
-	mutable bool m_canonicalized;
+	mutable bool m_exists = false;
+	mutable bool m_checkedExists = false;
+	mutable bool m_isDirectory = false;
+	mutable bool m_checkedIsDirectory = false;
+	mutable bool m_canonicalized = false;
 };
 
 #include "FilePath.inl"

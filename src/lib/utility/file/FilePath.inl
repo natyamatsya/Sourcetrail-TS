@@ -13,15 +13,8 @@
 #include <vector>
 #endif
 
-inline FilePath::FilePath()
-	: m_path()
-	, m_exists(false)
-	, m_checkedExists(false)
-	, m_isDirectory(false)
-	, m_checkedIsDirectory(false)
-	, m_canonicalized(false)
-{
-}
+// The default ctor, copy/move ctors, copy/move assignment, and dtor are all `= default` in the header --
+// the compiler-generated versions copy/move m_path and the (in-class-initialized) cache flags exactly.
 
 inline FilePath::FilePath(const char filePath[])
     : FilePath(std::string(filePath))
@@ -30,45 +23,13 @@ inline FilePath::FilePath(const char filePath[])
 
 inline FilePath::FilePath(const std::string& filePath)
 	: m_path(filePath)
-	, m_exists(false)
-	, m_checkedExists(false)
-	, m_isDirectory(false)
-	, m_checkedIsDirectory(false)
-	, m_canonicalized(false)
-{
-}
-
-inline FilePath::FilePath(const FilePath& other)
-	: m_path(other.getPath())
-	, m_exists(other.m_exists)
-	, m_checkedExists(other.m_checkedExists)
-	, m_isDirectory(other.m_isDirectory)
-	, m_checkedIsDirectory(other.m_checkedIsDirectory)
-	, m_canonicalized(other.m_canonicalized)
-{
-}
-
-inline FilePath::FilePath(FilePath&& other)
-	: m_path(std::move(other.m_path))
-	, m_exists(other.m_exists)
-	, m_checkedExists(other.m_checkedExists)
-	, m_isDirectory(other.m_isDirectory)
-	, m_checkedIsDirectory(other.m_checkedIsDirectory)
-	, m_canonicalized(other.m_canonicalized)
 {
 }
 
 inline FilePath::FilePath(const std::string& filePath, const std::string& base)
 	: m_path(std::filesystem::absolute(std::filesystem::path(base) / filePath))
-	, m_exists(false)
-	, m_checkedExists(false)
-	, m_isDirectory(false)
-	, m_checkedIsDirectory(false)
-	, m_canonicalized(false)
 {
 }
-
-inline FilePath::~FilePath() = default;
 
 inline const std::filesystem::path &FilePath::getPath() const
 {
@@ -454,28 +415,6 @@ inline bool FilePath::hasExtension(const std::vector<std::string>& extensions) c
 		}
 	}
 	return false;
-}
-
-inline FilePath& FilePath::operator=(const FilePath& other)
-{
-	m_path = other.getPath();
-	m_exists = other.m_exists;
-	m_checkedExists = other.m_checkedExists;
-	m_isDirectory = other.m_isDirectory;
-	m_checkedIsDirectory = other.m_checkedIsDirectory;
-	m_canonicalized = other.m_canonicalized;
-	return *this;
-}
-
-inline FilePath& FilePath::operator=(FilePath&& other)
-{
-	m_path = std::move(other.m_path);
-	m_exists = other.m_exists;
-	m_checkedExists = other.m_checkedExists;
-	m_isDirectory = other.m_isDirectory;
-	m_checkedIsDirectory = other.m_checkedIsDirectory;
-	m_canonicalized = other.m_canonicalized;
-	return *this;
 }
 
 inline bool FilePath::operator==(const FilePath& other) const
