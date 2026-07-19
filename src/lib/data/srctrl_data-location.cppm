@@ -5,6 +5,7 @@ module;
 
 // Global module fragment: std + the non-modularized deps (FilePath, Id via types.h, and logging.h's
 // LOG_ERROR used by SourceLocationCollection) stay global-module.
+#ifndef SRCTRL_IMPORT_STD
 #include <functional>
 #include <map>
 #include <memory>
@@ -12,11 +13,16 @@ module;
 #include <set>
 #include <string>
 #include <vector>
+#endif
 #include "types.h"
 #include "FilePath.h"
 #include "logging.h"
 
 export module srctrl.data:location;
+
+#ifdef SRCTRL_IMPORT_STD
+import std;
+#endif
 
 import :types;   // LocationType
 

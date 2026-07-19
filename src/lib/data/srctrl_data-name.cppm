@@ -4,11 +4,17 @@
 
 module;
 
+#ifndef SRCTRL_IMPORT_STD
 #include <sstream>
 #include <string>
 #include <vector>
+#endif
 
 export module srctrl.data:name;
+
+#ifdef SRCTRL_IMPORT_STD
+import std;
+#endif
 
 import srctrl.utility;   // utilityString (NameElement::Signature::getParameterString)
 import :types;           // NameDelimiterType (NameHierarchy)

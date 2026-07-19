@@ -9,6 +9,7 @@ module;
 // utilityEnum/utilityString/Tree (srctrl.utility), the classification enums AccessKind/DefinitionKind/
 // ElementComponentKind/NodeKind/NodeModifier (:types), NameHierarchy (:name), and the logging facade
 // (srctrl.logging -- the core's LOG_* calls became srctrl::log::error/warning).
+#ifndef SRCTRL_IMPORT_STD
 #include <algorithm>
 #include <deque>
 #include <functional>
@@ -20,12 +21,17 @@ module;
 #include <string>
 #include <typeinfo>
 #include <vector>
+#endif
 
 #include "types.h"
 #include "FilePath.h"
 #include "QtResources.h"
 
 export module srctrl.data:graph;
+
+#ifdef SRCTRL_IMPORT_STD
+import std;
+#endif
 
 import srctrl.utility;   // utilityEnum (intToEnum for Edge::EdgeType), utilityString, Tree (NodeType)
 import srctrl.logging;   // srctrl::log::error/warning (the former LOG_* macros)

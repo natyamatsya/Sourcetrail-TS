@@ -148,9 +148,10 @@ cycles in `lib` is prerequisite work, and a good cleanup in its own right).
   - **`.inl` convention** for inline impls kept out of headers (`Strings.inl`).
   - **`FILE_SET CXX_MODULES` must be `PUBLIC`**, not `PRIVATE`, for another target to `import` it.
   - **Scaffolding graduated** to `src/scaffolding/SrctrlModule.h` on a global include path.
-- **`SOURCETRAIL_CXX_IMPORT_STD` option — WORKS (gap closed).** A compile-time toggle so module
-  wrappers `import std;` instead of #including std headers (`SRCTRL_IMPORT_STD` → the wrapper switches;
-  targets set `CXX_MODULE_STD ON`). The full recipe for brew LLVM 22 / macOS:
+- **`SOURCETRAIL_CXX_IMPORT_STD` option — recipe proven for std-only modules; not yet a green full
+  build (see revised finding below).** A compile-time toggle so module wrappers `import std;` instead of
+  #including std headers (`SRCTRL_IMPORT_STD` → the wrapper switches; targets set `CXX_MODULE_STD ON`).
+  The full recipe for brew LLVM 22 / macOS:
   1. **Experimental gate** `CMAKE_EXPERIMENTAL_CXX_IMPORT_STD = f35a9ac6-8463-4d38-8eec-5d6008153e7d`
      (CMake-4.4-specific) + `CMAKE_CXX_STANDARD 23`, both set **before `project()`** (the top-level
      CMakeLists reads the cached option value to do this).
@@ -160,11 +161,27 @@ cycles in `lib` is prerequisite work, and a good cleanup in its own right).
      produce archives macOS `ld` rejects, which is what the earlier "std-module archive won't link"
      was — an *isolated-test* artifact, not a real blocker).
 
-  Verified end-to-end: `srctrl.utility` compiled with `import std;` (its wrapper drops the std
-  #includes) links and runs, **including interop** — a consumer that `#include`s std headers uses the
-  module's exported helpers fine. Note: a Qt-touching module (AidKit) keeps `<QString>` in the GMF, so
-  `import std` there mixes with Qt's std includes; the option is really for std-only modules like
-  `srctrl.utility`.
+  Verified for a **std-only** partition: `srctrl.utility:enums` compiled with `import std;` (its wrapper
+  drops the std #includes) links and runs, **including interop** — a consumer that `#include`s std headers
+  uses the module's exported helpers fine. Note: a Qt-touching module (AidKit) keeps `<QString>` in the
+  GMF, so `import std` there mixes with Qt's std includes; the option is really for std-only modules.
+
+- **`import std` is NOT yet green for the project-header-heavy partitions (revised finding).** Building
+  the *whole* first-party module set with `SOURCETRAIL_CXX_IMPORT_STD` on fails in
+  `srctrl.utility:cache`/`:string` (and would hit others) on two inherent import-std-with-legacy-headers
+  edges — neither introduced by any wrapper change, both pre-existing:
+  1. **Bare `::size_t`** — first-party headers (`OrderedCache.h`, `utilityString.h`, and many more) use
+     unqualified `size_t`. `import std` exports `std::size_t` but **not** the global `::size_t`, so once
+     the C++ std #includes are gone the name is undeclared (`missing '#include <uchar.h>'`). A real
+     import-std build needs either a mass `size_t`→`std::size_t` sweep or keeping the C-compat headers
+     (`<cstddef>`) unguarded.
+  2. **GMF/purview duplication** — `declaration of 'integral_constant' … in module follows declaration in
+     the global module`: libc++ internals reaching both a global-module fragment and `import std`.
+  So the honest status: the `import std` *recipe* (toolchain gate + modules.json + mach-o `ar`) is proven
+  on a std-only module, but the option is **not** a green full-build config today. The `SRCTRL_IMPORT_STD`
+  `#ifndef`/`#ifdef` guard is nonetheless applied **uniformly** across every partition wrapper (data:name/
+  location/graph brought in line with utility/types/logging) — it's a no-op in the default (green) build
+  and the correct forward pattern for when the two edges above are addressed.
 - **Phase 2 — `srctrl.utility`: first `lib` module. ✅ STARTED (utilityEnum → `:enums` partition).**
   Converted `utilityEnum.h` (header-only concepts/templates) into `srctrl.utility` with an `:enums`
   partition (`srctrl_utility.cppm` primary `export import :enums;` + `srctrl_utility-enum.cppm`). Both
