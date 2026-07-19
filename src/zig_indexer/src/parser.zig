@@ -39,6 +39,8 @@ const DeclClass = struct {
     name_token: Ast.TokenIndex,
     kind: NodeKind,
     container: ?Ast.full.ContainerDecl = null,
+    /// True when the declaration carries `pub` (fn/var). Fields have no `pub`.
+    is_pub: bool = false,
 };
 
 /// Join a dotted scope path: `"" + "x" -> "x"`, `"Outer" + "x" -> "Outer.x"`.
@@ -81,16 +83,17 @@ fn classifyDecl(
 ) ?DeclClass {
     if (tree.fullFnProto(buf[0..1], node)) |proto| {
         const name_token = proto.name_token orelse return null;
-        return .{ .name_token = name_token, .kind = if (in_container) .method else .function };
+        return .{ .name_token = name_token, .kind = if (in_container) .method else .function, .is_pub = proto.visib_token != null };
     }
     if (tree.fullVarDecl(node)) |var_decl| {
         const name_token = var_decl.ast.mut_token + 1;
+        const is_pub = var_decl.visib_token != null;
         if (var_decl.ast.init_node.unwrap()) |init_node| {
             if (tree.fullContainerDecl(buf, init_node)) |container| {
-                return .{ .name_token = name_token, .kind = containerKindOf(tree, container), .container = container };
+                return .{ .name_token = name_token, .kind = containerKindOf(tree, container), .container = container, .is_pub = is_pub };
             }
         }
-        return .{ .name_token = name_token, .kind = .global_variable };
+        return .{ .name_token = name_token, .kind = .global_variable, .is_pub = is_pub };
     }
     if (tree.fullContainerField(node)) |field| {
         return .{ .name_token = field.ast.main_token, .kind = if (parent_kind == .@"enum") .enum_constant else .field };
@@ -217,6 +220,8 @@ const Walker = struct {
 
         const serialized = try qualify(self.store.arena.allocator(), scope, self.ast.tokenSlice(cls.name_token));
         const id = try self.recordDef(cls.kind, serialized, cls.name_token, node);
+        // Visibility: `pub` -> public, otherwise file-private -> default.
+        try self.store.recordComponentAccess(id, if (cls.is_pub) .public else .default);
         // A container member gets an EDGE_MEMBER to its owner. A field/enum
         // constant is always a member (a Zig file is itself a struct, so a
         // top-level field is a member of the file node); a nested fn/var is a
@@ -254,6 +259,7 @@ const Walker = struct {
             const tp_id = try self.store.recordNode(.type_parameter, full, .explicit);
             _ = try self.store.recordLocation(tp_id, self.file_id, self.tokenSpan(name_tok), .token);
             _ = try self.store.recordEdge(.member, fn_id, tp_id);
+            try self.store.recordComponentAccess(tp_id, .type_parameter);
         }
     }
 };

@@ -80,6 +80,20 @@ pub const DefinitionKind = enum(i32) {
     explicit = 2,
 };
 
+/// AccessKind — src/lib/data/graph/token_component/AccessKind.h. Zig maps `pub`
+/// to `public`, other declarations to `default` (file-private, like Swift's
+/// `internal`), and generic parameters to `type_parameter`.
+pub const AccessKind = enum(i32) {
+    none = 0,
+    public = 1,
+    protected = 2,
+    private = 3,
+    default = 4,
+    template_parameter = 5,
+    type_parameter = 6,
+    package = 7,
+};
+
 pub const Id = i64;
 
 // NameHierarchy wire delimiters (src/lib/data/name/NameHierarchy.cpp). A
@@ -145,6 +159,7 @@ pub const StorageSourceLocation = struct {
 };
 pub const StorageLocalSymbol = struct { id: Id, name: []const u8 };
 pub const StorageOccurrence = struct { element_id: Id, source_location_id: Id };
+pub const StorageComponentAccess = struct { node_id: Id, access: AccessKind };
 pub const StorageError = struct { id: Id, message: []const u8, translation_unit: []const u8, fatal: bool, indexed: bool };
 
 /// A 1-based source span (Sourcetrail lines/cols are 1-based, end inclusive).
@@ -164,6 +179,7 @@ pub const Chunk = struct {
     source_locations: []const StorageSourceLocation = &.{},
     local_symbols: []const StorageLocalSymbol = &.{},
     occurrences: []const StorageOccurrence = &.{},
+    component_accesses: []const StorageComponentAccess = &.{},
     errors: []const StorageError = &.{},
 };
 
@@ -180,6 +196,7 @@ pub const Storage = struct {
     source_locations: std.ArrayListUnmanaged(StorageSourceLocation) = .empty,
     local_symbols: std.ArrayListUnmanaged(StorageLocalSymbol) = .empty,
     occurrences: std.ArrayListUnmanaged(StorageOccurrence) = .empty,
+    component_accesses: std.ArrayListUnmanaged(StorageComponentAccess) = .empty,
     errors: std.ArrayListUnmanaged(StorageError) = .empty,
 
     /// De-dup: serialized_name -> node id (a symbol seen from multiple sites is
@@ -190,6 +207,8 @@ pub const Storage = struct {
     local_symbol_by_name: std.StringHashMapUnmanaged(Id) = .empty,
     /// node id -> its index in `nodes`, for O(1) kind lookup/reclassification.
     node_index_by_id: std.AutoHashMapUnmanaged(Id, usize) = .empty,
+    /// nodes that already have a component_access row (one access per node).
+    component_access_by_node: std.AutoHashMapUnmanaged(Id, void) = .empty,
 
     pub fn init(child: Allocator) Storage {
         return .{ .arena = std.heap.ArenaAllocator.init(child) };
@@ -281,6 +300,13 @@ pub const Storage = struct {
         return id;
     }
 
+    /// Record a component_access (visibility) for a node — one per node.
+    pub fn recordComponentAccess(self: *Storage, node_id: Id, access: AccessKind) !void {
+        const a = self.alloc();
+        if ((try self.component_access_by_node.getOrPut(a, node_id)).found_existing) return;
+        try self.component_accesses.append(a, .{ .node_id = node_id, .access = access });
+    }
+
     pub fn recordLocation(self: *Storage, element_id: Id, file_node_id: Id, span: Span, kind: LocationType) !Id {
         const a = self.alloc();
         const id = self.createId();
@@ -309,6 +335,7 @@ pub const Storage = struct {
             .source_locations = self.source_locations.items,
             .local_symbols = self.local_symbols.items,
             .occurrences = self.occurrences.items,
+            .component_accesses = self.component_accesses.items,
             .errors = self.errors.items,
         };
     }

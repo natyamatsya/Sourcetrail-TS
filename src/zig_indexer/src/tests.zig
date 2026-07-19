@@ -160,6 +160,30 @@ test "file-as-struct: top-level fields are members of the file node" {
     try testing.expectEqual(@as(usize, 2), member_from_file);
 }
 
+test "component access: pub -> public, private -> default, type param -> type_parameter" {
+    const a = testing.allocator;
+    var store = storage.Storage.init(a);
+    defer store.deinit();
+    try indexString(a, &store,
+        \\pub fn exported(comptime T: type) void { _ = T; }
+        \\fn internal() void {}
+    );
+    const access = struct {
+        fn of(s: *storage.Storage, local: []const u8) ?storage.AccessKind {
+            const n = nodeNamed(s, local) orelse return null;
+            for (s.component_accesses.items) |ca| {
+                if (ca.node_id == n.id) return ca.access;
+            }
+            return null;
+        }
+    }.of;
+    try testing.expectEqual(storage.AccessKind.public, access(&store, "exported").?);
+    try testing.expectEqual(storage.AccessKind.default, access(&store, "internal").?);
+    try testing.expectEqual(storage.AccessKind.type_parameter, access(&store, "exported.T").?);
+    // One access row per node (dedup).
+    try testing.expectEqual(store.nodes.items.len - 1, store.component_accesses.items.len); // all but the file node
+}
+
 test "generic function's comptime type parameter is a NODE_TYPE_PARAMETER member" {
     const a = testing.allocator;
     var store = storage.Storage.init(a);

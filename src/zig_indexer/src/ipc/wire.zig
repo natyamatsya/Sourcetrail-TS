@@ -104,6 +104,13 @@ fn buildStorage(b: *c.flatcc_builder_t, chunk: *const storage.Chunk) Error!c.Sou
     }
     const occurrences_vec = c.Sourcetrail_Ipc_StorageOccurrence_vec_end(b);
 
+    // --- component accesses ---
+    _ = c.Sourcetrail_Ipc_StorageComponentAccess_vec_start(b);
+    for (chunk.component_accesses) |ca| {
+        _ = c.Sourcetrail_Ipc_StorageComponentAccess_vec_push(b, c.Sourcetrail_Ipc_StorageComponentAccess_create(b, ca.node_id, @intFromEnum(ca.access)));
+    }
+    const component_accesses_vec = c.Sourcetrail_Ipc_StorageComponentAccess_vec_end(b);
+
     // --- errors ---
     const error_refs = try a.alloc(c.Sourcetrail_Ipc_StorageError_ref_t, chunk.errors.len);
     for (chunk.errors, error_refs) |er, *ref| {
@@ -123,6 +130,7 @@ fn buildStorage(b: *c.flatcc_builder_t, chunk: *const storage.Chunk) Error!c.Sou
     _ = c.Sourcetrail_Ipc_IntermediateStorage_source_locations_add(b, locations_vec);
     _ = c.Sourcetrail_Ipc_IntermediateStorage_local_symbols_add(b, local_symbols_vec);
     _ = c.Sourcetrail_Ipc_IntermediateStorage_occurrences_add(b, occurrences_vec);
+    _ = c.Sourcetrail_Ipc_IntermediateStorage_component_accesses_add(b, component_accesses_vec);
     _ = c.Sourcetrail_Ipc_IntermediateStorage_errors_add(b, errors_vec);
     return c.Sourcetrail_Ipc_IntermediateStorage_end(b);
 }
