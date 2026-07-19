@@ -3,9 +3,15 @@
 #include <fstream>
 #include <filesystem>
 
+#include <nlohmann/json.hpp>
+
 #include <clang/Tooling/JSONCompilationDatabase.h>
 
+#include "AppPath.h"
 #include "CanonicalFilePathCache.h"
+#include "IntermediateStorageSerializer.h"
+#include "UserPaths.h"
+#include "utilityApp.h"
 #include "CxxCompilationDatabaseSingle.h"
 #include "CxxDiagnosticConsumer.h"
 #include "CxxParser.h"
@@ -85,45 +91,60 @@ std::shared_ptr<Task> createBuildPchTaskForInput(
 		dialogView->showUnknownProgressDialog("Preparing Indexing", "Processing Precompiled Headers");
 		LOG_INFO("Generating precompiled header output for input file \"" + pchInputFilePath.str() + "\" at location \"" + pchOutputFilePath.str() + "\"");
 
-		CxxParser::initializeLLVM();
-
 		if (!pchOutputFilePath.getParentDirectory().exists())
 		{
 			FileSystem::createDirectories(pchOutputFilePath.getParentDirectory());
 		}
 
-		std::shared_ptr<IntermediateStorage> storage = std::make_shared<IntermediateStorage>();
-		std::shared_ptr<ParserClientImpl> client = std::make_shared<ParserClientImpl>(storage);
+		// Build the PCH in a crash-isolated sourcetrail_indexer subprocess (--prebuild-pch): it
+		// parses arbitrary user code, so it belongs off the main process. It writes the .pch and
+		// serializes the symbols it indexes to <pchOutput>.storage for us to merge back.
+		const FilePath requestPath = pchOutputFilePath.getParentDirectory().getConcatenated("/pch_request.json");
+		const FilePath storagePath = FilePath(pchOutputFilePath.str() + ".storage");
+		FileSystem::remove(storagePath);
 
-		std::shared_ptr<FileRegister> fileRegister = std::make_shared<FileRegister>(pchInputFilePath, std::set<FilePath>{pchInputFilePath}, std::set<FilePathFilter>{});
+		nlohmann::json request;
+		request["pchInput"] = pchInputFilePath.str();
+		request["pchOutput"] = pchOutputFilePath.str();
+		request["compilerFlags"] = compilerFlags;
+		request["compilerPath"] = compilerPath;
+		{
+			std::ofstream out(requestPath.str());
+			out << request.dump();
+		}
 
-		std::shared_ptr<CanonicalFilePathCache> canonicalFilePathCache = std::make_shared<CanonicalFilePathCache>(fileRegister);
+		const FilePath indexerPath = AppPath::getCxxIndexerFilePath();
+		if (!indexerPath.exists())
+		{
+			LOG_ERROR("Cannot build PCH: indexer executable missing at " + indexerPath.str());
+			return;
+		}
 
-		clang::tooling::CompileCommand pchCommand;
-		pchCommand.Filename = pchInputFilePath.fileName();
-		pchCommand.Directory = pchOutputFilePath.getParentDirectory().str();
-		// DON'T use "-fsyntax-only" here because it will cause the output file to be erased.
-		// Use the real compiler path so the resource dir matches what the translation
-		// units get -- otherwise clang rejects the PCH as built with different flags.
-		pchCommand.CommandLine = utility::concat({ClangCompiler::TOOL_NAME}, CxxParser::getCommandlineArgumentsEssential(compilerPath, compilerFlags));
+		const std::vector<std::string> args = {
+			"0",
+			"pch-build",
+			AppPath::getSharedDataDirectoryPath().getAbsolute().str(),
+			UserPaths::getUserDataDirectoryPath().getAbsolute().str(),
+			"--prebuild-pch=" + requestPath.str()};
 
-		CxxCompilationDatabaseSingle compilationDatabase(pchCommand);
-		clang::tooling::ClangTool tool(compilationDatabase, {pchInputFilePath.str()});
-		GeneratePCHAction *action = new GeneratePCHAction(*client, *canonicalFilePathCache); // TODO (petermost): Memory leak?
+		const utility::ProcessOutput out = utility::executeProcess(
+			indexerPath.str(), args, FilePath(), false, utility::INFINITE_TIMEOUT);
+		if (out.exitCode != 0 || !storagePath.recheckExists())
+		{
+			LOG_ERROR(
+				"PCH build subprocess failed (exit " + std::to_string(out.exitCode) +
+				"); the precompiled header and its symbols are missing.");
+			return;
+		}
 
-		auto options = std::make_shared<clang::DiagnosticOptions>();
-		options->ShowCarets = false;
-		options->ShowFixits = false;
-		options->ShowSourceRanges = false;
-		options->SnippetLineLimit = 0;
-		CxxDiagnosticConsumer diagnostics(
-			llvm::errs(), options, *client, *canonicalFilePathCache, pchInputFilePath, true);
-
-		tool.setDiagnosticConsumer(&diagnostics);
-		tool.clearArgumentsAdjusters();
-		tool.run(new SingleFrontendActionFactory(action)); // TODO (petermost): Memory leak?
-
-		storageProvider->insert(storage);
+		std::ifstream in(storagePath.str(), std::ios::binary);
+		const std::vector<uint8_t> bytes(
+			(std::istreambuf_iterator<char>(in)), std::istreambuf_iterator<char>());
+		if (std::shared_ptr<IntermediateStorage> storage =
+				IpcSerializer::deserializeIntermediateStorage(bytes.data(), bytes.size()))
+		{
+			storageProvider->insert(storage);
+		}
 	});
 	return pchTask;
 }
