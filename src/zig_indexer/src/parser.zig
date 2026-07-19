@@ -22,6 +22,74 @@ const Span = storage.Span;
 
 pub const Error = error{OutOfMemory};
 
+// ---------------------------------------------------------------------------
+// Shared declaration classification
+//
+// Both passes below map an AST decl node to the same (name, NodeKind): the
+// Walker *emits* nodes/edges/locations, the Collector builds a node->name map
+// the ZLS reference pass names targets from. Classifying in ONE place keeps the
+// two passes from drifting (a resolved target must dedup onto the exact node the
+// declaration pass created).
+// ---------------------------------------------------------------------------
+
+/// What a container-scope declaration maps to: the token holding its name, the
+/// Sourcetrail node kind, and — for a `const X = struct|enum|union|opaque {…}`
+/// type — the container whose members should be recursed into.
+const DeclClass = struct {
+    name_token: Ast.TokenIndex,
+    kind: NodeKind,
+    container: ?Ast.full.ContainerDecl = null,
+};
+
+/// Join a dotted scope path: `"" + "x" -> "x"`, `"Outer" + "x" -> "Outer.x"`.
+fn qualify(a: std.mem.Allocator, scope: []const u8, name: []const u8) Error![]const u8 {
+    if (scope.len == 0) return a.dupe(u8, name);
+    return std.fmt.allocPrint(a, "{s}.{s}", .{ scope, name });
+}
+
+/// struct / enum / union / opaque keyword -> the matching container NodeKind
+/// (opaque has no distinct kind, so it maps to struct).
+fn containerKindOf(tree: *const Ast, container: Ast.full.ContainerDecl) NodeKind {
+    return switch (tree.tokenTag(container.ast.main_token)) {
+        .keyword_enum => .@"enum",
+        .keyword_union => .@"union",
+        else => .@"struct",
+    };
+}
+
+/// Classify a declaration node. `buf` must outlive the result (it backs the
+/// returned `ContainerDecl`). `in_container` selects method-vs-function;
+/// `parent_kind` selects enum-constant-vs-field. Returns null for nodes that are
+/// not named declarations. Note `const X = @import("…")` is not a container, so
+/// it falls through to `.global_variable` — the resolved EDGE_INCLUDE to the
+/// imported file is emitted later by the ZLS pass (semantic.zig), which needs to
+/// resolve the import string to a real path.
+fn classifyDecl(
+    tree: *const Ast,
+    buf: *[2]Ast.Node.Index,
+    node: Ast.Node.Index,
+    in_container: bool,
+    parent_kind: NodeKind,
+) ?DeclClass {
+    if (tree.fullFnProto(buf[0..1], node)) |proto| {
+        const name_token = proto.name_token orelse return null;
+        return .{ .name_token = name_token, .kind = if (in_container) .method else .function };
+    }
+    if (tree.fullVarDecl(node)) |var_decl| {
+        const name_token = var_decl.ast.mut_token + 1;
+        if (var_decl.ast.init_node.unwrap()) |init_node| {
+            if (tree.fullContainerDecl(buf, init_node)) |container| {
+                return .{ .name_token = name_token, .kind = containerKindOf(tree, container), .container = container };
+            }
+        }
+        return .{ .name_token = name_token, .kind = .global_variable };
+    }
+    if (tree.fullContainerField(node)) |field| {
+        return .{ .name_token = field.ast.main_token, .kind = if (parent_kind == .@"enum") .enum_constant else .field };
+    }
+    return null;
+}
+
 /// Parse `source` and emit its symbols into `store`. `file_path` is the logical
 /// path recorded for the file node. Parse errors become StorageError rows.
 pub fn indexSource(
@@ -72,47 +140,13 @@ const Collector = struct {
     tree: *const Ast,
     map: *std.AutoHashMapUnmanaged(Ast.Node.Index, DeclInfo),
 
-    fn qualify(self: *Collector, scope: []const u8, name: []const u8) Error![]const u8 {
-        if (scope.len == 0) return self.gpa.dupe(u8, name);
-        return std.fmt.allocPrint(self.gpa, "{s}.{s}", .{ scope, name });
-    }
-
-    fn containerKind(self: *Collector, container: Ast.full.ContainerDecl) NodeKind {
-        return switch (self.tree.tokenTag(container.ast.main_token)) {
-            .keyword_enum => .@"enum",
-            .keyword_union => .@"union",
-            else => .@"struct",
-        };
-    }
-
     fn visit(self: *Collector, node: Ast.Node.Index, scope: []const u8, in_container: bool, parent_kind: NodeKind) Error!void {
-        const tree = self.tree;
-        var fn_buf: [1]Ast.Node.Index = undefined;
-        if (tree.fullFnProto(&fn_buf, node)) |proto| {
-            const name_tok = proto.name_token orelse return;
-            const local = try self.qualify(scope, tree.tokenSlice(name_tok));
-            try self.map.put(self.gpa, node, .{ .name = local, .kind = if (in_container) .method else .function });
-            return;
-        }
-        if (tree.fullVarDecl(node)) |var_decl| {
-            const local = try self.qualify(scope, tree.tokenSlice(var_decl.ast.mut_token + 1));
-            if (var_decl.ast.init_node.unwrap()) |init_node| {
-                var c_buf: [2]Ast.Node.Index = undefined;
-                if (tree.fullContainerDecl(&c_buf, init_node)) |container| {
-                    const kind = self.containerKind(container);
-                    try self.map.put(self.gpa, node, .{ .name = local, .kind = kind });
-                    for (container.ast.members) |member| try self.visit(member, local, true, kind);
-                    return;
-                }
-            }
-            try self.map.put(self.gpa, node, .{ .name = local, .kind = .global_variable });
-            return;
-        }
-        if (tree.fullContainerField(node)) |field| {
-            const local = try self.qualify(scope, tree.tokenSlice(field.ast.main_token));
-            const kind: NodeKind = if (parent_kind == .@"enum") .enum_constant else .field;
-            try self.map.put(self.gpa, node, .{ .name = local, .kind = kind });
-            return;
+        var buf: [2]Ast.Node.Index = undefined;
+        const cls = classifyDecl(self.tree, &buf, node, in_container, parent_kind) orelse return;
+        const local = try qualify(self.gpa, scope, self.tree.tokenSlice(cls.name_token));
+        try self.map.put(self.gpa, node, .{ .name = local, .kind = cls.kind });
+        if (cls.container) |container| {
+            for (container.ast.members) |member| try self.visit(member, local, true, cls.kind);
         }
     }
 };
@@ -123,14 +157,6 @@ const Walker = struct {
     ast: *const Ast,
     file_id: Id,
     file_path: []const u8,
-
-    /// Build a dotted serialized name ("Outer.inner"). A simplified stand-in for
-    /// Sourcetrail's NameHierarchy serialization — refined at wire integration.
-    fn qualify(self: *Walker, scope: []const u8, name: []const u8) Error![]const u8 {
-        const a = self.store.arena.allocator();
-        if (scope.len == 0) return a.dupe(u8, name);
-        return std.fmt.allocPrint(a, "{s}.{s}", .{ scope, name });
-    }
 
     fn tokenSpan(self: *Walker, tok: Ast.TokenIndex) Span {
         const loc = self.ast.tokenLocation(0, tok);
@@ -178,103 +204,25 @@ const Walker = struct {
     }
 
     fn handleDecl(self: *Walker, node: Ast.Node.Index, scope: []const u8, owner_id: Id, in_container: bool, parent_kind: NodeKind) Error!void {
-        const ast = self.ast;
+        var buf: [2]Ast.Node.Index = undefined;
+        const cls = classifyDecl(self.ast, &buf, node, in_container, parent_kind) orelse return;
 
-        // Functions.
-        var fn_buf: [1]Ast.Node.Index = undefined;
-        if (ast.fullFnProto(&fn_buf, node)) |proto| {
-            const name_tok = proto.name_token orelse return;
-            const name = ast.tokenSlice(name_tok);
-            const serialized = try self.qualify(scope, name);
-            const kind: NodeKind = if (in_container) .method else .function;
-            const id = try self.recordDef(kind, serialized, name_tok, node);
-            if (in_container) _ = try self.store.recordEdge(.member, owner_id, id);
-            return;
-        }
-
-        // const / var declarations.
-        if (ast.fullVarDecl(node)) |var_decl| {
-            const name_tok = var_decl.ast.mut_token + 1;
-            const name = ast.tokenSlice(name_tok);
-            const serialized = try self.qualify(scope, name);
-
-            // const X = @import("path"): record just the binding. The EDGE_IMPORT
-            // to the *resolved* absolute file is emitted by the semantic pass
-            // (src/semantic.zig) — it needs ZLS to resolve the import string to a
-            // real path, which is what makes the incremental reverse-dependency
-            // closure precise (a raw "util.zig" node is a phantom file).
-            if (var_decl.ast.init_node.unwrap()) |init_node| {
-                if (self.importPath(init_node)) |_| {
-                    const gid = try self.recordDef(.global_variable, serialized, name_tok, node);
-                    if (in_container) _ = try self.store.recordEdge(.member, owner_id, gid);
-                    return;
-                }
-                // const X = struct|enum|union|opaque { ... }: a container type.
-                var c_buf: [2]Ast.Node.Index = undefined;
-                if (ast.fullContainerDecl(&c_buf, init_node)) |container| {
-                    const kind = self.containerKind(container);
-                    const id = try self.recordDef(kind, serialized, name_tok, node);
-                    if (in_container) _ = try self.store.recordEdge(.member, owner_id, id);
-                    try self.handleContainerMembers(container, serialized, id, kind);
-                    return;
-                }
-            }
-
-            const id = try self.recordDef(.global_variable, serialized, name_tok, node);
-            if (in_container) _ = try self.store.recordEdge(.member, owner_id, id);
-            return;
-        }
-
-        // Container fields (struct field / enum member / union variant).
-        if (ast.fullContainerField(node)) |field| {
-            const name_tok = field.ast.main_token;
-            const name = ast.tokenSlice(name_tok);
-            const serialized = try self.qualify(scope, name);
-            // A field of an enum is an enum constant; of a struct/union, a field.
-            const kind: NodeKind = if (parent_kind == .@"enum") .enum_constant else .field;
-            const id = try self.recordDef(kind, serialized, name_tok, node);
-            _ = try self.store.recordEdge(.member, owner_id, id);
-            return;
-        }
-    }
-
-    fn handleContainerMembers(self: *Walker, container: Ast.full.ContainerDecl, scope: []const u8, owner_id: Id, kind: NodeKind) Error!void {
-        for (container.ast.members) |member| {
-            try self.handleDecl(member, scope, owner_id, true, kind);
-        }
-    }
-
-    fn containerKind(self: *Walker, container: Ast.full.ContainerDecl) NodeKind {
-        const kw = self.ast.tokenTag(container.ast.main_token);
-        return switch (kw) {
-            .keyword_struct => .@"struct",
-            .keyword_enum => .@"enum",
-            .keyword_union => .@"union",
-            .keyword_opaque => .@"struct",
-            else => .@"struct",
+        const serialized = try qualify(self.store.arena.allocator(), scope, self.ast.tokenSlice(cls.name_token));
+        const id = try self.recordDef(cls.kind, serialized, cls.name_token, node);
+        // A container member gets an EDGE_MEMBER to its owner. A field/enum
+        // constant is always a member (a Zig file is itself a struct, so a
+        // top-level field is a member of the file node); a nested fn/var is a
+        // member of its container, but a *top-level* fn/var is not (its file
+        // membership is implicit — no edge). A `const X = @import("path")`
+        // lands here as .global_variable; the resolved EDGE_INCLUDE to the
+        // imported file is emitted by the ZLS pass (semantic.zig).
+        const is_member = switch (cls.kind) {
+            .field, .enum_constant => true,
+            else => in_container,
         };
-    }
-
-    /// If `node` is `@import("literal")`, return the unquoted literal.
-    fn importPath(self: *Walker, node: Ast.Node.Index) ?[]const u8 {
-        const ast = self.ast;
-        const main = ast.nodeMainToken(node);
-        if (ast.tokenTag(main) != .builtin) return null;
-        if (!std.mem.eql(u8, ast.tokenSlice(main), "@import")) return null;
-        // The first (and only) argument is the string-literal node: its main
-        // token is the string literal. Scan forward to the next string token.
-        var t = main + 1;
-        while (t < ast.tokens.len) : (t += 1) {
-            switch (ast.tokenTag(t)) {
-                .string_literal => {
-                    const raw = ast.tokenSlice(t);
-                    if (raw.len >= 2) return raw[1 .. raw.len - 1];
-                    return raw;
-                },
-                .r_paren, .semicolon => return null,
-                else => {},
-            }
+        if (is_member) _ = try self.store.recordEdge(.member, owner_id, id);
+        if (cls.container) |container| {
+            for (container.ast.members) |member| try self.handleDecl(member, serialized, id, true, cls.kind);
         }
-        return null;
     }
 };

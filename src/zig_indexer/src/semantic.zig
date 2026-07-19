@@ -260,8 +260,9 @@ fn spanOfToken(tree: *const Ast, tok: Ast.TokenIndex) Span {
 }
 
 /// Resolve every `@import("…")` in the file to its absolute on-disk path (via
-/// ZLS) and emit `EDGE_IMPORT` from this file node to the real imported file
-/// node. This is what makes the incremental reverse-dependency closure precise:
+/// ZLS) and emit `EDGE_INCLUDE` from this file node to the real imported file
+/// node (see the note at the edge emission below for why INCLUDE, not IMPORT).
+/// This is what makes the incremental reverse-dependency closure precise:
 /// a raw "util.zig" node is a phantom file that never matches the real one, so
 /// the syntactic pass deliberately emits no import edge. Unresolvable imports
 /// (e.g. `std` with no configured zig lib dir) are skipped.
