@@ -142,17 +142,32 @@ Launch/registration:
   existing `runExternalIndexerProcess(...)`; add the Zig storage-manager array + supervisor
   spawn/drain + processId band.
 
-## Phase 2 — Zig-side transport (thoth-ipc + flatcc)
+## Phase 2 — Zig-side transport (thoth-ipc + flatcc) — ✅ landed
 
-- Package the thoth-ipc Zig port as a module (`b.addModule("thoth-ipc", …)` + `build.zig.zon`
-  upstream in `submodules/thoth-ipc/zig/`, currently executables-only). Consume `ShmHandle`,
-  `Mutex`, `makeShmName`.
-- flatcc codegen: CMake custom command runs flatcc on the four `.fbs` → C headers; the Zig
-  `build.zig` `@cImport`s them.
-- Port the three channels from `src/rust_indexer/indexer/src/ipc/`; hand-roll the storage
-  queue framing from `SwiftIndexerStorageChannel.swift`; honor ADR-0002 chunking and
-  ADR-0003 null-vector/verify; back-pressure at `storage_count() < 2`.
-- `main.zig`: the argv parse + indexing loop above.
+- **thoth-ipc module** — the port now exposes an importable `thoth-ipc` module
+  (`src/root.zig` + `b.addModule` + `build.zig.zon`); the indexer consumes it as a `path`
+  dependency (`ShmHandle` / `Mutex` / `makeShmName`).
+- **flatcc wire codec** — `tools/gen_flatcc.sh` strips non-ASCII (flatcc rejects the `§` in
+  the shared `.fbs` comments that flatc tolerates) and runs flatcc; `build.zig` wires the
+  gen step + include/link (`libflatccrt`) and `src/ipc/c.zig` `@cImport`s the bindings.
+  `src/ipc/wire.zig` builds the `IntermediateStorageQueue` (one storage per entry, matching
+  the C++ `queue->storages()->Get(0)` reader). **Round-trip unit-tested** (build → verify →
+  read back; counts/`next_id`/name match).
+- **SHM channels** — `src/ipc/shm.zig` (thoth-ipc `ShmHandle`+`Mutex`, locked read /
+  read-modify-write), `src/ipc/queue.zig` (the `[u64 cap][u32 count][u32 size]…` framing,
+  unit-tested), `command.zig` (pop first Zig command; writeback re-serializes the queue with
+  every *other* command deep-cloned via flatcc `_clone`, preserving all fields),
+  `status.zig` (full IndexingStatus RMW — interrupt read, progress + `finished_process_ids`),
+  `storage_channel.zig` (push framed + back-pressure at `count() >= 2`).
+- **`main.zig`** — dual mode: IPC loop (`<processId> <uuid> …` → check interrupt → pop → index
+  → push → finish) and a standalone self-index driver.
+- **CMake** — `BUILD_ZIG_LANGUAGE_PACKAGE` builds `sourcetrail_zig_indexer` via `zig build`
+  (ReleaseSafe, `-Dschema-dir`/`-Dflatcc-prefix`) and copies it into `app/`. Verified: the
+  binary builds through CMake and lands in `app/`; 12/12 Zig unit tests pass.
+
+Remaining verification (Phase 5): live end-to-end — the app launches the indexer against a
+real Zig project and the SQLite DB is populated (needs the running app; the SHM round-trip
+can't be exercised by `zig build test` alone).
 
 ## Phase 3 — Analysis frontend (Ast → ZLS)
 
