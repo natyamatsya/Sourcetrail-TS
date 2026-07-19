@@ -5,10 +5,9 @@
     .fingerprint = 0x8e4a5aa3bd07d12c,
     .minimum_zig_version = "0.16.0",
     .dependencies = .{
-        // The thoth-ipc Zig port (ShmHandle / Mutex / makeShmName). Wired in
-        // Phase 2 once the port exposes an importable module; see
-        // context/ROADMAP_ZIG_INDEXER.md.
-        // .thoth_ipc = .{ .path = "../../submodules/thoth-ipc/zig/thoth-ipc" },
+        // The thoth-ipc Zig port (ShmHandle / Mutex / makeShmName), consumed as
+        // the "thoth-ipc" module it exposes via b.addModule.
+        .thoth_ipc = .{ .path = "../../submodules/thoth-ipc/zig/thoth-ipc" },
     },
     .paths = .{
         "build.zig",

@@ -1,15 +1,18 @@
 //! `sourcetrail_zig_indexer` entry point.
 //!
-//! Phase 2 will parse the positional argv `<processId> <instanceUuid> <appPath>
-//! <userDataPath> <logFilePath>`, open the thoth-ipc channels, and run the
-//! pop-command → index → push-storage loop (see ROADMAP_ZIG_INDEXER.md).
-//!
-//! For this Phase-3a milestone `main` is a standalone driver: given one or more
-//! .zig file paths, it parses each and prints a summary of extracted symbols —
-//! enough to smoke-test the parser end-to-end without the IPC layer.
+//! Two modes:
+//!  - **IPC mode** (how the app launches it): positional argv
+//!    `<processId> <instanceUuid> <appPath> <userDataPath> <logFilePath>`.
+//!    Opens the thoth-ipc channels and runs
+//!    `check interrupt -> pop Zig command -> index -> push storage -> finish`.
+//!  - **standalone mode**: given .zig file paths, parse each and print a summary
+//!    (a smoke driver for the parser). Selected when argv[1] is not a number.
 
 const std = @import("std");
 const indexer = @import("indexer");
+const CommandChannel = @import("ipc/command.zig").CommandChannel;
+const StatusChannel = @import("ipc/status.zig").StatusChannel;
+const StorageChannel = @import("ipc/storage_channel.zig").StorageChannel;
 
 pub fn main(init: std.process.Init) !void {
     const gpa = init.gpa;
@@ -18,28 +21,83 @@ pub fn main(init: std.process.Init) !void {
     defer args.deinit();
     const prog = args.next() orelse "sourcetrail_zig_indexer";
 
-    var stdout_buf: [4096]u8 = undefined;
-    var stdout_writer = std.Io.File.stdout().writer(init.io, &stdout_buf);
-    const out = &stdout_writer.interface;
-
-    var any = false;
-    while (args.next()) |path| {
-        any = true;
-        try indexOne(init.io, gpa, out, path);
+    // Collect argv into a slice we can index.
+    var argv: std.ArrayListUnmanaged([]const u8) = .empty;
+    defer {
+        for (argv.items) |a| gpa.free(a);
+        argv.deinit(gpa);
     }
-    if (!any) try out.print("usage: {s} <file.zig> [more.zig ...]\n", .{prog});
-    try out.flush();
+    while (args.next()) |a| try argv.append(gpa, try gpa.dupe(u8, a));
+
+    // IPC mode when argv[0] is a numeric processId.
+    if (argv.items.len >= 2) {
+        if (std.fmt.parseInt(u64, argv.items[0], 10)) |process_id| {
+            try runIpc(gpa, init.io, process_id, argv.items[1]);
+            return;
+        } else |_| {}
+    }
+
+    try runStandalone(gpa, init.io, prog, argv.items);
 }
 
-fn indexOne(io: std.Io, gpa: std.mem.Allocator, out: *std.Io.Writer, path: []const u8) !void {
+fn runIpc(gpa: std.mem.Allocator, io: std.Io, process_id: u64, uuid: []const u8) !void {
+    var commands = try CommandChannel.open(uuid);
+    defer commands.deinit();
+    var status = try StatusChannel.open(uuid, process_id);
+    defer status.deinit();
+    var storage = try StorageChannel.open(uuid, process_id);
+    defer storage.deinit();
+
+    while (true) {
+        if (try status.isInterrupted()) break;
+
+        const maybe_cmd = try commands.popZig(gpa);
+        var cmd = maybe_cmd orelse break;
+        defer cmd.deinit(gpa);
+
+        try status.updateIndexing(gpa, cmd.source_file_path);
+        indexOneCommand(gpa, io, &storage, cmd.source_file_path) catch {};
+        try status.finishIndexing(gpa);
+    }
+}
+
+fn indexOneCommand(gpa: std.mem.Allocator, io: std.Io, storage: *StorageChannel, path: []const u8) !void {
     const source = std.Io.Dir.cwd().readFileAllocOptions(
         io,
         path,
         gpa,
-        .limited(16 * 1024 * 1024),
+        .limited(64 * 1024 * 1024),
         .of(u8),
         0,
-    ) catch |err| {
+    ) catch return;
+    defer gpa.free(source);
+
+    var store = indexer.Storage.init(gpa);
+    defer store.deinit();
+    try indexer.indexSource(gpa, &store, path, source);
+
+    // Back-pressure: wait for the app to drain before pushing more.
+    const nap = std.c.timespec{ .sec = 0, .nsec = 2 * std.time.ns_per_ms };
+    while ((try storage.count()) >= 2) _ = std.c.nanosleep(&nap, null);
+    try storage.push(gpa, &store);
+}
+
+fn runStandalone(gpa: std.mem.Allocator, io: std.Io, prog: []const u8, argv: []const []const u8) !void {
+    var stdout_buf: [4096]u8 = undefined;
+    var stdout_writer = std.Io.File.stdout().writer(io, &stdout_buf);
+    const out = &stdout_writer.interface;
+
+    if (argv.len == 0) {
+        try out.print("usage: {s} <file.zig> [more.zig ...]\n", .{prog});
+        try out.flush();
+        return;
+    }
+    for (argv) |path| try indexOne(io, gpa, out, path);
+    try out.flush();
+}
+
+fn indexOne(io: std.Io, gpa: std.mem.Allocator, out: *std.Io.Writer, path: []const u8) !void {
+    const source = std.Io.Dir.cwd().readFileAllocOptions(io, path, gpa, .limited(16 * 1024 * 1024), .of(u8), 0) catch |err| {
         try out.print("skip {s}: {s}\n", .{ path, @errorName(err) });
         return;
     };
