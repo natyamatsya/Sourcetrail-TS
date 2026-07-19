@@ -79,4 +79,13 @@ if (UNIX)
 		CROSSCOMPILING_EMULATOR "${CATCH2_LOCALE_WRAPPER}"
 	)
 endif()
+
+# Module build: UtilityEnumTestSuite `import srctrl.utility;` instead of #including utilityEnum.h.
+if(SOURCETRAIL_CXX_MODULES_ENABLED)
+	target_compile_definitions(Sourcetrail_test PRIVATE SRCTRL_MODULE_BUILD)
+	# Module scanning is off project-wide (stdexec breaks clang-scan-deps); scan only the file that
+	# imports.
+	set_source_files_properties(UtilityEnumTestSuite.cpp PROPERTIES CXX_SCAN_FOR_MODULES ON)
+endif()
+
 catch_discover_tests(Sourcetrail_test)

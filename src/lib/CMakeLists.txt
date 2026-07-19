@@ -42,6 +42,21 @@ target_include_directories(Sourcetrail_lib
 		"${CMAKE_BINARY_DIR}/src/lib"
 )
 
+# Phase 2 of the C++20-modules migration (context/DESIGN_INDEXER_MODULARIZATION.md): the srctrl.utility
+# module (currently just the :enums partition = utilityEnum.h). PUBLIC so other targets can import it.
+# The .cppm are not GLOB'd, so they're built only when modules are enabled; the remaining lib .cpp
+# files keep #including utilityEnum.h as ordinary TUs -- it's header-only, so they coexist with the
+# module.
+if(SOURCETRAIL_CXX_MODULES_ENABLED)
+	target_sources(Sourcetrail_lib
+		PUBLIC
+			FILE_SET CXX_MODULES FILES
+				utility/srctrl_utility.cppm
+				utility/srctrl_utility-enum.cppm)
+	# Module scanning of the regular sources is off by the project-wide default (stdexec breaks
+	# clang-scan-deps -- see the top-level CMakeLists); the .cppm interface units are still scanned.
+endif()
+
 # CXX settings component sources — always compiled so the settings types are
 # unconditionally available (matching the Rust/Swift stabilization approach).
 file(GLOB_RECURSE _cxx_settings_sources CONFIGURE_DEPENDS

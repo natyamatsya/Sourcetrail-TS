@@ -24,6 +24,9 @@ target_link_libraries(AidKit_test
 # covers a header consumer of the inlined Strings against the module).
 if(SOURCETRAIL_CXX_MODULES_ENABLED)
 	target_compile_definitions(AidKit_test PRIVATE SRCTRL_MODULE_BUILD)
+	# Module scanning is off project-wide (stdexec); scan the files that import aidkit.
+	set_source_files_properties(enum_class_test.cpp thread_shared_test.cpp
+		PROPERTIES CXX_SCAN_FOR_MODULES ON)
 endif()
 
 if (WIN32)

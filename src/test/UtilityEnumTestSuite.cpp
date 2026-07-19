@@ -1,6 +1,13 @@
+// A module import must precede other declarations, so it goes above the Catch2 include.
+#ifdef SRCTRL_MODULE_BUILD
+import srctrl.utility;
+#endif
+
 #include "Catch2.hpp"
 
+#ifndef SRCTRL_MODULE_BUILD
 #include "utilityEnum.h"
+#endif
 
 #include <sstream>
 
