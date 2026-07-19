@@ -85,25 +85,19 @@ correct instead of silently dropped.
 | `indexing_file_paths` / progress | ✅ | ✅ | ✅ |
 | `current_files` per-pid RMW (cleared on finish) | ✅ | ✅ | ✅ |
 | `finished_process_ids` append | ✅ | ✅ | ✅ (hand-rolled u64-vec reader) |
-| `start_indexing` crash bookkeeping → `crashed_file_paths` | ✅ | ❌ | 🟡 |
+| `start_indexing` crash bookkeeping → `crashed_file_paths` | ✅ | ✅ (`3de38f1e25`) | ✅ |
+| empty vectors omitted (null) on write | ✅ (ADR-0003) | ✅ (`3de38f1e25`) | ✅ |
 | verify (`getCheckedRoot`) on read, surface corruption | ✅ | 🟡 `as_root`, no verify | 🟡 |
-| empty vectors omitted (null) on write | ✅ (ADR-0003) | ❌ writes empty vectors | 🟡 |
 
-Two genuine divergences, both low-severity:
+One remaining divergence, low-severity:
 
-- **No explicit crashed-TU bookkeeping.** Rust/Swift's `start_indexing` moves a
-  still-open `current_files` entry to `crashed_file_paths` when the same pid
-  starts a new file without finishing the last (i.e. the previous file crashed).
-  Zig's `updateIndexing` silently clears the stale entry instead. A file whose
-  Zig worker crashes mid-index is thus not surfaced through `crashed_file_paths`
-  (the C++ supervisor still detects leftover `current_files` on process exit, so
-  it is not lost — just reported through a different path).
-- **Writes empty FlatBuffers vectors** rather than omitting them. Rust/Swift emit
-  `null` for empty vectors (ADR-0003), which also sidesteps the mis-aligned empty
-  `[uint64]` that caused the earlier read crash. Zig instead survives it on the
-  read side with a memcpy accessor shim + a hand-rolled u64-vector reader
-  (`ipc/status.zig readU64VecField`). Adopting the omit-empty convention on write
-  would be a cheap, principled follow-up.
+- **No FlatBuffers verification on read.** Rust/Swift use `getCheckedRoot` and
+  surface a corrupt non-empty status as an error; Zig reads via `as_root` (its
+  memcpy accessor shim + hand-rolled u64-vector reader already make torn reads
+  non-fatal). The C++ poller occasionally logs "IndexingStatus failed FlatBuffers
+  verification; treating as empty status" from a torn concurrent read — handled
+  gracefully on both sides; omitting empty vectors (above) shrank that window
+  (19→9 on a full ZLS index).
 
 ---
 
@@ -173,16 +167,16 @@ mirroring how the Rust indexer degrades on unexpanded macros.
 | ~~3~~ | ~~`typedef` and `type_parameter` node kinds~~ | — | — | **Done** (`ddece0e633`): `comptime T: type` params → NODE_TYPE_PARAMETER; `const T = <type>` upgraded to NODE_TYPEDEF via ZLS `is_type_val`. 75 typedefs / 31 type params on ZLS. |
 | ~~4~~ | ~~Component access from `pub`~~ | — | — | **Done** (`f2e0b5e98f`): `pub`→public, else default, generic params→type_parameter. 811/3035/31 rows on ZLS (one per symbol node). |
 | ~~5~~ | ~~Typedef references as EDGE_TYPE_USAGE~~ | — | — | **Done** (`b3e3b86996`): wireOne reads the target's actual (reclassified) node kind. Same-file typedef refs now TYPE_USAGE (486/500 on ZLS); cross-file refs still USAGE (a referencing file can't see another file's const is a typedef without a per-ref ZLS resolve). |
-| 6 | Status: omit empty vectors on write; crashed-TU bookkeeping | Low | S | Align with ADR-0003 and the `start_indexing` crash path. |
-| 7 | Node attributes (deprecated/doc) | Low | M | Display-only side table; least impactful. |
+| ~~6~~ | ~~Status: omit empty vectors on write; crashed-TU bookkeeping~~ | — | — | **Done** (`3de38f1e25`): `startIndexing` records a leftover current-file as crashed (deduped); empty vectors omitted per ADR-0003 (also shrank the torn-read window 19→9). Read-side `getCheckedRoot` verification is the one status item left (low). |
+| 7 | Node attributes (deprecated/doc) | Low | M | Display-only side table; Zig has little to fill it. |
 | 8 | `implicit` definition kind | Low | S | Zig has few compiler-synthesized decls to mark. |
 | 9 | Node modifiers bitmask | Low | S | Zig has no deprecated/async modifiers to surface yet. |
 
-None block indexing. With #1–#5 done the full index runs with **zero** logged
-errors, full local-variable highlighting, typedef/generic modelling, type-usage
-edges, and visibility markers. What remains is IPC-hardening polish (status
-niceties #6) and two display side-tables Zig has little to populate (node
-attributes #7, node modifiers #9).
+None block indexing. With #1–#6 done the full index runs with **zero** logged
+errors (bar an occasional gracefully-handled torn status read), full local
+highlighting, typedef/generic modelling, type-usage edges, visibility markers,
+and crash bookkeeping. What remains is display side-tables Zig has little to fill
+(node attributes #7, modifiers #9) and minor semantics (#8).
 
 ---
 
@@ -209,8 +203,8 @@ The Zig indexer is a **production-shaped peer** on everything that governs
 correctness and throughput — IPC contract, chunked storage, back-pressure,
 incremental reverse-deps, the `NameHierarchy` wire format (a full index runs
 with zero logged errors), local-variable highlighting, typedef/generic
-modelling, type-usage edges, and visibility markers. Its remaining distance from
-Rust/Swift is a small amount of IPC-hardening polish (status niceties #6) and
-two display side-tables Zig has little to fill (node attributes #7, modifiers
-#9). Those are additive polish on a foundation that is at parity, not
+modelling, type-usage edges, visibility markers, and crash bookkeeping. Its remaining distance from
+Rust/Swift is two display side-tables Zig has little to fill (node attributes #7,
+modifiers #9), read-side status verification, and minor definition-kind
+semantics (#8). Those are additive polish on a foundation that is at parity, not
 structural rework.

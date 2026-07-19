@@ -236,10 +236,13 @@ can't be exercised by `zig build test` alone).
     `pub`→public / else default / generic params→type_parameter visibility rows; typedef
     references now EDGE_TYPE_USAGE (same-file). Parity gaps #1–#5 all done — the index runs
     error-free with local highlighting, typedef/generic modelling, and visibility markers.
+  - **Status hardening — ✅ landed** (`3de38f1e25`): `startIndexing` crashed-TU bookkeeping
+    (leftover current-file → crashed_file_paths, deduped) + omit-empty-vectors on write
+    (ADR-0003). Parity gaps #1–#6 all done.
   - **Next increment:** comptime/type resolution is WIP in ZLS — degrade to the syntactic
-    result where it can't resolve. Remaining polish is minor: status omit-empty-vectors +
-    crashed-TU bookkeeping (#6); Zig has little to fill the node-attribute (#7) / modifier
-    (#9) side-tables. See `context/PARITY_ZIG_INDEXER.md`.
+    result where it can't resolve. Remaining polish is minimal: read-side status
+    verification; Zig has little to fill the node-attribute (#7) / modifier (#9)
+    side-tables. See `context/PARITY_ZIG_INDEXER.md`.
 
 ## Phase 4 — Per-file incremental — ✅ landed + verified
 
