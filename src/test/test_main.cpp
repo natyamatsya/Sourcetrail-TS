@@ -6,6 +6,12 @@
 #include <UserPaths.h>
 #include <setupApp.h>
 
+#include "language_packages.h"
+
+#if BUILD_CXX_LANGUAGE_PACKAGE
+#include "CxxIndexerCommandCodec.h"
+#endif
+
 #include <filesystem>
 #include <iostream>
 
@@ -37,6 +43,15 @@ struct EventListener : Catch2::EventListenerBase
 		FilePath settingsFilePath = UserPaths::getAppSettingsFilePath();
 		cout << "Loading settings from " << settingsFilePath.str() << endl;
 		ApplicationSettings::getInstance()->load(settingsFilePath, true);
+
+#if BUILD_CXX_LANGUAGE_PACKAGE
+		// Register the Cxx indexer-command codec, exactly as app/main.cpp and
+		// indexer/main.cpp do. It lives in lib_cxx and can't self-register from
+		// lib_core's registry (that would be an upward dependency), nor via a
+		// static initializer (the linker strips the unreferenced TU from the
+		// static archive). The IPC serializer round-trip tests need it present.
+		registerCxxIndexerCommandCodec();
+#endif
 	}
 };
 
