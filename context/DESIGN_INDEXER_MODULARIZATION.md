@@ -164,7 +164,28 @@ cycles in `lib` is prerequisite work, and a good cleanup in its own right).
   Verified for a **std-only** partition: `srctrl.utility:enums` compiled with `import std;` (its wrapper
   drops the std #includes) links and runs, **including interop** — a consumer that `#include`s std headers
   uses the module's exported helpers fine. Note: a Qt-touching module (AidKit) keeps `<QString>` in the
-  GMF, so `import std` there mixes with Qt's std includes; the option is really for std-only modules.
+  GMF, so `import std` there mixes with Qt's std includes; the option is really for std-only modules —
+  **unless Qt itself is behind an import (see `srctrl.qt` below).**
+
+- **`srctrl.qt` — a Qt import-module wrapper dissolves the "Qt blocks import std" barrier (capability
+  proven; one integration hits a clang crash).** Qt 6.11 ships no C++20 modules, so we wrap it like
+  sqlpp23: `srctrl.qt` with partitions mirroring Qt's own names (`:core` = QtCore value types
+  `QString`/`QByteArray`/`QRegularExpression`/env fns; `:meta` = the `QMetaType` system; future `:gui`/
+  `:widgets`), re-exported via `export using ::QString;`. **The key result: `import srctrl.qt` + `import
+  std` coexist** — the consumer builds *and runs*, doing `QString`↔`std::string` interop with `std::string`
+  from `import std`. Putting Qt behind an `import` confines its textual std-pull to the wrapper's own TU, so
+  the "Qt drags std into the GMF" conflict that blocks import std **disappears**. This unblocks modularizing
+  the Qt-coupled foundational types into the import-std-clean world.
+  - **Caveat — Qt macros.** `QStringLiteral`, `Q_DECLARE_METATYPE`, `Q_OBJECT` are macros and can't cross
+    an `import`; a consumer keeps that one macro textual (replace `QStringLiteral("x")` with
+    `QString::fromUtf8("x")`, or keep a minimal `<QMetaType>` for `Q_DECLARE_METATYPE`).
+  - **Pilots.** `TimeStamp` (pure std, no Qt) modularized cleanly as `srctrl.utility:time`. `FilePath` —
+    the real Qt pilot — is **reverted**: the direct `srctrl.qt` consumption pattern works in isolation
+    (static `QRegularExpression` + `qgetenv` in an inline member through `srctrl.qt` compiles fine), but
+    routing `FilePath` through the *full 7-partition `srctrl.utility` re-export chain* (`:file` importing
+    srctrl.qt + srctrl.logging + :string) **segfaults clang's frontend** — a toolchain bug in a complex
+    module-merge, not a design flaw. Revisit with a newer clang, or by importing a Qt-coupled leaf module
+    directly rather than through a deep re-export chain.
 
 - **`import std` — now GREEN for the whole first-party module set (utility + data + logging).** Getting
   there took fixing two real import-std-with-legacy-headers edges (both pre-existing, surfaced only when

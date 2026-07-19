@@ -8,3 +8,4 @@ export import :cache;
 export import :types;
 export import :string;
 export import :math;
+export import :time;

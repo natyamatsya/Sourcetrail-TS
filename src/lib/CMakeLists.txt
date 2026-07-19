@@ -51,6 +51,9 @@ if(SOURCETRAIL_CXX_MODULES_ENABLED)
 	target_sources(Sourcetrail_lib
 		PUBLIC
 			FILE_SET CXX_MODULES FILES
+				utility/qt/srctrl_qt.cppm
+				utility/qt/srctrl_qt-core.cppm
+				utility/qt/srctrl_qt-meta.cppm
 				utility/logging/srctrl_logging.cppm
 				utility/srctrl_utility.cppm
 				utility/srctrl_utility-enum.cppm
@@ -58,6 +61,7 @@ if(SOURCETRAIL_CXX_MODULES_ENABLED)
 				utility/srctrl_utility-types.cppm
 				utility/srctrl_utility-string.cppm
 				utility/srctrl_utility-math.cppm
+				utility/srctrl_utility-time.cppm
 				data/srctrl_data.cppm
 				data/srctrl_data-types.cppm
 				data/srctrl_data-name.cppm
