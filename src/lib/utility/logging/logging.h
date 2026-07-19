@@ -6,7 +6,13 @@
 #include "LogManager.h"
 
 /**
- * @brief Macros to simplify usage of the log manager
+ * @brief Macros to simplify usage of the log manager.
+ *
+ * This header is the classic compat shim for the C++20-modules migration: the macros are kept
+ * unchanged so the ~489 existing LOG_* call sites compile untouched. New/module code should prefer the
+ * module-native front end -- `import srctrl.logging;` then srctrl::log::error("{}", x) / error_lazy(...)
+ * -- which captures the call site with std::source_location instead of __FILE__/__FUNCTION__/__LINE__
+ * and needs no macro. Both front ends route to the same LogManager backend (see LogFacade.h).
  */
 #define LOG_INFO(__str__)                                                                          \
 	do                                                                                             \

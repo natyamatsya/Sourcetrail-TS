@@ -279,6 +279,32 @@ cycles in `lib` is prerequisite work, and a good cleanup in its own right).
     RTTI (`dynamic_cast`) both resolve — provided the key function (the virtual destructor) is `inline`
     like every other member (the same all-members-inline rule; verified with an isolated test + the
     `TokenComponentStatic::copy()` interop in the data consumer).
+- **Phase 2 (cont.) — `srctrl.logging`: module-native logging (compat-shim only). ✅** A standalone
+  module (`LogFacade.h`/`.inl` + `srctrl_logging.cppm`) exporting `srctrl::log::{info,warning,error}`
+  (plain `string_view`, brace-safe), `*f` (std::format), and `*_lazy` (callable) front ends over the
+  **unchanged** classic `LogManager` singleton (kept global-module in the GMF). Replaces the LOG_* macros'
+  preprocessor capture (`__FILE__`/`__FUNCTION__`/`__LINE__`) with `std::source_location::current()` as a
+  defaulted argument, so nothing needs a macro to cross an `import`. Key pieces, all verified on our
+  clang22/libc++/C++23 toolchain:
+  - **`fmt_with_loc` consteval wrapper.** Non-terminal variadic + trailing default isn't allowed, so the
+    format string + `source_location` fold into one leading argument built by an implicit `consteval`
+    conversion; the trailing pack deduces normally because the wrapper's pack is pinned out of deduction
+    with `std::type_identity_t`. The `*f` suffix avoids ambiguity between the `string_view` overload and
+    the wrapper's converting ctor for a bare literal.
+  - **Compile-out + lazy eval** — the two things macros gave that functions can't for free — are
+    recovered by an exported `constexpr level min_level` gate via `if constexpr` (calls below the floor,
+    args included, are discarded) and the `*_lazy(callable)` overloads (message factory runs only when
+    the level is live). We had *no* per-level compile-out before (only a runtime `getLoggingEnabled()`),
+    so this is a net gain.
+  - **Compat-shim only:** `logging.h`'s 12 LOG_* macros are left byte-for-byte unchanged (same
+    `LogManager` backend, independent front end → zero behavior change, no ODR interaction) so all ~489
+    existing call sites compile untouched. Module purviews (the graph core next) will `import
+    srctrl.logging` and call `srctrl::log::error(...)` directly instead of GMF-including `logging.h`. The
+    102 `_STREAM` sites are deliberately **not** swept — future opportunistic migration.
+  - Verified: `Sourcetrail_lib` green modules-OFF (`LogFacade.h` valid as a plain header, shim untouched);
+    the module compiles ON with a consumer importing it and type-checking all four call styles (only the
+    app-provided LogManager backend is unlinked in the isolated harness, as designed; the runtime path
+    -- source_location capture + lazy gating -- was proven separately end-to-end with a stub backend).
 - **Next — the graph *core* (`Node`/`Edge`/`Graph`/`Token`, ~840 out-of-line lines) into `:graph`.** The
   hard part left in `graph/`: the `Node`⇄`Edge` cycle (established mutual-dep ordering), `NameHierarchy`
   (`:name`) + `utilityEnum`/`utilityString` (`srctrl.utility`) cross-module deps, and LOG usage

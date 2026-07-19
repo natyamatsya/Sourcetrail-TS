@@ -51,6 +51,7 @@ if(SOURCETRAIL_CXX_MODULES_ENABLED)
 	target_sources(Sourcetrail_lib
 		PUBLIC
 			FILE_SET CXX_MODULES FILES
+				utility/logging/srctrl_logging.cppm
 				utility/srctrl_utility.cppm
 				utility/srctrl_utility-enum.cppm
 				utility/srctrl_utility-cache.cppm
