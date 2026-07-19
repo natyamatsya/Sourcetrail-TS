@@ -154,8 +154,8 @@ mirroring how the Rust indexer degrades on unexpanded macros.
 |---|:--:|:--:|:--:|
 | occurrences + token/scope locations | ✅ | ✅ | ✅ |
 | definition kind (none/implicit/explicit) | 3 | 3 | 🟡 explicit only |
-| local symbols (fn-local bindings) | ✅ | ✅ | ❌ |
-| local-symbol locations (type 3, GUI highlight) | ✅ | ✅ | ❌ |
+| local symbols (fn-local bindings) | ✅ | ✅ | ✅ (`file<line:col>` convention) |
+| local-symbol locations (type 3, GUI highlight) | ✅ | ✅ | ✅ |
 | errors (parse/resolve) as StorageError | ✅ | ✅ | ✅ (parse errors) |
 | component access (public/private/…) | ✅ | ✅ | ❌ (Zig `pub` unused) |
 | node modifiers bitmask | 🟡 deprecated | ✅ actor/async/… | ❌ (always 0) |
@@ -169,15 +169,16 @@ mirroring how the Rust indexer degrades on unexpanded macros.
 | # | Gap | Severity | Effort | Notes |
 |---|---|---|---|---|
 | ~~1~~ | ~~`NameHierarchy` wire format~~ | — | — | **Done** (`f6e9529f33`): emits `[file, …parts]` with `.`/`/` delimiters; ZLS deserialize errors dropped from hundreds to 0. |
-| 2 | Local symbols (fn-local bindings + type-3 locations) | Med (GUI highlight of locals) | M | Needs a scope-local naming scheme (`file<line:col>`), already sketched in the roadmap. |
+| ~~2~~ | ~~Local symbols (fn-local bindings + type-3 locations)~~ | — | — | **Done** (`de1673c97a`): ZLS-resolved locals recorded as `file<line:col>` rows + type-3 occurrences; 10.3k locals / 39.8k occurrences on ZLS. |
 | 3 | `typedef` and `type_parameter` node kinds | Low–Med | M | `const T = U;` type aliases and generic params currently under-modelled. |
 | 4 | Component access from `pub` / node modifiers | Low | S | Map `pub`→public, else default; cheap enrichment. |
 | 5 | Status: omit empty vectors on write; crashed-TU bookkeeping | Low | S | Align with ADR-0003 and the `start_indexing` crash path. |
 | 6 | Node attributes (deprecated/doc) | Low | M | Display-only side table; least impactful. |
 | 7 | `implicit` definition kind | Low | S | Zig has few compiler-synthesized decls to mark. |
 
-None block indexing. With #1 done the full index now runs with **zero** logged
-errors; the next most user-visible enrichment is local symbols (#2).
+None block indexing. With #1 and #2 done the full index runs with **zero**
+logged errors and full local-variable highlighting; the next enrichment is the
+under-modelled `typedef` / `type_parameter` node kinds (#3).
 
 ---
 
@@ -202,8 +203,9 @@ errors; the next most user-visible enrichment is local symbols (#2).
 
 The Zig indexer is a **production-shaped peer** on everything that governs
 correctness and throughput — IPC contract, chunked storage, back-pressure,
-incremental reverse-deps, and now the `NameHierarchy` wire format (a full index
-runs with zero logged errors). Its remaining distance from Rust/Swift is
-**semantic breadth**, led by local symbols (#2) and the under-modelled
-type-alias / generic node kinds (#3). Those are additive enrichments on a
-foundation that is already at parity, not structural rework.
+incremental reverse-deps, the `NameHierarchy` wire format (a full index runs
+with zero logged errors), and local-variable highlighting. Its remaining
+distance from Rust/Swift is **semantic breadth**, led by the under-modelled
+type-alias / generic node kinds (#3) and access/attribute metadata. Those are
+additive enrichments on a foundation that is already at parity, not structural
+rework.

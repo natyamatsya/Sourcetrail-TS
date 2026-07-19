@@ -224,8 +224,12 @@ can't be exercised by `zig build test` alone).
     `[file, …dotted parts]` (`.` delimiter), files as `[path]` (`/`). The full ZLS index went
     from hundreds of `NameHierarchy::deserialize` errors to **zero**. See
     `context/PARITY_ZIG_INDEXER.md` for the full parity picture and remaining gaps.
+  - **Local symbols — ✅ landed** (`de1673c97a`): ZLS-resolved function-local bindings
+    (var/const/param/capture) become `StorageLocalSymbol` rows keyed `<file><line:col>`
+    (C++ `getLocalSymbolName` convention) with LOCATION_LOCAL_SYMBOL (type 3) occurrences
+    at each use — the GUI's same-local highlighting. 10.3k locals / 39.8k occurrences on ZLS.
   - **Next increment:** comptime/type resolution is WIP in ZLS — degrade to the syntactic
-    result where it can't resolve. Local symbols (fn-local bindings) are the next parity gap.
+    result where it can't resolve. `typedef`/`type_parameter` node kinds are the next gap.
 
 ## Phase 4 — Per-file incremental — ✅ landed + verified
 
