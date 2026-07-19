@@ -202,11 +202,17 @@ can't be exercised by `zig build test` alone).
   resolves an `@import` string to the target URI. Proven at runtime via the
   `--resolve <file> <ident>` mode (`square` in main resolves into util.zig; `Color`
   correctly unresolved from main's scope).
-  - **Next increment:** wire resolved references into storage emission as
-    `EDGE_CALL`/`EDGE_TYPE_USAGE` — this needs **file-qualified NameHierarchy** names so a
-    resolved target maps to the right Sourcetrail node across files (today's Phase-3a names
-    like `square` aren't globally unique) — plus field-access (`a.b`) resolution. Comptime/
-    type resolution is WIP in ZLS; degrade to the syntactic result where it can't resolve.
+  - **Reference wiring — ✅ landed.** For each identifier reference, resolve via ZLS
+    (`getPositionContext` → `lookupSymbolGlobal` / `getSymbolFieldAccesses`) and emit
+    `EDGE_CALL` (functions) / `EDGE_USAGE` from the enclosing top-level decl to the target,
+    with an occurrence. Names are now file-qualified `"<file>::<local>"`
+    (`storage.qualifiedName`) in **both** the declaration and reference passes, so a
+    resolved cross-file target dedups onto the right node. Verified end-to-end: the fixture
+    yields `EDGE_CALL main.zig::main → util.zig::square` (the cross-file call) in SQLite.
+  - **Next increment:** nested targets (methods/fields) — need a scope-path qualified name;
+    currently skipped. Type references as `EDGE_TYPE_USAGE` (currently `USAGE`). Context =
+    nested enclosing scope (currently the enclosing top-level decl). Comptime/type
+    resolution is WIP in ZLS; degrade to the syntactic result where it can't resolve.
 
 ## Phase 4 — Per-file incremental (ships with the above)
 
