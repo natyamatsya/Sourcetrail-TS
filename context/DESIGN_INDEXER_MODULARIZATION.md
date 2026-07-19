@@ -353,7 +353,12 @@ cycles in `lib` is prerequisite work, and a good cleanup in its own right).
     the `srctrl::log` rewrite); ON, all 11 first-party module units build and a consumer imports
     `srctrl.data` and uses `Graph`/`NodeType(NODE_CLASS)`/`intToEnum<Edge::EdgeType>` across the boundary
     (only FilePath.cpp + the Qt tag unlinked in the isolated harness, as designed).
-- **Next — `srctrl.storage`** (45 headers, incl. sqlpp/SQL-schema codegen that needs its own assessment).
+- **Next — `srctrl.storage`** (45 headers). **Scoped:** see `DESIGN_STORAGE_MODULARIZATION.md`. TL;DR:
+  the 15 header-only `type/` POD structs are a clean, immediate `srctrl.storage:types` win (deps entirely
+  on the done `:types` enums + GMF `Id`); everything past that is gated on a **sqlpp23-module spike**
+  (sqlpp23 v0.69 *does* ship `import sqlpp23.core/sqlite3`, but it's experimental, self-compiled, and the
+  ddl2cpp `SQLPP_CREATE_NAME_TAG` macro doesn't cross `import`) and must move in lockstep with the
+  CppSQLite3→sqlpp23 SQL-layer migration (`DESIGN_STORAGE_CODEGEN.md`) rather than race ahead of it.
 - **Phase 3 — `srctrl.cxx`.** Modularize `lib_cxx` with partitions; absorb the Clang-header BMI cost.
 - **Phase 4 — the indexer binary.** `src/indexer/main.cpp` becomes a pure consumer:
   `import srctrl.cxx;` (+ optionally `import std;`).
