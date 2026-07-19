@@ -1,7 +1,13 @@
 #ifndef TREE_H
 #define TREE_H
 
-template <typename T>
+#include "SrctrlModule.h"
+
+#ifndef SRCTRL_MODULE_PURVIEW
+#include <vector>
+#endif
+
+SRCTRL_EXPORT template <typename T>
 struct Tree
 {
 	Tree() = default;

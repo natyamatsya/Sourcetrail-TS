@@ -1,7 +1,9 @@
 #ifndef SCOPED_SWITCHER_H
 #define SCOPED_SWITCHER_H
 
-template <typename T>
+#include "SrctrlModule.h"
+
+SRCTRL_EXPORT template <typename T>
 class ScopedSwitcher
 {
 public:

@@ -1,9 +1,13 @@
 #ifndef SINGLE_VALUE_CACHE_H
 #define SINGLE_VALUE_CACHE_H
 
-#include <functional>
+#include "SrctrlModule.h"
 
-template <typename ValType>
+#ifndef SRCTRL_MODULE_PURVIEW
+#include <functional>
+#endif
+
+SRCTRL_EXPORT template <typename ValType>
 class SingleValueCache
 {
 public:

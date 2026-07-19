@@ -1,10 +1,14 @@
 #ifndef ORDERED_CACHE_H
 #define ORDERED_CACHE_H
 
+#include "SrctrlModule.h"
+
+#ifndef SRCTRL_MODULE_PURVIEW
 #include <functional>
 #include <map>
+#endif
 
-template <typename KeyType, typename ValType>
+SRCTRL_EXPORT template <typename KeyType, typename ValType>
 class OrderedCache
 {
 public:

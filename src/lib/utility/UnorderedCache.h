@@ -1,10 +1,14 @@
 #ifndef UNORDERED_CACHE_H
 #define UNORDERED_CACHE_H
 
+#include "SrctrlModule.h"
+
+#ifndef SRCTRL_MODULE_PURVIEW
 #include <functional>
 #include <unordered_map>
+#endif
 
-template <typename KeyType, typename ValType, typename Hasher = std::hash<KeyType>>
+SRCTRL_EXPORT template <typename KeyType, typename ValType, typename Hasher = std::hash<KeyType>>
 class UnorderedCache
 {
 public:

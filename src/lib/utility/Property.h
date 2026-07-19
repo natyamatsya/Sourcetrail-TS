@@ -1,7 +1,9 @@
 #ifndef PROPERTY_H
 #define PROPERTY_H
 
-template <class T>
+#include "SrctrlModule.h"
+
+SRCTRL_EXPORT template <class T>
 class Property
 {
 public:

@@ -52,9 +52,16 @@ if(SOURCETRAIL_CXX_MODULES_ENABLED)
 		PUBLIC
 			FILE_SET CXX_MODULES FILES
 				utility/srctrl_utility.cppm
-				utility/srctrl_utility-enum.cppm)
+				utility/srctrl_utility-enum.cppm
+				utility/srctrl_utility-cache.cppm
+				utility/srctrl_utility-types.cppm)
 	# Module scanning of the regular sources is off by the project-wide default (stdexec breaks
 	# clang-scan-deps -- see the top-level CMakeLists); the .cppm interface units are still scanned.
+	if(SOURCETRAIL_CXX_IMPORT_STD)
+		# srctrl.utility's wrapper `import std;`s under this option, so this target consumes the
+		# toolchain std module.
+		set_target_properties(Sourcetrail_lib PROPERTIES CXX_MODULE_STD ON)
+	endif()
 endif()
 
 # CXX settings component sources — always compiled so the settings types are

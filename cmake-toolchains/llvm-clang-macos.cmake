@@ -18,9 +18,17 @@ set(CMAKE_C_COMPILER   "${LLVM_PREFIX}/bin/clang"   CACHE FILEPATH "C compiler")
 set(CMAKE_CXX_COMPILER "${LLVM_PREFIX}/bin/clang++" CACHE FILEPATH "C++ compiler")
 
 # Use macOS system ar/ranlib — GNU ar (from binutils) produces archives that
-# Apple's ld rejects.
+# Apple's ld rejects.  (This also lets CMake's `import std` support link its std-module archive.)
 set(CMAKE_AR     "/usr/bin/ar"     CACHE FILEPATH "ar")
 set(CMAKE_RANLIB "/usr/bin/ranlib" CACHE FILEPATH "ranlib")
+
+# `import std` (SOURCETRAIL_CXX_IMPORT_STD): Homebrew LLVM ships libc++.modules.json under lib/c++/,
+# where clang's `-print-file-name` (which CMake's import-std detection queries) does not find it.
+# Point CMake at it explicitly so the toolchain probe succeeds.  Harmless when import std is off.
+if(EXISTS "${LLVM_PREFIX}/lib/c++/libc++.modules.json")
+    set(CMAKE_CXX_STDLIB_MODULES_JSON "${LLVM_PREFIX}/lib/c++/libc++.modules.json"
+        CACHE FILEPATH "libc++ std module metadata (for import std)")
+endif()
 
 # Use Apple's system libc++ at runtime.
 set(CMAKE_CXX_FLAGS_INIT "-stdlib=libc++")

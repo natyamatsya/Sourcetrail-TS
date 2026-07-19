@@ -148,16 +148,23 @@ cycles in `lib` is prerequisite work, and a good cleanup in its own right).
   - **`.inl` convention** for inline impls kept out of headers (`Strings.inl`).
   - **`FILE_SET CXX_MODULES` must be `PUBLIC`**, not `PRIVATE`, for another target to `import` it.
   - **Scaffolding graduated** to `src/scaffolding/SrctrlModule.h` on a global include path.
-- **`SOURCETRAIL_CXX_IMPORT_STD` option (added in Phase 1)** — a compile-time toggle so module wrappers
-  `import std;` instead of #including std headers (`SRCTRL_IMPORT_STD` → the wrapper switches; targets
-  set `CXX_MODULE_STD ON`). The experimental gate is set before `project()`. **Toolchain state (brew
-  LLVM 22 / macOS):** the CMake 4.4 gate UUID is `f35a9ac6-8463-4d38-8eec-5d6008153e7d`;
-  `libc++.modules.json` isn't found by `-print-file-name` (brew ships it in `lib/c++/`) so
-  `CMAKE_CXX_STDLIB_MODULES_JSON` must be pointed there — after which config + the std-module *compile*
-  succeed, but *linking* fails (`ld: archive member '/' not a mach-o file in lib@cmake_cxx_std.a` —
-  CMake's std-module archive is GNU-format, macOS `ld` rejects it). So the option ships **OFF** and
-  wired; AidKit builds with std includes. Also note: AidKit's `<QString>` (Qt, not a module) stays in
-  the GMF, so it's a poor `import std` candidate anyway — the option is really for std-only modules.
+- **`SOURCETRAIL_CXX_IMPORT_STD` option — WORKS (gap closed).** A compile-time toggle so module
+  wrappers `import std;` instead of #including std headers (`SRCTRL_IMPORT_STD` → the wrapper switches;
+  targets set `CXX_MODULE_STD ON`). The full recipe for brew LLVM 22 / macOS:
+  1. **Experimental gate** `CMAKE_EXPERIMENTAL_CXX_IMPORT_STD = f35a9ac6-8463-4d38-8eec-5d6008153e7d`
+     (CMake-4.4-specific) + `CMAKE_CXX_STANDARD 23`, both set **before `project()`** (the top-level
+     CMakeLists reads the cached option value to do this).
+  2. **`libc++.modules.json`** isn't found by `-print-file-name` (brew ships it in `lib/c++/`), so the
+     toolchain file sets `CMAKE_CXX_STDLIB_MODULES_JSON = ${LLVM_PREFIX}/lib/c++/libc++.modules.json`.
+  3. **A mach-o archiver** — `CMAKE_AR = /usr/bin/ar` (already in the toolchain; GNU `ar`/`llvm-ar`
+     produce archives macOS `ld` rejects, which is what the earlier "std-module archive won't link"
+     was — an *isolated-test* artifact, not a real blocker).
+
+  Verified end-to-end: `srctrl.utility` compiled with `import std;` (its wrapper drops the std
+  #includes) links and runs, **including interop** — a consumer that `#include`s std headers uses the
+  module's exported helpers fine. Note: a Qt-touching module (AidKit) keeps `<QString>` in the GMF, so
+  `import std` there mixes with Qt's std includes; the option is really for std-only modules like
+  `srctrl.utility`.
 - **Phase 2 — `srctrl.utility`: first `lib` module. ✅ STARTED (utilityEnum → `:enums` partition).**
   Converted `utilityEnum.h` (header-only concepts/templates) into `srctrl.utility` with an `:enums`
   partition (`srctrl_utility.cppm` primary `export import :enums;` + `srctrl_utility-enum.cppm`). Both
@@ -178,9 +185,19 @@ cycles in `lib` is prerequisite work, and a good cleanup in its own right).
   - **`import std` is not the blocker some thought**: the earlier "archive link fails" was the
     isolated test's default `llvm-ar`; the real toolchain uses `/usr/bin/ar` (mach-o) and links module
     archives fine (AidKit proved it).
-- **Phase 2 (cont.) — the rest of `srctrl.utility`, then `srctrl.data`/`srctrl.storage`.** Bottom-up
-  through `lib`, adding partitions per step. Out-of-line utility (utilityString, FilePath) needs the
-  inline/`.inl` treatment (or consumer conversion) before it can join a module.
+- **Phase 2 (cont.) — `srctrl.utility` grown to `:cache` + `:types` partitions.** Folded in seven more
+  header-only leaves: `SingleValueCache`/`OrderedCache`/`UnorderedCache` (→ `:cache`) and
+  `Status`/`Tree`/`Property`/`ScopedSwitcher` (→ `:types`). The primary `export import`s all three
+  partitions; a consumer `import srctrl.utility;` gets them all. Verified: all three partitions import
+  together (isolated), the 7 headers still compile as plain headers (OFF), `Sourcetrail_lib` builds ON
+  with the 4 module files, and the module indexes 0 errors. **Key finding — owned header-defined types
+  are safe across the import/#include boundary**: a `Box<int>` created via `#include` and one obtained
+  via `import` are the *same type* (tested). So the boundary rule is narrower than feared — only
+  *out-of-line symbols* (functions/vars in a `.cpp`) mismatch across the boundary; header-only types
+  (class templates, inline structs) don't, which is why these leaves fold in cleanly while consumers
+  still `#include` them. Out-of-line utility (utilityString, FilePath) still needs the inline/`.inl`
+  treatment (or consumer conversion) before it can join a module.
+- **Next — `srctrl.data`/`srctrl.storage`.** Bottom-up through `lib`, adding partitions per step.
 - **Phase 3 — `srctrl.cxx`.** Modularize `lib_cxx` with partitions; absorb the Clang-header BMI cost.
 - **Phase 4 — the indexer binary.** `src/indexer/main.cpp` becomes a pure consumer:
   `import srctrl.cxx;` (+ optionally `import std;`).
