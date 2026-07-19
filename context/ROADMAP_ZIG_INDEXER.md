@@ -239,10 +239,14 @@ can't be exercised by `zig build test` alone).
   - **Status hardening — ✅ landed** (`3de38f1e25`): `startIndexing` crashed-TU bookkeeping
     (leftover current-file → crashed_file_paths, deduped) + omit-empty-vectors on write
     (ADR-0003). Parity gaps #1–#6 all done.
-  - **Next increment:** comptime/type resolution is WIP in ZLS — degrade to the syntactic
-    result where it can't resolve. Remaining polish is minimal: read-side status
-    verification; Zig has little to fill the node-attribute (#7) / modifier (#9)
-    side-tables. See `context/PARITY_ZIG_INDEXER.md`.
+  - **Doc attributes + deprecation — ✅ landed** (`ac4566f801`): `///` first line →
+    `doc_brief` node_attribute (430 on ZLS); `/// Deprecated:` → deprecated modifier +
+    attribute. Parity gaps #1–#7 and #9 all done.
+  - **Feature parity reached.** The one open gap, `implicit` definition kind (#8), is N/A for
+    Zig (it synthesises no indexed symbols). Genuinely optional future work: read-side status
+    verification; comptime/type resolution improves as ZLS matures; Rust-style
+    generic-specialisation nodes would be a new feature, not gap-closing. See
+    `context/PARITY_ZIG_INDEXER.md`.
 
 ## Phase 4 — Per-file incremental — ✅ landed + verified
 

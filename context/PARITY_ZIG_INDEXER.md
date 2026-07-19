@@ -147,13 +147,13 @@ mirroring how the Rust indexer degrades on unexpanded macros.
 | Feature | Rust | Swift | Zig |
 |---|:--:|:--:|:--:|
 | occurrences + token/scope locations | ✅ | ✅ | ✅ |
-| definition kind (none/implicit/explicit) | 3 | 3 | 🟡 explicit only |
+| definition kind (none/implicit/explicit) | 3 | 3 | 🟡 explicit only (Zig synthesises none) |
 | local symbols (fn-local bindings) | ✅ | ✅ | ✅ (`file<line:col>` convention) |
 | local-symbol locations (type 3, GUI highlight) | ✅ | ✅ | ✅ |
 | errors (parse/resolve) as StorageError | ✅ | ✅ | ✅ (parse errors) |
 | component access (public/private/…) | ✅ | ✅ | ✅ (`pub`→public, else default, type params→type_parameter) |
-| node modifiers bitmask | 🟡 deprecated | ✅ actor/async/… | ❌ (always 0) |
-| node attributes (deprecated/cfg/availability/doc) | ✅ | ✅ | ❌ |
+| node modifiers bitmask | 🟡 deprecated | ✅ actor/async/… | 🟡 deprecated (`/// Deprecated:`) |
+| node attributes (deprecated/cfg/availability/doc) | ✅ | ✅ | 🟡 doc_brief + deprecated |
 | proper `NameHierarchy` wire format | ✅ | ✅ | ✅ (`[file, …parts]`, `.`/`/` delimiters) |
 
 ---
@@ -168,15 +168,16 @@ mirroring how the Rust indexer degrades on unexpanded macros.
 | ~~4~~ | ~~Component access from `pub`~~ | — | — | **Done** (`f2e0b5e98f`): `pub`→public, else default, generic params→type_parameter. 811/3035/31 rows on ZLS (one per symbol node). |
 | ~~5~~ | ~~Typedef references as EDGE_TYPE_USAGE~~ | — | — | **Done** (`b3e3b86996`): wireOne reads the target's actual (reclassified) node kind. Same-file typedef refs now TYPE_USAGE (486/500 on ZLS); cross-file refs still USAGE (a referencing file can't see another file's const is a typedef without a per-ref ZLS resolve). |
 | ~~6~~ | ~~Status: omit empty vectors on write; crashed-TU bookkeeping~~ | — | — | **Done** (`3de38f1e25`): `startIndexing` records a leftover current-file as crashed (deduped); empty vectors omitted per ADR-0003 (also shrank the torn-read window 19→9). Read-side `getCheckedRoot` verification is the one status item left (low). |
-| 7 | Node attributes (deprecated/doc) | Low | M | Display-only side table; Zig has little to fill it. |
-| 8 | `implicit` definition kind | Low | S | Zig has few compiler-synthesized decls to mark. |
-| 9 | Node modifiers bitmask | Low | S | Zig has no deprecated/async modifiers to surface yet. |
+| ~~7~~ | ~~Node attributes (doc/deprecated)~~ | — | — | **Done** (`ac4566f801`): `///` first line → `doc_brief`; `/// Deprecated:` → `deprecated`. 430 doc briefs on ZLS. (cfg/availability have no Zig analog.) |
+| ~~9~~ | ~~Node modifiers bitmask~~ | — | — | **Done** (`ac4566f801`): `deprecated` bit from the `/// Deprecated:` convention. The other bits (actor/async/nonisolated) are Swift/ObjC-only. |
+| 8 | `implicit` definition kind | — (N/A) | — | Zig synthesises no indexed symbols — every parsed decl is user-written (explicit); reference-only external symbols correctly carry no definition row. The only real implicit content would be Rust-style generic-specialisation nodes (a separate, larger feature), not a definition-kind tweak. |
 
-None block indexing. With #1–#6 done the full index runs with **zero** logged
-errors (bar an occasional gracefully-handled torn status read), full local
-highlighting, typedef/generic modelling, type-usage edges, visibility markers,
-and crash bookkeeping. What remains is display side-tables Zig has little to fill
-(node attributes #7, modifiers #9) and minor semantics (#8).
+None block indexing. With #1–#7 and #9 done the full index runs with **zero**
+logged errors (bar an occasional gracefully-handled torn status read), full
+local highlighting, typedef/generic modelling, type-usage edges, visibility
+markers, crash bookkeeping, doc summaries, and deprecation. #8 is the only open
+item and is **N/A for Zig** (nothing to mark implicit) barring a future
+generic-specialisation feature.
 
 ---
 
@@ -203,8 +204,9 @@ The Zig indexer is a **production-shaped peer** on everything that governs
 correctness and throughput — IPC contract, chunked storage, back-pressure,
 incremental reverse-deps, the `NameHierarchy` wire format (a full index runs
 with zero logged errors), local-variable highlighting, typedef/generic
-modelling, type-usage edges, visibility markers, and crash bookkeeping. Its remaining distance from
-Rust/Swift is two display side-tables Zig has little to fill (node attributes #7,
-modifiers #9), read-side status verification, and minor definition-kind
-semantics (#8). Those are additive polish on a foundation that is at parity, not
-structural rework.
+modelling, type-usage edges, visibility markers, crash bookkeeping, doc summaries, and deprecation.
+The only item without full parity is the `implicit` definition kind (#8), which
+is **N/A for Zig** — the language synthesises no indexed symbols to mark. In
+practical terms the Zig indexer is now at feature parity with the Rust and Swift
+backends; what is left is either not applicable or a separate feature
+(generic-specialisation nodes), not gap-closing on this foundation.
