@@ -6,3 +6,4 @@ export module srctrl.utility;
 export import :enums;
 export import :cache;
 export import :types;
+export import :string;

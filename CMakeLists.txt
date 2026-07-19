@@ -93,14 +93,16 @@ if(SOURCETRAIL_CXX_MODULES_ENABLED AND SOURCETRAIL_CXX_IMPORT_STD)
 	# also opt in per-target with the CXX_MODULE_STD property (done in each converted library).
 	add_compile_definitions(SRCTRL_IMPORT_STD)
 endif()
+# CMP0155 (NEW under the 4.4 baseline) makes CMake scan *every* C++20+ source for `import`
+# dependencies -- REGARDLESS of SOURCETRAIL_CXX_MODULES, so this must be unconditional. But
+# clang-scan-deps chokes on stdexec's preprocessor ("token is not a valid binary operator in a
+# preprocessor subexpression"), which is included across lib/lib_cxx/lib_gui, breaking even the plain
+# header build. So default module scanning OFF project-wide and turn it back ON per-file only where a
+# source actually `import`s (CXX_SCAN_FOR_MODULES source property). FILE_SET CXX_MODULES interface
+# units are always scanned/built regardless of this default.
+set(CMAKE_CXX_SCAN_FOR_MODULES OFF)
+
 if(SOURCETRAIL_CXX_MODULES_ENABLED)
-	# CMP0155 (NEW under the 4.4 baseline) would scan *every* C++20+ source for `import`. But
-	# clang-scan-deps chokes on stdexec's preprocessor ("token is not a valid binary operator in a
-	# preprocessor subexpression"), which is included across lib/lib_cxx/lib_gui. So default module
-	# scanning OFF project-wide and turn it back ON per-file only where a source actually `import`s
-	# (CXX_SCAN_FOR_MODULES source property). FILE_SET CXX_MODULES interface units are always
-	# scanned/built regardless of this default.
-	set(CMAKE_CXX_SCAN_FOR_MODULES OFF)
 	message(STATUS "C++20 modules: ENABLED (building the Phase-0 module POC; see DESIGN_INDEXER_MODULARIZATION.md)")
 	add_subdirectory(src/cxx_modules_poc)
 endif()

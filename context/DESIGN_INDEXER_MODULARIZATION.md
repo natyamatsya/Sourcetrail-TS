@@ -197,6 +197,20 @@ cycles in `lib` is prerequisite work, and a good cleanup in its own right).
   (class templates, inline structs) don't, which is why these leaves fold in cleanly while consumers
   still `#include` them. Out-of-line utility (utilityString, FilePath) still needs the inline/`.inl`
   treatment (or consumer conversion) before it can join a module.
+- **Phase 2 (cont.) — `utilityString` inlined and folded in as `:string`.** The first *out-of-line*
+  utility joins the module: `utilityString.cpp`'s pure-std functions moved to `utilityString.inl` as
+  `inline` (so header consumers get their own definitions — vague linkage — and don't depend on
+  module-attached symbols), declared `SRCTRL_EXPORT` in the header, and exported via a `:string`
+  partition. The 4 **Qt-dependent** locale functions (`toLowerCase`, `convertToUtf32`,
+  `isCaseInsensitive{Equal,Less}`) have pure-std *signatures* but `QString` *bodies*, so they stay
+  out-of-line in `utilityString.cpp` and are **not** exported — an include-only seam (like the `LOG_*`
+  macros), so the ~hundreds of non-Qt `utilityString` consumers don't pay for `<QString>`. Verified:
+  `Sourcetrail_lib` builds **OFF** (all 52 `utilityString` consumers recompile with the inline
+  functions) and **ON** (5 module BMIs), and `:string` imports (`utility::split`/`trim`/`elide`).
+  - **Latent OFF-build bug fixed here:** CMP0155 (NEW under the 4.4 baseline) scans C++20+ sources for
+    `import` *regardless of `SOURCETRAIL_CXX_MODULES`*, so the stdexec `clang-scan-deps` failure broke
+    even the plain header build once a stdexec-including target was compiled. `set(CMAKE_CXX_SCAN_FOR_MODULES
+    OFF)` is now **unconditional** (was inside the modules-enabled block), not just for module builds.
 - **Next — `srctrl.data`/`srctrl.storage`.** Bottom-up through `lib`, adding partitions per step.
 - **Phase 3 — `srctrl.cxx`.** Modularize `lib_cxx` with partitions; absorb the Clang-header BMI cost.
 - **Phase 4 — the indexer binary.** `src/indexer/main.cpp` becomes a pure consumer:
