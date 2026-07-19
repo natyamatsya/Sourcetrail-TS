@@ -188,6 +188,8 @@ pub const Storage = struct {
     /// De-dup: local-symbol name -> id (all occurrences of one function-local
     /// binding share a row, keyed by the C++ `file<line:col>` naming convention).
     local_symbol_by_name: std.StringHashMapUnmanaged(Id) = .empty,
+    /// node id -> its index in `nodes`, for O(1) kind lookup/reclassification.
+    node_index_by_id: std.AutoHashMapUnmanaged(Id, usize) = .empty,
 
     pub fn init(child: Allocator) Storage {
         return .{ .arena = std.heap.ArenaAllocator.init(child) };
@@ -226,6 +228,7 @@ pub const Storage = struct {
         // stays the raw path while the stored serialized_name is the wire form.
         const key = try a.dupe(u8, path);
         try self.nodes.append(a, .{ .id = id, .kind = .file, .serialized_name = try fileName(a, path) });
+        try self.node_index_by_id.put(a, id, self.nodes.items.len - 1);
         try self.node_by_name.put(a, key, id);
         return id;
     }
@@ -238,6 +241,7 @@ pub const Storage = struct {
         const id = self.createId();
         const owned = try a.dupe(u8, serialized_name);
         try self.nodes.append(a, .{ .id = id, .kind = kind, .serialized_name = owned });
+        try self.node_index_by_id.put(a, id, self.nodes.items.len - 1);
         try self.node_by_name.put(a, owned, id);
         if (def) |d| try self.symbols.append(a, .{ .id = id, .definition_kind = d });
         return id;
@@ -261,12 +265,13 @@ pub const Storage = struct {
     /// global_variable to typedef once ZLS confirms the value is a type.
     pub fn reclassifyNode(self: *Storage, serialized_name: []const u8, kind: NodeKind) void {
         const id = self.node_by_name.get(serialized_name) orelse return;
-        for (self.nodes.items) |*n| {
-            if (n.id == id) {
-                n.kind = kind;
-                return;
-            }
-        }
+        if (self.node_index_by_id.get(id)) |idx| self.nodes.items[idx].kind = kind;
+    }
+
+    /// The current kind of a node by id (reflects any reclassification).
+    pub fn nodeKind(self: *const Storage, id: Id) ?NodeKind {
+        const idx = self.node_index_by_id.get(id) orelse return null;
+        return self.nodes.items[idx].kind;
     }
 
     pub fn recordEdge(self: *Storage, kind: EdgeType, source: Id, target: Id) !Id {

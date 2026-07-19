@@ -232,8 +232,11 @@ fn wireOne(
     // onto the right node — top-level OR nested (Point.add, Point.x).
     const target_path = try decl.handle.uri.toFsPath(gpa);
     const target_qual = try indexer.storage.qualifiedName(gpa, target_path, info.name);
-    const edge_kind = edgeKindFor(info.kind);
     const target_id = try store.recordNode(info.kind, target_qual, null);
+    // Edge kind from the target's *actual* node kind, which may have been
+    // upgraded (e.g. global_variable -> typedef by resolveTypedefs) after the
+    // syntactic decl map that `info` comes from was built.
+    const edge_kind = edgeKindFor(store.nodeKind(target_id) orelse info.kind);
 
     // Context = innermost enclosing decl of the reference (smallest containing
     // span), else the file node.
