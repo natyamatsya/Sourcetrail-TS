@@ -1,5 +1,7 @@
 #include "QtProjectWizardContentPreferences.h"
 
+#include "qtScaleFactor.h"	// Qt scale-factor env helpers (moved out of utilityQt into lib)
+
 #include "ApplicationSettings.h"
 #include "FileLogger.h"
 #include "FileSystem.h"

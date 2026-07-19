@@ -28,15 +28,9 @@ QtMainWindow *getMainWindowforMainView(ViewLayout *viewLayout);
 
 void copyNewFilesFromDirectory(const QString &src, const QString &dst);
 
-extern const char QT_AUTO_SCREEN_SCALE_FACTOR[];
-
-bool isQtAutoScreenScaleFactorEnabled();
-void setQtAutoScreenScaleFactorEnabled(bool enable);
-
-extern const char QT_SCALE_FACTOR[];
-
-std::optional<double> getQtScaleFactor();
-void setQtScaleFactor(double factor);
+// Qt high-DPI scale-factor env helpers moved to lib/utility/qtScaleFactor.h (QtCore-only, so the headless
+// indexer's bootstrap doesn't need lib_gui). #include "qtScaleFactor.h" for isQtAutoScreenScaleFactorEnabled/
+// setQtAutoScreenScaleFactorEnabled/getQtScaleFactor/setQtScaleFactor.
 
 
 

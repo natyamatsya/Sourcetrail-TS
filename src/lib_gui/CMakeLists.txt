@@ -24,7 +24,6 @@ list(FILTER _lib_gui_base_SOURCES EXCLUDE REGEX ".*/QtProjectWizardContentPathsH
 list(FILTER _lib_gui_base_SOURCES EXCLUDE REGEX ".*/QtProjectWizardContentPathsIndexedHeaders\\.(cpp|h)")
 
 add_library(Sourcetrail_lib_gui
-	${CMAKE_CURRENT_BINARY_DIR}/productVersion.h
 	${CMAKE_CURRENT_BINARY_DIR}/licenses.h
 	${_lib_gui_base_SOURCES}
 )

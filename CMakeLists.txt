@@ -533,7 +533,9 @@ add_subdirectory(src/external)
 
 # Lib Gui ----------------------------------------------------------------------
 
-configure_file(cmake/productVersion.h.in src/lib_gui/productVersion.h)
+# Generated into lib's binary dir (on lib's include path): its only consumer is setupApp, which lives in
+# the base lib now. Keeping it out of lib_gui lets the headless indexer's bootstrap compile without lib_gui.
+configure_file(cmake/productVersion.h.in src/lib/productVersion.h)
 
 add_subdirectory(src/resources)
 add_subdirectory(src/lib_gui)

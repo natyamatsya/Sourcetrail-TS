@@ -8,8 +8,7 @@
 #include <UserPaths.h>
 #include <Version.h>
 #include <productVersion.h>
-#include <utilityApp.h>
-#include <utilityQt.h>
+#include <qtScaleFactor.h>
 
 #include <QCoreApplication>
 #include <QDir>
