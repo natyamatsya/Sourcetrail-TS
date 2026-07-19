@@ -211,7 +211,16 @@ cycles in `lib` is prerequisite work, and a good cleanup in its own right).
     `import` *regardless of `SOURCETRAIL_CXX_MODULES`*, so the stdexec `clang-scan-deps` failure broke
     even the plain header build once a stdexec-including target was compiled. `set(CMAKE_CXX_SCAN_FOR_MODULES
     OFF)` is now **unconditional** (was inside the modules-enabled block), not just for module builds.
-- **Next — `srctrl.data`/`srctrl.storage`.** Bottom-up through `lib`, adding partitions per step.
+- **Phase 2 (cont.) — `srctrl.data` started (`:types`).** The **second** first-party module: a
+  `:types` partition with `TooltipOrigin` (header-only enum) and `NameDelimiterType` (its 3 pure-std
+  functions inlined to `NameDelimiterType.inl`). Verified both ways (header + `import srctrl.data;`),
+  and **`Sourcetrail_lib` builds ON with two modules coexisting** (`srctrl.utility` + `srctrl.data`,
+  7 BMIs total). `lib/data` is mostly out-of-line and interconnected (214 files), so most components
+  need the inline/`.inl` (or split) treatment before joining.
+- **Next — inter-module deps + more `srctrl.data`.** `LocationType` is the natural next step: it
+  `#include`s `utilityEnum.h`, so it introduces the first **cross-module import** (`srctrl.data`
+  importing `srctrl.utility`) plus an exported template specialization (`intToEnum<LocationType>`) —
+  worth proving carefully. Then `srctrl.storage`, bottom-up.
 - **Phase 3 — `srctrl.cxx`.** Modularize `lib_cxx` with partitions; absorb the Clang-header BMI cost.
 - **Phase 4 — the indexer binary.** `src/indexer/main.cpp` becomes a pure consumer:
   `import srctrl.cxx;` (+ optionally `import std;`).

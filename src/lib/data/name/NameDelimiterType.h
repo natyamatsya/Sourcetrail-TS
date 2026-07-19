@@ -1,18 +1,25 @@
 #ifndef NAME_DELIMITER_TYPE_H
 #define NAME_DELIMITER_TYPE_H
 
-#include <string>
+#include "SrctrlModule.h"
 
-enum class NameDelimiterType
+#ifndef SRCTRL_MODULE_PURVIEW
+#include <array>
+#include <string>
+#endif
+
+SRCTRL_EXPORT enum class NameDelimiterType
 {
 	UNKNOWN,
 	FILE,
 	CXX
 };
 
-std::string nameDelimiterTypeToString(NameDelimiterType delimiter);
-NameDelimiterType stringToNameDelimiterType(const std::string& s);
+SRCTRL_EXPORT std::string nameDelimiterTypeToString(NameDelimiterType delimiter);
+SRCTRL_EXPORT NameDelimiterType stringToNameDelimiterType(const std::string& s);
 
-NameDelimiterType detectDelimiterType(const std::string& name);
+SRCTRL_EXPORT NameDelimiterType detectDelimiterType(const std::string& name);
+
+#include "NameDelimiterType.inl"
 
 #endif	  // NAME_DELIMITER_TYPE_H

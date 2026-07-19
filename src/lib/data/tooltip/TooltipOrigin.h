@@ -1,7 +1,9 @@
 #ifndef TOOLTIP_ORIGIN_H
 #define TOOLTIP_ORIGIN_H
 
-enum class TooltipOrigin
+#include "SrctrlModule.h"
+
+SRCTRL_EXPORT enum class TooltipOrigin
 {
 	TOOLTIP_ORIGIN_NONE,
 	TOOLTIP_ORIGIN_GRAPH,
