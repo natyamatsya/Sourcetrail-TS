@@ -5,6 +5,7 @@
 #include <clang/AST/Decl.h>
 #include <clang/AST/DeclTemplate.h>
 #include <clang/AST/Type.h>
+#include <clang/Basic/Module.h>
 
 #include "CanonicalFilePathCache.h"
 #include "CxxAstVisitorComponentContext.h"
@@ -72,6 +73,14 @@ Id CxxIndexingContext::getOrCreateSymbolId(CxxContext context)
 Id CxxIndexingContext::getOrCreateSymbolId(CxxContext context, const NameHierarchy& fallback)
 {
 	return m_symbols.getOrCreateSymbolId(context, fallback);
+}
+
+Id CxxIndexingContext::getOrCreateModuleSymbolId(const clang::Module* module)
+{
+	NameHierarchy name(module->getFullModuleName(), NameDelimiterType::CXX);
+	const Id symbolId = m_client.recordSymbol(name);
+	m_client.recordSymbolKind(symbolId, SymbolKind::MODULE);
+	return symbolId;
 }
 
 // --- current context -------------------------------------------------------------------------

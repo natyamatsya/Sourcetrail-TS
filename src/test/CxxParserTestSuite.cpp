@@ -41,7 +41,8 @@ std::shared_ptr<TestStorage> parseCode(const std::string &code, const std::vecto
 
 // Like parseCode, but hands back the raw IntermediateStorage so a test can
 // inspect node modifiers and node_attribute rows (TestStorage flattens both away).
-std::shared_ptr<IntermediateStorage> parseCodeToStorage(const std::string& code)
+std::shared_ptr<IntermediateStorage> parseCodeToStorage(
+	const std::string& code, const std::vector<std::string>& compilerFlags = {})
 {
 	std::shared_ptr<IntermediateStorage> storage = std::make_shared<IntermediateStorage>();
 	const std::shared_ptr<ParserClientImpl> parserClient = std::make_shared<ParserClientImpl>(storage);
@@ -52,8 +53,7 @@ std::shared_ptr<IntermediateStorage> parseCodeToStorage(const std::string& code)
 	parser.buildIndex(
 		"input.cc",
 		TextAccess::createFromString(code),
-		utility::concat(
-			std::vector<std::string>{}, ClangCompiler::stdOption(ClangCompiler::getLatestCppStandard())));
+		utility::concat(compilerFlags, ClangCompiler::stdOption(ClangCompiler::getLatestCppStandard())));
 	return storage;
 }
 
@@ -4879,6 +4879,52 @@ TEST_CASE("cxx parser leaves non-deprecated nodes unmarked")
 	REQUIRE_FALSE(hasDeprecatedNode(storage, "fresh"));
 	REQUIRE(deprecationMessages(storage, "fresh").empty());
 }
+
+TEST_CASE("cxx parser finds C++20 named module declaration")
+{
+	std::shared_ptr<TestStorage> client =
+		parseCode("export module foo;\n", {"-x", "c++-module"});
+
+	bool found = false;
+	for (const std::string& m: client->modules)
+	{
+		if (m.find("foo") != std::string::npos)
+		{
+			found = true;
+		}
+	}
+	REQUIRE(found);
+}
+
+TEST_CASE("cxx parser records exported declaration as modifier bit")
+{
+	std::shared_ptr<IntermediateStorage> storage = parseCodeToStorage(
+		"export module foo;\n"
+		"export int bar();\n",
+		{"-x", "c++-module"});
+
+	bool exportedBar = false;
+	bool sawBar = false;
+	for (const StorageNode& node: storage->getStorageNodes())
+	{
+		if (node.serializedName.find("bar") != std::string::npos)
+		{
+			sawBar = true;
+			if ((node.modifiers & NODE_MODIFIER_EXPORTED) != 0)
+			{
+				exportedBar = true;
+			}
+		}
+	}
+	REQUIRE(sawBar);
+	REQUIRE(exportedBar);
+}
+
+// NOTE: module IMPORT edges (visitImportDecl -> EDGE_IMPORT) are verified at runtime
+// but need an importable module's BMI built with a matching target/std to load, which
+// is the Phase-2 driver concern rather than an in-harness unit test. Confirmed manually:
+// `import foo;` against a target-matched foo.pcm records `IMPORT: global -> foo` + a
+// MODULE node for foo, 0 errors.
 
 /*
 void _test_TEST()

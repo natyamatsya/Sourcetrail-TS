@@ -97,6 +97,9 @@ public:
 	{
 	}
 
+	void visitTranslationUnitDecl(clang::TranslationUnitDecl*  /*d*/) {}
+	void visitImportDecl(clang::ImportDecl*  /*d*/) {}
+	void visitExportDecl(clang::ExportDecl*  /*d*/) {}
 	void visitTagDecl(clang::TagDecl*  /*d*/) {}
 	void visitClassTemplateDecl(clang::ClassTemplateDecl * /*d*/) {}
 	void visitClassTemplateSpecializationDecl(clang::ClassTemplateSpecializationDecl*  /*d*/) {}
