@@ -219,9 +219,13 @@ can't be exercised by `zig build test` alone).
     method is attributed to the method. Verified on the fixture: `main → Point.add` (CALL),
     `main → Point.x` and `Point.add → Point.x/Point.y` (USAGE), `main → Point` and
     `Point.add → Point` (TYPE_USAGE), cross-file `main → square` (CALL) intact.
+  - **NameHierarchy wire format — ✅ landed** (`f6e9529f33`): serialized names are now the
+    real `<delim>\tm name\ts\tp …` hierarchy (`storage.serializeName`), symbols as
+    `[file, …dotted parts]` (`.` delimiter), files as `[path]` (`/`). The full ZLS index went
+    from hundreds of `NameHierarchy::deserialize` errors to **zero**. See
+    `context/PARITY_ZIG_INDEXER.md` for the full parity picture and remaining gaps.
   - **Next increment:** comptime/type resolution is WIP in ZLS — degrade to the syntactic
-    result where it can't resolve. Proper `NameHierarchy` wire-format (the `<file>::<name>`
-    strings currently produce cosmetic deserialize warnings).
+    result where it can't resolve. Local symbols (fn-local bindings) are the next parity gap.
 
 ## Phase 4 — Per-file incremental — ✅ landed + verified
 

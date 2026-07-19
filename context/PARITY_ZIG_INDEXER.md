@@ -160,7 +160,7 @@ mirroring how the Rust indexer degrades on unexpanded macros.
 | component access (public/private/…) | ✅ | ✅ | ❌ (Zig `pub` unused) |
 | node modifiers bitmask | 🟡 deprecated | ✅ actor/async/… | ❌ (always 0) |
 | node attributes (deprecated/cfg/availability/doc) | ✅ | ✅ | ❌ |
-| proper `NameHierarchy` wire format | ✅ | ✅ | ❌ plain `<file>::<name>` |
+| proper `NameHierarchy` wire format | ✅ | ✅ | ✅ (`[file, …parts]`, `.`/`/` delimiters) |
 
 ---
 
@@ -168,7 +168,7 @@ mirroring how the Rust indexer degrades on unexpanded macros.
 
 | # | Gap | Severity | Effort | Notes |
 |---|---|---|---|---|
-| 1 | `NameHierarchy` wire format (plain `<file>::<name>`) | **Med** (cosmetic log spam; GUI name display) | S–M | Emits `NameHierarchy.cpp` deserialize warnings on every symbol; the graph is still correct. Adopt the `"::\tm…\ts\tp"` format Rust/Swift use. |
+| ~~1~~ | ~~`NameHierarchy` wire format~~ | — | — | **Done** (`f6e9529f33`): emits `[file, …parts]` with `.`/`/` delimiters; ZLS deserialize errors dropped from hundreds to 0. |
 | 2 | Local symbols (fn-local bindings + type-3 locations) | Med (GUI highlight of locals) | M | Needs a scope-local naming scheme (`file<line:col>`), already sketched in the roadmap. |
 | 3 | `typedef` and `type_parameter` node kinds | Low–Med | M | `const T = U;` type aliases and generic params currently under-modelled. |
 | 4 | Component access from `pub` / node modifiers | Low | S | Map `pub`→public, else default; cheap enrichment. |
@@ -176,8 +176,8 @@ mirroring how the Rust indexer degrades on unexpanded macros.
 | 6 | Node attributes (deprecated/doc) | Low | M | Display-only side table; least impactful. |
 | 7 | `implicit` definition kind | Low | S | Zig has few compiler-synthesized decls to mark. |
 
-None block indexing. #1 is the most visible (it is the only thing that logs
-errors during an otherwise-clean run) and the natural next task.
+None block indexing. With #1 done the full index now runs with **zero** logged
+errors; the next most user-visible enrichment is local symbols (#2).
 
 ---
 
@@ -202,7 +202,8 @@ errors during an otherwise-clean run) and the natural next task.
 
 The Zig indexer is a **production-shaped peer** on everything that governs
 correctness and throughput — IPC contract, chunked storage, back-pressure,
-incremental reverse-deps — and has proven it at compiler scale. Its remaining
-distance from Rust/Swift is **semantic breadth**, led by the `NameHierarchy`
-format (#1) and local symbols (#2). Those are additive enrichments on a
+incremental reverse-deps, and now the `NameHierarchy` wire format (a full index
+runs with zero logged errors). Its remaining distance from Rust/Swift is
+**semantic breadth**, led by local symbols (#2) and the under-modelled
+type-alias / generic node kinds (#3). Those are additive enrichments on a
 foundation that is already at parity, not structural rework.
