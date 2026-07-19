@@ -9,16 +9,13 @@ fn indexString(gpa: std.mem.Allocator, store: *storage.Storage, src: [:0]const u
     try indexer.parser.indexSource(gpa, store, "test.zig", src);
 }
 
-/// Find the first node with the given serialized name; null if absent.
-/// Match by the file-local name: exact (file nodes) or the `<file>::<local>`
-/// suffix (symbol nodes are file-qualified via storage.qualifiedName).
+/// Find the node for a symbol declared in "test.zig" by its dotted local path
+/// (e.g. "Point.norm"); null if absent. Rebuilds the exact NameHierarchy wire
+/// name storage.qualifiedName would produce and matches on it.
 fn nodeNamed(store: *storage.Storage, local: []const u8) ?storage.StorageNode {
+    const expected = storage.qualifiedName(store.arena.allocator(), "test.zig", local) catch return null;
     for (store.nodes.items) |n| {
-        if (std.mem.eql(u8, n.serialized_name, local)) return n;
-        if (std.mem.endsWith(u8, n.serialized_name, "::") == false and
-            n.serialized_name.len > local.len + 2 and
-            std.mem.endsWith(u8, n.serialized_name, local) and
-            std.mem.endsWith(u8, n.serialized_name[0 .. n.serialized_name.len - local.len], "::")) return n;
+        if (std.mem.eql(u8, n.serialized_name, expected)) return n;
     }
     return null;
 }

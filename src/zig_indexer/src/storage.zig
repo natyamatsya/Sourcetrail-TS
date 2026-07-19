@@ -82,14 +82,52 @@ pub const DefinitionKind = enum(i32) {
 
 pub const Id = i64;
 
-/// Globally-unique serialized name for a symbol: `"<file>::<local dotted path>"`.
-/// Zig files are anonymous structs with no global namespace, so a bare local
-/// name (`square`) collides across files; qualifying by the defining file makes
-/// it unique. BOTH the declaration pass (parser) and the ZLS reference pass must
-/// build names this way so a resolved cross-file target dedups onto the exact
-/// node the target file's declaration pass created.
+// NameHierarchy wire delimiters (src/lib/data/name/NameHierarchy.cpp). A
+// serialized name is `<delimiter>\tm` followed by one `\tn`-separated block per
+// hierarchy element, each `name\ts<sig-prefix>\tp<sig-postfix>`.
+const meta_delim = "\tm";
+const name_delim = "\tn";
+const part_delim = "\ts";
+const sig_delim = "\tp";
+
+/// Serialize a NameHierarchy the way the C++ `NameHierarchy::deserialize`
+/// expects. `delimiter` joins the elements in the qualified-name display
+/// (`.` for Zig scopes, `/` for file paths). Symbols carry no signature, so each
+/// element's prefix/postfix are empty.
+pub fn serializeName(a: std.mem.Allocator, delimiter: []const u8, elements: []const []const u8) ![]u8 {
+    var buf: std.ArrayListUnmanaged(u8) = .empty;
+    errdefer buf.deinit(a);
+    try buf.appendSlice(a, delimiter);
+    try buf.appendSlice(a, meta_delim);
+    for (elements, 0..) |name, i| {
+        if (i > 0) try buf.appendSlice(a, name_delim);
+        try buf.appendSlice(a, name);
+        try buf.appendSlice(a, part_delim); // then empty signature prefix
+        try buf.appendSlice(a, sig_delim); // then empty signature postfix
+    }
+    return buf.toOwnedSlice(a);
+}
+
+/// The NameHierarchy wire name for a file node: a single element (its path) with
+/// the file delimiter, matching the Rust/Swift indexers (`/\tm<path>\ts\tp`).
+pub fn fileName(a: std.mem.Allocator, path: []const u8) ![]u8 {
+    return serializeName(a, "/", &.{path});
+}
+
+/// Globally-unique NameHierarchy wire name for a symbol: the defining file
+/// followed by the dotted local scope path (`Point.add` -> file, `Point`,
+/// `add`). Zig files are anonymous structs with no global namespace, so a bare
+/// local name (`square`) collides across files; the file element makes it
+/// unique and is also its true outer scope. BOTH the declaration pass (parser)
+/// and the ZLS reference pass build names this way so a resolved cross-file
+/// target dedups onto the exact node the target file's declaration pass created.
 pub fn qualifiedName(a: std.mem.Allocator, file: []const u8, local: []const u8) ![]u8 {
-    return std.fmt.allocPrint(a, "{s}::{s}", .{ file, local });
+    var elements: std.ArrayListUnmanaged([]const u8) = .empty;
+    defer elements.deinit(a);
+    try elements.append(a, file);
+    var it = std.mem.splitScalar(u8, local, '.');
+    while (it.next()) |part| try elements.append(a, part);
+    return serializeName(a, ".", elements.items);
 }
 
 pub const StorageNode = struct { id: Id, kind: NodeKind, serialized_name: []const u8, modifiers: i32 = 0 };
@@ -179,9 +217,13 @@ pub const Storage = struct {
             .indexed = indexed,
             .complete = true,
         });
-        // A file is also a node (NODE_FILE) keyed by its path, matching the C++ model.
-        try self.nodes.append(a, .{ .id = id, .kind = .file, .serialized_name = try a.dupe(u8, path) });
-        try self.node_by_name.put(a, path, id);
+        // A file is also a node (NODE_FILE). Its wire name is a NameHierarchy,
+        // but it is deduped/looked-up internally by its plain path (that is how
+        // @import resolution and the file-node lookup find it), so the map key
+        // stays the raw path while the stored serialized_name is the wire form.
+        const key = try a.dupe(u8, path);
+        try self.nodes.append(a, .{ .id = id, .kind = .file, .serialized_name = try fileName(a, path) });
+        try self.node_by_name.put(a, key, id);
         return id;
     }
 

@@ -48,7 +48,9 @@ test "IntermediateStorage FlatBuffers round-trip (build -> read back)" {
     try testing.expectEqual(store.source_locations.items.len, c.Sourcetrail_Ipc_StorageSourceLocation_vec_len(locs));
     try testing.expectEqual(store.next_id, c.Sourcetrail_Ipc_IntermediateStorage_next_id(s));
 
-    // A specific node survives with its serialized name + kind.
+    // A specific node survives with its NameHierarchy wire name + kind.
+    const point_name = try storage.qualifiedName(a, "test.zig", "Point");
+    defer a.free(point_name);
     var found_point = false;
     var i: usize = 0;
     const n = c.Sourcetrail_Ipc_StorageNode_vec_len(nodes);
@@ -56,7 +58,7 @@ test "IntermediateStorage FlatBuffers round-trip (build -> read back)" {
         const node = c.Sourcetrail_Ipc_StorageNode_vec_at(nodes, i);
         const name = c.Sourcetrail_Ipc_StorageNode_serialized_name(node);
         const name_slice = name[0..c.flatbuffers_string_len(name)];
-        if (std.mem.endsWith(u8, name_slice, "::Point")) {
+        if (std.mem.eql(u8, name_slice, point_name)) {
             found_point = true;
             try testing.expectEqual(@intFromEnum(storage.NodeKind.@"struct"), c.Sourcetrail_Ipc_StorageNode_type(node));
         }
