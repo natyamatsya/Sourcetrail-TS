@@ -15,9 +15,15 @@
 // You should have received a copy of the GNU Lesser General Public License
 // along with CppAidKit. If not, see <http://www.gnu.org/licenses/>.
 
-#include <catch2/catch_all.hpp>
+// A module import must precede other declarations, so it goes above the catch2 include.
+#ifdef SRCTRL_MODULE_BUILD
+import aidkit;
+#endif
 
+#include <catch2/catch_all.hpp>
+#ifndef SRCTRL_MODULE_BUILD
 #include <aidkit/thread_shared.hpp>
+#endif
 
 using namespace std;
 using namespace aidkit;

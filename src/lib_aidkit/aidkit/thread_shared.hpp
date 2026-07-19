@@ -17,16 +17,20 @@
 
 #pragma once
 
+#include "SrctrlModule.h"
+
+#ifndef SRCTRL_MODULE_PURVIEW
 #include <mutex>
 #include <functional>
 #include <type_traits>
+#endif
 
 namespace aidkit {
 
 // Replacing accessor/const_accessor with unique_ptr is possible but has the undesirable sideeffect
 // that 'if (data.access())' would compile because a unique_ptr is convertible to bool!
 
-template <typename T, typename Mutex = std::mutex>
+SRCTRL_EXPORT template <typename T, typename Mutex = std::mutex>
 class thread_shared {
 	public:
 		template <typename U>
@@ -145,7 +149,7 @@ class thread_shared {
 		mutable Mutex m_mutex;
 };
 
-template <typename Functor, typename... Types>
+SRCTRL_EXPORT template <typename Functor, typename... Types>
 inline decltype(auto) access(Functor &&functor, thread_shared<Types> &...datas)
 {
 	static_assert(std::is_invocable_v<Functor, Types & ...> && !std::is_invocable_v<Functor, Types ...>, "Functor must accept 'Type &' parameter(s)!");
@@ -155,7 +159,7 @@ inline decltype(auto) access(Functor &&functor, thread_shared<Types> &...datas)
 	return std::invoke(std::forward<Functor>(functor), datas.m_data...);
 }
 
-template <typename Functor, typename... Types>
+SRCTRL_EXPORT template <typename Functor, typename... Types>
 inline decltype(auto) access(Functor &&functor, const thread_shared<Types> &...datas)
 {
 	static_assert(std::is_invocable_v<Functor, const Types & ...>, "Functor must accept 'const Type &' parameter(s)!");

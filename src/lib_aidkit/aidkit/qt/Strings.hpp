@@ -17,14 +17,24 @@
 
 #pragma once
 
+#include "SrctrlModule.h"
+
+#ifndef SRCTRL_MODULE_PURVIEW
 #include <QString>
 #include <ostream>
+#endif
 
 namespace aidkit::qt {
 
-QChar operator ""_qc(char c);
-QString operator ""_qs(const char *str, std::size_t len);
+SRCTRL_EXPORT QChar operator ""_qc(char c);
+SRCTRL_EXPORT QString operator ""_qs(const char *str, std::size_t len);
 
-std::ostream &operator<<(std::ostream &output, const QString &qstring);
+SRCTRL_EXPORT std::ostream &operator<<(std::ostream &output, const QString &qstring);
 
 }
+
+// Inline implementations kept out of the header per the .inl convention. Making these functions
+// inline (rather than out-of-line in Strings.cpp) is also what lets header-based consumers keep
+// #including this header when AidKit is built as a module: they get their own definitions instead of
+// depending on the now module-attached symbols.
+#include "Strings.inl"

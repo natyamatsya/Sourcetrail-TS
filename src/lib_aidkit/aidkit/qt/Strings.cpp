@@ -15,25 +15,6 @@
 // You should have received a copy of the GNU Lesser General Public License
 // along with CppAidKit. If not, see <http://www.gnu.org/licenses/>.
 
+// The implementations now live inline in Strings.inl (included by Strings.hpp); this TU just compiles
+// the header in the classic (non-module) build.
 #include "Strings.hpp"
-
-namespace aidkit::qt {
-
-using namespace	std;
-
-QChar operator ""_qc(char c)
-{
-	return QChar(c);
-}
-
-QString operator ""_qs(const char *str, size_t len)
-{
-	return QString::fromUtf8(str, static_cast<qsizetype>(len));
-}
-
-ostream &operator<<(ostream &output, const QString &qstring)
-{
-	return output << qstring.toStdString();
-}
-
-}
