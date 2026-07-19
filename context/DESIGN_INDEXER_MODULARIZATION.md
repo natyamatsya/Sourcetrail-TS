@@ -201,10 +201,20 @@ cycles in `lib` is prerequisite work, and a good cleanup in its own right).
       instantiating FilePath's class from a module BMI. The synthetic mimic didn't crash because it never
       instantiated a *real* Qt-coupled class of FilePath's shape. Since FilePath is instantiated directly by
       countless (future module) consumers, this makes it unusable as a module. **Reverted; FilePath stays
-      classic.** `srctrl.qt` (the wrapper + the import-std coexistence) and `TimeStamp` (`:time`) stand;
-      FilePath (and by extension the GUI's Qt-heavy value types) waits on a clang fix. Minimal repro worth
-      filing upstream: a module exporting a class with a `std::unique_ptr<std::filesystem::path>`-ish member
-      whose inline ctor touches an imported-Qt type, instantiated in a consumer.
+      classic.** `srctrl.qt` (the wrapper + the import-std coexistence) and `TimeStamp` (`:time`) stand.
+    - **The crash is NOT Qt — confirmed by refactoring it away.** Made FilePath fully **Qt-free**
+      (`refactor(FilePath)` commit `ff778ee0`: elementary `${VAR}`/`%VAR%` scanning instead of
+      `QRegularExpression`+`qgetenv`; a plain `std::tolower` loop instead of the Qt-seam
+      `utility::toLowerCase` — a good cleanup regardless). The pure-std FilePath, as a leaf module, **still
+      segfaults** on `FilePath p("/x");`. So it was never Qt. Bisection then ruled out the member type
+      (minimal modules with `unique_ptr<filesystem::path>` / value `filesystem::path` / `unique_ptr<string>`
+      members all compile), the baseline (a stripped FilePath — ctors + `str`/`extension`/`empty` — compiles),
+      and `expandEnvironmentVariables` (stripped FilePath + that method + the real srctrl.utility/logging
+      imports compiles). **It's a specific method (or a method-count threshold) in FilePath's full ~34-inline-
+      member set** — a clang BMI-deserialization bug. Pinning the exact method is a deeper bisection; FilePath
+      is now Qt-free and better positioned for a clang fix. Upstream repro shape: a class with a
+      `unique_ptr<filesystem::path>` member and ~30 inline members mixing std::filesystem ops + an imported
+      module's helpers, instantiated in a consumer.
 
 - **`import std` — now GREEN for the whole first-party module set (utility + data + logging).** Getting
   there took fixing two real import-std-with-legacy-headers edges (both pre-existing, surfaced only when
