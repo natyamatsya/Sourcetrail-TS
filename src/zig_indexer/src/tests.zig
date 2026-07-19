@@ -160,6 +160,28 @@ test "file-as-struct: top-level fields are members of the file node" {
     try testing.expectEqual(@as(usize, 2), member_from_file);
 }
 
+test "local symbols dedup by name; each reference is a type-3 occurrence" {
+    const a = testing.allocator;
+    var store = storage.Storage.init(a);
+    defer store.deinit();
+    const file_id = try store.recordFile("test.zig", "zig", true);
+
+    // Two references to the same local (same declaration site) share one row.
+    const name = "test.zig<3:9>";
+    const id1 = try store.recordLocalSymbol(name);
+    _ = try store.recordLocation(id1, file_id, .{ .start_line = 3, .start_col = 9, .end_line = 3, .end_col = 9 }, .local_symbol);
+    const id2 = try store.recordLocalSymbol(name);
+    _ = try store.recordLocation(id2, file_id, .{ .start_line = 5, .start_col = 12, .end_line = 5, .end_col = 12 }, .local_symbol);
+
+    try testing.expectEqual(id1, id2);
+    try testing.expectEqual(@as(usize, 1), store.local_symbols.items.len);
+    var type3: usize = 0;
+    for (store.source_locations.items) |l| {
+        if (l.kind == .local_symbol) type3 += 1;
+    }
+    try testing.expectEqual(@as(usize, 2), type3);
+}
+
 test "chunker: small store is one borrowed chunk" {
     const a = testing.allocator;
     var store = storage.Storage.init(a);

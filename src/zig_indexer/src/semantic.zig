@@ -212,19 +212,24 @@ fn wireOne(
     file_node_id: Id,
 ) !void {
     const gpa = store.arena.allocator();
-    if (decl.decl != .ast_node) return;
+    const ref_byte = tree.tokens.items(.start)[ref_tok];
+
+    // A container-scope declaration (top-level or nested: Point, Point.add,
+    // Point.x) is one the declaration pass named — wire a graph edge to it.
+    // Anything else ZLS resolves an identifier to is a function-local binding
+    // (var/const/parameter/capture/label): record it as a local symbol instead.
+    if (decl.decl != .ast_node) return wireLocal(store, decl, handle, tree, ref_tok, file_node_id);
     const node = decl.decl.ast_node;
     const target_tree = &decl.handle.tree;
+    const map = try getDeclMap(decl_maps, gpa, decl.handle.uri.raw, target_tree);
+    const info = map.get(node) orelse return wireLocal(store, decl, handle, tree, ref_tok, file_node_id);
 
     const decl_byte = target_tree.tokens.items(.start)[decl.nameToken()];
-    const ref_byte = tree.tokens.items(.start)[ref_tok];
     // Skip the declaration's own name token (a self reference).
     if (std.mem.eql(u8, decl.handle.uri.raw, handle.uri.raw) and decl_byte == ref_byte) return;
 
     // Name + kind exactly as the declaration pass would, so the target dedups
     // onto the right node — top-level OR nested (Point.add, Point.x).
-    const map = try getDeclMap(decl_maps, gpa, decl.handle.uri.raw, target_tree);
-    const info = map.get(node) orelse return; // unnamed / unsupported target
     const target_path = try decl.handle.uri.toFsPath(gpa);
     const target_qual = try indexer.storage.qualifiedName(gpa, target_path, info.name);
     const edge_kind = edgeKindFor(info.kind);
@@ -249,6 +254,28 @@ fn wireOne(
     const gop = try edges.getOrPut(gpa, key);
     if (!gop.found_existing) gop.value_ptr.* = try store.recordEdge(edge_kind, context_id, target_id);
     _ = try store.recordLocation(gop.value_ptr.*, file_node_id, spanOfToken(tree, ref_tok), .token);
+}
+
+/// Record a function-local binding occurrence: a LOCATION_LOCAL_SYMBOL (type 3)
+/// at the reference site, tied to a local-symbol row keyed by the declaration
+/// site (`<file><line:col>`, the C++ `getLocalSymbolName` convention) so the GUI
+/// highlights every occurrence of the same local together. A local can only be
+/// referenced within its own file, so its declaration is in `tree`.
+fn wireLocal(
+    store: *Storage,
+    decl: DeclWithHandle,
+    handle: *zls.DocumentStore.Handle,
+    tree: *const Ast,
+    ref_tok: Ast.TokenIndex,
+    file_node_id: Id,
+) !void {
+    const gpa = store.arena.allocator();
+    if (!std.mem.eql(u8, decl.handle.uri.raw, handle.uri.raw)) return;
+    const decl_loc = tree.tokenLocation(0, decl.nameToken());
+    const path = decl.handle.uri.toFsPath(gpa) catch return;
+    const name = try std.fmt.allocPrint(gpa, "{s}<{d}:{d}>", .{ path, decl_loc.line + 1, decl_loc.column + 1 });
+    const ls_id = try store.recordLocalSymbol(name);
+    _ = try store.recordLocation(ls_id, file_node_id, spanOfToken(tree, ref_tok), .local_symbol);
 }
 
 fn spanOfToken(tree: *const Ast, tok: Ast.TokenIndex) Span {

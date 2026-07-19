@@ -185,6 +185,9 @@ pub const Storage = struct {
     /// De-dup: serialized_name -> node id (a symbol seen from multiple sites is
     /// one node), mirroring the C++ `serialized_name` UNIQUE constraint.
     node_by_name: std.StringHashMapUnmanaged(Id) = .empty,
+    /// De-dup: local-symbol name -> id (all occurrences of one function-local
+    /// binding share a row, keyed by the C++ `file<line:col>` naming convention).
+    local_symbol_by_name: std.StringHashMapUnmanaged(Id) = .empty,
 
     pub fn init(child: Allocator) Storage {
         return .{ .arena = std.heap.ArenaAllocator.init(child) };
@@ -237,6 +240,19 @@ pub const Storage = struct {
         try self.nodes.append(a, .{ .id = id, .kind = kind, .serialized_name = owned });
         try self.node_by_name.put(a, owned, id);
         if (def) |d| try self.symbols.append(a, .{ .id = id, .definition_kind = d });
+        return id;
+    }
+
+    /// Record (or dedup) a function-local binding by its unique name (the C++
+    /// `file<line:col>` declaration-site convention). Returns its element id, to
+    /// be given LOCATION_LOCAL_SYMBOL occurrences at each reference site.
+    pub fn recordLocalSymbol(self: *Storage, name: []const u8) !Id {
+        const a = self.alloc();
+        if (self.local_symbol_by_name.get(name)) |existing| return existing;
+        const id = self.createId();
+        const owned = try a.dupe(u8, name);
+        try self.local_symbols.append(a, .{ .id = id, .name = owned });
+        try self.local_symbol_by_name.put(a, owned, id);
         return id;
     }
 
