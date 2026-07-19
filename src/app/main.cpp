@@ -38,6 +38,9 @@
 #include "LanguagePackageSwift.h"
 #include "SourceGroupFactoryModuleSwift.h"
 
+#include "LanguagePackageZig.h"
+#include "SourceGroupFactoryModuleZig.h"
+
 
 #include <QByteArray>
 #include <QtEnvironmentVariables>
@@ -103,6 +106,7 @@ void addLanguagePackages()
 #endif
 	addLanguagePackage<language_packages::buildRustLanguagePackage,  SourceGroupFactoryModuleRust,  LanguagePackageRust>();
 	addLanguagePackage<language_packages::buildSwiftLanguagePackage, SourceGroupFactoryModuleSwift, LanguagePackageSwift>();
+	addLanguagePackage<language_packages::buildZigLanguagePackage,   SourceGroupFactoryModuleZig,   LanguagePackageZig>();
 }
 
 int main(int argc, char* argv[])

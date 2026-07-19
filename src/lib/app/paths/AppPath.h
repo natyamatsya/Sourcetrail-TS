@@ -14,6 +14,7 @@ public:
 
 	static FilePath getRustIndexerFilePath();
 	static FilePath getSwiftIndexerFilePath();
+	static FilePath getZigIndexerFilePath();
 
 private:
 	static FilePath s_sharedDataDirectoryPath;

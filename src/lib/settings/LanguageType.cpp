@@ -12,6 +12,8 @@ std::string languageTypeToString(LanguageType t)
 		return "Rust";
 	case LanguageType::SWIFT:
 		return "Swift";
+	case LanguageType::ZIG:
+		return "Zig";
 	case LanguageType::CUSTOM:
 		return "Custom";
 	case LanguageType::UNKNOWN:
@@ -35,6 +37,8 @@ LanguageType getLanguageTypeForSourceGroupType(SourceGroupType t)
 		return LanguageType::RUST;
 	case SourceGroupType::SWIFT_EMPTY:
 		return LanguageType::SWIFT;
+	case SourceGroupType::ZIG_EMPTY:
+		return LanguageType::ZIG;
 	case SourceGroupType::CUSTOM_COMMAND:
 		return LanguageType::CUSTOM;
 	default:

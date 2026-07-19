@@ -49,3 +49,13 @@ FilePath AppPath::getSwiftIndexerFilePath()
 	else
 		return s_sharedDataDirectoryPath.getConcatenated(name);
 }
+
+FilePath AppPath::getZigIndexerFilePath()
+{
+	std::string name("sourcetrail_zig_indexer" + FilePath::getExecutableExtension());
+
+	if (!s_cxxIndexerDirectoryPath.empty())
+		return s_cxxIndexerDirectoryPath.getConcatenated(name);
+	else
+		return s_sharedDataDirectoryPath.getConcatenated(name);
+}

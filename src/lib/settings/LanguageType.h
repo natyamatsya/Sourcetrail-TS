@@ -14,6 +14,7 @@ enum class LanguageType
 	C,
 	RUST,
 	SWIFT,
+	ZIG,
 	CUSTOM
 };
 

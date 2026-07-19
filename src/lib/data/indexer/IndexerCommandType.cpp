@@ -10,6 +10,8 @@ std::string indexerCommandTypeToString(IndexerCommandType type)
 		return "indexer_command_rust";
 	case IndexerCommandType::INDEXER_COMMAND_SWIFT:
 		return "indexer_command_swift";
+	case IndexerCommandType::INDEXER_COMMAND_ZIG:
+		return "indexer_command_zig";
 	case IndexerCommandType::INDEXER_COMMAND_CUSTOM:
 		return "indexer_command_custom";
 	default:
@@ -26,6 +28,8 @@ IndexerCommandType stringToIndexerCommandType(const std::string& s)
 		return IndexerCommandType::INDEXER_COMMAND_RUST;
 	if (s == indexerCommandTypeToString(IndexerCommandType::INDEXER_COMMAND_SWIFT))
 		return IndexerCommandType::INDEXER_COMMAND_SWIFT;
+	if (s == indexerCommandTypeToString(IndexerCommandType::INDEXER_COMMAND_ZIG))
+		return IndexerCommandType::INDEXER_COMMAND_ZIG;
 	if (s == indexerCommandTypeToString(IndexerCommandType::INDEXER_COMMAND_CUSTOM))
 		return IndexerCommandType::INDEXER_COMMAND_CUSTOM;
 	return IndexerCommandType::INDEXER_COMMAND_UNKNOWN;

@@ -16,6 +16,8 @@ std::string sourceGroupTypeToString(SourceGroupType v)
 		return "Rust Empty";
 	case SourceGroupType::SWIFT_EMPTY:
 		return "Swift Empty";
+	case SourceGroupType::ZIG_EMPTY:
+		return "Zig Empty";
 	case SourceGroupType::CUSTOM_COMMAND:
 		// This is the serialization string stored in project files; upstream projects
 		// use exactly this value, so it must not change. (That it matches the
@@ -43,6 +45,8 @@ std::string sourceGroupTypeToProjectSetupString(SourceGroupType v)
 		return "Empty Rust Source Group";
 	case SourceGroupType::SWIFT_EMPTY:
 		return "Empty Swift Source Group";
+	case SourceGroupType::ZIG_EMPTY:
+		return "Empty Zig Source Group";
 	case SourceGroupType::CUSTOM_COMMAND:
 		return "Custom Command Source Group";
 	case SourceGroupType::UNKNOWN:
@@ -65,6 +69,8 @@ SourceGroupType stringToSourceGroupType(const std::string& v)
 		return SourceGroupType::RUST_EMPTY;
 	if (v == sourceGroupTypeToString(SourceGroupType::SWIFT_EMPTY))
 		return SourceGroupType::SWIFT_EMPTY;
+	if (v == sourceGroupTypeToString(SourceGroupType::ZIG_EMPTY))
+		return SourceGroupType::ZIG_EMPTY;
 	if (v == sourceGroupTypeToString(SourceGroupType::CUSTOM_COMMAND))
 		return SourceGroupType::CUSTOM_COMMAND;
 

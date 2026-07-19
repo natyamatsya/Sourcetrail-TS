@@ -8,6 +8,7 @@
 #endif
 #include "IndexerCommandRust.h"
 #include "IndexerCommandSwift.h"
+#include "IndexerCommandZig.h"
 #include "logging.h"
 
 #include "indexer_command_generated.h"
@@ -117,6 +118,18 @@ flatbuffers::DetachedBuffer serializeIndexerCommands(
 			swiftToolchainPath = builder.CreateString(swiftCmd->getToolchainPath());
 			swiftIndexStorePath = builder.CreateString(swiftCmd->getIndexStorePath());
 			swiftSpecializationScope = builder.CreateString(swiftCmd->getSpecializationScope());
+		}
+
+		if (auto* zigCmd = dynamic_cast<IndexerCommandZig*>(cmd.get()))
+		{
+			type = Sourcetrail::Ipc::IndexerCommandType_Zig;
+
+			std::vector<flatbuffers::Offset<flatbuffers::String>> paths;
+			for (const auto& p : zigCmd->getIndexedPaths())
+				paths.push_back(builder.CreateString(p.str()));
+			indexedPaths = builder.CreateVector(paths);
+
+			workingDirectory = builder.CreateString(zigCmd->getWorkingDirectory().str());
 		}
 
 		fbCommands.push_back(Sourcetrail::Ipc::CreateIndexerCommand(
@@ -254,6 +267,21 @@ std::vector<std::shared_ptr<IndexerCommand>> deserializeIndexerCommands(
 				indexedPaths, workingDir,
 				swiftBuildArgs, swiftToolchainPath, swiftIndexStorePath,
 				swiftSpecializationScope));
+			break;
+		}
+		case Sourcetrail::Ipc::IndexerCommandType_Zig:
+		{
+			std::set<FilePath> indexedPaths;
+			if (fbCmd->indexed_paths())
+				for (const auto* p : *fbCmd->indexed_paths())
+					indexedPaths.insert(FilePath(p->c_str()));
+
+			FilePath workingDir;
+			if (fbCmd->working_directory())
+				workingDir = FilePath(fbCmd->working_directory()->c_str());
+
+			result.push_back(std::make_shared<IndexerCommandZig>(
+				FilePath(fbCmd->source_file_path()->c_str()), indexedPaths, workingDir));
 			break;
 		}
 		default:

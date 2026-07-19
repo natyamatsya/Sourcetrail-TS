@@ -23,6 +23,7 @@ namespace
 	using enum IndexerCommandType;
 constexpr bool hasRustLanguagePackage{language_packages::buildRustLanguagePackage};
 constexpr bool hasSwiftLanguagePackage{language_packages::buildSwiftLanguagePackage};
+constexpr bool hasZigLanguagePackage{language_packages::buildZigLanguagePackage};
 
 // Rust supervisors take the ids right after the C++ range (crate fan-out R1):
 // processCount+1 .. processCount+rustSupervisorCount; the Swift supervisors
@@ -39,6 +40,22 @@ constexpr bool hasSwiftLanguagePackage{language_packages::buildSwiftLanguagePack
 		return static_cast<ProcessId>(processCount + rustSupervisorCount + 1 + supervisorIndex);
 
 	return static_cast<ProcessId>(processCount + 1 + supervisorIndex);
+}
+
+// Zig supervisors take the ids trailing the Swift range: processCount +
+// (rust supervisors if enabled) + (swift supervisors if enabled) + 1 + index.
+[[maybe_unused]] ProcessId zigIndexerProcessId(
+	const size_t processCount,
+	const size_t rustSupervisorCount,
+	const size_t swiftSupervisorCount,
+	const size_t supervisorIndex)
+{
+	size_t base = processCount;
+	if constexpr (hasRustLanguagePackage)
+		base += rustSupervisorCount;
+	if constexpr (hasSwiftLanguagePackage)
+		base += swiftSupervisorCount;
+	return static_cast<ProcessId>(base + 1 + supervisorIndex);
 }
 
 enum class IndexerProcessErrorCode
@@ -137,7 +154,8 @@ TaskBuildIndex::TaskBuildIndex(
 	const std::string& appUUID,
 	const std::vector<IndexerClusterEntry>& cxxClusterPlan,
 	size_t rustSupervisorCount,
-	size_t swiftSupervisorCount)
+	size_t swiftSupervisorCount,
+	size_t zigSupervisorCount)
 	: m_storageProvider(storageProvider)
 	, m_dialogView(dialogView)
 	, m_appUUID(appUUID)
@@ -145,6 +163,7 @@ TaskBuildIndex::TaskBuildIndex(
 	, m_processCount(processCount)
 	, m_rustSupervisorCount(rustSupervisorCount > 0 ? rustSupervisorCount : 1)
 	, m_swiftSupervisorCount(swiftSupervisorCount > 0 ? swiftSupervisorCount : 1)
+	, m_zigSupervisorCount(zigSupervisorCount > 0 ? zigSupervisorCount : 1)
 {
 	if (m_rustSupervisorCount > 1)
 	{
@@ -155,6 +174,11 @@ TaskBuildIndex::TaskBuildIndex(
 	{
 		LOG_INFO_STREAM(
 			<< "swift package fan-out: " << m_swiftSupervisorCount << " supervisors");
+	}
+	if (m_zigSupervisorCount > 1)
+	{
+		LOG_INFO_STREAM(
+			<< "zig fan-out: " << m_zigSupervisorCount << " supervisors");
 	}
 	if (cxxClusterPlan.empty())
 		return;
@@ -255,6 +279,23 @@ void TaskBuildIndex::doEnter(std::shared_ptr<Blackboard> blackboard)
 			m_runningThreadCount++;
 			m_processThreads.emplace_back(
 				&TaskBuildIndex::runSwiftIndexerProcess, this, swiftProcessId, logFilePath);
+		}
+	}
+
+	// Start the Zig indexer supervisors: the analog of the Rust/Swift loops,
+	// with ids trailing the Swift supervisors so each has its own storage
+	// channel.
+	if constexpr (hasZigLanguagePackage)
+	{
+		for (size_t k = 0; k < m_zigSupervisorCount; k++)
+		{
+			const ProcessId zigProcessId{
+				zigIndexerProcessId(m_processCount, m_rustSupervisorCount, m_swiftSupervisorCount, k)};
+			m_zigStorageManagers.push_back(std::make_shared<IntermediateStorageManagerImpl>(
+				m_appUUID, zigProcessId, true));
+			m_runningThreadCount++;
+			m_processThreads.emplace_back(
+				&TaskBuildIndex::runZigIndexerProcess, this, zigProcessId, logFilePath);
 		}
 	}
 
@@ -582,6 +623,16 @@ void TaskBuildIndex::runSwiftIndexerProcess(ProcessId processId, const std::stri
 		"Swift indexer process");
 }
 
+void TaskBuildIndex::runZigIndexerProcess(ProcessId processId, const std::string& logFilePath)
+{
+	runExternalIndexerProcess(
+		processId,
+		logFilePath,
+		AppPath::getZigIndexerFilePath(),
+		IndexerCommandType::INDEXER_COMMAND_ZIG,
+		"Zig indexer process");
+}
+
 void TaskBuildIndex::runExternalIndexerProcess(
 	ProcessId processId,
 	const std::string& logFilePath,
@@ -730,6 +781,15 @@ bool TaskBuildIndex::fetchIntermediateStorages(std::shared_ptr<Blackboard> black
 					storageManager = rustManager;
 			}
 		}
+		if constexpr (hasZigLanguagePackage)
+		{
+			for (const auto& zigManager: m_zigStorageManagers)
+			{
+				if (!storageManager && zigManager &&
+					finishedProcessId == zigManager->getProcessId())
+					storageManager = zigManager;
+			}
+		}
 		if (
 			!storageManager &&
 			static_cast<size_t>(finishedProcessId) <= m_interprocessIntermediateStorageManagers.size())
@@ -777,6 +837,17 @@ bool TaskBuildIndex::fetchIntermediateStorages(std::shared_ptr<Blackboard> black
 						drained.push_back(swiftManager->popIntermediateStorage());
 					}
 				}
+		}
+		if constexpr (hasZigLanguagePackage)
+		{
+			for (const auto& zigManager: m_zigStorageManagers)
+			{
+				if (zigManager && zigManager->peekCount() > 0)
+				{
+					LOG_INFO_STREAM(<< zigManager->getProcessId() << " - unsignaled zig storage");
+					drained.push_back(zigManager->popIntermediateStorage());
+				}
+			}
 		}
 	}
 
