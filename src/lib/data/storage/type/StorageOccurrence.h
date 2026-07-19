@@ -1,9 +1,13 @@
 #ifndef STORAGE_OCCURRENCE_H
 #define STORAGE_OCCURRENCE_H
 
-#include "types.h"
+#include "SrctrlModule.h"
 
-struct StorageOccurrence
+#ifndef SRCTRL_MODULE_PURVIEW
+#include "types.h"
+#endif
+
+SRCTRL_EXPORT struct StorageOccurrence
 {
 	StorageOccurrence(): elementId(0), sourceLocationId(0) {}
 

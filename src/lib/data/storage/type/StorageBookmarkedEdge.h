@@ -1,11 +1,15 @@
 #ifndef STORAGE_BOOKMARKED_EDGE_H
 #define STORAGE_BOOKMARKED_EDGE_H
 
+#include "SrctrlModule.h"
+
+#ifndef SRCTRL_MODULE_PURVIEW
 #include <string>
 
 #include "Bookmark.h"
+#endif
 
-struct StorageBookmarkedEdgeData
+SRCTRL_EXPORT struct StorageBookmarkedEdgeData
 {
 	StorageBookmarkedEdgeData()
 		: bookmarkId(BookmarkId::NONE)
@@ -35,7 +39,7 @@ struct StorageBookmarkedEdgeData
 	bool sourceNodeActive;
 };
 
-struct StorageBookmarkedEdge: public StorageBookmarkedEdgeData
+SRCTRL_EXPORT struct StorageBookmarkedEdge: public StorageBookmarkedEdgeData
 {
 	StorageBookmarkedEdge():  id(0) {}
 

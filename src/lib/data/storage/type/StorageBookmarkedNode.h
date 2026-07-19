@@ -1,11 +1,15 @@
 #ifndef STORAGE_BOOKMARKED_NODE_H
 #define STORAGE_BOOKMARKED_NODE_H
 
+#include "SrctrlModule.h"
+
+#ifndef SRCTRL_MODULE_PURVIEW
 #include <string>
 
 #include "Bookmark.h"
+#endif
 
-struct StorageBookmarkedNodeData
+SRCTRL_EXPORT struct StorageBookmarkedNodeData
 {
 	StorageBookmarkedNodeData(): bookmarkId(BookmarkId::NONE) {}
 
@@ -18,7 +22,7 @@ struct StorageBookmarkedNodeData
 	std::string serializedNodeName;
 };
 
-struct StorageBookmarkedNode: public StorageBookmarkedNodeData
+SRCTRL_EXPORT struct StorageBookmarkedNode: public StorageBookmarkedNodeData
 {
 	StorageBookmarkedNode():  id(0) {}
 

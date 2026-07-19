@@ -1,16 +1,20 @@
 #ifndef STORAGE_NODE_ATTRIBUTE_H
 #define STORAGE_NODE_ATTRIBUTE_H
 
+#include "SrctrlModule.h"
+
+#ifndef SRCTRL_MODULE_PURVIEW
 #include <string>
 
 #include "Id.h"
 #include "NodeAttributeKind.h"
+#endif
 
 // A sparse, display-only fact about a node — the key→value side-table shape from
 // context/DESIGN_STORAGE_CODEGEN.md. Unlike StorageComponentAccess (one row per
 // node), a node may carry several attributes, so ordering is the full
 // (nodeId, key, value) triple.
-struct StorageNodeAttribute
+SRCTRL_EXPORT struct StorageNodeAttribute
 {
 	StorageNodeAttribute(): nodeId(0), key(NodeAttributeKind::NONE) {}
 

@@ -16,7 +16,17 @@ this must coordinate with — see §4).
 | `ladybug/` | 2 f | 139 | LadybugConnection | optional backend; last |
 | top-level impl — `PersistentStorage` (356 h), `StorageAccessProxy/Cache/Provider`, `IntermediateStorage`, `ConcurrentStorageIndex` (459 h), `ConcurrentTursoWriter`, turso | 21 f | 6569 | turso, search indexes, graph | god-object layer; do last |
 
-## 2. Phase S1 — `srctrl.storage:types` (the win, do first)
+## 2. Phase S1 — `srctrl.storage:types` (the win, do first) ✅ DONE
+
+Landed as the new `srctrl.storage` module (`srctrl_storage.cppm` + `:types` partition), `import
+srctrl.data`. Two incidentals fell out: (a) `NodeAttributeKind` (an `intToEnum` enum StorageNodeAttribute
+needs) was folded into `srctrl.data:types` like the other enums — a GMF `utilityEnum.h` would have clashed
+with the imported `srctrl.utility`; (b) the graph core's deferred `NodeKindMask`/`NodeModifierMask` `int`
+typedefs got `SRCTRL_EXPORT`ed — `StorageNode` is the first importer to *name* them. `Bookmark.h`/
+`TimeStamp.h` sit cleanly in the GMF (they pull no modularized header, and no problematic std internals, so
+import-std stays green). Verified all three modes: classic OFF, module ON, and `import std`.
+
+### (original scope, for reference)
 
 The 15 `type/` structs (`StorageNode`, `StorageEdge`, `StorageFile`, `StorageError`,
 `StorageSourceLocation`, `StorageSymbol`, `StorageLocalSymbol`, `StorageOccurrence`,

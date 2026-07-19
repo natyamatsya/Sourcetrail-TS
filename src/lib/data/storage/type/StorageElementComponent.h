@@ -1,12 +1,16 @@
 #ifndef STORAGE_ELEMENT_COMPONENT_H
 #define STORAGE_ELEMENT_COMPONENT_H
 
+#include "SrctrlModule.h"
+
+#ifndef SRCTRL_MODULE_PURVIEW
 #include "ElementComponentKind.h"
 #include "Id.h"
 
 #include <string>
+#endif
 
-struct StorageElementComponent
+SRCTRL_EXPORT struct StorageElementComponent
 {
 	StorageElementComponent(): elementId(0), type(ElementComponentKind::ELEMENT_COMPONENT_NONE) {}
 

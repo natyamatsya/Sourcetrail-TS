@@ -1,11 +1,15 @@
 #ifndef STORAGE_FILE_H
 #define STORAGE_FILE_H
 
+#include "SrctrlModule.h"
+
+#ifndef SRCTRL_MODULE_PURVIEW
 #include <string>
 
 #include "types.h"
+#endif
 
-struct StorageFile
+SRCTRL_EXPORT struct StorageFile
 {
 	StorageFile()
 		: id(0)

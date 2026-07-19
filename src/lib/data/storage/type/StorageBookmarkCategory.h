@@ -1,11 +1,15 @@
 #ifndef STORAGE_BOOKMARK_CATEGORY_H
 #define STORAGE_BOOKMARK_CATEGORY_H
 
+#include "SrctrlModule.h"
+
+#ifndef SRCTRL_MODULE_PURVIEW
 #include <string>
 
 #include "types.h"
+#endif
 
-struct StorageBookmarkCategoryData
+SRCTRL_EXPORT struct StorageBookmarkCategoryData
 {
 	StorageBookmarkCategoryData() = default;
 
@@ -14,7 +18,7 @@ struct StorageBookmarkCategoryData
 	std::string name;
 };
 
-struct StorageBookmarkCategory: public StorageBookmarkCategoryData
+SRCTRL_EXPORT struct StorageBookmarkCategory: public StorageBookmarkCategoryData
 {
 	StorageBookmarkCategory():  id(0) {}
 

@@ -1,11 +1,15 @@
 #ifndef STORAGE_LOCAL_SYMBOL_H
 #define STORAGE_LOCAL_SYMBOL_H
 
+#include "SrctrlModule.h"
+
+#ifndef SRCTRL_MODULE_PURVIEW
 #include <string>
 
 #include "types.h"
+#endif
 
-struct StorageLocalSymbolData
+SRCTRL_EXPORT struct StorageLocalSymbolData
 {
 	StorageLocalSymbolData() = default;
 
@@ -19,7 +23,7 @@ struct StorageLocalSymbolData
 	std::string name;
 };
 
-struct StorageLocalSymbol: public StorageLocalSymbolData
+SRCTRL_EXPORT struct StorageLocalSymbol: public StorageLocalSymbolData
 {
 	StorageLocalSymbol():  id(0) {}
 

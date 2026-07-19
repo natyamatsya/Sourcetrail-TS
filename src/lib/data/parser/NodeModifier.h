@@ -33,7 +33,7 @@ SRCTRL_EXPORT enum NodeModifierType
 	NODE_MODIFIER_EXPORTED = 1 << 4,
 };
 
-using NodeModifierMask = int;
+SRCTRL_EXPORT using NodeModifierMask = int;
 
 SRCTRL_EXPORT inline bool nodeModifierHas(NodeModifierMask modifiers, NodeModifierType flag)
 {

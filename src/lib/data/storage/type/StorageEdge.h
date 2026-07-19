@@ -1,9 +1,13 @@
 #ifndef STORAGE_EDGE_H
 #define STORAGE_EDGE_H
 
-#include "Edge.h"
+#include "SrctrlModule.h"
 
-struct StorageEdgeData
+#ifndef SRCTRL_MODULE_PURVIEW
+#include "Edge.h"
+#endif
+
+SRCTRL_EXPORT struct StorageEdgeData
 {
 	StorageEdgeData(): type(Edge::EDGE_UNDEFINED), sourceNodeId(0), targetNodeId(0) {}
 
@@ -33,7 +37,7 @@ struct StorageEdgeData
 	Id targetNodeId;
 };
 
-struct StorageEdge: public StorageEdgeData
+SRCTRL_EXPORT struct StorageEdge: public StorageEdgeData
 {
 	StorageEdge():  id(0) {}
 

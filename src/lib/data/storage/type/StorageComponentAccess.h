@@ -1,10 +1,14 @@
 #ifndef STORAGE_COMPONENT_ACCESS_H
 #define STORAGE_COMPONENT_ACCESS_H
 
+#include "SrctrlModule.h"
+
+#ifndef SRCTRL_MODULE_PURVIEW
 #include "AccessKind.h"
 #include "Id.h"
+#endif
 
-struct StorageComponentAccess
+SRCTRL_EXPORT struct StorageComponentAccess
 {
 	StorageComponentAccess(): nodeId(0), type(AccessKind::NONE) {}
 

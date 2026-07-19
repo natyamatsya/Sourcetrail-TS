@@ -1,10 +1,14 @@
 #ifndef STORAGE_SOURCE_LOCATION_H
 #define STORAGE_SOURCE_LOCATION_H
 
+#include "SrctrlModule.h"
+
+#ifndef SRCTRL_MODULE_PURVIEW
 #include "Id.h"
 #include "LocationType.h"
+#endif
 
-struct StorageSourceLocationData
+SRCTRL_EXPORT struct StorageSourceLocationData
 {
 	StorageSourceLocationData()
 		: fileNodeId(0), startLine(-1), startCol(-1), endLine(-1), endCol(-1), type(LocationType::TOKEN)
@@ -58,7 +62,7 @@ struct StorageSourceLocationData
 	LocationType type;
 };
 
-struct StorageSourceLocation: public StorageSourceLocationData
+SRCTRL_EXPORT struct StorageSourceLocation: public StorageSourceLocationData
 {
 	StorageSourceLocation():  id(0) {}
 

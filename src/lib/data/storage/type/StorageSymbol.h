@@ -1,10 +1,14 @@
 #ifndef STORAGE_SYMBOL_H
 #define STORAGE_SYMBOL_H
 
+#include "SrctrlModule.h"
+
+#ifndef SRCTRL_MODULE_PURVIEW
 #include "DefinitionKind.h"
 #include "Id.h"
+#endif
 
-struct StorageSymbol
+SRCTRL_EXPORT struct StorageSymbol
 {
 	StorageSymbol(): id(0), definitionKind(DefinitionKind::NONE) {}
 

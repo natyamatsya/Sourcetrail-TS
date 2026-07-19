@@ -12,7 +12,7 @@
 #include <string>
 #endif
 
-typedef int NodeKindMask;
+SRCTRL_EXPORT typedef int NodeKindMask;
 
 SRCTRL_EXPORT enum NodeKind : NodeKindMask
 {

@@ -35,3 +35,5 @@ import srctrl.utility;
 // the storage layer import them rather than duplicating them into a GMF.
 #include "NodeKind.h"
 #include "NodeModifier.h"
+// NodeAttributeKind (sparse node_attribute key) -- another intToEnum enum, consumed by StorageNodeAttribute.
+#include "NodeAttributeKind.h"

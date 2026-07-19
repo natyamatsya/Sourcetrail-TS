@@ -1,13 +1,17 @@
 #ifndef STORAGE_NODE_H
 #define STORAGE_NODE_H
 
+#include "SrctrlModule.h"
+
+#ifndef SRCTRL_MODULE_PURVIEW
 #include <string>
 
 #include "Id.h"
 #include "NodeKind.h"
 #include "NodeModifier.h"
+#endif
 
-struct StorageNodeData
+SRCTRL_EXPORT struct StorageNodeData
 {
 	StorageNodeData(): type(NODE_UNDEFINED), modifiers(NODE_MODIFIER_NONE) {}
 
@@ -26,7 +30,7 @@ struct StorageNodeData
 	NodeModifierMask modifiers;
 };
 
-struct StorageNode: public StorageNodeData
+SRCTRL_EXPORT struct StorageNode: public StorageNodeData
 {
 	StorageNode():  id(0) {}
 

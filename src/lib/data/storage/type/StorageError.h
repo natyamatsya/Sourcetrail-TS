@@ -1,12 +1,16 @@
 #ifndef STORAGE_ERROR_H
 #define STORAGE_ERROR_H
 
+#include "SrctrlModule.h"
+
+#ifndef SRCTRL_MODULE_PURVIEW
 #include <string>
 
 #include "FilePath.h"
 #include "types.h"
+#endif
 
-struct StorageErrorData
+SRCTRL_EXPORT struct StorageErrorData
 {
 	StorageErrorData():  fatal(false), indexed(false) {}
 
@@ -44,7 +48,7 @@ struct StorageErrorData
 	bool indexed;
 };
 
-struct StorageError: public StorageErrorData
+SRCTRL_EXPORT struct StorageError: public StorageErrorData
 {
 	StorageError():  id(0) {}
 

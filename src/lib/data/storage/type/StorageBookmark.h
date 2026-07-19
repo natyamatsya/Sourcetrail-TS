@@ -1,11 +1,15 @@
 #ifndef STORAGE_BOOKMARK_H
 #define STORAGE_BOOKMARK_H
 
+#include "SrctrlModule.h"
+
+#ifndef SRCTRL_MODULE_PURVIEW
 #include <string>
 
 #include "Bookmark.h"
+#endif
 
-struct StorageBookmarkData
+SRCTRL_EXPORT struct StorageBookmarkData
 {
 	StorageBookmarkData():  categoryId(0) {}
 
@@ -24,7 +28,7 @@ struct StorageBookmarkData
 	Id categoryId;
 };
 
-struct StorageBookmark: public StorageBookmarkData
+SRCTRL_EXPORT struct StorageBookmark: public StorageBookmarkData
 {
 	StorageBookmark():  bookmarkId(BookmarkId::NONE) {}
 
