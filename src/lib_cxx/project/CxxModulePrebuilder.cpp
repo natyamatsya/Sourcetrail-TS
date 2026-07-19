@@ -37,22 +37,20 @@ bool mightUseModules(const FilePath& file)
 }	 // namespace
 
 CxxModulePrebuilder::Result CxxModulePrebuilder::prebuild(
-	const std::set<FilePath>& sourceFiles,
-	const std::vector<std::string>& baseCompilerFlags,
-	const FilePath& cacheDir)
+	const std::map<FilePath, std::vector<std::string>>& fileFlags, const FilePath& cacheDir)
 {
 	Result result;
 
 	// Detect candidate module files without parsing anything; skip entirely (no subprocess) if none.
-	std::vector<std::string> candidates;
-	for (const FilePath& file: sourceFiles)
+	nlohmann::json candidateFiles = nlohmann::json::array();
+	for (const auto& [file, flags]: fileFlags)
 	{
 		if (mightUseModules(file))
 		{
-			candidates.push_back(file.str());
+			candidateFiles.push_back({{"path", file.str()}, {"flags", flags}});
 		}
 	}
-	if (candidates.empty())
+	if (candidateFiles.empty())
 	{
 		return result;
 	}
@@ -67,8 +65,7 @@ CxxModulePrebuilder::Result CxxModulePrebuilder::prebuild(
 
 	nlohmann::json request;
 	request["cacheDir"] = cacheDir.str();
-	request["sourceFiles"] = candidates;
-	request["baseFlags"] = baseCompilerFlags;
+	request["files"] = candidateFiles;
 	{
 		std::ofstream out(requestPath.str());
 		out << request.dump();
