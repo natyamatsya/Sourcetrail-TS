@@ -1,18 +1,3 @@
+// Implementations are now inline in DefinitionKind.inl (included by the header); this TU just compiles
+// the header in the classic (non-module) build.
 #include "DefinitionKind.h"
-
-namespace
-{
-
-const DefinitionKind DEFINITION_KINDS[] = {
-	DefinitionKind::NONE,
-	DefinitionKind::IMPLICIT,
-	DefinitionKind::EXPLICIT
-};
-
-}
-
-template<>
-DefinitionKind intToEnum(int value)
-{
-	return lookupEnum(value, DEFINITION_KINDS, DefinitionKind::NONE);
-}

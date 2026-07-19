@@ -1,11 +1,15 @@
 #ifndef TOKEN_COMPONENT_ABSTRACTION_H
 #define TOKEN_COMPONENT_ABSTRACTION_H
 
+#include "SrctrlModule.h"
+
+#ifndef SRCTRL_MODULE_PURVIEW
 #include <string>
 
 #include "TokenComponent.h"
+#endif
 
-class TokenComponentAbstraction: public TokenComponent
+SRCTRL_EXPORT class TokenComponentAbstraction: public TokenComponent
 {
 public:
 	enum class AbstractionType
@@ -26,5 +30,7 @@ public:
 private:
 	const AbstractionType m_abstraction;
 };
+
+#include "TokenComponentAbstraction.inl"
 
 #endif	  // TOKEN_COMPONENT_ABSTRACTION_H

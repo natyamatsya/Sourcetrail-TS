@@ -1,9 +1,13 @@
 #ifndef TOKEN_COMPONENT_IS_AMBIGUOUS_H
 #define TOKEN_COMPONENT_IS_AMBIGUOUS_H
 
-#include "TokenComponent.h"
+#include "SrctrlModule.h"
 
-class TokenComponentIsAmbiguous: public TokenComponent
+#ifndef SRCTRL_MODULE_PURVIEW
+#include "TokenComponent.h"
+#endif
+
+SRCTRL_EXPORT class TokenComponentIsAmbiguous: public TokenComponent
 {
 public:
 	inline std::shared_ptr<TokenComponent> copy() const override

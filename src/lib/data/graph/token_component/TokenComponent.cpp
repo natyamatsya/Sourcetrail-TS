@@ -1,3 +1,3 @@
+// Member definitions are now inline in TokenComponent.inl (included by the header); this TU just
+// compiles the header in the classic (non-module) build.
 #include "TokenComponent.h"
-
-TokenComponent::~TokenComponent() = default;

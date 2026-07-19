@@ -266,9 +266,25 @@ cycles in `lib` is prerequisite work, and a good cleanup in its own right).
     follows global module"). A forward decl of a *module* type (`class SourceLocationFile;`, needed for the
     cycle) must carry `SRCTRL_EXPORT`, else the plain forward decl gives it module linkage and the later
     `export class` def fails ("cannot export redeclaration … previous has module linkage").
-- **Next — `graph/` (14 interconnected headers: Node/Edge/Graph/Token + token_component), then
-  `srctrl.storage` (45 headers, incl. sqlpp/SQL-schema codegen that needs its own assessment).** All the
-  mechanics are now settled; these are larger, mostly-mechanical batches.
+- **Phase 2 (cont.) — `graph/` started: the `token_component/` leaf layer → `srctrl.data:graph`, plus
+  three data enums folded into `:types`. ✅** The `TokenComponent` polymorphic base + its ~9 concrete
+  subtypes (`TokenComponentAbstraction`/`Access`/`BundledEdges`/`Const`/`FilePath`/`Static`/
+  `InheritanceChain`/`IsAmbiguous`) are now the `:graph` partition (wrapper GMF: `types.h`/`FilePath.h` +
+  std; `import :types;` for `AccessKind`). The three `intToEnum`-specializing enums the graph core needs
+  (`ElementComponentKind`, `DefinitionKind`, `AccessKind` — same cross-module pattern as `LocationType`)
+  went into `:types` rather than the GMF, so `:graph`/Node/Edge import them instead of duplicating. New
+  finding this cluster proved:
+  - **Polymorphic class hierarchies cross the module boundary cleanly.** An exported base with virtual
+    functions + derived overrides works for importers *and* header-consumers — virtual dispatch **and**
+    RTTI (`dynamic_cast`) both resolve — provided the key function (the virtual destructor) is `inline`
+    like every other member (the same all-members-inline rule; verified with an isolated test + the
+    `TokenComponentStatic::copy()` interop in the data consumer).
+- **Next — the graph *core* (`Node`/`Edge`/`Graph`/`Token`, ~840 out-of-line lines) into `:graph`.** The
+  hard part left in `graph/`: the `Node`⇄`Edge` cycle (established mutual-dep ordering), `NameHierarchy`
+  (`:name`) + `utilityEnum`/`utilityString` (`srctrl.utility`) cross-module deps, and LOG usage
+  throughout (`logging.h` in the GMF — inlinable, it forward-declares no graph type, unlike the
+  `NameHierarchy::deserialize` seam). Then `srctrl.storage` (45 headers, incl. sqlpp/SQL-schema codegen
+  that needs its own assessment).
 - **Phase 3 — `srctrl.cxx`.** Modularize `lib_cxx` with partitions; absorb the Clang-header BMI cost.
 - **Phase 4 — the indexer binary.** `src/indexer/main.cpp` becomes a pure consumer:
   `import srctrl.cxx;` (+ optionally `import std;`).

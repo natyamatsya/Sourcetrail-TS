@@ -59,7 +59,8 @@ if(SOURCETRAIL_CXX_MODULES_ENABLED)
 				data/srctrl_data.cppm
 				data/srctrl_data-types.cppm
 				data/srctrl_data-name.cppm
-				data/srctrl_data-location.cppm)
+				data/srctrl_data-location.cppm
+				data/srctrl_data-graph.cppm)
 	# Module scanning of the regular sources is off by the project-wide default (stdexec breaks
 	# clang-scan-deps -- see the top-level CMakeLists); the .cppm interface units are still scanned.
 	if(SOURCETRAIL_CXX_IMPORT_STD)

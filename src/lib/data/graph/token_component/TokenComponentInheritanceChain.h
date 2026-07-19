@@ -1,9 +1,13 @@
 #ifndef TOKEN_COMPONENT_INHERITANCE_CHAIN_H
 #define TOKEN_COMPONENT_INHERITANCE_CHAIN_H
 
-#include "TokenComponent.h"
+#include "SrctrlModule.h"
 
-class TokenComponentInheritanceChain: public TokenComponent
+#ifndef SRCTRL_MODULE_PURVIEW
+#include "TokenComponent.h"
+#endif
+
+SRCTRL_EXPORT class TokenComponentInheritanceChain: public TokenComponent
 {
 public:
 	TokenComponentInheritanceChain(const std::vector<Id>& inheritanceEdgeIds)

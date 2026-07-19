@@ -1,15 +1,3 @@
+// Implementations are now inline in ElementComponentKind.inl (included by the header); this TU just
+// compiles the header in the classic (non-module) build.
 #include "ElementComponentKind.h"
-
-template <>
-ElementComponentKind intToEnum(int value)
-{
-	using enum ElementComponentKind;
-	switch (static_cast<ElementComponentKind>(value))
-	{
-		case ELEMENT_COMPONENT_IS_AMBIGUOUS:
-			return ELEMENT_COMPONENT_IS_AMBIGUOUS;
-		default:
-			break;
-	}
-	return ELEMENT_COMPONENT_NONE;
-}

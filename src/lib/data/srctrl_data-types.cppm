@@ -6,6 +6,7 @@ module;
 #include <array>
 #include <cstddef>
 #include <string>
+#include <vector>
 #endif
 
 export module srctrl.data:types;
@@ -23,3 +24,9 @@ import srctrl.utility;
 #include "TooltipOrigin.h"
 #include "NameDelimiterType.h"
 #include "LocationType.h"
+// More intToEnum-specializing data enums (same cross-module pattern as LocationType). AccessKind and
+// DefinitionKind are consumed by the graph token-components / Node, so they live in :types (the graph
+// partition imports :types) rather than being duplicated into the GMF.
+#include "ElementComponentKind.h"
+#include "DefinitionKind.h"
+#include "AccessKind.h"

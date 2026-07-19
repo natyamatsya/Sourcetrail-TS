@@ -1,14 +1,18 @@
 #ifndef TOKEN_COMPONENT_BUNDLED_EDGES_H
 #define TOKEN_COMPONENT_BUNDLED_EDGES_H
 
+#include "SrctrlModule.h"
+
+#ifndef SRCTRL_MODULE_PURVIEW
 #include <map>
 #include <set>
 
 #include "types.h"
 
 #include "TokenComponent.h"
+#endif
 
-class TokenComponentBundledEdges: public TokenComponent
+SRCTRL_EXPORT class TokenComponentBundledEdges: public TokenComponent
 {
 public:
 	enum class Direction
@@ -38,5 +42,7 @@ private:
 	std::map<Id, Direction> m_ids;
 	Direction m_direction = Direction::DIRECTION_INVALID;
 };
+
+#include "TokenComponentBundledEdges.inl"
 
 #endif	  // TOKEN_COMPONENT_BUNDLED_EDGES_H
