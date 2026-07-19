@@ -361,6 +361,23 @@ fn isImportCall(tree: *const Ast, node: Ast.Node.Index) bool {
     return std.mem.eql(u8, name, "@import") or std.mem.eql(u8, name, "@cImport");
 }
 
+/// Cheap syntactic pre-filter for `resolveTypedefs`: skip ZLS type resolution
+/// for consts whose init is a plain literal, which can never be a type value.
+/// This is sound (a type alias's init is never a literal — it is a name, call,
+/// conditional, or type-constructor expression) and skips the bulk of value
+/// consts, keeping the typedef pass cheap on large files.
+fn couldBeType(tree: *const Ast, node: Ast.Node.Index) bool {
+    return switch (tree.nodeTag(node)) {
+        .number_literal,
+        .string_literal,
+        .multiline_string_literal,
+        .char_literal,
+        .enum_literal,
+        => false,
+        else => true,
+    };
+}
+
 /// Upgrade `const X = <expr>` bindings the declaration pass recorded as
 /// global_variable to NODE_TYPEDEF when ZLS resolves the value to a type (Zig
 /// has no syntactic type/value distinction, so this needs semantic resolution).
@@ -385,6 +402,7 @@ pub fn resolveTypedefs(session: *Session, store: *Storage, handle: *zls.Document
         if (tree.tokenTag(var_decl.ast.mut_token) != .keyword_const) continue;
         const init_node = var_decl.ast.init_node.unwrap() orelse continue;
         if (isImportCall(tree, init_node)) continue;
+        if (!couldBeType(tree, init_node)) continue; // skip plain-value consts cheaply
 
         const ty = (analyser.resolveTypeOfNode(.of(init_node, handle)) catch continue) orelse continue;
         if (!ty.is_type_val) continue;
