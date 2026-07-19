@@ -70,13 +70,13 @@ const DEFINITION_NONE: i32 = 0;
 const DEFINITION_IMPLICIT: i32 = 1;
 const DEFINITION_EXPLICIT: i32 = 2;
 
-// NodeModifier bitmask bits (src/lib/data/parser/NodeModifier.h). Rust only
+// NodeModifier bitmask bits (src/lib_core/data/parser/NodeModifier.h). Rust only
 // populates DEPRECATED today (from `#[deprecated]`); actor/async/nonisolated are
 // Swift's. The bit rides in StorageNode.modifiers, round-tripped as-is.
 const NODE_MODIFIER_DEPRECATED: i32 = 1 << 3;
 
 // NodeAttributeKind — sparse per-node metadata keys for the `node_attribute`
-// side table (src/lib/data/parser/NodeAttributeKind.h; append-only, never
+// side table (src/lib_core/data/parser/NodeAttributeKind.h; append-only, never
 // renumber). The value is a display-only string (tooltip payload).
 const NODE_ATTRIBUTE_DEPRECATED: i32 = 2;
 const NODE_ATTRIBUTE_CFG: i32 = 3;

@@ -15,12 +15,12 @@ file(GLOB Sourcetrail_lib_FBS CONFIGURE_DEPENDS
 	"${CMAKE_CURRENT_SOURCE_DIR}/data/indexer/interprocess/schemas/*.fbs"
 )
 
-add_library(Sourcetrail_lib
+add_library(Sourcetrail_lib_core
 	${CMAKE_CURRENT_BINARY_DIR}/language_packages.h
 	${Sourcetrail_lib_SOURCES}
 	${Sourcetrail_lib_FBS}
 )
-setDefaultTargetOptions(Sourcetrail_lib)
+setDefaultTargetOptions(Sourcetrail_lib_core)
 
 # Include directories: every subdirectory that contains at least one source file,
 # derived automatically — no hand-maintained list needed.
@@ -35,11 +35,11 @@ foreach(_f ${_lib_all_sources})
 endforeach()
 list(REMOVE_DUPLICATES _lib_include_dirs)
 
-target_include_directories(Sourcetrail_lib
+target_include_directories(Sourcetrail_lib_core
 	PUBLIC
 		${_lib_include_dirs}
 		.
-		"${CMAKE_BINARY_DIR}/src/lib"
+		"${CMAKE_BINARY_DIR}/src/lib_core"
 )
 
 # Phase 2 of the C++20-modules migration (context/DESIGN_INDEXER_MODULARIZATION.md): the srctrl.utility
@@ -48,7 +48,7 @@ target_include_directories(Sourcetrail_lib
 # files keep #including utilityEnum.h as ordinary TUs -- it's header-only, so they coexist with the
 # module.
 if(SOURCETRAIL_CXX_MODULES_ENABLED)
-	target_sources(Sourcetrail_lib
+	target_sources(Sourcetrail_lib_core
 		PUBLIC
 			FILE_SET CXX_MODULES FILES
 				utility/qt/srctrl_qt.cppm
@@ -84,14 +84,14 @@ if(SOURCETRAIL_CXX_MODULES_ENABLED)
 	# PRIVATE: the flag only has to be on the BMI *producer* -- it makes this target's BMIs full, so any
 	# consumer (here or in another target) reads the retained operator new/delete and never needs the flag.
 	if(CMAKE_CXX_COMPILER_ID MATCHES "Clang")
-		target_compile_options(Sourcetrail_lib PRIVATE -fno-modules-reduced-bmi)
+		target_compile_options(Sourcetrail_lib_core PRIVATE -fno-modules-reduced-bmi)
 	endif()
 	# Module scanning of the regular sources is off by the project-wide default (stdexec breaks
 	# clang-scan-deps -- see the top-level CMakeLists); the .cppm interface units are still scanned.
 	if(SOURCETRAIL_CXX_IMPORT_STD)
 		# srctrl.utility's wrapper `import std;`s under this option, so this target consumes the
 		# toolchain std module.
-		set_target_properties(Sourcetrail_lib PROPERTIES CXX_MODULE_STD ON)
+		set_target_properties(Sourcetrail_lib_core PROPERTIES CXX_MODULE_STD ON)
 	endif()
 	# Opt-in: compile sqlpp23's core+sqlite3 module interface units into the lib and have the SQLite storage
 	# impl `import sqlpp23.core/sqlite3` for the query DSL instead of #including it (SRCTRL_SQLPP23_MODULE
@@ -100,8 +100,8 @@ if(SOURCETRAIL_CXX_MODULES_ENABLED)
 	# stays a textual #include (sqlpp23 internals the module doesn't export -- see
 	# DESIGN_STORAGE_MODULARIZATION.md §3).
 	if(SOURCETRAIL_SQLPP23_MODULES)
-		sourcetrail_add_sqlpp23_modules(Sourcetrail_lib)
-		target_compile_definitions(Sourcetrail_lib PRIVATE SRCTRL_SQLPP23_MODULE)
+		sourcetrail_add_sqlpp23_modules(Sourcetrail_lib_core)
+		target_compile_definitions(Sourcetrail_lib_core PRIVATE SRCTRL_SQLPP23_MODULE)
 		set_source_files_properties(
 			"${CMAKE_CURRENT_SOURCE_DIR}/data/storage/sqlite/SqliteStorage.cpp"
 			"${CMAKE_CURRENT_SOURCE_DIR}/data/storage/sqlite/SqliteIndexStorage.cpp"
@@ -116,8 +116,8 @@ file(GLOB_RECURSE _cxx_settings_sources CONFIGURE_DEPENDS
 	"${CMAKE_CURRENT_SOURCE_DIR}/settings/source_group/component/cxx/*.cpp"
 	"${CMAKE_CURRENT_SOURCE_DIR}/settings/source_group/component/cxx/*.h"
 )
-target_sources(Sourcetrail_lib PRIVATE ${_cxx_settings_sources})
-target_include_directories(Sourcetrail_lib
+target_sources(Sourcetrail_lib_core PRIVATE ${_cxx_settings_sources})
+target_include_directories(Sourcetrail_lib_core
 	PUBLIC
 		settings/source_group/component/cxx
 		settings/source_group/type
@@ -210,22 +210,22 @@ if (SOURCETRAIL_AGENT_CONTROL)
 			COMMENT "Compiling agent FlatBuffer schema ${SCHEMA_NAME}.fbs"
 		)
 	endforeach()
-	target_compile_definitions(Sourcetrail_lib PUBLIC SOURCETRAIL_AGENT_CONTROL)
+	target_compile_definitions(Sourcetrail_lib_core PUBLIC SOURCETRAIL_AGENT_CONTROL)
 endif()
 
 add_custom_target(flatbuffers_schemas DEPENDS ${FLATBUFFERS_GENERATED_HEADERS})
-add_dependencies(Sourcetrail_lib flatbuffers_schemas)
+add_dependencies(Sourcetrail_lib_core flatbuffers_schemas)
 # lib_gui (QtUiSnapshot) also includes the generated agent headers, so it must wait
-# for schema generation too (src/lib_gui is add_subdirectory'd before src/lib).
+# for schema generation too (src/lib_gui is add_subdirectory'd before src/lib_core).
 if (TARGET Sourcetrail_lib_gui)
 	add_dependencies(Sourcetrail_lib_gui flatbuffers_schemas)
 endif()
 
-target_include_directories(Sourcetrail_lib PUBLIC ${FLATBUFFERS_GENERATED_DIR})
+target_include_directories(Sourcetrail_lib_core PUBLIC ${FLATBUFFERS_GENERATED_DIR})
 
 # ------------------------------------------------------------------------------
 
-target_link_libraries(Sourcetrail_lib
+target_link_libraries(Sourcetrail_lib_core
 	PUBLIC
 		AidKit_lib
 
@@ -257,7 +257,7 @@ target_link_libraries(Sourcetrail_lib
 )
 
 if (UNIX)
-	target_link_libraries(Sourcetrail_lib
+	target_link_libraries(Sourcetrail_lib_core
 		PUBLIC
 			${CMAKE_DL_LIBS}
 			Threads::Threads

@@ -1,4 +1,4 @@
-# QtResources (the resource-string accessor) moved down to src/lib/utility so `lib` -- which reaches for it
+# QtResources (the resource-string accessor) moved down to src/lib_core/utility so `lib` -- which reaches for it
 # from NodeType/GraphViewStyle -- no longer depends up on this target. res_gui now only carries the compiled
 # Qt .qrc data (added by qt_add_resources below); QtResources reads that data at runtime via QFile.
 add_library(Sourcetrail_res_gui)
@@ -168,6 +168,6 @@ target_include_directories(Sourcetrail_res_gui
 
 target_link_libraries(Sourcetrail_res_gui
 	PUBLIC
-		Sourcetrail_lib
+		Sourcetrail_lib_core
 		External_lib_qt
 )

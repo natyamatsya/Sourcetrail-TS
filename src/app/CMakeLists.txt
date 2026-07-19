@@ -16,7 +16,7 @@ set_target_properties(Sourcetrail
 
 target_link_libraries(Sourcetrail
 	PRIVATE
-		Sourcetrail_lib
+		Sourcetrail_lib_core
 		# lib is the base layer now (links no lib_gui/lib_cxx), so the app names the packages it needs:
 		# the GUI (brings res_gui transitively) and the Cxx language package + command codec.
 		Sourcetrail_lib_gui

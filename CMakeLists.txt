@@ -113,7 +113,7 @@ if(SOURCETRAIL_CXX_MODULES_ENABLED)
 	add_subdirectory(src/cxx_modules_poc)
 endif()
 
-configure_file(cmake/language_packages.h.in src/lib/language_packages.h)
+configure_file(cmake/language_packages.h.in src/lib_core/language_packages.h)
 
 # The Turso comparison backend swaps the storage layer's database types via
 # aliases (StorageDb/StorageStmt/StorageQuery), which changes the ABI of the
@@ -148,7 +148,7 @@ endif()
 
 # SOURCETRAIL_CLIENT_IDS only changes the body of SqliteIndexStorage::insertElement()
 # (the new members are always present, so no ABI change) — it is scoped to that
-# single source file in src/lib/CMakeLists.txt, not defined globally.
+# single source file in src/lib_core/CMakeLists.txt, not defined globally.
 
 
 # Make Ninja build verbose as well (https://github.com/ninja-build/ninja/issues/900):
@@ -186,7 +186,7 @@ set(CMAKE_CXX_EXTENSIONS OFF)
 set(CMAKE_FIND_PACKAGE_SORT_ORDER NATURAL)
 
 if (APPLE)
-	# Sourcetrail_lib and Sourcetrail_lib_gui (plus lib_cxx/res_gui) form a declared
+	# Sourcetrail_lib_core and Sourcetrail_lib_gui (plus lib_cxx/res_gui) form a declared
 	# dependency cycle, so CMake repeats the static archives on the link line for
 	# single-pass linkers. Apple's linker resolves archives in multiple passes and
 	# instead warns about every repetition ("ignoring duplicate libraries") on each
@@ -278,7 +278,7 @@ message(STATUS "Found stdexec (provides STDEXEC::stdexec)")
 
 # Agent-control channel — declared here (before thoth-ipc) because it decides
 # whether libipc is built with its optional async-receive (senders/receivers)
-# layer below. Consumed again in src/lib for the schema/compile-definition wiring.
+# layer below. Consumed again in src/lib_core for the schema/compile-definition wiring.
 option(SOURCETRAIL_AGENT_CONTROL "Build the agent-UI control channel (thoth-ipc + FlatBuffers)" ON)
 
 # thoth-ipc ----------------------------------------------------------------------
@@ -438,7 +438,7 @@ add_library(External_lib_glaze INTERFACE)
 target_link_libraries(External_lib_glaze INTERFACE glaze::glaze)
 
 # Rust crates via Corrosion ----------------------------------------------------
-# Fetched here (before src/external and src/lib) so the imported turso_shim
+# Fetched here (before src/external and src/lib_core) so the imported turso_shim
 # static-lib target exists when those subdirectories link against it. The Rust
 # indexer crate is imported later in its own section; only the shared Corrosion
 # fetch and the turso_shim import need to happen this early.
@@ -535,7 +535,7 @@ add_subdirectory(src/external)
 
 # Generated into lib's binary dir (on lib's include path): its only consumer is setupApp, which lives in
 # the base lib now. Keeping it out of lib_gui lets the headless indexer's bootstrap compile without lib_gui.
-configure_file(cmake/productVersion.h.in src/lib/productVersion.h)
+configure_file(cmake/productVersion.h.in src/lib_core/productVersion.h)
 
 add_subdirectory(src/resources)
 add_subdirectory(src/lib_gui)
@@ -546,13 +546,13 @@ if (UNIX)
 	find_package(Threads REQUIRED)
 endif()
 
-add_subdirectory(src/lib)
+add_subdirectory(src/lib_core)
 
 #
-# Resolve cyclic dependencies between Sourcetrail_lib and Sourcetrail_lib_gui:
+# Resolve cyclic dependencies between Sourcetrail_lib_core and Sourcetrail_lib_gui:
 #
 
-set_target_properties(Sourcetrail_lib
+set_target_properties(Sourcetrail_lib_core
 	PROPERTIES
 		LINK_INTERFACE_MULTIPLICITY 3
 )
@@ -722,7 +722,7 @@ if (BUILD_SWIFT_LANGUAGE_PACKAGE)
 	set(SWIFT_INDEXER_BINARY_NAME "sourcetrail_swift_indexer${CMAKE_EXECUTABLE_SUFFIX}")
 	set(SWIFT_INDEXER_BINARY_PATH "${SWIFT_INDEXER_BUILD_DIR}/release/${SWIFT_INDEXER_BINARY_NAME}")
 	set(SWIFT_INDEXER_APP_BINARY_PATH "${CMAKE_BINARY_DIR}/app/${SWIFT_INDEXER_BINARY_NAME}")
-	set(SWIFT_INDEXER_SCHEMA_DIR "${CMAKE_SOURCE_DIR}/src/lib/data/indexer/interprocess/schemas")
+	set(SWIFT_INDEXER_SCHEMA_DIR "${CMAKE_SOURCE_DIR}/src/lib_core/data/indexer/interprocess/schemas")
 	set(SWIFT_INDEXER_GENERATED_DIR "${SWIFT_INDEXER_BUILD_DIR}/generated")
 	set(
 		SWIFT_INDEXER_PACKAGE_GENERATED_DIR

@@ -22,7 +22,7 @@ target_include_directories(Sourcetrail_lib_cxx
 
 target_link_libraries(Sourcetrail_lib_cxx
 	PUBLIC
-		Sourcetrail_lib
+		Sourcetrail_lib_core
 		External_lib_clang
 )
 

@@ -81,7 +81,7 @@ target_include_directories(Sourcetrail_lib_gui
 
 target_link_libraries(Sourcetrail_lib_gui
 	PUBLIC
-		Sourcetrail_lib
+		Sourcetrail_lib_core
 		# The Cxx project-wizard content (paths/) uses lib_cxx source-group headers directly. Previously this
 		# came transitively via lib's umbrella link to lib_cxx; now that lib no longer links up, name it here.
 		$<$<BOOL:${BUILD_CXX_LANGUAGE_PACKAGE}>:Sourcetrail_lib_cxx>

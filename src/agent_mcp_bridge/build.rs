@@ -1,5 +1,5 @@
 // Generates Rust FlatBuffers bindings from the *same* agent-control schemas the
-// C++ side uses (src/lib/component/controller/agent_control/schemas/*.fbs), so the
+// C++ side uses (src/lib_core/component/controller/agent_control/schemas/*.fbs), so the
 // bridge and the app share one source of truth for the wire contracts. Mirrors the
 // C++ `flatc --cpp` generation in src/lib/CMakeLists.txt.
 //
@@ -80,7 +80,7 @@ fn emit_build_id(manifest: &Path) {
 
 fn main() {
     let manifest = PathBuf::from(std::env::var("CARGO_MANIFEST_DIR").unwrap());
-    let schema_dir = manifest.join("../lib/component/controller/agent_control/schemas");
+    let schema_dir = manifest.join("../lib_core/component/controller/agent_control/schemas");
     let out = PathBuf::from(std::env::var("OUT_DIR").unwrap());
     let flatc = find_flatc(&manifest);
 

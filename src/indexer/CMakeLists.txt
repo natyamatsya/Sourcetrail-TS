@@ -14,7 +14,7 @@ target_link_libraries(Sourcetrail_indexer
 	PRIVATE
 		# Headless: the indexer needs only the base lib + the Cxx language package. Its shared bootstrap
 		# (setupApp, QtCore-only) lives in lib now, so it no longer links Qt Widgets via lib_gui.
-		Sourcetrail_lib
+		Sourcetrail_lib_core
 		$<$<BOOL:${BUILD_CXX_LANGUAGE_PACKAGE}>:Sourcetrail_lib_cxx>
 )
 
