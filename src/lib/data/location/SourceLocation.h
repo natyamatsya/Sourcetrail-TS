@@ -1,17 +1,23 @@
 #ifndef SOURCE_LOCATION_H
 #define SOURCE_LOCATION_H
 
+#include "SrctrlModule.h"
+
+#ifndef SRCTRL_MODULE_PURVIEW
 #include <ostream>
 #include <string>
 #include <vector>
 
 #include "LocationType.h"
 #include "types.h"
+#endif
 
+#ifndef SRCTRL_MODULE_PURVIEW
 class FilePath;
-class SourceLocationFile;
+#endif
+SRCTRL_EXPORT class SourceLocationFile;
 
-class SourceLocation
+SRCTRL_EXPORT class SourceLocation
 {
 public:
 	SourceLocation(
@@ -69,5 +75,19 @@ private:
 };
 
 std::ostream& operator<<(std::ostream& ostream, const SourceLocation& location);
+
+// getFilePath()'s inline body dereferences SourceLocationFile, so the complete type must precede the
+// .inl. SourceLocation <-> SourceLocationFile is a mutual dependency: this include sits AFTER the class
+// definition (not in the top block) so that when SourceLocationFile.h re-enters SourceLocation.h the
+// class above is already complete, breaking the include cycle.
+#ifndef SRCTRL_MODULE_PURVIEW
+#include "SourceLocationFile.h"
+#endif
+
+// In a module build the wrapper includes the .inl explicitly AFTER all three class defs (the
+// SourceLocation<->SourceLocationFile cycle needs both complete), so guard it here.
+#ifndef SRCTRL_MODULE_PURVIEW
+#include "SourceLocation.inl"
+#endif
 
 #endif	  // SOURCE_LOCATION_H

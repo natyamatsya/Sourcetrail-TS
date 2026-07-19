@@ -1,6 +1,9 @@
 #ifndef SOURCE_LOCATION_COLLECTION_H
 #define SOURCE_LOCATION_COLLECTION_H
 
+#include "SrctrlModule.h"
+
+#ifndef SRCTRL_MODULE_PURVIEW
 #include <functional>
 #include <map>
 #include <memory>
@@ -8,13 +11,18 @@
 #include <vector>
 
 #include "LocationType.h"
+#include "SourceLocationFile.h"
+#include "logging.h"
 #include "types.h"
+#endif
 
+#ifndef SRCTRL_MODULE_PURVIEW
 class FilePath;
-class SourceLocation;
-class SourceLocationFile;
+#endif
+SRCTRL_EXPORT class SourceLocation;
+SRCTRL_EXPORT class SourceLocationFile;
 
-class SourceLocationCollection
+SRCTRL_EXPORT class SourceLocationCollection
 {
 public:
 	SourceLocationCollection();
@@ -59,5 +67,11 @@ private:
 };
 
 std::ostream& operator<<(std::ostream& ostream, const SourceLocationCollection& base);
+
+// In a module build the wrapper includes the .inl explicitly AFTER all three class defs (the
+// SourceLocation<->SourceLocationFile cycle needs both complete), so guard it here.
+#ifndef SRCTRL_MODULE_PURVIEW
+#include "SourceLocationCollection.inl"
+#endif
 
 #endif	  // SOURCE_LOCATION_COLLECTION_H

@@ -252,7 +252,23 @@ cycles in `lib` is prerequisite work, and a good cleanup in its own right).
     stays out-of-line (with `logging.h` + `utilityMainFunction.h` in its `.cpp`) — an **include-only
     member**: reachable via `#include`, not via `import`. Fine for now (no importer deserializes); it
     resolves fully once `utilityMainFunction` is itself modularized.
-- **Next — the rest of `name/`/`location/`/`graph/`, then `srctrl.storage`.** Same patterns.
+- **Phase 2 (cont.) — `location/` cluster folded into `srctrl.data:location`. ✅** `SourceLocation` +
+  `SourceLocationFile` + `SourceLocationCollection` (~684 out-of-line lines) fully inlined into per-class
+  `.inl`s; the wrapper imports `:types` (LocationType) and keeps `FilePath` / `Id` (types.h) / `logging.h`
+  in the GMF (global-module, no forward-decl of a location type, so no conflict). Two new patterns this
+  cluster forced (both now part of the recipe):
+  - **Mutually dependent classes** (`SourceLocation` ⇄ `SourceLocationFile`). Their `.inl`s each need the
+    partner complete, but in the purview the header's cycle-breaking cross-include is skipped. Fix: guard
+    each header's own `#include "X.inl"` too, and have the wrapper include **all class definitions first,
+    then all `.inl`s** — so every type is complete before any inline body is parsed.
+  - **Forward declarations across the module boundary.** A forward decl of a *non-module* type
+    (`class FilePath;`) must be guarded (skip in purview — it comes from the GMF, else "declared in module
+    follows global module"). A forward decl of a *module* type (`class SourceLocationFile;`, needed for the
+    cycle) must carry `SRCTRL_EXPORT`, else the plain forward decl gives it module linkage and the later
+    `export class` def fails ("cannot export redeclaration … previous has module linkage").
+- **Next — `graph/` (14 interconnected headers: Node/Edge/Graph/Token + token_component), then
+  `srctrl.storage` (45 headers, incl. sqlpp/SQL-schema codegen that needs its own assessment).** All the
+  mechanics are now settled; these are larger, mostly-mechanical batches.
 - **Phase 3 — `srctrl.cxx`.** Modularize `lib_cxx` with partitions; absorb the Clang-header BMI cost.
 - **Phase 4 — the indexer binary.** `src/indexer/main.cpp` becomes a pure consumer:
   `import srctrl.cxx;` (+ optionally `import std;`).

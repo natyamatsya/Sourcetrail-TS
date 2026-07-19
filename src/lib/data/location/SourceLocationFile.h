@@ -1,6 +1,9 @@
 #ifndef SOURCE_LOCATION_FILE_H
 #define SOURCE_LOCATION_FILE_H
 
+#include "SrctrlModule.h"
+
+#ifndef SRCTRL_MODULE_PURVIEW
 #include <functional>
 #include <map>
 #include <memory>
@@ -9,19 +12,21 @@
 
 #include "FilePath.h"
 #include "LocationType.h"
-#include "SourceLocation.h"
 #include "types.h"
+#endif
 
-class SourceLocationFile
+#ifndef SRCTRL_MODULE_PURVIEW
+class FilePath;
+#endif
+SRCTRL_EXPORT class SourceLocation;
+
+SRCTRL_EXPORT class SourceLocationFile
 {
 public:
 	struct LocationComp
 	{
 		bool operator()(
-			const std::shared_ptr<SourceLocation>& lhs, const std::shared_ptr<SourceLocation>& rhs) const
-		{
-			return *lhs < *rhs;
-		}
+			const std::shared_ptr<SourceLocation>& lhs, const std::shared_ptr<SourceLocation>& rhs) const;
 	};
 
 	SourceLocationFile(
@@ -86,5 +91,19 @@ private:
 };
 
 std::ostream& operator<<(std::ostream& ostream, const SourceLocationFile& base);
+
+// SourceLocationFile's members need the complete SourceLocation type, so pull it in before the .inl.
+// SourceLocation <-> SourceLocationFile is a mutual dependency: this include sits AFTER the class
+// definition (which only needs SourceLocation forward-declared, since LocationComp::operator() moved to
+// the .inl) so the include cycle terminates.
+#ifndef SRCTRL_MODULE_PURVIEW
+#include "SourceLocation.h"
+#endif
+
+// In a module build the wrapper includes the .inl explicitly AFTER all three class defs (the
+// SourceLocation<->SourceLocationFile cycle needs both complete), so guard it here.
+#ifndef SRCTRL_MODULE_PURVIEW
+#include "SourceLocationFile.inl"
+#endif
 
 #endif	  // SOURCE_LOCATION_FILE_H
