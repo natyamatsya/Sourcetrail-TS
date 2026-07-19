@@ -125,7 +125,15 @@ of it on the CppSQLite3 code.
    **`StorageAccess` (read interface) deferred**: it drags `ErrorInfo.h`→`StorageError` and
    `SearchMatch.h`→`Node` into the GMF, doubling those modularized types against the imports; it needs
    `ErrorInfo`/`SearchMatch` (a read-side/search cluster) modularized first.
-4. **S3** — the `sqlite/` impl, once the spike is green and coordinated with the codegen migration.
+4. **S3 wiring** ✅ — sqlpp23 module *build integration* landed: the overlay port now ships the module
+   sources (`<prefix>/modules/sqlpp23/*.cppm`), `cmake/SourcetrailSqlpp23Modules.cmake` compiles
+   `sqlpp23.core`+`sqlpp23.sqlite3` into a target, and the opt-in `SOURCETRAIL_SQLPP23_MODULES` option wires
+   them into `Sourcetrail_lib`. Helper verified end-to-end (imports + generated-form query against the
+   *installed* headers); default build unaffected (option OFF). **Remaining for S3:** (i) reinstall the
+   overlay port so the modules ship to the install tree (or keep `SQLPP23_MODULES_DIR` pointed at the
+   source); (ii) convert the `sqlite/` impl (`SqliteStorage` + `SqliteIndexStorage`, ~3.8k dense LOC) from
+   `#include <sqlpp23/...>` to `import`, coordinated with the CppSQLite3→sqlpp23 SQL-layer migration
+   (`DESIGN_STORAGE_CODEGEN.md`); (iii) a modules-ON full-lib build to verify in situ.
 5. **S4** — `PersistentStorage` + access/cache/provider + concurrency (turso) + ladybug, last (heaviest
    coupling; may keep impl `.cpp` classic and only modularize the interface).
 

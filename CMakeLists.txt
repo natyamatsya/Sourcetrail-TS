@@ -88,6 +88,12 @@ if(SOURCETRAIL_CXX_IMPORT_STD AND NOT SOURCETRAIL_CXX_MODULES)
 endif()
 include(cmake/SourcetrailCxxModules.cmake)
 sourcetrail_resolve_cxx_modules(SOURCETRAIL_CXX_MODULES_ENABLED)
+# Opt-in: consume sqlpp23 as a C++20 module (`import sqlpp23.core/sqlite3`) in the storage layer instead
+# of #including <sqlpp23/...>. Spike-validated (context/DESIGN_STORAGE_MODULARIZATION.md §3); OFF by
+# default because it needs the overlay port reinstalled to ship the module sources (or SQLPP23_MODULES_DIR
+# set). Only meaningful with SOURCETRAIL_CXX_MODULES on.
+option(SOURCETRAIL_SQLPP23_MODULES "Storage: consume sqlpp23 via `import` (experimental; needs the overlay port's module sources)." OFF)
+include(cmake/SourcetrailSqlpp23Modules.cmake)
 if(SOURCETRAIL_CXX_MODULES_ENABLED AND SOURCETRAIL_CXX_IMPORT_STD)
 	# Module wrappers switch their std #includes to `import std;`; targets with module interfaces must
 	# also opt in per-target with the CXX_MODULE_STD property (done in each converted library).

@@ -36,6 +36,15 @@ vcpkg_cmake_configure(
 
 vcpkg_cmake_install()
 
+# Ship the C++20 module interface units alongside the headers. BUILD_WITH_MODULES stays OFF (a plain
+# header install), but upstream does not precompile modules -- "your project compiles the module sources
+# itself" (docs/modules.md) -- so a module-consuming build (Sourcetrail's, via
+# cmake/SourcetrailSqlpp23Modules.cmake) needs the raw .cppm. Install them to the upstream-documented
+# location <prefix>/modules/sqlpp23 so find_package consumers can locate them.
+file(INSTALL "${SOURCE_PATH}/modules/"
+     DESTINATION "${CURRENT_PACKAGES_DIR}/modules/sqlpp23"
+     FILES_MATCHING PATTERN "*.cppm")
+
 # Config package name is "Sqlpp23" (installed to <prefix>/lib/cmake/Sqlpp23).
 vcpkg_cmake_config_fixup(PACKAGE_NAME Sqlpp23 CONFIG_PATH lib/cmake/Sqlpp23)
 

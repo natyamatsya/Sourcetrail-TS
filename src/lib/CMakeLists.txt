@@ -72,6 +72,12 @@ if(SOURCETRAIL_CXX_MODULES_ENABLED)
 		# toolchain std module.
 		set_target_properties(Sourcetrail_lib PROPERTIES CXX_MODULE_STD ON)
 	endif()
+	# Opt-in: compile sqlpp23's core+sqlite3 module interface units into the lib so the storage layer can
+	# `import sqlpp23.core/sqlite3` (see cmake/SourcetrailSqlpp23Modules.cmake). The storage impl's actual
+	# switch from #include to import is a later step; this just makes the modules available.
+	if(SOURCETRAIL_SQLPP23_MODULES)
+		sourcetrail_add_sqlpp23_modules(Sourcetrail_lib)
+	endif()
 endif()
 
 # CXX settings component sources — always compiled so the settings types are
