@@ -43,17 +43,20 @@ pub const StatusChannel = struct {
     }
 
     /// Report that this process is now indexing `file_path`. `current_files` is
-    /// a per-process "currently working on" map (one entry per process): replace
-    /// this process's entry so a *previous* file is not left dangling — a
-    /// left-over `current_files` entry is reported as a CRASHED translation unit
-    /// at TaskBuildIndex::doExit, which marks the file incomplete and forces it
-    /// to be re-indexed every refresh.
-    pub fn updateIndexing(self: *StatusChannel, gpa: std.mem.Allocator, file_path: []const u8) Error!void {
+    /// a per-process "currently working on" map (one entry per process). Crash
+    /// bookkeeping (mirrors the Rust/Swift `start_indexing`): if this process
+    /// still has a `current_files` entry, the previous file died without a
+    /// finish — record it in `crashed_file_paths` so the app marks it incomplete
+    /// rather than re-indexing it every refresh — then set the new current file.
+    pub fn startIndexing(self: *StatusChannel, gpa: std.mem.Allocator, file_path: []const u8) Error!void {
         const Ctx = struct { pid: u64, path: []const u8 };
         const H = struct {
             fn run(ctx: Ctx, a: std.mem.Allocator, bytes: []u8) shm.Error!shm.IpcShm.Outcome(void) {
                 var owned = try readStatus(a, bytes);
                 defer owned.deinit(a);
+                for (owned.current_files.items) |cf| {
+                    if (cf.pid == ctx.pid) try addCrashedFile(a, &owned, cf.path);
+                }
                 removeCurrentFile(a, &owned, ctx.pid);
                 try owned.indexing_file_paths.append(a, try a.dupe(u8, ctx.path));
                 try owned.current_files.append(a, .{ .pid = ctx.pid, .path = try a.dupe(u8, ctx.path) });
@@ -63,14 +66,18 @@ pub const StatusChannel = struct {
         try self.shm.readModifyWrite(gpa, Ctx{ .pid = self.process_id, .path = file_path }, void, H.run);
     }
 
-    /// Mark the current file finished: clear this process's `current_files`
-    /// entry (so it is not counted as crashed) and record it in
-    /// `finished_process_ids` so the app drains this process's storage.
+    /// Mark the current file finished: un-mark it as crashed (a retry succeeded),
+    /// clear this process's `current_files` entry (so it is not counted as
+    /// crashed), and record the pid in `finished_process_ids` so the app drains
+    /// this process's storage.
     pub fn finishIndexing(self: *StatusChannel, gpa: std.mem.Allocator) Error!void {
         const H = struct {
             fn run(pid: u64, a: std.mem.Allocator, bytes: []u8) shm.Error!shm.IpcShm.Outcome(void) {
                 var owned = try readStatus(a, bytes);
                 defer owned.deinit(a);
+                for (owned.current_files.items) |cf| {
+                    if (cf.pid == pid) removeCrashedFile(a, &owned, cf.path);
+                }
                 removeCurrentFile(a, &owned, pid);
                 try owned.finished_process_ids.append(a, pid);
                 return .{ .write = try serializeStatus(a, &owned), .result = {} };
@@ -153,6 +160,28 @@ fn readU64VecField(
     }
 }
 
+/// Add `path` to `crashed_file_paths` unless already present (a file may crash
+/// repeatedly under the supervisor's retry loop — keep one entry).
+fn addCrashedFile(a: std.mem.Allocator, owned: *OwnedStatus, path: []const u8) shm.Error!void {
+    for (owned.crashed_file_paths.items) |p| {
+        if (std.mem.eql(u8, p, path)) return;
+    }
+    try owned.crashed_file_paths.append(a, try a.dupe(u8, path));
+}
+
+/// Drop all `crashed_file_paths` entries equal to `path` (freeing them).
+fn removeCrashedFile(a: std.mem.Allocator, owned: *OwnedStatus, path: []const u8) void {
+    var k: usize = 0;
+    while (k < owned.crashed_file_paths.items.len) {
+        if (std.mem.eql(u8, owned.crashed_file_paths.items[k], path)) {
+            a.free(owned.crashed_file_paths.items[k]);
+            _ = owned.crashed_file_paths.swapRemove(k);
+        } else {
+            k += 1;
+        }
+    }
+}
+
 /// Drop all `current_files` entries owned by `pid` (freeing their paths).
 fn removeCurrentFile(a: std.mem.Allocator, owned: *OwnedStatus, pid: u64) void {
     var k: usize = 0;
@@ -212,46 +241,60 @@ fn serializeStatus(gpa: std.mem.Allocator, st: *const OwnedStatus) shm.Error![]u
     if (c.flatcc_builder_init(&b) != 0) return shm.Error.Shm;
     defer c.flatcc_builder_clear(&b);
 
-    // Leaf objects (strings, ProcessFile tables) are created *before* opening
-    // any vector frame — creating a nested object inside an open vec frame is a
-    // flatcc frame violation (corrupts the builder). Refs are then pushed.
-    const ifp_refs = try gpa.alloc(c.flatbuffers_string_ref_t, st.indexing_file_paths.items.len);
-    defer gpa.free(ifp_refs);
-    for (st.indexing_file_paths.items, ifp_refs) |p, *ref| ref.* = c.flatbuffers_string_create(&b, p.ptr, p.len);
-    _ = c.flatbuffers_string_vec_start(&b);
-    for (ifp_refs) |ref| _ = c.flatbuffers_string_vec_push(&b, ref);
-    const ifp = c.flatbuffers_string_vec_end(&b);
-
-    const pf_refs = try gpa.alloc(c.Sourcetrail_Ipc_ProcessFile_ref_t, st.current_files.items.len);
-    defer gpa.free(pf_refs);
-    for (st.current_files.items, pf_refs) |f, *ref| {
-        ref.* = c.Sourcetrail_Ipc_ProcessFile_create(&b, f.pid, c.flatbuffers_string_create(&b, f.path.ptr, f.path.len));
+    // Build only NON-EMPTY vectors; an empty vector is omitted (left null),
+    // matching the C++/Rust/Swift writers (ADR-0003) and keeping an empty
+    // `[uint64]` off the wire entirely. Leaf objects (strings, ProcessFile
+    // tables) and their vec frames must be built before start_as_root (a nested
+    // object inside an open frame corrupts the builder); a 0 ref means "absent".
+    var ifp: c.flatbuffers_string_vec_ref_t = 0;
+    if (st.indexing_file_paths.items.len > 0) {
+        const refs = try gpa.alloc(c.flatbuffers_string_ref_t, st.indexing_file_paths.items.len);
+        defer gpa.free(refs);
+        for (st.indexing_file_paths.items, refs) |p, *ref| ref.* = c.flatbuffers_string_create(&b, p.ptr, p.len);
+        _ = c.flatbuffers_string_vec_start(&b);
+        for (refs) |ref| _ = c.flatbuffers_string_vec_push(&b, ref);
+        ifp = c.flatbuffers_string_vec_end(&b);
     }
-    _ = c.Sourcetrail_Ipc_ProcessFile_vec_start(&b);
-    for (pf_refs) |ref| _ = c.Sourcetrail_Ipc_ProcessFile_vec_push(&b, ref);
-    const cf = c.Sourcetrail_Ipc_ProcessFile_vec_end(&b);
 
-    const crp_refs = try gpa.alloc(c.flatbuffers_string_ref_t, st.crashed_file_paths.items.len);
-    defer gpa.free(crp_refs);
-    for (st.crashed_file_paths.items, crp_refs) |p, *ref| ref.* = c.flatbuffers_string_create(&b, p.ptr, p.len);
-    _ = c.flatbuffers_string_vec_start(&b);
-    for (crp_refs) |ref| _ = c.flatbuffers_string_vec_push(&b, ref);
-    const crp = c.flatbuffers_string_vec_end(&b);
+    var cf: c.Sourcetrail_Ipc_ProcessFile_vec_ref_t = 0;
+    if (st.current_files.items.len > 0) {
+        const refs = try gpa.alloc(c.Sourcetrail_Ipc_ProcessFile_ref_t, st.current_files.items.len);
+        defer gpa.free(refs);
+        for (st.current_files.items, refs) |f, *ref| {
+            ref.* = c.Sourcetrail_Ipc_ProcessFile_create(&b, f.pid, c.flatbuffers_string_create(&b, f.path.ptr, f.path.len));
+        }
+        _ = c.Sourcetrail_Ipc_ProcessFile_vec_start(&b);
+        for (refs) |ref| _ = c.Sourcetrail_Ipc_ProcessFile_vec_push(&b, ref);
+        cf = c.Sourcetrail_Ipc_ProcessFile_vec_end(&b);
+    }
+
+    var crp: c.flatbuffers_string_vec_ref_t = 0;
+    if (st.crashed_file_paths.items.len > 0) {
+        const refs = try gpa.alloc(c.flatbuffers_string_ref_t, st.crashed_file_paths.items.len);
+        defer gpa.free(refs);
+        for (st.crashed_file_paths.items, refs) |p, *ref| ref.* = c.flatbuffers_string_create(&b, p.ptr, p.len);
+        _ = c.flatbuffers_string_vec_start(&b);
+        for (refs) |ref| _ = c.flatbuffers_string_vec_push(&b, ref);
+        crp = c.flatbuffers_string_vec_end(&b);
+    }
 
     // Scalar (non-offset) vec push takes a POINTER to the element (flatcc
     // `_vec_push(B, const T *p)`), unlike offset/string/table pushes.
-    _ = c.flatbuffers_uint64_vec_start(&b);
-    for (st.finished_process_ids.items) |id| {
-        var v: u64 = id;
-        _ = c.flatbuffers_uint64_vec_push(&b, &v);
+    var fpi: c.flatbuffers_uint64_vec_ref_t = 0;
+    if (st.finished_process_ids.items.len > 0) {
+        _ = c.flatbuffers_uint64_vec_start(&b);
+        for (st.finished_process_ids.items) |id| {
+            var v: u64 = id;
+            _ = c.flatbuffers_uint64_vec_push(&b, &v);
+        }
+        fpi = c.flatbuffers_uint64_vec_end(&b);
     }
-    const fpi = c.flatbuffers_uint64_vec_end(&b);
 
     _ = c.Sourcetrail_Ipc_IndexingStatus_start_as_root(&b);
-    _ = c.Sourcetrail_Ipc_IndexingStatus_indexing_file_paths_add(&b, ifp);
-    _ = c.Sourcetrail_Ipc_IndexingStatus_current_files_add(&b, cf);
-    _ = c.Sourcetrail_Ipc_IndexingStatus_crashed_file_paths_add(&b, crp);
-    _ = c.Sourcetrail_Ipc_IndexingStatus_finished_process_ids_add(&b, fpi);
+    if (ifp != 0) _ = c.Sourcetrail_Ipc_IndexingStatus_indexing_file_paths_add(&b, ifp);
+    if (cf != 0) _ = c.Sourcetrail_Ipc_IndexingStatus_current_files_add(&b, cf);
+    if (crp != 0) _ = c.Sourcetrail_Ipc_IndexingStatus_crashed_file_paths_add(&b, crp);
+    if (fpi != 0) _ = c.Sourcetrail_Ipc_IndexingStatus_finished_process_ids_add(&b, fpi);
     _ = c.Sourcetrail_Ipc_IndexingStatus_indexing_interrupted_add(&b, if (st.indexing_interrupted) 1 else 0);
     _ = c.Sourcetrail_Ipc_IndexingStatus_queue_stopped_add(&b, if (st.queue_stopped) 1 else 0);
     _ = c.Sourcetrail_Ipc_IndexingStatus_end_as_root(&b);
@@ -291,4 +334,46 @@ test "status RMW round-trips a ProcessFile at every base alignment" {
     try std.testing.expectEqualStrings(long_path, got.current_files.items[0].path);
     try std.testing.expectEqual(@as(usize, 1), got.finished_process_ids.items.len);
     try std.testing.expectEqual(@as(u64, 7), got.finished_process_ids.items[0]);
+}
+
+test "empty status round-trips (all vectors omitted)" {
+    const a = std.testing.allocator;
+    var owned = OwnedStatus{};
+    defer owned.deinit(a);
+    owned.indexing_interrupted = true;
+    const buf = try serializeStatus(a, &owned);
+    defer a.free(buf);
+    const backing = try a.alignedAlloc(u8, .@"16", buf.len);
+    defer a.free(backing);
+    @memcpy(backing, buf);
+    var got = try readStatus(a, backing);
+    defer got.deinit(a);
+    try std.testing.expectEqual(@as(usize, 0), got.indexing_file_paths.items.len);
+    try std.testing.expectEqual(@as(usize, 0), got.current_files.items.len);
+    try std.testing.expectEqual(@as(usize, 0), got.crashed_file_paths.items.len);
+    try std.testing.expectEqual(@as(usize, 0), got.finished_process_ids.items.len);
+    try std.testing.expect(got.indexing_interrupted);
+}
+
+test "crashed-file bookkeeping: dedup add, remove, round-trip" {
+    const a = std.testing.allocator;
+    var owned = OwnedStatus{};
+    defer owned.deinit(a);
+    try addCrashedFile(a, &owned, "a.zig");
+    try addCrashedFile(a, &owned, "a.zig"); // dedup
+    try addCrashedFile(a, &owned, "b.zig");
+    try std.testing.expectEqual(@as(usize, 2), owned.crashed_file_paths.items.len);
+    removeCrashedFile(a, &owned, "a.zig");
+    try std.testing.expectEqual(@as(usize, 1), owned.crashed_file_paths.items.len);
+    try std.testing.expectEqualStrings("b.zig", owned.crashed_file_paths.items[0]);
+
+    const buf = try serializeStatus(a, &owned);
+    defer a.free(buf);
+    const backing = try a.alignedAlloc(u8, .@"16", buf.len);
+    defer a.free(backing);
+    @memcpy(backing, buf);
+    var got = try readStatus(a, backing);
+    defer got.deinit(a);
+    try std.testing.expectEqual(@as(usize, 1), got.crashed_file_paths.items.len);
+    try std.testing.expectEqualStrings("b.zig", got.crashed_file_paths.items[0]);
 }

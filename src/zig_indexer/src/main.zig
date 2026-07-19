@@ -63,7 +63,7 @@ fn runIpc(gpa: std.mem.Allocator, io: std.Io, process_id: u64, uuid: []const u8)
         var cmd = maybe_cmd orelse break;
         defer cmd.deinit(gpa);
 
-        try status.updateIndexing(gpa, cmd.source_file_path);
+        try status.startIndexing(gpa, cmd.source_file_path);
         indexOneCommand(gpa, io, &storage, cmd.source_file_path) catch {};
         try status.finishIndexing(gpa);
     }
