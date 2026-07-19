@@ -1,5 +1,9 @@
 
+#include <array>
+#include <cstdio>
+#include <span>
 #include <string>
+#include <string_view>
 #include <vector>
 
 #include "language_package_flags.h"
@@ -8,6 +12,7 @@
 #include "CxxModulePrebuildRunner.h"
 #include "CxxPchBuildRunner.h"
 #include "FileLogger.h"
+#include "GlazeCli.h"
 #include "InterprocessIndexer.h"
 #include "LanguagePackageManager.h"
 #include "LogManager.h"
@@ -45,75 +50,73 @@ void suppressCrashMessage()
 #endif
 }
 
+// The indexer's argv is an app->worker contract, not a user CLI: the app launches it with five
+// positionals (see TaskBuildIndex / runIndexerPrebuildMode) plus at most one of the "--key=value"
+// flags. Described declaratively for the shared glaze reflection parser (glzcli), mirroring the app's
+// own command structs -- glzcli splits flags from positionals (so an optional flag never shifts the
+// positional layout) and leaves absent trailing positionals at their defaults.
+struct IndexerOptions
+{
+	std::string process_id;		 // a small integer; parsed to a ProcessId below
+	std::string instance_uuid;	 // the shared-memory IPC channel id (unused in prebuild modes)
+	std::string app_path;		 // shared data directory
+	std::string user_data_path;	 // user data directory
+	std::string log_file_path;	 // optional; logging is off when empty
+	std::string only_group_id;	 // fan-out: pin this worker to one source group
+	std::string prebuild_modules;	 // C++20 module-prebuild request path (mode switch)
+	std::string prebuild_pch;		 // PCH-prebuild request path (mode switch)
+
+	static constexpr std::array<std::string_view, 5> positionals = {
+		"process-id", "instance-uuid", "app-path", "user-data-path", "log-file-path"};
+};
+
+namespace glz
+{
+template <>
+struct meta<IndexerOptions>
+{
+	using T = IndexerOptions;
+	static constexpr auto value = object(
+		"process-id", &T::process_id,
+		"instance-uuid", &T::instance_uuid,
+		"app-path", &T::app_path,
+		"user-data-path", &T::user_data_path,
+		"log-file-path", &T::log_file_path,
+		"only-group-id", &T::only_group_id,
+		"prebuild-modules", &T::prebuild_modules,
+		"prebuild-pch", &T::prebuild_pch);
+};
+}	 // namespace glz
+
 int main(int argc, char* argv[])
 {
 	setupDefaultLocale();
-	
-	ProcessId processId = ProcessId::INVALID;
-	std::string instanceUuid;
-	std::string appPath;
-	std::string userDataPath;
-	std::string logFilePath;
-	std::string onlyGroupId;
-	std::string prebuildModulesRequest;
-	std::string prebuildPchRequest;
 
-	// Split "--key=value" flags from the positional arguments, so optional flags
-	// (like the fan-out group pin) don't shift the positional layout.
-	std::vector<std::string> positional;
-	for (int i = 1; i < argc; i++)
+	IndexerOptions options;
+	const std::vector<std::string> args(argv + 1, argv + argc);
+	if (const glzcli::ParseResult parseResult =
+			glzcli::parse(options, std::span<const std::string>(args));
+		parseResult.error)
 	{
-		const std::string arg = argv[i];
-		if (const std::string groupPrefix = "--only-group-id="; arg.starts_with(groupPrefix))
-		{
-			onlyGroupId = arg.substr(groupPrefix.size());
-		}
-		else if (const std::string prebuildPrefix = "--prebuild-modules=";
-				 arg.starts_with(prebuildPrefix))
-		{
-			prebuildModulesRequest = arg.substr(prebuildPrefix.size());
-		}
-		else if (const std::string pchPrefix = "--prebuild-pch="; arg.starts_with(pchPrefix))
-		{
-			prebuildPchRequest = arg.substr(pchPrefix.size());
-		}
-		else
-		{
-			positional.push_back(arg);
-		}
+		// Logging isn't configured yet (the log path is one of these very arguments).
+		std::fprintf(stderr, "sourcetrail_indexer: %s\n", parseResult.error->c_str());
+		return 1;
 	}
 
-	if (positional.size() >= 1)
-	{
-		processId = ProcessId(std::stoi(positional[0]));
-	}
+	const ProcessId processId = options.process_id.empty()
+		? ProcessId::INVALID
+		: ProcessId(std::stoi(options.process_id));
+	const std::string& instanceUuid = options.instance_uuid;
+	const std::string& onlyGroupId = options.only_group_id;
+	const std::string& prebuildModulesRequest = options.prebuild_modules;
+	const std::string& prebuildPchRequest = options.prebuild_pch;
 
-	if (positional.size() >= 2)
-	{
-		instanceUuid = positional[1];
-	}
+	AppPath::setSharedDataDirectoryPath(FilePath(options.app_path));
+	UserPaths::setUserDataDirectoryPath(FilePath(options.user_data_path));
 
-	if (positional.size() >= 3)
+	if (!options.log_file_path.empty())
 	{
-		appPath = positional[2];
-	}
-
-	if (positional.size() >= 4)
-	{
-		userDataPath = positional[3];
-	}
-
-	if (positional.size() >= 5)
-	{
-		logFilePath = positional[4];
-	}
-
-	AppPath::setSharedDataDirectoryPath(FilePath(appPath));
-	UserPaths::setUserDataDirectoryPath(FilePath(userDataPath));
-
-	if (!logFilePath.empty())
-	{
-		setupLogging(FilePath(logFilePath));
+		setupLogging(FilePath(options.log_file_path));
 	}
 
 	suppressCrashMessage();
