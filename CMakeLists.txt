@@ -56,6 +56,7 @@ cmake_print_variables(CMAKE_CXX_COMPILER)
 option(BUILD_CXX_LANGUAGE_PACKAGE  "Add C/C++ support to the Sourcetrail indexer." OFF)
 option(BUILD_RUST_LANGUAGE_PACKAGE "Add Rust support to the Sourcetrail indexer." OFF)
 option(BUILD_SWIFT_LANGUAGE_PACKAGE "Add Swift support to the Sourcetrail indexer." OFF)
+option(BUILD_ZIG_LANGUAGE_PACKAGE  "Add Zig support to the Sourcetrail indexer." OFF)
 option(BUILD_UNIT_TESTS_PACKAGE    "Build the corresponding language unit tests." OFF)
 # Dev/CI-only: run every SQL operation against Turso alongside SQLite and report
 # divergences. Requires the Rust toolchain (builds the turso_shim crate). Off by
