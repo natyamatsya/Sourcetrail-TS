@@ -158,8 +158,29 @@ cycles in `lib` is prerequisite work, and a good cleanup in its own right).
   CMake's std-module archive is GNU-format, macOS `ld` rejects it). So the option ships **OFF** and
   wired; AidKit builds with std includes. Also note: AidKit's `<QString>` (Qt, not a module) stays in
   the GMF, so it's a poor `import std` candidate anyway — the option is really for std-only modules.
-- **Phase 2 — `srctrl.utility`, then `srctrl.data`/`srctrl.storage`.** Bottom-up through `lib`,
-  one module (with its partitions) per step, each independently shippable and testable both ways.
+- **Phase 2 — `srctrl.utility`: first `lib` module. ✅ STARTED (utilityEnum → `:enums` partition).**
+  Converted `utilityEnum.h` (header-only concepts/templates) into `srctrl.utility` with an `:enums`
+  partition (`srctrl_utility.cppm` primary `export import :enums;` + `srctrl_utility-enum.cppm`). Both
+  ways verified: `utilityEnum.h` still works as a plain header (OFF), and `import srctrl.utility;` +
+  the user-specialized `intToEnum` primary template all work (ON, isolated). **`Sourcetrail_lib`
+  builds in ON mode** — the module BMIs build and the other ~664 header-consumer sources compile
+  alongside it (coexistence). `UtilityEnumTestSuite` converted to the import toggle and compiles
+  against the module; AidKit_test (43/43) and the POC still pass. Sourcetrail indexes the module
+  (2/2, 0 errors, `srctrl.utility` + `:enums` BMIs). Three findings, each a roadmap correction:
+  - **Partition names can't be keywords.** `export module srctrl.utility:enum;` fails to parse
+    (`enum` is a keyword) -- had to name the partition `:enums`.
+  - **`clang-scan-deps` chokes on stdexec** (`token is not a valid binary operator in a preprocessor
+    subexpression`), and CMP0155 otherwise scans *every* C++23 source in a module-linked target
+    (lib/lib_cxx/lib_gui all include stdexec). Fix: **default `CMAKE_CXX_SCAN_FOR_MODULES OFF`
+    project-wide** and re-enable it per-file (`CXX_SCAN_FOR_MODULES ON` source property) only on the
+    handful of files that actually `import`. `FILE_SET CXX_MODULES` interface units are scanned/built
+    regardless. This is the standing model for the migration.
+  - **`import std` is not the blocker some thought**: the earlier "archive link fails" was the
+    isolated test's default `llvm-ar`; the real toolchain uses `/usr/bin/ar` (mach-o) and links module
+    archives fine (AidKit proved it).
+- **Phase 2 (cont.) — the rest of `srctrl.utility`, then `srctrl.data`/`srctrl.storage`.** Bottom-up
+  through `lib`, adding partitions per step. Out-of-line utility (utilityString, FilePath) needs the
+  inline/`.inl` treatment (or consumer conversion) before it can join a module.
 - **Phase 3 — `srctrl.cxx`.** Modularize `lib_cxx` with partitions; absorb the Clang-header BMI cost.
 - **Phase 4 — the indexer binary.** `src/indexer/main.cpp` becomes a pure consumer:
   `import srctrl.cxx;` (+ optionally `import std;`).

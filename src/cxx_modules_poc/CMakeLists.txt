@@ -10,6 +10,8 @@ add_executable(srctrl_modules_poc ping_main.cpp)
 target_compile_features(srctrl_modules_poc PRIVATE cxx_std_23)
 target_include_directories(srctrl_modules_poc PRIVATE ${CMAKE_CURRENT_SOURCE_DIR})
 target_compile_definitions(srctrl_modules_poc PRIVATE SRCTRL_MODULE_BUILD)
+# Module scanning is off project-wide (stdexec); this consumer imports, so scan it.
+set_source_files_properties(ping_main.cpp PROPERTIES CXX_SCAN_FOR_MODULES ON)
 target_sources(srctrl_modules_poc
 	PRIVATE
 		FILE_SET CXX_MODULES FILES srctrl_ping.cppm)
