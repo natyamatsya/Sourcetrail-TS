@@ -1,14 +1,23 @@
 #ifndef GRAPH_H
 #define GRAPH_H
 
+#include "SrctrlModule.h"
+
+#ifndef SRCTRL_MODULE_PURVIEW
+#include <algorithm>
 #include <deque>
+#include <functional>
 #include <map>
 #include <memory>
+#include <ostream>
+#include <vector>
 
 #include "Edge.h"
+#include "LogFacade.h"
 #include "Node.h"
+#endif
 
-class Graph
+SRCTRL_EXPORT class Graph
 {
 public:
 	enum class TrailMode
@@ -78,6 +87,11 @@ private:
 	bool m_hasTrailOrigin;
 };
 
-std::ostream& operator<<(std::ostream& ostream, const Graph& graph);
+SRCTRL_EXPORT std::ostream& operator<<(std::ostream& ostream, const Graph& graph);
+
+// In a module build the wrapper includes the .inl explicitly AFTER all class defs, so guard it here.
+#ifndef SRCTRL_MODULE_PURVIEW
+#include "Graph.inl"
+#endif
 
 #endif	  // GRAPH_H

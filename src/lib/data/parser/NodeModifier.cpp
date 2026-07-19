@@ -1,35 +1,3 @@
+// All definitions are inline in NodeModifier.inl (pulled in by the header) so they resolve for both the
+// classic and the C++20-module build. This TU only anchors the header.
 #include "NodeModifier.h"
-
-std::string nodeModifierToString(NodeModifierMask modifiers)
-{
-	std::string result;
-	const auto add = [&result](const char* label) {
-		if (!result.empty())
-		{
-			result += ' ';
-		}
-		result += label;
-	};
-
-	if (nodeModifierHas(modifiers, NODE_MODIFIER_EXPORTED))
-	{
-		add("exported");
-	}
-	if (nodeModifierHas(modifiers, NODE_MODIFIER_DEPRECATED))
-	{
-		add("deprecated");
-	}
-	if (nodeModifierHas(modifiers, NODE_MODIFIER_NONISOLATED))
-	{
-		add("nonisolated");
-	}
-	if (nodeModifierHas(modifiers, NODE_MODIFIER_ASYNC))
-	{
-		add("async");
-	}
-	if (nodeModifierHas(modifiers, NODE_MODIFIER_ACTOR))
-	{
-		add("actor");
-	}
-	return result;
-}

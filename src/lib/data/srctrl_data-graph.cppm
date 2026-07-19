@@ -1,27 +1,40 @@
-// `srctrl.data:graph` partition -- the token graph's leaf layer: the TokenComponent polymorphic base
-// and its ~9 concrete subtypes. Module build only.
-//
-// Node/Edge/Graph/Token (the interconnected graph *core*) are a later, larger step; this partition is
-// the self-contained token_component/ cluster plus nothing else.
+// `srctrl.data:graph` partition -- the token graph: the TokenComponent polymorphic base + its ~9
+// concrete subtypes (the leaf layer), and the interconnected core Token / Edge / Node / Graph plus
+// NodeType. Module build only.
 
 module;
 
-// Global module fragment: std + the non-modularized deps (FilePath, Id via types.h) stay global-module.
-// AccessKind is NOT here -- it's an intToEnum-specializing enum in :types, imported below.
+// Global module fragment: std + the non-modularized deps (FilePath, Id via types.h, QtResources for
+// NodeType's icon paths) stay global-module. The modularized deps arrive via the imports below:
+// utilityEnum/utilityString/Tree (srctrl.utility), the classification enums AccessKind/DefinitionKind/
+// ElementComponentKind/NodeKind/NodeModifier (:types), NameHierarchy (:name), and the logging facade
+// (srctrl.logging -- the core's LOG_* calls became srctrl::log::error/warning).
+#include <algorithm>
+#include <deque>
+#include <functional>
 #include <map>
 #include <memory>
+#include <ostream>
 #include <set>
+#include <sstream>
 #include <string>
+#include <typeinfo>
+#include <vector>
+
 #include "types.h"
 #include "FilePath.h"
+#include "QtResources.h"
 
 export module srctrl.data:graph;
 
-import :types;   // AccessKind (TokenComponentAccess)
+import srctrl.utility;   // utilityEnum (intToEnum for Edge::EdgeType), utilityString, Tree (NodeType)
+import srctrl.logging;   // srctrl::log::error/warning (the former LOG_* macros)
+import :types;           // AccessKind, DefinitionKind, ElementComponentKind, NodeKind, NodeModifier
+import :name;            // NameHierarchy (Node)
 
 #define SRCTRL_MODULE_PURVIEW
-// Base first so it is complete before every derived class pulls it in (their own guarded
-// `#include "TokenComponent.h"` is skipped in the purview).
+// ---- Leaf layer: TokenComponent base first, then its subtypes (their guarded #include of
+// TokenComponent.h is skipped in the purview). ----
 #include "TokenComponent.h"
 #include "TokenComponentAbstraction.h"
 #include "TokenComponentAccess.h"
@@ -31,3 +44,19 @@ import :types;   // AccessKind (TokenComponentAccess)
 #include "TokenComponentStatic.h"
 #include "TokenComponentInheritanceChain.h"
 #include "TokenComponentIsAmbiguous.h"
+
+// ---- Core: all class DEFINITIONS first, then all .inl bodies (every type complete before any inline
+// member is parsed -- the Edge<->Node cycle needs this). NodeType is an independent value type Node
+// holds; Token is the base of Edge/Node; Edge forward-declares Node (SRCTRL_EXPORT'd) and Node.h needs
+// Edge complete, so Edge.h precedes Node.h. Each header's own guarded .inl include is skipped here. ----
+#include "NodeType.h"
+#include "Token.h"
+#include "Edge.h"
+#include "Node.h"
+#include "Graph.h"
+
+#include "NodeType.inl"
+#include "Token.inl"
+#include "Edge.inl"
+#include "Node.inl"
+#include "Graph.inl"

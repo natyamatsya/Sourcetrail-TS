@@ -1,6 +1,9 @@
 #ifndef NODE_TYPE_H
 #define NODE_TYPE_H
 
+#include "SrctrlModule.h"
+
+#ifndef SRCTRL_MODULE_PURVIEW
 #include <functional>
 #include <map>
 #include <memory>
@@ -9,10 +12,13 @@
 
 #include "FilePath.h"
 #include "NodeKind.h"
+#include "QtResources.h"
 #include "Tree.h"
 #include "types.h"
+#include "utilityString.h"
+#endif
 
-class NodeType
+SRCTRL_EXPORT class NodeType
 {
 public:
 	enum class StyleType
@@ -83,5 +89,10 @@ public:
 private:
 	NodeKind m_kind;
 };
+
+// In a module build the wrapper includes the .inl explicitly AFTER all class defs, so guard it here.
+#ifndef SRCTRL_MODULE_PURVIEW
+#include "NodeType.inl"
+#endif
 
 #endif	  // NODE_TYPE_H

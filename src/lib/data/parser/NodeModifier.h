@@ -1,7 +1,11 @@
 #ifndef NODE_MODIFIER_H
 #define NODE_MODIFIER_H
 
+#include "SrctrlModule.h"
+
+#ifndef SRCTRL_MODULE_PURVIEW
 #include <string>
+#endif
 
 // Per-node modifier flags — orthogonal properties a node carries on top of its
 // NodeKind, stored as a bitmask (StorageNode::modifiers). Kept separate from
@@ -10,7 +14,7 @@
 //
 // Persisted to the SQLite DB and the IPC wire as the raw int, so values are
 // append-only — never renumber.
-enum NodeModifierType
+SRCTRL_EXPORT enum NodeModifierType
 {
 	NODE_MODIFIER_NONE = 0,
 	// A Swift `actor` (SW13). Modelled as a class + this flag rather than a new
@@ -31,13 +35,15 @@ enum NodeModifierType
 
 using NodeModifierMask = int;
 
-inline bool nodeModifierHas(NodeModifierMask modifiers, NodeModifierType flag)
+SRCTRL_EXPORT inline bool nodeModifierHas(NodeModifierMask modifiers, NodeModifierType flag)
 {
 	return (modifiers & flag) != 0;
 }
 
 // Space-joined labels for the set modifiers ("actor", "async",
 // "nonisolated async"), for readable node-kind strings. Empty when none.
-std::string nodeModifierToString(NodeModifierMask modifiers);
+SRCTRL_EXPORT std::string nodeModifierToString(NodeModifierMask modifiers);
+
+#include "NodeModifier.inl"
 
 #endif	  // NODE_MODIFIER_H

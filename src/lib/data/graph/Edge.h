@@ -1,21 +1,31 @@
 #ifndef EDGE_H
 #define EDGE_H
 
+#include "SrctrlModule.h"
+
+#ifndef SRCTRL_MODULE_PURVIEW
+#include <ostream>
+#include <sstream>
 #include <string>
 
+#include "LogFacade.h"
 #include "Token.h"
+#include "TokenComponentBundledEdges.h"
 #include "utilityEnum.h"
+#include "utilityString.h"
+#endif
 
-class Node;
+// A module-type forward declaration must carry SRCTRL_EXPORT.
+SRCTRL_EXPORT class Node;
 
-class Edge: public Token
+SRCTRL_EXPORT class Edge: public Token
 {
 public:
 	typedef int TypeMask;
 	enum EdgeType : TypeMask
 	{
 		EDGE_UNDEFINED = 0,
-		
+
 		EDGE_MEMBER = 1 << 0,
 		EDGE_TYPE_USAGE = 1 << 1,
 		EDGE_USAGE = 1 << 2,
@@ -31,7 +41,7 @@ public:
 		EDGE_ANNOTATION_USAGE = 1 << 12,
 	};
 	static constexpr EdgeType EDGE_TYPE_MAX_VALUE = EDGE_ANNOTATION_USAGE;
-	
+
 
 	static const TypeMask LAYOUT_VERTICAL = EDGE_INHERITANCE | EDGE_OVERRIDE |
 		EDGE_TEMPLATE_SPECIALIZATION;
@@ -67,9 +77,22 @@ private:
 	Node* const m_to;
 };
 
+// An explicit specialization of the imported `intToEnum` template (declared+defined inline in the
+// .inl). Explicit specializations aren't separately `export`ed -- they're found via the primary.
 template <>
 Edge::EdgeType intToEnum(int value);
 
-std::ostream& operator<<(std::ostream& ostream, const Edge& edge);
+SRCTRL_EXPORT std::ostream& operator<<(std::ostream& ostream, const Edge& edge);
+
+// Edge's inline bodies dereference Node (m_from->addEdge(), getFrom()->getFullName(), ...), so the
+// complete Node type must precede Edge.inl. Node <-> Edge is a mutual dependency: Node's class body in
+// turn needs Edge complete (Edge::TypeMask appears in its signatures), so Node.h #includes us at its
+// top. Pull Node.h in here (after our class, which needs only a Node forward declaration) -- once both
+// classes are complete Node.h includes BOTH Edge.inl and Node.inl. We deliberately do NOT include
+// Edge.inl ourselves: on a direct <Node.h> entry the nested re-include of us is guard-skipped, so Node
+// would still be incomplete were we to pull Edge.inl here.
+#ifndef SRCTRL_MODULE_PURVIEW
+#include "Node.h"
+#endif
 
 #endif	  // EDGE_H

@@ -1,14 +1,19 @@
 #ifndef TOKEN_H
 #define TOKEN_H
 
+#include "SrctrlModule.h"
+
+#ifndef SRCTRL_MODULE_PURVIEW
 #include <string>
 #include <typeinfo>
 #include <vector>
 
+#include "LogFacade.h"
 #include "TokenComponent.h"
 #include "types.h"
+#endif
 
-class Token
+SRCTRL_EXPORT class Token
 {
 public:
 	explicit Token(Id id);
@@ -78,5 +83,10 @@ std::shared_ptr<ComponentType> Token::removeComponent()
 	}
 	return nullptr;
 }
+
+// In a module build the wrapper includes the .inl explicitly AFTER all class defs, so guard it here.
+#ifndef SRCTRL_MODULE_PURVIEW
+#include "Token.inl"
+#endif
 
 #endif	  // TOKEN_H

@@ -1,13 +1,20 @@
 #ifndef NODE_KIND_H
 #define NODE_KIND_H
 
+#include "SrctrlModule.h"
+
+// utilityEnum (intToEnum / lookupEnum) lives in srctrl.utility. In the header build we #include it; in
+// the module build the srctrl.data:types wrapper `import srctrl.utility;`s before pulling us into the
+// purview, so we must NOT re-include (and re-export) it here.
+#ifndef SRCTRL_MODULE_PURVIEW
 #include "utilityEnum.h"
 
 #include <string>
+#endif
 
 typedef int NodeKindMask;
 
-enum NodeKind : NodeKindMask
+SRCTRL_EXPORT enum NodeKind : NodeKindMask
 {
 	NODE_UNDEFINED = 0,
 
@@ -41,10 +48,14 @@ enum NodeKind : NodeKindMask
 constexpr NodeKind NODE_KIND_FIRST_VALUE = NODE_SYMBOL;
 constexpr NodeKind NODE_KIND_LAST_VALUE = NODE_CONCEPT;
 
+// An explicit specialization of the imported `intToEnum` template (declared+defined inline in the
+// .inl). Explicit specializations aren't separately `export`ed -- they're found via the primary.
 template<>
 NodeKind intToEnum(int value);
 
-std::string getReadableNodeKindString(NodeKind kind);
-NodeKind getNodeKindForReadableNodeKindString(const std::string& str);
+SRCTRL_EXPORT std::string getReadableNodeKindString(NodeKind kind);
+SRCTRL_EXPORT NodeKind getNodeKindForReadableNodeKindString(const std::string& str);
+
+#include "NodeKind.inl"
 
 #endif	  // NODE_KIND_H

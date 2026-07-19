@@ -305,12 +305,33 @@ cycles in `lib` is prerequisite work, and a good cleanup in its own right).
     the module compiles ON with a consumer importing it and type-checking all four call styles (only the
     app-provided LogManager backend is unlinked in the isolated harness, as designed; the runtime path
     -- source_location capture + lazy gating -- was proven separately end-to-end with a stub backend).
-- **Next — the graph *core* (`Node`/`Edge`/`Graph`/`Token`, ~840 out-of-line lines) into `:graph`.** The
-  hard part left in `graph/`: the `Node`⇄`Edge` cycle (established mutual-dep ordering), `NameHierarchy`
-  (`:name`) + `utilityEnum`/`utilityString` (`srctrl.utility`) cross-module deps, and LOG usage
-  throughout (`logging.h` in the GMF — inlinable, it forward-declares no graph type, unlike the
-  `NameHierarchy::deserialize` seam). Then `srctrl.storage` (45 headers, incl. sqlpp/SQL-schema codegen
-  that needs its own assessment).
+- **Phase 2 (cont.) — the graph *core* folded into `:graph`; `srctrl.data` now covers all of `graph/`. ✅**
+  `Token`/`Edge`/`Node`/`Graph` + the value type `NodeType` (~1100 out-of-line lines) inlined into the
+  `:graph` partition, and their two classification enums `NodeKind` (intToEnum-specializing) + `NodeModifier`
+  folded into `:types`. This is the **first real `srctrl.logging` consumer**: the core's `LOG_ERROR`/
+  `LOG_WARNING` calls became `srctrl::log::error`/`warning`, so the wrapper `import srctrl.logging;`
+  rather than GMF-including `logging.h` — the macro-in-GMF reliance is gone here. Cross-module: `import
+  srctrl.utility` (utilityEnum for `intToEnum<Edge::EdgeType>`, utilityString, `Tree` for NodeType),
+  `import :types` (the 5 enums), `import :name` (NameHierarchy); GMF keeps `types.h`/`FilePath.h`/
+  `QtResources.h`. Findings:
+  - **The `Edge`⇄`Node` cycle is asymmetric** (unlike SourceLocation⇄File). `Node`'s *class body* needs
+    `Edge` complete (`Edge::TypeMask` in three signatures), while `Edge` needs only a forward decl of
+    `Node`. So in the classic build `Node.h` `#include`s `Edge.h` at the top and is the single site that
+    pulls **both** `.inl`s (after both classes are complete); `Edge.h` forward-declares `Node`
+    (`SRCTRL_EXPORT class Node;`) and, in the classic path only, `#include`s `Node.h` after its own class
+    so either entry point yields the same TU order. In the module wrapper this is invisible: it includes
+    `Edge.h` then `Node.h` (both class defs), then all `.inl`s.
+  - **Enums the core needs live in `:types`, not the GMF.** `NodeType` pulls `NodeKind` (intToEnum) and
+    `Tree` (already `srctrl.utility`); GMF-including either would double them against the imports. Folding
+    `NodeKind`/`NodeModifier` into `:types` keeps a single definition the whole module graph shares.
+  - Known follow-up: the `NodeKindMask`/`NodeModifierMask` `int` typedefs are left un-`SRCTRL_EXPORT`ed
+    (no importer names them yet — callers pass `int`/enum literals); export them when a consumer needs
+    the spelling.
+  - Verified: `Sourcetrail_lib` green modules-OFF (whole app recompiles against the converted core +
+    the `srctrl::log` rewrite); ON, all 11 first-party module units build and a consumer imports
+    `srctrl.data` and uses `Graph`/`NodeType(NODE_CLASS)`/`intToEnum<Edge::EdgeType>` across the boundary
+    (only FilePath.cpp + the Qt tag unlinked in the isolated harness, as designed).
+- **Next — `srctrl.storage`** (45 headers, incl. sqlpp/SQL-schema codegen that needs its own assessment).
 - **Phase 3 — `srctrl.cxx`.** Modularize `lib_cxx` with partitions; absorb the Clang-header BMI cost.
 - **Phase 4 — the indexer binary.** `src/indexer/main.cpp` becomes a pure consumer:
   `import srctrl.cxx;` (+ optionally `import std;`).

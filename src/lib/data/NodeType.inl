@@ -1,0 +1,289 @@
+// Inline member definitions for NodeType.h (included at the end of that header). All members are
+// inline because an out-of-line member of an exported class does not resolve for module importers.
+
+#pragma once
+
+inline std::vector<NodeType> NodeType::getOverviewBundleNodes()
+{
+	using enum NodeType::StyleType;
+	// Defines the order of the bundles on the 'overview' view:
+	return {
+		NodeType(NODE_FILE),
+		NodeType(NODE_MACRO),
+		NodeType(NODE_ANNOTATION),
+		NodeType(NODE_MODULE),
+		NodeType(NODE_NAMESPACE),
+		NodeType(NODE_PACKAGE),
+		NodeType(NODE_CLASS),
+		NodeType(NODE_INTERFACE),
+		NodeType(NODE_STRUCT),
+		NodeType(NODE_RECORD),
+		NodeType(NODE_UNION),
+		NodeType(NODE_FUNCTION),
+		NodeType(NODE_GLOBAL_VARIABLE),
+		NodeType(NODE_TYPE),
+		NodeType(NODE_TYPEDEF),
+		NodeType(NODE_ENUM),
+		NodeType(NODE_CONCEPT)
+	};
+}
+
+inline NodeType::NodeType(NodeKind kind): m_kind(kind) {}
+
+inline bool NodeType::operator==(const NodeType& o) const
+{
+	return m_kind == o.m_kind;
+}
+
+inline bool NodeType::operator!=(const NodeType& o) const
+{
+	return !operator==(o);
+}
+
+inline bool NodeType::operator<(const NodeType& o) const
+{
+	return m_kind < o.m_kind;
+}
+inline NodeKind NodeType::getKind() const
+{
+	return m_kind;
+}
+
+inline Id NodeType::getId() const
+{
+	// TODO: add id in constructor and return it here
+	return m_kind;
+}
+
+inline bool NodeType::isFile() const
+{
+	using enum NodeType::StyleType;
+	const NodeKindMask mask = NODE_FILE;
+	return ((m_kind & mask) > 0);
+}
+
+inline bool NodeType::isBuiltin() const
+{
+	using enum NodeType::StyleType;
+	const NodeKindMask mask = NODE_BUILTIN_TYPE;
+	return ((m_kind & mask) > 0);
+}
+
+inline bool NodeType::isUnknownSymbol() const
+{
+	using enum NodeType::StyleType;
+	const NodeKindMask mask = NODE_SYMBOL;
+	return ((m_kind & mask) > 0);
+}
+
+inline bool NodeType::isInheritable() const
+{
+	using enum NodeType::StyleType;
+	// TODO: what about java enums? Cannot inherit from!
+	const NodeKindMask mask = NODE_SYMBOL | NODE_BUILTIN_TYPE | NODE_TYPE | NODE_STRUCT |
+		NODE_CLASS | NODE_INTERFACE;
+
+	return ((m_kind & mask) > 0);
+}
+
+inline bool NodeType::isPackage() const
+{
+	using enum NodeType::StyleType;
+	const NodeKindMask mask = NODE_MODULE | NODE_NAMESPACE | NODE_PACKAGE;
+	return ((m_kind & mask) > 0);
+}
+
+inline bool NodeType::isCallable() const
+{
+	using enum NodeType::StyleType;
+	const NodeKindMask mask = NODE_FUNCTION | NODE_METHOD;
+	return ((m_kind & mask) > 0);
+}
+
+inline bool NodeType::isVariable() const
+{
+	using enum NodeType::StyleType;
+	const NodeKindMask mask = NODE_GLOBAL_VARIABLE | NODE_FIELD;
+	return ((m_kind & mask) > 0);
+}
+
+inline bool NodeType::isUsable() const
+{
+	using enum NodeType::StyleType;
+	const NodeKindMask mask = NODE_SYMBOL | NODE_BUILTIN_TYPE | NODE_STRUCT | NODE_CLASS |
+		NODE_ENUM | NODE_UNION | NODE_INTERFACE | NODE_ANNOTATION | NODE_TYPEDEF | NODE_RECORD | NODE_CONCEPT;
+	return ((m_kind & mask) > 0);
+}
+
+inline bool NodeType::isPotentialMember() const
+{
+	using enum NodeType::StyleType;
+	const NodeKindMask mask = NODE_METHOD | NODE_FIELD | NODE_CLASS | NODE_INTERFACE |
+		NODE_ANNOTATION | NODE_STRUCT | NODE_UNION | NODE_TYPEDEF | NODE_ENUM | NODE_RECORD;
+
+	return ((m_kind & mask) > 0);
+}
+
+inline bool NodeType::isCollapsible() const
+{
+	using enum NodeType::StyleType;
+	const NodeKindMask mask = NODE_SYMBOL | NODE_TYPE | NODE_BUILTIN_TYPE | NODE_STRUCT |
+		NODE_CLASS | NODE_INTERFACE | NODE_ANNOTATION | NODE_ENUM | NODE_UNION | NODE_FILE | NODE_RECORD;
+	return ((m_kind & mask) > 0);
+}
+
+inline bool NodeType::isVisibleAsParentInGraph() const
+{
+	return !isPackage();
+}
+
+inline bool NodeType::hasSearchFilter() const
+{
+	using enum NodeType::StyleType;
+	const NodeKindMask mask = NODE_BUILTIN_TYPE | NODE_MODULE | NODE_NAMESPACE | NODE_PACKAGE |
+		NODE_STRUCT | NODE_CLASS | NODE_INTERFACE | NODE_ANNOTATION | NODE_GLOBAL_VARIABLE |
+		NODE_FIELD | NODE_FUNCTION | NODE_METHOD | NODE_ENUM | NODE_ENUM_CONSTANT | NODE_TYPEDEF |
+		NODE_FILE | NODE_MACRO | NODE_UNION | NODE_RECORD | NODE_CONCEPT;
+	return ((m_kind & mask) > 0);
+}
+
+inline Tree<NodeType::BundleInfo> NodeType::getOverviewBundleTree() const
+{
+	using enum NodeType::StyleType;
+	switch (m_kind)
+	{
+	case NODE_FILE:
+		return Tree<BundleInfo>(BundleInfo("Files"));
+	case NODE_MACRO:
+		return Tree<BundleInfo>(BundleInfo("Macros"));
+	case NODE_NAMESPACE:
+	{
+		Tree<BundleInfo> tree(BundleInfo("Namespaces"));
+		tree.children.push_back(Tree<BundleInfo>(BundleInfo(
+			[](const std::string& nodeName) {
+				return nodeName.find("anonymous namespace") != std::string::npos;
+			},
+			"Anonymous Namespaces")));
+		return tree;
+	}
+	case NODE_MODULE:
+		return Tree<BundleInfo>(BundleInfo("Modules"));
+	case NODE_PACKAGE:
+		return Tree<BundleInfo>(BundleInfo("Packages"));
+	case NODE_CLASS:
+		return Tree<BundleInfo>(BundleInfo("Classes"));
+	case NODE_INTERFACE:
+		return Tree<BundleInfo>(BundleInfo("Interfaces"));
+	case NODE_ANNOTATION:
+		return Tree<BundleInfo>(BundleInfo("Annotations"));
+	case NODE_STRUCT:
+		return Tree<BundleInfo>(BundleInfo("Structs"));
+	case NODE_FUNCTION:
+		return Tree<BundleInfo>(BundleInfo("Functions"));
+	case NODE_GLOBAL_VARIABLE:
+		return Tree<BundleInfo>(BundleInfo("Global Variables"));
+	case NODE_TYPE:
+		return Tree<BundleInfo>(BundleInfo("Types"));
+	case NODE_TYPEDEF:
+		return Tree<BundleInfo>(BundleInfo("Typedefs"));
+	case NODE_ENUM:
+		return Tree<BundleInfo>(BundleInfo("Enums"));
+	case NODE_UNION:
+		return Tree<BundleInfo>(BundleInfo("Unions"));
+	case NODE_RECORD:
+		return Tree<BundleInfo>(BundleInfo("Records"));
+	case NODE_CONCEPT:
+		return Tree<BundleInfo>(BundleInfo("Concepts"));
+	default:
+		break;
+	}
+	return Tree<BundleInfo>();
+}
+
+inline FilePath NodeType::getIconPath() const
+{
+	using enum NodeType::StyleType;
+	if (isPackage())
+	{
+		// this icon cannot be changed
+		return QtResources::GRAPH_VIEW_NAMESPACE;
+	}
+
+	switch (m_kind)
+	{
+	case NODE_ANNOTATION:
+		return QtResources::GRAPH_VIEW_ANNOTATION;
+	case NODE_ENUM:
+		return QtResources::GRAPH_VIEW_ENUM;
+	case NODE_TYPEDEF:
+		return QtResources::GRAPH_VIEW_TYPEDEF;
+	case NODE_MACRO:
+		return QtResources::GRAPH_VIEW_MACRO;
+	case NODE_FILE:
+		return QtResources::GRAPH_VIEW_FILE;
+	default:
+		return FilePath();
+	}
+}
+
+inline bool NodeType::hasIcon() const
+{
+	using enum NodeType::StyleType;
+	if (isPackage())
+	{
+		return true;
+	}
+
+	const NodeKindMask mask = NODE_ANNOTATION | NODE_ENUM | NODE_TYPEDEF | NODE_FILE | NODE_MACRO;
+	return ((m_kind & mask) > 0);
+}
+
+inline NodeType::StyleType NodeType::getNodeStyle() const
+{
+	using enum NodeType::StyleType;
+	switch (m_kind)
+	{
+	case NODE_MODULE:
+	case NODE_NAMESPACE:
+	case NODE_PACKAGE:
+		return STYLE_PACKAGE;
+	case NODE_SYMBOL:
+	case NODE_TYPE:
+	case NODE_BUILTIN_TYPE:
+	case NODE_STRUCT:
+	case NODE_CLASS:
+	case NODE_UNION:
+	case NODE_INTERFACE:
+	case NODE_RECORD:
+	case NODE_ANNOTATION:
+	case NODE_ENUM:
+	case NODE_TYPEDEF:
+	case NODE_TYPE_PARAMETER:
+	case NODE_FILE:
+	case NODE_MACRO:
+		return STYLE_BIG_NODE;
+	case NODE_FUNCTION:
+	case NODE_METHOD:
+	case NODE_GLOBAL_VARIABLE:
+	case NODE_FIELD:
+	case NODE_ENUM_CONSTANT:
+	case NODE_CONCEPT:
+	default:
+		return STYLE_SMALL_NODE;
+	}
+}
+
+inline bool NodeType::hasOverviewBundle() const
+{
+	return !getOverviewBundleTree().data.isValid();
+}
+
+inline std::string NodeType::getUnderscoredTypeString() const
+{
+	return utility::replace(utility::replace(getReadableTypeString(), "-", "_"), " ", "_");
+}
+
+inline std::string NodeType::getReadableTypeString() const
+{
+	return getReadableNodeKindString(m_kind);
+}

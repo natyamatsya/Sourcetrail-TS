@@ -1,19 +1,29 @@
 #ifndef NODE_H
 #define NODE_H
 
+#include "SrctrlModule.h"
+
+#ifndef SRCTRL_MODULE_PURVIEW
 #include <algorithm>
 #include <functional>
 #include <map>
+#include <ostream>
+#include <sstream>
 #include <string>
 
 #include "DefinitionKind.h"
 #include "Edge.h"
+#include "LogFacade.h"
 #include "NameHierarchy.h"
 #include "NodeModifier.h"
 #include "NodeType.h"
 #include "Token.h"
+#include "TokenComponentAccess.h"
+#include "TokenComponentConst.h"
+#include "TokenComponentStatic.h"
+#endif
 
-class Node: public Token
+SRCTRL_EXPORT class Node: public Token
 {
 public:
 	Node(Id id, NodeType type, NameHierarchy nameHierarchy, DefinitionKind definitionKind);
@@ -83,6 +93,15 @@ private:
 	size_t m_childCount = 0;
 };
 
-std::ostream& operator<<(std::ostream& ostream, const Node& node);
+SRCTRL_EXPORT std::ostream& operator<<(std::ostream& ostream, const Node& node);
+
+// Node <-> Edge mutual dependency: Edge is complete (via our top #include above) and Node is complete
+// (just defined), so this is the one point where BOTH .inl bodies can be pulled -- including Edge.inl,
+// which Edge.h deliberately leaves to us (see the note there). In a module build the wrapper includes
+// every class definition first and all .inls afterward, so guard these.
+#ifndef SRCTRL_MODULE_PURVIEW
+#include "Edge.inl"
+#include "Node.inl"
+#endif
 
 #endif	  // NODE_H
