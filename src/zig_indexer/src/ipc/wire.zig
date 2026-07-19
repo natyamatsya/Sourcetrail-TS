@@ -17,16 +17,16 @@ fn str(b: *c.flatcc_builder_t, s: []const u8) c.flatbuffers_string_ref_t {
     return c.flatbuffers_string_create(b, s.ptr, s.len);
 }
 
-/// Serialize `store` into a queue buffer. Caller owns the returned slice
-/// (allocated with `gpa`).
-pub fn serializeQueue(gpa: std.mem.Allocator, store: *const storage.Storage) Error![]u8 {
+/// Serialize one `Chunk` into a queue buffer holding a single
+/// `IntermediateStorage`. Caller owns the returned slice (allocated with `gpa`).
+pub fn serializeChunk(gpa: std.mem.Allocator, chunk: *const storage.Chunk) Error![]u8 {
     var b: c.flatcc_builder_t = undefined;
     if (c.flatcc_builder_init(&b) != 0) return Error.BuildFailed;
     defer c.flatcc_builder_clear(&b);
 
     _ = c.Sourcetrail_Ipc_IntermediateStorageQueue_start_as_root(&b);
 
-    const storage_ref = try buildStorage(&b, store);
+    const storage_ref = try buildStorage(&b, chunk);
 
     _ = c.Sourcetrail_Ipc_IntermediateStorage_vec_start(&b);
     _ = c.Sourcetrail_Ipc_IntermediateStorage_vec_push(&b, storage_ref);
@@ -44,14 +44,14 @@ pub fn serializeQueue(gpa: std.mem.Allocator, store: *const storage.Storage) Err
     return out;
 }
 
-fn buildStorage(b: *c.flatcc_builder_t, store: *const storage.Storage) Error!c.Sourcetrail_Ipc_IntermediateStorage_ref_t {
+fn buildStorage(b: *c.flatcc_builder_t, chunk: *const storage.Chunk) Error!c.Sourcetrail_Ipc_IntermediateStorage_ref_t {
     var arena_state = std.heap.ArenaAllocator.init(std.heap.c_allocator);
     defer arena_state.deinit();
     const a = arena_state.allocator();
 
     // --- nodes ---
-    const node_refs = try a.alloc(c.Sourcetrail_Ipc_StorageNode_ref_t, store.nodes.items.len);
-    for (store.nodes.items, node_refs) |n, *ref| {
+    const node_refs = try a.alloc(c.Sourcetrail_Ipc_StorageNode_ref_t, chunk.nodes.len);
+    for (chunk.nodes, node_refs) |n, *ref| {
         ref.* = c.Sourcetrail_Ipc_StorageNode_create(b, n.id, @intFromEnum(n.kind), str(b, n.serialized_name), n.modifiers);
     }
     _ = c.Sourcetrail_Ipc_StorageNode_vec_start(b);
@@ -59,8 +59,8 @@ fn buildStorage(b: *c.flatcc_builder_t, store: *const storage.Storage) Error!c.S
     const nodes_vec = c.Sourcetrail_Ipc_StorageNode_vec_end(b);
 
     // --- files ---
-    const file_refs = try a.alloc(c.Sourcetrail_Ipc_StorageFile_ref_t, store.files.items.len);
-    for (store.files.items, file_refs) |f, *ref| {
+    const file_refs = try a.alloc(c.Sourcetrail_Ipc_StorageFile_ref_t, chunk.files.len);
+    for (chunk.files, file_refs) |f, *ref| {
         ref.* = c.Sourcetrail_Ipc_StorageFile_create(b, f.id, str(b, f.file_path), str(b, f.language_identifier), boolFb(f.indexed), boolFb(f.complete));
     }
     _ = c.Sourcetrail_Ipc_StorageFile_vec_start(b);
@@ -69,28 +69,28 @@ fn buildStorage(b: *c.flatcc_builder_t, store: *const storage.Storage) Error!c.S
 
     // --- edges ---
     _ = c.Sourcetrail_Ipc_StorageEdge_vec_start(b);
-    for (store.edges.items) |e| {
+    for (chunk.edges) |e| {
         _ = c.Sourcetrail_Ipc_StorageEdge_vec_push(b, c.Sourcetrail_Ipc_StorageEdge_create(b, e.id, @intFromEnum(e.kind), e.source_node_id, e.target_node_id));
     }
     const edges_vec = c.Sourcetrail_Ipc_StorageEdge_vec_end(b);
 
     // --- symbols ---
     _ = c.Sourcetrail_Ipc_StorageSymbol_vec_start(b);
-    for (store.symbols.items) |s| {
+    for (chunk.symbols) |s| {
         _ = c.Sourcetrail_Ipc_StorageSymbol_vec_push(b, c.Sourcetrail_Ipc_StorageSymbol_create(b, s.id, @intFromEnum(s.definition_kind)));
     }
     const symbols_vec = c.Sourcetrail_Ipc_StorageSymbol_vec_end(b);
 
     // --- source locations ---
     _ = c.Sourcetrail_Ipc_StorageSourceLocation_vec_start(b);
-    for (store.source_locations.items) |l| {
+    for (chunk.source_locations) |l| {
         _ = c.Sourcetrail_Ipc_StorageSourceLocation_vec_push(b, c.Sourcetrail_Ipc_StorageSourceLocation_create(b, l.id, l.file_node_id, l.start_line, l.start_col, l.end_line, l.end_col, @intFromEnum(l.kind)));
     }
     const locations_vec = c.Sourcetrail_Ipc_StorageSourceLocation_vec_end(b);
 
     // --- local symbols ---
-    const local_refs = try a.alloc(c.Sourcetrail_Ipc_StorageLocalSymbol_ref_t, store.local_symbols.items.len);
-    for (store.local_symbols.items, local_refs) |ls, *ref| {
+    const local_refs = try a.alloc(c.Sourcetrail_Ipc_StorageLocalSymbol_ref_t, chunk.local_symbols.len);
+    for (chunk.local_symbols, local_refs) |ls, *ref| {
         ref.* = c.Sourcetrail_Ipc_StorageLocalSymbol_create(b, ls.id, str(b, ls.name));
     }
     _ = c.Sourcetrail_Ipc_StorageLocalSymbol_vec_start(b);
@@ -99,14 +99,14 @@ fn buildStorage(b: *c.flatcc_builder_t, store: *const storage.Storage) Error!c.S
 
     // --- occurrences ---
     _ = c.Sourcetrail_Ipc_StorageOccurrence_vec_start(b);
-    for (store.occurrences.items) |o| {
+    for (chunk.occurrences) |o| {
         _ = c.Sourcetrail_Ipc_StorageOccurrence_vec_push(b, c.Sourcetrail_Ipc_StorageOccurrence_create(b, o.element_id, o.source_location_id));
     }
     const occurrences_vec = c.Sourcetrail_Ipc_StorageOccurrence_vec_end(b);
 
     // --- errors ---
-    const error_refs = try a.alloc(c.Sourcetrail_Ipc_StorageError_ref_t, store.errors.items.len);
-    for (store.errors.items, error_refs) |er, *ref| {
+    const error_refs = try a.alloc(c.Sourcetrail_Ipc_StorageError_ref_t, chunk.errors.len);
+    for (chunk.errors, error_refs) |er, *ref| {
         ref.* = c.Sourcetrail_Ipc_StorageError_create(b, er.id, str(b, er.message), str(b, er.translation_unit), boolFb(er.fatal), boolFb(er.indexed));
     }
     _ = c.Sourcetrail_Ipc_StorageError_vec_start(b);
@@ -115,7 +115,7 @@ fn buildStorage(b: *c.flatcc_builder_t, store: *const storage.Storage) Error!c.S
 
     // --- assemble the storage table ---
     _ = c.Sourcetrail_Ipc_IntermediateStorage_start(b);
-    _ = c.Sourcetrail_Ipc_IntermediateStorage_next_id_add(b, store.next_id);
+    _ = c.Sourcetrail_Ipc_IntermediateStorage_next_id_add(b, chunk.next_id);
     _ = c.Sourcetrail_Ipc_IntermediateStorage_nodes_add(b, nodes_vec);
     _ = c.Sourcetrail_Ipc_IntermediateStorage_files_add(b, files_vec);
     _ = c.Sourcetrail_Ipc_IntermediateStorage_edges_add(b, edges_vec);

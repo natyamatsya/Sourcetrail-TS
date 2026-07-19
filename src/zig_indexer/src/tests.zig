@@ -143,3 +143,87 @@ test "parse error is recorded, not fatal to indexing" {
     );
     try testing.expect(store.errors.items.len > 0);
 }
+
+test "file-as-struct: top-level fields are members of the file node" {
+    const a = testing.allocator;
+    var store = storage.Storage.init(a);
+    defer store.deinit();
+    // A .zig file used as a struct: fields declared at file scope.
+    try indexString(a, &store,
+        \\x: i32,
+        \\y: i32,
+        \\pub fn sum(self: @This()) i32 { return self.x + self.y; }
+    );
+    // The file node is the owner; x and y each get an EDGE_MEMBER from it.
+    const file_id = store.node_by_name.get("test.zig").?;
+    var member_from_file: usize = 0;
+    for (store.edges.items) |e| {
+        if (e.kind == .member and e.source_node_id == file_id) member_from_file += 1;
+    }
+    try testing.expectEqual(@as(usize, 2), member_from_file);
+}
+
+test "chunker: small store is one borrowed chunk" {
+    const a = testing.allocator;
+    var store = storage.Storage.init(a);
+    defer store.deinit();
+    try indexString(a, &store,
+        \\const Point = struct { x: i32, pub fn f(self: Point) i32 { return self.x; } };
+    );
+    var set = try indexer.chunker.chunk(a, &store);
+    defer set.deinit();
+    try testing.expectEqual(@as(usize, 1), set.items.len);
+    try testing.expectEqual(store.nodes.items.len, set.items[0].nodes.len);
+    try testing.expectEqual(store.edges.items.len, set.items[0].edges.len);
+}
+
+test "chunker: oversized store splits into self-contained chunks" {
+    const a = testing.allocator;
+    var store = storage.Storage.init(a);
+    defer store.deinit();
+
+    const file_id = try store.recordFile("big.zig", "zig", true);
+    // ~8 KB names so a store of 1200 nodes far exceeds the 7 MiB budget.
+    const big_name = "n" ** 8000;
+    var buf: [8064]u8 = undefined;
+    var prev: ?storage.Id = null;
+    var k: usize = 0;
+    while (k < 1200) : (k += 1) {
+        const name = try std.fmt.bufPrint(&buf, "{s}{d}", .{ big_name, k });
+        const id = try store.recordNode(.function, name, .explicit);
+        _ = try store.recordLocation(id, file_id, .{ .start_line = 1, .start_col = 1, .end_line = 1, .end_col = 2 }, .token);
+        if (prev) |p| _ = try store.recordEdge(.call, p, id);
+        prev = id;
+    }
+
+    var set = try indexer.chunker.chunk(a, &store);
+    defer set.deinit();
+    try testing.expect(set.items.len >= 2);
+
+    var total_occurrences: usize = 0;
+    var total_edges: usize = 0;
+    for (set.items) |ch| {
+        // Node ids present in this chunk (as full row or stub).
+        var node_ids: std.AutoHashMapUnmanaged(storage.Id, void) = .empty;
+        defer node_ids.deinit(a);
+        for (ch.nodes) |n| try node_ids.put(a, n.id, {});
+        var loc_ids: std.AutoHashMapUnmanaged(storage.Id, void) = .empty;
+        defer loc_ids.deinit(a);
+        for (ch.source_locations) |l| try loc_ids.put(a, l.id, {});
+
+        // Self-containment: every edge endpoint is present in the same chunk.
+        for (ch.edges) |e| {
+            try testing.expect(node_ids.contains(e.source_node_id));
+            try testing.expect(node_ids.contains(e.target_node_id));
+        }
+        // Every occurrence's location (and that location's file node) is present.
+        for (ch.occurrences) |o| try testing.expect(loc_ids.contains(o.source_location_id));
+        for (ch.source_locations) |l| try testing.expect(node_ids.contains(l.file_node_id));
+
+        total_occurrences += ch.occurrences.len;
+        total_edges += ch.edges.len;
+    }
+    // Every occurrence and edge is emitted exactly once across all chunks.
+    try testing.expectEqual(store.occurrences.items.len, total_occurrences);
+    try testing.expectEqual(store.edges.items.len, total_edges);
+}

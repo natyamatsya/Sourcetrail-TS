@@ -88,10 +88,17 @@ fn indexOneCommand(gpa: std.mem.Allocator, io: std.Io, storage: *StorageChannel,
     // a semantic failure must not lose the syntactic result).
     resolveInto(gpa, io, &store, path, source) catch {};
 
-    // Back-pressure: wait for the app to drain before pushing more.
-    const nap = std.c.timespec{ .sec = 0, .nsec = 2 * std.time.ns_per_ms };
-    while ((try storage.count()) >= 2) _ = std.c.nanosleep(&nap, null);
-    try storage.push(gpa, &store);
+    // Split into segment-sized chunks (usually one) and push each behind the
+    // app's back-pressure, so a single huge file can never overflow the segment
+    // and be silently dropped.
+    var chunks = try indexer.chunker.chunk(gpa, &store);
+    defer chunks.deinit();
+    for (chunks.items) |*chunk| {
+        // Back-pressure: wait for the app to drain before pushing more.
+        const nap = std.c.timespec{ .sec = 0, .nsec = 2 * std.time.ns_per_ms };
+        while ((try storage.count()) >= 2) _ = std.c.nanosleep(&nap, null);
+        try storage.push(gpa, chunk);
+    }
 }
 
 fn resolveInto(gpa: std.mem.Allocator, io: std.Io, store: *indexer.Storage, path: []const u8, source: [:0]const u8) !void {

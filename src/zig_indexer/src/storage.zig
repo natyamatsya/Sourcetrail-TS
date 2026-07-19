@@ -112,6 +112,23 @@ pub const StorageError = struct { id: Id, message: []const u8, translation_unit:
 /// A 1-based source span (Sourcetrail lines/cols are 1-based, end inclusive).
 pub const Span = struct { start_line: u32, start_col: u32, end_line: u32, end_col: u32 };
 
+/// A serializable slice of storage rows — one `IntermediateStorage` message on
+/// the wire. The whole store is one chunk when it fits the segment budget;
+/// otherwise the chunker (chunker.zig) splits it into several self-contained
+/// chunks. Fields borrow their backing memory (the store arena or the chunker
+/// arena), which must outlive serialization.
+pub const Chunk = struct {
+    next_id: Id,
+    nodes: []const StorageNode = &.{},
+    files: []const StorageFile = &.{},
+    edges: []const StorageEdge = &.{},
+    symbols: []const StorageSymbol = &.{},
+    source_locations: []const StorageSourceLocation = &.{},
+    local_symbols: []const StorageLocalSymbol = &.{},
+    occurrences: []const StorageOccurrence = &.{},
+    errors: []const StorageError = &.{},
+};
+
 /// Accumulates rows and hands out element ids from a single counter, exactly
 /// like the C++ `IntermediateStorage::createId()` path (ids start at 1).
 pub const Storage = struct {
@@ -202,6 +219,22 @@ pub const Storage = struct {
         });
         try self.occurrences.append(a, .{ .element_id = element_id, .source_location_id = id });
         return id;
+    }
+
+    /// A `Chunk` view over the whole store (borrows the row lists). Used for the
+    /// common case where the storage fits the segment budget in one message.
+    pub fn wholeChunk(self: *const Storage) Chunk {
+        return .{
+            .next_id = self.next_id,
+            .nodes = self.nodes.items,
+            .files = self.files.items,
+            .edges = self.edges.items,
+            .symbols = self.symbols.items,
+            .source_locations = self.source_locations.items,
+            .local_symbols = self.local_symbols.items,
+            .occurrences = self.occurrences.items,
+            .errors = self.errors.items,
+        };
     }
 
     pub fn recordError(self: *Storage, message: []const u8, translation_unit: []const u8, fatal: bool) !Id {

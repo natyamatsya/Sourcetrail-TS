@@ -34,9 +34,11 @@ pub const StorageChannel = struct {
         return self.shm.readLocked({}, usize, H.run);
     }
 
-    /// Serialize `store` and append it as one entry to the SHM queue.
-    pub fn push(self: *StorageChannel, gpa: std.mem.Allocator, store: *const indexer.Storage) Error!void {
-        const entry = try wire.serializeQueue(gpa, store);
+    /// Serialize one `Chunk` and append it as one entry to the SHM queue. Large
+    /// stores are split into several budget-sized chunks by the chunker first
+    /// (see `indexer.chunker`), so a single entry never exceeds the segment.
+    pub fn push(self: *StorageChannel, gpa: std.mem.Allocator, chunk: *const indexer.Chunk) Error!void {
+        const entry = try wire.serializeChunk(gpa, chunk);
         defer gpa.free(entry);
 
         const Appender = struct {

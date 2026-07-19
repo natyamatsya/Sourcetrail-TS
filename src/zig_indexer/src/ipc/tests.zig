@@ -25,7 +25,8 @@ test "IntermediateStorage FlatBuffers round-trip (build -> read back)" {
         \\const std_mod = @import("std");
     );
 
-    const buf = try wire.serializeQueue(a, &store);
+    const whole = store.wholeChunk();
+    const buf = try wire.serializeChunk(a, &whole);
     defer a.free(buf);
 
     // Verify the buffer with the generated verifier before reading.
