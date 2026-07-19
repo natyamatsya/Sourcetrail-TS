@@ -132,8 +132,8 @@ mirroring how the Rust indexer degrades on unexpanded macros.
 | file, struct, function, method, field, enum, enum_constant, global_variable | ✅ | ✅ | ✅ |
 | union | ✅ | ✅ | ✅ |
 | module | ✅ | ✅ | ❌ (Zig files *are* modules) |
-| typedef (type alias) | ✅ | ✅ | ❌ (`const T = U;` → global_variable) |
-| type_parameter (generics) | ✅ | ✅ | ❌ |
+| typedef (type alias) | ✅ | ✅ | ✅ (ZLS `is_type_val`, non-import consts) |
+| type_parameter (generics) | ✅ | ✅ | ✅ (`comptime T: type` params) |
 | interface / class | trait | protocol/class | — (no OOP) |
 | macro | ✅ | ✅ | ❌ (Zig has no macros) |
 | symbol (fallback) | ✅ | ✅ | ✅ (reference targets) |
@@ -170,15 +170,17 @@ mirroring how the Rust indexer degrades on unexpanded macros.
 |---|---|---|---|---|
 | ~~1~~ | ~~`NameHierarchy` wire format~~ | — | — | **Done** (`f6e9529f33`): emits `[file, …parts]` with `.`/`/` delimiters; ZLS deserialize errors dropped from hundreds to 0. |
 | ~~2~~ | ~~Local symbols (fn-local bindings + type-3 locations)~~ | — | — | **Done** (`de1673c97a`): ZLS-resolved locals recorded as `file<line:col>` rows + type-3 occurrences; 10.3k locals / 39.8k occurrences on ZLS. |
-| 3 | `typedef` and `type_parameter` node kinds | Low–Med | M | `const T = U;` type aliases and generic params currently under-modelled. |
+| ~~3~~ | ~~`typedef` and `type_parameter` node kinds~~ | — | — | **Done** (`ddece0e633`): `comptime T: type` params → NODE_TYPE_PARAMETER; `const T = <type>` upgraded to NODE_TYPEDEF via ZLS `is_type_val`. 75 typedefs / 31 type params on ZLS. |
 | 4 | Component access from `pub` / node modifiers | Low | S | Map `pub`→public, else default; cheap enrichment. |
-| 5 | Status: omit empty vectors on write; crashed-TU bookkeeping | Low | S | Align with ADR-0003 and the `start_indexing` crash path. |
-| 6 | Node attributes (deprecated/doc) | Low | M | Display-only side table; least impactful. |
-| 7 | `implicit` definition kind | Low | S | Zig has few compiler-synthesized decls to mark. |
+| 5 | Typedef references as EDGE_TYPE_USAGE (currently EDGE_USAGE) | Low | S | The reference pass reads the syntactic decl map; teach it the reclassified kind. |
+| 6 | Status: omit empty vectors on write; crashed-TU bookkeeping | Low | S | Align with ADR-0003 and the `start_indexing` crash path. |
+| 7 | Node attributes (deprecated/doc) | Low | M | Display-only side table; least impactful. |
+| 8 | `implicit` definition kind | Low | S | Zig has few compiler-synthesized decls to mark. |
 
-None block indexing. With #1 and #2 done the full index runs with **zero**
-logged errors and full local-variable highlighting; the next enrichment is the
-under-modelled `typedef` / `type_parameter` node kinds (#3).
+None block indexing. With #1–#3 done the full index runs with **zero** logged
+errors, full local-variable highlighting, and typedef/generic modelling; only
+low-severity display enrichments remain (component access #4, typedef edge kind
+#5).
 
 ---
 
@@ -204,8 +206,8 @@ under-modelled `typedef` / `type_parameter` node kinds (#3).
 The Zig indexer is a **production-shaped peer** on everything that governs
 correctness and throughput — IPC contract, chunked storage, back-pressure,
 incremental reverse-deps, the `NameHierarchy` wire format (a full index runs
-with zero logged errors), and local-variable highlighting. Its remaining
-distance from Rust/Swift is **semantic breadth**, led by the under-modelled
-type-alias / generic node kinds (#3) and access/attribute metadata. Those are
-additive enrichments on a foundation that is already at parity, not structural
-rework.
+with zero logged errors), local-variable highlighting, and typedef/generic
+modelling. Its remaining distance from Rust/Swift is a handful of low-severity
+display enrichments — component-access/modifier metadata (#4), the typedef
+reference edge kind (#5), node attributes (#7). Those are additive polish on a
+foundation that is at parity, not structural rework.

@@ -228,8 +228,13 @@ can't be exercised by `zig build test` alone).
     (var/const/param/capture) become `StorageLocalSymbol` rows keyed `<file><line:col>`
     (C++ `getLocalSymbolName` convention) with LOCATION_LOCAL_SYMBOL (type 3) occurrences
     at each use — the GUI's same-local highlighting. 10.3k locals / 39.8k occurrences on ZLS.
+  - **Typedefs + type parameters — ✅ landed** (`ddece0e633`): `comptime T: type` params →
+    NODE_TYPE_PARAMETER (syntactic, parser); `const T = <non-import type>` → NODE_TYPEDEF via
+    a ZLS `resolveTypedefs` pass keyed on `Type.is_type_val`. 75 typedefs / 31 type params on
+    ZLS. See `context/PARITY_ZIG_INDEXER.md`; only low-severity display enrichments remain.
   - **Next increment:** comptime/type resolution is WIP in ZLS — degrade to the syntactic
-    result where it can't resolve. `typedef`/`type_parameter` node kinds are the next gap.
+    result where it can't resolve. Remaining polish: component access from `pub` (#4),
+    typedef references as EDGE_TYPE_USAGE (#5).
 
 ## Phase 4 — Per-file incremental — ✅ landed + verified
 
