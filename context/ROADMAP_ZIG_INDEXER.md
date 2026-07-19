@@ -203,16 +203,25 @@ can't be exercised by `zig build test` alone).
   `--resolve <file> <ident>` mode (`square` in main resolves into util.zig; `Color`
   correctly unresolved from main's scope).
   - **Reference wiring — ✅ landed.** For each identifier reference, resolve via ZLS
-    (`getPositionContext` → `lookupSymbolGlobal` / `getSymbolFieldAccesses`) and emit
-    `EDGE_CALL` (functions) / `EDGE_USAGE` from the enclosing top-level decl to the target,
-    with an occurrence. Names are now file-qualified `"<file>::<local>"`
-    (`storage.qualifiedName`) in **both** the declaration and reference passes, so a
-    resolved cross-file target dedups onto the right node. Verified end-to-end: the fixture
-    yields `EDGE_CALL main.zig::main → util.zig::square` (the cross-file call) in SQLite.
-  - **Next increment:** nested targets (methods/fields) — need a scope-path qualified name;
-    currently skipped. Type references as `EDGE_TYPE_USAGE` (currently `USAGE`). Context =
-    nested enclosing scope (currently the enclosing top-level decl). Comptime/type
-    resolution is WIP in ZLS; degrade to the syntactic result where it can't resolve.
+    (`getPositionContext` → `lookupSymbolGlobal` / `getSymbolFieldAccesses`) and emit an
+    edge from the enclosing decl to the target, with an occurrence. Names are file-qualified
+    `"<file>::<dotted-local>"` (`storage.qualifiedName`) in **both** the declaration and
+    reference passes, so a resolved cross-file target dedups onto the right node. Verified
+    end-to-end: the fixture yields `EDGE_CALL main.zig::main → util.zig::square` (the
+    cross-file call) in SQLite.
+  - **Nested targets + kind-derived edges — ✅ landed.** `parser.collectDecls` builds a
+    per-file `AST node → {dotted name, NodeKind}` map mirroring the declaration walk's
+    naming (`Point.add`, `Point.x`); the reference pass caches these maps per URI and looks
+    up the resolved AST node instead of gating on root-decl-ness, so methods/fields resolve
+    too. Edge kind is derived from the target's NodeKind: function/method → `EDGE_CALL`,
+    struct/enum/union/typedef → `EDGE_TYPE_USAGE`, else → `EDGE_USAGE`. Reference context is
+    the **innermost** enclosing decl (smallest containing byte span), so a reference inside a
+    method is attributed to the method. Verified on the fixture: `main → Point.add` (CALL),
+    `main → Point.x` and `Point.add → Point.x/Point.y` (USAGE), `main → Point` and
+    `Point.add → Point` (TYPE_USAGE), cross-file `main → square` (CALL) intact.
+  - **Next increment:** comptime/type resolution is WIP in ZLS — degrade to the syntactic
+    result where it can't resolve. Proper `NameHierarchy` wire-format (the `<file>::<name>`
+    strings currently produce cosmetic deserialize warnings).
 
 ## Phase 4 — Per-file incremental — ✅ landed + verified
 
