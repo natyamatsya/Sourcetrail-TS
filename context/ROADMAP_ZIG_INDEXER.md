@@ -242,11 +242,14 @@ can't be exercised by `zig build test` alone).
   - **Doc attributes + deprecation — ✅ landed** (`ac4566f801`): `///` first line →
     `doc_brief` node_attribute (430 on ZLS); `/// Deprecated:` → deprecated modifier +
     attribute. Parity gaps #1–#7 and #9 all done.
-  - **Feature parity reached.** The one open gap, `implicit` definition kind (#8), is N/A for
-    Zig (it synthesises no indexed symbols). Genuinely optional future work: read-side status
-    verification; comptime/type resolution improves as ZLS matures; Rust-style
-    generic-specialisation nodes would be a new feature, not gap-closing. See
-    `context/PARITY_ZIG_INDEXER.md`.
+  - **Feature parity reached.** Open gap `implicit` definition kind (#8) is N/A for Zig (it
+    synthesises no indexed symbols). Read-side status `getCheckedRoot` verification was
+    investigated and found **not viable**: flatcc's `verify_as_root` rejects flatcc's own
+    status buffers containing a `[uint64]` (error 12 "table field not aligned"; the C++
+    Google-FlatBuffers verifier accepts them) — the alignment-safe manual readers already
+    provide the crash-safety it would add. Genuinely optional future work: broader test
+    coverage / CI wiring; comptime/type resolution improves as ZLS matures; Rust-style
+    generic-specialisation nodes would be a new feature. See `context/PARITY_ZIG_INDEXER.md`.
 
 ## Phase 4 — Per-file incremental — ✅ landed + verified
 

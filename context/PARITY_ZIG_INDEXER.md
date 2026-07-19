@@ -87,17 +87,24 @@ correct instead of silently dropped.
 | `finished_process_ids` append | ✅ | ✅ | ✅ (hand-rolled u64-vec reader) |
 | `start_indexing` crash bookkeeping → `crashed_file_paths` | ✅ | ✅ (`3de38f1e25`) | ✅ |
 | empty vectors omitted (null) on write | ✅ (ADR-0003) | ✅ (`3de38f1e25`) | ✅ |
-| verify (`getCheckedRoot`) on read, surface corruption | ✅ | 🟡 `as_root`, no verify | 🟡 |
+| verify (`getCheckedRoot`) on read, surface corruption | ✅ | ⛔ not viable with flatcc | 🟡 |
 
 One remaining divergence, low-severity:
 
-- **No FlatBuffers verification on read.** Rust/Swift use `getCheckedRoot` and
-  surface a corrupt non-empty status as an error; Zig reads via `as_root` (its
-  memcpy accessor shim + hand-rolled u64-vector reader already make torn reads
-  non-fatal). The C++ poller occasionally logs "IndexingStatus failed FlatBuffers
-  verification; treating as empty status" from a torn concurrent read — handled
-  gracefully on both sides; omitting empty vectors (above) shrank that window
-  (19→9 on a full ZLS index).
+- **No FlatBuffers verification on read** — and it is **not viable in this
+  stack**. flatcc's `verify_as_root` rejects flatcc's *own* status buffers that
+  contain a `finished_process_ids` `[uint64]` with error 12 "table field not
+  aligned": flatcc's builder emits u64 vectors at 4-byte alignment but its
+  verifier demands 8 (the same inconsistency behind the original read crash).
+  The Google-FlatBuffers verifier on the C++ side accepts these buffers, so the
+  data is valid — flatcc's verifier is simply stricter than its own builder.
+  Adding it would reject every status carrying a finished pid. Zig instead reads
+  via `as_root` with the memcpy accessor shim + a bounds-checked hand-rolled
+  u64-vector reader, which already make torn/corrupt reads non-fatal (they parse
+  defensively, never crash). The C++ poller still occasionally logs "IndexingStatus
+  failed FlatBuffers verification; treating as empty status" from a torn
+  concurrent read — handled gracefully on both sides; omitting empty vectors
+  (above) shrank that window (19→9 on a full ZLS index).
 
 ---
 
