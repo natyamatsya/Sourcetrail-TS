@@ -41,6 +41,7 @@ CxxAstVisitor::CxxAstVisitor(
 		  CxxAstVisitorComponentDeclarationIndexer(this, m_index),
 		  CxxAstVisitorComponentReferenceIndexer(this, astContext, m_index),
 		  CxxAstVisitorComponentTypeIndexer(this, m_index),
+		  CxxAstVisitorComponentModuleIndexer(this, astContext, m_index),
 		  CxxAstVisitorComponentBraceRecorder(this, astContext, client))
 {
 	// The context component now exists; hand it to the indexing facade (it could not be reached
@@ -413,8 +414,9 @@ bool CxxAstVisitor::TraverseTemplateTemplateParmDecl(clang::TemplateTemplateParm
 	return true;
 }
 
-bool CxxAstVisitor::VisitTranslationUnitDecl(clang::TranslationUnitDecl*  /*d*/)
+bool CxxAstVisitor::VisitTranslationUnitDecl(clang::TranslationUnitDecl* d)
 {
+	forEachComponent([&](auto& component) { component.visitTranslationUnitDecl(d); });
 	return true;
 }
 
@@ -777,6 +779,8 @@ DEF_VISIT_TYPE_PTR(DeclStmt)
 DEF_VISIT_TYPE_PTR(ReturnStmt)
 DEF_VISIT_TYPE_PTR(CompoundStmt)
 DEF_VISIT_TYPE_PTR(InitListExpr)
+DEF_VISIT_TYPE_PTR(ImportDecl)
+DEF_VISIT_TYPE_PTR(ExportDecl)
 DEF_VISIT_TYPE_PTR(TagDecl)
 DEF_VISIT_TYPE_PTR(ClassTemplateDecl)
 DEF_VISIT_TYPE_PTR(ClassTemplateSpecializationDecl)

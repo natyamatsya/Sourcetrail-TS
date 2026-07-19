@@ -24,6 +24,9 @@ enum NodeModifierType
 	// since-version rides the node_attribute table under DEPRECATED). Swift
 	// `@available(*, deprecated)`, C++ `[[deprecated]]`, Rust `#[deprecated]`.
 	NODE_MODIFIER_DEPRECATED = 1 << 3,
+	// A declaration exported from a C++20 named module (`export ...`). Modelled
+	// as the underlying kind + this flag rather than a new node kind.
+	NODE_MODIFIER_EXPORTED = 1 << 4,
 };
 
 using NodeModifierMask = int;

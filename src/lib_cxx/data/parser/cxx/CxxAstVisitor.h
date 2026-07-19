@@ -17,6 +17,7 @@
 #include "CxxAstVisitorComponentDeclRefKind.h"
 #include "CxxAstVisitorComponentImplicitCode.h"
 #include "CxxAstVisitorComponentDeclarationIndexer.h"
+#include "CxxAstVisitorComponentModuleIndexer.h"
 #include "CxxAstVisitorComponentReferenceIndexer.h"
 #include "CxxAstVisitorComponentTypeIndexer.h"
 #include "CxxAstVisitorComponentTypeRefKind.h"
@@ -154,6 +155,8 @@ public:
 	bool VisitInitListExpr(clang::InitListExpr* s);
 
 
+	bool VisitImportDecl(clang::ImportDecl* d);
+	bool VisitExportDecl(clang::ExportDecl* d);
 	bool VisitTagDecl(clang::TagDecl* d);
 	bool VisitClassTemplateDecl(clang::ClassTemplateDecl *d);
 	bool VisitClassTemplateSpecializationDecl(clang::ClassTemplateSpecializationDecl* d);
@@ -177,7 +180,7 @@ public:
 	bool VisitConceptDecl(clang::ConceptDecl *d);
 	bool VisitConceptSpecializationExpr(clang::ConceptSpecializationExpr *d);
 	bool VisitConceptReference(clang::ConceptReference *d);
-	static bool VisitTranslationUnitDecl(clang::TranslationUnitDecl* d);
+	bool VisitTranslationUnitDecl(clang::TranslationUnitDecl* d);
 
 	bool VisitTypeLoc(clang::TypeLoc tl);
 
@@ -252,6 +255,7 @@ protected:
 		CxxAstVisitorComponentDeclarationIndexer,
 		CxxAstVisitorComponentReferenceIndexer,
 		CxxAstVisitorComponentTypeIndexer,
+		CxxAstVisitorComponentModuleIndexer,
 		CxxAstVisitorComponentBraceRecorder>
 		m_components;
 };

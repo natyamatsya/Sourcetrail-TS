@@ -21,6 +21,7 @@ namespace clang
 class ASTContext;
 class Decl;
 class NamedDecl;
+class Module;
 class Type;
 class DeducedType;
 class QualType;
@@ -68,6 +69,9 @@ public:
 	Id getOrCreateSymbolId(const clang::Type* type);
 	Id getOrCreateSymbolId(CxxContext context);
 	Id getOrCreateSymbolId(CxxContext context, const NameHierarchy& fallback);
+	// Interns a C++20 module as a MODULE symbol keyed by its full module name
+	// (idempotent — ParserClient::recordSymbol dedupes by serialized name).
+	Id getOrCreateModuleSymbolId(const clang::Module* module);
 
 	// --- current context ---------------------------------------------------------------------
 	CxxContext getContext(size_t skip = 0) const;
