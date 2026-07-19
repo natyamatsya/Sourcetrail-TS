@@ -7,12 +7,24 @@
 
 #include <nlohmann/json.hpp>
 
-#include <llvm/TargetParser/Host.h>
+#include <clang/Frontend/FrontendActions.h>
+#include <clang/Tooling/Tooling.h>
 
+#include "CanonicalFilePathCache.h"
+#include "CxxCompilationDatabaseSingle.h"
+#include "FilePathFilter.h"
+#include "CxxParser.h"
+#include "FileRegister.h"
 #include "FileSystem.h"
+#include "IntermediateStorage.h"
+#include "ParserClientImpl.h"
+#include "ResourcePaths.h"
+#include "SingleFrontendActionFactory.h"
+#include "ToolChain.h"
 #include "logging.h"
 #include "utility.h"
 #include "utilityApp.h"
+#include "utilityClang.h"
 
 namespace
 {
@@ -67,11 +79,62 @@ bool mightUseModules(const FilePath& file)
 	return false;
 }
 
-// The flags a module-interface BMI must be built with AND every importing TU must be indexed with,
-// so libclang can load the BMI (target triple + builtin-module handling must match).
-std::vector<std::string> moduleMatchFlags(const std::string& triple)
+// Builds one module-interface BMI in-process via a libTooling FrontendAction (the same machinery as
+// the PCH build), so the BMI is created with the exact libclang configuration the indexer later
+// loads it with -- no external clang++, and no target/resource-dir mismatch to paper over. Returns
+// true if the .pcm was produced.
+bool buildBmiInProcess(
+	const FilePath& inputFile,
+	const FilePath& bmiPath,
+	const FilePath& cacheDir,
+	const std::vector<std::string>& essentialInputFlags)
 {
-	return {"-target", triple, "-Xclang", "-fbuiltin-headers-in-system-modules"};
+	CxxParser::initializeLLVM();
+
+	// BMI generation records nothing into Sourcetrail storage; a throwaway client satisfies the API.
+	auto storage = std::make_shared<IntermediateStorage>();
+	auto client = std::make_shared<ParserClientImpl>(storage);
+	auto fileRegister = std::make_shared<FileRegister>(
+		inputFile, std::set<FilePath>{inputFile}, std::set<FilePathFilter>{});
+	auto cache = std::make_shared<CanonicalFilePathCache>(fileRegister);
+
+	std::vector<std::string> flags = essentialInputFlags;
+	utility::append(
+		flags,
+		std::vector<std::string>{
+			"-x",
+			"c++-module",
+			"-fprebuilt-module-path=" + cacheDir.str(),
+			inputFile.str(),
+			"-Xclang",
+			"-emit-module-interface",
+			"-o",
+			bmiPath.str()});
+
+	clang::tooling::CompileCommand command;
+	command.Filename = inputFile.fileName();
+	command.Directory = inputFile.getParentDirectory().str();
+	command.CommandLine = utility::concat(
+		std::vector<std::string>{ClangCompiler::TOOL_NAME},
+		CxxParser::getCommandlineArgumentsEssential(std::string(), flags));
+
+	CxxCompilationDatabaseSingle database(command);
+	clang::tooling::ClangTool tool(database, {inputFile.str()});
+	tool.clearArgumentsAdjusters();
+
+	// Match the indexer's builtin-header handling for an empty compiler path (see CxxParser::runTool).
+	if (!utility::resolveCompilerResourceDir(std::string()))
+	{
+		tool.appendArgumentsAdjuster(clang::tooling::getInsertArgumentAdjuster(
+			ResourcePaths::getCxxCompilerHeaderDirectoryPath().str().c_str(),
+			clang::tooling::ArgumentInsertPosition::BEGIN));
+		tool.appendArgumentsAdjuster(clang::tooling::getInsertArgumentAdjuster(
+			ClangCompiler::systemIncludeOption().c_str(),
+			clang::tooling::ArgumentInsertPosition::BEGIN));
+	}
+
+	tool.run(new SingleFrontendActionFactory(new clang::GenerateModuleInterfaceAction()));
+	return bmiPath.recheckExists();
 }
 }	 // namespace
 
@@ -82,18 +145,15 @@ CxxModulePrebuilder::Result CxxModulePrebuilder::prebuild(
 {
 	Result result;
 
-	const std::string triple = llvm::sys::getDefaultTargetTriple();
 	const std::string clangxx = toolPath("clang++");
 	const std::string scandeps = toolPath("clang-scan-deps");
 
-	// Flags common to scanning and BMI building: the project's own flags, a C++20+ standard, and the
-	// match flags. Kept separate from Sourcetrail's include-pch flags, which don't apply here.
+	// Flags common to scanning and BMI building: the project's own flags plus a C++20+ standard.
 	std::vector<std::string> buildFlags = baseCompilerFlags;
 	if (!hasStdFlag(buildFlags))
 	{
 		buildFlags.push_back("-std=c++20");
 	}
-	utility::append(buildFlags, moduleMatchFlags(triple));
 
 	// --- 1. scan every file for the module it provides / requires ---------------------------------
 	std::map<std::string, FilePath> moduleProviderFile;	  // logical-name -> interface unit
@@ -220,28 +280,16 @@ CxxModulePrebuilder::Result CxxModulePrebuilder::prebuild(
 	{
 		const std::string logicalName = providedModule[file];
 		const FilePath bmiPath = cacheDir.getConcatenated("/" + logicalName + ".pcm");
-
-		std::vector<std::string> args = buildFlags;
-		utility::append(
-			args,
-			{"-fprebuilt-module-path=" + cacheDir.str(),
-			 "-x",
-			 "c++-module",
-			 "--precompile",
-			 file.str(),
-			 "-o",
-			 bmiPath.str()});
-
-		const utility::ProcessOutput out = utility::executeProcess(clangxx, args, FilePath(), false);
-		if (out.exitCode != 0 || !bmiPath.recheckExists())
+		if (!buildBmiInProcess(file, bmiPath, cacheDir, buildFlags))
 		{
-			LOG_ERROR("Failed to build BMI for module '" + logicalName + "' (" + file.str() + "): " + out.error);
+			LOG_ERROR("Failed to build BMI for module '" + logicalName + "' (" + file.str() + ")");
 		}
 	}
 
 	// --- 4. flags the indexer needs to resolve imports against the cache --------------------------
+	// The BMIs were built in-process with the indexer's own libclang configuration, so no target /
+	// builtin-header match flags are needed here -- only the path to find them.
 	result.sharedFlags = {"-fprebuilt-module-path=" + cacheDir.str()};
-	utility::append(result.sharedFlags, moduleMatchFlags(triple));
 	for (const auto& [file, name]: providedModule)
 	{
 		result.interfaceUnits.insert(file);
