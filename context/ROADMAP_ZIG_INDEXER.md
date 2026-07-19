@@ -193,10 +193,20 @@ can't be exercised by `zig build test` alone).
   | function-local binding | `local_symbol` (`file<line:col>` convention) | `LOCATION_LOCAL_SYMBOL` |
 
   Source locations from Ast token spans; parse errors → `StorageError`.
-- **3b ZLS** (`Analyser` + `DocumentStore`): cross-file goto-def / find-refs / document
-  symbols for semantic edge resolution. Comptime/type resolution is WIP — degrade to
-  name-based fallback (the Rust indexer does the same for unexpanded macros). Requires
-  depending on ZLS as a Zig module.
+- **3b ZLS** (`Analyser` + `DocumentStore`) — ✅ **core landed.** ZLS 0.16.0 is consumed as
+  a library module on the existing Zig 0.16.0 toolchain (the latest 0.17-dev is *ahead* of
+  what ZLS master supports — its window is `[0.17.0-dev.292, dev.601)` — so 0.16.0 is both
+  simpler and more robust). `src/semantic.zig` wraps `DocumentStore` + `Analyser` +
+  `InternPool` (setup per ZLS's `tests/analysis_check.zig`): `lookupGlobal` resolves an
+  identifier to its declaration across imports (name + owning file); `resolveImport`
+  resolves an `@import` string to the target URI. Proven at runtime via the
+  `--resolve <file> <ident>` mode (`square` in main resolves into util.zig; `Color`
+  correctly unresolved from main's scope).
+  - **Next increment:** wire resolved references into storage emission as
+    `EDGE_CALL`/`EDGE_TYPE_USAGE` — this needs **file-qualified NameHierarchy** names so a
+    resolved target maps to the right Sourcetrail node across files (today's Phase-3a names
+    like `square` aren't globally unique) — plus field-access (`a.b`) resolution. Comptime/
+    type resolution is WIP in ZLS; degrade to the syntactic result where it can't resolve.
 
 ## Phase 4 — Per-file incremental (ships with the above)
 
