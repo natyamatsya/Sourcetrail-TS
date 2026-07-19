@@ -56,10 +56,22 @@ The production `sqlite/` impls couple to two third-party libraries:
   2. **Not precompiled.** "No compiled version of the modules will be installed; your project compiles the
      module sources itself." → we add sqlpp23's `.cppm` to our build (CMake wiring + real BMI build cost).
   3. **The `SQLPP_CREATE_NAME_TAG_FOR_SQL_AND_CPP` macro.** The ddl2cpp-generated schema headers define
-     column/table name tags via this macro, and **macros don't cross `import`**. Options: (a) keep
-     `<sqlpp23/core/name/create_name_tag.h>` in the GMF so the macro is textually available (pragmatic), or
-     (b) teach `tools/sqlpp23/ddl2cpp` to emit macro-free (pre-expanded) name tags so the schema header is
-     import-clean (better, ties into `DESIGN_STORAGE_CODEGEN.md`).
+     column/table name tags via this macro, and **macros don't cross `import`**. The macro expands to a
+     `struct _sqlpp_name_tag` that does two things: (1) stringizes the SQL name (`static constexpr char
+     name[] = "id"`) and (2) generates a `_member_t` with a data member **literally named** after the C++
+     column (`T id = {}`) plus a `.id` accessor.
+     - **Can a consteval wrapper replace it (à la the logging `fmt_with_loc`)?** Only half. The name-string
+       (1) is a compile-time value that a consteval/NTTP `name_tag<"id">` could carry. But (2) *synthesizes
+       a declaration with a computed identifier* (`.id`) — that's preprocessor/reflection territory;
+       consteval produces values, not members-with-computed-names. So consteval alone can't replace it.
+     - **It doesn't need to.** The macro runs at schema-*definition* time (in our generated header), not at
+       query time, so nothing has to cross `import`. Two clean options: **(a)** `import sqlpp23.core;` for
+       the machinery **+ a GMF `#include <sqlpp23/core/name/create_name_tag.h>`** for just the (tiny,
+       macro-only) tag header — simple and correct; or **(b, best)** teach `tools/sqlpp23/ddl2cpp` to emit
+       the tag **pre-expanded** (inline the small macro body into the generated schema) so the header is
+       fully import-clean with zero macro dependency. (b) is straightforward codegen work and ties into
+       `DESIGN_STORAGE_CODEGEN.md`. Whether we can drop `_member_t` entirely (if our queries address columns
+       by tag *type*, not the `.id` field) is a spike question that would simplify both options.
 
   **Recommendation: a de-risking spike before any storage-impl conversion** — a tiny harness that
   `import sqlpp23.core; import sqlpp23.sqlite3;` + one generated table on clang-22, resolving the macro
