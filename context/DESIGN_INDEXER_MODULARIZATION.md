@@ -230,8 +230,19 @@ cycles in `lib` is prerequisite work, and a good cleanup in its own right).
     dependency. Verified: `Sourcetrail_lib` builds OFF (LocationType consumers use the inline
     specialization) and ON, and a consumer importing both modules resolves `intToEnum<LocationType>`
     and `operator<<` across the boundary.
-- **Next — more `srctrl.data` (name/, location/, graph/), then `srctrl.storage`.** Bottom-up, same
-  inline/`.inl` + partition + cross-module-`import` patterns.
+- **Phase 2 (cont.) — `name/` cluster started: `NameElement` → `srctrl.data:name`.** The first
+  *concrete class* with out-of-line members joins a module. All of its members (and its nested
+  `Signature` class) are inlined into `NameElement.inl`; `srctrl.data:name` `import srctrl.utility;`
+  for the one `utility::substrBeforeLast` call. Verified OFF+ON (import == header build).
+  - **Critical rule this proved: every member of an exported class must be inline.** An out-of-line
+    member defined in an ordinary `.cpp` (global module) does NOT resolve for module *importers*
+    (undefined symbol — the exported class is module-attached, so the member is mangled differently
+    than the global-module definition). Header consumers still work (both global-module), but the
+    module can't leave any member out-of-line.
+- **Next — `NameHierarchy`, then the rest of `name/`/`location/`/`graph/`, then `srctrl.storage`.**
+  `NameHierarchy` needs *full* inlining (per the rule above), and its `deserialize` uses `LOG_ERROR`,
+  so `logging.h` (a macro header) must be `#include`d into the `:name` wrapper's GMF (macros can't be
+  imported) — the same seam as `LOG_*`.
 - **Phase 3 — `srctrl.cxx`.** Modularize `lib_cxx` with partitions; absorb the Clang-header BMI cost.
 - **Phase 4 — the indexer binary.** `src/indexer/main.cpp` becomes a pure consumer:
   `import srctrl.cxx;` (+ optionally `import std;`).

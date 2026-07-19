@@ -1,11 +1,18 @@
 #ifndef NAME_ELEMENT_H
 #define NAME_ELEMENT_H
 
+#include "SrctrlModule.h"
+
+// utility::substrBeforeLast (utilityString) lives in srctrl.utility. #included in the header build;
+// the srctrl.data:name wrapper `import srctrl.utility;`s in the module build (so skip it in the purview).
+#ifndef SRCTRL_MODULE_PURVIEW
 #include <string>
+#include "utilityString.h"
+#endif
 
 class DataType;
 
-class NameElement
+SRCTRL_EXPORT class NameElement
 {
 public:
 	class Signature
@@ -42,5 +49,7 @@ private:
 	std::string m_name;
 	Signature m_signature;
 };
+
+#include "NameElement.inl"
 
 #endif	  // NAME_ELEMENT_H

@@ -5,3 +5,4 @@
 export module srctrl.data;
 
 export import :types;
+export import :name;
