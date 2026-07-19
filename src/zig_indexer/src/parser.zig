@@ -50,6 +50,73 @@ pub fn indexSource(
     }
 }
 
+/// Name + kind of a declaration, keyed by its AST node — the inverse of the
+/// emission pass, used by the ZLS reference pass to name a resolved target the
+/// SAME way the declaration pass named it (so cross-file targets dedup). Mirrors
+/// `Walker.handleDecl` exactly; `name` is the plain dotted local path (no file
+/// qualifier).
+pub const DeclInfo = struct { name: []const u8, kind: NodeKind };
+
+/// Map every named declaration in `tree` to its dotted local name + kind.
+/// Allocated with `gpa` (names too); caller owns the map.
+pub fn collectDecls(gpa: std.mem.Allocator, tree: *const Ast) Error!std.AutoHashMapUnmanaged(Ast.Node.Index, DeclInfo) {
+    var map: std.AutoHashMapUnmanaged(Ast.Node.Index, DeclInfo) = .empty;
+    errdefer map.deinit(gpa);
+    var c = Collector{ .gpa = gpa, .tree = tree, .map = &map };
+    for (tree.rootDecls()) |node| try c.visit(node, "", false, .file);
+    return map;
+}
+
+const Collector = struct {
+    gpa: std.mem.Allocator,
+    tree: *const Ast,
+    map: *std.AutoHashMapUnmanaged(Ast.Node.Index, DeclInfo),
+
+    fn qualify(self: *Collector, scope: []const u8, name: []const u8) Error![]const u8 {
+        if (scope.len == 0) return self.gpa.dupe(u8, name);
+        return std.fmt.allocPrint(self.gpa, "{s}.{s}", .{ scope, name });
+    }
+
+    fn containerKind(self: *Collector, container: Ast.full.ContainerDecl) NodeKind {
+        return switch (self.tree.tokenTag(container.ast.main_token)) {
+            .keyword_enum => .@"enum",
+            .keyword_union => .@"union",
+            else => .@"struct",
+        };
+    }
+
+    fn visit(self: *Collector, node: Ast.Node.Index, scope: []const u8, in_container: bool, parent_kind: NodeKind) Error!void {
+        const tree = self.tree;
+        var fn_buf: [1]Ast.Node.Index = undefined;
+        if (tree.fullFnProto(&fn_buf, node)) |proto| {
+            const name_tok = proto.name_token orelse return;
+            const local = try self.qualify(scope, tree.tokenSlice(name_tok));
+            try self.map.put(self.gpa, node, .{ .name = local, .kind = if (in_container) .method else .function });
+            return;
+        }
+        if (tree.fullVarDecl(node)) |var_decl| {
+            const local = try self.qualify(scope, tree.tokenSlice(var_decl.ast.mut_token + 1));
+            if (var_decl.ast.init_node.unwrap()) |init_node| {
+                var c_buf: [2]Ast.Node.Index = undefined;
+                if (tree.fullContainerDecl(&c_buf, init_node)) |container| {
+                    const kind = self.containerKind(container);
+                    try self.map.put(self.gpa, node, .{ .name = local, .kind = kind });
+                    for (container.ast.members) |member| try self.visit(member, local, true, kind);
+                    return;
+                }
+            }
+            try self.map.put(self.gpa, node, .{ .name = local, .kind = .global_variable });
+            return;
+        }
+        if (tree.fullContainerField(node)) |field| {
+            const local = try self.qualify(scope, tree.tokenSlice(field.ast.main_token));
+            const kind: NodeKind = if (parent_kind == .@"enum") .enum_constant else .field;
+            try self.map.put(self.gpa, node, .{ .name = local, .kind = kind });
+            return;
+        }
+    }
+};
+
 const Walker = struct {
     gpa: std.mem.Allocator,
     store: *Storage,

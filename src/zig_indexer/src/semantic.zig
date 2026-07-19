@@ -106,17 +106,20 @@ pub const Session = struct {
 // Reference resolution pass
 // ---------------------------------------------------------------------------
 
-/// A top-level declaration in the file being indexed, with its byte span — used
-/// to attribute a reference to the enclosing declaration (the edge's context).
-const TopDecl = struct { start: usize, end: usize, qual: []const u8 };
+const DeclWithHandle = zls.Analyser.DeclWithHandle;
+const DeclMap = std.AutoHashMapUnmanaged(Ast.Node.Index, indexer.parser.DeclInfo);
+
+/// An enclosing declaration with its byte span, used to attribute a reference to
+/// its context (the edge source). The innermost containing span wins.
+const Context = struct { start: usize, end: usize, qual: []const u8 };
 
 /// Resolve every identifier reference in `handle`'s file to its declaration via
-/// ZLS and append resolved edges to `store`: EDGE_CALL to functions, EDGE_USAGE
-/// otherwise, each with an occurrence at the reference site. Only references
-/// whose target is a *top-level* declaration are wired (their file-qualified
-/// name is unambiguous and matches the declaration pass; nested targets need a
-/// scope-path name and are left for a follow-up). `file_path` is the absolute
-/// path of the indexed file; `file_node_id` its NODE_FILE id.
+/// ZLS and append resolved edges to `store`: EDGE_CALL (functions/methods),
+/// EDGE_TYPE_USAGE (types), EDGE_USAGE (everything else), each with an occurrence
+/// at the reference site. Targets are named the SAME way the declaration pass
+/// names them (file-qualified dotted path via indexer.parser.collectDecls), so
+/// nested targets (methods, fields) resolve across files too, and the reference
+/// is attributed to the innermost enclosing declaration.
 pub fn resolveReferences(
     session: *Session,
     store: *Storage,
@@ -127,19 +130,21 @@ pub fn resolveReferences(
     const gpa = store.arena.allocator();
     const tree = &handle.tree;
 
-    // Enclosing-context table: this file's top-level decls with their byte spans.
-    var contexts: std.ArrayListUnmanaged(TopDecl) = .empty;
-    for (tree.rootDecls()) |node| {
-        const name_tok = declNameToken(tree, node) orelse continue;
-        const first = tree.firstToken(node);
-        const last = tree.lastToken(node);
-        const start = tree.tokens.items(.start)[first];
-        const end = tree.tokens.items(.start)[last] + tree.tokenSlice(last).len;
-        const local = tree.tokenSlice(name_tok);
+    // Per-file decl maps (AST node -> name+kind), keyed by file URI, built lazily.
+    var decl_maps: std.StringHashMapUnmanaged(DeclMap) = .empty;
+
+    // Context table for THIS file: every named decl with its byte span. Built
+    // up front (before any wireOne inserts into decl_maps and invalidates the
+    // current-file map pointer).
+    const cur_map = try getDeclMap(&decl_maps, gpa, handle.uri.raw, tree);
+    var contexts: std.ArrayListUnmanaged(Context) = .empty;
+    var mit = cur_map.iterator();
+    while (mit.next()) |e| {
+        const range = nodeByteRange(tree, e.key_ptr.*);
         try contexts.append(gpa, .{
-            .start = start,
-            .end = end,
-            .qual = try indexer.storage.qualifiedName(gpa, file_path, local),
+            .start = range[0],
+            .end = range[1],
+            .qual = try indexer.storage.qualifiedName(gpa, file_path, e.value_ptr.name),
         });
     }
 
@@ -147,7 +152,7 @@ pub fn resolveReferences(
     defer analyser.deinit();
 
     // Dedup edges by (kind, src, tgt); each reference site still adds an occurrence.
-    var edges = std.StringHashMapUnmanaged(Id).empty;
+    var edges: std.StringHashMapUnmanaged(Id) = .empty;
 
     const tags = tree.tokens.items(.tag);
     var tok: u32 = 0;
@@ -159,8 +164,8 @@ pub fn resolveReferences(
         const name_tok, const name_loc = offsets.identifierTokenAndLocFromIndex(tree, idx) orelse continue;
         const name = offsets.locToSlice(tree.source, name_loc);
 
-        var resolved: ?zls.Analyser.DeclWithHandle = null;
-        var accesses: []const zls.Analyser.DeclWithHandle = &.{};
+        var resolved: ?DeclWithHandle = null;
+        var accesses: []const DeclWithHandle = &.{};
         switch (pos) {
             .var_access => resolved = (analyser.lookupSymbolGlobal(handle, name, idx) catch null),
             .field_access => |loc| {
@@ -170,52 +175,72 @@ pub fn resolveReferences(
             else => continue,
         }
 
-        if (resolved) |d| try wireOne(store, &edges, d, handle, tree, name_tok, contexts.items, file_node_id);
-        for (accesses) |d| try wireOne(store, &edges, d, handle, tree, name_tok, contexts.items, file_node_id);
+        if (resolved) |d| try wireOne(store, &decl_maps, &edges, contexts.items, d, handle, tree, name_tok, file_node_id);
+        for (accesses) |d| try wireOne(store, &decl_maps, &edges, contexts.items, d, handle, tree, name_tok, file_node_id);
     }
+}
+
+fn getDeclMap(cache: *std.StringHashMapUnmanaged(DeclMap), gpa: std.mem.Allocator, uri: []const u8, tree: *const Ast) !*DeclMap {
+    const gop = try cache.getOrPut(gpa, uri);
+    if (!gop.found_existing) gop.value_ptr.* = try indexer.parser.collectDecls(gpa, tree);
+    return gop.value_ptr;
+}
+
+fn nodeByteRange(tree: *const Ast, node: Ast.Node.Index) struct { usize, usize } {
+    const first = tree.firstToken(node);
+    const last = tree.lastToken(node);
+    return .{ tree.tokens.items(.start)[first], tree.tokens.items(.start)[last] + tree.tokenSlice(last).len };
+}
+
+fn edgeKindFor(kind: NodeKind) EdgeType {
+    return switch (kind) {
+        .function, .method => .call,
+        .@"struct", .@"enum", .@"union", .typedef => .type_usage,
+        else => .usage,
+    };
 }
 
 fn wireOne(
     store: *Storage,
+    decl_maps: *std.StringHashMapUnmanaged(DeclMap),
     edges: *std.StringHashMapUnmanaged(Id),
-    decl: zls.Analyser.DeclWithHandle,
+    contexts: []const Context,
+    decl: DeclWithHandle,
     handle: *zls.DocumentStore.Handle,
     tree: *const Ast,
     ref_tok: Ast.TokenIndex,
-    contexts: []const TopDecl,
     file_node_id: Id,
 ) !void {
     const gpa = store.arena.allocator();
-
-    // Only AST-node declarations that are top-level in their own file.
     if (decl.decl != .ast_node) return;
     const node = decl.decl.ast_node;
     const target_tree = &decl.handle.tree;
-    if (!isRootDecl(target_tree, node)) return;
 
-    const decl_name_tok = decl.nameToken();
-    const decl_byte = decl.handle.tree.tokens.items(.start)[decl_name_tok];
+    const decl_byte = target_tree.tokens.items(.start)[decl.nameToken()];
     const ref_byte = tree.tokens.items(.start)[ref_tok];
     // Skip the declaration's own name token (a self reference).
     if (std.mem.eql(u8, decl.handle.uri.raw, handle.uri.raw) and decl_byte == ref_byte) return;
 
+    // Name + kind exactly as the declaration pass would, so the target dedups
+    // onto the right node — top-level OR nested (Point.add, Point.x).
+    const map = try getDeclMap(decl_maps, gpa, decl.handle.uri.raw, target_tree);
+    const info = map.get(node) orelse return; // unnamed / unsupported target
     const target_path = try decl.handle.uri.toFsPath(gpa);
-    const target_local = target_tree.tokenSlice(decl_name_tok);
-    const target_qual = try indexer.storage.qualifiedName(gpa, target_path, target_local);
+    const target_qual = try indexer.storage.qualifiedName(gpa, target_path, info.name);
+    const edge_kind = edgeKindFor(info.kind);
+    const target_id = try store.recordNode(info.kind, target_qual, null);
 
-    // Function target -> CALL; anything else -> USAGE.
-    const is_fn = target_tree.nodeTag(node) == .fn_decl;
-    const node_kind: NodeKind = if (is_fn) .function else .symbol;
-    const edge_kind: EdgeType = if (is_fn) .call else .usage;
-
-    const target_id = try store.recordNode(node_kind, target_qual, null);
-
-    // Context = enclosing top-level decl of the reference (else the file node).
+    // Context = innermost enclosing decl of the reference (smallest containing
+    // span), else the file node.
     var context_id: Id = file_node_id;
+    var best: usize = std.math.maxInt(usize);
     for (contexts) |ctx| {
-        if (ref_byte >= ctx.start and ref_byte < ctx.end) {
-            if (store.node_by_name.get(ctx.qual)) |cid| context_id = cid;
-            break;
+        const w = ctx.end - ctx.start;
+        if (ref_byte >= ctx.start and ref_byte < ctx.end and w < best) {
+            if (store.node_by_name.get(ctx.qual)) |cid| {
+                context_id = cid;
+                best = w;
+            }
         }
     }
 
@@ -224,18 +249,6 @@ fn wireOne(
     const gop = try edges.getOrPut(gpa, key);
     if (!gop.found_existing) gop.value_ptr.* = try store.recordEdge(edge_kind, context_id, target_id);
     _ = try store.recordLocation(gop.value_ptr.*, file_node_id, spanOfToken(tree, ref_tok), .token);
-}
-
-fn declNameToken(tree: *const Ast, node: Ast.Node.Index) ?Ast.TokenIndex {
-    var buf: [1]Ast.Node.Index = undefined;
-    if (tree.fullFnProto(&buf, node)) |proto| return proto.name_token;
-    if (tree.fullVarDecl(node)) |vd| return vd.ast.mut_token + 1;
-    return null;
-}
-
-fn isRootDecl(tree: *const Ast, node: Ast.Node.Index) bool {
-    for (tree.rootDecls()) |r| if (r == node) return true;
-    return false;
 }
 
 fn spanOfToken(tree: *const Ast, tok: Ast.TokenIndex) Span {
