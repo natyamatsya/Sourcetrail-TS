@@ -1,8 +1,11 @@
 #ifndef UTILITY_SOURCE_GROUP_CXX_H
 #define UTILITY_SOURCE_GROUP_CXX_H
 
+#include <cstdint>
+#include <expected>
 #include <memory>
 #include <string>
+#include <string_view>
 #include <vector>
 
 #include <clang/Tooling/JSONCompilationDatabase.h>
@@ -48,6 +51,31 @@ std::vector<std::string> getWithRemoveIncludePchFlag(const std::vector<std::stri
 void removeIncludePchFlag(std::vector<std::string>& args);
 std::vector<std::string> getIncludePchFlags(const SourceGroupSettingsWithCxxPchOptions* settings);
 std::vector<std::string> getIncludePchFlagsForOutput(const FilePath& pchOutputFilePath);
+
+//! Failure modes of runIndexerPrebuildMode().
+enum class IndexerPrebuildError : std::uint8_t
+{
+	IndexerExecutableMissing,
+	SubprocessFailed,
+};
+
+constexpr std::string_view to_std_sv(IndexerPrebuildError error) noexcept
+{
+	using enum IndexerPrebuildError;
+	switch (error)
+	{
+	case IndexerExecutableMissing:
+		return "sourcetrail_indexer executable is missing";
+	case SubprocessFailed:
+		return "indexer prebuild subprocess exited non-zero";
+	}
+	return "unknown error";
+}
+
+//! Spawns the sourcetrail_indexer executable in a pre-index mode (e.g.
+//! "--prebuild-modules=<request>" or "--prebuild-pch=<request>") and blocks until it exits, so the
+//! parse-arbitrary-user-code work is crash-isolated from the main app process.
+std::expected<void, IndexerPrebuildError> runIndexerPrebuildMode(const std::string& modeArgument);
 }
 
 #endif

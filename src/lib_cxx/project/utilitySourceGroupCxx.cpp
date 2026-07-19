@@ -51,6 +51,35 @@ using namespace clang::tooling;
 namespace utility
 {
 
+std::expected<void, IndexerPrebuildError> runIndexerPrebuildMode(const std::string& modeArgument)
+{
+	const FilePath indexerPath = AppPath::getCxxIndexerFilePath();
+	if (!indexerPath.exists())
+	{
+		LOG_ERROR("Cannot run indexer prebuild: executable missing at " + indexerPath.str());
+		return std::unexpected(IndexerPrebuildError::IndexerExecutableMissing);
+	}
+
+	// Positionals mirror a normal indexer launch (processId, uuid, sharedDataPath, userDataPath); a
+	// prebuild ignores the IPC ones but needs the data paths for resource resolution.
+	const std::vector<std::string> args = {
+		"0",
+		"prebuild",
+		AppPath::getSharedDataDirectoryPath().getAbsolute().str(),
+		UserPaths::getUserDataDirectoryPath().getAbsolute().str(),
+		modeArgument};
+
+	const int exitCode =
+		utility::executeProcess(indexerPath.str(), args, FilePath(), false, utility::INFINITE_TIMEOUT)
+			.exitCode;
+	if (exitCode != 0)
+	{
+		LOG_ERROR("Indexer prebuild subprocess exited " + std::to_string(exitCode));
+		return std::unexpected(IndexerPrebuildError::SubprocessFailed);
+	}
+	return {};
+}
+
 std::shared_ptr<Task> createBuildPchTaskForInput(
 	const FilePath& pchInputFilePath,
 	const FilePath& pchOutputFilePath,
@@ -113,26 +142,13 @@ std::shared_ptr<Task> createBuildPchTaskForInput(
 			out << request.dump();
 		}
 
-		const FilePath indexerPath = AppPath::getCxxIndexerFilePath();
-		if (!indexerPath.exists())
-		{
-			LOG_ERROR("Cannot build PCH: indexer executable missing at " + indexerPath.str());
-			return;
-		}
-
-		const std::vector<std::string> args = {
-			"0",
-			"pch-build",
-			AppPath::getSharedDataDirectoryPath().getAbsolute().str(),
-			UserPaths::getUserDataDirectoryPath().getAbsolute().str(),
-			"--prebuild-pch=" + requestPath.str()};
-
-		const utility::ProcessOutput out = utility::executeProcess(
-			indexerPath.str(), args, FilePath(), false, utility::INFINITE_TIMEOUT);
-		if (out.exitCode != 0 || !storagePath.recheckExists())
+		const std::expected<void, IndexerPrebuildError> prebuilt =
+			runIndexerPrebuildMode("--prebuild-pch=" + requestPath.str());
+		if (!prebuilt || !storagePath.recheckExists())
 		{
 			LOG_ERROR(
-				"PCH build subprocess failed (exit " + std::to_string(out.exitCode) +
+				std::string("PCH build failed (") +
+				(prebuilt ? "storage missing" : std::string(to_std_sv(prebuilt.error()))) +
 				"); the precompiled header and its symbols are missing.");
 			return;
 		}

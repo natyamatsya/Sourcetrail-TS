@@ -4,11 +4,9 @@
 
 #include <nlohmann/json.hpp>
 
-#include "AppPath.h"
 #include "FileSystem.h"
-#include "UserPaths.h"
 #include "logging.h"
-#include "utilityApp.h"
+#include "utilitySourceGroupCxx.h"
 
 namespace
 {
@@ -71,28 +69,13 @@ CxxModulePrebuilder::Result CxxModulePrebuilder::prebuild(
 		out << request.dump();
 	}
 
-	const FilePath indexerPath = AppPath::getCxxIndexerFilePath();
-	if (!indexerPath.exists())
-	{
-		LOG_ERROR("Cannot prebuild C++20 modules: indexer executable missing at " + indexerPath.str());
-		return result;
-	}
-
-	// Positionals mirror a normal indexer launch (processId, uuid, sharedDataPath, userDataPath); the
-	// prebuild mode ignores the IPC ones but needs the data paths for resource resolution.
-	const std::vector<std::string> args = {
-		"0",
-		"module-prebuild",
-		AppPath::getSharedDataDirectoryPath().getAbsolute().str(),
-		UserPaths::getUserDataDirectoryPath().getAbsolute().str(),
-		"--prebuild-modules=" + requestPath.str()};
-
-	const utility::ProcessOutput out = utility::executeProcess(
-		indexerPath.str(), args, FilePath(), false, utility::INFINITE_TIMEOUT);
-	if (out.exitCode != 0 || !manifestPath.recheckExists())
+	const std::expected<void, utility::IndexerPrebuildError> prebuilt =
+		utility::runIndexerPrebuildMode("--prebuild-modules=" + requestPath.str());
+	if (!prebuilt || !manifestPath.recheckExists())
 	{
 		LOG_ERROR(
-			"C++20 module prebuild subprocess failed (exit " + std::to_string(out.exitCode) +
+			std::string("C++20 module prebuild failed (") +
+			(prebuilt ? "manifest missing" : std::string(utility::to_std_sv(prebuilt.error()))) +
 			"); imports will not resolve for this source group.");
 		return result;
 	}

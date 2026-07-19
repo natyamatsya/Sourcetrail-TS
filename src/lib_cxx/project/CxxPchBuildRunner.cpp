@@ -92,7 +92,9 @@ int CxxPchBuildRunner::run(const FilePath& requestPath)
 
 	tool.setDiagnosticConsumer(&diagnostics);
 	tool.clearArgumentsAdjusters();
-	tool.run(new SingleFrontendActionFactory(action));
+	// Stack-allocated factory so it isn't leaked (ClangTool::run does not take ownership).
+	SingleFrontendActionFactory factory(action);
+	tool.run(&factory);
 
 	// --- hand the indexed symbols back to the main process via the filesystem ----------------------
 	const flatbuffers::DetachedBuffer buffer = IpcSerializer::serializeIntermediateStorage(*storage);

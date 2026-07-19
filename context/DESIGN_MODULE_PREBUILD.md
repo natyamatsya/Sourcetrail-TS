@@ -57,9 +57,18 @@ the blocking spawn.
 
 ### Data contracts
 
-- `request.json`  — `{ "cacheDir": str, "sourceFiles": [str], "baseFlags": [str] }`
+- `request.json`  — `{ "cacheDir": str, "files": [ { "path": str, "flags": [str] } ] }` (per-file
+  flags: each compile-database command carries its own; the plain C++ Source Group maps every file
+  to the same set)
 - `manifest.json` — `{ "interfaceUnits": [str] }` (the module path is `cacheDir`, which the
   main process already knows, so it isn't echoed back)
+
+### Known limitation: module partitions
+Partition dependencies are tracked (`export module foo:part;` provides `foo:part`; `import :part;`
+resolves against the current module), so topo order is correct. But the on-disk BMI name sanitizes
+`:` to `-` (a `:` is illegal in a Windows path), and whether `-fprebuilt-module-path` resolves a
+partition BMI under that name is not verified — partition support is best-effort until exercised by
+the planned stress test.
 
 ## Phases
 

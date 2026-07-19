@@ -96,11 +96,13 @@ std::shared_ptr<IndexerCommandProvider> SourceGroupCxxEmpty::getIndexerCommandPr
 		utility::getIncludePchFlags(
 			dynamic_cast<const SourceGroupSettingsWithCxxPchOptions*>(m_settings.get())));
 
+	const std::set<FilePath> sourceFilePaths = getAllSourceFilePaths();
+
 	// C++20 modules: scan the source group, build its BMIs in dependency order, and collect the
 	// flags libclang needs to resolve `import`s. A no-op for source groups without modules. Every
 	// file shares the same flags here (unlike a compile database).
 	std::map<FilePath, std::vector<std::string>> fileFlags;
-	for (const FilePath& sourcePath: getAllSourceFilePaths())
+	for (const FilePath& sourcePath: sourceFilePaths)
 	{
 		fileFlags[sourcePath] = compilerFlags;
 	}
@@ -113,7 +115,7 @@ std::shared_ptr<IndexerCommandProvider> SourceGroupCxxEmpty::getIndexerCommandPr
 
 	std::shared_ptr<CxxIndexerCommandProvider> provider =
 		std::make_shared<CxxIndexerCommandProvider>();
-	for (const FilePath& sourcePath: getAllSourceFilePaths())
+	for (const FilePath& sourcePath: sourceFilePaths)
 	{
 		if (info.filesToIndex.find(sourcePath) != info.filesToIndex.end())
 		{
