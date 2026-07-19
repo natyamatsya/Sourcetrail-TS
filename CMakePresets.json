@@ -55,7 +55,9 @@
 			"cacheVariables": {
 				"CMAKE_C_COMPILER": "clang",
 				"CMAKE_CXX_COMPILER": "clang++",
-				"BUILD_SWIFT_LANGUAGE_PACKAGE": "ON"
+				"BUILD_SWIFT_LANGUAGE_PACKAGE": "ON",
+				"CMAKE_AR": "/usr/bin/ar",
+				"CMAKE_RANLIB": "/usr/bin/ranlib"
 			}
 		},
 		{
