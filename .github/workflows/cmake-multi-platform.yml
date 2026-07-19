@@ -78,6 +78,29 @@ jobs:
         run: cargo test -- --nocapture
 
   # ---------------------------------------------------------------------------
+  # Zig indexer: build + unit tests (macOS only — the thoth-ipc shm layer is
+  # macOS-specific). Toolchain comes from Homebrew: the indexer is built and
+  # validated against Homebrew's Zig 0.16.0 (a dev build with no release tag, so
+  # brew is the faithful pin) + flatcc 0.6.1. ZLS 0.16.0 is fetched by the Zig
+  # package manager during `zig build`. If a future Homebrew Zig bump breaks the
+  # build, pin the toolchain here.
+  # ---------------------------------------------------------------------------
+  zig-indexer:
+    name: Zig indexer (macos-latest)
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          submodules: recursive
+
+      - name: Install Zig + flatcc
+        run: brew install zig flatcc
+
+      - name: zig build test
+        working-directory: src/zig_indexer
+        run: zig build test --summary all
+
+  # ---------------------------------------------------------------------------
   # C++ build + unit tests on Linux / macOS.
   #
   # Builds the full application WITH the C++ language package (libclang) and the
