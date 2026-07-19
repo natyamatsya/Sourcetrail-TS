@@ -1,7 +1,9 @@
 #include "CxxModulePrebuildRunner.h"
 
+#include <algorithm>
 #include <cstdlib>
 #include <deque>
+#include <filesystem>
 #include <fstream>
 #include <map>
 #include <set>
@@ -41,16 +43,18 @@ struct ModuleScan
 	std::set<std::string> requires_;  // the modules this file `import`s
 };
 
-// Parse a (possibly dotted / partitioned) module name starting at token `i`: identifier, then any
-// run of `.ident` (submodules) or `:ident` (partition). Leaves `i` past the name.
+// Parse a (possibly dotted / partitioned) module name starting at token `i`: an optional leading
+// identifier, then any run of `.ident` (submodule) or `:ident` (partition). A leading `:` (as in
+// `import :part;`) yields a partition-only suffix (":part") which the caller resolves against the
+// current module. Leaves `i` past the name.
 std::string parseModuleName(const std::vector<clang::Token>& toks, size_t& i)
 {
-	if (i >= toks.size() || !toks[i].is(clang::tok::raw_identifier))
+	std::string name;
+	if (i < toks.size() && toks[i].is(clang::tok::raw_identifier))
 	{
-		return {};
+		name = toks[i].getRawIdentifier().str();
+		++i;
 	}
-	std::string name = toks[i].getRawIdentifier().str();
-	++i;
 	while (i + 1 < toks.size() &&
 		   (toks[i].is(clang::tok::period) || toks[i].is(clang::tok::colon)) &&
 		   toks[i + 1].is(clang::tok::raw_identifier))
@@ -63,9 +67,11 @@ std::string parseModuleName(const std::vector<clang::Token>& toks, size_t& i)
 
 // In-process replacement for `clang-scan-deps -format=p1689`: raw-lex the file (no preprocessing)
 // and pull the module declaration and imports out of the token stream. Robust to comments/strings
-// (the lexer handles them); the known gap vs the real scanner is module decls hidden behind macros
-// or #if, which is rare. `export module X` provides X; `import X` / `export import X` requires X;
-// header-unit imports (`import <h>` / `import "h"`) are skipped -- they aren't source-group units.
+// (the lexer handles them). Known gaps vs the real scanner, all rare: module decls hidden behind
+// macros / #if are missed, and a decl inside `#if 0` is a false positive (the raw lexer doesn't
+// evaluate the preprocessor). `export module X` provides X; `import X` / `export import X` /
+// `import :part` requires X; header-unit imports (`import <h>` / `import "h"`) are skipped -- they
+// aren't source-group units.
 ModuleScan scanModuleDeps(const FilePath& file)
 {
 	ModuleScan scan;
@@ -99,6 +105,25 @@ ModuleScan scanModuleDeps(const FilePath& file)
 		return t.is(clang::tok::raw_identifier) && t.getRawIdentifier() == s;
 	};
 
+	const auto recordRequire = [&](size_t start) {
+		size_t j = start;
+		std::string name = parseModuleName(toks, j);
+		if (name.rfind(':', 0) == 0)
+		{
+			// `import :part;` -- a partition of the module this file defines. Resolve it against the
+			// current module's base name (empty provides means it's not a module unit -> ignore).
+			if (scan.provides.empty())
+			{
+				return;
+			}
+			name = scan.provides.substr(0, scan.provides.find(':')) + name;
+		}
+		if (!name.empty())
+		{
+			scan.requires_.insert(name);
+		}
+	};
+
 	for (size_t i = 0; i < toks.size(); ++i)
 	{
 		if (isId(toks[i], "export") && i + 1 < toks.size())
@@ -113,20 +138,14 @@ ModuleScan scanModuleDeps(const FilePath& file)
 			}
 			else if (isId(toks[i + 1], "import"))
 			{
-				size_t j = i + 2;
-				if (std::string name = parseModuleName(toks, j); !name.empty())
-				{
-					scan.requires_.insert(name);
-				}
+				recordRequire(i + 2);
 			}
 		}
-		else if (isId(toks[i], "import") && i + 1 < toks.size() && toks[i + 1].is(clang::tok::raw_identifier))
+		else if (
+			isId(toks[i], "import") && i + 1 < toks.size() &&
+			(toks[i + 1].is(clang::tok::raw_identifier) || toks[i + 1].is(clang::tok::colon)))
 		{
-			size_t j = i + 1;
-			if (std::string name = parseModuleName(toks, j); !name.empty())
-			{
-				scan.requires_.insert(name);
-			}
+			recordRequire(i + 1);
 		}
 	}
 	return scan;
@@ -181,12 +200,18 @@ bool buildBmiInProcess(
 		}
 		if (f == "-o" || f == "-x")
 		{
-			++i;	 // drop the flag and its argument
+			++i;	 // space-separated form: drop the flag and its argument
 			continue;
 		}
-		if (f == inputFile.str())
+		if (f.rfind("-o", 0) == 0 || f.rfind("-x", 0) == 0)
 		{
-			continue;	 // the input file (added explicitly below)
+			continue;	 // glued form: -o<out> / -x<lang>
+		}
+		// The input file: a CDB command line may spell it relatively (e.g. `geo.cpp`) while inputFile
+		// is canonical, so match on the file name too, not just the exact string.
+		if (f == inputFile.str() || FilePath(f).fileName() == inputFile.fileName())
+		{
+			continue;
 		}
 		flags.push_back(f);
 	}
@@ -224,7 +249,10 @@ bool buildBmiInProcess(
 			clang::tooling::ArgumentInsertPosition::BEGIN));
 	}
 
-	tool.run(new SingleFrontendActionFactory(new clang::GenerateModuleInterfaceAction()));
+	// Stack-allocated factory so it isn't leaked (ClangTool::run does not take ownership); the action
+	// is adopted into a unique_ptr by SingleFrontendActionFactory::create().
+	SingleFrontendActionFactory factory(new clang::GenerateModuleInterfaceAction());
+	tool.run(&factory);
 	return bmiPath.recheckExists();
 }
 }	 // namespace
@@ -330,10 +358,24 @@ int CxxModulePrebuildRunner::run(const FilePath& requestPath)
 
 	// --- 3. build each BMI into the cache, in dependency order (with the file's own flags) ---------
 	FileSystem::createDirectories(cacheDir);
+	// Purge stale BMIs so a renamed/deleted module can't leave an orphan .pcm that still resolves on
+	// the next refresh.
+	for (const auto& entry: std::filesystem::directory_iterator(cacheDir.str()))
+	{
+		if (entry.path().extension() == ".pcm")
+		{
+			std::filesystem::remove(entry.path());
+		}
+	}
 	for (const FilePath& file: buildOrder)
 	{
 		const std::string logicalName = providedModule[file];
-		const FilePath bmiPath = cacheDir.getConcatenated("/" + logicalName + ".pcm");
+		// A partition name carries a ':' -- illegal in a Windows filename -- so sanitize it for the
+		// on-disk BMI. (Partition resolution via -fprebuilt-module-path is best-effort; see the
+		// design doc.)
+		std::string bmiName = logicalName;
+		std::replace(bmiName.begin(), bmiName.end(), ':', '-');
+		const FilePath bmiPath = cacheDir.getConcatenated("/" + bmiName + ".pcm");
 		std::vector<std::string> buildFlags = fileFlags[file];
 		if (!hasStdFlag(buildFlags))
 		{
