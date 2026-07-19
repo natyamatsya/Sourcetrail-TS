@@ -5,6 +5,7 @@
 #include "language_package_flags.h"
 #include "AppPath.h"
 #include "ApplicationSettings.h"
+#include "CxxModulePrebuildRunner.h"
 #include "FileLogger.h"
 #include "InterprocessIndexer.h"
 #include "LanguagePackageManager.h"
@@ -53,6 +54,7 @@ int main(int argc, char* argv[])
 	std::string userDataPath;
 	std::string logFilePath;
 	std::string onlyGroupId;
+	std::string prebuildModulesRequest;
 
 	// Split "--key=value" flags from the positional arguments, so optional flags
 	// (like the fan-out group pin) don't shift the positional layout.
@@ -63,6 +65,11 @@ int main(int argc, char* argv[])
 		if (const std::string groupPrefix = "--only-group-id="; arg.starts_with(groupPrefix))
 		{
 			onlyGroupId = arg.substr(groupPrefix.size());
+		}
+		else if (const std::string prebuildPrefix = "--prebuild-modules=";
+				 arg.starts_with(prebuildPrefix))
+		{
+			prebuildModulesRequest = arg.substr(prebuildPrefix.size());
 		}
 		else
 		{
@@ -116,6 +123,13 @@ int main(int argc, char* argv[])
 #if BUILD_CXX_LANGUAGE_PACKAGE
 	LanguagePackageManager::getInstance()->addPackage(std::make_shared<LanguagePackageCxx>());
 #endif
+
+	// Module-prebuild mode: scan + build C++20 BMIs for a source group, then exit -- a separate,
+	// crash-isolated invocation rather than the shared-memory indexing loop below.
+	if (!prebuildModulesRequest.empty())
+	{
+		return CxxModulePrebuildRunner::run(FilePath(prebuildModulesRequest));
+	}
 
 	InterprocessIndexer indexer(instanceUuid, processId, onlyGroupId);
 	const InterprocessIndexer::WorkResult workResult = indexer.work();
