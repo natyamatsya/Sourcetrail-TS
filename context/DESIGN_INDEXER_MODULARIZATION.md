@@ -29,40 +29,59 @@ module interfaces + partitions, not re-export shims) that also **dogfoods** our 
 
 ## The dual-build mechanism
 
-### One file, two roles, via macros
-Each converted interface file is *both* a header (when included) and a module interface unit (when
-compiled with `-x c++-module`), toggled by `SRCTRL_MODULE_BUILD`:
+> **Phase 0 correction.** The original sketch here toggled `module;` / `export module` with `#ifdef`
+> inside a single file. Phase 0 proved that **doesn't compile**: the compiler requires `module;` and
+> `export module` to be the *literal, first* tokens — they may not sit behind an `#ifdef`, a macro, or
+> any preprocessor conditional (`error: 'module;' can appear only at the start of the translation
+> unit`). The working mechanism, validated on this toolchain and in-repo, is a **header + a separate
+> module wrapper** (the pattern {fmt} uses).
 
-```cpp
-#ifdef SRCTRL_MODULE_BUILD
-module;                          // global module fragment (module mode only)
-#endif
-#include <vector>               // GMF in module mode; ordinary include in header mode
-#include <clang/AST/Decl.h>     // third-party headers live here in both modes
-#ifdef SRCTRL_MODULE_BUILD
-export module srctrl.cxx:name;  // a partition of srctrl.cxx
-import srctrl.utility;          // first-party deps become imports...
-#else
-#include "utilityString.h"      // ...or includes, in header mode
-#endif
+### Header + module wrapper (per module)
+Each module is a **pair**:
 
-SRCTRL_EXPORT class CxxName { /* ... */ };   // SRCTRL_EXPORT = `export` or nothing
-```
+- **`foo.h`** — the real declarations, decorated with `SRCTRL_EXPORT`, and guarding its own
+  system/third-party includes with `SRCTRL_MODULE_PURVIEW` so they aren't pulled into the module
+  purview:
+  ```cpp
+  #include "SrctrlModule.h"
+  #ifndef SRCTRL_MODULE_PURVIEW      // in a module build these are hoisted to the wrapper's GMF
+  #include <vector>
+  #include <clang/AST/Decl.h>
+  #endif
+  SRCTRL_EXPORT class CxxName { /* ... */ };   // SRCTRL_EXPORT = `export` or nothing
+  ```
+- **`foo.cppm`** — compiled *only* in a module build (a `FILE_SET CXX_MODULES` source). The
+  `module;` / `export module` lines are literal:
+  ```cpp
+  module;
+  #include <vector>                 // GMF: everything the exported headers need
+  #include <clang/AST/Decl.h>
+  export module srctrl.cxx:name;    // a partition of srctrl.cxx
+  #define SRCTRL_MODULE_PURVIEW
+  #include "foo.h"                  // decls enter the purview; SRCTRL_EXPORT exports them
+  ```
 
-- Preprocessor directives (`#ifdef`, `#include` that expands to declarations) are legal before
-  `module;`; only *declarations* aren't — this is why the toggle works and why the
-  [module-compat shim](DESIGN_MODULE_PREBUILD.md) is macro-only.
-- `SRCTRL_EXPORT`, `SRCTRL_MODULE_BEGIN(name)`, and the import/include toggle live in one tiny
-  scaffolding header (`SrctrlModule.h`) included everywhere, `#define`d per build mode.
+Consumers switch at their own top: `#ifdef SRCTRL_MODULE_BUILD import srctrl.cxx; #else #include
+"foo.h" #endif` (an `import` *may* be `#ifdef`'d — only the module-declaration lines may not).
+
+`SRCTRL_EXPORT` (and the `SRCTRL_MODULE_PURVIEW` convention) live in one tiny scaffolding header,
+`SrctrlModule.h`, `#define`d per build mode.
+
+The third-party include list is duplicated (header's guarded block + wrapper GMF) — a wart intrinsic
+to the technique; keeping the wrapper a thin mirror of the header's includes contains it.
 
 ### CMake
 - `option(SOURCETRAIL_CXX_MODULES "Build first-party C++ as C++20 modules" OFF)`.
-- **ON** requires CMake ≥ 3.28 (`FILE_SET CXX_MODULES`), the Ninja generator, and a module-capable
-  compiler (Clang ≥ 16, GCC ≥ 14, MSVC ≥ 19.36). A `check_cxx_source_compiles` probe confirms
-  `import`; if it fails, **auto-fall back to OFF with a `message(WARNING …)`** — never hard-fail.
-- ON: interface units are registered via `target_sources(tgt PUBLIC FILE_SET CXX_MODULES FILES …)`,
-  `SRCTRL_MODULE_BUILD` is defined, and CMake drives `clang-scan-deps` module ordering.
-- OFF: today's `GLOB_RECURSE` header build, untouched.
+- **Baseline is now CMake ≥ 4.4.0** (`cmake_minimum_required`), which defaults **CMP0155 = NEW** so
+  C++20+ sources are scanned for `import` automatically — no per-target `CXX_SCAN_FOR_MODULES` opt-in
+  (a step Phase 0 needed before the bump). Still requires the Ninja (or Visual Studio) generator and a
+  module-capable compiler (Clang ≥ 16, GCC ≥ 14, MSVC ≥ 19.36); `cmake/SourcetrailCxxModules.cmake`
+  probes these and **auto-falls back to the header build with a `message(WARNING …)`** — never
+  hard-fails.
+- ON: `.cppm` wrappers are registered via `target_sources(tgt PRIVATE FILE_SET CXX_MODULES FILES …)`,
+  `SRCTRL_MODULE_BUILD` is defined, and CMake drives module ordering.
+- OFF: today's `GLOB_RECURSE` header build, untouched (verified: with the flag OFF the POC target is
+  absent and the generated build is unchanged).
 
 ### Macros can't be modularized
 Modules don't export macros. The 23 function-like macros in `lib` — above all the pervasive `LOG_*`
@@ -104,9 +123,13 @@ cycles in `lib` is prerequisite work, and a good cleanup in its own right).
 
 ## Phased plan
 
-- **Phase 0 — scaffolding, no conversions.** Add the flag, the compiler-support probe + fallback, the
-  `SrctrlModule.h` macro header, and the CMake dual-path plumbing. Prove a *hand-written* toy module
-  (`srctrl.ping`) builds under the flag and the OFF build is byte-for-byte unchanged.
+- **Phase 0 — scaffolding, no conversions. ✅ DONE.** Added the `SOURCETRAIL_CXX_MODULES` flag, the
+  `cmake/SourcetrailCxxModules.cmake` capability probe + auto-fallback, the `SrctrlModule.h` macro
+  header, and the CMake dual-path plumbing (`src/cxx_modules_poc/`). Proved the hand-written
+  `srctrl.ping` module builds and runs in-repo with the flag ON (`srctrl_ping() = pong`, a real
+  `srctrl.ping.pcm` BMI), and that with the flag OFF the POC target is absent and the configure is
+  unchanged. Bumped `cmake_minimum_required` to **4.4.0** (CMP0155 = NEW → automatic import scanning).
+  Corrected the dual-build mechanism to the header + wrapper split (see above).
 - **Phase 1 — pilot.** Convert one leaf to dual-build: **`AidKit_lib`** (3 files, moc-free) or a
   self-contained `lib/utility` component (`Id`, `FilePath`). Gate: builds & tests pass **both** ways,
   and Sourcetrail indexes the module build.

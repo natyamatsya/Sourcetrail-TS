@@ -1,4 +1,4 @@
-cmake_minimum_required(VERSION 3.27)
+cmake_minimum_required(VERSION 4.4.0)
 
 include(CMakePrintHelpers)
 include(cmake/Sourcetrail.cmake)
@@ -55,6 +55,21 @@ option(SOURCETRAIL_CLIENT_IDS      "Assign element ids in-process (no lastRowId 
 # writing at once). Distinct from _COMPARE (which keeps SQLite as the single-
 # writer source of truth). Both pull in the turso_shim + cppturso3 targets.
 option(SOURCETRAIL_TURSO_CONCURRENT "Enable the Turso-only concurrent-writer storage path." OFF)
+
+# Build the first-party C++ as C++20 modules instead of headers (experimental; see
+# context/DESIGN_INDEXER_MODULARIZATION.md). Default OFF -- the classic header build is always
+# available. When ON, a capability probe auto-falls back to the header build (with a warning) on a
+# toolchain that can't build modules, so enabling this can never hard-fail a configure.
+option(SOURCETRAIL_CXX_MODULES "Build first-party C++ as C++20 modules (experimental)." OFF)
+include(cmake/SourcetrailCxxModules.cmake)
+sourcetrail_resolve_cxx_modules(SOURCETRAIL_CXX_MODULES_ENABLED)
+if(SOURCETRAIL_CXX_MODULES_ENABLED)
+	# The CMake 4.4 baseline defaults CMP0155 to NEW, so C++20+ sources are scanned for `import`
+	# automatically -- module consumers are ordered after the interfaces they import with no extra
+	# per-target opt-in.
+	message(STATUS "C++20 modules: ENABLED (building the Phase-0 module POC; see DESIGN_INDEXER_MODULARIZATION.md)")
+	add_subdirectory(src/cxx_modules_poc)
+endif()
 
 configure_file(cmake/language_packages.h.in src/lib/language_packages.h)
 
