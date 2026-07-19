@@ -4,12 +4,9 @@
 #include "logging.h"
 #include "utilityString.h"
 
-#include <QByteArray>
-#include <QtEnvironmentVariables>
-
+#include <cctype>
+#include <cstdlib>
 #include <filesystem>
-
-#include <QRegularExpression>
 
 using namespace utility;
 using namespace std;
@@ -222,25 +219,62 @@ FilePath FilePath::getCanonical() const
 std::vector<FilePath> FilePath::expandEnvironmentVariables() const
 {
 	std::vector<FilePath> paths;
-	QString text = QString::fromStdString(str());
+	std::string text = str();
 
-	static const QRegularExpression env(QStringLiteral("\\$\\{([^}]+)\\}|%([^%]+)%"));
-	QRegularExpressionMatch match;
-	while ((match = env.match(text)).hasMatch())
+	// Expand ${VAR} and %VAR% references by elementary scanning (leftmost reference wins, matching the old
+	// `\$\{([^}]+)\}|%([^%]+)%` regex) -- no std::regex. Repeat until none remain; an undefined variable
+	// aborts and yields no paths, as before.
+	for (;;)
 	{
-		const QString captured = match.captured(1).isEmpty() ? match.captured(2) : match.captured(1);
-		const QByteArray s = qgetenv(captured.toUtf8().constData());
-		if (s.isNull())
+		std::size_t start = std::string::npos;
+		std::size_t length = 0;
+		std::string name;
+
+		// ${VAR}: leftmost "${" up to the next "}" with >=1 char between ('}' is a distinct terminator).
+		if (const std::size_t open = text.find("${"); open != std::string::npos)
 		{
-			LOG_ERROR_STREAM(<< captured.toStdString() << " is not an environment variable in: " << text.toStdString());
+			if (const std::size_t close = text.find('}', open + 2);
+				close != std::string::npos && close > open + 2)
+			{
+				start = open;
+				length = close - open + 1;
+				name = text.substr(open + 2, close - open - 2);
+			}
+		}
+
+		// %VAR%: leftmost pair of '%' with >=1 char between; skip empty "%%" (both delimiters are '%').
+		for (std::size_t open = text.find('%'); open != std::string::npos && open < start;)
+		{
+			const std::size_t close = text.find('%', open + 1);
+			if (close == std::string::npos)
+			{
+				break;
+			}
+			if (close > open + 1)
+			{
+				start = open;
+				length = close - open + 1;
+				name = text.substr(open + 1, close - open - 1);
+				break;
+			}
+			open = close;	 // empty "%%" -> the second '%' begins the next candidate
+		}
+
+		if (start == std::string::npos)
+		{
+			break;
+		}
+
+		const char* const value = std::getenv(name.c_str());
+		if (value == nullptr)
+		{
+			LOG_ERROR_STREAM(<< name << " is not an environment variable in: " << text);
 			return paths;
 		}
-		text.replace(match.capturedStart(0), match.capturedLength(0), QString::fromUtf8(s));
+		text.replace(start, length, value);
 	}
 
-
-
-	for (const std::string& str: utility::splitToVector(text.toStdString(), getEnvironmentVariablePathSeparator()))
+	for (const std::string& str: utility::splitToVector(text, getEnvironmentVariablePathSeparator()))
 	{
 		if (str.size())
 		{
@@ -351,7 +385,14 @@ FilePath FilePath::getConcatenated(const char other[]) const
 
 FilePath FilePath::getLowerCase() const
 {
-	return FilePath(utility::toLowerCase(str()));
+	// ASCII lowercasing (paths are effectively ASCII; case-insensitive path matching on Windows is ASCII).
+	// Replaces utility::toLowerCase -- a Qt/locale-based helper -- so FilePath carries no Qt dependency.
+	std::string lower = str();
+	for (char& c: lower)
+	{
+		c = static_cast<char>(std::tolower(static_cast<unsigned char>(c)));
+	}
+	return FilePath(lower);
 }
 
 bool FilePath::contains(const FilePath& other) const
