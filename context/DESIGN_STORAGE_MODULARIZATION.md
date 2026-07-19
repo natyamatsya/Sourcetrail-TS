@@ -119,9 +119,12 @@ of it on the CppSQLite3 code.
 
 ## 5. Recommended sequencing
 
-1. **S1 now** — `srctrl.storage:types` (the 15 PODs). Independent of the SQL-layer churn, pure win.
-2. **Spike** — validate `import sqlpp23.core/sqlite3` on clang-22 + settle the name-tag macro (§3).
-3. **S2** — the abstract interface headers (`StorageAccess.h`, `Storage.h`).
+1. **S1** ✅ — `srctrl.storage:types` (the 15 PODs).
+2. **Spike** ✅ — `import sqlpp23.core/sqlite3` validated on clang-22; name-tag macro settled (§3).
+3. **S2** ✅ (partial) — `srctrl.storage:interface` = `Storage` (write interface) + `StorageStats`.
+   **`StorageAccess` (read interface) deferred**: it drags `ErrorInfo.h`→`StorageError` and
+   `SearchMatch.h`→`Node` into the GMF, doubling those modularized types against the imports; it needs
+   `ErrorInfo`/`SearchMatch` (a read-side/search cluster) modularized first.
 4. **S3** — the `sqlite/` impl, once the spike is green and coordinated with the codegen migration.
 5. **S4** — `PersistentStorage` + access/cache/provider + concurrency (turso) + ladybug, last (heaviest
    coupling; may keep impl `.cpp` classic and only modularize the interface).

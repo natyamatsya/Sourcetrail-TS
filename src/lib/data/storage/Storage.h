@@ -1,10 +1,15 @@
 #ifndef STORAGE_H
 #define STORAGE_H
 
+#include "SrctrlModule.h"
+
+#ifndef SRCTRL_MODULE_PURVIEW
 #include <functional>
+#include <map>
 #include <mutex>
 #include <set>
 #include <string>
+#include <vector>
 
 #include "StorageComponentAccess.h"
 #include "StorageEdge.h"
@@ -19,7 +24,12 @@
 #include "StorageSymbol.h"
 #include "types.h"
 
-class Storage
+// inject()'s inline body uses the logging facade + the TRACE() macro (tracing.h stays a GMF macro).
+#include "LogFacade.h"
+#include "tracing.h"
+#endif
+
+SRCTRL_EXPORT class Storage
 {
 public:
 	Storage();
@@ -66,5 +76,7 @@ private:
 
 	std::mutex m_dataMutex;
 };
+
+#include "Storage.inl"
 
 #endif	  // STORAGE_H
