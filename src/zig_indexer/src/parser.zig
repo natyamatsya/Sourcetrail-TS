@@ -57,6 +57,19 @@ pub fn isMetaTypeExpr(tree: *const Ast, node: Ast.Node.Index) bool {
         std.mem.eql(u8, tree.tokenSlice(tree.nodeMainToken(node)), "type");
 }
 
+/// The first line of a declaration's `///` doc comment (the run of doc_comment
+/// tokens immediately preceding `first_token`), stripped of its `///`/`//!`
+/// prefix and surrounding whitespace. Null when the decl has no doc comment.
+fn docBrief(tree: *const Ast, first_token: Ast.TokenIndex) ?[]const u8 {
+    if (first_token == 0 or tree.tokenTag(first_token - 1) != .doc_comment) return null;
+    var start = first_token - 1;
+    while (start > 0 and tree.tokenTag(start - 1) == .doc_comment) start -= 1;
+    var line = tree.tokenSlice(start); // first doc line: "/// text" or "//! text"
+    if (std.mem.startsWith(u8, line, "///") or std.mem.startsWith(u8, line, "//!")) line = line[3..];
+    const brief = std.mem.trim(u8, line, " \t\r\n");
+    return if (brief.len == 0) null else brief;
+}
+
 /// struct / enum / union / opaque keyword -> the matching container NodeKind
 /// (opaque has no distinct kind, so it maps to struct).
 fn containerKindOf(tree: *const Ast, container: Ast.full.ContainerDecl) NodeKind {
@@ -222,6 +235,19 @@ const Walker = struct {
         const id = try self.recordDef(cls.kind, serialized, cls.name_token, node);
         // Visibility: `pub` -> public, otherwise file-private -> default.
         try self.store.recordComponentAccess(id, if (cls.is_pub) .public else .default);
+        // A `///` doc comment's first line becomes the node's doc_brief attribute.
+        // Zig has no `@deprecated`; the ecosystem convention is a doc comment
+        // beginning `Deprecated:` — surface that as the deprecated modifier +
+        // attribute (the closest thing to the Swift/Rust deprecation signals).
+        // The colon is required so a comment merely *describing* deprecation
+        // ("deprecated can be set via …") is not mistaken for a marker.
+        if (docBrief(self.ast, self.ast.firstToken(node))) |brief| {
+            try self.store.recordNodeAttribute(id, .doc_brief, brief);
+            if (std.ascii.startsWithIgnoreCase(brief, "deprecated:")) {
+                self.store.addNodeModifier(id, storage.node_modifier_deprecated);
+                try self.store.recordNodeAttribute(id, .deprecated, brief);
+            }
+        }
         // A container member gets an EDGE_MEMBER to its owner. A field/enum
         // constant is always a member (a Zig file is itself a struct, so a
         // top-level field is a member of the file node); a nested fn/var is a

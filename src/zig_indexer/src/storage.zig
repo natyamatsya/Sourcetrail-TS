@@ -80,6 +80,17 @@ pub const DefinitionKind = enum(i32) {
     explicit = 2,
 };
 
+/// NodeAttributeKind — src/lib/data/parser/NodeAttributeKind.h. The key of a
+/// sparse display-only node_attribute(node_id, key, value) row. Zig fills only
+/// `doc_brief` (the first line of a `///` doc comment).
+pub const NodeAttributeKind = enum(i32) {
+    none = 0,
+    availability = 1,
+    deprecated = 2,
+    cfg = 3,
+    doc_brief = 4,
+};
+
 /// AccessKind — src/lib/data/graph/token_component/AccessKind.h. Zig maps `pub`
 /// to `public`, other declarations to `default` (file-private, like Swift's
 /// `internal`), and generic parameters to `type_parameter`.
@@ -95,6 +106,8 @@ pub const AccessKind = enum(i32) {
 };
 
 pub const Id = i64;
+
+const NodeAttrKey = struct { node_id: Id, key: NodeAttributeKind };
 
 // NameHierarchy wire delimiters (src/lib/data/name/NameHierarchy.cpp). A
 // serialized name is `<delimiter>\tm` followed by one `\tn`-separated block per
@@ -144,6 +157,11 @@ pub fn qualifiedName(a: std.mem.Allocator, file: []const u8, local: []const u8) 
     return serializeName(a, ".", elements.items);
 }
 
+/// NodeModifier bitmask — src/lib/data/parser/NodeModifier.h. The only bit that
+/// maps to Zig is `deprecated` (Zig has no `@deprecated`; the ecosystem marks it
+/// with a `/// Deprecated: …` doc comment, which the parser detects).
+pub const node_modifier_deprecated: i32 = 1 << 3;
+
 pub const StorageNode = struct { id: Id, kind: NodeKind, serialized_name: []const u8, modifiers: i32 = 0 };
 pub const StorageFile = struct { id: Id, file_path: []const u8, language_identifier: []const u8, indexed: bool, complete: bool };
 pub const StorageEdge = struct { id: Id, kind: EdgeType, source_node_id: Id, target_node_id: Id };
@@ -160,6 +178,7 @@ pub const StorageSourceLocation = struct {
 pub const StorageLocalSymbol = struct { id: Id, name: []const u8 };
 pub const StorageOccurrence = struct { element_id: Id, source_location_id: Id };
 pub const StorageComponentAccess = struct { node_id: Id, access: AccessKind };
+pub const StorageNodeAttribute = struct { node_id: Id, key: NodeAttributeKind, value: []const u8 };
 pub const StorageError = struct { id: Id, message: []const u8, translation_unit: []const u8, fatal: bool, indexed: bool };
 
 /// A 1-based source span (Sourcetrail lines/cols are 1-based, end inclusive).
@@ -180,6 +199,7 @@ pub const Chunk = struct {
     local_symbols: []const StorageLocalSymbol = &.{},
     occurrences: []const StorageOccurrence = &.{},
     component_accesses: []const StorageComponentAccess = &.{},
+    node_attributes: []const StorageNodeAttribute = &.{},
     errors: []const StorageError = &.{},
 };
 
@@ -197,6 +217,7 @@ pub const Storage = struct {
     local_symbols: std.ArrayListUnmanaged(StorageLocalSymbol) = .empty,
     occurrences: std.ArrayListUnmanaged(StorageOccurrence) = .empty,
     component_accesses: std.ArrayListUnmanaged(StorageComponentAccess) = .empty,
+    node_attributes: std.ArrayListUnmanaged(StorageNodeAttribute) = .empty,
     errors: std.ArrayListUnmanaged(StorageError) = .empty,
 
     /// De-dup: serialized_name -> node id (a symbol seen from multiple sites is
@@ -209,6 +230,8 @@ pub const Storage = struct {
     node_index_by_id: std.AutoHashMapUnmanaged(Id, usize) = .empty,
     /// nodes that already have a component_access row (one access per node).
     component_access_by_node: std.AutoHashMapUnmanaged(Id, void) = .empty,
+    /// (node id, attribute key) pairs already recorded (one value per key/node).
+    node_attribute_by_key: std.AutoHashMapUnmanaged(NodeAttrKey, void) = .empty,
 
     pub fn init(child: Allocator) Storage {
         return .{ .arena = std.heap.ArenaAllocator.init(child) };
@@ -307,6 +330,19 @@ pub const Storage = struct {
         try self.component_accesses.append(a, .{ .node_id = node_id, .access = access });
     }
 
+    /// Record a display-only node_attribute (e.g. a doc-comment brief) — one
+    /// value per (node, key). `value` is duped into the store arena.
+    pub fn recordNodeAttribute(self: *Storage, node_id: Id, key: NodeAttributeKind, value: []const u8) !void {
+        const a = self.alloc();
+        if ((try self.node_attribute_by_key.getOrPut(a, .{ .node_id = node_id, .key = key })).found_existing) return;
+        try self.node_attributes.append(a, .{ .node_id = node_id, .key = key, .value = try a.dupe(u8, value) });
+    }
+
+    /// OR modifier bits into an already-recorded node (found by id).
+    pub fn addNodeModifier(self: *Storage, id: Id, bits: i32) void {
+        if (self.node_index_by_id.get(id)) |idx| self.nodes.items[idx].modifiers |= bits;
+    }
+
     pub fn recordLocation(self: *Storage, element_id: Id, file_node_id: Id, span: Span, kind: LocationType) !Id {
         const a = self.alloc();
         const id = self.createId();
@@ -336,6 +372,7 @@ pub const Storage = struct {
             .local_symbols = self.local_symbols.items,
             .occurrences = self.occurrences.items,
             .component_accesses = self.component_accesses.items,
+            .node_attributes = self.node_attributes.items,
             .errors = self.errors.items,
         };
     }

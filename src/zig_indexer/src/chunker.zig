@@ -30,6 +30,7 @@ const symbol_cost: usize = 32;
 const location_cost: usize = 64;
 const occurrence_cost: usize = 32;
 const component_access_cost: usize = 32;
+const node_attribute_cost: usize = 40;
 const stub_cost_max: usize = 512;
 
 fn nodeCost(n: storage.StorageNode) usize {
@@ -55,6 +56,7 @@ pub fn estimatedSize(store: *const Storage) usize {
     total += store.source_locations.items.len * location_cost;
     total += store.occurrences.items.len * occurrence_cost;
     total += store.component_accesses.items.len * component_access_cost;
+    for (store.node_attributes.items) |na| total += node_attribute_cost + na.value.len;
     for (store.local_symbols.items) |ls| total += localSymbolCost(ls);
     for (store.errors.items) |e| total += errorCost(e);
     return total;
@@ -114,6 +116,7 @@ const Chunker = struct {
         local_symbols: std.ArrayListUnmanaged(storage.StorageLocalSymbol) = .empty,
         occurrences: std.ArrayListUnmanaged(storage.StorageOccurrence) = .empty,
         component_accesses: std.ArrayListUnmanaged(storage.StorageComponentAccess) = .empty,
+        node_attributes: std.ArrayListUnmanaged(storage.StorageNodeAttribute) = .empty,
         errors: std.ArrayListUnmanaged(storage.StorageError) = .empty,
         node_ids: IdSet = .empty,
         location_ids: IdSet = .empty,
@@ -193,6 +196,13 @@ const Chunker = struct {
             try self.cur.component_accesses.append(self.a, ca);
             self.cur.cost += component_access_cost;
         }
+        // Node attributes: each with a stub of the node it annotates.
+        for (self.store.node_attributes.items) |na| {
+            self.ensureBudget(stub_cost_max + node_attribute_cost + na.value.len);
+            try self.addNode(na.node_id, false);
+            try self.cur.node_attributes.append(self.a, na);
+            self.cur.cost += node_attribute_cost + na.value.len;
+        }
         // Errors last.
         for (self.store.errors.items) |e| {
             self.ensureBudget(errorCost(e));
@@ -268,7 +278,7 @@ const Chunker = struct {
         if (self.cur.nodes.items.len == 0 and self.cur.edges.items.len == 0 and
             self.cur.local_symbols.items.len == 0 and self.cur.occurrences.items.len == 0 and
             self.cur.locations.items.len == 0 and self.cur.component_accesses.items.len == 0 and
-            self.cur.errors.items.len == 0) return;
+            self.cur.node_attributes.items.len == 0 and self.cur.errors.items.len == 0) return;
         try self.out.append(self.a, .{
             .next_id = self.store.next_id,
             .nodes = self.cur.nodes.items,
@@ -279,6 +289,7 @@ const Chunker = struct {
             .local_symbols = self.cur.local_symbols.items,
             .occurrences = self.cur.occurrences.items,
             .component_accesses = self.cur.component_accesses.items,
+            .node_attributes = self.cur.node_attributes.items,
             .errors = self.cur.errors.items,
         });
         self.cur = .{}; // the old lists live in the arena, referenced by the frozen chunk

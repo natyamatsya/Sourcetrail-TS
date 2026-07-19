@@ -160,6 +160,54 @@ test "file-as-struct: top-level fields are members of the file node" {
     try testing.expectEqual(@as(usize, 2), member_from_file);
 }
 
+test "doc comment first line becomes a doc_brief node attribute" {
+    const a = testing.allocator;
+    var store = storage.Storage.init(a);
+    defer store.deinit();
+    try indexString(a, &store,
+        \\/// Adds two numbers.
+        \\/// (more detail on the second line)
+        \\pub fn add(x: i32, y: i32) i32 { return x + y; }
+        \\fn undocumented() void {}
+    );
+    const add_id = (nodeNamed(&store, "add") orelse return error.MissingNode).id;
+    var brief: ?[]const u8 = null;
+    for (store.node_attributes.items) |na| {
+        if (na.node_id == add_id and na.key == .doc_brief) brief = na.value;
+    }
+    try testing.expectEqualStrings("Adds two numbers.", brief orelse return error.NoDocBrief);
+    // An undocumented decl gets no node_attribute row.
+    const und_id = (nodeNamed(&store, "undocumented") orelse return error.MissingNode).id;
+    for (store.node_attributes.items) |na| try testing.expect(na.node_id != und_id);
+}
+
+test "/// Deprecated doc comment sets the deprecated modifier + attribute" {
+    const a = testing.allocator;
+    var store = storage.Storage.init(a);
+    defer store.deinit();
+    try indexString(a, &store,
+        \\/// Deprecated: use bar instead.
+        \\pub fn foo() void {}
+        \\/// A normal function.
+        \\pub fn bar() void {}
+    );
+    const foo = nodeNamed(&store, "foo") orelse return error.MissingNode;
+    try testing.expect(foo.modifiers & storage.node_modifier_deprecated != 0);
+    const bar = nodeNamed(&store, "bar") orelse return error.MissingNode;
+    try testing.expectEqual(@as(i32, 0), bar.modifiers);
+    // foo carries both a doc_brief and a deprecated attribute; bar only doc_brief.
+    var foo_attrs: usize = 0;
+    var foo_dep = false;
+    for (store.node_attributes.items) |na| {
+        if (na.node_id == foo.id) {
+            foo_attrs += 1;
+            if (na.key == .deprecated) foo_dep = true;
+        }
+    }
+    try testing.expect(foo_dep);
+    try testing.expectEqual(@as(usize, 2), foo_attrs);
+}
+
 test "component access: pub -> public, private -> default, type param -> type_parameter" {
     const a = testing.allocator;
     var store = storage.Storage.init(a);
