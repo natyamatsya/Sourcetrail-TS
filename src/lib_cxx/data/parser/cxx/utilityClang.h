@@ -1,6 +1,9 @@
 #ifndef UTILITY_CLANG_H
 #define UTILITY_CLANG_H
 
+#include "SrctrlModule.h"
+
+#ifndef SRCTRL_MODULE_PURVIEW
 #include <clang/AST/Decl.h>
 #include <filesystem>
 #include <optional>
@@ -9,7 +12,9 @@
 #include "SymbolKind.h"
 #include "DefinitionKind.h"
 
-struct ParseLocation;
+// In the module purview ParseLocation comes from `import srctrl.data`, FilePath from
+// `import srctrl.file`, CanonicalFilePathCache from the earlier purview include, and the real
+// clang declarations from the wrapper's Clang GMF (attached forward declarations would clash).
 struct ParseLocation;
 class CanonicalFilePathCache;
 class FilePath;
@@ -21,8 +26,9 @@ class Preprocessor;
 class SourceManager;
 struct PrintingPolicy;
 }	 // namespace clang
+#endif
 
-namespace utility
+SRCTRL_EXPORT namespace utility
 {
 clang::PrintingPolicy makePrintingPolicyForCPlusPlus();
 
@@ -69,5 +75,9 @@ const T* utility::getFirstDecl(const T* decl)
 	}
 	return clang::dyn_cast_or_null<T>(ret);
 }
+
+#ifndef SRCTRL_MODULE_PURVIEW
+#include "utilityClang.inl"
+#endif
 
 #endif	  // UTILITY_CLANG_H

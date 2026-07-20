@@ -36,7 +36,8 @@ if(SOURCETRAIL_CXX_MODULES_ENABLED)
 				srctrl_cxx.cppm
 				data/parser/cxx/name/srctrl_cxx-name.cppm
 				data/parser/cxx/srctrl_cxx-context.cppm
-				data/parser/cxx/srctrl_cxx-tooling.cppm)
+				data/parser/cxx/srctrl_cxx-tooling.cppm
+				data/parser/cxx/srctrl_cxx-parser.cppm)
 	# Same LLVM #166068 reduced-BMI workaround as lib_core (see its CMakeLists for the full story).
 	if(CMAKE_CXX_COMPILER_ID MATCHES "Clang")
 		target_compile_options(Sourcetrail_lib_cxx PRIVATE -fno-modules-reduced-bmi)

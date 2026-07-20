@@ -1,6 +1,9 @@
 #ifndef CANONICAL_FILE_PATH_CACHE_H
 #define CANONICAL_FILE_PATH_CACHE_H
 
+#include "SrctrlModule.h"
+
+#ifndef SRCTRL_MODULE_PURVIEW
 #include <string>
 #include <unordered_map>
 
@@ -12,8 +15,9 @@
 #include "FilePath.h"
 #include "FileRegister.h"
 #include "types.h"
+#endif
 
-class CanonicalFilePathCache
+SRCTRL_EXPORT class CanonicalFilePathCache
 {
 public:
 	CanonicalFilePathCache(std::shared_ptr<FileRegister> fileRegister);
@@ -52,5 +56,9 @@ private:
 
 	llvm::DenseMap<clang::FileID, bool> m_isProjectFileMap;
 };
+
+#ifndef SRCTRL_MODULE_PURVIEW
+#include "CanonicalFilePathCache.inl"
+#endif
 
 #endif	  // CANONICAL_FILE_PATH_CACHE_H

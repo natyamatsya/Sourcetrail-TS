@@ -1,11 +1,13 @@
-#include "ParseLocation.h"
+// Inline implementations for ParseLocation.h. Included at the end of that header; not a standalone TU.
 
-ParseLocation::ParseLocation()
+#pragma once
+
+inline ParseLocation::ParseLocation()
 	: fileId(0), startLineNumber(0), startColumnNumber(0), endLineNumber(0), endColumnNumber(0)
 {
 }
 
-ParseLocation::ParseLocation(Id fileId, size_t lineNumber, size_t columnNumber)
+inline ParseLocation::ParseLocation(Id fileId, size_t lineNumber, size_t columnNumber)
 	: fileId(fileId)
 	, startLineNumber(lineNumber)
 	, startColumnNumber(columnNumber)
@@ -14,7 +16,7 @@ ParseLocation::ParseLocation(Id fileId, size_t lineNumber, size_t columnNumber)
 {
 }
 
-ParseLocation::ParseLocation(
+inline ParseLocation::ParseLocation(
 	Id fileId,
 	size_t startLineNumber,
 	size_t startColumnNumber,
@@ -28,7 +30,7 @@ ParseLocation::ParseLocation(
 {
 }
 
-bool ParseLocation::isValid() const
+inline bool ParseLocation::isValid() const
 {
 	return fileId != 0;
 }

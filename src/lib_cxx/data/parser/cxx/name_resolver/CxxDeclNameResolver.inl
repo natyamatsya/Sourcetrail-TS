@@ -1,29 +1,30 @@
-#include "CxxDeclNameResolver.h"
+// Inline implementations for CxxDeclNameResolver.h. Included via CxxNameResolverBodies.h (classic)
+// or the srctrl.cxx:parser wrapper (purview); not a standalone TU.
 
+#pragma once
+
+#ifndef SRCTRL_MODULE_PURVIEW
 #include <clang/AST/ASTContext.h>
 
 #include "CanonicalFilePathCache.h"
 #include "CxxFunctionDeclName.h"
-#include "CxxSpecifierNameResolver.h"
 #include "CxxStaticFunctionDeclName.h"
-#include "CxxTemplateArgumentNameResolver.h"
-#include "CxxTemplateParameterStringResolver.h"
-#include "CxxTypeNameResolver.h"
 #include "CxxVariableDeclName.h"
 #include "ScopedSwitcher.h"
 #include "utilityClang.h"
+#endif
 
-CxxDeclNameResolver::CxxDeclNameResolver(CanonicalFilePathCache* canonicalFilePathCache)
+inline CxxDeclNameResolver::CxxDeclNameResolver(CanonicalFilePathCache* canonicalFilePathCache)
 	: CxxNameResolver(canonicalFilePathCache), m_currentDecl(nullptr)
 {
 }
 
-CxxDeclNameResolver::CxxDeclNameResolver(const CxxNameResolver* other)
+inline CxxDeclNameResolver::CxxDeclNameResolver(const CxxNameResolver* other)
 	: CxxNameResolver(other), m_currentDecl(nullptr)
 {
 }
 
-CxxName CxxDeclNameResolver::getName(const clang::NamedDecl* declaration)
+inline CxxName CxxDeclNameResolver::getName(const clang::NamedDecl* declaration)
 {
 	declaration = utility::getFirstDecl(declaration);
 
@@ -70,7 +71,7 @@ CxxName CxxDeclNameResolver::getName(const clang::NamedDecl* declaration)
 	return declName;
 }
 
-CxxName CxxDeclNameResolver::getContextName(const clang::DeclContext* declContext)
+inline CxxName CxxDeclNameResolver::getContextName(const clang::DeclContext* declContext)
 {
 	CxxName contextDeclName;
 
@@ -93,7 +94,7 @@ CxxName CxxDeclNameResolver::getContextName(const clang::DeclContext* declContex
 	return contextDeclName;
 }
 
-CxxName CxxDeclNameResolver::getDeclName(const clang::NamedDecl* declaration)
+inline CxxName CxxDeclNameResolver::getDeclName(const clang::NamedDecl* declaration)
 {
 	if (declaration)
 	{
@@ -443,7 +444,7 @@ CxxName CxxDeclNameResolver::getDeclName(const clang::NamedDecl* declaration)
 	return CxxName::make<CxxDeclName>(getNameForAnonymousSymbol("symbol", declaration));
 }
 
-std::string CxxDeclNameResolver::getTranslationUnitMainFileName(const clang::Decl* declaration)
+inline std::string CxxDeclNameResolver::getTranslationUnitMainFileName(const clang::Decl* declaration)
 {
 	const clang::SourceManager& sourceManager = declaration->getASTContext().getSourceManager();
 	return getCanonicalFilePathCache()
@@ -451,7 +452,7 @@ std::string CxxDeclNameResolver::getTranslationUnitMainFileName(const clang::Dec
 		.fileName();
 }
 
-std::string CxxDeclNameResolver::getNameForAnonymousSymbol(
+inline std::string CxxDeclNameResolver::getNameForAnonymousSymbol(
 	const std::string& symbolKindName, const clang::Decl* declaration)
 {
 	const clang::SourceManager& sourceManager = declaration->getASTContext().getSourceManager();
@@ -467,7 +468,7 @@ std::string CxxDeclNameResolver::getNameForAnonymousSymbol(
 	return "anonymous " + symbolKindName;
 }
 
-std::vector<std::string> CxxDeclNameResolver::getTemplateParameterStrings(
+inline std::vector<std::string> CxxDeclNameResolver::getTemplateParameterStrings(
 	const clang::TemplateDecl* templateDecl)
 {
 	std::vector<std::string> templateParameterStrings;
@@ -479,7 +480,7 @@ std::vector<std::string> CxxDeclNameResolver::getTemplateParameterStrings(
 	return templateParameterStrings;
 }
 
-std::string CxxDeclNameResolver::getTemplateParameterString(const clang::NamedDecl* parameter)
+inline std::string CxxDeclNameResolver::getTemplateParameterString(const clang::NamedDecl* parameter)
 {
 	CxxTemplateParameterStringResolver parameterStringResolver(this);
 	if (clang::isa<clang::TemplateDecl>(m_currentDecl) &&
@@ -497,7 +498,7 @@ std::string CxxDeclNameResolver::getTemplateParameterString(const clang::NamedDe
 	return parameterStringResolver.getTemplateParameterString(parameter);
 }
 
-std::string CxxDeclNameResolver::getTemplateArgumentName(const clang::TemplateArgument& argument)
+inline std::string CxxDeclNameResolver::getTemplateArgumentName(const clang::TemplateArgument& argument)
 {
 	return CxxTemplateArgumentNameResolver(this).getTemplateArgumentName(argument);
 }

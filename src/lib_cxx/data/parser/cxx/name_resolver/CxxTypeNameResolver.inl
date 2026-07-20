@@ -1,27 +1,26 @@
-#include "CxxTypeNameResolver.h"
+// Inline implementations for CxxTypeNameResolver.h. Included via CxxNameResolverBodies.h (classic)
+// or the srctrl.cxx:parser wrapper (purview); not a standalone TU.
 
+#pragma once
+
+#ifndef SRCTRL_MODULE_PURVIEW
 #include <clang/AST/ASTContext.h>
 #include <clang/AST/DeclTemplate.h>
 #include <clang/AST/PrettyPrinter.h>
 
-#include "CxxDeclNameResolver.h"
-#include "CxxSpecifierNameResolver.h"
-#include "CxxTemplateArgumentNameResolver.h"
 #include "logging.h"
 #include "utilityClang.h"
+#endif
 
-using namespace std;
-using namespace clang;
-using namespace utility;
 
-CxxTypeNameResolver::CxxTypeNameResolver(CanonicalFilePathCache* canonicalFilePathCache)
+inline CxxTypeNameResolver::CxxTypeNameResolver(CanonicalFilePathCache* canonicalFilePathCache)
 	: CxxNameResolver(canonicalFilePathCache)
 {
 }
 
-CxxTypeNameResolver::CxxTypeNameResolver(const CxxNameResolver* other): CxxNameResolver(other) {}
+inline CxxTypeNameResolver::CxxTypeNameResolver(const CxxNameResolver* other): CxxNameResolver(other) {}
 
-std::unique_ptr<CxxTypeName> CxxTypeNameResolver::getName(const clang::QualType& qualType, const VarDecl *varDecl)
+inline std::unique_ptr<CxxTypeName> CxxTypeNameResolver::getName(const clang::QualType& qualType, const clang::VarDecl *varDecl)
 {
 	std::unique_ptr<CxxTypeName> typeName = getName(qualType.getTypePtr());
 	if (typeName)
@@ -34,7 +33,7 @@ std::unique_ptr<CxxTypeName> CxxTypeNameResolver::getName(const clang::QualType&
 	return typeName;
 }
 
-std::unique_ptr<CxxTypeName> CxxTypeNameResolver::getName(const clang::Type* type)
+inline std::unique_ptr<CxxTypeName> CxxTypeNameResolver::getName(const clang::Type* type)
 {
 	if (type)
 	{
@@ -136,7 +135,7 @@ std::unique_ptr<CxxTypeName> CxxTypeNameResolver::getName(const clang::Type* typ
 		}
 		case clang::Type::Builtin:
 		{
-			clang::PrintingPolicy pp = makePrintingPolicyForCPlusPlus();
+			clang::PrintingPolicy pp = utility::makePrintingPolicyForCPlusPlus();
 
 			return std::make_unique<CxxTypeName>(
 				type->getAs<clang::BuiltinType>()->getName(pp).str(),
@@ -278,8 +277,8 @@ std::unique_ptr<CxxTypeName> CxxTypeNameResolver::getName(const clang::Type* typ
 		}
 		case clang::Type::Auto:
 		{
-			const AutoType *autoType = cast<AutoType>(type);
-			if (QualType deducedType = autoType->getDeducedType(); !deducedType.isNull())
+			const clang::AutoType *autoType = cast<clang::AutoType>(type);
+			if (clang::QualType deducedType = autoType->getDeducedType(); !deducedType.isNull())
 			{
 				return getName(deducedType);
 			}
@@ -288,15 +287,15 @@ std::unique_ptr<CxxTypeName> CxxTypeNameResolver::getName(const clang::Type* typ
 				// Actual type is resolved in CxxAstVisitorComponentIndexer::visitVarDecl
 				switch (autoType->getKeyword())
 				{
-					case AutoTypeKeyword::Auto:
-						return make_unique<CxxTypeName>("auto");
-					case AutoTypeKeyword::DecltypeAuto:
-						return make_unique<CxxTypeName>("decltype(auto)");
-					case AutoTypeKeyword::GNUAutoType:
-						return make_unique<CxxTypeName>("__auto_type"); // GNU C extension
+					case clang::AutoTypeKeyword::Auto:
+						return std::make_unique<CxxTypeName>("auto");
+					case clang::AutoTypeKeyword::DecltypeAuto:
+						return std::make_unique<CxxTypeName>("decltype(auto)");
+					case clang::AutoTypeKeyword::GNUAutoType:
+						return std::make_unique<CxxTypeName>("__auto_type"); // GNU C extension
 					default:
 						LOG_WARNING("Unknown auto type keyword encountered");
-						return make_unique<CxxTypeName>("auto");
+						return std::make_unique<CxxTypeName>("auto");
 				}
 			}
 		}
@@ -311,7 +310,7 @@ std::unique_ptr<CxxTypeName> CxxTypeNameResolver::getName(const clang::Type* typ
 			// A dependent decltype (e.g. the 'decltype(void(sizeof(T)))' argument of a
 			// partial specialization) is a DependentDecltypeType, which carries no
 			// underlying type until instantiation. Print the decltype expression instead.
-			clang::PrintingPolicy pp = makePrintingPolicyForCPlusPlus();
+			clang::PrintingPolicy pp = utility::makePrintingPolicyForCPlusPlus();
 			clang::SmallString<64> Buf;
 			llvm::raw_svector_ostream StrOS(Buf);
 			clang::QualType::print(type, clang::Qualifiers(), StrOS, pp, clang::Twine());
@@ -346,7 +345,7 @@ std::unique_ptr<CxxTypeName> CxxTypeNameResolver::getName(const clang::Type* typ
 		{
 			const std::string typeClassName = type->getTypeClassName();
 			LOG_INFO("Unhandled kind of type encountered: " + typeClassName);
-			clang::PrintingPolicy pp = makePrintingPolicyForCPlusPlus();
+			clang::PrintingPolicy pp = utility::makePrintingPolicyForCPlusPlus();
 
 			clang::SmallString<64> Buf;
 			llvm::raw_svector_ostream StrOS(Buf);

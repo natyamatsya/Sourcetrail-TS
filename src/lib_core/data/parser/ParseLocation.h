@@ -1,12 +1,16 @@
 #ifndef PARSE_LOCATION_H
 #define PARSE_LOCATION_H
 
+#include "SrctrlModule.h"
+
+#ifndef SRCTRL_MODULE_PURVIEW
 #include <string>
 
 #include "FilePath.h"
 #include "types.h"
+#endif
 
-enum class ParseLocationType
+SRCTRL_EXPORT enum class ParseLocationType
 {
 	TOKEN,
 	SCOPE,
@@ -15,7 +19,7 @@ enum class ParseLocationType
 	LOCAL
 };
 
-struct ParseLocation
+SRCTRL_EXPORT struct ParseLocation
 {
 	ParseLocation();
 	ParseLocation(Id fileId, size_t lineNumber, size_t columnNumber);
@@ -34,5 +38,7 @@ struct ParseLocation
 	size_t endLineNumber;
 	size_t endColumnNumber;
 };
+
+#include "ParseLocation.inl"
 
 #endif	  // PARSE_LOCATION_H

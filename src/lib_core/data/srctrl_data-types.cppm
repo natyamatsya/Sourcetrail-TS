@@ -30,6 +30,7 @@ import srctrl.utility;
 #include "ElementComponentKind.h"
 #include "DefinitionKind.h"
 #include "AccessKind.h"
+#include "SymbolKind.h"
 // Node classification enums the graph core (Node) needs: NodeKind (intToEnum-specializing, like the
 // above) and NodeModifier (a plain bitmask enum + nodeModifierToString). Kept in :types so :graph and
 // the storage layer import them rather than duplicating them into a GMF.

@@ -1,24 +1,27 @@
-#include "CxxSpecifierNameResolver.h"
+// Inline implementations for CxxSpecifierNameResolver.h. Included via CxxNameResolverBodies.h
+// (classic) or the srctrl.cxx:parser wrapper (purview); not a standalone TU.
 
-#include "CxxDeclNameResolver.h"
-#include "CxxTypeNameResolver.h"
+#pragma once
+
+#ifndef SRCTRL_MODULE_PURVIEW
 #include "clang_compat/ClangCompat.h"
 
 #include <clang/AST/ASTContext.h>
 #include <clang/AST/DeclTemplate.h>
 #include <clang/AST/PrettyPrinter.h>
+#endif
 
-CxxSpecifierNameResolver::CxxSpecifierNameResolver(CanonicalFilePathCache* canonicalFilePathCache)
+inline CxxSpecifierNameResolver::CxxSpecifierNameResolver(CanonicalFilePathCache* canonicalFilePathCache)
 	: CxxNameResolver(canonicalFilePathCache)
 {
 }
 
-CxxSpecifierNameResolver::CxxSpecifierNameResolver(const CxxNameResolver* other)
+inline CxxSpecifierNameResolver::CxxSpecifierNameResolver(const CxxNameResolver* other)
 	: CxxNameResolver(other)
 {
 }
 
-CxxName CxxSpecifierNameResolver::getName(
+inline CxxName CxxSpecifierNameResolver::getName(
 	clang_compat::NestedNameSpecifierRef nestedNameSpecifier)
 {
 	if (!nestedNameSpecifier)

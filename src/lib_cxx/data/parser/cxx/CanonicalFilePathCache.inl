@@ -1,24 +1,44 @@
-#include "CanonicalFilePathCache.h"
+// Inline implementations for CanonicalFilePathCache.h. Included at the end of that header; not a
+// standalone TU.
+
+#pragma once
+
+#ifndef SRCTRL_MODULE_PURVIEW
+#include <cctype>
 
 #include "utilityClang.h"
-#include "utilityString.h"
+#endif
+
+namespace canonical_file_path_cache_detail
+{
+// ASCII lowercasing for path-key comparison. Replaces utility::toLowerCase -- a Qt/locale-based
+// helper deliberately excluded from srctrl.utility:string, which this .inl cannot reach from the
+// srctrl.cxx:parser purview. Mirrors FilePath::getLowerCase().
+inline std::string toLowerCaseAscii(std::string in)
+{
+	for (char& c: in)
+	{
+		c = static_cast<char>(std::tolower(static_cast<unsigned char>(c)));
+	}
+	return in;
+}
+}	 // namespace canonical_file_path_cache_detail
 
 #include <clang/AST/ASTContext.h>
 #include <clang/Basic/FileManager.h>
 
-using namespace clang;
 
-CanonicalFilePathCache::CanonicalFilePathCache(std::shared_ptr<FileRegister> fileRegister)
+inline CanonicalFilePathCache::CanonicalFilePathCache(std::shared_ptr<FileRegister> fileRegister)
 	: m_fileRegister(fileRegister)
 {
 }
 
-std::shared_ptr<FileRegister> CanonicalFilePathCache::getFileRegister() const
+inline std::shared_ptr<FileRegister> CanonicalFilePathCache::getFileRegister() const
 {
 	return m_fileRegister;
 }
 
-FilePath CanonicalFilePathCache::getCanonicalFilePath(
+inline FilePath CanonicalFilePathCache::getCanonicalFilePath(
 	const clang::FileID& fileId, const clang::SourceManager& sourceManager)
 {
 	if (!fileId.isValid())
@@ -34,7 +54,7 @@ FilePath CanonicalFilePathCache::getCanonicalFilePath(
 
 	FilePath filePath;
 
-	const OptionalFileEntryRef fileEntry = sourceManager.getFileEntryRefForID(fileId);
+	const clang::OptionalFileEntryRef fileEntry = sourceManager.getFileEntryRefForID(fileId);
 	if (fileEntry)
 	{
 		filePath = getCanonicalFilePath(*fileEntry);
@@ -44,14 +64,14 @@ FilePath CanonicalFilePathCache::getCanonicalFilePath(
 	return filePath;
 }
 
-FilePath CanonicalFilePathCache::getCanonicalFilePath(const clang::FileEntryRef &entry)
+inline FilePath CanonicalFilePathCache::getCanonicalFilePath(const clang::FileEntryRef &entry)
 {
 	return getCanonicalFilePath(utility::getFileNameOfFileEntry(entry));
 }
 
-FilePath CanonicalFilePathCache::getCanonicalFilePath(const std::string& path)
+inline FilePath CanonicalFilePathCache::getCanonicalFilePath(const std::string& path)
 {
-	const std::string lowercasePath = utility::toLowerCase(path);
+	const std::string lowercasePath = canonical_file_path_cache_detail::toLowerCaseAscii(path);
 
 	auto it = m_fileStringMap.find(lowercasePath);
 	if (it != m_fileStringMap.end())
@@ -60,7 +80,7 @@ FilePath CanonicalFilePathCache::getCanonicalFilePath(const std::string& path)
 	}
 
 	const FilePath canonicalPath = FilePath(path).makeCanonical();
-	const std::string lowercaseCanonicalPath = utility::toLowerCase(canonicalPath.str());
+	const std::string lowercaseCanonicalPath = canonical_file_path_cache_detail::toLowerCaseAscii(canonicalPath.str());
 
 	m_fileStringMap.emplace(std::move(lowercasePath), canonicalPath);
 	m_fileStringMap.emplace(std::move(lowercaseCanonicalPath), canonicalPath);
@@ -68,7 +88,7 @@ FilePath CanonicalFilePathCache::getCanonicalFilePath(const std::string& path)
 	return canonicalPath;
 }
 
-FilePath CanonicalFilePathCache::getCanonicalFilePath(const Id symbolId)
+inline FilePath CanonicalFilePathCache::getCanonicalFilePath(const Id symbolId)
 {
 	auto it = m_symbolIdFileIdMap.find(symbolId);
 	if (it != m_symbolIdFileIdMap.end())
@@ -83,14 +103,14 @@ FilePath CanonicalFilePathCache::getCanonicalFilePath(const Id symbolId)
 	return FilePath();
 }
 
-void CanonicalFilePathCache::addFileSymbolId(const clang::FileID& fileId, const FilePath& path, Id symbolId)
+inline void CanonicalFilePathCache::addFileSymbolId(const clang::FileID& fileId, const FilePath& path, Id symbolId)
 {
 	m_fileIdSymbolIdMap.try_emplace(fileId, symbolId);
 	m_symbolIdFileIdMap.try_emplace(symbolId, fileId);
-	m_fileStringSymbolIdMap.emplace(utility::toLowerCase(path.str()), symbolId);
+	m_fileStringSymbolIdMap.emplace(canonical_file_path_cache_detail::toLowerCaseAscii(path.str()), symbolId);
 }
 
-Id CanonicalFilePathCache::getFileSymbolId(const clang::FileID& fileId)
+inline Id CanonicalFilePathCache::getFileSymbolId(const clang::FileID& fileId)
 {
 	if (!fileId.isValid())
 	{
@@ -106,14 +126,14 @@ Id CanonicalFilePathCache::getFileSymbolId(const clang::FileID& fileId)
 	return 0;
 }
 
-Id CanonicalFilePathCache::getFileSymbolId(const clang::FileEntryRef &entry)
+inline Id CanonicalFilePathCache::getFileSymbolId(const clang::FileEntryRef &entry)
 {
 	return getFileSymbolId(utility::getFileNameOfFileEntry(entry));
 }
 
-Id CanonicalFilePathCache::getFileSymbolId(const std::string& path)
+inline Id CanonicalFilePathCache::getFileSymbolId(const std::string& path)
 {
-	std::string canonicalPath = utility::toLowerCase(getCanonicalFilePath(path).str());
+	std::string canonicalPath = canonical_file_path_cache_detail::toLowerCaseAscii(getCanonicalFilePath(path).str());
 
 	auto it = m_fileStringSymbolIdMap.find(canonicalPath);
 	if (it != m_fileStringSymbolIdMap.end())
@@ -124,7 +144,7 @@ Id CanonicalFilePathCache::getFileSymbolId(const std::string& path)
 	return 0;
 }
 
-FilePath CanonicalFilePathCache::getDeclarationFilePath(const clang::Decl* declaration)
+inline FilePath CanonicalFilePathCache::getDeclarationFilePath(const clang::Decl* declaration)
 {
 	const clang::SourceManager& sourceManager = declaration->getASTContext().getSourceManager();
 	const clang::FileID fileId = sourceManager.getFileID(declaration->getBeginLoc());
@@ -136,12 +156,12 @@ FilePath CanonicalFilePathCache::getDeclarationFilePath(const clang::Decl* decla
 	return getCanonicalFilePath(sourceManager.getPresumedLoc(declaration->getBeginLoc()).getFilename());
 }
 
-std::string CanonicalFilePathCache::getDeclarationFileName(const clang::Decl* declaration)
+inline std::string CanonicalFilePathCache::getDeclarationFileName(const clang::Decl* declaration)
 {
 	return getDeclarationFilePath(declaration).fileName();
 }
 
-bool CanonicalFilePathCache::isProjectFile(
+inline bool CanonicalFilePathCache::isProjectFile(
 	const clang::FileID& fileId, const clang::SourceManager& sourceManager)
 {
 	if (!fileId.isValid())

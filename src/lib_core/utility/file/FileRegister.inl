@@ -1,9 +1,12 @@
-#include "FileRegister.h"
+// Inline implementations for FileRegister.h. Included at the end of that header; not a standalone TU.
 
-#include "FilePath.h"
+#pragma once
+
+#ifndef SRCTRL_MODULE_PURVIEW
 #include "FilePathFilter.h"
+#endif
 
-FileRegister::FileRegister(
+inline FileRegister::FileRegister(
 	const FilePath& currentPath,
 	const std::set<FilePath>& indexedPaths,
 	const std::set<FilePathFilter>& excludeFilters)
@@ -51,9 +54,9 @@ FileRegister::FileRegister(
 {
 }
 
-FileRegister::~FileRegister() = default;
+inline FileRegister::~FileRegister() = default;
 
-bool FileRegister::hasFilePath(const FilePath& filePath) const
+inline bool FileRegister::hasFilePath(const FilePath& filePath) const
 {
 	return m_hasFilePathCache.getValue(filePath.str());
 }

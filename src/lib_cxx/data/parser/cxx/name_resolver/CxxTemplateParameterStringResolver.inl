@@ -1,24 +1,27 @@
-#include "CxxTemplateParameterStringResolver.h"
+// Inline implementations for CxxTemplateParameterStringResolver.h. Included via
+// CxxNameResolverBodies.h (classic) or the srctrl.cxx:parser wrapper (purview); not a standalone TU.
 
+#pragma once
+
+#ifndef SRCTRL_MODULE_PURVIEW
 #include <sstream>
 
 #include <clang/AST/DeclTemplate.h>
 #include <clang/AST/PrettyPrinter.h>
+#endif
 
-#include "CxxTypeNameResolver.h"
-
-CxxTemplateParameterStringResolver::CxxTemplateParameterStringResolver(
+inline CxxTemplateParameterStringResolver::CxxTemplateParameterStringResolver(
 	CanonicalFilePathCache* canonicalFilePathCache)
 	: CxxNameResolver(canonicalFilePathCache)
 {
 }
 
-CxxTemplateParameterStringResolver::CxxTemplateParameterStringResolver(const CxxNameResolver* other)
+inline CxxTemplateParameterStringResolver::CxxTemplateParameterStringResolver(const CxxNameResolver* other)
 	: CxxNameResolver(other)
 {
 }
 
-std::string CxxTemplateParameterStringResolver::getTemplateParameterString(const clang::NamedDecl* parameter)
+inline std::string CxxTemplateParameterStringResolver::getTemplateParameterString(const clang::NamedDecl* parameter)
 {
 	std::string templateParameterTypeString;
 
@@ -50,7 +53,7 @@ std::string CxxTemplateParameterStringResolver::getTemplateParameterString(const
 	return templateParameterTypeString;
 }
 
-std::string CxxTemplateParameterStringResolver::getTemplateParameterTypeString(const clang::NonTypeTemplateParmDecl* parameter)
+inline std::string CxxTemplateParameterStringResolver::getTemplateParameterTypeString(const clang::NonTypeTemplateParmDecl* parameter)
 {
 	std::string typeString = CxxTypeName::makeUnsolvedIfNull(CxxTypeNameResolver(this).getName(parameter->getType()))->toString();
 
@@ -62,7 +65,7 @@ std::string CxxTemplateParameterStringResolver::getTemplateParameterTypeString(c
 	return typeString;
 }
 
-std::string CxxTemplateParameterStringResolver::getTemplateParameterTypeString(const clang::TemplateTypeParmDecl *parameter)
+inline std::string CxxTemplateParameterStringResolver::getTemplateParameterTypeString(const clang::TemplateTypeParmDecl *parameter)
 {
 	std::string typeString = (parameter->wasDeclaredWithTypename() ? "typename" : "class");
 
@@ -85,7 +88,7 @@ std::string CxxTemplateParameterStringResolver::getTemplateParameterTypeString(c
 	return typeString;
 }
 
-std::string CxxTemplateParameterStringResolver::getTemplateParameterTypeString(const clang::TemplateTemplateParmDecl* parameter)
+inline std::string CxxTemplateParameterStringResolver::getTemplateParameterTypeString(const clang::TemplateTemplateParmDecl* parameter)
 {
 	std::stringstream ss;
 	ss << "template<";

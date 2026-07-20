@@ -1,20 +1,23 @@
-#include "CxxTemplateArgumentNameResolver.h"
+// Inline implementations for CxxTemplateArgumentNameResolver.h. Included via
+// CxxNameResolverBodies.h (classic) or the srctrl.cxx:parser wrapper (purview); not a standalone TU.
 
-#include "CxxTypeNameResolver.h"
+#pragma once
+
+#ifndef SRCTRL_MODULE_PURVIEW
 #include "utilityClang.h"
 
 #include <clang/AST/DeclTemplate.h>
 #include <clang/AST/Expr.h>
 #include <clang/AST/PrettyPrinter.h>
+#endif
 
-using namespace utility;
 
-CxxTemplateArgumentNameResolver::CxxTemplateArgumentNameResolver(const CxxNameResolver* other)
+inline CxxTemplateArgumentNameResolver::CxxTemplateArgumentNameResolver(const CxxNameResolver* other)
 	: CxxNameResolver(other)
 {
 }
 
-std::string CxxTemplateArgumentNameResolver::getTemplateArgumentName(
+inline std::string CxxTemplateArgumentNameResolver::getTemplateArgumentName(
 	const clang::TemplateArgument& argument)
 {
 	// This doesn't work correctly if the template argument is dependent.
@@ -45,7 +48,7 @@ std::string CxxTemplateArgumentNameResolver::getTemplateArgumentName(
 	case clang::TemplateArgument::TemplateExpansion:	// handled correctly? template template parameter...
 	case clang::TemplateArgument::StructuralValue:
 	{
-		clang::PrintingPolicy pp = makePrintingPolicyForCPlusPlus();
+		clang::PrintingPolicy pp = utility::makePrintingPolicyForCPlusPlus();
 
 		constexpr bool includeType = false;
 		std::string buf;

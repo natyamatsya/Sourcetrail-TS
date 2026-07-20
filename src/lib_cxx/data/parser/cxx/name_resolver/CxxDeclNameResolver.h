@@ -1,16 +1,20 @@
 #ifndef CXX_DECL_NAME_RESOLVER_H
 #define CXX_DECL_NAME_RESOLVER_H
 
+#include "SrctrlModule.h"
+
+#ifndef SRCTRL_MODULE_PURVIEW
 #include <clang/AST/DeclTemplate.h>
 
 #include "CxxDeclName.h"
 #include "CxxNameResolver.h"
 #include "CxxTypeName.h"
 #include "CxxTypeNameResolver.h"
+#endif
 
 class CanonicalFilePathCache;
 
-class CxxDeclNameResolver: public CxxNameResolver
+SRCTRL_EXPORT class CxxDeclNameResolver: public CxxNameResolver
 {
 public:
 	CxxDeclNameResolver(CanonicalFilePathCache* canonicalFilePathCache);
@@ -116,5 +120,13 @@ std::vector<std::string> CxxDeclNameResolver::getTemplateParameterStringsOfParti
 	}
 	return templateParameterNames;
 }
+
+// Classic build: the resolver family is mutually recursive, so the inline bodies parse in ONE
+// place, once every class is complete. This header is the family's apex (its class-definition
+// includes pull the deepest chain); its bottom completes the remaining siblings and then includes
+// all bodies. The other headers bottom-include THIS header, so any entry point converges here.
+#ifndef SRCTRL_MODULE_PURVIEW
+#include "CxxNameResolverBodies.h"
+#endif
 
 #endif	  // CXX_DECL_NAME_RESOLVER_H

@@ -1,12 +1,14 @@
-#include "utilityClang.h"
+// Inline implementations for utilityClang.h. Included at the end of that header; not a standalone TU.
 
+#pragma once
+
+#ifndef SRCTRL_MODULE_PURVIEW
 #include <clang/AST/DeclCXX.h>
 #include <clang/AST/DeclTemplate.h>
 #include <clang/Basic/FileManager.h>
 #include <clang/Lex/Preprocessor.h>
 
 #include "CanonicalFilePathCache.h"
-#include "FilePath.h"
 #include "ParseLocation.h"
 #include "ToolChain.h"
 #include "clang_compat/ClangCompat.h"
@@ -16,11 +18,10 @@
 #include <filesystem>
 #include <map>
 #include <mutex>
+#endif
 
-using namespace std;
-using namespace clang;
 
-bool utility::isImplicit(const clang::Decl* d)
+inline bool utility::isImplicit(const clang::Decl* d)
 {
 	if (!d)
 	{
@@ -67,13 +68,13 @@ bool utility::isImplicit(const clang::Decl* d)
 	return isImplicit(clang::dyn_cast_or_null<clang::Decl>(d->getDeclContext()));
 }
 
-DefinitionKind utility::getDefinitionKind(const clang::Decl* d)
+inline DefinitionKind utility::getDefinitionKind(const clang::Decl* d)
 {
 	using enum DefinitionKind;
 	return isImplicit(d) ? IMPLICIT : EXPLICIT;
 }
 
-AccessKind utility::convertAccessSpecifier(clang::AccessSpecifier access)
+inline AccessKind utility::convertAccessSpecifier(clang::AccessSpecifier access)
 {
 	using enum clang::AccessSpecifier;
 	using enum AccessKind;
@@ -92,7 +93,7 @@ AccessKind utility::convertAccessSpecifier(clang::AccessSpecifier access)
 	}
 }
 
-SymbolKind utility::convertTagKind(const clang::TagTypeKind tagKind)
+inline SymbolKind utility::convertTagKind(const clang::TagTypeKind tagKind)
 {
 	using enum SymbolKind;
 	using enum clang::TagTypeKind;
@@ -114,17 +115,17 @@ SymbolKind utility::convertTagKind(const clang::TagTypeKind tagKind)
 	}
 }
 
-bool utility::isLocalVariable(const clang::ValueDecl *d)
+inline bool utility::isLocalVariable(const clang::ValueDecl *d)
 {
 	return !llvm::isa<clang::ParmVarDecl>(d) && !(d->getParentFunctionOrMethod() == nullptr);
 }
 
-bool utility::isParameter(const clang::ValueDecl *d)
+inline bool utility::isParameter(const clang::ValueDecl *d)
 {
 	return llvm::isa<clang::ParmVarDecl>(d);
 }
 
-SymbolKind utility::getSymbolKind(const clang::VarDecl* d)
+inline SymbolKind utility::getSymbolKind(const clang::VarDecl* d)
 {
 	using enum SymbolKind;
 	SymbolKind symbolKind = UNDEFINED;
@@ -145,9 +146,9 @@ SymbolKind utility::getSymbolKind(const clang::VarDecl* d)
 	return symbolKind;
 }
 
-string utility::getFileNameOfFileEntry(const FileEntryRef &entry)
+inline std::string utility::getFileNameOfFileEntry(const clang::FileEntryRef &entry)
 {
-	string fileName = entry.getFileEntry().tryGetRealPathName().str();
+	std::string fileName = entry.getFileEntry().tryGetRealPathName().str();
 	if (fileName.empty())
 	{
 		fileName = entry.getName().str();
@@ -159,7 +160,7 @@ string utility::getFileNameOfFileEntry(const FileEntryRef &entry)
 	return fileName;
 }
 
-ParseLocation utility::getParseLocation(
+inline ParseLocation utility::getParseLocation(
 	const clang::SourceLocation& sourceLocation,
 	const clang::SourceManager& sourceManager,
 	clang::Preprocessor* preprocessor,
@@ -208,7 +209,7 @@ ParseLocation utility::getParseLocation(
 	return ParseLocation();
 }
 
-ParseLocation utility::getParseLocation(
+inline ParseLocation utility::getParseLocation(
 	const clang::SourceRange& sourceRange,
 	const clang::SourceManager& sourceManager,
 	clang::Preprocessor* preprocessor,
@@ -258,15 +259,15 @@ ParseLocation utility::getParseLocation(
 	return ParseLocation();
 }
 
-PrintingPolicy utility::makePrintingPolicyForCPlusPlus()
+inline clang::PrintingPolicy utility::makePrintingPolicyForCPlusPlus()
 {
-	PrintingPolicy pp = PrintingPolicy(clang::LangOptions());
+	clang::PrintingPolicy pp = clang::PrintingPolicy(clang::LangOptions());
 	pp.adjustForCPlusPlus();
 
 	return pp;
 }
 
-std::optional<std::filesystem::path> utility::resolveCompilerResourceDir(const std::filesystem::path& compilerPath)
+inline std::optional<std::filesystem::path> utility::resolveCompilerResourceDir(const std::filesystem::path& compilerPath)
 {
 	static std::mutex cacheMutex;
 	static std::map<std::string, std::optional<std::filesystem::path>> cache;

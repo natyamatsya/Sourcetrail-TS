@@ -33,7 +33,9 @@ import :types;   // LocationType
 #include "SourceLocation.h"
 #include "SourceLocationFile.h"
 #include "SourceLocationCollection.h"
+#include "ParseLocation.h"
 // Then the inline member definitions.
 #include "SourceLocation.inl"
 #include "SourceLocationFile.inl"
 #include "SourceLocationCollection.inl"
+// (ParseLocation.inl is pulled by its header unconditionally)

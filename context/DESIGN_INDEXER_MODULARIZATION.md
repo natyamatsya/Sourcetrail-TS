@@ -523,6 +523,30 @@ cycles in `lib` is prerequisite work, and a good cleanup in its own right).
   - A purview fwd-decl of `clang::tooling::CompilationDatabase` would likewise attach a bogus
     entity — the header's clang fwd-decl block is purview-guarded, the real decls come from the
     wrapper's Clang GMF.
+- **Phase 3 (cont.) — `:parser` (visitor-layer slice 1): the AST-support layer. ✅** CanonicalFilePathCache,
+  the utilityClang helpers, and the full name_resolver/ family (CxxNameResolver + Decl/Type/Specifier/
+  TemplateArgument/TemplateParameterString) converted into `srctrl.cxx:parser` (~1.6k LOC inlined);
+  `ParseLocation` joined `srctrl.data:location`, `FileRegister`+`utilityFile` joined `srctrl.file`,
+  and `SymbolKind` — evidently missed when its siblings converted — joined `srctrl.data:types` on the
+  way. Hard-won findings:
+  - **The 6-way mutually recursive resolver family needs the Edge/Node discipline generalized**: an
+    include-guard cycle means a naive per-header `.inl` include parses bodies before sibling classes
+    are complete. Solution: an **apex pattern** — non-apex headers bottom-include the apex
+    (CxxDeclNameResolver.h, whose top pulls the deepest class chain); only the apex bottom-includes
+    `CxxNameResolverBodies.h`, which completes the remaining siblings and then includes all six
+    `.inl`s. Any classic entry point converges there with every class complete; the module wrapper
+    orders headers-then-inls explicitly and never enters.
+  - **Automated requalification needs a first-party guard**: a compiler-error-driven loop that
+    qualifies bare names (from deleted `using namespace clang/std` directives, per ADR-0005) must
+    skip first-party identifiers, or it happily prefixes `clang::` onto them forever. Also: a driver
+    TU that itself has `using namespace clang` *masks* unqualified names in the `.inl`s it includes —
+    pick a clean driver.
+  - Same Qt/locale `toLowerCase` seam as FileSystem: CanonicalFilePathCache now uses a local ASCII
+    helper (paths; mirrors FilePath::getLowerCase()).
+  Verified both modes — the CxxParser suite (283 cases) exercises the resolvers directly.
+  **Remaining for Phase 3:** the visitor cluster itself (CxxAstVisitor + ~10 components,
+  CxxIndexingContext/CxxSymbolRegistry, recorders, PreprocessorCallbacks, CxxParser/IndexerCxx —
+  ~4.4k LOC), which should join `:parser`/`:tooling`-style clusters.
 - **Phase 3 — `srctrl.cxx`.** Modularize `lib_cxx` with partitions; absorb the Clang-header BMI cost.
   **STARTED — `:name` landed. ✅** The `name/` cluster (CxxName type-erased wrapper + concept, the five
   decl-name leaves, CxxQualifierFlags — 7 headers, all `.cpp`s inlined into `.inl`s) is `srctrl.cxx`'s
