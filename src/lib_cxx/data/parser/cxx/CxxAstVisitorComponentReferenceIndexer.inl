@@ -1,20 +1,23 @@
-#include "CxxAstVisitorComponentReferenceIndexer.h"
+// Inline implementations for CxxAstVisitorComponentReferenceIndexer.h. Included via CxxAstVisitorBodies.h (classic) or the
+// srctrl.cxx:visitor wrapper (purview); not a standalone TU.
 
+#pragma once
+
+#ifndef SRCTRL_MODULE_PURVIEW
 #include "CxxAstVisitor.h"
 #include "CxxAstVisitorComponentDeclRefKind.h"
 #include "CxxAstVisitorComponentTypeRefKind.h"
 #include "CxxIndexingContext.h"
 #include "clang_compat/ClangCompat.h"
 #include "utilityClang.h"
-
 #include <clang/AST/ASTContext.h>
 #include <clang/AST/DeclTemplate.h>
 #include <clang/Basic/SourceLocation.h>
 #include <clang/Basic/SourceManager.h>
 #include <clang/Lex/Preprocessor.h>
+#endif
 
-
-CxxAstVisitorComponentReferenceIndexer::CxxAstVisitorComponentReferenceIndexer(
+inline CxxAstVisitorComponentReferenceIndexer::CxxAstVisitorComponentReferenceIndexer(
 	CxxAstVisitor* astVisitor, clang::ASTContext* astContext, CxxIndexingContext& index)
 	: CxxAstVisitorComponent(astVisitor)
 	, m_astContext(astContext)
@@ -22,13 +25,13 @@ CxxAstVisitorComponentReferenceIndexer::CxxAstVisitorComponentReferenceIndexer(
 {
 }
 
-void CxxAstVisitorComponentReferenceIndexer::wire()
+inline void CxxAstVisitorComponentReferenceIndexer::wire()
 {
 	m_typeRefKind = getAstVisitor()->getTypeRefKindComponent();
 	m_declRefKind = getAstVisitor()->getDeclRefKindComponent();
 }
 
-void CxxAstVisitorComponentReferenceIndexer::visitCastExpr(clang::CastExpr *d)
+inline void CxxAstVisitorComponentReferenceIndexer::visitCastExpr(clang::CastExpr *d)
 {
 	if (getAstVisitor()->shouldVisitStmt(d))
 	{
@@ -43,7 +46,7 @@ void CxxAstVisitorComponentReferenceIndexer::visitCastExpr(clang::CastExpr *d)
 	}
 }
 
-void CxxAstVisitorComponentReferenceIndexer::visitCXXFunctionalCastExpr(clang::CXXFunctionalCastExpr *d)
+inline void CxxAstVisitorComponentReferenceIndexer::visitCXXFunctionalCastExpr(clang::CXXFunctionalCastExpr *d)
 {
 	if (getAstVisitor()->shouldVisitStmt(d))
 	{
@@ -55,7 +58,7 @@ void CxxAstVisitorComponentReferenceIndexer::visitCXXFunctionalCastExpr(clang::C
 	}
 }
 
-void CxxAstVisitorComponentReferenceIndexer::visitConceptSpecializationExpr(clang::ConceptSpecializationExpr *d)
+inline void CxxAstVisitorComponentReferenceIndexer::visitConceptSpecializationExpr(clang::ConceptSpecializationExpr *d)
 {
 	if (getAstVisitor()->shouldVisitStmt(d))
 	{
@@ -63,7 +66,7 @@ void CxxAstVisitorComponentReferenceIndexer::visitConceptSpecializationExpr(clan
 	}
 }
 
-void CxxAstVisitorComponentReferenceIndexer::visitConceptReference(clang::ConceptReference *d)
+inline void CxxAstVisitorComponentReferenceIndexer::visitConceptReference(clang::ConceptReference *d)
 {
 	if (getAstVisitor()->shouldVisitReference(d->getLocation()))
 	{
@@ -71,7 +74,7 @@ void CxxAstVisitorComponentReferenceIndexer::visitConceptReference(clang::Concep
 	}
 }
 
-void CxxAstVisitorComponentReferenceIndexer::visitDeclRefExpr(clang::DeclRefExpr* s)
+inline void CxxAstVisitorComponentReferenceIndexer::visitDeclRefExpr(clang::DeclRefExpr* s)
 {
 	const clang::ValueDecl *decl = s->getDecl();
 
@@ -112,7 +115,7 @@ void CxxAstVisitorComponentReferenceIndexer::visitDeclRefExpr(clang::DeclRefExpr
 	}
 }
 
-void CxxAstVisitorComponentReferenceIndexer::visitMemberExpr(clang::MemberExpr* s)
+inline void CxxAstVisitorComponentReferenceIndexer::visitMemberExpr(clang::MemberExpr* s)
 {
 	if (getAstVisitor()->shouldVisitReference(s->getMemberLoc()))
 	{
@@ -126,7 +129,7 @@ void CxxAstVisitorComponentReferenceIndexer::visitMemberExpr(clang::MemberExpr* 
 	}
 }
 
-void CxxAstVisitorComponentReferenceIndexer::visitCXXConstructExpr(clang::CXXConstructExpr* s)
+inline void CxxAstVisitorComponentReferenceIndexer::visitCXXConstructExpr(clang::CXXConstructExpr* s)
 {
 	const clang::CXXConstructorDecl* constructorDecl = s->getConstructor();
 
@@ -183,7 +186,7 @@ void CxxAstVisitorComponentReferenceIndexer::visitCXXConstructExpr(clang::CXXCon
 	}
 }
 
-void CxxAstVisitorComponentReferenceIndexer::visitCXXDeleteExpr(clang::CXXDeleteExpr* s)
+inline void CxxAstVisitorComponentReferenceIndexer::visitCXXDeleteExpr(clang::CXXDeleteExpr* s)
 {
 	if (!s->isArrayForm() && getAstVisitor()->shouldVisitReference(s->getBeginLoc()))
 	{
@@ -211,7 +214,7 @@ void CxxAstVisitorComponentReferenceIndexer::visitCXXDeleteExpr(clang::CXXDelete
 	}
 }
 
-void CxxAstVisitorComponentReferenceIndexer::visitLambdaExpr(clang::LambdaExpr* s)
+inline void CxxAstVisitorComponentReferenceIndexer::visitLambdaExpr(clang::LambdaExpr* s)
 {
 	if (getAstVisitor()->shouldVisitStmt(s))
 	{
@@ -242,7 +245,7 @@ void CxxAstVisitorComponentReferenceIndexer::visitLambdaExpr(clang::LambdaExpr* 
 	}
 }
 
-void CxxAstVisitorComponentReferenceIndexer::visitConstructorInitializer(clang::CXXCtorInitializer* init)
+inline void CxxAstVisitorComponentReferenceIndexer::visitConstructorInitializer(clang::CXXCtorInitializer* init)
 {
 	if (getAstVisitor()->shouldVisitReference(init->getMemberLocation()))
 	{
@@ -259,7 +262,7 @@ void CxxAstVisitorComponentReferenceIndexer::visitConstructorInitializer(clang::
 	}
 }
 
-ReferenceKind CxxAstVisitorComponentReferenceIndexer::consumeDeclRefContextKind()
+inline ReferenceKind CxxAstVisitorComponentReferenceIndexer::consumeDeclRefContextKind()
 {
 	if (m_typeRefKind->isTraversingInheritance())
 	{

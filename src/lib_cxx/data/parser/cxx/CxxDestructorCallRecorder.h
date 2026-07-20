@@ -1,6 +1,9 @@
 #ifndef CXX_DESTRUCTOR_CALL_RECORDER_H
 #define CXX_DESTRUCTOR_CALL_RECORDER_H
 
+#include "SrctrlModule.h"
+
+#ifndef SRCTRL_MODULE_PURVIEW
 namespace clang
 {
 class ASTContext;
@@ -8,15 +11,17 @@ class FunctionDecl;
 }
 
 class ParserClient;
-class CxxSymbolRegistry;
-class CxxLocationExtractor;
-class CxxAstVisitorComponentContext;
+#endif
+
+SRCTRL_EXPORT class CxxSymbolRegistry;
+SRCTRL_EXPORT class CxxLocationExtractor;
+SRCTRL_EXPORT class CxxAstVisitorComponentContext;
 
 // Records the implicit and base-class destructor calls the compiler inserts at the end of a
 // function body, as CALL edges. Unlike the rest of the indexer (which visits AST nodes), this
 // builds a Clang CFG and walks its control-flow blocks to find those destructors. Extracted so
 // that this control-flow analysis lives on its own rather than inside the AST visitor.
-class CxxDestructorCallRecorder
+SRCTRL_EXPORT class CxxDestructorCallRecorder
 {
 public:
 	CxxDestructorCallRecorder(
@@ -35,5 +40,10 @@ private:
 	CxxLocationExtractor& m_locations;
 	CxxAstVisitorComponentContext& m_context;
 };
+
+
+// NOTE: no classic bottom-include here -- this header is top-included by other blob headers, so a
+// bottom-include of the apex could fire while an includer's class is still incomplete. Classic
+// consumers reach the inline bodies through any converging blob header (see CxxAstVisitorBodies.h).
 
 #endif	  // CXX_DESTRUCTOR_CALL_RECORDER_H

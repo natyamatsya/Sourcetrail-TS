@@ -1,6 +1,9 @@
 #ifndef CXX_AST_VISITOR_H
 #define CXX_AST_VISITOR_H
 
+#include "SrctrlModule.h"
+
+#ifndef SRCTRL_MODULE_PURVIEW
 #include <concepts>
 #include <memory>
 #include <string>
@@ -31,6 +34,7 @@ class FilePath;
 
 struct IndexerStateInfo;
 struct ParseLocation;
+#endif
 
 // methods are called in this order:
 //	TraverseDecl()
@@ -46,19 +50,19 @@ struct ParseLocation;
 // A CxxAstVisitor component hooks into the traversal by (optionally) overriding the
 // begin-/end-/visit methods that CxxAstVisitorComponent declares. This concept captures
 // exactly that contract, so the component set is checked where it is declared below.
-template <class T>
+SRCTRL_EXPORT template <class T>
 concept CxxAstVisitorComponentC = std::derived_from<T, CxxAstVisitorComponent>;
 
 // The registered components, held by value. Adding a component is a single entry here (plus
 // its constructor argument); CxxAstVisitor::forEachComponent then fans out to it automatically.
-template <CxxAstVisitorComponentC... Components>
+SRCTRL_EXPORT template <CxxAstVisitorComponentC... Components>
 using CxxAstVisitorComponents = std::tuple<Components...>;
 
 // This is a "curiously recurring template pattern (CRTP)" visitor, so it needs no virtual
 // functions. Verbose AST logging (formerly the virtual 'CxxVerboseAstVisitor' subclass) is now an
 // opt-in mode selected at construction: when isVerbose is set, the Traverse* methods log each
 // visited node before delegating to the normal traversal.
-class CxxAstVisitor: public clang::RecursiveASTVisitor<CxxAstVisitor>
+SRCTRL_EXPORT class CxxAstVisitor: public clang::RecursiveASTVisitor<CxxAstVisitor>
 {
 public:
 	CxxAstVisitor(
@@ -260,5 +264,15 @@ protected:
 		m_components;
 };
 
+
+
+// Classic build: the visitor family is one strongly-connected blob (components need the visitor,
+// the visitor's tuple holds the components by value), so the inline bodies parse in ONE place,
+// once every class is complete. This header is the family's apex -- its top pulls every blob
+// header -- and its bottom includes all bodies. Headers no other blob header top-includes
+// bottom-include THIS header, so their classic entry points converge here.
+#ifndef SRCTRL_MODULE_PURVIEW
+#include "CxxAstVisitorBodies.h"
+#endif
 
 #endif	  // CXX_AST_VISITOR_H

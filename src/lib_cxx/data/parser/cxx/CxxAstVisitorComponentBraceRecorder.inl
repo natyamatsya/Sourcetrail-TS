@@ -1,15 +1,19 @@
-#include "CxxAstVisitorComponentBraceRecorder.h"
+// Inline implementations for CxxAstVisitorComponentBraceRecorder.h. Included via CxxAstVisitorBodies.h (classic) or the
+// srctrl.cxx:visitor wrapper (purview); not a standalone TU.
 
+#pragma once
+
+#ifndef SRCTRL_MODULE_PURVIEW
 #include <clang/Lex/Preprocessor.h>
-
 #include "CanonicalFilePathCache.h"
 #include "CxxAstVisitor.h"
 #include "CxxAstVisitorComponentContext.h"
 #include "CxxLocationExtractor.h"
 #include "ParserClient.h"
 #include "utilityClang.h"
+#endif
 
-CxxAstVisitorComponentBraceRecorder::CxxAstVisitorComponentBraceRecorder(
+inline CxxAstVisitorComponentBraceRecorder::CxxAstVisitorComponentBraceRecorder(
 	CxxAstVisitor* astVisitor, clang::ASTContext* astContext, ParserClient& client)
 	: CxxAstVisitorComponent(astVisitor)
 	, m_astContext(astContext)
@@ -18,12 +22,12 @@ CxxAstVisitorComponentBraceRecorder::CxxAstVisitorComponentBraceRecorder(
 {
 }
 
-void CxxAstVisitorComponentBraceRecorder::wire()
+inline void CxxAstVisitorComponentBraceRecorder::wire()
 {
 	m_context = getAstVisitor()->getContextComponent();
 }
 
-void CxxAstVisitorComponentBraceRecorder::visitTagDecl(clang::TagDecl* d)
+inline void CxxAstVisitorComponentBraceRecorder::visitTagDecl(clang::TagDecl* d)
 {
 	if (getAstVisitor()->shouldVisitDecl(d))
 	{
@@ -40,7 +44,7 @@ void CxxAstVisitorComponentBraceRecorder::visitTagDecl(clang::TagDecl* d)
 	}
 }
 
-void CxxAstVisitorComponentBraceRecorder::visitNamespaceDecl(clang::NamespaceDecl* d)
+inline void CxxAstVisitorComponentBraceRecorder::visitNamespaceDecl(clang::NamespaceDecl* d)
 {
 	if (getAstVisitor()->shouldVisitDecl(d))
 	{
@@ -51,7 +55,7 @@ void CxxAstVisitorComponentBraceRecorder::visitNamespaceDecl(clang::NamespaceDec
 	}
 }
 
-void CxxAstVisitorComponentBraceRecorder::visitCompoundStmt(clang::CompoundStmt* s)
+inline void CxxAstVisitorComponentBraceRecorder::visitCompoundStmt(clang::CompoundStmt* s)
 {
 	if (getAstVisitor()->shouldVisitStmt(s))
 	{
@@ -67,7 +71,7 @@ void CxxAstVisitorComponentBraceRecorder::visitCompoundStmt(clang::CompoundStmt*
 	}
 }
 
-void CxxAstVisitorComponentBraceRecorder::visitInitListExpr(clang::InitListExpr* s)
+inline void CxxAstVisitorComponentBraceRecorder::visitInitListExpr(clang::InitListExpr* s)
 {
 	if (getAstVisitor()->shouldVisitStmt(s))
 	{
@@ -86,7 +90,7 @@ void CxxAstVisitorComponentBraceRecorder::visitInitListExpr(clang::InitListExpr*
 	}
 }
 
-void CxxAstVisitorComponentBraceRecorder::visitMSAsmStmt(clang::MSAsmStmt* s)
+inline void CxxAstVisitorComponentBraceRecorder::visitMSAsmStmt(clang::MSAsmStmt* s)
 {
 	if (getAstVisitor()->shouldVisitStmt(s))
 	{
@@ -105,18 +109,18 @@ void CxxAstVisitorComponentBraceRecorder::visitMSAsmStmt(clang::MSAsmStmt* s)
 	}
 }
 
-ParseLocation CxxAstVisitorComponentBraceRecorder::getParseLocation(const clang::SourceLocation& loc) const
+inline ParseLocation CxxAstVisitorComponentBraceRecorder::getParseLocation(const clang::SourceLocation& loc) const
 {
 	return m_locations.getParseLocation(loc);
 }
 
-FilePath CxxAstVisitorComponentBraceRecorder::getFilePath(const clang::SourceLocation& loc)
+inline FilePath CxxAstVisitorComponentBraceRecorder::getFilePath(const clang::SourceLocation& loc)
 {
 	const clang::SourceManager& sm = m_astContext->getSourceManager();
 	return getAstVisitor()->getCanonicalFilePathCache()->getCanonicalFilePath(sm.getFileID(loc), sm);
 }
 
-void CxxAstVisitorComponentBraceRecorder::recordBraces(
+inline void CxxAstVisitorComponentBraceRecorder::recordBraces(
 	const FilePath& filePath, const ParseLocation& lbraceLoc, const ParseLocation& rbraceLoc)
 {
 	if (lbraceLoc.startColumnNumber != rbraceLoc.startColumnNumber ||
@@ -140,7 +144,7 @@ void CxxAstVisitorComponentBraceRecorder::recordBraces(
 	}
 }
 
-clang::SourceLocation CxxAstVisitorComponentBraceRecorder::getFirstLBraceLocation(
+inline clang::SourceLocation CxxAstVisitorComponentBraceRecorder::getFirstLBraceLocation(
 	clang::SourceLocation searchStartLoc, clang::SourceLocation searchEndLoc) const
 {
 	const clang::SourceManager& sm = m_astContext->getSourceManager();
@@ -184,7 +188,7 @@ clang::SourceLocation CxxAstVisitorComponentBraceRecorder::getFirstLBraceLocatio
 	return clang::SourceLocation();
 }
 
-clang::SourceLocation CxxAstVisitorComponentBraceRecorder::getLastRBraceLocation(
+inline clang::SourceLocation CxxAstVisitorComponentBraceRecorder::getLastRBraceLocation(
 	clang::SourceLocation searchStartLoc, clang::SourceLocation searchEndLoc) const
 {
 	const clang::SourceManager& sm = m_astContext->getSourceManager();

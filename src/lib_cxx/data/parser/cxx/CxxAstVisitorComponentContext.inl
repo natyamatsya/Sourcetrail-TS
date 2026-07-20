@@ -1,13 +1,18 @@
-#include "CxxAstVisitorComponentContext.h"
+// Inline implementations for CxxAstVisitorComponentContext.h. Included via CxxAstVisitorBodies.h (classic) or the
+// srctrl.cxx:visitor wrapper (purview); not a standalone TU.
 
+#pragma once
+
+#ifndef SRCTRL_MODULE_PURVIEW
 #include "data/parser/cxx/CxxAstVisitor.h"
+#endif
 
-CxxAstVisitorComponentContext::CxxAstVisitorComponentContext(CxxAstVisitor* astVisitor)
+inline CxxAstVisitorComponentContext::CxxAstVisitorComponentContext(CxxAstVisitor* astVisitor)
 	: CxxAstVisitorComponent(astVisitor)
 {
 }
 
-const clang::NamedDecl* CxxAstVisitorComponentContext::getTopmostContextDecl(const size_t skip) const
+inline const clang::NamedDecl* CxxAstVisitorComponentContext::getTopmostContextDecl(const size_t skip) const
 {
 	size_t skipped = 0;
 
@@ -29,7 +34,7 @@ const clang::NamedDecl* CxxAstVisitorComponentContext::getTopmostContextDecl(con
 	return nullptr;
 }
 
-CxxContext CxxAstVisitorComponentContext::getContext(const size_t skip) const
+inline CxxContext CxxAstVisitorComponentContext::getContext(const size_t skip) const
 {
 	size_t skipped = 0;
 
@@ -48,7 +53,7 @@ CxxContext CxxAstVisitorComponentContext::getContext(const size_t skip) const
 	return {};
 }
 
-void CxxAstVisitorComponentContext::beginTraverseDecl(clang::Decl* d)
+inline void CxxAstVisitorComponentContext::beginTraverseDecl(clang::Decl* d)
 {
 	CxxContext context;
 
@@ -70,12 +75,12 @@ void CxxAstVisitorComponentContext::beginTraverseDecl(clang::Decl* d)
 	m_contextStack.push_back(context);
 }
 
-void CxxAstVisitorComponentContext::endTraverseDecl(clang::Decl*  /*d*/)
+inline void CxxAstVisitorComponentContext::endTraverseDecl(clang::Decl*  /*d*/)
 {
 	m_contextStack.pop_back();
 }
 
-void CxxAstVisitorComponentContext::beginTraverseTypeLoc(const clang::TypeLoc& tl)
+inline void CxxAstVisitorComponentContext::beginTraverseTypeLoc(const clang::TypeLoc& tl)
 {
 	CxxContext context;
 	// clang::TypeLoc::TypeLocClass tlcc = tl.getTypeLocClass();
@@ -112,67 +117,67 @@ void CxxAstVisitorComponentContext::beginTraverseTypeLoc(const clang::TypeLoc& t
 	m_contextStack.push_back(context);
 }
 
-void CxxAstVisitorComponentContext::endTraverseTypeLoc(const clang::TypeLoc&  /*tl*/)
+inline void CxxAstVisitorComponentContext::endTraverseTypeLoc(const clang::TypeLoc&  /*tl*/)
 {
 	m_contextStack.pop_back();
 }
 
-void CxxAstVisitorComponentContext::beginTraverseLambdaExpr(clang::LambdaExpr* s)
+inline void CxxAstVisitorComponentContext::beginTraverseLambdaExpr(clang::LambdaExpr* s)
 {
 	m_contextStack.push_back(CxxContext(s->getCallOperator()));
 }
 
-void CxxAstVisitorComponentContext::endTraverseLambdaExpr(clang::LambdaExpr*  /*s*/)
+inline void CxxAstVisitorComponentContext::endTraverseLambdaExpr(clang::LambdaExpr*  /*s*/)
 {
 	m_contextStack.pop_back();
 }
 
-void CxxAstVisitorComponentContext::beginTraverseFunctionDecl(clang::FunctionDecl* d)
+inline void CxxAstVisitorComponentContext::beginTraverseFunctionDecl(clang::FunctionDecl* d)
 {
 	m_templateArgumentContext.push_back(CxxContext(d));
 }
 
-void CxxAstVisitorComponentContext::endTraverseFunctionDecl(clang::FunctionDecl*  /*d*/)
+inline void CxxAstVisitorComponentContext::endTraverseFunctionDecl(clang::FunctionDecl*  /*d*/)
 {
 	m_templateArgumentContext.pop_back();
 }
 
-void CxxAstVisitorComponentContext::beginTraverseClassTemplateSpecializationDecl(
+inline void CxxAstVisitorComponentContext::beginTraverseClassTemplateSpecializationDecl(
 	clang::ClassTemplateSpecializationDecl* d)
 {
 	m_templateArgumentContext.push_back(CxxContext(d));
 }
 
-void CxxAstVisitorComponentContext::endTraverseClassTemplateSpecializationDecl(
+inline void CxxAstVisitorComponentContext::endTraverseClassTemplateSpecializationDecl(
 	clang::ClassTemplateSpecializationDecl*  /*d*/)
 {
 	m_templateArgumentContext.pop_back();
 }
 
-void CxxAstVisitorComponentContext::beginTraverseClassTemplatePartialSpecializationDecl(
+inline void CxxAstVisitorComponentContext::beginTraverseClassTemplatePartialSpecializationDecl(
 	clang::ClassTemplatePartialSpecializationDecl* d)
 {
 	m_templateArgumentContext.push_back(CxxContext(d));
 }
 
-void CxxAstVisitorComponentContext::endTraverseClassTemplatePartialSpecializationDecl(
+inline void CxxAstVisitorComponentContext::endTraverseClassTemplatePartialSpecializationDecl(
 	clang::ClassTemplatePartialSpecializationDecl*  /*d*/)
 {
 	m_templateArgumentContext.pop_back();
 }
 
-void CxxAstVisitorComponentContext::beginTraverseDeclRefExpr(clang::DeclRefExpr* s)
+inline void CxxAstVisitorComponentContext::beginTraverseDeclRefExpr(clang::DeclRefExpr* s)
 {
 	m_templateArgumentContext.push_back(CxxContext(
 		s->getDecl()));	   // e.g. used for recording usage of template arguments within function calls
 }
 
-void CxxAstVisitorComponentContext::endTraverseDeclRefExpr(clang::DeclRefExpr*  /*s*/)
+inline void CxxAstVisitorComponentContext::endTraverseDeclRefExpr(clang::DeclRefExpr*  /*s*/)
 {
 	m_templateArgumentContext.pop_back();
 }
 
-void CxxAstVisitorComponentContext::beginTraverseTemplateSpecializationTypeLoc(
+inline void CxxAstVisitorComponentContext::beginTraverseTemplateSpecializationTypeLoc(
 	const clang::TemplateSpecializationTypeLoc& loc)
 {
 	bool recordContext = true;
@@ -192,24 +197,24 @@ void CxxAstVisitorComponentContext::beginTraverseTemplateSpecializationTypeLoc(
 	}
 }
 
-void CxxAstVisitorComponentContext::endTraverseTemplateSpecializationTypeLoc(
+inline void CxxAstVisitorComponentContext::endTraverseTemplateSpecializationTypeLoc(
 	const clang::TemplateSpecializationTypeLoc&  /*loc*/)
 {
 	m_templateArgumentContext.pop_back();
 }
 
-void CxxAstVisitorComponentContext::beginTraverseUnresolvedLookupExpr(
+inline void CxxAstVisitorComponentContext::beginTraverseUnresolvedLookupExpr(
 	clang::UnresolvedLookupExpr*  /*e*/)	   // TODO: do this for unresolved and dependent stuff
 {
 	m_templateArgumentContext.push_back(CxxContext());
 }
 
-void CxxAstVisitorComponentContext::endTraverseUnresolvedLookupExpr(clang::UnresolvedLookupExpr*  /*e*/)
+inline void CxxAstVisitorComponentContext::endTraverseUnresolvedLookupExpr(clang::UnresolvedLookupExpr*  /*e*/)
 {
 	m_templateArgumentContext.pop_back();
 }
 
-void CxxAstVisitorComponentContext::beginTraverseTemplateArgumentLoc(
+inline void CxxAstVisitorComponentContext::beginTraverseTemplateArgumentLoc(
 	const clang::TemplateArgumentLoc&  /*loc*/)
 {
 	CxxContext context;
@@ -222,7 +227,7 @@ void CxxAstVisitorComponentContext::beginTraverseTemplateArgumentLoc(
 	m_contextStack.push_back(context);
 }
 
-void CxxAstVisitorComponentContext::endTraverseTemplateArgumentLoc(const clang::TemplateArgumentLoc&  /*loc*/)
+inline void CxxAstVisitorComponentContext::endTraverseTemplateArgumentLoc(const clang::TemplateArgumentLoc&  /*loc*/)
 {
 	m_contextStack.pop_back();
 }

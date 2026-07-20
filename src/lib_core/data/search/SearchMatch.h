@@ -85,6 +85,11 @@ SRCTRL_EXPORT struct SearchMatch
 	bool hasChildren = false;
 };
 
+// Whether this match is the (a) main function. The NameHierarchy-side main-function helpers
+// live in utilityMainFunction.h (srctrl.data:name); this overload sits with SearchMatch so the
+// search layer needs no dependency on them.
+SRCTRL_EXPORT bool isMainFunction(const SearchMatch &match);
+
 #include "SearchMatch.inl"
 
 #endif	  // SEARCH_MATCH_H

@@ -1,16 +1,21 @@
 #ifndef CXX_AST_VISITOR_COMPONENT_BRACE_RECORDER_H
 #define CXX_AST_VISITOR_COMPONENT_BRACE_RECORDER_H
 
+#include "SrctrlModule.h"
+
+#ifndef SRCTRL_MODULE_PURVIEW
 #include "CxxAstVisitorComponent.h"
 #include "ParseLocation.h"
 
-class CxxAstVisitorComponentContext;
-class CxxLocationExtractor;
 class ParserClient;
+#endif
+
+SRCTRL_EXPORT class CxxAstVisitorComponentContext;
+SRCTRL_EXPORT class CxxLocationExtractor;
 
 // This CxxAstVisitorComponent is responsible for recording all matching braces ["{", "}"]
 // throughout the visited AST.
-class CxxAstVisitorComponentBraceRecorder: public CxxAstVisitorComponent
+SRCTRL_EXPORT class CxxAstVisitorComponentBraceRecorder: public CxxAstVisitorComponent
 {
 public:
 	CxxAstVisitorComponentBraceRecorder(
@@ -40,5 +45,12 @@ private:
 	CxxLocationExtractor& m_locations;
 	CxxAstVisitorComponentContext* m_context = nullptr;
 };
+
+
+// Classic build: converge on the family apex, whose bottom includes all visitor-blob bodies once
+// every class definition is complete (see CxxAstVisitorBodies.h).
+#ifndef SRCTRL_MODULE_PURVIEW
+#include "CxxAstVisitor.h"
+#endif
 
 #endif	  // CXX_AST_VISITOR_COMPONENT_BRACE_RECORDER_H

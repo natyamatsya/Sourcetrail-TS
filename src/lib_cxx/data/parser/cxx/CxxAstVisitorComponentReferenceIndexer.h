@@ -1,19 +1,23 @@
 #ifndef CXX_AST_VISITOR_COMPONENT_REFERENCE_INDEXER_H
 #define CXX_AST_VISITOR_COMPONENT_REFERENCE_INDEXER_H
 
+#include "SrctrlModule.h"
+
+#ifndef SRCTRL_MODULE_PURVIEW
 #include "CxxAstVisitorComponent.h"
 #include "ReferenceKind.h"
+#endif
 
-class CxxIndexingContext;
-class CxxAstVisitorComponentTypeRefKind;
-class CxxAstVisitorComponentDeclRefKind;
+SRCTRL_EXPORT class CxxIndexingContext;
+SRCTRL_EXPORT class CxxAstVisitorComponentTypeRefKind;
+SRCTRL_EXPORT class CxxAstVisitorComponentDeclRefKind;
 
 // Records the reference edges the AST expresses: calls, type usages, constructions, deletions,
 // concept-constraint uses, member/decl references and constructor initializers. It classifies each
 // decl-reference by consulting the traversal-state components (inheritance / template-argument /
 // decl-ref kind) via consumeDeclRefContextKind, then emits the edge through the shared
 // CxxIndexingContext. Split out of the former monolithic indexer.
-class CxxAstVisitorComponentReferenceIndexer: public CxxAstVisitorComponent
+SRCTRL_EXPORT class CxxAstVisitorComponentReferenceIndexer: public CxxAstVisitorComponent
 {
 public:
 	CxxAstVisitorComponentReferenceIndexer(
@@ -48,5 +52,12 @@ private:
 	CxxAstVisitorComponentTypeRefKind* m_typeRefKind = nullptr;
 	CxxAstVisitorComponentDeclRefKind* m_declRefKind = nullptr;
 };
+
+
+// Classic build: converge on the family apex, whose bottom includes all visitor-blob bodies once
+// every class definition is complete (see CxxAstVisitorBodies.h).
+#ifndef SRCTRL_MODULE_PURVIEW
+#include "CxxAstVisitor.h"
+#endif
 
 #endif	  // CXX_AST_VISITOR_COMPONENT_REFERENCE_INDEXER_H

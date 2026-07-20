@@ -1,7 +1,10 @@
-#include "CxxSymbolRegistry.h"
+// Inline implementations for CxxSymbolRegistry.h. Included via CxxAstVisitorBodies.h (classic) or the
+// srctrl.cxx:visitor wrapper (purview); not a standalone TU.
 
+#pragma once
+
+#ifndef SRCTRL_MODULE_PURVIEW
 #include <clang/AST/Decl.h>
-
 #include "CanonicalFilePathCache.h"
 #include "CxxDeclNameResolver.h"
 #include "CxxName.h"
@@ -10,14 +13,15 @@
 #include "NameHierarchy.h"
 #include "ParserClient.h"
 #include "utilityMainFunction.h"
+#endif
 
-CxxSymbolRegistry::CxxSymbolRegistry(
+inline CxxSymbolRegistry::CxxSymbolRegistry(
 	ParserClient& client, CanonicalFilePathCache& canonicalFilePathCache)
 	: m_client(client), m_canonicalFilePathCache(canonicalFilePathCache)
 {
 }
 
-Id CxxSymbolRegistry::getOrCreateSymbolId(const clang::NamedDecl* decl)
+inline Id CxxSymbolRegistry::getOrCreateSymbolId(const clang::NamedDecl* decl)
 {
 	auto it = m_declSymbolIds.find(decl);
 	if (it != m_declSymbolIds.end())
@@ -47,7 +51,7 @@ Id CxxSymbolRegistry::getOrCreateSymbolId(const clang::NamedDecl* decl)
 	return symbolId;
 }
 
-Id CxxSymbolRegistry::getOrCreateSymbolId(const clang::Type* type)
+inline Id CxxSymbolRegistry::getOrCreateSymbolId(const clang::Type* type)
 {
 	auto it = m_typeSymbolIds.find(type);
 	if (it != m_typeSymbolIds.end())
@@ -72,7 +76,7 @@ Id CxxSymbolRegistry::getOrCreateSymbolId(const clang::Type* type)
 	return symbolId;
 }
 
-Id CxxSymbolRegistry::getOrCreateSymbolId(CxxContext context)
+inline Id CxxSymbolRegistry::getOrCreateSymbolId(CxxContext context)
 {
 	if (context)
 	{
@@ -87,7 +91,7 @@ Id CxxSymbolRegistry::getOrCreateSymbolId(CxxContext context)
 	return getOrCreateSymbolId(decl);
 }
 
-Id CxxSymbolRegistry::getOrCreateSymbolId(CxxContext context, const NameHierarchy& fallback)
+inline Id CxxSymbolRegistry::getOrCreateSymbolId(CxxContext context, const NameHierarchy& fallback)
 {
 	if (context)
 	{

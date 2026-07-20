@@ -272,3 +272,10 @@ inline SearchMatch::CommandType SearchMatch::getCommandType() const
 
 	return COMMAND_NODE_FILTER;
 }
+
+inline bool isMainFunction(const SearchMatch &match)
+{
+	// Mirrors utilityMainFunction's MAIN_NAME ("main").
+	return match.nodeType.getKind() == NODE_FUNCTION && match.tokenNames.size() != 0 &&
+		match.tokenNames[0].getRawName() == "main";
+}

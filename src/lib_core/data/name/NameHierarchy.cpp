@@ -1,5 +1,5 @@
 // Most NameHierarchy members are inline in NameHierarchy.inl (included by the header). deserialize
-// stays here because it needs LOG_ERROR (logging.h) and utilityMainFunction -- the latter
+// stays here because it needs LOG_ERROR (logging.h) -- so it remains
 // forward-declares NameHierarchy, so it can't sit in the module's global fragment. deserialize is thus
 // an include-only member (not reachable via `import srctrl.data;`), like the logging/Qt seams.
 #include "NameHierarchy.h"

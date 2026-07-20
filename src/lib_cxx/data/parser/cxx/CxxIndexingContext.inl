@@ -1,20 +1,24 @@
-#include "CxxIndexingContext.h"
+// Inline implementations for CxxIndexingContext.h. Included via CxxAstVisitorBodies.h (classic) or the
+// srctrl.cxx:visitor wrapper (purview); not a standalone TU.
 
+#pragma once
+
+#ifndef SRCTRL_MODULE_PURVIEW
 #include <clang/AST/ASTContext.h>
 #include <clang/AST/Attr.h>
 #include <clang/AST/Decl.h>
 #include <clang/AST/DeclTemplate.h>
 #include <clang/AST/Type.h>
 #include <clang/Basic/Module.h>
-
 #include "CanonicalFilePathCache.h"
 #include "CxxAstVisitorComponentContext.h"
 #include "CxxLocationExtractor.h"
 #include "NameHierarchy.h"
 #include "ParserClient.h"
 #include "utilityClang.h"
+#endif
 
-CxxIndexingContext::CxxIndexingContext(
+inline CxxIndexingContext::CxxIndexingContext(
 	clang::ASTContext& astContext,
 	ParserClient& client,
 	CanonicalFilePathCache& canonicalFilePathCache,
@@ -27,14 +31,14 @@ CxxIndexingContext::CxxIndexingContext(
 {
 }
 
-void CxxIndexingContext::setContext(CxxAstVisitorComponentContext& context)
+inline void CxxIndexingContext::setContext(CxxAstVisitorComponentContext& context)
 {
 	m_context = &context;
 }
 
 // --- high-level idioms -----------------------------------------------------------------------
 
-Id CxxIndexingContext::recordDeclaration(const clang::NamedDecl* d, SymbolKind kind)
+inline Id CxxIndexingContext::recordDeclaration(const clang::NamedDecl* d, SymbolKind kind)
 {
 	const Id symbolId = m_symbols.getOrCreateSymbolId(d);
 	m_client.recordSymbolKind(symbolId, kind);
@@ -45,7 +49,7 @@ Id CxxIndexingContext::recordDeclaration(const clang::NamedDecl* d, SymbolKind k
 	return symbolId;
 }
 
-Id CxxIndexingContext::recordReference(
+inline Id CxxIndexingContext::recordReference(
 	const clang::NamedDecl* referenced, ReferenceKind kind, const clang::SourceLocation& location)
 {
 	const Id referencedSymbolId = m_symbols.getOrCreateSymbolId(referenced);
@@ -55,27 +59,27 @@ Id CxxIndexingContext::recordReference(
 
 // --- symbol identity -------------------------------------------------------------------------
 
-Id CxxIndexingContext::getOrCreateSymbolId(const clang::NamedDecl* decl)
+inline Id CxxIndexingContext::getOrCreateSymbolId(const clang::NamedDecl* decl)
 {
 	return m_symbols.getOrCreateSymbolId(decl);
 }
 
-Id CxxIndexingContext::getOrCreateSymbolId(const clang::Type* type)
+inline Id CxxIndexingContext::getOrCreateSymbolId(const clang::Type* type)
 {
 	return m_symbols.getOrCreateSymbolId(type);
 }
 
-Id CxxIndexingContext::getOrCreateSymbolId(CxxContext context)
+inline Id CxxIndexingContext::getOrCreateSymbolId(CxxContext context)
 {
 	return m_symbols.getOrCreateSymbolId(context);
 }
 
-Id CxxIndexingContext::getOrCreateSymbolId(CxxContext context, const NameHierarchy& fallback)
+inline Id CxxIndexingContext::getOrCreateSymbolId(CxxContext context, const NameHierarchy& fallback)
 {
 	return m_symbols.getOrCreateSymbolId(context, fallback);
 }
 
-Id CxxIndexingContext::getOrCreateModuleSymbolId(const clang::Module* module)
+inline Id CxxIndexingContext::getOrCreateModuleSymbolId(const clang::Module* module)
 {
 	NameHierarchy name(module->getFullModuleName(), NameDelimiterType::CXX);
 	const Id symbolId = m_client.recordSymbol(name);
@@ -85,49 +89,49 @@ Id CxxIndexingContext::getOrCreateModuleSymbolId(const clang::Module* module)
 
 // --- current context -------------------------------------------------------------------------
 
-CxxContext CxxIndexingContext::getContext(size_t skip) const
+inline CxxContext CxxIndexingContext::getContext(size_t skip) const
 {
 	return m_context->getContext(skip);
 }
 
-const clang::NamedDecl* CxxIndexingContext::getTopmostContextDecl(size_t skip) const
+inline const clang::NamedDecl* CxxIndexingContext::getTopmostContextDecl(size_t skip) const
 {
 	return m_context->getTopmostContextDecl(skip);
 }
 
-Id CxxIndexingContext::contextSymbolId()
+inline Id CxxIndexingContext::contextSymbolId()
 {
 	return m_symbols.getOrCreateSymbolId(m_context->getContext());
 }
 
 // --- locations -------------------------------------------------------------------------------
 
-ParseLocation CxxIndexingContext::getParseLocation(const clang::SourceLocation& loc) const
+inline ParseLocation CxxIndexingContext::getParseLocation(const clang::SourceLocation& loc) const
 {
 	return m_locations.getParseLocation(loc);
 }
 
-ParseLocation CxxIndexingContext::getParseLocation(const clang::SourceRange& range) const
+inline ParseLocation CxxIndexingContext::getParseLocation(const clang::SourceRange& range) const
 {
 	return m_locations.getParseLocation(range);
 }
 
-ParseLocation CxxIndexingContext::getParseLocationOfTagDeclBody(clang::TagDecl* decl) const
+inline ParseLocation CxxIndexingContext::getParseLocationOfTagDeclBody(clang::TagDecl* decl) const
 {
 	return m_locations.getParseLocationOfTagDeclBody(decl);
 }
 
-ParseLocation CxxIndexingContext::getParseLocationOfFunctionBody(const clang::FunctionDecl* decl) const
+inline ParseLocation CxxIndexingContext::getParseLocationOfFunctionBody(const clang::FunctionDecl* decl) const
 {
 	return m_locations.getParseLocationOfFunctionBody(decl);
 }
 
-ParseLocation CxxIndexingContext::getSignatureLocation(clang::FunctionDecl* decl) const
+inline ParseLocation CxxIndexingContext::getSignatureLocation(clang::FunctionDecl* decl) const
 {
 	return m_locations.getSignatureLocation(decl);
 }
 
-std::string CxxIndexingContext::getLocalSymbolName(const clang::SourceLocation& loc) const
+inline std::string CxxIndexingContext::getLocalSymbolName(const clang::SourceLocation& loc) const
 {
 	const ParseLocation location = m_locations.getParseLocation(loc);
 	return m_canonicalFilePathCache.getCanonicalFilePath(location.fileId).fileName() + "<" +
@@ -136,50 +140,50 @@ std::string CxxIndexingContext::getLocalSymbolName(const clang::SourceLocation& 
 
 // --- recording primitives --------------------------------------------------------------------
 
-void CxxIndexingContext::recordSymbolKind(Id symbolId, SymbolKind symbolKind)
+inline void CxxIndexingContext::recordSymbolKind(Id symbolId, SymbolKind symbolKind)
 {
 	m_client.recordSymbolKind(symbolId, symbolKind);
 }
 
-void CxxIndexingContext::recordAccessKind(Id symbolId, AccessKind accessKind)
+inline void CxxIndexingContext::recordAccessKind(Id symbolId, AccessKind accessKind)
 {
 	m_client.recordAccessKind(symbolId, accessKind);
 }
 
-void CxxIndexingContext::recordDefinitionKind(Id symbolId, DefinitionKind definitionKind)
+inline void CxxIndexingContext::recordDefinitionKind(Id symbolId, DefinitionKind definitionKind)
 {
 	m_client.recordDefinitionKind(symbolId, definitionKind);
 }
 
-void CxxIndexingContext::recordNodeModifier(Id symbolId, NodeModifierMask modifier)
+inline void CxxIndexingContext::recordNodeModifier(Id symbolId, NodeModifierMask modifier)
 {
 	m_client.recordNodeModifier(symbolId, modifier);
 }
 
-void CxxIndexingContext::recordNodeAttribute(Id symbolId, NodeAttributeKind key, const std::string& value)
+inline void CxxIndexingContext::recordNodeAttribute(Id symbolId, NodeAttributeKind key, const std::string& value)
 {
 	m_client.recordNodeAttribute(symbolId, key, value);
 }
 
-Id CxxIndexingContext::recordReference(
+inline Id CxxIndexingContext::recordReference(
 	ReferenceKind kind, Id referencedSymbolId, Id contextSymbolId, const ParseLocation& location)
 {
 	return m_client.recordReference(kind, referencedSymbolId, contextSymbolId, location);
 }
 
-void CxxIndexingContext::recordLocalSymbol(const std::string& name, const ParseLocation& location)
+inline void CxxIndexingContext::recordLocalSymbol(const std::string& name, const ParseLocation& location)
 {
 	m_client.recordLocalSymbol(name, location);
 }
 
-void CxxIndexingContext::recordLocation(Id elementId, const ParseLocation& location, ParseLocationType type)
+inline void CxxIndexingContext::recordLocation(Id elementId, const ParseLocation& location, ParseLocationType type)
 {
 	m_client.recordLocation(elementId, location, type);
 }
 
 // --- specialized recorders -------------------------------------------------------------------
 
-void CxxIndexingContext::recordDeprecation(Id symbolId, const clang::Decl* d)
+inline void CxxIndexingContext::recordDeprecation(Id symbolId, const clang::Decl* d)
 {
 	if (const clang::DeprecatedAttr* attr = d->getAttr<clang::DeprecatedAttr>())
 	{
@@ -194,7 +198,7 @@ void CxxIndexingContext::recordDeprecation(Id symbolId, const clang::Decl* d)
 	}
 }
 
-void CxxIndexingContext::recordDeducedType(
+inline void CxxIndexingContext::recordDeducedType(
 	const clang::DeducedType* deducedType, Id contextSymbolId, const ParseLocation& keywordLocation)
 {
 	if (clang::QualType deduced = deducedType->getDeducedType(); !deduced.isNull())
@@ -203,7 +207,7 @@ void CxxIndexingContext::recordDeducedType(
 	}
 }
 
-void CxxIndexingContext::recordDeducedQualType(
+inline void CxxIndexingContext::recordDeducedQualType(
 	clang::QualType deducedQualType, Id contextSymbolId, const ParseLocation& keywordLocation)
 {
 	// Record the deduced type location:
@@ -212,7 +216,7 @@ void CxxIndexingContext::recordDeducedQualType(
 	m_client.recordReference(ReferenceKind::TYPE_USAGE, deducedTypeId, contextSymbolId, keywordLocation);
 }
 
-void CxxIndexingContext::recordTemplateMemberSpecialization(
+inline void CxxIndexingContext::recordTemplateMemberSpecialization(
 	const clang::MemberSpecializationInfo* memberSpecializationInfo,
 	Id contextId,
 	const ParseLocation& location,
@@ -226,12 +230,12 @@ void CxxIndexingContext::recordTemplateMemberSpecialization(
 	}
 }
 
-CxxConceptReferenceRecorder CxxIndexingContext::concepts()
+inline CxxConceptReferenceRecorder CxxIndexingContext::concepts()
 {
 	return {m_client, m_symbols, m_locations, *m_context};
 }
 
-CxxDestructorCallRecorder CxxIndexingContext::destructorCalls()
+inline CxxDestructorCallRecorder CxxIndexingContext::destructorCalls()
 {
 	return {m_astContext, m_client, m_symbols, m_locations, *m_context};
 }

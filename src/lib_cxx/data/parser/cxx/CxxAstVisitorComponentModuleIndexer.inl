@@ -1,9 +1,12 @@
-#include "CxxAstVisitorComponentModuleIndexer.h"
+// Inline implementations for CxxAstVisitorComponentModuleIndexer.h. Included via CxxAstVisitorBodies.h (classic) or the
+// srctrl.cxx:visitor wrapper (purview); not a standalone TU.
 
+#pragma once
+
+#ifndef SRCTRL_MODULE_PURVIEW
 #include <clang/AST/ASTContext.h>
 #include <clang/AST/Decl.h>
 #include <clang/Basic/Module.h>
-
 #include "CxxAstVisitor.h"
 #include "CxxIndexingContext.h"
 #include "DefinitionKind.h"
@@ -11,8 +14,9 @@
 #include "ParseLocation.h"
 #include "ReferenceKind.h"
 #include "types.h"
+#endif
 
-CxxAstVisitorComponentModuleIndexer::CxxAstVisitorComponentModuleIndexer(
+inline CxxAstVisitorComponentModuleIndexer::CxxAstVisitorComponentModuleIndexer(
 	CxxAstVisitor* astVisitor, clang::ASTContext* astContext, CxxIndexingContext& index)
 	: CxxAstVisitorComponent(astVisitor)
 	, m_astContext(astContext)
@@ -20,7 +24,7 @@ CxxAstVisitorComponentModuleIndexer::CxxAstVisitorComponentModuleIndexer(
 {
 }
 
-void CxxAstVisitorComponentModuleIndexer::visitTranslationUnitDecl(clang::TranslationUnitDecl* /*d*/)
+inline void CxxAstVisitorComponentModuleIndexer::visitTranslationUnitDecl(clang::TranslationUnitDecl* /*d*/)
 {
 	const clang::Module* module = m_astContext->getCurrentNamedModule();
 	if (module == nullptr || !module->isNamedModuleUnit())
@@ -37,7 +41,7 @@ void CxxAstVisitorComponentModuleIndexer::visitTranslationUnitDecl(clang::Transl
 	}
 }
 
-void CxxAstVisitorComponentModuleIndexer::visitImportDecl(clang::ImportDecl* d)
+inline void CxxAstVisitorComponentModuleIndexer::visitImportDecl(clang::ImportDecl* d)
 {
 	if (!getAstVisitor()->shouldVisitReference(d->getLocation()))
 	{
@@ -67,7 +71,7 @@ void CxxAstVisitorComponentModuleIndexer::visitImportDecl(clang::ImportDecl* d)
 		ReferenceKind::IMPORT, importedId, contextId, m_index.getParseLocation(d->getLocation()));
 }
 
-void CxxAstVisitorComponentModuleIndexer::visitExportDecl(clang::ExportDecl* d)
+inline void CxxAstVisitorComponentModuleIndexer::visitExportDecl(clang::ExportDecl* d)
 {
 	// Flag the declarations directly under this `export` region. (Grandchildren --
 	// e.g. names inside an `export namespace N { ... }` -- are a later refinement.)

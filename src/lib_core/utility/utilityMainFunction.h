@@ -1,19 +1,22 @@
 #ifndef UTILITY_MAIN_H
 #define UTILITY_MAIN_H
 
+#include "SrctrlModule.h"
+
+#ifndef SRCTRL_MODULE_PURVIEW
 #include <string>
 
-// Functions for handling multiple main functions:
-
 class NameHierarchy;
+#endif
 
-bool isMainFunction(const NameHierarchy &nameHierarchy);
-void uniquifyMainFunction(NameHierarchy *main, const std::string &uniqueAppendix);
-bool isUniquifiedMainFunction(const NameHierarchy &nameHierarchy);
-void deuniquifyMainFunction(NameHierarchy *main);
+// Functions for handling multiple main functions. (The SearchMatch-side check lives with
+// SearchMatch in data/search -- this header is NameHierarchy-only and part of srctrl.data:name.)
 
-struct SearchMatch;
+SRCTRL_EXPORT bool isMainFunction(const NameHierarchy &nameHierarchy);
+SRCTRL_EXPORT void uniquifyMainFunction(NameHierarchy *main, const std::string &uniqueAppendix);
+SRCTRL_EXPORT bool isUniquifiedMainFunction(const NameHierarchy &nameHierarchy);
+SRCTRL_EXPORT void deuniquifyMainFunction(NameHierarchy *main);
 
-bool isMainFunction(const SearchMatch &match);
+#include "utilityMainFunction.inl"
 
 #endif

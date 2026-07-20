@@ -570,6 +570,36 @@ cycles in `lib` is prerequisite work, and a good cleanup in its own right).
   (it already includes every component header — the natural `Bodies.h` site). The frontend glue
   (CxxParser, IndexerCxx, actions, PreprocessorCallbacks, CxxDiagnosticConsumer) can follow as a
   separate thin slice on top.
+- **Phase 3 (cont.) — `:visitor` landed: the blob converted in one shot. ✅** All 16 files
+  (CxxLocationExtractor, CxxSymbolRegistry, the two recorders, CxxIndexingContext,
+  CxxAstVisitorComponent + 9 components, CxxAstVisitor — ~4.5k LOC) inlined into `.inl`s and joined
+  as `srctrl.cxx:visitor` (imports `:name`/`:context`/`:parser` + srctrl.data/file/utility). The
+  apex pattern generalized cleanly, with one refinement over the resolver family:
+  - **Bottom-include placement rule**: a blob header may bottom-include the apex ONLY if no other
+    blob header top-includes it. Interior headers (Component base ← the 9 components; recorders +
+    SymbolRegistry ← IndexingContext) must NOT — their bottom-include would fire the apex while the
+    includer's class is still mid-parse, and the apex needs that class complete (guard-skip ≠
+    complete). The safe set converges via the apex's own top (which pulls every blob header);
+    `CxxAstVisitorBodies.h` at the apex bottom then parses all 16 `.inl`s with everything complete.
+  - **Exported-fwd-decl rule (new)**: in the purview, EVERY fwd decl of a partition-local class
+    must carry `SRCTRL_EXPORT`, not just the first — clang 22 rejects an exported definition whose
+    immediately-previous redeclaration is unexported ("cannot export redeclaration ... previous
+    declaration is not exported"), so a plain `class X;` between the exported first decl and the
+    exported definition breaks the chain.
+  - **`utilityMainFunction` was NOT GMF-safe** (previous scouting called it std-only): it
+    fwd-declares `NameHierarchy`, and a GMF fwd decl of a modularized class clashes exactly like a
+    full include (finding (a)). Fixed by modularizing it into `srctrl.data:name` (dual-build
+    `.h`/`.inl`; statics → `utility_main_function_detail` inline consts; ADR-0005 requalified) and
+    moving the SearchMatch overload of `isMainFunction` to `SearchMatch.h/.inl` (`:search`) where it
+    belongs — its one consumer (UndoRedoController) repointed.
+  - The vestigial anonymous namespace in CxxAstVisitor.cpp (verbose-log helpers) became
+    `cxx_ast_visitor_detail` (ODR trap, as always).
+  **Cost: `srctrl.cxx-visitor.pcm` = 130.9 MB** — the biggest BMI yet (RecursiveASTVisitor + CFG in
+  the GMF); compile time remains fine, confirming disk-not-time. Verified both modes: 2640
+  assertions, headless Usages index 529 nodes / 0 errors, identical either way. **Remaining for
+  Phase 3:** the frontend glue thin slice (CxxParser, IndexerCxx, ASTAction/ASTConsumer/
+  GeneratePCHAction, PreprocessorCallbacks, CommentHandler, CxxDiagnosticConsumer), then Phase 4
+  (indexer binary as pure importer).
 - **Phase 3 — `srctrl.cxx`.** Modularize `lib_cxx` with partitions; absorb the Clang-header BMI cost.
   **STARTED — `:name` landed. ✅** The `name/` cluster (CxxName type-erased wrapper + concept, the five
   decl-name leaves, CxxQualifierFlags — 7 headers, all `.cpp`s inlined into `.inl`s) is `srctrl.cxx`'s

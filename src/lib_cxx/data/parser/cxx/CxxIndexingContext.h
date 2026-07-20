@@ -1,6 +1,9 @@
 #ifndef CXX_INDEXING_CONTEXT_H
 #define CXX_INDEXING_CONTEXT_H
 
+#include "SrctrlModule.h"
+
+#ifndef SRCTRL_MODULE_PURVIEW
 #include <string>
 
 #include "AccessKind.h"
@@ -34,9 +37,11 @@ class FunctionDecl;
 
 class ParserClient;
 class CanonicalFilePathCache;
-class CxxLocationExtractor;
-class CxxAstVisitorComponentContext;
 class NameHierarchy;
+#endif
+
+SRCTRL_EXPORT class CxxLocationExtractor;
+SRCTRL_EXPORT class CxxAstVisitorComponentContext;
 
 // The mid-level indexing API that sits between the low-level ParserClient storage sink and the
 // per-node-kind handlers. It bundles the four collaborators every handler needs -- symbol identity
@@ -44,7 +49,7 @@ class NameHierarchy;
 // context -- and exposes both the recording primitives and the two dominant idioms
 // (recordDeclaration / recordReference). Handlers hold a single reference to this instead of
 // wiring up four dependencies and repeating the plumbing.
-class CxxIndexingContext
+SRCTRL_EXPORT class CxxIndexingContext
 {
 public:
 	CxxIndexingContext(
@@ -118,5 +123,12 @@ private:
 
 	CxxSymbolRegistry m_symbols;
 };
+
+
+// Classic build: converge on the family apex, whose bottom includes all visitor-blob bodies once
+// every class definition is complete (see CxxAstVisitorBodies.h).
+#ifndef SRCTRL_MODULE_PURVIEW
+#include "CxxAstVisitor.h"
+#endif
 
 #endif	  // CXX_INDEXING_CONTEXT_H

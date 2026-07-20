@@ -1,11 +1,13 @@
-#include "CxxAstVisitor.h"
+// Inline implementations for CxxAstVisitor.h. Included via CxxAstVisitorBodies.h (classic) or the
+// srctrl.cxx:visitor wrapper (purview); not a standalone TU.
 
+#pragma once
+
+#ifndef SRCTRL_MODULE_PURVIEW
 #include <sstream>
-
 #include <clang/AST/ASTContext.h>
 #include <clang/AST/TypeLoc.h>
 #include <clang/Lex/Preprocessor.h>
-
 #include "CanonicalFilePathCache.h"
 #include "CxxDeclNameResolver.h"
 #include "IndexerStateInfo.h"
@@ -15,9 +17,9 @@
 #include "clang_compat/ClangCompat.h"
 #include "logging.h"
 #include "utilityClang.h"
+#endif
 
-
-CxxAstVisitor::CxxAstVisitor(
+inline CxxAstVisitor::CxxAstVisitor(
 	clang::ASTContext* astContext,
 	clang::Preprocessor* preprocessor,
 	ParserClient& client,
@@ -51,48 +53,48 @@ CxxAstVisitor::CxxAstVisitor(
 	forEachComponent([](auto& component) { component.wire(); });
 }
 
-CxxAstVisitorComponentContext *CxxAstVisitor::getContextComponent()
+inline CxxAstVisitorComponentContext *CxxAstVisitor::getContextComponent()
 {
 	return &std::get<CxxAstVisitorComponentContext>(m_components);
 }
 
-CxxAstVisitorComponentTypeRefKind *CxxAstVisitor::getTypeRefKindComponent()
+inline CxxAstVisitorComponentTypeRefKind *CxxAstVisitor::getTypeRefKindComponent()
 {
 	return &std::get<CxxAstVisitorComponentTypeRefKind>(m_components);
 }
 
-CxxAstVisitorComponentDeclRefKind *CxxAstVisitor::getDeclRefKindComponent()
+inline CxxAstVisitorComponentDeclRefKind *CxxAstVisitor::getDeclRefKindComponent()
 {
 	return &std::get<CxxAstVisitorComponentDeclRefKind>(m_components);
 }
 
-CanonicalFilePathCache* CxxAstVisitor::getCanonicalFilePathCache() const
+inline CanonicalFilePathCache* CxxAstVisitor::getCanonicalFilePathCache() const
 {
 	return &m_canonicalFilePathCache;
 }
 
-CxxLocationExtractor& CxxAstVisitor::getLocationExtractor()
+inline CxxLocationExtractor& CxxAstVisitor::getLocationExtractor()
 {
 	return m_locations;
 }
 
-void CxxAstVisitor::indexDecl(clang::Decl* d)
+inline void CxxAstVisitor::indexDecl(clang::Decl* d)
 {
 	LOG_INFO("starting AST traversal");
 	this->TraverseDecl(d);
 }
 
-bool CxxAstVisitor::shouldVisitTemplateInstantiations() const
+inline bool CxxAstVisitor::shouldVisitTemplateInstantiations() const
 {
 	return true;
 }
 
-bool CxxAstVisitor::shouldVisitImplicitCode() const
+inline bool CxxAstVisitor::shouldVisitImplicitCode() const
 {
 	return std::get<CxxAstVisitorComponentImplicitCode>(m_components).shouldVisitImplicitCode();
 }
 
-bool CxxAstVisitor::shouldHandleTypeLoc(const clang::TypeLoc& tl)
+inline bool CxxAstVisitor::shouldHandleTypeLoc(const clang::TypeLoc& tl)
 {
 	return tl.getAs<clang::TagTypeLoc>() ||
 		tl.getAs<clang::TypedefTypeLoc>() ||
@@ -108,7 +110,7 @@ bool CxxAstVisitor::shouldHandleTypeLoc(const clang::TypeLoc& tl)
 		;
 }
 
-bool CxxAstVisitor::TraverseDecl(clang::Decl* decl)
+inline bool CxxAstVisitor::TraverseDecl(clang::Decl* decl)
 {
 	if (m_isVerbose)
 	{
@@ -162,13 +164,13 @@ bool CxxAstVisitor::TraverseDecl(clang::Decl* decl)
 }
 
 // same as Base::TraverseQualifiedTypeLoc(..) but we need to make sure to call this.TraverseTypeLoc(..)
-bool CxxAstVisitor::TraverseQualifiedTypeLoc(
+inline bool CxxAstVisitor::TraverseQualifiedTypeLoc(
 	clang::QualifiedTypeLoc tl, bool TraverseQualifier)
 {
 	return TraverseTypeLoc(tl.getUnqualifiedLoc(), TraverseQualifier);
 }
 
-bool CxxAstVisitor::TraverseTypeLoc(clang::TypeLoc v, bool TraverseQualifier)
+inline bool CxxAstVisitor::TraverseTypeLoc(clang::TypeLoc v, bool TraverseQualifier)
 {
 	if (m_isVerbose)
 	{
@@ -182,7 +184,7 @@ bool CxxAstVisitor::TraverseTypeLoc(clang::TypeLoc v, bool TraverseQualifier)
 	return true;
 }
 
-bool CxxAstVisitor::TraverseType(clang::QualType v, bool TraverseQualifier)
+inline bool CxxAstVisitor::TraverseType(clang::QualType v, bool TraverseQualifier)
 {
 	forEachComponent([&](auto& component) { component.beginTraverseType(v); });
 	clang_compat::traverseType(static_cast<Base&>(*this), v, TraverseQualifier);
@@ -190,7 +192,7 @@ bool CxxAstVisitor::TraverseType(clang::QualType v, bool TraverseQualifier)
 	return true;
 }
 
-bool CxxAstVisitor::TraverseStmt(clang::Stmt* v)
+inline bool CxxAstVisitor::TraverseStmt(clang::Stmt* v)
 {
 	if (m_isVerbose)
 	{
@@ -204,7 +206,7 @@ bool CxxAstVisitor::TraverseStmt(clang::Stmt* v)
 		[&](auto& component) { component.endTraverseStmt(v); });
 }
 
-std::string CxxAstVisitor::getIndentString() const
+inline std::string CxxAstVisitor::getIndentString() const
 {
 	std::string indentString;
 	for (unsigned int i = 0; i < m_indentation; i++)
@@ -214,9 +216,11 @@ std::string CxxAstVisitor::getIndentString() const
 	return indentString;
 }
 
-namespace
+// ODR-safe home for the verbose-logging helpers: anonymous namespaces are an ODR trap in
+// headers/inls (each includer gets a distinct entity referenced from inline bodies).
+namespace cxx_ast_visitor_detail
 {
-std::string obfuscateName(const std::string& name)
+inline std::string obfuscateName(const std::string& name)
 {
 	if (name.length() <= 2)
 	{
@@ -225,7 +229,7 @@ std::string obfuscateName(const std::string& name)
 	return name.substr(0, 1) + ".." + name.substr(name.length() - 1);
 }
 
-std::string typeLocClassToString(clang::TypeLoc tl)
+inline std::string typeLocClassToString(clang::TypeLoc tl)
 {
 	switch (tl.getTypeLocClass())
 	{
@@ -244,9 +248,9 @@ std::string typeLocClassToString(clang::TypeLoc tl)
 		return "";
 	}
 }
-}	 // namespace
+}	 // namespace cxx_ast_visitor_detail
 
-void CxxAstVisitor::logVerboseDecl(clang::Decl* d)
+inline void CxxAstVisitor::logVerboseDecl(clang::Decl* d)
 {
 	if (!d)
 	{
@@ -257,7 +261,7 @@ void CxxAstVisitor::logVerboseDecl(clang::Decl* d)
 	stream << getIndentString() << d->getDeclKindName() << "Decl";
 	if (clang::NamedDecl* namedDecl = clang::dyn_cast_or_null<clang::NamedDecl>(d))
 	{
-		stream << " [" << obfuscateName(namedDecl->getNameAsString()) << "]";
+		stream << " [" << cxx_ast_visitor_detail::obfuscateName(namedDecl->getNameAsString()) << "]";
 	}
 
 	ParseLocation loc = m_locations.getParseLocation(d->getSourceRange());
@@ -276,7 +280,7 @@ void CxxAstVisitor::logVerboseDecl(clang::Decl* d)
 	LOG_INFO_STREAM_BARE(<< "Indexer - " << stream.str());
 }
 
-void CxxAstVisitor::logVerboseStmt(clang::Stmt* stmt)
+inline void CxxAstVisitor::logVerboseStmt(clang::Stmt* stmt)
 {
 	if (!stmt)
 	{
@@ -290,7 +294,7 @@ void CxxAstVisitor::logVerboseStmt(clang::Stmt* stmt)
 		<< loc.endColumnNumber << ">");
 }
 
-void CxxAstVisitor::logVerboseTypeLoc(clang::TypeLoc tl)
+inline void CxxAstVisitor::logVerboseTypeLoc(clang::TypeLoc tl)
 {
 	if (tl.isNull())
 	{
@@ -299,14 +303,14 @@ void CxxAstVisitor::logVerboseTypeLoc(clang::TypeLoc tl)
 
 	ParseLocation loc = m_locations.getParseLocation(tl.getSourceRange());
 	LOG_INFO_STREAM_BARE(
-		<< "Indexer - " << getIndentString() << typeLocClassToString(tl) << "TypeLoc <"
+		<< "Indexer - " << getIndentString() << cxx_ast_visitor_detail::typeLocClassToString(tl) << "TypeLoc <"
 		<< loc.startLineNumber << ":" << loc.startColumnNumber << ", " << loc.endLineNumber << ":"
 		<< loc.endColumnNumber << ">");
 }
 
 // same as Base::TraverseCXXRecordDecl(..) but we need to integrate the setter for the context info.
 // additionally: skip implicit CXXRecordDecls (this does not skip template specializations).
-bool CxxAstVisitor::TraverseCXXRecordDecl(clang::CXXRecordDecl* d)
+inline bool CxxAstVisitor::TraverseCXXRecordDecl(clang::CXXRecordDecl* d)
 {
 	if (utility::isImplicit(d) && d->getMemberSpecializationInfo() == nullptr &&
 		!clang::isa<clang::ClassTemplateSpecializationDecl>(utility::getFirstDecl(d)))
@@ -338,7 +342,7 @@ bool CxxAstVisitor::TraverseCXXRecordDecl(clang::CXXRecordDecl* d)
 	return true;
 }
 
-bool CxxAstVisitor::traverseCXXBaseSpecifier(const clang::CXXBaseSpecifier& d)
+inline bool CxxAstVisitor::traverseCXXBaseSpecifier(const clang::CXXBaseSpecifier& d)
 {
 	forEachComponent([&](auto& component) { component.beginTraverseCXXBaseSpecifier(); });
 	bool ret = TraverseTypeLoc(d.getTypeSourceInfo()->getTypeLoc());
@@ -346,7 +350,7 @@ bool CxxAstVisitor::traverseCXXBaseSpecifier(const clang::CXXBaseSpecifier& d)
 	return ret;
 }
 
-bool CxxAstVisitor::TraverseCXXMethodDecl(clang::CXXMethodDecl* d)
+inline bool CxxAstVisitor::TraverseCXXMethodDecl(clang::CXXMethodDecl* d)
 {
 	if (d->getTemplatedKind() == clang::CXXMethodDecl::TK_FunctionTemplate)
 	{
@@ -366,7 +370,7 @@ bool CxxAstVisitor::TraverseCXXMethodDecl(clang::CXXMethodDecl* d)
 }
 
 // same as Base::TraverseTemplateTypeParmDecl(..) but we need to integrate the setter for the context info.
-bool CxxAstVisitor::TraverseTemplateTypeParmDecl(clang::TemplateTypeParmDecl* d)
+inline bool CxxAstVisitor::TraverseTemplateTypeParmDecl(clang::TemplateTypeParmDecl* d)
 {
 	WalkUpFromTemplateTypeParmDecl(d);
 
@@ -387,7 +391,7 @@ bool CxxAstVisitor::TraverseTemplateTypeParmDecl(clang::TemplateTypeParmDecl* d)
 
 // same as Base::TraverseTemplateTemplateParmDecl(..) but we need to integrate the setter for the
 // context info.
-bool CxxAstVisitor::TraverseTemplateTemplateParmDecl(clang::TemplateTemplateParmDecl* d)
+inline bool CxxAstVisitor::TraverseTemplateTemplateParmDecl(clang::TemplateTemplateParmDecl* d)
 {
 	WalkUpFromTemplateTemplateParmDecl(d);
 
@@ -413,13 +417,13 @@ bool CxxAstVisitor::TraverseTemplateTemplateParmDecl(clang::TemplateTemplateParm
 	return true;
 }
 
-bool CxxAstVisitor::VisitTranslationUnitDecl(clang::TranslationUnitDecl* d)
+inline bool CxxAstVisitor::VisitTranslationUnitDecl(clang::TranslationUnitDecl* d)
 {
 	forEachComponent([&](auto& component) { component.visitTranslationUnitDecl(d); });
 	return true;
 }
 
-bool CxxAstVisitor::TraverseNestedNameSpecifierLoc(clang::NestedNameSpecifierLoc loc)
+inline bool CxxAstVisitor::TraverseNestedNameSpecifierLoc(clang::NestedNameSpecifierLoc loc)
 {
 	bool ret = true;
 	if (loc)
@@ -437,7 +441,7 @@ bool CxxAstVisitor::TraverseNestedNameSpecifierLoc(clang::NestedNameSpecifierLoc
 	return ret;
 }
 
-bool CxxAstVisitor::TraverseConstructorInitializer(clang::CXXCtorInitializer* init)
+inline bool CxxAstVisitor::TraverseConstructorInitializer(clang::CXXCtorInitializer* init)
 {
 	forEachComponent([&](auto& component) { component.beginTraverseConstructorInitializer(init); });
 
@@ -452,22 +456,22 @@ bool CxxAstVisitor::TraverseConstructorInitializer(clang::CXXCtorInitializer* in
 	return ret;
 }
 
-bool CxxAstVisitor::TraverseCallExpr(clang::CallExpr* s)
+inline bool CxxAstVisitor::TraverseCallExpr(clang::CallExpr* s)
 {
 	return TraverseCallCommon(s);
 }
 
-bool CxxAstVisitor::TraverseCXXMemberCallExpr(clang::CXXMemberCallExpr* s)
+inline bool CxxAstVisitor::TraverseCXXMemberCallExpr(clang::CXXMemberCallExpr* s)
 {
 	return TraverseCallCommon(s);
 }
 
-bool CxxAstVisitor::TraverseCXXOperatorCallExpr(clang::CXXOperatorCallExpr* s)
+inline bool CxxAstVisitor::TraverseCXXOperatorCallExpr(clang::CXXOperatorCallExpr* s)
 {
 	return TraverseCallCommon(s);
 }
 
-bool CxxAstVisitor::TraverseCXXConstructExpr(clang::CXXConstructExpr* s)
+inline bool CxxAstVisitor::TraverseCXXConstructExpr(clang::CXXConstructExpr* s)
 {
 	forEachComponent([&](auto& component) { component.beginTraverseCallCommonCallee(); });
 	WalkUpFromCXXConstructExpr(s);
@@ -482,7 +486,7 @@ bool CxxAstVisitor::TraverseCXXConstructExpr(clang::CXXConstructExpr* s)
 	return true;
 }
 
-bool CxxAstVisitor::TraverseCXXTemporaryObjectExpr(clang::CXXTemporaryObjectExpr* v)
+inline bool CxxAstVisitor::TraverseCXXTemporaryObjectExpr(clang::CXXTemporaryObjectExpr* v)
 {
 	return traverseWithComponents(
 		[&](auto& component) { component.beginTraverseCXXTemporaryObjectExpr(v); },
@@ -490,7 +494,7 @@ bool CxxAstVisitor::TraverseCXXTemporaryObjectExpr(clang::CXXTemporaryObjectExpr
 		[&](auto& component) { component.endTraverseCXXTemporaryObjectExpr(v); });
 }
 
-bool CxxAstVisitor::TraverseLambdaExpr(clang::LambdaExpr* v)
+inline bool CxxAstVisitor::TraverseLambdaExpr(clang::LambdaExpr* v)
 {
 	return traverseWithComponents(
 		[&](auto& component) { component.beginTraverseLambdaExpr(v); },
@@ -502,7 +506,7 @@ bool CxxAstVisitor::TraverseLambdaExpr(clang::LambdaExpr* v)
 This code would also detect lambdas with concept usages, but it somehow breaks the detection/indexing
 of captured variables!
 
-bool CxxAstVisitor::TraverseLambdaExpr(clang::LambdaExpr *s)
+inline bool CxxAstVisitor::TraverseLambdaExpr(clang::LambdaExpr *s)
 {
 	forEachComponent([&](auto& component) { component.beginTraverseLambdaExpr(s); });
 
@@ -523,7 +527,7 @@ bool CxxAstVisitor::TraverseLambdaExpr(clang::LambdaExpr *s)
 }
 */
 
-bool CxxAstVisitor::TraverseFunctionDecl(clang::FunctionDecl* v)
+inline bool CxxAstVisitor::TraverseFunctionDecl(clang::FunctionDecl* v)
 {
 	return traverseWithComponents(
 		[&](auto& component) { component.beginTraverseFunctionDecl(v); },
@@ -533,7 +537,7 @@ bool CxxAstVisitor::TraverseFunctionDecl(clang::FunctionDecl* v)
 
 // same as base::TraverseClassTemplateSpecializationDecl but without traversing the typeloc of the
 // template specialitation itself
-bool CxxAstVisitor::TraverseClassTemplateSpecializationDecl(clang::ClassTemplateSpecializationDecl* D)
+inline bool CxxAstVisitor::TraverseClassTemplateSpecializationDecl(clang::ClassTemplateSpecializationDecl* D)
 {
 	forEachComponent([&](auto& component) { component.beginTraverseClassTemplateSpecializationDecl(D); });
 
@@ -606,7 +610,7 @@ bool CxxAstVisitor::TraverseClassTemplateSpecializationDecl(clang::ClassTemplate
 	return ReturnValue;
 }
 
-bool CxxAstVisitor::TraverseClassTemplatePartialSpecializationDecl(
+inline bool CxxAstVisitor::TraverseClassTemplatePartialSpecializationDecl(
 	clang::ClassTemplatePartialSpecializationDecl* v)
 {
 	return traverseWithComponents(
@@ -615,7 +619,7 @@ bool CxxAstVisitor::TraverseClassTemplatePartialSpecializationDecl(
 		[&](auto& component) { component.endTraverseClassTemplatePartialSpecializationDecl(v); });
 }
 
-bool CxxAstVisitor::TraverseDeclRefExpr(clang::DeclRefExpr* v)
+inline bool CxxAstVisitor::TraverseDeclRefExpr(clang::DeclRefExpr* v)
 {
 	return traverseWithComponents(
 		[&](auto& component) { component.beginTraverseDeclRefExpr(v); },
@@ -623,7 +627,7 @@ bool CxxAstVisitor::TraverseDeclRefExpr(clang::DeclRefExpr* v)
 		[&](auto& component) { component.endTraverseDeclRefExpr(v); });
 }
 
-bool CxxAstVisitor::TraverseCXXForRangeStmt(clang::CXXForRangeStmt* v)
+inline bool CxxAstVisitor::TraverseCXXForRangeStmt(clang::CXXForRangeStmt* v)
 {
 	return traverseWithComponents(
 		[&](auto& component) { component.beginTraverseCXXForRangeStmt(v); },
@@ -631,7 +635,7 @@ bool CxxAstVisitor::TraverseCXXForRangeStmt(clang::CXXForRangeStmt* v)
 		[&](auto& component) { component.endTraverseCXXForRangeStmt(v); });
 }
 
-bool CxxAstVisitor::TraverseTemplateSpecializationTypeLoc(
+inline bool CxxAstVisitor::TraverseTemplateSpecializationTypeLoc(
 	clang::TemplateSpecializationTypeLoc v, bool TraverseQualifier)
 {
 	return traverseWithComponents(
@@ -640,7 +644,7 @@ bool CxxAstVisitor::TraverseTemplateSpecializationTypeLoc(
 		[&](auto& component) { component.endTraverseTemplateSpecializationTypeLoc(v); });
 }
 
-bool CxxAstVisitor::TraverseUnresolvedLookupExpr(clang::UnresolvedLookupExpr* v)
+inline bool CxxAstVisitor::TraverseUnresolvedLookupExpr(clang::UnresolvedLookupExpr* v)
 {
 	return traverseWithComponents(
 		[&](auto& component) { component.beginTraverseUnresolvedLookupExpr(v); },
@@ -648,7 +652,7 @@ bool CxxAstVisitor::TraverseUnresolvedLookupExpr(clang::UnresolvedLookupExpr* v)
 		[&](auto& component) { component.endTraverseUnresolvedLookupExpr(v); });
 }
 
-bool CxxAstVisitor::TraverseUnresolvedMemberExpr(clang::UnresolvedMemberExpr* v)
+inline bool CxxAstVisitor::TraverseUnresolvedMemberExpr(clang::UnresolvedMemberExpr* v)
 {
 	return traverseWithComponents(
 		[&](auto& component) { component.beginTraverseUnresolvedMemberExpr(v); },
@@ -656,7 +660,7 @@ bool CxxAstVisitor::TraverseUnresolvedMemberExpr(clang::UnresolvedMemberExpr* v)
 		[&](auto& component) { component.endTraverseUnresolvedMemberExpr(v); });
 }
 
-bool CxxAstVisitor::TraverseTemplateArgumentLoc(const clang::TemplateArgumentLoc& loc)
+inline bool CxxAstVisitor::TraverseTemplateArgumentLoc(const clang::TemplateArgumentLoc& loc)
 {
 	forEachComponent([&](auto& component) { component.beginTraverseTemplateArgumentLoc(loc); });
 	bool ret = Base::TraverseTemplateArgumentLoc(loc);
@@ -664,7 +668,7 @@ bool CxxAstVisitor::TraverseTemplateArgumentLoc(const clang::TemplateArgumentLoc
 	return ret;
 }
 
-bool CxxAstVisitor::TraverseLambdaCapture(
+inline bool CxxAstVisitor::TraverseLambdaCapture(
 	clang::LambdaExpr* lambdaExpr, const clang::LambdaCapture* capture, clang::Expr*  /*Init*/)
 {
 	forEachComponent([&](auto& component) { component.beginTraverseLambdaCapture(lambdaExpr, capture); });
@@ -677,7 +681,7 @@ bool CxxAstVisitor::TraverseLambdaCapture(
 	return ret;
 }
 
-bool CxxAstVisitor::TraverseBinComma(clang::BinaryOperator* s)
+inline bool CxxAstVisitor::TraverseBinComma(clang::BinaryOperator* s)
 {
 	forEachComponent([&](auto& component) { component.beginTraverseBinCommaLhs(); });
 	TraverseStmt(s->getLHS());
@@ -689,13 +693,13 @@ bool CxxAstVisitor::TraverseBinComma(clang::BinaryOperator* s)
 	return true;
 }
 
-bool CxxAstVisitor::TraverseDeclarationNameInfo(clang::DeclarationNameInfo  /*NameInfo*/)
+inline bool CxxAstVisitor::TraverseDeclarationNameInfo(clang::DeclarationNameInfo  /*NameInfo*/)
 {
 	// we don't visit any children here
 	return true;
 }
 
-void CxxAstVisitor::traverseDeclContextHelper(clang::DeclContext* d)
+inline void CxxAstVisitor::traverseDeclContextHelper(clang::DeclContext* d)
 {
 	if (!d)
 	{
@@ -713,7 +717,7 @@ void CxxAstVisitor::traverseDeclContextHelper(clang::DeclContext* d)
 	}
 }
 
-bool CxxAstVisitor::TraverseCallCommon(clang::CallExpr* s)
+inline bool CxxAstVisitor::TraverseCallCommon(clang::CallExpr* s)
 {
 	forEachComponent([&](auto& component) { component.beginTraverseCallCommonCallee(); });
 	TraverseStmt(s->getCallee());
@@ -728,7 +732,7 @@ bool CxxAstVisitor::TraverseCallCommon(clang::CallExpr* s)
 	return true;
 }
 
-bool CxxAstVisitor::TraverseAssignCommon(clang::BinaryOperator* s)
+inline bool CxxAstVisitor::TraverseAssignCommon(clang::BinaryOperator* s)
 {
 	forEachComponent([&](auto& component) { component.beginTraverseAssignCommonLhs(); });
 	TraverseStmt(s->getLHS());
@@ -819,7 +823,7 @@ DEF_VISIT_CUSTOM_TYPE_PTR(ConstructorInitializer, CXXCtorInitializer)
 #undef DEF_VISIT_TYPE
 
 
-bool CxxAstVisitor::shouldVisitStmt(const clang::Stmt* stmt) const
+inline bool CxxAstVisitor::shouldVisitStmt(const clang::Stmt* stmt) const
 {
 	if (stmt != nullptr)
 	{
@@ -838,7 +842,7 @@ bool CxxAstVisitor::shouldVisitStmt(const clang::Stmt* stmt) const
 	return false;
 }
 
-bool CxxAstVisitor::shouldVisitDecl(const clang::Decl* decl) const
+inline bool CxxAstVisitor::shouldVisitDecl(const clang::Decl* decl) const
 {
 	if (decl != nullptr)
 	{
@@ -857,7 +861,7 @@ bool CxxAstVisitor::shouldVisitDecl(const clang::Decl* decl) const
 	return false;
 }
 
-bool CxxAstVisitor::shouldVisitReference(const clang::SourceLocation& referenceLocation) const
+inline bool CxxAstVisitor::shouldVisitReference(const clang::SourceLocation& referenceLocation) const
 {
 	clang::SourceLocation loc = m_astContext->getSourceManager().getExpansionLoc(referenceLocation);
 	if (loc.isInvalid())
@@ -873,7 +877,7 @@ bool CxxAstVisitor::shouldVisitReference(const clang::SourceLocation& referenceL
 	return false;
 }
 
-bool CxxAstVisitor::isLocatedInProjectFile(clang::SourceLocation loc) const
+inline bool CxxAstVisitor::isLocatedInProjectFile(clang::SourceLocation loc) const
 {
 	if (loc.isInvalid())
 	{

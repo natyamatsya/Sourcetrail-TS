@@ -1,29 +1,32 @@
-#include "CxxAstVisitorComponentTypeIndexer.h"
+// Inline implementations for CxxAstVisitorComponentTypeIndexer.h. Included via CxxAstVisitorBodies.h (classic) or the
+// srctrl.cxx:visitor wrapper (purview); not a standalone TU.
 
+#pragma once
+
+#ifndef SRCTRL_MODULE_PURVIEW
 #include "CxxAstVisitor.h"
 #include "CxxAstVisitorComponentTypeRefKind.h"
 #include "CxxIndexingContext.h"
 #include "clang_compat/ClangCompat.h"
 #include "utilityClang.h"
-
 #include <clang/AST/ASTContext.h>
 #include <clang/AST/DeclTemplate.h>
 #include <clang/Basic/SourceLocation.h>
+#endif
 
-
-CxxAstVisitorComponentTypeIndexer::CxxAstVisitorComponentTypeIndexer(
+inline CxxAstVisitorComponentTypeIndexer::CxxAstVisitorComponentTypeIndexer(
 	CxxAstVisitor* astVisitor, CxxIndexingContext& index)
 	: CxxAstVisitorComponent(astVisitor)
 	, m_index(index)
 {
 }
 
-void CxxAstVisitorComponentTypeIndexer::wire()
+inline void CxxAstVisitorComponentTypeIndexer::wire()
 {
 	m_typeRefKind = getAstVisitor()->getTypeRefKindComponent();
 }
 
-void CxxAstVisitorComponentTypeIndexer::beginTraverseNestedNameSpecifierLoc(
+inline void CxxAstVisitorComponentTypeIndexer::beginTraverseNestedNameSpecifierLoc(
 	const clang::NestedNameSpecifierLoc& loc)
 {
 	if (!getAstVisitor()->shouldVisitReference(loc.getBeginLoc()))
@@ -111,7 +114,7 @@ void CxxAstVisitorComponentTypeIndexer::beginTraverseNestedNameSpecifierLoc(
 	}
 }
 
-void CxxAstVisitorComponentTypeIndexer::beginTraverseTemplateArgumentLoc(
+inline void CxxAstVisitorComponentTypeIndexer::beginTraverseTemplateArgumentLoc(
 	const clang::TemplateArgumentLoc& loc)
 {
 	if (getAstVisitor()->shouldVisitReference(loc.getLocation()))
@@ -165,7 +168,7 @@ void CxxAstVisitorComponentTypeIndexer::beginTraverseTemplateArgumentLoc(
 	}
 }
 
-void CxxAstVisitorComponentTypeIndexer::beginTraverseLambdaCapture(
+inline void CxxAstVisitorComponentTypeIndexer::beginTraverseLambdaCapture(
 	clang::LambdaExpr* lambdaExpr, const clang::LambdaCapture* capture)
 {
 	if ((!lambdaExpr->isInitCapture(capture)) && (capture->capturesVariable()))
@@ -182,7 +185,7 @@ void CxxAstVisitorComponentTypeIndexer::beginTraverseLambdaCapture(
 	}
 }
 
-void CxxAstVisitorComponentTypeIndexer::visitTypeLoc(clang::TypeLoc tl)
+inline void CxxAstVisitorComponentTypeIndexer::visitTypeLoc(clang::TypeLoc tl)
 {
 	if (tl.isNull())
 	{

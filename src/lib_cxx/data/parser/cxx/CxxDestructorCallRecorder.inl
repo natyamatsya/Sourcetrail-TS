@@ -1,13 +1,15 @@
-#include "CxxDestructorCallRecorder.h"
+// Inline implementations for CxxDestructorCallRecorder.h. Included via CxxAstVisitorBodies.h (classic) or the
+// srctrl.cxx:visitor wrapper (purview); not a standalone TU.
 
+#pragma once
+
+#ifndef SRCTRL_MODULE_PURVIEW
 #include <memory>
 #include <optional>
-
 #include <clang/AST/ASTContext.h>
 #include <clang/AST/DeclCXX.h>
 #include <clang/AST/Type.h>
 #include <clang/Analysis/CFG.h>
-
 #include "CxxAstVisitorComponentContext.h"
 #include "CxxLocationExtractor.h"
 #include "CxxSymbolRegistry.h"
@@ -15,8 +17,9 @@
 #include "ParserClient.h"
 #include "ReferenceKind.h"
 #include "types.h"
+#endif
 
-void CxxDestructorCallRecorder::record(const clang::FunctionDecl* functionDecl)
+inline void CxxDestructorCallRecorder::record(const clang::FunctionDecl* functionDecl)
 {
 	auto recordDestructorCall =
 		[this](const clang::FunctionDecl* functionDecl, const clang::CXXDestructorDecl* destructorDecl)
@@ -82,7 +85,7 @@ void CxxDestructorCallRecorder::record(const clang::FunctionDecl* functionDecl)
 	}
 }
 
-CxxDestructorCallRecorder::CxxDestructorCallRecorder(
+inline CxxDestructorCallRecorder::CxxDestructorCallRecorder(
 	clang::ASTContext& astContext,
 	ParserClient& client,
 	CxxSymbolRegistry& symbols,

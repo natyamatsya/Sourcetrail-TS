@@ -1,16 +1,20 @@
 #ifndef CXX_AST_VISITOR_COMPONENT_DECLARATION_INDEXER_H
 #define CXX_AST_VISITOR_COMPONENT_DECLARATION_INDEXER_H
 
-#include "CxxAstVisitorComponent.h"
+#include "SrctrlModule.h"
 
-class CxxIndexingContext;
+#ifndef SRCTRL_MODULE_PURVIEW
+#include "CxxAstVisitorComponent.h"
+#endif
+
+SRCTRL_EXPORT class CxxIndexingContext;
 
 // Records the symbols the AST declares: one visit hook per declaration kind. Each hook resolves the
 // declaration's symbol id and its attributes (kind, access, definition, location, deprecation)
 // through the shared CxxIndexingContext -- most of that boilerplate lives in the facade's
 // recordDeclaration idiom. Split out of the former monolithic indexer so declaration recording is a
 // standalone concern, sitting alongside the reference and type-usage indexers.
-class CxxAstVisitorComponentDeclarationIndexer: public CxxAstVisitorComponent
+SRCTRL_EXPORT class CxxAstVisitorComponentDeclarationIndexer: public CxxAstVisitorComponent
 {
 public:
 	CxxAstVisitorComponentDeclarationIndexer(CxxAstVisitor* astVisitor, CxxIndexingContext& index);
@@ -42,5 +46,12 @@ private:
 	// context, plus the recordDeclaration / recordReference idioms. Owned by CxxAstVisitor.
 	CxxIndexingContext& m_index;
 };
+
+
+// Classic build: converge on the family apex, whose bottom includes all visitor-blob bodies once
+// every class definition is complete (see CxxAstVisitorBodies.h).
+#ifndef SRCTRL_MODULE_PURVIEW
+#include "CxxAstVisitor.h"
+#endif
 
 #endif	  // CXX_AST_VISITOR_COMPONENT_DECLARATION_INDEXER_H

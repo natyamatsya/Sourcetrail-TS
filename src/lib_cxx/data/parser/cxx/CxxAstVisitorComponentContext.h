@@ -1,13 +1,17 @@
 #ifndef CXX_AST_VISITOR_COMPONENT_CONTEXT_H
 #define CXX_AST_VISITOR_COMPONENT_CONTEXT_H
 
+#include "SrctrlModule.h"
+
+#ifndef SRCTRL_MODULE_PURVIEW
 #include "CxxAstVisitorComponent.h"
 #include "CxxContext.h"
+#endif
 
 // This CxxAstVisitorComponent is responsible for recording and providing the decl/type that acts as
 // the context of the currently traversed/visited node. Example: void foo() { bar(); } For this
 // snippet the declaration of "foo" serves as the context of the call to "bar"
-class CxxAstVisitorComponentContext: public CxxAstVisitorComponent
+SRCTRL_EXPORT class CxxAstVisitorComponentContext: public CxxAstVisitorComponent
 {
 public:
 	CxxAstVisitorComponentContext(CxxAstVisitor* astVisitor);
@@ -51,5 +55,12 @@ private:
 	std::vector<CxxContext> m_contextStack;
 	std::vector<CxxContext> m_templateArgumentContext;
 };
+
+
+// Classic build: converge on the family apex, whose bottom includes all visitor-blob bodies once
+// every class definition is complete (see CxxAstVisitorBodies.h).
+#ifndef SRCTRL_MODULE_PURVIEW
+#include "CxxAstVisitor.h"
+#endif
 
 #endif	  // CXX_AST_VISITOR_COMPONENT_CONTEXT_H

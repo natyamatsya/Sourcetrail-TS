@@ -1,8 +1,11 @@
-// `srctrl.data:name` partition -- NameElement + NameHierarchy. Module build only.
-// (NameHierarchy::deserialize is out-of-line in NameHierarchy.cpp -- it needs logging.h +
-// utilityMainFunction, the latter forward-declaring NameHierarchy, so it can't be in this GMF.)
+// `srctrl.data:name` partition -- NameElement + NameHierarchy + the main-function helpers
+// (utilityMainFunction). Module build only. (NameHierarchy::deserialize is out-of-line in
+// NameHierarchy.cpp -- it needs the logging macros, so it stays an include-only member, like the
+// logging/Qt seams.)
 
 module;
+
+#include <cassert>
 
 #ifndef SRCTRL_IMPORT_STD
 #include <sstream>
@@ -22,3 +25,4 @@ import :types;           // NameDelimiterType (NameHierarchy)
 #define SRCTRL_MODULE_PURVIEW
 #include "NameElement.h"
 #include "NameHierarchy.h"
+#include "utilityMainFunction.h"

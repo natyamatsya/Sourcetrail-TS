@@ -1,15 +1,19 @@
 #ifndef CXX_AST_VISITOR_COMPONENT_H
 #define CXX_AST_VISITOR_COMPONENT_H
 
-#include <clang/AST/RecursiveASTVisitor.h>
+#include "SrctrlModule.h"
 
-class CxxAstVisitor;
+#ifndef SRCTRL_MODULE_PURVIEW
+#include <clang/AST/RecursiveASTVisitor.h>
+#endif
+
+SRCTRL_EXPORT class CxxAstVisitor;
 
 // CxxAstVisitorComponent: This is the base class for all ast visitor components.
 // Each component can override it's begin-/endTraverse and visit methods in order to provide some
 // functionality. The CxxAstVisitor executes all of these methods of registered components while
 // traversing the AST.
-class CxxAstVisitorComponent
+SRCTRL_EXPORT class CxxAstVisitorComponent
 {
 public:
 	CxxAstVisitorComponent(CxxAstVisitor* astVisitor);
@@ -156,5 +160,10 @@ protected:
 private:
 	CxxAstVisitor* m_astVisitor;
 };
+
+
+// NOTE: no classic bottom-include here -- this header is top-included by other blob headers, so a
+// bottom-include of the apex could fire while an includer's class is still incomplete. Classic
+// consumers reach the inline bodies through any converging blob header (see CxxAstVisitorBodies.h).
 
 #endif	  // CXX_AST_VISITOR_COMPONENT_H

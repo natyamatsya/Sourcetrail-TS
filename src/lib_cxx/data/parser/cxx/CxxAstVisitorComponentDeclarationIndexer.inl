@@ -1,24 +1,27 @@
-#include "CxxAstVisitorComponentDeclarationIndexer.h"
+// Inline implementations for CxxAstVisitorComponentDeclarationIndexer.h. Included via CxxAstVisitorBodies.h (classic) or the
+// srctrl.cxx:visitor wrapper (purview); not a standalone TU.
 
+#pragma once
+
+#ifndef SRCTRL_MODULE_PURVIEW
 #include "CanonicalFilePathCache.h"
 #include "CxxAstVisitor.h"
 #include "CxxIndexingContext.h"
 #include "NameHierarchy.h"
 #include "clang_compat/ClangCompat.h"
 #include "utilityClang.h"
-
 #include <clang/AST/ASTContext.h>
 #include <clang/AST/DeclTemplate.h>
+#endif
 
-
-CxxAstVisitorComponentDeclarationIndexer::CxxAstVisitorComponentDeclarationIndexer(
+inline CxxAstVisitorComponentDeclarationIndexer::CxxAstVisitorComponentDeclarationIndexer(
 	CxxAstVisitor* astVisitor, CxxIndexingContext& index)
 	: CxxAstVisitorComponent(astVisitor)
 	, m_index(index)
 {
 }
 
-void CxxAstVisitorComponentDeclarationIndexer::visitTagDecl(clang::TagDecl* d)
+inline void CxxAstVisitorComponentDeclarationIndexer::visitTagDecl(clang::TagDecl* d)
 {
 	if (getAstVisitor()->shouldVisitDecl(d))
 	{
@@ -54,7 +57,7 @@ void CxxAstVisitorComponentDeclarationIndexer::visitTagDecl(clang::TagDecl* d)
 	}
 }
 
-void CxxAstVisitorComponentDeclarationIndexer::visitClassTemplateDecl(clang::ClassTemplateDecl *d)
+inline void CxxAstVisitorComponentDeclarationIndexer::visitClassTemplateDecl(clang::ClassTemplateDecl *d)
 {
 	if (getAstVisitor()->shouldVisitDecl(d))
 	{
@@ -62,7 +65,7 @@ void CxxAstVisitorComponentDeclarationIndexer::visitClassTemplateDecl(clang::Cla
 	}
 }
 
-void CxxAstVisitorComponentDeclarationIndexer::visitClassTemplateSpecializationDecl(
+inline void CxxAstVisitorComponentDeclarationIndexer::visitClassTemplateSpecializationDecl(
 	clang::ClassTemplateSpecializationDecl* d)
 {
 	if (getAstVisitor()->shouldVisitDecl(d))
@@ -88,7 +91,7 @@ void CxxAstVisitorComponentDeclarationIndexer::visitClassTemplateSpecializationD
 	}
 }
 
-void CxxAstVisitorComponentDeclarationIndexer::visitVarDecl(clang::VarDecl* d)
+inline void CxxAstVisitorComponentDeclarationIndexer::visitVarDecl(clang::VarDecl* d)
 {
 	if (getAstVisitor()->shouldVisitDecl(d))
 	{
@@ -152,7 +155,7 @@ void CxxAstVisitorComponentDeclarationIndexer::visitVarDecl(clang::VarDecl* d)
 	}
 }
 
-void CxxAstVisitorComponentDeclarationIndexer::visitDecompositionDecl(clang::DecompositionDecl *d)
+inline void CxxAstVisitorComponentDeclarationIndexer::visitDecompositionDecl(clang::DecompositionDecl *d)
 {
 	// Record structured bindings:
 
@@ -169,7 +172,7 @@ void CxxAstVisitorComponentDeclarationIndexer::visitDecompositionDecl(clang::Dec
 	}
 }
 
-void CxxAstVisitorComponentDeclarationIndexer::visitVarTemplateSpecializationDecl(
+inline void CxxAstVisitorComponentDeclarationIndexer::visitVarTemplateSpecializationDecl(
 	clang::VarTemplateSpecializationDecl* d)
 {
 	if (getAstVisitor()->shouldVisitDecl(d))
@@ -196,7 +199,7 @@ void CxxAstVisitorComponentDeclarationIndexer::visitVarTemplateSpecializationDec
 	}
 }
 
-void CxxAstVisitorComponentDeclarationIndexer::visitFieldDecl(clang::FieldDecl* d)
+inline void CxxAstVisitorComponentDeclarationIndexer::visitFieldDecl(clang::FieldDecl* d)
 {
 	if (getAstVisitor()->shouldVisitDecl(d))
 	{
@@ -234,7 +237,7 @@ void CxxAstVisitorComponentDeclarationIndexer::visitFieldDecl(clang::FieldDecl* 
 	}
 }
 
-void CxxAstVisitorComponentDeclarationIndexer::visitFunctionDecl(clang::FunctionDecl* d)
+inline void CxxAstVisitorComponentDeclarationIndexer::visitFunctionDecl(clang::FunctionDecl* d)
 {
 	if (getAstVisitor()->shouldVisitDecl(d))
 	{
@@ -329,7 +332,7 @@ void CxxAstVisitorComponentDeclarationIndexer::visitFunctionDecl(clang::Function
 	}
 }
 
-void CxxAstVisitorComponentDeclarationIndexer::visitFunctionTemplateDecl(clang::FunctionTemplateDecl *d)
+inline void CxxAstVisitorComponentDeclarationIndexer::visitFunctionTemplateDecl(clang::FunctionTemplateDecl *d)
 {
 	if (getAstVisitor()->shouldVisitDecl(d))
 	{
@@ -337,7 +340,7 @@ void CxxAstVisitorComponentDeclarationIndexer::visitFunctionTemplateDecl(clang::
 	}
 }
 
-void CxxAstVisitorComponentDeclarationIndexer::visitCXXMethodDecl(clang::CXXMethodDecl* d)
+inline void CxxAstVisitorComponentDeclarationIndexer::visitCXXMethodDecl(clang::CXXMethodDecl* d)
 {
 	// Decl has been recorded in VisitFunctionDecl
 	if (getAstVisitor()->shouldVisitDecl(d))
@@ -359,7 +362,7 @@ void CxxAstVisitorComponentDeclarationIndexer::visitCXXMethodDecl(clang::CXXMeth
 	}
 }
 
-void CxxAstVisitorComponentDeclarationIndexer::visitEnumConstantDecl(clang::EnumConstantDecl* d)
+inline void CxxAstVisitorComponentDeclarationIndexer::visitEnumConstantDecl(clang::EnumConstantDecl* d)
 {
 	if (getAstVisitor()->shouldVisitDecl(d))
 	{
@@ -371,7 +374,7 @@ void CxxAstVisitorComponentDeclarationIndexer::visitEnumConstantDecl(clang::Enum
 	}
 }
 
-void CxxAstVisitorComponentDeclarationIndexer::visitNamespaceDecl(clang::NamespaceDecl* d)
+inline void CxxAstVisitorComponentDeclarationIndexer::visitNamespaceDecl(clang::NamespaceDecl* d)
 {
 	if (getAstVisitor()->shouldVisitDecl(d))
 	{
@@ -384,7 +387,7 @@ void CxxAstVisitorComponentDeclarationIndexer::visitNamespaceDecl(clang::Namespa
 	}
 }
 
-void CxxAstVisitorComponentDeclarationIndexer::visitNamespaceAliasDecl(clang::NamespaceAliasDecl* d)
+inline void CxxAstVisitorComponentDeclarationIndexer::visitNamespaceAliasDecl(clang::NamespaceAliasDecl* d)
 {
 	if (getAstVisitor()->shouldVisitDecl(d))
 	{
@@ -404,7 +407,7 @@ void CxxAstVisitorComponentDeclarationIndexer::visitNamespaceAliasDecl(clang::Na
 	}
 }
 
-void CxxAstVisitorComponentDeclarationIndexer::visitTypedefDecl(clang::TypedefDecl* d)
+inline void CxxAstVisitorComponentDeclarationIndexer::visitTypedefDecl(clang::TypedefDecl* d)
 {
 	if (getAstVisitor()->shouldVisitDecl(d))
 	{
@@ -415,7 +418,7 @@ void CxxAstVisitorComponentDeclarationIndexer::visitTypedefDecl(clang::TypedefDe
 	}
 }
 
-void CxxAstVisitorComponentDeclarationIndexer::visitTypeAliasDecl(clang::TypeAliasDecl* d)
+inline void CxxAstVisitorComponentDeclarationIndexer::visitTypeAliasDecl(clang::TypeAliasDecl* d)
 {
 	if (getAstVisitor()->shouldVisitDecl(d))
 	{
@@ -426,7 +429,7 @@ void CxxAstVisitorComponentDeclarationIndexer::visitTypeAliasDecl(clang::TypeAli
 	}
 }
 
-void CxxAstVisitorComponentDeclarationIndexer::visitUsingDirectiveDecl(clang::UsingDirectiveDecl* d)
+inline void CxxAstVisitorComponentDeclarationIndexer::visitUsingDirectiveDecl(clang::UsingDirectiveDecl* d)
 {
 	if (getAstVisitor()->shouldVisitDecl(d))
 	{
@@ -450,7 +453,7 @@ void CxxAstVisitorComponentDeclarationIndexer::visitUsingDirectiveDecl(clang::Us
 	}
 }
 
-void CxxAstVisitorComponentDeclarationIndexer::visitUsingDecl(clang::UsingDecl* d)
+inline void CxxAstVisitorComponentDeclarationIndexer::visitUsingDecl(clang::UsingDecl* d)
 {
 	if (getAstVisitor()->shouldVisitDecl(d))
 	{
@@ -471,7 +474,7 @@ void CxxAstVisitorComponentDeclarationIndexer::visitUsingDecl(clang::UsingDecl* 
 	}
 }
 
-void CxxAstVisitorComponentDeclarationIndexer::visitNonTypeTemplateParmDecl(clang::NonTypeTemplateParmDecl* d)
+inline void CxxAstVisitorComponentDeclarationIndexer::visitNonTypeTemplateParmDecl(clang::NonTypeTemplateParmDecl* d)
 {
 	if (getAstVisitor()->shouldVisitDecl(d) && d->getDeclName().isIdentifier() &&
 		!d->getName().empty())	  // We don't create symbols for unnamed template parameters.
@@ -481,7 +484,7 @@ void CxxAstVisitorComponentDeclarationIndexer::visitNonTypeTemplateParmDecl(clan
 	}
 }
 
-void CxxAstVisitorComponentDeclarationIndexer::visitTemplateTypeParmDecl(clang::TemplateTypeParmDecl* d)
+inline void CxxAstVisitorComponentDeclarationIndexer::visitTemplateTypeParmDecl(clang::TemplateTypeParmDecl* d)
 {
 	if (getAstVisitor()->shouldVisitDecl(d) && d->getDeclName().isIdentifier() &&
 		!d->getName().empty())	  // We don't create symbols for unnamed template parameters.
@@ -495,7 +498,7 @@ void CxxAstVisitorComponentDeclarationIndexer::visitTemplateTypeParmDecl(clang::
 	}
 }
 
-void CxxAstVisitorComponentDeclarationIndexer::visitTemplateTemplateParmDecl(clang::TemplateTemplateParmDecl* d)
+inline void CxxAstVisitorComponentDeclarationIndexer::visitTemplateTemplateParmDecl(clang::TemplateTemplateParmDecl* d)
 {
 	if (getAstVisitor()->shouldVisitDecl(d) && d->getDeclName().isIdentifier() &&
 		!d->getName().empty())	  // We don't create symbols for unnamed template parameters.
@@ -505,7 +508,7 @@ void CxxAstVisitorComponentDeclarationIndexer::visitTemplateTemplateParmDecl(cla
 	}
 }
 
-void CxxAstVisitorComponentDeclarationIndexer::visitConceptDecl(clang::ConceptDecl *d)
+inline void CxxAstVisitorComponentDeclarationIndexer::visitConceptDecl(clang::ConceptDecl *d)
 {
 	if (getAstVisitor()->shouldVisitDecl(d))
 	{

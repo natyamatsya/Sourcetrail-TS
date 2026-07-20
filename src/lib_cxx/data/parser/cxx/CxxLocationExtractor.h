@@ -1,6 +1,9 @@
 #ifndef CXX_LOCATION_EXTRACTOR_H
 #define CXX_LOCATION_EXTRACTOR_H
 
+#include "SrctrlModule.h"
+
+#ifndef SRCTRL_MODULE_PURVIEW
 #include <clang/Basic/SourceLocation.h>
 
 #include "ParseLocation.h"
@@ -14,12 +17,13 @@ class FunctionDecl;
 }
 
 class CanonicalFilePathCache;
+#endif
 
 // Turns Clang source locations / declarations into Sourcetrail ParseLocations. Extracted so
 // location computation is a single first-class concern instead of being smeared across the
 // visitor and its components (which previously forwarded to it). Borrows its inputs, all owned
 // for the duration of the parse.
-class CxxLocationExtractor
+SRCTRL_EXPORT class CxxLocationExtractor
 {
 public:
 	CxxLocationExtractor(
@@ -39,5 +43,12 @@ private:
 	clang::Preprocessor* m_preprocessor;
 	CanonicalFilePathCache& m_canonicalFilePathCache;
 };
+
+
+// Classic build: converge on the family apex, whose bottom includes all visitor-blob bodies once
+// every class definition is complete (see CxxAstVisitorBodies.h).
+#ifndef SRCTRL_MODULE_PURVIEW
+#include "CxxAstVisitor.h"
+#endif
 
 #endif	  // CXX_LOCATION_EXTRACTOR_H

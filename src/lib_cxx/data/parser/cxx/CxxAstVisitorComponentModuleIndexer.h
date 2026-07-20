@@ -1,16 +1,20 @@
 #ifndef CXX_AST_VISITOR_COMPONENT_MODULE_INDEXER_H
 #define CXX_AST_VISITOR_COMPONENT_MODULE_INDEXER_H
 
-#include "CxxAstVisitorComponent.h"
+#include "SrctrlModule.h"
 
-class CxxIndexingContext;
+#ifndef SRCTRL_MODULE_PURVIEW
+#include "CxxAstVisitorComponent.h"
+#endif
+
+SRCTRL_EXPORT class CxxIndexingContext;
 
 // Records C++20 named-module structure: the module a translation unit defines
 // (`export module foo;` / `module foo:part;`) as a MODULE node, `import`
 // declarations as IMPORT edges between modules, and the NODE_MODIFIER_EXPORTED
 // flag on declarations under an `export` region. Split out of the indexer as its
 // own node category, alongside the declaration/reference/type indexers.
-class CxxAstVisitorComponentModuleIndexer: public CxxAstVisitorComponent
+SRCTRL_EXPORT class CxxAstVisitorComponentModuleIndexer: public CxxAstVisitorComponent
 {
 public:
 	CxxAstVisitorComponentModuleIndexer(
@@ -32,5 +36,12 @@ private:
 	// context, plus the recordDeclaration / recordReference idioms. Owned by CxxAstVisitor.
 	CxxIndexingContext& m_index;
 };
+
+
+// Classic build: converge on the family apex, whose bottom includes all visitor-blob bodies once
+// every class definition is complete (see CxxAstVisitorBodies.h).
+#ifndef SRCTRL_MODULE_PURVIEW
+#include "CxxAstVisitor.h"
+#endif
 
 #endif	  // CXX_AST_VISITOR_COMPONENT_MODULE_INDEXER_H

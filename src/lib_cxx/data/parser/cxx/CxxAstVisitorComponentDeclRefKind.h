@@ -1,15 +1,19 @@
 #ifndef CXX_AST_VISITOR_COMPONENT_DECL_REF_KIND_H
 #define CXX_AST_VISITOR_COMPONENT_DECL_REF_KIND_H
 
+#include "SrctrlModule.h"
+
+#ifndef SRCTRL_MODULE_PURVIEW
 #include <vector>
 
 #include "CxxAstVisitorComponent.h"
 #include "ReferenceKind.h"
+#endif
 
 // This CxxAstVisitorComponent is responsible for recording and providing the context based
 // ReferenceKind for each reference to a declaration encountered while traversing the AST. Example:
 // void foo() { bar(); } For this snippet the reference to "bar" is used in the context of a call.
-class CxxAstVisitorComponentDeclRefKind: public CxxAstVisitorComponent
+SRCTRL_EXPORT class CxxAstVisitorComponentDeclRefKind: public CxxAstVisitorComponent
 {
 public:
 	CxxAstVisitorComponentDeclRefKind(CxxAstVisitor* astVisitor);
@@ -74,5 +78,12 @@ private:
 	std::vector<ReferenceKind> m_oldThisRefKinds;
 	std::vector<ReferenceKind> m_oldChildRefKinds;
 };
+
+
+// Classic build: converge on the family apex, whose bottom includes all visitor-blob bodies once
+// every class definition is complete (see CxxAstVisitorBodies.h).
+#ifndef SRCTRL_MODULE_PURVIEW
+#include "CxxAstVisitor.h"
+#endif
 
 #endif	  // CXX_AST_VISITOR_COMPONENT_DECL_REF_KIND_H

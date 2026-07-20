@@ -1,8 +1,11 @@
-#include "CxxConceptReferenceRecorder.h"
+// Inline implementations for CxxConceptReferenceRecorder.h. Included via CxxAstVisitorBodies.h (classic) or the
+// srctrl.cxx:visitor wrapper (purview); not a standalone TU.
 
+#pragma once
+
+#ifndef SRCTRL_MODULE_PURVIEW
 #include <clang/AST/ASTConcept.h>
 #include <clang/AST/DeclTemplate.h>
-
 #include "CxxAstVisitorComponentContext.h"
 #include "CxxLocationExtractor.h"
 #include "CxxSymbolRegistry.h"
@@ -11,8 +14,9 @@
 #include "ReferenceKind.h"
 #include "clang_compat/ClangCompat.h"
 #include "types.h"
+#endif
 
-CxxConceptReferenceRecorder::CxxConceptReferenceRecorder(
+inline CxxConceptReferenceRecorder::CxxConceptReferenceRecorder(
 	ParserClient& client,
 	CxxSymbolRegistry& symbols,
 	CxxLocationExtractor& locations,
@@ -21,7 +25,7 @@ CxxConceptReferenceRecorder::CxxConceptReferenceRecorder(
 {
 }
 
-void CxxConceptReferenceRecorder::recordTemplateParameterConceptReferences(
+inline void CxxConceptReferenceRecorder::recordTemplateParameterConceptReferences(
 	const clang::TemplateDecl* templateDecl)
 {
 	if (const clang::TemplateParameterList* templateParameters = templateDecl->getTemplateParameters())
@@ -41,7 +45,7 @@ void CxxConceptReferenceRecorder::recordTemplateParameterConceptReferences(
 	}
 }
 
-void CxxConceptReferenceRecorder::recordNamedConceptReference(
+inline void CxxConceptReferenceRecorder::recordNamedConceptReference(
 	const clang::ConceptReference* conceptReference)
 {
 	if (const auto* conceptDecl = clang_compat::getNamedConceptDecl(conceptReference))

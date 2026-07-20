@@ -4,7 +4,7 @@
 
 #include "MessageFlushUpdates.h"
 #include "utility.h"
-#include "utilityMainFunction.h"
+#include "SearchMatch.h"
 
 #include "Application.h"
 #include "Project.h"

@@ -1,16 +1,19 @@
-#include "CxxLocationExtractor.h"
+// Inline implementations for CxxLocationExtractor.h. Included via CxxAstVisitorBodies.h (classic) or the
+// srctrl.cxx:visitor wrapper (purview); not a standalone TU.
 
+#pragma once
+
+#ifndef SRCTRL_MODULE_PURVIEW
 #include <optional>
-
 #include <clang/AST/ASTContext.h>
 #include <clang/AST/DeclCXX.h>
 #include <clang/AST/DeclTemplate.h>
 #include <clang/Basic/SourceManager.h>
 #include <clang/Lex/Lexer.h>
-
 #include "utilityClang.h"
+#endif
 
-CxxLocationExtractor::CxxLocationExtractor(
+inline CxxLocationExtractor::CxxLocationExtractor(
 	clang::ASTContext& astContext,
 	clang::Preprocessor* preprocessor,
 	CanonicalFilePathCache& canonicalFilePathCache)
@@ -20,19 +23,19 @@ CxxLocationExtractor::CxxLocationExtractor(
 {
 }
 
-ParseLocation CxxLocationExtractor::getParseLocation(const clang::SourceLocation& loc) const
+inline ParseLocation CxxLocationExtractor::getParseLocation(const clang::SourceLocation& loc) const
 {
 	return utility::getParseLocation(
 		loc, m_astContext.getSourceManager(), m_preprocessor, m_canonicalFilePathCache);
 }
 
-ParseLocation CxxLocationExtractor::getParseLocation(const clang::SourceRange& range) const
+inline ParseLocation CxxLocationExtractor::getParseLocation(const clang::SourceRange& range) const
 {
 	return utility::getParseLocation(
 		range, m_astContext.getSourceManager(), m_preprocessor, m_canonicalFilePathCache);
 }
 
-ParseLocation CxxLocationExtractor::getParseLocationOfTagDeclBody(clang::TagDecl* decl) const
+inline ParseLocation CxxLocationExtractor::getParseLocationOfTagDeclBody(clang::TagDecl* decl) const
 {
 	if (decl->isThisDeclarationADefinition())
 	{
@@ -54,7 +57,7 @@ ParseLocation CxxLocationExtractor::getParseLocationOfTagDeclBody(clang::TagDecl
 	return ParseLocation();
 }
 
-ParseLocation CxxLocationExtractor::getParseLocationOfFunctionBody(const clang::FunctionDecl* decl) const
+inline ParseLocation CxxLocationExtractor::getParseLocationOfFunctionBody(const clang::FunctionDecl* decl) const
 {
 	if (decl->hasBody() && decl->isThisDeclarationADefinition())
 	{
@@ -73,7 +76,7 @@ ParseLocation CxxLocationExtractor::getParseLocationOfFunctionBody(const clang::
 	return ParseLocation();
 }
 
-ParseLocation CxxLocationExtractor::getSignatureLocation(clang::FunctionDecl* d) const
+inline ParseLocation CxxLocationExtractor::getSignatureLocation(clang::FunctionDecl* d) const
 {
 	clang::SourceRange signatureRange = d->getSourceRange();
 
