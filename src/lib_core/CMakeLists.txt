@@ -62,6 +62,7 @@ if(SOURCETRAIL_CXX_MODULES_ENABLED)
 				utility/srctrl_utility.cppm
 				utility/srctrl_utility-enum.cppm
 				utility/srctrl_utility-cache.cppm
+				utility/srctrl_utility-containers.cppm
 				utility/srctrl_utility-types.cppm
 				utility/srctrl_utility-string.cppm
 				utility/srctrl_utility-math.cppm

@@ -5,6 +5,7 @@ export module srctrl.utility;
 
 export import :enums;
 export import :cache;
+export import :containers;
 export import :types;
 export import :string;
 export import :math;

@@ -486,6 +486,14 @@ cycles in `lib` is prerequisite work, and a good cleanup in its own right).
   ResourcePaths/FileTree; the remaining mid-layer blockers are messaging (MessageStatus), settings
   (ApplicationSettings/ToolChain — gated on splitting FilePath-dependent helpers out of `utility.h`,
   which would otherwise cycle srctrl.utility ↔ srctrl.file), TextCodec (Qt), and utilityApp (QProcess).
+- **Phase 2 (cont.) — mid-layer unblock 2: `utility.h` split → `srctrl.utility:containers`. ✅**
+  `utility.h`'s only FilePath coupling was the `toStrings<FilePath>` specialization — moved to a new
+  `utilityFilePath.h` (classic-build seam, 3 call sites), the out-of-line `digits()` inlined,
+  `utility.cpp` deleted. The now FilePath-free header becomes the `:containers` partition
+  (`SRCTRL_EXPORT namespace utility` — first use of an exported namespace-definition instead of
+  per-declaration tags). This kills the srctrl.utility ↔ srctrl.file cycle risk for good and makes
+  `utility.h` safe in any module GMF — unblocking ToolChain (its impl deps are now utility.h +
+  macro-only headers). Remaining blockers: messaging, settings, TextCodec/utilityApp (Qt-facing).
 - **Phase 3 — `srctrl.cxx`.** Modularize `lib_cxx` with partitions; absorb the Clang-header BMI cost.
   **STARTED — `:name` landed. ✅** The `name/` cluster (CxxName type-erased wrapper + concept, the five
   decl-name leaves, CxxQualifierFlags — 7 headers, all `.cpp`s inlined into `.inl`s) is `srctrl.cxx`'s

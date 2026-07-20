@@ -5,6 +5,7 @@
 #include "QtTextEditDialog.h"
 #include "UiPost.h"
 #include "utility.h"
+#include "utilityFilePath.h"
 #include "utilityString.h"
 
 QtProjectWizardContent::QtProjectWizardContent(QtProjectWizardWindow* window)

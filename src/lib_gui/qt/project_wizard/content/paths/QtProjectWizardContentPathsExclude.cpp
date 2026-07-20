@@ -3,6 +3,7 @@
 #include "SourceGroupSettings.h"
 #include "SourceGroupSettingsWithExcludeFilters.h"
 #include "utility.h"
+#include "utilityFilePath.h"
 
 QtProjectWizardContentPathsExclude::QtProjectWizardContentPathsExclude(
 	std::shared_ptr<SourceGroupSettings> settings, QtProjectWizardWindow* window)

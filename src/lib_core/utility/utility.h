@@ -1,16 +1,20 @@
 #ifndef UTILITY_H
 #define UTILITY_H
 
+#include "SrctrlModule.h"
+
+#ifndef SRCTRL_MODULE_PURVIEW
 #include <algorithm>
+#include <cstddef>
 #include <functional>
 #include <map>
 #include <set>
+#include <string>
 #include <unordered_set>
 #include <vector>
+#endif
 
-#include "FilePath.h"
-
-namespace utility
+SRCTRL_EXPORT namespace utility
 {
 template <typename T>
 std::vector<std::vector<T>> splitToEquallySizedParts(
@@ -80,8 +84,6 @@ std::set<TargetType> convert(const std::set<SourceType>& sourceContainer);
 
 template <typename T>
 std::vector<std::string> toStrings(const std::vector<T>& d);
-template <>
-std::vector<std::string> toStrings(const std::vector<FilePath>& d);
 
 template <typename T>
 bool isPermutation(const std::vector<T>& a, const std::vector<T>& b)
@@ -119,7 +121,18 @@ bool shareElement(const std::set<T>& a, const std::set<T>& b)
 	return false;
 }
 
-size_t digits(size_t n);
+inline size_t digits(size_t n)
+{
+	int digits = 1;
+
+	while (n >= 10)
+	{
+		n /= 10;
+		digits++;
+	}
+
+	return digits;
+}
 }	 // namespace utility
 
 template <typename T>
@@ -279,12 +292,6 @@ std::vector<std::string> utility::toStrings(const std::vector<T>& d)
 	using std::to_string;
 
 	return convert<T, std::string>(d, [](T t) { return to_string(t); });
-}
-
-template <>
-inline std::vector<std::string> utility::toStrings<FilePath>(const std::vector<FilePath>& d)
-{
-	return convert<FilePath, std::string>(d, [](const FilePath& fp) { return fp.str(); });
 }
 
 #endif	  // UTILITY_H

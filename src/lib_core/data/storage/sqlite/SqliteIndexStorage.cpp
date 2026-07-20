@@ -24,6 +24,7 @@ import sqlpp23.sqlite3;
 #include "SourceLocationFile.h"
 #include "TextAccess.h"
 #include "logging.h"
+#include "utilityFilePath.h"
 #include "utilityString.h"
 
 
