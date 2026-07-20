@@ -1,44 +1,49 @@
-#include "CompilationDatabase.h"
+// Inline implementations for CompilationDatabase.h. Included at the end of that header; not a
+// standalone TU.
 
+#pragma once
+
+#ifndef SRCTRL_MODULE_PURVIEW
+#include <memory>
 #include <set>
 
 #include <clang/Tooling/CompilationDatabase.h>
 #include <clang/Tooling/JSONCompilationDatabase.h>
 
-#include "FilePath.h"
 #include "ToolChain.h"
 #include "logging.h"
 #include "utility.h"
 #include "utilityString.h"
+#endif
 
-utility::CompilationDatabase::CompilationDatabase(const FilePath& filePath): m_filePath(filePath)
+inline utility::CompilationDatabase::CompilationDatabase(const FilePath& filePath): m_filePath(filePath)
 {
 	init();
 }
 
-std::vector<FilePath> utility::CompilationDatabase::getAllHeaderPaths() const
+inline std::vector<FilePath> utility::CompilationDatabase::getAllHeaderPaths() const
 {
 	std::vector<FilePath> paths = utility::concat(m_headers, m_systemHeaders);
 	paths = utility::unique(paths);
 	return paths;
 }
 
-std::vector<FilePath> utility::CompilationDatabase::getHeaderPaths() const
+inline std::vector<FilePath> utility::CompilationDatabase::getHeaderPaths() const
 {
 	return m_headers;
 }
 
-std::vector<FilePath> utility::CompilationDatabase::getSystemHeaderPaths() const
+inline std::vector<FilePath> utility::CompilationDatabase::getSystemHeaderPaths() const
 {
 	return m_systemHeaders;
 }
 
-std::vector<FilePath> utility::CompilationDatabase::getFrameworkHeaderPaths() const
+inline std::vector<FilePath> utility::CompilationDatabase::getFrameworkHeaderPaths() const
 {
 	return m_frameworkHeaders;
 }
 
-void utility::CompilationDatabase::init()
+inline void utility::CompilationDatabase::init()
 {
 	std::string error;
 	std::shared_ptr<clang::tooling::JSONCompilationDatabase> cdb(

@@ -522,6 +522,23 @@ cycles in `lib` is prerequisite work, and a good cleanup in its own right).
   MessageStatus/messaging, ResourcePaths, ToolChain) into any wrapper GMF — and those textually
   include FilePath.h, which clashes with `import srctrl.file`. They wait for either that mid-layer's
   modularization or an impl split (payload vs. static toolchain helpers for IndexerCommandCxx).
+- **Phase 3 (cont.) — blocker map CORRECTED + `:tooling` partition (CompilationDatabase). ✅**
+  The deferral analysis above over-counted: a non-modularized header is GMF-poison **only if it
+  transitively includes a modularized header**. Re-derived: `ToolChain.h` (std-only), the messaging
+  core (`Message/MessageBase/MessageQueue` → Id/TabIds/types only), `utilitySourceGroupCxx.h`
+  (std+clang), and `TextCodec.h` (Qt+std) are all **GMF-safe as-is** — a module TU may GMF-include
+  them and link their classic impls (global-module entities keep normal mangling). The only real
+  blockers left: `utilityApp.h` and `ApplicationSettings.h` (both textually reach FilePath.h).
+  Consequences banked:
+  - `ToolChain.cpp` requalified per ADR-0005 (its file-scope `using namespace std/string_literals/
+    utility` was the obstacle to ever inlining it; all redundant `""s`/`""sv` suffixes dropped).
+  - **`utility::CompilationDatabase` converted** into the new **`srctrl.cxx:tooling`** partition —
+    the designated Clang-tooling cluster (per the :context measurement, Clang-bearing code joins
+    THIS partition instead of opening new ~40 MB GMFs; :tooling's BMI is 29.8 MB). First partition
+    importing three first-party modules (srctrl.utility + srctrl.file + srctrl.logging) alongside a
+    Clang GMF.
+  Remaining for the deferred pair: `IndexerCommandCxx` needs `utilityApp` modularized (uses
+  `utility::executeProcess`); `IncludeProcessing` needs settings.
 - **Phase 4 — the indexer binary.** `src/indexer/main.cpp` becomes a pure consumer:
   `import srctrl.cxx;` (+ optionally `import std;`).
 - **Phase 5 — dogfood.** Index the module-built Sourcetrail *with* the module-built Sourcetrail; diff
