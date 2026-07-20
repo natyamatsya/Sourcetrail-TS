@@ -476,6 +476,18 @@ cycles in `lib` is prerequisite work, and a good cleanup in its own right).
     `PRINT_TRACES()` macros and includes nothing, making it GMF-safe (it used to textually pull
     FilePath + TimeStamp into `storage:interface`).
 - **Phase 3 — `srctrl.cxx`.** Modularize `lib_cxx` with partitions; absorb the Clang-header BMI cost.
+  **STARTED — `:name` landed. ✅** The `name/` cluster (CxxName type-erased wrapper + concept, the five
+  decl-name leaves, CxxQualifierFlags — 7 headers, all `.cpp`s inlined into `.inl`s) is `srctrl.cxx`'s
+  first partition, and `Sourcetrail_lib_cxx` gained the same dual-build CMake block as lib_core
+  (FILE_SET, `-fno-modules-reduced-bmi`, `CXX_MODULE_STD` gate). Chosen precisely because it is
+  Clang-free: the module bootstraps without paying the Clang-header BMI cost. Cross-module imports:
+  `srctrl.utility` (utilityEnum flag operators, utilityString join), `srctrl.data` (NameHierarchy);
+  GMF keeps only std + the P2988 `stdcompat/optional` shim. Verified both modes (2640 assertions,
+  identical headless Usages index — the CxxParser suite exercises these classes directly).
+  Next slices, in rough dependency order: `utility/` (IncludeDirective/IncludeProcessing,
+  CompilationDatabase), `data/indexer/` (IndexerCommandCxx payload — Clang-free header), then the
+  Clang-facing parser layers (`CxxContext`/`CxxSymbolRegistry`/visitor components) where the
+  Clang-header GMF cost finally lands and needs measuring.
 - **Phase 4 — the indexer binary.** `src/indexer/main.cpp` becomes a pure consumer:
   `import srctrl.cxx;` (+ optionally `import std;`).
 - **Phase 5 — dogfood.** Index the module-built Sourcetrail *with* the module-built Sourcetrail; diff

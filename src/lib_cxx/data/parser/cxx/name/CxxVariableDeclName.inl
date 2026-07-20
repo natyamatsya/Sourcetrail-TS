@@ -1,6 +1,9 @@
-#include "CxxVariableDeclName.h"
+// Inline implementations for CxxVariableDeclName.h. Included at the end of that header; not a
+// standalone TU.
 
-CxxVariableDeclName::CxxVariableDeclName(
+#pragma once
+
+inline CxxVariableDeclName::CxxVariableDeclName(
 	std::string name,
 	std::vector<std::string> templateParameterNames,
 	std::unique_ptr<CxxTypeName> typeName,
@@ -11,7 +14,7 @@ CxxVariableDeclName::CxxVariableDeclName(
 {
 }
 
-NameHierarchy CxxVariableDeclName::toNameHierarchy() const
+inline NameHierarchy CxxVariableDeclName::toNameHierarchy() const
 {
 	std::string signaturePrefix;
 	if (m_isStatic)

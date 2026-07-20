@@ -1,14 +1,18 @@
 #ifndef CXX_FUNCTION_DECL_NAME_H
 #define CXX_FUNCTION_DECL_NAME_H
 
+#include "SrctrlModule.h"
+
+#ifndef SRCTRL_MODULE_PURVIEW
 #include <memory>
 #include <vector>
 
 #include "CxxDeclName.h"
 #include "CxxTypeName.h"
 #include "CxxQualifierFlags.h"
+#endif
 
-class CxxFunctionDeclName: public CxxDeclName
+SRCTRL_EXPORT class CxxFunctionDeclName: public CxxDeclName
 {
 public:
 	CxxFunctionDeclName(
@@ -27,5 +31,7 @@ private:
 	const CxxQualifierFlags m_qualifierFlags;
 	const bool m_isStatic;
 };
+
+#include "CxxFunctionDeclName.inl"
 
 #endif	  // CXX_FUNCTION_DECL_NAME_H

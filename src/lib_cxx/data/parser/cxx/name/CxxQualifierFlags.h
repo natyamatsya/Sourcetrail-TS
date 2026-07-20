@@ -1,10 +1,14 @@
 #ifndef CXX_QUALIFIER_FLAGS_H
 #define CXX_QUALIFIER_FLAGS_H
 
+#include "SrctrlModule.h"
+
+#ifndef SRCTRL_MODULE_PURVIEW
 #include <cstdint>
 #include <string>
+#endif
 
-class CxxQualifierFlags
+SRCTRL_EXPORT class CxxQualifierFlags
 {
 public:
 	enum class QualifierType : std::uint8_t
@@ -25,5 +29,7 @@ public:
 private:
 	QualifierType m_flags = QualifierType::NONE;
 };
+
+#include "CxxQualifierFlags.inl"
 
 #endif

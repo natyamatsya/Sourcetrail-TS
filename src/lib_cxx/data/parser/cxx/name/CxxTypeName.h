@@ -1,6 +1,9 @@
 #ifndef CXX_TYPE_NAME_H
 #define CXX_TYPE_NAME_H
 
+#include "SrctrlModule.h"
+
+#ifndef SRCTRL_MODULE_PURVIEW
 #include <memory>
 #include <string>
 #include <vector>
@@ -8,8 +11,9 @@
 #include "CxxName.h"
 #include "CxxQualifierFlags.h"
 #include "NameHierarchy.h"
+#endif
 
-class CxxTypeName: public CxxNameParent
+SRCTRL_EXPORT class CxxTypeName: public CxxNameParent
 {
 public:
 	static std::unique_ptr<CxxTypeName> getUnsolved();
@@ -46,5 +50,7 @@ private:
 	CxxQualifierFlags m_qualifierFlags;
 	std::vector<Modifier> m_modifiers;
 };
+
+#include "CxxTypeName.inl"
 
 #endif	  // CXX_TYPE_NAME_H

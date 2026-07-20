@@ -1,8 +1,13 @@
-#include "CxxFunctionDeclName.h"
+// Inline implementations for CxxFunctionDeclName.h. Included at the end of that header; not a
+// standalone TU.
 
+#pragma once
+
+#ifndef SRCTRL_MODULE_PURVIEW
 #include <sstream>
+#endif
 
-CxxFunctionDeclName::CxxFunctionDeclName(
+inline CxxFunctionDeclName::CxxFunctionDeclName(
 	std::string name,
 	std::vector<std::string> templateParameterNames,
 	std::unique_ptr<CxxTypeName> returnTypeName,
@@ -17,7 +22,7 @@ CxxFunctionDeclName::CxxFunctionDeclName(
 {
 }
 
-NameHierarchy CxxFunctionDeclName::toNameHierarchy() const
+inline NameHierarchy CxxFunctionDeclName::toNameHierarchy() const
 {
 	std::stringstream prefix;
 	if (m_isStatic)

@@ -1,6 +1,9 @@
 #ifndef CXX_NAME_H
 #define CXX_NAME_H
 
+#include "SrctrlModule.h"
+
+#ifndef SRCTRL_MODULE_PURVIEW
 #include <concepts>
 #include <memory>
 #include <string>
@@ -10,11 +13,12 @@
 #include <stdcompat/optional>
 
 #include "NameHierarchy.h"
+#endif
 
 // The single operation every C++ name model must provide. This concept replaces
 // the former `virtual NameHierarchy toNameHierarchy() const = 0` of the abstract
 // CxxName base class.
-template <class T>
+SRCTRL_EXPORT template <class T>
 concept CxxNameC = requires(const T& t) {
 	{ t.toNameHierarchy() } -> std::same_as<NameHierarchy>;
 };
@@ -24,7 +28,7 @@ concept CxxNameC = requires(const T& t) {
 // hierarchy: the concrete name classes no longer inherit from CxxName, they only
 // satisfy the concept. Copies share the underlying model (shared_ptr), preserving
 // the aliasing the name resolvers rely on when they transfer parent chains.
-class CxxName
+SRCTRL_EXPORT class CxxName
 {
 public:
 	CxxName() = default;
@@ -87,7 +91,7 @@ private:
 // CxxNameParent: non-polymorphic mixin that gives the concrete name leaves their
 // parent linkage and the shared template-suffix helper. Plain data reuse, no
 // virtuals — distinct from the erased CxxName seam above.
-class CxxNameParent
+SRCTRL_EXPORT class CxxNameParent
 {
 public:
 	void setParent(CxxName parent) { m_parent = std::move(parent); }
@@ -98,5 +102,7 @@ public:
 private:
 	CxxName m_parent;
 };
+
+#include "CxxName.inl"
 
 #endif	  // CXX_NAME_H

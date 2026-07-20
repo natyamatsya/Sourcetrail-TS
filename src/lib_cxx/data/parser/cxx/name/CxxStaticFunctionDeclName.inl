@@ -1,6 +1,9 @@
-#include "CxxStaticFunctionDeclName.h"
+// Inline implementations for CxxStaticFunctionDeclName.h. Included at the end of that header; not a
+// standalone TU.
 
-CxxStaticFunctionDeclName::CxxStaticFunctionDeclName(
+#pragma once
+
+inline CxxStaticFunctionDeclName::CxxStaticFunctionDeclName(
 	std::string name,
 	std::vector<std::string> templateParameterNames,
 	std::unique_ptr<CxxTypeName> returnTypeName,
@@ -17,7 +20,7 @@ CxxStaticFunctionDeclName::CxxStaticFunctionDeclName(
 {
 }
 
-NameHierarchy CxxStaticFunctionDeclName::toNameHierarchy() const
+inline NameHierarchy CxxStaticFunctionDeclName::toNameHierarchy() const
 {
 	NameHierarchy ret = CxxFunctionDeclName::toNameHierarchy();
 	NameElement& last = ret.back();

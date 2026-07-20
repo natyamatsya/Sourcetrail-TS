@@ -1,13 +1,17 @@
-#include "CxxTypeName.h"
+// Inline implementations for CxxTypeName.h. Included at the end of that header; not a standalone TU.
 
+#pragma once
+
+#ifndef SRCTRL_MODULE_PURVIEW
 #include <sstream>
+#endif
 
-std::unique_ptr<CxxTypeName> CxxTypeName::getUnsolved()
+inline std::unique_ptr<CxxTypeName> CxxTypeName::getUnsolved()
 {
 	return std::make_unique<CxxTypeName>("unsolved-type");
 }
 
-std::unique_ptr<CxxTypeName> CxxTypeName::makeUnsolvedIfNull(std::unique_ptr<CxxTypeName> name)
+inline std::unique_ptr<CxxTypeName> CxxTypeName::makeUnsolvedIfNull(std::unique_ptr<CxxTypeName> name)
 {
 	if (name)
 	{
@@ -17,23 +21,23 @@ std::unique_ptr<CxxTypeName> CxxTypeName::makeUnsolvedIfNull(std::unique_ptr<Cxx
 	return getUnsolved();
 }
 
-CxxTypeName::Modifier::Modifier(std::string symbol): symbol(std::move(symbol)) {}
+inline CxxTypeName::Modifier::Modifier(std::string symbol): symbol(std::move(symbol)) {}
 
-CxxTypeName::CxxTypeName(std::string name): m_name(std::move(name)) {}
+inline CxxTypeName::CxxTypeName(std::string name): m_name(std::move(name)) {}
 
-CxxTypeName::CxxTypeName(std::string name, std::vector<std::string> templateArguments)
+inline CxxTypeName::CxxTypeName(std::string name, std::vector<std::string> templateArguments)
 	: m_name(std::move(name)), m_templateArguments(std::move(templateArguments))
 {
 }
 
-CxxTypeName::CxxTypeName(
+inline CxxTypeName::CxxTypeName(
 	std::string name, std::vector<std::string> templateArguments, CxxName parent)
 	: m_name(std::move(name)), m_templateArguments(std::move(templateArguments))
 {
 	setParent(std::move(parent));
 }
 
-NameHierarchy CxxTypeName::toNameHierarchy() const
+inline NameHierarchy CxxTypeName::toNameHierarchy() const
 {
 	NameHierarchy ret = getParent() ? getParent().toNameHierarchy()
 									: NameHierarchy(NameDelimiterType::CXX);
@@ -41,7 +45,7 @@ NameHierarchy CxxTypeName::toNameHierarchy() const
 	return ret;
 }
 
-void CxxTypeName::addQualifier(const CxxQualifierFlags::QualifierType qualifier)
+inline void CxxTypeName::addQualifier(const CxxQualifierFlags::QualifierType qualifier)
 {
 	if (m_modifiers.empty())
 	{
@@ -53,12 +57,12 @@ void CxxTypeName::addQualifier(const CxxQualifierFlags::QualifierType qualifier)
 	}
 }
 
-void CxxTypeName::addModifier(Modifier modifier)
+inline void CxxTypeName::addModifier(Modifier modifier)
 {
 	m_modifiers.emplace_back(std::move(modifier));
 }
 
-std::string CxxTypeName::toString() const
+inline std::string CxxTypeName::toString() const
 {
 	std::stringstream ss;
 	if (!m_qualifierFlags.empty())

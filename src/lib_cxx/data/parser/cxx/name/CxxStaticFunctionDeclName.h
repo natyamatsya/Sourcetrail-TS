@@ -1,9 +1,13 @@
 #ifndef CXX_STATIC_FUNCTION_DECL_NAME_H
 #define CXX_STATIC_FUNCTION_DECL_NAME_H
 
-#include "CxxFunctionDeclName.h"
+#include "SrctrlModule.h"
 
-class CxxStaticFunctionDeclName: public CxxFunctionDeclName
+#ifndef SRCTRL_MODULE_PURVIEW
+#include "CxxFunctionDeclName.h"
+#endif
+
+SRCTRL_EXPORT class CxxStaticFunctionDeclName: public CxxFunctionDeclName
 {
 public:
 	CxxStaticFunctionDeclName(
@@ -18,5 +22,7 @@ public:
 private:
 	std::string m_translationUnitFileName;
 };
+
+#include "CxxStaticFunctionDeclName.inl"
 
 #endif	  // CXX_FUNCTION_DECL_NAME_H

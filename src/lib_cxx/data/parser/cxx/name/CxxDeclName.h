@@ -1,14 +1,18 @@
 #ifndef CXX_DECL_NAME_H
 #define CXX_DECL_NAME_H
 
+#include "SrctrlModule.h"
+
+#ifndef SRCTRL_MODULE_PURVIEW
 #include <memory>
 #include <string>
 #include <vector>
 
 #include "CxxName.h"
 #include "NameHierarchy.h"
+#endif
 
-class CxxDeclName: public CxxNameParent
+SRCTRL_EXPORT class CxxDeclName: public CxxNameParent
 {
 public:
 	CxxDeclName(std::string name);
@@ -24,5 +28,7 @@ private:
 	const std::string m_name;
 	const std::vector<std::string> m_templateParameterNames;
 };
+
+#include "CxxDeclName.inl"
 
 #endif	  // CXX_DECL_NAME_H
