@@ -264,7 +264,7 @@ produces zero cluster/sole-writer log markers and the identical graph via the le
 - `src/lib/data/storage/ConcurrentTursoWriter.{h,cpp}` (retry, `retriedBatches`),
   `ConcurrentStorageIndex.h` (shared instance), `PersistentStorage.{h,cpp}` (eager writer +
   export + seam).
-- `src/lib/data/indexer/IndexerCommand.{h,cpp}`; `interprocess/schemas/indexer_command.fbs`;
+- `src/lib_core/data/indexer/IndexerCommand.{h,cpp}`; `abi-schemas/ipc-indexer/indexer_command.fbs`;
   `interprocess/serialization/IndexerCommandSerializer.cpp`; `src/lib/project/SourceGroup.cpp`
   (central tag).
 - `src/lib/data/indexer/interprocess/IpcInterprocessIndexerCommandManager.{h,cpp}` (group filter);

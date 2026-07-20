@@ -56,13 +56,13 @@ file prefix). All zeros means "empty / no data".
 
 ### FlatBuffers schemas (already defined)
 
-- `src/lib/data/indexer/interprocess/schemas/indexer_command.fbs`
+- `abi-schemas/ipc-indexer/indexer_command.fbs`
   — `IndexerCommandQueue` / `IndexerCommand` / `IndexerCommandType`
-- `src/lib/data/indexer/interprocess/schemas/intermediate_storage.fbs`
+- `abi-schemas/ipc-indexer/intermediate_storage.fbs`
   — `IntermediateStorageQueue` / `IntermediateStorage` and all sub-tables
-- `src/lib/data/indexer/interprocess/schemas/indexing_status.fbs`
+- `abi-schemas/ipc-indexer/indexing_status.fbs`
   — `IndexingStatus` / `ProcessFile`
-- `src/lib/data/indexer/interprocess/schemas/garbage_collector.fbs`
+- `abi-schemas/ipc-indexer/garbage_collector.fbs`
   — `GarbageCollectorState`
 
 ### Indexer process lifecycle

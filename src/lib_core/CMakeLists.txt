@@ -11,8 +11,12 @@ list(FILTER Sourcetrail_lib_SOURCES EXCLUDE REGEX "component/controller/agent_co
 # CXX settings sources are always included; lib_cxx itself is still optional.
 
 # FlatBuffer schema files — included so IDEs show them in the project tree.
+# The .fbs live in the top-level abi-schemas/ folder: they are the app's wire
+# ABI (indexer subprocess IPC + MCP-agent contract), shared with the Rust
+# bridge (src/agent_mcp_bridge/build.rs reads abi-schemas/ipc-mcp-agent).
 file(GLOB Sourcetrail_lib_FBS CONFIGURE_DEPENDS
-	"${CMAKE_CURRENT_SOURCE_DIR}/data/indexer/interprocess/schemas/*.fbs"
+	"${CMAKE_SOURCE_DIR}/abi-schemas/ipc-indexer/*.fbs"
+	"${CMAKE_SOURCE_DIR}/abi-schemas/ipc-mcp-agent/*.fbs"
 )
 
 add_library(Sourcetrail_lib_core
@@ -137,7 +141,7 @@ endif()
 
 # FlatBuffer schema compilation ------------------------------------------------
 
-set(FLATBUFFERS_SCHEMA_DIR ${CMAKE_CURRENT_SOURCE_DIR}/data/indexer/interprocess/schemas)
+set(FLATBUFFERS_SCHEMA_DIR ${CMAKE_SOURCE_DIR}/abi-schemas/ipc-indexer)
 set(FLATBUFFERS_GENERATED_DIR ${CMAKE_CURRENT_BINARY_DIR}/generated/flatbuffers)
 file(MAKE_DIRECTORY ${FLATBUFFERS_GENERATED_DIR})
 
@@ -161,7 +165,7 @@ foreach(SCHEMA_FILE ${FLATBUFFERS_SCHEMAS})
 	)
 endforeach()
 
-# Agent-UI control contracts (see component/controller/agent_control/schemas and
+# Agent-UI control contracts (see abi-schemas/ipc-mcp-agent and
 # context/DESIGN_AGENT_UI_CONTROL.md). Only generated + compiled when the opt-in
 # flag is set; the AgentControlController.cpp stub keeps the class linkable otherwise.
 # The SOURCETRAIL_AGENT_CONTROL option is declared in the top-level CMakeLists.txt
@@ -190,7 +194,7 @@ if (SOURCETRAIL_AGENT_CONTROL)
 		"${CMAKE_CURRENT_SOURCE_DIR}/component/controller/agent_control/AgentControlController.cpp"
 		PROPERTIES COMPILE_DEFINITIONS "AGENT_APP_BUILD_ID=\"${AGENT_APP_BUILD_ID}\"")
 
-	set(AGENT_SCHEMA_DIR ${CMAKE_CURRENT_SOURCE_DIR}/component/controller/agent_control/schemas)
+	set(AGENT_SCHEMA_DIR ${CMAKE_SOURCE_DIR}/abi-schemas/ipc-mcp-agent)
 	set(AGENT_SCHEMAS
 		${AGENT_SCHEMA_DIR}/agent_common.fbs
 		${AGENT_SCHEMA_DIR}/agent_command.fbs

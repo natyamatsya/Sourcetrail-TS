@@ -208,6 +208,6 @@ of its own — single source of truth stays in the app.
 
 - App side: `src/lib/component/controller/agent_control/` (`AgentControlController`,
   schemas, `prototype/cmd_roundtrip.cpp`).
-- Contracts: `.../agent_control/schemas/*.fbs` + `schemas/README.md`.
+- Contracts: `abi-schemas/ipc-mcp-agent/*.fbs` + `abi-schemas/ipc-mcp-agent/README.md`.
 - Umbrella design: `context/DESIGN_AGENT_UI_CONTROL.md` (Phase C).
 - Chunking: `docs/adr/ADR-0002-no-shm-growth.md`.

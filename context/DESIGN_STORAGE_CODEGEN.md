@@ -338,7 +338,7 @@ module interface units (`sqlpp23.core`, `sqlpp23.sqlite3`); the SQLite storage i
 
 ## Critical files
 
-- `src/lib/data/indexer/interprocess/schemas/intermediate_storage.fbs` — source
+- `abi-schemas/ipc-indexer/intermediate_storage.fbs` — source
   of truth for all transport types.
 - `src/rust_indexer/indexer/build.rs`, the CMake `flatc --swift` step — where
   `--gen-object-api` gets enabled.

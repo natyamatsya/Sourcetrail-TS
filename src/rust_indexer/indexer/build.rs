@@ -62,7 +62,7 @@ fn main() {
     println!("cargo:rerun-if-env-changed=FLATC");
 
     let manifest = PathBuf::from(std::env::var("CARGO_MANIFEST_DIR").unwrap());
-    let schema_dir = manifest.join("../../../src/lib_core/data/indexer/interprocess/schemas");
+    let schema_dir = manifest.join("../../../abi-schemas/ipc-indexer");
     let out_dir = PathBuf::from(std::env::var("OUT_DIR").unwrap());
 
     let schemas = [

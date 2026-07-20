@@ -41,4 +41,4 @@ flatc --cpp -I . -o <out> agent_common.fbs agent_command.fbs \
 
 Validated with flatc 25.9.23 (round-trip verified). CMake generation into
 `FLATBUFFERS_GENERATED_DIR` is wired in Phase B, when `AgentControlController`
-first consumes the headers (mirrors `data/indexer/interprocess/schemas/`).
+first consumes the headers (mirrors `abi-schemas/ipc-indexer/`).
