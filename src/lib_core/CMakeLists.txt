@@ -75,6 +75,7 @@ if(SOURCETRAIL_CXX_MODULES_ENABLED)
 				data/srctrl_data-types.cppm
 				data/srctrl_data-name.cppm
 				data/srctrl_data-location.cppm
+				data/srctrl_data-parser.cppm
 				data/srctrl_data-graph.cppm
 				data/srctrl_data-search.cppm
 				data/srctrl_data-tooltip.cppm

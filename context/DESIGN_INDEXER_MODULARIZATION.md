@@ -547,6 +547,16 @@ cycles in `lib` is prerequisite work, and a good cleanup in its own right).
   **Remaining for Phase 3:** the visitor cluster itself (CxxAstVisitor + ~10 components,
   CxxIndexingContext/CxxSymbolRegistry, recorders, PreprocessorCallbacks, CxxParser/IndexerCxx —
   ~4.4k LOC), which should join `:parser`/`:tooling`-style clusters.
+- **Phase 3 (cont.) — visitor enablers: `ParserClient` → `srctrl.data:parser`; `ReferenceKind` →
+  `:types`. ✅** The recording interface every language indexer writes through is a pure abstract
+  class whose parameter types were all already modularized — it becomes the new (aptly named)
+  `srctrl.data:parser` partition. `ReferenceKind` converts via the AccessKind/SymbolKind enum
+  pattern. The remaining lib_core surface of the visitor cluster is GMF-safe as-is
+  (`IndexerStateInfo` — a 10-line plain struct — and `utilityMainFunction`, std-only). The visitor
+  cluster itself is now unblocked; its own hazards, scouted: `CxxAstVisitor.cpp` carries
+  `using namespace clang` over 887 lines (requalify first, per ADR-0005), and the CRTP visitor +
+  variadic component tuple mean the class-definition ordering needs care (components before
+  visitor, `CxxIndexingContext`/`CxxSymbolRegistry` before components).
 - **Phase 3 — `srctrl.cxx`.** Modularize `lib_cxx` with partitions; absorb the Clang-header BMI cost.
   **STARTED — `:name` landed. ✅** The `name/` cluster (CxxName type-erased wrapper + concept, the five
   decl-name leaves, CxxQualifierFlags — 7 headers, all `.cpp`s inlined into `.inl`s) is `srctrl.cxx`'s

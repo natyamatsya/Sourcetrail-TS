@@ -1,6 +1,9 @@
 #ifndef PARSER_CLIENT_H
 #define PARSER_CLIENT_H
 
+#include "SrctrlModule.h"
+
+#ifndef SRCTRL_MODULE_PURVIEW
 #include "AccessKind.h"
 #include "DefinitionKind.h"
 #include "NameHierarchy.h"
@@ -11,10 +14,11 @@
 #include "SymbolKind.h"
 
 #include <string>
+#endif
 
 // TODO (petermost): Transfer documentation from https://github.com/CoatiSoftware/SourcetrailDB/blob/master/core/include/SourcetrailDBWriter.h
 
-class ParserClient
+SRCTRL_EXPORT class ParserClient
 {
 public:
 	virtual ~ParserClient() = default;
