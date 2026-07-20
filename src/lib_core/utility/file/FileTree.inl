@@ -1,8 +1,12 @@
-#include "FileTree.h"
+// Inline implementations for FileTree.h. Included at the end of that header; not a standalone TU.
 
+#pragma once
+
+#ifndef SRCTRL_MODULE_PURVIEW
 #include "FileSystem.h"
+#endif
 
-FileTree::FileTree(const FilePath& rootPath): m_rootPath(rootPath.getAbsolute().makeCanonical())
+inline FileTree::FileTree(const FilePath& rootPath): m_rootPath(rootPath.getAbsolute().makeCanonical())
 {
 	if (m_rootPath.exists())
 	{
@@ -20,7 +24,7 @@ FileTree::FileTree(const FilePath& rootPath): m_rootPath(rootPath.getAbsolute().
 	}
 }
 
-FilePath FileTree::getAbsoluteRootPathForRelativeFilePath(const FilePath& relativeFilePath)
+inline FilePath FileTree::getAbsoluteRootPathForRelativeFilePath(const FilePath& relativeFilePath)
 {
 	std::vector<FilePath> rootPaths = doGetAbsoluteRootPathsForRelativeFilePath(
 		relativeFilePath, false);
@@ -31,12 +35,12 @@ FilePath FileTree::getAbsoluteRootPathForRelativeFilePath(const FilePath& relati
 	return FilePath();
 }
 
-std::vector<FilePath> FileTree::getAbsoluteRootPathsForRelativeFilePath(const FilePath& relativeFilePath)
+inline std::vector<FilePath> FileTree::getAbsoluteRootPathsForRelativeFilePath(const FilePath& relativeFilePath)
 {
 	return doGetAbsoluteRootPathsForRelativeFilePath(relativeFilePath, true);
 }
 
-std::vector<FilePath> FileTree::doGetAbsoluteRootPathsForRelativeFilePath(
+inline std::vector<FilePath> FileTree::doGetAbsoluteRootPathsForRelativeFilePath(
 	const FilePath& relativeFilePath, bool allowMultipleResults)
 {
 	std::vector<FilePath> rootPaths;

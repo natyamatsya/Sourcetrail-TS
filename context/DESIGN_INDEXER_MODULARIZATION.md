@@ -475,6 +475,17 @@ cycles in `lib` is prerequisite work, and a good cleanup in its own right).
   - **`tracing.h` gated behind `TRACING_ENABLED`**: with tracing off it reduces to the empty `TRACE()`/
     `PRINT_TRACES()` macros and includes nothing, making it GMF-safe (it used to textually pull
     FilePath + TimeStamp into `storage:interface`).
+- **Phase 2 (cont.) — mid-layer unblock 1: `srctrl.file` grows the full file/path cluster. ✅**
+  `FileSystem`, `FileTree`, `AppPath`, `UserPaths`, `ResourcePaths` converted (.cpps inlined; the
+  AppPath/UserPaths static registries become C++17 inline variables in the .inls). Two findings:
+  (a) `AppPath.cpp`'s `#include "utilityApp.h"` was vestigial — it only used
+  `Platform::getExecutableExtension()`, already a GMF citizen; (b) `FileSystem` called the Qt/locale
+  `utility::toLowerCase`, which is *deliberately excluded* from `srctrl.utility:string` — replaced
+  with an elementary ASCII `toLowerCaseAscii` detail helper (file extensions are ASCII; mirrors
+  `FilePath::getLowerCase()`'s Qt-drop precedent). This unblocks the lib_cxx deferrals that hung on
+  ResourcePaths/FileTree; the remaining mid-layer blockers are messaging (MessageStatus), settings
+  (ApplicationSettings/ToolChain — gated on splitting FilePath-dependent helpers out of `utility.h`,
+  which would otherwise cycle srctrl.utility ↔ srctrl.file), TextCodec (Qt), and utilityApp (QProcess).
 - **Phase 3 — `srctrl.cxx`.** Modularize `lib_cxx` with partitions; absorb the Clang-header BMI cost.
   **STARTED — `:name` landed. ✅** The `name/` cluster (CxxName type-erased wrapper + concept, the five
   decl-name leaves, CxxQualifierFlags — 7 headers, all `.cpp`s inlined into `.inl`s) is `srctrl.cxx`'s

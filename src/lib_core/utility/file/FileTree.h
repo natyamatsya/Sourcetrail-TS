@@ -1,13 +1,17 @@
 #ifndef FILE_TREE_H
 #define FILE_TREE_H
 
+#include "SrctrlModule.h"
+
+#ifndef SRCTRL_MODULE_PURVIEW
 #include <set>
 #include <string>
 #include <unordered_map>
 
 #include "FilePath.h"
+#endif
 
-class FileTree
+SRCTRL_EXPORT class FileTree
 {
 public:
 	FileTree(const FilePath& rootPath);
@@ -22,5 +26,7 @@ private:
 	FilePath m_rootPath;
 	std::unordered_map<std::string, std::set<FilePath>> m_files;
 };
+
+#include "FileTree.inl"
 
 #endif	  // FILE_TREE_H

@@ -1,24 +1,26 @@
-#include "AppPath.h"
+// Inline implementations for AppPath.h. Included at the end of that header; not a standalone TU.
 
-#include "Platform.h"
-#include "utilityApp.h"
+#pragma once
 
+#ifndef SRCTRL_MODULE_PURVIEW
 #include <format>
+#include "Platform.h"
+#endif
 
-FilePath AppPath::s_sharedDataDirectoryPath("");
-FilePath AppPath::s_cxxIndexerDirectoryPath("");
+inline FilePath AppPath::s_sharedDataDirectoryPath("");
+inline FilePath AppPath::s_cxxIndexerDirectoryPath("");
 
-FilePath AppPath::getSharedDataDirectoryPath()
+inline FilePath AppPath::getSharedDataDirectoryPath()
 {
 	return s_sharedDataDirectoryPath;
 }
 
-void AppPath::setSharedDataDirectoryPath(const FilePath& path)
+inline void AppPath::setSharedDataDirectoryPath(const FilePath& path)
 {
 	s_sharedDataDirectoryPath = path;
 }
 
-FilePath AppPath::getCxxIndexerFilePath()
+inline FilePath AppPath::getCxxIndexerFilePath()
 {
 	std::string cxxIndexerName(std::format("sourcetrail_indexer{}", utility::Platform::getExecutableExtension()));
 
@@ -28,12 +30,12 @@ FilePath AppPath::getCxxIndexerFilePath()
 		return s_sharedDataDirectoryPath.getConcatenated(cxxIndexerName);
 }
 
-void AppPath::setCxxIndexerDirectoryPath(const FilePath& path)
+inline void AppPath::setCxxIndexerDirectoryPath(const FilePath& path)
 {
 	s_cxxIndexerDirectoryPath = path;
 }
 
-FilePath AppPath::getRustIndexerFilePath()
+inline FilePath AppPath::getRustIndexerFilePath()
 {
 	std::string name(std::format("sourcetrail_rust_indexer{}", utility::Platform::getExecutableExtension()));
 
@@ -43,7 +45,7 @@ FilePath AppPath::getRustIndexerFilePath()
 		return s_sharedDataDirectoryPath.getConcatenated(name);
 }
 
-FilePath AppPath::getSwiftIndexerFilePath()
+inline FilePath AppPath::getSwiftIndexerFilePath()
 {
 	std::string name(std::format("sourcetrail_swift_indexer{}", utility::Platform::getExecutableExtension()));
 
@@ -53,7 +55,7 @@ FilePath AppPath::getSwiftIndexerFilePath()
 		return s_sharedDataDirectoryPath.getConcatenated(name);
 }
 
-FilePath AppPath::getZigIndexerFilePath()
+inline FilePath AppPath::getZigIndexerFilePath()
 {
 	std::string name(std::format("sourcetrail_zig_indexer{}", utility::Platform::getExecutableExtension()));
 

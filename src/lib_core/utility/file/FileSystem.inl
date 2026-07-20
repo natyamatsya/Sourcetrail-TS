@@ -1,14 +1,30 @@
-#include "FileSystem.h"
+// Inline implementations for FileSystem.h. Included at the end of that header; not a standalone TU.
 
-#include <set>
+#pragma once
 
+#ifndef SRCTRL_MODULE_PURVIEW
+#include <cctype>
 #include <chrono>
 #include <filesystem>
 #include <system_error>
+#endif
 
-#include "utilityString.h"
+namespace file_system_detail
+{
+// ASCII lowercasing for file-extension matching (extensions are ASCII in practice). Replaces
+// utility::toLowerCase -- a Qt/locale-based helper deliberately excluded from srctrl.utility:string,
+// which this .inl cannot reach from the srctrl.file purview. Mirrors FilePath::getLowerCase().
+inline std::string toLowerCaseAscii(std::string in)
+{
+	for (char& c: in)
+	{
+		c = static_cast<char>(std::tolower(static_cast<unsigned char>(c)));
+	}
+	return in;
+}
+}	 // namespace file_system_detail
 
-std::vector<FilePath> FileSystem::getFilePathsFromDirectory(const FilePath &path, const std::vector<std::string> &extensions)
+inline std::vector<FilePath> FileSystem::getFilePathsFromDirectory(const FilePath &path, const std::vector<std::string> &extensions)
 {
 	std::set<std::string> ext(extensions.begin(), extensions.end());
 	std::vector<FilePath> files;
@@ -42,7 +58,7 @@ std::vector<FilePath> FileSystem::getFilePathsFromDirectory(const FilePath &path
 	return files;
 }
 
-FileInfo FileSystem::getFileInfoForPath(const FilePath &filePath)
+inline FileInfo FileSystem::getFileInfoForPath(const FilePath &filePath)
 {
 	if (filePath.exists())
 	{
@@ -51,13 +67,13 @@ FileInfo FileSystem::getFileInfoForPath(const FilePath &filePath)
 	return FileInfo();
 }
 
-std::vector<FileInfo> FileSystem::getFileInfosFromPaths(const std::vector<FilePath> &paths, const std::vector<std::string> &fileExtensions,
+inline std::vector<FileInfo> FileSystem::getFileInfosFromPaths(const std::vector<FilePath> &paths, const std::vector<std::string> &fileExtensions,
 	bool followSymLinks)
 {
 	std::set<std::string> ext;
 	for (const std::string &e : fileExtensions)
 	{
-		ext.insert(utility::toLowerCase(e));
+		ext.insert(file_system_detail::toLowerCaseAscii(e));
 	}
 
 	std::set<std::filesystem::path> symlinkDirs;
@@ -119,7 +135,7 @@ std::vector<FileInfo> FileSystem::getFileInfosFromPaths(const std::vector<FilePa
 				}
 
 				std::error_code fileEc;
-				if (std::filesystem::is_regular_file(*it, fileEc) && (ext.empty() || ext.find(utility::toLowerCase(it->path().extension().string())) != ext.end()))
+				if (std::filesystem::is_regular_file(*it, fileEc) && (ext.empty() || ext.find(file_system_detail::toLowerCaseAscii(it->path().extension().string())) != ext.end()))
 				{
 					const FilePath canonicalPath = FilePath(it->path().string()).getCanonical();
 					if (filePaths.find(canonicalPath) != filePaths.end())
@@ -129,7 +145,7 @@ std::vector<FileInfo> FileSystem::getFileInfosFromPaths(const std::vector<FilePa
 				}
 			}
 		}
-		else if (path.exists() && (ext.empty() || ext.find(utility::toLowerCase(path.extension())) != ext.end()))
+		else if (path.exists() && (ext.empty() || ext.find(file_system_detail::toLowerCaseAscii(path.extension())) != ext.end()))
 		{
 			const FilePath canonicalPath = path.getCanonical();
 			if (filePaths.find(canonicalPath) != filePaths.end())
@@ -144,12 +160,12 @@ std::vector<FileInfo> FileSystem::getFileInfosFromPaths(const std::vector<FilePa
 	return files;
 }
 
-std::set<FilePath> FileSystem::getSymLinkedDirectories(const FilePath &path)
+inline std::set<FilePath> FileSystem::getSymLinkedDirectories(const FilePath &path)
 {
 	return getSymLinkedDirectories(std::vector<FilePath>{path});
 }
 
-std::set<FilePath> FileSystem::getSymLinkedDirectories(const std::vector<FilePath> &paths)
+inline std::set<FilePath> FileSystem::getSymLinkedDirectories(const std::vector<FilePath> &paths)
 {
 	std::set<std::filesystem::path> symlinkDirs;
 
@@ -204,12 +220,12 @@ std::set<FilePath> FileSystem::getSymLinkedDirectories(const std::vector<FilePat
 	return files;
 }
 
-unsigned long long FileSystem::getFileByteSize(const FilePath &filePath)
+inline unsigned long long FileSystem::getFileByteSize(const FilePath &filePath)
 {
 	return std::filesystem::file_size(filePath.getPath());
 }
 
-TimeStamp FileSystem::getLastWriteTime(const FilePath &filePath)
+inline TimeStamp FileSystem::getLastWriteTime(const FilePath &filePath)
 {
 	if (filePath.exists())
 	{
@@ -228,7 +244,7 @@ TimeStamp FileSystem::getLastWriteTime(const FilePath &filePath)
 	return TimeStamp();
 }
 
-bool FileSystem::remove(const FilePath &path)
+inline bool FileSystem::remove(const FilePath &path)
 {
 	std::error_code ec;
 	const bool ret = std::filesystem::remove(path.getPath(), ec);
@@ -236,7 +252,7 @@ bool FileSystem::remove(const FilePath &path)
 	return ret;
 }
 
-bool FileSystem::rename(const FilePath &from, const FilePath &to)
+inline bool FileSystem::rename(const FilePath &from, const FilePath &to)
 {
 	if (!from.recheckExists() || to.recheckExists())
 	{
@@ -248,7 +264,7 @@ bool FileSystem::rename(const FilePath &from, const FilePath &to)
 	return true;
 }
 
-bool FileSystem::copyFile(const FilePath &from, const FilePath &to)
+inline bool FileSystem::copyFile(const FilePath &from, const FilePath &to)
 {
 	if (!from.recheckExists() || to.recheckExists())
 	{
@@ -260,7 +276,7 @@ bool FileSystem::copyFile(const FilePath &from, const FilePath &to)
 	return true;
 }
 
-bool FileSystem::copyDirectory(const FilePath &from, const FilePath &to)
+inline bool FileSystem::copyDirectory(const FilePath &from, const FilePath &to)
 {
 	if (!from.recheckExists() || to.recheckExists())
 	{
@@ -272,13 +288,13 @@ bool FileSystem::copyDirectory(const FilePath &from, const FilePath &to)
 	return true;
 }
 
-void FileSystem::createDirectories(const FilePath &path)
+inline void FileSystem::createDirectories(const FilePath &path)
 {
 	std::filesystem::create_directories(path.str());
 	path.recheckExists();
 }
 
-std::vector<FilePath> FileSystem::getDirectSubDirectories(const FilePath &path)
+inline std::vector<FilePath> FileSystem::getDirectSubDirectories(const FilePath &path)
 {
 	std::vector<FilePath> v;
 

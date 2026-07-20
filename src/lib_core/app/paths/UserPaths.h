@@ -1,9 +1,13 @@
 #ifndef USER_PATHS_H
 #define USER_PATHS_H
 
-#include "FilePath.h"
+#include "SrctrlModule.h"
 
-class UserPaths
+#ifndef SRCTRL_MODULE_PURVIEW
+#include "FilePath.h"
+#endif
+
+SRCTRL_EXPORT class UserPaths
 {
 public:
 	static FilePath getUserDataDirectoryPath();
@@ -16,5 +20,7 @@ public:
 private:
 	static FilePath s_userDataDirectoryPath;
 };
+
+#include "UserPaths.inl"
 
 #endif	  // USER_PATHS_H

@@ -1,9 +1,13 @@
 #ifndef APP_PATH_H
 #define APP_PATH_H
 
-#include "FilePath.h"
+#include "SrctrlModule.h"
 
-class AppPath
+#ifndef SRCTRL_MODULE_PURVIEW
+#include "FilePath.h"
+#endif
+
+SRCTRL_EXPORT class AppPath
 {
 public:
 	static FilePath getSharedDataDirectoryPath();
@@ -20,5 +24,7 @@ private:
 	static FilePath s_sharedDataDirectoryPath;
 	static FilePath s_cxxIndexerDirectoryPath;
 };
+
+#include "AppPath.inl"
 
 #endif	  // APP_PATH_H

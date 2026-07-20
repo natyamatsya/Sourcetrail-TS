@@ -1,14 +1,18 @@
 #ifndef FILE_SYSTEM_H
 #define FILE_SYSTEM_H
 
+#include "SrctrlModule.h"
+
+#ifndef SRCTRL_MODULE_PURVIEW
 #include <set>
 #include <string>
 #include <vector>
 
 #include "FileInfo.h"
 #include "TimeStamp.h"
+#endif
 
-class FileSystem
+SRCTRL_EXPORT class FileSystem
 {
 public:
 	static std::vector<FilePath> getFilePathsFromDirectory(const FilePath &path, const std::vector<std::string> &extensions = {});
@@ -37,5 +41,7 @@ public:
 	static void createDirectories(const FilePath &path);
 	static std::vector<FilePath> getDirectSubDirectories(const FilePath &path);
 };
+
+#include "FileSystem.inl"
 
 #endif // FILE_SYSTEM_H

@@ -1,6 +1,7 @@
-// `srctrl.file` -- the file/text leaf cluster: FilePath (a Qt-free, std::filesystem-backed value
-// type), FileInfo (path + last-write TimeStamp), and TextAccess (line-oriented text file access).
-// Module build only.
+// `srctrl.file` -- the file/path leaf cluster: FilePath (a Qt-free, std::filesystem-backed value
+// type), FileInfo (path + last-write TimeStamp), TextAccess (line-oriented text file access),
+// FileSystem (directory traversal / file ops), FileTree (relative-path root resolution), and the
+// application path registries (AppPath / UserPaths / ResourcePaths). Module build only.
 
 module;
 
@@ -8,13 +9,18 @@ module;
 // logging.h (LOG_* macros used by the .inls -- macros don't cross an `import`) stay global-module.
 #ifndef SRCTRL_IMPORT_STD
 #include <cctype>
+#include <chrono>
 #include <cstdlib>
 #include <filesystem>
+#include <format>
 #include <fstream>
 #include <memory>
 #include <optional>
+#include <set>
 #include <string>
 #include <string_view>
+#include <system_error>
+#include <unordered_map>
 #include <vector>
 #endif
 #include "Platform.h"
@@ -26,10 +32,15 @@ export module srctrl.file;
 import std;
 #endif
 
-import srctrl.utility;   // TimeStamp (FileInfo) -- the :time partition
+import srctrl.utility;   // TimeStamp (FileInfo/FileSystem), utilityString (FileSystem)
 import srctrl.logging;   // srctrl::log machinery behind the LOG_* macros
 
 #define SRCTRL_MODULE_PURVIEW
 #include "FilePath.h"
 #include "FileInfo.h"
 #include "TextAccess.h"
+#include "FileSystem.h"
+#include "FileTree.h"
+#include "AppPath.h"
+#include "UserPaths.h"
+#include "ResourcePaths.h"
