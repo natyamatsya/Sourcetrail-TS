@@ -84,7 +84,8 @@ if(SOURCETRAIL_CXX_MODULES_ENABLED)
 				data/storage/srctrl_storage-interface.cppm
 				data/storage/srctrl_storage-intermediate.cppm
 				data/storage/srctrl_storage-error.cppm
-				data/storage/srctrl_storage-access.cppm)
+				data/storage/srctrl_storage-access.cppm
+				data/indexer/srctrl_indexer.cppm)
 	# Workaround for LLVM #166068: in reduced-BMI mode (clang's default since 20) the replaceable global
 	# operator new/delete declarations are pruned from the BMI, so a consumer that instantiates a module
 	# type whose inline members allocate (e.g. FilePath -> std::filesystem::path -> std::__libcpp_allocate

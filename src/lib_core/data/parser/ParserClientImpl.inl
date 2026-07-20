@@ -1,13 +1,20 @@
-#include "ParserClientImpl.h"
+// Inline implementations for ParserClientImpl.h. Included at the end of that header (classic) or via
+// the srctrl.indexer wrapper (purview); not a standalone TU.
 
+#pragma once
+
+#ifndef SRCTRL_MODULE_PURVIEW
 #include "Edge.h"
 #include "NodeKind.h"
 #include "ParseLocation.h"
+#endif
 
-namespace
+// ODR-safe home for the kind-mapping helpers (anonymous namespaces are an ODR trap in
+// headers/inls).
+namespace parser_client_impl_detail
 {
 
-NodeKind symbolKindToNodeKind(SymbolKind symbolKind) 
+inline NodeKind symbolKindToNodeKind(SymbolKind symbolKind) 
 {
 	switch (symbolKind)
 	{
@@ -57,7 +64,7 @@ NodeKind symbolKindToNodeKind(SymbolKind symbolKind)
 	return NODE_SYMBOL;
 }
 
-Edge::EdgeType referenceKindToEdgeType(ReferenceKind referenceKind) 
+inline Edge::EdgeType referenceKindToEdgeType(ReferenceKind referenceKind) 
 {
 	switch (referenceKind)
 	{
@@ -89,7 +96,7 @@ Edge::EdgeType referenceKindToEdgeType(ReferenceKind referenceKind)
 	return Edge::EDGE_UNDEFINED;
 }
 
-LocationType parseLocationTypeToLocationType(ParseLocationType type) 
+inline LocationType parseLocationTypeToLocationType(ParseLocationType type) 
 {
 	switch (type)
 	{
@@ -107,33 +114,33 @@ LocationType parseLocationTypeToLocationType(ParseLocationType type)
 	return LocationType::TOKEN;
 }
 
-}
+}	 // namespace parser_client_impl_detail
 
-ParserClientImpl::ParserClientImpl(std::shared_ptr<IntermediateStorage> storage): m_storage(storage) {}
+inline ParserClientImpl::ParserClientImpl(std::shared_ptr<IntermediateStorage> storage): m_storage(storage) {}
 
-Id ParserClientImpl::recordFile(const FilePath& filePath, bool indexed)
+inline Id ParserClientImpl::recordFile(const FilePath& filePath, bool indexed)
 {
 	Id fileId = addFileName(filePath);
 	m_storage->addFile(StorageFile(fileId, filePath.str(), "", "", indexed, true));
 	return fileId;
 }
 
-void ParserClientImpl::recordFileLanguage(Id fileId, const std::string& languageIdentifier)
+inline void ParserClientImpl::recordFileLanguage(Id fileId, const std::string& languageIdentifier)
 {
 	m_storage->setFileLanguage(fileId, languageIdentifier);
 }
 
-Id ParserClientImpl::recordSymbol(const NameHierarchy& symbolName)
+inline Id ParserClientImpl::recordSymbol(const NameHierarchy& symbolName)
 {
 	return addNodeHierarchy(symbolName);
 }
 
-void ParserClientImpl::recordSymbolKind(Id symbolId, SymbolKind symbolKind)
+inline void ParserClientImpl::recordSymbolKind(Id symbolId, SymbolKind symbolKind)
 {
-	m_storage->setNodeType(symbolId, symbolKindToNodeKind(symbolKind));
+	m_storage->setNodeType(symbolId, parser_client_impl_detail::symbolKindToNodeKind(symbolKind));
 }
 
-void ParserClientImpl::recordAccessKind(Id symbolId, AccessKind accessKind)
+inline void ParserClientImpl::recordAccessKind(Id symbolId, AccessKind accessKind)
 {
 	if (accessKind != AccessKind::NONE)
 	{
@@ -141,7 +148,7 @@ void ParserClientImpl::recordAccessKind(Id symbolId, AccessKind accessKind)
 	}
 }
 
-void ParserClientImpl::recordDefinitionKind(Id symbolId, DefinitionKind definitionKind)
+inline void ParserClientImpl::recordDefinitionKind(Id symbolId, DefinitionKind definitionKind)
 {
 	if (definitionKind != DefinitionKind::NONE)
 	{
@@ -149,7 +156,7 @@ void ParserClientImpl::recordDefinitionKind(Id symbolId, DefinitionKind definiti
 	}
 }
 
-void ParserClientImpl::recordNodeModifier(Id symbolId, NodeModifierMask modifier)
+inline void ParserClientImpl::recordNodeModifier(Id symbolId, NodeModifierMask modifier)
 {
 	if (modifier != NODE_MODIFIER_NONE)
 	{
@@ -157,7 +164,7 @@ void ParserClientImpl::recordNodeModifier(Id symbolId, NodeModifierMask modifier
 	}
 }
 
-void ParserClientImpl::recordNodeAttribute(Id symbolId, NodeAttributeKind key, const std::string& value)
+inline void ParserClientImpl::recordNodeAttribute(Id symbolId, NodeAttributeKind key, const std::string& value)
 {
 	if (key != NodeAttributeKind::NONE)
 	{
@@ -165,10 +172,10 @@ void ParserClientImpl::recordNodeAttribute(Id symbolId, NodeAttributeKind key, c
 	}
 }
 
-Id ParserClientImpl::recordReference(
+inline Id ParserClientImpl::recordReference(
 	ReferenceKind referenceKind, Id referencedSymbolId, Id contextSymbolId, const ParseLocation& location)
 {
-	Id edgeId = addEdge(referenceKindToEdgeType(referenceKind), contextSymbolId, referencedSymbolId);
+	Id edgeId = addEdge(parser_client_impl_detail::referenceKindToEdgeType(referenceKind), contextSymbolId, referencedSymbolId);
 	if (edgeId)
 	{
 		addSourceLocation(edgeId, location, LocationType::TOKEN);
@@ -176,18 +183,18 @@ Id ParserClientImpl::recordReference(
 	return edgeId;
 }
 
-void ParserClientImpl::recordLocalSymbol(const std::string& name, const ParseLocation& location)
+inline void ParserClientImpl::recordLocalSymbol(const std::string& name, const ParseLocation& location)
 {
 	const Id localSymbolId = m_storage->addLocalSymbol(name);
 	addSourceLocation(localSymbolId, location, LocationType::LOCAL_SYMBOL);
 }
 
-void ParserClientImpl::recordLocation(Id elementId, const ParseLocation& location, ParseLocationType type)
+inline void ParserClientImpl::recordLocation(Id elementId, const ParseLocation& location, ParseLocationType type)
 {
-	addSourceLocation(elementId, location, parseLocationTypeToLocationType(type));
+	addSourceLocation(elementId, location, parser_client_impl_detail::parseLocationTypeToLocationType(type));
 }
 
-void ParserClientImpl::recordComment(const ParseLocation& location)
+inline void ParserClientImpl::recordComment(const ParseLocation& location)
 {
 	if (!location.isValid())
 	{
@@ -203,7 +210,7 @@ void ParserClientImpl::recordComment(const ParseLocation& location)
 		LocationType::COMMENT));
 }
 
-void ParserClientImpl::recordError(
+inline void ParserClientImpl::recordError(
 	const std::string& message,
 	bool fatal,
 	bool indexed,
@@ -219,13 +226,13 @@ void ParserClientImpl::recordError(
 	}
 }
 
-bool ParserClientImpl::hasContent() const
+inline bool ParserClientImpl::hasContent() const
 {
 	return m_storage->getByteSize(1) > 0;
 }
 
 
-Id ParserClientImpl::addNodeHierarchy(const NameHierarchy& nameHierarchy)
+inline Id ParserClientImpl::addNodeHierarchy(const NameHierarchy& nameHierarchy)
 {
 	Id childNodeId = 0;
 	Id firstNodeId = 0;
@@ -254,7 +261,7 @@ Id ParserClientImpl::addNodeHierarchy(const NameHierarchy& nameHierarchy)
 	return firstNodeId;
 }
 
-Id ParserClientImpl::addFileName(const FilePath& filePath)
+inline Id ParserClientImpl::addFileName(const FilePath& filePath)
 {
 	const std::string file = filePath.str();
 
@@ -271,7 +278,7 @@ Id ParserClientImpl::addFileName(const FilePath& filePath)
 	return fileId;
 }
 
-Id ParserClientImpl::addEdge(Edge::EdgeType type, Id sourceId, Id targetId)
+inline Id ParserClientImpl::addEdge(Edge::EdgeType type, Id sourceId, Id targetId)
 {
 	if (sourceId && targetId)
 	{
@@ -280,7 +287,7 @@ Id ParserClientImpl::addEdge(Edge::EdgeType type, Id sourceId, Id targetId)
 	return 0;
 }
 
-void ParserClientImpl::addSourceLocation(Id elementId, const ParseLocation& location, LocationType type)
+inline void ParserClientImpl::addSourceLocation(Id elementId, const ParseLocation& location, LocationType type)
 {
 	if (!location.isValid())
 	{

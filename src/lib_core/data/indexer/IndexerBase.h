@@ -1,6 +1,9 @@
 #ifndef INDEXER_BASE_H
 #define INDEXER_BASE_H
 
+#include "SrctrlModule.h"
+
+#ifndef SRCTRL_MODULE_PURVIEW
 #include <memory>
 
 #include "IndexerCommandType.h"
@@ -9,8 +12,9 @@
 class FileRegister;
 class IndexerCommand;
 class IntermediateStorage;
+#endif
 
-enum class IndexerErrorCode
+SRCTRL_EXPORT enum class IndexerErrorCode
 {
 	NoCommandProvided,
 	UnsupportedCommand,
@@ -20,14 +24,14 @@ enum class IndexerErrorCode
 	Interrupted
 };
 
-using IndexerError = utility::ExpectedError<IndexerErrorCode>;
+SRCTRL_EXPORT using IndexerError = utility::ExpectedError<IndexerErrorCode>;
 
-class IndexerBase
+SRCTRL_EXPORT class IndexerBase
 {
 public:
 	using IndexResult = std::expected<std::shared_ptr<IntermediateStorage>, IndexerError>;
 
-	IndexerBase();
+	IndexerBase() = default;
 	virtual ~IndexerBase() = default;
 
 	virtual IndexerCommandType getSupportedIndexerCommandType() const = 0;

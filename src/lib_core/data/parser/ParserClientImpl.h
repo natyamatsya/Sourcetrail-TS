@@ -1,14 +1,18 @@
 #ifndef PARSER_CLIENT_IMPL_H
 #define PARSER_CLIENT_IMPL_H
 
+#include "SrctrlModule.h"
+
+#ifndef SRCTRL_MODULE_PURVIEW
 #include "DefinitionKind.h"
 #include "IntermediateStorage.h"
 #include "LocationType.h"
 #include "ParserClient.h"
 
 #include <memory>
+#endif
 
-class ParserClientImpl: public ParserClient
+SRCTRL_EXPORT class ParserClientImpl: public ParserClient
 {
 public:
 	ParserClientImpl(std::shared_ptr<IntermediateStorage> storage);
@@ -54,5 +58,10 @@ private:
 	std::shared_ptr<IntermediateStorage> m_storage;
 	std::map<std::string, Id> m_fileIdMap;
 };
+
+
+#ifndef SRCTRL_MODULE_PURVIEW
+#include "ParserClientImpl.inl"
+#endif
 
 #endif	  // PARSER_CLIENT_IMPL_H

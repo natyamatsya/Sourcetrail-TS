@@ -1,6 +1,9 @@
-#include "IndexerCommandType.h"
+// Inline implementations for IndexerCommandType.h. Included at the end of that header (classic) or via
+// the srctrl.indexer wrapper (purview); not a standalone TU.
 
-std::string indexerCommandTypeToString(IndexerCommandType type)
+#pragma once
+
+inline std::string indexerCommandTypeToString(IndexerCommandType type)
 {
 	switch (type)
 	{
@@ -20,7 +23,7 @@ std::string indexerCommandTypeToString(IndexerCommandType type)
 	return "indexer_command_unknown";
 }
 
-IndexerCommandType stringToIndexerCommandType(const std::string& s)
+inline IndexerCommandType stringToIndexerCommandType(const std::string& s)
 {
 	if (s == indexerCommandTypeToString(IndexerCommandType::INDEXER_COMMAND_CXX))
 		return IndexerCommandType::INDEXER_COMMAND_CXX;

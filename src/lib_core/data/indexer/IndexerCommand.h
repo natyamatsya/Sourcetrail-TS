@@ -1,6 +1,9 @@
 #ifndef INDEXER_COMMAND_H
 #define INDEXER_COMMAND_H
 
+#include "SrctrlModule.h"
+
+#ifndef SRCTRL_MODULE_PURVIEW
 #include <concepts>
 #include <cstddef>
 #include <memory>
@@ -11,11 +14,12 @@
 
 #include "FilePath.h"
 #include "IndexerCommandType.h"
+#endif
 
 // Contract every language's indexer-command payload satisfies. A payload is a plain value type (NO base
 // class, NO virtuals) holding its language-specific data; it gets wrapped into the type-erased
 // IndexerCommand below. Adding a language is just writing a payload that models this -- an open set.
-template <class T>
+SRCTRL_EXPORT template <class T>
 concept IndexerCommandC = requires(const T& command, std::size_t stringSize) {
 	{ command.getIndexerCommandType() } -> std::convertible_to<IndexerCommandType>;
 	{ command.getByteSize(stringSize) } -> std::convertible_to<std::size_t>;
@@ -27,7 +31,7 @@ concept IndexerCommandC = requires(const T& command, std::size_t stringSize) {
 // lives here directly; the language-specific payload is erased behind Concept/Model. Model<Payload> is
 // only instantiated where Payload is complete (the construction sites), so e.g. the Cxx payload's Model
 // is emitted in lib_cxx and lib_core never names it.
-class IndexerCommand
+SRCTRL_EXPORT class IndexerCommand
 {
 public:
 	template <IndexerCommandC Payload>

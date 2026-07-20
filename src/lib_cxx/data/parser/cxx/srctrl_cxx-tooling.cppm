@@ -25,7 +25,6 @@ module;
 #include <clang/Tooling/JSONCompilationDatabase.h>
 #include <llvm/Support/VirtualFileSystem.h>
 
-#include "IndexerCommandType.h"
 #include "MessageStatus.h"
 #include "Platform.h"
 #include "ToolChain.h"
@@ -40,6 +39,7 @@ import std;
 import srctrl.utility;   // utility.h helpers (:containers), utilityString (:string), OrderedCache (:cache)
 import srctrl.file;      // FilePath, FilePathFilter
 import srctrl.process;   // utility::executeProcess (macOS sysroot detection)
+import srctrl.indexer;   // IndexerCommandType (was a GMF include until srctrl.indexer owned it)
 import srctrl.logging;   // srctrl::log machinery behind the LOG_* macros
 
 #define SRCTRL_MODULE_PURVIEW

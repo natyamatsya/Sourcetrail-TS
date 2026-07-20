@@ -688,6 +688,29 @@ cycles in `lib` is prerequisite work, and a good cleanup in its own right).
   deps now import or GMF-include cleanly); `IncludeProcessing` still waits on settings.
 - **Phase 4 — the indexer binary.** `src/indexer/main.cpp` becomes a pure consumer:
   `import srctrl.cxx;` (+ optionally `import std;`).
+  **STARTED — `srctrl.indexer` (the framework core) + IndexerCxx landed. ✅** The language-agnostic
+  framework — IndexerCommandType, the type-erased IndexerCommand (+ IndexerCommandC concept),
+  IndexerBase (+ IndexerErrorCode/IndexerError), the Indexer<T> template, ParserClientImpl, and
+  IndexerComposite — is a NEW standalone module `srctrl.indexer` (39.1 MB BMI), deliberately ABOVE
+  srctrl.data and srctrl.storage: the framework spans ParserClient (data) and IntermediateStorage
+  (storage), and storage already imports data, so it can live in neither. IndexerCxx then joined
+  `srctrl.cxx:frontend` (its base Indexer<IndexerCommandCxx> now imports cleanly). Findings:
+  - **A modularized header must leave every wrapper GMF it was in**: `srctrl.cxx:tooling` had
+    GMF-included IndexerCommandType.h (fine while classic) — once srctrl.indexer owned the enum,
+    the global-module copy clashed in any TU importing both. Fix: the GMF include becomes
+    `import srctrl.indexer;`. Grep all `.cppm`s for a header before modularizing it.
+  - **The inline-adder heuristic misses free functions without a qualified return type**
+    (`IndexerCommandType stringToIndexerCommandType(...)` has no `::` before the paren) — caught as
+    a duplicate symbol across LanguagePackage TUs. Same lesson class as the DEF_VISIT_* macros:
+    after inlining, verify every col-0 definition really got `inline`.
+  - IndexerBase's out-of-line default ctor became in-class `= default` (no key-function concerns:
+    all virtuals pure or defaulted); the 3-line IndexerBase.cpp and the header-only anchor
+    IndexerCommand.cpp were deleted outright.
+  - IndexerStateInfo.h and utilityExpected.h stay deliberately GMF-safe/classic — they're in
+    srctrl.cxx's GMFs too, and plain std-only headers cost nothing.
+  **Remaining for Phase 4:** the provider/task layer (IndexerCommandProvider,
+  Memory/CombinedIndexerCommandProvider, TaskBuildIndex — drags messaging + scheduling),
+  InterprocessIndexer (the interprocess layer), then `src/indexer/main.cpp` as pure importer.
 - **Phase 5 — dogfood.** Index the module-built Sourcetrail *with* the module-built Sourcetrail; diff
   the symbol/edge graph against the header build's graph (they must match) and benchmark incremental
   rebuilds ON vs OFF.

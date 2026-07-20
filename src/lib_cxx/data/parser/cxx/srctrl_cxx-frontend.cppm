@@ -1,10 +1,10 @@
 // `srctrl.cxx:frontend` partition -- the Clang frontend glue on top of the visitor: CxxParser (the
 // libTooling driver), the frontend actions (ASTAction / GeneratePCHAction / ASTConsumer /
 // SingleFrontendActionFactory), the preprocessor hooks (PreprocessorCallbacks / CommentHandler),
-// CxxDiagnosticConsumer, and the invocation helpers (CxxCompilationDatabaseSingle /
-// ClangInvocationInfo). A clean DAG (unlike the visitor blob), so each header carries its own
-// classic bottom-include. Module build only. IndexerCxx stays a classic TU -- it drags the
-// lib_core indexer framework (ParserClientImpl -> IntermediateStorage), which converts in Phase 4.
+// CxxDiagnosticConsumer, the invocation helpers (CxxCompilationDatabaseSingle /
+// ClangInvocationInfo), and IndexerCxx (its framework deps import cleanly now that
+// srctrl.indexer exists). A clean DAG (unlike the visitor blob), so each header carries its own
+// classic bottom-include. Module build only.
 //
 // Clang-bearing (Frontend/Driver/Tooling GMF); per the :context measurement the frontend layers
 // join few such partitions rather than opening new ones.
@@ -68,6 +68,7 @@ import srctrl.process;   // utility::resolveCompilerResourceDir
 import srctrl.file;      // FilePath, FileRegister, TextAccess, ResourcePaths
 import srctrl.settings;  // ApplicationSettings (verbose-logging switch)
 import srctrl.data;      // Parser + ParserClient (:parser), ParseLocation (:location)
+import srctrl.indexer;   // Indexer<T>, ParserClientImpl, IndexerCommand (IndexerCxx's base)
 import srctrl.logging;   // srctrl::log machinery behind the LOG_* macros
 import :tooling;         // IndexerCommandCxx
 import :parser;          // CanonicalFilePathCache, utilityClang
@@ -87,6 +88,7 @@ import :visitor;         // CxxAstVisitor (ASTConsumer drives it)
 #include "GeneratePCHAction.h"
 #include "SingleFrontendActionFactory.h"
 #include "CxxParser.h"
+#include "IndexerCxx.h"
 
 #include "CxxCompilationDatabaseSingle.inl"
 #include "ClangInvocationInfo.inl"
@@ -98,3 +100,4 @@ import :visitor;         // CxxAstVisitor (ASTConsumer drives it)
 #include "GeneratePCHAction.inl"
 #include "SingleFrontendActionFactory.inl"
 #include "CxxParser.inl"
+#include "IndexerCxx.inl"

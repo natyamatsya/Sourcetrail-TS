@@ -1,6 +1,9 @@
 #ifndef INDEXER_H
 #define INDEXER_H
 
+#include "SrctrlModule.h"
+
+#ifndef SRCTRL_MODULE_PURVIEW
 #include <memory>
 
 #include "IndexerBase.h"
@@ -9,8 +12,9 @@
 #include "ParserClientImpl.h"
 #include "logging.h"
 #include "utilityExpected.h"
+#endif
 
-template <typename T>
+SRCTRL_EXPORT template <typename T>
 class Indexer: public IndexerBase
 {
 public:

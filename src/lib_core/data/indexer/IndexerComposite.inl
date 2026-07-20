@@ -1,22 +1,27 @@
-#include "IndexerComposite.h"
+// Inline implementations for IndexerComposite.h. Included at the end of that header (classic) or via
+// the srctrl.indexer wrapper (purview); not a standalone TU.
 
+#pragma once
+
+#ifndef SRCTRL_MODULE_PURVIEW
 #include "IndexerCommand.h"
 #include "IntermediateStorage.h"
 #include "logging.h"
+#endif
 
-IndexerComposite::~IndexerComposite() = default;
+inline IndexerComposite::~IndexerComposite() = default;
 
-IndexerCommandType IndexerComposite::getSupportedIndexerCommandType() const
+inline IndexerCommandType IndexerComposite::getSupportedIndexerCommandType() const
 {
 	return IndexerCommandType::INDEXER_COMMAND_UNKNOWN;
 }
 
-void IndexerComposite::addIndexer(std::shared_ptr<IndexerBase> indexer)
+inline void IndexerComposite::addIndexer(std::shared_ptr<IndexerBase> indexer)
 {
 	m_indexers.emplace(indexer->getSupportedIndexerCommandType(), indexer);
 }
 
-IndexerBase::IndexResult IndexerComposite::index(const std::shared_ptr<IndexerCommand>& indexerCommand)
+inline IndexerBase::IndexResult IndexerComposite::index(const std::shared_ptr<IndexerCommand>& indexerCommand)
 {
 	if (!indexerCommand)
 	{
@@ -40,7 +45,7 @@ IndexerBase::IndexResult IndexerComposite::index(const std::shared_ptr<IndexerCo
 	return it->second->index(indexerCommand);
 }
 
-void IndexerComposite::interrupt()
+inline void IndexerComposite::interrupt()
 {
 	for (auto& it: m_indexers)
 	{
