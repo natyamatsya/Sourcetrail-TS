@@ -1,5 +1,9 @@
-#include "ConfigManager.h"
+// Inline implementations for ConfigManager.h. Included at the end of that header; not a
+// standalone TU.
 
+#pragma once
+
+#ifndef SRCTRL_MODULE_PURVIEW
 #include <cmath>
 #include <fstream>
 #include <set>
@@ -13,31 +17,32 @@
 #include "logging.h"
 #include "utility.h"
 #include "utilityString.h"
+#endif
 
-std::shared_ptr<ConfigManager> ConfigManager::createEmpty()
+inline std::shared_ptr<ConfigManager> ConfigManager::createEmpty()
 {
 	return std::shared_ptr<ConfigManager>(new ConfigManager());
 }
 
-std::shared_ptr<ConfigManager> ConfigManager::createAndLoad(const std::shared_ptr<TextAccess> textAccess)
+inline std::shared_ptr<ConfigManager> ConfigManager::createAndLoad(const std::shared_ptr<TextAccess> textAccess)
 {
 	std::shared_ptr<ConfigManager> configManager = std::shared_ptr<ConfigManager>(new ConfigManager());
 	configManager->load(textAccess);
 	return configManager;
 }
 
-std::shared_ptr<ConfigManager> ConfigManager::createCopy()
+inline std::shared_ptr<ConfigManager> ConfigManager::createCopy()
 {
 	return std::shared_ptr<ConfigManager>(new ConfigManager(*this));
 }
 
-void ConfigManager::clear()
+inline void ConfigManager::clear()
 {
 	m_values.clear();
 	m_warnedMissingKeys.clear();
 }
 
-bool ConfigManager::getValue(const std::string& key, std::string& value) const
+inline bool ConfigManager::getValue(const std::string& key, std::string& value) const
 {
 	std::multimap<std::string, std::string>::const_iterator it = m_values.find(key);
 
@@ -53,7 +58,7 @@ bool ConfigManager::getValue(const std::string& key, std::string& value) const
 	}
 }
 
-bool ConfigManager::getValue(const std::string& key, int& value) const
+inline bool ConfigManager::getValue(const std::string& key, int& value) const
 {
 	std::string valueString;
 	if (getValue(key, valueString))
@@ -64,7 +69,7 @@ bool ConfigManager::getValue(const std::string& key, int& value) const
 	return false;
 }
 
-bool ConfigManager::getValue(const std::string& key, float& value) const
+inline bool ConfigManager::getValue(const std::string& key, float& value) const
 {
 	std::string valueString;
 	if (getValue(key, valueString))
@@ -77,7 +82,7 @@ bool ConfigManager::getValue(const std::string& key, float& value) const
 	return false;
 }
 
-bool ConfigManager::getValue(const std::string& key, bool& value) const
+inline bool ConfigManager::getValue(const std::string& key, bool& value) const
 {
 	std::string valueString;
 	if (getValue(key, valueString))
@@ -88,7 +93,7 @@ bool ConfigManager::getValue(const std::string& key, bool& value) const
 	return false;
 }
 
-bool ConfigManager::getValue(const std::string& key, FilePath& value) const
+inline bool ConfigManager::getValue(const std::string& key, FilePath& value) const
 {
 	std::string valueString;
 	if (getValue(key, valueString))
@@ -99,7 +104,7 @@ bool ConfigManager::getValue(const std::string& key, FilePath& value) const
 	return false;
 }
 
-bool ConfigManager::getValues(const std::string& key, std::vector<std::string>& values) const
+inline bool ConfigManager::getValues(const std::string& key, std::vector<std::string>& values) const
 {
 	std::pair<
 		std::multimap<std::string, std::string>::const_iterator,
@@ -124,7 +129,7 @@ bool ConfigManager::getValues(const std::string& key, std::vector<std::string>& 
 	}
 }
 
-bool ConfigManager::getValues(const std::string& key, std::vector<int>& values) const
+inline bool ConfigManager::getValues(const std::string& key, std::vector<int>& values) const
 {
 	std::vector<std::string> valuesStringVector;
 	if (getValues(key, valuesStringVector))
@@ -138,7 +143,7 @@ bool ConfigManager::getValues(const std::string& key, std::vector<int>& values) 
 	return false;
 }
 
-bool ConfigManager::getValues(const std::string& key, std::vector<float>& values) const
+inline bool ConfigManager::getValues(const std::string& key, std::vector<float>& values) const
 {
 	std::vector<std::string> valuesStringVector;
 	if (getValues(key, valuesStringVector))
@@ -152,7 +157,7 @@ bool ConfigManager::getValues(const std::string& key, std::vector<float>& values
 	return false;
 }
 
-bool ConfigManager::getValues(const std::string& key, std::vector<bool>& values) const
+inline bool ConfigManager::getValues(const std::string& key, std::vector<bool>& values) const
 {
 	std::vector<std::string> valuesStringVector;
 	if (getValues(key, valuesStringVector))
@@ -166,7 +171,7 @@ bool ConfigManager::getValues(const std::string& key, std::vector<bool>& values)
 	return false;
 }
 
-bool ConfigManager::getValues(const std::string& key, std::vector<FilePath>& values) const
+inline bool ConfigManager::getValues(const std::string& key, std::vector<FilePath>& values) const
 {
 	std::vector<std::string> valuesStringVector;
 	if (getValues(key, valuesStringVector))
@@ -180,7 +185,7 @@ bool ConfigManager::getValues(const std::string& key, std::vector<FilePath>& val
 	return false;
 }
 
-void ConfigManager::setValue(const std::string& key, const std::string& value)
+inline void ConfigManager::setValue(const std::string& key, const std::string& value)
 {
 	std::multimap<std::string, std::string>::iterator it = m_values.find(key);
 
@@ -194,29 +199,29 @@ void ConfigManager::setValue(const std::string& key, const std::string& value)
 	}
 }
 
-void ConfigManager::setValue(const std::string& key, const int value)
+inline void ConfigManager::setValue(const std::string& key, const int value)
 {
 	setValue(key, std::to_string(value));
 }
 
-void ConfigManager::setValue(const std::string& key, const float value)
+inline void ConfigManager::setValue(const std::string& key, const float value)
 {
 	std::stringstream ss;
 	ss << value;
 	setValue(key, ss.str());
 }
 
-void ConfigManager::setValue(const std::string& key, const bool value)
+inline void ConfigManager::setValue(const std::string& key, const bool value)
 {
 	setValue(key, std::string(value ? "1" : "0"));
 }
 
-void ConfigManager::setValue(const std::string& key, const FilePath& value)
+inline void ConfigManager::setValue(const std::string& key, const FilePath& value)
 {
 	setValue(key, value.str());
 }
 
-void ConfigManager::setValues(const std::string& key, const std::vector<std::string>& values)
+inline void ConfigManager::setValues(const std::string& key, const std::vector<std::string>& values)
 {
 	std::multimap<std::string, std::string>::iterator it = m_values.find(key);
 
@@ -230,7 +235,7 @@ void ConfigManager::setValues(const std::string& key, const std::vector<std::str
 	}
 }
 
-void ConfigManager::setValues(const std::string& key, const std::vector<int>& values)
+inline void ConfigManager::setValues(const std::string& key, const std::vector<int>& values)
 {
 	std::vector<std::string> stringValues;
 	for (int i: values)
@@ -240,7 +245,7 @@ void ConfigManager::setValues(const std::string& key, const std::vector<int>& va
 	setValues(key, stringValues);
 }
 
-void ConfigManager::setValues(const std::string& key, const std::vector<float>& values)
+inline void ConfigManager::setValues(const std::string& key, const std::vector<float>& values)
 {
 	std::vector<std::string> stringValues;
 	for (float f: values)
@@ -250,7 +255,7 @@ void ConfigManager::setValues(const std::string& key, const std::vector<float>& 
 	setValues(key, stringValues);
 }
 
-void ConfigManager::setValues(const std::string& key, const std::vector<bool>& values)
+inline void ConfigManager::setValues(const std::string& key, const std::vector<bool>& values)
 {
 	std::vector<std::string> stringValues;
 	for (bool b: values)
@@ -260,7 +265,7 @@ void ConfigManager::setValues(const std::string& key, const std::vector<bool>& v
 	setValues(key, stringValues);
 }
 
-void ConfigManager::setValues(const std::string& key, const std::vector<FilePath>& values)
+inline void ConfigManager::setValues(const std::string& key, const std::vector<FilePath>& values)
 {
 	std::vector<std::string> stringValues;
 	for (const FilePath& p: values)
@@ -270,7 +275,7 @@ void ConfigManager::setValues(const std::string& key, const std::vector<FilePath
 	setValues(key, stringValues);
 }
 
-void ConfigManager::removeValues(const std::string& key)
+inline void ConfigManager::removeValues(const std::string& key)
 {
 	for (const std::string& sublevelKey: getSublevelKeys(key))
 	{
@@ -279,14 +284,14 @@ void ConfigManager::removeValues(const std::string& key)
 	m_values.erase(key);
 }
 
-bool ConfigManager::isValueDefined(const std::string& key) const
+inline bool ConfigManager::isValueDefined(const std::string& key) const
 {
 	std::multimap<std::string, std::string>::const_iterator it = m_values.find(key);
 
 	return (it != m_values.end());
 }
 
-std::vector<std::string> ConfigManager::getSublevelKeys(const std::string& key) const
+inline std::vector<std::string> ConfigManager::getSublevelKeys(const std::string& key) const
 {
 	std::set<std::string> keys;
 	for (std::multimap<std::string, std::string>::const_iterator it = m_values.begin();
@@ -306,7 +311,7 @@ std::vector<std::string> ConfigManager::getSublevelKeys(const std::string& key) 
 	return utility::toVector(keys);
 }
 
-bool ConfigManager::load(const std::shared_ptr<TextAccess> textAccess)
+inline bool ConfigManager::load(const std::shared_ptr<TextAccess> textAccess)
 {
 	const std::string& text = textAccess->getText();
 
@@ -341,12 +346,12 @@ bool ConfigManager::load(const std::shared_ptr<TextAccess> textAccess)
 	return true;
 }
 
-void ConfigManager::setWarnOnEmptyKey(bool warnOnEmptyKey) const
+inline void ConfigManager::setWarnOnEmptyKey(bool warnOnEmptyKey) const
 {
 	m_warnOnEmptyKey = warnOnEmptyKey;
 }
 
-void ConfigManager::warnMissingKey(const std::string& key) const
+inline void ConfigManager::warnMissingKey(const std::string& key) const
 {
 	bool shouldWarn = false;
 	{
@@ -361,9 +366,9 @@ void ConfigManager::warnMissingKey(const std::string& key) const
 		LOG_WARNING("value " + key + " is not present in config.");
 }
 
-ConfigManager::ConfigManager() = default;
+inline ConfigManager::ConfigManager() = default;
 
-ConfigManager::ConfigManager(const ConfigManager& other)
+inline ConfigManager::ConfigManager(const ConfigManager& other)
 	: m_values(other.m_values)
 	, m_warnOnEmptyKey(other.m_warnOnEmptyKey)
 {
@@ -371,7 +376,7 @@ ConfigManager::ConfigManager(const ConfigManager& other)
 
 
 
-void ConfigManager::parseTomlTable(const toml::v3::table& table, const std::string& currentPath)
+inline void ConfigManager::parseTomlTable(const toml::v3::table& table, const std::string& currentPath)
 {
 	for (auto&& [k, v] : table)
 	{
@@ -460,7 +465,7 @@ void ConfigManager::parseTomlTable(const toml::v3::table& table, const std::stri
 	}
 }
 
-toml::v3::table ConfigManager::buildTomlTable() const
+inline toml::v3::table ConfigManager::buildTomlTable() const
 {
 	toml::table root;
 
@@ -727,7 +732,7 @@ glz::generic buildJsonTree(const std::multimap<std::string, std::string>& values
 }
 }	 // namespace
 
-bool ConfigManager::loadJson(const std::string& text)
+inline bool ConfigManager::loadJson(const std::string& text)
 {
 	const auto parsed = glz::read_json<glz::generic>(text);
 	if (!parsed)
@@ -740,7 +745,7 @@ bool ConfigManager::loadJson(const std::string& text)
 	return true;
 }
 
-bool ConfigManager::saveJson(const std::string& filepath)
+inline bool ConfigManager::saveJson(const std::string& filepath)
 {
 	try
 	{
@@ -769,7 +774,7 @@ bool ConfigManager::saveJson(const std::string& filepath)
 	}
 }
 
-bool ConfigManager::saveToml(const std::string& filepath)
+inline bool ConfigManager::saveToml(const std::string& filepath)
 {
 	try
 	{
@@ -790,7 +795,7 @@ bool ConfigManager::saveToml(const std::string& filepath)
 	}
 }
 
-std::string ConfigManager::toString() const
+inline std::string ConfigManager::toString() const
 {
 	// The multimap is ordered, so this rendering is canonical: two stores with
 	// the same keys and values (including repeated-value lists) compare equal.

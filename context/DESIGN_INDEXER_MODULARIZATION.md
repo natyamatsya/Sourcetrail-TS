@@ -494,6 +494,15 @@ cycles in `lib` is prerequisite work, and a good cleanup in its own right).
   per-declaration tags). This kills the srctrl.utility ↔ srctrl.file cycle risk for good and makes
   `utility.h` safe in any module GMF — unblocking ToolChain (its impl deps are now utility.h +
   macro-only headers). Remaining blockers: messaging, settings, TextCodec/utilityApp (Qt-facing).
+- **Phase 2 (cont.) — `srctrl.settings` (mid-layer unblock 4, the last poison header). ✅**
+  ConfigManager (TOML/JSON key-value store; glaze + toml++ stay GMF third-party) + Settings +
+  ApplicationSettings converted into a new `srctrl.settings` module (imports srctrl.utility /
+  srctrl.file / srctrl.logging); `utilityFile` joined `srctrl.file` on the way (its header
+  fwd-declared FilePath — finding (a)). ApplicationSettings' fwd decls of TimeStamp/Version were
+  vestigial and deleted; its `static const VERSION` / `s_instance` members became inline-variable
+  definitions in the .inl. With this, **no known GMF-poison headers remain** — every module-blocked
+  conversion (IncludeProcessing next) has an import to reach for. Exercised at every app/test start
+  (the settings file loads through the inlined TOML path).
 - **Phase 3 (cont.) — `IndexerCommandCxx` joins `:tooling`; `FilePathFilter` joins `srctrl.file`. ✅**
   The Cxx payload + its Clang-backed static helpers convert (.cpp inlined; the memoized
   `getMacOSSysrootPath` local statics are safe — an inline function's local statics are one entity).

@@ -1,16 +1,20 @@
 #ifndef SETTINGS_H
 #define SETTINGS_H
 
+#include "SrctrlModule.h"
+
+#ifndef SRCTRL_MODULE_PURVIEW
 #include <memory>
 #include <string>
 #include <vector>
 
 #include "ConfigManager.h"
 #include "FilePath.h"
+#endif
 
 class SettingsMigration;
 
-class Settings
+SRCTRL_EXPORT class Settings
 {
 public:
 	Settings(const Settings& other);
@@ -115,5 +119,7 @@ bool Settings::setValues(const std::string& key, std::vector<T> values)
 	}
 	return false;
 }
+
+#include "Settings.inl"
 
 #endif	  // SETTINGS_H

@@ -1,5 +1,9 @@
-#include "ApplicationSettings.h"
+// Inline implementations for ApplicationSettings.h. Included at the end of that header; not a
+// standalone TU.
 
+#pragma once
+
+#ifndef SRCTRL_MODULE_PURVIEW
 #include <utility>
 
 #include "Logger.h"
@@ -8,12 +12,13 @@
 #include "UserPaths.h"
 #include "utility.h"
 #include "utilityFile.h"
+#endif
 
-const size_t ApplicationSettings::VERSION = 8;
+inline const size_t ApplicationSettings::VERSION = 8;
 
-std::shared_ptr<ApplicationSettings> ApplicationSettings::s_instance;
+inline std::shared_ptr<ApplicationSettings> ApplicationSettings::s_instance;
 
-std::shared_ptr<ApplicationSettings> ApplicationSettings::getInstance()
+inline std::shared_ptr<ApplicationSettings> ApplicationSettings::getInstance()
 {
 	if (!s_instance)
 	{
@@ -23,7 +28,7 @@ std::shared_ptr<ApplicationSettings> ApplicationSettings::getInstance()
 	return s_instance;
 }
 
-bool ApplicationSettings::load(const FilePath& filePath, bool readOnly)
+inline bool ApplicationSettings::load(const FilePath& filePath, bool readOnly)
 {
 	const bool loaded = Settings::load(filePath, readOnly);
 	if (!loaded)
@@ -52,98 +57,98 @@ bool ApplicationSettings::load(const FilePath& filePath, bool readOnly)
 	return true;
 }
 
-bool ApplicationSettings::operator==(const ApplicationSettings& other) const
+inline bool ApplicationSettings::operator==(const ApplicationSettings& other) const
 {
 	return utility::isPermutation<FilePath>(getHeaderSearchPaths(), other.getHeaderSearchPaths()) &&
 		utility::isPermutation<FilePath>(getFrameworkSearchPaths(), other.getFrameworkSearchPaths());
 }
 
-size_t ApplicationSettings::getMaxRecentProjectsCount()
+inline size_t ApplicationSettings::getMaxRecentProjectsCount()
 {
 	return 7;
 }
 
-std::string ApplicationSettings::getFontName() const
+inline std::string ApplicationSettings::getFontName() const
 {
 	return getValue<std::string>("application/font_name", "Source Code Pro");
 }
 
-void ApplicationSettings::setFontName(const std::string& fontName)
+inline void ApplicationSettings::setFontName(const std::string& fontName)
 {
 	setValue<std::string>("application/font_name", fontName);
 }
 
-int ApplicationSettings::getFontSize() const
+inline int ApplicationSettings::getFontSize() const
 {
 	return getValue<int>("application/font_size", 14);
 }
 
-void ApplicationSettings::setFontSize(int fontSize)
+inline void ApplicationSettings::setFontSize(int fontSize)
 {
 	setValue<int>("application/font_size", fontSize);
 }
 
-std::string ApplicationSettings::getTextEncoding() const
+inline std::string ApplicationSettings::getTextEncoding() const
 {
 	return getValue<std::string>("application/text_encoding", "UTF-8");
 }
 
-void ApplicationSettings::setTextEncoding(const std::string& textEncoding)
+inline void ApplicationSettings::setTextEncoding(const std::string& textEncoding)
 {
 	setValue<std::string>("application/text_encoding", textEncoding);
 }
 
-bool ApplicationSettings::getUseAnimations() const
+inline bool ApplicationSettings::getUseAnimations() const
 {
 	return getValue<bool>("application/use_animations", true);
 }
 
-void ApplicationSettings::setUseAnimations(bool useAnimations)
+inline void ApplicationSettings::setUseAnimations(bool useAnimations)
 {
 	setValue<bool>("application/use_animations", useAnimations);
 }
 
-bool ApplicationSettings::getShowBuiltinTypesInGraph() const
+inline bool ApplicationSettings::getShowBuiltinTypesInGraph() const
 {
 	return getValue<bool>("application/builtin_types_in_graph", false);
 }
 
-void ApplicationSettings::setShowBuiltinTypesInGraph(bool showBuiltinTypes)
+inline void ApplicationSettings::setShowBuiltinTypesInGraph(bool showBuiltinTypes)
 {
 	setValue<bool>("application/builtin_types_in_graph", showBuiltinTypes);
 }
 
-bool ApplicationSettings::getHideDeprecatedInGraph() const
+inline bool ApplicationSettings::getHideDeprecatedInGraph() const
 {
 	return getValue<bool>("application/hide_deprecated_in_graph", false);
 }
 
-void ApplicationSettings::setHideDeprecatedInGraph(bool hideDeprecated)
+inline void ApplicationSettings::setHideDeprecatedInGraph(bool hideDeprecated)
 {
 	setValue<bool>("application/hide_deprecated_in_graph", hideDeprecated);
 }
 
-bool ApplicationSettings::getShowDirectoryInCodeFileTitle() const
+inline bool ApplicationSettings::getShowDirectoryInCodeFileTitle() const
 {
 	return getValue<bool>("application/directory_in_code_title", false);
 }
 
-void ApplicationSettings::setShowDirectoryInCodeFileTitle(bool showDirectory)
+inline void ApplicationSettings::setShowDirectoryInCodeFileTitle(bool showDirectory)
 {
 	setValue<bool>("application/directory_in_code_title", showDirectory);
 }
 
-std::string ApplicationSettings::getColorSchemeName() const
+inline std::string ApplicationSettings::getColorSchemeName() const
 {
 	return getValue<std::string>("application/color_scheme", "bright");
 }
 
-FilePath ApplicationSettings::getColorSchemePath() const
+inline FilePath ApplicationSettings::getColorSchemePath() const
 {
 	return getColorSchemePath(getColorSchemeName());
 }
 
-FilePath ApplicationSettings::getColorSchemePath(const std::string& colorSchemeName) const
+inline FilePath ApplicationSettings::getColorSchemePath(const std::string& colorSchemeName) const
 {
 	FilePath defaultPath(ResourcePaths::getColorSchemesDirectoryPath().concatenate("bright.json"));
 	FilePath path(
@@ -157,287 +162,287 @@ FilePath ApplicationSettings::getColorSchemePath(const std::string& colorSchemeN
 	return path;
 }
 
-void ApplicationSettings::setColorSchemeName(const std::string& colorSchemeName)
+inline void ApplicationSettings::setColorSchemeName(const std::string& colorSchemeName)
 {
 	setValue("application/color_scheme", colorSchemeName);
 }
 
-bool ApplicationSettings::getColorSchemeFollowsSystem() const
+inline bool ApplicationSettings::getColorSchemeFollowsSystem() const
 {
 	return getValue<bool>("application/color_scheme_follows_system", false);
 }
 
-void ApplicationSettings::setColorSchemeFollowsSystem(bool followsSystem)
+inline void ApplicationSettings::setColorSchemeFollowsSystem(bool followsSystem)
 {
 	setValue("application/color_scheme_follows_system", followsSystem);
 }
 
-std::string ApplicationSettings::getColorSchemeNameDark() const
+inline std::string ApplicationSettings::getColorSchemeNameDark() const
 {
 	return getValue<std::string>("application/color_scheme_dark", "dark");
 }
 
-void ApplicationSettings::setColorSchemeNameDark(const std::string& colorSchemeName)
+inline void ApplicationSettings::setColorSchemeNameDark(const std::string& colorSchemeName)
 {
 	setValue("application/color_scheme_dark", colorSchemeName);
 }
 
-int ApplicationSettings::getFontSizeMax() const
+inline int ApplicationSettings::getFontSizeMax() const
 {
 	return getValue<int>("application/font_size_max", 24);
 }
 
-void ApplicationSettings::setFontSizeMax(const int fontSizeMax)
+inline void ApplicationSettings::setFontSizeMax(const int fontSizeMax)
 {
 	setValue<int>("application/font_size_max", fontSizeMax);
 }
 
-int ApplicationSettings::getFontSizeMin() const
+inline int ApplicationSettings::getFontSizeMin() const
 {
 	return getValue<int>("application/font_size_min", 4);
 }
 
-void ApplicationSettings::setFontSizeMin(const int fontSizeMin)
+inline void ApplicationSettings::setFontSizeMin(const int fontSizeMin)
 {
 	setValue<int>("application/font_size_min", fontSizeMin);
 }
 
-int ApplicationSettings::getFontSizeStd() const
+inline int ApplicationSettings::getFontSizeStd() const
 {
 	return getValue<int>("application/font_size_std", 12);
 }
 
-void ApplicationSettings::setFontSizeStd(const int fontSizeStd)
+inline void ApplicationSettings::setFontSizeStd(const int fontSizeStd)
 {
 	setValue<int>("application/font_size_std", fontSizeStd);
 }
 
-int ApplicationSettings::getWindowBaseWidth() const
+inline int ApplicationSettings::getWindowBaseWidth() const
 {
 	return getValue<int>("application/window_base_width", 500);
 }
 
-int ApplicationSettings::getWindowBaseHeight() const
+inline int ApplicationSettings::getWindowBaseHeight() const
 {
 	return getValue<int>("application/window_base_height", 500);
 }
 
-float ApplicationSettings::getScrollSpeed() const
+inline float ApplicationSettings::getScrollSpeed() const
 {
 	return getValue<float>("application/scroll_speed", 1.0f);
 }
 
-void ApplicationSettings::setScrollSpeed(float scrollSpeed)
+inline void ApplicationSettings::setScrollSpeed(float scrollSpeed)
 {
 	setValue<float>("application/scroll_speed", scrollSpeed);
 }
 
-bool ApplicationSettings::getGraphControlsVisible() const
+inline bool ApplicationSettings::getGraphControlsVisible() const
 {
 	return getValue<bool>("application/graph_controls_visible", true);
 }
 
-void ApplicationSettings::setGraphControlsVisible(bool visible)
+inline void ApplicationSettings::setGraphControlsVisible(bool visible)
 {
 	setValue<bool>("application/graph_controls_visible", visible);
 }
 
-GroupType ApplicationSettings::getGraphGrouping() const
+inline GroupType ApplicationSettings::getGraphGrouping() const
 {
 	return stringToGroupType(
 		getValue<std::string>("application/graph_grouping", groupTypeToString(GroupType::NONE)));
 }
 
-void ApplicationSettings::setGraphGrouping(GroupType type)
+inline void ApplicationSettings::setGraphGrouping(GroupType type)
 {
 	setValue<std::string>("application/graph_grouping", groupTypeToString(type));
 }
 
-int ApplicationSettings::getScreenAutoScaling() const
+inline int ApplicationSettings::getScreenAutoScaling() const
 {
 	return getValue<int>("screen/auto_scaling", 1);
 }
 
-void ApplicationSettings::setScreenAutoScaling(int autoScaling)
+inline void ApplicationSettings::setScreenAutoScaling(int autoScaling)
 {
 	setValue<int>("screen/auto_scaling", autoScaling);
 }
 
-float ApplicationSettings::getScreenScaleFactor() const
+inline float ApplicationSettings::getScreenScaleFactor() const
 {
 	return getValue<float>("screen/scale_factor", -1.0);
 }
 
-void ApplicationSettings::setScreenScaleFactor(float scaleFactor)
+inline void ApplicationSettings::setScreenScaleFactor(float scaleFactor)
 {
 	setValue<float>("screen/scale_factor", scaleFactor);
 }
 
-bool ApplicationSettings::getLoggingEnabled() const
+inline bool ApplicationSettings::getLoggingEnabled() const
 {
 	return getValue<bool>("application/logging_enabled", true);
 }
 
-void ApplicationSettings::setLoggingEnabled(bool value)
+inline void ApplicationSettings::setLoggingEnabled(bool value)
 {
 	setValue<bool>("application/logging_enabled", value);
 }
 
-bool ApplicationSettings::getVerboseIndexerLoggingEnabled() const
+inline bool ApplicationSettings::getVerboseIndexerLoggingEnabled() const
 {
 	return getValue<bool>("application/verbose_indexer_logging_enabled", false);
 }
 
-void ApplicationSettings::setVerboseIndexerLoggingEnabled(bool value)
+inline void ApplicationSettings::setVerboseIndexerLoggingEnabled(bool value)
 {
 	setValue<bool>("application/verbose_indexer_logging_enabled", value);
 }
 
-FilePath ApplicationSettings::getLogDirectoryPath() const
+inline FilePath ApplicationSettings::getLogDirectoryPath() const
 {
 	return FilePath(getValue<std::string>(
 		"application/log_directory_path", UserPaths::getLogDirectoryPath().getAbsolute().str()));
 }
 
-void ApplicationSettings::setLogDirectoryPath(const FilePath& path)
+inline void ApplicationSettings::setLogDirectoryPath(const FilePath& path)
 {
 	setValue<std::string>("application/log_directory_path", path.str());
 }
 
-void ApplicationSettings::setLogFilter(int mask)
+inline void ApplicationSettings::setLogFilter(int mask)
 {
 	setValue<int>("application/log_filter", mask);
 }
 
-void ApplicationSettings::setStatusFilter(int mask)
+inline void ApplicationSettings::setStatusFilter(int mask)
 {
 	setValue<int>("application/status_filter", mask);
 }
 
-int ApplicationSettings::getStatusFilter() const
+inline int ApplicationSettings::getStatusFilter() const
 {
 	return getValue<int>(
 		"application/status_filter",
 		std::to_underlying(StatusType::STATUS_INFO) | std::to_underlying(StatusType::STATUS_ERROR));
 }
 
-int ApplicationSettings::getLogFilter() const
+inline int ApplicationSettings::getLogFilter() const
 {
 	return getValue<int>("application/log_filter", Logger::LOG_WARNINGS | Logger::LOG_ERRORS);
 }
 
-int ApplicationSettings::getIndexerThreadCount() const
+inline int ApplicationSettings::getIndexerThreadCount() const
 {
 	return getValue<int>("indexing/indexer_thread_count", 0);
 }
 
-void ApplicationSettings::setIndexerThreadCount(const int count)
+inline void ApplicationSettings::setIndexerThreadCount(const int count)
 {
 	setValue<int>("indexing/indexer_thread_count", count);
 }
 
-std::string ApplicationSettings::getMultiGroupFanOutMode() const
+inline std::string ApplicationSettings::getMultiGroupFanOutMode() const
 {
 	return getValue<std::string>("indexing/multi_group_fan_out", "auto");
 }
 
-void ApplicationSettings::setMultiGroupFanOutMode(const std::string& mode)
+inline void ApplicationSettings::setMultiGroupFanOutMode(const std::string& mode)
 {
 	setValue<std::string>("indexing/multi_group_fan_out", mode);
 }
 
-std::vector<FilePath> ApplicationSettings::getHeaderSearchPaths() const
+inline std::vector<FilePath> ApplicationSettings::getHeaderSearchPaths() const
 {
 	return getPathValues("indexing/cxx/header_search_paths/header_search_path");
 }
 
-std::vector<FilePath> ApplicationSettings::getHeaderSearchPathsExpanded() const
+inline std::vector<FilePath> ApplicationSettings::getHeaderSearchPathsExpanded() const
 {
 	return utility::getExpandedPaths(getHeaderSearchPaths());
 }
 
-bool ApplicationSettings::setHeaderSearchPaths(const std::vector<FilePath>& headerSearchPaths)
+inline bool ApplicationSettings::setHeaderSearchPaths(const std::vector<FilePath>& headerSearchPaths)
 {
 	return setPathValues("indexing/cxx/header_search_paths/header_search_path", headerSearchPaths);
 }
 
-bool ApplicationSettings::getHasPrefilledHeaderSearchPaths() const
+inline bool ApplicationSettings::getHasPrefilledHeaderSearchPaths() const
 {
 	return getValue<bool>("indexing/cxx/has_prefilled_header_search_paths", false);
 }
 
-void ApplicationSettings::setHasPrefilledHeaderSearchPaths(bool v)
+inline void ApplicationSettings::setHasPrefilledHeaderSearchPaths(bool v)
 {
 	setValue<bool>("indexing/cxx/has_prefilled_header_search_paths", v);
 }
 
-std::vector<FilePath> ApplicationSettings::getFrameworkSearchPaths() const
+inline std::vector<FilePath> ApplicationSettings::getFrameworkSearchPaths() const
 {
 	return getPathValues("indexing/cxx/framework_search_paths/framework_search_path");
 }
 
-std::vector<FilePath> ApplicationSettings::getFrameworkSearchPathsExpanded() const
+inline std::vector<FilePath> ApplicationSettings::getFrameworkSearchPathsExpanded() const
 {
 	return utility::getExpandedPaths(getFrameworkSearchPaths());
 }
 
-bool ApplicationSettings::setFrameworkSearchPaths(const std::vector<FilePath>& frameworkSearchPaths)
+inline bool ApplicationSettings::setFrameworkSearchPaths(const std::vector<FilePath>& frameworkSearchPaths)
 {
 	return setPathValues(
 		"indexing/cxx/framework_search_paths/framework_search_path", frameworkSearchPaths);
 }
 
-bool ApplicationSettings::getHasPrefilledFrameworkSearchPaths() const
+inline bool ApplicationSettings::getHasPrefilledFrameworkSearchPaths() const
 {
 	return getValue<bool>("indexing/cxx/has_prefilled_framework_search_paths", false);
 }
 
-void ApplicationSettings::setHasPrefilledFrameworkSearchPaths(bool v)
+inline void ApplicationSettings::setHasPrefilledFrameworkSearchPaths(bool v)
 {
 	setValue<bool>("indexing/cxx/has_prefilled_framework_search_paths", v);
 }
 
-int ApplicationSettings::getCodeTabWidth() const
+inline int ApplicationSettings::getCodeTabWidth() const
 {
 	return getValue<int>("code/tab_width", 4);
 }
 
-void ApplicationSettings::setCodeTabWidth(int codeTabWidth)
+inline void ApplicationSettings::setCodeTabWidth(int codeTabWidth)
 {
 	setValue<int>("code/tab_width", codeTabWidth);
 }
 
-int ApplicationSettings::getCodeSnippetSnapRange() const
+inline int ApplicationSettings::getCodeSnippetSnapRange() const
 {
 	return getValue<int>("code/snippet/snap_range", 4);
 }
 
-void ApplicationSettings::setCodeSnippetSnapRange(int range)
+inline void ApplicationSettings::setCodeSnippetSnapRange(int range)
 {
 	setValue<int>("code/snippet/snap_range", range);
 }
 
-int ApplicationSettings::getCodeSnippetExpandRange() const
+inline int ApplicationSettings::getCodeSnippetExpandRange() const
 {
 	return getValue<int>("code/snippet/expand_range", 3);
 }
 
-void ApplicationSettings::setCodeSnippetExpandRange(int range)
+inline void ApplicationSettings::setCodeSnippetExpandRange(int range)
 {
 	setValue<int>("code/snippet/expand_range", range);
 }
 
-bool ApplicationSettings::getCodeViewModeSingle() const
+inline bool ApplicationSettings::getCodeViewModeSingle() const
 {
 	return getValue<bool>("code/view_mode_single", false);
 }
 
-void ApplicationSettings::setCodeViewModeSingle(bool enabled)
+inline void ApplicationSettings::setCodeViewModeSingle(bool enabled)
 {
 	setValue<bool>("code/view_mode_single", enabled);
 }
 
-std::vector<FilePath> ApplicationSettings::getRecentProjects() const
+inline std::vector<FilePath> ApplicationSettings::getRecentProjects() const
 {
 	std::vector<FilePath> recentProjects;
 	std::vector<FilePath> loadedRecentProjects = getPathValues(
@@ -457,77 +462,77 @@ std::vector<FilePath> ApplicationSettings::getRecentProjects() const
 	return recentProjects;
 }
 
-bool ApplicationSettings::setRecentProjects(const std::vector<FilePath>& recentProjects)
+inline bool ApplicationSettings::setRecentProjects(const std::vector<FilePath>& recentProjects)
 {
 	return setPathValues("user/recent_projects/recent_project", recentProjects);
 }
 
-bool ApplicationSettings::getSeenErrorHelpMessage() const
+inline bool ApplicationSettings::getSeenErrorHelpMessage() const
 {
 	return getValue<bool>("user/seen_error_help_message", false);
 }
 
-void ApplicationSettings::setSeenErrorHelpMessage(bool seen)
+inline void ApplicationSettings::setSeenErrorHelpMessage(bool seen)
 {
 	setValue<bool>("user/seen_error_help_message", seen);
 }
 
-FilePath ApplicationSettings::getLastFilepickerLocation() const
+inline FilePath ApplicationSettings::getLastFilepickerLocation() const
 {
 	return FilePath(getValue<std::string>("user/last_filepicker_location", ""));
 }
 
-void ApplicationSettings::setLastFilepickerLocation(const FilePath& path)
+inline void ApplicationSettings::setLastFilepickerLocation(const FilePath& path)
 {
 	setValue<std::string>("user/last_filepicker_location", path.str());
 }
 
-float ApplicationSettings::getGraphZoomLevel() const
+inline float ApplicationSettings::getGraphZoomLevel() const
 {
 	return getValue<float>("user/graph_zoom_level", 1.0f);
 }
 
-void ApplicationSettings::setGraphZoomLevel(float zoomLevel)
+inline void ApplicationSettings::setGraphZoomLevel(float zoomLevel)
 {
 	setValue<float>("user/graph_zoom_level", zoomLevel);
 }
 
-int ApplicationSettings::getPluginPort() const
+inline int ApplicationSettings::getPluginPort() const
 {
 	return getValue<int>("network/plugin_port", 6666);
 }
 
-void ApplicationSettings::setPluginPort(const int pluginPort)
+inline void ApplicationSettings::setPluginPort(const int pluginPort)
 {
 	setValue<int>("network/plugin_port", pluginPort);
 }
 
-int ApplicationSettings::getSourcetrailPort() const
+inline int ApplicationSettings::getSourcetrailPort() const
 {
 	return getValue<int>("network/sourcetrail_port", 6667);
 }
 
-void ApplicationSettings::setSourcetrailPort(const int sourcetrailPort)
+inline void ApplicationSettings::setSourcetrailPort(const int sourcetrailPort)
 {
 	setValue<int>("network/sourcetrail_port", sourcetrailPort);
 }
 
-int ApplicationSettings::getControlsMouseBackButton() const
+inline int ApplicationSettings::getControlsMouseBackButton() const
 {
 	return getValue<int>("controls/mouse_back_button", 0x8);
 }
 
-int ApplicationSettings::getControlsMouseForwardButton() const
+inline int ApplicationSettings::getControlsMouseForwardButton() const
 {
 	return getValue<int>("controls/mouse_forward_button", 0x10);
 }
 
-bool ApplicationSettings::getControlsGraphZoomOnMouseWheel() const
+inline bool ApplicationSettings::getControlsGraphZoomOnMouseWheel() const
 {
 	return getValue<bool>("controls/graph_zoom_on_mouse_wheel", false);
 }
 
-void ApplicationSettings::setControlsGraphZoomOnMouseWheel(bool zoomingDefault)
+inline void ApplicationSettings::setControlsGraphZoomOnMouseWheel(bool zoomingDefault)
 {
 	setValue<bool>("controls/graph_zoom_on_mouse_wheel", zoomingDefault);
 }

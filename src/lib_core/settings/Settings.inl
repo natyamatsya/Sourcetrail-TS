@@ -1,15 +1,19 @@
-#include "Settings.h"
+// Inline implementations for Settings.h. Included at the end of that header; not a standalone TU.
 
+#pragma once
+
+#ifndef SRCTRL_MODULE_PURVIEW
 #include "TextAccess.h"
 #include "logging.h"
 #include "utility.h"
+#endif
 
-Settings::Settings(const Settings& other)
+inline Settings::Settings(const Settings& other)
 	: m_config(other.m_config->createCopy()), m_filePath(other.m_filePath)
 {
 }
 
-Settings& Settings::operator=(const Settings& other)
+inline Settings& Settings::operator=(const Settings& other)
 {
 	if (&other != this)
 	{
@@ -20,9 +24,9 @@ Settings& Settings::operator=(const Settings& other)
 	return *this;
 }
 
-Settings::~Settings() = default;
+inline Settings::~Settings() = default;
 
-bool Settings::load(const FilePath& filePath, bool readOnly)
+inline bool Settings::load(const FilePath& filePath, bool readOnly)
 {
 	m_readOnly = readOnly;
 
@@ -41,7 +45,7 @@ bool Settings::load(const FilePath& filePath, bool readOnly)
 	}
 }
 
-bool Settings::loadFromString(const std::string& text, bool readOnly)
+inline bool Settings::loadFromString(const std::string& text, bool readOnly)
 {
 	m_readOnly = readOnly;
 
@@ -50,7 +54,7 @@ bool Settings::loadFromString(const std::string& text, bool readOnly)
 	return true;
 }
 
-bool Settings::save()
+inline bool Settings::save()
 {
 	if (m_readOnly)
 		return false;
@@ -72,45 +76,45 @@ bool Settings::save()
 	return success;
 }
 
-bool Settings::save(const FilePath& filePath)
+inline bool Settings::save(const FilePath& filePath)
 {
 	setFilePath(filePath);
 
 	return save();
 }
 
-void Settings::clear()
+inline void Settings::clear()
 {
 	m_config = ConfigManager::createEmpty();
 	m_filePath = FilePath();
 }
 
-const FilePath& Settings::getFilePath() const
+inline const FilePath& Settings::getFilePath() const
 {
 	return m_filePath;
 }
 
-size_t Settings::getVersion() const
+inline size_t Settings::getVersion() const
 {
 	return getValue<int>("version", 0);
 }
 
-void Settings::setVersion(size_t version)
+inline void Settings::setVersion(size_t version)
 {
 	setValue<int>("version", static_cast<int>(version));
 }
 
-Settings::Settings()
+inline Settings::Settings()
 {
 	clear();
 }
 
-void Settings::setFilePath(const FilePath& filePath)
+inline void Settings::setFilePath(const FilePath& filePath)
 {
 	m_filePath = filePath;
 }
 
-std::vector<FilePath> Settings::getPathValues(const std::string& key) const
+inline std::vector<FilePath> Settings::getPathValues(const std::string& key) const
 {
 	std::vector<FilePath> paths;
 	for (const std::string& value: getValues<std::string>(key, {}))
@@ -120,7 +124,7 @@ std::vector<FilePath> Settings::getPathValues(const std::string& key) const
 	return paths;
 }
 
-bool Settings::setPathValues(const std::string& key, const std::vector<FilePath>& paths)
+inline bool Settings::setPathValues(const std::string& key, const std::vector<FilePath>& paths)
 {
 	std::vector<std::string> values;
 	for (const FilePath& path: paths)
@@ -131,22 +135,22 @@ bool Settings::setPathValues(const std::string& key, const std::vector<FilePath>
 	return setValues(key, values);
 }
 
-bool Settings::isValueDefined(const std::string& key) const
+inline bool Settings::isValueDefined(const std::string& key) const
 {
 	return m_config->isValueDefined(key);
 }
 
-void Settings::removeValues(const std::string& key)
+inline void Settings::removeValues(const std::string& key)
 {
 	m_config->removeValues(key);
 }
 
-void Settings::enableWarnings() const
+inline void Settings::enableWarnings() const
 {
 	m_config->setWarnOnEmptyKey(true);
 }
 
-void Settings::disableWarnings() const
+inline void Settings::disableWarnings() const
 {
 	m_config->setWarnOnEmptyKey(false);
 }

@@ -1,14 +1,16 @@
-#include "utilityFile.h"
+// Inline implementations for utilityFile.h. Included at the end of that header; not a standalone TU.
 
-#include "FilePath.h"
-#include "FileSystem.h"
+#pragma once
 
+#ifndef SRCTRL_MODULE_PURVIEW
 #include <filesystem>
 
+#include "FileSystem.h"
 #include "logging.h"
 #include "utility.h"
+#endif
 
-std::vector<FilePath> utility::partitionFilePathsBySize(std::vector<FilePath> filePaths, int partitionCount)
+inline std::vector<FilePath> utility::partitionFilePathsBySize(std::vector<FilePath> filePaths, int partitionCount)
 {
 	typedef std::pair<unsigned long long int, FilePath> PairType;
 	std::vector<PairType> sourceFileSizesToCommands;
@@ -62,12 +64,12 @@ std::vector<FilePath> utility::partitionFilePathsBySize(std::vector<FilePath> fi
 	return sortedFilePaths;
 }
 
-std::vector<FilePath> utility::getTopLevelPaths(const std::vector<FilePath>& paths)
+inline std::vector<FilePath> utility::getTopLevelPaths(const std::vector<FilePath>& paths)
 {
 	return utility::getTopLevelPaths(utility::toSet(paths));
 }
 
-std::vector<FilePath> utility::getTopLevelPaths(const std::set<FilePath>& paths)
+inline std::vector<FilePath> utility::getTopLevelPaths(const std::set<FilePath>& paths)
 {
 	// this works because the set contains the paths already in alphabetical order
 	std::vector<FilePath> topLevelPaths;
@@ -86,7 +88,7 @@ std::vector<FilePath> utility::getTopLevelPaths(const std::set<FilePath>& paths)
 	return topLevelPaths;
 }
 
-FilePath utility::getExpandedPath(const FilePath& path)
+inline FilePath utility::getExpandedPath(const FilePath& path)
 {
 	std::vector<FilePath> paths = path.expandEnvironmentVariables();
 	if (!paths.empty())
@@ -103,7 +105,7 @@ FilePath utility::getExpandedPath(const FilePath& path)
 	return FilePath();
 }
 
-std::vector<FilePath> utility::getExpandedPaths(const std::vector<FilePath>& paths)
+inline std::vector<FilePath> utility::getExpandedPaths(const std::vector<FilePath>& paths)
 {
 	std::vector<FilePath> expandedPaths;
 	for (const FilePath& path: paths)
@@ -113,7 +115,7 @@ std::vector<FilePath> utility::getExpandedPaths(const std::vector<FilePath>& pat
 	return expandedPaths;
 }
 
-FilePath utility::getExpandedAndAbsolutePath(const FilePath& path, const FilePath& baseDirectory)
+inline FilePath utility::getExpandedAndAbsolutePath(const FilePath& path, const FilePath& baseDirectory)
 {
 	FilePath p = getExpandedPath(path);
 
@@ -125,7 +127,7 @@ FilePath utility::getExpandedAndAbsolutePath(const FilePath& path, const FilePat
 	return baseDirectory.getConcatenated(p).makeCanonical();
 }
 
-FilePath utility::getAsRelativeIfShorter(const FilePath& absolutePath, const FilePath& baseDirectory)
+inline FilePath utility::getAsRelativeIfShorter(const FilePath& absolutePath, const FilePath& baseDirectory)
 {
 	if (!baseDirectory.empty())
 	{
@@ -138,7 +140,7 @@ FilePath utility::getAsRelativeIfShorter(const FilePath& absolutePath, const Fil
 	return absolutePath;
 }
 
-std::vector<FilePath> utility::getAsRelativeIfShorter(
+inline std::vector<FilePath> utility::getAsRelativeIfShorter(
 	const std::vector<FilePath>& absolutePaths, const FilePath& baseDirectory)
 {
 	return utility::convert<FilePath, FilePath>(absolutePaths, [&](const FilePath& path) {

@@ -1,6 +1,9 @@
 #ifndef CONFIG_MANAGER_H
 #define CONFIG_MANAGER_H
 
+#include "SrctrlModule.h"
+
+#ifndef SRCTRL_MODULE_PURVIEW
 #include <map>
 #include <memory>
 #include <mutex>
@@ -8,12 +11,16 @@
 #include <string>
 #include <vector>
 
+// In the module purview TextAccess/FilePath come from `import srctrl.file` and the real toml++
+// declarations from the wrapper's GMF; purview forward declarations would attach different
+// entities and clash (finding (a)).
 class TextAccess;
 class FilePath;
 
 namespace toml { inline namespace v3 { class table; } }
+#endif
 
-class ConfigManager
+SRCTRL_EXPORT class ConfigManager
 {
 public:
 	static std::shared_ptr<ConfigManager> createEmpty();
@@ -104,5 +111,7 @@ std::vector<T> ConfigManager::getValuesOrDefaults(const std::string& key, std::v
 	}
 	return defaultValues;
 }
+
+#include "ConfigManager.inl"
 
 #endif	  // CONFIG_MANAGER_H

@@ -1,15 +1,16 @@
 #ifndef APPLICATION_SETTINGS_H
 #define APPLICATION_SETTINGS_H
 
+#include "SrctrlModule.h"
+
+#ifndef SRCTRL_MODULE_PURVIEW
 #include <memory>
 
 #include "GroupType.h"
 #include "Settings.h"
+#endif
 
-class TimeStamp;
-class Version;
-
-class ApplicationSettings: public Settings
+SRCTRL_EXPORT class ApplicationSettings: public Settings
 {
 public:
 	static std::shared_ptr<ApplicationSettings> getInstance();
@@ -181,5 +182,7 @@ private:
 
 	static std::shared_ptr<ApplicationSettings> s_instance;
 };
+
+#include "ApplicationSettings.inl"
 
 #endif	  // APPLICATION_SETTINGS_H

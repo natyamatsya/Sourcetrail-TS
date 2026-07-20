@@ -1,12 +1,16 @@
 #ifndef UTILITY_FILE_H
 #define UTILITY_FILE_H
 
+#include "SrctrlModule.h"
+
+#ifndef SRCTRL_MODULE_PURVIEW
 #include <set>
 #include <vector>
 
-class FilePath;
+#include "FilePath.h"
+#endif
 
-namespace utility
+SRCTRL_EXPORT namespace utility
 {
 std::vector<FilePath> partitionFilePathsBySize(std::vector<FilePath> filePaths, int partitionCount = 0);
 
@@ -21,5 +25,7 @@ FilePath getAsRelativeIfShorter(const FilePath& absolutePath, const FilePath& ba
 std::vector<FilePath> getAsRelativeIfShorter(
 	const std::vector<FilePath>& absolutePaths, const FilePath& baseDirectory);
 }	 // namespace utility
+
+#include "utilityFile.inl"
 
 #endif	  // UTILITY_FILE_H
