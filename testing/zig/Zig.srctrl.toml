@@ -1,0 +1,13 @@
+version = '8'
+
+[[source_groups]]
+id = 'a1b2c3d4-0000-0000-0000-000000000001'
+name = 'Zig Source Group'
+status = 'enabled'
+type = 'Zig Empty'
+
+    [source_groups.source_extensions]
+    source_extension = [ '.zig' ]
+
+    [source_groups.source_paths]
+    source_path = 'data'
