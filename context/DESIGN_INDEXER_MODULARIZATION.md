@@ -757,6 +757,28 @@ cycles in `lib` is prerequisite work, and a good cleanup in its own right).
   main.cpp classic (works today in both modes) and declare the milestone reached when (1) is
   done. TaskBuildIndex + the queue-fill task stay host-side classic (messaging + scheduling)
   until/unless messaging modularizes.
+  **Seam slice LANDED — the lib_core FilePath-bearing seams are gone.** srctrl.logging now owns
+  the whole backend (LogMessage / Logger / ConsoleLogger / FileLogger / LogManagerImplementation
+  / LogManager singleton → inline member) alongside the srctrl::log facade, held at the BOTTOM of
+  the module stack by two seams: **FileLogger is FilePath-free** (std::filesystem::path API —
+  srctrl.file imports srctrl.logging, so FilePath here would be a module cycle; the five callers
+  pass .getPath()/.string()), and setLoggingEnabled's MessageStatus/Version announcement is an
+  out-of-line seam fn (`log_manager_detail::notifyLoggingToggled`: include-free decl in
+  LogManagerNotifier.h — GMF-held so the purview include no-ops via its guard — classic def in
+  LogManagerNotifier.cpp; messaging stays out of the module graph). **Macro-header pattern for a
+  modularized backend:** logging.h keeps only the LOG_* macro definitions in a purview (its guard
+  strips the backend includes); wrappers include it AFTER `#define SRCTRL_MODULE_PURVIEW` instead
+  of in the GMF, so the expansions name the LogManager imported from srctrl.logging. Sweep
+  lessons: srctrl_data-location had never imported srctrl.logging (its LOG uses rode on the GMF
+  include) — "declaration must be imported before it is required" at first macro use;
+  srctrl_settings GMF-included Logger.h directly (now poison — dropped, ApplicationSettings.inl's
+  guarded include + the import cover it); srctrl_file had leeched `<algorithm>` through
+  logging.h's backend includes. Also split FilePath-free `setupLocale.{h,cpp}` out of setupApp
+  (indexer main includes it; setupApp.h re-includes it for the app/test bootstrap). **Remaining
+  for the main.cpp milestone: ONLY the lib_cxx project/ seam** (LanguagePackageCxx,
+  CxxIndexerCommandCodec, CxxModulePrebuildRunner/CxxPchBuildRunner) — plus switching main.cpp's
+  own LOG_* sites to srctrl::log (an importer TU cannot textually include logging.h's classic
+  backend path). GlazeCli.h to be checked for GMF-safety at flip time.
 - **Phase 5 — dogfood.** Index the module-built Sourcetrail *with* the module-built Sourcetrail; diff
   the symbol/edge graph against the header build's graph (they must match) and benchmark incremental
   rebuilds ON vs OFF.
