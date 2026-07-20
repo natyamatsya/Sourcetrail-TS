@@ -27,14 +27,16 @@ bool isOptionalSwiftCommand(const std::shared_ptr<IndexerCommand>& command)
 
 std::string getOptionalSwiftWorkingDirectory(const std::shared_ptr<IndexerCommand>& command)
 {
-	if (!isOptionalSwiftCommand(command))
+	if (!command)
 		return {};
 
-	const auto* swiftCommand = command->target<IndexerCommandSwift>();
-	if (!swiftCommand)
-		return {};
-
-	return swiftCommand->getWorkingDirectory().str();
+	// target<>() already discriminates the payload type, so the monadic chain both
+	// checks "is it a Swift command?" and extracts in one expression.
+	return command->target<IndexerCommandSwift>()
+		.transform([](const IndexerCommandSwift& swiftCommand) {
+			return swiftCommand.getWorkingDirectory().str();
+		})
+		.value_or(std::string{});
 }
 
 void assertOptionalSwiftSerializerRoundTrip()
@@ -59,8 +61,8 @@ void assertOptionalSwiftSerializerRoundTrip()
 		IpcSerializer::deserializeIndexerCommands(buffer.data(), buffer.size());
 
 	REQUIRE(deserializedCommands.size() == 1);
-	const auto* swiftCommand = deserializedCommands.front()->target<IndexerCommandSwift>();
-	REQUIRE(swiftCommand != nullptr);
+	const auto swiftCommand = deserializedCommands.front()->target<IndexerCommandSwift>();
+	REQUIRE(swiftCommand.has_value());
 	REQUIRE(deserializedCommands.front()->getSourceFilePath().str() == sourceFilePath.str());
 	REQUIRE(swiftCommand->getIndexedPaths() == indexedPaths);
 	REQUIRE(swiftCommand->getWorkingDirectory().str() == workingDirectory.str());

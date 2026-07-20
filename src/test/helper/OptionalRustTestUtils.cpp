@@ -27,14 +27,16 @@ bool isOptionalRustCommand(const std::shared_ptr<IndexerCommand>& command)
 
 std::string getOptionalRustWorkingDirectory(const std::shared_ptr<IndexerCommand>& command)
 {
-	if (!isOptionalRustCommand(command))
+	if (!command)
 		return {};
 
-	const auto* rustCommand = command->target<IndexerCommandRust>();
-	if (!rustCommand)
-		return {};
-
-	return rustCommand->getWorkingDirectory().str();
+	// target<>() already discriminates the payload type, so the monadic chain both
+	// checks "is it a Rust command?" and extracts in one expression.
+	return command->target<IndexerCommandRust>()
+		.transform([](const IndexerCommandRust& rustCommand) {
+			return rustCommand.getWorkingDirectory().str();
+		})
+		.value_or(std::string{});
 }
 
 void assertOptionalRustSerializerRoundTrip()
@@ -61,8 +63,8 @@ void assertOptionalRustSerializerRoundTrip()
 		IpcSerializer::deserializeIndexerCommands(buffer.data(), buffer.size());
 
 	REQUIRE(deserializedCommands.size() == 1);
-	const auto* rustCommand = deserializedCommands.front()->target<IndexerCommandRust>();
-	REQUIRE(rustCommand != nullptr);
+	const auto rustCommand = deserializedCommands.front()->target<IndexerCommandRust>();
+	REQUIRE(rustCommand.has_value());
 	REQUIRE(deserializedCommands.front()->getSourceFilePath().str() == sourceFilePath.str());
 	REQUIRE(rustCommand->getIndexedPaths() == indexedPaths);
 	REQUIRE(rustCommand->getWorkingDirectory().str() == workingDirectory.str());

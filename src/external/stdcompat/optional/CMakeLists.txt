@@ -16,8 +16,10 @@ target_include_directories(stdcompat_optional
 
 # Private include path for beman::optional while building this project.
 # The vendored headers include each other as <beman/optional/...>, so the
-# 3rdparty directory itself is the include root.
-target_include_directories(stdcompat_optional
+# 3rdparty directory itself is the include root. SYSTEM: it's third-party
+# code we don't maintain, so its warnings (e.g. -Wsuggest-override on
+# bad_optional_access::what) must not trip consumers built with -Werror.
+target_include_directories(stdcompat_optional SYSTEM
     INTERFACE
         $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/3rdparty>
 )

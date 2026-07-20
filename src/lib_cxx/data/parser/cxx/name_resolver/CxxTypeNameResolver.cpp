@@ -54,7 +54,7 @@ std::unique_ptr<CxxTypeName> CxxTypeNameResolver::getName(const clang::Type* typ
 		{
 			CxxName declNameErased = resolveDeclName(
 				type->getAs<clang::InjectedClassNameType>()->getDecl());
-			if (const CxxDeclName* declName = declNameErased.target<CxxDeclName>())
+			if (const auto declName = declNameErased.target<CxxDeclName>())
 			{
 				return std::make_unique<CxxTypeName>(
 					declName->getName(),
@@ -67,7 +67,7 @@ std::unique_ptr<CxxTypeName> CxxTypeNameResolver::getName(const clang::Type* typ
 		{
 			CxxName declNameErased = resolveDeclName(
 				type->getAs<clang::TypedefType>()->getDecl());
-			if (const CxxDeclName* declName = declNameErased.target<CxxDeclName>())
+			if (const auto declName = declNameErased.target<CxxDeclName>())
 			{
 				return std::make_unique<CxxTypeName>(
 					declName->getName(), std::vector<std::string>(), declName->getParent());
@@ -124,7 +124,7 @@ std::unique_ptr<CxxTypeName> CxxTypeNameResolver::getName(const clang::Type* typ
 		{
 			CxxName declNameErased = resolveDeclName(
 				type->getAs<clang::TagType>()->getDecl());
-			if (const CxxDeclName* declName = declNameErased.target<CxxDeclName>())
+			if (const auto declName = declNameErased.target<CxxDeclName>())
 			{
 				return std::make_unique<CxxTypeName>(
 					declName->getName(),
@@ -151,7 +151,7 @@ std::unique_ptr<CxxTypeName> CxxTypeNameResolver::getName(const clang::Type* typ
 			{
 				CxxName declNameErased = resolveDeclName(
 					tagType->getDecl());
-				if (const CxxDeclName* declName = declNameErased.target<CxxDeclName>())
+				if (const auto declName = declNameErased.target<CxxDeclName>())
 				{
 					return std::make_unique<CxxTypeName>(
 						declName->getName(),
@@ -169,7 +169,7 @@ std::unique_ptr<CxxTypeName> CxxTypeNameResolver::getName(const clang::Type* typ
 				CxxName declNameErased =
 					resolveDeclName(templateName.getAsTemplateDecl());
 
-				if (const CxxDeclName* declName = declNameErased.target<CxxDeclName>())
+				if (const auto declName = declNameErased.target<CxxDeclName>())
 				{
 					std::vector<std::string> templateArguments;
 					CxxTemplateArgumentNameResolver resolver(this);
@@ -228,7 +228,7 @@ std::unique_ptr<CxxTypeName> CxxTypeNameResolver::getName(const clang::Type* typ
 		{
 			CxxName declNameErased = resolveDeclName(
 				clang::dyn_cast<clang::TemplateTypeParmType>(type)->getDecl());
-			if (const CxxDeclName* declName = declNameErased.target<CxxDeclName>())
+			if (const auto declName = declNameErased.target<CxxDeclName>())
 			{
 				return std::make_unique<CxxTypeName>(
 					declName->getName(), declName->getTemplateParameterNames(), declName->getParent());

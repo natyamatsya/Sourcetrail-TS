@@ -23,7 +23,7 @@ bool deduplicateByWorkingDir(
 {
 	if constexpr (!Enabled)
 		return false;
-	const CmdType* typed = cmd->template target<CmdType>();
+	const stdcompat::optional<const CmdType&> typed = cmd->template target<CmdType>();
 	if (!typed)
 		return false;
 	if (!state.seenWorkingDirectories.insert(typed->getWorkingDirectory().str()).second)

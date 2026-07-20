@@ -7,6 +7,8 @@
 #include <string>
 #include <utility>
 
+#include <stdcompat/optional>
+
 #include "FilePath.h"
 #include "IndexerCommandType.h"
 
@@ -54,19 +56,25 @@ public:
 	const std::string& getSourceGroupId() const { return m_sourceGroupId; }
 	void setSourceGroupId(const std::string& sourceGroupId) { m_sourceGroupId = sourceGroupId; }
 
-	//! std::function::target-style typed access to the erased payload; null if it isn't a T.
+	//! std::function::target-style typed access to the erased payload; empty if it isn't a T.
+	//! Returns optional<T&> (P2988) rather than a raw pointer: a maybe-reference with value
+	//! semantics -- contextually bool, deref/arrow like a pointer, but not ownable or null-arithmetic.
 	template <class T>
-	const T* target() const
+	stdcompat::optional<const T&> target() const
 	{
 		const auto* model = dynamic_cast<const Model<T>*>(m_self.get());
-		return model ? &model->m_payload : nullptr;
+		if (model == nullptr)
+			return stdcompat::nullopt;
+		return model->m_payload;
 	}
 
 	template <class T>
-	T* target()
+	stdcompat::optional<T&> target()
 	{
 		auto* model = dynamic_cast<Model<T>*>(m_self.get());
-		return model ? &model->m_payload : nullptr;
+		if (model == nullptr)
+			return stdcompat::nullopt;
+		return model->m_payload;
 	}
 
 private:

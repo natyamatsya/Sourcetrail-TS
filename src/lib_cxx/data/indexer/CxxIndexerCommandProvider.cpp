@@ -9,8 +9,8 @@ CxxIndexerCommandProvider::CxxIndexerCommandProvider(): m_nextId(1) {}
 
 void CxxIndexerCommandProvider::addCommand(const std::shared_ptr<IndexerCommand>& wrapper)
 {
-	const IndexerCommandCxx* command = wrapper->target<IndexerCommandCxx>();
-	if (command == nullptr)
+	const stdcompat::optional<const IndexerCommandCxx&> command = wrapper->target<IndexerCommandCxx>();
+	if (!command)
 		return;
 
 	std::shared_ptr<CommandRepresentation> representation = std::make_shared<CommandRepresentation>();

@@ -60,7 +60,7 @@ IndexerBase::IndexResult Indexer<T>::index(const std::shared_ptr<IndexerCommand>
 			utility::makeExpectedError(IndexerErrorCode::NoCommandProvided, message));
 	}
 
-	const T* payload = indexerCommand->template target<T>();
+	const stdcompat::optional<const T&> payload = indexerCommand->template target<T>();
 	if (!payload)
 	{
 		const std::string message =
@@ -75,7 +75,7 @@ IndexerBase::IndexResult Indexer<T>::index(const std::shared_ptr<IndexerCommand>
 
 	// Alias the wrapper's ownership while pointing at the erased payload: the payload lives as long as
 	// the wrapper does, so the concrete-command view stays valid without copying it out.
-	const std::shared_ptr<const T> castCommand(indexerCommand, payload);
+	const std::shared_ptr<const T> castCommand(indexerCommand, &*payload);
 
 	const std::shared_ptr<IntermediateStorage> storage = std::make_shared<IntermediateStorage>();
 	const std::shared_ptr<ParserClientImpl> parserClient = std::make_shared<ParserClientImpl>(storage);

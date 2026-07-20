@@ -71,16 +71,16 @@ FilePath getOutputDirectoryPath(const std::string& projectName)
 }
 
 std::string indexerCommandCxxToString(
-	const IndexerCommandCxx* indexerCommand,
+	const IndexerCommandCxx& indexerCommand,
 	const FilePath& baseDirectory)
 {
 	std::string result;
 	result += "SourceFilePath: \"" +
-		indexerCommand->getSourceFilePath().getRelativeTo(baseDirectory).str() + "\"\n";
-	for (const FilePath& indexedPath: indexerCommand->getIndexedPaths())
+		indexerCommand.getSourceFilePath().getRelativeTo(baseDirectory).str() + "\"\n";
+	for (const FilePath& indexedPath: indexerCommand.getIndexedPaths())
 		result += "\tIndexedPath: \"" + indexedPath.getRelativeTo(baseDirectory).str() + "\"\n";
 	bool previousFlagWasSysroot = false;
-	for (std::string compilerFlag: indexerCommand->getCompilerFlags())
+	for (std::string compilerFlag: indexerCommand.getCompilerFlags())
 	{
 		if (previousFlagWasSysroot)
 		{
@@ -96,7 +96,7 @@ std::string indexerCommandCxxToString(
 			compilerFlag = flagAsPath.getRelativeTo(baseDirectory).str();
 		result += "\tCompilerFlag: \"" + compilerFlag + "\"\n";
 	}
-	for (const FilePathFilter& filter: indexerCommand->getExcludeFilters())
+	for (const FilePathFilter& filter: indexerCommand.getExcludeFilters())
 		result += "\tExcludeFilter: \"" + filter.str() + "\"\n";
 	return result;
 }
@@ -108,8 +108,8 @@ std::string indexerCommandToString(
 	if (!indexerCommand)
 		return "No IndexerCommand provided.";
 
-	if (const IndexerCommandCxx* indexerCommandCxx = indexerCommand->target<IndexerCommandCxx>())
-		return indexerCommandCxxToString(indexerCommandCxx, baseDirectory);
+	if (const auto indexerCommandCxx = indexerCommand->target<IndexerCommandCxx>())
+		return indexerCommandCxxToString(*indexerCommandCxx, baseDirectory);
 
 	return "Unsupported indexer command type: " +
 		indexerCommandTypeToString(indexerCommand->getIndexerCommandType());

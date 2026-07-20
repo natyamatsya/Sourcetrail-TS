@@ -74,8 +74,8 @@ void assertOptionalCxxSerializerRoundTrip()
 	auto result = IpcSerializer::deserializeIndexerCommands(buf.data(), buf.size());
 
 	REQUIRE(result.size() == 1);
-	auto* cxx = result[0]->target<IndexerCommandCxx>();
-	REQUIRE(cxx != nullptr);
+	const auto cxx = result[0]->target<IndexerCommandCxx>();
+	REQUIRE(cxx.has_value());
 	REQUIRE(cxx->getSourceFilePath().str() == "/home/user/project/main.cpp");
 	REQUIRE(cxx->getIndexedPaths() == indexedPaths);
 	REQUIRE(cxx->getWorkingDirectory().str() == "/home/user/project");

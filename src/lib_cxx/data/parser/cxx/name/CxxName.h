@@ -7,6 +7,8 @@
 #include <utility>
 #include <vector>
 
+#include <stdcompat/optional>
+
 #include "NameHierarchy.h"
 
 // The single operation every C++ name model must provide. This concept replaces
@@ -46,12 +48,15 @@ public:
 
 	// std::function::target-style access to the erased model, for the few sites
 	// that need the concrete leaf back (e.g. re-reading a resolved decl name as a
-	// type name). Returns nullptr unless the held model is exactly a T.
+	// type name). Returns optional<T&> (P2988) -- a maybe-reference with value
+	// semantics; empty unless the held model is exactly a T.
 	template <class T>
-	const T* target() const
+	stdcompat::optional<const T&> target() const
 	{
 		const auto* model = dynamic_cast<const Model<T>*>(m_self.get());
-		return model ? &model->m_model : nullptr;
+		if (model == nullptr)
+			return stdcompat::nullopt;
+		return model->m_model;
 	}
 
 private:

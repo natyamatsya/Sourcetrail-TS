@@ -52,8 +52,10 @@ void TaskExecuteCustomCommands::doEnter(std::shared_ptr<Blackboard>  /*blackboar
 		{
 			std::shared_ptr<IndexerCommand> indexerCommand =
 				m_indexerCommandProvider->consumeCommandForSourceFilePath(sourceFilePath);
-			if (const IndexerCommandCustom* custom =
-					indexerCommand ? indexerCommand->target<IndexerCommandCustom>() : nullptr)
+			const stdcompat::optional<IndexerCommandCustom&> custom =
+				indexerCommand ? indexerCommand->target<IndexerCommandCustom>()
+							   : stdcompat::optional<IndexerCommandCustom&>{};
+			if (custom)
 			{
 				if (m_targetDatabaseFilePath.empty())
 				{
