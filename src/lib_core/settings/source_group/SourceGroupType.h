@@ -16,6 +16,7 @@ enum class SourceGroupType
 	CXX_CMAKE_FILE_API,
 	RUST_EMPTY,
 	SWIFT_EMPTY,
+	ZIG_EMPTY,
 	CUSTOM_COMMAND
 };
 

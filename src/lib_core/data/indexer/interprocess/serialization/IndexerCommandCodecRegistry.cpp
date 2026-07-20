@@ -9,6 +9,7 @@
 #include "FilePath.h"
 #include "IndexerCommandRust.h"
 #include "IndexerCommandSwift.h"
+#include "IndexerCommandZig.h"
 
 namespace
 {
@@ -137,6 +138,46 @@ struct SwiftIndexerCommandCodec
 			swiftSpecializationScope));
 	}
 };
+
+// Codec provider for Zig indexer commands. Zig reuses the common indexed_paths /
+// working_directory wire fields (the .fbs only adds the Zig enum tag).
+struct ZigIndexerCommandCodec
+{
+	flatbuffers::Offset<Ipc::IndexerCommand> serialize(
+		flatbuffers::FlatBufferBuilder& builder, const IndexerCommand& base) const
+	{
+		const IndexerCommandZig& cmd = *base.target<IndexerCommandZig>();
+
+		std::vector<flatbuffers::Offset<flatbuffers::String>> paths;
+		for (const auto& p: cmd.getIndexedPaths())
+			paths.push_back(builder.CreateString(p.str()));
+
+		return Ipc::CreateIndexerCommand(
+			builder, Ipc::IndexerCommandType_Zig,
+			builder.CreateString(base.getSourceFilePath().str()),
+			builder.CreateVector(paths), 0, 0,
+			builder.CreateString(cmd.getWorkingDirectory().str()), 0, 0,
+			0, false, false, 0, 0,
+			builder.CreateString(base.getSourceGroupId()), false,
+			0, 0, 0, 0);
+	}
+
+	std::shared_ptr<IndexerCommand> deserialize(const Ipc::IndexerCommand& fbCmd) const
+	{
+		std::set<FilePath> indexedPaths;
+		if (fbCmd.indexed_paths())
+			for (const auto* p: *fbCmd.indexed_paths())
+				indexedPaths.insert(FilePath(p->c_str()));
+
+		FilePath workingDir;
+		if (fbCmd.working_directory())
+			workingDir = FilePath(fbCmd.working_directory()->c_str());
+
+		return std::make_shared<IndexerCommand>(
+			FilePath(fbCmd.source_file_path()->c_str()),
+			IndexerCommandZig(indexedPaths, workingDir));
+	}
+};
 }	 // namespace
 
 IndexerCommandCodecRegistry& IndexerCommandCodecRegistry::getInstance()
@@ -151,6 +192,7 @@ IndexerCommandCodecRegistry::IndexerCommandCodecRegistry()
 	// registerCxxIndexerCommandCodec() at its LanguagePackageCxx registration point.
 	registerCodec(IndexerCommandType::INDEXER_COMMAND_RUST, eraseIndexerCommandCodec(RustIndexerCommandCodec{}));
 	registerCodec(IndexerCommandType::INDEXER_COMMAND_SWIFT, eraseIndexerCommandCodec(SwiftIndexerCommandCodec{}));
+	registerCodec(IndexerCommandType::INDEXER_COMMAND_ZIG, eraseIndexerCommandCodec(ZigIndexerCommandCodec{}));
 }
 
 void IndexerCommandCodecRegistry::registerCodec(IndexerCommandType type, IndexerCommandCodec codec)

@@ -16,6 +16,7 @@
 #include "SourceGroupSettingsCxxCMakeFileAPI.h"
 #include "SourceGroupSettingsRustEmpty.h"
 #include "SourceGroupSettingsSwiftEmpty.h"
+#include "SourceGroupSettingsZigEmpty.h"
 
 namespace
 {
@@ -213,6 +214,9 @@ std::vector<std::shared_ptr<SourceGroupSettings>> ProjectSettings::getAllSourceG
 			break;
 		case SourceGroupType::SWIFT_EMPTY:
 			settings = makeIfEnabled<language_packages::buildSwiftLanguagePackage, SourceGroupSettingsSwiftEmpty>(id, this);
+			break;
+		case SourceGroupType::ZIG_EMPTY:
+			settings = makeIfEnabled<language_packages::buildZigLanguagePackage, SourceGroupSettingsZigEmpty>(id, this);
 			break;
 		case SourceGroupType::CUSTOM_COMMAND:
 			settings = std::make_shared<SourceGroupSettingsCustomCommand>(id, this);

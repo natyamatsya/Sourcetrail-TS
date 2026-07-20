@@ -40,7 +40,8 @@ public:
 		const std::string& appUUID,
 		const std::vector<IndexerClusterEntry>& cxxClusterPlan = {},
 		size_t rustSupervisorCount = 1,
-		size_t swiftSupervisorCount = 1);
+		size_t swiftSupervisorCount = 1,
+		size_t zigSupervisorCount = 1);
 
 	~TaskBuildIndex() override;
 
@@ -56,7 +57,8 @@ protected:
 	void runIndexerProcess(ProcessId processId, const std::string& logFilePath);
 	void runRustIndexerProcess(ProcessId processId, const std::string& logFilePath);
 	void runSwiftIndexerProcess(ProcessId processId, const std::string& logFilePath);
-	// Shared babysitter for an out-of-process language indexer (Rust, Swift):
+	void runZigIndexerProcess(ProcessId processId, const std::string& logFilePath);
+	// Shared babysitter for an out-of-process language indexer (Rust, Swift, Zig):
 	// relaunches the subprocess while commands of its type remain, tolerating
 	// up to maxConsecutiveFailures transient failures before interrupting the
 	// whole run — so one crash never aborts indexing.
@@ -117,8 +119,12 @@ protected:
 	//! One Swift storage manager per supervisor (SW6), ids following the Rust
 	//! supervisors: m_processCount+m_rustSupervisorCount+1 ..
 	std::vector<std::shared_ptr<IntermediateStorageManagerImpl>> m_swiftStorageManagers;
+	//! One Zig storage manager per supervisor, ids following the Swift
+	//! supervisors: m_processCount+m_rustSupervisorCount+m_swiftSupervisorCount+1 ..
+	std::vector<std::shared_ptr<IntermediateStorageManagerImpl>> m_zigStorageManagers;
 	size_t m_rustSupervisorCount = 1;
 	size_t m_swiftSupervisorCount = 1;
+	size_t m_zigSupervisorCount = 1;
 
 	std::atomic<size_t> m_runningThreadCount = 0;
 

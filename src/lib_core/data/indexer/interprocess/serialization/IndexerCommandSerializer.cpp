@@ -23,6 +23,8 @@ IndexerCommandType toNativeType(Sourcetrail::Ipc::IndexerCommandType type)
 		return INDEXER_COMMAND_RUST;
 	case Sourcetrail::Ipc::IndexerCommandType_Swift:
 		return INDEXER_COMMAND_SWIFT;
+	case Sourcetrail::Ipc::IndexerCommandType_Zig:
+		return INDEXER_COMMAND_ZIG;
 	default:
 		return INDEXER_COMMAND_UNKNOWN;
 	}
