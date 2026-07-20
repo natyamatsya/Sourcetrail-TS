@@ -488,6 +488,21 @@ cycles in `lib` is prerequisite work, and a good cleanup in its own right).
   CompilationDatabase), `data/indexer/` (IndexerCommandCxx payload — Clang-free header), then the
   Clang-facing parser layers (`CxxContext`/`CxxSymbolRegistry`/visitor components) where the
   Clang-header GMF cost finally lands and needs measuring.
+- **Phase 3 (cont.) — the Clang BMI cost MEASURED via `:context`. ✅** `CxxContext` (a single
+  using-alias over `llvm::PointerUnion<const NamedDecl*, const Type*>`) converted as the deliberate
+  probe: minimal purview, full clang/AST GMF. **Numbers (clang 22, -fno-modules-reduced-bmi, debug):
+  `srctrl.cxx-context.pcm` = 41.8 MB; partition compiles in ~2.8 s — cheaper than a comparable classic
+  Clang TU (~4.0 s). The cost is disk, not time,** and it amortizes: importers of future Clang-facing
+  partitions skip re-parsing the Clang headers entirely. Caveats recorded: (a) full-BMI mode inflates
+  every unit (`:name` is 22.3 MB with only std+NameHierarchy in its GMF) — revisit when the LLVM
+  #166068 fix ships and reduced BMI returns; (b) if many Clang-facing partitions each carry their own
+  AST GMF the disk cost multiplies — prefer ONE Clang-bearing partition cluster (or a shared internal
+  partition) when converting the visitor layers.
+  **Also scoped and deferred with reasons:** `IncludeProcessing`/`CompilationDatabase`/
+  `IndexerCommandCxx` impls all drag the non-modularized lib_core mid-layer (ApplicationSettings,
+  MessageStatus/messaging, ResourcePaths, ToolChain) into any wrapper GMF — and those textually
+  include FilePath.h, which clashes with `import srctrl.file`. They wait for either that mid-layer's
+  modularization or an impl split (payload vs. static toolchain helpers for IndexerCommandCxx).
 - **Phase 4 — the indexer binary.** `src/indexer/main.cpp` becomes a pure consumer:
   `import srctrl.cxx;` (+ optionally `import std;`).
 - **Phase 5 — dogfood.** Index the module-built Sourcetrail *with* the module-built Sourcetrail; diff
