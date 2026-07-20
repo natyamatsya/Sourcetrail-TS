@@ -1,13 +1,18 @@
-#include "IntermediateStorageSerializer.h"
+// Inline implementations for IntermediateStorageSerializer.h. Included at the end of that header
+// (classic) or via the srctrl.interprocess wrapper (purview); not a standalone TU.
 
+#pragma once
+
+#ifndef SRCTRL_MODULE_PURVIEW
 #include "IntermediateStorage.h"
 
 #include "intermediate_storage_generated.h"
+#endif
 
 namespace IpcSerializer
 {
 
-flatbuffers::DetachedBuffer serializeIntermediateStorage(const IntermediateStorage& storage)
+inline flatbuffers::DetachedBuffer serializeIntermediateStorage(const IntermediateStorage& storage)
 {
 	flatbuffers::FlatBufferBuilder builder(16384);
 
@@ -105,7 +110,7 @@ flatbuffers::DetachedBuffer serializeIntermediateStorage(const IntermediateStora
 	return builder.Release();
 }
 
-std::shared_ptr<IntermediateStorage> deserializeIntermediateStorage(
+inline std::shared_ptr<IntermediateStorage> deserializeIntermediateStorage(
 	const uint8_t* buf, std::size_t /*len*/)
 {
 	auto queue = Sourcetrail::Ipc::GetIntermediateStorageQueue(buf);

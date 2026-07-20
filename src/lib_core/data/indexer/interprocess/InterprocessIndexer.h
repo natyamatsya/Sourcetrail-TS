@@ -1,20 +1,24 @@
 #ifndef INTERPROCESS_INDEXER_H
 #define INTERPROCESS_INDEXER_H
 
+#include "SrctrlModule.h"
+
+#ifndef SRCTRL_MODULE_PURVIEW
 #include "InterprocessBackend.h"
 #include "utilityExpected.h"
 
 #include <expected>
+#endif
 
-enum class InterprocessIndexerErrorCode
+SRCTRL_EXPORT enum class InterprocessIndexerErrorCode
 {
 	ExecutionException,
 	ExecutionUnknownException
 };
 
-using InterprocessIndexerError = utility::ExpectedError<InterprocessIndexerErrorCode>;
+SRCTRL_EXPORT using InterprocessIndexerError = utility::ExpectedError<InterprocessIndexerErrorCode>;
 
-class InterprocessIndexer
+SRCTRL_EXPORT class InterprocessIndexer
 {
 public:
 	using WorkResult = std::expected<void, InterprocessIndexerError>;
@@ -35,5 +39,9 @@ private:
 	const ProcessId m_processId;
 	const std::string m_onlyGroupId;
 };
+
+#ifndef SRCTRL_MODULE_PURVIEW
+#include "InterprocessIndexer.inl"
+#endif
 
 #endif	  // INTERPROCESS_INDEXER_H

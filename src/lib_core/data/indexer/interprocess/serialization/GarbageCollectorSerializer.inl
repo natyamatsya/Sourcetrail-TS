@@ -1,11 +1,16 @@
-#include "GarbageCollectorSerializer.h"
+// Inline implementations for GarbageCollectorSerializer.h. Included at the end of that header
+// (classic) or via the srctrl.interprocess wrapper (purview); not a standalone TU.
 
+#pragma once
+
+#ifndef SRCTRL_MODULE_PURVIEW
 #include "garbage_collector_generated.h"
+#endif
 
 namespace IpcSerializer
 {
 
-flatbuffers::DetachedBuffer serializeGarbageCollector(const GarbageCollectorData& data)
+inline flatbuffers::DetachedBuffer serializeGarbageCollector(const GarbageCollectorData& data)
 {
 	flatbuffers::FlatBufferBuilder builder(2048);
 
@@ -26,7 +31,7 @@ flatbuffers::DetachedBuffer serializeGarbageCollector(const GarbageCollectorData
 	return builder.Release();
 }
 
-GarbageCollectorData deserializeGarbageCollector(const uint8_t* buf, std::size_t /*len*/)
+inline GarbageCollectorData deserializeGarbageCollector(const uint8_t* buf, std::size_t /*len*/)
 {
 	GarbageCollectorData result;
 

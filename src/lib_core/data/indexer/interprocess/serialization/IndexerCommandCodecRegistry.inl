@@ -1,17 +1,23 @@
-#include "IndexerCommandCodecRegistry.h"
+// Inline implementations for IndexerCommandCodecRegistry.h. Included at the end of that header
+// (classic) or via the srctrl.interprocess wrapper (purview); not a standalone TU.
 
-#include "IndexerCommand.h"
+#pragma once
 
+#ifndef SRCTRL_MODULE_PURVIEW
 #include <set>
 #include <string>
 #include <vector>
 
 #include "FilePath.h"
+#include "IndexerCommand.h"
 #include "IndexerCommandRust.h"
 #include "IndexerCommandSwift.h"
 #include "IndexerCommandZig.h"
+#endif
 
-namespace
+// ODR-safe home for the built-in codec providers (anonymous namespaces are an ODR trap in
+// headers/inls).
+namespace indexer_command_codec_registry_detail
 {
 namespace Ipc = Sourcetrail::Ipc;
 
@@ -178,29 +184,35 @@ struct ZigIndexerCommandCodec
 			IndexerCommandZig(indexedPaths, workingDir));
 	}
 };
-}	 // namespace
+}	 // namespace indexer_command_codec_registry_detail
 
-IndexerCommandCodecRegistry& IndexerCommandCodecRegistry::getInstance()
+inline IndexerCommandCodecRegistry& IndexerCommandCodecRegistry::getInstance()
 {
 	static IndexerCommandCodecRegistry instance;
 	return instance;
 }
 
-IndexerCommandCodecRegistry::IndexerCommandCodecRegistry()
+inline IndexerCommandCodecRegistry::IndexerCommandCodecRegistry()
 {
 	// The languages `lib` owns register up front; `lib_cxx` adds the Cxx codec via
 	// registerCxxIndexerCommandCodec() at its LanguagePackageCxx registration point.
-	registerCodec(IndexerCommandType::INDEXER_COMMAND_RUST, eraseIndexerCommandCodec(RustIndexerCommandCodec{}));
-	registerCodec(IndexerCommandType::INDEXER_COMMAND_SWIFT, eraseIndexerCommandCodec(SwiftIndexerCommandCodec{}));
-	registerCodec(IndexerCommandType::INDEXER_COMMAND_ZIG, eraseIndexerCommandCodec(ZigIndexerCommandCodec{}));
+	registerCodec(
+		IndexerCommandType::INDEXER_COMMAND_RUST,
+		eraseIndexerCommandCodec(indexer_command_codec_registry_detail::RustIndexerCommandCodec{}));
+	registerCodec(
+		IndexerCommandType::INDEXER_COMMAND_SWIFT,
+		eraseIndexerCommandCodec(indexer_command_codec_registry_detail::SwiftIndexerCommandCodec{}));
+	registerCodec(
+		IndexerCommandType::INDEXER_COMMAND_ZIG,
+		eraseIndexerCommandCodec(indexer_command_codec_registry_detail::ZigIndexerCommandCodec{}));
 }
 
-void IndexerCommandCodecRegistry::registerCodec(IndexerCommandType type, IndexerCommandCodec codec)
+inline void IndexerCommandCodecRegistry::registerCodec(IndexerCommandType type, IndexerCommandCodec codec)
 {
 	m_codecs[type] = std::move(codec);
 }
 
-const IndexerCommandCodec* IndexerCommandCodecRegistry::find(IndexerCommandType type) const
+inline const IndexerCommandCodec* IndexerCommandCodecRegistry::find(IndexerCommandType type) const
 {
 	const auto it = m_codecs.find(type);
 	return it == m_codecs.end() ? nullptr : &it->second;

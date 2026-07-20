@@ -1,5 +1,9 @@
-#include "IndexerCommandSerializer.h"
+// Inline implementations for IndexerCommandSerializer.h. Included at the end of that header
+// (classic) or via the srctrl.interprocess wrapper (purview); not a standalone TU.
 
+#pragma once
+
+#ifndef SRCTRL_MODULE_PURVIEW
 #include <string>
 
 #include "IndexerCommand.h"
@@ -8,11 +12,13 @@
 #include "logging.h"
 
 #include "indexer_command_generated.h"
+#endif
 
-namespace
+// ODR-safe home for the wire-type mapping (anonymous namespaces are an ODR trap in headers/inls).
+namespace indexer_command_serializer_detail
 {
 // Map the wire-format discriminator back to the native IndexerCommandType the registry is keyed by.
-IndexerCommandType toNativeType(Sourcetrail::Ipc::IndexerCommandType type)
+inline IndexerCommandType toNativeType(Sourcetrail::Ipc::IndexerCommandType type)
 {
 	using enum IndexerCommandType;
 	switch (type)
@@ -29,12 +35,12 @@ IndexerCommandType toNativeType(Sourcetrail::Ipc::IndexerCommandType type)
 		return INDEXER_COMMAND_UNKNOWN;
 	}
 }
-}	 // namespace
+}	 // namespace indexer_command_serializer_detail
 
 namespace IpcSerializer
 {
 
-flatbuffers::DetachedBuffer serializeIndexerCommands(
+inline flatbuffers::DetachedBuffer serializeIndexerCommands(
 	const std::vector<std::shared_ptr<IndexerCommand>>& commands)
 {
 	flatbuffers::FlatBufferBuilder builder(4096);
@@ -64,7 +70,7 @@ flatbuffers::DetachedBuffer serializeIndexerCommands(
 	return builder.Release();
 }
 
-std::vector<std::shared_ptr<IndexerCommand>> deserializeIndexerCommands(
+inline std::vector<std::shared_ptr<IndexerCommand>> deserializeIndexerCommands(
 	const uint8_t* buf, std::size_t /*len*/)
 {
 	std::vector<std::shared_ptr<IndexerCommand>> result;
@@ -80,7 +86,8 @@ std::vector<std::shared_ptr<IndexerCommand>> deserializeIndexerCommands(
 		if (!fbCmd)
 			continue;
 
-		const IndexerCommandCodec* codec = registry.find(toNativeType(fbCmd->type()));
+		const IndexerCommandCodec* codec = registry.find(
+			indexer_command_serializer_detail::toNativeType(fbCmd->type()));
 		if (codec == nullptr)
 		{
 			LOG_ERROR(

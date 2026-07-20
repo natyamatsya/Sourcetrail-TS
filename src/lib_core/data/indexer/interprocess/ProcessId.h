@@ -1,11 +1,15 @@
 #ifndef PROCESS_ID_H
 #define PROCESS_ID_H
 
+#include "SrctrlModule.h"
+
+#ifndef SRCTRL_MODULE_PURVIEW
 #include <cstddef>
 
 #include "utilityEnum.h"
+#endif
 
-enum class ProcessId : std::size_t
+SRCTRL_EXPORT enum class ProcessId : std::size_t
 {
 	NONE = 0,
 

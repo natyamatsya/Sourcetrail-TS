@@ -1,5 +1,9 @@
-#include "IpcInterprocessIndexerCommandManager.h"
+// Inline implementations for IpcInterprocessIndexerCommandManager.h. Included at the end of that
+// header (classic) or via the srctrl.interprocess wrapper (purview); not a standalone TU.
 
+#pragma once
+
+#ifndef SRCTRL_MODULE_PURVIEW
 #include <algorithm>
 #include <cstring>
 
@@ -7,10 +11,11 @@
 #include "IndexerCommandSerializer.h"
 #include "IndexerCommandType.h"
 #include "logging.h"
+#endif
 
-const char* IpcInterprocessIndexerCommandManager::s_sharedMemoryNamePrefix = "icmd_ipc_";
+inline const char* IpcInterprocessIndexerCommandManager::s_sharedMemoryNamePrefix = "icmd_ipc_";
 
-IpcInterprocessIndexerCommandManager::IpcInterprocessIndexerCommandManager(
+inline IpcInterprocessIndexerCommandManager::IpcInterprocessIndexerCommandManager(
 	const std::string& instanceUuid, ProcessId processId, bool isOwner)
 	: m_instanceUuid{instanceUuid}
 	, m_processId{processId}
@@ -21,9 +26,9 @@ IpcInterprocessIndexerCommandManager::IpcInterprocessIndexerCommandManager(
 {
 }
 
-IpcInterprocessIndexerCommandManager::~IpcInterprocessIndexerCommandManager() = default;
+inline IpcInterprocessIndexerCommandManager::~IpcInterprocessIndexerCommandManager() = default;
 
-void IpcInterprocessIndexerCommandManager::pushIndexerCommands(
+inline void IpcInterprocessIndexerCommandManager::pushIndexerCommands(
 	const std::vector<std::shared_ptr<IndexerCommand>>& indexerCommands)
 {
 	using enum IpcSharedMemory::AccessMode;
@@ -58,12 +63,12 @@ void IpcInterprocessIndexerCommandManager::pushIndexerCommands(
 	m_shm.notifyAll();
 }
 
-void IpcInterprocessIndexerCommandManager::notifyWaiters()
+inline void IpcInterprocessIndexerCommandManager::notifyWaiters()
 {
 	m_shm.notifyAll();
 }
 
-std::shared_ptr<IndexerCommand> IpcInterprocessIndexerCommandManager::popIndexerCommand(
+inline std::shared_ptr<IndexerCommand> IpcInterprocessIndexerCommandManager::popIndexerCommand(
 	IndexerCommandType skipType)
 {
 	using enum IpcSharedMemory::AccessMode;
@@ -73,7 +78,7 @@ std::shared_ptr<IndexerCommand> IpcInterprocessIndexerCommandManager::popIndexer
 	return popIndexerCommand(std::set<IndexerCommandType> {skipType});
 }
 
-std::shared_ptr<IndexerCommand> IpcInterprocessIndexerCommandManager::tryPopLocked(
+inline std::shared_ptr<IndexerCommand> IpcInterprocessIndexerCommandManager::tryPopLocked(
 	IpcSharedMemory::ScopedAccess& access,
 	const std::set<IndexerCommandType>& skipTypes,
 	const std::string& onlyGroupId)
@@ -119,14 +124,14 @@ std::shared_ptr<IndexerCommand> IpcInterprocessIndexerCommandManager::tryPopLock
 	return result;
 }
 
-std::shared_ptr<IndexerCommand> IpcInterprocessIndexerCommandManager::popIndexerCommand(
+inline std::shared_ptr<IndexerCommand> IpcInterprocessIndexerCommandManager::popIndexerCommand(
 	const std::set<IndexerCommandType>& skipTypes)
 {
 	IpcSharedMemory::ScopedAccess access(&m_shm);
 	return tryPopLocked(access, skipTypes);
 }
 
-std::shared_ptr<IndexerCommand> IpcInterprocessIndexerCommandManager::popIndexerCommandBlocking(
+inline std::shared_ptr<IndexerCommand> IpcInterprocessIndexerCommandManager::popIndexerCommandBlocking(
 	const std::set<IndexerCommandType>& skipTypes, uint32_t timeoutMs, const std::string& onlyGroupId)
 {
 	IpcSharedMemory::ScopedAccess access(&m_shm);
@@ -143,7 +148,7 @@ std::shared_ptr<IndexerCommand> IpcInterprocessIndexerCommandManager::popIndexer
 	return tryPopLocked(access, skipTypes, onlyGroupId);
 }
 
-bool IpcInterprocessIndexerCommandManager::hasIndexerCommandType(IndexerCommandType type)
+inline bool IpcInterprocessIndexerCommandManager::hasIndexerCommandType(IndexerCommandType type)
 {
 	using enum IpcSharedMemory::AccessMode;
 	using enum IndexerCommandType;
@@ -163,7 +168,7 @@ bool IpcInterprocessIndexerCommandManager::hasIndexerCommandType(IndexerCommandT
 	});
 }
 
-void IpcInterprocessIndexerCommandManager::clearIndexerCommands()
+inline void IpcInterprocessIndexerCommandManager::clearIndexerCommands()
 {
 	IpcSharedMemory::ScopedAccess access(&m_shm);
 	uint8_t zero[4] = {0, 0, 0, 0};
@@ -171,7 +176,7 @@ void IpcInterprocessIndexerCommandManager::clearIndexerCommands()
 	LOG_INFO_STREAM(<< "[pid=" << static_cast<int>(m_processId) << "] cleared all indexer commands");
 }
 
-size_t IpcInterprocessIndexerCommandManager::indexerCommandCount()
+inline size_t IpcInterprocessIndexerCommandManager::indexerCommandCount()
 {
 	IpcSharedMemory::ScopedAccess access(&m_shm);
 	std::size_t len = 0;
@@ -184,7 +189,7 @@ size_t IpcInterprocessIndexerCommandManager::indexerCommandCount()
 	return all.size();
 }
 
-std::map<std::string, size_t> IpcInterprocessIndexerCommandManager::indexerCommandCountsBySourceGroup()
+inline std::map<std::string, size_t> IpcInterprocessIndexerCommandManager::indexerCommandCountsBySourceGroup()
 {
 	std::map<std::string, size_t> counts;
 

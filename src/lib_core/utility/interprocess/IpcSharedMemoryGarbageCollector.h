@@ -1,6 +1,9 @@
 #ifndef IPC_SHARED_MEMORY_GARBAGE_COLLECTOR_H
 #define IPC_SHARED_MEMORY_GARBAGE_COLLECTOR_H
 
+#include "SrctrlModule.h"
+
+#ifndef SRCTRL_MODULE_PURVIEW
 #include <atomic>
 #include <condition_variable>
 #include <memory>
@@ -10,8 +13,9 @@
 #include <thread>
 
 #include "IpcSharedMemory.h"
+#endif
 
-class IpcSharedMemoryGarbageCollector
+SRCTRL_EXPORT class IpcSharedMemoryGarbageCollector
 {
 public:
 	static IpcSharedMemoryGarbageCollector* createInstance();
@@ -52,5 +56,9 @@ private:
 	std::set<std::string> m_sharedMemoryNames;
 	std::set<std::string> m_removedSharedMemoryNames;
 };
+
+#ifndef SRCTRL_MODULE_PURVIEW
+#include "IpcSharedMemoryGarbageCollector.inl"
+#endif
 
 #endif // IPC_SHARED_MEMORY_GARBAGE_COLLECTOR_H

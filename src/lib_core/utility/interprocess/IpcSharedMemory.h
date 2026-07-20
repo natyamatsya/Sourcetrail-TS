@@ -1,6 +1,9 @@
 #ifndef IPC_SHARED_MEMORY_H
 #define IPC_SHARED_MEMORY_H
 
+#include "SrctrlModule.h"
+
+#ifndef SRCTRL_MODULE_PURVIEW
 #include <cstddef>
 #include <cstdint>
 #include <atomic>
@@ -10,8 +13,9 @@
 #include <thoth-ipc/condition.h>
 #include <thoth-ipc/mutex.h>
 #include <thoth-ipc/shm.h>
+#endif
 
-class IpcSharedMemory
+SRCTRL_EXPORT class IpcSharedMemory
 {
 public:
 	enum class AccessMode
@@ -105,5 +109,9 @@ private:
 	thoth::sync::condition m_condition;
 	std::atomic<bool> m_lockBroken{false};
 };
+
+#ifndef SRCTRL_MODULE_PURVIEW
+#include "IpcSharedMemory.inl"
+#endif
 
 #endif // IPC_SHARED_MEMORY_H

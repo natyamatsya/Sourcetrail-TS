@@ -1,6 +1,9 @@
 #ifndef IPC_INTERPROCESS_INDEXER_COMMAND_MANAGER_H
 #define IPC_INTERPROCESS_INDEXER_COMMAND_MANAGER_H
 
+#include "SrctrlModule.h"
+
+#ifndef SRCTRL_MODULE_PURVIEW
 #include <map>
 #include <memory>
 #include <set>
@@ -12,8 +15,9 @@
 #include "ProcessId.h"
 
 class IndexerCommand;
+#endif
 
-class IpcInterprocessIndexerCommandManager
+SRCTRL_EXPORT class IpcInterprocessIndexerCommandManager
 {
 public:
 	IpcInterprocessIndexerCommandManager(
@@ -67,5 +71,9 @@ private:
 	ProcessId m_processId;
 	IpcSharedMemory m_shm;
 };
+
+#ifndef SRCTRL_MODULE_PURVIEW
+#include "IpcInterprocessIndexerCommandManager.inl"
+#endif
 
 #endif // IPC_INTERPROCESS_INDEXER_COMMAND_MANAGER_H

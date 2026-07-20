@@ -1,12 +1,15 @@
-#include "IpcInterprocessIntermediateStorageManager.h"
+// Inline implementations for IpcInterprocessIntermediateStorageManager.h. Included at the end of
+// that header (classic) or via the srctrl.interprocess wrapper (purview); not a standalone TU.
 
+#pragma once
+
+#ifndef SRCTRL_MODULE_PURVIEW
 #include <cstring>
 
 #include "IntermediateStorage.h"
 #include "IntermediateStorageSerializer.h"
 #include "logging.h"
-
-const char* IpcInterprocessIntermediateStorageManager::s_sharedMemoryNamePrefix = "iist_ipc_";
+#endif
 
 // Layout in shared memory:
 //   [uint64_t needed_capacity] [uint32_t count] [uint32_t size0] [bytes0...] ...
@@ -22,37 +25,44 @@ const char* IpcInterprocessIntermediateStorageManager::s_sharedMemoryNamePrefix 
 //   payloads instead (the Rust indexer chunks unconditionally and always
 //   writes 0). The field stays in the header for wire compatibility.
 
-static const size_t CAP_FIELD_SIZE  = sizeof(uint64_t);
-static const size_t COUNT_FIELD_SIZE = sizeof(uint32_t);
-static const size_t HEADER_SIZE      = CAP_FIELD_SIZE + COUNT_FIELD_SIZE;
+// ODR-safe home for the header-layout constants and field accessors (file-level statics are an ODR
+// trap in headers/inls).
+namespace ipc_intermediate_storage_manager_detail
+{
 
-static uint64_t readNeededCapacity(const uint8_t* buf)
+inline constexpr size_t CAP_FIELD_SIZE   = sizeof(uint64_t);
+inline constexpr size_t COUNT_FIELD_SIZE = sizeof(uint32_t);
+inline constexpr size_t HEADER_SIZE      = CAP_FIELD_SIZE + COUNT_FIELD_SIZE;
+
+inline uint64_t readNeededCapacity(const uint8_t* buf)
 {
 	uint64_t cap = 0;
 	std::memcpy(&cap, buf, sizeof(cap));
 	return cap;
 }
 
-static void writeNeededCapacity(uint8_t* buf, uint64_t cap)
+inline void writeNeededCapacity(uint8_t* buf, uint64_t cap)
 {
 	std::memcpy(buf, &cap, sizeof(cap));
 }
 
-static uint32_t readCount(const uint8_t* buf)
+inline uint32_t readCount(const uint8_t* buf)
 {
-	using enum IpcSharedMemory::AccessMode;
 	uint32_t count = 0;
 	std::memcpy(&count, buf + CAP_FIELD_SIZE, sizeof(count));
 	return count;
 }
 
-static void writeCount(uint8_t* buf, uint32_t count)
+inline void writeCount(uint8_t* buf, uint32_t count)
 {
-	using enum IpcSharedMemory::AccessMode;
 	std::memcpy(buf + CAP_FIELD_SIZE, &count, sizeof(count));
 }
 
-IpcInterprocessIntermediateStorageManager::IpcInterprocessIntermediateStorageManager(
+}	 // namespace ipc_intermediate_storage_manager_detail
+
+inline const char* IpcInterprocessIntermediateStorageManager::s_sharedMemoryNamePrefix = "iist_ipc_";
+
+inline IpcInterprocessIntermediateStorageManager::IpcInterprocessIntermediateStorageManager(
 	const std::string& instanceUuid, ProcessId processId, bool isOwner)
 	: m_instanceUuid{instanceUuid}
 	, m_processId{processId}
@@ -63,9 +73,10 @@ IpcInterprocessIntermediateStorageManager::IpcInterprocessIntermediateStorageMan
 {
 }
 
-void IpcInterprocessIntermediateStorageManager::pushIntermediateStorage(
+inline void IpcInterprocessIntermediateStorageManager::pushIntermediateStorage(
 	const std::shared_ptr<IntermediateStorage>& intermediateStorage)
 {
+	namespace detail = ipc_intermediate_storage_manager_detail;
 	using enum IpcSharedMemory::AccessMode;
 	auto fbBuf = IpcSerializer::serializeIntermediateStorage(*intermediateStorage);
 
@@ -76,20 +87,20 @@ void IpcInterprocessIntermediateStorageManager::pushIntermediateStorage(
 		std::size_t shmLen = 0;
 		const uint8_t* shmBuf = probe.read(&shmLen);
 
-		uint32_t count = (shmLen >= HEADER_SIZE) ? readCount(shmBuf) : 0;
+		uint32_t count = (shmLen >= detail::HEADER_SIZE) ? detail::readCount(shmBuf) : 0;
 		size_t existingPayload = 0;
 		{
-			const uint8_t* p = shmBuf + HEADER_SIZE;
+			const uint8_t* p = shmBuf + detail::HEADER_SIZE;
 			for (uint32_t i = 0; i < count; i++)
 			{
 				uint32_t entrySize = 0;
 				std::memcpy(&entrySize, p, sizeof(entrySize));
 				p += sizeof(entrySize) + entrySize;
-				existingPayload = static_cast<size_t>(p - shmBuf - HEADER_SIZE);
+				existingPayload = static_cast<size_t>(p - shmBuf - detail::HEADER_SIZE);
 			}
 		}
 
-		const size_t totalNeeded = HEADER_SIZE + existingPayload + sizeof(uint32_t) + fbBuf.size();
+		const size_t totalNeeded = detail::HEADER_SIZE + existingPayload + sizeof(uint32_t) + fbBuf.size();
 		if (totalNeeded > shmLen && IpcSharedMemory::canGrow())
 		{
 			growTo = totalNeeded * 2;
@@ -97,7 +108,7 @@ void IpcInterprocessIntermediateStorageManager::pushIntermediateStorage(
 			// We can write into the current (small) segment since cap field always fits.
 			std::vector<uint8_t> capBuf(shmLen, 0);
 			std::memcpy(capBuf.data(), shmBuf, shmLen);
-			writeNeededCapacity(capBuf.data(), static_cast<uint64_t>(growTo));
+			detail::writeNeededCapacity(capBuf.data(), static_cast<uint64_t>(growTo));
 			probe.write(capBuf.data(), capBuf.size());
 			LOG_INFO_STREAM(
 				<< "IpcIntermediateStorageManager: growing shared memory from " << shmLen
@@ -114,20 +125,20 @@ void IpcInterprocessIntermediateStorageManager::pushIntermediateStorage(
 	std::size_t shmLen = 0;
 	const uint8_t* shmBuf = access.read(&shmLen);
 
-	uint32_t count = (shmLen >= HEADER_SIZE) ? readCount(shmBuf) : 0;
+	uint32_t count = (shmLen >= detail::HEADER_SIZE) ? detail::readCount(shmBuf) : 0;
 	size_t existingPayload = 0;
 	{
-		const uint8_t* p = shmBuf + HEADER_SIZE;
+		const uint8_t* p = shmBuf + detail::HEADER_SIZE;
 		for (uint32_t i = 0; i < count; i++)
 		{
 			uint32_t entrySize = 0;
 			std::memcpy(&entrySize, p, sizeof(entrySize));
 			p += sizeof(entrySize) + entrySize;
-			existingPayload = static_cast<size_t>(p - shmBuf - HEADER_SIZE);
+			existingPayload = static_cast<size_t>(p - shmBuf - detail::HEADER_SIZE);
 		}
 	}
 
-	const size_t needed = HEADER_SIZE + existingPayload + sizeof(uint32_t) + fbBuf.size();
+	const size_t needed = detail::HEADER_SIZE + existingPayload + sizeof(uint32_t) + fbBuf.size();
 	if (needed > shmLen)
 		throw std::runtime_error(
 			"IpcIntermediateStorageManager: payload does not fit the shared memory segment "
@@ -136,14 +147,14 @@ void IpcInterprocessIntermediateStorageManager::pushIntermediateStorage(
 
 	std::vector<uint8_t> newBuf(shmLen, 0);
 	// Preserve the cap signal — only the parent clears it after re-mapping.
-	writeNeededCapacity(newBuf.data(), readNeededCapacity(shmBuf));
-	writeCount(newBuf.data(), count + 1);
+	detail::writeNeededCapacity(newBuf.data(), detail::readNeededCapacity(shmBuf));
+	detail::writeCount(newBuf.data(), count + 1);
 
 	if (existingPayload > 0)
-		std::memcpy(newBuf.data() + HEADER_SIZE, shmBuf + HEADER_SIZE, existingPayload);
+		std::memcpy(newBuf.data() + detail::HEADER_SIZE, shmBuf + detail::HEADER_SIZE, existingPayload);
 
 	uint32_t entrySize = static_cast<uint32_t>(fbBuf.size());
-	size_t offset = HEADER_SIZE + existingPayload;
+	size_t offset = detail::HEADER_SIZE + existingPayload;
 	std::memcpy(newBuf.data() + offset, &entrySize, sizeof(entrySize));
 	std::memcpy(newBuf.data() + offset + sizeof(entrySize), fbBuf.data(), fbBuf.size());
 
@@ -155,8 +166,9 @@ void IpcInterprocessIntermediateStorageManager::pushIntermediateStorage(
 // Check the needed_capacity field lock-free and grow m_shm if it requests more space.
 // The subprocess writes needed_capacity before calling grow() (outside the mutex),
 // so this field can be read safely without holding the lock.
-void IpcInterprocessIntermediateStorageManager::growIfNeeded()
+inline void IpcInterprocessIntermediateStorageManager::growIfNeeded()
 {
+	namespace detail = ipc_intermediate_storage_manager_detail;
 	using enum IpcSharedMemory::AccessMode;
 	// Segments are fixed-size where growth is unsupported; subprocesses chunk
 	// their payloads there and never request capacity (ADR-0002).
@@ -164,9 +176,9 @@ void IpcInterprocessIntermediateStorageManager::growIfNeeded()
 		return;
 	std::size_t shmLen = 0;
 	const uint8_t* shmBuf = m_shm.peekMappedMemory(&shmLen);
-	if (!shmBuf || shmLen < CAP_FIELD_SIZE)
+	if (!shmBuf || shmLen < detail::CAP_FIELD_SIZE)
 		return;
-	const uint64_t neededCap = readNeededCapacity(shmBuf);
+	const uint64_t neededCap = detail::readNeededCapacity(shmBuf);
 	if (neededCap <= static_cast<uint64_t>(shmLen))
 		return;
 	LOG_INFO_STREAM(
@@ -175,8 +187,9 @@ void IpcInterprocessIntermediateStorageManager::growIfNeeded()
 	m_shm.grow(static_cast<std::size_t>(neededCap));
 }
 
-std::shared_ptr<IntermediateStorage> IpcInterprocessIntermediateStorageManager::popIntermediateStorage()
+inline std::shared_ptr<IntermediateStorage> IpcInterprocessIntermediateStorageManager::popIntermediateStorage()
 {
+	namespace detail = ipc_intermediate_storage_manager_detail;
 	using enum IpcSharedMemory::AccessMode;
 	growIfNeeded();
 
@@ -184,15 +197,15 @@ std::shared_ptr<IntermediateStorage> IpcInterprocessIntermediateStorageManager::
 	std::size_t shmLen = 0;
 	const uint8_t* shmBuf = access.read(&shmLen);
 
-	if (shmLen < HEADER_SIZE)
+	if (shmLen < detail::HEADER_SIZE)
 		return nullptr;
 
-	uint32_t count = readCount(shmBuf);
+	uint32_t count = detail::readCount(shmBuf);
 	if (count == 0)
 		return nullptr;
 
 	// Read first entry
-	const uint8_t* p = shmBuf + HEADER_SIZE;
+	const uint8_t* p = shmBuf + detail::HEADER_SIZE;
 	uint32_t firstSize = 0;
 	std::memcpy(&firstSize, p, sizeof(firstSize));
 	const uint8_t* firstData = p + sizeof(firstSize);
@@ -201,7 +214,7 @@ std::shared_ptr<IntermediateStorage> IpcInterprocessIntermediateStorageManager::
 
 	// Remove first entry
 	size_t firstTotal = sizeof(uint32_t) + firstSize;
-	size_t remainStart = HEADER_SIZE + firstTotal;
+	size_t remainStart = detail::HEADER_SIZE + firstTotal;
 	size_t remainLen = 0;
 	{
 		const uint8_t* q = shmBuf + remainStart;
@@ -214,11 +227,11 @@ std::shared_ptr<IntermediateStorage> IpcInterprocessIntermediateStorageManager::
 		remainLen = static_cast<size_t>(q - shmBuf - remainStart);
 	}
 
-	std::vector<uint8_t> newBuf(HEADER_SIZE + remainLen, 0);
-	writeNeededCapacity(newBuf.data(), 0);
-	writeCount(newBuf.data(), count - 1);
+	std::vector<uint8_t> newBuf(detail::HEADER_SIZE + remainLen, 0);
+	detail::writeNeededCapacity(newBuf.data(), 0);
+	detail::writeCount(newBuf.data(), count - 1);
 	if (remainLen > 0)
-		std::memcpy(newBuf.data() + HEADER_SIZE, shmBuf + remainStart, remainLen);
+		std::memcpy(newBuf.data() + detail::HEADER_SIZE, shmBuf + remainStart, remainLen);
 
 	access.write(newBuf.data(), newBuf.size());
 
@@ -226,27 +239,29 @@ std::shared_ptr<IntermediateStorage> IpcInterprocessIntermediateStorageManager::
 	return result;
 }
 
-size_t IpcInterprocessIntermediateStorageManager::getIntermediateStorageCount()
+inline size_t IpcInterprocessIntermediateStorageManager::getIntermediateStorageCount()
 {
+	namespace detail = ipc_intermediate_storage_manager_detail;
 	using enum IpcSharedMemory::AccessMode;
 	growIfNeeded();
 
 	IpcSharedMemory::ScopedAccess access(&m_shm);
 	std::size_t shmLen = 0;
 	const uint8_t* shmBuf = access.read(&shmLen);
-	if (shmLen < HEADER_SIZE)
+	if (shmLen < detail::HEADER_SIZE)
 		return 0;
-	return readCount(shmBuf);
+	return detail::readCount(shmBuf);
 }
 
-size_t IpcInterprocessIntermediateStorageManager::peekCount() const
+inline size_t IpcInterprocessIntermediateStorageManager::peekCount() const
 {
+	namespace detail = ipc_intermediate_storage_manager_detail;
 	using enum IpcSharedMemory::AccessMode;
 	std::size_t shmLen = 0;
 	const uint8_t* shmBuf = m_shm.peekMappedMemory(&shmLen);
-	if (!shmBuf || shmLen < HEADER_SIZE)
+	if (!shmBuf || shmLen < detail::HEADER_SIZE)
 		return 0;
 	uint32_t count = 0;
-	std::memcpy(&count, shmBuf + CAP_FIELD_SIZE, sizeof(count));
+	std::memcpy(&count, shmBuf + detail::CAP_FIELD_SIZE, sizeof(count));
 	return count;
 }

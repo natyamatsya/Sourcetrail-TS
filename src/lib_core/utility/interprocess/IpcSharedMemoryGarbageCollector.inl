@@ -1,18 +1,23 @@
-#include "IpcSharedMemoryGarbageCollector.h"
+// Inline implementations for IpcSharedMemoryGarbageCollector.h. Included at the end of that header
+// (classic) or via the srctrl.interprocess wrapper (purview); not a standalone TU.
 
+#pragma once
+
+#ifndef SRCTRL_MODULE_PURVIEW
 #include <cstring>
 
 #include "GarbageCollectorSerializer.h"
 #include "TimeStamp.h"
 #include "logging.h"
+#endif
 
-const std::string IpcSharedMemoryGarbageCollector::s_memoryName = "gc_ipc";
-const size_t IpcSharedMemoryGarbageCollector::s_updateIntervalSeconds = 1;
-const size_t IpcSharedMemoryGarbageCollector::s_deleteThresholdSeconds = 10;
+inline const std::string IpcSharedMemoryGarbageCollector::s_memoryName = "gc_ipc";
+inline const size_t IpcSharedMemoryGarbageCollector::s_updateIntervalSeconds = 1;
+inline const size_t IpcSharedMemoryGarbageCollector::s_deleteThresholdSeconds = 10;
 
-std::shared_ptr<IpcSharedMemoryGarbageCollector> IpcSharedMemoryGarbageCollector::s_instance;
+inline std::shared_ptr<IpcSharedMemoryGarbageCollector> IpcSharedMemoryGarbageCollector::s_instance;
 
-IpcSharedMemoryGarbageCollector* IpcSharedMemoryGarbageCollector::createInstance()
+inline IpcSharedMemoryGarbageCollector* IpcSharedMemoryGarbageCollector::createInstance()
 {
 	using enum IpcSharedMemory::AccessMode;
 	try
@@ -29,23 +34,23 @@ IpcSharedMemoryGarbageCollector* IpcSharedMemoryGarbageCollector::createInstance
 	return s_instance.get();
 }
 
-IpcSharedMemoryGarbageCollector* IpcSharedMemoryGarbageCollector::getInstance()
+inline IpcSharedMemoryGarbageCollector* IpcSharedMemoryGarbageCollector::getInstance()
 {
 	return s_instance.get();
 }
 
-void IpcSharedMemoryGarbageCollector::destroyInstance()
+inline void IpcSharedMemoryGarbageCollector::destroyInstance()
 {
 	s_instance.reset();
 }
 
-IpcSharedMemoryGarbageCollector::IpcSharedMemoryGarbageCollector()
+inline IpcSharedMemoryGarbageCollector::IpcSharedMemoryGarbageCollector()
 	: m_shm{s_memoryName, 65536, IpcSharedMemory::AccessMode::OPEN_OR_CREATE}
 	, m_loopIsRunning{false}
 {
 }
 
-IpcSharedMemoryGarbageCollector::~IpcSharedMemoryGarbageCollector()
+inline IpcSharedMemoryGarbageCollector::~IpcSharedMemoryGarbageCollector()
 {
 	// Signal the thread to stop and join it without touching any IPC resources.
 	// IPC resources (m_shm, m_mutex) may already be invalid during static
@@ -56,7 +61,7 @@ IpcSharedMemoryGarbageCollector::~IpcSharedMemoryGarbageCollector()
 		m_thread->join();
 }
 
-void IpcSharedMemoryGarbageCollector::run(const std::string& uuid)
+inline void IpcSharedMemoryGarbageCollector::run(const std::string& uuid)
 {
 	using enum IpcSharedMemory::AccessMode;
 	LOG_INFO_STREAM(<< "start IPC shared memory garbage collection");
@@ -80,7 +85,7 @@ void IpcSharedMemoryGarbageCollector::run(const std::string& uuid)
 	});
 }
 
-void IpcSharedMemoryGarbageCollector::stop()
+inline void IpcSharedMemoryGarbageCollector::stop()
 {
 	using enum IpcSharedMemory::AccessMode;
 	LOG_INFO_STREAM(<< "stop IPC shared memory garbage collection");
@@ -140,7 +145,7 @@ void IpcSharedMemoryGarbageCollector::stop()
 	}
 }
 
-void IpcSharedMemoryGarbageCollector::registerSharedMemory(const std::string& sharedMemoryName)
+inline void IpcSharedMemoryGarbageCollector::registerSharedMemory(const std::string& sharedMemoryName)
 {
 	{
 		std::lock_guard<std::mutex> lock(m_sharedMemoryNamesMutex);
@@ -149,7 +154,7 @@ void IpcSharedMemoryGarbageCollector::registerSharedMemory(const std::string& sh
 	update();
 }
 
-void IpcSharedMemoryGarbageCollector::unregisterSharedMemory(const std::string& sharedMemoryName)
+inline void IpcSharedMemoryGarbageCollector::unregisterSharedMemory(const std::string& sharedMemoryName)
 {
 	{
 		std::lock_guard<std::mutex> lock(m_sharedMemoryNamesMutex);
@@ -159,7 +164,7 @@ void IpcSharedMemoryGarbageCollector::unregisterSharedMemory(const std::string& 
 	update();
 }
 
-void IpcSharedMemoryGarbageCollector::update()
+inline void IpcSharedMemoryGarbageCollector::update()
 {
 	using enum IpcSharedMemory::AccessMode;
 	std::lock_guard<std::mutex> lock(m_sharedMemoryNamesMutex);

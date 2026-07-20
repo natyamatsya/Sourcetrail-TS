@@ -1,13 +1,21 @@
-#include "IpcSharedMemory.h"
+// Inline implementations for IpcSharedMemory.h. Included at the end of that header (classic) or via
+// the srctrl.interprocess wrapper (purview); not a standalone TU.
 
+#pragma once
+
+#ifndef SRCTRL_MODULE_PURVIEW
 #include <cstring>
 #include <map>
 #include <mutex>
 #include <stdexcept>
 
 #include "logging.h"
+#endif
 
-namespace
+// ODR-safe home for the process-local live-handle registry and the thoth-ipc grow shims (anonymous
+// namespaces are an ODR trap in headers/inls). The function-local statics dedup across classic TUs
+// and the module purview by their common mangling, so there is exactly one registry per process.
+namespace ipc_shared_memory_detail
 {
 // Per-process registry of live IpcSharedMemory instances by logical name.
 // CREATE_AND_DELETE clears the segment's global storage; doing that underneath
@@ -16,19 +24,19 @@ namespace
 // silently. Deliberately leaked: IpcSharedMemory instances held by static
 // singletons destruct during static teardown, which must not touch a
 // destroyed mutex/map.
-std::mutex& liveHandleMutex()
+inline std::mutex& liveHandleMutex()
 {
 	static std::mutex* mutex = new std::mutex();
 	return *mutex;
 }
 
-std::map<std::string, size_t>& liveHandleRegistry()
+inline std::map<std::string, size_t>& liveHandleRegistry()
 {
 	static auto* registry = new std::map<std::string, size_t>();
 	return *registry;
 }
 
-size_t liveHandleCountLocked(const std::string& name)
+inline size_t liveHandleCountLocked(const std::string& name)
 {
 	const auto it = liveHandleRegistry().find(name);
 	return it != liveHandleRegistry().end() ? it->second : 0;
@@ -46,19 +54,30 @@ bool growSharedMemoryHandle(
 	shm.release();
 	return shm.acquire(memoryName.c_str(), newSize, thoth::shm::create | thoth::shm::open);
 }
-} // namespace
 
-const char* IpcSharedMemory::s_memoryNamePrefix = "srctrl_ipc_mem_";
-const char* IpcSharedMemory::s_mutexNamePrefix = "srctrl_ipc_mtx_";
-const char* IpcSharedMemory::s_conditionNamePrefix = "srctrl_ipc_cnd_";
-
-std::size_t IpcSharedMemory::liveHandleCount(const std::string& name)
+// Dependent context so this compiles against thoth-ipc revisions with and
+// without the capability query (mirrors growSharedMemoryHandle above).
+template <typename ShmHandle>
+bool canGrowSharedMemoryHandle()
 {
-	std::lock_guard<std::mutex> lock(liveHandleMutex());
-	return liveHandleCountLocked(name);
+	if constexpr (requires { ShmHandle::can_grow(); })
+		return ShmHandle::can_grow();
+	else
+		return true;	// older/foreign backends: the grow path re-creates by name
+}
+} // namespace ipc_shared_memory_detail
+
+inline const char* IpcSharedMemory::s_memoryNamePrefix = "srctrl_ipc_mem_";
+inline const char* IpcSharedMemory::s_mutexNamePrefix = "srctrl_ipc_mtx_";
+inline const char* IpcSharedMemory::s_conditionNamePrefix = "srctrl_ipc_cnd_";
+
+inline std::size_t IpcSharedMemory::liveHandleCount(const std::string& name)
+{
+	std::lock_guard<std::mutex> lock(ipc_shared_memory_detail::liveHandleMutex());
+	return ipc_shared_memory_detail::liveHandleCountLocked(name);
 }
 
-void IpcSharedMemory::deleteSharedMemory(const std::string& name)
+inline void IpcSharedMemory::deleteSharedMemory(const std::string& name)
 {
 	std::string memName = s_memoryNamePrefix + name;
 	std::string mtxName = s_mutexNamePrefix + name;
@@ -71,14 +90,15 @@ void IpcSharedMemory::deleteSharedMemory(const std::string& name)
 // OS limit (THOTH_IPC_SHM_NAME_MAX) to "/<prefix>_<16-hex-FNV1a-of-full-name>",
 // consistently across acquire/open/remove — so long names stay unique. (An
 // earlier 18-char truncation here silently collided names sharing a prefix.)
-IpcSharedMemory::IpcSharedMemory(const std::string& name, std::size_t size, AccessMode mode)
+inline IpcSharedMemory::IpcSharedMemory(const std::string& name, std::size_t size, AccessMode mode)
 	: m_name(name), m_size(size), m_mode(mode)
 {
 	using enum IpcSharedMemory::AccessMode;
 	if (mode == CREATE_AND_DELETE)
 	{
-		std::lock_guard<std::mutex> lock(liveHandleMutex());
-		if (const size_t liveHandles = liveHandleCountLocked(m_name); liveHandles > 0)
+		std::lock_guard<std::mutex> lock(ipc_shared_memory_detail::liveHandleMutex());
+		if (const size_t liveHandles = ipc_shared_memory_detail::liveHandleCountLocked(m_name);
+			liveHandles > 0)
 		{
 			LOG_WARNING(
 				"IpcSharedMemory: re-creating segment '" + m_name + "' underneath " +
@@ -113,21 +133,21 @@ IpcSharedMemory::IpcSharedMemory(const std::string& name, std::size_t size, Acce
 		throw std::runtime_error("IpcSharedMemory: failed to open condition: " + getConditionName());
 
 	{
-		std::lock_guard<std::mutex> lock(liveHandleMutex());
-		liveHandleRegistry()[m_name]++;
+		std::lock_guard<std::mutex> lock(ipc_shared_memory_detail::liveHandleMutex());
+		ipc_shared_memory_detail::liveHandleRegistry()[m_name]++;
 	}
 }
 
-IpcSharedMemory::~IpcSharedMemory()
+inline IpcSharedMemory::~IpcSharedMemory()
 {
 	using enum IpcSharedMemory::AccessMode;
 	{
-		std::lock_guard<std::mutex> lock(liveHandleMutex());
-		const auto it = liveHandleRegistry().find(m_name);
-		if (it != liveHandleRegistry().end() && --(it->second) == 0)
-			liveHandleRegistry().erase(it);
+		std::lock_guard<std::mutex> lock(ipc_shared_memory_detail::liveHandleMutex());
+		const auto it = ipc_shared_memory_detail::liveHandleRegistry().find(m_name);
+		if (it != ipc_shared_memory_detail::liveHandleRegistry().end() && --(it->second) == 0)
+			ipc_shared_memory_detail::liveHandleRegistry().erase(it);
 
-		if (const size_t remaining = liveHandleCountLocked(m_name);
+		if (const size_t remaining = ipc_shared_memory_detail::liveHandleCountLocked(m_name);
 			m_mode == CREATE_AND_DELETE && remaining > 0)
 		{
 			LOG_WARNING(
@@ -151,64 +171,50 @@ IpcSharedMemory::~IpcSharedMemory()
 	}
 }
 
-const std::string& IpcSharedMemory::name() const
+inline const std::string& IpcSharedMemory::name() const
 {
 	return m_name;
 }
 
-const uint8_t* IpcSharedMemory::peekMappedMemory(std::size_t* outSize) const
+inline const uint8_t* IpcSharedMemory::peekMappedMemory(std::size_t* outSize) const
 {
 	if (outSize)
 		*outSize = m_size;
 	return static_cast<const uint8_t*>(m_shm.get());
 }
 
-namespace
+inline bool IpcSharedMemory::canGrow() noexcept
 {
-// Dependent context so this compiles against thoth-ipc revisions with and
-// without the capability query (mirrors growSharedMemoryHandle above).
-template <typename ShmHandle>
-bool canGrowSharedMemoryHandle()
-{
-	if constexpr (requires { ShmHandle::can_grow(); })
-		return ShmHandle::can_grow();
-	else
-		return true;	// older/foreign backends: the grow path re-creates by name
-}
-} // namespace
-
-bool IpcSharedMemory::canGrow() noexcept
-{
-	return canGrowSharedMemoryHandle<thoth::shm::handle>();
+	return ipc_shared_memory_detail::canGrowSharedMemoryHandle<thoth::shm::handle>();
 }
 
-void IpcSharedMemory::grow(std::size_t newSize)
+inline void IpcSharedMemory::grow(std::size_t newSize)
 {
 	if (newSize <= m_size)
 		return;
 
-	if (!growSharedMemoryHandle(m_shm, getMemoryName(), newSize))
+	if (!ipc_shared_memory_detail::growSharedMemoryHandle(m_shm, getMemoryName(), newSize))
 		throw std::runtime_error("IpcSharedMemory::grow: failed to grow shared memory: " + getMemoryName());
 
 	m_size = newSize;
 }
 
-std::string IpcSharedMemory::getMemoryName() const
+inline std::string IpcSharedMemory::getMemoryName() const
 {
 	return s_memoryNamePrefix + m_name;
 }
 
-std::string IpcSharedMemory::getMutexName() const
+inline std::string IpcSharedMemory::getMutexName() const
 {
 	return s_mutexNamePrefix + m_name;
 }
 
-std::string IpcSharedMemory::getConditionName() const
+inline std::string IpcSharedMemory::getConditionName() const
 {
 	return s_conditionNamePrefix + m_name;
 }
 
-void IpcSharedMemory::notifyAll()
+inline void IpcSharedMemory::notifyAll()
 {
 	// broadcast() is sequence-based and does not require the mutex to be held.
 	m_condition.broadcast(m_mutex);
@@ -216,7 +222,7 @@ void IpcSharedMemory::notifyAll()
 
 // --- ScopedAccess ---
 
-IpcSharedMemory::ScopedAccess::ScopedAccess(IpcSharedMemory* memory)
+inline IpcSharedMemory::ScopedAccess::ScopedAccess(IpcSharedMemory* memory)
 	: m_memory(memory)
 {
 	if (m_memory->m_lockBroken.load())
@@ -255,7 +261,7 @@ IpcSharedMemory::ScopedAccess::ScopedAccess(IpcSharedMemory* memory)
 			<< " retries on '" << m_memory->getMutexName() << "'");
 }
 
-IpcSharedMemory::ScopedAccess::~ScopedAccess()
+inline IpcSharedMemory::ScopedAccess::~ScopedAccess()
 {
 	if (!m_locked)
 		return;
@@ -266,7 +272,7 @@ IpcSharedMemory::ScopedAccess::~ScopedAccess()
 	m_locked = false;
 }
 
-bool IpcSharedMemory::ScopedAccess::wait(uint32_t timeoutMs)
+inline bool IpcSharedMemory::ScopedAccess::wait(uint32_t timeoutMs)
 {
 	if (!m_locked)
 		throw std::runtime_error(
@@ -278,22 +284,22 @@ bool IpcSharedMemory::ScopedAccess::wait(uint32_t timeoutMs)
 	return m_memory->m_condition.wait(m_memory->m_mutex, timeoutMs);
 }
 
-void* IpcSharedMemory::ScopedAccess::data()
+inline void* IpcSharedMemory::ScopedAccess::data()
 {
 	return m_memory->m_shm.get();
 }
 
-const void* IpcSharedMemory::ScopedAccess::data() const
+inline const void* IpcSharedMemory::ScopedAccess::data() const
 {
 	return m_memory->m_shm.get();
 }
 
-std::size_t IpcSharedMemory::ScopedAccess::size() const
+inline std::size_t IpcSharedMemory::ScopedAccess::size() const
 {
 	return m_memory->m_shm.size();
 }
 
-void IpcSharedMemory::ScopedAccess::write(const uint8_t* buf, std::size_t len)
+inline void IpcSharedMemory::ScopedAccess::write(const uint8_t* buf, std::size_t len)
 {
 	using enum IpcSharedMemory::AccessMode;
 	void* mem = data();
@@ -312,7 +318,7 @@ void IpcSharedMemory::ScopedAccess::write(const uint8_t* buf, std::size_t len)
 	std::memcpy(mem, buf, len);
 }
 
-const uint8_t* IpcSharedMemory::ScopedAccess::read(std::size_t* outLen) const
+inline const uint8_t* IpcSharedMemory::ScopedAccess::read(std::size_t* outLen) const
 {
 	const void* mem = data();
 	if (!mem)
@@ -324,7 +330,7 @@ const uint8_t* IpcSharedMemory::ScopedAccess::read(std::size_t* outLen) const
 	return static_cast<const uint8_t*>(mem);
 }
 
-std::string IpcSharedMemory::ScopedAccess::logString() const
+inline std::string IpcSharedMemory::ScopedAccess::logString() const
 {
 	return m_memory->getMemoryName() + " - size: " + std::to_string(size());
 }

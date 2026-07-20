@@ -1,5 +1,9 @@
-#include "InterprocessIndexer.h"
+// Inline implementations for InterprocessIndexer.h. Included at the end of that header (classic)
+// or via the srctrl.interprocess wrapper (purview); not a standalone TU.
 
+#pragma once
+
+#ifndef SRCTRL_MODULE_PURVIEW
 #include "FileRegister.h"
 #include "IndexerCommand.h"
 #include "IndexerComposite.h"
@@ -18,8 +22,9 @@
 #include <mutex>
 #include <set>
 #include <thread>
+#endif
 
-InterprocessIndexer::InterprocessIndexer(
+inline InterprocessIndexer::InterprocessIndexer(
 	const std::string& uuid, ProcessId processId, const std::string& onlyGroupId)
 	: m_interprocessIndexerCommandManager(uuid, processId, false)
 	, m_interprocessIndexingStatusManager(uuid, processId, false)
@@ -32,7 +37,7 @@ InterprocessIndexer::InterprocessIndexer(
 		LOG_INFO_STREAM(<< m_processId << " pinned to source group " << m_onlyGroupId);
 }
 
-InterprocessIndexer::WorkResult InterprocessIndexer::work()
+inline InterprocessIndexer::WorkResult InterprocessIndexer::work()
 {
 	using enum IndexerCommandType;
 	std::atomic<bool> updaterThreadRunning = true;

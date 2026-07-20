@@ -1,6 +1,9 @@
 #ifndef IPC_INTERPROCESS_INTERMEDIATE_STORAGE_MANAGER_H
 #define IPC_INTERPROCESS_INTERMEDIATE_STORAGE_MANAGER_H
 
+#include "SrctrlModule.h"
+
+#ifndef SRCTRL_MODULE_PURVIEW
 #include <memory>
 #include <string>
 
@@ -8,8 +11,9 @@
 #include "ProcessId.h"
 
 class IntermediateStorage;
+#endif
 
-class IpcInterprocessIntermediateStorageManager
+SRCTRL_EXPORT class IpcInterprocessIntermediateStorageManager
 {
 public:
 	IpcInterprocessIntermediateStorageManager(
@@ -36,5 +40,9 @@ private:
 	ProcessId m_processId;
 	IpcSharedMemory m_shm;
 };
+
+#ifndef SRCTRL_MODULE_PURVIEW
+#include "IpcInterprocessIntermediateStorageManager.inl"
+#endif
 
 #endif // IPC_INTERPROCESS_INTERMEDIATE_STORAGE_MANAGER_H

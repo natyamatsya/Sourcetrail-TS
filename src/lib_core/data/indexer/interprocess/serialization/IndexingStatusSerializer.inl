@@ -1,12 +1,17 @@
-#include "IndexingStatusSerializer.h"
+// Inline implementations for IndexingStatusSerializer.h. Included at the end of that header
+// (classic) or via the srctrl.interprocess wrapper (purview); not a standalone TU.
 
+#pragma once
+
+#ifndef SRCTRL_MODULE_PURVIEW
 #include "indexing_status_generated.h"
 #include "logging.h"
+#endif
 
 namespace IpcSerializer
 {
 
-flatbuffers::DetachedBuffer serializeIndexingStatus(const IndexingStatusData& status)
+inline flatbuffers::DetachedBuffer serializeIndexingStatus(const IndexingStatusData& status)
 {
 	flatbuffers::FlatBufferBuilder builder(4096);
 
@@ -68,7 +73,7 @@ flatbuffers::DetachedBuffer serializeIndexingStatus(const IndexingStatusData& st
 	return builder.Release();
 }
 
-IndexingStatusData deserializeIndexingStatus(const uint8_t* buf, std::size_t len)
+inline IndexingStatusData deserializeIndexingStatus(const uint8_t* buf, std::size_t len)
 {
 	IndexingStatusData result;
 

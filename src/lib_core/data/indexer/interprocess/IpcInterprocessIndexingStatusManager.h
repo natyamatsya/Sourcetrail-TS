@@ -1,6 +1,9 @@
 #ifndef IPC_INTERPROCESS_INDEXING_STATUS_MANAGER_H
 #define IPC_INTERPROCESS_INDEXING_STATUS_MANAGER_H
 
+#include "SrctrlModule.h"
+
+#ifndef SRCTRL_MODULE_PURVIEW
 #include <optional>
 #include <string>
 #include <vector>
@@ -8,8 +11,9 @@
 #include "FilePath.h"
 #include "IpcSharedMemory.h"
 #include "ProcessId.h"
+#endif
 
-class IpcInterprocessIndexingStatusManager
+SRCTRL_EXPORT class IpcInterprocessIndexingStatusManager
 {
 public:
 	IpcInterprocessIndexingStatusManager(
@@ -39,5 +43,9 @@ private:
 	ProcessId m_processId;
 	IpcSharedMemory m_shm;
 };
+
+#ifndef SRCTRL_MODULE_PURVIEW
+#include "IpcInterprocessIndexingStatusManager.inl"
+#endif
 
 #endif // IPC_INTERPROCESS_INDEXING_STATUS_MANAGER_H

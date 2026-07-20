@@ -1,60 +1,67 @@
-#include "IntermediateStorageChunker.h"
+// Inline implementations for IntermediateStorageChunker.h. Included at the end of that header
+// (classic) or via the srctrl.interprocess wrapper (purview); not a standalone TU.
 
+#pragma once
+
+#ifndef SRCTRL_MODULE_PURVIEW
 #include <map>
 #include <set>
 #include <unordered_map>
 #include <unordered_set>
 
 #include "IntermediateStorage.h"
+#endif
 
-namespace
+// ODR-safe home for the cost model and the Chunker (anonymous namespaces are an ODR trap in
+// headers/inls).
+namespace intermediate_storage_chunker_detail
 {
 
 // Budget for one chunk's (over-)estimated serialized size. Back-pressure in
 // the subprocess keeps at most two entries queued, and two chunks plus queue
 // headers must stay comfortably below the fixed 16 MiB segment. Keep in sync
 // with CHUNK_BUDGET_BYTES in src/rust_indexer/indexer/src/ipc/storage.rs.
-constexpr size_t CHUNK_BUDGET_BYTES = 7 * 1024 * 1024;
+inline constexpr size_t CHUNK_BUDGET_BYTES = 7 * 1024 * 1024;
 
 // Conservative per-row estimates of the serialized footprint (table fields +
 // per-row overhead + padding). Same model as the Rust chunker.
-constexpr size_t EDGE_COST = 56;
-constexpr size_t SYMBOL_COST = 32;
-constexpr size_t LOCATION_COST = 64;
-constexpr size_t OCCURRENCE_COST = 32;
-constexpr size_t COMPONENT_ACCESS_COST = 32;
+inline constexpr size_t EDGE_COST = 56;
+inline constexpr size_t SYMBOL_COST = 32;
+inline constexpr size_t LOCATION_COST = 64;
+inline constexpr size_t OCCURRENCE_COST = 32;
+inline constexpr size_t COMPONENT_ACCESS_COST = 32;
 
-size_t nodeCost(const StorageNode& n)
+inline size_t nodeCost(const StorageNode& n)
 {
 	return 48 + n.serializedName.size();
 }
 
-size_t fileCost(const StorageFile& f)
+inline size_t fileCost(const StorageFile& f)
 {
 	return 64 + f.filePath.size() + f.languageIdentifier.size();
 }
 
-size_t localSymbolCost(const StorageLocalSymbol& ls)
+inline size_t localSymbolCost(const StorageLocalSymbol& ls)
 {
 	return 48 + ls.name.size();
 }
 
-size_t elementComponentCost(const StorageElementComponent& ec)
+inline size_t elementComponentCost(const StorageElementComponent& ec)
 {
 	return 48 + ec.data.size();
 }
 
-size_t errorCost(const StorageError& e)
+inline size_t errorCost(const StorageError& e)
 {
 	return 64 + e.message.size() + e.translationUnit.size();
 }
 
-size_t nodeAttributeCost(const StorageNodeAttribute& a)
+inline size_t nodeAttributeCost(const StorageNodeAttribute& a)
 {
 	return 40 + a.value.size();
 }
 
-size_t estimatedSize(const IntermediateStorage& s)
+inline size_t estimatedSize(const IntermediateStorage& s)
 {
 	size_t total = 1024;
 	for (const StorageNode& n: s.getStorageNodes())
@@ -362,17 +369,18 @@ private:
 	std::unordered_set<Id> m_curLocationIds;
 };
 
-}	 // namespace
+}	 // namespace intermediate_storage_chunker_detail
 
 namespace utility
 {
 
-std::vector<std::shared_ptr<IntermediateStorage>> chunkIntermediateStorage(
+inline std::vector<std::shared_ptr<IntermediateStorage>> chunkIntermediateStorage(
 	const std::shared_ptr<IntermediateStorage>& storage)
 {
-	if (estimatedSize(*storage) <= CHUNK_BUDGET_BYTES)
+	if (intermediate_storage_chunker_detail::estimatedSize(*storage) <=
+		intermediate_storage_chunker_detail::CHUNK_BUDGET_BYTES)
 		return {storage};
-	return Chunker(*storage).run();
+	return intermediate_storage_chunker_detail::Chunker(*storage).run();
 }
 
 }	 // namespace utility

@@ -1,10 +1,14 @@
 #ifndef INTERMEDIATE_STORAGE_CHUNKER_H
 #define INTERMEDIATE_STORAGE_CHUNKER_H
 
+#include "SrctrlModule.h"
+
+#ifndef SRCTRL_MODULE_PURVIEW
 #include <memory>
 #include <vector>
 
 class IntermediateStorage;
+#endif
 
 namespace utility
 {
@@ -22,8 +26,12 @@ namespace utility
 // deduped on inject, so each is emitted in exactly one chunk.
 //
 // A storage that fits the budget is returned unchanged (same instance).
-std::vector<std::shared_ptr<IntermediateStorage>> chunkIntermediateStorage(
+SRCTRL_EXPORT std::vector<std::shared_ptr<IntermediateStorage>> chunkIntermediateStorage(
 	const std::shared_ptr<IntermediateStorage>& storage);
 }	 // namespace utility
+
+#ifndef SRCTRL_MODULE_PURVIEW
+#include "IntermediateStorageChunker.inl"
+#endif
 
 #endif	  // INTERMEDIATE_STORAGE_CHUNKER_H

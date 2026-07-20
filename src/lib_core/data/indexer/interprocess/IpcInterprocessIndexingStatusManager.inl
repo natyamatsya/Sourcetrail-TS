@@ -1,27 +1,22 @@
-#include "IpcInterprocessIndexingStatusManager.h"
+// Inline implementations for IpcInterprocessIndexingStatusManager.h. Included at the end of that
+// header (classic) or via the srctrl.interprocess wrapper (purview); not a standalone TU.
 
+#pragma once
+
+#ifndef SRCTRL_MODULE_PURVIEW
 #include <algorithm>
 #include <cstring>
 
 #include "IndexingStatusSerializer.h"
 #include "logging.h"
+#endif
 
-const char* IpcInterprocessIndexingStatusManager::s_sharedMemoryNamePrefix = "ists_ipc_";
-
-IpcInterprocessIndexingStatusManager::IpcInterprocessIndexingStatusManager(
-	const std::string& instanceUuid, ProcessId processId, bool isOwner)
-	: m_instanceUuid{instanceUuid}
-	, m_processId{processId}
-	, m_shm{
-		  s_sharedMemoryNamePrefix + instanceUuid,
-		  1048576,
-		  isOwner ? IpcSharedMemory::AccessMode::CREATE_AND_DELETE : IpcSharedMemory::AccessMode::OPEN_OR_CREATE}
+// ODR-safe home for the shared read/write helpers (file-level statics are an ODR trap in
+// headers/inls).
+namespace ipc_indexing_status_manager_detail
 {
-}
 
-IpcInterprocessIndexingStatusManager::~IpcInterprocessIndexingStatusManager() = default;
-
-static IpcSerializer::IndexingStatusData readStatus(IpcSharedMemory::ScopedAccess& access)
+inline IpcSerializer::IndexingStatusData readStatus(IpcSharedMemory::ScopedAccess& access)
 {
 	std::size_t len = 0;
 	const uint8_t* buf = access.read(&len);
@@ -32,16 +27,33 @@ static IpcSerializer::IndexingStatusData readStatus(IpcSharedMemory::ScopedAcces
 	return {};
 }
 
-static void writeStatus(IpcSharedMemory::ScopedAccess& access, const IpcSerializer::IndexingStatusData& data)
+inline void writeStatus(IpcSharedMemory::ScopedAccess& access, const IpcSerializer::IndexingStatusData& data)
 {
 	auto fbBuf = IpcSerializer::serializeIndexingStatus(data);
 	access.write(fbBuf.data(), fbBuf.size());
 }
 
-void IpcInterprocessIndexingStatusManager::startIndexingSourceFile(const FilePath& filePath)
+}	 // namespace ipc_indexing_status_manager_detail
+
+inline const char* IpcInterprocessIndexingStatusManager::s_sharedMemoryNamePrefix = "ists_ipc_";
+
+inline IpcInterprocessIndexingStatusManager::IpcInterprocessIndexingStatusManager(
+	const std::string& instanceUuid, ProcessId processId, bool isOwner)
+	: m_instanceUuid{instanceUuid}
+	, m_processId{processId}
+	, m_shm{
+		  s_sharedMemoryNamePrefix + instanceUuid,
+		  1048576,
+		  isOwner ? IpcSharedMemory::AccessMode::CREATE_AND_DELETE : IpcSharedMemory::AccessMode::OPEN_OR_CREATE}
+{
+}
+
+inline IpcInterprocessIndexingStatusManager::~IpcInterprocessIndexingStatusManager() = default;
+
+inline void IpcInterprocessIndexingStatusManager::startIndexingSourceFile(const FilePath& filePath)
 {
 	IpcSharedMemory::ScopedAccess access(&m_shm);
-	auto data = readStatus(access);
+	auto data = ipc_indexing_status_manager_detail::readStatus(access);
 
 	// Add to indexing queue
 	data.indexingFilePaths.push_back(filePath.str());
@@ -64,13 +76,13 @@ void IpcInterprocessIndexingStatusManager::startIndexingSourceFile(const FilePat
 	// Set current file for this process
 	data.currentFiles.emplace_back(pid, filePath.str());
 
-	writeStatus(access, data);
+	ipc_indexing_status_manager_detail::writeStatus(access, data);
 }
 
-void IpcInterprocessIndexingStatusManager::finishIndexingSourceFile()
+inline void IpcInterprocessIndexingStatusManager::finishIndexingSourceFile()
 {
 	IpcSharedMemory::ScopedAccess access(&m_shm);
-	auto data = readStatus(access);
+	auto data = ipc_indexing_status_manager_detail::readStatus(access);
 
 	auto pid = static_cast<std::size_t>(m_processId);
 	std::string finishedFilePath;
@@ -98,42 +110,42 @@ void IpcInterprocessIndexingStatusManager::finishIndexingSourceFile()
 			data.crashedFilePaths.end());
 	}
 
-	writeStatus(access, data);
+	ipc_indexing_status_manager_detail::writeStatus(access, data);
 }
 
-void IpcInterprocessIndexingStatusManager::setIndexingInterrupted(bool interrupted)
+inline void IpcInterprocessIndexingStatusManager::setIndexingInterrupted(bool interrupted)
 {
 	IpcSharedMemory::ScopedAccess access(&m_shm);
-	auto data = readStatus(access);
+	auto data = ipc_indexing_status_manager_detail::readStatus(access);
 	data.indexingInterrupted = interrupted;
-	writeStatus(access, data);
+	ipc_indexing_status_manager_detail::writeStatus(access, data);
 }
 
-bool IpcInterprocessIndexingStatusManager::getIndexingInterrupted()
+inline bool IpcInterprocessIndexingStatusManager::getIndexingInterrupted()
 {
 	IpcSharedMemory::ScopedAccess access(&m_shm);
-	return readStatus(access).indexingInterrupted;
+	return ipc_indexing_status_manager_detail::readStatus(access).indexingInterrupted;
 }
 
-void IpcInterprocessIndexingStatusManager::setQueueStopped(bool stopped)
+inline void IpcInterprocessIndexingStatusManager::setQueueStopped(bool stopped)
 {
 	IpcSharedMemory::ScopedAccess access(&m_shm);
-	auto data = readStatus(access);
+	auto data = ipc_indexing_status_manager_detail::readStatus(access);
 	data.queueStopped = stopped;
-	writeStatus(access, data);
+	ipc_indexing_status_manager_detail::writeStatus(access, data);
 }
 
-bool IpcInterprocessIndexingStatusManager::getQueueStopped()
+inline bool IpcInterprocessIndexingStatusManager::getQueueStopped()
 {
 	IpcSharedMemory::ScopedAccess access(&m_shm);
-	return readStatus(access).queueStopped;
+	return ipc_indexing_status_manager_detail::readStatus(access).queueStopped;
 }
 
-ProcessId IpcInterprocessIndexingStatusManager::getNextFinishedProcessId()
+inline ProcessId IpcInterprocessIndexingStatusManager::getNextFinishedProcessId()
 {
 	using enum IpcSharedMemory::AccessMode;
 	IpcSharedMemory::ScopedAccess access(&m_shm);
-	auto data = readStatus(access);
+	auto data = ipc_indexing_status_manager_detail::readStatus(access);
 
 	if (data.finishedProcessIds.empty())
 		return ProcessId::NONE;
@@ -141,14 +153,14 @@ ProcessId IpcInterprocessIndexingStatusManager::getNextFinishedProcessId()
 	auto pid = data.finishedProcessIds.front();
 	data.finishedProcessIds.erase(data.finishedProcessIds.begin());
 
-	writeStatus(access, data);
+	ipc_indexing_status_manager_detail::writeStatus(access, data);
 	return static_cast<ProcessId>(pid);
 }
 
-std::vector<FilePath> IpcInterprocessIndexingStatusManager::getCurrentlyIndexedSourceFilePaths()
+inline std::vector<FilePath> IpcInterprocessIndexingStatusManager::getCurrentlyIndexedSourceFilePaths()
 {
 	IpcSharedMemory::ScopedAccess access(&m_shm);
-	auto data = readStatus(access);
+	auto data = ipc_indexing_status_manager_detail::readStatus(access);
 
 	// Drain the indexing files queue (same as boost backend)
 	std::vector<FilePath> result;
@@ -157,16 +169,16 @@ std::vector<FilePath> IpcInterprocessIndexingStatusManager::getCurrentlyIndexedS
 		result.emplace_back(p);
 
 	data.indexingFilePaths.clear();
-	writeStatus(access, data);
+	ipc_indexing_status_manager_detail::writeStatus(access, data);
 
 	return result;
 }
 
-std::optional<FilePath> IpcInterprocessIndexingStatusManager::getCurrentSourceFilePathForProcess(
+inline std::optional<FilePath> IpcInterprocessIndexingStatusManager::getCurrentSourceFilePathForProcess(
 	const ProcessId processId)
 {
 	IpcSharedMemory::ScopedAccess access(&m_shm);
-	const auto data = readStatus(access);
+	const auto data = ipc_indexing_status_manager_detail::readStatus(access);
 
 	const auto pid = static_cast<std::size_t>(processId);
 	for (const auto& [currentPid, path]: data.currentFiles)
@@ -178,10 +190,10 @@ std::optional<FilePath> IpcInterprocessIndexingStatusManager::getCurrentSourceFi
 	return std::nullopt;
 }
 
-std::vector<FilePath> IpcInterprocessIndexingStatusManager::getCurrentSourceFilePaths()
+inline std::vector<FilePath> IpcInterprocessIndexingStatusManager::getCurrentSourceFilePaths()
 {
 	IpcSharedMemory::ScopedAccess access(&m_shm);
-	const auto data = readStatus(access);
+	const auto data = ipc_indexing_status_manager_detail::readStatus(access);
 
 	std::vector<FilePath> result;
 	result.reserve(data.currentFiles.size());
@@ -191,10 +203,10 @@ std::vector<FilePath> IpcInterprocessIndexingStatusManager::getCurrentSourceFile
 	return result;
 }
 
-std::vector<FilePath> IpcInterprocessIndexingStatusManager::getCrashedSourceFilePaths()
+inline std::vector<FilePath> IpcInterprocessIndexingStatusManager::getCrashedSourceFilePaths()
 {
 	IpcSharedMemory::ScopedAccess access(&m_shm);
-	auto data = readStatus(access);
+	auto data = ipc_indexing_status_manager_detail::readStatus(access);
 
 	std::vector<FilePath> result;
 

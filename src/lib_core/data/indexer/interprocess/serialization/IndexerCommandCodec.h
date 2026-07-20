@@ -1,6 +1,9 @@
 #ifndef INDEXER_COMMAND_CODEC_H
 #define INDEXER_COMMAND_CODEC_H
 
+#include "SrctrlModule.h"
+
+#ifndef SRCTRL_MODULE_PURVIEW
 #include <concepts>
 #include <functional>
 #include <memory>
@@ -8,12 +11,13 @@
 #include "indexer_command_generated.h"
 
 class IndexerCommand;
+#endif
 
 // Type-erased (de)serialization for one language's IndexerCommand. Registered per IndexerCommandType
 // into IndexerCommandCodecRegistry so IndexerCommandSerializer dispatches by type without ever naming a
 // concrete command class -- which is what keeps `lib` free of a link dependency on `lib_cxx` (and any
 // future language package). No inheritance: a codec is a plain value holding two erased operations.
-struct IndexerCommandCodec
+SRCTRL_EXPORT struct IndexerCommandCodec
 {
 	using SerializeFn = std::function<flatbuffers::Offset<Sourcetrail::Ipc::IndexerCommand>(
 		flatbuffers::FlatBufferBuilder&, const IndexerCommand&)>;
@@ -26,7 +30,7 @@ struct IndexerCommandCodec
 
 // Compile-time contract a codec provider satisfies: any value type exposing these two operations can be
 // erased into an IndexerCommandCodec -- no base class, no virtuals.
-template <class T>
+SRCTRL_EXPORT template <class T>
 concept IndexerCommandCodecC = requires(
 	const T& codec,
 	flatbuffers::FlatBufferBuilder& builder,
@@ -39,7 +43,7 @@ concept IndexerCommandCodecC = requires(
 };
 
 // Erase a concept-satisfying provider value into the std::function-backed IndexerCommandCodec.
-template <IndexerCommandCodecC Provider>
+SRCTRL_EXPORT template <IndexerCommandCodecC Provider>
 IndexerCommandCodec eraseIndexerCommandCodec(Provider provider)
 {
 	return IndexerCommandCodec{
