@@ -158,9 +158,13 @@ of it on the CppSQLite3 code.
    them into `Sourcetrail_lib`. Helper verified end-to-end (imports + generated-form query against the
    *installed* headers); default build unaffected (option OFF). **Remaining for S3:** (i) reinstall the
    overlay port so the modules ship to the install tree (or keep `SQLPP23_MODULES_DIR` pointed at the
-   source); (ii) convert the `sqlite/` impl (`SqliteStorage` + `SqliteIndexStorage`, ~3.8k dense LOC) from
-   `#include <sqlpp23/...>` to `import`, coordinated with the CppSQLite3→sqlpp23 SQL-layer migration
-   (`DESIGN_STORAGE_CODEGEN.md`); (iii) ✅ a modules-ON full-lib build verified in situ — the whole app
+   source); (ii) ✅ the `sqlite/` impl conversion verified in situ — with
+   `SOURCETRAIL_CXX_MODULES=ON + SOURCETRAIL_SQLPP23_MODULES=ON` the full app builds and the three impl
+   TUs (`SqliteStorage`/`SqliteIndexStorage`/`SqliteBookmarkStorage`) demonstrably compile against the
+   `sqlpp23.core.pcm`/`sqlpp23.sqlite3.pcm` BMIs (per their ninja modmaps), not the header fallback;
+   test suite (728) + headless Usages index identical to the default build, which is unaffected
+   (both options OFF). The overlay port ships `modules/` into the install tree, so (i) is moot;
+   (iii) a modules-ON full-lib build verified in situ — the whole app
    (`Sourcetrail` + indexer + test) builds and links with `SOURCETRAIL_CXX_MODULES=ON` in the primary
    build dir, all 24 module units compiled; test suite + headless index identical ON vs OFF. Unblocking
    it forced the cross-BMI attachment cleanups recorded in DESIGN_INDEXER_MODULARIZATION.md (FilePath
