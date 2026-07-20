@@ -8,8 +8,9 @@
 // A standalone module ABOVE srctrl.indexer and srctrl.storage (it serializes IndexerCommands
 // and IntermediateStorages and drives the language packages). Module build only.
 //
-// GMF hazards this wrapper exists to contain: the thoth-ipc headers and the four
-// flatbuffers-generated wire headers are non-modularized third-party code -- global module only.
+// GMF hazards this wrapper exists to contain: the four flatbuffers-generated wire headers are
+// non-modularized generated code -- global module only. The thoth-ipc primitives come in via
+// `import thoth.ipc;` (upstream's opt-in named module) rather than GMF includes.
 //
 // Deliberately NOT here: TaskBuildIndex / TaskFillIndexerCommandQueue (host-side tasks that drag
 // messaging and scheduling -- they stay classic until messaging modularizes), and
@@ -42,11 +43,6 @@ module;
 #include <vector>
 #endif
 
-// thoth-ipc: the shared-memory / named-mutex / condition primitives (IpcSharedMemory's members).
-#include <thoth-ipc/condition.h>
-#include <thoth-ipc/mutex.h>
-#include <thoth-ipc/shm.h>
-
 // flatbuffers + the generated wire-format headers (build-dir generated, non-modularized).
 #include <flatbuffers/flatbuffers.h>
 #include "garbage_collector_generated.h"
@@ -68,6 +64,9 @@ export module srctrl.interprocess;
 import std;
 #endif
 
+import thoth.ipc;        // the shared-memory / named-mutex / condition primitives
+                         // (IpcSharedMemory's members) -- upstream's sqlpp23-style re-export
+                         // module, same global-module entities the classic headers declare
 import srctrl.utility;   // utilityEnum (MAX_ENUM_VALUE, enum to_string/streaming), TimeStamp
 import srctrl.file;      // FilePath, FileRegister
 import srctrl.data;      // the storage-row enums (NodeKind, Edge::EdgeType, LocationType, ...)

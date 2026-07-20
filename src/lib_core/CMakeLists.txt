@@ -98,6 +98,10 @@ if(SOURCETRAIL_CXX_MODULES_ENABLED)
 	if(CMAKE_CXX_COMPILER_ID MATCHES "Clang")
 		target_compile_options(Sourcetrail_lib_core PRIVATE -fno-modules-reduced-bmi)
 	endif()
+	# srctrl.interprocess `import thoth.ipc;`s (the top-level CMakeLists turns on
+	# THOTH_IPC_BUILD_MODULES in module builds); linking thoth_ipc_module provides the BMI
+	# and the module initializer.
+	target_link_libraries(Sourcetrail_lib_core PUBLIC thoth_ipc_module)
 	# Module scanning of the regular sources is off by the project-wide default (stdexec breaks
 	# clang-scan-deps -- see the top-level CMakeLists); the .cppm interface units are still scanned.
 	if(SOURCETRAIL_CXX_IMPORT_STD)

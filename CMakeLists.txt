@@ -309,6 +309,17 @@ if (SOURCETRAIL_AGENT_CONTROL AND NOT WIN32)
 	set(THOTH_IPC_STDEXEC ON CACHE BOOL "" FORCE)
 endif()
 
+# Module build: also build thoth-ipc's opt-in named module (target thoth_ipc_module,
+# sqlpp23-style re-export of the header surface) so srctrl.interprocess can
+# `import thoth.ipc;` instead of GMF-including the thoth headers. Same entities either
+# way (the interface unit declares them in its own global module fragment), so the
+# classic OFF build is unaffected.
+if (SOURCETRAIL_CXX_MODULES_ENABLED)
+	set(THOTH_IPC_BUILD_MODULES ON CACHE BOOL "" FORCE)
+else()
+	set(THOTH_IPC_BUILD_MODULES OFF CACHE BOOL "" FORCE)
+endif()
+
 add_subdirectory("${THOTH_IPC_DIR}" "${CMAKE_BINARY_DIR}/_deps/thoth-ipc-build")
 message(STATUS "Built thoth-ipc from submodule submodules/thoth-ipc")
 
