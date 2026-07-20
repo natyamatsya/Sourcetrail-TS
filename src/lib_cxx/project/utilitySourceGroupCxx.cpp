@@ -181,44 +181,6 @@ std::shared_ptr<Task> createBuildPchTask(const SourceGroupSettingsWithCxxPchOpti
 		pchInputFilePath, pchOutputFilePath, std::move(compilerFlags), "", storageProvider, dialogView);
 }
 
-std::expected<std::shared_ptr<clang::tooling::CompilationDatabase>, CdbLoadError> loadCDB(const FilePath& cdbPath)
-{
-	if (cdbPath.empty() || !cdbPath.exists())
-	{
-		return std::unexpected(CdbLoadError{CdbLoadError::Code::PathMissing, {}});
-	}
-
-	std::string errorString;
-	std::unique_ptr<clang::tooling::CompilationDatabase> cdb = clang::tooling::JSONCompilationDatabase::loadFromFile(
-		cdbPath.str(), errorString, clang::tooling::JSONCommandLineSyntax::AutoDetect);
-	if (cdb == nullptr)
-	{
-		return std::unexpected(CdbLoadError{CdbLoadError::Code::ParseFailed, std::move(errorString)});
-	}
-
-	return std::shared_ptr<clang::tooling::CompilationDatabase>(
-		expandResponseFiles(std::move(cdb), llvm::vfs::getRealFileSystem()));
-}
-
-std::expected<std::shared_ptr<clang::tooling::CompilationDatabase>, CdbLoadError> loadCDB(
-	std::string_view cdbContent, clang::tooling::JSONCommandLineSyntax syntax)
-{
-	if (cdbContent.empty())
-	{
-		return std::unexpected(CdbLoadError{CdbLoadError::Code::PathMissing, {}});
-	}
-
-	std::string errorString;
-	std::unique_ptr<clang::tooling::CompilationDatabase> cdb =
-		clang::tooling::JSONCompilationDatabase::loadFromBuffer(cdbContent, errorString, syntax);
-	if (cdb == nullptr)
-	{
-		return std::unexpected(CdbLoadError{CdbLoadError::Code::ParseFailed, std::move(errorString)});
-	}
-
-	return std::shared_ptr<clang::tooling::CompilationDatabase>(std::move(cdb));
-}
-
 bool containsIncludePchFlags(std::shared_ptr<clang::tooling::CompilationDatabase> cdb)
 {
 	for (const clang::tooling::CompileCommand& command: cdb->getAllCompileCommands())

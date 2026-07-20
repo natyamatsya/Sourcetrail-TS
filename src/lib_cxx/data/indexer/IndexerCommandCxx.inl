@@ -1,23 +1,26 @@
-#include "IndexerCommandCxx.h"
+// Inline implementations for IndexerCommandCxx.h. Included at the end of that header; not a
+// standalone TU.
 
+#pragma once
+
+#ifndef SRCTRL_MODULE_PURVIEW
 #include "MessageStatus.h"
 #include "OrderedCache.h"
 #include "Platform.h"
-#include "ResourcePaths.h"
 #include "ToolChain.h"
 #include "logging.h"
 #include "utilityApp.h"
-#include "utilitySourceGroupCxx.h"
+#include "CdbLoad.h"
 #include "utilityString.h"
 
 #include <clang/Tooling/CompilationDatabase.h>
 #include <clang/Tooling/JSONCompilationDatabase.h>
 
-
 #include <cstdint>
 #include <mutex>
+#endif
 
-std::vector<FilePath> IndexerCommandCxx::getSourceFilesFromCDB(const FilePath& cdbPath)
+inline std::vector<FilePath> IndexerCommandCxx::getSourceFilesFromCDB(const FilePath& cdbPath)
 {
 	const std::expected<std::shared_ptr<clang::tooling::CompilationDatabase>, utility::CdbLoadError> cdb =
 		utility::loadCDB(cdbPath);
@@ -38,7 +41,7 @@ std::vector<FilePath> IndexerCommandCxx::getSourceFilesFromCDB(const FilePath& c
 	return getSourceFilesFromCDB(cdb.value(), cdbPath);
 }
 
-std::vector<FilePath> IndexerCommandCxx::getSourceFilesFromCDB(std::shared_ptr<clang::tooling::CompilationDatabase> cdb, const FilePath& cdbPath)
+inline std::vector<FilePath> IndexerCommandCxx::getSourceFilesFromCDB(std::shared_ptr<clang::tooling::CompilationDatabase> cdb, const FilePath& cdbPath)
 {
 	std::vector<FilePath> filePaths;
 	if (cdb)
@@ -68,12 +71,12 @@ std::vector<FilePath> IndexerCommandCxx::getSourceFilesFromCDB(std::shared_ptr<c
 	return filePaths;
 }
 
-std::string IndexerCommandCxx::getCompilerFlagLanguageStandard(const std::string& languageStandard)
+inline std::string IndexerCommandCxx::getCompilerFlagLanguageStandard(const std::string& languageStandard)
 {
 	return ClangCompiler::stdOption(languageStandard);
 }
 
-const std::string& IndexerCommandCxx::getMacOSSysrootPath()
+inline const std::string& IndexerCommandCxx::getMacOSSysrootPath()
 {
 	static std::once_flag onceFlag;
 	static std::string cachedSysroot;
@@ -90,7 +93,7 @@ const std::string& IndexerCommandCxx::getMacOSSysrootPath()
 	return cachedSysroot;
 }
 
-std::vector<std::string> IndexerCommandCxx::getCompilerFlagsForSysroot(
+inline std::vector<std::string> IndexerCommandCxx::getCompilerFlagsForSysroot(
 	const std::vector<std::string>& existingFlags)
 {
 	if constexpr (!utility::Platform::isMac())
@@ -114,7 +117,7 @@ std::vector<std::string> IndexerCommandCxx::getCompilerFlagsForSysroot(
 	return {"-isysroot", sysroot};
 }
 
-std::string IndexerCommandCxx::hashCompilerFlags(const std::vector<std::string>& compilerFlags)
+inline std::string IndexerCommandCxx::hashCompilerFlags(const std::vector<std::string>& compilerFlags)
 {
 	// FNV-1a over the flags joined by '\n'. Deterministic across processes/runs
 	// (unlike std::hash), so the value can be persisted and compared on refresh.
@@ -142,12 +145,12 @@ std::string IndexerCommandCxx::hashCompilerFlags(const std::vector<std::string>&
 	return out;
 }
 
-std::string IndexerCommandCxx::getIndexerCommandHash() const
+inline std::string IndexerCommandCxx::getIndexerCommandHash() const
 {
 	return hashCompilerFlags(getCompilerFlags());
 }
 
-std::vector<std::string> IndexerCommandCxx::getCompilerFlagsForSystemHeaderSearchPaths(
+inline std::vector<std::string> IndexerCommandCxx::getCompilerFlagsForSystemHeaderSearchPaths(
 	const std::vector<FilePath>& systemHeaderSearchPaths)
 {
 	std::vector<std::string> compilerFlags;
@@ -175,7 +178,7 @@ std::vector<std::string> IndexerCommandCxx::getCompilerFlagsForSystemHeaderSearc
 	return compilerFlags;
 }
 
-std::vector<std::string> IndexerCommandCxx::getCompilerFlagsForFrameworkSearchPaths(
+inline std::vector<std::string> IndexerCommandCxx::getCompilerFlagsForFrameworkSearchPaths(
 	const std::vector<FilePath>& frameworkSearchPaths)
 {
 	std::vector<std::string> compilerFlags;
@@ -188,12 +191,12 @@ std::vector<std::string> IndexerCommandCxx::getCompilerFlagsForFrameworkSearchPa
 	return compilerFlags;
 }
 
-IndexerCommandType IndexerCommandCxx::getStaticIndexerCommandType()
+inline IndexerCommandType IndexerCommandCxx::getStaticIndexerCommandType()
 {
 	return IndexerCommandType::INDEXER_COMMAND_CXX;
 }
 
-IndexerCommandCxx::IndexerCommandCxx(
+inline IndexerCommandCxx::IndexerCommandCxx(
 	const FilePath& sourceFilePath,
 	const std::set<FilePath>& indexedPaths,
 	const std::set<FilePathFilter>& excludeFilters,
@@ -211,17 +214,17 @@ IndexerCommandCxx::IndexerCommandCxx(
 {
 }
 
-IndexerCommandType IndexerCommandCxx::getIndexerCommandType() const
+inline IndexerCommandType IndexerCommandCxx::getIndexerCommandType() const
 {
 	return getStaticIndexerCommandType();
 }
 
-const FilePath& IndexerCommandCxx::getSourceFilePath() const
+inline const FilePath& IndexerCommandCxx::getSourceFilePath() const
 {
 	return m_sourceFilePath;
 }
 
-size_t IndexerCommandCxx::getByteSize(size_t stringSize) const
+inline size_t IndexerCommandCxx::getByteSize(size_t stringSize) const
 {
 	size_t size = 0;
 
@@ -250,32 +253,32 @@ size_t IndexerCommandCxx::getByteSize(size_t stringSize) const
 	return size;
 }
 
-const std::set<FilePath>& IndexerCommandCxx::getIndexedPaths() const
+inline const std::set<FilePath>& IndexerCommandCxx::getIndexedPaths() const
 {
 	return m_indexedPaths;
 }
 
-const std::set<FilePathFilter>& IndexerCommandCxx::getExcludeFilters() const
+inline const std::set<FilePathFilter>& IndexerCommandCxx::getExcludeFilters() const
 {
 	return m_excludeFilters;
 }
 
-const std::set<FilePathFilter>& IndexerCommandCxx::getIncludeFilters() const
+inline const std::set<FilePathFilter>& IndexerCommandCxx::getIncludeFilters() const
 {
 	return m_includeFilters;
 }
 
-const std::vector<std::string>& IndexerCommandCxx::getCompilerFlags() const
+inline const std::vector<std::string>& IndexerCommandCxx::getCompilerFlags() const
 {
 	return m_compilerFlags;
 }
 
-const FilePath& IndexerCommandCxx::getWorkingDirectory() const
+inline const FilePath& IndexerCommandCxx::getWorkingDirectory() const
 {
 	return m_workingDirectory;
 }
 
-const std::string& IndexerCommandCxx::getCompilerPath() const
+inline const std::string& IndexerCommandCxx::getCompilerPath() const
 {
 	return m_compilerPath;
 }

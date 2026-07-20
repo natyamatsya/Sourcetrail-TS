@@ -1,13 +1,17 @@
 #ifndef FILE_PATH_FILTER_H
 #define FILE_PATH_FILTER_H
 
+#include "SrctrlModule.h"
+
+#ifndef SRCTRL_MODULE_PURVIEW
 #include <string>
 
 #include <QRegularExpression>
 
 #include "FilePath.h"
+#endif
 
-class FilePathFilter
+SRCTRL_EXPORT class FilePathFilter
 {
 public:
 	template<typename ContainerType>
@@ -44,5 +48,7 @@ bool FilePathFilter::areMatching(const ContainerType& filters, const FilePath& f
 
 	return false;
 }
+
+#include "FilePathFilter.inl"
 
 #endif	  // FILE_PATH_FILTER_H

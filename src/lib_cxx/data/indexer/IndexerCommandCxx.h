@@ -1,7 +1,11 @@
 #ifndef INDEXER_COMMAND_CXX_H
 #define INDEXER_COMMAND_CXX_H
 
+#include "SrctrlModule.h"
+
+#ifndef SRCTRL_MODULE_PURVIEW
 #include <cstddef>
+#include <memory>
 #include <set>
 #include <string>
 #include <vector>
@@ -10,15 +14,19 @@
 #include "FilePathFilter.h"
 #include "IndexerCommandType.h"
 
+// In the module purview the real clang::tooling declarations come from the wrapper's Clang GMF
+// includes; a purview forward declaration would attach a DIFFERENT CompilationDatabase entity to
+// the module and clash with them.
 namespace clang::tooling
 {
 class CompilationDatabase;
 }
+#endif
 
 // Cxx indexer-command payload: a plain value satisfying IndexerCommandC (no base class). The common data
 // (source file / source group) lives in the wrapping IndexerCommand, so this holds only Cxx-specific data.
 // The static helpers below are Clang-backed utilities that build Cxx commands; they stay in lib_cxx.
-class IndexerCommandCxx
+SRCTRL_EXPORT class IndexerCommandCxx
 {
 public:
 	static std::vector<FilePath> getSourceFilesFromCDB(const FilePath& cdbPath);
@@ -80,5 +88,7 @@ private:
 	std::vector<std::string> m_compilerFlags;
 	std::string m_compilerPath;
 };
+
+#include "IndexerCommandCxx.inl"
 
 #endif	  // INDEXER_COMMAND_CXX_H

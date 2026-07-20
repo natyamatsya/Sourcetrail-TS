@@ -33,10 +33,12 @@ import std;
 #endif
 
 import srctrl.utility;   // TimeStamp (FileInfo/FileSystem), utilityString (FileSystem)
+import srctrl.qt;        // QString/QRegularExpression (FilePathFilter) -- keeps Qt out of this GMF
 import srctrl.logging;   // srctrl::log machinery behind the LOG_* macros
 
 #define SRCTRL_MODULE_PURVIEW
 #include "FilePath.h"
+#include "FilePathFilter.h"
 #include "FileInfo.h"
 #include "TextAccess.h"
 #include "FileSystem.h"

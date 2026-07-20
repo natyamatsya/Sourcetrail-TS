@@ -494,6 +494,26 @@ cycles in `lib` is prerequisite work, and a good cleanup in its own right).
   per-declaration tags). This kills the srctrl.utility ↔ srctrl.file cycle risk for good and makes
   `utility.h` safe in any module GMF — unblocking ToolChain (its impl deps are now utility.h +
   macro-only headers). Remaining blockers: messaging, settings, TextCodec/utilityApp (Qt-facing).
+- **Phase 3 (cont.) — `IndexerCommandCxx` joins `:tooling`; `FilePathFilter` joins `srctrl.file`. ✅**
+  The Cxx payload + its Clang-backed static helpers convert (.cpp inlined; the memoized
+  `getMacOSSysrootPath` local statics are safe — an inline function's local statics are one entity).
+  Three findings this forced:
+  - **`FilePathFilter` had to modularize first** (IndexerCommandCxx members) — it couples FilePath
+    with Qt (QRegularExpression), so it joins `srctrl.file` with the Qt TYPES arriving via a new
+    `import srctrl.qt` (Qt must NOT enter srctrl.file's GMF — that would break `import std`
+    coexistence, the whole reason srctrl.qt exists). Two macro/operator seams: `QStringLiteral`
+    (a macro, can't cross the import) became plain `QString` construction, and Qt's free
+    `operator+`(QString,QString) is NOT re-exported by `export using ::QString` — member
+    `prepend`/`append` instead.
+  - **finding (a) strikes via forward declarations in GMF headers**: `utilitySourceGroupCxx.h`
+    fwd-declares `class FilePath`, which clashes with `import srctrl.file` — and a GMF header whose
+    *signatures* use FilePath fundamentally cannot coexist with the import (the GMF is preprocessed
+    before the import). Fix: split `CdbLoadError`/`loadCDB` out into `CdbLoad.h/.inl` (born
+    dual-build, purview-included by :tooling); utilitySourceGroupCxx.h re-includes it for its
+    classic consumers.
+  - A purview fwd-decl of `clang::tooling::CompilationDatabase` would likewise attach a bogus
+    entity — the header's clang fwd-decl block is purview-guarded, the real decls come from the
+    wrapper's Clang GMF.
 - **Phase 3 — `srctrl.cxx`.** Modularize `lib_cxx` with partitions; absorb the Clang-header BMI cost.
   **STARTED — `:name` landed. ✅** The `name/` cluster (CxxName type-erased wrapper + concept, the five
   decl-name leaves, CxxQualifierFlags — 7 headers, all `.cpp`s inlined into `.inl`s) is `srctrl.cxx`'s
