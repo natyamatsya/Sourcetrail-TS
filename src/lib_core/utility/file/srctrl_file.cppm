@@ -8,6 +8,7 @@ module;
 // Global module fragment: std + the non-modularized deps. Platform.h (compile-time platform oracle) and
 // logging.h (LOG_* macros used by the .inls -- macros don't cross an `import`) stay global-module.
 #ifndef SRCTRL_IMPORT_STD
+#include <algorithm>
 #include <cctype>
 #include <chrono>
 #include <cstdlib>
@@ -24,7 +25,6 @@ module;
 #include <vector>
 #endif
 #include "Platform.h"
-#include "logging.h"
 
 export module srctrl.file;
 
@@ -37,6 +37,9 @@ import srctrl.qt;        // QString/QRegularExpression (FilePathFilter) -- keeps
 import srctrl.logging;   // srctrl::log machinery behind the LOG_* macros
 
 #define SRCTRL_MODULE_PURVIEW
+// LOG_* macro definitions only (in the purview the header strips its backend includes); the
+// expansions name the LogManager imported from srctrl.logging.
+#include "logging.h"
 #include "FilePath.h"
 #include "FilePathFilter.h"
 #include "FileInfo.h"

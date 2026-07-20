@@ -1,23 +1,27 @@
-#include "FileLogger.h"
+// Inline implementations for FileLogger.h. Included at the end of that header (classic) or via the
+// srctrl.logging wrapper (purview); not a standalone TU.
 
+#pragma once
+
+#ifndef SRCTRL_MODULE_PURVIEW
 #include <cstdio>
 #include <ctime>
 #include <fstream>
 #include <sstream>
+#include <system_error>
+#endif
 
-#include "FileSystem.h"
-
-std::string FileLogger::generateDatedFileName(
+inline std::string FileLogger::generateDatedFileName(
 	const std::string& prefix, const std::string& suffix, int offsetDays)
 {
-	time_t time;
+	std::time_t time;
 	std::time(&time);
 
-	tm t = *std::localtime(&time);
+	std::tm t = *std::localtime(&time);
 
 	if (offsetDays != 0)
 	{
-		time = mktime(&t) + offsetDays * 24 * 60 * 60;
+		time = std::mktime(&t) + offsetDays * 24 * 60 * 60;
 		t = *std::localtime(&time);
 	}
 
@@ -42,7 +46,7 @@ std::string FileLogger::generateDatedFileName(
 	return filename.str();
 }
 
-FileLogger::FileLogger()
+inline FileLogger::FileLogger()
 	: Logger("FileLogger")
 	, m_logFileName("log")
 	, m_logDirectory("user/log/")
@@ -50,24 +54,25 @@ FileLogger::FileLogger()
 	updateLogFileName();
 }
 
-FilePath FileLogger::getLogFilePath() const
+inline std::filesystem::path FileLogger::getLogFilePath() const
 {
 	return m_currentLogFilePath;
 }
 
-void FileLogger::setLogFilePath(const FilePath& filePath)
+inline void FileLogger::setLogFilePath(const std::filesystem::path& filePath)
 {
 	m_currentLogFilePath = filePath;
 	m_logFileName = "";
 }
 
-void FileLogger::setLogDirectory(const FilePath& filePath)
+inline void FileLogger::setLogDirectory(const std::filesystem::path& directory)
 {
-	m_logDirectory = filePath;
-	FileSystem::createDirectories(m_logDirectory);
+	m_logDirectory = directory;
+	std::error_code ec;
+	std::filesystem::create_directories(m_logDirectory, ec);
 }
 
-void FileLogger::setFileName(const std::string& fileName)
+inline void FileLogger::setFileName(const std::string& fileName)
 {
 	if (fileName != m_logFileName)
 	{
@@ -78,43 +83,50 @@ void FileLogger::setFileName(const std::string& fileName)
 	}
 }
 
-void FileLogger::logInfo(const LogMessage& message)
+inline void FileLogger::logInfo(const LogMessage& message)
 {
 	logMessage("INFO", message);
 }
 
-void FileLogger::logWarning(const LogMessage& message)
+inline void FileLogger::logWarning(const LogMessage& message)
 {
 	logMessage("WARNING", message);
 }
 
-void FileLogger::logError(const LogMessage& message)
+inline void FileLogger::logError(const LogMessage& message)
 {
 	logMessage("ERROR", message);
 }
 
-void FileLogger::setMaxLogLineCount(unsigned int lineCount)
+inline void FileLogger::setMaxLogLineCount(unsigned int lineCount)
 {
 	m_maxLogLineCount = lineCount;
 }
 
-void FileLogger::setMaxLogFileCount(unsigned int fileCount)
+inline void FileLogger::setMaxLogFileCount(unsigned int fileCount)
 {
 	m_maxLogFileCount = fileCount;
 }
 
-void FileLogger::deleteLogFiles(const std::string& cutoffDate)
+inline void FileLogger::deleteLogFiles(const std::string& cutoffDate)
 {
-	for (const FilePath& file: FileSystem::getFilePathsFromDirectory(m_logDirectory, {".txt"}))
+	std::error_code ec;
+	std::filesystem::directory_iterator it(m_logDirectory, ec);
+	if (ec)
 	{
-		if (file.fileName() < cutoffDate)
+		return;
+	}
+
+	for (const std::filesystem::directory_entry& entry: it)
+	{
+		if (entry.path().extension() == ".txt" && entry.path().filename().string() < cutoffDate)
 		{
-			FileSystem::remove(file);
+			std::filesystem::remove(entry.path(), ec);
 		}
 	}
 }
 
-void FileLogger::updateLogFileName()
+inline void FileLogger::updateLogFileName()
 {
 	if (m_logFileName.empty())
 	{
@@ -123,7 +135,7 @@ void FileLogger::updateLogFileName()
 
 	bool fileChanged = false;
 
-	std::string currentLogFilePath = m_logDirectory.str() + m_logFileName;
+	std::string currentLogFilePath = m_logDirectory.string() + m_logFileName;
 	if (m_maxLogFileCount > 0)
 	{
 		currentLogFilePath += "_";
@@ -142,18 +154,19 @@ void FileLogger::updateLogFileName()
 	}
 	currentLogFilePath += ".txt";
 
-	m_currentLogFilePath = FilePath(currentLogFilePath);
+	m_currentLogFilePath = std::filesystem::path(currentLogFilePath);
 
 	if (fileChanged)
 	{
-		FileSystem::remove(m_currentLogFilePath);
+		std::error_code ec;
+		std::filesystem::remove(m_currentLogFilePath, ec);
 	}
 }
 
-void FileLogger::logMessage(const std::string& type, const LogMessage& message)
+inline void FileLogger::logMessage(const std::string& type, const LogMessage& message)
 {
 	std::ofstream fileStream;
-	fileStream.open(m_currentLogFilePath.str(), std::ios::app);
+	fileStream.open(m_currentLogFilePath.string(), std::ios::app);
 	fileStream << message.getTimeString("%H:%M:%S") << " | ";
 	fileStream << message.threadId << " | ";
 

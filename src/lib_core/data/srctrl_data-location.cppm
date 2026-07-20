@@ -16,7 +16,6 @@ module;
 #include <vector>
 #endif
 #include "types.h"
-#include "logging.h"
 
 export module srctrl.data:location;
 
@@ -24,10 +23,14 @@ export module srctrl.data:location;
 import std;
 #endif
 
-import srctrl.file;   // FilePath
+import srctrl.file;      // FilePath
+import srctrl.logging;   // LogManager behind the LOG_* macro expansions
 import :types;   // LocationType
 
 #define SRCTRL_MODULE_PURVIEW
+// LOG_* macro definitions only (in the purview the header strips its backend includes); the
+// expansions name the LogManager imported from srctrl.logging.
+#include "logging.h"
 // Class definitions first: SourceLocation and SourceLocationFile are mutually dependent, so both must
 // be complete before either .inl (whose inline members dereference the partner).
 #include "SourceLocation.h"

@@ -1,10 +1,11 @@
-#include "LogManager.h"
+// Inline implementations for LogManager.h. Included at the end of that header (classic) or via the
+// srctrl.logging wrapper (purview); not a standalone TU.
 
-#include "MessageStatus.h"
-#include "Version.h"
-#include "logging.h"
+#pragma once
 
-std::shared_ptr<LogManager> LogManager::getInstance()
+inline std::shared_ptr<LogManager> LogManager::s_instance;
+
+inline std::shared_ptr<LogManager> LogManager::getInstance()
 {
 	if (s_instance.use_count() == 0)
 	{
@@ -13,73 +14,66 @@ std::shared_ptr<LogManager> LogManager::getInstance()
 	return s_instance;
 }
 
-void LogManager::destroyInstance()
+inline void LogManager::destroyInstance()
 {
 	s_instance.reset();
 }
 
-LogManager::~LogManager() = default;
+inline LogManager::~LogManager() = default;
 
-void LogManager::setLoggingEnabled(bool enabled)
+inline void LogManager::setLoggingEnabled(bool enabled)
 {
 	if (m_loggingEnabled != enabled)
 	{
 		m_loggingEnabled = enabled;
 
-		if (enabled)
-		{
-			LOG_INFO(std::string("Enabled logging for Sourcetrail version ") + Version::getApplicationVersion().toDisplayString());
-			MessageStatus("Enabled console and file logging.").dispatch();
-		}
-		else
-		{
-			LOG_INFO("Disabled logging");
-			MessageStatus("Disabled console and file logging.").dispatch();
-		}
+		// Out-of-line seam: the MessageStatus/Version announcement lives in LogManagerNotifier.cpp so
+		// the (deliberately classic) messaging core never rides into logging consumers or the module.
+		log_manager_detail::notifyLoggingToggled(enabled);
 	}
 }
 
-bool LogManager::getLoggingEnabled() const
+inline bool LogManager::getLoggingEnabled() const
 {
 	return m_loggingEnabled;
 }
 
-void LogManager::addLogger(std::shared_ptr<Logger> logger)
+inline void LogManager::addLogger(std::shared_ptr<Logger> logger)
 {
 	m_logManagerImplementation.addLogger(logger);
 }
 
-void LogManager::removeLogger(std::shared_ptr<Logger> logger)
+inline void LogManager::removeLogger(std::shared_ptr<Logger> logger)
 {
 	m_logManagerImplementation.removeLogger(logger);
 }
 
-void LogManager::removeLoggersByType(const std::string& type)
+inline void LogManager::removeLoggersByType(const std::string& type)
 {
 	m_logManagerImplementation.removeLoggersByType(type);
 }
 
-Logger* LogManager::getLogger(std::shared_ptr<Logger> logger)
+inline Logger* LogManager::getLogger(std::shared_ptr<Logger> logger)
 {
 	return m_logManagerImplementation.getLogger(logger);
 }
 
-Logger* LogManager::getLoggerByType(const std::string& type)
+inline Logger* LogManager::getLoggerByType(const std::string& type)
 {
 	return m_logManagerImplementation.getLoggerByType(type);
 }
 
-void LogManager::clearLoggers()
+inline void LogManager::clearLoggers()
 {
 	m_logManagerImplementation.clearLoggers();
 }
 
-int LogManager::getLoggerCount() const
+inline int LogManager::getLoggerCount() const
 {
 	return m_logManagerImplementation.getLoggerCount();
 }
 
-void LogManager::logInfo(
+inline void LogManager::logInfo(
 	const std::string& message,
 	const std::string& file,
 	const std::string& function,
@@ -91,7 +85,7 @@ void LogManager::logInfo(
 	}
 }
 
-void LogManager::logWarning(
+inline void LogManager::logWarning(
 	const std::string& message,
 	const std::string& file,
 	const std::string& function,
@@ -103,7 +97,7 @@ void LogManager::logWarning(
 	}
 }
 
-void LogManager::logError(
+inline void LogManager::logError(
 	const std::string& message,
 	const std::string& file,
 	const std::string& function,
@@ -115,6 +109,4 @@ void LogManager::logError(
 	}
 }
 
-std::shared_ptr<LogManager> LogManager::s_instance;
-
-LogManager::LogManager() = default;
+inline LogManager::LogManager() = default;

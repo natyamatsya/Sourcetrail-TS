@@ -1,28 +1,29 @@
-#include "LogManagerImplementation.h"
+// Inline implementations for LogManagerImplementation.h. Included at the end of that header
+// (classic) or via the srctrl.logging wrapper (purview); not a standalone TU.
 
-#include <algorithm>
+#pragma once
 
-LogManagerImplementation::LogManagerImplementation() = default;
+inline LogManagerImplementation::LogManagerImplementation() = default;
 
-LogManagerImplementation::LogManagerImplementation(const LogManagerImplementation& other)
+inline LogManagerImplementation::LogManagerImplementation(const LogManagerImplementation& other)
 {
 	m_loggers = other.m_loggers;
 }
 
-void LogManagerImplementation::operator=(const LogManagerImplementation& other)
+inline void LogManagerImplementation::operator=(const LogManagerImplementation& other)
 {
 	m_loggers = other.m_loggers;
 }
 
-LogManagerImplementation::~LogManagerImplementation() = default;
+inline LogManagerImplementation::~LogManagerImplementation() = default;
 
-void LogManagerImplementation::addLogger(std::shared_ptr<Logger> logger)
+inline void LogManagerImplementation::addLogger(std::shared_ptr<Logger> logger)
 {
 	std::lock_guard<std::mutex> lockGuard(m_loggerMutex);
 	m_loggers.push_back(logger);
 }
 
-void LogManagerImplementation::removeLogger(std::shared_ptr<Logger> logger)
+inline void LogManagerImplementation::removeLogger(std::shared_ptr<Logger> logger)
 {
 	std::lock_guard<std::mutex> lockGuard(m_loggerMutex);
 	std::vector<std::shared_ptr<Logger>>::iterator it = std::find(
@@ -33,7 +34,7 @@ void LogManagerImplementation::removeLogger(std::shared_ptr<Logger> logger)
 	}
 }
 
-void LogManagerImplementation::removeLoggersByType(const std::string& type)
+inline void LogManagerImplementation::removeLoggersByType(const std::string& type)
 {
 	std::lock_guard<std::mutex> lockGuard(m_loggerMutex);
 	for (unsigned int i = 0; i < m_loggers.size(); i++)
@@ -46,7 +47,7 @@ void LogManagerImplementation::removeLoggersByType(const std::string& type)
 	}
 }
 
-Logger* LogManagerImplementation::getLogger(std::shared_ptr<Logger> logger)
+inline Logger* LogManagerImplementation::getLogger(std::shared_ptr<Logger> logger)
 {
 	std::lock_guard<std::mutex> lockGuard(m_loggerMutex);
 	std::vector<std::shared_ptr<Logger>>::iterator it = std::find(
@@ -58,7 +59,7 @@ Logger* LogManagerImplementation::getLogger(std::shared_ptr<Logger> logger)
 	return nullptr;
 }
 
-Logger* LogManagerImplementation::getLoggerByType(const std::string& type)
+inline Logger* LogManagerImplementation::getLoggerByType(const std::string& type)
 {
 	std::lock_guard<std::mutex> lockGuard(m_loggerMutex);
 	for (unsigned int i = 0; i < m_loggers.size(); i++)
@@ -71,18 +72,18 @@ Logger* LogManagerImplementation::getLoggerByType(const std::string& type)
 	return nullptr;
 }
 
-void LogManagerImplementation::clearLoggers()
+inline void LogManagerImplementation::clearLoggers()
 {
 	m_loggers.clear();
 }
 
-int LogManagerImplementation::getLoggerCount() const
+inline int LogManagerImplementation::getLoggerCount() const
 {
 	std::lock_guard<std::mutex> lockGuard(m_loggerMutex);
 	return static_cast<int>(m_loggers.size());
 }
 
-void LogManagerImplementation::logInfo(
+inline void LogManagerImplementation::logInfo(
 	const std::string& message,
 	const std::string& file,
 	const std::string& function,
@@ -96,7 +97,7 @@ void LogManagerImplementation::logInfo(
 	}
 }
 
-void LogManagerImplementation::logWarning(
+inline void LogManagerImplementation::logWarning(
 	const std::string& message,
 	const std::string& file,
 	const std::string& function,
@@ -110,7 +111,7 @@ void LogManagerImplementation::logWarning(
 	}
 }
 
-void LogManagerImplementation::logError(
+inline void LogManagerImplementation::logError(
 	const std::string& message,
 	const std::string& file,
 	const std::string& function,
@@ -124,12 +125,12 @@ void LogManagerImplementation::logError(
 	}
 }
 
-tm LogManagerImplementation::getTime()
+inline std::tm LogManagerImplementation::getTime()
 {
-	time_t time;
+	std::time_t time;
 	std::time(&time);
 
-	tm result = *std::localtime(&time);	   // this is done because localtime returns a pointer to a
-										   // statically allocated object
+	std::tm result = *std::localtime(&time);	// this is done because localtime returns a pointer to a
+												// statically allocated object
 	return result;
 }

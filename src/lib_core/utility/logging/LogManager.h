@@ -1,12 +1,22 @@
 #ifndef LOG_MANAGER_H
 #define LOG_MANAGER_H
 
+#include "SrctrlModule.h"
+
+// The messaging seam (see LogManagerNotifier.h): include-free, so it is safe in every context and the
+// srctrl.logging wrapper puts it in its global module fragment — this include is then a no-op in the
+// purview (include guard), keeping the declaration a global-module entity its classic definition links
+// against.
+#include "LogManagerNotifier.h"
+
+#ifndef SRCTRL_MODULE_PURVIEW
 #include <memory>
 
 #include "LogManagerImplementation.h"
 #include "Logger.h"
+#endif
 
-class LogManager
+SRCTRL_EXPORT class LogManager
 {
 public:
 	static std::shared_ptr<LogManager> getInstance();
@@ -51,5 +61,9 @@ private:
 	LogManagerImplementation m_logManagerImplementation;
 	bool m_loggingEnabled = false;
 };
+
+#ifndef SRCTRL_MODULE_PURVIEW
+#include "LogManager.inl"
+#endif
 
 #endif	  // LOG_MANAGER_H

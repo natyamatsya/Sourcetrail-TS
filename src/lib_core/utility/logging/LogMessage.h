@@ -1,11 +1,15 @@
 #ifndef LOG_MESSAGE_H
 #define LOG_MESSAGE_H
 
+#include "SrctrlModule.h"
+
+#ifndef SRCTRL_MODULE_PURVIEW
 #include <ctime>
 #include <string>
 #include <thread>
+#endif
 
-struct LogMessage
+SRCTRL_EXPORT struct LogMessage
 {
 public:
 	LogMessage(
@@ -27,7 +31,7 @@ public:
 	std::string getTimeString(const std::string& format) const
 	{
 		char timeString[50];
-		strftime(timeString, 50, format.c_str(), &time);
+		std::strftime(timeString, 50, format.c_str(), &time);
 		return std::string(timeString);
 	}
 

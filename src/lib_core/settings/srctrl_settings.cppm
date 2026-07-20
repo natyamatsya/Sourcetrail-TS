@@ -28,8 +28,6 @@ module;
 #include <toml++/toml.hpp>
 
 #include "GroupType.h"
-#include "Logger.h"
-#include "logging.h"
 
 export module srctrl.settings;
 
@@ -42,6 +40,9 @@ import srctrl.file;      // FilePath, TextAccess, UserPaths/ResourcePaths, utili
 import srctrl.logging;   // srctrl::log machinery behind the LOG_* macros
 
 #define SRCTRL_MODULE_PURVIEW
+// LOG_* macro definitions only (in the purview the header strips its backend includes); the
+// expansions name the LogManager imported from srctrl.logging.
+#include "logging.h"
 // Dependency order: the store, the base class, the singleton.
 #include "ConfigManager.h"
 #include "Settings.h"

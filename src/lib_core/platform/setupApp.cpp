@@ -15,28 +15,9 @@
 #include <QDirIterator>
 #include <QStandardPaths>
 
-#include <iostream>
-#include <locale>
-
 using namespace std;
 using namespace utility;
 using namespace std::filesystem;
-
-void setupDefaultLocale()
-{
-	try
-	{
-		locale defaultLocale("");
-		locale::global(defaultLocale);
-		cout.imbue(defaultLocale);
-		cerr.imbue(defaultLocale);
-	}
-	catch (const runtime_error&)
-	{
-		// Fall back to classic locale if the system locale is unavailable
-	}
-}
-
 
 static void setupUserDirectory(const FilePath &appPath)
 {

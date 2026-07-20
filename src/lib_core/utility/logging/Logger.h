@@ -1,12 +1,16 @@
 #ifndef LOGGER_H
 #define LOGGER_H
 
+#include "SrctrlModule.h"
+
+#ifndef SRCTRL_MODULE_PURVIEW
 #include <memory>
 #include <vector>
 
 #include "LogMessage.h"
+#endif
 
-class Logger
+SRCTRL_EXPORT class Logger
 {
 public:
 	typedef int LogLevelMask;
@@ -39,5 +43,9 @@ private:
 	const std::string m_type;
 	LogLevelMask m_levelMask = LOG_ALL;
 };
+
+#ifndef SRCTRL_MODULE_PURVIEW
+#include "Logger.inl"
+#endif
 
 #endif	  // LOGGER_H

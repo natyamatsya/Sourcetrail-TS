@@ -38,7 +38,6 @@ module;
 #include "clang_compat/ClangCompat.h"
 #include "ToolChain.h"
 #include "types.h"
-#include "logging.h"
 
 export module srctrl.cxx:parser;
 
@@ -54,6 +53,9 @@ import srctrl.logging;   // srctrl::log machinery behind the LOG_* macros
 import :name;            // CxxName / CxxDeclName / CxxTypeName / ... (the resolvers' output types)
 
 #define SRCTRL_MODULE_PURVIEW
+// LOG_* macro definitions only (in the purview the header strips its backend includes); the
+// expansions name the LogManager imported from srctrl.logging.
+#include "logging.h"
 // Class definitions in dependency order, then the mutually-recursive resolver bodies (each header's
 // own .inl include is purview-guarded, so every class is complete before any resolver body parses).
 #include "CanonicalFilePathCache.h"

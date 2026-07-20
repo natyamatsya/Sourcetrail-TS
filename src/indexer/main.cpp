@@ -18,7 +18,7 @@
 #include "LogManager.h"
 #include "UserPaths.h"
 #include "logging.h"
-#include "setupApp.h"
+#include "setupLocale.h"
 
 #if BUILD_CXX_LANGUAGE_PACKAGE
 	#include "CxxIndexerCommandCodec.h"
@@ -39,7 +39,7 @@ void setupLogging(const FilePath& logFilePath)
 	// logManager->addLogger(consoleLogger);
 
 	std::shared_ptr<FileLogger> fileLogger = std::make_shared<FileLogger>();
-	fileLogger->setLogFilePath(logFilePath);
+	fileLogger->setLogFilePath(logFilePath.getPath());
 	fileLogger->setLogLevel(Logger::LOG_ALL);
 	logManager->addLogger(fileLogger);
 }

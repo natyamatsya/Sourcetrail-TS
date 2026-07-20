@@ -407,7 +407,7 @@ void QtProjectWizardContentPreferences::save()
 		if (logger)
 		{
 			auto *fileLogger = dynamic_cast<FileLogger*>(logger);
-			fileLogger->setLogDirectory(appSettings->getLogDirectoryPath());
+			fileLogger->setLogDirectory(appSettings->getLogDirectoryPath().getPath());
 			fileLogger->setFileName(FileLogger::generateDatedFileName("log"));
 		}
 	}

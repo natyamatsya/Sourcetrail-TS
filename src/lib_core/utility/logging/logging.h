@@ -1,9 +1,16 @@
 #ifndef LOGGING_H
 #define LOGGING_H
 
+// In a module purview only the macro definitions survive: the backend is modularized (srctrl.logging),
+// so a textual LogManager declaration here would clash with the imported, module-attached one. Module
+// wrappers therefore include this header AFTER `#define SRCTRL_MODULE_PURVIEW` and get LogManager (and
+// std::stringstream) from `import srctrl.logging` (+ their own std handling); the macro expansions then
+// name the imported entities. Classic TUs are untouched.
+#ifndef SRCTRL_MODULE_PURVIEW
 #include <sstream>
 
 #include "LogManager.h"
+#endif
 
 /**
  * @brief Macros to simplify usage of the log manager.

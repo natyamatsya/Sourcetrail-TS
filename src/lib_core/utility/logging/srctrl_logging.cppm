@@ -1,24 +1,41 @@
-// `srctrl.logging` -- the module-native logging front end. A standalone module (no partitions):
-// consumers `import srctrl.logging;` and call srctrl::log::error(...) / errorf(...) / error_lazy(...)
-// instead of GMF-including logging.h, so a module purview no longer relies on a macro surviving in its
-// global module fragment. Module build only.
+// `srctrl.logging` -- the full logging subsystem as a module: the backend (LogMessage, the Logger
+// interface, ConsoleLogger, FileLogger, LogManagerImplementation, the LogManager singleton) plus the
+// module-native srctrl::log front end (LogFacade). Deliberately at the BOTTOM of the module stack --
+// no srctrl.* imports (srctrl.file itself imports this module), which is why FileLogger speaks
+// std::filesystem::path instead of FilePath.
 //
-// The classic LogManager backend (and its Logger/LogMessage/LogManagerImplementation deps) stays a
-// global-module dependency in the GMF -- this module only wraps its logInfo/logWarning/logError entry
-// points. logging.h's 12 LOG_* macros remain untouched as the classic compat shim for the ~489 existing
-// call sites (same backend, independent front end -> no behavior change, no ODR interaction).
+// Seams kept classic: logging.h's LOG_* macros (macros don't cross import -- wrappers include
+// logging.h AFTER #define SRCTRL_MODULE_PURVIEW so only the macro definitions survive, and the
+// expansions name the imported LogManager), and the MessageStatus/Version toggle announcement
+// (LogManagerNotifier.h in the GMF here, defined in classic LogManagerNotifier.cpp -- messaging
+// stays out of the module graph).
 
 module;
 
 #ifndef SRCTRL_IMPORT_STD
+#include <algorithm>
+#include <cstdio>
+#include <ctime>
+#include <filesystem>
 #include <format>
+#include <fstream>
+#include <iostream>
+#include <memory>
+#include <mutex>
 #include <source_location>
+#include <sstream>
 #include <string>
 #include <string_view>
+#include <system_error>
+#include <thread>
 #include <utility>
+#include <vector>
 #endif
 
-#include "LogManager.h"
+// The include-free messaging-seam declaration (classic definition in LogManagerNotifier.cpp); its
+// include guard makes LogManager.h's own include of it a no-op inside the purview, keeping the
+// declaration a global-module entity.
+#include "LogManagerNotifier.h"
 
 export module srctrl.logging;
 
@@ -27,4 +44,18 @@ import std;
 #endif
 
 #define SRCTRL_MODULE_PURVIEW
+// Class definitions in dependency order, then the inline bodies (each header's own bottom-include is
+// purview-guarded).
+#include "LogMessage.h"
+#include "Logger.h"
+#include "LogManagerImplementation.h"
+#include "LogManager.h"
+#include "ConsoleLogger.h"
+#include "FileLogger.h"
 #include "LogFacade.h"
+
+#include "Logger.inl"
+#include "LogManagerImplementation.inl"
+#include "LogManager.inl"
+#include "ConsoleLogger.inl"
+#include "FileLogger.inl"

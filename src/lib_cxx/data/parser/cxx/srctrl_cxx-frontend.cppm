@@ -53,7 +53,6 @@ module;
 // struct), and ToolChain (std-only header, classic impl).
 #include "clang_compat/ClangCompat.h"
 #include "types.h"
-#include "logging.h"
 #include "IndexerStateInfo.h"
 #include "ToolChain.h"
 
@@ -75,6 +74,9 @@ import :parser;          // CanonicalFilePathCache, utilityClang
 import :visitor;         // CxxAstVisitor (ASTConsumer drives it)
 
 #define SRCTRL_MODULE_PURVIEW
+// LOG_* macro definitions only (in the purview the header strips its backend includes); the
+// expansions name the LogManager imported from srctrl.logging.
+#include "logging.h"
 // Class definitions in dependency order (CommentHandler before ASTAction, which holds it by
 // value; everything before CxxParser), then the inline bodies (each header's own bottom-include
 // is purview-guarded).

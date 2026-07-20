@@ -45,7 +45,6 @@ module;
 // IndexerStateInfo (a GMF-safe 10-line plain struct).
 #include "clang_compat/ClangCompat.h"
 #include "types.h"
-#include "logging.h"
 #include "IndexerStateInfo.h"
 
 export module srctrl.cxx:visitor;
@@ -66,6 +65,9 @@ import :context;         // CxxContext (the PointerUnion alias over decl/type)
 import :parser;          // CanonicalFilePathCache, utilityClang, the name resolvers
 
 #define SRCTRL_MODULE_PURVIEW
+// LOG_* macro definitions only (in the purview the header strips its backend includes); the
+// expansions name the LogManager imported from srctrl.logging.
+#include "logging.h"
 // Class definitions in dependency order (mid-level indexing layer, recorders, components, then the
 // visitor whose tuple holds the components by value), then all inline bodies (each header's own
 // bottom-include is purview-guarded, so every class is complete before any body parses).

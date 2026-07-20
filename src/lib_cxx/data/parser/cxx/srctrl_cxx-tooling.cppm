@@ -28,7 +28,6 @@ module;
 #include "MessageStatus.h"
 #include "Platform.h"
 #include "ToolChain.h"
-#include "logging.h"
 
 export module srctrl.cxx:tooling;
 
@@ -43,6 +42,9 @@ import srctrl.indexer;   // IndexerCommandType (was a GMF include until srctrl.i
 import srctrl.logging;   // srctrl::log machinery behind the LOG_* macros
 
 #define SRCTRL_MODULE_PURVIEW
+// LOG_* macro definitions only (in the purview the header strips its backend includes); the
+// expansions name the LogManager imported from srctrl.logging.
+#include "logging.h"
 #include "CdbLoad.h"
 #include "CompilationDatabase.h"
 #include "IndexerCommandCxx.h"

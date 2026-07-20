@@ -34,7 +34,6 @@ module;
 // std-only expected helpers, also in srctrl.cxx's GMFs).
 #include "language_package_flags.h"
 #include "types.h"
-#include "logging.h"
 #include "IndexerStateInfo.h"
 #include "utilityExpected.h"
 
@@ -52,6 +51,9 @@ import srctrl.storage;   // IntermediateStorage (the index result / recording si
 import srctrl.logging;   // srctrl::log machinery behind the LOG_* macros
 
 #define SRCTRL_MODULE_PURVIEW
+// LOG_* macro definitions only (in the purview the header strips its backend includes); the
+// expansions name the LogManager imported from srctrl.logging.
+#include "logging.h"
 // Class definitions in dependency order, then the inline bodies (each header's own
 // bottom-include is purview-guarded).
 #include "IndexerCommandType.h"

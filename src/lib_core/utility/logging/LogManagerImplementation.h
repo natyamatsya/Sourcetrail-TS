@@ -1,14 +1,18 @@
 #ifndef LOG_MANAGER_IMPLEMENTATION_H
 #define LOG_MANAGER_IMPLEMENTATION_H
 
+#include "SrctrlModule.h"
+
+#ifndef SRCTRL_MODULE_PURVIEW
 #include <algorithm>
 #include <memory>
 #include <mutex>
 #include <vector>
 
 #include "Logger.h"
+#endif
 
-class LogManagerImplementation
+SRCTRL_EXPORT class LogManagerImplementation
 {
 public:
 	LogManagerImplementation();
@@ -46,11 +50,15 @@ public:
 		const unsigned int line);
 
 private:
-	static tm getTime();
+	static std::tm getTime();
 
 	std::vector<std::shared_ptr<Logger>> m_loggers;
 
 	mutable std::mutex m_loggerMutex;
 };
+
+#ifndef SRCTRL_MODULE_PURVIEW
+#include "LogManagerImplementation.inl"
+#endif
 
 #endif	  // LOG_MANAGER_IMPLEMENTATION_H

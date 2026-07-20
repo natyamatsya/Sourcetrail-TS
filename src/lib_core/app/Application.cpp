@@ -163,7 +163,7 @@ void Application::loadSettings()
 	if (logger != nullptr)
 	{
 		auto *fileLogger = dynamic_cast<FileLogger*>(logger);
-		fileLogger->setLogDirectory(settings->getLogDirectoryPath());
+		fileLogger->setLogDirectory(settings->getLogDirectoryPath().getPath());
 		fileLogger->setFileName(FileLogger::generateDatedFileName("log"));
 	}
 

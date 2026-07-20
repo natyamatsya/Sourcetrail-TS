@@ -231,7 +231,7 @@ void TaskBuildIndex::doEnter(std::shared_ptr<Blackboard> blackboard)
 	Logger* logger = LogManager::getInstance()->getLoggerByType("FileLogger");
 	if (logger != nullptr)
 	{
-		logFilePath = dynamic_cast<FileLogger*>(logger)->getLogFilePath().str();
+		logFilePath = dynamic_cast<FileLogger*>(logger)->getLogFilePath().string();
 	}
 
 	// When indexing is interrupted (request_stop), raise the IPC interrupt flag so the

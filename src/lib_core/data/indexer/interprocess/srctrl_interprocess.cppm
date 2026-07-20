@@ -53,7 +53,6 @@ module;
 // Non-modularized GMF deps: Id/types, the logging macros, the generated language-package flags,
 // utilityExpected (std-only expected helpers), and ScopedFunctor (std-only classic header).
 #include "types.h"
-#include "logging.h"
 #include "language_package_flags.h"
 #include "utilityExpected.h"
 #include "ScopedFunctor.h"
@@ -76,6 +75,9 @@ import srctrl.indexer;   // IndexerCommand(+Type, Rust/Swift/Zig payloads), Inde
 import srctrl.logging;   // srctrl::log machinery behind the LOG_* macros
 
 #define SRCTRL_MODULE_PURVIEW
+// LOG_* macro definitions only (in the purview the header strips its backend includes); the
+// expansions name the LogManager imported from srctrl.logging.
+#include "logging.h"
 // Class definitions in dependency order (IpcSharedMemory before everything that embeds it;
 // serializers before the managers and the GC that call them), then the inline bodies (each
 // header's own bottom-include is purview-guarded).
