@@ -1,6 +1,11 @@
 #include "tracing.h"
 
-#include <iostream>
+// The tracer classes exist only when tracing is enabled (see tracing.h); with tracing off
+// this TU is intentionally empty.
+#ifdef TRACING_ENABLED
+
+#include <format>
+#include <print>
 #include <set>
 
 std::shared_ptr<Tracer> Tracer::s_instance;
@@ -52,51 +57,55 @@ void Tracer::printTraces()
 
 	if (unfinishEvents > 0)
 	{
-		std::cout << "TRACING: Trace events are still running." << std::endl;
+		std::println("TRACING: Trace events are still running.");
 		return;
 	}
 	else if (m_events.empty())
 	{
-		std::cout << "TRACING: No trace events collected." << std::endl;
+		std::println("TRACING: No trace events collected.");
 		return;
 	}
 
 
-	std::cout << "TRACING\n--------------------------\n" << std::endl;
+	std::println("TRACING\n--------------------------\n");
 
-	std::cout << "HISTORY:\n\n";
-	std::cout << "    time                 name                     function";
-	std::cout << "                                          location\n";
-	std::cout << "-----------------------------------------------------------------";
-	std::cout << "------------------------------------------------------------\n";
+	std::println("HISTORY:\n");
+	std::println(
+		"    time                 name                     function"
+		"                                          location");
+	std::println(
+		"-----------------------------------------------------------------"
+		"------------------------------------------------------------");
 
 	for (auto& p: m_events)
 	{
-		std::cout << "thread: " << p.first << std::endl;
+		std::println("thread: {}", p.first);
 
 		for (const std::shared_ptr<TraceEvent>& event: p.second)
 		{
-			std::cout.width(8 + 2 * event->depth);
-			std::cout << std::right << std::setprecision(3) << std::fixed << event->time;
-
-			std::cout.width(17 - 2 * event->depth);
-			std::cout << " ";
-
-			std::cout.width(25);
-			std::cout << std::left << event->eventName;
-
-			std::cout.width(50);
-			std::cout << (event->functionName + "()") << event->locationName << std::endl;
+			// Nested-scope indentation: the time column grows by 2 per depth level and the
+			// gap before the name shrinks to match, keeping the name/function columns aligned.
+			std::println(
+				"{:>{}.3f}{:>{}}{:<25}{:<50}{}",
+				event->time,
+				8 + 2 * event->depth,
+				"",
+				17 - 2 * event->depth,
+				event->eventName,
+				event->functionName + "()",
+				event->locationName);
 		}
 
-		std::cout << std::endl;
+		std::println("");
 	}
 
-	std::cout << "\nREPORT:\n\n";
-	std::cout << "    time      count      name                     function";
-	std::cout << "                                          location\n";
-	std::cout << "-----------------------------------------------------------------";
-	std::cout << "------------------------------------------------------------\n";
+	std::println("\nREPORT:\n");
+	std::println(
+		"    time      count      name                     function"
+		"                                          location");
+	std::println(
+		"-----------------------------------------------------------------"
+		"------------------------------------------------------------");
 
 	struct AccumulatedTraceEvent
 	{
@@ -145,20 +154,16 @@ void Tracer::printTraces()
 
 	for (const AccumulatedTraceEvent& acc: sortedEvents)
 	{
-		std::cout.width(8);
-		std::cout << std::right << std::setprecision(3) << std::fixed << acc.time;
-
-		std::cout.width(10);
-		std::cout << acc.count << "       ";
-
-		std::cout.width(25);
-		std::cout << std::left << acc.event->eventName;
-
-		std::cout.width(50);
-		std::cout << (acc.event->functionName + "()") << acc.event->locationName << std::endl;
+		std::println(
+			"{:>8.3f}{:>10}       {:<25}{:<50}{}",
+			acc.time,
+			acc.count,
+			acc.event->eventName,
+			acc.event->functionName + "()",
+			acc.event->locationName);
 	}
 
-	std::cout << std::endl;
+	std::println("");
 
 	m_events.clear();
 }
@@ -228,15 +233,17 @@ void AccumulatingTracer::printTraces()
 	{
 		if (!p.second.empty())
 		{
-			std::cout << "TRACING: Trace events are still running." << std::endl;
+			std::println("TRACING: Trace events are still running.");
 		}
 	}
 
-	std::cout << "\nREPORT:\n\n";
-	std::cout << "    time      count      name                     function";
-	std::cout << "                                          location\n";
-	std::cout << "-----------------------------------------------------------------";
-	std::cout << "------------------------------------------------------------\n";
+	std::println("\nREPORT:\n");
+	std::println(
+		"    time      count      name                     function"
+		"                                          location");
+	std::println(
+		"-----------------------------------------------------------------"
+		"------------------------------------------------------------");
 
 	std::multiset<
 		AccumulatedTraceEvent,
@@ -252,22 +259,20 @@ void AccumulatingTracer::printTraces()
 
 	for (const AccumulatedTraceEvent& acc: sortedEvents)
 	{
-		std::cout.width(8);
-		std::cout << std::right << std::setprecision(3) << std::fixed << acc.time;
-
-		std::cout.width(10);
-		std::cout << acc.count << "       ";
-
-		std::cout.width(25);
-		std::cout << std::left << acc.event.eventName;
-
-		std::cout.width(50);
-		std::cout << (acc.event.functionName + "()") << acc.event.locationName << std::endl;
+		std::println(
+			"{:>8.3f}{:>10}       {:<25}{:<50}{}",
+			acc.time,
+			acc.count,
+			acc.event.eventName,
+			acc.event.functionName + "()",
+			acc.event.locationName);
 	}
 
-	std::cout << std::endl;
+	std::println("");
 
 	m_accumulatedEvents.clear();
 }
 
 AccumulatingTracer::AccumulatingTracer() = default;
+
+#endif	  // TRACING_ENABLED

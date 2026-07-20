@@ -1,16 +1,27 @@
 #ifndef TRACING_H
 #define TRACING_H
 
+// #define TRACING_ENABLED
+// #define USE_ACCUMULATED_TRACING
+
+// The tracer machinery (and its FilePath/TimeStamp dependencies) exists only when tracing is
+// enabled; with tracing off this header reduces to the two empty macros below. That keeps it
+// safe to #include in a module unit's global module fragment: it must not textually drag in
+// headers whose types are attached to a named module (FilePath -> srctrl.file, TimeStamp ->
+// srctrl.utility:time).
+#ifdef TRACING_ENABLED
+
 #include "FilePath.h"
 #include "Id.h"
 #include "TimeStamp.h"
 
+#include <map>
+#include <memory>
 #include <mutex>
 #include <stack>
+#include <string>
 #include <thread>
-
-// #define TRACING_ENABLED
-// #define USE_ACCUMULATED_TRACING
+#include <vector>
 
 struct TraceEvent
 {
@@ -127,6 +138,8 @@ ScopedTrace<TracerType>::~ScopedTrace()
 	m_event->time = TimeStamp::durationSeconds(m_timeStamp);
 	TracerType::getInstance()->finishEvent(m_event);
 }
+
+#endif	  // TRACING_ENABLED
 
 
 #ifdef TRACING_ENABLED
