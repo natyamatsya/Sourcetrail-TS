@@ -16,7 +16,6 @@
 #include "logging.h"
 #include "utilityClang.h"
 
-using namespace clang;
 
 CxxAstVisitor::CxxAstVisitor(
 	clang::ASTContext* astContext,

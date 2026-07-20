@@ -10,8 +10,6 @@
 #include <clang/AST/DeclTemplate.h>
 #include <clang/Basic/SourceLocation.h>
 
-using namespace std;
-using namespace clang;
 
 CxxAstVisitorComponentTypeIndexer::CxxAstVisitorComponentTypeIndexer(
 	CxxAstVisitor* astVisitor, CxxIndexingContext& index)

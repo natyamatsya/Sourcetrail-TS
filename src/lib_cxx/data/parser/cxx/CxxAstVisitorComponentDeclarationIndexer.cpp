@@ -10,8 +10,6 @@
 #include <clang/AST/ASTContext.h>
 #include <clang/AST/DeclTemplate.h>
 
-using namespace std;
-using namespace clang;
 
 CxxAstVisitorComponentDeclarationIndexer::CxxAstVisitorComponentDeclarationIndexer(
 	CxxAstVisitor* astVisitor, CxxIndexingContext& index)
@@ -98,13 +96,13 @@ void CxxAstVisitorComponentDeclarationIndexer::visitVarDecl(clang::VarDecl* d)
 		// string _typeName = d->getType().getAsString();
 
 		// Record auto/deduced types:
-		if (const DeducedType *deducedVariableType = d->getType()->getContainedDeducedType())
+		if (const clang::DeducedType *deducedVariableType = d->getType()->getContainedDeducedType())
 		{
-			for (TypeLoc typeLoc = d->getTypeSourceInfo()->getTypeLoc(); typeLoc; typeLoc = typeLoc.getNextTypeLoc())
+			for (clang::TypeLoc typeLoc = d->getTypeSourceInfo()->getTypeLoc(); typeLoc; typeLoc = typeLoc.getNextTypeLoc())
 			{
-				if (const AutoTypeLoc &autoTypeLoc = typeLoc.getAs<AutoTypeLoc>())
+				if (const clang::AutoTypeLoc &autoTypeLoc = typeLoc.getAs<clang::AutoTypeLoc>())
 				{
-					if (const AutoType *autoVariableType = dyn_cast<AutoType>(autoTypeLoc.getTypePtr()))
+					if (const clang::AutoType *autoVariableType = dyn_cast<clang::AutoType>(autoTypeLoc.getTypePtr()))
 					{
 						if (const auto* conceptDecl = clang_compat::getTypeConstraintConceptDecl(
 								autoVariableType))
@@ -160,7 +158,7 @@ void CxxAstVisitorComponentDeclarationIndexer::visitDecompositionDecl(clang::Dec
 
 	if (getAstVisitor()->shouldVisitDecl(d))
 	{
-		for (const BindingDecl *bindingDecl : d->bindings())
+		for (const clang::BindingDecl *bindingDecl : d->bindings())
 		{
 			// Don't record anonymous bindings:
 			if (!bindingDecl->getNameAsString().empty())
@@ -288,7 +286,7 @@ void CxxAstVisitorComponentDeclarationIndexer::visitFunctionDecl(clang::Function
 			else
 			{
 				// record edge from foo<int>() to foo<T>()
-				if (FunctionTemplateDecl *primaryTemplate = d->getPrimaryTemplate())
+				if (clang::FunctionTemplateDecl *primaryTemplate = d->getPrimaryTemplate())
 				{
 					Id templateId = m_index.getOrCreateSymbolId(primaryTemplate->getTemplatedDecl());
 					m_index.recordSymbolKind(templateId, SymbolKind::FUNCTION);
@@ -299,11 +297,11 @@ void CxxAstVisitorComponentDeclarationIndexer::visitFunctionDecl(clang::Function
 
 		// Record deduced return type:
 
-		if (const DeducedType *deducedReturnType = d->getReturnType()->getContainedDeducedType())
+		if (const clang::DeducedType *deducedReturnType = d->getReturnType()->getContainedDeducedType())
 		{
-			const SourceRange returnTypeSourceRange = d->getReturnTypeSourceRange();
+			const clang::SourceRange returnTypeSourceRange = d->getReturnTypeSourceRange();
 
-			if (const AutoType *autoReturnType = dyn_cast<AutoType>(deducedReturnType))
+			if (const clang::AutoType *autoReturnType = dyn_cast<clang::AutoType>(deducedReturnType))
 			{
 				const Id contextSymbolId = m_index.getOrCreateSymbolId(d);
 
@@ -331,7 +329,7 @@ void CxxAstVisitorComponentDeclarationIndexer::visitFunctionDecl(clang::Function
 	}
 }
 
-void CxxAstVisitorComponentDeclarationIndexer::visitFunctionTemplateDecl(FunctionTemplateDecl *d)
+void CxxAstVisitorComponentDeclarationIndexer::visitFunctionTemplateDecl(clang::FunctionTemplateDecl *d)
 {
 	if (getAstVisitor()->shouldVisitDecl(d))
 	{
@@ -490,7 +488,7 @@ void CxxAstVisitorComponentDeclarationIndexer::visitTemplateTypeParmDecl(clang::
 	{
 		m_index.recordLocalSymbol(m_index.getLocalSymbolName(d->getLocation()), m_index.getParseLocation(d->getLocation()));
 
-		if (const TypeConstraint *typeConstraint = d->getTypeConstraint())
+		if (const clang::TypeConstraint *typeConstraint = d->getTypeConstraint())
 		{
 			m_index.concepts().recordConceptReference(typeConstraint);
 		}

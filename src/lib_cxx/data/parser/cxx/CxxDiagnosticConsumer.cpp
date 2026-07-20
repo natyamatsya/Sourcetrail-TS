@@ -9,7 +9,6 @@
 #include "utilityClang.h"
 #include "utilityString.h"
 
-using namespace clang;
 
 CxxDiagnosticConsumer::CxxDiagnosticConsumer(
 	clang::raw_ostream& os,
@@ -95,7 +94,7 @@ void CxxDiagnosticConsumer::HandleDiagnostic(
 			}
 			else
 			{
-				const OptionalFileEntryRef fileEntry = sourceManager.getFileEntryRefForID(sourceManager.getMainFileID());
+				const clang::OptionalFileEntryRef fileEntry = sourceManager.getFileEntryRefForID(sourceManager.getMainFileID());
 				if (fileEntry)
 				{
 					filePath = m_canonicalFilePathCache.getCanonicalFilePath(*fileEntry);

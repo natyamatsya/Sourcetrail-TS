@@ -13,8 +13,6 @@
 #include <clang/Basic/SourceManager.h>
 #include <clang/Lex/Preprocessor.h>
 
-using namespace std;
-using namespace clang;
 
 CxxAstVisitorComponentReferenceIndexer::CxxAstVisitorComponentReferenceIndexer(
 	CxxAstVisitor* astVisitor, clang::ASTContext* astContext, CxxIndexingContext& index)
@@ -49,7 +47,7 @@ void CxxAstVisitorComponentReferenceIndexer::visitCXXFunctionalCastExpr(clang::C
 {
 	if (getAstVisitor()->shouldVisitStmt(d))
 	{
-		if (QualType qualType = d->getType(); !qualType.isNull())
+		if (clang::QualType qualType = d->getType(); !qualType.isNull())
 		{
 			const Id contextSymbolId = m_index.getOrCreateSymbolId(m_index.getContext());
 			m_index.recordDeducedQualType(qualType, contextSymbolId, m_index.getParseLocation(d->getBeginLoc()));
@@ -228,11 +226,11 @@ void CxxAstVisitorComponentReferenceIndexer::visitLambdaExpr(clang::LambdaExpr* 
 
 		// Iterate over the "closure type parameters" to detect concept usages:
 
-		if (const CXXRecordDecl *closureRecordDecl = s->getLambdaClass())
+		if (const clang::CXXRecordDecl *closureRecordDecl = s->getLambdaClass())
 		{
-			for (Decl *decl : closureRecordDecl->decls())
+			for (clang::Decl *decl : closureRecordDecl->decls())
 			{
-				if (const FunctionTemplateDecl *functionTemplateDecl = dyn_cast<FunctionTemplateDecl>(decl))
+				if (const clang::FunctionTemplateDecl *functionTemplateDecl = dyn_cast<clang::FunctionTemplateDecl>(decl))
 				{
 					if (functionTemplateDecl->getTemplatedDecl() != nullptr)
 					{

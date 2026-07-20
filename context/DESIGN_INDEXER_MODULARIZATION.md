@@ -557,6 +557,19 @@ cycles in `lib` is prerequisite work, and a good cleanup in its own right).
   `using namespace clang` over 887 lines (requalify first, per ADR-0005), and the CRTP visitor +
   variadic component tuple mean the class-definition ordering needs care (components before
   visitor, `CxxIndexingContext`/`CxxSymbolRegistry` before components).
+- **Phase 3 (cont.) — lib_cxx is ADR-0005-clean; the visitor blob is scoped for one shot.** All five
+  remaining `using namespace clang/std` TUs requalified (CxxAstVisitor — clean immediately, the
+  directive was vestigial — plus the Declaration/Type/Reference indexer components and
+  CxxDiagnosticConsumer, compiler-loop-driven with the hardened rules: uppercase-only auto-guess,
+  once-per-site memo; lowercase identifiers are locals and must never be namespace-prefixed).
+  **Finding: the visitor cluster is one strongly-connected blob** — the recorders need
+  `CxxAstVisitorComponentContext` complete, every component body includes `CxxAstVisitor.h`, and the
+  visitor's tuple holds all components by value. It cannot convert piecewise: one `:visitor`
+  partition, all ~15 files at once (SymbolRegistry, IndexingContext, LocationExtractor, recorders,
+  Component base + 10 components, CxxAstVisitor), with `CxxAstVisitor.h` as the classic-build apex
+  (it already includes every component header — the natural `Bodies.h` site). The frontend glue
+  (CxxParser, IndexerCxx, actions, PreprocessorCallbacks, CxxDiagnosticConsumer) can follow as a
+  separate thin slice on top.
 - **Phase 3 — `srctrl.cxx`.** Modularize `lib_cxx` with partitions; absorb the Clang-header BMI cost.
   **STARTED — `:name` landed. ✅** The `name/` cluster (CxxName type-erased wrapper + concept, the five
   decl-name leaves, CxxQualifierFlags — 7 headers, all `.cpp`s inlined into `.inl`s) is `srctrl.cxx`'s
