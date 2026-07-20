@@ -1,6 +1,9 @@
 #ifndef INDEXER_COMMAND_RUST_H
 #define INDEXER_COMMAND_RUST_H
 
+#include "SrctrlModule.h"
+
+#ifndef SRCTRL_MODULE_PURVIEW
 #include <cstddef>
 #include <set>
 #include <string>
@@ -8,10 +11,11 @@
 
 #include "FilePath.h"
 #include "IndexerCommandType.h"
+#endif
 
 // Rust indexer-command payload: a plain value satisfying IndexerCommandC (no base class). The common data
 // (source file / source group) lives in the wrapping IndexerCommand, so this holds only Rust-specific data.
-class IndexerCommandRust
+SRCTRL_EXPORT class IndexerCommandRust
 {
 public:
 	static IndexerCommandType getStaticIndexerCommandType();
@@ -60,5 +64,9 @@ private:
 	std::string m_specializationScope;
 	bool m_restrictToPackage;
 };
+
+#ifndef SRCTRL_MODULE_PURVIEW
+#include "IndexerCommandRust.inl"
+#endif
 
 #endif	  // INDEXER_COMMAND_RUST_H

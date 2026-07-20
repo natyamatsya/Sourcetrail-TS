@@ -1,6 +1,9 @@
 #ifndef INDEXER_COMMAND_SWIFT_H
 #define INDEXER_COMMAND_SWIFT_H
 
+#include "SrctrlModule.h"
+
+#ifndef SRCTRL_MODULE_PURVIEW
 #include <cstddef>
 #include <set>
 #include <string>
@@ -8,10 +11,11 @@
 
 #include "FilePath.h"
 #include "IndexerCommandType.h"
+#endif
 
 // Swift indexer-command payload: a plain value satisfying IndexerCommandC (no base class). The common data
 // (source file / source group) lives in the wrapping IndexerCommand, so this holds only Swift-specific data.
-class IndexerCommandSwift
+SRCTRL_EXPORT class IndexerCommandSwift
 {
 public:
 	static IndexerCommandType getStaticIndexerCommandType();
@@ -47,5 +51,9 @@ private:
 	std::string m_indexStorePath;
 	std::string m_specializationScope;
 };
+
+#ifndef SRCTRL_MODULE_PURVIEW
+#include "IndexerCommandSwift.inl"
+#endif
 
 #endif	  // INDEXER_COMMAND_SWIFT_H

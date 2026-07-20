@@ -1,16 +1,20 @@
 #ifndef INDEXER_COMMAND_ZIG_H
 #define INDEXER_COMMAND_ZIG_H
 
+#include "SrctrlModule.h"
+
+#ifndef SRCTRL_MODULE_PURVIEW
 #include <cstddef>
 #include <set>
 #include <string>
 
 #include "FilePath.h"
 #include "IndexerCommandType.h"
+#endif
 
 // Zig indexer-command payload: a plain value satisfying IndexerCommandC (no base class). The common data
 // (source file / source group) lives in the wrapping IndexerCommand, so this holds only Zig-specific data.
-class IndexerCommandZig
+SRCTRL_EXPORT class IndexerCommandZig
 {
 public:
 	static IndexerCommandType getStaticIndexerCommandType();
@@ -29,5 +33,9 @@ private:
 	std::set<FilePath> m_indexedPaths;
 	FilePath m_workingDirectory;
 };
+
+#ifndef SRCTRL_MODULE_PURVIEW
+#include "IndexerCommandZig.inl"
+#endif
 
 #endif	  // INDEXER_COMMAND_ZIG_H

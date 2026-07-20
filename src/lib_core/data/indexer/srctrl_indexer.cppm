@@ -1,5 +1,6 @@
 // `srctrl.indexer` -- the language-agnostic indexer framework: the type-erased IndexerCommand
-// value (+ its payload concept and type enum), the IndexerBase interface with its
+// value (+ its payload concept and type enum, and the plain-value Rust/Swift/Zig payloads that
+// the interprocess codec registry instantiates), the IndexerBase interface with its
 // std::expected-based error channel, the Indexer<T> template every language indexer derives from,
 // the ParserClientImpl recording sink, IndexerComposite, and the command providers
 // (IndexerCommandProvider + Memory/Combined), plus the language-package registry
@@ -19,8 +20,10 @@ module;
 #include <cstddef>
 #include <map>
 #include <memory>
+#include <set>
 #include <string>
 #include <utility>
+#include <vector>
 #endif
 
 // The P2988 optional<T&> shim (IndexerCommand::target), like srctrl.cxx:name's GMF.
@@ -53,6 +56,9 @@ import srctrl.logging;   // srctrl::log machinery behind the LOG_* macros
 // bottom-include is purview-guarded).
 #include "IndexerCommandType.h"
 #include "IndexerCommand.h"
+#include "IndexerCommandRust.h"
+#include "IndexerCommandSwift.h"
+#include "IndexerCommandZig.h"
 #include "IndexerBase.h"
 #include "ParserClientImpl.h"
 #include "Indexer.h"
@@ -64,6 +70,9 @@ import srctrl.logging;   // srctrl::log machinery behind the LOG_* macros
 #include "LanguagePackageManager.h"
 
 #include "IndexerCommandType.inl"
+#include "IndexerCommandRust.inl"
+#include "IndexerCommandSwift.inl"
+#include "IndexerCommandZig.inl"
 #include "ParserClientImpl.inl"
 #include "IndexerComposite.inl"
 #include "IndexerCommandProvider.inl"
