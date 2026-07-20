@@ -56,6 +56,7 @@ cmake_print_variables(CMAKE_CXX_COMPILER)
 option(BUILD_CXX_LANGUAGE_PACKAGE  "Add C/C++ support to the Sourcetrail indexer." OFF)
 option(BUILD_RUST_LANGUAGE_PACKAGE "Add Rust support to the Sourcetrail indexer." OFF)
 option(BUILD_SWIFT_LANGUAGE_PACKAGE "Add Swift support to the Sourcetrail indexer." OFF)
+option(BUILD_ZIG_LANGUAGE_PACKAGE  "Add Zig support to the Sourcetrail indexer." OFF)
 option(BUILD_UNIT_TESTS_PACKAGE    "Build the corresponding language unit tests." OFF)
 # Dev/CI-only: run every SQL operation against Turso alongside SQLite and report
 # divergences. Requires the Rust toolchain (builds the turso_shim crate). Off by
@@ -791,6 +792,71 @@ if (BUILD_SWIFT_LANGUAGE_PACKAGE)
 	)
 
 	message(STATUS "Swift language package enabled — building sourcetrail_swift_indexer via Swift Package Manager")
+endif()
+
+# Zig Indexer ------------------------------------------------------------------
+
+if (BUILD_ZIG_LANGUAGE_PACKAGE)
+	find_program(ZIG_EXECUTABLE zig)
+	if (NOT ZIG_EXECUTABLE)
+		message(FATAL_ERROR "Zig language package enabled but no 'zig' executable was found in PATH.")
+	endif()
+	find_program(FLATCC_EXECUTABLE flatcc)
+	if (NOT FLATCC_EXECUTABLE)
+		message(FATAL_ERROR "Zig language package enabled but no 'flatcc' executable was found in PATH (brew install flatcc).")
+	endif()
+	# flatcc install prefix = parent of the dir holding the flatcc binary
+	# (so <prefix>/include/flatcc and <prefix>/lib/libflatccrt.a resolve).
+	get_filename_component(FLATCC_BIN_DIR "${FLATCC_EXECUTABLE}" DIRECTORY)
+	get_filename_component(FLATCC_PREFIX "${FLATCC_BIN_DIR}" DIRECTORY)
+
+	set(ZIG_INDEXER_PACKAGE_DIR "${CMAKE_SOURCE_DIR}/src/zig_indexer")
+	set(ZIG_INDEXER_BUILD_DIR "${CMAKE_BINARY_DIR}/zig_indexer")
+	set(ZIG_INDEXER_BINARY_NAME "sourcetrail_zig_indexer${CMAKE_EXECUTABLE_SUFFIX}")
+	set(ZIG_INDEXER_BINARY_PATH "${ZIG_INDEXER_BUILD_DIR}/bin/${ZIG_INDEXER_BINARY_NAME}")
+	set(ZIG_INDEXER_APP_BINARY_PATH "${CMAKE_BINARY_DIR}/app/${ZIG_INDEXER_BINARY_NAME}")
+	# The Zig indexer generates flatcc bindings from the shared IPC ABI schemas
+	# (see abi-schemas/README.md) — the same .fbs the C++ side compiles with flatc.
+	set(ZIG_INDEXER_SCHEMA_DIR "${CMAKE_SOURCE_DIR}/abi-schemas/ipc-indexer")
+
+	# Sources that should retrigger a rebuild (the thoth-ipc Zig port + the
+	# indexer package + the shared schemas).
+	file(GLOB_RECURSE ZIG_INDEXER_SOURCES CONFIGURE_DEPENDS
+		"${ZIG_INDEXER_PACKAGE_DIR}/build.zig"
+		"${ZIG_INDEXER_PACKAGE_DIR}/build.zig.zon"
+		"${ZIG_INDEXER_PACKAGE_DIR}/src/*.zig"
+		"${ZIG_INDEXER_PACKAGE_DIR}/tools/*.sh"
+		"${ZIG_INDEXER_SCHEMA_DIR}/*.fbs"
+		"${CMAKE_SOURCE_DIR}/submodules/thoth-ipc/zig/thoth-ipc/src/*.zig"
+	)
+
+	add_custom_command(
+		OUTPUT "${ZIG_INDEXER_BINARY_PATH}"
+		COMMAND ${ZIG_EXECUTABLE} build
+			--build-file "${ZIG_INDEXER_PACKAGE_DIR}/build.zig"
+			--cache-dir "${ZIG_INDEXER_BUILD_DIR}/.zig-cache"
+			--prefix "${ZIG_INDEXER_BUILD_DIR}"
+			-Doptimize=ReleaseSafe
+			"-Dschema-dir=${ZIG_INDEXER_SCHEMA_DIR}"
+			"-Dflatcc-prefix=${FLATCC_PREFIX}"
+			install
+		WORKING_DIRECTORY "${ZIG_INDEXER_PACKAGE_DIR}"
+		DEPENDS ${ZIG_INDEXER_SOURCES}
+		COMMENT "Building sourcetrail_zig_indexer via zig build"
+		VERBATIM
+	)
+
+	add_custom_target(sourcetrail_zig_indexer DEPENDS "${ZIG_INDEXER_BINARY_PATH}")
+
+	add_custom_target(copy_zig_indexer ALL
+		COMMAND ${CMAKE_COMMAND} -E copy_if_different
+			"${ZIG_INDEXER_BINARY_PATH}"
+			"${ZIG_INDEXER_APP_BINARY_PATH}"
+		COMMENT "Copying sourcetrail_zig_indexer to app/"
+		DEPENDS sourcetrail_zig_indexer
+	)
+
+	message(STATUS "Zig language package enabled — building sourcetrail_zig_indexer via zig build (flatcc: ${FLATCC_PREFIX})")
 endif()
 
 # App --------------------------------------------------------------------------
