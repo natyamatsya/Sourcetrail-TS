@@ -1,8 +1,13 @@
-#include "MemoryIndexerCommandProvider.h"
+// Inline implementations for MemoryIndexerCommandProvider.h. Included at the end of that header (classic) or via
+// the srctrl.indexer wrapper (purview); not a standalone TU.
 
+#pragma once
+
+#ifndef SRCTRL_MODULE_PURVIEW
 #include "IndexerCommand.h"
+#endif
 
-MemoryIndexerCommandProvider::MemoryIndexerCommandProvider(
+inline MemoryIndexerCommandProvider::MemoryIndexerCommandProvider(
 	const std::vector<std::shared_ptr<IndexerCommand>>& commands)
 {
 	for (const std::shared_ptr<IndexerCommand>& command: commands)
@@ -11,7 +16,7 @@ MemoryIndexerCommandProvider::MemoryIndexerCommandProvider(
 	}
 }
 
-std::vector<FilePath> MemoryIndexerCommandProvider::getAllSourceFilePaths() const
+inline std::vector<FilePath> MemoryIndexerCommandProvider::getAllSourceFilePaths() const
 {
 	std::vector<FilePath> paths;
 	paths.reserve(m_commands.size());
@@ -26,7 +31,7 @@ std::vector<FilePath> MemoryIndexerCommandProvider::getAllSourceFilePaths() cons
 	return paths;
 }
 
-std::shared_ptr<IndexerCommand> MemoryIndexerCommandProvider::consumeCommand()
+inline std::shared_ptr<IndexerCommand> MemoryIndexerCommandProvider::consumeCommand()
 {
 	if (!m_commands.empty())
 	{
@@ -38,7 +43,7 @@ std::shared_ptr<IndexerCommand> MemoryIndexerCommandProvider::consumeCommand()
 	return std::shared_ptr<IndexerCommand>();
 }
 
-std::shared_ptr<IndexerCommand> MemoryIndexerCommandProvider::consumeCommandForSourceFilePath(
+inline std::shared_ptr<IndexerCommand> MemoryIndexerCommandProvider::consumeCommandForSourceFilePath(
 	const FilePath& filePath)
 {
 	std::map<FilePath, std::shared_ptr<IndexerCommand>>::const_iterator it = m_commands.find(filePath);
@@ -51,7 +56,7 @@ std::shared_ptr<IndexerCommand> MemoryIndexerCommandProvider::consumeCommandForS
 	return std::shared_ptr<IndexerCommand>();
 }
 
-std::vector<std::shared_ptr<IndexerCommand>> MemoryIndexerCommandProvider::consumeAllCommands()
+inline std::vector<std::shared_ptr<IndexerCommand>> MemoryIndexerCommandProvider::consumeAllCommands()
 {
 	std::vector<std::shared_ptr<IndexerCommand>> commands;
 	commands.reserve(m_commands.size());
@@ -65,12 +70,12 @@ std::vector<std::shared_ptr<IndexerCommand>> MemoryIndexerCommandProvider::consu
 	return commands;
 }
 
-void MemoryIndexerCommandProvider::clear()
+inline void MemoryIndexerCommandProvider::clear()
 {
 	m_commands.clear();
 }
 
-size_t MemoryIndexerCommandProvider::size() const
+inline size_t MemoryIndexerCommandProvider::size() const
 {
 	return m_commands.size();
 }

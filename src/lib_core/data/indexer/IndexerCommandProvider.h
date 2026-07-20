@@ -1,13 +1,17 @@
 #ifndef INDEXER_COMMAND_PROVIDER_H
 #define INDEXER_COMMAND_PROVIDER_H
 
+#include "SrctrlModule.h"
+
+#ifndef SRCTRL_MODULE_PURVIEW
 #include <memory>
 #include <vector>
 
 class FilePath;
 class IndexerCommand;
+#endif
 
-class IndexerCommandProvider
+SRCTRL_EXPORT class IndexerCommandProvider
 {
 public:
 	virtual ~IndexerCommandProvider() = default;
@@ -19,5 +23,10 @@ public:
 	virtual size_t size() const = 0;
 	bool empty() const;
 };
+
+
+#ifndef SRCTRL_MODULE_PURVIEW
+#include "IndexerCommandProvider.inl"
+#endif
 
 #endif	  // INDEXER_COMMAND_PROVIDER_H

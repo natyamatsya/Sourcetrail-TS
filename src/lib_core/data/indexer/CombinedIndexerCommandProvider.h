@@ -1,13 +1,17 @@
 #ifndef COMBINED_INDEXER_COMMAND_PROVIDER_H
 #define COMBINED_INDEXER_COMMAND_PROVIDER_H
 
+#include "SrctrlModule.h"
+
+#ifndef SRCTRL_MODULE_PURVIEW
 #include <string>
 #include <utility>
 #include <vector>
 
 #include "IndexerCommandProvider.h"
+#endif
 
-class CombinedIndexerCommandProvider: public IndexerCommandProvider
+SRCTRL_EXPORT class CombinedIndexerCommandProvider: public IndexerCommandProvider
 {
 public:
 	//! Commands consumed from this provider are tagged with sourceGroupId
@@ -34,5 +38,10 @@ public:
 private:
 	std::vector<std::pair<std::shared_ptr<IndexerCommandProvider>, std::string>> m_providers;
 };
+
+
+#ifndef SRCTRL_MODULE_PURVIEW
+#include "CombinedIndexerCommandProvider.inl"
+#endif
 
 #endif	  // COMBINED_INDEXER_COMMAND_PROVIDER_H

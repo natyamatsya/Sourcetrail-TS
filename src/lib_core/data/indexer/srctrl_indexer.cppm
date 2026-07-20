@@ -1,12 +1,13 @@
 // `srctrl.indexer` -- the language-agnostic indexer framework: the type-erased IndexerCommand
 // value (+ its payload concept and type enum), the IndexerBase interface with its
 // std::expected-based error channel, the Indexer<T> template every language indexer derives from,
-// the ParserClientImpl recording sink, and IndexerComposite. A standalone module (no partitions)
+// the ParserClientImpl recording sink, IndexerComposite, and the command providers
+// (IndexerCommandProvider + Memory/Combined). A standalone module (no partitions)
 // ABOVE srctrl.data and srctrl.storage -- the framework spans the parser-facing interface
 // (ParserClient) and the storage sink (IntermediateStorage), and srctrl.storage already imports
 // srctrl.data, so this cannot live inside either. Module build only.
 //
-// Deliberately NOT here: TaskBuildIndex / the command providers / InterprocessIndexer (they drag
+// Deliberately NOT here: TaskBuildIndex / InterprocessIndexer (they drag
 // messaging, scheduling, and the interprocess layer -- later slices), and IndexerStateInfo /
 // utilityExpected (GMF-safe plain headers, shared with srctrl.cxx's GMFs).
 
@@ -39,6 +40,7 @@ export module srctrl.indexer;
 import std;
 #endif
 
+import srctrl.utility;   // utility::append (:containers)
 import srctrl.file;      // FilePath (IndexerCommand's source file)
 import srctrl.data;      // ParserClient (:parser), ParseLocation (:location), Edge/NodeKind
                          // (:graph), the classification enums (:types)
@@ -54,7 +56,13 @@ import srctrl.logging;   // srctrl::log machinery behind the LOG_* macros
 #include "ParserClientImpl.h"
 #include "Indexer.h"
 #include "IndexerComposite.h"
+#include "IndexerCommandProvider.h"
+#include "MemoryIndexerCommandProvider.h"
+#include "CombinedIndexerCommandProvider.h"
 
 #include "IndexerCommandType.inl"
 #include "ParserClientImpl.inl"
 #include "IndexerComposite.inl"
+#include "IndexerCommandProvider.inl"
+#include "MemoryIndexerCommandProvider.inl"
+#include "CombinedIndexerCommandProvider.inl"
