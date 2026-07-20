@@ -713,16 +713,50 @@ cycles in `lib` is prerequisite work, and a good cleanup in its own right).
   consumption choke point; needed `import srctrl.utility` for utility::append), then
   LanguagePackage + LanguagePackageManager (singleton slot → inline variable). The per-language
   packages (Cxx/Rust/Swift/Zig) stay classic implementers of the importable interface.
-  **Remaining for Phase 4** (scoped for a fresh session): (a) the language payloads
-  IndexerCommandRust/Swift/Zig → srctrl.indexer (the codec registry drags them, and they're
-  FilePath-bearing so GMF-unsafe); (b) a `srctrl.interprocess` module — IpcSharedMemory(+GC,
-  thoth-ipc GMF), ProcessId, the IpcSerializer stack (flatbuffers-generated GMF; codec registry),
-  the three Ipc managers, IntermediateStorageChunker, InterprocessBackend, InterprocessIndexer
-  (~2.5k LOC); (c) then `src/indexer/main.cpp` as importer — noting the deliberately-classic seams
-  (FileLogger/LogManager backend, setupApp, GlazeCli, lib_cxx project/ prebuild runners) mean
-  "pure importer" is bounded by design: the milestone is `import srctrl.indexer / srctrl.cxx` for
-  everything modular, classic includes only for the GMF-safe seams. TaskBuildIndex + the queue-fill
-  task stay host-side classic (messaging + scheduling) until/unless messaging modularizes.
+  **Slice 4: the Rust/Swift/Zig payloads joined srctrl.indexer. ✅** Plain-value payloads
+  (FilePath-bearing → GMF-unsafe once the codec registry modularizes), converted to guarded
+  header + .inl; the wrapper GMF gained `<set>`/`<vector>` (first users in this module). No
+  wrapper GMF-included them (grep-all-cppms rule held).
+  **Slice 5: `srctrl.interprocess` landed. ✅** The whole shared-memory transport as a NEW
+  standalone module above srctrl.indexer + srctrl.storage (12 cpp→inl pairs + ProcessId /
+  InterprocessBackend / IndexerCommandCodec header-only): IpcSharedMemory(+GarbageCollector),
+  the IpcSerializer stack (garbage-collector / indexer-command / indexing-status /
+  intermediate-storage wire forms) + the type-erased codec registry, the three Ipc managers,
+  IntermediateStorageChunker, InterprocessIndexer. The flatbuffers-generated wire headers stay
+  GMF. ODR care: six named detail namespaces replaced anonymous namespaces / file statics; all
+  static members became inline definitions. The process-wide singletons (codec registry's
+  function-local static, the live-handle registry, GC s_instance) stay one-per-process across
+  classic TUs and the module because exported/global inline entities keep their ordinary
+  mangling and dedup at link — same mechanism the whole dual build rests on. Both binaries'
+  Ipc test suites (IpcIntegration/IpcSerializer/IpcSharedMemory) pass in both modes.
+  **Slice 6: `import thoth.ipc;`. ✅** thoth-ipc upstream added an opt-in sqlpp23-style named
+  module (THOTH_IPC_BUILD_MODULES → target `thoth_ipc_module`: the interface unit re-exports
+  the header surface from its own GMF, so the entities remain global-module — no attachment
+  clash with classic includes). Submodule bumped (0881642); the top-level CMake flips
+  THOTH_IPC_BUILD_MODULES with SOURCETRAIL_CXX_MODULES (symmetrically, cache follows both
+  ways); lib_core links thoth_ipc_module; srctrl_interprocess.cppm's three thoth GMF includes
+  became `import thoth.ipc;`.
+  **Remaining for Phase 4 — (c) `src/indexer/main.cpp` as importer. NEEDS A DESIGN PASS
+  first; do not attempt mechanically.** The blocker is the *type boundary* between imports and
+  the deliberately-classic seam headers, not missing modules: main.cpp's classic includes
+  (FileLogger/LogManager, AppPath/UserPaths, setupApp, the lib_cxx prebuild runners,
+  LanguagePackageCxx, CxxIndexerCommandCodec) textually declare or drag modularized types —
+  FilePath, LanguagePackage, IndexerCommandCodecRegistry. In a TU that ALSO imports
+  srctrl.file/indexer/interprocess, the textual declaration (global module) and the imported
+  one (attached to a named module) are DIFFERENT front-end types even though exported entities
+  mangle identically at link. Any value crossing the boundary breaks: e.g. textual
+  `UserPaths::getAppSettingsFilePath()` (global FilePath) into imported
+  `ApplicationSettings::load(attached FilePath)`, or textual `LanguagePackageCxx` (derives
+  global LanguagePackage) into imported `LanguagePackageManager::addPackage`. Options, in
+  rough preference order: (1) modularize the FilePath-bearing seams first (FileLogger/LogManager
+  → srctrl.logging; AppPath/UserPaths → srctrl.file or a small srctrl.app; the lib_cxx project/
+  layer incl. LanguagePackageCxx + CxxIndexerCommandCodec + prebuild runners → srctrl.cxx),
+  after which main.cpp imports everything and includes only macro/glaze/std-only headers;
+  (2) an #ifdef-swapped main.cpp that imports only modules whose types never cross into the
+  remaining textual includes (currently: none usefully — every import overlaps); (3) leave
+  main.cpp classic (works today in both modes) and declare the milestone reached when (1) is
+  done. TaskBuildIndex + the queue-fill task stay host-side classic (messaging + scheduling)
+  until/unless messaging modularizes.
 - **Phase 5 — dogfood.** Index the module-built Sourcetrail *with* the module-built Sourcetrail; diff
   the symbol/edge graph against the header build's graph (they must match) and benchmark incremental
   rebuilds ON vs OFF.
