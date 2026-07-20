@@ -22,20 +22,9 @@
 #include "IndexerCommandCxx.h"
 #include "TextAccess.h"
 
-#ifdef emit
-#pragma push_macro("emit")
-#undef emit
-#define SOURCETRAIL_RESTORE_QT_EMIT
-#endif
-
 #include "GeneratePCHAction.h"
 #include "ParserClientImpl.h"
 #include "SingleFrontendActionFactory.h"
-
-#ifdef SOURCETRAIL_RESTORE_QT_EMIT
-#pragma pop_macro("emit")
-#undef SOURCETRAIL_RESTORE_QT_EMIT
-#endif
 
 #include "SourceGroupSettingsWithCxxPchOptions.h"
 #include "StorageProvider.h"

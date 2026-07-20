@@ -15,6 +15,10 @@ list(FILTER Sourcetrail_test_SOURCES EXCLUDE REGEX ".*/ToolChainTestSuite\\.cpp"
 
 add_executable(Sourcetrail_test ${Sourcetrail_test_SOURCES})
 
+# Same reason as Sourcetrail_lib_cxx: the CxxParser suite includes the frontend glue headers,
+# whose inline bodies mix Qt-bearing and Sema-reaching includes; tests use no Qt keywords.
+target_compile_definitions(Sourcetrail_test PRIVATE QT_NO_EMIT)
+
 if (BUILD_CXX_LANGUAGE_PACKAGE)
 	target_sources(Sourcetrail_test
 		PRIVATE

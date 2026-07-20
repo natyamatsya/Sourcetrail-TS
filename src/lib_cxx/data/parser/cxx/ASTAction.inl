@@ -1,11 +1,15 @@
-#include "ASTAction.h"
+// Inline implementations for ASTAction.h. Included at the end of that header (classic) or via
+// the srctrl.cxx:frontend wrapper (purview); not a standalone TU.
 
+#pragma once
+
+#ifndef SRCTRL_MODULE_PURVIEW
 #include <clang/Frontend/CompilerInstance.h>
-
 #include "ASTConsumer.h"
 #include "PreprocessorCallbacks.h"
+#endif
 
-ASTAction::ASTAction(
+inline ASTAction::ASTAction(
 	ParserClient& client,
 	CanonicalFilePathCache& canonicalFilePathCache,
 	std::shared_ptr<IndexerStateInfo> indexerStateInfo)
@@ -16,7 +20,7 @@ ASTAction::ASTAction(
 {
 }
 
-std::unique_ptr<clang::ASTConsumer> ASTAction::CreateASTConsumer(
+inline std::unique_ptr<clang::ASTConsumer> ASTAction::CreateASTConsumer(
 	clang::CompilerInstance& compiler, llvm::StringRef  /*inFile*/)
 {
 	return std::unique_ptr<clang::ASTConsumer>(new ASTConsumer(
@@ -27,7 +31,7 @@ std::unique_ptr<clang::ASTConsumer> ASTAction::CreateASTConsumer(
 		m_indexerStateInfo));
 }
 
-bool ASTAction::BeginSourceFileAction(clang::CompilerInstance& compiler)
+inline bool ASTAction::BeginSourceFileAction(clang::CompilerInstance& compiler)
 {
 	clang::Preprocessor& preprocessor = compiler.getPreprocessor();
 	preprocessor.addPPCallbacks(std::make_unique<PreprocessorCallbacks>(

@@ -1,13 +1,17 @@
 #ifndef CXX_DIAGNOSTIC_CONSUMER
 #define CXX_DIAGNOSTIC_CONSUMER
 
+#include "SrctrlModule.h"
+
+#ifndef SRCTRL_MODULE_PURVIEW
 #include "FilePath.h"
 #include <clang/Frontend/TextDiagnosticPrinter.h>
 
 class CanonicalFilePathCache;
 class ParserClient;
+#endif
 
-class CxxDiagnosticConsumer: public clang::TextDiagnosticPrinter
+SRCTRL_EXPORT class CxxDiagnosticConsumer: public clang::TextDiagnosticPrinter
 {
 public:
 	CxxDiagnosticConsumer(
@@ -32,5 +36,10 @@ private:
 	const FilePath m_sourceFilePath;
 	bool m_useLogging;
 };
+
+
+#ifndef SRCTRL_MODULE_PURVIEW
+#include "CxxDiagnosticConsumer.inl"
+#endif
 
 #endif	  // CXX_DIAGNOSTIC_CONSUMER

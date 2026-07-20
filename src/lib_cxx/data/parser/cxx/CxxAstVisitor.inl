@@ -757,14 +757,14 @@ inline bool CxxAstVisitor::TraverseAssignCommon(clang::BinaryOperator* s)
 // supports it — that is the first non-preprocessor mechanism able to generate these members
 // programmatically. Until then, keep the macro.
 #define DEF_VISIT_CUSTOM_TYPE_PTR(__NAME_TYPE__, __PARAM_TYPE__)                                   \
-	bool CxxAstVisitor::Visit##__NAME_TYPE__(clang::__PARAM_TYPE__* v)                             \
+	inline bool CxxAstVisitor::Visit##__NAME_TYPE__(clang::__PARAM_TYPE__* v)                             \
 	{                                                                                              \
 		forEachComponent([&](auto& component) { component.visit##__NAME_TYPE__(v); });                                                \
 		return true;                                                                               \
 	}
 
 #define DEF_VISIT_CUSTOM_TYPE(__NAME_TYPE__, __PARAM_TYPE__)                                       \
-	bool CxxAstVisitor::Visit##__NAME_TYPE__(clang::__PARAM_TYPE__ v)                              \
+	inline bool CxxAstVisitor::Visit##__NAME_TYPE__(clang::__PARAM_TYPE__ v)                              \
 	{                                                                                              \
 		forEachComponent([&](auto& component) { component.visit##__NAME_TYPE__(v); });                                                \
 		return true;                                                                               \

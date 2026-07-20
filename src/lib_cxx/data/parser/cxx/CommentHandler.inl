@@ -1,18 +1,23 @@
-#include "CommentHandler.h"
+// Inline implementations for CommentHandler.h. Included at the end of that header (classic) or via
+// the srctrl.cxx:frontend wrapper (purview); not a standalone TU.
 
+#pragma once
+
+#ifndef SRCTRL_MODULE_PURVIEW
 #include "CanonicalFilePathCache.h"
 #include "ParseLocation.h"
 #include "ParserClient.h"
 #include "utilityClang.h"
+#endif
 
-CommentHandler::CommentHandler(
+inline CommentHandler::CommentHandler(
 	ParserClient& client,
 	CanonicalFilePathCache& canonicalFilePathCache)
 	: m_client(client), m_canonicalFilePathCache(canonicalFilePathCache)
 {
 }
 
-bool CommentHandler::HandleComment(clang::Preprocessor& preprocessor, clang::SourceRange sourceRange)
+inline bool CommentHandler::HandleComment(clang::Preprocessor& preprocessor, clang::SourceRange sourceRange)
 {
 	const clang::SourceManager& sourceManager = preprocessor.getSourceManager();
 

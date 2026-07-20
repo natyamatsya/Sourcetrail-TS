@@ -1,6 +1,9 @@
 #ifndef PREPROCESSOR_CALLBACKS_H
 #define PREPROCESSOR_CALLBACKS_H
 
+#include "SrctrlModule.h"
+
+#ifndef SRCTRL_MODULE_PURVIEW
 #include <memory>
 #include <set>
 
@@ -15,8 +18,9 @@ class CanonicalFilePathCache;
 class ParserClient;
 
 struct ParseLocation;
+#endif
 
-class PreprocessorCallbacks: public clang::PPCallbacks
+SRCTRL_EXPORT class PreprocessorCallbacks: public clang::PPCallbacks
 {
 public:
 	explicit PreprocessorCallbacks(
@@ -88,5 +92,10 @@ private:
 
 	std::set<clang::FileID> m_fileWasRecorded;
 };
+
+
+#ifndef SRCTRL_MODULE_PURVIEW
+#include "PreprocessorCallbacks.inl"
+#endif
 
 #endif	  // PREPROCESSOR_CALLBACKS_H

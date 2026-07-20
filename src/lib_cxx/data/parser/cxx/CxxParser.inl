@@ -1,5 +1,9 @@
-#include "CxxParser.h"
+// Inline implementations for CxxParser.h. Included at the end of that header (classic) or via
+// the srctrl.cxx:frontend wrapper (purview); not a standalone TU.
 
+#pragma once
+
+#ifndef SRCTRL_MODULE_PURVIEW
 #include "ASTAction.h"
 #include "ApplicationSettings.h"
 #include "CanonicalFilePathCache.h"
@@ -16,9 +20,9 @@
 #include "ToolChain.h"
 #include "logging.h"
 #include "utility.h"
+#include "utilityApp.h"
 #include "utilityClang.h"
 #include "utilityString.h"
-
 #include <clang/Driver/Compilation.h>
 #include <clang/Driver/Driver.h>
 #include <clang/Frontend/CompilerInvocation.h>
@@ -26,21 +30,38 @@
 #include <llvm/Option/ArgList.h>
 #include <llvm/Support/TargetSelect.h>
 #include <llvm/Support/VirtualFileSystem.h>
+#endif
 
-namespace
+// ODR-safe home for the tool-invocation helpers: anonymous namespaces are an ODR trap in
+// headers/inls (each includer gets a distinct entity referenced from inline bodies).
+namespace cxx_parser_detail
 {
+// ASCII-only lowering for executable names (cl.exe / clang-cl detection) -- utility::toLowerCase
+// is the Qt/locale seam deliberately excluded from module purviews (same pattern as
+// FilePath::getLowerCase / FileSystem / CanonicalFilePathCache).
+inline std::string toLowerCaseAscii(const std::string& in)
+{
+	std::string out;
+	out.reserve(in.size());
+	for (const char c: in)
+	{
+		out.push_back((c >= 'A' && c <= 'Z') ? static_cast<char>(c - 'A' + 'a') : c);
+	}
+	return out;
+}
+
 // clang derives its driver mode from argv[0]; a name ending in 'cl' selects CL
 // mode, which cannot parse the GNU-style flags Sourcetrail assembles (MSVC
 // flags are translated to clang spellings up front, see replaceMsvcArguments /
 // translateMsvcCompilerFragments). Fall back to the neutral tool name for
 // MSVC-style compilers; their resource dir would not resolve anyway.
-bool isMsvcStyleCompiler(const std::string& compilerPath)
+inline bool isMsvcStyleCompiler(const std::string& compilerPath)
 {
-	const std::string fileName = utility::toLowerCase(FilePath(compilerPath).fileName());
+	const std::string fileName = toLowerCaseAscii(FilePath(compilerPath).fileName());
 	return fileName == "cl.exe" || fileName == "cl" || fileName.starts_with("clang-cl");
 }
 
-std::vector<std::string> prependSyntaxOnlyToolArgs(
+inline std::vector<std::string> prependSyntaxOnlyToolArgs(
 	const std::string& compilerPath, const std::vector<std::string>& args)
 {
 	const std::string toolName = (compilerPath.empty() || isMsvcStyleCompiler(compilerPath))
@@ -49,13 +70,13 @@ std::vector<std::string> prependSyntaxOnlyToolArgs(
 	return utility::concat(std::vector<std::string>({toolName, ClangCompiler::syntaxOnlyOption()}), args);
 }
 
-std::vector<std::string> appendFilePath(const std::vector<std::string>& args, llvm::StringRef filePath)
+inline std::vector<std::string> appendFilePath(const std::vector<std::string>& args, llvm::StringRef filePath)
 {
 	return utility::concat(args, {filePath.str()});
 }
 
 // custom implementation of clang::runToolOnCodeWithArgs which also sets our custom DiagnosticConsumer
-bool runToolOnCodeWithArgs(
+inline bool runToolOnCodeWithArgs(
 	const std::string& compilerPath,
 	clang::DiagnosticConsumer* DiagConsumer,
 	std::unique_ptr<clang::FrontendAction> ToolAction,
@@ -90,9 +111,9 @@ bool runToolOnCodeWithArgs(
 
 	return Invocation.run();
 }
-}	 // namespace
+}	 // namespace cxx_parser_detail
 
-std::vector<std::string> CxxParser::getCommandlineArgumentsEssential(
+inline std::vector<std::string> CxxParser::getCommandlineArgumentsEssential(
 	const std::string& compilerPath, const std::vector<std::string>& compilerFlags)
 {
 	std::vector<std::string> args;
@@ -127,7 +148,7 @@ std::vector<std::string> CxxParser::getCommandlineArgumentsEssential(
 	return args;
 }
 
-void CxxParser::initializeLLVM()
+inline void CxxParser::initializeLLVM()
 {
 	static bool initialized = false;
 	if (!initialized)
@@ -140,7 +161,7 @@ void CxxParser::initializeLLVM()
 	}
 }
 
-CxxParser::CxxParser(
+inline CxxParser::CxxParser(
 	ParserClient& client,
 	std::shared_ptr<FileRegister> fileRegister,
 	std::shared_ptr<IndexerStateInfo> indexerStateInfo)
@@ -150,7 +171,7 @@ CxxParser::CxxParser(
 	llvm::InitializeNativeTargetAsmParser();
 }
 
-void CxxParser::buildIndex(std::shared_ptr<const IndexerCommandCxx> indexerCommand)
+inline void CxxParser::buildIndex(std::shared_ptr<const IndexerCommandCxx> indexerCommand)
 {
 	clang::tooling::CompileCommand compileCommand;
 	compileCommand.Filename = indexerCommand->getSourceFilePath().str();
@@ -172,7 +193,7 @@ void CxxParser::buildIndex(std::shared_ptr<const IndexerCommandCxx> indexerComma
 		args.push_back(sourcePath);
 	}
 	compileCommand.CommandLine = getCommandlineArgumentsEssential(indexerCommand->getCompilerPath(), args);
-	compileCommand.CommandLine = prependSyntaxOnlyToolArgs(indexerCommand->getCompilerPath(), compileCommand.CommandLine);
+	compileCommand.CommandLine = cxx_parser_detail::prependSyntaxOnlyToolArgs(indexerCommand->getCompilerPath(), compileCommand.CommandLine);
 
 	LOG_INFO(
 		"buildIndex: " + indexerCommand->getSourceFilePath().fileName() +
@@ -183,7 +204,7 @@ void CxxParser::buildIndex(std::shared_ptr<const IndexerCommandCxx> indexerComma
 	runTool(&compilationDatabase, indexerCommand->getSourceFilePath(), indexerCommand->getCompilerPath());
 }
 
-void CxxParser::buildIndex(
+inline void CxxParser::buildIndex(
 	const std::string& fileName,
 	std::shared_ptr<TextAccess> fileContent,
 	std::vector<std::string> compilerFlags)
@@ -198,10 +219,10 @@ void CxxParser::buildIndex(
 
 	std::vector<std::string> args = getCommandlineArgumentsEssential("", compilerFlags);
 
-	runToolOnCodeWithArgs("", diagnostics.get(), std::move(action), fileContent->getText(), args, fileName);
+	cxx_parser_detail::runToolOnCodeWithArgs("", diagnostics.get(), std::move(action), fileContent->getText(), args, fileName);
 }
 
-void CxxParser::runTool(
+inline void CxxParser::runTool(
 	clang::tooling::CompilationDatabase* compilationDatabase,
 	const FilePath& sourceFilePath,
 	const std::string& compilerPath)
@@ -275,7 +296,7 @@ void CxxParser::runTool(
 	}
 }
 
-std::shared_ptr<CxxDiagnosticConsumer> CxxParser::getDiagnostics(
+inline std::shared_ptr<CxxDiagnosticConsumer> CxxParser::getDiagnostics(
 	const FilePath& sourceFilePath,
 	CanonicalFilePathCache& canonicalFilePathCache,
 	bool logErrors) const

@@ -600,6 +600,36 @@ cycles in `lib` is prerequisite work, and a good cleanup in its own right).
   Phase 3:** the frontend glue thin slice (CxxParser, IndexerCxx, ASTAction/ASTConsumer/
   GeneratePCHAction, PreprocessorCallbacks, CommentHandler, CxxDiagnosticConsumer), then Phase 4
   (indexer binary as pure importer).
+- **Phase 3 (cont.) — `:frontend` landed: the glue slice. lib_cxx's parser pipeline is now fully
+  modular. ✅** The 10 frontend pairs (CxxParser, ASTAction/ASTConsumer/GeneratePCHAction/
+  SingleFrontendActionFactory, PreprocessorCallbacks, CommentHandler, CxxDiagnosticConsumer,
+  CxxCompilationDatabaseSingle, ClangInvocationInfo — ~1.3k LOC) became `srctrl.cxx:frontend`
+  (imports `:tooling`/`:parser`/`:visitor` + settings/file/process/data; Frontend/Driver/Tooling
+  GMF, 150.0 MB BMI). Unlike the visitor blob this layer is a clean DAG — no apex needed; every
+  header bottom-includes its own `.inl` (the CanonicalFilePathCache leaf pattern). On the way:
+  - **`Parser` (the 15-line abstract base) joined `srctrl.data:parser`** — it fwd-declared
+    ParserClient, so it was never GMF-safe (same lesson as utilityMainFunction).
+  - **IndexerCxx deliberately stays a classic TU**: it drags the lib_core indexer framework
+    (Indexer<T> → ParserClientImpl → IntermediateStorage), which is Phase 4's subject. Classic TUs
+    including dual-build headers keep working, so nothing blocks on it.
+  - **Qt's `emit` macro vs clang's Sema.h**: with the glue headers self-contained, any including TU
+    now mixes Qt-bearing first-party headers (ApplicationSettings/ResourcePaths) with
+    Sema-reaching clang headers, and the old per-TU `push_macro("emit")` sandwiches
+    (SourceGroupCxxCdb, utilitySourceGroupCxx) can no longer cover the collision (Sema.h has an
+    `emit()` member). Fix: `QT_NO_EMIT` on `Sourcetrail_lib_cxx` and `Sourcetrail_test` (both
+    non-GUI, zero Qt-keyword uses) and the sandwiches deleted.
+  - **Latent visitor-slice bug surfaced and fixed**: the 42 `DEF_VISIT_*` X-macro-generated
+    `CxxAstVisitor::Visit*` bodies in CxxAstVisitor.inl lacked `inline` — invisible while only ONE
+    classic TU (ASTConsumer.cpp) included the apex, duplicate symbols the moment the glue made it
+    several. Moral: after inlining a `.cpp`, grep the result for macro-GENERATED definitions too.
+  - Same Qt/locale `toLowerCase` seam as FilePath/FileSystem/CFPC: `cxx_parser_detail` gained an
+    ASCII `toLowerCaseAscii` for the cl.exe/clang-cl driver-mode check.
+  - The dead `TaskParseCxx` friend/fwd in CxxParser.h removed.
+  Verified both modes: 2640 assertions, headless Usages index 529 nodes / 0 errors, identical.
+  **Remaining for Phase 3: nothing.** lib_cxx is converted end-to-end (`:name`/`:context`/
+  `:tooling`/`:parser`/`:visitor`/`:frontend`) except IndexerCxx + the project/ source-group layer,
+  which belong to Phase 4 (indexer framework + binary as pure importer) and the IncludeProcessing
+  side quest.
 - **Phase 3 — `srctrl.cxx`.** Modularize `lib_cxx` with partitions; absorb the Clang-header BMI cost.
   **STARTED — `:name` landed. ✅** The `name/` cluster (CxxName type-erased wrapper + concept, the five
   decl-name leaves, CxxQualifierFlags — 7 headers, all `.cpp`s inlined into `.inl`s) is `srctrl.cxx`'s

@@ -1,9 +1,13 @@
 #ifndef CXX_COMPILATION_DATABASE_SINGLE_H
 #define CXX_COMPILATION_DATABASE_SINGLE_H
 
-#include <clang/Tooling/CompilationDatabase.h>
+#include "SrctrlModule.h"
 
-class CxxCompilationDatabaseSingle: public clang::tooling::CompilationDatabase
+#ifndef SRCTRL_MODULE_PURVIEW
+#include <clang/Tooling/CompilationDatabase.h>
+#endif
+
+SRCTRL_EXPORT class CxxCompilationDatabaseSingle: public clang::tooling::CompilationDatabase
 {
 public:
 	CxxCompilationDatabaseSingle(const clang::tooling::CompileCommand& command);
@@ -15,5 +19,10 @@ public:
 private:
 	clang::tooling::CompileCommand m_command;
 };
+
+
+#ifndef SRCTRL_MODULE_PURVIEW
+#include "CxxCompilationDatabaseSingle.inl"
+#endif
 
 #endif	  // CXX_COMPILATION_DATABASE_SINGLE_H

@@ -1,12 +1,16 @@
 #ifndef GENERATE_PCH_ACTION_H
 #define GENERATE_PCH_ACTION_H
 
+#include "SrctrlModule.h"
+
+#ifndef SRCTRL_MODULE_PURVIEW
 #include <clang/Frontend/FrontendActions.h>
 
 class ParserClient;
 class CanonicalFilePathCache;
+#endif
 
-class GeneratePCHAction: public clang::GeneratePCHAction
+SRCTRL_EXPORT class GeneratePCHAction: public clang::GeneratePCHAction
 {
 public:
 	explicit GeneratePCHAction(
@@ -27,5 +31,10 @@ private:
 	ParserClient& m_client;
 	CanonicalFilePathCache& m_canonicalFilePathCache;
 };
+
+
+#ifndef SRCTRL_MODULE_PURVIEW
+#include "GeneratePCHAction.inl"
+#endif
 
 #endif	  // GENERATE_PCH_ACTION_H

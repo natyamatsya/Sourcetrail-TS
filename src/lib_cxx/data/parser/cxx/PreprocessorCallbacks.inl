@@ -1,16 +1,19 @@
-#include "PreprocessorCallbacks.h"
+// Inline implementations for PreprocessorCallbacks.h. Included at the end of that header (classic) or via
+// the srctrl.cxx:frontend wrapper (purview); not a standalone TU.
 
+#pragma once
+
+#ifndef SRCTRL_MODULE_PURVIEW
 #include <clang/Basic/IdentifierTable.h>
 #include <clang/Driver/Util.h>
 #include <clang/Lex/MacroArgs.h>
-
 #include "CanonicalFilePathCache.h"
 #include "ParseLocation.h"
 #include "ParserClient.h"
 #include "utilityClang.h"
+#endif
 
-
-PreprocessorCallbacks::PreprocessorCallbacks(
+inline PreprocessorCallbacks::PreprocessorCallbacks(
 	clang::SourceManager& sourceManager,
 	ParserClient& client,
 	CanonicalFilePathCache& canonicalFilePathCache)
@@ -20,7 +23,7 @@ PreprocessorCallbacks::PreprocessorCallbacks(
 {
 }
 
-void PreprocessorCallbacks::FileChanged(
+inline void PreprocessorCallbacks::FileChanged(
 	clang::SourceLocation location,
 	FileChangeReason  /*reason*/,
 	clang::SrcMgr::CharacteristicKind,
@@ -51,7 +54,7 @@ void PreprocessorCallbacks::FileChanged(
 	}
 }
 
-void PreprocessorCallbacks::InclusionDirective(clang::SourceLocation  /*hashLocation*/,
+inline void PreprocessorCallbacks::InclusionDirective(clang::SourceLocation  /*hashLocation*/,
 	const clang::Token&  /*includeToken*/,
 	llvm::StringRef  /*fileName*/,
 	bool  /*isAngled*/,
@@ -80,7 +83,7 @@ void PreprocessorCallbacks::InclusionDirective(clang::SourceLocation  /*hashLoca
 	}
 }
 
-void PreprocessorCallbacks::MacroDefined(
+inline void PreprocessorCallbacks::MacroDefined(
 	const clang::Token& macroNameToken, const clang::MacroDirective* macroDirective)
 {
 	if (m_currentPathIsProjectFile)
@@ -102,7 +105,7 @@ void PreprocessorCallbacks::MacroDefined(
 	}
 }
 
-void PreprocessorCallbacks::MacroUndefined(
+inline void PreprocessorCallbacks::MacroUndefined(
 	const clang::Token& macroNameToken,
 	const clang::MacroDefinition&  /*macroDefinition*/,
 	const clang::MacroDirective*  /*macroUndefinition*/)
@@ -110,7 +113,7 @@ void PreprocessorCallbacks::MacroUndefined(
 	onMacroUsage(macroNameToken);
 }
 
-void PreprocessorCallbacks::Defined(
+inline void PreprocessorCallbacks::Defined(
 	const clang::Token& macroNameToken,
 	const clang::MacroDefinition&  /*macroDefinition*/,
 	clang::SourceRange  /*range*/)
@@ -118,14 +121,14 @@ void PreprocessorCallbacks::Defined(
 	onMacroUsage(macroNameToken);
 }
 
-void PreprocessorCallbacks::Ifdef(
+inline void PreprocessorCallbacks::Ifdef(
 	clang::SourceLocation  /*location*/,
 	const clang::Token& macroNameToken,
 	const clang::MacroDefinition&  /*macroDefinition*/)
 {
 	onMacroUsage(macroNameToken);
 }
-void PreprocessorCallbacks::Ifndef(
+inline void PreprocessorCallbacks::Ifndef(
 	clang::SourceLocation  /*location*/,
 	const clang::Token& macroNameToken,
 	const clang::MacroDefinition&  /*macroDefinition*/)
@@ -133,7 +136,7 @@ void PreprocessorCallbacks::Ifndef(
 	onMacroUsage(macroNameToken);
 }
 
-void PreprocessorCallbacks::MacroExpands(
+inline void PreprocessorCallbacks::MacroExpands(
 	const clang::Token& macroNameToken,
 	const clang::MacroDefinition&  /*macroDirective*/,
 	clang::SourceRange  /*range*/,
@@ -142,7 +145,7 @@ void PreprocessorCallbacks::MacroExpands(
 	onMacroUsage(macroNameToken);
 }
 
-void PreprocessorCallbacks::onMacroUsage(const clang::Token& macroNameToken)
+inline void PreprocessorCallbacks::onMacroUsage(const clang::Token& macroNameToken)
 {
 	if (m_currentPathIsProjectFile && isLocatedInProjectFile(macroNameToken.getLocation()))
 	{
@@ -154,7 +157,7 @@ void PreprocessorCallbacks::onMacroUsage(const clang::Token& macroNameToken)
 	}
 }
 
-ParseLocation PreprocessorCallbacks::getParseLocation(const clang::Token& macroNameTok) const
+inline ParseLocation PreprocessorCallbacks::getParseLocation(const clang::Token& macroNameTok) const
 {
 	const clang::SourceLocation& location = m_sourceManager.getSpellingLoc(macroNameTok.getLocation());
 	const clang::SourceLocation& endLocation = m_sourceManager.getSpellingLoc(
@@ -174,7 +177,7 @@ ParseLocation PreprocessorCallbacks::getParseLocation(const clang::Token& macroN
 	return ParseLocation();
 }
 
-ParseLocation PreprocessorCallbacks::getParseLocation(const clang::MacroInfo* macroInfo) const
+inline ParseLocation PreprocessorCallbacks::getParseLocation(const clang::MacroInfo* macroInfo) const
 {
 	clang::SourceLocation location = macroInfo->getDefinitionLoc();
 	clang::SourceLocation endLocation = macroInfo->getDefinitionEndLoc();
@@ -193,7 +196,7 @@ ParseLocation PreprocessorCallbacks::getParseLocation(const clang::MacroInfo* ma
 	return ParseLocation();
 }
 
-ParseLocation PreprocessorCallbacks::getParseLocation(const clang::SourceRange& sourceRange) const
+inline ParseLocation PreprocessorCallbacks::getParseLocation(const clang::SourceRange& sourceRange) const
 {
 	if (sourceRange.isValid())
 	{
@@ -218,7 +221,7 @@ ParseLocation PreprocessorCallbacks::getParseLocation(const clang::SourceRange& 
 	return ParseLocation();
 }
 
-bool PreprocessorCallbacks::isLocatedInProjectFile(const clang::SourceLocation loc)
+inline bool PreprocessorCallbacks::isLocatedInProjectFile(const clang::SourceLocation loc)
 {
 	// we need the spelling loc here, since this is the location where the macro comes from
 	clang::SourceLocation spellingLoc = m_sourceManager.getSpellingLoc(loc);

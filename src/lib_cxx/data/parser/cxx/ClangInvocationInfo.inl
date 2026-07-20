@@ -1,5 +1,9 @@
-#include "ClangInvocationInfo.h"
+// Inline implementations for ClangInvocationInfo.h. Included at the end of that header (classic) or via
+// the srctrl.cxx:frontend wrapper (purview); not a standalone TU.
 
+#pragma once
+
+#ifndef SRCTRL_MODULE_PURVIEW
 #include <clang/Basic/Version.h>
 #include <clang/Driver/Compilation.h>
 #include <clang/Driver/Driver.h>
@@ -8,17 +12,18 @@
 #include <llvm/Option/ArgList.h>
 #include <llvm/Support/TargetSelect.h>
 #include <llvm/TargetParser/Host.h>
-
 #include "ResourcePaths.h"
 #include "CxxCompilationDatabaseSingle.h"
 #include "CxxDiagnosticConsumer.h"
 #include "clang_compat/ClangCompat.h"
 #include "utilityString.h"
+#endif
 
-namespace
+// ODR-safe home for the helper (anonymous namespaces are an ODR trap in headers/inls).
+namespace clang_invocation_info_detail
 {
 // copied from clang codebase
-clang::driver::Driver* newDriver(
+inline clang::driver::Driver* newDriver(
 	clang::DiagnosticsEngine* Diagnostics,
 	const char* BinaryName,
 	clang::IntrusiveRefCntPtr<llvm::vfs::FileSystem> VFS)
@@ -29,10 +34,10 @@ clang::driver::Driver* newDriver(
 
 	return CompilerDriver;
 }
-}	 // namespace
+}	 // namespace clang_invocation_info_detail
 
 // copied and stitched together from clang codebase
-ClangInvocationInfo ClangInvocationInfo::getClangInvocationString(
+inline ClangInvocationInfo ClangInvocationInfo::getClangInvocationString(
 	const clang::tooling::CompilationDatabase* compilationDatabase)
 {
 	ClangInvocationInfo invocationInfo;
@@ -82,7 +87,7 @@ ClangInvocationInfo ClangInvocationInfo::getClangInvocationString(
 			new clang::FileManager(clang::FileSystemOptions()));
 
 		const std::unique_ptr<clang::driver::Driver> Driver(
-			newDriver(&Diagnostics, BinaryName, &Files->getVirtualFileSystem()));
+			clang_invocation_info_detail::newDriver(&Diagnostics, BinaryName, &Files->getVirtualFileSystem()));
 		// Since the input might only be virtual, don't check whether it exists.
 		Driver->setCheckInputsExist(false);
 		const std::unique_ptr<clang::driver::Compilation> Compilation(

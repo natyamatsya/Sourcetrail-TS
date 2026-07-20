@@ -1,6 +1,9 @@
 #ifndef AST_CONSUMER_H
 #define AST_CONSUMER_H
 
+#include "SrctrlModule.h"
+
+#ifndef SRCTRL_MODULE_PURVIEW
 #include <clang/AST/ASTConsumer.h>
 #include <clang/AST/ASTContext.h>
 
@@ -8,8 +11,9 @@ class CanonicalFilePathCache;
 class CxxAstVisitor;
 class ParserClient;
 struct IndexerStateInfo;
+#endif
 
-class ASTConsumer: public clang::ASTConsumer
+SRCTRL_EXPORT class ASTConsumer: public clang::ASTConsumer
 {
 public:
 	explicit ASTConsumer(
@@ -27,5 +31,10 @@ private:
 	std::shared_ptr<CxxAstVisitor> m_visitor;
 	std::shared_ptr<IndexerStateInfo> m_indexerStateInfo;
 };
+
+
+#ifndef SRCTRL_MODULE_PURVIEW
+#include "ASTConsumer.inl"
+#endif
 
 #endif	  // AST_CONSUMER_H

@@ -38,7 +38,8 @@ if(SOURCETRAIL_CXX_MODULES_ENABLED)
 				data/parser/cxx/srctrl_cxx-context.cppm
 				data/parser/cxx/srctrl_cxx-tooling.cppm
 				data/parser/cxx/srctrl_cxx-parser.cppm
-				data/parser/cxx/srctrl_cxx-visitor.cppm)
+				data/parser/cxx/srctrl_cxx-visitor.cppm
+				data/parser/cxx/srctrl_cxx-frontend.cppm)
 	# Same LLVM #166068 reduced-BMI workaround as lib_core (see its CMakeLists for the full story).
 	if(CMAKE_CXX_COMPILER_ID MATCHES "Clang")
 		target_compile_options(Sourcetrail_lib_cxx PRIVATE -fno-modules-reduced-bmi)
@@ -52,6 +53,12 @@ endif()
 # <prefix>/share/libc++/v1/. The module prebuild builds its BMI on demand so `import std;` resolves.
 # Bake in the LLVM install prefix we link against, so the runner compiles the std.cppm that matches
 # the in-process libclang's libc++ exactly.
+# Qt's `emit` macro breaks clang's Sema.h (which has an emit() member) -- with the frontend
+# glue headers now self-contained (inline bodies pull Qt-bearing settings/paths headers AND
+# Sema-reaching clang headers into any including TU), the per-TU push_macro sandwiches can't
+# cover it anymore. lib_cxx is non-GUI and uses no Qt keywords, so just don't define emit.
+target_compile_definitions(Sourcetrail_lib_cxx PRIVATE QT_NO_EMIT)
+
 target_compile_definitions(Sourcetrail_lib_cxx
 	PRIVATE
 		SOURCETRAIL_LLVM_INSTALL_PREFIX="${LLVM_INSTALL_PREFIX}"

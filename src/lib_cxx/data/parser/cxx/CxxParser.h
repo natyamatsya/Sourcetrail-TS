@@ -1,6 +1,9 @@
 #ifndef CXX_PARSER_H
 #define CXX_PARSER_H
 
+#include "SrctrlModule.h"
+
+#ifndef SRCTRL_MODULE_PURVIEW
 #include <string>
 #include <vector>
 
@@ -11,7 +14,6 @@ class CxxDiagnosticConsumer;
 class FilePath;
 class FileRegister;
 class IndexerCommandCxx;
-class TaskParseCxx;
 class TextAccess;
 
 
@@ -23,8 +25,9 @@ class FixedCompilationDatabase;
 
 
 struct IndexerStateInfo;
+#endif
 
-class CxxParser: public Parser
+SRCTRL_EXPORT class CxxParser: public Parser
 {
 public:
 	static std::vector<std::string> getCommandlineArgumentsEssential(
@@ -56,10 +59,13 @@ private:
 		CanonicalFilePathCache& canonicalFilePathCache,
 		bool logErrors) const;
 
-	friend class TaskParseCxx;
-
 	std::shared_ptr<FileRegister> m_fileRegister;
 	std::shared_ptr<IndexerStateInfo> m_indexerStateInfo;
 };
+
+
+#ifndef SRCTRL_MODULE_PURVIEW
+#include "CxxParser.inl"
+#endif
 
 #endif	  // CXX_PARSER_H

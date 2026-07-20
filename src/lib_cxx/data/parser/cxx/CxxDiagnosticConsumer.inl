@@ -1,16 +1,19 @@
-#include "CxxDiagnosticConsumer.h"
+// Inline implementations for CxxDiagnosticConsumer.h. Included at the end of that header (classic) or via
+// the srctrl.cxx:frontend wrapper (purview); not a standalone TU.
 
+#pragma once
+
+#ifndef SRCTRL_MODULE_PURVIEW
 #include <clang/Basic/SourceManager.h>
 #include <clang/Tooling/Tooling.h>
-
 #include "CanonicalFilePathCache.h"
 #include "ParseLocation.h"
 #include "ParserClient.h"
 #include "utilityClang.h"
 #include "utilityString.h"
+#endif
 
-
-CxxDiagnosticConsumer::CxxDiagnosticConsumer(
+inline CxxDiagnosticConsumer::CxxDiagnosticConsumer(
 	clang::raw_ostream& os,
 	std::shared_ptr<clang::DiagnosticOptions> diags,
 	ParserClient& client,
@@ -26,7 +29,7 @@ CxxDiagnosticConsumer::CxxDiagnosticConsumer(
 {
 }
 
-void CxxDiagnosticConsumer::BeginSourceFile(
+inline void CxxDiagnosticConsumer::BeginSourceFile(
 	const clang::LangOptions& langOptions, const clang::Preprocessor* preProcessor)
 {
 	if (m_useLogging)
@@ -35,7 +38,7 @@ void CxxDiagnosticConsumer::BeginSourceFile(
 	}
 }
 
-void CxxDiagnosticConsumer::EndSourceFile()
+inline void CxxDiagnosticConsumer::EndSourceFile()
 {
 	if (m_useLogging)
 	{
@@ -43,7 +46,7 @@ void CxxDiagnosticConsumer::EndSourceFile()
 	}
 }
 
-void CxxDiagnosticConsumer::HandleDiagnostic(
+inline void CxxDiagnosticConsumer::HandleDiagnostic(
 	clang::DiagnosticsEngine::Level level, const clang::Diagnostic& info)
 {
 	if (m_useLogging)

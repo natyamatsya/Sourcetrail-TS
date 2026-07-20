@@ -1,26 +1,30 @@
-#include "GeneratePCHAction.h"
+// Inline implementations for GeneratePCHAction.h. Included at the end of that header (classic) or via
+// the srctrl.cxx:frontend wrapper (purview); not a standalone TU.
 
+#pragma once
+
+#ifndef SRCTRL_MODULE_PURVIEW
 #include <clang/Frontend/CompilerInstance.h>
 #include <clang/Frontend/MultiplexConsumer.h>
 #include <clang/Lex/PreprocessorOptions.h>
 #include <clang/Serialization/ASTWriter.h>
-
 #include "clang_compat/ClangCompat.h"
 #include "PreprocessorCallbacks.h"
+#endif
 
-GeneratePCHAction::GeneratePCHAction(
+inline GeneratePCHAction::GeneratePCHAction(
 	ParserClient& client,
 	CanonicalFilePathCache& canonicalFilePathCache)
 	: m_client(client), m_canonicalFilePathCache(canonicalFilePathCache)
 {
 }
 
-bool GeneratePCHAction::shouldEraseOutputFiles()
+inline bool GeneratePCHAction::shouldEraseOutputFiles()
 {
 	return false;
 }
 
-std::unique_ptr<clang::ASTConsumer> GeneratePCHAction::CreateASTConsumer(
+inline std::unique_ptr<clang::ASTConsumer> GeneratePCHAction::CreateASTConsumer(
 	clang::CompilerInstance& CI, llvm::StringRef InFile)
 {
 	std::string Sysroot;
@@ -49,7 +53,7 @@ std::unique_ptr<clang::ASTConsumer> GeneratePCHAction::CreateASTConsumer(
 	return std::make_unique<clang::MultiplexConsumer>(std::move(Consumers));
 }
 
-bool GeneratePCHAction::BeginSourceFileAction(clang::CompilerInstance& compiler)
+inline bool GeneratePCHAction::BeginSourceFileAction(clang::CompilerInstance& compiler)
 {
 	clang::Preprocessor& preprocessor = compiler.getPreprocessor();
 	preprocessor.addPPCallbacks(std::make_unique<PreprocessorCallbacks>(

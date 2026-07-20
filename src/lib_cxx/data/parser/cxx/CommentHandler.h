@@ -1,12 +1,16 @@
 #ifndef COMMENT_HANDLER_H
 #define COMMENT_HANDLER_H
 
+#include "SrctrlModule.h"
+
+#ifndef SRCTRL_MODULE_PURVIEW
 #include <clang/Lex/Preprocessor.h>
 
 class CanonicalFilePathCache;
 class ParserClient;
+#endif
 
-class CommentHandler: public clang::CommentHandler
+SRCTRL_EXPORT class CommentHandler: public clang::CommentHandler
 {
 public:
 	CommentHandler(
@@ -21,5 +25,10 @@ private:
 	ParserClient& m_client;
 	CanonicalFilePathCache& m_canonicalFilePathCache;
 };
+
+
+#ifndef SRCTRL_MODULE_PURVIEW
+#include "CommentHandler.inl"
+#endif
 
 #endif	  // COMMENT_HANDLER_H

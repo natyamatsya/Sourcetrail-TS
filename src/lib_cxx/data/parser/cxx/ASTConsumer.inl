@@ -1,9 +1,14 @@
-#include "ASTConsumer.h"
+// Inline implementations for ASTConsumer.h. Included at the end of that header (classic) or via
+// the srctrl.cxx:frontend wrapper (purview); not a standalone TU.
 
+#pragma once
+
+#ifndef SRCTRL_MODULE_PURVIEW
 #include "ApplicationSettings.h"
 #include "CxxAstVisitor.h"
+#endif
 
-ASTConsumer::ASTConsumer(
+inline ASTConsumer::ASTConsumer(
 	clang::ASTContext* context,
 	clang::Preprocessor* preprocessor,
 	ParserClient& client,
@@ -19,7 +24,7 @@ ASTConsumer::ASTConsumer(
 		context, preprocessor, client, canonicalFilePathCache, indexerStateInfo, isVerbose);
 }
 
-void ASTConsumer::HandleTranslationUnit(clang::ASTContext& context)
+inline void ASTConsumer::HandleTranslationUnit(clang::ASTContext& context)
 {
 	m_visitor->indexDecl(context.getTranslationUnitDecl());
 }

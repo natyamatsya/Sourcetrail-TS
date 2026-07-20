@@ -1,6 +1,9 @@
 #ifndef AST_ACTION_H
 #define AST_ACTION_H
 
+#include "SrctrlModule.h"
+
+#ifndef SRCTRL_MODULE_PURVIEW
 #include <memory>
 
 #include <clang/Frontend/FrontendAction.h>
@@ -10,8 +13,9 @@
 class ParserClient;
 class CanonicalFilePathCache;
 struct IndexerStateInfo;
+#endif
 
-class ASTAction: public clang::ASTFrontendAction
+SRCTRL_EXPORT class ASTAction: public clang::ASTFrontendAction
 {
 public:
 	explicit ASTAction(
@@ -30,5 +34,10 @@ private:
 	std::shared_ptr<IndexerStateInfo> m_indexerStateInfo;
 	CommentHandler m_commentHandler;
 };
+
+
+#ifndef SRCTRL_MODULE_PURVIEW
+#include "ASTAction.inl"
+#endif
 
 #endif	  // AST_ACTION_H
