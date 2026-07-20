@@ -78,6 +78,7 @@ if(SOURCETRAIL_CXX_MODULES_ENABLED)
 				data/storage/srctrl_storage.cppm
 				data/storage/srctrl_storage-types.cppm
 				data/storage/srctrl_storage-interface.cppm
+				data/storage/srctrl_storage-intermediate.cppm
 				data/storage/srctrl_storage-error.cppm
 				data/storage/srctrl_storage-access.cppm)
 	# Workaround for LLVM #166068: in reduced-BMI mode (clang's default since 20) the replaceable global

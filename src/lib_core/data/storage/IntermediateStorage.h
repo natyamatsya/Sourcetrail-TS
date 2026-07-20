@@ -1,13 +1,17 @@
 #ifndef INTERMEDIATE_STORAGE_H
 #define INTERMEDIATE_STORAGE_H
 
+#include "SrctrlModule.h"
+
+#ifndef SRCTRL_MODULE_PURVIEW
 #include <map>
 #include <set>
 
 #include "NodeKind.h"
 #include "Storage.h"
+#endif
 
-class IntermediateStorage: public Storage
+SRCTRL_EXPORT class IntermediateStorage: public Storage
 {
 public:
 	IntermediateStorage();
@@ -101,5 +105,7 @@ private:
 
 	Id m_nextId;
 };
+
+#include "IntermediateStorage.inl"
 
 #endif	  // INTERMEDIATE_STORAGE_H

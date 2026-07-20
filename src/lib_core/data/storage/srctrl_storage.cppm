@@ -7,5 +7,6 @@ export module srctrl.storage;
 
 export import :types;
 export import :interface;
+export import :intermediate;
 export import :error;
 export import :access;

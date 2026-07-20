@@ -171,6 +171,15 @@ of it on the CppSQLite3 code.
    leaf-ness, `srctrl.data:bookmark`, FileInfo/TextAccess folded into `srctrl.file`, tracing.h gated).
 5. **S4** — `PersistentStorage` + access/cache/provider + concurrency (turso) + ladybug, last (heaviest
    coupling; may keep impl `.cpp` classic and only modularize the interface).
+   **Scoped + the valuable slice DONE:** `IntermediateStorage` converted (.cpp inlined into .inl) into a
+   new **`srctrl.storage:intermediate`** partition — it is the piece Phase 4 (the indexer binary as a
+   pure module consumer) actually imports, and its deps were already all modularized (Storage/:interface,
+   the record PODs/:types, NodeKind/NodeModifierMask/LocationType via srctrl.data). Verified both modes
+   (OFF and ON+sqlpp23: 2640 assertions, identical headless index). The rest of the layer —
+   `PersistentStorage` (3.9k LOC), `StorageAccessProxy/Cache/Provider`, `ConcurrentStorageIndex`/turso,
+   ladybug — **deliberately stays classic**: consumed only by app-side classic TUs (lib_gui-adjacent),
+   so attaching it buys no import edge while costing ~6k LOC of inline-conversion churn. Revisit only
+   if Phase 6 (GUI) ever modularizes.
 
 Net: **S1 is an immediate, low-risk next step** identical in shape to the data-types work; everything past it
 is gated on the sqlpp23-module spike and should track the SQL-layer migration rather than run ahead of it.

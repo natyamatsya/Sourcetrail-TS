@@ -1,10 +1,15 @@
-#include "IntermediateStorage.h"
+// Inline implementations for IntermediateStorage.h. Included at the end of that header; not a
+// standalone TU.
 
+#pragma once
+
+#ifndef SRCTRL_MODULE_PURVIEW
 #include "LocationType.h"
+#endif
 
-IntermediateStorage::IntermediateStorage(): m_nextId(1) {}
+inline IntermediateStorage::IntermediateStorage(): m_nextId(1) {}
 
-void IntermediateStorage::clear()
+inline void IntermediateStorage::clear()
 {
 	m_nodesIndex.clear();
 	m_nodeIdIndex.clear();
@@ -31,7 +36,7 @@ void IntermediateStorage::clear()
 	m_nextId = 1;
 }
 
-size_t IntermediateStorage::getByteSize(size_t stringSize) const
+inline size_t IntermediateStorage::getByteSize(size_t stringSize) const
 {
 	size_t byteSize = 0;
 
@@ -75,12 +80,12 @@ size_t IntermediateStorage::getByteSize(size_t stringSize) const
 	return byteSize;
 }
 
-size_t IntermediateStorage::getSourceLocationCount() const
+inline size_t IntermediateStorage::getSourceLocationCount() const
 {
 	return m_sourceLocations.size();
 }
 
-bool IntermediateStorage::hasFatalErrors() const
+inline bool IntermediateStorage::hasFatalErrors() const
 {
 	for (const StorageErrorData& error: m_errors)
 	{
@@ -93,7 +98,7 @@ bool IntermediateStorage::hasFatalErrors() const
 	return false;
 }
 
-void IntermediateStorage::setAllFilesIncomplete()
+inline void IntermediateStorage::setAllFilesIncomplete()
 {
 	for (StorageFile& file: m_files)
 	{
@@ -101,7 +106,7 @@ void IntermediateStorage::setAllFilesIncomplete()
 	}
 }
 
-void IntermediateStorage::setFilesWithErrorsIncomplete()
+inline void IntermediateStorage::setFilesWithErrorsIncomplete()
 {
 	std::set<Id> errorFileIds;
 	for (const StorageSourceLocation& location: m_sourceLocations)
@@ -121,7 +126,7 @@ void IntermediateStorage::setFilesWithErrorsIncomplete()
 	}
 }
 
-std::pair<Id, bool> IntermediateStorage::addNode(const StorageNodeData& nodeData)
+inline std::pair<Id, bool> IntermediateStorage::addNode(const StorageNodeData& nodeData)
 {
 	auto it = m_nodesIndex.find(nodeData);
 	if (it != m_nodesIndex.end())
@@ -141,7 +146,7 @@ std::pair<Id, bool> IntermediateStorage::addNode(const StorageNodeData& nodeData
 	return std::make_pair(nodeId, true);
 }
 
-std::vector<Id> IntermediateStorage::addNodes(const std::vector<StorageNode>& nodes)
+inline std::vector<Id> IntermediateStorage::addNodes(const std::vector<StorageNode>& nodes)
 {
 	std::vector<Id> nodeIds;
 	nodeIds.reserve(nodes.size());
@@ -152,7 +157,7 @@ std::vector<Id> IntermediateStorage::addNodes(const std::vector<StorageNode>& no
 	return nodeIds;
 }
 
-void IntermediateStorage::setNodeType(Id nodeId, NodeKind nodeType)
+inline void IntermediateStorage::setNodeType(Id nodeId, NodeKind nodeType)
 {
 	auto it = m_nodeIdIndex.find(nodeId);
 	if (it != m_nodeIdIndex.end() && m_nodes[it->second].type < nodeType)
@@ -161,7 +166,7 @@ void IntermediateStorage::setNodeType(Id nodeId, NodeKind nodeType)
 	}
 }
 
-void IntermediateStorage::addNodeModifier(Id nodeId, NodeModifierMask modifier)
+inline void IntermediateStorage::addNodeModifier(Id nodeId, NodeModifierMask modifier)
 {
 	auto it = m_nodeIdIndex.find(nodeId);
 	if (it != m_nodeIdIndex.end())
@@ -170,17 +175,17 @@ void IntermediateStorage::addNodeModifier(Id nodeId, NodeModifierMask modifier)
 	}
 }
 
-void IntermediateStorage::addSymbol(const StorageSymbol& symbol)
+inline void IntermediateStorage::addSymbol(const StorageSymbol& symbol)
 {
 	m_symbols.push_back(symbol);
 }
 
-void IntermediateStorage::addSymbols(const std::vector<StorageSymbol>& symbols)
+inline void IntermediateStorage::addSymbols(const std::vector<StorageSymbol>& symbols)
 {
 	m_symbols.insert(m_symbols.end(), symbols.begin(), symbols.end());
 }
 
-void IntermediateStorage::addFile(const StorageFile& file)
+inline void IntermediateStorage::addFile(const StorageFile& file)
 {
 	auto it = m_filesIndex.find(file);
 	if (it != m_filesIndex.end())
@@ -210,7 +215,7 @@ void IntermediateStorage::addFile(const StorageFile& file)
 	}
 }
 
-void IntermediateStorage::setFileLanguage(Id fileId, const std::string& languageIdentifier)
+inline void IntermediateStorage::setFileLanguage(Id fileId, const std::string& languageIdentifier)
 {
 	auto it = m_filesIdIndex.find(fileId);
 	if (it != m_filesIdIndex.end())
@@ -219,7 +224,7 @@ void IntermediateStorage::setFileLanguage(Id fileId, const std::string& language
 	}
 }
 
-Id IntermediateStorage::addEdge(const StorageEdgeData& edgeData)
+inline Id IntermediateStorage::addEdge(const StorageEdgeData& edgeData)
 {
 	auto it = m_edgesIndex.find(edgeData);
 	if (it != m_edgesIndex.end())
@@ -233,7 +238,7 @@ Id IntermediateStorage::addEdge(const StorageEdgeData& edgeData)
 	return edgeId;
 }
 
-std::vector<Id> IntermediateStorage::addEdges(const std::vector<StorageEdge>& edges)
+inline std::vector<Id> IntermediateStorage::addEdges(const std::vector<StorageEdge>& edges)
 {
 	std::vector<Id> edgeIds;
 	edgeIds.reserve(edges.size());
@@ -244,7 +249,7 @@ std::vector<Id> IntermediateStorage::addEdges(const std::vector<StorageEdge>& ed
 	return edgeIds;
 }
 
-Id IntermediateStorage::addLocalSymbol(const StorageLocalSymbolData& localSymbolData)
+inline Id IntermediateStorage::addLocalSymbol(const StorageLocalSymbolData& localSymbolData)
 {
 	auto it = m_localSymbols.find(StorageLocalSymbol(0, localSymbolData));
 	if (it != m_localSymbols.end())
@@ -257,7 +262,7 @@ Id IntermediateStorage::addLocalSymbol(const StorageLocalSymbolData& localSymbol
 	return localSymbolId;
 }
 
-std::vector<Id> IntermediateStorage::addLocalSymbols(const std::set<StorageLocalSymbol>& symbols)
+inline std::vector<Id> IntermediateStorage::addLocalSymbols(const std::set<StorageLocalSymbol>& symbols)
 {
 	std::vector<Id> symbolIds;
 	symbolIds.reserve(symbols.size());
@@ -268,7 +273,7 @@ std::vector<Id> IntermediateStorage::addLocalSymbols(const std::set<StorageLocal
 	return symbolIds;
 }
 
-Id IntermediateStorage::addSourceLocation(const StorageSourceLocationData& sourceLocationData)
+inline Id IntermediateStorage::addSourceLocation(const StorageSourceLocationData& sourceLocationData)
 {
 	auto it = m_sourceLocations.find(StorageSourceLocation(0, sourceLocationData));
 	if (it != m_sourceLocations.end())
@@ -281,7 +286,7 @@ Id IntermediateStorage::addSourceLocation(const StorageSourceLocationData& sourc
 	return sourceLocationId;
 }
 
-std::vector<Id> IntermediateStorage::addSourceLocations(const std::vector<StorageSourceLocation>& locations)
+inline std::vector<Id> IntermediateStorage::addSourceLocations(const std::vector<StorageSourceLocation>& locations)
 {
 	std::vector<Id> locationIds;
 	locationIds.reserve(locations.size());
@@ -292,47 +297,47 @@ std::vector<Id> IntermediateStorage::addSourceLocations(const std::vector<Storag
 	return locationIds;
 }
 
-void IntermediateStorage::addOccurrence(const StorageOccurrence& occurrence)
+inline void IntermediateStorage::addOccurrence(const StorageOccurrence& occurrence)
 {
 	m_occurrences.emplace(occurrence);
 }
 
-void IntermediateStorage::addOccurrences(const std::vector<StorageOccurrence>& occurrences)
+inline void IntermediateStorage::addOccurrences(const std::vector<StorageOccurrence>& occurrences)
 {
 	m_occurrences.insert(occurrences.begin(), occurrences.end());
 }
 
-void IntermediateStorage::addComponentAccess(const StorageComponentAccess& componentAccess)
+inline void IntermediateStorage::addComponentAccess(const StorageComponentAccess& componentAccess)
 {
 	m_componentAccesses.emplace(componentAccess);
 }
 
-void IntermediateStorage::addComponentAccesses(const std::vector<StorageComponentAccess>& componentAccesses)
+inline void IntermediateStorage::addComponentAccesses(const std::vector<StorageComponentAccess>& componentAccesses)
 {
 	m_componentAccesses.insert(componentAccesses.begin(), componentAccesses.end());
 }
 
-void IntermediateStorage::addNodeAttribute(const StorageNodeAttribute& nodeAttribute)
+inline void IntermediateStorage::addNodeAttribute(const StorageNodeAttribute& nodeAttribute)
 {
 	m_nodeAttributes.emplace(nodeAttribute);
 }
 
-void IntermediateStorage::addNodeAttributes(const std::vector<StorageNodeAttribute>& nodeAttributes)
+inline void IntermediateStorage::addNodeAttributes(const std::vector<StorageNodeAttribute>& nodeAttributes)
 {
 	m_nodeAttributes.insert(nodeAttributes.begin(), nodeAttributes.end());
 }
 
-void IntermediateStorage::addElementComponent(const StorageElementComponent& component)
+inline void IntermediateStorage::addElementComponent(const StorageElementComponent& component)
 {
 	m_elementComponents.emplace(component);
 }
 
-void IntermediateStorage::addElementComponents(const std::vector<StorageElementComponent>& components)
+inline void IntermediateStorage::addElementComponents(const std::vector<StorageElementComponent>& components)
 {
 	m_elementComponents.insert(components.begin(), components.end());
 }
 
-Id IntermediateStorage::addError(const StorageErrorData& errorData)
+inline Id IntermediateStorage::addError(const StorageErrorData& errorData)
 {
 	auto it = m_errorsIndex.find(errorData);
 	if (it != m_errorsIndex.end())
@@ -346,62 +351,62 @@ Id IntermediateStorage::addError(const StorageErrorData& errorData)
 	return errorId;
 }
 
-const std::vector<StorageNode>& IntermediateStorage::getStorageNodes() const
+inline const std::vector<StorageNode>& IntermediateStorage::getStorageNodes() const
 {
 	return m_nodes;
 }
 
-const std::vector<StorageFile>& IntermediateStorage::getStorageFiles() const
+inline const std::vector<StorageFile>& IntermediateStorage::getStorageFiles() const
 {
 	return m_files;
 }
 
-const std::vector<StorageSymbol>& IntermediateStorage::getStorageSymbols() const
+inline const std::vector<StorageSymbol>& IntermediateStorage::getStorageSymbols() const
 {
 	return m_symbols;
 }
 
-const std::vector<StorageEdge>& IntermediateStorage::getStorageEdges() const
+inline const std::vector<StorageEdge>& IntermediateStorage::getStorageEdges() const
 {
 	return m_edges;
 }
 
-const std::set<StorageLocalSymbol>& IntermediateStorage::getStorageLocalSymbols() const
+inline const std::set<StorageLocalSymbol>& IntermediateStorage::getStorageLocalSymbols() const
 {
 	return m_localSymbols;
 }
 
-const std::set<StorageSourceLocation>& IntermediateStorage::getStorageSourceLocations() const
+inline const std::set<StorageSourceLocation>& IntermediateStorage::getStorageSourceLocations() const
 {
 	return m_sourceLocations;
 }
 
-const std::set<StorageOccurrence>& IntermediateStorage::getStorageOccurrences() const
+inline const std::set<StorageOccurrence>& IntermediateStorage::getStorageOccurrences() const
 {
 	return m_occurrences;
 }
 
-const std::set<StorageComponentAccess>& IntermediateStorage::getComponentAccesses() const
+inline const std::set<StorageComponentAccess>& IntermediateStorage::getComponentAccesses() const
 {
 	return m_componentAccesses;
 }
 
-const std::set<StorageNodeAttribute>& IntermediateStorage::getNodeAttributes() const
+inline const std::set<StorageNodeAttribute>& IntermediateStorage::getNodeAttributes() const
 {
 	return m_nodeAttributes;
 }
 
-const std::set<StorageElementComponent>& IntermediateStorage::getElementComponents() const
+inline const std::set<StorageElementComponent>& IntermediateStorage::getElementComponents() const
 {
 	return m_elementComponents;
 }
 
-const std::vector<StorageError>& IntermediateStorage::getErrors() const
+inline const std::vector<StorageError>& IntermediateStorage::getErrors() const
 {
 	return m_errors;
 }
 
-void IntermediateStorage::setStorageNodes(std::vector<StorageNode> storageNodes)
+inline void IntermediateStorage::setStorageNodes(std::vector<StorageNode> storageNodes)
 {
 	m_nodes = std::move(storageNodes);
 
@@ -414,7 +419,7 @@ void IntermediateStorage::setStorageNodes(std::vector<StorageNode> storageNodes)
 	}
 }
 
-void IntermediateStorage::setStorageFiles(std::vector<StorageFile> storageFiles)
+inline void IntermediateStorage::setStorageFiles(std::vector<StorageFile> storageFiles)
 {
 	m_files = std::move(storageFiles);
 
@@ -427,12 +432,12 @@ void IntermediateStorage::setStorageFiles(std::vector<StorageFile> storageFiles)
 	}
 }
 
-void IntermediateStorage::setStorageSymbols(std::vector<StorageSymbol> storageSymbols)
+inline void IntermediateStorage::setStorageSymbols(std::vector<StorageSymbol> storageSymbols)
 {
 	m_symbols = std::move(storageSymbols);
 }
 
-void IntermediateStorage::setStorageEdges(std::vector<StorageEdge> storageEdges)
+inline void IntermediateStorage::setStorageEdges(std::vector<StorageEdge> storageEdges)
 {
 	m_edges = std::move(storageEdges);
 
@@ -443,37 +448,37 @@ void IntermediateStorage::setStorageEdges(std::vector<StorageEdge> storageEdges)
 	}
 }
 
-void IntermediateStorage::setStorageLocalSymbols(std::set<StorageLocalSymbol> storageLocalSymbols)
+inline void IntermediateStorage::setStorageLocalSymbols(std::set<StorageLocalSymbol> storageLocalSymbols)
 {
 	m_localSymbols = std::move(storageLocalSymbols);
 }
 
-void IntermediateStorage::setStorageSourceLocations(std::set<StorageSourceLocation> storageSourceLocations)
+inline void IntermediateStorage::setStorageSourceLocations(std::set<StorageSourceLocation> storageSourceLocations)
 {
 	m_sourceLocations = std::move(storageSourceLocations);
 }
 
-void IntermediateStorage::setStorageOccurrences(std::set<StorageOccurrence> storageOccurrences)
+inline void IntermediateStorage::setStorageOccurrences(std::set<StorageOccurrence> storageOccurrences)
 {
 	m_occurrences = std::move(storageOccurrences);
 }
 
-void IntermediateStorage::setComponentAccesses(std::set<StorageComponentAccess> componentAccesses)
+inline void IntermediateStorage::setComponentAccesses(std::set<StorageComponentAccess> componentAccesses)
 {
 	m_componentAccesses = std::move(componentAccesses);
 }
 
-void IntermediateStorage::setNodeAttributes(std::set<StorageNodeAttribute> nodeAttributes)
+inline void IntermediateStorage::setNodeAttributes(std::set<StorageNodeAttribute> nodeAttributes)
 {
 	m_nodeAttributes = std::move(nodeAttributes);
 }
 
-void IntermediateStorage::setElementComponents(std::set<StorageElementComponent> components)
+inline void IntermediateStorage::setElementComponents(std::set<StorageElementComponent> components)
 {
 	m_elementComponents = std::move(components);
 }
 
-void IntermediateStorage::setErrors(std::vector<StorageError> errors)
+inline void IntermediateStorage::setErrors(std::vector<StorageError> errors)
 {
 	m_errors = std::move(errors);
 
@@ -484,12 +489,12 @@ void IntermediateStorage::setErrors(std::vector<StorageError> errors)
 	}
 }
 
-Id IntermediateStorage::getNextId() const
+inline Id IntermediateStorage::getNextId() const
 {
 	return m_nextId;
 }
 
-void IntermediateStorage::setNextId(const Id nextId)
+inline void IntermediateStorage::setNextId(const Id nextId)
 {
 	m_nextId = nextId;
 }
