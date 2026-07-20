@@ -4,7 +4,7 @@ Sourcetrail is a free and open-source cross-platform source explorer that helps 
 
 * Free
 * Working offline
-* Supporting C/C++
+* Supporting C/C++, with additional out-of-process language packages for Rust, Swift, and Zig (see [Language Packages](#language-packages))
 * Operating on Linux, Windows (and macOS)
 * Offering a SDK ([SourcetrailDB](https://github.com/CoatiSoftware/SourcetrailDB)) to write custom language extensions
 
@@ -24,6 +24,7 @@ This is a **fork** of the Sourcetrail project and I want to keep this project at
 * [Documentation (Version 2021.4)](DOCUMENTATION.md)
 * [Sponsoring](#star-sponsoring)
 * [Changes](#changes)
+* [Language Packages](#language-packages)
 * [Building](#building)
 
 # :star: Sponsoring
@@ -70,6 +71,12 @@ By sponsoring me with **$10 per month**, you will gain access to the following *
 |GTest |1.17.0|1.17.0|
 
 ### Changes
+
+#### 2026.7.20
+
+* Zig: Add an out-of-process Zig language indexer (`BUILD_ZIG_LANGUAGE_PACKAGE`, requires `zig` + `flatcc`)
+* Internal: Hoist the cross-process FlatBuffers wire schemas to a top-level [`abi-schemas/`](abi-schemas/README.md) folder (shared C++/Rust/Swift/Zig contract)
+* Internal: Rename the base library `lib` → `lib_core`
 
 #### 2025.12.8
 
@@ -200,6 +207,26 @@ Sourcetrail supports two interprocess communication backends, selectable via the
 | **Indexing time** | 4.66s | 1.85s | **-60%** |
 
 Measured on macOS (release build) indexing the tictactoe sample project (7 source files, 1069 nodes, 7556 edges). Both backends produce identical indexing results.
+
+# Language Packages
+
+Each language is indexed by a *language package*, gated behind a CMake option (all
+default `OFF`; the presets enable C/C++, Rust, and — on macOS — Swift):
+
+| Option | Language | Extra tools required |
+|--------|----------|----------------------|
+| `BUILD_CXX_LANGUAGE_PACKAGE`   | C/C++ | Clang/LLVM (vcpkg or system) |
+| `BUILD_RUST_LANGUAGE_PACKAGE`  | Rust  | Rust toolchain (`cargo`) |
+| `BUILD_SWIFT_LANGUAGE_PACKAGE` | Swift | Swift toolchain |
+| `BUILD_ZIG_LANGUAGE_PACKAGE`   | Zig   | `zig` 0.16 and `flatcc` (`brew install zig flatcc`) |
+
+The C/C++ indexer is built into the app; Rust, Swift, and Zig run as separate indexer
+processes that communicate with the app over a shared FlatBuffers wire ABI defined in
+[`abi-schemas/`](abi-schemas/README.md). Enable a package at configure time, e.g.:
+
+```
+cmake --preset vcpkg-release -DBUILD_ZIG_LANGUAGE_PACKAGE=ON
+```
 
 # Building
 
