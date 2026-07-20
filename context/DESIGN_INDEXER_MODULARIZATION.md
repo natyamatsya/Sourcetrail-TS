@@ -708,9 +708,21 @@ cycles in `lib` is prerequisite work, and a good cleanup in its own right).
     IndexerCommand.cpp were deleted outright.
   - IndexerStateInfo.h and utilityExpected.h stay deliberately GMF-safe/classic — they're in
     srctrl.cxx's GMFs too, and plain std-only headers cost nothing.
-  **Remaining for Phase 4:** the provider/task layer (IndexerCommandProvider,
-  Memory/CombinedIndexerCommandProvider, TaskBuildIndex — drags messaging + scheduling),
-  InterprocessIndexer (the interprocess layer), then `src/indexer/main.cpp` as pure importer.
+  **Slices 2+3 (same day): the command providers and the language-package registry joined
+  srctrl.indexer. ✅** IndexerCommandProvider + Memory/CombinedIndexerCommandProvider (the fan-out
+  consumption choke point; needed `import srctrl.utility` for utility::append), then
+  LanguagePackage + LanguagePackageManager (singleton slot → inline variable). The per-language
+  packages (Cxx/Rust/Swift/Zig) stay classic implementers of the importable interface.
+  **Remaining for Phase 4** (scoped for a fresh session): (a) the language payloads
+  IndexerCommandRust/Swift/Zig → srctrl.indexer (the codec registry drags them, and they're
+  FilePath-bearing so GMF-unsafe); (b) a `srctrl.interprocess` module — IpcSharedMemory(+GC,
+  thoth-ipc GMF), ProcessId, the IpcSerializer stack (flatbuffers-generated GMF; codec registry),
+  the three Ipc managers, IntermediateStorageChunker, InterprocessBackend, InterprocessIndexer
+  (~2.5k LOC); (c) then `src/indexer/main.cpp` as importer — noting the deliberately-classic seams
+  (FileLogger/LogManager backend, setupApp, GlazeCli, lib_cxx project/ prebuild runners) mean
+  "pure importer" is bounded by design: the milestone is `import srctrl.indexer / srctrl.cxx` for
+  everything modular, classic includes only for the GMF-safe seams. TaskBuildIndex + the queue-fill
+  task stay host-side classic (messaging + scheduling) until/unless messaging modularizes.
 - **Phase 5 — dogfood.** Index the module-built Sourcetrail *with* the module-built Sourcetrail; diff
   the symbol/edge graph against the header build's graph (they must match) and benchmark incremental
   rebuilds ON vs OFF.
