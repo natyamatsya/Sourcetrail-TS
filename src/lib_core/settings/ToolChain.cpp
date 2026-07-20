@@ -6,10 +6,6 @@
 	#include <llvm/Config/llvm-config.h>
 #endif
 
-using namespace std;
-using namespace string_literals;
-using namespace utility;
-
 // Note: We do the '#if LLVM_VERSION_MAJOR ==' check in case we need to support two different clang
 // versions in the system build and the vcpkg build!
 //
@@ -39,31 +35,31 @@ using namespace utility;
 // note: use 'c++2c' or 'c++26' for 'Working draft for C++2c' standard
 // note: use 'gnu++2c' or 'gnu++26' for 'Working draft for C++2c with GNU extensions' standard
 
-static vector<string> getReleasedCppStandards()
+static std::vector<std::string> getReleasedCppStandards()
 {
-	const vector<string> releasedCppStandards = {
+	const std::vector<std::string> releasedCppStandards = {
 		#ifdef LLVM_VERSION_MAJOR
 			#if LLVM_VERSION_MAJOR >= 18
-				"c++23"s, "gnu++23"s,
-				"c++20"s, "gnu++20"s,
-				"c++17"s, "gnu++17"s,
-				"c++14"s, "gnu++14"s,
-				"c++11"s, "gnu++11"s,
-				"c++03"s, "gnu++03"s,
-				"c++98"s, "gnu++98"s,
+				"c++23", "gnu++23",
+				"c++20", "gnu++20",
+				"c++17", "gnu++17",
+				"c++14", "gnu++14",
+				"c++11", "gnu++11",
+				"c++03", "gnu++03",
+				"c++98", "gnu++98",
 			#endif
 		#endif
 	};
 	return releasedCppStandards;
 }
 
-static vector<string> getDraftCppStandards()
+static std::vector<std::string> getDraftCppStandards()
 {
-	const vector<string> draftCppStandards = {
+	const std::vector<std::string> draftCppStandards = {
 		#ifdef LLVM_VERSION_MAJOR
 			#if LLVM_VERSION_MAJOR >= 18
-				"c++2c"s, "c++26"s,
-				"gnu++2c"s, "gnu++26"s,
+				"c++2c", "c++26",
+				"gnu++2c", "gnu++26",
 			#endif
 		#endif
 	};
@@ -91,30 +87,30 @@ static vector<string> getDraftCppStandards()
 // note: use 'c2y' for 'Working Draft for ISO C2y' standard
 // note: use 'gnu2y' for 'Working Draft for ISO C2y with GNU extensions' standard
 
-static vector<string> getReleasedCStandards()
+static std::vector<std::string> getReleasedCStandards()
 {
-	const vector<string> releasedCStandards = {
+	const std::vector<std::string> releasedCStandards = {
 		#ifdef LLVM_VERSION_MAJOR
 			#if LLVM_VERSION_MAJOR >= 18
-				"c17"s, "gnu17"s,
-				"c11"s, "gnu11"s,
-				"c99"s, "gnu99"s,
-				"c89"s, "gnu89"s,
+				"c17", "gnu17",
+				"c11", "gnu11",
+				"c99", "gnu99",
+				"c89", "gnu89",
 			#endif
 		#endif
 	};
 	return releasedCStandards;
 }
 
-static vector<string> getDraftCStandards()
+static std::vector<std::string> getDraftCStandards()
 {
-	const vector<string> draftCStandards = {
+	const std::vector<std::string> draftCStandards = {
 		#ifdef LLVM_VERSION_MAJOR
 			#if LLVM_VERSION_MAJOR == 18 || LLVM_VERSION_MAJOR == 19
-				"c23"s, "gnu23"s
+				"c23", "gnu23"
 			#endif
 			#if LLVM_VERSION_MAJOR >= 19
-				"c2y"s, "gnu2y"s
+				"c2y", "gnu2y"
 			#endif
 		#endif
 	};
@@ -127,218 +123,218 @@ static vector<string> getDraftCStandards()
 //
 ///////////////////////////////////////////////////////////////////////////////
 
-string ClangCompiler::verboseOption()
+std::string ClangCompiler::verboseOption()
 {
-	return "-v"s;
+	return "-v";
 }
 
-string ClangCompiler::stdOption(const string &languageVersion)
+std::string ClangCompiler::stdOption(const std::string &languageVersion)
 {
-	return "-std="s + languageVersion;
+	return "-std=" + languageVersion;
 }
 
-string ClangCompiler::stdCOption(const string &version)
+std::string ClangCompiler::stdCOption(const std::string &version)
 {
-	return stdOption("c"s + version);
+	return stdOption("c" + version);
 }
 
-string ClangCompiler::stdCppOption(const string &version)
+std::string ClangCompiler::stdCppOption(const std::string &version)
 {
-	return stdOption("c++"s + version);
+	return stdOption("c++" + version);
 }
 
-string ClangCompiler::pthreadOption()
+std::string ClangCompiler::pthreadOption()
 {
-	return"-pthread"s;
+	return"-pthread";
 }
 
-string ClangCompiler::compileOption()
+std::string ClangCompiler::compileOption()
 {
 	// This option signals that no executable is built.
 
-	return "-c"s;
+	return "-c";
 }
 
-string ClangCompiler::syntaxOnlyOption()
+std::string ClangCompiler::syntaxOnlyOption()
 {
-	return "-fsyntax-only"s;
+	return "-fsyntax-only";
 }
 
 
-string ClangCompiler::msExtensionsOption()
+std::string ClangCompiler::msExtensionsOption()
 {
-	return "-fms-extensions"s;
+	return "-fms-extensions";
 }
 
-string ClangCompiler::msCompatibilityOption()
+std::string ClangCompiler::msCompatibilityOption()
 {
-	return "-fms-compatibility"s;
+	return "-fms-compatibility";
 }
 
-string ClangCompiler::msCompatibilityVersionOption(const string &version)
+std::string ClangCompiler::msCompatibilityVersionOption(const std::string &version)
 {
-	return "-fms-compatibility-version="s + version;
+	return "-fms-compatibility-version=" + version;
 }
 
-string ClangCompiler::preprocessOption()
+std::string ClangCompiler::preprocessOption()
 {
-	return "-E"s;
+	return "-E";
 }
 
-string ClangCompiler::defineOption(const string &nameValue)
+std::string ClangCompiler::defineOption(const std::string &nameValue)
 {
-	return "-D"s + nameValue;
+	return "-D" + nameValue;
 }
 
-string ClangCompiler::undefineOption(const string &name)
+std::string ClangCompiler::undefineOption(const std::string &name)
 {
-	return "-U"s + name;
+	return "-U" + name;
 }
 
-string ClangCompiler::includeOption()
+std::string ClangCompiler::includeOption()
 {
-	return "-I"s;
+	return "-I";
 }
 
-string ClangCompiler::includeOption(const string &directory)
+std::string ClangCompiler::includeOption(const std::string &directory)
 {
 	// -I<dir>, --include-directory <arg>, --include-directory=<arg>
 
 	return includeOption() + directory;
 }
 
-string ClangCompiler::forceIncludeOption()
+std::string ClangCompiler::forceIncludeOption()
 {
-	return "-include"s;
+	return "-include";
 }
 
-string ClangCompiler::forceIncludeOption2()
+std::string ClangCompiler::forceIncludeOption2()
 {
-	return "--include"s;
+	return "--include";
 }
 
-string ClangCompiler::forceIncludeOption(const string &file)
+std::string ClangCompiler::forceIncludeOption(const std::string &file)
 {
 	// -include<file>, --include<file>, --include=<arg>
 
 	return forceIncludeOption() + file;
 }
 
-string ClangCompiler::systemIncludeOption()
+std::string ClangCompiler::systemIncludeOption()
 {
-	return "-isystem"s;
+	return "-isystem";
 }
 
-string ClangCompiler::systemIncludeOption(const string &directory)
+std::string ClangCompiler::systemIncludeOption(const std::string &directory)
 {
 	// -isystem<directory>
 
 	return systemIncludeOption() + directory;
 }
 
-string ClangCompiler::frameworkIncludeOption()
+std::string ClangCompiler::frameworkIncludeOption()
 {
-	return "-iframework"s;
+	return "-iframework";
 }
 
-string ClangCompiler::frameworkIncludeOption(const string &directory)
+std::string ClangCompiler::frameworkIncludeOption(const std::string &directory)
 {
 	// -iframework<arg>
 
 	return frameworkIncludeOption() + directory;
 }
 
-string ClangCompiler::quoteIncludeOption()
+std::string ClangCompiler::quoteIncludeOption()
 {
-	return "-iquote"s;
+	return "-iquote";
 }
 
-string ClangCompiler::outputOption()
+std::string ClangCompiler::outputOption()
 {
-	return "-o"s;
+	return "-o";
 }
 
-string ClangCompiler::noWarningsOption()
+std::string ClangCompiler::noWarningsOption()
 {
 	// This option disables all warnings.
 
-	return "-w"s;
+	return "-w";
 }
 
-string ClangCompiler::emitPchOption()
+std::string ClangCompiler::emitPchOption()
 {
-	return "-emit-pch"s;
+	return "-emit-pch";
 }
 
-string ClangCompiler::includePchOption()
+std::string ClangCompiler::includePchOption()
 {
-	return "-include-pch"s;
+	return "-include-pch";
 }
 
-string ClangCompiler::allowPchWithCompilerErrors()
+std::string ClangCompiler::allowPchWithCompilerErrors()
 {
-	return "-fallow-pch-with-compiler-errors"s;
+	return "-fallow-pch-with-compiler-errors";
 }
 
-string ClangCompiler::errorLimitOption(int limit)
+std::string ClangCompiler::errorLimitOption(int limit)
 {
 	// This option tells clang just to continue parsing no matter how manny errors have been thrown.
 
-	return "-ferror-limit="s + to_string(limit);
+	return "-ferror-limit=" + std::to_string(limit);
 }
 
-string ClangCompiler::exceptionsOption()
+std::string ClangCompiler::exceptionsOption()
 {
 	// This option signals that clang should watch out for exception-related code during indexing.
 
-	return "-fexceptions"s;
+	return "-fexceptions";
 }
 
-string ClangCompiler::noDelayedTemplateParsingOption()
+std::string ClangCompiler::noDelayedTemplateParsingOption()
 {
 	// This option signals that templates that there should be AST elements for unused template functions as well.
 
-	return "-fno-delayed-template-parsing"s;
+	return "-fno-delayed-template-parsing";
 }
 
-string ClangCompiler::languageOption()
+std::string ClangCompiler::languageOption()
 {
-	return "-x"s;
+	return "-x";
 }
 
-string ClangCompiler::targetOption(const string &target)
+std::string ClangCompiler::targetOption(const std::string &target)
 {
-	return "--target="s + target;
+	return "--target=" + target;
 }
 
-string ClangCompiler::getLatestCppStandard()
+std::string ClangCompiler::getLatestCppStandard()
 {
 	return getReleasedCppStandards()[0];
 }
 
-string ClangCompiler::getLatestCppDraft()
+std::string ClangCompiler::getLatestCppDraft()
 {
 	return getDraftCppStandards()[0];
 }
 
-vector<string> ClangCompiler::getAvailableCppStandards()
+std::vector<std::string> ClangCompiler::getAvailableCppStandards()
 {
-	return concat(getDraftCppStandards(), getReleasedCppStandards());
+	return utility::concat(getDraftCppStandards(), getReleasedCppStandards());
 }
 
-string ClangCompiler::getLatestCStandard()
+std::string ClangCompiler::getLatestCStandard()
 {
 	return getReleasedCStandards()[0];
 }
 
-string ClangCompiler::getLatestCDraft()
+std::string ClangCompiler::getLatestCDraft()
 {
 	return getDraftCStandards()[0];
 }
 
-vector<string> ClangCompiler::getAvailableCStandards()
+std::vector<std::string> ClangCompiler::getAvailableCStandards()
 {
-	return concat(getDraftCStandards(), getReleasedCStandards());
+	return utility::concat(getDraftCStandards(), getReleasedCStandards());
 }
 
 std::vector<std::string> ClangCompiler::getAvailableArchTypes()
@@ -497,23 +493,23 @@ std::vector<std::string> ClangCompiler::getAvailableEnvironmentTypes()
 //
 ///////////////////////////////////////////////////////////////////////////////
 
-vector<string> VisualStudio::getVersionRanges()
+std::vector<std::string> VisualStudio::getVersionRanges()
 {
 	// Version table: https://github.com/microsoft/vswhere/wiki/Versions#release-versions
 	// Sorted from newest to oldest:
-	const vector<string> releasedVisualStudioVersionRanges = {
-		"[18.0, 19.0)"s, // 2026
-		"[17.0, 18.0)"s, // 2022
-		"[16.0, 17.0)"s, // 2019
-		"[15.0, 16.0)"s  // 2017
+	const std::vector<std::string> releasedVisualStudioVersionRanges = {
+		"[18.0, 19.0)", // 2026
+		"[17.0, 18.0)", // 2022
+		"[16.0, 17.0)", // 2019
+		"[15.0, 16.0)"  // 2017
 	};
 	return releasedVisualStudioVersionRanges;
 }
 
-string VisualStudio::getLatestMsvcVersion()
+std::string VisualStudio::getLatestMsvcVersion()
 {
 	// Can be found by calling 'cl /?':
-	return "19.44"s; // TODO (petermost): 19.50?
+	return "19.44"; // TODO (petermost): 19.50?
 }
 
 ///////////////////////////////////////////////////////////////////////////////
@@ -522,17 +518,17 @@ string VisualStudio::getLatestMsvcVersion()
 //
 ///////////////////////////////////////////////////////////////////////////////
 
-vector<string> WindowsSdk::getVersions()
+std::vector<std::string> WindowsSdk::getVersions()
 {
 	// Adapted from: https://en.wikipedia.org/wiki/Microsoft_Windows_SDK
 
-	const vector<string> sdkVersions = {
-		"v10"s,   // Windows Standalone SDK for Windows 10 (Also included in Visual Studio 2015)
-		"v8.1A"s, // Included in Visual Studio 2013
-		"v8.1"s,  // Windows Software Development Kit (SDK) for Windows 8.1
-		"v8.0A"s, // Included in Visual Studio 2012
-		"v7.1A"s, // Included in Visual Studio 2012 Update 1 (or later)
-		"v7.0A"s  // Included in Visual Studio 2010
+	const std::vector<std::string> sdkVersions = {
+		"v10",   // Windows Standalone SDK for Windows 10 (Also included in Visual Studio 2015)
+		"v8.1A", // Included in Visual Studio 2013
+		"v8.1",  // Windows Software Development Kit (SDK) for Windows 8.1
+		"v8.0A", // Included in Visual Studio 2012
+		"v7.1A", // Included in Visual Studio 2012 Update 1 (or later)
+		"v7.0A"  // Included in Visual Studio 2010
 	};
 	return sdkVersions;
 }
@@ -543,9 +539,9 @@ vector<string> WindowsSdk::getVersions()
 //
 ///////////////////////////////////////////////////////////////////////////////
 
-static optional<string> getArgumentValue(const string &argument, string_view argumentKey)
+static std::optional<std::string> getArgumentValue(const std::string &argument, std::string_view argumentKey)
 {
-	return argument.starts_with(argumentKey) ? optional(argument.substr(argumentKey.length())) : nullopt;
+	return argument.starts_with(argumentKey) ? std::optional(argument.substr(argumentKey.length())) : std::nullopt;
 }
 
 // MSVC options may be spelled with '-' as well as '/'. The translations above
@@ -554,17 +550,17 @@ static optional<string> getArgumentValue(const string &argument, string_view arg
 // (-wd/-we/-wo/-w1..-w4 followed by a warning number), conformance switches
 // (-Zc:...), debug info (-Zi/-Z7/-ZI), -permissive-, and -external:...
 // variants (the -external:I include form is already translated above).
-static bool isDashSpelledMsvcOnlyArgument(const string &argument)
+static bool isDashSpelledMsvcOnlyArgument(const std::string &argument)
 {
-	const string_view arg{argument};
+	const std::string_view arg{argument};
 	if (!arg.starts_with('-'))
 		return false;
-	if (arg.starts_with("-Zc:"sv) || arg == "-Zi"sv || arg == "-Z7"sv || arg == "-ZI"sv ||
-		arg == "-permissive-"sv || arg == "-utf-8"sv || arg.starts_with("-external:"sv))
+	if (arg.starts_with("-Zc:") || arg == "-Zi" || arg == "-Z7" || arg == "-ZI" ||
+		arg == "-permissive-" || arg == "-utf-8" || arg.starts_with("-external:"))
 		return true;
 	if (arg.size() > 3 && arg[1] == 'w' &&
 		(arg[2] == 'd' || arg[2] == 'e' || arg[2] == 'o' || ('1' <= arg[2] && arg[2] <= '4')))
-		return arg.find_first_not_of("0123456789"sv, 3) == string_view::npos;
+		return arg.find_first_not_of("0123456789", 3) == std::string_view::npos;
 	return false;
 }
 
@@ -573,66 +569,66 @@ static bool isDashSpelledMsvcOnlyArgument(const string &argument)
 // From https://learn.microsoft.com/en-us/cpp/build/reference/compiler-options:
 // - All compiler options are case-sensitive.
 // - You may use either a forward slash (/) or a dash (-) to specify a compiler option.
-static void translateMsvcTokens(vector<string> *commandLineArguments, vector<string>::iterator argument)
+static void translateMsvcTokens(std::vector<std::string> *commandLineArguments, std::vector<std::string>::iterator argument)
 {
-	optional<string> argumentValue;
+	std::optional<std::string> argumentValue;
 
 	while (argument != commandLineArguments->end())
 	{
 		// Preprocessor symbols:
 
-		if ((argumentValue = getArgumentValue(*argument, "/D"sv)))
+		if ((argumentValue = getArgumentValue(*argument, "/D")))
 			*argument++ = ClangCompiler::defineOption(*argumentValue);
-		else if ((argumentValue = getArgumentValue(*argument, "/U"sv)))
+		else if ((argumentValue = getArgumentValue(*argument, "/U")))
 			*argument++ = ClangCompiler::undefineOption(*argumentValue);
-		else if ((argumentValue = getArgumentValue(*argument, "/FI"sv)) || (argumentValue = getArgumentValue(*argument, "-FI"sv)))
+		else if ((argumentValue = getArgumentValue(*argument, "/FI")) || (argumentValue = getArgumentValue(*argument, "-FI")))
 			*argument++ = ClangCompiler::forceIncludeOption(*argumentValue);
 
 		// Preprocessor include directories:
 
-		else if ((argumentValue = getArgumentValue(*argument, "/I"sv)))
+		else if ((argumentValue = getArgumentValue(*argument, "/I")))
 			*argument++ = ClangCompiler::includeOption(*argumentValue);
-		else if ((argumentValue = getArgumentValue(*argument, "/external:I"sv)) || (argumentValue = getArgumentValue(*argument, "-external:I"sv)))
+		else if ((argumentValue = getArgumentValue(*argument, "/external:I")) || (argumentValue = getArgumentValue(*argument, "-external:I")))
 			*argument++ = ClangCompiler::systemIncludeOption(*argumentValue);
 
 		// C/C++ language version selection
 		// Note: 'latest' and 'preview' must be checked before concrete versions!
 
-		else if (argument->starts_with("/std:c++latest"sv) || argument->starts_with("-std:c++latest"sv))
+		else if (argument->starts_with("/std:c++latest") || argument->starts_with("-std:c++latest"))
 			*argument++ = ClangCompiler::stdOption(ClangCompiler::getLatestCppStandard());
-		else if (argument->starts_with("/std:clatest"sv) || argument->starts_with("-std:clatest"sv))
+		else if (argument->starts_with("/std:clatest") || argument->starts_with("-std:clatest"))
 			*argument++ = ClangCompiler::stdOption(ClangCompiler::getLatestCStandard());
 
 		// Only check for 'preview' and ignore the version:
 		// Note: There is no 'c<version>preview', but check it anyway
 
-		else if ((argument->starts_with("/std:c++"sv) || argument->starts_with("-std:c++"sv)) && argument->ends_with("preview"sv))
+		else if ((argument->starts_with("/std:c++") || argument->starts_with("-std:c++")) && argument->ends_with("preview"))
 			*argument++ = ClangCompiler::stdOption(ClangCompiler::getLatestCppDraft());
-		else if ((argument->starts_with("/std:c"sv) || argument->starts_with("-std:c"sv)) && argument->ends_with("preview"sv))
+		else if ((argument->starts_with("/std:c") || argument->starts_with("-std:c")) && argument->ends_with("preview"))
 			*argument++ = ClangCompiler::stdOption(ClangCompiler::getLatestCDraft());
 
-		else if ((argumentValue = getArgumentValue(*argument, "/std:c++"sv)) || (argumentValue = getArgumentValue(*argument, "-std:c++"sv)))
+		else if ((argumentValue = getArgumentValue(*argument, "/std:c++")) || (argumentValue = getArgumentValue(*argument, "-std:c++")))
 			*argument++ = ClangCompiler::stdCppOption(*argumentValue);
-		else if ((argumentValue = getArgumentValue(*argument, "/std:c"sv)) || (argumentValue = getArgumentValue(*argument, "-std:c"sv)))
+		else if ((argumentValue = getArgumentValue(*argument, "/std:c")) || (argumentValue = getArgumentValue(*argument, "-std:c")))
 			*argument++ = ClangCompiler::stdCOption(*argumentValue);
 
 		// Multithread support:
 
-		else if (getArgumentValue(*argument, "/MD"sv) || getArgumentValue(*argument, "/MT"sv)
-			|| getArgumentValue(*argument, "-MD"sv) || getArgumentValue(*argument, "-MT"sv))
+		else if (getArgumentValue(*argument, "/MD") || getArgumentValue(*argument, "/MT")
+			|| getArgumentValue(*argument, "-MD") || getArgumentValue(*argument, "-MT"))
 		{
 			// MSVC's runtime selection predefines macros the code may branch on:
 			// /MD[d] and /MT[d] define _MT, /MD[d] additionally _DLL, and the
 			// 'd' variants _DEBUG. Clang only sets these in cl driver mode, so
 			// spell them out for the parser.
-			const bool isDll = getArgumentValue(*argument, "/MD"sv) || getArgumentValue(*argument, "-MD"sv);
+			const bool isDll = getArgumentValue(*argument, "/MD") || getArgumentValue(*argument, "-MD");
 			const bool isDebugRuntime = argument->ends_with('d');
 
-			*argument++ = ClangCompiler::defineOption("_MT"s);
+			*argument++ = ClangCompiler::defineOption("_MT");
 			if (isDll)
-				argument = next(commandLineArguments->insert(argument, ClangCompiler::defineOption("_DLL"s)));
+				argument = std::next(commandLineArguments->insert(argument, ClangCompiler::defineOption("_DLL")));
 			if (isDebugRuntime)
-				argument = next(commandLineArguments->insert(argument, ClangCompiler::defineOption("_DEBUG"s)));
+				argument = std::next(commandLineArguments->insert(argument, ClangCompiler::defineOption("_DEBUG")));
 		}
 		// Remove unknown arguments (both '/' and '-' spellings of MSVC-only options):
 
@@ -643,17 +639,17 @@ static void translateMsvcTokens(vector<string> *commandLineArguments, vector<str
 	}
 }
 
-void replaceMsvcArguments(vector<string> *commandLineArguments)
+void replaceMsvcArguments(std::vector<std::string> *commandLineArguments)
 {
 	// Replace/Remove arguments only if these are for the Microsoft compiler, otherwise the check for '/' will remove Linux paths:
 
-	if (commandLineArguments->empty() || !(*commandLineArguments)[0].ends_with("cl.exe"s))
+	if (commandLineArguments->empty() || !(*commandLineArguments)[0].ends_with("cl.exe"))
 		return;
 
-	translateMsvcTokens(commandLineArguments, next(commandLineArguments->begin())); // skip command
+	translateMsvcTokens(commandLineArguments, std::next(commandLineArguments->begin())); // skip command
 }
 
-void translateMsvcCompilerFragments(vector<string> *compilerFlags)
+void translateMsvcCompilerFragments(std::vector<std::string> *compilerFlags)
 {
 	// Same translation for bare compiler flags (no argv[0]), e.g. the
 	// compileCommandFragments of a CMake File API compile group. The caller
