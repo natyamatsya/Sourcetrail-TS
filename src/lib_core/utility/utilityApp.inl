@@ -1,6 +1,8 @@
-#include "utilityApp.h"
+// Inline implementations for utilityApp.h. Included at the end of that header; not a standalone TU.
 
-#include "ResourcePaths.h"
+#pragma once
+
+#ifndef SRCTRL_MODULE_PURVIEW
 #include "ScopedFunctor.h"
 #include "logging.h"
 #include "utilityString.h"
@@ -13,23 +15,24 @@
 #include <chrono>
 #include <cstdlib>
 #include <filesystem>
+#include <memory>
 #include <mutex>
 #include <set>
-#include <thread>
-
-using namespace std::chrono;
+#include <system_error>
+#endif
 
 namespace utility
 {
-std::mutex s_runningProcessesMutex;
-std::set<std::shared_ptr<QProcess>> s_runningProcesses;
+// inline: one instance of the running-process registry across all TUs that include this .inl.
+inline std::mutex s_runningProcessesMutex;
+inline std::set<std::shared_ptr<QProcess>> s_runningProcesses;
 
-std::string getDocumentationLink()
+inline std::string getDocumentationLink()
 {
 	return "https://github.com/petermost/Sourcetrail/blob/master/DOCUMENTATION.md";
 }
 
-std::string searchPath(const std::string& bin, bool& ok)
+inline std::string searchPath(const std::string& bin, bool& ok)
 {
 	ok = false;
 
@@ -49,15 +52,18 @@ std::string searchPath(const std::string& bin, bool& ok)
 	return bin;
 }
 
-std::string searchPath(const std::string& bin)
+inline std::string searchPath(const std::string& bin)
 {
 	bool ok;
 	return searchPath(bin, ok);
 }
 
-namespace
+// Named (not anonymous) detail namespace: these helpers are referenced from the inline
+// executeProcess below; internal linkage would make each including TU reference a different
+// entity from the same inline function -- an ODR violation.
+namespace utility_app_detail
 {
-void logOutputLines(const std::string& text, std::string& logBuffer)
+inline void logOutputLines(const std::string& text, std::string& logBuffer)
 {
 	logBuffer += text;
 	if (logBuffer.empty())
@@ -74,12 +80,12 @@ void logOutputLines(const std::string& text, std::string& logBuffer)
 		logBuffer = lines.back();
 }
 
-std::string quoteArgument(const std::string& argument)
+inline std::string quoteArgument(const std::string& argument)
 {
 	return "\"" + argument + "\"";
 }
 
-std::string buildCommandLineForInfo(
+inline std::string buildCommandLineForInfo(
 	const std::string& executable,
 	const std::vector<std::string>& arguments)
 {
@@ -89,7 +95,7 @@ std::string buildCommandLineForInfo(
 	return commandLine;
 }
 
-std::string processStateToString(const QProcess::ProcessState state)
+inline std::string processStateToString(const QProcess::ProcessState state)
 {
 	switch (state)
 	{
@@ -103,7 +109,7 @@ std::string processStateToString(const QProcess::ProcessState state)
 	return "Unknown";
 }
 
-std::string processExitStatusToString(const QProcess::ExitStatus status)
+inline std::string processExitStatusToString(const QProcess::ExitStatus status)
 {
 	switch (status)
 	{
@@ -115,14 +121,14 @@ std::string processExitStatusToString(const QProcess::ExitStatus status)
 	return "Unknown";
 }
 
-std::string envValueForLog(const QProcessEnvironment& env, const QString& variable)
+inline std::string envValueForLog(const QProcessEnvironment& env, const QString& variable)
 {
 	if (!env.contains(variable))
 		return "<unset>";
 	return env.value(variable).toStdString();
 }
 
-std::string buildProcessInfo(
+inline std::string buildProcessInfo(
 	const std::string& command,
 	const std::string& resolvedCommand,
 	const std::vector<std::string>& arguments,
@@ -153,10 +159,10 @@ std::string buildProcessInfo(
 	info += "\nDYLD_LIBRARY_PATH: " + envValueForLog(env, QStringLiteral("DYLD_LIBRARY_PATH"));
 	return info;
 }
-}	 // namespace
+}	 // namespace utility_app_detail
 
-ProcessOutput executeProcess(const std::string& command, const std::vector<std::string>& arguments, const FilePath& workingDirectory,
-	const bool waitUntilNoOutput, const milliseconds &timeout, bool logProcessOutput)
+inline ProcessOutput executeProcess(const std::string& command, const std::vector<std::string>& arguments, const FilePath& workingDirectory,
+	const bool waitUntilNoOutput, const std::chrono::milliseconds &timeout, bool logProcessOutput)
 {
 	auto process = std::make_shared<QProcess>();
 	const std::string resolvedCommand = searchPath(command);
@@ -194,7 +200,7 @@ ProcessOutput executeProcess(const std::string& command, const std::vector<std::
 		ProcessOutput ret;
 		ret.error = process->errorString().toStdString();
 		ret.exitCode = -1;
-		ret.processInfo = buildProcessInfo(
+		ret.processInfo = utility_app_detail::buildProcessInfo(
 			command,
 			resolvedCommand,
 			arguments,
@@ -228,35 +234,37 @@ ProcessOutput executeProcess(const std::string& command, const std::vector<std::
 		process->waitForFinished(-1);
 		output = process->readAllStandardOutput().toStdString();
 		if (logProcessOutput)
-			logOutputLines(output, logBuffer);
+			utility_app_detail::logOutputLines(output, logBuffer);
 	}
 	else
 	{
-		auto deadline = steady_clock::now() + timeout;
+		auto deadline = std::chrono::steady_clock::now() + timeout;
 		bool outputReceived = false;
 
 		while (process->state() != QProcess::NotRunning)
 		{
-			auto remaining = duration_cast<milliseconds>(deadline - steady_clock::now());
-			if (remaining <= milliseconds::zero())
+			auto remaining = std::chrono::duration_cast<std::chrono::milliseconds>(
+				deadline - std::chrono::steady_clock::now());
+			if (remaining <= std::chrono::milliseconds::zero())
 			{
 				if (waitUntilNoOutput && outputReceived)
 				{
 					outputReceived = false;
-					deadline = steady_clock::now() + timeout;
+					deadline = std::chrono::steady_clock::now() + timeout;
 					continue;
 				}
 				LOG_WARNING("Canceling process because it " +
 					std::string(waitUntilNoOutput
 						? "did not generate any output during the last "
 						: "timed out after ") +
-					std::to_string(duration_cast<seconds>(timeout).count()) + " seconds.");
+					std::to_string(std::chrono::duration_cast<std::chrono::seconds>(timeout).count()) +
+					" seconds.");
 				process->kill();
 				process->waitForFinished(1000);
 				break;
 			}
 
-			int waitMs = static_cast<int>(std::min(remaining, milliseconds(100)).count());
+			int waitMs = static_cast<int>(std::min(remaining, std::chrono::milliseconds(100)).count());
 			if (process->waitForReadyRead(waitMs))
 			{
 				std::string chunk = process->readAllStandardOutput().toStdString();
@@ -265,7 +273,7 @@ ProcessOutput executeProcess(const std::string& command, const std::vector<std::
 					outputReceived = true;
 					output += chunk;
 					if (logProcessOutput)
-						logOutputLines(chunk, logBuffer);
+						utility_app_detail::logOutputLines(chunk, logBuffer);
 				}
 			}
 		}
@@ -276,7 +284,7 @@ ProcessOutput executeProcess(const std::string& command, const std::vector<std::
 		{
 			output += remaining;
 			if (logProcessOutput)
-				logOutputLines(remaining, logBuffer);
+				utility_app_detail::logOutputLines(remaining, logBuffer);
 		}
 	}
 
@@ -289,7 +297,7 @@ ProcessOutput executeProcess(const std::string& command, const std::vector<std::
 	ProcessOutput ret;
 	ret.output = trim(output);
 	ret.exitCode = process->exitCode();
-	ret.processInfo = buildProcessInfo(
+	ret.processInfo = utility_app_detail::buildProcessInfo(
 		command,
 		resolvedCommand,
 		arguments,
@@ -300,14 +308,14 @@ ProcessOutput executeProcess(const std::string& command, const std::vector<std::
 	return ret;
 }
 
-void killRunningProcesses()
+inline void killRunningProcesses()
 {
 	std::lock_guard<std::mutex> lock(s_runningProcessesMutex);
 	for (const auto& process : s_runningProcesses)
 		process->kill();
 }
 
-int getIdealThreadCount()
+inline int getIdealThreadCount()
 {
 	int threadCount = QThread::idealThreadCount();
 	if constexpr (Platform::isWindows())
@@ -318,26 +326,3 @@ int getIdealThreadCount()
 }
 
 }	 // namespace utility
-
-/* Not referenced anywhere!
-enum class OsType
-{
-	UNKNOWN,
-	LINUX,
-	MAC,
-	WINDOWS
-};
-
-std::string getOsTypeString()
-{
-	// WARNING: Don't change these string. The server API relies on them.
-	if constexpr (Platform::isWindows())
-		return "windows";
-	else if constexpr (Platform::isMac())
-		return "macOS";
-	else if constexpr (Platform::isLinux())
-		return "linux";
-	else
-		return "unknown";
-}
-*/

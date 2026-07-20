@@ -539,6 +539,17 @@ cycles in `lib` is prerequisite work, and a good cleanup in its own right).
     Clang GMF.
   Remaining for the deferred pair: `IndexerCommandCxx` needs `utilityApp` modularized (uses
   `utility::executeProcess`); `IncludeProcessing` needs settings.
+- **Phase 2 (cont.) — `srctrl.process` (utilityApp). ✅** Its own module rather than a partition: it
+  is the one mid-layer piece coupling Qt (QProcess) with FilePath, so it fits neither srctrl.file
+  (deliberately Qt-free) nor srctrl.qt (a pure Qt value-type wrapper). Conversion hazards handled:
+  the file-scope `using namespace std::chrono` dropped (ADR-0005), the `constexpr` timeout constants
+  became `inline constexpr` (namespace-scope constexpr has internal linkage, which a module cannot
+  export), the mutable running-process registry became `inline` variables (one instance across TUs),
+  and the anonymous-namespace helpers moved to a named `utility_app_detail` namespace (an inline
+  function referencing internal-linkage entities is an ODR trap). A vestigial ResourcePaths.h
+  include dropped. Verified: the headless index *exercises* the inlined `executeProcess` for real —
+  it is what spawns the indexer subprocess. **This unblocks `IndexerCommandCxx`** (all of its impl
+  deps now import or GMF-include cleanly); `IncludeProcessing` still waits on settings.
 - **Phase 4 — the indexer binary.** `src/indexer/main.cpp` becomes a pure consumer:
   `import srctrl.cxx;` (+ optionally `import std;`).
 - **Phase 5 — dogfood.** Index the module-built Sourcetrail *with* the module-built Sourcetrail; diff

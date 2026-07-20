@@ -1,17 +1,23 @@
 #ifndef UTILITY_APP_H
 #define UTILITY_APP_H
 
-#include <string>
+#include "SrctrlModule.h"
 
+#ifndef SRCTRL_MODULE_PURVIEW
 #include <chrono>
+#include <string>
+#include <vector>
 
 #include "FilePath.h"
-#include <Platform.h>
+#include "Platform.h"
+#endif
 
-namespace utility
+SRCTRL_EXPORT namespace utility
 {
-constexpr std::chrono::milliseconds DEFAULT_TIMEOUT(30000);
-constexpr std::chrono::milliseconds INFINITE_TIMEOUT(std::chrono::milliseconds::max());
+// inline: namespace-scope constexpr would otherwise have internal linkage, which cannot be exported
+// from a module.
+inline constexpr std::chrono::milliseconds DEFAULT_TIMEOUT(30000);
+inline constexpr std::chrono::milliseconds INFINITE_TIMEOUT(std::chrono::milliseconds::max());
 
 struct ProcessOutput
 {
@@ -40,5 +46,7 @@ void killRunningProcesses();
 int getIdealThreadCount();
 
 }
+
+#include "utilityApp.inl"
 
 #endif	  // UTILITY_APP_H

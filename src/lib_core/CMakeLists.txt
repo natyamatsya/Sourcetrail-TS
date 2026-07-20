@@ -68,6 +68,7 @@ if(SOURCETRAIL_CXX_MODULES_ENABLED)
 				utility/srctrl_utility-math.cppm
 				utility/srctrl_utility-time.cppm
 				utility/file/srctrl_file.cppm
+				utility/srctrl_process.cppm
 				data/srctrl_data.cppm
 				data/srctrl_data-bookmark.cppm
 				data/srctrl_data-types.cppm
