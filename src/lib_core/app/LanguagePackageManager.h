@@ -1,13 +1,17 @@
 #ifndef LANGUAGE_PACKAGE_MANAGER_H
 #define LANGUAGE_PACKAGE_MANAGER_H
 
+#include "SrctrlModule.h"
+
+#ifndef SRCTRL_MODULE_PURVIEW
 #include <memory>
 #include <vector>
+#endif
 
 class IndexerComposite;
 class LanguagePackage;
 
-class LanguagePackageManager
+SRCTRL_EXPORT class LanguagePackageManager
 {
 public:
 	static std::shared_ptr<LanguagePackageManager> getInstance();
@@ -22,5 +26,9 @@ private:
 
 	std::vector<std::shared_ptr<LanguagePackage>> m_packages;
 };
+
+#ifndef SRCTRL_MODULE_PURVIEW
+#include "LanguagePackageManager.inl"
+#endif
 
 #endif	  // LANGUAGE_PACKAGE_MANAGER_H

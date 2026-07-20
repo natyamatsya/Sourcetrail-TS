@@ -2,7 +2,8 @@
 // value (+ its payload concept and type enum), the IndexerBase interface with its
 // std::expected-based error channel, the Indexer<T> template every language indexer derives from,
 // the ParserClientImpl recording sink, IndexerComposite, and the command providers
-// (IndexerCommandProvider + Memory/Combined). A standalone module (no partitions)
+// (IndexerCommandProvider + Memory/Combined), plus the language-package registry
+// (LanguagePackage / LanguagePackageManager) that instantiates the per-language indexers. A standalone module (no partitions)
 // ABOVE srctrl.data and srctrl.storage -- the framework spans the parser-facing interface
 // (ParserClient) and the storage sink (IntermediateStorage), and srctrl.storage already imports
 // srctrl.data, so this cannot live inside either. Module build only.
@@ -59,6 +60,8 @@ import srctrl.logging;   // srctrl::log machinery behind the LOG_* macros
 #include "IndexerCommandProvider.h"
 #include "MemoryIndexerCommandProvider.h"
 #include "CombinedIndexerCommandProvider.h"
+#include "LanguagePackage.h"
+#include "LanguagePackageManager.h"
 
 #include "IndexerCommandType.inl"
 #include "ParserClientImpl.inl"
@@ -66,3 +69,4 @@ import srctrl.logging;   // srctrl::log machinery behind the LOG_* macros
 #include "IndexerCommandProvider.inl"
 #include "MemoryIndexerCommandProvider.inl"
 #include "CombinedIndexerCommandProvider.inl"
+#include "LanguagePackageManager.inl"
