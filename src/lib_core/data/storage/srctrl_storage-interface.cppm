@@ -17,10 +17,9 @@ module;
 #include <vector>
 #endif
 
-// Non-modularized GMF deps: Id (types.h), TimeStamp (StorageStats), and tracing.h's TRACE() macro
-// (still a macro -- textual in the purview, like logging.h was before srctrl.logging).
+// Non-modularized GMF deps: Id (types.h) and tracing.h's TRACE() macro (still a macro -- with
+// tracing off the header is only the empty macros, so it drags no modularized types into the GMF).
 #include "types.h"
-#include "TimeStamp.h"
 #include "tracing.h"
 
 export module srctrl.storage:interface;
@@ -29,6 +28,7 @@ export module srctrl.storage:interface;
 import std;
 #endif
 
+import srctrl.utility;   // TimeStamp (StorageStats) -- the :time partition
 import srctrl.logging;   // srctrl::log::warning/error in Storage::inject
 import :types;           // the storage record structs
 

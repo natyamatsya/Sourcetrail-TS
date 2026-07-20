@@ -1,12 +1,16 @@
 #ifndef FILE_INFO_H
 #define FILE_INFO_H
 
+#include "SrctrlModule.h"
+
+#ifndef SRCTRL_MODULE_PURVIEW
 #include <string>
 
 #include "FilePath.h"
 #include "TimeStamp.h"
+#endif
 
-struct FileInfo
+SRCTRL_EXPORT struct FileInfo
 {
 	FileInfo();
 	FileInfo(const FilePath& path);
@@ -15,5 +19,7 @@ struct FileInfo
 	FilePath path;
 	TimeStamp lastWriteTime;
 };
+
+#include "FileInfo.inl"
 
 #endif	  // FILE_INFO_H

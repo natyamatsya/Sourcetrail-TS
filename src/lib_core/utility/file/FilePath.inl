@@ -4,7 +4,6 @@
 
 #ifndef SRCTRL_MODULE_PURVIEW
 #include "logging.h"
-#include "utilityString.h"
 
 #include <cctype>
 #include <cstdlib>
@@ -216,12 +215,21 @@ inline std::vector<FilePath> FilePath::expandEnvironmentVariables() const
 		text.replace(start, length, value);
 	}
 
-	for (const std::string& str: utility::splitToVector(text, getEnvironmentVariablePathSeparator()))
+	// Split on the platform's path-list separator by elementary scanning (replaces
+	// utility::splitToVector) -- FilePath is a leaf module and must not pull utilityString.
+	constexpr char separator = getEnvironmentVariablePathSeparator();
+	for (std::size_t begin = 0; begin <= text.size();)
 	{
-		if (str.size())
+		std::size_t end = text.find(separator, begin);
+		if (end == std::string::npos)
 		{
-			paths.push_back(FilePath(str));
+			end = text.size();
 		}
+		if (end > begin)
+		{
+			paths.push_back(FilePath(text.substr(begin, end - begin)));
+		}
+		begin = end + 1;
 	}
 
 	return paths;

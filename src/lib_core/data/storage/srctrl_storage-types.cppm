@@ -7,14 +7,11 @@ module;
 #include <string>
 #endif
 
-// Non-modularized deps stay global-module: Id/types.h, FilePath, and the not-yet-converted Bookmark
-// data types (Bookmark/BookmarkCategory/TimeStamp -- none pull a modularized header, so GMF is safe).
-// The classification enums (NodeKind/AccessKind/... incl. NodeAttributeKind) and Edge come from the
-// import below, NOT the GMF.
+// Non-modularized deps stay global-module: Id/types.h. The classification enums
+// (NodeKind/AccessKind/... incl. NodeAttributeKind), Edge, FilePath, and the bookmark data types
+// (BookmarkId, TimeStamp via :bookmark/:time) come from the imports below, NOT the GMF.
 #include "types.h"
 #include "Id.h"
-#include "FilePath.h"
-#include "Bookmark.h"
 
 export module srctrl.storage:types;
 
@@ -22,7 +19,8 @@ export module srctrl.storage:types;
 import std;
 #endif
 
-import srctrl.data;   // :types classification enums (incl. NodeAttributeKind) + :graph Edge
+import srctrl.file;   // FilePath
+import srctrl.data;   // :types classification enums (incl. NodeAttributeKind) + :graph Edge + :bookmark
 
 #define SRCTRL_MODULE_PURVIEW
 // All 15 records are independent PODs (none includes another storage type header), so order is free.

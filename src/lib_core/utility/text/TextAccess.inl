@@ -1,12 +1,10 @@
-#include "TextAccess.h"
+// Inline implementations for TextAccess.h. Included at the end of that header; not a standalone TU.
 
-#include <fstream>
+#pragma once
 
-#include "logging.h"
-
-namespace
+namespace text_access_detail
 {
-std::istream& safeGetline(std::istream& is, std::string& t)
+inline std::istream& safeGetline(std::istream& is, std::string& t)
 {
 	t.clear();
 
@@ -44,9 +42,9 @@ std::istream& safeGetline(std::istream& is, std::string& t)
 		}
 	}
 }
-}	 // namespace
+}	 // namespace text_access_detail
 
-std::shared_ptr<TextAccess> TextAccess::createFromFile(const FilePath& filePath)
+inline std::shared_ptr<TextAccess> TextAccess::createFromFile(const FilePath& filePath)
 {
 	std::shared_ptr<TextAccess> result(new TextAccess());
 
@@ -56,7 +54,8 @@ std::shared_ptr<TextAccess> TextAccess::createFromFile(const FilePath& filePath)
 	return result;
 }
 
-std::shared_ptr<TextAccess> TextAccess::createFromString(const std::string& text, const FilePath& filePath)
+inline std::shared_ptr<TextAccess> TextAccess::createFromString(
+	const std::string& text, const FilePath& filePath)
 {
 	std::shared_ptr<TextAccess> result(new TextAccess());
 
@@ -66,7 +65,7 @@ std::shared_ptr<TextAccess> TextAccess::createFromString(const std::string& text
 	return result;
 }
 
-std::shared_ptr<TextAccess> TextAccess::createFromLines(
+inline std::shared_ptr<TextAccess> TextAccess::createFromLines(
 	const std::vector<std::string>& lines, const FilePath& filePath)
 {
 	std::shared_ptr<TextAccess> result(new TextAccess());
@@ -77,22 +76,22 @@ std::shared_ptr<TextAccess> TextAccess::createFromLines(
 	return result;
 }
 
-unsigned int TextAccess::getLineCount() const
+inline unsigned int TextAccess::getLineCount() const
 {
 	return static_cast<unsigned int>(m_lines.size());
 }
 
-bool TextAccess::isEmpty() const
+inline bool TextAccess::isEmpty() const
 {
 	return m_lines.empty();
 }
 
-FilePath TextAccess::getFilePath() const
+inline FilePath TextAccess::getFilePath() const
 {
 	return m_filePath;
 }
 
-std::string TextAccess::getLine(const unsigned int lineNumber) const
+inline std::string TextAccess::getLine(const unsigned int lineNumber) const
 {
 	if (!checkIndexInRange(lineNumber))
 	{
@@ -102,7 +101,7 @@ std::string TextAccess::getLine(const unsigned int lineNumber) const
 	return m_lines[lineNumber - 1];	   // -1 to correct for use as index
 }
 
-std::vector<std::string> TextAccess::getLines(
+inline std::vector<std::string> TextAccess::getLines(
 	const unsigned int firstLineNumber, const unsigned int lastLineNumber)
 {
 	if (!checkIndexIntervalInRange(firstLineNumber, lastLineNumber))
@@ -116,12 +115,12 @@ std::vector<std::string> TextAccess::getLines(
 	return std::vector<std::string>(first, last);
 }
 
-const std::vector<std::string>& TextAccess::getAllLines() const
+inline const std::vector<std::string>& TextAccess::getAllLines() const
 {
 	return m_lines;
 }
 
-std::string TextAccess::getText() const
+inline std::string TextAccess::getText() const
 {
 	std::string result;
 
@@ -133,7 +132,7 @@ std::string TextAccess::getText() const
 	return result;
 }
 
-std::vector<std::string> TextAccess::readFile(const FilePath& filePath)
+inline std::vector<std::string> TextAccess::readFile(const FilePath& filePath)
 {
 	std::vector<std::string> result;
 
@@ -151,7 +150,7 @@ std::vector<std::string> TextAccess::readFile(const FilePath& filePath)
 		while (!srcFile.eof())
 		{
 			std::string line;
-			safeGetline(srcFile, line);
+			text_access_detail::safeGetline(srcFile, line);
 			result.push_back(line + '\n');
 		}
 
@@ -182,7 +181,7 @@ std::vector<std::string> TextAccess::readFile(const FilePath& filePath)
 	return result;
 }
 
-std::vector<std::string> TextAccess::splitStringByLines(const std::string& text)
+inline std::vector<std::string> TextAccess::splitStringByLines(const std::string& text)
 {
 	std::vector<std::string> result;
 	size_t prevIndex = 0;
@@ -204,9 +203,9 @@ std::vector<std::string> TextAccess::splitStringByLines(const std::string& text)
 	return result;
 }
 
-TextAccess::TextAccess(): m_filePath("") {}
+inline TextAccess::TextAccess(): m_filePath("") {}
 
-bool TextAccess::checkIndexInRange(const unsigned int index) const
+inline bool TextAccess::checkIndexInRange(const unsigned int index) const
 {
 	if (index < 1)
 	{
@@ -223,7 +222,8 @@ bool TextAccess::checkIndexInRange(const unsigned int index) const
 	return true;
 }
 
-bool TextAccess::checkIndexIntervalInRange(const unsigned int firstIndex, const unsigned int lastIndex) const
+inline bool TextAccess::checkIndexIntervalInRange(
+	const unsigned int firstIndex, const unsigned int lastIndex) const
 {
 	if (!checkIndexInRange(firstIndex) || !checkIndexInRange(lastIndex))
 	{

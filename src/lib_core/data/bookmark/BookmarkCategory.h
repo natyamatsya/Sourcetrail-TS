@@ -1,11 +1,15 @@
 #ifndef BOOKMARK_CATEGORY_H
 #define BOOKMARK_CATEGORY_H
 
+#include "SrctrlModule.h"
+
+#ifndef SRCTRL_MODULE_PURVIEW
 #include <string>
 
 #include "types.h"
+#endif
 
-class BookmarkCategory
+SRCTRL_EXPORT class BookmarkCategory
 {
 public:
 	BookmarkCategory();
@@ -22,5 +26,7 @@ private:
 	Id m_id;
 	std::string m_name;
 };
+
+#include "BookmarkCategory.inl"
 
 #endif	  // BOOKMARK_CATEGORY_H

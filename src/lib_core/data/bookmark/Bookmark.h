@@ -1,17 +1,22 @@
 #ifndef BOOKMARK_H
 #define BOOKMARK_H
 
+#include "SrctrlModule.h"
+
+#ifndef SRCTRL_MODULE_PURVIEW
+#include <cstddef>
 #include <string>
 
 #include "TimeStamp.h"
 #include "BookmarkCategory.h"
+#endif
 
-enum class BookmarkId : std::size_t
+SRCTRL_EXPORT enum class BookmarkId : std::size_t
 {
 	NONE = 0
 };
 
-class Bookmark
+SRCTRL_EXPORT class Bookmark
 {
 public:
 	enum class BookmarkFilter
@@ -39,10 +44,10 @@ public:
 		const BookmarkCategory& category);
 
 	virtual ~Bookmark() = default;
-	
+
 	void setIsValid(const bool isValid = true);
 	bool isValid() const;
-	
+
 	BookmarkId getId() const;
 	std::string getName() const;
 	std::string getComment() const;
@@ -51,12 +56,14 @@ public:
 
 private:
 	bool m_isValid = false;
-	
+
 	const BookmarkId m_bookmarkId;
 	const std::string m_name;
 	const std::string m_comment;
 	const TimeStamp m_timeStamp;
 	const BookmarkCategory m_category;
 };
+
+#include "Bookmark.inl"
 
 #endif	  // BOOKMARK_H

@@ -453,6 +453,28 @@ cycles in `lib` is prerequisite work, and a good cleanup in its own right).
   (sqlpp23 v0.69 *does* ship `import sqlpp23.core/sqlite3`, but it's experimental, self-compiled, and the
   ddl2cpp `SQLPP_CREATE_NAME_TAG` macro doesn't cross `import`) and must move in lockstep with the
   CppSQLite3→sqlpp23 SQL-layer migration (`DESIGN_STORAGE_CODEGEN.md`) rather than race ahead of it.
+- **Phase 2 (cont.) — modules-ON builds the WHOLE APP in situ. ✅** First full-tree build with
+  `SOURCETRAIL_CXX_MODULES=ON` in the primary build dir (not the isolated harness): app + indexer +
+  test all link with the 24 first-party module units compiled; test suite (728) and the headless
+  Usages index (529 nodes / 435 files) are identical ON vs OFF. Getting there surfaced a class of
+  **cross-BMI attachment clashes** the harness never could: a textual (global-module) copy of a header
+  in ANY module unit's GMF clashes with the same entity attached to a named module once both BMIs meet
+  in one importer — even transitively (the global copy rides along inside the carrying module's BMI).
+  Rule distilled: **once a header is modularized, no module unit's GMF may textually include it,
+  directly or through any other GMF header.** Fixes this forced:
+  - **FilePath restored to a leaf**: the Qt-drop refactor had added `utilityString.h` to `FilePath.inl`
+    (for `utility::splitToVector`); inlined an elementary split instead, so GMF-including `FilePath.h`
+    no longer drags `:string`-attached declarations. `srctrl.file` dropped its `import srctrl.utility`.
+  - **`srctrl.data:bookmark`** (new partition): Bookmark/BookmarkCategory/EdgeBookmark/NodeBookmark
+    converted (.cpp bodies inlined into .inl); their textual `TimeStamp.h` in the storage GMFs was the
+    global copy clashing with `srctrl.utility:time`.
+  - **`srctrl.file` grew `FileInfo` + `TextAccess`** (both need FilePath; FileInfo needs TimeStamp, so
+    the module now `import srctrl.utility`) — and every wrapper that GMF-included `FilePath.h`
+    (`:location`, `:graph`, `storage:types`, `storage:access`) migrated to `import srctrl.file`, the
+    module's first consumers.
+  - **`tracing.h` gated behind `TRACING_ENABLED`**: with tracing off it reduces to the empty `TRACE()`/
+    `PRINT_TRACES()` macros and includes nothing, making it GMF-safe (it used to textually pull
+    FilePath + TimeStamp into `storage:interface`).
 - **Phase 3 — `srctrl.cxx`.** Modularize `lib_cxx` with partitions; absorb the Clang-header BMI cost.
 - **Phase 4 — the indexer binary.** `src/indexer/main.cpp` becomes a pure consumer:
   `import srctrl.cxx;` (+ optionally `import std;`).

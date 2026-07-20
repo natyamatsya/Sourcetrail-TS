@@ -4,8 +4,8 @@
 
 module;
 
-// Global module fragment: std + the non-modularized deps (FilePath, Id via types.h, QtResources for
-// NodeType's icon paths) stay global-module. The modularized deps arrive via the imports below:
+// Global module fragment: std + the non-modularized deps (Id via types.h, QtResources for
+// NodeType's icon paths) stay global-module. FilePath comes from `import srctrl.file`, NOT the GMF. The modularized deps arrive via the imports below:
 // utilityEnum/utilityString/Tree (srctrl.utility), the classification enums AccessKind/DefinitionKind/
 // ElementComponentKind/NodeKind/NodeModifier (:types), NameHierarchy (:name), and the logging facade
 // (srctrl.logging -- the core's LOG_* calls became srctrl::log::error/warning).
@@ -24,7 +24,6 @@ module;
 #endif
 
 #include "types.h"
-#include "FilePath.h"
 #include "QtResources.h"
 
 export module srctrl.data:graph;
@@ -34,6 +33,7 @@ import std;
 #endif
 
 import srctrl.utility;   // utilityEnum (intToEnum for Edge::EdgeType), utilityString, Tree (NodeType)
+import srctrl.file;      // FilePath
 import srctrl.logging;   // srctrl::log::error/warning (the former LOG_* macros)
 import :types;           // AccessKind, DefinitionKind, ElementComponentKind, NodeKind, NodeModifier
 import :name;            // NameHierarchy (Node)

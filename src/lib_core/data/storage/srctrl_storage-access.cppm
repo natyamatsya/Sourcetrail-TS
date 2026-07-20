@@ -11,16 +11,10 @@ module;
 #include <vector>
 #endif
 
-// GMF: Id (types.h), the bookmark records, and StorageAccess's non-modularized forward-decl types
-// (FilePath / NodeTypeSet / TextAccess / FileInfo -- none pull a modularized header). The module-typed
-// forward decls (Graph, SourceLocationFile/Collection) come from `import srctrl.data` instead.
+// GMF: Id (types.h). Everything else is imported: FilePath/TextAccess/FileInfo from srctrl.file,
+// the module-typed forward decls (Graph, SourceLocationFile/Collection) and the bookmark data
+// types from srctrl.data.
 #include "types.h"
-#include "BookmarkCategory.h"
-#include "EdgeBookmark.h"
-#include "NodeBookmark.h"
-#include "FilePath.h"
-#include "TextAccess.h"
-#include "FileInfo.h"
 
 export module srctrl.storage:access;
 
@@ -28,7 +22,8 @@ export module srctrl.storage:access;
 import std;
 #endif
 
-import srctrl.data;   // Node, LocationType, TooltipOrigin, SearchMatch, TooltipInfo, Graph, SourceLocation*
+import srctrl.file;   // FilePath, TextAccess, FileInfo
+import srctrl.data;   // Node, LocationType, TooltipOrigin, SearchMatch, TooltipInfo, Graph, SourceLocation*, :bookmark
 import :types;        // StorageEdge, StorageError
 import :error;        // ErrorInfo, ErrorCountInfo, ErrorFilter
 import :interface;    // StorageStats

@@ -5,6 +5,7 @@
 export module srctrl.data;
 
 export import :types;
+export import :bookmark;
 export import :name;
 export import :location;
 export import :graph;

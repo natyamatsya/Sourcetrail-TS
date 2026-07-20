@@ -1,9 +1,15 @@
 #ifndef EDGE_BOOKMARK_H
 #define EDGE_BOOKMARK_H
 
-#include "Bookmark.h"
+#include "SrctrlModule.h"
 
-class EdgeBookmark: public Bookmark
+#ifndef SRCTRL_MODULE_PURVIEW
+#include <vector>
+
+#include "Bookmark.h"
+#endif
+
+SRCTRL_EXPORT class EdgeBookmark: public Bookmark
 {
 public:
 	EdgeBookmark(
@@ -24,5 +30,7 @@ private:
 	std::vector<Id> m_edgeIds;
 	Id m_activeNodeId;
 };
+
+#include "EdgeBookmark.inl"
 
 #endif	  // EDGE_BOOKMARK_H

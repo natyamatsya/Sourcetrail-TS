@@ -1,13 +1,19 @@
 #ifndef TEXT_ACCESS_H
 #define TEXT_ACCESS_H
 
+#include "SrctrlModule.h"
+
+#ifndef SRCTRL_MODULE_PURVIEW
+#include <fstream>
 #include <memory>
 #include <string>
 #include <vector>
 
 #include "FilePath.h"
+#include "logging.h"
+#endif
 
-class TextAccess
+SRCTRL_EXPORT class TextAccess
 {
 public:
 	static std::shared_ptr<TextAccess> createFromFile(const FilePath& filePath);
@@ -50,5 +56,7 @@ private:
 	FilePath m_filePath;
 	std::vector<std::string> m_lines;
 };
+
+#include "TextAccess.inl"
 
 #endif	  // TEXT_ACCESS_H

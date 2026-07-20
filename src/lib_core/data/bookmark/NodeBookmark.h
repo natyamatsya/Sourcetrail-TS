@@ -1,9 +1,15 @@
 #ifndef NODE_BOOKMARK_H
 #define NODE_BOOKMARK_H
 
-#include "Bookmark.h"
+#include "SrctrlModule.h"
 
-class NodeBookmark: public Bookmark
+#ifndef SRCTRL_MODULE_PURVIEW
+#include <vector>
+
+#include "Bookmark.h"
+#endif
+
+SRCTRL_EXPORT class NodeBookmark: public Bookmark
 {
 public:
 	NodeBookmark(
@@ -20,5 +26,7 @@ public:
 private:
 	std::vector<Id> m_nodeIds;
 };
+
+#include "NodeBookmark.inl"
 
 #endif	  // NODE_BOOKMARK_H

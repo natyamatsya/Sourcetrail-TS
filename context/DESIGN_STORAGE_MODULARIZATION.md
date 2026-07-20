@@ -160,7 +160,11 @@ of it on the CppSQLite3 code.
    overlay port so the modules ship to the install tree (or keep `SQLPP23_MODULES_DIR` pointed at the
    source); (ii) convert the `sqlite/` impl (`SqliteStorage` + `SqliteIndexStorage`, ~3.8k dense LOC) from
    `#include <sqlpp23/...>` to `import`, coordinated with the CppSQLite3→sqlpp23 SQL-layer migration
-   (`DESIGN_STORAGE_CODEGEN.md`); (iii) a modules-ON full-lib build to verify in situ.
+   (`DESIGN_STORAGE_CODEGEN.md`); (iii) ✅ a modules-ON full-lib build verified in situ — the whole app
+   (`Sourcetrail` + indexer + test) builds and links with `SOURCETRAIL_CXX_MODULES=ON` in the primary
+   build dir, all 24 module units compiled; test suite + headless index identical ON vs OFF. Unblocking
+   it forced the cross-BMI attachment cleanups recorded in DESIGN_INDEXER_MODULARIZATION.md (FilePath
+   leaf-ness, `srctrl.data:bookmark`, FileInfo/TextAccess folded into `srctrl.file`, tracing.h gated).
 5. **S4** — `PersistentStorage` + access/cache/provider + concurrency (turso) + ladybug, last (heaviest
    coupling; may keep impl `.cpp` classic and only modularize the interface).
 

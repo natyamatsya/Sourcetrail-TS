@@ -3,8 +3,9 @@
 
 module;
 
-// Global module fragment: std + the non-modularized deps (FilePath, Id via types.h, and logging.h's
-// LOG_ERROR used by SourceLocationCollection) stay global-module.
+// Global module fragment: std + the non-modularized deps (Id via types.h, and logging.h's
+// LOG_ERROR used by SourceLocationCollection) stay global-module. FilePath comes from
+// `import srctrl.file`, NOT the GMF.
 #ifndef SRCTRL_IMPORT_STD
 #include <functional>
 #include <map>
@@ -15,7 +16,6 @@ module;
 #include <vector>
 #endif
 #include "types.h"
-#include "FilePath.h"
 #include "logging.h"
 
 export module srctrl.data:location;
@@ -24,6 +24,7 @@ export module srctrl.data:location;
 import std;
 #endif
 
+import srctrl.file;   // FilePath
 import :types;   // LocationType
 
 #define SRCTRL_MODULE_PURVIEW
