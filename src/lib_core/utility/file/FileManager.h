@@ -1,15 +1,21 @@
 #ifndef FILE_MANAGER_H
 #define FILE_MANAGER_H
 
+#include "SrctrlModule.h"
+
+#ifndef SRCTRL_MODULE_PURVIEW
 #include <map>
 #include <set>
 #include <string>
 #include <vector>
+#endif
 
+// Same-module fwd decls (srctrl.file): fine in the purview too -- FilePath/FilePathFilter are
+// declared earlier in the wrapper's include order.
 class FilePath;
 class FilePathFilter;
 
-class FileManager
+SRCTRL_EXPORT class FileManager
 {
 public:
 	FileManager();
@@ -38,5 +44,7 @@ private:
 
 	std::set<FilePath> m_allSourceFilePaths;
 };
+
+#include "FileManager.inl"
 
 #endif	  // FILE_MANAGER_H

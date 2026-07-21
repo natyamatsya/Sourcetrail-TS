@@ -47,6 +47,7 @@ import srctrl.logging;   // srctrl::log machinery behind the LOG_* macros
 #include "FileSystem.h"
 #include "FileTree.h"
 #include "utilityFile.h"
+#include "FileManager.h"
 #include "FileRegister.h"
 #include "AppPath.h"
 #include "UserPaths.h"

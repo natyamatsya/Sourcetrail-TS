@@ -1,8 +1,12 @@
-#include "ColorScheme.h"
+// Inline implementations for ColorScheme.h. Included ONLY via SourceGroupSettingsBodies.h (classic: one
+// TU emits the weak defs; module build: the srctrl.settings wrapper) -- not by the header itself,
+// so the settings family's cross-references stay acyclic. All definitions inline.
 
-std::shared_ptr<ColorScheme> ColorScheme::s_instance;
+#pragma once
 
-std::shared_ptr<ColorScheme> ColorScheme::getInstance()
+inline std::shared_ptr<ColorScheme> ColorScheme::s_instance;
+
+inline std::shared_ptr<ColorScheme> ColorScheme::getInstance()
 {
 	if (!s_instance)
 	{
@@ -12,29 +16,29 @@ std::shared_ptr<ColorScheme> ColorScheme::getInstance()
 	return s_instance;
 }
 
-ColorScheme::~ColorScheme() = default;
+inline ColorScheme::~ColorScheme() = default;
 
-bool ColorScheme::hasColor(const std::string& key) const
+inline bool ColorScheme::hasColor(const std::string& key) const
 {
 	return isValueDefined(key);
 }
 
-std::string ColorScheme::getColor(const std::string& key) const
+inline std::string ColorScheme::getColor(const std::string& key) const
 {
 	return getValue<std::string>(key, "#FF1493");
 }
 
-std::string ColorScheme::getColor(const std::string& key, const std::string& defaultColor) const
+inline std::string ColorScheme::getColor(const std::string& key, const std::string& defaultColor) const
 {
 	return getValue<std::string>(key, defaultColor);
 }
 
-std::string ColorScheme::getNodeTypeColor(NodeType type, const std::string& key, bool highlight) const
+inline std::string ColorScheme::getNodeTypeColor(NodeType type, const std::string& key, bool highlight) const
 {
 	return getNodeTypeColor(type.getUnderscoredTypeString(), key, highlight);
 }
 
-std::string ColorScheme::getNodeTypeColor(
+inline std::string ColorScheme::getNodeTypeColor(
 	const std::string& typeStr, const std::string& key, bool highlight) const
 {
 	disableWarnings();
@@ -64,12 +68,12 @@ std::string ColorScheme::getNodeTypeColor(
 	return color;
 }
 
-std::string ColorScheme::getEdgeTypeColor(Edge::EdgeType type) const
+inline std::string ColorScheme::getEdgeTypeColor(Edge::EdgeType type) const
 {
 	return getEdgeTypeColor(Edge::getUnderscoredTypeString(type));
 }
 
-std::string ColorScheme::getEdgeTypeColor(const std::string& type) const
+inline std::string ColorScheme::getEdgeTypeColor(const std::string& type) const
 {
 	disableWarnings();
 
@@ -85,19 +89,19 @@ std::string ColorScheme::getEdgeTypeColor(const std::string& type) const
 	return color;
 }
 
-std::string ColorScheme::getSearchTypeColor(
+inline std::string ColorScheme::getSearchTypeColor(
 	const std::string& searchTypeName, const std::string& key, const std::string& state) const
 {
 	std::string path = "search/query/" + searchTypeName + "/" + state + "/" + key;
 	return getValue<std::string>(path, "#FF1493");
 }
 
-std::string ColorScheme::getSyntaxColor(const std::string& key) const
+inline std::string ColorScheme::getSyntaxColor(const std::string& key) const
 {
 	return getValue<std::string>("code/snippet/syntax/" + key, "#FF1493");
 }
 
-std::string ColorScheme::getCodeAnnotationTypeColor(
+inline std::string ColorScheme::getCodeAnnotationTypeColor(
 	const std::string& typeStr, const std::string& key, ColorState state) const
 {
 	using enum ColorScheme::ColorState;
@@ -127,9 +131,9 @@ std::string ColorScheme::getCodeAnnotationTypeColor(
 	return color;
 }
 
-ColorScheme::ColorScheme() = default;
+inline ColorScheme::ColorScheme() = default;
 
-std::string ColorScheme::stateToString(ColorState state)
+inline std::string ColorScheme::stateToString(ColorState state)
 {
 	using enum ColorScheme::ColorState;
 	switch (state)

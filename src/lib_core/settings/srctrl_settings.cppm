@@ -48,7 +48,8 @@ import std;
 
 import srctrl.utility;   // utility.h helpers (:containers), Status (:types)
 import srctrl.file;      // FilePath, TextAccess, UserPaths/ResourcePaths, utilityFile
-import srctrl.logging;   // srctrl::log machinery behind the LOG_* macros
+import srctrl.logging;
+import srctrl.data;      // Edge/Node/NodeType (ColorScheme)   // srctrl::log machinery behind the LOG_* macros
 
 #define SRCTRL_MODULE_PURVIEW
 // LOG_* macro definitions only (in the purview the header strips its backend includes); the
@@ -61,6 +62,7 @@ import srctrl.logging;   // srctrl::log machinery behind the LOG_* macros
 #include "ConfigManager.h"
 #include "Settings.h"
 #include "ApplicationSettings.h"
+#include "ColorScheme.h"
 #include "SourceGroupSettings.h"
 #include "ProjectSettings.h"
 // The concrete source-group settings types (and, transitively, WithComponents + every component

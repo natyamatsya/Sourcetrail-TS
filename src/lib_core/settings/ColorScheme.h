@@ -1,11 +1,19 @@
 #ifndef COLOR_SCHEME_H
 #define COLOR_SCHEME_H
 
-#include "Edge.h"
-#include "Node.h"
+#include "SrctrlModule.h"
+
+// Family-internal include (srctrl.settings), unguarded: same module either way.
 #include "Settings.h"
 
-class ColorScheme: public Settings
+// srctrl.data types: fwd/textual in the classic build; the purview gets them from
+// `import srctrl.data` (the settings wrapper imports it for this header).
+#ifndef SRCTRL_MODULE_PURVIEW
+#include "Edge.h"
+#include "Node.h"
+#endif
+
+SRCTRL_EXPORT class ColorScheme: public Settings
 {
 public:
 	enum class ColorState
@@ -47,5 +55,7 @@ protected:
 
 	static std::string stateToString(ColorState state);
 };
+
+#include "ColorScheme.inl"
 
 #endif	  // COLOR_SCHEME_H
