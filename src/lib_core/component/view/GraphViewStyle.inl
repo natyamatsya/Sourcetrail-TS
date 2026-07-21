@@ -1,29 +1,41 @@
-#include "GraphViewStyle.h"
+// Inline implementations for GraphViewStyle.h. Included ONLY via SourceGroupSettingsBodies.h (classic: one
+// TU emits the weak defs; module build: the srctrl.settings wrapper) -- not by the header itself,
+// so the settings family's cross-references stay acyclic. All definitions inline.
 
-#include "ApplicationSettings.h"
-#include "ColorScheme.h"
+#pragma once
+
+// Family-internal (srctrl.view), unguarded: same module either way.
 #include "GraphViewStyleImpl.h"
-#include "QtResources.h"
+
+// Macro shim: self-guarding (macros textual, backend imported in the module build).
 #include "logging.h"
 
-int GraphViewStyle::s_gridCellSize = 5;
-int GraphViewStyle::s_gridCellPadding = 10;
+// Cross-module / GMF-linked deps: the wrapper supplies these via imports (srctrl.settings) or
+// its GMF (QtResources -- free functions with a classic impl must stay global-module).
+#ifndef SRCTRL_MODULE_PURVIEW
+#include "ApplicationSettings.h"
+#include "ColorScheme.h"
+#include "QtResources.h"
+#endif
 
-std::map<NodeType::StyleType, float> GraphViewStyle::s_charWidths;
-std::map<NodeType::StyleType, float> GraphViewStyle::s_charHeights;
+inline int GraphViewStyle::s_gridCellSize = 5;
+inline int GraphViewStyle::s_gridCellPadding = 10;
 
-std::shared_ptr<GraphViewStyleImpl> GraphViewStyle::s_impl;
+inline std::map<NodeType::StyleType, float> GraphViewStyle::s_charWidths;
+inline std::map<NodeType::StyleType, float> GraphViewStyle::s_charHeights;
 
-int GraphViewStyle::s_fontSize;
-std::string GraphViewStyle::s_fontName;
-float GraphViewStyle::s_zoomFactor;
+inline std::shared_ptr<GraphViewStyleImpl> GraphViewStyle::s_impl;
 
-std::string GraphViewStyle::s_focusColor;
-std::map<std::string, GraphViewStyle::NodeColor> GraphViewStyle::s_nodeColors;
-std::map<std::string, std::string> GraphViewStyle::s_edgeColors;
-std::map<bool, GraphViewStyle::NodeColor> GraphViewStyle::s_screenMatchColors;
+inline int GraphViewStyle::s_fontSize;
+inline std::string GraphViewStyle::s_fontName;
+inline float GraphViewStyle::s_zoomFactor;
 
-Vec2i GraphViewStyle::alignOnRaster(Vec2i position)
+inline std::string GraphViewStyle::s_focusColor;
+inline std::map<std::string, GraphViewStyle::NodeColor> GraphViewStyle::s_nodeColors;
+inline std::map<std::string, std::string> GraphViewStyle::s_edgeColors;
+inline std::map<bool, GraphViewStyle::NodeColor> GraphViewStyle::s_screenMatchColors;
+
+inline Vec2i GraphViewStyle::alignOnRaster(Vec2i position)
 {
 	int rasterPosDivisor = s_gridCellSize + s_gridCellPadding;
 
@@ -70,13 +82,13 @@ Vec2i GraphViewStyle::alignOnRaster(Vec2i position)
 	return position;
 }
 
-GraphViewStyle::NodeMargins::NodeMargins() = default;
+inline GraphViewStyle::NodeMargins::NodeMargins() = default;
 
-GraphViewStyle::NodeStyle::NodeStyle() = default;
+inline GraphViewStyle::NodeStyle::NodeStyle() = default;
 
-GraphViewStyle::EdgeStyle::EdgeStyle() = default;
+inline GraphViewStyle::EdgeStyle::EdgeStyle() = default;
 
-std::shared_ptr<GraphViewStyleImpl> GraphViewStyle::getImpl()
+inline std::shared_ptr<GraphViewStyleImpl> GraphViewStyle::getImpl()
 {
 	using enum NodeType::StyleType;
 	using enum ColorScheme::ColorState;
@@ -89,12 +101,12 @@ std::shared_ptr<GraphViewStyleImpl> GraphViewStyle::getImpl()
 	return s_impl;
 }
 
-void GraphViewStyle::setImpl(std::shared_ptr<GraphViewStyleImpl> impl)
+inline void GraphViewStyle::setImpl(std::shared_ptr<GraphViewStyleImpl> impl)
 {
 	s_impl = impl;
 }
 
-void GraphViewStyle::loadStyleSettings()
+inline void GraphViewStyle::loadStyleSettings()
 {
 	using enum NodeType::StyleType;
 	using enum ColorScheme::ColorState;
@@ -122,7 +134,7 @@ void GraphViewStyle::loadStyleSettings()
 	s_gridCellSize = s_gridCellPadding / 2;
 }
 
-size_t GraphViewStyle::getFontSizeForStyleType(NodeType::StyleType type)
+inline size_t GraphViewStyle::getFontSizeForStyleType(NodeType::StyleType type)
 {
 	using enum NodeType::StyleType;
 	using enum ColorScheme::ColorState;
@@ -140,64 +152,64 @@ size_t GraphViewStyle::getFontSizeForStyleType(NodeType::StyleType type)
 	}
 }
 
-size_t GraphViewStyle::getFontSizeOfAccessNode()
+inline size_t GraphViewStyle::getFontSizeOfAccessNode()
 {
 	return s_fontSize - 2;
 }
 
-size_t GraphViewStyle::getFontSizeOfExpandToggleNode()
+inline size_t GraphViewStyle::getFontSizeOfExpandToggleNode()
 {
 	return s_fontSize - 3;
 }
 
-size_t GraphViewStyle::getFontSizeOfCountCircle()
+inline size_t GraphViewStyle::getFontSizeOfCountCircle()
 {
 	return s_fontSize - 3;
 }
 
-size_t GraphViewStyle::getFontSizeOfQualifier()
+inline size_t GraphViewStyle::getFontSizeOfQualifier()
 {
 	return s_fontSize - 3;
 }
 
-size_t GraphViewStyle::getFontSizeOfTextNode(int fontSizeDiff)
+inline size_t GraphViewStyle::getFontSizeOfTextNode(int fontSizeDiff)
 {
 	return s_fontSize + fontSizeDiff;
 }
 
-size_t GraphViewStyle::getFontSizeOfGroupNode()
+inline size_t GraphViewStyle::getFontSizeOfGroupNode()
 {
 	using enum NodeType::StyleType;
 	using enum ColorScheme::ColorState;
 	return getFontSizeForStyleType(STYLE_GROUP);
 }
 
-std::string GraphViewStyle::getFontNameForDataNode()
+inline std::string GraphViewStyle::getFontNameForDataNode()
 {
 	return s_fontName + ", consolas, monospace, sans-serif";
 }
 
-std::string GraphViewStyle::getFontNameOfAccessNode()
+inline std::string GraphViewStyle::getFontNameOfAccessNode()
 {
 	return "Fira Sans, sans-serif";
 }
 
-std::string GraphViewStyle::getFontNameOfExpandToggleNode()
+inline std::string GraphViewStyle::getFontNameOfExpandToggleNode()
 {
 	return "Fira Sans, sans-serif";
 }
 
-std::string GraphViewStyle::getFontNameOfTextNode()
+inline std::string GraphViewStyle::getFontNameOfTextNode()
 {
 	return "Fira Sans, sans-serif";
 }
 
-std::string GraphViewStyle::getFontNameOfGroupNode()
+inline std::string GraphViewStyle::getFontNameOfGroupNode()
 {
 	return s_fontName + ", consolas, monospace, sans-serif";
 }
 
-GraphViewStyle::NodeMargins GraphViewStyle::getMarginsForDataNode(
+inline GraphViewStyle::NodeMargins GraphViewStyle::getMarginsForDataNode(
 	NodeType::StyleType type, bool hasIcon, bool hasChildren)
 {
 	using enum NodeType::StyleType;
@@ -254,7 +266,7 @@ GraphViewStyle::NodeMargins GraphViewStyle::getMarginsForDataNode(
 	return margins;
 }
 
-GraphViewStyle::NodeMargins GraphViewStyle::getMarginsOfAccessNode(AccessKind access)
+inline GraphViewStyle::NodeMargins GraphViewStyle::getMarginsOfAccessNode(AccessKind access)
 {
 	using enum NodeType::StyleType;
 	using enum ColorScheme::ColorState;
@@ -295,7 +307,7 @@ GraphViewStyle::NodeMargins GraphViewStyle::getMarginsOfAccessNode(AccessKind ac
 	return margins;
 }
 
-GraphViewStyle::NodeMargins GraphViewStyle::getMarginsOfExpandToggleNode()
+inline GraphViewStyle::NodeMargins GraphViewStyle::getMarginsOfExpandToggleNode()
 {
 	NodeMargins margins;
 
@@ -306,14 +318,14 @@ GraphViewStyle::NodeMargins GraphViewStyle::getMarginsOfExpandToggleNode()
 	return margins;
 }
 
-GraphViewStyle::NodeMargins GraphViewStyle::getMarginsOfBundleNode()
+inline GraphViewStyle::NodeMargins GraphViewStyle::getMarginsOfBundleNode()
 {
 	using enum NodeType::StyleType;
 	using enum ColorScheme::ColorState;
 	return getMarginsForDataNode(STYLE_BIG_NODE, true, false);
 }
 
-GraphViewStyle::NodeMargins GraphViewStyle::getMarginsOfTextNode(int fontSizeDiff)
+inline GraphViewStyle::NodeMargins GraphViewStyle::getMarginsOfTextNode(int fontSizeDiff)
 {
 	NodeMargins margins;
 
@@ -327,7 +339,7 @@ GraphViewStyle::NodeMargins GraphViewStyle::getMarginsOfTextNode(int fontSizeDif
 	return margins;
 }
 
-GraphViewStyle::NodeMargins GraphViewStyle::getMarginsOfGroupNode(GroupType type, bool hasName)
+inline GraphViewStyle::NodeMargins GraphViewStyle::getMarginsOfGroupNode(GroupType type, bool hasName)
 {
 	using enum NodeType::StyleType;
 	using enum ColorScheme::ColorState;
@@ -356,7 +368,7 @@ GraphViewStyle::NodeMargins GraphViewStyle::getMarginsOfGroupNode(GroupType type
 	return margins;
 }
 
-GraphViewStyle::NodeStyle GraphViewStyle::getStyleForNodeType(
+inline GraphViewStyle::NodeStyle GraphViewStyle::getStyleForNodeType(
 	NodeType type,
 	bool defined,
 	bool isActive,
@@ -377,7 +389,7 @@ GraphViewStyle::NodeStyle GraphViewStyle::getStyleForNodeType(
 		hasQualifier);
 }
 
-GraphViewStyle::NodeStyle GraphViewStyle::getStyleForNodeType(
+inline GraphViewStyle::NodeStyle GraphViewStyle::getStyleForNodeType(
 	NodeType::StyleType type,
 	const std::string& underscoredTypeString,
 	const FilePath& iconPath,
@@ -492,7 +504,7 @@ GraphViewStyle::NodeStyle GraphViewStyle::getStyleForNodeType(
 	return style;
 }
 
-GraphViewStyle::NodeStyle GraphViewStyle::getStyleOfAccessNode()
+inline GraphViewStyle::NodeStyle GraphViewStyle::getStyleOfAccessNode()
 {
 	NodeStyle style;
 
@@ -510,7 +522,7 @@ GraphViewStyle::NodeStyle GraphViewStyle::getStyleOfAccessNode()
 	return style;
 }
 
-GraphViewStyle::NodeStyle GraphViewStyle::getStyleOfExpandToggleNode()
+inline GraphViewStyle::NodeStyle GraphViewStyle::getStyleOfExpandToggleNode()
 {
 	NodeStyle style;
 
@@ -524,7 +536,7 @@ GraphViewStyle::NodeStyle GraphViewStyle::getStyleOfExpandToggleNode()
 	return style;
 }
 
-GraphViewStyle::NodeStyle GraphViewStyle::getStyleOfCountCircle()
+inline GraphViewStyle::NodeStyle GraphViewStyle::getStyleOfCountCircle()
 {
 	NodeStyle style;
 
@@ -536,7 +548,7 @@ GraphViewStyle::NodeStyle GraphViewStyle::getStyleOfCountCircle()
 	return style;
 }
 
-GraphViewStyle::NodeStyle GraphViewStyle::getStyleOfBundleNode(bool isFocused)
+inline GraphViewStyle::NodeStyle GraphViewStyle::getStyleOfBundleNode(bool isFocused)
 {
 	using enum NodeType::StyleType;
 	using enum ColorScheme::ColorState;
@@ -552,7 +564,7 @@ GraphViewStyle::NodeStyle GraphViewStyle::getStyleOfBundleNode(bool isFocused)
 		false);
 }
 
-GraphViewStyle::NodeStyle GraphViewStyle::getStyleOfQualifier()
+inline GraphViewStyle::NodeStyle GraphViewStyle::getStyleOfQualifier()
 {
 	NodeStyle style;
 
@@ -562,7 +574,7 @@ GraphViewStyle::NodeStyle GraphViewStyle::getStyleOfQualifier()
 	return style;
 }
 
-GraphViewStyle::NodeStyle GraphViewStyle::getStyleOfTextNode(int fontSizeDiff)
+inline GraphViewStyle::NodeStyle GraphViewStyle::getStyleOfTextNode(int fontSizeDiff)
 {
 	NodeStyle style;
 
@@ -577,7 +589,7 @@ GraphViewStyle::NodeStyle GraphViewStyle::getStyleOfTextNode(int fontSizeDiff)
 	return style;
 }
 
-GraphViewStyle::NodeStyle GraphViewStyle::getStyleOfGroupNode(GroupType type, bool isCoFocused)
+inline GraphViewStyle::NodeStyle GraphViewStyle::getStyleOfGroupNode(GroupType type, bool isCoFocused)
 {
 	using enum NodeType::StyleType;
 	using enum ColorScheme::ColorState;
@@ -625,7 +637,7 @@ GraphViewStyle::NodeStyle GraphViewStyle::getStyleOfGroupNode(GroupType type, bo
 	return style;
 }
 
-GraphViewStyle::EdgeStyle GraphViewStyle::getStyleForEdgeType(
+inline GraphViewStyle::EdgeStyle GraphViewStyle::getStyleForEdgeType(
 	Edge::EdgeType type, bool isActive, bool isFocused, bool isTrailEdge, bool isAmbiguous)
 {
 	using enum NodeType::StyleType;
@@ -741,7 +753,7 @@ GraphViewStyle::EdgeStyle GraphViewStyle::getStyleForEdgeType(
 	return style;
 }
 
-int GraphViewStyle::toGridOffset(int x)
+inline int GraphViewStyle::toGridOffset(int x)
 {
 	if (x > 0)
 	{
@@ -757,22 +769,22 @@ int GraphViewStyle::toGridOffset(int x)
 	}
 }
 
-int GraphViewStyle::toGridSize(int x)
+inline int GraphViewStyle::toGridSize(int x)
 {
 	return s_gridCellSize + toGridOffset(x - s_gridCellSize);
 }
 
-int GraphViewStyle::toGridGap(int x)
+inline int GraphViewStyle::toGridGap(int x)
 {
 	return s_gridCellPadding + toGridOffset(x - s_gridCellPadding);
 }
 
-float GraphViewStyle::getZoomFactor()
+inline float GraphViewStyle::getZoomFactor()
 {
 	return s_zoomFactor;
 }
 
-const std::string& GraphViewStyle::getFocusColor()
+inline const std::string& GraphViewStyle::getFocusColor()
 {
 	if (s_focusColor.empty())
 	{
@@ -782,7 +794,7 @@ const std::string& GraphViewStyle::getFocusColor()
 	return s_focusColor;
 }
 
-const GraphViewStyle::NodeColor& GraphViewStyle::getNodeColor(const std::string& typeStr, bool highlight)
+inline const GraphViewStyle::NodeColor& GraphViewStyle::getNodeColor(const std::string& typeStr, bool highlight)
 {
 	std::string type = highlight ? typeStr + "highlight" : typeStr;
 	std::map<std::string, NodeColor>::const_iterator it = s_nodeColors.find(type);
@@ -806,7 +818,7 @@ const GraphViewStyle::NodeColor& GraphViewStyle::getNodeColor(const std::string&
 	return s_nodeColors.find(type)->second;
 }
 
-const std::string& GraphViewStyle::getEdgeColor(const std::string& type)
+inline const std::string& GraphViewStyle::getEdgeColor(const std::string& type)
 {
 	std::map<std::string, std::string>::const_iterator it = s_edgeColors.find(type);
 	if (it != s_edgeColors.end())
@@ -820,7 +832,7 @@ const std::string& GraphViewStyle::getEdgeColor(const std::string& type)
 	return s_edgeColors.find(type)->second;
 }
 
-const GraphViewStyle::NodeColor& GraphViewStyle::getScreenMatchColor(bool focus)
+inline const GraphViewStyle::NodeColor& GraphViewStyle::getScreenMatchColor(bool focus)
 {
 	using enum NodeType::StyleType;
 	using enum ColorScheme::ColorState;
@@ -844,7 +856,7 @@ const GraphViewStyle::NodeColor& GraphViewStyle::getScreenMatchColor(bool focus)
 	return s_screenMatchColors.find(focus)->second;
 }
 
-float GraphViewStyle::getCharWidth(NodeType::StyleType type)
+inline float GraphViewStyle::getCharWidth(NodeType::StyleType type)
 {
 	std::map<NodeType::StyleType, float>::const_iterator it = s_charWidths.find(type);
 	if (it != s_charWidths.end())
@@ -857,7 +869,7 @@ float GraphViewStyle::getCharWidth(NodeType::StyleType type)
 	return charWidth;
 }
 
-float GraphViewStyle::getCharHeight(NodeType::StyleType type)
+inline float GraphViewStyle::getCharHeight(NodeType::StyleType type)
 {
 	std::map<NodeType::StyleType, float>::const_iterator it = s_charHeights.find(type);
 	if (it != s_charHeights.end())
@@ -870,12 +882,12 @@ float GraphViewStyle::getCharHeight(NodeType::StyleType type)
 	return charHeight;
 }
 
-float GraphViewStyle::getCharWidth(const std::string& fontName, size_t fontSize)
+inline float GraphViewStyle::getCharWidth(const std::string& fontName, size_t fontSize)
 {
 	return getImpl()->getCharWidth(fontName, fontSize);
 }
 
-float GraphViewStyle::getCharHeight(const std::string& fontName, size_t fontSize)
+inline float GraphViewStyle::getCharHeight(const std::string& fontName, size_t fontSize)
 {
 	return getImpl()->getCharHeight(fontName, fontSize);
 }

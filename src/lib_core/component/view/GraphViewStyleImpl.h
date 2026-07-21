@@ -1,9 +1,13 @@
 #ifndef GRAPH_VIEW_STYLE_IMPL_H
 #define GRAPH_VIEW_STYLE_IMPL_H
 
-#include "Node.h"
+#include "SrctrlModule.h"
 
-class GraphViewStyleImpl
+#ifndef SRCTRL_MODULE_PURVIEW
+#include "Node.h"
+#endif
+
+SRCTRL_EXPORT class GraphViewStyleImpl
 {
 public:
 	virtual ~GraphViewStyleImpl() = default;

@@ -1,6 +1,11 @@
 #ifndef GRAPH_VIEW_STYLE_H
 #define GRAPH_VIEW_STYLE_H
 
+#include "SrctrlModule.h"
+
+// Cross-module/std/GMF-linked deps: the srctrl.view wrapper supplies these via imports
+// (srctrl.utility/data) or its GMF (GroupType -- classic impl linked).
+#ifndef SRCTRL_MODULE_PURVIEW
 #include <map>
 #include <memory>
 
@@ -9,10 +14,13 @@
 #include "AccessKind.h"
 #include "GroupType.h"
 #include "Node.h"
+#endif
 
+// Family-internal fwd decl (same module; the wrapper includes GraphViewStyleImpl.h first, so in
+// the purview this is a redeclaration of an already-exported class).
 class GraphViewStyleImpl;
 
-class GraphViewStyle
+SRCTRL_EXPORT class GraphViewStyle
 {
 public:
 	static Vec2i alignOnRaster(Vec2i position);
@@ -185,5 +193,7 @@ private:
 	static std::map<std::string, std::string> s_edgeColors;
 	static std::map<bool, NodeColor> s_screenMatchColors;
 };
+
+#include "GraphViewStyle.inl"
 
 #endif	  // GRAPH_VIEW_STYLE_H
