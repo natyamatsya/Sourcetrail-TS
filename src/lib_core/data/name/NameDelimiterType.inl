@@ -10,6 +10,8 @@ inline std::string nameDelimiterTypeToString(NameDelimiterType delimiter)
 			return "/";
 		case NameDelimiterType::CXX:
 			return "::";
+		case NameDelimiterType::CXX_MODULE:
+			return ":";
 		default:
 			break;
 	}
@@ -26,12 +28,18 @@ inline NameDelimiterType stringToNameDelimiterType(const std::string& s)
 	{
 		return NameDelimiterType::CXX;
 	}
+	if (s == nameDelimiterTypeToString(NameDelimiterType::CXX_MODULE))
+	{
+		return NameDelimiterType::CXX_MODULE;
+	}
 	return NameDelimiterType::UNKNOWN;
 }
 
 inline NameDelimiterType detectDelimiterType(const std::string& name)
 {
-	static const std::array allDelimiters{NameDelimiterType::FILE, NameDelimiterType::CXX};
+	// CXX ("::") must be probed before CXX_MODULE (":") -- every "::" also contains ":".
+	static const std::array allDelimiters{
+		NameDelimiterType::FILE, NameDelimiterType::CXX, NameDelimiterType::CXX_MODULE};
 
 	for (NameDelimiterType delimiter: allDelimiters)
 	{

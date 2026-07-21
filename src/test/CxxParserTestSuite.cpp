@@ -4920,6 +4920,72 @@ TEST_CASE("cxx parser records exported declaration as modifier bit")
 	REQUIRE(exportedBar);
 }
 
+TEST_CASE("cxx parser nests a module partition under its primary module")
+{
+	std::shared_ptr<IntermediateStorage> storage =
+		parseCodeToStorage("export module foo:part;\n", {"-x", "c++-module"});
+
+	Id primaryId = 0;
+	Id partitionId = 0;
+	for (const StorageNode& node: storage->getStorageNodes())
+	{
+		if (node.type != NODE_MODULE)
+		{
+			continue;
+		}
+		const std::string name = NameHierarchy::deserialize(node.serializedName).getQualifiedName();
+		if (name == "foo")
+		{
+			primaryId = node.id;
+		}
+		else if (name == "foo:part")
+		{
+			partitionId = node.id;
+		}
+	}
+	REQUIRE(primaryId != 0);
+	REQUIRE(partitionId != 0);
+
+	bool memberEdge = false;
+	for (const StorageEdge& edge: storage->getStorageEdges())
+	{
+		if (edge.type == Edge::EDGE_MEMBER && edge.sourceNodeId == primaryId &&
+			edge.targetNodeId == partitionId)
+		{
+			memberEdge = true;
+		}
+	}
+	REQUIRE(memberEdge);
+}
+
+TEST_CASE("cxx parser keeps a module and a namespace of the same name distinct")
+{
+	std::shared_ptr<IntermediateStorage> storage = parseCodeToStorage(
+		"export module foo;\n"
+		"export namespace foo {}\n",
+		{"-x", "c++-module"});
+
+	bool moduleNode = false;
+	bool namespaceNode = false;
+	for (const StorageNode& node: storage->getStorageNodes())
+	{
+		if (NameHierarchy::deserialize(node.serializedName).getQualifiedName() != "foo")
+		{
+			continue;
+		}
+		if (node.type == NODE_MODULE)
+		{
+			moduleNode = true;
+		}
+		if (node.type == NODE_NAMESPACE)
+		{
+			namespaceNode = true;
+		}
+	}
+	REQUIRE(moduleNode);
+	REQUIRE(namespaceNode);
+}
+
 // NOTE: module IMPORT edges (visitImportDecl -> EDGE_IMPORT) are verified at runtime
 // but need an importable module's BMI built with a matching target/std to load, which
 // is the Phase-2 driver concern rather than an in-harness unit test. Confirmed manually:

@@ -81,7 +81,27 @@ inline Id CxxIndexingContext::getOrCreateSymbolId(CxxContext context, const Name
 
 inline Id CxxIndexingContext::getOrCreateModuleSymbolId(const clang::Module* module)
 {
-	NameHierarchy name(module->getFullModuleName(), NameDelimiterType::CXX);
+	// Module names live in their own delimiter world (":"): the serialized name embeds the
+	// delimiter, so module `foo` and namespace `foo` stay distinct nodes. A partition
+	// ("primary:part") becomes a two-element hierarchy nesting under its primary module; dots
+	// carry no semantic hierarchy in C++ module names and stay within one element.
+	const std::string fullName = module->getFullModuleName();
+	NameHierarchy name(NameDelimiterType::CXX_MODULE);
+
+	const std::string::size_type colon = fullName.find(':');
+	if (colon == std::string::npos)
+	{
+		name.push(fullName);
+	}
+	else
+	{
+		name.push(fullName.substr(0, colon));
+		name.push(fullName.substr(colon + 1));
+
+		const Id primaryId = m_client.recordSymbol(name.getRange(0, 1));
+		m_client.recordSymbolKind(primaryId, SymbolKind::MODULE);
+	}
+
 	const Id symbolId = m_client.recordSymbol(name);
 	m_client.recordSymbolKind(symbolId, SymbolKind::MODULE);
 	return symbolId;

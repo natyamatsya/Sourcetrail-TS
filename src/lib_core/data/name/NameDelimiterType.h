@@ -12,7 +12,8 @@ SRCTRL_EXPORT enum class NameDelimiterType
 {
 	UNKNOWN,
 	FILE,
-	CXX
+	CXX,
+	CXX_MODULE
 };
 
 SRCTRL_EXPORT std::string nameDelimiterTypeToString(NameDelimiterType delimiter);

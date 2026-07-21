@@ -845,9 +845,21 @@ cycles in `lib` is prerequisite work, and a good cleanup in its own right).
     caveat (by construction): classic parses usually claim the shared headers and never see
     `export`, so header-declared exports stay sparse in OUR OWN self-index; the region path
     still covers re-export using-declarations (thoth/Qt re-exports flagged).
-  - Deferred module-graph refinements: hierarchical module names (partitions/dots are one flat
-    element), and the module-vs-namespace name collision (a module named like a namespace —
-    aidkit — folds into the namespace node; needs a naming-scheme decision).
+  - ~~Deferred module-graph refinements~~ **RESOLVED (2026-07-21): module-graph naming.** Module
+    nodes now live in their own `NameDelimiterType::CXX_MODULE` delimiter world (`":"`). Because
+    the serialized name embeds the delimiter string, module `foo` and namespace `foo` are
+    distinct nodes by construction — the aidkit module/namespace fold is gone, no naming-scheme
+    hack needed. Partitions (`primary:part`) are two-element hierarchies: the partition node
+    nests under its primary module (MEMBER edge via addNodeHierarchy), the primary is recorded
+    as a MODULE node even when only a partition unit is seen, and the displayed qualified name
+    joins with `":"` — exactly the C++ spelling. Dots deliberately stay within one element:
+    the standard gives them no semantic hierarchy, and inventing a fictitious `srctrl` parent
+    module would misrepresent the import graph. Delimiter-sensitive consumers audited: template
+    collapse (PersistentStorage) matches CXX by exact string; search rescoring/tooltips use the
+    hierarchy's own delimiter; `detectDelimiterType` probes `"::"` before `":"`. Verified E2E on
+    a partition+collision fixture (module foo + `export import :part` + exported namespace foo):
+    distinct foo nodes (module 8 / namespace 16), MEMBER foo→foo:part, IMPORT foo→foo:part,
+    0 errors; Usages unchanged at 529/2041/0 (non-module graphs untouched).
 - **Phase 6 — GUI (optional/later).** `lib_gui` + moc, once moc/modules matures.
 
 ## Verification
