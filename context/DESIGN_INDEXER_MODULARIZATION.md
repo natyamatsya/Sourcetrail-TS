@@ -167,6 +167,31 @@ cycles in `lib` is prerequisite work, and a good cleanup in its own right).
   GMF, so `import std` there mixes with Qt's std includes; the option is really for std-only modules —
   **unless Qt itself is behind an import (see `srctrl.qt` below).**
 
+  **RE-VERIFIED ON THE FULL MODULE GRAPH (2026-07-21, Phase-5-complete tree):** the entire ON build —
+  all srctrl modules incl. the clang-heavy srctrl.cxx, srctrl.interprocess, `import thoth.ipc;`, the
+  importer indexer main.cpp — builds, tests (2656 assertions), and indexes (Usages 529/2041/0 +
+  partition/collision fixture) with `import std` on. Three findings:
+  1. **TOOLCHAIN BUG (brew LLVM 22.1.8 + Apple SDK): stock std.cppm does not compile** — "use of
+     undeclared identifier 'INFINITY'/'NAN'" from `<complex>`. The SDK math.h delegates INFINITY/NAN
+     to clang's float.h via the `__need_infinity_nan` re-include protocol whenever
+     `__has_feature(modules)` (true in ALL c++23 clang-22 compiles, not just module units), but
+     libc++'s float.h *wrapper* has a plain `_LIBCPP_FLOAT_H` guard that swallows the re-include once
+     `<cfloat>` was seen — and std.cppm's GMF includes `<cfloat>` (alphabetical) before
+     `<cmath>`/`<complex>`. Reproducible in a plain TU: `#include <cfloat>` + `#include <complex>`.
+     WORKAROUND in the mac toolchain file: patched build-dir copies of std(.compat).cppm that
+     `#include <math.h>` first (runs the float.h dance before the guard latches); a patched
+     modules.json points source-path at the copies while system-include-directories keeps the
+     original share dir for the .inc bodies. `CMAKE_CXX_STDLIB_MODULES_JSON` is FORCE-repointed.
+  2. **CMake caches import-std state at compiler DETECTION time** (`CMakeCXXCompiler.cmake`:
+     `CMAKE_CXX_COMPILER_IMPORT_STD`, and the modules-json path). Enabling the option on an existing
+     build dir — or changing the json — requires `rm -rf <build>/CMakeFiles/<cmake-ver>/` to force
+     redetection; a plain reconfigure silently keeps the old state (observed both ways: "not enabled
+     when detecting toolchain", and a patched json being ignored).
+  3. Two first-party fixes of the documented classes: a bare-`size_t` sweep miss in `utility.h`
+     (8 sites → `std::size_t`), and POSIX `localtime_r` in TimeStamp.inl — `<time.h>` now included
+     unconditionally in the `:time` wrapper GMF (**rule: POSIX/C-platform headers are NOT covered by
+     `import std` and stay textual in the import-std build**).
+
 - **`srctrl.qt` — a Qt import-module wrapper dissolves the "Qt blocks import std" barrier (capability
   proven; one integration hits a clang crash).** Qt 6.11 ships no C++20 modules, so we wrap it like
   sqlpp23: `srctrl.qt` with partitions mirroring Qt's own names (`:core` = QtCore value types

@@ -12,6 +12,10 @@ module;
 #include <string>
 #endif
 
+// POSIX localtime_r (TimeStamp.inl) is NOT part of `import std` -- the C header stays textual
+// in the import-std build too.
+#include <time.h>
+
 export module srctrl.utility:time;
 
 #ifdef SRCTRL_IMPORT_STD

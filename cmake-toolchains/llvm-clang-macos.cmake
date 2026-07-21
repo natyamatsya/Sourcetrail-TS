@@ -30,6 +30,58 @@ if(EXISTS "${LLVM_PREFIX}/lib/c++/libc++.modules.json")
         CACHE FILEPATH "libc++ std module metadata (for import std)")
 endif()
 
+# WORKAROUND (LLVM 22.1.8 + Apple SDK): the stock std.cppm fails to compile with
+# "use of undeclared identifier 'INFINITY'/'NAN'".  The SDK's math.h delegates those macros to
+# clang's float.h via the __need_infinity_nan re-include protocol whenever __has_feature(modules)
+# is true -- but libc++'s float.h *wrapper* has a plain include guard (_LIBCPP_FLOAT_H), so once
+# <cfloat> has been included the re-include is swallowed and the macros never materialize.
+# std.cppm's global module fragment includes <cfloat> (alphabetical) before <cmath>/<complex>,
+# so <complex> parses with INFINITY/NAN undeclared.  (Reproducible in a plain -std=c++23 TU with
+# `#include <cfloat>` + `#include <complex>` -- a toolchain bug, not a modules bug.)
+# Fix: compile patched copies of std(.compat).cppm that #include <math.h> FIRST, running the
+# float.h dance before the wrapper guard latches.  The .inc bodies still come from the original
+# share dir via system-include-directories.
+if(SOURCETRAIL_CXX_IMPORT_STD AND EXISTS "${LLVM_PREFIX}/share/libc++/v1/std.cppm")
+    set(_srctrl_std_patch_dir "${CMAKE_BINARY_DIR}/libcxx-std-module")
+    foreach(_srctrl_std_mod std std.compat)
+        file(READ "${LLVM_PREFIX}/share/libc++/v1/${_srctrl_std_mod}.cppm" _srctrl_std_src)
+        string(REPLACE
+            "module;"
+            "module;\n#include <math.h> // srctrl workaround: run the SDK math.h __need_infinity_nan float.h dance before <cfloat> latches _LIBCPP_FLOAT_H"
+            _srctrl_std_src "${_srctrl_std_src}")
+        file(WRITE "${_srctrl_std_patch_dir}/${_srctrl_std_mod}.cppm" "${_srctrl_std_src}")
+    endforeach()
+    file(WRITE "${_srctrl_std_patch_dir}/libc++.modules.json" "{
+  \"version\": 1,
+  \"revision\": 1,
+  \"modules\": [
+    {
+      \"logical-name\": \"std\",
+      \"source-path\": \"std.cppm\",
+      \"is-std-library\": true,
+      \"local-arguments\": {
+        \"system-include-directories\": [
+          \"${LLVM_PREFIX}/share/libc++/v1\"
+        ]
+      }
+    },
+    {
+      \"logical-name\": \"std.compat\",
+      \"source-path\": \"std.compat.cppm\",
+      \"is-std-library\": true,
+      \"local-arguments\": {
+        \"system-include-directories\": [
+          \"${LLVM_PREFIX}/share/libc++/v1\"
+        ]
+      }
+    }
+  ]
+}
+")
+    set(CMAKE_CXX_STDLIB_MODULES_JSON "${_srctrl_std_patch_dir}/libc++.modules.json"
+        CACHE FILEPATH "libc++ std module metadata (for import std)" FORCE)
+endif()
+
 # Use Apple's system libc++ at runtime.
 set(CMAKE_CXX_FLAGS_INIT "-stdlib=libc++")
 

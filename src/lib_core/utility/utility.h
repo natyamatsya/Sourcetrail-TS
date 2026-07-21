@@ -18,7 +18,7 @@ SRCTRL_EXPORT namespace utility
 {
 template <typename T>
 std::vector<std::vector<T>> splitToEquallySizedParts(
-	const std::vector<T>& values, const size_t desiredPartCount);
+	const std::vector<T>& values, const std::size_t desiredPartCount);
 
 template <typename T>
 std::vector<T> concat(const std::vector<T>& a, const std::vector<T>& b);
@@ -121,7 +121,7 @@ bool shareElement(const std::set<T>& a, const std::set<T>& b)
 	return false;
 }
 
-inline size_t digits(size_t n)
+inline std::size_t digits(std::size_t n)
 {
 	int digits = 1;
 
@@ -137,12 +137,12 @@ inline size_t digits(size_t n)
 
 template <typename T>
 std::vector<std::vector<T>> utility::splitToEquallySizedParts(
-	const std::vector<T>& values, const size_t desiredPartCount)
+	const std::vector<T>& values, const std::size_t desiredPartCount)
 {
-	const size_t partCount = std::max<size_t>(1, (std::min)(desiredPartCount, values.size()));
+	const std::size_t partCount = std::max<std::size_t>(1, (std::min)(desiredPartCount, values.size()));
 
 	std::vector<std::vector<T>> parts;
-	for (size_t i = 0; i < partCount; i++)
+	for (std::size_t i = 0; i < partCount; i++)
 	{
 		parts.emplace_back(std::vector<T>());
 	}
@@ -213,9 +213,9 @@ void utility::append(std::unordered_set<T>& a, const std::unordered_set<T>& b)
 template <typename T>
 std::vector<T> utility::unique(const std::vector<T>& a)
 {
-	std::map<T, size_t> unique;
+	std::map<T, std::size_t> unique;
 
-	size_t i = 0;
+	std::size_t i = 0;
 	for (const T& t: a)
 	{
 		if (unique.emplace(t, i).second)
@@ -225,7 +225,7 @@ std::vector<T> utility::unique(const std::vector<T>& a)
 	}
 
 	std::vector<T> r(i, T());
-	for (const std::pair<const T, size_t>& p: unique)
+	for (const std::pair<const T, std::size_t>& p: unique)
 	{
 		r[p.second] = p.first;
 	}
