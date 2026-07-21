@@ -6,7 +6,12 @@
 // wrappers therefore include this header AFTER `#define SRCTRL_MODULE_PURVIEW` and get LogManager (and
 // std::stringstream) from `import srctrl.logging` (+ their own std handling); the macro expansions then
 // name the imported entities. Classic TUs are untouched.
-#ifndef SRCTRL_MODULE_PURVIEW
+//
+// SRCTRL_LOGGING_VIA_IMPORT is the same contract for converted IMPORTER TUs (classic .cpps turned
+// into `import srctrl.logging;` consumers): the TU defines it before its includes -- only in the
+// module build -- and gets macros-only here, backend via import. TU-local by design: a target-wide
+// define would strip the backend from every non-importing TU of that target.
+#if !defined(SRCTRL_MODULE_PURVIEW) && !defined(SRCTRL_LOGGING_VIA_IMPORT)
 #include <sstream>
 
 #include "LogManager.h"

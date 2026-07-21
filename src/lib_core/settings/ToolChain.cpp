@@ -1,9 +1,19 @@
 #include "ToolChain.h"
 #include "language_packages.h"
+
+#include <optional>   // was transitive via utility.h before the import conversion
+
+#ifndef SRCTRL_MODULE_BUILD
 #include "utility.h"
+#endif
 
 #if BUILD_CXX_LANGUAGE_PACKAGE
 	#include <llvm/Config/llvm-config.h>
+#endif
+
+// Imports come AFTER all textual #includes (include-before-import rule).
+#ifdef SRCTRL_MODULE_BUILD
+import srctrl.utility;
 #endif
 
 // Note: We do the '#if LLVM_VERSION_MAJOR ==' check in case we need to support two different clang

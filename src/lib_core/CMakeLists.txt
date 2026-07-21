@@ -124,6 +124,22 @@ if(SOURCETRAIL_CXX_MODULES_ENABLED)
 			"${CMAKE_CURRENT_SOURCE_DIR}/data/storage/sqlite/SqliteBookmarkStorage.cpp"
 			PROPERTIES CXX_SCAN_FOR_MODULES ON)
 	endif()
+
+	# Converted consumer TUs: classic .cpps that `import srctrl.*;` instead of #including the
+	# modularized headers (guards under SRCTRL_MODULE_BUILD; logging consumers additionally define
+	# SRCTRL_LOGGING_VIA_IMPORT themselves -- see logging.h). Scan only the importing files.
+	target_compile_definitions(Sourcetrail_lib_core PRIVATE SRCTRL_MODULE_BUILD)
+	set_source_files_properties(
+		"${CMAKE_CURRENT_SOURCE_DIR}/component/controller/helper/SnippetMerger.cpp"
+		"${CMAKE_CURRENT_SOURCE_DIR}/data/HierarchyCache.cpp"
+		"${CMAKE_CURRENT_SOURCE_DIR}/data/fulltextsearch/SuffixArray.cpp"
+		"${CMAKE_CURRENT_SOURCE_DIR}/data/storage/sqlite/DualSqliteDatabase.cpp"
+		"${CMAKE_CURRENT_SOURCE_DIR}/data/storage/sqlite/SqliteDatabaseIndex.cpp"
+		"${CMAKE_CURRENT_SOURCE_DIR}/settings/ToolChain.cpp"
+		"${CMAKE_CURRENT_SOURCE_DIR}/settings/source_group/SourceGroupStatusType.cpp"
+		"${CMAKE_CURRENT_SOURCE_DIR}/utility/messaging/type/MessageStatus.cpp"
+		"${CMAKE_CURRENT_SOURCE_DIR}/utility/scheduling/TaskScheduler.cpp"
+		PROPERTIES CXX_SCAN_FOR_MODULES ON)
 endif()
 
 # CXX settings component sources — always compiled so the settings types are

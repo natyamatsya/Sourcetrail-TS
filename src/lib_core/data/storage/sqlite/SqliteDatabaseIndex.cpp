@@ -1,6 +1,17 @@
+// Module build: LOG_* macros stay textual (macros don't travel through imports); logging.h then
+// yields macros only and the backend comes from `import srctrl.logging` below.
+#ifdef SRCTRL_MODULE_BUILD
+#define SRCTRL_LOGGING_VIA_IMPORT
+#endif
+
 #include "SqliteDatabaseIndex.h"
 
 #include "logging.h"
+
+// Imports come AFTER all textual #includes (include-before-import rule).
+#ifdef SRCTRL_MODULE_BUILD
+import srctrl.logging;
+#endif
 
 SqliteDatabaseIndex::SqliteDatabaseIndex(const std::string& indexName, const std::string& indexTarget)
 	: m_indexName(indexName), m_indexTarget(indexTarget)

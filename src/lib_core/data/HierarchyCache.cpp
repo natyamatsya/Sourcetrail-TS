@@ -1,6 +1,13 @@
 #include "HierarchyCache.h"
 
+#ifndef SRCTRL_MODULE_BUILD
 #include "utility.h"
+#endif
+
+// Imports come AFTER all textual #includes (include-before-import rule).
+#ifdef SRCTRL_MODULE_BUILD
+import srctrl.utility;
+#endif
 
 HierarchyCache::HierarchyNode::HierarchyNode(Id nodeId)
 	: m_nodeId(nodeId), m_edgeId(0) 

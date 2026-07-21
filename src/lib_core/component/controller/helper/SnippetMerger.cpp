@@ -1,7 +1,14 @@
 #include "SnippetMerger.h"
 
+#ifndef SRCTRL_MODULE_BUILD
 #include "ApplicationSettings.h"
+#endif
 #include <algorithm>
+
+// Imports come AFTER all textual #includes (include-before-import rule).
+#ifdef SRCTRL_MODULE_BUILD
+import srctrl.settings;
+#endif
 
 SnippetMerger::SnippetMerger(int startRow, int endRow): m_start(startRow), m_end(endRow) {}
 

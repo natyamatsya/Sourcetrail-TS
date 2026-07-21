@@ -1,6 +1,13 @@
 #include "MessageStatus.h"
 
+#ifndef SRCTRL_MODULE_BUILD
 #include "utilityString.h"
+#endif
+
+// Imports come AFTER all textual #includes (include-before-import rule).
+#ifdef SRCTRL_MODULE_BUILD
+import srctrl.utility;
+#endif
 
 MessageStatus::MessageStatus(
 	const std::string& status, bool isError, bool showLoader, bool showInStatusBar)

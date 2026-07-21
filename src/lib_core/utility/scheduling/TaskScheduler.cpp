@@ -1,3 +1,9 @@
+// Module build: LOG_* macros stay textual (macros don't travel through imports); logging.h then
+// yields macros only and the backend comes from `import srctrl.logging` below.
+#ifdef SRCTRL_MODULE_BUILD
+#define SRCTRL_LOGGING_VIA_IMPORT
+#endif
+
 #include "TaskScheduler.h"
 
 #include <chrono>
@@ -5,6 +11,11 @@
 
 #include "ScopedFunctor.h"
 #include "logging.h"
+
+// Imports come AFTER all textual #includes (include-before-import rule).
+#ifdef SRCTRL_MODULE_BUILD
+import srctrl.logging;
+#endif
 
 TaskScheduler::TaskScheduler(TabId schedulerId)
 	: m_schedulerId(schedulerId)

@@ -1,3 +1,6 @@
+// NOT convertible to an importer TU: StdexecPrelude.h breaks clang-scan-deps ("token is not a
+// valid binary operator"), and an importing TU must be scanned. Stays fully classic until the
+// upstream scanner fix lands.
 #include "MessageQueue.h"
 
 #include <thread>

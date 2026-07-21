@@ -3,12 +3,23 @@
 // off it compiles to an empty object and pulls in no Turso headers.
 #ifdef SOURCETRAIL_TURSO_COMPARE
 
+// Module build: LOG_* macros stay textual (macros don't travel through imports); logging.h then
+// yields macros only and the backend comes from `import srctrl.logging` below.
+#ifdef SRCTRL_MODULE_BUILD
+#define SRCTRL_LOGGING_VIA_IMPORT
+#endif
+
 #include "DualSqliteDatabase.h"
 
 #include <cctype>
 #include <sstream>
 
 #include "logging.h"
+
+// Imports come AFTER all textual #includes (include-before-import rule).
+#ifdef SRCTRL_MODULE_BUILD
+import srctrl.logging;
+#endif
 
 namespace
 {

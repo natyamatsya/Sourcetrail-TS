@@ -1,8 +1,15 @@
 #include "SuffixArray.h"
 
+#ifndef SRCTRL_MODULE_BUILD
 #include "utilityString.h"
+#endif
 
 #include <algorithm>
+
+// Imports come AFTER all textual #includes (include-before-import rule).
+#ifdef SRCTRL_MODULE_BUILD
+import srctrl.utility;
+#endif
 
 using namespace utility;
 
