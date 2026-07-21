@@ -8,6 +8,12 @@ add_executable(Sourcetrail
 )
 setDefaultTargetOptions(Sourcetrail)
 
+# main.cpp includes the now self-contained lib_cxx package headers (LanguagePackageCxx, the prebuild
+# runners), which reach clang's Sema.h -- and Qt's `emit` macro breaks its `emit` member. The app
+# target's own sources use no Qt keywords (the GUI lives in lib_gui), so just don't define emit
+# (same as Sourcetrail_lib_cxx / Sourcetrail_test).
+target_compile_definitions(Sourcetrail PRIVATE QT_NO_EMIT)
+
 set_target_properties(Sourcetrail
 	PROPERTIES
 		RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/app/"

@@ -1,32 +1,55 @@
 
+// The generated language-package switches (BUILD_CXX_LANGUAGE_PACKAGE below).
+#include "language_packages.h"
+
 #include <array>
 #include <cstdio>
 #include <span>
+#include <sstream>
 #include <string>
 #include <string_view>
 #include <vector>
 
-#include "language_package_flags.h"
-#include "AppPath.h"
-#include "ApplicationSettings.h"
-#include "CxxModulePrebuildRunner.h"
-#include "CxxPchBuildRunner.h"
-#include "FileLogger.h"
 #include "GlazeCli.h"
-#include "InterprocessIndexer.h"
-#include "LanguagePackageManager.h"
-#include "LogManager.h"
-#include "UserPaths.h"
-#include "logging.h"
 #include "setupLocale.h"
+#include "utilityExpected.h"
 
-#if BUILD_CXX_LANGUAGE_PACKAGE
-	#include "CxxIndexerCommandCodec.h"
-	#include "LanguagePackageCxx.h"
+#ifndef SRCTRL_MODULE_BUILD
+	#include "AppPath.h"
+	#include "ApplicationSettings.h"
+	#include "CxxModulePrebuildRunner.h"
+	#include "CxxPchBuildRunner.h"
+	#include "FileLogger.h"
+	#include "InterprocessIndexer.h"
+	#include "LanguagePackageManager.h"
+	#include "LogFacade.h"
+	#include "LogManager.h"
+	#include "UserPaths.h"
+
+	#if BUILD_CXX_LANGUAGE_PACKAGE
+		#include "CxxIndexerCommandCodec.h"
+		#include "LanguagePackageCxx.h"
+	#endif
 #endif
 
 #if BOOST_OS_WINDOWS
 	#include <Windows.h>
+#endif
+
+// Module build: this TU is the Phase 4 "pure importer" milestone -- the modularized layers arrive
+// via import; the textual includes above are macro-only, std-only, or glaze seams shared with the
+// classic branch. The imports come AFTER every #include: a textual libc++ header parsed after the
+// BMI-merged declarations trips "cannot add 'abi_tag' attribute in a redeclaration" (the same
+// include-before-import rule thoth-ipc's module doc states, GCC PR114795 on the GCC side).
+#ifdef SRCTRL_MODULE_BUILD
+import srctrl.file;			 // FilePath, AppPath, UserPaths
+import srctrl.settings;		 // ApplicationSettings
+import srctrl.logging;		 // LogManager, FileLogger, Logger, srctrl::log
+import srctrl.indexer;		 // LanguagePackageManager
+import srctrl.interprocess;	 // InterprocessIndexer, ProcessId
+	#if BUILD_CXX_LANGUAGE_PACKAGE
+import srctrl.cxx;			 // LanguagePackageCxx, registerCxxIndexerCommandCodec, prebuild runners
+	#endif
 #endif
 
 void setupLogging(const FilePath& logFilePath)
@@ -126,8 +149,8 @@ int main(int argc, char* argv[])
 	appSettings->load(UserPaths::getAppSettingsFilePath());
 	LogManager::getInstance()->setLoggingEnabled(appSettings->getLoggingEnabled());
 
-	LOG_INFO("sharedDataPath: " + AppPath::getSharedDataDirectoryPath().str());
-	LOG_INFO("userDataPath: " + UserPaths::getUserDataDirectoryPath().str());
+	srctrl::log::info("sharedDataPath: " + AppPath::getSharedDataDirectoryPath().str());
+	srctrl::log::info("userDataPath: " + UserPaths::getUserDataDirectoryPath().str());
 
 
 #if BUILD_CXX_LANGUAGE_PACKAGE
@@ -150,7 +173,9 @@ int main(int argc, char* argv[])
 	const InterprocessIndexer::WorkResult workResult = indexer.work();
 	if (!workResult)
 	{
-		LOG_ERROR_STREAM(<< "Indexer worker failed: " << workResult.error());
+		std::ostringstream message;
+		message << "Indexer worker failed: " << workResult.error();
+		srctrl::log::error(message.str());
 		return 1;
 	}
 

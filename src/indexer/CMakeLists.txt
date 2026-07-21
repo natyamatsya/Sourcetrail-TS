@@ -18,6 +18,15 @@ target_link_libraries(Sourcetrail_indexer
 		$<$<BOOL:${BUILD_CXX_LANGUAGE_PACKAGE}>:Sourcetrail_lib_cxx>
 )
 
+# Module build: main.cpp is the Phase 4 "pure importer" milestone -- it imports the modularized
+# layers (srctrl.file/settings/logging/indexer/interprocess/cxx) instead of #including their
+# headers. Same mechanics as the test target's importer TUs: define the toggle and scan only the
+# file that imports (project-wide scanning is off; stdexec breaks clang-scan-deps).
+if(SOURCETRAIL_CXX_MODULES_ENABLED)
+	target_compile_definitions(Sourcetrail_indexer PRIVATE SRCTRL_MODULE_BUILD)
+	set_source_files_properties(main.cpp PROPERTIES CXX_SCAN_FOR_MODULES ON)
+endif()
+
 # The recursive C++ AST visitor (CxxAstVisitor over clang's RecursiveASTVisitor)
 # descends one frame per AST node. Pathologically nested code overflows the
 # default 1 MiB thread stack on Windows — e.g. clang's own SemaARM.cpp intrinsic

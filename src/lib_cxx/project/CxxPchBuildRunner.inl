@@ -1,5 +1,9 @@
-#include "CxxPchBuildRunner.h"
+// Inline implementations for CxxPchBuildRunner.h. Included at the end of that header (classic) or
+// via the srctrl.cxx:package wrapper (purview); not a standalone TU.
 
+#pragma once
+
+#ifndef SRCTRL_MODULE_PURVIEW
 #include <fstream>
 #include <set>
 #include <string>
@@ -27,8 +31,9 @@
 #include "ToolChain.h"
 #include "logging.h"
 #include "utility.h"
+#endif
 
-int CxxPchBuildRunner::run(const FilePath& requestPath)
+inline int CxxPchBuildRunner::run(const FilePath& requestPath)
 {
 	FilePath pchInputFilePath;
 	FilePath pchOutputFilePath;

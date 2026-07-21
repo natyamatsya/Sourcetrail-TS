@@ -1,5 +1,9 @@
-#include "CxxModulePrebuildRunner.h"
+// Inline implementations for CxxModulePrebuildRunner.h. Included at the end of that header
+// (classic) or via the srctrl.cxx:package wrapper (purview); not a standalone TU.
 
+#pragma once
+
+#ifndef SRCTRL_MODULE_PURVIEW
 #include <algorithm>
 #include <cstdlib>
 #include <deque>
@@ -41,8 +45,11 @@
 #include "utility.h"
 #include "utilityApp.h"
 #include "utilityClang.h"
+#endif
 
-namespace
+// ODR-safe home for the scanner and BMI-build helpers (anonymous namespaces are an ODR trap in
+// headers/inls).
+namespace cxx_module_prebuild_runner_detail
 {
 struct ModuleScan
 {
@@ -54,7 +61,7 @@ struct ModuleScan
 // identifier, then any run of `.ident` (submodule) or `:ident` (partition). A leading `:` (as in
 // `import :part;`) yields a partition-only suffix (":part") which the caller resolves against the
 // current module. Leaves `i` past the name.
-std::string parseModuleName(const std::vector<clang::Token>& toks, size_t& i)
+inline std::string parseModuleName(const std::vector<clang::Token>& toks, size_t& i)
 {
 	std::string name;
 	if (i < toks.size() && toks[i].is(clang::tok::raw_identifier))
@@ -79,7 +86,7 @@ std::string parseModuleName(const std::vector<clang::Token>& toks, size_t& i)
 // evaluate the preprocessor). `export module X` provides X; `import X` / `export import X` /
 // `import :part` requires X; header-unit imports (`import <h>` / `import "h"`) are skipped -- they
 // aren't source-group units.
-ModuleScan scanModuleDeps(const FilePath& file)
+inline ModuleScan scanModuleDeps(const FilePath& file)
 {
 	ModuleScan scan;
 	std::ifstream in(file.str(), std::ios::binary);
@@ -158,7 +165,7 @@ ModuleScan scanModuleDeps(const FilePath& file)
 	return scan;
 }
 
-bool hasStdFlag(const std::vector<std::string>& flags)
+inline bool hasStdFlag(const std::vector<std::string>& flags)
 {
 	for (const std::string& f: flags)
 	{
@@ -176,7 +183,7 @@ bool hasStdFlag(const std::vector<std::string>& flags)
 // success returns {}; on failure returns the captured clang diagnostics (the real cause -- a missing
 // header, an unresolved import, a syntax error) so the caller can surface it instead of a bare
 // "build failed".
-std::expected<void, std::string> buildBmiInProcess(
+inline std::expected<void, std::string> buildBmiInProcess(
 	const FilePath& inputFile,
 	const FilePath& bmiPath,
 	const FilePath& cacheDir,
@@ -291,7 +298,7 @@ std::expected<void, std::string> buildBmiInProcess(
 // against (baked in at build time) so the std.cppm we compile matches the in-process libclang's
 // libc++ exactly; as a fallback we derive the prefix from a resolvable compiler's resource dir
 // (<prefix>/lib/clang/<v>).
-std::optional<FilePath> findStdModuleSource(const std::string& fileName)
+inline std::optional<FilePath> findStdModuleSource(const std::string& fileName)
 {
 	std::vector<std::filesystem::path> prefixes;
 #ifdef SOURCETRAIL_LLVM_INSTALL_PREFIX
@@ -324,7 +331,7 @@ std::optional<FilePath> findStdModuleSource(const std::string& fileName)
 // Macros are exempt because they aren't declarations. Declaration-class gaps (e.g. Xcode 27's `getenv`
 // in Vulkan-Hpp) therefore can't be fixed here; they must be resolved in the module's own global
 // fragment -- the diagnostics pipeline surfaces them for that. Returns the shim path.
-FilePath writeModuleCompatShim(const FilePath& cacheDir)
+inline FilePath writeModuleCompatShim(const FilePath& cacheDir)
 {
 	const FilePath shimPath = cacheDir.getConcatenated("/module_compat_shim.h");
 	std::ofstream out(shimPath.str());
@@ -346,7 +353,7 @@ FilePath writeModuleCompatShim(const FilePath& cacheDir)
 // math-macro compat shim is applied centrally by buildBmiInProcess. std.compat imports std, so std
 // must be built first (buildBmiInProcess puts the cache on the module path). On success returns {}; on
 // failure returns a message (a missing std.cppm, or the captured clang diagnostics).
-std::expected<void, std::string> buildStdModuleBmi(
+inline std::expected<void, std::string> buildStdModuleBmi(
 	const std::string& moduleName,
 	const std::string& sourceFileName,
 	const FilePath& cacheDir,
@@ -368,10 +375,12 @@ std::expected<void, std::string> buildStdModuleBmi(
 	flags.push_back("-Wno-reserved-module-identifier");
 	return buildBmiInProcess(*source, bmiPath, cacheDir, flags, compatShimPath);
 }
-}	 // namespace
+}	 // namespace cxx_module_prebuild_runner_detail
 
-int CxxModulePrebuildRunner::run(const FilePath& requestPath)
+inline int CxxModulePrebuildRunner::run(const FilePath& requestPath)
 {
+	namespace detail = cxx_module_prebuild_runner_detail;
+
 	// --- read the request --------------------------------------------------------------------------
 	FilePath cacheDir;
 	std::set<FilePath> sourceFiles;
@@ -406,7 +415,7 @@ int CxxModulePrebuildRunner::run(const FilePath& requestPath)
 
 	for (const FilePath& file: sourceFiles)
 	{
-		const ModuleScan scan = scanModuleDeps(file);
+		const detail::ModuleScan scan = detail::scanModuleDeps(file);
 		if (!scan.provides.empty())
 		{
 			moduleProviderFile[scan.provides] = file;
@@ -484,7 +493,7 @@ int CxxModulePrebuildRunner::run(const FilePath& requestPath)
 	// A single toolchain-compat shim -include'd into *every* BMI build (std and source modules alike):
 	// it re-defines the C math macros Xcode 27's SDK cleanup dropped. Safe to force everywhere -- it's
 	// macro-only (legal before a `module;` global fragment, unlike a header include) and #ifndef-guarded.
-	const FilePath compatShim = writeModuleCompatShim(cacheDir);
+	const FilePath compatShim = detail::writeModuleCompatShim(cacheDir);
 
 	// Per-module BMI build failures, captured with the real clang diagnostics. This subprocess has no
 	// logger of its own, so a failure is (a) printed here -- visible when the prebuild is run directly
@@ -528,15 +537,15 @@ int CxxModulePrebuildRunner::run(const FilePath& requestPath)
 			}
 		}
 		if (const std::expected<void, std::string> built =
-				buildStdModuleBmi("std", "std.cppm", cacheDir, compatShim, baseFlags);
+				detail::buildStdModuleBmi("std", "std.cppm", cacheDir, compatShim, baseFlags);
 			!built)
 		{
 			recordFailure("std", std::string(), built.error());
 		}
 		if (needStdCompat)
 		{
-			if (const std::expected<void, std::string> built =
-					buildStdModuleBmi("std.compat", "std.compat.cppm", cacheDir, compatShim, baseFlags);
+			if (const std::expected<void, std::string> built = detail::buildStdModuleBmi(
+					"std.compat", "std.compat.cppm", cacheDir, compatShim, baseFlags);
 				!built)
 			{
 				recordFailure("std.compat", std::string(), built.error());
@@ -555,12 +564,12 @@ int CxxModulePrebuildRunner::run(const FilePath& requestPath)
 		std::replace(bmiName.begin(), bmiName.end(), ':', '-');
 		const FilePath bmiPath = cacheDir.getConcatenated("/" + bmiName + ".pcm");
 		std::vector<std::string> buildFlags = fileFlags[file];
-		if (!hasStdFlag(buildFlags))
+		if (!detail::hasStdFlag(buildFlags))
 		{
 			buildFlags.push_back("-std=c++20");
 		}
 		if (const std::expected<void, std::string> built =
-				buildBmiInProcess(file, bmiPath, cacheDir, buildFlags, compatShim);
+				detail::buildBmiInProcess(file, bmiPath, cacheDir, buildFlags, compatShim);
 			!built)
 		{
 			recordFailure(logicalName, file.str(), built.error());

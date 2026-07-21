@@ -1,19 +1,24 @@
-#include "CxxIndexerCommandCodec.h"
+// Inline implementations for CxxIndexerCommandCodec.h. Included at the end of that header (classic)
+// or via the srctrl.cxx:package wrapper (purview); not a standalone TU.
 
-#include "IndexerCommand.h"
+#pragma once
 
+#ifndef SRCTRL_MODULE_PURVIEW
 #include <set>
 #include <string>
 #include <vector>
 
 #include "FilePath.h"
 #include "FilePathFilter.h"
+#include "IndexerCommand.h"
 #include "IndexerCommandCodec.h"
 #include "IndexerCommandCodecRegistry.h"
 #include "IndexerCommandCxx.h"
 #include "IndexerCommandType.h"
+#endif
 
-namespace
+// ODR-safe home for the codec provider (anonymous namespaces are an ODR trap in headers/inls).
+namespace cxx_indexer_command_codec_detail
 {
 namespace Ipc = Sourcetrail::Ipc;
 
@@ -91,10 +96,11 @@ struct CxxIndexerCommandCodecProvider
 				indexedPaths, excludeFilters, includeFilters, workingDir, compilerFlags, compilerPath));
 	}
 };
-}	 // namespace
+}	 // namespace cxx_indexer_command_codec_detail
 
-void registerCxxIndexerCommandCodec()
+inline void registerCxxIndexerCommandCodec()
 {
 	IndexerCommandCodecRegistry::getInstance().registerCodec(
-		IndexerCommandType::INDEXER_COMMAND_CXX, eraseIndexerCommandCodec(CxxIndexerCommandCodecProvider{}));
+		IndexerCommandType::INDEXER_COMMAND_CXX,
+		eraseIndexerCommandCodec(cxx_indexer_command_codec_detail::CxxIndexerCommandCodecProvider{}));
 }

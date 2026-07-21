@@ -323,6 +323,26 @@ endif()
 add_subdirectory("${THOTH_IPC_DIR}" "${CMAKE_BINARY_DIR}/_deps/thoth-ipc-build")
 message(STATUS "Built thoth-ipc from submodule submodules/thoth-ipc")
 
+# Same reduced-BMI workaround as our own module targets (LLVM #166068 -- see src/lib_core): every
+# BMI in one import graph should be full. thoth.ipc.pcm was the only reduced BMI left, and the first
+# TU that deserialized it alongside the clang-heavy srctrl.cxx BMIs (srctrl.cxx:package) crashed
+# clang's ASTReader; a full BMI fixes it. Upstream doesn't set the flag (it can't know the
+# consumer's policy), so the consumer does.
+if (THOTH_IPC_BUILD_MODULES AND CMAKE_CXX_COMPILER_ID MATCHES "Clang")
+	target_compile_options(thoth_ipc_module PRIVATE -fno-modules-reduced-bmi)
+endif()
+if (THOTH_IPC_BUILD_MODULES)
+	# The BMI must see the same libc++ configuration macros as its importers: libc++ encodes its
+	# hardening mode in the declarations' abi_tag, and setDefaultTargetOptions puts these on every
+	# first-party target (Debug). A thoth.ipc.pcm built without them carries differently-tagged std
+	# declarations, which every importer TU that also #includes std textually rejects ("cannot add
+	# 'abi_tag' attribute in a redeclaration") -- module units only masked it via
+	# -fskip-odr-check-in-gmf. Mirror the defines (cmake/Sourcetrail.cmake).
+	target_compile_definitions(thoth_ipc_module PRIVATE
+		$<$<CONFIG:Debug>:_FORTIFY_SOURCE=3>
+		$<$<CONFIG:Debug>:_GLIBCXX_ASSERTIONS>)
+endif()
+
 add_library(External_lib_ipc INTERFACE)
 # The C++ library target is `thoth_ipc` (underscore): cpp/thoth-ipc/src has its
 # own project(thoth_ipc), so add_library(${PROJECT_NAME}) names it thoth_ipc and

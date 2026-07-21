@@ -10,3 +10,4 @@ export import :tooling;
 export import :parser;
 export import :visitor;
 export import :frontend;
+export import :package;
