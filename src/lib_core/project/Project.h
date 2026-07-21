@@ -50,6 +50,13 @@ public:
 	void buildIndex(RefreshInfo info, std::shared_ptr<DialogView> dialogView);
 
 private:
+	// The actual refresh/buildIndex bodies. The public entry points are std::expected exception
+	// boundaries around these: any escaping exception becomes a failed IndexingOutcome and a
+	// terminal MessageIndexingFinished, so a headless run can never lose its quit event to a
+	// throw (the generic task runner would otherwise just log and drop it).
+	void refreshImpl(std::shared_ptr<DialogView> dialogView, RefreshMode refreshMode);
+	void buildIndexImpl(RefreshInfo info, std::shared_ptr<DialogView> dialogView);
+
 	ShardConfig m_shardConfig;
 
 	enum class ProjectStateType

@@ -281,8 +281,14 @@ void Application::handleMessage(MessageCloseProject*  /*message*/)
 	m_mainView->clear();
 }
 
-void Application::handleMessage(MessageIndexingFinished*  /*message*/)
+void Application::handleMessage(MessageIndexingFinished* message)
 {
+	if (!message->outcome)
+	{
+		LOG_ERROR(
+			"Indexing ended abnormally: " + utility::expectedErrorToString(message->outcome.error()));
+	}
+
 	logStorageStats();
 
 	if (m_hasGUI)
@@ -291,7 +297,9 @@ void Application::handleMessage(MessageIndexingFinished*  /*message*/)
 	}
 	else
 	{
-		MessageQuitApplication().dispatch();
+		// The indexing outcome becomes the headless process exit code (0 = success), so scripts
+		// and CI can trust the run instead of reading silence as success.
+		MessageQuitApplication(message->outcome ? 0 : 1).dispatch();
 	}
 }
 

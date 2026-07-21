@@ -5,6 +5,7 @@
 
 #include "Blackboard.h"
 #include "Task.h"
+#include "TaskFinally.h"
 #include "TaskGroupSelector.h"
 #include "TaskGroupSequence.h"
 #include "TaskScheduler.h"
@@ -278,4 +279,90 @@ TEST_CASE("task scheduling within task processing")
 	REQUIRE(4 == task->subTask->enterCallOrder);
 	REQUIRE(5 == task->subTask->updateCallOrder);
 	REQUIRE(6 == task->subTask->exitCallOrder);
+}
+
+namespace
+{
+// A task whose update throws -- exercising the TaskRunner exception boundary that TaskFinally
+// relies on to convert throws into STATE_FAILURE.
+class ThrowingTask: public Task
+{
+public:
+	void doEnter(std::shared_ptr<Blackboard>  /*blackboard*/) override {}
+	TaskState doUpdate(std::shared_ptr<Blackboard>  /*blackboard*/) override
+	{
+		throw std::runtime_error("task deliberately failed");
+	}
+	void doExit(std::shared_ptr<Blackboard>  /*blackboard*/) override {}
+	void doReset(std::shared_ptr<Blackboard>  /*blackboard*/) override {}
+};
+
+struct TerminalRecord
+{
+	int calls = 0;
+	TaskFinally::TerminalCause cause = TaskFinally::TerminalCause::Success;
+};
+
+std::shared_ptr<TaskFinally> makeFinally(TerminalRecord& record, std::shared_ptr<Task> child)
+{
+	auto finally = std::make_shared<TaskFinally>([&record](TaskFinally::TerminalCause cause) {
+		record.calls++;
+		record.cause = cause;
+	});
+	finally->addChildTask(child);
+	return finally;
+}
+}	 // namespace
+
+TEST_CASE("task finally signals success once")
+{
+	int order = 0;
+	TerminalRecord record;
+	std::shared_ptr<TaskFinally> task = makeFinally(record, std::make_shared<TestTask>(&order, 1));
+
+	executeTask(*task);
+
+	REQUIRE(1 == record.calls);
+	REQUIRE(TaskFinally::TerminalCause::Success == record.cause);
+}
+
+TEST_CASE("task finally signals failure once")
+{
+	int order = 0;
+	TerminalRecord record;
+	std::shared_ptr<TaskFinally> task =
+		makeFinally(record, std::make_shared<TestTask>(&order, 1, STATE_FAILURE));
+
+	executeTask(*task);
+
+	REQUIRE(1 == record.calls);
+	REQUIRE(TaskFinally::TerminalCause::Failure == record.cause);
+}
+
+TEST_CASE("task finally converts a throwing stage into a failure signal")
+{
+	TerminalRecord record;
+	std::shared_ptr<TaskFinally> task = makeFinally(record, std::make_shared<ThrowingTask>());
+
+	executeTask(*task);
+
+	REQUIRE(1 == record.calls);
+	REQUIRE(TaskFinally::TerminalCause::Failure == record.cause);
+}
+
+TEST_CASE("task finally signals termination and stays fired-once")
+{
+	int order = 0;
+	TerminalRecord record;
+	std::shared_ptr<TaskFinally> task =
+		makeFinally(record, std::make_shared<TestTask>(&order, -1));
+
+	task->terminate();
+
+	REQUIRE(1 == record.calls);
+	REQUIRE(TaskFinally::TerminalCause::Terminated == record.cause);
+
+	// A later terminal state must not re-fire the callback.
+	task->terminate();
+	REQUIRE(1 == record.calls);
 }

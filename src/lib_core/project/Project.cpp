@@ -23,6 +23,7 @@
 #include "TaskCleanStorage.h"
 #include "TaskExecuteCustomCommands.h"
 #include "TaskFillIndexerCommandQueue.h"
+#include "TaskFinally.h"
 #include "TaskFinishParsing.h"
 #include "TaskInjectStorage.h"
 #include "TaskMergeStorages.h"
@@ -31,6 +32,7 @@
 #include "FilePath.h"
 #include "FileSystem.h"
 #include "MessageErrorCountClear.h"
+#include "IndexingOutcome.h"
 #include "MessageIndexingFinished.h"
 #include "MessageIndexingShowDialog.h"
 #include "MessageIndexingStarted.h"
@@ -263,6 +265,25 @@ void Project::load(std::shared_ptr<DialogView> dialogView)
 
 void Project::refresh(std::shared_ptr<DialogView> dialogView, RefreshMode refreshMode)
 {
+	// std::expected exception boundary (ADR-0004): refresh runs inside a generic scheduled task
+	// whose runner would swallow an escaping exception with a single log line -- and without a
+	// terminal MessageIndexingFinished a headless run waits forever. Convert any escape into a
+	// failed outcome and dispatch the terminal event ourselves.
+	const IndexingOutcome outcome = utility::expectedFromExceptions<void>(
+		IndexingErrorCode::PipelineFailed,
+		IndexingErrorCode::PipelineFailed,
+		"project refresh failed",
+		[&]() { refreshImpl(dialogView, refreshMode); });
+	if (!outcome)
+	{
+		LOG_ERROR(utility::expectedErrorToString(outcome.error()));
+		m_refreshStage = RefreshStageType::NONE;
+		MessageIndexingFinished(outcome).dispatch();
+	}
+}
+
+void Project::refreshImpl(std::shared_ptr<DialogView> dialogView, RefreshMode refreshMode)
+{
 	if (m_refreshStage != RefreshStageType::NONE)
 	{
 		return;
@@ -427,6 +448,23 @@ std::vector<std::shared_ptr<const SourceGroup>> Project::getSourceGroups() const
 }
 
 void Project::buildIndex(RefreshInfo info, std::shared_ptr<DialogView> dialogView)
+{
+	// Same std::expected boundary as refresh(): buildIndex is also entered directly by the GUI
+	// indexing dialog's callback.
+	const IndexingOutcome outcome = utility::expectedFromExceptions<void>(
+		IndexingErrorCode::PipelineFailed,
+		IndexingErrorCode::PipelineFailed,
+		"assembling the indexing pipeline failed",
+		[&]() { buildIndexImpl(std::move(info), dialogView); });
+	if (!outcome)
+	{
+		LOG_ERROR(utility::expectedErrorToString(outcome.error()));
+		m_refreshStage = RefreshStageType::NONE;
+		MessageIndexingFinished(outcome).dispatch();
+	}
+}
+
+void Project::buildIndexImpl(RefreshInfo info, std::shared_ptr<DialogView> dialogView)
 {
 	if (m_refreshStage == RefreshStageType::INDEXING)
 	{
@@ -943,7 +981,26 @@ void Project::buildIndex(RefreshInfo info, std::shared_ptr<DialogView> dialogVie
 		}))));
 
 	taskSequential->setIsBackgroundTask(true);
-	Task::dispatch(TabIds::app(), taskSequential);
+	// The pipeline root owns the terminal event: whatever way the tree ends abnormally (a failed
+	// or throwing stage -- converted to STATE_FAILURE by its TaskRunner -- or termination), the
+	// run still reaches exactly one MessageIndexingFinished. Success is dispatched by the tree's
+	// own final stage, so the callback stays silent on Success.
+	Task::dispatch(
+		TabIds::app(),
+		std::make_shared<TaskFinally>([this](TaskFinally::TerminalCause cause) {
+			if (cause == TaskFinally::TerminalCause::Success)
+			{
+				return;
+			}
+			m_refreshStage = RefreshStageType::NONE;
+			const bool terminated = cause == TaskFinally::TerminalCause::Terminated;
+			MessageIndexingFinished(std::unexpected(utility::makeExpectedError(
+					terminated ? IndexingErrorCode::PipelineTerminated
+							   : IndexingErrorCode::PipelineFailed,
+					terminated ? "indexing was terminated before completion"
+							   : "an indexing pipeline stage failed; see the errors above")))
+				.dispatch();
+		})->addChildTask(taskSequential));
 
 	m_refreshStage = RefreshStageType::INDEXING;
 	MessageStatus(
