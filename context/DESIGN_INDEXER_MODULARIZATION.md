@@ -826,6 +826,28 @@ cycles in `lib` is prerequisite work, and a good cleanup in its own right).
   NameHierarchy — module vs namespace name collision); NODE_MODIFIER_EXPORTED shows only 2
   flagged nodes in the self-index (suspiciously few — visitExportDecl coverage to check);
   remaining Phase 5: graph-equivalence diff OFF vs ON and the incremental-rebuild benchmark.
+  **PHASE 5 COMPLETE (2026-07-21, commit f01e0c4c):**
+  - **Graph equivalence: byte-identical.** Full normalized dumps of the Usages fixture (every
+    node with type+modifiers, every edge with endpoints, every node/edge occurrence with exact
+    source positions, counts, errors) are identical between the final OFF-built and ON-built
+    indexer. Modules change the build, not the semantics — proven at content level, not counts.
+  - **Rebuild benchmark (llvm-clang-dbg, M1):** touch FilePath.h → OFF: 298 TUs / 112 s; ON:
+    351 TUs / 201 s (~1.8×). Touch a leaf .cpp → 9.1 s both. The dual build makes broad header
+    edits DEARER today: classic includers still rebuild AND the BMI chain + importer wrappers
+    rebuild on top (serialized by BMI deps). The incremental win arrives only as classic
+    includers convert to importers — the benchmark quantifies the current cost honestly and
+    should be re-run per consumer-conversion milestone.
+  - **Modifier merge fixed:** SqliteIndexStorage::addNodes name-dedup dropped modifiers (type
+    was upgraded, modifiers weren't) → NODE_MODIFIER_EXPORTED lost to whichever TU inserted a
+    symbol first. Now ORed on merge (+ both-orders regression test). Export status additionally
+    recorded per-declaration (Decl::isInExportDeclContext) in the declaration indexer — correct
+    for normal module projects where the interface unit claims its own content. Dual-build
+    caveat (by construction): classic parses usually claim the shared headers and never see
+    `export`, so header-declared exports stay sparse in OUR OWN self-index; the region path
+    still covers re-export using-declarations (thoth/Qt re-exports flagged).
+  - Deferred module-graph refinements: hierarchical module names (partitions/dots are one flat
+    element), and the module-vs-namespace name collision (a module named like a namespace —
+    aidkit — folds into the namespace node; needs a naming-scheme decision).
 - **Phase 6 — GUI (optional/later).** `lib_gui` + moc, once moc/modules matures.
 
 ## Verification
