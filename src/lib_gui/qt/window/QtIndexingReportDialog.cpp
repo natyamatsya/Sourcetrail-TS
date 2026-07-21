@@ -6,7 +6,14 @@
 #include "MessageErrorsHelpMessage.h"
 #include "MessageIndexingShowDialog.h"
 #include "MessageRefresh.h"
+#ifndef SRCTRL_MODULE_BUILD
 #include "TimeStamp.h"
+#endif
+
+// Imports come AFTER all textual #includes (include-before-import rule).
+#ifdef SRCTRL_MODULE_BUILD
+import srctrl.utility;
+#endif
 
 QtIndexingReportDialog::QtIndexingReportDialog(
 	size_t indexedFileCount,

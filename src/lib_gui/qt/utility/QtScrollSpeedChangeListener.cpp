@@ -4,8 +4,15 @@
 
 #include <QScrollBar>
 
+#ifndef SRCTRL_MODULE_BUILD
 #include "ApplicationSettings.h"
+#endif
 #include "UiPost.h"
+
+// Imports come AFTER all textual #includes (include-before-import rule).
+#ifdef SRCTRL_MODULE_BUILD
+import srctrl.settings;
+#endif
 
 QtScrollSpeedChangeListener::QtScrollSpeedChangeListener() = default;
 

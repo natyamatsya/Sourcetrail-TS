@@ -1,9 +1,21 @@
+// Module build: LOG_* macros stay textual; backend via `import srctrl.logging` below.
+#ifdef SRCTRL_MODULE_BUILD
+#define SRCTRL_LOGGING_VIA_IMPORT
+#endif
+
 #include "QtRequest.h"
 
 #include <QNetworkAccessManager>
 #include <QNetworkReply>
 
+#include <sstream>   // LOG_*_STREAM builds a std::stringstream; was transitive via logging.h
+
 #include "logging.h"
+
+// Imports come AFTER all textual #includes (include-before-import rule).
+#ifdef SRCTRL_MODULE_BUILD
+import srctrl.logging;
+#endif
 
 QtRequest::QtRequest()
 {

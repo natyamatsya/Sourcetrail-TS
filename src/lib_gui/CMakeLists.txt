@@ -94,3 +94,25 @@ target_link_libraries(Sourcetrail_lib_gui
 		# Qt<->stdexec bridge in qt/execution/ needs stdexec directly.
 		STDEXEC::stdexec
 )
+
+# Module build: converted consumer TUs `import srctrl.*;` instead of #including the modularized
+# headers (guards under SRCTRL_MODULE_BUILD; logging consumers define SRCTRL_LOGGING_VIA_IMPORT
+# themselves -- see logging.h). Scan only the importing files (project-wide scanning is off;
+# stdexec breaks clang-scan-deps -- which also makes stdexec-including TUs unconvertible, e.g.
+# Schedulers.cpp/UiPost.cpp).
+if(SOURCETRAIL_CXX_MODULES_ENABLED)
+	target_compile_definitions(Sourcetrail_lib_gui PRIVATE SRCTRL_MODULE_BUILD)
+	set_source_files_properties(
+		"${CMAKE_CURRENT_SOURCE_DIR}/qt/QtCoreApplication.cpp"
+		"${CMAKE_CURRENT_SOURCE_DIR}/qt/element/QtTable.cpp"
+		"${CMAKE_CURRENT_SOURCE_DIR}/qt/network/QtRequest.cpp"
+		"${CMAKE_CURRENT_SOURCE_DIR}/qt/network/QtTcpWrapper.cpp"
+		"${CMAKE_CURRENT_SOURCE_DIR}/qt/utility/QtFilesAndDirectoriesDialog.cpp"
+		"${CMAKE_CURRENT_SOURCE_DIR}/qt/utility/QtScreenshot.cpp"
+		"${CMAKE_CURRENT_SOURCE_DIR}/qt/utility/QtScrollSpeedChangeListener.cpp"
+		"${CMAKE_CURRENT_SOURCE_DIR}/qt/utility/QtUiSnapshot.cpp"
+		"${CMAKE_CURRENT_SOURCE_DIR}/qt/view/QtViewWidgetWrapper.cpp"
+		"${CMAKE_CURRENT_SOURCE_DIR}/qt/window/QtIndexingReportDialog.cpp"
+		"${CMAKE_CURRENT_SOURCE_DIR}/qt/window/QtWindowBase.cpp"
+		PROPERTIES CXX_SCAN_FOR_MODULES ON)
+endif()

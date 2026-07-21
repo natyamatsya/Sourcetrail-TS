@@ -1,12 +1,19 @@
 #include "QtWindowBase.h"
 
+#ifndef SRCTRL_MODULE_BUILD
 #include "ApplicationSettings.h"
+#endif
 #include "compatibilityQt.h"
 #include "QtResources.h"
 
 #include <QGraphicsDropShadowEffect>
 #include <QMouseEvent>
 #include <QVBoxLayout>
+
+// Imports come AFTER all textual #includes (include-before-import rule).
+#ifdef SRCTRL_MODULE_BUILD
+import srctrl.settings;
+#endif
 
 using namespace utility::compatibility;
 

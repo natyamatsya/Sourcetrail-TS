@@ -1,7 +1,17 @@
+// Module build: LOG_* macros stay textual; backend via `import srctrl.logging` below.
+#ifdef SRCTRL_MODULE_BUILD
+#define SRCTRL_LOGGING_VIA_IMPORT
+#endif
+
 #include "QtTcpWrapper.h"
 #include <qdatastream.h>
 
 #include "logging.h"
+
+// Imports come AFTER all textual #includes (include-before-import rule).
+#ifdef SRCTRL_MODULE_BUILD
+import srctrl.logging;
+#endif
 
 QtTcpWrapper::QtTcpWrapper(
 	QObject* parent, const std::string& ip, const quint16 serverPort, const quint16 clientPort)

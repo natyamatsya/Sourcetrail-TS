@@ -8,7 +8,14 @@
 #include <QScrollBar>
 #include <QStyledItemDelegate>
 
+#ifndef SRCTRL_MODULE_BUILD
 #include "ApplicationSettings.h"
+#endif
+
+// Imports come AFTER all textual #includes (include-before-import rule).
+#ifdef SRCTRL_MODULE_BUILD
+import srctrl.settings;
+#endif
 
 
 class SelectableCellDelegate: public QStyledItemDelegate

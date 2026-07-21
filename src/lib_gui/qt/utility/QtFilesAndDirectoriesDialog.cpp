@@ -4,8 +4,16 @@
 #include <QListView>
 #include <QPushButton>
 
+#ifndef SRCTRL_MODULE_BUILD
 #include "FilePath.h"
 #include "utilityApp.h"
+#endif
+
+// Imports come AFTER all textual #includes (include-before-import rule).
+#ifdef SRCTRL_MODULE_BUILD
+import srctrl.file;
+import srctrl.process;
+#endif
 
 QtFilesAndDirectoriesDialog::QtFilesAndDirectoriesDialog(QWidget* parent): QFileDialog(parent)
 {
