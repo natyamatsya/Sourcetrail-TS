@@ -1,9 +1,13 @@
 #ifndef MESSAGE_BOOKMARK_BUTTON_STATE_H
 #define MESSAGE_BOOKMARK_BUTTON_STATE_H
 
+#include "SrctrlModule.h"
+
+// Family-internal includes are unguarded: same module either way.
 #include "Message.h"
 
-class MessageBookmarkButtonState: public Message<MessageBookmarkButtonState>
+
+SRCTRL_EXPORT class MessageBookmarkButtonState: public Message<MessageBookmarkButtonState>
 {
 public:
 	enum class ButtonState

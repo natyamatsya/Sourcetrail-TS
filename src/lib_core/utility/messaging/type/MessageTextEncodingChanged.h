@@ -1,9 +1,13 @@
 #ifndef MESSAGE_TEXT_ENCODING_CHANGED_H
 #define MESSAGE_TEXT_ENCODING_CHANGED_H
 
+#include "SrctrlModule.h"
+
+// Family-internal includes are unguarded: same module either way.
 #include "Message.h"
 
-class MessageTextEncodingChanged : public Message<MessageTextEncodingChanged>
+
+SRCTRL_EXPORT class MessageTextEncodingChanged : public Message<MessageTextEncodingChanged>
 {
 public:
 	MessageTextEncodingChanged(const std::string &encoding)

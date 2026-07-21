@@ -1,9 +1,13 @@
 #ifndef MESSAGE_CUSTOM_TRAIL_SHOW_H
 #define MESSAGE_CUSTOM_TRAIL_SHOW_H
 
+#include "SrctrlModule.h"
+
+// Family-internal includes are unguarded: same module either way.
 #include "Message.h"
 
-class MessageCustomTrailShow: public Message<MessageCustomTrailShow>
+
+SRCTRL_EXPORT class MessageCustomTrailShow: public Message<MessageCustomTrailShow>
 {
 public:
 	MessageCustomTrailShow() = default;

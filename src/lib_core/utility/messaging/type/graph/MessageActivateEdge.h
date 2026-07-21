@@ -1,13 +1,19 @@
 #ifndef MESSAGE_ACTIVATE_EDGE_H
 #define MESSAGE_ACTIVATE_EDGE_H
 
+#include "SrctrlModule.h"
+
+// Family-internal includes are unguarded: same module either way.
+#include "Message.h"
+
+#ifndef SRCTRL_MODULE_PURVIEW
 #include "Edge.h"
 #include "NameHierarchy.h"
 
-#include "Message.h"
 #include "TabIds.h"
+#endif
 
-class MessageActivateEdge: public Message<MessageActivateEdge>
+SRCTRL_EXPORT class MessageActivateEdge: public Message<MessageActivateEdge>
 {
 public:
 	MessageActivateEdge(

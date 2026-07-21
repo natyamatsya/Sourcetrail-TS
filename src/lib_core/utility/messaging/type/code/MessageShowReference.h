@@ -1,11 +1,17 @@
 #ifndef MESSAGE_SHOW_REFERENCE_H
 #define MESSAGE_SHOW_REFERENCE_H
 
+#include "SrctrlModule.h"
+
+// Family-internal includes are unguarded: same module either way.
 #include "Message.h"
+
+#ifndef SRCTRL_MODULE_PURVIEW
 #include "TabIds.h"
 #include "types.h"
+#endif
 
-class MessageShowReference: public Message<MessageShowReference>
+SRCTRL_EXPORT class MessageShowReference: public Message<MessageShowReference>
 {
 public:
 	MessageShowReference(size_t refIndex, Id tokenId, Id locationId, bool fromUser)

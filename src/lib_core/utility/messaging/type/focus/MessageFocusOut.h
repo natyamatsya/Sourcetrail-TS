@@ -1,13 +1,19 @@
 #ifndef MESSAGE_FOCUS_OUT_H
 #define MESSAGE_FOCUS_OUT_H
 
+#include "SrctrlModule.h"
+
+// Family-internal includes are unguarded: same module either way.
+#include "Message.h"
+
+#ifndef SRCTRL_MODULE_PURVIEW
 #include <vector>
 
-#include "Message.h"
 #include "TabIds.h"
 #include "types.h"
+#endif
 
-class MessageFocusOut: public Message<MessageFocusOut>
+SRCTRL_EXPORT class MessageFocusOut: public Message<MessageFocusOut>
 {
 public:
 	MessageFocusOut(const std::vector<Id>& tokenIds): tokenIds(tokenIds)

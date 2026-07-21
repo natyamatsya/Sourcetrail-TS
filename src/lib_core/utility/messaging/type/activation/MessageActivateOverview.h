@@ -1,13 +1,18 @@
 #ifndef MESSAGE_ACTIVATE_ALL_H
 #define MESSAGE_ACTIVATE_ALL_H
 
+#include "SrctrlModule.h"
+
+// Family-internal includes are unguarded: same module either way.
 #include "Message.h"
 #include "MessageActivateBase.h"
 
+#ifndef SRCTRL_MODULE_PURVIEW
 #include "NodeTypeSet.h"
 #include "TabIds.h"
+#endif
 
-class MessageActivateOverview
+SRCTRL_EXPORT class MessageActivateOverview
 	: public Message<MessageActivateOverview>
 	, public MessageActivateBase
 {

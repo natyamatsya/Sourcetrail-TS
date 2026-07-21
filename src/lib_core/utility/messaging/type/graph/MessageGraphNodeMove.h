@@ -1,12 +1,18 @@
 #ifndef MESSAGE_GRAPH_NODE_MOVE_H
 #define MESSAGE_GRAPH_NODE_MOVE_H
 
+#include "SrctrlModule.h"
+
+// Family-internal includes are unguarded: same module either way.
 #include "Message.h"
+
+#ifndef SRCTRL_MODULE_PURVIEW
 #include "TabIds.h"
 #include "Vector2.h"
 #include "types.h"
+#endif
 
-class MessageGraphNodeMove: public Message<MessageGraphNodeMove>
+SRCTRL_EXPORT class MessageGraphNodeMove: public Message<MessageGraphNodeMove>
 {
 public:
 	MessageGraphNodeMove(Id tokenId, const Vec2i& delta): tokenId(tokenId), delta(delta)

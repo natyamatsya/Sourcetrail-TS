@@ -1,11 +1,15 @@
 #ifndef REFRESH_INFO_H
 #define REFRESH_INFO_H
 
+#include "SrctrlModule.h"
+
+#ifndef SRCTRL_MODULE_PURVIEW
 #include <set>
 
 #include "FilePath.h"
+#endif
 
-enum class RefreshMode
+SRCTRL_EXPORT enum class RefreshMode
 {
 	NONE,
 	UPDATED_FILES,
@@ -13,7 +17,7 @@ enum class RefreshMode
 	ALL_FILES
 };
 
-struct RefreshInfo
+SRCTRL_EXPORT struct RefreshInfo
 {
 	std::set<FilePath> filesToIndex;
 	std::set<FilePath> filesToClear;

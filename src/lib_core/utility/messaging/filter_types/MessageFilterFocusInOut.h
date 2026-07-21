@@ -1,11 +1,15 @@
 #ifndef MESSAGE_FILTER_FOCUS_IN_OUT_H
 #define MESSAGE_FILTER_FOCUS_IN_OUT_H
 
+#include "SrctrlModule.h"
+
+// Family-internal includes are unguarded: same module either way.
 #include "MessageFilter.h"
 #include "MessageFocusIn.h"
 #include "MessageFocusOut.h"
 
-class MessageFilterFocusInOut: public MessageFilter
+
+SRCTRL_EXPORT class MessageFilterFocusInOut: public MessageFilter
 {
 	void filter(MessageQueue::MessageBufferType* messageBuffer) override
 	{

@@ -1,10 +1,16 @@
 #ifndef MESSAGE_TO_NEXT_CODE_REFERENCE_H
 #define MESSAGE_TO_NEXT_CODE_REFERENCE_H
 
-#include "Message.h"
-#include "TabIds.h"
+#include "SrctrlModule.h"
 
-class MessageToNextCodeReference: public Message<MessageToNextCodeReference>
+// Family-internal includes are unguarded: same module either way.
+#include "Message.h"
+
+#ifndef SRCTRL_MODULE_PURVIEW
+#include "TabIds.h"
+#endif
+
+SRCTRL_EXPORT class MessageToNextCodeReference: public Message<MessageToNextCodeReference>
 {
 public:
 	MessageToNextCodeReference(const FilePath& filePath, size_t lineNumber, size_t columnNumber, bool next)

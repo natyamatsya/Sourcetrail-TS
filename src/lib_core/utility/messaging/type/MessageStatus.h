@@ -1,12 +1,17 @@
 #ifndef MESSAGE_STATUS_H
 #define MESSAGE_STATUS_H
 
-#include <string>
-#include <vector>
+#include "SrctrlModule.h"
 
+// Family-internal includes are unguarded: same module either way.
 #include "Message.h"
 
-class MessageStatus: public Message<MessageStatus>
+#ifndef SRCTRL_MODULE_PURVIEW
+#include <string>
+#include <vector>
+#endif
+
+SRCTRL_EXPORT class MessageStatus: public Message<MessageStatus>
 {
 public:
 	MessageStatus(
@@ -33,5 +38,7 @@ public:
 private:
 	std::vector<std::string> m_stati;
 };
+
+#include "MessageStatus.inl"
 
 #endif	  // MESSAGE_STATUS_H

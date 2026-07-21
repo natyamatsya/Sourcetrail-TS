@@ -1,12 +1,23 @@
 #ifndef MESSAGE_BASE_H
 #define MESSAGE_BASE_H
 
+#include "SrctrlModule.h"
+
+#ifndef SRCTRL_MODULE_PURVIEW
 #include <ostream>
 #include <sstream>
 
 #include "Id.h"
 #include "TabIds.h"
+#endif
 
+// GM-attached in the module build ([module.unit]/7 -- extern "C++" contents attach to the global
+// module): this type appears in the signatures of the classic-forever MessageQueue seam
+// (MessageQueue.cpp, stdexec pimpl), and module attachment is part of a class type's mangling,
+// so the seam only links if these types mangle identically on both sides. Playbook rule 11.
+#ifdef SRCTRL_MODULE_PURVIEW
+export extern "C++" {
+#endif
 class MessageBase
 {
 public:
@@ -121,5 +132,19 @@ private:
 	bool m_isLast = true;
 	bool m_isLogged = true;
 };
+#ifdef SRCTRL_MODULE_PURVIEW
+}
+#endif
+
+// Outside the export block (an out-of-class static member definition cannot itself be
+// exported), but still extern "C++": clang attaches a naked purview definition to the
+// module, which conflicts with the global-module in-class declaration.
+#ifdef SRCTRL_MODULE_PURVIEW
+extern "C++" {
+#endif
+inline Id MessageBase::s_nextId = 1;
+#ifdef SRCTRL_MODULE_PURVIEW
+}
+#endif
 
 #endif	  // MESSAGE_BASE_H

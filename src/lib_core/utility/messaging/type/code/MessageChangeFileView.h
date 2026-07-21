@@ -1,13 +1,19 @@
 #ifndef MESSAGE_CHANGE_FILE_VIEW_H
 #define MESSAGE_CHANGE_FILE_VIEW_H
 
+#include "SrctrlModule.h"
+
+// Family-internal includes are unguarded: same module either way.
+#include "Message.h"
+
+#ifndef SRCTRL_MODULE_PURVIEW
 #include "CodeScrollParams.h"
 #include "CodeSnippetParams.h"
 #include "FilePath.h"
-#include "Message.h"
 #include "TabIds.h"
+#endif
 
-class MessageChangeFileView: public Message<MessageChangeFileView>
+SRCTRL_EXPORT class MessageChangeFileView: public Message<MessageChangeFileView>
 {
 public:
 	enum class FileState

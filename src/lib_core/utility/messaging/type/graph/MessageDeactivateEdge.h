@@ -1,10 +1,16 @@
 #ifndef MESSAGE_DEACTIVATE_EDGE_H
 #define MESSAGE_DEACTIVATE_EDGE_H
 
-#include "Message.h"
-#include "TabIds.h"
+#include "SrctrlModule.h"
 
-class MessageDeactivateEdge: public Message<MessageDeactivateEdge>
+// Family-internal includes are unguarded: same module either way.
+#include "Message.h"
+
+#ifndef SRCTRL_MODULE_PURVIEW
+#include "TabIds.h"
+#endif
+
+SRCTRL_EXPORT class MessageDeactivateEdge: public Message<MessageDeactivateEdge>
 {
 public:
 	MessageDeactivateEdge(bool scrollToDefinition): scrollToDefinition(scrollToDefinition)

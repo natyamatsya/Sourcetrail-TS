@@ -1,9 +1,13 @@
 #ifndef MESSAGE_WINDOW_FOCUS_H
 #define MESSAGE_WINDOW_FOCUS_H
 
+#include "SrctrlModule.h"
+
+// Family-internal includes are unguarded: same module either way.
 #include "Message.h"
 
-class MessageWindowFocus: public Message<MessageWindowFocus>
+
+SRCTRL_EXPORT class MessageWindowFocus: public Message<MessageWindowFocus>
 {
 public:
 	MessageWindowFocus(bool focusIn): focusIn(focusIn) {}

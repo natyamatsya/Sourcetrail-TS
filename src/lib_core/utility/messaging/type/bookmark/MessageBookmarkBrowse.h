@@ -1,10 +1,16 @@
 #ifndef MESSAGE_BOOKMARKS_BROWSE_H
 #define MESSAGE_BOOKMARKS_BROWSE_H
 
-#include "Bookmark.h"
+#include "SrctrlModule.h"
+
+// Family-internal includes are unguarded: same module either way.
 #include "Message.h"
 
-class MessageBookmarkBrowse: public Message<MessageBookmarkBrowse>
+#ifndef SRCTRL_MODULE_PURVIEW
+#include "Bookmark.h"
+#endif
+
+SRCTRL_EXPORT class MessageBookmarkBrowse: public Message<MessageBookmarkBrowse>
 {
 public:
 	MessageBookmarkBrowse(

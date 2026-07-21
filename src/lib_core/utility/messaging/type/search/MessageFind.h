@@ -1,10 +1,16 @@
 #ifndef MESSAGE_FIND_H
 #define MESSAGE_FIND_H
 
-#include "Message.h"
-#include "TabIds.h"
+#include "SrctrlModule.h"
 
-class MessageFind: public Message<MessageFind>
+// Family-internal includes are unguarded: same module either way.
+#include "Message.h"
+
+#ifndef SRCTRL_MODULE_PURVIEW
+#include "TabIds.h"
+#endif
+
+SRCTRL_EXPORT class MessageFind: public Message<MessageFind>
 {
 public:
 	MessageFind(bool fulltext = false): findFulltext(fulltext)

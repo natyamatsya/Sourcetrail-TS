@@ -1,10 +1,16 @@
 #ifndef MESSAGE_HISTORY_UNDO_H
 #define MESSAGE_HISTORY_UNDO_H
 
-#include "Message.h"
-#include "TabIds.h"
+#include "SrctrlModule.h"
 
-class MessageHistoryUndo: public Message<MessageHistoryUndo>
+// Family-internal includes are unguarded: same module either way.
+#include "Message.h"
+
+#ifndef SRCTRL_MODULE_PURVIEW
+#include "TabIds.h"
+#endif
+
+SRCTRL_EXPORT class MessageHistoryUndo: public Message<MessageHistoryUndo>
 {
 public:
 	static const std::string getStaticType()

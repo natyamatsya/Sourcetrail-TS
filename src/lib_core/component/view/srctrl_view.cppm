@@ -16,6 +16,7 @@ module;
 // Non-modularized GMF deps, classic impls linked: GroupType (std-only enum) and the generated
 // QtResources accessors (free functions -- purview-textual would module-mangle their refs).
 #include "GroupType.h"
+#include "types.h"   // Id (classic-global)
 #include "QtResources.h"
 
 export module srctrl.view;
@@ -35,5 +36,6 @@ import srctrl.logging;    // backend behind the LOG_* macros
 #include "logging.h"
 // Interface before facade: GraphViewStyle.h fwd-declares GraphViewStyleImpl, and the fwd decl
 // must redeclare the already-exported class.
+#include "CodeScrollParams.h"
 #include "GraphViewStyleImpl.h"
 #include "GraphViewStyle.h"

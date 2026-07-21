@@ -1,10 +1,16 @@
 #ifndef MESSAGE_PROJECT_NEW_H
 #define MESSAGE_PROJECT_NEW_H
 
-#include "FilePath.h"
+#include "SrctrlModule.h"
+
+// Family-internal includes are unguarded: same module either way.
 #include "Message.h"
 
-class MessageProjectNew: public Message<MessageProjectNew>
+#ifndef SRCTRL_MODULE_PURVIEW
+#include "FilePath.h"
+#endif
+
+SRCTRL_EXPORT class MessageProjectNew: public Message<MessageProjectNew>
 {
 public:
 	MessageProjectNew(const FilePath& cdbPath): cdbPath(cdbPath) {}

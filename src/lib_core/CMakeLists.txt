@@ -87,7 +87,8 @@ if(SOURCETRAIL_CXX_MODULES_ENABLED)
 				data/storage/srctrl_storage-access.cppm
 				data/indexer/srctrl_indexer.cppm
 				data/indexer/interprocess/srctrl_interprocess.cppm
-				component/view/srctrl_view.cppm)
+				component/view/srctrl_view.cppm
+				utility/messaging/srctrl_messaging.cppm)
 	# Workaround for LLVM #166068: in reduced-BMI mode (clang's default since 20) the replaceable global
 	# operator new/delete declarations are pruned from the BMI, so a consumer that instantiates a module
 	# type whose inline members allocate (e.g. FilePath -> std::filesystem::path -> std::__libcpp_allocate
@@ -98,6 +99,11 @@ if(SOURCETRAIL_CXX_MODULES_ENABLED)
 	# consumer (here or in another target) reads the retained operator new/delete and never needs the flag.
 	if(CMAKE_CXX_COMPILER_ID MATCHES "Clang")
 		target_compile_options(Sourcetrail_lib_core PRIVATE -fno-modules-reduced-bmi)
+		# Surface silently-ordered duplicate attachments (same entity parsed into the GMF of one
+		# BMI and the purview of another): clang hard-errors on one deserialization order but only
+		# emits this DefaultIgnore warning on the other -- without it the hazard hides until an
+		# import-graph reshape flips the order (the srctrl.messaging park; repro-gmf-attachment/).
+		target_compile_options(Sourcetrail_lib_core PRIVATE -Wdecls-in-multiple-modules)
 	endif()
 	# srctrl.interprocess `import thoth.ipc;`s (the top-level CMakeLists turns on
 	# THOTH_IPC_BUILD_MODULES in module builds); linking thoth_ipc_module provides the BMI
@@ -137,7 +143,6 @@ if(SOURCETRAIL_CXX_MODULES_ENABLED)
 		"${CMAKE_CURRENT_SOURCE_DIR}/data/storage/sqlite/DualSqliteDatabase.cpp"
 		"${CMAKE_CURRENT_SOURCE_DIR}/data/storage/sqlite/SqliteDatabaseIndex.cpp"
 		"${CMAKE_CURRENT_SOURCE_DIR}/settings/ToolChain.cpp"
-		"${CMAKE_CURRENT_SOURCE_DIR}/utility/messaging/type/MessageStatus.cpp"
 		"${CMAKE_CURRENT_SOURCE_DIR}/utility/scheduling/TaskScheduler.cpp"
 		PROPERTIES CXX_SCAN_FOR_MODULES ON)
 endif()

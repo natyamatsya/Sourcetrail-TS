@@ -1,6 +1,9 @@
 #ifndef MESSAGE_QUEUE_H
 #define MESSAGE_QUEUE_H
 
+#include "SrctrlModule.h"
+
+#ifndef SRCTRL_MODULE_PURVIEW
 #include <atomic>
 #include <deque>
 #include <memory>
@@ -9,11 +12,30 @@
 #include <vector>
 
 #include "types.h"
+#endif
 
+// These three are GM-attached in the module build (extern "C++" in their headers -- they appear
+// in the classic MessageQueue seam's signatures), so their fwd decls must carry the same
+// attachment; exported because the defining declarations that follow in the mesh are exported.
+#ifdef SRCTRL_MODULE_PURVIEW
+export extern "C++" {
+#endif
 class MessageBase;
 class MessageFilter;
 class MessageListenerBase;
+#ifdef SRCTRL_MODULE_PURVIEW
+}
+#endif
 
+// MessageQueue's implementation stays a classic TU forever (stdexec pimpl in MessageQueue.cpp).
+// In the module build the class therefore lives in the GLOBAL module: a linkage-specification
+// attaches its contents to the global module ([module.unit]/7), which keeps every member and
+// s_instance ordinary-mangled so the classic definitions link for importers too. Without this,
+// the wrapper's instantiated Message<T>::dispatch() bodies reference module-mangled
+// MessageQueue@srctrl.messaging symbols that nothing defines.
+#ifdef SRCTRL_MODULE_PURVIEW
+export extern "C++" {
+#endif
 class MessageQueue
 {
 public:
@@ -81,5 +103,8 @@ private:
 
 	bool m_sendMessagesAsTasks = false;
 };
+#ifdef SRCTRL_MODULE_PURVIEW
+}
+#endif
 
 #endif	  // MESSAGE_QUEUE_H

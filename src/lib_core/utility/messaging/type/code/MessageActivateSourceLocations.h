@@ -1,11 +1,17 @@
 #ifndef MESSAGE_ACTIVATE_SOURCE_LOCATIONS_H
 #define MESSAGE_ACTIVATE_SOURCE_LOCATIONS_H
 
+#include "SrctrlModule.h"
+
+// Family-internal includes are unguarded: same module either way.
 #include "Message.h"
+
+#ifndef SRCTRL_MODULE_PURVIEW
 #include "TabIds.h"
 #include "types.h"
+#endif
 
-class MessageActivateSourceLocations: public Message<MessageActivateSourceLocations>
+SRCTRL_EXPORT class MessageActivateSourceLocations: public Message<MessageActivateSourceLocations>
 {
 public:
 	MessageActivateSourceLocations(const std::vector<Id>& locationIds, bool containsUnsolvedLocations)

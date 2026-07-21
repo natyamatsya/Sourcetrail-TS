@@ -1,9 +1,13 @@
 #ifndef MESSAGE_ACTIVATE_WINDOW_H
 #define MESSAGE_ACTIVATE_WINDOW_H
 
+#include "SrctrlModule.h"
+
+// Family-internal includes are unguarded: same module either way.
 #include "Message.h"
 
-class MessageActivateWindow: public Message<MessageActivateWindow>
+
+SRCTRL_EXPORT class MessageActivateWindow: public Message<MessageActivateWindow>
 {
 public:
 	MessageActivateWindow() = default;

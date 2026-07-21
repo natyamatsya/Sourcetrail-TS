@@ -886,6 +886,29 @@ cycles in `lib` is prerequisite work, and a good cleanup in its own right).
     distinct foo nodes (module 8 / namespace 16), MEMBER foo→foo:part, IMPORT foo→foo:part,
     0 errors; Usages unchanged at 529/2041/0 (non-module graphs untouched).
 - **Phase 6 — GUI (optional/later).** `lib_gui` + moc, once moc/modules matures.
+- **`srctrl.messaging` LANDED — after solving the "BMI-merge mystery" that briefly parked it. ✅**
+  The whole messaging family (MessageBase/Queue/Filter/ListenerBase/Listener mesh + ~96 message
+  and filter types + honorary members IndexingOutcome/RefreshInfo/ShardConfig) is a module; the
+  slice first shipped OFF-green but died ON with `declaration 'trim' attached to named module
+  'srctrl.utility:string' cannot be attached to other modules` in `srctrl_cxx-frontend.cppm` —
+  with provably zero textual utilityString parses in the failing TU. **Root cause (ours, not
+  clang's):** `srctrl_cxx-tooling.cppm` GMF-pre-loaded `MessageStatus.h` (rule 9, from when it
+  was classic); once MessageStatus joined the family, its header pulled `utilityString.h` through
+  a `#ifndef SRCTRL_MODULE_PURVIEW` guard that is INACTIVE in a GMF (the macro is defined only
+  after `export module`) — global-module attachment vs `import srctrl.utility` = ill-formed,
+  [basic.link]/10. Clang's diagnosis is lazy and order-dependent (GM-copy-first deserialization
+  → silent DefaultIgnore warning; named-module-first → hard error), which made it look like a
+  compiler bug; minimal 6-file reproducer + full LLVM-issue research conserved in
+  `tools/modules-migration/repro-gmf-attachment/`. Fixes: :tooling imports srctrl.messaging
+  (playbook rule 9 amended: GMF includes need a module-free closure; `convertible.py --audit-gmf`
+  enforces it); `-Wdecls-in-multiple-modules` enabled on both module targets to surface the
+  silent ordering. **Second seam (new rule 11):** MessageQueue's impl is classic-forever (stdexec
+  pimpl), and module attachment is part of a class type's MANGLING — so MessageQueue AND every
+  type in its signatures (MessageBase, MessageFilter, MessageListenerBase) are GM-attached via
+  purview-gated `export extern "C++" {}` ([module.unit]/7); out-of-class `s_nextId` definitions
+  need a plain `extern "C++"` wrap (naked purview definitions get module-attached and clash with
+  the GM in-class declaration). Verified: ON build green, 2656/2656 assertions, Usages
+  529/2041/0; OFF re-verified green.
 
 ## Verification
 

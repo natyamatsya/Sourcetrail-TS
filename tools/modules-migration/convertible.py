@@ -81,7 +81,10 @@ def module_surface():
             if not m:
                 continue
             module = m.group(1)
-            purview = text.split("SRCTRL_MODULE_PURVIEW", 1)
+            # Split on the #define line, not the bare string -- it also appears in comments
+            # (srctrl_logging.cppm line 8 taught us that).
+            purview = re.split(r'^#define SRCTRL_MODULE_PURVIEW\b.*$', text,
+                               maxsplit=1, flags=re.M)
             if len(purview) < 2:
                 continue
             for inc in re.finditer(r'^#include "([^"]+)"', purview[1], re.M):
@@ -279,7 +282,64 @@ def apply_conversion(tu, headers, imports):
     open(tu, "w").write("\n".join(out))
 
 
+def audit_gmf():
+    """Flag wrapper GMF includes whose textual closure reaches a module-owned header.
+
+    Purview guards are inactive in a GMF (SRCTRL_MODULE_PURVIEW is defined only after
+    `export module`), so such an include attaches the owned header's declarations to the
+    global module -- ill-formed against an import of the owner, and clang diagnoses it
+    lazily in whatever sibling partition first merges both BMIs (repro-gmf-attachment/).
+    """
+    bad = 0
+    for dirpath, _, files in os.walk(SRC):
+        if "cxx_modules_poc" in dirpath:
+            continue
+        for f in sorted(files):
+            if not f.endswith(".cppm"):
+                continue
+            path = os.path.join(dirpath, f)
+            gmf = read(path).split("export module", 1)[0]
+            for inc in re.finditer(r'^#include "([^"]+)"', gmf, re.M):
+                base = os.path.basename(inc.group(1))
+                if base in OWNER_OVERRIDES:
+                    continue
+                if base in MOD:
+                    print(f"GMF-OWNED   {f}: {base} is owned by {MOD[base]} -- import it instead")
+                    bad += 1
+                    continue
+                seen, stack = set(), [base]
+                while stack:
+                    b = stack.pop()
+                    if b in seen or b in GATED_CLEAN:
+                        continue
+                    seen.add(b)
+                    for p in by_base.get(b, []):
+                        for full in inc_re.findall(read(p)):
+                            i = os.path.basename(full)
+                            # Path-includes resolve first-party only by full suffix match --
+                            # <clang/Basic/SourceLocation.h> must not collide with our
+                            # SourceLocation.h by basename.
+                            if "/" in full and not any(
+                                    q.endswith(os.sep + full.replace("/", os.sep))
+                                    for q in by_base.get(i, [])):
+                                continue
+                            if i in MOD and i not in OWNER_OVERRIDES:
+                                print(f"GMF-CLOSURE {f}: {base} -> ... -> {b} -> {i} "
+                                      f"(owned by {MOD[i]}) -- import {MOD[i]} instead")
+                                bad += 1
+                                stack.clear()
+                                break
+                            stack.append(i)
+                        else:
+                            continue
+                        break
+    print(f"\n{bad} GMF attachment hazard(s)" if bad else "GMF closures are module-free")
+    return bad
+
+
 def main(argv):
+    if argv and argv[0] == "--audit-gmf":
+        sys.exit(1 if audit_gmf() else 0)
     if argv and argv[0] == "--index":
         argv = argv[1:]
         db = argv.pop(0) if argv and argv[0].endswith(".db") else os.path.join(

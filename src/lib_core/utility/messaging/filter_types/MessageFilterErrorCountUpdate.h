@@ -1,10 +1,14 @@
 #ifndef MESSAGE_FILTER_ERROR_COUNT_UPDATE_H
 #define MESSAGE_FILTER_ERROR_COUNT_UPDATE_H
 
+#include "SrctrlModule.h"
+
+// Family-internal includes are unguarded: same module either way.
 #include "MessageErrorCountUpdate.h"
 #include "MessageFilter.h"
 
-class MessageFilterErrorCountUpdate: public MessageFilter
+
+SRCTRL_EXPORT class MessageFilterErrorCountUpdate: public MessageFilter
 {
 	void filter(MessageQueue::MessageBufferType* messageBuffer) override
 	{

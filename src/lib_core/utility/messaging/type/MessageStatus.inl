@@ -1,15 +1,15 @@
-#include "MessageStatus.h"
+// Inline implementations for MessageStatus.h (included at its end). All definitions inline: the
+// messaging family is module-attached in the module build, and inline keeps ordinary mangling so
+// classic TUs and the wrapper emit mergeable weak definitions (dual-build rule).
 
-#ifndef SRCTRL_MODULE_BUILD
+#pragma once
+
+// Cross-module dep: the wrapper supplies utilityString via `import srctrl.utility`.
+#ifndef SRCTRL_MODULE_PURVIEW
 #include "utilityString.h"
 #endif
 
-// Imports come AFTER all textual #includes (include-before-import rule).
-#ifdef SRCTRL_MODULE_BUILD
-import srctrl.utility;
-#endif
-
-MessageStatus::MessageStatus(
+inline MessageStatus::MessageStatus(
 	const std::string& status, bool isError, bool showLoader, bool showInStatusBar)
 	: isError(isError), showLoader(showLoader), showInStatusBar(showInStatusBar)
 {
@@ -18,24 +18,24 @@ MessageStatus::MessageStatus(
 	setSendAsTask(false);
 }
 
-MessageStatus::MessageStatus(
+inline MessageStatus::MessageStatus(
 	const std::vector<std::string>& stati, bool isError, bool showLoader, bool showInStatusBar)
 	: isError(isError), showLoader(showLoader), showInStatusBar(showInStatusBar), m_stati(stati)
 {
 	setSendAsTask(false);
 }
 
-const std::string MessageStatus::getStaticType()
+inline const std::string MessageStatus::getStaticType()
 {
 	return "MessageStatus";
 }
 
-const std::vector<std::string>& MessageStatus::stati() const
+inline const std::vector<std::string>& MessageStatus::stati() const
 {
 	return m_stati;
 }
 
-std::string MessageStatus::status() const
+inline std::string MessageStatus::status() const
 {
 	if (m_stati.size())
 	{
@@ -45,7 +45,7 @@ std::string MessageStatus::status() const
 	return "";
 }
 
-void MessageStatus::print(std::ostream& os) const
+inline void MessageStatus::print(std::ostream& os) const
 {
 	for (const std::string& status: m_stati)
 	{

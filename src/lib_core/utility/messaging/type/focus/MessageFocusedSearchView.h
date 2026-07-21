@@ -1,10 +1,16 @@
 #ifndef MESSAGE_FOCUSED_SEARCH_VIEW_H
 #define MESSAGE_FOCUSED_SEARCH_VIEW_H
 
-#include "Message.h"
-#include "TabIds.h"
+#include "SrctrlModule.h"
 
-class MessageFocusedSearchView: public Message<MessageFocusedSearchView>
+// Family-internal includes are unguarded: same module either way.
+#include "Message.h"
+
+#ifndef SRCTRL_MODULE_PURVIEW
+#include "TabIds.h"
+#endif
+
+SRCTRL_EXPORT class MessageFocusedSearchView: public Message<MessageFocusedSearchView>
 {
 public:
 	MessageFocusedSearchView(bool focusIn): focusIn(focusIn)

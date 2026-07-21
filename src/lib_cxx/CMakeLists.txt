@@ -44,6 +44,11 @@ if(SOURCETRAIL_CXX_MODULES_ENABLED)
 	# Same LLVM #166068 reduced-BMI workaround as lib_core (see its CMakeLists for the full story).
 	if(CMAKE_CXX_COMPILER_ID MATCHES "Clang")
 		target_compile_options(Sourcetrail_lib_cxx PRIVATE -fno-modules-reduced-bmi)
+		# Surface silently-ordered duplicate attachments (same entity parsed into the GMF of one
+		# BMI and the purview of another): clang hard-errors on one deserialization order but only
+		# emits this DefaultIgnore warning on the other -- without it the hazard hides until an
+		# import-graph reshape flips the order (the srctrl.messaging park; repro-gmf-attachment/).
+		target_compile_options(Sourcetrail_lib_cxx PRIVATE -Wdecls-in-multiple-modules)
 	endif()
 	if(SOURCETRAIL_CXX_IMPORT_STD)
 		set_target_properties(Sourcetrail_lib_cxx PROPERTIES CXX_MODULE_STD ON)

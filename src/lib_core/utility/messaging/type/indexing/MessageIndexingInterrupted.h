@@ -1,9 +1,13 @@
 #ifndef MESSAGE_INDEXING_INTERRUPTED_H
 #define MESSAGE_INDEXING_INTERRUPTED_H
 
+#include "SrctrlModule.h"
+
+// Family-internal includes are unguarded: same module either way.
 #include "Message.h"
 
-class MessageIndexingInterrupted: public Message<MessageIndexingInterrupted>
+
+SRCTRL_EXPORT class MessageIndexingInterrupted: public Message<MessageIndexingInterrupted>
 {
 public:
 	static const std::string getStaticType()

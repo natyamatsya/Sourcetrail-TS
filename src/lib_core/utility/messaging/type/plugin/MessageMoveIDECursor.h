@@ -1,10 +1,16 @@
 #ifndef MESSAGE_MOVE_IDE_CURSOR_H
 #define MESSAGE_MOVE_IDE_CURSOR_H
 
-#include "FilePath.h"
+#include "SrctrlModule.h"
+
+// Family-internal includes are unguarded: same module either way.
 #include "Message.h"
 
-class MessageMoveIDECursor: public Message<MessageMoveIDECursor>
+#ifndef SRCTRL_MODULE_PURVIEW
+#include "FilePath.h"
+#endif
+
+SRCTRL_EXPORT class MessageMoveIDECursor: public Message<MessageMoveIDECursor>
 {
 public:
 	MessageMoveIDECursor(const FilePath& filePath, const unsigned int row, const unsigned int column)

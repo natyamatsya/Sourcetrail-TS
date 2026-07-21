@@ -1,14 +1,21 @@
 #ifndef MESSAGE_LOAD_PROJECT_H
 #define MESSAGE_LOAD_PROJECT_H
 
+#include "SrctrlModule.h"
+
+// Family-internal includes are unguarded: same module either way.
+#include "Message.h"
+
+// Honorary family (payload value types carried by this message; dual-swept, attached here).
 #include "RefreshInfo.h"
+#include "ShardConfig.h"
+#ifndef SRCTRL_MODULE_PURVIEW
 
 #include "FilePath.h"
-#include "Message.h"
-#include "ShardConfig.h"
 #include "utilityEnum.h"
+#endif
 
-class MessageLoadProject: public Message<MessageLoadProject>
+SRCTRL_EXPORT class MessageLoadProject: public Message<MessageLoadProject>
 {
 public:
 	MessageLoadProject(

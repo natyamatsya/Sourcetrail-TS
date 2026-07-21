@@ -1,10 +1,16 @@
 #ifndef MESSAGE_SCROLL_GRAPH_H
 #define MESSAGE_SCROLL_GRAPH_H
 
-#include "Message.h"
-#include "TabIds.h"
+#include "SrctrlModule.h"
 
-class MessageScrollGraph: public Message<MessageScrollGraph>
+// Family-internal includes are unguarded: same module either way.
+#include "Message.h"
+
+#ifndef SRCTRL_MODULE_PURVIEW
+#include "TabIds.h"
+#endif
+
+SRCTRL_EXPORT class MessageScrollGraph: public Message<MessageScrollGraph>
 {
 public:
 	MessageScrollGraph(int xValue, int yValue): xValue(xValue), yValue(yValue)

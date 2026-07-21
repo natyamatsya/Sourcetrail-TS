@@ -1,9 +1,13 @@
 #ifndef MESSAGE_SHOW_STATUS_H
 #define MESSAGE_SHOW_STATUS_H
 
+#include "SrctrlModule.h"
+
+// Family-internal includes are unguarded: same module either way.
 #include "Message.h"
 
-class MessageShowStatus: public Message<MessageShowStatus>
+
+SRCTRL_EXPORT class MessageShowStatus: public Message<MessageShowStatus>
 {
 public:
 	MessageShowStatus() = default;

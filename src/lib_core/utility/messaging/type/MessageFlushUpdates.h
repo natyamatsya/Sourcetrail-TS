@@ -1,10 +1,16 @@
 #ifndef MESSAGE_FLUSH_UPDATES_H
 #define MESSAGE_FLUSH_UPDATES_H
 
-#include "Message.h"
-#include "TabIds.h"
+#include "SrctrlModule.h"
 
-class MessageFlushUpdates: public Message<MessageFlushUpdates>
+// Family-internal includes are unguarded: same module either way.
+#include "Message.h"
+
+#ifndef SRCTRL_MODULE_PURVIEW
+#include "TabIds.h"
+#endif
+
+SRCTRL_EXPORT class MessageFlushUpdates: public Message<MessageFlushUpdates>
 {
 public:
 	MessageFlushUpdates(bool keepsContent = false)

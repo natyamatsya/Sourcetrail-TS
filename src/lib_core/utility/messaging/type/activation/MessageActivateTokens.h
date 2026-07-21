@@ -1,13 +1,19 @@
 #ifndef MESSAGE_ACTIVATE_TOKENS_H
 #define MESSAGE_ACTIVATE_TOKENS_H
 
+#include "SrctrlModule.h"
+
+// Family-internal includes are unguarded: same module either way.
 #include "Message.h"
 #include "MessageActivateBase.h"
+
+#ifndef SRCTRL_MODULE_PURVIEW
 #include "types.h"
 
 #include "SearchMatch.h"
+#endif
 
-class MessageActivateTokens
+SRCTRL_EXPORT class MessageActivateTokens
 	: public Message<MessageActivateTokens>
 	, public MessageActivateBase
 {

@@ -1,9 +1,13 @@
 #ifndef MESSAGE_WINDOW_CLOSED_H
 #define MESSAGE_WINDOW_CLOSED_H
 
+#include "SrctrlModule.h"
+
+// Family-internal includes are unguarded: same module either way.
 #include "Message.h"
 
-class MessageWindowClosed: public Message<MessageWindowClosed>
+
+SRCTRL_EXPORT class MessageWindowClosed: public Message<MessageWindowClosed>
 {
 public:
 	MessageWindowClosed()

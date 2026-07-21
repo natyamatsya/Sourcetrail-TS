@@ -1,11 +1,17 @@
 #ifndef MESSAGE_ACTIVATE_LEGEND_H
 #define MESSAGE_ACTIVATE_LEGEND_H
 
+#include "SrctrlModule.h"
+
+// Family-internal includes are unguarded: same module either way.
 #include "Message.h"
 #include "MessageActivateBase.h"
-#include "TabIds.h"
 
-class MessageActivateLegend
+#ifndef SRCTRL_MODULE_PURVIEW
+#include "TabIds.h"
+#endif
+
+SRCTRL_EXPORT class MessageActivateLegend
 	: public Message<MessageActivateLegend>
 	, public MessageActivateBase
 {

@@ -1,10 +1,16 @@
 #ifndef MESSAGE_STATUS_FILTER_CHANGED_H
 #define MESSAGE_STATUS_FILTER_CHANGED_H
 
-#include "Message.h"
-#include "Status.h"
+#include "SrctrlModule.h"
 
-class MessageStatusFilterChanged: public Message<MessageStatusFilterChanged>
+// Family-internal includes are unguarded: same module either way.
+#include "Message.h"
+
+#ifndef SRCTRL_MODULE_PURVIEW
+#include "Status.h"
+#endif
+
+SRCTRL_EXPORT class MessageStatusFilterChanged: public Message<MessageStatusFilterChanged>
 {
 public:
 	MessageStatusFilterChanged(const StatusFilter filter): statusFilter(filter) {}

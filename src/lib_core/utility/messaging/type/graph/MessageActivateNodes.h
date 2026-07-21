@@ -1,11 +1,17 @@
 #ifndef MESSAGE_ACTIVATE_NODES_H
 #define MESSAGE_ACTIVATE_NODES_H
 
+#include "SrctrlModule.h"
+
+// Family-internal includes are unguarded: same module either way.
 #include "Message.h"
+
+#ifndef SRCTRL_MODULE_PURVIEW
 #include "TabIds.h"
 #include "types.h"
+#endif
 
-class MessageActivateNodes: public Message<MessageActivateNodes>
+SRCTRL_EXPORT class MessageActivateNodes: public Message<MessageActivateNodes>
 {
 public:
 	struct ActiveNode

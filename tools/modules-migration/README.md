@@ -65,7 +65,21 @@ Known regex gaps — ALWAYS review the diff and let the OFF build arbitrate:
    classic callers (include-only contract). Anything an importer calls must be inline in-module.
 7. Anything the wrapper itself references (vtables of concrete types!) must be inline in-module.
 8. Family-internal includes/fwd decls unguarded; family fwd decls need `SRCTRL_EXPORT`.
-9. Classic-with-cpp deps of a wrapper (ToolChain, utilityUuid) go in its GMF, never the purview.
+9. Classic-with-cpp deps of a wrapper (ToolChain, utilityUuid) go in its GMF, never the purview —
+   BUT a GMF include is only legal while its whole include closure is module-free. Purview guards
+   (`#ifndef SRCTRL_MODULE_PURVIEW`) do NOT protect a GMF parse (the macro is defined only after
+   `export module`), so a module-owned header reached textually from a GMF attaches its closure to
+   the global module — ill-formed against an import of the owner, and clang diagnoses it lazily,
+   far away, in whatever sibling partition first merges both BMIs (`repro-gmf-attachment/`). When
+   a classic GMF dep later joins a module, every wrapper pre-loading it must switch to importing
+   the owning module (MessageStatus/`srctrl.cxx:tooling` lesson).
 10. Cycle-prone aggregates (a factory naming its whole family) live in a dedicated `.inl`
     included only by the wrapper (last) + a classic emission TU whose non-inline function
     odr-uses them (an unused address-take is dropped without emitting).
+11. A family class whose implementation stays a classic TU forever (MessageQueue's stdexec
+    pimpl) goes in the GLOBAL module via a purview-gated linkage-specification:
+    `#ifdef SRCTRL_MODULE_PURVIEW / export extern "C++" { / #endif` around the class.
+    [module.unit]/7 attaches linkage-spec contents to the global module, so members and
+    static data keep ordinary mangling and the classic definitions link for importers.
+    Without it, wrapper-instantiated inline callers reference `Member@module` symbols
+    nothing defines (the mangling-law flip side of rule 6).

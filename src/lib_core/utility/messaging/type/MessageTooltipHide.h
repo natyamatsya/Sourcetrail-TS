@@ -1,9 +1,13 @@
 #ifndef MESSAGE_TOOLTIP_HIDE_H
 #define MESSAGE_TOOLTIP_HIDE_H
 
+#include "SrctrlModule.h"
+
+// Family-internal includes are unguarded: same module either way.
 #include "Message.h"
 
-class MessageTooltipHide: public Message<MessageTooltipHide>
+
+SRCTRL_EXPORT class MessageTooltipHide: public Message<MessageTooltipHide>
 {
 public:
 	MessageTooltipHide()

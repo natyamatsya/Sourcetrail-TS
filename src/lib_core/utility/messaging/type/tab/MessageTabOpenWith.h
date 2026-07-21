@@ -1,11 +1,17 @@
 #ifndef MESSAGE_TAB_OPEN_WITH_H
 #define MESSAGE_TAB_OPEN_WITH_H
 
-#include "FilePath.h"
-#include "Message.h"
-#include "SearchMatch.h"
+#include "SrctrlModule.h"
 
-class MessageTabOpenWith: public Message<MessageTabOpenWith>
+// Family-internal includes are unguarded: same module either way.
+#include "Message.h"
+
+#ifndef SRCTRL_MODULE_PURVIEW
+#include "FilePath.h"
+#include "SearchMatch.h"
+#endif
+
+SRCTRL_EXPORT class MessageTabOpenWith: public Message<MessageTabOpenWith>
 {
 public:
 	static const std::string getStaticType()

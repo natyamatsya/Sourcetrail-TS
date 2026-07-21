@@ -1,17 +1,21 @@
 #ifndef SHARD_CONFIG_H
 #define SHARD_CONFIG_H
 
+#include "SrctrlModule.h"
+
+#ifndef SRCTRL_MODULE_PURVIEW
 #include <set>
 #include <string>
 
 #include "FilePath.h"
+#endif
 
 //! Distributed indexing: with a ShardConfig active, this process indexes only a
 //! deterministic stripe of the project's translation units into a standalone
 //! shard DB at outputPath (the live project DB is never touched). Shard DBs
 //! produced for the same project with the same count are later combined with the
 //! `merge` CLI command.
-struct ShardConfig
+SRCTRL_EXPORT struct ShardConfig
 {
 	bool isActive() const
 	{

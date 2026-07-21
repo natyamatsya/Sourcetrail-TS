@@ -1,11 +1,17 @@
 #ifndef MESSAGE_ACTIVATE_TOKEN_IDS_H
 #define MESSAGE_ACTIVATE_TOKEN_IDS_H
 
+#include "SrctrlModule.h"
+
+// Family-internal includes are unguarded: same module either way.
 #include "Message.h"
+
+#ifndef SRCTRL_MODULE_PURVIEW
 #include "TabIds.h"
 #include "types.h"
+#endif
 
-class MessageActivateTokenIds: public Message<MessageActivateTokenIds>
+SRCTRL_EXPORT class MessageActivateTokenIds: public Message<MessageActivateTokenIds>
 {
 public:
 	MessageActivateTokenIds(const std::vector<Id>& tokenIds): tokenIds(tokenIds)

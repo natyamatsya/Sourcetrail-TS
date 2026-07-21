@@ -1,10 +1,16 @@
 #ifndef MESSAGE_LOG_FILTER_CHANGED_H
 #define MESSAGE_LOG_FILTER_CHANGED_H
 
-#include "Logger.h"
+#include "SrctrlModule.h"
+
+// Family-internal includes are unguarded: same module either way.
 #include "Message.h"
 
-class MessageLogFilterChanged: public Message<MessageLogFilterChanged>
+#ifndef SRCTRL_MODULE_PURVIEW
+#include "Logger.h"
+#endif
+
+SRCTRL_EXPORT class MessageLogFilterChanged: public Message<MessageLogFilterChanged>
 {
 public:
 	MessageLogFilterChanged(const Logger::LogLevelMask filter): logFilter(filter) {}

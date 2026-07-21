@@ -1,10 +1,16 @@
 #ifndef MESSAGE_TAB_STATE_H
 #define MESSAGE_TAB_STATE_H
 
-#include "Message.h"
-#include "SearchMatch.h"
+#include "SrctrlModule.h"
 
-class MessageTabState: public Message<MessageTabState>
+// Family-internal includes are unguarded: same module either way.
+#include "Message.h"
+
+#ifndef SRCTRL_MODULE_PURVIEW
+#include "SearchMatch.h"
+#endif
+
+SRCTRL_EXPORT class MessageTabState: public Message<MessageTabState>
 {
 public:
 	MessageTabState(TabId tabId, const std::vector<SearchMatch>& searchMatches)

@@ -1,11 +1,16 @@
 #ifndef MESSAGE_ERROR_COUNT_UPDATE_H
 #define MESSAGE_ERROR_COUNT_UPDATE_H
 
+#include "SrctrlModule.h"
+
+// Family-internal includes are unguarded: same module either way.
 #include "Message.h"
 
+#ifndef SRCTRL_MODULE_PURVIEW
 #include "ErrorCountInfo.h"
+#endif
 
-class MessageErrorCountUpdate: public Message<MessageErrorCountUpdate>
+SRCTRL_EXPORT class MessageErrorCountUpdate: public Message<MessageErrorCountUpdate>
 {
 public:
 	static const std::string getStaticType()

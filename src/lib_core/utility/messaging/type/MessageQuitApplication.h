@@ -1,9 +1,13 @@
 #ifndef MESSAGE_QUIT_APPLICATION_H
 #define MESSAGE_QUIT_APPLICATION_H
 
+#include "SrctrlModule.h"
+
+// Family-internal includes are unguarded: same module either way.
 #include "Message.h"
 
-class MessageQuitApplication: public Message<MessageQuitApplication>
+
+SRCTRL_EXPORT class MessageQuitApplication: public Message<MessageQuitApplication>
 {
 public:
 	MessageQuitApplication() = default;

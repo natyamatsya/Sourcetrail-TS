@@ -1,9 +1,13 @@
 #ifndef MESSAGE_ZOOM_H
 #define MESSAGE_ZOOM_H
 
+#include "SrctrlModule.h"
+
+// Family-internal includes are unguarded: same module either way.
 #include "Message.h"
 
-class MessageZoom: public Message<MessageZoom>
+
+SRCTRL_EXPORT class MessageZoom: public Message<MessageZoom>
 {
 public:
 	MessageZoom(bool zoomIn): zoomIn(zoomIn) {}

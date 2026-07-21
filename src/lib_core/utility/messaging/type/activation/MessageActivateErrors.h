@@ -1,13 +1,18 @@
 #ifndef MESSAGE_ACTIVATE_ERRORS_H
 #define MESSAGE_ACTIVATE_ERRORS_H
 
+#include "SrctrlModule.h"
+
+// Family-internal includes are unguarded: same module either way.
 #include "Message.h"
 #include "MessageActivateBase.h"
 
+#ifndef SRCTRL_MODULE_PURVIEW
 #include "ErrorFilter.h"
 #include "TabIds.h"
+#endif
 
-class MessageActivateErrors
+SRCTRL_EXPORT class MessageActivateErrors
 	: public Message<MessageActivateErrors>
 	, public MessageActivateBase
 {

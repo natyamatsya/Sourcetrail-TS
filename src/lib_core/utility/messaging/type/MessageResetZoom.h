@@ -1,9 +1,13 @@
 #ifndef MESSAGE_RESET_ZOOM_H
 #define MESSAGE_RESET_ZOOM_H
 
+#include "SrctrlModule.h"
+
+// Family-internal includes are unguarded: same module either way.
 #include "Message.h"
 
-class MessageResetZoom: public Message<MessageResetZoom>
+
+SRCTRL_EXPORT class MessageResetZoom: public Message<MessageResetZoom>
 {
 public:
 	MessageResetZoom() = default;

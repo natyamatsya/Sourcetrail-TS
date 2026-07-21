@@ -1,9 +1,13 @@
 #ifndef MESSAGE_PING_RECEIVED_H
 #define MESSAGE_PING_RECEIVED_H
 
+#include "SrctrlModule.h"
+
+// Family-internal includes are unguarded: same module either way.
 #include "Message.h"
 
-class MessagePingReceived: public Message<MessagePingReceived>
+
+SRCTRL_EXPORT class MessagePingReceived: public Message<MessagePingReceived>
 {
 public:
 	MessagePingReceived() = default;

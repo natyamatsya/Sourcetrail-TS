@@ -1,9 +1,13 @@
 #ifndef MESSAGE_REFRESH_UI_H
 #define MESSAGE_REFRESH_UI_H
 
+#include "SrctrlModule.h"
+
+// Family-internal includes are unguarded: same module either way.
 #include "Message.h"
 
-class MessageRefreshUI: public Message<MessageRefreshUI>
+
+SRCTRL_EXPORT class MessageRefreshUI: public Message<MessageRefreshUI>
 {
 public:
 	static const std::string getStaticType()

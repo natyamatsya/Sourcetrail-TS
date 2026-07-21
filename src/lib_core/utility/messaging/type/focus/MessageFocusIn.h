@@ -1,14 +1,20 @@
 #ifndef MESSAGE_FOCUS_IN_H
 #define MESSAGE_FOCUS_IN_H
 
+#include "SrctrlModule.h"
+
+// Family-internal includes are unguarded: same module either way.
+#include "Message.h"
+
+#ifndef SRCTRL_MODULE_PURVIEW
 #include <vector>
 
-#include "Message.h"
 #include "TabIds.h"
 #include "TooltipOrigin.h"
 #include "types.h"
+#endif
 
-class MessageFocusIn: public Message<MessageFocusIn>
+SRCTRL_EXPORT class MessageFocusIn: public Message<MessageFocusIn>
 {
 public:
 	MessageFocusIn(const std::vector<Id>& tokenIds, TooltipOrigin origin = TooltipOrigin::TOOLTIP_ORIGIN_NONE)

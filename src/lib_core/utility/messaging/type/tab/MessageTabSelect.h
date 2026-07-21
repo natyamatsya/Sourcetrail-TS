@@ -1,9 +1,13 @@
 #ifndef MESSAGE_TAB_SELECT_H
 #define MESSAGE_TAB_SELECT_H
 
+#include "SrctrlModule.h"
+
+// Family-internal includes are unguarded: same module either way.
 #include "Message.h"
 
-class MessageTabSelect: public Message<MessageTabSelect>
+
+SRCTRL_EXPORT class MessageTabSelect: public Message<MessageTabSelect>
 {
 public:
 	MessageTabSelect(bool next): next(next) {}

@@ -1,9 +1,13 @@
 #ifndef MESSAGE_PLUGIN_PORT_CHANGE_H
 #define MESSAGE_PLUGIN_PORT_CHANGE_H
 
+#include "SrctrlModule.h"
+
+// Family-internal includes are unguarded: same module either way.
 #include "Message.h"
 
-class MessagePluginPortChange: public Message<MessagePluginPortChange>
+
+SRCTRL_EXPORT class MessagePluginPortChange: public Message<MessagePluginPortChange>
 {
 public:
 	MessagePluginPortChange() = default;

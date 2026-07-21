@@ -1,13 +1,18 @@
 #ifndef MESSAGE_SEARCH_H
 #define MESSAGE_SEARCH_H
 
+#include "SrctrlModule.h"
+
+// Family-internal includes are unguarded: same module either way.
 #include "Message.h"
 
+#ifndef SRCTRL_MODULE_PURVIEW
 #include "NodeTypeSet.h"
 #include "SearchMatch.h"
 #include "TabIds.h"
+#endif
 
-class MessageSearch: public Message<MessageSearch>
+SRCTRL_EXPORT class MessageSearch: public Message<MessageSearch>
 {
 public:
 	static const std::string getStaticType()

@@ -1,11 +1,17 @@
 #ifndef MESSAGE_ACTIVATE_FULLTEXT_SEARCH_H
 #define MESSAGE_ACTIVATE_FULLTEXT_SEARCH_H
 
+#include "SrctrlModule.h"
+
+// Family-internal includes are unguarded: same module either way.
 #include "Message.h"
 #include "MessageActivateBase.h"
-#include "TabIds.h"
 
-class MessageActivateFullTextSearch
+#ifndef SRCTRL_MODULE_PURVIEW
+#include "TabIds.h"
+#endif
+
+SRCTRL_EXPORT class MessageActivateFullTextSearch
 	: public Message<MessageActivateFullTextSearch>
 	, public MessageActivateBase
 {

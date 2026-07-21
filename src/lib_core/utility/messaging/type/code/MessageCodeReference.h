@@ -1,10 +1,16 @@
 #ifndef MESSAGE_CODE_REFERENCE_H
 #define MESSAGE_CODE_REFERENCE_H
 
-#include "Message.h"
-#include "TabIds.h"
+#include "SrctrlModule.h"
 
-class MessageCodeReference: public Message<MessageCodeReference>
+// Family-internal includes are unguarded: same module either way.
+#include "Message.h"
+
+#ifndef SRCTRL_MODULE_PURVIEW
+#include "TabIds.h"
+#endif
+
+SRCTRL_EXPORT class MessageCodeReference: public Message<MessageCodeReference>
 {
 public:
 	enum class Type

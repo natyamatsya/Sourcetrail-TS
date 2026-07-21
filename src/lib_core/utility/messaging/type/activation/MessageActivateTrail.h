@@ -1,13 +1,19 @@
 #ifndef MESSAGE_ACTIVATE_TRAIL_H
 #define MESSAGE_ACTIVATE_TRAIL_H
 
+#include "SrctrlModule.h"
+
+// Family-internal includes are unguarded: same module either way.
 #include "Message.h"
 #include "MessageActivateBase.h"
+
+#ifndef SRCTRL_MODULE_PURVIEW
 #include "NodeType.h"
 #include "TabIds.h"
 #include "types.h"
+#endif
 
-class MessageActivateTrail
+SRCTRL_EXPORT class MessageActivateTrail
 	: public Message<MessageActivateTrail>
 	, public MessageActivateBase
 {

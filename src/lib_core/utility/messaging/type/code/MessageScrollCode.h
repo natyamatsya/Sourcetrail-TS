@@ -1,10 +1,16 @@
 #ifndef MESSAGE_SCROLL_CODE_H
 #define MESSAGE_SCROLL_CODE_H
 
-#include "Message.h"
-#include "TabIds.h"
+#include "SrctrlModule.h"
 
-class MessageScrollCode: public Message<MessageScrollCode>
+// Family-internal includes are unguarded: same module either way.
+#include "Message.h"
+
+#ifndef SRCTRL_MODULE_PURVIEW
+#include "TabIds.h"
+#endif
+
+SRCTRL_EXPORT class MessageScrollCode: public Message<MessageScrollCode>
 {
 public:
 	MessageScrollCode(int value, bool inListMode): value(value), inListMode(inListMode)

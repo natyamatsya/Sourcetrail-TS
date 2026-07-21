@@ -1,9 +1,13 @@
 #ifndef MESSAGE_SWITCH_COLOR_SCHEME_H
 #define MESSAGE_SWITCH_COLOR_SCHEME_H
 
+#include "SrctrlModule.h"
+
+// Family-internal includes are unguarded: same module either way.
 #include "Message.h"
 
-class MessageSwitchColorScheme: public Message<MessageSwitchColorScheme>
+
+SRCTRL_EXPORT class MessageSwitchColorScheme: public Message<MessageSwitchColorScheme>
 {
 public:
 	MessageSwitchColorScheme(const FilePath& filePath): colorSchemePath(filePath) {}

@@ -1,12 +1,17 @@
 #ifndef MESSAGE_TOOLTIP_SHOW_H
 #define MESSAGE_TOOLTIP_SHOW_H
 
+#include "SrctrlModule.h"
+
+// Family-internal includes are unguarded: same module either way.
 #include "Message.h"
 
+#ifndef SRCTRL_MODULE_PURVIEW
 #include "TooltipInfo.h"
 #include "TooltipOrigin.h"
+#endif
 
-class MessageTooltipShow: public Message<MessageTooltipShow>
+SRCTRL_EXPORT class MessageTooltipShow: public Message<MessageTooltipShow>
 {
 public:
 	MessageTooltipShow(TooltipInfo info, TooltipOrigin origin): tooltipInfo(info), origin(origin)

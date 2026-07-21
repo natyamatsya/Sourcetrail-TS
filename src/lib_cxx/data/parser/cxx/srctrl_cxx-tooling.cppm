@@ -21,11 +21,14 @@ module;
 
 // Non-modularized GMF deps: the Clang tooling headers, ToolChain (std-only header; its impl stays a
 // classic TU -- calling global-module functions from a module TU links fine), and the logging macros.
+// MessageStatus must NOT be pre-loaded here: it is owned by srctrl.messaging, and a GMF textual
+// parse of a module-owned header attaches its whole closure (utilityString!) to the global module --
+// ill-formed against `import srctrl.utility`, diagnosed by clang only when a sibling partition
+// merges both BMIs (see tools/modules-migration/repro-gmf-attachment/). Imported below instead.
 #include <clang/Tooling/CompilationDatabase.h>
 #include <clang/Tooling/JSONCompilationDatabase.h>
 #include <llvm/Support/VirtualFileSystem.h>
 
-#include "MessageStatus.h"
 #include "Platform.h"
 #include "ToolChain.h"
 
@@ -39,6 +42,7 @@ import srctrl.utility;   // utility.h helpers (:containers), utilityString (:str
 import srctrl.file;      // FilePath, FilePathFilter
 import srctrl.process;   // utility::executeProcess (macOS sysroot detection)
 import srctrl.indexer;   // IndexerCommandType (was a GMF include until srctrl.indexer owned it)
+import srctrl.messaging; // MessageStatus (was a GMF include until srctrl.messaging owned it)
 import srctrl.logging;   // srctrl::log machinery behind the LOG_* macros
 
 #define SRCTRL_MODULE_PURVIEW

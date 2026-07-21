@@ -1,10 +1,14 @@
 #ifndef CODE_SCROLL_PARAMS_H
 #define CODE_SCROLL_PARAMS_H
 
+#include "SrctrlModule.h"
+
+#ifndef SRCTRL_MODULE_PURVIEW
 #include "FilePath.h"
 #include "types.h"
+#endif
 
-struct CodeScrollParams
+SRCTRL_EXPORT struct CodeScrollParams
 {
 	enum class Type
 	{

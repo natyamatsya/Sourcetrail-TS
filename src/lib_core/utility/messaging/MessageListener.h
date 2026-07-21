@@ -1,13 +1,18 @@
 #ifndef MESSAGE_LISTENER_H
 #define MESSAGE_LISTENER_H
 
-#include <string>
+#include "SrctrlModule.h"
 
+// Family-internal includes are unguarded: same module either way.
 #include "MessageBase.h"
 #include "MessageListenerBase.h"
 #include "MessageQueue.h"
 
-template <typename MessageType>
+#ifndef SRCTRL_MODULE_PURVIEW
+#include <string>
+#endif
+
+SRCTRL_EXPORT template <typename MessageType>
 class MessageListener: public MessageListenerBase
 {
 public:

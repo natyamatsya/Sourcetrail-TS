@@ -1,11 +1,17 @@
 #ifndef MESSAGE_CODE_SHOW_DEFINITION_H
 #define MESSAGE_CODE_SHOW_DEFINITION_H
 
+#include "SrctrlModule.h"
+
+// Family-internal includes are unguarded: same module either way.
 #include "Message.h"
+
+#ifndef SRCTRL_MODULE_PURVIEW
 #include "TabIds.h"
 #include "types.h"
+#endif
 
-class MessageCodeShowDefinition: public Message<MessageCodeShowDefinition>
+SRCTRL_EXPORT class MessageCodeShowDefinition: public Message<MessageCodeShowDefinition>
 {
 public:
 	static const std::string getStaticType()

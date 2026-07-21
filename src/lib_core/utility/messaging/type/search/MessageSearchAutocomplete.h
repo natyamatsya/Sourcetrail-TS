@@ -1,12 +1,18 @@
 #ifndef MESSAGE_SEARCH_AUTOCOMPLETE_H
 #define MESSAGE_SEARCH_AUTOCOMPLETE_H
 
+#include "SrctrlModule.h"
+
+// Family-internal includes are unguarded: same module either way.
 #include "Message.h"
+
+#ifndef SRCTRL_MODULE_PURVIEW
 #include "Node.h"
 #include "NodeTypeSet.h"
 #include "TabIds.h"
+#endif
 
-class MessageSearchAutocomplete: public Message<MessageSearchAutocomplete>
+SRCTRL_EXPORT class MessageSearchAutocomplete: public Message<MessageSearchAutocomplete>
 {
 public:
 	MessageSearchAutocomplete(const std::string& query, NodeTypeSet acceptedNodeTypes)

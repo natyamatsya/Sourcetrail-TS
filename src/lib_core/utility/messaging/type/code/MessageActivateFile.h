@@ -1,11 +1,17 @@
 #ifndef MESSAGE_ACTIVATE_FILE_H
 #define MESSAGE_ACTIVATE_FILE_H
 
-#include "FilePath.h"
-#include "Message.h"
-#include "TabIds.h"
+#include "SrctrlModule.h"
 
-class MessageActivateFile: public Message<MessageActivateFile>
+// Family-internal includes are unguarded: same module either way.
+#include "Message.h"
+
+#ifndef SRCTRL_MODULE_PURVIEW
+#include "FilePath.h"
+#include "TabIds.h"
+#endif
+
+SRCTRL_EXPORT class MessageActivateFile: public Message<MessageActivateFile>
 {
 public:
 	MessageActivateFile(const FilePath& filePath, unsigned int line = 0)

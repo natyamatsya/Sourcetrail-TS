@@ -1,9 +1,13 @@
 #ifndef MESSAGE_SCROLL_SPEED_CHANGE_H
 #define MESSAGE_SCROLL_SPEED_CHANGE_H
 
+#include "SrctrlModule.h"
+
+// Family-internal includes are unguarded: same module either way.
 #include "Message.h"
 
-class MessageScrollSpeedChange: public Message<MessageScrollSpeedChange>
+
+SRCTRL_EXPORT class MessageScrollSpeedChange: public Message<MessageScrollSpeedChange>
 {
 public:
 	MessageScrollSpeedChange(float scrollSpeed): scrollSpeed(scrollSpeed) {}

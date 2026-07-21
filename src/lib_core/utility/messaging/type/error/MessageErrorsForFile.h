@@ -1,9 +1,13 @@
 #ifndef MESSAGE_ERRORS_FOR_FILE_H
 #define MESSAGE_ERRORS_FOR_FILE_H
 
+#include "SrctrlModule.h"
+
+// Family-internal includes are unguarded: same module either way.
 #include "Message.h"
 
-class MessageErrorsForFile: public Message<MessageErrorsForFile>
+
+SRCTRL_EXPORT class MessageErrorsForFile: public Message<MessageErrorsForFile>
 {
 public:
 	static const std::string getStaticType()

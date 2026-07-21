@@ -1,10 +1,16 @@
 #ifndef MESSAGE_FOCUS_VIEW_H
 #define MESSAGE_FOCUS_VIEW_H
 
-#include "Message.h"
-#include "TabIds.h"
+#include "SrctrlModule.h"
 
-class MessageFocusView: public Message<MessageFocusView>
+// Family-internal includes are unguarded: same module either way.
+#include "Message.h"
+
+#ifndef SRCTRL_MODULE_PURVIEW
+#include "TabIds.h"
+#endif
+
+SRCTRL_EXPORT class MessageFocusView: public Message<MessageFocusView>
 {
 public:
 	enum class ViewType

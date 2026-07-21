@@ -1,9 +1,13 @@
 #ifndef MESSAGE_BOOKMARK_CREATE_H
 #define MESSAGE_BOOKMARK_CREATE_H
 
+#include "SrctrlModule.h"
+
+// Family-internal includes are unguarded: same module either way.
 #include "Message.h"
 
-class MessageBookmarkCreate: public Message<MessageBookmarkCreate>
+
+SRCTRL_EXPORT class MessageBookmarkCreate: public Message<MessageBookmarkCreate>
 {
 public:
 	MessageBookmarkCreate(Id nodeId = 0): nodeId(nodeId) {}

@@ -1,11 +1,17 @@
 #ifndef MESSAGE_SCROLL_TO_LINE_H
 #define MESSAGE_SCROLL_TO_LINE_H
 
-#include "FilePath.h"
-#include "Message.h"
-#include "TabIds.h"
+#include "SrctrlModule.h"
 
-class MessageScrollToLine: public Message<MessageScrollToLine>
+// Family-internal includes are unguarded: same module either way.
+#include "Message.h"
+
+#ifndef SRCTRL_MODULE_PURVIEW
+#include "FilePath.h"
+#include "TabIds.h"
+#endif
+
+SRCTRL_EXPORT class MessageScrollToLine: public Message<MessageScrollToLine>
 {
 public:
 	MessageScrollToLine(const FilePath& filePath, size_t line): filePath(filePath), line(line)
