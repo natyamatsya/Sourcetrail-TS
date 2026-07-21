@@ -779,6 +779,30 @@ cycles in `lib` is prerequisite work, and a good cleanup in its own right).
   CxxIndexerCommandCodec, CxxModulePrebuildRunner/CxxPchBuildRunner) — plus switching main.cpp's
   own LOG_* sites to srctrl::log (an importer TU cannot textually include logging.h's classic
   backend path). GlazeCli.h to be checked for GMF-safety at flip time.
+  **PHASE 4 COMPLETE — `srctrl.cxx:package` + main.cpp as pure importer LANDED.** The new
+  partition carries the language-package glue (LanguagePackageCxx, registerCxxIndexerCommandCodec
+  with its provider in `cxx_indexer_command_codec_detail`, both prebuild runners with the
+  scanner/BMI helpers in `cxx_module_prebuild_runner_detail`); it is the ONE srctrl.cxx partition
+  importing srctrl.interprocess, keeping that dependency out of the parser pipeline. GlazeCli.h
+  proved GMF-safe (std + glaze only). main.cpp imports
+  srctrl.file/settings/logging/indexer/interprocess(/cxx under BUILD_CXX_LANGUAGE_PACKAGE) under
+  SRCTRL_MODULE_BUILD (same define + per-file CXX_SCAN_FOR_MODULES mechanics as the test target);
+  its textual remainder is language_packages.h (macro-only, may precede the imports),
+  GlazeCli/setupLocale/utilityExpected + std; LOG_* sites became srctrl::log (classic branch gets
+  them from LogFacade.h). QT_NO_EMIT joined the app target (the self-contained package headers
+  reach Sema.h from src/app/main.cpp). **Two toolchain rules from the first TU mixing the
+  clang-heavy srctrl.cxx BMIs with srctrl.interprocess/thoth.ipc:** (1) EVERY BMI in one import
+  graph must be full — thoth.ipc.pcm was the only reduced one (upstream can't know the consumer's
+  policy) and crashed clang's ASTReader (`ASTDeclReader::Visit` during std:: lookup) when
+  deserialized next to the srctrl.cxx BMIs; the consumer's top-level CMake now sets
+  -fno-modules-reduced-bmi (+ the Debug hardening defines) on thoth_ipc_module. (2) In an
+  importer TU every #include must PRECEDE the imports — a textual libc++ header parsed after the
+  BMI-merged declarations fails with "cannot add 'abi_tag' attribute in a redeclaration" (the
+  fwd-header's tagged declaration must come before the class-body friend redecl, and BMI merging
+  inverts the order if imports come first). thoth-ipc's module doc states the same rule (GCC
+  PR114795 over there); the libc++ ODR signature itself was IDENTICAL across the define sets —
+  this is declaration order, not config mismatch. The ON-mode headless index exercises the
+  importer-built indexer subprocess end to end.
 - **Phase 5 — dogfood.** Index the module-built Sourcetrail *with* the module-built Sourcetrail; diff
   the symbol/edge graph against the header build's graph (they must match) and benchmark incremental
   rebuilds ON vs OFF.
