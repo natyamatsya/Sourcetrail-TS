@@ -1,5 +1,6 @@
 #include "QtCodeArea.h"
 
+#ifndef SRCTRL_MODULE_BUILD
 #include "ApplicationSettings.h"
 #include "ColorScheme.h"
 #include "MessageActivateLocalSymbols.h"
@@ -8,16 +9,23 @@
 #include "MessageFocusOut.h"
 #include "MessageMoveIDECursor.h"
 #include "MessageShowError.h"
+#endif
 #include "Platform.h"
 #include "QtActions.h"
 #include "QtCodeNavigator.h"
 #include "QtContextMenu.h"
+#ifndef SRCTRL_MODULE_BUILD
 #include "SourceLocationFile.h"
+#endif
 #include "TextCodec.h"
 #include "compatibilityQt.h"
+#ifndef SRCTRL_MODULE_BUILD
 #include "utility.h"
+#endif
 #include "utilityQt.h"
+#ifndef SRCTRL_MODULE_BUILD
 #include "utilityString.h"
+#endif
 
 #include <QApplication>
 #include <QDrag>
@@ -34,6 +42,15 @@
 #include <QToolTip>
 
 #include <algorithm>
+
+// Imports come AFTER all textual #includes (include-before-import rule: textual libc++
+// following BMI-merged declarations trips "cannot add 'abi_tag' in a redeclaration").
+#ifdef SRCTRL_MODULE_BUILD
+import srctrl.data;
+import srctrl.messaging;
+import srctrl.settings;
+import srctrl.utility;
+#endif
 
 using namespace utility::compatibility;
 

@@ -1,13 +1,22 @@
 #include "QtAutocompletionList.h"
 
+#ifndef SRCTRL_MODULE_BUILD
 #include "ApplicationSettings.h"
 #include "ColorScheme.h"
 #include "GraphViewStyle.h"
+#endif
 #include "QtDeviceScaledPixmap.h"
 #include "QtResources.h"
 
 #include <QPainter>
 #include <QScrollBar>
+
+// Imports come AFTER all textual #includes (include-before-import rule: textual libc++
+// following BMI-merged declarations trips "cannot add 'abi_tag' in a redeclaration").
+#ifdef SRCTRL_MODULE_BUILD
+import srctrl.settings;
+import srctrl.view;
+#endif
 
 QtAutocompletionModel::QtAutocompletionModel(QObject* parent): QAbstractTableModel(parent) {}
 

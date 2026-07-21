@@ -220,6 +220,8 @@ def closure_dirt(base):
 def analyze(tu):
     name = os.path.basename(tu)
     stem = name[:-4]
+    if re.search(r'^import srctrl\.', read(tu), re.M):
+        return ("SKIP", name, "already converted (imports srctrl.*)")
     if f"{stem}.h" in MOD or f"{stem}.hpp" in MOD:
         return ("SKIP", name, f"definer TU of modularized {stem} (classic seam)")
     if any(b.endswith(".inl") for b in direct_includes(tu)):
@@ -227,7 +229,10 @@ def analyze(tu):
     incs = [b for b in direct_includes(tu) if b != "Catch2.hpp"]
     if any(b in STDEXEC_MARKERS for b in incs):
         return ("SKIP", name, "includes stdexec directly (scanner-unconvertible)")
-    modular = sorted(set(b for b in incs if b in MOD))
+    # logging.h stays CLASSIC for consumers post-pivot: the macro backend must exist at include
+    # time whenever the textual closure logs, and the textual (GM) backend merges with the BMI
+    # anyway. (SRCTRL_LOGGING_VIA_IMPORT remains only in pre-pivot conversions.)
+    modular = sorted(set(b for b in incs if b in MOD and b != "logging.h"))
     if not modular:
         return ("SKIP", name, "no modularized includes")
     dirt_of = index_closure_dirt if INDEX_EDGES else closure_dirt
@@ -310,13 +315,11 @@ def apply_conversion(tu, headers, imports):
     """Rewrite `tu` in place: guard modularized includes, append the import block."""
     lines = read(tu).split("\n")
     guard = set(headers)
-    logging_via_import = "logging.h" in guard
-    if logging_via_import:
-        guard.discard("logging.h")  # macro header stays textual; backend via import
 
     out = []
     i = 0
     last_include_out_idx = -1
+    in_preamble = True
     while i < len(lines):
         l = lines[i]
         m = inc_re.match(l)
@@ -334,7 +337,17 @@ def apply_conversion(tu, headers, imports):
             out.append("#endif")
             last_include_out_idx = len(out) - 1
         else:
-            if m or l.startswith("#endif") or l.startswith("#ifndef SRCTRL_MODULE_BUILD"):
+            # Track the last PREAMBLE include only: once past the contiguous run of
+            # preprocessor lines / comments / blanks at the top, stop moving the anchor --
+            # a late #endif (BUILD_CXX guard, .moc include) must not drag the import block
+            # into a function body (QtProjectWizard lesson).
+            stripped = l.strip()
+            preamble_line = (not stripped or stripped.startswith(("#", "//", "/*", "*"))
+                             or stripped.startswith("using namespace"))
+            if not preamble_line:
+                in_preamble = False
+            if in_preamble and (m or l.startswith("#endif")
+                                or l.startswith("#ifndef SRCTRL_MODULE_BUILD")):
                 last_include_out_idx = len(out)
             out.append(l)
         i += 1
@@ -345,9 +358,6 @@ def apply_conversion(tu, headers, imports):
     insert_at = last_include_out_idx + 1 if last_include_out_idx >= 0 else 0
     out[insert_at:insert_at] = block
 
-    if logging_via_import:
-        out[0:0] = [LOGGING_COMMENT.rstrip("\n"), "#ifdef SRCTRL_MODULE_BUILD",
-                    "#define SRCTRL_LOGGING_VIA_IMPORT", "#endif", ""]
 
     open(tu, "w").write("\n".join(out))
 
@@ -428,8 +438,6 @@ def main(argv):
             if soft:
                 print(f"NOTE {name}: include-only (two-entity) closures stay textual: " +
                       ", ".join(f"{b} ({'/'.join(o)})" for b, o in soft.items()))
-            if "srctrl.logging" not in imports and "logging.h" in headers:
-                imports = sorted(set(imports) | {"srctrl.logging"})
             apply_conversion(tu, headers, imports)
             cmake_todo.append(tu)
             print(f"APPLIED {name}: imports {', '.join(imports)}")

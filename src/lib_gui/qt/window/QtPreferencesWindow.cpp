@@ -2,10 +2,12 @@
 
 #include "language_package_flags.h"
 
+#ifndef SRCTRL_MODULE_BUILD
 #include "MessageLoadProject.h"
 #include "MessagePluginPortChange.h"
 #include "MessageRefreshUI.h"
 #include "MessageScrollSpeedChange.h"
+#endif
 
 #include "Application.h"
 #include "DialogView.h"
@@ -14,6 +16,12 @@
 #include "QtProjectWizardContentPathsHeaderSearchGlobal.h"
 #include "QtProjectWizardContentPreferences.h"
 #include "Platform.h"
+
+// Imports come AFTER all textual #includes (include-before-import rule: textual libc++
+// following BMI-merged declarations trips "cannot add 'abi_tag' in a redeclaration").
+#ifdef SRCTRL_MODULE_BUILD
+import srctrl.messaging;
+#endif
 
 QtPreferencesWindow::QtPreferencesWindow(QWidget* parent): QtProjectWizardWindow(parent)
 {

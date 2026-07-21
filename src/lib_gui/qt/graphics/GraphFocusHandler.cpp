@@ -1,9 +1,20 @@
 #include "GraphFocusHandler.h"
 
+#ifndef SRCTRL_MODULE_BUILD
 #include "MessageFocusChanged.h"
+#endif
 #include "QtGraphEdge.h"
 #include "QtGraphNode.h"
+#ifndef SRCTRL_MODULE_BUILD
 #include "utility.h"
+#endif
+
+// Imports come AFTER all textual #includes (include-before-import rule: textual libc++
+// following BMI-merged declarations trips "cannot add 'abi_tag' in a redeclaration").
+#ifdef SRCTRL_MODULE_BUILD
+import srctrl.messaging;
+import srctrl.utility;
+#endif
 
 GraphFocusHandler::GraphFocusHandler(GraphFocusClient* client): m_client(client) {}
 

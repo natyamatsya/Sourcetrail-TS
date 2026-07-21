@@ -8,8 +8,10 @@
 #include <QGuiApplication>
 #include <QTimer>
 
+#ifndef SRCTRL_MODULE_BUILD
 #include "MessageIndexingStatus.h"
 #include "MessageStatus.h"
+#endif
 #include "Project.h"
 #include "QtIndexingDialog.h"
 #include "QtIndexingProgressDialog.h"
@@ -19,11 +21,23 @@
 #include "QtMainWindow.h"
 #include "QtUnknownProgressDialog.h"
 #include "QtWindow.h"
+#ifndef SRCTRL_MODULE_BUILD
 #include "StorageAccess.h"
+#endif
 #include "UiPost.h"
 #include "TabIds.h"
 #include "TaskLambda.h"
+#ifndef SRCTRL_MODULE_BUILD
 #include "utility.h"
+#endif
+
+// Imports come AFTER all textual #includes (include-before-import rule: textual libc++
+// following BMI-merged declarations trips "cannot add 'abi_tag' in a redeclaration").
+#ifdef SRCTRL_MODULE_BUILD
+import srctrl.messaging;
+import srctrl.storage;
+import srctrl.utility;
+#endif
 
 QtDialogView::QtDialogView(QtMainWindow* mainWindow, UseCase useCase, StorageAccess* storageAccess)
 	: DialogView(useCase, storageAccess)

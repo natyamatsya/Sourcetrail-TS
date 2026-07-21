@@ -4,9 +4,19 @@
 
 #include "QtTextEditDialog.h"
 #include "UiPost.h"
+#ifndef SRCTRL_MODULE_BUILD
 #include "utility.h"
+#endif
 #include "utilityFilePath.h"
+#ifndef SRCTRL_MODULE_BUILD
 #include "utilityString.h"
+#endif
+
+// Imports come AFTER all textual #includes (include-before-import rule: textual libc++
+// following BMI-merged declarations trips "cannot add 'abi_tag' in a redeclaration").
+#ifdef SRCTRL_MODULE_BUILD
+import srctrl.utility;
+#endif
 
 QtProjectWizardContent::QtProjectWizardContent(QtProjectWizardWindow* window)
 	: QWidget(window)

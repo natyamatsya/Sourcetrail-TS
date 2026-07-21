@@ -1,16 +1,20 @@
 #include "QtGraphNode.h"
 
 #include "GraphFocusHandler.h"
+#ifndef SRCTRL_MODULE_BUILD
 #include "MessageCodeShowDefinition.h"
 #include "MessageGraphNodeHide.h"
 #include "MessageGraphNodeMove.h"
+#endif
 #include "QtDeviceScaledPixmap.h"
 #include "QtGraphEdge.h"
 #include "QtGraphNodeComponent.h"
 #include "QtResources.h"
 #include "QtRoundedRectItem.h"
 #include "utilityQt.h"
+#ifndef SRCTRL_MODULE_BUILD
 #include "utilityString.h"
+#endif
 
 #include <QBrush>
 #include <QCursor>
@@ -18,6 +22,13 @@
 #include <QFontMetrics>
 #include <QGraphicsSceneEvent>
 #include <QPen>
+
+// Imports come AFTER all textual #includes (include-before-import rule: textual libc++
+// following BMI-merged declarations trips "cannot add 'abi_tag' in a redeclaration").
+#ifdef SRCTRL_MODULE_BUILD
+import srctrl.messaging;
+import srctrl.utility;
+#endif
 
 void QtGraphNode::blendIn()
 {

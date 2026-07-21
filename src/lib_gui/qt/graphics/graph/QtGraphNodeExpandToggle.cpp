@@ -3,11 +3,19 @@
 #include "QtDeviceScaledPixmap.h"
 #include "QtRoundedRectItem.h"
 #include "utilityQt.h"
+#ifndef SRCTRL_MODULE_BUILD
 #include "MessageGraphNodeExpand.h"
+#endif
 #include "logging.h"
 #include "QtResources.h"
 
 #include <QFontMetrics>
+
+// Imports come AFTER all textual #includes (include-before-import rule: textual libc++
+// following BMI-merged declarations trips "cannot add 'abi_tag' in a redeclaration").
+#ifdef SRCTRL_MODULE_BUILD
+import srctrl.messaging;
+#endif
 
 QtGraphNodeExpandToggle::QtGraphNodeExpandToggle(bool expanded, int invisibleSubNodeCount)
 	: m_invisibleSubNodeCount(invisibleSubNodeCount), m_expanded(expanded)

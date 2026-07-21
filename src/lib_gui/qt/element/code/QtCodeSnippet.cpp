@@ -5,12 +5,23 @@
 #include <QStyle>
 #include <qmenu.h>
 
+#ifndef SRCTRL_MODULE_BUILD
 #include "MessageShowScope.h"
+#endif
 
 #include "QtCodeFile.h"
 #include "QtCodeNavigator.h"
 #include "QtHoverButton.h"
+#ifndef SRCTRL_MODULE_BUILD
 #include "SourceLocationFile.h"
+#endif
+
+// Imports come AFTER all textual #includes (include-before-import rule: textual libc++
+// following BMI-merged declarations trips "cannot add 'abi_tag' in a redeclaration").
+#ifdef SRCTRL_MODULE_BUILD
+import srctrl.data;
+import srctrl.messaging;
+#endif
 
 QtCodeSnippet::QtCodeSnippet(const CodeSnippetParams& params, QtCodeNavigator* navigator, QtCodeFile* file)
 	: QFrame(file)

@@ -1,15 +1,23 @@
 #include "QtSearchBar.h"
 
+#ifndef SRCTRL_MODULE_BUILD
 #include "MessageActivateFullTextSearch.h"
 #include "MessageActivateOverview.h"
 #include "MessageSearch.h"
 #include "MessageSearchAutocomplete.h"
+#endif
 #include "QtActions.h"
 #include "QtResources.h"
 #include "QtSearchBarButton.h"
 #include "QtSmartSearchBox.h"
 
 #include <QHBoxLayout>
+
+// Imports come AFTER all textual #includes (include-before-import rule: textual libc++
+// following BMI-merged declarations trips "cannot add 'abi_tag' in a redeclaration").
+#ifdef SRCTRL_MODULE_BUILD
+import srctrl.messaging;
+#endif
 
 QtSearchBar::QtSearchBar()
 {

@@ -1,18 +1,31 @@
 #include "QtHistoryList.h"
 
+#ifndef SRCTRL_MODULE_BUILD
 #include "ColorScheme.h"
 #include "GraphViewStyle.h"
 #include "MessageHistoryToPosition.h"
 #include "MessageTabOpenWith.h"
+#endif
 #include "QtDeviceScaledPixmap.h"
 #include "QtResources.h"
 #include "utilityQt.h"
+#ifndef SRCTRL_MODULE_BUILD
 #include "utilityString.h"
+#endif
 
 #include <QBoxLayout>
 #include <QLabel>
 #include <QMouseEvent>
 #include <QScrollBar>
+
+// Imports come AFTER all textual #includes (include-before-import rule: textual libc++
+// following BMI-merged declarations trips "cannot add 'abi_tag' in a redeclaration").
+#ifdef SRCTRL_MODULE_BUILD
+import srctrl.messaging;
+import srctrl.settings;
+import srctrl.utility;
+import srctrl.view;
+#endif
 
 using namespace utility;
 

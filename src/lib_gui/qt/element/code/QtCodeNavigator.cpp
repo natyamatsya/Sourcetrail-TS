@@ -1,22 +1,28 @@
 #include "QtCodeNavigator.h"
 #include "UiPost.h"
 
+#ifndef SRCTRL_MODULE_BUILD
 #include "ApplicationSettings.h"
+#endif
 #include "CodeFocusHandler.h"
+#ifndef SRCTRL_MODULE_BUILD
 #include "MessageCodeReference.h"
 #include "MessageHistoryRedo.h"
 #include "MessageHistoryUndo.h"
 #include "MessageScrollCode.h"
 #include "MessageTabOpenWith.h"
 #include "MessageToNextCodeReference.h"
+#endif
 #include "QtActions.h"
 #include "QtCodeArea.h"
 #include "QtCodeFile.h"
 #include "QtCodeSnippet.h"
 #include "QtResources.h"
 #include "QtSearchBarButton.h"
+#ifndef SRCTRL_MODULE_BUILD
 #include "SourceLocation.h"
 #include "SourceLocationCollection.h"
+#endif
 #include "TabIds.h"
 #include "logging.h"
 #include "utilityQt.h"
@@ -29,6 +35,14 @@
 #include <QStyle>
 #include <QTimer>
 #include <QVBoxLayout>
+
+// Imports come AFTER all textual #includes (include-before-import rule: textual libc++
+// following BMI-merged declarations trips "cannot add 'abi_tag' in a redeclaration").
+#ifdef SRCTRL_MODULE_BUILD
+import srctrl.data;
+import srctrl.messaging;
+import srctrl.settings;
+#endif
 
 QtCodeNavigator::QtCodeNavigator(QWidget* parent)
 	: QWidget(parent),  m_schedulerId(TabIds::ignore())

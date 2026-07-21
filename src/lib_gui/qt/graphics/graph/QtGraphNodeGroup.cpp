@@ -6,11 +6,22 @@
 #include <QPainterPath>
 #include <QPen>
 
+#ifndef SRCTRL_MODULE_BUILD
 #include "MessageActivateNodes.h"
 #include "MessageFocusIn.h"
 #include "MessageFocusOut.h"
 #include "MessageGraphNodeBundleSplit.h"
+#endif
 #include "QtRoundedRectItem.h"
+
+// Imports come AFTER all textual #includes (include-before-import rule: textual libc++
+// following BMI-merged declarations trips "cannot add 'abi_tag' in a redeclaration").
+#ifdef SRCTRL_MODULE_BUILD
+import srctrl.messaging;
+// TooltipOrigin came transitively through the message headers before the guard; visibility
+// does not flow through imports (no re-exports), so name the owner directly.
+import srctrl.data;
+#endif
 
 QtGraphNodeGroup::QtGraphNodeGroup(
 	GraphFocusHandler* focusHandler, Id tokenId, const std::string& name, GroupType type, bool interactive)

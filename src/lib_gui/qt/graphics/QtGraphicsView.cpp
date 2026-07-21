@@ -1,7 +1,10 @@
 #include "QtGraphicsView.h"
 
+#ifndef SRCTRL_MODULE_BUILD
 #include "ApplicationSettings.h"
+#endif
 #include "GraphFocusHandler.h"
+#ifndef SRCTRL_MODULE_BUILD
 #include "MessageActivateLegend.h"
 #include "MessageBookmarkCreate.h"
 #include "MessageCodeShowDefinition.h"
@@ -11,6 +14,7 @@
 #include "MessageHistoryRedo.h"
 #include "MessageHistoryUndo.h"
 #include "MessageTabOpenWith.h"
+#endif
 #include "QtActions.h"
 #include "QtContextMenu.h"
 #include "QtFileDialog.h"
@@ -32,6 +36,13 @@
 #include <QParallelAnimationGroup>
 #include <QPropertyAnimation>
 #include <QSvgGenerator>
+
+// Imports come AFTER all textual #includes (include-before-import rule: textual libc++
+// following BMI-merged declarations trips "cannot add 'abi_tag' in a redeclaration").
+#ifdef SRCTRL_MODULE_BUILD
+import srctrl.messaging;
+import srctrl.settings;
+#endif
 
 constexpr float ZOOM_IN_BUTTON_SPEED = 20.0f;
 constexpr float ZOOM_OUT_BUTTON_SPEED = -20.0f;

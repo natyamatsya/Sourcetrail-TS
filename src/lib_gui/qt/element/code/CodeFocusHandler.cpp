@@ -1,9 +1,17 @@
 #include "CodeFocusHandler.h"
 
+#ifndef SRCTRL_MODULE_BUILD
 #include "MessageFocusChanged.h"
 #include "MessageFocusIn.h"
 #include "MessageFocusOut.h"
 #include "MessageFocusView.h"
+#endif
+
+// Imports come AFTER all textual #includes (include-before-import rule: textual libc++
+// following BMI-merged declarations trips "cannot add 'abi_tag' in a redeclaration").
+#ifdef SRCTRL_MODULE_BUILD
+import srctrl.messaging;
+#endif
 
 void CodeFocusHandler::focus()
 {

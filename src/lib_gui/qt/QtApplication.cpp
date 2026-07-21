@@ -5,12 +5,24 @@
 #include <kddockwidgets/Config.h>
 #include <kddockwidgets/KDDockWidgets.h>
 
+#ifndef SRCTRL_MODULE_BUILD
 #include "FilePath.h"
 #include "LogManager.h"
 #include "MessageLoadProject.h"
 #include "MessageWindowFocus.h"
 #include "ProjectSettings.h"
 #include "utilityApp.h"
+#endif
+
+// Imports come AFTER all textual #includes (include-before-import rule: textual libc++
+// following BMI-merged declarations trips "cannot add 'abi_tag' in a redeclaration").
+#ifdef SRCTRL_MODULE_BUILD
+import srctrl.file;
+import srctrl.logging;
+import srctrl.messaging;
+import srctrl.process;
+import srctrl.settings;
+#endif
 
 QtApplication::QtApplication(int& argc, char** argv): QApplication(argc, argv)
 {

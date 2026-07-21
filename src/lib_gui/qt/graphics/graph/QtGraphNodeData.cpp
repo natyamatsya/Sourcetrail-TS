@@ -1,15 +1,29 @@
 #include "QtGraphNodeData.h"
 
+#ifndef SRCTRL_MODULE_BUILD
 #include "FilePath.h"
+#endif
 #include "GraphFocusHandler.h"
+#ifndef SRCTRL_MODULE_BUILD
 #include "MessageActivateNodes.h"
 #include "MessageDeactivateEdge.h"
 #include "MessageFocusIn.h"
 #include "MessageFocusOut.h"
 #include "MessageTabOpenWith.h"
 #include "MessageTooltipShow.h"
+#endif
 #include "QtResources.h"
+#ifndef SRCTRL_MODULE_BUILD
 #include "TokenComponentFilePath.h"
+#endif
+
+// Imports come AFTER all textual #includes (include-before-import rule: textual libc++
+// following BMI-merged declarations trips "cannot add 'abi_tag' in a redeclaration").
+#ifdef SRCTRL_MODULE_BUILD
+import srctrl.data;
+import srctrl.file;
+import srctrl.messaging;
+#endif
 
 QtGraphNodeData::QtGraphNodeData(
 	GraphFocusHandler* focusHandler,

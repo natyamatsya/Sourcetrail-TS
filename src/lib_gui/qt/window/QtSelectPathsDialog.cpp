@@ -6,8 +6,17 @@
 #include <QListWidget>
 #include <QPushButton>
 
+#ifndef SRCTRL_MODULE_BUILD
 #include "FilePath.h"
 #include "utility.h"
+#endif
+
+// Imports come AFTER all textual #includes (include-before-import rule: textual libc++
+// following BMI-merged declarations trips "cannot add 'abi_tag' in a redeclaration").
+#ifdef SRCTRL_MODULE_BUILD
+import srctrl.file;
+import srctrl.utility;
+#endif
 
 QtSelectPathsDialog::QtSelectPathsDialog(const QString& title, const QString& description, QWidget* parent)
 	: QtTextEditDialog(title, description, parent)

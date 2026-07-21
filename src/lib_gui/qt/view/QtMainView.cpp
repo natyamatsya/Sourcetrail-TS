@@ -1,10 +1,21 @@
 #include "QtMainView.h"
 #include "UiPost.h"
 
+#ifndef SRCTRL_MODULE_BUILD
 #include "MessageRefreshUIState.h"
+#endif
 #include "QtMainWindow.h"
 #include "QtViewWidgetWrapper.h"
+#ifndef SRCTRL_MODULE_BUILD
 #include "utilityApp.h"
+#endif
+
+// Imports come AFTER all textual #includes (include-before-import rule: textual libc++
+// following BMI-merged declarations trips "cannot add 'abi_tag' in a redeclaration").
+#ifdef SRCTRL_MODULE_BUILD
+import srctrl.messaging;
+import srctrl.process;
+#endif
 
 QtMainView::QtMainView(const ViewFactory* viewFactory, StorageAccess* storageAccess)
 	: MainView(viewFactory, storageAccess)

@@ -4,15 +4,27 @@
 #include "language_package_flags.h"
 
 #include "SourceGroupCustomCommand.h"
+#ifndef SRCTRL_MODULE_BUILD
 #include "SourceGroupSettingsCustomCommand.h"
+#endif
 #include "SourceGroupSettingsWithSourcePaths.h"
+#ifndef SRCTRL_MODULE_BUILD
 #include "utility.h"
 #include "utilityFile.h"
+#endif
 
 #if BUILD_CXX_LANGUAGE_PACKAGE
 	#include "SourceGroupCxxEmpty.h"
 #endif
 #include "SourceGroupSettingsWithCxxPathsAndFlags.h"
+// Imports come AFTER all textual #includes (include-before-import rule: textual libc++
+// following BMI-merged declarations trips "cannot add 'abi_tag' in a redeclaration").
+#ifdef SRCTRL_MODULE_BUILD
+import srctrl.file;
+import srctrl.settings;
+import srctrl.utility;
+#endif
+
 
 QtProjectWizardContentPathsSource::QtProjectWizardContentPathsSource(
 	std::shared_ptr<SourceGroupSettings> settings, QtProjectWizardWindow* window)
@@ -86,6 +98,7 @@ std::vector<FilePath> QtProjectWizardContentPathsSource::getFilePaths() const
 	if (std::dynamic_pointer_cast<SourceGroupSettingsWithCxxPathsAndFlags>(m_settings))
 		allSourceFilePaths = SourceGroupCxxEmpty(m_settings).getAllSourceFilePaths();
 #endif
+
 
 	if (std::shared_ptr<SourceGroupSettingsCustomCommand> settings =
 			std::dynamic_pointer_cast<SourceGroupSettingsCustomCommand>(m_settings))

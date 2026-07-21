@@ -9,13 +9,22 @@
 #include <QPushButton>
 #include <QStandardItemModel>
 
+#ifndef SRCTRL_MODULE_BUILD
 #include "ApplicationSettings.h"
 #include "ColorScheme.h"
 #include "MessageClearStatusView.h"
 #include "MessageStatusFilterChanged.h"
+#endif
 #include "QtTable.h"
 #include "QtViewWidgetWrapper.h"
 #include "utilityQt.h"
+
+// Imports come AFTER all textual #includes (include-before-import rule: textual libc++
+// following BMI-merged declarations trips "cannot add 'abi_tag' in a redeclaration").
+#ifdef SRCTRL_MODULE_BUILD
+import srctrl.messaging;
+import srctrl.settings;
+#endif
 
 QtStatusView::QtStatusView(ViewLayout* viewLayout): StatusView(viewLayout)
 {

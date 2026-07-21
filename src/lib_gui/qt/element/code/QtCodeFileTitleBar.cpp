@@ -1,7 +1,9 @@
 #include "QtCodeFileTitleBar.h"
 
 #include "Application.h"
+#ifndef SRCTRL_MODULE_BUILD
 #include "MessageErrorsForFile.h"
+#endif
 #include "Project.h"
 #include "QtIconStateButton.h"
 #include "QtResources.h"
@@ -11,6 +13,12 @@
 #include <QLabel>
 #include <QStyle>
 #include <QVariant>
+
+// Imports come AFTER all textual #includes (include-before-import rule: textual libc++
+// following BMI-merged declarations trips "cannot add 'abi_tag' in a redeclaration").
+#ifdef SRCTRL_MODULE_BUILD
+import srctrl.messaging;
+#endif
 
 QtCodeFileTitleBar::QtCodeFileTitleBar(QWidget* parent, bool isHovering, bool isSingle)
 	: QtHoverButton(parent)

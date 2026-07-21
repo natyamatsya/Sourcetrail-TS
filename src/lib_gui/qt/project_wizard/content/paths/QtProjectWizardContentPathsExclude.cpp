@@ -1,9 +1,20 @@
 #include "QtProjectWizardContentPathsExclude.h"
 
+#ifndef SRCTRL_MODULE_BUILD
 #include "SourceGroupSettings.h"
+#endif
 #include "SourceGroupSettingsWithExcludeFilters.h"
+#ifndef SRCTRL_MODULE_BUILD
 #include "utility.h"
+#endif
 #include "utilityFilePath.h"
+
+// Imports come AFTER all textual #includes (include-before-import rule: textual libc++
+// following BMI-merged declarations trips "cannot add 'abi_tag' in a redeclaration").
+#ifdef SRCTRL_MODULE_BUILD
+import srctrl.settings;
+import srctrl.utility;
+#endif
 
 QtProjectWizardContentPathsExclude::QtProjectWizardContentPathsExclude(
 	std::shared_ptr<SourceGroupSettings> settings, QtProjectWizardWindow* window)

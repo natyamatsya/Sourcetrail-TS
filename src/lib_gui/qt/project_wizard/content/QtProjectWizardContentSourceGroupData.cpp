@@ -4,7 +4,15 @@
 #include <QCheckBox>
 #include <QLineEdit>
 
+#ifndef SRCTRL_MODULE_BUILD
 #include "SourceGroupSettings.h"
+#endif
+
+// Imports come AFTER all textual #includes (include-before-import rule: textual libc++
+// following BMI-merged declarations trips "cannot add 'abi_tag' in a redeclaration").
+#ifdef SRCTRL_MODULE_BUILD
+import srctrl.settings;
+#endif
 
 QtProjectWizardContentSourceGroupData::QtProjectWizardContentSourceGroupData(
 	std::shared_ptr<SourceGroupSettings> settings, QtProjectWizardWindow* window)

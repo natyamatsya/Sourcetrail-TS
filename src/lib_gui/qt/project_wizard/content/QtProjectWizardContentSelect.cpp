@@ -7,17 +7,31 @@
 #include "QtMessageBox.h"
 #include "QtProjectWizardWindow.h"
 #include "QtResources.h"
+#ifndef SRCTRL_MODULE_BUILD
 #include "ResourcePaths.h"
+#endif
 #include "SqliteIndexStorage.h"
+#ifndef SRCTRL_MODULE_BUILD
 #include "utilityApp.h"
+#endif
 #include "utilityQt.h"
+#ifndef SRCTRL_MODULE_BUILD
 #include "utilityString.h"
+#endif
 
 #include <QButtonGroup>
 #include <QLabel>
 #include <QPushButton>
 
 #include <regex>
+
+// Imports come AFTER all textual #includes (include-before-import rule: textual libc++
+// following BMI-merged declarations trips "cannot add 'abi_tag' in a redeclaration").
+#ifdef SRCTRL_MODULE_BUILD
+import srctrl.file;
+import srctrl.process;
+import srctrl.utility;
+#endif
 
 using namespace utility;
 using namespace std::chrono;

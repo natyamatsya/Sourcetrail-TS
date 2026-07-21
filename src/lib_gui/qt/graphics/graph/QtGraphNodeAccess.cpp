@@ -1,8 +1,12 @@
 #include "QtGraphNodeAccess.h"
 
+#ifndef SRCTRL_MODULE_BUILD
 #include "GraphViewStyle.h"
+#endif
 #include "QtDeviceScaledPixmap.h"
+#ifndef SRCTRL_MODULE_BUILD
 #include "TokenComponentAccess.h"
+#endif
 #include "utilityQt.h"
 #include "QtResources.h"
 
@@ -10,6 +14,13 @@
 #include <QCursor>
 #include <QFontMetrics>
 #include <QPen>
+
+// Imports come AFTER all textual #includes (include-before-import rule: textual libc++
+// following BMI-merged declarations trips "cannot add 'abi_tag' in a redeclaration").
+#ifdef SRCTRL_MODULE_BUILD
+import srctrl.data;
+import srctrl.view;
+#endif
 
 QtGraphNodeAccess::QtGraphNodeAccess(AccessKind accessKind)
 	:  m_accessKind(accessKind)

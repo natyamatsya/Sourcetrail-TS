@@ -6,15 +6,27 @@
 #include <QScrollBar>
 #include <QVBoxLayout>
 
+#ifndef SRCTRL_MODULE_BUILD
 #include "FilePath.h"
 #include "MessageChangeFileView.h"
+#endif
 #include "QtCodeArea.h"
 #include "QtCodeFileTitleBar.h"
 #include "QtCodeFileTitleButton.h"
 #include "QtCodeNavigator.h"
+#ifndef SRCTRL_MODULE_BUILD
 #include "SourceLocationFile.h"
+#endif
 #include "logging.h"
 #include "utilityQt.h"
+
+// Imports come AFTER all textual #includes (include-before-import rule: textual libc++
+// following BMI-merged declarations trips "cannot add 'abi_tag' in a redeclaration").
+#ifdef SRCTRL_MODULE_BUILD
+import srctrl.data;
+import srctrl.file;
+import srctrl.messaging;
+#endif
 
 QtCodeFileSingle::QtCodeFileSingle(QtCodeNavigator* navigator, QWidget*  /*parent*/)
 	: m_navigator(navigator) 

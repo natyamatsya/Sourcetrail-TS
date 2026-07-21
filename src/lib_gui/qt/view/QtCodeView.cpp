@@ -4,12 +4,20 @@
 #include "CodeController.h"
 #include "tracing.h"
 #include "QtResources.h"
+#ifndef SRCTRL_MODULE_BUILD
 #include "ColorScheme.h"
+#endif
 #include "QtCodeArea.h"
 #include "QtCodeNavigator.h"
 #include "QtHighlighter.h"
 #include "QtViewWidgetWrapper.h"
 #include "utilityQt.h"
+
+// Imports come AFTER all textual #includes (include-before-import rule: textual libc++
+// following BMI-merged declarations trips "cannot add 'abi_tag' in a redeclaration").
+#ifdef SRCTRL_MODULE_BUILD
+import srctrl.settings;
+#endif
 
 using namespace utility;
 

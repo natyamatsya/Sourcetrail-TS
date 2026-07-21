@@ -8,13 +8,25 @@
 #include <QTextCursor>
 #include <QTextDocument>
 
+#ifndef SRCTRL_MODULE_BUILD
 #include "ColorScheme.h"
 #include "FileSystem.h"
 #include "ResourcePaths.h"
 #include "TextAccess.h"
+#endif
 #include "logging.h"
 #include "tracing.h"
+#ifndef SRCTRL_MODULE_BUILD
 #include "utility.h"
+#endif
+
+// Imports come AFTER all textual #includes (include-before-import rule: textual libc++
+// following BMI-merged declarations trips "cannot add 'abi_tag' in a redeclaration").
+#ifdef SRCTRL_MODULE_BUILD
+import srctrl.file;
+import srctrl.settings;
+import srctrl.utility;
+#endif
 
 using namespace std;
 

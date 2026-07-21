@@ -1,8 +1,10 @@
 #include "QtProjectWizard.h"
 
 #include "Application.h"
+#ifndef SRCTRL_MODULE_BUILD
 #include "MessageLoadProject.h"
 #include "MessageStatus.h"
+#endif
 #include "Platform.h"
 #include "QtMessageBox.h"
 #include "QtProjectWizardContent.h"
@@ -20,11 +22,15 @@
 #include "QtProjectWizardContentSourceGroupInfoText.h"
 #include "QtProjectWizardContentUnloadable.h"
 #include "QtResources.h"
+#ifndef SRCTRL_MODULE_BUILD
 #include "SourceGroupSettingsCustomCommand.h"
 #include "SourceGroupSettingsUnloadable.h"
+#endif
 #include "ToolChain.h"
 #include "language_package_flags.h"
+#ifndef SRCTRL_MODULE_BUILD
 #include "utility.h"
+#endif
 #include "utilityPathDetection.h"
 #include "utilityUuid.h"
 
@@ -51,13 +57,25 @@
 	#include "QtProjectWizardContentPathsHeaderSearch.h"
 	#include "QtProjectWizardContentPathsIndexedHeaders.h"
 #endif
+#ifndef SRCTRL_MODULE_BUILD
 #include "SourceGroupSettingsCEmpty.h"
 #include "SourceGroupSettingsCppEmpty.h"
 #include "SourceGroupSettingsCxxCdb.h"
 #include "SourceGroupSettingsCxxCMakeFileAPI.h"
+#endif
 
+#ifndef SRCTRL_MODULE_BUILD
 #include "SourceGroupSettingsRustEmpty.h"
 #include "SourceGroupSettingsSwiftEmpty.h"
+#endif
+
+// Imports come AFTER all textual #includes (include-before-import rule: textual libc++
+// following BMI-merged declarations trips "cannot add 'abi_tag' in a redeclaration").
+#ifdef SRCTRL_MODULE_BUILD
+import srctrl.messaging;
+import srctrl.settings;
+import srctrl.utility;
+#endif
 
 using namespace std;
 
@@ -646,6 +664,7 @@ void QtProjectWizard::selectedSourceGroupChanged(int index)
 		addSourceGroupContents(summary, settings, this);
 	}
 #endif	  // BUILD_CXX_LANGUAGE_PACKAGE
+
 
 	if (
 		std::shared_ptr<SourceGroupSettingsRustEmpty> settings =

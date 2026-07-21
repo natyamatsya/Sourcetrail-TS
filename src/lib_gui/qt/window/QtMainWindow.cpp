@@ -1,9 +1,12 @@
 #include "QtMainWindow.h"
 
 #include "Application.h"
+#ifndef SRCTRL_MODULE_BUILD
 #include "ApplicationSettings.h"
 #include "Bookmark.h"
+#endif
 #include "CompositeView.h"
+#ifndef SRCTRL_MODULE_BUILD
 #include "FileSystem.h"
 #include "MessageActivateBase.h"
 #include "MessageActivateLegend.h"
@@ -32,6 +35,7 @@
 #include "MessageTabSelect.h"
 #include "MessageWindowClosed.h"
 #include "MessageZoom.h"
+#endif
 #include "QtAbout.h"
 #include "QtActions.h"
 #include "QtBuildJsonBrowser.h"
@@ -44,15 +48,23 @@
 #include "QtResources.h"
 #include "QtStartScreen.h"
 #include "QtViewWidgetWrapper.h"
+#ifndef SRCTRL_MODULE_BUILD
 #include "ResourcePaths.h"
+#endif
 #include "TabbedView.h"
+#ifndef SRCTRL_MODULE_BUILD
 #include "UserPaths.h"
+#endif
 #include "View.h"
 #include "logging.h"
 #include "tracing.h"
+#ifndef SRCTRL_MODULE_BUILD
 #include "utilityApp.h"
+#endif
 #include "utilityQt.h"
+#ifndef SRCTRL_MODULE_BUILD
 #include "utilityString.h"
+#endif
 
 #include <QApplication>
 #include <QDesktopServices>
@@ -69,6 +81,17 @@
 #include <kddockwidgets/DockWidget.h>
 #include <kddockwidgets/KDDockWidgets.h>
 #include <kddockwidgets/LayoutSaver.h>
+
+// Imports come AFTER all textual #includes (include-before-import rule: textual libc++
+// following BMI-merged declarations trips "cannot add 'abi_tag' in a redeclaration").
+#ifdef SRCTRL_MODULE_BUILD
+import srctrl.data;
+import srctrl.file;
+import srctrl.messaging;
+import srctrl.process;
+import srctrl.settings;
+import srctrl.utility;
+#endif
 
 
 using namespace utility;

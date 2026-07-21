@@ -1,8 +1,10 @@
 #include "QtRefreshView.h"
 #include "UiPost.h"
 
+#ifndef SRCTRL_MODULE_BUILD
 #include "MessageIndexingShowDialog.h"
 #include "MessageRefresh.h"
+#endif
 #include "QtActions.h"
 #include "QtResources.h"
 #include "QtSearchBarButton.h"
@@ -11,6 +13,12 @@
 
 #include <QFrame>
 #include <QHBoxLayout>
+
+// Imports come AFTER all textual #includes (include-before-import rule: textual libc++
+// following BMI-merged declarations trips "cannot add 'abi_tag' in a redeclaration").
+#ifdef SRCTRL_MODULE_BUILD
+import srctrl.messaging;
+#endif
 
 using namespace utility;
 

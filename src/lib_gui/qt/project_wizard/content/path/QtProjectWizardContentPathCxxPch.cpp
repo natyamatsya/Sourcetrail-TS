@@ -1,12 +1,25 @@
 #include "QtProjectWizardContentPathCxxPch.h"
 #include "QtMessageBox.h"
 
+#ifndef SRCTRL_MODULE_BUILD
 #include "IndexerCommandCxx.h"
 #include "SourceGroupSettingsCxxCdb.h"
+#endif
 #include "SourceGroupSettingsWithCxxPchOptions.h"
+#ifndef SRCTRL_MODULE_BUILD
 #include "utility.h"
 #include "utilityFile.h"
+#endif
 #include "utilitySourceGroupCxx.h"
+
+// Imports come AFTER all textual #includes (include-before-import rule: textual libc++
+// following BMI-merged declarations trips "cannot add 'abi_tag' in a redeclaration").
+#ifdef SRCTRL_MODULE_BUILD
+import srctrl.cxx;
+import srctrl.file;
+import srctrl.settings;
+import srctrl.utility;
+#endif
 
 QtProjectWizardContentPathCxxPch::QtProjectWizardContentPathCxxPch(
 	std::shared_ptr<SourceGroupSettings> settings,

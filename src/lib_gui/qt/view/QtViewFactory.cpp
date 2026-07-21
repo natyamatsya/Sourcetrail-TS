@@ -1,6 +1,8 @@
 #include "QtViewFactory.h"
 
+#ifndef SRCTRL_MODULE_BUILD
 #include "GraphViewStyle.h"
+#endif
 #include "QtBookmarkButtonsView.h"
 #include "QtBookmarkView.h"
 #include "QtCodeView.h"
@@ -21,6 +23,12 @@
 #include "QtTooltipView.h"
 #include "QtUndoRedoView.h"
 #include "utilityQt.h"
+
+// Imports come AFTER all textual #includes (include-before-import rule: textual libc++
+// following BMI-merged declarations trips "cannot add 'abi_tag' in a redeclaration").
+#ifdef SRCTRL_MODULE_BUILD
+import srctrl.view;
+#endif
 
 std::shared_ptr<MainView> QtViewFactory::createMainView(StorageAccess* storageAccess) const
 {

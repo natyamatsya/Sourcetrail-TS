@@ -5,6 +5,7 @@
 #include <QTextBlock>
 #include <QWindow>
 
+#ifndef SRCTRL_MODULE_BUILD
 #include "ApplicationSettings.h"
 #include "ColorScheme.h"
 #include "MessageActivateLocalSymbols.h"
@@ -12,14 +13,28 @@
 #include "MessageActivateTokenIds.h"
 #include "MessageTabOpenWith.h"
 #include "MessageTooltipShow.h"
+#endif
 #include "QtContextMenu.h"
 #include "QtHighlighter.h"
 #include "QtActions.h"
+#ifndef SRCTRL_MODULE_BUILD
 #include "SourceLocation.h"
 #include "SourceLocationFile.h"
+#endif
 #include "TextCodec.h"
 #include "tracing.h"
+#ifndef SRCTRL_MODULE_BUILD
 #include "utility.h"
+#endif
+
+// Imports come AFTER all textual #includes (include-before-import rule: textual libc++
+// following BMI-merged declarations trips "cannot add 'abi_tag' in a redeclaration").
+#ifdef SRCTRL_MODULE_BUILD
+import srctrl.data;
+import srctrl.messaging;
+import srctrl.settings;
+import srctrl.utility;
+#endif
 
 std::vector<QtCodeField::AnnotationColor> QtCodeField::s_annotationColors;
 std::string QtCodeField::s_focusColor;

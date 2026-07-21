@@ -4,8 +4,11 @@
 #include <QGraphicsItemGroup>
 #include <QGraphicsSceneEvent>
 
+#ifndef SRCTRL_MODULE_BUILD
 #include "Edge.h"
+#endif
 #include "GraphFocusHandler.h"
+#ifndef SRCTRL_MODULE_BUILD
 #include "GraphViewStyle.h"
 #include "MessageActivateEdge.h"
 #include "MessageActivateTrailEdge.h"
@@ -15,13 +18,25 @@
 #include "MessageGraphNodeHide.h"
 #include "MessageTooltipHide.h"
 #include "MessageTooltipShow.h"
+#endif
 #include "QtGraphNode.h"
 #include "QtLineItemAngled.h"
 #include "QtLineItemBezier.h"
 #include "QtLineItemStraight.h"
+#ifndef SRCTRL_MODULE_BUILD
 #include "TokenComponentInheritanceChain.h"
 #include "TokenComponentIsAmbiguous.h"
 #include "utility.h"
+#endif
+
+// Imports come AFTER all textual #includes (include-before-import rule: textual libc++
+// following BMI-merged declarations trips "cannot add 'abi_tag' in a redeclaration").
+#ifdef SRCTRL_MODULE_BUILD
+import srctrl.data;
+import srctrl.messaging;
+import srctrl.utility;
+import srctrl.view;
+#endif
 
 QtGraphEdge* QtGraphEdge::s_focusedEdge = nullptr;
 QtGraphEdge* QtGraphEdge::s_focusedBezierEdge = nullptr;

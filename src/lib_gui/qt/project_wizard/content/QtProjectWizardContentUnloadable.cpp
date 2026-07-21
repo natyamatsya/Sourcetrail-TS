@@ -1,6 +1,14 @@
 #include "QtProjectWizardContentUnloadable.h"
 
+#ifndef SRCTRL_MODULE_BUILD
 #include "SourceGroupSettingsUnloadable.h"
+#endif
+
+// Imports come AFTER all textual #includes (include-before-import rule: textual libc++
+// following BMI-merged declarations trips "cannot add 'abi_tag' in a redeclaration").
+#ifdef SRCTRL_MODULE_BUILD
+import srctrl.settings;
+#endif
 
 QtProjectWizardContentUnloadable::QtProjectWizardContentUnloadable(
 	std::shared_ptr<SourceGroupSettingsUnloadable> settings, QtProjectWizardWindow* window)

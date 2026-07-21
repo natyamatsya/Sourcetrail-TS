@@ -1,7 +1,9 @@
 #include "QtUndoRedo.h"
 
+#ifndef SRCTRL_MODULE_BUILD
 #include "MessageHistoryRedo.h"
 #include "MessageHistoryUndo.h"
+#endif
 #include "QtContextMenu.h"
 #include "QtHistoryList.h"
 #include "QtActions.h"
@@ -10,6 +12,12 @@
 
 #include <QHBoxLayout>
 #include <QTimer>
+
+// Imports come AFTER all textual #includes (include-before-import rule: textual libc++
+// following BMI-merged declarations trips "cannot add 'abi_tag' in a redeclaration").
+#ifdef SRCTRL_MODULE_BUILD
+import srctrl.messaging;
+#endif
 
 QtUndoRedo::QtUndoRedo()
 	:  m_historyHiddenAt(TimeStamp::now())

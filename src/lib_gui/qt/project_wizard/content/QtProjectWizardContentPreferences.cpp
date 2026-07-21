@@ -2,18 +2,24 @@
 
 #include "qtScaleFactor.h"	// Qt scale-factor env helpers (moved out of utilityQt into lib)
 
+#ifndef SRCTRL_MODULE_BUILD
 #include "ApplicationSettings.h"
 #include "FileLogger.h"
 #include "FileSystem.h"
 #include "MessageSwitchColorScheme.h"
 #include "MessageTextEncodingChanged.h"
+#endif
 #include "QtActions.h"
 #include "QtColorSchemeWatcher.h"
+#ifndef SRCTRL_MODULE_BUILD
 #include "ResourcePaths.h"
+#endif
 #include "TextCodec.h"
 #include "logging.h"
+#ifndef SRCTRL_MODULE_BUILD
 #include "utility.h"
 #include "utilityApp.h"
+#endif
 #include "utilityQt.h"
 
 #include <QCheckBox>
@@ -22,6 +28,17 @@
 #include <QLabel>
 #include <QLineEdit>
 #include <QTimer>
+
+// Imports come AFTER all textual #includes (include-before-import rule: textual libc++
+// following BMI-merged declarations trips "cannot add 'abi_tag' in a redeclaration").
+#ifdef SRCTRL_MODULE_BUILD
+import srctrl.file;
+import srctrl.logging;
+import srctrl.messaging;
+import srctrl.process;
+import srctrl.settings;
+import srctrl.utility;
+#endif
 
 using namespace std;
 using namespace utility;

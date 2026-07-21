@@ -1,9 +1,11 @@
 #include "QtCustomTrailView.h"
 #include "UiPost.h"
 
+#ifndef SRCTRL_MODULE_BUILD
 #include "ColorScheme.h"
 #include "MessageActivateTrail.h"
 #include "NodeTypeSet.h"
+#endif
 #include "QtMainWindow.h"
 #include "QtResources.h"
 #include "QtSmartSearchBox.h"
@@ -19,6 +21,14 @@
 #include <QLabel>
 #include <QRadioButton>
 #include <QSlider>
+
+// Imports come AFTER all textual #includes (include-before-import rule: textual libc++
+// following BMI-merged declarations trips "cannot add 'abi_tag' in a redeclaration").
+#ifdef SRCTRL_MODULE_BUILD
+import srctrl.data;
+import srctrl.messaging;
+import srctrl.settings;
+#endif
 
 
 using namespace utility;

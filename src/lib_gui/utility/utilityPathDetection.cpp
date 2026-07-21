@@ -1,8 +1,12 @@
 #include "utilityPathDetection.h"
+// Classic header, previously supplied transitively by a now-guarded include (rule 5).
+#include "Platform.h"
 
 #include "language_package_flags.h"
 
+#ifndef SRCTRL_MODULE_BUILD
 #include "utilityApp.h"
+#endif
 
 #if BUILD_CXX_LANGUAGE_PACKAGE
 	#include "CxxFrameworkPathDetector.h"
@@ -10,6 +14,12 @@
 	#include "CxxVs17ToLatestHeaderPathDetector.h"
 #endif
 #include "ToolChain.h"
+// Imports come AFTER all textual #includes (include-before-import rule: textual libc++
+// following BMI-merged declarations trips "cannot add 'abi_tag' in a redeclaration").
+#ifdef SRCTRL_MODULE_BUILD
+import srctrl.process;
+#endif
+
 
 using namespace std;
 
@@ -47,5 +57,6 @@ std::shared_ptr<CombinedPathDetector> utility::getCxxFrameworkPathDetector()
 	combinedDetector->addDetector(std::make_shared<CxxFrameworkPathDetector>("clang"));
 	combinedDetector->addDetector(std::make_shared<CxxFrameworkPathDetector>("gcc"));
 #endif
+
 	return combinedDetector;
 }

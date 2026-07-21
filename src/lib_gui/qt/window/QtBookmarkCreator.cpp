@@ -6,7 +6,15 @@
 #include <QTextEdit>
 #include <QVBoxLayout>
 
+#ifndef SRCTRL_MODULE_BUILD
 #include "MessageStatus.h"
+#endif
+
+// Imports come AFTER all textual #includes (include-before-import rule: textual libc++
+// following BMI-merged declarations trips "cannot add 'abi_tag' in a redeclaration").
+#ifdef SRCTRL_MODULE_BUILD
+import srctrl.messaging;
+#endif
 
 QtBookmarkCreator::QtBookmarkCreator(ControllerProxy<BookmarkController>* controllerProxy, QWidget* parent, BookmarkId bookmarkId)
 	: QtBookmarkWindow(controllerProxy, false, parent)

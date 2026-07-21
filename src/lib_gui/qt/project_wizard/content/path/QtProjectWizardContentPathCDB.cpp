@@ -2,10 +2,20 @@
 
 #include "QtProjectWizardContentPathsIndexedHeaders.h"
 #include "SourceGroupCxxCdb.h"
+#ifndef SRCTRL_MODULE_BUILD
 #include "SourceGroupSettingsCxxCdb.h"
 #include "utility.h"
 #include "utilityFile.h"
+#endif
 #include "utilitySourceGroupCxx.h"
+
+// Imports come AFTER all textual #includes (include-before-import rule: textual libc++
+// following BMI-merged declarations trips "cannot add 'abi_tag' in a redeclaration").
+#ifdef SRCTRL_MODULE_BUILD
+import srctrl.file;
+import srctrl.settings;
+import srctrl.utility;
+#endif
 
 QtProjectWizardContentPathCDB::QtProjectWizardContentPathCDB(
 	std::shared_ptr<SourceGroupSettingsCxxCdb> settings, QtProjectWizardWindow* window)

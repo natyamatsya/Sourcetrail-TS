@@ -5,8 +5,10 @@
 #include <thread>
 
 #include "Application.h"
+#ifndef SRCTRL_MODULE_BUILD
 #include "ApplicationSettings.h"
 #include "FileManager.h"
+#endif
 #include "IncludeDirective.h"
 #include "IncludeProcessing.h"
 #include "QtDialogView.h"
@@ -14,14 +16,26 @@
 #include "UiPost.h"
 #include "QtTextEditDialog.h"
 #include "ScopedFunctor.h"
+#ifndef SRCTRL_MODULE_BUILD
 #include "SourceGroupSettings.h"
+#endif
 #include "SourceGroupSettingsWithCxxPathsAndFlags.h"
 #include "SourceGroupSettingsWithExcludeFilters.h"
 #include "SourceGroupSettingsWithSourceExtensions.h"
 #include "SourceGroupSettingsWithSourcePaths.h"
+#ifndef SRCTRL_MODULE_BUILD
 #include "utility.h"
 #include "utilityFile.h"
 #include "utilityString.h"
+#endif
+
+// Imports come AFTER all textual #includes (include-before-import rule: textual libc++
+// following BMI-merged declarations trips "cannot add 'abi_tag' in a redeclaration").
+#ifdef SRCTRL_MODULE_BUILD
+import srctrl.file;
+import srctrl.settings;
+import srctrl.utility;
+#endif
 
 QtProjectWizardContentPathsHeaderSearch::QtProjectWizardContentPathsHeaderSearch(
 	std::shared_ptr<SourceGroupSettings> settings,
