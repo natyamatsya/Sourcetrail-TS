@@ -112,7 +112,9 @@ if(SOURCETRAIL_CXX_MODULES_ENABLED)
 		"${CMAKE_CURRENT_SOURCE_DIR}/qt/utility/QtScrollSpeedChangeListener.cpp"
 		"${CMAKE_CURRENT_SOURCE_DIR}/qt/utility/QtUiSnapshot.cpp"
 		"${CMAKE_CURRENT_SOURCE_DIR}/qt/view/QtViewWidgetWrapper.cpp"
+		"${CMAKE_CURRENT_SOURCE_DIR}/qt/window/QtActions.cpp"
 		"${CMAKE_CURRENT_SOURCE_DIR}/qt/window/QtIndexingReportDialog.cpp"
+		"${CMAKE_CURRENT_SOURCE_DIR}/qt/window/QtLicenseWindow.cpp"
 		"${CMAKE_CURRENT_SOURCE_DIR}/qt/window/QtWindowBase.cpp"
 		PROPERTIES CXX_SCAN_FOR_MODULES ON)
 endif()

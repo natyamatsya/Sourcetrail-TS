@@ -97,8 +97,10 @@ if(SOURCETRAIL_CXX_MODULES_ENABLED)
 	set_source_files_properties(
 		ConfigManagerTestSuite.cpp
 		FilePathFilterTestSuite.cpp
+		FileManagerTestSuite.cpp
 		FilePathTestSuite.cpp
 		FileSystemTestSuite.cpp
+		MatrixDynamicBaseTestSuite.cpp
 		GraphTestSuite.cpp
 		HierarchyCacheTestSuite.cpp
 		IpcSharedMemoryTestSuite.cpp

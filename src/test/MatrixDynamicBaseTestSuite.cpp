@@ -1,7 +1,19 @@
+// Module build: LOG_* macros stay textual (macros don't travel through imports); logging.h
+// then yields macros only and the backend comes from `import srctrl.logging` below.
+#ifdef SRCTRL_MODULE_BUILD
+#define SRCTRL_LOGGING_VIA_IMPORT
+#endif
+
 #include "Catch2.hpp"
 
 #include "MatrixDynamicBase.h"
 #include "logging.h"
+
+// Imports come AFTER all textual #includes (include-before-import rule: textual libc++
+// following BMI-merged declarations trips "cannot add 'abi_tag' in a redeclaration").
+#ifdef SRCTRL_MODULE_BUILD
+import srctrl.logging;
+#endif
 
 namespace
 {

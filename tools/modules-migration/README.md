@@ -20,7 +20,24 @@ module) and classifies every classic `.cpp`:
 
 Caveats: purely textual (no preprocessing — `GATED_CLEAN` allowlists headers like tracing.h whose
 modularized includes sit behind an off-by-default gate); only sees DIRECT purview includes
-(`EXTRA_ATTACHED` covers transitively-attached family headers if a wrapper relies on that).
+(`EXTRA_ATTACHED` covers transitively-attached family headers if a wrapper relies on that);
+multi-wrapper macro headers need `OWNER_OVERRIDES` (logging.h belongs to srctrl.logging even
+though every wrapper includes it).
+
+### `--apply <tu.cpp>...` — mechanical conversion
+
+Rewrites each CONVERTIBLE TU in place: wraps its modularized includes under
+`#ifndef SRCTRL_MODULE_BUILD`, appends the import block after the last include, and handles the
+logging.h macro-header case (`SRCTRL_LOGGING_VIA_IMPORT` + textual logging.h + import). Prints
+the per-target CMake `CXX_SCAN_FOR_MODULES` entries to wire manually. Review the diff; build.
+
+### `--index [db]` — self-index closure (the dogfooding loop)
+
+Replaces the textual include scan with the `EDGE_INCLUDE` edges of Sourcetrail's own self-index
+(default `Sourcetrail.srctrl.db`): preprocessed truth, so gated headers and exotic include
+spellings resolve exactly. The DB reflects the build it indexed — refresh after structural
+changes (modules-ON build, then `Sourcetrail index --full Sourcetrail.srctrl.toml`).
+Forward-declaration dirtiness still comes from the textual scan.
 
 ## cpp2inl.py / hdr2mod.py — one-shot generators (drafts, not truth)
 

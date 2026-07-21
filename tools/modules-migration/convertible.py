@@ -24,9 +24,23 @@ extra headers in EXTRA_ATTACHED below.
 
 Usage:
   tools/modules-migration/convertible.py [paths-or-globs of .cpp files; default: src/**]
+  tools/modules-migration/convertible.py --apply <tu.cpp> [...]
+  tools/modules-migration/convertible.py --index [Sourcetrail.srctrl.db] [tus...]
+
+--index replaces the textual include scan with the include edges of Sourcetrail's own
+self-index (EDGE_INCLUDE = 256): preprocessed truth, so preprocessor-gated headers (tracing.h)
+and exotic include spellings resolve exactly -- the dogfooding loop. The DB reflects the build
+it indexed: refresh with a modules-ON build + `Sourcetrail index --full Sourcetrail.srctrl.toml`
+after structural changes. Forward-declaration dirtiness still comes from the regex scan.
 
 Output per TU: CONVERTIBLE with the exact import block to paste, BLOCKED with the dirty
 headers (ranked blocker list at the end), or SKIP reasons (definer/stdexec/no modular deps).
+
+--apply rewrites each CONVERTIBLE TU in place (guards the modularized includes under
+SRCTRL_MODULE_BUILD, appends the import block after the last include, handles the logging.h
+macro-header case via SRCTRL_LOGGING_VIA_IMPORT) and prints the CMake scan-list entries still
+needed (per-target set_source_files_properties -- wired manually, targets differ). Review the
+diff; the OFF build stays the arbiter.
 """
 
 import os
@@ -45,6 +59,11 @@ STDEXEC_MARKERS = {"StdexecPrelude.h", "execution.hpp", "any_sender_of.hpp"}
 # Headers attached to a module only transitively (unguarded family includes inside a purview
 # header). Map basename -> module.
 EXTRA_ATTACHED: dict[str, str] = {}
+
+# Headers included in MANY wrappers' purviews where only one module owns the entities. logging.h
+# is the macro header: every wrapper includes it for the LOG_* macros, but the backend belongs to
+# srctrl.logging -- without this, "last wrapper walked wins" hands out wrong imports.
+OWNER_OVERRIDES = {"logging.h": "srctrl.logging"}
 
 # ---------------------------------------------------------------- module surface
 
@@ -66,7 +85,10 @@ def module_surface():
             if len(purview) < 2:
                 continue
             for inc in re.finditer(r'^#include "([^"]+)"', purview[1], re.M):
-                surface[os.path.basename(inc.group(1))] = module
+                base = os.path.basename(inc.group(1))
+                if base not in OWNER_OVERRIDES:
+                    surface[base] = module
+    surface.update(OWNER_OVERRIDES)
     return surface
 
 MOD = module_surface()
@@ -133,19 +155,22 @@ def closure_verdict(base):
 def analyze(tu):
     name = os.path.basename(tu)
     stem = name[:-4]
-    if f"{stem}.h" in MOD:
-        return ("SKIP", name, f"definer TU of modularized {stem}.h (classic seam)")
+    if f"{stem}.h" in MOD or f"{stem}.hpp" in MOD:
+        return ("SKIP", name, f"definer TU of modularized {stem} (classic seam)")
+    if any(b.endswith(".inl") for b in direct_includes(tu)):
+        return ("SKIP", name, "emission/seam TU (includes an .inl directly)")
     incs = [b for b in direct_includes(tu) if b != "Catch2.hpp"]
     if any(b in STDEXEC_MARKERS for b in incs):
         return ("SKIP", name, "includes stdexec directly (scanner-unconvertible)")
     modular = sorted(set(b for b in incs if b in MOD))
     if not modular:
         return ("SKIP", name, "no modularized includes")
+    verdict = index_closure_verdict if INDEX_EDGES else closure_verdict
     dirty = {}
     for b in sorted(set(incs)):
         if b in MOD:
             continue
-        v = closure_verdict(b)
+        v = verdict(b)
         if v:
             dirty[b] = v
     if dirty:
@@ -154,7 +179,134 @@ def analyze(tu):
     return ("CONVERTIBLE", name, (modular, imports))
 
 
+# ---------------------------------------------------------------- index-backed closure
+
+INDEX_EDGES: dict[str, set] = {}   # file basename -> directly included file basenames
+
+
+def load_index(db_path):
+    """Include graph from the self-index: EDGE_INCLUDE (256) between NODE_FILE (262144) nodes."""
+    import sqlite3
+    con = sqlite3.connect(f"file:{db_path}?mode=ro", uri=True)
+    files = {}
+    for nid, name in con.execute("SELECT id, serialized_name FROM node WHERE type = 262144"):
+        # file serialization: '/<TAB>m<path><TAB>s...' -- take the path between \tm and \ts
+        m = re.search(r'\tm([^\t]+)\ts', name)
+        if m:
+            files[nid] = os.path.basename(m.group(1))
+    for src, dst in con.execute(
+            "SELECT source_node_id, target_node_id FROM edge WHERE type = 256"):
+        if src in files and dst in files:
+            INDEX_EDGES.setdefault(files[src], set()).add(files[dst])
+    con.close()
+
+
+@lru_cache(maxsize=None)
+def index_closure_verdict(base):
+    """closure_verdict over the self-index include graph (preprocessed truth)."""
+    if base in MOD:
+        return f"includes modularized {base}"
+    seen, stack = set(), [base]
+    while stack:
+        b = stack.pop()
+        if b in seen:
+            continue
+        seen.add(b)
+        for p in by_base.get(b, []):
+            fwd = dirty_fwd_decls(p)
+            if fwd:
+                return f"{b}: unguarded fwd decl of attached type {fwd[0]}"
+        for i in INDEX_EDGES.get(b, ()):
+            if i in seen:
+                continue
+            if i in MOD:
+                return f"{b} -> modularized {i}"
+            if i in STDEXEC_MARKERS:
+                return "stdexec in closure (scanner-unconvertible)"
+            stack.append(i)
+    return None
+
+
+IMPORT_COMMENT = ("// Imports come AFTER all textual #includes (include-before-import rule: textual libc++\n"
+                  "// following BMI-merged declarations trips \"cannot add 'abi_tag' in a redeclaration\").\n")
+LOGGING_COMMENT = ("// Module build: LOG_* macros stay textual (macros don't travel through imports); logging.h\n"
+                   "// then yields macros only and the backend comes from `import srctrl.logging` below.\n")
+
+
+def apply_conversion(tu, headers, imports):
+    """Rewrite `tu` in place: guard modularized includes, append the import block."""
+    lines = read(tu).split("\n")
+    guard = set(headers)
+    logging_via_import = "logging.h" in guard
+    if logging_via_import:
+        guard.discard("logging.h")  # macro header stays textual; backend via import
+
+    out = []
+    i = 0
+    last_include_out_idx = -1
+    while i < len(lines):
+        l = lines[i]
+        m = inc_re.match(l)
+        if m and os.path.basename(m.group(1)) in guard:
+            run = [l]
+            while i + 1 < len(lines):
+                nxt = inc_re.match(lines[i + 1])
+                if nxt and os.path.basename(nxt.group(1)) in guard:
+                    run.append(lines[i + 1])
+                    i += 1
+                else:
+                    break
+            out.append("#ifndef SRCTRL_MODULE_BUILD")
+            out.extend(run)
+            out.append("#endif")
+            last_include_out_idx = len(out) - 1
+        else:
+            if m or l.startswith("#endif") or l.startswith("#ifndef SRCTRL_MODULE_BUILD"):
+                last_include_out_idx = len(out)
+            out.append(l)
+        i += 1
+
+    block = ["", IMPORT_COMMENT.rstrip("\n"), "#ifdef SRCTRL_MODULE_BUILD"]
+    block += [f"import {m};" for m in imports]
+    block += ["#endif"]
+    insert_at = last_include_out_idx + 1 if last_include_out_idx >= 0 else 0
+    out[insert_at:insert_at] = block
+
+    if logging_via_import:
+        out[0:0] = [LOGGING_COMMENT.rstrip("\n"), "#ifdef SRCTRL_MODULE_BUILD",
+                    "#define SRCTRL_LOGGING_VIA_IMPORT", "#endif", ""]
+
+    open(tu, "w").write("\n".join(out))
+
+
 def main(argv):
+    if argv and argv[0] == "--index":
+        argv = argv[1:]
+        db = argv.pop(0) if argv and argv[0].endswith(".db") else os.path.join(
+            ROOT, "Sourcetrail.srctrl.db")
+        load_index(db)
+        print(f"# include closure from self-index: {db} "
+              f"({sum(len(v) for v in INDEX_EDGES.values())} include edges)")
+    if argv and argv[0] == "--apply":
+        cmake_todo = []
+        for tu in argv[1:]:
+            kind, name, info = analyze(tu)
+            if kind != "CONVERTIBLE":
+                print(f"REFUSED {name}: {kind} -- {info}")
+                continue
+            headers, imports = info
+            if "srctrl.logging" not in imports and "logging.h" in headers:
+                imports = sorted(set(imports) | {"srctrl.logging"})
+            apply_conversion(tu, headers, imports)
+            cmake_todo.append(tu)
+            print(f"APPLIED {name}: imports {', '.join(imports)}")
+        if cmake_todo:
+            print("\nAdd to the owning target's CXX_SCAN_FOR_MODULES list "
+                  "(under SOURCETRAIL_CXX_MODULES_ENABLED):")
+            for tu in cmake_todo:
+                print(f"  {os.path.relpath(tu, ROOT)}")
+        return
+
     tus = argv or [os.path.join(dp, f)
                    for dp, _, fs in os.walk(SRC)
                    for f in fs if f.endswith(".cpp") and "cxx_modules_poc" not in dp]

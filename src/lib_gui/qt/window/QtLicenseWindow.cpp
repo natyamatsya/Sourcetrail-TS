@@ -3,11 +3,19 @@
 #include "licenses.h"
 #include "QtExpanderButton.h"
 
+#ifndef SRCTRL_MODULE_BUILD
 #include <aidkit/qt/Strings.hpp>
+#endif
 
 #include <QLabel>
 #include <QVBoxLayout>
 #include <QToolButton>
+
+// Imports come AFTER all textual #includes (include-before-import rule: textual libc++
+// following BMI-merged declarations trips "cannot add 'abi_tag' in a redeclaration").
+#ifdef SRCTRL_MODULE_BUILD
+import aidkit;
+#endif
 
 using namespace std;
 using namespace aidkit::qt;
