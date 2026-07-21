@@ -931,6 +931,18 @@ cycles in `lib` is prerequisite work, and a good cleanup in its own right).
   the GM in-class declaration). Verified: ON build green, 2656/2656 assertions, Usages
   529/2041/0; OFF re-verified green.
 
+- **Batches 9+10 -- the post-pivot mass conversion. ✅** 179 TUs converted in two slices
+  (92 lib_gui incl. the first AUTOMOC'd Q_OBJECT TUs; then 24 test suites, 53 lib_core, 8
+  lib_cxx, 1 app). The consumer frontier is now CLOSED: remaining are 4 stdexec-blocked TUs
+  (TaskBuildIndex.h x3, Schedulers.h -- classic until stdexec becomes scannable) and 5
+  deliberate keepers (aidkit dual-switch tests, StringsTest's intentional textual coverage,
+  QtActions/QtLicenseWindow include-only). Tool lessons: module_surface maps only
+  SRCTRL_EXPORT-bearing headers (classic rule-9 headers like Id.h parse in purviews but their
+  GM entities are invisible to importers); apply_conversion anchors imports to the contiguous
+  preamble (a late #endif dragged blocks into function bodies); the recurring manual fix class
+  is transitive visibility (a guarded include used to supply types from OTHER modules --
+  visibility does not flow through imports, so the consumer names the owner directly).
+
 ## Verification
 
 - **Dual-build CI:** every phase builds and runs the test suite with the flag **OFF and ON**; both must
