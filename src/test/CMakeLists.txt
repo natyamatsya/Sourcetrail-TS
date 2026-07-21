@@ -86,12 +86,31 @@ if (UNIX)
 	)
 endif()
 
-# Module build: UtilityEnumTestSuite `import srctrl.utility;` instead of #including utilityEnum.h.
+# Module build: converted test suites `import srctrl.*;` instead of #including the modularized
+# headers (the includes sit under `#ifndef SRCTRL_MODULE_BUILD`). A suite is convertible when its
+# remaining textual include closure contains no modularized header and no unguarded forward
+# declaration of a module-attached type.
 if(SOURCETRAIL_CXX_MODULES_ENABLED)
 	target_compile_definitions(Sourcetrail_test PRIVATE SRCTRL_MODULE_BUILD)
-	# Module scanning is off project-wide (stdexec breaks clang-scan-deps); scan only the file that
-	# imports.
-	set_source_files_properties(UtilityEnumTestSuite.cpp PROPERTIES CXX_SCAN_FOR_MODULES ON)
+	# Module scanning is off project-wide (stdexec breaks clang-scan-deps); scan only the files that
+	# import.
+	set_source_files_properties(
+		ConfigManagerTestSuite.cpp
+		FilePathFilterTestSuite.cpp
+		FilePathTestSuite.cpp
+		FileSystemTestSuite.cpp
+		GraphTestSuite.cpp
+		HierarchyCacheTestSuite.cpp
+		IpcSharedMemoryTestSuite.cpp
+		LogManagerTestSuite.cpp
+		LowMemoryStringMapTestSuite.cpp
+		QtResourcesTestSuite.cpp
+		SourceLocationCollectionTestSuite.cpp
+		TextAccessTestSuite.cpp
+		UtilityEnumTestSuite.cpp
+		UtilityStringTestSuite.cpp
+		Vector2TestSuite.cpp
+		PROPERTIES CXX_SCAN_FOR_MODULES ON)
 endif()
 
 catch_discover_tests(Sourcetrail_test)

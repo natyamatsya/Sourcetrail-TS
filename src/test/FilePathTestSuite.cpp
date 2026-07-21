@@ -1,7 +1,16 @@
 #include "Catch2.hpp"
 
+#ifndef SRCTRL_MODULE_BUILD
 #include "FilePath.h"
+#endif
 #include "Platform.h"
+
+// Imports come AFTER all textual #includes (include-before-import rule: textual libc++
+// following BMI-merged declarations trips "cannot add 'abi_tag' in a redeclaration").
+#ifdef SRCTRL_MODULE_BUILD
+import srctrl.file;
+#endif
+
 
 TEST_CASE("file_path_gets_created_empty")
 {

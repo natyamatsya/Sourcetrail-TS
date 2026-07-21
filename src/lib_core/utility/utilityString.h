@@ -101,13 +101,13 @@ std::string join(const ContainerType& list, const std::string& delimiter)
 // Locale specific functions:
 //
 
-std::u32string convertToUtf32(const std::string &utf8chars);
+SRCTRL_EXPORT std::u32string convertToUtf32(const std::string &utf8chars);
 
-std::string toLowerCase(const std::string& in);
+SRCTRL_EXPORT std::string toLowerCase(const std::string& in);
 
-bool isCaseInsensitiveEqual(const std::string& a, const std::string& b);
+SRCTRL_EXPORT bool isCaseInsensitiveEqual(const std::string& a, const std::string& b);
 
-bool isCaseInsensitiveLess(const std::string& s1, const std::string& s2);
+SRCTRL_EXPORT bool isCaseInsensitiveLess(const std::string& s1, const std::string& s2);
 
 }	 // namespace utility
 

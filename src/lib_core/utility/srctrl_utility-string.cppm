@@ -1,6 +1,6 @@
 // `srctrl.utility:string` partition -- the utilityString helpers. Module build only.
-// Only the pure-std functions are exported; utilityString's 4 Qt-dependent locale functions stay
-// out-of-line in utilityString.cpp and are not part of the module (an include-only seam).
+// The 4 Qt-backed locale functions are inline in utilityString.inl (their <QString> comes from this
+// GMF): module-attached declarations with classic out-of-line definitions do not link for importers.
 
 module;
 
@@ -13,6 +13,9 @@ module;
 #include <string_view>
 #include <vector>
 #endif
+
+// Qt is never covered by `import std` -- stays textual in both import-std modes.
+#include <QString>
 
 export module srctrl.utility:string;
 

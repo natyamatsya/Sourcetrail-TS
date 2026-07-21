@@ -1,8 +1,19 @@
 #include "Catch2.hpp"
 
+#include "Id.h"   // global-module everywhere (Qt-coupled, deliberately unmodularized)
+#ifndef SRCTRL_MODULE_BUILD
 #include "SourceLocation.h"
 #include "SourceLocationCollection.h"
 #include "SourceLocationFile.h"
+#endif
+
+// Imports come AFTER all textual #includes (include-before-import rule: textual libc++
+// following BMI-merged declarations trips "cannot add 'abi_tag' in a redeclaration").
+#ifdef SRCTRL_MODULE_BUILD
+import srctrl.data;
+import srctrl.file;   // FilePath is used directly; srctrl.data does not re-export it
+#endif
+
 
 TEST_CASE("source locations get created with other end")
 {

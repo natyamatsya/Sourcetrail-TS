@@ -18,6 +18,10 @@ target_link_libraries(Sourcetrail_indexer
 		$<$<BOOL:${BUILD_CXX_LANGUAGE_PACKAGE}>:Sourcetrail_lib_cxx>
 )
 
+# utilityString.inl pulls <QString> (inline locale functions), and Qt's `emit` macro breaks
+# clang's Sema.h members in this clang-including TU. Same fix as the app target.
+target_compile_definitions(Sourcetrail_indexer PRIVATE QT_NO_EMIT)
+
 # Module build: main.cpp is the Phase 4 "pure importer" milestone -- it imports the modularized
 # layers (srctrl.file/settings/logging/indexer/interprocess/cxx) instead of #including their
 # headers. Same mechanics as the test target's importer TUs: define the toggle and scan only the

@@ -7,8 +7,17 @@
 
 #include <flatbuffers/flatbuffers.h>
 
+#ifndef SRCTRL_MODULE_BUILD
 #include "IpcSharedMemory.h"
+#endif
 #include "intermediate_storage_generated.h"
+
+// Imports come AFTER all textual #includes (include-before-import rule: textual libc++
+// following BMI-merged declarations trips "cannot add 'abi_tag' in a redeclaration").
+#ifdef SRCTRL_MODULE_BUILD
+import srctrl.interprocess;
+#endif
+
 
 TEST_CASE("ipc shared memory")
 {

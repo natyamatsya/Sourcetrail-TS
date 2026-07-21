@@ -3,9 +3,19 @@
 #include <string>
 #include <vector>
 
+#ifndef SRCTRL_MODULE_BUILD
 #include "FileSystem.h"
 #include "utility.h"
+#endif
 #include "Platform.h"
+
+// Imports come AFTER all textual #includes (include-before-import rule: textual libc++
+// following BMI-merged declarations trips "cannot add 'abi_tag' in a redeclaration").
+#ifdef SRCTRL_MODULE_BUILD
+import srctrl.file;
+import srctrl.utility;
+#endif
+
 
 namespace
 {

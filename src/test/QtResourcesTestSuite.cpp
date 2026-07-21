@@ -1,11 +1,20 @@
 #include "QtResources.h"
+#ifndef SRCTRL_MODULE_BUILD
 #include "FilePath.h"
+#endif
 
 #include "Catch2.hpp"
 
 #include <QDir>
 #include <QDirIterator>
 #include <QFileInfo>
+
+// Imports come AFTER all textual #includes (include-before-import rule: textual libc++
+// following BMI-merged declarations trips "cannot add 'abi_tag' in a redeclaration").
+#ifdef SRCTRL_MODULE_BUILD
+import srctrl.file;
+#endif
+
 
 using namespace std;
 
