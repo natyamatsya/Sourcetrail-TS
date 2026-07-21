@@ -806,6 +806,26 @@ cycles in `lib` is prerequisite work, and a good cleanup in its own right).
 - **Phase 5 — dogfood.** Index the module-built Sourcetrail *with* the module-built Sourcetrail; diff
   the symbol/edge graph against the header build's graph (they must match) and benchmark incremental
   rebuilds ON vs OFF.
+  **Phase 5 SELF-INDEX LANDED (2026-07-21, commits 294f9fe0 + 6ac4ca7c + 54bec574):** the
+  module-built Sourcetrail indexed its own modules-ON build via the CMake File API source group
+  (`Sourcetrail.srctrl.toml`, preset llvm-clang-dbg): **625 files, ~133k LOC, 0 errors; 42
+  NODE_MODULE nodes (every srctrl module + partition, srctrl.ping, thoth.ipc); 140 EDGE_IMPORT
+  edges** reproducing the wrapper imports exactly (srctrl.cxx:package → srctrl.interprocess,
+  :frontend → srctrl.indexer, importer TUs as file-context → module edges incl. main.cpp's).
+  Three indexing defects found+fixed (294f9fe0): modmap path derivation ignored subdirectory
+  targets' own build/source dirs + CMake's `..`→`__` object-path mangling (SourceEntry now
+  carries target paths, type-safely parsed); the response-file quotes were kept (clang searched
+  for module `"name`) and -fmodule-output passed through (an indexing parse must never write
+  BMIs into the build tree); CMake's synthesized `@synth_<n>` module-collation targets re-listed
+  every interface unit without a modmap → each module TU parsed a second time flag-less → 30
+  phantom "module not found" fatals (synth targets skipped now). A thrown nlohmann error during
+  development also exposed the headless hang class → fixed fundamentally (ADR-0008: guaranteed
+  terminal event via TaskFinally + expectedFromExceptions boundaries, outcome exit codes,
+  no-progress watchdog). **Known follow-ups:** module nodes are FLAT (partition/dotted names in
+  one element); the `aidkit` module node merges with the `aidkit` C++ *namespace* node (same
+  NameHierarchy — module vs namespace name collision); NODE_MODIFIER_EXPORTED shows only 2
+  flagged nodes in the self-index (suspiciously few — visitExportDecl coverage to check);
+  remaining Phase 5: graph-equivalence diff OFF vs ON and the incremental-rebuild benchmark.
 - **Phase 6 — GUI (optional/later).** `lib_gui` + moc, once moc/modules matures.
 
 ## Verification
