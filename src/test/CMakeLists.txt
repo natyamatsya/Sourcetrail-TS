@@ -91,10 +91,12 @@ endif()
 # remaining textual include closure contains no modularized header and no unguarded forward
 # declaration of a module-attached type.
 if(SOURCETRAIL_CXX_MODULES_ENABLED)
-	target_compile_definitions(Sourcetrail_test PRIVATE SRCTRL_MODULE_BUILD)
-	# Module scanning is off project-wide (stdexec breaks clang-scan-deps); scan only the files that
-	# import.
-	set_source_files_properties(
+	# SRCTRL_MODULE_BUILD is PER-SOURCE, not target-wide: it means "this TU imports the module
+	# graph". Headers guard modularized includes/fwd decls on it, so non-importing TUs in the same
+	# target (including moc-generated ones, which can never import) must NOT define it -- they keep
+	# the classic textual view. Module scanning is off project-wide (stdexec breaks
+	# clang-scan-deps); scan only the files that import.
+	set(_srctrl_importing_tus
 		ConfigManagerTestSuite.cpp
 		FilePathFilterTestSuite.cpp
 		FileManagerTestSuite.cpp
@@ -113,7 +115,10 @@ if(SOURCETRAIL_CXX_MODULES_ENABLED)
 		UtilityEnumTestSuite.cpp
 		UtilityStringTestSuite.cpp
 		Vector2TestSuite.cpp
-		PROPERTIES CXX_SCAN_FOR_MODULES ON)
+	)
+	set_source_files_properties(${_srctrl_importing_tus} PROPERTIES CXX_SCAN_FOR_MODULES ON)
+	set_property(SOURCE ${_srctrl_importing_tus} APPEND PROPERTY
+		COMPILE_DEFINITIONS SRCTRL_MODULE_BUILD)
 endif()
 
 catch_discover_tests(Sourcetrail_test)

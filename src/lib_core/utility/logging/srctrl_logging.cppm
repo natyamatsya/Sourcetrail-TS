@@ -44,6 +44,11 @@ import std;
 #endif
 
 #define SRCTRL_MODULE_PURVIEW
+// The whole textual purview is a linkage-specification: every declaration AND definition the
+// headers/.inls bring in attaches to the GLOBAL module ([module.unit]/7), keeping one entity and
+// one ordinary mangling across importer TUs, classic TUs, and moc-generated TUs (SRCTRL_EXPORT's
+// `export extern "C++"` handles declarations; this block covers the .inl definitions too).
+extern "C++" {
 // Class definitions in dependency order, then the inline bodies (each header's own bottom-include is
 // purview-guarded).
 #include "LogMessage.h"
@@ -59,3 +64,6 @@ import std;
 #include "LogManager.inl"
 #include "ConsoleLogger.inl"
 #include "FileLogger.inl"
+
+// close the purview-wide extern "C++" linkage block
+}

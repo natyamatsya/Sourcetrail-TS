@@ -134,9 +134,9 @@ if(SOURCETRAIL_CXX_MODULES_ENABLED)
 
 	# Converted consumer TUs: classic .cpps that `import srctrl.*;` instead of #including the
 	# modularized headers (guards under SRCTRL_MODULE_BUILD; logging consumers additionally define
-	# SRCTRL_LOGGING_VIA_IMPORT themselves -- see logging.h). Scan only the importing files.
-	target_compile_definitions(Sourcetrail_lib_core PRIVATE SRCTRL_MODULE_BUILD)
-	set_source_files_properties(
+	# SRCTRL_LOGGING_VIA_IMPORT themselves -- see logging.h). SRCTRL_MODULE_BUILD is PER-SOURCE:
+	# headers guard on it, so non-importing TUs (incl. moc-generated ones) keep the classic view.
+	set(_srctrl_importing_tus
 		"${CMAKE_CURRENT_SOURCE_DIR}/component/controller/helper/SnippetMerger.cpp"
 		"${CMAKE_CURRENT_SOURCE_DIR}/data/HierarchyCache.cpp"
 		"${CMAKE_CURRENT_SOURCE_DIR}/data/fulltextsearch/SuffixArray.cpp"
@@ -144,7 +144,10 @@ if(SOURCETRAIL_CXX_MODULES_ENABLED)
 		"${CMAKE_CURRENT_SOURCE_DIR}/data/storage/sqlite/SqliteDatabaseIndex.cpp"
 		"${CMAKE_CURRENT_SOURCE_DIR}/settings/ToolChain.cpp"
 		"${CMAKE_CURRENT_SOURCE_DIR}/utility/scheduling/TaskScheduler.cpp"
-		PROPERTIES CXX_SCAN_FOR_MODULES ON)
+	)
+	set_source_files_properties(${_srctrl_importing_tus} PROPERTIES CXX_SCAN_FOR_MODULES ON)
+	set_property(SOURCE ${_srctrl_importing_tus} APPEND PROPERTY
+		COMPILE_DEFINITIONS SRCTRL_MODULE_BUILD)
 endif()
 
 # CXX settings component sources — always compiled so the settings types are

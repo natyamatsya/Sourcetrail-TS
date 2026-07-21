@@ -51,6 +51,11 @@ import srctrl.storage;   // IntermediateStorage (the index result / recording si
 import srctrl.logging;   // srctrl::log machinery behind the LOG_* macros
 
 #define SRCTRL_MODULE_PURVIEW
+// The whole textual purview is a linkage-specification: every declaration AND definition the
+// headers/.inls bring in attaches to the GLOBAL module ([module.unit]/7), keeping one entity and
+// one ordinary mangling across importer TUs, classic TUs, and moc-generated TUs (SRCTRL_EXPORT's
+// `export extern "C++"` handles declarations; this block covers the .inl definitions too).
+extern "C++" {
 // LOG_* macro definitions only (in the purview the header strips its backend includes); the
 // expansions name the LogManager imported from srctrl.logging.
 #include "logging.h"
@@ -81,3 +86,6 @@ import srctrl.logging;   // srctrl::log machinery behind the LOG_* macros
 #include "MemoryIndexerCommandProvider.inl"
 #include "CombinedIndexerCommandProvider.inl"
 #include "LanguagePackageManager.inl"
+
+// close the purview-wide extern "C++" linkage block
+}

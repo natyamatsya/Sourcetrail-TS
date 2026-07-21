@@ -25,8 +25,16 @@ import std;
 import srctrl.utility;   // TimeStamp (the :time partition)
 
 #define SRCTRL_MODULE_PURVIEW
+// The whole textual purview is a linkage-specification: every declaration AND definition the
+// headers/.inls bring in attaches to the GLOBAL module ([module.unit]/7), keeping one entity and
+// one ordinary mangling across importer TUs, classic TUs, and moc-generated TUs (SRCTRL_EXPORT's
+// `export extern "C++"` handles declarations; this block covers the .inl definitions too).
+extern "C++" {
 // Base types before the deriving bookmarks (their guarded #includes are skipped in the purview).
 #include "BookmarkCategory.h"
 #include "Bookmark.h"
 #include "EdgeBookmark.h"
 #include "NodeBookmark.h"
+
+// close the purview-wide extern "C++" linkage block
+}

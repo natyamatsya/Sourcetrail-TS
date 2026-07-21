@@ -28,6 +28,11 @@ import srctrl.utility;   // utilityEnum (CxxQualifierFlags' flag operators), uti
 import srctrl.data;      // NameHierarchy / NameElement / NameDelimiterType (:name)
 
 #define SRCTRL_MODULE_PURVIEW
+// The whole textual purview is a linkage-specification: every declaration AND definition the
+// headers/.inls bring in attaches to the GLOBAL module ([module.unit]/7), keeping one entity and
+// one ordinary mangling across importer TUs, classic TUs, and moc-generated TUs (SRCTRL_EXPORT's
+// `export extern "C++"` handles declarations; this block covers the .inl definitions too).
+extern "C++" {
 // Dependency order: qualifier flags and the erased wrapper first, then the leaves (their guarded
 // #includes of each other are skipped in the purview).
 #include "CxxQualifierFlags.h"
@@ -37,3 +42,6 @@ import srctrl.data;      // NameHierarchy / NameElement / NameDelimiterType (:na
 #include "CxxFunctionDeclName.h"
 #include "CxxStaticFunctionDeclName.h"
 #include "CxxVariableDeclName.h"
+
+// close the purview-wide extern "C++" linkage block
+}

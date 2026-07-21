@@ -5,6 +5,9 @@
 
 #include <QVariant>
 
+// FilePath is module-owned but GLOBAL-MODULE-attached (SRCTRL_EXPORT = export extern "C++"),
+// so this textual fwd decl and the `import srctrl.file;` of a converted includer declare the
+// SAME entity -- no guard needed, and moc-generated TUs parse it classically as ever.
 class FilePath;
 class QColor;
 class QIcon;

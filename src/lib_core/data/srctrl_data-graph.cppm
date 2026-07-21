@@ -39,6 +39,11 @@ import :types;           // AccessKind, DefinitionKind, ElementComponentKind, No
 import :name;            // NameHierarchy (Node)
 
 #define SRCTRL_MODULE_PURVIEW
+// The whole textual purview is a linkage-specification: every declaration AND definition the
+// headers/.inls bring in attaches to the GLOBAL module ([module.unit]/7), keeping one entity and
+// one ordinary mangling across importer TUs, classic TUs, and moc-generated TUs (SRCTRL_EXPORT's
+// `export extern "C++"` handles declarations; this block covers the .inl definitions too).
+extern "C++" {
 // ---- Leaf layer: TokenComponent base first, then its subtypes (their guarded #include of
 // TokenComponent.h is skipped in the purview). ----
 #include "TokenComponent.h"
@@ -67,3 +72,6 @@ import :name;            // NameHierarchy (Node)
 #include "Edge.inl"
 #include "Node.inl"
 #include "Graph.inl"
+
+// close the purview-wide extern "C++" linkage block
+}

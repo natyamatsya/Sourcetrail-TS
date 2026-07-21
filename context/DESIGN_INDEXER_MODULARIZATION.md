@@ -886,6 +886,27 @@ cycles in `lib` is prerequisite work, and a good cleanup in its own right).
     distinct foo nodes (module 8 / namespace 16), MEMBER foo→foo:part, IMPORT foo→foo:part,
     0 errors; Usages unchanged at 529/2041/0 (non-module graphs untouched).
 - **Phase 6 — GUI (optional/later).** `lib_gui` + moc, once moc/modules matures.
+- **Phase 6 OPENED — the ATTACHMENT PIVOT makes moc coexistence structural. ✅** Two changes:
+  (1) `SRCTRL_MODULE_BUILD` is now defined PER SOURCE FILE (CMake, alongside CXX_SCAN_FOR_MODULES)
+  in all five targets — it means "this TU imports the module graph", so moc-generated TUs (which
+  can never import) and unconverted TUs keep the classic textual view by construction.
+  (2) `SRCTRL_EXPORT` = `export extern "C++"` and every wrapper wraps its textual purview in an
+  `extern "C++" { }` block: ALL first-party entities attach to the GLOBAL module ([module.unit]/7)
+  with ordinary mangling while imports still grant visibility. Motivation: the only alternative
+  for Q_OBJECT headers needing module-owned types at parse time was include-after-import, which
+  clang documents as unsupported (#61465); with GM attachment, textual parse + import of the same
+  entity MERGE (include-before-import direction, guaranteed by the imports-last rule) — verified
+  by a standalone smoke test over every SRCTRL_EXPORT declaration shape and by the pilot
+  (utilityQt.cpp imports srctrl.file/settings while textually including QtMainView.h, whose
+  closure pulls FilePath.h textually AND fwd-declares attached types). Fallout fixed en route:
+  free-function .inl definitions were naked-purview (module-attached) against now-GM declarations
+  — the purview-wide extern "C++" block covers declarations AND definitions uniformly (36 wrappers
+  edited by script); SRCTRL_LOGGING_VIA_IMPORT is unusable when the TU's textual closure itself
+  logs (QtMainView.h -> FilePath.inl expands LOG_* at include time) — logging stays fully classic
+  there. CONSEQUENCES: the mangling law and the include-only-contract asymmetry are retired; the
+  consumer frontier exploded from "exhausted" to 227 CONVERTIBLE / 4 BLOCKED (all four stdexec:
+  TaskBuildIndex.h ×3, Schedulers.h) — the Application and storage strata are now consumer-open
+  too. Verified dual-mode: ON build + 2656/2656 + Usages 529/2041/0; OFF build + 2656/2656.
 - **`srctrl.messaging` LANDED — after solving the "BMI-merge mystery" that briefly parked it. ✅**
   The whole messaging family (MessageBase/Queue/Filter/ListenerBase/Listener mesh + ~96 message
   and filter types + honorary members IndexingOutcome/RefreshInfo/ShardConfig) is a module; the

@@ -23,10 +23,12 @@ target_link_libraries(AidKit_test
 # and thread_shared tests from #include to import (StringsTest keeps #including, so the same run also
 # covers a header consumer of the inlined Strings against the module).
 if(SOURCETRAIL_CXX_MODULES_ENABLED)
-	target_compile_definitions(AidKit_test PRIVATE SRCTRL_MODULE_BUILD)
 	# Module scanning is off project-wide (stdexec); scan the files that import aidkit.
+	# SRCTRL_MODULE_BUILD is per-source ("this TU imports") -- see the main targets.
 	set_source_files_properties(enum_class_test.cpp thread_shared_test.cpp
 		PROPERTIES CXX_SCAN_FOR_MODULES ON)
+	set_property(SOURCE enum_class_test.cpp thread_shared_test.cpp APPEND PROPERTY
+		COMPILE_DEFINITIONS SRCTRL_MODULE_BUILD)
 endif()
 
 if (WIN32)

@@ -101,8 +101,10 @@ target_link_libraries(Sourcetrail_lib_gui
 # stdexec breaks clang-scan-deps -- which also makes stdexec-including TUs unconvertible, e.g.
 # Schedulers.cpp/UiPost.cpp).
 if(SOURCETRAIL_CXX_MODULES_ENABLED)
-	target_compile_definitions(Sourcetrail_lib_gui PRIVATE SRCTRL_MODULE_BUILD)
-	set_source_files_properties(
+	# SRCTRL_MODULE_BUILD is PER-SOURCE ("this TU imports"): headers guard modularized fwd decls /
+	# includes on it, and moc-generated TUs (which can never import) plus unconverted TUs keep the
+	# classic textual view by not defining it.
+	set(_srctrl_importing_tus
 		"${CMAKE_CURRENT_SOURCE_DIR}/qt/QtCoreApplication.cpp"
 		"${CMAKE_CURRENT_SOURCE_DIR}/qt/element/QtTable.cpp"
 		"${CMAKE_CURRENT_SOURCE_DIR}/qt/network/QtRequest.cpp"
@@ -110,11 +112,15 @@ if(SOURCETRAIL_CXX_MODULES_ENABLED)
 		"${CMAKE_CURRENT_SOURCE_DIR}/qt/utility/QtFilesAndDirectoriesDialog.cpp"
 		"${CMAKE_CURRENT_SOURCE_DIR}/qt/utility/QtScreenshot.cpp"
 		"${CMAKE_CURRENT_SOURCE_DIR}/qt/utility/QtScrollSpeedChangeListener.cpp"
+		"${CMAKE_CURRENT_SOURCE_DIR}/qt/utility/utilityQt.cpp"
 		"${CMAKE_CURRENT_SOURCE_DIR}/qt/utility/QtUiSnapshot.cpp"
 		"${CMAKE_CURRENT_SOURCE_DIR}/qt/view/QtViewWidgetWrapper.cpp"
 		"${CMAKE_CURRENT_SOURCE_DIR}/qt/window/QtActions.cpp"
 		"${CMAKE_CURRENT_SOURCE_DIR}/qt/window/QtIndexingReportDialog.cpp"
 		"${CMAKE_CURRENT_SOURCE_DIR}/qt/window/QtLicenseWindow.cpp"
 		"${CMAKE_CURRENT_SOURCE_DIR}/qt/window/QtWindowBase.cpp"
-		PROPERTIES CXX_SCAN_FOR_MODULES ON)
+	)
+	set_source_files_properties(${_srctrl_importing_tus} PROPERTIES CXX_SCAN_FOR_MODULES ON)
+	set_property(SOURCE ${_srctrl_importing_tus} APPEND PROPERTY
+		COMPILE_DEFINITIONS SRCTRL_MODULE_BUILD)
 endif()

@@ -27,8 +27,8 @@ target_compile_definitions(Sourcetrail_indexer PRIVATE QT_NO_EMIT)
 # headers. Same mechanics as the test target's importer TUs: define the toggle and scan only the
 # file that imports (project-wide scanning is off; stdexec breaks clang-scan-deps).
 if(SOURCETRAIL_CXX_MODULES_ENABLED)
-	target_compile_definitions(Sourcetrail_indexer PRIVATE SRCTRL_MODULE_BUILD)
 	set_source_files_properties(main.cpp PROPERTIES CXX_SCAN_FOR_MODULES ON)
+	set_property(SOURCE main.cpp APPEND PROPERTY COMPILE_DEFINITIONS SRCTRL_MODULE_BUILD)
 endif()
 
 # The recursive C++ AST visitor (CxxAstVisitor over clang's RecursiveASTVisitor)

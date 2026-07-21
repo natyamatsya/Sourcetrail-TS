@@ -1,10 +1,22 @@
+// No SRCTRL_LOGGING_VIA_IMPORT here: the textual closure below (QtMainView.h -> ... ->
+// FilePath.inl) expands LOG_* macros during the includes, BEFORE any import could supply the
+// backend -- so logging.h stays fully classic. Post-pivot (SRCTRL_EXPORT = export extern "C++")
+// the textual backend and the srctrl.logging BMI declare the same global-module entities anyway.
+
 #include "utilityQt.h"
 
+// Phase-6 moc-coexistence pilot: QtMainView.h (Q_OBJECT, moc-owned) stays TEXTUAL -- its
+// MessageListener closure parses as global-module here, which is safe because none of this TU's
+// imports load the srctrl.messaging BMI (include-only two-entity mode). The modularized
+// non-Qt headers below are replaced by imports.
+#include "QtMainView.h"
+
+#ifndef SRCTRL_MODULE_BUILD
 #include "FilePath.h"
 #include "FileSystem.h"
-#include "QtMainView.h"
-#include "logging.h"
 #include "ColorScheme.h"
+#endif
+#include "logging.h"
 
 #include <QDir>
 #include <QFile>
@@ -14,6 +26,12 @@
 #include <QWidget>
 
 #include <set>
+
+// Imports AFTER all textual includes (include-before-import rule).
+#ifdef SRCTRL_MODULE_BUILD
+import srctrl.file;      // FilePath, FileSystem
+import srctrl.settings;  // ColorScheme
+#endif
 
 namespace utility
 {

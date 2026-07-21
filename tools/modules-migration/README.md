@@ -53,16 +53,33 @@ Known regex gaps — ALWAYS review the diff and let the OFF build arbitrate:
 - `SRCTRL_EXPORT` must precede `template`, the sweep puts it on the class line;
 - family-internal includes/fwd decls must NOT be guarded — the sweep guards everything.
 
-## The playbook (what the tools encode, learned batches 1–6)
+## The playbook (what the tools encode, learned batches 1–6 + the Phase-6 pivot)
 
+0. **THE ATTACHMENT PIVOT (Phase 6, supersedes the caveats in 6/9/11):** `SRCTRL_EXPORT` is
+   `export extern "C++"`, and every wrapper wraps its whole textual purview in an
+   `extern "C++" { }` block — ALL first-party entities (declarations AND .inl definitions)
+   attach to the GLOBAL module ([module.unit]/7) with ordinary mangling, while imports still
+   grant name visibility. Consequences: a textual parse and an import of the same entity MERGE
+   instead of clashing (include-before-import direction only — rule 1 still orders that);
+   fwd decls of module-owned types in classic headers are harmless; classic out-of-line
+   definitions link for importer callers; moc-generated TUs coexist freely (Q_OBJECT headers
+   stay textual forever); the only remaining conversion blocker is stdexec (rule 4). Bare
+   `export` had given entities strong module ownership — the srctrl.messaging park, the
+   toLowerCase lesson, and the include-only-contract asymmetry were all costs of that choice.
+   `SRCTRL_MODULE_BUILD` is defined PER SOURCE FILE (CMake, next to CXX_SCAN_FOR_MODULES), so
+   it means "this TU imports" — never define it target-wide (moc TUs must not see it).
 1. Imports after ALL textual includes (abi_tag redeclaration).
 2. Import what you USE — no re-exports between srctrl modules.
 3. `LOG_*` users: TU-local `SRCTRL_LOGGING_VIA_IMPORT` before includes, `import srctrl.logging;`.
+   NOT usable when the TU's remaining textual closure itself expands `LOG_*` (e.g. Qt headers
+   pulling FilePath.inl) — the backend must exist at include time; keep logging.h fully classic
+   there (post-pivot the textual backend and the BMI are the same entities).
 4. stdexec in the closure ⇒ unconvertible (clang-scan-deps).
 5. Dropped includes expose transitive std headers — add them explicitly.
-6. Mangling law: free functions in module content module-mangle (must be inline); members of
-   attached classes stay ordinary-mangled — classic out-of-line member defs work ONLY for
-   classic callers (include-only contract). Anything an importer calls must be inline in-module.
+6. (Largely retired by rule 0.) Under bare `export` the mangling law was: free functions in
+   module content module-mangle (must be inline); members of attached classes stay
+   ordinary-mangled for classic callers only. Post-pivot everything is ordinary-mangled; keep
+   definitions inline in headers/.inls anyway (dual-build ODR merging relies on it).
 7. Anything the wrapper itself references (vtables of concrete types!) must be inline in-module.
 8. Family-internal includes/fwd decls unguarded; family fwd decls need `SRCTRL_EXPORT`.
 9. Classic-with-cpp deps of a wrapper (ToolChain, utilityUuid) go in its GMF, never the purview —

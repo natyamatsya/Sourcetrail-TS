@@ -121,38 +121,100 @@ def direct_includes(path):
     return [os.path.basename(m) for m in inc_re.findall(read(path))]
 
 
+def strip_module_guards(text):
+    """Drop `#ifndef SRCTRL_MODULE_BUILD ... #endif` regions (per-TU importer guards in headers):
+    for closure analysis a swept header counts as clean -- importing TUs never parse the guarded
+    lines, and non-importing TUs never import, so the guarded content cannot clash."""
+    out, depth = [], 0
+    for line in text.splitlines(keepends=True):
+        s = line.strip()
+        if depth:
+            if s.startswith("#if"):
+                depth += 1
+            elif s.startswith("#endif"):
+                depth -= 1
+            continue
+        if s.startswith("#ifndef") and "SRCTRL_MODULE_BUILD" in s:
+            depth = 1
+            continue
+        out.append(line)
+    return "".join(out)
+
+
+def header_includes(path):
+    return [os.path.basename(m) for m in inc_re.findall(strip_module_guards(read(path)))]
+
+
 def dirty_fwd_decls(path):
-    return [n for n in fwd_re.findall(read(path)) if f"{n}.h" in MOD]
+    return [n for n in fwd_re.findall(strip_module_guards(read(path))) if f"{n}.h" in MOD]
+
+
+def module_graph():
+    """primary module name -> set of directly imported primary modules (from the wrappers)."""
+    graph = {}
+    for dirpath, _, files in os.walk(SRC):
+        if "cxx_modules_poc" in dirpath:
+            continue
+        for f in files:
+            if not f.endswith(".cppm"):
+                continue
+            text = read(os.path.join(dirpath, f))
+            m = re.search(r'^export module ([\w.]+?)(?::[\w.]+)?;', text, re.M)
+            if not m:
+                continue
+            deps = {i for i in re.findall(r'^(?:export )?import ([\w.]+);', text, re.M)
+                    if i != "std"}
+            graph.setdefault(m.group(1), set()).update(deps)
+    return graph
+
+
+MODULE_IMPORTS = module_graph()
+
+
+def loaded_closure(mods):
+    """All module BMIs a TU importing `mods` transitively loads."""
+    seen, stack = set(), list(mods)
+    while stack:
+        m = stack.pop()
+        if m in seen:
+            continue
+        seen.add(m)
+        stack.extend(MODULE_IMPORTS.get(m, ()))
+    return seen
 
 
 @lru_cache(maxsize=None)
-def closure_verdict(base):
-    """None if clean; else a short reason string."""
+def closure_dirt(base):
+    """ALL dirty items in the textual closure, as (reason, owning module | None) pairs.
+    owner=None means unconditionally blocking (stdexec). A modularized-header/fwd-decl item
+    only blocks a TU whose imports transitively LOAD the owning BMI ([basic.link] clash);
+    otherwise the closure parses as self-contained global-module text -- the accepted
+    include-only two-entity mode (Q_OBJECT/moc surfaces live there permanently)."""
     if base in GATED_CLEAN:
-        return None
+        return ()
     if base in MOD:
-        return f"includes modularized {base}"
-    seen, stack = set(), [base]
+        return ((f"includes modularized {base}", MOD[base]),)
+    dirt, seen, stack = [], set(), [base]
     while stack:
         b = stack.pop()
         if b in seen:
             continue
         seen.add(b)
         if b in STDEXEC_MARKERS:
-            return "stdexec in closure (scanner-unconvertible)"
+            return (("stdexec in closure (scanner-unconvertible)", None),)
         for p in by_base.get(b, []):
-            fwd = dirty_fwd_decls(p)
-            if fwd:
-                return f"{b}: unguarded fwd decl of attached type {fwd[0]}"
-            for i in direct_includes(p):
+            for n in dirty_fwd_decls(p):
+                dirt.append((f"{b}: fwd decl of attached type {n}", MOD[f"{n}.h"]))
+            for i in header_includes(p):
                 if i in GATED_CLEAN or i in seen:
                     continue
                 if i in MOD:
-                    return f"{b} -> modularized {i}"
+                    dirt.append((f"{b} -> modularized {i}", MOD[i]))
+                    continue
                 if i in STDEXEC_MARKERS:
-                    return "stdexec in closure (scanner-unconvertible)"
+                    return (("stdexec in closure (scanner-unconvertible)", None),)
                 stack.append(i)
-    return None
+    return tuple(dirt)
 
 
 def analyze(tu):
@@ -168,18 +230,26 @@ def analyze(tu):
     modular = sorted(set(b for b in incs if b in MOD))
     if not modular:
         return ("SKIP", name, "no modularized includes")
-    verdict = index_closure_verdict if INDEX_EDGES else closure_verdict
-    dirty = {}
+    dirt_of = index_closure_dirt if INDEX_EDGES else closure_dirt
+    imports = sorted(set(MOD[b] for b in modular))
+    loaded = loaded_closure(imports)
+    hard, soft = {}, {}
     for b in sorted(set(incs)):
         if b in MOD:
             continue
-        v = verdict(b)
-        if v:
-            dirty[b] = v
-    if dirty:
-        return ("BLOCKED", name, dirty)
-    imports = sorted(set(MOD[b] for b in modular))
-    return ("CONVERTIBLE", name, (modular, imports))
+        # Post-pivot (SRCTRL_EXPORT = export extern "C++") every first-party entity is
+        # global-module-attached, so a textual parse and an import of the same entity MERGE
+        # ([module.unit]/7) -- modularized headers/fwd decls in the textual closure no longer
+        # block (include-before-import direction only, which rule 1 guarantees). Only
+        # stdexec (owner None: unscannable TU) still blocks.
+        blocking = [r for r, o in dirt_of(b) if o is None]
+        if blocking:
+            hard[b] = "; ".join(dict.fromkeys(blocking))
+        elif dirt_of(b):
+            soft[b] = sorted({o for _, o in dirt_of(b)})
+    if hard:
+        return ("BLOCKED", name, hard)
+    return ("CONVERTIBLE", name, (modular, imports, soft))
 
 
 # ---------------------------------------------------------------- index-backed closure
@@ -205,29 +275,29 @@ def load_index(db_path):
 
 
 @lru_cache(maxsize=None)
-def index_closure_verdict(base):
-    """closure_verdict over the self-index include graph (preprocessed truth)."""
+def index_closure_dirt(base):
+    """closure_dirt over the self-index include graph (preprocessed truth)."""
     if base in MOD:
-        return f"includes modularized {base}"
-    seen, stack = set(), [base]
+        return ((f"includes modularized {base}", MOD[base]),)
+    dirt, seen, stack = [], set(), [base]
     while stack:
         b = stack.pop()
         if b in seen:
             continue
         seen.add(b)
         for p in by_base.get(b, []):
-            fwd = dirty_fwd_decls(p)
-            if fwd:
-                return f"{b}: unguarded fwd decl of attached type {fwd[0]}"
+            for n in dirty_fwd_decls(p):
+                dirt.append((f"{b}: fwd decl of attached type {n}", MOD[f"{n}.h"]))
         for i in INDEX_EDGES.get(b, ()):
             if i in seen:
                 continue
             if i in MOD:
-                return f"{b} -> modularized {i}"
+                dirt.append((f"{b} -> modularized {i}", MOD[i]))
+                continue
             if i in STDEXEC_MARKERS:
-                return "stdexec in closure (scanner-unconvertible)"
+                return (("stdexec in closure (scanner-unconvertible)", None),)
             stack.append(i)
-    return None
+    return tuple(dirt)
 
 
 IMPORT_COMMENT = ("// Imports come AFTER all textual #includes (include-before-import rule: textual libc++\n"
@@ -354,7 +424,10 @@ def main(argv):
             if kind != "CONVERTIBLE":
                 print(f"REFUSED {name}: {kind} -- {info}")
                 continue
-            headers, imports = info
+            headers, imports, soft = info
+            if soft:
+                print(f"NOTE {name}: include-only (two-entity) closures stay textual: " +
+                      ", ".join(f"{b} ({'/'.join(o)})" for b, o in soft.items()))
             if "srctrl.logging" not in imports and "logging.h" in headers:
                 imports = sorted(set(imports) | {"srctrl.logging"})
             apply_conversion(tu, headers, imports)
@@ -374,10 +447,12 @@ def main(argv):
     for tu in tus:
         kind, name, info = analyze(tu)
         if kind == "CONVERTIBLE":
-            headers, imports = info
+            headers, imports, soft = info
             block = "".join(f"import {m};\n" for m in imports)
+            extra = ("\n  include-only kept textual: " +
+                     ", ".join(f"{b} ({'/'.join(o)})" for b, o in soft.items())) if soft else ""
             print(f"CONVERTIBLE {name}\n  guard: {' '.join(headers)}\n  " +
-                  block.replace("\n", "\n  ").rstrip())
+                  block.replace("\n", "\n  ").rstrip() + extra)
         elif kind == "BLOCKED":
             for b, why in info.items():
                 blockers[b] += 1
