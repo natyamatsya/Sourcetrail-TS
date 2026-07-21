@@ -862,6 +862,16 @@ cycles in `lib` is prerequisite work, and a good cleanup in its own right).
     rebuild on top (serialized by BMI deps). The incremental win arrives only as classic
     includers convert to importers — the benchmark quantifies the current cost honestly and
     should be re-run per consumer-conversion milestone.
+    *Re-run after batches 9+10 + the attachment pivot (~290 importing TUs, 2026-07-22):*
+    touch FilePath.h → OFF: 273 TUs / 129 s; ON: 326 TUs / 215 s (~1.7×, was ~1.8×). Touch a
+    leaf .cpp (Edge.cpp) → 1 TU / 5 s OFF vs 1 TU / 7 s ON (parity; +2 s is BMI-graph
+    restat + link). Interpretation unchanged in kind, improved in degree: converting
+    importers shaves the ratio, but the hot-header tax stays until the classic textual
+    path itself narrows — the ~500 remaining classic TUs still rebuild on every hot-header
+    edit, and the BMI chain serializes on top. Benchmark hygiene lesson: converge ninja
+    (second run = "no work to do") before AND after each touch — a non-converged first
+    pass silently leaks work into the next measurement (our first "85-TU leaf rebuild"
+    was exactly that).
   - **Modifier merge fixed:** SqliteIndexStorage::addNodes name-dedup dropped modifiers (type
     was upgraded, modifiers weren't) → NODE_MODIFIER_EXPORTED lost to whichever TU inserted a
     symbol first. Now ORed on merge (+ both-orders regression test). Export status additionally
