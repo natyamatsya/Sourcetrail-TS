@@ -317,6 +317,7 @@ void SqliteIndexStorage::setMode(const StorageModeType mode)
 	m_tempNodeNameIndex.clear();
 	m_tempWNodeNameIndex.clear();
 	m_tempNodeTypes.clear();
+	m_tempNodeModifiers.clear();
 	m_tempEdgeIndex.clear();
 	m_tempLocalSymbolIndex.clear();
 	m_tempSourceLocationIndices.clear();
@@ -396,6 +397,10 @@ std::vector<Id> SqliteIndexStorage::addNodes(const std::vector<StorageNode>& nod
 			}
 
 			m_tempNodeTypes.emplace(node.id, node.type);
+			if (node.modifiers != 0)
+			{
+				m_tempNodeModifiers.emplace(node.id, node.modifiers);
+			}
 		});
 	}
 
@@ -425,6 +430,21 @@ std::vector<Id> SqliteIndexStorage::addNodes(const std::vector<StorageNode>& nod
 					m_tempNodeTypes[nodeId] = data.type;
 				}
 
+				// Merge modifiers by OR: the same symbol is recorded by many TUs, and only some
+				// see the flag-bearing declaration (e.g. NODE_MODIFIER_EXPORTED exists only in
+				// the module-wrapper parse; classic TUs never see `export`). Without the merge,
+				// whichever TU inserted the node first silently wins and the flag is lost.
+				if (data.modifiers != 0)
+				{
+					const int previous = m_tempNodeModifiers[nodeId];
+					const int merged = previous | static_cast<int>(data.modifiers);
+					if (merged != previous)
+					{
+						setNodeModifiers(merged, nodeId);
+						m_tempNodeModifiers[nodeId] = merged;
+					}
+				}
+
 				nodeIds[i] = nodeId;
 			}
 			else
@@ -443,6 +463,10 @@ std::vector<Id> SqliteIndexStorage::addNodes(const std::vector<StorageNode>& nod
 					m_tempNodeNameIndex.add(name, id);
 				}
 				m_tempNodeTypes.emplace(id, data.type);
+				if (data.modifiers != 0)
+				{
+					m_tempNodeModifiers.emplace(id, static_cast<int>(data.modifiers));
+				}
 			}
 		}
 	}
@@ -1662,6 +1686,21 @@ void SqliteIndexStorage::setNodeType(int type, Id nodeId)
 	{
 		db()(update(nodeTable)
 				 .set(nodeTable.type = type)
+				 .where(nodeTable.id == static_cast<Id::type>(nodeId)));
+	}
+	catch (const std::exception& e)
+	{
+		LOG_ERROR(e.what());
+	}
+}
+
+void SqliteIndexStorage::setNodeModifiers(int modifiers, Id nodeId)
+{
+	using namespace sqlpp;
+	try
+	{
+		db()(update(nodeTable)
+				 .set(nodeTable.modifiers = modifiers)
 				 .where(nodeTable.id == static_cast<Id::type>(nodeId)));
 	}
 	catch (const std::exception& e)

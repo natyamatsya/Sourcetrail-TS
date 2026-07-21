@@ -103,6 +103,7 @@ public:
 
 	// --- specialized recorders ---------------------------------------------------------------
 	void recordDeprecation(Id symbolId, const clang::Decl* d);
+	void recordExportStatus(Id symbolId, const clang::Decl* d);
 	void recordDeducedType(const clang::DeducedType* deducedType, Id contextSymbolId, const ParseLocation& keywordLocation);
 	void recordDeducedQualType(clang::QualType deducedQualType, Id contextSymbolId, const ParseLocation& keywordLocation);
 	void recordTemplateMemberSpecialization(

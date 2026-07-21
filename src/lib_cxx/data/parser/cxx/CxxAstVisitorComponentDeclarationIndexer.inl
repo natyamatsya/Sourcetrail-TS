@@ -42,6 +42,7 @@ inline void CxxAstVisitorComponentDeclarationIndexer::visitTagDecl(clang::TagDec
 		m_index.recordAccessKind(symbolId, utility::convertAccessSpecifier(d->getAccess()));
 		m_index.recordDefinitionKind(symbolId, definitionKind);
 		m_index.recordDeprecation(symbolId, d);
+		m_index.recordExportStatus(symbolId, d);
 
 		if (clang::EnumDecl* enumDecl = clang::dyn_cast_or_null<clang::EnumDecl>(d))
 		{
@@ -149,6 +150,7 @@ inline void CxxAstVisitorComponentDeclarationIndexer::visitVarDecl(clang::VarDec
 			m_index.recordAccessKind(symbolId, utility::convertAccessSpecifier(d->getAccess()));
 			m_index.recordDefinitionKind(symbolId, utility::getDefinitionKind(d));
 			m_index.recordDeprecation(symbolId, d);
+			m_index.recordExportStatus(symbolId, d);
 
 			m_index.recordTemplateMemberSpecialization(d->getMemberSpecializationInfo(), symbolId, location, symbolKind);
 		}
@@ -248,6 +250,7 @@ inline void CxxAstVisitorComponentDeclarationIndexer::visitFunctionDecl(clang::F
 		m_index.recordAccessKind(symbolId, utility::convertAccessSpecifier(d->getAccess()));
 		m_index.recordDefinitionKind(symbolId, utility::getDefinitionKind(d));
 		m_index.recordDeprecation(symbolId, d);
+		m_index.recordExportStatus(symbolId, d);
 
 		if (d->isFirstDecl())
 		{
@@ -371,6 +374,7 @@ inline void CxxAstVisitorComponentDeclarationIndexer::visitEnumConstantDecl(clan
 		m_index.recordLocation(symbolId, m_index.getParseLocation(d->getLocation()), ParseLocationType::TOKEN);
 		m_index.recordDefinitionKind(symbolId, utility::getDefinitionKind(d));
 		m_index.recordDeprecation(symbolId, d);
+		m_index.recordExportStatus(symbolId, d);
 	}
 }
 

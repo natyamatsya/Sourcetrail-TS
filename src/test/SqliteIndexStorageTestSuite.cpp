@@ -46,6 +46,39 @@ TEST_CASE("storage round-trips node modifiers")
 	REQUIRE(NODE_MODIFIER_NONE == plainModifiers);
 }
 
+TEST_CASE("storage merges node modifiers across duplicate inserts by OR")
+{
+	// The same symbol is recorded by many TUs and only some see the flag-bearing declaration
+	// (e.g. NODE_MODIFIER_EXPORTED exists only in the module-wrapper parse; classic TUs never
+	// see `export`). The name-dedup merge must OR modifiers, in both insert orders.
+	FilePath databasePath("data/SQLiteTestSuite/test.sqlite");
+	NodeModifierMask flagFirst = NODE_MODIFIER_NONE;
+	NodeModifierMask flagSecond = NODE_MODIFIER_NONE;
+	{
+		StorageConnection connection(databasePath);
+		SqliteIndexStorage storage(connection);
+		storage.setup();
+		storage.beginTransaction();
+
+		// flagged insert first, plain duplicate second
+		const Id firstId = storage.addNode(
+			StorageNodeData(NODE_CLASS, "FlagFirst", NODE_MODIFIER_EXPORTED));
+		storage.addNode(StorageNodeData(NODE_CLASS, "FlagFirst"));
+
+		// plain insert first, flagged duplicate second
+		const Id secondId = storage.addNode(StorageNodeData(NODE_CLASS, "FlagSecond"));
+		storage.addNode(StorageNodeData(NODE_CLASS, "FlagSecond", NODE_MODIFIER_EXPORTED));
+
+		storage.commitTransaction();
+		flagFirst = storage.getNodeById(firstId).modifiers;
+		flagSecond = storage.getNodeById(secondId).modifiers;
+	}
+	FileSystem::remove(databasePath);
+
+	REQUIRE(NODE_MODIFIER_EXPORTED == flagFirst);
+	REQUIRE(NODE_MODIFIER_EXPORTED == flagSecond);
+}
+
 TEST_CASE("storage round-trips node attributes")
 {
 	FilePath databasePath("data/SQLiteTestSuite/test.sqlite");

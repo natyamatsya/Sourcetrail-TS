@@ -198,6 +198,18 @@ inline void CxxIndexingContext::recordDeprecation(Id symbolId, const clang::Decl
 	}
 }
 
+inline void CxxIndexingContext::recordExportStatus(Id symbolId, const clang::Decl* d)
+{
+	// A C++20 `export` is a per-declaration property, recorded where the declaration is indexed
+	// rather than by traversing ExportDecl regions (see the module indexer component): the region
+	// containing a header's declaration is only traversed by the one TU that CLAIMS the header,
+	// and in the dual build that is usually a classic TU which never sees `export` at all.
+	if (d->isInExportDeclContext())
+	{
+		m_client.recordNodeModifier(symbolId, NODE_MODIFIER_EXPORTED);
+	}
+}
+
 inline void CxxIndexingContext::recordDeducedType(
 	const clang::DeducedType* deducedType, Id contextSymbolId, const ParseLocation& keywordLocation)
 {
