@@ -904,6 +904,31 @@ CMakeFileAPIReader::GetSourcesExpected CMakeFileAPIReader::getSourcesDetailed(
 
 		const auto targetType{targetNl->value("type", std::string{})};
 
+		// The target's own build/source directories (`paths` in the target reply, relative to the
+		// top-level dirs). Needed to locate per-TU artifacts like the .o.modmap module response
+		// files, which live under <targetBuildDir>/CMakeFiles/<name>.dir/. Type-checked at every
+		// step: this reader tolerates replies whose objects arrive as key-value arrays (see the
+		// *ArrayNormalized warning codes), and nlohmann's value() THROWS on a non-object.
+		const auto readTargetPath = [&](const char* key) -> std::string
+		{
+			if (!targetNl->is_object() || !targetNl->contains("paths"))
+				return {};
+			const auto& pathsNl{(*targetNl)["paths"]};
+			if (!pathsNl.is_object() || !pathsNl.contains(key) || !pathsNl[key].is_string())
+				return {};
+			return pathsNl[key].get<std::string>();
+		};
+		const auto resolveTargetPath = [](const FilePath& base, const std::string& rel) -> FilePath
+		{
+			if (rel.empty() || rel == ".")
+				return base;
+			if (FilePath{rel}.isAbsolute())
+				return FilePath{rel};
+			return base.getConcatenated("/" + rel);
+		};
+		const FilePath targetBuildDir{resolveTargetPath(m_buildDir, readTargetPath("build"))};
+		const FilePath targetSourceDir{resolveTargetPath(sourceDir, readTargetPath("source"))};
+
 		std::vector<std::string> dependencyNames{};
 		const auto appendDependencyIdsFromArray = [&](const nlohmann::json& dependenciesNl)
 		{
@@ -1059,6 +1084,8 @@ CMakeFileAPIReader::GetSourcesExpected CMakeFileAPIReader::getSourcesDetailed(
 			entry.targetName = targetName;
 			entry.targetType = targetType;
 			entry.sourceDir = sourceDir;
+			entry.targetBuildDir = targetBuildDir;
+			entry.targetSourceDir = targetSourceDir;
 
 			if (src.contains("compileGroupIndex"))
 			{

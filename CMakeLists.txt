@@ -341,6 +341,12 @@ if (THOTH_IPC_BUILD_MODULES)
 	target_compile_definitions(thoth_ipc_module PRIVATE
 		$<$<CONFIG:Debug>:_FORTIFY_SOURCE=3>
 		$<$<CONFIG:Debug>:_GLIBCXX_ASSERTIONS>)
+	# Our stdexec workaround sets CMAKE_CXX_SCAN_FOR_MODULES OFF project-wide, and the thoth
+	# subdirectory inherits it -- but its module smoke test is an importer TU and needs the scan
+	# (else: "module 'thoth.ipc' not found"). Scan just that target; it doesn't touch stdexec.
+	if (TARGET module_smoke)
+		set_target_properties(module_smoke PROPERTIES CXX_SCAN_FOR_MODULES ON)
+	endif()
 endif()
 
 add_library(External_lib_ipc INTERFACE)

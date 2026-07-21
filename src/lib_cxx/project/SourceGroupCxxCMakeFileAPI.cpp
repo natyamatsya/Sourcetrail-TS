@@ -19,6 +19,7 @@
 #include "utilityApp.h"
 #include "utilityClang.h"
 
+#include <algorithm>
 #include <fstream>
 #include <unordered_map>
 
@@ -228,6 +229,12 @@ bool shouldCreateCxxCommand(
 	const CMakeFileAPIReader::SourceEntry& entry,
 	const std::vector<FilePathFilter>& excludeFilters)
 {
+	// CMake synthesizes per-target helper targets ("<name>@synth_<n>") for C++20 module
+	// collation; they re-list the real target's interface units but have no .modmap of their
+	// own, so indexing them parses every module TU a second time WITHOUT usable module flags —
+	// each import then fails and pollutes the index with phantom "module not found" errors.
+	if (entry.targetName.find("@synth_") != std::string::npos)
+		return false;
 	if (entry.isGenerated)
 		return false;
 	// CMake's generated PCH wrapper/driver (cmake_pch.hxx, cmake_pch.hxx.cxx) is
@@ -259,12 +266,38 @@ bool shouldCreateCxxCommand(
 std::vector<std::string> getModuleFlags(
 	const CMakeFileAPIReader::SourceEntry& entry, const FilePath& buildDir)
 {
-	// Derive modmap path: <buildDir>/CMakeFiles/<targetName>.dir/<relSrcPath>.o.modmap
-	const FilePath relSrcPath{entry.path.getRelativeTo(entry.sourceDir)};
+	// Derive the modmap path: <targetBuildDir>/CMakeFiles/<targetName>.dir/<relSrcPath>.o.modmap.
+	// The object tree lives under the TARGET's build directory (a subdirectory target's objects are
+	// NOT under the top-level build dir), and the source path in it is relative to the TARGET's
+	// source directory, with CMake's object-name mangling of `..` components to `__` (a source
+	// outside the target's source dir, e.g. thoth-ipc's ../modules/thoth.ipc.cppm, becomes
+	// __/modules/...).
+	const FilePath& targetSourceBase{
+		entry.targetSourceDir.empty() ? entry.sourceDir : entry.targetSourceDir};
+	const FilePath& targetBuildBase{entry.targetBuildDir.empty() ? buildDir : entry.targetBuildDir};
+
+	std::string relSrcPath{entry.path.getRelativeTo(targetSourceBase).str()};
+	{
+		// CMake object paths spell a leading/interior `..` path component as `__`.
+		std::string mangled;
+		size_t pos = 0;
+		while (pos <= relSrcPath.size())
+		{
+			const size_t sep = relSrcPath.find('/', pos);
+			const std::string component = relSrcPath.substr(
+				pos, sep == std::string::npos ? std::string::npos : sep - pos);
+			mangled += (component == "..") ? "__" : component;
+			if (sep == std::string::npos)
+				break;
+			mangled += '/';
+			pos = sep + 1;
+		}
+		relSrcPath = mangled;
+	}
+
 	const FilePath targetDir{
-		buildDir.getConcatenated("/CMakeFiles/" + entry.targetName + ".dir")};
-	const FilePath modmapPath{
-		targetDir.getConcatenated("/" + relSrcPath.str() + ".o.modmap")};
+		targetBuildBase.getConcatenated("/CMakeFiles/" + entry.targetName + ".dir")};
+	const FilePath modmapPath{targetDir.getConcatenated("/" + relSrcPath + ".o.modmap")};
 
 	if (modmapPath.exists())
 	{
@@ -275,6 +308,17 @@ std::vector<std::string> getModuleFlags(
 		while (std::getline(file, line))
 		{
 			if (line.empty())
+				continue;
+
+			// The modmap is a compiler response file, so values may be double-quoted
+			// (-fmodule-file="name=path"). Each line becomes ONE argv element here -- no word
+			// splitting -- so the quotes are pure noise and must go (clang would otherwise look for
+			// a module literally named `"name`).
+			line.erase(std::remove(line.begin(), line.end(), '"'), line.end());
+
+			// Never let an indexing parse write a BMI back into the build tree (it could race or
+			// clobber a concurrent build's .pcm); indexing only needs to READ module files.
+			if (line.rfind("-fmodule-output", 0) == 0)
 				continue;
 
 			// Handle space-separated two-token flags like "-x c++-module".
@@ -289,7 +333,8 @@ std::vector<std::string> getModuleFlags(
 			}
 
 			// For flags of the form -ffoo=<value> (or -ffoo=name=<path> for
-			// -fmodule-file=), expand relative path values to absolute.
+			// -fmodule-file=), expand relative path values to absolute. Relative paths in the
+			// modmap are relative to the TOP-LEVEL build dir (ninja's working directory).
 			// Use the *last* '=' to find the path component so that
 			// -fmodule-file=hello=rel/path works correctly.
 			const auto lastEqPos{line.rfind('=')};

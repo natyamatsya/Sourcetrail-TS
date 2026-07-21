@@ -9,5 +9,5 @@ type = 'C/C++ from CMake File API'
 [source_groups.cmake]
 configuration = ''
 preset_name = 'llvm-clang-dbg'
-source_directory = '/Users/fischi/dev/github/natyamatsya/Sourcetrail'
+source_directory = '/Users/fischi/dev/github/natyamatsya/Sourcetrail-TS'
 target_glob = ''

@@ -49,6 +49,12 @@ public:
 		std::string targetName;
 		std::string targetType;	// EXECUTABLE, STATIC_LIBRARY, SHARED_LIBRARY, ...
 		FilePath sourceDir;		// CMake source directory (paths.source from codemodel)
+		// The TARGET's own directories (absolute; from the target reply's `paths`, which are
+		// relative to the top-level dirs). A target added in a subdirectory keeps its object
+		// files -- and the .modmap module response files next to them -- under
+		// <targetBuildDir>/CMakeFiles/<name>.dir/, NOT under the top-level build dir.
+		FilePath targetBuildDir;
+		FilePath targetSourceDir;
 	};
 
 	struct TargetEntry
