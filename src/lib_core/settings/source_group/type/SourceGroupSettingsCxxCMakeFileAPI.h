@@ -1,13 +1,16 @@
 #ifndef SOURCE_GROUP_SETTINGS_CXX_CMAKE_FILE_API_H
 #define SOURCE_GROUP_SETTINGS_CXX_CMAKE_FILE_API_H
 
+#include "SrctrlModule.h"
+
+// Family-internal includes are unguarded: same module either way.
 #include "SourceGroupSettingsWithComponents.h"
 #include "SourceGroupSettingsWithCxxCMakeBuildDirectory.h"
 #include "SourceGroupSettingsWithCxxPathsAndFlags.h"
 #include "SourceGroupSettingsWithExcludeFilters.h"
 #include "SourceGroupSettingsWithIndexedHeaderPaths.h"
 
-class SourceGroupSettingsCxxCMakeFileAPI
+SRCTRL_EXPORT class SourceGroupSettingsCxxCMakeFileAPI
 	: public SourceGroupSettingsWithComponents<
 		  SourceGroupSettingsWithCxxCMakeBuildDirectory,
 		  SourceGroupSettingsWithCxxPathsAndFlags,

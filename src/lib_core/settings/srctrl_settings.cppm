@@ -24,10 +24,16 @@ module;
 
 // Non-modularized GMF deps: the TOML/JSON backends (header-only third-party), GroupType (std-only
 // enum header; classic impl linked), Logger (log-level mask constants), and the logging macros.
+// utilityUuid stays global-module the same way (classic impl linked -- a purview-textual include
+// would module-mangle the references and never resolve against utilityUuid.cpp.o).
+// language_package_flags supplies the LANGUAGE_PACKAGE macros to the family bodies in the purview.
 #include <glaze/glaze.hpp>
 #include <toml++/toml.hpp>
 
 #include "GroupType.h"
+#include "language_package_flags.h"
+#include "utilityUuid.h"
+#include "ToolChain.h"   // ClangCompiler (C/Cpp-standard mixins); classic impl linked
 
 export module srctrl.settings;
 
@@ -43,7 +49,12 @@ import srctrl.logging;   // srctrl::log machinery behind the LOG_* macros
 // LOG_* macro definitions only (in the purview the header strips its backend includes); the
 // expansions name the LogManager imported from srctrl.logging.
 #include "logging.h"
-// Dependency order: the store, the base class, the singleton.
+// Dependency order: the store, the base class, the singleton, then the source-group/project
+// settings family. ProjectSettings.h transitively attaches the whole family (headers include
+// their inls at the end; family-internal inl includes are unguarded, so include guards +
+// inl-after-class ordering resolve the cross-references inside the purview too).
 #include "ConfigManager.h"
 #include "Settings.h"
 #include "ApplicationSettings.h"
+#include "SourceGroupSettings.h"
+#include "ProjectSettings.h"

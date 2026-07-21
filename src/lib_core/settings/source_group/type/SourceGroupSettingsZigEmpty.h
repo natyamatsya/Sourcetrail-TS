@@ -1,12 +1,15 @@
 #ifndef SOURCE_GROUP_SETTINGS_ZIG_EMPTY_H
 #define SOURCE_GROUP_SETTINGS_ZIG_EMPTY_H
 
+#include "SrctrlModule.h"
+
+// Family-internal includes are unguarded: same module either way.
 #include "SourceGroupSettings.h"
 #include "SourceGroupSettingsWithExcludeFilters.h"
 #include "SourceGroupSettingsWithSourceExtensions.h"
 #include "SourceGroupSettingsWithSourcePaths.h"
 
-class SourceGroupSettingsZigEmpty
+SRCTRL_EXPORT class SourceGroupSettingsZigEmpty
 	: public SourceGroupSettings
 	, public SourceGroupSettingsWithSourcePaths
 	, public SourceGroupSettingsWithExcludeFilters
@@ -22,5 +25,7 @@ public:
 	void saveSettings(ConfigManager* config) override;
 	bool equalsSettings(const SourceGroupSettingsBase* other) override;
 };
+
+#include "SourceGroupSettingsZigEmpty.inl"
 
 #endif	  // SOURCE_GROUP_SETTINGS_ZIG_EMPTY_H

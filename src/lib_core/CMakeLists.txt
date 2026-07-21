@@ -136,7 +136,6 @@ if(SOURCETRAIL_CXX_MODULES_ENABLED)
 		"${CMAKE_CURRENT_SOURCE_DIR}/data/storage/sqlite/DualSqliteDatabase.cpp"
 		"${CMAKE_CURRENT_SOURCE_DIR}/data/storage/sqlite/SqliteDatabaseIndex.cpp"
 		"${CMAKE_CURRENT_SOURCE_DIR}/settings/ToolChain.cpp"
-		"${CMAKE_CURRENT_SOURCE_DIR}/settings/source_group/SourceGroupStatusType.cpp"
 		"${CMAKE_CURRENT_SOURCE_DIR}/utility/messaging/type/MessageStatus.cpp"
 		"${CMAKE_CURRENT_SOURCE_DIR}/utility/scheduling/TaskScheduler.cpp"
 		PROPERTIES CXX_SCAN_FOR_MODULES ON)

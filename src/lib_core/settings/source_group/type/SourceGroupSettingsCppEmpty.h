@@ -1,6 +1,8 @@
 #ifndef SOURCE_GROUP_SETTINGS_CPP_EMPTY_H
 #define SOURCE_GROUP_SETTINGS_CPP_EMPTY_H
 
+#include "SrctrlModule.h"
+
 #	include "SourceGroupSettingsWithComponents.h"
 #	include "SourceGroupSettingsWithCppStandard.h"
 #	include "SourceGroupSettingsWithCxxCrossCompilationOptions.h"
@@ -10,7 +12,7 @@
 #	include "SourceGroupSettingsWithSourceExtensionsCpp.h"
 #	include "SourceGroupSettingsWithSourcePaths.h"
 
-class SourceGroupSettingsCppEmpty
+SRCTRL_EXPORT class SourceGroupSettingsCppEmpty
 	: public SourceGroupSettingsWithComponents<
 		  SourceGroupSettingsWithCppStandard,
 		  SourceGroupSettingsWithCxxCrossCompilationOptions,

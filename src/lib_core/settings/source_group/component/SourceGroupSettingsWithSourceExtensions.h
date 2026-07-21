@@ -1,11 +1,16 @@
 #ifndef SOURCE_GROUP_SETTINGS_WITH_SOURCE_EXTENSIONS_H
 #define SOURCE_GROUP_SETTINGS_WITH_SOURCE_EXTENSIONS_H
 
-#include <vector>
+#include "SrctrlModule.h"
 
+// Family-internal includes are unguarded: same module either way.
 #include "SourceGroupSettingsComponent.h"
 
-class SourceGroupSettingsWithSourceExtensions: public SourceGroupSettingsComponent
+#ifndef SRCTRL_MODULE_PURVIEW
+#include <vector>
+#endif
+
+SRCTRL_EXPORT class SourceGroupSettingsWithSourceExtensions: public SourceGroupSettingsComponent
 {
 public:
 	~SourceGroupSettingsWithSourceExtensions() override = default;
@@ -24,5 +29,7 @@ private:
 
 	std::vector<std::string> m_sourceExtensions;
 };
+
+#include "SourceGroupSettingsWithSourceExtensions.inl"
 
 #endif	  // SOURCE_GROUP_SETTINGS_WITH_SOURCE_EXTENSIONS_H

@@ -1,13 +1,16 @@
 #ifndef SOURCE_GROUP_SETTINGS_CUSTOM_COMMAND_H
 #define SOURCE_GROUP_SETTINGS_CUSTOM_COMMAND_H
 
+#include "SrctrlModule.h"
+
+// Family-internal includes are unguarded: same module either way.
 #include "SourceGroupSettingsWithComponents.h"
 #include "SourceGroupSettingsWithCustomCommand.h"
 #include "SourceGroupSettingsWithExcludeFilters.h"
 #include "SourceGroupSettingsWithSourceExtensionsEmpty.h"
 #include "SourceGroupSettingsWithSourcePaths.h"
 
-class SourceGroupSettingsCustomCommand
+SRCTRL_EXPORT class SourceGroupSettingsCustomCommand
 	: public SourceGroupSettingsWithComponents<
 		  SourceGroupSettingsWithCustomCommand,
 		  SourceGroupSettingsWithExcludeFilters,

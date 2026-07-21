@@ -1,6 +1,9 @@
 #ifndef SOURCE_GROUP_SETTINGS_CXX_CDB_H
 #define SOURCE_GROUP_SETTINGS_CXX_CDB_H
 
+#include "SrctrlModule.h"
+
+// Family-internal includes are unguarded: same module either way.
 #include "SourceGroupSettingsWithComponents.h"
 #include "SourceGroupSettingsWithCxxCdbPath.h"
 #include "SourceGroupSettingsWithCxxPathsAndFlags.h"
@@ -8,7 +11,7 @@
 #include "SourceGroupSettingsWithExcludeFilters.h"
 #include "SourceGroupSettingsWithIndexedHeaderPaths.h"
 
-class SourceGroupSettingsCxxCdb
+SRCTRL_EXPORT class SourceGroupSettingsCxxCdb
 	: public SourceGroupSettingsWithComponents<
 		  SourceGroupSettingsWithCxxCdbPath,
 		  SourceGroupSettingsWithCxxPathsAndFlags,

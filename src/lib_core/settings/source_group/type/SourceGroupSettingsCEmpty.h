@@ -1,6 +1,9 @@
 #ifndef SOURCE_GROUP_SETTINGS_C_EMPTY_H
 #define SOURCE_GROUP_SETTINGS_C_EMPTY_H
 
+#include "SrctrlModule.h"
+
+// Family-internal includes are unguarded: same module either way.
 #include "SourceGroupSettingsWithCStandard.h"
 #include "SourceGroupSettingsWithComponents.h"
 #include "SourceGroupSettingsWithCxxCrossCompilationOptions.h"
@@ -10,7 +13,7 @@
 #include "SourceGroupSettingsWithSourceExtensionsC.h"
 #include "SourceGroupSettingsWithSourcePaths.h"
 
-class SourceGroupSettingsCEmpty
+SRCTRL_EXPORT class SourceGroupSettingsCEmpty
 	: public SourceGroupSettingsWithComponents<
 		  SourceGroupSettingsWithCStandard,
 		  SourceGroupSettingsWithCxxCrossCompilationOptions,

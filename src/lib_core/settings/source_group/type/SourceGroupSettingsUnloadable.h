@@ -1,14 +1,19 @@
 #ifndef SOURCE_GROUP_SETTINGS_UNLOADABLE_H
 #define SOURCE_GROUP_SETTINGS_UNLOADABLE_H
 
-#include <map>
-#include <string>
+#include "SrctrlModule.h"
 
+// Family-internal includes are unguarded: same module either way.
 #include "SourceGroupSettings.h"
 
-class SourceGroupSettingsUnloadable: public SourceGroupSettings
+#ifndef SRCTRL_MODULE_PURVIEW
+#include <map>
+#include <string>
+#endif
+
+SRCTRL_EXPORT class SourceGroupSettingsUnloadable: public SourceGroupSettings
 {
-public:
+SRCTRL_EXPORT public:
 	SourceGroupSettingsUnloadable(const std::string& id, const ProjectSettings* projectSettings);
 	std::string getTypeString();
 	std::shared_ptr<SourceGroupSettings> createCopy() const override;
@@ -20,5 +25,7 @@ private:
 	std::string m_typeString;
 	std::map<std::string, std::vector<std::string>> m_content;
 };
+
+#include "SourceGroupSettingsUnloadable.inl"
 
 #endif	  // SOURCE_GROUP_SETTINGS_UNLOADABLE_H

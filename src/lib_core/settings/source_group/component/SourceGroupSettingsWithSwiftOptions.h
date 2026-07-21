@@ -1,16 +1,22 @@
 #ifndef SOURCE_GROUP_SETTINGS_WITH_SWIFT_OPTIONS_H
 #define SOURCE_GROUP_SETTINGS_WITH_SWIFT_OPTIONS_H
 
+#include "SrctrlModule.h"
+
+// Family-internal includes are unguarded: same module either way.
+#include "SourceGroupSettingsComponent.h"
+
+#ifndef SRCTRL_MODULE_PURVIEW
 #include <string>
 #include <vector>
 
 #include "FilePath.h"
-#include "SourceGroupSettingsComponent.h"
+#endif
 
 // Swift project-model options for Swift source groups (SW5). Mirrors the Rust
 // SourceGroupSettingsWithCargoOptions; see context/DESIGN_SWIFT_INDEXER.md and
 // context/ROADMAP_SWIFT_INDEXER.md.
-class SourceGroupSettingsWithSwiftOptions: public SourceGroupSettingsComponent
+SRCTRL_EXPORT class SourceGroupSettingsWithSwiftOptions: public SourceGroupSettingsComponent
 {
 public:
 	~SourceGroupSettingsWithSwiftOptions() override = default;
@@ -49,5 +55,7 @@ private:
 	FilePath m_swiftIndexStorePath;
 	std::string m_swiftSpecializationScope;
 };
+
+#include "SourceGroupSettingsWithSwiftOptions.inl"
 
 #endif	  // SOURCE_GROUP_SETTINGS_WITH_SWIFT_OPTIONS_H

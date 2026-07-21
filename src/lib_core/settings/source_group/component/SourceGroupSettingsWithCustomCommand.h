@@ -1,9 +1,12 @@
 #ifndef SOURCE_GROUP_SETTINGS_WITH_CUSTOM_COMMAND_H
 #define SOURCE_GROUP_SETTINGS_WITH_CUSTOM_COMMAND_H
 
+#include "SrctrlModule.h"
+
+// Family-internal includes are unguarded: same module either way.
 #include "SourceGroupSettingsComponent.h"
 
-class SourceGroupSettingsWithCustomCommand: public SourceGroupSettingsComponent
+SRCTRL_EXPORT class SourceGroupSettingsWithCustomCommand: public SourceGroupSettingsComponent
 {
 public:
 	~SourceGroupSettingsWithCustomCommand() override = default;
@@ -24,5 +27,7 @@ private:
 	std::string m_customCommand;
 	bool m_runInParallel = false;
 };
+
+#include "SourceGroupSettingsWithCustomCommand.inl"
 
 #endif	  // SOURCE_GROUP_SETTINGS_WITH_CUSTOM_COMMAND_H

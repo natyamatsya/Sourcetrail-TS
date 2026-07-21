@@ -1,12 +1,18 @@
 #ifndef SOURCE_GROUP_SETTINGS_WITH_SOURCE_PATHS_H
 #define SOURCE_GROUP_SETTINGS_WITH_SOURCE_PATHS_H
 
+#include "SrctrlModule.h"
+
+// Family-internal includes are unguarded: same module either way.
+#include "SourceGroupSettingsComponent.h"
+
+#ifndef SRCTRL_MODULE_PURVIEW
 #include <vector>
 
 #include "FilePath.h"
-#include "SourceGroupSettingsComponent.h"
+#endif
 
-class SourceGroupSettingsWithSourcePaths: public SourceGroupSettingsComponent
+SRCTRL_EXPORT class SourceGroupSettingsWithSourcePaths: public SourceGroupSettingsComponent
 {
 public:
 	~SourceGroupSettingsWithSourcePaths() override = default;
@@ -24,5 +30,7 @@ protected:
 private:
 	std::vector<FilePath> m_sourcePaths;
 };
+
+#include "SourceGroupSettingsWithSourcePaths.inl"
 
 #endif	  // SOURCE_GROUP_SETTINGS_WITH_SOURCE_PATHS_H

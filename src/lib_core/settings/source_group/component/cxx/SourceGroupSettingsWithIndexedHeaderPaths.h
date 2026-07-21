@@ -1,13 +1,20 @@
 #ifndef SOURCE_GROUP_SETTINGS_WITH_INDEXED_HEADER_PATHS_H
 #define SOURCE_GROUP_SETTINGS_WITH_INDEXED_HEADER_PATHS_H
 
-#include <vector>
+#include "SrctrlModule.h"
 
+// Family-internal includes are unguarded: same module either way.
 #include "SourceGroupSettingsComponent.h"
 
-class FilePath;
+#ifndef SRCTRL_MODULE_PURVIEW
+#include <vector>
+#endif
 
-class SourceGroupSettingsWithIndexedHeaderPaths: public SourceGroupSettingsComponent
+#ifndef SRCTRL_MODULE_PURVIEW
+class FilePath;
+#endif
+
+SRCTRL_EXPORT class SourceGroupSettingsWithIndexedHeaderPaths: public SourceGroupSettingsComponent
 {
 public:
 	~SourceGroupSettingsWithIndexedHeaderPaths() override = default;
@@ -25,5 +32,7 @@ protected:
 private:
 	std::vector<FilePath> m_indexedHeaderPaths;
 };
+
+#include "SourceGroupSettingsWithIndexedHeaderPaths.inl"
 
 #endif	  // SOURCE_GROUP_SETTINGS_WITH_INDEXED_HEADER_PATHS_H

@@ -1,10 +1,16 @@
 #ifndef SOURCE_GROUP_SETTINGS_WITH_CXX_CDB_PATH_H
 #define SOURCE_GROUP_SETTINGS_WITH_CXX_CDB_PATH_H
 
-#include "FilePath.h"
+#include "SrctrlModule.h"
+
+// Family-internal includes are unguarded: same module either way.
 #include "SourceGroupSettingsComponent.h"
 
-class SourceGroupSettingsWithCxxCdbPath: public SourceGroupSettingsComponent
+#ifndef SRCTRL_MODULE_PURVIEW
+#include "FilePath.h"
+#endif
+
+SRCTRL_EXPORT class SourceGroupSettingsWithCxxCdbPath: public SourceGroupSettingsComponent
 {
 public:
 	~SourceGroupSettingsWithCxxCdbPath() override = default;
@@ -22,5 +28,7 @@ protected:
 private:
 	FilePath m_compilationDatabasePath;
 };
+
+#include "SourceGroupSettingsWithCxxCdbPath.inl"
 
 #endif	  // SOURCE_GROUP_SETTINGS_WITH_CXX_CDB_PATH_H

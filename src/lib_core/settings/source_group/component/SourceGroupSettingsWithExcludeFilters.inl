@@ -1,31 +1,40 @@
-#include "SourceGroupSettingsWithExcludeFilters.h"
+// Inline implementations for SourceGroupSettingsWithExcludeFilters.h (included at its end). All definitions inline: the family
+// is module-attached in the module build, and inline keeps ordinary mangling so classic TUs and
+// the wrapper emit mergeable weak definitions (dual-build rule).
 
+#pragma once
+
+// Family-internal includes stay unguarded: same module either way; include guards
+// + inl-after-class ordering make the cross-references resolve in both builds.
+#include "ProjectSettings.h"
+
+// Cross-module/std/GMF-linked deps: the wrapper supplies these via imports or its GMF.
+#ifndef SRCTRL_MODULE_PURVIEW
 #include <QRegularExpression>
 #include <QString>
-
 #include "FilePathFilter.h"
 #include "FileSystem.h"
-#include "ProjectSettings.h"
 #include "utility.h"
 #include "utilityFile.h"
+#endif
 
-std::vector<std::string> SourceGroupSettingsWithExcludeFilters::getExcludeFilterStrings() const
+inline std::vector<std::string> SourceGroupSettingsWithExcludeFilters::getExcludeFilterStrings() const
 {
 	return m_excludeFilters;
 }
 
-std::vector<FilePathFilter> SourceGroupSettingsWithExcludeFilters::getExcludeFiltersExpandedAndAbsolute() const
+inline std::vector<FilePathFilter> SourceGroupSettingsWithExcludeFilters::getExcludeFiltersExpandedAndAbsolute() const
 {
 	return getFiltersExpandedAndAbsolute(getExcludeFilterStrings());
 }
 
-void SourceGroupSettingsWithExcludeFilters::setExcludeFilterStrings(
+inline void SourceGroupSettingsWithExcludeFilters::setExcludeFilterStrings(
 	const std::vector<std::string>& excludeFilters)
 {
 	m_excludeFilters = excludeFilters;
 }
 
-bool SourceGroupSettingsWithExcludeFilters::equals(const SourceGroupSettingsBase* other) const
+inline bool SourceGroupSettingsWithExcludeFilters::equals(const SourceGroupSettingsBase* other) const
 {
 	const SourceGroupSettingsWithExcludeFilters* otherPtr =
 		dynamic_cast<const SourceGroupSettingsWithExcludeFilters*>(other);
@@ -33,18 +42,18 @@ bool SourceGroupSettingsWithExcludeFilters::equals(const SourceGroupSettingsBase
 	return (otherPtr && utility::isPermutation(m_excludeFilters, otherPtr->m_excludeFilters));
 }
 
-void SourceGroupSettingsWithExcludeFilters::load(const ConfigManager* config, const std::string& key)
+inline void SourceGroupSettingsWithExcludeFilters::load(const ConfigManager* config, const std::string& key)
 {
 	setExcludeFilterStrings(config->getValuesOrDefaults(
 		key + "/exclude_filters/exclude_filter", std::vector<std::string>()));
 }
 
-void SourceGroupSettingsWithExcludeFilters::save(ConfigManager* config, const std::string& key)
+inline void SourceGroupSettingsWithExcludeFilters::save(ConfigManager* config, const std::string& key)
 {
 	config->setValues(key + "/exclude_filters/exclude_filter", getExcludeFilterStrings());
 }
 
-std::vector<FilePathFilter> SourceGroupSettingsWithExcludeFilters::getFiltersExpandedAndAbsolute(
+inline std::vector<FilePathFilter> SourceGroupSettingsWithExcludeFilters::getFiltersExpandedAndAbsolute(
 	const std::vector<std::string>& filterStrings) const
 {
 	const FilePath projectDirectoryPath = getProjectSettings()->getProjectDirectoryPath();

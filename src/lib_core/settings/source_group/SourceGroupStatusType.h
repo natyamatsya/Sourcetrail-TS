@@ -1,15 +1,21 @@
 #ifndef SOURCE_GROUP_STATUS_TYPE_H
 #define SOURCE_GROUP_STATUS_TYPE_H
 
-#include <string>
+#include "SrctrlModule.h"
 
-enum class SourceGroupStatusType
+#ifndef SRCTRL_MODULE_PURVIEW
+#include <string>
+#endif
+
+SRCTRL_EXPORT enum class SourceGroupStatusType
 {
 	ENABLED,
 	DISABLED
 };
 
-std::string sourceGroupStatusTypeToString(SourceGroupStatusType v);
-SourceGroupStatusType stringToSourceGroupStatusType(const std::string &v);
+SRCTRL_EXPORT std::string sourceGroupStatusTypeToString(SourceGroupStatusType v);
+SRCTRL_EXPORT SourceGroupStatusType stringToSourceGroupStatusType(const std::string &v);
+
+#include "SourceGroupStatusType.inl"
 
 #endif	  // SOURCE_GROUP_STATUS_TYPE_H

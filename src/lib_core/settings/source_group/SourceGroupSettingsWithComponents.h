@@ -1,6 +1,9 @@
 #ifndef SOURCE_GROUP_SETTINGS_WITH_COMPONENTS_H
 #define SOURCE_GROUP_SETTINGS_WITH_COMPONENTS_H
 
+#include "SrctrlModule.h"
+
+// Family-internal includes are unguarded: same module either way.
 #include "SourceGroupSettings.h"
 
 /*
@@ -49,7 +52,7 @@ int main()
 */
 
 template <typename... ComponentTypes>
-class SourceGroupSettingsWithComponents
+SRCTRL_EXPORT class SourceGroupSettingsWithComponents
 	: public SourceGroupSettings
 	, public ComponentTypes...
 {

@@ -1,13 +1,20 @@
 #ifndef SOURCE_GROUP_SETTINGS_WITH_EXCLUDE_FILTERS_H
 #define SOURCE_GROUP_SETTINGS_WITH_EXCLUDE_FILTERS_H
 
-#include <vector>
+#include "SrctrlModule.h"
 
+// Family-internal includes are unguarded: same module either way.
 #include "SourceGroupSettingsComponent.h"
 
-class FilePathFilter;
+#ifndef SRCTRL_MODULE_PURVIEW
+#include <vector>
+#endif
 
-class SourceGroupSettingsWithExcludeFilters: public SourceGroupSettingsComponent
+#ifndef SRCTRL_MODULE_PURVIEW
+class FilePathFilter;
+#endif
+
+SRCTRL_EXPORT class SourceGroupSettingsWithExcludeFilters: public SourceGroupSettingsComponent
 {
 public:
 	~SourceGroupSettingsWithExcludeFilters() override = default;
@@ -28,5 +35,7 @@ private:
 
 	std::vector<std::string> m_excludeFilters;
 };
+
+#include "SourceGroupSettingsWithExcludeFilters.inl"
 
 #endif	  // SOURCE_GROUP_SETTINGS_WITH_EXCLUDE_FILTERS_H

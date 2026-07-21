@@ -1,6 +1,10 @@
-#include "SourceGroupType.h"
+// Inline implementations for SourceGroupType.h (included at its end). All definitions inline: the family
+// is module-attached in the module build, and inline keeps ordinary mangling so classic TUs and
+// the wrapper emit mergeable weak definitions (dual-build rule).
 
-std::string sourceGroupTypeToString(SourceGroupType v)
+#pragma once
+
+inline std::string sourceGroupTypeToString(SourceGroupType v)
 {
 	switch (v)
 	{
@@ -29,7 +33,7 @@ std::string sourceGroupTypeToString(SourceGroupType v)
 	return "";
 }
 
-std::string sourceGroupTypeToProjectSetupString(SourceGroupType v)
+inline std::string sourceGroupTypeToProjectSetupString(SourceGroupType v)
 {
 	switch (v)
 	{
@@ -55,7 +59,7 @@ std::string sourceGroupTypeToProjectSetupString(SourceGroupType v)
 	return "unknown";
 }
 
-SourceGroupType stringToSourceGroupType(const std::string& v)
+inline SourceGroupType stringToSourceGroupType(const std::string& v)
 {
 	if (v == sourceGroupTypeToString(SourceGroupType::C_EMPTY))
 		return SourceGroupType::C_EMPTY;

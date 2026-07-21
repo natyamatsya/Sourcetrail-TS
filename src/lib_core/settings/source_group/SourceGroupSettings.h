@@ -1,18 +1,25 @@
 #ifndef SOURCE_GROUP_SETTINGS_H
 #define SOURCE_GROUP_SETTINGS_H
 
-#include <memory>
-#include <vector>
+#include "SrctrlModule.h"
 
+// Family-internal includes are unguarded: same module either way.
 #include "LanguageType.h"
 #include "SourceGroupSettingsBase.h"
 #include "SourceGroupStatusType.h"
 #include "SourceGroupType.h"
 
+#ifndef SRCTRL_MODULE_PURVIEW
+#include <memory>
+#include <vector>
+#endif
+
+#ifndef SRCTRL_MODULE_PURVIEW
 class ConfigManager;
 class FilePath;
+#endif
 
-class SourceGroupSettings: virtual public SourceGroupSettingsBase
+SRCTRL_EXPORT class SourceGroupSettings: virtual public SourceGroupSettingsBase
 {
 public:
 	static const size_t s_version;
@@ -59,5 +66,7 @@ private:
 	std::string m_name;
 	SourceGroupStatusType m_status = SourceGroupStatusType::ENABLED;
 };
+
+#include "SourceGroupSettings.inl"
 
 #endif	  // SOURCE_GROUP_SETTINGS_H

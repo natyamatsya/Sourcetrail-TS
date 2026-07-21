@@ -1,14 +1,17 @@
+// The one ProjectSettings member that names the concrete source-group settings types: the factory.
+// It stays a CLASSIC out-of-line member (not in ProjectSettings.inl) for two reasons:
+//   1. Members of module-attached classes keep ordinary mangling (NameHierarchy::deserialize
+//      precedent), so this definition links for classic TUs and importers alike.
+//   2. Keeping the type/*.h includes out of the inl chain breaks the include cycle
+//      WithComponents.h -> SourceGroupSettings.inl -> ProjectSettings.h -> type/*.h ->
+//      WithComponents.h.
 #include "ProjectSettings.h"
 
 #include "language_package_flags.h"
+#include "logging.h"
+
 #include "SourceGroupSettingsCustomCommand.h"
 #include "SourceGroupSettingsUnloadable.h"
-#include "logging.h"
-#include "utilityFile.h"
-#include "utilityString.h"
-#include "utilityUuid.h"
-
-#include <filesystem>
 
 #include "SourceGroupSettingsCEmpty.h"
 #include "SourceGroupSettingsCppEmpty.h"
@@ -20,14 +23,6 @@
 
 namespace
 {
-bool hasTomlProjectExtension(const std::filesystem::path& path)
-{
-	if (path.extension() != ".toml")
-		return false;
-
-	return path.stem().extension() == ".srctrl";
-}
-
 template <bool Enabled, typename T>
 std::shared_ptr<SourceGroupSettings> makeIfEnabled(const std::string& id, const ProjectSettings* owner)
 {
@@ -37,152 +32,6 @@ std::shared_ptr<SourceGroupSettings> makeIfEnabled(const std::string& id, const 
 		return std::make_shared<SourceGroupSettingsUnloadable>(id, owner);
 }
 }	 // namespace
-
-const std::string ProjectSettings::PROJECT_FILE_EXTENSION = ".srctrl.toml";
-const std::string ProjectSettings::BOOKMARK_DB_FILE_EXTENSION = ".srctrl.bm";
-const std::string ProjectSettings::INDEX_DB_FILE_EXTENSION = ".srctrl.db";
-const std::string ProjectSettings::TEMP_INDEX_DB_FILE_EXTENSION = ".srctrl.db.tmp";
-
-const size_t ProjectSettings::VERSION = 8;
-
-LanguageType ProjectSettings::getLanguageOfProject(const FilePath& filePath)
-{
-	LanguageType languageType = LanguageType::UNKNOWN;
-
-	ProjectSettings projectSettings;
-	projectSettings.load(filePath);
-	for (const std::shared_ptr<SourceGroupSettings>& sourceGroupSettings:
-		 projectSettings.getAllSourceGroupSettings())
-	{
-		const LanguageType currentLanguageType = getLanguageTypeForSourceGroupType(
-			sourceGroupSettings->getType());
-		if (languageType == LanguageType::UNKNOWN)
-		{
-			languageType = currentLanguageType;
-		}
-		else if (languageType != currentLanguageType)
-		{
-			// language is unknown if source groups have different languages.
-			languageType = LanguageType::UNKNOWN;
-			break;
-		}
-	}
-
-	return languageType;
-}
-
-bool ProjectSettings::isProjectFilePath(const FilePath& filePath)
-{
-	return isTomlProjectFilePath(filePath);
-}
-
-bool ProjectSettings::isTomlProjectFilePath(const FilePath& filePath)
-{
-	return hasTomlProjectExtension(filePath.getPath());
-}
-
-ProjectSettings::ProjectSettings() = default;
-
-ProjectSettings::ProjectSettings(const FilePath& projectFilePath)
-{
-	setFilePath(projectFilePath);
-}
-
-ProjectSettings::~ProjectSettings() = default;
-
-bool ProjectSettings::equalsExceptNameAndLocation(const ProjectSettings& other) const
-{
-	const std::vector<std::shared_ptr<SourceGroupSettings>> allMySettings =
-		getAllSourceGroupSettings();
-	const std::vector<std::shared_ptr<SourceGroupSettings>> allOtherSettings =
-		other.getAllSourceGroupSettings();
-
-	if (allMySettings.size() != allOtherSettings.size())
-	{
-		return false;
-	}
-
-	for (const std::shared_ptr<SourceGroupSettings>& mySourceGroup: allMySettings)
-	{
-		bool matched = false;
-		for (const std::shared_ptr<SourceGroupSettings>& otherSourceGroup: allOtherSettings)
-		{
-			if (mySourceGroup->equalsSettings(otherSourceGroup.get()))
-			{
-				matched = true;
-				break;
-			}
-		}
-
-		if (!matched)
-		{
-			return false;
-		}
-	}
-
-	return true;
-}
-
-bool ProjectSettings::reload()
-{
-	return Settings::load(getFilePath());
-}
-
-FilePath ProjectSettings::getProjectFilePath() const
-{
-	return getFilePath();
-}
-
-void ProjectSettings::setProjectFilePath(std::string projectName, const FilePath& projectFileLocation)
-{
-	setFilePath(projectFileLocation.getConcatenated("/" + projectName + PROJECT_FILE_EXTENSION));
-}
-
-FilePath ProjectSettings::getDependenciesDirectoryPath() const
-{
-	return getProjectDirectoryPath().concatenate("sourcetrail_dependencies");
-}
-
-static FilePath stripProjectExtension(const FilePath& path)
-{
-	FilePath p = path.withoutExtension();
-	if (p.extension() == ".srctrl")
-		p = p.withoutExtension();
-	return p;
-}
-
-FilePath ProjectSettings::getDBFilePath() const
-{
-	return stripProjectExtension(getFilePath()).replaceExtension(INDEX_DB_FILE_EXTENSION);
-}
-
-FilePath ProjectSettings::getTempDBFilePath() const
-{
-	return stripProjectExtension(getFilePath()).replaceExtension(TEMP_INDEX_DB_FILE_EXTENSION);
-}
-
-FilePath ProjectSettings::getBookmarkDBFilePath() const
-{
-	return stripProjectExtension(getFilePath()).replaceExtension(BOOKMARK_DB_FILE_EXTENSION);
-}
-
-std::string ProjectSettings::getProjectName() const
-{
-	FilePath p = getFilePath().withoutExtension();
-	if (p.extension() == ".srctrl")
-		p = p.withoutExtension();
-	return p.fileName();
-}
-
-FilePath ProjectSettings::getProjectDirectoryPath() const
-{
-	return getFilePath().getParentDirectory();
-}
-
-std::string ProjectSettings::getDescription() const
-{
-	return getValue<std::string>("description", "");
-}
 
 std::vector<std::shared_ptr<SourceGroupSettings>> ProjectSettings::getAllSourceGroupSettings() const
 {
@@ -237,48 +86,4 @@ std::vector<std::shared_ptr<SourceGroupSettings>> ProjectSettings::getAllSourceG
 	}
 
 	return allSettings;
-}
-
-void ProjectSettings::setAllSourceGroupSettings(
-	const std::vector<std::shared_ptr<SourceGroupSettings>>& allSettings)
-{
-	for (const std::string& key: m_config->getSublevelKeys("source_groups"))
-	{
-		m_config->removeValues(key);
-	}
-
-	for (const std::shared_ptr<SourceGroupSettings>& settings: allSettings)
-	{
-		const std::string key = SourceGroupSettings::s_keyPrefix + settings->getId();
-		const SourceGroupType type = settings->getType();
-		setValue(key + "/type", sourceGroupTypeToString(type));
-
-		settings->saveSettings(m_config.get());
-	}
-}
-
-std::vector<FilePath> ProjectSettings::makePathsExpandedAndAbsolute(const std::vector<FilePath>& paths) const
-{
-	std::vector<FilePath> p = utility::getExpandedPaths(paths);
-
-	std::vector<FilePath> absPaths;
-	const FilePath basePath = getProjectDirectoryPath();
-	for (const FilePath& path: p)
-	{
-		if (path.isAbsolute())
-		{
-			absPaths.push_back(path);
-		}
-		else
-		{
-			absPaths.push_back(basePath.getConcatenated(path).makeCanonical());
-		}
-	}
-
-	return absPaths;
-}
-
-FilePath ProjectSettings::makePathExpandedAndAbsolute(const FilePath& path) const
-{
-	return utility::getExpandedAndAbsolutePath(path, getProjectDirectoryPath());
 }

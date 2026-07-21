@@ -1,26 +1,36 @@
-#include "SourceGroupSettingsWithSwiftOptions.h"
+// Inline implementations for SourceGroupSettingsWithSwiftOptions.h (included at its end). All definitions inline: the family
+// is module-attached in the module build, and inline keeps ordinary mangling so classic TUs and
+// the wrapper emit mergeable weak definitions (dual-build rule).
 
-#include "ConfigManager.h"
+#pragma once
+
+// Family-internal includes stay unguarded: same module either way; include guards
+// + inl-after-class ordering make the cross-references resolve in both builds.
 #include "ProjectSettings.h"
+
+// Cross-module/std/GMF-linked deps: the wrapper supplies these via imports or its GMF.
+#ifndef SRCTRL_MODULE_PURVIEW
+#include "ConfigManager.h"
 #include "utility.h"
 #include "utilityFile.h"
+#endif
 
-const std::vector<std::string>& SourceGroupSettingsWithSwiftOptions::getSwiftBuildArgs() const
+inline const std::vector<std::string>& SourceGroupSettingsWithSwiftOptions::getSwiftBuildArgs() const
 {
 	return m_swiftBuildArgs;
 }
 
-void SourceGroupSettingsWithSwiftOptions::setSwiftBuildArgs(const std::vector<std::string>& args)
+inline void SourceGroupSettingsWithSwiftOptions::setSwiftBuildArgs(const std::vector<std::string>& args)
 {
 	m_swiftBuildArgs = args;
 }
 
-const FilePath& SourceGroupSettingsWithSwiftOptions::getSwiftToolchainPath() const
+inline const FilePath& SourceGroupSettingsWithSwiftOptions::getSwiftToolchainPath() const
 {
 	return m_swiftToolchainPath;
 }
 
-FilePath SourceGroupSettingsWithSwiftOptions::getSwiftToolchainPathExpandedAndAbsolute() const
+inline FilePath SourceGroupSettingsWithSwiftOptions::getSwiftToolchainPathExpandedAndAbsolute() const
 {
 	if (m_swiftToolchainPath.empty())
 		return FilePath();
@@ -28,17 +38,17 @@ FilePath SourceGroupSettingsWithSwiftOptions::getSwiftToolchainPathExpandedAndAb
 		m_swiftToolchainPath, getProjectSettings()->getProjectDirectoryPath());
 }
 
-void SourceGroupSettingsWithSwiftOptions::setSwiftToolchainPath(const FilePath& path)
+inline void SourceGroupSettingsWithSwiftOptions::setSwiftToolchainPath(const FilePath& path)
 {
 	m_swiftToolchainPath = path;
 }
 
-const FilePath& SourceGroupSettingsWithSwiftOptions::getSwiftIndexStorePath() const
+inline const FilePath& SourceGroupSettingsWithSwiftOptions::getSwiftIndexStorePath() const
 {
 	return m_swiftIndexStorePath;
 }
 
-FilePath SourceGroupSettingsWithSwiftOptions::getSwiftIndexStorePathExpandedAndAbsolute() const
+inline FilePath SourceGroupSettingsWithSwiftOptions::getSwiftIndexStorePathExpandedAndAbsolute() const
 {
 	if (m_swiftIndexStorePath.empty())
 		return FilePath();
@@ -46,22 +56,22 @@ FilePath SourceGroupSettingsWithSwiftOptions::getSwiftIndexStorePathExpandedAndA
 		m_swiftIndexStorePath, getProjectSettings()->getProjectDirectoryPath());
 }
 
-void SourceGroupSettingsWithSwiftOptions::setSwiftIndexStorePath(const FilePath& path)
+inline void SourceGroupSettingsWithSwiftOptions::setSwiftIndexStorePath(const FilePath& path)
 {
 	m_swiftIndexStorePath = path;
 }
 
-const std::string& SourceGroupSettingsWithSwiftOptions::getSwiftSpecializationScope() const
+inline const std::string& SourceGroupSettingsWithSwiftOptions::getSwiftSpecializationScope() const
 {
 	return m_swiftSpecializationScope;
 }
 
-void SourceGroupSettingsWithSwiftOptions::setSwiftSpecializationScope(const std::string& scope)
+inline void SourceGroupSettingsWithSwiftOptions::setSwiftSpecializationScope(const std::string& scope)
 {
 	m_swiftSpecializationScope = scope;
 }
 
-bool SourceGroupSettingsWithSwiftOptions::equals(const SourceGroupSettingsBase* other) const
+inline bool SourceGroupSettingsWithSwiftOptions::equals(const SourceGroupSettingsBase* other) const
 {
 	const SourceGroupSettingsWithSwiftOptions* otherPtr =
 		dynamic_cast<const SourceGroupSettingsWithSwiftOptions*>(other);
@@ -73,7 +83,7 @@ bool SourceGroupSettingsWithSwiftOptions::equals(const SourceGroupSettingsBase* 
 		m_swiftSpecializationScope == otherPtr->m_swiftSpecializationScope);
 }
 
-void SourceGroupSettingsWithSwiftOptions::load(const ConfigManager* config, const std::string& key)
+inline void SourceGroupSettingsWithSwiftOptions::load(const ConfigManager* config, const std::string& key)
 {
 	setSwiftBuildArgs(config->getValuesOrDefaults(
 		key + "/swift_build_args/swift_build_arg", std::vector<std::string>()));
@@ -85,7 +95,7 @@ void SourceGroupSettingsWithSwiftOptions::load(const ConfigManager* config, cons
 		config->getValueOrDefault(key + "/swift_specialization_scope", std::string{"local"}));
 }
 
-void SourceGroupSettingsWithSwiftOptions::save(ConfigManager* config, const std::string& key)
+inline void SourceGroupSettingsWithSwiftOptions::save(ConfigManager* config, const std::string& key)
 {
 	config->setValues(key + "/swift_build_args/swift_build_arg", getSwiftBuildArgs());
 	config->setValue(key + "/swift_toolchain_path", getSwiftToolchainPath().str());

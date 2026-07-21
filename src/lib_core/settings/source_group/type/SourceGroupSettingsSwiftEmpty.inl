@@ -1,24 +1,31 @@
-#include "SourceGroupSettingsSwiftEmpty.h"
+// Inline implementations for SourceGroupSettingsSwiftEmpty.h (included at its end). All definitions inline: the family
+// is module-attached in the module build, and inline keeps ordinary mangling so classic TUs and
+// the wrapper emit mergeable weak definitions (dual-build rule).
 
+#pragma once
+
+// Cross-module/std/GMF-linked deps: the wrapper supplies these via imports or its GMF.
+#ifndef SRCTRL_MODULE_PURVIEW
 #include "ConfigManager.h"
+#endif
 
-std::vector<std::string> SourceGroupSettingsSwiftEmpty::getDefaultSourceExtensions() const
+inline std::vector<std::string> SourceGroupSettingsSwiftEmpty::getDefaultSourceExtensions() const
 {
 	return {".swift"};
 }
 
-SourceGroupSettingsSwiftEmpty::SourceGroupSettingsSwiftEmpty(
+inline SourceGroupSettingsSwiftEmpty::SourceGroupSettingsSwiftEmpty(
 	const std::string& id, const ProjectSettings* projectSettings)
 	: SourceGroupSettings{SourceGroupType::SWIFT_EMPTY, id, projectSettings}
 {
 }
 
-std::shared_ptr<SourceGroupSettings> SourceGroupSettingsSwiftEmpty::createCopy() const
+inline std::shared_ptr<SourceGroupSettings> SourceGroupSettingsSwiftEmpty::createCopy() const
 {
 	return std::make_shared<SourceGroupSettingsSwiftEmpty>(*this);
 }
 
-void SourceGroupSettingsSwiftEmpty::loadSettings(const ConfigManager* config)
+inline void SourceGroupSettingsSwiftEmpty::loadSettings(const ConfigManager* config)
 {
 	const std::string key = s_keyPrefix + getId();
 	SourceGroupSettings::load(config, key);
@@ -28,7 +35,7 @@ void SourceGroupSettingsSwiftEmpty::loadSettings(const ConfigManager* config)
 	SourceGroupSettingsWithSwiftOptions::load(config, key);
 }
 
-void SourceGroupSettingsSwiftEmpty::saveSettings(ConfigManager* config)
+inline void SourceGroupSettingsSwiftEmpty::saveSettings(ConfigManager* config)
 {
 	const std::string key = s_keyPrefix + getId();
 	SourceGroupSettings::save(config, key);
@@ -38,7 +45,7 @@ void SourceGroupSettingsSwiftEmpty::saveSettings(ConfigManager* config)
 	SourceGroupSettingsWithSwiftOptions::save(config, key);
 }
 
-bool SourceGroupSettingsSwiftEmpty::equalsSettings(const SourceGroupSettingsBase* other)
+inline bool SourceGroupSettingsSwiftEmpty::equalsSettings(const SourceGroupSettingsBase* other)
 {
 	if (!SourceGroupSettings::equals(other))
 		return false;

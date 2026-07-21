@@ -1,13 +1,18 @@
 #ifndef SOURCE_GROUP_SETTINGS_WITH_CPP_STANDARD_H
 #define SOURCE_GROUP_SETTINGS_WITH_CPP_STANDARD_H
 
-#include <vector>
+#include "SrctrlModule.h"
 
+// Family-internal includes are unguarded: same module either way.
 #include "SourceGroupSettingsComponent.h"
 
-class SourceGroupSettingsWithCppStandard: public SourceGroupSettingsComponent
+#ifndef SRCTRL_MODULE_PURVIEW
+#include <vector>
+#endif
+
+SRCTRL_EXPORT class SourceGroupSettingsWithCppStandard: public SourceGroupSettingsComponent
 {
-public:
+SRCTRL_EXPORT public:
 	static std::string getDefaultCppStandard();
 	static std::vector<std::string> getAvailableCppStandards();
 
@@ -25,5 +30,7 @@ protected:
 private:
 	std::string m_cppStandard;
 };
+
+#include "SourceGroupSettingsWithCppStandard.inl"
 
 #endif	  // SOURCE_GROUP_SETTINGS_WITH_CPP_STANDARD_H

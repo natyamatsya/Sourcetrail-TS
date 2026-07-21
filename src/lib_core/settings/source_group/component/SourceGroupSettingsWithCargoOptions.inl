@@ -1,16 +1,26 @@
-#include "SourceGroupSettingsWithCargoOptions.h"
+// Inline implementations for SourceGroupSettingsWithCargoOptions.h (included at its end). All definitions inline: the family
+// is module-attached in the module build, and inline keeps ordinary mangling so classic TUs and
+// the wrapper emit mergeable weak definitions (dual-build rule).
 
-#include "ConfigManager.h"
+#pragma once
+
+// Family-internal includes stay unguarded: same module either way; include guards
+// + inl-after-class ordering make the cross-references resolve in both builds.
 #include "ProjectSettings.h"
+
+// Cross-module/std/GMF-linked deps: the wrapper supplies these via imports or its GMF.
+#ifndef SRCTRL_MODULE_PURVIEW
+#include "ConfigManager.h"
 #include "utility.h"
 #include "utilityFile.h"
+#endif
 
-const FilePath& SourceGroupSettingsWithCargoOptions::getCargoWorkspaceDirectory() const
+inline const FilePath& SourceGroupSettingsWithCargoOptions::getCargoWorkspaceDirectory() const
 {
 	return m_cargoWorkspaceDirectory;
 }
 
-FilePath SourceGroupSettingsWithCargoOptions::getCargoWorkspaceDirectoryExpandedAndAbsolute() const
+inline FilePath SourceGroupSettingsWithCargoOptions::getCargoWorkspaceDirectoryExpandedAndAbsolute() const
 {
 	if (m_cargoWorkspaceDirectory.empty())
 		return FilePath();
@@ -18,62 +28,62 @@ FilePath SourceGroupSettingsWithCargoOptions::getCargoWorkspaceDirectoryExpanded
 		m_cargoWorkspaceDirectory, getProjectSettings()->getProjectDirectoryPath());
 }
 
-void SourceGroupSettingsWithCargoOptions::setCargoWorkspaceDirectory(const FilePath& path)
+inline void SourceGroupSettingsWithCargoOptions::setCargoWorkspaceDirectory(const FilePath& path)
 {
 	m_cargoWorkspaceDirectory = path;
 }
 
-const std::vector<std::string>& SourceGroupSettingsWithCargoOptions::getCargoFeatures() const
+inline const std::vector<std::string>& SourceGroupSettingsWithCargoOptions::getCargoFeatures() const
 {
 	return m_cargoFeatures;
 }
 
-void SourceGroupSettingsWithCargoOptions::setCargoFeatures(const std::vector<std::string>& features)
+inline void SourceGroupSettingsWithCargoOptions::setCargoFeatures(const std::vector<std::string>& features)
 {
 	m_cargoFeatures = features;
 }
 
-bool SourceGroupSettingsWithCargoOptions::getCargoAllFeatures() const
+inline bool SourceGroupSettingsWithCargoOptions::getCargoAllFeatures() const
 {
 	return m_cargoAllFeatures;
 }
 
-void SourceGroupSettingsWithCargoOptions::setCargoAllFeatures(bool allFeatures)
+inline void SourceGroupSettingsWithCargoOptions::setCargoAllFeatures(bool allFeatures)
 {
 	m_cargoAllFeatures = allFeatures;
 }
 
-bool SourceGroupSettingsWithCargoOptions::getCargoNoDefaultFeatures() const
+inline bool SourceGroupSettingsWithCargoOptions::getCargoNoDefaultFeatures() const
 {
 	return m_cargoNoDefaultFeatures;
 }
 
-void SourceGroupSettingsWithCargoOptions::setCargoNoDefaultFeatures(bool noDefaultFeatures)
+inline void SourceGroupSettingsWithCargoOptions::setCargoNoDefaultFeatures(bool noDefaultFeatures)
 {
 	m_cargoNoDefaultFeatures = noDefaultFeatures;
 }
 
-const std::string& SourceGroupSettingsWithCargoOptions::getCargoTargetTriple() const
+inline const std::string& SourceGroupSettingsWithCargoOptions::getCargoTargetTriple() const
 {
 	return m_cargoTargetTriple;
 }
 
-void SourceGroupSettingsWithCargoOptions::setCargoTargetTriple(const std::string& targetTriple)
+inline void SourceGroupSettingsWithCargoOptions::setCargoTargetTriple(const std::string& targetTriple)
 {
 	m_cargoTargetTriple = targetTriple;
 }
 
-const std::string& SourceGroupSettingsWithCargoOptions::getRustSpecializationScope() const
+inline const std::string& SourceGroupSettingsWithCargoOptions::getRustSpecializationScope() const
 {
 	return m_rustSpecializationScope;
 }
 
-void SourceGroupSettingsWithCargoOptions::setRustSpecializationScope(const std::string& scope)
+inline void SourceGroupSettingsWithCargoOptions::setRustSpecializationScope(const std::string& scope)
 {
 	m_rustSpecializationScope = scope;
 }
 
-bool SourceGroupSettingsWithCargoOptions::equals(const SourceGroupSettingsBase* other) const
+inline bool SourceGroupSettingsWithCargoOptions::equals(const SourceGroupSettingsBase* other) const
 {
 	const SourceGroupSettingsWithCargoOptions* otherPtr =
 		dynamic_cast<const SourceGroupSettingsWithCargoOptions*>(other);
@@ -87,7 +97,7 @@ bool SourceGroupSettingsWithCargoOptions::equals(const SourceGroupSettingsBase* 
 		m_rustSpecializationScope == otherPtr->m_rustSpecializationScope);
 }
 
-void SourceGroupSettingsWithCargoOptions::load(const ConfigManager* config, const std::string& key)
+inline void SourceGroupSettingsWithCargoOptions::load(const ConfigManager* config, const std::string& key)
 {
 	setCargoWorkspaceDirectory(FilePath(
 		config->getValueOrDefault(key + "/cargo_workspace_directory", std::string{})));
@@ -100,7 +110,7 @@ void SourceGroupSettingsWithCargoOptions::load(const ConfigManager* config, cons
 		config->getValueOrDefault<std::string>(key + "/rust_specialization_scope", "local"));
 }
 
-void SourceGroupSettingsWithCargoOptions::save(ConfigManager* config, const std::string& key)
+inline void SourceGroupSettingsWithCargoOptions::save(ConfigManager* config, const std::string& key)
 {
 	config->setValue(key + "/cargo_workspace_directory", getCargoWorkspaceDirectory().str());
 	config->setValues(key + "/cargo_features/cargo_feature", getCargoFeatures());

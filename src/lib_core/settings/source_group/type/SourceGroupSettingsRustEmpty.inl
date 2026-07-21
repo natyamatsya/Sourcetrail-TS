@@ -1,24 +1,31 @@
-#include "SourceGroupSettingsRustEmpty.h"
+// Inline implementations for SourceGroupSettingsRustEmpty.h (included at its end). All definitions inline: the family
+// is module-attached in the module build, and inline keeps ordinary mangling so classic TUs and
+// the wrapper emit mergeable weak definitions (dual-build rule).
 
+#pragma once
+
+// Cross-module/std/GMF-linked deps: the wrapper supplies these via imports or its GMF.
+#ifndef SRCTRL_MODULE_PURVIEW
 #include "ConfigManager.h"
+#endif
 
-std::vector<std::string> SourceGroupSettingsRustEmpty::getDefaultSourceExtensions() const
+inline std::vector<std::string> SourceGroupSettingsRustEmpty::getDefaultSourceExtensions() const
 {
 	return {".rs"};
 }
 
-SourceGroupSettingsRustEmpty::SourceGroupSettingsRustEmpty(
+inline SourceGroupSettingsRustEmpty::SourceGroupSettingsRustEmpty(
 	const std::string& id, const ProjectSettings* projectSettings)
 	: SourceGroupSettings(SourceGroupType::RUST_EMPTY, id, projectSettings)
 {
 }
 
-std::shared_ptr<SourceGroupSettings> SourceGroupSettingsRustEmpty::createCopy() const
+inline std::shared_ptr<SourceGroupSettings> SourceGroupSettingsRustEmpty::createCopy() const
 {
 	return std::make_shared<SourceGroupSettingsRustEmpty>(*this);
 }
 
-void SourceGroupSettingsRustEmpty::loadSettings(const ConfigManager* config)
+inline void SourceGroupSettingsRustEmpty::loadSettings(const ConfigManager* config)
 {
 	const std::string key = s_keyPrefix + getId();
 	SourceGroupSettings::load(config, key);
@@ -28,7 +35,7 @@ void SourceGroupSettingsRustEmpty::loadSettings(const ConfigManager* config)
 	SourceGroupSettingsWithCargoOptions::load(config, key);
 }
 
-void SourceGroupSettingsRustEmpty::saveSettings(ConfigManager* config)
+inline void SourceGroupSettingsRustEmpty::saveSettings(ConfigManager* config)
 {
 	const std::string key = s_keyPrefix + getId();
 	SourceGroupSettings::save(config, key);
@@ -38,7 +45,7 @@ void SourceGroupSettingsRustEmpty::saveSettings(ConfigManager* config)
 	SourceGroupSettingsWithCargoOptions::save(config, key);
 }
 
-bool SourceGroupSettingsRustEmpty::equalsSettings(const SourceGroupSettingsBase* other)
+inline bool SourceGroupSettingsRustEmpty::equalsSettings(const SourceGroupSettingsBase* other)
 {
 	if (!SourceGroupSettings::equals(other))
 		return false;

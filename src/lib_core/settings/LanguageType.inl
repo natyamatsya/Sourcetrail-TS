@@ -1,6 +1,10 @@
-#include "LanguageType.h"
+// Inline implementations for LanguageType.h (included at its end). All definitions inline: the family
+// is module-attached in the module build, and inline keeps ordinary mangling so classic TUs and
+// the wrapper emit mergeable weak definitions (dual-build rule).
 
-std::string languageTypeToString(LanguageType t)
+#pragma once
+
+inline std::string languageTypeToString(LanguageType t)
 {
 	switch (t)
 	{
@@ -22,7 +26,7 @@ std::string languageTypeToString(LanguageType t)
 	return "unknown";
 }
 
-LanguageType getLanguageTypeForSourceGroupType(SourceGroupType t)
+inline LanguageType getLanguageTypeForSourceGroupType(SourceGroupType t)
 {
 	switch (t)
 	{

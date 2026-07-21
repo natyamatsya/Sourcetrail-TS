@@ -1,19 +1,15 @@
-// Module build: LOG_* macros stay textual (macros don't travel through imports); logging.h then
-// yields macros only and the backend comes from `import srctrl.logging` below.
-#ifdef SRCTRL_MODULE_BUILD
-#define SRCTRL_LOGGING_VIA_IMPORT
-#endif
+// Inline implementations for SourceGroupStatusType.h (included at its end). All definitions inline: the family
+// is module-attached in the module build, and inline keeps ordinary mangling so classic TUs and
+// the wrapper emit mergeable weak definitions (dual-build rule).
 
-#include "SourceGroupStatusType.h"
+#pragma once
 
+// Cross-module/std/GMF-linked deps: the wrapper supplies these via imports or its GMF.
+#ifndef SRCTRL_MODULE_PURVIEW
 #include "logging.h"
-
-// Imports come AFTER all textual #includes (include-before-import rule).
-#ifdef SRCTRL_MODULE_BUILD
-import srctrl.logging;
 #endif
 
-std::string sourceGroupStatusTypeToString(SourceGroupStatusType v)
+inline std::string sourceGroupStatusTypeToString(SourceGroupStatusType v)
 {
 	switch (v)
 	{
@@ -26,7 +22,7 @@ std::string sourceGroupStatusTypeToString(SourceGroupStatusType v)
 	return "disabled";
 }
 
-SourceGroupStatusType stringToSourceGroupStatusType(const std::string &v)
+inline SourceGroupStatusType stringToSourceGroupStatusType(const std::string &v)
 {
 	if (v == sourceGroupStatusTypeToString(SourceGroupStatusType::ENABLED))
 	{

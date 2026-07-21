@@ -1,10 +1,16 @@
 #ifndef SOURCE_GROUP_SETTINGS_WITH_CXX_PCH_OPTIONS_H
 #define SOURCE_GROUP_SETTINGS_WITH_CXX_PCH_OPTIONS_H
 
-#include "FilePath.h"
+#include "SrctrlModule.h"
+
+// Family-internal includes are unguarded: same module either way.
 #include "SourceGroupSettingsComponent.h"
 
-class SourceGroupSettingsWithCxxPchOptions: public SourceGroupSettingsComponent
+#ifndef SRCTRL_MODULE_PURVIEW
+#include "FilePath.h"
+#endif
+
+SRCTRL_EXPORT class SourceGroupSettingsWithCxxPchOptions: public SourceGroupSettingsComponent
 {
 public:
 	~SourceGroupSettingsWithCxxPchOptions() override = default;
@@ -32,5 +38,7 @@ private:
 	std::vector<std::string> m_pchFlags;
 	bool m_useCompilerFlags = true;
 };
+
+#include "SourceGroupSettingsWithCxxPchOptions.inl"
 
 #endif	  // SOURCE_GROUP_SETTINGS_WITH_CXX_PCH_OPTIONS_H

@@ -1,13 +1,17 @@
 #ifndef SOURCE_GROUP_TYPE_H
 #define SOURCE_GROUP_TYPE_H
 
+#include "SrctrlModule.h"
+
+#ifndef SRCTRL_MODULE_PURVIEW
 #include "language_package_flags.h"
 
 #include <QMetaType>
 
 #include <string>
+#endif
 
-enum class SourceGroupType
+SRCTRL_EXPORT enum class SourceGroupType
 {
 	UNKNOWN,
 	C_EMPTY,
@@ -20,10 +24,17 @@ enum class SourceGroupType
 	CUSTOM_COMMAND
 };
 
+// Q_DECLARE_METATYPE is a macro and can't cross an import (srctrl.qt:meta precedent): classic
+// includers keep it textual; the module purview strips it (module content never marshals this
+// enum through QVariant itself).
+#ifndef SRCTRL_MODULE_PURVIEW
 Q_DECLARE_METATYPE(SourceGroupType)
+#endif
 
-std::string sourceGroupTypeToString(SourceGroupType v);
-std::string sourceGroupTypeToProjectSetupString(SourceGroupType v);
-SourceGroupType stringToSourceGroupType(const std::string& v);
+SRCTRL_EXPORT std::string sourceGroupTypeToString(SourceGroupType v);
+SRCTRL_EXPORT std::string sourceGroupTypeToProjectSetupString(SourceGroupType v);
+SRCTRL_EXPORT SourceGroupType stringToSourceGroupType(const std::string& v);
+
+#include "SourceGroupType.inl"
 
 #endif	  // SOURCE_GROUP_TYPE_H

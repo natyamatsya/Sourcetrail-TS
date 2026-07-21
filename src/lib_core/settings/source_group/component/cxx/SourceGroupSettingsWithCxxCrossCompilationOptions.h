@@ -1,9 +1,12 @@
 #ifndef SOURCE_GROUP_SETTINGS_WITH_CXX_CROSS_COMPILATION_OPTIONS_H
 #define SOURCE_GROUP_SETTINGS_WITH_CXX_CROSS_COMPILATION_OPTIONS_H
 
+#include "SrctrlModule.h"
+
+// Family-internal includes are unguarded: same module either way.
 #include "SourceGroupSettingsComponent.h"
 
-class SourceGroupSettingsWithCxxCrossCompilationOptions: public SourceGroupSettingsComponent
+SRCTRL_EXPORT class SourceGroupSettingsWithCxxCrossCompilationOptions: public SourceGroupSettingsComponent
 {
 public:
 	~SourceGroupSettingsWithCxxCrossCompilationOptions() override = default;
@@ -38,5 +41,7 @@ private:
 	std::string m_targetSys;
 	std::string m_targetAbi;
 };
+
+#include "SourceGroupSettingsWithCxxCrossCompilationOptions.inl"
 
 #endif	  // SOURCE_GROUP_SETTINGS_WITH_CXX_CROSS_COMPILATION_OPTIONS_H

@@ -1,12 +1,18 @@
 #ifndef SOURCE_GROUP_SETTINGS_WITH_CXX_PATHS_AND_FLAGS_H
 #define SOURCE_GROUP_SETTINGS_WITH_CXX_PATHS_AND_FLAGS_H
 
+#include "SrctrlModule.h"
+
+// Family-internal includes are unguarded: same module either way.
+#include "SourceGroupSettingsComponent.h"
+
+#ifndef SRCTRL_MODULE_PURVIEW
 #include <vector>
 
 #include "FilePath.h"
-#include "SourceGroupSettingsComponent.h"
+#endif
 
-class SourceGroupSettingsWithCxxPathsAndFlags: public SourceGroupSettingsComponent
+SRCTRL_EXPORT class SourceGroupSettingsWithCxxPathsAndFlags: public SourceGroupSettingsComponent
 {
 public:
 	~SourceGroupSettingsWithCxxPathsAndFlags() override = default;
@@ -33,5 +39,7 @@ private:
 	std::vector<FilePath> m_frameworkSearchPaths;
 	std::vector<std::string> m_compilerFlags;
 };
+
+#include "SourceGroupSettingsWithCxxPathsAndFlags.inl"
 
 #endif	  // SOURCE_GROUP_SETTINGS_WITH_CXX_PATHS_AND_FLAGS_H

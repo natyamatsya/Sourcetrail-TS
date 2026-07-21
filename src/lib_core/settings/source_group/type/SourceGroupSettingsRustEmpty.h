@@ -1,13 +1,16 @@
 #ifndef SOURCE_GROUP_SETTINGS_RUST_EMPTY_H
 #define SOURCE_GROUP_SETTINGS_RUST_EMPTY_H
 
+#include "SrctrlModule.h"
+
+// Family-internal includes are unguarded: same module either way.
 #include "SourceGroupSettings.h"
 #include "SourceGroupSettingsWithCargoOptions.h"
 #include "SourceGroupSettingsWithExcludeFilters.h"
 #include "SourceGroupSettingsWithSourceExtensions.h"
 #include "SourceGroupSettingsWithSourcePaths.h"
 
-class SourceGroupSettingsRustEmpty
+SRCTRL_EXPORT class SourceGroupSettingsRustEmpty
 	: public SourceGroupSettings
 	, public SourceGroupSettingsWithSourcePaths
 	, public SourceGroupSettingsWithExcludeFilters
@@ -24,5 +27,7 @@ public:
 	void saveSettings(ConfigManager* config) override;
 	bool equalsSettings(const SourceGroupSettingsBase* other) override;
 };
+
+#include "SourceGroupSettingsRustEmpty.inl"
 
 #endif	  // SOURCE_GROUP_SETTINGS_RUST_EMPTY_H

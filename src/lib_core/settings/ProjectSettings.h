@@ -1,15 +1,23 @@
 #ifndef PROJECT_SETTINGS_H
 #define PROJECT_SETTINGS_H
 
+#include "SrctrlModule.h"
+
+// Family-internal includes are unguarded: same module either way.
+#include "LanguageType.h"
+
+#ifndef SRCTRL_MODULE_PURVIEW
 #include <memory>
 #include <vector>
 
-#include "LanguageType.h"
 #include "Settings.h"
+#endif
 
-class SourceGroupSettings;
+#ifndef SRCTRL_MODULE_PURVIEW
+SRCTRL_EXPORT class SourceGroupSettings;
+#endif
 
-class ProjectSettings: public Settings
+SRCTRL_EXPORT class ProjectSettings: public Settings
 {
 public:
 	static const std::string PROJECT_FILE_EXTENSION;
@@ -49,5 +57,7 @@ public:
 	std::vector<FilePath> makePathsExpandedAndAbsolute(const std::vector<FilePath>& paths) const;
 	FilePath makePathExpandedAndAbsolute(const FilePath& path) const;
 };
+
+#include "ProjectSettings.inl"
 
 #endif	  // PROJECT_SETTINGS_H

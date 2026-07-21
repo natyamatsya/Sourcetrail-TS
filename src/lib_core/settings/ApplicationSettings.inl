@@ -1,5 +1,6 @@
-// Inline implementations for ApplicationSettings.h. Included at the end of that header; not a
-// standalone TU.
+// Inline implementations for ApplicationSettings.h (included at its end). All definitions inline: the family
+// is module-attached in the module build, and inline keeps ordinary mangling so classic TUs and
+// the wrapper emit mergeable weak definitions (dual-build rule).
 
 #pragma once
 

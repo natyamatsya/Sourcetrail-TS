@@ -1,10 +1,17 @@
 #ifndef SOURCE_GROUP_SETTINGS_BASE_H
 #define SOURCE_GROUP_SETTINGS_BASE_H
 
-class FilePath;
-class ProjectSettings;
+#include "SrctrlModule.h"
 
-class SourceGroupSettingsBase
+// FilePath is another module's type: fwd-declare only in the classic build (the purview gets it
+// from `import srctrl.file`). ProjectSettings is family-internal -- the fwd decl attaches to this
+// module in the purview and must stay visible.
+#ifndef SRCTRL_MODULE_PURVIEW
+class FilePath;
+#endif
+SRCTRL_EXPORT class ProjectSettings;
+
+SRCTRL_EXPORT class SourceGroupSettingsBase
 {
 public:
 	virtual ~SourceGroupSettingsBase() = default;

@@ -1,10 +1,16 @@
 #ifndef SOURCE_GROUP_SETTINGS_WITH_CXX_CMAKE_BUILD_DIRECTORY_H
 #define SOURCE_GROUP_SETTINGS_WITH_CXX_CMAKE_BUILD_DIRECTORY_H
 
-#include "FilePath.h"
+#include "SrctrlModule.h"
+
+// Family-internal includes are unguarded: same module either way.
 #include "SourceGroupSettingsComponent.h"
 
-class SourceGroupSettingsWithCxxCMakeBuildDirectory: public SourceGroupSettingsComponent
+#ifndef SRCTRL_MODULE_PURVIEW
+#include "FilePath.h"
+#endif
+
+SRCTRL_EXPORT class SourceGroupSettingsWithCxxCMakeBuildDirectory: public SourceGroupSettingsComponent
 {
 public:
 	~SourceGroupSettingsWithCxxCMakeBuildDirectory() override = default;

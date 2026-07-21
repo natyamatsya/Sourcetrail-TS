@@ -1,16 +1,22 @@
 #ifndef SOURCE_GROUP_SETTINGS_WITH_CARGO_OPTIONS_H
 #define SOURCE_GROUP_SETTINGS_WITH_CARGO_OPTIONS_H
 
+#include "SrctrlModule.h"
+
+// Family-internal includes are unguarded: same module either way.
+#include "SourceGroupSettingsComponent.h"
+
+#ifndef SRCTRL_MODULE_PURVIEW
 #include <string>
 #include <vector>
 
 #include "FilePath.h"
-#include "SourceGroupSettingsComponent.h"
+#endif
 
 // Cargo project-model options for Rust source groups (project model v1:
 // feature selection and target triple — see
 // context/DESIGN_RUST_PROJECT_MODEL.md; per-target scoping is deferred).
-class SourceGroupSettingsWithCargoOptions: public SourceGroupSettingsComponent
+SRCTRL_EXPORT class SourceGroupSettingsWithCargoOptions: public SourceGroupSettingsComponent
 {
 public:
 	~SourceGroupSettingsWithCargoOptions() override = default;
@@ -54,5 +60,7 @@ private:
 	std::string m_cargoTargetTriple;
 	std::string m_rustSpecializationScope = "local";
 };
+
+#include "SourceGroupSettingsWithCargoOptions.inl"
 
 #endif	  // SOURCE_GROUP_SETTINGS_WITH_CARGO_OPTIONS_H

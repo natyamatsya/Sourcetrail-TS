@@ -1,25 +1,32 @@
-#include "SourceGroupSettingsUnloadable.h"
+// Inline implementations for SourceGroupSettingsUnloadable.h (included at its end). All definitions inline: the family
+// is module-attached in the module build, and inline keeps ordinary mangling so classic TUs and
+// the wrapper emit mergeable weak definitions (dual-build rule).
 
+#pragma once
+
+// Cross-module/std/GMF-linked deps: the wrapper supplies these via imports or its GMF.
+#ifndef SRCTRL_MODULE_PURVIEW
 #include "ConfigManager.h"
 #include "utility.h"
+#endif
 
-SourceGroupSettingsUnloadable::SourceGroupSettingsUnloadable(
+inline SourceGroupSettingsUnloadable::SourceGroupSettingsUnloadable(
 	const std::string& id, const ProjectSettings* projectSettings)
 	: SourceGroupSettings(SourceGroupType::UNKNOWN, id, projectSettings)
 {
 }
 
-std::string SourceGroupSettingsUnloadable::getTypeString()
+inline std::string SourceGroupSettingsUnloadable::getTypeString()
 {
 	return m_typeString;
 }
 
-std::shared_ptr<SourceGroupSettings> SourceGroupSettingsUnloadable::createCopy() const
+inline std::shared_ptr<SourceGroupSettings> SourceGroupSettingsUnloadable::createCopy() const
 {
 	return std::make_shared<SourceGroupSettingsUnloadable>(*this);
 }
 
-void SourceGroupSettingsUnloadable::loadSettings(const ConfigManager* config)
+inline void SourceGroupSettingsUnloadable::loadSettings(const ConfigManager* config)
 {
 	const std::string key = s_keyPrefix + getId();
 
@@ -52,7 +59,7 @@ void SourceGroupSettingsUnloadable::loadSettings(const ConfigManager* config)
 	}
 }
 
-void SourceGroupSettingsUnloadable::saveSettings(ConfigManager* config)
+inline void SourceGroupSettingsUnloadable::saveSettings(ConfigManager* config)
 {
 	for (const auto &it: m_content)
 	{
@@ -60,7 +67,7 @@ void SourceGroupSettingsUnloadable::saveSettings(ConfigManager* config)
 	}
 }
 
-bool SourceGroupSettingsUnloadable::equalsSettings(const SourceGroupSettingsBase* other)
+inline bool SourceGroupSettingsUnloadable::equalsSettings(const SourceGroupSettingsBase* other)
 {
 	if (!SourceGroupSettings::equals(other))
 	{
