@@ -48,4 +48,6 @@ private:
 	std::string m_configuration;
 };
 
+#include "SourceGroupSettingsWithCxxCMakeBuildDirectory.inl"
+
 #endif	  // SOURCE_GROUP_SETTINGS_WITH_CXX_CMAKE_BUILD_DIRECTORY_H

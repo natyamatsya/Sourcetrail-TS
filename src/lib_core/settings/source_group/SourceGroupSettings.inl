@@ -4,9 +4,10 @@
 
 #pragma once
 
+// The three ProjectSettings-touching members live in ProjectSettings.inl (keeps this inl free
+// of ProjectSettings.h, which breaks the WithComponents include cycle).
 // Family-internal includes stay unguarded: same module either way; include guards
 // + inl-after-class ordering make the cross-references resolve in both builds.
-#include "ProjectSettings.h"
 
 // Cross-module/std/GMF-linked deps: the wrapper supplies these via imports or its GMF.
 #ifndef SRCTRL_MODULE_PURVIEW
@@ -99,18 +100,3 @@ inline const ProjectSettings* SourceGroupSettings::getProjectSettings() const
 	return m_projectSettings;
 }
 
-inline FilePath SourceGroupSettings::getSourceGroupDependenciesDirectoryPath() const
-{
-	return getProjectSettings()->getDependenciesDirectoryPath().concatenate(getId());
-}
-
-inline FilePath SourceGroupSettings::getProjectDirectoryPath() const
-{
-	return m_projectSettings->getProjectDirectoryPath();
-}
-
-inline std::vector<FilePath> SourceGroupSettings::makePathsExpandedAndAbsolute(
-	const std::vector<FilePath>& paths) const
-{
-	return m_projectSettings->makePathsExpandedAndAbsolute(paths);
-}

@@ -105,6 +105,7 @@ if(SOURCETRAIL_CXX_MODULES_ENABLED)
 		LogManagerTestSuite.cpp
 		LowMemoryStringMapTestSuite.cpp
 		QtResourcesTestSuite.cpp
+		SettingsTestSuite.cpp
 		SourceLocationCollectionTestSuite.cpp
 		TextAccessTestSuite.cpp
 		UtilityEnumTestSuite.cpp

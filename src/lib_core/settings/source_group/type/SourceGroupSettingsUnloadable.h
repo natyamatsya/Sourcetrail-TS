@@ -13,7 +13,7 @@
 
 SRCTRL_EXPORT class SourceGroupSettingsUnloadable: public SourceGroupSettings
 {
-SRCTRL_EXPORT public:
+public:
 	SourceGroupSettingsUnloadable(const std::string& id, const ProjectSettings* projectSettings);
 	std::string getTypeString();
 	std::shared_ptr<SourceGroupSettings> createCopy() const override;

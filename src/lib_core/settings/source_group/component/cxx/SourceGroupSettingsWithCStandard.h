@@ -12,7 +12,7 @@
 
 SRCTRL_EXPORT class SourceGroupSettingsWithCStandard: public SourceGroupSettingsComponent
 {
-SRCTRL_EXPORT public:
+public:
 	static std::string getDefaultCStandard();
 	static std::vector<std::string> getAvailableCStandards();
 

@@ -1,9 +1,17 @@
 #include "Catch2.hpp"
 
+#ifndef SRCTRL_MODULE_BUILD
 #include "ProjectSettings.h"
 #include "Settings.h"
 #include "SourceGroupSettings.h"
 #include "SourceGroupSettingsWithSourcePaths.h"
+#endif
+
+// Imports come AFTER all textual #includes (include-before-import rule).
+#ifdef SRCTRL_MODULE_BUILD
+import srctrl.settings;
+import srctrl.file;   // FilePath used directly in the source-path tests
+#endif
 
 namespace
 {

@@ -30,6 +30,11 @@ module;
 #include <glaze/glaze.hpp>
 #include <toml++/toml.hpp>
 
+// Qt is never covered by `import std` and QStringLiteral is a macro -- textual in the GMF
+// (utilityString/AidKit precedent). Needed by the exclude-filter bodies.
+#include <QRegularExpression>
+#include <QString>
+
 #include "GroupType.h"
 #include "language_package_flags.h"
 #include "utilityUuid.h"
@@ -58,3 +63,17 @@ import srctrl.logging;   // srctrl::log machinery behind the LOG_* macros
 #include "ApplicationSettings.h"
 #include "SourceGroupSettings.h"
 #include "ProjectSettings.h"
+// The concrete source-group settings types (and, transitively, WithComponents + every component
+// mixin). NOT reachable via ProjectSettings.h -- its factory lives in a classic .cpp precisely to
+// keep these out of the inl chain -- so the wrapper attaches them explicitly.
+#include "SourceGroupSettingsCEmpty.h"
+#include "SourceGroupSettingsCppEmpty.h"
+#include "SourceGroupSettingsCustomCommand.h"
+#include "SourceGroupSettingsCxxCdb.h"
+#include "SourceGroupSettingsCxxCMakeFileAPI.h"
+#include "SourceGroupSettingsRustEmpty.h"
+#include "SourceGroupSettingsSwiftEmpty.h"
+#include "SourceGroupSettingsUnloadable.h"
+#include "SourceGroupSettingsZigEmpty.h"
+// The factory, last: it names the whole type family.
+#include "ProjectSettingsFactory.inl"

@@ -51,8 +51,8 @@ int main()
 }
 */
 
-template <typename... ComponentTypes>
-SRCTRL_EXPORT class SourceGroupSettingsWithComponents
+SRCTRL_EXPORT template <typename... ComponentTypes>
+class SourceGroupSettingsWithComponents
 	: public SourceGroupSettings
 	, public ComponentTypes...
 {

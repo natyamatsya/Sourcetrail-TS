@@ -4,10 +4,10 @@
 
 #pragma once
 
-// NB: getAllSourceGroupSettings (the concrete-type factory) is NOT here -- it lives in
-// ProjectSettings.cpp as a classic out-of-line member (members of attached classes keep ordinary
-// mangling; NameHierarchy::deserialize precedent). Keeping the type/*.h includes out of this inl
-// is what breaks the WithComponents include cycle.
+// This inl also hosts SourceGroupSettings' three ProjectSettings-touching member bodies (keeps
+// SourceGroupSettings.inl free of ProjectSettings.h). The concrete-type factory lives in
+// ProjectSettingsFactory.inl -- naming the type family from ANY header the family re-enters is
+// cyclic, so only the wrapper and the classic emission TU include it.
 
 // Family-internal include, unguarded (same module either way): the bodies below walk
 // SourceGroupSettings members, so the complete type is required.
@@ -15,6 +15,7 @@
 
 // Cross-module/std/GMF-linked deps: the wrapper supplies these via imports or its GMF.
 #ifndef SRCTRL_MODULE_PURVIEW
+#include "language_package_flags.h"
 #include "logging.h"
 #include "utilityFile.h"
 #include "utilityString.h"
@@ -226,3 +227,20 @@ inline FilePath ProjectSettings::makePathExpandedAndAbsolute(const FilePath& pat
 {
 	return utility::getExpandedAndAbsolutePath(path, getProjectDirectoryPath());
 }
+
+inline FilePath SourceGroupSettings::getSourceGroupDependenciesDirectoryPath() const
+{
+	return getProjectSettings()->getDependenciesDirectoryPath().concatenate(getId());
+}
+
+inline FilePath SourceGroupSettings::getProjectDirectoryPath() const
+{
+	return m_projectSettings->getProjectDirectoryPath();
+}
+
+inline std::vector<FilePath> SourceGroupSettings::makePathsExpandedAndAbsolute(
+	const std::vector<FilePath>& paths) const
+{
+	return m_projectSettings->makePathsExpandedAndAbsolute(paths);
+}
+
