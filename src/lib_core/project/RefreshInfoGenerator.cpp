@@ -1,15 +1,26 @@
 #include "RefreshInfoGenerator.h"
 
+#ifndef SRCTRL_MODULE_BUILD
 #include "FileInfo.h"
 #include "FileSystem.h"
+#endif
 #include "PersistentStorage.h"
 #include "RefreshInfo.h"
 #include "SourceGroup.h"
 #include "SourceGroupStatusType.h"
+#ifndef SRCTRL_MODULE_BUILD
 #include "TextAccess.h"
 #include "utility.h"
+#endif
 
 #include <unordered_map>
+
+// Imports come AFTER all textual #includes (include-before-import rule: textual libc++
+// following BMI-merged declarations trips "cannot add 'abi_tag' in a redeclaration").
+#ifdef SRCTRL_MODULE_BUILD
+import srctrl.file;
+import srctrl.utility;
+#endif
 
 RefreshInfo RefreshInfoGenerator::getRefreshInfoForUpdatedFiles(
 	const std::vector<std::shared_ptr<SourceGroup>>& sourceGroups,

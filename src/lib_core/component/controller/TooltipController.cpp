@@ -2,13 +2,24 @@
 
 #include "CodeView.h"
 #include "GraphView.h"
+#ifndef SRCTRL_MODULE_BUILD
 #include "StorageAccess.h"
+#endif
 #include "TooltipView.h"
 
+#ifndef SRCTRL_MODULE_BUILD
 #include "MessageActivateSourceLocations.h"
+#endif
 #include "TabIds.h"
 #include "TaskDecoratorDelay.h"
 #include "TaskLambda.h"
+
+// Imports come AFTER all textual #includes (include-before-import rule: textual libc++
+// following BMI-merged declarations trips "cannot add 'abi_tag' in a redeclaration").
+#ifdef SRCTRL_MODULE_BUILD
+import srctrl.messaging;
+import srctrl.storage;
+#endif
 
 Id TooltipController::TooltipRequest::s_requestId = 1;
 

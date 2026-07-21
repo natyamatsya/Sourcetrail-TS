@@ -1,20 +1,37 @@
 #include "BookmarkController.h"
 
 #include "Application.h"
+#ifndef SRCTRL_MODULE_BUILD
 #include "Bookmark.h"
+#endif
 #include "BookmarkView.h"
+#ifndef SRCTRL_MODULE_BUILD
 #include "EdgeBookmark.h"
 #include "NodeBookmark.h"
 #include "StorageAccess.h"
 #include "StorageEdge.h"
+#endif
 
+#ifndef SRCTRL_MODULE_BUILD
 #include "MessageActivateEdge.h"
 #include "MessageActivateNodes.h"
 #include "MessageBookmarkButtonState.h"
+#endif
 #include "TabIds.h"
 #include "logging.h"
+#ifndef SRCTRL_MODULE_BUILD
 #include "utility.h"
 #include "utilityString.h"
+#endif
+
+// Imports come AFTER all textual #includes (include-before-import rule: textual libc++
+// following BMI-merged declarations trips "cannot add 'abi_tag' in a redeclaration").
+#ifdef SRCTRL_MODULE_BUILD
+import srctrl.data;
+import srctrl.messaging;
+import srctrl.storage;
+import srctrl.utility;
+#endif
 
 using namespace utility;
 

@@ -1,9 +1,24 @@
 #include "CxxIndexerCommandProvider.h"
 
-#include "IndexerCommand.h"
+#include <stdcompat/optional>  // was transitive via the now-guarded IndexerCommand.h (rule 5)
 
+#ifndef SRCTRL_MODULE_BUILD
+#include "IndexerCommand.h"
+#endif
+
+#ifndef SRCTRL_MODULE_BUILD
 #include "IndexerCommandCxx.h"
+#endif
 #include "logging.h"
+
+// Imports come AFTER all textual #includes (include-before-import rule: textual libc++
+// following BMI-merged declarations trips "cannot add 'abi_tag' in a redeclaration").
+#ifdef SRCTRL_MODULE_BUILD
+import srctrl.cxx;
+import srctrl.indexer;
+// FilePathFilter came transitively before; visibility does not flow through imports.
+import srctrl.file;
+#endif
 
 CxxIndexerCommandProvider::CxxIndexerCommandProvider(): m_nextId(1) {}
 

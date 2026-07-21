@@ -28,3 +28,10 @@ target_link_libraries(Sourcetrail
 		Sourcetrail_lib_gui
 		$<$<BOOL:${BUILD_CXX_LANGUAGE_PACKAGE}>:Sourcetrail_lib_cxx>
 )
+
+# Module build: converted consumer TUs (SRCTRL_MODULE_BUILD is PER-SOURCE -- "this TU imports").
+if(SOURCETRAIL_CXX_MODULES_ENABLED)
+	set_source_files_properties(ApplicationSettingsPrefiller.cpp PROPERTIES CXX_SCAN_FOR_MODULES ON)
+	set_property(SOURCE ApplicationSettingsPrefiller.cpp APPEND PROPERTY
+		COMPILE_DEFINITIONS SRCTRL_MODULE_BUILD)
+endif()

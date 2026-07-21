@@ -1,11 +1,22 @@
 #include "ErrorController.h"
 
 #include "Application.h"
+#ifndef SRCTRL_MODULE_BUILD
 #include "ApplicationSettings.h"
+#endif
 #include "DialogView.h"
 #include "Project.h"
+#ifndef SRCTRL_MODULE_BUILD
 #include "StorageAccess.h"
+#endif
 #include "TabIds.h"
+
+// Imports come AFTER all textual #includes (include-before-import rule: textual libc++
+// following BMI-merged declarations trips "cannot add 'abi_tag' in a redeclaration").
+#ifdef SRCTRL_MODULE_BUILD
+import srctrl.settings;
+import srctrl.storage;
+#endif
 
 ErrorController::ErrorController(StorageAccess* storageAccess): m_storageAccess(storageAccess) {}
 

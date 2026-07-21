@@ -5,9 +5,18 @@
 #include <set>
 #include <vector>
 
+#ifndef SRCTRL_MODULE_BUILD
 #include "IndexerCommandSerializer.h"
 #include "IndexerCommand.h"
 #include "IndexerCommandSwift.h"
+#endif
+
+// Imports come AFTER all textual #includes (include-before-import rule: textual libc++
+// following BMI-merged declarations trips "cannot add 'abi_tag' in a redeclaration").
+#ifdef SRCTRL_MODULE_BUILD
+import srctrl.indexer;
+import srctrl.interprocess;
+#endif
 
 std::shared_ptr<IndexerCommand> makeOptionalSwiftCommand(const std::string& workingDirectory)
 {

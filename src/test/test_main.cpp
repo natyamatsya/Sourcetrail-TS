@@ -1,19 +1,33 @@
 #include "Catch2.hpp"
 
+#ifndef SRCTRL_MODULE_BUILD
 #include "ApplicationSettings.h"
+#endif
 #include "utilityPathDetection.h"
+#ifndef SRCTRL_MODULE_BUILD
 #include <AppPath.h>
 #include <UserPaths.h>
+#endif
 #include <setupApp.h>
 
 #include "language_packages.h"
 
 #if BUILD_CXX_LANGUAGE_PACKAGE
+#ifndef SRCTRL_MODULE_BUILD
 #include "CxxIndexerCommandCodec.h"
+#endif
 #endif
 
 #include <filesystem>
 #include <iostream>
+
+// Imports come AFTER all textual #includes (include-before-import rule: textual libc++
+// following BMI-merged declarations trips "cannot add 'abi_tag' in a redeclaration").
+#ifdef SRCTRL_MODULE_BUILD
+import srctrl.cxx;
+import srctrl.file;
+import srctrl.settings;
+#endif
 
 using namespace std;
 using namespace std::filesystem;

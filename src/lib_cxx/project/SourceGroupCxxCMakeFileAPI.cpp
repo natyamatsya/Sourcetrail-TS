@@ -1,27 +1,50 @@
 #include "SourceGroupCxxCMakeFileAPI.h"
+#ifndef SRCTRL_MODULE_BUILD
 #include "IndexerCommand.h"
+#endif
 
+#ifndef SRCTRL_MODULE_BUILD
 #include "ApplicationSettings.h"
+#endif
 #include "CMakeFileAPIReader.h"
 #include "CxxIndexerCommandProvider.h"
+#ifndef SRCTRL_MODULE_BUILD
 #include "IndexerCommandCxx.h"
 #include "MessageStatus.h"
+#endif
 #include "RefreshInfo.h"
+#ifndef SRCTRL_MODULE_BUILD
 #include "SourceGroupSettingsCxxCMakeFileAPI.h"
+#endif
 #include "SourceGroupSettingsWithCxxCMakeBuildDirectory.h"
 #include "TaskLambda.h"
 #include "TaskGroupSequence.h"
 #include "ToolChain.h"
 #include "logging.h"
+#ifndef SRCTRL_MODULE_BUILD
 #include "utility.h"
 #include "utilityString.h"
+#endif
 #include "utilitySourceGroupCxx.h"
+#ifndef SRCTRL_MODULE_BUILD
 #include "utilityApp.h"
 #include "utilityClang.h"
+#endif
 
 #include <algorithm>
 #include <fstream>
 #include <unordered_map>
+
+// Imports come AFTER all textual #includes (include-before-import rule: textual libc++
+// following BMI-merged declarations trips "cannot add 'abi_tag' in a redeclaration").
+#ifdef SRCTRL_MODULE_BUILD
+import srctrl.cxx;
+import srctrl.indexer;
+import srctrl.messaging;
+import srctrl.process;
+import srctrl.settings;
+import srctrl.utility;
+#endif
 
 namespace
 {

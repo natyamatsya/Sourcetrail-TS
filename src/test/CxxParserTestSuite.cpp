@@ -1,17 +1,35 @@
 #include "Catch2.hpp"
 
+#ifndef SRCTRL_MODULE_BUILD
 #include "TextAccess.h"
 #include "utility.h"
 #include "utilityString.h"
+#endif
 
+#ifndef SRCTRL_MODULE_BUILD
 #include "CxxParser.h"
 #include "IndexerCommandCxx.h"
+#endif
 #include "IndexerStateInfo.h"
+#ifndef SRCTRL_MODULE_BUILD
 #include "ParserClientImpl.h"
+#endif
 
 #include "TestFileRegister.h"
 #include "TestStorage.h"
 #include "ToolChain.h"
+
+// Imports come AFTER all textual #includes (include-before-import rule: textual libc++
+// following BMI-merged declarations trips "cannot add 'abi_tag' in a redeclaration").
+#ifdef SRCTRL_MODULE_BUILD
+import srctrl.cxx;
+import srctrl.file;
+import srctrl.indexer;
+// transitive-visibility fix: these came through now-guarded includes before;
+// visibility does not flow through imports.
+import srctrl.storage;
+import srctrl.utility;
+#endif
 
 using namespace std;
 using namespace std::string_literals;

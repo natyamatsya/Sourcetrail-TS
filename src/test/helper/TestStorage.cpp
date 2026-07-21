@@ -1,12 +1,20 @@
 #include "TestStorage.h"
 
+#ifndef SRCTRL_MODULE_BUILD
 #include "AccessKind.h"
 #include "Edge.h"
 #include "LocationType.h"
 #include "NameHierarchy.h"
 #include "NodeKind.h"
+#endif
 
 #include <map>
+
+// Imports come AFTER all textual #includes (include-before-import rule: textual libc++
+// following BMI-merged declarations trips "cannot add 'abi_tag' in a redeclaration").
+#ifdef SRCTRL_MODULE_BUILD
+import srctrl.data;
+#endif
 
 std::shared_ptr<TestStorage> TestStorage::create(std::shared_ptr<const Storage> storage)
 {

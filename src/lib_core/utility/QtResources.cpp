@@ -1,14 +1,25 @@
 #include "QtResources.h"
 
+#ifndef SRCTRL_MODULE_BUILD
 #include "ApplicationSettings.h"
 #include "ColorScheme.h"
+#endif
 #include "Platform.h"
 #include "logging.h"
+#ifndef SRCTRL_MODULE_BUILD
 #include "utilityString.h"
+#endif
 
 #include <QFile>
 
 #include <vector>
+
+// Imports come AFTER all textual #includes (include-before-import rule: textual libc++
+// following BMI-merged declarations trips "cannot add 'abi_tag' in a redeclaration").
+#ifdef SRCTRL_MODULE_BUILD
+import srctrl.settings;
+import srctrl.utility;
+#endif
 
 using namespace std;
 using namespace utility;

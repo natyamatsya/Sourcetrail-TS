@@ -1,11 +1,13 @@
 #include "setupApp.h"
 
+#ifndef SRCTRL_MODULE_BUILD
 #include <AppPath.h>
 #include <ApplicationSettings.h>
 #include <FilePath.h>
 #include <FileSystem.h>
 #include <ResourcePaths.h>
 #include <UserPaths.h>
+#endif
 #include <Version.h>
 #include <productVersion.h>
 #include <qtScaleFactor.h>
@@ -14,6 +16,13 @@
 #include <QDir>
 #include <QDirIterator>
 #include <QStandardPaths>
+
+// Imports come AFTER all textual #includes (include-before-import rule: textual libc++
+// following BMI-merged declarations trips "cannot add 'abi_tag' in a redeclaration").
+#ifdef SRCTRL_MODULE_BUILD
+import srctrl.file;
+import srctrl.settings;
+#endif
 
 using namespace std;
 using namespace utility;

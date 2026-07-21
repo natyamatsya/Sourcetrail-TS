@@ -17,15 +17,29 @@ import sqlpp23.sqlite3;
 #endif
 
 #include "BorrowedSqliteConnection.h"
+#ifndef SRCTRL_MODULE_BUILD
 #include "FileSystem.h"
+#endif
 #include "IndexTables.h"
+#ifndef SRCTRL_MODULE_BUILD
 #include "LocationType.h"
 #include "SourceLocationCollection.h"
 #include "SourceLocationFile.h"
 #include "TextAccess.h"
+#endif
 #include "logging.h"
 #include "utilityFilePath.h"
+#ifndef SRCTRL_MODULE_BUILD
 #include "utilityString.h"
+#endif
+
+// Imports come AFTER all textual #includes (include-before-import rule: textual libc++
+// following BMI-merged declarations trips "cannot add 'abi_tag' in a redeclaration").
+#ifdef SRCTRL_MODULE_BUILD
+import srctrl.data;
+import srctrl.file;
+import srctrl.utility;
+#endif
 
 
 const size_t SqliteIndexStorage::s_storageVersion = 27;

@@ -1,19 +1,27 @@
+#include <stdcompat/optional>  // was transitive via the now-guarded IndexerCommand.h (rule 5)
 #include "TaskExecuteCustomCommands.h"
 
+#ifndef SRCTRL_MODULE_BUILD
 #include "ApplicationSettings.h"
+#endif
 #include "Blackboard.h"
 #include "DialogView.h"
+#ifndef SRCTRL_MODULE_BUILD
 #include "ElementComponentKind.h"
 #include "FileSystem.h"
 #include "IndexerCommand.h"
+#endif
 #include "IndexerCommandCustom.h"
+#ifndef SRCTRL_MODULE_BUILD
 #include "IndexerCommandProvider.h"
 #include "MessageErrorCountClear.h"
 #include "MessageErrorCountUpdate.h"
 #include "MessageIndexingStatus.h"
 #include "MessageShowStatus.h"
 #include "MessageStatus.h"
+#endif
 #include "PersistentStorage.h"
+#ifndef SRCTRL_MODULE_BUILD
 #include "SourceLocationCollection.h"
 #include "SourceLocationFile.h"
 #include "TextAccess.h"
@@ -21,6 +29,19 @@
 #include "utilityApp.h"
 #include "utilityFile.h"
 #include "utilityString.h"
+#endif
+
+// Imports come AFTER all textual #includes (include-before-import rule: textual libc++
+// following BMI-merged declarations trips "cannot add 'abi_tag' in a redeclaration").
+#ifdef SRCTRL_MODULE_BUILD
+import srctrl.data;
+import srctrl.file;
+import srctrl.indexer;
+import srctrl.messaging;
+import srctrl.process;
+import srctrl.settings;
+import srctrl.utility;
+#endif
 
 using namespace utility;
 

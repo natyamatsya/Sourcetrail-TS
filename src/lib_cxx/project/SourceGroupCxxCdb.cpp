@@ -1,23 +1,43 @@
 #include "SourceGroupCxxCdb.h"
+#ifndef SRCTRL_MODULE_BUILD
 #include "IndexerCommand.h"
+#endif
 
 #include "Application.h"
+#ifndef SRCTRL_MODULE_BUILD
 #include "ApplicationSettings.h"
 #include "ClangInvocationInfo.h"
 #include "CxxCompilationDatabaseSingle.h"
+#endif
 #include "CxxIndexerCommandProvider.h"
 #include "CxxModulePrebuilder.h"
+#ifndef SRCTRL_MODULE_BUILD
 #include "IndexerCommandCxx.h"
 #include "MessageStatus.h"
 #include "SourceGroupSettingsCxxCdb.h"
+#endif
 #include "TaskLambda.h"
 #include "ToolChain.h"
+#ifndef SRCTRL_MODULE_BUILD
 #include "utility.h"
+#endif
 #include "utilitySourceGroupCxx.h"
+#ifndef SRCTRL_MODULE_BUILD
 #include "utilityString.h"
+#endif
 
 #include <clang/Tooling/JSONCompilationDatabase.h>
 #include <clang/Tooling/Tooling.h>
+
+// Imports come AFTER all textual #includes (include-before-import rule: textual libc++
+// following BMI-merged declarations trips "cannot add 'abi_tag' in a redeclaration").
+#ifdef SRCTRL_MODULE_BUILD
+import srctrl.cxx;
+import srctrl.indexer;
+import srctrl.messaging;
+import srctrl.settings;
+import srctrl.utility;
+#endif
 
 SourceGroupCxxCdb::SourceGroupCxxCdb(std::shared_ptr<SourceGroupSettingsCxxCdb> settings)
 	: m_settings(settings)

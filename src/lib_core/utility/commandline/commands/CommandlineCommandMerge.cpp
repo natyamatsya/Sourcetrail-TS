@@ -5,14 +5,27 @@
 #include <span>
 
 #include "CommandLineParser.h"
+#ifndef SRCTRL_MODULE_BUILD
 #include "FilePath.h"
 #include "FileSystem.h"
+#endif
 #include "GlazeCli.h"
 #include "PersistentStorage.h"
+#ifndef SRCTRL_MODULE_BUILD
 #include "ProjectSettings.h"
 #include "StorageStats.h"
 #include "TextAccess.h"
 #include "TimeStamp.h"
+#endif
+
+// Imports come AFTER all textual #includes (include-before-import rule: textual libc++
+// following BMI-merged declarations trips "cannot add 'abi_tag' in a redeclaration").
+#ifdef SRCTRL_MODULE_BUILD
+import srctrl.file;
+import srctrl.settings;
+import srctrl.storage;
+import srctrl.utility;
+#endif
 
 namespace glz
 {

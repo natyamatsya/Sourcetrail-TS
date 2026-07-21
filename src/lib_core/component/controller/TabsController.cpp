@@ -1,16 +1,24 @@
 #include "TabsController.h"
 
 #include "Application.h"
+#ifndef SRCTRL_MODULE_BUILD
 #include "MessageFind.h"
 #include "MessageIndexingFinished.h"
 #include "MessageScrollToLine.h"
 #include "MessageSearch.h"
 #include "MessageWindowChanged.h"
+#endif
 #include "ScreenSearchInterfaces.h"
 #include "TabIds.h"
 #include "TaskLambda.h"
 #include "TaskManager.h"
 #include "TaskScheduler.h"
+
+// Imports come AFTER all textual #includes (include-before-import rule: textual libc++
+// following BMI-merged declarations trips "cannot add 'abi_tag' in a redeclaration").
+#ifdef SRCTRL_MODULE_BUILD
+import srctrl.messaging;
+#endif
 
 TabsController::TabsController(
 	ViewLayout* mainLayout,

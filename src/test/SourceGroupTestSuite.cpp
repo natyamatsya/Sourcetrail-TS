@@ -2,19 +2,38 @@
 
 #include <fstream>
 
+#ifndef SRCTRL_MODULE_BUILD
 #include "AppPath.h"
+#endif
 #include "Application.h"
+#ifndef SRCTRL_MODULE_BUILD
 #include "FileSystem.h"
 #include "IndexerCommand.h"
+#endif
 #include "IndexerCommandCustom.h"
 #include "Platform.h"
+#ifndef SRCTRL_MODULE_BUILD
 #include "ProjectSettings.h"
+#endif
 #include "SourceGroupCustomCommand.h"
+#ifndef SRCTRL_MODULE_BUILD
 #include "SourceGroupSettingsCustomCommand.h"
 #include "TextAccess.h"
+#endif
 #include "Version.h"
 #include "utilityPathDetection.h"
+#ifndef SRCTRL_MODULE_BUILD
 #include "utilityString.h"
+#endif
+
+// Imports come AFTER all textual #includes (include-before-import rule: textual libc++
+// following BMI-merged declarations trips "cannot add 'abi_tag' in a redeclaration").
+#ifdef SRCTRL_MODULE_BUILD
+import srctrl.file;
+import srctrl.indexer;
+import srctrl.settings;
+import srctrl.utility;
+#endif
 
 using namespace std;
 using namespace utility;

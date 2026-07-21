@@ -1,11 +1,19 @@
 #include "Catch2.hpp"
 
+#ifndef SRCTRL_MODULE_BUILD
 #include "ApplicationSettings.h"
+#endif
 #include "CommandLineParser.h"
 
 #include <iostream>
 #include <sstream>
 #include <string>
+
+// Imports come AFTER all textual #includes (include-before-import rule: textual libc++
+// following BMI-merged declarations trips "cannot add 'abi_tag' in a redeclaration").
+#ifdef SRCTRL_MODULE_BUILD
+import srctrl.settings;
+#endif
 
 TEST_CASE("command line")
 {

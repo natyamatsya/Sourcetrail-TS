@@ -1,13 +1,24 @@
 #include "StorageAccessProxy.h"
 
+#ifndef SRCTRL_MODULE_BUILD
 #include "Graph.h"
 #include "NodeTypeSet.h"
 #include "SourceLocationCollection.h"
 #include "SourceLocationFile.h"
+#endif
 
+#ifndef SRCTRL_MODULE_BUILD
 #include "FileInfo.h"
 #include "FilePath.h"
+#endif
 #include "logging.h"
+
+// Imports come AFTER all textual #includes (include-before-import rule: textual libc++
+// following BMI-merged declarations trips "cannot add 'abi_tag' in a redeclaration").
+#ifdef SRCTRL_MODULE_BUILD
+import srctrl.data;
+import srctrl.file;
+#endif
 
 void StorageAccessProxy::setSubject(std::weak_ptr<StorageAccess> subject)
 {

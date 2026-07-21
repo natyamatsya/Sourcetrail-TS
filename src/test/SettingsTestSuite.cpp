@@ -1,10 +1,11 @@
 #include "Catch2.hpp"
 
+// classic headers (entities not exported): stay textual
+#include "SourceGroupSettingsWithSourcePaths.h"
 #ifndef SRCTRL_MODULE_BUILD
 #include "ProjectSettings.h"
 #include "Settings.h"
 #include "SourceGroupSettings.h"
-#include "SourceGroupSettingsWithSourcePaths.h"
 #endif
 
 // Imports come AFTER all textual #includes (include-before-import rule).

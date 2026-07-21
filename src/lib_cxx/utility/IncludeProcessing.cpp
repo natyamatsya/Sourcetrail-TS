@@ -4,14 +4,28 @@
 #include <set>
 #include <unordered_set>
 
+#ifndef SRCTRL_MODULE_BUILD
 #include "ApplicationSettings.h"
 #include "FilePath.h"
 #include "FileTree.h"
+#endif
 #include "IncludeDirective.h"
+#ifndef SRCTRL_MODULE_BUILD
 #include "TextAccess.h"
+#endif
 #include "TextCodec.h"
+#ifndef SRCTRL_MODULE_BUILD
 #include "utility.h"
 #include "utilityString.h"
+#endif
+
+// Imports come AFTER all textual #includes (include-before-import rule: textual libc++
+// following BMI-merged declarations trips "cannot add 'abi_tag' in a redeclaration").
+#ifdef SRCTRL_MODULE_BUILD
+import srctrl.file;
+import srctrl.settings;
+import srctrl.utility;
+#endif
 
 namespace
 {

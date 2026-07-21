@@ -1,8 +1,11 @@
 #include "ActivationController.h"
 
+#ifndef SRCTRL_MODULE_BUILD
 #include "ApplicationSettings.h"
 #include "StorageAccess.h"
+#endif
 
+#ifndef SRCTRL_MODULE_BUILD
 #include "MessageActivateLegend.h"
 #include "MessageActivateOverview.h"
 #include "MessageActivateTokens.h"
@@ -14,6 +17,20 @@
 #include "MessageStatus.h"
 #include "MessageTooltipShow.h"
 #include "utility.h"
+#endif
+
+// Imports come AFTER all textual #includes (include-before-import rule: textual libc++
+// following BMI-merged declarations trips "cannot add 'abi_tag' in a redeclaration").
+#ifdef SRCTRL_MODULE_BUILD
+import srctrl.messaging;
+import srctrl.settings;
+import srctrl.storage;
+import srctrl.utility;
+// TooltipOrigin / CodeScrollParams came transitively through guarded includes; visibility
+// does not flow through imports, so name the owners directly.
+import srctrl.data;
+import srctrl.view;
+#endif
 
 ActivationController::ActivationController(StorageAccess* storageAccess)
 	: m_storageAccess(storageAccess)

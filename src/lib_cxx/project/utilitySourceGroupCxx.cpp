@@ -7,6 +7,7 @@
 
 #include <clang/Tooling/JSONCompilationDatabase.h>
 
+#ifndef SRCTRL_MODULE_BUILD
 #include "AppPath.h"
 #include "CanonicalFilePathCache.h"
 #include "IntermediateStorageSerializer.h"
@@ -15,24 +16,42 @@
 #include "CxxCompilationDatabaseSingle.h"
 #include "CxxDiagnosticConsumer.h"
 #include "CxxParser.h"
+#endif
 #include "DialogView.h"
+#ifndef SRCTRL_MODULE_BUILD
 #include "FilePathFilter.h"
 #include "FileRegister.h"
 #include "FileSystem.h"
 #include "IndexerCommandCxx.h"
 #include "TextAccess.h"
+#endif
 
+#ifndef SRCTRL_MODULE_BUILD
 #include "GeneratePCHAction.h"
 #include "ParserClientImpl.h"
 #include "SingleFrontendActionFactory.h"
+#endif
 
 #include "SourceGroupSettingsWithCxxPchOptions.h"
 #include "StorageProvider.h"
 #include "TaskLambda.h"
 #include "logging.h"
+#ifndef SRCTRL_MODULE_BUILD
 #include "utility.h"
 #include "utilityString.h"
+#endif
 #include "ToolChain.h"
+
+// Imports come AFTER all textual #includes (include-before-import rule: textual libc++
+// following BMI-merged declarations trips "cannot add 'abi_tag' in a redeclaration").
+#ifdef SRCTRL_MODULE_BUILD
+import srctrl.cxx;
+import srctrl.file;
+import srctrl.indexer;
+import srctrl.interprocess;
+import srctrl.process;
+import srctrl.utility;
+#endif
 
 
 namespace utility

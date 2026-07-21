@@ -97,24 +97,48 @@ if(SOURCETRAIL_CXX_MODULES_ENABLED)
 	# the classic textual view. Module scanning is off project-wide (stdexec breaks
 	# clang-scan-deps); scan only the files that import.
 	set(_srctrl_importing_tus
+		CMakeFileAPIReaderTestSuite.cpp
+		CommandlineTestSuite.cpp
+		ConcurrentTursoWriterTestSuite.cpp
 		ConfigManagerTestSuite.cpp
-		FilePathFilterTestSuite.cpp
+		CxxParserTestSuite.cpp
 		FileManagerTestSuite.cpp
+		FilePathFilterTestSuite.cpp
 		FilePathTestSuite.cpp
 		FileSystemTestSuite.cpp
-		MatrixDynamicBaseTestSuite.cpp
 		GraphTestSuite.cpp
 		HierarchyCacheTestSuite.cpp
+		IpcSerializerTestSuite.cpp
 		IpcSharedMemoryTestSuite.cpp
 		LogManagerTestSuite.cpp
 		LowMemoryStringMapTestSuite.cpp
+		MatrixBaseTestSuite.cpp
+		MatrixDynamicBaseTestSuite.cpp
+		MessageQueueTestSuite.cpp
 		QtResourcesTestSuite.cpp
+		RefreshInfoGeneratorTestSuite.cpp
+		SearchIndexTestSuite.cpp
 		SettingsTestSuite.cpp
+		ShardConfigTestSuite.cpp
+		SourceGroupCxxTestSuite.cpp
+		SourceGroupTestSuite.cpp
 		SourceLocationCollectionTestSuite.cpp
+		SqliteBookmarkStorageTestSuite.cpp
+		SqliteIndexStorageTestSuite.cpp
+		StorageProviderTestSuite.cpp
+		StorageTestSuite.cpp
 		TextAccessTestSuite.cpp
+		ToolChainTestSuite.cpp
+		TursoCompareTestSuite.cpp
 		UtilityEnumTestSuite.cpp
 		UtilityStringTestSuite.cpp
 		Vector2TestSuite.cpp
+		helper/OptionalCxxTestUtils.cpp
+		helper/OptionalRustTestUtils.cpp
+		helper/OptionalSwiftTestUtils.cpp
+		helper/TestFileRegister.cpp
+		helper/TestStorage.cpp
+		test_main.cpp
 	)
 	set_source_files_properties(${_srctrl_importing_tus} PROPERTIES CXX_SCAN_FOR_MODULES ON)
 	set_property(SOURCE ${_srctrl_importing_tus} APPEND PROPERTY

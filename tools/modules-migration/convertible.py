@@ -67,6 +67,15 @@ OWNER_OVERRIDES = {"logging.h": "srctrl.logging"}
 
 # ---------------------------------------------------------------- module surface
 
+def by_base_paths(base):
+    """Paths for a header basename (module_surface runs before the by_base index is built)."""
+    hits = []
+    for dirpath, _, files in os.walk(SRC):
+        if base in files:
+            hits.append(os.path.join(dirpath, base))
+    return hits
+
+
 def module_surface():
     """basename -> owning module, from the wrappers' purview includes."""
     surface = dict(EXTRA_ATTACHED)
@@ -89,8 +98,16 @@ def module_surface():
                 continue
             for inc in re.finditer(r'^#include "([^"]+)"', purview[1], re.M):
                 base = os.path.basename(inc.group(1))
-                if base not in OWNER_OVERRIDES:
-                    surface[base] = module
+                if base in OWNER_OVERRIDES:
+                    continue
+                # Only headers that actually EXPORT their entities are import-substitutable.
+                # Classic rule-9 headers (Id.h, types.h, ...) are parsed in purviews too, but
+                # their un-exported (GM) entities are invisible to importers -- consumers must
+                # keep including them textually.
+                for pth in by_base_paths(base):
+                    if "SRCTRL_EXPORT" in open(pth, encoding="utf-8", errors="replace").read():
+                        surface[base] = module
+                        break
     surface.update(OWNER_OVERRIDES)
     return surface
 

@@ -1,11 +1,24 @@
 #include "ApplicationSettingsPrefiller.h"
 
+#ifndef SRCTRL_MODULE_BUILD
 #include "ApplicationSettings.h"
 #include "FilePath.h"
 #include "MessageStatus.h"
+#endif
 #include "logging.h"
 #include "utilityPathDetection.h"
+#ifndef SRCTRL_MODULE_BUILD
 #include "utilityString.h"
+#endif
+
+// Imports come AFTER all textual #includes (include-before-import rule: textual libc++
+// following BMI-merged declarations trips "cannot add 'abi_tag' in a redeclaration").
+#ifdef SRCTRL_MODULE_BUILD
+import srctrl.file;
+import srctrl.messaging;
+import srctrl.settings;
+import srctrl.utility;
+#endif
 
 void ApplicationSettingsPrefiller::prefillPaths(ApplicationSettings* settings)
 {

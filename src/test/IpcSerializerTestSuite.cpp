@@ -1,18 +1,34 @@
 #include "Catch2.hpp"
+// Id is a classic (non-exported) header: textual, GM everywhere (rule 5).
+#include "Id.h"
 
 #include "language_package_flags.h"
 
+#ifndef SRCTRL_MODULE_BUILD
 #include "IndexerCommandSerializer.h"
 #include "IntermediateStorageSerializer.h"
 #include "IndexingStatusSerializer.h"
 #include "GarbageCollectorSerializer.h"
+#endif
 #include "OptionalCxxTestUtils.h"
 #include "OptionalRustTestUtils.h"
 #include "OptionalSwiftTestUtils.h"
 
+#ifndef SRCTRL_MODULE_BUILD
 #include "IntermediateStorage.h"
 #include "IndexerCommand.h"
 #include "IndexerCommandSwift.h"
+#endif
+
+// Imports come AFTER all textual #includes (include-before-import rule: textual libc++
+// following BMI-merged declarations trips "cannot add 'abi_tag' in a redeclaration").
+#ifdef SRCTRL_MODULE_BUILD
+// Id/Edge/DefinitionKind came transitively before; visibility does not flow through imports.
+import srctrl.data;
+import srctrl.indexer;
+import srctrl.interprocess;
+import srctrl.storage;
+#endif
 
 TEST_CASE("ipc serializer round-trips")
 {

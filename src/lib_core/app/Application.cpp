@@ -2,34 +2,58 @@
 
 #include "CppSQLite3.h"
 
+#ifndef SRCTRL_MODULE_BUILD
 #include "ApplicationSettings.h"
 #include "ColorScheme.h"
+#endif
 #include "DialogView.h"
+#ifndef SRCTRL_MODULE_BUILD
 #include "FileLogger.h"
 #include "GraphViewStyle.h"
+#endif
 #include "AgentControlController.h"
 #include "IDECommunicationController.h"
+#ifndef SRCTRL_MODULE_BUILD
 #include "LogManager.h"
+#endif
 #include "MainView.h"
+// classic headers (entities not exported): stay textual
+#include "MessageQueue.h"
+#ifndef SRCTRL_MODULE_BUILD
 #include "MessageFilterErrorCountUpdate.h"
 #include "MessageFilterFocusInOut.h"
 #include "MessageFilterSearchAutocomplete.h"
-#include "MessageQueue.h"
 #include "MessageQuitApplication.h"
 #include "MessageStatus.h"
 #include "MessageTextEncodingChanged.h"
+#endif
 #include "NetworkFactory.h"
+#ifndef SRCTRL_MODULE_BUILD
 #include "ProjectSettings.h"
 #include "InterprocessBackend.h"
+#endif
 #include "StorageCache.h"
 #include "TabIds.h"
 #include "TaskManager.h"
+#ifndef SRCTRL_MODULE_BUILD
 #include "UserPaths.h"
+#endif
 #include "Version.h"
 #include "ViewFactory.h"
 #include "logging.h"
 #include "tracing.h"
 #include "utilityUuid.h"
+
+// Imports come AFTER all textual #includes (include-before-import rule: textual libc++
+// following BMI-merged declarations trips "cannot add 'abi_tag' in a redeclaration").
+#ifdef SRCTRL_MODULE_BUILD
+import srctrl.file;
+import srctrl.interprocess;
+import srctrl.logging;
+import srctrl.messaging;
+import srctrl.settings;
+import srctrl.view;
+#endif
 
 std::shared_ptr<Application> Application::s_instance;
 std::function<FilePath()> Application::s_colorSchemePathProvider;

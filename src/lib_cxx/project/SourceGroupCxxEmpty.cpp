@@ -1,21 +1,41 @@
 #include "SourceGroupCxxEmpty.h"
+#ifndef SRCTRL_MODULE_BUILD
 #include "IndexerCommand.h"
+#endif
 
+#ifndef SRCTRL_MODULE_BUILD
 #include "ApplicationSettings.h"
+#endif
 #include "CxxIndexerCommandProvider.h"
 #include "CxxModulePrebuilder.h"
+#ifndef SRCTRL_MODULE_BUILD
 #include "FileManager.h"
 #include "IndexerCommandCxx.h"
+#endif
 #include "RefreshInfo.h"
+#ifndef SRCTRL_MODULE_BUILD
 #include "SourceGroupSettingsCEmpty.h"
 #include "SourceGroupSettingsCppEmpty.h"
+#endif
 #include "SourceGroupSettingsWithCppStandard.h"
 #include "SourceGroupSettingsWithCxxPathsAndFlags.h"
 #include "TaskLambda.h"
 #include "ToolChain.h"
 #include "logging.h"
+#ifndef SRCTRL_MODULE_BUILD
 #include "utility.h"
+#endif
 #include "utilitySourceGroupCxx.h"
+
+// Imports come AFTER all textual #includes (include-before-import rule: textual libc++
+// following BMI-merged declarations trips "cannot add 'abi_tag' in a redeclaration").
+#ifdef SRCTRL_MODULE_BUILD
+import srctrl.cxx;
+import srctrl.file;
+import srctrl.indexer;
+import srctrl.settings;
+import srctrl.utility;
+#endif
 
 SourceGroupCxxEmpty::SourceGroupCxxEmpty(std::shared_ptr<SourceGroupSettings> settings)
 	: m_settings(settings)

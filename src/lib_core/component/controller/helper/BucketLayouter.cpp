@@ -1,7 +1,15 @@
 #include "BucketLayouter.h"
 
 #include "DummyEdge.h"
+#ifndef SRCTRL_MODULE_BUILD
 #include "GraphViewStyle.h"
+#endif
+
+// Imports come AFTER all textual #includes (include-before-import rule: textual libc++
+// following BMI-merged declarations trips "cannot add 'abi_tag' in a redeclaration").
+#ifdef SRCTRL_MODULE_BUILD
+import srctrl.view;
+#endif
 
 Bucket::Bucket(): i(0), j(0), m_width(0), m_height(0) {}
 

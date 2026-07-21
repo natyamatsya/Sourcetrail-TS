@@ -2,26 +2,49 @@
 
 #include <set>
 
+#ifndef SRCTRL_MODULE_BUILD
 #include "AccessKind.h"
+#endif
 #include "Application.h"
+#ifndef SRCTRL_MODULE_BUILD
 #include "ApplicationSettings.h"
+#endif
 #include "BucketLayouter.h"
+#ifndef SRCTRL_MODULE_BUILD
 #include "Graph.h"
+#endif
 #include "GraphView.h"
+#ifndef SRCTRL_MODULE_BUILD
 #include "GraphViewStyle.h"
+#endif
 #include "ListLayouter.h"
+#ifndef SRCTRL_MODULE_BUILD
 #include "MessageActivateNodes.h"
 #include "MessageStatus.h"
 #include "StorageAccess.h"
 #include "TokenComponentAccess.h"
 #include "TokenComponentFilePath.h"
 #include "TokenComponentInheritanceChain.h"
+#endif
 #include "TrailLayouter.h"
 #include "logging.h"
 
 #include "tracing.h"
+#ifndef SRCTRL_MODULE_BUILD
 #include "utility.h"
 #include "utilityString.h"
+#endif
+
+// Imports come AFTER all textual #includes (include-before-import rule: textual libc++
+// following BMI-merged declarations trips "cannot add 'abi_tag' in a redeclaration").
+#ifdef SRCTRL_MODULE_BUILD
+import srctrl.data;
+import srctrl.messaging;
+import srctrl.settings;
+import srctrl.storage;
+import srctrl.utility;
+import srctrl.view;
+#endif
 
 GraphController::GraphController(StorageAccess* storageAccess)
 	: m_storageAccess(storageAccess)

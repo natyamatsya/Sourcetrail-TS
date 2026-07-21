@@ -99,11 +99,10 @@ if(SOURCETRAIL_CXX_MODULES_ENABLED)
 	# consumer (here or in another target) reads the retained operator new/delete and never needs the flag.
 	if(CMAKE_CXX_COMPILER_ID MATCHES "Clang")
 		target_compile_options(Sourcetrail_lib_core PRIVATE -fno-modules-reduced-bmi)
-		# Surface silently-ordered duplicate attachments (same entity parsed into the GMF of one
-		# BMI and the purview of another): clang hard-errors on one deserialization order but only
-		# emits this DefaultIgnore warning on the other -- without it the hazard hides until an
-		# import-graph reshape flips the order (the srctrl.messaging park; repro-gmf-attachment/).
-		target_compile_options(Sourcetrail_lib_core PRIVATE -Wdecls-in-multiple-modules)
+		# NOTE: -Wdecls-in-multiple-modules was briefly enabled here to surface GM/named-module
+		# dual attachments (the srctrl.messaging park). Post-pivot (SRCTRL_EXPORT =
+		# export extern "C++") ALL first-party entities are global-module by design, so the
+		# warning only reports our intended architecture (~150 hits/build) -- removed.
 	endif()
 	# srctrl.interprocess `import thoth.ipc;`s (the top-level CMakeLists turns on
 	# THOTH_IPC_BUILD_MODULES in module builds); linking thoth_ipc_module provides the BMI
@@ -137,12 +136,65 @@ if(SOURCETRAIL_CXX_MODULES_ENABLED)
 	# SRCTRL_LOGGING_VIA_IMPORT themselves -- see logging.h). SRCTRL_MODULE_BUILD is PER-SOURCE:
 	# headers guard on it, so non-importing TUs (incl. moc-generated ones) keep the classic view.
 	set(_srctrl_importing_tus
+		"${CMAKE_CURRENT_SOURCE_DIR}/app/Application.cpp"
+		"${CMAKE_CURRENT_SOURCE_DIR}/component/controller/ActivationController.cpp"
+		"${CMAKE_CURRENT_SOURCE_DIR}/component/controller/BookmarkController.cpp"
+		"${CMAKE_CURRENT_SOURCE_DIR}/component/controller/CodeController.cpp"
+		"${CMAKE_CURRENT_SOURCE_DIR}/component/controller/CustomTrailController.cpp"
+		"${CMAKE_CURRENT_SOURCE_DIR}/component/controller/ErrorController.cpp"
+		"${CMAKE_CURRENT_SOURCE_DIR}/component/controller/GraphController.cpp"
+		"${CMAKE_CURRENT_SOURCE_DIR}/component/controller/IDECommunicationController.cpp"
+		"${CMAKE_CURRENT_SOURCE_DIR}/component/controller/SearchController.cpp"
+		"${CMAKE_CURRENT_SOURCE_DIR}/component/controller/StatusBarController.cpp"
+		"${CMAKE_CURRENT_SOURCE_DIR}/component/controller/StatusController.cpp"
+		"${CMAKE_CURRENT_SOURCE_DIR}/component/controller/TabsController.cpp"
+		"${CMAKE_CURRENT_SOURCE_DIR}/component/controller/TooltipController.cpp"
+		"${CMAKE_CURRENT_SOURCE_DIR}/component/controller/UndoRedoController.cpp"
+		"${CMAKE_CURRENT_SOURCE_DIR}/component/controller/helper/BucketLayouter.cpp"
+		"${CMAKE_CURRENT_SOURCE_DIR}/component/controller/helper/ListLayouter.cpp"
+		"${CMAKE_CURRENT_SOURCE_DIR}/component/controller/helper/NetworkProtocolHelper.cpp"
 		"${CMAKE_CURRENT_SOURCE_DIR}/component/controller/helper/SnippetMerger.cpp"
+		"${CMAKE_CURRENT_SOURCE_DIR}/component/view/helper/CodeSnippetParams.cpp"
 		"${CMAKE_CURRENT_SOURCE_DIR}/data/HierarchyCache.cpp"
+		"${CMAKE_CURRENT_SOURCE_DIR}/data/TaskCleanStorage.cpp"
+		"${CMAKE_CURRENT_SOURCE_DIR}/data/TaskFinishParsing.cpp"
+		"${CMAKE_CURRENT_SOURCE_DIR}/data/TaskInjectStorage.cpp"
+		"${CMAKE_CURRENT_SOURCE_DIR}/data/TaskMergeStorages.cpp"
 		"${CMAKE_CURRENT_SOURCE_DIR}/data/fulltextsearch/SuffixArray.cpp"
+		"${CMAKE_CURRENT_SOURCE_DIR}/data/indexer/IndexerCommandCustom.cpp"
+		"${CMAKE_CURRENT_SOURCE_DIR}/data/indexer/TaskExecuteCustomCommands.cpp"
+		"${CMAKE_CURRENT_SOURCE_DIR}/data/indexer/TaskFillIndexerCommandQueue.cpp"
+		"${CMAKE_CURRENT_SOURCE_DIR}/data/search/SearchIndex.cpp"
+		"${CMAKE_CURRENT_SOURCE_DIR}/data/storage/PersistentStorage.cpp"
+		"${CMAKE_CURRENT_SOURCE_DIR}/data/storage/StorageAccessProxy.cpp"
+		"${CMAKE_CURRENT_SOURCE_DIR}/data/storage/StorageCache.cpp"
+		"${CMAKE_CURRENT_SOURCE_DIR}/data/storage/TursoSqliteExport.cpp"
+		"${CMAKE_CURRENT_SOURCE_DIR}/data/storage/ladybug/LadybugGraphStorage.cpp"
 		"${CMAKE_CURRENT_SOURCE_DIR}/data/storage/sqlite/DualSqliteDatabase.cpp"
 		"${CMAKE_CURRENT_SOURCE_DIR}/data/storage/sqlite/SqliteDatabaseIndex.cpp"
+		"${CMAKE_CURRENT_SOURCE_DIR}/data/storage/sqlite/SqliteIndexStorage.cpp"
+		"${CMAKE_CURRENT_SOURCE_DIR}/data/storage/sqlite/SqliteStorage.cpp"
+		"${CMAKE_CURRENT_SOURCE_DIR}/data/storage/sqlite/StorageConnection.cpp"
+		"${CMAKE_CURRENT_SOURCE_DIR}/platform/setupApp.cpp"
+		"${CMAKE_CURRENT_SOURCE_DIR}/project/RefreshInfoGenerator.cpp"
+		"${CMAKE_CURRENT_SOURCE_DIR}/project/SourceGroup.cpp"
+		"${CMAKE_CURRENT_SOURCE_DIR}/project/SourceGroupCustomCommand.cpp"
+		"${CMAKE_CURRENT_SOURCE_DIR}/project/SourceGroupFactory.cpp"
+		"${CMAKE_CURRENT_SOURCE_DIR}/project/SourceGroupFactoryModuleCustom.cpp"
+		"${CMAKE_CURRENT_SOURCE_DIR}/project/SourceGroupFactoryModuleRust.cpp"
+		"${CMAKE_CURRENT_SOURCE_DIR}/project/SourceGroupFactoryModuleSwift.cpp"
+		"${CMAKE_CURRENT_SOURCE_DIR}/project/SourceGroupFactoryModuleZig.cpp"
+		"${CMAKE_CURRENT_SOURCE_DIR}/project/SourceGroupRust.cpp"
+		"${CMAKE_CURRENT_SOURCE_DIR}/project/SourceGroupSwift.cpp"
+		"${CMAKE_CURRENT_SOURCE_DIR}/project/SourceGroupZig.cpp"
 		"${CMAKE_CURRENT_SOURCE_DIR}/settings/ToolChain.cpp"
+		"${CMAKE_CURRENT_SOURCE_DIR}/utility/QtResources.cpp"
+		"${CMAKE_CURRENT_SOURCE_DIR}/utility/commandline/CommandLineParser.cpp"
+		"${CMAKE_CURRENT_SOURCE_DIR}/utility/commandline/CommandlineHelper.cpp"
+		"${CMAKE_CURRENT_SOURCE_DIR}/utility/commandline/commands/CommandlineCommandConfig.cpp"
+		"${CMAKE_CURRENT_SOURCE_DIR}/utility/commandline/commands/CommandlineCommandIndex.cpp"
+		"${CMAKE_CURRENT_SOURCE_DIR}/utility/commandline/commands/CommandlineCommandMerge.cpp"
+		"${CMAKE_CURRENT_SOURCE_DIR}/utility/logging/LogManagerNotifier.cpp"
 		"${CMAKE_CURRENT_SOURCE_DIR}/utility/scheduling/TaskScheduler.cpp"
 	)
 	set_source_files_properties(${_srctrl_importing_tus} PROPERTIES CXX_SCAN_FOR_MODULES ON)

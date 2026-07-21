@@ -2,9 +2,20 @@
 
 #include <utility>
 
+#ifndef SRCTRL_MODULE_BUILD
 #include "ApplicationSettings.h"
+#endif
 #include "StatusView.h"
+#ifndef SRCTRL_MODULE_BUILD
 #include "utility.h"
+#endif
+
+// Imports come AFTER all textual #includes (include-before-import rule: textual libc++
+// following BMI-merged declarations trips "cannot add 'abi_tag' in a redeclaration").
+#ifdef SRCTRL_MODULE_BUILD
+import srctrl.settings;
+import srctrl.utility;
+#endif
 
 StatusController::StatusController()
 {

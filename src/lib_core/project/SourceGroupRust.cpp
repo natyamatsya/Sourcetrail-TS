@@ -1,16 +1,34 @@
 #include "SourceGroupRust.h"
+#ifndef SRCTRL_MODULE_BUILD
 #include "IndexerCommand.h"
 #include "FilePathFilter.h"
+#endif
 
 #include <nlohmann/json.hpp>
 
+#ifndef SRCTRL_MODULE_BUILD
 #include "FileManager.h"
 #include "IndexerCommandRust.h"
+#endif
 #include "RefreshInfo.h"
+#ifndef SRCTRL_MODULE_BUILD
 #include "SourceGroupSettingsRustEmpty.h"
+#endif
 #include "logging.h"
+#ifndef SRCTRL_MODULE_BUILD
 #include "utility.h"
 #include "utilityApp.h"
+#endif
+
+// Imports come AFTER all textual #includes (include-before-import rule: textual libc++
+// following BMI-merged declarations trips "cannot add 'abi_tag' in a redeclaration").
+#ifdef SRCTRL_MODULE_BUILD
+import srctrl.file;
+import srctrl.indexer;
+import srctrl.process;
+import srctrl.settings;
+import srctrl.utility;
+#endif
 
 namespace
 {

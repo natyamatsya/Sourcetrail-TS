@@ -1,13 +1,24 @@
 #include "TaskInjectStorage.h"
 
+#ifndef SRCTRL_MODULE_BUILD
 #include "IntermediateStorage.h"
 #include "Storage.h"
+#endif
 #include "StorageProvider.h"
+#ifndef SRCTRL_MODULE_BUILD
 #include "TimeStamp.h"
+#endif
 #include "logging.h"
 
 #ifdef SOURCETRAIL_TURSO_CONCURRENT
 #include "PersistentStorage.h"
+#endif
+
+// Imports come AFTER all textual #includes (include-before-import rule: textual libc++
+// following BMI-merged declarations trips "cannot add 'abi_tag' in a redeclaration").
+#ifdef SRCTRL_MODULE_BUILD
+import srctrl.storage;
+import srctrl.utility;
 #endif
 
 TaskInjectStorage::TaskInjectStorage(

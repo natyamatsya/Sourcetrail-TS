@@ -2,6 +2,7 @@
 
 #include <queue>
 
+#ifndef SRCTRL_MODULE_BUILD
 #include "AccessKind.h"
 #include "ApplicationSettings.h"
 #include "ElementComponentKind.h"
@@ -15,7 +16,9 @@
 #include "SourceLocationCollection.h"
 #include "SourceLocationFile.h"
 #include "TextAccess.h"
+#endif
 #include "TextCodec.h"
+#ifndef SRCTRL_MODULE_BUILD
 #include "TimeStamp.h"
 #include "TokenComponentAccess.h"
 #include "TokenComponentBundledEdges.h"
@@ -23,18 +26,35 @@
 #include "TokenComponentInheritanceChain.h"
 #include "TokenComponentIsAmbiguous.h"
 #include "UnorderedCache.h"
+#endif
 #include "logging.h"
 #include "tracing.h"
+#ifndef SRCTRL_MODULE_BUILD
 #include "utility.h"
 #include "utilityApp.h"
+#endif
 
 #ifdef SOURCETRAIL_TURSO_CONCURRENT
 #include <algorithm>
 #include <thread>
 
+#ifndef SRCTRL_MODULE_BUILD
 #include "FileSystem.h"
 #include "IntermediateStorage.h"
+#endif
 #include "TursoSqliteExport.h"
+#endif
+
+// Imports come AFTER all textual #includes (include-before-import rule: textual libc++
+// following BMI-merged declarations trips "cannot add 'abi_tag' in a redeclaration").
+#ifdef SRCTRL_MODULE_BUILD
+import srctrl.data;
+import srctrl.file;
+import srctrl.messaging;
+import srctrl.process;
+import srctrl.settings;
+import srctrl.storage;
+import srctrl.utility;
 #endif
 
 using namespace std;

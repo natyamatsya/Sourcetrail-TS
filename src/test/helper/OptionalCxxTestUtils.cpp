@@ -2,11 +2,26 @@
 
 #include "Catch2.hpp"
 
+#ifndef SRCTRL_MODULE_BUILD
 #include "IndexerCommandSerializer.h"
+#endif
 
 #if BUILD_CXX_LANGUAGE_PACKAGE
+#ifndef SRCTRL_MODULE_BUILD
 #include "IndexerCommand.h"
 #include "IndexerCommandCxx.h"
+#endif
+#endif
+
+// Imports come AFTER all textual #includes (include-before-import rule: textual libc++
+// following BMI-merged declarations trips "cannot add 'abi_tag' in a redeclaration").
+#ifdef SRCTRL_MODULE_BUILD
+import srctrl.cxx;
+// transitive-visibility fix: these came through now-guarded includes before;
+// visibility does not flow through imports.
+import srctrl.file;
+import srctrl.indexer;
+import srctrl.interprocess;
 #endif
 
 std::shared_ptr<IndexerCommand> makeOptionalCxxCommand(

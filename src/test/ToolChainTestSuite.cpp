@@ -3,10 +3,18 @@
 #include "ToolChain.h"
 #include "utilitySourceGroupCxx.h"
 
+#ifndef SRCTRL_MODULE_BUILD
 #include <clang/Tooling/CompilationDatabase.h>
+#endif
 #include <clang/Tooling/JSONCompilationDatabase.h>
 
 #include <string>
+
+// Imports come AFTER all textual #includes (include-before-import rule: textual libc++
+// following BMI-merged declarations trips "cannot add 'abi_tag' in a redeclaration").
+#ifdef SRCTRL_MODULE_BUILD
+import srctrl.cxx;
+#endif
 
 using namespace std;
 using namespace utility;

@@ -44,15 +44,30 @@ if(SOURCETRAIL_CXX_MODULES_ENABLED)
 	# Same LLVM #166068 reduced-BMI workaround as lib_core (see its CMakeLists for the full story).
 	if(CMAKE_CXX_COMPILER_ID MATCHES "Clang")
 		target_compile_options(Sourcetrail_lib_cxx PRIVATE -fno-modules-reduced-bmi)
-		# Surface silently-ordered duplicate attachments (same entity parsed into the GMF of one
-		# BMI and the purview of another): clang hard-errors on one deserialization order but only
-		# emits this DefaultIgnore warning on the other -- without it the hazard hides until an
-		# import-graph reshape flips the order (the srctrl.messaging park; repro-gmf-attachment/).
-		target_compile_options(Sourcetrail_lib_cxx PRIVATE -Wdecls-in-multiple-modules)
+		# NOTE: -Wdecls-in-multiple-modules was briefly enabled here to surface GM/named-module
+		# dual attachments (the srctrl.messaging park). Post-pivot (SRCTRL_EXPORT =
+		# export extern "C++") ALL first-party entities are global-module by design, so the
+		# warning only reports our intended architecture (~150 hits/build) -- removed.
 	endif()
 	if(SOURCETRAIL_CXX_IMPORT_STD)
 		set_target_properties(Sourcetrail_lib_cxx PROPERTIES CXX_MODULE_STD ON)
 	endif()
+
+	# Converted consumer TUs (batch 10): SRCTRL_MODULE_BUILD is PER-SOURCE ("this TU imports");
+	# non-importing TUs keep the classic textual view. Scan only the importing files.
+	set(_srctrl_importing_tus
+		"${CMAKE_CURRENT_SOURCE_DIR}/data/indexer/CxxIndexerCommandProvider.cpp"
+		"${CMAKE_CURRENT_SOURCE_DIR}/project/CxxModulePrebuilder.cpp"
+		"${CMAKE_CURRENT_SOURCE_DIR}/project/SourceGroupCxxCMakeFileAPI.cpp"
+		"${CMAKE_CURRENT_SOURCE_DIR}/project/SourceGroupCxxCdb.cpp"
+		"${CMAKE_CURRENT_SOURCE_DIR}/project/SourceGroupCxxEmpty.cpp"
+		"${CMAKE_CURRENT_SOURCE_DIR}/project/SourceGroupFactoryModuleCxx.cpp"
+		"${CMAKE_CURRENT_SOURCE_DIR}/project/utilitySourceGroupCxx.cpp"
+		"${CMAKE_CURRENT_SOURCE_DIR}/utility/IncludeProcessing.cpp"
+	)
+	set_source_files_properties(${_srctrl_importing_tus} PROPERTIES CXX_SCAN_FOR_MODULES ON)
+	set_property(SOURCE ${_srctrl_importing_tus} APPEND PROPERTY
+		COMPILE_DEFINITIONS SRCTRL_MODULE_BUILD)
 endif()
 
 # The C++20 standard library module (std.cppm) ships next to the toolchain's libc++ at

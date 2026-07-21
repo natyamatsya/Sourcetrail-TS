@@ -3,6 +3,7 @@
 #include <memory>
 
 #include "Application.h"
+#ifndef SRCTRL_MODULE_BUILD
 #include "ApplicationSettings.h"
 #include "FileInfo.h"
 #include "MessageFocusView.h"
@@ -14,10 +15,24 @@
 #include "SourceLocationFile.h"
 #include "StorageAccess.h"
 #include "TextAccess.h"
+#endif
 #include "logging.h"
 #include "tracing.h"
+#ifndef SRCTRL_MODULE_BUILD
 #include "utility.h"
 #include "utilityString.h"
+#endif
+
+// Imports come AFTER all textual #includes (include-before-import rule: textual libc++
+// following BMI-merged declarations trips "cannot add 'abi_tag' in a redeclaration").
+#ifdef SRCTRL_MODULE_BUILD
+import srctrl.data;
+import srctrl.file;
+import srctrl.messaging;
+import srctrl.settings;
+import srctrl.storage;
+import srctrl.utility;
+#endif
 
 CodeController::CodeController(StorageAccess* storageAccess): m_storageAccess(storageAccess) {}
 

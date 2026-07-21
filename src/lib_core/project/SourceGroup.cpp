@@ -1,13 +1,25 @@
 #include "SourceGroup.h"
 
+#ifndef SRCTRL_MODULE_BUILD
 #include "FilePath.h"
 #include "FilePathFilter.h"
 #include "IndexerCommand.h"
 #include "MemoryIndexerCommandProvider.h"
 #include "ProjectSettings.h"
+#endif
 #include "RefreshInfo.h"
+#ifndef SRCTRL_MODULE_BUILD
 #include "SourceGroupSettings.h"
+#endif
 #include "TaskLambda.h"
+
+// Imports come AFTER all textual #includes (include-before-import rule: textual libc++
+// following BMI-merged declarations trips "cannot add 'abi_tag' in a redeclaration").
+#ifdef SRCTRL_MODULE_BUILD
+import srctrl.file;
+import srctrl.indexer;
+import srctrl.settings;
+#endif
 
 std::shared_ptr<IndexerCommandProvider> SourceGroup::getIndexerCommandProvider(const RefreshInfo& info) const
 {

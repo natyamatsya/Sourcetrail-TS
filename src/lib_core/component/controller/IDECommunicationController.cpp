@@ -1,15 +1,28 @@
 #include "IDECommunicationController.h"
 
+#ifndef SRCTRL_MODULE_BUILD
 #include "FileSystem.h"
 #include "MessageActivateWindow.h"
 #include "MessagePingReceived.h"
 #include "MessageProjectNew.h"
 #include "MessageStatus.h"
 #include "MessageTabOpenWith.h"
+#endif
 #include "logging.h"
 
+#ifndef SRCTRL_MODULE_BUILD
 #include "SourceLocationFile.h"
 #include "StorageAccess.h"
+#endif
+
+// Imports come AFTER all textual #includes (include-before-import rule: textual libc++
+// following BMI-merged declarations trips "cannot add 'abi_tag' in a redeclaration").
+#ifdef SRCTRL_MODULE_BUILD
+import srctrl.data;
+import srctrl.file;
+import srctrl.messaging;
+import srctrl.storage;
+#endif
 
 IDECommunicationController::IDECommunicationController(StorageAccess* storageAccess)
 	: m_storageAccess(storageAccess) 
