@@ -34,8 +34,7 @@ void TaskFinally::doReset(std::shared_ptr<Blackboard>  /*blackboard*/)
 
 void TaskFinally::doTerminate()
 {
-	// TaskDecorator::doTerminate is private-virtual, so forward to the runner directly.
-	m_taskRunner->terminate();
+	TaskDecorator::doTerminate();
 	signal(TerminalCause::Terminated);
 }
 
