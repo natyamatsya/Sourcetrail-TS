@@ -14,7 +14,11 @@ enum class TabId : unsigned
 	USER = 10
 };
 
+// Guarded out of module purviews -- see the note on Q_DECLARE_METATYPE(Id) in utility/Id.h
+// (the macro's QMetaType specialization cannot cross an `import`; MSVC C1116 on re-import).
+#ifndef SRCTRL_MODULE_PURVIEW
 Q_DECLARE_METATYPE(TabId)
+#endif
 
 class TabIds
 {
