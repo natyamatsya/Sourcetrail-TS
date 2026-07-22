@@ -228,19 +228,8 @@ inline FilePath ProjectSettings::makePathExpandedAndAbsolute(const FilePath& pat
 	return utility::getExpandedAndAbsolutePath(path, getProjectDirectoryPath());
 }
 
-inline FilePath SourceGroupSettings::getSourceGroupDependenciesDirectoryPath() const
-{
-	return getProjectSettings()->getDependenciesDirectoryPath().concatenate(getId());
-}
-
-inline FilePath SourceGroupSettings::getProjectDirectoryPath() const
-{
-	return m_projectSettings->getProjectDirectoryPath();
-}
-
-inline std::vector<FilePath> SourceGroupSettings::makePathsExpandedAndAbsolute(
-	const std::vector<FilePath>& paths) const
-{
-	return m_projectSettings->makePathsExpandedAndAbsolute(paths);
-}
+// SourceGroupSettings' ProjectSettings-forwarding accessors
+// (getSourceGroupDependenciesDirectoryPath / getProjectDirectoryPath / makePathsExpandedAndAbsolute)
+// are defined out-of-line in source_group/SourceGroupSettings.cpp -- as inline definitions here they
+// only reached consumers that also pulled this .inl, which broke the classic link. See that file.
 

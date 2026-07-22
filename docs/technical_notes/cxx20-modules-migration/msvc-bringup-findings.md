@@ -221,6 +221,35 @@ Takeaway: on Windows, **clang-cl gives fuller modularization than cl.exe** (no f
 cost of the response-file workaround; cl.exe needs the below-storage cut but has integrated scanning.
 Both compilers build the full app and pass 405/405.
 
+## Build times (Windows, cl.exe 14.51, Debug, converged-ninja protocol)
+
+Target `Sourcetrail_lib_gui` (compiles lib_core + lib_gui + archives — the compile-dominated bulk),
+Rust/turso disabled so the build converges. ON = modules + `import std` + below-storage cut.
+
+| | OFF (classic) | ON (modules) | ON / OFF |
+|---|---|---|---|
+| Clean | 82 s (497 edges) | 103 s (664 edges) | 1.26× |
+| Incremental — hot header (`FilePath.h`) | 57 s (224 edges) | 63 s (295 edges) | 1.11× |
+| Incremental — leaf (`Edge.cpp`) | 3 s | 3 s | parity |
+
+Clean is ~1.26× (P1689 scan + BMI production + the one-time `std.ixx` compile). The hot-header penalty
+is only ~1.1× — much milder than the macOS ~1.7×, because the below-storage cut keeps the module
+rebuild chain short and the extra ~70 edges parallelize well. Leaf edits are at parity — the module
+graph costs nothing when untouched.
+
+### Classic-build link fix (surfaced by the OFF benchmark)
+
+The OFF benchmark exposed that the **classic app never linked on MSVC** (this whole bring-up built only
+the modules config): `SourceGroupSettings`'s three ProjectSettings-forwarding accessors
+(`getSourceGroupDependenciesDirectoryPath` / `getProjectDirectoryPath` / `makePathsExpandedAndAbsolute`)
+were defined `inline` in `ProjectSettings.inl` (where `ProjectSettings` is complete), but
+`SourceGroupSettings.h` pulls only `SourceGroupSettings.inl` — so a classic consumer with just
+`SourceGroupSettings.h` got the declarations without the definitions (LNK2019, e.g.
+`QtProjectWizardContentPaths.cpp`). The module build hid it (the `srctrl.settings` BMI carried the
+inline defs). **Fix:** a classic seam `source_group/SourceGroupSettings.cpp` defines the three
+out-of-line with both classes complete; ordinary-mangled, so it links for classic consumers and (via
+global-module attachment) for module importers. Verified: both OFF and ON apps now link.
+
 ## How to reproduce this state
 
 ```powershell
