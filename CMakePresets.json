@@ -97,6 +97,20 @@
 			}
 		},
 		{
+			"hidden": true,
+			"name": "windows-clang-cl-presets",
+			"description": "clang-cl + Ninja on Windows: clang's frontend with the MSVC ABI/STL. Unlike cl.exe, clang-cl has neither the QMetaType-IFC nor the glaze/toml ICE, so it builds the full module graph (the frontier cut is cl.exe-only). Run scripts/win/Init-ModulesEnv.ps1 for the MSVC env and put the desired LLVM bin (>=16; 22.1.8 matches the macOS build) first on PATH so 'clang-cl' resolves to it. Modules opt-in: -D SOURCETRAIL_CXX_MODULES=ON.",
+			"cacheVariables": {
+				"CMAKE_C_COMPILER": "clang-cl",
+				"CMAKE_CXX_COMPILER": "clang-cl"
+			},
+			"condition": {
+				"type": "equals",
+				"lhs": "${hostSystemName}",
+				"rhs": "Windows"
+			}
+		},
+		{
 			"name": "dbg",
 			"inherits": [
 				"dbg-presets",
@@ -188,6 +202,20 @@
 			"inherits": [
 				"reldbg",
 				"windows-msvc-presets"
+			]
+		},
+		{
+			"name": "windows-clang-cl-dbg",
+			"inherits": [
+				"dbg",
+				"windows-clang-cl-presets"
+			]
+		},
+		{
+			"name": "windows-clang-cl-rel",
+			"inherits": [
+				"rel",
+				"windows-clang-cl-presets"
 			]
 		}
 	]

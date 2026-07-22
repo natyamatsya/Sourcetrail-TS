@@ -8,6 +8,12 @@
 #include <QTextCursor>
 #include <QTextDocument>
 
+// std::set (used below) is not pulled in transitively by every STL; make it explicit. Textual unless
+// `import std` supplies it -- kept before the imports (include-before-import rule).
+#ifndef SRCTRL_IMPORT_STD
+#include <set>
+#endif
+
 #ifndef SRCTRL_MODULE_BUILD
 #include "ColorScheme.h"
 #include "FileSystem.h"
