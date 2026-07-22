@@ -98,7 +98,14 @@ private:
 	type m_value;
 };
 
+// Q_DECLARE_METATYPE is a macro; it cannot cross an `import`. Guarded out of module purviews so the
+// QMetaTypeId<Id> / QMetaType::fromType<Id> specialization is not baked into a module's BMI -- MSVC
+// rejects re-importing that specialization (C1116). The metatype registration instead happens in the
+// classic/importer TUs that include this header textually (playbook: metatype registration stays in
+// classic TUs). See docs/technical_notes/cxx20-modules-migration/msvc-bringup-findings.md.
+#ifndef SRCTRL_MODULE_PURVIEW
 Q_DECLARE_METATYPE(Id)
+#endif
 
 std::string to_string(const Id id);
 

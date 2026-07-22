@@ -83,6 +83,20 @@
 			}
 		},
 		{
+			"hidden": true,
+			"name": "windows-msvc-presets",
+			"description": "MSVC + Ninja for the Windows C++20-modules bring-up. Run scripts/win/Init-ModulesEnv.ps1 first (or use a 'x64 Native Tools Command Prompt for VS 18') so cl.exe and the pinned module-capable toolset (14.51.36231) are on PATH. Modules stay opt-in: add -D SOURCETRAIL_CXX_MODULES=ON.",
+			"cacheVariables": {
+				"CMAKE_C_COMPILER": "cl",
+				"CMAKE_CXX_COMPILER": "cl"
+			},
+			"condition": {
+				"type": "equals",
+				"lhs": "${hostSystemName}",
+				"rhs": "Windows"
+			}
+		},
+		{
 			"name": "dbg",
 			"inherits": [
 				"dbg-presets",
@@ -153,6 +167,27 @@
 			"inherits": [
 				"reldbg",
 				"llvm-clang-presets"
+			]
+		},
+		{
+			"name": "windows-msvc-dbg",
+			"inherits": [
+				"dbg",
+				"windows-msvc-presets"
+			]
+		},
+		{
+			"name": "windows-msvc-rel",
+			"inherits": [
+				"rel",
+				"windows-msvc-presets"
+			]
+		},
+		{
+			"name": "windows-msvc-reldbg",
+			"inherits": [
+				"reldbg",
+				"windows-msvc-presets"
 			]
 		}
 	]

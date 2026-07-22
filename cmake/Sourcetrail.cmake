@@ -138,10 +138,14 @@ function(setMsvcTargetOptions targetName)
 	target_compile_options(${targetName}
 		PRIVATE
 			/utf-8
-			
+
 			/nologo
 			/MP
 			/W4
+
+			# COFF caps an object at 65,279 sections; modules + heavy templates (e.g. the sqlite
+			# storage TUs) blow past it (C1128). /bigobj raises the limit to 2^32. Harmless otherwise.
+			/bigobj
 
 			#
 			# Make msvc standard compliant (sigh):

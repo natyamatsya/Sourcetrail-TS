@@ -11,9 +11,18 @@
 // into `import srctrl.logging;` consumers): the TU defines it before its includes -- only in the
 // module build -- and gets macros-only here, backend via import. TU-local by design: a target-wide
 // define would strip the backend from every non-importing TU of that target.
-#if !defined(SRCTRL_MODULE_PURVIEW) && !defined(SRCTRL_LOGGING_VIA_IMPORT)
+// std::stringstream is named by the LOG_*_STREAM macro expansions below. Macros can't travel through
+// `import` and srctrl.logging does not export std types, so <sstream> must be textually available in
+// every consumer where such a macro expands -- INCLUDING converted importer TUs
+// (SRCTRL_LOGGING_VIA_IMPORT). Only a module purview skips it (the wrapper's GMF / import std supplies
+// std there). This is include-before-import safe: consumers include logging.h ahead of their imports.
+#if !defined(SRCTRL_MODULE_PURVIEW)
 #include <sstream>
+#endif
 
+// LogManager is the modularized backend: importer TUs and wrappers get it via `import srctrl.logging`,
+// so only classic (non-purview, non-import) TUs pull the textual declaration.
+#if !defined(SRCTRL_MODULE_PURVIEW) && !defined(SRCTRL_LOGGING_VIA_IMPORT)
 #include "LogManager.h"
 #endif
 
