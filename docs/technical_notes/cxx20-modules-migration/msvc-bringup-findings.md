@@ -208,8 +208,18 @@ env via `Init-ModulesEnv.ps1`, `IMPORT_STD=OFF` (clang merges textual+BMI std, s
   clang requires it. Added a textual `<set>` (guarded by `SRCTRL_IMPORT_STD`, before the imports). A
   genuine latent bug clang surfaced; harmless on cl.exe/macOS.
 
+- ✅ **Test suite green under clang-cl too: 405/405** (same as cl.exe; 4 symlink tests skipped). The
+  test drivers stay classic on Windows for both compilers (`if(NOT MSVC)`): several test TUs
+  `import srctrl.cxx`, which does not exist here (indexer package off, no local LLVM), so the classic
+  path keeps that cxx code behind `BUILD_CXX_LANGUAGE_PACKAGE`. Also fixed a latent bug surfaced when
+  test drivers do import: `test_main.cpp`'s `import srctrl.cxx;` was not guarded by
+  `BUILD_CXX_LANGUAGE_PACKAGE` (its matching textual include was).
+- The response-file workaround is wired into the `windows-clang-cl-*` presets (`environment`:
+  `CMAKE_NINJA_FORCE_RESPONSE_FILE=1`), so `cmake --preset windows-clang-cl-dbg` needs no manual env.
+
 Takeaway: on Windows, **clang-cl gives fuller modularization than cl.exe** (no frontier cut), at the
 cost of the response-file workaround; cl.exe needs the below-storage cut but has integrated scanning.
+Both compilers build the full app and pass 405/405.
 
 ## How to reproduce this state
 

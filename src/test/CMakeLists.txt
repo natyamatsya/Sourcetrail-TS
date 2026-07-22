@@ -140,10 +140,13 @@ if(SOURCETRAIL_CXX_MODULES_ENABLED)
 		helper/TestStorage.cpp
 		test_main.cpp
 	)
-	# The test drivers link and exercise the module-built libraries. On MSVC they compile as CLASSIC
-	# TUs rather than importing: MSVC's modules-frontend bugs (Qt QMetaType through an IFC, glaze/toml
-	# ICE -- see docs/.../msvc-bringup-findings.md) surface in test code's metatype/serialization use,
-	# and the classic path exercises the very same module-built libraries. Off MSVC they import as before.
+	# On Windows (both cl.exe and clang-cl) the test drivers compile as CLASSIC TUs rather than
+	# importing -- they still link and exercise the module-built libraries. Reasons: cl.exe's
+	# modules-frontend bugs (Qt QMetaType through an IFC, glaze/toml ICE -- see
+	# docs/.../msvc-bringup-findings.md) surface in test code's metatype/serialization use; and because
+	# the C/C++ indexer package is off on Windows (no local LLVM), several test TUs `import srctrl.cxx`,
+	# which then does not exist -- the classic path keeps that cxx code behind BUILD_CXX_LANGUAGE_PACKAGE
+	# instead. Off Windows they import as before.
 	if(NOT MSVC)
 		set_source_files_properties(${_srctrl_importing_tus} PROPERTIES CXX_SCAN_FOR_MODULES ON)
 		set_property(SOURCE ${_srctrl_importing_tus} APPEND PROPERTY

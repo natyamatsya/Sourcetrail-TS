@@ -22,8 +22,9 @@ target_link_libraries(AidKit_test
 # In a module build, exercise the `import aidkit;` path: SRCTRL_MODULE_BUILD switches the enum_class
 # and thread_shared tests from #include to import (StringsTest keeps #including, so the same run also
 # covers a header consumer of the inlined Strings against the module).
-# On MSVC the test drivers stay classic (they still link the module-built AidKit_lib): mixing Catch2's
-# textual std with `import std` (via `import aidkit`) in one TU double-defines std on MSVC.
+# On Windows (cl.exe and clang-cl) the test drivers stay classic (they still link the module-built
+# AidKit_lib): on cl.exe mixing Catch2's textual std with `import std` (via `import aidkit`) in one TU
+# double-defines std, and Windows tests are kept classic uniformly (see src/test/CMakeLists.txt).
 if(SOURCETRAIL_CXX_MODULES_ENABLED AND NOT MSVC)
 	# Module scanning is off project-wide (stdexec); scan the files that import aidkit.
 	# SRCTRL_MODULE_BUILD is per-source ("this TU imports") -- see the main targets.

@@ -24,7 +24,9 @@
 // Imports come AFTER all textual #includes (include-before-import rule: textual libc++
 // following BMI-merged declarations trips "cannot add 'abi_tag' in a redeclaration").
 #ifdef SRCTRL_MODULE_BUILD
-import srctrl.cxx;
+#if BUILD_CXX_LANGUAGE_PACKAGE
+import srctrl.cxx;   // only built when the C/C++ indexer package is on (matches the include above)
+#endif
 import srctrl.file;
 import srctrl.settings;
 #endif
