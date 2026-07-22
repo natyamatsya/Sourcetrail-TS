@@ -15,13 +15,14 @@
 // You should have received a copy of the GNU Lesser General Public License
 // along with CppAidKit. If not, see <http://www.gnu.org/licenses/>.
 
-// A module import must precede other declarations, so it goes above the catch2 include.
+// Textual includes precede the import (playbook rule 1: include-before-import). Catch2 pulls in std
+// headers textually; on MSVC with `import std` (reached via `import aidkit`) they must come first, or
+// the std module and the textual std double-define. `import` in a regular importer TU may follow
+// includes -- it need not be the first declaration.
+#include <catch2/catch_all.hpp>
 #ifdef SRCTRL_MODULE_BUILD
 import aidkit;
-#endif
-
-#include <catch2/catch_all.hpp>
-#ifndef SRCTRL_MODULE_BUILD
+#else
 #include <aidkit/enum_class.hpp>
 #endif
 
