@@ -52,43 +52,47 @@ target_include_directories(Sourcetrail_lib_core
 # files keep #including utilityEnum.h as ordinary TUs -- it's header-only, so they coexist with the
 # module.
 if(SOURCETRAIL_CXX_MODULES_ENABLED)
+	set(_srctrl_module_units
+			utility/qt/srctrl_qt.cppm
+			utility/qt/srctrl_qt-core.cppm
+			utility/qt/srctrl_qt-meta.cppm
+			utility/logging/srctrl_logging.cppm
+			utility/srctrl_utility.cppm
+			utility/srctrl_utility-enum.cppm
+			utility/srctrl_utility-cache.cppm
+			utility/srctrl_utility-containers.cppm
+			utility/srctrl_utility-types.cppm
+			utility/srctrl_utility-string.cppm
+			utility/srctrl_utility-math.cppm
+			utility/srctrl_utility-time.cppm
+			utility/file/srctrl_file.cppm
+			utility/srctrl_process.cppm
+			settings/srctrl_settings.cppm
+			data/srctrl_data.cppm
+			data/srctrl_data-bookmark.cppm
+			data/srctrl_data-types.cppm
+			data/srctrl_data-name.cppm
+			data/srctrl_data-location.cppm
+			data/srctrl_data-parser.cppm
+			data/srctrl_data-graph.cppm
+			data/srctrl_data-search.cppm
+			data/srctrl_data-tooltip.cppm
+			data/storage/srctrl_storage.cppm
+			data/storage/srctrl_storage-types.cppm
+			data/storage/srctrl_storage-interface.cppm
+			data/storage/srctrl_storage-intermediate.cppm
+			data/storage/srctrl_storage-error.cppm
+			data/storage/srctrl_storage-access.cppm
+			data/indexer/srctrl_indexer.cppm
+			data/indexer/interprocess/srctrl_interprocess.cppm
+			component/view/srctrl_view.cppm
+			utility/messaging/srctrl_messaging.cppm)
+	# On MSVC, keep srctrl.storage + its importers (messaging/indexer/interprocess) classic -- see
+	# sourcetrail_msvc_filter_module_units in cmake/SourcetrailCxxModules.cmake. No-op elsewhere.
+	sourcetrail_msvc_filter_module_units(_srctrl_module_units)
 	target_sources(Sourcetrail_lib_core
 		PUBLIC
-			FILE_SET CXX_MODULES FILES
-				utility/qt/srctrl_qt.cppm
-				utility/qt/srctrl_qt-core.cppm
-				utility/qt/srctrl_qt-meta.cppm
-				utility/logging/srctrl_logging.cppm
-				utility/srctrl_utility.cppm
-				utility/srctrl_utility-enum.cppm
-				utility/srctrl_utility-cache.cppm
-				utility/srctrl_utility-containers.cppm
-				utility/srctrl_utility-types.cppm
-				utility/srctrl_utility-string.cppm
-				utility/srctrl_utility-math.cppm
-				utility/srctrl_utility-time.cppm
-				utility/file/srctrl_file.cppm
-				utility/srctrl_process.cppm
-				settings/srctrl_settings.cppm
-				data/srctrl_data.cppm
-				data/srctrl_data-bookmark.cppm
-				data/srctrl_data-types.cppm
-				data/srctrl_data-name.cppm
-				data/srctrl_data-location.cppm
-				data/srctrl_data-parser.cppm
-				data/srctrl_data-graph.cppm
-				data/srctrl_data-search.cppm
-				data/srctrl_data-tooltip.cppm
-				data/storage/srctrl_storage.cppm
-				data/storage/srctrl_storage-types.cppm
-				data/storage/srctrl_storage-interface.cppm
-				data/storage/srctrl_storage-intermediate.cppm
-				data/storage/srctrl_storage-error.cppm
-				data/storage/srctrl_storage-access.cppm
-				data/indexer/srctrl_indexer.cppm
-				data/indexer/interprocess/srctrl_interprocess.cppm
-				component/view/srctrl_view.cppm
-				utility/messaging/srctrl_messaging.cppm)
+			FILE_SET CXX_MODULES FILES ${_srctrl_module_units})
 	# Workaround for LLVM #166068: in reduced-BMI mode (clang's default since 20) the replaceable global
 	# operator new/delete declarations are pruned from the BMI, so a consumer that instantiates a module
 	# type whose inline members allocate (e.g. FilePath -> std::filesystem::path -> std::__libcpp_allocate
@@ -197,6 +201,9 @@ if(SOURCETRAIL_CXX_MODULES_ENABLED)
 		"${CMAKE_CURRENT_SOURCE_DIR}/utility/logging/LogManagerNotifier.cpp"
 		"${CMAKE_CURRENT_SOURCE_DIR}/utility/scheduling/TaskScheduler.cpp"
 	)
+	# On MSVC, TUs that import a classic-on-Windows module (storage/messaging/indexer/interprocess)
+	# compile fully classic instead of importing. No-op elsewhere.
+	sourcetrail_msvc_filter_importers(_srctrl_importing_tus)
 	set_source_files_properties(${_srctrl_importing_tus} PROPERTIES CXX_SCAN_FOR_MODULES ON)
 	set_property(SOURCE ${_srctrl_importing_tus} APPEND PROPERTY
 		COMPILE_DEFINITIONS SRCTRL_MODULE_BUILD)

@@ -29,10 +29,11 @@ that GMF as macOS-only territory anyway).
 - ✅ **Phase-0 POC** builds after a portability fix (below).
 - ✅ **`import std` works on MSVC with zero patching** — CMake's `CXX_MODULE_STD` built `std.ixx`/
   `std.compat.ixx` and `aidkit.cppm` consumed it. This is the **recommended MSVC mode** (frontier #2).
-- ⏳ **`lib_core`**: under textual std (IMPORT_STD OFF) it reached ~127/193 before the std-merge
-  frontier; **under `import std` it reaches ~280/329** — through the utility/qt/logging/file/data
-  layers — stopping at the `srctrl.storage` partitions on the Qt-metatype IFC bug (frontier #3).
-  ~30+ of the tree's 44 module units build on MSVC.
+- ✅ **`lib_core` builds completely on MSVC** (`Sourcetrail_lib_core.lib`, 0 errors) under `import std`
+  with the **below-storage frontier cut**: the 26 module units of the utility/qt/logging/file/data/
+  settings/view/process layers build as modules; `srctrl.storage` and everything that imports it
+  (messaging, indexer, interprocess) + their consumer TUs compile classic. This is the resolution of
+  frontiers #3 (Qt QMetaType IFC bug) and Risk 3 (glaze/toml ICE) on Windows — see below.
 
 ## Fixes landed
 
@@ -154,6 +155,25 @@ to the storage layer builds under `import std`). Two ways forward, both a design
 Recommendation: file the MSVC repro (it is a genuine compiler bug, self-flagged) and, in parallel, keep
 `srctrl.storage` (and any Qt-metatype-crossing module) classic on Windows via the dual build so the rest
 of the module graph proceeds.
+
+**Resolution (implemented) — the below-storage frontier cut.** On MSVC the module frontier stops below
+`srctrl.storage`: `cmake/SourcetrailCxxModules.cmake` provides `sourcetrail_msvc_filter_module_units`
+(drops the storage/messaging/indexer/interprocess wrapper `.cppm`) and `sourcetrail_msvc_filter_importers`
+(drops importer TUs that `import` any of those, so they compile fully classic). Both are no-ops off MSVC
+and are applied in `src/lib_core`, `src/lib_gui`, `src/app`, `src/indexer` CMakeLists. The dual build's
+global-module attachment lets the classic storage code and the module lower layers share ordinary
+mangling, so `Sourcetrail_lib_core.lib` links. This is a coherent partial frontier, exactly the handoff's
+bottom-up W2 — extend it upward as MSVC (or our workarounds) allow.
+
+## Frontier #4 (Risk 3) — MSVC ICE on glaze/toml++ in an IFC-import TU
+
+Compiling importer TUs that instantiate `glz::write_json` (reached via `ConfigManager::saveJson`,
+inline) crashed `cl` with `C1001 Internal compiler error` in `glaze/api/std/variant.hpp`, again with the
+`report-cpp-modules-problem` note (IFC import context). This is the handoff's Risk 3 (glaze/toml++ are
+too template-heavy for MSVC's modules frontend). **Fix:** a classic seam — `ConfigManager.inl` became
+`ConfigManager.cpp` (all its non-template members out-of-line; the two header templates use no glaze), so
+glaze/toml instantiate only in that one classic TU, never an IFC-import one. Same pattern as the
+FilePathFilter seam; dual-build safe and a no-op for clang.
 
 ## How to reproduce this state
 

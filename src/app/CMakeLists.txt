@@ -31,7 +31,13 @@ target_link_libraries(Sourcetrail
 
 # Module build: converted consumer TUs (SRCTRL_MODULE_BUILD is PER-SOURCE -- "this TU imports").
 if(SOURCETRAIL_CXX_MODULES_ENABLED)
-	set_source_files_properties(ApplicationSettingsPrefiller.cpp PROPERTIES CXX_SCAN_FOR_MODULES ON)
-	set_property(SOURCE ApplicationSettingsPrefiller.cpp APPEND PROPERTY
-		COMPILE_DEFINITIONS SRCTRL_MODULE_BUILD)
+	# On MSVC this TU imports srctrl.messaging (kept classic below the storage frontier), so it drops
+	# to a fully-classic TU there; unchanged elsewhere.
+	set(_srctrl_importing_tus ApplicationSettingsPrefiller.cpp)
+	sourcetrail_msvc_filter_importers(_srctrl_importing_tus)
+	if(_srctrl_importing_tus)
+		set_source_files_properties(${_srctrl_importing_tus} PROPERTIES CXX_SCAN_FOR_MODULES ON)
+		set_property(SOURCE ${_srctrl_importing_tus} APPEND PROPERTY
+			COMPILE_DEFINITIONS SRCTRL_MODULE_BUILD)
+	endif()
 endif()
