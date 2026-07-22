@@ -189,6 +189,28 @@ too template-heavy for MSVC's modules frontend). **Fix:** a classic seam — `Co
 glaze/toml instantiate only in that one classic TU, never an IFC-import one. Same pattern as the
 FilePathFilter seam; dual-build safe and a no-op for clang.
 
+## clang-cl (clang frontend + MSVC ABI/STL) — builds the FULL module graph
+
+Built with **clang-cl 22.1.8** (standalone LLVM — the *same* clang version as the macOS build), MSVC
+env via `Init-ModulesEnv.ps1`, `IMPORT_STD=OFF` (clang merges textual+BMI std, so no std module needed):
+
+- ✅ **`Sourcetrail.exe` builds and links** — 0 errors, **36 module BMIs, the FULL graph including
+  `srctrl.storage`/`messaging`/`indexer`/`interprocess`.** clang's frontend has **neither** the
+  QMetaType-IFC bug **nor** the glaze/toml ICE, so it does *not* need the frontier cut — proving that
+  cut is a cl.exe-frontend-bug workaround, not a design limit. The filters therefore key on
+  `CMAKE_CXX_COMPILER_ID STREQUAL "MSVC"` (real cl.exe), not the CMake `MSVC` variable (also true for
+  clang-cl). Presets: `windows-clang-cl-{dbg,rel}`.
+- **Command-length limit:** clang-scan-deps runs as `cmd /C "clang-scan-deps -- clang-cl <~80 -I paths>
+  > tmp && rename"`, which overflows cmd.exe's 8191-char limit on the big targets ("The command line is
+  too long"). Fix: configure with `CMAKE_NINJA_FORCE_RESPONSE_FILE=1` (env) so ninja passes flags via
+  response files. (cl.exe's integrated `/scanDependencies` avoids this.)
+- **`QtHighlighter.cpp`:** used `std::set` without including `<set>` — cl.exe pulled it transitively,
+  clang requires it. Added a textual `<set>` (guarded by `SRCTRL_IMPORT_STD`, before the imports). A
+  genuine latent bug clang surfaced; harmless on cl.exe/macOS.
+
+Takeaway: on Windows, **clang-cl gives fuller modularization than cl.exe** (no frontier cut), at the
+cost of the response-file workaround; cl.exe needs the below-storage cut but has integrated scanning.
+
 ## How to reproduce this state
 
 ```powershell

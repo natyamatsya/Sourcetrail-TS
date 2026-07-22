@@ -51,13 +51,17 @@ endfunction()
 # build supports a partial module frontier (classic and module TUs share ordinary mangling under the
 # global-module attachment model). Everywhere else these build as modules, unchanged.
 #
-# These two filters are no-ops off MSVC, so callers wrap them around their normal lists unconditionally.
+# The cut is specific to the MSVC *frontend* (cl.exe). clang-cl uses the clang frontend (with the MSVC
+# ABI/STL) and does NOT have the QMetaType-IFC / glaze-ICE bugs -- it builds the full module graph like
+# the macOS clang build -- so these filters key on CMAKE_CXX_COMPILER_ID STREQUAL "MSVC", not the CMake
+# `MSVC` variable (which is also true for clang-cl). No-ops on clang-cl/clang/gcc, so callers wrap them
+# around their normal lists unconditionally.
 set(SOURCETRAIL_MSVC_CLASSIC_MODULE_RE  "^srctrl_(storage|messaging|indexer|interprocess)")
 set(SOURCETRAIL_MSVC_CLASSIC_IMPORT_RE  "import[ \t]+srctrl\\.(storage|messaging|indexer|interprocess)")
 
-# Drop the wrapper .cppm of the classic-on-MSVC modules from <list_var> (by basename).
+# Drop the wrapper .cppm of the classic-on-cl.exe modules from <list_var> (by basename).
 function(sourcetrail_msvc_filter_module_units list_var)
-	if(NOT MSVC)
+	if(NOT CMAKE_CXX_COMPILER_ID STREQUAL "MSVC")
 		return()
 	endif()
 	set(_kept "")
@@ -74,7 +78,7 @@ endfunction()
 # Drop importer TUs that `import` any classic-on-MSVC module from <list_var> -- those compile fully
 # classic instead. Entries may be absolute or relative to CMAKE_CURRENT_SOURCE_DIR.
 function(sourcetrail_msvc_filter_importers list_var)
-	if(NOT MSVC)
+	if(NOT CMAKE_CXX_COMPILER_ID STREQUAL "MSVC")
 		return()
 	endif()
 	set(_kept "")
