@@ -140,9 +140,15 @@ if(SOURCETRAIL_CXX_MODULES_ENABLED)
 		helper/TestStorage.cpp
 		test_main.cpp
 	)
-	set_source_files_properties(${_srctrl_importing_tus} PROPERTIES CXX_SCAN_FOR_MODULES ON)
-	set_property(SOURCE ${_srctrl_importing_tus} APPEND PROPERTY
-		COMPILE_DEFINITIONS SRCTRL_MODULE_BUILD)
+	# The test drivers link and exercise the module-built libraries. On MSVC they compile as CLASSIC
+	# TUs rather than importing: MSVC's modules-frontend bugs (Qt QMetaType through an IFC, glaze/toml
+	# ICE -- see docs/.../msvc-bringup-findings.md) surface in test code's metatype/serialization use,
+	# and the classic path exercises the very same module-built libraries. Off MSVC they import as before.
+	if(NOT MSVC)
+		set_source_files_properties(${_srctrl_importing_tus} PROPERTIES CXX_SCAN_FOR_MODULES ON)
+		set_property(SOURCE ${_srctrl_importing_tus} APPEND PROPERTY
+			COMPILE_DEFINITIONS SRCTRL_MODULE_BUILD)
+	endif()
 endif()
 
 catch_discover_tests(Sourcetrail_test)

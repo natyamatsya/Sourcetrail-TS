@@ -42,6 +42,12 @@ that GMF as macOS-only territory anyway).
   singletons and inline definitions merge correctly under COMDAT folding + mixed module/classic linkage,
   and classic out-of-line definitions link for module-importer callers (the whole point of the
   global-module attachment model) on MSVC. **The full application builds on Windows with modules ON.**
+- ✅ **Test suite green: 405/405 pass** (`AidKit_test` + `Sourcetrail_test`, 4 symlink tests skipped as
+  environment-specific). The test *drivers* compile classic on MSVC (they link and exercise the
+  module-built libraries; mixing Catch2's textual std with `import std` in one TU double-defines std,
+  and the metatype/glaze bugs surface in test code) — so the suite validates the module-built libs via
+  the classic API. Two aidkit tests also had `import aidkit;` before their Catch2 include (violating
+  playbook rule 1, include-before-import) — reordered.
 
 ## Fixes landed
 

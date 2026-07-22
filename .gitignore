@@ -48,3 +48,9 @@ src/swift_indexer/Sources/SourcetrailSwiftIndexerCore/GeneratedFromCMake
 # Temporary reference extraction
 /inspiration/download/
 /inspiration/download.zip
+
+# Test-run outputs written through the bin/test/data junction (not fixtures)
+/bin/test/data/ConfigManagerTestSuite/temp*.json
+/bin/test/data/ConfigManagerTestSuite/temp*.srctrl.toml
+/bin/test/data/test.sqlite
+/bin/test/data/testBookmarks.sqlite
