@@ -42,3 +42,58 @@ function(sourcetrail_resolve_cxx_modules out_var)
 		set(${out_var} ON PARENT_SCOPE)
 	endif()
 endfunction()
+
+# --- MSVC module frontier (the below-storage cut) --------------------------------------------------
+# On MSVC the C++20-modules build stops below srctrl.storage: MSVC cannot round-trip a Qt QMetaType
+# specialization through an IFC (a compiler defect, self-flagged via report-cpp-modules-problem -- see
+# docs/technical_notes/cxx20-modules-migration/msvc-bringup-findings.md). srctrl.storage and the
+# modules that import it (messaging, indexer, interprocess) therefore stay CLASSIC on Windows; the dual
+# build supports a partial module frontier (classic and module TUs share ordinary mangling under the
+# global-module attachment model). Everywhere else these build as modules, unchanged.
+#
+# These two filters are no-ops off MSVC, so callers wrap them around their normal lists unconditionally.
+set(SOURCETRAIL_MSVC_CLASSIC_MODULE_RE  "^srctrl_(storage|messaging|indexer|interprocess)")
+set(SOURCETRAIL_MSVC_CLASSIC_IMPORT_RE  "import[ \t]+srctrl\\.(storage|messaging|indexer|interprocess)")
+
+# Drop the wrapper .cppm of the classic-on-MSVC modules from <list_var> (by basename).
+function(sourcetrail_msvc_filter_module_units list_var)
+	if(NOT MSVC)
+		return()
+	endif()
+	set(_kept "")
+	foreach(_cppm IN LISTS ${list_var})
+		get_filename_component(_base "${_cppm}" NAME)
+		if(_base MATCHES "${SOURCETRAIL_MSVC_CLASSIC_MODULE_RE}")
+			continue()
+		endif()
+		list(APPEND _kept "${_cppm}")
+	endforeach()
+	set(${list_var} "${_kept}" PARENT_SCOPE)
+endfunction()
+
+# Drop importer TUs that `import` any classic-on-MSVC module from <list_var> -- those compile fully
+# classic instead. Entries may be absolute or relative to CMAKE_CURRENT_SOURCE_DIR.
+function(sourcetrail_msvc_filter_importers list_var)
+	if(NOT MSVC)
+		return()
+	endif()
+	set(_kept "")
+	foreach(_tu IN LISTS ${list_var})
+		set(_path "${_tu}")
+		if(NOT IS_ABSOLUTE "${_path}")
+			set(_path "${CMAKE_CURRENT_SOURCE_DIR}/${_tu}")
+		endif()
+		set(_drop FALSE)
+		if(EXISTS "${_path}")
+			file(STRINGS "${_path}" _hits REGEX "${SOURCETRAIL_MSVC_CLASSIC_IMPORT_RE}")
+			if(_hits)
+				set(_drop TRUE)
+			endif()
+		endif()
+		if(_drop)
+			continue()
+		endif()
+		list(APPEND _kept "${_tu}")
+	endforeach()
+	set(${list_var} "${_kept}" PARENT_SCOPE)
+endfunction()

@@ -210,6 +210,9 @@ if(SOURCETRAIL_CXX_MODULES_ENABLED)
 		"${CMAKE_CURRENT_SOURCE_DIR}/utility/path_detector/cxx_header/utilityCxxHeaderDetection.cpp"
 		"${CMAKE_CURRENT_SOURCE_DIR}/utility/utilityPathDetection.cpp"
 	)
+	# On MSVC, TUs importing a classic-on-Windows module (storage/messaging/indexer/interprocess)
+	# compile fully classic instead. No-op elsewhere.
+	sourcetrail_msvc_filter_importers(_srctrl_importing_tus)
 	set_source_files_properties(${_srctrl_importing_tus} PROPERTIES CXX_SCAN_FOR_MODULES ON)
 	set_property(SOURCE ${_srctrl_importing_tus} APPEND PROPERTY
 		COMPILE_DEFINITIONS SRCTRL_MODULE_BUILD)

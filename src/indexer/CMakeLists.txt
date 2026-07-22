@@ -27,8 +27,14 @@ target_compile_definitions(Sourcetrail_indexer PRIVATE QT_NO_EMIT)
 # headers. Same mechanics as the test target's importer TUs: define the toggle and scan only the
 # file that imports (project-wide scanning is off; stdexec breaks clang-scan-deps).
 if(SOURCETRAIL_CXX_MODULES_ENABLED)
-	set_source_files_properties(main.cpp PROPERTIES CXX_SCAN_FOR_MODULES ON)
-	set_property(SOURCE main.cpp APPEND PROPERTY COMPILE_DEFINITIONS SRCTRL_MODULE_BUILD)
+	# On MSVC main.cpp imports srctrl.indexer/interprocess (kept classic below the storage frontier),
+	# so it drops to a fully-classic TU there; unchanged elsewhere.
+	set(_srctrl_importing_tus main.cpp)
+	sourcetrail_msvc_filter_importers(_srctrl_importing_tus)
+	if(_srctrl_importing_tus)
+		set_source_files_properties(${_srctrl_importing_tus} PROPERTIES CXX_SCAN_FOR_MODULES ON)
+		set_property(SOURCE ${_srctrl_importing_tus} APPEND PROPERTY COMPILE_DEFINITIONS SRCTRL_MODULE_BUILD)
+	endif()
 endif()
 
 # The recursive C++ AST visitor (CxxAstVisitor over clang's RecursiveASTVisitor)

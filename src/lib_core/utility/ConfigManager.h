@@ -112,6 +112,7 @@ std::vector<T> ConfigManager::getValuesOrDefaults(const std::string& key, std::v
 	return defaultValues;
 }
 
-#include "ConfigManager.inl"
+// ConfigManager's non-template members are defined out-of-line in ConfigManager.cpp (a classic seam)
+// so glaze/toml++ never instantiate in an IFC-import TU on MSVC -- see ConfigManager.cpp.
 
 #endif	  // CONFIG_MANAGER_H
