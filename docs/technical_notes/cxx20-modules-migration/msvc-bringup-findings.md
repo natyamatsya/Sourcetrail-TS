@@ -34,6 +34,14 @@ that GMF as macOS-only territory anyway).
   settings/view/process layers build as modules; `srctrl.storage` and everything that imports it
   (messaging, indexer, interprocess) + their consumer TUs compile classic. This is the resolution of
   frontiers #3 (Qt QMetaType IFC bug) and Risk 3 (glaze/toml ICE) on Windows — see below.
+- ✅ **`lib_gui` builds** (0 errors) — Qt widgets + AUTOMOC. `mocs_compilation.cpp` compiles alongside
+  the module-importer TUs: **moc coexistence works on MSVC** (handoff Risk 2) under the per-source
+  `SRCTRL_MODULE_BUILD` keying + global-module attachment.
+- ✅ **`Sourcetrail.exe` builds AND LINKS on MSVC** — the whole app (lib_core + lib_gui + thoth_ipc + Qt),
+  0 compile errors, **0 link errors, 0 duplicate/unresolved symbols**. This validates handoff Risk 4:
+  singletons and inline definitions merge correctly under COMDAT folding + mixed module/classic linkage,
+  and classic out-of-line definitions link for module-importer callers (the whole point of the
+  global-module attachment model) on MSVC. **The full application builds on Windows with modules ON.**
 
 ## Fixes landed
 
