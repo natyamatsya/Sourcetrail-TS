@@ -16,189 +16,82 @@ Sourcetrail is licensed under the [GNU General Public License Version 3](LICENSE
 
 This project was archived by the original authors and maintainers of Sourcetrail by the end of 2021. You can read more about this decision in this [blog entry](https://web.archive.org/web/20211115131149/https://www.sourcetrail.com/blog/discontinue_sourcetrail/).
 
-This is a **fork** of the Sourcetrail project and I want to keep this project at least buildable.
+This repository is an **experimental fork** — a personal playground for exploring new indexers (Rust, Swift, Zig), IPC backends, and multi-process indexing fan-out. It is published as-is, purely for anyone curious about that experimentation. There are **no plans for community support**: no issue triage, no roadmap, no release or stability guarantees, and history may be force-rewritten without notice.
+
+At a high level it explores polyglot out-of-process indexers (Rust, Swift, Zig), a C++20-modules migration, a `thoth-ipc`/FlatBuffers IPC backend, concurrent Turso storage, multi-process indexing fan-out, and an agent/MCP bridge — see [Contributions](#contributions) for detail.
+
+If you need a **stable, production-grade Sourcetrail**, please use the actively maintained [**petermost/Sourcetrail**](https://github.com/petermost/Sourcetrail) fork that this work builds upon. It has kept Sourcetrail buildable and dependable for production use for many years since the original project was archived, and offers prebuilt binaries. If you'd like to support that effort, please consider sponsoring its maintainer at <https://github.com/sponsors/petermost>.
 
 ## **Contents**
 
 * [Quick Start Guide (Version 2021.4)](DOCUMENTATION.md#getting-started)
 * [Documentation (Version 2021.4)](DOCUMENTATION.md)
-* [Sponsoring](#star-sponsoring)
-* [Changes](#changes)
+* [Contributions](#contributions)
 * [Language Packages](#language-packages)
 * [Building](#building)
 
-# :star: Sponsoring
+# Dependencies
 
-If you like the changes I've done so far, then please consider [sponsoring me](https://github.com/sponsors/petermost).
+Dependencies are provided by **vcpkg** — see [`vcpkg.json`](vcpkg.json) for the exact set and the pinned `builtin-baseline`. The main libraries are FlatBuffers, glaze, nlohmann-json, SQLite3, sqlpp23, tomlplusplus, stdexec, and Catch2 (tests), plus Clang/LLVM for the C/C++ indexer — built via vcpkg on Windows, system-provided on Linux/macOS. Qt 6 and the per-language toolchains (Rust, Swift, Zig) come from the system.
 
-By sponsoring me with **$10 per month**, you will gain access to the following **binary releases** in appreciation of your support:
+# Contributions
 
-* Sourcetrail
-* :new: Visual Studio 2026 Extension
-* :new: QtCreator 18 Plugin
+Since diverging from upstream in February 2026 (~590 commits), the study has explored the
+following, grouped by subject. These are exploratory technology studies, not release-hardened
+features.
 
-### Binary Releases
+**Language packages** (out-of-process indexers over a shared FlatBuffers wire ABI, [`abi-schemas/`](abi-schemas/README.md))
+* **Rust** — macro-usage edges (derive/attr/bang), lifetime use-sites, implicit
+  generic-specialization nodes, `#[deprecated]`/`#[cfg]` metadata, function-local symbols.
+* **Swift** — parity series SW7–SW16: global-actor/`Sendable` concurrency, attached &
+  freestanding macros, property wrappers & result builders, protocol conformance, generics.
+* **Zig** — a new out-of-process Zig indexer wired into the app.
 
-|Name                        |Platform     |Packaging                  |Build        |
-|----------------------------|-------------|---------------------------|-------------|
-|Sourcetrail                 |Linux        |ZIP Archive, Debian Package|Vcpkg, System|
-|Sourcetrail                 |Windows      |ZIP Archive                |Vcpkg        |
-|Visual Studio 2026 Extension|Windows      |VSIX Package               |             |
-|Qt Creator 18 Plugin        |Linux/Windows|ZIP Archive                |             |
+**C++20 modules migration** (the largest effort, ~80 commits)
+* Progressively converting the codebase to C++20 modules (`import std`), including the Qt/moc
+  coexistence and the glaze/toml compiler seams.
+* Windows bring-up under both MSVC (`cl.exe`) and `clang-cl`; clang-cl builds the full module graph.
 
-### Sourcetrail used/tested/supported libraries ###
+**Indexing fan-out & execution**
+* Distributed sharded indexing: per-source-group subprocess clusters, crate/package-granular
+  fan-out for Rust & Swift, a type-erased `IndexerCommand` codec, chunked oversized storage pushes.
+* Headless watchdog, terminal events and exit codes; raised then removed the subprocess cap.
+* Concurrency modernization: stdexec senders/receivers with a Qt scheduler bridge, retiring
+  `QtThreadedFunctor` across ~20 components.
 
-**C++**
+**Storage** (Turso + SQLite)
+* Concurrent Turso sole-writer with MVCC conflict-retry and a separate SQLite export.
+* A firewalled Rust shim (`tsq_*`) over `turso_core`, a `CppTurso3` C++ wrapper, and migration
+  of the SQLite storage layer to sqlpp23.
 
-|Name      |System|Vcpkg |
-|----------|------|------|
-|Clang/LLVM|20.1.8|18.1.6|
+**IPC backend**
+* Replaced `boost::interprocess` with `thoth-ipc` + FlatBuffers (now the sole backend), with an
+  event-driven command queue over a cross-process condition variable. See
+  [IPC Backend Performance](#ipc-backend-performance).
 
-**Miscellaneous**
+**Agent control & MCP bridge**
+* An agent-UI control channel (over thoth-ipc): a `GetInfo` handshake, `QueryUi` (server-side
+  JSONPath element selection), `CaptureElement` screenshots, `InvokeAction`, UI-tree snapshots,
+  event subscription, and a multi-instance app pool.
+* A Rust MCP bridge exposing the running app to AI agents.
 
-|Name   |System|Vcpkg |
-|-------|------|------|
-|Qt     |6.9.2 |6.10.0|
-|Boost  |1.88.0|1.90.0|
-|SQLite3|3.46.1|3.51.2|
-|TinyXML|2.6.2 |2.6.2 |
+**Configuration**
+* Settings and color schemes migrated from XML to JSON (via glaze); project files moved to TOML
+  (`.srctrl.toml`); the TinyXML dependency removed.
 
-**Tests**
+**Windows & build**
+* CMake File API support for MSVC projects, a vcpkg overlay for LLVM, and directory-junction
+  based test data (no symlink privileges needed).
 
-|Name  |System|Vcpkg |
-|------|------|------|
-|Catch2|3.7.1 |3.12.0|
-|GTest |1.17.0|1.17.0|
+For the pre-fork history of the lineage this builds on, see the upstream
+[petermost/Sourcetrail](https://github.com/petermost/Sourcetrail) README.
 
-### Changes
+# IPC Backend Performance
 
-#### 2026.7.20
+The legacy `boost::interprocess` indexer backend was replaced by `thoth-ipc` + FlatBuffers,
+now the default and only IPC implementation. Against the old backend, the migration measured:
 
-* Zig: Add an out-of-process Zig language indexer (`BUILD_ZIG_LANGUAGE_PACKAGE`, requires `zig` + `flatcc`)
-* Internal: Hoist the cross-process FlatBuffers wire schemas to a top-level [`abi-schemas/`](abi-schemas/README.md) folder (shared C++/Rust/Swift/Zig contract)
-* Internal: Rename the base library `lib` → `lib_core`
-
-#### 2025.12.8
-
-* C++: Add indexing of structured binding declarations
-
-* C++: Add indexing of `auto` prvalue casts
-* GUI: Fix error/status view not cleared between indexing ([#51](https://github.com/petermost/Sourcetrail/issues/51))
-* C/C++: Replace msvc mulitithreading library switches with corresponding clang switch
-* C/C++: Add Visual Studio 2026 support
-* Database: Enable simple database performance improvement
-* Python: Remove non-working Python support
-* C/C++: Remove support for Visual Studio 2010 to 2015
-
-#### 2025.10.13
-
-* C/C++: Add indexing of `concept` type constraints
-
-* C/C++: Add indexing of abbreviated function templates
-* C/C++: Use correct keyword for template template parameters (clang/LLVM >= 20)
-
-#### 2025.9.9
-
-* C/C++: Add indexing of `auto` return types
-
-* GUI: Allow tab closing with middle mouse click
-* GUI: Improve layout of license window content
-* GUI: Add `Open` to context menu of start window
-
-#### 2025.7.11
-
-* C/C++: Add indexing of `constexpr`
-
-* C/C++: Replace most `msvc` compiler switches with the correct `clang` switches (Fixes a long standing issue ["no such file or directory (sourcetrail is treating MSVC options as file/dir)"](https://github.com/CoatiSoftware/Sourcetrail/issues/744)
-* Java: Add support for Java 24
-* C/C++/Java: Revised the list of keywords for syntax highlighting
-
-#### 2025.6.19
-
-* GUI: Allow removing projects from the `Recent Projects` list
-* GUI: Fix highlighting of `Text` and `On-Screen` search results for UTF-16/UTF-32 text
-* GUI: Show configured text encoding in the status bar
-* Internal: Switch to ['UTF-8 Everywhere'](https://utf8everywhere.org/)
-* Internal: Switch to Qt resource system for most GUI resources
-
-#### 2025.5.1
-
-* GUI: Fix handling of Esc/Return keys for dialogs (Indexing, Bookmark, etc.) (Fixes [issue 27](https://github.com/petermost/Sourcetrail/issues/27))
-* GUI: Activate bookmark with double click and close bookmark manager
-* GUI: Highlight the taskbar entry when indexing has finished
-* GUI: Show indexing progress in window title
-* GUI: Added tooltips or prompt texts to many widgets
-
-#### 2025.4.1
-
-* Java: Add Support for record classes
-* macOS: Fix vcpkg build. Thanks to [ChristianWieden](https://github.com/ChristianWieden) for the help
-
-#### 2025.3.3
-
-* Java: Add support for Eclipse JDT 3.40 (Java 23)
-* Java: Update Gradle support to 8.12
-
-#### 2025.1.28
-
-* C/C++: Add support for Clang 19 (C++23).
-* C/C++: Re-enable detection of non-trivial destructor calls.
-* Fix: Keep the console window open when logging is enabled.
-* Framework: Replace/Remove last Qt5 dependency.
-
-#### 2024.9.23
-
-* GUI: Try to hide the external console window on Windows. See ["The console window is not hidden under Windows 11"](https://github.com/petermost/Sourcetrail/issues/19) for additional information.
-* GUI: Add the 'Hack' font.
-* Fix: Copy the tutorial project files on initial run.
-
-#### 2024.8.2
-
-* GUI: Remove `qt.conf` which seems to improve the menu font rendering under Windows
-
-#### 2024.7.3
-
-* GUI: Fix non-working dialogs i.e. the selected action weren't executed
-* C/C++: Disabled indexing of non-trivial destructor calls. See [#7 (comment)](https://github.com/petermost/Sourcetrail/issues/7#issuecomment-2199640807) for further details.
-
-#### 2024.7.2
-
-* Installation: Add Debian packaging
-
-#### 2024.7.1
-
-* C/C++: Add indexing of the deduced type of auto variables
-* C/C++: Add indexing of user defined conversion operators
-* C/C++: Add indexing of non-trivial destructor calls
-
-#### 2024.7.0
-
-* C/C++: Update libClang/LibTooling to Clang 18
-
-#### 2024.6.0
-
-* C/C++: Add indexing of the deduced type of auto variables
-
-#### 2024.05.9
-
-* C/C++: Add indexing of user defined conversion operators
-* C/C++: Update support for C++ standards C++20, C++23
-* C/C++: Update detection of 'Global Include Paths' for Visual Studio 2017, 2019, 2022
-* Java: Generalize detection of JRE/JVM
-* Java: Generalize detection of Maven
-* Java: Update support for Java Standard 16, 17, 18, 19, 20
-* Framework: Update libClang/LibTooling to Clang 16/17
-* Framework: Switch from Qt5 to Qt6
-
-#### 2021.4.19 - 0.3.0
-
-[Coati Changelog](docs/COATI_CHANGELOG.md)
-
-## IPC Backend Performance
-
-Sourcetrail supports two interprocess communication backends, selectable via the CMake option `USE_CPP_IPC`:
-
-| Metric | boost::interprocess | thoth-ipc + FlatBuffers | Delta |
+| Metric | boost::interprocess (old) | thoth-ipc + FlatBuffers | Delta |
 |---|---|---|---|
 | **Wall time** | 5.56s | 3.57s | **-36%** |
 | **User time** | 3.48s | 0.89s | **-74%** |
@@ -206,7 +99,7 @@ Sourcetrail supports two interprocess communication backends, selectable via the
 | **RSS** | 10.2 GB | 113 MB | **-99%** |
 | **Indexing time** | 4.66s | 1.85s | **-60%** |
 
-Measured on macOS (release build) indexing the tictactoe sample project (7 source files, 1069 nodes, 7556 edges). Both backends produce identical indexing results.
+Measured on macOS (release build) indexing the tictactoe sample project (7 source files, 1069 nodes, 7556 edges).
 
 # Language Packages
 
@@ -225,103 +118,67 @@ processes that communicate with the app over a shared FlatBuffers wire ABI defin
 [`abi-schemas/`](abi-schemas/README.md). Enable a package at configure time, e.g.:
 
 ```
-cmake --preset vcpkg-release -DBUILD_ZIG_LANGUAGE_PACKAGE=ON
+cmake --preset rel -DBUILD_ZIG_LANGUAGE_PACKAGE=ON
 ```
 
 # Building
 
-There are 2 ways to build the project:
-
-1. With **vcpkg** provided packages ([Vcpkg build](#vcpkg-build))
-2. With the **system** provided packages ([System build](#system-build))
+All builds use the bundled **vcpkg** to provide dependencies, driven by CMake presets —
+there is no separate system-package build path. Pick a preset for your platform and
+compiler, configure, then build into `.build/<preset>`.
 
 ## Cloning
 
-It is important to clone the repository with the **submodules**. On Linux/macOS also enable
-the **symlinks**:
+Clone the repository and run the init script:
 
 ```
-git clone https://github.com/petermost/Sourcetrail.git --recurse-submodules --config core.symlinks=true
-```
-
-On **Windows** no symlink support is needed (the build relies on directory junctions
-instead, which require no special privileges or Developer Mode) — a plain clone is fine:
-
-```
-git clone https://github.com/petermost/Sourcetrail.git
+git clone https://github.com/natyamatsya/Sourcetrail-TS.git
+cd Sourcetrail-TS
 python init_repository.py
 ```
 
-The `init_repository.py` script initializes the submodules and bootstraps vcpkg. It can be
-re-run at any time (e.g. after a pull that moved the submodules).
+`init_repository.py` initializes the submodules and bootstraps vcpkg; re-run it after a
+pull that moved submodules. On **Linux/macOS** you may add `--config core.symlinks=true`
+to the clone. On **Windows** no symlink support is needed — the build uses directory
+junctions, which require no special privileges or Developer Mode.
 
-Get the updates with:
+Update with:
 
 ```
 git pull --recurse-submodules
+python init_repository.py
 ```
 
-## Vcpkg Build
+## Prerequisites
 
-Depending on the platform, additional software/packages must be installed.
+* **Linux:** run `scripts/install-vcpkg-dependencies.sh` (system libraries vcpkg needs to
+  build the Qt package), plus a system Clang/LLVM for the C/C++ indexer.
+* **Windows:** [Visual Studio 2026](https://visualstudio.microsoft.com/vs/community/) with
+  the C++ toolset. Build from a "x64 Native Tools Command Prompt for VS 18", or run
+  `scripts/win/Init-ModulesEnv.ps1` first.
+* **macOS:** [Xcode](https://developer.apple.com/xcode/) command-line tools, plus
+  autoconf, autoconf-archive, automake, libtool, and ninja.
 
-* **Linux:**
-  * Install additional packages with `scripts/install-vcpkg-dependencies.sh`.
-* **Windows:**
-  * [Visual Studio 2026 Community Edition](https://visualstudio.microsoft.com/vs/community/)
-* **macOS:**
-  * [Xcode](https://developer.apple.com/xcode/)
-  * libtools, autoconf, autoconf-archive, automake, patchelf, ninja
+## Configure and build
 
-Prepare the build in a terminal or command prompt ("x64 Native Tools Command Prompt"):
+Choose a preset:
 
-```
-cd Sourcetrail
-cmake --preset vcpkg-release
-```
+| Preset | Platform / compiler |
+|--------|---------------------|
+| `rel` / `dbg` / `reldbg`             | Linux; system Clang/LLVM for the C/C++ indexer |
+| `rel-cxx`                            | as `rel`, but builds LLVM via vcpkg for the C/C++ indexer |
+| `apple-clang-rel` / `llvm-clang-rel` | macOS (also enables the Swift package) |
+| `windows-msvc-rel`                   | Windows, MSVC (`cl.exe`) |
+| `windows-clang-cl-rel`               | Windows, `clang-cl` |
 
-Note that the initial compilation of the vcpkg packages (especially LLVM) will take a **long** time!
-
-> [!TIP]
-> Download a [binary release](#star-binary-releases).
-
-Build:
-
-```
-cd ../build/vcpkg-release
-cmake --build .
-```
-
-## System build
-
-### Linux
-
-To compile it under (K)ubuntu 25.04, "Questing Quokka", install the following packages:
-
-**General packages:** cmake, ninja-build, libboost1.88-all-dev, libboost-charconv1.88-dev, qt6-base-dev, qt6-svg-dev, libsqlite3-dev, libtinyxml-dev
-
-**C++ packages:** clang-20, libclang-20-dev
-
-**Unit test packages:** catch2, libgtest-dev
-
-Prepare the build:
+The presets enable the C/C++ and Rust language packages and the unit tests by default;
+enable others with e.g. `-D BUILD_ZIG_LANGUAGE_PACKAGE=ON` (see
+[Language Packages](#language-packages)).
 
 ```
-cd Sourcetrail
-cmake --preset system-release
+cmake --preset rel
+cmake --build .build/rel
 ```
 
-Build:
-
-```
-cd ../build/system-release
-cmake --build .
-```
-
-### Windows
-
-System build is not tested and therefore not supported.
-
-### macOS
-
-System build is not tested and therefore not supported.
+The first configure builds the vcpkg dependencies — and, for `rel-cxx`, LLVM — which takes
+a **long** time.
