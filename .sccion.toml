@@ -1,6 +1,6 @@
-# sccache: this file's *location* is its content.
+# sccion: this file's *location* is its content.
 #
-# sccache walks up from each compilation looking for `.sccache.toml`, the way
+# sccion walks up from each compilation looking for `.sccion.toml`, the way
 # clang-format finds `.clang-format`, and the directory holding it becomes a
 # basedir. Paths under that root are then recorded relative to it, so every
 # checkout of this repository computes the same cache keys instead of one set
