@@ -25,3 +25,10 @@
 # each resource's mtime, so two worktrees checked out seconds apart genuinely
 # differ, and the cache is right to rebuild them. SOURCE_DATE_EPOCH is what
 # makes rcc reproducible, if that ever becomes worth closing.
+
+# libclang's Preprocessor.h names __DATE__ and __TIME__ -- in an identifier and
+# in a comment -- because it implements them. The scan reads bytes, so every TU
+# that includes it looked like it expands them, which made 7 of this build's
+# most expensive units uncacheable in direct mode. Nothing in src/ uses a time
+# macro; verified by grep on 2026-08-10.
+ignore_time_macros = true
