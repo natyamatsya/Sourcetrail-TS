@@ -1,0 +1,27 @@
+# sccache: this file's *location* is its content.
+#
+# sccache walks up from each compilation looking for `.sccache.toml`, the way
+# clang-format finds `.clang-format`, and the directory holding it becomes a
+# basedir. Paths under that root are then recorded relative to it, so every
+# checkout of this repository computes the same cache keys instead of one set
+# per path. That is why the file is committed and why it names no path: an
+# absolute basedir would be right in one checkout and wrong in every other,
+# and worktrees created on demand cannot be enumerated in advance at all.
+#
+# It is deliberately empty otherwise. The settings this file may carry are only
+# those that shape cache keys; anything deciding *where* a build reads or writes
+# stays in the machine's own configuration, because this file travels with the
+# repository.
+#
+# Measured on 2026-08-10 (llvm-clang-reldbg, 561 compilations, two worktrees of
+# the same commit):
+#
+#   without this file   0 of 561 shared   288 s
+#   with it           559 of 561 shared    18 s
+#
+# The two components that differed were `inputs` — the preprocessed text carries
+# the checkout path — and `working_directory`. Both are basedir-stripped once a
+# root is declared. The 2 that still miss are generated qrc_*.cpp: rcc embeds
+# each resource's mtime, so two worktrees checked out seconds apart genuinely
+# differ, and the cache is right to rebuild them. SOURCE_DATE_EPOCH is what
+# makes rcc reproducible, if that ever becomes worth closing.
