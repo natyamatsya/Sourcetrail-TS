@@ -1,0 +1,14 @@
+{
+	"mcpServers": {
+		"sccion": {
+			"command": "sccion-mcp",
+			"args": [],
+			"env": {}
+		},
+		"sourcetrail": {
+			"command": "${SOURCETRAIL_MCP_BIN:-sourcetrail-mcp}",
+			"args": [],
+			"env": {}
+		}
+	}
+}
