@@ -34,8 +34,12 @@ pub fn build(b: *std.Build) void {
     // flatcc C bindings for the shared .fbs schemas. gen_flatcc.sh strips
     // non-ASCII (flatcc's parser rejects it) and runs flatcc into an output dir.
     const flatcc_prefix = b.option([]const u8, "flatcc-prefix", "flatcc install prefix") orelse "/opt/homebrew";
+    // The CMake build passes this explicitly (ZIG_INDEXER_SCHEMA_DIR), so the
+    // default only matters to a standalone `zig build` -- which is exactly what
+    // CI runs, and what was left pointing at src/lib after that tree became
+    // src/lib_core and the schemas moved to abi-schemas/.
     const schema_dir = b.option([]const u8, "schema-dir", "IPC .fbs schema dir") orelse
-        "../../src/lib/data/indexer/interprocess/schemas";
+        "../../abi-schemas/ipc-indexer";
     const gen = b.addSystemCommand(&.{"bash"});
     gen.addFileArg(b.path("tools/gen_flatcc.sh"));
     gen.addArg(schema_dir);
