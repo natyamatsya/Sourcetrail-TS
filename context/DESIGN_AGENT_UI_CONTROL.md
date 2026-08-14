@@ -185,7 +185,12 @@ things on top, added here (not a parallel C++ command hierarchy):
 Two version layers meet at the bridge, and only one was covered before this section:
 
 - **MCP wire protocol** (client ↔ `sourcetrail-mcp`): negotiated by rmcp
-  (`ProtocolVersion::LATEST` in `get_info`). Handled.
+  (`ProtocolVersion::LATEST` in `get_info`). Handled. Since rmcp 3.x that
+  negotiation covers two lifecycles rather than one: `initialize` for clients
+  through 2025-11-25, and the sessionless 2026-07-28 opening, where the version
+  rides in each request's `_meta` and `server/discover` replaces the handshake.
+  Which one is used is the client's choice, per connection, and nothing in this
+  bridge selects it.
 - **Agent-control protocol** (bridge ↔ app, FlatBuffers): had **no version stamp**.
   It relied purely on append-only union compatibility plus "unknown command"
   soft-degradation. The dangerous direction is a **newer bridge → older app**: the
@@ -235,8 +240,9 @@ entry:
 - **Claude Desktop:** an `mcpServers` entry in `claude_desktop_config.json`
   (`~/Library/Application Support/Claude/` on macOS, `%APPDATA%\Claude\` on Windows)
   with `command` + `args`, then restart.
-- rmcp negotiates the MCP wire `ProtocolVersion` at `initialize`; the client spawns a
-  fresh server per session over stdio.
+- rmcp negotiates the MCP wire `ProtocolVersion` at `initialize`, or per request from
+  `_meta` when the client speaks 2026-07-28 and sends no handshake at all; either way
+  the client spawns a fresh server per session over stdio.
 
 **Install scripts.** `scripts/install-mcp.sh` (macOS/Linux) and
 `scripts/install-mcp.ps1` (Windows) build `sourcetrail-mcp` (`cargo build --release

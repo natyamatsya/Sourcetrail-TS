@@ -2,8 +2,15 @@
 //! tools over stdio, and manages app lifecycle + multiple instances (for
 //! comparison tests). Requires the `mcp` feature.
 //!
-//! NOTE: the rmcp surface targets rmcp 0.8.5 (verified with `cargo check
+//! NOTE: the rmcp surface targets rmcp 3.1.2 (verified with `cargo check
 //! --features mcp`). Design: context/DESIGN_AGENT_MCP_BRIDGE.md.
+//!
+//! The SDK carries the protocol, and since 3.x it carries more than one
+//! revision of it: a client that opens with `initialize` negotiates a session
+//! as before, and one that speaks 2026-07-28 sends no handshake at all -- it
+//! opens with `server/discover` or any request carrying the required `_meta`,
+//! and rmcp serves it without a session. Nothing here chooses between them; the
+//! client does, per connection.
 
 use std::path::PathBuf;
 use std::sync::mpsc;
@@ -13,8 +20,11 @@ use serde_json::{json, Value};
 use tokio::sync::oneshot;
 
 use rmcp::{
-    handler::server::{router::tool::ToolRouter, wrapper::Parameters},
-    model::{CallToolResult, Content, Implementation, ProtocolVersion, ServerCapabilities, ServerInfo},
+    handler::server::wrapper::Parameters,
+    model::{
+        CallToolResult, ContentBlock, Implementation, ProtocolVersion, ServerCapabilities,
+        ServerInfo,
+    },
     tool, tool_handler, tool_router,
     transport::stdio,
     ErrorData as McpError, ServerHandler, ServiceExt,
@@ -59,7 +69,7 @@ impl ManagerHandle {
 }
 
 fn ok_json(v: Value) -> Result<CallToolResult, McpError> {
-    Ok(CallToolResult::success(vec![Content::text(
+    Ok(CallToolResult::success(vec![ContentBlock::text(
         serde_json::to_string_pretty(&v).unwrap_or_else(|_| v.to_string()),
     )]))
 }
@@ -238,16 +248,17 @@ struct KillArgs {
 
 // --- MCP server -------------------------------------------------------------
 
+// No `tool_router` field: `#[tool_handler]` calls `Self::tool_router()` itself,
+// so a stored copy is one the server never reads.
 #[derive(Clone)]
 struct SourcetrailServer {
     mgr: ManagerHandle,
-    tool_router: ToolRouter<SourcetrailServer>,
 }
 
 #[tool_router]
 impl SourcetrailServer {
     fn new(mgr: ManagerHandle) -> Self {
-        Self { mgr, tool_router: Self::tool_router() }
+        Self { mgr }
     }
 
     #[tool(description = "Return the current UI state (project, app_state FSM, active nodes, graph, code view, search matches, errors) of an instance.")]
@@ -390,25 +401,26 @@ impl SourcetrailServer {
 #[tool_handler]
 impl ServerHandler for SourcetrailServer {
     fn get_info(&self) -> ServerInfo {
-        ServerInfo {
-            protocol_version: ProtocolVersion::LATEST,
-            capabilities: ServerCapabilities::builder().enable_tools().build(),
-            server_info: Implementation {
-                name: "sourcetrail-mcp".into(),
-                version: env!("CARGO_PKG_VERSION").into(),
-                title: Some("Sourcetrail".into()),
-                icons: None,
-                website_url: None,
-            },
-            instructions: Some(
+        // Built with the SDK's own builders rather than a struct literal: these
+        // types are `#[non_exhaustive]`, so a revision that adds a field is a
+        // field this file never has to learn about.
+        ServerInfo::new(ServerCapabilities::builder().enable_tools().build())
+            // The newest revision the SDK implements. Older clients are still
+            // answered in their own: rmcp negotiates per connection, so one
+            // binary serves an editor on 2025-06-18 and one on 2026-07-28
+            // without either being configured for the other.
+            .with_protocol_version(ProtocolVersion::LATEST)
+            .with_server_info(
+                Implementation::new("sourcetrail-mcp", env!("CARGO_PKG_VERSION"))
+                    .with_title("Sourcetrail"),
+            )
+            .with_instructions(
                 "Drive Sourcetrail's UI. Tools take an optional `instance` id (default: the \
                  running app). start_instance spawns a new app (labelled by its git checkout) \
                  so you can compare versions side by side; kill_instance / list_instances manage \
                  the pool. Read with get_ui_state; resolve names with find_element; then \
-                 activate_node / activate_file. app_state is the FSM."
-                    .into(),
-            ),
-        }
+                 activate_node / activate_file. app_state is the FSM.",
+            )
     }
 }
 

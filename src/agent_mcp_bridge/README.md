@@ -58,7 +58,9 @@ Run Sourcetrail with agent control, then point the client at the server binary:
 ## Status
 
 Scaffold. Core (schema/protocol/ipc) is written against verified thoth-ipc +
-flatbuffers APIs; the `rmcp` server targets rmcp ~0.8 and needs a first
-`cargo build --features mcp` to reconcile the SDK surface. Not yet wired into the
+flatbuffers APIs; the `rmcp` server targets rmcp ~3.1, which speaks both MCP
+lifecycles — a client that opens with `initialize` negotiates a session, and one
+speaking 2026-07-28 opens with `server/discover` (or any request carrying the
+required `_meta`) and is served without one. Not yet wired into the
 CMake/Corrosion build (it is a separate process). Resources/subscriptions and
 `get_frame` reassembly are follow-ups (Phase C.2–C.3).
