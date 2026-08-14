@@ -171,6 +171,27 @@ Choose a preset:
 | `windows-msvc-rel`                   | Windows, MSVC (`cl.exe`) |
 | `windows-clang-cl-rel`               | Windows, `clang-cl` |
 
+### Compiler cache
+
+If `sccion`, `sccache` or `ccache` is on PATH, configure puts it in front of the compiler
+automatically and says which one it picked. Nothing to wire up, and nothing to install —
+without one, the build is simply uncached:
+
+```
+-- Compiler cache: /Users/you/.cargo/bin/sccion
+```
+
+Control it with `-D SOURCETRAIL_COMPILER_CACHE=OFF` (never), `=ON` (fail if none is
+installed, which is what a CI job measuring the cache wants) or the default `AUTO`. A
+launcher you set yourself is left alone. On MSVC the cache pairs itself with `/Z7`, because
+the default `/Zi` puts debug info in a PDB shared by every translation unit in a target and
+nothing that produces one can be cached.
+
+For [sccion](https://github.com/natyamatsya/sccion) specifically, the committed
+`.sccion.toml` at the repository root is what lets two checkouts of this project share cache
+entries rather than each warming its own — measured here at 288 s down to 18 s across two
+worktrees of one commit.
+
 The presets enable the C/C++ and Rust language packages and the unit tests by default;
 enable others with e.g. `-D BUILD_ZIG_LANGUAGE_PACKAGE=ON` (see
 [Language Packages](#language-packages)).

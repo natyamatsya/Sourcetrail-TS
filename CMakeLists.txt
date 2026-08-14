@@ -52,6 +52,10 @@ project(Sourcetrail VERSION 2026.2.11 HOMEPAGE_URL "http://sourcetrail.de")
 cmake_print_variables(CMAKE_C_COMPILER)
 cmake_print_variables(CMAKE_CXX_COMPILER)
 
+# Before any target exists, so every one of them inherits the launcher.
+include(cmake/SourcetrailCompilerCache.cmake)
+sourcetrail_resolve_compiler_cache()
+
 # Configure which language(s)/package(s) should be supported:
 option(BUILD_CXX_LANGUAGE_PACKAGE  "Add C/C++ support to the Sourcetrail indexer." OFF)
 option(BUILD_RUST_LANGUAGE_PACKAGE "Add Rust support to the Sourcetrail indexer." OFF)
