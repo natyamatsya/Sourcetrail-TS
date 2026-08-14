@@ -56,7 +56,13 @@
 				"CMAKE_C_COMPILER": "clang",
 				"CMAKE_CXX_COMPILER": "clang++",
 				"BUILD_SWIFT_LANGUAGE_PACKAGE": "ON"
-			}
+			},
+			"condition": {
+				"type": "equals",
+				"lhs": "${hostSystemName}",
+				"rhs": "Darwin"
+			},
+			"description": "Apple's clang, whatever `clang`/`clang++` resolve to on PATH. macOS only: the Swift language package it enables needs Apple's toolchain."
 		},
 		{
 			"hidden": true,
@@ -64,6 +70,26 @@
 			"cacheVariables": {
 				"VCPKG_CHAINLOAD_TOOLCHAIN_FILE": "${sourceDir}/cmake-toolchains/llvm-clang-macos.cmake",
 				"BUILD_SWIFT_LANGUAGE_PACKAGE": "ON"
+			},
+			"condition": {
+				"type": "equals",
+				"lhs": "${hostSystemName}",
+				"rhs": "Darwin"
+			},
+			"description": "Homebrew LLVM via cmake-toolchains/llvm-clang-macos.cmake, which keeps Apple's libc++ at runtime while compiling with LLVM's headers. macOS only. Set LLVM_PREFIX (cache or environment) to point at a different LLVM; the file falls back to the usual Homebrew prefixes for arm64 and Intel."
+		},
+		{
+			"hidden": true,
+			"name": "linux-gcc-presets",
+			"description": "GCC on Linux. The unprefixed dbg/rel/reldbg presets already use whatever CMake finds first; this pins gcc explicitly so a machine with both compilers is not a coin toss.",
+			"cacheVariables": {
+				"CMAKE_C_COMPILER": "gcc",
+				"CMAKE_CXX_COMPILER": "g++"
+			},
+			"condition": {
+				"type": "equals",
+				"lhs": "${hostSystemName}",
+				"rhs": "Linux"
 			}
 		},
 		{
@@ -220,6 +246,473 @@
 				"rel",
 				"windows-clang-cl-presets"
 			]
+		},
+		{
+			"name": "windows-clang-cl-reldbg",
+			"inherits": [
+				"reldbg",
+				"windows-clang-cl-presets"
+			]
+		},
+		{
+			"name": "linux-gcc-dbg",
+			"inherits": [
+				"dbg",
+				"linux-gcc-presets"
+			]
+		},
+		{
+			"name": "linux-gcc-rel",
+			"inherits": [
+				"rel",
+				"linux-gcc-presets"
+			]
+		},
+		{
+			"name": "linux-gcc-reldbg",
+			"inherits": [
+				"reldbg",
+				"linux-gcc-presets"
+			]
+		}
+	],
+	"buildPresets": [
+		{
+			"name": "dbg",
+			"configurePreset": "dbg"
+		},
+		{
+			"name": "rel",
+			"configurePreset": "rel"
+		},
+		{
+			"name": "rel-cxx",
+			"configurePreset": "rel-cxx"
+		},
+		{
+			"name": "reldbg",
+			"configurePreset": "reldbg"
+		},
+		{
+			"name": "apple-clang-dbg",
+			"configurePreset": "apple-clang-dbg",
+			"condition": {
+				"type": "equals",
+				"lhs": "${hostSystemName}",
+				"rhs": "Darwin"
+			}
+		},
+		{
+			"name": "apple-clang-rel",
+			"configurePreset": "apple-clang-rel",
+			"condition": {
+				"type": "equals",
+				"lhs": "${hostSystemName}",
+				"rhs": "Darwin"
+			}
+		},
+		{
+			"name": "apple-clang-reldbg",
+			"configurePreset": "apple-clang-reldbg",
+			"condition": {
+				"type": "equals",
+				"lhs": "${hostSystemName}",
+				"rhs": "Darwin"
+			}
+		},
+		{
+			"name": "llvm-clang-dbg",
+			"configurePreset": "llvm-clang-dbg",
+			"condition": {
+				"type": "equals",
+				"lhs": "${hostSystemName}",
+				"rhs": "Darwin"
+			}
+		},
+		{
+			"name": "llvm-clang-rel",
+			"configurePreset": "llvm-clang-rel",
+			"condition": {
+				"type": "equals",
+				"lhs": "${hostSystemName}",
+				"rhs": "Darwin"
+			}
+		},
+		{
+			"name": "llvm-clang-reldbg",
+			"configurePreset": "llvm-clang-reldbg",
+			"condition": {
+				"type": "equals",
+				"lhs": "${hostSystemName}",
+				"rhs": "Darwin"
+			}
+		},
+		{
+			"name": "windows-msvc-dbg",
+			"configurePreset": "windows-msvc-dbg",
+			"condition": {
+				"type": "equals",
+				"lhs": "${hostSystemName}",
+				"rhs": "Windows"
+			}
+		},
+		{
+			"name": "windows-msvc-rel",
+			"configurePreset": "windows-msvc-rel",
+			"condition": {
+				"type": "equals",
+				"lhs": "${hostSystemName}",
+				"rhs": "Windows"
+			}
+		},
+		{
+			"name": "windows-msvc-reldbg",
+			"configurePreset": "windows-msvc-reldbg",
+			"condition": {
+				"type": "equals",
+				"lhs": "${hostSystemName}",
+				"rhs": "Windows"
+			}
+		},
+		{
+			"name": "windows-clang-cl-dbg",
+			"configurePreset": "windows-clang-cl-dbg",
+			"condition": {
+				"type": "equals",
+				"lhs": "${hostSystemName}",
+				"rhs": "Windows"
+			}
+		},
+		{
+			"name": "windows-clang-cl-rel",
+			"configurePreset": "windows-clang-cl-rel",
+			"condition": {
+				"type": "equals",
+				"lhs": "${hostSystemName}",
+				"rhs": "Windows"
+			}
+		},
+		{
+			"name": "windows-clang-cl-reldbg",
+			"configurePreset": "windows-clang-cl-reldbg",
+			"condition": {
+				"type": "equals",
+				"lhs": "${hostSystemName}",
+				"rhs": "Windows"
+			}
+		},
+		{
+			"name": "linux-gcc-dbg",
+			"configurePreset": "linux-gcc-dbg",
+			"condition": {
+				"type": "equals",
+				"lhs": "${hostSystemName}",
+				"rhs": "Linux"
+			}
+		},
+		{
+			"name": "linux-gcc-rel",
+			"configurePreset": "linux-gcc-rel",
+			"condition": {
+				"type": "equals",
+				"lhs": "${hostSystemName}",
+				"rhs": "Linux"
+			}
+		},
+		{
+			"name": "linux-gcc-reldbg",
+			"configurePreset": "linux-gcc-reldbg",
+			"condition": {
+				"type": "equals",
+				"lhs": "${hostSystemName}",
+				"rhs": "Linux"
+			}
+		}
+	],
+	"testPresets": [
+		{
+			"name": "dbg",
+			"configurePreset": "dbg",
+			"output": {
+				"outputOnFailure": true
+			},
+			"execution": {
+				"noTestsAction": "error",
+				"stopOnFailure": false
+			}
+		},
+		{
+			"name": "rel",
+			"configurePreset": "rel",
+			"output": {
+				"outputOnFailure": true
+			},
+			"execution": {
+				"noTestsAction": "error",
+				"stopOnFailure": false
+			}
+		},
+		{
+			"name": "rel-cxx",
+			"configurePreset": "rel-cxx",
+			"output": {
+				"outputOnFailure": true
+			},
+			"execution": {
+				"noTestsAction": "error",
+				"stopOnFailure": false
+			}
+		},
+		{
+			"name": "reldbg",
+			"configurePreset": "reldbg",
+			"output": {
+				"outputOnFailure": true
+			},
+			"execution": {
+				"noTestsAction": "error",
+				"stopOnFailure": false
+			}
+		},
+		{
+			"name": "apple-clang-dbg",
+			"configurePreset": "apple-clang-dbg",
+			"output": {
+				"outputOnFailure": true
+			},
+			"execution": {
+				"noTestsAction": "error",
+				"stopOnFailure": false
+			},
+			"condition": {
+				"type": "equals",
+				"lhs": "${hostSystemName}",
+				"rhs": "Darwin"
+			}
+		},
+		{
+			"name": "apple-clang-rel",
+			"configurePreset": "apple-clang-rel",
+			"output": {
+				"outputOnFailure": true
+			},
+			"execution": {
+				"noTestsAction": "error",
+				"stopOnFailure": false
+			},
+			"condition": {
+				"type": "equals",
+				"lhs": "${hostSystemName}",
+				"rhs": "Darwin"
+			}
+		},
+		{
+			"name": "apple-clang-reldbg",
+			"configurePreset": "apple-clang-reldbg",
+			"output": {
+				"outputOnFailure": true
+			},
+			"execution": {
+				"noTestsAction": "error",
+				"stopOnFailure": false
+			},
+			"condition": {
+				"type": "equals",
+				"lhs": "${hostSystemName}",
+				"rhs": "Darwin"
+			}
+		},
+		{
+			"name": "llvm-clang-dbg",
+			"configurePreset": "llvm-clang-dbg",
+			"output": {
+				"outputOnFailure": true
+			},
+			"execution": {
+				"noTestsAction": "error",
+				"stopOnFailure": false
+			},
+			"condition": {
+				"type": "equals",
+				"lhs": "${hostSystemName}",
+				"rhs": "Darwin"
+			}
+		},
+		{
+			"name": "llvm-clang-rel",
+			"configurePreset": "llvm-clang-rel",
+			"output": {
+				"outputOnFailure": true
+			},
+			"execution": {
+				"noTestsAction": "error",
+				"stopOnFailure": false
+			},
+			"condition": {
+				"type": "equals",
+				"lhs": "${hostSystemName}",
+				"rhs": "Darwin"
+			}
+		},
+		{
+			"name": "llvm-clang-reldbg",
+			"configurePreset": "llvm-clang-reldbg",
+			"output": {
+				"outputOnFailure": true
+			},
+			"execution": {
+				"noTestsAction": "error",
+				"stopOnFailure": false
+			},
+			"condition": {
+				"type": "equals",
+				"lhs": "${hostSystemName}",
+				"rhs": "Darwin"
+			}
+		},
+		{
+			"name": "windows-msvc-dbg",
+			"configurePreset": "windows-msvc-dbg",
+			"output": {
+				"outputOnFailure": true
+			},
+			"execution": {
+				"noTestsAction": "error",
+				"stopOnFailure": false
+			},
+			"condition": {
+				"type": "equals",
+				"lhs": "${hostSystemName}",
+				"rhs": "Windows"
+			}
+		},
+		{
+			"name": "windows-msvc-rel",
+			"configurePreset": "windows-msvc-rel",
+			"output": {
+				"outputOnFailure": true
+			},
+			"execution": {
+				"noTestsAction": "error",
+				"stopOnFailure": false
+			},
+			"condition": {
+				"type": "equals",
+				"lhs": "${hostSystemName}",
+				"rhs": "Windows"
+			}
+		},
+		{
+			"name": "windows-msvc-reldbg",
+			"configurePreset": "windows-msvc-reldbg",
+			"output": {
+				"outputOnFailure": true
+			},
+			"execution": {
+				"noTestsAction": "error",
+				"stopOnFailure": false
+			},
+			"condition": {
+				"type": "equals",
+				"lhs": "${hostSystemName}",
+				"rhs": "Windows"
+			}
+		},
+		{
+			"name": "windows-clang-cl-dbg",
+			"configurePreset": "windows-clang-cl-dbg",
+			"output": {
+				"outputOnFailure": true
+			},
+			"execution": {
+				"noTestsAction": "error",
+				"stopOnFailure": false
+			},
+			"condition": {
+				"type": "equals",
+				"lhs": "${hostSystemName}",
+				"rhs": "Windows"
+			}
+		},
+		{
+			"name": "windows-clang-cl-rel",
+			"configurePreset": "windows-clang-cl-rel",
+			"output": {
+				"outputOnFailure": true
+			},
+			"execution": {
+				"noTestsAction": "error",
+				"stopOnFailure": false
+			},
+			"condition": {
+				"type": "equals",
+				"lhs": "${hostSystemName}",
+				"rhs": "Windows"
+			}
+		},
+		{
+			"name": "windows-clang-cl-reldbg",
+			"configurePreset": "windows-clang-cl-reldbg",
+			"output": {
+				"outputOnFailure": true
+			},
+			"execution": {
+				"noTestsAction": "error",
+				"stopOnFailure": false
+			},
+			"condition": {
+				"type": "equals",
+				"lhs": "${hostSystemName}",
+				"rhs": "Windows"
+			}
+		},
+		{
+			"name": "linux-gcc-dbg",
+			"configurePreset": "linux-gcc-dbg",
+			"output": {
+				"outputOnFailure": true
+			},
+			"execution": {
+				"noTestsAction": "error",
+				"stopOnFailure": false
+			},
+			"condition": {
+				"type": "equals",
+				"lhs": "${hostSystemName}",
+				"rhs": "Linux"
+			}
+		},
+		{
+			"name": "linux-gcc-rel",
+			"configurePreset": "linux-gcc-rel",
+			"output": {
+				"outputOnFailure": true
+			},
+			"execution": {
+				"noTestsAction": "error",
+				"stopOnFailure": false
+			},
+			"condition": {
+				"type": "equals",
+				"lhs": "${hostSystemName}",
+				"rhs": "Linux"
+			}
+		},
+		{
+			"name": "linux-gcc-reldbg",
+			"configurePreset": "linux-gcc-reldbg",
+			"output": {
+				"outputOnFailure": true
+			},
+			"execution": {
+				"noTestsAction": "error",
+				"stopOnFailure": false
+			},
+			"condition": {
+				"type": "equals",
+				"lhs": "${hostSystemName}",
+				"rhs": "Linux"
+			}
 		}
 	]
 }

@@ -163,13 +163,21 @@ python init_repository.py
 
 Choose a preset:
 
-| Preset | Platform / compiler |
-|--------|---------------------|
-| `rel` / `dbg` / `reldbg`             | Linux; system Clang/LLVM for the C/C++ indexer |
-| `rel-cxx`                            | as `rel`, but builds LLVM via vcpkg for the C/C++ indexer |
-| `apple-clang-rel` / `llvm-clang-rel` | macOS (also enables the Swift package) |
-| `windows-msvc-rel`                   | Windows, MSVC (`cl.exe`) |
-| `windows-clang-cl-rel`               | Windows, `clang-cl` |
+| Preset family | Platform / compiler |
+|---------------|---------------------|
+| `rel` / `dbg` / `reldbg`   | any platform, whichever compiler CMake finds first; system Clang/LLVM for the C/C++ indexer |
+| `linux-gcc-*`              | Linux, GCC pinned explicitly (`gcc`/`g++`) |
+| `apple-clang-*`            | macOS, Apple's clang from PATH (also enables the Swift package) |
+| `llvm-clang-*`             | macOS, Homebrew LLVM; set `LLVM_PREFIX` for an LLVM elsewhere |
+| `windows-msvc-*`           | Windows, MSVC (`cl.exe`) |
+| `windows-clang-cl-*`       | Windows, `clang-cl` |
+| `rel-cxx`                  | as `rel`, but builds LLVM via vcpkg for the C/C++ indexer |
+
+Every family has `-dbg`, `-rel` and `-reldbg`. Presets whose platform does not match are
+hidden: `cmake --list-presets` shows only what this machine can build, which is why the
+list is shorter than the table. Each configure preset has a matching build and test
+preset, so `cmake --build --preset rel` and `ctest --preset rel` work without naming a
+build directory.
 
 ### Compiler cache
 
