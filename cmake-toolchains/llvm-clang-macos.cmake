@@ -12,7 +12,31 @@
 # single consistent libc++ ABI.  vcpkg must also be built with this flag (via
 # this same chainload toolchain) so its archives match.
 
-set(LLVM_PREFIX "/opt/homebrew/opt/llvm")
+# Where that LLVM lives. Hardcoding one prefix made this file correct on exactly
+# one kind of machine -- Homebrew on Apple silicon -- and silently wrong on an
+# Intel mac, on a Nix or MacPorts LLVM, or on any checkout whose owner installed
+# it elsewhere. Set LLVM_PREFIX (as a cache variable or in the environment) to
+# override; otherwise the usual prefixes are tried in order.
+if(NOT LLVM_PREFIX)
+	if(DEFINED ENV{LLVM_PREFIX})
+		set(LLVM_PREFIX "$ENV{LLVM_PREFIX}")
+	else()
+		foreach(candidate "$ENV{HOMEBREW_PREFIX}/opt/llvm" "/opt/homebrew/opt/llvm"
+						  "/usr/local/opt/llvm" "/opt/local/libexec/llvm")
+			if(EXISTS "${candidate}/bin/clang++")
+				set(LLVM_PREFIX "${candidate}")
+				break()
+			endif()
+		endforeach()
+	endif()
+endif()
+
+if(NOT EXISTS "${LLVM_PREFIX}/bin/clang++")
+	message(FATAL_ERROR
+		"No LLVM clang++ found under LLVM_PREFIX='${LLVM_PREFIX}'. Install one (brew install llvm) "
+		"or set LLVM_PREFIX to the prefix of an existing LLVM. The apple-clang-* presets need none "
+		"of this if the system toolchain is enough.")
+endif()
 
 set(CMAKE_C_COMPILER   "${LLVM_PREFIX}/bin/clang"   CACHE FILEPATH "C compiler")
 set(CMAKE_CXX_COMPILER "${LLVM_PREFIX}/bin/clang++" CACHE FILEPATH "C++ compiler")
