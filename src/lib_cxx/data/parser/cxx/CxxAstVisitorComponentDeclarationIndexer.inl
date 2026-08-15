@@ -43,6 +43,7 @@ inline void CxxAstVisitorComponentDeclarationIndexer::visitTagDecl(clang::TagDec
 		m_index.recordDefinitionKind(symbolId, definitionKind);
 		m_index.recordDeprecation(symbolId, d);
 		m_index.recordExportStatus(symbolId, d);
+		m_index.recordSchemaBinding(symbolId, d);
 
 		if (clang::EnumDecl* enumDecl = clang::dyn_cast_or_null<clang::EnumDecl>(d))
 		{

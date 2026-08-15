@@ -105,6 +105,7 @@ public:
 	void recordDeprecation(Id symbolId, const clang::Decl* d);
 	void recordExportStatus(Id symbolId, const clang::Decl* d);
 	void recordForeignBinding(Id symbolId, const clang::NamedDecl* d);
+	void recordSchemaBinding(Id symbolId, const clang::NamedDecl* d);
 	void recordDeducedType(const clang::DeducedType* deducedType, Id contextSymbolId, const ParseLocation& keywordLocation);
 	void recordDeducedQualType(clang::QualType deducedQualType, Id contextSymbolId, const ParseLocation& keywordLocation);
 	void recordTemplateMemberSpecialization(

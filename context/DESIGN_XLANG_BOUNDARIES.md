@@ -1,9 +1,9 @@
 # Design: Cross-language boundaries — indexing and visualization
 
-**Status: X0, X1, X5 done; X2 done for C++/Rust/Zig (Swift outstanding); X4 first
-slice done (2026-08-15).** Remaining: the Swift producer, the schema-mediated
-species (X3), and the rest of the visualization — grouping, the boundary filter
-chip, the legend. Nothing here requires the analysis engines of
+**Status: X0, X1, X5 done; X2 done for C++/Rust/Zig; X3 done for C++/Rust; X4
+first slice done (2026-08-15).** Remaining: the Swift producers, Zig's schema
+mirrors, the IPC *channel* boundary (see X3 executed), and the rest of the
+visualization — grouping, the boundary filter chip, the legend. Nothing here requires the analysis engines of
 [ROADMAP_ANALYSIS_ENGINES.md](ROADMAP_ANALYSIS_ENGINES.md); the boundary is
 recorded by producers, not derived. The invariant is
 [ADR-0009](../docs/adr/ADR-0009-language-boundaries-are-edges.md).
@@ -251,10 +251,8 @@ lands alone, proven behaviour-preserving, before any feature rides on it.
   `SemanticIndexer.swift:120` so C symbols in a mixed target survive, and fixing
   the missing `INDEXER_COMMAND_ZIG` in `InterprocessIndexer.inl:104-108` (today a
   C++ subprocess can pop a Zig command and drop it).
-- **X3 — the schema species.** `NameDelimiterType::SCHEMA`; atoms minted from
-  FlatBuffers table names by the four generated-code producers. *Open: whether the
-  `.fbs` file should instead be indexed as a source group, making the atom a real
-  declaration with a definition rather than a synthetic node — see Open questions.*
+- **X3 — the schema species (the IPC boundary). ✅ DONE for C++ and Rust
+  (2026-08-15); Swift and Zig outstanding.** See *X3 executed* below.
 - **X4 — visualization. 🟡 first slice done (2026-08-15).** The mask reaches the
   graph (`Node::getLanguages`/`isLanguageBoundary`) and a boundary node is drawn
   with a heavy border in `graph/node/boundary/border`; the tooltip names the
@@ -360,6 +358,60 @@ and the active state. Verified in the running app rather than by reasoning about
 it: activating `abi:zig_add` renders the atom flanked by the Zig `export fn` and
 the C++ `extern "C"` declaration, joined by `EDGE_BINDS`, with the atom drawn in
 the boundary colour.
+
+## X3 executed (2026-08-15) — the IPC boundary, and the constant nobody links
+
+This is the species that matters most in this repository, because this
+repository *is* four languages talking over shared memory. Two things cross that
+boundary, and they are not the same shape.
+
+**The message types.** One FlatBuffers table becomes a mirror in every language,
+and nothing related them. The atom is keyed by **(schema file, type name)** —
+`schema:intermediate_storage.StorageEdge` — because that pair is the only
+spelling every backend agrees on: namespaces differ (C++ `Sourcetrail::Ipc`,
+Rust's lowercased modules, Swift's underscored flattening) but every backend
+writes `<base>_generated.<ext>` and keeps the table's own name. Generator
+suffixes (`T`, `Builder`, `Args`) fold onto the table name, so all of one
+language's mirrors reach one atom.
+
+Measured on this repository, indexing the C++ generated mirror together with the
+Rust indexer: **19 atoms carry `languages = 3`** — the actual wire surface
+between the app and the Rust indexer, and it names itself:
+
+```
+ATOM  schema:intermediate_storage.StorageEdge   langs=3
+  <- cxx  Sourcetrail::Ipc::StorageEdge
+  <- cxx  Sourcetrail::Ipc::StorageEdgeBuilder
+  <- rust schemas::intermediate_storage::…  (three mirrors)
+```
+
+`IndexerCommand`, `IndexerCommandQueue`, `IndexerCommandType`, `StorageNode`,
+`StorageFile`, `StorageEdge`, `NameTimestamp`, `GarbageCollectorStats` — that
+list *is* the IPC contract, and until now it existed only in a `.fbs` file and
+four generated trees.
+
+One implementation note worth keeping: in Rust the mirrors arrive through
+`include!(concat!(env!("OUT_DIR"), …))`, so they are macro-origin, and the first
+version of the producer missed every one of them by hooking only the ordinary
+path. Generated code is exactly the code that arrives by unusual routes.
+
+**The channel constants — not done, and the sharper problem.** The other half of
+an IPC boundary is the channel: which segment, written by whom, read by whom.
+The evidence that this is worth doing is already in the tree — `"srctrl_ipc_mem_"`
+and `"srctrl_ipc_mtx_"` are duplicated verbatim in **four** languages
+(`IpcSharedMemory.inl:70-71`, `shm.rs:18-19`, `shm.zig:12-13`,
+`IpcSharedMemoryRaw.swift:14-15`) with nothing relating them; change one and the
+IPC breaks silently, in a way no test in any single language would catch.
+
+Modelling it needs a decision this design has not taken. A channel has
+*direction* — a writer and a reader — which `EDGE_BINDS` deliberately does not
+carry, so it wants either `EDGE_SENDS`/`EDGE_RECEIVES` or a role on the atom.
+And detection is genuinely harder than linkage: a channel name is a string
+literal at a call site, so recognising one means either a project-declared prefix
+(configuration this design has otherwise avoided) or a derived cross-language
+pass over string literals, which belongs to
+[ROADMAP_ANALYSIS_ENGINES.md](ROADMAP_ANALYSIS_ENGINES.md) rather than to a
+producer. Left open on purpose.
 
 ## Verification
 

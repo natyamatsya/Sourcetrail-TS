@@ -382,6 +382,40 @@ fn serialize_abi_name(symbol: &str) -> String {
     out
 }
 
+/// Encode a schema-mediated contract atom: `"schema\tm<base>\ts\tp\tn<type>\ts\tp"`.
+/// Keyed by (schema file base, type name) because that is the only spelling every
+/// generator agrees on -- namespaces and suffixes differ per language backend.
+fn serialize_schema_name(schema_base: &str, type_name: &str) -> String {
+    let mut out = String::from("schema\tm");
+    out.push_str(schema_base);
+    out.push_str("\ts\tp\tn");
+    out.push_str(type_name);
+    out.push_str("\ts\tp");
+    out
+}
+
+/// The schema base of a generated mirror file, if it is one: every FlatBuffers
+/// backend writes `<base>_generated.<ext>`. A file that does not say it is
+/// generated holds somebody's hand-written type, which mirrors nothing.
+fn schema_base_of(path: &str) -> Option<String> {
+    let file = path.rsplit('/').next().unwrap_or(path);
+    let idx = file.find("_generated.")?;
+    (idx > 0).then(|| file[..idx].to_owned())
+}
+
+/// Fold a generator's suffixes onto the schema type's own name, so every mirror
+/// of one table reaches one atom (`StorageNodeT` and `StorageNode` alike).
+fn schema_type_name(name: &str) -> &str {
+    for suffix in ["Builder", "T"] {
+        if let Some(stripped) = name.strip_suffix(suffix) {
+            if !stripped.is_empty() {
+                return stripped;
+            }
+        }
+    }
+    name
+}
+
 /// Encode a file path into the `NameHierarchy` wire format using "/" delimiter:
 ///   `"/\tm" + path + "\ts\tp"`
 fn serialize_file_name(path: &str) -> String {
@@ -1481,10 +1515,15 @@ impl<'db> Collector<'db> {
             };
             self.add_def_kind(name, kind, vfs_fid, mapped, DEFINITION_IMPLICIT, modifiers);
             self.apply_item_attrs(name, &item_attrs);
+            // Generated mirrors arrive through `include!(concat!(env!("OUT_DIR"), ...))`,
+            // so they are macro-origin: the schema binding has to happen on this
+            // path too, against the file the expansion maps back to.
+            self.bind_if_schema_mirror(name, vfs_fid);
             return;
         }
         let vfs_fid = self.real_file_of(&in_file);
         self.add_def(name, kind, vfs_fid, range, modifiers);
+        self.bind_if_schema_mirror(name, vfs_fid);
         if full_range != range {
             self.add_scope_location(name, full_range, vfs_fid);
         }
@@ -1524,6 +1563,42 @@ impl<'db> Collector<'db> {
             };
             self.bind_to_abi_atom(node_id, &symbol);
         }
+    }
+
+    /// Bind a type declared in a generated mirror file to its schema atom -- the
+    /// IPC species: one FlatBuffers table, one mirror per language, related by
+    /// nothing until now. See context/DESIGN_XLANG_BOUNDARIES.md.
+    fn bind_if_schema_mirror(&mut self, name: &str, file_id: ra_ap_vfs::FileId) {
+        let Some(path) = self.vfs_path(file_id) else {
+            return;
+        };
+        let Some(schema_base) = schema_base_of(&path) else {
+            return;
+        };
+        let Some(&node_id) = self.node_ids.get(name) else {
+            return;
+        };
+        let type_name = schema_type_name(name.rsplit("::").next().unwrap_or(name)).to_owned();
+        if type_name.is_empty() {
+            return;
+        }
+        let serialized = serialize_schema_name(&schema_base, &type_name);
+        let atom_id = match self.abi_atom_ids.get(&serialized) {
+            Some(&id) => id,
+            None => {
+                let id = self.alloc_id();
+                self.storage.nodes.push(OwnedStorageNode {
+                    id,
+                    type_: NODE_SYMBOL,
+                    serialized_name: Some(serialized.clone()),
+                    modifiers: 0,
+                    language_mask: LANGUAGE_RUST,
+                });
+                self.abi_atom_ids.insert(serialized, id);
+                id
+            }
+        };
+        self.push_edge(EDGE_BINDS, node_id, atom_id);
     }
 
     /// Mint (or find) the contract atom for a C ABI symbol and record this

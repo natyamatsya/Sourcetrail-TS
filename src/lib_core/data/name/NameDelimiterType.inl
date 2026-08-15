@@ -14,6 +14,8 @@ inline std::string nameDelimiterTypeToString(NameDelimiterType delimiter)
 			return ":";
 		case NameDelimiterType::ABI:
 			return "abi";
+		case NameDelimiterType::SCHEMA:
+			return "schema";
 		default:
 			break;
 	}
@@ -37,6 +39,10 @@ inline NameDelimiterType stringToNameDelimiterType(const std::string& s)
 	if (s == nameDelimiterTypeToString(NameDelimiterType::ABI))
 	{
 		return NameDelimiterType::ABI;
+	}
+	if (s == nameDelimiterTypeToString(NameDelimiterType::SCHEMA))
+	{
+		return NameDelimiterType::SCHEMA;
 	}
 	return NameDelimiterType::UNKNOWN;
 }

@@ -20,7 +20,12 @@ SRCTRL_EXPORT enum class NameDelimiterType
 	// can never be spelled with it, which is what lets two producers emit the
 	// same atom name and have the existing serialized-name merge join them on
 	// purpose. See context/DESIGN_XLANG_BOUNDARIES.md.
-	ABI
+	ABI,
+	// The reserved namespace for schema-mediated contract atoms: one declaration
+	// in an interface schema (a FlatBuffers table) that a generator mirrors into
+	// several languages. Keyed by (schema file, type), which is the only spelling
+	// every generator agrees on -- namespaces and suffixes differ per language.
+	SCHEMA
 };
 
 SRCTRL_EXPORT std::string nameDelimiterTypeToString(NameDelimiterType delimiter);

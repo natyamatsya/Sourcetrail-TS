@@ -275,6 +275,65 @@ inline void CxxIndexingContext::recordForeignBinding(Id symbolId, const clang::N
 		ReferenceKind::BINDS, atomId, symbolId, m_locations.getParseLocation(d->getLocation()));
 }
 
+inline void CxxIndexingContext::recordSchemaBinding(Id symbolId, const clang::NamedDecl* d)
+{
+	// The IPC species: a type that a code generator mirrored from an interface
+	// schema. The four languages in this repository each carry their own
+	// `StorageNode` generated from one FlatBuffers table, and nothing in the
+	// graph relates them.
+	//
+	// The key is (schema file, type name), because it is the only spelling every
+	// generator agrees on: namespaces differ (C++ `Sourcetrail::Ipc`, Swift's
+	// underscored flattening, Rust's lowercased modules) but every generator
+	// writes `<schema>_generated.<ext>` and keeps the table's own name. The
+	// atom is therefore `schema:intermediate_storage.StorageNode`, reachable
+	// from any language that mirrors that table.
+	if (!d)
+	{
+		return;
+	}
+
+	const clang::SourceManager& sourceManager = m_astContext.getSourceManager();
+	const std::string fileName =
+		FilePath(sourceManager.getFilename(d->getLocation()).str()).fileName();
+
+	// `<base>_generated.<ext>` is flatc's convention in every language backend,
+	// and flatcc's for C. A file that does not say it is generated is somebody's
+	// hand-written type, which is not a mirror of anything.
+	const std::string marker = "_generated.";
+	const std::string::size_type markerPos = fileName.find(marker);
+	if (markerPos == std::string::npos || markerPos == 0)
+	{
+		return;
+	}
+	const std::string schemaBase = fileName.substr(0, markerPos);
+
+	// One table yields several C++ types -- `StorageNode`, `StorageNodeBuilder`,
+	// `StorageNodeT` -- and the other backends add their own suffixes. Fold them
+	// onto the table's name so every mirror of one table reaches one atom.
+	std::string typeName = d->getNameAsString();
+	for (const std::string& suffix: {std::string("Builder"), std::string("T")})
+	{
+		if (typeName.size() > suffix.size() &&
+			typeName.compare(typeName.size() - suffix.size(), suffix.size(), suffix) == 0)
+		{
+			typeName = typeName.substr(0, typeName.size() - suffix.size());
+		}
+	}
+	if (typeName.empty())
+	{
+		return;
+	}
+
+	NameHierarchy atom(NameDelimiterType::SCHEMA);
+	atom.push(schemaBase);
+	atom.push(typeName);
+
+	const Id atomId = m_client.recordSymbol(atom);
+	m_client.recordReference(
+		ReferenceKind::BINDS, atomId, symbolId, m_locations.getParseLocation(d->getLocation()));
+}
+
 inline void CxxIndexingContext::recordDeducedType(
 	const clang::DeducedType* deducedType, Id contextSymbolId, const ParseLocation& keywordLocation)
 {
