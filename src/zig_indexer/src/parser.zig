@@ -41,6 +41,11 @@ const DeclClass = struct {
     container: ?Ast.full.ContainerDecl = null,
     /// True when the declaration carries `pub` (fn/var). Fields have no `pub`.
     is_pub: bool = false,
+    /// The C ABI symbol this declaration is reachable under, when it says so
+    /// with `export` (defines the symbol) or `extern` (declares somebody
+    /// else's). Both are the source stating a linkage name, which is the only
+    /// thing another language can bind to; a plain `fn` is not a boundary.
+    abi_symbol: ?[]const u8 = null,
 };
 
 /// Join a dotted scope path: `"" + "x" -> "x"`, `"Outer" + "x" -> "Outer.x"`.
@@ -96,7 +101,23 @@ fn classifyDecl(
 ) ?DeclClass {
     if (tree.fullFnProto(buf[0..1], node)) |proto| {
         const name_token = proto.name_token orelse return null;
-        return .{ .name_token = name_token, .kind = if (in_container) .method else .function, .is_pub = proto.visib_token != null };
+        // `extern`/`export`/`inline` share one token slot in the AST; only the
+        // first two are linkage. `inline` is not a boundary.
+        var abi_symbol: ?[]const u8 = null;
+        if (proto.extern_export_inline_token) |tok| {
+            const keyword = tree.tokenSlice(tok);
+            if (std.mem.eql(u8, keyword, "export") or std.mem.eql(u8, keyword, "extern")) {
+                // `extern "c" fn foo` may name a library, never the symbol; the
+                // symbol is the declaration's own name in both forms.
+                abi_symbol = tree.tokenSlice(name_token);
+            }
+        }
+        return .{
+            .name_token = name_token,
+            .kind = if (in_container) .method else .function,
+            .is_pub = proto.visib_token != null,
+            .abi_symbol = abi_symbol,
+        };
     }
     if (tree.fullVarDecl(node)) |var_decl| {
         const name_token = var_decl.ast.mut_token + 1;
@@ -235,6 +256,7 @@ const Walker = struct {
         const id = try self.recordDef(cls.kind, serialized, cls.name_token, node);
         // Visibility: `pub` -> public, otherwise file-private -> default.
         try self.store.recordComponentAccess(id, if (cls.is_pub) .public else .default);
+        if (cls.abi_symbol) |symbol| try self.store.recordAbiBinding(id, symbol);
         // A `///` doc comment's first line becomes the node's doc_brief attribute.
         // Zig has no `@deprecated`; the ecosystem convention is a doc comment
         // beginning `Deprecated:` — surface that as the deprecated modifier +

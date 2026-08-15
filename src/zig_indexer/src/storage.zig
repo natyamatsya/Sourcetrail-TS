@@ -57,6 +57,10 @@ pub const EdgeType = enum(i32) {
     bundled_edges = 1 << 10,
     macro_usage = 1 << 11,
     annotation_usage = 1 << 12,
+    // A declaration binding to a contract atom -- the node standing for the C
+    // ABI symbol two languages agree about. Always declaration -> atom.
+    // See context/DESIGN_XLANG_BOUNDARIES.md.
+    binds = 1 << 13,
 };
 
 /// LocationType — src/lib/data/location/LocationType.h.
@@ -336,6 +340,22 @@ pub const Storage = struct {
     }
 
     /// Record a component_access (visibility) for a node — one per node.
+    /// Mint (or find) the contract atom for a C ABI symbol and bind `decl_id` to
+    /// it. The atom lives in the reserved "abi" namespace, so the C++ and Rust
+    /// indexers emitting the same symbol land on this very node through the
+    /// serialized-name merge -- deliberately, in a namespace only atoms occupy.
+    ///
+    /// Note the atom name carries no file-path prefix, unlike every other name
+    /// this indexer emits: the prefix exists to keep Zig symbols from colliding,
+    /// and an atom must collide -- with the other language's atom -- to work.
+    pub fn recordAbiBinding(self: *Storage, decl_id: Id, symbol: []const u8) !void {
+        const serialized = try serializeName(self.arena.allocator(), "abi", &.{symbol});
+        // recordNode dedups by serialized name, which is exactly the join we want
+        // here: every declaration exporting this symbol reaches the same atom.
+        const atom_id = try self.recordNode(.symbol, serialized, null);
+        _ = try self.recordEdge(.binds, decl_id, atom_id);
+    }
+
     pub fn recordComponentAccess(self: *Storage, node_id: Id, access: AccessKind) !void {
         const a = self.alloc();
         if ((try self.component_access_by_node.getOrPut(a, node_id)).found_existing) return;
