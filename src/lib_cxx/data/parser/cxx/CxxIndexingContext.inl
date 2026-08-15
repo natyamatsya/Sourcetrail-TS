@@ -230,6 +230,51 @@ inline void CxxIndexingContext::recordExportStatus(Id symbolId, const clang::Dec
 	}
 }
 
+inline void CxxIndexingContext::recordForeignBinding(Id symbolId, const clang::NamedDecl* d)
+{
+	// C language linkage is the declaration saying, in the source, that it means
+	// to be reachable under a plain symbol name -- which is the only thing another
+	// language can bind to. Anything else (a mangled C++ name, a static function)
+	// is not a boundary, and guessing one from a name that merely looks foreign is
+	// exactly what this must not do.
+	//
+	// The atom is minted in the reserved ABI namespace, so two producers naming the
+	// same ABI symbol land on one node through the ordinary serialized-name merge:
+	// no resolver, and no risk of colliding with a real declaration. It is left
+	// with no definition kind on purpose -- nobody defines an ABI symbol, they
+	// declare against it (the DefinitionKind::NONE convention for referenced-but-
+	// undefined symbols). See context/DESIGN_XLANG_BOUNDARIES.md.
+	// `isExternC` is a property of the declarations that can actually have C
+	// linkage -- functions and variables -- not of NamedDecl, so ask whichever
+	// this is. Taking NamedDecl keeps the hook usable from every visit site.
+	bool externC = false;
+	if (const auto* fn = clang::dyn_cast_or_null<clang::FunctionDecl>(d))
+	{
+		externC = fn->isExternC();
+	}
+	else if (const auto* var = clang::dyn_cast_or_null<clang::VarDecl>(d))
+	{
+		externC = var->isExternC();
+	}
+	if (!externC)
+	{
+		return;
+	}
+
+	const std::string symbolName = d->getNameAsString();
+	if (symbolName.empty())
+	{
+		return;
+	}
+
+	NameHierarchy atom(NameDelimiterType::ABI);
+	atom.push(symbolName);
+
+	const Id atomId = m_client.recordSymbol(atom);
+	m_client.recordReference(
+		ReferenceKind::BINDS, atomId, symbolId, m_locations.getParseLocation(d->getLocation()));
+}
+
 inline void CxxIndexingContext::recordDeducedType(
 	const clang::DeducedType* deducedType, Id contextSymbolId, const ParseLocation& keywordLocation)
 {

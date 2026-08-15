@@ -13,7 +13,14 @@ SRCTRL_EXPORT enum class NameDelimiterType
 	UNKNOWN,
 	FILE,
 	CXX,
-	CXX_MODULE
+	CXX_MODULE,
+	// The reserved namespace for contract atoms -- the nodes that stand for a
+	// thing two languages agree about (a C ABI symbol) rather than for a
+	// declaration in anybody's source. Reserved so that an ordinary declaration
+	// can never be spelled with it, which is what lets two producers emit the
+	// same atom name and have the existing serialized-name merge join them on
+	// purpose. See context/DESIGN_XLANG_BOUNDARIES.md.
+	ABI
 };
 
 SRCTRL_EXPORT std::string nameDelimiterTypeToString(NameDelimiterType delimiter);

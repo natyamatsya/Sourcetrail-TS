@@ -24,7 +24,9 @@ SRCTRL_EXPORT enum class ReferenceKind
 	INCLUDE = 8,
 	IMPORT = 9,
 	MACRO_USAGE = 10,
-	ANNOTATION_USAGE = 11
+	ANNOTATION_USAGE = 11,
+	// A declaration binding to a contract atom (EDGE_BINDS).
+	BINDS = 12
 };
 
 // An explicit specialization of the imported `intToEnum` template (declared+defined inline in the

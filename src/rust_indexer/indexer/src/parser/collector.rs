@@ -22,10 +22,11 @@ use crate::ipc::storage::{
 use super::{
     DEFINITION_EXPLICIT, DEFINITION_IMPLICIT, DEFINITION_NONE, EDGE_CALL, EDGE_IMPORT,
     EDGE_INHERITANCE, EDGE_MACRO_USAGE, EDGE_MEMBER, EDGE_OVERRIDE, EDGE_TEMPLATE_SPECIALIZATION,
-    EDGE_TYPE_ARGUMENT, EDGE_TYPE_USAGE, EDGE_USAGE, LANGUAGE_RUST, LOCATION_LOCAL_SYMBOL, LOCATION_SCOPE,
+    EDGE_BINDS, EDGE_TYPE_ARGUMENT, EDGE_TYPE_USAGE, EDGE_USAGE, LANGUAGE_RUST, LOCATION_LOCAL_SYMBOL,
+    LOCATION_SCOPE,
     LOCATION_TOKEN, NODE_ATTRIBUTE_CFG, NODE_ATTRIBUTE_DEPRECATED, NODE_ENUM, NODE_ENUM_CONSTANT,
     NODE_FIELD, NODE_FILE, NODE_FUNCTION, NODE_GLOBAL_VARIABLE, NODE_INTERFACE, NODE_MACRO,
-    NODE_METHOD, NODE_MODIFIER_DEPRECATED, NODE_MODULE, NODE_STRUCT, NODE_TYPE_PARAMETER,
+    NODE_METHOD, NODE_MODIFIER_DEPRECATED, NODE_MODULE, NODE_STRUCT, NODE_SYMBOL, NODE_TYPE_PARAMETER,
     NODE_TYPEDEF, NODE_UNION, SpecializationScope,
 };
 
@@ -110,6 +111,20 @@ struct ItemAttrs {
     /// `all(unix, feature = "serde")`. Only present on items that *survived*
     /// cfg-stripping — the guard held — which is exactly the display case.
     cfg: Option<String>,
+    /// The C ABI symbol this item is exported under, if it is: `#[no_mangle]`
+    /// (the symbol is the item's own name) or `#[export_name = "..."]` (the
+    /// symbol is spelled out). A plain `extern "C" fn` is NOT enough — without
+    /// one of these the symbol is still mangled and nothing can bind to it, so
+    /// minting an atom for it would be inventing a boundary.
+    abi_symbol: Option<AbiExport>,
+}
+
+/// How an item's C ABI symbol is spelled.
+enum AbiExport {
+    /// `#[no_mangle]`: the symbol is the item's own name.
+    ItemName,
+    /// `#[export_name = "sym"]`: the symbol is given.
+    Explicit(String),
 }
 
 /// Scan an item node's outer attributes for the metadata the storage models.
@@ -120,11 +135,24 @@ fn scan_item_attrs(node: &ra_ap_syntax::SyntaxNode) -> ItemAttrs {
     let mut out = ItemAttrs {
         deprecated: None,
         cfg: None,
+        abi_symbol: None,
     };
     for attr in node.children().filter_map(ast::Attr::cast) {
         match attr.simple_name().as_deref() {
             Some("deprecated") => out.deprecated = Some(deprecation_note(&attr)),
             Some("cfg") => out.cfg = cfg_predicate(&attr),
+            // `#[export_name]` wins: it names the symbol outright, and an item
+            // carrying both is exported under the explicit name.
+            Some("no_mangle") => {
+                if out.abi_symbol.is_none() {
+                    out.abi_symbol = Some(AbiExport::ItemName);
+                }
+            }
+            Some("export_name") => {
+                if let Some(sym) = attr_string_value(&attr) {
+                    out.abi_symbol = Some(AbiExport::Explicit(sym));
+                }
+            }
             _ => {}
         }
     }
@@ -142,6 +170,18 @@ fn deprecation_note(attr: &ast::Attr) -> Option<String> {
             text.starts_with('"').then(|| string_token_value(&text))
         }
         ast::Meta::TokenTreeMeta(tt) => note_from_token_tree(&tt.token_tree()?),
+        _ => None,
+    }
+}
+
+/// The string literal of a simple `#[key = "value"]` attribute, e.g.
+/// `#[export_name = "tsq_open"]`.
+fn attr_string_value(attr: &ast::Attr) -> Option<String> {
+    match attr.meta()? {
+        ast::Meta::KeyValueMeta(kv) => {
+            let text = kv.expr()?.syntax().text().to_string();
+            text.starts_with('"').then(|| string_token_value(&text))
+        }
         _ => None,
     }
 }
@@ -285,6 +325,10 @@ struct Collector<'db> {
     file_infos: HashMap<ra_ap_vfs::FileId, Option<FileInfo>>,
     /// plain qualified name → node id (fallback edge resolution)
     node_ids: HashMap<String, i64>,
+    /// serialized `abi` atom name → node id, so every declaration exporting the
+    /// same C ABI symbol binds to one atom within this crate's storage (across
+    /// crates and languages the serialized-name merge does the joining).
+    abi_atom_ids: HashMap<String, i64>,
     /// HIR definition identity → node id (exact edge resolution)
     def_ids: HashMap<DefKey, i64>,
     /// local source files, in discovery order, for the semantic reference pass
@@ -323,6 +367,21 @@ fn serialize_name(qualified: &str) -> String {
     out
 }
 
+/// Encode a C ABI symbol into the `NameHierarchy` wire format, in the reserved
+/// "abi" namespace: `"abi\tm" + symbol + "\ts\tp"`. Reserved means no ordinary
+/// declaration can be spelled this way, so when the C++ indexer emits the same
+/// ABI symbol the two land on one node through the existing serialized-name
+/// merge -- which is how a boundary resolves with no resolver at all.
+fn serialize_abi_name(symbol: &str) -> String {
+    let mut out = String::from("abi\tm");
+    out.push_str(symbol);
+    out.push('\t');
+    out.push('s');
+    out.push('\t');
+    out.push('p');
+    out
+}
+
 /// Encode a file path into the `NameHierarchy` wire format using "/" delimiter:
 ///   `"/\tm" + path + "\ts\tp"`
 fn serialize_file_name(path: &str) -> String {
@@ -348,6 +407,7 @@ impl<'db> Collector<'db> {
             file_ids: HashMap::new(),
             file_infos: HashMap::new(),
             node_ids: HashMap::new(),
+            abi_atom_ids: HashMap::new(),
             def_ids: HashMap::new(),
             local_files: Vec::new(),
             local_files_seen: HashSet::new(),
@@ -1457,6 +1517,41 @@ impl<'db> Collector<'db> {
                 value: Some(cfg.clone()),
             });
         }
+        if let Some(abi) = &attrs.abi_symbol {
+            let symbol = match abi {
+                AbiExport::ItemName => name.rsplit("::").next().unwrap_or(name).to_owned(),
+                AbiExport::Explicit(sym) => sym.clone(),
+            };
+            self.bind_to_abi_atom(node_id, &symbol);
+        }
+    }
+
+    /// Mint (or find) the contract atom for a C ABI symbol and record this
+    /// declaration as binding to it.
+    ///
+    /// The atom is a node in the reserved `abi` namespace with no definition
+    /// row: nobody *defines* an ABI symbol, they declare against it, which is
+    /// the existing treatment for referenced-but-undefined symbols. The edge
+    /// runs declaration -> atom, the same direction every producer uses, so an
+    /// atom's incoming edges answer "who implements this".
+    fn bind_to_abi_atom(&mut self, decl_node_id: i64, symbol: &str) {
+        let serialized = serialize_abi_name(symbol);
+        let atom_id = match self.abi_atom_ids.get(&serialized) {
+            Some(&id) => id,
+            None => {
+                let id = self.alloc_id();
+                self.storage.nodes.push(OwnedStorageNode {
+                    id,
+                    type_: NODE_SYMBOL,
+                    serialized_name: Some(serialized.clone()),
+                    modifiers: 0,
+                    language_mask: LANGUAGE_RUST,
+                });
+                self.abi_atom_ids.insert(serialized, id);
+                id
+            }
+        };
+        self.push_edge(EDGE_BINDS, decl_node_id, atom_id);
     }
 
     /// Record a SCOPE location for the already-emitted node `name`.

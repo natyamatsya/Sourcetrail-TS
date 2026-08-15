@@ -90,6 +90,8 @@ inline Edge::EdgeType referenceKindToEdgeType(ReferenceKind referenceKind)
 			return Edge::EDGE_MACRO_USAGE;
 		case ReferenceKind::ANNOTATION_USAGE:
 			return Edge::EDGE_ANNOTATION_USAGE;
+		case ReferenceKind::BINDS:
+			return Edge::EDGE_BINDS;
 		default:
 			break;
 	}

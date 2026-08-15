@@ -39,8 +39,14 @@ public:
 		EDGE_BUNDLED_EDGES = 1 << 10,
 		EDGE_MACRO_USAGE = 1 << 11,
 		EDGE_ANNOTATION_USAGE = 1 << 12,
+		// A declaration binds to a contract atom: "this Rust `#[no_mangle] extern
+		// \"C\"` function and that C++ `extern \"C\"` declaration are the same
+		// runtime entity". Always points declaration -> atom, from every producer,
+		// so that "who implements this" is the atom's incoming edges. See
+		// context/DESIGN_XLANG_BOUNDARIES.md.
+		EDGE_BINDS = 1 << 13,
 	};
-	static constexpr EdgeType EDGE_TYPE_MAX_VALUE = EDGE_ANNOTATION_USAGE;
+	static constexpr EdgeType EDGE_TYPE_MAX_VALUE = EDGE_BINDS;
 
 
 	static const TypeMask LAYOUT_VERTICAL = EDGE_INHERITANCE | EDGE_OVERRIDE |

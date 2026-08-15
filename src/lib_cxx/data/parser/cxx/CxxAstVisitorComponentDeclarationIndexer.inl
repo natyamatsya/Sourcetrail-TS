@@ -251,6 +251,7 @@ inline void CxxAstVisitorComponentDeclarationIndexer::visitFunctionDecl(clang::F
 		m_index.recordDefinitionKind(symbolId, utility::getDefinitionKind(d));
 		m_index.recordDeprecation(symbolId, d);
 		m_index.recordExportStatus(symbolId, d);
+		m_index.recordForeignBinding(symbolId, d);
 
 		if (d->isFirstDecl())
 		{

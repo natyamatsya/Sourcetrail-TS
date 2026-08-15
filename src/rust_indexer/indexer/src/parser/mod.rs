@@ -53,6 +53,9 @@ use crate::ipc::storage::{OwnedIntermediateStorage, OwnedStorageError, OwnedStor
 
 const NODE_FILE: i32 = 1 << 18;
 const NODE_MODULE: i32 = 1 << 3;
+// The generic symbol kind, used for contract atoms: an ABI symbol is not a
+// function or a struct, it is the name the linker agrees on.
+pub const NODE_SYMBOL: i32 = 1 << 0;
 const NODE_STRUCT: i32 = 1 << 6;
 const NODE_INTERFACE: i32 = 1 << 8;
 const NODE_FIELD: i32 = 1 << 11;
@@ -69,6 +72,11 @@ const NODE_UNION: i32 = 1 << 20;
 const DEFINITION_NONE: i32 = 0;
 const DEFINITION_IMPLICIT: i32 = 1;
 const DEFINITION_EXPLICIT: i32 = 2;
+
+// EDGE_BINDS (src/lib_core/data/graph/Edge.h): a declaration binding to a
+// contract atom -- the node standing for the C ABI symbol two languages agree
+// about. Always declaration -> atom. See context/DESIGN_XLANG_BOUNDARIES.md.
+pub const EDGE_BINDS: i32 = 1 << 13;
 
 // LanguageMask bit (src/lib_core/data/parser/LanguageMask.h). Every node this
 // indexer records carries it, so the merge can OR together the bits of every
