@@ -644,6 +644,7 @@ mod chunk_tests {
             type_: 1 << 18,
             serialized_name: Some("/\tm/tmp/f.rs\ts\tp".to_owned()),
             modifiers: 0,
+            language_mask: 1 << 1,  // LANGUAGE_RUST
         });
         s.files.push(OwnedStorageFile {
             id: 1,
@@ -662,6 +663,7 @@ mod chunk_tests {
                 type_: 64,
                 serialized_name: Some(format!("n{i}_{}", "x".repeat(name_len))),
                 modifiers: 0,
+                language_mask: 1 << 1,  // LANGUAGE_RUST
             });
             s.symbols.push(OwnedStorageSymbol {
                 id,

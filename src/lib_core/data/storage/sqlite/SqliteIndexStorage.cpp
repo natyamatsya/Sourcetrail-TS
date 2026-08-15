@@ -42,7 +42,7 @@ import srctrl.utility;
 #endif
 
 
-const size_t SqliteIndexStorage::s_storageVersion = 27;
+const size_t SqliteIndexStorage::s_storageVersion = 28;
 
 namespace
 {
@@ -116,7 +116,8 @@ constexpr auto nodeFromRow = [](const auto& row) -> std::optional<StorageNode> {
 	if (id != 0 && type != -1)
 	{
 		return StorageNode(id, intToEnum<NodeKind>(type), fieldText(row.serializedName),
-			static_cast<NodeModifierMask>(row.modifiers));
+			static_cast<NodeModifierMask>(row.modifiers),
+			static_cast<LanguageMask>(row.languages));
 	}
 	return std::nullopt;
 };
@@ -332,6 +333,7 @@ void SqliteIndexStorage::setMode(const StorageModeType mode)
 	m_tempWNodeNameIndex.clear();
 	m_tempNodeTypes.clear();
 	m_tempNodeModifiers.clear();
+	m_tempNodeLanguages.clear();
 	m_tempEdgeIndex.clear();
 	m_tempLocalSymbolIndex.clear();
 	m_tempSourceLocationIndices.clear();
@@ -415,6 +417,10 @@ std::vector<Id> SqliteIndexStorage::addNodes(const std::vector<StorageNode>& nod
 			{
 				m_tempNodeModifiers.emplace(node.id, node.modifiers);
 			}
+			if (node.languages != 0)
+			{
+				m_tempNodeLanguages.emplace(node.id, node.languages);
+			}
 		});
 	}
 
@@ -459,6 +465,21 @@ std::vector<Id> SqliteIndexStorage::addNodes(const std::vector<StorageNode>& nod
 					}
 				}
 
+				// Merge languages by OR, for the same reason as the modifiers above and
+				// one more: a node recorded by two languages is the fact this column
+				// exists to keep. Overwriting would let whichever indexer ran first
+				// decide, which is how the boundary went missing before.
+				if (data.languages != 0)
+				{
+					const int previous = m_tempNodeLanguages[nodeId];
+					const int merged = previous | static_cast<int>(data.languages);
+					if (merged != previous)
+					{
+						setNodeLanguages(merged, nodeId);
+						m_tempNodeLanguages[nodeId] = merged;
+					}
+				}
+
 				nodeIds[i] = nodeId;
 			}
 			else
@@ -481,6 +502,10 @@ std::vector<Id> SqliteIndexStorage::addNodes(const std::vector<StorageNode>& nod
 				{
 					m_tempNodeModifiers.emplace(id, static_cast<int>(data.modifiers));
 				}
+				if (data.languages != 0)
+				{
+					m_tempNodeLanguages.emplace(id, static_cast<int>(data.languages));
+				}
 			}
 		}
 	}
@@ -491,13 +516,14 @@ std::vector<Id> SqliteIndexStorage::addNodes(const std::vector<StorageNode>& nod
 		insertInChunks(
 			db(),
 			nodesToInsert,
-			[] { return insert_into(nodeTable).columns(nodeTable.id, nodeTable.type, nodeTable.serializedName, nodeTable.modifiers); },
+			[] { return insert_into(nodeTable).columns(nodeTable.id, nodeTable.type, nodeTable.serializedName, nodeTable.modifiers, nodeTable.languages); },
 			[](auto& insert, const StorageNode& node) {
 				insert.add_values(
 					nodeTable.id = static_cast<Id::type>(node.id),
 					nodeTable.type = static_cast<int>(node.type),
 					nodeTable.serializedName = node.serializedName,
-					nodeTable.modifiers = static_cast<int>(node.modifiers));
+					nodeTable.modifiers = static_cast<int>(node.modifiers),
+					nodeTable.languages = static_cast<int>(node.languages));
 			});
 	}
 
@@ -1723,6 +1749,21 @@ void SqliteIndexStorage::setNodeModifiers(int modifiers, Id nodeId)
 	}
 }
 
+void SqliteIndexStorage::setNodeLanguages(int languages, Id nodeId)
+{
+	using namespace sqlpp;
+	try
+	{
+		db()(update(nodeTable)
+				 .set(nodeTable.languages = languages)
+				 .where(nodeTable.id == static_cast<Id::type>(nodeId)));
+	}
+	catch (const std::exception& e)
+	{
+		LOG_ERROR(e.what());
+	}
+}
+
 namespace
 {
 // Shared implementation of the three source-location-per-file getters; the
@@ -2277,6 +2318,7 @@ void SqliteIndexStorage::setupTables()
 			"type INTEGER NOT NULL, "
 			"serialized_name TEXT, "
 			"modifiers INTEGER NOT NULL DEFAULT 0, "
+			"languages INTEGER NOT NULL DEFAULT 0, "
 			"PRIMARY KEY(id), "
 			"FOREIGN KEY(id) REFERENCES element(id) ON DELETE CASCADE);");
 

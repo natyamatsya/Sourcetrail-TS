@@ -16,6 +16,10 @@ table StorageNode {
     type:            int32;  // NodeKind bitmask
     serialized_name: string;
     modifiers:       int32;  // NodeModifier bitmask (0 = none); e.g. actor
+    // Which languages recorded this node (LanguageMask; 0 = unstated). OR-merged
+    // across producers, so more than one bit means more than one language named
+    // it -- see context/DESIGN_XLANG_BOUNDARIES.md. Appended, never renumbered.
+    language_mask:   int32;
 }
 
 table StorageFile {

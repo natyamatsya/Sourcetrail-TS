@@ -6,6 +6,7 @@
 #ifndef SRCTRL_MODULE_PURVIEW
 #include "DefinitionKind.h"
 #include "IntermediateStorage.h"
+#include "LanguageMask.h"
 #include "LocationType.h"
 #include "ParserClient.h"
 
@@ -15,7 +16,10 @@
 SRCTRL_EXPORT class ParserClientImpl: public ParserClient
 {
 public:
-	ParserClientImpl(std::shared_ptr<IntermediateStorage> storage);
+	// `languages` is the bit of the indexer driving this client; every node it
+	// mints is stamped with it. Defaulted for tests and for the fixture-style
+	// callers that record symbols without an indexer behind them.
+	ParserClientImpl(std::shared_ptr<IntermediateStorage> storage, LanguageMask languages = LANGUAGE_NONE);
 
 	Id recordFile(const FilePath& filePath, bool indexed) override;
 	void recordFileLanguage(Id fileId, const std::string& languageIdentifier) override;
@@ -56,6 +60,7 @@ private:
 	void addSourceLocation(Id elementId, const ParseLocation& location, LocationType type);
 
 	std::shared_ptr<IntermediateStorage> m_storage;
+	LanguageMask m_languages;
 	std::map<std::string, Id> m_fileIdMap;
 };
 

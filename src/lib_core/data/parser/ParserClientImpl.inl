@@ -116,7 +116,10 @@ inline LocationType parseLocationTypeToLocationType(ParseLocationType type)
 
 }	 // namespace parser_client_impl_detail
 
-inline ParserClientImpl::ParserClientImpl(std::shared_ptr<IntermediateStorage> storage): m_storage(storage) {}
+inline ParserClientImpl::ParserClientImpl(std::shared_ptr<IntermediateStorage> storage, LanguageMask languages)
+	: m_storage(storage), m_languages(languages)
+{
+}
 
 inline Id ParserClientImpl::recordFile(const FilePath& filePath, bool indexed)
 {
@@ -238,8 +241,11 @@ inline Id ParserClientImpl::addNodeHierarchy(const NameHierarchy& nameHierarchy)
 	Id firstNodeId = 0;
 	for (size_t i = nameHierarchy.size(); i > 0; i--)
 	{
-		std::pair<Id, bool> ret = m_storage->addNode(StorageNodeData(NODE_SYMBOL, 
-			NameHierarchy::serializeRange(nameHierarchy, 0, i)));
+		// Every node this client mints carries the language of the indexer that
+		// owns the client — including the ancestor scope nodes, which have no
+		// declaration of their own but do belong to whoever named them.
+		std::pair<Id, bool> ret = m_storage->addNode(StorageNodeData(NODE_SYMBOL,
+			NameHierarchy::serializeRange(nameHierarchy, 0, i), NODE_MODIFIER_NONE, m_languages));
 
 		if (!firstNodeId)
 		{

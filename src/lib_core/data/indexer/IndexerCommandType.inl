@@ -37,3 +37,22 @@ inline IndexerCommandType stringToIndexerCommandType(const std::string& s)
 		return IndexerCommandType::INDEXER_COMMAND_CUSTOM;
 	return IndexerCommandType::INDEXER_COMMAND_UNKNOWN;
 }
+
+inline LanguageMask languageMaskForIndexerCommandType(IndexerCommandType type)
+{
+	switch (type)
+	{
+	case IndexerCommandType::INDEXER_COMMAND_CXX:
+		return LANGUAGE_CXX;
+	case IndexerCommandType::INDEXER_COMMAND_RUST:
+		return LANGUAGE_RUST;
+	case IndexerCommandType::INDEXER_COMMAND_SWIFT:
+		return LANGUAGE_SWIFT;
+	case IndexerCommandType::INDEXER_COMMAND_ZIG:
+		return LANGUAGE_ZIG;
+	case IndexerCommandType::INDEXER_COMMAND_CUSTOM:
+	case IndexerCommandType::INDEXER_COMMAND_UNKNOWN:
+		break;
+	}
+	return LANGUAGE_NONE;
+}

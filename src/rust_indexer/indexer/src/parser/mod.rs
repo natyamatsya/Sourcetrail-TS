@@ -70,6 +70,12 @@ const DEFINITION_NONE: i32 = 0;
 const DEFINITION_IMPLICIT: i32 = 1;
 const DEFINITION_EXPLICIT: i32 = 2;
 
+// LanguageMask bit (src/lib_core/data/parser/LanguageMask.h). Every node this
+// indexer records carries it, so the merge can OR together the bits of every
+// language that named the same symbol -- see context/DESIGN_XLANG_BOUNDARIES.md.
+// Append-only, never renumber.
+pub const LANGUAGE_RUST: i32 = 1 << 1;
+
 // NodeModifier bitmask bits (src/lib_core/data/parser/NodeModifier.h). Rust only
 // populates DEPRECATED today (from `#[deprecated]`); actor/async/nonisolated are
 // Swift's. The bit rides in StorageNode.modifiers, round-tripped as-is.

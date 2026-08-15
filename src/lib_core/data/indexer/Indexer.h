@@ -82,7 +82,11 @@ IndexerBase::IndexResult Indexer<T>::index(const std::shared_ptr<IndexerCommand>
 	const std::shared_ptr<const T> castCommand(indexerCommand, &*payload);
 
 	const std::shared_ptr<IntermediateStorage> storage = std::make_shared<IntermediateStorage>();
-	const std::shared_ptr<ParserClientImpl> parserClient = std::make_shared<ParserClientImpl>(storage);
+	// The indexer's own language rides along, so every node this run records says
+	// who recorded it. The command type is the authority: it is what selected
+	// this indexer in the first place.
+	const std::shared_ptr<ParserClientImpl> parserClient = std::make_shared<ParserClientImpl>(
+		storage, languageMaskForIndexerCommandType(getSupportedIndexerCommandType()));
 
 	const auto doIndexResult = utility::expectedFromExceptions<void>(
 		IndexerErrorCode::ExecutionException,

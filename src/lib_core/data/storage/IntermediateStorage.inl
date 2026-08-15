@@ -136,6 +136,11 @@ inline std::pair<Id, bool> IntermediateStorage::addNode(const StorageNodeData& n
 		{
 			storedNode.type = nodeData.type;
 		}
+		// OR rather than overwrite, for the same reason the modifiers merge does
+		// it downstream: whoever recorded the name first would otherwise decide
+		// the answer alone, and a node claimed by two languages is exactly the
+		// fact we are here to keep.
+		storedNode.languages |= nodeData.languages;
 		return std::make_pair(storedNode.id, false);
 	}
 

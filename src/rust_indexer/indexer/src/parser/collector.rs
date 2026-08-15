@@ -22,7 +22,7 @@ use crate::ipc::storage::{
 use super::{
     DEFINITION_EXPLICIT, DEFINITION_IMPLICIT, DEFINITION_NONE, EDGE_CALL, EDGE_IMPORT,
     EDGE_INHERITANCE, EDGE_MACRO_USAGE, EDGE_MEMBER, EDGE_OVERRIDE, EDGE_TEMPLATE_SPECIALIZATION,
-    EDGE_TYPE_ARGUMENT, EDGE_TYPE_USAGE, EDGE_USAGE, LOCATION_LOCAL_SYMBOL, LOCATION_SCOPE,
+    EDGE_TYPE_ARGUMENT, EDGE_TYPE_USAGE, EDGE_USAGE, LANGUAGE_RUST, LOCATION_LOCAL_SYMBOL, LOCATION_SCOPE,
     LOCATION_TOKEN, NODE_ATTRIBUTE_CFG, NODE_ATTRIBUTE_DEPRECATED, NODE_ENUM, NODE_ENUM_CONSTANT,
     NODE_FIELD, NODE_FILE, NODE_FUNCTION, NODE_GLOBAL_VARIABLE, NODE_INTERFACE, NODE_MACRO,
     NODE_METHOD, NODE_MODIFIER_DEPRECATED, NODE_MODULE, NODE_STRUCT, NODE_TYPE_PARAMETER,
@@ -402,6 +402,7 @@ impl<'db> Collector<'db> {
             type_: NODE_FILE,
             serialized_name: Some(serialize_file_name(path)),
             modifiers: 0,
+            language_mask: LANGUAGE_RUST,
         });
         self.storage.files.push(OwnedStorageFile {
             id,
@@ -473,6 +474,7 @@ impl<'db> Collector<'db> {
             type_: node_kind,
             serialized_name: Some(serialize_name(name)),
             modifiers,
+            language_mask: LANGUAGE_RUST,
         });
         self.storage.symbols.push(OwnedStorageSymbol {
             id: node_id,
@@ -1080,6 +1082,7 @@ impl<'db> Collector<'db> {
                         type_: row.base_kind,
                         serialized_name: Some(serialize_name(&row.spec_name)),
                         modifiers: 0,
+                        language_mask: LANGUAGE_RUST,
                     });
                     self.storage.symbols.push(OwnedStorageSymbol {
                         id,
@@ -1139,6 +1142,7 @@ impl<'db> Collector<'db> {
                         type_: NODE_MACRO,
                         serialized_name: Some(serialize_name(&row.macro_name)),
                         modifiers: 0,
+                        language_mask: LANGUAGE_RUST,
                     });
                     self.storage.symbols.push(OwnedStorageSymbol {
                         id,

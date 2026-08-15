@@ -52,7 +52,7 @@ fn buildStorage(b: *c.flatcc_builder_t, chunk: *const storage.Chunk) Error!c.Sou
     // --- nodes ---
     const node_refs = try a.alloc(c.Sourcetrail_Ipc_StorageNode_ref_t, chunk.nodes.len);
     for (chunk.nodes, node_refs) |n, *ref| {
-        ref.* = c.Sourcetrail_Ipc_StorageNode_create(b, n.id, @intFromEnum(n.kind), str(b, n.serialized_name), n.modifiers);
+        ref.* = c.Sourcetrail_Ipc_StorageNode_create(b, n.id, @intFromEnum(n.kind), str(b, n.serialized_name), n.modifiers, n.language_mask);
     }
     _ = c.Sourcetrail_Ipc_StorageNode_vec_start(b);
     for (node_refs) |ref| _ = c.Sourcetrail_Ipc_StorageNode_vec_push(b, ref);

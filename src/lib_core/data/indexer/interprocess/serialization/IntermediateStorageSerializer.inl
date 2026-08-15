@@ -21,7 +21,8 @@ inline flatbuffers::DetachedBuffer serializeIntermediateStorage(const Intermedia
 	for (const auto& n : storage.getStorageNodes())
 		fbNodes.push_back(Sourcetrail::Ipc::CreateStorageNode(
 			builder, static_cast<int64_t>(n.id), static_cast<int32_t>(n.type),
-			builder.CreateString(n.serializedName), static_cast<int32_t>(n.modifiers)));
+			builder.CreateString(n.serializedName), static_cast<int32_t>(n.modifiers),
+			static_cast<int32_t>(n.languages)));
 
 	// Files
 	std::vector<flatbuffers::Offset<Sourcetrail::Ipc::StorageFile>> fbFiles;
@@ -129,7 +130,8 @@ inline std::shared_ptr<IntermediateStorage> deserializeIntermediateStorage(
 		for (const auto* n : *fb->nodes())
 			nodes.emplace_back(Id(n->id()), static_cast<NodeKind>(n->type()),
 				n->serialized_name() ? n->serialized_name()->str() : "",
-				static_cast<NodeModifierMask>(n->modifiers()));
+				static_cast<NodeModifierMask>(n->modifiers()),
+				static_cast<LanguageMask>(n->language_mask()));
 		storage->setStorageNodes(std::move(nodes));
 	}
 

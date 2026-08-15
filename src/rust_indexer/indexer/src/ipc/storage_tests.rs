@@ -52,12 +52,14 @@ mod tests {
                     type_: 4096,
                     serialized_name: Some("my_func".into()),
                     modifiers: 0,
+                    language_mask: 1 << 1,  // LANGUAGE_RUST
                 },
                 OwnedStorageNode {
                     id: 3,
                     type_: 64,
                     serialized_name: Some("MyStruct".into()),
                     modifiers: 0,
+                    language_mask: 1 << 1,  // LANGUAGE_RUST
                 },
             ],
             ..Default::default()

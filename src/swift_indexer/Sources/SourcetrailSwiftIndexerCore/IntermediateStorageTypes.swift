@@ -17,14 +17,26 @@ package typealias OwnedStorageOccurrence = Sourcetrail_Ipc_StorageOccurrenceT
 package typealias OwnedStorageError = Sourcetrail_Ipc_StorageErrorT
 
 extension Sourcetrail_Ipc_StorageNodeT {
-	package convenience init(id: Int64, type: Int32, serializedName: String, modifiers: Int32 = 0) {
+	/// `languageMask` defaults to Swift's bit rather than 0: every node this
+	/// indexer builds was named by Swift, and the merge ORs the bits of every
+	/// language that named the same symbol (see
+	/// context/DESIGN_XLANG_BOUNDARIES.md). LanguageMask lives in
+	/// src/lib_core/data/parser/LanguageMask.h and is append-only.
+	package convenience init(
+		id: Int64, type: Int32, serializedName: String, modifiers: Int32 = 0,
+		languageMask: Int32 = LANGUAGE_SWIFT
+	) {
 		self.init()
 		self.id = id
 		self.type = type
 		self.serializedName = serializedName
 		self.modifiers = modifiers
+		self.languageMask = languageMask
 	}
 }
+
+/// LanguageMask bit for this indexer (`1 << 2`).
+package let LANGUAGE_SWIFT: Int32 = 1 << 2
 
 extension Sourcetrail_Ipc_StorageFileT {
 	package convenience init(

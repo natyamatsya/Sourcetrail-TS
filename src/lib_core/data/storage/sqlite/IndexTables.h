@@ -133,13 +133,19 @@ namespace idx {
       using data_type = ::sqlpp::integral;
       using has_default = std::true_type;  // DEFAULT 0 (NodeModifier bitmask)
     };
+    struct Languages {
+      SQLPP_CREATE_NAME_TAG_FOR_SQL_AND_CPP(languages, languages);
+      using data_type = ::sqlpp::integral;
+      using has_default = std::true_type;  // DEFAULT 0 (LanguageMask)
+    };
     SQLPP_CREATE_NAME_TAG_FOR_SQL_AND_CPP(node, node);
     template<typename T>
     using _table_columns = sqlpp::table_columns<T,
                Id,
                Type,
                SerializedName,
-               Modifiers>;
+               Modifiers,
+               Languages>;
     using _required_insert_columns = sqlpp::detail::type_set<  // [PK-is-FK] Id added
                sqlpp::column_t<sqlpp::table_t<Node_>, Id>,
                sqlpp::column_t<sqlpp::table_t<Node_>, Type>>;

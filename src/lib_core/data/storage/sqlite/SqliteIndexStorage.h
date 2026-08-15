@@ -128,6 +128,7 @@ public:
 	void setFileCompleteIfNoError(Id fileId, const std::string& filePath, bool complete);
 	void setNodeType(int type, Id nodeId);
 	void setNodeModifiers(int modifiers, Id nodeId);
+	void setNodeLanguages(int languages, Id nodeId);
 
 	std::shared_ptr<SourceLocationFile> getSourceLocationsForFile(const FilePath& filePath) const;
 	std::shared_ptr<SourceLocationFile> getSourceLocationsForLinesInFile(
@@ -270,6 +271,7 @@ private:
 	LowMemoryStringMap<std::string, Id> m_tempWNodeNameIndex;
 	std::map<Id, int> m_tempNodeTypes;
 	std::map<Id, int> m_tempNodeModifiers;
+	std::map<Id, int> m_tempNodeLanguages;
 	std::map<StorageEdgeData, Id> m_tempEdgeIndex;
 	std::map<std::string, std::map<std::string, Id>> m_tempLocalSymbolIndex;
 	std::map<Id, std::map<TempSourceLocation, Id>> m_tempSourceLocationIndices;

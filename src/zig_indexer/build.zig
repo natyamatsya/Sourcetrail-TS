@@ -43,6 +43,22 @@ pub fn build(b: *std.Build) void {
     const gen = b.addSystemCommand(&.{"bash"});
     gen.addFileArg(b.path("tools/gen_flatcc.sh"));
     gen.addArg(schema_dir);
+    // The directory arrives as a plain string, so nothing about the schemas is in
+    // this step's cache key: editing a .fbs left the generated bindings stale and
+    // the failure surfaced as an arity mismatch in wire.zig, one layer away from
+    // the cause. Declare each schema as an input so a schema edit regenerates.
+    const io = b.graph.io;
+    if (std.Io.Dir.cwd().openDir(io, schema_dir, .{ .iterate = true })) |dir| {
+        var it = dir.iterate();
+        while (it.next(io) catch null) |entry| {
+            if (entry.kind != .file) continue;
+            if (!std.mem.endsWith(u8, entry.name, ".fbs")) continue;
+            gen.addFileInput(.{ .cwd_relative = b.pathJoin(&.{ schema_dir, entry.name }) });
+        }
+    } else |_| {
+        // Not fatal: the CMake build passes an absolute -Dschema-dir and the
+        // script itself fails loudly if the directory is wrong.
+    }
     const gen_dir = gen.addOutputDirectoryArg("flatcc");
 
     const exe = b.addExecutable(.{

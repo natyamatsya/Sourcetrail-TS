@@ -162,7 +162,19 @@ pub fn qualifiedName(a: std.mem.Allocator, file: []const u8, local: []const u8) 
 /// with a `/// Deprecated: …` doc comment, which the parser detects).
 pub const node_modifier_deprecated: i32 = 1 << 3;
 
-pub const StorageNode = struct { id: Id, kind: NodeKind, serialized_name: []const u8, modifiers: i32 = 0 };
+// `language_mask` defaults to Zig's bit: every node this indexer records was
+// named by Zig, and the merge ORs together the bits of every language that
+// named the same symbol (context/DESIGN_XLANG_BOUNDARIES.md). The mask is
+// LanguageMask in src/lib_core/data/parser/LanguageMask.h; append-only.
+pub const LANGUAGE_ZIG: i32 = 1 << 3;
+
+pub const StorageNode = struct {
+    id: Id,
+    kind: NodeKind,
+    serialized_name: []const u8,
+    modifiers: i32 = 0,
+    language_mask: i32 = LANGUAGE_ZIG,
+};
 pub const StorageFile = struct { id: Id, file_path: []const u8, language_identifier: []const u8, indexed: bool, complete: bool };
 pub const StorageEdge = struct { id: Id, kind: EdgeType, source_node_id: Id, target_node_id: Id };
 pub const StorageSymbol = struct { id: Id, definition_kind: DefinitionKind };
