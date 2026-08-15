@@ -1,9 +1,12 @@
 # Design: Cross-language boundaries — indexing and visualization
 
-**Status: Proposed, not implemented.** Groundwork (X0) is independently useful and
-should land alone. Nothing here requires the analysis engines of
+**Status: X0, X1, X5 done; X2 done for C++/Rust/Zig (Swift outstanding); X4 first
+slice done (2026-08-15).** Remaining: the Swift producer, the schema-mediated
+species (X3), and the rest of the visualization — grouping, the boundary filter
+chip, the legend. Nothing here requires the analysis engines of
 [ROADMAP_ANALYSIS_ENGINES.md](ROADMAP_ANALYSIS_ENGINES.md); the boundary is
-recorded by producers, not derived.
+recorded by producers, not derived. The invariant is
+[ADR-0009](../docs/adr/ADR-0009-language-boundaries-are-edges.md).
 
 Related: [DESIGN_STORAGE_CODEGEN.md](DESIGN_STORAGE_CODEGEN.md) (the facet
 contract this obeys — no new side tables),
@@ -241,7 +244,8 @@ lands alone, proven behaviour-preserving, before any feature rides on it.
   single-language index is byte-identical to today except for the new column; a
   four-language index of this repo shows the expected per-language node counts.*
 - **X1 — measure the collisions. ✅ DONE (2026-08-15).** See *X1 executed* below.
-- **X2 — atoms and the ABI species.** `NameDelimiterType::ABI`; `EDGE_BINDS`;
+- **X2 — atoms and the ABI species. ✅ DONE for C++, Rust and Zig (2026-08-15);
+  Swift outstanding.** `NameDelimiterType::ABI`; `EDGE_BINDS`;
   producers for C++ `extern "C"`, Rust `#[no_mangle]`/`extern "C"`, Zig
   `export`/`extern`, Swift `@_cdecl`. Includes lifting the Swift filter at
   `SemanticIndexer.swift:120` so C symbols in a mixed target survive, and fixing
@@ -251,12 +255,13 @@ lands alone, proven behaviour-preserving, before any feature rides on it.
   FlatBuffers table names by the four generated-code producers. *Open: whether the
   `.fbs` file should instead be indexed as a source group, making the atom a real
   declaration with a definition rather than a synthetic node — see Open questions.*
-- **X4 — visualization.** `StorageAccess::getLanguagesForNodeIds`; the node style
-  override; `GroupType::LANGUAGE`; the boundary filter chip; the legend section.
-- **X5 — the invariant.** ADR-0009 recording the two rules every indexer must obey
-  forever: *a boundary is an edge, never an identity merge* (files excepted), and
-  *`EDGE_BINDS` points declaration → atom*. ADRs bind all four producers, which is
-  what ADR-0002 and ADR-0003 already do.
+- **X4 — visualization. 🟡 first slice done (2026-08-15).** The mask reaches the
+  graph (`Node::getLanguages`/`isLanguageBoundary`) and a boundary node is drawn
+  with a heavy border in `graph/node/boundary/border`; the tooltip names the
+  languages when there is more than one. Still open: `GroupType::LANGUAGE`, the
+  boundary filter chip, and the legend section.
+- **X5 — the invariant. ✅ DONE (2026-08-15).**
+  [ADR-0009](../docs/adr/ADR-0009-language-boundaries-are-edges.md).
 - **X6 (optional) — build-mediated boundaries.** Zig `@cImport` resolving to the
   C header's symbols; bridging headers. Needs a clang parse from a non-C++
   indexer, so it is genuinely harder than X2/X3 and deliberately last.
@@ -319,6 +324,42 @@ the failure *visible*: any project can run one query and get its own number
 rather than inheriting this one. Revisit if a real project reports a non-zero
 count, and note that X2's atoms deliberately rely on the same merge — in a
 namespace where merging is the intent.
+
+## X2 executed (2026-08-15) — the boundary is in the graph
+
+Atoms, `EDGE_BINDS`, and producers for C++ (`isExternC`), Rust (`#[no_mangle]` /
+`#[export_name]`) and Zig (`export`/`extern`). Swift is the one producer not yet
+written.
+
+Against the real boundary in this repository — `src/turso_shim` (Rust, 24
+`#[no_mangle]` exports) indexed together with `src/external/turso` (C++, which
+declares them `extern "C"`) — the result is **24 atoms, every one carrying
+`languages = 3` (cxx|rust), and 48 binding edges**, two per atom. Reading one
+out:
+
+```
+ATOM   abi mtsq_open s p  langs=3
+  <- cxx   :: mtsq_open sTsqDb * p(const char *)
+  <- rust  :: mtsq_open s p
+```
+
+A C++/Zig pair behaves the same way (`abi:zig_add`, `languages = 9`), and a Zig
+`extern fn` for a symbol nobody defines produces a one-sided atom — a dangling
+boundary, which is worth seeing rather than hiding.
+
+**What did not happen is the point.** The two declarations did not merge. They
+keep their own names, signatures and locations, and the relation between them is
+an edge. That is now an invariant rather than a convention: ADR-0009.
+
+## X4 executed (2026-08-15, first slice) — you can see it
+
+`Node` carries the mask into the graph, and `QtGraphNodeData::updateStyle` draws
+a node that more than one language claims with a heavy solid border — a border
+override, for the same reason deprecation is one: it has to survive the type fill
+and the active state. Verified in the running app rather than by reasoning about
+it: activating `abi:zig_add` renders the atom flanked by the Zig `export fn` and
+the C++ `extern "C"` declaration, joined by `EDGE_BINDS`, with the atom drawn in
+the boundary colour.
 
 ## Verification
 
