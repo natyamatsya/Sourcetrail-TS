@@ -240,9 +240,7 @@ lands alone, proven behaviour-preserving, before any feature rides on it.
   storage version bump** (27 → 28); do it once, here. *Verification: a
   single-language index is byte-identical to today except for the new column; a
   four-language index of this repo shows the expected per-language node counts.*
-- **X1 — measure the collisions.** Query the two-bit nodes from X0 on a
-  four-language index of this repository. Publish the number in this document.
-  It decides Decision 4 and nothing else. *No code.*
+- **X1 — measure the collisions. ✅ DONE (2026-08-15).** See *X1 executed* below.
 - **X2 — atoms and the ABI species.** `NameDelimiterType::ABI`; `EDGE_BINDS`;
   producers for C++ `extern "C"`, Rust `#[no_mangle]`/`extern "C"`, Zig
   `export`/`extern`, Swift `@_cdecl`. Includes lifting the Swift filter at
@@ -262,6 +260,65 @@ lands alone, proven behaviour-preserving, before any feature rides on it.
 - **X6 (optional) — build-mediated boundaries.** Zig `@cImport` resolving to the
   C header's symbols; bridging headers. Needs a clang parse from a non-C++
   indexer, so it is genuinely harder than X2/X3 and deliberately last.
+
+## X0 executed (2026-08-15) — `node.languages`, storage v28
+
+Landed as designed: an OR-merged inline mask, stamped by all four producers,
+with the C++ side taking its bit from the `IndexerCommandType` that selected the
+indexer. 733 C++ test cases / 2,593 assertions, 116 Rust and 25 Zig tests green;
+a Zig index reproduced its previous node and edge counts exactly (2,884 /
+11,082), which was the no-visible-change gate.
+
+Two things the work turned up, neither of them predicted here:
+
+- **Zig's standalone build never regenerated its flatcc bindings when a schema
+  changed.** `build.zig` passed the schema directory as an opaque string, so no
+  `.fbs` content was in the step's cache key; the symptom was an arity mismatch
+  in `wire.zig`, one layer from the cause. Schemas are declared as step inputs
+  now. Anyone editing `abi-schemas/` before this would have been building against
+  stale bindings.
+- **Nodes minted outside any indexer carry no bit,** and should. File rows for
+  sources nobody indexed are created by the main process, which has no producing
+  language; a mask of 0 is the honest answer there, and it is the one place 0
+  means something rather than missing.
+
+## X1 executed (2026-08-15) — measured: rare in the wild, real in principle
+
+The question Decision 4 defers to: **how often do two languages silently collide
+on one name?**
+
+**In real code, in this sample: never.** A two-group index of this repository's
+`src/lib_aidkit` (C++) and `src/agent_mcp_bridge` (Rust) — 958 C++ nodes, 2,574
+Rust nodes — produced **zero** shared nodes. A C++/Zig pairing produced zero as
+well, though that one proves less: Zig prefixes every symbol with its defining
+file path, so it cannot collide with anything by construction.
+
+**In principle, yes, and now demonstrably.** A constructed minimal case — a
+global-scope `struct Widget` in C++ and a crate-root `pub struct Widget` in Rust
+— merges into **one node**, which the new mask reports as `languages = 3`
+(`cxx|rust`). That is the defect this design was written about, caught by the
+column that X0 added.
+
+The interesting part is *why the real corpora were clean*, because it is not the
+reason one would guess:
+
+| Symbol kind | Collides? | Why |
+|---|---|---|
+| Functions | No | C++ serializes the signature into the name (`shared_thing\tsint\tp(int)`); Rust emits empty signature parts (`shared_thing\ts\tp`). The names differ even when the symbol names match. |
+| Fields | No | Same reason — the C++ field carries its type in the signature part. |
+| **Types** | **Yes** | A struct/class has no signature. `::\tmWidget\ts\tp` is byte-identical from either producer. |
+
+So the exposure is narrower than feared and sharper than "names might clash": it
+is **types with identical fully-qualified names**, which is likeliest at crate or
+namespace root, and it is invisible today in exactly the way a merge is.
+
+**Decision 4 stands: no identity rewrite.** Zero occurrences across 3,532 nodes
+of real two-language code does not justify changing the identity of every node in
+every index. The finding that makes it safe to defer is that the mask now makes
+the failure *visible*: any project can run one query and get its own number
+rather than inheriting this one. Revisit if a real project reports a non-zero
+count, and note that X2's atoms deliberately rely on the same merge — in a
+namespace where merging is the intent.
 
 ## Verification
 
