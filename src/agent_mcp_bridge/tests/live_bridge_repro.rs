@@ -44,6 +44,9 @@ fn small_ui_states_survive_a_long_connection() {
 #[ignore = "needs a running app with a project loaded and a broad search performed"]
 fn large_ui_states_survive_a_long_connection() {
     let (failures, status) = hammer_ui_state("large");
-    // Currently fails: this is the open bug, kept as the reproduction.
+    // Passes on a freshly prepared instance. The 60/60 corruption this was
+    // written for was observed on a connection that had first accumulated a
+    // long run of timed-out requests, and has not been reproduced from a clean
+    // start — see live_chunk_churn.rs for what was tried.
     assert_eq!(failures, 0, "large replies corrupted; dropped_frames={}", status["dropped_frames"]);
 }
