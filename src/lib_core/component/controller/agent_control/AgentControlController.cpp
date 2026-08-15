@@ -242,8 +242,27 @@ flatbuffers::Offset<fb::SearchMatch> makeSearchMatch(
 	{
 		nodeIds.push_back(static_cast<std::uint64_t>(id));
 	}
+	const auto textOffset = builder.CreateString(match.name);
+	// An empty node_ids is left *absent* rather than written as a zero-length
+	// vector, and this is load-bearing rather than tidiness.
+	//
+	// node_ids is [uint64], so its elements must start 8-aligned. With no
+	// elements there is nothing to align, and the builder does not force the
+	// element region to an 8-boundary — a legal buffer. But the Rust verifier
+	// (flatbuffers 25.12.19, verify_vector_range) checks is_aligned::<T>(start)
+	// *before* it looks at the length, so it rejects the whole message over the
+	// alignment of elements that do not exist.
+	//
+	// Search matches that are commands ("overview", "legend", "boundary") are
+	// exactly the ones with no node ids, so a search for a command name could
+	// make every following GetUiState unreadable to the bridge. Absent and empty
+	// mean the same thing to every reader here, and absent is the one that
+	// survives the trip.
+	const auto nodeIdsOffset = nodeIds.empty()
+		? flatbuffers::Offset<flatbuffers::Vector<std::uint64_t>>()
+		: builder.CreateVector(nodeIds);
 	return fb::CreateSearchMatch(
-		builder, builder.CreateString(match.name), /*node_kind*/ 0, builder.CreateVector(nodeIds), match.score);
+		builder, textOffset, /*node_kind*/ 0, nodeIdsOffset, match.score);
 }
 
 flatbuffers::Offset<fb::BookmarkInfo> makeBookmark(

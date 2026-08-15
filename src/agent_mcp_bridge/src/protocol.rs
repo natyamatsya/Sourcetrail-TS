@@ -664,6 +664,57 @@ mod tests {
         assert_eq!(json["tabs"][0]["active"], true);
     }
 
+    // A SearchMatch with no node ids must be written with node_ids *absent*, not
+    // as a zero-length vector — see makeSearchMatch in AgentControlController.cpp.
+    //
+    // node_ids is [uint64], so its elements must start 8-aligned. An empty vector
+    // has no elements, so the builder does not force that boundary and the buffer
+    // is legal; but flatbuffers' verifier checks is_aligned::<T>(start) before it
+    // looks at the length (verify_vector_range), and rejects the whole message
+    // over the alignment of elements that are not there. Whether it trips depends
+    // on what precedes the vector, which is why it looked intermittent.
+    //
+    // Note the hazard cannot be built from this side: Rust's builder aligns even
+    // a zero-length vector, so the empty-vector variants below all pass here
+    // (the counter prints 0). Only the C++ writer produces the refused shape,
+    // which is why the fix lives there and this test guards the invariant rather
+    // than reproducing the fault. The reproduction is a live one: search for a
+    // command name ("boundary"), then GetUiState.
+    #[test]
+    fn absent_node_ids_parses_at_every_alignment() {
+        fn build(pad: usize, empty_vector: bool) -> Vec<u8> {
+            let mut b = FlatBufferBuilder::new();
+            let text = b.create_string(&"x".repeat(pad));
+            let ids = if empty_vector { Some(b.create_vector::<u64>(&[])) } else { None };
+            let m = fb::SearchMatch::create(
+                &mut b,
+                &fb::SearchMatchArgs { text: Some(text), node_kind: 0, node_ids: ids, score: 1 },
+            );
+            let matches = b.create_vector(&[m]);
+            let ui = fb::UiState::create(
+                &mut b,
+                &fb::UiStateArgs { search_matches: Some(matches), ..Default::default() },
+            );
+            let env = fb::UiStateEnvelope::create(
+                &mut b, &fb::UiStateEnvelopeArgs { request_id: 1, state: Some(ui) });
+            b.finish(env, None);
+            b.finished_data().to_vec()
+        }
+
+        let mut refused_when_empty = 0;
+        for pad in 0..24 {
+            let absent = build(pad, false);
+            let (_, json) = parse_ui_state(&absent)
+                .unwrap_or_else(|e| panic!("absent node_ids refused at pad {pad}: {e}"));
+            assert_eq!(json["search_matches"][0]["node_ids"].as_array().unwrap().len(), 0);
+
+            if parse_ui_state(&build(pad, true)).is_err() {
+                refused_when_empty += 1;
+            }
+        }
+        println!("empty-vector form refused at {refused_when_empty} of 24 alignments");
+    }
+
     // search_matches is the only field in the envelope carrying a [uint64], and
     // it went untested above -- which is how a misaligned node_ids vector
     // reached the wire unnoticed. Kept as its own case so the u64 vector is
