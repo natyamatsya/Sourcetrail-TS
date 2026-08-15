@@ -52,6 +52,10 @@ SRCTRL_EXPORT inline bool languageMaskIsShared(LanguageMask languages)
 // node descriptions and tooltips. Empty when none.
 SRCTRL_EXPORT std::string languageMaskToString(LanguageMask languages);
 
+// The same set spelled for a reader rather than for a log line: "C++",
+// "C++ + Swift". Used for group titles and anywhere a person sees the mask.
+SRCTRL_EXPORT std::string languageMaskToDisplayString(LanguageMask languages);
+
 #include "LanguageMask.inl"
 
 #endif	  // LANGUAGE_MASK_H

@@ -195,6 +195,7 @@ DEF_GETTER_1(
 	std::vector<SearchMatch>())
 DEF_GETTER_0(getGraphForAll, std::shared_ptr<Graph>, std::make_shared<Graph>())
 DEF_GETTER_1(getGraphForNodeTypes, NodeTypeSet, std::shared_ptr<Graph>, std::make_shared<Graph>())
+DEF_GETTER_0(getGraphForLanguageBoundaries, std::shared_ptr<Graph>, std::make_shared<Graph>())
 DEF_GETTER_3(
 	getGraphForActiveTokenIds,
 	const std::vector<Id>&,

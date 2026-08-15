@@ -5,6 +5,7 @@
 
 #include "MessageActivateErrors.h"
 #include "MessageActivateFullTextSearch.h"
+#include "MessageActivateBoundaries.h"
 #include "MessageActivateLegend.h"
 #include "MessageActivateLocalSymbols.h"
 #include "MessageActivateOverview.h"
@@ -41,6 +42,7 @@ class UndoRedoController
 	: public Controller
 	, public MessageListener<MessageActivateErrors>
 	, public MessageListener<MessageActivateFullTextSearch>
+	, public MessageListener<MessageActivateBoundaries>
 	, public MessageListener<MessageActivateLegend>
 	, public MessageListener<MessageActivateLocalSymbols>
 	, public MessageListener<MessageActivateOverview>
@@ -95,6 +97,7 @@ private:
 
 	void handleMessage(MessageActivateErrors* message) override;
 	void handleMessage(MessageActivateFullTextSearch* message) override;
+	void handleMessage(MessageActivateBoundaries* message) override;
 	void handleMessage(MessageActivateLegend* message) override;
 	void handleMessage(MessageActivateLocalSymbols* message) override;
 	void handleMessage(MessageActivateOverview* message) override;

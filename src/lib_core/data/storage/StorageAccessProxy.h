@@ -35,6 +35,7 @@ public:
 
 	std::shared_ptr<Graph> getGraphForAll() const override;
 	std::shared_ptr<Graph> getGraphForNodeTypes(NodeTypeSet nodeTypes) const override;
+	std::shared_ptr<Graph> getGraphForLanguageBoundaries() const override;
 	std::shared_ptr<Graph> getGraphForActiveTokenIds(
 		const std::vector<Id>& tokenIds,
 		const std::vector<Id>& expandedNodeIds,

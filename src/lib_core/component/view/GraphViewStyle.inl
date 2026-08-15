@@ -611,6 +611,10 @@ inline GraphViewStyle::NodeStyle GraphViewStyle::getStyleOfGroupNode(GroupType t
 	{
 		colorType += "namespace";
 	}
+	else if (type == GroupType::LANGUAGE)
+	{
+		colorType += "language";
+	}
 	else if (type == GroupType::INHERITANCE)
 	{
 		colorType += "inheritance";

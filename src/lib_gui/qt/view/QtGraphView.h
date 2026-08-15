@@ -162,6 +162,7 @@ private:
 	QWidget *m_groupWidget;
 	QtSelfRefreshIconButton *m_groupFileButton;
 	QtSelfRefreshIconButton *m_groupNamespaceButton;
+	QtSelfRefreshIconButton *m_groupLanguageButton;
 
 	std::vector<QRectF> m_virtualNodeRects;
 

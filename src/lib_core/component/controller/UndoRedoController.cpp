@@ -87,6 +87,18 @@ void UndoRedoController::handleMessage(MessageActivateFullTextSearch* message)
 	processCommand(command);
 }
 
+void UndoRedoController::handleMessage(MessageActivateBoundaries* message)
+{
+	if (sameMessageTypeAsLast(message))
+	{
+		return;
+	}
+
+	Command command(
+		std::make_shared<MessageActivateBoundaries>(*message), Command::Order::ORDER_ACTIVATE);
+	processCommand(command);
+}
+
 void UndoRedoController::handleMessage(MessageActivateLegend* message)
 {
 	if (sameMessageTypeAsLast(message))

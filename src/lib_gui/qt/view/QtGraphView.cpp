@@ -178,18 +178,23 @@ QtGraphView::QtGraphView(ViewLayout *viewLayout)
 	{
 		m_groupFileButton = new QtSelfRefreshIconButton(QLatin1String(""), QtResources::GRAPH_VIEW_FILE, "search/button");
 		m_groupNamespaceButton = new QtSelfRefreshIconButton(QLatin1String(""), QtResources::GRAPH_VIEW_GROUP_NAMESPACE, "search/button");
+		m_groupLanguageButton = new QtSelfRefreshIconButton(QLatin1String(""), QtResources::GRAPH_VIEW_GROUP_LANGUAGE, "search/button");
 
 		m_groupFileButton->setObjectName(QStringLiteral("group_right_button"));
 		m_groupNamespaceButton->setObjectName(QStringLiteral("group_left_button"));
+		m_groupLanguageButton->setObjectName(QStringLiteral("group_middle_button"));
 
 		m_groupFileButton->setToolTip(tr("group by file"));
 		m_groupNamespaceButton->setToolTip(tr("group by package/namespace/module"));
+		m_groupLanguageButton->setToolTip(tr("group by language, with one group for the boundary"));
 
 		m_groupFileButton->setCheckable(true);
 		m_groupNamespaceButton->setCheckable(true);
+		m_groupLanguageButton->setCheckable(true);
 
 		m_groupFileButton->setIconSize(QSize(14, 14));
 		m_groupNamespaceButton->setIconSize(QSize(14, 14));
+		m_groupLanguageButton->setIconSize(QSize(14, 14));
 
 		connect(m_groupFileButton, &QPushButton::clicked, [this]()
 		{
@@ -198,6 +203,10 @@ QtGraphView::QtGraphView(ViewLayout *viewLayout)
 		connect(m_groupNamespaceButton, &QPushButton::clicked, [this]()
 		{
 			groupingUpdated(m_groupNamespaceButton);
+		});
+		connect(m_groupLanguageButton, &QPushButton::clicked, [this]()
+		{
+			groupingUpdated(m_groupLanguageButton);
 		});
 
 		GroupType type = ApplicationSettings::getInstance()->getGraphGrouping();
@@ -209,15 +218,20 @@ QtGraphView::QtGraphView(ViewLayout *viewLayout)
 		{
 			m_groupNamespaceButton->setChecked(true);
 		}
+		else if (type == GroupType::LANGUAGE)
+		{
+			m_groupLanguageButton->setChecked(true);
+		}
 
 		m_groupWidget = new QWidget(widget);
-		m_groupWidget->setGeometry(38, 8, 54, 26);
+		m_groupWidget->setGeometry(38, 8, 82, 26);
 
 		QHBoxLayout *layout = new QHBoxLayout();
 		layout->setContentsMargins(0, 0, 0, 0);
 		layout->setSpacing(2);
 
 		layout->addWidget(m_groupNamespaceButton);
+		layout->addWidget(m_groupLanguageButton);
 		layout->addWidget(m_groupFileButton);
 
 		m_groupWidget->setLayout(layout);
@@ -540,6 +554,10 @@ GroupType QtGraphView::getGrouping() const
 	{
 		return GroupType::NAMESPACE;
 	}
+	else if (m_groupLanguageButton->isChecked())
+	{
+		return GroupType::LANGUAGE;
+	}
 
 	return GroupType::NONE;
 }
@@ -806,7 +824,16 @@ void QtGraphView::clickedForwardTrail()
 
 void QtGraphView::groupingUpdated(QPushButton *button)
 {
-	(button == m_groupFileButton ? m_groupNamespaceButton : m_groupFileButton)->setChecked(false);
+	// The three are mutually exclusive: whichever was clicked stays as the click
+	// left it, and the other two clear. Written as a sweep rather than as a
+	// conditional swap so adding a fourth grouping needs no edit here.
+	for (QtSelfRefreshIconButton *other: {m_groupNamespaceButton, m_groupLanguageButton, m_groupFileButton})
+	{
+		if (other != button)
+		{
+			other->setChecked(false);
+		}
+	}
 
 	ApplicationSettings *appSettings = ApplicationSettings::getInstance().get();
 	if (appSettings->getGraphGrouping() != getGrouping())

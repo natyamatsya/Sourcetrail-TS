@@ -4,6 +4,7 @@
 #include <list>
 #include <vector>
 
+#include "MessageActivateBoundaries.h"
 #include "MessageActivateErrors.h"
 #include "MessageActivateFullTextSearch.h"
 #include "MessageActivateLegend.h"
@@ -35,6 +36,7 @@ class StorageAccess;
 
 class GraphController
 	: public Controller
+	, public MessageListener<MessageActivateBoundaries>
 	, public MessageListener<MessageActivateErrors>
 	, public MessageListener<MessageActivateFullTextSearch>
 	, public MessageListener<MessageActivateLegend>
@@ -61,6 +63,7 @@ public:
 	TabId getSchedulerId() const override;
 
 private:
+	void handleMessage(MessageActivateBoundaries* message) override;
 	void handleMessage(MessageActivateErrors* message) override;
 	void handleMessage(MessageActivateFullTextSearch* message) override;
 	void handleMessage(MessageActivateLegend* message) override;
@@ -127,7 +130,11 @@ private:
 	void addCharacterIndex();
 	bool hasCharacterIndex() const;
 
+	// Applies whichever grouping the view asks for; the per-kind functions below
+	// are the implementations.
+	void groupNodes(GroupType groupType);
 	void groupNodesByParents(GroupType groupType);
+	void groupNodesByLanguage();
 	DummyNode* groupAllNodes(GroupType groupType, Id groupNodeId);
 	void groupTrailNodes(GroupType groupType);
 

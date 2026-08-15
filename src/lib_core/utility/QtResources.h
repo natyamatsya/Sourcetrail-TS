@@ -56,6 +56,7 @@ public:
 	static const char GRAPH_VIEW_GRAPH[];
 	static const char GRAPH_VIEW_GRAPH_RIGHT[];
 	static const char GRAPH_VIEW_GRAPH_UP[];
+	static const char GRAPH_VIEW_GROUP_LANGUAGE[];
 	static const char GRAPH_VIEW_GROUP_NAMESPACE[];
 	static const char GRAPH_VIEW_LEGEND[];
 	static const char GRAPH_VIEW_MACRO[];

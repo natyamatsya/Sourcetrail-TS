@@ -10,7 +10,13 @@ enum class GroupType
 	FRAMELESS,
 	FILE,
 	NAMESPACE,
-	INHERITANCE
+	INHERITANCE,
+	// One group per producing language, plus a group for the nodes more than
+	// one language claims. Unlike FILE and NAMESPACE this groups by a property
+	// of the node itself rather than by a parent, so it needs no storage
+	// lookup -- the mask is already on the graph node.
+	// See context/DESIGN_XLANG_BOUNDARIES.md.
+	LANGUAGE
 };
 
 std::string groupTypeToString(GroupType type);

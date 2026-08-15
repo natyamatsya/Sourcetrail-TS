@@ -73,6 +73,7 @@ PersistentStorage::PersistentStorage(const FilePath& dbPath, const FilePath& boo
 	m_commandIndex.addNode(0, SearchMatch::getCommandName(COMMAND_ALL));
 	m_commandIndex.addNode(0, SearchMatch::getCommandName(COMMAND_ERROR));
 	m_commandIndex.addNode(0, SearchMatch::getCommandName(COMMAND_LEGEND));
+	m_commandIndex.addNode(0, SearchMatch::getCommandName(COMMAND_BOUNDARY));
 
 	for (const NodeType& nodeType: NodeTypeSet::all().getNodeTypes())
 	{
@@ -1456,6 +1457,47 @@ std::shared_ptr<Graph> PersistentStorage::getGraphForNodeTypes(NodeTypeSet nodeT
 
 	std::shared_ptr<Graph> graph = std::make_shared<Graph>();
 	addNodesWithParentsAndEdgesToGraph(tokenIds, std::vector<Id>(), graph.get(), false);
+
+	return graph;
+}
+
+std::shared_ptr<Graph> PersistentStorage::getGraphForLanguageBoundaries() const
+{
+	TRACE();
+
+	std::set<Id> boundaryIds;
+	m_sqliteIndexStorage.forEach<StorageNode>([&](StorageNode&& node) {
+		if (!languageMaskIsShared(node.languages))
+		{
+			return;
+		}
+
+		// Files are excluded on purpose. Every indexer names a file the same way
+		// deliberately (ADR-0009), so in a mixed target a large share of files
+		// carry two bits without any of them being a boundary in the sense this
+		// command is asking about. Including them would bury the atoms.
+		if (NodeType(intToEnum<NodeKind>(node.type)).isFile())
+		{
+			return;
+		}
+
+		boundaryIds.insert(node.id);
+	});
+
+	// An atom on its own says nothing: the boundary *is* the pairing, so pull in
+	// whatever binds to one. Only the declarations, not their whole subgraphs --
+	// addNodesWithParentsAndEdgesToGraph brings the parents needed to place them.
+	std::set<Id> tokenIds = boundaryIds;
+	m_sqliteIndexStorage.forEach<StorageEdge>([&](StorageEdge&& edge) {
+		if (edge.type == Edge::EDGE_BINDS && boundaryIds.find(edge.targetNodeId) != boundaryIds.end())
+		{
+			tokenIds.insert(edge.sourceNodeId);
+		}
+	});
+
+	std::shared_ptr<Graph> graph = std::make_shared<Graph>();
+	addNodesWithParentsAndEdgesToGraph(
+		std::vector<Id>(tokenIds.begin(), tokenIds.end()), std::vector<Id>(), graph.get(), false);
 
 	return graph;
 }

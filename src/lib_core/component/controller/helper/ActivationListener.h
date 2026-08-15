@@ -1,6 +1,7 @@
 #ifndef ACTIVATION_LISTENER_H
 #define ACTIVATION_LISTENER_H
 
+#include "MessageActivateBoundaries.h"
 #include "MessageActivateErrors.h"
 #include "MessageActivateFullTextSearch.h"
 #include "MessageActivateLegend.h"
@@ -10,7 +11,8 @@
 #include "MessageListener.h"
 
 class ActivationListener
-	: public MessageListener<MessageActivateErrors>
+	: public MessageListener<MessageActivateBoundaries>
+	, public MessageListener<MessageActivateErrors>
 	, public MessageListener<MessageActivateFullTextSearch>
 	, public MessageListener<MessageActivateOverview>
 	, public MessageListener<MessageActivateLegend>
@@ -21,6 +23,7 @@ protected:
 	const std::vector<SearchMatch>& getSearchMatches() const;
 
 private:
+	void handleMessage(MessageActivateBoundaries* message) override;
 	void handleMessage(MessageActivateErrors* message) override;
 	void handleMessage(MessageActivateFullTextSearch* message) override;
 	void handleMessage(MessageActivateOverview* message) override;

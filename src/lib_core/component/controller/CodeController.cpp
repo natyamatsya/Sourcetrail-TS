@@ -97,6 +97,13 @@ void CodeController::handleMessage(MessageActivateFullTextSearch* message)
 	showFiles(params, firstReferenceScrollParams(), !message->isReplayed());
 }
 
+void CodeController::handleMessage(MessageActivateBoundaries*  /*message*/)
+{
+	// Nothing to show: the boundary view is a whole-project answer with no one
+	// file behind it, the same situation the legend is in.
+	clear();
+}
+
 void CodeController::handleMessage(MessageActivateLegend*  /*message*/)
 {
 	clear();

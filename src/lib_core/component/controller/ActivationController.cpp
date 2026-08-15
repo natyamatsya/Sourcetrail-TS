@@ -6,6 +6,7 @@
 #endif
 
 #ifndef SRCTRL_MODULE_BUILD
+#include "MessageActivateBoundaries.h"
 #include "MessageActivateLegend.h"
 #include "MessageActivateOverview.h"
 #include "MessageActivateTokens.h"
@@ -197,6 +198,14 @@ void ActivationController::handleMessage(MessageSearch* message)
 		case COMMAND_LEGEND:
 		{
 			MessageActivateLegend msg;
+			msg.setSchedulerId(message->getSchedulerId());
+			msg.dispatch();
+			return;
+		}
+
+		case COMMAND_BOUNDARY:
+		{
+			MessageActivateBoundaries msg;
 			msg.setSchedulerId(message->getSchedulerId());
 			msg.dispatch();
 			return;

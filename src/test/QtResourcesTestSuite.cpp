@@ -72,6 +72,7 @@ const char *resourceNames[] = {
 	QtResources::GRAPH_VIEW_GRAPH,
 	QtResources::GRAPH_VIEW_GRAPH_RIGHT,
 	QtResources::GRAPH_VIEW_GRAPH_UP,
+	QtResources::GRAPH_VIEW_GROUP_LANGUAGE,
 	QtResources::GRAPH_VIEW_GROUP_NAMESPACE,
 	QtResources::GRAPH_VIEW_LEGEND,
 	QtResources::GRAPH_VIEW_MACRO,

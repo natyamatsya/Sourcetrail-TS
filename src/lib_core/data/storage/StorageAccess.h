@@ -63,6 +63,9 @@ public:
 
 	virtual std::shared_ptr<Graph> getGraphForAll() const = 0;
 	virtual std::shared_ptr<Graph> getGraphForNodeTypes(NodeTypeSet nodeTypes) const = 0;
+	// Every node more than one language claims, together with the declarations
+	// bound to it -- the graph behind the "boundary" command.
+	virtual std::shared_ptr<Graph> getGraphForLanguageBoundaries() const = 0;
 	virtual std::shared_ptr<Graph> getGraphForActiveTokenIds(
 		const std::vector<Id>& tokenIds,
 		const std::vector<Id>& expandedNodeIds,

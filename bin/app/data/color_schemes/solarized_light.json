@@ -169,6 +169,9 @@
          "annotation": {
             "like": "file"
          },
+         "boundary": {
+            "border": "#9B4FD1"
+         },
          "built_in_type": {
             "like": "type"
          },
@@ -290,6 +293,18 @@
                },
                "fill": {
                   "normal": "transparent"
+               }
+            },
+            "language": {
+               "border": {
+                  "highlight": "#B98FE0",
+                  "normal": "#C9A6E8"
+               },
+               "fill": {
+                  "normal": "transparent"
+               },
+               "text": {
+                  "normal": "#5C5C5C"
                }
             },
             "namespace": {

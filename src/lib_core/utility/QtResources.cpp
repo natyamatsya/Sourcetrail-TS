@@ -74,6 +74,7 @@ const char QtResources::GRAPH_VIEW_GRAPH_LEFT[]      = ":/graph_view/images/grap
 const char QtResources::GRAPH_VIEW_GRAPH[]           = ":/graph_view/images/graph.png";
 const char QtResources::GRAPH_VIEW_GRAPH_RIGHT[]     = ":/graph_view/images/graph_right.png";
 const char QtResources::GRAPH_VIEW_GRAPH_UP[]        = ":/graph_view/images/graph_up.png";
+const char QtResources::GRAPH_VIEW_GROUP_LANGUAGE[]  = ":/graph_view/images/group_language.png";
 const char QtResources::GRAPH_VIEW_GROUP_NAMESPACE[] = ":/graph_view/images/group_namespace.png";
 const char QtResources::GRAPH_VIEW_LEGEND[]          = ":/graph_view/images/legend.png";
 const char QtResources::GRAPH_VIEW_MACRO[]           = ":/graph_view/images/macro.png";

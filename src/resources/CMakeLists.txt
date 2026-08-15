@@ -57,6 +57,7 @@ qt_add_resources(Sourcetrail_res_gui Sourcetrail_resources
 		graph_view/images/graph.png
 		graph_view/images/graph_right.png
 		graph_view/images/graph_up.png
+		graph_view/images/group_language.png
 		graph_view/images/group_namespace.png
 		graph_view/images/legend.png
 		graph_view/images/macro.png

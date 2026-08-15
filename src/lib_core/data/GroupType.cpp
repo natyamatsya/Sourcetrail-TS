@@ -16,6 +16,8 @@ std::string groupTypeToString(GroupType type)
 		return "namespace";
 	case GroupType::INHERITANCE:
 		return "inheritance";
+	case GroupType::LANGUAGE:
+		return "language";
 	}
 
 	return "none";
@@ -35,6 +37,8 @@ GroupType stringToGroupType(const std::string& value)
 		return GroupType::NAMESPACE;
 	if (value == groupTypeToString(GroupType::INHERITANCE))
 		return GroupType::INHERITANCE;
+	if (value == groupTypeToString(GroupType::LANGUAGE))
+		return GroupType::LANGUAGE;
 
 	return GroupType::NONE;
 }

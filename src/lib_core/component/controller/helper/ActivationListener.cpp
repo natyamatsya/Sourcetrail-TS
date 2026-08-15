@@ -15,6 +15,11 @@ void ActivationListener::handleMessage(MessageActivateFullTextSearch* message)
 	handleMessageBase(message);
 }
 
+void ActivationListener::handleMessage(MessageActivateBoundaries* message)
+{
+	handleMessageBase(message);
+}
+
 void ActivationListener::handleMessage(MessageActivateLegend* message)
 {
 	handleMessageBase(message);

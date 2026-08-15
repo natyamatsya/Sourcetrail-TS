@@ -100,6 +100,8 @@ inline std::string SearchMatch::getCommandName(CommandType type)
 		return "node_filter";
 	case COMMAND_LEGEND:
 		return "legend";
+	case COMMAND_BOUNDARY:
+		return "boundary";
 	}
 
 	return "none";
@@ -268,6 +270,10 @@ inline SearchMatch::CommandType SearchMatch::getCommandType() const
 	else if (name == "legend")
 	{
 		return COMMAND_LEGEND;
+	}
+	else if (name == "boundary")
+	{
+		return COMMAND_BOUNDARY;
 	}
 
 	return COMMAND_NODE_FILTER;

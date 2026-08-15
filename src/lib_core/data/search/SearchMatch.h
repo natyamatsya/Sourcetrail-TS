@@ -38,7 +38,12 @@ SRCTRL_EXPORT struct SearchMatch
 		COMMAND_ALL,
 		COMMAND_ERROR,
 		COMMAND_NODE_FILTER,
-		COMMAND_LEGEND
+		COMMAND_LEGEND,
+		// "Show me the seams": every node more than one language claims, with
+		// the declarations bound to it. Not a NODE_FILTER, because what makes a
+		// node a boundary is its language mask and those matchers only see a
+		// NodeType. See context/DESIGN_XLANG_BOUNDARIES.md.
+		COMMAND_BOUNDARY
 	};
 
 	static void log(const std::vector<SearchMatch>& matches, const std::string& query);

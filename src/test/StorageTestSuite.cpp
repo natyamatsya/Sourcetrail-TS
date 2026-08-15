@@ -5,6 +5,7 @@
 #endif
 
 #ifndef SRCTRL_MODULE_BUILD
+#include "Graph.h"
 #include "IntermediateStorage.h"
 #endif
 #include "PersistentStorage.h"
@@ -358,4 +359,88 @@ TEST_CASE("storage finds and removes depending file nodes")
 	// TS_ASSERT(!storage.getNodeWithId(id3));
 	// TS_ASSERT(!storage.getEdgeWithId(id4));
 	// TS_ASSERT(!storage.getEdgeWithId(id5));
+}
+
+TEST_CASE("storage boundary graph holds the atoms and what binds to them")
+{
+	// The graph behind the "boundary" command: a contract atom claimed by two
+	// languages, plus every declaration bound to it. See
+	// context/DESIGN_XLANG_BOUNDARIES.md and ADR-0009.
+	TestStorage storage;
+
+	NameHierarchy atomName(NameDelimiterType::ABI);
+	atomName.push("shared_symbol");
+
+	NameHierarchy cxxDeclaration = createNameHierarchy("shared_symbol");
+	NameHierarchy rustDeclaration = createNameHierarchy("crate::shared_symbol");
+	NameHierarchy singleLanguage = createNameHierarchy("PlainType");
+
+	std::shared_ptr<IntermediateStorage> intermediateStorage = std::make_shared<IntermediateStorage>();
+
+	const Id atomId = intermediateStorage
+						  ->addNode(StorageNodeData(
+							  NODE_SYMBOL,
+							  NameHierarchy::serialize(atomName),
+							  NODE_MODIFIER_NONE,
+							  LANGUAGE_CXX | LANGUAGE_RUST))
+						  .first;
+	const Id cxxId = intermediateStorage
+						 ->addNode(StorageNodeData(
+							 NODE_FUNCTION,
+							 NameHierarchy::serialize(cxxDeclaration),
+							 NODE_MODIFIER_NONE,
+							 LANGUAGE_CXX))
+						 .first;
+	const Id rustId = intermediateStorage
+						  ->addNode(StorageNodeData(
+							  NODE_FUNCTION,
+							  NameHierarchy::serialize(rustDeclaration),
+							  NODE_MODIFIER_NONE,
+							  LANGUAGE_RUST))
+						  .first;
+	// Claimed by one language only: not a boundary, must stay out.
+	const Id plainId = intermediateStorage
+						   ->addNode(StorageNodeData(
+							   NODE_CLASS,
+							   NameHierarchy::serialize(singleLanguage),
+							   NODE_MODIFIER_NONE,
+							   LANGUAGE_CXX))
+						   .first;
+	// A file two indexers named is a deliberate identity merge, not a boundary,
+	// so it is excluded even though its mask has two bits set.
+	const std::string sharedPath = "path/to/shared.h";
+	const Id fileId = intermediateStorage
+						  ->addNode(StorageNodeData(
+							  NODE_FILE,
+							  NameHierarchy::serialize(
+								  NameHierarchy(sharedPath, NameDelimiterType::FILE)),
+							  NODE_MODIFIER_NONE,
+							  LANGUAGE_CXX | LANGUAGE_ZIG))
+						  .first;
+	intermediateStorage->addFile(StorageFile(fileId, sharedPath, "cpp", "someTime", true, true));
+
+	intermediateStorage->addEdge(StorageEdgeData(Edge::EDGE_BINDS, cxxId, atomId));
+	intermediateStorage->addEdge(StorageEdgeData(Edge::EDGE_BINDS, rustId, atomId));
+
+	storage.inject(intermediateStorage.get());
+	storage.buildCaches();
+
+	std::shared_ptr<Graph> graph = storage.getGraphForLanguageBoundaries();
+
+	const Id storedAtomId = storage.getNodeIdForNameHierarchy(atomName);
+	const Id storedCxxId = storage.getNodeIdForNameHierarchy(cxxDeclaration);
+	const Id storedRustId = storage.getNodeIdForNameHierarchy(rustDeclaration);
+
+	REQUIRE(graph->getNodeById(storedAtomId) != nullptr);
+	// Both binders come along: an atom on its own says nothing, the pairing is
+	// the answer.
+	REQUIRE(graph->getNodeById(storedCxxId) != nullptr);
+	REQUIRE(graph->getNodeById(storedRustId) != nullptr);
+
+	REQUIRE(graph->getNodeById(storage.getNodeIdForNameHierarchy(singleLanguage)) == nullptr);
+	REQUIRE(graph->getNodeById(storage.getNodeIdForFileNode(FilePath(sharedPath))) == nullptr);
+
+	// The mask survives into the graph, which is what draws the heavy border.
+	REQUIRE(graph->getNodeById(storedAtomId)->isLanguageBoundary());
+	REQUIRE(!graph->getNodeById(storedCxxId)->isLanguageBoundary());
 }

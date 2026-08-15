@@ -95,6 +95,14 @@ void QtGraphNodeGroup::onClick()
 	{
 		MessageActivateNodes(m_tokenId).dispatch();
 	}
+	else if (m_type == GroupType::LANGUAGE)
+	{
+		// Deliberately inert. A language group's id is synthesized from a
+		// member (GraphController::groupNodesByLanguage) because no token
+		// stands for "C++"; activating it would look up a node that does not
+		// exist, and splitting it as a bundle would be worse. The same reason
+		// keeps it out of the hover handlers below.
+	}
 	else
 	{
 		MessageGraphNodeBundleSplit(m_tokenId).dispatch();

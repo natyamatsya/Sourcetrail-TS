@@ -1,5 +1,6 @@
 #include "GraphController.h"
 
+#include <limits>
 #include <set>
 
 #ifndef SRCTRL_MODULE_BUILD
@@ -64,6 +65,26 @@ void GraphController::handleMessage(MessageActivateErrors*  /*message*/)
 void GraphController::handleMessage(MessageActivateFullTextSearch*  /*message*/)
 {
 	clear();
+}
+
+// The whole boundary surface of the project in one graph. Laid out as a list
+// rather than bundled by type: the answer is a set of pairings, and the reader
+// wants to scan them, not to explore outward from one.
+void GraphController::handleMessage(MessageActivateBoundaries* message)
+{
+	TRACE("graph boundaries");
+
+	clear();
+
+	createDummyGraphAndSetActiveAndVisibility(
+		std::vector<Id>(), m_storageAccess->getGraphForLanguageBoundaries(), false);
+
+	layoutNesting();
+	layoutList();
+
+	GraphView::GraphParams params;
+	params.scrollToTop = true;
+	buildGraph(message, params);
 }
 
 void GraphController::handleMessage(MessageActivateLegend* message)
@@ -226,7 +247,7 @@ void GraphController::handleMessage(MessageActivateTokens* message)
 			}
 		}
 
-		groupNodesByParents(getView()->getGrouping());
+		groupNodes(getView()->getGrouping());
 
 		layoutNesting();
 		layoutGraph(true);
@@ -1653,6 +1674,124 @@ bool GraphController::hasCharacterIndex() const
 	return false;
 }
 
+void GraphController::groupNodes(GroupType groupType)
+{
+	if (groupType == GroupType::LANGUAGE)
+	{
+		groupNodesByLanguage();
+		return;
+	}
+
+	groupNodesByParents(groupType);
+}
+
+namespace
+{
+// Map key standing in for "more than one language", larger than any real mask
+// so the boundary group sorts after the single-language ones.
+constexpr LanguageMask BOUNDARY_GROUP_KEY = std::numeric_limits<LanguageMask>::max();
+}
+
+// Groups by the language mask already on each node: one group per producing
+// language, and one for everything more than one language claims. That last
+// group is the point of the mode -- it collects the contract atoms and shared
+// files that the rest of this design exists to make visible, rather than
+// leaving them scattered through whichever single-language group happened to
+// come first. See context/DESIGN_XLANG_BOUNDARIES.md.
+void GraphController::groupNodesByLanguage()
+{
+	using enum DummyNode::Type;
+	TRACE();
+
+	// Keyed by mask so ordering is by the bit values -- C++, Rust, Swift, Zig,
+	// then the boundary group -- rather than alphabetical by title.
+	std::map<LanguageMask, std::vector<std::shared_ptr<DummyNode>>> nodesToGroup;
+	std::map<std::string, std::shared_ptr<DummyNode>> groupNodes;
+
+	for (const std::shared_ptr<DummyNode>& dummyNode: m_dummyNodes)
+	{
+		if (dummyNode->isGroupNode())
+		{
+			groupNodes.emplace(dummyNode->name, dummyNode);
+		}
+		else if (dummyNode->visible && dummyNode->isGraphNode() && dummyNode->data)
+		{
+			const LanguageMask languages = dummyNode->data->getLanguages();
+			if (languages == LANGUAGE_NONE)
+			{
+				// Nodes no indexer claimed -- file rows minted by the main
+				// process (X0). There is no honest group for them, so they stay
+				// top-level rather than landing in an "unknown" bucket.
+				continue;
+			}
+
+			// Every shared node shares one group whatever its combination, so
+			// the boundary is one place to look instead of one group per pair.
+			nodesToGroup[languageMaskIsShared(languages) ? BOUNDARY_GROUP_KEY : languages]
+				.push_back(dummyNode);
+		}
+	}
+
+	std::set<Id> groupedNodeIds;
+	for (const auto& p: nodesToGroup)
+	{
+		const std::string name = p.first == BOUNDARY_GROUP_KEY
+			? "Language Boundary"
+			: languageMaskToDisplayString(p.first);
+
+		std::shared_ptr<DummyNode> groupNode;
+		auto it = groupNodes.find(name);
+		if (it != groupNodes.end())
+		{
+			groupNode = it->second;
+		}
+		else
+		{
+			groupNode = std::make_shared<DummyNode>(DUMMY_GROUP);
+			groupNode->visible = true;
+			groupNode->groupType = GroupType::LANGUAGE;
+			groupNode->groupLayout = GroupLayout::BUCKET;
+			groupNode->name = name;
+			// No token backs a language group, so its id is synthesized from a
+			// member the way bundle and inheritance groups do. Taken from the
+			// first member, which is stable because m_dummyNodes is.
+			groupNode->tokenId = p.second[0]->tokenId | Id::FirstBits::TWO;
+			m_topLevelAncestorIds[groupNode->tokenId] = groupNode->tokenId;
+			m_dummyNodes.push_back(groupNode);
+		}
+
+		for (const std::shared_ptr<DummyNode>& dummyNode: p.second)
+		{
+			if (dummyNode->hasActiveSubNode())
+			{
+				groupNode->bundleInfo = dummyNode->bundleInfo;
+				groupNode->bundleId = dummyNode->bundleId;
+			}
+
+			groupNode->subNodes.push_back(dummyNode);
+			m_topLevelAncestorIds[dummyNode->tokenId] = groupNode->tokenId;
+			groupedNodeIds.insert(dummyNode->tokenId);
+		}
+
+		if (!groupNode->bundleId)
+		{
+			groupNode->bundleId = groupNode->subNodes[0]->bundleId;
+		}
+
+		groupNode->bundleInfo = DummyNode::BundleInfo::averageBundleInfo(groupNode->getBundleInfos());
+		groupNode->sortSubNodesByName();
+	}
+
+	for (int i = 0; i < int(m_dummyNodes.size()); i++)
+	{
+		if (groupedNodeIds.find(m_dummyNodes[i]->tokenId) != groupedNodeIds.end())
+		{
+			m_dummyNodes.erase(m_dummyNodes.begin() + i);
+			i--;
+		}
+	}
+}
+
 void GraphController::groupNodesByParents(GroupType groupType)
 {
 	using enum Graph::TrailMode;
@@ -2506,7 +2645,7 @@ void GraphController::relayoutGraph(
 	{
 		if (!showsTrail)
 		{
-			groupNodesByParents(getView()->getGrouping());
+			groupNodes(getView()->getGrouping());
 		}
 
 		layoutNesting();
@@ -2917,6 +3056,26 @@ void GraphController::createLegendGraph()
 				Edge::EDGE_TEMPLATE_SPECIALIZATION,
 				templateSpecializationMethodNode,
 				templateMethodNode);
+		}
+
+		// The boundary, drawn the way the graph draws it: two declarations in
+		// different languages, each keeping its own name and signature, joined
+		// to a contract atom that neither of them owns. The atom carries two
+		// language bits, which is what gives it the heavy border -- so this one
+		// entry documents both the edge kind and the node styling.
+		// See context/DESIGN_XLANG_BOUNDARIES.md and ADR-0009.
+		{
+			addText("language boundary", 0, Vec2i(x, y + dy * ++i));
+			Node* cxxDeclaration = addNode(
+				NODE_FUNCTION, "extern \"C\" function", Vec2i(x, y + dy * ++i));
+			Node* atom = addNode(
+				NODE_SYMBOL, "abi:symbol", Vec2i(x + dx, y + dy * i + dy / 2), DefinitionKind::NONE);
+			Node* rustDeclaration = addNode(
+				NODE_FUNCTION, "#[no_mangle] fn", Vec2i(x, y + dy * ++i + dy));
+			atom->setLanguages(LANGUAGE_CXX | LANGUAGE_RUST);
+			addEdge(Edge::EDGE_BINDS, cxxDeclaration, atom);
+			addEdge(Edge::EDGE_BINDS, rustDeclaration, atom);
+			i += 1;
 		}
 	}
 

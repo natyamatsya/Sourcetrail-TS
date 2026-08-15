@@ -97,6 +97,12 @@ QPushButton:pressed {
 	padding-left: 2px;
 }
 
+#group_middle_button {
+	border-radius: 0;
+	max-width: 26px;
+	max-height: 26px;
+}
+
 #group_right_button {
 	border-radius: 0;
 	border-top-right-radius: 10px;
