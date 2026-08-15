@@ -555,10 +555,22 @@ impl Bridge {
     }
 
     pub fn get_ui_state(&mut self) -> Result<Value> {
+        self.get_ui_state_with_timeout(OP_TIMEOUT)
+    }
+
+    /// `get_ui_state` with an explicit reply window. A short one abandons the
+    /// reply in flight, which is the interesting case: the app has already
+    /// committed the payload to a chunk, and nothing frees that chunk until
+    /// someone reads the frame. There are only 32 chunk slots per size, so
+    /// abandoning enough replies exhausts the pool and the app silently falls
+    /// back to 64-byte inline fragments — thousands of them for a large reply,
+    /// through a 256-slot ring. Hence the drain below: it is what returns those
+    /// chunks, and skipping it is what lets a run of timeouts wedge a connection.
+    pub fn get_ui_state_with_timeout(&mut self, timeout: Duration) -> Result<Value> {
         self.drain_stale_states();
         let id = self.next_id();
         self.send(&protocol::get_ui_state(id))?;
-        self.read_ui_state(id, OP_TIMEOUT)
+        self.read_ui_state(id, timeout)
     }
 
     /// Capture the structural UI tree (accessibility, or the raw object tree). The
@@ -578,6 +590,15 @@ impl Bridge {
     /// until the matches land, rather than returning on the ack (which raced to an
     /// empty result).
     pub fn search(&mut self, query: &str) -> Result<Value> {
+        self.search_with_timeout(query, OP_TIMEOUT)
+    }
+
+    /// `search` with an explicit reply window. A short one abandons both the ack
+    /// and the (large) SearchCompleted event, which is the case worth testing:
+    /// unlike the state channel, events arrive several per request, so abandoned
+    /// ones accumulate faster than later requests consume them. Each large one
+    /// holds a chunk, and there are only 32 per chunk size.
+    pub fn search_with_timeout(&mut self, query: &str, timeout: Duration) -> Result<Value> {
         // SearchCompleted carries no request id, so the loop below can only take
         // the first result it sees. Draining first is what makes "the first" mean
         // "ours" -- without it one timed-out search leaves its result queued and
@@ -586,7 +607,7 @@ impl Bridge {
         let id = self.next_id();
         self.send(&protocol::search(id, query))?;
 
-        let deadline = Instant::now() + OP_TIMEOUT;
+        let deadline = Instant::now() + timeout;
         let mut acked = false;
         while Instant::now() < deadline {
             let buf = self.events.recv(Some(RECV_POLL_MS)).context("recv event")?;
