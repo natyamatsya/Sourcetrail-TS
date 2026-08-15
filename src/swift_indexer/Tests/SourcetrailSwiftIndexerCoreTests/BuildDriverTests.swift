@@ -46,6 +46,31 @@ import Testing
 		#expect(diagnostics.count == 1)
 		#expect(diagnostics[0].message == "expected ':' after label")
 	}
+
+	// Verbatim from `swift build` with stderr redirected to a file -- SwiftPM
+	// colours diagnostics even when nothing is attached to a terminal, so this
+	// is the ordinary case rather than the decorated one. Before the escapes
+	// were stripped the severity read as "\u{1b}[1;31merror" and the whole
+	// diagnostic was dropped.
+	@Test func parsesColouredDiagnostics() {
+		let output =
+			"/pkg/Sources/Demo/Broken.swift:1:14: \u{1b}[1;31merror: \u{1b}[1;39m"
+			+ "cannot find 'thisDoesNotExist' in scope\u{1b}[0;0m"
+		let diagnostics = BuildDriver.parseDiagnostics(output)
+		#expect(diagnostics.count == 1)
+		#expect(diagnostics[0].filePath == "/pkg/Sources/Demo/Broken.swift")
+		#expect(diagnostics[0].line == 1)
+		#expect(diagnostics[0].column == 14)
+		#expect(diagnostics[0].severity == .error)
+		#expect(diagnostics[0].message == "cannot find 'thisDoesNotExist' in scope")
+	}
+
+	@Test func strippingLeavesUncolouredTextUntouched() {
+		let plain = "/pkg/A.swift:1:1: error: broken"
+		#expect(BuildDriver.stripAnsiEscapes(plain) == plain)
+		#expect(BuildDriver.stripAnsiEscapes("\u{1b}[0;0m") == "")
+		#expect(BuildDriver.stripAnsiEscapes("a\u{1b}[1;31mb") == "ab")
+	}
 }
 
 @Suite struct PackageDescribeParsingTests {

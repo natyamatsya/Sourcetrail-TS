@@ -150,7 +150,7 @@ package enum BuildDriver {
 		var diagnostics: [BuildDiagnostic] = []
 		var seen = Set<String>()
 		for line in output.split(separator: "\n") {
-			guard let diagnostic = parseDiagnosticLine(String(line)) else {
+			guard let diagnostic = parseDiagnosticLine(stripAnsiEscapes(String(line))) else {
 				continue
 			}
 			let key = "\(diagnostic.filePath):\(diagnostic.line):\(diagnostic.column):\(diagnostic.severity):\(diagnostic.message)"
@@ -159,6 +159,44 @@ package enum BuildDriver {
 			}
 		}
 		return diagnostics
+	}
+
+	// Removes ANSI escape sequences (CSI ... final-byte) from a line.
+	//
+	// SwiftPM colours its diagnostics, and it does so even when stderr is a
+	// pipe rather than a terminal, so the severity field arrives as
+	// "\u{1b}[1;31merror" and matches nothing. Untreated, every diagnostic is
+	// dropped and each file degrades to the syntactic fallback with no sign
+	// that a real compiler error was the cause. Stripping here rather than
+	// asking the build for `--no-color` keeps this working whoever colours the
+	// output and whatever flag the toolchain settles on.
+	static func stripAnsiEscapes(_ line: String) -> String {
+		guard line.contains("\u{1b}") else {
+			return line
+		}
+		var result = ""
+		result.reserveCapacity(line.count)
+		var characters = line.makeIterator()
+		while let character = characters.next() {
+			guard character == "\u{1b}" else {
+				result.append(character)
+				continue
+			}
+			// CSI: ESC '[' , parameter/intermediate bytes, then a final byte in
+			// 0x40...0x7E. Anything else after ESC is a short sequence whose
+			// single next byte we drop with it.
+			guard let next = characters.next() else {
+				break
+			}
+			if next == "[" {
+				while let parameter = characters.next() {
+					if let ascii = parameter.asciiValue, (0x40...0x7E).contains(ascii) {
+						break
+					}
+				}
+			}
+		}
+		return result
 	}
 
 	static func parseDiagnosticLine(_ line: String) -> BuildDiagnostic? {
