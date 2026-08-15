@@ -15,6 +15,13 @@ use crate::protocol::{self, channel, Incoming};
 const SEND_TIMEOUT_MS: u64 = 1000;
 const RECV_POLL_MS: u64 = 200;
 const OP_TIMEOUT: Duration = Duration::from_secs(5);
+/// Reply window for the two commands that capture the accessibility tree on the
+/// GUI thread. Deliberately one constant: `query_ui` does everything
+/// `get_snapshot` does — the same full-tree walk — and then compiles a JSONPath,
+/// evaluates it and converts every match, so it is never the faster of the two.
+/// It used to be given OP_TIMEOUT while get_snapshot had 15s, which showed up as
+/// query_ui timing out intermittently on exactly the queries that match a lot.
+const SNAPSHOT_TIMEOUT: Duration = Duration::from_secs(15);
 /// Bound on the buffered event log (drops oldest; `seq` gaps let a poller detect it).
 const EVENT_LOG_CAP: usize = 2048;
 
@@ -580,7 +587,7 @@ impl Bridge {
         self.drain_stale_snapshots();
         let (id, _) =
             self.send_and_ack("get_snapshot", OP_TIMEOUT, |id| protocol::get_snapshot(id, object_tree))?;
-        self.read_snapshot(id, Duration::from_secs(15))
+        self.read_snapshot(id, SNAPSHOT_TIMEOUT)
     }
 
     /// Search has a two-part reply: a `CommandResult` ack (which may reject, e.g.
@@ -709,7 +716,7 @@ impl Bridge {
     pub fn query_ui(&mut self, jsonpath: &str) -> Result<Value> {
         self.drain_stale_snapshots();
         let (id, _) = self.send_and_ack("query_ui", OP_TIMEOUT, |id| protocol::query_ui(id, jsonpath))?;
-        self.read_snapshot(id, OP_TIMEOUT)
+        self.read_snapshot(id, SNAPSHOT_TIMEOUT)
     }
 
     /// Read st.agent.frames until the `FrameEnvelope` for `request_id`.
