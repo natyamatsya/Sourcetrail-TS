@@ -56,6 +56,21 @@ inline void Node::setModifiers(NodeModifierMask modifiers)
 	m_modifiers = modifiers;
 }
 
+inline LanguageMask Node::getLanguages() const
+{
+	return m_languages;
+}
+
+inline void Node::setLanguages(LanguageMask languages)
+{
+	m_languages = languages;
+}
+
+inline bool Node::isLanguageBoundary() const
+{
+	return languageMaskIsShared(m_languages);
+}
+
 inline bool Node::isActor() const
 {
 	return nodeModifierHas(m_modifiers, NODE_MODIFIER_ACTOR);

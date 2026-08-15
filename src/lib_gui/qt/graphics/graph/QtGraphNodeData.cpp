@@ -1,5 +1,7 @@
 #include "QtGraphNodeData.h"
 
+#include "ColorScheme.h"
+
 #ifndef SRCTRL_MODULE_BUILD
 #include "FilePath.h"
 #endif
@@ -115,6 +117,23 @@ void QtGraphNodeData::updateStyle()
 			style.borderWidth = 2;
 		}
 		style.borderDashed = true;
+	}
+
+	// A node more than one language claims is a language boundary: a contract
+	// atom, or a file both indexers named. Drawn as a solid heavy border in the
+	// scheme's boundary colour, for the same reason deprecation is a border
+	// override rather than a fill -- it has to survive the type colour and the
+	// active state, because the whole point is to find these at a glance in a
+	// graph of ordinary nodes. See context/DESIGN_XLANG_BOUNDARIES.md.
+	if (m_data->isLanguageBoundary())
+	{
+		style.color.border = ColorScheme::getInstance()
+								 ->getColor("graph/node/boundary/border", "#B36AE2");
+		if (style.borderWidth < 3)
+		{
+			style.borderWidth = 3;
+		}
+		style.borderDashed = false;
 	}
 
 	setStyle(style);

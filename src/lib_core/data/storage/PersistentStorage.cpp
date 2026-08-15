@@ -2629,6 +2629,13 @@ TooltipInfo PersistentStorage::getTooltipInfoForTokenIds(
 			info.title += "  #[cfg(" + attribute.value + ")]";
 		}
 	}
+	if (languageMaskIsShared(node.languages))
+	{
+		// Only when more than one language claims it: naming the single language
+		// of every node would be noise, but "cxx rust" on one node is the whole
+		// point of the boundary work.
+		info.title += "  [" + languageMaskToString(node.languages) + "]";
+	}
 	if (nodeModifierHas(node.modifiers, NODE_MODIFIER_DEPRECATED))
 	{
 		// The bit conveys the boolean; the DEPRECATED node_attribute adds the message.
@@ -3381,6 +3388,7 @@ void PersistentStorage::addNodeToGraph(
 
 	Node* node = graph->createNode(newNode.id, type, std::move(nameHierarchy), defKind);
 	node->setModifiers(newNode.modifiers);
+	node->setLanguages(newNode.languages);
 
 	if (addChildCount)
 	{

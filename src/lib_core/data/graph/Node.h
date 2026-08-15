@@ -15,6 +15,7 @@
 #include "Edge.h"
 #include "LogFacade.h"
 #include "NameHierarchy.h"
+#include "LanguageMask.h"
 #include "NodeModifier.h"
 #include "NodeType.h"
 #include "Token.h"
@@ -38,6 +39,14 @@ public:
 	// the actor modifier set.
 	NodeModifierMask getModifiers() const;
 	void setModifiers(NodeModifierMask modifiers);
+
+	// Which languages named this node. More than one bit is a node two
+	// languages both claim -- a contract atom, a shared file, or (rarely, see
+	// X1 in context/DESIGN_XLANG_BOUNDARIES.md) a name collision. The view
+	// renders that as a boundary.
+	LanguageMask getLanguages() const;
+	void setLanguages(LanguageMask languages);
+	bool isLanguageBoundary() const;
 	bool isActor() const;
 	bool isDeprecated() const;
 
@@ -89,6 +98,7 @@ private:
 	const NameHierarchy m_nameHierarchy;
 	DefinitionKind m_definitionKind;
 	NodeModifierMask m_modifiers = NODE_MODIFIER_NONE;
+	LanguageMask m_languages = LANGUAGE_NONE;
 
 	std::size_t m_childCount = 0;
 };
