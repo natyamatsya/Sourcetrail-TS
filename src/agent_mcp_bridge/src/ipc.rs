@@ -41,6 +41,11 @@ pub struct Bridge {
     // the handshake couldn't complete (app down / too old). Best-effort — never
     // fails connect. Surfaced via status() and the get_instance_info tool.
     handshake: Value,
+    // How many frames were dropped as unparseable. Recovery is silent by design
+    // (a bad frame is skipped, not fatal), so this is the only trace it leaves —
+    // surfaced by status() so a corrupt channel is diagnosable rather than just
+    // slow.
+    dropped_frames: u64,
 }
 
 impl Bridge {
@@ -75,6 +80,7 @@ impl Bridge {
             next_id: 1,
             event_log: VecDeque::new(),
             handshake: Value::Null,
+            dropped_frames: 0,
         };
         // Best-effort handshake: detect protocol skew up front, but never fail the
         // connect over it (status/read-only use must work against a down or old app).
@@ -321,7 +327,13 @@ impl Bridge {
                 continue;
             }
             self.record_event(buf.data());
-            let (_seq, incoming) = protocol::parse_event(buf.data())?;
+            let (_seq, incoming) = match protocol::parse_event(buf.data()) {
+                Ok(parsed) => parsed,
+                Err(e) => {
+                    self.note_dropped_frame("event", &e);
+                    continue;
+                }
+            };
             match incoming {
                 Incoming::CommandResult { request_id: rid, ok, message } if rid == request_id => {
                     return Ok((ok, message, search));
@@ -341,7 +353,18 @@ impl Bridge {
             if buf.is_empty() {
                 continue;
             }
-            let (rid, json) = protocol::parse_ui_state(buf.data())?;
+            // A frame that will not parse is skipped, not fatal. It cannot be
+            // this request's reply, and failing here cascaded: the real reply
+            // stayed unread, the next request found it first, and every later
+            // request ran one frame behind for the life of the connection.
+            // Skipping costs a frame; failing cost the session.
+            let (rid, json) = match protocol::parse_ui_state(buf.data()) {
+                Ok(parsed) => parsed,
+                Err(e) => {
+                    self.note_dropped_frame("state", &e);
+                    continue;
+                }
+            };
             if rid == request_id {
                 return Ok(json);
             }
@@ -362,6 +385,48 @@ impl Bridge {
         }
     }
 
+    /// Drop stale `UiStateEnvelope` frames on st.agent.state before asking for a
+    /// fresh one. The app publishes UiState only in answer to a GetUiState, so
+    /// anything already sitting here is a late reply to a request that gave up —
+    /// never ours, since nothing of ours is in flight yet. Same reasoning and
+    /// same safety as drain_stale_snapshots.
+    fn drain_stale_states(&mut self) {
+        for _ in 0..64 {
+            match self.state.try_recv() {
+                Ok(buf) if !buf.is_empty() => {}	// drop stale frame
+                _ => break,
+            }
+        }
+    }
+
+    /// Drop stale frames on st.agent.events before issuing a command whose reply
+    /// is an *event*. Unlike the state and snapshot drains these are recorded
+    /// rather than discarded, because events are also the poll_events log and a
+    /// drain must not create a hole in it.
+    ///
+    /// This is what makes `search` correlate at all: SearchCompleted carries no
+    /// request id (agent_event.fbs), so the loop can only take the first one it
+    /// sees. Draining first is what makes "the first one" mean "ours" — without
+    /// it, one timed-out search leaves a result behind and every later query
+    /// answers with its predecessor's matches.
+    fn drain_stale_events(&mut self) {
+        for _ in 0..64 {
+            match self.events.try_recv() {
+                Ok(buf) if !buf.is_empty() => self.record_event(buf.data()),
+                _ => break,
+            }
+        }
+    }
+
+    /// Count and log a frame that would not parse. Visible rather than silent:
+    /// dropping frames is recovery, not correctness, so a rising count is the
+    /// symptom worth chasing.
+    fn note_dropped_frame(&mut self, channel: &str, err: &anyhow::Error) {
+        self.dropped_frames = self.dropped_frames.saturating_add(1);
+        // stderr, not stdout: stdout is the MCP stdio transport.
+        eprintln!("sourcetrail-mcp: dropped unparseable {channel} frame #{}: {err}", self.dropped_frames);
+    }
+
     /// Read `st.agent.snapshot` until the `UiSnapshot` for `request_id`.
     fn read_snapshot(&mut self, request_id: u64, timeout: Duration) -> Result<Value> {
         let deadline = Instant::now() + timeout;
@@ -370,7 +435,13 @@ impl Bridge {
             if buf.is_empty() {
                 continue;
             }
-            let (rid, json) = protocol::parse_ui_snapshot(buf.data())?;
+            let (rid, json) = match protocol::parse_ui_snapshot(buf.data()) {
+                Ok(parsed) => parsed,
+                Err(e) => {
+                    self.note_dropped_frame("snapshot", &e);
+                    continue;
+                }
+            };
             if rid == request_id {
                 return Ok(json);
             }
@@ -409,7 +480,14 @@ impl Bridge {
                 continue;
             }
             self.record_event(buf.data());
-            if let Incoming::Settled { request_id: rid } = protocol::parse_event(buf.data())?.1 {
+            let parsed = match protocol::parse_event(buf.data()) {
+                Ok(parsed) => parsed,
+                Err(e) => {
+                    self.note_dropped_frame("event", &e);
+                    continue;
+                }
+            };
+            if let Incoming::Settled { request_id: rid } = parsed.1 {
                 if rid == request_id {
                     return Ok(());
                 }
@@ -438,6 +516,7 @@ impl Bridge {
             "app_listening": self.cmd.recv_count() >= 1,
             "bridge_build_id": protocol::BRIDGE_BUILD_ID,
             "protocol": self.handshake,
+            "dropped_frames": self.dropped_frames,
             "channel_receivers": {
                 "cmd": self.cmd.recv_count(),        // = app listeners
                 "events": self.events.recv_count(),  // reply channels: count includes this bridge
@@ -476,6 +555,7 @@ impl Bridge {
     }
 
     pub fn get_ui_state(&mut self) -> Result<Value> {
+        self.drain_stale_states();
         let id = self.next_id();
         self.send(&protocol::get_ui_state(id))?;
         self.read_ui_state(id, OP_TIMEOUT)
@@ -498,6 +578,11 @@ impl Bridge {
     /// until the matches land, rather than returning on the ack (which raced to an
     /// empty result).
     pub fn search(&mut self, query: &str) -> Result<Value> {
+        // SearchCompleted carries no request id, so the loop below can only take
+        // the first result it sees. Draining first is what makes "the first" mean
+        // "ours" -- without it one timed-out search leaves its result queued and
+        // every later query answers with its predecessor's matches.
+        self.drain_stale_events();
         let id = self.next_id();
         self.send(&protocol::search(id, query))?;
 
@@ -509,7 +594,13 @@ impl Bridge {
                 continue;
             }
             self.record_event(buf.data());
-            let (_seq, incoming) = protocol::parse_event(buf.data())?;
+            let (_seq, incoming) = match protocol::parse_event(buf.data()) {
+                Ok(parsed) => parsed,
+                Err(e) => {
+                    self.note_dropped_frame("event", &e);
+                    continue;
+                }
+            };
             match incoming {
                 Incoming::SearchCompleted(v) => return Ok(v),
                 Incoming::CommandResult { request_id: rid, ok, message } if rid == id => {

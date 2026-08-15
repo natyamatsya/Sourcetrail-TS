@@ -409,12 +409,20 @@ pub fn event_to_json(bytes: &[u8]) -> Result<Value> {
     Ok(obj)
 }
 
+// TEMPORARY diagnostic: dump a buffer that failed to verify.
+fn dump_bad_buffer(tag: &str, bytes: &[u8]) {
+    if std::env::var("SOURCETRAIL_MCP_DUMP_BAD").is_err() { return; }
+    let path = format!("/tmp/badbuf-{tag}-{}.bin", bytes.len());
+    let _ = std::fs::write(&path, bytes);
+    eprintln!("dumped {} bytes to {} (ptr%8 unknown)", bytes.len(), path);
+}
+
 // --- UiState decoding (st.agent.state) --------------------------------------
 
 /// Decode a `UiStateEnvelope`; returns `(request_id, ui_state_json)`.
 pub fn parse_ui_state(bytes: &[u8]) -> Result<(u64, Value)> {
     let env = flatbuffers::root::<fb::UiStateEnvelope>(bytes)
-        .map_err(|e| anyhow!("bad UiStateEnvelope: {e}"))?;
+        .map_err(|e| { dump_bad_buffer("uistate", bytes); anyhow!("bad UiStateEnvelope: {e}") })?;
     let request_id = env.request_id();
     let s = env.state().ok_or_else(|| anyhow!("UiStateEnvelope has no state"))?;
 
@@ -654,6 +662,35 @@ mod tests {
         assert_eq!(json["active_nodes"][0]["serialized_name"], "m::Foo");
         assert_eq!(json["tabs"][0]["tab_id"], 10);
         assert_eq!(json["tabs"][0]["active"], true);
+    }
+
+    // search_matches is the only field in the envelope carrying a [uint64], and
+    // it went untested above -- which is how a misaligned node_ids vector
+    // reached the wire unnoticed. Kept as its own case so the u64 vector is
+    // always exercised.
+    #[test]
+    fn ui_state_search_matches_with_node_ids_parse() {
+        let mut b = FlatBufferBuilder::new();
+        let text = b.create_string("boundary");
+        let ids = b.create_vector(&[7u64, 8u64, 9u64]);
+        let m = fb::SearchMatch::create(
+            &mut b,
+            &fb::SearchMatchArgs { text: Some(text), node_kind: 0, node_ids: Some(ids), score: 5 },
+        );
+        let matches = b.create_vector(&[m]);
+        let ui = fb::UiState::create(
+            &mut b,
+            &fb::UiStateArgs { search_matches: Some(matches), ..Default::default() },
+        );
+        let env = fb::UiStateEnvelope::create(
+            &mut b, &fb::UiStateEnvelopeArgs { request_id: 3, state: Some(ui) });
+        b.finish(env, None);
+
+        let (rid, json) = parse_ui_state(b.finished_data()).unwrap();
+        assert_eq!(rid, 3);
+        assert_eq!(json["search_matches"][0]["text"], "boundary");
+        assert_eq!(json["search_matches"][0]["node_ids"][0], 7);
+        assert_eq!(json["search_matches"][0]["node_ids"][2], 9);
     }
 
     #[test]
