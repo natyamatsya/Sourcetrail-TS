@@ -41,6 +41,12 @@ final class AccessMap {
 	// Deprecation message per declaration name position (only when non-empty; the
 	// boolean itself rides the NODE_MODIFIER_DEPRECATED bit in modifierByPos).
 	private var deprecationByPos: [SyntaxPos: String] = [:]
+	// The C ABI symbol a declaration is exported under (`@_cdecl("sym")`), per
+	// name position. This is Swift's half of the ABI-mediated boundary
+	// (context/DESIGN_XLANG_BOUNDARIES.md): the attribute is the source saying it
+	// means to be reachable under a plain symbol name, which is the only thing
+	// another language can bind to.
+	private var cdeclByPos: [SyntaxPos: String] = [:]
 
 	static func build(path: String) -> AccessMap {
 		let map = AccessMap()
@@ -72,6 +78,11 @@ final class AccessMap {
 		deprecationByPos[pos]
 	}
 
+	// The C ABI symbol for the declaration at `pos` (nil = not exported).
+	func cdeclSymbol(at pos: SyntaxPos) -> String? {
+		cdeclByPos[pos]
+	}
+
 	fileprivate func record(nameToken: TokenSyntax, access: Int32, converter: SourceLocationConverter) {
 		let extent = tokenExtent(nameToken, converter)
 		byPos[SyntaxPos(line: Int(extent.startLine), column: Int(extent.startColumn))] = access
@@ -93,6 +104,14 @@ final class AccessMap {
 		guard !message.isEmpty else { return }  // the bit signals deprecation; the row adds the text
 		let extent = tokenExtent(nameToken, converter)
 		deprecationByPos[SyntaxPos(line: Int(extent.startLine), column: Int(extent.startColumn))] = message
+	}
+
+	fileprivate func recordCdecl(
+		nameToken: TokenSyntax, attributes: AttributeListSyntax, converter: SourceLocationConverter
+	) {
+		guard let symbol = swiftCdeclSymbol(attributes) else { return }
+		let extent = tokenExtent(nameToken, converter)
+		cdeclByPos[SyntaxPos(line: Int(extent.startLine), column: Int(extent.startColumn))] = symbol
 	}
 
 	fileprivate func recordAvailability(
@@ -120,6 +139,25 @@ func swiftAvailability(_ attributes: AttributeListSyntax) -> String? {
 		}
 	}
 	return specs.isEmpty ? nil : specs.joined(separator: "; ")
+}
+
+// The C ABI symbol a declaration is exported under: `@_cdecl("tsq_open")`, and
+// `@_silgen_name` which spells the same thing at a lower level. Returns the
+// symbol without quotes, or nil when the declaration is not exported. A Swift
+// function without one of these has a mangled name and nothing can bind to it,
+// so it is not a boundary -- the same rule the other producers follow.
+func swiftCdeclSymbol(_ attributes: AttributeListSyntax) -> String? {
+	for case .attribute(let attribute) in attributes {
+		let name = attribute.attributeName.as(IdentifierTypeSyntax.self)?.name.text
+		guard name == "_cdecl" || name == "_silgen_name" else { continue }
+		guard let arguments = attribute.arguments else { continue }
+		let text = arguments.description.trimmingCharacters(in: .whitespacesAndNewlines)
+		let symbol = text.trimmingCharacters(in: CharacterSet(charactersIn: "\""))
+		if !symbol.isEmpty {
+			return symbol
+		}
+	}
+	return nil
 }
 
 // A declaration's deprecation, if any: `@available(*, deprecated)` /
@@ -194,6 +232,7 @@ private final class AccessVisitor: SyntaxVisitor {
 	) {
 		map.record(nameToken: nameToken, access: swiftAccessKind(modifiers), converter: converter)
 		map.recordAvailability(nameToken: nameToken, attributes: attributes, converter: converter)
+		map.recordCdecl(nameToken: nameToken, attributes: attributes, converter: converter)
 		if let deprecation = swiftDeprecation(attributes) {
 			map.recordModifiers(nameToken: nameToken, mask: NodeModifier.deprecated, converter: converter)
 			map.recordDeprecation(

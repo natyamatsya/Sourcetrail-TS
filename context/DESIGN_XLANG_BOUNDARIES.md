@@ -1,9 +1,9 @@
 # Design: Cross-language boundaries — indexing and visualization
 
-**Status: X0, X1, X5 done; X2 done for C++/Rust/Zig; X3 done for C++/Rust; X4
-first slice done (2026-08-15).** Remaining: the Swift producers, Zig's schema
-mirrors, the IPC *channel* boundary (see X3 executed), and the rest of the
-visualization — grouping, the boundary filter chip, the legend. Nothing here requires the analysis engines of
+**Status: X0, X1, X5 done; X2 done for all four producers; X3 done for
+C++/Rust/Swift (Zig has no Zig-side mirror to bind); X4 first slice done
+(2026-08-15).** Remaining: the IPC *channel* boundary (see X3 executed) and the
+rest of the visualization — grouping, the boundary filter chip, the legend. Nothing here requires the analysis engines of
 [ROADMAP_ANALYSIS_ENGINES.md](ROADMAP_ANALYSIS_ENGINES.md); the boundary is
 recorded by producers, not derived. The invariant is
 [ADR-0009](../docs/adr/ADR-0009-language-boundaries-are-edges.md).
@@ -244,15 +244,15 @@ lands alone, proven behaviour-preserving, before any feature rides on it.
   single-language index is byte-identical to today except for the new column; a
   four-language index of this repo shows the expected per-language node counts.*
 - **X1 — measure the collisions. ✅ DONE (2026-08-15).** See *X1 executed* below.
-- **X2 — atoms and the ABI species. ✅ DONE for C++, Rust and Zig (2026-08-15);
-  Swift outstanding.** `NameDelimiterType::ABI`; `EDGE_BINDS`;
+- **X2 — atoms and the ABI species. ✅ DONE for C++, Rust, Zig and Swift
+  (2026-08-15).** `NameDelimiterType::ABI`; `EDGE_BINDS`;
   producers for C++ `extern "C"`, Rust `#[no_mangle]`/`extern "C"`, Zig
   `export`/`extern`, Swift `@_cdecl`. Includes lifting the Swift filter at
   `SemanticIndexer.swift:120` so C symbols in a mixed target survive, and fixing
   the missing `INDEXER_COMMAND_ZIG` in `InterprocessIndexer.inl:104-108` (today a
   C++ subprocess can pop a Zig command and drop it).
-- **X3 — the schema species (the IPC boundary). ✅ DONE for C++ and Rust
-  (2026-08-15); Swift and Zig outstanding.** See *X3 executed* below.
+- **X3 — the schema species (the IPC boundary). ✅ DONE for C++, Rust and Swift
+  (2026-08-15); Zig has nothing to bind — see below.** See *X3 executed*.
 - **X4 — visualization. 🟡 first slice done (2026-08-15).** The mask reaches the
   graph (`Node::getLanguages`/`isLanguageBoundary`) and a boundary node is drawn
   with a heavy border in `graph/node/boundary/border`; the tooltip names the
@@ -412,6 +412,48 @@ literal at a call site, so recognising one means either a project-declared prefi
 pass over string literals, which belongs to
 [ROADMAP_ANALYSIS_ENGINES.md](ROADMAP_ANALYSIS_ENGINES.md) rather than to a
 producer. Left open on purpose.
+
+## Swift executed (2026-08-15) — both species, and a lesson about fallbacks
+
+Swift's ABI half is `@_cdecl("sym")` (and `@_silgen_name`), read syntactically
+next to `@available` and the access modifiers, keyed by name position the way
+every other syntactic fact in this indexer is. A Swift function without one of
+those has a mangled name and mints nothing, the same rule the other three
+producers follow.
+
+It shows what the atom is *for* better than any other pair so far:
+
+```
+ATOM  abi:swift_compute   langs=5  (cxx|swift)
+  <- cxx   ::swift_compute(int)
+  <- swift ::Demo.swiftCompute(_:)
+```
+
+The Swift declaration is called `swiftCompute(_:)` and exports as
+`swift_compute`. No name-based merge could ever have related those two; the atom
+is the only thing that can.
+
+The schema half took a second attempt, and the reason generalises. The binding
+was hooked into the semantic pass, and produced nothing — because generated
+mirrors are exactly the files that *have no up-to-date index unit*, so they
+arrive through `SyntacticIndexer`'s fallback instead. Both passes now bind, and
+the (schema file, type) key is a shared free function rather than a copy in each.
+With that: **19 schema atoms carry `languages = 5`**, the same 19 contracts the
+C++/Rust pairing found.
+
+Two producers, two different reasons the first attempt missed: Rust's mirrors are
+macro-origin, Swift's are index-unit-less. Generated code arrives by unusual
+routes in every language, and a producer that only handles the ordinary path will
+silently bind nothing.
+
+**Zig is not an omission here, it is a structural fact.** Zig's mirror of these
+schemas is not Zig — flatcc has no Zig backend, so the bindings are generated *C*
+and reach the code through `@cImport` (`src/zig_indexer/src/ipc/c.zig:5`). A Zig
+indexer that reads `.zig` files has no declaration to bind, and inventing one
+from an `@cImport` would be the build-mediated species (X6), not this one. The
+Zig side of the IPC boundary is reachable only by indexing that generated C — a C
+source group over the flatcc output — which is a project-setup question rather
+than a producer change.
 
 ## Verification
 

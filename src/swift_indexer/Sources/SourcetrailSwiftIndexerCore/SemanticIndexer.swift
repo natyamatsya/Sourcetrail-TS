@@ -166,6 +166,21 @@ final class SemanticIndexer {
 			builder.recordNodeAttribute(
 				nodeId: nodeId, key: NodeAttributeKind.deprecated, value: message)
 		}
+		// The ABI-mediated boundary: `@_cdecl("sym")` states a linkage name, so
+		// this declaration and whatever C++/Rust/Zig declares the same symbol meet
+		// at one atom. See context/DESIGN_XLANG_BOUNDARIES.md.
+		if let symbol = accessMap?.cdeclSymbol(at: position) {
+			builder.bindToAtom(declNodeId: nodeId, delimiter: "abi", parts: [symbol])
+		}
+		// The schema-mediated (IPC) boundary: a type mirrored from an interface
+		// schema. Keyed by (schema file, type name) because that pair is the only
+		// spelling every generator backend agrees on.
+		if let (schemaBase, typeName) = schemaMirrorKey(
+			path: occurrence.location.path, typeName: parts.last ?? "")
+		{
+			builder.bindToAtom(
+				declNodeId: nodeId, delimiter: "schema", parts: [schemaBase, typeName])
+		}
 		recordDefinitionLocations(
 			elementId: nodeId, occurrence: occurrence, fileNodeId: fileNodeId)
 

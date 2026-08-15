@@ -32,6 +32,9 @@ enum EdgeKind {
 	static let import_: Int32 = 1 << 9
 	static let macroUsage: Int32 = 1 << 11
 	static let annotationUsage: Int32 = 1 << 12
+	// A declaration binding to a contract atom; always declaration -> atom
+	// (ADR-0009).
+	static let binds: Int32 = 1 << 13
 }
 
 enum DefinitionKind {
@@ -78,6 +81,30 @@ enum LocationKind {
 	static let localSymbol: Int32 = 3
 }
 
+// (schema base, type name) when `path` is a generated mirror -- every FlatBuffers
+// backend writes `<base>_generated.<ext>` -- else nil. Generator suffixes fold
+// onto the table's own name, and flatc's Swift backend flattens the schema
+// namespace into the type (`Sourcetrail_Ipc_StorageNode`), so the table's name is
+// the last underscore segment. Shared by both indexing passes: generated files
+// often have no up-to-date index unit and arrive through the syntactic fallback.
+func schemaMirrorKey(path: String, typeName: String) -> (String, String)? {
+	let file = path.split(separator: "/").last.map(String.init) ?? path
+	guard let markerRange = file.range(of: "_generated."), !file.hasPrefix("_generated.")
+	else {
+		return nil
+	}
+	let schemaBase = String(file[file.startIndex..<markerRange.lowerBound])
+	guard !schemaBase.isEmpty else { return nil }
+	var name = typeName
+	for suffix in ["Builder", "T"] where name.hasSuffix(suffix) && name.count > suffix.count {
+		name = String(name.dropLast(suffix.count))
+	}
+	if name.contains("_"), let last = name.split(separator: "_").last {
+		name = String(last)
+	}
+	return name.isEmpty ? nil : (schemaBase, name)
+}
+
 enum NameHierarchy {
 	// `"::\tm" + parts joined by "\tn" with each part followed by "\ts\tp"`
 	// — identical to the Rust side's serialize_name.
@@ -94,5 +121,20 @@ enum NameHierarchy {
 
 	static func serializeFile(path: String) -> String {
 		"/\tm" + path + "\ts\tp"
+	}
+
+	// A contract atom in a reserved namespace ("abi", "schema") -- the node two
+	// languages meet at. Reserved means no ordinary declaration can be spelled
+	// this way, so the storage's serialized-name merge joins the producers on
+	// purpose. See context/DESIGN_XLANG_BOUNDARIES.md.
+	static func serializeAtom(delimiter: String, parts: [String]) -> String {
+		var out = delimiter + "\tm"
+		for (index, part) in parts.enumerated() {
+			if index > 0 {
+				out += "\tn"
+			}
+			out += part + "\ts\tp"
+		}
+		return out
 	}
 }

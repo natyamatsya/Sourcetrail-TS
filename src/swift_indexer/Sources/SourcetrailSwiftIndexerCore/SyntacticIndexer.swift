@@ -36,6 +36,7 @@ enum SyntacticIndexer {
 		let visitor = DeclVisitor(
 			moduleName: moduleName,
 			builder: builder,
+			path: path,
 			fileNodeId: fileNodeId,
 			converter: converter
 		)
@@ -46,16 +47,22 @@ enum SyntacticIndexer {
 		private let builder: StorageBuilder
 		private let fileNodeId: Int64
 		private let converter: SourceLocationConverter
+		/// The file being walked -- generated mirrors are recognised by their name
+		/// (`<schema>_generated.swift`), and they reach this pass rather than the
+		/// semantic one precisely because generated files often have no index unit.
+		private let path: String
 		/// Name-part stack; starts with the module.
 		private var scope: [String]
 
 		init(
 			moduleName: String,
 			builder: StorageBuilder,
+			path: String,
 			fileNodeId: Int64,
 			converter: SourceLocationConverter
 		) {
 			self.builder = builder
+			self.path = path
 			self.fileNodeId = fileNodeId
 			self.converter = converter
 			self.scope = [moduleName]
@@ -92,6 +99,17 @@ enum SyntacticIndexer {
 			}
 			if mask != 0 {
 				builder.addNodeModifier(nodeId: nodeId, modifier: mask)
+			}
+			// The two boundary species, on the fallback path as well as the
+			// semantic one (context/DESIGN_XLANG_BOUNDARIES.md).
+			if let attributed = decl.asProtocol(WithAttributesSyntax.self),
+				let symbol = swiftCdeclSymbol(attributed.attributes)
+			{
+				builder.bindToAtom(declNodeId: nodeId, delimiter: "abi", parts: [symbol])
+			}
+			if let (schemaBase, typeName) = schemaMirrorKey(path: path, typeName: name) {
+				builder.bindToAtom(
+					declNodeId: nodeId, delimiter: "schema", parts: [schemaBase, typeName])
 			}
 
 			let parentKind = scope.count == 1 ? NodeKind.module : NodeKind.symbol

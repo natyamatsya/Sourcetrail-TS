@@ -113,6 +113,25 @@ final class StorageBuilder {
 		}
 	}
 
+	/// The contract atom for `parts` in a reserved namespace, deduped by
+	/// serialized name, and an EDGE_BINDS edge from `declNodeId` to it. Atoms get
+	/// no symbol row: nobody defines an ABI symbol or a schema table, they
+	/// declare against it (the DefinitionKind::NONE convention).
+	func bindToAtom(declNodeId: Int64, delimiter: String, parts: [String]) {
+		let name = NameHierarchy.serializeAtom(delimiter: delimiter, parts: parts)
+		let atomId: Int64
+		if let existing = nodeIds[name] {
+			atomId = existing
+		} else {
+			atomId = storage.allocateId()
+			nodeIds[name] = atomId
+			storage.nodes.append(
+				OwnedStorageNode(id: atomId, type: NodeKind.symbol, serializedName: name)
+			)
+		}
+		_ = edgeId(type: EdgeKind.binds, source: declNodeId, target: atomId)
+	}
+
 	func edgeId(type: Int32, source: Int64, target: Int64) -> Int64 {
 		let key = "\(type):\(source):\(target)"
 		if let id = edgeIds[key] {
