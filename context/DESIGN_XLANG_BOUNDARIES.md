@@ -1,9 +1,9 @@
 # Design: Cross-language boundaries — indexing and visualization
 
-**Status: X0, X1, X5 done; X2 done for all four producers; X3 done for
-C++/Rust/Swift (Zig has no Zig-side mirror to bind); X4 first slice done
-(2026-08-15).** Remaining: the IPC *channel* boundary (see X3 executed) and the
-rest of the visualization — grouping, the boundary filter chip, the legend. Nothing here requires the analysis engines of
+**Status: X0-X5 done (2026-08-15); X2 for all four producers, X3 for
+C++/Rust/Swift (Zig has no Zig-side mirror to bind).** Remaining: the IPC
+*channel* boundary (see *X3 executed*), Zig's schema half (structural — see
+below), and the optional X6. Nothing here requires the analysis engines of
 [ROADMAP_ANALYSIS_ENGINES.md](ROADMAP_ANALYSIS_ENGINES.md); the boundary is
 recorded by producers, not derived. The invariant is
 [ADR-0009](../docs/adr/ADR-0009-language-boundaries-are-edges.md).
@@ -253,11 +253,15 @@ lands alone, proven behaviour-preserving, before any feature rides on it.
   C++ subprocess can pop a Zig command and drop it).
 - **X3 — the schema species (the IPC boundary). ✅ DONE for C++, Rust and Swift
   (2026-08-15); Zig has nothing to bind — see below.** See *X3 executed*.
-- **X4 — visualization. 🟡 first slice done (2026-08-15).** The mask reaches the
-  graph (`Node::getLanguages`/`isLanguageBoundary`) and a boundary node is drawn
-  with a heavy border in `graph/node/boundary/border`; the tooltip names the
-  languages when there is more than one. Still open: `GroupType::LANGUAGE`, the
-  boundary filter chip, and the legend section.
+- **X4 — visualization. ✅ DONE (2026-08-15).** The mask reaches the graph
+  (`Node::getLanguages`/`isLanguageBoundary`); a boundary node is drawn with a
+  heavy border in `graph/node/boundary/border` and its tooltip names the
+  languages. `GroupType::LANGUAGE` groups by producing language with one
+  "Language Boundary" group for everything more than one language claims; the
+  filter chip landed as `SearchMatch::CommandType::COMMAND_BOUNDARY` (type
+  `boundary` in the search field), backed by
+  `StorageAccess::getGraphForLanguageBoundaries`; the legend gained a boundary
+  entry. Colours are scheme entries across all seven schemes.
 - **X5 — the invariant. ✅ DONE (2026-08-15).**
   [ADR-0009](../docs/adr/ADR-0009-language-boundaries-are-edges.md).
 - **X6 (optional) — build-mediated boundaries.** Zig `@cImport` resolving to the
@@ -349,7 +353,7 @@ boundary, which is worth seeing rather than hiding.
 keep their own names, signatures and locations, and the relation between them is
 an edge. That is now an invariant rather than a convention: ADR-0009.
 
-## X4 executed (2026-08-15, first slice) — you can see it
+## X4 executed (2026-08-15) — you can see it, and you can ask for it
 
 `Node` carries the mask into the graph, and `QtGraphNodeData::updateStyle` draws
 a node that more than one language claims with a heavy solid border — a border
@@ -358,6 +362,27 @@ and the active state. Verified in the running app rather than by reasoning about
 it: activating `abi:zig_add` renders the atom flanked by the Zig `export fn` and
 the C++ `extern "C"` declaration, joined by `EDGE_BINDS`, with the atom drawn in
 the boundary colour.
+
+The rest followed. **Grouping**: `GroupType::LANGUAGE` keys on the mask each node
+already carries, so unlike FILE and NAMESPACE it needs no storage lookup — one
+group per language plus a single "Language Boundary" group, because the point is
+to have one place to look rather than one group per pair. A language group is
+inert on click and hover: its id is synthesized from a member (no token stands
+for "C++"), so activating it would look up a node that does not exist.
+
+**The command**: `boundary` in the search field, a `CommandType` rather than a
+node-type filter because `NodeTypeSet`'s matchers only ever see a `NodeType` and
+what makes a node a boundary is its language mask — the design called that
+correctly. `getGraphForLanguageBoundaries` excludes file nodes deliberately:
+every indexer names a file the same way on purpose (ADR-0009), so in a mixed
+target a mass of files carry two bits without being boundaries in the sense the
+command asks about, and including them buried the atoms.
+
+Verified in the app: the three grouping controls are live in the widget tree
+(`group_left_button` / `group_middle_button` / `group_right_button`), and a
+storage test covers the boundary graph — the atom and both binders present, the
+single-language node and the two-language *file* both absent, and the mask
+surviving into the graph.
 
 ## X3 executed (2026-08-15) — the IPC boundary, and the constant nobody links
 
