@@ -665,7 +665,21 @@ if (BUILD_CXX_LANGUAGE_PACKAGE)
 			${LLVM_INCLUDE_DIRS}
 			${CLANG_INCLUDE_DIRS}
 	)
-	
+
+	# lib_core's ToolChain.cpp reads LLVM_VERSION_MAJOR out of <llvm/Config/llvm-config.h>
+	# when the C++ package is on, so it needs LLVM's include path -- but nothing else of
+	# LLVM's, which is why this is the include directories alone and not External_lib_clang
+	# (that target's INTERFACE carries every LLVM and Clang library, and lib_core links none
+	# of them). Stated here rather than in src/lib_core/CMakeLists.txt because lib_core is
+	# added before find_package(Clang) runs, so LLVM_INCLUDE_DIRS does not exist yet there.
+	#
+	# It has to be stated at all: on a machine where Homebrew's keg-only llvm happens to be
+	# force-linked, /opt/homebrew/include/llvm resolves the header and the omission is
+	# invisible. A stock `brew install llvm` leaves it unlinked -- which is what the macOS CI
+	# runner has, and where this first showed up as a build failure rather than a missing
+	# dependency.
+	target_include_directories(Sourcetrail_lib_core SYSTEM PRIVATE ${LLVM_INCLUDE_DIRS})
+
 	# 'LLVM_LINK_LLVM_DYLIB' is set when LLVM/Clang have been build into seperate single libraries.
 	# Apparently this means for LLVM 'libLLVM' and for Clang 'libclang-cpp'.
 	# For further details see https://llvm.org/docs/CMake.html#embedding-llvm-in-your-project
