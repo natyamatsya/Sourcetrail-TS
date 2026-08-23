@@ -343,6 +343,10 @@ struct Collector<'db> {
     storage: OwnedIntermediateStorage,
     /// Scope of implicit generic-specialization nodes (§7).
     spec_scope: SpecializationScope,
+    /// Project-declared IPC channel-name prefixes. A `const`/`static` whose
+    /// initializer is a string literal starting with one of these binds to a
+    /// `channel:` contract atom. Empty = the project declares no channels.
+    channel_name_prefixes: Vec<String>,
     /// Called whenever we start processing a new source file. Receives the file path.
     on_file: Box<dyn FnMut(&str) + 'db>,
 }
@@ -375,6 +379,21 @@ fn serialize_name(qualified: &str) -> String {
 fn serialize_abi_name(symbol: &str) -> String {
     let mut out = String::from("abi\tm");
     out.push_str(symbol);
+    out.push('\t');
+    out.push('s');
+    out.push('\t');
+    out.push('p');
+    out
+}
+
+/// Encode a channel-mediated contract atom: `"channel\tm<literal>\ts\tp"`.
+/// Keyed by the literal itself, because the literal is the only thing the four
+/// declarations of one channel name have in common -- they are called
+/// MEM_PREFIX here, s_memoryNamePrefix in C++, mem_prefix in Zig and
+/// memoryNamePrefix in Swift.
+fn serialize_channel_name(literal: &str) -> String {
+    let mut out = String::from("channel\tm");
+    out.push_str(literal);
     out.push('\t');
     out.push('s');
     out.push('\t');
@@ -433,6 +452,7 @@ impl<'db> Collector<'db> {
         db: &'db RootDatabase,
         vfs: &'db Vfs,
         spec_scope: SpecializationScope,
+        channel_name_prefixes: Vec<String>,
         on_file: impl FnMut(&str) + 'db,
     ) -> Self {
         Self {
@@ -450,6 +470,7 @@ impl<'db> Collector<'db> {
             next_id: 1,
             storage: OwnedIntermediateStorage::default(),
             spec_scope,
+            channel_name_prefixes,
             on_file: Box::new(on_file),
         }
     }
@@ -1421,15 +1442,21 @@ impl<'db> Collector<'db> {
                 if let Some(name) = c.name(self.db) {
                     let name = name.as_str().to_string();
                     let qualified_name = Self::qualify_in_module(module_prefix, &name);
-                    self.emit_from_source(c.source(self.db), &qualified_name, NODE_GLOBAL_VARIABLE);
+                    let src = c.source(self.db);
+                    let body = src.as_ref().and_then(|s| s.value.body());
+                    self.emit_from_source(src, &qualified_name, NODE_GLOBAL_VARIABLE);
                     self.register_def(DefKey::Def(def), &qualified_name);
+                    self.bind_if_channel_const(&qualified_name, body);
                 }
             }
             ModuleDef::Static(s) => {
                 let name = s.name(self.db).as_str().to_string();
                 let qualified_name = Self::qualify_in_module(module_prefix, &name);
-                self.emit_from_source(s.source(self.db), &qualified_name, NODE_GLOBAL_VARIABLE);
+                let src = s.source(self.db);
+                let body = src.as_ref().and_then(|s| s.value.body());
+                self.emit_from_source(src, &qualified_name, NODE_GLOBAL_VARIABLE);
                 self.register_def(DefKey::Def(def), &qualified_name);
+                self.bind_if_channel_const(&qualified_name, body);
             }
             ModuleDef::Macro(m) => {
                 let name = m.name(self.db).as_str().to_string();
@@ -1583,6 +1610,57 @@ impl<'db> Collector<'db> {
             return;
         }
         let serialized = serialize_schema_name(&schema_base, &type_name);
+        let atom_id = match self.abi_atom_ids.get(&serialized) {
+            Some(&id) => id,
+            None => {
+                let id = self.alloc_id();
+                self.storage.nodes.push(OwnedStorageNode {
+                    id,
+                    type_: NODE_SYMBOL,
+                    serialized_name: Some(serialized.clone()),
+                    modifiers: 0,
+                    language_mask: LANGUAGE_RUST,
+                });
+                self.abi_atom_ids.insert(serialized, id);
+                id
+            }
+        };
+        self.push_edge(EDGE_BINDS, node_id, atom_id);
+    }
+
+    /// Bind a `const`/`static` whose initializer is a string literal naming one
+    /// of the project's declared IPC channels to its `channel:` contract atom --
+    /// the channel species. `srctrl_ipc_mem_` is spelled out verbatim in four
+    /// languages with nothing relating the copies; change one and the IPC breaks
+    /// silently, in a way no test in any single language would catch.
+    ///
+    /// Which literals count is declared by the project rather than guessed here:
+    /// a string constant is not evidence of a channel the way `#[no_mangle]` is
+    /// evidence of linkage. With no prefixes declared this records nothing.
+    fn bind_if_channel_const(&mut self, name: &str, body: Option<ast::Expr>) {
+        if self.channel_name_prefixes.is_empty() {
+            return;
+        }
+        let Some(body) = body else {
+            return;
+        };
+        let text = body.syntax().text().to_string();
+        if !text.starts_with('"') {
+            return;
+        }
+        let literal = string_token_value(&text);
+        if literal.is_empty()
+            || !self
+                .channel_name_prefixes
+                .iter()
+                .any(|prefix| !prefix.is_empty() && literal.starts_with(prefix.as_str()))
+        {
+            return;
+        }
+        let Some(&node_id) = self.node_ids.get(name) else {
+            return;
+        };
+        let serialized = serialize_channel_name(&literal);
         let atom_id = match self.abi_atom_ids.get(&serialized) {
             Some(&id) => id,
             None => {
@@ -2776,6 +2854,7 @@ pub(super) fn collect_from_db<'db>(
     db: &'db RootDatabase,
     vfs: &'db Vfs,
     spec_scope: SpecializationScope,
+    channel_name_prefixes: Vec<String>,
     restrict_to_package_root: Option<&std::path::Path>,
     on_file: impl FnMut(&str) + 'db,
 ) -> OwnedIntermediateStorage {
@@ -2783,7 +2862,8 @@ pub(super) fn collect_from_db<'db>(
     // runs on the next-trait-solver, which requires the database to be
     // attached to the current thread via hir_ty's TLS.
     ra_ap_hir::attach_db(db, || {
-        let mut collector = Collector::with_callback(db, vfs, spec_scope, on_file);
+        let mut collector =
+            Collector::with_callback(db, vfs, spec_scope, channel_name_prefixes, on_file);
 
         for krate in Crate::all(db) {
             // Skip library crates (std, core, registry deps) — only index

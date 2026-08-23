@@ -8,6 +8,8 @@
 #include <clang/AST/Attr.h>
 #include <clang/AST/Decl.h>
 #include <clang/AST/DeclTemplate.h>
+#include <clang/AST/Expr.h>
+#include <clang/AST/ExprCXX.h>
 #include <clang/AST/Type.h>
 #include <clang/Basic/Module.h>
 #include "CanonicalFilePathCache.h"
@@ -328,6 +330,71 @@ inline void CxxIndexingContext::recordSchemaBinding(Id symbolId, const clang::Na
 	NameHierarchy atom(NameDelimiterType::SCHEMA);
 	atom.push(schemaBase);
 	atom.push(typeName);
+
+	const Id atomId = m_client.recordSymbol(atom);
+	m_client.recordReference(
+		ReferenceKind::BINDS, atomId, symbolId, m_locations.getParseLocation(d->getLocation()));
+}
+
+inline void CxxIndexingContext::recordChannelBinding(Id symbolId, const clang::VarDecl* d)
+{
+	// The channel species: an IPC channel is named by a string constant that
+	// several languages must spell identically, and nothing in the graph relates
+	// the four copies. `srctrl_ipc_mem_` is written out verbatim in C++, Rust,
+	// Zig and Swift; change one and the IPC breaks silently, in a way no test in
+	// any single language would catch.
+	//
+	// The atom is keyed by the *literal*, not by the declaration's name, because
+	// the literal is the only thing the four declarations have in common: they
+	// are called s_memoryNamePrefix, MEM_PREFIX, mem_prefix and memoryNamePrefix
+	// respectively. That is the same reason the ABI atom is keyed by the linkage
+	// symbol rather than by the Swift function's own name.
+	//
+	// Which literals count is declared by the project (`channel_name_prefixes`),
+	// not guessed here: a string constant is not evidence of a channel the way
+	// `extern "C"` is evidence of linkage, so recognising one needs a statement
+	// from outside the source. With no prefixes declared this records nothing.
+	if (!d)
+	{
+		return;
+	}
+	const std::vector<std::string>& prefixes = m_client.getChannelNamePrefixes();
+	if (prefixes.empty())
+	{
+		return;
+	}
+
+	const clang::Expr* init = d->getAnyInitializer();
+	if (init == nullptr)
+	{
+		return;
+	}
+	// `const char* p = "lit"` wraps the literal in an array-to-pointer decay, and
+	// `std::string_view v = "lit"` in a constructor call; unwrap both so the four
+	// languages' spellings of "a constant holding this text" all reach the atom.
+	init = init->IgnoreParenImpCasts();
+	if (const auto* construct = clang::dyn_cast<clang::CXXConstructExpr>(init))
+	{
+		if (construct->getNumArgs() == 0)
+		{
+			return;
+		}
+		init = construct->getArg(0)->IgnoreParenImpCasts();
+	}
+	const auto* literal = clang::dyn_cast<clang::StringLiteral>(init);
+	if (literal == nullptr || !literal->isOrdinary())
+	{
+		return;
+	}
+
+	const std::string channelName = literal->getString().str();
+	if (!isChannelName(channelName, prefixes))
+	{
+		return;
+	}
+
+	NameHierarchy atom(NameDelimiterType::CHANNEL);
+	atom.push(channelName);
 
 	const Id atomId = m_client.recordSymbol(atom);
 	m_client.recordReference(

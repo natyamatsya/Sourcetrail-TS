@@ -16,6 +16,8 @@ inline std::string nameDelimiterTypeToString(NameDelimiterType delimiter)
 			return "abi";
 		case NameDelimiterType::SCHEMA:
 			return "schema";
+		case NameDelimiterType::CHANNEL:
+			return "channel";
 		default:
 			break;
 	}
@@ -43,6 +45,10 @@ inline NameDelimiterType stringToNameDelimiterType(const std::string& s)
 	if (s == nameDelimiterTypeToString(NameDelimiterType::SCHEMA))
 	{
 		return NameDelimiterType::SCHEMA;
+	}
+	if (s == nameDelimiterTypeToString(NameDelimiterType::CHANNEL))
+	{
+		return NameDelimiterType::CHANNEL;
 	}
 	return NameDelimiterType::UNKNOWN;
 }

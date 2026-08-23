@@ -609,6 +609,12 @@ void Project::buildIndexImpl(RefreshInfo info, std::shared_ptr<DialogView> dialo
 		std::make_unique<CombinedIndexerCommandProvider>();
 	std::unique_ptr<CombinedIndexerCommandProvider> customIndexerCommandProvider =
 		std::make_unique<CombinedIndexerCommandProvider>();
+	// The channel-name prefixes are a property of the project, not of a source
+	// group -- a channel is precisely the thing two source groups share -- so
+	// they are stamped onto every command whatever language it is for.
+	const std::vector<std::string> channelNamePrefixes = m_settings->getChannelNamePrefixes();
+	indexerCommandProvider->setChannelNamePrefixes(channelNamePrefixes);
+	customIndexerCommandProvider->setChannelNamePrefixes(channelNamePrefixes);
 	std::vector<IndexerClusterEntry> cxxClusters;
 	size_t rustCrateCount = 0;
 	size_t swiftPackageCount = 0;

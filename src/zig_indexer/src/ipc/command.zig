@@ -20,12 +20,19 @@ pub const Command = struct {
     source_file_path: []u8,
     working_directory: []u8,
     indexed_paths: [][]u8,
+    /// Project-declared IPC channel-name prefixes (the channel species of
+    /// context/DESIGN_XLANG_BOUNDARIES.md). Common to every command type, not
+    /// Zig-specific; the queue rewrite carries it for other languages'
+    /// commands automatically because `_clone` copies whole tables.
+    channel_name_prefixes: [][]const u8,
 
     pub fn deinit(self: *Command, gpa: std.mem.Allocator) void {
         gpa.free(self.source_file_path);
         gpa.free(self.working_directory);
         for (self.indexed_paths) |p| gpa.free(p);
         gpa.free(self.indexed_paths);
+        for (self.channel_name_prefixes) |p| gpa.free(p);
+        gpa.free(self.channel_name_prefixes);
     }
 };
 
@@ -103,7 +110,22 @@ fn copyCommand(gpa: std.mem.Allocator, cmd: c.Sourcetrail_Ipc_IndexerCommand_tab
         paths[filled] = try gpa.dupe(u8, strSlice(c.flatbuffers_string_vec_at(paths_vec, filled)));
     }
 
-    return .{ .source_file_path = src, .working_directory = wd, .indexed_paths = paths };
+    const prefix_vec = c.Sourcetrail_Ipc_IndexerCommand_channel_name_prefixes(cmd);
+    const pn: usize = if (prefix_vec == null) 0 else c.flatbuffers_string_vec_len(prefix_vec);
+    const prefixes = try gpa.alloc([]const u8, pn);
+    errdefer gpa.free(prefixes);
+    var pfilled: usize = 0;
+    errdefer for (prefixes[0..pfilled]) |p| gpa.free(p);
+    while (pfilled < pn) : (pfilled += 1) {
+        prefixes[pfilled] = try gpa.dupe(u8, strSlice(c.flatbuffers_string_vec_at(prefix_vec, pfilled)));
+    }
+
+    return .{
+        .source_file_path = src,
+        .working_directory = wd,
+        .indexed_paths = paths,
+        .channel_name_prefixes = prefixes,
+    };
 }
 
 fn rebuildWithout(gpa: std.mem.Allocator, cmds: c.Sourcetrail_Ipc_IndexerCommand_vec_t, len: usize, skip: usize) shm.Error![]u8 {

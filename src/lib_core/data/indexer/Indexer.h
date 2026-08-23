@@ -85,8 +85,13 @@ IndexerBase::IndexResult Indexer<T>::index(const std::shared_ptr<IndexerCommand>
 	// The indexer's own language rides along, so every node this run records says
 	// who recorded it. The command type is the authority: it is what selected
 	// this indexer in the first place.
+	// The project's channel-name prefixes ride along the same way, and for the same
+	// reason: they are common to every command type, so the erased payload cannot
+	// carry them and the producers read them back off the client.
 	const std::shared_ptr<ParserClientImpl> parserClient = std::make_shared<ParserClientImpl>(
-		storage, languageMaskForIndexerCommandType(getSupportedIndexerCommandType()));
+		storage,
+		languageMaskForIndexerCommandType(getSupportedIndexerCommandType()),
+		indexerCommand->getChannelNamePrefixes());
 
 	const auto doIndexResult = utility::expectedFromExceptions<void>(
 		IndexerErrorCode::ExecutionException,

@@ -17,6 +17,7 @@
 #ifndef SRCTRL_MODULE_BUILD
 #include "IntermediateStorage.h"
 #include "IndexerCommand.h"
+#include "ParserClient.h"
 #include "IndexerCommandSwift.h"
 #endif
 
@@ -70,6 +71,45 @@ TEST_CASE("ipc serializer round-trips")
 		REQUIRE(result.size() == 2);
 		REQUIRE(result[0]->getSourceGroupId() == "6f0d4b2e-9c1a-4a5e-8f00-1234567890ab");
 		REQUIRE(result[1]->getSourceGroupId().empty());
+	}
+
+	SECTION("IndexerCommand channel-name prefixes round-trip")
+	{
+		// The project's declared IPC channel prefixes ride every command type
+		// through the base class, like the group tag — they are what every
+		// language's producer needs to mint a `channel:` contract atom.
+		auto withPrefixes = std::make_shared<IndexerCommand>(
+			FilePath("/src/main.swift"),
+			IndexerCommandSwift(std::set<FilePath>{FilePath("/src")}, FilePath("/src")));
+		withPrefixes->setChannelNamePrefixes({"srctrl_ipc_", "icmd_ipc_"});
+		auto without = std::make_shared<IndexerCommand>(
+			FilePath("/src/other.swift"),
+			IndexerCommandSwift(std::set<FilePath>{}, FilePath("/src")));
+
+		auto buf = IpcSerializer::serializeIndexerCommands({withPrefixes, without});
+		auto result = IpcSerializer::deserializeIndexerCommands(buf.data(), buf.size());
+
+		REQUIRE(result.size() == 2);
+		REQUIRE(result[0]->getChannelNamePrefixes() ==
+			std::vector<std::string>{"srctrl_ipc_", "icmd_ipc_"});
+		REQUIRE(result[1]->getChannelNamePrefixes().empty());
+	}
+
+	SECTION("channel-name matching is prefix, not glob")
+	{
+		// Prefix on purpose: this predicate is reimplemented by four indexers in
+		// four languages, and "starts with" is the only spelling that cannot
+		// drift between them.
+		const std::vector<std::string> prefixes{"srctrl_ipc_"};
+		REQUIRE(isChannelName("srctrl_ipc_mem_", prefixes));
+		REQUIRE(isChannelName("srctrl_ipc_", prefixes));
+		REQUIRE_FALSE(isChannelName("srctrl_ip", prefixes));
+		REQUIRE_FALSE(isChannelName("prefixed_srctrl_ipc_mem_", prefixes));
+		REQUIRE_FALSE(isChannelName("srctrl_ipc_mem_", {}));
+		// An empty prefix would otherwise match every string literal in the
+		// project; it is ignored rather than treated as a wildcard.
+		REQUIRE_FALSE(isChannelName("anything", {""}));
+		REQUIRE_FALSE(isChannelName("", prefixes));
 	}
 
 	SECTION("IntermediateStorage round-trip")

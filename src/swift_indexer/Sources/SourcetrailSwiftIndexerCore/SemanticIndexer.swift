@@ -33,6 +33,9 @@ final class SemanticIndexer {
 	/// SW11 (type arguments): whether/where generic use sites emit
 	/// EDGE_TYPE_ARGUMENT.
 	private let specializationScope: SpecializationScope
+	/// Project-declared IPC channel-name prefixes; empty = no channels declared
+	/// and this pass records none.
+	private let channelNamePrefixes: [String]
 	/// SW11: per-file type-argument sites (arg pos → base pos). Nil when the scope
 	/// is `off`. Set per file.
 	private var genericArgMap: GenericArgMap?
@@ -48,7 +51,8 @@ final class SemanticIndexer {
 		databasePath: URL,
 		builder: StorageBuilder,
 		toolchainPath: String = "",
-		specializationScope: SpecializationScope = .local
+		specializationScope: SpecializationScope = .local,
+		channelNamePrefixes: [String] = []
 	) throws {
 		let library = try IndexStoreLibrary(
 			dylibPath: Toolchain.libIndexStorePath(toolchainPath: toolchainPath))
@@ -62,6 +66,7 @@ final class SemanticIndexer {
 		index.pollForUnitChangesAndWait(isInitialScan: true)
 		self.builder = builder
 		self.specializationScope = specializationScope
+		self.channelNamePrefixes = channelNamePrefixes
 	}
 
 	/// The subset of `sourceFiles` with an up-to-date index unit.
@@ -84,7 +89,7 @@ final class SemanticIndexer {
 		scopeMap = DeclScopeMap.build(path: path)
 		genericMap = GenericParamMap.build(path: path)
 		attributeMap = AttributeMap.build(path: path)
-		accessMap = AccessMap.build(path: path)
+		accessMap = AccessMap.build(path: path, channelNamePrefixes: channelNamePrefixes)
 		genericArgMap = specializationScope == .off ? nil : GenericArgMap.build(path: path)
 		defPartsByPos.removeAll(keepingCapacity: true)
 		refTargetByPos.removeAll(keepingCapacity: true)
@@ -180,6 +185,14 @@ final class SemanticIndexer {
 		{
 			builder.bindToAtom(
 				declNodeId: nodeId, delimiter: "schema", parts: [schemaBase, typeName])
+		}
+		// The channel-mediated (IPC) boundary: a constant holding a channel name
+		// the project declared. Keyed by the literal, because that is the only
+		// thing the four languages' declarations of one channel share -- here it
+		// is `memoryNamePrefix`, in C++ `s_memoryNamePrefix`, in Rust
+		// `MEM_PREFIX` and in Zig `mem_prefix`.
+		if let channel = accessMap?.channelName(at: position) {
+			builder.bindToAtom(declNodeId: nodeId, delimiter: "channel", parts: [channel])
 		}
 		recordDefinitionLocations(
 			elementId: nodeId, occurrence: occurrence, fileNodeId: fileNodeId)

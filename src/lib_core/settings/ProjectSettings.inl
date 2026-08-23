@@ -184,6 +184,16 @@ inline std::string ProjectSettings::getDescription() const
 	return getValue<std::string>("description", "");
 }
 
+inline std::vector<std::string> ProjectSettings::getChannelNamePrefixes() const
+{
+	return getValues<std::string>("channel_name_prefixes", {});
+}
+
+inline void ProjectSettings::setChannelNamePrefixes(const std::vector<std::string>& prefixes)
+{
+	setValues("channel_name_prefixes", prefixes);
+}
+
 inline void ProjectSettings::setAllSourceGroupSettings(
 	const std::vector<std::shared_ptr<SourceGroupSettings>>& allSettings)
 {

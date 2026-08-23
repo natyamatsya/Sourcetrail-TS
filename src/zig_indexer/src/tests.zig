@@ -382,3 +382,70 @@ test "self-index: parse the indexer's own source without errors" {
         try testing.expect(has_public);
     }
 }
+
+// --- channel-mediated boundaries (context/DESIGN_XLANG_BOUNDARIES.md) -------
+
+fn indexStringWithChannels(
+    gpa: std.mem.Allocator,
+    store: *storage.Storage,
+    src: [:0]const u8,
+    prefixes: []const []const u8,
+) !void {
+    try indexer.parser.indexSourceWithChannels(gpa, store, "test.zig", src, prefixes);
+}
+
+fn channelAtom(store: *storage.Storage, literal: []const u8) ?storage.StorageNode {
+    const expected = storage.serializeName(store.arena.allocator(), "channel", &.{literal}) catch return null;
+    for (store.nodes.items) |n| {
+        if (std.mem.eql(u8, n.serialized_name, expected)) return n;
+    }
+    return null;
+}
+
+test "a string constant matching a declared channel prefix binds to a channel atom" {
+    var store = storage.Storage.init(testing.allocator);
+    defer store.deinit();
+    try indexStringWithChannels(
+        testing.allocator,
+        &store,
+        \\const mem_prefix = "srctrl_ipc_mem_";
+        \\const mtx_prefix = "srctrl_ipc_mtx_";
+        \\const unrelated = "some other string";
+        \\const not_a_string = 7;
+        \\
+    ,
+        &.{"srctrl_ipc_"},
+    );
+
+    const mem = channelAtom(&store, "srctrl_ipc_mem_") orelse return error.MissingAtom;
+    const mtx = channelAtom(&store, "srctrl_ipc_mtx_") orelse return error.MissingAtom;
+    try testing.expect(channelAtom(&store, "some other string") == null);
+
+    // Byte-golden, not just self-consistent: the atom joins the four languages
+    // through the serialized-name merge, so this exact wire string is what the
+    // C++, Rust and Swift producers must also emit. Asserting it through this
+    // indexer's own serializer would prove only that it agrees with itself.
+    try testing.expectEqualStrings("channel\tmsrctrl_ipc_mem_\ts\tp", mem.serialized_name);
+
+    // The edge runs declaration -> atom, the direction every producer uses, so
+    // an atom's incoming edges answer "who speaks this channel".
+    const decl = nodeNamed(&store, "mem_prefix") orelse return error.MissingDecl;
+    var found = false;
+    for (store.edges.items) |e| {
+        if (e.kind == .binds and e.source_node_id == decl.id and e.target_node_id == mem.id) found = true;
+    }
+    try testing.expect(found);
+    try testing.expectEqual(@as(usize, 2), countEdges(&store, .binds));
+    _ = mtx;
+}
+
+test "no channel atoms without declared prefixes" {
+    var store = storage.Storage.init(testing.allocator);
+    defer store.deinit();
+    try indexString(testing.allocator, &store,
+        \\const mem_prefix = "srctrl_ipc_mem_";
+        \\
+    );
+    try testing.expect(channelAtom(&store, "srctrl_ipc_mem_") == null);
+    try testing.expectEqual(@as(usize, 0), countEdges(&store, .binds));
+}

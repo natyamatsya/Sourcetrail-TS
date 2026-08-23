@@ -29,7 +29,8 @@ private func makeCommand(
 		swiftBuildArgs: type == .swift ? ["--configuration", "release"] : [],
 		swiftToolchainPath: type == .swift ? "/opt/swift-6.1" : "",
 		swiftIndexStorePath: type == .swift ? "/build/index/store" : "",
-		swiftSpecializationScope: type == .swift ? "all" : ""
+		swiftSpecializationScope: type == .swift ? "all" : "",
+		channelNamePrefixes: ["srctrl_ipc_"]
 	)
 }
 
@@ -77,6 +78,13 @@ private func makeCommand(
 		#expect(rust.specializationScope == "local")
 		#expect(rust.sourceGroupId == "group-of-crate")
 		#expect(rust.restrictToPackage == true)
+
+		// The project's channel-name prefixes are common to every command type,
+		// so they must survive the pop AND the rewrite of other languages'
+		// commands — the "carry every schema field" invariant.
+		#expect(poppedCommand.channelNamePrefixes == ["srctrl_ipc_"])
+		#expect(cxx.channelNamePrefixes.map { $0 ?? "" } == ["srctrl_ipc_"])
+		#expect(rust.channelNamePrefixes.map { $0 ?? "" } == ["srctrl_ipc_"])
 	}
 
 	@Test func popReturnsNilAndDoesNotRewriteWithoutSwiftCommand() throws {

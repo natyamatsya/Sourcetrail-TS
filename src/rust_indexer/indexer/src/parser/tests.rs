@@ -19,6 +19,7 @@ fn index_src_with_sysroot(src: &str) -> OwnedIntermediateStorage {
         LoadProfile::SYSROOT,
         CargoOptions::default(),
         SpecializationScope::default(),
+        Vec::new(),
         false,
         |_| {},
     )
@@ -34,6 +35,26 @@ fn index_src_with_scope(src: &str, spec_scope: SpecializationScope) -> OwnedInte
         LoadProfile::FAST,
         CargoOptions::default(),
         spec_scope,
+        Vec::new(),
+        false,
+        |_| {},
+    )
+}
+
+// Helper: index a source string with the project's IPC channel-name prefixes
+// declared, so `const X: &str = "<prefix>…"` mints a `channel:` contract atom.
+fn index_src_with_channel_prefixes(
+    src: &str,
+    prefixes: Vec<String>,
+) -> OwnedIntermediateStorage {
+    let tmp = tempfile::tempdir().unwrap();
+    scaffold_temp_crate(tmp.path(), src).unwrap();
+    index_crate_with(
+        tmp.path(),
+        LoadProfile::FAST,
+        CargoOptions::default(),
+        SpecializationScope::default(),
+        prefixes,
         false,
         |_| {},
     )
@@ -1163,6 +1184,7 @@ fn index_feature_fixture(options: CargoOptions) -> OwnedIntermediateStorage {
         LoadProfile::FAST,
         options,
         SpecializationScope::default(),
+        Vec::new(),
         false,
         |_| {},
     )
@@ -1575,5 +1597,70 @@ fn cfg_predicate_recorded_as_attribute() {
     assert_eq!(
         node_attr_values(&s, "portable", NODE_ATTRIBUTE_CFG),
         vec!["all()".to_string()]
+    );
+}
+
+// --- channel-mediated boundaries (context/DESIGN_XLANG_BOUNDARIES.md) -------
+
+#[test]
+fn channel_name_constant_binds_to_channel_atom() {
+    let s = index_src_with_channel_prefixes(
+        r#"
+pub const MEM_PREFIX: &str = "srctrl_ipc_mem_";
+pub static MTX_PREFIX: &str = "srctrl_ipc_mtx_";
+pub const UNRELATED: &str = "some other string";
+pub const NOT_A_STRING: u32 = 7;
+"#,
+        vec!["srctrl_ipc_".to_owned()],
+    );
+
+    let atoms: Vec<String> = s
+        .nodes
+        .iter()
+        .filter_map(|n| n.serialized_name.as_deref())
+        .filter(|n| n.starts_with("channel\tm"))
+        .map(|n| n.to_owned())
+        .collect();
+    assert_eq!(
+        atoms.len(),
+        2,
+        "expected one atom per matching literal, got {atoms:?}"
+    );
+    assert!(atoms.contains(&"channel\tmsrctrl_ipc_mem_\ts\tp".to_owned()), "{atoms:?}");
+    assert!(atoms.contains(&"channel\tmsrctrl_ipc_mtx_\ts\tp".to_owned()), "{atoms:?}");
+
+    // The declaration binds TO the atom, the direction every producer uses.
+    let atom_ids: Vec<i64> = s
+        .nodes
+        .iter()
+        .filter(|n| {
+            n.serialized_name
+                .as_deref()
+                .is_some_and(|x| x.starts_with("channel\tm"))
+        })
+        .map(|n| n.id)
+        .collect();
+    let binds = s
+        .edges
+        .iter()
+        .filter(|e| e.type_ == EDGE_BINDS && atom_ids.contains(&e.target_node_id))
+        .count();
+    assert_eq!(binds, 2, "edges: {:?}", s.edges);
+}
+
+#[test]
+fn no_channel_atoms_without_declared_prefixes() {
+    // The feature is off by default: a project that declares no channel-name
+    // prefixes gets exactly the index it got before this existed.
+    let s = index_src_with_channel_prefixes(
+        r#"pub const MEM_PREFIX: &str = "srctrl_ipc_mem_";"#,
+        Vec::new(),
+    );
+    assert!(
+        !s.nodes
+            .iter()
+            .any(|n| n.serialized_name.as_deref().is_some_and(|x| x.starts_with("channel\tm"))),
+        "nodes: {:?}",
+        node_names(&s)
     );
 }

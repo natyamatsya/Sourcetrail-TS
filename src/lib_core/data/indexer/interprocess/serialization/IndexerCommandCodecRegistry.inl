@@ -38,6 +38,10 @@ struct RustIndexerCommandCodec
 		for (const auto& f: cmd.getFeatures())
 			feats.push_back(builder.CreateString(f));
 
+		std::vector<flatbuffers::Offset<flatbuffers::String>> channelPrefixes;
+		for (const auto& p: base.getChannelNamePrefixes())
+			channelPrefixes.push_back(builder.CreateString(p));
+
 		return Ipc::CreateIndexerCommand(
 			builder, Ipc::IndexerCommandType_Rust,
 			builder.CreateString(base.getSourceFilePath().str()),
@@ -47,7 +51,8 @@ struct RustIndexerCommandCodec
 			builder.CreateString(cmd.getTargetTriple()),
 			builder.CreateString(cmd.getSpecializationScope()),
 			builder.CreateString(base.getSourceGroupId()), cmd.getRestrictToPackage(),
-			0, 0, 0, 0);
+			0, 0, 0, 0,
+			builder.CreateVector(channelPrefixes));
 	}
 
 	std::shared_ptr<IndexerCommand> deserialize(const Ipc::IndexerCommand& fbCmd) const
@@ -97,6 +102,10 @@ struct SwiftIndexerCommandCodec
 		for (const auto& a: cmd.getBuildArgs())
 			swiftArgs.push_back(builder.CreateString(a));
 
+		std::vector<flatbuffers::Offset<flatbuffers::String>> channelPrefixes;
+		for (const auto& p: base.getChannelNamePrefixes())
+			channelPrefixes.push_back(builder.CreateString(p));
+
 		return Ipc::CreateIndexerCommand(
 			builder, Ipc::IndexerCommandType_Swift,
 			builder.CreateString(base.getSourceFilePath().str()),
@@ -107,7 +116,8 @@ struct SwiftIndexerCommandCodec
 			builder.CreateVector(swiftArgs),
 			builder.CreateString(cmd.getToolchainPath()),
 			builder.CreateString(cmd.getIndexStorePath()),
-			builder.CreateString(cmd.getSpecializationScope()));
+			builder.CreateString(cmd.getSpecializationScope()),
+			builder.CreateVector(channelPrefixes));
 	}
 
 	std::shared_ptr<IndexerCommand> deserialize(const Ipc::IndexerCommand& fbCmd) const
@@ -158,6 +168,10 @@ struct ZigIndexerCommandCodec
 		for (const auto& p: cmd.getIndexedPaths())
 			paths.push_back(builder.CreateString(p.str()));
 
+		std::vector<flatbuffers::Offset<flatbuffers::String>> channelPrefixes;
+		for (const auto& p: base.getChannelNamePrefixes())
+			channelPrefixes.push_back(builder.CreateString(p));
+
 		return Ipc::CreateIndexerCommand(
 			builder, Ipc::IndexerCommandType_Zig,
 			builder.CreateString(base.getSourceFilePath().str()),
@@ -165,7 +179,8 @@ struct ZigIndexerCommandCodec
 			builder.CreateString(cmd.getWorkingDirectory().str()), 0, 0,
 			0, false, false, 0, 0,
 			builder.CreateString(base.getSourceGroupId()), false,
-			0, 0, 0, 0);
+			0, 0, 0, 0,
+			builder.CreateVector(channelPrefixes));
 	}
 
 	std::shared_ptr<IndexerCommand> deserialize(const Ipc::IndexerCommand& fbCmd) const

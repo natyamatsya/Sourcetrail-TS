@@ -1,9 +1,8 @@
 # Design: Cross-language boundaries — indexing and visualization
 
-**Status: X0-X5 done (2026-08-15); X2 for all four producers, X3 for
-C++/Rust/Swift (Zig has no Zig-side mirror to bind).** Remaining: the IPC
-*channel* boundary (see *X3 executed*), Zig's schema half (structural — see
-below), and the optional X6. Nothing here requires the analysis engines of
+**Status: X0-X5 and X7 done; X2 and X7 for all four producers, X3 for
+C++/Rust/Swift (Zig has no Zig-side mirror to bind).** Remaining: Zig's schema
+half (structural — see below) and the optional X6. Nothing here requires the analysis engines of
 [ROADMAP_ANALYSIS_ENGINES.md](ROADMAP_ANALYSIS_ENGINES.md); the boundary is
 recorded by producers, not derived. The invariant is
 [ADR-0009](../docs/adr/ADR-0009-language-boundaries-are-edges.md).
@@ -264,6 +263,11 @@ lands alone, proven behaviour-preserving, before any feature rides on it.
   entry. Colours are scheme entries across all seven schemes.
 - **X5 — the invariant. ✅ DONE (2026-08-15).**
   [ADR-0009](../docs/adr/ADR-0009-language-boundaries-are-edges.md).
+- **X7 — the channel species (the other half of the IPC boundary). ✅ DONE
+  (2026-08-23) for all four producers.** `NameDelimiterType::CHANNEL`; the
+  project setting `channel_name_prefixes`; the prefixes delivered to every
+  indexer on the common `IndexerCommand`; producers for C++ `VarDecl`, Rust
+  `const`/`static`, Zig `const`/`var` and Swift `let`/`var`. See *X7 executed*.
 - **X6 (optional) — build-mediated boundaries.** Zig `@cImport` resolving to the
   C header's symbols; bridging headers. Needs a clang parse from a non-C++
   indexer, so it is genuinely harder than X2/X3 and deliberately last.
@@ -420,23 +424,13 @@ One implementation note worth keeping: in Rust the mirrors arrive through
 version of the producer missed every one of them by hooking only the ordinary
 path. Generated code is exactly the code that arrives by unusual routes.
 
-**The channel constants — not done, and the sharper problem.** The other half of
-an IPC boundary is the channel: which segment, written by whom, read by whom.
-The evidence that this is worth doing is already in the tree — `"srctrl_ipc_mem_"`
-and `"srctrl_ipc_mtx_"` are duplicated verbatim in **four** languages
-(`IpcSharedMemory.inl:70-71`, `shm.rs:18-19`, `shm.zig:12-13`,
+**The channel constants.** The other half of an IPC boundary is the channel
+itself. The evidence that this was worth doing was already in the tree —
+`"srctrl_ipc_mem_"` and `"srctrl_ipc_mtx_"` are duplicated verbatim in **four**
+languages (`IpcSharedMemory.inl:70-72`, `shm.rs:18-19`, `shm.zig:12-13`,
 `IpcSharedMemoryRaw.swift:14-15`) with nothing relating them; change one and the
-IPC breaks silently, in a way no test in any single language would catch.
-
-Modelling it needs a decision this design has not taken. A channel has
-*direction* — a writer and a reader — which `EDGE_BINDS` deliberately does not
-carry, so it wants either `EDGE_SENDS`/`EDGE_RECEIVES` or a role on the atom.
-And detection is genuinely harder than linkage: a channel name is a string
-literal at a call site, so recognising one means either a project-declared prefix
-(configuration this design has otherwise avoided) or a derived cross-language
-pass over string literals, which belongs to
-[ROADMAP_ANALYSIS_ENGINES.md](ROADMAP_ANALYSIS_ENGINES.md) rather than to a
-producer. Left open on purpose.
+IPC breaks silently, in a way no test in any single language would catch. See
+*X7 executed* below for how it landed.
 
 ## Swift executed (2026-08-15) — both species, and a lesson about fallbacks
 
@@ -480,6 +474,91 @@ Zig side of the IPC boundary is reachable only by indexing that generated C — 
 source group over the flatcc output — which is a project-setup question rather
 than a producer change.
 
+## X7 executed (2026-08-23) — the channel, and two decisions that were open
+
+X3 left the *channel* half of the IPC boundary open on two questions. Both are
+now answered, and both answers came out of what a producer can actually see.
+
+**Is a channel symmetric or directional? Symmetric.** The design's own doubt was
+that a channel has a writer and a reader, which `EDGE_BINDS` deliberately does
+not carry — so it wanted `EDGE_SENDS`/`EDGE_RECEIVES`, or a role on the atom.
+The answer is that *direction is not a property of the thing the producer sees*.
+What each language declares is a **name constant**, and the same constant serves
+the opener and the attacher on both sides; `IpcSharedMemory.inl:70` cannot say
+whether this process will write or read. A directional edge would therefore have
+had to be guessed, which is exactly what Decision 3's "only declared linkage
+mints an atom" rule forbids. So: the existing `EDGE_BINDS`, no new edge kind, no
+storage version bump, and an atom whose incoming edges answer "who speaks this
+channel". If direction is ever wanted it belongs on the *call site* that opens
+the segment — a different producer, and derived rather than declared.
+
+**How is a channel detected? By project-declared prefixes.** A string constant
+is not evidence of a channel the way `extern "C"` is evidence of linkage, so
+recognising one needs a statement from outside the source. The alternative —
+inferring from IPC call sites (`shm_open`, `boost::interprocess`, …) — makes
+every producer carry a table of its language's IPC surface, and still misses a
+constant that is passed through three layers before reaching the syscall. So the
+project declares its own channel names:
+
+```toml
+channel_name_prefixes = ['srctrl_ipc_']
+```
+
+and a producer mints `channel:<literal>` for any constant whose *string-literal
+initializer* starts with a declared prefix. With no prefixes declared — the
+default — every producer records exactly what it recorded before. The
+project-specific `srctrl_ipc_` string stays out of all four indexers, which was
+the point.
+
+**Prefix, not glob, on purpose.** The matching rule is reimplemented in four
+languages, and "starts with" is the one spelling that cannot drift between them.
+A glob would have been four hand-written matchers with four sets of corner cases
+— precisely the tier-3 failure class
+[abi-consistency-review.md](../submodules/thoth-ipc/context/abi-consistency-review.md)
+is about, reintroduced in the code whose job is to *find* that class.
+
+**The atom is keyed by the literal, not by the declaration's name.** The four
+declarations of one channel are called `s_memoryNamePrefix`, `MEM_PREFIX`,
+`mem_prefix` and `memoryNamePrefix`; only the literal is shared. This is the
+same reason the ABI atom is keyed by the linkage symbol rather than by the Swift
+function's own name, and it is why the merge works with no resolver. Measured, on
+a four-source-group project holding one constant per language:
+
+```
+ATOM  channel:srctrl_ipc_mem_   langs=15 (cxx|rust|swift|zig)
+  <- cxx    IpcSharedMemory::s_memoryNamePrefix
+  <- rust   MEM_PREFIX
+  <- swift  ShmDemo::IpcSharedMemoryRaw::memoryNamePrefix
+  <- zig    shm.zig::mem_prefix
+```
+
+Four declarations, four language bits on one node, four `EDGE_BINDS` edges — and
+`channel:srctrl_ipc_mtx_` alongside it with the same shape. The `not a channel`
+constant each language also declares is present as a node and bound to nothing.
+Removing `channel_name_prefixes` from the same project drops the graph from 22
+nodes / 17 edges to 20 / 9: exactly the two atoms and their eight edges, and
+nothing else changes.
+
+**Delivery: one common field, not four language-specific ones.** The prefixes
+are project-wide — a channel is by definition what two source groups share — so
+they ride on the *common* `IndexerCommand` (`channel_name_prefixes` in
+`indexer_command.fbs`, appended and additive) and are stamped at the same
+consumption choke point as the source-group tag
+(`CombinedIndexerCommandProvider`). `Indexer<T>::index` hands them to
+`ParserClientImpl` next to the language mask, for the same reason: the client is
+the one per-run object every producer already holds. Rust's and Swift's
+pop-rewrites had to carry the new field or they would strip it from other
+languages' commands — the "carry every schema field" invariant, now covered by a
+round-trip assertion in all three languages that own a rewrite.
+
+**Two things worth keeping.** Swift's producer has to sit in *both* passes, as
+X3 found for the schema species — but for the opposite reason: constants live in
+ordinary hand-written source, so the semantic pass is the one that matters, and
+the syntactic fallback exists for files whose build is broken. And an
+interpolated Swift literal (`"srctrl_ipc_\(suffix)"`) is deliberately *not* a
+channel name: it is not a fixed string, so it cannot be the thing another
+language spells identically.
+
 ## Verification
 
 The subject is this repository. It is a four-language program joined by all three
@@ -497,10 +576,14 @@ boundary species, which makes it both the test case and the proof.
 4. **X3 gate:** `schema:Sourcetrail.Ipc.StorageNode` binds the C++, Rust, Swift and
    Zig mirrors of that FlatBuffers table — one atom, four edges, four language
    bits.
-5. **Regression gate:** the existing suites stay green
+5. **X7 gate:** with `channel_name_prefixes = ['srctrl_ipc_']` declared,
+   `channel:srctrl_ipc_mem_` and `channel:srctrl_ipc_mtx_` each bind the C++,
+   Rust, Zig and Swift constants that spell them; with the setting absent, no
+   `channel:` node exists at all.
+6. **Regression gate:** the existing suites stay green
    (`ctest --preset llvm-clang-reldbg`, `zig build test` in `src/zig_indexer`,
    `cargo test` in `src/rust_indexer`, the Swift package tests).
-6. **Honesty gate:** X1's collision count is recorded here whatever it says,
+7. **Honesty gate:** X1's collision count is recorded here whatever it says,
    including if it says the identity problem is negligible.
 
 ## Top risks

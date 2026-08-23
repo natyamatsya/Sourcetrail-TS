@@ -12,7 +12,8 @@ enum SyntacticIndexer {
 	static func indexFile(
 		path: String,
 		moduleName: String,
-		builder: StorageBuilder
+		builder: StorageBuilder,
+		channelNamePrefixes: [String] = []
 	) {
 		guard let source = try? String(contentsOfFile: path, encoding: .utf8) else {
 			builder.recordError(
@@ -38,7 +39,8 @@ enum SyntacticIndexer {
 			builder: builder,
 			path: path,
 			fileNodeId: fileNodeId,
-			converter: converter
+			converter: converter,
+			channelNamePrefixes: channelNamePrefixes
 		)
 		visitor.walk(tree)
 	}
@@ -53,18 +55,22 @@ enum SyntacticIndexer {
 		private let path: String
 		/// Name-part stack; starts with the module.
 		private var scope: [String]
+		/// Project-declared IPC channel-name prefixes; empty = none declared.
+		private let channelNamePrefixes: [String]
 
 		init(
 			moduleName: String,
 			builder: StorageBuilder,
 			path: String,
 			fileNodeId: Int64,
-			converter: SourceLocationConverter
+			converter: SourceLocationConverter,
+			channelNamePrefixes: [String] = []
 		) {
 			self.builder = builder
 			self.path = path
 			self.fileNodeId = fileNodeId
 			self.converter = converter
+			self.channelNamePrefixes = channelNamePrefixes
 			self.scope = [moduleName]
 			super.init(viewMode: .sourceAccurate)
 			_ = builder.nodeId(parts: [moduleName], kind: NodeKind.module)
@@ -74,7 +80,8 @@ enum SyntacticIndexer {
 
 		private func emit(
 			name: String, kind: Int32, nameToken: TokenSyntax, decl: some SyntaxProtocol,
-			access: Int32 = AccessKind.default_, modifiers: Int32 = 0
+			access: Int32 = AccessKind.default_, modifiers: Int32 = 0,
+			channelName: String? = nil
 		) -> Int64 {
 			let parts = scope + [name]
 			let nodeId = builder.nodeId(parts: parts, kind: kind)
@@ -110,6 +117,9 @@ enum SyntacticIndexer {
 			if let (schemaBase, typeName) = schemaMirrorKey(path: path, typeName: name) {
 				builder.bindToAtom(
 					declNodeId: nodeId, delimiter: "schema", parts: [schemaBase, typeName])
+			}
+			if let channelName {
+				builder.bindToAtom(declNodeId: nodeId, delimiter: "channel", parts: [channelName])
 			}
 
 			let parentKind = scope.count == 1 ? NodeKind.module : NodeKind.symbol
@@ -278,7 +288,8 @@ enum SyntacticIndexer {
 				let kind = scope.count == 1 ? NodeKind.globalVariable : NodeKind.field
 				_ = emit(name: pattern.identifier.text, kind: kind, nameToken: pattern.identifier, decl: node,
 					access: swiftAccessKind(node.modifiers),
-					modifiers: swiftNodeModifiers(node.modifiers, isAsync: false))
+					modifiers: swiftNodeModifiers(node.modifiers, isAsync: false),
+					channelName: swiftChannelName(binding, prefixes: channelNamePrefixes))
 			}
 			// Accessors/initializer expressions carry no declarations we index.
 			return .skipChildren

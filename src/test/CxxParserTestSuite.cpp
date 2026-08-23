@@ -75,6 +75,43 @@ std::shared_ptr<IntermediateStorage> parseCodeToStorage(
 	return storage;
 }
 
+// Like parseCodeToStorage, but with the project's IPC channel-name prefixes
+// declared, so a string-literal constant matching one mints a `channel:` atom.
+std::shared_ptr<IntermediateStorage> parseCodeWithChannelPrefixes(
+	const std::string& code, const std::vector<std::string>& channelNamePrefixes)
+{
+	std::shared_ptr<IntermediateStorage> storage = std::make_shared<IntermediateStorage>();
+	const std::shared_ptr<ParserClientImpl> parserClient =
+		std::make_shared<ParserClientImpl>(storage, LANGUAGE_CXX, channelNamePrefixes);
+	CxxParser parser(
+		*parserClient,
+		std::make_shared<TestFileRegister>(),
+		std::make_shared<IndexerStateInfo>());
+	parser.buildIndex(
+		"input.cc",
+		TextAccess::createFromString(code),
+		utility::concat(
+			std::vector<std::string>{},
+			ClangCompiler::stdOption(ClangCompiler::getLatestCppStandard())));
+	return storage;
+}
+
+// The serialized names of every `channel:` contract atom in `storage`.
+std::vector<std::string> channelAtomNames(const std::shared_ptr<IntermediateStorage>& storage)
+{
+	const std::string prefix = nameDelimiterTypeToString(NameDelimiterType::CHANNEL) + "\tm";
+	std::vector<std::string> names;
+	for (const StorageNode& node: storage->getStorageNodes())
+	{
+		if (node.serializedName.starts_with(prefix))
+		{
+			names.push_back(node.serializedName);
+		}
+	}
+	std::sort(names.begin(), names.end());
+	return names;
+}
+
 bool hasDeprecatedNode(const std::shared_ptr<IntermediateStorage>& storage, const std::string& namePart)
 {
 	for (const StorageNode& node: storage->getStorageNodes())
@@ -5026,3 +5063,54 @@ void _test_TEST()
 	int ofo = 0;
 }
 */
+
+// --- channel-mediated boundaries (context/DESIGN_XLANG_BOUNDARIES.md) -------
+
+TEST_CASE("cxx parser binds a channel-name constant to a channel atom")
+{
+	// An IPC channel is named by a string constant that four languages must
+	// spell identically. The atom is keyed by the LITERAL, not by the
+	// declaration's name, because the literal is the only thing the four
+	// declarations share.
+	const std::shared_ptr<IntermediateStorage> storage = parseCodeWithChannelPrefixes(
+		"struct Shm {\n"
+		"	static const char* s_memoryNamePrefix;\n"
+		"};\n"
+		"const char* Shm::s_memoryNamePrefix = \"srctrl_ipc_mem_\";\n"
+		"const char* g_unrelated = \"some other string\";\n"
+		"const int g_notAString = 7;\n",
+		{"srctrl_ipc_"});
+
+	REQUIRE(channelAtomNames(storage) == std::vector<std::string>{"channel\tmsrctrl_ipc_mem_\ts\tp"});
+
+	// The edge runs declaration -> atom, the direction every producer uses, so
+	// an atom's incoming edges answer "who speaks this channel".
+	Id atomId = 0;
+	for (const StorageNode& node: storage->getStorageNodes())
+	{
+		if (node.serializedName == "channel\tmsrctrl_ipc_mem_\ts\tp")
+		{
+			atomId = node.id;
+		}
+	}
+	REQUIRE(atomId != 0);
+
+	size_t binds = 0;
+	for (const StorageEdge& edge: storage->getStorageEdges())
+	{
+		if (edge.type == Edge::EDGE_BINDS && edge.targetNodeId == atomId)
+		{
+			binds++;
+		}
+	}
+	REQUIRE(binds > 0);
+}
+
+TEST_CASE("cxx parser records no channel atoms without declared prefixes")
+{
+	// The feature is off by default: a project that declares no channel-name
+	// prefixes gets exactly the index it got before this existed.
+	const std::shared_ptr<IntermediateStorage> storage = parseCodeWithChannelPrefixes(
+		"const char* g_memoryNamePrefix = \"srctrl_ipc_mem_\";\n", {});
+	REQUIRE(channelAtomNames(storage).empty());
+}

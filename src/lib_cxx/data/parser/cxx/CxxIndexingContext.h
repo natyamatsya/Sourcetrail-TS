@@ -33,6 +33,7 @@ class SourceLocation;
 class SourceRange;
 class TagDecl;
 class FunctionDecl;
+class VarDecl;
 }
 
 class ParserClient;
@@ -106,6 +107,7 @@ public:
 	void recordExportStatus(Id symbolId, const clang::Decl* d);
 	void recordForeignBinding(Id symbolId, const clang::NamedDecl* d);
 	void recordSchemaBinding(Id symbolId, const clang::NamedDecl* d);
+	void recordChannelBinding(Id symbolId, const clang::VarDecl* d);
 	void recordDeducedType(const clang::DeducedType* deducedType, Id contextSymbolId, const ParseLocation& keywordLocation);
 	void recordDeducedQualType(clang::QualType deducedQualType, Id contextSymbolId, const ParseLocation& keywordLocation);
 	void recordTemplateMemberSpecialization(

@@ -89,6 +89,12 @@ pub struct OwnedIndexerCommand {
     pub swift_toolchain_path: String,
     pub swift_index_store_path: String,
     pub swift_specialization_scope: String,
+    /// Project-declared IPC channel-name prefixes (the channel species of
+    /// context/DESIGN_XLANG_BOUNDARIES.md). A string-literal constant whose
+    /// value starts with one of these binds to a `channel:` contract atom.
+    /// Common to every command type, so it must round-trip through the
+    /// pop-rewrite like source_group_id.
+    pub channel_name_prefixes: Vec<String>,
 }
 
 impl OwnedIndexerCommand {
@@ -120,6 +126,7 @@ impl OwnedIndexerCommand {
                 .swift_specialization_scope()
                 .unwrap_or("")
                 .to_owned(),
+            channel_name_prefixes: str_vec(cmd.channel_name_prefixes()),
         }
     }
 }
@@ -252,6 +259,12 @@ fn serialize_queue(commands: &[OwnedIndexerCommand]) -> Vec<u8> {
             } else {
                 Some(fbb.create_string(&cmd.swift_specialization_scope))
             };
+            let channel_name_prefixes: Vec<_> = cmd
+                .channel_name_prefixes
+                .iter()
+                .map(|s| fbb.create_string(s))
+                .collect();
+            let channel_name_prefixes_v = fbb.create_vector(&channel_name_prefixes);
             IndexerCommand::create(
                 &mut fbb,
                 &IndexerCommandArgs {
@@ -274,6 +287,7 @@ fn serialize_queue(commands: &[OwnedIndexerCommand]) -> Vec<u8> {
                     swift_toolchain_path,
                     swift_index_store_path,
                     swift_specialization_scope,
+                    channel_name_prefixes: Some(channel_name_prefixes_v),
                 },
             )
         })
@@ -331,6 +345,7 @@ mod tests {
             } else {
                 String::new()
             },
+            channel_name_prefixes: vec!["srctrl_ipc_".to_owned()],
         }
     }
 
@@ -374,6 +389,14 @@ mod tests {
         assert!(!commands.get(1).restrict_to_package());
         assert_eq!(commands.get(2).type_(), IndexerCommandType::Rust);
         assert!(commands.get(2).restrict_to_package());
+
+        // The project's channel-name prefixes are common to every command type,
+        // so they must survive the pop AND the rewrite for languages this
+        // indexer does not itself serve.
+        assert_eq!(popped.channel_name_prefixes, vec!["srctrl_ipc_".to_owned()]);
+        let prefixes = commands.get(0).channel_name_prefixes().unwrap();
+        assert_eq!(prefixes.len(), 1);
+        assert_eq!(prefixes.get(0), "srctrl_ipc_");
     }
 
     #[test]

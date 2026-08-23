@@ -47,15 +47,23 @@ final class AccessMap {
 	// means to be reachable under a plain symbol name, which is the only thing
 	// another language can bind to.
 	private var cdeclByPos: [SyntaxPos: String] = [:]
+	// The IPC channel name a `let`/`var` holds, per name position: the string
+	// literal it is initialized with, when that literal is one the project
+	// declared a channel-name prefix for. Swift's half of the channel-mediated
+	// boundary (context/DESIGN_XLANG_BOUNDARIES.md) -- the literal is the only
+	// thing the four languages' declarations of one channel have in common.
+	private var channelByPos: [SyntaxPos: String] = [:]
 
-	static func build(path: String) -> AccessMap {
+	static func build(path: String, channelNamePrefixes: [String] = []) -> AccessMap {
 		let map = AccessMap()
 		guard let source = try? String(contentsOfFile: path, encoding: .utf8) else {
 			return map
 		}
 		let tree = Parser.parse(source: source)
 		let converter = SourceLocationConverter(fileName: path, tree: tree)
-		AccessVisitor(map: map, converter: converter).walk(tree)
+		AccessVisitor(
+			map: map, converter: converter, channelNamePrefixes: channelNamePrefixes
+		).walk(tree)
 		return map
 	}
 
@@ -81,6 +89,11 @@ final class AccessMap {
 	// The C ABI symbol for the declaration at `pos` (nil = not exported).
 	func cdeclSymbol(at pos: SyntaxPos) -> String? {
 		cdeclByPos[pos]
+	}
+
+	// The IPC channel name held by the declaration at `pos` (nil = not one).
+	func channelName(at pos: SyntaxPos) -> String? {
+		channelByPos[pos]
 	}
 
 	fileprivate func record(nameToken: TokenSyntax, access: Int32, converter: SourceLocationConverter) {
@@ -112,6 +125,13 @@ final class AccessMap {
 		guard let symbol = swiftCdeclSymbol(attributes) else { return }
 		let extent = tokenExtent(nameToken, converter)
 		cdeclByPos[SyntaxPos(line: Int(extent.startLine), column: Int(extent.startColumn))] = symbol
+	}
+
+	fileprivate func recordChannel(
+		nameToken: TokenSyntax, name: String, converter: SourceLocationConverter
+	) {
+		let extent = tokenExtent(nameToken, converter)
+		channelByPos[SyntaxPos(line: Int(extent.startLine), column: Int(extent.startColumn))] = name
 	}
 
 	fileprivate func recordAvailability(
@@ -156,6 +176,33 @@ func swiftCdeclSymbol(_ attributes: AttributeListSyntax) -> String? {
 		if !symbol.isEmpty {
 			return symbol
 		}
+	}
+	return nil
+}
+
+// The IPC channel a `let`/`var` names, if any: the string literal it is
+// initialized with, when that literal starts with one of the project's declared
+// channel-name prefixes. Returns nil for a non-literal initializer, an
+// interpolated literal, and for every literal when no prefixes are declared.
+//
+// Which literals count is declared by the project rather than guessed here: a
+// string constant is not evidence of a channel the way `@_cdecl` is evidence of
+// linkage, so recognising one needs a statement from outside the source. Prefix
+// (not glob) matching, so this predicate reads identically in all four
+// producers.
+func swiftChannelName(_ binding: PatternBindingSyntax, prefixes: [String]) -> String? {
+	guard !prefixes.isEmpty,
+		let value = binding.initializer?.value.as(StringLiteralExprSyntax.self)
+	else { return nil }
+	var literal = ""
+	for segment in value.segments {
+		// An interpolated literal is not a fixed channel name.
+		guard case .stringSegment(let text) = segment else { return nil }
+		literal += text.content.text
+	}
+	guard !literal.isEmpty else { return nil }
+	for prefix in prefixes where !prefix.isEmpty && literal.hasPrefix(prefix) {
+		return literal
 	}
 	return nil
 }
@@ -220,10 +267,12 @@ func swiftNodeModifiers(_ modifiers: DeclModifierListSyntax, isAsync: Bool) -> I
 private final class AccessVisitor: SyntaxVisitor {
 	private let map: AccessMap
 	private let converter: SourceLocationConverter
+	private let channelNamePrefixes: [String]
 
-	init(map: AccessMap, converter: SourceLocationConverter) {
+	init(map: AccessMap, converter: SourceLocationConverter, channelNamePrefixes: [String] = []) {
 		self.map = map
 		self.converter = converter
+		self.channelNamePrefixes = channelNamePrefixes
 		super.init(viewMode: .sourceAccurate)
 	}
 
@@ -291,6 +340,10 @@ private final class AccessVisitor: SyntaxVisitor {
 			if let pattern = binding.pattern.as(IdentifierPatternSyntax.self) {
 				record(pattern.identifier, node.modifiers, node.attributes)
 				map.recordModifiers(nameToken: pattern.identifier, mask: mask, converter: converter)
+				if let channel = swiftChannelName(binding, prefixes: channelNamePrefixes) {
+					map.recordChannel(
+						nameToken: pattern.identifier, name: channel, converter: converter)
+				}
 			}
 		}
 		return .skipChildren

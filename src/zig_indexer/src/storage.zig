@@ -356,6 +356,22 @@ pub const Storage = struct {
         _ = try self.recordEdge(.binds, decl_id, atom_id);
     }
 
+    /// Mint (or find) the contract atom for an IPC channel name and bind
+    /// `decl_id` to it -- the channel species. The atom is keyed by the string
+    /// literal, not by the declaration's name, because the literal is the only
+    /// thing the four languages' declarations of one channel have in common:
+    /// here it is `mem_prefix`, in C++ `s_memoryNamePrefix`, in Rust
+    /// `MEM_PREFIX` and in Swift `memoryNamePrefix`.
+    ///
+    /// Like the ABI atom, the name carries no file-path prefix: the prefix keeps
+    /// Zig symbols from colliding, and an atom must collide -- with the other
+    /// languages' atoms -- to work.
+    pub fn recordChannelBinding(self: *Storage, decl_id: Id, channel_name: []const u8) !void {
+        const serialized = try serializeName(self.arena.allocator(), "channel", &.{channel_name});
+        const atom_id = try self.recordNode(.symbol, serialized, null);
+        _ = try self.recordEdge(.binds, decl_id, atom_id);
+    }
+
     pub fn recordComponentAccess(self: *Storage, node_id: Id, access: AccessKind) !void {
         const a = self.alloc();
         if ((try self.component_access_by_node.getOrPut(a, node_id)).found_existing) return;

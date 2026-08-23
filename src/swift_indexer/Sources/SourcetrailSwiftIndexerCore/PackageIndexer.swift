@@ -9,6 +9,7 @@ package enum PackageIndexer {
 		workingDirectory: String,
 		options: SwiftBuildOptions = SwiftBuildOptions(),
 		specializationScope: SpecializationScope = .local,
+		channelNamePrefixes: [String] = [],
 		onFile: (String) -> Void
 	) -> OwnedIntermediateStorage {
 		let packageRoot = URL(fileURLWithPath: workingDirectory)
@@ -49,7 +50,8 @@ package enum PackageIndexer {
 					.appendingPathComponent(".build/sourcetrail-indexstore-db"),
 				builder: builder,
 				toolchainPath: options.toolchainPath,
-				specializationScope: specializationScope
+				specializationScope: specializationScope,
+				channelNamePrefixes: channelNamePrefixes
 			)
 			for path in semantic.coveredFiles(of: allFiles) {
 				onFile(path)
@@ -72,7 +74,8 @@ package enum PackageIndexer {
 			SyntacticIndexer.indexFile(
 				path: path,
 				moduleName: model.moduleName(forSourceFile: path) ?? model.packageName,
-				builder: builder
+				builder: builder,
+				channelNamePrefixes: channelNamePrefixes
 			)
 		}
 

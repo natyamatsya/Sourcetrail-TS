@@ -95,7 +95,8 @@ struct SourcetrailSwiftIndexer {
 							toolchainPath: command.toolchainPath,
 							indexStorePath: command.indexStorePath
 						),
-						specializationScope: SpecializationScope.parse(command.specializationScope)
+						specializationScope: SpecializationScope.parse(command.specializationScope),
+						channelNamePrefixes: command.channelNamePrefixes
 					) { filePath in
 						Self.reportingStatus("updateIndexing") {
 							try statusChannel.updateIndexing(filePath: filePath)

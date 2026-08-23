@@ -118,8 +118,11 @@ inline LocationType parseLocationTypeToLocationType(ParseLocationType type)
 
 }	 // namespace parser_client_impl_detail
 
-inline ParserClientImpl::ParserClientImpl(std::shared_ptr<IntermediateStorage> storage, LanguageMask languages)
-	: m_storage(storage), m_languages(languages)
+inline ParserClientImpl::ParserClientImpl(
+	std::shared_ptr<IntermediateStorage> storage,
+	LanguageMask languages,
+	std::vector<std::string> channelNamePrefixes)
+	: m_storage(storage), m_languages(languages), m_channelNamePrefixes(std::move(channelNamePrefixes))
 {
 }
 
@@ -234,6 +237,11 @@ inline void ParserClientImpl::recordError(
 inline bool ParserClientImpl::hasContent() const
 {
 	return m_storage->getByteSize(1) > 0;
+}
+
+inline const std::vector<std::string>& ParserClientImpl::getChannelNamePrefixes() const
+{
+	return m_channelNamePrefixes;
 }
 
 

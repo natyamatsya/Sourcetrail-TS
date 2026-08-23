@@ -164,6 +164,7 @@ pub fn index_crate(
         LoadProfile::FULL,
         options,
         SpecializationScope::default(),
+        Vec::new(),
         false,
         on_file,
     )
@@ -177,6 +178,7 @@ pub fn index_crate_scoped(
     crate_root: &Path,
     options: CargoOptions,
     spec_scope: SpecializationScope,
+    channel_name_prefixes: Vec<String>,
     restrict_to_package: bool,
     on_file: impl FnMut(&str),
 ) -> OwnedIntermediateStorage {
@@ -185,6 +187,7 @@ pub fn index_crate_scoped(
         LoadProfile::FULL,
         options,
         spec_scope,
+        channel_name_prefixes,
         restrict_to_package,
         on_file,
     )
@@ -234,6 +237,7 @@ pub(crate) fn index_crate_with(
     profile: LoadProfile,
     options: CargoOptions,
     spec_scope: SpecializationScope,
+    channel_name_prefixes: Vec<String>,
     restrict_to_package: bool,
     on_file: impl FnMut(&str),
 ) -> OwnedIntermediateStorage {
@@ -302,6 +306,7 @@ pub(crate) fn index_crate_with(
         &db,
         &vfs,
         spec_scope,
+        channel_name_prefixes,
         restrict_to_package_root.as_deref(),
         on_file,
     )
@@ -339,6 +344,7 @@ pub fn index_file(file_path: &str, _module_prefix: &str) -> OwnedIntermediateSto
         LoadProfile::FAST,
         CargoOptions::default(),
         SpecializationScope::Local,
+        Vec::new(),
         false,
         |_| {},
     );

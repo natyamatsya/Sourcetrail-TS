@@ -1,5 +1,13 @@
 version = '8'
 
+# The channel species of context/DESIGN_XLANG_BOUNDARIES.md: a string constant
+# whose value starts with one of these prefixes names an IPC channel, and every
+# language's indexer binds its declaration to a `channel:<literal>` contract
+# atom. `srctrl_ipc_` covers the shared-memory / mutex / condition names the four
+# IPC implementations each spell out verbatim; `icmd_ipc_` and the other segment
+# names are built from the instance uuid at runtime and are not constants.
+channel_name_prefixes = ['srctrl_ipc_']
+
 [[source_groups]]
 id = 'c1c52368-3e98-4457-8a7c-aa0d1f135b2f'
 name = 'C/C++ from CMake File API'

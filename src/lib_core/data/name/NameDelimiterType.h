@@ -25,7 +25,13 @@ SRCTRL_EXPORT enum class NameDelimiterType
 	// in an interface schema (a FlatBuffers table) that a generator mirrors into
 	// several languages. Keyed by (schema file, type), which is the only spelling
 	// every generator agrees on -- namespaces and suffixes differ per language.
-	SCHEMA
+	SCHEMA,
+	// The reserved namespace for channel-mediated contract atoms: an IPC channel
+	// named by a string constant that several languages must spell identically.
+	// Keyed by the literal itself, because the literal is the only thing the four
+	// declarations have in common -- their own names differ per language
+	// convention (s_memoryNamePrefix / MEM_PREFIX / mem_prefix / memoryNamePrefix).
+	CHANNEL
 };
 
 SRCTRL_EXPORT std::string nameDelimiterTypeToString(NameDelimiterType delimiter);

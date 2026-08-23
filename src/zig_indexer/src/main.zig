@@ -64,12 +64,18 @@ fn runIpc(gpa: std.mem.Allocator, io: std.Io, process_id: u64, uuid: []const u8)
         defer cmd.deinit(gpa);
 
         try status.startIndexing(gpa, cmd.source_file_path);
-        indexOneCommand(gpa, io, &storage, cmd.source_file_path) catch {};
+        indexOneCommand(gpa, io, &storage, cmd.source_file_path, cmd.channel_name_prefixes) catch {};
         try status.finishIndexing(gpa);
     }
 }
 
-fn indexOneCommand(gpa: std.mem.Allocator, io: std.Io, storage: *StorageChannel, path: []const u8) !void {
+fn indexOneCommand(
+    gpa: std.mem.Allocator,
+    io: std.Io,
+    storage: *StorageChannel,
+    path: []const u8,
+    channel_name_prefixes: []const []const u8,
+) !void {
     const source = std.Io.Dir.cwd().readFileAllocOptions(
         io,
         path,
@@ -82,7 +88,7 @@ fn indexOneCommand(gpa: std.mem.Allocator, io: std.Io, storage: *StorageChannel,
 
     var store = indexer.Storage.init(gpa);
     defer store.deinit();
-    try indexer.indexSource(gpa, &store, path, source);
+    try indexer.parser.indexSourceWithChannels(gpa, &store, path, source, channel_name_prefixes);
 
     // Phase 3b: augment with ZLS-resolved cross-file references (best-effort —
     // a semantic failure must not lose the syntactic result).

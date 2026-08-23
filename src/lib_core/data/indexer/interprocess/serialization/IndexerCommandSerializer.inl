@@ -5,6 +5,7 @@
 
 #ifndef SRCTRL_MODULE_PURVIEW
 #include <string>
+#include <vector>
 
 #include "IndexerCommand.h"
 #include "IndexerCommandCodecRegistry.h"
@@ -103,6 +104,16 @@ inline std::vector<std::shared_ptr<IndexerCommand>> deserializeIndexerCommands(
 			// Restore the source-group tag the codec left untouched (common to every command type).
 			if (fbCmd->source_group_id())
 				command->setSourceGroupId(fbCmd->source_group_id()->str());
+			// Same for the project's channel-name prefixes: common data, so it is
+			// restored here rather than in every codec.
+			if (fbCmd->channel_name_prefixes())
+			{
+				std::vector<std::string> prefixes;
+				prefixes.reserve(fbCmd->channel_name_prefixes()->size());
+				for (const auto* prefix: *fbCmd->channel_name_prefixes())
+					prefixes.emplace_back(prefix->str());
+				command->setChannelNamePrefixes(std::move(prefixes));
+			}
 			result.push_back(std::move(command));
 		}
 	}

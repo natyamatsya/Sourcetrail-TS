@@ -8,6 +8,7 @@
 
 #ifndef SRCTRL_MODULE_PURVIEW
 #include <memory>
+#include <string>
 #include <vector>
 
 #include "Settings.h"
@@ -50,6 +51,15 @@ public:
 	FilePath getProjectDirectoryPath() const;
 
 	std::string getDescription() const;
+
+	//! Project-declared IPC channel-name prefixes (`channel_name_prefixes`). A
+	//! string-literal constant whose value starts with one of these is a channel
+	//! name, and every language's indexer binds its declaration to a `channel:`
+	//! contract atom. Project-wide because a channel is by definition not the
+	//! property of one source group. Empty = the feature is off.
+	//! See context/DESIGN_XLANG_BOUNDARIES.md.
+	std::vector<std::string> getChannelNamePrefixes() const;
+	void setChannelNamePrefixes(const std::vector<std::string>& prefixes);
 
 	std::vector<std::shared_ptr<SourceGroupSettings>> getAllSourceGroupSettings() const;
 	void setAllSourceGroupSettings(const std::vector<std::shared_ptr<SourceGroupSettings>>& allSettings);

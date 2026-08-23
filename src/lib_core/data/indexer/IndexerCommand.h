@@ -9,6 +9,7 @@
 #include <memory>
 #include <string>
 #include <utility>
+#include <vector>
 
 #include <stdcompat/optional>
 
@@ -49,7 +50,11 @@ public:
 
 	std::size_t getByteSize(std::size_t stringSize) const
 	{
-		return m_sourceFilePath.str().size() + m_sourceGroupId.size() + m_self->getByteSize(stringSize);
+		std::size_t prefixBytes = 0;
+		for (const std::string& prefix: m_channelNamePrefixes)
+			prefixBytes += prefix.size() + stringSize;
+		return m_sourceFilePath.str().size() + m_sourceGroupId.size() + prefixBytes +
+			m_self->getByteSize(stringSize);
 	}
 
 	const FilePath& getSourceFilePath() const { return m_sourceFilePath; }
@@ -59,6 +64,17 @@ public:
 	//! empty until then. Lets subprocesses filter the shared command queue by group (fan-out S2).
 	const std::string& getSourceGroupId() const { return m_sourceGroupId; }
 	void setSourceGroupId(const std::string& sourceGroupId) { m_sourceGroupId = sourceGroupId; }
+
+	//! The project's declared IPC channel-name prefixes (project setting
+	//! `channel_name_prefixes`). Project-wide rather than per-source-group, and
+	//! stamped at the same consumption choke point as the source group id, so it
+	//! reaches every language's subprocess over the one table they all read.
+	//! Empty = the project declares no channels and no producer records one.
+	const std::vector<std::string>& getChannelNamePrefixes() const { return m_channelNamePrefixes; }
+	void setChannelNamePrefixes(std::vector<std::string> prefixes)
+	{
+		m_channelNamePrefixes = std::move(prefixes);
+	}
 
 	//! std::function::target-style typed access to the erased payload; empty if it isn't a T.
 	//! Returns optional<T&> (P2988) rather than a raw pointer: a maybe-reference with value
@@ -104,6 +120,7 @@ private:
 
 	FilePath m_sourceFilePath;
 	std::string m_sourceGroupId;
+	std::vector<std::string> m_channelNamePrefixes;
 	std::unique_ptr<Concept> m_self;
 };
 

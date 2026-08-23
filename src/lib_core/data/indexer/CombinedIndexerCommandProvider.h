@@ -20,6 +20,12 @@ public:
 	//! materialize on consume.
 	void addProvider(std::shared_ptr<IndexerCommandProvider> provider, const std::string& sourceGroupId);
 
+	//! The project's declared IPC channel-name prefixes, stamped onto every
+	//! command consumed here. Project-wide, so it is set once rather than per
+	//! provider; tagged at the same choke point as the source group id and for
+	//! the same reason (lazy providers only materialize commands on consume).
+	void setChannelNamePrefixes(std::vector<std::string> prefixes);
+
 	//! Distinct source-group ids in provider order (fan-out S3): lets the queue
 	//! fill task keep every group's commands available for pinned consumers.
 	std::vector<std::string> getSourceGroupIds() const;
@@ -37,6 +43,7 @@ public:
 
 private:
 	std::vector<std::pair<std::shared_ptr<IndexerCommandProvider>, std::string>> m_providers;
+	std::vector<std::string> m_channelNamePrefixes;
 };
 
 

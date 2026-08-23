@@ -6,3 +6,4 @@ pub const chunker = @import("chunker.zig");
 pub const Storage = storage.Storage;
 pub const Chunk = storage.Chunk;
 pub const indexSource = parser.indexSource;
+pub const indexSourceWithChannels = parser.indexSourceWithChannels;

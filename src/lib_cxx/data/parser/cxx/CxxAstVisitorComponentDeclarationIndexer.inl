@@ -152,6 +152,10 @@ inline void CxxAstVisitorComponentDeclarationIndexer::visitVarDecl(clang::VarDec
 			m_index.recordDefinitionKind(symbolId, utility::getDefinitionKind(d));
 			m_index.recordDeprecation(symbolId, d);
 			m_index.recordExportStatus(symbolId, d);
+			// A namespace- or class-scope constant can name an IPC channel; a local
+			// or a parameter cannot be shared with another language, which is why
+			// this sits in the non-local branch.
+			m_index.recordChannelBinding(symbolId, d);
 
 			m_index.recordTemplateMemberSpecialization(d->getMemberSpecializationInfo(), symbolId, location, symbolKind);
 		}

@@ -143,6 +143,20 @@ pub fn indexSource(
     file_path: []const u8,
     source: [:0]const u8,
 ) Error!void {
+    return indexSourceWithChannels(gpa, store, file_path, source, &.{});
+}
+
+/// `indexSource` plus the project's declared IPC channel-name prefixes: a
+/// `const`/`var` whose initializer is a string literal starting with one of them
+/// binds to a `channel:` contract atom, so the four languages that spell one
+/// channel name are joined in the graph. See context/DESIGN_XLANG_BOUNDARIES.md.
+pub fn indexSourceWithChannels(
+    gpa: std.mem.Allocator,
+    store: *Storage,
+    file_path: []const u8,
+    source: [:0]const u8,
+    channel_name_prefixes: []const []const u8,
+) Error!void {
     var ast = try Ast.parse(gpa, source, .zig);
     defer ast.deinit(gpa);
 
@@ -155,7 +169,14 @@ pub fn indexSource(
         _ = try store.recordError(aw.written(), file_path, !parse_err.is_note);
     }
 
-    var walker: Walker = .{ .gpa = gpa, .store = store, .ast = &ast, .file_id = file_id, .file_path = file_path };
+    var walker: Walker = .{
+        .gpa = gpa,
+        .store = store,
+        .ast = &ast,
+        .file_id = file_id,
+        .file_path = file_path,
+        .channel_name_prefixes = channel_name_prefixes,
+    };
     // The file itself is a struct container; its top-level decls are members of
     // the file scope (owner = file node, but no EDGE_MEMBER at the root).
     for (ast.rootDecls()) |decl| {
@@ -202,6 +223,9 @@ const Walker = struct {
     ast: *const Ast,
     file_id: Id,
     file_path: []const u8,
+    /// Project-declared IPC channel-name prefixes; empty = the project declares
+    /// no channels and this pass records none.
+    channel_name_prefixes: []const []const u8 = &.{},
 
     fn tokenSpan(self: *Walker, tok: Ast.TokenIndex) Span {
         const loc = self.ast.tokenLocation(0, tok);
@@ -257,6 +281,7 @@ const Walker = struct {
         // Visibility: `pub` -> public, otherwise file-private -> default.
         try self.store.recordComponentAccess(id, if (cls.is_pub) .public else .default);
         if (cls.abi_symbol) |symbol| try self.store.recordAbiBinding(id, symbol);
+        try self.recordChannelBinding(node, id);
         // A `///` doc comment's first line becomes the node's doc_brief attribute.
         // Zig has no `@deprecated`; the ecosystem convention is a doc comment
         // beginning `Deprecated:` — surface that as the deprecated modifier +
@@ -289,6 +314,31 @@ const Walker = struct {
         if (cls.kind == .function or cls.kind == .method) {
             var pbuf: [1]Ast.Node.Index = undefined;
             if (self.ast.fullFnProto(&pbuf, node)) |proto| try self.recordTypeParams(proto, serialized, id);
+        }
+    }
+
+    /// Bind a `const`/`var` whose initializer is a string literal naming one of
+    /// the project's declared IPC channels to its `channel:` contract atom.
+    ///
+    /// Which literals count is declared by the project, not guessed here: a
+    /// string constant is not evidence of a channel the way `export` is evidence
+    /// of linkage, so recognising one needs a statement from outside the source.
+    /// With no prefixes declared this records nothing.
+    fn recordChannelBinding(self: *Walker, node: Ast.Node.Index, id: Id) Error!void {
+        if (self.channel_name_prefixes.len == 0) return;
+        const var_decl = self.ast.fullVarDecl(node) orelse return;
+        const init_node = var_decl.ast.init_node.unwrap() orelse return;
+        if (self.ast.nodeTag(init_node) != .string_literal) return;
+
+        const raw = self.ast.tokenSlice(self.ast.nodeMainToken(init_node));
+        // A malformed literal is not a channel name; the parse error is the Zig
+        // compiler's to report, not this indexer's.
+        const value = std.zig.string_literal.parseAlloc(self.store.arena.allocator(), raw) catch return;
+        for (self.channel_name_prefixes) |prefix| {
+            if (prefix.len != 0 and std.mem.startsWith(u8, value, prefix)) {
+                try self.store.recordChannelBinding(id, value);
+                return;
+            }
         }
     }
 

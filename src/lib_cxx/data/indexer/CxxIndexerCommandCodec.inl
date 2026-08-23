@@ -48,6 +48,10 @@ struct CxxIndexerCommandCodecProvider
 		for (const auto& f: cmd.getCompilerFlags())
 			flags.push_back(builder.CreateString(f));
 
+		std::vector<flatbuffers::Offset<flatbuffers::String>> channelPrefixes;
+		for (const auto& p: base.getChannelNamePrefixes())
+			channelPrefixes.push_back(builder.CreateString(p));
+
 		return Ipc::CreateIndexerCommand(
 			builder, Ipc::IndexerCommandType_Cxx,
 			builder.CreateString(base.getSourceFilePath().str()),
@@ -56,7 +60,8 @@ struct CxxIndexerCommandCodecProvider
 			builder.CreateVector(flags), builder.CreateString(cmd.getCompilerPath()),
 			0, false, false, 0, 0,
 			builder.CreateString(base.getSourceGroupId()), false,
-			0, 0, 0, 0);
+			0, 0, 0, 0,
+			builder.CreateVector(channelPrefixes));
 	}
 
 	std::shared_ptr<IndexerCommand> deserialize(const Ipc::IndexerCommand& fbCmd) const

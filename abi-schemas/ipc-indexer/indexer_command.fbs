@@ -53,6 +53,14 @@ table IndexerCommand {
     //                          sites — "off" | "local" | "all" (empty = "local").
     //                          The Swift analog of specialization_scope (SW11).
     swift_specialization_scope: string;
+    // Project-declared IPC channel-name prefixes (the channel species of
+    // context/DESIGN_XLANG_BOUNDARIES.md). Common to every command type rather
+    // than language-specific: a channel is what two source groups share. A
+    // string-literal constant whose value starts with one of these makes the
+    // producer mint a `channel:<literal>` contract atom and bind the
+    // declaration to it. Empty = the project declares no channels.
+    // Appended field: FlatBuffers-additive.
+    channel_name_prefixes: [string];
 }
 
 table IndexerCommandQueue {

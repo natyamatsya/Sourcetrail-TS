@@ -11,6 +11,10 @@ package struct SwiftIndexerCommand {
 	package let indexStorePath: String
 	// SW11 type-argument edge scope ("off"/"local"/"all"; empty = "local").
 	package let specializationScope: String
+	// Project-declared IPC channel-name prefixes (the channel species of
+	// context/DESIGN_XLANG_BOUNDARIES.md). Common to every command type rather
+	// than Swift-specific: a channel is what two source groups share.
+	package let channelNamePrefixes: [String]
 
 	package init(
 		sourceFilePath: String,
@@ -18,7 +22,8 @@ package struct SwiftIndexerCommand {
 		buildArgs: [String] = [],
 		toolchainPath: String = "",
 		indexStorePath: String = "",
-		specializationScope: String = ""
+		specializationScope: String = "",
+		channelNamePrefixes: [String] = []
 	) {
 		self.sourceFilePath = sourceFilePath
 		self.workingDirectory = workingDirectory
@@ -26,6 +31,7 @@ package struct SwiftIndexerCommand {
 		self.toolchainPath = toolchainPath
 		self.indexStorePath = indexStorePath
 		self.specializationScope = specializationScope
+		self.channelNamePrefixes = channelNamePrefixes
 	}
 }
 
@@ -93,7 +99,8 @@ package final class SwiftIndexerCommandChannel {
 			buildArgs: selected.swiftBuildArgs,
 			toolchainPath: selected.swiftToolchainPath,
 			indexStorePath: selected.swiftIndexStorePath,
-			specializationScope: selected.swiftSpecializationScope
+			specializationScope: selected.swiftSpecializationScope,
+			channelNamePrefixes: selected.channelNamePrefixes
 		)
 		return (replacement: rewrittenQueue, result: swiftCommand)
 	}
@@ -144,6 +151,7 @@ package final class SwiftIndexerCommandChannel {
 			let swiftSpecializationScopeOffset = command.swiftSpecializationScope.isEmpty
 				? Offset()
 				: builder.create(string: command.swiftSpecializationScope)
+			let channelNamePrefixesOffset = builder.createVector(ofStrings: command.channelNamePrefixes)
 
 			return Sourcetrail_Ipc_IndexerCommand.createIndexerCommand(
 				&builder,
@@ -165,7 +173,8 @@ package final class SwiftIndexerCommandChannel {
 				swiftBuildArgsVectorOffset: swiftBuildArgsOffset,
 				swiftToolchainPathOffset: swiftToolchainPathOffset,
 				swiftIndexStorePathOffset: swiftIndexStorePathOffset,
-				swiftSpecializationScopeOffset: swiftSpecializationScopeOffset
+				swiftSpecializationScopeOffset: swiftSpecializationScopeOffset,
+				channelNamePrefixesVectorOffset: channelNamePrefixesOffset
 			)
 		}
 
@@ -202,6 +211,7 @@ struct OwnedIndexerCommand {
 	let swiftToolchainPath: String
 	let swiftIndexStorePath: String
 	let swiftSpecializationScope: String
+	let channelNamePrefixes: [String]
 
 	init(
 		type: Sourcetrail_Ipc_IndexerCommandType,
@@ -222,7 +232,8 @@ struct OwnedIndexerCommand {
 		swiftBuildArgs: [String] = [],
 		swiftToolchainPath: String = "",
 		swiftIndexStorePath: String = "",
-		swiftSpecializationScope: String = ""
+		swiftSpecializationScope: String = "",
+		channelNamePrefixes: [String] = []
 	) {
 		self.type = type
 		self.sourceFilePath = sourceFilePath
@@ -243,6 +254,7 @@ struct OwnedIndexerCommand {
 		self.swiftToolchainPath = swiftToolchainPath
 		self.swiftIndexStorePath = swiftIndexStorePath
 		self.swiftSpecializationScope = swiftSpecializationScope
+		self.channelNamePrefixes = channelNamePrefixes
 	}
 
 	init(from command: Sourcetrail_Ipc_IndexerCommand) {
@@ -265,5 +277,6 @@ struct OwnedIndexerCommand {
 		swiftToolchainPath = command.swiftToolchainPath ?? ""
 		swiftIndexStorePath = command.swiftIndexStorePath ?? ""
 		swiftSpecializationScope = command.swiftSpecializationScope ?? ""
+		channelNamePrefixes = command.channelNamePrefixes.map { $0 ?? "" }
 	}
 }

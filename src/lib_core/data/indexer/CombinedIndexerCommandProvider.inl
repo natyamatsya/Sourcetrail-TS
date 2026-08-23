@@ -22,6 +22,11 @@ inline void CombinedIndexerCommandProvider::addProvider(
 	}
 }
 
+inline void CombinedIndexerCommandProvider::setChannelNamePrefixes(std::vector<std::string> prefixes)
+{
+	m_channelNamePrefixes = std::move(prefixes);
+}
+
 inline std::vector<std::string> CombinedIndexerCommandProvider::getSourceGroupIds() const
 {
 	std::vector<std::string> groupIds;
@@ -48,6 +53,7 @@ inline std::shared_ptr<IndexerCommand> CombinedIndexerCommandProvider::consumeCo
 		if (command)
 		{
 			command->setSourceGroupId(groupId);
+			command->setChannelNamePrefixes(m_channelNamePrefixes);
 			return command;
 		}
 	}
@@ -75,6 +81,7 @@ inline std::shared_ptr<IndexerCommand> CombinedIndexerCommandProvider::consumeCo
 		if (command)
 		{
 			command->setSourceGroupId(groupId);
+			command->setChannelNamePrefixes(m_channelNamePrefixes);
 			return command;
 		}
 	}
@@ -90,6 +97,7 @@ inline std::shared_ptr<IndexerCommand> CombinedIndexerCommandProvider::consumeCo
 		if (command)
 		{
 			command->setSourceGroupId(groupId);
+			command->setChannelNamePrefixes(m_channelNamePrefixes);
 			return command;
 		}
 	}
@@ -107,6 +115,7 @@ inline std::vector<std::shared_ptr<IndexerCommand>> CombinedIndexerCommandProvid
 		for (const std::shared_ptr<IndexerCommand>& command: providerCommands)
 		{
 			command->setSourceGroupId(groupId);
+			command->setChannelNamePrefixes(m_channelNamePrefixes);
 		}
 		utility::append(commands, providerCommands);
 	}

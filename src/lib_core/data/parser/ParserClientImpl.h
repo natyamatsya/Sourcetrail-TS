@@ -11,6 +11,8 @@
 #include "ParserClient.h"
 
 #include <memory>
+#include <string>
+#include <vector>
 #endif
 
 SRCTRL_EXPORT class ParserClientImpl: public ParserClient
@@ -19,7 +21,12 @@ public:
 	// `languages` is the bit of the indexer driving this client; every node it
 	// mints is stamped with it. Defaulted for tests and for the fixture-style
 	// callers that record symbols without an indexer behind them.
-	ParserClientImpl(std::shared_ptr<IntermediateStorage> storage, LanguageMask languages = LANGUAGE_NONE);
+	// `channelNamePrefixes` is the project's declared IPC channel-name prefixes,
+	// which the producers read back through getChannelNamePrefixes().
+	ParserClientImpl(
+		std::shared_ptr<IntermediateStorage> storage,
+		LanguageMask languages = LANGUAGE_NONE,
+		std::vector<std::string> channelNamePrefixes = {});
 
 	Id recordFile(const FilePath& filePath, bool indexed) override;
 	void recordFileLanguage(Id fileId, const std::string& languageIdentifier) override;
@@ -50,6 +57,8 @@ public:
 
 	bool hasContent() const override;
 
+	const std::vector<std::string>& getChannelNamePrefixes() const override;
+
 private:
 	void addAccess(Id nodeId, AccessKind access);
 
@@ -61,6 +70,7 @@ private:
 
 	std::shared_ptr<IntermediateStorage> m_storage;
 	LanguageMask m_languages;
+	std::vector<std::string> m_channelNamePrefixes;
 	std::map<std::string, Id> m_fileIdMap;
 };
 
