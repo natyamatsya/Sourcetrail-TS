@@ -2850,12 +2850,37 @@ fn package_root_of(crate_root_file: &std::path::Path) -> Option<std::path::PathB
     }
 }
 
+/// The workspace root a package belongs to: the nearest ancestor whose
+/// `Cargo.toml` declares `[workspace]`, or the package itself when its own
+/// manifest does (a single-crate project is its own workspace). `None` when no
+/// manifest up the chain declares one.
+fn workspace_root_of(package_root: &std::path::Path) -> Option<std::path::PathBuf> {
+    let mut dir = Some(package_root);
+    while let Some(d) = dir {
+        let manifest = d.join("Cargo.toml");
+        if let Ok(text) = std::fs::read_to_string(&manifest) {
+            // Line-oriented on purpose: this only has to tell a workspace
+            // manifest from a plain package one, and pulling in a TOML parser
+            // for that is not worth the dependency.
+            if text
+                .lines()
+                .any(|l| l.trim_start().starts_with("[workspace]"))
+            {
+                return std::fs::canonicalize(d).ok();
+            }
+        }
+        dir = d.parent();
+    }
+    None
+}
+
 pub(super) fn collect_from_db<'db>(
     db: &'db RootDatabase,
     vfs: &'db Vfs,
     spec_scope: SpecializationScope,
     channel_name_prefixes: Vec<String>,
     restrict_to_package_root: Option<&std::path::Path>,
+    index_path_dependencies: bool,
     on_file: impl FnMut(&str) + 'db,
 ) -> OwnedIntermediateStorage {
     // HIR type inference (Semantics::resolve_method_call, Impl::self_ty, …)
@@ -2864,6 +2889,9 @@ pub(super) fn collect_from_db<'db>(
     ra_ap_hir::attach_db(db, || {
         let mut collector =
             Collector::with_callback(db, vfs, spec_scope, channel_name_prefixes, on_file);
+        // Computed once: which workspace the commanded package belongs to, so a
+        // crate outside it can be recognised as a path dependency.
+        let workspace_root = restrict_to_package_root.and_then(workspace_root_of);
 
         for krate in Crate::all(db) {
             // Skip library crates (std, core, registry deps) — only index
@@ -2892,9 +2920,22 @@ pub(super) fn collect_from_db<'db>(
             // members with their own commands — including root packages, whose
             // directory is a path prefix of every member's.
             if let Some(commanded_root) = restrict_to_package_root {
-                match package_root_of(std::path::Path::new(&crate_root_path)) {
-                    Some(package_root) if package_root == commanded_root => {}
-                    _ => continue,
+                let package_root = package_root_of(std::path::Path::new(&crate_root_path));
+                let is_commanded_package = package_root.as_deref() == Some(commanded_root);
+                // With `index_path_dependencies`, a member command ALSO collects
+                // the local crates that live outside its workspace: those are the
+                // `path = "..."` dependencies, which belong to no member command
+                // and would otherwise never be indexed at all. Sibling members
+                // stay excluded — they are inside the workspace and have their own
+                // commands, so admitting them would index them twice.
+                let is_outside_workspace = index_path_dependencies
+                    && package_root.as_deref().is_some_and(|pkg| {
+                        workspace_root
+                            .as_deref()
+                            .is_none_or(|ws| !pkg.starts_with(ws))
+                    });
+                if !is_commanded_package && !is_outside_workspace {
+                    continue;
                 }
             }
             // A panic inside rust-analyzer (e.g. on a pathological input) must

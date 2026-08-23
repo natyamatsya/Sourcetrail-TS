@@ -65,6 +65,7 @@ fn main() {
             parser::SpecializationScope,
             bool,
             Vec<String>,
+            bool,
         ),
         sourcetrail_rust_indexer_lib::ipc::storage::OwnedIntermediateStorage,
     > = HashMap::new();
@@ -134,6 +135,7 @@ fn main() {
             spec_scope,
             cmd.restrict_to_package,
             cmd.channel_name_prefixes.clone(),
+            cmd.index_path_dependencies,
         );
         let storage = if let Some(cached) = storage_cache.get(&cache_key) {
             log::info!(
@@ -155,6 +157,7 @@ fn main() {
                 spec_scope,
                 cmd.channel_name_prefixes.clone(),
                 cmd.restrict_to_package,
+                cmd.index_path_dependencies,
                 move |path| {
                     if let Err(e) = status_ch_ref.update_indexing(path) {
                         log::warn!("per-file progress update failed: {e}");

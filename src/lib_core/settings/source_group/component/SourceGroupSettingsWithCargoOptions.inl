@@ -83,6 +83,16 @@ inline void SourceGroupSettingsWithCargoOptions::setRustSpecializationScope(cons
 	m_rustSpecializationScope = scope;
 }
 
+inline bool SourceGroupSettingsWithCargoOptions::getRustIndexPathDependencies() const
+{
+	return m_rustIndexPathDependencies;
+}
+
+inline void SourceGroupSettingsWithCargoOptions::setRustIndexPathDependencies(bool indexPathDependencies)
+{
+	m_rustIndexPathDependencies = indexPathDependencies;
+}
+
 inline bool SourceGroupSettingsWithCargoOptions::equals(const SourceGroupSettingsBase* other) const
 {
 	const SourceGroupSettingsWithCargoOptions* otherPtr =
@@ -94,7 +104,8 @@ inline bool SourceGroupSettingsWithCargoOptions::equals(const SourceGroupSetting
 		m_cargoAllFeatures == otherPtr->m_cargoAllFeatures &&
 		m_cargoNoDefaultFeatures == otherPtr->m_cargoNoDefaultFeatures &&
 		m_cargoTargetTriple == otherPtr->m_cargoTargetTriple &&
-		m_rustSpecializationScope == otherPtr->m_rustSpecializationScope);
+		m_rustSpecializationScope == otherPtr->m_rustSpecializationScope &&
+		m_rustIndexPathDependencies == otherPtr->m_rustIndexPathDependencies);
 }
 
 inline void SourceGroupSettingsWithCargoOptions::load(const ConfigManager* config, const std::string& key)
@@ -108,6 +119,8 @@ inline void SourceGroupSettingsWithCargoOptions::load(const ConfigManager* confi
 	setCargoTargetTriple(config->getValueOrDefault<std::string>(key + "/cargo_target_triple", ""));
 	setRustSpecializationScope(
 		config->getValueOrDefault<std::string>(key + "/rust_specialization_scope", "local"));
+	setRustIndexPathDependencies(
+		config->getValueOrDefault(key + "/rust_index_path_dependencies", false));
 }
 
 inline void SourceGroupSettingsWithCargoOptions::save(ConfigManager* config, const std::string& key)
@@ -118,4 +131,5 @@ inline void SourceGroupSettingsWithCargoOptions::save(ConfigManager* config, con
 	config->setValue(key + "/cargo_no_default_features", getCargoNoDefaultFeatures());
 	config->setValue(key + "/cargo_target_triple", getCargoTargetTriple());
 	config->setValue(key + "/rust_specialization_scope", getRustSpecializationScope());
+	config->setValue(key + "/rust_index_path_dependencies", getRustIndexPathDependencies());
 }

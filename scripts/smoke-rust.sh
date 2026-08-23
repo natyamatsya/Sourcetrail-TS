@@ -67,6 +67,13 @@ id = 'a3f1c2e4-0000-4000-8000-smokerust0001'
 name = 'Rust Smoke'
 status = 'enabled'
 type = 'Rust Empty'
+# The assertions below cover traits, INHERITANCE/OVERRIDE edges and
+# specialization nodes, none of which the indexer's own crate has -- they come
+# from the thoth-ipc `path = "..."` dependency this crate builds against. Crate
+# fan-out R1b gives each workspace MEMBER its own command that collects only its
+# own package, which leaves a path dependency belonging to no command at all;
+# this option is what puts it back. See context/DESIGN_RUST_CRATE_FANOUT.md.
+rust_index_path_dependencies = true
 
     [source_groups.source_extensions]
     source_extension = '.rs'

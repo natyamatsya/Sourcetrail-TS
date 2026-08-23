@@ -95,6 +95,10 @@ pub struct OwnedIndexerCommand {
     /// Common to every command type, so it must round-trip through the
     /// pop-rewrite like source_group_id.
     pub channel_name_prefixes: Vec<String>,
+    /// Crate fan-out R1b option: also collect the local crates outside this
+    /// package's workspace, i.e. its `path = "..."` dependencies, which belong
+    /// to no member command. Must round-trip through the pop-rewrite.
+    pub index_path_dependencies: bool,
 }
 
 impl OwnedIndexerCommand {
@@ -127,6 +131,7 @@ impl OwnedIndexerCommand {
                 .unwrap_or("")
                 .to_owned(),
             channel_name_prefixes: str_vec(cmd.channel_name_prefixes()),
+            index_path_dependencies: cmd.rust_index_path_dependencies(),
         }
     }
 }
@@ -288,6 +293,7 @@ fn serialize_queue(commands: &[OwnedIndexerCommand]) -> Vec<u8> {
                     swift_index_store_path,
                     swift_specialization_scope,
                     channel_name_prefixes: Some(channel_name_prefixes_v),
+                    rust_index_path_dependencies: cmd.index_path_dependencies,
                 },
             )
         })
@@ -346,6 +352,7 @@ mod tests {
                 String::new()
             },
             channel_name_prefixes: vec!["srctrl_ipc_".to_owned()],
+            index_path_dependencies: kind == IndexerCommandType::Rust,
         }
     }
 
@@ -397,6 +404,10 @@ mod tests {
         let prefixes = commands.get(0).channel_name_prefixes().unwrap();
         assert_eq!(prefixes.len(), 1);
         assert_eq!(prefixes.get(0), "srctrl_ipc_");
+
+        // The R1b path-dependency option round-trips like restrict_to_package.
+        assert!(popped.index_path_dependencies);
+        assert!(commands.get(2).rust_index_path_dependencies());
     }
 
     #[test]

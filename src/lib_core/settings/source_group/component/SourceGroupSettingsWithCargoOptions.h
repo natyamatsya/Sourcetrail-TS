@@ -41,6 +41,18 @@ public:
 	const std::string& getCargoTargetTriple() const;
 	void setCargoTargetTriple(const std::string& targetTriple);
 
+	// Crate fan-out R1b emits one command per workspace MEMBER, and a member
+	// command collects only its own package -- which leaves a `path = "..."`
+	// dependency outside the workspace belonging to no command at all, so it is
+	// never indexed. Turn this on to have each member command also collect the
+	// local crates that live outside the workspace root, i.e. its path
+	// dependencies. Off by default: it is extra work per command, and two
+	// members sharing one path dependency each collect it (the storage merge
+	// dedupes the nodes, but the work is done twice).
+	// See context/DESIGN_RUST_CRATE_FANOUT.md.
+	bool getRustIndexPathDependencies() const;
+	void setRustIndexPathDependencies(bool indexPathDependencies);
+
 	// Implicit generic-specialization node scope ("off"/"local"/"all";
 	// §7 of context/DESIGN_RUST_TYPE_SYSTEM_EDGES.md). Default "local".
 	const std::string& getRustSpecializationScope() const;
@@ -59,6 +71,7 @@ private:
 	bool m_cargoNoDefaultFeatures = false;
 	std::string m_cargoTargetTriple;
 	std::string m_rustSpecializationScope = "local";
+	bool m_rustIndexPathDependencies = false;
 };
 
 #include "SourceGroupSettingsWithCargoOptions.inl"

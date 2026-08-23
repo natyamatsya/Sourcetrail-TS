@@ -166,6 +166,7 @@ pub fn index_crate(
         SpecializationScope::default(),
         Vec::new(),
         false,
+        false,
         on_file,
     )
 }
@@ -180,6 +181,7 @@ pub fn index_crate_scoped(
     spec_scope: SpecializationScope,
     channel_name_prefixes: Vec<String>,
     restrict_to_package: bool,
+    index_path_dependencies: bool,
     on_file: impl FnMut(&str),
 ) -> OwnedIntermediateStorage {
     index_crate_with(
@@ -189,6 +191,7 @@ pub fn index_crate_scoped(
         spec_scope,
         channel_name_prefixes,
         restrict_to_package,
+        index_path_dependencies,
         on_file,
     )
 }
@@ -239,6 +242,7 @@ pub(crate) fn index_crate_with(
     spec_scope: SpecializationScope,
     channel_name_prefixes: Vec<String>,
     restrict_to_package: bool,
+    index_path_dependencies: bool,
     on_file: impl FnMut(&str),
 ) -> OwnedIntermediateStorage {
     let cargo_config = CargoConfig {
@@ -308,6 +312,7 @@ pub(crate) fn index_crate_with(
         spec_scope,
         channel_name_prefixes,
         restrict_to_package_root.as_deref(),
+        index_path_dependencies,
         on_file,
     )
 }
@@ -345,6 +350,7 @@ pub fn index_file(file_path: &str, _module_prefix: &str) -> OwnedIntermediateSto
         CargoOptions::default(),
         SpecializationScope::Local,
         Vec::new(),
+        false,
         false,
         |_| {},
     );

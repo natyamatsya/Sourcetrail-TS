@@ -21,6 +21,7 @@ fn index_src_with_sysroot(src: &str) -> OwnedIntermediateStorage {
         SpecializationScope::default(),
         Vec::new(),
         false,
+        false,
         |_| {},
     )
 }
@@ -36,6 +37,7 @@ fn index_src_with_scope(src: &str, spec_scope: SpecializationScope) -> OwnedInte
         CargoOptions::default(),
         spec_scope,
         Vec::new(),
+        false,
         false,
         |_| {},
     )
@@ -55,6 +57,7 @@ fn index_src_with_channel_prefixes(
         CargoOptions::default(),
         SpecializationScope::default(),
         prefixes,
+        false,
         false,
         |_| {},
     )
@@ -1185,6 +1188,7 @@ fn index_feature_fixture(options: CargoOptions) -> OwnedIntermediateStorage {
         options,
         SpecializationScope::default(),
         Vec::new(),
+        false,
         false,
         |_| {},
     )

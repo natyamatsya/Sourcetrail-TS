@@ -169,7 +169,8 @@ std::vector<std::shared_ptr<IndexerCommand>> SourceGroupRust::getIndexerCommands
 				m_settings->getCargoNoDefaultFeatures(),
 				m_settings->getCargoTargetTriple(),
 				m_settings->getRustSpecializationScope(),
-				restrictToPackage));
+				restrictToPackage,
+				m_settings->getRustIndexPathDependencies()));
 	};
 
 	// Crate fan-out R1b: one command per workspace member crate, so K Rust

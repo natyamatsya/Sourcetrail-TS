@@ -174,7 +174,8 @@ package final class SwiftIndexerCommandChannel {
 				swiftToolchainPathOffset: swiftToolchainPathOffset,
 				swiftIndexStorePathOffset: swiftIndexStorePathOffset,
 				swiftSpecializationScopeOffset: swiftSpecializationScopeOffset,
-				channelNamePrefixesVectorOffset: channelNamePrefixesOffset
+				channelNamePrefixesVectorOffset: channelNamePrefixesOffset,
+				rustIndexPathDependencies: command.rustIndexPathDependencies
 			)
 		}
 
@@ -212,6 +213,9 @@ struct OwnedIndexerCommand {
 	let swiftIndexStorePath: String
 	let swiftSpecializationScope: String
 	let channelNamePrefixes: [String]
+	/// Rust-only (crate fan-out R1b), but carried here like every other schema
+	/// field: a Rust command passing through the Swift pop-rewrite must keep it.
+	let rustIndexPathDependencies: Bool
 
 	init(
 		type: Sourcetrail_Ipc_IndexerCommandType,
@@ -233,7 +237,8 @@ struct OwnedIndexerCommand {
 		swiftToolchainPath: String = "",
 		swiftIndexStorePath: String = "",
 		swiftSpecializationScope: String = "",
-		channelNamePrefixes: [String] = []
+		channelNamePrefixes: [String] = [],
+		rustIndexPathDependencies: Bool = false
 	) {
 		self.type = type
 		self.sourceFilePath = sourceFilePath
@@ -255,6 +260,7 @@ struct OwnedIndexerCommand {
 		self.swiftIndexStorePath = swiftIndexStorePath
 		self.swiftSpecializationScope = swiftSpecializationScope
 		self.channelNamePrefixes = channelNamePrefixes
+		self.rustIndexPathDependencies = rustIndexPathDependencies
 	}
 
 	init(from command: Sourcetrail_Ipc_IndexerCommand) {
@@ -278,5 +284,6 @@ struct OwnedIndexerCommand {
 		swiftIndexStorePath = command.swiftIndexStorePath ?? ""
 		swiftSpecializationScope = command.swiftSpecializationScope ?? ""
 		channelNamePrefixes = command.channelNamePrefixes.map { $0 ?? "" }
+		rustIndexPathDependencies = command.rustIndexPathDependencies
 	}
 }

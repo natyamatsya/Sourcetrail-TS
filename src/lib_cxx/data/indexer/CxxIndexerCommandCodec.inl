@@ -61,7 +61,7 @@ struct CxxIndexerCommandCodecProvider
 			0, false, false, 0, 0,
 			builder.CreateString(base.getSourceGroupId()), false,
 			0, 0, 0, 0,
-			builder.CreateVector(channelPrefixes));
+			builder.CreateVector(channelPrefixes), false);
 	}
 
 	std::shared_ptr<IndexerCommand> deserialize(const Ipc::IndexerCommand& fbCmd) const

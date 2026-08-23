@@ -30,7 +30,8 @@ private func makeCommand(
 		swiftToolchainPath: type == .swift ? "/opt/swift-6.1" : "",
 		swiftIndexStorePath: type == .swift ? "/build/index/store" : "",
 		swiftSpecializationScope: type == .swift ? "all" : "",
-		channelNamePrefixes: ["srctrl_ipc_"]
+		channelNamePrefixes: ["srctrl_ipc_"],
+		rustIndexPathDependencies: type == .rust
 	)
 }
 
@@ -85,6 +86,10 @@ private func makeCommand(
 		#expect(poppedCommand.channelNamePrefixes == ["srctrl_ipc_"])
 		#expect(cxx.channelNamePrefixes.map { $0 ?? "" } == ["srctrl_ipc_"])
 		#expect(rust.channelNamePrefixes.map { $0 ?? "" } == ["srctrl_ipc_"])
+		// The R1b path-dependency option is a Rust field, but the Swift
+		// pop-rewrite must still carry it or a Rust command loses it.
+		#expect(rust.rustIndexPathDependencies)
+		#expect(!cxx.rustIndexPathDependencies)
 	}
 
 	@Test func popReturnsNilAndDoesNotRewriteWithoutSwiftCommand() throws {

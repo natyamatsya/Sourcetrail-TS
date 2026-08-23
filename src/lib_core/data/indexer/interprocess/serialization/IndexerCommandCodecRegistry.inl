@@ -52,7 +52,7 @@ struct RustIndexerCommandCodec
 			builder.CreateString(cmd.getSpecializationScope()),
 			builder.CreateString(base.getSourceGroupId()), cmd.getRestrictToPackage(),
 			0, 0, 0, 0,
-			builder.CreateVector(channelPrefixes));
+			builder.CreateVector(channelPrefixes), cmd.getIndexPathDependencies());
 	}
 
 	std::shared_ptr<IndexerCommand> deserialize(const Ipc::IndexerCommand& fbCmd) const
@@ -82,7 +82,8 @@ struct RustIndexerCommandCodec
 		return std::make_shared<IndexerCommand>(
 			FilePath(fbCmd.source_file_path()->c_str()),
 			IndexerCommandRust(indexedPaths, workingDir, features, fbCmd.all_features(), fbCmd.no_default_features(),
-			targetTriple, specializationScope, fbCmd.restrict_to_package()));
+			targetTriple, specializationScope, fbCmd.restrict_to_package(),
+			fbCmd.rust_index_path_dependencies()));
 	}
 };
 
@@ -117,7 +118,7 @@ struct SwiftIndexerCommandCodec
 			builder.CreateString(cmd.getToolchainPath()),
 			builder.CreateString(cmd.getIndexStorePath()),
 			builder.CreateString(cmd.getSpecializationScope()),
-			builder.CreateVector(channelPrefixes));
+			builder.CreateVector(channelPrefixes), false);
 	}
 
 	std::shared_ptr<IndexerCommand> deserialize(const Ipc::IndexerCommand& fbCmd) const
@@ -180,7 +181,7 @@ struct ZigIndexerCommandCodec
 			0, false, false, 0, 0,
 			builder.CreateString(base.getSourceGroupId()), false,
 			0, 0, 0, 0,
-			builder.CreateVector(channelPrefixes));
+			builder.CreateVector(channelPrefixes), false);
 	}
 
 	std::shared_ptr<IndexerCommand> deserialize(const Ipc::IndexerCommand& fbCmd) const

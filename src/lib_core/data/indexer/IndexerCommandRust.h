@@ -28,7 +28,8 @@ public:
 		bool noDefaultFeatures = false,
 		const std::string& targetTriple = "",
 		const std::string& specializationScope = "local",
-		bool restrictToPackage = false);
+		bool restrictToPackage = false,
+		bool indexPathDependencies = false);
 
 	// IndexerCommandC contract:
 	IndexerCommandType getIndexerCommandType() const;
@@ -54,6 +55,12 @@ public:
 	// collects the whole loaded workspace (legacy / fallback commands).
 	bool getRestrictToPackage() const;
 
+	// Crate fan-out R1b option: with restrictToPackage set, also collect the
+	// local crates outside this package's workspace -- its `path = "..."`
+	// dependencies, which belong to no member command and are otherwise never
+	// indexed. Sibling members stay with their own commands.
+	bool getIndexPathDependencies() const;
+
 private:
 	std::set<FilePath> m_indexedPaths;
 	FilePath m_workingDirectory;
@@ -63,6 +70,7 @@ private:
 	std::string m_targetTriple;
 	std::string m_specializationScope;
 	bool m_restrictToPackage;
+	bool m_indexPathDependencies;
 };
 
 #ifndef SRCTRL_MODULE_PURVIEW

@@ -16,7 +16,8 @@ inline IndexerCommandRust::IndexerCommandRust(
 	bool noDefaultFeatures,
 	const std::string& targetTriple,
 	const std::string& specializationScope,
-	bool restrictToPackage)
+	bool restrictToPackage,
+	bool indexPathDependencies)
 	: m_indexedPaths(indexedPaths)
 	, m_workingDirectory(workingDirectory)
 	, m_features(features)
@@ -25,6 +26,7 @@ inline IndexerCommandRust::IndexerCommandRust(
 	, m_targetTriple(targetTriple)
 	, m_specializationScope(specializationScope)
 	, m_restrictToPackage(restrictToPackage)
+	, m_indexPathDependencies(indexPathDependencies)
 {
 }
 
@@ -81,4 +83,9 @@ inline const std::string& IndexerCommandRust::getSpecializationScope() const
 inline bool IndexerCommandRust::getRestrictToPackage() const
 {
 	return m_restrictToPackage;
+}
+
+inline bool IndexerCommandRust::getIndexPathDependencies() const
+{
+	return m_indexPathDependencies;
 }

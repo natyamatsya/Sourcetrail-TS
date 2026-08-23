@@ -61,6 +61,12 @@ table IndexerCommand {
     // declaration to it. Empty = the project declares no channels.
     // Appended field: FlatBuffers-additive.
     channel_name_prefixes: [string];
+    // Crate fan-out R1b option (Rust commands): a member command also collects
+    // the local crates outside its workspace — its `path = "..."` dependencies,
+    // which otherwise belong to no command and are never indexed. Sibling
+    // members stay with their own commands. See DESIGN_RUST_CRATE_FANOUT.md.
+    // Appended field: FlatBuffers-additive.
+    rust_index_path_dependencies: bool;
 }
 
 table IndexerCommandQueue {
