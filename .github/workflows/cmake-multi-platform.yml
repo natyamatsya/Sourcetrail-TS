@@ -172,6 +172,21 @@ jobs:
         if: runner.os == 'macOS'
         run: brew install ninja llvm qt
 
+      # ubuntu-latest ships CMake 3.31, and the top-level CMakeLists requires
+      # 4.4.0 (CMP0155 defaults to NEW there, so C++20 sources are scanned for
+      # `import` without a per-target opt-in). macOS and Windows runners already
+      # carry >= 4.4, so this is Linux-only. Pinned rather than "latest" for the
+      # same reason every other tool here is: a silent toolchain bump is not a
+      # thing a build should discover at configure time.
+      - name: Install CMake (Linux)
+        if: runner.os == 'Linux'
+        run: |
+          version=4.4.2
+          curl -fsSL -o /tmp/cmake.tar.gz \
+            "https://github.com/Kitware/CMake/releases/download/v${version}/cmake-${version}-linux-x86_64.tar.gz"
+          sudo tar -xzf /tmp/cmake.tar.gz -C /opt
+          echo "/opt/cmake-${version}-linux-x86_64/bin" >> "$GITHUB_PATH"
+
       - name: Bootstrap vcpkg
         run: ./vcpkg/bootstrap-vcpkg.sh -disableMetrics
 
