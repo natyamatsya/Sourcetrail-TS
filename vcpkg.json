@@ -22,7 +22,9 @@
 		"ladybug": {
 			"description": "External dependencies for the optional LadybugDB (Kùzu) graph backend, replacing the copies vendored in its third_party tree",
 			"dependencies": [
+				"antlr4",
 				"brotli",
+				"lz4",
 				"yyjson",
 				"zstd"
 			]

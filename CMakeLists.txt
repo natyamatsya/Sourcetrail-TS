@@ -526,9 +526,11 @@ if (BUILD_LADYBUG OR SOURCETRAIL_USE_LADYBUG)
 	# still build from the vendored tree. Requires the "ladybug" manifest feature
 	# — the vcpkg-ladybug-presets preset turns it on.
 	if (isVcpkgBuild)
-		set(LBUG_SYSTEM_BROTLI ON CACHE BOOL "" FORCE)
-		set(LBUG_SYSTEM_YYJSON ON CACHE BOOL "" FORCE)
-		set(LBUG_SYSTEM_ZSTD   ON CACHE BOOL "" FORCE)
+		set(LBUG_SYSTEM_ANTLR4   ON CACHE BOOL "" FORCE)
+		set(LBUG_SYSTEM_BROTLI   ON CACHE BOOL "" FORCE)
+		set(LBUG_SYSTEM_LZ4      ON CACHE BOOL "" FORCE)
+		set(LBUG_SYSTEM_YYJSON   ON CACHE BOOL "" FORCE)
+		set(LBUG_SYSTEM_ZSTD     ON CACHE BOOL "" FORCE)
 	endif()
 
 	add_subdirectory(submodules/ladybug EXCLUDE_FROM_ALL)

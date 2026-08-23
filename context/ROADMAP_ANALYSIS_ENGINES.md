@@ -94,19 +94,31 @@ ordinary transitive link dependencies. Because the sources compile as OBJECT
 libraries, which never see usage requirements, an external package's headers
 must also be pushed onto the global include path.
 
-**Migrated:** brotli, yyjson, zstd.
+**Migrated:** brotli, yyjson, zstd, lz4, antlr4_runtime.
 
-**Blocked by namespace renaming.** snappy, fast_float, thrift, parquet and
-mbedtls are rewritten into `lbug_`-prefixed namespaces so their symbols cannot
-collide in a static link, and Kùzu's own sources call them by those names
-(`lbug_snappy::RawUncompress`, `lbug_fast_float::from_chars`). An unmodified
-upstream package does not compile against them; switching those means undoing
-the rename, which is a separate decision.
+**Blocked, and this is the axis that matters.** The vendored copy is usually not
+the upstream library: Kùzu wraps each one in a namespace so its symbols cannot
+collide in a static link, and its own sources then call it by that name. Header
+layout is a red herring; the namespace is what decides. snappy, fast_float,
+thrift and parquet take an `lbug_` prefix (`lbug_snappy::RawUncompress`,
+`lbug_fast_float::from_chars`); miniz and re2 are wrapped as `miniz::` and
+`lbug::`; mbedtls is renamed the same way. utf8proc goes further still and
+carries API additions of ours that upstream does not have
+(`utf8proc_next_grapheme`, `utf8proc_codepoint`, a wider `utf8proc_NFC`).
+Switching any of these means undoing the wrapping first — a separate decision,
+since the wrapping exists to make a static liblbug.a safe to link beside other
+copies of the same libraries. zstd is the exception that proves the rule: only
+its internal static-API header is wrapped, and we do not use it.
 
-**Blocked by header layout.** re2, simsimd, utf8proc, lz4 and miniz are
-flattened or amalgamated (`#include "re2.h"`, not `re2/re2.h`; lz4 and miniz are
-C sources renamed to C++ and included as `.hpp`). Each needs a forwarding header
-or a small include sweep.
+**Deferred on cost.** re2 is both wrapped and would pull abseil into the
+dependency tree. roaring (4.5.0) and simsimd (6.0.0) are *older* in our pinned
+vcpkg baseline than the vendored copies (4.5.1, 6.2.1), so switching would be a
+downgrade until the baseline moves.
+
+**Not yet examined.** httplib and fastpfor keep their upstream namespaces and
+have ports at 0.31.0 and 0.3.1 against vendored 0.14.2 and 0.1.8 — the two
+remaining candidates worth a look. spdlog, taywee_args and pybind11 are used
+only by `tools/` and `test/`, never by the library we link.
 
 **No vcpkg port.** alp, pcg, glob, cppjieba, pyparse, and the generated
 `antlr4_cypher` parser stay vendored, or would need an overlay port.
