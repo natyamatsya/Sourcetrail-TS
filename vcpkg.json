@@ -18,6 +18,14 @@
 			"dependencies": [
 				"llvm"
 			]
+		},
+		"ladybug": {
+			"description": "External dependencies for the optional LadybugDB (Kùzu) graph backend, replacing the copies vendored in its third_party tree",
+			"dependencies": [
+				"brotli",
+				"yyjson",
+				"zstd"
+			]
 		}
 	},
 	"builtin-baseline": "4556e1a3c9e2d1c4a7344cac5d045a9d87b2e77f"

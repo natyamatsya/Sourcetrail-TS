@@ -520,6 +520,17 @@ if (BUILD_LADYBUG OR SOURCETRAIL_USE_LADYBUG)
 	set(BUILD_STATIC_LBUG       ON CACHE BOOL "" FORCE)
 	set(AUTO_UPDATE_GRAMMAR    OFF CACHE BOOL "" FORCE)
 
+	# Take the dependencies we already have ports for from vcpkg rather than from
+	# Kùzu's vendored third_party copies, which are years behind (see
+	# context/ROADMAP_ANALYSIS_ENGINES.md). This is the migrated set; the rest
+	# still build from the vendored tree. Requires the "ladybug" manifest feature
+	# — the vcpkg-ladybug-presets preset turns it on.
+	if (isVcpkgBuild)
+		set(LBUG_SYSTEM_BROTLI ON CACHE BOOL "" FORCE)
+		set(LBUG_SYSTEM_YYJSON ON CACHE BOOL "" FORCE)
+		set(LBUG_SYSTEM_ZSTD   ON CACHE BOOL "" FORCE)
+	endif()
+
 	add_subdirectory(submodules/ladybug EXCLUDE_FROM_ALL)
 
 	add_library(External_lib_ladybug INTERFACE)

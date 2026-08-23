@@ -75,6 +75,42 @@ Formerly Kùzu.
 and Kùzu, diff the graphs (counts + histograms) exactly as done for Turso, before
 committing to a migration.
 
+### Dependency provenance — vendored vs. vcpkg
+
+Kùzu vendors ~23 libraries as trimmed source trees under `third_party/`, pinned
+years behind upstream (httplib 0.14.2 vs. 0.53.1, mbedtls 3.1.0 vs. 4.2.0,
+spdlog 1.13.0 vs. 1.17.0). Upstream keeps them pinned deliberately and our fork
+carries no patches there, so re-vendoring by hand would be pure divergence for
+no benefit — while our own vcpkg baseline already ships most of them at current
+versions. Taking them from vcpkg *is* the dependency update.
+
+The migration is per library, gated by `LBUG_SYSTEM_<LIB>` options that default
+to the vendored copy, because Kùzu's own wasm, musl and python-wheel pipelines
+have no package manager. Sourcetrail turns the switches on for a vcpkg build;
+upstream's default path is untouched, which keeps future syncs from the fork
+point cheap. The seam is `lbug_link_deps` plus the `LBUG_STATIC_ARCHIVE_LIBRARIES`
+list: vendored copies are `ar`-merged into `liblbug.a`, external packages stay
+ordinary transitive link dependencies. Because the sources compile as OBJECT
+libraries, which never see usage requirements, an external package's headers
+must also be pushed onto the global include path.
+
+**Migrated:** brotli, yyjson, zstd.
+
+**Blocked by namespace renaming.** snappy, fast_float, thrift, parquet and
+mbedtls are rewritten into `lbug_`-prefixed namespaces so their symbols cannot
+collide in a static link, and Kùzu's own sources call them by those names
+(`lbug_snappy::RawUncompress`, `lbug_fast_float::from_chars`). An unmodified
+upstream package does not compile against them; switching those means undoing
+the rename, which is a separate decision.
+
+**Blocked by header layout.** re2, simsimd, utf8proc, lz4 and miniz are
+flattened or amalgamated (`#include "re2.h"`, not `re2/re2.h`; lz4 and miniz are
+C sources renamed to C++ and included as `.hpp`). Each needs a forwarding header
+or a small include sweep.
+
+**No vcpkg port.** alp, pcg, glob, cppjieba, pyparse, and the generated
+`antlr4_cypher` parser stay vendored, or would need an overlay port.
+
 ---
 
 ## Tier 2 — Datalog / fixpoint (derivation) — the deep cut
