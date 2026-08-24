@@ -24,6 +24,7 @@
 			"dependencies": [
 				"antlr4",
 				"brotli",
+				"cpp-httplib",
 				"lz4",
 				"yyjson",
 				"zstd"
