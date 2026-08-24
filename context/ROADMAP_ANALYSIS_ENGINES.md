@@ -67,8 +67,14 @@ Formerly Kùzu.
 - A full storage-backend swap is a *large* lift (the Turso work is the proof).
   You would likely keep a relational store for non-graph data, so it means two
   engines or a bigger migration.
-- **LadybugDB is a young fork of Kùzu** — maturity/maintenance risk vs. tracking
-  Kùzu directly. Evaluate against upstream Kùzu too.
+- **There is no upstream to fall back to.** Kùzu was archived by its own
+  maintainers (`kuzudb/kuzu`, `archived: true`, last push 2025-10-10, final
+  release 0.11.3; the README says the team "is working on something new").
+  LadybugDB is the continuation, not a fork competing with a live upstream — it
+  sits at 0.20.0, nine minor versions past where Kùzu stopped, carrying storage
+  and query work Kùzu never shipped. So the risk is not "which of two projects"
+  but "one young project, no fallback": if LadybugDB stalls, the exit is a fork
+  we maintain ourselves, and the engine is a very large C++ codebase.
 - Cypher is a second query dialect to own.
 
 **De-risking:** reuse the storage seam + dual-compare harness — index into SQLite
@@ -219,7 +225,13 @@ parse → base facts (EDB) → Datalog rules → derived relations (IDB) → gra
 
 ## Open questions
 
-- Is Kùzu upstream (vs. the LadybugDB fork) the better long-term dependency?
+- ~~Is Kùzu upstream (vs. the LadybugDB fork) the better long-term
+  dependency?~~ **Settled 2026-08-24: Kùzu is archived, so there is no choice to
+  make — LadybugDB is the only live line.** What replaces the question is
+  narrower and harder: what does the exit look like if LadybugDB stalls, and is
+  the storage seam enough to make that a backend swap rather than a rescue? The
+  dual-compare harness is worth building for that reason alone, independent of
+  whether the migration ever happens.
 - Where should derived relations live and how are they invalidated on incremental
   re-index (before Differential Datalog exists)?
 - Do the base edges carry enough type/receiver info for CHA, or does the indexer
