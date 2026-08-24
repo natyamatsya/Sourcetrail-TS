@@ -126,6 +126,13 @@ about a capability that demonstrably exists.
 and Kùzu, diff the graphs (counts + histograms) exactly as done for Turso, before
 committing to a migration.
 
+**A first pass at that comparison has been run** — node/edge only, queried side by
+side rather than diffed: [EXPERIMENT_LADYBUG_MIRROR.md](EXPERIMENT_LADYBUG_MIRROR.md).
+Read it before acting on the traversal argument below. Its short version: the
+traversal bottleneck was a missing index on the read path, not the engine, and
+indexed SQLite beats Ladybug on single-source traversal by 2.5–7x while losing
+whole-graph pattern matching by 1.8–4.5x.
+
 ### Dependency provenance — vendored vs. vcpkg
 
 Kùzu vendors ~23 libraries as trimmed source trees under `third_party/`, pinned
