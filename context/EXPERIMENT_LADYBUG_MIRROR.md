@@ -115,10 +115,33 @@ and the compile tax are properties of the engine, not defects to fix.
 | single `Edge` table (5) | `LadybugGraphStorage` creates one relationship table per `Edge::EdgeType` — `Member`, `TypeUsage`, `Call`, … — and `addEdge` writes into the matching one. A type with no entry still gets mirrored, into a shared `Edge` table carrying the raw type, because losing an edge silently is worse than losing traversal speed. |
 | silent partial mirror | `PersistentStorage::addNodes`/`addEdges` used to `break` out of the mirror loop on the first failure and log a warning, leaving a graph that looked complete. They now log an error and **drop the mirror for the rest of the run**, so a half-graph can never be mistaken for a whole one. The same applies when SQLite returns a different number of ids than rows submitted, which was previously skipped in silence. |
 
-What is *not* fixed: the mirror still writes row by row. Statement caching removes the
-compilation cost but not the per-row round trip, and bulk `COPY` remains far faster than
-either. If the mirror is ever meant to carry a full project rather than demonstrate a
-shape, that is the next change.
+| row-by-row writes (4) | Rows are now staged as CSV text and handed to `COPY`, one statement per table per batch, flushed on commit inside the transaction and discarded on rollback. Measured end to end on this project's graph — 40,341 nodes and 76,025 call edges across two batches — **340 ms**, against a row-by-row path that could not load 5,000 nodes in 400 s. |
+
+Two constraints shaped the bulk load, both checked rather than assumed: Kùzu accepts
+`COPY` into a **non-empty** table, and accepts it **inside an explicit transaction**.
+Either being false would have forced a different design.
+
+Ordering matters and is not free. A relationship `COPY` fails outright if an endpoint is
+missing, so `Node` is always flushed before any relationship table — `std::map` ordering
+gives that for nothing, since `Node` sorts first. Across batches the invariant holds
+because SQLite enforces it: `edge.source_node_id REFERENCES node(id)` means the node row
+exists before the edge is inserted, and the mirror writes in the same order. A first
+version of the benchmark that split the export arbitrarily *did* fail this way, which is
+worth knowing — the failure mode is a hard error, where the old row-by-row statement
+(`MATCH (a), (b) CREATE …`) silently created nothing when an endpoint was absent.
+
+Because a failed `COPY` aborts the transaction, every transaction boundary now disables
+the mirror on failure too, not just the row writers: anything staged after an aborted
+transaction would be written into nothing.
+
+What is still *not* addressed: re-mirroring into a `.lbug` that already holds the same
+ids will now fail loudly on the duplicate primary key, where `MERGE` used to absorb it.
+Within a run the repeats Sourcetrail generates for re-indexed elements are dropped by an
+id set; across runs the graph is not incremental. The previous code was not incremental
+either — it re-`CREATE`d relationships unconditionally and silently duplicated them — so
+this trades a silent wrong answer for a loud refusal, which is the same trade as the
+truncation fix. Making the mirror genuinely incremental is a design question, not a
+patch.
 
 Verified by compiling all three translation units with `SOURCETRAIL_USE_LADYBUG`
 defined against the real Kùzu headers — with a deliberate-error positive control to

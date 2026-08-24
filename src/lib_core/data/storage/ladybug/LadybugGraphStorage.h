@@ -1,8 +1,10 @@
 #ifndef LADYBUG_GRAPH_STORAGE_H
 #define LADYBUG_GRAPH_STORAGE_H
 
+#include <map>
 #include <memory>
 #include <string>
+#include <unordered_set>
 #include <vector>
 
 #include <stdext/expected>
@@ -52,10 +54,31 @@ public:
 	// are the natural next step once the node/edge core is validated end to end.
 
 private:
-	explicit LadybugGraphStorage(std::unique_ptr<ladybug::LadybugConnection> connection);
+	explicit LadybugGraphStorage(
+		std::unique_ptr<ladybug::LadybugConnection> connection, std::string stagingPrefix);
 	stdext::expected<void, std::string> setupSchema() noexcept;
 
+	// Rows are staged as CSV text and handed to Kùzu's COPY in one statement per
+	// table, rather than written a row at a time. Writing row by row costs a Cypher
+	// execution per row; COPY costs one per table per batch, and measured over this
+	// project's index that is the difference between 160 ms and not finishing (see
+	// context/EXPERIMENT_LADYBUG_MIRROR.md). Staging is flushed on commit, before the
+	// transaction closes, and discarded on rollback.
+	void stageRow(const std::string& table, std::string row) noexcept;
+	stdext::expected<void, std::string> flushStagedRows() noexcept;
+	void discardStagedRows() noexcept;
+
 	std::unique_ptr<ladybug::LadybugConnection> m_connection;
+
+	// Ordered so Node is flushed before any relationship table: a relationship COPY
+	// requires both endpoints to exist already.
+	std::map<std::string, std::string> m_stagedRows;
+	std::string m_stagingPrefix;
+
+	// Sourcetrail hands the same element back when an existing one is re-indexed, so
+	// the same id can arrive twice in a run. MERGE used to absorb that; COPY would
+	// fail on the duplicate primary key, so the repeats are dropped here instead.
+	std::unordered_set<Id> m_stagedIds;
 };
 
 #endif	// LADYBUG_GRAPH_STORAGE_H

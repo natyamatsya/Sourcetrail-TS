@@ -5,6 +5,9 @@
 #include "LadybugGraphStorage.h"
 
 #include <cstdint>
+#include <cstdio>
+#include <fstream>
+#include <utility>
 
 #ifndef SRCTRL_MODULE_BUILD
 #include "FilePath.h"
@@ -61,6 +64,25 @@ constexpr EdgeTable kEdgeTables[] = {
 // type. Losing an edge silently would be worse than losing the traversal speed.
 constexpr const char* kFallbackEdgeTable = "Edge";
 
+// Kùzu reads standard CSV: quote every field and double any embedded quote, which
+// covers the tabs, commas and newlines that Sourcetrail's serialized names contain.
+std::string csvQuote(const std::string& value)
+{
+	std::string quoted;
+	quoted.reserve(value.size() + 2);
+	quoted += '"';
+	for (const char character: value)
+	{
+		if (character == '"')
+		{
+			quoted += '"';
+		}
+		quoted += character;
+	}
+	quoted += '"';
+	return quoted;
+}
+
 const char* edgeTableFor(Edge::EdgeType type) noexcept
 {
 	for (const EdgeTable& table: kEdgeTables)
@@ -74,8 +96,9 @@ const char* edgeTableFor(Edge::EdgeType type) noexcept
 }
 }  // namespace
 
-LadybugGraphStorage::LadybugGraphStorage(std::unique_ptr<ladybug::LadybugConnection> connection)
-	: m_connection(std::move(connection))
+LadybugGraphStorage::LadybugGraphStorage(
+	std::unique_ptr<ladybug::LadybugConnection> connection, std::string stagingPrefix)
+	: m_connection(std::move(connection)), m_stagingPrefix(std::move(stagingPrefix))
 {
 }
 
@@ -88,8 +111,8 @@ stdext::expected<std::unique_ptr<LadybugGraphStorage>, std::string> LadybugGraph
 		return std::unexpected(connection.error());
 	}
 
-	auto storage =
-		std::unique_ptr<LadybugGraphStorage>(new LadybugGraphStorage(std::move(*connection)));
+	auto storage = std::unique_ptr<LadybugGraphStorage>(
+		new LadybugGraphStorage(std::move(*connection), databaseDir.str() + ".staging"));
 	if (auto schema = storage->setupSchema(); !schema)
 	{
 		return std::unexpected(schema.error());
@@ -126,11 +149,81 @@ stdext::expected<void, std::string> LadybugGraphStorage::beginTransaction() noex
 
 stdext::expected<void, std::string> LadybugGraphStorage::commitTransaction() noexcept
 {
+	// Flush inside the transaction, so a failed COPY takes the batch down with it
+	// rather than leaving a partially mirrored commit behind.
+	if (auto flushed = flushStagedRows(); !flushed)
+	{
+		return flushed;
+	}
 	return m_connection->execute("COMMIT;");
+}
+
+void LadybugGraphStorage::stageRow(const std::string& table, std::string row) noexcept
+{
+	try
+	{
+		std::string& staged = m_stagedRows[table];
+		staged += row;
+		staged += '\n';
+	}
+	catch (const std::exception&)
+	{
+		// Staging is best-effort like the rest of the mirror; a failure here surfaces
+		// as a short COPY rather than a crash in the indexing path.
+	}
+}
+
+stdext::expected<void, std::string> LadybugGraphStorage::flushStagedRows() noexcept
+{
+	// std::map orders by key, and "Node" sorts before every relationship table used
+	// here, so endpoints are always in place before the relationships that need them.
+	for (auto& [table, rows]: m_stagedRows)
+	{
+		if (rows.empty())
+		{
+			continue;
+		}
+
+		const std::string path = m_stagingPrefix + "." + table + ".csv";
+		try
+		{
+			std::ofstream file(path, std::ios::binary | std::ios::trunc);
+			if (!file)
+			{
+				return std::unexpected("could not open the staging file " + path);
+			}
+			file << rows;
+			if (!file)
+			{
+				return std::unexpected("could not write the staging file " + path);
+			}
+		}
+		catch (const std::exception& e)
+		{
+			return std::unexpected(std::string{"staging "} + table + " failed: " + e.what());
+		}
+
+		const auto copied = m_connection->execute(
+			"COPY " + table + " FROM \'" + path + "\';");
+		std::remove(path.c_str());
+		if (!copied)
+		{
+			return copied;
+		}
+		rows.clear();
+	}
+	return {};
+}
+
+void LadybugGraphStorage::discardStagedRows() noexcept
+{
+	m_stagedRows.clear();
+	m_stagedIds.clear();
 }
 
 stdext::expected<void, std::string> LadybugGraphStorage::rollbackTransaction() noexcept
 {
+	discardStagedRows();
 	return m_connection->execute("ROLLBACK;");
 }
 
@@ -139,13 +232,18 @@ stdext::expected<void, std::string> LadybugGraphStorage::addNode(
 {
 	try
 	{
-		const ladybug::Params params{
-			{"id", static_cast<std::int64_t>(id)},
-			{"type", static_cast<std::int64_t>(data.type)},
-			{"name", data.serializedName},
-		};
-		return m_connection->execute(
-			"MERGE (n:Node {id: $id}) SET n.type = $type, n.serializedName = $name;", params);
+		if (!m_stagedIds.insert(id).second)
+		{
+			// Already staged in this run; the id identifies the element, so the row
+			// would be identical and COPY would reject the duplicate key.
+			return {};
+		}
+		stageRow(
+			"Node",
+			std::to_string(static_cast<std::int64_t>(id)) + "," +
+				std::to_string(static_cast<std::int64_t>(data.type)) + "," +
+				csvQuote(data.serializedName));
+		return {};
 	}
 	catch (const std::exception& e)
 	{
@@ -158,31 +256,23 @@ stdext::expected<void, std::string> LadybugGraphStorage::addEdge(
 {
 	try
 	{
-		const char* const table = edgeTableFor(data.type);
-		if (table == kFallbackEdgeTable)
+		if (!m_stagedIds.insert(id).second)
 		{
-			const ladybug::Params params{
-				{"id", static_cast<std::int64_t>(id)},
-				{"type", static_cast<std::int64_t>(data.type)},
-				{"src", static_cast<std::int64_t>(data.sourceNodeId)},
-				{"tgt", static_cast<std::int64_t>(data.targetNodeId)},
-			};
-			return m_connection->execute(
-				"MATCH (a:Node {id: $src}), (b:Node {id: $tgt}) "
-				"CREATE (a)-[:Edge {id: $id, type: $type}]->(b);",
-				params);
+			return {};
 		}
 
-		const ladybug::Params params{
-			{"id", static_cast<std::int64_t>(id)},
-			{"src", static_cast<std::int64_t>(data.sourceNodeId)},
-			{"tgt", static_cast<std::int64_t>(data.targetNodeId)},
-		};
-		// One statement shape per table, so the adapter's cache holds a bounded set.
-		return m_connection->execute(
-			std::string{"MATCH (a:Node {id: $src}), (b:Node {id: $tgt}) CREATE (a)-[:"} + table +
-				" {id: $id}]->(b);",
-			params);
+		// A relationship COPY takes FROM and TO first, then the properties.
+		const std::string endpoints = std::to_string(static_cast<std::int64_t>(data.sourceNodeId)) +
+			"," + std::to_string(static_cast<std::int64_t>(data.targetNodeId)) + "," +
+			std::to_string(static_cast<std::int64_t>(id));
+
+		const char* const table = edgeTableFor(data.type);
+		stageRow(
+			table,
+			table == kFallbackEdgeTable
+				? endpoints + "," + std::to_string(static_cast<std::int64_t>(data.type))
+				: endpoints);
+		return {};
 	}
 	catch (const std::exception& e)
 	{

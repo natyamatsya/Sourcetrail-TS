@@ -504,7 +504,11 @@ void PersistentStorage::startInjection()
 	{
 		if (auto result = m_ladybugGraphStorage->beginTransaction(); !result)
 		{
-			LOG_WARNING("Ladybug begin transaction failed: " + result.error());
+			// A failed transaction boundary leaves the mirror in an unknown state: a
+			// failed bulk load aborts the transaction, so anything staged afterwards
+			// would be written into nothing. Give up rather than keep half a graph.
+			LOG_ERROR("Ladybug begin transaction failed, disabling the mirror: " + result.error());
+			m_ladybugGraphStorage.reset();
 		}
 	}
 #endif
@@ -519,7 +523,11 @@ void PersistentStorage::finishInjection()
 	{
 		if (auto result = m_ladybugGraphStorage->commitTransaction(); !result)
 		{
-			LOG_WARNING("Ladybug commit failed: " + result.error());
+			// A failed transaction boundary leaves the mirror in an unknown state: a
+			// failed bulk load aborts the transaction, so anything staged afterwards
+			// would be written into nothing. Give up rather than keep half a graph.
+			LOG_ERROR("Ladybug commit failed, disabling the mirror: " + result.error());
+			m_ladybugGraphStorage.reset();
 		}
 	}
 #endif
@@ -536,7 +544,11 @@ void PersistentStorage::rollbackInjection()
 	{
 		if (auto result = m_ladybugGraphStorage->rollbackTransaction(); !result)
 		{
-			LOG_WARNING("Ladybug rollback failed: " + result.error());
+			// A failed transaction boundary leaves the mirror in an unknown state: a
+			// failed bulk load aborts the transaction, so anything staged afterwards
+			// would be written into nothing. Give up rather than keep half a graph.
+			LOG_ERROR("Ladybug rollback failed, disabling the mirror: " + result.error());
+			m_ladybugGraphStorage.reset();
 		}
 	}
 #endif
