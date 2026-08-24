@@ -48,8 +48,7 @@ seam + harness are the de-risking tools for trying any alternate backend.
 
 **What it is.** An embeddable (in-process, serverless) columnar graph database,
 primarily C++, Cypher query language, with factorized / worst-case-optimal join
-processing, ACID transactions, full-text + vector indexing, and WASM bindings.
-Formerly Kùzu.
+processing, ACID transactions, and full-text + vector indexing. Formerly Kùzu.
 
 **Where it fits Sourcetrail:**
 - **Variable-length path queries** (`MATCH (a)-[:CALL*1..5]->(b)`) replace
@@ -58,10 +57,56 @@ Formerly Kùzu.
 - **Factorized / WCO joins** are built for the many-to-many blow-up of graph
   pattern queries — Sourcetrail's dense reference graphs are the pathological
   SQL-join case.
-- **WASM bindings** → the same engine could back a browser / claude.ai code view.
 - **Vector index** → semantic symbol/doc search alongside the exact index.
+  **Verified 2026-08-24, and it is the strongest surviving argument — see below.**
 - **Embeddable + C++** → it drops into the exact slot SQLite/Turso occupy, and the
   core is C++.
+
+### The vector index is real, maintained, and aimed at our query shape
+
+Checked because the archival made every inherited Kùzu claim suspect.
+`extension/vector` implements **HNSW** (`CREATE_VECTOR_INDEX`; metrics `cosine`,
+`l2`, `l2sq`, `dotproduct`) and ships in `EXTENSION_LIST`. It is not inherited
+and idle — every date below post-dates Kùzu's archival on 2025-10-10:
+
+| Date | Work |
+|---|---|
+| 2026-08-14 | error-message fix |
+| 2026-07-31 | direct INT8 HNSW support + correctness tests |
+| 2026-07-06 | **scalar quantization storage for HNSW** (SQ8/SQ16) |
+| 2026-06-04 | **NaviX adaptive search on by default** |
+| 2026-06-03 | deleted-embedding handling, stranded-search fallback |
+
+Scalar quantization is a design of LadybugDB's own: SQ8/SQ16 quantized distance
+evaluation with the quantized embeddings held *in Ladybug storage* rather than a
+sidecar file, transactionally consistent with the base node table, with optional
+full-precision rerank.
+
+**NaviX matters more for us.** It is filtered vector search *through the graph* —
+the case where a similarity query is constrained by a graph predicate. Their own
+SIFT benchmark (k=10, efs=96, 32 threads, `tools/benchmark/navix/`):
+
+| Selectivity | NaviX recall / ms | Vanilla `auto` recall / ms |
+|---:|---:|---:|
+| 0.50 | 0.990 / 60.2 | 0.925 / 28.7 |
+| 0.30 | 0.998 / 74.0 | 0.999 / 94.2 |
+| 0.10 | 1.000 / 33.1 | 1.000 / 63.4 |
+
+Low selectivity — few nodes surviving the filter — is roughly twice as fast at
+equal recall. That is exactly the shape of a code-search query: *vectors similar
+to this, but only within these files / this symbol kind / this language.* A
+bolted-on vector store beside SQLite cannot do that; it would filter after the
+fact, or filter first and lose the index.
+
+**Two caveats before treating this as available.** It is an **extension, not
+core**: `BUILD_EXTENSIONS` is empty by default and we build none, so using it
+means building `vector` and either loading it dynamically or static-linking it —
+`extension_config.cmake` only static-links it for WASM, Android and Swift, so an
+embedded static build needs that path extended, and it pulls the `extension`
+submodule into our build for the first time. And this was a **capability audit,
+not a trial**: no HNSW index has been built over a Sourcetrail index, so
+"semantic symbol search alongside the exact index" remains an untested claim
+about a capability that demonstrably exists.
 
 **Costs / risks:**
 - A full storage-backend swap is a *large* lift (the Turso work is the proof).
@@ -217,7 +262,7 @@ parse → base facts (EDB) → Datalog rules → derived relations (IDB) → gra
    near-zero blast radius. **Start here.**
 2. **Kùzu / LadybugDB as an alternate graph backend** behind the storage seam,
    de-risked with the dual-compare harness; move deep traversals + custom-trail to
-   Cypher; unlock WASM web + vector search. Do this once *traversal* perf/features
+   Cypher; unlock vector search. Do this once *traversal* perf/features
    (not analysis) are the bottleneck.
 3. **Incremental derivation (Differential Dataflow / DDlog)** to maintain derived
    relations under incremental refresh. The deep, correct end state; only when
