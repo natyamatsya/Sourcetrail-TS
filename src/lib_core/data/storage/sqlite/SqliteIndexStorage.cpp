@@ -2246,11 +2246,20 @@ std::vector<std::pair<int, SqliteDatabaseIndex>> SqliteIndexStorage::getIndices(
 	indices.push_back({std::to_underlying(StorageModeType::STORAGE_MODE_READ) | std::to_underlying(StorageModeType::STORAGE_MODE_CLEAR), SqliteDatabaseIndex("occurrence_element_id_index", "occurrence(element_id)")});
 	indices.push_back({std::to_underlying(StorageModeType::STORAGE_MODE_READ) | std::to_underlying(StorageModeType::STORAGE_MODE_CLEAR), SqliteDatabaseIndex( "occurrence_source_location_id_index", "occurrence(source_location_id)")});
 	indices.push_back({std::to_underlying(StorageModeType::STORAGE_MODE_CLEAR), SqliteDatabaseIndex( "element_component_foreign_key_index", "element_component(element_id)")});
-	indices.push_back({std::to_underlying(StorageModeType::STORAGE_MODE_CLEAR), SqliteDatabaseIndex("edge_source_foreign_key_index", "edge(source_node_id)")});
-	indices.push_back({std::to_underlying(StorageModeType::STORAGE_MODE_CLEAR), SqliteDatabaseIndex("edge_target_foreign_key_index", "edge(target_node_id)")});
-	indices.push_back({std::to_underlying(StorageModeType::STORAGE_MODE_CLEAR), SqliteDatabaseIndex("source_location_foreign_key_index", "source_location(file_node_id)")});
-	indices.push_back({std::to_underlying(StorageModeType::STORAGE_MODE_CLEAR), SqliteDatabaseIndex("occurrence_element_foreign_key_index", "occurrence(element_id)")});
-	indices.push_back({std::to_underlying(StorageModeType::STORAGE_MODE_CLEAR), SqliteDatabaseIndex( "occurrence_source_location_foreign_key_index", "occurrence(source_location_id)")});
+	// Legacy duplicates, kept listed only so they get dropped. Each indexed exactly
+	// the same columns as one of the indices above, which already cover clear mode,
+	// so SQLite was building and maintaining two identical b-trees per column set --
+	// paid on every insert during indexing and in file size. A mode mask of 0 never
+	// matches, so setMode() always takes its remove branch and cleans them out of
+	// databases that already have them; deleting these lines instead would strand
+	// the indices in every existing database, since setMode() can only drop what it
+	// still knows about. Safe to delete once no database in circulation predates
+	// this change.
+	indices.push_back({0, SqliteDatabaseIndex("edge_source_foreign_key_index", "edge(source_node_id)")});
+	indices.push_back({0, SqliteDatabaseIndex("edge_target_foreign_key_index", "edge(target_node_id)")});
+	indices.push_back({0, SqliteDatabaseIndex("source_location_foreign_key_index", "source_location(file_node_id)")});
+	indices.push_back({0, SqliteDatabaseIndex("occurrence_element_foreign_key_index", "occurrence(element_id)")});
+	indices.push_back({0, SqliteDatabaseIndex("occurrence_source_location_foreign_key_index", "occurrence(source_location_id)")});
 
 	return indices;
 }
