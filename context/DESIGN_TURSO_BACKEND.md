@@ -95,7 +95,9 @@ element_components. Revisit if a project produces them.
 Under MVCC snapshot isolation a writer cannot see another writer's *uncommitted*
 node, so a concurrent edge/occurrence referencing it would fail an FK check.
 Sourcetrail normally sets `PRAGMA FOREIGN_KEYS=ON`; the concurrent schema is built
-**without FK constraints** (Sourcetrail validates/rebuilds structure afterward).
+**without FK constraints** (Sourcetrail validates/rebuilds structure afterward). What
+those constraints do when they *are* on, and the indices the cascades need, is in
+[DESIGN_STORAGE_SCHEMA.md](DESIGN_STORAGE_SCHEMA.md).
 
 ### 7. Statements Turso rejects by design (dual mode)
 

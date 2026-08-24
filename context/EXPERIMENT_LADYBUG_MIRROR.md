@@ -12,8 +12,9 @@
   (`sqlite3 .timer on` real; Ladybug's own `executing` figure), which excludes process
   startup on both sides.
 - **Related:** [ROADMAP_ANALYSIS_ENGINES.md](ROADMAP_ANALYSIS_ENGINES.md) (the plan
-  this tests), [INDEXING_OPTIMIZATIONS.md](INDEXING_OPTIMIZATIONS.md) (the write-side
-  measurements).
+  this tests), [DESIGN_STORAGE_SCHEMA.md](DESIGN_STORAGE_SCHEMA.md) (the schema being
+  queried, and the index modes), [INDEXING_OPTIMIZATIONS.md](INDEXING_OPTIMIZATIONS.md)
+  (the write-side measurements).
 
 ## Headline
 
