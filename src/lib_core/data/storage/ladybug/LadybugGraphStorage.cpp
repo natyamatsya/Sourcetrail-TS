@@ -20,11 +20,58 @@ namespace
 {
 // The property-graph schema mirroring Sourcetrail's node/edge model. `id` is the
 // shared element id (SQLite primary key), reused as the Kùzu primary key.
-constexpr const char* kSchema[] = {
+constexpr const char* kNodeTable =
 	"CREATE NODE TABLE IF NOT EXISTS Node("
-	"id INT64, type INT64, serializedName STRING, PRIMARY KEY(id));",
-	"CREATE REL TABLE IF NOT EXISTS Edge(FROM Node TO Node, id INT64, type INT64);",
+	"id INT64, type INT64, serializedName STRING, PRIMARY KEY(id));";
+
+// One relationship table per edge type rather than a single table discriminated by a
+// `type` property. Kùzu matches relationship patterns by table, so a typed traversal
+// against one shared table has to read every edge and filter; measured over this
+// project's own index, a two-hop pattern took 154 ms against a shared table and 29 ms
+// against typed ones (context/EXPERIMENT_LADYBUG_MIRROR.md).
+//
+// The names are a storage contract, so they are spelled out here rather than derived
+// from Edge::getReadableTypeString(), which exists to be shown to a human and is free
+// to change for display reasons.
+struct EdgeTable
+{
+	Edge::EdgeType type;
+	const char* name;
 };
+
+constexpr EdgeTable kEdgeTables[] = {
+	{Edge::EDGE_MEMBER, "Member"},
+	{Edge::EDGE_TYPE_USAGE, "TypeUsage"},
+	{Edge::EDGE_USAGE, "Usage"},
+	{Edge::EDGE_CALL, "Call"},
+	{Edge::EDGE_INHERITANCE, "Inheritance"},
+	{Edge::EDGE_OVERRIDE, "Override"},
+	{Edge::EDGE_TYPE_ARGUMENT, "TypeArgument"},
+	{Edge::EDGE_TEMPLATE_SPECIALIZATION, "TemplateSpecialization"},
+	{Edge::EDGE_INCLUDE, "Include"},
+	{Edge::EDGE_IMPORT, "Import"},
+	{Edge::EDGE_BUNDLED_EDGES, "BundledEdges"},
+	{Edge::EDGE_MACRO_USAGE, "MacroUsage"},
+	{Edge::EDGE_ANNOTATION_USAGE, "AnnotationUsage"},
+	{Edge::EDGE_BINDS, "Binds"},
+};
+
+// Anything the table above does not name -- a type added to Edge::EdgeType without a
+// matching entry here -- still gets mirrored, into a shared table carrying the raw
+// type. Losing an edge silently would be worse than losing the traversal speed.
+constexpr const char* kFallbackEdgeTable = "Edge";
+
+const char* edgeTableFor(Edge::EdgeType type) noexcept
+{
+	for (const EdgeTable& table: kEdgeTables)
+	{
+		if (table.type == type)
+		{
+			return table.name;
+		}
+	}
+	return kFallbackEdgeTable;
+}
 }  // namespace
 
 LadybugGraphStorage::LadybugGraphStorage(std::unique_ptr<ladybug::LadybugConnection> connection)
@@ -52,14 +99,24 @@ stdext::expected<std::unique_ptr<LadybugGraphStorage>, std::string> LadybugGraph
 
 stdext::expected<void, std::string> LadybugGraphStorage::setupSchema() noexcept
 {
-	for (const char* ddl: kSchema)
+	if (auto result = m_connection->execute(kNodeTable); !result)
 	{
+		return result;
+	}
+
+	for (const EdgeTable& table: kEdgeTables)
+	{
+		const std::string ddl = std::string{"CREATE REL TABLE IF NOT EXISTS "} + table.name +
+			"(FROM Node TO Node, id INT64);";
 		if (auto result = m_connection->execute(ddl); !result)
 		{
 			return result;
 		}
 	}
-	return {};
+
+	return m_connection->execute(
+		std::string{"CREATE REL TABLE IF NOT EXISTS "} + kFallbackEdgeTable +
+		"(FROM Node TO Node, id INT64, type INT64);");
 }
 
 stdext::expected<void, std::string> LadybugGraphStorage::beginTransaction() noexcept
@@ -101,15 +158,30 @@ stdext::expected<void, std::string> LadybugGraphStorage::addEdge(
 {
 	try
 	{
+		const char* const table = edgeTableFor(data.type);
+		if (table == kFallbackEdgeTable)
+		{
+			const ladybug::Params params{
+				{"id", static_cast<std::int64_t>(id)},
+				{"type", static_cast<std::int64_t>(data.type)},
+				{"src", static_cast<std::int64_t>(data.sourceNodeId)},
+				{"tgt", static_cast<std::int64_t>(data.targetNodeId)},
+			};
+			return m_connection->execute(
+				"MATCH (a:Node {id: $src}), (b:Node {id: $tgt}) "
+				"CREATE (a)-[:Edge {id: $id, type: $type}]->(b);",
+				params);
+		}
+
 		const ladybug::Params params{
 			{"id", static_cast<std::int64_t>(id)},
-			{"type", static_cast<std::int64_t>(data.type)},
 			{"src", static_cast<std::int64_t>(data.sourceNodeId)},
 			{"tgt", static_cast<std::int64_t>(data.targetNodeId)},
 		};
+		// One statement shape per table, so the adapter's cache holds a bounded set.
 		return m_connection->execute(
-			"MATCH (a:Node {id: $src}), (b:Node {id: $tgt}) "
-			"CREATE (a)-[:Edge {id: $id, type: $type}]->(b);",
+			std::string{"MATCH (a:Node {id: $src}), (b:Node {id: $tgt}) CREATE (a)-[:"} + table +
+				" {id: $id}]->(b);",
 			params);
 	}
 	catch (const std::exception& e)

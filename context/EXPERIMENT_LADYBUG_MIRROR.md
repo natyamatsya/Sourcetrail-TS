@@ -104,6 +104,29 @@ worst-case-optimal join claim, and it holds.
    lock — consistent with the scaffold's framing of the mirror as a read accelerator
    rather than a concurrent store.
 
+## Scaffold fixes made in response (2026-08-24)
+
+Findings 4, 5 and the silent-truncation behaviour were acted on; the workload split
+and the compile tax are properties of the engine, not defects to fix.
+
+| Finding | Change |
+|---|---|
+| prepare-per-call (4) | `LadybugConnection::Impl` now caches prepared statements by statement text. The mirror draws from a fixed set of statement shapes, so per-row compilation becomes per-shape compilation. |
+| single `Edge` table (5) | `LadybugGraphStorage` creates one relationship table per `Edge::EdgeType` — `Member`, `TypeUsage`, `Call`, … — and `addEdge` writes into the matching one. A type with no entry still gets mirrored, into a shared `Edge` table carrying the raw type, because losing an edge silently is worse than losing traversal speed. |
+| silent partial mirror | `PersistentStorage::addNodes`/`addEdges` used to `break` out of the mirror loop on the first failure and log a warning, leaving a graph that looked complete. They now log an error and **drop the mirror for the rest of the run**, so a half-graph can never be mistaken for a whole one. The same applies when SQLite returns a different number of ids than rows submitted, which was previously skipped in silence. |
+
+What is *not* fixed: the mirror still writes row by row. Statement caching removes the
+compilation cost but not the per-row round trip, and bulk `COPY` remains far faster than
+either. If the mirror is ever meant to carry a full project rather than demonstrate a
+shape, that is the next change.
+
+Verified by compiling all three translation units with `SOURCETRAIL_USE_LADYBUG`
+defined against the real Kùzu headers — with a deliberate-error positive control to
+confirm the guarded blocks were actually being compiled rather than skipped — and by
+executing the generated DDL and statement shapes through the shell, where a typed
+`MATCH (a)-[:Call]->(b)` returns the expected row. A full application build with the
+mirror enabled was **not** run.
+
 ## What this means for Tier 1
 
 The roadmap's stated gate — "do this once *traversal* perf/features are the

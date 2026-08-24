@@ -249,7 +249,12 @@ std::vector<Id> PersistentStorage::addNodes(const std::vector<StorageNode>& node
 {
 	std::vector<Id> ids = m_sqliteIndexStorage.addNodes(nodes);
 #ifdef SOURCETRAIL_USE_LADYBUG
-	if (m_ladybugGraphStorage && ids.size() == nodes.size())
+	if (m_ladybugGraphStorage && ids.size() != nodes.size())
+	{
+		LOG_ERROR("Ladybug node mirror skipped: SQLite returned a different number of ids");
+		m_ladybugGraphStorage.reset();
+	}
+	if (m_ladybugGraphStorage)
 	{
 		for (size_t i = 0; i < nodes.size(); ++i)
 		{
@@ -257,7 +262,11 @@ std::vector<Id> PersistentStorage::addNodes(const std::vector<StorageNode>& node
 			// client-assigned ids are enabled).
 			if (auto result = m_ladybugGraphStorage->addNode(ids[i], nodes[i]); !result)
 			{
-				LOG_WARNING("Ladybug node mirror failed: " + result.error());
+				// Abandon the mirror rather than carry on with a hole in it. Breaking
+				// out of the loop alone would leave a graph that looks complete and
+				// silently is not, which is worse than having no graph at all.
+				LOG_ERROR("Ladybug node mirror failed, disabling the mirror: " + result.error());
+				m_ladybugGraphStorage.reset();
 				break;
 			}
 		}
@@ -308,13 +317,19 @@ std::vector<Id> PersistentStorage::addEdges(const std::vector<StorageEdge>& edge
 {
 	std::vector<Id> ids = m_sqliteIndexStorage.addEdges(edges);
 #ifdef SOURCETRAIL_USE_LADYBUG
-	if (m_ladybugGraphStorage && ids.size() == edges.size())
+	if (m_ladybugGraphStorage && ids.size() != edges.size())
+	{
+		LOG_ERROR("Ladybug edge mirror skipped: SQLite returned a different number of ids");
+		m_ladybugGraphStorage.reset();
+	}
+	if (m_ladybugGraphStorage)
 	{
 		for (size_t i = 0; i < edges.size(); ++i)
 		{
 			if (auto result = m_ladybugGraphStorage->addEdge(ids[i], edges[i]); !result)
 			{
-				LOG_WARNING("Ladybug edge mirror failed: " + result.error());
+				LOG_ERROR("Ladybug edge mirror failed, disabling the mirror: " + result.error());
+				m_ladybugGraphStorage.reset();
 				break;
 			}
 		}

@@ -7,6 +7,7 @@
 // submodules/ladybug/src/include, exposed via the External_lib_ladybug target.
 #include <common/types/value/value.h>
 #include <main/connection.h>
+#include <main/prepared_statement.h>
 #include <main/database.h>
 #include <main/query_result.h>
 
@@ -16,6 +17,15 @@ struct LadybugConnection::Impl
 {
 	std::unique_ptr<lbug::main::Database> database;
 	std::unique_ptr<lbug::main::Connection> connection;
+
+	// Cypher compilation is the dominant cost of the mirror, not execution: Kùzu
+	// reports 10-19 ms compiling against single-digit ms executing, and the mirror
+	// issues one statement per node and per edge. Preparing afresh every call made
+	// loading a mid-sized project unworkable -- 5,000 nodes as individual statements
+	// did not finish in 400 s, where the same rows bulk-loaded in 160 ms (see
+	// context/EXPERIMENT_LADYBUG_MIRROR.md). The statement text is drawn from a fixed
+	// set, so caching by text turns per-row compilation into per-shape compilation.
+	std::unordered_map<std::string, std::unique_ptr<lbug::main::PreparedStatement>> prepared;
 };
 
 namespace
@@ -90,11 +100,16 @@ stdext::expected<void, Error> LadybugConnection::execute(
 {
 	try
 	{
-		auto prepared = m_impl->connection->prepare(cypher);
-		if (!prepared || !prepared->isSuccess())
+		auto cached = m_impl->prepared.find(cypher);
+		if (cached == m_impl->prepared.end())
 		{
-			return std::unexpected(Error{
-				prepared ? prepared->getErrorMessage() : std::string{"prepare returned null"}});
+			auto prepared = m_impl->connection->prepare(cypher);
+			if (!prepared || !prepared->isSuccess())
+			{
+				return std::unexpected(Error{
+					prepared ? prepared->getErrorMessage() : std::string{"prepare returned null"}});
+			}
+			cached = m_impl->prepared.emplace(cypher, std::move(prepared)).first;
 		}
 
 		std::unordered_map<std::string, std::unique_ptr<lbug::common::Value>> bound;
@@ -103,7 +118,8 @@ stdext::expected<void, Error> LadybugConnection::execute(
 			bound.emplace(name, toValue(param));
 		}
 
-		return toResult(m_impl->connection->executeWithParams(prepared.get(), std::move(bound)));
+		return toResult(
+			m_impl->connection->executeWithParams(cached->second.get(), std::move(bound)));
 	}
 	catch (const std::exception& e)
 	{
