@@ -46,7 +46,9 @@ set(CMAKE_CXX_COMPILER "${LLVM_PREFIX}/bin/clang++" CACHE FILEPATH "C++ compiler
 # overrides that, while `ld` comes from whichever Xcode xcode-select names. When the two differ
 # the newer SDK's .tbd stubs list architectures the older ld cannot parse ("tapi error: malformed
 # file ... unknown architecture arm64e.x1-macos", CLT SDK 27 against Xcode 26.6 on CI). A later
-# -isysroot wins over the config file's. Set CMAKE_OSX_SYSROOT to choose another SDK.
+# -isysroot wins over the config file's. Set CMAKE_OSX_SYSROOT to choose another SDK. FORCE, because
+# a build directory configured before this cached CMAKE_OSX_SYSROOT as an empty string, which a
+# plain set(CACHE) leaves alone; it only ever replaces an empty value.
 if(NOT CMAKE_OSX_SYSROOT)
 	execute_process(
 		COMMAND xcrun --show-sdk-path
@@ -55,7 +57,7 @@ if(NOT CMAKE_OSX_SYSROOT)
 		RESULT_VARIABLE _srctrl_sdk_result
 		ERROR_QUIET)
 	if(_srctrl_sdk_result EQUAL 0 AND IS_DIRECTORY "${_srctrl_sdk_path}")
-		set(CMAKE_OSX_SYSROOT "${_srctrl_sdk_path}" CACHE PATH "macOS SDK (that of the selected developer directory)")
+		set(CMAKE_OSX_SYSROOT "${_srctrl_sdk_path}" CACHE PATH "macOS SDK (that of the selected developer directory)" FORCE)
 	endif()
 endif()
 
