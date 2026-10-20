@@ -889,11 +889,13 @@ if (BUILD_ZIG_LANGUAGE_PACKAGE)
 	set(ZIG_INDEXER_SCHEMA_DIR "${CMAKE_SOURCE_DIR}/abi-schemas/ipc-indexer")
 
 	# Sources that should retrigger a rebuild (the thoth-ipc Zig port + the
-	# indexer package + the shared schemas).
+	# indexer package, including the C headers its build translates for flatcc,
+	# + the shared schemas).
 	file(GLOB_RECURSE ZIG_INDEXER_SOURCES CONFIGURE_DEPENDS
 		"${ZIG_INDEXER_PACKAGE_DIR}/build.zig"
 		"${ZIG_INDEXER_PACKAGE_DIR}/build.zig.zon"
 		"${ZIG_INDEXER_PACKAGE_DIR}/src/*.zig"
+		"${ZIG_INDEXER_PACKAGE_DIR}/include/*.h"
 		"${ZIG_INDEXER_PACKAGE_DIR}/tools/*.sh"
 		"${ZIG_INDEXER_SCHEMA_DIR}/*.fbs"
 		"${CMAKE_SOURCE_DIR}/submodules/thoth-ipc/zig/thoth-ipc/src/*.zig"
