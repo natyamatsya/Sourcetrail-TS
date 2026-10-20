@@ -92,10 +92,10 @@ jobs:
   # ---------------------------------------------------------------------------
   # Zig indexer: build + unit tests (macOS only — the thoth-ipc shm layer is
   # macOS-specific). Toolchain comes from Homebrew: the indexer is built and
-  # validated against Homebrew's Zig 0.16.0 (a dev build with no release tag, so
-  # brew is the faithful pin) + flatcc 0.6.1. ZLS 0.16.0 is fetched by the Zig
-  # package manager during `zig build`. If a future Homebrew Zig bump breaks the
-  # build, pin the toolchain here.
+  # validated against Zig 0.16.0 + flatcc 0.6.1. ZLS 0.16.0 is fetched by the
+  # Zig package manager during `zig build`, and refuses any other Zig -- so Zig
+  # is pinned to brew's zig@0.16 (keg-only, hence the PATH entry); plain `zig`
+  # moved to 0.17.0 in October 2026.
   # ---------------------------------------------------------------------------
   zig-indexer:
     name: Zig indexer (macos-latest)
@@ -106,7 +106,9 @@ jobs:
           submodules: recursive
 
       - name: Install Zig + flatcc
-        run: brew install zig flatcc
+        run: |
+          brew install zig@0.16 flatcc
+          echo "$(brew --prefix zig@0.16)/bin" >> "$GITHUB_PATH"
 
       - name: zig build test
         working-directory: src/zig_indexer
@@ -186,10 +188,18 @@ jobs:
 
       # macOS uses Homebrew for LLVM and Qt: the aqtinstall Qt packages still link
       # '-framework AGL', which recent macOS SDKs no longer ship, while brew's Qt
-      # matches the SDK on the runner (and the local dev setup).
+      # matches the SDK on the runner (and the local dev setup). LLVM is pinned
+      # to 22, as on Linux: the C++ indexer accepts Clang >= 18 and < 23, and
+      # plain `llvm` moved to 23 in October 2026.
       - name: Install build tools + LLVM + Qt (macOS)
         if: runner.os == 'macOS'
-        run: brew install ninja llvm qt
+        # LLVM_PREFIX goes to the job's environment because
+        # cmake-toolchains/llvm-clang-macos.cmake reads it from there (vcpkg's
+        # chainloaded port builds included), and otherwise falls back to the
+        # unversioned opt/llvm.
+        run: |
+          brew install ninja llvm@22 qt
+          echo "LLVM_PREFIX=$(brew --prefix llvm@22)" >> "$GITHUB_ENV"
 
       # ubuntu-latest ships CMake 3.31, and the top-level CMakeLists requires
       # 4.4.0 (CMP0155 defaults to NEW there, so C++20 sources are scanned for
@@ -225,7 +235,7 @@ jobs:
           if [ "${{ runner.os }}" = "macOS" ]; then
             # Build with Homebrew LLVM (Apple Clang lacks the C++23/26 features stdexec
             # and the libc++ ABI handling rely on); point find_package at brew LLVM + Qt.
-            LLVM_PREFIX="$(brew --prefix llvm)"
+            # LLVM_PREFIX (llvm@22) comes from the install step.
             QT_PREFIX="$(brew --prefix qt)"
             EXTRA="-DVCPKG_CHAINLOAD_TOOLCHAIN_FILE=$PWD/cmake-toolchains/llvm-clang-macos.cmake -DCMAKE_PREFIX_PATH=$LLVM_PREFIX;$QT_PREFIX"
           else
