@@ -5,13 +5,17 @@
 
 #include <concepts>
 #include <cstddef>
+#include <cstdint>
 #include <iosfwd>
 #include <string>
 #include <type_traits>
 
 class Id final {
 public:
-	using type = long long;
+	// std::int64_t, not long long: the two are the same type on macOS and Windows, but on
+	// Linux int64_t is `long`, and sqlpp23 recognises only the <cstdint> types as integral
+	// -- a long long column value does not compile there.
+	using type = std::int64_t;
 
 	enum class FirstBits : type
 	{

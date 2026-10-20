@@ -13,12 +13,13 @@
 // concurrent intern maps, so that concurrent intern() of the same key from many
 // threads yields exactly one id, and distinct keys never collide.
 //
-// Deliberately Qt-free and header-only (uses the raw `long long` == Id::type)
-// so it can be unit-tested in isolation. SqliteIndexStorage converts Id<->long
-// long at the boundary, as it already does.
+// Deliberately Qt-free and header-only (uses the raw std::int64_t == Id::type)
+// so it can be unit-tested in isolation. SqliteIndexStorage converts
+// Id<->std::int64_t at the boundary, as it already does.
 
 #include <atomic>
 #include <cstddef>
+#include <cstdint>
 #include <functional>
 #include <memory>
 #include <mutex>
@@ -30,7 +31,7 @@
 namespace storage
 {
 
-using ElementId = long long;  // == Id::type
+using ElementId = std::int64_t;  // == Id::type
 
 //! Monotonic, thread-safe element-id allocator. Seed once from MAX(id)+1 so the
 //! sequence continues an existing database.
