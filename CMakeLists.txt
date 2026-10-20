@@ -500,6 +500,15 @@ if (SOURCETRAIL_USE_TURSO)
 		MANIFEST_PATH "${CMAKE_SOURCE_DIR}/src/turso_shim/Cargo.toml"
 		CRATES turso_shim
 	)
+	# Corrosion (v0.5 through at least v0.6.1) hard-codes the Command Line Tools SDK's usr/lib as
+	# an INTERFACE_LINK_DIRECTORIES of every Rust library it imports on macOS. Ahead of everything
+	# on the link line, it makes ld resolve -lSystem/-lc/-lm (Rust std's native libs) from that SDK
+	# rather than the one -isysroot names -- and when the CLT SDK is newer than the selected
+	# Xcode's ld can read (CLT SDK 27 vs Xcode 26.6 on CI: "tapi error: malformed file ... unknown
+	# architecture") every link fails. Those libraries come from the sysroot anyway; drop it.
+	if (APPLE AND TARGET turso_shim-static)
+		set_property(TARGET turso_shim-static PROPERTY INTERFACE_LINK_DIRECTORIES "")
+	endif()
 	message(STATUS "Turso enabled (compare=${SOURCETRAIL_TURSO_COMPARE} concurrent=${SOURCETRAIL_TURSO_CONCURRENT}) — building turso_shim via Corrosion")
 endif()
 
