@@ -25,6 +25,8 @@
 #endif
 #include "Version.h"
 
+#include <llvm/Config/llvm-config.h>
+
 // Imports come AFTER all textual #includes (include-before-import rule: textual libc++
 // following BMI-merged declarations trips "cannot add 'abi_tag' in a redeclaration").
 #ifdef SRCTRL_MODULE_BUILD
@@ -327,6 +329,11 @@ TEST_CASE("source gropup cxx c correct default standard")
 	const std::string defaultCStandard = SourceGroupSettingsWithCStandard::getDefaultCStandard();
 	const std::string defaultCppStandard = SourceGroupSettingsWithCppStandard::getDefaultCppStandard();
 
+	// The newest released standard; C23 counts as released from clang 20 on.
+#if LLVM_VERSION_MAJOR >= 20
+	REQUIRE(defaultCStandard == "c23");
+#else
 	REQUIRE(defaultCStandard == "c17");
+#endif
 	REQUIRE(defaultCppStandard == "c++23");
 }
