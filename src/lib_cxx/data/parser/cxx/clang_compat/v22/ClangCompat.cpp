@@ -49,8 +49,13 @@ std::unique_ptr<clang::ASTConsumer> createPchGenerator(
 		frontendOptions.ModuleFileExtensions,
 		allowAstWithErrors,
 		frontendOptions.IncludeTimestamps,
-		false,
-		+compilerInstance.getLangOpts().CacheGeneratedPCH);
+		false
+#if CLANG_VERSION_MAJOR < 23
+		// Clang 23 removed LangOptions::CacheGeneratedPCH together with the
+		// ShouldCacheASTInMemory parameter it fed.
+		, +compilerInstance.getLangOpts().CacheGeneratedPCH
+#endif
+	);
 }
 
 NestedNameSpecifierKind getNestedNameSpecifierKind(const NestedNameSpecifierRef nestedNameSpecifier)

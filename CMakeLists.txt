@@ -625,7 +625,7 @@ if (BUILD_CXX_LANGUAGE_PACKAGE)
 	# For further details see https://llvm.org/docs/CMake.html#embedding-llvm-in-your-project
 
 	set(CLANG_MIN_VERSION 18)
-	set(CLANG_MAX_VERSION 23)
+	set(CLANG_MAX_VERSION 24)
 	
 	if (DEFINED CMAKE_MSVC_RUNTIME_LIBRARY)
 		set(savedMsvcRuntimeLibrary "${CMAKE_MSVC_RUNTIME_LIBRARY}")

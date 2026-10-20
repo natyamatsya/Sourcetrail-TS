@@ -44,6 +44,8 @@ import srctrl.utility;
 // Draft standards:
 // note: use 'c++2c' or 'c++26' for 'Working draft for C++2c' standard
 // note: use 'gnu++2c' or 'gnu++26' for 'Working draft for C++2c with GNU extensions' standard
+// note: use 'c++2d' for 'Working draft for C++2d' standard (clang 23+)
+// note: use 'gnu++2d' for 'Working draft for C++2d with GNU extensions' standard (clang 23+)
 
 static std::vector<std::string> getReleasedCppStandards()
 {
@@ -67,6 +69,9 @@ static std::vector<std::string> getDraftCppStandards()
 {
 	const std::vector<std::string> draftCppStandards = {
 		#ifdef LLVM_VERSION_MAJOR
+			#if LLVM_VERSION_MAJOR >= 23
+				"c++2d", "gnu++2d",
+			#endif
 			#if LLVM_VERSION_MAJOR >= 18
 				"c++2c", "c++26",
 				"gnu++2c", "gnu++26",
