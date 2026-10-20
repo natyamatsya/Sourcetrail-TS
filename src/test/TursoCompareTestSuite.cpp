@@ -16,6 +16,7 @@
 #endif
 #include "SqliteIndexStorage.h"
 #include "StorageConnection.h"
+#include "TestTempDirectory.h"
 
 // Imports come AFTER all textual #includes (include-before-import rule: textual libc++
 // following BMI-merged declarations trips "cannot add 'abi_tag' in a redeclaration").
@@ -34,7 +35,8 @@ void removeBoth(const FilePath& dbPath)
 
 TEST_CASE("turso matches sqlite across a representative storage workload")
 {
-	FilePath databasePath("data/SQLiteTestSuite/turso_compare.sqlite");
+	const TestTempDirectory tempDirectory{"TursoCompareTestSuite"};
+	const FilePath databasePath(tempDirectory.getFilePath("turso_compare.sqlite"));
 	removeBoth(databasePath);
 
 	turso_compare::resetDivergenceCount();

@@ -5,6 +5,7 @@
 #endif
 #include "SqliteBookmarkStorage.h"
 #include "StorageConnection.h"
+#include "TestTempDirectory.h"
 
 // Imports come AFTER all textual #includes (include-before-import rule: textual libc++
 // following BMI-merged declarations trips "cannot add 'abi_tag' in a redeclaration").
@@ -14,7 +15,8 @@ import srctrl.file;
 
 TEST_CASE("add bookmarks")
 {
-	FilePath databasePath("data/SQLiteTestSuite/bookmarkTest.sqlite");
+	const TestTempDirectory tempDirectory{"SqliteBookmarkStorageTestSuite"};
+	const FilePath databasePath(tempDirectory.getFilePath("bookmarkTest.sqlite"));
 	int bookmarkCount = 4;
 	int result = -1;
 	{
@@ -41,7 +43,8 @@ TEST_CASE("add bookmarks")
 
 TEST_CASE("add bookmarked node")
 {
-	FilePath databasePath("data/SQLiteTestSuite/bookmarkTest.sqlite");
+	const TestTempDirectory tempDirectory{"SqliteBookmarkStorageTestSuite"};
+	const FilePath databasePath(tempDirectory.getFilePath("bookmarkTest.sqlite"));
 	int bookmarkCount = 4;
 	int result = -1;
 	{
@@ -68,7 +71,8 @@ TEST_CASE("add bookmarked node")
 
 TEST_CASE("remove bookmark also removes bookmarked node")
 {
-	FilePath databasePath("data/SQLiteTestSuite/bookmarkTest.sqlite");
+	const TestTempDirectory tempDirectory{"SqliteBookmarkStorageTestSuite"};
+	const FilePath databasePath(tempDirectory.getFilePath("bookmarkTest.sqlite"));
 	int result = -1;
 	{
 		FileSystem::remove(databasePath);
@@ -92,7 +96,8 @@ TEST_CASE("remove bookmark also removes bookmarked node")
 
 TEST_CASE("edit nodeBookmark")
 {
-	FilePath databasePath("data/SQLiteTestSuite/bookmarkTest.sqlite");
+	const TestTempDirectory tempDirectory{"SqliteBookmarkStorageTestSuite"};
+	const FilePath databasePath(tempDirectory.getFilePath("bookmarkTest.sqlite"));
 
 	const std::string updatedName = "updated name";
 	const std::string updatedComment = "updated comment";

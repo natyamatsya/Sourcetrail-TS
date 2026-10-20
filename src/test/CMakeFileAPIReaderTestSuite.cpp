@@ -16,6 +16,7 @@
 #ifndef SRCTRL_MODULE_BUILD
 #include "FilePath.h"
 #endif
+#include "TestTempDirectory.h"
 
 // Imports come AFTER all textual #includes (include-before-import rule: textual libc++
 // following BMI-merged declarations trips "cannot add 'abi_tag' in a redeclaration").
@@ -422,8 +423,8 @@ TEST_CASE("CMakeFileAPIReader isReplyStale compares input mtimes against the ind
 	// paths into the generating machine), so build a minimal hermetic reply where
 	// the relative mtimes are set explicitly.
 	namespace fs = std::filesystem;
-	const fs::path root = fs::temp_directory_path() / "sourcetrail_isReplyStale_test";
-	fs::remove_all(root);
+	const TestTempDirectory tempDirectory{"isReplyStale"};
+	const fs::path& root = tempDirectory.getPath();
 	const fs::path replyDir = root / "build/.cmake/api/v1/reply";
 	fs::create_directories(replyDir);
 	const fs::path sourceDir = root / "source";
@@ -449,8 +450,6 @@ TEST_CASE("CMakeFileAPIReader isReplyStale compares input mtimes against the ind
 	// Input newer than the index -> stale.
 	fs::last_write_time(input, fs::last_write_time(index) + std::chrono::seconds{2});
 	CHECK(reader.isReplyStale());
-
-	fs::remove_all(root);
 }
 
 TEST_CASE("CMakeFileAPIReader isReplyStale returns false for missing reply")
