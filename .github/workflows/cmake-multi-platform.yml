@@ -44,7 +44,7 @@ jobs:
       # and reports hits and misses in the job summary. Without the cache
       # credentials (a fork's pull request) it warns and the job builds uncached.
       - name: Set up sccion
-        uses: natyamatsya/sccion@v0.1.1
+        uses: natyamatsya/sccion@v0.1.2
 
       - name: Cache Cargo registry + build
         uses: actions/cache@v6
@@ -161,7 +161,7 @@ jobs:
       # builds. `installed` decides below whether configure insists on it.
       - name: Set up sccion
         id: sccion
-        uses: natyamatsya/sccion@v0.1.1
+        uses: natyamatsya/sccion@v0.1.2
 
       - name: Cache Cargo registry + build
         uses: actions/cache@v6
@@ -328,7 +328,7 @@ jobs:
       # /Z7, since a shared /Zi PDB cannot be cached.
       - name: Set up sccion
         id: sccion
-        uses: natyamatsya/sccion@v0.1.1
+        uses: natyamatsya/sccion@v0.1.2
         with:
           rustc-wrapper: false # no Rust in this job
 
