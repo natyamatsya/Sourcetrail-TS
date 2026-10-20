@@ -41,6 +41,24 @@ endif()
 set(CMAKE_C_COMPILER   "${LLVM_PREFIX}/bin/clang"   CACHE FILEPATH "C compiler")
 set(CMAKE_CXX_COMPILER "${LLVM_PREFIX}/bin/clang++" CACHE FILEPATH "C++ compiler")
 
+# Link against the SDK of the developer directory whose `ld` does the linking. Homebrew's clang
+# config files default to `-isysroot` the Command Line Tools SDK, and since CMake 4 nothing
+# overrides that, while `ld` comes from whichever Xcode xcode-select names. When the two differ
+# the newer SDK's .tbd stubs list architectures the older ld cannot parse ("tapi error: malformed
+# file ... unknown architecture arm64e.x1-macos", CLT SDK 27 against Xcode 26.6 on CI). A later
+# -isysroot wins over the config file's. Set CMAKE_OSX_SYSROOT to choose another SDK.
+if(NOT CMAKE_OSX_SYSROOT)
+	execute_process(
+		COMMAND xcrun --show-sdk-path
+		OUTPUT_VARIABLE _srctrl_sdk_path
+		OUTPUT_STRIP_TRAILING_WHITESPACE
+		RESULT_VARIABLE _srctrl_sdk_result
+		ERROR_QUIET)
+	if(_srctrl_sdk_result EQUAL 0 AND IS_DIRECTORY "${_srctrl_sdk_path}")
+		set(CMAKE_OSX_SYSROOT "${_srctrl_sdk_path}" CACHE PATH "macOS SDK (that of the selected developer directory)")
+	endif()
+endif()
+
 # Use macOS system ar/ranlib — GNU ar (from binutils) produces archives that
 # Apple's ld rejects.  (This also lets CMake's `import std` support link its std-module archive.)
 set(CMAKE_AR     "/usr/bin/ar"     CACHE FILEPATH "ar")
