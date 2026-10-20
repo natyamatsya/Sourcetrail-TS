@@ -1,9 +1,15 @@
 name: CI
 
 on:
-  # Push trigger deactivated to conserve CI budget. Re-enable by uncommenting.
-  # push:
-  #   branches: ["main"]
+  # Runs on main are what make the caches shared: a pull request reads cache
+  # entries written on main, but those written by another pull request never
+  # reach it. Each merge refreshes them for the pull requests after it, and the
+  # weekly run keeps them clear of the Actions cache's 7-day eviction when
+  # nothing merges. Standard hosted runners are free for a public repository.
+  push:
+    branches: ["main"]
+  schedule:
+    - cron: "0 3 * * 1" # Mondays, 03:00 UTC
   pull_request:
     branches: ["main"]
   workflow_dispatch:
@@ -33,6 +39,12 @@ jobs:
           # #[derive(...)] does not resolve (expansion degrades gracefully,
           # but the derive tests assert the expanded items).
           components: rust-src
+
+      # Compiler cache in the Actions cache: exports RUSTC_WRAPPER for cargo,
+      # and reports hits and misses in the job summary. Without the cache
+      # credentials (a fork's pull request) it warns and the job builds uncached.
+      - name: Set up sccion
+        uses: natyamatsya/sccion@v0.1.0
 
       - name: Cache Cargo registry + build
         uses: actions/cache@v6
@@ -135,6 +147,13 @@ jobs:
         with:
           components: rust-src
 
+      # Puts sccion on PATH, where cmake/SourcetrailCompilerCache.cmake finds
+      # it and makes it the C/C++ launcher; RUSTC_WRAPPER covers the Corrosion
+      # builds. `installed` decides below whether configure insists on it.
+      - name: Set up sccion
+        id: sccion
+        uses: natyamatsya/sccion@v0.1.0
+
       - name: Cache Cargo registry + build
         uses: actions/cache@v6
         with:
@@ -216,10 +235,14 @@ jobs:
           # The project triplet carries per-port customizations (e.g. catch2 is
           # built with CATCH_CONFIG_NO_POSIX_SIGNALS, which src/test/Catch2.cpp
           # asserts on Linux); without it vcpkg builds plain ports.
+          # SOURCETRAIL_COMPILER_CACHE=ON when sccion came up, so a launcher
+          # that silently went missing fails configure instead of building
+          # uncached; AUTO when the action stood down (a fork's pull request).
           cmake -S . -B build -G Ninja \
             -DCMAKE_BUILD_TYPE=Release \
             -DCMAKE_TOOLCHAIN_FILE="$PWD/vcpkg/scripts/buildsystems/vcpkg.cmake" \
             -DVCPKG_TARGET_TRIPLET=x64-arm64-linux-windows-osx-static-md \
+            -DSOURCETRAIL_COMPILER_CACHE=${{ steps.sccion.outputs.installed == 'true' && 'ON' || 'AUTO' }} \
             -DBUILD_CXX_LANGUAGE_PACKAGE=ON \
             -DBUILD_RUST_LANGUAGE_PACKAGE=ON \
             -DBUILD_UNIT_TESTS_PACKAGE=ON \
@@ -279,6 +302,17 @@ jobs:
       - name: Set up MSVC
         uses: ilammy/msvc-dev-cmd@v1
 
+      # Same as the Linux/macOS job. Only Sourcetrail's own sources go through
+      # it: the launcher is set by the project's CMake, which vcpkg's port
+      # builds never run, and LLVM is kept by the vcpkg binary cache below.
+      # With a cache in front of cl, SourcetrailCompilerCache.cmake switches to
+      # /Z7, since a shared /Zi PDB cannot be cached.
+      - name: Set up sccion
+        id: sccion
+        uses: natyamatsya/sccion@v0.1.0
+        with:
+          rustc-wrapper: false # no Rust in this job
+
       # vcpkg's x-gha binary-cache backend was REMOVED from vcpkg (setting
       # VCPKG_BINARY_SOURCES to it silently disabled caching altogether and the
       # ~2.6h LLVM build ran on every push). Instead let vcpkg use its default
@@ -310,6 +344,7 @@ jobs:
             -DCMAKE_TOOLCHAIN_FILE="$PWD/vcpkg/scripts/buildsystems/vcpkg.cmake" \
             -DVCPKG_TARGET_TRIPLET=x64-arm64-linux-windows-osx-static-md \
             -DVCPKG_MANIFEST_FEATURES=cxx-indexer \
+            -DSOURCETRAIL_COMPILER_CACHE=${{ steps.sccion.outputs.installed == 'true' && 'ON' || 'AUTO' }} \
             -DBUILD_CXX_LANGUAGE_PACKAGE=ON \
             -DBUILD_RUST_LANGUAGE_PACKAGE=OFF \
             -DBUILD_UNIT_TESTS_PACKAGE=ON
