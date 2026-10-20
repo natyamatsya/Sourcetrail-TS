@@ -157,7 +157,7 @@ pub fn indexSourceWithChannels(
     source: [:0]const u8,
     channel_name_prefixes: []const []const u8,
 ) Error!void {
-    var ast = try Ast.parse(gpa, source, .zig);
+    var ast = try Ast.parse(gpa, source, .{});
     defer ast.deinit(gpa);
 
     const file_id = try store.recordFile(file_path, "zig", true);

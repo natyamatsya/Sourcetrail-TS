@@ -298,7 +298,7 @@ test "chunker: oversized store splits into self-contained chunks" {
 
     const file_id = try store.recordFile("big.zig", "zig", true);
     // ~8 KB names so a store of 1200 nodes far exceeds the 7 MiB budget.
-    const big_name = "n" ** 8000;
+    const big_name: [8000]u8 = @splat('n');
     var buf: [8064]u8 = undefined;
     var prev: ?storage.Id = null;
     var k: usize = 0;
@@ -364,7 +364,7 @@ test "self-index: parse the indexer's own source without errors" {
     inline for (cases) |case| {
         var store = storage.Storage.init(a);
         defer store.deinit();
-        const src = try a.dupeZ(u8, case.src);
+        const src = try a.dupeSentinel(u8, case.src, 0);
         defer a.free(src);
         try indexer.parser.indexSource(a, &store, case.path, src);
 

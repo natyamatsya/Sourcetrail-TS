@@ -51,10 +51,10 @@ pub const Session = struct {
                 .environ_map = &self.environ_map,
                 .zig_exe_path = zig_exe_path,
                 .zig_lib_dir = null,
-                .build_runner_path = null,
+                .zig_cache_dir = null,
                 .builtin_path = null,
                 .global_cache_dir = null,
-                .wasi_preopens = {},
+                .preopens = .empty,
             },
             .diagnostics_collection = &self.diagnostics,
         };

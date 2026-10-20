@@ -24,7 +24,7 @@ pub fn build(b: *std.Build) void {
         .optimize = optimize,
     }).module("thoth-ipc");
 
-    // ZLS (0.16.0) as a library: its Analyser + DocumentStore drive cross-file
+    // ZLS (0.17.0) as a library: its Analyser + DocumentStore drive cross-file
     // semantic resolution (Phase 3b). Consumed as the "zls" module it exposes.
     const zls = b.dependency("zls", .{
         .target = target,
@@ -61,6 +61,11 @@ pub fn build(b: *std.Build) void {
     }
     const gen_dir = gen.addOutputDirectoryArg("flatcc");
 
+    // Zig 0.17 removed @cImport: translate the flatcc umbrella header in the
+    // build graph instead and import the result as the "flatcc_c" module
+    // (re-exported by src/ipc/c.zig).
+    const flatcc_c = translateFlatcc(b, gen_dir, flatcc_prefix, target, optimize);
+
     const exe = b.addExecutable(.{
         .name = "sourcetrail_zig_indexer",
         .root_module = b.createModule(.{
@@ -75,12 +80,12 @@ pub fn build(b: *std.Build) void {
             },
         }),
     });
-    configureFlatcc(exe.root_module, gen_dir, flatcc_prefix);
+    configureFlatcc(exe.root_module, flatcc_c, flatcc_prefix);
     b.installArtifact(exe);
 
     const run = b.addRunArtifact(exe);
     run.step.dependOn(b.getInstallStep());
-    if (b.args) |args| run.addArgs(args);
+    run.addPassthruArgs();
     b.step("run", "Run the Zig indexer").dependOn(&run.step);
 
     const test_step = b.step("test", "Run the indexer unit tests");
@@ -109,7 +114,7 @@ pub fn build(b: *std.Build) void {
             },
         }),
     });
-    configureFlatcc(ipc_tests.root_module, gen_dir, flatcc_prefix);
+    configureFlatcc(ipc_tests.root_module, flatcc_c, flatcc_prefix);
     test_step.dependOn(&b.addRunArtifact(ipc_tests).step);
 
     // Semantic-pass tests: drive a real ZLS Session over an in-memory document
@@ -129,15 +134,33 @@ pub fn build(b: *std.Build) void {
     test_step.dependOn(&b.addRunArtifact(semantic_tests).step);
 }
 
-/// Add the flatcc-generated include dir, the flatcc runtime headers/lib, and
-/// the libflatccrt link to a module that @cImports the generated bindings.
-fn configureFlatcc(mod: *std.Build.Module, gen_dir: std.Build.LazyPath, prefix: []const u8) void {
-    const b = mod.owner;
+/// Translate include/flatcc_bindings.h (the flatcc-generated readers/builders/
+/// verifiers plus the flatcc builder runtime) into a Zig module.
+fn translateFlatcc(
+    b: *std.Build,
+    gen_dir: std.Build.LazyPath,
+    prefix: []const u8,
+    target: std.Build.ResolvedTarget,
+    optimize: std.builtin.Optimize,
+) *std.Build.Module {
+    const tc = b.addTranslateC(.{
+        .root_source_file = b.path("include/flatcc_bindings.h"),
+        .target = target,
+        .optimize = optimize,
+    });
     // Our unaligned-safe flatcc accessor shim must be found before flatcc's own
     // headers (it defines the FLATCC_ACCESSORS include guard).
-    mod.addIncludePath(b.path("include"));
-    mod.addIncludePath(gen_dir);
-    mod.addIncludePath(.{ .cwd_relative = b.pathJoin(&.{ prefix, "include" }) });
+    tc.addIncludePath(b.path("include"));
+    tc.addIncludePath(gen_dir);
+    tc.addIncludePath(.{ .cwd_relative = b.pathJoin(&.{ prefix, "include" }) });
+    return tc.createModule();
+}
+
+/// Import the translated flatcc bindings into a module and link it against
+/// the flatcc runtime (libflatccrt).
+fn configureFlatcc(mod: *std.Build.Module, flatcc_c: *std.Build.Module, prefix: []const u8) void {
+    const b = mod.owner;
+    mod.addImport("flatcc_c", flatcc_c);
     mod.addLibraryPath(.{ .cwd_relative = b.pathJoin(&.{ prefix, "lib" }) });
     mod.linkSystemLibrary("flatccrt", .{});
 }

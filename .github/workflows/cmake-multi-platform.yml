@@ -91,11 +91,11 @@ jobs:
 
   # ---------------------------------------------------------------------------
   # Zig indexer: build + unit tests (macOS only — the thoth-ipc shm layer is
-  # macOS-specific). Toolchain comes from Homebrew: the indexer is built and
-  # validated against Zig 0.16.0 + flatcc 0.6.1. ZLS 0.16.0 is fetched by the
-  # Zig package manager during `zig build`, and refuses any other Zig -- so Zig
-  # is pinned to brew's zig@0.16 (keg-only, hence the PATH entry); plain `zig`
-  # moved to 0.17.0 in October 2026.
+  # macOS-specific). The indexer is built and validated against Zig 0.17.0 +
+  # flatcc. ZLS 0.17.0 is fetched by the Zig package manager during `zig build`,
+  # and refuses any other Zig, so Zig is the exact release from ziglang.org,
+  # checked against its published SHA-256 -- not brew's `zig`, which follows
+  # whatever is newest (its move to 0.17.0 broke this job). flatcc stays on brew.
   # ---------------------------------------------------------------------------
   zig-indexer:
     name: Zig indexer (macos-latest)
@@ -107,8 +107,14 @@ jobs:
 
       - name: Install Zig + flatcc
         run: |
-          brew install zig@0.16 flatcc
-          echo "$(brew --prefix zig@0.16)/bin" >> "$GITHUB_PATH"
+          version=0.17.0
+          sha256=b607e9b9234790a008116ae5bdb71c6243b84b9fb42a53a9e70fde41c06c536a
+          name="zig-aarch64-macos-${version}"
+          curl -fsSL -o "$RUNNER_TEMP/zig.tar.xz" "https://ziglang.org/download/${version}/${name}.tar.xz"
+          echo "${sha256}  $RUNNER_TEMP/zig.tar.xz" | shasum -a 256 -c -
+          tar -xJf "$RUNNER_TEMP/zig.tar.xz" -C "$RUNNER_TEMP"
+          echo "$RUNNER_TEMP/${name}" >> "$GITHUB_PATH"
+          brew install flatcc
 
       - name: zig build test
         working-directory: src/zig_indexer
