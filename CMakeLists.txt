@@ -58,6 +58,8 @@ cmake_print_variables(CMAKE_CXX_COMPILER)
 # The option keeps its name: CI passes -DSOURCETRAIL_COMPILER_CACHE=ON.
 include(cmake/SccionCompilerCache.cmake)
 sccion_compiler_cache(OPTION SOURCETRAIL_COMPILER_CACHE)
+# And sccion's cache for what external builds produce: the indexer binaries.
+include(cmake/SccionToolCache.cmake)
 
 # Configure which language(s)/package(s) should be supported:
 option(BUILD_CXX_LANGUAGE_PACKAGE  "Add C/C++ support to the Sourcetrail indexer." OFF)
@@ -770,29 +772,62 @@ add_subdirectory(src/indexer)
 # Rust Indexer -----------------------------------------------------------------
 
 if (BUILD_RUST_LANGUAGE_PACKAGE)
-	# Corrosion is fetched earlier (shared with SOURCETRAIL_TURSO_COMPARE).
-	corrosion_import_crate(
-		MANIFEST_PATH "${CMAKE_SOURCE_DIR}/src/rust_indexer/Cargo.toml"
-		CRATES sourcetrail-rust-indexer
-		IMPORTED_CRATES rust_indexer_targets
+	# A standalone executable, so cargo builds it directly -- Corrosion's import
+	# is for libraries C++ links, like turso_shim -- and the finished binary is
+	# cached whole: a compiler cache still leaves the link, the build scripts and
+	# the proc-macros to run on every hit. The toolchain is the one Corrosion
+	# found (fetched earlier, shared with turso_shim); it keeps its own
+	# Rust_COMPILER etc. in its directory's scope, so these are its cached copies.
+	set(RUST_INDEXER_RUSTC "${Rust_COMPILER_CACHED}")
+	set(RUST_INDEXER_CARGO "${Rust_CARGO_CACHED}")
+	set(RUST_INDEXER_TRIPLE "${Rust_CARGO_TARGET_CACHED}")
+	if (NOT RUST_INDEXER_RUSTC OR NOT RUST_INDEXER_CARGO OR NOT RUST_INDEXER_TRIPLE)
+		message(FATAL_ERROR "Rust language package: Corrosion found no Rust toolchain to build the indexer with")
+	endif()
+	set(RUST_INDEXER_TARGET_DIR "${CMAKE_BINARY_DIR}/rust_indexer")
+	set(RUST_INDEXER_BINARY_NAME "sourcetrail_rust_indexer${CMAKE_EXECUTABLE_SUFFIX}")
+	set(RUST_INDEXER_BINARY_PATH
+		"${RUST_INDEXER_TARGET_DIR}/${RUST_INDEXER_TRIPLE}/release/${RUST_INDEXER_BINARY_NAME}")
+	# The crate's build.rs needs flatc, which is not on PATH (especially on
+	# Windows), so point it at the vcpkg-provided host tool.
+	set(RUST_INDEXER_COMMAND_ENVIRONMENT
+		"FLATC=$<TARGET_FILE:flatbuffers::flatc>"
+		"CARGO_BUILD_RUSTC=${RUST_INDEXER_RUSTC}")
+	if (SCCION_RUSTC_WRAPPER)
+		list(APPEND RUST_INDEXER_COMMAND_ENVIRONMENT "RUSTC_WRAPPER=${SCCION_RUSTC_WRAPPER}")
+	endif()
+	sccion_cached_tool(sourcetrail_rust_indexer
+		OUTPUTS "${RUST_INDEXER_BINARY_PATH}"
+		COMMAND "${RUST_INDEXER_CARGO}" build --release --locked
+			--manifest-path "${CMAKE_SOURCE_DIR}/src/rust_indexer/Cargo.toml"
+			--package sourcetrail-rust-indexer
+			--bin sourcetrail_rust_indexer
+			--target ${RUST_INDEXER_TRIPLE}
+			--target-dir "${RUST_INDEXER_TARGET_DIR}"
+		COMMAND_ENVIRONMENT ${RUST_INDEXER_COMMAND_ENVIRONMENT}
+		# The workspace, its path dependency, and the schemas build.rs compiles;
+		# Cargo.lock pins the rest.
+		SOURCE_TREES
+			"${CMAKE_SOURCE_DIR}/src/rust_indexer"
+			"${CMAKE_SOURCE_DIR}/submodules/thoth-ipc/rust/thoth-ipc"
+			"${CMAKE_SOURCE_DIR}/abi-schemas/ipc-indexer"
+		TOOLS
+			"\"${RUST_INDEXER_RUSTC}\" -vV"
+			"\"${RUST_INDEXER_CARGO}\" -V"
+			"\"$<TARGET_FILE:flatbuffers::flatc>\" --version"
+		ENVIRONMENT RUSTFLAGS CARGO_ENCODED_RUSTFLAGS SDKROOT MACOSX_DEPLOYMENT_TARGET
+		COMMENT "Building sourcetrail_rust_indexer via cargo, or restoring it"
 	)
 
-	# The crate's build.rs needs flatc, which is not on PATH (especially on
-	# Windows), so point it at the vcpkg-provided host tool:
-	corrosion_set_env_vars(sourcetrail_rust_indexer "FLATC=$<TARGET_FILE:flatbuffers::flatc>")
-	sccion_cache_rust_crates(${rust_indexer_targets})
-
-	# Copy the Rust indexer binary to app/ so AppPath::getRustIndexerFilePath() finds it.
-	# Corrosion produces an IMPORTED target, so we use a custom target with add_dependencies.
 	add_custom_target(copy_rust_indexer ALL
 		COMMAND ${CMAKE_COMMAND} -E copy_if_different
-			$<TARGET_FILE:sourcetrail_rust_indexer>
-			"${CMAKE_BINARY_DIR}/app/$<TARGET_FILE_NAME:sourcetrail_rust_indexer>"
+			"${RUST_INDEXER_BINARY_PATH}"
+			"${CMAKE_BINARY_DIR}/app/${RUST_INDEXER_BINARY_NAME}"
 		COMMENT "Copying sourcetrail_rust_indexer to app/"
 		DEPENDS sourcetrail_rust_indexer
 	)
 
-	message(STATUS "Rust language package enabled — building sourcetrail_rust_indexer via Corrosion")
+	message(STATUS "Rust language package enabled — building sourcetrail_rust_indexer via cargo")
 endif()
 
 # Swift Indexer ----------------------------------------------------------------
@@ -846,27 +881,34 @@ if (BUILD_SWIFT_LANGUAGE_PACKAGE)
 		VERBATIM
 	)
 
-	file(GLOB_RECURSE SWIFT_INDEXER_SOURCES CONFIGURE_DEPENDS
-		"${SWIFT_INDEXER_PACKAGE_DIR}/Package.swift"
-		"${SWIFT_INDEXER_PACKAGE_DIR}/Sources/*.swift"
-	)
-
-	add_custom_command(
-		OUTPUT "${SWIFT_INDEXER_BINARY_PATH}"
+	# Built by SwiftPM, which no compiler cache can see into, so the finished
+	# binary is cached instead, keyed on everything the package reads: its own
+	# tree and its two path dependencies' (Package.resolved pins the rest), the
+	# generated schema sources, and the toolchain. A checkout whose Swift is
+	# unchanged restores it rather than spend minutes building swift-syntax.
+	set(SWIFT_INDEXER_TOOLS "\"${SWIFT_EXECUTABLE}\" --version")
+	if (APPLE)
+		list(APPEND SWIFT_INDEXER_TOOLS "xcrun --show-sdk-version" "xcrun --show-sdk-path")
+	endif()
+	sccion_cached_tool(sourcetrail_swift_indexer
+		OUTPUTS "${SWIFT_INDEXER_BINARY_PATH}"
 		COMMAND ${SWIFT_EXECUTABLE} build
 			--configuration release
 			--package-path "${SWIFT_INDEXER_PACKAGE_DIR}"
 			--build-path "${SWIFT_INDEXER_BUILD_DIR}"
 			--product sourcetrail_swift_indexer
+		SOURCE_TREES
+			"${SWIFT_INDEXER_PACKAGE_DIR}"
+			"${CMAKE_SOURCE_DIR}/submodules/thoth-ipc/swift/thoth-ipc"
+			"${CMAKE_SOURCE_DIR}/submodules/thoth-ipc/swift/thoth-ipc/vendor/flatbuffers"
+		INPUT_FILES ${SWIFT_INDEXER_GENERATED_SOURCES}
+		TOOLS ${SWIFT_INDEXER_TOOLS}
+		ENVIRONMENT SDKROOT DEVELOPER_DIR MACOSX_DEPLOYMENT_TARGET
 		DEPENDS
-			${SWIFT_INDEXER_SOURCES}
 			${SWIFT_INDEXER_GENERATED_SOURCES}
 			"${SWIFT_INDEXER_PACKAGE_GENERATED_DIR}"
-		COMMENT "Building sourcetrail_swift_indexer via Swift Package Manager"
-		VERBATIM
+		COMMENT "Building sourcetrail_swift_indexer via Swift Package Manager, or restoring it"
 	)
-
-	add_custom_target(sourcetrail_swift_indexer DEPENDS "${SWIFT_INDEXER_BINARY_PATH}")
 
 	add_custom_target(copy_swift_indexer ALL
 		COMMAND ${CMAKE_COMMAND} -E copy_if_different
@@ -904,21 +946,11 @@ if (BUILD_ZIG_LANGUAGE_PACKAGE)
 	# (see abi-schemas/README.md) — the same .fbs the C++ side compiles with flatc.
 	set(ZIG_INDEXER_SCHEMA_DIR "${CMAKE_SOURCE_DIR}/abi-schemas/ipc-indexer")
 
-	# Sources that should retrigger a rebuild (the thoth-ipc Zig port + the
-	# indexer package, including the C headers its build translates for flatcc,
-	# + the shared schemas).
-	file(GLOB_RECURSE ZIG_INDEXER_SOURCES CONFIGURE_DEPENDS
-		"${ZIG_INDEXER_PACKAGE_DIR}/build.zig"
-		"${ZIG_INDEXER_PACKAGE_DIR}/build.zig.zon"
-		"${ZIG_INDEXER_PACKAGE_DIR}/src/*.zig"
-		"${ZIG_INDEXER_PACKAGE_DIR}/include/*.h"
-		"${ZIG_INDEXER_PACKAGE_DIR}/tools/*.sh"
-		"${ZIG_INDEXER_SCHEMA_DIR}/*.fbs"
-		"${CMAKE_SOURCE_DIR}/submodules/thoth-ipc/zig/thoth-ipc/src/*.zig"
-	)
-
-	add_custom_command(
-		OUTPUT "${ZIG_INDEXER_BINARY_PATH}"
+	# Cached whole, keyed on the indexer package (its C headers and tools
+	# included; build.zig.zon pins zls), the thoth-ipc Zig port, the shared
+	# schemas, and the zig and flatcc versions.
+	sccion_cached_tool(sourcetrail_zig_indexer
+		OUTPUTS "${ZIG_INDEXER_BINARY_PATH}"
 		COMMAND ${ZIG_EXECUTABLE} build
 			--build-file "${ZIG_INDEXER_PACKAGE_DIR}/build.zig"
 			--cache-dir "${ZIG_INDEXER_BUILD_DIR}/.zig-cache"
@@ -928,12 +960,15 @@ if (BUILD_ZIG_LANGUAGE_PACKAGE)
 			"-Dflatcc-prefix=${FLATCC_PREFIX}"
 			install
 		WORKING_DIRECTORY "${ZIG_INDEXER_PACKAGE_DIR}"
-		DEPENDS ${ZIG_INDEXER_SOURCES}
-		COMMENT "Building sourcetrail_zig_indexer via zig build"
-		VERBATIM
+		SOURCE_TREES
+			"${ZIG_INDEXER_PACKAGE_DIR}"
+			"${ZIG_INDEXER_SCHEMA_DIR}"
+			"${CMAKE_SOURCE_DIR}/submodules/thoth-ipc/zig/thoth-ipc"
+		TOOLS
+			"\"${ZIG_EXECUTABLE}\" version"
+			"\"${FLATCC_EXECUTABLE}\" --version"
+		COMMENT "Building sourcetrail_zig_indexer via zig build, or restoring it"
 	)
-
-	add_custom_target(sourcetrail_zig_indexer DEPENDS "${ZIG_INDEXER_BINARY_PATH}")
 
 	add_custom_target(copy_zig_indexer ALL
 		COMMAND ${CMAKE_COMMAND} -E copy_if_different

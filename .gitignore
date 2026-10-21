@@ -54,3 +54,7 @@ src/swift_indexer/Sources/SourcetrailSwiftIndexerCore/GeneratedFromCMake
 /bin/test/data/ConfigManagerTestSuite/temp*.srctrl.toml
 /bin/test/data/test.sqlite
 /bin/test/data/testBookmarks.sqlite
+
+# Build output the build writes into the source tree.
+src/swift_indexer/.build/
+src/swift_indexer/Sources/SourcetrailSwiftIndexerCore/GeneratedFromCMake
