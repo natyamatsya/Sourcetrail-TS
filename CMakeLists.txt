@@ -53,8 +53,11 @@ cmake_print_variables(CMAKE_C_COMPILER)
 cmake_print_variables(CMAKE_CXX_COMPILER)
 
 # Before any target exists, so every one of them inherits the launcher.
-include(cmake/SourcetrailCompilerCache.cmake)
-sourcetrail_resolve_compiler_cache()
+# sccion's module, committed so a machine without sccion still configures --
+# with sccache, ccache or uncached. Refresh it from `sccion --cmake-module-dir`.
+# The option keeps its name: CI passes -DSOURCETRAIL_COMPILER_CACHE=ON.
+include(cmake/SccionCompilerCache.cmake)
+sccion_compiler_cache(OPTION SOURCETRAIL_COMPILER_CACHE)
 
 # Configure which language(s)/package(s) should be supported:
 option(BUILD_CXX_LANGUAGE_PACKAGE  "Add C/C++ support to the Sourcetrail indexer." OFF)
@@ -501,7 +504,7 @@ if (SOURCETRAIL_USE_TURSO)
 		CRATES turso_shim
 		IMPORTED_CRATES turso_shim_targets
 	)
-	sourcetrail_cache_rust_crates(${turso_shim_targets})
+	sccion_cache_rust_crates(${turso_shim_targets})
 	# Corrosion (v0.5 through at least v0.6.1) hard-codes the Command Line Tools SDK's usr/lib as
 	# an INTERFACE_LINK_DIRECTORIES of every Rust library it imports on macOS. Ahead of everything
 	# on the link line, it makes ld resolve -lSystem/-lc/-lm (Rust std's native libs) from that SDK
@@ -777,7 +780,7 @@ if (BUILD_RUST_LANGUAGE_PACKAGE)
 	# The crate's build.rs needs flatc, which is not on PATH (especially on
 	# Windows), so point it at the vcpkg-provided host tool:
 	corrosion_set_env_vars(sourcetrail_rust_indexer "FLATC=$<TARGET_FILE:flatbuffers::flatc>")
-	sourcetrail_cache_rust_crates(${rust_indexer_targets})
+	sccion_cache_rust_crates(${rust_indexer_targets})
 
 	# Copy the Rust indexer binary to app/ so AppPath::getRustIndexerFilePath() finds it.
 	# Corrosion produces an IMPORTED target, so we use a custom target with add_dependencies.
