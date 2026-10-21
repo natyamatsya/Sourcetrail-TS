@@ -1,9 +1,15 @@
 name: CI
 
 on:
-  # Push trigger deactivated to conserve CI budget. Re-enable by uncommenting.
-  # push:
-  #   branches: ["main"]
+  # Runs on main are what make the caches shared: a pull request reads cache
+  # entries written on main, but those written by another pull request never
+  # reach it. Each merge refreshes them for the pull requests after it, and the
+  # weekly run keeps them clear of the Actions cache's 7-day eviction when
+  # nothing merges. Standard hosted runners are free for a public repository.
+  push:
+    branches: ["main"]
+  schedule:
+    - cron: "0 3 * * 1" # Mondays, 03:00 UTC
   pull_request:
     branches: ["main"]
   workflow_dispatch:
@@ -33,6 +39,12 @@ jobs:
           # #[derive(...)] does not resolve (expansion degrades gracefully,
           # but the derive tests assert the expanded items).
           components: rust-src
+
+      # Compiler cache in the Actions cache: exports RUSTC_WRAPPER for cargo,
+      # and reports hits and misses in the job summary. Without the cache
+      # credentials (a fork's pull request) it warns and the job builds uncached.
+      - name: Set up sccion
+        uses: natyamatsya/sccion@v0.1.2
 
       - name: Cache Cargo registry + build
         uses: actions/cache@v6
@@ -79,11 +91,11 @@ jobs:
 
   # ---------------------------------------------------------------------------
   # Zig indexer: build + unit tests (macOS only — the thoth-ipc shm layer is
-  # macOS-specific). Toolchain comes from Homebrew: the indexer is built and
-  # validated against Homebrew's Zig 0.16.0 (a dev build with no release tag, so
-  # brew is the faithful pin) + flatcc 0.6.1. ZLS 0.16.0 is fetched by the Zig
-  # package manager during `zig build`. If a future Homebrew Zig bump breaks the
-  # build, pin the toolchain here.
+  # macOS-specific). The indexer is built and validated against Zig 0.17.0 +
+  # flatcc. ZLS 0.17.0 is fetched by the Zig package manager during `zig build`,
+  # and refuses any other Zig, so Zig is the exact release from ziglang.org,
+  # checked against its published SHA-256 -- not brew's `zig`, which follows
+  # whatever is newest (its move to 0.17.0 broke this job). flatcc stays on brew.
   # ---------------------------------------------------------------------------
   zig-indexer:
     name: Zig indexer (macos-latest)
@@ -94,7 +106,15 @@ jobs:
           submodules: recursive
 
       - name: Install Zig + flatcc
-        run: brew install zig flatcc
+        run: |
+          version=0.17.0
+          sha256=b607e9b9234790a008116ae5bdb71c6243b84b9fb42a53a9e70fde41c06c536a
+          name="zig-aarch64-macos-${version}"
+          curl -fsSL -o "$RUNNER_TEMP/zig.tar.xz" "https://ziglang.org/download/${version}/${name}.tar.xz"
+          echo "${sha256}  $RUNNER_TEMP/zig.tar.xz" | shasum -a 256 -c -
+          tar -xJf "$RUNNER_TEMP/zig.tar.xz" -C "$RUNNER_TEMP"
+          echo "$RUNNER_TEMP/${name}" >> "$GITHUB_PATH"
+          brew install flatcc
 
       - name: zig build test
         working-directory: src/zig_indexer
@@ -106,7 +126,8 @@ jobs:
   # Builds the full application WITH the C++ language package (libclang) and the
   # Catch2 unit tests, then runs them via ctest. Dependencies come from the vcpkg
   # manifest (stdexec/tomlplusplus/... are find_package()'d unconditionally); Qt6
-  # and LLVM/Clang 18-23 (for the C++ indexer) are installed separately.
+  # and LLVM/Clang (for the C++ indexer) are installed separately: 22 on Linux,
+  # 23 on macOS, so the two newest supported releases are built and tested.
   #
   # ctest runs each Catch2 case in its own process, which also isolates any single
   # crashing test from the rest of the suite.
@@ -134,6 +155,13 @@ jobs:
         uses: dtolnay/rust-toolchain@stable
         with:
           components: rust-src
+
+      # Puts sccion on PATH, where cmake/SourcetrailCompilerCache.cmake finds
+      # it and makes it the C/C++ launcher; RUSTC_WRAPPER covers the Corrosion
+      # builds. `installed` decides below whether configure insists on it.
+      - name: Set up sccion
+        id: sccion
+        uses: natyamatsya/sccion@v0.1.2
 
       - name: Cache Cargo registry + build
         uses: actions/cache@v6
@@ -167,10 +195,20 @@ jobs:
 
       # macOS uses Homebrew for LLVM and Qt: the aqtinstall Qt packages still link
       # '-framework AGL', which recent macOS SDKs no longer ship, while brew's Qt
-      # matches the SDK on the runner (and the local dev setup).
+      # matches the SDK on the runner (and the local dev setup). LLVM is pinned
+      # to 23 while Linux builds 22, so CI covers both. llvm@23 is an alias of
+      # brew's `llvm` until that moves on, when it becomes a versioned formula;
+      # plain `llvm` would follow it to a release the C++ indexer has not been
+      # tested against (CMakeLists.txt refuses Clang >= 24).
       - name: Install build tools + LLVM + Qt (macOS)
         if: runner.os == 'macOS'
-        run: brew install ninja llvm qt
+        # LLVM_PREFIX goes to the job's environment because
+        # cmake-toolchains/llvm-clang-macos.cmake reads it from there (vcpkg's
+        # chainloaded port builds included), and otherwise falls back to the
+        # unversioned opt/llvm.
+        run: |
+          brew install ninja llvm@23 qt
+          echo "LLVM_PREFIX=$(brew --prefix llvm@23)" >> "$GITHUB_ENV"
 
       # ubuntu-latest ships CMake 3.31, and the top-level CMakeLists requires
       # 4.4.0 (CMP0155 defaults to NEW there, so C++20 sources are scanned for
@@ -206,7 +244,7 @@ jobs:
           if [ "${{ runner.os }}" = "macOS" ]; then
             # Build with Homebrew LLVM (Apple Clang lacks the C++23/26 features stdexec
             # and the libc++ ABI handling rely on); point find_package at brew LLVM + Qt.
-            LLVM_PREFIX="$(brew --prefix llvm)"
+            # LLVM_PREFIX (llvm@23) comes from the install step.
             QT_PREFIX="$(brew --prefix qt)"
             EXTRA="-DVCPKG_CHAINLOAD_TOOLCHAIN_FILE=$PWD/cmake-toolchains/llvm-clang-macos.cmake -DCMAKE_PREFIX_PATH=$LLVM_PREFIX;$QT_PREFIX"
           else
@@ -216,10 +254,14 @@ jobs:
           # The project triplet carries per-port customizations (e.g. catch2 is
           # built with CATCH_CONFIG_NO_POSIX_SIGNALS, which src/test/Catch2.cpp
           # asserts on Linux); without it vcpkg builds plain ports.
+          # SOURCETRAIL_COMPILER_CACHE=ON when sccion came up, so a launcher
+          # that silently went missing fails configure instead of building
+          # uncached; AUTO when the action stood down (a fork's pull request).
           cmake -S . -B build -G Ninja \
             -DCMAKE_BUILD_TYPE=Release \
             -DCMAKE_TOOLCHAIN_FILE="$PWD/vcpkg/scripts/buildsystems/vcpkg.cmake" \
             -DVCPKG_TARGET_TRIPLET=x64-arm64-linux-windows-osx-static-md \
+            -DSOURCETRAIL_COMPILER_CACHE=${{ steps.sccion.outputs.installed == 'true' && 'ON' || 'AUTO' }} \
             -DBUILD_CXX_LANGUAGE_PACKAGE=ON \
             -DBUILD_RUST_LANGUAGE_PACKAGE=ON \
             -DBUILD_UNIT_TESTS_PACKAGE=ON \
@@ -279,6 +321,17 @@ jobs:
       - name: Set up MSVC
         uses: ilammy/msvc-dev-cmd@v1
 
+      # Same as the Linux/macOS job. Only Sourcetrail's own sources go through
+      # it: the launcher is set by the project's CMake, which vcpkg's port
+      # builds never run, and LLVM is kept by the vcpkg binary cache below.
+      # With a cache in front of cl, SourcetrailCompilerCache.cmake switches to
+      # /Z7, since a shared /Zi PDB cannot be cached.
+      - name: Set up sccion
+        id: sccion
+        uses: natyamatsya/sccion@v0.1.2
+        with:
+          rustc-wrapper: false # no Rust in this job
+
       # vcpkg's x-gha binary-cache backend was REMOVED from vcpkg (setting
       # VCPKG_BINARY_SOURCES to it silently disabled caching altogether and the
       # ~2.6h LLVM build ran on every push). Instead let vcpkg use its default
@@ -299,6 +352,7 @@ jobs:
         run: .\vcpkg\bootstrap-vcpkg.bat -disableMetrics
 
       - name: Configure
+        id: configure
         shell: bash
         run: |
           # Same shape as the Linux/macOS job. The project triplet is required:
@@ -310,6 +364,7 @@ jobs:
             -DCMAKE_TOOLCHAIN_FILE="$PWD/vcpkg/scripts/buildsystems/vcpkg.cmake" \
             -DVCPKG_TARGET_TRIPLET=x64-arm64-linux-windows-osx-static-md \
             -DVCPKG_MANIFEST_FEATURES=cxx-indexer \
+            -DSOURCETRAIL_COMPILER_CACHE=${{ steps.sccion.outputs.installed == 'true' && 'ON' || 'AUTO' }} \
             -DBUILD_CXX_LANGUAGE_PACKAGE=ON \
             -DBUILD_RUST_LANGUAGE_PACKAGE=OFF \
             -DBUILD_UNIT_TESTS_PACKAGE=ON
@@ -317,8 +372,13 @@ jobs:
       - name: Build
         run: cmake --build build --parallel
 
+      # Only after a successful Configure: that is where vcpkg builds every
+      # port, so the archives are complete. A run cancelled or failed during
+      # Configure must not save -- it once stored an all-but-empty archive
+      # under the real key, and every later run took that exact-key "hit",
+      # skipped its own save and built LLVM from scratch again.
       - name: Save vcpkg binary cache
-        if: always() && steps.vcpkg-binary-cache.outputs.cache-hit != 'true'
+        if: always() && steps.configure.outcome == 'success' && steps.vcpkg-binary-cache.outputs.cache-hit != 'true'
         uses: actions/cache/save@v6
         with:
           path: ~/AppData/Local/vcpkg/archives

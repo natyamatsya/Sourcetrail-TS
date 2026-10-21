@@ -12,6 +12,7 @@
 #ifndef SRCTRL_MODULE_BUILD
 #include "StorageNodeAttribute.h"
 #endif
+#include "TestTempDirectory.h"
 
 // Imports come AFTER all textual #includes (include-before-import rule: textual libc++
 // following BMI-merged declarations trips "cannot add 'abi_tag' in a redeclaration").
@@ -22,11 +23,17 @@ import srctrl.utility;
 
 namespace
 {
-class TestStorage: public PersistentStorage
+// Each TestStorage owns its database files in a fresh temp directory (TEST_CASEs run as concurrent
+// processes under ctest). TestTempDirectory is the first base, so it is constructed before and
+// destroyed after the PersistentStorage that uses it.
+class TestStorage: private TestTempDirectory, public PersistentStorage
 {
 public:
 	TestStorage()
-		: PersistentStorage(FilePath("data/test.sqlite"), FilePath("data/testBookmarks.sqlite"))
+		: TestTempDirectory("StorageTestSuite")
+		, PersistentStorage(
+			  FilePath(TestTempDirectory::getFilePath("test.sqlite")),
+			  FilePath(TestTempDirectory::getFilePath("testBookmarks.sqlite")))
 	{
 		clear();
 	}

@@ -91,7 +91,7 @@ pub fn appendEntry(gpa: std.mem.Allocator, queue: []const u8, entry: []const u8,
 }
 
 /// A blank (empty) queue slot: the first 4 bytes zero mark it empty for readers.
-pub const empty_marker = [_]u8{0} ** 4;
+pub const empty_marker: [4]u8 = @splat(0);
 
 // ---------------------------------------------------------------------------
 
@@ -103,7 +103,7 @@ test "readCount on empty/blank slot is 0" {
 test "append then walk: count, framing, payload round-trip" {
     const a = std.testing.allocator;
     // Start from a blank slot (header zeroed, count 0).
-    var q: []u8 = try a.dupe(u8, &([_]u8{0} ** header_size));
+    var q: []u8 = try a.dupe(u8, &@as([header_size]u8, @splat(0)));
     defer a.free(q);
 
     const e0 = "hello";
@@ -137,6 +137,6 @@ test "append then walk: count, framing, payload round-trip" {
 
 test "append fails when it would exceed the fixed segment" {
     const a = std.testing.allocator;
-    const q = [_]u8{0} ** header_size;
+    const q: [header_size]u8 = @splat(0);
     try std.testing.expectError(Error.SegmentTooSmall, appendEntry(a, &q, "toolong", header_size + 4 + 3));
 }

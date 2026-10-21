@@ -4,6 +4,7 @@
 #include "ConfigManager.h"
 #include "TextAccess.h"
 #endif
+#include "TestTempDirectory.h"
 
 // Imports come AFTER all textual #includes (include-before-import rule: textual libc++
 // following BMI-merged declarations trips "cannot add 'abi_tag' in a redeclaration").
@@ -148,7 +149,8 @@ TEST_CASE("config manager returns correct list for key")
 
 TEST_CASE("config manager save and load configuration and compare")
 {
-	const FilePath path("data/ConfigManagerTestSuite/temp.json");
+	const TestTempDirectory tempDirectory{"ConfigManagerTestSuite"};
+	const FilePath path(tempDirectory.getFilePath("temp.json"));
 
 	std::shared_ptr<ConfigManager> config = ConfigManager::createAndLoad(getConfigTextAccess());
 	config->saveJson(path.str());
@@ -172,7 +174,8 @@ TEST_CASE("config manager loads special character")
 
 TEST_CASE("config manager save and load special character and compare")
 {
-	const FilePath path("data/ConfigManagerTestSuite/temp.json");
+	const TestTempDirectory tempDirectory{"ConfigManagerTestSuite"};
+	const FilePath path(tempDirectory.getFilePath("temp.json"));
 	std::string specialCharacter;
 	specialCharacter = SPECIAL_CHARACTER_UTF8_LOWER_UE;
 
@@ -242,7 +245,8 @@ TEST_CASE("config manager loads TOML plain array")
 
 TEST_CASE("config manager TOML round-trip preserves repeated-value keys")
 {
-	const FilePath path("data/ConfigManagerTestSuite/temp.srctrl.toml");
+	const TestTempDirectory tempDirectory{"ConfigManagerTestSuite"};
+	const FilePath path(tempDirectory.getFilePath("temp.srctrl.toml"));
 
 	std::shared_ptr<ConfigManager> config = ConfigManager::createAndLoad(getConfigTextAccess());
 	config->setValues(
@@ -330,7 +334,8 @@ TEST_CASE("config manager getSublevelKeys works for TOML source_groups")
 
 TEST_CASE("config manager TOML save and reload round-trip for simple values")
 {
-	const FilePath path("data/ConfigManagerTestSuite/temp.srctrl.toml");
+	const TestTempDirectory tempDirectory{"ConfigManagerTestSuite"};
+	const FilePath path(tempDirectory.getFilePath("temp.srctrl.toml"));
 
 	std::shared_ptr<ConfigManager> config = ConfigManager::createEmpty();
 	config->setValue("version", 8);
@@ -356,7 +361,8 @@ TEST_CASE("config manager TOML save and reload round-trip for simple values")
 
 TEST_CASE("config manager TOML save and reload round-trip for source_groups")
 {
-	const FilePath path("data/ConfigManagerTestSuite/temp_sg.srctrl.toml");
+	const TestTempDirectory tempDirectory{"ConfigManagerTestSuite"};
+	const FilePath path(tempDirectory.getFilePath("temp_sg.srctrl.toml"));
 
 	std::shared_ptr<ConfigManager> config = ConfigManager::createEmpty();
 	const std::string prefix =
@@ -385,7 +391,8 @@ TEST_CASE("config manager TOML save and reload round-trip for source_groups")
 
 TEST_CASE("config manager JSON save and reload round-trip for simple and nested values")
 {
-	const FilePath path("data/ConfigManagerTestSuite/temp.json");
+	const TestTempDirectory tempDirectory{"ConfigManagerTestSuite"};
+	const FilePath path(tempDirectory.getFilePath("temp.json"));
 
 	std::shared_ptr<ConfigManager> config = ConfigManager::createEmpty();
 	config->setValue("application/font_name", std::string("Source Code Pro"));
@@ -416,7 +423,8 @@ TEST_CASE("config manager JSON save and reload round-trip for plain list")
 	// container key ("recent_projects") holding a repeated singular child
 	// ("recent_project"). This must survive a save+reload cycle unchanged (the TOML
 	// serializer does not, which is why ApplicationSettings uses JSON).
-	const FilePath path("data/ConfigManagerTestSuite/temp_list.json");
+	const TestTempDirectory tempDirectory{"ConfigManagerTestSuite"};
+	const FilePath path(tempDirectory.getFilePath("temp_list.json"));
 
 	std::shared_ptr<ConfigManager> config = ConfigManager::createEmpty();
 	config->setValues(

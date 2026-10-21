@@ -1,5 +1,6 @@
 #include "Catch2.hpp"
 
+#include <filesystem>
 #include <fstream>
 
 #include <QDateTime>
@@ -18,6 +19,7 @@
 #include "SourceGroupSettings.h"
 #include "utility.h"
 #endif
+#include "TestTempDirectory.h"
 
 // Imports come AFTER all textual #includes (include-before-import rule: textual libc++
 // following BMI-merged declarations trips "cannot add 'abi_tag' in a redeclaration").
@@ -29,9 +31,28 @@ import srctrl.utility;
 
 namespace
 {
-FilePath m_indexDbPath = FilePath("data/RefreshInfoGeneratorTestSuite/project.srctrl.db");
-FilePath m_bookmarkDbPath = FilePath("data/RefreshInfoGeneratorTestSuite/project.srctrl.bm");
-FilePath m_sourceFolder = FilePath("data/RefreshInfoGeneratorTestSuite/src");
+// The project lives in a temp directory unique to this test process (ctest runs the TEST_CASEs as
+// concurrent processes); cleanup() empties it between the TEST_CASEs of a single-process run.
+const TestTempDirectory& projectDirectory()
+{
+	static const TestTempDirectory directory{"RefreshInfoGeneratorTestSuite"};
+	return directory;
+}
+
+FilePath indexDbPath()
+{
+	return FilePath(projectDirectory().getFilePath("project.srctrl.db"));
+}
+
+FilePath bookmarkDbPath()
+{
+	return FilePath(projectDirectory().getFilePath("project.srctrl.bm"));
+}
+
+FilePath sourceFolder()
+{
+	return FilePath(projectDirectory().getFilePath("src"));
+}
 
 class SourceGroupSettingsTest: public SourceGroupSettings
 {
@@ -120,16 +141,11 @@ private:
 
 void cleanup()
 {
-	FileSystem::remove(m_indexDbPath);
-	FileSystem::remove(m_bookmarkDbPath);
-
-	if (m_sourceFolder.recheckExists())
+	// Removes everything, including the storage backend's sidecar files next to the databases.
+	for (const std::filesystem::directory_entry& entry:
+		 std::filesystem::directory_iterator(projectDirectory().getPath()))
 	{
-		for (const FilePath& path: FileSystem::getFilePathsFromDirectory(m_sourceFolder))
-		{
-			FileSystem::remove(path);
-		}
-		FileSystem::remove(m_sourceFolder);
+		std::filesystem::remove_all(entry.path());
 	}
 }
 
@@ -200,7 +216,7 @@ TEST_CASE("refresh info for all files clears nothing and indexes previously unkn
 {
 	cleanup();
 	{
-		const FilePath sourceFilePath = m_sourceFolder.getConcatenated("main.cpp");
+		const FilePath sourceFilePath = sourceFolder().getConcatenated("main.cpp");
 
 		std::vector<std::shared_ptr<SourceGroup>> sourceGroups;
 		sourceGroups.push_back(
@@ -225,7 +241,7 @@ TEST_CASE("refresh info for all files is empty for disabled source group")
 {
 	cleanup();
 	{
-		const FilePath sourceFilePath = m_sourceFolder.getConcatenated("main.cpp");
+		const FilePath sourceFilePath = sourceFolder().getConcatenated("main.cpp");
 
 		std::shared_ptr<SourceGroupTest> sourceGroup(new SourceGroupTest({sourceFilePath}));
 		sourceGroup->setStatus(SourceGroupStatusType::DISABLED);
@@ -249,7 +265,7 @@ TEST_CASE("refresh info for all files is clears indexed files of disabled source
 {
 	cleanup();
 	{
-		const FilePath sourceFilePath = m_sourceFolder.getConcatenated("main.cpp");
+		const FilePath sourceFilePath = sourceFolder().getConcatenated("main.cpp");
 
 		std::shared_ptr<SourceGroupTest> sourceGroup(new SourceGroupTest({sourceFilePath}));
 		sourceGroup->setStatus(SourceGroupStatusType::DISABLED);
@@ -260,7 +276,7 @@ TEST_CASE("refresh info for all files is clears indexed files of disabled source
 		addFileToFileSystem(sourceFilePath);
 
 		std::shared_ptr<PersistentStorage> storage = std::make_shared<PersistentStorage>(
-			m_indexDbPath, m_bookmarkDbPath);
+			indexDbPath(), bookmarkDbPath());
 		storage->setup();
 		addVeryNewFileToStorage(sourceFilePath, true, true, storage);
 		storage->buildCaches();
@@ -283,9 +299,9 @@ TEST_CASE("refresh info for all files is clears nonindexed files of disabled sou
 {
 	cleanup();
 	{
-		const FilePath upToDateSourceFilePath = m_sourceFolder.getConcatenated(
+		const FilePath upToDateSourceFilePath = sourceFolder().getConcatenated(
 			"up_to_date_file.cpp");
-		const FilePath upToDateHeaderFilePath = m_sourceFolder.getConcatenated(
+		const FilePath upToDateHeaderFilePath = sourceFolder().getConcatenated(
 			"up_to_date_file.h");
 
 		std::shared_ptr<SourceGroupTest> sourceGroup(new SourceGroupTest(
@@ -296,7 +312,7 @@ TEST_CASE("refresh info for all files is clears nonindexed files of disabled sou
 		sourceGroups.push_back(sourceGroup);
 
 		std::shared_ptr<PersistentStorage> storage = std::make_shared<PersistentStorage>(
-			m_indexDbPath, m_bookmarkDbPath);
+			indexDbPath(), bookmarkDbPath());
 		storage->setup();
 
 		const Id upToDateSourceFileId = addVeryNewFileToStorage(
@@ -336,7 +352,7 @@ TEST_CASE("refresh info for updated files is empty for empty storage and empty s
 		sourceGroups.push_back(std::shared_ptr<SourceGroupTest>(new SourceGroupTest({})));
 
 		std::shared_ptr<PersistentStorage> storage = std::make_shared<PersistentStorage>(
-			m_indexDbPath, m_bookmarkDbPath);
+			indexDbPath(), bookmarkDbPath());
 		storage->setup();
 
 		storage->buildCaches();
@@ -391,7 +407,7 @@ RefreshInfo getRefreshInfo(
 	RefreshInfo refreshInfo;
 	cleanup();
 	{
-		const FilePath filePath = m_sourceFolder.getConcatenated("file.extension");
+		const FilePath filePath = sourceFolder().getConcatenated("file.extension");
 
 		const std::set<FilePath> sourceFilePaths =
 			((fileState == SOURCE_FILE) ? std::set<FilePath>({filePath}) : std::set<FilePath>({}));
@@ -410,7 +426,7 @@ RefreshInfo getRefreshInfo(
 		}
 
 		std::shared_ptr<PersistentStorage> storage = std::make_shared<PersistentStorage>(
-			m_indexDbPath, m_bookmarkDbPath);
+			indexDbPath(), bookmarkDbPath());
 		storage->setup();
 
 		if (knownState == UNKNOWN)
@@ -684,9 +700,9 @@ TEST_CASE(
 {
 	cleanup();
 	{
-		const FilePath upToDateSourceFilePath = m_sourceFolder.getConcatenated(
+		const FilePath upToDateSourceFilePath = sourceFolder().getConcatenated(
 			"up_to_date_file.cpp");
-		const FilePath outdatedSourceFilePath = m_sourceFolder.getConcatenated(
+		const FilePath outdatedSourceFilePath = sourceFolder().getConcatenated(
 			"outdated_file.cpp");
 
 		std::vector<std::shared_ptr<SourceGroup>> sourceGroups;
@@ -694,7 +710,7 @@ TEST_CASE(
 			new SourceGroupTest({upToDateSourceFilePath, outdatedSourceFilePath})));
 
 		std::shared_ptr<PersistentStorage> storage = std::make_shared<PersistentStorage>(
-			m_indexDbPath, m_bookmarkDbPath);
+			indexDbPath(), bookmarkDbPath());
 		storage->setup();
 
 		const Id upToDateSourceFileId = addVeryNewFileToStorage(
@@ -735,16 +751,16 @@ TEST_CASE(
 {
 	cleanup();
 	{
-		const FilePath upToDateSourceFilePath = m_sourceFolder.getConcatenated(
+		const FilePath upToDateSourceFilePath = sourceFolder().getConcatenated(
 			"up_to_date_file.cpp");
-		const FilePath outdatedHeaderFilePath = m_sourceFolder.getConcatenated("outdated_file.h");
+		const FilePath outdatedHeaderFilePath = sourceFolder().getConcatenated("outdated_file.h");
 
 		std::vector<std::shared_ptr<SourceGroup>> sourceGroups;
 		sourceGroups.push_back(std::shared_ptr<SourceGroupTest>(new SourceGroupTest(
 			{upToDateSourceFilePath}, {upToDateSourceFilePath, outdatedHeaderFilePath})));
 
 		std::shared_ptr<PersistentStorage> storage = std::make_shared<PersistentStorage>(
-			m_indexDbPath, m_bookmarkDbPath);
+			indexDbPath(), bookmarkDbPath());
 		storage->setup();
 
 		const Id upToDateSourceFileId = addVeryNewFileToStorage(
@@ -783,16 +799,16 @@ TEST_CASE(
 {
 	cleanup();
 	{
-		const FilePath upToDateSourceFilePath = m_sourceFolder.getConcatenated(
+		const FilePath upToDateSourceFilePath = sourceFolder().getConcatenated(
 			"up_to_date_file.cpp");
-		const FilePath outdatedHeaderFilePath = m_sourceFolder.getConcatenated("outdated_file.h");
+		const FilePath outdatedHeaderFilePath = sourceFolder().getConcatenated("outdated_file.h");
 
 		std::vector<std::shared_ptr<SourceGroup>> sourceGroups;
 		sourceGroups.push_back(
 			std::shared_ptr<SourceGroupTest>(new SourceGroupTest({upToDateSourceFilePath})));
 
 		std::shared_ptr<PersistentStorage> storage = std::make_shared<PersistentStorage>(
-			m_indexDbPath, m_bookmarkDbPath);
+			indexDbPath(), bookmarkDbPath());
 		storage->setup();
 
 		const Id upToDateSourceFileId = addVeryNewFileToStorage(
@@ -829,9 +845,9 @@ TEST_CASE("refresh info for updated files does not clear unknown uptodate header
 {
 	cleanup();
 	{
-		const FilePath upToDateSourceFilePath = m_sourceFolder.getConcatenated(
+		const FilePath upToDateSourceFilePath = sourceFolder().getConcatenated(
 			"up_to_date_file.cpp");
-		const FilePath upToDateHeaderFilePath = m_sourceFolder.getConcatenated(
+		const FilePath upToDateHeaderFilePath = sourceFolder().getConcatenated(
 			"up_to_date_file.h");
 
 		std::vector<std::shared_ptr<SourceGroup>> sourceGroups;
@@ -839,7 +855,7 @@ TEST_CASE("refresh info for updated files does not clear unknown uptodate header
 			std::shared_ptr<SourceGroupTest>(new SourceGroupTest({upToDateSourceFilePath})));
 
 		std::shared_ptr<PersistentStorage> storage = std::make_shared<PersistentStorage>(
-			m_indexDbPath, m_bookmarkDbPath);
+			indexDbPath(), bookmarkDbPath());
 		storage->setup();
 
 		const Id upToDateSourceFileId = addVeryNewFileToStorage(
@@ -870,9 +886,9 @@ TEST_CASE(
 {
 	cleanup();
 	{
-		const FilePath outdatedSourceFilePath = m_sourceFolder.getConcatenated(
+		const FilePath outdatedSourceFilePath = sourceFolder().getConcatenated(
 			"outdated_file.cpp");
-		const FilePath upToDateHeaderFilePath = m_sourceFolder.getConcatenated(
+		const FilePath upToDateHeaderFilePath = sourceFolder().getConcatenated(
 			"up_to_date_file.h");
 
 		std::vector<std::shared_ptr<SourceGroup>> sourceGroups;
@@ -880,7 +896,7 @@ TEST_CASE(
 			{outdatedSourceFilePath}, {outdatedSourceFilePath, upToDateHeaderFilePath})));
 
 		std::shared_ptr<PersistentStorage> storage = std::make_shared<PersistentStorage>(
-			m_indexDbPath, m_bookmarkDbPath);
+			indexDbPath(), bookmarkDbPath());
 		storage->setup();
 
 		const Id outdatedSourceFileId = addVeryOldFileToStorage(
@@ -918,11 +934,11 @@ TEST_CASE(
 {
 	cleanup();
 	{
-		const FilePath outdatedSourceFilePath = m_sourceFolder.getConcatenated(
+		const FilePath outdatedSourceFilePath = sourceFolder().getConcatenated(
 			"outdated_file.cpp");
-		const FilePath upToDateSourceFilePath = m_sourceFolder.getConcatenated(
+		const FilePath upToDateSourceFilePath = sourceFolder().getConcatenated(
 			"up_to_date_file.cpp");
-		const FilePath upToDateHeaderFilePath = m_sourceFolder.getConcatenated(
+		const FilePath upToDateHeaderFilePath = sourceFolder().getConcatenated(
 			"up_to_date_file.h");
 
 		std::vector<std::shared_ptr<SourceGroup>> sourceGroups;
@@ -931,7 +947,7 @@ TEST_CASE(
 			{outdatedSourceFilePath, upToDateSourceFilePath, upToDateHeaderFilePath})));
 
 		std::shared_ptr<PersistentStorage> storage = std::make_shared<PersistentStorage>(
-			m_indexDbPath, m_bookmarkDbPath);
+			indexDbPath(), bookmarkDbPath());
 		storage->setup();
 
 		const Id outdatedSourceFileId = addVeryOldFileToStorage(
@@ -972,11 +988,11 @@ TEST_CASE(
 {
 	cleanup();
 	{
-		const FilePath upToDateSourceFilePath = m_sourceFolder.getConcatenated(
+		const FilePath upToDateSourceFilePath = sourceFolder().getConcatenated(
 			"up_to_date_file.cpp");
-		const FilePath upToDateHeaderFilePath = m_sourceFolder.getConcatenated(
+		const FilePath upToDateHeaderFilePath = sourceFolder().getConcatenated(
 			"up_to_date_file.h");
-		const FilePath outOfDateHeaderFilePath = m_sourceFolder.getConcatenated(
+		const FilePath outOfDateHeaderFilePath = sourceFolder().getConcatenated(
 			"out_of_date_file.h");
 
 		std::vector<std::shared_ptr<SourceGroup>> sourceGroups;
@@ -988,7 +1004,7 @@ TEST_CASE(
 			})));
 
 		std::shared_ptr<PersistentStorage> storage = std::make_shared<PersistentStorage>(
-			m_indexDbPath, m_bookmarkDbPath);
+			indexDbPath(), bookmarkDbPath());
 		storage->setup();
 
 		const Id upToDateSourceFileId = addVeryNewFileToStorage(
@@ -1033,11 +1049,11 @@ TEST_CASE(
 {
 	cleanup();
 	{
-		const FilePath upToDateSourceFilePath = m_sourceFolder.getConcatenated(
+		const FilePath upToDateSourceFilePath = sourceFolder().getConcatenated(
 			"up_to_date_file.cpp");
-		const FilePath upToDateHeaderFilePath = m_sourceFolder.getConcatenated(
+		const FilePath upToDateHeaderFilePath = sourceFolder().getConcatenated(
 			"up_to_date_file.h");
-		const FilePath outOfDateHeaderFilePath = m_sourceFolder.getConcatenated(
+		const FilePath outOfDateHeaderFilePath = sourceFolder().getConcatenated(
 			"out_of_date_file.h");
 
 		std::vector<std::shared_ptr<SourceGroup>> sourceGroups;
@@ -1049,7 +1065,7 @@ TEST_CASE(
 			})));
 
 		std::shared_ptr<PersistentStorage> storage = std::make_shared<PersistentStorage>(
-			m_indexDbPath, m_bookmarkDbPath);
+			indexDbPath(), bookmarkDbPath());
 		storage->setup();
 
 		const Id upToDateSourceFileId = addVeryNewFileToStorage(

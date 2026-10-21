@@ -65,7 +65,7 @@ pub const IpcShm = struct {
 
     /// Mark the segment empty (first 4 bytes zero).
     pub fn clearLocked(self: *IpcShm) Error!void {
-        try self.writeLocked(&[_]u8{0} ** 4);
+        try self.writeLocked(&@as([4]u8, @splat(0)));
     }
 
     /// The result of a read-modify-write step: optional replacement bytes to

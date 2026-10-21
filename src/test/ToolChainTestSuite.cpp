@@ -3,11 +3,14 @@
 #include "ToolChain.h"
 #include "utilitySourceGroupCxx.h"
 
+#include <clang/Basic/LangStandard.h>
 #ifndef SRCTRL_MODULE_BUILD
 #include <clang/Tooling/CompilationDatabase.h>
 #endif
 #include <clang/Tooling/JSONCompilationDatabase.h>
+#include <llvm/Config/llvm-config.h>
 
+#include <set>
 #include <string>
 
 // Imports come AFTER all textual #includes (include-before-import rule: textual libc++
@@ -197,7 +200,7 @@ TEST_CASE("CDB replace msvc arguments")
 
 		"-std=c++23", "-std=c++23",
 		"-std=c++11", "-std=c++14",
-		"-std=c17", "-std=c17",
+		"-std=" + ClangCompiler::getLatestCStandard(), "-std=" + ClangCompiler::getLatestCStandard(),
 		"-std=c11", "-std=c99",
 
 		"-std=" + ClangCompiler::getLatestCppDraft(), "-std=" + ClangCompiler::getLatestCppDraft(),
@@ -218,3 +221,39 @@ TEST_CASE("CDB replace msvc arguments")
 		REQUIRE(arguments[i] == expectedClangArguments[i]);
 }
 
+
+// The standards lists are spliced together per LLVM version with #if blocks, so a missing comma
+// at a block boundary glues two names into one ("gnu23" "c2y" -> "gnu23c2y") and still compiles.
+// Every name offered must be one the linked clang accepts for -std=, and none may repeat.
+TEST_CASE("clang compiler offers only standards the linked clang accepts")
+{
+	const auto requireAccepted = [](const std::vector<std::string>& standards) {
+		REQUIRE(!standards.empty());
+		std::set<std::string> seen;
+		for (const std::string& standard: standards)
+		{
+			INFO("-std=" << standard);
+			REQUIRE(clang::LangStandard::getLangStandardForName(standard) != nullptr);
+			REQUIRE(seen.insert(standard).second);
+		}
+	};
+
+	requireAccepted(ClangCompiler::getAvailableCStandards());
+	requireAccepted(ClangCompiler::getAvailableCppStandards());
+}
+
+// C23 is a released standard from clang 20 on (a working draft in 18 and 19), so it becomes the
+// default C standard there; the newest draft is C2y from 19 on.
+TEST_CASE("clang compiler's latest C standard and draft follow the LLVM version")
+{
+#if LLVM_VERSION_MAJOR >= 20
+	REQUIRE(ClangCompiler::getLatestCStandard() == "c23");
+#else
+	REQUIRE(ClangCompiler::getLatestCStandard() == "c17");
+#endif
+#if LLVM_VERSION_MAJOR >= 19
+	REQUIRE(ClangCompiler::getLatestCDraft() == "c2y");
+#else
+	REQUIRE(ClangCompiler::getLatestCDraft() == "c23");
+#endif
+}

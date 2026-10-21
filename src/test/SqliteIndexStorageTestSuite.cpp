@@ -8,6 +8,7 @@
 #ifndef SRCTRL_MODULE_BUILD
 #include "StorageNodeAttribute.h"
 #endif
+#include "TestTempDirectory.h"
 
 // Imports come AFTER all textual #includes (include-before-import rule: textual libc++
 // following BMI-merged declarations trips "cannot add 'abi_tag' in a redeclaration").
@@ -18,7 +19,8 @@ import srctrl.storage;
 
 TEST_CASE("storage adds node successfully")
 {
-	FilePath databasePath("data/SQLiteTestSuite/test.sqlite");
+	const TestTempDirectory tempDirectory{"SqliteIndexStorageTestSuite"};
+	const FilePath databasePath(tempDirectory.getFilePath("test.sqlite"));
 	int nodeCount = -1;
 	{
 		StorageConnection connection(databasePath);
@@ -36,7 +38,8 @@ TEST_CASE("storage adds node successfully")
 
 TEST_CASE("storage round-trips node modifiers")
 {
-	FilePath databasePath("data/SQLiteTestSuite/test.sqlite");
+	const TestTempDirectory tempDirectory{"SqliteIndexStorageTestSuite"};
+	const FilePath databasePath(tempDirectory.getFilePath("test.sqlite"));
 	NodeModifierMask actorModifiers = NODE_MODIFIER_NONE;
 	NodeModifierMask plainModifiers = NODE_MODIFIER_ACTOR;  // sentinel; expect it reset to NONE
 	{
@@ -62,7 +65,8 @@ TEST_CASE("storage merges node modifiers across duplicate inserts by OR")
 	// The same symbol is recorded by many TUs and only some see the flag-bearing declaration
 	// (e.g. NODE_MODIFIER_EXPORTED exists only in the module-wrapper parse; classic TUs never
 	// see `export`). The name-dedup merge must OR modifiers, in both insert orders.
-	FilePath databasePath("data/SQLiteTestSuite/test.sqlite");
+	const TestTempDirectory tempDirectory{"SqliteIndexStorageTestSuite"};
+	const FilePath databasePath(tempDirectory.getFilePath("test.sqlite"));
 	NodeModifierMask flagFirst = NODE_MODIFIER_NONE;
 	NodeModifierMask flagSecond = NODE_MODIFIER_NONE;
 	{
@@ -92,7 +96,8 @@ TEST_CASE("storage merges node modifiers across duplicate inserts by OR")
 
 TEST_CASE("storage round-trips node attributes")
 {
-	FilePath databasePath("data/SQLiteTestSuite/test.sqlite");
+	const TestTempDirectory tempDirectory{"SqliteIndexStorageTestSuite"};
+	const FilePath databasePath(tempDirectory.getFilePath("test.sqlite"));
 	std::vector<StorageNodeAttribute> attributes;
 	{
 		StorageConnection connection(databasePath);
@@ -134,7 +139,8 @@ TEST_CASE("storage round-trips node attributes")
 
 TEST_CASE("storage removes node successfully")
 {
-	FilePath databasePath("data/SQLiteTestSuite/test.sqlite");
+	const TestTempDirectory tempDirectory{"SqliteIndexStorageTestSuite"};
+	const FilePath databasePath(tempDirectory.getFilePath("test.sqlite"));
 	int nodeCount = -1;
 	{
 		StorageConnection connection(databasePath);
@@ -153,7 +159,8 @@ TEST_CASE("storage removes node successfully")
 
 TEST_CASE("storage adds edge successfully")
 {
-	FilePath databasePath("data/SQLiteTestSuite/test.sqlite");
+	const TestTempDirectory tempDirectory{"SqliteIndexStorageTestSuite"};
+	const FilePath databasePath(tempDirectory.getFilePath("test.sqlite"));
 	int edgeCount = -1;
 	{
 		StorageConnection connection(databasePath);
@@ -173,7 +180,8 @@ TEST_CASE("storage adds edge successfully")
 
 TEST_CASE("storage removes edge successfully")
 {
-	FilePath databasePath("data/SQLiteTestSuite/test.sqlite");
+	const TestTempDirectory tempDirectory{"SqliteIndexStorageTestSuite"};
+	const FilePath databasePath(tempDirectory.getFilePath("test.sqlite"));
 	int edgeCount = -1;
 	{
 		StorageConnection connection(databasePath);

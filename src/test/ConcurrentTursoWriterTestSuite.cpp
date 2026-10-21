@@ -14,6 +14,7 @@
 #endif
 #include "SqliteIndexStorage.h"
 #include "StorageConnection.h"
+#include "TestTempDirectory.h"
 #include "TursoSqliteExport.h"
 #include "turso_shim.h"
 
@@ -169,8 +170,9 @@ TEST_CASE("concurrent turso writer: all kinds, concurrent result == serial resul
 {
 	const auto work = makeWorkload(/*batches*/ 150, /*sharedPool*/ 400);
 
-	const Counts serial = runAndCount("data/SQLiteTestSuite/ctw_serial.db", 1, work);
-	const Counts concurrent = runAndCount("data/SQLiteTestSuite/ctw_concurrent.db", 8, work);
+	const TestTempDirectory tempDirectory{"ConcurrentTursoWriterTestSuite"};
+	const Counts serial = runAndCount(tempDirectory.getFilePath("ctw_serial.db"), 1, work);
+	const Counts concurrent = runAndCount(tempDirectory.getFilePath("ctw_concurrent.db"), 8, work);
 
 	REQUIRE(serial.failed == 0);
 	REQUIRE(concurrent.failed == 0);
@@ -195,13 +197,9 @@ TEST_CASE("concurrent turso writer: export lands the drained result in SQLite")
 {
 	const auto work = makeWorkload(/*batches*/ 40, /*sharedPool*/ 120);
 
-	const std::string tursoPath = "data/SQLiteTestSuite/ctw_export.db";
-	const FilePath sqlitePath("data/SQLiteTestSuite/ctw_export.sqlite");
-	for (const char* sfx: {"", "-wal", "-shm", "-log"})
-	{
-		FileSystem::remove(FilePath(tursoPath + sfx));
-	}
-	FileSystem::remove(sqlitePath);
+	const TestTempDirectory tempDirectory{"ConcurrentTursoWriterTestSuite"};
+	const std::string tursoPath = tempDirectory.getFilePath("ctw_export.db");
+	const FilePath sqlitePath(tempDirectory.getFilePath("ctw_export.sqlite"));
 
 	// Seed above 1 (like an incremental-continuity seed) to prove ids are
 	// taken from the writer and land verbatim in SQLite.
@@ -241,12 +239,6 @@ TEST_CASE("concurrent turso writer: export lands the drained result in SQLite")
 		const std::string nodeIdSql = "SELECT id FROM node WHERE serialized_name = 'sym_0'";
 		REQUIRE(connection.legacy().execScalar(nodeIdSql) == writer.scalar(nodeIdSql));
 	}
-
-	for (const char* sfx: {"", "-wal", "-shm", "-log"})
-	{
-		FileSystem::remove(FilePath(tursoPath + sfx));
-	}
-	FileSystem::remove(sqlitePath);
 }
 
 // The S0 correctness gate at the engine level: force a genuine MVCC write-write
@@ -256,11 +248,8 @@ TEST_CASE("concurrent turso writer: export lands the drained result in SQLite")
 // OR-IGNORE batch on a fresh snapshot converges to the correct final state.
 TEST_CASE("concurrent turso writer: conflicted commit rolls back and retries idempotently")
 {
-	const std::string dbPath = "data/SQLiteTestSuite/ctw_conflict.db";
-	for (const char* sfx: {"", "-wal", "-shm", "-log"})
-	{
-		FileSystem::remove(FilePath(dbPath + sfx));
-	}
+	const TestTempDirectory tempDirectory{"ConcurrentTursoWriterTestSuite"};
+	const std::string dbPath = tempDirectory.getFilePath("ctw_conflict.db");
 
 	TsqDb* db = tsq_open(dbPath.c_str());
 	REQUIRE(db != nullptr);
@@ -319,10 +308,6 @@ TEST_CASE("concurrent turso writer: conflicted commit rolls back and retries ide
 	REQUIRE(scalar("SELECT COUNT(*) FROM t WHERE id = 2 AND v = 'b2'") == 1);
 
 	tsq_close(db);
-	for (const char* sfx: {"", "-wal", "-shm", "-log"})
-	{
-		FileSystem::remove(FilePath(dbPath + sfx));
-	}
 }
 
 #endif  // SOURCETRAIL_TURSO_CONCURRENT

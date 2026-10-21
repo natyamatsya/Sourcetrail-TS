@@ -2,9 +2,15 @@
 
 #include "ClangCompat.h"
 
+#include <clang/AST/ASTConsumer.h>
 #include <clang/AST/NestedNameSpecifier.h>
 #include <clang/AST/Type.h>
+#include <clang/Frontend/CompilerInstance.h>
+#include <clang/Frontend/FrontendAction.h>
+#include <clang/Serialization/ASTWriter.h>
+#include <clang/Tooling/Tooling.h>
 
+#include <memory>
 #include <optional>
 
 namespace
@@ -52,6 +58,28 @@ struct MockTypeLocVisitor
 	}
 #endif
 };
+
+// Feeds a header through the clang_compat PCH generator alone (no container writer), so the test
+// sees exactly what the version-specific PCHGenerator constructor call produced.
+class PchBufferAction: public clang::ASTFrontendAction
+{
+public:
+	explicit PchBufferAction(std::shared_ptr<clang::PCHBuffer> buffer): m_buffer(std::move(buffer)) {}
+
+	std::unique_ptr<clang::ASTConsumer> CreateASTConsumer(
+		clang::CompilerInstance& compilerInstance, llvm::StringRef /*inFile*/) override
+	{
+		return clang_compat::createPchGenerator(compilerInstance, "compat.pch", "", m_buffer, false);
+	}
+
+	clang::TranslationUnitKind getTranslationUnitKind() override
+	{
+		return clang::TU_Prefix;
+	}
+
+private:
+	const std::shared_ptr<clang::PCHBuffer> m_buffer;
+};
 }
 
 TEST_CASE("clang compat returns driver option table")
@@ -63,6 +91,21 @@ TEST_CASE("clang compat returns driver option table")
 TEST_CASE("clang compat resource path returns empty for empty binary path")
 {
 	REQUIRE(clang_compat::getResourcesPath("").empty());
+}
+
+TEST_CASE("clang compat PCH generator serializes a header")
+{
+	const auto buffer = std::make_shared<clang::PCHBuffer>();
+
+	const bool success = clang::tooling::runToolOnCodeWithArgs(
+		std::make_unique<PchBufferAction>(buffer),
+		"struct CompatPchStruct { int member; };",
+		{"-x", "c++-header", "-std=c++17"},
+		"compat.h");
+
+	REQUIRE(success);
+	REQUIRE(buffer->IsComplete);
+	REQUIRE(!buffer->Data.empty());
 }
 
 TEST_CASE("clang compat nested-name-specifier helpers handle empty values")

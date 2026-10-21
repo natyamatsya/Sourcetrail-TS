@@ -500,6 +500,15 @@ if (SOURCETRAIL_USE_TURSO)
 		MANIFEST_PATH "${CMAKE_SOURCE_DIR}/src/turso_shim/Cargo.toml"
 		CRATES turso_shim
 	)
+	# Corrosion (v0.5 through at least v0.6.1) hard-codes the Command Line Tools SDK's usr/lib as
+	# an INTERFACE_LINK_DIRECTORIES of every Rust library it imports on macOS. Ahead of everything
+	# on the link line, it makes ld resolve -lSystem/-lc/-lm (Rust std's native libs) from that SDK
+	# rather than the one -isysroot names -- and when the CLT SDK is newer than the selected
+	# Xcode's ld can read (CLT SDK 27 vs Xcode 26.6 on CI: "tapi error: malformed file ... unknown
+	# architecture") every link fails. Those libraries come from the sysroot anyway; drop it.
+	if (APPLE AND TARGET turso_shim-static)
+		set_property(TARGET turso_shim-static PROPERTY INTERFACE_LINK_DIRECTORIES "")
+	endif()
 	message(STATUS "Turso enabled (compare=${SOURCETRAIL_TURSO_COMPARE} concurrent=${SOURCETRAIL_TURSO_CONCURRENT}) — building turso_shim via Corrosion")
 endif()
 
@@ -625,7 +634,7 @@ if (BUILD_CXX_LANGUAGE_PACKAGE)
 	# For further details see https://llvm.org/docs/CMake.html#embedding-llvm-in-your-project
 
 	set(CLANG_MIN_VERSION 18)
-	set(CLANG_MAX_VERSION 23)
+	set(CLANG_MAX_VERSION 24)
 	
 	if (DEFINED CMAKE_MSVC_RUNTIME_LIBRARY)
 		set(savedMsvcRuntimeLibrary "${CMAKE_MSVC_RUNTIME_LIBRARY}")
@@ -889,11 +898,13 @@ if (BUILD_ZIG_LANGUAGE_PACKAGE)
 	set(ZIG_INDEXER_SCHEMA_DIR "${CMAKE_SOURCE_DIR}/abi-schemas/ipc-indexer")
 
 	# Sources that should retrigger a rebuild (the thoth-ipc Zig port + the
-	# indexer package + the shared schemas).
+	# indexer package, including the C headers its build translates for flatcc,
+	# + the shared schemas).
 	file(GLOB_RECURSE ZIG_INDEXER_SOURCES CONFIGURE_DEPENDS
 		"${ZIG_INDEXER_PACKAGE_DIR}/build.zig"
 		"${ZIG_INDEXER_PACKAGE_DIR}/build.zig.zon"
 		"${ZIG_INDEXER_PACKAGE_DIR}/src/*.zig"
+		"${ZIG_INDEXER_PACKAGE_DIR}/include/*.h"
 		"${ZIG_INDEXER_PACKAGE_DIR}/tools/*.sh"
 		"${ZIG_INDEXER_SCHEMA_DIR}/*.fbs"
 		"${CMAKE_SOURCE_DIR}/submodules/thoth-ipc/zig/thoth-ipc/src/*.zig"

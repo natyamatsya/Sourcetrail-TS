@@ -44,6 +44,8 @@ import srctrl.utility;
 // Draft standards:
 // note: use 'c++2c' or 'c++26' for 'Working draft for C++2c' standard
 // note: use 'gnu++2c' or 'gnu++26' for 'Working draft for C++2c with GNU extensions' standard
+// note: use 'c++2d' for 'Working draft for C++2d' standard (clang 23+)
+// note: use 'gnu++2d' for 'Working draft for C++2d with GNU extensions' standard (clang 23+)
 
 static std::vector<std::string> getReleasedCppStandards()
 {
@@ -67,6 +69,9 @@ static std::vector<std::string> getDraftCppStandards()
 {
 	const std::vector<std::string> draftCppStandards = {
 		#ifdef LLVM_VERSION_MAJOR
+			#if LLVM_VERSION_MAJOR >= 23
+				"c++2d", "gnu++2d",
+			#endif
 			#if LLVM_VERSION_MAJOR >= 18
 				"c++2c", "c++26",
 				"gnu++2c", "gnu++26",
@@ -90,10 +95,12 @@ static std::vector<std::string> getDraftCppStandards()
 // note: use 'gnu11' for 'ISO C 2011 with GNU extensions' standard
 // note: use 'c17', 'iso9899:2017', 'c18', or 'iso9899:2018' for 'ISO C 2017' standard
 // note: use 'gnu17' or 'gnu18' for 'ISO C 2017 with GNU extensions' standard
+// note: use 'c23' or 'iso9899:2024' for 'ISO C 2023' standard (clang 20+)
+// note: use 'gnu23' for 'ISO C 2023 with GNU extensions' standard (clang 20+)
 //
 // Draft standards:
-// note: use 'c23' for 'Working Draft for ISO C23' standard
-// note: use 'gnu23' for 'Working Draft for ISO C23 with GNU extensions' standard
+// note: use 'c23' for 'Working Draft for ISO C23' standard (clang 18 and 19)
+// note: use 'gnu23' for 'Working Draft for ISO C23 with GNU extensions' standard (clang 18 and 19)
 // note: use 'c2y' for 'Working Draft for ISO C2y' standard
 // note: use 'gnu2y' for 'Working Draft for ISO C2y with GNU extensions' standard
 
@@ -101,6 +108,9 @@ static std::vector<std::string> getReleasedCStandards()
 {
 	const std::vector<std::string> releasedCStandards = {
 		#ifdef LLVM_VERSION_MAJOR
+			#if LLVM_VERSION_MAJOR >= 20
+				"c23", "gnu23",
+			#endif
 			#if LLVM_VERSION_MAJOR >= 18
 				"c17", "gnu17",
 				"c11", "gnu11",
@@ -116,11 +126,11 @@ static std::vector<std::string> getDraftCStandards()
 {
 	const std::vector<std::string> draftCStandards = {
 		#ifdef LLVM_VERSION_MAJOR
-			#if LLVM_VERSION_MAJOR == 18 || LLVM_VERSION_MAJOR == 19
-				"c23", "gnu23"
-			#endif
 			#if LLVM_VERSION_MAJOR >= 19
-				"c2y", "gnu2y"
+				"c2y", "gnu2y",
+			#endif
+			#if LLVM_VERSION_MAJOR == 18 || LLVM_VERSION_MAJOR == 19
+				"c23", "gnu23",
 			#endif
 		#endif
 	};

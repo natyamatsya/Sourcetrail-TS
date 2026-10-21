@@ -111,7 +111,7 @@ default `OFF`; the presets enable C/C++, Rust, and — on macOS — Swift):
 | `BUILD_CXX_LANGUAGE_PACKAGE`   | C/C++ | Clang/LLVM (vcpkg or system) |
 | `BUILD_RUST_LANGUAGE_PACKAGE`  | Rust  | Rust toolchain (`cargo`) |
 | `BUILD_SWIFT_LANGUAGE_PACKAGE` | Swift | Swift toolchain |
-| `BUILD_ZIG_LANGUAGE_PACKAGE`   | Zig   | `zig` 0.16 and `flatcc` (`brew install zig flatcc`) |
+| `BUILD_ZIG_LANGUAGE_PACKAGE`   | Zig   | `zig` 0.17 and `flatcc` (`brew install zig flatcc`) |
 
 The C/C++ indexer is built into the app; Rust, Swift, and Zig run as separate indexer
 processes that communicate with the app over a shared FlatBuffers wire ABI defined in
