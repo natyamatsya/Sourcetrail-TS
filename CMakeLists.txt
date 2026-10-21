@@ -499,7 +499,9 @@ if (SOURCETRAIL_USE_TURSO)
 	corrosion_import_crate(
 		MANIFEST_PATH "${CMAKE_SOURCE_DIR}/src/turso_shim/Cargo.toml"
 		CRATES turso_shim
+		IMPORTED_CRATES turso_shim_targets
 	)
+	sourcetrail_cache_rust_crates(${turso_shim_targets})
 	# Corrosion (v0.5 through at least v0.6.1) hard-codes the Command Line Tools SDK's usr/lib as
 	# an INTERFACE_LINK_DIRECTORIES of every Rust library it imports on macOS. Ahead of everything
 	# on the link line, it makes ld resolve -lSystem/-lc/-lm (Rust std's native libs) from that SDK
@@ -769,11 +771,13 @@ if (BUILD_RUST_LANGUAGE_PACKAGE)
 	corrosion_import_crate(
 		MANIFEST_PATH "${CMAKE_SOURCE_DIR}/src/rust_indexer/Cargo.toml"
 		CRATES sourcetrail-rust-indexer
+		IMPORTED_CRATES rust_indexer_targets
 	)
 
 	# The crate's build.rs needs flatc, which is not on PATH (especially on
 	# Windows), so point it at the vcpkg-provided host tool:
 	corrosion_set_env_vars(sourcetrail_rust_indexer "FLATC=$<TARGET_FILE:flatbuffers::flatc>")
+	sourcetrail_cache_rust_crates(${rust_indexer_targets})
 
 	# Copy the Rust indexer binary to app/ so AppPath::getRustIndexerFilePath() finds it.
 	# Corrosion produces an IMPORTED target, so we use a custom target with add_dependencies.

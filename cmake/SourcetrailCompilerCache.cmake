@@ -22,6 +22,23 @@ set_property(CACHE SOURCETRAIL_COMPILER_CACHE PROPERTY STRINGS AUTO ON OFF)
 # runs one should not have to install anything.
 set(SOURCETRAIL_COMPILER_CACHE_CANDIDATES sccion sccache ccache)
 
+# The cache that also takes rustc, as cargo's RUSTC_WRAPPER, when `cache` is
+# one that can: sccion and sccache can, ccache cannot. Empty otherwise -- and
+# when the environment already names a wrapper, which is then the one cargo
+# should keep using.
+function(_sourcetrail_rustc_wrapper_for out cache)
+	set(wrapper "")
+	get_filename_component(name "${cache}" NAME_WE)
+	if(name STREQUAL "sccion" OR name STREQUAL "sccache")
+		if(DEFINED ENV{RUSTC_WRAPPER} OR DEFINED ENV{CARGO_BUILD_RUSTC_WRAPPER})
+			message(STATUS "Compiler cache: cargo keeps the RUSTC_WRAPPER the environment sets")
+		else()
+			set(wrapper "${cache}")
+		endif()
+	endif()
+	set(${out} "${wrapper}" PARENT_SCOPE)
+endfunction()
+
 function(sourcetrail_resolve_compiler_cache)
 	if(SOURCETRAIL_COMPILER_CACHE STREQUAL "OFF" OR NOT SOURCETRAIL_COMPILER_CACHE)
 		message(STATUS "Compiler cache: disabled (SOURCETRAIL_COMPILER_CACHE=OFF)")
@@ -50,11 +67,14 @@ function(sourcetrail_resolve_compiler_cache)
 			if(NOT SOURCETRAIL_EXISTING_LAUNCHER)
 				set(existing_usable FALSE)
 			endif()
+			set(existing_exe "${SOURCETRAIL_EXISTING_LAUNCHER}")
 			unset(SOURCETRAIL_EXISTING_LAUNCHER CACHE)
 		endif()
 
 		if(existing_usable)
 			message(STATUS "Compiler cache: using the launcher already set (${existing_exe})")
+			_sourcetrail_rustc_wrapper_for(wrapper "${existing_exe}")
+			set(SOURCETRAIL_RUSTC_WRAPPER "${wrapper}" PARENT_SCOPE)
 			return()
 		endif()
 		message(WARNING
@@ -88,6 +108,8 @@ function(sourcetrail_resolve_compiler_cache)
 	set(CMAKE_C_COMPILER_LAUNCHER   "${SOURCETRAIL_COMPILER_CACHE_EXECUTABLE}" PARENT_SCOPE)
 	set(CMAKE_CXX_COMPILER_LAUNCHER "${SOURCETRAIL_COMPILER_CACHE_EXECUTABLE}" PARENT_SCOPE)
 	message(STATUS "Compiler cache: ${SOURCETRAIL_COMPILER_CACHE_EXECUTABLE}")
+	_sourcetrail_rustc_wrapper_for(wrapper "${SOURCETRAIL_COMPILER_CACHE_EXECUTABLE}")
+	set(SOURCETRAIL_RUSTC_WRAPPER "${wrapper}" PARENT_SCOPE)
 
 	# MSVC's default /Zi writes debug info into one PDB shared by every
 	# translation unit in a target. A compiler cache cannot serve an object whose
@@ -112,4 +134,26 @@ function(sourcetrail_resolve_compiler_cache)
 			"Compiler cache: no .sccion.toml in this checkout -- `sccion --init` writes one, "
 			"and it is what lets two checkouts share cache entries")
 	endif()
+endfunction()
+
+# Run the cargo builds of these Corrosion targets through the compiler cache as
+# well, as RUSTC_WRAPPER, when it is one that takes rustc. Without it every
+# checkout compiles its Rust dependencies from scratch: measured in a fresh
+# worktree, the Rust, Swift and Zig builds were most of a 205 s build whose C++
+# all came from the cache.
+#
+# What rustc caching covers: library crates (rlib, staticlib), compiled without
+# incremental. cargo builds registry dependencies that way in every profile, and
+# runs them with the same paths in every checkout, so those share between
+# checkouts. A crate of this repository keys on its own checkout's path, and
+# binaries, proc-macros and build scripts are linked by rustc and never cached.
+function(sourcetrail_cache_rust_crates)
+	if(NOT SOURCETRAIL_RUSTC_WRAPPER)
+		return()
+	endif()
+	foreach(target IN LISTS ARGN)
+		corrosion_set_env_vars(${target} "RUSTC_WRAPPER=${SOURCETRAIL_RUSTC_WRAPPER}")
+	endforeach()
+	list(JOIN ARGN ", " targets)
+	message(STATUS "Compiler cache: cargo builds of ${targets} go through ${SOURCETRAIL_RUSTC_WRAPPER}")
 endfunction()
