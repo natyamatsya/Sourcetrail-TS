@@ -352,6 +352,7 @@ jobs:
         run: .\vcpkg\bootstrap-vcpkg.bat -disableMetrics
 
       - name: Configure
+        id: configure
         shell: bash
         run: |
           # Same shape as the Linux/macOS job. The project triplet is required:
@@ -371,8 +372,13 @@ jobs:
       - name: Build
         run: cmake --build build --parallel
 
+      # Only after a successful Configure: that is where vcpkg builds every
+      # port, so the archives are complete. A run cancelled or failed during
+      # Configure must not save -- it once stored an all-but-empty archive
+      # under the real key, and every later run took that exact-key "hit",
+      # skipped its own save and built LLVM from scratch again.
       - name: Save vcpkg binary cache
-        if: always() && steps.vcpkg-binary-cache.outputs.cache-hit != 'true'
+        if: always() && steps.configure.outcome == 'success' && steps.vcpkg-binary-cache.outputs.cache-hit != 'true'
         uses: actions/cache/save@v6
         with:
           path: ~/AppData/Local/vcpkg/archives
