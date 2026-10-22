@@ -2,8 +2,8 @@
 //! tools over stdio, and manages app lifecycle + multiple instances (for
 //! comparison tests). Requires the `mcp` feature.
 //!
-//! NOTE: the rmcp surface targets rmcp 3.1.2 (verified with `cargo check
-//! --features mcp`). Design: context/DESIGN_AGENT_MCP_BRIDGE.md.
+//! NOTE: the rmcp surface targets rmcp 3.5 (what Cargo.toml asks for and what
+//! this file is written against). Design: context/DESIGN_AGENT_MCP_BRIDGE.md.
 //!
 //! The SDK carries the protocol, and since 3.x it carries more than one
 //! revision of it: a client that opens with `initialize` negotiates a session
@@ -23,7 +23,7 @@ use rmcp::{
     handler::server::wrapper::Parameters,
     model::{
         CallToolResult, ContentBlock, Implementation, ProtocolVersion, ServerCapabilities,
-        ServerInfo,
+        ServerConfig,
     },
     tool, tool_handler, tool_router,
     transport::stdio,
@@ -62,9 +62,11 @@ impl ManagerHandle {
         self.tx
             .send((Box::new(f), rtx))
             .map_err(|_| McpError::internal_error("manager thread gone", None))?;
+        // `{:#}`: the whole context chain ("attach to instance 'x': <why>"), not
+        // just the outermost context.
         rrx.await
             .map_err(|_| McpError::internal_error("manager dropped reply", None))?
-            .map_err(|e| McpError::internal_error(e.to_string(), None))
+            .map_err(|e| McpError::internal_error(format!("{e:#}"), None))
     }
 }
 
@@ -79,11 +81,15 @@ fn default_true() -> bool {
 }
 
 // --- Tool argument schemas --------------------------------------------------
-// Every driving tool takes an optional `instance` (default = the unnamespaced
-// running app); the manager lazily attaches to it on first use.
+// Every driving tool takes an optional `instance` (default = the one running
+// instance, else the unnamespaced app); the manager lazily attaches to it on
+// first use. Every schema denies unknown fields, nested ones included: a
+// misspelled argument fails naming the field, instead of being dropped so the
+// call goes ahead on the default.
 
 #[derive(serde::Deserialize, rmcp::schemars::JsonSchema)]
 #[schemars(crate = "rmcp::schemars")]
+#[serde(deny_unknown_fields)]
 struct InstanceArg {
     #[serde(default)]
     instance: String,
@@ -91,6 +97,7 @@ struct InstanceArg {
 
 #[derive(serde::Deserialize, rmcp::schemars::JsonSchema)]
 #[schemars(crate = "rmcp::schemars")]
+#[serde(deny_unknown_fields)]
 struct RefPathStep {
     role: String,
     #[serde(default)]
@@ -101,6 +108,7 @@ struct RefPathStep {
 
 #[derive(serde::Deserialize, rmcp::schemars::JsonSchema)]
 #[schemars(crate = "rmcp::schemars")]
+#[serde(deny_unknown_fields)]
 struct ElementRefArg {
     #[serde(default)]
     object_name: String,
@@ -110,6 +118,7 @@ struct ElementRefArg {
 
 #[derive(serde::Deserialize, rmcp::schemars::JsonSchema)]
 #[schemars(crate = "rmcp::schemars")]
+#[serde(deny_unknown_fields)]
 struct InvokeActionArgs {
     /// The element to act on — pass a `ref` object from get_snapshot (object_name + path).
     #[serde(rename = "ref")]
@@ -130,6 +139,7 @@ struct InvokeActionArgs {
 
 #[derive(serde::Deserialize, rmcp::schemars::JsonSchema)]
 #[schemars(crate = "rmcp::schemars")]
+#[serde(deny_unknown_fields)]
 struct CaptureElementArgs {
     /// The element to screenshot — pass a `ref` from get_snapshot.
     #[serde(rename = "ref")]
@@ -146,6 +156,7 @@ struct CaptureElementArgs {
 
 #[derive(serde::Deserialize, rmcp::schemars::JsonSchema)]
 #[schemars(crate = "rmcp::schemars")]
+#[serde(deny_unknown_fields)]
 struct SetLogFilterArgs {
     /// Qt category filter rules (QLoggingCategory::setFilterRules), e.g.
     /// "qt.qpa.*=false\nmyapp.net.debug=true". Empty leaves Qt emission as-is.
@@ -168,6 +179,7 @@ fn default_warning() -> String {
 
 #[derive(serde::Deserialize, rmcp::schemars::JsonSchema)]
 #[schemars(crate = "rmcp::schemars")]
+#[serde(deny_unknown_fields)]
 struct PollEventsArgs {
     /// Cursor: return events with seq greater than this. Start at 0; pass the
     /// returned `latest_seq` next time.
@@ -179,6 +191,7 @@ struct PollEventsArgs {
 
 #[derive(serde::Deserialize, rmcp::schemars::JsonSchema)]
 #[schemars(crate = "rmcp::schemars")]
+#[serde(deny_unknown_fields)]
 struct QueryArgs {
     query: String,
     #[serde(default)]
@@ -187,6 +200,7 @@ struct QueryArgs {
 
 #[derive(serde::Deserialize, rmcp::schemars::JsonSchema)]
 #[schemars(crate = "rmcp::schemars")]
+#[serde(deny_unknown_fields)]
 struct ActivateNodeArgs {
     #[serde(default)]
     serialized_name: Option<String>,
@@ -198,6 +212,7 @@ struct ActivateNodeArgs {
 
 #[derive(serde::Deserialize, rmcp::schemars::JsonSchema)]
 #[schemars(crate = "rmcp::schemars")]
+#[serde(deny_unknown_fields)]
 struct PathArgs {
     path: String,
     #[serde(default)]
@@ -206,6 +221,7 @@ struct PathArgs {
 
 #[derive(serde::Deserialize, rmcp::schemars::JsonSchema)]
 #[schemars(crate = "rmcp::schemars")]
+#[serde(deny_unknown_fields)]
 struct TabArgs {
     /// Tab id (from get_ui_state.tabs[].tab_id).
     tab_id: u64,
@@ -215,6 +231,7 @@ struct TabArgs {
 
 #[derive(serde::Deserialize, rmcp::schemars::JsonSchema)]
 #[schemars(crate = "rmcp::schemars")]
+#[serde(deny_unknown_fields)]
 struct SnapshotArgs {
     /// Raw object tree (widgets + Q_PROPERTY bag) instead of the default accessibility tree.
     #[serde(default)]
@@ -225,6 +242,7 @@ struct SnapshotArgs {
 
 #[derive(serde::Deserialize, rmcp::schemars::JsonSchema)]
 #[schemars(crate = "rmcp::schemars")]
+#[serde(deny_unknown_fields)]
 struct StartArgs {
     /// Path to the Sourcetrail binary to launch.
     bin: String,
@@ -242,8 +260,11 @@ struct StartArgs {
 
 #[derive(serde::Deserialize, rmcp::schemars::JsonSchema)]
 #[schemars(crate = "rmcp::schemars")]
+#[serde(deny_unknown_fields)]
 struct KillArgs {
-    id: String,
+    /// The instance to stop; empty = the one running instance.
+    #[serde(default)]
+    instance: String,
 }
 
 // --- MCP server -------------------------------------------------------------
@@ -389,10 +410,10 @@ impl SourcetrailServer {
 
     #[tool(description = "Kill a spawned instance (or detach an attached one) and forget it.")]
     async fn kill_instance(&self, Parameters(a): Parameters<KillArgs>) -> Result<CallToolResult, McpError> {
-        ok_json(self.mgr.call(move |m| { m.kill(&a.id)?; Ok(json!({ "killed": a.id })) }).await?)
+        ok_json(self.mgr.call(move |m| Ok(json!({ "killed": m.kill(&a.instance)? }))).await?)
     }
 
-    #[tool(description = "List known instances (spawned or attached) and their ids.")]
+    #[tool(description = "List known instances (spawned or attached): id, pid, running, exit_code, bin, console_file, and starts that failed.")]
     async fn list_instances(&self) -> Result<CallToolResult, McpError> {
         ok_json(self.mgr.call(|m| Ok(m.list())).await?)
     }
@@ -400,11 +421,11 @@ impl SourcetrailServer {
 
 #[tool_handler]
 impl ServerHandler for SourcetrailServer {
-    fn get_info(&self) -> ServerInfo {
+    fn get_info(&self) -> ServerConfig {
         // Built with the SDK's own builders rather than a struct literal: these
         // types are `#[non_exhaustive]`, so a revision that adds a field is a
         // field this file never has to learn about.
-        ServerInfo::new(ServerCapabilities::builder().enable_tools().build())
+        ServerConfig::new(ServerCapabilities::builder().enable_tools().build())
             // The newest revision the SDK implements. Older clients are still
             // answered in their own: rmcp negotiates per connection, so one
             // binary serves an editor on 2025-06-18 and one on 2026-07-28

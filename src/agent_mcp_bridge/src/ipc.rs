@@ -31,6 +31,16 @@ fn thoth_token(build_id: &str) -> Option<&str> {
     build_id.split('+').find_map(|t| t.strip_prefix("thoth-ipc:"))
 }
 
+/// The error for a command the app refused. The app's own refusals already start
+/// with "rejected: ...", so say it once rather than "X rejected: rejected: ...".
+fn rejection(label: &str, message: &str) -> anyhow::Error {
+    if message.starts_with("rejected") {
+        anyhow!("{label} {message}")
+    } else {
+        anyhow!("{label} rejected: {message}")
+    }
+}
+
 pub struct Bridge {
     cmd: Route,
     cmd_name: String,
@@ -471,7 +481,7 @@ impl Bridge {
         self.send(&build(id))?;
         let (ok, msg, _) = self.await_ack(id, timeout)?;
         if !ok {
-            bail!("{label} rejected: {msg}");
+            return Err(rejection(label, &msg));
         }
         Ok((id, msg))
     }
@@ -633,7 +643,7 @@ impl Bridge {
                 Incoming::SearchCompleted(v) => return Ok(v),
                 Incoming::CommandResult { request_id: rid, ok, message } if rid == id => {
                     if !ok {
-                        bail!("search rejected: {message}");
+                        return Err(rejection("search", &message));
                     }
                     acked = true; // accepted — the SearchCompleted event is on its way
                 }
@@ -765,5 +775,17 @@ impl Bridge {
             (rank, -score) // lower rank first, higher score first
         });
         Ok(json!({ "query": query, "matches": items }))
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::rejection;
+
+    #[test]
+    fn a_rejection_says_rejected_once() {
+        assert_eq!(rejection("activate_node", "rejected: no project loaded").to_string(),
+                   "activate_node rejected: no project loaded");
+        assert_eq!(rejection("search", "unknown command").to_string(), "search rejected: unknown command");
     }
 }
