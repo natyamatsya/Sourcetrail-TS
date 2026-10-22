@@ -76,7 +76,7 @@ Topics: describe() with no topic lists them all.",
         summary: "Spawn, attach to, list, and stop Sourcetrail processes; protocol version check.",
         tools: &["instance_start", "instance_stop", "instance_list", "instance_handshake"],
         doc: "\
-instance_start { bin, id?, project?, headless=true, profile=\"agent\", fresh=false } -> { id }
+instance_start { bin, id?, project?, headless=true, profile=\"agent\", fresh=false, debugger? } -> { id }
   Spawns `bin` with --agent-instance <id> (channels st.agent.<id>.*) and returns once the app \
 answers the handshake. id defaults to the binary's git label <branch>-<shorthash>, so two \
 builds run side by side for comparisons. headless sets QT_QPA_PLATFORM=offscreen. `project` \
@@ -104,6 +104,41 @@ app_version, app_build_id, bridge_build_id, instance_id, skew, wire }
   The connect-time GetInfo -> AppInfo exchange. skew: match | app_older (commands this \
 bridge added are unknown to the app: rebuild the app) | app_newer (rebuild the bridge). \
 wire: whether both sides were built against the same thoth-ipc.",
+    },
+    Topic {
+        name: "debug",
+        summary: "Crash dumps, live and post-mortem debugging through the platform debugger (cdb / lldb).",
+        tools: &["instance_debug", "instance_debug_command", "instance_debug_dump"],
+        doc: "\
+Every instance instance_start launches gets the platform debugger attached right after the \
+handshake (debugger: false skips it): cdb on Windows (Debugging Tools for Windows; CDB_PATH), \
+lldb on macOS. On a crash (an exception nobody handled: access violation, abort/qFatal, stack \
+overflow, an unhandled C++ exception) the debugger writes a full dump beside the instance's \
+console file and holds the app stopped at the fault. instance_list then shows `stopped` (the \
+exception and frame) and `dump_written`; every other tool on that instance fails at once with \
+the stop, and a call already waiting says so when it times out.
+
+instance_debug { instance?, pid?, break_in=false } -> { debugger, dump, dump_written, \
+debugger_console, connect, stopped }
+  Attaches if no debugger is attached yet (an app you started yourself: pass its pid). \
+break_in: true stops the app now and returns the stop; resume it before driving the UI \
+again, a stopped app answers nothing.
+
+instance_debug_command { instance?, command } -> { output, stopped }
+  A command in the debugger's own language. A running app is stopped for it and resumed \
+after; a stopped one stays stopped. cdb: `.ecxr; kb` (the crash's stack), `~*k` (all \
+threads), `!analyze -v`, `.frame N; dv` (locals), `bp module!Class::method`, `g` (resume, on \
+its own). lldb: `bt all`, `frame select N`, `frame variable`, `breakpoint set -n \
+Class::method`, `process continue`. Symbols: a build with debug information (e.g. the \
+reldbg preset) names Sourcetrail's own frames; a Release build shows bare offsets.
+
+instance_debug_dump { path, id? } -> { id, debugger, dump, stopped }
+  Opens a dump post-mortem (an earlier instance's `dump`, or one from elsewhere) as an id for \
+instance_debug_command; instance_stop closes it.
+
+`connect` is for a human alongside: `cdb -remote <connect>`, or lldb's MCP server. Dumps are \
+pruned at instance_start to the 3 newest (SOURCETRAIL_MCP_KEEP_DUMPS; 0 keeps all), never one \
+an instance or an open dump points at.",
     },
     Topic {
         name: "state",
@@ -255,6 +290,8 @@ filter in place.",
 /// Topic names the catalog has also been asked for.
 const TOPIC_ALIASES: &[(&str, &str)] = &[
     ("instance", "instances"),
+    ("debugger", "debug"),
+    ("crash", "debug"),
     ("navigation", "nav"),
     ("log", "logs"),
 ];

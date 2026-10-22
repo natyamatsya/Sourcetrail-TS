@@ -65,9 +65,30 @@ impl ManagerHandle {
             .map_err(|_| McpError::internal_error("manager thread gone", None))?;
         // `{:#}`: the whole context chain ("attach to instance 'x': <why>"), not
         // just the outermost context.
-        rrx.await
-            .map_err(|_| McpError::internal_error("manager dropped reply", None))?
-            .map_err(|e| McpError::internal_error(format!("{e:#}"), None))
+        let mut message = match rrx.await.map_err(|_| McpError::internal_error("manager dropped reply", None))? {
+            Ok(v) => return Ok(v),
+            Err(e) => format!("{e:#}"),
+        };
+        // An app that stopped in its debugger during the call (a crash, a
+        // breakpoint) answers nothing: say so rather than only "timed out".
+        if message.contains("timed out") {
+            if let Ok(Value::String(stops)) = self.call_raw(|m| Ok(json!(m.debugger_stops()))).await {
+                if !stops.is_empty() {
+                    message.push_str(&format!(". Stopped in the debugger: {stops} (instance_debug_command)"));
+                }
+            }
+        }
+        Err(McpError::internal_error(message, None))
+    }
+
+    /// A job without the error formatting of [`Self::call`].
+    async fn call_raw<F>(&self, f: F) -> anyhow::Result<Value>
+    where
+        F: FnOnce(&mut InstanceManager) -> anyhow::Result<Value> + Send + 'static,
+    {
+        let (rtx, rrx) = oneshot::channel();
+        self.tx.send((Box::new(f), rtx)).map_err(|_| anyhow::anyhow!("manager thread gone"))?;
+        rrx.await.map_err(|_| anyhow::anyhow!("manager dropped reply"))?
     }
 }
 
@@ -279,6 +300,48 @@ struct StartArgs {
     /// Run on a throwaway copy of the profile (deleted when the instance stops).
     #[serde(default)]
     fresh: bool,
+    /// Attach the platform debugger (crash dumps, live debugging); default: when
+    /// one is installed (cdb on Windows, lldb on macOS).
+    #[serde(default)]
+    debugger: Option<bool>,
+}
+
+#[derive(serde::Deserialize, rmcp::schemars::JsonSchema)]
+#[schemars(crate = "rmcp::schemars")]
+#[serde(deny_unknown_fields)]
+struct DebugArgs {
+    /// The instance to debug; empty = the one running instance.
+    #[serde(default)]
+    instance: String,
+    /// For an app the bridge attached to rather than started: its process id.
+    #[serde(default)]
+    pid: Option<u32>,
+    /// Stop the app right away and return the stop.
+    #[serde(default)]
+    break_in: bool,
+}
+
+#[derive(serde::Deserialize, rmcp::schemars::JsonSchema)]
+#[schemars(crate = "rmcp::schemars")]
+#[serde(deny_unknown_fields)]
+struct DebugCommandArgs {
+    /// The instance (or open dump) whose debugger runs the command.
+    #[serde(default)]
+    instance: String,
+    /// A command in the debugger's own language (cdb: `~*k`, `.ecxr; k`,
+    /// `!analyze -v`, `g`; lldb: `bt all`, `process continue`).
+    command: String,
+}
+
+#[derive(serde::Deserialize, rmcp::schemars::JsonSchema)]
+#[schemars(crate = "rmcp::schemars")]
+#[serde(deny_unknown_fields)]
+struct DebugDumpArgs {
+    /// The dump to open (`.dmp` on Windows, a core on macOS).
+    path: String,
+    /// The id to address it by; default `dump-<file stem>`.
+    #[serde(default)]
+    id: String,
 }
 
 #[derive(serde::Deserialize, rmcp::schemars::JsonSchema)]
@@ -388,6 +451,7 @@ impl SourcetrailServer {
                         headless: a.headless,
                         profile: a.profile,
                         fresh: a.fresh,
+                        debugger: a.debugger,
                     })?;
                     Ok(json!({ "id": id }))
                 })
@@ -400,7 +464,7 @@ impl SourcetrailServer {
         ok_json(self.mgr.call(move |m| Ok(json!({ "killed": m.kill(&a.instance)? }))).await?)
     }
 
-    #[tool(description = "List known instances. Returns { instances: [ { id, spawned, pid, running, exit_code?, bin?, console_file?, qt?, user_data_dir?, fresh? } | { id, start_failed } ] }.")]
+    #[tool(description = "List known instances and open dumps. Returns { instances: [ { id, pid, running, exit_code?, stopped?, dump?, console_file?, ... } | { id, start_failed } ] }.")]
     async fn instance_list(&self) -> Result<CallToolResult, McpError> {
         ok_json(self.mgr.call(|m| Ok(m.list())).await?)
     }
@@ -408,6 +472,21 @@ impl SourcetrailServer {
     #[tool(description = "Check an instance's protocol version against the bridge's. Returns { ok, bridge_protocol_version, app_protocol_version, app_version, skew: match|app_older|app_newer, wire }.")]
     async fn instance_handshake(&self, Parameters(a): Parameters<InstanceArg>) -> Result<CallToolResult, McpError> {
         ok_json(self.mgr.call(move |m| Ok(m.get_or_attach(&a.instance)?.bridge().handshake())).await?)
+    }
+
+    #[tool(description = "Attach the platform debugger to an instance (instance_start already does) or stop it with break_in. Returns { debugger, dump, dump_written, stopped, connect }; describe('debug').")]
+    async fn instance_debug(&self, Parameters(a): Parameters<DebugArgs>) -> Result<CallToolResult, McpError> {
+        ok_json(self.mgr.call(move |m| m.debug(&a.instance, a.pid, a.break_in)).await?)
+    }
+
+    #[tool(description = "Run a debugger command (cdb: ~*k, .ecxr; k, !analyze -v, g; lldb: bt all) on an instance or open dump; a running app is stopped for it and resumed. Returns { output, stopped }.")]
+    async fn instance_debug_command(&self, Parameters(a): Parameters<DebugCommandArgs>) -> Result<CallToolResult, McpError> {
+        ok_json(self.mgr.call(move |m| m.debug_command(&a.instance, &a.command)).await?)
+    }
+
+    #[tool(description = "Open a crash dump post-mortem in the platform debugger, as an id for instance_debug_command; instance_stop closes it. Returns { id, debugger, dump, stopped }.")]
+    async fn instance_debug_dump(&self, Parameters(a): Parameters<DebugDumpArgs>) -> Result<CallToolResult, McpError> {
+        ok_json(self.mgr.call(move |m| m.open_dump(std::path::Path::new(&a.path), &a.id)).await?)
     }
 
     // --- state + events ---

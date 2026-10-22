@@ -10,7 +10,7 @@
 //! (`<branch>-<shorthash>`), so pointing the bridge at a checkout self-identifies
 //! the version under test in the channel namespace.
 
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::path::{Path, PathBuf};
 use std::process::{Child, Command, Stdio};
 use std::time::{Duration, Instant};
@@ -18,6 +18,7 @@ use std::time::{Duration, Instant};
 use anyhow::{anyhow, bail, Context, Result};
 use serde_json::{json, Value};
 
+use crate::debugger::{self, DebugSession};
 use crate::ipc::Bridge;
 
 /// How long to wait for a freshly spawned app to open its channels.
@@ -42,6 +43,9 @@ pub struct StartOpts {
     /// Run on a throwaway copy of the profile, removed when the instance goes: a
     /// clean start that keeps what the profile holds, and changes that never persist.
     pub fresh: bool,
+    /// Attach the platform debugger once the app is up (crash dumps, live
+    /// debugging); `None` = whenever one is installed.
+    pub debugger: Option<bool>,
 }
 
 /// The profile that means "the developer's own settings": no --user-data-dir.
@@ -57,20 +61,29 @@ pub struct AppInstance {
     bridge: Bridge,
     /// What the instance was started with (spawned instances only).
     launch: Option<Launch>,
+    /// The debugger attached to it, if any (see [`InstanceManager::debug`]).
+    debug: Option<DebugSession>,
 }
 
 /// Launch facts reported by `instance_list`.
 struct Launch {
     bin: PathBuf,
     headless: bool,
-    /// Where the app's stdout and stderr go (see [`InstanceManager::start`]).
-    console_file: PathBuf,
+    /// The run's files share this path without extension: `.console.txt` (the
+    /// app's stdout and stderr), and with a debugger `.dmp`, `.cdb.log`, ...
+    stem: PathBuf,
     /// The Qt installation put on the app's PATH (see [`qt_prefix`]).
     qt: Option<PathBuf>,
     /// The user-data directory passed to the app (--user-data-dir), if isolated.
     user_data_dir: Option<PathBuf>,
     /// `user_data_dir` is a throwaway copy, deleted on drop.
     fresh_copy: bool,
+}
+
+impl Launch {
+    fn console_file(&self) -> PathBuf {
+        with_suffix(&self.stem, ".console.txt")
+    }
 }
 
 impl Drop for Launch {
@@ -92,27 +105,36 @@ impl AppInstance {
         &mut self.bridge
     }
 
-    /// Exit status of a spawned instance that is gone (`None` while it runs, and
-    /// for an attached one, whose process the bridge does not own).
-    fn exit_status(&mut self) -> Option<std::process::ExitStatus> {
-        self.child.as_mut()?.try_wait().ok().flatten()
+    /// Exit code of a spawned instance that is gone (`None` while it runs, held
+    /// at a fault by its debugger included, and for an attached one, whose
+    /// process the bridge does not own).
+    fn exit_code(&mut self) -> Option<i32> {
+        debugger::child_exit(self.child.as_mut()?, self.debug.as_ref())
     }
 
     fn describe(&mut self) -> Value {
-        let exit = self.exit_status();
+        let exit = self.exit_code();
         let mut v = json!({
             "id": self.id,
             "spawned": self.is_spawned(),
             "pid": self.child.as_ref().map(Child::id),
             "running": exit.is_none(),
         });
-        if let Some(status) = exit {
-            v["exit_code"] = json!(status.code());
+        if let Some(code) = exit {
+            v["exit_code"] = json!(format!("0x{:08x}", code as u32));
+        }
+        if let Some(d) = &self.debug {
+            if let (Value::Object(m), Value::Object(dbg)) = (&mut v, d.describe()) {
+                m.extend(dbg);
+            }
+            if exit.is_none() {
+                v["stopped"] = json!(d.stop_status());
+            }
         }
         if let Some(l) = &self.launch {
             v["bin"] = json!(l.bin.display().to_string());
             v["headless"] = json!(l.headless);
-            v["console_file"] = json!(l.console_file.display().to_string());
+            v["console_file"] = json!(l.console_file().display().to_string());
             v["qt"] = json!(l.qt.as_ref().map(|q| q.display().to_string()));
             v["user_data_dir"] = json!(l.user_data_dir.as_ref().map(|d| d.display().to_string()));
             v["fresh"] = json!(l.fresh_copy);
@@ -125,7 +147,14 @@ impl Drop for AppInstance {
     fn drop(&mut self) {
         if let Some(mut child) = self.child.take() {
             let _ = child.kill();
-            let _ = child.wait();
+            // A process its debugger holds (at a fault, or just attached) cannot be
+            // reaped until the debugger lets go: on Windows the wait blocks for
+            // good. So end the debugger first, then wait, bounded.
+            self.debug.take();
+            let deadline = Instant::now() + Duration::from_secs(5);
+            while !matches!(child.try_wait(), Ok(Some(_))) && Instant::now() < deadline {
+                std::thread::sleep(Duration::from_millis(20));
+            }
         }
         // `launch` drops after this body, so a fresh copy of a profile is removed
         // only once the app that used it is gone.
@@ -137,11 +166,13 @@ pub struct InstanceManager {
     /// Why the last `start` of an id failed. A later call on that id says so,
     /// instead of attaching to an app that never came up.
     failed_starts: HashMap<String, String>,
+    /// Dumps open post-mortem (`instance_debug_dump`), by id.
+    dumps: HashMap<String, DebugSession>,
 }
 
 impl InstanceManager {
     pub fn new() -> Self {
-        Self { instances: HashMap::new(), failed_starts: HashMap::new() }
+        Self { instances: HashMap::new(), failed_starts: HashMap::new(), dumps: HashMap::new() }
     }
 
     /// Get the instance for `id`, lazily **attaching** to an already-running app if
@@ -151,7 +182,28 @@ impl InstanceManager {
     /// An empty `id` is the running app: the one running instance when the bridge
     /// knows exactly one, else the unnamespaced `st.agent.*` channels (see
     /// [`Self::resolve`]).
+    ///
+    /// An instance stopped in its debugger answers nothing, so this fails at once
+    /// with the stop instead of letting the call time out.
     pub fn get_or_attach(&mut self, id: &str) -> Result<&mut AppInstance> {
+        let instance = self.lookup(id)?;
+        if let Some(session) = &instance.debug {
+            if let Some(stopped) = session.stop_status() {
+                // instance.id, not the argument: an empty one resolved to this.
+                bail!(
+                    "instance '{}' is stopped in the debugger ({stopped}) and answers nothing until it runs: \
+                     inspect it with instance_debug_command, resume it with the command \"{}\"",
+                    instance.id,
+                    session.resume_command()
+                );
+            }
+        }
+        Ok(instance)
+    }
+
+    /// [`Self::get_or_attach`] without the stopped-in-the-debugger check: for the
+    /// debugger tools, which work on a stopped instance.
+    fn lookup(&mut self, id: &str) -> Result<&mut AppInstance> {
         let resolved = self.resolve(id);
         let id: &str = &resolved;
         if !self.instances.contains_key(id) {
@@ -187,16 +239,21 @@ impl InstanceManager {
                      Start it with instance_start, or launch Sourcetrail with --agent-instance {id}."
                 );
             }
-            self.instances
-                .insert(id.to_string(), AppInstance { id: id.to_string(), child: None, bridge, launch: None });
+            self.instances.insert(
+                id.to_string(),
+                AppInstance { id: id.to_string(), child: None, bridge, launch: None, debug: None },
+            );
         }
         let instance = self.instances.get_mut(id).unwrap();
-        // A spawned instance that is gone: say so, rather than failing later with
-        // "no receiver" on its channels.
-        if let Some(status) = instance.exit_status() {
-            let console = instance.launch.as_ref().map(|l| l.console_file.display().to_string());
+        // A spawned instance that is gone: say so (and where its crash dump is),
+        // rather than failing later with "no receiver" on its channels.
+        if let Some(code) = instance.exit_code() {
+            let console = instance.launch.as_ref().map(|l| l.console_file().display().to_string());
+            let dump = instance.debug.as_ref().map(DebugSession::dump_path).filter(|d| d.is_file());
+            let dump = dump.map_or(String::new(), |d| format!("; crash dump: {}", d.display()));
             bail!(
-                "instance '{id}' is not running (it exited: {status}); its console output is in {}",
+                "instance '{id}' is not running (exit code 0x{:08x}{dump}); its console output is in {}",
+                code as u32,
                 console.unwrap_or_default()
             );
         }
@@ -208,7 +265,7 @@ impl InstanceManager {
         let mut ids: Vec<String> = self
             .instances
             .iter_mut()
-            .filter_map(|(id, i)| (i.is_spawned() && i.exit_status().is_none()).then(|| id.clone()))
+            .filter_map(|(id, i)| (i.is_spawned() && i.exit_code().is_none()).then(|| id.clone()))
             .collect();
         ids.sort();
         ids
@@ -252,6 +309,7 @@ impl InstanceManager {
         if self.instances.contains_key(&id) {
             bail!("instance '{id}' already exists (stop it first or pass a distinct id)");
         }
+        self.prune_dumps();
         match self.spawn(&id, opts) {
             Ok(()) => {
                 self.failed_starts.remove(&id);
@@ -275,7 +333,8 @@ impl InstanceManager {
         // stdout, and one console line from the app (the console logger writes to
         // std::cout) corrupts the protocol stream. Console output goes to a file
         // instead, so a crash's last words (qFatal, CRT asserts) survive.
-        let console_file = new_run_path(id, "console.txt")?;
+        let stem = new_run_stem(id)?;
+        let console_file = with_suffix(&stem, ".console.txt");
         let console = std::fs::File::create(&console_file)
             .with_context(|| format!("create console file {}", console_file.display()))?;
         cmd.stdin(Stdio::null())
@@ -309,11 +368,20 @@ impl InstanceManager {
         let child = cmd
             .spawn()
             .with_context(|| format!("spawn {}", opts.bin.display()))?;
-        let launch =
-            Launch { bin: opts.bin.clone(), headless: opts.headless, console_file, qt, user_data_dir, fresh_copy };
+        let launch = Launch { bin: opts.bin.clone(), headless: opts.headless, stem, qt, user_data_dir, fresh_copy };
 
         // Poll until the app answers the handshake (or it died / timed out).
         let mut instance = wait_for_ready(id, child, launch)?;
+
+        // The debugger attaches once the app is up (see debugger.rs for why not at
+        // launch). Its files go beside the instance's console file.
+        if opts.debugger.unwrap_or_else(debugger::available) {
+            let pid = instance.child.as_ref().map(Child::id).unwrap_or_default();
+            let stem = instance.launch.as_ref().map(|l| l.stem.clone()).unwrap_or_default();
+            instance.debug = Some(
+                debugger::attach(pid, id, &stem).context("attach the debugger (pass debugger: false to skip)")?,
+            );
+        }
 
         // Optionally load a project right away.
         if let Some(project) = &opts.project {
@@ -323,20 +391,30 @@ impl InstanceManager {
         Ok(())
     }
 
-    /// Kill (if spawned) and forget an instance. Returns the id it acted on, which
-    /// an empty argument resolves to.
+    /// Kill (if spawned) and forget an instance, or close an open dump. Returns
+    /// the id it acted on, which an empty argument resolves to.
     pub fn kill(&mut self, id: &str) -> Result<String> {
-        let id = self.resolve(id);
+        // One open dump is as unambiguous a default as one running instance.
+        let id = match self.resolve(id) {
+            r if !r.is_empty() => r,
+            _ if self.dumps.len() == 1 && !self.instances.contains_key("") => {
+                self.dumps.keys().next().cloned().unwrap_or_default()
+            }
+            r => r,
+        };
         if id.is_empty() && !self.instances.contains_key("") {
-            bail!("`instance` is needed: no single running instance to default to (instance_list)");
+            bail!("`instance` is needed: no single running instance or open dump to default to (instance_list)");
         }
-        // Drop kills the child.
-        self.instances.remove(&id).ok_or_else(|| anyhow!("no such instance '{id}' (instance_list)"))?;
+        // Drop kills the child (and ends the debugger first).
+        if self.instances.remove(&id).is_none() && self.dumps.remove(&id).is_none() {
+            bail!("no such instance '{id}' (instance_list)");
+        }
         Ok(id)
     }
 
     pub fn list(&mut self) -> Value {
         let mut items: Vec<Value> = self.instances.values_mut().map(AppInstance::describe).collect();
+        items.extend(self.dumps.iter().map(|(id, session)| describe_dump(id, session)));
         items.extend(
             self.failed_starts
                 .iter()
@@ -345,6 +423,114 @@ impl InstanceManager {
         );
         json!({ "instances": items })
     }
+
+    /// Attach the platform debugger to an instance (if none is attached yet) and
+    /// describe the session. A spawned instance is found by id; for an app the
+    /// bridge attached to, pass its `pid`. `break_in` stops it right away.
+    pub fn debug(&mut self, id: &str, pid: Option<u32>, break_in: bool) -> Result<Value> {
+        let instance = self.lookup(id)?;
+        if instance.debug.is_none() {
+            let pid = instance
+                .child
+                .as_ref()
+                .map(Child::id)
+                .or(pid)
+                .ok_or_else(|| anyhow!("instance '{}' was not started by the bridge: pass its `pid`", instance.id))?;
+            let stem = match &instance.launch {
+                Some(l) => l.stem.clone(),
+                None => new_run_stem(&format!("{}-attached-{pid}", instance.id))?,
+            };
+            instance.debug = Some(debugger::attach(pid, &instance.id, &stem)?);
+        }
+        let session = instance.debug.as_ref().expect("attached above");
+        let mut v = session.describe();
+        if break_in {
+            v["stopped"] = json!(session.break_in()?);
+            v["next"] = json!(format!(
+                "The app is stopped in the debugger: inspect it with instance_debug_command, then resume it \
+                 with the command \"{}\" before driving the UI again.",
+                session.resume_command()
+            ));
+        } else {
+            v["stopped"] = json!(session.stop_status());
+        }
+        Ok(v)
+    }
+
+    /// Open a dump post-mortem in the platform debugger, as the pseudo-instance
+    /// `id` (default: `dump-<file stem>`) for instance_debug_command; closed by
+    /// [`Self::kill`].
+    pub fn open_dump(&mut self, path: &Path, id: &str) -> Result<Value> {
+        let id = if id.is_empty() {
+            format!("dump-{}", sanitize(&path.file_stem().unwrap_or_default().to_string_lossy()))
+        } else {
+            sanitize(id)
+        };
+        if self.instances.contains_key(&id) || self.dumps.contains_key(&id) {
+            bail!("instance '{id}' already exists (instance_stop it first or pass a distinct id)");
+        }
+        let session = debugger::open_dump(path, &new_run_stem(&id)?)?;
+        let v = describe_dump(&id, &session);
+        self.dumps.insert(id, session);
+        Ok(v)
+    }
+
+    /// The instances stopped in their debugger, as "'<id>': <stop>" joined by
+    /// "; " (empty when none is).
+    pub fn debugger_stops(&self) -> String {
+        let mut stops: Vec<String> = self
+            .instances
+            .values()
+            .filter_map(|i| Some(format!("'{}': {}", i.id, i.debug.as_ref()?.stop_status()?)))
+            .collect();
+        stops.sort();
+        stops.join("; ")
+    }
+
+    /// Run a command in an instance's debugger (or an open dump's) and return its
+    /// output, plus the stop the process is in afterwards (null: running).
+    pub fn debug_command(&mut self, id: &str, command: &str) -> Result<Value> {
+        if let Some(session) = self.dumps.get(id) {
+            let output = session.command(command)?;
+            return Ok(json!({ "output": output, "stopped": session.stop_status() }));
+        }
+        let instance = self.lookup(id)?;
+        let session = instance.debug.as_ref().ok_or_else(|| {
+            anyhow!("no debugger is attached to instance '{}': instance_debug attaches one", instance.id)
+        })?;
+        let output = session.command(command)?;
+        Ok(json!({ "output": output, "stopped": session.stop_status() }))
+    }
+
+    /// The dumps a live session or an open post-mortem still points at.
+    fn protected_dumps(&self) -> HashSet<PathBuf> {
+        let mut out: HashSet<PathBuf> = self
+            .instances
+            .values()
+            .filter_map(|i| Some(i.debug.as_ref()?.dump_path().to_path_buf()))
+            .collect();
+        out.extend(self.dumps.values().map(|s| s.dump_path().to_path_buf()));
+        out
+    }
+
+    /// Keep the log directory from filling up with crash dumps: a full minidump
+    /// of Sourcetrail is hundreds of megabytes, and nothing else removes them.
+    pub fn prune_dumps(&self) -> usize {
+        let keep = dumps_kept();
+        if keep == 0 {
+            return 0;
+        }
+        prune_dumps_in(&home().join("logs"), keep, &self.protected_dumps())
+    }
+}
+
+/// An open dump in instance_list.
+fn describe_dump(id: &str, session: &DebugSession) -> Value {
+    let mut v = json!({ "id": id, "running": false, "stopped": session.stop_status() });
+    if let (Value::Object(m), Value::Object(dbg)) = (&mut v, session.describe()) {
+        m.extend(dbg);
+    }
+    v
 }
 
 impl Default for InstanceManager {
@@ -353,7 +539,7 @@ impl Default for InstanceManager {
     }
 }
 
-/// Spawn-side readiness: retry until the app can actually be *driven*, failing fast
+// Spawn-side readiness: retry until the app can actually be *driven*, failing fast
 /// if the child exits meanwhile.
 ///
 /// A successful `Bridge::connect_instance` only means the SHM segments exist — the
@@ -371,13 +557,13 @@ fn wait_for_ready(id: &str, mut child: Child, launch: Launch) -> Result<AppInsta
             bail!(
                 "app exited before its channels were ready ({status}{}); its console output is in {}",
                 exit_hint(status),
-                launch.console_file.display()
+                launch.console_file().display()
             );
         }
         if let Ok(bridge) = Bridge::connect_instance(id) {
             let hs = bridge.handshake();
             if hs.get("ok").and_then(Value::as_bool) == Some(true) {
-                return Ok(AppInstance { id: id.to_string(), child: Some(child), bridge, launch: Some(launch) });
+                return Ok(AppInstance { id: id.to_string(), child: Some(child), bridge, launch: Some(launch), debug: None });
             }
             last_handshake = hs;
         }
@@ -402,7 +588,7 @@ fn wait_for_ready(id: &str, mut child: Child, launch: Launch) -> Result<AppInsta
             bail!(
                 "instance '{id}' did not become driveable within {READY_TIMEOUT:?} (no successful handshake): \
                  {hint}. Its console output is in {}",
-                launch.console_file.display()
+                launch.console_file().display()
             );
         }
         std::thread::sleep(READY_POLL);
@@ -518,16 +704,61 @@ fn copy_dir(from: &Path, to: &Path) -> Result<()> {
     Ok(())
 }
 
-/// A new file for a run of instance `id`: `<home>/logs/<id>-<unix ms>.<ext>`, so
-/// every run keeps its own (before/after a change stay comparable).
-fn new_run_path(id: &str, ext: &str) -> Result<PathBuf> {
+/// The stem of a new run of instance `id`: `<home>/logs/<id>-<unix ms>`. The
+/// run's files share it (`.console.txt`, and with a debugger `.dmp`, `.cdb.log`,
+/// ...), so every run keeps its own and before/after a change stay comparable.
+fn new_run_stem(id: &str) -> Result<PathBuf> {
     let dir = home().join("logs");
     std::fs::create_dir_all(&dir).with_context(|| format!("create log dir {}", dir.display()))?;
     let stamp = std::time::SystemTime::now()
         .duration_since(std::time::UNIX_EPOCH)
         .map(|d| d.as_millis())
         .unwrap_or_default();
-    Ok(dir.join(format!("{id}-{stamp}.{ext}")))
+    Ok(dir.join(format!("{id}-{stamp}")))
+}
+
+/// `stem` with `suffix` appended (not an extension replaced: ids contain dots).
+fn with_suffix(stem: &Path, suffix: &str) -> PathBuf {
+    let mut s = stem.as_os_str().to_owned();
+    s.push(suffix);
+    PathBuf::from(s)
+}
+
+/// How many crash dumps to keep in the log directory, newest first. They are
+/// large and nothing else removes them, so a debugging session's handful of
+/// crashes would otherwise pile up. `SOURCETRAIL_MCP_KEEP_DUMPS` sets another
+/// number; 0 keeps every one.
+const DUMPS_KEPT: usize = 3;
+
+fn dumps_kept() -> usize {
+    std::env::var("SOURCETRAIL_MCP_KEEP_DUMPS").ok().and_then(|v| v.parse().ok()).unwrap_or(DUMPS_KEPT)
+}
+
+/// Delete all but the `keep` newest dumps in `dir`, never one in `protected`.
+/// Returns how many went. Pure except for the removals (tested).
+///
+/// A protected dump counts towards `keep`: an instance holding three of them is
+/// already at the limit, rather than three above it.
+fn prune_dumps_in(dir: &Path, keep: usize, protected: &HashSet<PathBuf>) -> usize {
+    let mut dumps: Vec<(std::time::SystemTime, PathBuf)> = std::fs::read_dir(dir)
+        .into_iter()
+        .flatten()
+        .flatten()
+        .map(|entry| entry.path())
+        .filter(|p| matches!(p.extension().and_then(|e| e.to_str()), Some("dmp") | Some("core")))
+        .filter_map(|p| p.metadata().ok().and_then(|m| m.modified().ok()).map(|t| (t, p)))
+        .collect();
+    dumps.sort_by(|a, b| b.0.cmp(&a.0)); // newest first
+    let mut kept = dumps.iter().filter(|(_, p)| protected.contains(p)).count();
+    let mut removed = 0;
+    for (_, path) in dumps.into_iter().filter(|(_, p)| !protected.contains(p)) {
+        if kept < keep {
+            kept += 1;
+        } else if std::fs::remove_file(&path).is_ok() {
+            removed += 1;
+        }
+    }
+    removed
 }
 
 /// `<branch>-<shorthash>` for the binary's enclosing git checkout, sanitized for a
@@ -600,6 +831,29 @@ mod tests {
         assert!(!root.join(DEFAULT_PROFILE).exists());
         let (dir, _) = user_data_dir_in(&root, &root, "my profile", false, "x").unwrap();
         assert_eq!(dir, Some(root.join("my-profile")));
+    }
+
+    #[test]
+    fn pruning_keeps_the_newest_dumps_and_never_a_protected_one() {
+        let dir = scratch_root("prune");
+        std::fs::create_dir_all(&dir).unwrap();
+        let base = std::time::SystemTime::now() - Duration::from_secs(1000);
+        let mut paths = Vec::new();
+        for i in 0..5u64 {
+            let p = dir.join(format!("run-{i}.dmp"));
+            let f = std::fs::File::create(&p).unwrap();
+            f.set_modified(base + Duration::from_secs(i * 10)).unwrap();
+            paths.push(p);
+        }
+        std::fs::write(dir.join("run-0.console.txt"), "kept").unwrap();
+        // The oldest is protected: kept beyond the limit, and counted towards it.
+        let protected: HashSet<PathBuf> = [paths[0].clone()].into_iter().collect();
+        assert_eq!(prune_dumps_in(&dir, 3, &protected), 2);
+        for (i, p) in paths.iter().enumerate() {
+            assert_eq!(p.exists(), matches!(i, 0 | 3 | 4), "{}", p.display());
+        }
+        assert!(dir.join("run-0.console.txt").exists(), "only dumps are pruned");
+        let _ = std::fs::remove_dir_all(&dir);
     }
 
     #[test]

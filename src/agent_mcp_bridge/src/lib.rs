@@ -9,6 +9,8 @@
 //!                    correlation.
 //!   * [`catalog`]  — the `describe` topics: usage notes and result shapes,
 //!                    one topic per tool area.
+//!   * [`debugger`] — the platform debugger (cdb / lldb) behind an instance:
+//!                    crash dumps, live and post-mortem debugging.
 //!
 //! The `mcp` feature (see `bin/server.rs`) wraps [`ipc::Bridge`] in an `rmcp`
 //! stdio server; the default build exposes only the core + a smoke-test binary.
@@ -24,6 +26,7 @@ pub mod protocol;
 pub mod ipc;
 pub mod instance;
 pub mod catalog;
+pub mod debugger;
 
 pub use instance::InstanceManager;
 pub use ipc::Bridge;
