@@ -13,6 +13,9 @@
 #endif
 #include "AgentControlController.h"
 #include "IDECommunicationController.h"
+#include "IndexingStateMachine.h"
+#include "QuestionStateMachine.h"
+#include "RemoteStateMachine.h"
 #ifndef SRCTRL_MODULE_BUILD
 #include "LogManager.h"
 #endif
@@ -93,6 +96,10 @@ void Application::createInstance(
 	s_instance->m_schedulers = schedulers;
 
 	s_instance->m_storageCache = std::make_shared<StorageCache>();
+
+	// The state machines remote control can drive (agent control's GetMachines).
+	StateMachineRegistry::instance().add(IndexingStateMachine::instance());
+	StateMachineRegistry::instance().add(QuestionStateMachine::instance());
 
 	if (hasGui)
 	{
@@ -501,6 +508,10 @@ void Application::loadWindow(bool showStartWindow)
 
 void Application::refreshProject(RefreshMode refreshMode)
 {
+	// The indexing machine follows the request from here: what the project does
+	// with it moves it on, and a request nothing came of returns it to idle.
+	IndexingStateMachine::instance()->requested();
+
 	if (m_project && checkSharedMemory())
 	{
 		m_project->refresh(getDialogView(DialogView::UseCase::INDEXING), refreshMode);
@@ -510,6 +521,8 @@ void Application::refreshProject(RefreshMode refreshMode)
 			MessageQuitApplication().dispatch();
 		}
 	}
+
+	IndexingStateMachine::instance()->requestHandled(m_project ? "the refresh did not start" : "no project is loaded");
 }
 
 void Application::updateRecentProjects(const FilePath& projectSettingsFilePath)

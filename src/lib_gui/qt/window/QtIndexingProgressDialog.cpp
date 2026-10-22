@@ -3,6 +3,8 @@
 #include <QLabel>
 #include <QPushButton>
 
+#include "IndexingStateMachine.h"
+
 #ifndef SRCTRL_MODULE_BUILD
 #include "MessageIndexingInterrupted.h"
 #endif
@@ -111,7 +113,12 @@ void QtIndexingProgressDialog::onStopPressed()
 {
 	if (isVisible())
 	{
-		MessageIndexingInterrupted().dispatch();
+		// Through the indexing machine, as an agent's interrupt goes. Should it
+		// refuse (its state behind the pipeline), the button still stops the run.
+		if (!IndexingStateMachine::instance()->interrupt(EventSource::Ui).ok)
+		{
+			MessageIndexingInterrupted().dispatch();
+		}
 	}
 }
 

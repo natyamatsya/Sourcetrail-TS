@@ -6,6 +6,7 @@
 #include <thread>
 
 #include <QGuiApplication>
+#include <QSignalBlocker>
 #include <QTimer>
 
 #ifndef SRCTRL_MODULE_BUILD
@@ -46,10 +47,7 @@ QtDialogView::QtDialogView(QtMainWindow* mainWindow, UseCase useCase, StorageAcc
 {
 }
 
-QtDialogView::~QtDialogView()
-{
-	m_resultReady = true;
-}
+QtDialogView::~QtDialogView() = default;
 
 bool QtDialogView::dialogsHidden() const
 {
@@ -135,77 +133,100 @@ void QtDialogView::hideProgressDialog()
 	setParentWindow(nullptr);
 }
 
-void QtDialogView::startIndexingDialog(
-	Project* project,
-	const std::vector<RefreshMode>& enabledModes,
-	const RefreshMode initialMode,
-	std::function<void(const RefreshInfo& info)> onStartIndexing,
-	std::function<void()> onCancelIndexing)
+bool QtDialogView::presentsQuestions() const
 {
-	m_refreshInfos.clear();
+	return true;
+}
 
+void QtDialogView::presentModeChoice(const std::vector<RefreshMode>& modes, RefreshMode mode)
+{
 	execution::qt::onUi(m_mainWindow, [=, this]() {
 		m_dialogsVisible = true;
 		m_windowStack.clearWindows();
 
-		QtIndexingStartDialog* window = createWindow<QtIndexingStartDialog>(
-			enabledModes, initialMode);
+		QtIndexingStartDialog* window = createWindow<QtIndexingStartDialog>(modes, mode);
+		m_startDialog = window;
 
-		std::function<void(RefreshMode)> onRefreshModeChanged = ([=, this](RefreshMode refreshMode) {
-			auto it = m_refreshInfos.find(refreshMode);
-			if (it != m_refreshInfos.end())
-			{
-				window->updateRefreshInfo(it->second);
-				window->show();
-				return;
-			}
-
-			std::shared_ptr<QTimer> timer = std::make_shared<QTimer>();
-			timer->setSingleShot(true);
-			connect(timer.get(), &QTimer::timeout, [=, this]() {
-				showUnknownProgress("Preparing Indexing", "Processing Files", true);
-			});
-			timer->start(200);
-
-			Task::dispatch(TabIds::app(), std::make_shared<TaskLambda>([=, this]() {
-							   RefreshInfo info = project->getRefreshInfo(refreshMode);
-
-							   execution::qt::onUi(m_mainWindow, [=, this]() {
-								   m_dialogsVisible = true;
-								   m_refreshInfos.emplace(info.mode, info);
-								   window->updateRefreshInfo(info);
-
-								   timer->stop();
-								   hideUnknownProgress();
-								   window->show();
-							   });
-						   }));
+		// The buttons send the indexing machine's events, as an agent does; the
+		// machine answers through presentRefreshInfo and dismissModeChoice.
+		connect(window, &QtIndexingStartDialog::setMode, [](RefreshMode refreshMode) {
+			IndexingStateMachine::instance()->selectMode(refreshMode, EventSource::Ui);
 		});
 
-		connect(window, &QtIndexingStartDialog::setMode, onRefreshModeChanged);
-
-		connect(window, &QtIndexingStartDialog::startIndexing, [=, this](RefreshMode refreshMode) {
-			RefreshInfo info = m_refreshInfos.find(refreshMode)->second;
-			Task::dispatch(
-				TabIds::app(), std::make_shared<TaskLambda>([=]() { onStartIndexing(info); }));
-
+		connect(window, &QtIndexingStartDialog::startIndexing, [this](RefreshMode refreshMode) {
+			IndexingStateMachine::instance()->start(refreshMode, EventSource::Ui);
+			stopCounting();
 			m_windowStack.clearWindows();
 		});
 
-		connect(window, &QtIndexingDialog::canceled, [=, this]() {
-			Task::dispatch(TabIds::app(), std::make_shared<TaskLambda>([=]() { onCancelIndexing(); }));
-
+		connect(window, &QtIndexingDialog::canceled, [this]() {
+			IndexingStateMachine::instance()->cancel(EventSource::Ui);
+			stopCounting();
 			setUIBlocked(false);
 		});
 
-		onRefreshModeChanged(initialMode);
-
-		window->hide();
+		window->hide();	 // until the files of the initial mode are counted
 		setUIBlocked(true);
 	});
 }
 
-void QtDialogView::updateIndexingDialog(
+void QtDialogView::presentCounting()
+{
+	execution::qt::onUi(m_mainWindow, [this]() {
+		if (m_countingTimer == nullptr)
+		{
+			m_countingTimer = new QTimer(this);
+			m_countingTimer->setSingleShot(true);
+			connect(m_countingTimer, &QTimer::timeout, [this]() {
+				showUnknownProgress("Preparing Indexing", "Processing Files", true);
+			});
+		}
+		m_countingTimer->start(200);
+	});
+}
+
+void QtDialogView::presentRefreshInfo(const RefreshInfo& info)
+{
+	execution::qt::onUi(m_mainWindow, [=, this]() {
+		stopCounting();
+		if (m_startDialog)
+		{
+			m_dialogsVisible = true;
+			// Showing the mode checks its button, which would report a selection.
+			const QSignalBlocker blocker(m_startDialog.data());
+			m_startDialog->updateRefreshInfo(info);
+			m_startDialog->show();
+		}
+	});
+}
+
+void QtDialogView::dismissModeChoice(bool started)
+{
+	execution::qt::onUi(m_mainWindow, [=, this]() {
+		stopCounting();
+		if (!m_startDialog)
+		{
+			return;
+		}
+		m_startDialog = nullptr;
+		m_windowStack.clearWindows();
+		if (!started)
+		{
+			setUIBlocked(false);
+		}
+	});
+}
+
+void QtDialogView::stopCounting()
+{
+	if (m_countingTimer != nullptr)
+	{
+		m_countingTimer->stop();
+	}
+	hideUnknownProgress();
+}
+
+void QtDialogView::showIndexingProgress(
 	size_t startedFileCount,
 	size_t finishedFileCount,
 	size_t totalFileCount,
@@ -241,13 +262,13 @@ void QtDialogView::updateIndexingDialog(
 	});
 }
 
-void QtDialogView::updateCustomIndexingDialog(
+void QtDialogView::showCustomIndexingProgress(
 	size_t startedFileCount,
 	size_t finishedFileCount,
 	size_t totalFileCount,
 	const std::vector<FilePath>& sourcePaths)
 {
-	updateIndexingDialog(startedFileCount, finishedFileCount, totalFileCount, sourcePaths);
+	showIndexingProgress(startedFileCount, finishedFileCount, totalFileCount, sourcePaths);
 
 	execution::qt::onUi(m_mainWindow, [=, this]() {
 		QtIndexingProgressDialog* window = dynamic_cast<QtIndexingProgressDialog*>(
@@ -259,87 +280,87 @@ void QtDialogView::updateCustomIndexingDialog(
 	});
 }
 
-DatabasePolicy QtDialogView::finishedIndexingDialog(
-	size_t indexedFileCount,
-	size_t totalIndexedFileCount,
-	size_t completedFileCount,
-	size_t totalFileCount,
-	float time,
-	ErrorCountInfo errorInfo,
-	bool interrupted)
+bool QtDialogView::presentReport(const IndexingReport& report)
 {
 	using enum DatabasePolicy;
 
-	// Offscreen (agent-driven / headless GUI) runs have no user who could press
-	// the report dialog's buttons. Blocking here parks the task scheduler in a
-	// wait loop, which also starves agent-control commands — so keep the indexed
-	// data and continue immediately.
+	// Offscreen (agent-driven / headless GUI) runs have no user who could press the
+	// report's buttons, and a report nobody answers holds the pipeline: the run
+	// keeps its data instead.
 	if (QGuiApplication::platformName() == QLatin1String("offscreen"))
 	{
-		return DATABASE_POLICY_KEEP;
+		return false;
 	}
 
-	DatabasePolicy policy = DATABASE_POLICY_UNKNOWN;
-	m_resultReady = false;
-
-	execution::qt::onUi(m_mainWindow, [=, this, &policy]() {
+	execution::qt::onUi(m_mainWindow, [=, this]() {
 		m_dialogsVisible = true;
 		m_windowStack.clearWindows();
 
 		QtIndexingReportDialog* window = createWindow<QtIndexingReportDialog>(
-			indexedFileCount,
-			totalIndexedFileCount,
-			completedFileCount,
-			totalFileCount,
-			time,
-			interrupted);
-		window->updateErrorCount(errorInfo.total, errorInfo.fatal);
-		connect(window, &QtIndexingDialog::finished, [this, &policy]() {
+			report.indexedFileCount,
+			report.totalIndexedFileCount,
+			report.completedFileCount,
+			report.totalFileCount,
+			report.time,
+			report.interrupted);
+		window->updateErrorCount(report.errorCount, report.fatalCount);
+		connect(window, &QtIndexingDialog::finished, [this]() {
 			setUIBlocked(false);
-			policy = DATABASE_POLICY_KEEP;
-			m_resultReady = true;
+			IndexingStateMachine::instance()->decide(DATABASE_POLICY_KEEP, EventSource::Ui);
 		});
-		connect(window, &QtIndexingDialog::canceled, [this, &policy]() {
+		connect(window, &QtIndexingDialog::canceled, [this]() {
 			setUIBlocked(false);
-			policy = DATABASE_POLICY_DISCARD;
-			m_resultReady = true;
+			IndexingStateMachine::instance()->decide(DATABASE_POLICY_DISCARD, EventSource::Ui);
 		});
-		connect(window, &QtIndexingReportDialog::requestReindexing, [this, &policy]() {
+		connect(window, &QtIndexingReportDialog::requestReindexing, [this]() {
 			setUIBlocked(false);
-			policy = DATABASE_POLICY_REFRESH;
-			m_resultReady = true;
+			IndexingStateMachine::instance()->decide(DATABASE_POLICY_REFRESH, EventSource::Ui);
 		});
 
 		m_mainWindow->hideWindowTitleProgress();
 		m_mainWindow->alert();
-		
+
 		setUIBlocked(true);
 	});
-
-	while (!m_resultReady)
-	{
-		std::this_thread::sleep_for(std::chrono::milliseconds(25));
-	}
-
-	return policy;
+	return true;
 }
 
-int QtDialogView::confirm(const std::string& message, const std::vector<std::string>& options)
+void QtDialogView::dismissReport()
 {
-	int result = -1;
-	m_resultReady = false;
+	execution::qt::onUi(m_mainWindow, [this]() {
+		if (dynamic_cast<QtIndexingReportDialog*>(m_windowStack.getTopWindow()))
+		{
+			m_windowStack.clearWindows();
+			setUIBlocked(false);
+		}
+	});
+}
 
-	execution::qt::onUi(m_mainWindow, [=, this, &result]() {
+void QtDialogView::presentQuestion(
+	std::uint64_t id, const std::string& text, const std::vector<std::string>& options)
+{
+	// On the GUI thread this runs inline and returns once the question is answered;
+	// from another thread the asker waits in the question machine meanwhile.
+	execution::qt::onUi(m_mainWindow, [=, this]() {
+		// An agent answered before the box came up: nothing to show.
+		if (!QuestionStateMachine::instance()->isOpen(id))
+		{
+			return;
+		}
+
 		QtMessageBox msgBox;
-		msgBox.setText(QString::fromStdString(message));
+		msgBox.setText(QString::fromStdString(text));
 
 		for (const std::string& option: options)
 		{
 			msgBox.addButton(QString::fromStdString(option), QtMessageBox::AcceptRole);
 		}
 
+		m_questionBoxes[id] = &msgBox;
 		QAbstractButton *clickedButton = msgBox.execModal();
+		m_questionBoxes.erase(id);
 
+		int result = -1;
 		for (int i = 0; i < msgBox.buttons().size(); i++)
 		{
 			if (clickedButton == msgBox.buttons().at(i))
@@ -349,15 +370,20 @@ int QtDialogView::confirm(const std::string& message, const std::vector<std::str
 			}
 		}
 
-		m_resultReady = true;
+		// Does nothing when an agent's answer closed the box.
+		QuestionStateMachine::instance()->answer(id, result, EventSource::Ui);
 	});
+}
 
-	while (!m_resultReady)
-	{
-		std::this_thread::sleep_for(std::chrono::milliseconds(25));
-	}
-
-	return result;
+void QtDialogView::dismissQuestion(std::uint64_t id)
+{
+	execution::qt::onUi(m_mainWindow, [=, this]() {
+		auto it = m_questionBoxes.find(id);
+		if (it != m_questionBoxes.end() && it->second)
+		{
+			it->second->done(0);
+		}
+	});
 }
 
 void QtDialogView::setParentWindow(QtWindow* window)
@@ -466,7 +492,10 @@ void QtDialogView::handleMessage(MessageErrorCountUpdate* message)
 
 void QtDialogView::handleMessage(MessageWindowClosed*  /*message*/)
 {
-	m_resultReady = true;
+	// The app is closing: whoever waits on a question or a report this view shows
+	// goes on (with no answer) instead of blocking the shutdown.
+	QuestionStateMachine::instance()->withdraw(this);
+	IndexingStateMachine::instance()->detach(this);
 }
 
 void QtDialogView::updateErrorCount(size_t errorCount, size_t fatalCount)

@@ -6,20 +6,22 @@
 #include <vector>
 
 #include "ErrorCountInfo.h"
+#include "IndexingStateMachine.h"
+#include "QuestionStateMachine.h"
 #include "RefreshInfo.h"
 
 class Project;
 class StorageAccess;
 
-enum class DatabasePolicy
-{
-	DATABASE_POLICY_KEEP,
-	DATABASE_POLICY_DISCARD,
-	DATABASE_POLICY_REFRESH,
-	DATABASE_POLICY_UNKNOWN
-};
-
+// Where the application meets the person in front of it: questions, the indexing
+// dialogs, progress. The questions and the indexing dialogs are states of the
+// QuestionStateMachine and the IndexingStateMachine: the public methods move those
+// machines, and a subclass shows their states through the presenter hooks (the
+// base, without a GUI, shows nothing and answers for itself). Since the machines
+// own the waiting, an agent answers through them just as the dialog's buttons do.
 class DialogView
+	: public QuestionPresenter
+	, public IndexingPresenter
 {
 public:
 	enum class UseCase
@@ -30,7 +32,7 @@ public:
 	};
 
 	DialogView(UseCase useCase, StorageAccess* storageAccess);
-	virtual ~DialogView() = default;
+	~DialogView() override;
 
 	UseCase getUseCase() const;
 
@@ -46,23 +48,24 @@ public:
 		const std::string& title, const std::string& message, size_t progress);
 	virtual void hideProgressDialog();
 
-	virtual void startIndexingDialog(
+	void startIndexingDialog(
 		Project* project,
 		const std::vector<RefreshMode>& enabledModes,
 		const RefreshMode initialMode,
 		std::function<void(const RefreshInfo& info)> onStartIndexing,
 		std::function<void()> onCancelIndexing);
-	virtual void updateIndexingDialog(
+	void updateIndexingDialog(
 		size_t startedFileCount,
 		size_t finishedFileCount,
 		size_t totalFileCount,
 		const std::vector<FilePath>& sourcePaths);
-	virtual void updateCustomIndexingDialog(
+	void updateCustomIndexingDialog(
 		size_t startedFileCount,
 		size_t finishedFileCount,
 		size_t totalFileCount,
 		const std::vector<FilePath>& sourcePaths);
-	virtual DatabasePolicy finishedIndexingDialog(
+	// Waits for the decision on the run's data.
+	DatabasePolicy finishedIndexingDialog(
 		size_t indexedFileCount,
 		size_t totalIndexedFileCount,
 		size_t completedFileCount,
@@ -71,10 +74,36 @@ public:
 		ErrorCountInfo errorInfo,
 		bool interrupted);
 
+	// Asks and waits: the index of the chosen option, -1 for none.
 	int confirm(const std::string& message);
-	virtual int confirm(const std::string& message, const std::vector<std::string>& options);
+	int confirm(const std::string& message, const std::vector<std::string>& options);
 
 protected:
+	// Whether this view can show a question; without one, confirm() answers -1.
+	virtual bool presentsQuestions() const;
+
+	virtual void showIndexingProgress(
+		size_t startedFileCount,
+		size_t finishedFileCount,
+		size_t totalFileCount,
+		const std::vector<FilePath>& sourcePaths);
+	virtual void showCustomIndexingProgress(
+		size_t startedFileCount,
+		size_t finishedFileCount,
+		size_t totalFileCount,
+		const std::vector<FilePath>& sourcePaths);
+
+	void presentQuestion(
+		std::uint64_t id, const std::string& text, const std::vector<std::string>& options) override;
+	void dismissQuestion(std::uint64_t id) override;
+
+	void presentModeChoice(const std::vector<RefreshMode>& modes, RefreshMode mode) override;
+	void presentCounting() override;
+	void presentRefreshInfo(const RefreshInfo& info) override;
+	void dismissModeChoice(bool started) override;
+	bool presentReport(const IndexingReport& report) override;
+	void dismissReport() override;
+
 	const UseCase m_useCase;
 	StorageAccess* m_storageAccess;
 

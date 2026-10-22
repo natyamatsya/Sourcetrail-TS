@@ -10,6 +10,7 @@
 #include "IndexerCommandCustom.h"
 #include "IndexerCommandRust.h"
 #include "IndexerCommandSwift.h"
+#include "IndexingStateMachine.h"
 #include "MemoryIndexerCommandProvider.h"
 #include "PersistentStorage.h"
 #include "ProjectSettings.h"
@@ -278,6 +279,7 @@ void Project::refresh(std::shared_ptr<DialogView> dialogView, RefreshMode refres
 	{
 		LOG_ERROR(utility::expectedErrorToString(outcome.error()));
 		m_refreshStage = RefreshStageType::NONE;
+		IndexingStateMachine::instance()->ended(utility::expectedErrorToString(outcome.error()));
 		MessageIndexingFinished(outcome).dispatch();
 	}
 }
@@ -460,6 +462,7 @@ void Project::buildIndex(RefreshInfo info, std::shared_ptr<DialogView> dialogVie
 	{
 		LOG_ERROR(utility::expectedErrorToString(outcome.error()));
 		m_refreshStage = RefreshStageType::NONE;
+		IndexingStateMachine::instance()->ended(utility::expectedErrorToString(outcome.error()));
 		MessageIndexingFinished(outcome).dispatch();
 	}
 }
@@ -496,6 +499,7 @@ void Project::buildIndexImpl(RefreshInfo info, std::shared_ptr<DialogView> dialo
 
 			MessageStatus(message).dispatch();
 			m_refreshStage = RefreshStageType::NONE;
+			IndexingStateMachine::instance()->ended(message);
 			return;
 		}
 	}
@@ -531,6 +535,7 @@ void Project::buildIndexImpl(RefreshInfo info, std::shared_ptr<DialogView> dialo
 					{
 						MessageStatus("Cannot partially clear project. Indexing aborted.").dispatch();
 						m_refreshStage = RefreshStageType::NONE;
+						IndexingStateMachine::instance()->ended("cannot partially clear the project");
 						dialogView->clearDialogs();
 						return;
 					}
@@ -545,6 +550,7 @@ void Project::buildIndexImpl(RefreshInfo info, std::shared_ptr<DialogView> dialo
 		}
 	}
 
+	IndexingStateMachine::instance()->preparing();
 	MessageStatus("Preparing Indexing", false, true).dispatch();
 	MessageErrorCountClear().dispatch();
 
@@ -904,6 +910,7 @@ void Project::buildIndexImpl(RefreshInfo info, std::shared_ptr<DialogView> dialo
 		taskSequential->addTask(	// we don't need to hide this dialog again, because it's
 									// overridden by other dialogs later on.
 			std::make_shared<TaskLambda>([dialogView]() {
+				IndexingStateMachine::instance()->wrappingUp();
 				dialogView->showUnknownProgressDialog("Finish Indexing", "Saving\nRemaining Data");
 			}));
 
@@ -970,6 +977,7 @@ void Project::buildIndexImpl(RefreshInfo info, std::shared_ptr<DialogView> dialo
 
 	taskSequential->addTask(std::make_shared<TaskLambda>([dialogView, this]() {
 		m_refreshStage = RefreshStageType::NONE;
+		IndexingStateMachine::instance()->ended("");
 		MessageIndexingFinished().dispatch();
 	}));
 
@@ -1000,6 +1008,8 @@ void Project::buildIndexImpl(RefreshInfo info, std::shared_ptr<DialogView> dialo
 			}
 			m_refreshStage = RefreshStageType::NONE;
 			const bool terminated = cause == TaskFinally::TerminalCause::Terminated;
+			IndexingStateMachine::instance()->ended(
+				terminated ? "indexing was terminated before completion" : "an indexing pipeline stage failed");
 			MessageIndexingFinished(std::unexpected(utility::makeExpectedError(
 					terminated ? IndexingErrorCode::PipelineTerminated
 							   : IndexingErrorCode::PipelineFailed,
@@ -1009,6 +1019,7 @@ void Project::buildIndexImpl(RefreshInfo info, std::shared_ptr<DialogView> dialo
 		})->addChildTask(taskSequential));
 
 	m_refreshStage = RefreshStageType::INDEXING;
+	IndexingStateMachine::instance()->indexingStarted();
 	MessageStatus(
 		"Starting Indexing: " + std::to_string(sourceFileCount) + " source files", false, true)
 		.dispatch();
