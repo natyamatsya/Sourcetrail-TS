@@ -42,7 +42,7 @@ pub const IpcShm = struct {
         const timeout_ms: i128 = 500;
         var attempt: u32 = 0;
         while (attempt < 60) : (attempt += 1) {
-            if (self.mutex.lockTimeout(timeout_ms * std.time.ns_per_ms)) return;
+            if (self.mutex.lockTimeout(timeout_ms * std.time.ns_per_ms) catch return Error.Shm) return;
         }
         return Error.Timeout;
     }
