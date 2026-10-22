@@ -70,7 +70,7 @@ option(BUILD_UNIT_TESTS_PACKAGE    "Build the corresponding language unit tests.
 # Dev/CI-only: run every SQL operation against Turso alongside SQLite and report
 # divergences. Requires the Rust toolchain (builds the turso_shim crate). Off by
 # default so normal builds are unaffected.
-option(SOURCETRAIL_TURSO_COMPARE   "Run a Turso backend alongside SQLite and diff results." ON)
+option(SOURCETRAIL_TURSO_COMPARE   "Run a Turso backend alongside SQLite and diff results." OFF)
 # Phase 2 prototype: assign element ids from an in-process counter instead of the
 # INSERT+lastRowId() round-trip — the precondition for a non-blocking write path.
 option(SOURCETRAIL_CLIENT_IDS      "Assign element ids in-process (no lastRowId round-trip)." OFF)

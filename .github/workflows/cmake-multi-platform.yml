@@ -276,11 +276,14 @@ jobs:
           # SOURCETRAIL_COMPILER_CACHE=ON when sccion came up, so a launcher
           # that silently went missing fails configure instead of building
           # uncached; AUTO when the action stood down (a fork's pull request).
+          # SOURCETRAIL_TURSO_COMPARE is off by default and on in CI, which
+          # builds the Turso shim and runs TursoCompareTestSuite.
           cmake -S . -B build -G Ninja \
             -DCMAKE_BUILD_TYPE=Release \
             -DCMAKE_TOOLCHAIN_FILE="$PWD/vcpkg/scripts/buildsystems/vcpkg.cmake" \
             -DVCPKG_TARGET_TRIPLET=x64-arm64-linux-windows-osx-static-md \
             -DSOURCETRAIL_COMPILER_CACHE=${{ steps.sccion.outputs.installed == 'true' && 'ON' || 'AUTO' }} \
+            -DSOURCETRAIL_TURSO_COMPARE=ON \
             -DBUILD_CXX_LANGUAGE_PACKAGE=ON \
             -DBUILD_RUST_LANGUAGE_PACKAGE=ON \
             -DBUILD_UNIT_TESTS_PACKAGE=ON \
@@ -405,6 +408,7 @@ jobs:
             -DVCPKG_TARGET_TRIPLET=x64-arm64-linux-windows-osx-static-md \
             -DVCPKG_MANIFEST_FEATURES=cxx-indexer \
             -DSOURCETRAIL_COMPILER_CACHE=${{ steps.sccion.outputs.installed == 'true' && 'ON' || 'AUTO' }} \
+            -DSOURCETRAIL_TURSO_COMPARE=ON \
             -DBUILD_CXX_LANGUAGE_PACKAGE=ON \
             -DBUILD_RUST_LANGUAGE_PACKAGE=OFF \
             -DBUILD_UNIT_TESTS_PACKAGE=ON
