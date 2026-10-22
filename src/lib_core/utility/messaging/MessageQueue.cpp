@@ -8,6 +8,7 @@
 #include "MessageBase.h"
 #include "MessageFilter.h"
 #include "MessageListenerBase.h"
+#include "ScopedFunctor.h"
 #include "StdexecPrelude.h"
 #include "TabIds.h"
 #include "TaskGroupParallel.h"
@@ -229,7 +230,7 @@ bool MessageQueue::loopIsRunning() const
 bool MessageQueue::hasMessagesQueued() const
 {
 	std::lock_guard<std::mutex> lock(m_messageBufferMutex);
-	return m_messageBuffer.size() > 0;
+	return m_messageBuffer.size() > 0 || m_messagesInFlight.load() > 0;
 }
 
 void MessageQueue::setSendMessagesAsTasks(bool sendMessagesAsTasks)
@@ -266,8 +267,12 @@ void MessageQueue::processMessages()
 
 			message = m_messageBuffer.front();
 			m_messageBuffer.pop_front();
+			// Under the buffer lock, so hasMessagesQueued() never sees the message
+			// in neither place.
+			m_messagesInFlight++;
 		}
 
+		[[maybe_unused]] ScopedFunctor handedOn([this]() { m_messagesInFlight--; });
 		processMessage(message, false);
 	}
 }

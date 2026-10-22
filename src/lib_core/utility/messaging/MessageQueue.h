@@ -97,6 +97,10 @@ private:
 	size_t m_listenersLength = 0;
 
 	std::atomic<bool> m_loopIsRunning = false;
+	// Messages taken out of the buffer and not yet handed on (to their listeners or,
+	// as tasks, to a scheduler). Counted by hasMessagesQueued(): between the pop and
+	// the hand-off a message is in neither place.
+	std::atomic<int> m_messagesInFlight = 0;
 
 	mutable std::mutex m_messageBufferMutex;
 	mutable std::mutex m_listenersMutex;
