@@ -604,7 +604,7 @@ void QtProjectWizard::selectedSourceGroupChanged(int index)
 
 	if (!canExitContent())
 	{
-		QTimer::singleShot(1, [&]() { m_sourceGroupList->setCurrentRow(m_previouslySelectedIndex); });
+		QTimer::singleShot(1, this, [this]() { m_sourceGroupList->setCurrentRow(m_previouslySelectedIndex); });
 		return;
 	}
 

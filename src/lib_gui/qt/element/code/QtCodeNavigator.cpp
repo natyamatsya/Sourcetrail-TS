@@ -653,7 +653,10 @@ void QtCodeNavigator::scrollTo(const CodeScrollParams& params, bool animated, bo
 
 	if (m_mode == MODE_LIST)
 	{
-		QTimer::singleShot(100, func);
+		// `this` as the context: the scroll is cancelled with the navigator. Without
+		// it, a navigator destroyed within these 100 ms (opening another project
+		// closes the tabs) left the timer to call into a dead m_current (_purecall).
+		QTimer::singleShot(100, this, func);
 	}
 	else
 	{

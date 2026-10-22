@@ -84,7 +84,7 @@ void QtProjectWizardContentPreferences::populate(QGridLayout* layout, int& row)
 
 		addWidget(m_fontFace, layout, rowNum);
 
-		QTimer::singleShot(10, [this]()
+		QTimer::singleShot(10, this, [this]()
 		{
 			m_fontFace->showPopup();
 		});
