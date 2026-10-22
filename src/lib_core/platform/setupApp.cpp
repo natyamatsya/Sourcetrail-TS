@@ -28,11 +28,19 @@ using namespace std;
 using namespace utility;
 using namespace std::filesystem;
 
-static void setupUserDirectory(const FilePath &appPath)
+static void setupUserDirectory(const FilePath &appPath, const FilePath &userDataDir)
 {
-	// Determine user directory:
-	QString userDataLocation = QStandardPaths::writableLocation(QStandardPaths::AppConfigLocation) + "/";
-	UserPaths::setUserDataDirectoryPath(FilePath(userDataLocation.toStdString()).makeAbsolute());
+	// Determine user directory: the one asked for (--user-data-dir, e.g. an isolated
+	// profile for an agent-driven instance), else the per-user location.
+	if (!userDataDir.empty())
+	{
+		UserPaths::setUserDataDirectoryPath(FilePath(userDataDir.str() + "/").makeAbsolute());
+	}
+	else
+	{
+		QString userDataLocation = QStandardPaths::writableLocation(QStandardPaths::AppConfigLocation) + "/";
+		UserPaths::setUserDataDirectoryPath(FilePath(userDataLocation.toStdString()).makeAbsolute());
+	}
 
 	// Create missing user directory and copy default configurations:
 	if (!UserPaths::getUserDataDirectoryPath().exists()) {
@@ -59,7 +67,7 @@ static void setupUserDirectory(const FilePath &appPath)
 	}
 }
 
-Version setupAppDirectories(const FilePath &appPath)
+Version setupAppDirectories(const FilePath &appPath, const FilePath &userDataDir)
 {
 	QCoreApplication::setApplicationName(QStringLiteral("Sourcetrail"));
 
@@ -71,7 +79,7 @@ Version setupAppDirectories(const FilePath &appPath)
 	AppPath::setSharedDataDirectoryPath(appPath);
 	AppPath::setCxxIndexerDirectoryPath(appPath);
 
-	setupUserDirectory(appPath);
+	setupUserDirectory(appPath, userDataDir);
 
 	return version;
 }

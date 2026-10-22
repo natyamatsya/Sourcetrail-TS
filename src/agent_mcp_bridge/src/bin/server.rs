@@ -272,6 +272,13 @@ struct StartArgs {
     /// Run offscreen (`QT_QPA_PLATFORM=offscreen`); default true.
     #[serde(default = "default_true")]
     headless: bool,
+    /// Settings profile: a name for an isolated, persistent user-data directory
+    /// (default "agent"), or "user" for your own settings.
+    #[serde(default)]
+    profile: String,
+    /// Run on a throwaway copy of the profile (deleted when the instance stops).
+    #[serde(default)]
+    fresh: bool,
 }
 
 #[derive(serde::Deserialize, rmcp::schemars::JsonSchema)]
@@ -369,7 +376,7 @@ impl SourcetrailServer {
 
     // --- instances ---
 
-    #[tool(description = "Launch a Sourcetrail process with agent control (headless by default). Needs `bin`. Returns { id } for the `instance` argument; describe('instances').")]
+    #[tool(description = "Launch a Sourcetrail process with agent control (headless, on an isolated settings profile by default). Needs `bin`. Returns { id } for the `instance` argument; describe('instances').")]
     async fn instance_start(&self, Parameters(a): Parameters<StartArgs>) -> Result<CallToolResult, McpError> {
         ok_json(
             self.mgr
@@ -379,6 +386,8 @@ impl SourcetrailServer {
                         id: a.id,
                         project: a.project,
                         headless: a.headless,
+                        profile: a.profile,
+                        fresh: a.fresh,
                     })?;
                     Ok(json!({ "id": id }))
                 })
@@ -391,7 +400,7 @@ impl SourcetrailServer {
         ok_json(self.mgr.call(move |m| Ok(json!({ "killed": m.kill(&a.instance)? }))).await?)
     }
 
-    #[tool(description = "List known instances. Returns { instances: [ { id, spawned, pid, running, exit_code?, bin?, console_file?, qt? } | { id, start_failed } ] }.")]
+    #[tool(description = "List known instances. Returns { instances: [ { id, spawned, pid, running, exit_code?, bin?, console_file?, qt?, user_data_dir?, fresh? } | { id, start_failed } ] }.")]
     async fn instance_list(&self) -> Result<CallToolResult, McpError> {
         ok_json(self.mgr.call(|m| Ok(m.list())).await?)
     }

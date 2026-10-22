@@ -31,7 +31,7 @@ struct meta<commandline::TopOpts>
 	static constexpr auto value = object("version", &T::version, "project-file", &T::project_file,
 		"screenshot", &T::screenshot, "screenshot-delay", &T::screenshot_delay, "ui-snapshot",
 		&T::ui_snapshot, "ui-snapshot-format", &T::ui_snapshot_format, "agent-instance",
-		&T::agent_instance);
+		&T::agent_instance, "user-data-dir", &T::user_data_dir);
 };
 }	 // namespace glz
 

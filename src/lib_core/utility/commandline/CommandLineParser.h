@@ -27,6 +27,7 @@ struct TopOpts
 	std::string ui_snapshot;
 	std::string ui_snapshot_format = "accessibility";
 	std::string agent_instance;
+	std::string user_data_dir;	// read by main() before the parser runs; declared so it parses
 
 	static constexpr std::array shorts = {std::pair{'v', std::string_view{"version"}}};
 	static constexpr std::array<std::string_view, 1> positionals = {"project-file"};
@@ -42,7 +43,10 @@ struct TopOpts
 		std::pair{std::string_view{"ui-snapshot-format"},
 			std::string_view{"Snapshot format: 'accessibility' (default) or 'object'"}},
 		std::pair{std::string_view{"agent-instance"},
-			std::string_view{"Namespace the agent-control channels as st.agent.<id>.* for side-by-side instances (empty = default)"}}};
+			std::string_view{"Namespace the agent-control channels as st.agent.<id>.* for side-by-side instances (empty = default)"}},
+		std::pair{std::string_view{"user-data-dir"},
+			std::string_view{"Keep settings, logs and the default projects in this directory instead of the per-user one "
+							 "(also SOURCETRAIL_USER_DATA_DIR); created with the defaults if missing"}}};
 };
 
 class CommandLineParser

@@ -8,7 +8,8 @@
 // bootstrap consumers keep getting all three setup functions from one header.
 #include <setupLocale.h>
 
-Version setupAppDirectories(const FilePath &appPath);
+// `userDataDir` overrides the per-user data location (--user-data-dir); empty = the default.
+Version setupAppDirectories(const FilePath &appPath, const FilePath &userDataDir = FilePath());
 void setupAppEnvironment(int argc, char *argv[]);
 
 #endif

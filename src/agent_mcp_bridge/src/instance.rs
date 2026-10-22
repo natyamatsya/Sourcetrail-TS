@@ -35,7 +35,19 @@ pub struct StartOpts {
     pub project: Option<String>,
     /// Run offscreen (`QT_QPA_PLATFORM=offscreen`); default true for tests.
     pub headless: bool,
+    /// Settings profile: a name for an isolated user-data directory that persists
+    /// across runs (empty = [`DEFAULT_PROFILE`]), or [`USER_PROFILE`] for the
+    /// developer's own settings.
+    pub profile: String,
+    /// Run on a throwaway copy of the profile, removed when the instance goes: a
+    /// clean start that keeps what the profile holds, and changes that never persist.
+    pub fresh: bool,
 }
+
+/// The profile that means "the developer's own settings": no --user-data-dir.
+pub const USER_PROFILE: &str = "user";
+/// The profile spawned instances use when none is named.
+pub const DEFAULT_PROFILE: &str = "agent";
 
 /// A managed app + its control channel.
 pub struct AppInstance {
@@ -55,6 +67,18 @@ struct Launch {
     console_file: PathBuf,
     /// The Qt installation put on the app's PATH (see [`qt_prefix`]).
     qt: Option<PathBuf>,
+    /// The user-data directory passed to the app (--user-data-dir), if isolated.
+    user_data_dir: Option<PathBuf>,
+    /// `user_data_dir` is a throwaway copy, deleted on drop.
+    fresh_copy: bool,
+}
+
+impl Drop for Launch {
+    fn drop(&mut self) {
+        if let (true, Some(dir)) = (self.fresh_copy, &self.user_data_dir) {
+            let _ = std::fs::remove_dir_all(dir);
+        }
+    }
 }
 
 impl AppInstance {
@@ -90,6 +114,8 @@ impl AppInstance {
             v["headless"] = json!(l.headless);
             v["console_file"] = json!(l.console_file.display().to_string());
             v["qt"] = json!(l.qt.as_ref().map(|q| q.display().to_string()));
+            v["user_data_dir"] = json!(l.user_data_dir.as_ref().map(|d| d.display().to_string()));
+            v["fresh"] = json!(l.fresh_copy);
         }
         v
     }
@@ -101,6 +127,8 @@ impl Drop for AppInstance {
             let _ = child.kill();
             let _ = child.wait();
         }
+        // `launch` drops after this body, so a fresh copy of a profile is removed
+        // only once the app that used it is gone.
     }
 }
 
@@ -271,10 +299,18 @@ impl InstanceManager {
             cmd.env("PATH", format!("{}{sep}{path}", qt.join("bin").display()));
             cmd.env("QT_PLUGIN_PATH", qt.join("plugins"));
         }
+        // Settings, logs and recent projects in an isolated profile, so an agent's
+        // runs neither read nor change the developer's own. The app creates a
+        // profile directory that does not exist yet, with the default settings.
+        let (user_data_dir, fresh_copy) = user_data_dir_for(&opts.profile, opts.fresh, id)?;
+        if let Some(dir) = &user_data_dir {
+            cmd.arg("--user-data-dir").arg(dir);
+        }
         let child = cmd
             .spawn()
             .with_context(|| format!("spawn {}", opts.bin.display()))?;
-        let launch = Launch { bin: opts.bin.clone(), headless: opts.headless, console_file, qt };
+        let launch =
+            Launch { bin: opts.bin.clone(), headless: opts.headless, console_file, qt, user_data_dir, fresh_copy };
 
         // Poll until the app answers the handshake (or it died / timed out).
         let mut instance = wait_for_ready(id, child, launch)?;
@@ -422,6 +458,66 @@ pub fn home() -> PathBuf {
         .join("sourcetrail-mcp")
 }
 
+/// Where named profiles live: `<home>/profiles/<name>`. Outside any checkout on
+/// purpose: a profile holds machine state (window geometry, recent projects).
+pub fn profiles_root() -> PathBuf {
+    home().join("profiles")
+}
+
+/// The --user-data-dir for a profile: `None` for the developer's own settings,
+/// else the profile's directory, or a throwaway copy of it when `fresh`.
+/// Returns the directory and whether it is a copy to delete afterwards.
+fn user_data_dir_for(profile: &str, fresh: bool, id: &str) -> Result<(Option<PathBuf>, bool)> {
+    user_data_dir_in(&profiles_root(), &std::env::temp_dir().join("sourcetrail-mcp"), profile, fresh, id)
+}
+
+/// [`user_data_dir_for`] with the profile root and the scratch directory for fresh
+/// copies passed in (tested).
+///
+/// A profile's directory is not created here: Sourcetrail creates a user-data
+/// directory that does not exist yet and fills it with its default settings, but
+/// leaves an existing (even empty) one as it is.
+fn user_data_dir_in(root: &Path, scratch: &Path, profile: &str, fresh: bool, id: &str) -> Result<(Option<PathBuf>, bool)> {
+    let profile = profile.trim();
+    if profile.eq_ignore_ascii_case(USER_PROFILE) {
+        if fresh {
+            bail!("`fresh` needs an isolated profile; the '{USER_PROFILE}' profile is the developer's own settings");
+        }
+        return Ok((None, false));
+    }
+    let name = sanitize(if profile.is_empty() { DEFAULT_PROFILE } else { profile });
+    let dir = root.join(&name);
+    std::fs::create_dir_all(root).with_context(|| format!("create profile root {}", root.display()))?;
+    if !fresh {
+        return Ok((Some(dir), false));
+    }
+    let stamp = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|d| d.as_millis())
+        .unwrap_or_default();
+    let copy = scratch.join(format!("{name}-{id}-{stamp}"));
+    std::fs::create_dir_all(scratch).with_context(|| format!("create {}", scratch.display()))?;
+    // A profile that never ran has nothing to copy: the copy starts as defaults.
+    if dir.is_dir() {
+        copy_dir(&dir, &copy).with_context(|| format!("copy profile {} to {}", dir.display(), copy.display()))?;
+    }
+    Ok((Some(copy), true))
+}
+
+fn copy_dir(from: &Path, to: &Path) -> Result<()> {
+    std::fs::create_dir_all(to)?;
+    for entry in std::fs::read_dir(from)? {
+        let entry = entry?;
+        let target = to.join(entry.file_name());
+        if entry.file_type()?.is_dir() {
+            copy_dir(&entry.path(), &target)?;
+        } else {
+            std::fs::copy(entry.path(), &target)?;
+        }
+    }
+    Ok(())
+}
+
 /// A new file for a run of instance `id`: `<home>/logs/<id>-<unix ms>.<ext>`, so
 /// every run keeps its own (before/after a change stay comparable).
 fn new_run_path(id: &str, ext: &str) -> Result<PathBuf> {
@@ -479,5 +575,47 @@ mod tests {
                      Qt6Core_DIR:PATH=C:/elsewhere\n";
         assert_eq!(qt_prefix_from_cache(cache), Some(PathBuf::from("C:/Qt/Qt6.8.5/6.8.5/msvc2022_64")));
         assert_eq!(qt_prefix_from_cache("CMAKE_BUILD_TYPE:STRING=Release\n"), None);
+    }
+
+    fn scratch_root(tag: &str) -> PathBuf {
+        let dir = std::env::temp_dir().join(format!("sourcetrail-mcp-test-{tag}-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        dir
+    }
+
+    #[test]
+    fn the_user_profile_means_no_user_data_dir() {
+        let root = scratch_root("user");
+        assert_eq!(user_data_dir_in(&root, &root, "user", false, "x").unwrap(), (None, false));
+        assert!(user_data_dir_in(&root, &root, "User", true, "x").is_err());
+    }
+
+    #[test]
+    fn a_named_profile_persists_and_is_left_for_the_app_to_create() {
+        let root = scratch_root("named");
+        let (dir, fresh) = user_data_dir_in(&root, &root, "", false, "x").unwrap();
+        assert_eq!(dir, Some(root.join(DEFAULT_PROFILE)));
+        assert!(!fresh);
+        // Not created: the app fills a missing directory with its defaults.
+        assert!(!root.join(DEFAULT_PROFILE).exists());
+        let (dir, _) = user_data_dir_in(&root, &root, "my profile", false, "x").unwrap();
+        assert_eq!(dir, Some(root.join("my-profile")));
+    }
+
+    #[test]
+    fn fresh_copies_the_profile() {
+        let root = scratch_root("fresh");
+        let scratch = root.join("scratch");
+        std::fs::create_dir_all(root.join("p").join("sub")).unwrap();
+        std::fs::write(root.join("p").join("sub").join("settings.json"), "{}").unwrap();
+        let (dir, fresh) = user_data_dir_in(&root, &scratch, "p", true, "i").unwrap();
+        let dir = dir.unwrap();
+        assert!(fresh);
+        assert!(dir.starts_with(&scratch));
+        assert_eq!(std::fs::read_to_string(dir.join("sub").join("settings.json")).unwrap(), "{}");
+        // A profile that never ran: nothing to copy, the app starts from defaults.
+        let (dir, _) = user_data_dir_in(&root, &scratch, "never-ran", true, "i").unwrap();
+        assert!(!dir.unwrap().exists());
+        let _ = std::fs::remove_dir_all(&root);
     }
 }

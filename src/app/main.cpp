@@ -68,6 +68,29 @@ void closeConsoleWindow()
 #endif
 }
 
+// --user-data-dir (also SOURCETRAIL_USER_DATA_DIR): where settings, logs and the
+// default projects live, empty = the per-user location. Read from argv directly
+// because the user directory is set up before the command line is parsed; the
+// parser declares the option too, so it accepts it.
+FilePath userDataDirFromCommandLine(int argc, char* argv[])
+{
+	const std::string option = "--user-data-dir";
+	for (int i = 1; i < argc; i++)
+	{
+		const std::string arg = argv[i];
+		if (arg == option && i + 1 < argc)
+		{
+			return FilePath(argv[i + 1]);
+		}
+		if (arg.starts_with(option + "="))
+		{
+			return FilePath(arg.substr(option.size() + 1));
+		}
+	}
+	const QByteArray fromEnvironment = qgetenv("SOURCETRAIL_USER_DATA_DIR");
+	return FilePath(fromEnvironment.toStdString());
+}
+
 void signalHandler(int  /*signum*/)
 {
 	std::cout << "interrupt indexing" << std::endl;
@@ -115,7 +138,8 @@ int main(int argc, char* argv[])
 {
 	setupDefaultLocale();
 
-	Version version = setupAppDirectories(FilePath(argv[0]).getCanonical().getParentDirectory());
+	Version version = setupAppDirectories(
+		FilePath(argv[0]).getCanonical().getParentDirectory(), userDataDirFromCommandLine(argc, argv));
 
 	if constexpr (utility::Platform::isLinux())
 	{

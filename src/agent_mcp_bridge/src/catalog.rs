@@ -76,7 +76,7 @@ Topics: describe() with no topic lists them all.",
         summary: "Spawn, attach to, list, and stop Sourcetrail processes; protocol version check.",
         tools: &["instance_start", "instance_stop", "instance_list", "instance_handshake"],
         doc: "\
-instance_start { bin, id?, project?, headless=true } -> { id }
+instance_start { bin, id?, project?, headless=true, profile=\"agent\", fresh=false } -> { id }
   Spawns `bin` with --agent-instance <id> (channels st.agent.<id>.*) and returns once the app \
 answers the handshake. id defaults to the binary's git label <branch>-<shorthash>, so two \
 builds run side by side for comparisons. headless sets QT_QPA_PLATFORM=offscreen. `project` \
@@ -84,12 +84,18 @@ is loaded once the app is up. The app runs from its own directory, with stdin cl
 stdout/stderr in a console file under $SOURCETRAIL_MCP_HOME/logs (default \
 <local app data>/sourcetrail-mcp/logs). If the app keeps running but never answers, a startup \
 dialog is likely waiting invisibly: start it with headless: false to see it.
+  profile: settings isolation. Spawned instances run on an isolated user-data directory \
+(--user-data-dir: settings, window layout, logs, recent projects) that persists across \
+runs, $SOURCETRAIL_MCP_HOME/profiles/<name>, \"agent\" unless profile names another; a \
+profile that never ran starts from Sourcetrail's defaults. profile \"user\" runs on your own \
+settings instead. fresh: true runs on a throwaway copy of the profile, deleted when the \
+instance stops: a known starting point whose changes never persist.
 
 instance_stop { instance? } -> { killed: id }
   Kills a spawned instance (or forgets an attached one). Empty = the one running instance.
 
 instance_list {} -> { instances: [ { id, spawned, pid, running, exit_code?, bin?, headless?, \
-console_file? } | { id, running: false, start_failed } ] }
+console_file?, qt?, user_data_dir?, fresh? } | { id, running: false, start_failed } ] }
   A failed start stays listed with its reason; calls on that id repeat it instead of \
 waiting on an app that never came up.
 
