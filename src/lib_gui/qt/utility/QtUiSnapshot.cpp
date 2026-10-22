@@ -33,6 +33,7 @@ import srctrl.logging;
 #include <QAccessible>
 
 #include "QtAccessibleRole.h"	// shared accessibleRoleName (also used by QtUiControl)
+#include "QtUiAnchor.h"			// ref anchors, shared with QtUiQuery and QtUiControl
 #include "QtUiHash.h"			// structuralHash (per-node version stamp)
 #endif
 
@@ -52,16 +53,30 @@ struct StepData
 	std::uint32_t index;
 };
 
-// The re-resolvable address of the current node: the accumulated path from a root.
-flatbuffers::Offset<fb::ElementRef> buildRef(flatbuffers::FlatBufferBuilder& b, const std::vector<StepData>& path)
+// Where a node's ref is anchored (see QtUiAnchor.h): the objectName of the nearest
+// node at or above it that a unique name anchors, and that node's depth in `path`.
+// No anchor: the ref is the whole path from its top-level window.
+struct Anchor
 {
+	QString name;
+	std::size_t depth = 0;
+};
+
+// The re-resolvable address of the current node: its anchor and the path steps
+// below it, else the accumulated path from a root.
+flatbuffers::Offset<fb::ElementRef> buildRef(
+	flatbuffers::FlatBufferBuilder& b, const std::vector<StepData>& path, const Anchor& anchor = {})
+{
+	const std::size_t first = anchor.name.isEmpty() ? 0 : anchor.depth + 1;
 	std::vector<flatbuffers::Offset<fb::PathStep>> steps;
-	steps.reserve(path.size());
-	for (const StepData& s: path)
+	for (std::size_t i = first; i < path.size(); ++i)
 	{
-		steps.push_back(fb::CreatePathStep(b, b.CreateSharedString(s.role), b.CreateSharedString(s.name), s.index));
+		steps.push_back(fb::CreatePathStep(
+			b, b.CreateSharedString(path[i].role), b.CreateSharedString(path[i].name), path[i].index));
 	}
-	return fb::CreateElementRef(b, 0, b.CreateVector(steps));
+	const auto name = anchor.name.isEmpty() ? flatbuffers::Offset<flatbuffers::String>()
+											: b.CreateSharedString(anchor.name.toStdString());
+	return fb::CreateElementRef(b, name, b.CreateVector(steps));
 }
 
 // Skip large/binary property values — record the type name instead.
@@ -192,8 +207,16 @@ std::uint32_t stateBits(const QAccessible::State& s)
 
 // --- Route 1: accessibility tree (semantic backbone) -----------------------
 flatbuffers::Offset<fb::UiNode> buildAccessibleNode(
-	flatbuffers::FlatBufferBuilder& b, QAccessibleInterface* iface, std::vector<StepData>& path)
+	flatbuffers::FlatBufferBuilder& b,
+	QAccessibleInterface* iface,
+	std::vector<StepData>& path,
+	const std::map<QString, int>& names,
+	Anchor anchor)
 {
+	if (const QString own = anchorFor(iface->object(), names); !own.isEmpty())
+	{
+		anchor = {own, path.size() - 1};
+	}
 	std::vector<flatbuffers::Offset<fb::UiNode>> children;
 	std::map<std::pair<std::string, std::string>, std::uint32_t> counts;
 	const int n = iface->childCount();
@@ -207,11 +230,11 @@ flatbuffers::Offset<fb::UiNode> buildAccessibleNode(
 		const std::string cr = accessibleRoleName(child->role());
 		const std::string cn = child->text(QAccessible::Name).toStdString();
 		path.push_back({cr, cn, counts[{cr, cn}]++});
-		children.push_back(buildAccessibleNode(b, child, path));
+		children.push_back(buildAccessibleNode(b, child, path, names, anchor));
 		path.pop_back();
 	}
 	const auto kids = b.CreateVector(children);
-	const auto ref = buildRef(b, path);
+	const auto ref = buildRef(b, path, anchor);
 	const auto role = b.CreateString(accessibleRoleName(iface->role()));
 	const auto name = b.CreateString(iface->text(QAccessible::Name).toStdString());
 	const auto value = b.CreateString(iface->text(QAccessible::Value).toStdString());
@@ -282,6 +305,7 @@ std::vector<std::uint8_t> captureUiSnapshot(
 	{
 		useAccessibility = true;
 		treeHash = detail::kFnvOffset;
+		const std::map<QString, int> names = countWidgetNames();	// one census: anchors need unique names
 		std::map<std::pair<std::string, std::string>, std::uint32_t> counts;
 		for (QWidget* widget: topLevels)
 		{
@@ -290,7 +314,7 @@ std::vector<std::uint8_t> captureUiSnapshot(
 				const std::string role = accessibleRoleName(iface->role());
 				const std::string name = iface->text(QAccessible::Name).toStdString();
 				std::vector<StepData> path{{role, name, counts[{role, name}]++}};
-				roots.push_back(buildAccessibleNode(builder, iface, path));
+				roots.push_back(buildAccessibleNode(builder, iface, path, names, {}));
 				detail::hashMixU64(treeHash, structuralHash(iface));
 			}
 		}

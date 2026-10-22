@@ -245,6 +245,13 @@ ui_snapshot { object_tree=false, instance? } -> { request_id, format, tree_hash,
 ref: { object_name, path: [ { role, name, index } ] }, hash, children: [node] }
   The accessibility tree by default; object_tree=true gives the raw widget tree with \
 properties. Pass a node's `ref` unchanged to ui_invoke / ui_capture.
+  A ref is { object_name, path }. object_name (the anchor) is the widget carrying that \
+name anywhere in the app, and path steps down from it; without one, path starts at a \
+top-level window. The snapshot anchors each ref on the nearest widget whose name exactly one \
+visible widget carries, so most refs are short and survive a window title change, e.g. the \
+toolbar's Back button: { object_name: \"undo_button\", path: [] }. A known name works by hand \
+too: ui_invoke { ref: { object_name: \"home_button\" }, action: \"Press\" }. A name several \
+visible widgets carry is refused, saying so.
 
 ui_query { query, instance? } -> the ui_snapshot shape, roots = the matches
   JSONPath (RFC 9535) evaluated in the app over the accessibility tree, so only matches \

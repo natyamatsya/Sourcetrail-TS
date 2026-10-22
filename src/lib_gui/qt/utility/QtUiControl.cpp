@@ -29,6 +29,7 @@
 #include <QAccessibleActionInterface>
 
 #include "QtAccessibleRole.h"
+#include "QtUiAnchor.h"
 #include "QtUiHash.h"
 #endif
 
@@ -37,10 +38,11 @@ namespace utility::qt
 #if QT_CONFIG(accessibility)
 namespace
 {
-// A compact, human-readable rendering of the selector for error messages.
-std::string pathToString(const std::vector<RefStep>& path)
+// A compact, human-readable rendering of the selector for error messages:
+// `#anchor/role[name]/...`, or `/role[name]/...` from a top-level window.
+std::string refToString(const std::string& objectName, const std::vector<RefStep>& path)
 {
-	std::string s;
+	std::string s = objectName.empty() ? "" : "#" + objectName;
 	for (const RefStep& step: path)
 	{
 		s += "/" + step.role + "[" + step.name + "]";
@@ -72,42 +74,60 @@ QAccessibleInterface* childMatching(QAccessibleInterface* parent, const RefStep&
 	return nullptr;
 }
 
-// Resolve the absolute path from the top-level widgets. `objectName` (the ref's
-// anchor) is honored when set, but the snapshot emits an empty anchor today, so
-// the common case is a pure root-relative path. See the objectName-hygiene pass
-// in DESIGN_AGENT_UI_SNAPSHOT.md.
-QAccessibleInterface* resolve(const std::string& objectName, const std::vector<RefStep>& path)
+// Resolve a ref (see QtUiAnchor.h): with an `objectName` anchor, the widget carrying
+// it wherever it sits, then `path` down from it; without one, `path` from the
+// top-level windows. Returns nullptr with `error` saying why.
+QAccessibleInterface* resolve(const std::string& objectName, const std::vector<RefStep>& path, std::string& error)
 {
-	if (path.empty())
-	{
-		return nullptr;
-	}
-
-	std::map<std::pair<std::string, std::string>, std::uint32_t> counts;
 	QAccessibleInterface* current = nullptr;
-	for (QWidget* widget: QApplication::topLevelWidgets())
+	std::size_t step = 0;
+	if (!objectName.empty())
 	{
-		if (!objectName.empty() && widget->objectName().toStdString() != objectName)
+		QWidget* anchor = widgetNamed(QString::fromStdString(objectName), error);
+		if (anchor == nullptr)
 		{
-			continue;
+			return nullptr;
 		}
-		QAccessibleInterface* iface = QAccessible::queryAccessibleInterface(widget);
-		if (iface == nullptr)
+		current = QAccessible::queryAccessibleInterface(anchor);
+		if (current == nullptr)
 		{
-			continue;
-		}
-		const std::string role = accessibleRoleName(iface->role());
-		const std::string name = iface->text(QAccessible::Name).toStdString();
-		if (role == path[0].role && name == path[0].name && counts[{role, name}]++ == path[0].index)
-		{
-			current = iface;
-			break;
+			error = "widget '" + objectName + "' has no accessible interface";
+			return nullptr;
 		}
 	}
-
-	for (std::size_t k = 1; current != nullptr && k < path.size(); ++k)
+	else
 	{
-		current = childMatching(current, path[k]);
+		if (path.empty())
+		{
+			error = "the ref is empty: pass an object_name, a path, or both";
+			return nullptr;
+		}
+		std::map<std::pair<std::string, std::string>, std::uint32_t> counts;
+		for (QWidget* widget: QApplication::topLevelWidgets())
+		{
+			QAccessibleInterface* iface = QAccessible::queryAccessibleInterface(widget);
+			if (iface == nullptr)
+			{
+				continue;
+			}
+			const std::string role = accessibleRoleName(iface->role());
+			const std::string name = iface->text(QAccessible::Name).toStdString();
+			if (role == path[0].role && name == path[0].name && counts[{role, name}]++ == path[0].index)
+			{
+				current = iface;
+				break;
+			}
+		}
+		step = 1;
+	}
+
+	for (; current != nullptr && step < path.size(); ++step)
+	{
+		current = childMatching(current, path[step]);
+	}
+	if (current == nullptr)
+	{
+		error = "element not found: " + refToString(objectName, path);
 	}
 	return current;
 }
@@ -120,14 +140,15 @@ ControlResult invokeAction(
 	const std::string& text,
 	std::uint64_t expectHash)
 {
-	QAccessibleInterface* iface = resolve(objectName, path);
+	std::string error;
+	QAccessibleInterface* iface = resolve(objectName, path, error);
 	if (iface == nullptr)
 	{
-		return {false, "element not found: " + pathToString(path)};
+		return {false, error};
 	}
 	if (expectHash != 0 && structuralHash(iface) != expectHash)
 	{
-		return {false, "element changed since snapshot: " + pathToString(path)};
+		return {false, "element changed since snapshot: " + refToString(objectName, path)};
 	}
 
 	if (!action.empty())
@@ -135,7 +156,7 @@ ControlResult invokeAction(
 		QAccessibleActionInterface* actions = iface->actionInterface();
 		if (actions == nullptr)
 		{
-			return {false, "element has no actions: " + pathToString(path)};
+			return {false, "element has no actions: " + refToString(objectName, path)};
 		}
 		if (!actions->actionNames().contains(QString::fromStdString(action)))
 		{
@@ -149,7 +170,7 @@ ControlResult invokeAction(
 		QAccessibleEditableTextInterface* editable = iface->editableTextInterface();
 		if (editable == nullptr)
 		{
-			return {false, "element text is not editable: " + pathToString(path)};
+			return {false, "element text is not editable: " + refToString(objectName, path)};
 		}
 		const int len = (iface->textInterface() != nullptr) ? iface->textInterface()->characterCount() : 0;
 		editable->replaceText(0, len, QString::fromStdString(text));
@@ -165,14 +186,15 @@ ControlResult invokeAction(
 CaptureResult captureElement(
 	const std::string& objectName, const std::vector<RefStep>& path, std::uint64_t expectHash)
 {
-	QAccessibleInterface* iface = resolve(objectName, path);
+	std::string error;
+	QAccessibleInterface* iface = resolve(objectName, path, error);
 	if (iface == nullptr)
 	{
-		return {false, "element not found: " + pathToString(path), {}, 0, 0};
+		return {false, error, {}, 0, 0};
 	}
 	if (expectHash != 0 && structuralHash(iface) != expectHash)
 	{
-		return {false, "element changed since snapshot: " + pathToString(path), {}, 0, 0};
+		return {false, "element changed since snapshot: " + refToString(objectName, path), {}, 0, 0};
 	}
 
 	QPixmap pixmap;
@@ -195,7 +217,7 @@ CaptureResult captureElement(
 		}
 		if (host == nullptr)
 		{
-			return {false, "element has no grabbable widget: " + pathToString(path), {}, 0, 0};
+			return {false, "element has no grabbable widget: " + refToString(objectName, path), {}, 0, 0};
 		}
 		const QRect r = iface->rect();
 		pixmap = host->grab(QRect(host->mapFromGlobal(r.topLeft()), r.size()));

@@ -19,6 +19,7 @@
 #include "json-query/JSONQuery"
 
 #include "QtAccessibleRole.h"
+#include "QtUiAnchor.h"
 #include "QtUiHash.h"
 #include "agent_snapshot_generated.h"
 
@@ -32,20 +33,36 @@ namespace
 {
 using Step = std::tuple<QString, QString, int>;	// role, name, nth-among-siblings
 
-QJsonObject refJson(const std::vector<Step>& path)
+// Where a node's ref is anchored: the nearest node at or above it that a unique
+// objectName anchors, and its depth in the path (see QtUiAnchor.h).
+struct Anchor
+{
+	QString name;
+	std::size_t depth = 0;
+};
+
+// The node's ref, built exactly as QtUiSnapshot builds it: the anchor and the path
+// steps below it, else the whole path from its top-level window.
+QJsonObject refJson(const std::vector<Step>& path, const Anchor& anchor)
 {
 	QJsonArray steps;
-	for (const auto& [role, name, index]: path)
+	for (std::size_t i = anchor.name.isEmpty() ? 0 : anchor.depth + 1; i < path.size(); ++i)
 	{
+		const auto& [role, name, index] = path[i];
 		steps.append(QJsonObject{{"role", role}, {"name", name}, {"index", index}});
 	}
-	return QJsonObject{{"object_name", QString()}, {"path", steps}};
+	return QJsonObject{{"object_name", anchor.name}, {"path", steps}};
 }
 
 // Accessibility tree -> JSON, matching get_snapshot's shape so the agent writes one
 // JSONPath against what it already sees. Each node carries its resolvable `ref`.
-QJsonObject buildJsonNode(QAccessibleInterface* iface, std::vector<Step>& path)
+QJsonObject buildJsonNode(
+	QAccessibleInterface* iface, std::vector<Step>& path, const std::map<QString, int>& names, Anchor anchor)
 {
+	if (const QString own = anchorFor(iface->object(), names); !own.isEmpty())
+	{
+		anchor = {own, path.size() - 1};
+	}
 	QJsonArray children;
 	std::map<std::pair<QString, QString>, int> counts;
 	const int n = iface->childCount();
@@ -59,7 +76,7 @@ QJsonObject buildJsonNode(QAccessibleInterface* iface, std::vector<Step>& path)
 		const QString cr = QString::fromLatin1(accessibleRoleName(child->role()));
 		const QString cn = child->text(QAccessible::Name);
 		path.push_back({cr, cn, counts[{cr, cn}]++});
-		children.append(buildJsonNode(child, path));
+		children.append(buildJsonNode(child, path, names, anchor));
 		path.pop_back();
 	}
 
@@ -73,7 +90,7 @@ QJsonObject buildJsonNode(QAccessibleInterface* iface, std::vector<Step>& path)
 	}
 	const QRect r = iface->rect();
 	return QJsonObject{
-		{"ref", refJson(path)},
+		{"ref", refJson(path, anchor)},
 		{"role", QString::fromLatin1(accessibleRoleName(iface->role()))},
 		{"name", iface->text(QAccessible::Name)},
 		{"value", iface->text(QAccessible::Value)},
@@ -134,6 +151,7 @@ flatbuffers::Offset<fb::UiNode> jsonToUiNode(flatbuffers::FlatBufferBuilder& b, 
 QueryResult queryUi(const std::string& jsonPath, std::uint64_t requestId)
 {
 	QJsonArray roots;
+	const std::map<QString, int> names = countWidgetNames();	// one census: anchors need unique names
 	std::map<std::pair<QString, QString>, int> counts;
 	for (QWidget* widget: QApplication::topLevelWidgets())
 	{
@@ -145,7 +163,7 @@ QueryResult queryUi(const std::string& jsonPath, std::uint64_t requestId)
 		const QString role = QString::fromLatin1(accessibleRoleName(iface->role()));
 		const QString name = iface->text(QAccessible::Name);
 		std::vector<Step> path{{role, name, counts[{role, name}]++}};
-		roots.append(buildJsonNode(iface, path));
+		roots.append(buildJsonNode(iface, path, names, {}));
 	}
 	const QJsonObject document{{"roots", roots}};
 

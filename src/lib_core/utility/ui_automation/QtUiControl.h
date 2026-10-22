@@ -6,9 +6,12 @@
 #include <vector>
 
 // Structural UI control: the sender counterpart to QtUiSnapshot. Resolve an
-// ElementRef (the same role/name/index selector the snapshot emits per node) back
-// to a live QAccessibleInterface, then invoke an accessible action on it. Shared
-// by the agent-control InvokeAction and CaptureElement commands.
+// ElementRef (the ref the snapshot emits per node) back to a live
+// QAccessibleInterface, then invoke an accessible action on it. A ref is an
+// `objectName` anchor, the widget carrying that name anywhere in the app, with
+// `path` (role/name/index steps) down from it; or, without an anchor, a `path`
+// from a top-level window. See lib_gui's QtUiAnchor.h. Shared by the
+// agent-control InvokeAction and CaptureElement commands.
 // See context/DESIGN_AGENT_UI_CONTROL.md (Structural control).
 namespace utility::qt
 {
