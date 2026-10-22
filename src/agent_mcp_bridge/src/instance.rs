@@ -53,6 +53,8 @@ struct Launch {
     headless: bool,
     /// Where the app's stdout and stderr go (see [`InstanceManager::start`]).
     console_file: PathBuf,
+    /// The Qt installation put on the app's PATH (see [`qt_prefix`]).
+    qt: Option<PathBuf>,
 }
 
 impl AppInstance {
@@ -87,6 +89,7 @@ impl AppInstance {
             v["bin"] = json!(l.bin.display().to_string());
             v["headless"] = json!(l.headless);
             v["console_file"] = json!(l.console_file.display().to_string());
+            v["qt"] = json!(l.qt.as_ref().map(|q| q.display().to_string()));
         }
         v
     }
@@ -256,10 +259,22 @@ impl InstanceManager {
         if let Some(dir) = opts.bin.parent().filter(|d| !d.as_os_str().is_empty()) {
             cmd.current_dir(dir);
         }
+        // Run on the Qt the binary was built with: its bin first on PATH (a dev
+        // build is not deployed, so without it the loader fails before main()),
+        // and its plugins on QT_PLUGIN_PATH (windeployqt copies only the
+        // platform plugin of a desktop session, so an offscreen start of a
+        // deployed build has no platform to load and aborts).
+        let qt = qt_prefix(&opts.bin);
+        if let Some(qt) = &qt {
+            let sep = if cfg!(windows) { ";" } else { ":" };
+            let path = std::env::var("PATH").unwrap_or_default();
+            cmd.env("PATH", format!("{}{sep}{path}", qt.join("bin").display()));
+            cmd.env("QT_PLUGIN_PATH", qt.join("plugins"));
+        }
         let child = cmd
             .spawn()
             .with_context(|| format!("spawn {}", opts.bin.display()))?;
-        let launch = Launch { bin: opts.bin.clone(), headless: opts.headless, console_file };
+        let launch = Launch { bin: opts.bin.clone(), headless: opts.headless, console_file, qt };
 
         // Poll until the app answers the handshake (or it died / timed out).
         let mut instance = wait_for_ready(id, child, launch)?;
@@ -318,7 +333,8 @@ fn wait_for_ready(id: &str, mut child: Child, launch: Launch) -> Result<AppInsta
     loop {
         if let Some(status) = child.try_wait().context("poll child")? {
             bail!(
-                "app exited before its channels were ready ({status}); its console output is in {}",
+                "app exited before its channels were ready ({status}{}); its console output is in {}",
+                exit_hint(status),
                 launch.console_file.display()
             );
         }
@@ -355,6 +371,40 @@ fn wait_for_ready(id: &str, mut child: Child, launch: Launch) -> Result<AppInsta
         }
         std::thread::sleep(READY_POLL);
     }
+}
+
+/// What an exit status says that its number does not, for the ones a failed
+/// start actually produces.
+fn exit_hint(status: std::process::ExitStatus) -> &'static str {
+    // STATUS_DLL_NOT_FOUND: the loader gave up before main(), so the app wrote
+    // nothing to explain it. On a dev build that is Qt not being deployed.
+    const STATUS_DLL_NOT_FOUND: u32 = 0xC000_0135;
+    match status.code() {
+        Some(code) if cfg!(windows) && code as u32 == STATUS_DLL_NOT_FOUND => {
+            ": a DLL is missing, most likely Qt's: set SOURCETRAIL_MCP_QT_DIR to the Qt prefix the binary was built with"
+        }
+        _ => "",
+    }
+}
+
+/// The Qt installation (its prefix: `bin/`, `plugins/`) a spawned app runs on:
+/// `$SOURCETRAIL_MCP_QT_DIR` if set, else the Qt the binary was configured
+/// with, read from `Qt6_DIR` in the CMakeCache.txt of the build tree it sits in
+/// (`<prefix>/lib/cmake/Qt6`). `None` leaves the inherited environment alone,
+/// e.g. for an installed, fully deployed Sourcetrail.
+fn qt_prefix(bin: &Path) -> Option<PathBuf> {
+    if let Some(dir) = std::env::var_os("SOURCETRAIL_MCP_QT_DIR") {
+        return Some(PathBuf::from(dir));
+    }
+    let cache = bin.ancestors().skip(1).map(|d| d.join("CMakeCache.txt")).find(|f| f.is_file())?;
+    qt_prefix_from_cache(&std::fs::read_to_string(cache).ok()?).filter(|p| p.join("plugins").is_dir())
+}
+
+/// The Qt prefix named by a CMakeCache's `Qt6_DIR` entry. Pure (tested).
+fn qt_prefix_from_cache(cache: &str) -> Option<PathBuf> {
+    let qt6_dir = cache.lines().find_map(|l| l.strip_prefix("Qt6_DIR:PATH="))?.trim();
+    // <prefix>/lib/cmake/Qt6
+    Some(Path::new(qt6_dir).parent()?.parent()?.parent()?.to_path_buf())
 }
 
 /// The bridge's data directory (console files, later logs and captures):
@@ -416,4 +466,18 @@ fn sanitize(s: &str) -> String {
     s.chars()
         .map(|c| if c.is_ascii_alphanumeric() || c == '-' || c == '_' { c } else { '-' })
         .collect()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn the_qt_prefix_comes_from_qt6_dir() {
+        let cache = "CMAKE_BUILD_TYPE:STRING=Release\n\
+                     Qt6_DIR:PATH=C:/Qt/Qt6.8.5/6.8.5/msvc2022_64/lib/cmake/Qt6\n\
+                     Qt6Core_DIR:PATH=C:/elsewhere\n";
+        assert_eq!(qt_prefix_from_cache(cache), Some(PathBuf::from("C:/Qt/Qt6.8.5/6.8.5/msvc2022_64")));
+        assert_eq!(qt_prefix_from_cache("CMAKE_BUILD_TYPE:STRING=Release\n"), None);
+    }
 }
