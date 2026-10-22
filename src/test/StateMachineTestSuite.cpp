@@ -875,3 +875,59 @@ TEST_CASE("concurrent state machine dropped with a timeout pending")
 	std::this_thread::sleep_for(std::chrono::milliseconds(60));
 	REQUIRE(recorder.path() == std::vector<std::string> {"off>on:press(agent)"});
 }
+
+TEST_CASE("concurrent state machine moves are on behalf of the cause that set them going")
+{
+	const auto lamp = std::make_shared<Lamp>(std::chrono::milliseconds(20));
+	std::vector<std::pair<std::string, std::uint64_t>> moves;
+	std::mutex movesMutex;
+	const std::size_t id = StateMachineRegistry::instance().addObserver([&](const MachineTransition& transition) {
+		if (transition.machine == "lamp")
+		{
+			const std::lock_guard<std::mutex> lock(movesMutex);
+			moves.emplace_back(transition.event + ">" + transition.to, transition.cause);
+		}
+	});
+
+	{
+		const CauseScope agentRequest(7);
+		REQUIRE(lamp->fire("press", "", EventSource::Agent).ok);	// off (rest) -> on
+	}
+	// The burn comes from the timer thread, with no cause of its own: still request 7's.
+	REQUIRE(eventually([&]() { return lamp->state() == LampMachine::State::Broken; }));
+	REQUIRE(eventually([&]() {
+		const std::lock_guard<std::mutex> lock(movesMutex);
+		return moves.size() == 2;
+	}));
+	StateMachineRegistry::instance().removeObserver(id);
+
+	const std::lock_guard<std::mutex> lock(movesMutex);
+	REQUIRE(moves[0] == std::pair<std::string, std::uint64_t>("press>on", 7));
+	REQUIRE(moves[1] == std::pair<std::string, std::uint64_t>("burn>broken", 7));
+}
+
+TEST_CASE("concurrent state machine episode ends at rest")
+{
+	const auto lamp = std::make_shared<Lamp>(std::chrono::hours(1));
+	std::vector<std::uint64_t> causes;
+	const std::size_t id = StateMachineRegistry::instance().addObserver([&](const MachineTransition& transition) {
+		if (transition.machine == "lamp")
+		{
+			causes.push_back(transition.cause);
+		}
+	});
+	{
+		const CauseScope agentRequest(9);
+		lamp->fire("press", "", EventSource::Agent);	// on, request 9
+	}
+	lamp->fire("press", "", EventSource::App);	// off: the app going on with request 9's episode, now at rest
+	lamp->fire("press", "", EventSource::App);	// on again: a new episode, no cause
+	{
+		const CauseScope agentRequest(11);
+		lamp->fire("press", "", EventSource::Agent);	// off, request 11
+		lamp->fire("press", "", EventSource::Agent);	// on, request 11's episode
+	}
+	lamp->fire("press", "", EventSource::Ui);	// off: a person took over, no cause
+	StateMachineRegistry::instance().removeObserver(id);
+	REQUIRE(causes == std::vector<std::uint64_t> {9, 9, 0, 11, 11, 0});
+}

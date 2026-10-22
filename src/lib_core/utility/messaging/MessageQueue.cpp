@@ -7,6 +7,7 @@
 #include <thread>
 
 #include "MessageBase.h"
+#include "MessageCause.h"
 #include "MessageFilter.h"
 #include "MessageListenerBase.h"
 #include "ScopedFunctor.h"
@@ -127,6 +128,9 @@ std::shared_ptr<const MessageQueue::Observer> MessageQueue::followerOf(const Mes
 
 void MessageQueue::pushMessage(std::shared_ptr<MessageBase> message)
 {
+	// On behalf of whatever it is dispatched for now: a message the history replays
+	// was dispatched before, for something else.
+	message->setCause(currentCause());
 	// Started as it is dispatched: whoever dispatched it sees it going on.
 	if (const std::shared_ptr<const Observer> followedBy = followerOf(*message))
 	{
@@ -142,6 +146,7 @@ void MessageQueue::pushMessage(std::shared_ptr<MessageBase> message)
 
 void MessageQueue::processMessage(std::shared_ptr<MessageBase> message, bool asNextTask)
 {
+	message->setCause(currentCause());
 	const std::shared_ptr<const Observer> followedBy = followerOf(*message);
 	if (followedBy)
 	{
@@ -370,7 +375,11 @@ void MessageQueue::sendMessage(std::shared_ptr<MessageBase> message)
 		{
 			// The listenersMutex gets unlocked so changes to listeners are possible while message handling.
 			m_listenersMutex.unlock();
-			listener->handleMessageBase(message.get());
+			{
+				// What the listener dispatches carries the message's cause on.
+				const CauseScope cause(message->getCause());
+				listener->handleMessageBase(message.get());
+			}
 			m_listenersMutex.lock();
 		}
 	}
@@ -405,6 +414,7 @@ void MessageQueue::sendMessageAsTask(
 						listenerId);
 					if (listener)
 					{
+						const CauseScope cause(message->getCause());
 						listener->handleMessageBase(message.get());
 					}
 				}));

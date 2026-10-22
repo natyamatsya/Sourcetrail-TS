@@ -1,4 +1,5 @@
 #include "QtDialogView.h"
+#include "MessageCause.h"
 #include "QtMessageBox.h"
 
 #include <chrono>
@@ -356,6 +357,13 @@ void QtDialogView::presentQuestion(
 			msgBox.addButton(QString::fromStdString(option), QtMessageBox::AcceptRole);
 		}
 
+		// The answer is on behalf of whoever clicked (an agent's posted click carries
+		// its request), not of what put the box up.
+		std::uint64_t clickCause = 0;
+		QObject::connect(&msgBox, &QMessageBox::buttonClicked, &msgBox, [&clickCause](QAbstractButton *) {
+			clickCause = currentCause();
+		});
+
 		m_questionBoxes[id] = &msgBox;
 		QAbstractButton *clickedButton = msgBox.execModal();
 		m_questionBoxes.erase(id);
@@ -371,6 +379,7 @@ void QtDialogView::presentQuestion(
 		}
 
 		// Does nothing when an agent's answer closed the box.
+		const CauseScope cause(clickCause);
 		QuestionStateMachine::instance()->answer(id, result, EventSource::Ui);
 	});
 }

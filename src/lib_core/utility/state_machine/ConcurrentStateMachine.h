@@ -21,6 +21,7 @@
 #include <utility>
 #include <vector>
 
+#include "MessageCause.h"
 #include "RemoteStateMachine.h"
 #include "StateMachine.h"
 
@@ -77,6 +78,24 @@ concept MachineSpec = requires {
 		std::ranges::range_value_t<decltype(Spec::transitions)>,
 		typename StateMachine<typename Spec::State, typename Spec::Event>::Transition>;
 };
+
+// The states a spec's machine rests in between episodes (Spec::resting), by default
+// its initial state. The application's own moves in an episode that come without a
+// cause (from another thread: the GUI drawing, the indexing pipeline) are on behalf
+// of the cause of the episode's last move from outside; a person's move without one
+// takes the episode over.
+template <typename Spec>
+constexpr bool isResting(typename Spec::State state)
+{
+	if constexpr (requires { Spec::resting; })
+	{
+		return std::ranges::find(Spec::resting, state) != std::ranges::end(Spec::resting);
+	}
+	else
+	{
+		return state == Spec::initial;
+	}
+}
 
 // The data a spec keeps beside its table: Spec::Data, or nothing.
 template <typename Spec>
@@ -211,7 +230,8 @@ public:
 		}
 
 		// Moves along `event`, ending a running timeout. False, and no change, when the
-		// state has no row for it.
+		// state has no row for it. The move is on behalf of the thread's cause; an
+		// application move without one, of the episode's (isResting).
 		bool move(Event event, EventSource source = EventSource::App)
 		{
 			const State from = state();
@@ -220,6 +240,10 @@ public:
 				return false;
 			}
 			m_monitor->timeout.reset();
+			if (const std::uint64_t cause = currentCause(); cause != 0 || source != EventSource::App)
+			{
+				m_monitor->episodeCause = cause;
+			}
 			m_published.push_back(
 				{std::string(Spec::name),
 				 std::string(stateName(from)),
@@ -227,7 +251,12 @@ public:
 				 std::string(eventName(event)),
 				 source,
 				 m_monitor->context(),
-				 revision()});
+				 revision(),
+				 m_monitor->episodeCause});
+			if (isResting<Spec>(state()))
+			{
+				m_monitor->episodeCause = 0;
+			}
 			return true;
 		}
 
@@ -407,6 +436,7 @@ private:
 		StateMachine<State, Event> table {
 			Spec::initial, {std::ranges::begin(Spec::transitions), std::ranges::end(Spec::transitions)}};
 		Data data {};
+		std::uint64_t episodeCause = 0;	// what set the machine going from rest
 		std::weak_ptr<Monitor> self;
 		std::condition_variable_any wake;	// the timer: armed, ended or due
 		std::optional<Timeout> timeout;

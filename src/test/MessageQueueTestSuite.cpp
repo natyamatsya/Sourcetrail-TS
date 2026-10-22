@@ -1,9 +1,12 @@
 #include "Catch2.hpp"
 
+#include <atomic>
 #include <chrono>
+#include <cstdint>
 #include <thread>
 
 // classic headers (entities not exported): stay textual
+#include "MessageCause.h"
 #include "MessageQueue.h"
 #ifndef SRCTRL_MODULE_BUILD
 #include "Message.h"
@@ -301,4 +304,71 @@ TEST_CASE("concurrent burst dispatch is fully delivered despite coalesced wakeup
 	MessageQueue::getInstance()->stopMessageLoop();
 
 	REQUIRE(2 * MESSAGES_PER_PRODUCER == listener.m_messageCount);
+}
+
+namespace
+{
+class CauseMessage: public Message<CauseMessage>
+{
+public:
+	static const std::string getStaticType()
+	{
+		return "CauseMessage";
+	}
+};
+
+class FollowUpMessage: public Message<FollowUpMessage>
+{
+public:
+	static const std::string getStaticType()
+	{
+		return "FollowUpMessage";
+	}
+};
+
+// Dispatches a follow-up from its handler, as an activation does.
+class CauseListener: public MessageListener<CauseMessage>
+{
+private:
+	void handleMessage(CauseMessage*  /*message*/) override
+	{
+		FollowUpMessage().dispatch();
+	}
+};
+
+class FollowUpListener: public MessageListener<FollowUpMessage>
+{
+public:
+	std::atomic<std::uint64_t> m_cause = 1;	// not 0: tells "not run" from "no cause"
+	std::atomic<int> m_count = 0;
+
+private:
+	void handleMessage(FollowUpMessage* message) override
+	{
+		m_cause = message->getCause() == currentCause() ? currentCause() : 999;
+		m_count++;
+	}
+};
+}	 // namespace
+
+TEST_CASE("a message's cause carries on to what its handling dispatches")
+{
+	MessageQueue::getInstance()->startMessageLoopThreaded();
+	CauseListener causeListener;
+	FollowUpListener followUp;
+
+	{
+		const CauseScope agentRequest(42);
+		CauseMessage().dispatch();
+	}
+	waitForThread();
+	REQUIRE(followUp.m_count == 1);
+	REQUIRE(followUp.m_cause == 42);
+
+	CauseMessage().dispatch();	// the user: no cause
+	waitForThread();
+	MessageQueue::getInstance()->stopMessageLoop();
+	REQUIRE(followUp.m_count == 2);
+	REQUIRE(followUp.m_cause == 0);
+	REQUIRE(currentCause() == 0);
 }

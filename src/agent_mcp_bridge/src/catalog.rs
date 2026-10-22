@@ -191,11 +191,21 @@ draws it, and what the graph_* tools act on (describe('graph')): members inside 
     Topic {
         name: "events",
         summary: "Await transitions (indexing done, node activated) instead of re-polling state.",
-        tools: &["events_poll"],
+        tools: &["events_poll", "events_history"],
         doc: "\
-events_poll { since_seq=0, instance? } -> { events: [ { seq, timestamp_ms, type, ... } ], latest_seq }
+events_poll { since_seq=0, instance? } -> { events: [ { seq, timestamp_ms, type, caused_by?, ... } ], latest_seq }
   Pass latest_seq back as since_seq. A jump in seq beyond the returned events means some \
-were dropped (the buffer holds 2048): poll more often.
+were dropped (the buffer holds 2048): poll more often. caused_by (agent-control protocol v7) \
+is the request_id of the command the event follows from: what its handling dispatched, and \
+the state machine episodes it set going (an activation until the views have drawn, an \
+indexing run until idle). Absent: the user did it, or the app on its own.
+
+events_history { request_id?, last=10, instance? } -> { requests: [ { request_id, command, \
+sent_ms, ack: { ok, message, after_ms }, settled_after_ms, events: [ { seq, after_ms, type, \
+machine?, from?, to?, event?, nodes?, dialog?, ... } ] } ] }
+  What the commands this bridge sent led to, matched by caused_by: which nodes an activation \
+showed, which machines moved, a dialog a click opened, and how long until it settled. For \
+one request, or the last ones. From the events the bridge has read (the last 2048).
 
 Event types and their fields:
   AppStateChanged { state }            IndexingStarted {}
@@ -206,6 +216,8 @@ Event types and their fields:
   StatusChanged { text }               TabsChanged { tabs }
   FocusChanged { view }                CommandResult { request_id, ok, message }
   Settled { request_id }               AppInfo { request_id, protocol_version, ... }
+  MachineTransition { machine, from, to, event, source, context, revision } (describe('machines'))
+  DialogChanged { dialog }             a dialog came up (as ui_state.dialog) or went away (\"\")
   LogEvent { level, log_source, category, message, log_file, function, log_line } \
 (only after logs_forward)",
     },

@@ -142,6 +142,16 @@ pub const MACHINES_SINCE: u32 = 6;
 /// (`UiState.view_graph`) and takes the graph commands (expand, hide, split, trail).
 pub const GRAPH_SINCE: u32 = 7;
 
+/// The protocol version from which every event says which request it follows from
+/// (`EventEnvelope.caused_by`), and a dialog coming or going is an event.
+pub const CAUSES_SINCE: u32 = 7;
+
+/// The request id of a CommandEnvelope and its command's schema name ("ActivateNode").
+pub fn command_of(bytes: &[u8]) -> Option<(u64, &'static str)> {
+    let envelope = flatbuffers::root::<fb::CommandEnvelope>(bytes).ok()?;
+    Some((envelope.request_id(), envelope.command_type().variant_name()?))
+}
+
 /// Expand (or collapse) a node's members in the graph.
 pub fn expand_node(request_id: u64, node_id: u64, expand: bool) -> Vec<u8> {
     let mut b = FlatBufferBuilder::new();
@@ -642,6 +652,10 @@ pub fn event_to_json(bytes: &[u8]) -> Result<Value> {
         "type": env.event_type().variant_name().unwrap_or("Unknown"),
     });
     let m = obj.as_object_mut().expect("json object");
+    // The request it follows from (protocol v7); left out for none.
+    if env.caused_by() != 0 {
+        m.insert("caused_by".into(), json!(env.caused_by()));
+    }
     match env.event_type() {
         fb::Event::NodesActivated => {
             let e = env.event_as_nodes_activated().unwrap();
@@ -735,6 +749,9 @@ pub fn event_to_json(bytes: &[u8]) -> Result<Value> {
             let machines: Vec<Value> =
                 e.machines().map(|v| v.iter().map(machine_state_json).collect()).unwrap_or_default();
             m.insert("machines".into(), json!(machines));
+        }
+        fb::Event::DialogChanged => {
+            m.insert("dialog".into(), json!(env.event_as_dialog_changed().unwrap().dialog().unwrap_or_default()));
         }
         // IndexingStarted (empty) and any future arms: type tag only.
         _ => {}
@@ -1066,6 +1083,44 @@ mod tests {
     }
 
     #[test]
+    fn events_say_what_they_follow_from() {
+        let mut b = FlatBufferBuilder::new();
+        let dialog = b.create_string("'Reindex?' (modal)");
+        let e = fb::DialogChanged::create(&mut b, &fb::DialogChangedArgs { dialog: Some(dialog) });
+        let env = fb::EventEnvelope::create(
+            &mut b,
+            &fb::EventEnvelopeArgs {
+                seq: 3,
+                timestamp_ms: 10,
+                event_type: fb::Event::DialogChanged,
+                event: Some(e.as_union_value()),
+                caused_by: 42,
+            },
+        );
+        b.finish(env, None);
+        let v = event_to_json(b.finished_data()).unwrap();
+        assert_eq!(v["type"], "DialogChanged");
+        assert_eq!(v["dialog"], "'Reindex?' (modal)");
+        assert_eq!(v["caused_by"], 42);
+
+        // No cause: left out, not 0.
+        let mut b = FlatBufferBuilder::new();
+        let s = fb::Settled::create(&mut b, &fb::SettledArgs { request_id: 5 });
+        let env = fb::EventEnvelope::create(
+            &mut b,
+            &fb::EventEnvelopeArgs {
+                seq: 4,
+                timestamp_ms: 11,
+                event_type: fb::Event::Settled,
+                event: Some(s.as_union_value()),
+                caused_by: 0,
+            },
+        );
+        b.finish(env, None);
+        assert!(event_to_json(b.finished_data()).unwrap().get("caused_by").is_none());
+    }
+
+    #[test]
     fn ui_state_reports_its_dialog() {
         fn with_dialog(dialog: &str) -> Value {
             let mut b = FlatBufferBuilder::new();
@@ -1215,6 +1270,7 @@ mod tests {
                 timestamp_ms: 0,
                 event_type: fb::Event::CommandResult,
                 event: Some(cr.as_union_value()),
+                caused_by: 0,
             },
         );
         b.finish(env, None);
@@ -1245,6 +1301,7 @@ mod tests {
                 timestamp_ms: 0,
                 event_type: fb::Event::TabsChanged,
                 event: Some(tc.as_union_value()),
+                caused_by: 0,
             },
         );
         b.finish(env, None);
@@ -1273,6 +1330,7 @@ mod tests {
                 timestamp_ms: 1234,
                 event_type: fb::Event::IndexingProgress,
                 event: Some(ip.as_union_value()),
+                caused_by: 0,
             },
         );
         b.finish(env, None);
@@ -1296,6 +1354,7 @@ mod tests {
                 timestamp_ms: 0,
                 event_type: fb::Event::AppStateChanged,
                 event: Some(asc.as_union_value()),
+                caused_by: 0,
             },
         );
         b.finish(env, None);
@@ -1315,6 +1374,7 @@ mod tests {
                 timestamp_ms: 0,
                 event_type: fb::Event::Settled,
                 event: Some(s.as_union_value()),
+                caused_by: 0,
             },
         );
         b.finish(env, None);
@@ -1360,6 +1420,7 @@ mod tests {
                 timestamp_ms: 0,
                 event_type: fb::Event::AppInfo,
                 event: Some(a.as_union_value()),
+                caused_by: 0,
             },
         );
         b.finish(env, None);
@@ -1464,6 +1525,7 @@ mod tests {
                 timestamp_ms: 0,
                 event_type: fb::Event::LogEvent,
                 event: Some(le.as_union_value()),
+                caused_by: 0,
             },
         );
         b.finish(ev, None);
@@ -1595,6 +1657,7 @@ mod tests {
                 timestamp_ms: 0,
                 event_type: fb::Event::MachineStates,
                 event: Some(states.as_union_value()),
+                caused_by: 0,
             },
         );
         b.finish(env, None);
@@ -1626,6 +1689,7 @@ mod tests {
                 timestamp_ms: 0,
                 event_type: fb::Event::MachineTransition,
                 event: Some(t.as_union_value()),
+                caused_by: 0,
             },
         );
         b.finish(env, None);

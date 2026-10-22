@@ -800,6 +800,36 @@ that drawn graph, so remote control needs to see it.
 - Bridge: `graph_expand`, `graph_hide`, `graph_split`, `graph_trail`, each returning
   the settled `ui_state` (`describe('graph')`).
 
+### Which request an event follows from (`caused_by`, v7)
+
+Sourcetrail dispatches asynchronously, so "what did my command do" needs a rule
+that holds across threads. The rule is the message graph: a message is on behalf
+of whatever its dispatcher worked for, and its listeners work for that too.
+
+- **`MessageCause.h`**: a thread's current cause (an agent's request id, 0 for none)
+  in a `CauseScope`. The `MessageQueue` stamps each message with the dispatching
+  thread's cause as it is dispatched (a message the history replays was dispatched
+  before, for something else) and runs each listener under the message's cause,
+  in tasks too. What a listener dispatches carries the cause on.
+- **Across threads** the cause is carried where work is handed over:
+  `execution::qt::onUi` posts take it along (a view's update, a dialog a handler
+  shows), as do the agent's posted button clicks and synthetic input events, the
+  dialog watcher's deferred rescan, and a project load deferred until startup.
+- **State machines** record it on every transition. A move is on behalf of the
+  thread's cause; the application's own moves that come without one (the GUI
+  drawing an activation, the indexing pipeline) inherit the cause of the episode's
+  last move from outside, until the machine is back at rest (`Spec::resting`, by
+  default its initial state). A person's move without a cause takes the episode
+  over, so a user's answer is not credited to the agent request that asked.
+- **Agent control** handles each command under `CauseScope(request_id)` and gives
+  every event `EventEnvelope.caused_by`: the transition's cause for
+  `MachineTransition` and the `AppStateChanged` it leads to, the request itself for
+  `CommandResult` and `Settled`, the publishing thread's otherwise. A dialog coming
+  up or going away is a `DialogChanged` event, so a box a command opened is seen
+  without polling, and attributed.
+- **Bridge**: `caused_by` in `events_poll`, and `events_history` lists, per command
+  the bridge sent, its ack, when it settled and the events that followed from it.
+
 ## Optimistic control — structural hashes (staleness detection)
 
 An `ElementRef` is resolved *at execute time* against the live tree (role/name/index

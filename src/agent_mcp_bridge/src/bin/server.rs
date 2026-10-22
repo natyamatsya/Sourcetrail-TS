@@ -370,6 +370,24 @@ struct ScrollArgs {
 #[derive(serde::Deserialize, rmcp::schemars::JsonSchema)]
 #[schemars(crate = "rmcp::schemars")]
 #[serde(deny_unknown_fields)]
+struct HistoryOfArgs {
+    /// One request (a request_id from events_poll); default: the last ones.
+    #[serde(default)]
+    request_id: Option<u64>,
+    /// How many of the last requests, without request_id. Default 10.
+    #[serde(default = "default_history_last")]
+    last: usize,
+    #[serde(default)]
+    instance: String,
+}
+
+fn default_history_last() -> usize {
+    10
+}
+
+#[derive(serde::Deserialize, rmcp::schemars::JsonSchema)]
+#[schemars(crate = "rmcp::schemars")]
+#[serde(deny_unknown_fields)]
 struct GraphNodeArgs {
     /// A node of the graph: ui_state.view_graph[].id.
     node_id: u64,
@@ -809,6 +827,11 @@ impl SourcetrailServer {
     #[tool(description = "Scroll the code view to a 1-based line of a source file. Returns the settled ui_state.")]
     async fn nav_scroll_to_line(&self, Parameters(a): Parameters<ScrollArgs>) -> Result<CallToolResult, McpError> {
         ok_json(self.mgr.call(move |m| m.get_or_attach(&a.instance)?.bridge().scroll_to_line(&a.path, a.line)).await?)
+    }
+
+    #[tool(description = "What the commands sent led to: per request its command, ack, settle time and the events caused_by it (activations, machine transitions, dialogs). Returns { requests: [...] }.")]
+    async fn events_history(&self, Parameters(a): Parameters<HistoryOfArgs>) -> Result<CallToolResult, McpError> {
+        ok_json(self.mgr.call(move |m| Ok(m.get_or_attach(&a.instance)?.bridge().request_log(a.request_id, a.last))).await?)
     }
 
     #[tool(description = "Expand (or with expand=false collapse) a graph node's members, like its expand toggle. node_id from ui_state.view_graph. Returns the settled ui_state.")]

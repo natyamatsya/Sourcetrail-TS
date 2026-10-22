@@ -31,6 +31,21 @@ const LOAD_POLL: Duration = Duration::from_millis(100);
 const LOAD_STATE_READ: Duration = Duration::from_secs(2);
 /// Bound on the buffered event log (drops oldest; `seq` gaps let a poller detect it).
 const EVENT_LOG_CAP: usize = 2048;
+const REQUEST_LOG_CAP: usize = 256;
+
+fn now_ms() -> u64 {
+    std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|d| d.as_millis() as u64)
+        .unwrap_or(0)
+}
+
+/// A command this bridge sent, for the history: what it was and when.
+struct SentRequest {
+    id: u64,
+    command: &'static str,
+    sent_ms: u64,
+}
 
 /// Pull the `thoth-ipc:<version>` token out of a build_id (`git:<hash>+thoth-ipc:X`).
 /// That token is the SHM wire the two sides must agree on, so it's what we compare.
@@ -77,6 +92,8 @@ pub struct Bridge {
     // explicit drain) is recorded here as self-describing JSON, so poll_events can
     // replay it by seq cursor. Bounded; oldest dropped.
     event_log: VecDeque<Value>,
+    // The commands sent, newest last, for history(). Bounded; oldest dropped.
+    requests: VecDeque<SentRequest>,
     // Result of the connect-time protocol handshake (GetInfo -> AppInfo): the app's
     // protocol version + build identity and the computed skew, or an error note if
     // the handshake couldn't complete (app down / too old). Best-effort — never
@@ -124,6 +141,7 @@ impl Bridge {
             snapshot,
             next_id: 1,
             event_log: VecDeque::new(),
+            requests: VecDeque::new(),
             handshake: Value::Null,
             dropped_frames: 0,
             last_frame: None,
@@ -309,6 +327,12 @@ impl Bridge {
                 self.cmd_name,
                 self.cmd_receivers()
             );
+        }
+        if let Some((id, command)) = protocol::command_of(bytes) {
+            if self.requests.len() >= REQUEST_LOG_CAP {
+                self.requests.pop_front();
+            }
+            self.requests.push_back(SentRequest { id, command, sent_ms: now_ms() });
         }
         Ok(())
     }
@@ -591,12 +615,7 @@ impl Bridge {
     /// events means some were dropped (the log and the shm ring are both bounded)
     /// — poll more often. Start from `since_seq = 0`.
     pub fn poll_events(&mut self, since_seq: u64) -> Value {
-        for _ in 0..EVENT_LOG_CAP {
-            match self.events.try_recv() {
-                Ok(buf) if !buf.is_empty() => self.record_event(buf.data()),
-                _ => break,
-            }
-        }
+        self.drain_events();
         let events: Vec<Value> = self
             .event_log
             .iter()
@@ -610,6 +629,88 @@ impl Bridge {
             .and_then(Value::as_u64)
             .unwrap_or(since_seq);
         json!({ "events": events, "latest_seq": latest })
+    }
+
+    fn drain_events(&mut self) {
+        for _ in 0..EVENT_LOG_CAP {
+            match self.events.try_recv() {
+                Ok(buf) if !buf.is_empty() => self.record_event(buf.data()),
+                _ => break,
+            }
+        }
+    }
+
+    /// What the commands this bridge sent led to: for request `request_id`, or the
+    /// `last` ones, each with its command, its ack, when it settled, and the events
+    /// that followed from it (`caused_by`, protocol v7): activations, the machines'
+    /// transitions, a dialog that came up. Times are ms after the command was sent.
+    pub fn request_log(&mut self, request_id: Option<u64>, last: usize) -> Value {
+        self.drain_events();
+        let chosen: Vec<&SentRequest> = match request_id {
+            Some(id) => self.requests.iter().filter(|r| r.id == id).collect(),
+            None => {
+                let skip = self.requests.len().saturating_sub(last.max(1));
+                self.requests.iter().skip(skip).collect()
+            }
+        };
+        let requests: Vec<Value> = chosen.iter().map(|r| self.request_entry(r)).collect();
+        let mut v = json!({ "requests": requests });
+        if self.app_protocol_version() < protocol::CAUSES_SINCE {
+            v["note"] = json!(format!(
+                "this app speaks agent-control protocol v{} and does not say what follows from a \
+                 command (needs v{}): only its ack and Settled are matched",
+                self.app_protocol_version(),
+                protocol::CAUSES_SINCE
+            ));
+        }
+        v
+    }
+
+    fn request_entry(&self, request: &SentRequest) -> Value {
+        let after = |e: &Value| {
+            e.get("timestamp_ms").and_then(Value::as_u64).map(|t| t as i64 - request.sent_ms as i64)
+        };
+        let mut ack = Value::Null;
+        let mut settled_after_ms = Value::Null;
+        let mut events = Vec::new();
+        for e in &self.event_log {
+            let caused = e.get("caused_by").and_then(Value::as_u64) == Some(request.id);
+            let answers = e.get("request_id").and_then(Value::as_u64) == Some(request.id);
+            if !caused && !answers {
+                continue;
+            }
+            match e.get("type").and_then(Value::as_str) {
+                Some("CommandResult") => {
+                    ack = json!({ "ok": e["ok"], "message": e["message"], "after_ms": after(e) });
+                }
+                Some("Settled") => settled_after_ms = json!(after(e)),
+                // Replies to the command itself, not what it led to.
+                Some("MachineStates") | Some("AppInfo") => {}
+                Some(kind) => {
+                    let mut summary = json!({ "seq": e["seq"], "after_ms": after(e), "type": kind });
+                    for key in ["machine", "from", "to", "event", "dialog", "file_path", "state"] {
+                        if let Some(value) = e.get(key) {
+                            summary[key] = value.clone();
+                        }
+                    }
+                    if let Some(nodes) = e.get("nodes").and_then(Value::as_array) {
+                        let names: Vec<&Value> =
+                            nodes.iter().filter_map(|n| n.get("display_name")).collect();
+                        summary["nodes"] = json!(names);
+                    }
+                    events.push(summary);
+                }
+                None => {}
+            }
+        }
+        json!({
+            "request_id": request.id,
+            "command": request.command,
+            "sent_ms": request.sent_ms,
+            "ack": ack,
+            "settled_after_ms": settled_after_ms,
+            "events": events,
+        })
     }
 
     pub fn get_ui_state(&mut self) -> Result<Value> {

@@ -58,7 +58,8 @@ MachineFireResult ProjectStateMachine::load(const std::string& path, RefreshMode
 
 	// A load that ran while the app starts could find what it needs not there yet
 	// (the language packages register late in startup): it waits for `started`.
-	m_app->whenStarted([weak = m_machine.weak(), path, refresh]() {
+	m_app->whenStarted([weak = m_machine.weak(), path, refresh, cause = currentCause()]() {
+		const CauseScope scope(cause);
 		if (const auto machine = weak.lock())
 		{
 			machine->transaction().data().waitingForStartup = false;

@@ -78,6 +78,11 @@ table MachineTransition {
 // The answer to GetMachines and SendMachineEvent, correlated by request_id.
 table MachineStates { request_id: uint64; machines: [MachineState]; }
 
+// What is in front of the app changed (protocol v7): a dialog or modal window came
+// up (`dialog` as UiState.dialog reports it) or went away (""). Sent as it happens,
+// so an agent sees a box a command opened without polling for it.
+table DialogChanged { dialog: string; }
+
 union Event {
     NodesActivated,
     EdgeActivated,
@@ -97,6 +102,7 @@ union Event {
     AppInfo,
     MachineTransition,   // appended (protocol v6)
     MachineStates,
+    DialogChanged,       // appended (protocol v7)
 }
 
 // One message on `st.agent.events`. `seq` is a per-session monotonic counter so a
@@ -105,6 +111,10 @@ table EventEnvelope {
     seq:          uint64;
     timestamp_ms: uint64;
     event:        Event;
+    // Appended in protocol v7: the request_id of the command the event follows from
+    // (through the messages its handling dispatched, and the state machine episode
+    // it set going), 0 when none is known: the user, or the app on its own.
+    caused_by:    uint64;
 }
 
 root_type EventEnvelope;

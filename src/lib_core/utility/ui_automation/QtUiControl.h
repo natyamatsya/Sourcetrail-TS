@@ -125,8 +125,10 @@ ControlResult sendInputAt(
 	std::int32_t x, std::int32_t y, const std::vector<InputEvent>& events, std::function<void()> delivered);
 
 //! Start (`true`) or stop watching for dialogs, for currentDialog(). Callable
-//! from any thread: the watch itself is installed on the GUI thread.
-void watchDialogs(bool on);
+//! from any thread: the watch itself is installed on the GUI thread. `changed`, when
+//! given, is told what is in front of the app each time that changes (on the GUI
+//! thread; "" when a dialog went away).
+void watchDialogs(bool on, std::function<void(const std::string&)> changed = {});
 
 //! What is in front of the app, waiting for an answer: the active modal window
 //! ("'title' (modal): text"), else the title of the visible in-window dialog

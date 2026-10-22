@@ -42,6 +42,7 @@ struct MachineTransition
 	EventSource source = EventSource::App;
 	std::string context;	// after the transition
 	std::uint64_t revision = 0;
+	std::uint64_t cause = 0;	// the request it was on behalf of (MessageCause.h), 0 for none
 };
 
 struct MachineFireResult

@@ -95,7 +95,9 @@ enum AppState : byte {
 //      event, and UiState.machines (an older app leaves it out, which would read
 //      as "no machines")
 //   7  the graph as drawn (UiState.view_graph) and its controls: ExpandNode,
-//      HideNode, SplitBundle, ActivateTrail
+//      HideNode, SplitBundle, ActivateTrail; EventEnvelope.caused_by (an older
+//      app leaves it out, which would read as "caused by nothing") and the
+//      DialogChanged event
 enum ProtocolVersion : uint { Current = 7 }
 
 // A node of the graph view as drawn (protocol v7).

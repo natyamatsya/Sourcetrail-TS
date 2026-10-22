@@ -1,5 +1,7 @@
 #include "UiPost.h"
 
+#include "MessageCause.h"
+
 #include "QtThreadScheduler.h"
 #include "StdexecPrelude.h"
 #include "logging.h"
@@ -30,11 +32,14 @@ void onUi(QObject* anchor, std::function<void()> work)
 	// swallows exceptions so the sender has no error channel -- required by
 	// start_detached, and consistent with ADR-0001 (domain errors are values,
 	// not exceptions; a throwing GUI callback is a bug we log rather than crash).
+	// The work is on behalf of what the posting thread works for (MessageCause.h):
+	// a dialog it shows, a message it dispatches.
 	stdexec::start_detached(
 		stdexec::schedule(QtThreadScheduler{ anchor }) |
 		stdexec::then(
-			[work = std::move(work)]() noexcept
+			[work = std::move(work), cause = currentCause()]() noexcept
 			{
+				const CauseScope scope(cause);
 				try
 				{
 					work();

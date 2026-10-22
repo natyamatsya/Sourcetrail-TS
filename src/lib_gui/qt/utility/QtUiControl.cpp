@@ -1,7 +1,9 @@
 #include "QtUiControl.h"
 
 #include <algorithm>
+#include <functional>
 #include <map>
+#include <memory>
 #include <mutex>
 #include <utility>
 
@@ -34,6 +36,7 @@
 #include <QAccessible>
 #include <QAccessibleActionInterface>
 
+#include "MessageCause.h"
 #include "QtAccessibleRole.h"
 #include "QtUiAnchor.h"
 #include "QtUiHash.h"
@@ -180,7 +183,14 @@ ControlResult invokeAction(
 			{
 				return {false, "element is disabled: " + refToString(objectName, path)};
 			}
-			QMetaObject::invokeMethod(button, [button]() { button->click(); }, Qt::QueuedConnection);
+			// Under the request's cause: what the click dispatches is on its behalf.
+			QMetaObject::invokeMethod(
+				button,
+				[button, cause = currentCause()]() {
+					const CauseScope scope(cause);
+					button->click();
+				},
+				Qt::QueuedConnection);
 		}
 		else
 		{
@@ -525,6 +535,21 @@ std::string describeReceiver(const QWidget* receiver)
 	return text;
 }
 
+// Delivers `event` to `receiver` on a later turn of the event loop, under the cause
+// current now: what the event dispatches is on behalf of the request that sent it.
+// Queued calls run in order, and inside a nested event loop, as posted events do; a
+// deleted receiver drops it.
+void postUnderCause(QWidget* receiver, QEvent* event)
+{
+	QMetaObject::invokeMethod(
+		receiver,
+		[receiver, event = std::shared_ptr<QEvent>(event), cause = currentCause()]() {
+			const CauseScope scope(cause);
+			QCoreApplication::sendEvent(receiver, event.get());
+		},
+		Qt::QueuedConnection);
+}
+
 // Post the gesture to `receiver`, each event at the global point `toGlobal(event)`
 // gives, then `delivered`. Posted rather than sent: a press can open a menu or a
 // dialog whose exec() would otherwise block the caller, and the agent's ack with
@@ -546,39 +571,39 @@ void postGesture(
 		switch (event.kind)
 		{
 		case InputKind::MouseMove:
-			QCoreApplication::postEvent(receiver,
+			postUnderCause(receiver,
 				new QMouseEvent(QEvent::MouseMove, local, global, Qt::NoButton, toQtButtons(event.buttons), modifiers));
 			break;
 		case InputKind::MousePress:
-			QCoreApplication::postEvent(
+			postUnderCause(
 				receiver, new QMouseEvent(QEvent::MouseButtonPress, local, global, button, button, modifiers));
 			break;
 		case InputKind::MouseRelease:
-			QCoreApplication::postEvent(
+			postUnderCause(
 				receiver, new QMouseEvent(QEvent::MouseButtonRelease, local, global, button, Qt::NoButton, modifiers));
 			// A real right-click also makes the window send a context-menu event;
 			// posted input does not go through the window, so post it here.
 			if (button == Qt::RightButton)
 			{
-				QCoreApplication::postEvent(receiver,
+				postUnderCause(receiver,
 					new QContextMenuEvent(QContextMenuEvent::Mouse, local.toPoint(), global.toPoint(), modifiers));
 			}
 			break;
 		case InputKind::MouseDoubleClick:
-			QCoreApplication::postEvent(
+			postUnderCause(
 				receiver, new QMouseEvent(QEvent::MouseButtonDblClick, local, global, button, button, modifiers));
 			break;
 		case InputKind::Wheel:
-			QCoreApplication::postEvent(receiver,
+			postUnderCause(receiver,
 				new QWheelEvent(local, global, QPoint(0, 0), QPoint(0, event.wheelDelta), toQtButtons(event.buttons),
 					modifiers, Qt::NoScrollPhase, /*inverted*/ false));
 			break;
 		case InputKind::KeyPress:
-			QCoreApplication::postEvent(receiver,
+			postUnderCause(receiver,
 				new QKeyEvent(QEvent::KeyPress, static_cast<int>(event.key), modifiers, QString::fromStdString(event.text)));
 			break;
 		case InputKind::KeyRelease:
-			QCoreApplication::postEvent(receiver,
+			postUnderCause(receiver,
 				new QKeyEvent(QEvent::KeyRelease, static_cast<int>(event.key), modifiers, QString::fromStdString(event.text)));
 			break;
 		}
@@ -711,6 +736,7 @@ std::string describeDialog()
 
 std::mutex s_dialogMutex;
 std::string s_dialog;	 // what describeDialog() last returned
+std::function<void(const std::string&)> s_dialogChanged;	// GUI thread only
 
 // Recomputes the dialog when a window or a window-stack element shows or hides.
 // The recompute is deferred to the next event-loop turn and coalesced, so a burst
@@ -723,8 +749,18 @@ public:
 	void refresh()
 	{
 		const std::string dialog = describeDialog();
-		const std::lock_guard<std::mutex> lock(s_dialogMutex);
-		s_dialog = dialog;
+		{
+			const std::lock_guard<std::mutex> lock(s_dialogMutex);
+			if (dialog == s_dialog)
+			{
+				return;
+			}
+			s_dialog = dialog;
+		}
+		if (s_dialogChanged)
+		{
+			s_dialogChanged(dialog);
+		}
 	}
 
 protected:
@@ -737,7 +773,9 @@ protected:
 				!m_pending)
 			{
 				m_pending = true;
-				QTimer::singleShot(0, this, [this]() {
+				// A dialog a request's click opened is on its behalf.
+				QTimer::singleShot(0, this, [this, cause = currentCause()]() {
+					const CauseScope scope(cause);
 					m_pending = false;
 					refresh();
 				});
@@ -753,13 +791,14 @@ private:
 QPointer<DialogWatch> s_dialogWatch;	// GUI thread only
 }	 // namespace
 
-void watchDialogs(bool on)
+void watchDialogs(bool on, std::function<void(const std::string&)> changed)
 {
 	if (qApp == nullptr)
 	{
 		return;
 	}
-	QMetaObject::invokeMethod(qApp, [on]() {
+	QMetaObject::invokeMethod(qApp, [on, changed = std::move(changed)]() {
+		s_dialogChanged = on ? changed : nullptr;
 		if (on && s_dialogWatch.isNull())
 		{
 			s_dialogWatch = new DialogWatch(qApp);

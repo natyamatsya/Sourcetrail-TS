@@ -95,6 +95,7 @@ bool AgentControlController::isListening() const
 #include "SearchMatch.h"
 
 #include "MessageAgentCommand.h"
+#include "MessageCause.h"
 #include "MessageActivateFile.h"
 #include "MessageActivateNodes.h"
 #include "MessageActivateOverview.h"
@@ -510,7 +511,12 @@ struct AgentControlController::Impl
 		// the message buffer drains. Hook the app scheduler here; handleCommand hooks
 		// the tab a command lands in. flushSettled emits Settled once all is quiet.
 		TaskManager::getScheduler(TabIds::app())->setIdleHandler([this]() { onIdle(); });
-		utility::qt::watchDialogs(true);
+		utility::qt::watchDialogs(true, [this, alive = std::weak_ptr<void>(m_lifetime)](const std::string& dialog) {
+			if (alive.lock())
+			{
+				publishDialogChanged(dialog);
+			}
+		});
 		m_machineObserver = StateMachineRegistry::instance().addObserver([this](const MachineTransition& transition) {
 			publishTransition(transition);
 			// The views have drawn what the activation gave them: what waited for that
@@ -522,7 +528,7 @@ struct AgentControlController::Impl
 			// AppState is derived from these.
 			if (transition.machine == "app" || transition.machine == "project" || transition.machine == "indexing")
 			{
-				updateAppState();
+				updateAppState(transition.cause);
 			}
 		});
 
@@ -768,6 +774,7 @@ struct AgentControlController::Impl
 				stdexec::then([this, requestId, objectName = std::move(ref.objectName),
 								  path = std::move(ref.path), action = std::move(action),
 								  text = std::move(text), expectHash]() {
+					const CauseScope cause(requestId);
 					const utility::qt::ControlResult r =
 						utility::qt::invokeAction(objectName, path, action, text, expectHash);
 					m_uiScope.spawn(
@@ -898,6 +905,7 @@ struct AgentControlController::Impl
 							expectSettle(requestId);
 						}
 					};
+					const CauseScope cause(requestId);
 					const utility::qt::ControlResult r = atPoint
 						? utility::qt::sendInputAt(x, y, events, delivered)
 						: utility::qt::sendInput(ref.objectName, ref.path, events, delivered);
@@ -941,6 +949,8 @@ struct AgentControlController::Impl
 		const auto* envelope = fb::GetCommandEnvelope(data);
 		const std::uint64_t requestId = envelope->request_id();
 		const fb::Command type = envelope->command_type();
+		// What the command dispatches, and all that follows from it, is on its behalf.
+		const CauseScope cause(requestId);
 
 		// State gate: everything but load_project / get_ui_state / set_log_filter
 		// needs a project (the GUI-only commands never get here).
@@ -1354,7 +1364,7 @@ struct AgentControlController::Impl
 				for (const std::uint64_t requestId: settled)
 				{
 					flatbuffers::FlatBufferBuilder builder;
-					publishEvent(builder, fb::Event_Settled, fb::CreateSettled(builder, requestId).Union());
+					publishEvent(builder, fb::Event_Settled, fb::CreateSettled(builder, requestId).Union(), requestId);
 				}
 			}));
 	}
@@ -1602,13 +1612,19 @@ struct AgentControlController::Impl
 		m_framesChannel.send(builder.GetBufferPointer(), builder.GetSize());
 	}
 
-	void publishEvent(flatbuffers::FlatBufferBuilder& builder, fb::Event type, flatbuffers::Offset<void> event)
+	// `cause`: the request the event follows from (caused_by), by default the one the
+	// publishing thread works for.
+	void publishEvent(
+		flatbuffers::FlatBufferBuilder& builder,
+		fb::Event type,
+		flatbuffers::Offset<void> event,
+		std::uint64_t cause = currentCause())
 	{
 		// Serialized: events are normally published from the app-scheduler thread,
 		// but InvokeAction acks from the ui() thread — the lock keeps the seq counter
 		// and the route send consistent across both.
 		const std::lock_guard<std::mutex> lock(m_eventMutex);
-		builder.Finish(fb::CreateEventEnvelope(builder, m_eventSeq++, nowMs(), type, event));
+		builder.Finish(fb::CreateEventEnvelope(builder, m_eventSeq++, nowMs(), type, event, cause));
 		// No bridge attached: skip the send, which thoth-ipc would otherwise report
 		// as failed for every app event. The seq still advances, so a bridge that
 		// attaches later sees the gap and knows it missed events.
@@ -1644,7 +1660,9 @@ struct AgentControlController::Impl
 		return project == "no_project" ? fb::AppState_NoProject : fb::AppState_Loading;
 	}
 
-	void updateAppState()
+	// `cause`: what the change follows from (a machine transition's), by default the
+	// request the calling thread works for.
+	void updateAppState(std::uint64_t cause = currentCause())
 	{
 		const fb::AppState next = computeAppState();
 		{
@@ -1656,7 +1674,7 @@ struct AgentControlController::Impl
 			m_appState = next;
 		}
 		flatbuffers::FlatBufferBuilder builder;
-		publishEvent(builder, fb::Event_AppStateChanged, fb::CreateAppStateChanged(builder, next).Union());
+		publishEvent(builder, fb::Event_AppStateChanged, fb::CreateAppStateChanged(builder, next).Union(), cause);
 	}
 
 	void publishTransition(const MachineTransition& transition)
@@ -1670,7 +1688,15 @@ struct AgentControlController::Impl
 		const auto context = builder.CreateString(transition.context);
 		const auto offset = fb::CreateMachineTransition(
 			builder, machine, from, to, event, source, context, transition.revision);
-		publishEvent(builder, fb::Event_MachineTransition, offset.Union());
+		publishEvent(builder, fb::Event_MachineTransition, offset.Union(), transition.cause);
+	}
+
+	// A dialog came up or went away (protocol v7).
+	void publishDialogChanged(const std::string& dialog)
+	{
+		flatbuffers::FlatBufferBuilder builder;
+		const auto offset = fb::CreateDialogChanged(builder, builder.CreateString(dialog));
+		publishEvent(builder, fb::Event_DialogChanged, offset.Union());
 	}
 
 	void publishMachineStates(
@@ -1688,7 +1714,7 @@ struct AgentControlController::Impl
 	{
 		flatbuffers::FlatBufferBuilder builder;
 		const auto result = fb::CreateCommandResult(builder, requestId, ok, builder.CreateString(message));
-		publishEvent(builder, fb::Event_CommandResult, result.Union());
+		publishEvent(builder, fb::Event_CommandResult, result.Union(), requestId);
 	}
 
 	StorageAccess* m_storageAccess;

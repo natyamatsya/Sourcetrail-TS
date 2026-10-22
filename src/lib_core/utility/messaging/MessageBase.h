@@ -4,6 +4,7 @@
 #include "SrctrlModule.h"
 
 #ifndef SRCTRL_MODULE_PURVIEW
+#include <cstdint>
 #include <ostream>
 #include <sstream>
 
@@ -45,6 +46,19 @@ public:
 	void setSchedulerId(TabId schedulerId)
 	{
 		m_schedulerId = schedulerId;
+	}
+
+	// The request it was dispatched on behalf of (MessageCause.h), 0 for none:
+	// stamped by the MessageQueue as it is dispatched, and current while its
+	// listeners run.
+	std::uint64_t getCause() const
+	{
+		return m_cause;
+	}
+
+	void setCause(std::uint64_t cause)
+	{
+		m_cause = cause;
 	}
 
 	bool sendAsTask() const
@@ -122,6 +136,7 @@ private:
 
 	Id m_id;
 	TabId m_schedulerId;
+	std::uint64_t m_cause = 0;
 
 	bool m_isParallel = false;
 	bool m_isReplayed = false;

@@ -72,7 +72,7 @@ definitions finds a whole area with one query:
 | `ui_*` | `ui_state`, `ui_frame`, `ui_snapshot`, `ui_query`, `ui_invoke`, `ui_input`, `ui_capture` |
 | `nav_*` | `nav_search`, `nav_find`, `nav_activate_node`, `nav_activate_file`, `nav_activate_tab`, `nav_scroll_to_line`, `nav_history` |
 | `graph_*` | `graph_expand`, `graph_hide`, `graph_split`, `graph_trail` |
-| `events_*` | `events_poll` |
+| `events_*` | `events_poll`, `events_history` |
 | `logs_*` | `logs_forward` |
 | `project_*` | `project_open` |
 | `machine_*` | `machine_state`, `machine_send` |

@@ -60,6 +60,7 @@ struct ProjectMachine
 
 	static constexpr std::string_view name = "project";
 	static constexpr State initial = State::NoProject;
+	static constexpr std::array resting {State::NoProject, State::Ready};
 	static constexpr std::array states {
 		named(State::NoProject, "no_project"),
 		named(State::Loading, "loading"),
