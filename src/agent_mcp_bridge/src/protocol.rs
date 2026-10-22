@@ -125,6 +125,25 @@ pub fn activate_tab(request_id: u64, tab_id: u64) -> Vec<u8> {
     finish(b, request_id, fb::Command::ActivateTab, c.as_union_value())
 }
 
+pub fn scroll_to_line(request_id: u64, file_path: &str, line: u32) -> Vec<u8> {
+    let mut b = FlatBufferBuilder::new();
+    let p = b.create_string(file_path);
+    let c = fb::ScrollToLine::create(&mut b, &fb::ScrollToLineArgs { file_path: Some(p), line });
+    finish(b, request_id, fb::Command::ScrollToLine, c.as_union_value())
+}
+
+/// The toolbar's back (`forward == false`) or forward navigation.
+pub fn history(request_id: u64, forward: bool) -> Vec<u8> {
+    let mut b = FlatBufferBuilder::new();
+    if forward {
+        let c = fb::HistoryForward::create(&mut b, &fb::HistoryForwardArgs {});
+        finish(b, request_id, fb::Command::HistoryForward, c.as_union_value())
+    } else {
+        let c = fb::HistoryBack::create(&mut b, &fb::HistoryBackArgs {});
+        finish(b, request_id, fb::Command::HistoryBack, c.as_union_value())
+    }
+}
+
 pub fn load_project(request_id: u64, project_file_path: &str) -> Vec<u8> {
     let mut b = FlatBufferBuilder::new();
     let p = b.create_string(project_file_path);
@@ -608,6 +627,22 @@ mod tests {
         assert_eq!(env.request_id(), 3);
         assert_eq!(env.command_type(), fb::Command::ActivateTab);
         assert_eq!(env.command_as_activate_tab().unwrap().tab_id(), 10);
+    }
+
+    #[test]
+    fn scroll_to_line_command_roundtrips() {
+        let bytes = scroll_to_line(4, "/src/main.cpp", 42);
+        let env = cmd(&bytes);
+        assert_eq!(env.command_type(), fb::Command::ScrollToLine);
+        let c = env.command_as_scroll_to_line().unwrap();
+        assert_eq!(c.file_path(), Some("/src/main.cpp"));
+        assert_eq!(c.line(), 42);
+    }
+
+    #[test]
+    fn history_commands_roundtrip() {
+        assert_eq!(cmd(&history(6, false)).command_type(), fb::Command::HistoryBack);
+        assert_eq!(cmd(&history(7, true)).command_type(), fb::Command::HistoryForward);
     }
 
     #[test]

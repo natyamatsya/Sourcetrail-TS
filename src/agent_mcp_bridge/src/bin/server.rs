@@ -15,6 +15,7 @@
 use std::path::PathBuf;
 use std::sync::mpsc;
 
+use agent_mcp_bridge::catalog;
 use agent_mcp_bridge::instance::{InstanceManager, StartOpts};
 use serde_json::{json, Value};
 use tokio::sync::oneshot;
@@ -120,7 +121,7 @@ struct ElementRefArg {
 #[schemars(crate = "rmcp::schemars")]
 #[serde(deny_unknown_fields)]
 struct InvokeActionArgs {
-    /// The element to act on — pass a `ref` object from get_snapshot (object_name + path).
+    /// The element to act on — pass a `ref` object from ui_snapshot (object_name + path).
     #[serde(rename = "ref")]
     target: ElementRefArg,
     /// Accessible action name from the node's `actions` (e.g. "Press", "Toggle", "ShowMenu").
@@ -141,7 +142,7 @@ struct InvokeActionArgs {
 #[schemars(crate = "rmcp::schemars")]
 #[serde(deny_unknown_fields)]
 struct CaptureElementArgs {
-    /// The element to screenshot — pass a `ref` from get_snapshot.
+    /// The element to screenshot — pass a `ref` from ui_snapshot.
     #[serde(rename = "ref")]
     target: ElementRefArg,
     /// Also return the element's properties (name/value/actions). (Reserved.)
@@ -223,7 +224,7 @@ struct PathArgs {
 #[schemars(crate = "rmcp::schemars")]
 #[serde(deny_unknown_fields)]
 struct TabArgs {
-    /// Tab id (from get_ui_state.tabs[].tab_id).
+    /// Tab id (from ui_state.tabs[].tab_id).
     tab_id: u64,
     #[serde(default)]
     instance: String,
@@ -267,13 +268,53 @@ struct KillArgs {
     instance: String,
 }
 
+#[derive(serde::Deserialize, rmcp::schemars::JsonSchema)]
+#[schemars(crate = "rmcp::schemars")]
+#[serde(deny_unknown_fields)]
+struct ScrollArgs {
+    /// Source file whose line to show.
+    path: String,
+    /// 1-based line number.
+    line: u32,
+    #[serde(default)]
+    instance: String,
+}
+
+#[derive(serde::Deserialize, rmcp::schemars::JsonSchema)]
+#[schemars(crate = "rmcp::schemars")]
+#[serde(deny_unknown_fields)]
+struct HistoryArgs {
+    /// "back" or "forward".
+    direction: String,
+    #[serde(default)]
+    instance: String,
+}
+
+#[derive(serde::Deserialize, rmcp::schemars::JsonSchema)]
+#[schemars(crate = "rmcp::schemars")]
+#[serde(deny_unknown_fields)]
+struct DescribeArgs {
+    /// Topic (or tool name); empty lists the topics.
+    #[serde(default)]
+    topic: String,
+}
+
 // --- MCP server -------------------------------------------------------------
 
 // No `tool_router` field: `#[tool_handler]` calls `Self::tool_router()` itself,
 // so a stored copy is one the server never reads.
+//
+// Tool names carry an area prefix (instance_, ui_, nav_, events_, logs_,
+// project_), so a client that searches or defers tool definitions finds a whole
+// area with one query. Descriptions stay one line with the result shape; the
+// detail is in catalog.rs, served by `describe`.
 #[derive(Clone)]
 struct SourcetrailServer {
     mgr: ManagerHandle,
+}
+
+fn element_path(target: &ElementRefArg) -> Vec<(String, String, u32)> {
+    target.path.iter().map(|s| (s.role.clone(), s.name.clone(), s.index)).collect()
 }
 
 #[tool_router]
@@ -282,117 +323,15 @@ impl SourcetrailServer {
         Self { mgr }
     }
 
-    #[tool(description = "Return the current UI state (project, app_state FSM, active nodes, graph, code view, search matches, errors) of an instance.")]
-    async fn get_ui_state(&self, Parameters(a): Parameters<InstanceArg>) -> Result<CallToolResult, McpError> {
-        ok_json(self.mgr.call(move |m| m.get_or_attach(&a.instance)?.bridge().get_ui_state()).await?)
+    #[tool(description = "Start here. With no topic, lists the topics; with one (e.g. describe('nav')) or a tool name, returns that area's usage notes and exact result shapes. Returns { topics } or { topic, tools, doc }.")]
+    async fn describe(&self, Parameters(a): Parameters<DescribeArgs>) -> Result<CallToolResult, McpError> {
+        ok_json(catalog::describe(&a.topic))
     }
 
-    #[tool(description = "Report the connect-time protocol handshake for an instance: the bridge's and app's agent-control protocol versions, the app's version/build/instance id, and the computed skew (match / app_older / app_newer). Use to diagnose a stale or mismatched checkout — app_older means commands this bridge added won't be understood.")]
-    async fn get_instance_info(&self, Parameters(a): Parameters<InstanceArg>) -> Result<CallToolResult, McpError> {
-        ok_json(self.mgr.call(move |m| Ok(m.get_or_attach(&a.instance)?.bridge().handshake())).await?)
-    }
+    // --- instances ---
 
-    #[tool(
-        description = "Poll app events since a cursor. Returns {events, latest_seq}; pass latest_seq back as since_seq (start at 0). Events include AppStateChanged, IndexingStarted/Progress/Finished, NodesActivated, FileActivated, SearchCompleted, ErrorCountChanged, StatusChanged, TabsChanged, CommandResult, and (after set_log_filter) LogEvent. Use to await a transition (e.g. app_state -> Ready) instead of re-polling get_ui_state. A seq jump beyond the returned events means some were dropped — poll more often."
-    )]
-    async fn poll_events(&self, Parameters(a): Parameters<PollEventsArgs>) -> Result<CallToolResult, McpError> {
-        ok_json(self.mgr.call(move |m| Ok(m.get_or_attach(&a.instance)?.bridge().poll_events(a.since_seq))).await?)
-    }
-
-    #[tool(description = "Enable/configure log forwarding to the event stream. qt_rules controls Qt's category emission (QLoggingCategory filter rules); event_pattern is a regex over 'category: message' gating what raises a LogEvent; min_level (info/warning/error) is the floor. After this, LogEvents appear in poll_events.")]
-    async fn set_log_filter(&self, Parameters(a): Parameters<SetLogFilterArgs>) -> Result<CallToolResult, McpError> {
-        ok_json(
-            self.mgr
-                .call(move |m| {
-                    m.get_or_attach(&a.instance)?.bridge().set_log_filter(&a.qt_rules, &a.event_pattern, &a.min_level)
-                })
-                .await?,
-        )
-    }
-
-    #[tool(description = "Search the indexed code base; returns matches (text, node_ids, score).")]
-    async fn search(&self, Parameters(a): Parameters<QueryArgs>) -> Result<CallToolResult, McpError> {
-        ok_json(self.mgr.call(move |m| m.get_or_attach(&a.instance)?.bridge().search(&a.query)).await?)
-    }
-
-    #[tool(description = "Resolve a human query to the best-matching element(s), ranked. Use before activate_node.")]
-    async fn find_element(&self, Parameters(a): Parameters<QueryArgs>) -> Result<CallToolResult, McpError> {
-        ok_json(self.mgr.call(move |m| m.get_or_attach(&a.instance)?.bridge().find_element(&a.query)).await?)
-    }
-
-    #[tool(description = "Activate a node (by serialized_name or node_id); returns the resulting UI state.")]
-    async fn activate_node(&self, Parameters(a): Parameters<ActivateNodeArgs>) -> Result<CallToolResult, McpError> {
-        ok_json(
-            self.mgr
-                .call(move |m| m.get_or_attach(&a.instance)?.bridge().activate_node(a.serialized_name.as_deref(), a.node_id))
-                .await?,
-        )
-    }
-
-    #[tool(description = "Open a source file in the code view; returns the resulting UI state.")]
-    async fn activate_file(&self, Parameters(a): Parameters<PathArgs>) -> Result<CallToolResult, McpError> {
-        ok_json(self.mgr.call(move |m| m.get_or_attach(&a.instance)?.bridge().activate_file(&a.path)).await?)
-    }
-
-    #[tool(description = "Switch to a specific tab by id (from get_ui_state.tabs); returns the resulting UI state.")]
-    async fn activate_tab(&self, Parameters(a): Parameters<TabArgs>) -> Result<CallToolResult, McpError> {
-        ok_json(self.mgr.call(move |m| m.get_or_attach(&a.instance)?.bridge().activate_tab(a.tab_id)).await?)
-    }
-
-    #[tool(description = "Capture the structural UI tree: every element's role, geometry, and supported actions, each with a ref you can target. Accessibility tree by default; object_tree=true for the raw widget/property tree.")]
-    async fn get_snapshot(&self, Parameters(a): Parameters<SnapshotArgs>) -> Result<CallToolResult, McpError> {
-        ok_json(self.mgr.call(move |m| m.get_or_attach(&a.instance)?.bridge().get_snapshot(a.object_tree)).await?)
-    }
-
-    #[tool(description = "Invoke an accessible action on a UI element (structural control). Pass a `ref` from get_snapshot plus an `action` from that node's `actions` (e.g. Press, Toggle, ShowMenu), or `text` to set an editable field. Returns { ok, message } — resolution failures (element not found / action not supported) are data, not errors.")]
-    async fn invoke_action(&self, Parameters(a): Parameters<InvokeActionArgs>) -> Result<CallToolResult, McpError> {
-        ok_json(
-            self.mgr
-                .call(move |m| {
-                    let path: Vec<(String, String, u32)> =
-                        a.target.path.iter().map(|s| (s.role.clone(), s.name.clone(), s.index)).collect();
-                    m.get_or_attach(&a.instance)?.bridge().invoke_action(
-                        &a.target.object_name,
-                        &path,
-                        &a.action,
-                        &a.text,
-                        a.expect_hash,
-                    )
-                })
-                .await?,
-        )
-    }
-
-    #[tool(description = "Select UI elements by JSONPath (RFC 9535), evaluated server-side over the accessibility snapshot (same shape as get_snapshot). Returns a snapshot whose roots are the matches, each with a ref you can invoke/capture. Filters at the source — the full tree never crosses the wire. Example: $.roots..[?(@.role=='button')].")]
-    async fn query_ui(&self, Parameters(a): Parameters<QueryArgs>) -> Result<CallToolResult, McpError> {
-        ok_json(self.mgr.call(move |m| m.get_or_attach(&a.instance)?.bridge().query_ui(&a.query)).await?)
-    }
-
-    #[tool(description = "Screenshot a single UI element by its `ref` (from get_snapshot). Returns { ok, frame } where frame has width/height and image_base64 (PNG). Complements get_snapshot's structure with pixels.")]
-    async fn capture_element(&self, Parameters(a): Parameters<CaptureElementArgs>) -> Result<CallToolResult, McpError> {
-        ok_json(
-            self.mgr
-                .call(move |m| {
-                    let path: Vec<(String, String, u32)> =
-                        a.target.path.iter().map(|s| (s.role.clone(), s.name.clone(), s.index)).collect();
-                    m.get_or_attach(&a.instance)?.bridge().capture_element(
-                        &a.target.object_name,
-                        &path,
-                        a.include_properties,
-                        a.expect_hash,
-                    )
-                })
-                .await?,
-        )
-    }
-
-    #[tool(description = "Load a project (.srctrlprj); kicks off indexing — poll get_ui_state.app_state for Ready.")]
-    async fn load_project(&self, Parameters(a): Parameters<PathArgs>) -> Result<CallToolResult, McpError> {
-        ok_json(self.mgr.call(move |m| m.get_or_attach(&a.instance)?.bridge().load_project(&a.path)).await?)
-    }
-
-    #[tool(description = "Start (spawn) a new Sourcetrail instance. `id` defaults to the binary's git label (<branch>-<hash>). Returns the instance id to target with other tools.")]
-    async fn start_instance(&self, Parameters(a): Parameters<StartArgs>) -> Result<CallToolResult, McpError> {
+    #[tool(description = "Launch a Sourcetrail process with agent control (headless by default). Needs `bin`. Returns { id } for the `instance` argument; describe('instances').")]
+    async fn instance_start(&self, Parameters(a): Parameters<StartArgs>) -> Result<CallToolResult, McpError> {
         ok_json(
             self.mgr
                 .call(move |m| {
@@ -408,14 +347,147 @@ impl SourcetrailServer {
         )
     }
 
-    #[tool(description = "Kill a spawned instance (or detach an attached one) and forget it.")]
-    async fn kill_instance(&self, Parameters(a): Parameters<KillArgs>) -> Result<CallToolResult, McpError> {
+    #[tool(description = "Stop a spawned instance (or forget an attached one). Empty instance = the one running instance. Returns { killed: id }.")]
+    async fn instance_stop(&self, Parameters(a): Parameters<KillArgs>) -> Result<CallToolResult, McpError> {
         ok_json(self.mgr.call(move |m| Ok(json!({ "killed": m.kill(&a.instance)? }))).await?)
     }
 
-    #[tool(description = "List known instances (spawned or attached): id, pid, running, exit_code, bin, console_file, and starts that failed.")]
-    async fn list_instances(&self) -> Result<CallToolResult, McpError> {
+    #[tool(description = "List known instances. Returns { instances: [ { id, spawned, pid, running, exit_code?, bin?, console_file?, qt? } | { id, start_failed } ] }.")]
+    async fn instance_list(&self) -> Result<CallToolResult, McpError> {
         ok_json(self.mgr.call(|m| Ok(m.list())).await?)
+    }
+
+    #[tool(description = "Check an instance's protocol version against the bridge's. Returns { ok, bridge_protocol_version, app_protocol_version, app_version, skew: match|app_older|app_newer, wire }.")]
+    async fn instance_handshake(&self, Parameters(a): Parameters<InstanceArg>) -> Result<CallToolResult, McpError> {
+        ok_json(self.mgr.call(move |m| Ok(m.get_or_attach(&a.instance)?.bridge().handshake())).await?)
+    }
+
+    // --- state + events ---
+
+    #[tool(description = "Read the app's state: project, app_state (NoProject/Loading/Indexing/Ready/Busy), active nodes, graph, code view, search matches, tabs. Returns the ui_state object; describe('state').")]
+    async fn ui_state(&self, Parameters(a): Parameters<InstanceArg>) -> Result<CallToolResult, McpError> {
+        ok_json(self.mgr.call(move |m| m.get_or_attach(&a.instance)?.bridge().get_ui_state()).await?)
+    }
+
+    #[tool(description = "Await transitions (app_state, indexing, activations) instead of re-polling ui_state. Returns { events: [ { seq, type, ... } ], latest_seq }; pass latest_seq back as since_seq.")]
+    async fn events_poll(&self, Parameters(a): Parameters<PollEventsArgs>) -> Result<CallToolResult, McpError> {
+        ok_json(self.mgr.call(move |m| Ok(m.get_or_attach(&a.instance)?.bridge().poll_events(a.since_seq))).await?)
+    }
+
+    #[tool(description = "Forward the app's log lines into events_poll as LogEvents, filtered by min_level, a regex and Qt category rules. Returns { ok, message }; describe('logs').")]
+    async fn logs_forward(&self, Parameters(a): Parameters<SetLogFilterArgs>) -> Result<CallToolResult, McpError> {
+        ok_json(
+            self.mgr
+                .call(move |m| {
+                    m.get_or_attach(&a.instance)?.bridge().set_log_filter(&a.qt_rules, &a.event_pattern, &a.min_level)
+                })
+                .await?,
+        )
+    }
+
+    // --- project ---
+
+    #[tool(description = "Open a Sourcetrail project (.srctrlprj / .srctrl.toml). Returns { ok, message } on acceptance; indexing follows, so wait for app_state Ready (events_poll).")]
+    async fn project_open(&self, Parameters(a): Parameters<PathArgs>) -> Result<CallToolResult, McpError> {
+        ok_json(self.mgr.call(move |m| m.get_or_attach(&a.instance)?.bridge().load_project(&a.path)).await?)
+    }
+
+    // --- navigation ---
+
+    #[tool(description = "Search the indexed code base (unranked). Returns [ { text, node_kind, node_ids, score } ]. Use nav_find to pick one element.")]
+    async fn nav_search(&self, Parameters(a): Parameters<QueryArgs>) -> Result<CallToolResult, McpError> {
+        ok_json(self.mgr.call(move |m| m.get_or_attach(&a.instance)?.bridge().search(&a.query)).await?)
+    }
+
+    #[tool(description = "Resolve a name to the best-matching code elements, ranked (exact, prefix, substring, score). Returns { query, matches }; activate matches[0].node_ids[0].")]
+    async fn nav_find(&self, Parameters(a): Parameters<QueryArgs>) -> Result<CallToolResult, McpError> {
+        ok_json(self.mgr.call(move |m| m.get_or_attach(&a.instance)?.bridge().find_element(&a.query)).await?)
+    }
+
+    #[tool(description = "Show a code element in the graph and code view, by node_id or serialized_name. Returns the settled ui_state.")]
+    async fn nav_activate_node(&self, Parameters(a): Parameters<ActivateNodeArgs>) -> Result<CallToolResult, McpError> {
+        ok_json(
+            self.mgr
+                .call(move |m| m.get_or_attach(&a.instance)?.bridge().activate_node(a.serialized_name.as_deref(), a.node_id))
+                .await?,
+        )
+    }
+
+    #[tool(description = "Open a source file in the code view. Returns the settled ui_state.")]
+    async fn nav_activate_file(&self, Parameters(a): Parameters<PathArgs>) -> Result<CallToolResult, McpError> {
+        ok_json(self.mgr.call(move |m| m.get_or_attach(&a.instance)?.bridge().activate_file(&a.path)).await?)
+    }
+
+    #[tool(description = "Switch to a tab by tab_id (from ui_state.tabs). Returns the settled ui_state.")]
+    async fn nav_activate_tab(&self, Parameters(a): Parameters<TabArgs>) -> Result<CallToolResult, McpError> {
+        ok_json(self.mgr.call(move |m| m.get_or_attach(&a.instance)?.bridge().activate_tab(a.tab_id)).await?)
+    }
+
+    #[tool(description = "Scroll the code view to a 1-based line of a source file. Returns the settled ui_state.")]
+    async fn nav_scroll_to_line(&self, Parameters(a): Parameters<ScrollArgs>) -> Result<CallToolResult, McpError> {
+        ok_json(self.mgr.call(move |m| m.get_or_attach(&a.instance)?.bridge().scroll_to_line(&a.path, a.line)).await?)
+    }
+
+    #[tool(description = "Navigate back or forward in the activation history, like the toolbar arrows. direction: back|forward. Returns the settled ui_state.")]
+    async fn nav_history(&self, Parameters(a): Parameters<HistoryArgs>) -> Result<CallToolResult, McpError> {
+        let forward = match a.direction.trim().to_ascii_lowercase().as_str() {
+            "back" => false,
+            "forward" => true,
+            other => {
+                return Err(McpError::invalid_params(
+                    format!("direction must be \"back\" or \"forward\", not \"{other}\""),
+                    None,
+                ))
+            }
+        };
+        ok_json(self.mgr.call(move |m| m.get_or_attach(&a.instance)?.bridge().history(forward)).await?)
+    }
+
+    // --- structural UI ---
+
+    #[tool(description = "Capture the widget tree: each element's role, name, rect, actions and a `ref` to target. Accessibility tree by default, object_tree=true for widgets. Returns { tree_hash, roots }; describe('ui').")]
+    async fn ui_snapshot(&self, Parameters(a): Parameters<SnapshotArgs>) -> Result<CallToolResult, McpError> {
+        ok_json(self.mgr.call(move |m| m.get_or_attach(&a.instance)?.bridge().get_snapshot(a.object_tree)).await?)
+    }
+
+    #[tool(description = "Select UI elements by JSONPath (RFC 9535) over the accessibility tree, in the app. Returns the ui_snapshot shape with the matches as roots, e.g. $.roots..[?(@.role=='button')].")]
+    async fn ui_query(&self, Parameters(a): Parameters<QueryArgs>) -> Result<CallToolResult, McpError> {
+        ok_json(self.mgr.call(move |m| m.get_or_attach(&a.instance)?.bridge().query_ui(&a.query)).await?)
+    }
+
+    #[tool(description = "Run an accessible action (Press, Toggle, ShowMenu...) or set `text` on the element a ui_snapshot `ref` names. Returns { ok, message }; not found / unsupported is ok: false.")]
+    async fn ui_invoke(&self, Parameters(a): Parameters<InvokeActionArgs>) -> Result<CallToolResult, McpError> {
+        ok_json(
+            self.mgr
+                .call(move |m| {
+                    let path = element_path(&a.target);
+                    m.get_or_attach(&a.instance)?.bridge().invoke_action(
+                        &a.target.object_name,
+                        &path,
+                        &a.action,
+                        &a.text,
+                        a.expect_hash,
+                    )
+                })
+                .await?,
+        )
+    }
+
+    #[tool(description = "Screenshot one element by its ui_snapshot `ref`. Returns { ok, frame: { width, height, image_base64 } } (PNG) or { ok: false, message }.")]
+    async fn ui_capture(&self, Parameters(a): Parameters<CaptureElementArgs>) -> Result<CallToolResult, McpError> {
+        ok_json(
+            self.mgr
+                .call(move |m| {
+                    let path = element_path(&a.target);
+                    m.get_or_attach(&a.instance)?.bridge().capture_element(
+                        &a.target.object_name,
+                        &path,
+                        a.include_properties,
+                        a.expect_hash,
+                    )
+                })
+                .await?,
+        )
     }
 }
 
@@ -436,11 +508,13 @@ impl ServerHandler for SourcetrailServer {
                     .with_title("Sourcetrail"),
             )
             .with_instructions(
-                "Drive Sourcetrail's UI. Tools take an optional `instance` id (default: the \
-                 running app). start_instance spawns a new app (labelled by its git checkout) \
-                 so you can compare versions side by side; kill_instance / list_instances manage \
-                 the pool. Read with get_ui_state; resolve names with find_element; then \
-                 activate_node / activate_file. app_state is the FSM.",
+                "Drive Sourcetrail's UI. Start with describe(): it lists the topics, and \
+                 describe('<topic>') gives an area's usage notes and result shapes. \
+                 instance_start spawns an app (labelled by its git checkout) so versions run \
+                 side by side; tools take an optional `instance` (default: the one running \
+                 instance). Read with ui_state; resolve names with nav_find; then \
+                 nav_activate_node / nav_activate_file. app_state is the FSM. Tools were renamed \
+                 with area prefixes: describe('<old name>') gives the new one.",
             )
     }
 }
@@ -451,4 +525,59 @@ async fn main() -> anyhow::Result<()> {
     let service = SourcetrailServer::new(ManagerHandle::spawn()).serve(stdio()).await?;
     service.waiting().await?;
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::collections::BTreeSet;
+
+    /// Descriptions are the part every client pays for up front; the detail
+    /// belongs in a `describe` topic.
+    const MAX_DESCRIPTION_CHARS: usize = 220;
+
+    fn registered() -> Vec<rmcp::model::Tool> {
+        SourcetrailServer::tool_router().list_all()
+    }
+
+    #[test]
+    fn registered_tools_and_catalog_agree() {
+        let registered: BTreeSet<String> = registered().iter().map(|t| t.name.to_string()).collect();
+        let documented: BTreeSet<String> =
+            catalog::TOPICS.iter().flat_map(|t| t.tools.iter().map(|s| s.to_string())).collect();
+        assert_eq!(
+            registered, documented,
+            "every registered tool must belong to exactly one describe topic, and every topic tool must exist"
+        );
+    }
+
+    #[test]
+    fn tool_names_carry_an_area_prefix() {
+        const PREFIXES: &[&str] = &["instance_", "ui_", "nav_", "events_", "logs_", "project_"];
+        for t in registered() {
+            let name = t.name.as_ref();
+            assert!(
+                name == "describe" || PREFIXES.iter().any(|p| name.starts_with(p)),
+                "tool {name} has no area prefix"
+            );
+        }
+    }
+
+    #[test]
+    fn descriptions_are_one_line_with_a_result_shape() {
+        for t in registered() {
+            let d = t.description.as_deref().unwrap_or_default();
+            assert!(d.chars().count() <= MAX_DESCRIPTION_CHARS, "{}: description is {} chars", t.name, d.chars().count());
+            assert!(!d.contains('\n'), "{}: description spans lines", t.name);
+            assert!(d.contains("Returns"), "{}: description does not say what it returns", t.name);
+        }
+    }
+
+    #[test]
+    fn no_former_name_is_still_registered() {
+        let registered: BTreeSet<String> = registered().iter().map(|t| t.name.to_string()).collect();
+        for (old, _) in catalog::FORMER_NAMES {
+            assert!(!registered.contains(*old), "{old} is still registered under its former name");
+        }
+    }
 }

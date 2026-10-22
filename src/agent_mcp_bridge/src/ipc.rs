@@ -668,6 +668,16 @@ impl Bridge {
         self.act_and_observe("activate_tab", |id| protocol::activate_tab(id, tab_id))
     }
 
+    pub fn scroll_to_line(&mut self, path: &str, line: u32) -> Result<Value> {
+        self.act_and_observe("scroll_to_line", |id| protocol::scroll_to_line(id, path, line))
+    }
+
+    /// Back (`forward == false`) or forward in the navigation history.
+    pub fn history(&mut self, forward: bool) -> Result<Value> {
+        let label = if forward { "history forward" } else { "history back" };
+        self.act_and_observe(label, |id| protocol::history(id, forward))
+    }
+
     /// Structural control: invoke an accessible `action` (or set `text`) on the
     /// element addressed by a snapshot `ref` (object_name + role/name/index path).
     /// The app resolves + invokes on the GUI thread; the ack **is** the result, and

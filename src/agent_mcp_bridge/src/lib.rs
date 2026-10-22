@@ -7,6 +7,8 @@
 //!   * [`ipc`]      — [`ipc::Bridge`]: connects the four thoth-ipc routes and
 //!                    exposes act-and-observe operations with request/reply
 //!                    correlation.
+//!   * [`catalog`]  — the `describe` topics: usage notes and result shapes,
+//!                    one topic per tool area.
 //!
 //! The `mcp` feature (see `bin/server.rs`) wraps [`ipc::Bridge`] in an `rmcp`
 //! stdio server; the default build exposes only the core + a smoke-test binary.
@@ -21,6 +23,7 @@ include!(concat!(env!("OUT_DIR"), "/schema_gen.rs"));
 pub mod protocol;
 pub mod ipc;
 pub mod instance;
+pub mod catalog;
 
 pub use instance::InstanceManager;
 pub use ipc::Bridge;
