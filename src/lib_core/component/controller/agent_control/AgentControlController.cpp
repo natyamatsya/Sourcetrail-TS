@@ -86,6 +86,7 @@ bool AgentControlController::isListening() const
 
 #include "MessageAgentCommand.h"
 #include "MessageActivateFile.h"
+#include "MessageActivateErrors.h"
 #include "MessageActivateNodes.h"
 #include "MessageActivateOverview.h"
 #include "MessageActivateTokens.h"
@@ -98,6 +99,7 @@ bool AgentControlController::isListening() const
 #include "MessageScrollToLine.h"
 #include "MessageSearch.h"
 #include "MessageTabActivate.h"
+#include "MessageTabOpenWith.h"
 #include "MessageTabsChanged.h"
 
 namespace fb = Sourcetrail::Agent;
@@ -396,6 +398,9 @@ struct AgentControlController::Impl
 	: public MessageListener<MessageAgentCommand>
 	, public MessageListener<MessageActivateTokens>
 	, public MessageListener<MessageActivateOverview>
+	, public MessageListener<MessageActivateErrors>
+	, public MessageListener<MessageLoadProject>
+	, public MessageListener<MessageTabOpenWith>
 	, public MessageListener<MessageActivateFile>
 	, public MessageListener<MessageScrollToLine>
 	, public MessageListener<MessageSearch>
@@ -435,7 +440,7 @@ struct AgentControlController::Impl
 		// tab's, so a command's fan-out completes when both have gone idle — not when
 		// the message buffer drains. Hook the app scheduler here; handleCommand hooks
 		// the tab a command lands in. flushSettled emits Settled once all is quiet.
-		TaskManager::getScheduler(TabIds::app())->setIdleHandler([this]() { flushSettled(); });
+		TaskManager::getScheduler(TabIds::app())->setIdleHandler([this]() { onIdle(); });
 		utility::qt::watchDialogs(true);
 
 		// Log forwarding: capture both LogManager (app) and Qt logging into one
@@ -517,7 +522,7 @@ struct AgentControlController::Impl
 		}
 		const auto event = fb::CreateNodesActivated(builder, builder.CreateVector(nodes));
 		publishEvent(builder, fb::Event_NodesActivated, event.Union());
-		updateAppState();
+		tabActivated();
 	}
 
 	// The overview (the toolbar's home button, or Back to where a session began)
@@ -533,7 +538,37 @@ struct AgentControlController::Impl
 		flatbuffers::FlatBufferBuilder builder;
 		const auto event = fb::CreateNodesActivated(builder, builder.CreateVector(std::vector<flatbuffers::Offset<fb::NodeRef>>{}));
 		publishEvent(builder, fb::Event_NodesActivated, event.Union());
-		updateAppState();
+		tabActivated();
+	}
+
+	// A tab opened on the errors (a project with indexing errors) is a first
+	// activation as much as the overview is.
+	void handleMessage(MessageActivateErrors*) override
+	{
+		tabActivated();
+	}
+
+	// ---- project-load lifecycle (see computeAppState) ------------------------
+
+	// A load from the GUI (or the command line). The agent's own LoadProject has
+	// begun the phase already, before dispatching this.
+	void handleMessage(MessageLoadProject* message) override
+	{
+		if (!message->projectSettingsFilePath.empty())
+		{
+			beginLoad();
+		}
+	}
+
+	// TabsController opens a tab, e.g. the overview a load ends with: its first
+	// activation is still to come.
+	void handleMessage(MessageTabOpenWith*) override
+	{
+		LoadPhase expected = LoadPhase::AwaitingTab;
+		if (m_loadPhase.compare_exchange_strong(expected, LoadPhase::Opening))
+		{
+			m_openingSinceMs.store(nowMs());
+		}
 	}
 
 	void handleMessage(MessageActivateFile* message) override
@@ -585,6 +620,10 @@ struct AgentControlController::Impl
 	void handleMessage(MessageIndexingFinished*) override
 	{
 		m_indexing.store(false);
+		// A load with an index, and indexing a project that has no tab yet, end in
+		// TabsController opening the overview, which it announces with
+		// MessageTabOpenWith. Until that is decided the app is still loading.
+		m_loadPhase.store(LoadPhase::AwaitingTab);
 		flatbuffers::FlatBufferBuilder builder;
 		publishEvent(builder, fb::Event_IndexingFinished, fb::CreateIndexingFinished(builder, true).Union());
 		updateAppState();
@@ -780,12 +819,22 @@ struct AgentControlController::Impl
 			emitResult(requestId, false, "rejected: no project loaded");
 			return;
 		}
+		// Navigating while a load is still opening its first tab races the load's
+		// own activation of the overview, which can land after it and become a
+		// history step. Refuse instead, so the agent waits for Ready.
+		if (needsProject && computeAppState() == fb::AppState_Loading)
+		{
+			emitResult(requestId, false, "rejected: the project is still loading; wait for app_state Ready");
+			return;
+		}
 
 		switch (type)
 		{
 		case fb::Command_LoadProject:
 			if (const auto* c = envelope->command_as_LoadProject(); c && c->project_file_path())
 			{
+				// Before the dispatch, so the ack already reports Loading.
+				beginLoad();
 				MessageLoadProject(FilePath(c->project_file_path()->str()), false, toRefreshMode(c->refresh_mode()))
 					.dispatch();
 			}
@@ -890,8 +939,81 @@ struct AgentControlController::Impl
 		m_pendingSettle.push_back(requestId);
 		if (tab != TabId::NONE && tab != TabIds::app() && m_settleTabs.insert(tab).second)
 		{
-			TaskManager::getScheduler(tab)->setIdleHandler([this]() { flushSettled(); });
+			TaskManager::getScheduler(tab)->setIdleHandler([this]() { onIdle(); });
 		}
+	}
+
+	// The idle handler of the app scheduler and of the tab schedulers commands ran
+	// in: flush Settled, and move the load lifecycle on.
+	void onIdle()
+	{
+		flushSettled();
+		settleLoad();
+	}
+
+	// Whether no message is queued or in flight and no scheduler that ran agent
+	// work has tasks: the app has quiesced.
+	bool quiescent()
+	{
+		if (MessageQueue::getInstance()->hasMessagesQueued() ||
+			TaskManager::getScheduler(TabIds::app())->hasTasksQueued())
+		{
+			return false;
+		}
+		const std::lock_guard<std::mutex> lock(m_settleMutex);
+		for (const TabId tab: m_settleTabs)
+		{
+			if (TaskManager::getScheduler(tab)->hasTasksQueued())
+			{
+				return false;
+			}
+		}
+		return true;
+	}
+
+	// Loading ends when the app quiesced without anything opening a tab (the load
+	// found no index and asks to index, failed, or reloaded the same project), and
+	// AwaitingTab when it quiesced without TabsController opening one. Opening ends
+	// with the tab's first activation (tabActivated); the bound below only keeps a
+	// tab that never activates from holding the state at Loading for good.
+	void settleLoad()
+	{
+		const LoadPhase phase = m_loadPhase.load();
+		if (phase == LoadPhase::None)
+		{
+			return;
+		}
+		if (phase == LoadPhase::Opening)
+		{
+			if (nowMs() - m_openingSinceMs.load() < kOpeningLimitMs)
+			{
+				return;
+			}
+			LOG_WARNING("agent-control: the tab a load opened was not activated within 10 s; reporting Ready");
+		}
+		else if (!quiescent())
+		{
+			return;
+		}
+		LoadPhase expected = phase;
+		if (m_loadPhase.compare_exchange_strong(expected, LoadPhase::None))
+		{
+			updateAppState();
+		}
+	}
+
+	void beginLoad()
+	{
+		m_loadPhase.store(LoadPhase::Loading);
+		updateAppState();
+	}
+
+	// A tab's first activation ends the Opening phase.
+	void tabActivated()
+	{
+		LoadPhase expected = LoadPhase::Opening;
+		m_loadPhase.compare_exchange_strong(expected, LoadPhase::None);
+		updateAppState();
 	}
 
 	// Publish a `Settled` for every accepted command whose fan-out has now drained.
@@ -1162,12 +1284,20 @@ struct AgentControlController::Impl
 	}
 
 	// The coarse application FSM, derived from Sourcetrail's project + indexing
-	// state. Loading/Busy are reserved (no clean signal to drive them yet).
+	// state and the load lifecycle. Loading lasts from a load request until the app
+	// is usable: the project opened and, when the load opens a tab, that tab's first
+	// activation (the overview) has landed, so nothing of the load arrives after an
+	// agent's first navigation. Busy is reserved.
 	fb::AppState computeAppState() const
 	{
 		if (m_indexing)
 		{
 			return fb::AppState_Indexing;
+		}
+		if (const LoadPhase phase = m_loadPhase.load(); phase != LoadPhase::None &&
+			!(phase == LoadPhase::Opening && nowMs() - m_openingSinceMs.load() >= kOpeningLimitMs))
+		{
+			return fb::AppState_Loading;
 		}
 		bool hasProject = false;
 		if (const auto app = Application::getInstance())
@@ -1222,6 +1352,22 @@ struct AgentControlController::Impl
 	std::vector<MessageTabsChanged::TabInfo> m_tabsCache;
 	fb::AppState m_appState = fb::AppState_NoProject;
 	std::atomic<bool> m_indexing{false};
+
+	// The project-load lifecycle behind AppState Loading: None -> Loading (a load
+	// was requested) -> AwaitingTab (MessageIndexingFinished: TabsController decides
+	// whether to open the overview) -> Opening (it does, MessageTabOpenWith) -> None
+	// (the tab's first activation). Loading and AwaitingTab also end once the app
+	// quiesces without moving on. Read and moved from several threads, hence atomic.
+	enum class LoadPhase
+	{
+		None,
+		Loading,
+		AwaitingTab,
+		Opening
+	};
+	std::atomic<LoadPhase> m_loadPhase{LoadPhase::None};
+	std::atomic<std::uint64_t> m_openingSinceMs{0};
+	static constexpr std::uint64_t kOpeningLimitMs = 10000;
 	std::uint64_t m_eventSeq = 0;
 	std::mutex m_eventMutex;	// serializes publishEvent across the app-scheduler + ui() threads
 

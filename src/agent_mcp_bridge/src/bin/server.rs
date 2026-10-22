@@ -514,7 +514,7 @@ impl SourcetrailServer {
 
     // --- project ---
 
-    #[tool(description = "Open a Sourcetrail project (.srctrlprj / .srctrl.toml). Returns { ok, message } on acceptance; indexing follows, so wait for app_state Ready (events_poll).")]
+    #[tool(description = "Open a Sourcetrail project (.srctrlprj / .srctrl.toml) and wait until it is usable. Returns the ui_state once loading is done (Ready, or the indexing dialog in `dialog`).")]
     async fn project_open(&self, Parameters(a): Parameters<PathArgs>) -> Result<CallToolResult, McpError> {
         ok_json(self.mgr.call(move |m| m.get_or_attach(&a.instance)?.bridge().load_project(&a.path)).await?)
     }

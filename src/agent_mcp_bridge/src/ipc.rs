@@ -22,6 +22,10 @@ const OP_TIMEOUT: Duration = Duration::from_secs(5);
 /// It used to be given OP_TIMEOUT while get_snapshot had 15s, which showed up as
 /// query_ui timing out intermittently on exactly the queries that match a lot.
 const SNAPSHOT_TIMEOUT: Duration = Duration::from_secs(15);
+/// How long `load_project` waits for a load to finish (a large index takes a while
+/// to open), and how often it looks.
+const LOAD_TIMEOUT: Duration = Duration::from_secs(300);
+const LOAD_POLL: Duration = Duration::from_millis(100);
 /// Bound on the buffered event log (drops oldest; `seq` gaps let a poller detect it).
 const EVENT_LOG_CAP: usize = 2048;
 
@@ -796,12 +800,28 @@ impl Bridge {
         return Err(self.reply_timeout("frame", request_id, timeout))
     }
 
-    /// Loading kicks off indexing; return on ack and let the caller poll
-    /// `app_state` (or subscribe) for the transition to `Ready`.
+    /// Load a project and return the `UiState` once the load is done: the app
+    /// reports `Loading` from the request until the project is open and the tab the
+    /// load opens has its first activation, so the state returned is one the
+    /// caller can navigate from. A load that finds no index ends at Ready with the
+    /// indexing dialog in `dialog`. An app before protocol v4 does not report the
+    /// load, so its state is returned right after the ack.
     pub fn load_project(&mut self, path: &str) -> Result<Value> {
-        let (_, msg) =
-            self.send_and_ack("load_project", Duration::from_secs(10), |id| protocol::load_project(id, path))?;
-        Ok(json!({ "ok": true, "message": msg }))
+        self.send_and_ack("load_project", Duration::from_secs(10), |id| protocol::load_project(id, path))?;
+        if self.app_protocol_version() < protocol::LOAD_STATE_SINCE {
+            return self.get_ui_state();
+        }
+        let deadline = Instant::now() + LOAD_TIMEOUT;
+        loop {
+            let state = self.get_ui_state()?;
+            if state["app_state"] != "Loading" {
+                return Ok(state);
+            }
+            if Instant::now() >= deadline {
+                bail!("the project was still loading after {LOAD_TIMEOUT:?}; app_state follows it");
+            }
+            std::thread::sleep(LOAD_POLL);
+        }
     }
 
     /// Resolve a human query to ranked element matches: `search`, then order by

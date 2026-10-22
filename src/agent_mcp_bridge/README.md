@@ -77,8 +77,21 @@ definitions finds a whole area with one query:
 
 Tools that change the app (`nav_activate_*`, `nav_scroll_to_line`, `nav_history`)
 **auto-observe**: they return the `ui_state` once the app reports the command's
-effects settled. `app_state` (NoProject/Indexing/Ready) is the FSM the agent keys
-off; `dialog` says what waits for an answer in front of the app.
+effects settled. `app_state` is the FSM the agent keys off; `dialog` says what
+waits for an answer in front of the app.
+
+```text
+NoProject ──load──▶ Loading ──project open, first tab activated──▶ Ready
+                       │  (or: quiet with no tab to open)            │
+                       └──────────────── Indexing ◀──index──────────┘
+                                            └──done──▶ Loading ▶ Ready
+```
+
+`Loading` lasts from a load request until the project is open and the tab the load
+opens has shown the overview, so nothing of the load can land after the agent's
+first navigation; `nav_*` is refused meanwhile. `project_open` (and
+`instance_start { project }`) wait for it and return the state to start from, so
+an agent never needs to sleep after opening a project.
 
 The tools were renamed with these prefixes (`get_ui_state` → `ui_state`, `search` →
 `nav_search`, `start_instance` → `instance_start`, ...). MCP has no aliases, so

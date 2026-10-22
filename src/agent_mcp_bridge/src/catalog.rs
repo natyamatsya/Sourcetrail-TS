@@ -35,9 +35,8 @@ semantic tool covers what you need.
 
 First contact, end to end:
   instance_start    { bin: \"<path to Sourcetrail>\" }          -> { id: \"main-1a2b3c\" }
-  project_open      { path: \"<project>.srctrlprj\" }           -> { ok, message }
-  events_poll       { since_seq: 0 }   until AppStateChanged -> Ready
-  nav_find          { query: \"MyClass\" }                       -> ranked matches
+  project_open      { path: \"<project>.srctrlprj\" }           -> ui_state, Ready once loaded
+  nav_find         { query: \"MyClass\" }                       -> ranked matches
   nav_activate_node { node_id: <matches[0].node_ids[0]> }       -> the settled ui_state
   instance_stop     {}
 With one running instance, `instance` can be left out everywhere; otherwise pass the id \
@@ -156,8 +155,11 @@ ui_state { instance? } -> {
   tabs: [ { tab_id, title, active } ],
   dialog: string }
 
-app_state is the FSM to key off: Ready means a project is loaded and not indexing, and \
-every nav_* tool needs a project. dialog says what waits for an answer in front of the app: \
+app_state is the FSM to key off. NoProject -> Loading (a load was requested, by \
+project_open or in the app, until the project is open and its first tab has shown the \
+overview) -> Ready; Indexing while indexing, then Loading again if indexing opens the first \
+tab. nav_* needs a project and is refused while Loading. Ready means usable: nothing of an \
+earlier load or indexing run is still on its way (agent-control protocol v4+). dialog says what waits for an answer in front of the app: \
 a modal window (\"'title' (modal): text\") or one of Sourcetrail's in-window dialogs by its \
 title (\"Start Indexing\" after opening a project that has no index yet); \"\" when nothing \
 does, null from an app before agent-control protocol v3. Check it when Ready does not \
@@ -271,14 +273,18 @@ ui_capture { ref, include_properties=false, expect_hash=0, instance? } -> PNG im
         summary: "Open a Sourcetrail project; indexing starts and app_state follows it.",
         tools: &["project_open"],
         doc: "\
-project_open { path, instance? } -> { ok, message }
-  Loads a project (.srctrlprj / .srctrl.toml) and returns once the app accepted it. A \
-project with an up-to-date index is usable at once (app_state Ready). One without an index \
-asks first: ui_state.dialog reads \"Start Indexing\", and nothing is indexed until its Start \
-button is pressed:
+project_open { path, instance? } -> ui_state
+  Loads a project (.srctrlprj / .srctrl.toml) and returns once the load is done, so the \
+state it returns is one to navigate from; instance_start { project } waits the same way. \
+The app reports app_state Loading from the request until the project is open and the tab \
+the load opens has shown the overview, and refuses nav_* meanwhile (\"still loading\"), so \
+nothing of the load lands after a first navigation. A project with an up-to-date index \
+comes back Ready. One without an index comes back Ready with ui_state.dialog \"Start \
+Indexing\", and nothing is indexed until its Start button is pressed:
   ui_query  { query: \"$.roots..[?(@.role=='button' && @.name=='Start')]\" }
   ui_invoke { ref: <roots[0].ref>, action: \"Press\" }
-then wait for IndexingFinished with events_poll (app_state goes Indexing, then Ready).",
+then wait for app_state Ready with events_poll or ui_state: it goes Indexing, then \
+Loading while the first tab opens on the overview, then Ready.",
     },
     Topic {
         name: "logs",

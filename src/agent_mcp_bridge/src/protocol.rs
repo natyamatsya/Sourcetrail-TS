@@ -128,6 +128,9 @@ pub fn activate_tab(request_id: u64, tab_id: u64) -> Vec<u8> {
 /// The protocol version from which the app answers `GetFrame` (with `region`).
 pub const GET_FRAME_SINCE: u32 = 2;
 
+/// The protocol version from which the app reports `Loading` until a load is done.
+pub const LOAD_STATE_SINCE: u32 = 4;
+
 /// The screen as a user sees it, downscaled to `max_width` when non-zero;
 /// `region` (`[x, y, w, h]` in the frame's own pixels) crops it first.
 pub fn get_frame(request_id: u64, max_width: u32, region: Option<[i32; 4]>) -> Vec<u8> {
