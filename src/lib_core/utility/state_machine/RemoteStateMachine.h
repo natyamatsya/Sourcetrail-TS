@@ -1,11 +1,13 @@
 #ifndef REMOTE_STATE_MACHINE_H
 #define REMOTE_STATE_MACHINE_H
 
+#include <concepts>
 #include <cstdint>
 #include <functional>
 #include <map>
 #include <memory>
 #include <mutex>
+#include <optional>
 #include <string>
 #include <vector>
 
@@ -51,19 +53,91 @@ struct MachineFireResult
 // A state machine that can be read and driven by name: the seam remote control
 // uses instead of finding and pressing widgets. A dialog that shows one of these
 // states is a view of it; its buttons send the same events an agent does.
-class RemoteStateMachine
+//
+// It has a snapshot and, when it takes events from outside, `fire(event, args,
+// source)`: sends `event` with `args` (a JSON object; empty for none) from `source`,
+// failing, and changing nothing, when the machine does not accept the event now or
+// the args do not fit it. A machine without `fire` is watched, not driven.
+template <typename Machine>
+concept RemoteMachine = requires(const Machine& machine) {
+	{ machine.snapshot() } -> std::same_as<MachineSnapshot>;
+};
+
+template <typename Machine>
+concept DrivenRemoteMachine = RemoteMachine<Machine> &&
+	requires(Machine& machine, const std::string& text, EventSource source) {
+		{ machine.fire(text, text, source) } -> std::same_as<MachineFireResult>;
+	};
+
+// Any RemoteMachine, shared: what the registry keeps. A value; the machine's type is
+// erased behind a table of functions made for it.
+class AnyStateMachine
 {
 public:
-	virtual ~RemoteStateMachine() = default;
+	template <RemoteMachine Machine>
+	explicit AnyStateMachine(std::shared_ptr<Machine> machine)
+		: m_name(machine->snapshot().machine), m_machine(std::move(machine)), m_operations(&operationsOf<Machine>())
+	{
+	}
 
-	virtual std::string name() const = 0;
-	virtual MachineSnapshot snapshot() const = 0;
+	const std::string& name() const
+	{
+		return m_name;
+	}
 
-	// Sends `event` with `args` (a JSON object; empty for none) from `source`. Fails,
-	// changing nothing, when the machine does not accept the event now or the args
-	// do not fit it.
-	virtual MachineFireResult fire(
-		const std::string& event, const std::string& args, EventSource source) = 0;
+	MachineSnapshot snapshot() const
+	{
+		return m_operations->snapshot(m_machine.get());
+	}
+
+	MachineFireResult fire(const std::string& event, const std::string& args, EventSource source) const
+	{
+		return m_operations->fire(m_machine.get(), m_name, event, args, source);
+	}
+
+private:
+	struct Operations
+	{
+		MachineSnapshot (*snapshot)(const void* machine);
+		MachineFireResult (*fire)(
+			void* machine, const std::string& name, const std::string& event, const std::string& args, EventSource source);
+	};
+
+	template <RemoteMachine Machine>
+	static MachineSnapshot snapshotOf(const void* machine)
+	{
+		return static_cast<const Machine*>(machine)->snapshot();
+	}
+
+	template <RemoteMachine Machine>
+	static MachineFireResult fireOf(
+		[[maybe_unused]] void* machine,
+		[[maybe_unused]] const std::string& name,
+		const std::string& event,
+		[[maybe_unused]] const std::string& args,
+		[[maybe_unused]] EventSource source)
+	{
+		if constexpr (DrivenRemoteMachine<Machine>)
+		{
+			return static_cast<Machine*>(machine)->fire(event, args, source);
+		}
+		else
+		{
+			return {false, "the " + name + " machine takes no events from outside ('" + event + "'): watch it"};
+		}
+	}
+
+	// The table for `Machine`, one per type.
+	template <RemoteMachine Machine>
+	static const Operations& operationsOf()
+	{
+		static constexpr Operations operations {&snapshotOf<Machine>, &fireOf<Machine>};
+		return operations;
+	}
+
+	std::string m_name;
+	std::shared_ptr<void> m_machine;
+	const Operations* m_operations;
 };
 
 // The machines remote control can reach, and the observers of their transitions.
@@ -74,9 +148,15 @@ public:
 
 	static StateMachineRegistry& instance();
 
-	void add(std::shared_ptr<RemoteStateMachine> machine);
-	std::shared_ptr<RemoteStateMachine> find(const std::string& name) const;
-	std::vector<std::shared_ptr<RemoteStateMachine>> all() const;
+	// Keeps `machine` unless one of its name is known already.
+	void add(AnyStateMachine machine);
+	template <RemoteMachine Machine>
+	void add(std::shared_ptr<Machine> machine)
+	{
+		add(AnyStateMachine(std::move(machine)));
+	}
+	std::optional<AnyStateMachine> find(const std::string& name) const;
+	std::vector<AnyStateMachine> all() const;
 
 	std::size_t addObserver(Observer observer);
 	void removeObserver(std::size_t id);
@@ -87,7 +167,7 @@ public:
 
 private:
 	mutable std::mutex m_mutex;
-	std::vector<std::shared_ptr<RemoteStateMachine>> m_machines;
+	std::vector<AnyStateMachine> m_machines;
 	std::map<std::size_t, Observer> m_observers;
 	std::size_t m_nextObserverId = 1;
 };

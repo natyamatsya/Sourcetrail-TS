@@ -48,6 +48,21 @@ struct QuestionMachine
 		Withdraw
 	};
 
+	struct Question
+	{
+		std::uint64_t id = 0;
+		std::string text;
+		std::vector<std::string> options;
+		QuestionPresenter* presenter = nullptr;
+	};
+
+	struct Data
+	{
+		std::deque<Question> open;	// front: the question the state is about
+		std::map<std::uint64_t, int> answers;	// answered, not yet collected by the asker
+		std::uint64_t nextId = 1;
+	};
+
 	static constexpr std::string_view name = "question";
 	static constexpr State initial = State::Idle;
 	static constexpr std::array states {named(State::Idle, "idle"), named(State::Asking, "asking")};
@@ -58,11 +73,15 @@ struct QuestionMachine
 		{State::Asking, Event::Answer, State::Idle},
 		{State::Asking, Event::Withdraw, State::Idle},
 	});
+
+	static std::string context(State state, const Data& data);
 };
 
-class QuestionStateMachine: public ConcurrentStateMachine<QuestionMachine>
+class QuestionStateMachine
 {
 public:
+	using State = QuestionMachine::State;
+
 	static std::shared_ptr<QuestionStateMachine> instance();
 
 	// Asks and waits for the answer: the index of the chosen option, or -1 when the
@@ -79,23 +98,18 @@ public:
 	// get -1. For a window that closed, or a presenter going away.
 	void withdraw(QuestionPresenter* presenter);
 
-	MachineFireResult fire(const std::string& event, const std::string& args, EventSource source) override;
+	MachineSnapshot snapshot() const
+	{
+		return m_machine.snapshot();
+	}
+	MachineFireResult fire(const std::string& event, const std::string& args, EventSource source);
 
 private:
-	struct Question
-	{
-		std::uint64_t id = 0;
-		std::string text;
-		std::vector<std::string> options;
-		QuestionPresenter* presenter = nullptr;
-	};
+	using Event = QuestionMachine::Event;
+	using Question = QuestionMachine::Question;
 
-	std::string contextLocked() const override;
-
+	ConcurrentStateMachine<QuestionMachine> m_machine;
 	std::condition_variable m_answered;
-	std::deque<Question> m_open;	// front: the question the state is about
-	std::map<std::uint64_t, int> m_answers;	// answered, not yet collected by the asker
-	std::uint64_t m_nextId = 1;
 };
 
 #endif	  // QUESTION_STATE_MACHINE_H

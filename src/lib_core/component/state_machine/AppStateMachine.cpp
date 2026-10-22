@@ -24,11 +24,12 @@ void AppStateMachine::started()
 {
 	std::vector<std::function<void()>> waiting;
 	{
-		Transaction transaction(*this);
-		m_startupMs = std::chrono::duration_cast<std::chrono::milliseconds>(
-						  std::chrono::steady_clock::now() - m_createdAt)
-						  .count();
-		waiting.swap(m_waiting);
+		auto transaction = m_machine.transaction();
+		AppMachine::Data& data = transaction.data();
+		data.startupMs = std::chrono::duration_cast<std::chrono::milliseconds>(
+							 std::chrono::steady_clock::now() - data.createdAt)
+							 .count();
+		waiting.swap(data.waiting);
 		transaction.move(Event::Started);
 	}
 	for (const std::function<void()>& work: waiting)
@@ -39,23 +40,23 @@ void AppStateMachine::started()
 
 void AppStateMachine::quitting()
 {
-	Transaction transaction(*this);
-	m_waiting.clear();
+	auto transaction = m_machine.transaction();
+	transaction.data().waiting.clear();
 	transaction.move(Event::Quit);
 }
 
 bool AppStateMachine::isStarting() const
 {
-	return state() == State::Starting;
+	return m_machine.state() == State::Starting;
 }
 
 void AppStateMachine::whenStarted(std::function<void()> work)
 {
 	{
-		Transaction transaction(*this);
+		auto transaction = m_machine.transaction();
 		if (transaction.state() == State::Starting)
 		{
-			m_waiting.push_back(std::move(work));
+			transaction.data().waiting.push_back(std::move(work));
 			return;
 		}
 		if (transaction.state() == State::Closing)
@@ -66,16 +67,16 @@ void AppStateMachine::whenStarted(std::function<void()> work)
 	work();
 }
 
-std::string AppStateMachine::contextLocked() const
+std::string AppMachine::context(State  /*state*/, const Data& data)
 {
 	app_machine_json::AppContext context;
-	if (m_startupMs >= 0)
+	if (data.startupMs >= 0)
 	{
-		context.startup_ms = m_startupMs;
+		context.startup_ms = data.startupMs;
 	}
-	if (!m_waiting.empty())
+	if (!data.waiting.empty())
 	{
-		context.waiting = m_waiting.size();
+		context.waiting = data.waiting.size();
 	}
 	return glz::write_json(context).value_or("{}");
 }

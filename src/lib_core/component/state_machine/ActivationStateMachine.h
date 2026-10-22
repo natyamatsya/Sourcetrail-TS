@@ -40,6 +40,18 @@ struct ActivationMachine
 		TimedOut
 	};
 
+	struct Data
+	{
+		int inFlight = 0;	// messages that change the views, being handled
+		std::map<std::string, int> drawing;	// tickets held, by view
+		std::uint64_t generation = 0;	// a timed out rendering drops the tickets it waited for
+		std::uint64_t activation = 0;	// activations requested so far
+		std::chrono::steady_clock::time_point requestedAt;
+		std::int64_t tookMs = -1;	// how long the last activation took, request to shown
+		std::string outcome;
+		std::chrono::milliseconds renderingLimit {10000};
+	};
+
 	static constexpr std::string_view name = "activation";
 	static constexpr State initial = State::Idle;
 	static constexpr std::array states {
@@ -57,11 +69,15 @@ struct ActivationMachine
 		{State::Rendering, Event::Shown, State::Idle},
 		{State::Rendering, Event::TimedOut, State::Idle},
 	});
+
+	static std::string context(State state, const Data& data);
 };
 
-class ActivationStateMachine: public ConcurrentStateMachine<ActivationMachine>
+class ActivationStateMachine
 {
 public:
+	using State = ActivationMachine::State;
+
 	static std::shared_ptr<ActivationStateMachine> instance();
 
 	// Has the message queue report the messages that change the views (changesViews).
@@ -84,24 +100,27 @@ public:
 	// a view that never reports must not hold the app.
 	void setRenderingLimit(std::chrono::milliseconds limit);
 
+	// Watched by remote control, not driven: no fire.
+	MachineSnapshot snapshot() const
+	{
+		return m_machine.snapshot();
+	}
+
 private:
 	class Ticket;
+	using Machine = ConcurrentStateMachine<ActivationMachine>;
+	using Event = ActivationMachine::Event;
 
-	void drawn(std::uint64_t generation, const std::string& view);
+	// The machine's moves, on its data: what tickets and the message queue's
+	// observer call through a weak handle.
+	static void started(Machine::Transaction& transaction);
+	static void handled(Machine::Transaction& transaction);
+	static void drawn(Machine::Transaction& transaction, std::uint64_t generation, const std::string& view);
 	// Moves on what the counts allow: out of `activating` once no message is in
 	// flight, out of `rendering` once nothing draws.
-	void advance(Transaction& transaction);
-	std::size_t drawingLocked() const;
-	std::string contextLocked() const override;
+	static void advance(Machine::Transaction& transaction);
 
-	int m_inFlight = 0;	// messages that change the views, being handled
-	std::map<std::string, int> m_drawing;	// tickets held, by view
-	std::uint64_t m_generation = 0;	// a timed out rendering drops the tickets it waited for
-	std::uint64_t m_activation = 0;	// activations requested so far
-	std::chrono::steady_clock::time_point m_requestedAt;
-	std::int64_t m_tookMs = -1;	// how long the last activation took, request to shown
-	std::string m_outcome;
-	std::chrono::milliseconds m_renderingLimit {10000};
+	Machine m_machine;
 };
 
 #endif	  // ACTIVATION_STATE_MACHINE_H

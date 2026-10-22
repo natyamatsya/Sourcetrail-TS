@@ -43,25 +43,25 @@ MachineFireResult ProjectStateMachine::load(const std::string& path, RefreshMode
 	}
 	bool waiting = false;
 	{
-		Transaction transaction(*this);
+		auto transaction = m_machine.transaction();
 		if (!transaction.accepts(Event::Load))
 		{
 			return transaction.refuse(Event::Load);
 		}
-		m_path = path;
-		m_outcome.clear();
+		ProjectMachine::Data& data = transaction.data();
+		data.path = path;
+		data.outcome.clear();
 		waiting = m_app->isStarting();
-		m_waitingForStartup = waiting;
+		data.waitingForStartup = waiting;
 		transaction.move(Event::Load, source);
 	}
 
 	// A load that ran while the app starts could find what it needs not there yet
 	// (the language packages register late in startup): it waits for `started`.
-	m_app->whenStarted([weak = weakSelf(), path, refresh]() {
-		if (const auto self = weak.lock())
+	m_app->whenStarted([weak = m_machine.weak(), path, refresh]() {
+		if (const auto machine = weak.lock())
 		{
-			const auto lock = self->lock();
-			self->m_waitingForStartup = false;
+			machine->transaction().data().waitingForStartup = false;
 		}
 		MessageLoadProject(FilePath(path), false, refresh).dispatch();
 	});
@@ -71,12 +71,12 @@ MachineFireResult ProjectStateMachine::load(const std::string& path, RefreshMode
 MachineFireResult ProjectStateMachine::close(EventSource source)
 {
 	{
-		Transaction transaction(*this);
+		auto transaction = m_machine.transaction();
 		if (!transaction.accepts(Event::Close))
 		{
 			return transaction.refuse(Event::Close);
 		}
-		m_outcome.clear();
+		transaction.data().outcome.clear();
 		transaction.move(Event::Close, source);
 	}
 
@@ -86,12 +86,12 @@ MachineFireResult ProjectStateMachine::close(EventSource source)
 
 void ProjectStateMachine::requested(const std::string& path)
 {
-	Transaction transaction(*this);
-	m_path = path;
+	auto transaction = m_machine.transaction();
+	transaction.data().path = path;
 	// Already loading when it was `load` that asked.
 	if (transaction.state() != State::Loading)
 	{
-		m_outcome.clear();
+		transaction.data().outcome.clear();
 		transaction.move(Event::Requested);
 	}
 }
@@ -103,11 +103,11 @@ void ProjectStateMachine::kept(const std::string& outcome)
 
 void ProjectStateMachine::failed(const std::string& outcome)
 {
-	Transaction transaction(*this);
-	m_outcome = outcome;
+	auto transaction = m_machine.transaction();
+	transaction.data().outcome = outcome;
 	if (transaction.accepts(Event::Failed))
 	{
-		m_path.clear();
+		transaction.data().path.clear();
 		transaction.move(Event::Failed);
 	}
 }
@@ -124,14 +124,14 @@ void ProjectStateMachine::reloading()
 
 void ProjectStateMachine::tabOpening()
 {
-	Transaction transaction(*this);
+	auto transaction = m_machine.transaction();
 	if (!transaction.move(Event::TabOpening))
 	{
 		return;
 	}
 	// Moves on unless the tab showed (or anything else moved the machine) first.
-	transaction.timeout(m_openingLimit, [this](Transaction& timedOut) {
-		m_outcome = "the first tab did not show in time";
+	transaction.timeout(transaction.data().openingLimit, [](auto& timedOut) {
+		timedOut.data().outcome = "the first tab did not show in time";
 		timedOut.move(Event::TimedOut);
 		timedOut.defer([]() {
 			LOG_WARNING("project state machine: the tab a load opened was not activated in time; moving on to ready");
@@ -146,11 +146,11 @@ void ProjectStateMachine::shown()
 
 void ProjectStateMachine::closed()
 {
-	Transaction transaction(*this);
+	auto transaction = m_machine.transaction();
 	if (transaction.accepts(Event::Closed))
 	{
-		m_path.clear();
-		m_outcome = "closed";
+		transaction.data().path.clear();
+		transaction.data().outcome = "closed";
 		transaction.move(Event::Closed);
 	}
 }
@@ -162,13 +162,12 @@ void ProjectStateMachine::closeRefused(const std::string& outcome)
 
 void ProjectStateMachine::setOpeningLimit(std::chrono::milliseconds limit)
 {
-	const auto lock = this->lock();
-	m_openingLimit = limit;
+	m_machine.transaction().data().openingLimit = limit;
 }
 
 MachineFireResult ProjectStateMachine::fire(const std::string& event, const std::string& args, EventSource source)
 {
-	const std::optional<Event> control = controlNamed(event);
+	const std::optional<Event> control = m_machine.controlNamed(event);
 	if (control == Event::Load)
 	{
 		const auto parsed = parseArgs<project_machine_json::LoadArgs>(
@@ -197,41 +196,41 @@ MachineFireResult ProjectStateMachine::fire(const std::string& event, const std:
 		}
 		return close(source);
 	}
-	return unknownEvent(event);
+	return m_machine.unknownEvent(event);
 }
 
 void ProjectStateMachine::report(Event event, const std::string* outcome)
 {
-	Transaction transaction(*this);
+	auto transaction = m_machine.transaction();
 	if (!transaction.accepts(event))
 	{
 		return;
 	}
 	if (outcome != nullptr)
 	{
-		m_outcome = *outcome;
+		transaction.data().outcome = *outcome;
 	}
 	transaction.move(event);
 }
 
-std::string ProjectStateMachine::contextLocked() const
+std::string ProjectMachine::context(State state, const Data& data)
 {
 	project_machine_json::ProjectContext context;
-	if (!m_path.empty())
+	if (!data.path.empty())
 	{
-		context.path = m_path;
+		context.path = data.path;
 	}
-	if (m_waitingForStartup)
+	if (data.waitingForStartup)
 	{
 		context.waiting_for = "startup";
 	}
-	else if (stateLocked() == State::Opening)
+	else if (state == State::Opening)
 	{
 		context.waiting_for = "tab";
 	}
-	if (!m_outcome.empty())
+	if (!data.outcome.empty())
 	{
-		context.outcome = m_outcome;
+		context.outcome = data.outcome;
 	}
 	return glz::write_json(context).value_or("{}");
 }

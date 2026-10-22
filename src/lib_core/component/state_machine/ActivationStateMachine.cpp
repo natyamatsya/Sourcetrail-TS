@@ -25,7 +25,7 @@ struct ActivationContext
 class ActivationStateMachine::Ticket
 {
 public:
-	Ticket(std::weak_ptr<ActivationStateMachine> machine, std::uint64_t generation, std::string view)
+	Ticket(Machine::Weak machine, std::uint64_t generation, std::string view)
 		: m_machine(std::move(machine)), m_generation(generation), m_view(std::move(view))
 	{
 	}
@@ -33,14 +33,15 @@ public:
 	Ticket& operator=(const Ticket&) = delete;
 	~Ticket()
 	{
-		if (const auto machine = m_machine.lock())
+		if (const std::optional<Machine> machine = m_machine.lock())
 		{
-			machine->drawn(m_generation, m_view);
+			auto transaction = machine->transaction();
+			drawn(transaction, m_generation, m_view);
 		}
 	}
 
 private:
-	const std::weak_ptr<ActivationStateMachine> m_machine;
+	const Machine::Weak m_machine;
 	const std::uint64_t m_generation;
 	const std::string m_view;
 };
@@ -54,18 +55,19 @@ std::shared_ptr<ActivationStateMachine> ActivationStateMachine::instance()
 void ActivationStateMachine::followMessages()
 {
 	auto observer = std::make_shared<MessageQueue::Observer>();
-	const std::weak_ptr<ActivationStateMachine> weak = weakSelf();
 	observer->follows = [](const MessageBase& message) { return changesViews(message.getType()); };
-	observer->started = [weak](const MessageBase&) {
-		if (const auto self = weak.lock())
+	observer->started = [weak = m_machine.weak()](const MessageBase&) {
+		if (const std::optional<Machine> machine = weak.lock())
 		{
-			self->messageStarted();
+			auto transaction = machine->transaction();
+			started(transaction);
 		}
 	};
-	observer->handled = [weak](const MessageBase&) {
-		if (const auto self = weak.lock())
+	observer->handled = [weak = m_machine.weak()](const MessageBase&) {
+		if (const std::optional<Machine> machine = weak.lock())
 		{
-			self->messageHandled();
+			auto transaction = machine->transaction();
+			handled(transaction);
 		}
 	};
 	MessageQueue::getInstance()->setObserver(observer);
@@ -117,98 +119,127 @@ bool ActivationStateMachine::changesViews(const std::string& messageType)
 
 void ActivationStateMachine::messageStarted()
 {
-	Transaction transaction(*this);
-	m_inFlight++;
-	if (transaction.state() != State::Activating)
-	{
-		m_requestedAt = std::chrono::steady_clock::now();
-		m_outcome.clear();
-		m_activation++;
-		transaction.move(Event::Requested);
-	}
+	auto transaction = m_machine.transaction();
+	started(transaction);
 }
 
 void ActivationStateMachine::messageHandled()
 {
-	Transaction transaction(*this);
-	if (m_inFlight > 0)
-	{
-		m_inFlight--;
-	}
-	advance(transaction);
+	auto transaction = m_machine.transaction();
+	handled(transaction);
 }
 
 std::shared_ptr<void> ActivationStateMachine::drawing(const std::string& view)
 {
-	const Transaction transaction(*this);
+	auto transaction = m_machine.transaction();
 	if (transaction.state() == State::Idle)
 	{
 		return {};
 	}
-	m_drawing[view]++;
-	return std::make_shared<Ticket>(weakSelf(), m_generation, view);
+	transaction.data().drawing[view]++;
+	return std::make_shared<Ticket>(m_machine.weak(), transaction.data().generation, view);
 }
 
 bool ActivationStateMachine::isIdle() const
 {
-	return state() == State::Idle;
+	return m_machine.state() == State::Idle;
 }
 
 void ActivationStateMachine::setRenderingLimit(std::chrono::milliseconds limit)
 {
-	const auto lock = this->lock();
-	m_renderingLimit = limit;
+	m_machine.transaction().data().renderingLimit = limit;
 }
 
-void ActivationStateMachine::drawn(std::uint64_t generation, const std::string& view)
+void ActivationStateMachine::started(Machine::Transaction& transaction)
 {
-	Transaction transaction(*this);
-	if (generation != m_generation)
+	ActivationMachine::Data& data = transaction.data();
+	data.inFlight++;
+	if (transaction.state() != State::Activating)
 	{
-		return;	// a rendering that timed out stopped waiting for it
+		data.requestedAt = std::chrono::steady_clock::now();
+		data.outcome.clear();
+		data.activation++;
+		transaction.move(Event::Requested);
 	}
-	if (const auto it = m_drawing.find(view); it != m_drawing.end() && --it->second <= 0)
+}
+
+void ActivationStateMachine::handled(Machine::Transaction& transaction)
+{
+	if (transaction.data().inFlight > 0)
 	{
-		m_drawing.erase(it);
+		transaction.data().inFlight--;
 	}
 	advance(transaction);
 }
 
-void ActivationStateMachine::advance(Transaction& transaction)
+void ActivationStateMachine::drawn(Machine::Transaction& transaction, std::uint64_t generation, const std::string& view)
 {
+	ActivationMachine::Data& data = transaction.data();
+	if (generation != data.generation)
+	{
+		return;	// a rendering that timed out stopped waiting for it
+	}
+	if (const auto it = data.drawing.find(view); it != data.drawing.end() && --it->second <= 0)
+	{
+		data.drawing.erase(it);
+	}
+	advance(transaction);
+}
+
+namespace
+{
+std::size_t ticketsHeld(const ActivationMachine::Data& data)
+{
+	std::size_t count = 0;
+	for (const auto& [view, tickets]: data.drawing)
+	{
+		count += static_cast<std::size_t>(tickets);
+	}
+	return count;
+}
+
+std::int64_t msSince(std::chrono::steady_clock::time_point start)
+{
+	return std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::steady_clock::now() - start).count();
+}
+}	 // namespace
+
+void ActivationStateMachine::advance(Machine::Transaction& transaction)
+{
+	ActivationMachine::Data& data = transaction.data();
 	switch (transaction.state())
 	{
 	case State::Activating:
-		if (m_inFlight > 0)
+		if (data.inFlight > 0)
 		{
 			return;
 		}
-		if (drawingLocked() > 0)
+		if (ticketsHeld(data) > 0)
 		{
 			transaction.move(Event::Handled);
 			// Gives up on views that do not report in time.
-			transaction.timeout(m_renderingLimit, [this](Transaction& timedOut) {
+			transaction.timeout(data.renderingLimit, [](Machine::Transaction& timedOut) {
+				ActivationMachine::Data& timedOutData = timedOut.data();
 				std::string views;
-				for (const auto& [view, tickets]: m_drawing)
+				for (const auto& [view, tickets]: timedOutData.drawing)
 				{
 					views += (views.empty() ? "" : ", ") + view;
 				}
-				m_outcome = std::format("timed out waiting for {} to draw", views);
-				timedOut.defer([warning = std::format("activation state machine: {}; moving on to idle", m_outcome)]() {
-					LOG_WARNING(warning);
-				});
-				m_drawing.clear();
-				m_generation++;
-				m_tookMs = std::chrono::duration_cast<std::chrono::milliseconds>(
-							   std::chrono::steady_clock::now() - m_requestedAt)
-							   .count();
+				timedOutData.outcome = std::format("timed out waiting for {} to draw", views);
+				timedOut.defer(
+					[warning = std::format("activation state machine: {}; moving on to idle", timedOutData.outcome)]() {
+						LOG_WARNING(warning);
+					});
+				timedOutData.drawing.clear();
+				timedOutData.generation++;
+				timedOutData.tookMs = msSince(timedOutData.requestedAt);
 				timedOut.move(Event::TimedOut);
 			});
 			return;
 		}
 		break;
 	case State::Rendering:
-		if (drawingLocked() > 0)
+		if (ticketsHeld(data) > 0)
 		{
 			return;
 		}
@@ -216,37 +247,25 @@ void ActivationStateMachine::advance(Transaction& transaction)
 	case State::Idle:
 		return;
 	}
-	m_tookMs = std::chrono::duration_cast<std::chrono::milliseconds>(
-				   std::chrono::steady_clock::now() - m_requestedAt)
-				   .count();
+	data.tookMs = msSince(data.requestedAt);
 	transaction.move(Event::Shown);
 }
 
-std::size_t ActivationStateMachine::drawingLocked() const
-{
-	std::size_t count = 0;
-	for (const auto& [view, tickets]: m_drawing)
-	{
-		count += static_cast<std::size_t>(tickets);
-	}
-	return count;
-}
-
-std::string ActivationStateMachine::contextLocked() const
+std::string ActivationMachine::context(State  /*state*/, const Data& data)
 {
 	activation_machine_json::ActivationContext context;
-	context.activation = m_activation;
-	if (!m_drawing.empty())
+	context.activation = data.activation;
+	if (!data.drawing.empty())
 	{
-		context.drawing = m_drawing | std::views::keys | std::ranges::to<std::vector<std::string>>();
+		context.drawing = data.drawing | std::views::keys | std::ranges::to<std::vector<std::string>>();
 	}
-	if (m_tookMs >= 0)
+	if (data.tookMs >= 0)
 	{
-		context.took_ms = m_tookMs;
+		context.took_ms = data.tookMs;
 	}
-	if (!m_outcome.empty())
+	if (!data.outcome.empty())
 	{
-		context.outcome = m_outcome;
+		context.outcome = data.outcome;
 	}
 	return glz::write_json(context).value_or("{}");
 }

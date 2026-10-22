@@ -35,10 +35,11 @@ int QuestionStateMachine::ask(
 {
 	std::uint64_t id = 0;
 	{
-		Transaction transaction(*this);
-		id = m_nextId++;
-		m_open.push_back({id, text, options, presenter});
-		if (m_open.size() == 1)
+		auto transaction = m_machine.transaction();
+		QuestionMachine::Data& data = transaction.data();
+		id = data.nextId++;
+		data.open.push_back({id, text, options, presenter});
+		if (data.open.size() == 1)
 		{
 			transaction.move(Event::Ask);
 		}
@@ -46,35 +47,37 @@ int QuestionStateMachine::ask(
 
 	presenter->presentQuestion(id, text, options);
 
-	Transaction transaction(*this);
-	m_answered.wait(transaction.lock(), [&]() { return m_answers.contains(id); });
-	return m_answers.extract(id).mapped();
+	auto transaction = m_machine.transaction();
+	m_answered.wait(transaction.lock(), [&]() { return transaction.data().answers.contains(id); });
+	return transaction.data().answers.extract(id).mapped();
 }
 
 bool QuestionStateMachine::isOpen(std::uint64_t id) const
 {
-	const auto lock = this->lock();
-	return std::ranges::contains(m_open, id, &Question::id);
+	return m_machine.read([id](const QuestionMachine::Data& data, State) {
+		return std::ranges::contains(data.open, id, &Question::id);
+	});
 }
 
 bool QuestionStateMachine::answer(std::uint64_t id, int option, EventSource source)
 {
 	QuestionPresenter* presenter = nullptr;
 	{
-		Transaction transaction(*this);
-		const auto it = std::ranges::find(m_open, id, &Question::id);
-		if (it == m_open.end())
+		auto transaction = m_machine.transaction();
+		QuestionMachine::Data& data = transaction.data();
+		const auto it = std::ranges::find(data.open, id, &Question::id);
+		if (it == data.open.end())
 		{
 			return false;
 		}
-		const bool current = it == m_open.begin();
+		const bool current = it == data.open.begin();
 		presenter = it->presenter;
-		m_open.erase(it);
-		m_answers[id] = option;
+		data.open.erase(it);
+		data.answers[id] = option;
 		if (current)
 		{
 			transaction.move(Event::Answer, source);
-			if (!m_open.empty())
+			if (!data.open.empty())
 			{
 				transaction.move(Event::Ask);
 			}
@@ -92,16 +95,17 @@ void QuestionStateMachine::withdraw(QuestionPresenter* presenter)
 {
 	std::vector<Question> withdrawn;
 	{
-		Transaction transaction(*this);
-		const bool currentWithdrawn = !m_open.empty() &&
-			(presenter == nullptr || m_open.front().presenter == presenter);
-		for (auto it = m_open.begin(); it != m_open.end();)
+		auto transaction = m_machine.transaction();
+		QuestionMachine::Data& data = transaction.data();
+		const bool currentWithdrawn = !data.open.empty() &&
+			(presenter == nullptr || data.open.front().presenter == presenter);
+		for (auto it = data.open.begin(); it != data.open.end();)
 		{
 			if (presenter == nullptr || it->presenter == presenter)
 			{
-				m_answers[it->id] = -1;
+				data.answers[it->id] = -1;
 				withdrawn.push_back(*it);
-				it = m_open.erase(it);
+				it = data.open.erase(it);
 			}
 			else
 			{
@@ -111,7 +115,7 @@ void QuestionStateMachine::withdraw(QuestionPresenter* presenter)
 		if (currentWithdrawn)
 		{
 			transaction.move(Event::Withdraw);
-			if (!m_open.empty())
+			if (!data.open.empty())
 			{
 				transaction.move(Event::Ask);
 			}
@@ -129,9 +133,9 @@ void QuestionStateMachine::withdraw(QuestionPresenter* presenter)
 
 MachineFireResult QuestionStateMachine::fire(const std::string& event, const std::string& args, EventSource source)
 {
-	if (controlNamed(event) != Event::Answer)
+	if (m_machine.controlNamed(event) != Event::Answer)
 	{
-		return unknownEvent(event);
+		return m_machine.unknownEvent(event);
 	}
 	const auto parsed = parseArgs<question_machine_json::AnswerArgs>(
 		event, args, R"({"option": n} or {"label": "..."})");
@@ -140,62 +144,60 @@ MachineFireResult QuestionStateMachine::fire(const std::string& event, const std
 		return {false, parsed.error()};
 	}
 
-	std::uint64_t id = 0;
-	int option = -1;
+	// Which question, and which of its options.
+	const auto choice = m_machine.read(
+		[&](const QuestionMachine::Data& data, State) -> std::expected<std::pair<std::uint64_t, int>, std::string> {
+			if (data.open.empty())
+			{
+				return std::unexpected("no question is open");
+			}
+			auto question = data.open.begin();
+			if (parsed->id)
+			{
+				question = std::ranges::find(data.open, *parsed->id, &Question::id);
+				if (question == data.open.end())
+				{
+					return std::unexpected(std::format("question {} is not open", *parsed->id));
+				}
+			}
+			if (parsed->label)
+			{
+				const auto it = std::ranges::find(question->options, *parsed->label);
+				if (it == question->options.end())
+				{
+					return std::unexpected(std::format("'{}' is not one of the options", *parsed->label));
+				}
+				return std::pair(question->id, static_cast<int>(it - question->options.begin()));
+			}
+			if (parsed->option)
+			{
+				if (*parsed->option < 0 || *parsed->option >= static_cast<int>(question->options.size()))
+				{
+					return std::unexpected(std::format("option {} is out of range", *parsed->option));
+				}
+				return std::pair(question->id, *parsed->option);
+			}
+			return std::unexpected(R"(answer needs {"option": n} or {"label": "..."})");
+		});
+	if (!choice)
 	{
-		const auto lock = this->lock();
-		if (m_open.empty())
-		{
-			return {false, "no question is open"};
-		}
-		auto question = m_open.begin();
-		if (parsed->id)
-		{
-			question = std::ranges::find(m_open, *parsed->id, &Question::id);
-			if (question == m_open.end())
-			{
-				return {false, std::format("question {} is not open", *parsed->id)};
-			}
-		}
-		id = question->id;
-		if (parsed->label)
-		{
-			const auto it = std::ranges::find(question->options, *parsed->label);
-			if (it == question->options.end())
-			{
-				return {false, std::format("'{}' is not one of the options", *parsed->label)};
-			}
-			option = static_cast<int>(it - question->options.begin());
-		}
-		else if (parsed->option)
-		{
-			option = *parsed->option;
-			if (option < 0 || option >= static_cast<int>(question->options.size()))
-			{
-				return {false, std::format("option {} is out of range", option)};
-			}
-		}
-		else
-		{
-			return {false, R"(answer needs {"option": n} or {"label": "..."})"};
-		}
+		return {false, choice.error()};
 	}
-
-	if (!answer(id, option, source))
+	if (!answer(choice->first, choice->second, source))
 	{
 		return {false, "the question was answered meanwhile"};
 	}
 	return {true, "answered"};
 }
 
-std::string QuestionStateMachine::contextLocked() const
+std::string QuestionMachine::context(State  /*state*/, const Data& data)
 {
-	if (m_open.empty())
+	if (data.open.empty())
 	{
 		return "{}";
 	}
-	const Question& question = m_open.front();
+	const Question& question = data.open.front();
 	const question_machine_json::QuestionContext context {
-		question.id, question.text, question.options, m_open.size() - 1};
+		question.id, question.text, question.options, data.open.size() - 1};
 	return glz::write_json(context).value_or("{}");
 }

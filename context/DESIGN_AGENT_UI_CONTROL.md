@@ -644,28 +644,36 @@ drives through the same events:
 - **`StateMachine<State, Event>`** (`utility/state_machine/StateMachine.h`): a
   transition table, checked on every move, so what a machine can do next is data
   and "which events are accepted now" is a lookup.
-- **`RemoteStateMachine`** + **`StateMachineRegistry`**: a machine by name, with its
-  state, the events it accepts from outside now, a JSON context (what the state is
-  about), and `fire(event, args, source)`. The registry publishes every transition,
-  with its source: `ui` (a button), `agent`, or `app` (the pipeline moving on).
+- **`RemoteMachine`** + **`StateMachineRegistry`** (`RemoteStateMachine.h`): what
+  remote control needs of a machine, as a concept: a `snapshot()` (state, the events
+  it accepts from outside now, a JSON context saying what the state is about) and,
+  for a machine that is driven rather than watched, `fire(event, args, source)`. The
+  registry keeps each one as an `AnyStateMachine`, a value that erases the machine's
+  type behind a table of functions made for it; a machine without `fire` answers
+  that it is only watched. It publishes every transition, with its source: `ui` (a
+  button), `agent`, or `app` (the pipeline moving on).
 - **`ConcurrentStateMachine<Spec>`** (`utility/state_machine/ConcurrentStateMachine.h`):
-  the base of every machine below. A machine is first a `MachineSpec`, a struct of
+  what every machine below holds. A machine is first a `MachineSpec`, a struct of
   constexpr data: its `State`/`Event` scoped enums, their names (`named`, and
-  `control` for the events sent from outside), the initial state and the transition
-  table. A `consteval` check rejects a spec whose table uses an unnamed state or has
-  two rows for one (state, event), at compile time. The base turns the spec into a
-  thread-safe `RemoteStateMachine`:
-  - one lock for the table and the machine's own data, held by a `Transaction`
-    (RAII); the moves made in it are published when it ends, after the lock is
-    released, so an observer may read the machine back;
-  - the snapshot, the event names, `controlNamed`, the refusals ("'x' is not accepted
-    in state 'y'", unknown events listing the controls) and a `fire` for machines
-    that are only watched;
-  - one timeout at a time, armed in a Transaction and ended by the next move, whose
-    handler runs in a Transaction of its own on a timer thread (`project`'s opening
-    limit, `activation`'s rendering limit). It never runs on a machine that is going.
+  `control` for the events sent from outside), the initial state, the transition
+  table, and the `Data` it keeps beside the table with a `context(State, const
+  Data&)` that renders it. A `consteval` check rejects a spec whose table uses an
+  unnamed state or has two rows for one (state, event), at compile time.
 
-  A machine adds its data, its `contextLocked()` and the operations its callers use.
+  `ConcurrentStateMachine` is a handle to a monitor that owns the table and the
+  `Data` behind one lock. The data is reachable only through a `Transaction` (RAII,
+  holding the lock) or `read()`, so the compiler, not a comment, keeps it from being
+  touched unlocked. The moves made in a Transaction are published when it ends,
+  after the lock is released, so an observer may read the machine back; work it
+  `defer`s (logging) runs after that. One timeout at a time is armed in a
+  Transaction and ended by the next move; its handler runs in a Transaction of its
+  own on a timer thread and works on the monitor's data only. Callbacks that may
+  outlive the machine (a view's drawing ticket, a load waiting for startup) keep a
+  `Weak` handle.
+
+  The machines are plain classes, with no base class and no virtual functions: each
+  holds its `ConcurrentStateMachine`, gives it the operations its callers use, and
+  meets `RemoteMachine` with a forwarding `snapshot()` and, when driven, `fire()`.
   Control arguments parse through `parseArgs<Args>` (`MachineArgs.h`) into a
   `std::expected`.
 - **`question`** (`component/state_machine/QuestionStateMachine`): idle ⇄ asking.

@@ -32,6 +32,13 @@ struct AppMachine
 		Quit
 	};
 
+	struct Data
+	{
+		std::vector<std::function<void()>> waiting;	// for `started`
+		std::chrono::steady_clock::time_point createdAt = std::chrono::steady_clock::now();
+		std::int64_t startupMs = -1;	// how long starting took, once known
+	};
+
 	static constexpr std::string_view name = "app";
 	static constexpr State initial = State::Starting;
 	static constexpr std::array states {
@@ -42,11 +49,15 @@ struct AppMachine
 		{State::Starting, Event::Quit, State::Closing},
 		{State::Running, Event::Quit, State::Closing},
 	});
+
+	static std::string context(State state, const Data& data);
 };
 
-class AppStateMachine: public ConcurrentStateMachine<AppMachine>
+class AppStateMachine
 {
 public:
+	using State = AppMachine::State;
+
 	static std::shared_ptr<AppStateMachine> instance();
 
 	// main has finished starting the app: runs what waited for it.
@@ -59,12 +70,16 @@ public:
 	// the thread that reports it, in the order asked).
 	void whenStarted(std::function<void()> work);
 
-private:
-	std::string contextLocked() const override;
+	// Watched by remote control, not driven: no fire.
+	MachineSnapshot snapshot() const
+	{
+		return m_machine.snapshot();
+	}
 
-	std::vector<std::function<void()>> m_waiting;	// for `started`
-	const std::chrono::steady_clock::time_point m_createdAt = std::chrono::steady_clock::now();
-	std::int64_t m_startupMs = -1;	// how long starting took, once known
+private:
+	using Event = AppMachine::Event;
+
+	ConcurrentStateMachine<AppMachine> m_machine;
 };
 
 #endif	  // APP_STATE_MACHINE_H

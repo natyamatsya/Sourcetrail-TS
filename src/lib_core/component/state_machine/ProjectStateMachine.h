@@ -50,6 +50,14 @@ struct ProjectMachine
 		CloseRefused
 	};
 
+	struct Data
+	{
+		std::string path;	// the project loading or open
+		std::string outcome;	// how the last load or close ended
+		bool waitingForStartup = false;
+		std::chrono::milliseconds openingLimit {10000};
+	};
+
 	static constexpr std::string_view name = "project";
 	static constexpr State initial = State::NoProject;
 	static constexpr std::array states {
@@ -94,11 +102,15 @@ struct ProjectMachine
 		{State::Unloading, Event::Closed, State::NoProject},
 		{State::Unloading, Event::CloseRefused, State::Ready},
 	});
+
+	static std::string context(State state, const Data& data);
 };
 
-class ProjectStateMachine: public ConcurrentStateMachine<ProjectMachine>
+class ProjectStateMachine
 {
 public:
+	using State = ProjectMachine::State;
+
 	static std::shared_ptr<ProjectStateMachine> instance();
 
 	explicit ProjectStateMachine(std::shared_ptr<AppStateMachine> app);
@@ -133,18 +145,20 @@ public:
 	// (with a warning): a tab that never activates must not hold the app.
 	void setOpeningLimit(std::chrono::milliseconds limit);
 
-	MachineFireResult fire(const std::string& event, const std::string& args, EventSource source) override;
+	MachineSnapshot snapshot() const
+	{
+		return m_machine.snapshot();
+	}
+	MachineFireResult fire(const std::string& event, const std::string& args, EventSource source);
 
 private:
+	using Event = ProjectMachine::Event;
+
 	// Moves along an application event, recording `outcome` when given.
 	void report(Event event, const std::string* outcome = nullptr);
-	std::string contextLocked() const override;
 
+	ConcurrentStateMachine<ProjectMachine> m_machine;
 	const std::shared_ptr<AppStateMachine> m_app;
-	std::string m_path;	// the project loading or open
-	std::string m_outcome;	// how the last load or close ended
-	bool m_waitingForStartup = false;
-	std::chrono::milliseconds m_openingLimit {10000};
 };
 
 #endif	  // PROJECT_STATE_MACHINE_H

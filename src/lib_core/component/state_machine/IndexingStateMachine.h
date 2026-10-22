@@ -104,6 +104,38 @@ struct IndexingMachine
 		End
 	};
 
+	struct Progress
+	{
+		std::size_t started = 0;
+		std::size_t finished = 0;
+		std::size_t total = 0;
+		std::string file;
+	};
+
+	struct Data
+	{
+		// choosing_mode
+		std::function<RefreshInfo(RefreshMode)> countFiles;
+		std::vector<RefreshMode> modes;
+		RefreshMode mode = RefreshMode::NONE;
+		std::map<RefreshMode, RefreshInfo> infos;
+		std::set<RefreshMode> counting;
+		std::function<void(const RefreshInfo&)> onStart;
+		std::function<void()> onCancel;
+		IndexingPresenter* choicePresenter = nullptr;
+
+		// indexing, finishing
+		Progress progress;
+		bool interrupted = false;
+
+		// reporting
+		std::optional<IndexingReport> report;
+		std::optional<DatabasePolicy> decision;
+		IndexingPresenter* reportPresenter = nullptr;
+
+		std::string outcome;	// how the last request or run ended
+	};
+
 	static constexpr std::string_view name = "indexing";
 	static constexpr State initial = State::Idle;
 	static constexpr std::array states {
@@ -164,11 +196,15 @@ struct IndexingMachine
 		{State::Reporting, Event::Reindex, State::Finishing},
 		{State::Reporting, Event::End, State::Idle},
 	});
+
+	static std::string context(State state, const Data& data);
 };
 
-class IndexingStateMachine: public ConcurrentStateMachine<IndexingMachine>
+class IndexingStateMachine
 {
 public:
+	using State = IndexingMachine::State;
+
 	static std::shared_ptr<IndexingStateMachine> instance();
 
 	// The pipeline's side.
@@ -206,49 +242,24 @@ public:
 	MachineFireResult interrupt(EventSource source);
 	MachineFireResult decide(DatabasePolicy policy, EventSource source);
 
-	MachineFireResult fire(const std::string& event, const std::string& args, EventSource source) override;
+	MachineSnapshot snapshot() const
+	{
+		return m_machine.snapshot();
+	}
+	MachineFireResult fire(const std::string& event, const std::string& args, EventSource source);
 
 	static const char* modeName(RefreshMode mode);
 	static std::optional<RefreshMode> modeFromName(const std::string& name);
 
 private:
-	struct Progress
-	{
-		std::size_t started = 0;
-		std::size_t finished = 0;
-		std::size_t total = 0;
-		std::string file;
-	};
+	using Event = IndexingMachine::Event;
+	using Data = IndexingMachine::Data;
 
 	void count(RefreshMode mode);
 	void counted(RefreshMode mode, const RefreshInfo& info);
-	void resetChoice();
-	// Whether `mode` is offered in the open choice; the reason when not.
-	std::expected<RefreshMode, std::string> offered(RefreshMode mode) const;
-	std::string contextLocked() const override;
 
+	ConcurrentStateMachine<IndexingMachine> m_machine;
 	std::condition_variable m_decided;
-
-	// choosing_mode
-	std::function<RefreshInfo(RefreshMode)> m_countFiles;
-	std::vector<RefreshMode> m_modes;
-	RefreshMode m_mode = RefreshMode::NONE;
-	std::map<RefreshMode, RefreshInfo> m_infos;
-	std::set<RefreshMode> m_counting;
-	std::function<void(const RefreshInfo&)> m_onStart;
-	std::function<void()> m_onCancel;
-	IndexingPresenter* m_choicePresenter = nullptr;
-
-	// indexing, finishing
-	Progress m_progress;
-	bool m_interrupted = false;
-
-	// reporting
-	std::optional<IndexingReport> m_report;
-	std::optional<DatabasePolicy> m_decision;
-	IndexingPresenter* m_reportPresenter = nullptr;
-
-	std::string m_outcome;	// how the last request or run ended
 };
 
 #endif	  // INDEXING_STATE_MACHINE_H

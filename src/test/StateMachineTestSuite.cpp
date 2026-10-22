@@ -4,6 +4,7 @@
 #include <array>
 #include <chrono>
 #include <format>
+#include <type_traits>
 #include <future>
 #include <mutex>
 #include <string>
@@ -456,7 +457,6 @@ TEST_CASE("app runs what waited for it once started")
 	app.whenStarted([&]() { ran.push_back(3); });
 	REQUIRE(ran == std::vector<int> {1, 2, 3});
 
-	REQUIRE_FALSE(app.fire("started", "", EventSource::Agent).ok);
 	app.quitting();
 	app.whenStarted([&]() { ran.push_back(4); });
 	REQUIRE(ran.size() == 3);
@@ -587,7 +587,7 @@ TEST_CASE("activation ends once its messages are handled and the views have draw
 	REQUIRE(activation->snapshot().state == "idle");
 	REQUIRE(contains(activation->snapshot().context, R"("activation":1)"));
 	REQUIRE(contains(activation->snapshot().context, R"("took_ms":)"));
-	REQUIRE_FALSE(activation->fire("requested", "", EventSource::Agent).ok);
+	REQUIRE_FALSE(AnyStateMachine(activation).fire("requested", "", EventSource::Agent).ok);
 }
 
 TEST_CASE("activation with nothing to draw ends once what it dispatched is handled")
@@ -669,6 +669,16 @@ struct LampMachine
 	static constexpr std::array states {
 		named(State::Off, "off"), named(State::On, "on"), named(State::Broken, "broken")};
 	static constexpr std::array events {control(Event::Press, "press"), named(Event::Burn, "burn")};
+
+	struct Data
+	{
+		int presses = 0;
+	};
+
+	static std::string context(State  /*state*/, const Data& data)
+	{
+		return std::format(R"({{"presses":{}}})", data.presses);
+	}
 	static constexpr auto transitions = std::to_array<StateMachine<State, Event>::Transition>({
 		{State::Off, Event::Press, State::On},
 		{State::On, Event::Press, State::Off},
@@ -676,39 +686,58 @@ struct LampMachine
 	});
 };
 
-// A lamp left on burns out after a while, unless pressed again first.
-class Lamp: public ConcurrentStateMachine<LampMachine>
+// A lamp left on burns out after a while, unless pressed again first. A plain class
+// holding its machine: a RemoteMachine by its snapshot and fire.
+class Lamp
 {
 public:
+	using Machine = ConcurrentStateMachine<LampMachine>;
+	using Event = LampMachine::Event;
+	using State = LampMachine::State;
+
 	explicit Lamp(std::chrono::milliseconds lifetime): m_lifetime(lifetime) {}
 
-	MachineFireResult fire(const std::string& event, const std::string&  /*args*/, EventSource source) override
+	MachineSnapshot snapshot() const
 	{
-		if (controlNamed(event) != Event::Press)
+		return m_machine.snapshot();
+	}
+
+	State state() const
+	{
+		return m_machine.state();
+	}
+
+	MachineFireResult fire(const std::string& event, const std::string&  /*args*/, EventSource source)
+	{
+		if (Machine::controlNamed(event) != Event::Press)
 		{
-			return unknownEvent(event);
+			return Machine::unknownEvent(event);
 		}
-		Transaction transaction(*this);
+		auto transaction = m_machine.transaction();
 		if (!transaction.move(Event::Press, source))
 		{
 			return transaction.refuse(Event::Press);
 		}
-		m_presses++;
+		transaction.data().presses++;
 		if (transaction.state() == State::On)
 		{
-			transaction.timeout(m_lifetime, [](Transaction& burning) { burning.move(Event::Burn); });
+			transaction.timeout(m_lifetime, [](Machine::Transaction& burning) { burning.move(Event::Burn); });
 		}
 		return {true, "pressed"};
 	}
 
 private:
-	std::string contextLocked() const override
-	{
-		return std::format(R"({{"presses":{}}})", m_presses);
-	}
-
+	Machine m_machine;
 	const std::chrono::milliseconds m_lifetime;
-	int m_presses = 0;
+};
+
+// Watched only: a snapshot, no fire.
+struct Thermometer
+{
+	MachineSnapshot snapshot() const
+	{
+		return {"thermometer", "reading", {}, "{}", 0};
+	}
 };
 
 struct UnnamedStateMachine
@@ -764,22 +793,41 @@ static_assert(MachineSpec<IndexingMachine> && isWellFormed<IndexingMachine>());
 static_assert(!isWellFormed<UnnamedStateMachine>(), "a state the table uses has no name");
 static_assert(!isWellFormed<AmbiguousMachine>(), "two rows for one (state, event)");
 static_assert(!MachineSpec<UnscopedMachine>, "states and events are scoped enums");
-static_assert(Lamp::controlNamed("press") == LampMachine::Event::Press);
-static_assert(!Lamp::controlNamed("burn"), "burn is the lamp's own event, not a control");
-static_assert(IndexingStateMachine::stateName(IndexingMachine::State::ChoosingMode) == "choosing_mode");
+static_assert(Lamp::Machine::controlNamed("press") == LampMachine::Event::Press);
+static_assert(!Lamp::Machine::controlNamed("burn"), "burn is the lamp's own event, not a control");
+static_assert(
+	ConcurrentStateMachine<IndexingMachine>::stateName(IndexingMachine::State::ChoosingMode) == "choosing_mode");
+// Remote control takes any type with a snapshot; fire makes it driven.
+static_assert(DrivenRemoteMachine<Lamp> && DrivenRemoteMachine<IndexingStateMachine>);
+static_assert(RemoteMachine<AppStateMachine> && !DrivenRemoteMachine<AppStateMachine>);
+static_assert(RemoteMachine<Thermometer> && !RemoteMachine<int>);
+// No base classes and no virtual functions: machines are plain values over a monitor.
+static_assert(!std::is_polymorphic_v<Lamp> && !std::is_polymorphic_v<ProjectStateMachine>);
+static_assert(!std::is_polymorphic_v<ConcurrentStateMachine<ProjectMachine>>);
 
 TEST_CASE("concurrent state machine names its controls and refuses the rest")
 {
 	const auto lamp = std::make_shared<Lamp>(std::chrono::hours(1));
-	REQUIRE(Lamp::controlNames() == "press");
+	REQUIRE(Lamp::Machine::controlNames() == "press");
 	REQUIRE(lamp->snapshot().events == std::vector<std::string> {"press"});
 
 	const MachineFireResult unknown = lamp->fire("burn", "", EventSource::Agent);
 	REQUIRE_FALSE(unknown.ok);
 	REQUIRE(unknown.message == "unknown event 'burn' (press; the others come from the application)");
-	REQUIRE(AppStateMachine::instance()->fire("started", "", EventSource::Agent).message ==
+	REQUIRE(AnyStateMachine(AppStateMachine::instance()).fire("started", "", EventSource::Agent).message ==
 			"the app machine takes no events from outside ('started'): watch it");
-	REQUIRE(IndexingStateMachine::controlNames() == "refresh, select_mode, start, cancel, interrupt, keep, discard, reindex");
+	REQUIRE(
+		ConcurrentStateMachine<IndexingMachine>::controlNames() ==
+		"refresh, select_mode, start, cancel, interrupt, keep, discard, reindex");
+
+	// The registry keeps any of them, erased.
+	const AnyStateMachine thermometer(std::make_shared<Thermometer>());
+	REQUIRE(thermometer.name() == "thermometer");
+	REQUIRE(thermometer.snapshot().state == "reading");
+	REQUIRE_FALSE(thermometer.fire("calibrate", "", EventSource::Agent).ok);
+	const AnyStateMachine erasedLamp(lamp);
+	REQUIRE(erasedLamp.fire("press", "", EventSource::Agent).ok);
+	REQUIRE(lamp->state() == LampMachine::State::On);
 }
 
 TEST_CASE("concurrent state machine publishes its moves once the lock is released")

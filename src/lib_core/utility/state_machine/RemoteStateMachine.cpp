@@ -22,33 +22,26 @@ StateMachineRegistry& StateMachineRegistry::instance()
 	return registry;
 }
 
-void StateMachineRegistry::add(std::shared_ptr<RemoteStateMachine> machine)
+void StateMachineRegistry::add(AnyStateMachine machine)
 {
 	const std::lock_guard<std::mutex> lock(m_mutex);
-	const std::string name = machine->name();
-	const bool known = std::any_of(m_machines.begin(), m_machines.end(), [&](const auto& m) {
-		return m->name() == name;
-	});
-	if (!known)
+	if (!std::ranges::contains(m_machines, machine.name(), &AnyStateMachine::name))
 	{
 		m_machines.push_back(std::move(machine));
 	}
 }
 
-std::shared_ptr<RemoteStateMachine> StateMachineRegistry::find(const std::string& name) const
+std::optional<AnyStateMachine> StateMachineRegistry::find(const std::string& name) const
 {
 	const std::lock_guard<std::mutex> lock(m_mutex);
-	for (const std::shared_ptr<RemoteStateMachine>& machine: m_machines)
+	if (const auto it = std::ranges::find(m_machines, name, &AnyStateMachine::name); it != m_machines.end())
 	{
-		if (machine->name() == name)
-		{
-			return machine;
-		}
+		return *it;
 	}
-	return nullptr;
+	return std::nullopt;
 }
 
-std::vector<std::shared_ptr<RemoteStateMachine>> StateMachineRegistry::all() const
+std::vector<AnyStateMachine> StateMachineRegistry::all() const
 {
 	const std::lock_guard<std::mutex> lock(m_mutex);
 	return m_machines;

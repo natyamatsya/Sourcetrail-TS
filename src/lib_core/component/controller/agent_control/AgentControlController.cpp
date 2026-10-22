@@ -341,9 +341,9 @@ flatbuffers::Offset<fb::MachineState> makeMachineState(
 std::vector<flatbuffers::Offset<fb::MachineState>> makeMachineStates(flatbuffers::FlatBufferBuilder& builder)
 {
 	std::vector<flatbuffers::Offset<fb::MachineState>> machines;
-	for (const std::shared_ptr<RemoteStateMachine>& machine: StateMachineRegistry::instance().all())
+	for (const AnyStateMachine& machine: StateMachineRegistry::instance().all())
 	{
-		machines.push_back(makeMachineState(builder, machine->snapshot()));
+		machines.push_back(makeMachineState(builder, machine.snapshot()));
 	}
 	return machines;
 }
@@ -351,9 +351,9 @@ std::vector<flatbuffers::Offset<fb::MachineState>> makeMachineStates(flatbuffers
 std::string machineNames()
 {
 	std::string names;
-	for (const std::shared_ptr<RemoteStateMachine>& machine: StateMachineRegistry::instance().all())
+	for (const AnyStateMachine& machine: StateMachineRegistry::instance().all())
 	{
-		names += (names.empty() ? "" : ", ") + machine->name();
+		names += (names.empty() ? "" : ", ") + machine.name();
 	}
 	return names;
 }
@@ -847,8 +847,8 @@ struct AgentControlController::Impl
 		{
 			const auto* c = envelope->command_as_SendMachineEvent();
 			const std::string name = (c != nullptr && c->machine() != nullptr) ? c->machine()->str() : "";
-			const auto machine = StateMachineRegistry::instance().find(name);
-			if (machine == nullptr)
+			const std::optional<AnyStateMachine> machine = StateMachineRegistry::instance().find(name);
+			if (!machine)
 			{
 				emitResult(requestId, false, "no state machine '" + name + "' (" + machineNames() + ")");
 				flatbuffers::FlatBufferBuilder builder;
