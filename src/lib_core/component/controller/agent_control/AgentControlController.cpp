@@ -87,6 +87,7 @@ bool AgentControlController::isListening() const
 #include "MessageAgentCommand.h"
 #include "MessageActivateFile.h"
 #include "MessageActivateNodes.h"
+#include "MessageActivateOverview.h"
 #include "MessageActivateTokens.h"
 #include "MessageErrorCountUpdate.h"
 #include "MessageHistoryRedo.h"
@@ -394,6 +395,7 @@ private:
 struct AgentControlController::Impl
 	: public MessageListener<MessageAgentCommand>
 	, public MessageListener<MessageActivateTokens>
+	, public MessageListener<MessageActivateOverview>
 	, public MessageListener<MessageActivateFile>
 	, public MessageListener<MessageScrollToLine>
 	, public MessageListener<MessageSearch>
@@ -514,6 +516,22 @@ struct AgentControlController::Impl
 			}
 		}
 		const auto event = fb::CreateNodesActivated(builder, builder.CreateVector(nodes));
+		publishEvent(builder, fb::Event_NodesActivated, event.Union());
+		updateAppState();
+	}
+
+	// The overview (the toolbar's home button, or Back to where a session began)
+	// activates no node: nothing is active any more, and the code view shows no file.
+	void handleMessage(MessageActivateOverview*) override
+	{
+		{
+			const std::lock_guard<std::mutex> lock(m_stateMutex);
+			m_activeNodeIds.clear();
+			m_currentFile.clear();
+			m_scrollLine = 0;
+		}
+		flatbuffers::FlatBufferBuilder builder;
+		const auto event = fb::CreateNodesActivated(builder, builder.CreateVector(std::vector<flatbuffers::Offset<fb::NodeRef>>{}));
 		publishEvent(builder, fb::Event_NodesActivated, event.Union());
 		updateAppState();
 	}
