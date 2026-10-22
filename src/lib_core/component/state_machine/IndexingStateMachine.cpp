@@ -600,9 +600,12 @@ std::string IndexingMachine::context(State state, const Data& data)
 	switch (state)
 	{
 	case State::ChoosingMode:
-		context.modes = data.modes |
-			std::views::transform([](RefreshMode mode) { return std::string(IndexingStateMachine::modeName(mode)); }) |
-			std::ranges::to<std::vector<std::string>>();
+		{
+			// Not `| std::ranges::to<...>()`: clang cannot instantiate that adaptor from libstdc++ 14.
+			const auto modes = data.modes |
+				std::views::transform([](RefreshMode mode) { return std::string(IndexingStateMachine::modeName(mode)); });
+			context.modes = std::vector<std::string>(modes.begin(), modes.end());
+		}
 		context.mode = IndexingStateMachine::modeName(data.mode);
 		context.counting = data.counting.contains(data.mode);
 		if (const auto it = data.infos.find(data.mode); it != data.infos.end())

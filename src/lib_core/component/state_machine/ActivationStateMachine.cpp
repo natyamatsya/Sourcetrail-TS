@@ -257,7 +257,9 @@ std::string ActivationMachine::context(State  /*state*/, const Data& data)
 	context.activation = data.activation;
 	if (!data.drawing.empty())
 	{
-		context.drawing = data.drawing | std::views::keys | std::ranges::to<std::vector<std::string>>();
+		// Not `| std::ranges::to<...>()`: clang cannot instantiate that adaptor from libstdc++ 14.
+		const auto drawing = data.drawing | std::views::keys;
+		context.drawing = std::vector<std::string>(drawing.begin(), drawing.end());
 	}
 	if (data.tookMs >= 0)
 	{
