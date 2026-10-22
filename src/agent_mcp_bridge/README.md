@@ -68,7 +68,7 @@ definitions finds a whole area with one query:
 | Area | Tools |
 |---|---|
 | discovery | `describe` |
-| `instance_*` | `instance_start`, `instance_stop`, `instance_list`, `instance_handshake` |
+| `instance_*` | `instance_start`, `instance_stop`, `instance_list`, `instance_handshake`, `instance_debug`, `instance_debug_command`, `instance_debug_dump` |
 | `ui_*` | `ui_state`, `ui_frame`, `ui_snapshot`, `ui_query`, `ui_invoke`, `ui_capture` |
 | `nav_*` | `nav_search`, `nav_find`, `nav_activate_node`, `nav_activate_file`, `nav_activate_tab`, `nav_scroll_to_line`, `nav_history` |
 | `events_*` | `events_poll` |
@@ -129,8 +129,45 @@ are answered. From agent-control protocol v3 the GUI-only commands (`ui_frame`,
 that thread, so the agent can still see such a box and press its button while
 `ui_state` waits.
 
+## Debugging
+
+Every instance `instance_start` launches gets the platform debugger attached right
+after the handshake (`debugger: false` skips it): cdb on Windows (Debugging Tools
+for Windows, or `CDB_PATH`), lldb on macOS. The bridge drives it itself: cdb
+through its console, lldb through its MCP protocol server.
+
+- **Crash** (an exception nobody handled: access violation, abort/qFatal, stack
+  overflow, an unhandled C++ exception): the debugger writes a full dump beside the
+  instance's console file and holds the app at the fault. `instance_list` shows
+  `stopped` (the exception and frame) and `dump_written`; calls on the instance
+  fail at once with the stop.
+- **Commands**: `instance_debug_command { command }` in the debugger's own
+  language, returning `{ output, stopped }`. A running app is stopped for the
+  command and resumed after. cdb: `.ecxr; kb`, `~*k`, `!analyze -v`, `.frame N; dv`,
+  `bp module!Class::method`, `g` on its own to resume.
+- **Live**: `instance_debug { break_in: true }` stops the app; resume it before
+  driving the UI again.
+- **Post-mortem**: `instance_debug_dump { path }` opens a dump as an id for
+  `instance_debug_command`.
+- **Symbols**: a Release build shows bare offsets. Build the `reldbg` preset (with
+  `-D VCPKG_MANIFEST_FEATURES=cxx-indexer` for the C++ indexer) for Sourcetrail's
+  own frames; system modules come from Microsoft's symbol server unless
+  `_NT_SYMBOL_PATH` is set.
+- Dumps are pruned at `instance_start` to the 3 newest (`SOURCETRAIL_MCP_KEEP_DUMPS`).
+- `tests/debugger.rs` checks crash, abort, normal exit, commands while running,
+  break-in and post-mortem against the installed debugger, with
+  `examples/crashme.rs`; it is skipped where none is installed. The lldb side has
+  not been run yet.
+
+A worked example: opening a project 150–200 ms after pressing Back crashed
+Sourcetrail about every other time. Driven headless on the `reldbg` build with
+the debugger attached, the crash came back as a stop with a dump, and `.ecxr; kb`
+named `QtCodeNavigator::scrollTo`'s deferred lambda calling into a destroyed view
+(`_purecall`), a context-less `QTimer::singleShot`. The same 20-run sequence then
+showed the fix: 10 crashes before, none after.
+
 ## Status
 
-Verified against the rel-cxx build on Windows, headless. Not yet covered here: an
-agent log layer with query tools, synthetic mouse/keyboard input for the graph
-view, a per-request history, and attaching a debugger for crash dumps.
+Verified against the rel-cxx and reldbg builds on Windows, headless. Not yet
+covered here: an agent log layer with query tools, synthetic mouse/keyboard input
+for the graph view, and a per-request history.
