@@ -697,6 +697,35 @@ impl Bridge {
         Ok(json!({ "ok": ok, "message": message }))
     }
 
+    /// The screen as a user sees it: every visible top-level window composited at
+    /// its position, downscaled to `max_width` pixels when non-zero, cropped first
+    /// to `region` (`[x, y, w, h]` in the frame's own pixels) when given. Returns
+    /// `{ ok, frame, windows }` with the PNG base64-encoded, or
+    /// `{ ok: false, message }`.
+    pub fn get_frame(&mut self, max_width: u32, region: Option<[i32; 4]>) -> Result<Value> {
+        // An app before v2 has the GetFrame arm in its schema but answers it as an
+        // unknown command; say what to do about it instead.
+        let app_version = self.handshake["app_protocol_version"].as_u64().unwrap_or(0);
+        if app_version < u64::from(protocol::GET_FRAME_SINCE) {
+            bail!(
+                "this app speaks agent-control protocol v{app_version} and cannot capture the screen \
+                 (needs v{}): rebuild the app",
+                protocol::GET_FRAME_SINCE
+            );
+        }
+        let id = self.next_id();
+        self.send(&protocol::get_frame(id, max_width, region))?;
+        let (ok, message, _) = self.await_ack(id, OP_TIMEOUT)?;
+        if !ok {
+            return Ok(json!({ "ok": false, "message": message }));
+        }
+        let frame = self.read_frame(id, OP_TIMEOUT)?;
+        // The ack names the composited windows ("windows: 'title' WxH (modal); ..."),
+        // so a dialog over the main window shows in the result, not only in pixels.
+        let windows = message.strip_prefix("windows: ").unwrap_or(&message).to_string();
+        Ok(json!({ "ok": true, "frame": frame, "windows": windows }))
+    }
+
     /// Screenshot a single element by its ref. The app grabs it on the GUI thread,
     /// acks, then sends a `FrameEnvelope` on st.agent.frames. Returns `{ ok, frame }`
     /// with the PNG base64-encoded, or `{ ok: false, message }` if the element

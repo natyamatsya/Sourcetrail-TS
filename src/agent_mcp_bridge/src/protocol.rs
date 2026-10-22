@@ -125,6 +125,21 @@ pub fn activate_tab(request_id: u64, tab_id: u64) -> Vec<u8> {
     finish(b, request_id, fb::Command::ActivateTab, c.as_union_value())
 }
 
+/// The protocol version from which the app answers `GetFrame` (with `region`).
+pub const GET_FRAME_SINCE: u32 = 2;
+
+/// The screen as a user sees it, downscaled to `max_width` when non-zero;
+/// `region` (`[x, y, w, h]` in the frame's own pixels) crops it first.
+pub fn get_frame(request_id: u64, max_width: u32, region: Option<[i32; 4]>) -> Vec<u8> {
+    let mut b = FlatBufferBuilder::new();
+    let rect = region.map(|r| fb::Rect::new(r[0], r[1], r[2], r[3]));
+    let c = fb::GetFrame::create(
+        &mut b,
+        &fb::GetFrameArgs { format: fb::FrameFormat::Png, max_width, region: rect.as_ref() },
+    );
+    finish(b, request_id, fb::Command::GetFrame, c.as_union_value())
+}
+
 pub fn scroll_to_line(request_id: u64, file_path: &str, line: u32) -> Vec<u8> {
     let mut b = FlatBufferBuilder::new();
     let p = b.create_string(file_path);
@@ -637,6 +652,19 @@ mod tests {
         let c = env.command_as_scroll_to_line().unwrap();
         assert_eq!(c.file_path(), Some("/src/main.cpp"));
         assert_eq!(c.line(), 42);
+    }
+
+    #[test]
+    fn get_frame_command_roundtrips() {
+        let whole_bytes = get_frame(8, 1024, None);
+        let whole = cmd(&whole_bytes).command_as_get_frame().unwrap();
+        assert_eq!(whole.max_width(), 1024);
+        assert!(whole.region().is_none());
+        let bytes = get_frame(9, 0, Some([10, 20, 300, 200]));
+        let env = cmd(&bytes);
+        assert_eq!(env.command_type(), fb::Command::GetFrame);
+        let r = env.command_as_get_frame().unwrap().region().copied().unwrap();
+        assert_eq!((r.x(), r.y(), r.w(), r.h()), (10, 20, 300, 200));
     }
 
     #[test]

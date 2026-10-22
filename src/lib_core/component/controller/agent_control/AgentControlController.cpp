@@ -551,7 +551,8 @@ struct AgentControlController::Impl
 			type == fb::Command_LoadProject || type == fb::Command_GetUiState ||
 			type == fb::Command_GetSnapshot || type == fb::Command_InvokeAction ||
 			type == fb::Command_CaptureElement || type == fb::Command_QueryUi ||
-			type == fb::Command_SetLogFilter || type == fb::Command_GetInfo);
+			type == fb::Command_SetLogFilter || type == fb::Command_GetInfo ||
+			type == fb::Command_GetFrame);
 		if (needsProject && computeAppState() == fb::AppState_NoProject)
 		{
 			emitResult(requestId, false, "rejected: no project loaded");
@@ -680,11 +681,39 @@ struct AgentControlController::Impl
 				stdexec::then([this, requestId, objectName = std::move(ref.objectName),
 								  path = std::move(ref.path), expectHash]() {
 					const utility::qt::CaptureResult r = utility::qt::captureElement(objectName, path, expectHash);
+					// Ack first, frame second: see publishFrame.
+					emitResult(requestId, r.ok, r.message);
 					if (r.ok)
 					{
 						publishFrame(requestId, r);
 					}
+				}));
+			return;
+		}
+		case fb::Command_GetFrame:
+		{
+			const auto* c = envelope->command_as_GetFrame();
+			if (c == nullptr || c->format() != fb::FrameFormat_Png)
+			{
+				emitResult(requestId, false, "get_frame: unsupported format (only Png)");
+				return;
+			}
+			const std::uint32_t maxWidth = c->max_width();
+			const fb::Rect region = c->region() != nullptr ? *c->region() : fb::Rect(0, 0, 0, 0);
+			// Grab on the GUI thread (ui()); on success publish the FrameEnvelope on
+			// st.agent.frames, then ack. The ack's message names the composited
+			// windows, so a dialog over the main window shows in the reply too.
+			m_uiScope.spawn(
+				stdexec::schedule(m_schedulers->ui()) |
+				stdexec::then([this, requestId, maxWidth, region]() {
+					const utility::qt::CaptureResult r =
+						utility::qt::captureScreen(maxWidth, region.x(), region.y(), region.w(), region.h());
+					// Ack first, frame second: see publishFrame.
 					emitResult(requestId, r.ok, r.message);
+					if (r.ok)
+					{
+						publishFrame(requestId, r);
+					}
 				}));
 			return;
 		}
@@ -937,11 +966,22 @@ struct AgentControlController::Impl
 		publishEvent(builder, fb::Event_LogEvent, event.Union());
 	}
 
-	// One FrameEnvelope for a CaptureElement reply, on st.agent.frames. Single
-	// chunk (thoth-ipc fragments large messages itself); correlated by request_id.
-	// Runs on the ui() thread, the sole sender on m_framesChannel.
+	// One FrameEnvelope for a CaptureElement / GetFrame reply, on st.agent.frames.
+	// Single chunk (thoth-ipc fragments large messages itself); correlated by
+	// request_id. Runs on the ui() thread, the sole sender on m_framesChannel.
+	//
+	// Callers ack before they publish. On Windows thoth-ipc never puts a large
+	// message in chunk storage: it splits it into 64-byte fragments in the ring,
+	// which holds about 16 KB, so a frame only gets through while the bridge is
+	// reading the channel. The bridge reads frames once it has the ack; a frame
+	// published first filled the ring with nobody reading, and anything over the
+	// ring's size was lost (the bridge timed out waiting for it).
 	void publishFrame(std::uint64_t requestId, const utility::qt::CaptureResult& result)
 	{
+		if (m_framesChannel.recv_count() == 0)
+		{
+			return;	// the requester went away: don't encode a frame nobody reads
+		}
 		flatbuffers::FlatBufferBuilder builder;
 		const auto payload = builder.CreateVector(result.png);
 		fb::FrameEnvelopeBuilder fb_builder(builder);
@@ -966,7 +1006,13 @@ struct AgentControlController::Impl
 		// and the route send consistent across both.
 		const std::lock_guard<std::mutex> lock(m_eventMutex);
 		builder.Finish(fb::CreateEventEnvelope(builder, m_eventSeq++, nowMs(), type, event));
-		m_eventsChannel.send(builder.GetBufferPointer(), builder.GetSize());
+		// No bridge attached: skip the send, which thoth-ipc would otherwise report
+		// as failed for every app event. The seq still advances, so a bridge that
+		// attaches later sees the gap and knows it missed events.
+		if (m_eventsChannel.recv_count() > 0)
+		{
+			m_eventsChannel.send(builder.GetBufferPointer(), builder.GetSize());
+		}
 	}
 
 	// The coarse application FSM, derived from Sourcetrail's project + indexing

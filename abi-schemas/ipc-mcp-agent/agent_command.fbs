@@ -50,7 +50,10 @@ table GetInfo { }                                                               
 
 // Requests: the reply is published on another channel, correlated by request_id.
 table GetUiState { }                                                                  // -> UiStateEnvelope on st.agent.state
-table GetFrame   { format: FrameFormat = Png; max_width: uint32 = 0; }                // -> FrameEnvelope on st.agent.frames
+// GetFrame: the screen as a user sees it, every visible top-level window composited
+// (answered since protocol v2). `region` (appended) crops it, in the frame's own
+// pixels, before `max_width` downscales; absent = the whole frame.
+table GetFrame   { format: FrameFormat = Png; max_width: uint32 = 0; region: Rect; }  // -> FrameEnvelope on st.agent.frames
 table GetSnapshot { format: SnapshotFormat = Accessibility; }                         // -> UiSnapshot on st.agent.snapshot
 
 union Command {

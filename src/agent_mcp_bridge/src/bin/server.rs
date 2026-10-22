@@ -77,6 +77,21 @@ fn ok_json(v: Value) -> Result<CallToolResult, McpError> {
     )]))
 }
 
+/// Turn a `{ ok, frame: { ..., image_base64 } }` capture into what a client can
+/// use: the PNG as an MCP image block (a model sees images, not base64 text),
+/// plus the metadata as JSON without the payload. `{ ok: false, message }`
+/// passes through as JSON.
+fn frame_result(mut v: Value) -> Result<CallToolResult, McpError> {
+    let Some(b64) = v["frame"]["image_base64"].as_str().map(str::to_owned) else {
+        return ok_json(v);
+    };
+    if let Some(frame) = v["frame"].as_object_mut() {
+        frame.remove("image_base64");
+    }
+    let meta = ContentBlock::text(serde_json::to_string_pretty(&v).unwrap_or_else(|_| v.to_string()));
+    Ok(CallToolResult::success(vec![ContentBlock::image(b64, "image/png"), meta]))
+}
+
 fn default_true() -> bool {
     true
 }
@@ -293,6 +308,30 @@ struct HistoryArgs {
 #[derive(serde::Deserialize, rmcp::schemars::JsonSchema)]
 #[schemars(crate = "rmcp::schemars")]
 #[serde(deny_unknown_fields)]
+struct RegionArg {
+    x: i32,
+    y: i32,
+    w: i32,
+    h: i32,
+}
+
+#[derive(serde::Deserialize, rmcp::schemars::JsonSchema)]
+#[schemars(crate = "rmcp::schemars")]
+#[serde(deny_unknown_fields)]
+struct FrameArgs {
+    /// Downscale to this width in pixels (aspect kept); 0 = full size.
+    #[serde(default)]
+    max_width: u32,
+    /// Crop to this rectangle, in the full frame's pixels, before downscaling.
+    #[serde(default)]
+    region: Option<RegionArg>,
+    #[serde(default)]
+    instance: String,
+}
+
+#[derive(serde::Deserialize, rmcp::schemars::JsonSchema)]
+#[schemars(crate = "rmcp::schemars")]
+#[serde(deny_unknown_fields)]
 struct DescribeArgs {
     /// Topic (or tool name); empty lists the topics.
     #[serde(default)]
@@ -473,9 +512,20 @@ impl SourcetrailServer {
         )
     }
 
-    #[tool(description = "Screenshot one element by its ui_snapshot `ref`. Returns { ok, frame: { width, height, image_base64 } } (PNG) or { ok: false, message }.")]
+    #[tool(description = "See the screen as a user would: every visible window, dialogs included, composited. Returns a PNG image plus { ok, frame: { width, height }, windows }; region crops, max_width downscales.")]
+    async fn ui_frame(&self, Parameters(a): Parameters<FrameArgs>) -> Result<CallToolResult, McpError> {
+        let region = a.region.map(|r| [r.x, r.y, r.w, r.h]);
+        if region.is_some_and(|r| r[2] <= 0 || r[3] <= 0) {
+            return Err(McpError::invalid_params("region needs a positive w and h", None));
+        }
+        frame_result(
+            self.mgr.call(move |m| m.get_or_attach(&a.instance)?.bridge().get_frame(a.max_width, region)).await?,
+        )
+    }
+
+    #[tool(description = "Screenshot one element by its ui_snapshot `ref`. Returns a PNG image plus { ok, frame: { width, height } }, or { ok: false, message }.")]
     async fn ui_capture(&self, Parameters(a): Parameters<CaptureElementArgs>) -> Result<CallToolResult, McpError> {
-        ok_json(
+        frame_result(
             self.mgr
                 .call(move |m| {
                     let path = element_path(&a.target);

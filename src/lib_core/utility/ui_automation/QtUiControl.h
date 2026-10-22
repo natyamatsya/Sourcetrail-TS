@@ -56,6 +56,20 @@ ControlResult invokeAction(
 //! returns `{false, ...}` when built without Qt accessibility support.
 CaptureResult captureElement(
 	const std::string& objectName, const std::vector<RefStep>& path, std::uint64_t expectHash = 0);
+
+//! Capture the screen as a user sees it: every visible top-level window
+//! composited at its global position (dialogs and popups over the main window)
+//! to a PNG. A region of non-zero `regionW` x `regionH` crops the composite, in
+//! its own pixels, before `maxWidth` (when non-zero) downscales the result with
+//! the aspect kept. On success the message names the composited windows
+//! ("windows: 'title' WxH (modal); ..."). Backs the GetFrame command. MUST run
+//! on the Qt GUI thread; needs no accessibility support.
+CaptureResult captureScreen(
+	std::uint32_t maxWidth = 0,
+	std::int32_t regionX = 0,
+	std::int32_t regionY = 0,
+	std::int32_t regionW = 0,
+	std::int32_t regionH = 0);
 }	 // namespace utility::qt
 
 #endif	  // QT_UI_CONTROL_H

@@ -1,19 +1,25 @@
 #include "QtUiControl.h"
 
+#include <algorithm>
 #include <map>
 #include <utility>
 
 #include <QWidget>	// pulls Qt GUI feature macros (QT_CONFIG) before the check below
 
-#if QT_CONFIG(accessibility)
-#include <QAccessible>
-#include <QAccessibleActionInterface>
+// captureScreen needs no accessibility support.
 #include <QApplication>
 #include <QBuffer>
 #include <QByteArray>
+#include <QColor>
+#include <QList>
+#include <QPainter>
 #include <QPixmap>
 #include <QRect>
 #include <QString>
+
+#if QT_CONFIG(accessibility)
+#include <QAccessible>
+#include <QAccessibleActionInterface>
 
 #include "QtAccessibleRole.h"
 #include "QtUiHash.h"
@@ -218,4 +224,141 @@ CaptureResult captureElement(const std::string&, const std::vector<RefStep>&, st
 	return {false, "Qt accessibility support not built", {}, 0, 0};
 }
 #endif	// QT_CONFIG(accessibility)
+
+namespace
+{
+// Paint layer of a top-level window in a screen composite. Qt has no z-order
+// query, so stack the way a window manager does: ordinary windows, then dialogs,
+// then the active modal, then popups and tooltips.
+int compositeLayer(const QWidget* window)
+{
+	if (window->windowType() == Qt::Popup || window->windowType() == Qt::ToolTip)
+	{
+		return 3;
+	}
+	if (window == QApplication::activeModalWidget())
+	{
+		return 2;
+	}
+	if (window->windowType() == Qt::Dialog || window->isModal())
+	{
+		return 1;
+	}
+	return 0;
+}
+
+// "'title' 800x600 (modal)" for the capture message.
+std::string describeWindow(const QWidget* window)
+{
+	QString title = window->windowTitle();
+	if (title.isEmpty())
+	{
+		title = window->objectName().isEmpty() ? QString::fromLatin1(window->metaObject()->className())
+											   : window->objectName();
+	}
+	QString text = QStringLiteral("'%1' %2x%3").arg(title).arg(window->width()).arg(window->height());
+	if (window == QApplication::activeModalWidget())
+	{
+		text += QStringLiteral(" (modal)");
+	}
+	return text.toStdString();
+}
+}	 // namespace
+
+// Every visible top-level window, composited at its global position the way a
+// user sees the screen. Grabbing one window would make the result depend on
+// focus: a message box would replace the main window, and a dialog behind the
+// focus would go unseen.
+CaptureResult captureScreen(
+	std::uint32_t maxWidth, std::int32_t regionX, std::int32_t regionY, std::int32_t regionW, std::int32_t regionH)
+{
+	QList<QWidget*> windows;
+	for (QWidget* topLevel: QApplication::topLevelWidgets())
+	{
+		if (topLevel->isVisible() && topLevel->isWindow() && !topLevel->size().isEmpty())
+		{
+			windows.append(topLevel);
+		}
+	}
+	if (windows.isEmpty())
+	{
+		return {false, "no visible window to capture", {}, 0, 0};
+	}
+
+	const auto area = [](const QWidget* w) { return static_cast<qint64>(w->width()) * w->height(); };
+	std::stable_sort(windows.begin(), windows.end(), [&](const QWidget* a, const QWidget* b) {
+		const int layerA = compositeLayer(a);
+		const int layerB = compositeLayer(b);
+		return layerA != layerB ? layerA < layerB : area(a) > area(b);
+	});
+
+	QRect canvas;
+	qreal dpr = 1.0;
+	for (const QWidget* window: windows)
+	{
+		canvas = canvas.united(window->geometry());
+		dpr = std::max(dpr, window->devicePixelRatioF());
+	}
+
+	QPixmap pixmap(canvas.size() * dpr);
+	pixmap.setDevicePixelRatio(dpr);
+	pixmap.fill(QColor(0x20, 0x20, 0x20));	  // the desktop behind and between windows
+	std::string described;
+	{
+		QPainter painter(&pixmap);
+		for (QWidget* window: windows)
+		{
+			const QPixmap grabbed = window->grab();
+			if (!grabbed.isNull())
+			{
+				painter.drawPixmap(
+					QRect(window->geometry().topLeft() - canvas.topLeft(), window->size()), grabbed);
+			}
+			described += (described.empty() ? "windows: " : "; ") + describeWindow(window);
+		}
+	}
+	if (pixmap.isNull())
+	{
+		return {false, "grab produced an empty image", {}, 0, 0};
+	}
+
+	// Crop before the downscale, so a region reads in the pixels the caller saw.
+	if (regionW > 0 && regionH > 0)
+	{
+		const QRect frame(0, 0, pixmap.width(), pixmap.height());
+		const QRect wanted = QRect(regionX, regionY, regionW, regionH).intersected(frame);
+		if (wanted.isEmpty())
+		{
+			return {
+				false,
+				"region " + std::to_string(regionX) + "," + std::to_string(regionY) + " " +
+					std::to_string(regionW) + "x" + std::to_string(regionH) + " lies outside the " +
+					std::to_string(frame.width()) + "x" + std::to_string(frame.height()) + " frame",
+				{},
+				0,
+				0};
+		}
+		pixmap = pixmap.copy(wanted);
+		described += "; cropped to " + std::to_string(wanted.x()) + "," + std::to_string(wanted.y()) + " " +
+			std::to_string(wanted.width()) + "x" + std::to_string(wanted.height());
+	}
+	if (maxWidth != 0 && pixmap.width() > static_cast<int>(maxWidth))
+	{
+		pixmap = pixmap.scaledToWidth(static_cast<int>(maxWidth), Qt::SmoothTransformation);
+	}
+
+	QByteArray bytes;
+	QBuffer buffer(&bytes);
+	buffer.open(QIODevice::WriteOnly);
+	if (!pixmap.save(&buffer, "PNG"))
+	{
+		return {false, "PNG encode failed", {}, 0, 0};
+	}
+	return {
+		true,
+		described,
+		std::vector<std::uint8_t>(bytes.begin(), bytes.end()),
+		static_cast<std::uint32_t>(pixmap.width()),
+		static_cast<std::uint32_t>(pixmap.height())};
+}
 }	 // namespace utility::qt

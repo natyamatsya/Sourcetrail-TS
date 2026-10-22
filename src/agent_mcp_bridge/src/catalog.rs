@@ -167,10 +167,18 @@ nav_history { direction: \"back\" | \"forward\", instance? } -> ui_state
     },
     Topic {
         name: "ui",
-        summary: "Structural UI control: the widget tree with refs, JSONPath queries, invoking actions, element screenshots.",
-        tools: &["ui_snapshot", "ui_query", "ui_invoke", "ui_capture"],
+        summary: "See and drive the UI: screenshots, the widget tree with refs, JSONPath queries, invoking actions.",
+        tools: &["ui_frame", "ui_snapshot", "ui_query", "ui_invoke", "ui_capture"],
         doc: "\
 For what no nav_* tool covers: menus, dialogs, buttons, preferences.
+
+ui_frame { max_width=0, region?: { x, y, w, h }, instance? } -> PNG image + \
+{ ok, frame: { width, height, format, bytes }, windows } | { ok: false, message }
+  The screen as a user sees it: every visible top-level window composited at its position \
+(dialogs and popups over the main window), so it is what to look at when ui_state does not \
+explain what the app is doing. `windows` names them (\"'title' WxH (modal); ...\"). region \
+crops in the full frame's pixels, then max_width downscales (aspect kept). Needs an app on \
+agent-control protocol v2 or later (instance_handshake).
 
 ui_snapshot { object_tree=false, instance? } -> { request_id, format, tree_hash, roots: [node] }
   node: { role, name, value, state, actions: [str], rect: { x, y, w, h }, \
@@ -187,9 +195,9 @@ ui_invoke { ref, action?, text?, expect_hash=0, instance? } -> { ok, message }
 sets an editable field's `text`. expect_hash (the node's `hash`) refuses the action if the \
 element changed since the snapshot. Not found / unsupported -> ok: false.
 
-ui_capture { ref, include_properties=false, expect_hash=0, instance? } -> \
-{ ok, frame: { width, height, format, bytes, image_base64 } } | { ok: false, message }
-  PNG of one element.",
+ui_capture { ref, include_properties=false, expect_hash=0, instance? } -> PNG image + \
+{ ok, frame: { width, height, format, bytes } } | { ok: false, message }
+  One element, grabbed from its widget (a sub-element from its window, cropped).",
     },
     Topic {
         name: "project",
