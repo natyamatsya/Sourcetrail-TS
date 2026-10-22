@@ -91,7 +91,10 @@ enum AppState : byte {
 //      tab has its first activation; navigation commands are refused meanwhile
 //   5  SendInput (synthetic mouse / keyboard gestures), and GetFrame's ack
 //      reports the frame's origin and scale in global coordinates
-enum ProtocolVersion : uint { Current = 5 }
+//   6  state machines: GetMachines, SendMachineEvent, the MachineTransition
+//      event, and UiState.machines (an older app leaves it out, which would read
+//      as "no machines")
+enum ProtocolVersion : uint { Current = 6 }
 
 enum RefreshMode : byte { None = 0, UpdatedFiles = 1, AllFiles = 2 }
 
@@ -111,6 +114,18 @@ enum InputEventKind : byte {
     KeyRelease = 6
 }
 enum MouseButton : byte { NoButton = 0, Left = 1, Right = 2, Middle = 3 }
+
+// A state machine as remote control sees it (protocol v6): what it is doing, the
+// events it accepts from outside now, and a JSON object with what the state is
+// about (the open question and its options, the files a mode would index, the
+// indexing progress, the report). See DESIGN_AGENT_UI_CONTROL.md (State machines).
+table MachineState {
+    machine:  string;     // "indexing", "question"
+    state:    string;
+    events:   [string];   // accepted now from a dialog or an agent
+    context:  string;     // JSON object
+    revision: uint64;     // counts the machine's transitions
+}
 
 // Structural UI snapshot format (see agent_snapshot.fbs / DESIGN_AGENT_UI_SNAPSHOT.md).
 enum SnapshotFormat : byte { Accessibility = 0, ObjectTree = 1 }

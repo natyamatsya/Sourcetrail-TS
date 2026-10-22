@@ -74,6 +74,7 @@ definitions finds a whole area with one query:
 | `events_*` | `events_poll` |
 | `logs_*` | `logs_forward` |
 | `project_*` | `project_open` |
+| `machine_*` | `machine_state`, `machine_send` |
 
 Tools that change the app (`nav_activate_*`, `nav_scroll_to_line`, `nav_history`)
 **auto-observe**: they return the `ui_state` once the app reports the command's
@@ -144,6 +145,27 @@ are answered. From agent-control protocol v3 the GUI-only commands (`ui_frame`,
 `ui_snapshot`, `ui_query`, `ui_invoke`, `ui_capture`, `instance_handshake`) bypass
 that thread, so the agent can still see such a box and press its button while
 `ui_state` waits.
+
+From protocol v6 the questions and the indexing dialogs are state machines, which is
+the better way to answer them: see below.
+
+## State machines
+
+What waits for a person is a state machine in the app (protocol v6): `indexing` (the
+mode choice, progress, the report) and `question` (the boxes the app asks and waits
+on). A dialog shows a state, and its buttons send the machine events; `machine_send`
+sends the same events, and the dialog closes when an agent answered it. Every move is
+a `MachineTransition` in `events_poll`, with its source (`ui`, `agent` or `app`).
+
+```text
+machine_state {}                                          -> each machine's state, accepted events, context
+machine_send  { machine: "indexing", event: "start", until: ["idle"], timeout_s: 300 }
+machine_send  { machine: "question", event: "answer", args: { label: "Reindex" } }
+```
+
+`project_open` on a project whose load asks first ("the index is outdated:
+reindex?") returns at once with the question instead of waiting for the load.
+`describe('machines')` has both lifecycles.
 
 ## Synthetic input
 

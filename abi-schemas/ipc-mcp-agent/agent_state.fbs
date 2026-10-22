@@ -47,6 +47,11 @@ table UiState {
     // dialogs, by its title ("Start Indexing"). Empty when nothing is. An app
     // before v3 leaves it out, which would read as "nothing", hence the bump.
     dialog:            string;
+
+    // Appended in protocol v6: the state machines remote control can drive (see
+    // GetMachines), so one state read shows whether indexing waits for a mode or a
+    // question for its answer.
+    machines:          [MachineState];
 }
 
 // One message on `st.agent.state`. `request_id` echoes the GetUiState command's id.

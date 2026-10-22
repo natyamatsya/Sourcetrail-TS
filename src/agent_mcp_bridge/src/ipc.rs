@@ -26,6 +26,9 @@ const SNAPSHOT_TIMEOUT: Duration = Duration::from_secs(15);
 /// to open), and how often it looks.
 const LOAD_TIMEOUT: Duration = Duration::from_secs(300);
 const LOAD_POLL: Duration = Duration::from_millis(100);
+/// How long a load waits for one UiState before it looks for a question that
+/// would hold it.
+const LOAD_STATE_READ: Duration = Duration::from_secs(2);
 /// Bound on the buffered event log (drops oldest; `seq` gaps let a poller detect it).
 const EVENT_LOG_CAP: usize = 2048;
 
@@ -51,6 +54,15 @@ fn rejection(label: &str, message: &str) -> anyhow::Error {
     } else {
         anyhow!("{label} rejected: {message}")
     }
+}
+
+/// The ack and the `MachineStates` of a machine command, with the transitions
+/// read meanwhile.
+struct MachineReply {
+    ok: bool,
+    message: String,
+    machines: Vec<Value>,
+    transitions: Vec<Value>,
 }
 
 pub struct Bridge {
@@ -783,7 +795,8 @@ impl Bridge {
         let app_version = self.app_protocol_version();
         if app_version < protocol::SEND_INPUT_SINCE {
             bail!(
-                "this app speaks agent-control protocol v{app_version} and cannot take synthetic input                  (needs v{}): rebuild the app",
+                "this app speaks agent-control protocol v{app_version} and cannot take synthetic input \
+                 (needs v{}): rebuild the app",
                 protocol::SEND_INPUT_SINCE
             );
         }
@@ -798,6 +811,158 @@ impl Bridge {
         }
         let state = self.get_ui_state()?;
         Ok(json!({ "ok": true, "message": message, "settled": true, "state": state }))
+    }
+
+    /// The state machines (protocol v6): all of them, or the one `machine` names.
+    /// Returns `{ machines: [ { machine, state, events, context, revision } ] }`.
+    pub fn get_machines(&mut self, machine: &str) -> Result<Value> {
+        self.require_machines()?;
+        self.drain_stale_events();
+        let id = self.next_id();
+        self.send(&protocol::get_machines(id, machine))?;
+        let reply = self.await_machine_reply(id, machine, OP_TIMEOUT)?;
+        if !reply.ok {
+            return Err(rejection("machine_state", &reply.message));
+        }
+        Ok(json!({ "machines": reply.machines }))
+    }
+
+    /// Send `machine` its `event` (args: a JSON object, "" for none), as a
+    /// dialog's button would. With `until`, then wait up to `timeout` for the
+    /// machine to reach one of those states. Returns `{ ok, message, machine,
+    /// transitions }` (the machine as it is after the event, or once reached), plus
+    /// `reached` with `until`. A refused event is `ok: false` with the machine's
+    /// state and accepted events, not an error.
+    pub fn send_machine_event(
+        &mut self,
+        machine: &str,
+        event: &str,
+        args: &str,
+        until: &[String],
+        timeout: Duration,
+    ) -> Result<Value> {
+        self.require_machines()?;
+        self.drain_stale_events();
+        let id = self.next_id();
+        self.send(&protocol::send_machine_event(id, machine, event, args))?;
+        let reply = self.await_machine_reply(id, machine, OP_TIMEOUT)?;
+        let snapshot = reply.machines.into_iter().next().unwrap_or(Value::Null);
+        let mut transitions = reply.transitions;
+        if !reply.ok || until.is_empty() {
+            return Ok(json!({
+                "ok": reply.ok,
+                "message": reply.message,
+                "machine": snapshot,
+                "transitions": transitions,
+            }));
+        }
+        let current = snapshot["state"].as_str().unwrap_or_default().to_string();
+        let reached = self.await_machine_state(machine, until, current, timeout, &mut transitions)?;
+        let snapshot = self.machine_snapshot(machine)?;
+        Ok(json!({
+            "ok": true,
+            "message": reply.message,
+            "machine": snapshot,
+            "transitions": transitions,
+            "reached": reached,
+        }))
+    }
+
+    /// Wait up to `timeout` for `machine` to be in one of `until` (sending
+    /// nothing). Returns `{ machine, transitions, reached }`.
+    pub fn wait_machine(&mut self, machine: &str, until: &[String], timeout: Duration) -> Result<Value> {
+        let snapshot = self.machine_snapshot(machine)?;
+        let current = snapshot["state"].as_str().unwrap_or_default().to_string();
+        let mut transitions = Vec::new();
+        if until.contains(&current) {
+            return Ok(json!({ "machine": snapshot, "transitions": transitions, "reached": true }));
+        }
+        let reached = self.await_machine_state(machine, until, current, timeout, &mut transitions)?;
+        let snapshot = self.machine_snapshot(machine)?;
+        Ok(json!({ "machine": snapshot, "transitions": transitions, "reached": reached }))
+    }
+
+    fn machine_snapshot(&mut self, machine: &str) -> Result<Value> {
+        let machines = self.get_machines(machine)?;
+        Ok(machines["machines"].get(0).cloned().unwrap_or(Value::Null))
+    }
+
+    fn require_machines(&self) -> Result<()> {
+        let app_version = self.app_protocol_version();
+        if app_version < protocol::MACHINES_SINCE {
+            bail!(
+                "this app speaks agent-control protocol v{app_version} and has no state machines \
+                 (needs v{}): rebuild the app",
+                protocol::MACHINES_SINCE
+            );
+        }
+        Ok(())
+    }
+
+    /// Read events until the ack and the `MachineStates` of request `id` (the app
+    /// sends both, the ack first), keeping `machine`'s transitions seen meanwhile:
+    /// those the event itself caused arrive before the ack.
+    fn await_machine_reply(&mut self, id: u64, machine: &str, timeout: Duration) -> Result<MachineReply> {
+        let deadline = Instant::now() + timeout;
+        let mut ack: Option<(bool, String)> = None;
+        let mut transitions = Vec::new();
+        while Instant::now() < deadline {
+            let buf = self.events.recv(Some(RECV_POLL_MS)).context("recv event")?;
+            if buf.is_empty() {
+                continue;
+            }
+            self.record_event(buf.data());
+            let incoming = match protocol::parse_event(buf.data()) {
+                Ok((_seq, incoming)) => incoming,
+                Err(e) => {
+                    self.note_dropped_frame("event", &e);
+                    continue;
+                }
+            };
+            match incoming {
+                Incoming::CommandResult { request_id, ok, message } if request_id == id => ack = Some((ok, message)),
+                Incoming::MachineTransition(t) if machine.is_empty() || t["machine"] == machine => {
+                    transitions.push(t)
+                }
+                Incoming::MachineStates { request_id, machines } if request_id == id => {
+                    let (ok, message) = ack.unwrap_or((false, "no acknowledgement".to_string()));
+                    return Ok(MachineReply { ok, message, machines, transitions });
+                }
+                _ => {}
+            }
+        }
+        Err(self.reply_timeout("MachineStates", id, timeout))
+    }
+
+    /// Follow `machine`'s transitions from state `current` until it is in one of
+    /// `until`. False when `timeout` passed first (not an error: the caller
+    /// reports where the machine is).
+    fn await_machine_state(
+        &mut self,
+        machine: &str,
+        until: &[String],
+        mut current: String,
+        timeout: Duration,
+        transitions: &mut Vec<Value>,
+    ) -> Result<bool> {
+        let deadline = Instant::now() + timeout;
+        while !until.contains(&current) {
+            if Instant::now() >= deadline {
+                return Ok(false);
+            }
+            let buf = self.events.recv(Some(RECV_POLL_MS)).context("recv event")?;
+            if buf.is_empty() {
+                continue;
+            }
+            self.record_event(buf.data());
+            if let Ok((_seq, Incoming::MachineTransition(t))) = protocol::parse_event(buf.data()) {
+                if t["machine"] == machine {
+                    current = t["to"].as_str().unwrap_or_default().to_string();
+                    transitions.push(t);
+                }
+            }
+        }
+        Ok(true)
     }
 
     /// Screenshot a single element by its ref. The app grabs it on the GUI thread,
@@ -862,18 +1027,39 @@ impl Bridge {
     /// reports `Loading` from the request until the project is open and the tab the
     /// load opens has its first activation, so the state returned is one the
     /// caller can navigate from. A load that finds no index ends at Ready with the
-    /// indexing dialog in `dialog`. An app before protocol v4 does not report the
-    /// load, so its state is returned right after the ack.
+    /// indexing dialog in `dialog`. A load that asks a question first ("the index
+    /// is outdated: reindex?") holds the app until it is answered; from protocol v6
+    /// that returns at once as `{ app_state: "Loading", question, note }` rather
+    /// than waiting it out. An app before protocol v4 does not report the load, so
+    /// its state is returned right after the ack.
     pub fn load_project(&mut self, path: &str) -> Result<Value> {
         self.send_and_ack("load_project", Duration::from_secs(10), |id| protocol::load_project(id, path))?;
         if self.app_protocol_version() < protocol::LOAD_STATE_SINCE {
             return self.get_ui_state();
         }
+        let questions = self.app_protocol_version() >= protocol::MACHINES_SINCE;
         let deadline = Instant::now() + LOAD_TIMEOUT;
         loop {
-            let state = self.get_ui_state()?;
-            if state["app_state"] != "Loading" {
-                return Ok(state);
+            // The question machine answers on the reader thread, even while the
+            // question holds the thread a UiState is read on.
+            if questions {
+                let question = self.machine_snapshot("question")?;
+                if question["state"] == "asking" {
+                    return Ok(json!({
+                        "app_state": "Loading",
+                        "question": question,
+                        "note": "the load waits for this answer: machine_send { machine: \"question\", \
+                                 event: \"answer\", args: { label: ... } }, then project_open is done \
+                                 once ui_state.app_state is no longer Loading",
+                    }));
+                }
+            }
+            match self.get_ui_state_with_timeout(if questions { LOAD_STATE_READ } else { OP_TIMEOUT }) {
+                Ok(state) if state["app_state"] != "Loading" => return Ok(state),
+                Ok(_) => {}
+                // A question that came up meanwhile holds the read: look again.
+                Err(_) if questions => {}
+                Err(e) => return Err(e),
             }
             if Instant::now() >= deadline {
                 bail!("the project was still loading after {LOAD_TIMEOUT:?}; app_state follows it");

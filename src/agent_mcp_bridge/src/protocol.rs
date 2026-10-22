@@ -134,6 +134,31 @@ pub const LOAD_STATE_SINCE: u32 = 4;
 /// The protocol version from which the app answers `SendInput`.
 pub const SEND_INPUT_SINCE: u32 = 5;
 
+/// The protocol version from which the app has state machines (`GetMachines`,
+/// `SendMachineEvent`, `MachineTransition`, `UiState.machines`).
+pub const MACHINES_SINCE: u32 = 6;
+
+/// Read the state machines: all of them, or the one `machine` names.
+pub fn get_machines(request_id: u64, machine: &str) -> Vec<u8> {
+    let mut b = FlatBufferBuilder::new();
+    let m = (!machine.is_empty()).then(|| b.create_string(machine));
+    let c = fb::GetMachines::create(&mut b, &fb::GetMachinesArgs { machine: m });
+    finish(b, request_id, fb::Command::GetMachines, c.as_union_value())
+}
+
+/// Send `machine` its `event`, with `args` a JSON object ("" for none).
+pub fn send_machine_event(request_id: u64, machine: &str, event: &str, args: &str) -> Vec<u8> {
+    let mut b = FlatBufferBuilder::new();
+    let m = b.create_string(machine);
+    let e = b.create_string(event);
+    let a = b.create_string(args);
+    let c = fb::SendMachineEvent::create(
+        &mut b,
+        &fb::SendMachineEventArgs { machine: Some(m), event: Some(e), args: Some(a) },
+    );
+    finish(b, request_id, fb::Command::SendMachineEvent, c.as_union_value())
+}
+
 /// One synthetic input event (see agent_command.fbs, InputEvent).
 #[derive(Debug, Clone, Default, PartialEq)]
 pub struct InputEvent {
@@ -439,6 +464,10 @@ pub enum Incoming {
     TabsChanged(Value),
     Settled { request_id: u64 },
     AppInfo { request_id: u64, protocol_version: u32, app_version: String, build_id: String, instance_id: String },
+    /// The answer to GetMachines / SendMachineEvent: the machines as JSON.
+    MachineStates { request_id: u64, machines: Vec<Value> },
+    /// A state machine moved (see [`machine_transition_json`]).
+    MachineTransition(Value),
     Other(&'static str),
 }
 
@@ -485,6 +514,16 @@ pub fn parse_event(bytes: &[u8]) -> Result<(u64, Incoming)> {
                 build_id: a.build_id().unwrap_or_default().to_string(),
                 instance_id: a.instance_id().unwrap_or_default().to_string(),
             }
+        }
+        fb::Event::MachineStates => {
+            let m = env.event_as_machine_states().unwrap();
+            Incoming::MachineStates {
+                request_id: m.request_id(),
+                machines: m.machines().map(|v| v.iter().map(machine_state_json).collect()).unwrap_or_default(),
+            }
+        }
+        fb::Event::MachineTransition => {
+            Incoming::MachineTransition(machine_transition_json(env.event_as_machine_transition().unwrap()))
         }
         other => Incoming::Other(other.variant_name().unwrap_or("Unknown")),
     };
@@ -586,6 +625,18 @@ pub fn event_to_json(bytes: &[u8]) -> Result<Value> {
             let caps: Vec<&str> = e.capabilities().map(|v| v.iter().collect()).unwrap_or_default();
             m.insert("capabilities".into(), json!(caps));
         }
+        fb::Event::MachineTransition => {
+            if let Value::Object(fields) = machine_transition_json(env.event_as_machine_transition().unwrap()) {
+                m.extend(fields);
+            }
+        }
+        fb::Event::MachineStates => {
+            let e = env.event_as_machine_states().unwrap();
+            m.insert("request_id".into(), json!(e.request_id()));
+            let machines: Vec<Value> =
+                e.machines().map(|v| v.iter().map(machine_state_json).collect()).unwrap_or_default();
+            m.insert("machines".into(), json!(machines));
+        }
         // IndexingStarted (empty) and any future arms: type tag only.
         _ => {}
     }
@@ -646,6 +697,8 @@ pub fn parse_ui_state(bytes: &[u8]) -> Result<(u64, Value)> {
         "code_view": code_view,
         "search_matches": search_matches,
         "tabs": tabs,
+        // The state machines (protocol v6); null from an older app.
+        "machines": s.machines().map(|v| v.iter().map(machine_state_json).collect::<Vec<_>>()),
     });
     Ok((request_id, json))
 }
@@ -742,6 +795,39 @@ fn tab_info_json(t: fb::TabInfo) -> Value {
         "tab_id": t.tab_id(),
         "title": t.title().unwrap_or_default(),
         "active": t.active(),
+    })
+}
+
+/// A machine's context is a JSON object in a string; hand it on as JSON (or as
+/// the string, should it ever not parse).
+fn context_json(text: Option<&str>) -> Value {
+    let text = text.unwrap_or_default();
+    if text.is_empty() {
+        return json!({});
+    }
+    serde_json::from_str(text).unwrap_or_else(|_| json!(text))
+}
+
+pub fn machine_state_json(m: fb::MachineState) -> Value {
+    let events: Vec<&str> = m.events().map(|v| v.iter().collect()).unwrap_or_default();
+    json!({
+        "machine": m.machine().unwrap_or_default(),
+        "state": m.state().unwrap_or_default(),
+        "events": events,
+        "context": context_json(m.context()),
+        "revision": m.revision(),
+    })
+}
+
+pub fn machine_transition_json(t: fb::MachineTransition) -> Value {
+    json!({
+        "machine": t.machine().unwrap_or_default(),
+        "from": t.from().unwrap_or_default(),
+        "to": t.to().unwrap_or_default(),
+        "event": t.event().unwrap_or_default(),
+        "source": t.source().unwrap_or_default(),
+        "context": context_json(t.context()),
+        "revision": t.revision(),
     })
 }
 
@@ -1366,5 +1452,86 @@ mod tests {
         let path = child.ref_().unwrap().path().unwrap();
         assert_eq!(path.get(path.len() - 1).role().unwrap(), "button");
         assert_eq!(path.get(path.len() - 1).name().unwrap(), "OK");
+    }
+
+    #[test]
+    fn machine_commands_and_events_roundtrip() {
+        let bytes = send_machine_event(4, "indexing", "start", r#"{"mode":"all"}"#);
+        let env = flatbuffers::root::<fb::CommandEnvelope>(&bytes).unwrap();
+        assert_eq!(env.request_id(), 4);
+        let c = env.command_as_send_machine_event().unwrap();
+        assert_eq!(c.machine(), Some("indexing"));
+        assert_eq!(c.event(), Some("start"));
+        assert_eq!(c.args(), Some(r#"{"mode":"all"}"#));
+
+        let bytes = get_machines(5, "");
+        let env = flatbuffers::root::<fb::CommandEnvelope>(&bytes).unwrap();
+        assert_eq!(env.command_as_get_machines().unwrap().machine(), None);
+
+        let mut b = FlatBufferBuilder::new();
+        let machine = b.create_string("question");
+        let state = b.create_string("asking");
+        let answer = b.create_string("answer");
+        let events = b.create_vector(&[answer]);
+        let context = b.create_string(r#"{"text":"Reindex?","options":["Reindex","Cancel"]}"#);
+        let ms = fb::MachineState::create(
+            &mut b,
+            &fb::MachineStateArgs {
+                machine: Some(machine),
+                state: Some(state),
+                events: Some(events),
+                context: Some(context),
+                revision: 3,
+            },
+        );
+        let machines = b.create_vector(&[ms]);
+        let states =
+            fb::MachineStates::create(&mut b, &fb::MachineStatesArgs { request_id: 5, machines: Some(machines) });
+        let env = fb::EventEnvelope::create(
+            &mut b,
+            &fb::EventEnvelopeArgs {
+                seq: 1,
+                timestamp_ms: 0,
+                event_type: fb::Event::MachineStates,
+                event: Some(states.as_union_value()),
+            },
+        );
+        b.finish(env, None);
+        match parse_event(b.finished_data()).unwrap().1 {
+            Incoming::MachineStates { request_id, machines } => {
+                assert_eq!(request_id, 5);
+                assert_eq!(machines[0]["state"], "asking");
+                assert_eq!(machines[0]["events"], json!(["answer"]));
+                assert_eq!(machines[0]["context"]["options"][1], "Cancel");
+            }
+            other => panic!("expected MachineStates, got {other:?}"),
+        }
+
+        let mut b = FlatBufferBuilder::new();
+        let args = fb::MachineTransitionArgs {
+            machine: Some(b.create_string("indexing")),
+            from: Some(b.create_string("indexing")),
+            to: Some(b.create_string("finishing")),
+            event: Some(b.create_string("interrupt")),
+            source: Some(b.create_string("agent")),
+            context: Some(b.create_string(r#"{"interrupted":true}"#)),
+            revision: 7,
+        };
+        let t = fb::MachineTransition::create(&mut b, &args);
+        let env = fb::EventEnvelope::create(
+            &mut b,
+            &fb::EventEnvelopeArgs {
+                seq: 2,
+                timestamp_ms: 0,
+                event_type: fb::Event::MachineTransition,
+                event: Some(t.as_union_value()),
+            },
+        );
+        b.finish(env, None);
+        let v = event_to_json(b.finished_data()).unwrap();
+        assert_eq!(v["type"], "MachineTransition");
+        assert_eq!(v["to"], "finishing");
+        assert_eq!(v["source"], "agent");
+        assert_eq!(v["context"]["interrupted"], true);
     }
 }

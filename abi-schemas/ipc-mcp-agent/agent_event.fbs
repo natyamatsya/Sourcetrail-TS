@@ -62,6 +62,22 @@ table AppInfo {
     capabilities:     [string]; // reserved: supported command names
 }
 
+// A state machine moved (protocol v6): from a dialog's button, an agent's
+// SendMachineEvent, or the application itself (source "ui", "agent", "app").
+// `context` is the machine's JSON context after the move.
+table MachineTransition {
+    machine:  string;
+    from:     string;
+    to:       string;
+    event:    string;
+    source:   string;
+    context:  string;
+    revision: uint64;
+}
+
+// The answer to GetMachines and SendMachineEvent, correlated by request_id.
+table MachineStates { request_id: uint64; machines: [MachineState]; }
+
 union Event {
     NodesActivated,
     EdgeActivated,
@@ -79,6 +95,8 @@ union Event {
     Settled,
     LogEvent,
     AppInfo,
+    MachineTransition,   // appended (protocol v6)
+    MachineStates,
 }
 
 // One message on `st.agent.events`. `seq` is a per-session monotonic counter so a

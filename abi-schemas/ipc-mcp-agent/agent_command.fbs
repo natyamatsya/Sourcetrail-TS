@@ -92,6 +92,19 @@ table SendInput {
     target_y:         int32;
 }
 
+// Reads state machines (protocol v6): every machine, or the one named. Acked, then
+// answered by a MachineStates event with the same request_id (empty when no
+// machine has that name).
+table GetMachines { machine: string; }
+
+// Sends a state machine one of the events it accepts now, as a dialog's button
+// would (protocol v6). `args` is a JSON object (empty for none), e.g.
+// {"mode": "all"} for the indexing machine's start. The ack says whether the
+// machine took it; a MachineStates event with the same request_id follows,
+// carrying the machine after the transition. What the pipeline does next arrives
+// as MachineTransition events.
+table SendMachineEvent { machine: string; event: string; args: string; }
+
 union Command {
     LoadProject,
     Search,
@@ -112,6 +125,8 @@ union Command {
     SetLogFilter,
     GetInfo,
     SendInput,     // appended (protocol v5)
+    GetMachines,   // appended (protocol v6)
+    SendMachineEvent,
 }
 
 // One message on `st.agent.cmd`. `request_id` correlates a later reply

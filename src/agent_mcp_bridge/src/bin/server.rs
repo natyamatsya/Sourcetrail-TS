@@ -13,6 +13,7 @@
 //! client does, per connection.
 
 use std::path::PathBuf;
+use std::time::Duration;
 use std::sync::mpsc;
 
 use agent_mcp_bridge::catalog;
@@ -463,6 +464,51 @@ struct InputArgs {
     instance: String,
 }
 
+#[derive(serde::Deserialize, rmcp::schemars::JsonSchema)]
+#[schemars(crate = "rmcp::schemars")]
+#[serde(deny_unknown_fields)]
+struct MachineStateArgs {
+    /// A machine's name ("indexing", "question"); empty for all of them.
+    #[serde(default)]
+    machine: String,
+    /// Wait until the machine is in one of these states (needs `machine`).
+    #[serde(default)]
+    until: Vec<String>,
+    /// How long to wait for `until`, in seconds (default 60, at most 300).
+    #[serde(default)]
+    timeout_s: Option<u64>,
+    #[serde(default)]
+    instance: String,
+}
+
+#[derive(serde::Deserialize, rmcp::schemars::JsonSchema)]
+#[schemars(crate = "rmcp::schemars")]
+#[serde(deny_unknown_fields)]
+struct MachineSendArgs {
+    /// The machine: "indexing" or "question".
+    machine: String,
+    /// One of the events the machine accepts now (machine_state lists them).
+    event: String,
+    /// The event's arguments, a JSON object: {"mode": "all"} for indexing's
+    /// select_mode/start, {"label": "Reindex"} or {"option": 0} for question's answer.
+    #[serde(default)]
+    args: Option<Value>,
+    /// Then wait until the machine is in one of these states.
+    #[serde(default)]
+    until: Vec<String>,
+    /// How long to wait for `until`, in seconds (default 60, at most 300).
+    #[serde(default)]
+    timeout_s: Option<u64>,
+    #[serde(default)]
+    instance: String,
+}
+
+/// The wait for a machine's `until`: 60 s unless asked, at most 300 s (the call
+/// holds the bridge meanwhile).
+fn machine_timeout(timeout_s: Option<u64>) -> Duration {
+    Duration::from_secs(timeout_s.unwrap_or(60).clamp(1, 300))
+}
+
 /// The events a ready-made gesture stands for, all at the target's center.
 fn gesture_events(gesture: &str) -> Result<Vec<InputEvent>, McpError> {
     let at = |kind, button| InputEvent { kind, centered: true, button, ..Default::default() };
@@ -802,6 +848,49 @@ impl SourcetrailServer {
         )
     }
 
+    #[tool(description = "The state machines (indexing, question): state, events accepted now, context. `until` waits for a state. Returns { machines: [...] } or { machine, transitions, reached }; describe('machines').")]
+    async fn machine_state(&self, Parameters(a): Parameters<MachineStateArgs>) -> Result<CallToolResult, McpError> {
+        if !a.until.is_empty() && a.machine.is_empty() {
+            return Err(McpError::invalid_params("`until` needs a `machine`", None));
+        }
+        let timeout = machine_timeout(a.timeout_s);
+        ok_json(
+            self.mgr
+                .call(move |m| {
+                    let bridge = m.get_or_attach(&a.instance)?.bridge();
+                    if a.until.is_empty() {
+                        bridge.get_machines(&a.machine)
+                    } else {
+                        bridge.wait_machine(&a.machine, &a.until, timeout)
+                    }
+                })
+                .await?,
+        )
+    }
+
+    #[tool(description = "Send a state machine an event, as its dialog's button would (start indexing, answer a question). Returns { ok, message, machine, transitions }, + reached with `until`; describe('machines').")]
+    async fn machine_send(&self, Parameters(a): Parameters<MachineSendArgs>) -> Result<CallToolResult, McpError> {
+        let args = match &a.args {
+            None => String::new(),
+            Some(v @ Value::Object(_)) => v.to_string(),
+            Some(_) => return Err(McpError::invalid_params("`args` must be a JSON object", None)),
+        };
+        let timeout = machine_timeout(a.timeout_s);
+        ok_json(
+            self.mgr
+                .call(move |m| {
+                    m.get_or_attach(&a.instance)?.bridge().send_machine_event(
+                        &a.machine,
+                        &a.event,
+                        &args,
+                        &a.until,
+                        timeout,
+                    )
+                })
+                .await?,
+        )
+    }
+
     #[tool(description = "Screenshot one element by its ui_snapshot `ref`. Returns a PNG image plus { ok, frame: { width, height } }, or { ok: false, message }.")]
     async fn ui_capture(&self, Parameters(a): Parameters<CaptureElementArgs>) -> Result<CallToolResult, McpError> {
         frame_result(
@@ -882,7 +971,7 @@ mod tests {
 
     #[test]
     fn tool_names_carry_an_area_prefix() {
-        const PREFIXES: &[&str] = &["instance_", "ui_", "nav_", "events_", "logs_", "project_"];
+        const PREFIXES: &[&str] = &["instance_", "ui_", "nav_", "events_", "logs_", "project_", "machine_"];
         for t in registered() {
             let name = t.name.as_ref();
             assert!(

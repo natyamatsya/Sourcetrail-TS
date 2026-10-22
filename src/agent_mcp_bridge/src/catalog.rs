@@ -55,10 +55,12 @@ Unknown tool arguments are rejected, naming the field.
 
 A question that blocks: Sourcetrail asks some questions (\"reindex the project?\") in a modal \
 box that holds the thread commands run on until it is answered, so ui_state and nav_* time \
-out while it is up. ui_frame, ui_snapshot, ui_query, ui_invoke and instance_handshake still \
-answer (agent-control protocol v3+): ui_frame shows the box and names it in `windows`, and \
-ui_query { query: \"$.roots..[?(@.role=='button' && @.name=='Cancel')]\" } finds its buttons \
-(take the one whose rect is not empty; the box's own role reads \"unknown\"), which ui_invoke \
+out while it is up. The question is a state machine (protocol v6): machine_state { machine: \
+\"question\" } shows its text and options, and machine_send { machine: \"question\", event: \
+\"answer\", args: { label: \"Cancel\" } } answers it and closes the box; see \
+describe('machines'). ui_frame, ui_snapshot, ui_query, ui_invoke and instance_handshake answer \
+too (protocol v3+), for other boxes: ui_query { query: \"$.roots..[?(@.role=='button' && \
+@.name=='Cancel')]\" } finds a button (take the one whose rect is not empty), which ui_invoke \
 presses.
 
 Settled state: tools that change the app (nav_activate_*, nav_scroll_to_line, nav_history) \
@@ -315,12 +317,65 @@ state it returns is one to navigate from; instance_start { project } waits the s
 The app reports app_state Loading from the request until the project is open and the tab \
 the load opens has shown the overview, and refuses nav_* meanwhile (\"still loading\"), so \
 nothing of the load lands after a first navigation. A project with an up-to-date index \
-comes back Ready. One without an index comes back Ready with ui_state.dialog \"Start \
-Indexing\", and nothing is indexed until its Start button is pressed:
-  ui_query  { query: \"$.roots..[?(@.role=='button' && @.name=='Start')]\" }
-  ui_invoke { ref: <roots[0].ref>, action: \"Press\" }
-then wait for app_state Ready with events_poll or ui_state: it goes Indexing, then \
-Loading while the first tab opens on the overview, then Ready.",
+comes back Ready. One without an index comes back Ready with the indexing machine in \
+choosing_mode (ui_state.dialog \"Start Indexing\"), and nothing is indexed until it starts:
+  machine_send { machine: \"indexing\", event: \"start\", until: [\"idle\"], timeout_s: 300 }
+returns once indexing is over; app_state then goes Loading while the first tab opens on the \
+overview, then Ready (ui_state shows it). describe('machines') has the whole lifecycle.
+  A load that asks first (the index is outdated or from another version: \"reindex?\") \
+returns at once with { app_state: \"Loading\", question, note } (protocol v6): answer it with \
+machine_send { machine: \"question\", event: \"answer\", args: { label: \"Reindex\" } }.",
+    },
+    Topic {
+        name: "machines",
+        summary: "State machines: indexing and questions, driven by events instead of their dialogs' buttons.",
+        tools: &["machine_state", "machine_send"],
+        doc: "\
+What waits for a person in Sourcetrail is a state machine: indexing (choose a mode, follow \
+progress, decide on the report) and the questions the app asks. A dialog shows a state; its \
+buttons send the machine events; an agent sends the same events, and the dialog closes when \
+an agent answered it. Every move is a MachineTransition event (events_poll) with its source: \
+ui (a button), agent, or app (the pipeline moving on). Needs agent-control protocol v6.
+
+machine_state { machine?, until?: [state], timeout_s=60, instance? }
+  -> { machines: [ { machine, state, events, context, revision } ] }
+  -> with until: { machine, transitions, reached }
+  `events` are those the machine accepts now; `context` is what the state is about. ui_state \
+carries the same list as `machines`.
+
+machine_send { machine, event, args?: {...}, until?: [state], timeout_s=60, instance? }
+  -> { ok, message, machine, transitions } (+ reached with until)
+  A refused event is ok: false with the machine as it is (its state and accepted events). \
+`transitions` are the moves seen meanwhile; with until the call returns once the machine is \
+in one of those states, or after timeout_s (at most 300; the call holds the bridge meanwhile) \
+with reached: false.
+
+indexing: idle -> pending -> choosing_mode -> pending -> preparing -> indexing -> finishing \
+-> reporting -> finishing -> idle
+  refresh { mode?: updated|all }   idle: asks for a refresh, as the menu's Refresh does. The \
+mode choice opens (choosing_mode), or the app asks a question first (the index is outdated: \
+see question), or finds nothing to do and returns to idle with context.outcome saying why.
+  select_mode { mode }             choosing_mode: updated | incomplete | all, among \
+context.modes; context.files_to_index follows once counted (context.counting meanwhile).
+  start { mode? }                  choosing_mode: indexes (with the selected mode by default).
+  cancel                           choosing_mode: closes the choice.
+  interrupt                        preparing/indexing: stops; what is indexed so far is kept \
+for the report.
+  keep | discard | reindex         reporting: the decision on the run's data. Offscreen \
+(headless) the report is kept without asking, so reporting passes straight on.
+  context: modes, mode, counting, files_to_index, files_to_clear (choosing_mode); progress \
+{ started, finished, total, file }, interrupted (preparing..finishing); report { indexed, \
+total_indexed, completed, total, seconds, errors, fatal, interrupted } (reporting); outcome \
+(how the last request or run ended: kept, discarded, canceled, nothing to refresh...).
+  Recipe: index a project that has none, and wait for it:
+    machine_send { machine: \"indexing\", event: \"start\", until: [\"idle\"], timeout_s: 300 }
+  Reindex everything: machine_send { machine: \"indexing\", event: \"refresh\", args: { mode: \
+\"all\" }, until: [\"choosing_mode\", \"idle\"] }, then start as above.
+
+question: idle -> asking -> idle
+  answer { label } | { option: n } | { id, ... }   asking: answers the question in context \
+{ id, text, options, queued } and closes its box. Questions asked meanwhile queue behind it \
+(context.queued); answering moves to the next one.",
     },
     Topic {
         name: "logs",
@@ -343,6 +398,10 @@ const TOPIC_ALIASES: &[(&str, &str)] = &[
     ("crash", "debug"),
     ("navigation", "nav"),
     ("log", "logs"),
+    ("machine", "machines"),
+    ("state machine", "machines"),
+    ("indexing", "machines"),
+    ("question", "machines"),
 ];
 
 /// Tools as they were called before the area prefixes, and what they are now.

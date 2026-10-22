@@ -182,12 +182,13 @@ things on top, added here (not a parallel C++ command hierarchy):
 
 ## Protocol handshake & versioning
 
-> **Since written:** `Current` is 5 (2026-10-22). v2 answers `GetFrame` (a composite of
+> **Since written:** `Current` is 6 (2026-10-22). v2 answers `GetFrame` (a composite of
 > every visible window, with an optional `region`); v3 adds `UiState.dialog` and moves
 > the commands that only need the GUI thread off the message bus, so they answer while a
 > modal question blocks it; v4 reports `Loading` until a load has its tab up; v5 adds
 > `SendInput` (see *Synthetic input*) and has `GetFrame`'s ack report the frame's origin
-> and scale. The version log, and the rule for when to bump (an older app
+> and scale; v6 adds the state machines (see *State machines*). The version log, and
+> the rule for when to bump (an older app
 > would answer *silently wrong*), live in `agent_common.fbs`.
 
 Two version layers meet at the bridge, and only one was covered before this section:
@@ -620,6 +621,69 @@ widgets), context menus, drags inside one widget, hover.
   see posted presses: `QGuiApplication::mouseButtons()` follows window-system input only.
   The dock separators check it (and, on Windows, `GetKeyState`), so dragging one to resize
   a dock does nothing; close or float the dock with its title-bar buttons instead.
+
+## State machines (v6) — control events as the remote-control seam
+
+Tiers 2 and 3 drive the UI's widgets, and every widget an agent must find is a
+place where a click works for a person but an agent has to search. Sourcetrail
+already had the event half of an alternative: user actions become messages (94
+`Message*` types). What it lacked was the *state* half. The flows that wait for a
+person kept their state in their dialogs: `DialogView::confirm()` and the indexing
+report parked a worker thread in a 25 ms spin loop until a button set a flag, the
+mode choice cached its counts in `QtDialogView`, and nothing outside the dialog
+could tell what was being waited for, or answer it.
+
+The retrofit makes those flows state machines that a dialog shows and an agent
+drives through the same events:
+
+- **`StateMachine<State, Event>`** (`utility/state_machine/StateMachine.h`): a
+  transition table, checked on every move, so what a machine can do next is data
+  and "which events are accepted now" is a lookup.
+- **`RemoteStateMachine`** + **`StateMachineRegistry`**: a machine by name, with its
+  state, the events it accepts from outside now, a JSON context (what the state is
+  about), and `fire(event, args, source)`. The registry publishes every transition,
+  with its source: `ui` (a button), `agent`, or `app` (the pipeline moving on).
+- **`question`** (`component/state_machine/QuestionStateMachine`): idle ⇄ asking.
+  `DialogView::confirm()` asks it and waits on a condition variable; the dialog is
+  its presenter. Questions asked meanwhile queue behind the open one.
+- **`indexing`** (`IndexingStateMachine`): idle → pending → choosing_mode → pending →
+  preparing → indexing → finishing → reporting → finishing → idle. Controls:
+  `refresh`, `select_mode`, `start`, `cancel`, `interrupt`, `keep`/`discard`/
+  `reindex`. `Project` and `Application` report the pipeline's steps (`requested`,
+  `prepare`, `begin`, `wrap_up`, `report`, `end`), so the machine never guesses from
+  dialog titles.
+
+**DialogView became the presenter.** The pipeline still calls `DialogView`
+(`startIndexingDialog`, `confirm`, `finishedIndexingDialog`, the progress updates),
+but those are now non-virtual and move the machines; `QtDialogView` only implements
+the presenter hooks (`presentQuestion`, `presentModeChoice`, `presentRefreshInfo`,
+`presentReport` and their `dismiss*`). Its buttons call the machine (`start(mode,
+Ui)`, `answer(id, i, Ui)`), and when an agent answered, the machine tells the
+presenter to close what it shows. The progress dialog's Stop sends `interrupt`
+(falling back to the plain `MessageIndexingInterrupted` should the machine refuse,
+so a person can always stop). Two robustness rules keep the human path safe: a mode
+choice opened from `idle` records the request first, and a waiting report is always
+decided by its buttons even if the state disagreed.
+
+**Protocol (v6).** `GetMachines { machine }` and `SendMachineEvent { machine, event,
+args }` are answered on the reader thread (the machines are thread-safe, and a
+question parks exactly the thread other commands wait on), each with an ack and a
+`MachineStates` reply; every transition is a `MachineTransition` event; `UiState`
+carries `machines`. The bridge's `machine_send { ..., until }` follows transitions
+until a target state, and `project_open` returns at once with an open question
+instead of waiting out a load that question holds.
+
+**Found on the way.** Agent control used to open its channel inside
+`Application::createInstance()`, before `main` registered the language packages:
+a bridge fast enough to send `LoadProject` first had the project load with no C++
+source group factory, and the mode choice counted 0 files. The channel now opens
+(`Application::startAgentControl()`) once startup is done. Startup itself is the
+next candidate for a machine, together with the load lifecycle behind
+`AppState Loading` (v4).
+
+Offscreen the report is still kept without asking (nobody could press it, and a
+report nobody answers holds the pipeline); the machine passes through `reporting`
+with source `app`, so an agent sees the decision.
 
 ## Optimistic control — structural hashes (staleness detection)
 

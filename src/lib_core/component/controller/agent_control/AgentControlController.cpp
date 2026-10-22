@@ -75,6 +75,7 @@ bool AgentControlController::isListening() const
 #include "NodeType.h"
 #include "NodeTypeSet.h"
 #include "RefreshInfo.h"
+#include "RemoteStateMachine.h"
 #include "StorageAccess.h"
 #include "Version.h"
 #include "logging.h"
@@ -321,6 +322,41 @@ flatbuffers::Offset<fb::TabInfo> makeTabInfo(
 		tab.active);
 }
 
+flatbuffers::Offset<fb::MachineState> makeMachineState(
+	flatbuffers::FlatBufferBuilder& builder, const MachineSnapshot& snapshot)
+{
+	std::vector<flatbuffers::Offset<flatbuffers::String>> events;
+	for (const std::string& event: snapshot.events)
+	{
+		events.push_back(builder.CreateString(event));
+	}
+	const auto machine = builder.CreateString(snapshot.machine);
+	const auto state = builder.CreateString(snapshot.state);
+	const auto eventsOffset = builder.CreateVector(events);
+	const auto context = builder.CreateString(snapshot.context);
+	return fb::CreateMachineState(builder, machine, state, eventsOffset, context, snapshot.revision);
+}
+
+std::vector<flatbuffers::Offset<fb::MachineState>> makeMachineStates(flatbuffers::FlatBufferBuilder& builder)
+{
+	std::vector<flatbuffers::Offset<fb::MachineState>> machines;
+	for (const std::shared_ptr<RemoteStateMachine>& machine: StateMachineRegistry::instance().all())
+	{
+		machines.push_back(makeMachineState(builder, machine->snapshot()));
+	}
+	return machines;
+}
+
+std::string machineNames()
+{
+	std::string names;
+	for (const std::shared_ptr<RemoteStateMachine>& machine: StateMachineRegistry::instance().all())
+	{
+		names += (names.empty() ? "" : ", ") + machine->name();
+	}
+	return names;
+}
+
 // Receives raw CommandEnvelope frames from a thoth-ipc route and hands each to a
 // sink. Two implementations, selected by how thoth-ipc was built:
 //
@@ -469,6 +505,8 @@ struct AgentControlController::Impl
 		// the tab a command lands in. flushSettled emits Settled once all is quiet.
 		TaskManager::getScheduler(TabIds::app())->setIdleHandler([this]() { onIdle(); });
 		utility::qt::watchDialogs(true);
+		m_machineObserver = StateMachineRegistry::instance().addObserver(
+			[this](const MachineTransition& transition) { publishTransition(transition); });
 
 		// Log forwarding: capture both LogManager (app) and Qt logging into one
 		// LogEvent stream. Off until the agent opts in via SetLogFilter.
@@ -486,6 +524,7 @@ struct AgentControlController::Impl
 
 	void stop()
 	{
+		StateMachineRegistry::instance().removeObserver(m_machineObserver);
 		utility::qt::installQtLogSink(nullptr);
 		utility::qt::setQtLogRules("");	// restore default Qt verbosity
 		if (m_agentLogger)
@@ -797,6 +836,53 @@ struct AgentControlController::Impl
 						publishFrame(requestId, r);
 					}
 				}));
+			return true;
+		}
+		// The state machines answer here on the reader thread: they are thread-safe,
+		// and a question they hold parks the message thread, which is exactly when
+		// an agent needs to answer it.
+		case fb::Command_GetMachines:
+		{
+			const auto* c = envelope->command_as_GetMachines();
+			const std::string name = (c != nullptr && c->machine() != nullptr) ? c->machine()->str() : "";
+			flatbuffers::FlatBufferBuilder builder;
+			std::vector<flatbuffers::Offset<fb::MachineState>> machines;
+			if (name.empty())
+			{
+				machines = makeMachineStates(builder);
+			}
+			else if (const auto machine = StateMachineRegistry::instance().find(name))
+			{
+				machines.push_back(makeMachineState(builder, machine->snapshot()));
+			}
+			// MachineStates follows the ack even on a refusal (then empty), so the
+			// bridge always has one reply to wait for.
+			emitResult(
+				requestId,
+				!machines.empty() || name.empty(),
+				machines.empty() && !name.empty() ? "no state machine '" + name + "' (" + machineNames() + ")" : "");
+			publishMachineStates(builder, requestId, machines);
+			return true;
+		}
+		case fb::Command_SendMachineEvent:
+		{
+			const auto* c = envelope->command_as_SendMachineEvent();
+			const std::string name = (c != nullptr && c->machine() != nullptr) ? c->machine()->str() : "";
+			const auto machine = StateMachineRegistry::instance().find(name);
+			if (machine == nullptr)
+			{
+				emitResult(requestId, false, "no state machine '" + name + "' (" + machineNames() + ")");
+				flatbuffers::FlatBufferBuilder builder;
+				publishMachineStates(builder, requestId, {});
+				return true;
+			}
+			const MachineFireResult result = machine->fire(
+				c->event() != nullptr ? c->event()->str() : "",
+				c->args() != nullptr ? c->args()->str() : "",
+				EventSource::Agent);
+			emitResult(requestId, result.ok, result.message);
+			flatbuffers::FlatBufferBuilder builder;
+			publishMachineStates(builder, requestId, {makeMachineState(builder, machine->snapshot())});
 			return true;
 		}
 		case fb::Command_SendInput:
@@ -1265,6 +1351,8 @@ struct AgentControlController::Impl
 		// before protocol v3, which cannot report a dialog, from one that has none.
 		const auto dialogOffset = builder.CreateString(dialog);
 
+		const auto machinesOffset = builder.CreateVector(makeMachineStates(builder));
+
 		const ErrorCountInfo errors = m_storageAccess->getErrorCount();
 		const auto uiState = fb::CreateUiState(
 			builder,
@@ -1279,7 +1367,8 @@ struct AgentControlController::Impl
 			static_cast<std::uint32_t>(errors.fatal),
 			m_indexing.load(),
 			computeAppState(),
-			dialogOffset);
+			dialogOffset,
+			machinesOffset);
 		builder.Finish(fb::CreateUiStateEnvelope(builder, requestId, uiState));
 		m_stateChannel.send(builder.GetBufferPointer(), builder.GetSize());
 	}
@@ -1417,6 +1506,29 @@ struct AgentControlController::Impl
 		publishEvent(builder, fb::Event_AppStateChanged, fb::CreateAppStateChanged(builder, next).Union());
 	}
 
+	void publishTransition(const MachineTransition& transition)
+	{
+		flatbuffers::FlatBufferBuilder builder;
+		const auto machine = builder.CreateString(transition.machine);
+		const auto from = builder.CreateString(transition.from);
+		const auto to = builder.CreateString(transition.to);
+		const auto event = builder.CreateString(transition.event);
+		const auto source = builder.CreateString(eventSourceName(transition.source));
+		const auto context = builder.CreateString(transition.context);
+		const auto offset = fb::CreateMachineTransition(
+			builder, machine, from, to, event, source, context, transition.revision);
+		publishEvent(builder, fb::Event_MachineTransition, offset.Union());
+	}
+
+	void publishMachineStates(
+		flatbuffers::FlatBufferBuilder& builder,
+		std::uint64_t requestId,
+		const std::vector<flatbuffers::Offset<fb::MachineState>>& machines)
+	{
+		const auto offset = fb::CreateMachineStates(builder, requestId, builder.CreateVector(machines));
+		publishEvent(builder, fb::Event_MachineStates, offset.Union());
+	}
+
 	// Closed-loop ack for a command. ok=false with a "rejected: ..." message covers
 	// state-gated rejections.
 	void emitResult(std::uint64_t requestId, bool ok, const std::string& message = "")
@@ -1479,6 +1591,7 @@ struct AgentControlController::Impl
 	std::set<TabId> m_settleTabs;	// tab schedulers whose idle handler is flushSettled
 
 	bool m_listening = false;
+	std::size_t m_machineObserver = 0;	// publishes every state machine transition
 	// Expires with the Impl: GUI-thread callbacks that may run after stop() check it.
 	std::shared_ptr<int> m_lifetime = std::make_shared<int>(0);
 };
