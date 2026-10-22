@@ -109,11 +109,11 @@ void Application::createInstance(
 
 	// Agent-UI control channel: needs the GUI (live views/state) and the
 	// schedulers (the ui() hop). No-op stub unless built with SOURCETRAIL_AGENT_CONTROL.
+	// Opened by startAgentControl() once the app has finished starting.
 	if (enableAgentControl && hasGui && s_instance->m_schedulers != nullptr)
 	{
 		s_instance->m_agentControlController = std::make_shared<AgentControlController>(
 			s_instance->m_storageCache.get(), s_instance->m_schedulers, agentInstanceId);
-		s_instance->m_agentControlController->startListening();
 	}
 
 	s_instance->startMessagingAndScheduling();
@@ -122,6 +122,14 @@ void Application::createInstance(
 std::shared_ptr<Application> Application::getInstance()
 {
 	return s_instance;
+}
+
+void Application::startAgentControl()
+{
+	if (m_agentControlController && !m_agentControlController->isListening())
+	{
+		m_agentControlController->startListening();
+	}
 }
 
 execution::ISchedulers* Application::getSchedulers() const

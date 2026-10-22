@@ -282,6 +282,10 @@ int main(int argc, char* argv[])
 				commandLineParser.getUiSnapshotPath(), format, commandLineParser.getScreenshotDelayMs());
 		}
 
+		// Last: an agent's commands find the app as a user would, started (the
+		// language packages registered, the startup load queued ahead of theirs).
+		Application::getInstance()->startAgentControl();
+
 		return QtApplication::exec();
 	}
 }

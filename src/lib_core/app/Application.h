@@ -51,6 +51,12 @@ public:
 	static std::shared_ptr<Application> getInstance();
 	static void destroyInstance();
 
+	//! Opens the agent-control channel createInstance() set up. Called once the
+	//! application has finished starting (language packages registered, settings
+	//! prefilled): a command that arrived earlier could load a project the app
+	//! cannot index yet.
+	void startAgentControl();
+
 	//! Process I/O / Compute / UI schedulers, injected at createInstance() (the
 	//! GUI bootstrap passes execution::qt::Schedulers; null in headless/tests).
 	execution::ISchedulers* getSchedulers() const;

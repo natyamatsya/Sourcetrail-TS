@@ -1509,6 +1509,10 @@ void AgentControlController::startListening()
 
 void AgentControlController::stopListening()
 {
+	if (!m_impl->m_listening)
+	{
+		return;	// never started (the app quit before startup ended), or stopped already
+	}
 	m_impl->stop();
 	m_impl->m_listening = false;
 }
