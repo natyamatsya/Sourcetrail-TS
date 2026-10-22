@@ -13,6 +13,7 @@
 #endif
 #include "AgentControlController.h"
 #include "IDECommunicationController.h"
+#include "ActivationStateMachine.h"
 #include "AppStateMachine.h"
 #include "IndexingStateMachine.h"
 #include "ProjectStateMachine.h"
@@ -105,6 +106,13 @@ void Application::createInstance(
 	StateMachineRegistry::instance().add(ProjectStateMachine::instance());
 	StateMachineRegistry::instance().add(IndexingStateMachine::instance());
 	StateMachineRegistry::instance().add(QuestionStateMachine::instance());
+	StateMachineRegistry::instance().add(ActivationStateMachine::instance());
+	// The activation machine follows what changes the views, which report when
+	// they have drawn it: with no views there is nothing to follow.
+	if (hasGui)
+	{
+		ActivationStateMachine::instance()->followMessages();
+	}
 
 	if (hasGui)
 	{

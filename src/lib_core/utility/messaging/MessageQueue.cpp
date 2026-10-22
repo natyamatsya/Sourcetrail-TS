@@ -3,6 +3,7 @@
 // upstream scanner fix lands.
 #include "MessageQueue.h"
 
+#include <algorithm>
 #include <thread>
 
 #include "MessageBase.h"
@@ -11,6 +12,7 @@
 #include "ScopedFunctor.h"
 #include "StdexecPrelude.h"
 #include "TabIds.h"
+#include "TaskFinally.h"
 #include "TaskGroupParallel.h"
 #include "TaskGroupSequence.h"
 #include "TaskLambda.h"
@@ -105,8 +107,31 @@ void MessageQueue::addMessageFilter(std::shared_ptr<MessageFilter> filter)
 	m_filters.push_back(filter);
 }
 
+void MessageQueue::setObserver(std::shared_ptr<const Observer> observer)
+{
+	const std::lock_guard<std::mutex> lock(m_observerMutex);
+	m_observer = std::move(observer);
+}
+
+std::shared_ptr<const MessageQueue::Observer> MessageQueue::observer() const
+{
+	const std::lock_guard<std::mutex> lock(m_observerMutex);
+	return m_observer;
+}
+
+std::shared_ptr<const MessageQueue::Observer> MessageQueue::followerOf(const MessageBase& message) const
+{
+	std::shared_ptr<const Observer> followedBy = observer();
+	return followedBy && followedBy->follows(message) ? followedBy : nullptr;
+}
+
 void MessageQueue::pushMessage(std::shared_ptr<MessageBase> message)
 {
+	// Started as it is dispatched: whoever dispatched it sees it going on.
+	if (const std::shared_ptr<const Observer> followedBy = followerOf(*message))
+	{
+		followedBy->started(*message);
+	}
 	{
 		std::lock_guard<std::mutex> lock(m_messageBufferMutex);
 		m_messageBuffer.push_back(message);
@@ -117,6 +142,17 @@ void MessageQueue::pushMessage(std::shared_ptr<MessageBase> message)
 
 void MessageQueue::processMessage(std::shared_ptr<MessageBase> message, bool asNextTask)
 {
+	const std::shared_ptr<const Observer> followedBy = followerOf(*message);
+	if (followedBy)
+	{
+		followedBy->started(*message);
+	}
+	handOn(message, asNextTask, followedBy);
+}
+
+void MessageQueue::handOn(
+	std::shared_ptr<MessageBase> message, bool asNextTask, std::shared_ptr<const Observer> followedBy)
+{
 	if (message->isLogged())
 	{
 		LOG_INFO_BARE("send " + message->str());
@@ -124,11 +160,15 @@ void MessageQueue::processMessage(std::shared_ptr<MessageBase> message, bool asN
 
 	if (m_sendMessagesAsTasks && message->sendAsTask())
 	{
-		sendMessageAsTask(message, asNextTask);
+		sendMessageAsTask(message, asNextTask, followedBy);
 	}
 	else
 	{
 		sendMessage(message);
+		if (followedBy)
+		{
+			followedBy->handled(*message);
+		}
 	}
 }
 
@@ -247,8 +287,22 @@ void MessageQueue::processMessages()
 	while (true)
 	{
 		std::shared_ptr<MessageBase> message;
+		const std::shared_ptr<const Observer> follower = observer();
+		std::vector<std::shared_ptr<MessageBase>> dropped;	// followed ones a filter dropped
 		{
 			std::lock_guard<std::mutex> lock(m_messageBufferMutex);
+
+			std::vector<std::shared_ptr<MessageBase>> followed;
+			if (follower)
+			{
+				for (const std::shared_ptr<MessageBase>& queued: m_messageBuffer)
+				{
+					if (follower->follows(*queued))
+					{
+						followed.push_back(queued);
+					}
+				}
+			}
 
 			for (std::shared_ptr<MessageFilter> filter: m_filters)
 			{
@@ -260,20 +314,38 @@ void MessageQueue::processMessages()
 				filter->filter(&m_messageBuffer);
 			}
 
-			if (!m_messageBuffer.size())
+			for (const std::shared_ptr<MessageBase>& queued: followed)
 			{
-				break;
+				if (std::find(m_messageBuffer.begin(), m_messageBuffer.end(), queued) == m_messageBuffer.end())
+				{
+					dropped.push_back(queued);
+				}
 			}
 
-			message = m_messageBuffer.front();
-			m_messageBuffer.pop_front();
-			// Under the buffer lock, so hasMessagesQueued() never sees the message
-			// in neither place.
-			m_messagesInFlight++;
+			if (m_messageBuffer.size())
+			{
+				message = m_messageBuffer.front();
+				m_messageBuffer.pop_front();
+				// Under the buffer lock, so hasMessagesQueued() never sees the message
+				// in neither place.
+				m_messagesInFlight++;
+			}
+		}
+
+		// Handled, as far as their observer goes: they were started when pushed.
+		for (const std::shared_ptr<MessageBase>& queued: dropped)
+		{
+			follower->handled(*queued);
+		}
+
+		if (!message)
+		{
+			break;
 		}
 
 		[[maybe_unused]] ScopedFunctor handedOn([this]() { m_messagesInFlight--; });
-		processMessage(message, false);
+		// Started when it was pushed.
+		handOn(message, false, follower && follower->follows(*message) ? follower : nullptr);
 	}
 }
 
@@ -304,7 +376,8 @@ void MessageQueue::sendMessage(std::shared_ptr<MessageBase> message)
 	}
 }
 
-void MessageQueue::sendMessageAsTask(std::shared_ptr<MessageBase> message, bool asNextTask) const
+void MessageQueue::sendMessageAsTask(
+	std::shared_ptr<MessageBase> message, bool asNextTask, std::shared_ptr<const Observer> observer) const
 {
 	std::shared_ptr<TaskGroup> taskGroup;
 	if (message->isParallel())
@@ -339,6 +412,36 @@ void MessageQueue::sendMessageAsTask(std::shared_ptr<MessageBase> message, bool 
 		}
 	}
 
+	std::shared_ptr<Task> task = taskGroup;
+	if (observer)
+	{
+		// `handled` once the listeners' tasks ended, however they did; and when a
+		// scheduler drops them unrun, as the task goes.
+		struct Handled
+		{
+			std::function<void()> report;
+			~Handled()
+			{
+				if (report)
+				{
+					report();
+				}
+			}
+		};
+		auto handled = std::make_shared<Handled>();
+		handled->report = [observer, message]() { observer->handled(*message); };
+		auto finally = std::make_shared<TaskFinally>([handled](TaskFinally::TerminalCause) {
+			std::function<void()> report = std::move(handled->report);
+			handled->report = nullptr;
+			if (report)
+			{
+				report();
+			}
+		});
+		finally->setTask(taskGroup);
+		task = finally;
+	}
+
 	TabId schedulerId = message->getSchedulerId();
 	if (schedulerId == TabId::NONE)
 	{
@@ -347,10 +450,10 @@ void MessageQueue::sendMessageAsTask(std::shared_ptr<MessageBase> message, bool 
 
 	if (asNextTask)
 	{
-		Task::dispatchNext(schedulerId, taskGroup);
+		Task::dispatchNext(schedulerId, task);
 	}
 	else
 	{
-		Task::dispatch(schedulerId, taskGroup);
+		Task::dispatch(schedulerId, task);
 	}
 }

@@ -6,6 +6,7 @@
 #ifndef SRCTRL_MODULE_PURVIEW
 #include <atomic>
 #include <deque>
+#include <functional>
 #include <memory>
 #include <mutex>
 #include <thread>
@@ -41,6 +42,17 @@ class MessageQueue
 public:
 	typedef std::deque<std::shared_ptr<MessageBase>> MessageBufferType;
 
+	// Follows the messages it picks (`follows`) from their dispatch: `started` as
+	// one is pushed to the buffer or processed right away, `handled` once all its
+	// listeners have run (also when their tasks were dropped unrun, or a filter
+	// dropped it). The activation state machine is one.
+	struct Observer
+	{
+		std::function<bool(const MessageBase&)> follows;
+		std::function<void(const MessageBase&)> started;
+		std::function<void(const MessageBase&)> handled;
+	};
+
 	static std::shared_ptr<MessageQueue> getInstance();
 
 	~MessageQueue();
@@ -51,6 +63,7 @@ public:
 	MessageListenerBase* getListenerById(Id listenerId) const;
 
 	void addMessageFilter(std::shared_ptr<MessageFilter> filter);
+	void setObserver(std::shared_ptr<const Observer> observer);
 
 	void pushMessage(std::shared_ptr<MessageBase> message);
 	void processMessage(std::shared_ptr<MessageBase> message, bool asNextTask);
@@ -72,8 +85,12 @@ private:
 	void operator=(const MessageQueue&) = delete;
 
 	void processMessages();
+	void handOn(std::shared_ptr<MessageBase> message, bool asNextTask, std::shared_ptr<const Observer> followedBy);
 	void sendMessage(std::shared_ptr<MessageBase> message);
-	void sendMessageAsTask(std::shared_ptr<MessageBase> message, bool asNextTask) const;
+	void sendMessageAsTask(
+		std::shared_ptr<MessageBase> message, bool asNextTask, std::shared_ptr<const Observer> observer) const;
+	std::shared_ptr<const Observer> observer() const;
+	std::shared_ptr<const Observer> followerOf(const MessageBase& message) const;
 
 	//! Wake the (event-driven) message loop to drain the buffer. Coalesced so
 	//! that a burst of pushMessage() calls schedules at most one pending drain.
@@ -104,6 +121,8 @@ private:
 
 	mutable std::mutex m_messageBufferMutex;
 	mutable std::mutex m_listenersMutex;
+	mutable std::mutex m_observerMutex;
+	std::shared_ptr<const Observer> m_observer;
 
 	bool m_sendMessagesAsTasks = false;
 };

@@ -8,6 +8,7 @@
 #include <thread>
 #include <vector>
 
+#include "ActivationStateMachine.h"
 #include "AppStateMachine.h"
 #include "IndexingStateMachine.h"
 #include "ProjectStateMachine.h"
@@ -557,4 +558,89 @@ TEST_CASE("project close")
 	project->closed();
 	REQUIRE(project->snapshot().state == "no_project");
 	REQUIRE(contains(project->snapshot().context, R"("outcome":"closed")"));
+}
+
+TEST_CASE("activation ends once its messages are handled and the views have drawn")
+{
+	const auto activation = std::make_shared<ActivationStateMachine>();
+	REQUIRE(activation->snapshot().state == "idle");
+	REQUIRE_FALSE(activation->drawing("graph"));	// drawing that is no activation's
+
+	activation->messageStarted();	// MessageActivateNodes
+	REQUIRE(activation->snapshot().state == "activating");
+	activation->messageStarted();	// the MessageActivateTokens it dispatched
+	std::shared_ptr<void> graph = activation->drawing("graph");
+	std::shared_ptr<void> code = activation->drawing("code");
+	REQUIRE(graph);
+	activation->messageHandled();
+	REQUIRE(activation->snapshot().state == "activating");	// one still in flight
+	activation->messageHandled();
+	REQUIRE(activation->snapshot().state == "rendering");
+	REQUIRE(contains(activation->snapshot().context, R"("drawing":["code","graph"])"));
+
+	graph.reset();
+	REQUIRE(activation->snapshot().state == "rendering");
+	code.reset();
+	REQUIRE(activation->snapshot().state == "idle");
+	REQUIRE(contains(activation->snapshot().context, R"("activation":1)"));
+	REQUIRE(contains(activation->snapshot().context, R"("took_ms":)"));
+	REQUIRE_FALSE(activation->fire("requested", "", EventSource::Agent).ok);
+}
+
+TEST_CASE("activation with nothing to draw ends once what it dispatched is handled")
+{
+	const auto activation = std::make_shared<ActivationStateMachine>();
+
+	activation->messageStarted();	// MessageSearch
+	activation->messageStarted();	// the MessageActivateOverview its listener dispatched
+	activation->messageHandled();
+	REQUIRE(activation->snapshot().state == "activating");
+	activation->messageHandled();
+	REQUIRE(activation->snapshot().state == "idle");
+}
+
+TEST_CASE("activation requested while the last one draws starts over")
+{
+	const auto activation = std::make_shared<ActivationStateMachine>();
+
+	activation->messageStarted();
+	std::shared_ptr<void> graph = activation->drawing("graph");
+	activation->messageHandled();
+	REQUIRE(activation->snapshot().state == "rendering");
+
+	activation->messageStarted();
+	REQUIRE(activation->snapshot().state == "activating");
+	REQUIRE(contains(activation->snapshot().context, R"("activation":2)"));
+	activation->messageHandled();
+	REQUIRE(activation->snapshot().state == "rendering");	// the graph still draws the first
+	graph.reset();
+	REQUIRE(activation->snapshot().state == "idle");
+}
+
+TEST_CASE("activation a view never reports times out")
+{
+	const auto activation = std::make_shared<ActivationStateMachine>();
+	activation->setRenderingLimit(std::chrono::milliseconds(20));
+
+	activation->messageStarted();
+	std::shared_ptr<void> stuck = activation->drawing("code");
+	activation->messageHandled();
+	REQUIRE(eventually([&]() { return activation->snapshot().state == "idle"; }));
+	REQUIRE(contains(activation->snapshot().context, R"("outcome":"timed out waiting for code to draw")"));
+
+	// The next one does not wait for the ticket it gave up on.
+	activation->messageStarted();
+	activation->messageHandled();
+	REQUIRE(activation->snapshot().state == "idle");
+	stuck.reset();
+	REQUIRE(activation->snapshot().state == "idle");
+}
+
+TEST_CASE("activation follows the messages that change the views")
+{
+	REQUIRE(ActivationStateMachine::changesViews("MessageActivateNodes"));
+	REQUIRE(ActivationStateMachine::changesViews("MessageHistoryUndo"));
+	REQUIRE(ActivationStateMachine::changesViews("MessageGraphNodeExpand"));
+	REQUIRE_FALSE(ActivationStateMachine::changesViews("MessageStatus"));
+	REQUIRE_FALSE(ActivationStateMachine::changesViews("MessageAgentCommand"));
 }
