@@ -8,7 +8,9 @@
 #include <thread>
 #include <vector>
 
+#include "AppStateMachine.h"
 #include "IndexingStateMachine.h"
+#include "ProjectStateMachine.h"
 #include "QuestionStateMachine.h"
 #include "RemoteStateMachine.h"
 #include "StateMachine.h"
@@ -429,4 +431,130 @@ TEST_CASE("indexing interrupt moves on to finishing")
 	REQUIRE_FALSE(machine.fire("interrupt", "", EventSource::Agent).ok);
 	machine.ended("");
 	REQUIRE(machine.snapshot().state == "idle");
+}
+
+TEST_CASE("app runs what waited for it once started")
+{
+	AppStateMachine app;
+	Recorder recorder("app");
+	std::vector<int> ran;
+
+	app.whenStarted([&]() { ran.push_back(1); });
+	app.whenStarted([&]() { ran.push_back(2); });
+	REQUIRE(app.isStarting());
+	REQUIRE(ran.empty());
+	REQUIRE(contains(app.snapshot().context, R"("waiting":2)"));
+
+	app.started();
+	REQUIRE(ran == std::vector<int> {1, 2});
+	REQUIRE(app.snapshot().state == "running");
+	REQUIRE(contains(app.snapshot().context, R"("startup_ms":)"));
+	app.whenStarted([&]() { ran.push_back(3); });
+	REQUIRE(ran == std::vector<int> {1, 2, 3});
+
+	REQUIRE_FALSE(app.fire("started", "", EventSource::Agent).ok);
+	app.quitting();
+	app.whenStarted([&]() { ran.push_back(4); });
+	REQUIRE(ran.size() == 3);
+	REQUIRE(recorder.path() == std::vector<std::string> {"starting>running:started(app)", "running>closing:quit(app)"});
+}
+
+TEST_CASE("project load asked for while the app starts waits for it")
+{
+	const auto app = std::make_shared<AppStateMachine>();
+	const auto project = std::make_shared<ProjectStateMachine>(app);
+
+	const MachineFireResult load = project->fire("load", R"({"path":"a.srctrl.toml"})", EventSource::Agent);
+	REQUIRE(load.ok);
+	REQUIRE(load.message == "loading once the app has started");
+	REQUIRE(project->snapshot().state == "loading");
+	REQUIRE(contains(project->snapshot().context, R"("waiting_for":"startup")"));
+	REQUIRE(project->snapshot().events.empty());
+	REQUIRE_FALSE(project->fire("load", R"({"path":"b.srctrl.toml"})", EventSource::Agent).ok);
+
+	project->requested("a.srctrl.toml");	// the dispatched load arrives: already loading
+	REQUIRE(project->snapshot().state == "loading");
+}
+
+TEST_CASE("project load ends with the first activation of the tab it opens")
+{
+	const auto app = std::make_shared<AppStateMachine>();
+	app->started();
+	const auto project = std::make_shared<ProjectStateMachine>(app);
+	Recorder recorder("project");
+
+	REQUIRE(project->snapshot().events == std::vector<std::string> {"load"});
+	project->requested("a.srctrl.toml");
+	project->shown();	// an activation before any tab opened does not end the load
+	REQUIRE(project->snapshot().state == "loading");
+	project->tabOpening();
+	REQUIRE(contains(project->snapshot().context, R"("waiting_for":"tab")"));
+	project->shown();
+	REQUIRE(project->snapshot().state == "ready");
+	REQUIRE(project->snapshot().events == std::vector<std::string> {"load", "close"});
+
+	project->reloading();	// an indexing run ended
+	project->loaded();	// with tabs: no tab is coming
+	REQUIRE(project->snapshot().state == "ready");
+	REQUIRE(
+		recorder.path() ==
+		std::vector<std::string> {
+			"no_project>loading:requested(app)",
+			"loading>opening:tab_opening(app)",
+			"opening>ready:shown(app)",
+			"ready>loading:reloading(app)",
+			"loading>ready:loaded(app)"});
+}
+
+TEST_CASE("project tab that never shows times out")
+{
+	const auto app = std::make_shared<AppStateMachine>();
+	app->started();
+	const auto project = std::make_shared<ProjectStateMachine>(app);
+	project->setOpeningLimit(std::chrono::milliseconds(20));
+
+	project->requested("a.srctrl.toml");
+	project->tabOpening();
+	REQUIRE(eventually([&]() { return project->snapshot().state == "ready"; }));
+	REQUIRE(contains(project->snapshot().context, R"("outcome":"the first tab did not show in time")"));
+}
+
+TEST_CASE("project load that fails or changes nothing")
+{
+	const auto app = std::make_shared<AppStateMachine>();
+	app->started();
+	const auto project = std::make_shared<ProjectStateMachine>(app);
+
+	project->requested("broken.srctrl.toml");
+	project->failed("could not load broken.srctrl.toml");
+	REQUIRE(project->snapshot().state == "no_project");
+	REQUIRE(contains(project->snapshot().context, R"("outcome":"could not load broken.srctrl.toml")"));
+
+	project->requested("a.srctrl.toml");
+	project->loaded();	// no index yet
+	REQUIRE(project->snapshot().state == "ready");
+	REQUIRE(project->fire("load", R"({"path":"a.srctrl.toml","refresh":"all"})", EventSource::Agent).ok);
+	project->kept("the project is open already");
+	REQUIRE(project->snapshot().state == "ready");
+	REQUIRE_FALSE(project->fire("load", R"({"path":"a.srctrl.toml","refresh":"sideways"})", EventSource::Agent).ok);
+	REQUIRE_FALSE(project->fire("load", R"({"file":"a.srctrl.toml"})", EventSource::Agent).ok);
+}
+
+TEST_CASE("project close")
+{
+	const auto app = std::make_shared<AppStateMachine>();
+	app->started();
+	const auto project = std::make_shared<ProjectStateMachine>(app);
+
+	REQUIRE_FALSE(project->fire("close", "", EventSource::Agent).ok);
+	project->requested("a.srctrl.toml");
+	project->loaded();
+	REQUIRE(project->fire("close", "", EventSource::Agent).ok);
+	REQUIRE(project->snapshot().state == "unloading");
+	project->closeRefused("cannot close the project while indexing");
+	REQUIRE(project->snapshot().state == "ready");
+	REQUIRE(project->fire("close", "", EventSource::Agent).ok);
+	project->closed();
+	REQUIRE(project->snapshot().state == "no_project");
+	REQUIRE(contains(project->snapshot().context, R"("outcome":"closed")"));
 }
