@@ -237,6 +237,25 @@ jobs:
           key: ${{ runner.os }}-vcpkg-cxx-${{ hashFiles('vcpkg.json') }}
           restore-keys: ${{ runner.os }}-vcpkg-cxx-
 
+      # The indexer binaries the build caches whole (cmake/SccionToolCache.cmake,
+      # here the Rust indexer): restored from the newest run's set, which every
+      # pull request can read once a push to main saved it, and saved again
+      # below only when this run stored an entry the restored set lacked. An
+      # entry is keyed on everything that goes into the binary, so a restored
+      # one is the binary this commit would build.
+      - name: Restore the tool cache
+        uses: actions/cache/restore@v6
+        with:
+          path: ${{ runner.temp }}/sccion-tools
+          key: ${{ runner.os }}-sccion-tools-${{ github.run_id }}
+          restore-keys: ${{ runner.os }}-sccion-tools-
+
+      - name: Point the build at the tool cache
+        shell: bash
+        run: |
+          echo "SCCION_TOOL_CACHE_DIR=$RUNNER_TEMP/sccion-tools" >> "$GITHUB_ENV"
+          ls -d "$RUNNER_TEMP"/sccion-tools/*/*/ 2>/dev/null | sort > "$RUNNER_TEMP/sccion-tools-before.txt" || true
+
       - name: Configure
         shell: bash
         run: |
@@ -265,10 +284,31 @@ jobs:
             -DBUILD_CXX_LANGUAGE_PACKAGE=ON \
             -DBUILD_RUST_LANGUAGE_PACKAGE=ON \
             -DBUILD_UNIT_TESTS_PACKAGE=ON \
+            -DSCCION_TOOL_CACHE_KEEP=2 \
             $EXTRA
 
       - name: Build
+        id: build
         run: cmake --build build --parallel
+
+      - name: Did the build store a new tool cache entry?
+        id: tool-cache-changed
+        if: always() && steps.build.outcome == 'success'
+        shell: bash
+        run: |
+          ls -d "$RUNNER_TEMP"/sccion-tools/*/*/ 2>/dev/null | sort > "$RUNNER_TEMP/sccion-tools-after.txt" || true
+          if cmp -s "$RUNNER_TEMP/sccion-tools-before.txt" "$RUNNER_TEMP/sccion-tools-after.txt"; then
+            echo "changed=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "changed=true" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Save the tool cache
+        if: always() && steps.tool-cache-changed.outputs.changed == 'true'
+        uses: actions/cache/save@v6
+        with:
+          path: ${{ runner.temp }}/sccion-tools
+          key: ${{ runner.os }}-sccion-tools-${{ github.run_id }}
 
       - name: Test
         working-directory: build
