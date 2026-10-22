@@ -7,6 +7,7 @@
 #include "MessageScrollToLine.h"
 #include "MessageSearch.h"
 #include "MessageWindowChanged.h"
+#include "ProjectStateMachine.h"
 #endif
 #include "ScreenSearchInterfaces.h"
 #include "TabIds.h"
@@ -173,6 +174,11 @@ void TabsController::handleMessage(MessageIndexingFinished*  /*message*/)
 	{
 		MessageTabOpenWith(SearchMatch::createCommand(COMMAND_ALL)).dispatch();
 	}
+	else
+	{
+		// No tab is coming: a load that waited for this decision is done.
+		ProjectStateMachine::instance()->loaded();
+	}
 }
 
 void TabsController::handleMessage(MessageTabClose*  /*message*/)
@@ -232,6 +238,17 @@ void TabsController::handleMessage(MessageTabOpenWith* message)
 
 	if (match.isValid())
 	{
+		// The project's first tab: its first activation ends a load (or the
+		// indexing of a project that had none).
+		bool firstTab = false;
+		{
+			std::lock_guard<std::mutex> lock(m_tabsMutex);
+			firstTab = m_tabs.empty();
+		}
+		if (firstTab)
+		{
+			ProjectStateMachine::instance()->tabOpening();
+		}
 		getView()->openTab(message->showTab, match);
 		m_isCreatingTab = true;
 	}

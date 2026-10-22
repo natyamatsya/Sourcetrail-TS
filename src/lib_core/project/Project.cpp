@@ -11,6 +11,7 @@
 #include "IndexerCommandRust.h"
 #include "IndexerCommandSwift.h"
 #include "IndexingStateMachine.h"
+#include "ProjectStateMachine.h"
 #include "MemoryIndexerCommandProvider.h"
 #include "PersistentStorage.h"
 #include "ProjectSettings.h"
@@ -98,6 +99,17 @@ bool Project::isLoaded() const
 	}
 
 	return false;
+}
+
+bool Project::isOpen() const
+{
+	return m_state != ProjectStateType::PROJECT_STATE_NOT_LOADED;
+}
+
+bool Project::hasIndex() const
+{
+	return m_state == ProjectStateType::PROJECT_STATE_LOADED ||
+		m_state == ProjectStateType::PROJECT_STATE_OUTDATED;
 }
 
 bool Project::isIndexing() const
@@ -260,6 +272,9 @@ void Project::load(std::shared_ptr<DialogView> dialogView)
 
 	if (m_state != ProjectStateType::PROJECT_STATE_LOADED && m_hasGUI)
 	{
+		// Pending from here, not from when the refresh is handled: the load is over
+		// once the project is open, and the request it leaves must already show.
+		IndexingStateMachine::instance()->requested();
 		MessageRefresh().dispatch();
 	}
 }
@@ -978,6 +993,7 @@ void Project::buildIndexImpl(RefreshInfo info, std::shared_ptr<DialogView> dialo
 	taskSequential->addTask(std::make_shared<TaskLambda>([dialogView, this]() {
 		m_refreshStage = RefreshStageType::NONE;
 		IndexingStateMachine::instance()->ended("");
+		ProjectStateMachine::instance()->reloading();
 		MessageIndexingFinished().dispatch();
 	}));
 

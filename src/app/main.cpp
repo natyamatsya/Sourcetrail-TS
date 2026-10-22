@@ -1,5 +1,6 @@
 #include "setupApp.h"
 
+#include "AppStateMachine.h"
 #include "Application.h"
 #include "ApplicationSettings.h"
 #include "ApplicationSettingsPrefiller.h"
@@ -282,9 +283,10 @@ int main(int argc, char* argv[])
 				commandLineParser.getUiSnapshotPath(), format, commandLineParser.getScreenshotDelayMs());
 		}
 
-		// Last: an agent's commands find the app as a user would, started (the
-		// language packages registered, the startup load queued ahead of theirs).
-		Application::getInstance()->startAgentControl();
+		// Started: the language packages registered, the settings prefilled, the
+		// startup load queued. What waited for it (a load an agent asked for while
+		// the app started) goes now, behind the startup load.
+		AppStateMachine::instance()->started();
 
 		return QtApplication::exec();
 	}

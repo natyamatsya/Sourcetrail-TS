@@ -160,8 +160,10 @@ ui_state { instance? } -> {
 
 app_state is the FSM to key off. NoProject -> Loading (a load was requested, by \
 project_open or in the app, until the project is open and its first tab has shown the \
-overview) -> Ready; Indexing while indexing, then Loading again if indexing opens the first \
-tab. nav_* needs a project and is refused while Loading. Ready means usable: nothing of an \
+overview) -> Ready; Indexing while indexing, then Loading again while the new index loads and \
+the first tab opens. Loading also covers the app starting and a refresh still being decided \
+(the mode choice or a question about to come up). It is derived from the app, project and \
+indexing machines (describe('machines')). nav_* needs a project and is refused while Loading. Ready means usable: nothing of an \
 earlier load or indexing run is still on its way (agent-control protocol v4+). dialog says what waits for an answer in front of the app: \
 a modal window (\"'title' (modal): text\") or one of Sourcetrail's in-window dialogs by its \
 title (\"Start Indexing\" after opening a project that has no index yet); \"\" when nothing \
@@ -328,11 +330,12 @@ machine_send { machine: \"question\", event: \"answer\", args: { label: \"Reinde
     },
     Topic {
         name: "machines",
-        summary: "State machines: indexing and questions, driven by events instead of their dialogs' buttons.",
+        summary: "State machines: app startup, the project's load, indexing and questions, driven by events.",
         tools: &["machine_state", "machine_send"],
         doc: "\
 What waits for a person in Sourcetrail is a state machine: indexing (choose a mode, follow \
-progress, decide on the report) and the questions the app asks. A dialog shows a state; its \
+progress, decide on the report) and the questions the app asks; so are the app's startup and \
+the project's load, which app_state is derived from. A dialog shows a state; its \
 buttons send the machine events; an agent sends the same events, and the dialog closes when \
 an agent answered it. Every move is a MachineTransition event (events_poll) with its source: \
 ui (a button), agent, or app (the pipeline moving on). Needs agent-control protocol v6.
@@ -371,6 +374,21 @@ total_indexed, completed, total, seconds, errors, fatal, interrupted } (reportin
     machine_send { machine: \"indexing\", event: \"start\", until: [\"idle\"], timeout_s: 300 }
   Reindex everything: machine_send { machine: \"indexing\", event: \"refresh\", args: { mode: \
 \"all\" }, until: [\"choosing_mode\", \"idle\"] }, then start as above.
+
+app: starting -> running -> closing
+  starting lasts until the app has finished starting (settings, language packages, the \
+startup load queued); context.startup_ms says how long it took. No events from outside: \
+watch it. A load asked for meanwhile waits for it (see project).
+
+project: no_project -> loading -> opening -> ready -> unloading -> no_project
+  load { path, refresh?: updated|incomplete|all }   no_project/ready: opens a project, as \
+project_open does (that uses it). While the app starts, context.waiting_for is \"startup\" \
+and the load runs once it has started.
+  close                                              ready: closes the project.
+  loading ends at ready (no tab is coming: the project has no index yet, or the load changed \
+nothing: context.outcome), at opening (the overview tab opens; context.waiting_for \"tab\") or \
+at no_project (the load failed). opening ends with the tab's first activation (or after 10 s, \
+with a warning in outcome). After an indexing run the new index loads: ready -> loading again.
 
 question: idle -> asking -> idle
   answer { label } | { option: n } | { id, ... }   asking: answers the question in context \

@@ -32,6 +32,10 @@ public:
 
 	bool isLoaded() const;
 	bool isIndexing() const;
+	//! The settings loaded (whatever the index's state); false after a failed load.
+	bool isOpen() const;
+	//! The index loaded and browsable (it may be outdated).
+	bool hasIndex() const;
 
 	bool settingsEqualExceptNameAndLocation(const ProjectSettings& otherSettings) const;
 	void setStateOutdated();

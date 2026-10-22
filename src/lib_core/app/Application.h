@@ -6,6 +6,9 @@
 #include <string>
 
 #include "DialogView.h"
+#include "MessageActivateErrors.h"
+#include "MessageActivateOverview.h"
+#include "MessageActivateTokens.h"
 #include "MessageActivateWindow.h"
 #include "MessageCloseProject.h"
 #include "MessageIndexingFinished.h"
@@ -14,6 +17,7 @@
 #include "MessageRefresh.h"
 #include "MessageRefreshUI.h"
 #include "MessageSwitchColorScheme.h"
+#include "MessageWindowClosed.h"
 #include "Project.h"
 
 namespace execution
@@ -32,13 +36,17 @@ class Version;
 class ViewFactory;
 
 class Application
-	: public MessageListener<MessageActivateWindow>
+	: public MessageListener<MessageActivateErrors>
+	, public MessageListener<MessageActivateOverview>
+	, public MessageListener<MessageActivateTokens>
+	, public MessageListener<MessageActivateWindow>
 	, public MessageListener<MessageCloseProject>
 	, public MessageListener<MessageIndexingFinished>
 	, public MessageListener<MessageLoadProject>
 	, public MessageListener<MessageRefresh>
 	, public MessageListener<MessageRefreshUI>
 	, public MessageListener<MessageSwitchColorScheme>
+	, public MessageListener<MessageWindowClosed>
 {
 public:
 	static void createInstance(
@@ -50,12 +58,6 @@ public:
 		const std::string& agentInstanceId = "");
 	static std::shared_ptr<Application> getInstance();
 	static void destroyInstance();
-
-	//! Opens the agent-control channel createInstance() set up. Called once the
-	//! application has finished starting (language packages registered, settings
-	//! prefilled): a command that arrived earlier could load a project the app
-	//! cannot index yet.
-	void startAgentControl();
 
 	//! Process I/O / Compute / UI schedulers, injected at createInstance() (the
 	//! GUI bootstrap passes execution::qt::Schedulers; null in headless/tests).
@@ -98,6 +100,10 @@ private:
 
 	Application(bool withGUI = true);
 
+	// The first activation of the tab a load opened ends the load (ProjectStateMachine).
+	void handleMessage(MessageActivateErrors* message) override;
+	void handleMessage(MessageActivateOverview* message) override;
+	void handleMessage(MessageActivateTokens* message) override;
 	void handleMessage(MessageActivateWindow* message) override;
 	void handleMessage(MessageCloseProject* message) override;
 	void handleMessage(MessageIndexingFinished* message) override;
@@ -105,6 +111,7 @@ private:
 	void handleMessage(MessageRefresh* message) override;
 	void handleMessage(MessageRefreshUI* message) override;
 	void handleMessage(MessageSwitchColorScheme* message) override;
+	void handleMessage(MessageWindowClosed* message) override;
 
 	static void startMessagingAndScheduling();
 

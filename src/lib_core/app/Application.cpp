@@ -13,7 +13,9 @@
 #endif
 #include "AgentControlController.h"
 #include "IDECommunicationController.h"
+#include "AppStateMachine.h"
 #include "IndexingStateMachine.h"
+#include "ProjectStateMachine.h"
 #include "QuestionStateMachine.h"
 #include "RemoteStateMachine.h"
 #ifndef SRCTRL_MODULE_BUILD
@@ -98,6 +100,9 @@ void Application::createInstance(
 	s_instance->m_storageCache = std::make_shared<StorageCache>();
 
 	// The state machines remote control can drive (agent control's GetMachines).
+	// The app machine is in `starting` until main reports it started.
+	StateMachineRegistry::instance().add(AppStateMachine::instance());
+	StateMachineRegistry::instance().add(ProjectStateMachine::instance());
 	StateMachineRegistry::instance().add(IndexingStateMachine::instance());
 	StateMachineRegistry::instance().add(QuestionStateMachine::instance());
 
@@ -116,11 +121,13 @@ void Application::createInstance(
 
 	// Agent-UI control channel: needs the GUI (live views/state) and the
 	// schedulers (the ui() hop). No-op stub unless built with SOURCETRAIL_AGENT_CONTROL.
-	// Opened by startAgentControl() once the app has finished starting.
+	// Open from here on: an agent sees the app start (machine "app"), and a load it
+	// asks for meanwhile waits for the start (ProjectStateMachine::load).
 	if (enableAgentControl && hasGui && s_instance->m_schedulers != nullptr)
 	{
 		s_instance->m_agentControlController = std::make_shared<AgentControlController>(
 			s_instance->m_storageCache.get(), s_instance->m_schedulers, agentInstanceId);
+		s_instance->m_agentControlController->startListening();
 	}
 
 	s_instance->startMessagingAndScheduling();
@@ -129,14 +136,6 @@ void Application::createInstance(
 std::shared_ptr<Application> Application::getInstance()
 {
 	return s_instance;
-}
-
-void Application::startAgentControl()
-{
-	if (m_agentControlController && !m_agentControlController->isListening())
-	{
-		m_agentControlController->startListening();
-	}
 }
 
 execution::ISchedulers* Application::getSchedulers() const
@@ -312,12 +311,34 @@ void Application::handleMessage(MessageCloseProject*  /*message*/)
 	if (m_project && m_project->isIndexing())
 	{
 		MessageStatus("Cannot close the project while indexing.", true, false).dispatch();
+		ProjectStateMachine::instance()->closeRefused("cannot close the project while indexing");
 		return;
 	}
 
 	m_project.reset();
 	updateTitle();
 	m_mainView->clear();
+	ProjectStateMachine::instance()->closed();
+}
+
+void Application::handleMessage(MessageActivateErrors*  /*message*/)
+{
+	ProjectStateMachine::instance()->shown();
+}
+
+void Application::handleMessage(MessageActivateOverview*  /*message*/)
+{
+	ProjectStateMachine::instance()->shown();
+}
+
+void Application::handleMessage(MessageActivateTokens*  /*message*/)
+{
+	ProjectStateMachine::instance()->shown();
+}
+
+void Application::handleMessage(MessageWindowClosed*  /*message*/)
+{
+	AppStateMachine::instance()->quitting();
 }
 
 void Application::handleMessage(MessageIndexingFinished* message)
@@ -354,14 +375,18 @@ void Application::handleMessage(MessageLoadProject* message)
 		return;
 	}
 
+	const std::shared_ptr<ProjectStateMachine> projectMachine = ProjectStateMachine::instance();
+
 	if (m_project && m_project->isIndexing())
 	{
 		MessageStatus("Cannot load another project while indexing.", true, false).dispatch();
+		projectMachine->kept("cannot load another project while indexing");
 		return;
 	}
 
 	if (m_project && projectSettingsFilePath == m_project->getProjectSettingsFilePath())
 	{
+		projectMachine->kept("the project is open already");
 		if (message->settingsChanged && m_hasGUI)
 		{
 			m_project->setStateOutdated();
@@ -370,6 +395,7 @@ void Application::handleMessage(MessageLoadProject* message)
 	}
 	else
 	{
+		projectMachine->requested(projectSettingsFilePath.str());
 		MessageStatus("Loading Project: " + projectSettingsFilePath.str(), false, true).dispatch();
 
 		m_project.reset();
@@ -429,6 +455,18 @@ void Application::handleMessage(MessageLoadProject* message)
 				projectSettingsFilePath.str() + "\" with unknown exception.";
 			LOG_ERROR(message);
 			MessageStatus(message, true).dispatch();
+		}
+
+		// How the load ended. A project open with its index waits for TabsController,
+		// which the MessageIndexingFinished its load dispatched has the overview open
+		// (or not); a project without one is open as far as loading goes.
+		if (!m_project || !m_project->isOpen())
+		{
+			projectMachine->failed("could not load " + projectSettingsFilePath.str());
+		}
+		else if (!m_project->hasIndex() || !m_hasGUI)
+		{
+			projectMachine->loaded();
 		}
 
 		if (message->refreshMode != RefreshMode::NONE)

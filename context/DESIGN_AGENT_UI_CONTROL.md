@@ -673,13 +673,36 @@ carries `machines`. The bridge's `machine_send { ..., until }` follows transitio
 until a target state, and `project_open` returns at once with an open question
 instead of waiting out a load that question holds.
 
-**Found on the way.** Agent control used to open its channel inside
-`Application::createInstance()`, before `main` registered the language packages:
-a bridge fast enough to send `LoadProject` first had the project load with no C++
-source group factory, and the mode choice counted 0 files. The channel now opens
-(`Application::startAgentControl()`) once startup is done. Startup itself is the
-next candidate for a machine, together with the load lifecycle behind
-`AppState Loading` (v4).
+**Startup and the project's load.** Two more machines replace what agent control
+used to infer:
+
+- **`app`** (`AppStateMachine`): starting → running → closing. `main` reports
+  `started` once the language packages are registered, the settings prefilled and
+  the startup load queued; `whenStarted(work)` runs work then (or at once). The
+  window closing moves it to `closing`.
+- **`project`** (`ProjectStateMachine`): no_project → loading → opening → ready, and
+  ready → unloading → no_project. Controls: `load { path, refresh? }`, `close`.
+  Application reports the load's outcome (`requested`, `kept` — the same project, or
+  refused while indexing —, `failed`, `loaded` — open with no tab coming —), the
+  TabsController the tab decision (`tab_opening` for the project's first tab, or
+  `loaded`), the first activation ends `opening` (`shown`), and a 10 s timer event
+  (`timed_out`) keeps a tab that never activates from holding the app. After an
+  indexing run, `reloading` (ready → loading) covers the new index loading until the
+  same tab decision.
+
+These replace the v4 `LoadPhase`, which the controller inferred from messages plus
+queue quiescence and a timestamp. `AppState` is now derived: Indexing while indexing;
+Loading while the app starts, the project loads or opens, or a refresh is still being
+decided (indexing `pending`: the mode choice or a question is about to come up, which
+`Project::load` records the moment it dispatches the refresh); Ready; NoProject.
+
+**Found on the way.** Agent control opened its channel inside
+`Application::createInstance()`, before `main` registered the language packages: a
+bridge fast enough to send `LoadProject` first had the project load with no C++
+source group factory, and the mode choice counted 0 files. With the app machine the
+channel opens early again (agents watch the app start), and the project machine
+holds a `load` asked for while the app starts until `started`: the ordering is the
+machine's, not the order of lines in `main`.
 
 Offscreen the report is still kept without asking (nobody could press it, and a
 report nobody answers holds the pipeline); the machine passes through `reporting`
