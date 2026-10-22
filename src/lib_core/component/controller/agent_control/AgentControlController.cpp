@@ -24,6 +24,7 @@ bool AgentControlController::isListening() const
 #include <functional>
 #include <mutex>
 #include <regex>
+#include <set>
 #include <string>
 #include <thread>
 #include <vector>
@@ -70,6 +71,7 @@ bool AgentControlController::isListening() const
 #include "TaskScheduler.h"
 #include "NameHierarchy.h"
 #include "Node.h"
+#include "NodeType.h"
 #include "NodeTypeSet.h"
 #include "RefreshInfo.h"
 #include "StorageAccess.h"
@@ -85,6 +87,7 @@ bool AgentControlController::isListening() const
 #include "MessageAgentCommand.h"
 #include "MessageActivateFile.h"
 #include "MessageActivateNodes.h"
+#include "MessageActivateTokens.h"
 #include "MessageErrorCountUpdate.h"
 #include "MessageHistoryRedo.h"
 #include "MessageHistoryUndo.h"
@@ -222,15 +225,17 @@ std::uint64_t nowMs()
 flatbuffers::Offset<fb::NodeRef> makeNodeRef(
 	flatbuffers::FlatBufferBuilder& builder,
 	Id id,
-	const std::string& serializedName,
+	const NameHierarchy& name,
+	NodeKind kind,
 	const std::string& displayName = "")
 {
+	const std::string display = displayName.empty() ? name.getQualifiedName() : displayName;
 	return fb::CreateNodeRef(
 		builder,
 		static_cast<std::uint64_t>(id),
-		builder.CreateString(serializedName),
-		/*node_kind*/ 0,
-		displayName.empty() ? 0 : builder.CreateString(displayName));
+		builder.CreateString(NameHierarchy::serialize(name)),
+		static_cast<std::int32_t>(kind),
+		display.empty() ? 0 : builder.CreateString(display));
 }
 
 flatbuffers::Offset<fb::SearchMatch> makeSearchMatch(
@@ -262,7 +267,7 @@ flatbuffers::Offset<fb::SearchMatch> makeSearchMatch(
 		? flatbuffers::Offset<flatbuffers::Vector<std::uint64_t>>()
 		: builder.CreateVector(nodeIds);
 	return fb::CreateSearchMatch(
-		builder, textOffset, /*node_kind*/ 0, nodeIdsOffset, match.score);
+		builder, textOffset, static_cast<std::int32_t>(match.nodeType.getKind()), nodeIdsOffset, match.score);
 }
 
 flatbuffers::Offset<fb::BookmarkInfo> makeBookmark(
@@ -380,13 +385,17 @@ private:
 };
 }	 // namespace
 
-// The listeners run on the message-processing thread, consistently with every
-// other controller — so reading StorageCache and mutating the state cache below
-// need no extra synchronization (and no UI-thread hop).
+// Threads: agent commands are handled on the app TaskScheduler (MessageAgentCommand
+// is scheduled there), but the messages that change what is on screen —
+// activations, the code view — are scheduled on the current tab's scheduler, a
+// thread of its own, and parallel ones fan out further. So the state cache is
+// guarded by m_stateMutex. Commands that only need the GUI thread skip the message
+// bus entirely (see handleGuiCommand).
 struct AgentControlController::Impl
 	: public MessageListener<MessageAgentCommand>
-	, public MessageListener<MessageActivateNodes>
+	, public MessageListener<MessageActivateTokens>
 	, public MessageListener<MessageActivateFile>
+	, public MessageListener<MessageScrollToLine>
 	, public MessageListener<MessageSearch>
 	, public MessageListener<MessageIndexingStarted>
 	, public MessageListener<MessageIndexingFinished>
@@ -412,13 +421,20 @@ struct AgentControlController::Impl
 		// non-thread-safe StorageCache is safe to query. Delivery from the reader
 		// runs on io(); the dispatch() hop then lands it on the message thread.
 		m_reader.start(
-			[](std::vector<std::uint8_t> bytes) { MessageAgentCommand(std::move(bytes)).dispatch(); },
+			[this](std::vector<std::uint8_t> bytes) {
+				if (!handleGuiCommand(bytes))
+				{
+					MessageAgentCommand(std::move(bytes)).dispatch();
+				}
+			},
 			m_schedulers->io());
-		// Settle barrier: message handlers run as tasks on the app TaskScheduler
-		// (Application sets setSendMessagesAsTasks(true)), so a command's fan-out
-		// completes when *that* scheduler goes idle — not when the message buffer
-		// drains. Hook it there; flushSettled emits Settled once things quiesce.
+		// Settle barrier: message handlers run as tasks (Application sets
+		// setSendMessagesAsTasks(true)), on the app scheduler and on the current
+		// tab's, so a command's fan-out completes when both have gone idle — not when
+		// the message buffer drains. Hook the app scheduler here; handleCommand hooks
+		// the tab a command lands in. flushSettled emits Settled once all is quiet.
 		TaskManager::getScheduler(TabIds::app())->setIdleHandler([this]() { flushSettled(); });
+		utility::qt::watchDialogs(true);
 
 		// Log forwarding: capture both LogManager (app) and Qt logging into one
 		// LogEvent stream. Off until the agent opts in via SetLogFilter.
@@ -443,7 +459,16 @@ struct AgentControlController::Impl
 			LogManager::getInstance()->removeLogger(m_agentLogger);
 			m_agentLogger.reset();
 		}
+		utility::qt::watchDialogs(false);
 		TaskManager::getScheduler(TabIds::app())->setIdleHandler(nullptr);	// before we tear down
+		{
+			const std::lock_guard<std::mutex> lock(m_settleMutex);
+			for (const TabId tab: m_settleTabs)
+			{
+				TaskManager::getScheduler(tab)->setIdleHandler(nullptr);
+			}
+			m_settleTabs.clear();
+		}
 		m_reader.stop();
 		m_uiScope.request_stop();
 		stdexec::sync_wait(m_uiScope.on_empty());	 // join any in-flight snapshot capture
@@ -456,15 +481,37 @@ struct AgentControlController::Impl
 		handleCommand(message->bytes.data(), message->bytes.size());
 	}
 
-	void handleMessage(MessageActivateNodes* message) override
+	// Every activation ends here, whoever started it: an agent's ActivateNode, a
+	// click in the graph or the search, and the back/forward history replaying an
+	// earlier one. Listening for MessageActivateNodes alone missed all but the
+	// first, so active_nodes went stale after a click or nav_history.
+	void handleMessage(MessageActivateTokens* message) override
 	{
-		m_activeNodeIds.clear();
+		if (message->isEdge || message->isBundledEdges)
+		{
+			return;	// the active nodes stay what they were
+		}
+		std::vector<Id> ids = message->tokenIds;
 		flatbuffers::FlatBufferBuilder builder;
 		std::vector<flatbuffers::Offset<fb::NodeRef>> nodes;
-		for (const auto& active: message->nodes)
+		bool showsFile = false;
+		for (const Id id: ids)
 		{
-			m_activeNodeIds.push_back(active.nodeId);
-			nodes.push_back(makeNodeRef(builder, active.nodeId, NameHierarchy::serialize(active.nameHierarchy)));
+			const NodeType type = m_storageAccess->getNodeTypeForNodeWithId(id);
+			showsFile = showsFile || type.isFile();
+			nodes.push_back(makeNodeRef(builder, id, m_storageAccess->getNameHierarchyForNodeId(id), type.getKind()));
+		}
+		{
+			const std::lock_guard<std::mutex> lock(m_stateMutex);
+			m_activeNodeIds = std::move(ids);
+			// The code view now lists the activated nodes' references across files,
+			// so no single file is "the" one shown; a file node is the exception
+			// (MessageActivateFile sets that one).
+			if (!showsFile)
+			{
+				m_currentFile.clear();
+				m_scrollLine = 0;
+			}
 		}
 		const auto event = fb::CreateNodesActivated(builder, builder.CreateVector(nodes));
 		publishEvent(builder, fb::Event_NodesActivated, event.Union());
@@ -473,19 +520,35 @@ struct AgentControlController::Impl
 
 	void handleMessage(MessageActivateFile* message) override
 	{
-		m_currentFile = message->filePath.str();
+		const std::string file = message->filePath.str();
+		{
+			const std::lock_guard<std::mutex> lock(m_stateMutex);
+			m_currentFile = file;
+			m_scrollLine = 0;
+		}
 		flatbuffers::FlatBufferBuilder builder;
-		const auto event = fb::CreateFileActivated(builder, builder.CreateString(m_currentFile));
+		const auto event = fb::CreateFileActivated(builder, builder.CreateString(file));
 		publishEvent(builder, fb::Event_FileActivated, event.Union());
 		updateAppState();
 	}
 
+	void handleMessage(MessageScrollToLine* message) override
+	{
+		const std::lock_guard<std::mutex> lock(m_stateMutex);
+		m_currentFile = message->filePath.str();
+		m_scrollLine = static_cast<std::uint32_t>(message->line);
+	}
+
 	void handleMessage(MessageSearch* message) override
 	{
-		m_lastSearchMatches = message->getMatches();
+		const std::vector<SearchMatch> found = message->getMatches();
+		{
+			const std::lock_guard<std::mutex> lock(m_stateMutex);
+			m_lastSearchMatches = found;
+		}
 		flatbuffers::FlatBufferBuilder builder;
 		std::vector<flatbuffers::Offset<fb::SearchMatch>> matches;
-		for (const SearchMatch& match: m_lastSearchMatches)
+		for (const SearchMatch& match: found)
 		{
 			matches.push_back(makeSearchMatch(builder, match));
 		}
@@ -495,7 +558,7 @@ struct AgentControlController::Impl
 
 	void handleMessage(MessageIndexingStarted*) override
 	{
-		m_indexing = true;
+		m_indexing.store(true);
 		flatbuffers::FlatBufferBuilder builder;
 		publishEvent(builder, fb::Event_IndexingStarted, fb::CreateIndexingStarted(builder).Union());
 		updateAppState();
@@ -503,7 +566,7 @@ struct AgentControlController::Impl
 
 	void handleMessage(MessageIndexingFinished*) override
 	{
-		m_indexing = false;
+		m_indexing.store(false);
 		flatbuffers::FlatBufferBuilder builder;
 		publishEvent(builder, fb::Event_IndexingFinished, fb::CreateIndexingFinished(builder, true).Union());
 		updateAppState();
@@ -521,15 +584,158 @@ struct AgentControlController::Impl
 
 	void handleMessage(MessageTabsChanged* message) override
 	{
-		m_tabsCache = message->tabs;
+		{
+			const std::lock_guard<std::mutex> lock(m_stateMutex);
+			m_tabsCache = message->tabs;
+		}
 		flatbuffers::FlatBufferBuilder builder;
 		std::vector<flatbuffers::Offset<fb::TabInfo>> tabs;
-		for (const auto& tab: m_tabsCache)
+		for (const auto& tab: message->tabs)
 		{
 			tabs.push_back(makeTabInfo(builder, tab));
 		}
 		const auto event = fb::CreateTabsChanged(builder, builder.CreateVector(tabs));
 		publishEvent(builder, fb::Event_TabsChanged, event.Union());
+	}
+
+	// ---- commands that only need the GUI thread (reader thread) ---------------
+
+	// GetInfo and the structural UI commands touch no storage and no message
+	// state, so they skip the message bus: decoded here on the reader thread and
+	// run on the GUI thread (ui()). That keeps them answering while the message
+	// thread is blocked, which is exactly when an agent needs them: a confirm()
+	// dialog parks the thread that asked until someone answers, and through the
+	// bus the agent could neither see the dialog (GetFrame) nor press its button
+	// (InvokeAction). Returns false for every other command, which then goes
+	// through MessageAgentCommand to handleCommand as before.
+	bool handleGuiCommand(const std::vector<std::uint8_t>& bytes)
+	{
+		flatbuffers::Verifier verifier(bytes.data(), bytes.size());
+		if (!fb::VerifyCommandEnvelopeBuffer(verifier))
+		{
+			return false;	// handleCommand reports it
+		}
+		const auto* envelope = fb::GetCommandEnvelope(bytes.data());
+		const std::uint64_t requestId = envelope->request_id();
+		switch (envelope->command_type())
+		{
+		case fb::Command_GetInfo:
+			publishAppInfo(requestId);
+			return true;
+		case fb::Command_GetSnapshot:
+		{
+			const auto* c = envelope->command_as_GetSnapshot();
+			const utility::qt::SnapshotFormat format =
+				toSnapshotFormat(c != nullptr ? c->format() : fb::SnapshotFormat_Accessibility);
+			// Ack, then capture on the GUI thread and send the UiSnapshot on
+			// st.agent.snapshot: the bridge reads it once it has the ack (see
+			// publishFrame for why that order matters). Scoped so stop() joins it.
+			emitResult(requestId, true);
+			m_uiScope.spawn(
+				stdexec::schedule(m_schedulers->ui()) | stdexec::then([this, requestId, format]() {
+					const std::vector<std::uint8_t> buffer = utility::qt::captureUiSnapshot(format, requestId);
+					if (!buffer.empty())
+					{
+						m_snapshotChannel.send(buffer.data(), buffer.size());
+					}
+				}));
+			return true;
+		}
+		case fb::Command_InvokeAction:
+		{
+			const auto* c = envelope->command_as_InvokeAction();
+			if (c == nullptr || c->target() == nullptr)
+			{
+				emitResult(requestId, false, "invoke_action: missing target");
+				return true;
+			}
+			DecodedRef ref = decodeElementRef(c->target());
+			std::string action = c->action() ? c->action()->str() : "";
+			std::string text = c->text() ? c->text()->str() : "";
+			const std::uint64_t expectHash = c->expect_hash();
+			// QAccessible touches widgets, so resolve + invoke on the GUI thread, then
+			// ack with the result. The ack is the reply (no Settled).
+			m_uiScope.spawn(
+				stdexec::schedule(m_schedulers->ui()) |
+				stdexec::then([this, requestId, objectName = std::move(ref.objectName),
+								  path = std::move(ref.path), action = std::move(action),
+								  text = std::move(text), expectHash]() {
+					const utility::qt::ControlResult r =
+						utility::qt::invokeAction(objectName, path, action, text, expectHash);
+					emitResult(requestId, r.ok, r.message);
+				}));
+			return true;
+		}
+		case fb::Command_CaptureElement:
+		{
+			const auto* c = envelope->command_as_CaptureElement();
+			if (c == nullptr || c->target() == nullptr)
+			{
+				emitResult(requestId, false, "capture_element: missing target");
+				return true;
+			}
+			DecodedRef ref = decodeElementRef(c->target());
+			const std::uint64_t expectHash = c->expect_hash();
+			m_uiScope.spawn(
+				stdexec::schedule(m_schedulers->ui()) |
+				stdexec::then([this, requestId, objectName = std::move(ref.objectName),
+								  path = std::move(ref.path), expectHash]() {
+					const utility::qt::CaptureResult r = utility::qt::captureElement(objectName, path, expectHash);
+					// Ack first, frame second: see publishFrame.
+					emitResult(requestId, r.ok, r.message);
+					if (r.ok)
+					{
+						publishFrame(requestId, r);
+					}
+				}));
+			return true;
+		}
+		case fb::Command_GetFrame:
+		{
+			const auto* c = envelope->command_as_GetFrame();
+			if (c == nullptr || c->format() != fb::FrameFormat_Png)
+			{
+				emitResult(requestId, false, "get_frame: unsupported format (only Png)");
+				return true;
+			}
+			const std::uint32_t maxWidth = c->max_width();
+			const fb::Rect region = c->region() != nullptr ? *c->region() : fb::Rect(0, 0, 0, 0);
+			// The ack's message names the composited windows, so a dialog over the
+			// main window shows in the reply too.
+			m_uiScope.spawn(
+				stdexec::schedule(m_schedulers->ui()) | stdexec::then([this, requestId, maxWidth, region]() {
+					const utility::qt::CaptureResult r =
+						utility::qt::captureScreen(maxWidth, region.x(), region.y(), region.w(), region.h());
+					// Ack first, frame second: see publishFrame.
+					emitResult(requestId, r.ok, r.message);
+					if (r.ok)
+					{
+						publishFrame(requestId, r);
+					}
+				}));
+			return true;
+		}
+		case fb::Command_QueryUi:
+		{
+			const auto* c = envelope->command_as_QueryUi();
+			std::string jsonPath = (c != nullptr && c->jsonpath() != nullptr) ? c->jsonpath()->str() : "";
+			// Evaluate the JSONPath over the live tree on the GUI thread; ack, then
+			// send a UiSnapshot of the matched nodes on st.agent.snapshot.
+			m_uiScope.spawn(
+				stdexec::schedule(m_schedulers->ui()) |
+				stdexec::then([this, requestId, jsonPath = std::move(jsonPath)]() {
+					const utility::qt::QueryResult r = utility::qt::queryUi(jsonPath, requestId);
+					emitResult(requestId, r.ok, r.message);
+					if (r.ok && !r.snapshot.empty())
+					{
+						m_snapshotChannel.send(r.snapshot.data(), r.snapshot.size());
+					}
+				}));
+			return true;
+		}
+		default:
+			return false;
+		}
 	}
 
 	// ---- command handling (message-processing thread) -------------------------
@@ -546,13 +752,11 @@ struct AgentControlController::Impl
 		const std::uint64_t requestId = envelope->request_id();
 		const fb::Command type = envelope->command_type();
 
-		// State gate: everything but load_project / get_ui_state needs a project.
+		// State gate: everything but load_project / get_ui_state / set_log_filter
+		// needs a project (the GUI-only commands never get here).
 		const bool needsProject = !(
 			type == fb::Command_LoadProject || type == fb::Command_GetUiState ||
-			type == fb::Command_GetSnapshot || type == fb::Command_InvokeAction ||
-			type == fb::Command_CaptureElement || type == fb::Command_QueryUi ||
-			type == fb::Command_SetLogFilter || type == fb::Command_GetInfo ||
-			type == fb::Command_GetFrame);
+			type == fb::Command_SetLogFilter);
 		if (needsProject && computeAppState() == fb::AppState_NoProject)
 		{
 			emitResult(requestId, false, "rejected: no project loaded");
@@ -618,123 +822,6 @@ struct AgentControlController::Impl
 		case fb::Command_GetUiState:
 			publishUiState(requestId);
 			break;
-		case fb::Command_GetInfo:
-			publishAppInfo(requestId);
-			break;
-		case fb::Command_GetSnapshot:
-			if (const auto* c = envelope->command_as_GetSnapshot())
-			{
-				// Introspection touches widgets, so capture on the GUI thread (ui()),
-				// then send the UiSnapshot on st.agent.snapshot. Scoped so stop() joins it.
-				const utility::qt::SnapshotFormat format = toSnapshotFormat(c->format());
-				m_uiScope.spawn(
-					stdexec::schedule(m_schedulers->ui()) | stdexec::then([this, requestId, format]() {
-						const std::vector<std::uint8_t> buffer =
-							utility::qt::captureUiSnapshot(format, requestId);
-						if (!buffer.empty())
-						{
-							m_snapshotChannel.send(buffer.data(), buffer.size());
-						}
-					}));
-			}
-			break;
-		case fb::Command_InvokeAction:
-		{
-			const auto* c = envelope->command_as_InvokeAction();
-			if (c == nullptr || c->target() == nullptr)
-			{
-				emitResult(requestId, false, "invoke_action: missing target");
-				return;
-			}
-			DecodedRef ref = decodeElementRef(c->target());
-			std::string action = c->action() ? c->action()->str() : "";
-			std::string text = c->text() ? c->text()->str() : "";
-			const std::uint64_t expectHash = c->expect_hash();
-			// QAccessible touches widgets, so resolve + invoke on the GUI thread
-			// (ui()), then ack with the result. Scoped so stop() joins it. The ack is
-			// the reply (no separate Settled — the invoke is async on ui()).
-			m_uiScope.spawn(
-				stdexec::schedule(m_schedulers->ui()) |
-				stdexec::then([this, requestId, objectName = std::move(ref.objectName),
-								  path = std::move(ref.path), action = std::move(action),
-								  text = std::move(text), expectHash]() {
-					const utility::qt::ControlResult r =
-						utility::qt::invokeAction(objectName, path, action, text, expectHash);
-					emitResult(requestId, r.ok, r.message);
-				}));
-			return;
-		}
-		case fb::Command_CaptureElement:
-		{
-			const auto* c = envelope->command_as_CaptureElement();
-			if (c == nullptr || c->target() == nullptr)
-			{
-				emitResult(requestId, false, "capture_element: missing target");
-				return;
-			}
-			DecodedRef ref = decodeElementRef(c->target());
-			const std::uint64_t expectHash = c->expect_hash();
-			// Grab on the GUI thread (ui()); on success publish the FrameEnvelope on
-			// st.agent.frames, then ack with the result.
-			m_uiScope.spawn(
-				stdexec::schedule(m_schedulers->ui()) |
-				stdexec::then([this, requestId, objectName = std::move(ref.objectName),
-								  path = std::move(ref.path), expectHash]() {
-					const utility::qt::CaptureResult r = utility::qt::captureElement(objectName, path, expectHash);
-					// Ack first, frame second: see publishFrame.
-					emitResult(requestId, r.ok, r.message);
-					if (r.ok)
-					{
-						publishFrame(requestId, r);
-					}
-				}));
-			return;
-		}
-		case fb::Command_GetFrame:
-		{
-			const auto* c = envelope->command_as_GetFrame();
-			if (c == nullptr || c->format() != fb::FrameFormat_Png)
-			{
-				emitResult(requestId, false, "get_frame: unsupported format (only Png)");
-				return;
-			}
-			const std::uint32_t maxWidth = c->max_width();
-			const fb::Rect region = c->region() != nullptr ? *c->region() : fb::Rect(0, 0, 0, 0);
-			// Grab on the GUI thread (ui()); on success publish the FrameEnvelope on
-			// st.agent.frames, then ack. The ack's message names the composited
-			// windows, so a dialog over the main window shows in the reply too.
-			m_uiScope.spawn(
-				stdexec::schedule(m_schedulers->ui()) |
-				stdexec::then([this, requestId, maxWidth, region]() {
-					const utility::qt::CaptureResult r =
-						utility::qt::captureScreen(maxWidth, region.x(), region.y(), region.w(), region.h());
-					// Ack first, frame second: see publishFrame.
-					emitResult(requestId, r.ok, r.message);
-					if (r.ok)
-					{
-						publishFrame(requestId, r);
-					}
-				}));
-			return;
-		}
-		case fb::Command_QueryUi:
-		{
-			const auto* c = envelope->command_as_QueryUi();
-			std::string jsonPath = (c != nullptr && c->jsonpath() != nullptr) ? c->jsonpath()->str() : "";
-			// Evaluate the JSONPath over the live tree on the GUI thread; reply with a
-			// UiSnapshot of the matched nodes on st.agent.snapshot, then ack.
-			m_uiScope.spawn(
-				stdexec::schedule(m_schedulers->ui()) |
-				stdexec::then([this, requestId, jsonPath = std::move(jsonPath)]() {
-					const utility::qt::QueryResult r = utility::qt::queryUi(jsonPath, requestId);
-					if (r.ok && !r.snapshot.empty())
-					{
-						m_snapshotChannel.send(r.snapshot.data(), r.snapshot.size());
-					}
-					emitResult(requestId, r.ok, r.message);
-				}));
-			return;
-		}
 		case fb::Command_SetLogFilter:
 		{
 			const auto* c = envelope->command_as_SetLogFilter();
@@ -777,35 +864,53 @@ struct AgentControlController::Impl
 		}
 		emitResult(requestId, true);
 		// Emit `Settled { requestId }` once the fan-out this command dispatched has
-		// drained (queue-idle). handleCommand runs *inside* the drain (as the
-		// MessageAgentCommand listener), so the effects are enqueued but not yet
-		// processed; the idle handler flushes this once they are.
+		// drained. handleCommand runs *inside* the drain (as the MessageAgentCommand
+		// listener), so the effects are enqueued but not yet processed. They run on
+		// the app scheduler and on the current tab's, so both get the idle handler.
+		const TabId tab = TabIds::currentTab();
+		const std::lock_guard<std::mutex> lock(m_settleMutex);
 		m_pendingSettle.push_back(requestId);
+		if (tab != TabId::NONE && tab != TabIds::app() && m_settleTabs.insert(tab).second)
+		{
+			TaskManager::getScheduler(tab)->setIdleHandler([this]() { flushSettled(); });
+		}
 	}
 
 	// Publish a `Settled` for every accepted command whose fan-out has now drained.
-	// Runs on the app TaskScheduler thread (its idle handler) — the same thread the
-	// message-handler tasks ran on, so m_pendingSettle needs no synchronization and
-	// the effects are visible here.
+	// Runs from the idle handler of the app scheduler or of a tab's scheduler, so it
+	// checks that the other one is idle too.
 	void flushSettled()
 	{
-		if (m_pendingSettle.empty())
+		std::vector<std::uint64_t> settled;
 		{
-			return;
+			const std::lock_guard<std::mutex> lock(m_settleMutex);
+			if (m_pendingSettle.empty())
+			{
+				return;
+			}
+			// A command's effects hop message-buffer -> task, and from the app
+			// scheduler to the tab's (an activation is handled where its tab is): if
+			// messages are still queued or either scheduler still has tasks, effects
+			// are mid-flight. A later idle edge, on whichever finishes last, flushes.
+			if (MessageQueue::getInstance()->hasMessagesQueued() ||
+				TaskManager::getScheduler(TabIds::app())->hasTasksQueued())
+			{
+				return;
+			}
+			for (const TabId tab: m_settleTabs)
+			{
+				if (TaskManager::getScheduler(tab)->hasTasksQueued())
+				{
+					return;
+				}
+			}
+			settled.swap(m_pendingSettle);
 		}
-		// A command's effects hop message-buffer -> task: if messages are still
-		// queued, effects are mid-flight — wait for a later idle when they've all
-		// been routed and run (i.e. the whole system has quiesced).
-		if (MessageQueue::getInstance()->hasMessagesQueued())
-		{
-			return;
-		}
-		for (const std::uint64_t requestId: m_pendingSettle)
+		for (const std::uint64_t requestId: settled)
 		{
 			flatbuffers::FlatBufferBuilder builder;
 			publishEvent(builder, fb::Event_Settled, fb::CreateSettled(builder, requestId).Union());
 		}
-		m_pendingSettle.clear();
 	}
 
 	// Handshake reply: publish an `AppInfo` event carrying this build's protocol
@@ -827,10 +932,24 @@ struct AgentControlController::Impl
 		publishEvent(builder, fb::Event_AppInfo, ib.Finish().Union());
 	}
 
-	// The deterministic "what's on screen", assembled from StorageAccess + the
-	// state cache (both message-thread-local).
+	// The deterministic "what's on screen", assembled from StorageAccess and a copy
+	// of the state cache taken under m_stateMutex.
 	void publishUiState(std::uint64_t requestId)
 	{
+		std::vector<Id> activeNodeIds;
+		std::string currentFile;
+		std::uint32_t scrollLine = 0;
+		std::vector<SearchMatch> lastSearchMatches;
+		std::vector<MessageTabsChanged::TabInfo> tabsCache;
+		{
+			const std::lock_guard<std::mutex> lock(m_stateMutex);
+			activeNodeIds = m_activeNodeIds;
+			currentFile = m_currentFile;
+			scrollLine = m_scrollLine;
+			lastSearchMatches = m_lastSearchMatches;
+			tabsCache = m_tabsCache;
+		}
+
 		flatbuffers::FlatBufferBuilder builder;
 
 		std::string projectPath;
@@ -841,24 +960,27 @@ struct AgentControlController::Impl
 		const auto projectOffset = builder.CreateString(projectPath);
 
 		std::vector<flatbuffers::Offset<fb::NodeRef>> activeNodes;
-		for (const Id id: m_activeNodeIds)
+		for (const Id id: activeNodeIds)
 		{
-			activeNodes.push_back(
-				makeNodeRef(builder, id, NameHierarchy::serialize(m_storageAccess->getNameHierarchyForNodeId(id))));
+			activeNodes.push_back(makeNodeRef(
+				builder,
+				id,
+				m_storageAccess->getNameHierarchyForNodeId(id),
+				m_storageAccess->getNodeTypeForNodeWithId(id).getKind()));
 		}
 		const auto activeOffset = builder.CreateVector(activeNodes);
 
 		flatbuffers::Offset<fb::Graph> graphOffset = 0;
-		if (!m_activeNodeIds.empty())
+		if (!activeNodeIds.empty())
 		{
 			if (const std::shared_ptr<Graph> graph =
-					m_storageAccess->getGraphForActiveTokenIds(m_activeNodeIds, {}, nullptr))
+					m_storageAccess->getGraphForActiveTokenIds(activeNodeIds, {}, nullptr))
 			{
 				std::vector<flatbuffers::Offset<fb::NodeRef>> nodes;
 				std::vector<flatbuffers::Offset<fb::EdgeRef>> edges;
 				graph->forEachNode([&](Node* node) {
 					nodes.push_back(makeNodeRef(
-						builder, node->getId(), NameHierarchy::serialize(node->getNameHierarchy()), node->getName()));
+						builder, node->getId(), node->getNameHierarchy(), node->getType().getKind(), node->getName()));
 				});
 				graph->forEachEdge([&](Edge* edge) {
 					edges.push_back(fb::CreateEdgeRef(
@@ -873,13 +995,13 @@ struct AgentControlController::Impl
 		}
 
 		flatbuffers::Offset<fb::CodeViewState> codeOffset = 0;
-		if (!m_currentFile.empty())
+		if (!currentFile.empty())
 		{
-			codeOffset = fb::CreateCodeViewState(builder, builder.CreateString(m_currentFile));
+			codeOffset = fb::CreateCodeViewState(builder, builder.CreateString(currentFile), scrollLine);
 		}
 
 		std::vector<flatbuffers::Offset<fb::SearchMatch>> searchMatches;
-		for (const SearchMatch& match: m_lastSearchMatches)
+		for (const SearchMatch& match: lastSearchMatches)
 		{
 			searchMatches.push_back(makeSearchMatch(builder, match));
 		}
@@ -897,11 +1019,16 @@ struct AgentControlController::Impl
 		const auto bookmarksOffset = builder.CreateVector(bookmarks);
 
 		std::vector<flatbuffers::Offset<fb::TabInfo>> tabInfos;
-		for (const auto& tab: m_tabsCache)
+		for (const auto& tab: tabsCache)
 		{
 			tabInfos.push_back(makeTabInfo(builder, tab));
 		}
 		const auto tabsOffset = builder.CreateVector(tabInfos);
+
+		const std::string dialog = utility::qt::currentDialog();
+		// Always written, empty included: an absent field is how the bridge tells an app
+		// before protocol v3, which cannot report a dialog, from one that has none.
+		const auto dialogOffset = builder.CreateString(dialog);
 
 		const ErrorCountInfo errors = m_storageAccess->getErrorCount();
 		const auto uiState = fb::CreateUiState(
@@ -915,8 +1042,9 @@ struct AgentControlController::Impl
 			bookmarksOffset,
 			static_cast<std::uint32_t>(errors.total),
 			static_cast<std::uint32_t>(errors.fatal),
-			m_indexing,
-			computeAppState());
+			m_indexing.load(),
+			computeAppState(),
+			dialogOffset);
 		builder.Finish(fb::CreateUiStateEnvelope(builder, requestId, uiState));
 		m_stateChannel.send(builder.GetBufferPointer(), builder.GetSize());
 	}
@@ -1034,13 +1162,16 @@ struct AgentControlController::Impl
 	void updateAppState()
 	{
 		const fb::AppState next = computeAppState();
-		if (next != m_appState)
 		{
+			const std::lock_guard<std::mutex> lock(m_stateMutex);
+			if (next == m_appState)
+			{
+				return;
+			}
 			m_appState = next;
-			flatbuffers::FlatBufferBuilder builder;
-			publishEvent(
-				builder, fb::Event_AppStateChanged, fb::CreateAppStateChanged(builder, m_appState).Union());
 		}
+		flatbuffers::FlatBufferBuilder builder;
+		publishEvent(builder, fb::Event_AppStateChanged, fb::CreateAppStateChanged(builder, next).Union());
 	}
 
 	// Closed-loop ack for a command. ok=false with a "rejected: ..." message covers
@@ -1063,13 +1194,16 @@ struct AgentControlController::Impl
 	thoth::route m_framesChannel;		// FrameEnvelope replies to CaptureElement / GetFrame
 	exec::async_scope m_uiScope;	// GUI-thread-hopped work (snapshot capture), joined on stop()
 
-	// State cache, touched only from the message-processing thread.
+	// State cache, written by message handlers on the app and tab schedulers and
+	// read by publishUiState: guarded by m_stateMutex.
+	std::mutex m_stateMutex;
 	std::vector<Id> m_activeNodeIds;
-	std::string m_currentFile;
+	std::string m_currentFile;	   // the file the code view shows on its own, if any
+	std::uint32_t m_scrollLine = 0;	   // its line, from the last MessageScrollToLine
 	std::vector<SearchMatch> m_lastSearchMatches;
 	std::vector<MessageTabsChanged::TabInfo> m_tabsCache;
-	bool m_indexing = false;
 	fb::AppState m_appState = fb::AppState_NoProject;
+	std::atomic<bool> m_indexing{false};
 	std::uint64_t m_eventSeq = 0;
 	std::mutex m_eventMutex;	// serializes publishEvent across the app-scheduler + ui() threads
 
@@ -1081,7 +1215,9 @@ struct AgentControlController::Impl
 	std::mutex m_logConfigMutex;
 	std::regex m_logPattern;
 	bool m_logHasPattern = false;
+	std::mutex m_settleMutex;	// m_pendingSettle and m_settleTabs: flushed from several schedulers' idle handlers
 	std::vector<std::uint64_t> m_pendingSettle;	// accepted request_ids awaiting a queue-idle Settled
+	std::set<TabId> m_settleTabs;	// tab schedulers whose idle handler is flushSettled
 
 	bool m_listening = false;
 };

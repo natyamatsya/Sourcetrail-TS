@@ -84,7 +84,10 @@ enum AppState : byte {
 // and needs no bump of its own. Versions:
 //   1  the handshake (GetInfo -> AppInfo) and every command up to SetLogFilter
 //   2  GetFrame answered (whole-screen composite) and its `region` crop
-enum ProtocolVersion : uint { Current = 2 }
+//   3  UiState.dialog; commands that only need the GUI thread (GetInfo, GetFrame,
+//      GetSnapshot, QueryUi, InvokeAction, CaptureElement) no longer wait for
+//      the message thread, so they answer while a dialog blocks it
+enum ProtocolVersion : uint { Current = 3 }
 
 enum RefreshMode : byte { None = 0, UpdatedFiles = 1, AllFiles = 2 }
 

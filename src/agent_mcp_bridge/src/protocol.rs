@@ -486,6 +486,9 @@ pub fn parse_ui_state(bytes: &[u8]) -> Result<(u64, Value)> {
         "request_id": request_id,
         "project_file_path": s.project_file_path().unwrap_or_default(),
         "app_state": app_state_str(s.app_state().0),
+        // What waits for an answer in front of the app: "" when nothing does, null
+        // from an app before protocol v3, which cannot tell.
+        "dialog": s.dialog(),
         "indexing_active": s.indexing_active(),
         "error_total": s.error_total(),
         "error_fatal": s.error_fatal(),
@@ -690,6 +693,21 @@ mod tests {
     }
 
     #[test]
+    fn ui_state_reports_its_dialog() {
+        fn with_dialog(dialog: &str) -> Value {
+            let mut b = FlatBufferBuilder::new();
+            let text = b.create_string(dialog);
+            let ui = fb::UiState::create(&mut b, &fb::UiStateArgs { dialog: Some(text), ..Default::default() });
+            let env = fb::UiStateEnvelope::create(&mut b, &fb::UiStateEnvelopeArgs { request_id: 1, state: Some(ui) });
+            b.finish(env, None);
+            parse_ui_state(b.finished_data()).unwrap().1
+        }
+        assert_eq!(with_dialog("Start Indexing")["dialog"], "Start Indexing");
+        // Nothing in front: an empty string, which a v3 app always writes.
+        assert_eq!(with_dialog("")["dialog"], "");
+    }
+
+    #[test]
     fn ui_state_parses_to_json() {
         let mut b = FlatBufferBuilder::new();
         let sn = b.create_string("m::Foo");
@@ -721,6 +739,8 @@ mod tests {
         let (rid, json) = parse_ui_state(b.finished_data()).unwrap();
         assert_eq!(rid, 9);
         assert_eq!(json["app_state"], "Ready");
+        // No dialog field: an app before v3, which cannot tell, reads as null.
+        assert!(json["dialog"].is_null());
         assert_eq!(json["error_total"], 2);
         assert_eq!(json["active_nodes"][0]["serialized_name"], "m::Foo");
         assert_eq!(json["tabs"][0]["tab_id"], 10);

@@ -2,20 +2,27 @@
 
 #include <algorithm>
 #include <map>
+#include <mutex>
 #include <utility>
 
 #include <QWidget>	// pulls Qt GUI feature macros (QT_CONFIG) before the check below
 
-// captureScreen needs no accessibility support.
+// captureScreen and the dialog watch need no accessibility support.
 #include <QApplication>
 #include <QBuffer>
 #include <QByteArray>
 #include <QColor>
+#include <QEvent>
+#include <QLabel>
 #include <QList>
+#include <QMessageBox>
+#include <QMetaObject>
 #include <QPainter>
 #include <QPixmap>
+#include <QPointer>
 #include <QRect>
 #include <QString>
+#include <QTimer>
 
 #if QT_CONFIG(accessibility)
 #include <QAccessible>
@@ -360,5 +367,107 @@ CaptureResult captureScreen(
 		std::vector<std::uint8_t>(bytes.begin(), bytes.end()),
 		static_cast<std::uint32_t>(pixmap.width()),
 		static_cast<std::uint32_t>(pixmap.height())};
+}
+
+namespace
+{
+// What is in front of the app; GUI thread only. A modal window first (confirm()
+// boxes block the thread that asked, so naming them is what lets an agent see
+// why nothing answers), then Sourcetrail's in-window dialogs: elements of a
+// QtWindowStack, each of which carries its title in a QLabel named "title".
+std::string describeDialog()
+{
+	if (QWidget* modal = QApplication::activeModalWidget())
+	{
+		QString text = QStringLiteral("'%1' (modal)").arg(modal->windowTitle());
+		if (const auto* box = qobject_cast<QMessageBox*>(modal); box != nullptr && !box->text().isEmpty())
+		{
+			text += QStringLiteral(": ") + box->text();
+		}
+		return text.toStdString();
+	}
+	for (QWidget* widget: QApplication::allWidgets())
+	{
+		if (widget->inherits("QtWindowStackElement") && widget->isVisible())
+		{
+			const QLabel* title = widget->findChild<QLabel*>(QStringLiteral("title"));
+			return (title != nullptr && !title->text().isEmpty()) ? title->text().toStdString()
+																 : widget->metaObject()->className();
+		}
+	}
+	return "";
+}
+
+std::mutex s_dialogMutex;
+std::string s_dialog;	 // what describeDialog() last returned
+
+// Recomputes the dialog when a window or a window-stack element shows or hides.
+// The recompute is deferred to the next event-loop turn and coalesced, so a burst
+// of show/hide events (a dialog and its children) costs one scan.
+class DialogWatch: public QObject
+{
+public:
+	using QObject::QObject;
+
+	void refresh()
+	{
+		const std::string dialog = describeDialog();
+		const std::lock_guard<std::mutex> lock(s_dialogMutex);
+		s_dialog = dialog;
+	}
+
+protected:
+	bool eventFilter(QObject* watched, QEvent* event) override
+	{
+		if (event->type() == QEvent::Show || event->type() == QEvent::Hide)
+		{
+			if (const auto* widget = qobject_cast<QWidget*>(watched);
+				widget != nullptr && (widget->isWindow() || widget->inherits("QtWindowStackElement")) &&
+				!m_pending)
+			{
+				m_pending = true;
+				QTimer::singleShot(0, this, [this]() {
+					m_pending = false;
+					refresh();
+				});
+			}
+		}
+		return false;
+	}
+
+private:
+	bool m_pending = false;
+};
+
+QPointer<DialogWatch> s_dialogWatch;	// GUI thread only
+}	 // namespace
+
+void watchDialogs(bool on)
+{
+	if (qApp == nullptr)
+	{
+		return;
+	}
+	QMetaObject::invokeMethod(qApp, [on]() {
+		if (on && s_dialogWatch.isNull())
+		{
+			s_dialogWatch = new DialogWatch(qApp);
+			qApp->installEventFilter(s_dialogWatch);
+			s_dialogWatch->refresh();
+		}
+		else if (!on && !s_dialogWatch.isNull())
+		{
+			qApp->removeEventFilter(s_dialogWatch);
+			delete s_dialogWatch.data();
+			const std::lock_guard<std::mutex> lock(s_dialogMutex);
+			s_dialog.clear();
+		}
+	});
+}
+
+std::string currentDialog()
+{
+	const std::lock_guard<std::mutex> lock(s_dialogMutex);
+	return s_dialog;
 }
 }	 // namespace utility::qt

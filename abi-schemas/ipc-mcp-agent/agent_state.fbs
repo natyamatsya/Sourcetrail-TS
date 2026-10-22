@@ -41,6 +41,12 @@ table UiState {
     error_fatal:       uint32;
     indexing_active:   bool;
     app_state:         AppState = NoProject;   // the coarse application FSM state
+
+    // Appended in protocol v3: what is in front of the app, waiting for an answer:
+    // a modal window ("'title' (modal): text") or one of Sourcetrail's in-window
+    // dialogs, by its title ("Start Indexing"). Empty when nothing is. An app
+    // before v3 leaves it out, which would read as "nothing", hence the bump.
+    dialog:            string;
 }
 
 // One message on `st.agent.state`. `request_id` echoes the GetUiState command's id.

@@ -70,6 +70,17 @@ CaptureResult captureScreen(
 	std::int32_t regionY = 0,
 	std::int32_t regionW = 0,
 	std::int32_t regionH = 0);
+
+//! Start (`true`) or stop watching for dialogs, for currentDialog(). Callable
+//! from any thread: the watch itself is installed on the GUI thread.
+void watchDialogs(bool on);
+
+//! What is in front of the app, waiting for an answer: the active modal window
+//! ("'title' (modal): text"), else the title of the visible in-window dialog
+//! (Sourcetrail's window stack, e.g. "Start Indexing"); empty when nothing is.
+//! Callable from any thread: it reads what the watch last saw on the GUI thread,
+//! which is kept current as windows and dialogs show and hide.
+std::string currentDialog();
 }	 // namespace utility::qt
 
 #endif	  // QT_UI_CONTROL_H

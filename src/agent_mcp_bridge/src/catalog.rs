@@ -54,6 +54,14 @@ rejected, no project loaded) come back as MCP tool errors. Resolution failures i
 UI (element not found, action unsupported, stale expect_hash) are data: { ok: false, message }. \
 Unknown tool arguments are rejected, naming the field.
 
+A question that blocks: Sourcetrail asks some questions (\"reindex the project?\") in a modal \
+box that holds the thread commands run on until it is answered, so ui_state and nav_* time \
+out while it is up. ui_frame, ui_snapshot, ui_query, ui_invoke and instance_handshake still \
+answer (agent-control protocol v3+): ui_frame shows the box and names it in `windows`, and \
+ui_query { query: \"$.roots..[?(@.role=='button' && @.name=='Cancel')]\" } finds its buttons \
+(take the one whose rect is not empty; the box's own role reads \"unknown\"), which ui_invoke \
+presses.
+
 Settled state: tools that change the app (nav_activate_*, nav_scroll_to_line, nav_history) \
 wait until the app reports Settled for the request, then return the ui_state object (shape \
 in describe('state')).
@@ -104,11 +112,22 @@ ui_state { instance? } -> {
   graph: { nodes: [node], edges: [ { edge_id, edge_type, source, target } ] } | null,
   code_view: { file_path, scroll_line } | null,
   search_matches: [ { text, node_kind, node_ids: [u64], score } ],
-  tabs: [ { tab_id, title, active } ] }
+  tabs: [ { tab_id, title, active } ],
+  dialog: string }
 
-app_state is the FSM to key off: Ready means a project is loaded and indexed, and every \
-nav_* tool needs a project. serialized_name is what nav_activate_node takes by name; \
-node_id works too.",
+app_state is the FSM to key off: Ready means a project is loaded and not indexing, and \
+every nav_* tool needs a project. dialog says what waits for an answer in front of the app: \
+a modal window (\"'title' (modal): text\") or one of Sourcetrail's in-window dialogs by its \
+title (\"Start Indexing\" after opening a project that has no index yet); \"\" when nothing \
+does, null from an app before agent-control protocol v3. Check it when Ready does not \
+behave like Ready.
+
+active_nodes follow every activation, whoever made it: nav_activate_*, nav_history, a click \
+in the graph. display_name is the qualified name, node_kind Sourcetrail's NodeKind bit \
+(the same bit in search_matches). serialized_name is what nav_activate_node takes by name; \
+node_id works too. code_view is the file the code view shows on its own (after \
+nav_activate_file or nav_scroll_to_line, with scroll_line); null while it lists an activated \
+node's references across files.",
     },
     Topic {
         name: "events",
@@ -205,9 +224,13 @@ ui_capture { ref, include_properties=false, expect_hash=0, instance? } -> PNG im
         tools: &["project_open"],
         doc: "\
 project_open { path, instance? } -> { ok, message }
-  Loads a .srctrlprj and returns once the app accepted it: indexing runs afterwards. Wait \
-for app_state Ready with events_poll (AppStateChanged, IndexingFinished) or ui_state before \
-using nav_* tools.",
+  Loads a project (.srctrlprj / .srctrl.toml) and returns once the app accepted it. A \
+project with an up-to-date index is usable at once (app_state Ready). One without an index \
+asks first: ui_state.dialog reads \"Start Indexing\", and nothing is indexed until its Start \
+button is pressed:
+  ui_query  { query: \"$.roots..[?(@.role=='button' && @.name=='Start')]\" }
+  ui_invoke { ref: <roots[0].ref>, action: \"Press\" }
+then wait for IndexingFinished with events_poll (app_state goes Indexing, then Ready).",
     },
     Topic {
         name: "logs",

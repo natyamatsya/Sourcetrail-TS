@@ -110,6 +110,11 @@ impl Bridge {
         self.handshake.clone()
     }
 
+    /// The app's agent-control protocol version from the handshake (0 if unknown).
+    pub fn app_protocol_version(&self) -> u32 {
+        self.handshake["app_protocol_version"].as_u64().and_then(|v| u32::try_from(v).ok()).unwrap_or(0)
+    }
+
     /// Issue `GetInfo` and await the app's `AppInfo`, computing protocol skew.
     /// Returns a JSON summary regardless of outcome (never propagates an error, so
     /// connect always succeeds). On a `bridge > app` skew, warns to stderr — the
@@ -298,6 +303,13 @@ impl Bridge {
             0 => "the app is no longer listening — it likely crashed or exited after receiving \
                   the command"
                 .to_string(),
+            // From v3 the GUI-only commands bypass the message thread, so they still
+            // answer when a dialog blocks it: point there.
+            n if self.app_protocol_version() >= 3 => format!(
+                "{n} app receiver(s) still connected — the app received the command but sent no \
+                 reply. A dialog waiting for an answer blocks it: ui_frame shows what is on screen \
+                 and ui_query/ui_invoke can answer it, since those still work while it waits"
+            ),
             n => format!(
                 "{n} app receiver(s) still connected — the app received the command but sent no \
                  reply (it may be blocked on the GUI thread, e.g. a modal dialog, or its reply \
@@ -705,8 +717,8 @@ impl Bridge {
     pub fn get_frame(&mut self, max_width: u32, region: Option<[i32; 4]>) -> Result<Value> {
         // An app before v2 has the GetFrame arm in its schema but answers it as an
         // unknown command; say what to do about it instead.
-        let app_version = self.handshake["app_protocol_version"].as_u64().unwrap_or(0);
-        if app_version < u64::from(protocol::GET_FRAME_SINCE) {
+        let app_version = self.app_protocol_version();
+        if app_version < protocol::GET_FRAME_SINCE {
             bail!(
                 "this app speaks agent-control protocol v{app_version} and cannot capture the screen \
                  (needs v{}): rebuild the app",
