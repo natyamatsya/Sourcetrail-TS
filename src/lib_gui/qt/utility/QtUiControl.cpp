@@ -8,21 +8,26 @@
 #include <QWidget>	// pulls Qt GUI feature macros (QT_CONFIG) before the check below
 
 // captureScreen and the dialog watch need no accessibility support.
+#include <QAbstractScrollArea>
 #include <QApplication>
 #include <QBuffer>
 #include <QByteArray>
 #include <QColor>
+#include <QContextMenuEvent>
 #include <QEvent>
+#include <QKeyEvent>
 #include <QLabel>
 #include <QList>
 #include <QMessageBox>
 #include <QMetaObject>
+#include <QMouseEvent>
 #include <QPainter>
 #include <QPixmap>
 #include <QPointer>
 #include <QRect>
 #include <QString>
 #include <QTimer>
+#include <QWheelEvent>
 
 #if QT_CONFIG(accessibility)
 #include <QAccessible>
@@ -351,6 +356,11 @@ CaptureResult captureScreen(
 		return {false, "grab produced an empty image", {}, 0, 0};
 	}
 
+	// Where the frame sits in global coordinates, for an agent that picks a point
+	// out of it: frame pixel p is the global point origin + p / scale.
+	QPointF origin = canvas.topLeft();
+	double scale = dpr;
+
 	// Crop before the downscale, so a region reads in the pixels the caller saw.
 	if (regionW > 0 && regionH > 0)
 	{
@@ -368,13 +378,21 @@ CaptureResult captureScreen(
 				0};
 		}
 		pixmap = pixmap.copy(wanted);
+		origin += QPointF(wanted.topLeft()) / dpr;
 		described += "; cropped to " + std::to_string(wanted.x()) + "," + std::to_string(wanted.y()) + " " +
 			std::to_string(wanted.width()) + "x" + std::to_string(wanted.height());
 	}
 	if (maxWidth != 0 && pixmap.width() > static_cast<int>(maxWidth))
 	{
+		const int fullWidth = pixmap.width();
 		pixmap = pixmap.scaledToWidth(static_cast<int>(maxWidth), Qt::SmoothTransformation);
+		scale *= static_cast<double>(pixmap.width()) / fullWidth;
 	}
+	described += QStringLiteral(" | origin %1,%2 scale %3")
+					 .arg(qRound(origin.x()))
+					 .arg(qRound(origin.y()))
+					 .arg(scale, 0, 'g', 6)
+					 .toStdString();
 
 	QByteArray bytes;
 	QBuffer buffer(&bytes);
@@ -390,6 +408,259 @@ CaptureResult captureScreen(
 		static_cast<std::uint32_t>(pixmap.width()),
 		static_cast<std::uint32_t>(pixmap.height())};
 }
+
+// --- Synthetic input (SendInput) -------------------------------------------------
+namespace
+{
+Qt::MouseButton toQtButton(std::int32_t button)
+{
+	switch (button)
+	{
+	case 1:
+		return Qt::LeftButton;
+	case 2:
+		return Qt::RightButton;
+	case 3:
+		return Qt::MiddleButton;
+	default:
+		return Qt::NoButton;
+	}
+}
+
+Qt::MouseButtons toQtButtons(std::uint32_t mask)
+{
+	Qt::MouseButtons buttons;
+	if (mask & 0x1u)
+	{
+		buttons |= Qt::LeftButton;
+	}
+	if (mask & 0x2u)
+	{
+		buttons |= Qt::RightButton;
+	}
+	if (mask & 0x4u)
+	{
+		buttons |= Qt::MiddleButton;
+	}
+	return buttons;
+}
+
+Qt::KeyboardModifiers toQtModifiers(std::uint32_t mask)
+{
+	Qt::KeyboardModifiers modifiers;
+	if (mask & 0x1u)
+	{
+		modifiers |= Qt::ShiftModifier;
+	}
+	if (mask & 0x2u)
+	{
+		modifiers |= Qt::ControlModifier;
+	}
+	if (mask & 0x4u)
+	{
+		modifiers |= Qt::AltModifier;
+	}
+	if (mask & 0x8u)
+	{
+		modifiers |= Qt::MetaModifier;
+	}
+	return modifiers;
+}
+
+// The widget that takes mouse input for `widget`: a scroll area (the graph view,
+// the code view) handles it on its viewport.
+QWidget* inputReceiver(QWidget* widget)
+{
+	if (auto* area = qobject_cast<QAbstractScrollArea*>(widget); area != nullptr && area->viewport() != nullptr)
+	{
+		return area->viewport();
+	}
+	return widget;
+}
+
+// "QGraphicsView viewport of 'graph_view'" for the result message.
+std::string describeReceiver(const QWidget* receiver)
+{
+	// A scroll area's viewport is named for the area it belongs to, and the names
+	// Qt gives its own internals (qt_scrollarea_viewport, qt_tabwidget_stackedwidget)
+	// say nothing about where the input went.
+	const QWidget* shown = receiver;
+	if (const auto* area = qobject_cast<const QAbstractScrollArea*>(receiver->parentWidget());
+		area != nullptr && area->viewport() == receiver)
+	{
+		shown = area;
+	}
+	const QWidget* named = shown;
+	while (named != nullptr && (named->objectName().isEmpty() || named->objectName().startsWith(QLatin1String("qt_"))))
+	{
+		named = named->parentWidget();
+	}
+	std::string text = shown->metaObject()->className();
+	if (shown != receiver)
+	{
+		text += " viewport";
+	}
+	if (named != nullptr)
+	{
+		text += (named == shown ? " '" : " in '") + named->objectName().toStdString() + "'";
+	}
+	return text;
+}
+
+// Post the gesture to `receiver`, each event at the global point `toGlobal(event)`
+// gives, then `delivered`. Posted rather than sent: a press can open a menu or a
+// dialog whose exec() would otherwise block the caller, and the agent's ack with
+// it. Posted events and the queued call run in order, so `delivered` follows the
+// last event (inside a nested event loop, if one of them opened one). A deleted
+// receiver drops its pending events.
+void postGesture(
+	QWidget* receiver,
+	const std::vector<InputEvent>& events,
+	const std::function<QPointF(const InputEvent&)>& toGlobal,
+	std::function<void()> delivered)
+{
+	for (const InputEvent& event: events)
+	{
+		const QPointF global = toGlobal(event);
+		const QPointF local = receiver->mapFromGlobal(global);
+		const Qt::KeyboardModifiers modifiers = toQtModifiers(event.modifiers);
+		const Qt::MouseButton button = toQtButton(event.button);
+		switch (event.kind)
+		{
+		case InputKind::MouseMove:
+			QCoreApplication::postEvent(receiver,
+				new QMouseEvent(QEvent::MouseMove, local, global, Qt::NoButton, toQtButtons(event.buttons), modifiers));
+			break;
+		case InputKind::MousePress:
+			QCoreApplication::postEvent(
+				receiver, new QMouseEvent(QEvent::MouseButtonPress, local, global, button, button, modifiers));
+			break;
+		case InputKind::MouseRelease:
+			QCoreApplication::postEvent(
+				receiver, new QMouseEvent(QEvent::MouseButtonRelease, local, global, button, Qt::NoButton, modifiers));
+			// A real right-click also makes the window send a context-menu event;
+			// posted input does not go through the window, so post it here.
+			if (button == Qt::RightButton)
+			{
+				QCoreApplication::postEvent(receiver,
+					new QContextMenuEvent(QContextMenuEvent::Mouse, local.toPoint(), global.toPoint(), modifiers));
+			}
+			break;
+		case InputKind::MouseDoubleClick:
+			QCoreApplication::postEvent(
+				receiver, new QMouseEvent(QEvent::MouseButtonDblClick, local, global, button, button, modifiers));
+			break;
+		case InputKind::Wheel:
+			QCoreApplication::postEvent(receiver,
+				new QWheelEvent(local, global, QPoint(0, 0), QPoint(0, event.wheelDelta), toQtButtons(event.buttons),
+					modifiers, Qt::NoScrollPhase, /*inverted*/ false));
+			break;
+		case InputKind::KeyPress:
+			QCoreApplication::postEvent(receiver,
+				new QKeyEvent(QEvent::KeyPress, static_cast<int>(event.key), modifiers, QString::fromStdString(event.text)));
+			break;
+		case InputKind::KeyRelease:
+			QCoreApplication::postEvent(receiver,
+				new QKeyEvent(QEvent::KeyRelease, static_cast<int>(event.key), modifiers, QString::fromStdString(event.text)));
+			break;
+		}
+	}
+	QMetaObject::invokeMethod(qApp, std::move(delivered), Qt::QueuedConnection);
+}
+
+// The deepest visible widget under the global point, front window first: an open
+// popup (a menu), then the active modal window, then the others. Reaches widgets
+// with no accessible element of their own.
+QWidget* widgetAt(const QPoint& global)
+{
+	QList<QWidget*> windows;
+	if (QWidget* popup = QApplication::activePopupWidget())
+	{
+		windows.append(popup);
+	}
+	if (QWidget* modal = QApplication::activeModalWidget())
+	{
+		windows.append(modal);
+	}
+	windows.append(QApplication::topLevelWidgets());
+	for (QWidget* window: windows)
+	{
+		if (!window->isVisible() || !window->isWindow() || !window->geometry().contains(global))
+		{
+			continue;
+		}
+		QWidget* widget = window;
+		while (QWidget* child = widget->childAt(widget->mapFromGlobal(global)))
+		{
+			widget = child;
+		}
+		return widget;
+	}
+	return nullptr;
+}
+}	 // namespace
+
+ControlResult sendInputAt(
+	std::int32_t x, std::int32_t y, const std::vector<InputEvent>& events, std::function<void()> delivered)
+{
+	const QPoint point(x, y);
+	QWidget* widget = widgetAt(point);
+	if (widget == nullptr)
+	{
+		return {false, "no window covers the point " + std::to_string(x) + "," + std::to_string(y)};
+	}
+	QWidget* receiver = inputReceiver(widget);
+	postGesture(
+		receiver,
+		events,
+		[point](const InputEvent& event) { return event.centered ? QPointF(point) : QPointF(event.x, event.y); },
+		std::move(delivered));
+	return {true, "delivered to " + describeReceiver(receiver)};
+}
+
+#if QT_CONFIG(accessibility)
+ControlResult sendInput(
+	const std::string& objectName,
+	const std::vector<RefStep>& path,
+	const std::vector<InputEvent>& events,
+	std::function<void()> delivered)
+{
+	std::string error;
+	QAccessibleInterface* iface = resolve(objectName, path, error);
+	if (iface == nullptr)
+	{
+		return {false, error};
+	}
+	// The element's own widget, else its nearest ancestor's (a sub-element such as
+	// a menu item or a cell has none); coordinates stay relative to the element.
+	QWidget* widget = qobject_cast<QWidget*>(iface->object());
+	for (QAccessibleInterface* p = iface->parent(); widget == nullptr && p != nullptr; p = p->parent())
+	{
+		widget = qobject_cast<QWidget*>(p->object());
+	}
+	if (widget == nullptr)
+	{
+		return {false, "element has no widget to receive input: " + refToString(objectName, path)};
+	}
+	QWidget* receiver = inputReceiver(widget);
+	const QRect element = iface->rect();	// global
+	postGesture(
+		receiver,
+		events,
+		[element](const InputEvent& event) {
+			return event.centered ? QPointF(element.center())
+								  : QPointF(element.topLeft()) + QPointF(event.x, event.y);
+		},
+		std::move(delivered));
+	return {true, "delivered to " + describeReceiver(receiver)};
+}
+#else
+ControlResult sendInput(
+	const std::string&, const std::vector<RefStep>&, const std::vector<InputEvent>&, std::function<void()>)
+{
+	return {false, "Qt accessibility support not built: target a point instead"};
+}
+#endif	// QT_CONFIG(accessibility)
 
 namespace
 {

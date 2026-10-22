@@ -236,12 +236,14 @@ nav_history { direction: \"back\" | \"forward\", instance? } -> ui_state
 For what no nav_* tool covers: menus, dialogs, buttons, preferences.
 
 ui_frame { max_width=0, region?: { x, y, w, h }, instance? } -> PNG image + \
-{ ok, frame: { width, height, format, bytes }, windows } | { ok: false, message }
+{ ok, frame: { width, height, format, bytes, origin: { x, y }, scale }, windows } | { ok: false, message }
   The screen as a user sees it: every visible top-level window composited at its position \
 (dialogs and popups over the main window), so it is what to look at when ui_state does not \
 explain what the app is doing. `windows` names them (\"'title' WxH (modal); ...\"). region \
-crops in the full frame's pixels, then max_width downscales (aspect kept). Needs an app on \
-agent-control protocol v2 or later (instance_handshake).
+crops in the full frame's pixels, then max_width downscales (aspect kept). origin and scale \
+place the frame on screen: pixel p is the global point origin + p / scale, which is how \
+ui_input { at_frame } aims at what the frame shows (v5+). Needs an app on agent-control \
+protocol v2 or later (instance_handshake).
 
 ui_snapshot { object_tree=false, instance? } -> { request_id, format, tree_hash, roots: [node] }
   node: { role, name, value, state, actions: [str], rect: { x, y, w, h }, \
@@ -268,6 +270,39 @@ element changed since the snapshot. Not found / unsupported -> ok: false.
 ui_capture { ref, include_properties=false, expect_hash=0, instance? } -> PNG image + \
 { ok, frame: { width, height, format, bytes } } | { ok: false, message }
   One element, grabbed from its widget (a sub-element from its window, cropped).",
+    },
+    Topic {
+        name: "input",
+        summary: "Synthetic mouse and keyboard: click graph nodes, hover, drag, zoom, type, open context menus.",
+        tools: &["ui_input"],
+        doc: "\
+For what has no accessible action or nav_* tool, above all the graph: its nodes and edges \
+are drawn, not widgets, so they appear in no ui_snapshot; find them in ui_frame instead.
+
+ui_input { ref? | at?: [x, y] | at_frame?: [px, py], gesture? | events?, instance? } -> \
+{ ok, message, settled, state } | { ok: false, message }
+  Target, exactly one of:
+    ref        an element from ui_snapshot / ui_query (a scroll area such as the graph view \
+               gets the input on its viewport)
+    at         the widget under a global point (ui_snapshot rects are global)
+    at_frame   the widget under a pixel of the last ui_frame: what you see is where it goes. \
+               ui_frame reports frame.origin and frame.scale; global = origin + pixel / scale.
+  gesture: click | double_click | right_click | hover, at the target's center. right_click \
+opens the context menu (graph nodes: open in new tab, hide, bookmark...); find its items \
+with ui_query and press them with ui_invoke.
+  events, in order (a drag: press, move with buttons [\"left\"], ..., release):
+    { kind: move|press|release|doubleclick|wheel|keypress|keyrelease,
+      x, y (relative to a ref element; global for at; frame pixels for at_frame) or centered: true,
+      button: left|right|middle|none, buttons: [held during a move/wheel],
+      modifiers: [shift, ctrl, alt, meta], wheel_delta: 120 per notch up,
+      key: Enter|Escape|Tab|Left|F5|\"a\"|<Qt::Key code>, text }
+  The graph zooms with ctrl + wheel and pans with a left drag on empty space.
+  The result: `message` names the widget that received the input; once its effects \
+drained, `state` is the ui_state (a clicked node is in active_nodes). settled: false means \
+they did not drain in time, e.g. the click opened a dialog that holds the app: look with \
+ui_frame.
+  Modifiers travel with each event; code that reads the global keyboard state instead does \
+not see them. Needs agent-control protocol v5.",
     },
     Topic {
         name: "project",

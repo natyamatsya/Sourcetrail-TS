@@ -2,6 +2,7 @@
 #define QT_UI_CONTROL_H
 
 #include <cstdint>
+#include <functional>
 #include <string>
 #include <vector>
 
@@ -65,14 +66,63 @@ CaptureResult captureElement(
 //! to a PNG. A region of non-zero `regionW` x `regionH` crops the composite, in
 //! its own pixels, before `maxWidth` (when non-zero) downscales the result with
 //! the aspect kept. On success the message names the composited windows
-//! ("windows: 'title' WxH (modal); ..."). Backs the GetFrame command. MUST run
-//! on the Qt GUI thread; needs no accessibility support.
+//! ("windows: 'title' WxH (modal); ...") and ends with " | origin X,Y scale S":
+//! frame pixel (px, py) is the global point (X + px / S, Y + py / S). Backs the
+//! GetFrame command. MUST run on the Qt GUI thread; needs no accessibility support.
 CaptureResult captureScreen(
 	std::uint32_t maxWidth = 0,
 	std::int32_t regionX = 0,
 	std::int32_t regionY = 0,
 	std::int32_t regionW = 0,
 	std::int32_t regionH = 0);
+
+//! Kind of a synthetic input event (mirrors the schema's InputEventKind).
+enum class InputKind
+{
+	MouseMove,
+	MousePress,
+	MouseRelease,
+	MouseDoubleClick,
+	Wheel,
+	KeyPress,
+	KeyRelease
+};
+
+//! One event of a SendInput gesture (see agent_command.fbs, InputEvent). x / y are
+//! relative to the target element for a ref target and global for a point target;
+//! `centered` puts a mouse event at the element's center, or at the point.
+struct InputEvent
+{
+	InputKind kind = InputKind::MouseMove;
+	std::int32_t x = 0;
+	std::int32_t y = 0;
+	bool centered = false;
+	std::int32_t button = 0;	   // 0 none, 1 left, 2 right, 3 middle
+	std::uint32_t buttons = 0;	   // held: bit0 left, bit1 right, bit2 middle
+	std::uint32_t modifiers = 0;   // bit0 Shift, bit1 Ctrl, bit2 Alt, bit3 Meta
+	std::int32_t wheelDelta = 0;   // 120 = one notch up
+	std::uint32_t key = 0;		   // Qt::Key
+	std::string text;
+};
+
+//! Queue a gesture for the element `objectName` + `path` address (a scroll area,
+//! like the graph view, receives it on its viewport). The events are posted, not
+//! sent, so a press that opens a menu or a dialog cannot block the caller; after
+//! the last one `delivered` runs on the GUI thread. A right-button release also
+//! posts the context-menu event a real one would cause. On success the message
+//! names the receiving widget. MUST run on the Qt GUI thread; needs accessibility
+//! support to resolve the ref.
+ControlResult sendInput(
+	const std::string& objectName,
+	const std::vector<RefStep>& path,
+	const std::vector<InputEvent>& events,
+	std::function<void()> delivered);
+
+//! sendInput to the deepest widget under the global point (x, y): reaches what has
+//! no accessible element, like the graph's nodes. Event coordinates are global.
+//! MUST run on the Qt GUI thread; needs no accessibility support.
+ControlResult sendInputAt(
+	std::int32_t x, std::int32_t y, const std::vector<InputEvent>& events, std::function<void()> delivered);
 
 //! Start (`true`) or stop watching for dialogs, for currentDialog(). Callable
 //! from any thread: the watch itself is installed on the GUI thread.

@@ -56,6 +56,42 @@ table GetUiState { }                                                            
 table GetFrame   { format: FrameFormat = Png; max_width: uint32 = 0; region: Rect; }  // -> FrameEnvelope on st.agent.frames
 table GetSnapshot { format: SnapshotFormat = Accessibility; }                         // -> UiSnapshot on st.agent.snapshot
 
+// One event of a SendInput gesture. x / y: pixels, local to the target widget for
+// a ref target, global for a point target (as ui_snapshot rects are); `centered`
+// puts a mouse event at the target's center instead. `buttons` is the bitmask of
+// buttons held during a MouseMove or Wheel (bit0 Left, bit1 Right, bit2 Middle);
+// `modifiers` bit0 Shift, bit1 Ctrl, bit2 Alt, bit3 Meta, carried by the event
+// (handlers reading event->modifiers() see them, code reading the global
+// QApplication::keyboardModifiers() does not). wheel_delta: 120 = one notch up.
+// key: a Qt::Key code; text: the text a key event produces.
+table InputEvent {
+    kind:        InputEventKind;
+    x:           int32;
+    y:           int32;
+    centered:    bool = false;
+    button:      MouseButton;
+    buttons:     uint32;
+    modifiers:   uint32;
+    wheel_delta: int32;
+    key:         uint32;
+    text:        string;
+}
+
+// A gesture of synthetic input events, delivered in order to one widget: the one
+// `target` names (resolved as for InvokeAction; a scroll area such as the graph
+// view receives it on its viewport), or with `use_target_point` the deepest widget
+// under the global point (target_x, target_y), which reaches what has no
+// accessible element, like the graph's nodes. A drag is press, move..., release.
+// Acked once the events are queued for the GUI; a Settled follows once their
+// effects drained, as for a navigation command (answered since protocol v5).
+table SendInput {
+    target:           ElementRef;
+    events:           [InputEvent];
+    use_target_point: bool = false;
+    target_x:         int32;
+    target_y:         int32;
+}
+
 union Command {
     LoadProject,
     Search,
@@ -75,6 +111,7 @@ union Command {
     QueryUi,
     SetLogFilter,
     GetInfo,
+    SendInput,     // appended (protocol v5)
 }
 
 // One message on `st.agent.cmd`. `request_id` correlates a later reply

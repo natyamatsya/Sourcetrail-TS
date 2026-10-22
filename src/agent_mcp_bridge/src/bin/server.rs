@@ -17,6 +17,7 @@ use std::sync::mpsc;
 
 use agent_mcp_bridge::catalog;
 use agent_mcp_bridge::instance::{InstanceManager, StartOpts};
+use agent_mcp_bridge::protocol::{self, InputEvent, InputKind, InputTarget};
 use serde_json::{json, Value};
 use tokio::sync::oneshot;
 
@@ -406,6 +407,144 @@ struct FrameArgs {
 #[derive(serde::Deserialize, rmcp::schemars::JsonSchema)]
 #[schemars(crate = "rmcp::schemars")]
 #[serde(deny_unknown_fields)]
+struct InputEventArg {
+    /// move | press | release | doubleclick | wheel | keypress | keyrelease
+    kind: String,
+    /// Mouse position: relative to the `ref` element, global for `at`, frame pixels
+    /// for `at_frame`.
+    #[serde(default)]
+    x: f64,
+    #[serde(default)]
+    y: f64,
+    /// Put a mouse event at the element's center (`ref`) or at the point itself.
+    #[serde(default)]
+    centered: bool,
+    /// left (default) | right | middle | none, for press/release/doubleclick.
+    #[serde(default)]
+    button: Option<String>,
+    /// Buttons held during a move or wheel (drag): any of left, right, middle.
+    #[serde(default)]
+    buttons: Vec<String>,
+    /// Any of shift, ctrl, alt, meta.
+    #[serde(default)]
+    modifiers: Vec<String>,
+    /// Wheel: 120 = one notch up, -120 one down.
+    #[serde(default)]
+    wheel_delta: i32,
+    /// Key events: a name (Enter, Escape, Tab, Left, F5, ...), one character, or a Qt::Key code.
+    #[serde(default)]
+    key: String,
+    /// Key events: the text the key types (default: the key's character).
+    #[serde(default)]
+    text: String,
+}
+
+#[derive(serde::Deserialize, rmcp::schemars::JsonSchema)]
+#[schemars(crate = "rmcp::schemars")]
+#[serde(deny_unknown_fields)]
+struct InputArgs {
+    /// The element to send to: a `ref` from ui_snapshot / ui_query.
+    #[serde(default, rename = "ref")]
+    target: Option<ElementRefArg>,
+    /// Or the widget under this global point [x, y] (ui_snapshot rects are global).
+    #[serde(default)]
+    at: Option<[i32; 2]>,
+    /// Or under this pixel [x, y] of the last ui_frame (for what only the picture
+    /// shows, like graph nodes); event x/y are then frame pixels too.
+    #[serde(default)]
+    at_frame: Option<[f64; 2]>,
+    /// A ready-made gesture at the target's center: click | double_click | right_click | hover.
+    #[serde(default)]
+    gesture: Option<String>,
+    /// Or the events themselves, delivered in order (a drag: press, move..., release).
+    #[serde(default)]
+    events: Vec<InputEventArg>,
+    #[serde(default)]
+    instance: String,
+}
+
+/// The events a ready-made gesture stands for, all at the target's center.
+fn gesture_events(gesture: &str) -> Result<Vec<InputEvent>, McpError> {
+    let at = |kind, button| InputEvent { kind, centered: true, button, ..Default::default() };
+    Ok(match gesture.trim().to_ascii_lowercase().as_str() {
+        "click" => vec![at(InputKind::Press, 1), at(InputKind::Release, 1)],
+        "double_click" | "doubleclick" => vec![
+            at(InputKind::Press, 1),
+            at(InputKind::Release, 1),
+            at(InputKind::DoubleClick, 1),
+            at(InputKind::Release, 1),
+        ],
+        "right_click" | "rightclick" => vec![at(InputKind::Press, 2), at(InputKind::Release, 2)],
+        "hover" => vec![at(InputKind::Move, 0)],
+        other => {
+            return Err(McpError::invalid_params(
+                format!("gesture must be click, double_click, right_click or hover, not \"{other}\""),
+                None,
+            ))
+        }
+    })
+}
+
+fn mouse_button(name: Option<&str>, kind: InputKind) -> Result<u8, McpError> {
+    let default = if matches!(kind, InputKind::Press | InputKind::Release | InputKind::DoubleClick) { "left" } else { "none" };
+    match name.unwrap_or(default).trim().to_ascii_lowercase().as_str() {
+        "none" => Ok(0),
+        "left" => Ok(1),
+        "right" => Ok(2),
+        "middle" => Ok(3),
+        other => Err(McpError::invalid_params(format!("button must be left, right, middle or none, not \"{other}\""), None)),
+    }
+}
+
+fn bit_mask(names: &[String], table: &[(&str, u32)], what: &str) -> Result<u32, McpError> {
+    names.iter().try_fold(0, |mask, name| {
+        let lower = name.trim().to_ascii_lowercase();
+        table.iter().find(|(n, _)| *n == lower).map(|(_, bit)| mask | bit).ok_or_else(|| {
+            let valid: Vec<&str> = table.iter().map(|(n, _)| *n).collect();
+            McpError::invalid_params(format!("{what} \"{name}\" is not one of {}", valid.join(", ")), None)
+        })
+    })
+}
+
+/// The wire form of one `ui_input` event; `point` maps its position (frame pixels
+/// to global, or as is).
+fn input_event(e: &InputEventArg, point: &dyn Fn(f64, f64) -> anyhow::Result<(i32, i32)>) -> Result<InputEvent, McpError> {
+    let kind = InputKind::parse(&e.kind).ok_or_else(|| {
+        McpError::invalid_params(
+            format!("kind must be move, press, release, doubleclick, wheel, keypress or keyrelease, not \"{}\"", e.kind),
+            None,
+        )
+    })?;
+    let (x, y) = if kind.is_mouse() && !e.centered {
+        point(e.x, e.y).map_err(|err| McpError::invalid_params(format!("{err:#}"), None))?
+    } else {
+        (0, 0)
+    };
+    let (key, text) = if kind.is_mouse() {
+        (0, String::new())
+    } else {
+        let key = protocol::qt_key(&e.key)
+            .ok_or_else(|| McpError::invalid_params(format!("unknown key \"{}\"", e.key), None))?;
+        let text = if !e.text.is_empty() || e.key.chars().count() != 1 { e.text.clone() } else { e.key.clone() };
+        (key, text)
+    };
+    Ok(InputEvent {
+        kind,
+        x,
+        y,
+        centered: e.centered,
+        button: mouse_button(e.button.as_deref(), kind)?,
+        buttons: bit_mask(&e.buttons, &[("left", 1), ("right", 2), ("middle", 4)], "button")?,
+        modifiers: bit_mask(&e.modifiers, &[("shift", 1), ("ctrl", 2), ("alt", 4), ("meta", 8)], "modifier")?,
+        wheel_delta: e.wheel_delta,
+        key,
+        text,
+    })
+}
+
+#[derive(serde::Deserialize, rmcp::schemars::JsonSchema)]
+#[schemars(crate = "rmcp::schemars")]
+#[serde(deny_unknown_fields)]
 struct DescribeArgs {
     /// Topic (or tool name); empty lists the topics.
     #[serde(default)]
@@ -613,6 +752,53 @@ impl SourcetrailServer {
         }
         frame_result(
             self.mgr.call(move |m| m.get_or_attach(&a.instance)?.bridge().get_frame(a.max_width, region)).await?,
+        )
+    }
+
+    #[tool(description = "Mouse and keyboard on a `ref`, a global point `at`, or a pixel of the last ui_frame `at_frame` (graph nodes): a `gesture` or `events`. Returns { ok, message, settled, state }; describe('input').")]
+    async fn ui_input(&self, Parameters(a): Parameters<InputArgs>) -> Result<CallToolResult, McpError> {
+        let targets = usize::from(a.target.is_some()) + usize::from(a.at.is_some()) + usize::from(a.at_frame.is_some());
+        if targets != 1 {
+            return Err(McpError::invalid_params("give exactly one of ref, at, at_frame", None));
+        }
+        if a.gesture.is_some() == !a.events.is_empty() {
+            return Err(McpError::invalid_params("give either a gesture or events", None));
+        }
+        let gesture = a.gesture.as_deref().map(gesture_events).transpose()?;
+        ok_json(
+            self.mgr
+                .call(move |m| {
+                    let bridge = m.get_or_attach(&a.instance)?.bridge();
+                    // Positions: frame pixels for at_frame, else as given.
+                    let to_global = |x: f64, y: f64| -> anyhow::Result<(i32, i32)> {
+                        if a.at_frame.is_some() {
+                            bridge.frame_to_global(x, y)
+                        } else {
+                            Ok((x.round() as i32, y.round() as i32))
+                        }
+                    };
+                    let events = match gesture {
+                        Some(events) => events,
+                        None => a
+                            .events
+                            .iter()
+                            .map(|e| input_event(e, &to_global))
+                            .collect::<Result<Vec<_>, _>>()
+                            .map_err(|e| anyhow::anyhow!(e.message.to_string()))?,
+                    };
+                    let path = a.target.as_ref().map(element_path).unwrap_or_default();
+                    let object_name = a.target.as_ref().map(|t| t.object_name.clone()).unwrap_or_default();
+                    let target = match (a.at, a.at_frame) {
+                        (Some([x, y]), _) => InputTarget::Point { x, y },
+                        (None, Some([px, py])) => {
+                            let (x, y) = bridge.frame_to_global(px, py)?;
+                            InputTarget::Point { x, y }
+                        }
+                        (None, None) => InputTarget::Ref { object_name: &object_name, path: &path },
+                    };
+                    bridge.send_input(&target, &events)
+                })
+                .await?,
         )
     }
 

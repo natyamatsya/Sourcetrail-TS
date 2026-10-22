@@ -22,6 +22,7 @@ bool AgentControlController::isListening() const
 #include <cstdint>
 #include <atomic>
 #include <functional>
+#include <memory>
 #include <mutex>
 #include <regex>
 #include <set>
@@ -195,6 +196,32 @@ DecodedRef decodeElementRef(const fb::ElementRef* ref)
 				 step->name() != nullptr ? step->name()->str() : "",
 				 step->index()});
 		}
+	}
+	return out;
+}
+
+// A schema InputEvent gesture decoded into QtUiControl's form.
+std::vector<utility::qt::InputEvent> decodeInputEvents(const flatbuffers::Vector<flatbuffers::Offset<fb::InputEvent>>* events)
+{
+	std::vector<utility::qt::InputEvent> out;
+	if (events == nullptr)
+	{
+		return out;
+	}
+	for (const auto* e: *events)
+	{
+		utility::qt::InputEvent event;
+		event.kind = static_cast<utility::qt::InputKind>(e->kind());
+		event.x = e->x();
+		event.y = e->y();
+		event.centered = e->centered();
+		event.button = static_cast<std::int32_t>(e->button());
+		event.buttons = e->buttons();
+		event.modifiers = e->modifiers();
+		event.wheelDelta = e->wheel_delta();
+		event.key = e->key();
+		event.text = e->text() != nullptr ? e->text()->str() : "";
+		out.push_back(std::move(event));
 	}
 	return out;
 }
@@ -772,6 +799,39 @@ struct AgentControlController::Impl
 				}));
 			return true;
 		}
+		case fb::Command_SendInput:
+		{
+			const auto* c = envelope->command_as_SendInput();
+			if (c == nullptr || c->events() == nullptr || c->events()->size() == 0)
+			{
+				emitResult(requestId, false, "send_input: no events");
+				return true;
+			}
+			std::vector<utility::qt::InputEvent> events = decodeInputEvents(c->events());
+			const bool atPoint = c->use_target_point();
+			const std::int32_t x = c->target_x();
+			const std::int32_t y = c->target_y();
+			DecodedRef ref = decodeElementRef(c->target());
+			// Resolve and queue on the GUI thread, then ack. The events are posted, so
+			// the ack does not wait for whatever they open (a menu, a dialog); once the
+			// last one is delivered the request waits for Settled like a navigation
+			// command, so the caller can read the state the gesture led to.
+			m_uiScope.spawn(
+				stdexec::schedule(m_schedulers->ui()) |
+				stdexec::then([this, requestId, atPoint, x, y, ref = std::move(ref), events = std::move(events)]() {
+					auto delivered = [this, alive = std::weak_ptr<void>(m_lifetime), requestId]() {
+						if (alive.lock())
+						{
+							expectSettle(requestId);
+						}
+					};
+					const utility::qt::ControlResult r = atPoint
+						? utility::qt::sendInputAt(x, y, events, delivered)
+						: utility::qt::sendInput(ref.objectName, ref.path, events, delivered);
+					emitResult(requestId, r.ok, r.message);
+				}));
+			return true;
+		}
 		case fb::Command_QueryUi:
 		{
 			const auto* c = envelope->command_as_QueryUi();
@@ -930,16 +990,29 @@ struct AgentControlController::Impl
 			return;
 		}
 		emitResult(requestId, true);
-		// Emit `Settled { requestId }` once the fan-out this command dispatched has
-		// drained. handleCommand runs *inside* the drain (as the MessageAgentCommand
-		// listener), so the effects are enqueued but not yet processed. They run on
-		// the app scheduler and on the current tab's, so both get the idle handler.
+		// handleCommand runs *inside* the drain (as the MessageAgentCommand
+		// listener), so the effects are enqueued but not yet processed.
+		expectSettle(requestId);
+	}
+
+	// Emit `Settled { requestId }` once the effects of a request have drained. They
+	// run on the app scheduler and on the current tab's, so both get the idle
+	// handler. A request whose effects dispatched nothing would wait for an idle
+	// edge that never comes, so an app that is quiet already settles it at once.
+	void expectSettle(std::uint64_t requestId)
+	{
 		const TabId tab = TabIds::currentTab();
-		const std::lock_guard<std::mutex> lock(m_settleMutex);
-		m_pendingSettle.push_back(requestId);
-		if (tab != TabId::NONE && tab != TabIds::app() && m_settleTabs.insert(tab).second)
 		{
-			TaskManager::getScheduler(tab)->setIdleHandler([this]() { onIdle(); });
+			const std::lock_guard<std::mutex> lock(m_settleMutex);
+			m_pendingSettle.push_back(requestId);
+			if (tab != TabId::NONE && tab != TabIds::app() && m_settleTabs.insert(tab).second)
+			{
+				TaskManager::getScheduler(tab)->setIdleHandler([this]() { onIdle(); });
+			}
+		}
+		if (quiescent())
+		{
+			flushSettled();
 		}
 	}
 
@@ -1406,6 +1479,8 @@ struct AgentControlController::Impl
 	std::set<TabId> m_settleTabs;	// tab schedulers whose idle handler is flushSettled
 
 	bool m_listening = false;
+	// Expires with the Impl: GUI-thread callbacks that may run after stop() check it.
+	std::shared_ptr<int> m_lifetime = std::make_shared<int>(0);
 };
 
 AgentControlController::AgentControlController(

@@ -69,7 +69,7 @@ definitions finds a whole area with one query:
 |---|---|
 | discovery | `describe` |
 | `instance_*` | `instance_start`, `instance_stop`, `instance_list`, `instance_handshake`, `instance_debug`, `instance_debug_command`, `instance_debug_dump` |
-| `ui_*` | `ui_state`, `ui_frame`, `ui_snapshot`, `ui_query`, `ui_invoke`, `ui_capture` |
+| `ui_*` | `ui_state`, `ui_frame`, `ui_snapshot`, `ui_query`, `ui_invoke`, `ui_input`, `ui_capture` |
 | `nav_*` | `nav_search`, `nav_find`, `nav_activate_node`, `nav_activate_file`, `nav_activate_tab`, `nav_scroll_to_line`, `nav_history` |
 | `events_*` | `events_poll` |
 | `logs_*` | `logs_forward` |
@@ -123,6 +123,9 @@ and returns once the app answers the handshake. A spawned instance:
   `$SOURCETRAIL_MCP_HOME/profiles/<name>`, `"agent"` unless `profile` names another,
   persistent across runs; `profile: "user"` uses your own settings, and `fresh: true`
   a throwaway copy of the profile;
+- runs **without animations** (`--no-animations`, the stored setting untouched)
+  unless `animations: true`: settling does not wait for a graph transition, so a
+  frame taken after a command would catch it midway;
 - has stdin closed and its **stdout/stderr in a console file**
   (`$SOURCETRAIL_MCP_HOME/logs/<id>-<ms>.console.txt`) — never on the bridge's own
   stdout, which carries the MCP protocol.
@@ -141,6 +144,18 @@ are answered. From agent-control protocol v3 the GUI-only commands (`ui_frame`,
 `ui_snapshot`, `ui_query`, `ui_invoke`, `ui_capture`, `instance_handshake`) bypass
 that thread, so the agent can still see such a box and press its button while
 `ui_state` waits.
+
+## Synthetic input
+
+`ui_input` posts mouse, wheel and key events to the app's own widgets (protocol v5),
+for what the accessibility tree does not reach: graph nodes and edges, context menus,
+hover, ctrl+wheel zoom. Aim with `at_frame: [x, y]`, a pixel of the last `ui_frame`
+(its result carries the frame's origin and scale), with `at` (global coordinates), or
+with a `ref`; send a `gesture` (`click`, `double_click`, `right_click`, `hover`) or a
+list of `events`. The result names the widget that got the input and, like a
+navigation command, the state once the app settled: click a graph node and
+`state.active_nodes` is that node. `describe('input')` has the details. Dragging a
+dock separator does not work: the docks ask the platform which buttons are down.
 
 ## Debugging
 

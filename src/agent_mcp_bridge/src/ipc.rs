@@ -35,6 +35,14 @@ fn thoth_token(build_id: &str) -> Option<&str> {
     build_id.split('+').find_map(|t| t.strip_prefix("thoth-ipc:"))
 }
 
+/// "189,175 scale 1" (the tail of a v5 GetFrame ack) as (x, y, scale).
+fn parse_frame_geometry(text: &str) -> Option<(f64, f64, f64)> {
+    let (origin, scale) = text.trim().split_once(" scale ")?;
+    let (x, y) = origin.split_once(',')?;
+    let scale: f64 = scale.trim().parse().ok()?;
+    (scale > 0.0).then_some((x.trim().parse().ok()?, y.trim().parse().ok()?, scale))
+}
+
 /// The error for a command the app refused. The app's own refusals already start
 /// with "rejected: ...", so say it once rather than "X rejected: rejected: ...".
 fn rejection(label: &str, message: &str) -> anyhow::Error {
@@ -67,6 +75,10 @@ pub struct Bridge {
     // surfaced by status() so a corrupt channel is diagnosable rather than just
     // slow.
     dropped_frames: u64,
+    // Where the last ui_frame sat in global coordinates (origin x, origin y,
+    // scale): frame pixel p is the global point origin + p / scale. ui_input's
+    // `at_frame` converts with it.
+    last_frame: Option<(f64, f64, f64)>,
 }
 
 impl Bridge {
@@ -102,6 +114,7 @@ impl Bridge {
             event_log: VecDeque::new(),
             handshake: Value::Null,
             dropped_frames: 0,
+            last_frame: None,
         };
         // Best-effort handshake: detect protocol skew up front, but never fail the
         // connect over it (status/read-only use must work against a down or old app).
@@ -738,8 +751,53 @@ impl Bridge {
         let frame = self.read_frame(id, OP_TIMEOUT)?;
         // The ack names the composited windows ("windows: 'title' WxH (modal); ..."),
         // so a dialog over the main window shows in the result, not only in pixels.
-        let windows = message.strip_prefix("windows: ").unwrap_or(&message).to_string();
-        Ok(json!({ "ok": true, "frame": frame, "windows": windows }))
+        // From v5 it ends with " | origin X,Y scale S": where the frame sits on screen.
+        let (windows, geometry) = match message.split_once(" | origin ") {
+            Some((windows, geometry)) => (windows, parse_frame_geometry(geometry)),
+            None => (message.as_str(), None),
+        };
+        let windows = windows.strip_prefix("windows: ").unwrap_or(windows).to_string();
+        let mut v = json!({ "ok": true, "frame": frame, "windows": windows });
+        if let Some((x, y, scale)) = geometry {
+            self.last_frame = Some((x, y, scale));
+            v["frame"]["origin"] = json!({ "x": x, "y": y });
+            v["frame"]["scale"] = json!(scale);
+        }
+        Ok(v)
+    }
+
+    /// The global point a pixel of the last `get_frame` shows.
+    pub fn frame_to_global(&self, px: f64, py: f64) -> Result<(i32, i32)> {
+        let (x0, y0, scale) = self.last_frame.ok_or_else(|| {
+            anyhow!("no frame to map from: take one with ui_frame first (an app on agent-control protocol v5+)")
+        })?;
+        Ok(((x0 + px / scale).round() as i32, (y0 + py / scale).round() as i32))
+    }
+
+    /// Deliver a gesture of synthetic input events, then wait until their effects
+    /// drained and read the state they led to. Returns `{ ok, message, settled,
+    /// state }`; a target that does not resolve is `{ ok: false, message }`. When the
+    /// effects do not drain in time (a click opened a dialog that holds the app),
+    /// `settled` is false and there is no state.
+    pub fn send_input(&mut self, target: &protocol::InputTarget, events: &[protocol::InputEvent]) -> Result<Value> {
+        let app_version = self.app_protocol_version();
+        if app_version < protocol::SEND_INPUT_SINCE {
+            bail!(
+                "this app speaks agent-control protocol v{app_version} and cannot take synthetic input                  (needs v{}): rebuild the app",
+                protocol::SEND_INPUT_SINCE
+            );
+        }
+        let id = self.next_id();
+        self.send(&protocol::send_input(id, target, events))?;
+        let (ok, message, _) = self.await_ack(id, OP_TIMEOUT)?;
+        if !ok {
+            return Ok(json!({ "ok": false, "message": message }));
+        }
+        if let Err(e) = self.await_settled(id, OP_TIMEOUT) {
+            return Ok(json!({ "ok": true, "message": message, "settled": false, "note": format!("{e:#}") }));
+        }
+        let state = self.get_ui_state()?;
+        Ok(json!({ "ok": true, "message": message, "settled": true, "state": state }))
     }
 
     /// Screenshot a single element by its ref. The app grabs it on the GUI thread,
@@ -851,7 +909,15 @@ impl Bridge {
 
 #[cfg(test)]
 mod tests {
-    use super::rejection;
+    use super::{parse_frame_geometry, rejection};
+
+    #[test]
+    fn frame_geometry_parses() {
+        assert_eq!(parse_frame_geometry("189,175 scale 1"), Some((189.0, 175.0, 1.0)));
+        assert_eq!(parse_frame_geometry("-10,4 scale 0.571429"), Some((-10.0, 4.0, 0.571429)));
+        assert_eq!(parse_frame_geometry("189,175"), None);
+        assert_eq!(parse_frame_geometry("1,2 scale 0"), None);
+    }
 
     #[test]
     fn a_rejection_says_rejected_once() {

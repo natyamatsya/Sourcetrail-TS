@@ -89,13 +89,28 @@ enum AppState : byte {
 //      the message thread, so they answer while a dialog blocks it
 //   4  AppState Loading is reported: from a load request until the load's first
 //      tab has its first activation; navigation commands are refused meanwhile
-enum ProtocolVersion : uint { Current = 4 }
+//   5  SendInput (synthetic mouse / keyboard gestures), and GetFrame's ack
+//      reports the frame's origin and scale in global coordinates
+enum ProtocolVersion : uint { Current = 5 }
 
 enum RefreshMode : byte { None = 0, UpdatedFiles = 1, AllFiles = 2 }
 
 enum ViewKind : byte { Unknown = 0, Graph = 1, Code = 2, Search = 3, Bookmarks = 4, Errors = 5 }
 
 enum FrameFormat : byte { Png = 0, Jpeg = 1, RawRgba = 2 }
+
+// Synthetic input (SendInput, protocol v5): the kind of one event of a gesture,
+// and the button a press / release / double-click concerns.
+enum InputEventKind : byte {
+    MouseMove = 0,
+    MousePress = 1,
+    MouseRelease = 2,
+    MouseDoubleClick = 3,
+    Wheel = 4,
+    KeyPress = 5,
+    KeyRelease = 6
+}
+enum MouseButton : byte { NoButton = 0, Left = 1, Right = 2, Middle = 3 }
 
 // Structural UI snapshot format (see agent_snapshot.fbs / DESIGN_AGENT_UI_SNAPSHOT.md).
 enum SnapshotFormat : byte { Accessibility = 0, ObjectTree = 1 }

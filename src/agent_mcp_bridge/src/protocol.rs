@@ -131,6 +131,152 @@ pub const GET_FRAME_SINCE: u32 = 2;
 /// The protocol version from which the app reports `Loading` until a load is done.
 pub const LOAD_STATE_SINCE: u32 = 4;
 
+/// The protocol version from which the app answers `SendInput`.
+pub const SEND_INPUT_SINCE: u32 = 5;
+
+/// One synthetic input event (see agent_command.fbs, InputEvent).
+#[derive(Debug, Clone, Default, PartialEq)]
+pub struct InputEvent {
+    pub kind: InputKind,
+    pub x: i32,
+    pub y: i32,
+    pub centered: bool,
+    /// 0 none, 1 left, 2 right, 3 middle.
+    pub button: u8,
+    /// Held buttons: bit0 left, bit1 right, bit2 middle.
+    pub buttons: u32,
+    /// bit0 Shift, bit1 Ctrl, bit2 Alt, bit3 Meta.
+    pub modifiers: u32,
+    pub wheel_delta: i32,
+    /// A Qt::Key code.
+    pub key: u32,
+    pub text: String,
+}
+
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub enum InputKind {
+    #[default]
+    Move,
+    Press,
+    Release,
+    DoubleClick,
+    Wheel,
+    KeyPress,
+    KeyRelease,
+}
+
+impl InputKind {
+    /// The kind a `ui_input` event names: move, press, release, doubleclick,
+    /// wheel, keypress, keyrelease.
+    pub fn parse(name: &str) -> Option<Self> {
+        Some(match name.trim().to_ascii_lowercase().as_str() {
+            "move" => Self::Move,
+            "press" => Self::Press,
+            "release" => Self::Release,
+            "doubleclick" | "double_click" => Self::DoubleClick,
+            "wheel" => Self::Wheel,
+            "keypress" | "key_press" => Self::KeyPress,
+            "keyrelease" | "key_release" => Self::KeyRelease,
+            _ => return None,
+        })
+    }
+
+    fn fb(self) -> fb::InputEventKind {
+        match self {
+            Self::Move => fb::InputEventKind::MouseMove,
+            Self::Press => fb::InputEventKind::MousePress,
+            Self::Release => fb::InputEventKind::MouseRelease,
+            Self::DoubleClick => fb::InputEventKind::MouseDoubleClick,
+            Self::Wheel => fb::InputEventKind::Wheel,
+            Self::KeyPress => fb::InputEventKind::KeyPress,
+            Self::KeyRelease => fb::InputEventKind::KeyRelease,
+        }
+    }
+
+    pub fn is_mouse(self) -> bool {
+        !matches!(self, Self::KeyPress | Self::KeyRelease)
+    }
+}
+
+/// Where a gesture goes: the element a ref names, or the widget under a global point.
+pub enum InputTarget<'a> {
+    Ref { object_name: &'a str, path: &'a [(String, String, u32)] },
+    Point { x: i32, y: i32 },
+}
+
+pub fn send_input(request_id: u64, target: &InputTarget, events: &[InputEvent]) -> Vec<u8> {
+    let mut b = FlatBufferBuilder::new();
+    let built: Vec<_> = events
+        .iter()
+        .map(|e| {
+            let text = b.create_string(&e.text);
+            fb::InputEvent::create(
+                &mut b,
+                &fb::InputEventArgs {
+                    kind: e.kind.fb(),
+                    x: e.x,
+                    y: e.y,
+                    centered: e.centered,
+                    button: fb::MouseButton(e.button as i8),
+                    buttons: e.buttons,
+                    modifiers: e.modifiers,
+                    wheel_delta: e.wheel_delta,
+                    key: e.key,
+                    text: Some(text),
+                },
+            )
+        })
+        .collect();
+    let events = b.create_vector(&built);
+    let (target, use_target_point, target_x, target_y) = match target {
+        InputTarget::Ref { object_name, path } => (Some(build_element_ref(&mut b, object_name, path)), false, 0, 0),
+        InputTarget::Point { x, y } => (None, true, *x, *y),
+    };
+    let c = fb::SendInput::create(
+        &mut b,
+        &fb::SendInputArgs { target, events: Some(events), use_target_point, target_x, target_y },
+    );
+    finish(b, request_id, fb::Command::SendInput, c.as_union_value())
+}
+
+/// A Qt::Key code for a key name (Enter, Escape, Tab, Backspace, Delete, Space,
+/// Left/Up/Right/Down, Home, End, PageUp, PageDown, F1-F12), a single
+/// character, or a number given as is.
+pub fn qt_key(name: &str) -> Option<u32> {
+    let name = name.trim();
+    if let Ok(code) = name.parse::<u32>() {
+        if name.len() > 1 {
+            return Some(code);
+        }
+    }
+    let mut chars = name.chars();
+    if let (Some(c), None) = (chars.next(), chars.next()) {
+        // Qt::Key for a printable character is its upper-case Latin-1 code.
+        return Some(c.to_ascii_uppercase() as u32);
+    }
+    let lower = name.to_ascii_lowercase();
+    if let Some(n) = lower.strip_prefix('f').and_then(|n| n.parse::<u32>().ok()).filter(|n| (1..=12).contains(n)) {
+        return Some(0x0100_0030 + n - 1);
+    }
+    Some(match lower.as_str() {
+        "escape" | "esc" => 0x0100_0000,
+        "tab" => 0x0100_0001,
+        "backspace" => 0x0100_0003,
+        "return" | "enter" => 0x0100_0004,
+        "delete" | "del" => 0x0100_0007,
+        "home" => 0x0100_0010,
+        "end" => 0x0100_0011,
+        "left" => 0x0100_0012,
+        "up" => 0x0100_0013,
+        "right" => 0x0100_0014,
+        "down" => 0x0100_0015,
+        "pageup" | "page_up" => 0x0100_0016,
+        "pagedown" | "page_down" => 0x0100_0017,
+        "space" => 0x20,
+        _ => return None,
+    })
+}
+
 /// The screen as a user sees it, downscaled to `max_width` when non-zero;
 /// `region` (`[x, y, w, h]` in the frame's own pixels) crops it first.
 pub fn get_frame(request_id: u64, max_width: u32, region: Option<[i32; 4]>) -> Vec<u8> {
@@ -671,6 +817,43 @@ mod tests {
         assert_eq!(env.command_type(), fb::Command::GetFrame);
         let r = env.command_as_get_frame().unwrap().region().copied().unwrap();
         assert_eq!((r.x(), r.y(), r.w(), r.h()), (10, 20, 300, 200));
+    }
+
+    #[test]
+    fn send_input_command_roundtrips() {
+        let click = [
+            InputEvent { kind: InputKind::Press, centered: true, button: 1, ..Default::default() },
+            InputEvent { kind: InputKind::Release, x: 3, y: 4, button: 1, modifiers: 0b10, ..Default::default() },
+            InputEvent { kind: InputKind::KeyPress, key: 0x0100_0004, text: "\r".into(), ..Default::default() },
+        ];
+        let at_point = send_input(1, &InputTarget::Point { x: 500, y: 300 }, &click);
+        let c = cmd(&at_point).command_as_send_input().unwrap();
+        assert!(c.use_target_point());
+        assert_eq!((c.target_x(), c.target_y()), (500, 300));
+        let events = c.events().unwrap();
+        assert_eq!(events.len(), 3);
+        assert_eq!(events.get(0).kind(), fb::InputEventKind::MousePress);
+        assert!(events.get(0).centered());
+        assert_eq!(events.get(1).button(), fb::MouseButton::Left);
+        assert_eq!((events.get(1).x(), events.get(1).y(), events.get(1).modifiers()), (3, 4, 2));
+        assert_eq!(events.get(2).key(), 0x0100_0004);
+
+        let path = vec![("button".to_string(), "Back".to_string(), 0)];
+        let by_ref = send_input(2, &InputTarget::Ref { object_name: "undo_button", path: &path }, &click[..1]);
+        let c = cmd(&by_ref).command_as_send_input().unwrap();
+        assert!(!c.use_target_point());
+        assert_eq!(c.target().unwrap().object_name(), Some("undo_button"));
+    }
+
+    #[test]
+    fn keys_and_kinds_parse() {
+        assert_eq!(qt_key("a"), Some(0x41));
+        assert_eq!(qt_key("Enter"), Some(0x0100_0004));
+        assert_eq!(qt_key("F5"), Some(0x0100_0034));
+        assert_eq!(qt_key("16777216"), Some(0x0100_0000));
+        assert_eq!(qt_key("bogus"), None);
+        assert_eq!(InputKind::parse("DoubleClick"), Some(InputKind::DoubleClick));
+        assert_eq!(InputKind::parse("tap"), None);
     }
 
     #[test]

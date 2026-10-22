@@ -182,10 +182,12 @@ things on top, added here (not a parallel C++ command hierarchy):
 
 ## Protocol handshake & versioning
 
-> **Since written:** `Current` is 3 (2026-10-22). v2 answers `GetFrame` (a composite of
+> **Since written:** `Current` is 5 (2026-10-22). v2 answers `GetFrame` (a composite of
 > every visible window, with an optional `region`); v3 adds `UiState.dialog` and moves
 > the commands that only need the GUI thread off the message bus, so they answer while a
-> modal question blocks it. The version log, and the rule for when to bump (an older app
+> modal question blocks it; v4 reports `Loading` until a load has its tab up; v5 adds
+> `SendInput` (see *Synthetic input*) and has `GetFrame`'s ack report the frame's origin
+> and scale. The version log, and the rule for when to bump (an older app
 > would answer *silently wrong*), live in `agent_common.fbs`.
 
 Two version layers meet at the bridge, and only one was covered before this section:
@@ -593,6 +595,31 @@ events are escape hatches for the long tail.
 - **Tier 3 — `InvokeMethod` / `SendInputEvent`**: powerful escape hatches (arbitrary slot
   invocation, synthetic input) — **capability-gated and logged**, off unless explicitly
   enabled for a trusted session.
+
+### Synthetic input (`SendInput`, v5)
+
+> Implemented without the gate. The events are Qt events posted to this process's own
+> widgets (no OS-level injection), so they reach nothing `InvokeAction` cannot already
+> press, through the same local channel.
+
+`SendInput { target, events }` delivers a gesture to a widget: mouse move/press/release/
+double-click, wheel (with modifiers: ctrl+wheel zooms the graph), key press/release. It
+covers what the accessibility tree does not: graph nodes and edges (`QGraphicsItem`s, not
+widgets), context menus, drags inside one widget, hover.
+
+- **Targets.** An `ElementRef` (coordinates relative to the element, or its centre), or a
+  global point. The bridge's `ui_input` also takes `at_frame: [x, y]`, a pixel of the last
+  `ui_frame`: `GetFrame`'s ack reports the frame's origin and scale for the conversion.
+- **Receiver.** The widget at the point: an open popup first, then the active modal, then
+  the top-levels; a scroll area gets the input on its viewport.
+- **Posted, not sent.** A press that opens a menu or a dialog would block the caller in
+  `exec()`, and the ack with it. The ack names the receiver; once the last event is
+  delivered (inside the nested loop, if one opened) the request waits for `Settled` like
+  a navigation command.
+- **Limit.** Code that asks which buttons are down rather than reading the event does not
+  see posted presses: `QGuiApplication::mouseButtons()` follows window-system input only.
+  The dock separators check it (and, on Windows, `GetKeyState`), so dragging one to resize
+  a dock does nothing; close or float the dock with its title-bar buttons instead.
 
 ## Optimistic control — structural hashes (staleness detection)
 
