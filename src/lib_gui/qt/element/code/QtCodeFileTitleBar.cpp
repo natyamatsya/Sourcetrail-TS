@@ -49,6 +49,8 @@ QtCodeFileTitleBar::QtCodeFileTitleBar(QWidget* parent, bool isHovering, bool is
 
 	m_expandButton->setToolTip(QStringLiteral("expand"));
 	m_collapseButton->setToolTip(QStringLiteral("collapse"));
+	m_expandButton->setAccessibleName(tr("Expand"));
+	m_collapseButton->setAccessibleName(tr("Collapse"));
 
 	for (QtSelfRefreshIconButton* button: {m_expandButton, m_collapseButton})
 	{

@@ -32,6 +32,7 @@ QtSearchBar::QtSearchBar()
 	m_homeButton = new QtSearchBarButton(QtResources::SEARCH_VIEW_HOME);
 	m_homeButton->setObjectName(QStringLiteral("home_button"));
 	m_homeButton->setToolTip(QtActions::toOverview().tooltip());
+	m_homeButton->setAccessibleName(QtActions::toOverview().name());
 	layout->addWidget(m_homeButton);
 	connect(m_homeButton, &QPushButton::clicked, this, &QtSearchBar::homeButtonClicked);
 
@@ -61,6 +62,7 @@ QtSearchBar::QtSearchBar()
 	m_searchButton = new QtSearchBarButton(QtResources::SEARCH_VIEW_SEARCH);
 	m_searchButton->setObjectName(QStringLiteral("search_button"));
 	m_searchButton->setToolTip(QtActions::executeFindSymbol().tooltip());
+	m_searchButton->setAccessibleName(QtActions::executeFindSymbol().name());
 	layout->addWidget(m_searchButton);
 
 	connect(m_searchButton, &QPushButton::clicked, m_searchBox, &QtSmartSearchBox::startSearch);

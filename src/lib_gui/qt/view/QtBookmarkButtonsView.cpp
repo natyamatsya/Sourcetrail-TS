@@ -40,6 +40,7 @@ QtBookmarkButtonsView::QtBookmarkButtonsView(ViewLayout* viewLayout)
 	m_createBookmarkButton = new QtSearchBarButton(QtResources::BOOKMARK_VIEW_BOOKMARK_EDIT_BOOKMARK_ICON);
 	m_createBookmarkButton->setObjectName(QStringLiteral("bookmark_button"));
 	m_createBookmarkButton->setToolTip(QtActions::bookmarkActiveSymbol().tooltip());
+	m_createBookmarkButton->setAccessibleName(QtActions::bookmarkActiveSymbol().name());
 	m_createBookmarkButton->setEnabled(false);
 	layout->addWidget(m_createBookmarkButton);
 
@@ -48,6 +49,7 @@ QtBookmarkButtonsView::QtBookmarkButtonsView(ViewLayout* viewLayout)
 	m_showBookmarksButton = new QtSearchBarButton(QtResources::BOOKMARK_VIEW_BOOKMARK_LIST_ICON);
 	m_showBookmarksButton->setObjectName(QStringLiteral("show_bookmark_button"));
 	m_showBookmarksButton->setToolTip(QtActions::bookmarkManager().tooltip());
+	m_showBookmarksButton->setAccessibleName(QtActions::bookmarkManager().name());
 	layout->addWidget(m_showBookmarksButton);
 
 	connect(m_showBookmarksButton, &QPushButton::clicked, this, &QtBookmarkButtonsView::showBookmarksClicked);

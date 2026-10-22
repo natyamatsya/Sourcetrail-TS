@@ -19,8 +19,11 @@
 import srctrl.messaging;
 #endif
 
+// m_historyHiddenAt starts at the epoch: no history list was ever hidden, so the
+// first press is never mistaken for the click that just closed one. Starting it at
+// now() swallowed every press within 250 ms of the view being built, which an
+// agent driving the app right after opening a project hit every time.
 QtUndoRedo::QtUndoRedo()
-	:  m_historyHiddenAt(TimeStamp::now())
 {
 	setObjectName(QStringLiteral("undo_redo_bar"));
 

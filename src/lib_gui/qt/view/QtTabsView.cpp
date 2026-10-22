@@ -55,6 +55,7 @@ QtTabsView::QtTabsView(ViewLayout* viewLayout)
 	QPushButton* addButton = new QtSelfRefreshIconButton(QStringLiteral(""), QtResources::TABS_VIEW_ADD, "tab/bar/button");
 	addButton->setObjectName(QStringLiteral("add_button"));
 	addButton->setToolTip(QtActions::newTab().tooltip());
+	addButton->setAccessibleName(QtActions::newTab().name());
 	addButton->setIconSize(QSize(14, 14));
 
 	QWidget* back = new QWidget();

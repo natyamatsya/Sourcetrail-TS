@@ -35,6 +35,7 @@ QtRefreshView::QtRefreshView(ViewLayout* viewLayout): RefreshView(viewLayout)
 	QtSearchBarButton* refreshButton = new QtSearchBarButton(QtResources::REFRESH_VIEW_REFRESH);
 	refreshButton->setObjectName(QStringLiteral("refresh_button"));
 	refreshButton->setToolTip(QtActions::refresh().tooltip());
+	refreshButton->setAccessibleName(QtActions::refresh().name());
 	QWidget::connect(refreshButton, &QPushButton::clicked, []()
 	{
 		MessageIndexingShowDialog().dispatch();

@@ -43,6 +43,7 @@ QtScreenSearchBox::QtScreenSearchBox(
 	{
 		m_searchButton = new QtSelfRefreshIconButton("", QtResources::SEARCH_VIEW_SEARCH, "screen_search/button");
 		m_searchButton->setObjectName(QStringLiteral("search_button"));
+		m_searchButton->setAccessibleName(tr("Search on screen"));
 		m_searchButton->setIconSize(QSize(12, 12));
 		layout->addWidget(m_searchButton);
 
@@ -77,11 +78,13 @@ QtScreenSearchBox::QtScreenSearchBox(
 		m_prevButton = new QtSelfRefreshIconButton("", QtResources::CODE_VIEW_ARROW_LEFT, "screen_search/button");
 		m_prevButton->setToolTip(QtActions::screenSearchPrevious().tooltip());
 		m_prevButton->setObjectName(QStringLiteral("prev_button"));
+		m_prevButton->setAccessibleName(QtActions::screenSearchPrevious().name());
 		m_prevButton->setIconSize(QSize(12, 12));
 
 		m_nextButton = new QtSelfRefreshIconButton("", QtResources::CODE_VIEW_ARROW_RIGHT, "screen_search/button");
 		m_nextButton->setToolTip(QtActions::screenSearchNext().tooltip());
 		m_nextButton->setObjectName(QStringLiteral("next_button"));
+		m_nextButton->setAccessibleName(QtActions::screenSearchNext().name());
 		m_nextButton->setIconSize(QSize(12, 12));
 
 		layout->addWidget(m_prevButton);
@@ -103,6 +106,7 @@ QtScreenSearchBox::QtScreenSearchBox(
 		m_closeButton = new QtSelfRefreshIconButton("", QtResources::SCREEN_SEARCH_VIEW_CLOSE, "screen_search/button");
 		m_closeButton->setToolTip(QtActions::screenSearchClose().tooltip());
 		m_closeButton->setObjectName(QStringLiteral("close_button"));
+		m_closeButton->setAccessibleName(QtActions::screenSearchClose().name());
 		m_closeButton->setIconSize(QSize(15, 15));
 		layout->addWidget(m_closeButton);
 

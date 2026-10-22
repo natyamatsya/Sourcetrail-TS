@@ -101,6 +101,7 @@ QtGraphView::QtGraphView(ViewLayout *viewLayout)
 			m_expandButton = new QtSelfRefreshIconButton(QLatin1String(""), QtResources::GRAPH_VIEW_GRAPH, "search/button");
 			m_expandButton->setObjectName(QStringLiteral("expand_button"));
 			m_expandButton->setToolTip(tr("show trail controls"));
+			m_expandButton->setAccessibleName(tr("Show trail controls"));
 			m_expandButton->setIconSize(QSize(16, 16));
 			m_expandButton->setGeometry(0, 0, 26, 26);
 			connect(m_expandButton, &QPushButton::clicked, this, &QtGraphView::clickedExpand);
@@ -115,6 +116,7 @@ QtGraphView::QtGraphView(ViewLayout *viewLayout)
 			m_collapseButton = new QtSelfRefreshIconButton(QLatin1String(""), QtResources::GRAPH_VIEW_GRAPH_ARROW, "search/button", ui);
 			m_collapseButton->setObjectName(QStringLiteral("collapse_button"));
 			m_collapseButton->setToolTip(tr("hide trail controls"));
+			m_collapseButton->setAccessibleName(tr("Hide trail controls"));
 			m_collapseButton->setIconSize(QSize(16, 16));
 			connect(m_collapseButton, &QPushButton::clicked, this, &QtGraphView::clickedCollapse);
 
@@ -122,16 +124,21 @@ QtGraphView::QtGraphView(ViewLayout *viewLayout)
 			m_customTrailButton->setObjectName(QStringLiteral("trail_button"));
 			m_customTrailButton->setIconSize(QSize(16, 16));
 			m_customTrailButton->setToolTip(tr("custom trail"));
+			m_customTrailButton->setAccessibleName(tr("Custom trail"));
 			m_customTrailButton->setIconPath(QtResources::GRAPH_VIEW_GRAPH_CUSTOM);
 			connect(m_customTrailButton, &QPushButton::clicked, this, &QtGraphView::clickedCustomTrail);
 
 			m_forwardTrailButton = new QtSelfRefreshIconButton(QLatin1String(""), FilePath(), "search/button", ui);
 			m_forwardTrailButton->setObjectName(QStringLiteral("trail_button"));
+			// The tooltip follows the active symbol (callees, derived classes, ...);
+			// the name says which button this is.
+			m_forwardTrailButton->setAccessibleName(tr("Forward trail"));
 			m_forwardTrailButton->setIconSize(QSize(16, 16));
 			connect(m_forwardTrailButton, &QPushButton::clicked, this, &QtGraphView::clickedForwardTrail);
 
 			m_backwardTrailButton = new QtSelfRefreshIconButton(QLatin1String(""), FilePath(), "search/button", ui);
 			m_backwardTrailButton->setObjectName(QStringLiteral("trail_button"));
+			m_backwardTrailButton->setAccessibleName(tr("Backward trail"));
 			m_backwardTrailButton->setIconSize(QSize(16, 16));
 			connect(m_backwardTrailButton, &QPushButton::clicked, this, &QtGraphView::clickedBackwardTrail);
 

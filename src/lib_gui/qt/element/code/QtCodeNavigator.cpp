@@ -81,6 +81,8 @@ QtCodeNavigator::QtCodeNavigator(QWidget* parent)
 
 			m_prevReferenceButton->setToolTip(QtActions::previousReference().tooltip());
 			m_nextReferenceButton->setToolTip(QtActions::nextReference().tooltip());
+			m_prevReferenceButton->setAccessibleName(QtActions::previousReference().name());
+			m_nextReferenceButton->setAccessibleName(QtActions::nextReference().name());
 
 			m_prevReferenceButton->setIconSize(QSize(12, 12));
 			m_nextReferenceButton->setIconSize(QSize(12, 12));
