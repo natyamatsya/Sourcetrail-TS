@@ -1,5 +1,7 @@
 #include "QtCodeArea.h"
 
+#include "ActivationStateMachine.h"
+
 #ifndef SRCTRL_MODULE_BUILD
 #include "ApplicationSettings.h"
 #include "ColorScheme.h"
@@ -622,6 +624,7 @@ void QtCodeArea::ensureLocationIdVisible(Id locationId, int parentWidth, bool an
 		anim->setEndValue(newValue);
 		anim->setEasingCurve(QEasingCurve::InOutQuad);
 		anim->start();
+		utility::holdWhileRunning(anim, ActivationStateMachine::instance()->drawing("code"));
 	}
 	else
 	{

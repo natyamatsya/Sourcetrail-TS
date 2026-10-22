@@ -1,6 +1,8 @@
 #include "QtCodeNavigator.h"
 #include "UiPost.h"
 
+#include "ActivationStateMachine.h"
+
 #ifndef SRCTRL_MODULE_BUILD
 #include "ApplicationSettings.h"
 #endif
@@ -658,7 +660,8 @@ void QtCodeNavigator::scrollTo(const CodeScrollParams& params, bool animated, bo
 		// `this` as the context: the scroll is cancelled with the navigator. Without
 		// it, a navigator destroyed within these 100 ms (opening another project
 		// closes the tabs) left the timer to call into a dead m_current (_purecall).
-		QTimer::singleShot(100, this, func);
+		// The code view has not drawn the activation until this scroll is done.
+		QTimer::singleShot(100, this, [func, drawing = ActivationStateMachine::instance()->drawing("code")]() { func(); });
 	}
 	else
 	{

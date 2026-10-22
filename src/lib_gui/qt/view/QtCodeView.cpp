@@ -1,6 +1,8 @@
 #include "QtCodeView.h"
 #include "UiPost.h"
 
+#include "ActivationStateMachine.h"
+
 #include "CodeController.h"
 #include "tracing.h"
 #include "QtResources.h"
@@ -88,7 +90,7 @@ void QtCodeView::clearMatches()
 
 void QtCodeView::clear()
 {
-	execution::qt::onUi(QtViewWidgetWrapper::getWidgetOfView(this), [=, this]() { m_widget->clear(); });
+	execution::qt::onUi(QtViewWidgetWrapper::getWidgetOfView(this), [=, this, drawing = ActivationStateMachine::instance()->drawing("code")]() { m_widget->clear(); });
 }
 
 bool QtCodeView::showsErrors() const
@@ -102,7 +104,7 @@ void QtCodeView::showSnippets(
 	const CodeScrollParams& scrollParams)
 {
 	using enum QtCodeNavigator::Mode;
-	execution::qt::onUi(QtViewWidgetWrapper::getWidgetOfView(this), [=, this]() {
+	execution::qt::onUi(QtViewWidgetWrapper::getWidgetOfView(this), [=, this, drawing = ActivationStateMachine::instance()->drawing("code")]() {
 		TRACE("show snippets");
 
 		m_widget->setMode(MODE_LIST);
@@ -129,7 +131,7 @@ void QtCodeView::showSingleFile(
 	const CodeFileParams& file, const CodeParams& params, const CodeScrollParams& scrollParams)
 {
 	using enum QtCodeNavigator::Mode;
-	execution::qt::onUi(QtViewWidgetWrapper::getWidgetOfView(this), [=, this]() {
+	execution::qt::onUi(QtViewWidgetWrapper::getWidgetOfView(this), [=, this, drawing = ActivationStateMachine::instance()->drawing("code")]() {
 		TRACE("show single file");
 
 		bool animatedScroll = !m_widget->isInListMode();
@@ -163,7 +165,7 @@ void QtCodeView::showSingleFile(
 
 void QtCodeView::updateSourceLocations(const std::vector<CodeFileParams>& files)
 {
-	execution::qt::onUi(QtViewWidgetWrapper::getWidgetOfView(this), [=, this]() {
+	execution::qt::onUi(QtViewWidgetWrapper::getWidgetOfView(this), [=, this, drawing = ActivationStateMachine::instance()->drawing("code")]() {
 		TRACE("update source locations");
 
 		for (const CodeFileParams& file: files)
@@ -188,7 +190,9 @@ void QtCodeView::updateSourceLocations(const std::vector<CodeFileParams>& files)
 
 void QtCodeView::scrollTo(const CodeScrollParams& params, bool animated)
 {
-	execution::qt::onUi(QtViewWidgetWrapper::getWidgetOfView(this), [=, this]() { m_widget->scrollTo(params, animated, true); });
+	execution::qt::onUi(QtViewWidgetWrapper::getWidgetOfView(this), [=, this, drawing = ActivationStateMachine::instance()->drawing("code")]() {
+		m_widget->scrollTo(params, animated, true);
+	});
 }
 
 void QtCodeView::coFocusTokenIds(const std::vector<Id>& coFocusedTokenIds)

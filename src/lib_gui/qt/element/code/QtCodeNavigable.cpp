@@ -1,5 +1,8 @@
 #include "QtCodeNavigable.h"
 
+#include "ActivationStateMachine.h"
+#include "utilityQt.h"
+
 #include <QPropertyAnimation>
 #include <QScrollArea>
 #include <QScrollBar>
@@ -96,6 +99,7 @@ void QtCodeNavigable::ensureWidgetVisibleAnimated(
 			anim->setEndValue(scrollBar->value() + value);
 			anim->setEasingCurve(QEasingCurve::InOutQuad);
 			anim->start();
+			utility::holdWhileRunning(anim, ActivationStateMachine::instance()->drawing("code"));
 		}
 		else
 		{
@@ -186,6 +190,7 @@ void QtCodeNavigable::ensurePercentVisibleAnimated(
 			anim->setEndValue(value);
 			anim->setEasingCurve(QEasingCurve::InOutQuad);
 			anim->start();
+			utility::holdWhileRunning(anim, ActivationStateMachine::instance()->drawing("code"));
 		}
 		else
 		{

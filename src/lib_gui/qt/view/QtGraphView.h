@@ -145,6 +145,9 @@ private:
 	bool m_isIndexedList = false;
 
 	std::shared_ptr<QSequentialAnimationGroup> m_transition;
+	// The activation's drawing ticket while the transition plays: released once
+	// finishedTransition has run (which centers the active node, animated too).
+	std::shared_ptr<void> m_transitionDrawing;
 	QPointF m_sceneRectOffset;
 
 	QtScrollSpeedChangeListener m_scrollSpeedChangeListenerHorizontal;

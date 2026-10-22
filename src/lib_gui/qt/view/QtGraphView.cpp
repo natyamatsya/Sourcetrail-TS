@@ -1,5 +1,6 @@
 #include "QtGraphView.h"
 
+#include "ActivationStateMachine.h"
 #ifndef SRCTRL_MODULE_BUILD
 #include "ApplicationSettings.h"
 #endif
@@ -343,7 +344,8 @@ void QtGraphView::rebuildGraph(std::shared_ptr<Graph> graph, const std::vector<s
 	const std::vector<std::shared_ptr<DummyEdge>> &edges, const GraphParams params)
 {
 	using enum Graph::TrailMode;
-	execution::qt::onUi(QtViewWidgetWrapper::getWidgetOfView(this), [=, this]()
+	// Held until the graph shows the result: the end of its transition, if any.
+	execution::qt::onUi(QtViewWidgetWrapper::getWidgetOfView(this), [=, this, drawing = ActivationStateMachine::instance()->drawing("graph")]()
 	{
 		if (isTransitioning())
 		{
@@ -443,6 +445,10 @@ void QtGraphView::rebuildGraph(std::shared_ptr<Graph> graph, const std::vector<s
 		if (params.animatedTransition && ApplicationSettings::getInstance()->getUseAnimations() && view->isVisible())
 		{
 			createTransition();
+			if (isTransitioning())
+			{
+				m_transitionDrawing = drawing;
+			}
 		}
 		else
 		{
@@ -453,7 +459,7 @@ void QtGraphView::rebuildGraph(std::shared_ptr<Graph> graph, const std::vector<s
 
 void QtGraphView::clear()
 {
-	execution::qt::onUi(QtViewWidgetWrapper::getWidgetOfView(this), [this]()
+	execution::qt::onUi(QtViewWidgetWrapper::getWidgetOfView(this), [this, drawing = ActivationStateMachine::instance()->drawing("graph")]()
 	{
 		m_focusHandler.clear();
 
@@ -577,7 +583,7 @@ void QtGraphView::scrollToValues(int xValue, int yValue)
 
 void QtGraphView::activateEdge(Id edgeId)
 {
-	execution::qt::onUi(QtViewWidgetWrapper::getWidgetOfView(this), [=, this]()
+	execution::qt::onUi(QtViewWidgetWrapper::getWidgetOfView(this), [=, this, drawing = ActivationStateMachine::instance()->drawing("graph")]()
 	{
 		if (isTransitioning())
 		{
@@ -733,6 +739,7 @@ void QtGraphView::finishedTransition()
 	}
 
 	switchToNewGraphData();
+	m_transitionDrawing.reset();
 }
 
 void QtGraphView::clickedInEmptySpace()

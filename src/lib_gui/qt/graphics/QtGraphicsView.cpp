@@ -1,5 +1,6 @@
 #include "QtGraphicsView.h"
 
+#include "ActivationStateMachine.h"
 #ifndef SRCTRL_MODULE_BUILD
 #include "ApplicationSettings.h"
 #endif
@@ -234,6 +235,7 @@ void QtGraphicsView::ensureVisibleAnimated(const QRectF& rect, int xmargin, int 
 		connect(move, &QPropertyAnimation::finished, [this]() { setInteractive(true); });
 
 		move->start();
+		utility::holdWhileRunning(move, ActivationStateMachine::instance()->drawing("graph"));
 	}
 	else
 	{

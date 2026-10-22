@@ -18,6 +18,7 @@
 #endif
 #include "logging.h"
 
+#include <QAbstractAnimation>
 #include <QDir>
 #include <QFile>
 #include <QFontDatabase>
@@ -115,6 +116,24 @@ QtMainWindow *getMainWindowforMainView(ViewLayout *viewLayout)
 		return mainView->getMainWindow();
 	}
 	return nullptr;
+}
+
+void holdWhileRunning(QAbstractAnimation *animation, std::shared_ptr<void> hold)
+{
+	if (animation == nullptr || !hold || animation->state() == QAbstractAnimation::Stopped)
+	{
+		return;
+	}
+	// The connection owns it, so it also goes with the animation.
+	auto held = std::make_shared<std::shared_ptr<void>>(std::move(hold));
+	QObject::connect(animation, &QAbstractAnimation::stateChanged, animation,
+		[held](QAbstractAnimation::State state, QAbstractAnimation::State)
+		{
+			if (state == QAbstractAnimation::Stopped)
+			{
+				held->reset();
+			}
+		});
 }
 
 void copyNewFilesFromDirectory(const QString &src, const QString &dst)

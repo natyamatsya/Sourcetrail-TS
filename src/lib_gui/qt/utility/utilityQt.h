@@ -1,6 +1,7 @@
 #ifndef UTILITY_QT_H
 #define UTILITY_QT_H
 
+#include <memory>
 #include <string>
 
 #include <QVariant>
@@ -9,6 +10,7 @@
 // so this textual fwd decl and the `import srctrl.file;` of a converted includer declare the
 // SAME entity -- no guard needed, and moc-generated TUs parse it classically as ever.
 class FilePath;
+class QAbstractAnimation;
 class QColor;
 class QIcon;
 class QPixmap;
@@ -30,6 +32,10 @@ QIcon createButtonIcon(const FilePath &iconPath, const std::string &colorId);
 QtMainWindow *getMainWindowforMainView(ViewLayout *viewLayout);
 
 void copyNewFilesFromDirectory(const QString &src, const QString &dst);
+
+// Keeps `hold` until `animation` stops (or goes): a view holds its drawing ticket
+// (ActivationStateMachine::drawing) through the animation that shows the result.
+void holdWhileRunning(QAbstractAnimation *animation, std::shared_ptr<void> hold);
 
 // Qt high-DPI scale-factor env helpers moved to lib/utility/qtScaleFactor.h (QtCore-only, so the headless
 // indexer's bootstrap doesn't need lib_gui). #include "qtScaleFactor.h" for isQtAutoScreenScaleFactorEnabled/
