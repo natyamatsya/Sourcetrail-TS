@@ -52,6 +52,12 @@ table UiState {
     // GetMachines), so one state read shows whether indexing waits for a mode or a
     // question for its answer.
     machines:          [MachineState];
+
+    // Appended in protocol v7: the graph as the current tab's view draws it, members
+    // inside their nodes (parent), with the bundles and groups it made and what can
+    // be expanded or split. `graph` above is what the storage relates to the active
+    // nodes; this is what is on screen and what the graph commands act on.
+    view_graph:        [GraphViewNode];
 }
 
 // One message on `st.agent.state`. `request_id` echoes the GetUiState command's id.

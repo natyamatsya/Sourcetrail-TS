@@ -105,6 +105,33 @@ table GetMachines { machine: string; }
 // as MachineTransition events.
 table SendMachineEvent { machine: string; event: string; args: string; }
 
+// The graph's controls (protocol v7), on the current tab's graph, as its own
+// buttons would: each is acked, then Settled once the graph has drawn the result.
+// Expand or collapse a node's members (its expand toggle): MessageGraphNodeExpand.
+table ExpandNode { node_id: uint64; expand: bool = true; }
+// Take a node (or an edge, by its id) out of the graph: MessageGraphNodeHide.
+table HideNode { node_id: uint64; }
+// Split a bundle or group into its nodes (a view_graph id): MessageGraphNodeBundleSplit,
+// laid out as clicking it would.
+table SplitBundle { bundle_id: uint64; }
+// Show the trail from or to a node: what it calls or is called by, its bases or
+// derived classes, its includes or includers (MessageActivateTrail). Edge kinds
+// default by the node's kind, as the graph's trail buttons choose them; with a
+// target, the trail runs from node to target over every node kind (the custom
+// trail dialog). Kinds by their readable names ("call", "override", "inheritance";
+// "class", "function"). depth 0: as deep as it goes. layout Auto: vertical for
+// inheritance, horizontal otherwise, as the trail buttons lay it out.
+table ActivateTrail {
+    node_id:           uint64;
+    direction:         TrailDirection = Outgoing;
+    target_id:         uint64;
+    edge_kinds:        [string];
+    node_kinds:        [string];
+    depth:             uint32;
+    layout:            TrailLayout = Auto;
+    include_non_indexed: bool;
+}
+
 union Command {
     LoadProject,
     Search,
@@ -127,6 +154,10 @@ union Command {
     SendInput,     // appended (protocol v5)
     GetMachines,   // appended (protocol v6)
     SendMachineEvent,
+    ExpandNode,    // appended (protocol v7)
+    HideNode,
+    SplitBundle,
+    ActivateTrail,
 }
 
 // One message on `st.agent.cmd`. `request_id` correlates a later reply

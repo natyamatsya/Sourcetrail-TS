@@ -161,7 +161,9 @@ ui_state { instance? } -> {
   code_view: { file_path, scroll_line } | null,
   search_matches: [ { text, node_kind, node_ids: [u64], score } ],
   tabs: [ { tab_id, title, active } ],
-  dialog: string }
+  dialog: string,
+  view_graph: [ { kind: node | bundle | group, id, name, node_kind, parent?, active?, \
+expanded?, hidden_members?, bundled?, splittable?, group? } ] }
 
 app_state is the FSM to key off. NoProject -> Loading (a load was requested, by \
 project_open or in the app, until the project is open and its first tab has shown the \
@@ -180,7 +182,11 @@ in the graph. display_name is the qualified name, node_kind Sourcetrail's NodeKi
 (the same bit in search_matches). serialized_name is what nav_activate_node takes by name; \
 node_id works too. code_view is the file the code view shows on its own (after \
 nav_activate_file or nav_scroll_to_line, with scroll_line); null while it lists an activated \
-node's references across files.",
+node's references across files.
+
+graph is what the storage relates to the active nodes; view_graph is the graph as the view \
+draws it, and what the graph_* tools act on (describe('graph')): members inside their node \
+(parent: the index of that node in view_graph), and the bundles and groups the graph made.",
     },
     Topic {
         name: "events",
@@ -236,6 +242,33 @@ nav_scroll_to_line { path, line, instance? } -> ui_state
   Scrolls the code view to a line (1-based) of a file.
 nav_history { direction: \"back\" | \"forward\", instance? } -> ui_state
   The toolbar's back/forward navigation.",
+    },
+    Topic {
+        name: "graph",
+        summary: "Work the graph as drawn: expand members, hide nodes, split bundles, show trails.",
+        tools: &["graph_expand", "graph_hide", "graph_split", "graph_trail"],
+        doc: "\
+The graph's own controls, on the current tab's graph (agent-control protocol v7). Each returns \
+the settled ui_state once the graph has drawn the result; ids come from ui_state.view_graph, \
+which lists what the view draws: symbols (kind node; members carry parent, the index of their \
+node), and the bundles (\"12 callers\") and groups (by file, namespace...) it made.
+
+graph_expand { node_id, expand=true, instance? } -> ui_state
+  A node whose view_graph entry has `expanded` has an expand toggle: true shows its members \
+(hidden_members says how many more), false collapses them.
+graph_hide { node_id, instance? } -> ui_state
+  Takes a node (or an edge, by its id from ui_state.graph) out of the graph.
+graph_split { bundle_id, instance? } -> ui_state
+  Splits a bundle or group whose entry is splittable, as clicking it does. A file or \
+namespace group is not split: its id is that node's, so nav_activate_node shows it.
+graph_trail { node_id, direction=\"outgoing\" | \"incoming\", target_id?, edge_kinds?, \
+node_kinds?, depth=0, layout?, include_non_indexed=false, instance? } -> ui_state
+  The trail buttons and the custom trail dialog. outgoing shows what a function calls, the \
+classes derived from a class, what a file includes; incoming a function's callers, a class's \
+bases, a file's includers. edge_kinds default by the node's kind (functions: call, override; \
+classes: inheritance, template specialization; files: include); name them for other nodes. \
+target_id: the paths from node_id to it instead. depth 0 is as deep as it goes. A wrong kind \
+name is refused with the list of valid ones.",
     },
     Topic {
         name: "ui",

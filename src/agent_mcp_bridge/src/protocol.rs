@@ -138,6 +138,105 @@ pub const SEND_INPUT_SINCE: u32 = 5;
 /// `SendMachineEvent`, `MachineTransition`, `UiState.machines`).
 pub const MACHINES_SINCE: u32 = 6;
 
+/// The protocol version from which the app reports the graph as drawn
+/// (`UiState.view_graph`) and takes the graph commands (expand, hide, split, trail).
+pub const GRAPH_SINCE: u32 = 7;
+
+/// Expand (or collapse) a node's members in the graph.
+pub fn expand_node(request_id: u64, node_id: u64, expand: bool) -> Vec<u8> {
+    let mut b = FlatBufferBuilder::new();
+    let c = fb::ExpandNode::create(&mut b, &fb::ExpandNodeArgs { node_id, expand });
+    finish(b, request_id, fb::Command::ExpandNode, c.as_union_value())
+}
+
+/// Take a node (or an edge) out of the graph.
+pub fn hide_node(request_id: u64, node_id: u64) -> Vec<u8> {
+    let mut b = FlatBufferBuilder::new();
+    let c = fb::HideNode::create(&mut b, &fb::HideNodeArgs { node_id });
+    finish(b, request_id, fb::Command::HideNode, c.as_union_value())
+}
+
+/// Split a bundle or group of the graph into its nodes.
+pub fn split_bundle(request_id: u64, bundle_id: u64) -> Vec<u8> {
+    let mut b = FlatBufferBuilder::new();
+    let c = fb::SplitBundle::create(&mut b, &fb::SplitBundleArgs { bundle_id });
+    finish(b, request_id, fb::Command::SplitBundle, c.as_union_value())
+}
+
+/// What `activate_trail` shows: the trail from or to `node_id` (to `target_id`
+/// when not 0), over `edge_kinds` and `node_kinds` (empty: the defaults).
+pub struct Trail<'a> {
+    pub node_id: u64,
+    pub incoming: bool,
+    pub target_id: u64,
+    pub edge_kinds: &'a [String],
+    pub node_kinds: &'a [String],
+    pub depth: u32,
+    /// None: as the trail buttons lay it out; Some(true): horizontal.
+    pub horizontal: Option<bool>,
+    pub include_non_indexed: bool,
+}
+
+pub fn activate_trail(request_id: u64, trail: &Trail) -> Vec<u8> {
+    let mut b = FlatBufferBuilder::new();
+    let edge_kinds = string_vector(&mut b, trail.edge_kinds);
+    let node_kinds = string_vector(&mut b, trail.node_kinds);
+    let c = fb::ActivateTrail::create(
+        &mut b,
+        &fb::ActivateTrailArgs {
+            node_id: trail.node_id,
+            direction: if trail.incoming { fb::TrailDirection::Incoming } else { fb::TrailDirection::Outgoing },
+            target_id: trail.target_id,
+            edge_kinds: Some(edge_kinds),
+            node_kinds: Some(node_kinds),
+            depth: trail.depth,
+            layout: match trail.horizontal {
+                None => fb::TrailLayout::Auto,
+                Some(true) => fb::TrailLayout::Horizontal,
+                Some(false) => fb::TrailLayout::Vertical,
+            },
+            include_non_indexed: trail.include_non_indexed,
+        },
+    );
+    finish(b, request_id, fb::Command::ActivateTrail, c.as_union_value())
+}
+
+fn string_vector<'b>(
+    b: &mut FlatBufferBuilder<'b>,
+    names: &[String],
+) -> flatbuffers::WIPOffset<flatbuffers::Vector<'b, flatbuffers::ForwardsUOffset<&'b str>>> {
+    let names: Vec<_> = names.iter().map(|n| b.create_string(n)).collect();
+    b.create_vector(&names)
+}
+
+/// A node of the graph as drawn, with only what applies to its kind.
+fn graph_view_node_json(n: fb::GraphViewNode) -> Value {
+    let kind = match n.kind() {
+        fb::GraphViewNodeKind::Bundle => "bundle",
+        fb::GraphViewNodeKind::Group => "group",
+        _ => "node",
+    };
+    let mut v = json!({ "kind": kind, "id": n.id(), "name": n.name().unwrap_or_default(), "node_kind": n.node_kind() });
+    if n.parent() >= 0 {
+        v["parent"] = json!(n.parent());
+    }
+    if n.active() {
+        v["active"] = json!(true);
+    }
+    if n.expandable() {
+        v["expanded"] = json!(n.expanded());
+        v["hidden_members"] = json!(n.hidden_members());
+    }
+    if kind != "node" {
+        v["bundled"] = json!(n.bundled());
+        v["splittable"] = json!(n.splittable());
+    }
+    if let Some(group) = n.group().filter(|g| !g.is_empty()) {
+        v["group"] = json!(group);
+    }
+    v
+}
+
 /// Read the state machines: all of them, or the one `machine` names.
 pub fn get_machines(request_id: u64, machine: &str) -> Vec<u8> {
     let mut b = FlatBufferBuilder::new();
@@ -699,6 +798,8 @@ pub fn parse_ui_state(bytes: &[u8]) -> Result<(u64, Value)> {
         "tabs": tabs,
         // The state machines (protocol v6); null from an older app.
         "machines": s.machines().map(|v| v.iter().map(machine_state_json).collect::<Vec<_>>()),
+        // The graph as drawn (protocol v7); null from an older app.
+        "view_graph": s.view_graph().map(|v| v.iter().map(graph_view_node_json).collect::<Vec<_>>()),
     });
     Ok((request_id, json))
 }

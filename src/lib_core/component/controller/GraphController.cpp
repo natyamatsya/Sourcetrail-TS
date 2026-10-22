@@ -11,6 +11,7 @@
 #include "ApplicationSettings.h"
 #endif
 #include "BucketLayouter.h"
+#include "DisplayedGraph.h"
 #ifndef SRCTRL_MODULE_BUILD
 #include "Graph.h"
 #endif
@@ -717,6 +718,7 @@ void GraphController::clear()
 	m_showsLegend = false;
 	m_tokenIdToFocus = 0;
 
+	DisplayedGraph::instance().clear(getTabId());
 	getView()->clear();
 }
 
@@ -2674,6 +2676,8 @@ void GraphController::buildGraph(MessageBase* message, GraphView::GraphParams pa
 		params.tokenIdToFocus = m_tokenIdToFocus;
 
 		getView()->rebuildGraph(m_graph, m_dummyNodes, m_dummyEdges, params);
+		// What the view now shows, for remote control (ui_state's view_graph).
+		DisplayedGraph::instance().set(getTabId(), m_dummyNodes);
 
 		m_tokenIdToFocus = 0;
 	}

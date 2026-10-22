@@ -775,6 +775,31 @@ and dispatched what it does, and the bridge waits for the activation machine to 
 before it returns (`drawn: true`). A click that opens a modal dialog does not hold the
 ack: the dialog's event loop delivers it. A disabled button is refused (`ok: false`).
 
+### The graph as drawn, and its controls (v7)
+
+`UiState.graph` is what the storage relates to the active nodes. What the graph view
+draws differs: members show inside their node or hide behind its expand toggle, nodes
+the user hid are gone, and many neighbours collapse into bundles ("12 Referencing
+Symbols") or groups (by file, namespace, language). The graph's own controls act on
+that drawn graph, so remote control needs to see it.
+
+- **`DisplayedGraph`** (`component/controller/helper`): `GraphController::buildGraph`
+  records its dummy nodes there per tab, and `clear` drops them. Remote control reads
+  the current tab's as `UiState.view_graph`: each node, bundle or group with its id (a
+  symbol's node id, a bundle's or group's id in this graph), its `parent` (the node a
+  member is drawn in), whether it is active, its expand state and hidden member count,
+  and for bundles and groups their size and whether they split.
+- **`ExpandNode`, `HideNode`, `SplitBundle`, `ActivateTrail`** dispatch the messages
+  the graph's controls do (`MessageGraphNodeExpand`, `MessageGraphNodeHide`,
+  `MessageGraphNodeBundleSplit`, `MessageActivateTrail`), after checking the target
+  against the drawn graph. A split lays out as clicking the bundle does
+  (`bundleSplitFor`, shared with `QtGraphNodeBundle`). A trail's edge kinds default
+  by the node's kind as the trail buttons choose them; a target or node kinds make it
+  the custom trail dialog's. Each is followed by the activation machine, so `Settled`
+  comes once the graph has drawn the result.
+- Bridge: `graph_expand`, `graph_hide`, `graph_split`, `graph_trail`, each returning
+  the settled `ui_state` (`describe('graph')`).
+
 ## Optimistic control — structural hashes (staleness detection)
 
 An `ElementRef` is resolved *at execute time* against the live tree (role/name/index

@@ -71,13 +71,14 @@ definitions finds a whole area with one query:
 | `instance_*` | `instance_start`, `instance_stop`, `instance_list`, `instance_handshake`, `instance_debug`, `instance_debug_command`, `instance_debug_dump` |
 | `ui_*` | `ui_state`, `ui_frame`, `ui_snapshot`, `ui_query`, `ui_invoke`, `ui_input`, `ui_capture` |
 | `nav_*` | `nav_search`, `nav_find`, `nav_activate_node`, `nav_activate_file`, `nav_activate_tab`, `nav_scroll_to_line`, `nav_history` |
+| `graph_*` | `graph_expand`, `graph_hide`, `graph_split`, `graph_trail` |
 | `events_*` | `events_poll` |
 | `logs_*` | `logs_forward` |
 | `project_*` | `project_open` |
 | `machine_*` | `machine_state`, `machine_send` |
 
-Tools that change the app (`nav_activate_*`, `nav_scroll_to_line`, `nav_history`)
-**auto-observe**: they return the `ui_state` once the app reports the command's
+Tools that change the app (`nav_activate_*`, `nav_scroll_to_line`, `nav_history`,
+`graph_*`) **auto-observe**: they return the `ui_state` once the app reports the command's
 effects settled. `app_state` is the FSM the agent keys off; `dialog` says what
 waits for an answer in front of the app.
 

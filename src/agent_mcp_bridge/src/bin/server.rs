@@ -115,10 +115,6 @@ fn frame_result(mut v: Value) -> Result<CallToolResult, McpError> {
     Ok(CallToolResult::success(vec![ContentBlock::image(b64, "image/png"), meta]))
 }
 
-fn default_true() -> bool {
-    true
-}
-
 // --- Tool argument schemas --------------------------------------------------
 // Every driving tool takes an optional `instance` (default = the one running
 // instance, else the unnamespaced app); the manager lazily attaches to it on
@@ -374,6 +370,76 @@ struct ScrollArgs {
 #[derive(serde::Deserialize, rmcp::schemars::JsonSchema)]
 #[schemars(crate = "rmcp::schemars")]
 #[serde(deny_unknown_fields)]
+struct GraphNodeArgs {
+    /// A node of the graph: ui_state.view_graph[].id.
+    node_id: u64,
+    #[serde(default)]
+    instance: String,
+}
+
+#[derive(serde::Deserialize, rmcp::schemars::JsonSchema)]
+#[schemars(crate = "rmcp::schemars")]
+#[serde(deny_unknown_fields)]
+struct ExpandArgs {
+    /// A node with an expand toggle: ui_state.view_graph[].id where `expanded` is present.
+    node_id: u64,
+    /// false collapses.
+    #[serde(default = "default_true")]
+    expand: bool,
+    #[serde(default)]
+    instance: String,
+}
+
+fn default_true() -> bool {
+    true
+}
+
+#[derive(serde::Deserialize, rmcp::schemars::JsonSchema)]
+#[schemars(crate = "rmcp::schemars")]
+#[serde(deny_unknown_fields)]
+struct SplitArgs {
+    /// A bundle or group: ui_state.view_graph[].id where `splittable` is true.
+    bundle_id: u64,
+    #[serde(default)]
+    instance: String,
+}
+
+#[derive(serde::Deserialize, rmcp::schemars::JsonSchema)]
+#[schemars(crate = "rmcp::schemars")]
+#[serde(deny_unknown_fields)]
+struct TrailArgs {
+    /// The node the trail starts from (or ends at, with direction "incoming").
+    node_id: u64,
+    /// "outgoing" (what a function calls, a class's derived classes, what a file
+    /// includes) or "incoming" (callers, base classes, includers). Default outgoing.
+    #[serde(default)]
+    direction: Option<String>,
+    /// A trail from node_id to this node instead.
+    #[serde(default)]
+    target_id: Option<u64>,
+    /// Edge kinds by name ("call", "override", "inheritance", "include", "use", ...);
+    /// default: by the node's kind, as the graph's trail buttons choose.
+    #[serde(default)]
+    edge_kinds: Vec<String>,
+    /// Node kinds to keep ("class", "function", ...); default: all.
+    #[serde(default)]
+    node_kinds: Vec<String>,
+    /// How many edges deep; 0 (default): as deep as it goes.
+    #[serde(default)]
+    depth: u32,
+    /// "horizontal" or "vertical"; default: vertical for inheritance, else horizontal.
+    #[serde(default)]
+    layout: Option<String>,
+    /// Keep nodes outside the index (unresolved symbols) on the trail.
+    #[serde(default)]
+    include_non_indexed: bool,
+    #[serde(default)]
+    instance: String,
+}
+
+#[derive(serde::Deserialize, rmcp::schemars::JsonSchema)]
+#[schemars(crate = "rmcp::schemars")]
+#[serde(deny_unknown_fields)]
 struct HistoryArgs {
     /// "back" or "forward".
     direction: String,
@@ -602,7 +668,7 @@ struct DescribeArgs {
 // No `tool_router` field: `#[tool_handler]` calls `Self::tool_router()` itself,
 // so a stored copy is one the server never reads.
 //
-// Tool names carry an area prefix (instance_, ui_, nav_, events_, logs_,
+// Tool names carry an area prefix (instance_, ui_, nav_, graph_, events_, logs_,
 // project_), so a client that searches or defers tool definitions finds a whole
 // area with one query. Descriptions stay one line with the result shape; the
 // detail is in catalog.rs, served by `describe`.
@@ -743,6 +809,63 @@ impl SourcetrailServer {
     #[tool(description = "Scroll the code view to a 1-based line of a source file. Returns the settled ui_state.")]
     async fn nav_scroll_to_line(&self, Parameters(a): Parameters<ScrollArgs>) -> Result<CallToolResult, McpError> {
         ok_json(self.mgr.call(move |m| m.get_or_attach(&a.instance)?.bridge().scroll_to_line(&a.path, a.line)).await?)
+    }
+
+    #[tool(description = "Expand (or with expand=false collapse) a graph node's members, like its expand toggle. node_id from ui_state.view_graph. Returns the settled ui_state.")]
+    async fn graph_expand(&self, Parameters(a): Parameters<ExpandArgs>) -> Result<CallToolResult, McpError> {
+        ok_json(self.mgr.call(move |m| m.get_or_attach(&a.instance)?.bridge().expand_node(a.node_id, a.expand)).await?)
+    }
+
+    #[tool(description = "Hide a node (or an edge, by its id) in the graph, like its context menu's Hide. Returns the settled ui_state.")]
+    async fn graph_hide(&self, Parameters(a): Parameters<GraphNodeArgs>) -> Result<CallToolResult, McpError> {
+        ok_json(self.mgr.call(move |m| m.get_or_attach(&a.instance)?.bridge().hide_node(a.node_id)).await?)
+    }
+
+    #[tool(description = "Split a bundle or group of the graph into its nodes, like clicking it. bundle_id from ui_state.view_graph (splittable). Returns the settled ui_state.")]
+    async fn graph_split(&self, Parameters(a): Parameters<SplitArgs>) -> Result<CallToolResult, McpError> {
+        ok_json(self.mgr.call(move |m| m.get_or_attach(&a.instance)?.bridge().split_bundle(a.bundle_id)).await?)
+    }
+
+    #[tool(description = "Show a trail: a function's callees or callers, a class's derived or base classes, a file's includes or includers; or the paths to target_id. Returns the settled ui_state.")]
+    async fn graph_trail(&self, Parameters(a): Parameters<TrailArgs>) -> Result<CallToolResult, McpError> {
+        let incoming = match a.direction.as_deref().map(|d| d.trim().to_ascii_lowercase()) {
+            None => false,
+            Some(d) if d == "outgoing" => false,
+            Some(d) if d == "incoming" => true,
+            Some(other) => {
+                return Err(McpError::invalid_params(
+                    format!("direction must be \"outgoing\" or \"incoming\", not \"{other}\""),
+                    None,
+                ))
+            }
+        };
+        let horizontal = match a.layout.as_deref().map(|l| l.trim().to_ascii_lowercase()) {
+            None => None,
+            Some(l) if l == "horizontal" => Some(true),
+            Some(l) if l == "vertical" => Some(false),
+            Some(other) => {
+                return Err(McpError::invalid_params(
+                    format!("layout must be \"horizontal\" or \"vertical\", not \"{other}\""),
+                    None,
+                ))
+            }
+        };
+        ok_json(
+            self.mgr
+                .call(move |m| {
+                    m.get_or_attach(&a.instance)?.bridge().activate_trail(&protocol::Trail {
+                        node_id: a.node_id,
+                        incoming,
+                        target_id: a.target_id.unwrap_or(0),
+                        edge_kinds: &a.edge_kinds,
+                        node_kinds: &a.node_kinds,
+                        depth: a.depth,
+                        horizontal,
+                        include_non_indexed: a.include_non_indexed,
+                    })
+                })
+                .await?,
+        )
     }
 
     #[tool(description = "Navigate back or forward in the activation history, like the toolbar arrows. direction: back|forward. Returns the settled ui_state.")]
@@ -971,7 +1094,7 @@ mod tests {
 
     #[test]
     fn tool_names_carry_an_area_prefix() {
-        const PREFIXES: &[&str] = &["instance_", "ui_", "nav_", "events_", "logs_", "project_", "machine_"];
+        const PREFIXES: &[&str] = &["instance_", "ui_", "nav_", "graph_", "events_", "logs_", "project_", "machine_"];
         for t in registered() {
             let name = t.name.as_ref();
             assert!(

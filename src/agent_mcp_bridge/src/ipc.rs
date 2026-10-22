@@ -713,6 +713,39 @@ impl Bridge {
         self.act_and_observe("scroll_to_line", |id| protocol::scroll_to_line(id, path, line))
     }
 
+    /// The graph's controls (protocol v7), each returning the settled ui_state.
+    pub fn expand_node(&mut self, node_id: u64, expand: bool) -> Result<Value> {
+        self.require_graph()?;
+        self.act_and_observe("graph_expand", |id| protocol::expand_node(id, node_id, expand))
+    }
+
+    pub fn hide_node(&mut self, node_id: u64) -> Result<Value> {
+        self.require_graph()?;
+        self.act_and_observe("graph_hide", |id| protocol::hide_node(id, node_id))
+    }
+
+    pub fn split_bundle(&mut self, bundle_id: u64) -> Result<Value> {
+        self.require_graph()?;
+        self.act_and_observe("graph_split", |id| protocol::split_bundle(id, bundle_id))
+    }
+
+    pub fn activate_trail(&mut self, trail: &protocol::Trail) -> Result<Value> {
+        self.require_graph()?;
+        self.act_and_observe("graph_trail", |id| protocol::activate_trail(id, trail))
+    }
+
+    fn require_graph(&self) -> Result<()> {
+        let app_version = self.app_protocol_version();
+        if app_version < protocol::GRAPH_SINCE {
+            bail!(
+                "this app speaks agent-control protocol v{app_version} and has no graph commands \
+                 (needs v{}): rebuild the app",
+                protocol::GRAPH_SINCE
+            );
+        }
+        Ok(())
+    }
+
     /// Back (`forward == false`) or forward in the navigation history.
     pub fn history(&mut self, forward: bool) -> Result<Value> {
         let label = if forward { "history forward" } else { "history back" };

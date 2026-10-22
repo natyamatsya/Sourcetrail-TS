@@ -18,12 +18,15 @@ bool AgentControlController::isListening() const
 
 #else
 
+#include <algorithm>
 #include <chrono>
 #include <cstdint>
 #include <atomic>
+#include <format>
 #include <functional>
 #include <memory>
 #include <mutex>
+#include <optional>
 #include <regex>
 #include <set>
 #include <string>
@@ -57,6 +60,7 @@ bool AgentControlController::isListening() const
 #include "Edge.h"
 #include "ErrorCountInfo.h"
 #include "FilePath.h"
+#include "DisplayedGraph.h"
 #include "Graph.h"
 #include "Id.h"
 #include "LogManager.h"
@@ -95,6 +99,10 @@ bool AgentControlController::isListening() const
 #include "MessageActivateNodes.h"
 #include "MessageActivateOverview.h"
 #include "MessageActivateTokens.h"
+#include "MessageActivateTrail.h"
+#include "MessageGraphNodeBundleSplit.h"
+#include "MessageGraphNodeExpand.h"
+#include "MessageGraphNodeHide.h"
 #include "MessageErrorCountUpdate.h"
 #include "MessageHistoryRedo.h"
 #include "MessageHistoryUndo.h"
@@ -1055,6 +1063,16 @@ struct AgentControlController::Impl
 			}
 			break;
 		}
+		case fb::Command_ExpandNode:
+		case fb::Command_HideNode:
+		case fb::Command_SplitBundle:
+		case fb::Command_ActivateTrail:
+			if (const std::optional<std::string> refusal = sendGraphCommand(*envelope))
+			{
+				emitResult(requestId, false, "rejected: " + *refusal);
+				return;
+			}
+			break;
 		default:
 			emitResult(requestId, false, "unknown command");
 			return;
@@ -1063,6 +1081,172 @@ struct AgentControlController::Impl
 		// handleCommand runs *inside* the drain (as the MessageAgentCommand
 		// listener), so the effects are enqueued but not yet processed.
 		expectSettle(requestId);
+	}
+
+	// The graph's controls (protocol v7), on what the current tab's graph view shows,
+	// as its own buttons would. Nothing when the command went out; else why not.
+	std::optional<std::string> sendGraphCommand(const fb::CommandEnvelope& envelope)
+	{
+		const std::vector<DisplayedGraphNode> shown = DisplayedGraph::instance().get(TabIds::currentTab());
+		const auto displayed = [&](std::uint64_t id) -> const DisplayedGraphNode* {
+			const auto it = std::ranges::find_if(
+				shown, [id](const DisplayedGraphNode& node) { return node.id == Id(static_cast<Id::type>(id)); });
+			return it != shown.end() ? &*it : nullptr;
+		};
+
+		switch (envelope.command_type())
+		{
+		case fb::Command_ExpandNode:
+		{
+			const auto* c = envelope.command_as_ExpandNode();
+			const DisplayedGraphNode* node = displayed(c->node_id());
+			if (node == nullptr || node->kind != DisplayedGraphNode::Kind::Node)
+			{
+				return std::format("node {} is not in the graph (see ui_state.view_graph)", c->node_id());
+			}
+			if (!node->expandable)
+			{
+				return std::format("'{}' has no members to expand or collapse", node->name);
+			}
+			MessageGraphNodeExpand(node->id, c->expand()).dispatch();
+			return std::nullopt;
+		}
+		case fb::Command_HideNode:
+		{
+			// A node of the graph, or an edge (by its id, which view_graph does not list).
+			MessageGraphNodeHide(Id(static_cast<Id::type>(envelope.command_as_HideNode()->node_id()))).dispatch();
+			return std::nullopt;
+		}
+		case fb::Command_SplitBundle:
+		{
+			const auto* c = envelope.command_as_SplitBundle();
+			const DisplayedGraphNode* bundle = displayed(c->bundle_id());
+			if (bundle == nullptr || bundle->kind == DisplayedGraphNode::Kind::Node)
+			{
+				return std::format("no bundle or group {} in the graph (see ui_state.view_graph)", c->bundle_id());
+			}
+			if (!bundle->splittable)
+			{
+				return bundle->group == "file" || bundle->group == "namespace"
+					? std::format("the {} group '{}' is not split: activate its node instead", bundle->group, bundle->name)
+					: std::format("'{}' cannot be split", bundle->name);
+			}
+			MessageGraphNodeBundleSplit(bundle->id, bundle->splitRemovesOthers, bundle->splitToList).dispatch();
+			return std::nullopt;
+		}
+		case fb::Command_ActivateTrail:
+			return sendTrail(*envelope.command_as_ActivateTrail());
+		default:
+			return "not a graph command";
+		}
+	}
+
+	// A trail from or to a node, with the edges the graph's trail buttons would
+	// follow unless named.
+	std::optional<std::string> sendTrail(const fb::ActivateTrail& c)
+	{
+		const Id nodeId(static_cast<Id::type>(c.node_id()));
+		if (nodeId == 0 || m_storageAccess->getNameHierarchyForNodeId(nodeId).getQualifiedName().empty())
+		{
+			return std::format("no node {}", c.node_id());
+		}
+		const NodeType type = m_storageAccess->getNodeTypeForNodeWithId(nodeId);
+
+		Edge::TypeMask edgeTypes = 0;
+		bool vertical = false;
+		if (c.edge_kinds() != nullptr && c.edge_kinds()->size() > 0)
+		{
+			for (const flatbuffers::String* name: *c.edge_kinds())
+			{
+				const Edge::EdgeType edgeType = Edge::getTypeForReadableTypeString(name->str());
+				if (edgeType == Edge::EDGE_UNDEFINED)
+				{
+					return std::format("unknown edge kind '{}' ({})", name->str(), edgeKindNames());
+				}
+				edgeTypes |= edgeType;
+			}
+		}
+		else if (type.isInheritable())
+		{
+			edgeTypes = Edge::EDGE_INHERITANCE | Edge::EDGE_TEMPLATE_SPECIALIZATION;
+			vertical = true;
+		}
+		else if (type.isCallable())
+		{
+			edgeTypes = Edge::EDGE_CALL | Edge::EDGE_OVERRIDE;
+		}
+		else if (type.isFile())
+		{
+			edgeTypes = Edge::EDGE_INCLUDE;
+		}
+		else
+		{
+			return std::format(
+				"no default trail for a {}: name the edge_kinds ({})",
+				getReadableNodeKindString(type.getKind()),
+				edgeKindNames());
+		}
+
+		NodeKindMask nodeTypes = 0;
+		if (c.node_kinds() != nullptr)
+		{
+			for (const flatbuffers::String* name: *c.node_kinds())
+			{
+				const NodeKind kind = getNodeKindForReadableNodeKindString(name->str());
+				// An unknown name reads as "symbol".
+				if (kind == NODE_SYMBOL && name->str() != getReadableNodeKindString(NODE_SYMBOL))
+				{
+					return std::format("unknown node kind '{}' ({})", name->str(), nodeKindNames());
+				}
+				nodeTypes |= kind;
+			}
+		}
+
+		const bool horizontal = c.layout() == fb::TrailLayout_Auto ? !vertical : c.layout() == fb::TrailLayout_Horizontal;
+		Id originId = nodeId;
+		Id targetId = 0;
+		if (c.target_id() != 0)
+		{
+			targetId = Id(static_cast<Id::type>(c.target_id()));
+		}
+		else if (c.direction() == fb::TrailDirection_Incoming)
+		{
+			originId = 0;
+			targetId = nodeId;
+		}
+
+		// With a target or node kinds it is the custom trail dialog's.
+		MessageActivateTrail message = c.target_id() != 0 || nodeTypes != 0
+			? MessageActivateTrail(
+				  originId, targetId, nodeTypes, edgeTypes, c.include_non_indexed(), c.depth(), horizontal)
+			: MessageActivateTrail(originId, targetId, edgeTypes, c.depth(), horizontal);
+		message.searchMatches = m_storageAccess->getSearchMatchesForTokenIds({nodeId});
+		message.dispatch();
+		return std::nullopt;
+	}
+
+	static std::string edgeKindNames()
+	{
+		std::string names;
+		for (Edge::TypeMask mask = 1; mask <= Edge::EDGE_TYPE_MAX_VALUE; mask *= 2)
+		{
+			const auto type = static_cast<Edge::EdgeType>(mask);
+			if (type != Edge::EDGE_BUNDLED_EDGES)
+			{
+				names += (names.empty() ? "" : ", ") + Edge::getReadableTypeString(type);
+			}
+		}
+		return names;
+	}
+
+	static std::string nodeKindNames()
+	{
+		std::string names;
+		for (NodeKindMask mask = NODE_KIND_FIRST_VALUE; mask <= NODE_KIND_LAST_VALUE; mask <<= 1)
+		{
+			names += (names.empty() ? "" : ", ") + getReadableNodeKindString(static_cast<NodeKind>(mask));
+		}
+		return names;
 	}
 
 	// Emit `Settled { requestId }` once the effects of a request have drained. They
@@ -1294,6 +1478,31 @@ struct AgentControlController::Impl
 
 		const auto machinesOffset = builder.CreateVector(makeMachineStates(builder));
 
+		std::vector<flatbuffers::Offset<fb::GraphViewNode>> viewGraph;
+		for (const DisplayedGraphNode& node: DisplayedGraph::instance().get(TabIds::currentTab()))
+		{
+			const auto kind = node.kind == DisplayedGraphNode::Kind::Bundle ? fb::GraphViewNodeKind_Bundle
+				: node.kind == DisplayedGraphNode::Kind::Group				? fb::GraphViewNodeKind_Group
+																			: fb::GraphViewNodeKind_Node;
+			const auto name = builder.CreateString(node.name);
+			const auto group = builder.CreateString(node.group);
+			viewGraph.push_back(fb::CreateGraphViewNode(
+				builder,
+				kind,
+				static_cast<std::uint64_t>(node.id),
+				name,
+				static_cast<std::int32_t>(node.nodeKind),
+				node.parent,
+				node.active,
+				node.expandable,
+				node.expanded,
+				static_cast<std::uint32_t>(node.hiddenMembers),
+				static_cast<std::uint32_t>(node.bundled),
+				node.splittable,
+				group));
+		}
+		const auto viewGraphOffset = builder.CreateVector(viewGraph);
+
 		const ErrorCountInfo errors = m_storageAccess->getErrorCount();
 		const auto uiState = fb::CreateUiState(
 			builder,
@@ -1309,7 +1518,8 @@ struct AgentControlController::Impl
 			m_indexing.load(),
 			computeAppState(),
 			dialogOffset,
-			machinesOffset);
+			machinesOffset,
+			viewGraphOffset);
 		builder.Finish(fb::CreateUiStateEnvelope(builder, requestId, uiState));
 		m_stateChannel.send(builder.GetBufferPointer(), builder.GetSize());
 	}

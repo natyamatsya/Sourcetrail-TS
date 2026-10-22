@@ -7,6 +7,7 @@
 #include "GraphViewStyle.h"
 #include "MessageGraphNodeBundleSplit.h"
 #endif
+#include "DisplayedGraph.h"
 #include "QtCountCircleItem.h"
 
 // Imports come AFTER all textual #includes (include-before-import rule: textual libc++
@@ -51,12 +52,8 @@ Id QtGraphNodeBundle::getTokenId() const
 
 void QtGraphNodeBundle::onClick()
 {
-	MessageGraphNodeBundleSplit(
-		m_tokenId,
-		(!m_type.isUnknownSymbol() || getName() == "Symbols") &&
-			getName() != "Anonymous Namespaces",	 // TODO: move to language package
-		!m_type.isUnknownSymbol() || getName() == "Symbols")
-		.dispatch();
+	const BundleSplit split = bundleSplitFor(m_type, getName());
+	MessageGraphNodeBundleSplit(m_tokenId, split.removeOtherNodes, split.layoutToList).dispatch();
 }
 
 void QtGraphNodeBundle::updateStyle()

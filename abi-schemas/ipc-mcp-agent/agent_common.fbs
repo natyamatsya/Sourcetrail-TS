@@ -94,7 +94,34 @@ enum AppState : byte {
 //   6  state machines: GetMachines, SendMachineEvent, the MachineTransition
 //      event, and UiState.machines (an older app leaves it out, which would read
 //      as "no machines")
-enum ProtocolVersion : uint { Current = 6 }
+//   7  the graph as drawn (UiState.view_graph) and its controls: ExpandNode,
+//      HideNode, SplitBundle, ActivateTrail
+enum ProtocolVersion : uint { Current = 7 }
+
+// A node of the graph view as drawn (protocol v7).
+enum GraphViewNodeKind : byte { Node = 0, Bundle = 1, Group = 2 }
+
+table GraphViewNode {
+    kind:                 GraphViewNodeKind;
+    id:                   uint64;   // the symbol's node id; a bundle's or group's id in this graph
+    name:                 string;
+    node_kind:            int32;    // NodeKind; a bundle's: what it bundles
+    parent:               int32 = -1;   // index of the node this one is drawn in
+    active:               bool;
+    expandable:           bool;     // has an expand toggle (ExpandNode)
+    expanded:             bool;
+    hidden_members:       uint32;   // what expanding would show
+    bundled:              uint32;   // a bundle's or group's nodes
+    splittable:           bool;     // SplitBundle takes it
+    group:                string;   // a group's kind: file, namespace, language, inheritance...
+}
+
+// Which way a trail goes from the node (protocol v7), as the graph's two trail
+// buttons: Outgoing shows what a function calls, the classes derived from a class,
+// what a file includes; Incoming a function's callers, a class's bases, a file's
+// includers.
+enum TrailDirection : byte { Outgoing = 0, Incoming = 1 }
+enum TrailLayout : byte { Auto = 0, Horizontal = 1, Vertical = 2 }
 
 enum RefreshMode : byte { None = 0, UpdatedFiles = 1, AllFiles = 2 }
 
