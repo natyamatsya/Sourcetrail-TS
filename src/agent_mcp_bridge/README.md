@@ -155,7 +155,9 @@ What waits for a person is a state machine in the app (protocol v6): `indexing` 
 mode choice, progress, the report) and `question` (the boxes the app asks and waits
 on). So are `app` (starting -> running -> closing) and `project` (no_project -> loading
 -> opening -> ready), which `app_state` is derived from; a project load asked for while
-the app starts waits for it. A dialog shows a state, and its buttons send the machine events; `machine_send`
+the app starts waits for it. `activation` (idle -> activating -> rendering -> idle)
+follows an activation until the graph and code views have drawn it, animations included:
+`Settled` waits for it, and so does `ui_invoke` when its press started one. A dialog shows a state, and its buttons send the machine events; `machine_send`
 sends the same events, and the dialog closes when an agent answered it. Every move is
 a `MachineTransition` in `events_poll`, with its source (`ui`, `agent` or `app`).
 

@@ -8,6 +8,7 @@
 #include <QWidget>	// pulls Qt GUI feature macros (QT_CONFIG) before the check below
 
 // captureScreen and the dialog watch need no accessibility support.
+#include <QAbstractButton>
 #include <QAbstractScrollArea>
 #include <QApplication>
 #include <QBuffer>
@@ -167,7 +168,24 @@ ControlResult invokeAction(
 		{
 			return {false, "action not supported: " + action};
 		}
-		actions->doAction(QString::fromStdString(action));
+		// A button's accessible Press is an animated click: it releases 100 ms later,
+		// and what the button does on release (Back dispatches on it) comes after
+		// the ack. Post a plain click instead; the caller acks behind it, so the
+		// click has run when the ack arrives (and a modal dialog it opens does not
+		// hold the ack: the dialog's own loop delivers it).
+		auto* button = qobject_cast<QAbstractButton*>(iface->object());
+		if (button != nullptr && QString::fromStdString(action) == QAccessibleActionInterface::pressAction())
+		{
+			if (!button->isEnabled())
+			{
+				return {false, "element is disabled: " + refToString(objectName, path)};
+			}
+			QMetaObject::invokeMethod(button, [button]() { button->click(); }, Qt::QueuedConnection);
+		}
+		else
+		{
+			actions->doAction(QString::fromStdString(action));
+		}
 	}
 
 	if (!text.empty())

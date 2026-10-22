@@ -307,7 +307,7 @@ struct StartArgs {
     #[serde(default)]
     debugger: Option<bool>,
     /// Keep the app's animations (graph transitions, smooth scrolling). Off by
-    /// default: settling does not wait for an animation, so a frame would catch it midway.
+    /// default: settling waits for them, so each navigation takes longer.
     #[serde(default)]
     animations: bool,
 }

@@ -75,6 +75,7 @@ bool AgentControlController::isListening() const
 #include "NodeType.h"
 #include "NodeTypeSet.h"
 #include "RefreshInfo.h"
+#include "ActivationStateMachine.h"
 #include "AppStateMachine.h"
 #include "IndexingStateMachine.h"
 #include "ProjectStateMachine.h"
@@ -504,6 +505,12 @@ struct AgentControlController::Impl
 		utility::qt::watchDialogs(true);
 		m_machineObserver = StateMachineRegistry::instance().addObserver([this](const MachineTransition& transition) {
 			publishTransition(transition);
+			// The views have drawn what the activation gave them: what waited for that
+			// may settle now.
+			if (transition.machine == "activation" && transition.to == "idle")
+			{
+				flushSettled();
+			}
 			// AppState is derived from these.
 			if (transition.machine == "app" || transition.machine == "project" || transition.machine == "indexing")
 			{
@@ -744,7 +751,10 @@ struct AgentControlController::Impl
 			std::string text = c->text() ? c->text()->str() : "";
 			const std::uint64_t expectHash = c->expect_hash();
 			// QAccessible touches widgets, so resolve + invoke on the GUI thread, then
-			// ack with the result. The ack is the reply (no Settled).
+			// ack with the result. The ack is the reply (no Settled). It goes behind
+			// what the action posted to the GUI thread (a button's click): by then
+			// the click has dispatched what it does, and the activation machine says
+			// whether that is still going on.
 			m_uiScope.spawn(
 				stdexec::schedule(m_schedulers->ui()) |
 				stdexec::then([this, requestId, objectName = std::move(ref.objectName),
@@ -752,7 +762,9 @@ struct AgentControlController::Impl
 								  text = std::move(text), expectHash]() {
 					const utility::qt::ControlResult r =
 						utility::qt::invokeAction(objectName, path, action, text, expectHash);
-					emitResult(requestId, r.ok, r.message);
+					m_uiScope.spawn(
+						stdexec::schedule(m_schedulers->ui()) |
+						stdexec::then([this, requestId, r]() { emitResult(requestId, r.ok, r.message); }));
 				}));
 			return true;
 		}
@@ -1081,12 +1093,14 @@ struct AgentControlController::Impl
 		flushSettled();
 	}
 
-	// Whether no message is queued or in flight and no scheduler that ran agent
-	// work has tasks: the app has quiesced.
+	// Whether no message is queued or in flight, no scheduler that ran agent work
+	// has tasks, and the views have drawn what they were given (the activation
+	// machine is idle): the app has quiesced.
 	bool quiescent()
 	{
 		if (MessageQueue::getInstance()->hasMessagesQueued() ||
-			TaskManager::getScheduler(TabIds::app())->hasTasksQueued())
+			TaskManager::getScheduler(TabIds::app())->hasTasksQueued() ||
+			!ActivationStateMachine::instance()->isIdle())
 		{
 			return false;
 		}
@@ -1103,11 +1117,11 @@ struct AgentControlController::Impl
 
 	// Publish a `Settled` for every accepted command whose fan-out has now drained.
 	// Runs from the idle handler of the app scheduler or of a tab's scheduler, so it
-	// checks that the other one is idle too. The last hop of a command's effects is
-	// usually a view posting its update to the GUI thread (QtGraphView::rebuildGraph
-	// goes through onUi), which no scheduler counts: Settled therefore goes out from
-	// the GUI thread, behind everything posted there before it, so a frame taken
-	// after it shows the views updated.
+	// checks that the other one is idle too, and when the activation machine goes
+	// idle: the graph and code views report when they have drawn what a command
+	// changed (their animations included), so a frame taken after Settled shows
+	// it. The other views' last hop is a post to the GUI thread no one counts:
+	// Settled goes out from the GUI thread, behind everything posted there before.
 	void flushSettled()
 	{
 		std::vector<std::uint64_t> settled;
@@ -1122,7 +1136,8 @@ struct AgentControlController::Impl
 			// messages are still queued or either scheduler still has tasks, effects
 			// are mid-flight. A later idle edge, on whichever finishes last, flushes.
 			if (MessageQueue::getInstance()->hasMessagesQueued() ||
-				TaskManager::getScheduler(TabIds::app())->hasTasksQueued())
+				TaskManager::getScheduler(TabIds::app())->hasTasksQueued() ||
+				!ActivationStateMachine::instance()->isIdle())
 			{
 				return;
 			}

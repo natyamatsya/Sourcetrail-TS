@@ -65,7 +65,9 @@ presses.
 
 Settled state: tools that change the app (nav_activate_*, nav_scroll_to_line, nav_history) \
 wait until the app reports Settled for the request, then return the ui_state object (shape \
-in describe('state')).
+in describe('state')). Settled waits for the graph and code views to have drawn the result, \
+their animations included (the activation machine, describe('machines')): a ui_frame taken \
+right after shows it.
 
 Renamed tools: describe(<former name>) says what a tool is called now (get_ui_state -> \
 ui_state, search -> nav_search, start_instance -> instance_start, ...).
@@ -91,7 +93,10 @@ runs, $SOURCETRAIL_MCP_HOME/profiles/<name>, \"agent\" unless profile names anot
 profile that never ran starts from Sourcetrail's defaults. profile \"user\" runs on your own \
 settings instead. fresh: true runs on a throwaway copy of the profile, deleted when the \
 instance stops: a known starting point whose changes never persist.
-  animations: the app runs with --no-animations unless this is true (the stored setting is left alone). Settling waits for the app's queues, not for a graph transition or a smooth scroll still playing, so with animations on a ui_frame right after a command can show the view midway and ui_input coordinates taken from it can miss.
+  animations: the app runs with --no-animations unless this is true (the stored setting is \
+left alone). Settling waits for the graph's transitions and the views' smooth scrolling too, \
+so frames are the same either way; animations only make each navigation take longer (about a \
+second).
 
 instance_stop { instance? } -> { killed: id }
   Kills a spawned instance (or forgets an attached one). Empty = the one running instance.
@@ -266,10 +271,13 @@ ui_query { query, instance? } -> the ui_snapshot shape, roots = the matches
   JSONPath (RFC 9535) evaluated in the app over the accessibility tree, so only matches \
 cross the wire. Example: $.roots..[?(@.role=='button' && @.name=='OK')].
 
-ui_invoke { ref, action?, text?, expect_hash=0, instance? } -> { ok, message }
+ui_invoke { ref, action?, text?, expect_hash=0, instance? } -> { ok, message, drawn? }
   Runs an accessible action from the node's `actions` (Press, Toggle, ShowMenu, ...) or \
 sets an editable field's `text`. expect_hash (the node's `hash`) refuses the action if the \
-element changed since the snapshot. Not found / unsupported -> ok: false.
+element changed since the snapshot. Not found / unsupported / a disabled button -> ok: \
+false. An action that \
+started an activation (Back, Forward, Home, a search result) returns once the views have \
+drawn it: drawn: true (false: not within 5 s).
 
 ui_capture { ref, include_properties=false, expect_hash=0, instance? } -> PNG image + \
 { ok, frame: { width, height, format, bytes } } | { ok: false, message }
@@ -330,12 +338,13 @@ machine_send { machine: \"question\", event: \"answer\", args: { label: \"Reinde
     },
     Topic {
         name: "machines",
-        summary: "State machines: app startup, the project's load, indexing and questions, driven by events.",
+        summary: "State machines: app startup, the project's load, indexing, questions, and what the views show.",
         tools: &["machine_state", "machine_send"],
         doc: "\
 What waits for a person in Sourcetrail is a state machine: indexing (choose a mode, follow \
 progress, decide on the report) and the questions the app asks; so are the app's startup and \
-the project's load, which app_state is derived from. A dialog shows a state; its \
+the project's load, which app_state is derived from, and an activation until the views have \
+drawn it. A dialog shows a state; its \
 buttons send the machine events; an agent sends the same events, and the dialog closes when \
 an agent answered it. Every move is a MachineTransition event (events_poll) with its source: \
 ui (a button), agent, or app (the pipeline moving on). Needs agent-control protocol v6.
@@ -389,6 +398,15 @@ and the load runs once it has started.
 nothing: context.outcome), at opening (the overview tab opens; context.waiting_for \"tab\") or \
 at no_project (the load failed). opening ends with the tab's first activation (or after 10 s, \
 with a warning in outcome). After an indexing run the new index loads: ready -> loading again.
+
+activation: idle -> activating -> rendering -> idle
+  An activation (nav_*, a click in the graph, Back, a search), and anything else that changes \
+the graph or code view (expanding a node, a reference in the code view), from its dispatch: \
+activating while the app handles it, rendering while the views draw it (context.drawing: \
+\"graph\", \"code\"; animations included), idle once they have (context.took_ms). No events \
+from outside: watch it. Settled waits for it, and ui_invoke waits for an activation its \
+action started (drawn: true). A view that never reports is given up on after 10 s \
+(timed_out, with a warning in context.outcome).
 
 question: idle -> asking -> idle
   answer { label } | { option: n } | { id, ... }   asking: answers the question in context \

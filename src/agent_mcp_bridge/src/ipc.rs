@@ -723,7 +723,9 @@ impl Bridge {
     /// element addressed by a snapshot `ref` (object_name + role/name/index path).
     /// The app resolves + invokes on the GUI thread; the ack **is** the result, and
     /// resolution failures ("element not found", "action not supported") come back
-    /// as data (`{ ok, message }`), not transport errors.
+    /// as data (`{ ok, message }`), not transport errors. An action that started an
+    /// activation (Back, Home, a search result) returns once the views have drawn
+    /// it, with `drawn` (false: not within the timeout).
     pub fn invoke_action(
         &mut self,
         object_name: &str,
@@ -735,7 +737,43 @@ impl Bridge {
         let id = self.next_id();
         self.send(&protocol::invoke_action(id, object_name, path, action, text, expect_hash))?;
         let (ok, message, _) = self.await_ack(id, OP_TIMEOUT)?;
+        if ok {
+            if let Some(drawn) = self.await_activation(OP_TIMEOUT) {
+                return Ok(json!({ "ok": ok, "message": message, "drawn": drawn }));
+            }
+        }
         Ok(json!({ "ok": ok, "message": message }))
+    }
+
+    /// Wait for the activation machine to be idle: the graph and code views have
+    /// drawn what the last activation gave them. An action that dispatched one finds
+    /// it going already. None when there was nothing to wait for (or the app has no
+    /// activation machine), else whether it went idle within `timeout`. Re-reads the
+    /// machine now and then: a transition between its snapshot and the wait is not
+    /// lost on it.
+    fn await_activation(&mut self, timeout: Duration) -> Option<bool> {
+        if self.app_protocol_version() < protocol::MACHINES_SINCE {
+            return None;
+        }
+        let deadline = Instant::now() + timeout;
+        let idle = ["idle".to_string()];
+        let mut waited = false;
+        loop {
+            let state = self.machine_snapshot("activation").ok()?["state"].as_str()?.to_string();
+            if state == "idle" {
+                return waited.then_some(true);
+            }
+            waited = true;
+            let now = Instant::now();
+            if now >= deadline {
+                return Some(false);
+            }
+            let slice = (deadline - now).min(Duration::from_millis(500));
+            let mut transitions = Vec::new();
+            if self.await_machine_state("activation", &idle, state, slice, &mut transitions).ok()? {
+                return Some(true);
+            }
+        }
     }
 
     /// The screen as a user sees it: every visible top-level window composited at

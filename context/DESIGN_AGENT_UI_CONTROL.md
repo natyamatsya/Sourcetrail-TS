@@ -331,9 +331,14 @@ Two more hops, found once agents read frames right after `Settled`:
   GUI thread, posted behind everything queued there; if that work dispatched more, the
   request waits for the next idle edge.
 - **Animations.** A graph transition or a smooth scroll plays for a second after its view
-  updated, and nothing waits for it. Instances the bridge spawns run with
-  `--no-animations` (a session override; the stored setting is untouched), unless
-  `instance_start` asks for `animations: true`.
+  updated. Instances the bridge spawns run with `--no-animations` (a session override;
+  the stored setting is untouched), unless `instance_start` asks for `animations: true`.
+
+Both are now reported instead of inferred: `Settled` also waits for the **activation
+machine** to be idle (see State machines), which the graph and code views move on when
+they have drawn, animations included. A frame taken right after `Settled` matches one
+taken a second later with animations on, so `--no-animations` only saves time. The GUI
+round-trip stays for the views that do not report (the search field, the tab title).
 
 ### Observation model — events as subscriptions, not polling
 
@@ -707,6 +712,40 @@ machine's, not the order of lines in `main`.
 Offscreen the report is still kept without asking (nobody could press it, and a
 report nobody answers holds the pipeline); the machine passes through `reporting`
 with source `app`, so an agent sees the decision.
+
+**What the views show.** The `activation` machine (`ActivationStateMachine`) follows an
+activation from its dispatch until the graph and code views have drawn it: idle →
+activating → rendering → idle. It has no remote events: agents activate through the nav
+commands and watch it.
+
+- **Activating** is counted on the message queue. `MessageQueue::Observer` follows the
+  messages that change those views (`changesViews`: the activations, the history, graph
+  expand/hide/bundle split, the code view's references and scrolls): `started` when one is
+  pushed to the buffer or processed right away, `handled` once all its listeners have run.
+  In task mode that is a `TaskFinally` around the listeners' task group, plus a guard for
+  tasks a scheduler drops unrun; a followed message a filter drops counts as handled. What
+  a listener dispatches on the way is counted before the message that dispatched it ends,
+  so a whole activation (MessageActivateNodes → MessageActivateTokens, a search →
+  MessageActivateOverview, Back → the replayed history) is one stretch of `activating`.
+  Counting from the dispatch means whoever dispatched one (a button) finds the machine
+  activating as soon as the dispatch returns.
+- **Rendering** is counted on the views. A view the controllers hand an activation's
+  result takes a ticket (`drawing("graph")`, `drawing("code")`) and holds it in what draws
+  it: the `onUi` work, the code view's deferred list-mode scroll, the graph's transition
+  (until `finishedTransition` has run: it centers the active node, animated as well) and
+  the views' smooth-scroll animations (`utility::holdWhileRunning`). Dropping the last
+  copy reports the view drawn. Outside an activation `drawing` hands out nothing, so a
+  user scrolling does not move the machine.
+- A view that never reports is given up on after 10 s (`timed_out`, with a warning); the
+  tickets it held are ignored from then on.
+
+`ui_invoke` relies on the dispatch-time count. Qt's accessible Press on a button is an
+animated click that releases 100 ms later, and the toolbar's Back and Forward dispatch on
+release, after the ack. `QtUiControl` therefore posts a plain `click()` for a button's
+Press, and the controller posts the ack behind it: when the ack arrives the click has run
+and dispatched what it does, and the bridge waits for the activation machine to be idle
+before it returns (`drawn: true`). A click that opens a modal dialog does not hold the
+ack: the dialog's event loop delivers it. A disabled button is refused (`ok: false`).
 
 ## Optimistic control — structural hashes (staleness detection)
 
