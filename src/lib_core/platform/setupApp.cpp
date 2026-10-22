@@ -71,7 +71,7 @@ Version setupAppDirectories(const FilePath &appPath, const FilePath &userDataDir
 {
 	QCoreApplication::setApplicationName(QStringLiteral("Sourcetrail"));
 
-	Version version(PRODUCT_VERSION_MAJOR, PRODUCT_VERSION_MINOR, PRODUCT_VERSION_PATCH);
+	Version version(PRODUCT_VERSION_MAJOR, PRODUCT_VERSION_MINOR, PRODUCT_VERSION_PATCH, PRODUCT_VERSION_SUFFIX);
 	QCoreApplication::setApplicationVersion(QString::fromStdString(version.toDisplayString()));
 
 	// Note: This functions is called from main in 'main.cpp' *AND* the main in 'test_main.cpp'.

@@ -1,0 +1,49 @@
+name: Release
+
+# A tag v<major>.<minor>.<patch>[-<pre-release>] is checked against the sources
+# (the project() version and its CHANGELOG.md section, scripts/release-notes.sh),
+# built and tested with the CI jobs, and drafted as a GitHub release with its
+# changelog section as notes; publishing the draft is done by hand. Only v* tags
+# start it, so upstream's date tags (2025.12.8 and the like) never do.
+#
+# To release: set project(Sourcetrail VERSION x.y.z) and rename CHANGELOG.md's
+# [Unreleased] to "[x.y.z] - <date>" in one commit, then tag it vx.y.z and push
+# the tag. A tag like vx.y.z-rc.1 tries the same run ahead of that commit.
+on:
+  push:
+    tags: ["v*"]
+
+permissions:
+  contents: read
+
+jobs:
+  check:
+    name: Check the tag against the sources
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - name: Version and release notes
+        run: scripts/release-notes.sh "$GITHUB_REF_NAME"
+
+  ci:
+    name: CI
+    needs: check
+    uses: ./.github/workflows/cmake-multi-platform.yml
+
+  draft:
+    name: Draft the GitHub release
+    needs: ci
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v7
+      - name: Create the draft
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          scripts/release-notes.sh "$GITHUB_REF_NAME" > "$RUNNER_TEMP/notes.md"
+          pre_release=""
+          case "$GITHUB_REF_NAME" in *-*) pre_release="--prerelease" ;; esac
+          gh release create "$GITHUB_REF_NAME" --draft --verify-tag $pre_release \
+            --title "Sourcetrail ${GITHUB_REF_NAME#v}" --notes-file "$RUNNER_TEMP/notes.md"

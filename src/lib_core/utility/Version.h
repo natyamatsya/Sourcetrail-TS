@@ -10,7 +10,8 @@ public:
 	static const Version& getApplicationVersion();
 
 	Version() = default;
-	Version(int major, int minor, int patch);
+	// suffix: "" for a release, "-rc.1" for a pre-release tag, "+g<hash>" for any other commit.
+	Version(int major, int minor, int patch, std::string suffix = {});
 
 	std::string toDisplayString() const;
 
@@ -20,6 +21,7 @@ private:
 	int m_majorNumber = 0;
 	int m_minorNumber = 0;
 	int m_patchNumber = 0;
+	std::string m_suffix;
 };
 
 #endif	  // VERSION_H

@@ -13,6 +13,8 @@ on:
   pull_request:
     branches: ["main"]
   workflow_dispatch:
+  # release.yml builds and tests a release tag with these same jobs.
+  workflow_call:
 
 jobs:
   # ---------------------------------------------------------------------------

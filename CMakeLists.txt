@@ -48,7 +48,10 @@ endif()
 
 # Project ----------------------------------------------------------------------
 
-project(Sourcetrail VERSION 2026.2.11 HOMEPAGE_URL "http://sourcetrail.de")
+# The fork's own SemVer line, independent of upstream's date versions (it diverged
+# at 2026.2.11). A release is a commit that sets this version and dates its
+# CHANGELOG.md section, tagged v<version>; .github/workflows/release.yml checks both.
+project(Sourcetrail VERSION 0.1.0 HOMEPAGE_URL "https://github.com/natyamatsya/Sourcetrail-TS")
 cmake_print_variables(CMAKE_C_COMPILER)
 cmake_print_variables(CMAKE_CXX_COMPILER)
 
@@ -607,6 +610,25 @@ add_subdirectory(src/external)
 
 # Generated into lib's binary dir (on lib's include path): its only consumer is setupApp, which lives in
 # the base lib now. Keeping it out of lib_gui lets the headless indexer's bootstrap compile without lib_gui.
+# The suffix says which build this is: none for the release tag v<version>, the
+# pre-release part for a tag like v<version>-rc.1, and +g<hash> for any other commit.
+# It is stamped at configure time, like the agent build id in src/lib_core.
+if (NOT DEFINED SOURCETRAIL_VERSION_SUFFIX)
+	execute_process(
+		COMMAND git -C ${CMAKE_SOURCE_DIR} describe --tags --exact-match --match "v${PROJECT_VERSION}*" HEAD
+		OUTPUT_VARIABLE _version_tag OUTPUT_STRIP_TRAILING_WHITESPACE ERROR_QUIET)
+	execute_process(
+		COMMAND git -C ${CMAKE_SOURCE_DIR} rev-parse --short HEAD
+		OUTPUT_VARIABLE _version_hash OUTPUT_STRIP_TRAILING_WHITESPACE ERROR_QUIET)
+	if (_version_tag MATCHES "^v${PROJECT_VERSION}(-[0-9A-Za-z.-]+)?$")
+		set(SOURCETRAIL_VERSION_SUFFIX "${CMAKE_MATCH_1}")
+	elseif (_version_hash)
+		set(SOURCETRAIL_VERSION_SUFFIX "+g${_version_hash}")
+	else()
+		set(SOURCETRAIL_VERSION_SUFFIX "")
+	endif()
+endif()
+message(STATUS "Sourcetrail version: ${PROJECT_VERSION}${SOURCETRAIL_VERSION_SUFFIX}")
 configure_file(cmake/productVersion.h.in src/lib_core/productVersion.h)
 
 add_subdirectory(src/resources)
@@ -1049,8 +1071,9 @@ set(CPACK_PACKAGE_VERSION ${CMAKE_PROJECT_VERSION})
 set(CPACK_PACKAGE_DESCRIPTION_SUMMARY "Source code explorer")
 set(CPACK_PACKAGE_DESCRIPTION "Free and open-source cross-platform source explorer that helps you get productive on unfamiliar source code.")
 
-set(CPACK_PACKAGE_CONTACT "P. Most <pmost@pera-software.com>")
-set(CPACK_PACKAGE_VENDOR "PERA Software Solutions GmbH")
+# The fork packages under its own name; upstream's are petermost/Sourcetrail's.
+set(CPACK_PACKAGE_CONTACT "natyamatsya <natyamatsya@users.noreply.github.com>")
+set(CPACK_PACKAGE_VENDOR "natyamatsya")
 set(CPACK_PACKAGE_HOMEPAGE_URL ${PROJECT_HOMEPAGE_URL})
 set(CPACK_PACKAGE_ICON "${CMAKE_BINARY_DIR}/app/Sourcetrail.ico")
 
