@@ -1,7 +1,8 @@
 # Design: Storage-Layer Groundwork — Transport Codegen + Facet Model
 
-**Status: Decided, not yet implemented. Sequenced *before* the remaining
-declaration-modifier features (`open`/`final`, `@available`).** This note records
+**Status: Decided; steps 1–2 of the [staged sequence](#staged-sequence-plan-of-record)
+landed on 2026-07-18 (transport codegen, the `node_attribute` substrate), steps 3–5
+are open.** This note records
 the storage-layer refactor that the fork constraint was hiding. As of the repo
 isolation (upstream `petermost/Sourcetrail` remote removed, `trunk()` repointed
 to `main@origin`, pushed `main` made immutable), there is **no upstream-sync
