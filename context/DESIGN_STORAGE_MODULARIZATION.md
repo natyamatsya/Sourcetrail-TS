@@ -12,7 +12,6 @@ this must coordinate with — see §4).
 | `type/` — POD record structs | 15 h, **0 cpp** | 0 | none (just `:types` enums + `Id`/`types.h`) | **DO FIRST — trivial, high value** |
 | interface — `Storage.h`, `StorageAccess.h`, `StorageStats.h`, `StorageDbTypes.h` | ~4 h | small | abstract | easy, medium value |
 | `sqlite/` — production SQLite impl | 17 h | 3787 | **CppSQLite3** + sqlpp23 schema | the sqlpp23 decision point (§3) |
-| `sqlite/sqlpp23_poc/` | 11 f | 748 | **sqlpp23** (macro+template DSL) | POC being promoted; don't modularize as-is (§4) |
 | `ladybug/` | 2 f | 139 | LadybugConnection | optional backend; last |
 | top-level impl — `PersistentStorage` (356 h), `StorageAccessProxy/Cache/Provider`, `IntermediateStorage`, `ConcurrentStorageIndex` (459 h), `ConcurrentTursoWriter`, turso | 21 f | 6569 | turso, search indexes, graph | god-object layer; do last |
 
@@ -130,12 +129,12 @@ The production `sqlite/` impls couple to two third-party libraries:
 ## 4. Coordinate with the SQL-layer migration (`DESIGN_STORAGE_CODEGEN.md`)
 
 The storage layer is **mid-migration** from hand-written CppSQLite3 to sqlpp23-generated schema — the
-production `sqlite/IndexTables.h` is now itself `sqlpp23-ddl2cpp`-generated ("promoted from `sqlpp23_poc/`"),
+production `sqlite/IndexTables.h` is now itself `sqlpp23-ddl2cpp`-generated (promoted from the sqlpp23 POC),
 with documented manual PK-is-FK corrections. This directly interacts with modularization:
 - Modularizing the **CppSQLite3** impl now risks throwaway work if it's being replaced by sqlpp23.
 - The **macro-free codegen** option (§3, option b) is a shared deliverable with the codegen migration.
-- `sqlpp23_poc/` is the source the production path was promoted *from* — likely legacy; **confirm it's being
-  retired and do not modularize it.**
+- The `sqlpp23_poc/` folder the production path was promoted *from* has been removed; it lives on in commits
+  `89878f427` (bookmark + meta) and `0db959812` (index).
 
 So storage modularization should **follow, or move in lockstep with, the sqlpp23 migration** — not race ahead
 of it on the CppSQLite3 code.

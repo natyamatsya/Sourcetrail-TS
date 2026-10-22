@@ -19,9 +19,9 @@ maintenance dance. The sections below are kept as the design rationale.
 |---|---|---|
 | vcpkg overlay port for sqlpp23 0.69 | `vcpkg-overlay-ports/sqlpp23/` | installs clean under `--enforce-port-checks` |
 | Vendored `ddl2cpp` table generator (+ reserved-word fix) | `tools/sqlpp23/ddl2cpp/` | regression-tested |
-| Bookmark storage POC (typed CRUD, IoC) | `src/lib/data/storage/sqlite/sqlpp23_poc/` | compiles + runs (`POC PASS`) |
-| Meta/version/transaction POC | same | `POC PASS` |
-| Index storage POC (batch insert, client-ids, IN-lists) | same | `INDEX POC PASS` |
+| Bookmark storage POC (typed CRUD, IoC) | commit `89878f427` (removed once Phase 5 shipped) | compiled + ran (`POC PASS`) |
+| Meta/version/transaction POC | same commit | `POC PASS` |
+| Index storage POC (batch insert, client-ids, IN-lists) | commit `0db959812` | `INDEX POC PASS` |
 
 The POCs proved the *mechanics* on standalone connections. What they did **not**
 do — and what this refactor is about — is put a real `SqliteStorage` on an
