@@ -1,5 +1,14 @@
 # Design: Agent MCP bridge (Phase C)
 
+> **Status (2026-10-22):** implemented; the tool names below are the original design
+> names. The shipped tools carry area prefixes (`get_ui_state` → `ui_state`,
+> `load_project` → `project_open`, `activate_node` → `nav_activate_node`,
+> `find_element` → `nav_find`, ...), `describe` serves usage notes per area, and the
+> app speaks agent-control protocol v3 (screen capture, `UiState.dialog`, GUI-only
+> commands that bypass the message thread). The current surface is in
+> [`src/agent_mcp_bridge/README.md`](../src/agent_mcp_bridge/README.md); the version
+> log is in `abi-schemas/ipc-mcp-agent/agent_common.fbs`.
+
 Exposes the running Sourcetrail as an **MCP server** so an AI agent (Claude Code, or
 any MCP client) can drive and observe the UI. It is the agent-facing half of the
 control plane designed in [`DESIGN_AGENT_UI_CONTROL.md`](DESIGN_AGENT_UI_CONTROL.md);

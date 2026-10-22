@@ -182,6 +182,12 @@ things on top, added here (not a parallel C++ command hierarchy):
 
 ## Protocol handshake & versioning
 
+> **Since written:** `Current` is 3 (2026-10-22). v2 answers `GetFrame` (a composite of
+> every visible window, with an optional `region`); v3 adds `UiState.dialog` and moves
+> the commands that only need the GUI thread off the message bus, so they answer while a
+> modal question blocks it. The version log, and the rule for when to bump (an older app
+> would answer *silently wrong*), live in `agent_common.fbs`.
+
 Two version layers meet at the bridge, and only one was covered before this section:
 
 - **MCP wire protocol** (client ↔ `sourcetrail-mcp`): negotiated by rmcp
