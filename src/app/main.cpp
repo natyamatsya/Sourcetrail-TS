@@ -248,6 +248,8 @@ int main(int argc, char* argv[])
 
 		auto applicationSettings = ApplicationSettings::getInstance();
 		ApplicationSettingsPrefiller::prefillPaths(applicationSettings.get());
+		if (commandLineParser.getNoAnimations())
+			ApplicationSettings::suppressAnimations();
 		if (!applicationSettings->getLoggingEnabled())
 			closeConsoleWindow();
 

@@ -31,7 +31,8 @@ struct meta<commandline::TopOpts>
 	static constexpr auto value = object("version", &T::version, "project-file", &T::project_file,
 		"screenshot", &T::screenshot, "screenshot-delay", &T::screenshot_delay, "ui-snapshot",
 		&T::ui_snapshot, "ui-snapshot-format", &T::ui_snapshot_format, "agent-instance",
-		&T::agent_instance, "user-data-dir", &T::user_data_dir);
+		&T::agent_instance, "user-data-dir", &T::user_data_dir,
+		"no-animations", &T::no_animations);
 };
 }	 // namespace glz
 
@@ -181,6 +182,11 @@ const std::string& CommandLineParser::getUiSnapshotFormat() const
 const std::string& CommandLineParser::getAgentInstanceId() const
 {
 	return m_top.agent_instance;
+}
+
+bool CommandLineParser::getNoAnimations() const
+{
+	return m_top.no_animations;
 }
 
 bool CommandLineParser::hasError() const

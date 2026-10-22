@@ -1018,7 +1018,11 @@ struct AgentControlController::Impl
 
 	// Publish a `Settled` for every accepted command whose fan-out has now drained.
 	// Runs from the idle handler of the app scheduler or of a tab's scheduler, so it
-	// checks that the other one is idle too.
+	// checks that the other one is idle too. The last hop of a command's effects is
+	// usually a view posting its update to the GUI thread (QtGraphView::rebuildGraph
+	// goes through onUi), which no scheduler counts: Settled therefore goes out from
+	// the GUI thread, behind everything posted there before it, so a frame taken
+	// after it shows the views updated.
 	void flushSettled()
 	{
 		std::vector<std::uint64_t> settled;
@@ -1046,11 +1050,29 @@ struct AgentControlController::Impl
 			}
 			settled.swap(m_pendingSettle);
 		}
-		for (const std::uint64_t requestId: settled)
-		{
-			flatbuffers::FlatBufferBuilder builder;
-			publishEvent(builder, fb::Event_Settled, fb::CreateSettled(builder, requestId).Union());
-		}
+		m_uiScope.spawn(
+			stdexec::schedule(m_schedulers->ui()) | stdexec::then([this, settled = std::move(settled)]() {
+				// The GUI work that ran first may have dispatched more (a view that
+				// requests data): then these wait for the idle edge that work brings.
+				if (!quiescent())
+				{
+					{
+						const std::lock_guard<std::mutex> lock(m_settleMutex);
+						m_pendingSettle.insert(m_pendingSettle.end(), settled.begin(), settled.end());
+					}
+					// That edge may have passed before they were back in the list.
+					if (quiescent())
+					{
+						flushSettled();
+					}
+					return;
+				}
+				for (const std::uint64_t requestId: settled)
+				{
+					flatbuffers::FlatBufferBuilder builder;
+					publishEvent(builder, fb::Event_Settled, fb::CreateSettled(builder, requestId).Union());
+				}
+			}));
 	}
 
 	// Handshake reply: publish an `AppInfo` event carrying this build's protocol

@@ -46,6 +46,9 @@ pub struct StartOpts {
     /// Attach the platform debugger once the app is up (crash dumps, live
     /// debugging); `None` = whenever one is installed.
     pub debugger: Option<bool>,
+    /// Keep the app's animations; off by default (--no-animations), so a frame
+    /// taken once a command settles shows the end state, not a transition.
+    pub animations: bool,
 }
 
 /// The profile that means "the developer's own settings": no --user-data-dir.
@@ -326,6 +329,9 @@ impl InstanceManager {
         // Agent control is always on in agent builds; only the namespace is passed.
         let mut cmd = Command::new(&opts.bin);
         cmd.arg("--agent-instance").arg(id);
+        if !opts.animations {
+            cmd.arg("--no-animations");
+        }
         if opts.headless {
             cmd.env("QT_QPA_PLATFORM", "offscreen");
         }

@@ -18,6 +18,7 @@
 inline const size_t ApplicationSettings::VERSION = 8;
 
 inline std::shared_ptr<ApplicationSettings> ApplicationSettings::s_instance;
+inline bool ApplicationSettings::s_animationsSuppressed = false;
 
 inline std::shared_ptr<ApplicationSettings> ApplicationSettings::getInstance()
 {
@@ -101,12 +102,17 @@ inline void ApplicationSettings::setTextEncoding(const std::string& textEncoding
 
 inline bool ApplicationSettings::getUseAnimations() const
 {
-	return getValue<bool>("application/use_animations", true);
+	return !s_animationsSuppressed && getValue<bool>("application/use_animations", true);
 }
 
 inline void ApplicationSettings::setUseAnimations(bool useAnimations)
 {
 	setValue<bool>("application/use_animations", useAnimations);
+}
+
+inline void ApplicationSettings::suppressAnimations()
+{
+	s_animationsSuppressed = true;
 }
 
 inline bool ApplicationSettings::getShowBuiltinTypesInGraph() const

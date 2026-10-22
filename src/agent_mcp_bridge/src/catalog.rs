@@ -75,7 +75,7 @@ Topics: describe() with no topic lists them all.",
         summary: "Spawn, attach to, list, and stop Sourcetrail processes; protocol version check.",
         tools: &["instance_start", "instance_stop", "instance_list", "instance_handshake"],
         doc: "\
-instance_start { bin, id?, project?, headless=true, profile=\"agent\", fresh=false, debugger? } -> { id }
+instance_start { bin, id?, project?, headless=true, profile=\"agent\", fresh=false, debugger?, animations=false } -> { id }
   Spawns `bin` with --agent-instance <id> (channels st.agent.<id>.*) and returns once the app \
 answers the handshake. id defaults to the binary's git label <branch>-<shorthash>, so two \
 builds run side by side for comparisons. headless sets QT_QPA_PLATFORM=offscreen. `project` \
@@ -89,6 +89,7 @@ runs, $SOURCETRAIL_MCP_HOME/profiles/<name>, \"agent\" unless profile names anot
 profile that never ran starts from Sourcetrail's defaults. profile \"user\" runs on your own \
 settings instead. fresh: true runs on a throwaway copy of the profile, deleted when the \
 instance stops: a known starting point whose changes never persist.
+  animations: the app runs with --no-animations unless this is true (the stored setting is left alone). Settling waits for the app's queues, not for a graph transition or a smooth scroll still playing, so with animations on a ui_frame right after a command can show the view midway and ui_input coordinates taken from it can miss.
 
 instance_stop { instance? } -> { killed: id }
   Kills a spawned instance (or forgets an attached one). Empty = the one running instance.

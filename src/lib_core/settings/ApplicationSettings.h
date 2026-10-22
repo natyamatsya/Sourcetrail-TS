@@ -62,6 +62,9 @@ public:
 
 	bool getUseAnimations() const;
 	void setUseAnimations(bool useAnimations);
+	//! Turns animations off for this run without changing the stored setting
+	//! (--no-animations): whoever drives the app sees each view in its end state.
+	static void suppressAnimations();
 
 	bool getShowBuiltinTypesInGraph() const;
 	void setShowBuiltinTypesInGraph(bool showBuiltinTypes);
@@ -181,6 +184,7 @@ private:
 	void operator=(const ApplicationSettings&);
 
 	static std::shared_ptr<ApplicationSettings> s_instance;
+	static bool s_animationsSuppressed;
 };
 
 #include "ApplicationSettings.inl"

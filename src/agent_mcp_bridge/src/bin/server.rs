@@ -304,6 +304,10 @@ struct StartArgs {
     /// one is installed (cdb on Windows, lldb on macOS).
     #[serde(default)]
     debugger: Option<bool>,
+    /// Keep the app's animations (graph transitions, smooth scrolling). Off by
+    /// default: settling does not wait for an animation, so a frame would catch it midway.
+    #[serde(default)]
+    animations: bool,
 }
 
 #[derive(serde::Deserialize, rmcp::schemars::JsonSchema)]
@@ -452,6 +456,7 @@ impl SourcetrailServer {
                         profile: a.profile,
                         fresh: a.fresh,
                         debugger: a.debugger,
+                        animations: a.animations,
                     })?;
                     Ok(json!({ "id": id }))
                 })

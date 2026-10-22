@@ -320,6 +320,18 @@ don't "settle" at queue-idle; they settle at their domain event. `Settled` there
 contract: `load_project`/reindex → await `AppStateChanged(Ready)`; everything else → await
 `Settled`.
 
+Two more hops, found once agents read frames right after `Settled`:
+
+- **The GUI thread.** A view's last step is usually posting its update to the GUI thread
+  (`QtGraphView::rebuildGraph` goes through `onUi`), which no scheduler counts. A frame
+  taken at the idle edge showed the previous graph. `Settled` therefore goes out from the
+  GUI thread, posted behind everything queued there; if that work dispatched more, the
+  request waits for the next idle edge.
+- **Animations.** A graph transition or a smooth scroll plays for a second after its view
+  updated, and nothing waits for it. Instances the bridge spawns run with
+  `--no-animations` (a session override; the stored setting is untouched), unless
+  `instance_start` asks for `animations: true`.
+
 ### Observation model — events as subscriptions, not polling
 
 The MCP bridge is request/response only: the agent observes by calling `get_ui_state`. That
