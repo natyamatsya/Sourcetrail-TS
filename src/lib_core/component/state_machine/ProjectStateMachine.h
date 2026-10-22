@@ -2,16 +2,12 @@
 #define PROJECT_STATE_MACHINE_H
 
 #include <chrono>
-#include <cstdint>
 #include <memory>
-#include <mutex>
 #include <string>
-#include <vector>
 
 #include "AppStateMachine.h"
+#include "ConcurrentStateMachine.h"
 #include "RefreshInfo.h"
-#include "RemoteStateMachine.h"
-#include "StateMachine.h"
 
 // The open project's lifecycle, from a load request until the project is usable:
 //
@@ -26,11 +22,8 @@
 // the load lands after a first navigation. Application and TabsController report
 // the steps; `load` and `close` come from agents. A load asked for while the app
 // is still starting waits for it (AppStateMachine::whenStarted).
-class ProjectStateMachine
-	: public RemoteStateMachine
-	, public std::enable_shared_from_this<ProjectStateMachine>
+struct ProjectMachine
 {
-public:
 	enum class State
 	{
 		NoProject,
@@ -57,6 +50,55 @@ public:
 		CloseRefused
 	};
 
+	static constexpr std::string_view name = "project";
+	static constexpr State initial = State::NoProject;
+	static constexpr std::array states {
+		named(State::NoProject, "no_project"),
+		named(State::Loading, "loading"),
+		named(State::Opening, "opening"),
+		named(State::Ready, "ready"),
+		named(State::Unloading, "unloading")};
+	static constexpr std::array events {
+		control(Event::Load, "load"),
+		control(Event::Close, "close"),
+		named(Event::Requested, "requested"),
+		named(Event::Kept, "kept"),
+		named(Event::Failed, "failed"),
+		named(Event::Loaded, "loaded"),
+		named(Event::TabOpening, "tab_opening"),
+		named(Event::Reloading, "reloading"),
+		named(Event::Shown, "shown"),
+		named(Event::TimedOut, "timed_out"),
+		named(Event::Closed, "closed"),
+		named(Event::CloseRefused, "close_refused")};
+	static constexpr auto transitions = std::to_array<StateMachine<State, Event>::Transition>({
+		{State::NoProject, Event::Load, State::Loading},
+		{State::NoProject, Event::Requested, State::Loading},
+
+		{State::Loading, Event::Kept, State::Ready},
+		{State::Loading, Event::Failed, State::NoProject},
+		{State::Loading, Event::Loaded, State::Ready},
+		{State::Loading, Event::TabOpening, State::Opening},
+
+		{State::Opening, Event::Shown, State::Ready},
+		{State::Opening, Event::TimedOut, State::Ready},
+		{State::Opening, Event::Requested, State::Loading},
+
+		{State::Ready, Event::Load, State::Loading},
+		{State::Ready, Event::Requested, State::Loading},
+		{State::Ready, Event::TabOpening, State::Opening},
+		{State::Ready, Event::Reloading, State::Loading},
+		{State::Ready, Event::Close, State::Unloading},
+		{State::Ready, Event::Closed, State::NoProject},
+
+		{State::Unloading, Event::Closed, State::NoProject},
+		{State::Unloading, Event::CloseRefused, State::Ready},
+	});
+};
+
+class ProjectStateMachine: public ConcurrentStateMachine<ProjectMachine>
+{
+public:
 	static std::shared_ptr<ProjectStateMachine> instance();
 
 	explicit ProjectStateMachine(std::shared_ptr<AppStateMachine> app);
@@ -91,22 +133,14 @@ public:
 	// (with a warning): a tab that never activates must not hold the app.
 	void setOpeningLimit(std::chrono::milliseconds limit);
 
-	std::string name() const override;
-	MachineSnapshot snapshot() const override;
 	MachineFireResult fire(const std::string& event, const std::string& args, EventSource source) override;
 
-	static const char* stateName(State state);
-	static const char* eventName(Event event);
-
 private:
-	bool move(Event event, EventSource source, std::vector<MachineTransition>& published);
-	void moveAndPublish(Event event, const std::string* outcome = nullptr);
-	void openingTimedOut(std::uint64_t revision);
-	std::string contextLocked() const;
+	// Moves along an application event, recording `outcome` when given.
+	void report(Event event, const std::string* outcome = nullptr);
+	std::string contextLocked() const override;
 
 	const std::shared_ptr<AppStateMachine> m_app;
-	mutable std::mutex m_mutex;
-	StateMachine<State, Event> m_machine;
 	std::string m_path;	// the project loading or open
 	std::string m_outcome;	// how the last load or close ended
 	bool m_waitingForStartup = false;

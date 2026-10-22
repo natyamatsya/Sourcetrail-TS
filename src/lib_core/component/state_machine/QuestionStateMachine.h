@@ -10,8 +10,7 @@
 #include <string>
 #include <vector>
 
-#include "RemoteStateMachine.h"
-#include "StateMachine.h"
+#include "ConcurrentStateMachine.h"
 
 // Shows a question to the user. The answer comes back through
 // QuestionStateMachine::answer, from the user's click or from an agent.
@@ -35,9 +34,8 @@ public:
 //
 // Questions asked while one is open queue up behind it: answering the first moves
 // to idle, and `ask` brings up the next.
-class QuestionStateMachine: public RemoteStateMachine
+struct QuestionMachine
 {
-public:
 	enum class State
 	{
 		Idle,
@@ -50,9 +48,22 @@ public:
 		Withdraw
 	};
 
-	static std::shared_ptr<QuestionStateMachine> instance();
+	static constexpr std::string_view name = "question";
+	static constexpr State initial = State::Idle;
+	static constexpr std::array states {named(State::Idle, "idle"), named(State::Asking, "asking")};
+	static constexpr std::array events {
+		named(Event::Ask, "ask"), control(Event::Answer, "answer"), named(Event::Withdraw, "withdraw")};
+	static constexpr auto transitions = std::to_array<StateMachine<State, Event>::Transition>({
+		{State::Idle, Event::Ask, State::Asking},
+		{State::Asking, Event::Answer, State::Idle},
+		{State::Asking, Event::Withdraw, State::Idle},
+	});
+};
 
-	QuestionStateMachine();
+class QuestionStateMachine: public ConcurrentStateMachine<QuestionMachine>
+{
+public:
+	static std::shared_ptr<QuestionStateMachine> instance();
 
 	// Asks and waits for the answer: the index of the chosen option, or -1 when the
 	// question was withdrawn or closed without a choice.
@@ -68,8 +79,6 @@ public:
 	// get -1. For a window that closed, or a presenter going away.
 	void withdraw(QuestionPresenter* presenter);
 
-	std::string name() const override;
-	MachineSnapshot snapshot() const override;
 	MachineFireResult fire(const std::string& event, const std::string& args, EventSource source) override;
 
 private:
@@ -81,14 +90,9 @@ private:
 		QuestionPresenter* presenter = nullptr;
 	};
 
-	// Under m_mutex: moves the machine and records the transition to publish.
-	void move(Event event, EventSource source, std::vector<MachineTransition>& published);
-	std::string contextLocked() const;
-	MachineSnapshot snapshotLocked() const;
+	std::string contextLocked() const override;
 
-	mutable std::mutex m_mutex;
 	std::condition_variable m_answered;
-	StateMachine<State, Event> m_machine;
 	std::deque<Question> m_open;	// front: the question the state is about
 	std::map<std::uint64_t, int> m_answers;	// answered, not yet collected by the asker
 	std::uint64_t m_nextId = 1;

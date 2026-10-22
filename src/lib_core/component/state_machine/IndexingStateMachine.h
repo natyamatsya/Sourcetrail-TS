@@ -3,6 +3,7 @@
 
 #include <condition_variable>
 #include <cstddef>
+#include <expected>
 #include <functional>
 #include <map>
 #include <memory>
@@ -12,9 +13,8 @@
 #include <string>
 #include <vector>
 
+#include "ConcurrentStateMachine.h"
 #include "RefreshInfo.h"
-#include "RemoteStateMachine.h"
-#include "StateMachine.h"
 
 enum class DatabasePolicy
 {
@@ -70,9 +70,8 @@ public:
 //
 // "pending" is the pipeline deciding what comes next: it may ask a question first
 // (see QuestionStateMachine), find nothing to do, or need the mode chosen.
-class IndexingStateMachine: public RemoteStateMachine
+struct IndexingMachine
 {
-public:
 	enum class State
 	{
 		Idle,
@@ -105,9 +104,72 @@ public:
 		End
 	};
 
-	static std::shared_ptr<IndexingStateMachine> instance();
+	static constexpr std::string_view name = "indexing";
+	static constexpr State initial = State::Idle;
+	static constexpr std::array states {
+		named(State::Idle, "idle"),
+		named(State::Pending, "pending"),
+		named(State::ChoosingMode, "choosing_mode"),
+		named(State::Preparing, "preparing"),
+		named(State::Indexing, "indexing"),
+		named(State::Finishing, "finishing"),
+		named(State::Reporting, "reporting")};
+	static constexpr std::array events {
+		control(Event::Refresh, "refresh"),
+		control(Event::SelectMode, "select_mode"),
+		control(Event::Start, "start"),
+		control(Event::Cancel, "cancel"),
+		control(Event::Interrupt, "interrupt"),
+		control(Event::Keep, "keep"),
+		control(Event::Discard, "discard"),
+		control(Event::Reindex, "reindex"),
+		named(Event::Requested, "requested"),
+		named(Event::AskMode, "ask_mode"),
+		named(Event::Counted, "counted"),
+		named(Event::Prepare, "prepare"),
+		named(Event::Begin, "begin"),
+		named(Event::WrapUp, "wrap_up"),
+		named(Event::Report, "report"),
+		named(Event::End, "end")};
+	static constexpr auto transitions = std::to_array<StateMachine<State, Event>::Transition>({
+		{State::Idle, Event::Refresh, State::Pending},
+		{State::Idle, Event::Requested, State::Pending},
 
-	IndexingStateMachine();
+		{State::Pending, Event::AskMode, State::ChoosingMode},
+		{State::Pending, Event::Prepare, State::Preparing},
+		{State::Pending, Event::End, State::Idle},
+
+		{State::ChoosingMode, Event::SelectMode, State::ChoosingMode},
+		{State::ChoosingMode, Event::Counted, State::ChoosingMode},
+		{State::ChoosingMode, Event::Start, State::Pending},
+		{State::ChoosingMode, Event::Cancel, State::Idle},
+		{State::ChoosingMode, Event::End, State::Idle},
+
+		{State::Preparing, Event::Begin, State::Indexing},
+		{State::Preparing, Event::Interrupt, State::Finishing},
+		{State::Preparing, Event::WrapUp, State::Finishing},
+		{State::Preparing, Event::Report, State::Reporting},
+		{State::Preparing, Event::End, State::Idle},
+
+		{State::Indexing, Event::Interrupt, State::Finishing},
+		{State::Indexing, Event::WrapUp, State::Finishing},
+		{State::Indexing, Event::Report, State::Reporting},
+		{State::Indexing, Event::End, State::Idle},
+
+		{State::Finishing, Event::Report, State::Reporting},
+		{State::Finishing, Event::End, State::Idle},
+
+		{State::Reporting, Event::Keep, State::Finishing},
+		{State::Reporting, Event::Discard, State::Finishing},
+		{State::Reporting, Event::Reindex, State::Finishing},
+		{State::Reporting, Event::End, State::Idle},
+	});
+};
+
+class IndexingStateMachine: public ConcurrentStateMachine<IndexingMachine>
+{
+public:
+	static std::shared_ptr<IndexingStateMachine> instance();
 
 	// The pipeline's side.
 
@@ -144,12 +206,8 @@ public:
 	MachineFireResult interrupt(EventSource source);
 	MachineFireResult decide(DatabasePolicy policy, EventSource source);
 
-	std::string name() const override;
-	MachineSnapshot snapshot() const override;
 	MachineFireResult fire(const std::string& event, const std::string& args, EventSource source) override;
 
-	static const char* stateName(State state);
-	static const char* eventName(Event event);
 	static const char* modeName(RefreshMode mode);
 	static std::optional<RefreshMode> modeFromName(const std::string& name);
 
@@ -162,17 +220,14 @@ private:
 		std::string file;
 	};
 
-	// Under m_mutex: moves along `event` and records the transition to publish.
-	// False when the current state has no row for it.
-	bool move(Event event, EventSource source, std::vector<MachineTransition>& published);
 	void count(RefreshMode mode);
 	void counted(RefreshMode mode, const RefreshInfo& info);
 	void resetChoice();
-	std::string contextLocked() const;
+	// Whether `mode` is offered in the open choice; the reason when not.
+	std::expected<RefreshMode, std::string> offered(RefreshMode mode) const;
+	std::string contextLocked() const override;
 
-	mutable std::mutex m_mutex;
 	std::condition_variable m_decided;
-	StateMachine<State, Event> m_machine;
 
 	// choosing_mode
 	std::function<RefreshInfo(RefreshMode)> m_countFiles;

@@ -5,12 +5,10 @@
 #include <cstdint>
 #include <functional>
 #include <memory>
-#include <mutex>
 #include <string>
 #include <vector>
 
-#include "RemoteStateMachine.h"
-#include "StateMachine.h"
+#include "ConcurrentStateMachine.h"
 
 // The application's own lifecycle:
 //
@@ -20,9 +18,8 @@
 // starting the app: the language packages registered, the settings prefilled, the
 // startup load queued. Work that needs a started app (a project load an agent asks
 // for while it starts) waits for `started` instead of racing it (whenStarted).
-class AppStateMachine: public RemoteStateMachine
+struct AppMachine
 {
-public:
 	enum class State
 	{
 		Starting,
@@ -35,9 +32,22 @@ public:
 		Quit
 	};
 
-	static std::shared_ptr<AppStateMachine> instance();
+	static constexpr std::string_view name = "app";
+	static constexpr State initial = State::Starting;
+	static constexpr std::array states {
+		named(State::Starting, "starting"), named(State::Running, "running"), named(State::Closing, "closing")};
+	static constexpr std::array events {named(Event::Started, "started"), named(Event::Quit, "quit")};
+	static constexpr auto transitions = std::to_array<StateMachine<State, Event>::Transition>({
+		{State::Starting, Event::Started, State::Running},
+		{State::Starting, Event::Quit, State::Closing},
+		{State::Running, Event::Quit, State::Closing},
+	});
+};
 
-	AppStateMachine();
+class AppStateMachine: public ConcurrentStateMachine<AppMachine>
+{
+public:
+	static std::shared_ptr<AppStateMachine> instance();
 
 	// main has finished starting the app: runs what waited for it.
 	void started();
@@ -49,19 +59,9 @@ public:
 	// the thread that reports it, in the order asked).
 	void whenStarted(std::function<void()> work);
 
-	std::string name() const override;
-	MachineSnapshot snapshot() const override;
-	MachineFireResult fire(const std::string& event, const std::string& args, EventSource source) override;
-
-	static const char* stateName(State state);
-	static const char* eventName(Event event);
-
 private:
-	void move(Event event, std::vector<MachineTransition>& published);
-	std::string contextLocked() const;
+	std::string contextLocked() const override;
 
-	mutable std::mutex m_mutex;
-	StateMachine<State, Event> m_machine;
 	std::vector<std::function<void()>> m_waiting;	// for `started`
 	const std::chrono::steady_clock::time_point m_createdAt = std::chrono::steady_clock::now();
 	std::int64_t m_startupMs = -1;	// how long starting took, once known

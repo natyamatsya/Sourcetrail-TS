@@ -648,6 +648,26 @@ drives through the same events:
   state, the events it accepts from outside now, a JSON context (what the state is
   about), and `fire(event, args, source)`. The registry publishes every transition,
   with its source: `ui` (a button), `agent`, or `app` (the pipeline moving on).
+- **`ConcurrentStateMachine<Spec>`** (`utility/state_machine/ConcurrentStateMachine.h`):
+  the base of every machine below. A machine is first a `MachineSpec`, a struct of
+  constexpr data: its `State`/`Event` scoped enums, their names (`named`, and
+  `control` for the events sent from outside), the initial state and the transition
+  table. A `consteval` check rejects a spec whose table uses an unnamed state or has
+  two rows for one (state, event), at compile time. The base turns the spec into a
+  thread-safe `RemoteStateMachine`:
+  - one lock for the table and the machine's own data, held by a `Transaction`
+    (RAII); the moves made in it are published when it ends, after the lock is
+    released, so an observer may read the machine back;
+  - the snapshot, the event names, `controlNamed`, the refusals ("'x' is not accepted
+    in state 'y'", unknown events listing the controls) and a `fire` for machines
+    that are only watched;
+  - one timeout at a time, armed in a Transaction and ended by the next move, whose
+    handler runs in a Transaction of its own on a timer thread (`project`'s opening
+    limit, `activation`'s rendering limit). It never runs on a machine that is going.
+
+  A machine adds its data, its `contextLocked()` and the operations its callers use.
+  Control arguments parse through `parseArgs<Args>` (`MachineArgs.h`) into a
+  `std::expected`.
 - **`question`** (`component/state_machine/QuestionStateMachine`): idle ⇄ asking.
   `DialogView::confirm()` asks it and waits on a condition variable; the dialog is
   its presenter. Questions asked meanwhile queue behind the open one.

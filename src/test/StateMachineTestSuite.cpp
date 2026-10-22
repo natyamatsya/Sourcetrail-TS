@@ -1,7 +1,9 @@
 #include "Catch2.hpp"
 
 #include <atomic>
+#include <array>
 #include <chrono>
+#include <format>
 #include <future>
 #include <mutex>
 #include <string>
@@ -10,6 +12,7 @@
 
 #include "ActivationStateMachine.h"
 #include "AppStateMachine.h"
+#include "ConcurrentStateMachine.h"
 #include "IndexingStateMachine.h"
 #include "ProjectStateMachine.h"
 #include "QuestionStateMachine.h"
@@ -643,4 +646,184 @@ TEST_CASE("activation follows the messages that change the views")
 	REQUIRE(ActivationStateMachine::changesViews("MessageGraphNodeExpand"));
 	REQUIRE_FALSE(ActivationStateMachine::changesViews("MessageStatus"));
 	REQUIRE_FALSE(ActivationStateMachine::changesViews("MessageAgentCommand"));
+}
+
+namespace
+{
+struct LampMachine
+{
+	enum class State
+	{
+		Off,
+		On,
+		Broken
+	};
+	enum class Event
+	{
+		Press,
+		Burn
+	};
+
+	static constexpr std::string_view name = "lamp";
+	static constexpr State initial = State::Off;
+	static constexpr std::array states {
+		named(State::Off, "off"), named(State::On, "on"), named(State::Broken, "broken")};
+	static constexpr std::array events {control(Event::Press, "press"), named(Event::Burn, "burn")};
+	static constexpr auto transitions = std::to_array<StateMachine<State, Event>::Transition>({
+		{State::Off, Event::Press, State::On},
+		{State::On, Event::Press, State::Off},
+		{State::On, Event::Burn, State::Broken},
+	});
+};
+
+// A lamp left on burns out after a while, unless pressed again first.
+class Lamp: public ConcurrentStateMachine<LampMachine>
+{
+public:
+	explicit Lamp(std::chrono::milliseconds lifetime): m_lifetime(lifetime) {}
+
+	MachineFireResult fire(const std::string& event, const std::string&  /*args*/, EventSource source) override
+	{
+		if (controlNamed(event) != Event::Press)
+		{
+			return unknownEvent(event);
+		}
+		Transaction transaction(*this);
+		if (!transaction.move(Event::Press, source))
+		{
+			return transaction.refuse(Event::Press);
+		}
+		m_presses++;
+		if (transaction.state() == State::On)
+		{
+			transaction.timeout(m_lifetime, [](Transaction& burning) { burning.move(Event::Burn); });
+		}
+		return {true, "pressed"};
+	}
+
+private:
+	std::string contextLocked() const override
+	{
+		return std::format(R"({{"presses":{}}})", m_presses);
+	}
+
+	const std::chrono::milliseconds m_lifetime;
+	int m_presses = 0;
+};
+
+struct UnnamedStateMachine
+{
+	enum class State
+	{
+		A,
+		B
+	};
+	enum class Event
+	{
+		Go
+	};
+	static constexpr std::string_view name = "unnamed";
+	static constexpr State initial = State::A;
+	static constexpr std::array states {named(State::A, "a")};
+	static constexpr std::array events {named(Event::Go, "go")};
+	static constexpr auto transitions = std::to_array<StateMachine<State, Event>::Transition>({
+		{State::A, Event::Go, State::B},
+	});
+};
+
+struct AmbiguousMachine: UnnamedStateMachine
+{
+	static constexpr std::array states {named(State::A, "a"), named(State::B, "b")};
+	static constexpr auto transitions = std::to_array<StateMachine<State, Event>::Transition>({
+		{State::A, Event::Go, State::B},
+		{State::A, Event::Go, State::A},
+	});
+};
+
+struct UnscopedMachine
+{
+	enum State
+	{
+		A
+	};
+	enum Event
+	{
+		Go
+	};
+	static constexpr std::string_view name = "unscoped";
+	static constexpr State initial = A;
+	static constexpr std::array<Named<State>, 0> states {};
+	static constexpr std::array<Named<Event>, 0> events {};
+	static constexpr std::array<StateMachine<State, Event>::Transition, 0> transitions {};
+};
+}	 // namespace
+
+// The spec is checked as it is compiled.
+static_assert(MachineSpec<LampMachine> && isWellFormed<LampMachine>());
+static_assert(MachineSpec<IndexingMachine> && isWellFormed<IndexingMachine>());
+static_assert(!isWellFormed<UnnamedStateMachine>(), "a state the table uses has no name");
+static_assert(!isWellFormed<AmbiguousMachine>(), "two rows for one (state, event)");
+static_assert(!MachineSpec<UnscopedMachine>, "states and events are scoped enums");
+static_assert(Lamp::controlNamed("press") == LampMachine::Event::Press);
+static_assert(!Lamp::controlNamed("burn"), "burn is the lamp's own event, not a control");
+static_assert(IndexingStateMachine::stateName(IndexingMachine::State::ChoosingMode) == "choosing_mode");
+
+TEST_CASE("concurrent state machine names its controls and refuses the rest")
+{
+	const auto lamp = std::make_shared<Lamp>(std::chrono::hours(1));
+	REQUIRE(Lamp::controlNames() == "press");
+	REQUIRE(lamp->snapshot().events == std::vector<std::string> {"press"});
+
+	const MachineFireResult unknown = lamp->fire("burn", "", EventSource::Agent);
+	REQUIRE_FALSE(unknown.ok);
+	REQUIRE(unknown.message == "unknown event 'burn' (press; the others come from the application)");
+	REQUIRE(AppStateMachine::instance()->fire("started", "", EventSource::Agent).message ==
+			"the app machine takes no events from outside ('started'): watch it");
+	REQUIRE(IndexingStateMachine::controlNames() == "refresh, select_mode, start, cancel, interrupt, keep, discard, reindex");
+}
+
+TEST_CASE("concurrent state machine publishes its moves once the lock is released")
+{
+	const auto lamp = std::make_shared<Lamp>(std::chrono::hours(1));
+	std::vector<std::string> seen;
+	// An observer reading the machine back would deadlock under the lock.
+	const std::size_t id = StateMachineRegistry::instance().addObserver([&](const MachineTransition& transition) {
+		if (transition.machine == "lamp")
+		{
+			seen.push_back(transition.to + " " + lamp->snapshot().state + " " + transition.context);
+		}
+	});
+	REQUIRE(lamp->fire("press", "", EventSource::Ui).ok);
+	REQUIRE(lamp->fire("press", "", EventSource::Ui).ok);
+	StateMachineRegistry::instance().removeObserver(id);
+
+	REQUIRE(seen == std::vector<std::string> {R"(on on {"presses":0})", R"(off off {"presses":1})"});
+	REQUIRE(lamp->snapshot().revision == 2);
+}
+
+TEST_CASE("concurrent state machine timeout runs unless the machine moves first")
+{
+	const auto lamp = std::make_shared<Lamp>(std::chrono::milliseconds(20));
+	Recorder recorder("lamp");
+
+	REQUIRE(lamp->fire("press", "", EventSource::Agent).ok);
+	REQUIRE(lamp->fire("press", "", EventSource::Agent).ok);	// off before it burns
+	std::this_thread::sleep_for(std::chrono::milliseconds(60));
+	REQUIRE(lamp->state() == LampMachine::State::Off);
+
+	REQUIRE(lamp->fire("press", "", EventSource::Agent).ok);
+	// Published once the timeout's Transaction let go of the lock.
+	REQUIRE(eventually([&]() { return recorder.path().back() == "on>broken:burn(app)"; }));
+	REQUIRE(lamp->state() == LampMachine::State::Broken);
+	REQUIRE_FALSE(lamp->fire("press", "", EventSource::Agent).ok);
+}
+
+TEST_CASE("concurrent state machine dropped with a timeout pending")
+{
+	auto lamp = std::make_shared<Lamp>(std::chrono::milliseconds(30));
+	Recorder recorder("lamp");
+	REQUIRE(lamp->fire("press", "", EventSource::Agent).ok);
+	lamp.reset();	// joins the timer; the timeout never runs
+	std::this_thread::sleep_for(std::chrono::milliseconds(60));
+	REQUIRE(recorder.path() == std::vector<std::string> {"off>on:press(agent)"});
 }

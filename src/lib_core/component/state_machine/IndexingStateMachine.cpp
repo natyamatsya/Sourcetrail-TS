@@ -2,8 +2,7 @@
 
 #include <algorithm>
 
-#include <glaze/glaze.hpp>
-
+#include "MachineArgs.h"
 #include "MessageIndexingInterrupted.h"
 #include "MessageRefresh.h"
 #include "TabIds.h"
@@ -34,6 +33,7 @@ struct ReportContext
 	bool interrupted = false;
 };
 
+// Only what the current state is about is filled; glaze leaves out the empty optionals.
 struct IndexingContext
 {
 	std::optional<std::vector<std::string>> modes;
@@ -51,66 +51,7 @@ struct ModeArgs
 {
 	std::optional<std::string> mode;
 };
-
-struct NoArgs
-{
-};
 }	 // namespace indexing_machine_json
-
-namespace
-{
-using namespace indexing_machine_json;
-
-using State = IndexingStateMachine::State;
-using Event = IndexingStateMachine::Event;
-
-// The events a dialog or an agent may send; the rest come from the pipeline.
-bool isControl(Event event)
-{
-	switch (event)
-	{
-	case Event::Refresh:
-	case Event::SelectMode:
-	case Event::Start:
-	case Event::Cancel:
-	case Event::Interrupt:
-	case Event::Keep:
-	case Event::Discard:
-	case Event::Reindex:
-		return true;
-	default:
-		return false;
-	}
-}
-
-// Only what the current state is about is filled; glaze leaves out the empty optionals.
-template <typename Args>
-std::optional<std::string> parseArgs(const std::string& args, Args& parsed)
-{
-	const std::string text = args.empty() ? std::string("{}") : args;
-	if (const auto error = glz::read_json(parsed, text))
-	{
-		return glz::format_error(error, text);
-	}
-	return std::nullopt;
-}
-
-void publishAll(const std::vector<MachineTransition>& published)
-{
-	for (const MachineTransition& transition: published)
-	{
-		StateMachineRegistry::instance().publish(transition);
-	}
-}
-
-MachineFireResult notAccepted(Event event, State state)
-{
-	return {
-		false,
-		std::string("'") + IndexingStateMachine::eventName(event) + "' is not accepted in state '" +
-			IndexingStateMachine::stateName(state) + "'"};
-}
-}	 // namespace
 
 std::shared_ptr<IndexingStateMachine> IndexingStateMachine::instance()
 {
@@ -118,72 +59,25 @@ std::shared_ptr<IndexingStateMachine> IndexingStateMachine::instance()
 	return machine;
 }
 
-IndexingStateMachine::IndexingStateMachine()
-	: m_machine(
-		  State::Idle,
-		  {
-			  {State::Idle, Event::Refresh, State::Pending},
-			  {State::Idle, Event::Requested, State::Pending},
-
-			  {State::Pending, Event::AskMode, State::ChoosingMode},
-			  {State::Pending, Event::Prepare, State::Preparing},
-			  {State::Pending, Event::End, State::Idle},
-
-			  {State::ChoosingMode, Event::SelectMode, State::ChoosingMode},
-			  {State::ChoosingMode, Event::Counted, State::ChoosingMode},
-			  {State::ChoosingMode, Event::Start, State::Pending},
-			  {State::ChoosingMode, Event::Cancel, State::Idle},
-			  {State::ChoosingMode, Event::End, State::Idle},
-
-			  {State::Preparing, Event::Begin, State::Indexing},
-			  {State::Preparing, Event::Interrupt, State::Finishing},
-			  {State::Preparing, Event::WrapUp, State::Finishing},
-			  {State::Preparing, Event::Report, State::Reporting},
-			  {State::Preparing, Event::End, State::Idle},
-
-			  {State::Indexing, Event::Interrupt, State::Finishing},
-			  {State::Indexing, Event::WrapUp, State::Finishing},
-			  {State::Indexing, Event::Report, State::Reporting},
-			  {State::Indexing, Event::End, State::Idle},
-
-			  {State::Finishing, Event::Report, State::Reporting},
-			  {State::Finishing, Event::End, State::Idle},
-
-			  {State::Reporting, Event::Keep, State::Finishing},
-			  {State::Reporting, Event::Discard, State::Finishing},
-			  {State::Reporting, Event::Reindex, State::Finishing},
-			  {State::Reporting, Event::End, State::Idle},
-		  })
-{
-}
-
 void IndexingStateMachine::requested()
 {
-	std::vector<MachineTransition> published;
+	Transaction transaction(*this);
+	// Already pending when an agent's `refresh` brought the request here.
+	if (transaction.state() == State::Idle)
 	{
-		const std::lock_guard<std::mutex> lock(m_mutex);
-		// Already pending when an agent's `refresh` brought the request here.
-		if (m_machine.state() == State::Idle)
-		{
-			m_outcome.clear();
-			move(Event::Requested, EventSource::App, published);
-		}
+		m_outcome.clear();
+		transaction.move(Event::Requested);
 	}
-	publishAll(published);
 }
 
 void IndexingStateMachine::requestHandled(const std::string& outcome)
 {
-	std::vector<MachineTransition> published;
+	Transaction transaction(*this);
+	if (transaction.state() == State::Pending)
 	{
-		const std::lock_guard<std::mutex> lock(m_mutex);
-		if (m_machine.state() == State::Pending)
-		{
-			m_outcome = outcome;
-			move(Event::End, EventSource::App, published);
-		}
+		m_outcome = outcome;
+		transaction.move(Event::End);
 	}
-	publishAll(published);
 }
 
 void IndexingStateMachine::chooseMode(
@@ -194,9 +88,8 @@ void IndexingStateMachine::chooseMode(
 	std::function<void()> onCancel,
 	IndexingPresenter* presenter)
 {
-	std::vector<MachineTransition> published;
 	{
-		const std::lock_guard<std::mutex> lock(m_mutex);
+		Transaction transaction(*this);
 		resetChoice();
 		m_countFiles = std::move(countFiles);
 		m_modes = modes;
@@ -207,18 +100,16 @@ void IndexingStateMachine::chooseMode(
 		m_counting.insert(initialMode);
 		// Every refresh passes requested(); should one ever bypass it, the dialog
 		// must still work, so the request is recorded here.
-		if (m_machine.state() == State::Idle)
+		if (transaction.state() == State::Idle)
 		{
-			move(Event::Requested, EventSource::App, published);
+			transaction.move(Event::Requested);
 		}
-		if (!move(Event::AskMode, EventSource::App, published))
+		if (!transaction.move(Event::AskMode))
 		{
-			LOG_WARNING(
-				std::string("indexing state machine: the mode choice opened in state ") +
-				stateName(m_machine.state()));
+			LOG_WARNING(std::format(
+				"indexing state machine: the mode choice opened in state {}", stateName(transaction.state())));
 		}
 	}
-	publishAll(published);
 
 	presenter->presentModeChoice(modes, initialMode);
 	presenter->presentCounting();
@@ -227,24 +118,16 @@ void IndexingStateMachine::chooseMode(
 
 void IndexingStateMachine::preparing()
 {
-	std::vector<MachineTransition> published;
-	{
-		const std::lock_guard<std::mutex> lock(m_mutex);
-		m_progress = {};
-		m_interrupted = false;
-		move(Event::Prepare, EventSource::App, published);
-	}
-	publishAll(published);
+	Transaction transaction(*this);
+	m_progress = {};
+	m_interrupted = false;
+	transaction.move(Event::Prepare);
 }
 
 void IndexingStateMachine::indexingStarted()
 {
-	std::vector<MachineTransition> published;
-	{
-		const std::lock_guard<std::mutex> lock(m_mutex);
-		move(Event::Begin, EventSource::App, published);
-	}
-	publishAll(published);
+	Transaction transaction(*this);
+	transaction.move(Event::Begin);
 }
 
 void IndexingStateMachine::progress(
@@ -252,7 +135,7 @@ void IndexingStateMachine::progress(
 {
 	// Progress changes the context, not the state: no transition to publish (the
 	// IndexingProgress event carries it for subscribers).
-	const std::lock_guard<std::mutex> lock(m_mutex);
+	const auto lock = this->lock();
 	m_progress.started = started;
 	m_progress.finished = finished;
 	m_progress.total = total;
@@ -264,40 +147,34 @@ void IndexingStateMachine::progress(
 
 void IndexingStateMachine::wrappingUp()
 {
-	std::vector<MachineTransition> published;
+	Transaction transaction(*this);
+	if (transaction.state() != State::Finishing)
 	{
-		const std::lock_guard<std::mutex> lock(m_mutex);
-		if (m_machine.state() != State::Finishing)
-		{
-			move(Event::WrapUp, EventSource::App, published);
-		}
+		transaction.move(Event::WrapUp);
 	}
-	publishAll(published);
 }
 
 DatabasePolicy IndexingStateMachine::report(const IndexingReport& report, IndexingPresenter* presenter)
 {
-	std::vector<MachineTransition> published;
 	{
-		const std::lock_guard<std::mutex> lock(m_mutex);
+		Transaction transaction(*this);
 		m_report = report;
 		m_decision.reset();
 		m_reportPresenter = presenter;
-		if (!move(Event::Report, EventSource::App, published))
+		if (!transaction.move(Event::Report))
 		{
-			LOG_WARNING(
-				std::string("indexing state machine: the report came in state ") + stateName(m_machine.state()));
+			LOG_WARNING(std::format(
+				"indexing state machine: the report came in state {}", stateName(transaction.state())));
 		}
 	}
-	publishAll(published);
 
 	if (!presenter->presentReport(report))
 	{
 		decide(DatabasePolicy::DATABASE_POLICY_KEEP, EventSource::App);
 	}
 
-	std::unique_lock<std::mutex> lock(m_mutex);
-	m_decided.wait(lock, [this]() { return m_decision.has_value(); });
+	Transaction transaction(*this);
+	m_decided.wait(transaction.lock(), [this]() { return m_decision.has_value(); });
 	const DatabasePolicy policy = *m_decision;
 	m_report.reset();
 	m_reportPresenter = nullptr;
@@ -306,30 +183,26 @@ DatabasePolicy IndexingStateMachine::report(const IndexingReport& report, Indexi
 
 void IndexingStateMachine::ended(const std::string& outcome)
 {
-	std::vector<MachineTransition> published;
+	Transaction transaction(*this);
+	// A run that went through the report keeps the decision as its outcome.
+	if (!outcome.empty())
 	{
-		const std::lock_guard<std::mutex> lock(m_mutex);
-		// A run that went through the report keeps the decision as its outcome.
-		if (!outcome.empty())
-		{
-			m_outcome = outcome;
-		}
-		else if (m_outcome.empty())
-		{
-			m_outcome = "finished";
-		}
-		resetChoice();
-		m_report.reset();
-		move(Event::End, EventSource::App, published);
+		m_outcome = outcome;
 	}
-	publishAll(published);
+	else if (m_outcome.empty())
+	{
+		m_outcome = "finished";
+	}
+	resetChoice();
+	m_report.reset();
+	transaction.move(Event::End);
 }
 
 void IndexingStateMachine::detach(IndexingPresenter* presenter)
 {
 	bool reportAbandoned = false;
 	{
-		const std::lock_guard<std::mutex> lock(m_mutex);
+		const auto lock = this->lock();
 		if (m_choicePresenter == presenter)
 		{
 			m_choicePresenter = nullptr;
@@ -337,7 +210,7 @@ void IndexingStateMachine::detach(IndexingPresenter* presenter)
 		if (m_reportPresenter == presenter)
 		{
 			m_reportPresenter = nullptr;
-			reportAbandoned = m_machine.state() == State::Reporting && !m_decision;
+			reportAbandoned = m_report && !m_decision;
 		}
 	}
 	if (reportAbandoned)
@@ -348,17 +221,15 @@ void IndexingStateMachine::detach(IndexingPresenter* presenter)
 
 MachineFireResult IndexingStateMachine::refresh(RefreshMode mode, EventSource source)
 {
-	std::vector<MachineTransition> published;
 	{
-		const std::lock_guard<std::mutex> lock(m_mutex);
-		if (!m_machine.accepts(Event::Refresh))
+		Transaction transaction(*this);
+		if (!transaction.accepts(Event::Refresh))
 		{
-			return notAccepted(Event::Refresh, m_machine.state());
+			return transaction.refuse(Event::Refresh);
 		}
 		m_outcome.clear();
-		move(Event::Refresh, source, published);
+		transaction.move(Event::Refresh, source);
 	}
-	publishAll(published);
 
 	MessageRefresh message;
 	if (mode == RefreshMode::ALL_FILES)
@@ -371,23 +242,22 @@ MachineFireResult IndexingStateMachine::refresh(RefreshMode mode, EventSource so
 
 MachineFireResult IndexingStateMachine::selectMode(RefreshMode mode, EventSource source)
 {
-	std::vector<MachineTransition> published;
 	IndexingPresenter* presenter = nullptr;
 	std::optional<RefreshInfo> known;
 	bool needsCount = false;
 	{
-		const std::lock_guard<std::mutex> lock(m_mutex);
-		if (!m_machine.accepts(Event::SelectMode))
+		Transaction transaction(*this);
+		if (!transaction.accepts(Event::SelectMode))
 		{
-			return notAccepted(Event::SelectMode, m_machine.state());
+			return transaction.refuse(Event::SelectMode);
 		}
-		if (std::find(m_modes.begin(), m_modes.end(), mode) == m_modes.end())
+		if (const auto choice = offered(mode); !choice)
 		{
-			return {false, std::string("mode '") + modeName(mode) + "' is not offered for this refresh"};
+			return {false, choice.error()};
 		}
 		m_mode = mode;
 		presenter = m_choicePresenter;
-		if (auto it = m_infos.find(mode); it != m_infos.end())
+		if (const auto it = m_infos.find(mode); it != m_infos.end())
 		{
 			known = it->second;
 		}
@@ -395,9 +265,8 @@ MachineFireResult IndexingStateMachine::selectMode(RefreshMode mode, EventSource
 		{
 			needsCount = m_counting.insert(mode).second;
 		}
-		move(Event::SelectMode, source, published);
+		transaction.move(Event::SelectMode, source);
 	}
-	publishAll(published);
 
 	if (presenter != nullptr)
 	{
@@ -415,40 +284,38 @@ MachineFireResult IndexingStateMachine::selectMode(RefreshMode mode, EventSource
 	{
 		count(mode);
 	}
-	return {true, std::string("mode '") + modeName(mode) + "' selected"};
+	return {true, std::format("mode '{}' selected", modeName(mode))};
 }
 
 MachineFireResult IndexingStateMachine::start(std::optional<RefreshMode> mode, EventSource source)
 {
-	std::vector<MachineTransition> published;
 	IndexingPresenter* presenter = nullptr;
 	std::function<void(const RefreshInfo&)> onStart;
 	std::optional<RefreshInfo> info;
 	std::function<RefreshInfo(RefreshMode)> countFiles;
 	RefreshMode chosen = RefreshMode::NONE;
 	{
-		const std::lock_guard<std::mutex> lock(m_mutex);
-		if (!m_machine.accepts(Event::Start))
+		Transaction transaction(*this);
+		if (!transaction.accepts(Event::Start))
 		{
-			return notAccepted(Event::Start, m_machine.state());
+			return transaction.refuse(Event::Start);
 		}
-		chosen = mode.value_or(m_mode);
-		if (std::find(m_modes.begin(), m_modes.end(), chosen) == m_modes.end())
+		const auto choice = offered(mode.value_or(m_mode));
+		if (!choice)
 		{
-			return {false, std::string("mode '") + modeName(chosen) + "' is not offered for this refresh"};
+			return {false, choice.error()};
 		}
-		m_mode = chosen;
+		chosen = m_mode = *choice;
 		presenter = m_choicePresenter;
 		onStart = m_onStart;
 		countFiles = m_countFiles;
-		if (auto it = m_infos.find(chosen); it != m_infos.end())
+		if (const auto it = m_infos.find(chosen); it != m_infos.end())
 		{
 			info = it->second;
 		}
-		move(Event::Start, source, published);
+		transaction.move(Event::Start, source);
 		resetChoice();
 	}
-	publishAll(published);
 
 	// Close the dialog before the pipeline shows its next one.
 	if (presenter != nullptr && source != EventSource::Ui)
@@ -464,27 +331,25 @@ MachineFireResult IndexingStateMachine::start(std::optional<RefreshMode> mode, E
 		}
 		requestHandled("nothing to index");
 	}));
-	return {true, std::string("indexing starts with mode '") + modeName(chosen) + "'"};
+	return {true, std::format("indexing starts with mode '{}'", modeName(chosen))};
 }
 
 MachineFireResult IndexingStateMachine::cancel(EventSource source)
 {
-	std::vector<MachineTransition> published;
 	IndexingPresenter* presenter = nullptr;
 	std::function<void()> onCancel;
 	{
-		const std::lock_guard<std::mutex> lock(m_mutex);
-		if (!m_machine.accepts(Event::Cancel))
+		Transaction transaction(*this);
+		if (!transaction.accepts(Event::Cancel))
 		{
-			return notAccepted(Event::Cancel, m_machine.state());
+			return transaction.refuse(Event::Cancel);
 		}
 		presenter = m_choicePresenter;
 		onCancel = m_onCancel;
 		m_outcome = "canceled";
-		move(Event::Cancel, source, published);
+		transaction.move(Event::Cancel, source);
 		resetChoice();
 	}
-	publishAll(published);
 
 	if (presenter != nullptr && source != EventSource::Ui)
 	{
@@ -499,17 +364,15 @@ MachineFireResult IndexingStateMachine::cancel(EventSource source)
 
 MachineFireResult IndexingStateMachine::interrupt(EventSource source)
 {
-	std::vector<MachineTransition> published;
 	{
-		const std::lock_guard<std::mutex> lock(m_mutex);
-		if (!m_machine.accepts(Event::Interrupt))
+		Transaction transaction(*this);
+		if (!transaction.accepts(Event::Interrupt))
 		{
-			return notAccepted(Event::Interrupt, m_machine.state());
+			return transaction.refuse(Event::Interrupt);
 		}
 		m_interrupted = true;
-		move(Event::Interrupt, source, published);
+		transaction.move(Event::Interrupt, source);
 	}
-	publishAll(published);
 
 	MessageIndexingInterrupted().dispatch();
 	return {true, "interrupting: the files indexed so far are kept for the report"};
@@ -521,15 +384,15 @@ MachineFireResult IndexingStateMachine::decide(DatabasePolicy policy, EventSourc
 	const Event event = policy == DATABASE_POLICY_DISCARD ? Event::Discard
 		: policy == DATABASE_POLICY_REFRESH				   ? Event::Reindex
 														   : Event::Keep;
-	std::vector<MachineTransition> published;
 	IndexingPresenter* presenter = nullptr;
+	std::string outcome;
 	{
-		const std::lock_guard<std::mutex> lock(m_mutex);
+		Transaction transaction(*this);
 		// A waiting report is what a decision answers. Should the state ever disagree,
 		// the report's buttons must still release the pipeline, so the wait decides.
 		if (!m_report || m_decision)
 		{
-			return notAccepted(event, m_machine.state());
+			return transaction.refuse(event);
 		}
 		m_decision = policy;
 		presenter = m_reportPresenter;
@@ -537,184 +400,91 @@ MachineFireResult IndexingStateMachine::decide(DatabasePolicy policy, EventSourc
 			: policy == DATABASE_POLICY_REFRESH		   ? "reindexing"
 			: policy == DATABASE_POLICY_KEEP		   ? "kept"
 													   : "closed without a decision";
-		if (!move(event, source, published))
+		outcome = m_outcome;
+		if (!transaction.move(event, source))
 		{
-			LOG_WARNING(
-				std::string("indexing state machine: decided '") + eventName(event) + "' in state " +
-				stateName(m_machine.state()));
+			LOG_WARNING(std::format(
+				"indexing state machine: decided '{}' in state {}", eventName(event), stateName(transaction.state())));
 		}
 	}
 	m_decided.notify_all();
-	publishAll(published);
 
 	if (presenter != nullptr && source == EventSource::Agent)
 	{
 		presenter->dismissReport();
 	}
-	return {true, m_outcome};
-}
-
-std::string IndexingStateMachine::name() const
-{
-	return "indexing";
-}
-
-MachineSnapshot IndexingStateMachine::snapshot() const
-{
-	const std::lock_guard<std::mutex> lock(m_mutex);
-	MachineSnapshot snapshot;
-	snapshot.machine = name();
-	snapshot.state = stateName(m_machine.state());
-	for (const Event event: m_machine.acceptedEvents())
-	{
-		if (isControl(event))
-		{
-			snapshot.events.push_back(eventName(event));
-		}
-	}
-	snapshot.context = contextLocked();
-	snapshot.revision = m_machine.revision();
-	return snapshot;
+	return {true, outcome};
 }
 
 MachineFireResult IndexingStateMachine::fire(const std::string& event, const std::string& args, EventSource source)
 {
-	auto parseMode = [&](bool required, std::optional<RefreshMode>& mode) -> std::optional<std::string> {
-		ModeArgs parsed;
-		if (auto error = parseArgs(args, parsed))
-		{
-			return event + ": " + *error + R"( (expected {"mode": "updated" | "incomplete" | "all"}))";
-		}
-		if (!parsed.mode)
-		{
-			return required ? std::optional<std::string>(event + R"( needs {"mode": "updated" | "incomplete" | "all"})")
-							: std::nullopt;
-		}
-		mode = modeFromName(*parsed.mode);
-		if (!mode)
-		{
-			return "unknown mode '" + *parsed.mode + R"(' (updated, incomplete, all))";
-		}
-		return std::nullopt;
-	};
-	auto noArgs = [&]() -> std::optional<std::string> {
-		NoArgs parsed;
-		if (auto error = parseArgs(args, parsed))
-		{
-			return event + " takes no arguments: " + *error;
-		}
-		return std::nullopt;
+	// {"mode": "..."}, which select_mode needs and refresh and start may have.
+	const auto parseMode = [&](bool required) -> std::expected<std::optional<RefreshMode>, std::string> {
+		return parseArgs<indexing_machine_json::ModeArgs>(event, args, R"({"mode": "updated" | "incomplete" | "all"})")
+			.and_then([&](const indexing_machine_json::ModeArgs& parsed)
+						  -> std::expected<std::optional<RefreshMode>, std::string> {
+				if (!parsed.mode)
+				{
+					if (required)
+					{
+						return std::unexpected(event + R"( needs {"mode": "updated" | "incomplete" | "all"})");
+					}
+					return std::optional<RefreshMode>();
+				}
+				if (const std::optional<RefreshMode> mode = modeFromName(*parsed.mode))
+				{
+					return mode;
+				}
+				return std::unexpected(std::format("unknown mode '{}' (updated, incomplete, all)", *parsed.mode));
+			});
 	};
 
-	std::optional<RefreshMode> mode;
-	if (event == "refresh")
+	const std::optional<Event> control = controlNamed(event);
+	if (!control)
 	{
-		if (auto error = parseMode(false, mode))
-		{
-			return {false, *error};
-		}
-		return refresh(mode.value_or(RefreshMode::UPDATED_FILES), source);
+		return unknownEvent(event);
 	}
-	if (event == "select_mode")
-	{
-		if (auto error = parseMode(true, mode))
-		{
-			return {false, *error};
-		}
-		return selectMode(*mode, source);
-	}
-	if (event == "start")
-	{
-		if (auto error = parseMode(false, mode))
-		{
-			return {false, *error};
-		}
-		return start(mode, source);
-	}
-
-	using enum DatabasePolicy;
-	const std::map<std::string, std::function<MachineFireResult()>> plain = {
-		{"cancel", [&]() { return cancel(source); }},
-		{"interrupt", [&]() { return interrupt(source); }},
-		{"keep", [&]() { return decide(DATABASE_POLICY_KEEP, source); }},
-		{"discard", [&]() { return decide(DATABASE_POLICY_DISCARD, source); }},
-		{"reindex", [&]() { return decide(DATABASE_POLICY_REFRESH, source); }},
-	};
-	if (auto it = plain.find(event); it != plain.end())
-	{
-		if (auto error = noArgs())
-		{
-			return {false, *error};
-		}
-		return it->second();
-	}
-	return {
-		false,
-		"unknown event '" + event +
-			"' (refresh, select_mode, start, cancel, interrupt, keep, discard, reindex; the others come "
-			"from the application)"};
-}
-
-const char* IndexingStateMachine::stateName(State state)
-{
-	switch (state)
-	{
-	case State::Idle:
-		return "idle";
-	case State::Pending:
-		return "pending";
-	case State::ChoosingMode:
-		return "choosing_mode";
-	case State::Preparing:
-		return "preparing";
-	case State::Indexing:
-		return "indexing";
-	case State::Finishing:
-		return "finishing";
-	case State::Reporting:
-		return "reporting";
-	}
-	return "?";
-}
-
-const char* IndexingStateMachine::eventName(Event event)
-{
-	switch (event)
+	switch (*control)
 	{
 	case Event::Refresh:
-		return "refresh";
 	case Event::SelectMode:
-		return "select_mode";
 	case Event::Start:
-		return "start";
-	case Event::Cancel:
-		return "cancel";
-	case Event::Interrupt:
-		return "interrupt";
-	case Event::Keep:
-		return "keep";
-	case Event::Discard:
-		return "discard";
-	case Event::Reindex:
-		return "reindex";
-	case Event::Requested:
-		return "requested";
-	case Event::AskMode:
-		return "ask_mode";
-	case Event::Counted:
-		return "counted";
-	case Event::Prepare:
-		return "prepare";
-	case Event::Begin:
-		return "begin";
-	case Event::WrapUp:
-		return "wrap_up";
-	case Event::Report:
-		return "report";
-	case Event::End:
-		return "end";
+	{
+		const auto mode = parseMode(*control == Event::SelectMode);
+		if (!mode)
+		{
+			return {false, mode.error()};
+		}
+		if (*control == Event::Refresh)
+		{
+			return refresh(mode->value_or(RefreshMode::UPDATED_FILES), source);
+		}
+		return *control == Event::SelectMode ? selectMode(**mode, source) : start(*mode, source);
 	}
-	return "?";
+	default:
+		break;
+	}
+
+	if (const auto none = parseArgs<machine_args::None>(event, args); !none)
+	{
+		return {false, none.error()};
+	}
+	using enum DatabasePolicy;
+	switch (*control)
+	{
+	case Event::Cancel:
+		return cancel(source);
+	case Event::Interrupt:
+		return interrupt(source);
+	case Event::Keep:
+		return decide(DATABASE_POLICY_KEEP, source);
+	case Event::Discard:
+		return decide(DATABASE_POLICY_DISCARD, source);
+	case Event::Reindex:
+		return decide(DATABASE_POLICY_REFRESH, source);
+	default:
+		return unknownEvent(event);
+	}
 }
 
 const char* IndexingStateMachine::modeName(RefreshMode mode)
@@ -746,31 +516,13 @@ std::optional<RefreshMode> IndexingStateMachine::modeFromName(const std::string&
 	return std::nullopt;
 }
 
-bool IndexingStateMachine::move(Event event, EventSource source, std::vector<MachineTransition>& published)
-{
-	const State from = m_machine.state();
-	if (!m_machine.fire(event))
-	{
-		return false;
-	}
-	published.push_back(
-		{name(),
-		 stateName(from),
-		 stateName(m_machine.state()),
-		 eventName(event),
-		 source,
-		 contextLocked(),
-		 m_machine.revision()});
-	return true;
-}
-
 // Counts what `mode` would index on the app scheduler, as the dialog always did:
 // it walks the source groups and the storage.
 void IndexingStateMachine::count(RefreshMode mode)
 {
 	std::function<RefreshInfo(RefreshMode)> countFiles;
 	{
-		const std::lock_guard<std::mutex> lock(m_mutex);
+		const auto lock = this->lock();
 		countFiles = m_countFiles;
 	}
 	if (!countFiles)
@@ -784,12 +536,11 @@ void IndexingStateMachine::count(RefreshMode mode)
 
 void IndexingStateMachine::counted(RefreshMode mode, const RefreshInfo& info)
 {
-	std::vector<MachineTransition> published;
 	IndexingPresenter* presenter = nullptr;
 	{
-		const std::lock_guard<std::mutex> lock(m_mutex);
+		Transaction transaction(*this);
 		// A choice that ended meanwhile (started, canceled) has no use for the count.
-		if (m_machine.state() != State::ChoosingMode || !m_counting.erase(mode))
+		if (transaction.state() != State::ChoosingMode || !m_counting.erase(mode))
 		{
 			return;
 		}
@@ -798,9 +549,8 @@ void IndexingStateMachine::counted(RefreshMode mode, const RefreshInfo& info)
 		{
 			presenter = m_choicePresenter;
 		}
-		move(Event::Counted, EventSource::App, published);
+		transaction.move(Event::Counted);
 	}
-	publishAll(published);
 
 	if (presenter != nullptr)
 	{
@@ -819,28 +569,33 @@ void IndexingStateMachine::resetChoice()
 	m_choicePresenter = nullptr;
 }
 
+std::expected<RefreshMode, std::string> IndexingStateMachine::offered(RefreshMode mode) const
+{
+	if (!std::ranges::contains(m_modes, mode))
+	{
+		return std::unexpected(std::format("mode '{}' is not offered for this refresh", modeName(mode)));
+	}
+	return mode;
+}
+
 std::string IndexingStateMachine::contextLocked() const
 {
+	using namespace indexing_machine_json;
 	IndexingContext context;
-	switch (m_machine.state())
+	switch (stateLocked())
 	{
 	case State::ChoosingMode:
-	{
-		std::vector<std::string> modes;
-		for (const RefreshMode mode: m_modes)
-		{
-			modes.emplace_back(modeName(mode));
-		}
-		context.modes = modes;
+		context.modes = m_modes |
+			std::views::transform([](RefreshMode mode) { return std::string(modeName(mode)); }) |
+			std::ranges::to<std::vector<std::string>>();
 		context.mode = modeName(m_mode);
 		context.counting = m_counting.contains(m_mode);
-		if (auto it = m_infos.find(m_mode); it != m_infos.end())
+		if (const auto it = m_infos.find(m_mode); it != m_infos.end())
 		{
 			context.files_to_index = it->second.filesToIndex.size();
 			context.files_to_clear = it->second.filesToClear.size();
 		}
 		break;
-	}
 	case State::Preparing:
 	case State::Indexing:
 	case State::Finishing:

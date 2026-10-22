@@ -2,17 +2,12 @@
 #define ACTIVATION_STATE_MACHINE_H
 
 #include <chrono>
-#include <condition_variable>
 #include <cstdint>
 #include <map>
 #include <memory>
-#include <mutex>
 #include <string>
-#include <thread>
-#include <vector>
 
-#include "RemoteStateMachine.h"
-#include "StateMachine.h"
+#include "ConcurrentStateMachine.h"
 
 // What the graph and code views show, from a request until they have drawn it:
 //
@@ -29,11 +24,8 @@
 // agent pressed) finds the machine activating already. The views then draw on the
 // GUI thread, some of them animated: each holds a ticket (drawing) until it has,
 // and `rendering` ends with the last.
-class ActivationStateMachine
-	: public RemoteStateMachine
-	, public std::enable_shared_from_this<ActivationStateMachine>
+struct ActivationMachine
 {
-public:
 	enum class State
 	{
 		Idle,
@@ -48,10 +40,29 @@ public:
 		TimedOut
 	};
 
-	static std::shared_ptr<ActivationStateMachine> instance();
+	static constexpr std::string_view name = "activation";
+	static constexpr State initial = State::Idle;
+	static constexpr std::array states {
+		named(State::Idle, "idle"), named(State::Activating, "activating"), named(State::Rendering, "rendering")};
+	static constexpr std::array events {
+		named(Event::Requested, "requested"),
+		named(Event::Handled, "handled"),
+		named(Event::Shown, "shown"),
+		named(Event::TimedOut, "timed_out")};
+	static constexpr auto transitions = std::to_array<StateMachine<State, Event>::Transition>({
+		{State::Idle, Event::Requested, State::Activating},
+		{State::Activating, Event::Handled, State::Rendering},
+		{State::Activating, Event::Shown, State::Idle},
+		{State::Rendering, Event::Requested, State::Activating},
+		{State::Rendering, Event::Shown, State::Idle},
+		{State::Rendering, Event::TimedOut, State::Idle},
+	});
+};
 
-	ActivationStateMachine();
-	~ActivationStateMachine() override;
+class ActivationStateMachine: public ConcurrentStateMachine<ActivationMachine>
+{
+public:
+	static std::shared_ptr<ActivationStateMachine> instance();
 
 	// Has the message queue report the messages that change the views (changesViews).
 	void followMessages();
@@ -73,38 +84,24 @@ public:
 	// a view that never reports must not hold the app.
 	void setRenderingLimit(std::chrono::milliseconds limit);
 
-	std::string name() const override;
-	MachineSnapshot snapshot() const override;
-	MachineFireResult fire(const std::string& event, const std::string& args, EventSource source) override;
-
-	static const char* stateName(State state);
-	static const char* eventName(Event event);
-
 private:
 	class Ticket;
 
 	void drawn(std::uint64_t generation, const std::string& view);
 	// Moves on what the counts allow: out of `activating` once no message is in
 	// flight, out of `rendering` once nothing draws.
-	void advanceLocked(std::vector<MachineTransition>& published);
-	void move(Event event, std::vector<MachineTransition>& published);
+	void advance(Transaction& transaction);
 	std::size_t drawingLocked() const;
-	void watch(std::stop_token stop);
-	std::string contextLocked() const;
+	std::string contextLocked() const override;
 
-	mutable std::mutex m_mutex;
-	std::condition_variable_any m_wake;	// the watchdog: rendering started or ended
-	StateMachine<State, Event> m_machine;
 	int m_inFlight = 0;	// messages that change the views, being handled
 	std::map<std::string, int> m_drawing;	// tickets held, by view
 	std::uint64_t m_generation = 0;	// a timed out rendering drops the tickets it waited for
 	std::uint64_t m_activation = 0;	// activations requested so far
 	std::chrono::steady_clock::time_point m_requestedAt;
-	std::chrono::steady_clock::time_point m_renderingSince;
 	std::int64_t m_tookMs = -1;	// how long the last activation took, request to shown
 	std::string m_outcome;
 	std::chrono::milliseconds m_renderingLimit {10000};
-	std::jthread m_watchdog;	// started with the first rendering
 };
 
 #endif	  // ACTIVATION_STATE_MACHINE_H
