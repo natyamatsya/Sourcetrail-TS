@@ -612,6 +612,10 @@ configure_file(cmake/productVersion.h.in src/lib_core/productVersion.h)
 add_subdirectory(src/resources)
 add_subdirectory(src/lib_gui)
 
+# AUTOMOC runs moc with no launcher in front of it, so sccion stands in for
+# moc itself in these targets and caches it (nothing changes without sccion).
+sccion_wrap_automoc(kddockwidgets Sourcetrail_res_gui Sourcetrail_lib_gui)
+
 # Lib --------------------------------------------------------------------------
 
 if (UNIX)
