@@ -132,17 +132,12 @@ bool QtProjectWizardContentPathsIndexedHeaders::check()
 {
 	if (m_list->getPathsAsDisplayed().empty())
 	{
-		QtMessageBox msgBox(m_window);
-		msgBox.setText(
-			QStringLiteral("You didn't specify any Header Files & Directories to Index."));
-		msgBox.setInformativeText(QString::fromStdString(
-			"Sourcetrail will only index the source files listed in the " + m_projectKindName +
-			" file and none of the included header files."));
-		QPushButton *continueButton = msgBox.addButton(QStringLiteral("Continue"), QtMessageBox::ButtonRole::YesRole);
-		msgBox.addButton(QStringLiteral("Cancel"), QtMessageBox::ButtonRole::NoRole);
-		msgBox.setDefaultButton(continueButton);
-
-		if (msgBox.execModal() != continueButton)
+		if (m_window->ask(
+				QString::fromStdString(
+					"You didn't specify any Header Files & Directories to Index. Sourcetrail will only "
+					"index the source files listed in the " +
+					m_projectKindName + " file and none of the included header files."),
+				{"Continue", "Cancel"}) != 0)
 		{
 			return false;
 		}

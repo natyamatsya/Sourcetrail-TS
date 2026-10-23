@@ -78,17 +78,13 @@ bool QtProjectWizardContentCustomCommand::check()
 {
 	if (m_customCommand->text().isEmpty())
 	{
-		QtMessageBox msgBox(m_window);
-		msgBox.setText(QStringLiteral("Please enter a custom command."));
-		msgBox.execModal();
+		m_window->tell(QStringLiteral("Please enter a custom command."));
 		return false;
 	}
 
 	if (m_customCommand->text().toStdString().find("%{SOURCE_FILE_PATH}") == std::string::npos)
 	{
-		QtMessageBox msgBox(m_window);
-		msgBox.setText(QStringLiteral("The variable %{SOURCE_FILE_PATH} is missing in the custom command."));
-		msgBox.execModal();
+		m_window->tell(QStringLiteral("The variable %{SOURCE_FILE_PATH} is missing in the custom command."));
 		return false;
 	}
 

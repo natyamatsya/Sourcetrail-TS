@@ -84,9 +84,7 @@ bool QtProjectWizardContentFlags::check()
 
 	if (!error.empty())
 	{
-		QtMessageBox msgBox(m_window);
-		msgBox.setText(QString::fromStdString(error));
-		msgBox.execModal();
+		m_window->tell(QString::fromStdString(error));
 		return false;
 	}
 

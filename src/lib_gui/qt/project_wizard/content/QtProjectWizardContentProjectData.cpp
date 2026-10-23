@@ -123,15 +123,9 @@ bool QtProjectWizardContentProjectData::check()
 	}
 	else if (!paths[0].exists())
 	{
-		QtMessageBox msgBox(m_window);
-		msgBox.setText(QStringLiteral(
-			"The specified location does not exist. Do you want to create the directory?"));
-		msgBox.addButton(QStringLiteral("Abort"), QtMessageBox::ButtonRole::NoRole);
-		QPushButton* createButton = msgBox.addButton(
-			QStringLiteral("Create"), QtMessageBox::ButtonRole::YesRole);
-		msgBox.setDefaultButton(createButton);
-		msgBox.setIcon(QtMessageBox::Icon::Question);
-		if (msgBox.execModal() == createButton)	 // QtMessageBox::Yes
+		if (m_window->ask(
+				QStringLiteral("The specified location does not exist. Do you want to create the directory?"),
+				{"Create", "Abort"}) == 0)
 		{
 			FileSystem::createDirectories(paths[0]);
 		}

@@ -69,12 +69,11 @@ bool QtProjectWizardContentPathCxxPch::check()
 			loadedCdb = utility::loadCDB(cdbPath);
 		if (!loadedCdb)
 		{
-			QtMessageBox msgBox(m_window);
-			msgBox.setText(tr("Unable to open and read the provided compilation database file."));
-			msgBox.setInformativeText(QString::fromStdString(
-				loadedCdb.error().message.empty() ? std::string(utility::to_std_sv(loadedCdb.error().code))
-												  : loadedCdb.error().message));
-			msgBox.execModal();
+			m_window->tell(
+				tr("Unable to open and read the provided compilation database file.") + "\n" +
+				QString::fromStdString(
+					loadedCdb.error().message.empty() ? std::string(utility::to_std_sv(loadedCdb.error().code))
+													  : loadedCdb.error().message));
 			return false;
 		}
 		const std::shared_ptr<clang::tooling::CompilationDatabase> cdb = loadedCdb.value();
@@ -83,29 +82,21 @@ bool QtProjectWizardContentPathCxxPch::check()
 		{
 			if (m_settingsCxxPch->getPchInputFilePath().empty())
 			{
-				QtMessageBox msgBox(m_window);
-				msgBox.setText(
-					"The provided compilation database file uses precompiled headers. If you want "
-					"to make use of "
-					"precompiled headers to speed up your indexer, please specify an input at "
-					"Precompiled Header File.");
-				QPushButton* cancelButton = msgBox.addButton(QStringLiteral("Cancel"), QtMessageBox::ButtonRole::RejectRole);
-				msgBox.addButton(QStringLiteral("Continue"), QtMessageBox::ButtonRole::AcceptRole);
-				return msgBox.execModal() != cancelButton;
+				return m_window->ask(
+						   "The provided compilation database file uses precompiled headers. If you want "
+						   "to make use of precompiled headers to speed up your indexer, please specify an "
+						   "input at Precompiled Header File.",
+						   {"Continue", "Cancel"}) == 0;
 			}
 		}
 		else
 		{
 			if (!m_settingsCxxPch->getPchInputFilePath().empty())
 			{
-				QtMessageBox msgBox(m_window);
-				msgBox.setText(
-					"The provided compilation database file does not use precompiled headers. The "
-					"specified input file at "
-					"Precompiled Header File will not be used.");
-				QPushButton* cancelButton = msgBox.addButton(QStringLiteral("Cancel"), QtMessageBox::ButtonRole::RejectRole);
-				msgBox.addButton(QStringLiteral("Continue"), QtMessageBox::ButtonRole::AcceptRole);
-				return msgBox.execModal() != cancelButton;
+				return m_window->ask(
+						   "The provided compilation database file does not use precompiled headers. The "
+						   "specified input file at Precompiled Header File will not be used.",
+						   {"Continue", "Cancel"}) == 0;
 			}
 		}
 	}
