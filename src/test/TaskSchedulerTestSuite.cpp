@@ -1,13 +1,18 @@
 #include "Catch2.hpp"
 
+#include <atomic>
 #include <chrono>
 #include <thread>
+#include <vector>
 
 #include "Blackboard.h"
 #include "Task.h"
 #include "TaskFinally.h"
 #include "TaskGroupSelector.h"
 #include "TaskGroupSequence.h"
+#include "StdexecPrelude.h"
+#include "Strand.h"
+#include "TaskLambda.h"
 #include "TaskScheduler.h"
 
 using enum Task::TaskState;
@@ -99,6 +104,39 @@ public:
 	TaskScheduler* scheduler;
 	std::shared_ptr<TestTask> subTask;
 };
+
+// Holds until released, as a background task waiting on its work does.
+class HoldingTask: public Task
+{
+public:
+	std::atomic<bool> released = false;
+	std::atomic<int> updates = 0;
+
+private:
+	void doEnter(std::shared_ptr<Blackboard>  /*blackboard*/) override {}
+	TaskState doUpdate(std::shared_ptr<Blackboard>  /*blackboard*/) override
+	{
+		updates++;
+		return released ? STATE_SUCCESS : STATE_HOLD;
+	}
+	void doExit(std::shared_ptr<Blackboard>  /*blackboard*/) override {}
+	void doReset(std::shared_ptr<Blackboard>  /*blackboard*/) override {}
+};
+
+template <typename Predicate>
+bool eventually(Predicate predicate)
+{
+	const auto deadline = std::chrono::steady_clock::now() + std::chrono::seconds(5);
+	while (std::chrono::steady_clock::now() < deadline)
+	{
+		if (predicate())
+		{
+			return true;
+		}
+		std::this_thread::sleep_for(std::chrono::milliseconds(2));
+	}
+	return predicate();
+}
 
 void waitForThread(TaskScheduler& scheduler)
 {
@@ -365,4 +403,68 @@ TEST_CASE("task finally signals termination and stays fired-once")
 	// A later terminal state must not re-fire the callback.
 	task->terminate();
 	REQUIRE(1 == record.calls);
+}
+
+TEST_CASE("scheduler on a strand runs its tasks in order and goes idle")
+{
+	exec::static_thread_pool pool(2);
+	const auto strand = execution::Strand::create(pool.get_scheduler());
+	const auto scheduler = std::make_shared<TaskScheduler>(TabId::NONE);
+	std::atomic<int> idle = 0;
+	scheduler->setIdleHandler([&]() { idle++; });
+
+	std::vector<int> order;	// written on the strand only
+	scheduler->pushTask(std::make_shared<TaskLambda>([&]() { order.push_back(1); }));	// before it starts
+	scheduler->startSchedulerLoopOn(strand);
+	scheduler->pushTask(std::make_shared<TaskLambda>([&]() { order.push_back(strand->runsHere() ? 2 : -2); }));
+	scheduler->pushTask(std::make_shared<TaskLambda>([&]() { order.push_back(3); }));
+
+	REQUIRE(eventually([&]() { return idle > 0 && !scheduler->hasTasksQueued(); }));
+	scheduler->stopSchedulerLoop();
+	REQUIRE(order == std::vector<int> {1, 2, 3});
+	REQUIRE_FALSE(scheduler->loopIsRunning());
+}
+
+TEST_CASE("scheduler on a strand lets other work run while a task holds")
+{
+	exec::static_thread_pool pool(2);
+	const auto strand = execution::Strand::create(pool.get_scheduler());
+	const auto scheduler = std::make_shared<TaskScheduler>(TabId::NONE);
+	std::atomic<int> idle = 0;
+	scheduler->setIdleHandler([&]() { idle++; });
+	scheduler->startSchedulerLoopOn(strand);
+
+	const auto holding = std::make_shared<HoldingTask>();
+	scheduler->pushTask(holding);
+	REQUIRE(eventually([&]() { return holding->updates > 1; }));
+
+	// A pipeline continuing on the strand gets its turn between the task's passes.
+	std::atomic<bool> continued = false;
+	stdexec::sync_wait(
+		stdexec::schedule(strand->scheduler()) | stdexec::then([&]() { continued = strand->runsHere(); }));
+	REQUIRE(continued);
+	REQUIRE(scheduler->hasTasksQueued());
+	REQUIRE(idle == 0);
+
+	holding->released = true;
+	REQUIRE(eventually([&]() { return idle == 1; }));
+	REQUIRE_FALSE(scheduler->hasTasksQueued());
+	scheduler->stopSchedulerLoop();
+}
+
+TEST_CASE("scheduler on a strand terminates what is left when it stops")
+{
+	exec::static_thread_pool pool(2);
+	const auto strand = execution::Strand::create(pool.get_scheduler());
+	const auto scheduler = std::make_shared<TaskScheduler>(TabId::NONE);
+	scheduler->startSchedulerLoopOn(strand);
+
+	const auto holding = std::make_shared<HoldingTask>();
+	scheduler->pushTask(holding);
+	REQUIRE(eventually([&]() { return holding->updates > 0; }));
+	scheduler->stopSchedulerLoop();	// waits for the pass that terminates it
+	REQUIRE_FALSE(scheduler->hasTasksQueued());
+	const int updates = holding->updates;
+	std::this_thread::sleep_for(std::chrono::milliseconds(20));
+	REQUIRE(holding->updates == updates);
 }

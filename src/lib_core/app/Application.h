@@ -23,6 +23,7 @@
 namespace execution
 {
 class ISchedulers;
+class Strand;
 }
 
 class Bookmark;
@@ -113,7 +114,7 @@ private:
 	void handleMessage(MessageSwitchColorScheme* message) override;
 	void handleMessage(MessageWindowClosed* message) override;
 
-	static void startMessagingAndScheduling();
+	void startMessagingAndScheduling();
 
 	void loadWindow(bool showStartWindow);
 
@@ -132,6 +133,9 @@ private:
 	// Non-owning: the concrete schedulers are a process-wide singleton owned by
 	// the GUI bootstrap; null in headless/test contexts.
 	execution::ISchedulers* m_schedulers = nullptr;
+	// The app scheduler's tasks (the message handlers among them) run here, over
+	// the I/O pool; null without schedulers, where the scheduler has a thread.
+	std::shared_ptr<execution::Strand> m_appStrand;
 
 	std::shared_ptr<Project> m_project;
 	std::shared_ptr<StorageCache> m_storageCache;

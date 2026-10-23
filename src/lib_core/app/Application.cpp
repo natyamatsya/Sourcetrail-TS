@@ -40,7 +40,10 @@
 #endif
 #include "StorageCache.h"
 #include "TabIds.h"
+#include "ISchedulers.h"
+#include "Strand.h"
 #include "TaskManager.h"
+#include "TaskScheduler.h"
 #ifndef SRCTRL_MODULE_BUILD
 #include "UserPaths.h"
 #endif
@@ -161,6 +164,8 @@ void Application::destroyInstance()
 
 	MessageQueue::getInstance()->stopMessageLoop();
 	TaskManager::destroyScheduler(TabIds::background());
+	// A strand loop's pass may hold the scheduler past its removal: end it here.
+	TaskManager::getScheduler(TabIds::app())->stopSchedulerLoop();
 	TaskManager::destroyScheduler(TabIds::app());
 
 	if (GarbageCollectorImpl* gc = GarbageCollectorImpl::getInstance())
@@ -520,7 +525,18 @@ void Application::handleMessage(MessageSwitchColorScheme* message)
 
 void Application::startMessagingAndScheduling()
 {
-	TaskManager::getScheduler(TabIds::app())->startSchedulerLoopThreaded();
+	// On a strand over the I/O pool where there are schedulers: it holds no thread
+	// while it has nothing to do, and the load's pipeline continues on it,
+	// serialized with the message handlers and the indexing tasks.
+	if (m_schedulers != nullptr)
+	{
+		m_appStrand = execution::Strand::create(m_schedulers->io());
+		TaskManager::getScheduler(TabIds::app())->startSchedulerLoopOn(m_appStrand);
+	}
+	else
+	{
+		TaskManager::getScheduler(TabIds::app())->startSchedulerLoopThreaded();
+	}
 	TaskManager::getScheduler(TabIds::background())->startSchedulerLoopThreaded();
 
 	MessageQueue* queue = MessageQueue::getInstance().get();
