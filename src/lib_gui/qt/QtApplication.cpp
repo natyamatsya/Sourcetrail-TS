@@ -5,6 +5,8 @@
 #include <kddockwidgets/Config.h>
 #include <kddockwidgets/KDDockWidgets.h>
 
+#include "MessageCause.h"
+
 #ifndef SRCTRL_MODULE_BUILD
 #include "FilePath.h"
 #include "LogManager.h"
@@ -68,6 +70,22 @@ bool QtApplication::event(QEvent* event)
 	}
 
 	return QApplication::event(event);
+}
+
+// A person's input (spontaneous mouse, key, wheel, touch events from the window
+// system) is on nobody's behalf (MessageCause.h), also in the event loop of a modal
+// box that a request's work opened and runs under its cause: a person's answer there
+// is theirs. An agent's input is posted, not spontaneous, and keeps its request.
+// Other spontaneous events keep the cause: Qt delivers some synchronously for the
+// app's own calls (closing a dialog sends a QCloseEvent through the window system).
+bool QtApplication::notify(QObject* receiver, QEvent* event)
+{
+	if (event->spontaneous() && event->isInputEvent())
+	{
+		const CauseScope none(0);
+		return QApplication::notify(receiver, event);
+	}
+	return QApplication::notify(receiver, event);
 }
 
 void QtApplication::onApplicationStateChanged(Qt::ApplicationState state)

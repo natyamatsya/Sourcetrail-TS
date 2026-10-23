@@ -358,7 +358,8 @@ void QtDialogView::presentQuestion(
 		}
 
 		// The answer is on behalf of whoever clicked (an agent's posted click carries
-		// its request), not of what put the box up.
+		// its request, a person's has none: QtApplication::notify), not of what put the
+		// box up.
 		std::uint64_t clickCause = 0;
 		QObject::connect(&msgBox, &QMessageBox::buttonClicked, &msgBox, [&clickCause](QAbstractButton *) {
 			clickCause = currentCause();

@@ -37,9 +37,8 @@ void onUi(QObject* anchor, std::function<void()> work)
 	stdexec::start_detached(
 		stdexec::schedule(QtThreadScheduler{ anchor }) |
 		stdexec::then(
-			[work = std::move(work), cause = currentCause()]() noexcept
+			[work = withCurrentCause(std::move(work))]() noexcept
 			{
-				const CauseScope scope(cause);
 				try
 				{
 					work();

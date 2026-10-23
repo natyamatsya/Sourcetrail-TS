@@ -811,10 +811,17 @@ of whatever its dispatcher worked for, and its listeners work for that too.
   thread's cause as it is dispatched (a message the history replays was dispatched
   before, for something else) and runs each listener under the message's cause,
   in tasks too. What a listener dispatches carries the cause on.
-- **Across threads** the cause is carried where work is handed over:
-  `execution::qt::onUi` posts take it along (a view's update, a dialog a handler
-  shows), as do the agent's posted button clicks and synthetic input events, the
+- **Across threads** the cause is carried where work is handed over, by wrapping the
+  work in `withCurrentCause`: `execution::qt::onUi` posts (a view's update, a dialog
+  a handler shows), the agent's posted button clicks and synthetic input events, the
   dialog watcher's deferred rescan, and a project load deferred until startup.
+- **A person's input** (spontaneous mouse, key, wheel and touch events) runs under
+  no cause (`QtApplication::notify`). A modal box that a request's work opened runs
+  its event loop inside that work's scope, so without this a person's click there
+  would read as the request's; an agent's input is posted, not spontaneous, and
+  keeps its request. Other spontaneous events keep the cause, since Qt delivers some
+  synchronously for the app's own calls (closing a dialog goes through the window
+  system as a `QCloseEvent`).
 - **State machines** record it on every transition. A move is on behalf of the
   thread's cause; the application's own moves that come without one (the GUI
   drawing an activation, the indexing pipeline) inherit the cause of the episode's

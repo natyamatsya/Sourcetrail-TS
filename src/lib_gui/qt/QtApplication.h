@@ -10,6 +10,7 @@ public:
 	QtApplication(int& argc, char** argv);
 
 	bool event(QEvent* event) override;
+	bool notify(QObject* receiver, QEvent* event) override;
 	static int exec();
 
 private slots:

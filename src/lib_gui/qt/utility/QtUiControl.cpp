@@ -184,13 +184,7 @@ ControlResult invokeAction(
 				return {false, "element is disabled: " + refToString(objectName, path)};
 			}
 			// Under the request's cause: what the click dispatches is on its behalf.
-			QMetaObject::invokeMethod(
-				button,
-				[button, cause = currentCause()]() {
-					const CauseScope scope(cause);
-					button->click();
-				},
-				Qt::QueuedConnection);
+			QMetaObject::invokeMethod(button, withCurrentCause([button]() { button->click(); }), Qt::QueuedConnection);
 		}
 		else
 		{
@@ -543,10 +537,9 @@ void postUnderCause(QWidget* receiver, QEvent* event)
 {
 	QMetaObject::invokeMethod(
 		receiver,
-		[receiver, event = std::shared_ptr<QEvent>(event), cause = currentCause()]() {
-			const CauseScope scope(cause);
+		withCurrentCause([receiver, event = std::shared_ptr<QEvent>(event)]() {
 			QCoreApplication::sendEvent(receiver, event.get());
-		},
+		}),
 		Qt::QueuedConnection);
 }
 
@@ -773,12 +766,11 @@ protected:
 				!m_pending)
 			{
 				m_pending = true;
-				// A dialog a request's click opened is on its behalf.
-				QTimer::singleShot(0, this, [this, cause = currentCause()]() {
-					const CauseScope scope(cause);
+				// A dialog a request's work opened or closed is on its behalf.
+				QTimer::singleShot(0, this, withCurrentCause([this]() {
 					m_pending = false;
 					refresh();
-				});
+				}));
 			}
 		}
 		return false;
