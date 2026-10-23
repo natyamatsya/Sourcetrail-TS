@@ -626,6 +626,8 @@ widgets), context menus, drags inside one widget, hover.
   see posted presses: `QGuiApplication::mouseButtons()` follows window-system input only.
   The dock separators check it (and, on Windows, `GetKeyState`), so dragging one to resize
   a dock does nothing; close or float the dock with its title-bar buttons instead.
+  Those are named after their dock (`Graph_close_button`, `Graph_float_button`, and
+  `Graph_side_bar_button` for an auto-hidden one), so an `object_name` reaches them.
 
 ## State machines (v6) — control events as the remote-control seam
 
