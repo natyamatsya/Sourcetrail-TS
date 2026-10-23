@@ -168,6 +168,9 @@ machine_send  { machine: "indexing", event: "start", until: ["idle"], timeout_s:
 machine_send  { machine: "question", event: "answer", args: { label: "Reindex" } }
 ```
 
+An indexing run ends by reopening the project on its new index, so `until: ["idle"]` on
+`indexing` also waits for the project to be `ready` again: navigation can follow at once.
+
 `project_open` on a project whose load asks first ("the index is outdated:
 reindex?") returns at once with the question instead of waiting for the load.
 `describe('machines')` has both lifecycles.

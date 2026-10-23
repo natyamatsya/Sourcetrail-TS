@@ -1078,8 +1078,10 @@ void Project::buildIndexImpl(RefreshInfo info, std::shared_ptr<DialogView> dialo
 
 	taskSequential->addTask(std::make_shared<TaskLambda>([dialogView, this]() {
 		m_refreshStage = RefreshStageType::NONE;
-		IndexingStateMachine::instance()->ended("");
+		// The reload first: whoever sees the run end (an agent waiting for idle)
+		// sees the project already reopening on the new index.
 		ProjectStateMachine::instance()->reloading();
+		IndexingStateMachine::instance()->ended("");
 		MessageIndexingFinished().dispatch();
 	}));
 

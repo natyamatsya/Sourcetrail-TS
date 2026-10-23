@@ -380,8 +380,8 @@ nothing of the load lands after a first navigation. A project with an up-to-date
 comes back Ready. One without an index comes back Ready with the indexing machine in \
 choosing_mode (ui_state.dialog \"Start Indexing\"), and nothing is indexed until it starts:
   machine_send { machine: \"indexing\", event: \"start\", until: [\"idle\"], timeout_s: 300 }
-returns once indexing is over; app_state then goes Loading while the first tab opens on the \
-overview, then Ready (ui_state shows it). describe('machines') has the whole lifecycle.
+returns once indexing is over and the project has reopened on the new index (app_state \
+Ready), so navigation can follow at once. describe('machines') has the whole lifecycle.
   A load that asks first (the index is outdated or from another version: \"reindex?\") \
 returns at once with { app_state: \"Loading\", question, note } (protocol v6): answer it with \
 machine_send { machine: \"question\", event: \"answer\", args: { label: \"Reindex\" } }.",
@@ -410,7 +410,9 @@ machine_send { machine, event, args?: {...}, until?: [state], timeout_s=60, inst
   A refused event is ok: false with the machine as it is (its state and accepted events). \
 `transitions` are the moves seen meanwhile; with until the call returns once the machine is \
 in one of those states, or after timeout_s (at most 300; the call holds the bridge meanwhile) \
-with reached: false.
+with reached: false. A run's end (indexing idle) reopens the project on the new index, so \
+until: [\"idle\"] on indexing also waits for the project to be ready again; its moves are \
+among the transitions.
 
 indexing: idle -> pending -> choosing_mode -> pending -> preparing -> indexing -> finishing \
 -> reporting -> finishing -> idle

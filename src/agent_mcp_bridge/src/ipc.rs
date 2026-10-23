@@ -1202,9 +1202,13 @@ impl Bridge {
                 "transitions": transitions,
             }));
         }
+        let deadline = Instant::now() + timeout;
         let current = snapshot["state"].as_str().unwrap_or_default().to_string();
-        let reached = self.await_machine_state(machine, until, current, timeout, &mut transitions)?;
+        let mut reached = self.await_machine_state(machine, until, current, timeout, &mut transitions)?;
         let snapshot = self.machine_snapshot(machine)?;
+        if reached {
+            reached = self.await_reopened_project(machine, &snapshot, deadline, &mut transitions)?;
+        }
         Ok(json!({
             "ok": true,
             "message": reply.message,
@@ -1217,15 +1221,44 @@ impl Bridge {
     /// Wait up to `timeout` for `machine` to be in one of `until` (sending
     /// nothing). Returns `{ machine, transitions, reached }`.
     pub fn wait_machine(&mut self, machine: &str, until: &[String], timeout: Duration) -> Result<Value> {
-        let snapshot = self.machine_snapshot(machine)?;
+        let deadline = Instant::now() + timeout;
+        let mut snapshot = self.machine_snapshot(machine)?;
         let current = snapshot["state"].as_str().unwrap_or_default().to_string();
         let mut transitions = Vec::new();
-        if until.contains(&current) {
-            return Ok(json!({ "machine": snapshot, "transitions": transitions, "reached": true }));
+        let mut reached = until.contains(&current);
+        if !reached {
+            reached = self.await_machine_state(machine, until, current, timeout, &mut transitions)?;
+            snapshot = self.machine_snapshot(machine)?;
         }
-        let reached = self.await_machine_state(machine, until, current, timeout, &mut transitions)?;
-        let snapshot = self.machine_snapshot(machine)?;
+        if reached {
+            reached = self.await_reopened_project(machine, &snapshot, deadline, &mut transitions)?;
+        }
         Ok(json!({ "machine": snapshot, "transitions": transitions, "reached": reached }))
+    }
+
+    /// An indexing run reopens the project on its new index, and asks for that
+    /// before it ends. So a wait that saw the run end (the indexing machine idle)
+    /// also waits, until `deadline`, for the project to be ready again: the caller
+    /// can navigate at once instead of hitting "still loading". The project's
+    /// moves join `transitions`. False when the deadline passed first.
+    fn await_reopened_project(
+        &mut self,
+        machine: &str,
+        snapshot: &Value,
+        deadline: Instant,
+        transitions: &mut Vec<Value>,
+    ) -> Result<bool> {
+        if machine != "indexing" || snapshot["state"] != "idle" {
+            return Ok(true);
+        }
+        let project = self.machine_snapshot("project")?;
+        let current = project["state"].as_str().unwrap_or_default().to_string();
+        if current != "loading" && current != "opening" {
+            return Ok(true);
+        }
+        let ready = ["ready".to_string()];
+        let remaining = deadline.saturating_duration_since(Instant::now());
+        self.await_machine_state("project", &ready, current, remaining, transitions)
     }
 
     fn machine_snapshot(&mut self, machine: &str) -> Result<Value> {
