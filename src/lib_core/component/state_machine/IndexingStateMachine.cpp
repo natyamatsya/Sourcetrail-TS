@@ -63,7 +63,7 @@ void resetChoice(IndexingMachine::Data& data)
 	data.counting.clear();
 	data.onStart = nullptr;
 	data.onCancel = nullptr;
-	data.choicePresenter = nullptr;
+	data.choicePresenter = {};
 }
 
 // `mode` when the open choice offers it; the reason when not.
@@ -111,7 +111,7 @@ void IndexingStateMachine::chooseMode(
 	RefreshMode initialMode,
 	std::function<void(const RefreshInfo&)> onStart,
 	std::function<void()> onCancel,
-	IndexingPresenter* presenter)
+	IndexingPresenter presenter)
 {
 	{
 		auto transaction = m_machine.transaction();
@@ -138,8 +138,8 @@ void IndexingStateMachine::chooseMode(
 		}
 	}
 
-	presenter->presentModeChoice(modes, initialMode);
-	presenter->presentCounting();
+	presenter.presentModeChoice(modes, initialMode);
+	presenter.presentCounting();
 	count(initialMode);
 }
 
@@ -182,7 +182,7 @@ void IndexingStateMachine::wrappingUp()
 }
 
 void IndexingStateMachine::report(
-	const IndexingReport& report, IndexingPresenter* presenter, std::function<void(DatabasePolicy)> decided)
+	const IndexingReport& report, IndexingPresenter presenter, std::function<void(DatabasePolicy)> decided)
 {
 	{
 		auto transaction = m_machine.transaction();
@@ -198,13 +198,13 @@ void IndexingStateMachine::report(
 		}
 	}
 
-	if (!presenter->presentReport(report))
+	if (!presenter.presentReport(report))
 	{
 		decide(DatabasePolicy::DATABASE_POLICY_KEEP, EventSource::App);
 	}
 }
 
-DatabasePolicy IndexingStateMachine::report(const IndexingReport& report, IndexingPresenter* presenter)
+DatabasePolicy IndexingStateMachine::report(const IndexingReport& report, IndexingPresenter presenter)
 {
 	std::mutex mutex;
 	std::condition_variable decidedNow;
@@ -239,7 +239,7 @@ void IndexingStateMachine::ended(const std::string& outcome)
 	transaction.move(Event::End);
 }
 
-void IndexingStateMachine::detach(IndexingPresenter* presenter)
+void IndexingStateMachine::detach(IndexingPresenter presenter)
 {
 	bool reportAbandoned = false;
 	{
@@ -247,11 +247,11 @@ void IndexingStateMachine::detach(IndexingPresenter* presenter)
 		Data& data = transaction.data();
 		if (data.choicePresenter == presenter)
 		{
-			data.choicePresenter = nullptr;
+			data.choicePresenter = {};
 		}
 		if (data.reportPresenter == presenter)
 		{
-			data.reportPresenter = nullptr;
+			data.reportPresenter = {};
 			reportAbandoned = data.report.has_value();
 		}
 	}
@@ -284,7 +284,7 @@ MachineFireResult IndexingStateMachine::refresh(RefreshMode mode, EventSource so
 
 MachineFireResult IndexingStateMachine::selectMode(RefreshMode mode, EventSource source)
 {
-	IndexingPresenter* presenter = nullptr;
+	IndexingPresenter presenter;
 	std::optional<RefreshInfo> known;
 	bool needsCount = false;
 	{
@@ -311,16 +311,16 @@ MachineFireResult IndexingStateMachine::selectMode(RefreshMode mode, EventSource
 		transaction.move(Event::SelectMode, source);
 	}
 
-	if (presenter != nullptr)
+	if (presenter)
 	{
 		// The dialog shows the mode selected, whoever selected it.
 		if (known)
 		{
-			presenter->presentRefreshInfo(*known);
+			presenter.presentRefreshInfo(*known);
 		}
 		else
 		{
-			presenter->presentCounting();
+			presenter.presentCounting();
 		}
 	}
 	if (needsCount)
@@ -332,7 +332,7 @@ MachineFireResult IndexingStateMachine::selectMode(RefreshMode mode, EventSource
 
 MachineFireResult IndexingStateMachine::start(std::optional<RefreshMode> mode, EventSource source)
 {
-	IndexingPresenter* presenter = nullptr;
+	IndexingPresenter presenter;
 	std::function<void(const RefreshInfo&)> onStart;
 	std::optional<RefreshInfo> info;
 	std::function<RefreshInfo(RefreshMode)> countFiles;
@@ -362,9 +362,9 @@ MachineFireResult IndexingStateMachine::start(std::optional<RefreshMode> mode, E
 	}
 
 	// Close the dialog before the pipeline shows its next one.
-	if (presenter != nullptr && source != EventSource::Ui)
+	if (presenter && source != EventSource::Ui)
 	{
-		presenter->dismissModeChoice(true);
+		presenter.dismissModeChoice(true);
 	}
 	// On the app scheduler, as the dialog's start always ran: counting (when the
 	// mode was not counted yet) and building the index both belong there.
@@ -380,7 +380,7 @@ MachineFireResult IndexingStateMachine::start(std::optional<RefreshMode> mode, E
 
 MachineFireResult IndexingStateMachine::cancel(EventSource source)
 {
-	IndexingPresenter* presenter = nullptr;
+	IndexingPresenter presenter;
 	std::function<void()> onCancel;
 	{
 		auto transaction = m_machine.transaction();
@@ -396,9 +396,9 @@ MachineFireResult IndexingStateMachine::cancel(EventSource source)
 		resetChoice(data);
 	}
 
-	if (presenter != nullptr && source != EventSource::Ui)
+	if (presenter && source != EventSource::Ui)
 	{
-		presenter->dismissModeChoice(false);
+		presenter.dismissModeChoice(false);
 	}
 	if (onCancel)
 	{
@@ -429,7 +429,7 @@ MachineFireResult IndexingStateMachine::decide(DatabasePolicy policy, EventSourc
 	const Event event = policy == DATABASE_POLICY_DISCARD ? Event::Discard
 		: policy == DATABASE_POLICY_REFRESH				   ? Event::Reindex
 														   : Event::Keep;
-	IndexingPresenter* presenter = nullptr;
+	IndexingPresenter presenter;
 	std::function<void(DatabasePolicy)> decided;
 	std::string outcome;
 	{
@@ -445,7 +445,7 @@ MachineFireResult IndexingStateMachine::decide(DatabasePolicy policy, EventSourc
 		presenter = data.reportPresenter;
 		decided = std::move(data.decided);
 		data.report.reset();
-		data.reportPresenter = nullptr;
+		data.reportPresenter = {};
 		data.outcome = policy == DATABASE_POLICY_DISCARD ? "discarded"
 			: policy == DATABASE_POLICY_REFRESH			  ? "reindexing"
 			: policy == DATABASE_POLICY_KEEP			  ? "kept"
@@ -458,9 +458,9 @@ MachineFireResult IndexingStateMachine::decide(DatabasePolicy policy, EventSourc
 			});
 		}
 	}
-	if (presenter != nullptr && source == EventSource::Agent)
+	if (presenter && source == EventSource::Agent)
 	{
-		presenter->dismissReport();
+		presenter.dismissReport();
 	}
 	if (decided)
 	{
@@ -586,7 +586,7 @@ void IndexingStateMachine::count(RefreshMode mode)
 
 void IndexingStateMachine::counted(RefreshMode mode, const RefreshInfo& info)
 {
-	IndexingPresenter* presenter = nullptr;
+	IndexingPresenter presenter;
 	{
 		auto transaction = m_machine.transaction();
 		Data& data = transaction.data();
@@ -603,9 +603,9 @@ void IndexingStateMachine::counted(RefreshMode mode, const RefreshInfo& info)
 		transaction.move(Event::Counted);
 	}
 
-	if (presenter != nullptr)
+	if (presenter)
 	{
-		presenter->presentRefreshInfo(info);
+		presenter.presentRefreshInfo(info);
 	}
 }
 

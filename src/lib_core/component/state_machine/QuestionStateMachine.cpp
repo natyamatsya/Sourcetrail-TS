@@ -32,7 +32,7 @@ std::shared_ptr<QuestionStateMachine> QuestionStateMachine::instance()
 }
 
 QuestionSender QuestionStateMachine::asked(
-	std::string text, std::vector<std::string> options, QuestionPresenter* presenter)
+	std::string text, std::vector<std::string> options, QuestionPresenter presenter)
 {
 	// Owned by its sender where a shared_ptr owns it (instance()); a machine of a
 	// scope of its own outlives what it asks.
@@ -45,7 +45,7 @@ QuestionSender QuestionStateMachine::asked(
 }
 
 int QuestionStateMachine::ask(
-	const std::string& text, const std::vector<std::string>& options, QuestionPresenter* presenter)
+	const std::string& text, const std::vector<std::string>& options, QuestionPresenter presenter)
 {
 	const auto answer = stdexec::sync_wait(asked(text, options, presenter));
 	return answer ? std::get<0>(*answer) : -1;
@@ -54,7 +54,7 @@ int QuestionStateMachine::ask(
 std::uint64_t QuestionStateMachine::open(
 	std::string text,
 	std::vector<std::string> options,
-	QuestionPresenter* presenter,
+	QuestionPresenter presenter,
 	std::function<void(int)> answered)
 {
 	auto transaction = m_machine.transaction();
@@ -74,9 +74,9 @@ void QuestionStateMachine::present(std::uint64_t id)
 		const auto it = std::ranges::find(data.open, id, &Question::id);
 		return it != data.open.end() ? std::optional(*it) : std::nullopt;
 	});
-	if (question && question->presenter != nullptr)
+	if (question && question->presenter)
 	{
-		question->presenter->presentQuestion(id, question->text, question->options);
+		question->presenter.presentQuestion(id, question->text, question->options);
 	}
 }
 
@@ -89,7 +89,7 @@ bool QuestionStateMachine::isOpen(std::uint64_t id) const
 
 bool QuestionStateMachine::answer(std::uint64_t id, int option, EventSource source)
 {
-	QuestionPresenter* presenter = nullptr;
+	QuestionPresenter presenter;
 	std::function<void(int)> answered;
 	{
 		auto transaction = m_machine.transaction();
@@ -112,9 +112,9 @@ bool QuestionStateMachine::answer(std::uint64_t id, int option, EventSource sour
 			}
 		}
 	}
-	if (presenter != nullptr)
+	if (presenter)
 	{
-		presenter->dismissQuestion(id);
+		presenter.dismissQuestion(id);
 	}
 	if (answered)
 	{
@@ -123,11 +123,9 @@ bool QuestionStateMachine::answer(std::uint64_t id, int option, EventSource sour
 	return true;
 }
 
-void QuestionStateMachine::withdraw(QuestionPresenter* presenter)
+void QuestionStateMachine::withdraw(QuestionPresenter presenter)
 {
-	withdrawWhere([presenter](const Question& question) {
-		return presenter == nullptr || question.presenter == presenter;
-	});
+	withdrawWhere([presenter](const Question& question) { return !presenter || question.presenter == presenter; });
 }
 
 void QuestionStateMachine::withdraw(std::uint64_t id)
@@ -165,9 +163,9 @@ void QuestionStateMachine::withdrawWhere(const std::function<bool(const Question
 	}
 	for (const Question& question: withdrawn)
 	{
-		if (question.presenter != nullptr)
+		if (question.presenter)
 		{
-			question.presenter->dismissQuestion(question.id);
+			question.presenter.dismissQuestion(question.id);
 		}
 		if (question.answered)
 		{

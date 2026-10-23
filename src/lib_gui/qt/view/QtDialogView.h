@@ -45,6 +45,17 @@ public:
 
 	void setParentWindow(QtWindow* window);
 
+	void presentQuestion(
+		std::uint64_t id, const std::string& text, const std::vector<std::string>& options) override;
+	void dismissQuestion(std::uint64_t id) override;
+
+	void presentModeChoice(const std::vector<RefreshMode>& modes, RefreshMode mode) override;
+	void presentCounting() override;
+	void presentRefreshInfo(const RefreshInfo& info) override;
+	void dismissModeChoice(bool started) override;
+	bool presentReport(const IndexingReport& report) override;
+	void dismissReport() override;
+
 protected:
 	bool presentsQuestions() const override;
 
@@ -58,17 +69,6 @@ protected:
 		size_t finishedFileCount,
 		size_t totalFileCount,
 		const std::vector<FilePath>& sourcePaths) override;
-
-	void presentQuestion(
-		std::uint64_t id, const std::string& text, const std::vector<std::string>& options) override;
-	void dismissQuestion(std::uint64_t id) override;
-
-	void presentModeChoice(const std::vector<RefreshMode>& modes, RefreshMode mode) override;
-	void presentCounting() override;
-	void presentRefreshInfo(const RefreshInfo& info) override;
-	void dismissModeChoice(bool started) override;
-	bool presentReport(const IndexingReport& report) override;
-	void dismissReport() override;
 
 private slots:
 	void showUnknownProgress(const std::string& title, const std::string& message, bool stacked);

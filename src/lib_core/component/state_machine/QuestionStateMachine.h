@@ -14,21 +14,58 @@
 
 #include "ConcurrentStateMachine.h"
 #include "MessageCause.h"
+#include "Presenter.h"
 #include "StdexecPrelude.h"
 
 // Shows a question to the user. The answer comes back through
 // QuestionStateMachine::answer, from the user's click or from an agent.
-class QuestionPresenter
+//
+// presentQuestion(id, text, options) may block (a modal loop on the GUI thread)
+// until the question is answered; from another thread it shows the question and
+// returns. dismissQuestion(id): question `id` was answered elsewhere or withdrawn,
+// close it if it is still shown.
+template <typename T>
+concept PresentsQuestions =
+	requires(T& presenter, std::uint64_t id, const std::string& text, const std::vector<std::string>& options) {
+		presenter.presentQuestion(id, text, options);
+		presenter.dismissQuestion(id);
+	};
+
+struct QuestionPresenterOperations
+{
+	void (*present)(void* presenter, std::uint64_t id, const std::string& text, const std::vector<std::string>& options);
+	void (*dismiss)(void* presenter, std::uint64_t id);
+};
+
+// Any PresentsQuestions, by reference (Presenter.h). Empty: nobody can answer.
+class QuestionPresenter: public Presenter<QuestionPresenterOperations>
 {
 public:
-	virtual ~QuestionPresenter() = default;
+	using Presenter::Presenter;
 
-	// May block (a modal loop on the GUI thread) until the question is answered; from
-	// another thread it shows the question and returns.
-	virtual void presentQuestion(
-		std::uint64_t id, const std::string& text, const std::vector<std::string>& options) = 0;
-	// Question `id` was answered elsewhere or withdrawn: close it if it is still shown.
-	virtual void dismissQuestion(std::uint64_t id) = 0;
+	template <PresentsQuestions T>
+		requires(!std::derived_from<T, Presenter>)	// a handle is copied, not referred to
+	QuestionPresenter(T& presenter): Presenter(presenter, &operations<T>)
+	{
+	}
+
+	void presentQuestion(std::uint64_t id, const std::string& text, const std::vector<std::string>& options) const
+	{
+		m_operations->present(m_presenter, id, text, options);
+	}
+
+	void dismissQuestion(std::uint64_t id) const
+	{
+		m_operations->dismiss(m_presenter, id);
+	}
+
+private:
+	template <PresentsQuestions T>
+	static constexpr QuestionPresenterOperations operations {
+		[](void* presenter, std::uint64_t id, const std::string& text, const std::vector<std::string>& options) {
+			static_cast<T*>(presenter)->presentQuestion(id, text, options);
+		},
+		[](void* presenter, std::uint64_t id) { static_cast<T*>(presenter)->dismissQuestion(id); }};
 };
 
 // The questions the application asks (DialogView::confirm, DialogView::asked):
@@ -60,7 +97,7 @@ struct QuestionMachine
 		std::uint64_t id = 0;
 		std::string text;
 		std::vector<std::string> options;
-		QuestionPresenter* presenter = nullptr;
+		QuestionPresenter presenter;
 		std::function<void(int)> answered;	// the asker's, called once
 	};
 
@@ -96,17 +133,17 @@ public:
 	// The answer as a sender: the index of the chosen option, or -1 when the question
 	// was withdrawn or closed without a choice. Stopping the sender withdraws it.
 	// Without a presenter nobody can answer: -1 at once.
-	QuestionSender asked(std::string text, std::vector<std::string> options, QuestionPresenter* presenter);
+	QuestionSender asked(std::string text, std::vector<std::string> options, QuestionPresenter presenter);
 
 	// Asks and waits for the answer (see asked).
-	int ask(const std::string& text, const std::vector<std::string>& options, QuestionPresenter* presenter);
+	int ask(const std::string& text, const std::vector<std::string>& options, QuestionPresenter presenter);
 
 	// Opens a question without showing it: `answered` gets the answer once, on the
 	// thread that answers or withdraws it. Returns its id, for present and withdraw.
 	std::uint64_t open(
 		std::string text,
 		std::vector<std::string> options,
-		QuestionPresenter* presenter,
+		QuestionPresenter presenter,
 		std::function<void(int)> answered);
 
 	// Shows open question `id` (its presenter may block until it is answered).
@@ -118,9 +155,9 @@ public:
 	// Answers open question `id`. False when it is not open (any more).
 	bool answer(std::uint64_t id, int option, EventSource source);
 
-	// Withdraws the open questions `presenter` shows (all for nullptr): their askers
-	// get -1. For a window that closed, or a presenter going away.
-	void withdraw(QuestionPresenter* presenter);
+	// Withdraws the open questions `presenter` shows (all for an empty one): their
+	// askers get -1. For a window that closed, or a presenter going away.
+	void withdraw(QuestionPresenter presenter);
 
 	// Withdraws question `id` if it is still open: its asker gets -1.
 	void withdraw(std::uint64_t id);
@@ -152,7 +189,7 @@ public:
 		std::shared_ptr<QuestionStateMachine> machine,
 		std::string text,
 		std::vector<std::string> options,
-		QuestionPresenter* presenter)
+		QuestionPresenter presenter)
 		: m_machine(std::move(machine))
 		, m_text(std::move(text))
 		, m_options(std::move(options))
@@ -178,7 +215,7 @@ public:
 		std::shared_ptr<QuestionStateMachine> machine;
 		std::string text;
 		std::vector<std::string> options;
-		QuestionPresenter* presenter;
+		QuestionPresenter presenter;
 		std::uint64_t cause;	// asked on behalf of it, wherever the sender starts
 		std::uint64_t id = 0;
 		int answer = -1;
@@ -196,7 +233,7 @@ public:
 		void start() & noexcept
 		{
 			const StopToken token = stdexec::get_stop_token(stdexec::get_env(receiver));
-			if (presenter == nullptr || token.stop_requested())
+			if (!presenter || token.stop_requested())
 			{
 				stdexec::set_value(std::move(receiver), -1);
 				return;
@@ -240,7 +277,7 @@ private:
 	std::shared_ptr<QuestionStateMachine> m_machine;
 	std::string m_text;
 	std::vector<std::string> m_options;
-	QuestionPresenter* m_presenter;
+	QuestionPresenter m_presenter;
 	std::uint64_t m_cause;
 };
 

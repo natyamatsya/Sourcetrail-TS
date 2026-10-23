@@ -633,7 +633,7 @@ QuestionSender Application::askFor(const ProjectLoad& load, const std::optional<
 	const CauseScope cause(load.cause);	// the question remembers it
 	if (!question)
 	{
-		return QuestionStateMachine::instance()->asked({}, {}, nullptr);
+		return QuestionStateMachine::instance()->asked({}, {}, QuestionPresenter());
 	}
 	return getDialogView(DialogView::UseCase::GENERAL)->asked(question->text, question->options);
 }

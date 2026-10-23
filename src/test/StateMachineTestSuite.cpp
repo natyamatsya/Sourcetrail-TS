@@ -74,16 +74,16 @@ private:
 	std::vector<std::string> m_path;
 };
 
-class FakeQuestionPresenter: public QuestionPresenter
+class FakeQuestionPresenter
 {
 public:
-	void presentQuestion(std::uint64_t id, const std::string&  /*text*/, const std::vector<std::string>&  /*options*/) override
+	void presentQuestion(std::uint64_t id, const std::string&  /*text*/, const std::vector<std::string>&  /*options*/)
 	{
 		const std::lock_guard<std::mutex> lock(mutex);
 		presented.push_back(id);
 	}
 
-	void dismissQuestion(std::uint64_t id) override
+	void dismissQuestion(std::uint64_t id)
 	{
 		const std::lock_guard<std::mutex> lock(mutex);
 		dismissed.push_back(id);
@@ -100,30 +100,30 @@ public:
 	std::vector<std::uint64_t> dismissed;
 };
 
-class FakeIndexingPresenter: public IndexingPresenter
+class FakeIndexingPresenter
 {
 public:
-	void presentModeChoice(const std::vector<RefreshMode>&  /*modes*/, RefreshMode  /*mode*/) override
+	void presentModeChoice(const std::vector<RefreshMode>&  /*modes*/, RefreshMode  /*mode*/)
 	{
 		choicePresented = true;
 	}
-	void presentCounting() override {}
-	void presentRefreshInfo(const RefreshInfo& info) override
+	void presentCounting() {}
+	void presentRefreshInfo(const RefreshInfo& info)
 	{
 		const std::lock_guard<std::mutex> lock(mutex);
 		shownModes.push_back(info.mode);
 	}
-	void dismissModeChoice(bool started) override
+	void dismissModeChoice(bool started)
 	{
 		choiceDismissed = true;
 		choiceDismissedStarted = started;
 	}
-	bool presentReport(const IndexingReport&  /*report*/) override
+	bool presentReport(const IndexingReport&  /*report*/)
 	{
 		reportPresented = true;
 		return answersReports;
 	}
-	void dismissReport() override
+	void dismissReport()
 	{
 		reportDismissed = true;
 	}
@@ -205,7 +205,7 @@ TEST_CASE("question waits for an answer from remote control")
 	Recorder recorder("question");
 
 	std::future<int> answer = std::async(std::launch::async, [&]() {
-		return machine.ask("Reindex the project?", {"Reindex", "Cancel"}, &presenter);
+		return machine.ask("Reindex the project?", {"Reindex", "Cancel"}, presenter);
 	});
 	REQUIRE(eventually([&]() { return machine.snapshot().state == "asking"; }));
 
@@ -234,11 +234,11 @@ TEST_CASE("question asked meanwhile waits behind the open one")
 	FakeQuestionPresenter presenter;
 
 	std::future<int> first = std::async(std::launch::async, [&]() {
-		return machine.ask("First?", {"Yes", "No"}, &presenter);
+		return machine.ask("First?", {"Yes", "No"}, presenter);
 	});
 	REQUIRE(eventually([&]() { return presenter.presentedIds().size() == 1; }));
 	std::future<int> second = std::async(std::launch::async, [&]() {
-		return machine.ask("Second?", {"Yes", "No"}, &presenter);
+		return machine.ask("Second?", {"Yes", "No"}, presenter);
 	});
 	REQUIRE(eventually([&]() { return presenter.presentedIds().size() == 2; }));
 	REQUIRE(contains(machine.snapshot().context, R"("queued":1)"));
@@ -260,13 +260,63 @@ TEST_CASE("question withdrawn answers none")
 	FakeQuestionPresenter presenter;
 
 	std::future<int> answer = std::async(std::launch::async, [&]() {
-		return machine.ask("Keep the data?", {"Keep", "Discard"}, &presenter);
+		return machine.ask("Keep the data?", {"Keep", "Discard"}, presenter);
 	});
 	REQUIRE(eventually([&]() { return machine.snapshot().state == "asking"; }));
 
-	machine.withdraw(&presenter);
+	machine.withdraw(presenter);
 	REQUIRE(answer.get() == -1);
 	REQUIRE(machine.snapshot().state == "idle");
+}
+
+// A presenter seen through one of several bases, as QtDialogView (a QObject first,
+// then DialogView) is.
+struct Window
+{
+	virtual ~Window() = default;
+	int handle = 0;
+};
+
+struct Dialogs
+{
+	virtual ~Dialogs() = default;
+	virtual void presentQuestion(std::uint64_t, const std::string&, const std::vector<std::string>&) {}
+	virtual void dismissQuestion(std::uint64_t)
+	{
+		dismissed++;
+	}
+	std::atomic<int> dismissed = 0;
+};
+
+struct WindowWithDialogs
+	: public Window
+	, public Dialogs
+{
+};
+
+TEST_CASE("question presenter handles compare by the presenter")
+{
+	WindowWithDialogs window;
+	const QuestionPresenter direct(window);
+	QuestionPresenter copied = direct;
+	const QuestionPresenter recopied(copied);	// a copy, not a handle to the handle
+	REQUIRE(recopied == direct);
+	REQUIRE(QuestionPresenter(static_cast<Dialogs&>(window)) == direct);
+	REQUIRE_FALSE(QuestionPresenter() == direct);
+	REQUIRE_FALSE(static_cast<bool>(QuestionPresenter()));
+
+	// Asked through one base, withdrawn through the whole.
+	QuestionStateMachine machine;
+	exec::async_scope scope;
+	std::atomic<int> answer = -2;
+	scope.spawn(
+		machine.asked("Close?", {"Yes"}, static_cast<Dialogs&>(window)) |
+		stdexec::then([&](int option) { answer = option; }));
+	REQUIRE(machine.snapshot().state == "asking");
+	machine.withdraw(window);
+	REQUIRE(answer == -1);
+	REQUIRE(window.dismissed == 1);
+	stdexec::sync_wait(scope.on_empty());
 }
 
 TEST_CASE("question as a sender holds no thread")
@@ -277,7 +327,7 @@ TEST_CASE("question as a sender holds no thread")
 
 	std::atomic<int> answer = -2;
 	scope.spawn(
-		machine.asked("Reindex the project?", {"Reindex", "Cancel"}, &presenter) |
+		machine.asked("Reindex the project?", {"Reindex", "Cancel"}, presenter) |
 		stdexec::then([&](int option) { answer = option; }));
 	REQUIRE(machine.snapshot().state == "asking");	// asked, and nothing waits for it
 	REQUIRE(presenter.presentedIds().size() == 1);
@@ -288,7 +338,7 @@ TEST_CASE("question as a sender holds no thread")
 	// Stopping the asker withdraws its question.
 	std::atomic<int> stopped = -2;
 	scope.spawn(
-		machine.asked("Keep the data?", {"Keep", "Discard"}, &presenter) |
+		machine.asked("Keep the data?", {"Keep", "Discard"}, presenter) |
 		stdexec::then([&](int option) { stopped = option; }));
 	REQUIRE(machine.snapshot().state == "asking");
 	scope.request_stop();
@@ -298,7 +348,7 @@ TEST_CASE("question as a sender holds no thread")
 	stdexec::sync_wait(scope.on_empty());
 
 	// Without a presenter nobody can answer.
-	REQUIRE(std::get<0>(*stdexec::sync_wait(machine.asked("Anyone?", {"Yes"}, nullptr))) == -1);
+	REQUIRE(std::get<0>(*stdexec::sync_wait(machine.asked("Anyone?", {"Yes"}, {}))) == -1);
 	REQUIRE(machine.snapshot().state == "idle");
 }
 
@@ -355,7 +405,7 @@ TEST_CASE("indexing mode choice counts the files and starts with the chosen mode
 		RefreshMode::UPDATED_FILES,
 		[&](const RefreshInfo& info) { started.set_value(info.mode); },
 		[]() {},
-		&presenter);
+		presenter);
 
 	REQUIRE(presenter.choicePresented);
 	REQUIRE(machine.snapshot().state == "choosing_mode");
@@ -388,7 +438,7 @@ TEST_CASE("indexing mode choice canceled returns to idle")
 	// must not refer to this test's locals.
 	machine.requested();
 	machine.chooseMode(
-		nullptr, {RefreshMode::ALL_FILES}, RefreshMode::ALL_FILES, [](const RefreshInfo&) {}, []() {}, &presenter);
+		nullptr, {RefreshMode::ALL_FILES}, RefreshMode::ALL_FILES, [](const RefreshInfo&) {}, []() {}, presenter);
 	REQUIRE(machine.fire("cancel", "", EventSource::Agent).ok);
 	REQUIRE(machine.snapshot().state == "idle");
 	REQUIRE(presenter.choiceDismissed);
@@ -416,7 +466,7 @@ TEST_CASE("indexing run waits for the decision on its report")
 		IndexingReport report;
 		report.indexedFileCount = 10;
 		report.totalFileCount = 10;
-		return machine.report(report, &presenter);
+		return machine.report(report, presenter);
 	});
 	REQUIRE(eventually([&]() { return machine.snapshot().state == "reporting"; }));
 	snapshot = machine.snapshot();
@@ -451,7 +501,7 @@ TEST_CASE("indexing report nobody can answer keeps the data")
 	machine.requested();
 	machine.preparing();
 	machine.indexingStarted();
-	REQUIRE(machine.report(IndexingReport(), &presenter) == DatabasePolicy::DATABASE_POLICY_KEEP);
+	REQUIRE(machine.report(IndexingReport(), presenter) == DatabasePolicy::DATABASE_POLICY_KEEP);
 	REQUIRE_FALSE(presenter.reportDismissed);
 	machine.ended("");
 	REQUIRE(contains(machine.snapshot().context, R"("outcome":"kept")"));
@@ -466,7 +516,7 @@ TEST_CASE("indexing report holds no thread while it waits")
 	machine.preparing();
 	machine.indexingStarted();
 	std::optional<DatabasePolicy> decided;
-	machine.report(IndexingReport(), &presenter, [&](DatabasePolicy policy) { decided = policy; });
+	machine.report(IndexingReport(), presenter, [&](DatabasePolicy policy) { decided = policy; });
 	REQUIRE(machine.snapshot().state == "reporting");	// shown, and nothing waits for it
 	REQUIRE(presenter.reportPresented);
 	REQUIRE_FALSE(decided);

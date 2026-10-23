@@ -14,6 +14,7 @@
 #include <vector>
 
 #include "ConcurrentStateMachine.h"
+#include "Presenter.h"
 #include "RefreshInfo.h"
 
 enum class DatabasePolicy
@@ -39,24 +40,90 @@ struct IndexingReport
 // Shows the indexing states that wait for a person: the mode choice ("Start
 // Indexing") and the report. Whatever the presenter shows, its buttons go to the
 // IndexingStateMachine, which an agent drives the same way.
-class IndexingPresenter
+//
+// - presentModeChoice(modes, mode); presentCounting(): the files the selected mode
+//   would index are being counted, presentRefreshInfo(info): and are known;
+//   dismissModeChoice(started): someone else (an agent) chose, close the choice
+//   (`started`: indexing goes on).
+// - presentReport(report) shows the report, or returns false when nobody could
+//   answer it (no GUI, or offscreen): the run then keeps its data.
+//   dismissReport(): someone else decided, close the report.
+template <typename T>
+concept PresentsIndexing = requires(
+	T& presenter,
+	const std::vector<RefreshMode>& modes,
+	RefreshMode mode,
+	const RefreshInfo& info,
+	bool started,
+	const IndexingReport& report) {
+	presenter.presentModeChoice(modes, mode);
+	presenter.presentCounting();
+	presenter.presentRefreshInfo(info);
+	presenter.dismissModeChoice(started);
+	{ presenter.presentReport(report) } -> std::convertible_to<bool>;
+	presenter.dismissReport();
+};
+
+struct IndexingPresenterOperations
+{
+	void (*presentModeChoice)(void* presenter, const std::vector<RefreshMode>& modes, RefreshMode mode);
+	void (*presentCounting)(void* presenter);
+	void (*presentRefreshInfo)(void* presenter, const RefreshInfo& info);
+	void (*dismissModeChoice)(void* presenter, bool started);
+	bool (*presentReport)(void* presenter, const IndexingReport& report);
+	void (*dismissReport)(void* presenter);
+};
+
+// Any PresentsIndexing, by reference (Presenter.h).
+class IndexingPresenter: public Presenter<IndexingPresenterOperations>
 {
 public:
-	virtual ~IndexingPresenter() = default;
+	using Presenter::Presenter;
 
-	virtual void presentModeChoice(const std::vector<RefreshMode>& modes, RefreshMode mode) = 0;
-	// The files the selected mode would index are being counted ...
-	virtual void presentCounting() = 0;
-	// ... and are known.
-	virtual void presentRefreshInfo(const RefreshInfo& info) = 0;
-	// Someone else (an agent) chose; close the choice. `started`: indexing goes on.
-	virtual void dismissModeChoice(bool started) = 0;
+	template <PresentsIndexing T>
+		requires(!std::derived_from<T, Presenter>)	// a handle is copied, not referred to
+	IndexingPresenter(T& presenter): Presenter(presenter, &operations<T>)
+	{
+	}
 
-	// Shows the report, or returns false when nobody could answer it (no GUI, or
-	// offscreen): the run then keeps its data.
-	virtual bool presentReport(const IndexingReport& report) = 0;
-	// Someone else decided; close the report.
-	virtual void dismissReport() = 0;
+	void presentModeChoice(const std::vector<RefreshMode>& modes, RefreshMode mode) const
+	{
+		m_operations->presentModeChoice(m_presenter, modes, mode);
+	}
+	void presentCounting() const
+	{
+		m_operations->presentCounting(m_presenter);
+	}
+	void presentRefreshInfo(const RefreshInfo& info) const
+	{
+		m_operations->presentRefreshInfo(m_presenter, info);
+	}
+	void dismissModeChoice(bool started) const
+	{
+		m_operations->dismissModeChoice(m_presenter, started);
+	}
+	bool presentReport(const IndexingReport& report) const
+	{
+		return m_operations->presentReport(m_presenter, report);
+	}
+	void dismissReport() const
+	{
+		m_operations->dismissReport(m_presenter);
+	}
+
+private:
+	template <PresentsIndexing T>
+	static constexpr IndexingPresenterOperations operations {
+		[](void* presenter, const std::vector<RefreshMode>& modes, RefreshMode mode) {
+			static_cast<T*>(presenter)->presentModeChoice(modes, mode);
+		},
+		[](void* presenter) { static_cast<T*>(presenter)->presentCounting(); },
+		[](void* presenter, const RefreshInfo& info) { static_cast<T*>(presenter)->presentRefreshInfo(info); },
+		[](void* presenter, bool started) { static_cast<T*>(presenter)->dismissModeChoice(started); },
+		[](void* presenter, const IndexingReport& report) -> bool {
+			return static_cast<T*>(presenter)->presentReport(report);
+		},
+		[](void* presenter) { static_cast<T*>(presenter)->dismissReport(); }};
 };
 
 // The indexing lifecycle, from a refresh request to the decision what to do with
@@ -122,7 +189,7 @@ struct IndexingMachine
 		std::set<RefreshMode> counting;
 		std::function<void(const RefreshInfo&)> onStart;
 		std::function<void()> onCancel;
-		IndexingPresenter* choicePresenter = nullptr;
+		IndexingPresenter choicePresenter;
 
 		// indexing, finishing
 		Progress progress;
@@ -130,7 +197,7 @@ struct IndexingMachine
 
 		// reporting
 		std::optional<IndexingReport> report;	// until it is decided on
-		IndexingPresenter* reportPresenter = nullptr;
+		IndexingPresenter reportPresenter;
 		std::function<void(DatabasePolicy)> decided;	// the reporter's, called once
 
 		std::string outcome;	// how the last request or run ended
@@ -221,20 +288,20 @@ public:
 		RefreshMode initialMode,
 		std::function<void(const RefreshInfo&)> onStart,
 		std::function<void()> onCancel,
-		IndexingPresenter* presenter);
+		IndexingPresenter presenter);
 	void preparing();
 	void indexingStarted();
 	void progress(std::size_t started, std::size_t finished, std::size_t total, const std::string& file);
 	void wrappingUp();
 	// Shows the report without waiting: `decided` gets the decision, from the
 	// presenter's buttons or an agent, on the thread that decides.
-	void report(const IndexingReport& report, IndexingPresenter* presenter, std::function<void(DatabasePolicy)> decided);
+	void report(const IndexingReport& report, IndexingPresenter presenter, std::function<void(DatabasePolicy)> decided);
 	// Shows the report and waits for the decision.
-	DatabasePolicy report(const IndexingReport& report, IndexingPresenter* presenter);
+	DatabasePolicy report(const IndexingReport& report, IndexingPresenter presenter);
 	// The run or request is over; an empty `outcome` keeps the report's decision.
 	void ended(const std::string& outcome);
 	// The presenter goes away: forget it, and let a report waiting on it go on.
-	void detach(IndexingPresenter* presenter);
+	void detach(IndexingPresenter presenter);
 
 	// The controls: what the dialogs' buttons and agents send.
 

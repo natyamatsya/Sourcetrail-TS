@@ -9,8 +9,8 @@ DialogView::DialogView(UseCase useCase, StorageAccess* storageAccess)
 
 DialogView::~DialogView()
 {
-	QuestionStateMachine::instance()->withdraw(this);
-	IndexingStateMachine::instance()->detach(this);
+	QuestionStateMachine::instance()->withdraw(*this);
+	IndexingStateMachine::instance()->detach(*this);
 }
 
 DialogView::UseCase DialogView::getUseCase() const
@@ -55,7 +55,7 @@ void DialogView::startIndexingDialog(
 		initialMode,
 		std::move(onStartIndexing),
 		std::move(onCancelIndexing),
-		this);
+		*this);
 }
 
 void DialogView::updateIndexingDialog(
@@ -99,7 +99,7 @@ void DialogView::finishedIndexingDialog(
 		 errorInfo.total,
 		 errorInfo.fatal,
 		 interrupted},
-		this,
+		*this,
 		std::move(decided));
 }
 
@@ -110,12 +110,12 @@ int DialogView::confirm(const std::string& message)
 
 int DialogView::confirm(const std::string& message, const std::vector<std::string>& options)
 {
-	return QuestionStateMachine::instance()->ask(message, options, presentsQuestions() ? this : nullptr);
+	return QuestionStateMachine::instance()->ask(message, options, questionPresenter());
 }
 
 QuestionSender DialogView::asked(const std::string& message, const std::vector<std::string>& options)
 {
-	return QuestionStateMachine::instance()->asked(message, options, presentsQuestions() ? this : nullptr);
+	return QuestionStateMachine::instance()->asked(message, options, questionPresenter());
 }
 
 void DialogView::notify(const std::string& message, const std::vector<std::string>& options)
@@ -165,3 +165,8 @@ bool DialogView::presentReport(const IndexingReport&  /*report*/)
 }
 
 void DialogView::dismissReport() {}
+
+QuestionPresenter DialogView::questionPresenter()
+{
+	return presentsQuestions() ? QuestionPresenter(*this) : QuestionPresenter();
+}

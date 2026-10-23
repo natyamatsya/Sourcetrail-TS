@@ -19,9 +19,10 @@ class StorageAccess;
 // machines, and a subclass shows their states through the presenter hooks (the
 // base, without a GUI, shows nothing and answers for itself). Since the machines
 // own the waiting, an agent answers through them just as the dialog's buttons do.
+//
+// The machines keep it as a QuestionPresenter and an IndexingPresenter: handles to
+// whatever has the hooks, not bases it derives from.
 class DialogView
-	: public QuestionPresenter
-	, public IndexingPresenter
 {
 public:
 	enum class UseCase
@@ -32,7 +33,7 @@ public:
 	};
 
 	DialogView(UseCase useCase, StorageAccess* storageAccess);
-	~DialogView() override;
+	virtual ~DialogView();
 
 	UseCase getUseCase() const;
 
@@ -84,9 +85,23 @@ public:
 	// Shows a notice and goes on: nothing waits for it to be closed.
 	void notify(const std::string& message, const std::vector<std::string>& options = {});
 
+	// The presenter hooks: what the machines call to show their states
+	// (PresentsQuestions, PresentsIndexing).
+	virtual void presentQuestion(std::uint64_t id, const std::string& text, const std::vector<std::string>& options);
+	virtual void dismissQuestion(std::uint64_t id);
+
+	virtual void presentModeChoice(const std::vector<RefreshMode>& modes, RefreshMode mode);
+	virtual void presentCounting();
+	virtual void presentRefreshInfo(const RefreshInfo& info);
+	virtual void dismissModeChoice(bool started);
+	virtual bool presentReport(const IndexingReport& report);
+	virtual void dismissReport();
+
 protected:
 	// Whether this view can show a question; without one, confirm() answers -1.
 	virtual bool presentsQuestions() const;
+	// This view, if it presentsQuestions().
+	QuestionPresenter questionPresenter();
 
 	virtual void showIndexingProgress(
 		size_t startedFileCount,
@@ -98,17 +113,6 @@ protected:
 		size_t finishedFileCount,
 		size_t totalFileCount,
 		const std::vector<FilePath>& sourcePaths);
-
-	void presentQuestion(
-		std::uint64_t id, const std::string& text, const std::vector<std::string>& options) override;
-	void dismissQuestion(std::uint64_t id) override;
-
-	void presentModeChoice(const std::vector<RefreshMode>& modes, RefreshMode mode) override;
-	void presentCounting() override;
-	void presentRefreshInfo(const RefreshInfo& info) override;
-	void dismissModeChoice(bool started) override;
-	bool presentReport(const IndexingReport& report) override;
-	void dismissReport() override;
 
 	const UseCase m_useCase;
 	StorageAccess* m_storageAccess;

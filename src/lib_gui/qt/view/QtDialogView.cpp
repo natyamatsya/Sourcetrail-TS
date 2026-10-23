@@ -504,8 +504,8 @@ void QtDialogView::handleMessage(MessageWindowClosed*  /*message*/)
 {
 	// The app is closing: whoever waits on a question or a report this view shows
 	// goes on (with no answer) instead of blocking the shutdown.
-	QuestionStateMachine::instance()->withdraw(this);
-	IndexingStateMachine::instance()->detach(this);
+	QuestionStateMachine::instance()->withdraw(*this);
+	IndexingStateMachine::instance()->detach(*this);
 }
 
 void QtDialogView::updateErrorCount(size_t errorCount, size_t fatalCount)
