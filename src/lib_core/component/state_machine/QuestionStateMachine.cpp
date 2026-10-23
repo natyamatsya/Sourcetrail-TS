@@ -4,6 +4,7 @@
 #include <optional>
 
 #include "MachineArgs.h"
+#include "logging.h"
 
 // glaze reflects these for JSON; MSVC cannot reflect types in an anonymous namespace.
 namespace question_machine_json
@@ -244,4 +245,9 @@ std::string QuestionMachine::context(State  /*state*/, const Data& data)
 	const question_machine_json::QuestionContext context {
 		question.id, question.text, question.options, data.open.size() - 1};
 	return glz::write_json(context).value_or("{}");
+}
+
+void reportAnswerFailure(const char* what)
+{
+	LOG_ERROR(std::string("what an answer led to failed: ") + what);
 }

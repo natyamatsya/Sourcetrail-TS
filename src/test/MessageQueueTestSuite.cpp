@@ -398,6 +398,15 @@ TEST_CASE("a request's work is counted until it is done")
 	CauseWork::ended(7);	// more ends than begins: ignored
 	REQUIRE(done.size() == 1);
 
+	{
+		const CauseScope request(8);
+		CauseWork::Held held;	// the current cause's
+		CauseWork::Held moved = std::move(held);	// one piece of work, moved
+		REQUIRE(CauseWork::pending(8) == 1);
+	}
+	REQUIRE(CauseWork::pending(8) == 0);
+	REQUIRE(done == std::vector<std::uint64_t> {7, 8});
+
 	CauseWork::onDone(nullptr);
 }
 

@@ -244,16 +244,31 @@ private:
 	std::uint64_t m_cause;
 };
 
+// What an answer's callback threw, logged (QuestionStateMachine.cpp).
+void reportAnswerFailure(const char* what);
+
 // Asks `question` and goes on: `answered(option)` runs once it is answered (-1 for
-// none), on the thread that answers it, on behalf of what asked.
+// none), on the thread that answers it, on behalf of what asked; the question counts
+// as that request's work until then (CauseWork).
 template <std::invocable<int> Answered>
 void whenAnswered(QuestionSender question, Answered answered)
 {
 	stdexec::start_detached(
 		std::move(question) |
-		stdexec::then([answered = std::move(answered), cause = currentCause()](int option) mutable noexcept {
-			const CauseScope scope(cause);
-			answered(option);
+		stdexec::then([answered = std::move(answered), work = CauseWork::Held()](int option) mutable noexcept {
+			const CauseScope scope(work.cause());
+			try
+			{
+				answered(option);
+			}
+			catch (const std::exception& e)
+			{
+				reportAnswerFailure(e.what());
+			}
+			catch (...)
+			{
+				reportAnswerFailure("an unknown exception");
+			}
 		}));
 }
 

@@ -169,12 +169,15 @@ void MessageQueue::handOn(
 	}
 	else
 	{
+		// Done with, however its listeners end.
+		[[maybe_unused]] ScopedFunctor done([&message, &followedBy]() {
+			if (followedBy)
+			{
+				followedBy->handled(*message);
+			}
+			CauseWork::ended(message->getCause());
+		});
 		sendMessage(message);
-		if (followedBy)
-		{
-			followedBy->handled(*message);
-		}
-		CauseWork::ended(message->getCause());
 	}
 }
 
@@ -410,6 +413,17 @@ public:
 
 	~ListenerTask() override
 	{
+		// Dropped (or terminated) while its listeners still run on the pool: handled
+		// once the last of them ended.
+		if (m_sideBySide && m_handled)
+		{
+			const std::lock_guard<std::mutex> lock(m_sideBySide->mutex);
+			if (m_sideBySide->running > 0)
+			{
+				m_sideBySide->afterAll = std::exchange(m_handled, nullptr);
+				return;
+			}
+		}
 		report();
 	}
 
@@ -419,6 +433,8 @@ private:
 	{
 		std::atomic<std::size_t> running = 0;
 		TaskWake allEnded;
+		std::mutex mutex;
+		std::function<void()> afterAll;	// the dropped task's report, for the last one
 	};
 
 	void doEnter(std::shared_ptr<Blackboard>  /*blackboard*/) override {}
@@ -489,6 +505,15 @@ private:
 		if (--sideBySide.running == 0)
 		{
 			sideBySide.allEnded.notify();
+			std::function<void()> afterAll;
+			{
+				const std::lock_guard<std::mutex> lock(sideBySide.mutex);
+				afterAll = std::exchange(sideBySide.afterAll, nullptr);
+			}
+			if (afterAll)
+			{
+				afterAll();
+			}
 		}
 	}
 

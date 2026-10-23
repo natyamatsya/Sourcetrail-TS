@@ -375,6 +375,8 @@ struct Application::ProjectLoad
 		}
 	};
 	std::optional<stdexec::inplace_stop_callback<RequestStop>> stopWithApp;
+	// The load counts as its request's work until it ends, its question included.
+	std::optional<CauseWork::Held> work;
 
 	// Runs a step (one returning false ends the load), turning what it throws into
 	// the load's failure, as the load always has.
@@ -572,6 +574,7 @@ void Application::loadProject(const FilePath& path, const ShardConfig& shardConf
 	const auto load = std::make_shared<ProjectLoad>();
 	load->path = path;
 	load->cause = currentCause();
+	load->work.emplace(load->cause);
 	load->refreshMode = refreshMode;
 	load->stopWithApp.emplace(m_pipelines.get_stop_token(), ProjectLoad::RequestStop {&load->stop});
 	if (m_loading)
@@ -796,7 +799,7 @@ void Application::refreshProject(RefreshMode refreshMode)
 			if (std::optional<Project::RefreshPlan> plan = m_project->planRefresh(refreshMode);
 				plan && !plan->questions.empty())
 			{
-				askThenRefresh({m_project, std::move(*plan), 0, currentCause()});
+				askThenRefresh({m_project, std::move(*plan), 0, currentCause(), CauseWork::Held()});
 				return;
 			}
 		}

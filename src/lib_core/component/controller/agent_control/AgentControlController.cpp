@@ -620,6 +620,7 @@ struct AgentControlController::Impl
 
 	void stop()
 	{
+		m_stopping = true;
 		StateMachineRegistry::instance().removeObserver(m_machineObserver);
 		utility::qt::installQtLogSink(nullptr);
 		utility::qt::setQtLogRules("");	// restore default Qt verbosity
@@ -635,11 +636,15 @@ struct AgentControlController::Impl
 		stdexec::sync_wait(m_uiScope.on_empty());	 // join any in-flight snapshot capture
 	}
 
-	// Runs `work` on the GUI thread; stop() joins what is still running.
+	// Runs `work` on the GUI thread; stop() joins what is still running, and refuses
+	// what comes after.
 	template <std::invocable Work>
 	void onGui(Work work)
 	{
-		m_uiScope.spawn(stdexec::schedule(m_schedulers->ui()) | stdexec::then(std::move(work)));
+		if (!m_stopping)
+		{
+			m_uiScope.spawn(stdexec::schedule(m_schedulers->ui()) | stdexec::then(std::move(work)));
+		}
 	}
 
 	// ---- MessageListener overrides (message-processing thread) ----------------
@@ -1722,6 +1727,7 @@ struct AgentControlController::Impl
 	std::vector<std::uint64_t> m_pendingSettle;	// accepted request_ids awaiting their Settled
 
 	bool m_listening = false;
+	std::atomic<bool> m_stopping = false;	// stop() began: no GUI work is spawned any more
 	std::size_t m_machineObserver = 0;	// publishes every state machine transition
 	// Expires with the Impl: GUI-thread callbacks that may run after stop() check it.
 	std::shared_ptr<int> m_lifetime = std::make_shared<int>(0);

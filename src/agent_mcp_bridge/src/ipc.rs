@@ -502,9 +502,9 @@ impl Bridge {
                     let asking = machines.iter().find(|m| m["machine"] == "question" && m["state"] == "asking");
                     if let (true, Some(question)) = (alive.queued, asking) {
                         return Err(anyhow::Error::new(BehindQuestion(format!(
-                            "{what} for request {request_id} waits behind a question the app is asking, \
-                             which holds its queue until it is answered: machine_send {{ machine: \
-                             \"question\", event: \"answer\", args: {{ label: ... }} }} (question: {question})"
+                            "{what} for request {request_id} waits for a question the app is asking: \
+                             answer it with machine_send {{ machine: \"question\", event: \"answer\", \
+                             args: {{ label: ... }} }} (question: {question})"
                         ))));
                     }
                 }

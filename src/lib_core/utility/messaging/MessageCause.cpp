@@ -1,5 +1,6 @@
 #include "MessageCause.h"
 
+#include <condition_variable>
 #include <mutex>
 #include <unordered_map>
 
@@ -12,6 +13,8 @@ struct PendingWork
 	std::mutex mutex;
 	std::unordered_map<std::uint64_t, std::size_t> counts;
 	std::function<void(std::uint64_t)> done;
+	std::size_t calling = 0;	// calls of `done` in flight
+	std::condition_variable called;
 };
 
 PendingWork& pendingWork()
@@ -64,10 +67,19 @@ void CauseWork::ended(std::uint64_t cause)
 		}
 		work.counts.erase(it);
 		done = work.done;
+		if (done)
+		{
+			work.calling++;
+		}
 	}
 	if (done)
 	{
 		done(cause);
+		{
+			const std::lock_guard<std::mutex> lock(work.mutex);
+			work.calling--;
+		}
+		work.called.notify_all();
 	}
 }
 
@@ -82,6 +94,7 @@ std::size_t CauseWork::pending(std::uint64_t cause)
 void CauseWork::onDone(std::function<void(std::uint64_t)> done)
 {
 	PendingWork& work = pendingWork();
-	const std::lock_guard<std::mutex> lock(work.mutex);
+	std::unique_lock<std::mutex> lock(work.mutex);
 	work.done = std::move(done);
+	work.called.wait(lock, [&work]() { return work.calling == 0; });
 }

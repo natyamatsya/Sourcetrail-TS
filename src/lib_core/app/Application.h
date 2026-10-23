@@ -11,6 +11,7 @@
 #include "MessageActivateOverview.h"
 #include "MessageActivateTokens.h"
 #include "MessageActivateWindow.h"
+#include "MessageCause.h"
 #include "MessageCloseProject.h"
 #include "MessageIndexingFinished.h"
 #include "MessageListener.h"
@@ -147,6 +148,7 @@ private:
 		Project::RefreshPlan plan;
 		std::size_t next = 0;	// the question to ask next
 		std::uint64_t cause = 0;	// the refresh's request
+		CauseWork::Held work;	// counts as the request's work while it waits
 	};
 	void askThenRefresh(PendingRefresh refresh);
 	void refreshAnswered(PendingRefresh refresh, int option);

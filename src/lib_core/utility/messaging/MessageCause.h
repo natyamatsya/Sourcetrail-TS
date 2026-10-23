@@ -50,8 +50,44 @@ public:
 	static void ended(std::uint64_t cause);
 	static std::size_t pending(std::uint64_t cause);
 	// Called with the cause, on the thread that ended the work, whenever a request's
-	// pending work drops to none. One at a time; nullptr clears it.
+	// pending work drops to none. One at a time; nullptr clears it. Returns once no
+	// call of the one it replaces runs any more.
 	static void onDone(std::function<void(std::uint64_t)> done);
+
+	// Work on behalf of a cause (by default the current one) while it lives: a
+	// pipeline, a question its request waits for. Move-only.
+	class Held
+	{
+	public:
+		Held(): Held(currentCause()) {}
+		explicit Held(std::uint64_t cause): m_cause(cause)
+		{
+			begun(m_cause);
+		}
+		Held(Held&& other) noexcept: m_cause(std::exchange(other.m_cause, 0)) {}
+		Held& operator=(Held&& other) noexcept
+		{
+			if (this != &other)
+			{
+				ended(std::exchange(m_cause, std::exchange(other.m_cause, 0)));
+			}
+			return *this;
+		}
+		Held(const Held&) = delete;
+		Held& operator=(const Held&) = delete;
+		~Held()
+		{
+			ended(m_cause);
+		}
+
+		std::uint64_t cause() const
+		{
+			return m_cause;
+		}
+
+	private:
+		std::uint64_t m_cause;	// 0 once moved from: nothing held
+	};
 };
 
 #endif	  // MESSAGE_CAUSE_H
