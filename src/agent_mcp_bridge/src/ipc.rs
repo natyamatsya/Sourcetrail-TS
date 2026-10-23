@@ -26,9 +26,15 @@ const SNAPSHOT_TIMEOUT: Duration = Duration::from_secs(15);
 /// to open), and how often it looks.
 const LOAD_TIMEOUT: Duration = Duration::from_secs(300);
 const LOAD_POLL: Duration = Duration::from_millis(100);
-/// How long a load waits for one UiState before it looks for a question that
-/// would hold it.
-const LOAD_STATE_READ: Duration = Duration::from_secs(2);
+/// How long the app may go without answering before a wait gives up on it. A
+/// reply may take longer while the app answers: its queue is busy, and the reply
+/// comes once the queue gets to it.
+const UNRESPONSIVE: Duration = Duration::from_secs(3);
+/// How often a wait for a reply asks whether the app still answers.
+const PROBE_EVERY: Duration = Duration::from_secs(1);
+/// The longest a reply may take while the app answers, so a queue that never gets
+/// to it (stuck behind a live reader thread) still ends the wait.
+const BUSY_LIMIT: Duration = Duration::from_secs(120);
 /// Bound on the buffered event log (drops oldest; `seq` gaps let a poller detect it).
 const EVENT_LOG_CAP: usize = 2048;
 const REQUEST_LOG_CAP: usize = 256;
@@ -71,6 +77,36 @@ fn rejection(label: &str, message: &str) -> anyhow::Error {
     }
 }
 
+/// Whether the app still answers while a reply is slow to come. The state
+/// machines answer on the app's reader thread, whatever its message thread is busy
+/// with, so a `GetMachines` probe tells a busy app (keep waiting) from a hung or
+/// gone one (give up after UNRESPONSIVE). Off for an app without state machines
+/// and for a window shorter than PROBE_EVERY: those windows are taken as given.
+struct Liveness {
+    on: bool,
+    // The reply waits in the app's queue, which a question parks until answered.
+    queued: bool,
+    deadline: Instant,
+    // When the app last answered a probe (or the wait began).
+    heard: Instant,
+    // The probe in flight and when it went out.
+    probe: Option<(u64, Instant)>,
+}
+
+/// A reply that waits in the app's queue while a question holds it: the question
+/// is to be answered first. Its own type, so a load that looks for the question
+/// next tells it from an app that stopped answering.
+#[derive(Debug)]
+struct BehindQuestion(String);
+
+impl std::fmt::Display for BehindQuestion {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str(&self.0)
+    }
+}
+
+impl std::error::Error for BehindQuestion {}
+
 /// The ack and the `MachineStates` of a machine command, with the transitions
 /// read meanwhile.
 struct MachineReply {
@@ -109,6 +145,11 @@ pub struct Bridge {
     // scale): frame pixel p is the global point origin + p / scale. ui_input's
     // `at_frame` converts with it.
     last_frame: Option<(f64, f64, f64)>,
+    // The last command sent: its id, and whether it waits in the app's queue.
+    last_sent: Option<(u64, bool)>,
+    // Liveness probes whose replies have not been read yet. Their replies are the
+    // bridge's own business and stay out of the event log.
+    probes: VecDeque<u64>,
 }
 
 impl Bridge {
@@ -146,6 +187,8 @@ impl Bridge {
             handshake: Value::Null,
             dropped_frames: 0,
             last_frame: None,
+            last_sent: None,
+            probes: VecDeque::new(),
         };
         // Best-effort handshake: detect protocol skew up front, but never fail the
         // connect over it (status/read-only use must work against a down or old app).
@@ -329,6 +372,7 @@ impl Bridge {
                 self.cmd_receivers()
             );
         }
+        self.last_sent = protocol::queued_of(bytes);
         if let Some((id, command)) = protocol::action_of(bytes) {
             if self.requests.len() >= REQUEST_LOG_CAP {
                 self.requests.pop_front();
@@ -387,11 +431,169 @@ impl Bridge {
         anyhow!("timed out after {timeout:?} awaiting {what} for request {request_id}: {tail}{skew_hint}")
     }
 
+    /// A wait for a reply within `timeout`; `queued` when the reply waits in the
+    /// app's queue.
+    fn liveness(&self, timeout: Duration, queued: bool) -> Liveness {
+        let on = timeout >= PROBE_EVERY && self.app_protocol_version() >= protocol::MACHINES_SINCE;
+        let now = Instant::now();
+        Liveness {
+            on,
+            queued,
+            deadline: now + if on { timeout.max(BUSY_LIMIT) } else { timeout },
+            heard: now,
+            probe: None,
+        }
+    }
+
+    /// Whether the ack of `request_id` waits in the app's queue (true unless it is
+    /// the last command sent and that one is answered aside).
+    fn ack_queued(&self, request_id: u64) -> bool {
+        self.last_sent.map_or(true, |(id, queued)| id != request_id || queued)
+    }
+
+    /// Before each read of a wait for `what`: fail once the wait is past its
+    /// deadline or a probe has gone unanswered for UNRESPONSIVE, else probe the app
+    /// when it has not answered one for PROBE_EVERY.
+    fn check_alive(&mut self, alive: &mut Liveness, what: &str, request_id: u64, timeout: Duration) -> Result<()> {
+        let now = Instant::now();
+        if now >= alive.deadline {
+            return Err(if alive.on {
+                self.busy_timeout(what, request_id, timeout.max(BUSY_LIMIT))
+            } else {
+                self.reply_timeout(what, request_id, timeout)
+            });
+        }
+        if !alive.on {
+            return Ok(());
+        }
+        match alive.probe {
+            Some((_, sent)) if now - sent >= UNRESPONSIVE => Err(self.unresponsive(what, request_id, UNRESPONSIVE)),
+            None if now - alive.heard >= PROBE_EVERY => {
+                let id = self.next_id();
+                self.send(&protocol::get_machines(id, "question"))?;
+                if self.probes.len() >= 16 {
+                    self.probes.pop_front();
+                }
+                self.probes.push_back(id);
+                alive.probe = Some((id, now));
+                Ok(())
+            }
+            _ => Ok(()),
+        }
+    }
+
+    /// Whether `incoming` is the reply to a probe, taken here. Its `MachineStates`
+    /// says the app answers; with a question asking, a reply that waits in the
+    /// app's queue will not come until the question is answered.
+    fn take_probe_reply(
+        &mut self,
+        alive: &mut Liveness,
+        incoming: &Incoming,
+        what: &str,
+        request_id: u64,
+    ) -> Result<bool> {
+        match incoming {
+            Incoming::CommandResult { request_id: rid, .. } if self.probes.contains(rid) => Ok(true),
+            Incoming::MachineStates { request_id: rid, machines } if self.probes.contains(rid) => {
+                self.probes.retain(|probe| probe != rid);
+                if alive.probe.is_some_and(|(id, _)| id == *rid) {
+                    alive.probe = None;
+                    alive.heard = Instant::now();
+                    let asking = machines.iter().find(|m| m["machine"] == "question" && m["state"] == "asking");
+                    if let (true, Some(question)) = (alive.queued, asking) {
+                        return Err(anyhow::Error::new(BehindQuestion(format!(
+                            "{what} for request {request_id} waits behind a question the app is asking, \
+                             which holds its queue until it is answered: machine_send {{ machine: \
+                             \"question\", event: \"answer\", args: {{ label: ... }} }} (question: {question})"
+                        ))));
+                    }
+                }
+                Ok(true)
+            }
+            _ => Ok(false),
+        }
+    }
+
+    /// The next event off st.agent.events for a wait (None when none came within
+    /// one poll), recorded for poll_events. Probes the app meanwhile; see Liveness.
+    fn next_event(
+        &mut self,
+        alive: &mut Liveness,
+        what: &str,
+        request_id: u64,
+        timeout: Duration,
+    ) -> Result<Option<Incoming>> {
+        self.check_alive(alive, what, request_id, timeout)?;
+        let buf = self.events.recv(Some(RECV_POLL_MS)).context("recv event")?;
+        if buf.is_empty() {
+            return Ok(None);
+        }
+        let incoming = match protocol::parse_event(buf.data()) {
+            Ok((_seq, incoming)) => incoming,
+            Err(e) => {
+                self.record_event(buf.data());
+                self.note_dropped_frame("event", &e);
+                return Ok(None);
+            }
+        };
+        if self.take_probe_reply(alive, &incoming, what, request_id)? {
+            return Ok(None);
+        }
+        self.record_event(buf.data());
+        Ok(Some(incoming))
+    }
+
+    /// The probe replies on st.agent.events while a reply is awaited on another
+    /// channel; everything else read meanwhile is recorded.
+    fn take_probe_replies(&mut self, alive: &mut Liveness, what: &str, request_id: u64) -> Result<()> {
+        for _ in 0..64 {
+            let buf = match self.events.try_recv() {
+                Ok(buf) if !buf.is_empty() => buf,
+                _ => break,
+            };
+            match protocol::parse_event(buf.data()) {
+                Ok((_seq, incoming)) if self.take_probe_reply(alive, &incoming, what, request_id)? => {}
+                _ => self.record_event(buf.data()),
+            }
+        }
+        Ok(())
+    }
+
+    /// The app answered all along, but `what` did not come.
+    fn busy_timeout(&self, what: &str, request_id: u64, waited: Duration) -> anyhow::Error {
+        anyhow!(
+            "{what} for request {request_id} did not come within {waited:?}, though the app kept \
+             answering: its queue is busy with something else (with a debugger attached, \
+             instance_debug_command \"~*k\" shows what)"
+        )
+    }
+
+    /// The app stopped answering while `what` was awaited, `silent` long.
+    fn unresponsive(&self, what: &str, request_id: u64, silent: Duration) -> anyhow::Error {
+        if self.cmd_receivers() == 0 {
+            return anyhow!(
+                "the app went away awaiting {what} for request {request_id}: it likely crashed or exited"
+            );
+        }
+        anyhow!(
+            "the app has not answered for {silent:?} awaiting {what} for request {request_id}, \
+             not even the state machines its reader thread answers: it is hung (with a debugger \
+             attached, instance_debug_command \"~*k\" shows where)"
+        )
+    }
+
     /// Record one raw `EventEnvelope` into the observation log (bounded ring).
     /// Called wherever events are read off `st.agent.events`, so nothing consumed
     /// for reply correlation is lost to `poll_events`.
     fn record_event(&mut self, bytes: &[u8]) {
         if let Ok(v) = protocol::event_to_json(bytes) {
+            // A probe's reply that came after its wait ended.
+            if let Some(rid) = v["request_id"].as_u64().filter(|rid| self.probes.contains(rid)) {
+                if v["type"] == "MachineStates" {
+                    self.probes.retain(|probe| *probe != rid);
+                }
+                return;
+            }
             if self.event_log.len() >= EVENT_LOG_CAP {
                 self.event_log.pop_front();
             }
@@ -401,37 +603,30 @@ impl Bridge {
 
     /// Read `st.agent.events` until the `CommandResult` for `request_id`, keeping
     /// any `SearchCompleted` seen meanwhile. Returns `(ok, message, matches?)`.
+    /// A slow ack is waited for while the app answers (see Liveness).
     fn await_ack(&mut self, request_id: u64, timeout: Duration) -> Result<(bool, String, Option<Value>)> {
-        let deadline = Instant::now() + timeout;
+        let mut alive = self.liveness(timeout, self.ack_queued(request_id));
         let mut search: Option<Value> = None;
-        while Instant::now() < deadline {
-            let buf = self.events.recv(Some(RECV_POLL_MS)).context("recv event")?;
-            if buf.is_empty() {
-                continue;
-            }
-            self.record_event(buf.data());
-            let (_seq, incoming) = match protocol::parse_event(buf.data()) {
-                Ok(parsed) => parsed,
-                Err(e) => {
-                    self.note_dropped_frame("event", &e);
-                    continue;
-                }
-            };
-            match incoming {
-                Incoming::CommandResult { request_id: rid, ok, message } if rid == request_id => {
+        loop {
+            match self.next_event(&mut alive, "CommandResult (ack)", request_id, timeout)? {
+                Some(Incoming::CommandResult { request_id: rid, ok, message }) if rid == request_id => {
                     return Ok((ok, message, search));
                 }
-                Incoming::SearchCompleted(v) => search = Some(v),
+                Some(Incoming::SearchCompleted(v)) => search = Some(v),
                 _ => {}
             }
         }
-        return Err(self.reply_timeout("CommandResult (ack)", request_id, timeout))
     }
 
     /// Read `st.agent.state` until the `UiStateEnvelope` for `request_id`.
+    /// A slow one is waited for while the app answers (see Liveness).
     fn read_ui_state(&mut self, request_id: u64, timeout: Duration) -> Result<Value> {
-        let deadline = Instant::now() + timeout;
-        while Instant::now() < deadline {
+        let mut alive = self.liveness(timeout, true);
+        loop {
+            self.check_alive(&mut alive, "UiState", request_id, timeout)?;
+            if alive.probe.is_some() {
+                self.take_probe_replies(&mut alive, "UiState", request_id)?;
+            }
             let buf = self.state.recv(Some(RECV_POLL_MS)).context("recv state")?;
             if buf.is_empty() {
                 continue;
@@ -452,7 +647,6 @@ impl Bridge {
                 return Ok(json);
             }
         }
-        return Err(self.reply_timeout("UiState", request_id, timeout))
     }
 
     /// Drop any stale `UiSnapshot` frames sitting in the channel (e.g. a reply from
@@ -555,28 +749,18 @@ impl Bridge {
     /// Read events (recording all meanwhile) until the `Settled` for `request_id`
     /// — the queue-idle barrier that means the command's synchronous fan-out has
     /// drained, so the next read observes the *settled* state.
+    /// The queue is what settles, so a question it waits behind ends the wait.
     fn await_settled(&mut self, request_id: u64, timeout: Duration) -> Result<()> {
-        let deadline = Instant::now() + timeout;
-        while Instant::now() < deadline {
-            let buf = self.events.recv(Some(RECV_POLL_MS)).context("recv event")?;
-            if buf.is_empty() {
-                continue;
-            }
-            self.record_event(buf.data());
-            let parsed = match protocol::parse_event(buf.data()) {
-                Ok(parsed) => parsed,
-                Err(e) => {
-                    self.note_dropped_frame("event", &e);
-                    continue;
-                }
-            };
-            if let Incoming::Settled { request_id: rid } = parsed.1 {
+        let mut alive = self.liveness(timeout, true);
+        loop {
+            if let Some(Incoming::Settled { request_id: rid }) =
+                self.next_event(&mut alive, "Settled", request_id, timeout)?
+            {
                 if rid == request_id {
                     return Ok(());
                 }
             }
         }
-        return Err(self.reply_timeout("Settled", request_id, timeout))
     }
 
     /// Full act-and-observe: send, await the ack (reject → error), await `Settled`
@@ -767,24 +951,17 @@ impl Bridge {
         let id = self.next_id();
         self.send(&protocol::search(id, query))?;
 
-        let deadline = Instant::now() + timeout;
+        let mut alive = self.liveness(timeout, true);
         let mut acked = false;
-        while Instant::now() < deadline {
-            let buf = self.events.recv(Some(RECV_POLL_MS)).context("recv event")?;
-            if buf.is_empty() {
-                continue;
-            }
-            self.record_event(buf.data());
-            let (_seq, incoming) = match protocol::parse_event(buf.data()) {
-                Ok(parsed) => parsed,
-                Err(e) => {
-                    self.note_dropped_frame("event", &e);
-                    continue;
-                }
+        loop {
+            let incoming = match self.next_event(&mut alive, "search reply", id, timeout) {
+                Ok(incoming) => incoming,
+                Err(e) if acked => return Err(e.context("search accepted but its results did not come")),
+                Err(e) => return Err(e),
             };
             match incoming {
-                Incoming::SearchCompleted(v) => return Ok(v),
-                Incoming::CommandResult { request_id: rid, ok, message } if rid == id => {
+                Some(Incoming::SearchCompleted(v)) => return Ok(v),
+                Some(Incoming::CommandResult { request_id: rid, ok, message }) if rid == id => {
                     if !ok {
                         return Err(rejection("search", &message));
                     }
@@ -793,10 +970,6 @@ impl Bridge {
                 _ => {}
             }
         }
-        if acked {
-            bail!("search accepted but no results within {OP_TIMEOUT:?} (query too broad?)");
-        }
-        return Err(self.reply_timeout("search reply", id, OP_TIMEOUT))
     }
 
     pub fn activate_node(&mut self, serialized_name: Option<&str>, node_id: u64) -> Result<Value> {
@@ -993,7 +1166,7 @@ impl Bridge {
         self.drain_stale_events();
         let id = self.next_id();
         self.send(&protocol::get_machines(id, machine))?;
-        let reply = self.await_machine_reply(id, machine, OP_TIMEOUT)?;
+        let reply = self.await_machine_reply(id, machine, UNRESPONSIVE)?;
         if !reply.ok {
             return Err(rejection("machine_state", &reply.message));
         }
@@ -1018,7 +1191,7 @@ impl Bridge {
         self.drain_stale_events();
         let id = self.next_id();
         self.send(&protocol::send_machine_event(id, machine, event, args))?;
-        let reply = self.await_machine_reply(id, machine, OP_TIMEOUT)?;
+        let reply = self.await_machine_reply(id, machine, UNRESPONSIVE)?;
         let snapshot = reply.machines.into_iter().next().unwrap_or(Value::Null);
         let mut transitions = reply.transitions;
         if !reply.ok || until.is_empty() {
@@ -1074,7 +1247,9 @@ impl Bridge {
 
     /// Read events until the ack and the `MachineStates` of request `id` (the app
     /// sends both, the ack first), keeping `machine`'s transitions seen meanwhile:
-    /// those the event itself caused arrive before the ack.
+    /// those the event itself caused arrive before the ack. The app's reader thread
+    /// answers these, whatever else it is busy with, so no answer within `timeout`
+    /// means it does not answer at all.
     fn await_machine_reply(&mut self, id: u64, machine: &str, timeout: Duration) -> Result<MachineReply> {
         let deadline = Instant::now() + timeout;
         let mut ack: Option<(bool, String)> = None;
@@ -1104,7 +1279,7 @@ impl Bridge {
                 _ => {}
             }
         }
-        Err(self.reply_timeout("MachineStates", id, timeout))
+        Err(self.unresponsive("MachineStates", id, timeout))
     }
 
     /// Follow `machine`'s transitions from state `current` until it is in one of
@@ -1206,7 +1381,7 @@ impl Bridge {
     /// than waiting it out. An app before protocol v4 does not report the load, so
     /// its state is returned right after the ack.
     pub fn load_project(&mut self, path: &str) -> Result<Value> {
-        self.send_and_ack("load_project", Duration::from_secs(10), |id| protocol::load_project(id, path))?;
+        self.send_and_ack("load_project", OP_TIMEOUT, |id| protocol::load_project(id, path))?;
         if self.app_protocol_version() < protocol::LOAD_STATE_SINCE {
             return self.get_ui_state();
         }
@@ -1227,11 +1402,11 @@ impl Bridge {
                     }));
                 }
             }
-            match self.get_ui_state_with_timeout(if questions { LOAD_STATE_READ } else { OP_TIMEOUT }) {
+            match self.get_ui_state() {
                 Ok(state) if state["app_state"] != "Loading" => return Ok(state),
                 Ok(_) => {}
                 // A question that came up meanwhile holds the read: look again.
-                Err(_) if questions => {}
+                Err(e) if e.is::<BehindQuestion>() => {}
                 Err(e) => return Err(e),
             }
             if Instant::now() >= deadline {

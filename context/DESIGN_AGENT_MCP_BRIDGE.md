@@ -123,8 +123,14 @@ tool call:
     return {ok, message}
 ```
 
-- **Timeouts:** every await is bounded (e.g. 5 s ack, longer for `load_project` since it
-  kicks off indexing — there, return on ack and let the agent poll `app_state`/subscribe).
+- **Timeouts:** a reply may be slow, an app may not go silent. While the bridge
+  waits for a reply that waits in the app's queue (an ack, `Settled`, a `UiState`),
+  it sends a `GetMachines` probe every second: the app's reader thread answers it,
+  whatever the queue is busy with. A wait fails when a probe goes unanswered for
+  3 s (the app is hung or gone), when the probe shows a question asking (it holds
+  the queue until it is answered; the error says how), or after 120 s of a busy
+  app. A window shorter than the probe interval, and an app before v6, keep the
+  fixed timeout. Probe replies stay out of the event log.
 - **`seq` gap detection:** `EventEnvelope.seq` is monotonic; a gap means the bridge
   missed events (late subscribe / restart) → it does a full `GetUiState` resync.
 - **Cancellation race:** documented in the app side; the bridge treats a missing

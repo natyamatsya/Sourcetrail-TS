@@ -146,6 +146,26 @@ pub const GRAPH_SINCE: u32 = 7;
 /// (`EventEnvelope.caused_by`), and a dialog coming or going is an event.
 pub const CAUSES_SINCE: u32 = 7;
 
+/// The request id of a CommandEnvelope, and whether the app handles its command on
+/// its message thread, behind whatever that thread is doing (a question it asks
+/// parks it until answered). The rest the app answers on its reader or GUI thread.
+pub fn queued_of(bytes: &[u8]) -> Option<(u64, bool)> {
+    let envelope = flatbuffers::root::<fb::CommandEnvelope>(bytes).ok()?;
+    let answered_aside = matches!(
+        envelope.command_type(),
+        fb::Command::GetInfo
+            | fb::Command::GetSnapshot
+            | fb::Command::InvokeAction
+            | fb::Command::CaptureElement
+            | fb::Command::GetFrame
+            | fb::Command::GetMachines
+            | fb::Command::SendMachineEvent
+            | fb::Command::SendInput
+            | fb::Command::QueryUi
+    );
+    Some((envelope.request_id(), !answered_aside))
+}
+
 /// The request id of a CommandEnvelope and its command's schema name ("ActivateNode"),
 /// for a command that acts on the app; None for a read (GetUiState after every
 /// action, GetFrame, QueryUi...), which leads to nothing.
@@ -1109,6 +1129,13 @@ mod tests {
             &fb::EventEnvelopeArgs { seq, timestamp_ms, event_type, event: Some(event), caused_by },
         );
         b.finish(env, None);
+    }
+
+    #[test]
+    fn commands_say_whether_they_wait_in_the_app_queue() {
+        assert_eq!(queued_of(&activate_node(7, None, 1)), Some((7, true)));
+        assert_eq!(queued_of(&get_ui_state(8)), Some((8, true)));
+        assert_eq!(queued_of(&get_machines(9, "question")), Some((9, false)));
     }
 
     #[test]
