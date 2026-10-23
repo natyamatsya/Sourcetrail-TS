@@ -87,6 +87,8 @@ public:
 
 	int handleDialog(const std::string& message);
 	int handleDialog(const std::string& message, const std::vector<std::string>& options);
+	// Shows a notice and goes on (DialogView::notify).
+	void showNotice(const std::string& message, const std::vector<std::string>& options = {});
 	std::shared_ptr<DialogView> getDialogView(DialogView::UseCase useCase);
 
 	void updateHistoryMenu(std::shared_ptr<MessageBase> message);

@@ -63,6 +63,8 @@ public:
 	}
 
 	std::vector<SearchMatch> searchMatches;
+	// The person agreed to a graph this large already: it is not asked again.
+	bool largeGraphConfirmed = false;
 
 	const Id originId;
 	const Id targetId;

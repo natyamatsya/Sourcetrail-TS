@@ -19,7 +19,7 @@ class PersistentStorage;
 class ProjectSettings;
 class StorageCache;
 
-class Project
+class Project: public std::enable_shared_from_this<Project>
 {
 public:
 	Project(

@@ -684,9 +684,13 @@ drives through the same events:
   withdraws the question), and `DialogView::confirm()` waits on that sender for the
   callers that still block. The load's question and the refresh's (`Project::planRefresh`,
   asked one after the other by `Application::askThenRefresh`) are asked that way, so the
-  app's queue answers while they are open; the few `confirm()`s left (the graph's "show
-  all nodes?", the controllers' notices, Preferences) still hold their thread. The
-  dialog is its presenter. Questions asked meanwhile queue behind the open one.
+  app's queue answers while they are open. So are the rest: notices go out through
+  `DialogView::notify()` (shown, not waited for), the graph's "the graph will contain N
+  nodes, proceed?" sends the trail again on "Yes" (`largeGraphConfirmed`), and the
+  run's "cannot partially clear: re-index all?" goes on with the run on the app
+  scheduler. Only a command-line error before the event loop, and the headless paths
+  (no presenter: -1 at once), still call `confirm()`. The dialog is its presenter.
+  Questions asked meanwhile queue behind the open one.
 - **`indexing`** (`IndexingStateMachine`): idle → pending → choosing_mode → pending →
   preparing → indexing → finishing → reporting → finishing → idle. Controls:
   `refresh`, `select_mode`, `start`, `cancel`, `interrupt`, `keep`/`discard`/

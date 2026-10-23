@@ -118,6 +118,11 @@ QuestionSender DialogView::asked(const std::string& message, const std::vector<s
 	return QuestionStateMachine::instance()->asked(message, options, presentsQuestions() ? this : nullptr);
 }
 
+void DialogView::notify(const std::string& message, const std::vector<std::string>& options)
+{
+	stdexec::start_detached(asked(message, options) | stdexec::then([](int) noexcept {}));
+}
+
 bool DialogView::presentsQuestions() const
 {
 	return false;

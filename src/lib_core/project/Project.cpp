@@ -2,6 +2,7 @@
 
 #include <algorithm>
 
+#include "AppStateMachine.h"
 #include "ApplicationSettings.h"
 #include "CombinedIndexerCommandProvider.h"
 #include "DialogView.h"
@@ -33,6 +34,7 @@
 
 #include "FilePath.h"
 #include "FileSystem.h"
+#include "MessageCause.h"
 #include "MessageErrorCountClear.h"
 #include "IndexingOutcome.h"
 #include "MessageIndexingFinished.h"
@@ -626,24 +628,40 @@ void Project::buildIndexImpl(RefreshInfo info, std::shared_ptr<DialogView> dialo
 
 				if (abortIndexing)
 				{
-					if (m_hasGUI &&
-						dialogView->confirm(
-							"<p>This project contains a source group of type \"" +
-								sourceGroupTypeToString(sourceGroup->getType()) +
-								"\" that cannot be partially cleared. Do you want to re-index the "
-								"whole project instead?</p>",
-							{"Full Re-Index", "Cancel"}) == 1)
+					const std::weak_ptr<Project> self = weak_from_this();
+					if (m_hasGUI && !self.expired())
 					{
-						MessageStatus("Cannot partially clear project. Indexing aborted.").dispatch();
-						m_refreshStage = RefreshStageType::NONE;
-						IndexingStateMachine::instance()->ended("cannot partially clear the project");
-						dialogView->clearDialogs();
+						// Asked without holding the app's thread: the answer goes on with
+						// the run there, on behalf of what started it.
+						stdexec::start_detached(
+							dialogView->asked(
+								"<p>This project contains a source group of type \"" +
+									sourceGroupTypeToString(sourceGroup->getType()) +
+									"\" that cannot be partially cleared. Do you want to re-index "
+									"the whole project instead?</p>",
+								{"Full Re-Index", "Cancel"}) |
+							stdexec::then([self, dialogView, cause = currentCause()](int option) noexcept {
+								Task::dispatch(TabIds::app(), std::make_shared<TaskLambda>([self, dialogView, cause, option]() {
+									const CauseScope scope(cause);
+									const std::shared_ptr<Project> project = self.lock();
+									if (!project || AppStateMachine::instance()->isClosing())
+									{
+										return;
+									}
+									if (option == 1)
+									{
+										MessageStatus("Cannot partially clear project. Indexing aborted.").dispatch();
+										project->m_refreshStage = RefreshStageType::NONE;
+										IndexingStateMachine::instance()->ended("cannot partially clear the project");
+										dialogView->clearDialogs();
+										return;
+									}
+									project->buildIndex(project->getRefreshInfo(RefreshMode::ALL_FILES), dialogView);
+								}));
+							}));
 						return;
 					}
-					else
-					{
-						info = getRefreshInfo(RefreshMode::ALL_FILES);
-					}
+					info = getRefreshInfo(RefreshMode::ALL_FILES);
 				}
 
 				break;
@@ -1192,7 +1210,7 @@ bool Project::swapToTempStorageFile(
 	}
 	if (m_hasGUI)
 	{
-		dialogView->confirm(indexInUse().text);
+		dialogView->notify(indexInUse().text);
 	}
 	return false;
 }

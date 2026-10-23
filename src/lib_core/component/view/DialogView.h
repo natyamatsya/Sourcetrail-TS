@@ -81,6 +81,8 @@ public:
 	int confirm(const std::string& message, const std::vector<std::string>& options);
 	// Asks without holding a thread: a sender of what confirm returns.
 	QuestionSender asked(const std::string& message, const std::vector<std::string>& options);
+	// Shows a notice and goes on: nothing waits for it to be closed.
+	void notify(const std::string& message, const std::vector<std::string>& options = {});
 
 protected:
 	// Whether this view can show a question; without one, confirm() answers -1.

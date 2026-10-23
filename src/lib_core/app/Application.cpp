@@ -304,6 +304,11 @@ int Application::handleDialog(const std::string& message, const std::vector<std:
 	return getDialogView(DialogView::UseCase::GENERAL)->confirm(message, options);
 }
 
+void Application::showNotice(const std::string& message, const std::vector<std::string>& options)
+{
+	getDialogView(DialogView::UseCase::GENERAL)->notify(message, options);
+}
+
 std::shared_ptr<DialogView> Application::getDialogView(DialogView::UseCase useCase)
 {
 	if (m_mainView)

@@ -22,6 +22,7 @@
 #include "ListLayouter.h"
 #ifndef SRCTRL_MODULE_BUILD
 #include "MessageActivateNodes.h"
+#include "MessageCause.h"
 #include "MessageStatus.h"
 #include "StorageAccess.h"
 #include "TokenComponentAccess.h"
@@ -307,27 +308,39 @@ void GraphController::handleMessage(MessageActivateTrail* message)
 	{
 		MessageStatus("No trail graph found.", true).dispatch();
 
-		Application::getInstance()->handleDialog(
+		Application::getInstance()->showNotice(
 			"No custom trail was found between the specified symbols with the specified "
 			"parameters.",
 			{"Ok"});
 	}
-	else if (graph->getNodeCount() > 1000)
+	else if (graph->getNodeCount() > 1000 && !message->largeGraphConfirmed)
 	{
-		int r = Application::getInstance()->handleDialog(
-			"Warning!\n\nThe graph will contain " + std::to_string(graph->getNodeCount()) +
-				" nodes. "
-				"Layouting and drawing might take a while and the resulting graph could look "
-				"confusing. Please "
-				"consider reducing graph depth with the slider on the left.\n\n"
-				"Do you want to proceed?",
-			{"Yes", "No"});
-
-		if (r == 1)
-		{
-			MessageStatus("Aborted graph display").dispatch();
-			return;
-		}
+		// Asked without holding the tab's thread; "Yes" sends the trail again, and it is
+		// drawn without asking. Not as a replay, which is not drawn (buildGraph): the
+		// history takes it for the step it recorded already (same origin and target).
+		stdexec::start_detached(
+			Application::getInstance()
+				->getDialogView(DialogView::UseCase::GENERAL)
+				->asked(
+					"Warning!\n\nThe graph will contain " + std::to_string(graph->getNodeCount()) +
+						" nodes. "
+						"Layouting and drawing might take a while and the resulting graph could look "
+						"confusing. Please "
+						"consider reducing graph depth with the slider on the left.\n\n"
+						"Do you want to proceed?",
+					{"Yes", "No"}) |
+			stdexec::then([trail = *message, cause = currentCause()](int option) mutable noexcept {
+				const CauseScope scope(cause);
+				if (option != 0)
+				{
+					MessageStatus("Aborted graph display").dispatch();
+					return;
+				}
+				trail.largeGraphConfirmed = true;
+				trail.dispatch();
+			}));
+		MessageStatus("Waiting for the answer on the large graph").dispatch();
+		return;
 	}
 
 	createDummyGraph(graph);

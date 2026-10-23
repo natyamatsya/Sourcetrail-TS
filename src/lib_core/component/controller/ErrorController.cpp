@@ -123,8 +123,7 @@ void ErrorController::handleMessage(MessageErrorsForFile* message)
 	std::shared_ptr<const Project> project = Application::getInstance()->getCurrentProject();
 	if (project && project->isIndexing())
 	{
-		Application::getInstance()->handleDialog(
-			"Showing errors for a file is not possible while indexing.");
+		Application::getInstance()->showNotice("Showing errors for a file is not possible while indexing.");
 		return;
 	}
 

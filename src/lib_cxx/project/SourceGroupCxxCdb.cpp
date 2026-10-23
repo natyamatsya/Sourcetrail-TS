@@ -54,7 +54,7 @@ std::expected<void, PrepareIndexingError> SourceGroupCxxCdb::prepareIndexing()
 			"anymore: " +
 			cdbPath.str();
 		MessageStatus(error, true).dispatch();
-		Application::getInstance()->handleDialog(error, {"Ok"});
+		Application::getInstance()->showNotice(error, {"Ok"});
 		return std::unexpected(PrepareIndexingError::SourcePathMissing);
 	}
 	return {};
