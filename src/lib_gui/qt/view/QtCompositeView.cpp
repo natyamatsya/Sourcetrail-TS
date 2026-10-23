@@ -62,7 +62,9 @@ void QtCompositeView::createWidgetWrapper()
 
 void QtCompositeView::refreshView()
 {
-	execution::qt::onUi(QtViewWidgetWrapper::getWidgetOfView(this), [=, this]() {
+	// Anchored to m_widget, not getWidgetOfView(this): the constructor refreshes
+	// before View::create() gives the view its widget wrapper.
+	execution::qt::onUi(m_widget, [=, this]() {
 		utility::setWidgetBackgroundColor(
 			m_widget, ColorScheme::getInstance()->getColor("search/background"));
 	});
@@ -77,7 +79,7 @@ void QtCompositeView::addViewWidget(View* view)
 
 void QtCompositeView::showFocusIndicator(bool focus)
 {
-	execution::qt::onUi(QtViewWidgetWrapper::getWidgetOfView(this), [=, this]() {
+	execution::qt::onUi(m_widget, [=, this]() {
 		const std::string& colorName = focus ? "window/focus" : "search/background";
 		utility::setWidgetBackgroundColor(
 			m_focusIndicator, ColorScheme::getInstance()->getColor(colorName));
