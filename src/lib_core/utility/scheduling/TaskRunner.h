@@ -20,6 +20,10 @@ public:
 	void park();
 	void unpark();
 	bool isParked() const;
+	// Parked while still running (not a background task's hold): nothing queued
+	// behind it runs before it ends. Its scheduler's to set, under its lock.
+	void setHoldsQueue(bool holds);
+	bool holdsQueue() const;
 
 private:
 	std::shared_ptr<Task> m_task;
@@ -29,6 +33,7 @@ private:
 	std::shared_ptr<Blackboard> m_blackboard;
 
 	std::atomic<bool> m_parked = false;
+	bool m_holdsQueue = false;
 };
 
 #endif	  // TASK_RUNNER_H

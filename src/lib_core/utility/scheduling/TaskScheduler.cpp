@@ -205,31 +205,9 @@ void TaskScheduler::processTasks()
 			runner->unpark();
 		}
 
-		while (std::ranges::any_of(m_taskRunners, [](const auto& runner) { return !runner->isParked(); }))
+		while (hasRunnable())
 		{
-			std::shared_ptr<TaskRunner> runner = m_taskRunners.front();
-			Task::TaskState state = STATE_HOLD;
-
-			if (!runner->isParked())
-			{
-				processedAny = true;
-				m_tasksMutex.unlock();
-
-				[[maybe_unused]]
-				ScopedFunctor functor([this]()
-				{
-					m_tasksMutex.lock();
-				});
-
-				state = runUntilItWaits(runner);
-			}
-
-			m_taskRunners.pop_front();
-
-			if (state == STATE_HOLD || (state == STATE_RUNNING && runner->isParked()))
-			{
-				m_taskRunners.push_back(runner);
-			}
+			processedAny |= runFront();
 		}
 
 		m_terminateRunningTasks = false;
@@ -275,35 +253,13 @@ void TaskScheduler::runPass()
 	{
 		std::lock_guard<std::mutex> lock(m_tasksMutex);
 
-		for (std::size_t round = m_taskRunners.size(); round > 0 && !m_taskRunners.empty(); round--)
+		for (std::size_t round = m_taskRunners.size(); round > 0 && hasRunnable(); round--)
 		{
-			std::shared_ptr<TaskRunner> runner = m_taskRunners.front();
-			Task::TaskState state = STATE_HOLD;
-
-			if (!runner->isParked())
-			{
-				m_passProcessedAny = true;
-				m_tasksMutex.unlock();
-
-				[[maybe_unused]]
-				ScopedFunctor functor([this]()
-				{
-					m_tasksMutex.lock();
-				});
-
-				state = runUntilItWaits(runner);
-			}
-
-			m_taskRunners.pop_front();
-
-			if (state == STATE_HOLD || (state == STATE_RUNNING && runner->isParked()))
-			{
-				m_taskRunners.push_back(runner);
-			}
+			m_passProcessedAny |= runFront();
 		}
 
-		// While only parked runners are left, no pass is posted: waking one posts it.
-		if (std::ranges::any_of(m_taskRunners, [](const auto& runner) { return !runner->isParked(); }))
+		// While nothing may run, no pass is posted: waking a parked runner posts it.
+		if (hasRunnable())
 		{
 			strand = m_strand;	// the next pass, after what else waits on the strand
 		}
@@ -331,6 +287,60 @@ void TaskScheduler::runPass()
 	{
 		idleHandler();
 	}
+}
+
+bool TaskScheduler::hasRunnable() const
+{
+	for (const std::shared_ptr<TaskRunner>& runner: m_taskRunners)
+	{
+		if (!runner->isParked())
+		{
+			return true;
+		}
+		if (runner->holdsQueue())
+		{
+			return false;
+		}
+	}
+	return false;
+}
+
+bool TaskScheduler::runFront()
+{
+	using enum Task::TaskState;
+
+	const std::shared_ptr<TaskRunner> runner = m_taskRunners.front();
+	if (runner->isParked())
+	{
+		m_taskRunners.pop_front();	// a parked background runner: the others go first
+		m_taskRunners.push_back(runner);
+		return false;
+	}
+
+	Task::TaskState state = STATE_FAILURE;
+	{
+		m_tasksMutex.unlock();
+
+		[[maybe_unused]]
+		ScopedFunctor functor([this]()
+		{
+			m_tasksMutex.lock();
+		});
+
+		state = runUntilItWaits(runner);
+	}
+
+	runner->setHoldsQueue(state == STATE_RUNNING && runner->isParked());
+	if (runner->holdsQueue())
+	{
+		return true;	// stays at the front until it is woken
+	}
+	m_taskRunners.pop_front();
+	if (state == STATE_HOLD)
+	{
+		m_taskRunners.push_back(runner);
+	}
+	return true;
 }
 
 Task::TaskState TaskScheduler::runUntilItWaits(const std::shared_ptr<TaskRunner>& runner)

@@ -77,6 +77,13 @@ private:
 
 	// A parked runner can run again.
 	void wake(TaskRunner& runner);
+	// Under m_tasksMutex: whether a queued runner may run now. A runner parked while
+	// running holds the queue, as a running task always did; a parked background
+	// runner lets the others go first.
+	bool hasRunnable() const;
+	// Under m_tasksMutex, when hasRunnable(): runs the front runner (unlocked
+	// meanwhile) or, parked, moves it to the back. Whether a task ran.
+	bool runFront();
 	// Runs `runner` until it is not running, parked or stopped; how it ended
 	// (STATE_FAILURE when the loop stopped or tasks were terminated).
 	Task::TaskState runUntilItWaits(const std::shared_ptr<TaskRunner>& runner);

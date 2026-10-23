@@ -79,6 +79,16 @@ bool TaskRunner::isParked() const
 	return m_parked;
 }
 
+void TaskRunner::setHoldsQueue(bool holds)
+{
+	m_holdsQueue = holds;
+}
+
+bool TaskRunner::holdsQueue() const
+{
+	return m_holdsQueue;
+}
+
 void TaskRunner::terminate()
 {
 	if (m_task)

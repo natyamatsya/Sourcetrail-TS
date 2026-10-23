@@ -522,6 +522,7 @@ TEST_CASE("task parked on a strand is left alone until woken")
 	scheduler->startSchedulerLoopOn(strand);
 
 	const auto parking = std::make_shared<ParkingTask>();
+	parking->setIsBackgroundTask(true);	// held, as a background task waits
 	scheduler->pushTask(parking);
 	REQUIRE(eventually([&]() { return parking->updates == 1; }));
 	std::this_thread::sleep_for(std::chrono::milliseconds(50));
@@ -591,4 +592,34 @@ TEST_CASE("parallel group on a strand is woken by its children, not polled")
 	REQUIRE(eventually([&]() { return idle == 1; }));
 	REQUIRE(std::chrono::steady_clock::now() - released < std::chrono::seconds(1));
 	scheduler->stopSchedulerLoop();
+}
+
+TEST_CASE("task parked while running keeps the tasks behind it waiting")
+{
+	// As a running task always did: a parallel group's listeners run, and the next
+	// message for the same controllers waits for them.
+	const auto check = [](TaskScheduler& scheduler) {
+		const auto parking = std::make_shared<ParkingTask>();
+		std::atomic<bool> ran = false;
+		scheduler.pushTask(parking);
+		scheduler.pushTask(std::make_shared<TaskLambda>([&]() { ran = true; }));
+		REQUIRE(eventually([&]() { return parking->updates > 0; }));
+		std::this_thread::sleep_for(std::chrono::milliseconds(60));
+		REQUIRE_FALSE(ran);
+
+		parking->wakeUp();
+		REQUIRE(eventually([&]() { return ran.load(); }));
+		REQUIRE(eventually([&]() { return !scheduler.hasTasksQueued(); }));
+	};
+
+	exec::static_thread_pool pool(2);
+	const auto onStrand = std::make_shared<TaskScheduler>(TabId::NONE);
+	onStrand->startSchedulerLoopOn(execution::Strand::create(pool.get_scheduler()));
+	check(*onStrand);
+	onStrand->stopSchedulerLoop();
+
+	TaskScheduler onThread(TabId::NONE);
+	onThread.startSchedulerLoopThreaded();
+	check(onThread);
+	onThread.stopSchedulerLoop();
 }
