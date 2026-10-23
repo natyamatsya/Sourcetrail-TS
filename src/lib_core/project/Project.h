@@ -2,6 +2,7 @@
 #define PROJECT_H
 
 #include <memory>
+#include <optional>
 #include <set>
 #include <string>
 #include <vector>
@@ -40,7 +41,30 @@ public:
 	bool settingsEqualExceptNameAndLocation(const ProjectSettings& otherSettings) const;
 	void setStateOutdated();
 
+	//! Loads the project on the calling thread, asking what it asks and waiting.
 	void load(std::shared_ptr<DialogView> dialogView);
+
+	//! The load in its steps, for a pipeline that opens the index off the app's
+	//! thread (Application::loadProject): beginLoad and finishLoad where the app's
+	//! state is touched, readSettings, resolveInterruptedRun and openIndex where
+	//! the files are; a step that returns false ends the load. load() runs them
+	//! in a row.
+	struct Question
+	{
+		std::string text;
+		std::vector<std::string> options;
+	};
+	bool beginLoad();
+	bool readSettings();
+	//! The question an interrupted indexing run leaves (keep its data or discard it).
+	std::optional<Question> interruptedRunQuestion() const;
+	//! Keeps the interrupted run's data on option 0, else discards it; takes it when
+	//! there is no other index. False when the index is in use by another process:
+	//! indexInUse() says so.
+	bool resolveInterruptedRun(int option);
+	static Question indexInUse();
+	void openIndex();
+	void finishLoad();
 
 	void refresh(std::shared_ptr<DialogView> dialogView, RefreshMode refreshMode);
 
@@ -87,6 +111,7 @@ private:
 		const FilePath& indexDbFilePath,
 		const FilePath& tempIndexDbFilePath,
 		std::shared_ptr<DialogView> dialogView);
+	static bool moveTempStorageFile(const FilePath& indexDbFilePath, const FilePath& tempIndexDbFilePath);
 	void discardTempStorage();
 
 	bool hasCxxSourceGroup() const;

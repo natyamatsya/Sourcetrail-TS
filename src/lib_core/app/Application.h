@@ -1,6 +1,7 @@
 #ifndef APPLICATION_H
 #define APPLICATION_H
 
+#include <atomic>
 #include <functional>
 #include <memory>
 #include <string>
@@ -19,6 +20,7 @@
 #include "MessageSwitchColorScheme.h"
 #include "MessageWindowClosed.h"
 #include "Project.h"
+#include "StdexecPrelude.h"
 
 namespace execution
 {
@@ -118,6 +120,15 @@ private:
 
 	void loadWindow(bool showStartWindow);
 
+	// Loads the project at `path`: with schedulers as a pipeline, where the index
+	// opens on the I/O pool, a question holds no thread, and the project becomes the
+	// app's back on the app strand; without them in a row on this thread.
+	struct ProjectLoad;
+	void loadProject(const FilePath& path, const ShardConfig& shardConfig, RefreshMode refreshMode);
+	// On the app's thread: the project becomes the app's, unless a load asked for
+	// since (or a close) dropped it.
+	void endLoad(const std::shared_ptr<ProjectLoad>& load);
+
 	void refreshProject(RefreshMode refreshMode);
 	void updateRecentProjects(const FilePath& projectSettingsFilePath);
 
@@ -139,6 +150,13 @@ private:
 
 	std::shared_ptr<Project> m_project;
 	std::shared_ptr<StorageCache> m_storageCache;
+	// The load in flight, read and written on the app's thread only; m_loads owns
+	// the pipelines, which stop with the app.
+	std::shared_ptr<ProjectLoad> m_loading;
+	exec::async_scope m_loads;
+	// The app is stopping its loads: a question they asked was withdrawn, not
+	// answered, so they change no files on its account.
+	std::atomic<bool> m_loadsStopping = false;
 
 	std::shared_ptr<MainView> m_mainView;
 

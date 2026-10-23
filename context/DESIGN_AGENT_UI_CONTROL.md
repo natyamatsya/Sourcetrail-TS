@@ -305,8 +305,9 @@ returned before the activation task ran → empty `active_nodes`).
 The barrier therefore watches the **app `TaskScheduler` idle** edge, guarded by
 `MessageQueue::hasMessagesQueued()` (a command's effects hop buffer → task, so if messages
 are still queued the fan-out is mid-flight — wait for a later idle). The idle handler runs
-on the scheduler thread — the same one the handlers ran on — so the controller's state
-cache and `m_pendingSettle` need no extra synchronization. The controller tracks the
+where the handlers ran, after them: the app scheduler runs on a strand over the I/O pool
+(`execution::Strand`, `TaskScheduler::startSchedulerLoopOn`), so its tasks and the idle
+edge are serialized, though not always on the same thread. The controller tracks the
 in-flight `request_id`; on the first quiesced idle it emits `Settled { request_id }`.
 
 **This hooks the legacy `TaskScheduler`, which
@@ -679,8 +680,10 @@ drives through the same events:
   Control arguments parse through `parseArgs<Args>` (`MachineArgs.h`) into a
   `std::expected`.
 - **`question`** (`component/state_machine/QuestionStateMachine`): idle ⇄ asking.
-  `DialogView::confirm()` asks it and waits on a condition variable; the dialog is
-  its presenter. Questions asked meanwhile queue behind the open one.
+  Asking holds no thread: `DialogView::asked()` is a sender of the answer (stopping it
+  withdraws the question), and `DialogView::confirm()` waits on that sender for the
+  callers that still block. The dialog is its presenter. Questions asked meanwhile
+  queue behind the open one.
 - **`indexing`** (`IndexingStateMachine`): idle → pending → choosing_mode → pending →
   preparing → indexing → finishing → reporting → finishing → idle. Controls:
   `refresh`, `select_mode`, `start`, `cancel`, `interrupt`, `keep`/`discard`/
@@ -724,7 +727,12 @@ used to infer:
   refused while indexing —, `failed`, `loaded` — open with no tab coming —), the
   TabsController the tab decision (`tab_opening` for the project's first tab, or
   `loaded`), the first activation ends `opening` (`shown`), and a 10 s timer event
-  (`timed_out`) keeps a tab that never activates from holding the app. After an
+  (`timed_out`) keeps a tab that never activates from holding the app. The load
+  itself is a pipeline (`Application::loadProject`): it begins on the app strand,
+  opens the index on the I/O pool, asks an interrupted run's keep-or-discard
+  question as a sender, and installs the project back on the strand, all on behalf
+  of the request that asked for it. The app's queue answers meanwhile (`ui_state`
+  while the question is open); a newer load or a close drops one still in flight. After an
   indexing run, `reloading` (ready → loading) covers the new index loading until the
   same tab decision.
 

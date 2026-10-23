@@ -12,6 +12,7 @@
 #include <vector>
 
 #include "ConcurrentStateMachine.h"
+#include "MessageCause.h"
 #include "StdexecPrelude.h"
 
 // Shows a question to the user. The answer comes back through
@@ -155,6 +156,7 @@ public:
 		, m_text(std::move(text))
 		, m_options(std::move(options))
 		, m_presenter(presenter)
+		, m_cause(currentCause())
 	{
 	}
 
@@ -176,6 +178,7 @@ public:
 		std::string text;
 		std::vector<std::string> options;
 		QuestionPresenter* presenter;
+		std::uint64_t cause;	// asked on behalf of it, wherever the sender starts
 		std::uint64_t id = 0;
 		int answer = -1;
 		std::optional<typename StopToken::template callback_type<OnStop>> onStop;
@@ -197,6 +200,7 @@ public:
 				stdexec::set_value(std::move(receiver), -1);
 				return;
 			}
+			const CauseScope scope(cause);
 			id = machine->open(std::move(text), std::move(options), presenter, [this](int option) {
 				answer = option;
 				if (phase.exchange(Phase::Answered) == Phase::Waiting)
@@ -222,7 +226,13 @@ public:
 	template <class Receiver>
 	Operation<std::decay_t<Receiver>> connect(Receiver&& receiver) && noexcept
 	{
-		return {std::forward<Receiver>(receiver), std::move(m_machine), std::move(m_text), std::move(m_options), m_presenter};
+		return {
+			std::forward<Receiver>(receiver),
+			std::move(m_machine),
+			std::move(m_text),
+			std::move(m_options),
+			m_presenter,
+			m_cause};
 	}
 
 private:
@@ -230,6 +240,7 @@ private:
 	std::string m_text;
 	std::vector<std::string> m_options;
 	QuestionPresenter* m_presenter;
+	std::uint64_t m_cause;
 };
 
 #endif	  // QUESTION_STATE_MACHINE_H

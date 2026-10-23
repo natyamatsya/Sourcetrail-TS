@@ -2,6 +2,9 @@
 
 #include "CppSQLite3.h"
 
+#include <optional>
+#include <type_traits>
+
 #ifndef SRCTRL_MODULE_BUILD
 #include "ApplicationSettings.h"
 #include "ColorScheme.h"
@@ -24,6 +27,7 @@
 #endif
 #include "MainView.h"
 // classic headers (entities not exported): stay textual
+#include "MessageCause.h"
 #include "MessageQueue.h"
 #ifndef SRCTRL_MODULE_BUILD
 #include "MessageFilterErrorCountUpdate.h"
@@ -160,6 +164,15 @@ void Application::destroyInstance()
 	if (s_instance && s_instance->m_agentControlController)
 	{
 		s_instance->m_agentControlController->stopListening();
+	}
+
+	// A load in flight ends here: its question is withdrawn, and what it opened is
+	// not installed.
+	if (s_instance)
+	{
+		s_instance->m_loadsStopping = true;
+		s_instance->m_loads.request_stop();
+		stdexec::sync_wait(s_instance->m_loads.on_empty());
 	}
 
 	MessageQueue::getInstance()->stopMessageLoop();
@@ -329,6 +342,7 @@ void Application::handleMessage(MessageCloseProject*  /*message*/)
 	}
 
 	m_project.reset();
+	m_loading.reset();	// a load still in flight is dropped where it ends
 	updateTitle();
 	m_mainView->clear();
 	ProjectStateMachine::instance()->closed();
@@ -376,6 +390,59 @@ void Application::handleMessage(MessageIndexingFinished* message)
 	}
 }
 
+struct Application::ProjectLoad
+{
+	FilePath path;
+	std::uint64_t cause = 0;	// what asked for the load: all its steps are on its behalf
+	RefreshMode refreshMode = RefreshMode::NONE;
+	std::shared_ptr<Project> project;
+	bool ended = false;	// a step ended the load before its index opened
+	bool opened = false;	// the pipeline opened the index (finishLoad is left to do)
+	std::string failure;	// what an exception said
+};
+
+namespace
+{
+// Runs a step of `load` (one returning false ends the load), turning what it
+// throws into the load's failure, as the load always has.
+template <typename Load, typename Step>
+bool loadStep(Load& load, Step step) noexcept
+{
+	if (load.ended)
+	{
+		return false;
+	}
+	try
+	{
+		if constexpr (std::is_void_v<decltype(step())>)
+		{
+			step();
+		}
+		else if (!step())
+		{
+			load.ended = true;
+		}
+	}
+	catch (CppSQLite3Exception& e)
+	{
+		load.failure = "Failed to load project at \"" + load.path.str() +
+			"\" with sqlite exception: " + e.errorMessage();
+		load.ended = true;
+	}
+	catch (std::exception& e)
+	{
+		load.failure = "Failed to load project at \"" + load.path.str() + "\" with exception: " + e.what();
+		load.ended = true;
+	}
+	catch (...)
+	{
+		load.failure = "Failed to load project at \"" + load.path.str() + "\" with unknown exception.";
+		load.ended = true;
+	}
+	return !load.ended;
+}
+}	 // namespace
+
 void Application::handleMessage(MessageLoadProject* message)
 {
 	TRACE("app load project");
@@ -397,7 +464,11 @@ void Application::handleMessage(MessageLoadProject* message)
 		return;
 	}
 
-	if (m_project && projectSettingsFilePath == m_project->getProjectSettingsFilePath())
+	if (m_loading && projectSettingsFilePath == m_loading->path)
+	{
+		projectMachine->kept("the project is loading already");
+	}
+	else if (m_project && projectSettingsFilePath == m_project->getProjectSettingsFilePath())
 	{
 		projectMachine->kept("the project is open already");
 		if (message->settingsChanged && m_hasGUI)
@@ -418,74 +489,130 @@ void Application::handleMessage(MessageLoadProject* message)
 			m_mainView->clear();
 		}
 
-		try
+		loadProject(projectSettingsFilePath, message->shardConfig, message->refreshMode);
+	}
+}
+
+void Application::loadProject(const FilePath& path, const ShardConfig& shardConfig, RefreshMode refreshMode)
+{
+	const auto load = std::make_shared<ProjectLoad>();
+	load->path = path;
+	load->cause = currentCause();
+	load->refreshMode = refreshMode;
+	m_loading = load;
+
+	const bool started = loadStep(*load, [&]() {
+		updateRecentProjects(path);
+
+		m_storageCache->clear();
+		m_storageCache->setSubject(
+			std::weak_ptr<StorageAccess>());	// TODO: check if this is really required.
+
+		load->project = std::make_shared<Project>(
+			std::make_shared<ProjectSettings>(path), m_storageCache.get(), getUUID(), hasGUI());
+		load->project->setShardConfig(shardConfig);
+	});
+
+	if (!started || m_appStrand == nullptr)
+	{
+		// In a row: the project is the app's while it loads, as it always was.
+		m_project = load->project;
+		if (started)
 		{
-			updateRecentProjects(projectSettingsFilePath);
+			loadStep(*load, [&]() { load->project->load(getDialogView(DialogView::UseCase::GENERAL)); });
+		}
+		endLoad(load);
+		return;
+	}
 
-			m_storageCache->clear();
-			m_storageCache->setSubject(
-				std::weak_ptr<StorageAccess>());	// TODO: check if this is really required.
+	if (!loadStep(*load, [&]() { return load->project->beginLoad(); }))
+	{
+		endLoad(load);
+		return;
+	}
 
-			m_project = std::make_shared<Project>(
-				std::make_shared<ProjectSettings>(projectSettingsFilePath),
-				m_storageCache.get(),
-				getUUID(),
-				hasGUI());
+	// What the load asks: the question as a sender, or -1 at once when there is none.
+	const std::shared_ptr<DialogView> dialog = getDialogView(DialogView::UseCase::GENERAL);
+	const auto ask = [dialog, load](const std::optional<Project::Question>& question) noexcept {
+		const CauseScope cause(load->cause);	// the question remembers it
+		return question ? dialog->asked(question->text, question->options)
+						: QuestionStateMachine::instance()->asked({}, {}, nullptr);
+	};
+	const execution::AnyScheduler io = m_schedulers->io();
 
-			if (m_project)
+	m_loads.spawn(
+		stdexec::schedule(io) | stdexec::then([load]() noexcept -> std::optional<Project::Question> {
+			const CauseScope cause(load->cause);
+			if (!loadStep(*load, [&]() { return load->project->readSettings(); }))
 			{
-				m_project->setShardConfig(message->shardConfig);
-				m_project->load(getDialogView(DialogView::UseCase::GENERAL));
+				return std::nullopt;
 			}
-			else
+			return load->project->interruptedRunQuestion();
+		}) |
+		stdexec::let_value(ask) |
+		// Answered on the thread that answered it: back to the files.
+		stdexec::continues_on(io) | stdexec::then([this, load](int option) noexcept -> std::optional<Project::Question> {
+			const CauseScope cause(load->cause);
+			if (m_loadsStopping)
 			{
-				LOG_ERROR_STREAM(<< "Failed to load project.");
-				MessageStatus("Failed to load project: " + projectSettingsFilePath.str(), true)
-					.dispatch();
+				load->ended = true;	// keep or discard is for a person to say, not for the exit
+				return std::nullopt;
 			}
+			if (!loadStep(*load, [&]() { return load->project->resolveInterruptedRun(option); }))
+			{
+				return load->failure.empty() ? std::optional(Project::indexInUse()) : std::nullopt;
+			}
+			load->opened = loadStep(*load, [&]() { load->project->openIndex(); });
+			return std::nullopt;
+		}) |
+		stdexec::let_value(ask) |
+		stdexec::continues_on(m_appStrand->scheduler()) |
+		stdexec::then([this, load](int) noexcept { endLoad(load); }));
+}
 
-			updateTitle();
-		}
-		catch (CppSQLite3Exception& e)
-		{
-			const std::string message = "Failed to load project at \"" +
-										 projectSettingsFilePath.str() + "\" with sqlite exception: " +
-										 e.errorMessage();
-			LOG_ERROR(message);
-			MessageStatus(message, true).dispatch();
-		}
-		catch (std::exception& e)
-		{
-			const std::string message = "Failed to load project at \"" +
-				projectSettingsFilePath.str() + "\" with exception: " +
-				e.what();
-			LOG_ERROR(message);
-			MessageStatus(message, true).dispatch();
-		}
-		catch (...)
-		{
-			const std::string message = "Failed to load project at \"" +
-				projectSettingsFilePath.str() + "\" with unknown exception.";
-			LOG_ERROR(message);
-			MessageStatus(message, true).dispatch();
-		}
+void Application::endLoad(const std::shared_ptr<ProjectLoad>& load)
+{
+	if (m_loading != load)
+	{
+		return;	// a load asked for since, or a close, dropped it
+	}
+	m_loading.reset();
+	const CauseScope cause(load->cause);
 
-		// How the load ended. A project open with its index waits for TabsController,
-		// which the MessageIndexingFinished its load dispatched has the overview open
-		// (or not); a project without one is open as far as loading goes.
-		if (!m_project || !m_project->isOpen())
-		{
-			projectMachine->failed("could not load " + projectSettingsFilePath.str());
-		}
-		else if (!m_project->hasIndex() || !m_hasGUI)
-		{
-			projectMachine->loaded();
-		}
+	if (!load->failure.empty())
+	{
+		LOG_ERROR(load->failure);
+		MessageStatus(load->failure, true).dispatch();
+	}
 
-		if (message->refreshMode != RefreshMode::NONE)
+	m_project = load->project;
+	if (load->opened)
+	{
+		loadStep(*load, [&]() { load->project->finishLoad(); });
+		if (!load->failure.empty())
 		{
-			refreshProject(message->refreshMode);
+			LOG_ERROR(load->failure);
+			MessageStatus(load->failure, true).dispatch();
 		}
+	}
+	updateTitle();
+
+	// How the load ended. A project open with its index waits for TabsController,
+	// which the MessageIndexingFinished its load dispatched has the overview open
+	// (or not); a project without one is open as far as loading goes.
+	const std::shared_ptr<ProjectStateMachine> projectMachine = ProjectStateMachine::instance();
+	if (!m_project || !m_project->isOpen())
+	{
+		projectMachine->failed("could not load " + load->path.str());
+	}
+	else if (!m_project->hasIndex() || !m_hasGUI)
+	{
+		projectMachine->loaded();
+	}
+
+	if (load->refreshMode != RefreshMode::NONE)
+	{
+		refreshProject(load->refreshMode);
 	}
 }
 

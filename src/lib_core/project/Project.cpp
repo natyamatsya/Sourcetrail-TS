@@ -132,65 +132,113 @@ void Project::setStateOutdated()
 
 void Project::load(std::shared_ptr<DialogView> dialogView)
 {
+	if (!beginLoad() || !readSettings())
+	{
+		return;
+	}
+	if (const std::optional<Question> question = interruptedRunQuestion())
+	{
+		if (!resolveInterruptedRun(dialogView->confirm(question->text, question->options)))
+		{
+			if (m_hasGUI)
+			{
+				dialogView->confirm(indexInUse().text);
+			}
+			return;
+		}
+	}
+	else if (!resolveInterruptedRun(-1))
+	{
+		return;
+	}
+	openIndex();
+	finishLoad();
+}
+
+bool Project::beginLoad()
+{
 	if (m_refreshStage != RefreshStageType::NONE)
 	{
 		MessageStatus("Cannot load another project while indexing.", true, false).dispatch();
-		return;
+		return false;
 	}
 
 	m_storageCache->clear();
 	m_storageCache->setSubject(
 		std::weak_ptr<StorageAccess>());	// TODO: check if this is really required.
+	return true;
+}
 
-	if (!m_settings->reload())
+bool Project::readSettings()
+{
+	return m_settings->reload();
+}
+
+std::optional<Project::Question> Project::interruptedRunQuestion() const
+{
+	if (!m_settings->getTempDBFilePath().exists() || !m_settings->getDBFilePath().exists())
 	{
-		return;
+		return std::nullopt;
 	}
+	return Question {
+		"Sourcetrail has been closed unexpectedly while indexing this project. "
+		"You can either choose to keep "
+		"the data that has already been indexed or discard that data and restore "
+		"the state of your project "
+		"before indexing?",
+		{"Keep and Continue", "Discard and Restore"}};
+}
 
+bool Project::resolveInterruptedRun(int option)
+{
 	const FilePath dbPath = m_settings->getDBFilePath();
 	const FilePath tempDbPath = m_settings->getTempDBFilePath();
+
+	if (!tempDbPath.exists())
+	{
+		return true;
+	}
+	if (!dbPath.exists())
+	{
+		LOG_INFO(
+			"Switching to temporary indexing data because no other persistent data was "
+			"found");
+		FileSystem::rename(tempDbPath, dbPath);
+		return true;
+	}
+	if (option == 0)
+	{
+		LOG_INFO("Switching to temporary indexing data on user's decision");
+		if (!moveTempStorageFile(dbPath, tempDbPath))
+		{
+			m_state = ProjectStateType::PROJECT_STATE_NOT_LOADED;
+			MessageStatus("Unable to load project", true, false).dispatch();
+			return false;
+		}
+		return true;
+	}
+	LOG_INFO("Discarding temporary indexing data on user's decision");
+	FileSystem::remove(tempDbPath);
+	return true;
+}
+
+Project::Question Project::indexInUse()
+{
+	return {
+		"<p>The old index database file of this project seems to be used by a different "
+		"process and cannot "
+		"be updated.</p><p>Please close all processes that are using this database and "
+		"re-load this project to "
+		"apply or discard the changes pending from the current indexer run.</p>",
+		{}};
+}
+
+void Project::openIndex()
+{
+	const FilePath dbPath = m_settings->getDBFilePath();
 	const FilePath bookmarkDbPath = m_settings->getBookmarkDBFilePath();
 
-	{
-		if (tempDbPath.exists())
-		{
-			if (dbPath.exists())
-			{
-				if (dialogView->confirm(
-						"Sourcetrail has been closed unexpectedly while indexing this project. "
-						"You can either choose to keep "
-						"the data that has already been indexed or discard that data and restore "
-						"the state of your project "
-						"before indexing?",
-						{"Keep and Continue", "Discard and Restore"}) == 0)
-				{
-					LOG_INFO("Switching to temporary indexing data on user's decision");
-					if (!swapToTempStorageFile(dbPath, tempDbPath, dialogView))
-					{
-						m_state = ProjectStateType::PROJECT_STATE_NOT_LOADED;
-						MessageStatus("Unable to load project", true, false).dispatch();
-						return;
-					}
-				}
-				else
-				{
-					LOG_INFO("Discarding temporary indexing data on user's decision");
-					FileSystem::remove(tempDbPath);
-				}
-			}
-			else
-			{
-				LOG_INFO(
-					"Switching to temporary indexing data because no other persistent data was "
-					"found");
-				FileSystem::rename(tempDbPath, dbPath);
-			}
-		}
-	}
-
 	m_storage = std::make_shared<PersistentStorage>(dbPath, bookmarkDbPath);
-
-	bool canLoad = false;
 
 	if (m_storage->isEmpty())
 	{
@@ -207,12 +255,10 @@ void Project::load(std::shared_ptr<DialogView> dialogView)
 			m_settings->equalsExceptNameAndLocation(storedSettings))
 		{
 			m_state = ProjectStateType::PROJECT_STATE_LOADED;
-			canLoad = true;
 		}
 		else
 		{
 			m_state = ProjectStateType::PROJECT_STATE_OUTDATED;
-			canLoad = true;
 		}
 	}
 
@@ -224,17 +270,23 @@ void Project::load(std::shared_ptr<DialogView> dialogView)
 	{
 		LOG_ERROR("Exception has been encountered while loading the project.");
 
-		canLoad = false;
 		m_state = ProjectStateType::PROJECT_STATE_DB_CORRUPTED;
 	}
 
 	m_sourceGroups = SourceGroupFactory::getInstance()->createSourceGroups(
 		m_settings->getAllSourceGroupSettings());
 
-	if (canLoad)
+	if (hasIndex())
 	{
 		m_storage->setMode(SqliteIndexStorage::StorageModeType::STORAGE_MODE_READ);
 		m_storage->buildCaches();
+	}
+}
+
+void Project::finishLoad()
+{
+	if (hasIndex())
+	{
 		m_storageCache->setSubject(m_storage);
 
 		if (m_hasGUI)
@@ -1098,6 +1150,19 @@ bool Project::swapToTempStorageFile(
 	const FilePath& tempIndexDbFilePath,
 	std::shared_ptr<DialogView> dialogView)
 {
+	if (moveTempStorageFile(indexDbFilePath, tempIndexDbFilePath))
+	{
+		return true;
+	}
+	if (m_hasGUI)
+	{
+		dialogView->confirm(indexInUse().text);
+	}
+	return false;
+}
+
+bool Project::moveTempStorageFile(const FilePath& indexDbFilePath, const FilePath& tempIndexDbFilePath)
+{
 	try
 	{
 		FileSystem::remove(indexDbFilePath);
@@ -1105,15 +1170,6 @@ bool Project::swapToTempStorageFile(
 	}
 	catch (std::exception& /*e*/)
 	{
-		if (m_hasGUI)
-		{
-			dialogView->confirm(
-				"<p>The old index database file of this project seems to be used by a different "
-				"process and cannot "
-				"be updated.</p><p>Please close all processes that are using this database and "
-				"re-load this project to "
-				"apply or discard the changes pending from the current indexer run.</p>");
-		}
 		return false;
 	}
 	return true;

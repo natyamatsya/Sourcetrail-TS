@@ -34,6 +34,9 @@ model — it means retiring the old `Task`/`TaskScheduler` machinery that curren
 | `79f046c6` | **Application owns an injectable `execution::ISchedulers*`**, wired at the composition root (`main.cpp`) — scaffolding, not yet consumed |
 | `94e1f44a` | `TaskBuildIndex` structured cancellation — `stdexec::inplace_stop_source` + `inplace_stop_callback`, `std::jthread` auto-join |
 | `d637c411` | fresh run_loop per session; smoke harness (`scripts/smoke.sh`) + run_loop regression tests |
+| `945bd5316` | **Asking holds no thread** — `QuestionStateMachine::asked` / `DialogView::asked`, a sender of the answer; `confirm()` waits on it |
+| `86414fad4` | **App strand** — `execution::Strand` (serial over a pool, a stdexec scheduler); the app `TaskScheduler` runs its loop there (`startSchedulerLoopOn`): event-driven passes instead of a 25 ms poll, held tasks interleave, idle edge kept. I/O pool: four threads |
+| `feat(project)`, after `86414fad4` | **The project load as a pipeline** — strand → `io()` (open the index) → the question as a sender → strand (install), on behalf of the request |
 
 ## The seam today
 
@@ -47,12 +50,16 @@ Message<T>::dispatch() → pushMessage() → [run_loop drain]
                            → Task::dispatch(schedulerId, taskGroup)   ← OLD path
 ```
 
-That last hop lands on `TaskScheduler`/`TaskManager` — a **polling** loop with
-`TaskGroupParallel` spawning a raw `std::thread` per task. The event-driven
-run_loop (done) fixed the *queue*; the *handler execution* still rides the old
-Task machinery. The injected `ISchedulers` exists but nothing consumes it yet.
+That last hop lands on `TaskScheduler`/`TaskManager`. For the app scheduler that
+is now a loop on a strand over `ISchedulers::io()` (event-driven, no thread of its
+own); the background and tab schedulers still poll on threads of their own, and
+`TaskGroupParallel` still spawns a raw `std::thread` per task.
 
 ## Next increment — "route message-handler execution onto `ISchedulers`"
+
+*Started:* the app scheduler runs on a strand over `io()`, and the project load
+continues on it from a pipeline. Left: the tab and background schedulers, and
+handlers as senders rather than `TaskLambda`s.
 
 The smallest, highest-value step, and the one the scaffolding was built for:
 
