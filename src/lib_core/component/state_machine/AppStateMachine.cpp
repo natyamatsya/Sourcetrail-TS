@@ -49,6 +49,10 @@ void AppStateMachine::quitting()
 
 MachineFireResult AppStateMachine::quit(EventSource source)
 {
+	if (!m_quit)
+	{
+		return {false, "nothing here can end this app"};	// and it stays as it is
+	}
 	{
 		auto transaction = m_machine.transaction();
 		if (!transaction.accepts(Event::Quit))
@@ -57,10 +61,6 @@ MachineFireResult AppStateMachine::quit(EventSource source)
 		}
 		transaction.data().waiting.clear();
 		transaction.move(Event::Quit, source);
-	}
-	if (!m_quit)
-	{
-		return {true, "closing, though nothing here ends the app"};
 	}
 	m_quit();
 	return {true, "closing"};

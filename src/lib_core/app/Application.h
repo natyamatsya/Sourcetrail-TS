@@ -185,6 +185,9 @@ private:
 	// Whether they are stopping, or the app is closing: a question box the closing
 	// ended answers "none", which is not a person's answer either.
 	bool pipelinesStopping() const;
+	// Spawns a pipeline into m_pipelines, unless they are stopping.
+	template <typename Sender>
+	void spawnPipeline(Sender pipeline);
 
 	std::shared_ptr<MainView> m_mainView;
 

@@ -167,17 +167,23 @@ void Application::destroyInstance()
 	}
 
 	// A load in flight ends here: its question is withdrawn, and what it opened is
-	// not installed.
+	// not installed. No pipeline is spawned from here on.
 	if (s_instance)
 	{
 		s_instance->m_pipelinesStopping = true;
 		s_instance->m_pipelines.request_stop();
-		stdexec::sync_wait(s_instance->m_pipelines.on_empty());
 	}
 
 	MessageQueue::getInstance()->stopMessageLoop();
 	// A strand loop's pass may hold its scheduler past its removal: end them here.
 	TaskManager::stopSchedulerLoops();
+
+	// What spawns pipelines (the message handlers, the tasks) has stopped: wait for
+	// the ones in flight.
+	if (s_instance)
+	{
+		stdexec::sync_wait(s_instance->m_pipelines.on_empty());
+	}
 	TaskManager::destroyScheduler(TabIds::background());
 	TaskManager::destroyScheduler(TabIds::app());
 
@@ -337,61 +343,12 @@ void Application::handleMessage(MessageActivateWindow*  /*message*/)
 	}
 }
 
-void Application::handleMessage(MessageCloseProject*  /*message*/)
+template <typename Sender>
+void Application::spawnPipeline(Sender pipeline)
 {
-	if (m_project && m_project->isIndexing())
+	if (!m_pipelinesStopping)
 	{
-		MessageStatus("Cannot close the project while indexing.", true, false).dispatch();
-		ProjectStateMachine::instance()->closeRefused("cannot close the project while indexing");
-		return;
-	}
-
-	m_project.reset();
-	m_loading.reset();	// a load still in flight is dropped where it ends
-	updateTitle();
-	m_mainView->clear();
-	ProjectStateMachine::instance()->closed();
-}
-
-void Application::handleMessage(MessageActivateErrors*  /*message*/)
-{
-	ProjectStateMachine::instance()->shown();
-}
-
-void Application::handleMessage(MessageActivateOverview*  /*message*/)
-{
-	ProjectStateMachine::instance()->shown();
-}
-
-void Application::handleMessage(MessageActivateTokens*  /*message*/)
-{
-	ProjectStateMachine::instance()->shown();
-}
-
-void Application::handleMessage(MessageWindowClosed*  /*message*/)
-{
-	AppStateMachine::instance()->quitting();
-}
-
-void Application::handleMessage(MessageIndexingFinished* message)
-{
-	if (!message->outcome)
-	{
-		LOG_ERROR(
-			"Indexing ended abnormally: " + utility::expectedErrorToString(message->outcome.error()));
-	}
-
-	logStorageStats();
-
-	if (m_hasGUI)
-	{
-		MessageRefreshUI().afterIndexing().dispatch();
-	}
-	else
-	{
-		// The indexing outcome becomes the headless process exit code (0 = success), so scripts
-		// and CI can trust the run instead of reading silence as success.
-		MessageQuitApplication(message->outcome ? 0 : 1).dispatch();
+		m_pipelines.spawn(std::move(pipeline));
 	}
 }
 
@@ -405,6 +362,20 @@ struct Application::ProjectLoad
 	bool opened = false;	// the pipeline opened the index (finishLoad is left to do)
 	std::string failure;	// what an exception said
 
+	// Requested when a load or a close replaces this one, or the app stops its
+	// pipelines (linked below): the pipeline runs under it, so its question is
+	// withdrawn, and no step changes files after it.
+	stdexec::inplace_stop_source stop;
+	struct RequestStop
+	{
+		stdexec::inplace_stop_source* source;
+		void operator()() const noexcept
+		{
+			source->request_stop();
+		}
+	};
+	std::optional<stdexec::inplace_stop_callback<RequestStop>> stopWithApp;
+
 	// Runs a step (one returning false ends the load), turning what it throws into
 	// the load's failure, as the load always has.
 	template <typename Step>
@@ -413,9 +384,9 @@ struct Application::ProjectLoad
 	// On the I/O pool: reads the settings; what an interrupted run leaves to ask.
 	std::optional<Project::Question> readSettings() noexcept;
 	// On the I/O pool with the answer: keeps or discards the interrupted run's data
-	// and opens the index; what to tell when the index is in use. With `stopping`,
-	// the answer is the closing's, not a person's, and nothing is changed.
-	std::optional<Project::Question> openIndex(int option, bool stopping) noexcept;
+	// and opens the index; what to tell when the index is in use. With `appClosing`,
+	// or once the load was stopped, the answer is not a person's, and nothing changes.
+	std::optional<Project::Question> openIndex(int option, bool appClosing) noexcept;
 };
 
 template <typename Step>
@@ -464,20 +435,86 @@ std::optional<Project::Question> Application::ProjectLoad::readSettings() noexce
 	return project->interruptedRunQuestion();
 }
 
-std::optional<Project::Question> Application::ProjectLoad::openIndex(int option, bool stopping) noexcept
+std::optional<Project::Question> Application::ProjectLoad::openIndex(int option, bool appClosing) noexcept
 {
 	const CauseScope scope(cause);
-	if (stopping)
+	if (appClosing || stop.stop_requested())
 	{
 		ended = true;	// keep or discard is for a person to say, not for the exit
 		return std::nullopt;
 	}
-	if (!step([&]() { return project->resolveInterruptedRun(option); }))
+	bool inUse = false;
+	if (!step([&]() {
+			inUse = !project->resolveInterruptedRun(option);
+			return !inUse;
+		}))
 	{
-		return failure.empty() ? std::optional(Project::indexInUse()) : std::nullopt;
+		return inUse ? std::optional(Project::indexInUse()) : std::nullopt;
 	}
 	opened = step([this]() { project->openIndex(); });
 	return std::nullopt;
+}
+
+void Application::handleMessage(MessageCloseProject*  /*message*/)
+{
+	if (m_project && m_project->isIndexing())
+	{
+		MessageStatus("Cannot close the project while indexing.", true, false).dispatch();
+		ProjectStateMachine::instance()->closeRefused("cannot close the project while indexing");
+		return;
+	}
+
+	m_project.reset();
+	if (m_loading)
+	{
+		m_loading->stop.request_stop();	// a load in flight withdraws its question and ends
+		m_loading.reset();
+	}
+	updateTitle();
+	m_mainView->clear();
+	ProjectStateMachine::instance()->closed();
+}
+
+void Application::handleMessage(MessageActivateErrors*  /*message*/)
+{
+	ProjectStateMachine::instance()->shown();
+}
+
+void Application::handleMessage(MessageActivateOverview*  /*message*/)
+{
+	ProjectStateMachine::instance()->shown();
+}
+
+void Application::handleMessage(MessageActivateTokens*  /*message*/)
+{
+	ProjectStateMachine::instance()->shown();
+}
+
+void Application::handleMessage(MessageWindowClosed*  /*message*/)
+{
+	AppStateMachine::instance()->quitting();
+}
+
+void Application::handleMessage(MessageIndexingFinished* message)
+{
+	if (!message->outcome)
+	{
+		LOG_ERROR(
+			"Indexing ended abnormally: " + utility::expectedErrorToString(message->outcome.error()));
+	}
+
+	logStorageStats();
+
+	if (m_hasGUI)
+	{
+		MessageRefreshUI().afterIndexing().dispatch();
+	}
+	else
+	{
+		// The indexing outcome becomes the headless process exit code (0 = success), so scripts
+		// and CI can trust the run instead of reading silence as success.
+		MessageQuitApplication(message->outcome ? 0 : 1).dispatch();
+	}
 }
 
 void Application::handleMessage(MessageLoadProject* message)
@@ -536,6 +573,11 @@ void Application::loadProject(const FilePath& path, const ShardConfig& shardConf
 	load->path = path;
 	load->cause = currentCause();
 	load->refreshMode = refreshMode;
+	load->stopWithApp.emplace(m_pipelines.get_stop_token(), ProjectLoad::RequestStop {&load->stop});
+	if (m_loading)
+	{
+		m_loading->stop.request_stop();	// replaced: its question is withdrawn
+	}
 	m_loading = load;
 
 	const bool started = load->step([&]() {
@@ -572,14 +614,15 @@ void Application::loadProject(const FilePath& path, const ShardConfig& shardConf
 	const auto ask = [this, load](const std::optional<Project::Question>& question) noexcept {
 		return askFor(*load, question);
 	};
-	m_pipelines.spawn(
+	spawnPipeline(stdexec::write_env(
 		stdexec::schedule(io) | stdexec::then([load]() noexcept { return load->readSettings(); }) |
-		stdexec::let_value(ask) |
-		// Answered on the thread that answered it: back to the files.
-		stdexec::continues_on(io) |
-		stdexec::then([this, load](int option) noexcept { return load->openIndex(option, pipelinesStopping()); }) |
-		stdexec::let_value(ask) |
-		stdexec::continues_on(appScheduler()) | stdexec::then([this, load](int) noexcept { endLoad(load); }));
+			stdexec::let_value(ask) |
+			// Answered on the thread that answered it: back to the files.
+			stdexec::continues_on(io) |
+			stdexec::then([this, load](int option) noexcept { return load->openIndex(option, pipelinesStopping()); }) |
+			stdexec::let_value(ask) |
+			stdexec::continues_on(appScheduler()) | stdexec::then([this, load](int) noexcept { endLoad(load); }),
+		stdexec::prop {stdexec::get_stop_token, load->stop.get_token()}));
 }
 
 QuestionSender Application::askFor(const ProjectLoad& load, const std::optional<Project::Question>& question)
@@ -787,7 +830,7 @@ void Application::askThenRefresh(PendingRefresh refresh)
 
 	const Project::Question& question = refresh.plan.questions[refresh.next];
 	QuestionSender answer = dialog->asked(question.text, question.options);
-	m_pipelines.spawn(
+	spawnPipeline(
 		std::move(answer) | stdexec::continues_on(appScheduler()) |
 		stdexec::then([this, refresh = std::move(refresh)](int option) mutable noexcept {
 			refreshAnswered(std::move(refresh), option);

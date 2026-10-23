@@ -68,7 +68,8 @@ public:
 	void quitting();
 	// Ends the app as closing its window would: what main installed does it.
 	MachineFireResult quit(EventSource source);
-	// How the app ends on `quit` (main's: leave the event loop).
+	// How the app ends on `quit` (main's: leave the event loop). Set once, before
+	// anything can send `quit`; without it `quit` is refused.
 	void onQuit(std::function<void()> quit);
 
 	bool isStarting() const;

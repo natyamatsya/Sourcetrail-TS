@@ -534,6 +534,13 @@ TEST_CASE("app quit asked from outside ends it as closing its window does")
 	REQUIRE(app.snapshot().state == "closing");
 	REQUIRE_FALSE(app.fire("quit", "", EventSource::Agent).ok);	// closing already
 	REQUIRE(ended == 1);
+
+	// Nothing installed to end it: refused, and the app goes on as it was.
+	AppStateMachine unended;
+	unended.started();
+	REQUIRE_FALSE(unended.fire("quit", "", EventSource::Agent).ok);
+	REQUIRE(unended.snapshot().state == "running");
+	REQUIRE_FALSE(unended.isClosing());
 }
 
 TEST_CASE("project load asked for while the app starts waits for it")

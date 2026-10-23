@@ -235,6 +235,13 @@ int main(int argc, char* argv[])
 		QtViewFactory viewFactory;
 		QtNetworkFactory networkFactory;
 
+		// An agent's quit ends the app as closing its window does: the event loop
+		// ends, modal loops with it, and the teardown runs. Before createInstance,
+		// which opens agent control.
+		AppStateMachine::instance()->onQuit([]() {
+			QMetaObject::invokeMethod(qApp, []() { QCoreApplication::exit(0); }, Qt::QueuedConnection);
+		});
+
 		Application::createInstance(
 			version,
 			&viewFactory,
@@ -284,12 +291,6 @@ int main(int argc, char* argv[])
 			utility::qt::scheduleSnapshotAndQuit(
 				commandLineParser.getUiSnapshotPath(), format, commandLineParser.getScreenshotDelayMs());
 		}
-
-		// An agent's quit ends the app as closing its window does: the event loop
-		// ends, modal loops with it, and the teardown below runs.
-		AppStateMachine::instance()->onQuit([]() {
-			QMetaObject::invokeMethod(qApp, []() { QCoreApplication::exit(0); }, Qt::QueuedConnection);
-		});
 
 		// Started: the language packages registered, the settings prefilled, the
 		// startup load queued. What waited for it (a load an agent asked for while
