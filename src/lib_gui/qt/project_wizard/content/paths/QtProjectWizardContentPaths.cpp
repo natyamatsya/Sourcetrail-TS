@@ -96,27 +96,21 @@ bool QtProjectWizardContentPaths::check()
 
 		if (!missingPaths.isEmpty())
 		{
-			QtMessageBox msgBox(m_window);
-			msgBox.setText(QString("Some provided paths do not exist at \"%1\". Do you want to "
-								   "remove them before continuing?")
-							   .arg(m_titleString));
-			msgBox.setDetailedText(missingPaths);
-			QPushButton* removeButton = msgBox.addButton(QStringLiteral("Remove"), QtMessageBox::YesRole);
-			QPushButton* keepButton = msgBox.addButton(QStringLiteral("Keep"), QtMessageBox::ButtonRole::NoRole);
-			QPushButton* cancelButton = msgBox.addButton(QStringLiteral("Cancel"), QtMessageBox::ButtonRole::RejectRole);
-
-			QAbstractButton *clickedButton = msgBox.execModal();
-
-			if (clickedButton == removeButton)
+			const int answer = m_window->ask(
+				QString("Some provided paths do not exist at \"%1\". Do you want to remove them before "
+						"continuing?\n\n%2")
+					.arg(m_titleString, missingPaths),
+				{"Remove", "Keep", "Cancel"});
+			if (answer == 0)
 			{
 				m_list->setPaths(existingPaths);
 				save();
 			}
-			else if (clickedButton == keepButton)
+			else if (answer == 1)
 			{
 				return true;
 			}
-			else if (clickedButton == cancelButton)
+			else
 			{
 				return false;
 			}

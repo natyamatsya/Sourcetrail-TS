@@ -78,29 +78,23 @@ bool QtProjectWizardContentProjectData::check()
 {
 	if (m_projectName->text().isEmpty())
 	{
-		QtMessageBox msgBox(m_window);
-		msgBox.setText(QStringLiteral("Please enter a project name."));
-		msgBox.execModal();
+		m_window->tell(QStringLiteral("Please enter a project name."));
 		return false;
 	}
 
 	static const QRegularExpression portableName(QStringLiteral("^[a-zA-Z0-9._][a-zA-Z0-9._-]*$"));
 	if (!portableName.match(m_projectName->text()).hasMatch())
 	{
-		QtMessageBox msgBox(m_window);
-		msgBox.setText(
+		m_window->tell(
 			"The provided project name is not a valid file name. Please adjust the name "
 			"accordingly.");
-		msgBox.execModal();
 		return false;
 	}
 
 	if (m_projectFileLocation->getText().isEmpty())
 	{
-		QtMessageBox msgBox(m_window);
-		msgBox.setText(
+		m_window->tell(
 			QStringLiteral("Please define the location for the Sourcetrail project file."));
-		msgBox.execModal();
 		return false;
 	}
 
@@ -108,29 +102,23 @@ bool QtProjectWizardContentProjectData::check()
 		FilePath(m_projectFileLocation->getText().toStdString()).expandEnvironmentVariables();
 	if (paths.size() != 1)
 	{
-		QtMessageBox msgBox(m_window);
-		msgBox.setText(
+		m_window->tell(
 			"The specified location seems to be invalid. Please make sure that the used "
 			"environment variables are unambiguous.");
-		msgBox.execModal();
 		return false;
 	}
 	else if (!paths.front().isAbsolute())
 	{
-		QtMessageBox msgBox(m_window);
-		msgBox.setText(
+		m_window->tell(
 			"The specified location seems to be invalid. Please specify an absolute directory "
 			"path.");
-		msgBox.execModal();
 		return false;
 	}
 	else if (!paths.front().isValid())
 	{
-		QtMessageBox msgBox(m_window);
-		msgBox.setText(
+		m_window->tell(
 			"The specified location seems to be invalid. Please check the characters used in the "
 			"path.");
-		msgBox.execModal();
 		return false;
 	}
 	else if (!paths[0].exists())

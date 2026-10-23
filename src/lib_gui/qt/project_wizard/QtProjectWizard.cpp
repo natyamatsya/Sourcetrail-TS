@@ -22,6 +22,7 @@
 #include "QtProjectWizardContentSourceGroupInfoText.h"
 #include "QtProjectWizardContentUnloadable.h"
 #include "QtResources.h"
+#include "SourceGroupFields.h"
 #ifndef SRCTRL_MODULE_BUILD
 #include "SourceGroupSettingsCustomCommand.h"
 #include "SourceGroupSettingsUnloadable.h"
@@ -36,6 +37,7 @@
 
 #include <QFileDialog>
 #include <QListWidget>
+#include <QScopedValueRollback>
 #include <QScrollArea>
 #include <QSysInfo>
 #include <QTimer>
@@ -307,6 +309,15 @@ QtProjectWizard::QtProjectWizard(QWidget* parent)
 	ApplicationSettings* appSettings = ApplicationSettings::getInstance().get();
 	m_appSettings.setHeaderSearchPaths(appSettings->getHeaderSearchPaths());
 	m_appSettings.setFrameworkSearchPaths(appSettings->getFrameworkSearchPaths());
+
+	// Closed by a person (its close button, Escape) or an agent.
+	connect(this, &QtWindow::canceled, this, []() { ProjectWizardStateMachine::instance()->canceled(); });
+}
+
+QtProjectWizard::~QtProjectWizard()
+{
+	// Gone without closing (the start screen replaced it): the machine is closed too.
+	ProjectWizardStateMachine::instance()->canceled();
 }
 
 QSize QtProjectWizard::sizeHint() const
@@ -495,6 +506,8 @@ void QtProjectWizard::windowReady()
 	{
 		generalButtonClicked();
 	}
+
+	ProjectWizardStateMachine::instance()->opened(view());
 }
 
 void QtProjectWizard::handlePrevious()
@@ -586,6 +599,8 @@ void QtProjectWizard::generalButtonClicked()
 
 	m_generalButton->setChecked(true);
 	m_sourceGroupList->setCurrentRow(-1);
+
+	reportChanged();
 }
 
 void QtProjectWizard::selectedSourceGroupChanged(int index)
@@ -690,6 +705,8 @@ void QtProjectWizard::selectedSourceGroupChanged(int index)
 	loadContent();
 
 	m_previouslySelectedIndex = index;
+
+	reportChanged();
 }
 
 void QtProjectWizard::selectedSourceGroupNameChanged(const QString& name)
@@ -704,36 +721,34 @@ void QtProjectWizard::removeSelectedSourceGroup()
 		return;
 	}
 
-	QtMessageBox msgBox(this);
-	msgBox.setText(QStringLiteral("Remove Source Group"));
-	msgBox.setInformativeText(QStringLiteral("Do you really want to remove this source group from the project?"));
-	QPushButton *yesButton = msgBox.addButton(QStringLiteral("Yes"), QtMessageBox::ButtonRole::YesRole);
-	msgBox.addButton(QStringLiteral("No"), QtMessageBox::ButtonRole::NoRole);
-	msgBox.setIcon(QtMessageBox::Icon::Question);
-	if (msgBox.execModal() == yesButton)	 // QtMessageBox::Yes
+	if (ask(QStringLiteral("Do you really want to remove this source group from the project?"), {"Yes", "No"}) == 0)
 	{
-		int currentRow = m_sourceGroupList->currentRow();
-		m_allSourceGroupSettings.erase(m_allSourceGroupSettings.begin() + currentRow);
-
-		updateSourceGroupList();
-		setContent(nullptr);
-
-		if (m_allSourceGroupSettings.empty())
-		{
-			setNextEnabled(false);
-			generalButtonClicked();
-			return;
-		}
-
-		if (currentRow >= int(m_allSourceGroupSettings.size()))
-		{
-			currentRow--;
-		}
-
-		m_previouslySelectedIndex = -1;
-
-		m_sourceGroupList->setCurrentRow(currentRow);
+		removeSourceGroup(m_sourceGroupList->currentRow());
 	}
+}
+
+void QtProjectWizard::removeSourceGroup(int row)
+{
+	m_allSourceGroupSettings.erase(m_allSourceGroupSettings.begin() + row);
+
+	updateSourceGroupList();
+	setContent(nullptr);
+
+	if (m_allSourceGroupSettings.empty())
+	{
+		setNextEnabled(false);
+		generalButtonClicked();
+		return;
+	}
+
+	if (row >= int(m_allSourceGroupSettings.size()))
+	{
+		row--;
+	}
+
+	m_previouslySelectedIndex = -1;
+
+	m_sourceGroupList->setCurrentRow(row);
 }
 
 void QtProjectWizard::duplicateSelectedSourceGroup()
@@ -823,6 +838,12 @@ void QtProjectWizard::windowStackChanged()
 	{
 		setEnabled(true);
 		raise();
+
+		// The type selection closed without a type chosen.
+		if (std::exchange(m_choosingType, false) && !m_typeSelected && !m_applying)
+		{
+			ProjectWizardStateMachine::instance()->back(view());
+		}
 	}
 }
 
@@ -849,11 +870,16 @@ void QtProjectWizard::newSourceGroup()
 	window->setNextEnabled(false);
 	window->setPreviousEnabled(false);
 	window->updateSubTitle(QStringLiteral("Type Selection"));
+
+	m_choosingType = true;
+	m_typeSelected = false;
+	ProjectWizardStateMachine::instance()->choosing(view());
 }
 
 
 void QtProjectWizard::selectedProjectType(SourceGroupType sourceGroupType)
 {
+	m_typeSelected = true;
 	const std::string sourceGroupId = utility::getUuidString();
 	std::shared_ptr<SourceGroupSettings> settings;
 
@@ -911,6 +937,10 @@ void QtProjectWizard::selectedProjectType(SourceGroupType sourceGroupType)
 	{
 		createSourceGroup(settings);
 	}
+	if (!m_applying)
+	{
+		ProjectWizardStateMachine::instance()->selected(view());
+	}
 }
 
 void QtProjectWizard::createSourceGroup(std::shared_ptr<SourceGroupSettings> settings)
@@ -927,7 +957,7 @@ void QtProjectWizard::createSourceGroup(std::shared_ptr<SourceGroupSettings> set
 	m_sourceGroupList->setCurrentRow(static_cast<int>(m_allSourceGroupSettings.size()) - 1);
 }
 
-void QtProjectWizard::createProject()
+bool QtProjectWizard::createProject()
 {
 	FilePath path = m_projectSettings->getFilePath();
 
@@ -937,15 +967,10 @@ void QtProjectWizard::createProject()
 	{
 		MessageStatus("Unable to save project to location: " + path.str()).dispatch();
 
-		QtMessageBox msgBox(this);
-		msgBox.setText(QStringLiteral("Could not create Project"));
-		msgBox.setInformativeText(QString::fromStdString(
-			"<p>Sourcetrail was unable to save the project to the specified path. Please pick a "
-			"different project location.</p>"));
-		msgBox.addButton(QStringLiteral("Ok"), QtMessageBox::ButtonRole::AcceptRole);
-		msgBox.execModal();
-
-		return;
+		tell(QString::fromStdString(
+			"Could not create the project: Sourcetrail was unable to save it to " + path.str() +
+			". Please pick a different project location."));
+		return false;
 	}
 
 	bool settingsChanged = false;
@@ -968,5 +993,205 @@ void QtProjectWizard::createProject()
 
 	MessageLoadProject(path, settingsChanged).dispatch();
 
+	ProjectWizardStateMachine::instance()->created(path.str());
 	finishWizard();
+	return true;
+}
+
+ProjectWizardView QtProjectWizard::view() const
+{
+	ProjectWizardView view;
+	view.editing = m_editing;
+	view.projectName = m_projectSettings->getProjectName();
+	view.projectLocation = m_projectSettings->getProjectDirectoryPath().str();
+	for (const std::shared_ptr<SourceGroupSettings>& group: m_allSourceGroupSettings)
+	{
+		view.sourceGroups.push_back(
+			{group->getName(),
+			 std::string(sourceGroupTypeId(group->getType())),
+			 group->getStatus() == SourceGroupStatusType::ENABLED});
+	}
+	if (m_previouslySelectedIndex >= 0 && m_previouslySelectedIndex < int(m_allSourceGroupSettings.size()))
+	{
+		view.sourceGroup = static_cast<std::size_t>(m_previouslySelectedIndex);
+		view.fields = readSourceGroupFields(*m_allSourceGroupSettings[m_previouslySelectedIndex]);
+	}
+	if constexpr (language_packages::buildCxxLanguagePackage)
+	{
+		view.types.insert(view.types.end(), {"cdb", "cmake", "cpp", "c"});
+	}
+	if constexpr (language_packages::buildRustLanguagePackage)
+	{
+		view.types.emplace_back("rust");
+	}
+	if constexpr (language_packages::buildSwiftLanguagePackage)
+	{
+		view.types.emplace_back("swift");
+	}
+	view.types.emplace_back("custom");
+	return view;
+}
+
+void QtProjectWizard::reportChanged() const
+{
+	if (!m_applying)
+	{
+		ProjectWizardStateMachine::instance()->changed(view());
+	}
+}
+
+std::string QtProjectWizard::failure(const std::string& otherwise) const
+{
+	return lastMessage().isEmpty() ? otherwise : lastMessage().toStdString();
+}
+
+void QtProjectWizard::apply(const ProjectWizardRequest& request)
+{
+	using Kind = ProjectWizardRequest::Kind;
+	const std::shared_ptr<ProjectWizardStateMachine> machine = ProjectWizardStateMachine::instance();
+	const QScopedValueRollback<bool> applying(m_applying, true);
+	clearLastMessage();
+
+	switch (request.kind)
+	{
+	case Kind::Set:
+	{
+		if (m_editing && (request.projectName || request.projectLocation))
+		{
+			machine->failed(view(), "the name and location of a project are fixed once it exists");
+			return;
+		}
+		if (content())
+		{
+			saveContent();	// what a person typed meanwhile stays
+		}
+		if (request.projectName || request.projectLocation)
+		{
+			m_projectSettings->setProjectFilePath(
+				request.projectName.value_or(m_projectSettings->getProjectName()),
+				FilePath(request.projectLocation.value_or(m_projectSettings->getProjectDirectoryPath().str())));
+		}
+		std::string errors;
+		if (!request.fields.empty() && m_previouslySelectedIndex >= 0)
+		{
+			SourceGroupSettings& group = *m_allSourceGroupSettings[m_previouslySelectedIndex];
+			for (const auto& [name, value]: request.fields)
+			{
+				if (const auto written = writeSourceGroupField(group, name, value); !written)
+				{
+					errors += (errors.empty() ? "" : "; ") + written.error();
+				}
+			}
+			updateSourceGroupList();
+			m_sourceGroupList->blockSignals(true);
+			m_sourceGroupList->setCurrentRow(m_previouslySelectedIndex);
+			m_sourceGroupList->blockSignals(false);
+		}
+		if (content())
+		{
+			loadContent();
+		}
+		errors.empty() ? machine->applied(view()) : machine->failed(view(), errors);
+		return;
+	}
+	case Kind::Show:
+	{
+		if (request.sourceGroup)
+		{
+			m_sourceGroupList->setCurrentRow(static_cast<int>(*request.sourceGroup));
+		}
+		else if (m_previouslySelectedIndex != -1)
+		{
+			generalButtonClicked();
+		}
+		const bool shown = request.sourceGroup ? m_previouslySelectedIndex == static_cast<int>(*request.sourceGroup)
+											   : m_previouslySelectedIndex == -1;
+		shown ? machine->applied(view())
+			  : machine->failed(view(), failure("the page shown could not be left"));
+		return;
+	}
+	case Kind::AddSourceGroup:
+	{
+		if (request.type == SourceGroupType::UNKNOWN)
+		{
+			newSourceGroup();	// the type selection: choosing_type
+			if (!m_choosingType)
+			{
+				machine->failed(view(), failure("the page shown could not be left"));
+			}
+			return;
+		}
+		if (!canExitContent())
+		{
+			machine->failed(view(), failure("the page shown could not be left"));
+			return;
+		}
+		const std::size_t groups = m_allSourceGroupSettings.size();
+		selectedProjectType(request.type);
+		m_allSourceGroupSettings.size() > groups
+			? machine->applied(view())
+			: machine->failed(view(), "this build has no source groups of that type");
+		return;
+	}
+	case Kind::SelectType:
+	{
+		if (!m_choosingType)
+		{
+			machine->failed(view(), "the type selection is not open");
+			return;
+		}
+		selectedProjectType(request.type);
+		machine->applied(view());
+		return;
+	}
+	case Kind::RemoveSourceGroup:
+	{
+		const int row = request.sourceGroup ? static_cast<int>(*request.sourceGroup) : m_previouslySelectedIndex;
+		if (row < 0 || row >= int(m_allSourceGroupSettings.size()))
+		{
+			machine->failed(view(), "no source group to remove");
+			return;
+		}
+		removeSourceGroup(row);
+		machine->applied(view());
+		return;
+	}
+	case Kind::Create:
+	{
+		if (content())
+		{
+			saveContent();
+			if (!content()->check())
+			{
+				machine->failed(view(), failure("a check on the page failed"));
+				return;
+			}
+		}
+		if (m_allSourceGroupSettings.empty())
+		{
+			machine->failed(view(), "a project needs a source group: add_source_group");
+			return;
+		}
+		if (!createProject())
+		{
+			machine->failed(view(), failure("the project could not be saved"));
+		}
+		return;	// created
+	}
+	case Kind::Cancel:
+	{
+		if (m_choosingType)
+		{
+			cancelSourceGroup();
+			machine->applied(view());
+			return;
+		}
+		cancelWizard();	// canceled
+		return;
+	}
+	case Kind::New:
+	case Kind::Edit:
+		break;
+	}
+	machine->failed(view(), "the main window opens the wizard");
 }

@@ -1,7 +1,10 @@
 #ifndef QT_MAIN_WINDOW_H
 #define QT_MAIN_WINDOW_H
 
+#include <QPointer>
+
 #include "FilePath.h"
+#include "ProjectWizardStateMachine.h"
 #include "QtWindowStack.h"
 #include "QtWindowTitleProgress.h"
 
@@ -13,6 +16,7 @@
 class Bookmark;
 class MessageBase;
 class QtBuildJsonBrowser;
+class QtProjectWizard;
 class View;
 
 namespace KDDockWidgets::QtWidgets
@@ -150,6 +154,10 @@ public slots:
 	void editProject();
 	void closeProject();
 
+	// What the project wizard machine has the wizard do for an agent
+	// (PresentsProjectWizard): open it, or pass the request on to it.
+	void applyToProjectWizard(const ProjectWizardRequest& request);
+
 	static void find();
 	static void findFulltext();
 	void findOnScreen();
@@ -231,6 +239,7 @@ private:
 
 	QtWindowStack m_windowStack;
 	QtBuildJsonBrowser* m_buildJsonBrowser = nullptr;
+	QPointer<QtProjectWizard> m_projectWizard;	// the wizard open, if one is
 
 	QtWindowTitleProgress m_windowTitleProgress;
 };

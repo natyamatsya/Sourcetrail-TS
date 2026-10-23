@@ -17,9 +17,13 @@
 #include "BookmarkStateMachine.h"
 #include "ConcurrentStateMachine.h"
 #include "IndexingStateMachine.h"
+#include "ProjectSettings.h"
 #include "ProjectStateMachine.h"
+#include "ProjectWizardStateMachine.h"
 #include "QuestionStateMachine.h"
 #include "SearchStateMachine.h"
+#include "SourceGroupFields.h"
+#include "SourceGroupSettingsCustomCommand.h"
 #include "RemoteStateMachine.h"
 #include "StateMachine.h"
 #include "TabIds.h"
@@ -832,6 +836,118 @@ TEST_CASE("bookmark editor opens, takes its fields and saves them")
 	REQUIRE(machine.fire("create", R"({"node_id":12})", EventSource::Agent).ok);
 	REQUIRE(eventually([&]() { return machine.snapshot().state == "idle"; }));
 	REQUIRE(machine.snapshot().context.find("did not open") != std::string::npos);
+	machine.detach(presenter);
+}
+
+TEST_CASE("source group fields are read and set by name")
+{
+	ProjectSettings project;
+	project.setProjectFilePath("fields", FilePath("C:/projects"));
+	SourceGroupSettingsCustomCommand group("id", &project);
+	group.setName("tool");
+
+	std::map<std::string, SourceGroupField> fields = readSourceGroupFields(group);
+	REQUIRE(fields.contains("custom_command"));
+	REQUIRE(fields.contains("source_paths"));
+	REQUIRE_FALSE(fields.contains("compilation_database"));
+	REQUIRE(std::get<std::string>(fields["name"]) == "tool");
+
+	REQUIRE(writeSourceGroupField(group, "custom_command", std::string("tool %{SOURCE_FILE_PATH}")));
+	REQUIRE(writeSourceGroupField(group, "source_paths", std::vector<std::string> {"src", "include"}));
+	REQUIRE(writeSourceGroupField(group, "enabled", false));
+	REQUIRE(group.getCustomCommand() == "tool %{SOURCE_FILE_PATH}");
+	REQUIRE(group.getSourcePaths().size() == 2);
+	REQUIRE(group.getStatus() == SourceGroupStatusType::DISABLED);
+
+	const auto notOne = writeSourceGroupField(group, "compilation_database", std::string("x.json"));
+	REQUIRE_FALSE(notOne);
+	REQUIRE(notOne.error().find("it has") != std::string::npos);
+	REQUIRE_FALSE(writeSourceGroupField(group, "source_paths", std::string("src")));	// a list
+
+	REQUIRE(sourceGroupTypeForId(sourceGroupTypeId(SourceGroupType::CXX_CDB)) == SourceGroupType::CXX_CDB);
+	REQUIRE(sourceGroupTypeForId("cobol") == SourceGroupType::UNKNOWN);
+}
+
+struct FakeWizardPresenter
+{
+	void applyToProjectWizard(const ProjectWizardRequest& request)
+	{
+		requests.push_back(request);
+	}
+
+	std::vector<ProjectWizardRequest> requests;
+};
+
+TEST_CASE("project wizard carries out requests and follows a person")
+{
+	using Kind = ProjectWizardRequest::Kind;
+	ProjectWizardStateMachine machine;
+	REQUIRE_FALSE(machine.fire("new", "", EventSource::Agent).ok);	// no window to show it in
+
+	FakeWizardPresenter presenter;
+	machine.attach(presenter);
+	REQUIRE(machine.fire("new", "", EventSource::Agent).ok);
+	REQUIRE(presenter.requests.back().kind == Kind::New);
+	REQUIRE(machine.snapshot().state == "applying");
+
+	ProjectWizardView view;
+	view.projectName = "game";
+	view.types = {"cdb", "custom"};
+	machine.opened(view);
+	MachineSnapshot snapshot = machine.snapshot();
+	REQUIRE(snapshot.state == "editing");
+	REQUIRE(snapshot.context.find(R"("page":"general")") != std::string::npos);
+
+	// What the machine can tell before the wizard is asked.
+	REQUIRE_FALSE(machine.fire("set", R"({"fields":{"source_paths":["src"]}})", EventSource::Agent).ok);
+	REQUIRE_FALSE(machine.fire("add_source_group", R"({"type":"cobol"})", EventSource::Agent).ok);
+	REQUIRE_FALSE(machine.fire("show", R"({"source_group":0})", EventSource::Agent).ok);
+
+	REQUIRE(machine.fire("add_source_group", R"({"type":"custom"})", EventSource::Agent).ok);
+	REQUIRE(presenter.requests.back().type == SourceGroupType::CUSTOM_COMMAND);
+	view.sourceGroups = {{"Custom Command Source Group", "custom", true}};
+	view.sourceGroup = 0;
+	view.fields = {{"custom_command", std::string()}, {"name", std::string("Custom Command Source Group")}};
+	machine.applied(view);
+	snapshot = machine.snapshot();
+	REQUIRE(snapshot.state == "editing");
+	REQUIRE(snapshot.context.find(R"("custom_command":"")") != std::string::npos);
+
+	REQUIRE_FALSE(machine.fire("set", R"({"fields":{"compilation_database":"x.json"}})", EventSource::Agent).ok);
+	REQUIRE(machine.fire("set", R"({"fields":{"custom_command":"tool"},"project_name":"game2"})", EventSource::Agent).ok);
+	REQUIRE(std::get<std::string>(presenter.requests.back().fields.at("custom_command")) == "tool");
+	REQUIRE(presenter.requests.back().projectName == "game2");
+	machine.failed(view, "the entered path does not exist");
+	snapshot = machine.snapshot();
+	REQUIRE(snapshot.state == "editing");
+	REQUIRE(snapshot.context.find("does not exist") != std::string::npos);
+
+	// A person opens the type selection and closes it again.
+	machine.choosing(view);
+	snapshot = machine.snapshot();
+	REQUIRE(snapshot.state == "choosing_type");
+	REQUIRE(snapshot.context.find(R"("types":["cdb","custom"])") != std::string::npos);
+	machine.back(view);
+	REQUIRE(machine.snapshot().state == "editing");
+
+	REQUIRE(machine.fire("create", "", EventSource::Agent).ok);
+	machine.selected(view);	// a person's step while the request is carried out: no move
+	REQUIRE(machine.snapshot().state == "applying");
+	machine.created("C:/projects/game2.srctrl.toml");
+	snapshot = machine.snapshot();
+	REQUIRE(snapshot.state == "closed");
+	REQUIRE(snapshot.context.find("created C:/projects/game2.srctrl.toml") != std::string::npos);
+
+	// A person opens the wizard and closes it.
+	machine.opened(view);
+	REQUIRE(machine.snapshot().state == "editing");
+	machine.canceled();
+	REQUIRE(machine.snapshot().state == "closed");
+	REQUIRE(machine.fire("edit", "", EventSource::Agent).ok);
+	machine.notOpened("no project is loaded to edit");
+	snapshot = machine.snapshot();
+	REQUIRE(snapshot.state == "closed");
+	REQUIRE(snapshot.context.find("no project is loaded") != std::string::npos);
 	machine.detach(presenter);
 }
 

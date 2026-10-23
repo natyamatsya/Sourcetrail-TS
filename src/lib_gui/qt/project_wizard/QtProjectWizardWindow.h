@@ -1,6 +1,9 @@
 #ifndef QT_PROJECT_WIZARD_WINDOW_H
 #define QT_PROJECT_WIZARD_WINDOW_H
 
+#include <string>
+#include <vector>
+
 #include "QtWindow.h"
 
 class QtProjectWizardContent;
@@ -22,6 +25,15 @@ public:
 	void loadContent();
 	void refreshContent();
 
+	// What keeps the wizard from going on, told the person as a question
+	// (QuestionStateMachine), which an agent answers as well; returns once answered.
+	void tell(const QString& text);
+	// Asks the person: the index of the option chosen, -1 for none.
+	int ask(const QString& text, const std::vector<std::string>& options);
+	// What was told or asked last: why an agent's request did not go through.
+	QString lastMessage() const;
+	void clearLastMessage();
+
 	static const int FRONT_COL = 0;
 	static const int HELP_COL = 1;
 	static const int LINE_COL = 2;
@@ -39,6 +51,7 @@ private:
 	QtProjectWizardContent* m_content = nullptr;
 	QSize m_preferredSize;
 	bool m_showSeparator;
+	QString m_lastMessage;
 };
 
 #endif	  // QT_PROJECT_WIZARD_WINDOW_H

@@ -389,7 +389,7 @@ machine_send { machine: \"question\", event: \"answer\", args: { label: \"Reinde
     },
     Topic {
         name: "machines",
-        summary: "State machines: app startup, the project's load, indexing, questions, what the views show, the search box, the bookmark editor.",
+        summary: "State machines: app startup, the project's load, indexing, questions, what the views show, the search box, the bookmark editor, the project wizard.",
         tools: &["machine_state", "machine_send"],
         doc: "\
 What waits for a person in Sourcetrail is a state machine: indexing (choose a mode, follow \
@@ -411,7 +411,9 @@ machine_send { machine, event, args?: {...}, until?: [state], timeout_s=60, inst
   A refused event is ok: false with the machine as it is (its state and accepted events). \
 `transitions` are the moves seen meanwhile; with until the call returns once the machine is \
 in one of those states, or after timeout_s (at most 300; the call holds the bridge meanwhile) \
-with reached: false. A run's end (indexing idle) reopens the project on the new index, so \
+with reached: false. It also ends, reached: false, when the app asks a question meanwhile: \
+the question's move is among the transitions; answer it (see question) and wait again. A \
+run's end (indexing idle) reopens the project on the new index, so \
 until: [\"idle\"] on indexing also waits for the project to be ready again; its moves are \
 among the transitions.
 
@@ -495,7 +497,38 @@ editor (refused without a name).
   context: editor { mode: create|edit, bookmark_id?, node_id?, name, comment, category, \
 categories } (editing); outcome (idle).
   Deleting a bookmark or a category, and the bookmark button on a bookmarked symbol, ask a \
-question (see question).",
+question (see question).
+
+project_wizard: closed -> applying -> editing -> applying -> closed
+  The project wizard (New Project / Edit Project). Every request below moves it to applying \
+while the wizard carries it out; wait with until: [\"editing\", \"closed\", \"choosing_type\"]. \
+A failed request is back at editing with context.error. A check on the way (a missing path, \
+an invalid name) asks a question first (see question): answer it, the request then fails \
+with that text. A person's steps move the machine too: opening the wizard, the type \
+selection, creating, closing; the context follows their page changes once they leave a page.
+  new                              closed: opens the wizard on a new project.
+  edit                             closed: opens it on the project loaded.
+  set { project_name?, project_location?, fields?: { ... } }   editing: the general page's \
+name and location (a new project's only), and the shown source group's fields: \
+context.fields lists them with their values (strings, lists of strings, true/false), e.g. \
+source_paths, extensions, exclude_filters, compilation_database, cmake_source_directory, \
+cmake_preset, header_search_paths, compiler_flags, cpp_standard, custom_command.
+  show { source_group? }           editing: that source group's page, or the general one.
+  add_source_group { type? }       editing: adds a source group of type cdb | cmake | cpp | c \
+| rust | swift | custom and shows it; without a type the type selection opens \
+(choosing_type, context.types).
+  select_type { type }             choosing_type: picks the type there.
+  remove_source_group { source_group? }   editing: removes it (default: the one shown).
+  create                           editing: saves the project (create or save) and loads it: \
+closed, context.outcome; the project machine takes over.
+  cancel                           editing: closes the wizard; choosing_type: closes the type \
+selection.
+  context: mode (new | edit), page (general | source_group), source_group, project { name, \
+location }, source_groups [{ name, type, enabled }], fields, types (choosing_type), applying, \
+error; outcome (closed).
+  Recipe, a project from a compilation database: new; set { project_name, project_location }; \
+add_source_group { type: \"cdb\" }; set { fields: { compilation_database: \
+\"C:/b/compile_commands.json\" } }; create.",
     },
     Topic {
         name: "logs",
@@ -525,6 +558,8 @@ const TOPIC_ALIASES: &[(&str, &str)] = &[
     ("autocomplete", "machines"),
     ("bookmark", "machines"),
     ("bookmarks", "machines"),
+    ("wizard", "machines"),
+    ("project_wizard", "machines"),
 ];
 
 /// Tools as they were called before the area prefixes, and what they are now.

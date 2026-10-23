@@ -1,4 +1,5 @@
 #include "QtMainWindow.h"
+#include "UiPost.h"
 
 #include "Application.h"
 #ifndef SRCTRL_MODULE_BUILD
@@ -179,10 +180,14 @@ QtMainWindow::QtMainWindow()
 	// Need to call loadLayout here for right DockWidget size on Linux
 	// Second call is in Application.cpp
 	loadLayout();
+
+	ProjectWizardStateMachine::instance()->attach(*this);
 }
 
 QtMainWindow::~QtMainWindow()
 {
+	ProjectWizardStateMachine::instance()->detach(*this);
+
 	for (DockWidget& dockWidget: m_dockWidgets)
 	{
 		dockWidget.toggle->clear();
@@ -754,6 +759,7 @@ void QtMainWindow::hideStartScreen()
 void QtMainWindow::newProject()
 {
 	QtProjectWizard* wizard = createWindow<QtProjectWizard>();
+	m_projectWizard = wizard;
 	wizard->newProject();
 }
 
@@ -764,6 +770,7 @@ void QtMainWindow::newProjectFromCDB(const FilePath& filePath)
 	{
 		wizard = createWindow<QtProjectWizard>();
 	}
+	m_projectWizard = wizard;
 
 	wizard->newProjectFromCDB(filePath);
 }
@@ -786,9 +793,41 @@ void QtMainWindow::editProject()
 	if (currentProject)
 	{
 		QtProjectWizard* wizard = createWindow<QtProjectWizard>();
+		m_projectWizard = wizard;
 
 		wizard->editProject(currentProject->getProjectSettingsFilePath());
 	}
+}
+
+void QtMainWindow::applyToProjectWizard(const ProjectWizardRequest& request)
+{
+	execution::qt::onUi(this, [this, request]() {
+		using Kind = ProjectWizardRequest::Kind;
+		const std::shared_ptr<ProjectWizardStateMachine> machine = ProjectWizardStateMachine::instance();
+		if (request.kind == Kind::New)
+		{
+			newProject();	// opened
+		}
+		else if (request.kind == Kind::Edit)
+		{
+			if (Application::getInstance()->getCurrentProject())
+			{
+				editProject();	// opened
+			}
+			else
+			{
+				machine->notOpened("no project is loaded to edit");
+			}
+		}
+		else if (m_projectWizard)
+		{
+			m_projectWizard->apply(request);
+		}
+		else
+		{
+			machine->canceled();	// the wizard is gone
+		}
+	});
 }
 
 void QtMainWindow::closeProject()

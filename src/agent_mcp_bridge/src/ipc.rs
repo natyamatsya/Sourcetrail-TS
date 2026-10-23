@@ -1341,6 +1341,11 @@ impl Bridge {
                 if t["machine"] == machine {
                     current = t["to"].as_str().unwrap_or_default().to_string();
                     transitions.push(t);
+                } else if t["machine"] == "question" && t["to"] == "asking" {
+                    // The app asks first: nothing moves until it is answered, so the
+                    // wait ends here, with the question among the transitions.
+                    transitions.push(t);
+                    return Ok(false);
                 }
             }
         }

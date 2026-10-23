@@ -20,6 +20,7 @@
 #include "AppStateMachine.h"
 #include "IndexingStateMachine.h"
 #include "ProjectStateMachine.h"
+#include "ProjectWizardStateMachine.h"
 #include "BookmarkStateMachine.h"
 #include "QuestionStateMachine.h"
 #include "SearchStateMachine.h"
@@ -118,6 +119,7 @@ void Application::createInstance(
 	StateMachineRegistry::instance().add(ActivationStateMachine::instance());
 	StateMachineRegistry::instance().add(SearchStateMachine::instance());
 	StateMachineRegistry::instance().add(BookmarkStateMachine::instance());
+	StateMachineRegistry::instance().add(ProjectWizardStateMachine::instance());
 	// The activation machine follows what changes the views, which report when
 	// they have drawn it: with no views there is nothing to follow.
 	if (hasGui)

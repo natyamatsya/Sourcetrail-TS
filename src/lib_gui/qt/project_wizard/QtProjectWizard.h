@@ -7,6 +7,7 @@
 
 #include "ApplicationSettings.h"
 #include "ProjectSettings.h"
+#include "ProjectWizardStateMachine.h"
 #include "QtProjectWizardWindow.h"
 #include "QtWindow.h"
 
@@ -22,7 +23,12 @@ class QtProjectWizard: public QtProjectWizardWindow
 
 public:
 	QtProjectWizard(QWidget* parent = nullptr);
+	~QtProjectWizard() override;
 	QSize sizeHint() const override;
+
+	// Carries out what an agent asked (ProjectWizardStateMachine), and reports how it
+	// went; New and Edit are the main window's.
+	void apply(const ProjectWizardRequest& request);
 
 public slots:
 	void newProject();
@@ -45,6 +51,14 @@ private:
 	void updateSourceGroupList();
 	bool canExitContent();
 
+	// The wizard as the project wizard machine shows it.
+	ProjectWizardView view() const;
+	// A person changed the page: the machine's context follows.
+	void reportChanged() const;
+	void removeSourceGroup(int row);
+	// What keeps an agent's request from going through: what was told last, or `otherwise`.
+	std::string failure(const std::string& otherwise) const;
+
 	QtWindowStack m_windowStack;
 
 	std::shared_ptr<ProjectSettings> m_projectSettings;
@@ -53,6 +67,10 @@ private:
 
 	bool m_editing = false;
 	int m_previouslySelectedIndex = -1;
+
+	bool m_applying = false;	// an agent's request is carried out: it reports itself
+	bool m_choosingType = false;	// the type selection is open
+	bool m_typeSelected = false;	// a type was chosen there
 
 	QPushButton* m_generalButton;
 	QPushButton* m_removeButton;
@@ -78,7 +96,8 @@ private slots:
 	void selectedProjectType(SourceGroupType sourceGroupType);
 
 	void createSourceGroup(std::shared_ptr<SourceGroupSettings> settings);
-	void createProject();
+	// Saves the project and loads it; false (told why) when it could not be saved.
+	bool createProject();
 };
 
 #endif	  // QT_PROJECT_WIZARD_H

@@ -5,6 +5,8 @@
 #include <QPushButton>
 #include <QScrollArea>
 
+#include "Application.h"
+#include "DialogView.h"
 #include "QtProjectWizardContent.h"
 #include "utilityQt.h"
 
@@ -50,6 +52,27 @@ void QtProjectWizardWindow::loadContent()
 void QtProjectWizardWindow::refreshContent()
 {
 	m_content->refresh();
+}
+
+void QtProjectWizardWindow::tell(const QString& text)
+{
+	ask(text, {"OK"});
+}
+
+int QtProjectWizardWindow::ask(const QString& text, const std::vector<std::string>& options)
+{
+	m_lastMessage = text;
+	return Application::getInstance()->getDialogView(DialogView::UseCase::PROJECT_SETUP)->confirm(text.toStdString(), options);
+}
+
+QString QtProjectWizardWindow::lastMessage() const
+{
+	return m_lastMessage;
+}
+
+void QtProjectWizardWindow::clearLastMessage()
+{
+	m_lastMessage.clear();
 }
 
 void QtProjectWizardWindow::populateWindow(QWidget* widget)
