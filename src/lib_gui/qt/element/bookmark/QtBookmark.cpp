@@ -1,7 +1,8 @@
 #include "QtBookmark.h"
 
+#include "Application.h"
+#include "DialogView.h"
 #include "QtActions.h"
-#include "QtMessageBox.h"
 #include "QtResources.h"
 #include "utilityQt.h"
 
@@ -212,17 +213,16 @@ void QtBookmark::editClicked()
 
 void QtBookmark::deleteClicked()
 {
-	QtMessageBox msgBox;
-	msgBox.setText(tr("Delete Bookmark"));
-	msgBox.setInformativeText(tr("Do you really want to delete this bookmark?"));
-	QPushButton *deleteButton = msgBox.addButton(tr("Delete"), QtMessageBox::ButtonRole::YesRole);
-	msgBox.addButton(tr("Keep"), QtMessageBox::ButtonRole::NoRole);
-	msgBox.setIcon(QtMessageBox::Icon::Question);
-	if (msgBox.execModal() == deleteButton)	 // QtMessageBox::Yes
-	{
-		m_controllerProxy->executeAsTaskWithArgs(
-			&BookmarkController::deleteBookmark, m_bookmark->getId());
-	}
+	// A question (QuestionStateMachine): an agent answers it as the box's buttons do.
+	whenAnswered(
+		Application::getInstance()->getDialogView(DialogView::UseCase::GENERAL)->asked(
+			"Do you really want to delete the bookmark '" + m_bookmark->getName() + "'?", {"Delete", "Keep"}),
+		[proxy = m_controllerProxy, id = m_bookmark->getId()](int option) {
+			if (option == 0)
+			{
+				proxy->executeAsTaskWithArgs(&BookmarkController::deleteBookmark, id);
+			}
+		});
 }
 
 void QtBookmark::elideButtonText()

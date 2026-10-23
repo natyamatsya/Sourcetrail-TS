@@ -1,5 +1,9 @@
 #include "BookmarkController.h"
 
+#include <format>
+
+#include "BookmarkStateMachine.h"
+
 #include "Application.h"
 #ifndef SRCTRL_MODULE_BUILD
 #include "Bookmark.h"
@@ -278,6 +282,7 @@ void BookmarkController::showBookmarkCreator(Id nodeId)
 	TabId tabId = TabIds::currentTab();
 	if (!m_activeNodeIds[tabId].size() && !m_activeEdgeIds[tabId].size() && !nodeId)
 	{
+		BookmarkStateMachine::instance()->nothing("nothing is active to bookmark");
 		return;
 	}
 
@@ -406,9 +411,22 @@ void BookmarkController::handleMessage(MessageBookmarkDelete*  /*message*/)
 	deleteBookmarkForActiveTokens();
 }
 
-void BookmarkController::handleMessage(MessageBookmarkEdit*  /*message*/)
+void BookmarkController::handleMessage(MessageBookmarkEdit* message)
 {
-	showBookmarkCreator(0);
+	if (message->bookmarkId == 0)
+	{
+		showBookmarkCreator(0);
+		return;
+	}
+	for (const std::shared_ptr<Bookmark>& bookmark: getAllBookmarks())
+	{
+		if (static_cast<std::uint64_t>(bookmark->getId()) == message->bookmarkId)
+		{
+			showBookmarkEditor(bookmark);
+			return;
+		}
+	}
+	BookmarkStateMachine::instance()->nothing(std::format("there is no bookmark {}", message->bookmarkId));
 }
 
 void BookmarkController::handleMessage(MessageIndexingFinished*  /*message*/)

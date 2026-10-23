@@ -6,8 +6,9 @@
 #include "MessageBookmarkDelete.h"
 #include "MessageBookmarkEdit.h"
 #endif
+#include "Application.h"
+#include "DialogView.h"
 #include "QtActions.h"
-#include "QtMessageBox.h"
 #include "QtResources.h"
 #include "QtSearchBarButton.h"
 #include "QtViewWidgetWrapper.h"
@@ -106,24 +107,20 @@ void QtBookmarkButtonsView::createBookmarkClicked()
 	}
 	else if (m_createButtonState == ALREADY_CREATED)
 	{
-		QtMessageBox msgBox;
-		msgBox.setText(tr("Edit Bookmark"));
-		msgBox.setInformativeText(tr("Do you want to edit or delete the bookmark for this symbol?"));
-		QPushButton *editButton = msgBox.addButton(tr("Edit"), QtMessageBox::ButtonRole::YesRole);
-		QPushButton *deleteButton = msgBox.addButton(tr("Delete"), QtMessageBox::ButtonRole::NoRole);
-		QPushButton* cancelButton = msgBox.addButton(tr("Cancel"), QtMessageBox::ButtonRole::RejectRole);
-		msgBox.setDefaultButton(cancelButton);
-		msgBox.setIcon(QtMessageBox::Icon::Question);
-
-		QAbstractButton *clickedButton = msgBox.execModal();
-		if (clickedButton == editButton)
-		{
-			MessageBookmarkEdit().dispatch();
-		}
-		else if (clickedButton == deleteButton)
-		{
-			MessageBookmarkDelete().dispatch();
-		}
+		// A question (QuestionStateMachine): an agent answers it as the box's buttons do.
+		whenAnswered(
+			Application::getInstance()->getDialogView(DialogView::UseCase::GENERAL)->asked(
+				"Do you want to edit or delete the bookmark for this symbol?", {"Edit", "Delete", "Cancel"}),
+			[](int option) {
+				if (option == 0)
+				{
+					MessageBookmarkEdit().dispatch();
+				}
+				else if (option == 1)
+				{
+					MessageBookmarkDelete().dispatch();
+				}
+			});
 	}
 }
 

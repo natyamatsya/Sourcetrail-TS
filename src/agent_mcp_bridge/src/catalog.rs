@@ -165,6 +165,7 @@ ui_state { instance? } -> {
   code_view: { file_path, scroll_line } | null,
   search_matches: [ { text, node_kind, node_ids: [u64], score } ],
   tabs: [ { tab_id, title, active } ],
+  bookmarks: [ { id, name, comment, category } ],
   dialog: string,
   view_graph: [ { kind: node | bundle | group, id, name, node_kind, parent?, active?, \
 expanded?, hidden_members?, bundled?, splittable?, group? } ] }
@@ -388,7 +389,7 @@ machine_send { machine: \"question\", event: \"answer\", args: { label: \"Reinde
     },
     Topic {
         name: "machines",
-        summary: "State machines: app startup, the project's load, indexing, questions, what the views show, the search box.",
+        summary: "State machines: app startup, the project's load, indexing, questions, what the views show, the search box, the bookmark editor.",
         tools: &["machine_state", "machine_send"],
         doc: "\
 What waits for a person in Sourcetrail is a state machine: indexing (choose a mode, follow \
@@ -470,7 +471,18 @@ search: idle -> completing -> suggesting -> idle
   type { query }                   any state: types query into the box (in place of what is there) and asks for its completions: completing, then suggesting (context.suggestions: [{ name, type, kind }], the first 30; more: how many are not listed), or idle with context.outcome \"nothing matches ...\".
   select { index } | { name }      suggesting: searches for that suggestion, as clicking it in the list does; the activation follows (watch activation, or ui_state.active_nodes).
   dismiss                          completing/suggesting: closes the list.
-  Recipe: machine_send { machine: \"search\", event: \"type\", args: { query: \"Foo\" }, until: [\"suggesting\", \"idle\"] }, then select.",
+  Recipe: machine_send { machine: \"search\", event: \"type\", args: { query: \"Foo\" }, until: [\"suggesting\", \"idle\"] }, then select.
+
+bookmark: idle -> opening -> editing -> idle
+  The bookmark editor (Create / Edit Bookmark). A person opening it (the bookmark button, a node's context menu, the browser's edit button) moves it to editing too; their typing changes context.editor without a move.
+  create { node_id? }              idle: opens the editor on what is active (or that node), as the bookmark button does; something bookmarked already opens its bookmark (mode edit).
+  edit { id }                      idle: opens bookmark id (ui_state.bookmarks).
+  opening ends at editing, or at idle with context.outcome (nothing is active, no such bookmark, or the editor did not open within 5 s).
+  set { name?, comment?, category? }   editing: fills the editor's fields; a category not among context.editor.categories is created.
+  save                             editing: creates or updates the bookmark and closes the editor (refused without a name).
+  cancel                           editing: closes it.
+  context: editor { mode: create|edit, bookmark_id?, node_id?, name, comment, category, categories } (editing); outcome (idle).
+  Deleting a bookmark or a category, and the bookmark button on a bookmarked symbol, ask a question (see question).",
     },
     Topic {
         name: "logs",
@@ -498,6 +510,8 @@ const TOPIC_ALIASES: &[(&str, &str)] = &[
     ("indexing", "machines"),
     ("question", "machines"),
     ("autocomplete", "machines"),
+    ("bookmark", "machines"),
+    ("bookmarks", "machines"),
 ];
 
 /// Tools as they were called before the area prefixes, and what they are now.

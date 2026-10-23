@@ -6,10 +6,6 @@
 #include <QTextEdit>
 #include <QVBoxLayout>
 
-#ifndef SRCTRL_MODULE_BUILD
-#include "MessageStatus.h"
-#endif
-
 // Imports come AFTER all textual #includes (include-before-import rule: textual libc++
 // following BMI-merged declarations trips "cannot add 'abi_tag' in a redeclaration").
 #ifdef SRCTRL_MODULE_BUILD
@@ -19,7 +15,6 @@ import srctrl.messaging;
 QtBookmarkCreator::QtBookmarkCreator(ControllerProxy<BookmarkController>* controllerProxy, QWidget* parent, BookmarkId bookmarkId)
 	: QtBookmarkWindow(controllerProxy, false, parent)
 	, m_editBookmarkId(bookmarkId)
-	, m_nodeId(0)
 {
 	QVBoxLayout* mainLayout = new QVBoxLayout(this);
 	mainLayout->setContentsMargins(0, 0, 0, 0);
@@ -47,6 +42,7 @@ QtBookmarkCreator::QtBookmarkCreator(ControllerProxy<BookmarkController>* contro
 		layout->addWidget(m_displayName);
 
 		connect(m_displayName, &QLineEdit::textChanged, this, &QtBookmarkCreator::onNameChanged);
+		connect(m_displayName, &QLineEdit::textChanged, this, &QtBookmarkCreator::onFieldsChanged);
 
 		layout->addSpacing(15);
 	}
@@ -61,6 +57,8 @@ QtBookmarkCreator::QtBookmarkCreator(ControllerProxy<BookmarkController>* contro
 		m_commentBox->setObjectName(QStringLiteral("creator_comment_box"));
 		m_commentBox->setPlaceholderText(tr("Comment"));
 		layout->addWidget(m_commentBox);
+
+		connect(m_commentBox, &QTextEdit::textChanged, this, &QtBookmarkCreator::onFieldsChanged);
 
 		layout->addSpacing(15);
 	}
@@ -78,6 +76,8 @@ QtBookmarkCreator::QtBookmarkCreator(ControllerProxy<BookmarkController>* contro
 		m_categoryBox->lineEdit()->setPlaceholderText(tr("Category"));
 		m_categoryBox->setInsertPolicy(QComboBox::InsertPolicy::InsertAtTop);
 		layout->addWidget(m_categoryBox);
+
+		connect(m_categoryBox, &QComboBox::currentTextChanged, this, &QtBookmarkCreator::onFieldsChanged);
 
 		layout->addSpacing(20);
 	}
@@ -128,36 +128,52 @@ void QtBookmarkCreator::setCurrentBookmarkCategory(const BookmarkCategory& categ
 	}
 }
 
-void QtBookmarkCreator::setNodeId(Id nodeId)
+void QtBookmarkCreator::setCommit(std::function<void(const BookmarkFields&)> commit)
 {
-	m_nodeId = nodeId;
+	m_commit = std::move(commit);
+}
+
+void QtBookmarkCreator::setEditorId(std::uint64_t editorId)
+{
+	m_editorId = editorId;
+}
+
+void QtBookmarkCreator::showFields(const BookmarkFields& fields)
+{
+	m_displayName->setText(QString::fromStdString(fields.name));
+	m_commentBox->setPlainText(QString::fromStdString(fields.comment));
+	m_categoryBox->setCurrentText(QString::fromStdString(fields.category));
+}
+
+BookmarkFields QtBookmarkCreator::fields() const
+{
+	return {
+		m_displayName->text().toStdString(),
+		m_commentBox->toPlainText().toStdString(),
+		m_categoryBox->currentText().toStdString()};
 }
 
 void QtBookmarkCreator::handleNext()
 {
-	std::string name = m_displayName->text().toStdString();
-	std::string comment = m_commentBox->toPlainText().toStdString();
-	std::string category = m_categoryBox->currentText().toStdString();
-
-	if (m_editBookmarkId != BookmarkId::NONE)
+	// Saved through the bookmark machine, as an agent saves it; should the machine
+	// be elsewhere (it never is while this editor shows), the click still counts.
+	if (!BookmarkStateMachine::instance()->save(fields(), EventSource::Ui, m_editorId).ok && m_commit)
 	{
-		m_controllerProxy->executeAsTaskWithArgs(
-			&BookmarkController::editBookmark, m_editBookmarkId, name, comment, category);
+		m_commit(fields());
 	}
-	else
-	{
-		m_controllerProxy->executeAsTaskWithArgs(
-			&BookmarkController::createBookmark, name, comment, category, m_nodeId);
-
-		MessageStatus("Creating Bookmark for active Token").dispatch();
-	}
-
+	m_commit = nullptr;
 	close();
 }
 
 void QtBookmarkCreator::handleClose()
 {
+	BookmarkStateMachine::instance()->cancel(EventSource::Ui, m_editorId);
 	close();
+}
+
+void QtBookmarkCreator::onFieldsChanged()
+{
+	BookmarkStateMachine::instance()->edited(m_editorId, fields());
 }
 
 void QtBookmarkCreator::onNameChanged(const QString& text)

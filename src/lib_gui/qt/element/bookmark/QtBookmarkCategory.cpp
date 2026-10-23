@@ -1,5 +1,7 @@
 #include "QtBookmarkCategory.h"
-#include "QtMessageBox.h"
+
+#include "Application.h"
+#include "DialogView.h"
 #include "utilityQt.h"
 #include "QtResources.h"
 
@@ -114,14 +116,16 @@ void QtBookmarkCategory::leaveEvent(QEvent*  /*event*/)
 
 void QtBookmarkCategory::deleteClicked()
 {
-	QtMessageBox msgBox;
-	msgBox.setText(tr("Delete Category"));
-	msgBox.setInformativeText(tr("Do you really want to delete this category AND all containing bookmarks?"));
-	QPushButton *deleteButton = msgBox.addButton(tr("Delete"), QtMessageBox::ButtonRole::YesRole);
-	msgBox.addButton(tr("Keep"), QtMessageBox::ButtonRole::NoRole);
-	msgBox.setIcon(QtMessageBox::Icon::Question);
-	if (msgBox.execModal() == deleteButton)	 // QtMessageBox::Yes
-	{
-		m_controllerProxy->executeAsTaskWithArgs(&BookmarkController::deleteBookmarkCategory, m_id);
-	}
+	// A question (QuestionStateMachine): an agent answers it as the box's buttons do.
+	whenAnswered(
+		Application::getInstance()->getDialogView(DialogView::UseCase::GENERAL)->asked(
+			"Do you really want to delete the category '" + m_name->text().toStdString() +
+				"' AND all the bookmarks in it?",
+			{"Delete", "Keep"}),
+		[proxy = m_controllerProxy, id = m_id](int option) {
+			if (option == 0)
+			{
+				proxy->executeAsTaskWithArgs(&BookmarkController::deleteBookmarkCategory, id);
+			}
+		});
 }

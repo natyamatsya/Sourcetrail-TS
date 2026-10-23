@@ -831,6 +831,22 @@ pub fn parse_ui_state(bytes: &[u8]) -> Result<(u64, Value)> {
 
     let tabs: Vec<Value> = s.tabs().map(|v| v.iter().map(tab_info_json).collect()).unwrap_or_default();
 
+    let bookmarks: Vec<Value> = s
+        .bookmarks()
+        .map(|v| {
+            v.iter()
+                .map(|b| {
+                    json!({
+                        "id": b.bookmark_id(),
+                        "name": b.name().unwrap_or_default(),
+                        "comment": b.comment().unwrap_or_default(),
+                        "category": b.category().unwrap_or_default(),
+                    })
+                })
+                .collect()
+        })
+        .unwrap_or_default();
+
     let json = json!({
         "request_id": request_id,
         "project_file_path": s.project_file_path().unwrap_or_default(),
@@ -846,6 +862,7 @@ pub fn parse_ui_state(bytes: &[u8]) -> Result<(u64, Value)> {
         "code_view": code_view,
         "search_matches": search_matches,
         "tabs": tabs,
+        "bookmarks": bookmarks,
         // The state machines (protocol v6); null from an older app.
         "machines": s.machines().map(|v| v.iter().map(machine_state_json).collect::<Vec<_>>()),
         // The graph as drawn (protocol v7); null from an older app.

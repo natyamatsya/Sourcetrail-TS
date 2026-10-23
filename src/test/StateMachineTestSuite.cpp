@@ -14,6 +14,7 @@
 
 #include "ActivationStateMachine.h"
 #include "AppStateMachine.h"
+#include "BookmarkStateMachine.h"
 #include "ConcurrentStateMachine.h"
 #include "IndexingStateMachine.h"
 #include "ProjectStateMachine.h"
@@ -756,6 +757,82 @@ TEST_CASE("search suggests what was typed last, and searches for what is selecte
 	machine.detach(presenter);
 	REQUIRE(machine.fire("type", R"({"query":"Q"})", EventSource::Agent).ok);
 	REQUIRE(presenter.queries.size() == 2);
+}
+
+struct FakeBookmarkPresenter
+{
+	void presentBookmarkFields(const BookmarkFields& fields)
+	{
+		shown.push_back(fields.name);
+	}
+	void dismissBookmarkEditor()
+	{
+		dismissed++;
+	}
+
+	std::vector<std::string> shown;
+	int dismissed = 0;
+};
+
+TEST_CASE("bookmark editor opens, takes its fields and saves them")
+{
+	BookmarkStateMachine machine;
+	FakeBookmarkPresenter presenter;
+	machine.attach(presenter);
+	std::vector<std::string> saved;
+	const auto commit = [&saved](const BookmarkFields& fields) { saved.push_back(fields.name + "/" + fields.category); };
+
+	// An agent asks for the editor; the bookmark controller opens it.
+	REQUIRE(machine.fire("create", "", EventSource::Agent).ok);
+	REQUIRE(machine.snapshot().state == "opening");
+	BookmarkStateMachine::Editor editor;
+	editor.fields.name = "TicTacToe";
+	editor.categories = {"default"};
+	const std::uint64_t first = machine.opened(editor, commit);
+	MachineSnapshot snapshot = machine.snapshot();
+	REQUIRE(snapshot.state == "editing");
+	REQUIRE(snapshot.context.find(R"("mode":"create")") != std::string::npos);
+	REQUIRE(snapshot.events == std::vector<std::string> {"set", "save", "cancel"});
+
+	REQUIRE(machine.fire("set", R"({"name":"Game","category":"core"})", EventSource::Agent).ok);
+	REQUIRE(presenter.shown == std::vector<std::string> {"Game"});
+	REQUIRE_FALSE(machine.fire("set", R"({"colour":"red"})", EventSource::Agent).ok);
+	REQUIRE(machine.fire("save", "", EventSource::Agent).ok);
+	REQUIRE(saved == std::vector<std::string> {"Game/core"});
+	REQUIRE(presenter.dismissed == 1);
+	snapshot = machine.snapshot();
+	REQUIRE(snapshot.state == "idle");
+	REQUIRE(snapshot.context.find("created 'Game'") != std::string::npos);
+
+	// A person opens it, types, and saves: what the editor reports, nothing presented.
+	editor.bookmarkId = 7;
+	const std::uint64_t second = machine.opened(editor, commit);
+	REQUIRE(second != first);
+	const std::uint64_t revision = machine.snapshot().revision;
+	machine.edited(second, {"", "a comment", "default"});
+	snapshot = machine.snapshot();
+	REQUIRE(snapshot.revision == revision);	// typing changes the fields, it does not move
+	REQUIRE(snapshot.context.find(R"("comment":"a comment")") != std::string::npos);
+	REQUIRE_FALSE(machine.fire("save", "", EventSource::Agent).ok);	// no name
+	REQUIRE_FALSE(machine.save(BookmarkFields {"Old", "", ""}, EventSource::Ui, first).ok);	// another editor's
+	REQUIRE(machine.save(BookmarkFields {"Renamed", "", "default"}, EventSource::Ui, second).ok);
+	REQUIRE(saved.back() == "Renamed/default");
+	REQUIRE(presenter.dismissed == 1);
+	REQUIRE(machine.snapshot().context.find("updated 'Renamed'") != std::string::npos);
+
+	// A request nobody opens the editor for ends.
+	REQUIRE(machine.fire("edit", R"({"id":3})", EventSource::Agent).ok);
+	machine.nothing("there is no bookmark 3");
+	snapshot = machine.snapshot();
+	REQUIRE(snapshot.state == "idle");
+	REQUIRE(snapshot.context.find("there is no bookmark 3") != std::string::npos);
+	REQUIRE_FALSE(machine.fire("edit", "", EventSource::Agent).ok);
+
+	machine.setOpeningLimit(std::chrono::milliseconds(20));
+	REQUIRE(machine.fire("create", R"({"node_id":12})", EventSource::Agent).ok);
+	REQUIRE(eventually([&]() { return machine.snapshot().state == "idle"; }));
+	REQUIRE(machine.snapshot().context.find("did not open") != std::string::npos);
+	machine.detach(presenter);
 }
 
 TEST_CASE("activation ends once its messages are handled and the views have drawn")

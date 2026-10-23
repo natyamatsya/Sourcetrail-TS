@@ -3,7 +3,10 @@
 
 #include <QWidget>
 
+#include <functional>
+
 #include "BookmarkController.h"
+#include "BookmarkStateMachine.h"
 #include "ControllerProxy.h"
 #include "QtBookmarkWindow.h"
 
@@ -25,23 +28,32 @@ public:
 	void setBookmarkCategories(const std::vector<BookmarkCategory>& categories);
 	void setCurrentBookmarkCategory(const BookmarkCategory& category);
 	
-	void setNodeId(Id nodeId);
-	
+	// What saving does, and which of the bookmark machine's editors this one is: its
+	// buttons and fields go to the machine.
+	void setCommit(std::function<void(const BookmarkFields&)> commit);
+	void setEditorId(std::uint64_t editorId);
+	// Fills the fields (an agent set them).
+	void showFields(const BookmarkFields& fields);
+
 protected:
 	void handleNext() override;
 	void handleClose() override;
 	
 private slots:
 	void onNameChanged(const QString& text);
-	
+	void onFieldsChanged();
+
 private:
+	BookmarkFields fields() const;
+
 	const BookmarkId m_editBookmarkId;
 
 	QLineEdit* m_displayName;
 	QTextEdit* m_commentBox;
 	QComboBox* m_categoryBox;
 
-	Id m_nodeId;
+	std::function<void(const BookmarkFields&)> m_commit;
+	std::uint64_t m_editorId = 0;
 };
 
 #endif	  // QT_BOOKMARK_CREATOR_H
