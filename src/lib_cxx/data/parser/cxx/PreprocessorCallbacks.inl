@@ -180,17 +180,20 @@ inline ParseLocation PreprocessorCallbacks::getParseLocation(const clang::Token&
 inline ParseLocation PreprocessorCallbacks::getParseLocation(const clang::MacroInfo* macroInfo) const
 {
 	clang::SourceLocation location = macroInfo->getDefinitionLoc();
+	// Where the definition's last token starts: the macro's name when the body is empty.
 	clang::SourceLocation endLocation = macroInfo->getDefinitionEndLoc();
 
 	Id fileSymbolId = m_canonicalFilePathCache.getFileSymbolId(m_sourceManager.getFileID(location));
 	if (fileSymbolId)
 	{
+		const unsigned lastTokenLength =
+			clang::Lexer::MeasureTokenLength(endLocation, m_sourceManager, clang::LangOptions());
 		return ParseLocation(
 			fileSymbolId,
 			m_sourceManager.getSpellingLineNumber(location),
 			m_sourceManager.getSpellingColumnNumber(location),
 			m_sourceManager.getSpellingLineNumber(endLocation),
-			m_sourceManager.getSpellingColumnNumber(endLocation) - 1);
+			m_sourceManager.getSpellingColumnNumber(endLocation) + std::max(lastTokenLength, 1u) - 1);
 	}
 
 	return ParseLocation();

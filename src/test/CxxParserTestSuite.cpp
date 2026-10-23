@@ -680,7 +680,7 @@ TEST_CASE("cxx parser finds macro define")
 		"{\n"
 		"};\n");
 
-	REQUIRE(utility::containsElement<std::string>(client->macros, "PI <1:9 1:10>"));
+	REQUIRE(utility::containsElement<std::string>(client->macros, "PI <1:9 <1:9 1:10> 1:10>"));
 }
 
 TEST_CASE("cxx parser finds macro undefine")
@@ -767,7 +767,19 @@ TEST_CASE("cxx parser finds macro define scope")
 		"#define MAX(a,b) \\\n"
 		"	((a)>(b)?(a):(b))");
 
-	REQUIRE(utility::containsElement<std::string>(client->macros, "MAX <1:9 <1:9 1:11> 2:17>"));
+	// The scope ends with the closing parenthesis, the last token.
+	REQUIRE(utility::containsElement<std::string>(client->macros, "MAX <1:9 <1:9 1:11> 2:18>"));
+}
+
+TEST_CASE("cxx parser finds the scope of a macro defined without a body")
+{
+	// An include guard: the definition ends with the macro's name.
+	std::shared_ptr<TestStorage> client = parseCode(
+		"#ifndef _FIELD_\n"
+		"#define _FIELD_\n"
+		"#endif\n");
+
+	REQUIRE(utility::containsElement<std::string>(client->macros, "_FIELD_ <2:9 <2:9 2:15> 2:15>"));
 }
 
 TEST_CASE("cxx parser finds type template parameter definition of template type alias")
