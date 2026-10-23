@@ -64,6 +64,21 @@ void TaskRunner::reset()
 	m_reset = true;
 }
 
+void TaskRunner::park()
+{
+	m_parked = true;
+}
+
+void TaskRunner::unpark()
+{
+	m_parked = false;
+}
+
+bool TaskRunner::isParked() const
+{
+	return m_parked;
+}
+
 void TaskRunner::terminate()
 {
 	if (m_task)

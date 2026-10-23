@@ -1,6 +1,8 @@
 #include "Catch2.hpp"
 
 #include <atomic>
+#include <functional>
+#include <mutex>
 #include <chrono>
 #include <thread>
 #include <vector>
@@ -9,6 +11,7 @@
 #include "Task.h"
 #include "TaskFinally.h"
 #include "TaskGroupSelector.h"
+#include "TaskGroupParallel.h"
 #include "TaskGroupSequence.h"
 #include "StdexecPrelude.h"
 #include "Strand.h"
@@ -137,6 +140,46 @@ bool eventually(Predicate predicate)
 	}
 	return predicate();
 }
+
+// Parks itself until woken, then succeeds, as a task waiting for an answer does.
+class ParkingTask: public Task
+{
+public:
+	std::atomic<int> updates = 0;
+	std::mutex mutex;
+	std::function<void()> wake;
+	bool woken = false;
+
+	void wakeUp()
+	{
+		std::function<void()> wakeNow;
+		{
+			const std::lock_guard<std::mutex> lock(mutex);
+			woken = true;
+			wakeNow = std::exchange(wake, nullptr);
+		}
+		if (wakeNow)
+		{
+			wakeNow();
+		}
+	}
+
+private:
+	void doEnter(std::shared_ptr<Blackboard>  /*blackboard*/) override {}
+	TaskState doUpdate(std::shared_ptr<Blackboard>  /*blackboard*/) override
+	{
+		updates++;
+		const std::lock_guard<std::mutex> lock(mutex);
+		if (woken)
+		{
+			return STATE_SUCCESS;
+		}
+		wake = TaskScheduler::parkCurrentTask();
+		return STATE_RUNNING;
+	}
+	void doExit(std::shared_ptr<Blackboard>  /*blackboard*/) override {}
+	void doReset(std::shared_ptr<Blackboard>  /*blackboard*/) override {}
+};
 
 void waitForThread(TaskScheduler& scheduler)
 {
@@ -467,4 +510,85 @@ TEST_CASE("scheduler on a strand terminates what is left when it stops")
 	const int updates = holding->updates;
 	std::this_thread::sleep_for(std::chrono::milliseconds(20));
 	REQUIRE(holding->updates == updates);
+}
+
+TEST_CASE("task parked on a strand is left alone until woken")
+{
+	exec::static_thread_pool pool(2);
+	const auto strand = execution::Strand::create(pool.get_scheduler());
+	const auto scheduler = std::make_shared<TaskScheduler>(TabId::NONE);
+	std::atomic<int> idle = 0;
+	scheduler->setIdleHandler([&]() { idle++; });
+	scheduler->startSchedulerLoopOn(strand);
+
+	const auto parking = std::make_shared<ParkingTask>();
+	scheduler->pushTask(parking);
+	REQUIRE(eventually([&]() { return parking->updates == 1; }));
+	std::this_thread::sleep_for(std::chrono::milliseconds(50));
+	REQUIRE(parking->updates == 1);	// no pass for a parked task
+	REQUIRE(scheduler->hasTasksQueued());
+	REQUIRE(idle == 0);
+
+	// Other tasks run meanwhile.
+	std::atomic<bool> ran = false;
+	scheduler->pushTask(std::make_shared<TaskLambda>([&]() { ran = true; }));
+	REQUIRE(eventually([&]() { return ran.load(); }));
+	REQUIRE(parking->updates == 1);
+	REQUIRE(idle == 0);
+
+	parking->wakeUp();
+	REQUIRE(eventually([&]() { return idle == 1; }));
+	REQUIRE(parking->updates == 2);
+	REQUIRE_FALSE(scheduler->hasTasksQueued());
+	scheduler->stopSchedulerLoop();
+}
+
+TEST_CASE("task parked on a thread loop is looked at each loop, not spun")
+{
+	TaskScheduler scheduler(TabId::NONE);
+	scheduler.startSchedulerLoopThreaded();
+
+	const auto parking = std::make_shared<ParkingTask>();
+	scheduler.pushTask(parking);
+	REQUIRE(eventually([&]() { return parking->updates > 0; }));
+	std::this_thread::sleep_for(std::chrono::milliseconds(200));
+	REQUIRE(parking->updates < 20);	// about one a loop (25 ms), not thousands
+
+	parking->wakeUp();
+	REQUIRE(eventually([&]() { return !scheduler.hasTasksQueued(); }));
+	scheduler.stopSchedulerLoop();
+}
+
+TEST_CASE("parallel group on a strand is woken by its children, not polled")
+{
+	exec::static_thread_pool pool(2);
+	const auto strand = execution::Strand::create(pool.get_scheduler());
+	const auto scheduler = std::make_shared<TaskScheduler>(TabId::NONE);
+	std::atomic<int> idle = 0;
+	scheduler->setIdleHandler([&]() { idle++; });
+	scheduler->startSchedulerLoopOn(strand);
+
+	std::atomic<bool> release = false;
+	const auto group = std::make_shared<TaskGroupParallel>();
+	group->addTask(std::make_shared<TaskLambda>([&]() {
+		while (!release)
+		{
+			std::this_thread::sleep_for(std::chrono::milliseconds(1));
+		}
+	}));
+	group->addTask(std::make_shared<TaskLambda>([]() {}));
+	scheduler->pushTask(group);
+
+	// While the slow child runs, the group holds no thread of the strand.
+	std::this_thread::sleep_for(std::chrono::milliseconds(30));
+	std::atomic<bool> continued = false;
+	stdexec::sync_wait(stdexec::schedule(strand->scheduler()) | stdexec::then([&]() { continued = true; }));
+	REQUIRE(continued);
+	REQUIRE(idle == 0);
+
+	const auto released = std::chrono::steady_clock::now();
+	release = true;
+	REQUIRE(eventually([&]() { return idle == 1; }));
+	REQUIRE(std::chrono::steady_clock::now() - released < std::chrono::seconds(1));
+	scheduler->stopSchedulerLoop();
 }

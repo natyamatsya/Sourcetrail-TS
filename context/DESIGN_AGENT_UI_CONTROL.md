@@ -697,8 +697,10 @@ drives through the same events:
   `reindex`. `Project` and `Application` report the pipeline's steps (`requested`,
   `prepare`, `begin`, `wrap_up`, `report`, `end`), so the machine never guesses from
   dialog titles. The report holds no thread while it waits for the decision: it goes
-  to a callback, and `TaskFinishParsing` looks for it each update (25 ms apart), so
-  the app's strand runs what else waits in between.
+  to a callback, and `TaskFinishParsing` parks until the decision wakes it
+  (`TaskScheduler::parkCurrentTask`), as `TaskGroupParallel` parks until a child ends;
+  a parked task is left out of the scheduler's passes, and a thread loop looks at it
+  again each `threadLoopInterval`.
 
 **DialogView became the presenter.** The pipeline still calls `DialogView`
 (`startIndexingDialog`, `confirm`, `finishedIndexingDialog`, the progress updates),

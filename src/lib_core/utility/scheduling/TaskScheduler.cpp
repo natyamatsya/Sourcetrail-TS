@@ -6,6 +6,7 @@
 
 #include "TaskScheduler.h"
 
+#include <algorithm>
 #include <chrono>
 #include <thread>
 
@@ -17,6 +18,17 @@
 #ifdef SRCTRL_MODULE_BUILD
 import srctrl.logging;
 #endif
+
+namespace
+{
+// The scheduler and runner whose task the calling thread updates now, if any.
+struct CurrentTask
+{
+	TaskScheduler* scheduler = nullptr;
+	std::shared_ptr<TaskRunner> runner;
+};
+thread_local CurrentTask* t_currentTask = nullptr;
+}	 // namespace
 
 TaskScheduler::TaskScheduler(TabId schedulerId)
 	: m_schedulerId(schedulerId)
@@ -90,7 +102,7 @@ void TaskScheduler::startSchedulerLoop()
 			}
 		}
 
-		std::this_thread::sleep_for(std::chrono::milliseconds(25));
+		std::this_thread::sleep_for(threadLoopInterval);
 	}
 
 	{
@@ -157,7 +169,7 @@ void TaskScheduler::stopSchedulerLoop()
 			}
 		}
 
-		std::this_thread::sleep_for(std::chrono::milliseconds(25));
+		std::this_thread::sleep_for(threadLoopInterval);
 	}
 }
 
@@ -187,13 +199,20 @@ void TaskScheduler::processTasks()
 	{
 		std::lock_guard<std::mutex> lock(m_tasksMutex);
 
-		while (m_taskRunners.size())
+		// Parked runners are looked at again each loop.
+		for (const std::shared_ptr<TaskRunner>& runner: m_taskRunners)
 		{
-			processedAny = true;
-			std::shared_ptr<TaskRunner> runner = m_taskRunners.front();
-			Task::TaskState state = STATE_RUNNING;
+			runner->unpark();
+		}
 
+		while (std::ranges::any_of(m_taskRunners, [](const auto& runner) { return !runner->isParked(); }))
+		{
+			std::shared_ptr<TaskRunner> runner = m_taskRunners.front();
+			Task::TaskState state = STATE_HOLD;
+
+			if (!runner->isParked())
 			{
+				processedAny = true;
 				m_tasksMutex.unlock();
 
 				[[maybe_unused]]
@@ -202,29 +221,12 @@ void TaskScheduler::processTasks()
 					m_tasksMutex.lock();
 				});
 
-				while (true)
-				{
-					{
-						std::lock_guard<std::mutex> lock(m_loopMutex);
-
-						if (!m_loopIsRunning || m_terminateRunningTasks)
-						{
-							runner->terminate();
-							break;
-						}
-					}
-
-					state = runner->update(m_schedulerId);
-					if (state != STATE_RUNNING)
-					{
-						break;
-					}
-				}
+				state = runUntilItWaits(runner);
 			}
 
 			m_taskRunners.pop_front();
 
-			if (state == STATE_HOLD)
+			if (state == STATE_HOLD || (state == STATE_RUNNING && runner->isParked()))
 			{
 				m_taskRunners.push_back(runner);
 			}
@@ -237,7 +239,7 @@ void TaskScheduler::processTasks()
 		// an event). Runs on this scheduler thread — the same one the message
 		// handlers ran on — so the handler sees their effects and shares their
 		// thread. It must not push tasks (the drain loop has already broken).
-		if (processedAny)
+		if (processedAny && m_taskRunners.empty())
 		{
 			idleHandler = m_idleHandler;
 		}
@@ -275,11 +277,12 @@ void TaskScheduler::runPass()
 
 		for (std::size_t round = m_taskRunners.size(); round > 0 && !m_taskRunners.empty(); round--)
 		{
-			m_passProcessedAny = true;
 			std::shared_ptr<TaskRunner> runner = m_taskRunners.front();
-			Task::TaskState state = STATE_RUNNING;
+			Task::TaskState state = STATE_HOLD;
 
+			if (!runner->isParked())
 			{
+				m_passProcessedAny = true;
 				m_tasksMutex.unlock();
 
 				[[maybe_unused]]
@@ -288,35 +291,19 @@ void TaskScheduler::runPass()
 					m_tasksMutex.lock();
 				});
 
-				while (true)
-				{
-					{
-						std::lock_guard<std::mutex> loopLock(m_loopMutex);
-
-						if (!m_loopIsRunning || m_terminateRunningTasks)
-						{
-							runner->terminate();
-							break;
-						}
-					}
-
-					state = runner->update(m_schedulerId);
-					if (state != STATE_RUNNING)
-					{
-						break;
-					}
-				}
+				state = runUntilItWaits(runner);
 			}
 
 			m_taskRunners.pop_front();
 
-			if (state == STATE_HOLD)
+			if (state == STATE_HOLD || (state == STATE_RUNNING && runner->isParked()))
 			{
 				m_taskRunners.push_back(runner);
 			}
 		}
 
-		if (!m_taskRunners.empty())
+		// While only parked runners are left, no pass is posted: waking one posts it.
+		if (std::ranges::any_of(m_taskRunners, [](const auto& runner) { return !runner->isParked(); }))
 		{
 			strand = m_strand;	// the next pass, after what else waits on the strand
 		}
@@ -324,8 +311,8 @@ void TaskScheduler::runPass()
 		{
 			m_passPosted = false;
 			m_terminateRunningTasks = false;
-			// Scheduler-idle edge, as in processTasks.
-			if (std::exchange(m_passProcessedAny, false))
+			// Scheduler-idle edge, as in processTasks (not while parked ones wait).
+			if (m_taskRunners.empty() && std::exchange(m_passProcessedAny, false))
 			{
 				idleHandler = m_idleHandler;
 			}
@@ -343,6 +330,84 @@ void TaskScheduler::runPass()
 	if (idleHandler)
 	{
 		idleHandler();
+	}
+}
+
+Task::TaskState TaskScheduler::runUntilItWaits(const std::shared_ptr<TaskRunner>& runner)
+{
+	using enum Task::TaskState;
+
+	CurrentTask current {this, runner};
+	CurrentTask* const outer = std::exchange(t_currentTask, &current);
+	[[maybe_unused]]
+	ScopedFunctor restore([outer]()
+	{
+		t_currentTask = outer;
+	});
+
+	Task::TaskState state = STATE_RUNNING;
+	while (true)
+	{
+		{
+			std::lock_guard<std::mutex> loopLock(m_loopMutex);
+
+			if (!m_loopIsRunning || m_terminateRunningTasks)
+			{
+				runner->terminate();
+				return STATE_FAILURE;	// dropped, parked or not
+			}
+		}
+
+		state = runner->update(m_schedulerId);
+		if (state != STATE_RUNNING || runner->isParked())
+		{
+			return state;
+		}
+	}
+}
+
+std::function<void()> TaskScheduler::parkCurrentTask()
+{
+	if (t_currentTask == nullptr || !t_currentTask->runner)
+	{
+		return {};
+	}
+	t_currentTask->runner->park();
+	return [scheduler = t_currentTask->scheduler->weak_from_this(),
+			runner = std::weak_ptr<TaskRunner>(t_currentTask->runner)]() {
+		const std::shared_ptr<TaskScheduler> owner = scheduler.lock();
+		const std::shared_ptr<TaskRunner> parked = runner.lock();
+		if (owner && parked)
+		{
+			owner->wake(*parked);
+		}
+		else if (parked)
+		{
+			parked->unpark();	// a scheduler of a scope of its own: its loop looks again
+		}
+	};
+}
+
+void TaskScheduler::waitForNextLook()
+{
+	std::this_thread::sleep_for(threadLoopInterval);
+}
+
+void TaskScheduler::wake(TaskRunner& runner)
+{
+	std::shared_ptr<execution::Strand> strand;
+	{
+		std::lock_guard<std::mutex> lock(m_tasksMutex);
+		runner.unpark();
+		if (m_strand && !m_passPosted && !m_taskRunners.empty())
+		{
+			m_passPosted = true;
+			strand = m_strand;
+		}
+	}
+	if (strand)
+	{
+		strand->post([self = shared_from_this()]() { self->runPass(); });
 	}
 }
 

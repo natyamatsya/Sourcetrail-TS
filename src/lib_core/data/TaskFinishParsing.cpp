@@ -1,7 +1,5 @@
 #include "TaskFinishParsing.h"
 
-#include <chrono>
-#include <thread>
 
 #include "Blackboard.h"
 #include "DialogView.h"
@@ -11,6 +9,7 @@
 #include "MessageStatus.h"
 #endif
 #include "PersistentStorage.h"
+#include "TaskScheduler.h"
 #ifndef SRCTRL_MODULE_BUILD
 #include "TimeStamp.h"
 #endif
@@ -57,12 +56,24 @@ Task::TaskState TaskFinishParsing::doUpdate(std::shared_ptr<Blackboard> blackboa
 
 	if (m_decision)
 	{
-		const int decision = m_decision->load();
+		int decision = -1;
+		bool parked = false;
+		{
+			const std::lock_guard<std::mutex> lock(m_decision->mutex);
+			decision = m_decision->policy;
+			if (decision < 0)
+			{
+				// Parked until the decision wakes it, holding no thread.
+				m_decision->wake = TaskScheduler::parkCurrentTask();
+				parked = static_cast<bool>(m_decision->wake);
+			}
+		}
 		if (decision < 0)
 		{
-			// Waits for the decision as the indexing waits for its indexers: a short
-			// sleep per update, and what else waits on the app's strand runs between.
-			std::this_thread::sleep_for(std::chrono::milliseconds(25));
+			if (!parked)
+			{
+				TaskScheduler::waitForNextLook();
+			}
 			return STATE_RUNNING;
 		}
 		MessageIndexingStatus(false).dispatch();
@@ -169,7 +180,7 @@ Task::TaskState TaskFinishParsing::doUpdate(std::shared_ptr<Blackboard> blackboa
 #endif
 	// The report holds no thread while it waits for the decision: the updates after
 	// this one look for it.
-	m_decision = std::make_shared<std::atomic<int>>(-1);
+	m_decision = std::make_shared<Decision>();
 	m_dialogView->finishedIndexingDialog(
 		indexedSourceFileCount,
 		sourceFileCount,
@@ -178,7 +189,18 @@ Task::TaskState TaskFinishParsing::doUpdate(std::shared_ptr<Blackboard> blackboa
 		static_cast<float>(time),
 		errorInfo,
 		interruptedIndexing,
-		[decision = m_decision](DatabasePolicy policy) { decision->store(static_cast<int>(policy)); });
+		[decision = m_decision](DatabasePolicy policy) {
+			std::function<void()> wake;
+			{
+				const std::lock_guard<std::mutex> lock(decision->mutex);
+				decision->policy = static_cast<int>(policy);
+				wake = std::exchange(decision->wake, nullptr);
+			}
+			if (wake)
+			{
+				wake();
+			}
+		});
 	return STATE_RUNNING;
 }
 

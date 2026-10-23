@@ -1,8 +1,9 @@
 #ifndef TASK_FINISH_PARSING_H
 #define TASK_FINISH_PARSING_H
 
-#include <atomic>
+#include <functional>
 #include <memory>
+#include <mutex>
 #include <vector>
 
 #include "Task.h"
@@ -27,8 +28,15 @@ private:
 
 	std::shared_ptr<PersistentStorage> m_storage;
 	std::shared_ptr<DialogView> m_dialogView;
-	// The decision on the report, once it is shown: -1 until someone decided.
-	std::shared_ptr<std::atomic<int>> m_decision;
+	// The decision on the report once it is shown, -1 until someone decided, and how
+	// to wake the task then (parked meanwhile).
+	struct Decision
+	{
+		std::mutex mutex;
+		int policy = -1;
+		std::function<void()> wake;
+	};
+	std::shared_ptr<Decision> m_decision;
 };
 
 #endif	  // TASK_FINISH_PARSING_H

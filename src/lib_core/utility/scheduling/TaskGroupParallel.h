@@ -2,6 +2,8 @@
 #define TASK_GROUP_PARALLEL_H
 
 #include <atomic>
+#include <functional>
+#include <mutex>
 #include <thread>
 
 #include "TaskGroup.h"
@@ -32,12 +34,16 @@ private:
 	void processTaskThreaded(
 		std::shared_ptr<TaskInfo> taskInfo,
 		std::shared_ptr<Blackboard> blackboard);
+	// Wakes the parked group (doUpdate), if it is.
+	void wake();
 
 	std::vector<std::shared_ptr<TaskInfo>> m_tasks;
 	bool m_needsToStartThreads = true;
 
 	std::atomic<bool> m_taskFailed;
 	std::atomic<int> m_activeTaskCount;
+	std::mutex m_wakeMutex;
+	std::function<void()> m_wake;	// set while the group is parked
 };
 
 #endif	  // TASK_GROUP_PARALLEL_H

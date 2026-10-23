@@ -1,6 +1,7 @@
 #ifndef TASK_SCHEDULER_H
 #define TASK_SCHEDULER_H
 
+#include <chrono>
 #include <condition_variable>
 #include <deque>
 #include <functional>
@@ -51,6 +52,20 @@ public:
 
 	void terminateRunningTasks();
 
+	//! For a task in its update: its runner waits, left out of the scheduler's
+	//! passes, until the returned function is called (from any thread). The task
+	//! returns STATE_RUNNING or STATE_HOLD as it would anyway. On a thread loop a
+	//! parked runner is also looked at again each loop (25 ms). Empty when the
+	//! calling thread is not updating a scheduler's task (a parallel group's child):
+	//! the task then waits as it did before.
+	static std::function<void()> parkCurrentTask();
+
+	//! How often a thread loop looks at its tasks when it has nothing to run.
+	static constexpr std::chrono::milliseconds threadLoopInterval {25};
+	//! For a task where nothing parks it (parkCurrentTask was empty): waits as long
+	//! as a thread loop would before looking at it again.
+	static void waitForNextLook();
+
 private:
 	void processTasks();
 
@@ -59,6 +74,12 @@ private:
 	// runners are left, so other work on the strand runs in between.
 	void postPass();
 	void runPass();
+
+	// A parked runner can run again.
+	void wake(TaskRunner& runner);
+	// Runs `runner` until it is not running, parked or stopped; how it ended
+	// (STATE_FAILURE when the loop stopped or tasks were terminated).
+	Task::TaskState runUntilItWaits(const std::shared_ptr<TaskRunner>& runner);
 
 	const TabId m_schedulerId;
 
