@@ -101,11 +101,13 @@ QtApplication::QtApplication(int& argc, char** argv): QApplication(argc, argv)
 
 	// Docking behaviour tuned for the multi-monitor detach/reattach workflow: floating
 	// windows are independent top-levels that can themselves host docks, tabs are
-	// reorderable, and views can be collapsed to the side bar (auto-hide).
+	// reorderable, and views can be collapsed to the side bar (auto-hide). The close
+	// button of tabbed docks closes the current tab only, the one it is named after
+	// (QtDockViewFactory), not the whole group.
 	auto& dockConfig = KDDockWidgets::Config::self();
 	dockConfig.setFlags(
 		dockConfig.flags() | KDDockWidgets::Config::Flag_AllowReorderTabs |
-		KDDockWidgets::Config::Flag_AutoHideSupport);
+		KDDockWidgets::Config::Flag_AutoHideSupport | KDDockWidgets::Config::Flag_CloseOnlyCurrentTab);
 
 	connect(
 		this,
