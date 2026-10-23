@@ -6,6 +6,7 @@
 #endif
 #include "DummyEdge.h"
 #include "DummyNode.h"
+#include "GraphControls.h"
 #ifndef SRCTRL_MODULE_BUILD
 #include "GraphViewStyle.h"
 #include "MessageActivateTrail.h"
@@ -883,25 +884,8 @@ MessageActivateTrail QtGraphView::getMessageActivateTrail(bool forward)
 	QtGraphNodeData *node = dynamic_cast<QtGraphNodeData *>(m_oldActiveNode);
 	if (node)
 	{
-		Edge::TypeMask edgeTypes;
-		bool horizontalLayout = true;
-
-		if (node->getData()->getType().isInheritable())
-		{
-			edgeTypes = Edge::EDGE_INHERITANCE | Edge::EDGE_TEMPLATE_SPECIALIZATION;
-			horizontalLayout = false;
-		}
-		else if (node->getData()->getType().isCallable())
-		{
-			edgeTypes = Edge::EDGE_CALL | Edge::EDGE_OVERRIDE;
-			horizontalLayout = true;
-		}
-		else if (node->getData()->getType().isFile())
-		{
-			edgeTypes = Edge::EDGE_INCLUDE;
-			horizontalLayout = true;
-		}
-		else
+		const std::optional<TrailDefaults> trail = trailDefaultsFor(node->getData()->getType());
+		if (!trail)
 		{
 			return message;
 		}
@@ -916,7 +900,7 @@ MessageActivateTrail QtGraphView::getMessageActivateTrail(bool forward)
 			depth = 0;
 		}
 
-		return MessageActivateTrail(originId, targetId, edgeTypes, depth, horizontalLayout);
+		return MessageActivateTrail(originId, targetId, trail->edgeTypes, depth, trail->horizontal);
 	}
 
 	return message;

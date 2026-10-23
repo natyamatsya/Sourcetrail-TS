@@ -12,7 +12,6 @@
 #include "TabIds.h"
 #include "types.h"
 
-class NodeType;
 struct DummyNode;
 
 // A node of the graph view as drawn: a symbol, or a bundle or group the graph made.
@@ -46,16 +45,6 @@ struct DisplayedGraphNode
 	bool splitRemovesOthers = false;
 	bool splitToList = false;
 };
-
-// How clicking a bundle splits it (QtGraphNodeBundle): the other nodes go and the
-// bundled ones are listed, except for bundles of unknown symbols, which keep their
-// neighbours (and anonymous namespaces, which are never listed alone).
-struct BundleSplit
-{
-	bool removeOtherNodes = false;
-	bool layoutToList = false;
-};
-BundleSplit bundleSplitFor(const NodeType& bundledType, const std::string& name);
 
 // What each tab's graph view shows, as its GraphController last built it. The
 // storage's graph says what exists; this says what is on screen and what the

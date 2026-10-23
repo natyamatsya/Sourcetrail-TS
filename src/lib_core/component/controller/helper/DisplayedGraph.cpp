@@ -1,6 +1,7 @@
 #include "DisplayedGraph.h"
 
 #include "DummyNode.h"
+#include "GraphControls.h"
 #include "GroupType.h"
 #include "NodeType.h"
 
@@ -78,13 +79,6 @@ void collect(const DummyNode& node, int parent, std::vector<DisplayedGraphNode>&
 	}
 }
 }	 // namespace
-
-BundleSplit bundleSplitFor(const NodeType& bundledType, const std::string& name)
-{
-	// TODO: move to language package (as it was in QtGraphNodeBundle).
-	const bool listed = !bundledType.isUnknownSymbol() || name == "Symbols";
-	return {listed && name != "Anonymous Namespaces", listed};
-}
 
 DisplayedGraph& DisplayedGraph::instance()
 {

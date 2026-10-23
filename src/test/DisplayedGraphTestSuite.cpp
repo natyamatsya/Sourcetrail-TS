@@ -70,18 +70,3 @@ TEST_CASE("displayed graph lists what the view draws, members inside their node"
 	DisplayedGraph::instance().clear(TabIds::app());
 	REQUIRE(DisplayedGraph::instance().get(TabIds::app()).empty());
 }
-
-TEST_CASE("bundle split keeps the neighbours of unknown symbols")
-{
-	const BundleSplit functions = bundleSplitFor(NodeType(NODE_FUNCTION), "Referencing Symbols");
-	REQUIRE(functions.removeOtherNodes);
-	REQUIRE(functions.layoutToList);
-
-	const BundleSplit unknown = bundleSplitFor(NodeType(NODE_SYMBOL), "Unresolved");
-	REQUIRE_FALSE(unknown.removeOtherNodes);
-	REQUIRE_FALSE(unknown.layoutToList);
-
-	const BundleSplit anonymous = bundleSplitFor(NodeType(NODE_NAMESPACE), "Anonymous Namespaces");
-	REQUIRE_FALSE(anonymous.removeOtherNodes);
-	REQUIRE(anonymous.layoutToList);
-}

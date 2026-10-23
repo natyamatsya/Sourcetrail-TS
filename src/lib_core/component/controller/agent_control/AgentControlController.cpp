@@ -62,6 +62,7 @@ bool AgentControlController::isListening() const
 #include "FilePath.h"
 #include "DisplayedGraph.h"
 #include "Graph.h"
+#include "GraphControls.h"
 #include "Id.h"
 #include "LogManager.h"
 #include "LogMessage.h"
@@ -256,6 +257,11 @@ utility::qt::SnapshotFormat toSnapshotFormat(fb::SnapshotFormat format)
 	}
 }
 
+Id toId(std::uint64_t id)
+{
+	return Id(static_cast<Id::type>(id));
+}
+
 std::uint64_t nowMs()
 {
 	return static_cast<std::uint64_t>(std::chrono::duration_cast<std::chrono::milliseconds>(
@@ -365,6 +371,69 @@ std::string machineNames()
 		names += (names.empty() ? "" : ", ") + machine.name();
 	}
 	return names;
+}
+
+std::string edgeKindNames()
+{
+	std::string names;
+	for (Edge::TypeMask mask = 1; mask <= Edge::EDGE_TYPE_MAX_VALUE; mask *= 2)
+	{
+		const auto type = static_cast<Edge::EdgeType>(mask);
+		if (type != Edge::EDGE_BUNDLED_EDGES)
+		{
+			names += (names.empty() ? "" : ", ") + Edge::getReadableTypeString(type);
+		}
+	}
+	return names;
+}
+
+std::string nodeKindNames()
+{
+	std::string names;
+	for (NodeKindMask mask = NODE_KIND_FIRST_VALUE; mask <= NODE_KIND_LAST_VALUE; mask <<= 1)
+	{
+		names += (names.empty() ? "" : ", ") + getReadableNodeKindString(static_cast<NodeKind>(mask));
+	}
+	return names;
+}
+
+fb::GraphViewNodeKind toGraphViewNodeKind(DisplayedGraphNode::Kind kind)
+{
+	switch (kind)
+	{
+	case DisplayedGraphNode::Kind::Bundle:
+		return fb::GraphViewNodeKind_Bundle;
+	case DisplayedGraphNode::Kind::Group:
+		return fb::GraphViewNodeKind_Group;
+	default:
+		return fb::GraphViewNodeKind_Node;
+	}
+}
+
+// What the graph view of `tab` draws (UiState.view_graph, protocol v7).
+std::vector<flatbuffers::Offset<fb::GraphViewNode>> makeGraphView(flatbuffers::FlatBufferBuilder& builder, TabId tab)
+{
+	std::vector<flatbuffers::Offset<fb::GraphViewNode>> nodes;
+	for (const DisplayedGraphNode& node: DisplayedGraph::instance().get(tab))
+	{
+		const auto name = builder.CreateString(node.name);
+		const auto group = builder.CreateString(node.group);
+		nodes.push_back(fb::CreateGraphViewNode(
+			builder,
+			toGraphViewNodeKind(node.kind),
+			static_cast<std::uint64_t>(node.id),
+			name,
+			static_cast<std::int32_t>(node.nodeKind),
+			node.parent,
+			node.active,
+			node.expandable,
+			node.expanded,
+			static_cast<std::uint32_t>(node.hiddenMembers),
+			static_cast<std::uint32_t>(node.bundled),
+			node.splittable,
+			group));
+	}
+	return nodes;
 }
 
 // Receives raw CommandEnvelope frames from a thoth-ipc route and hands each to a
@@ -998,7 +1067,7 @@ struct AgentControlController::Impl
 		case fb::Command_ActivateNode:
 			if (const auto* c = envelope->command_as_ActivateNode())
 			{
-				Id nodeId(static_cast<Id::type>(c->node_id()));
+				Id nodeId = toId(c->node_id());
 				if (nodeId == 0 && c->serialized_name())
 				{
 					nodeId = m_storageAccess->getNodeIdForNameHierarchy(
@@ -1100,7 +1169,7 @@ struct AgentControlController::Impl
 		const std::vector<DisplayedGraphNode> shown = DisplayedGraph::instance().get(TabIds::currentTab());
 		const auto displayed = [&](std::uint64_t id) -> const DisplayedGraphNode* {
 			const auto it = std::ranges::find_if(
-				shown, [id](const DisplayedGraphNode& node) { return node.id == Id(static_cast<Id::type>(id)); });
+				shown, [id](const DisplayedGraphNode& node) { return node.id == toId(id); });
 			return it != shown.end() ? &*it : nullptr;
 		};
 
@@ -1124,7 +1193,7 @@ struct AgentControlController::Impl
 		case fb::Command_HideNode:
 		{
 			// A node of the graph, or an edge (by its id, which view_graph does not list).
-			MessageGraphNodeHide(Id(static_cast<Id::type>(envelope.command_as_HideNode()->node_id()))).dispatch();
+			MessageGraphNodeHide(toId(envelope.command_as_HideNode()->node_id())).dispatch();
 			return std::nullopt;
 		}
 		case fb::Command_SplitBundle:
@@ -1155,7 +1224,7 @@ struct AgentControlController::Impl
 	// follow unless named.
 	std::optional<std::string> sendTrail(const fb::ActivateTrail& c)
 	{
-		const Id nodeId(static_cast<Id::type>(c.node_id()));
+		const Id nodeId = toId(c.node_id());
 		if (nodeId == 0 || m_storageAccess->getNameHierarchyForNodeId(nodeId).getQualifiedName().empty())
 		{
 			return std::format("no node {}", c.node_id());
@@ -1163,7 +1232,7 @@ struct AgentControlController::Impl
 		const NodeType type = m_storageAccess->getNodeTypeForNodeWithId(nodeId);
 
 		Edge::TypeMask edgeTypes = 0;
-		bool vertical = false;
+		bool horizontalByDefault = true;
 		if (c.edge_kinds() != nullptr && c.edge_kinds()->size() > 0)
 		{
 			for (const flatbuffers::String* name: *c.edge_kinds())
@@ -1176,18 +1245,10 @@ struct AgentControlController::Impl
 				edgeTypes |= edgeType;
 			}
 		}
-		else if (type.isInheritable())
+		else if (const std::optional<TrailDefaults> trail = trailDefaultsFor(type))
 		{
-			edgeTypes = Edge::EDGE_INHERITANCE | Edge::EDGE_TEMPLATE_SPECIALIZATION;
-			vertical = true;
-		}
-		else if (type.isCallable())
-		{
-			edgeTypes = Edge::EDGE_CALL | Edge::EDGE_OVERRIDE;
-		}
-		else if (type.isFile())
-		{
-			edgeTypes = Edge::EDGE_INCLUDE;
+			edgeTypes = trail->edgeTypes;
+			horizontalByDefault = trail->horizontal;
 		}
 		else
 		{
@@ -1212,12 +1273,13 @@ struct AgentControlController::Impl
 			}
 		}
 
-		const bool horizontal = c.layout() == fb::TrailLayout_Auto ? !vertical : c.layout() == fb::TrailLayout_Horizontal;
+		const bool horizontal =
+			c.layout() == fb::TrailLayout_Auto ? horizontalByDefault : c.layout() == fb::TrailLayout_Horizontal;
 		Id originId = nodeId;
 		Id targetId = 0;
 		if (c.target_id() != 0)
 		{
-			targetId = Id(static_cast<Id::type>(c.target_id()));
+			targetId = toId(c.target_id());
 		}
 		else if (c.direction() == fb::TrailDirection_Incoming)
 		{
@@ -1233,30 +1295,6 @@ struct AgentControlController::Impl
 		message.searchMatches = m_storageAccess->getSearchMatchesForTokenIds({nodeId});
 		message.dispatch();
 		return std::nullopt;
-	}
-
-	static std::string edgeKindNames()
-	{
-		std::string names;
-		for (Edge::TypeMask mask = 1; mask <= Edge::EDGE_TYPE_MAX_VALUE; mask *= 2)
-		{
-			const auto type = static_cast<Edge::EdgeType>(mask);
-			if (type != Edge::EDGE_BUNDLED_EDGES)
-			{
-				names += (names.empty() ? "" : ", ") + Edge::getReadableTypeString(type);
-			}
-		}
-		return names;
-	}
-
-	static std::string nodeKindNames()
-	{
-		std::string names;
-		for (NodeKindMask mask = NODE_KIND_FIRST_VALUE; mask <= NODE_KIND_LAST_VALUE; mask <<= 1)
-		{
-			names += (names.empty() ? "" : ", ") + getReadableNodeKindString(static_cast<NodeKind>(mask));
-		}
-		return names;
 	}
 
 	// Emit `Settled { requestId }` once the effects of a request have drained. They
@@ -1488,30 +1526,7 @@ struct AgentControlController::Impl
 
 		const auto machinesOffset = builder.CreateVector(makeMachineStates(builder));
 
-		std::vector<flatbuffers::Offset<fb::GraphViewNode>> viewGraph;
-		for (const DisplayedGraphNode& node: DisplayedGraph::instance().get(TabIds::currentTab()))
-		{
-			const auto kind = node.kind == DisplayedGraphNode::Kind::Bundle ? fb::GraphViewNodeKind_Bundle
-				: node.kind == DisplayedGraphNode::Kind::Group				? fb::GraphViewNodeKind_Group
-																			: fb::GraphViewNodeKind_Node;
-			const auto name = builder.CreateString(node.name);
-			const auto group = builder.CreateString(node.group);
-			viewGraph.push_back(fb::CreateGraphViewNode(
-				builder,
-				kind,
-				static_cast<std::uint64_t>(node.id),
-				name,
-				static_cast<std::int32_t>(node.nodeKind),
-				node.parent,
-				node.active,
-				node.expandable,
-				node.expanded,
-				static_cast<std::uint32_t>(node.hiddenMembers),
-				static_cast<std::uint32_t>(node.bundled),
-				node.splittable,
-				group));
-		}
-		const auto viewGraphOffset = builder.CreateVector(viewGraph);
+		const auto viewGraphOffset = builder.CreateVector(makeGraphView(builder, TabIds::currentTab()));
 
 		const ErrorCountInfo errors = m_storageAccess->getErrorCount();
 		const auto uiState = fb::CreateUiState(

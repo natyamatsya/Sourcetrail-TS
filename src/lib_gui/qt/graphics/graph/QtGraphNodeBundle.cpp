@@ -7,7 +7,7 @@
 #include "GraphViewStyle.h"
 #include "MessageGraphNodeBundleSplit.h"
 #endif
-#include "DisplayedGraph.h"
+#include "GraphControls.h"
 #include "QtCountCircleItem.h"
 
 // Imports come AFTER all textual #includes (include-before-import rule: textual libc++
