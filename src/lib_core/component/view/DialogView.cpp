@@ -108,11 +108,12 @@ int DialogView::confirm(const std::string& message)
 
 int DialogView::confirm(const std::string& message, const std::vector<std::string>& options)
 {
-	if (!presentsQuestions())
-	{
-		return -1;
-	}
-	return QuestionStateMachine::instance()->ask(message, options, this);
+	return QuestionStateMachine::instance()->ask(message, options, presentsQuestions() ? this : nullptr);
+}
+
+QuestionSender DialogView::asked(const std::string& message, const std::vector<std::string>& options)
+{
+	return QuestionStateMachine::instance()->asked(message, options, presentsQuestions() ? this : nullptr);
 }
 
 bool DialogView::presentsQuestions() const

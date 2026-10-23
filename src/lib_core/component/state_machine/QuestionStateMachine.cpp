@@ -30,26 +30,53 @@ std::shared_ptr<QuestionStateMachine> QuestionStateMachine::instance()
 	return machine;
 }
 
+QuestionSender QuestionStateMachine::asked(
+	std::string text, std::vector<std::string> options, QuestionPresenter* presenter)
+{
+	// Owned by its sender where a shared_ptr owns it (instance()); a machine of a
+	// scope of its own outlives what it asks.
+	std::shared_ptr<QuestionStateMachine> self = weak_from_this().lock();
+	if (!self)
+	{
+		self = std::shared_ptr<QuestionStateMachine>(std::shared_ptr<void>(), this);
+	}
+	return QuestionSender(std::move(self), std::move(text), std::move(options), presenter);
+}
+
 int QuestionStateMachine::ask(
 	const std::string& text, const std::vector<std::string>& options, QuestionPresenter* presenter)
 {
-	std::uint64_t id = 0;
-	{
-		auto transaction = m_machine.transaction();
-		QuestionMachine::Data& data = transaction.data();
-		id = data.nextId++;
-		data.open.push_back({id, text, options, presenter});
-		if (data.open.size() == 1)
-		{
-			transaction.move(Event::Ask);
-		}
-	}
+	const auto answer = stdexec::sync_wait(asked(text, options, presenter));
+	return answer ? std::get<0>(*answer) : -1;
+}
 
-	presenter->presentQuestion(id, text, options);
-
+std::uint64_t QuestionStateMachine::open(
+	std::string text,
+	std::vector<std::string> options,
+	QuestionPresenter* presenter,
+	std::function<void(int)> answered)
+{
 	auto transaction = m_machine.transaction();
-	m_answered.wait(transaction.lock(), [&]() { return transaction.data().answers.contains(id); });
-	return transaction.data().answers.extract(id).mapped();
+	QuestionMachine::Data& data = transaction.data();
+	const std::uint64_t id = data.nextId++;
+	data.open.push_back({id, std::move(text), std::move(options), presenter, std::move(answered)});
+	if (data.open.size() == 1)
+	{
+		transaction.move(Event::Ask);
+	}
+	return id;
+}
+
+void QuestionStateMachine::present(std::uint64_t id)
+{
+	const auto question = m_machine.read([id](const QuestionMachine::Data& data, State) -> std::optional<Question> {
+		const auto it = std::ranges::find(data.open, id, &Question::id);
+		return it != data.open.end() ? std::optional(*it) : std::nullopt;
+	});
+	if (question && question->presenter != nullptr)
+	{
+		question->presenter->presentQuestion(id, question->text, question->options);
+	}
 }
 
 bool QuestionStateMachine::isOpen(std::uint64_t id) const
@@ -62,6 +89,7 @@ bool QuestionStateMachine::isOpen(std::uint64_t id) const
 bool QuestionStateMachine::answer(std::uint64_t id, int option, EventSource source)
 {
 	QuestionPresenter* presenter = nullptr;
+	std::function<void(int)> answered;
 	{
 		auto transaction = m_machine.transaction();
 		QuestionMachine::Data& data = transaction.data();
@@ -72,8 +100,8 @@ bool QuestionStateMachine::answer(std::uint64_t id, int option, EventSource sour
 		}
 		const bool current = it == data.open.begin();
 		presenter = it->presenter;
+		answered = std::move(it->answered);
 		data.open.erase(it);
-		data.answers[id] = option;
 		if (current)
 		{
 			transaction.move(Event::Answer, source);
@@ -83,28 +111,41 @@ bool QuestionStateMachine::answer(std::uint64_t id, int option, EventSource sour
 			}
 		}
 	}
-	m_answered.notify_all();
 	if (presenter != nullptr)
 	{
 		presenter->dismissQuestion(id);
+	}
+	if (answered)
+	{
+		answered(option);
 	}
 	return true;
 }
 
 void QuestionStateMachine::withdraw(QuestionPresenter* presenter)
 {
+	withdrawWhere([presenter](const Question& question) {
+		return presenter == nullptr || question.presenter == presenter;
+	});
+}
+
+void QuestionStateMachine::withdraw(std::uint64_t id)
+{
+	withdrawWhere([id](const Question& question) { return question.id == id; });
+}
+
+void QuestionStateMachine::withdrawWhere(const std::function<bool(const Question&)>& which)
+{
 	std::vector<Question> withdrawn;
 	{
 		auto transaction = m_machine.transaction();
 		QuestionMachine::Data& data = transaction.data();
-		const bool currentWithdrawn = !data.open.empty() &&
-			(presenter == nullptr || data.open.front().presenter == presenter);
+		const bool currentWithdrawn = !data.open.empty() && which(data.open.front());
 		for (auto it = data.open.begin(); it != data.open.end();)
 		{
-			if (presenter == nullptr || it->presenter == presenter)
+			if (which(*it))
 			{
-				data.answers[it->id] = -1;
-				withdrawn.push_back(*it);
+				withdrawn.push_back(std::move(*it));
 				it = data.open.erase(it);
 			}
 			else
@@ -121,12 +162,15 @@ void QuestionStateMachine::withdraw(QuestionPresenter* presenter)
 			}
 		}
 	}
-	m_answered.notify_all();
 	for (const Question& question: withdrawn)
 	{
 		if (question.presenter != nullptr)
 		{
 			question.presenter->dismissQuestion(question.id);
+		}
+		if (question.answered)
+		{
+			question.answered(-1);
 		}
 	}
 }

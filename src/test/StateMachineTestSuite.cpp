@@ -268,6 +268,39 @@ TEST_CASE("question withdrawn answers none")
 	REQUIRE(machine.snapshot().state == "idle");
 }
 
+TEST_CASE("question as a sender holds no thread")
+{
+	QuestionStateMachine machine;
+	FakeQuestionPresenter presenter;
+	exec::async_scope scope;
+
+	std::atomic<int> answer = -2;
+	scope.spawn(
+		machine.asked("Reindex the project?", {"Reindex", "Cancel"}, &presenter) |
+		stdexec::then([&](int option) { answer = option; }));
+	REQUIRE(machine.snapshot().state == "asking");	// asked, and nothing waits for it
+	REQUIRE(presenter.presentedIds().size() == 1);
+	REQUIRE(answer == -2);
+	REQUIRE(machine.fire("answer", R"({"label":"Reindex"})", EventSource::Agent).ok);
+	REQUIRE(answer == 0);
+
+	// Stopping the asker withdraws its question.
+	std::atomic<int> stopped = -2;
+	scope.spawn(
+		machine.asked("Keep the data?", {"Keep", "Discard"}, &presenter) |
+		stdexec::then([&](int option) { stopped = option; }));
+	REQUIRE(machine.snapshot().state == "asking");
+	scope.request_stop();
+	REQUIRE(stopped == -1);
+	REQUIRE(machine.snapshot().state == "idle");
+	REQUIRE(presenter.dismissed.size() == 2);
+	stdexec::sync_wait(scope.on_empty());
+
+	// Without a presenter nobody can answer.
+	REQUIRE(std::get<0>(*stdexec::sync_wait(machine.asked("Anyone?", {"Yes"}, nullptr))) == -1);
+	REQUIRE(machine.snapshot().state == "idle");
+}
+
 TEST_CASE("indexing request nothing came of returns to idle")
 {
 	IndexingStateMachine machine;

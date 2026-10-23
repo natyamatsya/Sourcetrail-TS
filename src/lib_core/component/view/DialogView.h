@@ -77,6 +77,8 @@ public:
 	// Asks and waits: the index of the chosen option, -1 for none.
 	int confirm(const std::string& message);
 	int confirm(const std::string& message, const std::vector<std::string>& options);
+	// Asks without holding a thread: a sender of what confirm returns.
+	QuestionSender asked(const std::string& message, const std::vector<std::string>& options);
 
 protected:
 	// Whether this view can show a question; without one, confirm() answers -1.
