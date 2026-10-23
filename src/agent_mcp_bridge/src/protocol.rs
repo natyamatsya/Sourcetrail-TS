@@ -146,10 +146,23 @@ pub const GRAPH_SINCE: u32 = 7;
 /// (`EventEnvelope.caused_by`), and a dialog coming or going is an event.
 pub const CAUSES_SINCE: u32 = 7;
 
-/// The request id of a CommandEnvelope and its command's schema name ("ActivateNode").
-pub fn command_of(bytes: &[u8]) -> Option<(u64, &'static str)> {
+/// The request id of a CommandEnvelope and its command's schema name ("ActivateNode"),
+/// for a command that acts on the app; None for a read (GetUiState after every
+/// action, GetFrame, QueryUi...), which leads to nothing.
+pub fn action_of(bytes: &[u8]) -> Option<(u64, &'static str)> {
     let envelope = flatbuffers::root::<fb::CommandEnvelope>(bytes).ok()?;
-    Some((envelope.request_id(), envelope.command_type().variant_name()?))
+    let command = envelope.command_type();
+    let read = matches!(
+        command,
+        fb::Command::GetUiState
+            | fb::Command::GetInfo
+            | fb::Command::GetSnapshot
+            | fb::Command::GetMachines
+            | fb::Command::GetFrame
+            | fb::Command::CaptureElement
+            | fb::Command::QueryUi
+    );
+    (!read).then_some((envelope.request_id(), command.variant_name()?))
 }
 
 /// Expand (or collapse) a node's members in the graph.
@@ -1082,22 +1095,35 @@ mod tests {
         assert_eq!(c.project_file_path().unwrap(), "/p/x.srctrlprj");
     }
 
+    /// Finishes `b` as the event envelope `seq` around `event`.
+    fn finish_event(
+        b: &mut FlatBufferBuilder,
+        seq: u64,
+        timestamp_ms: u64,
+        event_type: fb::Event,
+        event: flatbuffers::WIPOffset<flatbuffers::UnionWIPOffset>,
+        caused_by: u64,
+    ) {
+        let env = fb::EventEnvelope::create(
+            b,
+            &fb::EventEnvelopeArgs { seq, timestamp_ms, event_type, event: Some(event), caused_by },
+        );
+        b.finish(env, None);
+    }
+
+    #[test]
+    fn actions_are_logged_and_reads_are_not() {
+        assert_eq!(action_of(&activate_node(7, None, 1)), Some((7, "ActivateNode")));
+        assert_eq!(action_of(&expand_node(8, 1, true)), Some((8, "ExpandNode")));
+        assert_eq!(action_of(&get_ui_state(9)), None);
+    }
+
     #[test]
     fn events_say_what_they_follow_from() {
         let mut b = FlatBufferBuilder::new();
         let dialog = b.create_string("'Reindex?' (modal)");
         let e = fb::DialogChanged::create(&mut b, &fb::DialogChangedArgs { dialog: Some(dialog) });
-        let env = fb::EventEnvelope::create(
-            &mut b,
-            &fb::EventEnvelopeArgs {
-                seq: 3,
-                timestamp_ms: 10,
-                event_type: fb::Event::DialogChanged,
-                event: Some(e.as_union_value()),
-                caused_by: 42,
-            },
-        );
-        b.finish(env, None);
+        finish_event(&mut b, 3, 10, fb::Event::DialogChanged, e.as_union_value(), 42);
         let v = event_to_json(b.finished_data()).unwrap();
         assert_eq!(v["type"], "DialogChanged");
         assert_eq!(v["dialog"], "'Reindex?' (modal)");
@@ -1106,17 +1132,7 @@ mod tests {
         // No cause: left out, not 0.
         let mut b = FlatBufferBuilder::new();
         let s = fb::Settled::create(&mut b, &fb::SettledArgs { request_id: 5 });
-        let env = fb::EventEnvelope::create(
-            &mut b,
-            &fb::EventEnvelopeArgs {
-                seq: 4,
-                timestamp_ms: 11,
-                event_type: fb::Event::Settled,
-                event: Some(s.as_union_value()),
-                caused_by: 0,
-            },
-        );
-        b.finish(env, None);
+        finish_event(&mut b, 4, 11, fb::Event::Settled, s.as_union_value(), 0);
         assert!(event_to_json(b.finished_data()).unwrap().get("caused_by").is_none());
     }
 
@@ -1263,17 +1279,7 @@ mod tests {
             &mut b,
             &fb::CommandResultArgs { request_id: 4, ok: false, message: Some(msg) },
         );
-        let env = fb::EventEnvelope::create(
-            &mut b,
-            &fb::EventEnvelopeArgs {
-                seq: 1,
-                timestamp_ms: 0,
-                event_type: fb::Event::CommandResult,
-                event: Some(cr.as_union_value()),
-                caused_by: 0,
-            },
-        );
-        b.finish(env, None);
+        finish_event(&mut b, 1, 0, fb::Event::CommandResult, cr.as_union_value(), 0);
 
         let (seq, inc) = parse_event(b.finished_data()).unwrap();
         assert_eq!(seq, 1);
@@ -1294,17 +1300,7 @@ mod tests {
         let tab = fb::TabInfo::create(&mut b, &fb::TabInfoArgs { tab_id: 11, title: Some(title), active: true });
         let tabs = b.create_vector(&[tab]);
         let tc = fb::TabsChanged::create(&mut b, &fb::TabsChangedArgs { tabs: Some(tabs) });
-        let env = fb::EventEnvelope::create(
-            &mut b,
-            &fb::EventEnvelopeArgs {
-                seq: 2,
-                timestamp_ms: 0,
-                event_type: fb::Event::TabsChanged,
-                event: Some(tc.as_union_value()),
-                caused_by: 0,
-            },
-        );
-        b.finish(env, None);
+        finish_event(&mut b, 2, 0, fb::Event::TabsChanged, tc.as_union_value(), 0);
 
         match parse_event(b.finished_data()).unwrap().1 {
             Incoming::TabsChanged(v) => {
@@ -1323,17 +1319,7 @@ mod tests {
             &mut b,
             &fb::IndexingProgressArgs { files_done: 7, files_total: 20 },
         );
-        let env = fb::EventEnvelope::create(
-            &mut b,
-            &fb::EventEnvelopeArgs {
-                seq: 42,
-                timestamp_ms: 1234,
-                event_type: fb::Event::IndexingProgress,
-                event: Some(ip.as_union_value()),
-                caused_by: 0,
-            },
-        );
-        b.finish(env, None);
+        finish_event(&mut b, 42, 1234, fb::Event::IndexingProgress, ip.as_union_value(), 0);
         let v = event_to_json(b.finished_data()).unwrap();
         assert_eq!(v["seq"], 42);
         assert_eq!(v["timestamp_ms"], 1234);
@@ -1347,17 +1333,7 @@ mod tests {
             &mut b,
             &fb::AppStateChangedArgs { state: fb::AppState::Ready },
         );
-        let env = fb::EventEnvelope::create(
-            &mut b,
-            &fb::EventEnvelopeArgs {
-                seq: 43,
-                timestamp_ms: 0,
-                event_type: fb::Event::AppStateChanged,
-                event: Some(asc.as_union_value()),
-                caused_by: 0,
-            },
-        );
-        b.finish(env, None);
+        finish_event(&mut b, 43, 0, fb::Event::AppStateChanged, asc.as_union_value(), 0);
         let v = event_to_json(b.finished_data()).unwrap();
         assert_eq!(v["type"], "AppStateChanged");
         assert_eq!(v["state"], "Ready");
@@ -1367,17 +1343,7 @@ mod tests {
     fn settled_event_parses() {
         let mut b = FlatBufferBuilder::new();
         let s = fb::Settled::create(&mut b, &fb::SettledArgs { request_id: 9 });
-        let env = fb::EventEnvelope::create(
-            &mut b,
-            &fb::EventEnvelopeArgs {
-                seq: 5,
-                timestamp_ms: 0,
-                event_type: fb::Event::Settled,
-                event: Some(s.as_union_value()),
-                caused_by: 0,
-            },
-        );
-        b.finish(env, None);
+        finish_event(&mut b, 5, 0, fb::Event::Settled, s.as_union_value(), 0);
         // correlation decode (await_settled path)
         match parse_event(b.finished_data()).unwrap().1 {
             Incoming::Settled { request_id } => assert_eq!(request_id, 9),
@@ -1413,17 +1379,7 @@ mod tests {
                 capabilities: None,
             },
         );
-        let env = fb::EventEnvelope::create(
-            &mut b,
-            &fb::EventEnvelopeArgs {
-                seq: 11,
-                timestamp_ms: 0,
-                event_type: fb::Event::AppInfo,
-                event: Some(a.as_union_value()),
-                caused_by: 0,
-            },
-        );
-        b.finish(env, None);
+        finish_event(&mut b, 11, 0, fb::Event::AppInfo, a.as_union_value(), 0);
         // correlation decode (handshake path)
         match parse_event(b.finished_data()).unwrap().1 {
             Incoming::AppInfo { request_id, protocol_version, app_version, instance_id, .. } => {
@@ -1518,17 +1474,7 @@ mod tests {
                 ..Default::default()
             },
         );
-        let ev = fb::EventEnvelope::create(
-            &mut b,
-            &fb::EventEnvelopeArgs {
-                seq: 3,
-                timestamp_ms: 0,
-                event_type: fb::Event::LogEvent,
-                event: Some(le.as_union_value()),
-                caused_by: 0,
-            },
-        );
-        b.finish(ev, None);
+        finish_event(&mut b, 3, 0, fb::Event::LogEvent, le.as_union_value(), 0);
         let v = event_to_json(b.finished_data()).unwrap();
         assert_eq!(v["type"], "LogEvent");
         assert_eq!(v["level"], "error");
@@ -1650,17 +1596,7 @@ mod tests {
         let machines = b.create_vector(&[ms]);
         let states =
             fb::MachineStates::create(&mut b, &fb::MachineStatesArgs { request_id: 5, machines: Some(machines) });
-        let env = fb::EventEnvelope::create(
-            &mut b,
-            &fb::EventEnvelopeArgs {
-                seq: 1,
-                timestamp_ms: 0,
-                event_type: fb::Event::MachineStates,
-                event: Some(states.as_union_value()),
-                caused_by: 0,
-            },
-        );
-        b.finish(env, None);
+        finish_event(&mut b, 1, 0, fb::Event::MachineStates, states.as_union_value(), 0);
         match parse_event(b.finished_data()).unwrap().1 {
             Incoming::MachineStates { request_id, machines } => {
                 assert_eq!(request_id, 5);
@@ -1682,17 +1618,7 @@ mod tests {
             revision: 7,
         };
         let t = fb::MachineTransition::create(&mut b, &args);
-        let env = fb::EventEnvelope::create(
-            &mut b,
-            &fb::EventEnvelopeArgs {
-                seq: 2,
-                timestamp_ms: 0,
-                event_type: fb::Event::MachineTransition,
-                event: Some(t.as_union_value()),
-                caused_by: 0,
-            },
-        );
-        b.finish(env, None);
+        finish_event(&mut b, 2, 0, fb::Event::MachineTransition, t.as_union_value(), 0);
         let v = event_to_json(b.finished_data()).unwrap();
         assert_eq!(v["type"], "MachineTransition");
         assert_eq!(v["to"], "finishing");

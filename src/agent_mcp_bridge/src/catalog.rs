@@ -205,7 +205,8 @@ sent_ms, ack: { ok, message, after_ms }, settled_after_ms, events: [ { seq, afte
 machine?, from?, to?, event?, nodes?, dialog?, ... } ] } ] }
   What the commands this bridge sent led to, matched by caused_by: which nodes an activation \
 showed, which machines moved, a dialog a click opened, and how long until it settled. For \
-one request, or the last ones. From the events the bridge has read (the last 2048).
+one request, or the last ones; reads (ui_state, frames, queries) lead to nothing and are left \
+out. From the events the bridge has read (the last 2048).
 
 Event types and their fields:
   AppStateChanged { state }            IndexingStarted {}

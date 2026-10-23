@@ -615,15 +615,22 @@ fn gesture_events(gesture: &str) -> Result<Vec<InputEvent>, McpError> {
     })
 }
 
+/// The option `value` names (trimmed, in any case); else an error that lists them.
+fn one_of<T: Copy>(what: &str, value: &str, options: &[(&str, T)]) -> Result<T, McpError> {
+    let lower = value.trim().to_ascii_lowercase();
+    options.iter().find(|(name, _)| *name == lower).map(|(_, option)| *option).ok_or_else(|| {
+        let names: Vec<&str> = options.iter().map(|(name, _)| *name).collect();
+        let listed = match names.split_last() {
+            Some((last, rest)) if !rest.is_empty() => format!("{} or {last}", rest.join(", ")),
+            _ => names.concat(),
+        };
+        McpError::invalid_params(format!("{what} must be {listed}, not \"{value}\""), None)
+    })
+}
+
 fn mouse_button(name: Option<&str>, kind: InputKind) -> Result<u8, McpError> {
     let default = if matches!(kind, InputKind::Press | InputKind::Release | InputKind::DoubleClick) { "left" } else { "none" };
-    match name.unwrap_or(default).trim().to_ascii_lowercase().as_str() {
-        "none" => Ok(0),
-        "left" => Ok(1),
-        "right" => Ok(2),
-        "middle" => Ok(3),
-        other => Err(McpError::invalid_params(format!("button must be left, right, middle or none, not \"{other}\""), None)),
-    }
+    one_of("button", name.unwrap_or(default), &[("left", 1), ("right", 2), ("middle", 3), ("none", 0)])
 }
 
 fn bit_mask(names: &[String], table: &[(&str, u32)], what: &str) -> Result<u32, McpError> {
@@ -829,7 +836,7 @@ impl SourcetrailServer {
         ok_json(self.mgr.call(move |m| m.get_or_attach(&a.instance)?.bridge().scroll_to_line(&a.path, a.line)).await?)
     }
 
-    #[tool(description = "What the commands sent led to: per request its command, ack, settle time and the events caused_by it (activations, machine transitions, dialogs). Returns { requests: [...] }.")]
+    #[tool(description = "What the commands sent led to: per request its command, ack, settle time and the events caused_by it (activations, machine transitions, dialogs); reads like ui_state are left out. Returns { requests: [...] }.")]
     async fn events_history(&self, Parameters(a): Parameters<HistoryOfArgs>) -> Result<CallToolResult, McpError> {
         ok_json(self.mgr.call(move |m| Ok(m.get_or_attach(&a.instance)?.bridge().request_log(a.request_id, a.last))).await?)
     }
@@ -851,28 +858,14 @@ impl SourcetrailServer {
 
     #[tool(description = "Show a trail: a function's callees or callers, a class's derived or base classes, a file's includes or includers; or the paths to target_id. Returns the settled ui_state.")]
     async fn graph_trail(&self, Parameters(a): Parameters<TrailArgs>) -> Result<CallToolResult, McpError> {
-        let incoming = match a.direction.as_deref().map(|d| d.trim().to_ascii_lowercase()) {
-            None => false,
-            Some(d) if d == "outgoing" => false,
-            Some(d) if d == "incoming" => true,
-            Some(other) => {
-                return Err(McpError::invalid_params(
-                    format!("direction must be \"outgoing\" or \"incoming\", not \"{other}\""),
-                    None,
-                ))
-            }
-        };
-        let horizontal = match a.layout.as_deref().map(|l| l.trim().to_ascii_lowercase()) {
-            None => None,
-            Some(l) if l == "horizontal" => Some(true),
-            Some(l) if l == "vertical" => Some(false),
-            Some(other) => {
-                return Err(McpError::invalid_params(
-                    format!("layout must be \"horizontal\" or \"vertical\", not \"{other}\""),
-                    None,
-                ))
-            }
-        };
+        let incoming = a
+            .direction
+            .as_deref()
+            .map(|d| one_of("direction", d, &[("outgoing", false), ("incoming", true)]))
+            .transpose()?
+            .unwrap_or(false);
+        let horizontal =
+            a.layout.as_deref().map(|l| one_of("layout", l, &[("horizontal", true), ("vertical", false)])).transpose()?;
         ok_json(
             self.mgr
                 .call(move |m| {
@@ -893,16 +886,7 @@ impl SourcetrailServer {
 
     #[tool(description = "Navigate back or forward in the activation history, like the toolbar arrows. direction: back|forward. Returns the settled ui_state.")]
     async fn nav_history(&self, Parameters(a): Parameters<HistoryArgs>) -> Result<CallToolResult, McpError> {
-        let forward = match a.direction.trim().to_ascii_lowercase().as_str() {
-            "back" => false,
-            "forward" => true,
-            other => {
-                return Err(McpError::invalid_params(
-                    format!("direction must be \"back\" or \"forward\", not \"{other}\""),
-                    None,
-                ))
-            }
-        };
+        let forward = one_of("direction", &a.direction, &[("back", false), ("forward", true)])?;
         ok_json(self.mgr.call(move |m| m.get_or_attach(&a.instance)?.bridge().history(forward)).await?)
     }
 
@@ -1113,6 +1097,17 @@ mod tests {
             registered, documented,
             "every registered tool must belong to exactly one describe topic, and every topic tool must exist"
         );
+    }
+
+    #[test]
+    fn options_are_named_in_any_case_and_refused_with_the_list() {
+        let directions = [("back", false), ("forward", true)];
+        assert!(one_of("direction", " Forward ", &directions).unwrap());
+        let refused = one_of("direction", "up", &directions).unwrap_err().message.to_string();
+        assert_eq!(refused, "direction must be back or forward, not \"up\"");
+        let buttons = [("left", 1), ("right", 2), ("middle", 3), ("none", 0)];
+        let refused = one_of("button", "x", &buttons).unwrap_err().message.to_string();
+        assert_eq!(refused, "button must be left, right, middle or none, not \"x\"");
     }
 
     #[test]

@@ -40,7 +40,7 @@ fn now_ms() -> u64 {
         .unwrap_or(0)
 }
 
-/// A command this bridge sent, for the history: what it was and when.
+/// An action this bridge sent, for the request log: what it was and when.
 struct SentRequest {
     id: u64,
     command: &'static str,
@@ -92,7 +92,8 @@ pub struct Bridge {
     // explicit drain) is recorded here as self-describing JSON, so poll_events can
     // replay it by seq cursor. Bounded; oldest dropped.
     event_log: VecDeque<Value>,
-    // The commands sent, newest last, for history(). Bounded; oldest dropped.
+    // The actions sent (not the reads), newest last, for request_log(). Bounded;
+    // oldest dropped.
     requests: VecDeque<SentRequest>,
     // Result of the connect-time protocol handshake (GetInfo -> AppInfo): the app's
     // protocol version + build identity and the computed skew, or an error note if
@@ -328,7 +329,7 @@ impl Bridge {
                 self.cmd_receivers()
             );
         }
-        if let Some((id, command)) = protocol::command_of(bytes) {
+        if let Some((id, command)) = protocol::action_of(bytes) {
             if self.requests.len() >= REQUEST_LOG_CAP {
                 self.requests.pop_front();
             }
