@@ -468,21 +468,34 @@ question: idle -> asking -> idle
 
 search: idle -> completing -> suggesting -> idle
   The search box's autocompletion. A person typing moves it as an agent's `type` does.
-  type { query }                   any state: types query into the box (in place of what is there) and asks for its completions: completing, then suggesting (context.suggestions: [{ name, type, kind }], the first 30; more: how many are not listed), or idle with context.outcome \"nothing matches ...\".
-  select { index } | { name }      suggesting: searches for that suggestion, as clicking it in the list does; the activation follows (watch activation, or ui_state.active_nodes).
+  type { query }                   any state: types query into the box (in place of what is \
+there) and asks for its completions: completing, then suggesting (context.suggestions: [{ \
+name, type, kind }], the first 30; more: how many are not listed), or idle with \
+context.outcome \"nothing matches ...\".
+  select { index } | { name }      suggesting: searches for that suggestion, as clicking it \
+in the list does; the activation follows (watch activation, or ui_state.active_nodes).
   dismiss                          completing/suggesting: closes the list.
-  Recipe: machine_send { machine: \"search\", event: \"type\", args: { query: \"Foo\" }, until: [\"suggesting\", \"idle\"] }, then select.
+  Recipe: machine_send { machine: \"search\", event: \"type\", args: { query: \"Foo\" }, \
+until: [\"suggesting\", \"idle\"] }, then select.
 
 bookmark: idle -> opening -> editing -> idle
-  The bookmark editor (Create / Edit Bookmark). A person opening it (the bookmark button, a node's context menu, the browser's edit button) moves it to editing too; their typing changes context.editor without a move.
-  create { node_id? }              idle: opens the editor on what is active (or that node), as the bookmark button does; something bookmarked already opens its bookmark (mode edit).
+  The bookmark editor (Create / Edit Bookmark). A person opening it (the bookmark button, a \
+node's context menu, the browser's edit button) moves it to editing too; their typing \
+changes context.editor without a move.
+  create { node_id? }              idle: opens the editor on what is active (or that node), \
+as the bookmark button does; something bookmarked already opens its bookmark (mode edit).
   edit { id }                      idle: opens bookmark id (ui_state.bookmarks).
-  opening ends at editing, or at idle with context.outcome (nothing is active, no such bookmark, or the editor did not open within 5 s).
-  set { name?, comment?, category? }   editing: fills the editor's fields; a category not among context.editor.categories is created.
-  save                             editing: creates or updates the bookmark and closes the editor (refused without a name).
+  opening ends at editing, or at idle with context.outcome (nothing is active, no such \
+bookmark, or the editor did not open within 5 s).
+  set { name?, comment?, category? }   editing: fills the editor's fields; a category not \
+among context.editor.categories is created.
+  save                             editing: creates or updates the bookmark and closes the \
+editor (refused without a name).
   cancel                           editing: closes it.
-  context: editor { mode: create|edit, bookmark_id?, node_id?, name, comment, category, categories } (editing); outcome (idle).
-  Deleting a bookmark or a category, and the bookmark button on a bookmarked symbol, ask a question (see question).",
+  context: editor { mode: create|edit, bookmark_id?, node_id?, name, comment, category, \
+categories } (editing); outcome (idle).
+  Deleting a bookmark or a category, and the bookmark button on a bookmarked symbol, ask a \
+question (see question).",
     },
     Topic {
         name: "logs",
