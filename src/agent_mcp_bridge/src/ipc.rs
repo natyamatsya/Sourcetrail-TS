@@ -1238,9 +1238,10 @@ impl Bridge {
 
     /// An indexing run reopens the project on its new index, and asks for that
     /// before it ends. So a wait that saw the run end (the indexing machine idle)
-    /// also waits, until `deadline`, for the project to be ready again: the caller
-    /// can navigate at once instead of hitting "still loading". The project's
-    /// moves join `transitions`. False when the deadline passed first.
+    /// also waits, until `deadline`, for the reopening to end: ready again, or
+    /// no_project when it failed. The caller can navigate at once instead of
+    /// hitting "still loading". The project's moves join `transitions`. False when
+    /// the deadline passed first.
     fn await_reopened_project(
         &mut self,
         machine: &str,
@@ -1256,9 +1257,9 @@ impl Bridge {
         if current != "loading" && current != "opening" {
             return Ok(true);
         }
-        let ready = ["ready".to_string()];
+        let settled = ["ready".to_string(), "no_project".to_string()];
         let remaining = deadline.saturating_duration_since(Instant::now());
-        self.await_machine_state("project", &ready, current, remaining, transitions)
+        self.await_machine_state("project", &settled, current, remaining, transitions)
     }
 
     fn machine_snapshot(&mut self, machine: &str) -> Result<Value> {
