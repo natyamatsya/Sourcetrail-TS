@@ -146,9 +146,15 @@ class ParkingTask: public Task
 {
 public:
 	std::atomic<int> updates = 0;
+	std::atomic<bool> terminated = false;
 	std::mutex mutex;
 	std::function<void()> wake;
 	bool woken = false;
+
+	void terminate() override
+	{
+		terminated = true;
+	}
 
 	void wakeUp()
 	{
@@ -614,4 +620,22 @@ TEST_CASE("task parked while running keeps the tasks behind it waiting")
 	onThread.startSchedulerLoopThreaded();
 	check(onThread);
 	onThread.stopSchedulerLoop();
+}
+
+TEST_CASE("a parked task is terminated when its scheduler on a strand stops")
+{
+	// An indexing run waiting for its indexers: stopping the app must end it (and with
+	// it the indexer processes), though nothing posts a pass for a parked task.
+	exec::static_thread_pool pool(2);
+	const auto scheduler = std::make_shared<TaskScheduler>(TabId::NONE);
+	scheduler->startSchedulerLoopOn(execution::Strand::create(pool.get_scheduler()));
+
+	const auto parking = std::make_shared<ParkingTask>();
+	parking->setIsBackgroundTask(true);
+	scheduler->pushTask(parking);
+	REQUIRE(eventually([&]() { return parking->updates > 0; }));
+
+	scheduler->stopSchedulerLoop();
+	REQUIRE(parking->terminated);
+	REQUIRE_FALSE(scheduler->hasTasksQueued());
 }

@@ -155,6 +155,18 @@ void TaskScheduler::stopSchedulerLoop()
 		std::unique_lock<std::mutex> lock(m_tasksMutex);
 		if (m_strand)
 		{
+			// A last pass terminates what is left, parked runners too (an indexing run
+			// waiting for its indexers): nothing else would post one for them.
+			for (const std::shared_ptr<TaskRunner>& runner: m_taskRunners)
+			{
+				runner->unpark();
+				runner->setHoldsQueue(false);
+			}
+			if (!m_passPosted && !m_taskRunners.empty())
+			{
+				m_passPosted = true;
+				m_strand->post([self = shared_from_this()]() { self->runPass(); });
+			}
 			if (!m_strand->runsHere())
 			{
 				m_passesEnded.wait(lock, [this]() { return !m_passPosted; });
