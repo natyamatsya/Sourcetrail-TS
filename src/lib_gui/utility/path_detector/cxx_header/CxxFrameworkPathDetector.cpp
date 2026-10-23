@@ -3,6 +3,8 @@
 #ifndef SRCTRL_MODULE_BUILD
 #include "FilePath.h"
 #endif
+#include "Platform.h"
+#include "ToolChain.h"
 #include "utilityCxxHeaderDetection.h"
 #ifndef SRCTRL_MODULE_BUILD
 #include "utilityString.h"
@@ -30,6 +32,15 @@ std::vector<FilePath> CxxFrameworkPathDetector::doGetPaths() const
 		{
 			FilePath p =
 				FilePath(utility::replace(path, " (framework directory)", "")).makeCanonical();
+			// An SDK's frameworks come with -isysroot, and the detected compiler's SDK
+			// need not be the one the indexer's sysroot names.
+			if constexpr (utility::Platform::isMac())
+			{
+				if (ClangCompiler::isSuppliedByMacSysroot(p.str()))
+				{
+					continue;
+				}
+			}
 			if (p.exists())
 			{
 				frameworkPaths.push_back(p);

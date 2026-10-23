@@ -257,3 +257,27 @@ TEST_CASE("clang compiler's latest C standard and draft follow the LLVM version"
 	REQUIRE(ClangCompiler::getLatestCDraft() == "c23");
 #endif
 }
+
+TEST_CASE("clang compiler leaves what the macOS sysroot supplies to the driver")
+{
+	const std::string xcodeSdk =
+		"/Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/SDKs/MacOSX.sdk";
+	const std::string toolsSdk = "/Library/Developer/CommandLineTools/SDKs/MacOSX27.0.sdk";
+
+	REQUIRE(ClangCompiler::isSuppliedByMacSysroot(xcodeSdk + "/usr/include"));
+	REQUIRE(ClangCompiler::isSuppliedByMacSysroot(xcodeSdk + "/usr/include/c++/v1"));
+	REQUIRE(ClangCompiler::isSuppliedByMacSysroot(toolsSdk + "/System/Library/Frameworks"));
+	REQUIRE(ClangCompiler::isSuppliedByMacSysroot(toolsSdk + "/System/Library/SubFrameworks"));
+	// Another toolchain's libc++, as path detection finds it through `clang` on PATH.
+	REQUIRE(ClangCompiler::isSuppliedByMacSysroot("/opt/homebrew/Cellar/llvm/23.1.4/include/c++/v1"));
+}
+
+TEST_CASE("clang compiler keeps search paths the macOS sysroot does not supply")
+{
+	REQUIRE_FALSE(ClangCompiler::isSuppliedByMacSysroot("/usr/local/include"));
+	REQUIRE_FALSE(ClangCompiler::isSuppliedByMacSysroot("/opt/homebrew/include"));
+	REQUIRE_FALSE(ClangCompiler::isSuppliedByMacSysroot("/Library/Frameworks"));
+	REQUIRE_FALSE(ClangCompiler::isSuppliedByMacSysroot("/Users/me/project/usr/include"));
+	REQUIRE_FALSE(ClangCompiler::isSuppliedByMacSysroot(
+		"/Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/include"));
+}

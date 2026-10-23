@@ -158,16 +158,15 @@ inline std::vector<std::string> IndexerCommandCxx::getCompilerFlagsForSystemHead
 
 	for (const FilePath& path: systemHeaderSearchPaths)
 	{
-		// On macOS the SDK C headers must come from -isysroot alone. An explicit
-		// "-isystem <SDK>/usr/include" places that directory ahead of the sysroot's
-		// own copy and breaks libc++'s #include_next chain (<cctype> can no longer
-		// reach the C <ctype.h>). Drop any SDK usr/include path -- the sysroot
-		// provides it in the correct position. Matches both the Xcode and the
-		// CommandLineTools SDKs regardless of which one -isysroot points at.
+		// On macOS the SDK C headers and libc++ must come from -isysroot and the
+		// compiler alone. An explicit "-isystem <SDK>/usr/include", or another
+		// toolchain's libc++ (Homebrew LLVM's, found by path detection), lands ahead
+		// of the driver's own and breaks libc++'s #include_next chain (<cctype> can
+		// no longer reach the C <ctype.h>). Settings written before path detection
+		// skipped them still carry such paths.
 		if constexpr (utility::Platform::isMac())
 		{
-			const std::string s = path.str();
-			if (utility::isPostfix("/usr/include", s) && s.find(".sdk/") != std::string::npos)
+			if (ClangCompiler::isSuppliedByMacSysroot(path.str()))
 			{
 				continue;
 			}
@@ -185,6 +184,14 @@ inline std::vector<std::string> IndexerCommandCxx::getCompilerFlagsForFrameworkS
 	compilerFlags.reserve(frameworkSearchPaths.size() * 2);
 	for (const FilePath& path: frameworkSearchPaths)
 	{
+		// An SDK's frameworks come with -isysroot; another SDK's would not match it.
+		if constexpr (utility::Platform::isMac())
+		{
+			if (ClangCompiler::isSuppliedByMacSysroot(path.str()))
+			{
+				continue;
+			}
+		}
 		compilerFlags.push_back(ClangCompiler::frameworkIncludeOption());
 		compilerFlags.push_back(path.str());
 	}

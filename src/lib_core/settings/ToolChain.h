@@ -48,6 +48,13 @@ class ClangCompiler final : public ToolChain {
 		static std::string frameworkIncludeOption();
 		static std::string frameworkIncludeOption(const std::string &directory);
 
+		// On macOS the driver adds an SDK's C headers and frameworks from -isysroot, and the
+		// libc++ that belongs to the compiler. Passed again as explicit search paths they come
+		// first and can belong to another toolchain: a second libc++ breaks <cctype>'s
+		// #include_next, and another SDK's frameworks do not match the sysroot. Callers drop
+		// such paths on macOS only.
+		static bool isSuppliedByMacSysroot(const std::string &directory);
+
 		static std::string forceIncludeOption();
 		static std::string forceIncludeOption2();
 		static std::string forceIncludeOption(const std::string &file);

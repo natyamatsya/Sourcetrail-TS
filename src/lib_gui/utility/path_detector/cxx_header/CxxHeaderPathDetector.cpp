@@ -3,6 +3,8 @@
 #ifndef SRCTRL_MODULE_BUILD
 #include "FilePath.h"
 #endif
+#include "Platform.h"
+#include "ToolChain.h"
 #include "utilityCxxHeaderDetection.h"
 #ifndef SRCTRL_MODULE_BUILD
 #include "utilityString.h"
@@ -27,13 +29,18 @@ std::vector<FilePath> CxxHeaderPathDetector::doGetPaths() const
 
 	for (const std::string& path: paths)
 	{
-		// Skip an SDK's usr/include on macOS: it is supplied by -isysroot, and adding
-		// it as an explicit -isystem breaks libc++'s #include_next chain (see
+		// Skip what the macOS driver supplies itself: an SDK's usr/include, and the
+		// libc++ of the detected compiler, which need not be the indexer's (`clang`
+		// on PATH can be Homebrew LLVM while the indexer emulates Apple's `c++`).
+		// Adding them as explicit -isystem breaks libc++'s #include_next chain (see
 		// IndexerCommandCxx::getCompilerFlagsForSystemHeaderSearchPaths). The indexer
-		// strips it defensively too, but never storing it keeps the settings clean.
-		if (utility::isPostfix("/usr/include", path) && path.find(".sdk/") != std::string::npos)
+		// strips them defensively too, but never storing them keeps the settings clean.
+		if constexpr (utility::Platform::isMac())
 		{
-			continue;
+			if (ClangCompiler::isSuppliedByMacSysroot(FilePath(path).getCanonical().str()))
+			{
+				continue;
+			}
 		}
 
 		if (!utility::isPostfix(" (framework directory)", path) &&

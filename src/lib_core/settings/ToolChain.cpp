@@ -264,6 +264,16 @@ std::string ClangCompiler::frameworkIncludeOption(const std::string &directory)
 	return frameworkIncludeOption() + directory;
 }
 
+bool ClangCompiler::isSuppliedByMacSysroot(const std::string &directory)
+{
+	// Any SDK, Xcode's or the CommandLineTools': -isysroot may name another one.
+	const bool inSdk = directory.find(".sdk/") != std::string::npos;
+	return (inSdk &&
+			(directory.ends_with("/usr/include") || directory.ends_with("/System/Library/Frameworks") ||
+				directory.ends_with("/System/Library/SubFrameworks"))) ||
+		directory.ends_with("/include/c++/v1");
+}
+
 std::string ClangCompiler::quoteIncludeOption()
 {
 	return "-iquote";

@@ -5,11 +5,10 @@
 #include "FilePath.h"
 #include "MessageStatus.h"
 #endif
+#include "Platform.h"
+#include "ToolChain.h"
 #include "logging.h"
 #include "utilityPathDetection.h"
-#ifndef SRCTRL_MODULE_BUILD
-#include "utilityString.h"
-#endif
 
 // Imports come AFTER all textual #includes (include-before-import rule: textual libc++
 // following BMI-merged declarations trips "cannot add 'abi_tag' in a redeclaration").
@@ -24,7 +23,7 @@ void ApplicationSettingsPrefiller::prefillPaths(ApplicationSettings* settings)
 {
 	bool updated = false;
 
-	updated |= migrateStaleSdkHeaderPaths(settings);
+	updated |= migrateSysrootSuppliedPaths(settings);
 	updated |= prefillCxxHeaderPaths(settings);
 	updated |= prefillCxxFrameworkPaths(settings);
 
@@ -34,32 +33,45 @@ void ApplicationSettingsPrefiller::prefillPaths(ApplicationSettings* settings)
 	}
 }
 
-bool ApplicationSettingsPrefiller::migrateStaleSdkHeaderPaths(ApplicationSettings* settings)
+bool ApplicationSettingsPrefiller::migrateSysrootSuppliedPaths(ApplicationSettings* settings)
 {
-	const std::vector<FilePath> paths = settings->getHeaderSearchPaths();
-	std::vector<FilePath> cleaned;
-	cleaned.reserve(paths.size());
-	for (const FilePath& path: paths)
+	if constexpr (!utility::Platform::isMac())
 	{
-		const std::string s = path.str();
-		// Drop any SDK usr/include: it is provided by -isysroot, and keeping it as an
-		// explicit -isystem breaks libc++'s #include_next chain during indexing.
-		if (utility::isPostfix("/usr/include", s) && s.find(".sdk/") != std::string::npos)
-		{
-			continue;
-		}
-		cleaned.push_back(path);
+		return false;
 	}
 
-	if (cleaned.size() == paths.size())
+	// The SDK's headers and frameworks and the compiler's libc++ come with
+	// -isysroot and the driver; stored again they come first and can belong to
+	// another toolchain (see ClangCompiler::isSuppliedByMacSysroot).
+	const auto withoutSysrootSupplied = [](const std::vector<FilePath>& paths) {
+		std::vector<FilePath> kept;
+		kept.reserve(paths.size());
+		for (const FilePath& path: paths)
+		{
+			if (!ClangCompiler::isSuppliedByMacSysroot(path.str()))
+			{
+				kept.push_back(path);
+			}
+		}
+		return kept;
+	};
+
+	const std::vector<FilePath> headerPaths = settings->getHeaderSearchPaths();
+	const std::vector<FilePath> frameworkPaths = settings->getFrameworkSearchPaths();
+	const std::vector<FilePath> keptHeaderPaths = withoutSysrootSupplied(headerPaths);
+	const std::vector<FilePath> keptFrameworkPaths = withoutSysrootSupplied(frameworkPaths);
+	const size_t removed = (headerPaths.size() - keptHeaderPaths.size()) +
+		(frameworkPaths.size() - keptFrameworkPaths.size());
+	if (removed == 0)
 	{
 		return false;
 	}
 
 	LOG_INFO(
-		"Removed " + std::to_string(paths.size() - cleaned.size()) +
-		" stale SDK usr/include header search path(s); the SDK sysroot supplies them.");
-	settings->setHeaderSearchPaths(cleaned);
+		"Removed " + std::to_string(removed) +
+		" header or framework search path(s) that the macOS SDK sysroot and the compiler supply.");
+	settings->setHeaderSearchPaths(keptHeaderPaths);
+	settings->setFrameworkSearchPaths(keptFrameworkPaths);
 	return true;
 }
 
