@@ -2,6 +2,7 @@
 #include "UiPost.h"
 
 #include "QtSearchBar.h"
+#include "SearchStateMachine.h"
 #include "QtViewWidgetWrapper.h"
 #include "utilityQt.h"
 #include "QtResources.h"
@@ -11,6 +12,12 @@ using namespace utility;
 QtSearchView::QtSearchView(ViewLayout* viewLayout): SearchView(viewLayout)
 {
 	m_widget = new QtSearchBar();
+	SearchStateMachine::instance()->attach(*this);
+}
+
+QtSearchView::~QtSearchView()
+{
+	SearchStateMachine::instance()->detach(*this);
 }
 
 void QtSearchView::createWidgetWrapper()
@@ -67,4 +74,16 @@ void QtSearchView::setStyleSheet()
 	{
 		m_widget->getCompleterPopup()->setStyleSheet(css);
 	}
+}
+
+void QtSearchView::presentQuery(const std::string& query)
+{
+	execution::qt::onUi(QtViewWidgetWrapper::getWidgetOfView(this), [this, query = QString::fromStdString(query)]() {
+		m_widget->showQuery(query);
+	});
+}
+
+void QtSearchView::dismissSuggestions()
+{
+	execution::qt::onUi(QtViewWidgetWrapper::getWidgetOfView(this), [this]() { m_widget->dismissSuggestions(); });
 }

@@ -21,6 +21,7 @@
 #include "IndexingStateMachine.h"
 #include "ProjectStateMachine.h"
 #include "QuestionStateMachine.h"
+#include "SearchStateMachine.h"
 #include "RemoteStateMachine.h"
 #ifndef SRCTRL_MODULE_BUILD
 #include "LogManager.h"
@@ -114,6 +115,7 @@ void Application::createInstance(
 	StateMachineRegistry::instance().add(IndexingStateMachine::instance());
 	StateMachineRegistry::instance().add(QuestionStateMachine::instance());
 	StateMachineRegistry::instance().add(ActivationStateMachine::instance());
+	StateMachineRegistry::instance().add(SearchStateMachine::instance());
 	// The activation machine follows what changes the views, which report when
 	// they have drawn it: with no views there is nothing to follow.
 	if (hasGui)

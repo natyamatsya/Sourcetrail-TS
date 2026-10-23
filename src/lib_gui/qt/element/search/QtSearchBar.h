@@ -26,6 +26,9 @@ public:
 	void setFocus();
 	void findFulltext();
 	void setAutocompletionList(const std::vector<SearchMatch>& autocompletionList);
+	// What an agent does in the search box (QtSmartSearchBox).
+	void showQuery(const QString& query);
+	void dismissSuggestions();
 
 	QAbstractItemView* getCompleterPopup();
 

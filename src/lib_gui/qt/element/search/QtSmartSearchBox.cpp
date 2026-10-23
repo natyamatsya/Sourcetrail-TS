@@ -7,12 +7,14 @@
 #include <QApplication>
 #include <QClipboard>
 #include <QKeyEvent>
+#include <QScopedValueRollback>
 
 #ifndef SRCTRL_MODULE_BUILD
 #include "ColorScheme.h"
 #include "GraphViewStyle.h"
 #include "MessageFocusedSearchView.h"
 #include "NodeTypeSet.h"
+#include "SearchStateMachine.h"
 #endif
 #include "compatibilityQt.h"
 #ifndef SRCTRL_MODULE_BUILD
@@ -103,6 +105,7 @@ QtSmartSearchBox::QtSmartSearchBox(QWidget* parent)
 
 	m_completer = new QtAutocompletionList(this);
 	m_completer->setWidget(this);
+	m_completer->popup()->installEventFilter(this);
 
 	updatePlaceholder();
 }
@@ -155,6 +158,21 @@ void QtSmartSearchBox::setAutocompletionList(const std::vector<SearchMatch>& aut
 	{
 		m_highlightedMatch = *completer->getSearchMatchAt(0);
 	}
+}
+
+void QtSmartSearchBox::showQuery(const QString& query)
+{
+	const QScopedValueRollback<bool> quiet(m_reportsDismissal, false);
+	clearMatches();
+	updateElements();
+	setEditText(query);
+	layoutElements();
+}
+
+void QtSmartSearchBox::dismissSuggestions()
+{
+	const QScopedValueRollback<bool> quiet(m_reportsDismissal, false);
+	hideAutoCompletions();
 }
 
 void QtSmartSearchBox::setMatches(const std::vector<SearchMatch>& matches)
@@ -235,6 +253,15 @@ bool QtSmartSearchBox::event(QEvent* event)
 	}
 
 	return QWidget::event(event);
+}
+
+bool QtSmartSearchBox::eventFilter(QObject* watched, QEvent* event)
+{
+	if (watched == m_completer->popup() && event->type() == QEvent::Hide && m_reportsDismissal)
+	{
+		SearchStateMachine::instance()->dismiss(EventSource::Ui);
+	}
+	return QLineEdit::eventFilter(watched, event);
 }
 
 void QtSmartSearchBox::resizeEvent(QResizeEvent* event)
@@ -646,6 +673,7 @@ void QtSmartSearchBox::onTextEdited(const QString& text)
 	else
 	{
 		hideAutoCompletions();
+		SearchStateMachine::instance()->dismiss(EventSource::Ui);
 	}
 }
 
@@ -1097,6 +1125,7 @@ void QtSmartSearchBox::requestAutoCompletions()
 	else
 	{
 		hideAutoCompletions();
+		SearchStateMachine::instance()->dismiss(EventSource::Ui);
 	}
 }
 

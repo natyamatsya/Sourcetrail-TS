@@ -5,6 +5,7 @@
 #include "MessageActivateOverview.h"
 #include "MessageSearch.h"
 #include "MessageSearchAutocomplete.h"
+#include "SearchStateMachine.h"
 #endif
 #include "QtActions.h"
 #include "QtResources.h"
@@ -117,15 +118,27 @@ void QtSearchBar::homeButtonClicked()
 
 void QtSearchBar::requestAutocomplete(const std::string& query, NodeTypeSet acceptedNodeTypes)
 {
-	MessageSearchAutocomplete(query, acceptedNodeTypes).dispatch();
+	SearchStateMachine::instance()->type(query, acceptedNodeTypes, EventSource::Ui);
 }
 
 void QtSearchBar::requestSearch(const std::vector<SearchMatch>& matches, NodeTypeSet acceptedNodeTypes)
 {
+	SearchStateMachine::instance()->dismiss(EventSource::Ui);	// what was suggested is over
 	MessageSearch(matches, acceptedNodeTypes).dispatch();
 }
 
 void QtSearchBar::requestFullTextSearch(const std::string& query, bool caseSensitive)
 {
+	SearchStateMachine::instance()->dismiss(EventSource::Ui);
 	MessageActivateFullTextSearch(query, caseSensitive).dispatch();
+}
+
+void QtSearchBar::showQuery(const QString& query)
+{
+	m_searchBox->showQuery(query);
+}
+
+void QtSearchBar::dismissSuggestions()
+{
+	m_searchBox->dismissSuggestions();
 }

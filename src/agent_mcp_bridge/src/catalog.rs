@@ -388,7 +388,7 @@ machine_send { machine: \"question\", event: \"answer\", args: { label: \"Reinde
     },
     Topic {
         name: "machines",
-        summary: "State machines: app startup, the project's load, indexing, questions, and what the views show.",
+        summary: "State machines: app startup, the project's load, indexing, questions, what the views show, the search box.",
         tools: &["machine_state", "machine_send"],
         doc: "\
 What waits for a person in Sourcetrail is a state machine: indexing (choose a mode, follow \
@@ -463,7 +463,14 @@ action started (drawn: true). A view that never reports is given up on after 10 
 question: idle -> asking -> idle
   answer { label } | { option: n } | { id, ... }   asking: answers the question in context \
 { id, text, options, queued } and closes its box. Questions asked meanwhile queue behind it \
-(context.queued); answering moves to the next one.",
+(context.queued); answering moves to the next one.
+
+search: idle -> completing -> suggesting -> idle
+  The search box's autocompletion. A person typing moves it as an agent's `type` does.
+  type { query }                   any state: types query into the box (in place of what is there) and asks for its completions: completing, then suggesting (context.suggestions: [{ name, type, kind }], the first 30; more: how many are not listed), or idle with context.outcome \"nothing matches ...\".
+  select { index } | { name }      suggesting: searches for that suggestion, as clicking it in the list does; the activation follows (watch activation, or ui_state.active_nodes).
+  dismiss                          completing/suggesting: closes the list.
+  Recipe: machine_send { machine: \"search\", event: \"type\", args: { query: \"Foo\" }, until: [\"suggesting\", \"idle\"] }, then select.",
     },
     Topic {
         name: "logs",
@@ -490,6 +497,7 @@ const TOPIC_ALIASES: &[(&str, &str)] = &[
     ("state machine", "machines"),
     ("indexing", "machines"),
     ("question", "machines"),
+    ("autocomplete", "machines"),
 ];
 
 /// Tools as they were called before the area prefixes, and what they are now.

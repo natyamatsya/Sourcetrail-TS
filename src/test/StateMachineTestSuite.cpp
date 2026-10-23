@@ -18,6 +18,7 @@
 #include "IndexingStateMachine.h"
 #include "ProjectStateMachine.h"
 #include "QuestionStateMachine.h"
+#include "SearchStateMachine.h"
 #include "RemoteStateMachine.h"
 #include "StateMachine.h"
 #include "TabIds.h"
@@ -691,6 +692,70 @@ TEST_CASE("project close")
 	project->closed();
 	REQUIRE(project->snapshot().state == "no_project");
 	REQUIRE(contains(project->snapshot().context, R"("outcome":"closed")"));
+}
+
+struct FakeSearchPresenter
+{
+	void presentQuery(const std::string& query)
+	{
+		queries.push_back(query);
+	}
+	void dismissSuggestions()
+	{
+		dismissed++;
+	}
+
+	std::vector<std::string> queries;
+	int dismissed = 0;
+};
+
+TEST_CASE("search suggests what was typed last, and searches for what is selected")
+{
+	SearchStateMachine machine;
+	FakeSearchPresenter presenter;
+	machine.attach(presenter);
+
+	// An agent types: the box shows it, and its completions are asked for.
+	REQUIRE(machine.fire("type", R"({"query":"Fo"})", EventSource::Agent).ok);
+	REQUIRE(machine.fire("type", R"({"query":"Foo"})", EventSource::Agent).ok);
+	REQUIRE(presenter.queries == std::vector<std::string> {"Fo", "Foo"});
+	REQUIRE(machine.snapshot().state == "completing");
+
+	// Completions for what was typed over are not shown.
+	REQUIRE_FALSE(machine.awaits("Fo"));
+	REQUIRE_FALSE(machine.completed("Fo", {SearchMatch("Fo")}));
+	REQUIRE(machine.completed("Foo", {SearchMatch("Foo"), SearchMatch("FooBar")}));
+	MachineSnapshot snapshot = machine.snapshot();
+	REQUIRE(snapshot.state == "suggesting");
+	REQUIRE(snapshot.context.find(R"("name":"FooBar")") != std::string::npos);
+	REQUIRE(snapshot.events == std::vector<std::string> {"type", "select", "dismiss"});
+
+	REQUIRE_FALSE(machine.fire("select", R"({"index":2})", EventSource::Agent).ok);
+	REQUIRE_FALSE(machine.fire("select", R"({"name":"Bar"})", EventSource::Agent).ok);
+	REQUIRE(machine.fire("select", R"({"name":"FooBar"})", EventSource::Agent).ok);
+	snapshot = machine.snapshot();
+	REQUIRE(snapshot.state == "idle");
+	REQUIRE(snapshot.context.find("searched for 'FooBar'") != std::string::npos);
+	REQUIRE(presenter.dismissed == 1);
+
+	// A person types: the box has it already. Nothing found ends the query.
+	REQUIRE(machine.type("Qux", NodeTypeSet::all(), EventSource::Ui).ok);
+	REQUIRE(presenter.queries.size() == 2);
+	REQUIRE(machine.completed("Qux", {}));
+	snapshot = machine.snapshot();
+	REQUIRE(snapshot.state == "idle");
+	REQUIRE(snapshot.context.find("nothing matches 'Qux'") != std::string::npos);
+	REQUIRE_FALSE(machine.fire("dismiss", "", EventSource::Agent).ok);
+
+	// Closing the list stops the wait for completions.
+	REQUIRE(machine.type("Baz", NodeTypeSet::all(), EventSource::Ui).ok);
+	REQUIRE(machine.dismiss(EventSource::Ui).ok);
+	REQUIRE_FALSE(machine.completed("Baz", {SearchMatch("Baz")}));
+	REQUIRE(presenter.dismissed == 1);	// the person closed it themselves
+
+	machine.detach(presenter);
+	REQUIRE(machine.fire("type", R"({"query":"Q"})", EventSource::Agent).ok);
+	REQUIRE(presenter.queries.size() == 2);
 }
 
 TEST_CASE("activation ends once its messages are handled and the views have drawn")

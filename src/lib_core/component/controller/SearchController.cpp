@@ -3,6 +3,7 @@
 #ifndef SRCTRL_MODULE_BUILD
 #include "MessageTabState.h"
 #endif
+#include "SearchStateMachine.h"
 #include "SearchView.h"
 #ifndef SRCTRL_MODULE_BUILD
 #include "StorageAccess.h"
@@ -62,17 +63,20 @@ void SearchController::handleMessage(MessageSearchAutocomplete* message)
 {
 	TRACE("search autocomplete");
 
-	SearchView* view = getView();
-
-	// Don't autocomplete if autocompletion request is not up-to-date anymore
-	if (message->query != view->getQuery())
+	// Typed over or closed meanwhile: not up to date any more.
+	const std::shared_ptr<SearchStateMachine> search = SearchStateMachine::instance();
+	if (!search->awaits(message->query))
 	{
 		return;
 	}
 
 	LOG_INFO("autocomplete string: \"" + message->query + "\"");
-	view->setAutocompletionList(m_storageAccess->getAutocompletionMatches(
-		message->query, message->acceptedNodeTypes, true));
+	const std::vector<SearchMatch> matches = m_storageAccess->getAutocompletionMatches(
+		message->query, message->acceptedNodeTypes, true);
+	if (search->completed(message->query, matches))
+	{
+		getView()->setAutocompletionList(matches);
+	}
 }
 
 SearchView* SearchController::getView()

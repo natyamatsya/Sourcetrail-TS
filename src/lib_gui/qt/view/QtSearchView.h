@@ -11,7 +11,7 @@ class QtSearchView: public SearchView
 {
 public:
 	QtSearchView(ViewLayout* viewLayout);
-	~QtSearchView() override = default;
+	~QtSearchView() override;
 
 	// View implementation
 	void createWidgetWrapper() override;
@@ -23,6 +23,10 @@ public:
 	void setFocus() override;
 	void findFulltext() override;
 	void setAutocompletionList(const std::vector<SearchMatch>& autocompletionList) override;
+
+	// What the search machine shows of an agent's doing (PresentsSearch).
+	void presentQuery(const std::string& query);
+	void dismissSuggestions();
 
 private:
 	void setStyleSheet();

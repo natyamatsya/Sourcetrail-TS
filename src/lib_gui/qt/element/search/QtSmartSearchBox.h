@@ -42,6 +42,11 @@ public:
 	
 	void setAutocompletionList(const std::vector<SearchMatch>& autocompletionList);
 	void setMatches(const std::vector<SearchMatch>& matches);
+	// Shows `query` as if typed, in place of what is in the box; its completions are
+	// asked for already (an agent typed it: the search machine).
+	void showQuery(const QString& query);
+	// Closes the suggestions (an agent closed them, or searched for one).
+	void dismissSuggestions();
 	void setFocus();
 	void findFulltext();
 	
@@ -57,6 +62,8 @@ public slots:
 
 protected:
 	bool event(QEvent* event) override;
+	// The suggestions closing (a key, a click elsewhere): the search machine hears of it.
+	bool eventFilter(QObject* watched, QEvent* event) override;
 	void resizeEvent(QResizeEvent* event) override;
 
 	void focusInEvent(QFocusEvent* event) override;
@@ -135,6 +142,9 @@ private:
 
 	QWidget* m_highlightRect;
 	QtAutocompletionList* m_completer;
+	// Whether the suggestions closing is a person's doing, to tell the search machine:
+	// not while the box shows what an agent did.
+	bool m_reportsDismissal = true;
 
 	int m_oldLayoutOffset = 0;
 };

@@ -26,6 +26,7 @@
 #include "MessageQueue.h"
 #include "ProjectStateMachine.h"
 #include "QuestionStateMachine.h"
+#include "SearchStateMachine.h"
 #include "RemoteStateMachine.h"
 #include "StdexecPrelude.h"
 #include "StorageAccessProxy.h"
@@ -173,6 +174,7 @@ struct ControlledApp
 		StateMachineRegistry::instance().add(IndexingStateMachine::instance());
 		StateMachineRegistry::instance().add(QuestionStateMachine::instance());
 		StateMachineRegistry::instance().add(ActivationStateMachine::instance());
+		StateMachineRegistry::instance().add(SearchStateMachine::instance());
 		// Started, as main reports it: until then the app is Loading.
 		if (AppStateMachine::instance()->isStarting())
 		{
