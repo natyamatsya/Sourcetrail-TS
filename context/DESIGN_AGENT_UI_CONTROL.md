@@ -705,7 +705,12 @@ drives through the same events:
 (`startIndexingDialog`, `confirm`, `finishedIndexingDialog`, the progress updates),
 but those are now non-virtual and move the machines; `QtDialogView` only implements
 the presenter hooks (`presentQuestion`, `presentModeChoice`, `presentRefreshInfo`,
-`presentReport` and their `dismiss*`). Its buttons call the machine (`start(mode,
+`presentReport` and their `dismiss*`). A presenter is not a base class: a machine
+keeps a handle (`QuestionPresenter`, `IndexingPresenter`; `Presenter.h`) made from any
+object with the hooks its concept names (`PresentsQuestions`, `PresentsIndexing`). The
+handle calls them through a table of functions made for the object's type and
+compares by the whole object (`dynamic_cast<const void*>`), so `QtDialogView` is one
+presenter whether it is reached as itself or as its `DialogView`. Its buttons call the machine (`start(mode,
 Ui)`, `answer(id, i, Ui)`), and when an agent answered, the machine tells the
 presenter to close what it shows. The progress dialog's Stop sends `interrupt`
 (falling back to the plain `MessageIndexingInterrupted` should the machine refuse,
@@ -800,6 +805,42 @@ Press, and the controller posts the ack behind it: when the ack arrives the clic
 and dispatched what it does, and the bridge waits for the activation machine to be idle
 before it returns (`drawn: true`). A click that opens a modal dialog does not hold the
 ack: the dialog's event loop delivers it. A disabled button is refused (`ok: false`).
+
+### The search box, the bookmark editor, the project wizard
+
+Three more flows that waited for a person became machines, in the same shape: a
+long-lived view is the presenter (the search view, the bookmark view, the main
+window) and passes what an agent does on to the window it shows, a person's steps
+in that window are reported to the machine as they happen, and the boxes the flows
+used to show of their own are questions now.
+
+- **`search`** (`SearchStateMachine`): idle → completing → suggesting → idle, the
+  search box's autocompletion. `type { query }` puts the query in the box and asks
+  for its completions; `select { index | name }` searches for a suggestion as a click
+  in the list does; `dismiss` closes the list. The box reports a person's typing and
+  closing the list (Escape, a click elsewhere: the popup's hide), and the machine,
+  not the box's text, says whether completions are still wanted: those for a query
+  typed over are dropped, as before, also when an agent typed it.
+- **`bookmark`** (`BookmarkStateMachine`): idle → opening → editing → idle, the
+  bookmark editor. `create { node_id? }` and `edit { id }` ask the bookmark controller
+  to open it (opening ends at editing, or with why nothing opened); `set`, `save`,
+  `cancel` act on the editor. A person's typing changes the context without a move.
+  Each editor window has an id, so an older one closing cannot end a newer one's
+  state. Deleting a bookmark or a category and the bookmark button on a bookmarked
+  symbol ask questions. (The bookmark view's posts went nowhere since the GUI posts
+  were anchored to the main window, which `getMainWindowforMainView` did not find for
+  a view in the search bar's composite: it now looks through composites.)
+- **`project_wizard`** (`ProjectWizardStateMachine`): closed → applying → editing →
+  applying → closed. Every control is a request the wizard carries out on the GUI
+  thread while the machine is `applying`; the wizard reports `applied`, `failed` (back
+  to editing with the reason), `created` or `canceled`. A source group's settings are
+  named fields (`SourceGroupFields`), each belonging to the groups whose type has its
+  component, so the machine refuses a field the shown group does not have before the
+  wizard is asked. The wizard's checks ask through the question machine
+  (`QtProjectWizardWindow::tell`/`ask`, blocking on the GUI thread in the question
+  box's modal loop, which an agent's answer ends); a request a check stopped fails
+  with what the check said. The bridge's `until` waits end early when a question
+  opens, so an agent sees it at once.
 
 ### The graph as drawn, and its controls (v7)
 
