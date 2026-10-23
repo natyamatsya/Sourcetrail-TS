@@ -10,6 +10,7 @@
 // imports load the srctrl.messaging BMI (include-only two-entity mode). The modularized
 // non-Qt headers below are replaced by imports.
 #include "QtMainView.h"
+#include "View.h"
 
 #ifndef SRCTRL_MODULE_BUILD
 #include "FilePath.h"
@@ -111,9 +112,16 @@ QIcon createButtonIcon(const FilePath &iconPath, const std::string &colorId)
 
 QtMainWindow *getMainWindowforMainView(ViewLayout *viewLayout)
 {
-	if (QtMainView *mainView = dynamic_cast<QtMainView *>(viewLayout))
+	// A view in a composite (the search bar's: the bookmark view) is in the main view
+	// through the composite's layout.
+	while (viewLayout != nullptr)
 	{
-		return mainView->getMainWindow();
+		if (QtMainView *mainView = dynamic_cast<QtMainView *>(viewLayout))
+		{
+			return mainView->getMainWindow();
+		}
+		const View *view = dynamic_cast<const View *>(viewLayout);
+		viewLayout = view != nullptr ? view->getViewLayout() : nullptr;
 	}
 	return nullptr;
 }
