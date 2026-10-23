@@ -1,5 +1,8 @@
 #include "TaskFinishParsing.h"
 
+#include <chrono>
+#include <thread>
+
 #include "Blackboard.h"
 #include "DialogView.h"
 #ifndef SRCTRL_MODULE_BUILD
@@ -51,6 +54,36 @@ Task::TaskState TaskFinishParsing::doUpdate(std::shared_ptr<Blackboard> blackboa
 {
 	using enum Task::TaskState;
 	using enum DatabasePolicy;
+
+	if (m_decision)
+	{
+		const int decision = m_decision->load();
+		if (decision < 0)
+		{
+			// Waits for the decision as the indexing waits for its indexers: a short
+			// sleep per update, and what else waits on the app's strand runs between.
+			std::this_thread::sleep_for(std::chrono::milliseconds(25));
+			return STATE_RUNNING;
+		}
+		MessageIndexingStatus(false).dispatch();
+
+		const auto policy = static_cast<DatabasePolicy>(decision);
+		if (policy == DATABASE_POLICY_KEEP)
+		{
+			blackboard->set("keep_database", true);
+		}
+		else if (policy == DATABASE_POLICY_DISCARD)
+		{
+			blackboard->set("discard_database", true);
+		}
+		else if (policy == DATABASE_POLICY_REFRESH)
+		{
+			blackboard->set("keep_database", true);
+			blackboard->set("refresh_database", true);
+		}
+		return STATE_SUCCESS;
+	}
+
 	TimeStamp start = TimeStamp::now();
 
 	m_dialogView->showUnknownProgressDialog("Finish Indexing", "Optimizing database");
@@ -134,32 +167,19 @@ Task::TaskState TaskFinishParsing::doUpdate(std::shared_ptr<Blackboard> blackboa
 		MessageStatus(degraded, true, false).dispatch();
 	}
 #endif
-	DatabasePolicy policy = m_dialogView->finishedIndexingDialog(
+	// The report holds no thread while it waits for the decision: the updates after
+	// this one look for it.
+	m_decision = std::make_shared<std::atomic<int>>(-1);
+	m_dialogView->finishedIndexingDialog(
 		indexedSourceFileCount,
 		sourceFileCount,
 		stats.completedFileCount,
 		stats.fileCount,
 		static_cast<float>(time),
 		errorInfo,
-		interruptedIndexing);
-
-	MessageIndexingStatus(false).dispatch();
-
-	if (policy == DATABASE_POLICY_KEEP)
-	{
-		blackboard->set("keep_database", true);
-	}
-	else if (policy == DATABASE_POLICY_DISCARD)
-	{
-		blackboard->set("discard_database", true);
-	}
-	else if (policy == DATABASE_POLICY_REFRESH)
-	{
-		blackboard->set("keep_database", true);
-		blackboard->set("refresh_database", true);
-	}
-
-	return STATE_SUCCESS;
+		interruptedIndexing,
+		[decision = m_decision](DatabasePolicy policy) { decision->store(static_cast<int>(policy)); });
+	return STATE_RUNNING;
 }
 
 void TaskFinishParsing::doExit(std::shared_ptr<Blackboard>  /*blackboard*/)
@@ -167,4 +187,7 @@ void TaskFinishParsing::doExit(std::shared_ptr<Blackboard>  /*blackboard*/)
 	m_storage.reset();
 }
 
-void TaskFinishParsing::doReset(std::shared_ptr<Blackboard>  /*blackboard*/) {}
+void TaskFinishParsing::doReset(std::shared_ptr<Blackboard>  /*blackboard*/)
+{
+	m_decision.reset();
+}

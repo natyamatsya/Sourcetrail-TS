@@ -337,11 +337,21 @@ void Project::refresh(std::shared_ptr<DialogView> dialogView, RefreshMode refres
 	// whose runner would swallow an escaping exception with a single log line -- and without a
 	// terminal MessageIndexingFinished a headless run waits forever. Convert any escape into a
 	// failed outcome and dispatch the terminal event ourselves.
+	refreshGuarded([&]() { refreshImpl(dialogView, refreshMode); });
+}
+
+void Project::refreshPlanned(std::shared_ptr<DialogView> dialogView, const RefreshPlan& plan)
+{
+	refreshGuarded([&]() { refreshPlannedImpl(dialogView, plan); });
+}
+
+void Project::refreshGuarded(const std::function<void()>& refresh)
+{
 	const IndexingOutcome outcome = utility::expectedFromExceptions<void>(
 		IndexingErrorCode::PipelineFailed,
 		IndexingErrorCode::PipelineFailed,
 		"project refresh failed",
-		[&]() { refreshImpl(dialogView, refreshMode); });
+		refresh);
 	if (!outcome)
 	{
 		LOG_ERROR(utility::expectedErrorToString(outcome.error()));
@@ -353,24 +363,41 @@ void Project::refresh(std::shared_ptr<DialogView> dialogView, RefreshMode refres
 
 void Project::refreshImpl(std::shared_ptr<DialogView> dialogView, RefreshMode refreshMode)
 {
-	if (m_refreshStage != RefreshStageType::NONE)
+	const std::optional<RefreshPlan> plan = planRefresh(refreshMode);
+	if (!plan)
 	{
 		return;
+	}
+	for (const Question& question: plan->questions)
+	{
+		if (dialogView->confirm(question.text, question.options) == 1)
+		{
+			return;
+		}
+	}
+	refreshPlannedImpl(dialogView, *plan);
+}
+
+std::optional<Project::RefreshPlan> Project::planRefresh(RefreshMode refreshMode) const
+{
+	if (m_refreshStage != RefreshStageType::NONE)
+	{
+		return std::nullopt;
 	}
 
 	if (m_state == ProjectStateType::PROJECT_STATE_NOT_LOADED)
 	{
-		return;
+		return std::nullopt;
 	}
 
-	bool needsFullRefresh = false;
-	bool fullRefresh = false;
+	RefreshPlan plan;
+	plan.mode = refreshMode;
 	std::string question;
 
 	switch (m_state)
 	{
 	case ProjectStateType::PROJECT_STATE_EMPTY:
-		needsFullRefresh = true;
+		plan.needsFullRefresh = true;
 		break;
 
 	case ProjectStateType::PROJECT_STATE_LOADED:
@@ -383,7 +410,7 @@ void Project::refreshImpl(std::shared_ptr<DialogView> dialogView, RefreshMode re
 			"reflect the current project state. Alternatively you can also choose to just reindex "
 			"updated or "
 			"incomplete files. Do you want to reindex the project?";
-		fullRefresh = true;
+		plan.fullRefresh = true;
 		break;
 
 	case ProjectStateType::PROJECT_STATE_OUTVERSIONED:
@@ -391,7 +418,7 @@ void Project::refreshImpl(std::shared_ptr<DialogView> dialogView, RefreshMode re
 			"This project was indexed with a different version of Sourcetrail. It needs to be "
 			"fully reindexed to "
 			"be used with this version of Sourcetrail. Do you want to reindex the project?";
-		needsFullRefresh = true;
+		plan.needsFullRefresh = true;
 		break;
 
 	case ProjectStateType::PROJECT_STATE_DB_CORRUPTED:
@@ -399,7 +426,7 @@ void Project::refreshImpl(std::shared_ptr<DialogView> dialogView, RefreshMode re
 			"There was a problem loading the index of this project. The project needs to get "
 			"fully reindexed. "
 			"Do you want to reindex the project?";
-		needsFullRefresh = true;
+		plan.needsFullRefresh = true;
 		break;
 
 	default:
@@ -408,25 +435,32 @@ void Project::refreshImpl(std::shared_ptr<DialogView> dialogView, RefreshMode re
 
 	if (question.size() && m_hasGUI)
 	{
-		if (dialogView->confirm(question, {"Reindex", "Cancel"}) == 1)
-		{
-			return;
-		}
+		plan.questions.push_back({question, {"Reindex", "Cancel"}});
 	}
 
 	if (ApplicationSettings::getInstance()->getLoggingEnabled() &&
 		ApplicationSettings::getInstance()->getVerboseIndexerLoggingEnabled() && m_hasGUI)
 	{
-		if (dialogView->confirm(
-				"Warning: You are about to index your project with the \"verbose indexer "
-				"logging\" setting "
-				"enabled. This will cause a significant slowdown in indexing performance. Do you "
-				"want to proceed?",
-				{"Yes", "No"}) == 1)
-		{
-			return;
-		}
+		plan.questions.push_back(
+			{"Warning: You are about to index your project with the \"verbose indexer "
+			 "logging\" setting "
+			 "enabled. This will cause a significant slowdown in indexing performance. Do you "
+			 "want to proceed?",
+			 {"Yes", "No"}});
 	}
+	return plan;
+}
+
+void Project::refreshPlannedImpl(std::shared_ptr<DialogView> dialogView, const RefreshPlan& plan)
+{
+	if (m_refreshStage != RefreshStageType::NONE)
+	{
+		return;	// one started while the questions were open
+	}
+
+	const bool needsFullRefresh = plan.needsFullRefresh;
+	const bool fullRefresh = plan.fullRefresh;
+	RefreshMode refreshMode = plan.mode;
 
 	m_refreshStage = RefreshStageType::REFRESHING;
 

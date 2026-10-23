@@ -1,6 +1,8 @@
 #ifndef TASK_FINISH_PARSING_H
 #define TASK_FINISH_PARSING_H
 
+#include <atomic>
+#include <memory>
 #include <vector>
 
 #include "Task.h"
@@ -25,6 +27,8 @@ private:
 
 	std::shared_ptr<PersistentStorage> m_storage;
 	std::shared_ptr<DialogView> m_dialogView;
+	// The decision on the report, once it is shown: -1 until someone decided.
+	std::shared_ptr<std::atomic<int>> m_decision;
 };
 
 #endif	  // TASK_FINISH_PARSING_H

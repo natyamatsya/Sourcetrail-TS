@@ -129,6 +129,10 @@ private:
 	// since (or a close) dropped it.
 	void endLoad(const std::shared_ptr<ProjectLoad>& load);
 
+	// Asks the refresh's questions from `next` on, one after the other without
+	// holding a thread, then refreshes on the app's thread, unless one cancelled it.
+	void askThenRefresh(std::shared_ptr<Project> project, Project::RefreshPlan plan, std::size_t next, std::uint64_t cause);
+
 	void refreshProject(RefreshMode refreshMode);
 	void updateRecentProjects(const FilePath& projectSettingsFilePath);
 
@@ -150,13 +154,13 @@ private:
 
 	std::shared_ptr<Project> m_project;
 	std::shared_ptr<StorageCache> m_storageCache;
-	// The load in flight, read and written on the app's thread only; m_loads owns
-	// the pipelines, which stop with the app.
+	// The load in flight, read and written on the app's thread only.
 	std::shared_ptr<ProjectLoad> m_loading;
-	exec::async_scope m_loads;
-	// The app is stopping its loads: a question they asked was withdrawn, not
-	// answered, so they change no files on its account.
-	std::atomic<bool> m_loadsStopping = false;
+	// The pipelines of loads and refreshes, which stop with the app.
+	exec::async_scope m_pipelines;
+	// The app is stopping them: a question they asked was withdrawn, not answered,
+	// so they act on none of its account.
+	std::atomic<bool> m_pipelinesStopping = false;
 
 	std::shared_ptr<MainView> m_mainView;
 

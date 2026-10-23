@@ -80,16 +80,17 @@ void DialogView::updateCustomIndexingDialog(
 	showCustomIndexingProgress(startedFileCount, finishedFileCount, totalFileCount, sourcePaths);
 }
 
-DatabasePolicy DialogView::finishedIndexingDialog(
+void DialogView::finishedIndexingDialog(
 	size_t indexedFileCount,
 	size_t totalIndexedFileCount,
 	size_t completedFileCount,
 	size_t totalFileCount,
 	float time,
 	ErrorCountInfo errorInfo,
-	bool interrupted)
+	bool interrupted,
+	std::function<void(DatabasePolicy)> decided)
 {
-	return IndexingStateMachine::instance()->report(
+	IndexingStateMachine::instance()->report(
 		{indexedFileCount,
 		 totalIndexedFileCount,
 		 completedFileCount,
@@ -98,7 +99,8 @@ DatabasePolicy DialogView::finishedIndexingDialog(
 		 errorInfo.total,
 		 errorInfo.fatal,
 		 interrupted},
-		this);
+		this,
+		std::move(decided));
 }
 
 int DialogView::confirm(const std::string& message)

@@ -7,6 +7,7 @@
 #include <type_traits>
 #include <future>
 #include <mutex>
+#include <optional>
 #include <string>
 #include <thread>
 #include <vector>
@@ -454,6 +455,28 @@ TEST_CASE("indexing report nobody can answer keeps the data")
 	REQUIRE_FALSE(presenter.reportDismissed);
 	machine.ended("");
 	REQUIRE(contains(machine.snapshot().context, R"("outcome":"kept")"));
+}
+
+TEST_CASE("indexing report holds no thread while it waits")
+{
+	IndexingStateMachine machine;
+	FakeIndexingPresenter presenter;
+
+	machine.requested();
+	machine.preparing();
+	machine.indexingStarted();
+	std::optional<DatabasePolicy> decided;
+	machine.report(IndexingReport(), &presenter, [&](DatabasePolicy policy) { decided = policy; });
+	REQUIRE(machine.snapshot().state == "reporting");	// shown, and nothing waits for it
+	REQUIRE(presenter.reportPresented);
+	REQUIRE_FALSE(decided);
+
+	REQUIRE(machine.fire("reindex", "", EventSource::Agent).ok);
+	REQUIRE(decided == DatabasePolicy::DATABASE_POLICY_REFRESH);
+	REQUIRE(presenter.reportDismissed);
+	REQUIRE_FALSE(machine.fire("keep", "", EventSource::Agent).ok);	// decided once
+	machine.ended("");
+	REQUIRE(contains(machine.snapshot().context, R"("outcome":"reindexing")"));
 }
 
 TEST_CASE("indexing interrupt moves on to finishing")

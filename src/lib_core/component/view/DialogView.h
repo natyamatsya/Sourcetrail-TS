@@ -64,15 +64,17 @@ public:
 		size_t finishedFileCount,
 		size_t totalFileCount,
 		const std::vector<FilePath>& sourcePaths);
-	// Waits for the decision on the run's data.
-	DatabasePolicy finishedIndexingDialog(
+	// Shows the report on the run without waiting: `decided` gets the decision on
+	// its data, on the thread that decides.
+	void finishedIndexingDialog(
 		size_t indexedFileCount,
 		size_t totalIndexedFileCount,
 		size_t completedFileCount,
 		size_t totalFileCount,
 		float time,
 		ErrorCountInfo errorInfo,
-		bool interrupted);
+		bool interrupted,
+		std::function<void(DatabasePolicy)> decided);
 
 	// Asks and waits: the index of the chosen option, -1 for none.
 	int confirm(const std::string& message);

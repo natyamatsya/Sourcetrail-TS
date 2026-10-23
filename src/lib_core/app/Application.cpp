@@ -170,9 +170,9 @@ void Application::destroyInstance()
 	// not installed.
 	if (s_instance)
 	{
-		s_instance->m_loadsStopping = true;
-		s_instance->m_loads.request_stop();
-		stdexec::sync_wait(s_instance->m_loads.on_empty());
+		s_instance->m_pipelinesStopping = true;
+		s_instance->m_pipelines.request_stop();
+		stdexec::sync_wait(s_instance->m_pipelines.on_empty());
 	}
 
 	MessageQueue::getInstance()->stopMessageLoop();
@@ -540,7 +540,7 @@ void Application::loadProject(const FilePath& path, const ShardConfig& shardConf
 	};
 	const execution::AnyScheduler io = m_schedulers->io();
 
-	m_loads.spawn(
+	m_pipelines.spawn(
 		stdexec::schedule(io) | stdexec::then([load]() noexcept -> std::optional<Project::Question> {
 			const CauseScope cause(load->cause);
 			if (!loadStep(*load, [&]() { return load->project->readSettings(); }))
@@ -553,7 +553,7 @@ void Application::loadProject(const FilePath& path, const ShardConfig& shardConf
 		// Answered on the thread that answered it: back to the files.
 		stdexec::continues_on(io) | stdexec::then([this, load](int option) noexcept -> std::optional<Project::Question> {
 			const CauseScope cause(load->cause);
-			if (m_loadsStopping)
+			if (m_pipelinesStopping)
 			{
 				load->ended = true;	// keep or discard is for a person to say, not for the exit
 				return std::nullopt;
@@ -703,6 +703,17 @@ void Application::refreshProject(RefreshMode refreshMode)
 
 	if (m_project && checkSharedMemory())
 	{
+		// With questions to ask, their answers decide, and the request ends there.
+		if (m_appStrand != nullptr)
+		{
+			if (std::optional<Project::RefreshPlan> plan = m_project->planRefresh(refreshMode);
+				plan && !plan->questions.empty())
+			{
+				askThenRefresh(m_project, std::move(*plan), 0, currentCause());
+				return;
+			}
+		}
+
 		m_project->refresh(getDialogView(DialogView::UseCase::INDEXING), refreshMode);
 
 		if (!m_hasGUI && !m_project->isIndexing())
@@ -712,6 +723,42 @@ void Application::refreshProject(RefreshMode refreshMode)
 	}
 
 	IndexingStateMachine::instance()->requestHandled(m_project ? "the refresh did not start" : "no project is loaded");
+}
+
+void Application::askThenRefresh(
+	std::shared_ptr<Project> project, Project::RefreshPlan plan, std::size_t next, std::uint64_t cause)
+{
+	const CauseScope scope(cause);
+	const std::shared_ptr<DialogView> dialog = getDialogView(DialogView::UseCase::INDEXING);
+	if (m_project != project)
+	{
+		IndexingStateMachine::instance()->requestHandled("another project was loaded meanwhile");
+		return;
+	}
+	if (next == plan.questions.size())
+	{
+		project->refreshPlanned(dialog, plan);
+		IndexingStateMachine::instance()->requestHandled("the refresh did not start");
+		return;
+	}
+
+	const Project::Question& question = plan.questions[next];
+	auto answer = dialog->asked(question.text, question.options);
+	m_pipelines.spawn(
+		std::move(answer) | stdexec::continues_on(m_appStrand->scheduler()) |
+		stdexec::then([this, project = std::move(project), plan = std::move(plan), next, cause](int option) mutable noexcept {
+			if (m_pipelinesStopping)
+			{
+				return;
+			}
+			if (option == 1)
+			{
+				const CauseScope scope(cause);
+				IndexingStateMachine::instance()->requestHandled("the refresh did not start");
+				return;
+			}
+			askThenRefresh(std::move(project), std::move(plan), next + 1, cause);
+		}));
 }
 
 void Application::updateRecentProjects(const FilePath& projectSettingsFilePath)

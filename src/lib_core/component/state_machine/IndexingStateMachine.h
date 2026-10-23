@@ -132,6 +132,7 @@ struct IndexingMachine
 		std::optional<IndexingReport> report;
 		std::optional<DatabasePolicy> decision;
 		IndexingPresenter* reportPresenter = nullptr;
+		std::function<void(DatabasePolicy)> decided;	// the reporter's, called once
 
 		std::string outcome;	// how the last request or run ended
 	};
@@ -226,7 +227,10 @@ public:
 	void indexingStarted();
 	void progress(std::size_t started, std::size_t finished, std::size_t total, const std::string& file);
 	void wrappingUp();
-	// Waits for the decision on the report, from the presenter's buttons or an agent.
+	// Shows the report without waiting: `decided` gets the decision, from the
+	// presenter's buttons or an agent, on the thread that decides.
+	void report(const IndexingReport& report, IndexingPresenter* presenter, std::function<void(DatabasePolicy)> decided);
+	// Shows the report and waits for the decision.
 	DatabasePolicy report(const IndexingReport& report, IndexingPresenter* presenter);
 	// The run or request is over; an empty `outcome` keeps the report's decision.
 	void ended(const std::string& outcome);
@@ -259,7 +263,6 @@ private:
 	void counted(RefreshMode mode, const RefreshInfo& info);
 
 	ConcurrentStateMachine<IndexingMachine> m_machine;
-	std::condition_variable m_decided;
 };
 
 #endif	  // INDEXING_STATE_MACHINE_H

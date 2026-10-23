@@ -181,7 +181,8 @@ void IndexingStateMachine::wrappingUp()
 	}
 }
 
-DatabasePolicy IndexingStateMachine::report(const IndexingReport& report, IndexingPresenter* presenter)
+void IndexingStateMachine::report(
+	const IndexingReport& report, IndexingPresenter* presenter, std::function<void(DatabasePolicy)> decided)
 {
 	{
 		auto transaction = m_machine.transaction();
@@ -189,6 +190,7 @@ DatabasePolicy IndexingStateMachine::report(const IndexingReport& report, Indexi
 		data.report = report;
 		data.decision.reset();
 		data.reportPresenter = presenter;
+		data.decided = std::move(decided);
 		if (!transaction.move(Event::Report))
 		{
 			transaction.defer([state = m_machine.stateName(transaction.state())]() {
@@ -201,14 +203,23 @@ DatabasePolicy IndexingStateMachine::report(const IndexingReport& report, Indexi
 	{
 		decide(DatabasePolicy::DATABASE_POLICY_KEEP, EventSource::App);
 	}
+}
 
-	auto transaction = m_machine.transaction();
-	Data& data = transaction.data();
-	m_decided.wait(transaction.lock(), [&data]() { return data.decision.has_value(); });
-	const DatabasePolicy policy = *data.decision;
-	data.report.reset();
-	data.reportPresenter = nullptr;
-	return policy;
+DatabasePolicy IndexingStateMachine::report(const IndexingReport& report, IndexingPresenter* presenter)
+{
+	std::mutex mutex;
+	std::condition_variable decidedNow;
+	std::optional<DatabasePolicy> decision;
+	this->report(report, presenter, [&](DatabasePolicy policy) {
+		{
+			const std::lock_guard<std::mutex> lock(mutex);
+			decision = policy;
+		}
+		decidedNow.notify_all();
+	});
+	std::unique_lock<std::mutex> lock(mutex);
+	decidedNow.wait(lock, [&]() { return decision.has_value(); });
+	return *decision;
 }
 
 void IndexingStateMachine::ended(const std::string& outcome)
@@ -420,6 +431,7 @@ MachineFireResult IndexingStateMachine::decide(DatabasePolicy policy, EventSourc
 		: policy == DATABASE_POLICY_REFRESH				   ? Event::Reindex
 														   : Event::Keep;
 	IndexingPresenter* presenter = nullptr;
+	std::function<void(DatabasePolicy)> decided;
 	std::string outcome;
 	{
 		auto transaction = m_machine.transaction();
@@ -432,6 +444,9 @@ MachineFireResult IndexingStateMachine::decide(DatabasePolicy policy, EventSourc
 		}
 		data.decision = policy;
 		presenter = data.reportPresenter;
+		decided = std::move(data.decided);
+		data.report.reset();
+		data.reportPresenter = nullptr;
 		data.outcome = policy == DATABASE_POLICY_DISCARD ? "discarded"
 			: policy == DATABASE_POLICY_REFRESH			  ? "reindexing"
 			: policy == DATABASE_POLICY_KEEP			  ? "kept"
@@ -444,11 +459,13 @@ MachineFireResult IndexingStateMachine::decide(DatabasePolicy policy, EventSourc
 			});
 		}
 	}
-	m_decided.notify_all();
-
 	if (presenter != nullptr && source == EventSource::Agent)
 	{
 		presenter->dismissReport();
+	}
+	if (decided)
+	{
+		decided(policy);
 	}
 	return {true, outcome};
 }

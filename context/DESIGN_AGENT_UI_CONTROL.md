@@ -682,14 +682,19 @@ drives through the same events:
 - **`question`** (`component/state_machine/QuestionStateMachine`): idle ⇄ asking.
   Asking holds no thread: `DialogView::asked()` is a sender of the answer (stopping it
   withdraws the question), and `DialogView::confirm()` waits on that sender for the
-  callers that still block. The dialog is its presenter. Questions asked meanwhile
-  queue behind the open one.
+  callers that still block. The load's question and the refresh's (`Project::planRefresh`,
+  asked one after the other by `Application::askThenRefresh`) are asked that way, so the
+  app's queue answers while they are open; the few `confirm()`s left (the graph's "show
+  all nodes?", the controllers' notices, Preferences) still hold their thread. The
+  dialog is its presenter. Questions asked meanwhile queue behind the open one.
 - **`indexing`** (`IndexingStateMachine`): idle → pending → choosing_mode → pending →
   preparing → indexing → finishing → reporting → finishing → idle. Controls:
   `refresh`, `select_mode`, `start`, `cancel`, `interrupt`, `keep`/`discard`/
   `reindex`. `Project` and `Application` report the pipeline's steps (`requested`,
   `prepare`, `begin`, `wrap_up`, `report`, `end`), so the machine never guesses from
-  dialog titles.
+  dialog titles. The report holds no thread while it waits for the decision: it goes
+  to a callback, and `TaskFinishParsing` looks for it each update (25 ms apart), so
+  the app's strand runs what else waits in between.
 
 **DialogView became the presenter.** The pipeline still calls `DialogView`
 (`startIndexingDialog`, `confirm`, `finishedIndexingDialog`, the progress updates),

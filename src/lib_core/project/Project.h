@@ -1,6 +1,7 @@
 #ifndef PROJECT_H
 #define PROJECT_H
 
+#include <functional>
 #include <memory>
 #include <optional>
 #include <set>
@@ -66,7 +67,22 @@ public:
 	void openIndex();
 	void finishLoad();
 
+	//! Refreshes on the calling thread, asking what it asks and waiting.
 	void refresh(std::shared_ptr<DialogView> dialogView, RefreshMode refreshMode);
+
+	//! What a refresh asks before it starts (reindex an outdated index? index with
+	//! verbose logging?), for a caller that asks without waiting: option 1 of any
+	//! question cancels it. Nothing when there is nothing to refresh.
+	struct RefreshPlan
+	{
+		RefreshMode mode = RefreshMode::NONE;
+		bool needsFullRefresh = false;
+		bool fullRefresh = false;
+		std::vector<Question> questions;
+	};
+	std::optional<RefreshPlan> planRefresh(RefreshMode refreshMode) const;
+	//! The refresh once its questions were answered and none cancelled it.
+	void refreshPlanned(std::shared_ptr<DialogView> dialogView, const RefreshPlan& plan);
 
 	//! Distributed indexing: when active, refresh() indexes only this process's
 	//! stripe into a standalone shard DB (see ShardConfig). Set before load().
@@ -83,6 +99,8 @@ private:
 	// terminal MessageIndexingFinished, so a headless run can never lose its quit event to a
 	// throw (the generic task runner would otherwise just log and drop it).
 	void refreshImpl(std::shared_ptr<DialogView> dialogView, RefreshMode refreshMode);
+	void refreshPlannedImpl(std::shared_ptr<DialogView> dialogView, const RefreshPlan& plan);
+	void refreshGuarded(const std::function<void()>& refresh);
 	void buildIndexImpl(RefreshInfo info, std::shared_ptr<DialogView> dialogView);
 
 	ShardConfig m_shardConfig;
