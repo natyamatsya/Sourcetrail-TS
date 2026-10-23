@@ -98,8 +98,12 @@ left alone). Settling waits for the graph's transitions and the views' smooth sc
 so frames are the same either way; animations only make each navigation take longer (about a \
 second).
 
-instance_stop { instance? } -> { killed: id }
-  Kills a spawned instance (or forgets an attached one). Empty = the one running instance.
+instance_stop { instance?, kill?, timeout_s? } -> { stopped: id, how: quit|killed|forgotten|closed, \
+exit_code?, note? }
+  Asks a spawned instance to quit as closing its window would (machine app, event quit), so \
+its teardown runs, and kills it when it does not exit within timeout_s (default 15) or kill \
+is true; `note` says why it was killed. Forgets an attached instance. Empty = the one running \
+instance.
 
 instance_list {} -> { instances: [ { id, spawned, pid, running, exit_code?, bin?, headless?, \
 console_file?, qt?, user_data_dir?, fresh? } | { id, running: false, start_failed } ] }

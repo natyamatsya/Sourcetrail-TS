@@ -153,7 +153,11 @@ several apps side by side and compare them (baseline vs candidate).
 - **Start/kill/list tools.** `start_instance{bin, id?, project?, headless?}` spawns
   `Sourcetrail --agent-instance <id>` (agent control is always on; offscreen by default), polls until
   its channels are ready (failing fast if the child exits), optionally loads a project, and
-  returns the id. `kill_instance{id}` and `list_instances` manage the pool.
+  returns the id. `kill_instance{id}` and `list_instances` manage the pool. (Now
+  `instance_start`/`instance_stop`/`instance_list`.) `instance_stop` asks a spawned app
+  to quit first (machine `app`, event `quit`), so its teardown runs as on a person's quit,
+  and kills it only when it does not exit in time (`timeout_s`, default 15) or `kill` is
+  set; the result says which (`how: quit|killed`, with `note` saying why it was killed).
 - **Git-labelled ids.** If `start_instance` is given no `id`, it derives one from the
   binary's enclosing **git checkout** — `<branch>-<shorthash>`, sanitized — so pointing the
   bridge at a checkout self-identifies the version under test in the channel namespace. A

@@ -24,6 +24,8 @@ use crate::ipc::Bridge;
 /// How long to wait for a freshly spawned app to open its channels.
 const READY_TIMEOUT: Duration = Duration::from_secs(30);
 const READY_POLL: Duration = Duration::from_millis(250);
+/// How long instance_stop waits for an app it asked to quit before it kills it.
+pub const QUIT_TIMEOUT: Duration = Duration::from_secs(15);
 
 /// Options for spawning an instance.
 #[derive(Debug, Default, Clone)]
@@ -106,6 +108,36 @@ impl AppInstance {
     }
     pub fn bridge(&mut self) -> &mut Bridge {
         &mut self.bridge
+    }
+
+    /// Asks a spawned instance to end as closing its window would (the app
+    /// machine's `quit`) and waits up to `timeout` for the process to exit. Its exit
+    /// code once it did; `Err` with why not (an app without the control, one held
+    /// by its debugger, one that did not exit in time), and then it still runs.
+    fn quit(&mut self, timeout: Duration) -> Result<i32> {
+        if self.child.is_none() {
+            bail!("the bridge did not start this instance");
+        }
+        if let Some(code) = self.exit_code() {
+            return Ok(code);
+        }
+        if self.debug.as_ref().and_then(DebugSession::stop_status).is_some() {
+            bail!("its debugger holds it stopped");
+        }
+        // The reply can be lost to the exit it starts; a refusal cannot.
+        if let Ok(reply) = self.bridge.send_machine_event("app", "quit", "", &[], timeout) {
+            if reply["ok"] == false {
+                bail!("the app refused: {}", reply["message"].as_str().unwrap_or("quit is not a control of its app machine"));
+            }
+        }
+        let deadline = Instant::now() + timeout;
+        while Instant::now() < deadline {
+            if let Some(code) = self.exit_code() {
+                return Ok(code);
+            }
+            std::thread::sleep(Duration::from_millis(50));
+        }
+        bail!("it did not exit within {timeout:?}")
     }
 
     /// Exit code of a spawned instance that is gone (`None` while it runs, held
@@ -395,6 +427,28 @@ impl InstanceManager {
         }
         self.instances.insert(id.to_string(), instance);
         Ok(())
+    }
+
+    /// Stop an instance and forget it, or close an open dump: a spawned one is
+    /// asked to quit (unless `kill`) and killed when it does not exit within
+    /// `timeout`. Returns `{ stopped: id, how: quit|killed|forgotten|closed,
+    /// exit_code?, note? }`.
+    pub fn stop(&mut self, id: &str, kill: bool, timeout: Duration) -> Result<Value> {
+        let resolved = self.resolve(id);
+        let Some(instance) = self.instances.get_mut(&resolved) else {
+            let id = self.kill(id)?;
+            return Ok(json!({ "stopped": id, "how": "closed" }));
+        };
+        if !instance.is_spawned() {
+            let id = self.kill(&resolved)?;
+            return Ok(json!({ "stopped": id, "how": "forgotten" }));
+        }
+        let quit = if kill { Err(anyhow!("asked to kill it")) } else { instance.quit(timeout) };
+        let id = self.kill(&resolved)?;
+        Ok(match quit {
+            Ok(code) => json!({ "stopped": id, "how": "quit", "exit_code": format!("0x{:08x}", code as u32) }),
+            Err(why) => json!({ "stopped": id, "how": "killed", "note": format!("{why:#}") }),
+        })
     }
 
     /// Kill (if spawned) and forget an instance, or close an open dump. Returns

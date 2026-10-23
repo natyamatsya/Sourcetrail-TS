@@ -519,6 +519,23 @@ TEST_CASE("app runs what waited for it once started")
 	REQUIRE(recorder.path() == std::vector<std::string> {"starting>running:started(app)", "running>closing:quit(app)"});
 }
 
+TEST_CASE("app quit asked from outside ends it as closing its window does")
+{
+	AppStateMachine app;
+	int ended = 0;
+	app.onQuit([&]() { ended++; });
+	app.started();
+	REQUIRE(app.snapshot().events == std::vector<std::string> {"quit"});
+	REQUIRE_FALSE(app.fire("quit", R"({"now":true})", EventSource::Agent).ok);
+	REQUIRE(ended == 0);
+
+	REQUIRE(app.fire("quit", "", EventSource::Agent).ok);
+	REQUIRE(ended == 1);
+	REQUIRE(app.snapshot().state == "closing");
+	REQUIRE_FALSE(app.fire("quit", "", EventSource::Agent).ok);	// closing already
+	REQUIRE(ended == 1);
+}
+
 TEST_CASE("project load asked for while the app starts waits for it")
 {
 	const auto app = std::make_shared<AppStateMachine>();
@@ -855,7 +872,7 @@ static_assert(
 	ConcurrentStateMachine<IndexingMachine>::stateName(IndexingMachine::State::ChoosingMode) == "choosing_mode");
 // Remote control takes any type with a snapshot; fire makes it driven.
 static_assert(DrivenRemoteMachine<Lamp> && DrivenRemoteMachine<IndexingStateMachine>);
-static_assert(RemoteMachine<AppStateMachine> && !DrivenRemoteMachine<AppStateMachine>);
+static_assert(DrivenRemoteMachine<AppStateMachine>);
 static_assert(RemoteMachine<Thermometer> && !RemoteMachine<int>);
 // No base classes and no virtual functions: machines are plain values over a monitor.
 static_assert(!std::is_polymorphic_v<Lamp> && !std::is_polymorphic_v<ProjectStateMachine>);
@@ -871,7 +888,7 @@ TEST_CASE("concurrent state machine names its controls and refuses the rest")
 	REQUIRE_FALSE(unknown.ok);
 	REQUIRE(unknown.message == "unknown event 'burn' (press; the others come from the application)");
 	REQUIRE(AnyStateMachine(AppStateMachine::instance()).fire("started", "", EventSource::Agent).message ==
-			"the app machine takes no events from outside ('started'): watch it");
+			"unknown event 'started' (quit; the others come from the application)");
 	REQUIRE(
 		ConcurrentStateMachine<IndexingMachine>::controlNames() ==
 		"refresh, select_mode, start, cancel, interrupt, keep, discard, reindex");

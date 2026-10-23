@@ -161,6 +161,9 @@ private:
 	// The app is stopping them: a question they asked was withdrawn, not answered,
 	// so they act on none of its account.
 	std::atomic<bool> m_pipelinesStopping = false;
+	// Whether they are stopping, or the app is closing: a question box the closing
+	// ended answers "none", which is not a person's answer either.
+	bool pipelinesStopping() const;
 
 	std::shared_ptr<MainView> m_mainView;
 

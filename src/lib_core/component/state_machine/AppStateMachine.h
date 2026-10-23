@@ -18,6 +18,8 @@
 // starting the app: the language packages registered, the settings prefilled, the
 // startup load queued. Work that needs a started app (a project load an agent asks
 // for while it starts) waits for `started` instead of racing it (whenStarted).
+// `quit` is the window closing, or an agent asking the app to end (as closing its
+// window would, so it goes through the same teardown as a person's quit).
 struct AppMachine
 {
 	enum class State
@@ -43,7 +45,7 @@ struct AppMachine
 	static constexpr State initial = State::Starting;
 	static constexpr std::array states {
 		named(State::Starting, "starting"), named(State::Running, "running"), named(State::Closing, "closing")};
-	static constexpr std::array events {named(Event::Started, "started"), named(Event::Quit, "quit")};
+	static constexpr std::array events {named(Event::Started, "started"), control(Event::Quit, "quit")};
 	static constexpr auto transitions = std::to_array<StateMachine<State, Event>::Transition>({
 		{State::Starting, Event::Started, State::Running},
 		{State::Starting, Event::Quit, State::Closing},
@@ -64,22 +66,28 @@ public:
 	void started();
 	// The main window closed: the app is going away.
 	void quitting();
+	// Ends the app as closing its window would: what main installed does it.
+	MachineFireResult quit(EventSource source);
+	// How the app ends on `quit` (main's: leave the event loop).
+	void onQuit(std::function<void()> quit);
 
 	bool isStarting() const;
+	bool isClosing() const;
 	// Runs `work` once the app has started: now if it has, else on `started` (on
 	// the thread that reports it, in the order asked).
 	void whenStarted(std::function<void()> work);
 
-	// Watched by remote control, not driven: no fire.
 	MachineSnapshot snapshot() const
 	{
 		return m_machine.snapshot();
 	}
+	MachineFireResult fire(const std::string& event, const std::string& args, EventSource source);
 
 private:
 	using Event = AppMachine::Event;
 
 	ConcurrentStateMachine<AppMachine> m_machine;
+	std::function<void()> m_quit;	// set once, before the app runs
 };
 
 #endif	  // APP_STATE_MACHINE_H

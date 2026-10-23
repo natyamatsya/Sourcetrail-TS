@@ -4,6 +4,8 @@
 
 #include <glaze/glaze.hpp>
 
+#include "MachineArgs.h"
+
 // glaze reflects this for JSON; MSVC cannot reflect types in an anonymous namespace.
 namespace app_machine_json
 {
@@ -45,9 +47,51 @@ void AppStateMachine::quitting()
 	transaction.move(Event::Quit);
 }
 
+MachineFireResult AppStateMachine::quit(EventSource source)
+{
+	{
+		auto transaction = m_machine.transaction();
+		if (!transaction.accepts(Event::Quit))
+		{
+			return transaction.refuse(Event::Quit);
+		}
+		transaction.data().waiting.clear();
+		transaction.move(Event::Quit, source);
+	}
+	if (!m_quit)
+	{
+		return {true, "closing, though nothing here ends the app"};
+	}
+	m_quit();
+	return {true, "closing"};
+}
+
+void AppStateMachine::onQuit(std::function<void()> quit)
+{
+	m_quit = std::move(quit);
+}
+
+MachineFireResult AppStateMachine::fire(const std::string& event, const std::string& args, EventSource source)
+{
+	if (m_machine.controlNamed(event) != Event::Quit)
+	{
+		return m_machine.unknownEvent(event);
+	}
+	if (const auto parsed = parseArgs<machine_args::None>(event, args); !parsed)
+	{
+		return {false, parsed.error()};
+	}
+	return quit(source);
+}
+
 bool AppStateMachine::isStarting() const
 {
 	return m_machine.state() == State::Starting;
+}
+
+bool AppStateMachine::isClosing() const
+{
+	return m_machine.state() == State::Closing;
 }
 
 void AppStateMachine::whenStarted(std::function<void()> work)

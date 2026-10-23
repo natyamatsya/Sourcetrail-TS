@@ -553,7 +553,7 @@ void Application::loadProject(const FilePath& path, const ShardConfig& shardConf
 		// Answered on the thread that answered it: back to the files.
 		stdexec::continues_on(io) | stdexec::then([this, load](int option) noexcept -> std::optional<Project::Question> {
 			const CauseScope cause(load->cause);
-			if (m_pipelinesStopping)
+			if (pipelinesStopping())
 			{
 				load->ended = true;	// keep or discard is for a person to say, not for the exit
 				return std::nullopt;
@@ -568,6 +568,11 @@ void Application::loadProject(const FilePath& path, const ShardConfig& shardConf
 		stdexec::let_value(ask) |
 		stdexec::continues_on(m_appStrand->scheduler()) |
 		stdexec::then([this, load](int) noexcept { endLoad(load); }));
+}
+
+bool Application::pipelinesStopping() const
+{
+	return m_pipelinesStopping || AppStateMachine::instance()->isClosing();
 }
 
 void Application::endLoad(const std::shared_ptr<ProjectLoad>& load)
@@ -747,7 +752,7 @@ void Application::askThenRefresh(
 	m_pipelines.spawn(
 		std::move(answer) | stdexec::continues_on(m_appStrand->scheduler()) |
 		stdexec::then([this, project = std::move(project), plan = std::move(plan), next, cause](int option) mutable noexcept {
-			if (m_pipelinesStopping)
+			if (pipelinesStopping())
 			{
 				return;
 			}

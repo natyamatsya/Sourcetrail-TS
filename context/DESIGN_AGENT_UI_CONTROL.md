@@ -725,7 +725,10 @@ used to infer:
 - **`app`** (`AppStateMachine`): starting → running → closing. `main` reports
   `started` once the language packages are registered, the settings prefilled and
   the startup load queued; `whenStarted(work)` runs work then (or at once). The
-  window closing moves it to `closing`.
+  window closing moves it to `closing`, and so does its one control, `quit`: an
+  agent ends the app as closing its window would (main leaves the event loop, modal
+  loops with it, and the teardown runs). A question box that closing ends answers
+  "none"; the load and the refresh, seeing the app closing, act on none of it.
 - **`project`** (`ProjectStateMachine`): no_project → loading → opening → ready, and
   ready → unloading → no_project. Controls: `load { path, refresh? }`, `close`.
   Application reports the load's outcome (`requested`, `kept` — the same project, or

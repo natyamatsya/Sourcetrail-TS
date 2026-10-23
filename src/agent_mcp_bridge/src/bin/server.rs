@@ -353,6 +353,12 @@ struct KillArgs {
     /// The instance to stop; empty = the one running instance.
     #[serde(default)]
     instance: String,
+    /// Kill it at once instead of asking it to quit first.
+    #[serde(default)]
+    kill: bool,
+    /// How long to wait for it to quit before killing it (default 15).
+    #[serde(default)]
+    timeout_s: Option<u64>,
 }
 
 #[derive(serde::Deserialize, rmcp::schemars::JsonSchema)]
@@ -740,9 +746,10 @@ impl SourcetrailServer {
         )
     }
 
-    #[tool(description = "Stop a spawned instance (or forget an attached one). Empty instance = the one running instance. Returns { killed: id }.")]
+    #[tool(description = "Stop an instance: asks it to quit (its teardown runs), kills it if it does not exit in time or kill is true. Returns { stopped, how: quit|killed|forgotten|closed, exit_code?, note? }.")]
     async fn instance_stop(&self, Parameters(a): Parameters<KillArgs>) -> Result<CallToolResult, McpError> {
-        ok_json(self.mgr.call(move |m| Ok(json!({ "killed": m.kill(&a.instance)? }))).await?)
+        let timeout = a.timeout_s.map_or(agent_mcp_bridge::instance::QUIT_TIMEOUT, |s| Duration::from_secs(s.clamp(1, 120)));
+        ok_json(self.mgr.call(move |m| m.stop(&a.instance, a.kill, timeout)).await?)
     }
 
     #[tool(description = "List known instances and open dumps. Returns { instances: [ { id, pid, running, exit_code?, stopped?, dump?, console_file?, ... } | { id, start_failed } ] }.")]
