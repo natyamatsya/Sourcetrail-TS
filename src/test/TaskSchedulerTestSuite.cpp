@@ -448,13 +448,11 @@ TEST_CASE("task finally signals termination and stays fired-once")
 	REQUIRE(1 == record.calls);
 }
 
-TEST_CASE("scheduler on a strand runs its tasks in order and goes idle")
+TEST_CASE("scheduler on a strand runs its tasks in order")
 {
 	exec::static_thread_pool pool(2);
 	const auto strand = execution::Strand::create(pool.get_scheduler());
 	const auto scheduler = std::make_shared<TaskScheduler>(TabId::NONE);
-	std::atomic<int> idle = 0;
-	scheduler->setIdleHandler([&]() { idle++; });
 
 	std::vector<int> order;	// written on the strand only
 	scheduler->pushTask(std::make_shared<TaskLambda>([&]() { order.push_back(1); }));	// before it starts
@@ -462,7 +460,7 @@ TEST_CASE("scheduler on a strand runs its tasks in order and goes idle")
 	scheduler->pushTask(std::make_shared<TaskLambda>([&]() { order.push_back(strand->runsHere() ? 2 : -2); }));
 	scheduler->pushTask(std::make_shared<TaskLambda>([&]() { order.push_back(3); }));
 
-	REQUIRE(eventually([&]() { return idle > 0 && !scheduler->hasTasksQueued(); }));
+	REQUIRE(eventually([&]() { return !scheduler->hasTasksQueued(); }));
 	scheduler->stopSchedulerLoop();
 	REQUIRE(order == std::vector<int> {1, 2, 3});
 	REQUIRE_FALSE(scheduler->loopIsRunning());
@@ -473,8 +471,6 @@ TEST_CASE("scheduler on a strand lets other work run while a task holds")
 	exec::static_thread_pool pool(2);
 	const auto strand = execution::Strand::create(pool.get_scheduler());
 	const auto scheduler = std::make_shared<TaskScheduler>(TabId::NONE);
-	std::atomic<int> idle = 0;
-	scheduler->setIdleHandler([&]() { idle++; });
 	scheduler->startSchedulerLoopOn(strand);
 
 	const auto holding = std::make_shared<HoldingTask>();
@@ -487,10 +483,10 @@ TEST_CASE("scheduler on a strand lets other work run while a task holds")
 		stdexec::schedule(strand->scheduler()) | stdexec::then([&]() { continued = strand->runsHere(); }));
 	REQUIRE(continued);
 	REQUIRE(scheduler->hasTasksQueued());
-	REQUIRE(idle == 0);
+	REQUIRE(scheduler->hasTasksQueued());
 
 	holding->released = true;
-	REQUIRE(eventually([&]() { return idle == 1; }));
+	REQUIRE(eventually([&]() { return !scheduler->hasTasksQueued(); }));
 	REQUIRE_FALSE(scheduler->hasTasksQueued());
 	scheduler->stopSchedulerLoop();
 }
@@ -517,8 +513,6 @@ TEST_CASE("task parked on a strand is left alone until woken")
 	exec::static_thread_pool pool(2);
 	const auto strand = execution::Strand::create(pool.get_scheduler());
 	const auto scheduler = std::make_shared<TaskScheduler>(TabId::NONE);
-	std::atomic<int> idle = 0;
-	scheduler->setIdleHandler([&]() { idle++; });
 	scheduler->startSchedulerLoopOn(strand);
 
 	const auto parking = std::make_shared<ParkingTask>();
@@ -528,17 +522,17 @@ TEST_CASE("task parked on a strand is left alone until woken")
 	std::this_thread::sleep_for(std::chrono::milliseconds(50));
 	REQUIRE(parking->updates == 1);	// no pass for a parked task
 	REQUIRE(scheduler->hasTasksQueued());
-	REQUIRE(idle == 0);
+	REQUIRE(scheduler->hasTasksQueued());
 
 	// Other tasks run meanwhile.
 	std::atomic<bool> ran = false;
 	scheduler->pushTask(std::make_shared<TaskLambda>([&]() { ran = true; }));
 	REQUIRE(eventually([&]() { return ran.load(); }));
 	REQUIRE(parking->updates == 1);
-	REQUIRE(idle == 0);
+	REQUIRE(scheduler->hasTasksQueued());
 
 	parking->wakeUp();
-	REQUIRE(eventually([&]() { return idle == 1; }));
+	REQUIRE(eventually([&]() { return !scheduler->hasTasksQueued(); }));
 	REQUIRE(parking->updates == 2);
 	REQUIRE_FALSE(scheduler->hasTasksQueued());
 	scheduler->stopSchedulerLoop();
@@ -565,8 +559,6 @@ TEST_CASE("parallel group on a strand is woken by its children, not polled")
 	exec::static_thread_pool pool(2);
 	const auto strand = execution::Strand::create(pool.get_scheduler());
 	const auto scheduler = std::make_shared<TaskScheduler>(TabId::NONE);
-	std::atomic<int> idle = 0;
-	scheduler->setIdleHandler([&]() { idle++; });
 	scheduler->startSchedulerLoopOn(strand);
 
 	std::atomic<bool> release = false;
@@ -585,11 +577,11 @@ TEST_CASE("parallel group on a strand is woken by its children, not polled")
 	std::atomic<bool> continued = false;
 	stdexec::sync_wait(stdexec::schedule(strand->scheduler()) | stdexec::then([&]() { continued = true; }));
 	REQUIRE(continued);
-	REQUIRE(idle == 0);
+	REQUIRE(scheduler->hasTasksQueued());
 
 	const auto released = std::chrono::steady_clock::now();
 	release = true;
-	REQUIRE(eventually([&]() { return idle == 1; }));
+	REQUIRE(eventually([&]() { return !scheduler->hasTasksQueued(); }));
 	REQUIRE(std::chrono::steady_clock::now() - released < std::chrono::seconds(1));
 	scheduler->stopSchedulerLoop();
 }

@@ -2,6 +2,7 @@
 #define TASK_RUNNER_H
 
 #include <atomic>
+#include <cstdint>
 #include <memory>
 
 #include "Task.h"
@@ -25,6 +26,10 @@ public:
 	void setHoldsQueue(bool holds);
 	bool holdsQueue() const;
 
+	// What it was scheduled on behalf of (the cause current when it was made): it
+	// runs under it, and counts as that request's work until it ends (CauseWork).
+	std::uint64_t cause() const;
+
 private:
 	std::shared_ptr<Task> m_task;
 	bool m_reset = false;
@@ -34,6 +39,7 @@ private:
 
 	std::atomic<bool> m_parked = false;
 	bool m_holdsQueue = false;
+	const std::uint64_t m_cause;
 };
 
 #endif	  // TASK_RUNNER_H

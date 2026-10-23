@@ -45,37 +45,25 @@ A queued message is delivered like this (`src/lib/utility/messaging/MessageQueue
 ```
 Message<T>::dispatch() → pushMessage() → [run_loop drain]
   → sendMessage()        : iterate MessageListener<T>, call handleMessage()   (inline)
-  or sendMessageAsTask() : wrap each listener's handleMessageBase() in a
-                           TaskLambda → TaskGroupParallel/Sequence
-                           → Task::dispatch(schedulerId, taskGroup)   ← OLD path
+  or sendMessageAsTask() : one ListenerTask for the message's listeners
+                           → Task::dispatch(schedulerId, task)
 ```
 
-That last hop lands on `TaskScheduler`/`TaskManager`. For the app scheduler that
-is now a loop on a strand over `ISchedulers::io()` (event-driven, no thread of its
-own); the background and tab schedulers still poll on threads of their own, and
-`TaskGroupParallel` still spawns a raw `std::thread` per task.
+The `ListenerTask` takes its turn in the scheduler's queue, so messages and the other
+tasks stay in order. It runs a message's listeners in a row; a parallel message's
+(an activation's graph and code) run side by side on `ISchedulers::compute()`, as
+senders, while the task waits parked and holds the queue. Every scheduler (the app's,
+the background's, each tab's) loops on a strand of its own over `ISchedulers::io()`,
+event-driven and holding no thread while idle. Headless (no schedulers) they loop on
+threads, and a parallel message's listeners run in a row.
 
 ## Next increment — "route message-handler execution onto `ISchedulers`"
 
-*Started:* the app scheduler runs on a strand over `io()`, and the project load
-continues on it from a pipeline. Left: the tab and background schedulers, and
-handlers as senders rather than `TaskLambda`s.
-
-The smallest, highest-value step, and the one the scaffolding was built for:
-
-- In `sendMessageAsTask`, run each per-listener unit of work on
-  `Application::getSchedulers()->io()` (or `compute()`) instead of wrapping it in
-  a `TaskLambda` on the old `TaskScheduler`. A listener that must touch Qt hops via
-  `ui()` / `onUi`.
-- Preserve everything the front door guarantees: `TabId` scheduler routing, the
-  parallel-vs-sequence choice, message filters, `dispatchImmediately`, and the
-  inline `sendMessage()` path.
-- Retire `TaskScheduler`/`TaskGroupParallel` **for message delivery** (they remain
-  for the indexer until Phase 3).
-- Extend `scripts/smoke.sh` + `MessageQueueTestSuite` to cover the new routing.
-
-This is a bounded change to one function's back half, on top of finished
-scaffolding — not a rewrite of the 91 message types or their listeners.
+*Done:* every scheduler runs on a strand over `io()`; a message's listeners are one
+task, a parallel message's run as senders on `compute()` (no thread per listener);
+`Settled` comes from the work's completion (`CauseWork`), and the schedulers' idle hook
+is gone. Left for Phase 3: the indexer's `Task` trees (`TaskGroupParallel` still starts
+a thread per child there) and the remaining `std::thread` sites.
 
 ## Later — subsystem migration (Phase 3+)
 

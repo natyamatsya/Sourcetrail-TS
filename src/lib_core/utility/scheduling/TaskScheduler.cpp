@@ -10,6 +10,7 @@
 #include <chrono>
 #include <thread>
 
+#include "MessageCause.h"
 #include "ScopedFunctor.h"
 #include "Strand.h"
 #include "logging.h"
@@ -45,6 +46,7 @@ void TaskScheduler::pushTask(std::shared_ptr<Task> task)
 	{
 		std::lock_guard<std::mutex> lock(m_tasksMutex);
 		m_taskRunners.push_back(std::make_shared<TaskRunner>(task));
+		CauseWork::begun(m_taskRunners.back()->cause());
 	}
 	postPass();
 }
@@ -54,13 +56,15 @@ void TaskScheduler::pushNextTask(std::shared_ptr<Task> task)
 	{
 		std::lock_guard<std::mutex> lock(m_tasksMutex);
 
+		const auto runner = std::make_shared<TaskRunner>(task);
+		CauseWork::begun(runner->cause());
 		if (m_taskRunners.size() == 0)
 		{
-			m_taskRunners.push_front(std::make_shared<TaskRunner>(task));
+			m_taskRunners.push_front(runner);
 		}
 		else
 		{
-			m_taskRunners.insert(m_taskRunners.begin() + 1, std::make_shared<TaskRunner>(task));
+			m_taskRunners.insert(m_taskRunners.begin() + 1, runner);
 		}
 	}
 	postPass();
@@ -194,39 +198,20 @@ void TaskScheduler::processTasks()
 {
 	using enum Task::TaskState;
 
-	bool processedAny = false;
-	std::function<void()> idleHandler;
+	std::lock_guard<std::mutex> lock(m_tasksMutex);
+
+	// Parked runners are looked at again each loop.
+	for (const std::shared_ptr<TaskRunner>& runner: m_taskRunners)
 	{
-		std::lock_guard<std::mutex> lock(m_tasksMutex);
-
-		// Parked runners are looked at again each loop.
-		for (const std::shared_ptr<TaskRunner>& runner: m_taskRunners)
-		{
-			runner->unpark();
-		}
-
-		while (hasRunnable())
-		{
-			processedAny |= runFront();
-		}
-
-		m_terminateRunningTasks = false;
-
-		// Scheduler-idle edge: the runner queue drained after doing work. Copy the
-		// handler under the lock; invoke it below, outside the lock (it may publish
-		// an event). Runs on this scheduler thread — the same one the message
-		// handlers ran on — so the handler sees their effects and shares their
-		// thread. It must not push tasks (the drain loop has already broken).
-		if (processedAny && m_taskRunners.empty())
-		{
-			idleHandler = m_idleHandler;
-		}
+		runner->unpark();
 	}
 
-	if (idleHandler)
+	while (hasRunnable())
 	{
-		idleHandler();
+		runFront();
 	}
+
+	m_terminateRunningTasks = false;
 }
 
 void TaskScheduler::postPass()
@@ -248,14 +233,13 @@ void TaskScheduler::runPass()
 {
 	using enum Task::TaskState;
 
-	std::function<void()> idleHandler;
 	std::shared_ptr<execution::Strand> strand;
 	{
 		std::lock_guard<std::mutex> lock(m_tasksMutex);
 
 		for (std::size_t round = m_taskRunners.size(); round > 0 && hasRunnable(); round--)
 		{
-			m_passProcessedAny |= runFront();
+			runFront();
 		}
 
 		// While nothing may run, no pass is posted: waking a parked runner posts it.
@@ -267,11 +251,6 @@ void TaskScheduler::runPass()
 		{
 			m_passPosted = false;
 			m_terminateRunningTasks = false;
-			// Scheduler-idle edge, as in processTasks (not while parked ones wait).
-			if (m_taskRunners.empty() && std::exchange(m_passProcessedAny, false))
-			{
-				idleHandler = m_idleHandler;
-			}
 		}
 	}
 
@@ -282,10 +261,6 @@ void TaskScheduler::runPass()
 	else
 	{
 		m_passesEnded.notify_all();
-	}
-	if (idleHandler)
-	{
-		idleHandler();
 	}
 }
 
@@ -305,7 +280,7 @@ bool TaskScheduler::hasRunnable() const
 	return false;
 }
 
-bool TaskScheduler::runFront()
+void TaskScheduler::runFront()
 {
 	using enum Task::TaskState;
 
@@ -314,7 +289,7 @@ bool TaskScheduler::runFront()
 	{
 		m_taskRunners.pop_front();	// a parked background runner: the others go first
 		m_taskRunners.push_back(runner);
-		return false;
+		return;
 	}
 
 	Task::TaskState state = STATE_FAILURE;
@@ -333,14 +308,20 @@ bool TaskScheduler::runFront()
 	runner->setHoldsQueue(state == STATE_RUNNING && runner->isParked());
 	if (runner->holdsQueue())
 	{
-		return true;	// stays at the front until it is woken
+		return;	// stays at the front until it is woken
 	}
 	m_taskRunners.pop_front();
 	if (state == STATE_HOLD)
 	{
 		m_taskRunners.push_back(runner);
 	}
-	return true;
+	else
+	{
+		// Done with, for good. Outside the lock: the work's end calls back (CauseWork).
+		m_tasksMutex.unlock();
+		CauseWork::ended(runner->cause());
+		m_tasksMutex.lock();
+	}
 }
 
 Task::TaskState TaskScheduler::runUntilItWaits(const std::shared_ptr<TaskRunner>& runner)
@@ -348,6 +329,7 @@ Task::TaskState TaskScheduler::runUntilItWaits(const std::shared_ptr<TaskRunner>
 	using enum Task::TaskState;
 
 	CurrentTask current {this, runner};
+	const CauseScope cause(runner->cause());	// what it dispatches carries it on
 	CurrentTask* const outer = std::exchange(t_currentTask, &current);
 	[[maybe_unused]]
 	ScopedFunctor restore([outer]()
@@ -419,10 +401,4 @@ void TaskScheduler::wake(TaskRunner& runner)
 	{
 		strand->post([self = shared_from_this()]() { self->runPass(); });
 	}
-}
-
-void TaskScheduler::setIdleHandler(std::function<void()> handler)
-{
-	std::lock_guard<std::mutex> lock(m_tasksMutex);
-	m_idleHandler = std::move(handler);
 }

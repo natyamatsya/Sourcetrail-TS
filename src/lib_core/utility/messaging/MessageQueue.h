@@ -76,6 +76,9 @@ public:
 	bool hasMessagesQueued() const;
 
 	void setSendMessagesAsTasks(bool sendMessagesAsTasks);
+	//! Where a parallel message's listeners run side by side: `run` starts work on a
+	//! pool (the app's compute pool, as a sender). Without one they run in a row.
+	void setListenerPool(std::function<void(std::function<void()>)> run);
 
 private:
 	static std::shared_ptr<MessageQueue> s_instance;
@@ -125,6 +128,7 @@ private:
 	std::shared_ptr<const Observer> m_observer;
 
 	bool m_sendMessagesAsTasks = false;
+	std::function<void(std::function<void()>)> m_listenerPool;	// set before the loop starts
 };
 #ifdef SRCTRL_MODULE_PURVIEW
 }

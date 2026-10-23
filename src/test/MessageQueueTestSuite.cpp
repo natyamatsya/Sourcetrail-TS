@@ -3,11 +3,18 @@
 #include <atomic>
 #include <chrono>
 #include <cstdint>
+#include <mutex>
+#include <set>
 #include <thread>
 
 // classic headers (entities not exported): stay textual
 #include "MessageCause.h"
 #include "MessageQueue.h"
+#include "StdexecPrelude.h"
+#include "Strand.h"
+#include "TabIds.h"
+#include "TaskManager.h"
+#include "TaskScheduler.h"
 #ifndef SRCTRL_MODULE_BUILD
 #include "Message.h"
 #include "MessageListener.h"
@@ -371,4 +378,133 @@ TEST_CASE("a message's cause carries on to what its handling dispatches")
 	REQUIRE(followUp.m_count == 2);
 	REQUIRE(followUp.m_cause == 0);
 	REQUIRE(currentCause() == 0);
+}
+
+TEST_CASE("a request's work is counted until it is done")
+{
+	std::vector<std::uint64_t> done;
+	CauseWork::onDone([&](std::uint64_t cause) { done.push_back(cause); });
+
+	CauseWork::begun(7);
+	CauseWork::begun(7);
+	CauseWork::begun(0);	// nothing: not counted
+	REQUIRE(CauseWork::pending(7) == 2);
+	REQUIRE(CauseWork::pending(0) == 0);
+	CauseWork::ended(7);
+	REQUIRE(done.empty());
+	CauseWork::ended(7);
+	REQUIRE(CauseWork::pending(7) == 0);
+	REQUIRE(done == std::vector<std::uint64_t> {7});
+	CauseWork::ended(7);	// more ends than begins: ignored
+	REQUIRE(done.size() == 1);
+
+	CauseWork::onDone(nullptr);
+}
+
+namespace
+{
+class ParallelMessage: public Message<ParallelMessage>
+{
+public:
+	ParallelMessage()
+	{
+		setIsParallel(true);
+	}
+	static const std::string getStaticType()
+	{
+		return "ParallelMessage";
+	}
+};
+
+// Two of these handle a ParallelMessage side by side; the next message waits.
+class SlowListener: public MessageListener<ParallelMessage>
+{
+public:
+	explicit SlowListener(std::atomic<int>& running, std::atomic<int>& most): m_running(running), m_most(most) {}
+
+	std::atomic<int> handled = 0;
+
+private:
+	void handleMessage(ParallelMessage*  /*message*/) override
+	{
+		const int now = ++m_running;
+		for (int most = m_most; now > most && !m_most.compare_exchange_weak(most, now);)
+		{
+		}
+		std::this_thread::sleep_for(std::chrono::milliseconds(80));
+		--m_running;
+		handled++;
+	}
+
+	std::atomic<int>& m_running;
+	std::atomic<int>& m_most;
+};
+
+class AfterListener: public MessageListener<Test2Message>
+{
+public:
+	explicit AfterListener(std::atomic<int>& running): m_running(running) {}
+
+	std::atomic<int> ranAlongside = 0;
+	std::atomic<int> handled = 0;
+
+private:
+	void handleMessage(Test2Message*  /*message*/) override
+	{
+		ranAlongside += m_running.load();
+		handled++;
+	}
+
+	std::atomic<int>& m_running;
+};
+}	 // namespace
+
+TEST_CASE("a parallel message's listeners run side by side on the pool, and the next one waits")
+{
+	// Two pools, as the app has (I/O for the strands, compute for the listeners): a
+	// static_thread_pool keeps work scheduled from one of its threads on that thread.
+	exec::static_thread_pool io(2);
+	exec::static_thread_pool compute(2);
+	const auto strand = execution::Strand::create(io.get_scheduler());
+	TaskManager::getScheduler(TabIds::app())->startSchedulerLoopOn(strand);
+	MessageQueue* queue = MessageQueue::getInstance().get();
+	queue->setSendMessagesAsTasks(true);
+	queue->setListenerPool([scheduler = compute.get_scheduler()](std::function<void()> work) {
+		stdexec::start_detached(stdexec::schedule(scheduler) | stdexec::then(std::move(work)));
+	});
+	queue->startMessageLoopThreaded();
+
+	std::atomic<int> running = 0;
+	std::atomic<int> most = 0;
+	SlowListener first(running, most);
+	SlowListener second(running, most);
+	AfterListener after(running);
+
+	{
+		const CauseScope request(77);
+		ParallelMessage().dispatch();
+		Test2Message().dispatch();
+	}
+	const auto deadline = std::chrono::steady_clock::now() + std::chrono::seconds(5);
+	while (after.handled == 0 && std::chrono::steady_clock::now() < deadline)
+	{
+		std::this_thread::sleep_for(std::chrono::milliseconds(5));
+	}
+	while (CauseWork::pending(77) > 0 && std::chrono::steady_clock::now() < deadline)
+	{
+		std::this_thread::sleep_for(std::chrono::milliseconds(5));
+	}
+
+	queue->stopMessageLoop();
+	queue->setListenerPool(nullptr);
+	queue->setSendMessagesAsTasks(false);
+	TaskManager::getScheduler(TabIds::app())->stopSchedulerLoop();
+	TaskManager::destroyScheduler(TabIds::app());
+
+	REQUIRE(first.handled == 1);
+	REQUIRE(second.handled == 1);
+	REQUIRE(most == 2);	// side by side
+	REQUIRE(after.handled == 1);
+	REQUIRE(after.ranAlongside == 0);	// after them, not alongside
+	REQUIRE(CauseWork::pending(77) == 0);	// all of the request's work is done
 }

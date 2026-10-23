@@ -42,14 +42,6 @@ public:
 	bool loopIsRunning() const;
 	bool hasTasksQueued() const;
 
-	//! Invoked on the scheduler's loop thread each time the runner queue drains to
-	//! empty after running at least one task (a "scheduler idle" edge). Single slot;
-	//! pass nullptr to clear. Used by AgentControlController for the act-and-observe
-	//! `Settled` barrier — the app dispatches message handlers as tasks here, so this
-	//! (not MessageQueue idle) is where a command's fan-out actually completes. The
-	//! handler must not push tasks (it runs after the drain loop has broken).
-	void setIdleHandler(std::function<void()> handler);
-
 	void terminateRunningTasks();
 
 	//! For a task in its update: its runner waits, left out of the scheduler's
@@ -82,8 +74,8 @@ private:
 	// runner lets the others go first.
 	bool hasRunnable() const;
 	// Under m_tasksMutex, when hasRunnable(): runs the front runner (unlocked
-	// meanwhile) or, parked, moves it to the back. Whether a task ran.
-	bool runFront();
+	// meanwhile) or, parked, moves it to the back.
+	void runFront();
 	// Runs `runner` until it is not running, parked or stopped; how it ended
 	// (STATE_FAILURE when the loop stopped or tasks were terminated).
 	Task::TaskState runUntilItWaits(const std::shared_ptr<TaskRunner>& runner);
@@ -100,13 +92,9 @@ private:
 	mutable std::mutex m_loopMutex;
 	mutable std::mutex m_threadMutex;
 
-	// Guarded by m_tasksMutex; copied out under the lock before invocation.
-	std::function<void()> m_idleHandler;
-
 	std::shared_ptr<execution::Strand> m_strand;	// the strand loop's, set once it starts
 	bool m_passPosted = false;	// guarded by m_tasksMutex
 	std::condition_variable m_passesEnded;	// m_passPosted went false
-	bool m_passProcessedAny = false;	// since the queue was last empty; guarded by m_tasksMutex
 };
 
 #endif	  // TASK_SCHEDULER_H

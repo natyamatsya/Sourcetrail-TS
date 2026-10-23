@@ -293,29 +293,28 @@ next goes idle after the command. The agent loop becomes **send → await `Comma
 await `Settled(request_id)` → read `UiState`** — deterministic, no polling, no per-command
 race handling.
 
-### Producing `Settled` — a scheduler-idle signal
+### Producing `Settled` — from the request's own work
 
-Subtlety discovered in implementation: the app runs message handlers **as tasks**
-(`Application` sets `MessageQueue::setSendMessagesAsTasks(true)`, so `sendMessageAsTask`
-wraps each listener's `handleMessageBase` in a `TaskLambda` on the app `TaskScheduler`). So
-a command's fan-out completes when *that scheduler* quiesces — **not** when the message
-buffer drains. Hooking `MessageQueue` idle fires too early (observed: `activate_node`
-returned before the activation task ran → empty `active_nodes`).
+A request has settled when the work queued on its behalf is done and the views have
+drawn what it changed. Work is counted per cause (`CauseWork`, next to `CauseScope` in
+`MessageCause.h`): a message from when it is queued (`pushMessage`, or processed at once)
+until it is handled, filtered out or dropped unrun; a scheduler task from when it is
+pushed until it leaves the scheduler for good. Tasks run under the cause they were queued
+under, and listeners under their message's, so what they queue in turn is counted for the
+same request before their own work ends: the count only reaches zero once the whole
+fan-out has run. The graph and code views report drawing to the activation machine.
 
-The barrier therefore watches the **app `TaskScheduler` idle** edge, guarded by
-`MessageQueue::hasMessagesQueued()` (a command's effects hop buffer → task, so if messages
-are still queued the fan-out is mid-flight — wait for a later idle). The idle handler runs
-where the handlers ran, after them: the app scheduler runs on a strand over the I/O pool
-(`execution::Strand`, `TaskScheduler::startSchedulerLoopOn`), so its tasks and the idle
-edge are serialized, though not always on the same thread. The controller tracks the
-in-flight `request_id`; on the first quiesced idle it emits `Settled { request_id }`.
+`AgentControlController` keeps the accepted requests that wait for their `Settled`, and
+looks again whenever a request's count drops to zero (`CauseWork::onDone`), when the
+activation machine goes idle, and as a request comes in. The last hop is a post to the
+GUI thread, behind what was posted there before, which looks once more: GUI work may
+have queued more on the request's behalf.
 
-**This hooks the legacy `TaskScheduler`, which
-[`ROADMAP_STDEXEC_MIGRATION.md`](ROADMAP_STDEXEC_MIGRATION.md) is retiring.** Its "next
-increment" — route message-handler execution onto the stdexec `ISchedulers` — is the clean
-end state: with handlers running as senders on a scheduler, `Settled` becomes a natural
-`async_scope`/completion signal and the idle-handler hook goes away. The scheduler-idle
-hook is a correct **interim** that the migration supersedes.
+This replaced a barrier on the schedulers going idle (the app scheduler's idle edge,
+guarded by the message queue and the tabs' schedulers). That waited for *everything* to be
+quiet, and it missed requests whose last message was handled on the message loop itself,
+where no scheduler goes idle: a request then never settled. The schedulers have no idle
+hook any more.
 
 Nuance — *asynchronous* effects (indexing, project load) outlive the queue drain, so they
 don't "settle" at queue-idle; they settle at their domain event. `Settled` therefore means

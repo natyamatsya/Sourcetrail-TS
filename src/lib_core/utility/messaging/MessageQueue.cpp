@@ -13,10 +13,8 @@
 #include "ScopedFunctor.h"
 #include "StdexecPrelude.h"
 #include "TabIds.h"
-#include "TaskFinally.h"
-#include "TaskGroupParallel.h"
-#include "TaskGroupSequence.h"
-#include "TaskLambda.h"
+#include "Task.h"
+#include "TaskScheduler.h"
 #include "logging.h"
 
 // Event-driven loop backing: a single-threaded stdexec run_loop drained on its
@@ -131,6 +129,7 @@ void MessageQueue::pushMessage(std::shared_ptr<MessageBase> message)
 	// On behalf of whatever it is dispatched for now: a message the history replays
 	// was dispatched before, for something else.
 	message->setCause(currentCause());
+	CauseWork::begun(message->getCause());
 	// Started as it is dispatched: whoever dispatched it sees it going on.
 	if (const std::shared_ptr<const Observer> followedBy = followerOf(*message))
 	{
@@ -147,6 +146,7 @@ void MessageQueue::pushMessage(std::shared_ptr<MessageBase> message)
 void MessageQueue::processMessage(std::shared_ptr<MessageBase> message, bool asNextTask)
 {
 	message->setCause(currentCause());
+	CauseWork::begun(message->getCause());
 	const std::shared_ptr<const Observer> followedBy = followerOf(*message);
 	if (followedBy)
 	{
@@ -174,6 +174,7 @@ void MessageQueue::handOn(
 		{
 			followedBy->handled(*message);
 		}
+		CauseWork::ended(message->getCause());
 	}
 }
 
@@ -283,6 +284,11 @@ void MessageQueue::setSendMessagesAsTasks(bool sendMessagesAsTasks)
 	m_sendMessagesAsTasks = sendMessagesAsTasks;
 }
 
+void MessageQueue::setListenerPool(std::function<void(std::function<void()>)> run)
+{
+	m_listenerPool = std::move(run);
+}
+
 std::shared_ptr<MessageQueue> MessageQueue::s_instance;
 
 MessageQueue::MessageQueue(): m_messageLoop(std::make_unique<MessageLoop>()) {}
@@ -293,22 +299,11 @@ void MessageQueue::processMessages()
 	{
 		std::shared_ptr<MessageBase> message;
 		const std::shared_ptr<const Observer> follower = observer();
-		std::vector<std::shared_ptr<MessageBase>> dropped;	// followed ones a filter dropped
+		std::vector<std::shared_ptr<MessageBase>> dropped;	// the ones a filter dropped
 		{
 			std::lock_guard<std::mutex> lock(m_messageBufferMutex);
 
-			std::vector<std::shared_ptr<MessageBase>> followed;
-			if (follower)
-			{
-				for (const std::shared_ptr<MessageBase>& queued: m_messageBuffer)
-				{
-					if (follower->follows(*queued))
-					{
-						followed.push_back(queued);
-					}
-				}
-			}
-
+			const MessageBufferType queued = m_messageBuffer;
 			for (std::shared_ptr<MessageFilter> filter: m_filters)
 			{
 				if (!m_messageBuffer.size())
@@ -319,11 +314,14 @@ void MessageQueue::processMessages()
 				filter->filter(&m_messageBuffer);
 			}
 
-			for (const std::shared_ptr<MessageBase>& queued: followed)
+			if (queued.size() != m_messageBuffer.size())
 			{
-				if (std::find(m_messageBuffer.begin(), m_messageBuffer.end(), queued) == m_messageBuffer.end())
+				for (const std::shared_ptr<MessageBase>& candidate: queued)
 				{
-					dropped.push_back(queued);
+					if (std::find(m_messageBuffer.begin(), m_messageBuffer.end(), candidate) == m_messageBuffer.end())
+					{
+						dropped.push_back(candidate);
+					}
 				}
 			}
 
@@ -337,10 +335,14 @@ void MessageQueue::processMessages()
 			}
 		}
 
-		// Handled, as far as their observer goes: they were started when pushed.
+		// Done with: handled, as far as their observer goes (started when pushed).
 		for (const std::shared_ptr<MessageBase>& queued: dropped)
 		{
-			follower->handled(*queued);
+			if (follower && follower->follows(*queued))
+			{
+				follower->handled(*queued);
+			}
+			CauseWork::ended(queued->getCause());
 		}
 
 		if (!message)
@@ -385,72 +387,167 @@ void MessageQueue::sendMessage(std::shared_ptr<MessageBase> message)
 	}
 }
 
+namespace
+{
+// A message's listeners as one task on its scheduler, in the queue in its turn: in
+// a row, or, for a parallel message with a pool to run on, side by side there while
+// the task waits parked, holding the queue as the listeners' thread group did.
+// `handled` goes once they all ran, or when the task is dropped unrun.
+class ListenerTask: public Task
+{
+public:
+	ListenerTask(
+		std::shared_ptr<MessageBase> message,
+		std::vector<Id> listenerIds,
+		std::function<void(std::function<void()>)> pool,
+		std::function<void()> handled)
+		: m_message(std::move(message))
+		, m_listenerIds(std::move(listenerIds))
+		, m_pool(std::move(pool))
+		, m_handled(std::move(handled))
+	{
+	}
+
+	~ListenerTask() override
+	{
+		report();
+	}
+
+private:
+	// What the listeners running on the pool share with the task.
+	struct SideBySide
+	{
+		std::mutex mutex;
+		std::size_t running = 0;
+		std::function<void()> wake;
+	};
+
+	void doEnter(std::shared_ptr<Blackboard>  /*blackboard*/) override {}
+	void doExit(std::shared_ptr<Blackboard>  /*blackboard*/) override {}
+	void doReset(std::shared_ptr<Blackboard>  /*blackboard*/) override {}
+
+	TaskState doUpdate(std::shared_ptr<Blackboard>  /*blackboard*/) override
+	{
+		using enum Task::TaskState;
+		if (!m_sideBySide)
+		{
+			if (!m_message->isParallel() || !m_pool || m_listenerIds.size() < 2)
+			{
+				for (const Id listenerId: m_listenerIds)
+				{
+					runListener(*m_message, listenerId);
+				}
+				report();
+				return STATE_SUCCESS;
+			}
+			startSideBySide();
+		}
+
+		std::unique_lock<std::mutex> lock(m_sideBySide->mutex);
+		if (m_sideBySide->running == 0)
+		{
+			lock.unlock();
+			report();
+			return STATE_SUCCESS;
+		}
+		m_sideBySide->wake = TaskScheduler::parkCurrentTask();
+		if (!m_sideBySide->wake)
+		{
+			lock.unlock();
+			TaskScheduler::waitForNextLook();
+		}
+		return STATE_RUNNING;
+	}
+
+	void startSideBySide()
+	{
+		m_sideBySide = std::make_shared<SideBySide>();
+		m_sideBySide->running = m_listenerIds.size();
+		for (const Id listenerId: m_listenerIds)
+		{
+			m_pool([sideBySide = m_sideBySide, message = m_message, listenerId]() {
+				try
+				{
+					runListener(*message, listenerId);
+				}
+				catch (const std::exception& e)
+				{
+					LOG_ERROR(std::string("a message listener failed: ") + e.what());
+				}
+				catch (...)
+				{
+					LOG_ERROR("a message listener failed with an unknown exception");
+				}
+				listenerDone(*sideBySide);
+			});
+		}
+	}
+
+	static void runListener(MessageBase& message, Id listenerId)
+	{
+		if (MessageListenerBase* listener = MessageQueue::getInstance()->getListenerById(listenerId))
+		{
+			const CauseScope cause(message.getCause());
+			listener->handleMessageBase(&message);
+		}
+	}
+
+	static void listenerDone(SideBySide& sideBySide)
+	{
+		std::function<void()> wake;
+		{
+			const std::lock_guard<std::mutex> lock(sideBySide.mutex);
+			if (--sideBySide.running == 0)
+			{
+				wake = std::exchange(sideBySide.wake, nullptr);
+			}
+		}
+		if (wake)
+		{
+			wake();
+		}
+	}
+
+	void report()
+	{
+		if (std::function<void()> handled = std::exchange(m_handled, nullptr))
+		{
+			handled();
+		}
+	}
+
+	const std::shared_ptr<MessageBase> m_message;
+	const std::vector<Id> m_listenerIds;
+	const std::function<void(std::function<void()>)> m_pool;
+	std::function<void()> m_handled;
+	std::shared_ptr<SideBySide> m_sideBySide;
+};
+}	 // namespace
+
 void MessageQueue::sendMessageAsTask(
 	std::shared_ptr<MessageBase> message, bool asNextTask, std::shared_ptr<const Observer> observer) const
 {
-	std::shared_ptr<TaskGroup> taskGroup;
-	if (message->isParallel())
-	{
-		taskGroup = std::make_shared<TaskGroupParallel>();
-	}
-	else
-	{
-		taskGroup = std::make_shared<TaskGroupSequence>();
-	}
-
+	std::vector<Id> listenerIds;
 	{
 		std::lock_guard<std::mutex> lock(m_listenersMutex);
-		for (size_t i = 0; i < m_listeners.size(); i++)
+		for (MessageListenerBase* listener: m_listeners)
 		{
-			MessageListenerBase* listener = m_listeners[i];
-
 			if (listener->getType() == message->getType() &&
 				(message->getSchedulerId() == TabId::NONE || listener->getSchedulerId() == TabId::NONE ||
 				 listener->getSchedulerId() == message->getSchedulerId()))
 			{
-				Id listenerId = listener->getId();
-				taskGroup->addTask(std::make_shared<TaskLambda>([listenerId, message]() {
-					MessageListenerBase* listener = MessageQueue::getInstance()->getListenerById(
-						listenerId);
-					if (listener)
-					{
-						const CauseScope cause(message->getCause());
-						listener->handleMessageBase(message.get());
-					}
-				}));
+				listenerIds.push_back(listener->getId());
 			}
 		}
 	}
 
-	std::shared_ptr<Task> task = taskGroup;
-	if (observer)
-	{
-		// `handled` once the listeners' tasks ended, however they did; and when a
-		// scheduler drops them unrun, as the task goes.
-		struct Handled
+	auto task = std::make_shared<ListenerTask>(message, std::move(listenerIds), m_listenerPool, [observer, message]() {
+		if (observer)
 		{
-			std::function<void()> report;
-			~Handled()
-			{
-				if (report)
-				{
-					report();
-				}
-			}
-		};
-		auto handled = std::make_shared<Handled>();
-		handled->report = [observer, message]() { observer->handled(*message); };
-		auto finally = std::make_shared<TaskFinally>([handled](TaskFinally::TerminalCause) {
-			std::function<void()> report = std::move(handled->report);
-			handled->report = nullptr;
-			if (report)
-			{
-				report();
-			}
-		});
-		finally->setTask(taskGroup);
-		task = finally;
-	}
+			observer->handled(*message);
+		}
+		CauseWork::ended(message->getCause());
+	});
 
 	TabId schedulerId = message->getSchedulerId();
 	if (schedulerId == TabId::NONE)
@@ -458,6 +555,8 @@ void MessageQueue::sendMessageAsTask(
 		schedulerId = TabIds::app();
 	}
 
+	// Queued on behalf of the message's cause: it counts as that request's work.
+	const CauseScope cause(message->getCause());
 	if (asNextTask)
 	{
 		Task::dispatchNext(schedulerId, task);

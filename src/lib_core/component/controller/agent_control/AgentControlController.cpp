@@ -575,12 +575,14 @@ struct AgentControlController::Impl
 				}
 			},
 			m_schedulers->io());
-		// Settle barrier: message handlers run as tasks (Application sets
-		// setSendMessagesAsTasks(true)), on the app scheduler and on the current
-		// tab's, so a command's fan-out completes when both have gone idle — not when
-		// the message buffer drains. Hook the app scheduler here; handleCommand hooks
-		// the tab a command lands in. flushSettled emits Settled once all is quiet.
-		TaskManager::getScheduler(TabIds::app())->setIdleHandler([this]() { onIdle(); });
+		// Settle barrier: a request has settled once the work queued on its behalf
+		// is done (CauseWork) and the views have drawn (the activation machine).
+		CauseWork::onDone([this, alive = std::weak_ptr<void>(m_lifetime)](std::uint64_t) {
+			if (alive.lock())
+			{
+				flushSettled();
+			}
+		});
 		utility::qt::watchDialogs(true, [this, alive = std::weak_ptr<void>(m_lifetime)](const std::string& dialog) {
 			if (alive.lock())
 			{
@@ -627,15 +629,7 @@ struct AgentControlController::Impl
 			m_agentLogger.reset();
 		}
 		utility::qt::watchDialogs(false);
-		TaskManager::getScheduler(TabIds::app())->setIdleHandler(nullptr);	// before we tear down
-		{
-			const std::lock_guard<std::mutex> lock(m_settleMutex);
-			for (const TabId tab: m_settleTabs)
-			{
-				TaskManager::getScheduler(tab)->setIdleHandler(nullptr);
-			}
-			m_settleTabs.clear();
-		}
+		CauseWork::onDone(nullptr);	// before we tear down
 		m_reader.stop();
 		m_uiScope.request_stop();
 		stdexec::sync_wait(m_uiScope.on_empty());	 // join any in-flight snapshot capture
@@ -1300,111 +1294,68 @@ struct AgentControlController::Impl
 		return std::nullopt;
 	}
 
-	// Emit `Settled { requestId }` once the effects of a request have drained. They
-	// run on the app scheduler and on the current tab's, so both get the idle
-	// handler. A request whose effects dispatched nothing would wait for an idle
-	// edge that never comes, so an app that is quiet already settles it at once.
+	// Emit `Settled { requestId }` once the request's work is done: what it queued
+	// on its behalf (messages, tasks, and what those queued in turn: CauseWork) has
+	// ended, and the views have drawn what it changed (the activation machine).
 	void expectSettle(std::uint64_t requestId)
 	{
-		const TabId tab = TabIds::currentTab();
 		{
 			const std::lock_guard<std::mutex> lock(m_settleMutex);
 			m_pendingSettle.push_back(requestId);
-			if (tab != TabId::NONE && tab != TabIds::app() && m_settleTabs.insert(tab).second)
-			{
-				TaskManager::getScheduler(tab)->setIdleHandler([this]() { onIdle(); });
-			}
 		}
-		if (quiescent())
-		{
-			flushSettled();
-		}
-	}
-
-	// The idle handler of the app scheduler and of the tab schedulers commands ran
-	// in: flush Settled.
-	void onIdle()
-	{
 		flushSettled();
 	}
 
-	// Whether no message is queued or in flight, no scheduler that ran agent work
-	// has tasks, and the views have drawn what they were given (the activation
-	// machine is idle): the app has quiesced.
-	bool quiescent()
+	// Whether request `requestId`'s work is done and the views have drawn.
+	static bool isSettled(std::uint64_t requestId)
 	{
-		if (MessageQueue::getInstance()->hasMessagesQueued() ||
-			TaskManager::getScheduler(TabIds::app())->hasTasksQueued() ||
-			!ActivationStateMachine::instance()->isIdle())
-		{
-			return false;
-		}
-		const std::lock_guard<std::mutex> lock(m_settleMutex);
-		for (const TabId tab: m_settleTabs)
-		{
-			if (TaskManager::getScheduler(tab)->hasTasksQueued())
-			{
-				return false;
-			}
-		}
-		return true;
+		return CauseWork::pending(requestId) == 0 && ActivationStateMachine::instance()->isIdle();
 	}
 
-	// Publish a `Settled` for every accepted command whose fan-out has now drained.
-	// Runs from the idle handler of the app scheduler or of a tab's scheduler, so it
-	// checks that the other one is idle too, and when the activation machine goes
-	// idle: the graph and code views report when they have drawn what a command
-	// changed (their animations included), so a frame taken after Settled shows
-	// it. The other views' last hop is a post to the GUI thread no one counts:
-	// Settled goes out from the GUI thread, behind everything posted there before.
+	// Publish a `Settled` for every pending request whose work is done: when one's
+	// work ends, when the activation machine goes idle, and as a request comes in.
+	// The graph and code views report when they have drawn (their animations
+	// included), so a frame taken after Settled shows it. The other views' last hop
+	// is a post to the GUI thread no one counts: Settled goes out from the GUI
+	// thread, behind everything posted there before, and a request whose GUI work
+	// queued more meanwhile waits for that too.
 	void flushSettled()
 	{
 		std::vector<std::uint64_t> settled;
 		{
 			const std::lock_guard<std::mutex> lock(m_settleMutex);
-			if (m_pendingSettle.empty())
-			{
-				return;
-			}
-			// A command's effects hop message-buffer -> task, and from the app
-			// scheduler to the tab's (an activation is handled where its tab is): if
-			// messages are still queued or either scheduler still has tasks, effects
-			// are mid-flight. A later idle edge, on whichever finishes last, flushes.
-			if (MessageQueue::getInstance()->hasMessagesQueued() ||
-				TaskManager::getScheduler(TabIds::app())->hasTasksQueued() ||
-				!ActivationStateMachine::instance()->isIdle())
-			{
-				return;
-			}
-			for (const TabId tab: m_settleTabs)
-			{
-				if (TaskManager::getScheduler(tab)->hasTasksQueued())
+			std::erase_if(m_pendingSettle, [&settled](std::uint64_t requestId) {
+				if (!isSettled(requestId))
 				{
-					return;
+					return false;
 				}
-			}
-			settled.swap(m_pendingSettle);
+				settled.push_back(requestId);
+				return true;
+			});
+		}
+		if (settled.empty())
+		{
+			return;
 		}
 		onGui([this, settled = std::move(settled)]() {
-			// The GUI work that ran first may have dispatched more (a view that
-			// requests data): then these wait for the idle edge that work brings.
-			if (!quiescent())
+			std::vector<std::uint64_t> notYet;
+			for (const std::uint64_t requestId: settled)
+			{
+				if (!isSettled(requestId))
+				{
+					notYet.push_back(requestId);
+					continue;
+				}
+				flatbuffers::FlatBufferBuilder builder;
+				publishEvent(builder, fb::Event_Settled, fb::CreateSettled(builder, requestId).Union(), requestId);
+			}
+			if (!notYet.empty())
 			{
 				{
 					const std::lock_guard<std::mutex> lock(m_settleMutex);
-					m_pendingSettle.insert(m_pendingSettle.end(), settled.begin(), settled.end());
+					m_pendingSettle.insert(m_pendingSettle.end(), notYet.begin(), notYet.end());
 				}
-				// That edge may have passed before they were back in the list.
-				if (quiescent())
-				{
-					flushSettled();
-				}
-				return;
-			}
-			for (const std::uint64_t requestId: settled)
-			{
-				flatbuffers::FlatBufferBuilder builder;
-				publishEvent(builder, fb::Event_Settled, fb::CreateSettled(builder, requestId).Union(), requestId);
+				flushSettled();	// their work may have ended before they were back in the list
 			}
 		});
 	}
@@ -1767,9 +1718,8 @@ struct AgentControlController::Impl
 	std::mutex m_logConfigMutex;
 	std::regex m_logPattern;
 	bool m_logHasPattern = false;
-	std::mutex m_settleMutex;	// m_pendingSettle and m_settleTabs: flushed from several schedulers' idle handlers
-	std::vector<std::uint64_t> m_pendingSettle;	// accepted request_ids awaiting a queue-idle Settled
-	std::set<TabId> m_settleTabs;	// tab schedulers whose idle handler is flushSettled
+	std::mutex m_settleMutex;	// m_pendingSettle: flushed from whichever thread ends a request's work
+	std::vector<std::uint64_t> m_pendingSettle;	// accepted request_ids awaiting their Settled
 
 	bool m_listening = false;
 	std::size_t m_machineObserver = 0;	// publishes every state machine transition

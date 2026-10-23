@@ -708,6 +708,14 @@ void Application::startMessagingAndScheduling()
 	queue->addMessageFilter(std::make_shared<MessageFilterSearchAutocomplete>());
 
 	queue->setSendMessagesAsTasks(true);
+	// A parallel message's listeners (an activation's graph and code) side by side
+	// on the compute pool, as senders, not on a thread each.
+	if (m_schedulers != nullptr)
+	{
+		queue->setListenerPool([pool = m_schedulers->compute()](std::function<void()> work) {
+			stdexec::start_detached(stdexec::schedule(pool) | stdexec::then(std::move(work)));
+		});
+	}
 	queue->startMessageLoopThreaded();
 }
 

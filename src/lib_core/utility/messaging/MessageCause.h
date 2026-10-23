@@ -1,7 +1,9 @@
 #ifndef MESSAGE_CAUSE_H
 #define MESSAGE_CAUSE_H
 
+#include <cstddef>
 #include <cstdint>
+#include <functional>
 #include <utility>
 
 // What a thread's work is on behalf of: an agent's request id, or 0 for nothing
@@ -36,5 +38,20 @@ auto withCurrentCause(Work work)
 		work();
 	};
 }
+
+// The work queued on behalf of a request and not done yet: its messages from when
+// they are queued until they are handled, the tasks scheduled for it until they
+// end. A request with none left (and its views drawn) has settled: agent control's
+// Settled, from the work's own completion rather than from schedulers going idle.
+class CauseWork
+{
+public:
+	static void begun(std::uint64_t cause);
+	static void ended(std::uint64_t cause);
+	static std::size_t pending(std::uint64_t cause);
+	// Called with the cause, on the thread that ended the work, whenever a request's
+	// pending work drops to none. One at a time; nullptr clears it.
+	static void onDone(std::function<void(std::uint64_t)> done);
+};
 
 #endif	  // MESSAGE_CAUSE_H

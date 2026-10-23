@@ -1,11 +1,12 @@
 #include "TaskRunner.h"
 
 #include "Blackboard.h"
+#include "MessageCause.h"
 #include "TaskManager.h"
 #include "TaskScheduler.h"
 #include "logging.h"
 
-TaskRunner::TaskRunner(std::shared_ptr<Task> task): m_task(task) {}
+TaskRunner::TaskRunner(std::shared_ptr<Task> task): m_task(task), m_cause(currentCause()) {}
 
 Task::TaskState TaskRunner::update(TabId schedulerId)
 {
@@ -87,6 +88,11 @@ void TaskRunner::setHoldsQueue(bool holds)
 bool TaskRunner::holdsQueue() const
 {
 	return m_holdsQueue;
+}
+
+std::uint64_t TaskRunner::cause() const
+{
+	return m_cause;
 }
 
 void TaskRunner::terminate()
