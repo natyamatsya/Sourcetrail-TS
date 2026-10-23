@@ -24,7 +24,8 @@ inline std::vector<NodeType> NodeType::getOverviewBundleNodes()
 		NodeType(NODE_TYPE),
 		NodeType(NODE_TYPEDEF),
 		NodeType(NODE_ENUM),
-		NodeType(NODE_CONCEPT)
+		NodeType(NODE_CONCEPT),
+		NodeType(NODE_BUILTIN_TYPE)
 	};
 }
 
@@ -194,6 +195,8 @@ inline Tree<NodeType::BundleInfo> NodeType::getOverviewBundleTree() const
 		return Tree<BundleInfo>(BundleInfo("Records"));
 	case NODE_CONCEPT:
 		return Tree<BundleInfo>(BundleInfo("Concepts"));
+	case NODE_BUILTIN_TYPE:
+		return Tree<BundleInfo>(BundleInfo("Builtin Types"));
 	default:
 		break;
 	}

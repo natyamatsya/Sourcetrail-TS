@@ -1588,6 +1588,15 @@ void GraphController::bundleNodesByType()
 	std::list<std::shared_ptr<DummyNode>> nodes(m_dummyNodes.begin(), m_dummyNodes.end());
 	m_dummyNodes.clear();
 
+	// The C++ indexer records builtin types as definitions, so the overview gets them.
+	// They show only with the setting, as in an activation's graph (hideBuiltinTypes).
+	if (!ApplicationSettings::getInstance()->getShowBuiltinTypesInGraph())
+	{
+		std::erase_if(nodes, [](const std::shared_ptr<DummyNode>& node) {
+			return node->isGraphNode() && node->data->getType().isBuiltin();
+		});
+	}
+
 	bool hasNonFileBundle = false;
 
 	for (const NodeType& nodeType: NodeType::getOverviewBundleNodes())
