@@ -948,6 +948,29 @@ struct AgentControlController::Impl
 			publishMachineStates(builder, requestId, {makeMachineState(builder, machine->snapshot())});
 			return true;
 		}
+		// A load goes through the project machine, which is thread-safe and loading
+		// before the ack goes out; the load itself runs later on the message thread.
+		// So the ack does not wait for whatever that thread is busy with.
+		case fb::Command_LoadProject:
+		{
+			const auto* c = envelope->command_as_LoadProject();
+			if (c == nullptr || c->project_file_path() == nullptr)
+			{
+				emitResult(requestId, false, "rejected: load_project: missing project path");
+				return true;
+			}
+			const CauseScope cause(requestId);
+			const MachineFireResult result = ProjectStateMachine::instance()->load(
+				c->project_file_path()->str(), toRefreshMode(c->refresh_mode()), EventSource::Agent);
+			if (!result.ok)
+			{
+				emitResult(requestId, false, "rejected: " + result.message);
+				return true;
+			}
+			emitResult(requestId, true);
+			expectSettle(requestId);
+			return true;
+		}
 		case fb::Command_SendInput:
 		{
 			const auto* c = envelope->command_as_SendInput();
@@ -1021,11 +1044,9 @@ struct AgentControlController::Impl
 		// What the command dispatches, and all that follows from it, is on its behalf.
 		const CauseScope cause(requestId);
 
-		// State gate: everything but load_project / get_ui_state / set_log_filter
-		// needs a project (the GUI-only commands never get here).
-		const bool needsProject = !(
-			type == fb::Command_LoadProject || type == fb::Command_GetUiState ||
-			type == fb::Command_SetLogFilter);
+		// State gate: everything but get_ui_state / set_log_filter needs a project
+		// (the GUI-only commands and load_project never get here).
+		const bool needsProject = !(type == fb::Command_GetUiState || type == fb::Command_SetLogFilter);
 		if (needsProject && computeAppState() == fb::AppState_NoProject)
 		{
 			emitResult(requestId, false, "rejected: no project loaded");
@@ -1042,20 +1063,6 @@ struct AgentControlController::Impl
 
 		switch (type)
 		{
-		case fb::Command_LoadProject:
-			if (const auto* c = envelope->command_as_LoadProject(); c && c->project_file_path())
-			{
-				// Through the project machine, which is loading before the ack goes out
-				// (and holds the load until the app has started).
-				const MachineFireResult result = ProjectStateMachine::instance()->load(
-					c->project_file_path()->str(), toRefreshMode(c->refresh_mode()), EventSource::Agent);
-				if (!result.ok)
-				{
-					emitResult(requestId, false, "rejected: " + result.message);
-					return;
-				}
-			}
-			break;
 		case fb::Command_Search:
 			if (const auto* c = envelope->command_as_Search(); c && c->query())
 			{

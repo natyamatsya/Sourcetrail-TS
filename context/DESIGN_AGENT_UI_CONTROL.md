@@ -706,7 +706,10 @@ question parks exactly the thread other commands wait on), each with an ack and 
 `MachineStates` reply; every transition is a `MachineTransition` event; `UiState`
 carries `machines`. The bridge's `machine_send { ..., until }` follows transitions
 until a target state, and `project_open` returns at once with an open question
-instead of waiting out a load that question holds.
+instead of waiting out a load that question holds. `LoadProject` is answered on the
+reader thread as well: the project machine is loading before the ack goes out, and
+the load runs on the message thread once it gets there. So the ack does not wait
+for whatever that thread is busy with.
 
 **Startup and the project's load.** Two more machines replace what agent control
 used to infer:
