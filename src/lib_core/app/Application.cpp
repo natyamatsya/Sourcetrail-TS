@@ -176,9 +176,9 @@ void Application::destroyInstance()
 	}
 
 	MessageQueue::getInstance()->stopMessageLoop();
+	// A strand loop's pass may hold its scheduler past its removal: end them here.
+	TaskManager::stopSchedulerLoops();
 	TaskManager::destroyScheduler(TabIds::background());
-	// A strand loop's pass may hold the scheduler past its removal: end it here.
-	TaskManager::getScheduler(TabIds::app())->stopSchedulerLoop();
 	TaskManager::destroyScheduler(TabIds::app());
 
 	if (GarbageCollectorImpl* gc = GarbageCollectorImpl::getInstance())
@@ -592,6 +592,19 @@ QuestionSender Application::askFor(const ProjectLoad& load, const std::optional<
 	return getDialogView(DialogView::UseCase::GENERAL)->asked(question->text, question->options);
 }
 
+std::shared_ptr<execution::Strand> Application::startTaskScheduler(TabId tab)
+{
+	const std::shared_ptr<TaskScheduler> scheduler = TaskManager::createScheduler(tab);
+	if (m_schedulers == nullptr)
+	{
+		scheduler->startSchedulerLoopThreaded();
+		return nullptr;
+	}
+	std::shared_ptr<execution::Strand> strand = execution::Strand::create(m_schedulers->io());
+	scheduler->startSchedulerLoopOn(strand);
+	return strand;
+}
+
 execution::Strand::Scheduler Application::appScheduler() const
 {
 	return m_appStrand->scheduler();
@@ -684,19 +697,10 @@ void Application::handleMessage(MessageSwitchColorScheme* message)
 
 void Application::startMessagingAndScheduling()
 {
-	// On a strand over the I/O pool where there are schedulers: it holds no thread
-	// while it has nothing to do, and the load's pipeline continues on it,
-	// serialized with the message handlers and the indexing tasks.
-	if (m_schedulers != nullptr)
-	{
-		m_appStrand = execution::Strand::create(m_schedulers->io());
-		TaskManager::getScheduler(TabIds::app())->startSchedulerLoopOn(m_appStrand);
-	}
-	else
-	{
-		TaskManager::getScheduler(TabIds::app())->startSchedulerLoopThreaded();
-	}
-	TaskManager::getScheduler(TabIds::background())->startSchedulerLoopThreaded();
+	// The load's pipeline continues on the app's strand, serialized with the message
+	// handlers and the indexing tasks.
+	m_appStrand = startTaskScheduler(TabIds::app());
+	startTaskScheduler(TabIds::background());
 
 	MessageQueue* queue = MessageQueue::getInstance().get();
 	queue->addMessageFilter(std::make_shared<MessageFilterErrorCountUpdate>());

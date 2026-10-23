@@ -66,6 +66,11 @@ public:
 	//! GUI bootstrap passes execution::qt::Schedulers; null in headless/tests).
 	execution::ISchedulers* getSchedulers() const;
 
+	//! Starts the task scheduler of `tab` (the app's, the background's, a tab's): on a
+	//! strand of its own over the I/O pool where the app has schedulers, so it holds
+	//! no thread while it has nothing to run; else on a thread of its own. Its strand.
+	std::shared_ptr<execution::Strand> startTaskScheduler(TabId tab);
+
 	static std::string getUUID();
 
 	static void loadSettings();

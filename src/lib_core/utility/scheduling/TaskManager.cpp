@@ -1,5 +1,7 @@
 #include "TaskManager.h"
 
+#include <vector>
+
 #include "TaskScheduler.h"
 
 std::map<TabId, std::shared_ptr<TaskScheduler>> TaskManager::s_schedulers;
@@ -34,4 +36,23 @@ std::shared_ptr<TaskScheduler> TaskManager::getScheduler(TabId schedulerId)
 	std::shared_ptr<TaskScheduler> scheduler = std::make_shared<TaskScheduler>(schedulerId);
 	s_schedulers.emplace(schedulerId, scheduler);
 	return scheduler;
+}
+
+void TaskManager::stopSchedulerLoops()
+{
+	std::vector<std::shared_ptr<TaskScheduler>> schedulers;
+	{
+		std::lock_guard<std::mutex> lock(s_schedulersMutex);
+		for (const auto& [id, scheduler]: s_schedulers)
+		{
+			schedulers.push_back(scheduler);
+		}
+	}
+	for (const std::shared_ptr<TaskScheduler>& scheduler: schedulers)
+	{
+		if (scheduler->loopIsRunning())
+		{
+			scheduler->stopSchedulerLoop();
+		}
+	}
 }

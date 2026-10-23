@@ -57,7 +57,14 @@ void TabsController::addTab(TabId tabId, SearchMatch match)
 {
 	std::lock_guard<std::mutex> lock(m_tabsMutex);
 
-	TaskManager::createScheduler(tabId)->startSchedulerLoopThreaded();
+	if (const std::shared_ptr<Application> app = Application::getInstance())
+	{
+		app->startTaskScheduler(tabId);	// a tab's own serial context, beside the others
+	}
+	else
+	{
+		TaskManager::createScheduler(tabId)->startSchedulerLoopThreaded();
+	}
 
 	m_tabs.emplace(
 		tabId, std::make_shared<Tab>(tabId, m_viewFactory, m_storageAccess, m_screenSearchSender));

@@ -16,6 +16,10 @@ public:
 	
 	static std::shared_ptr<TaskScheduler> getScheduler(TabId schedulerId);
 
+	//! Stops every scheduler's loop, for the app's end: a loop on a strand stops once
+	//! its pass in flight ended, so nothing of it runs after the app is gone.
+	static void stopSchedulerLoops();
+
 private:
 	static std::map<TabId, std::shared_ptr<TaskScheduler>> s_schedulers;
 	static std::mutex s_schedulersMutex;
