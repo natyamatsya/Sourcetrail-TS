@@ -55,18 +55,20 @@ QtTcpWrapper::~QtTcpWrapper()
 
 void QtTcpWrapper::sendMessage(const std::string& message) const
 {
-	QByteArray data = QString::fromStdString(message).toUtf8();
-
-	QTcpSocket socket;
-	socket.connectToHost(QHostAddress::LocalHost, m_clientPort);
-
-	if (socket.waitForConnected())
-	{
-		socket.write(data);
-		socket.flush();
-		socket.waitForBytesWritten();
-		socket.close();
-	}
+	// Without waiting for the connection: mostly no plugin listens, and a refused
+	// connect to localhost takes about 2 s on Windows (it retries the SYN). Waiting
+	// held up the thread that sends, the app's task queue, on every focus ping.
+	// The socket lives on this wrapper's (the GUI) thread and deletes itself.
+	auto* socket = new QTcpSocket();
+	socket->moveToThread(thread());
+	connect(socket, &QTcpSocket::connected, socket, [socket, data = QString::fromStdString(message).toUtf8()]() {
+		socket->write(data);
+		socket->disconnectFromHost();
+	});
+	connect(socket, &QTcpSocket::disconnected, socket, &QObject::deleteLater);
+	connect(socket, &QTcpSocket::errorOccurred, socket, &QObject::deleteLater);
+	QMetaObject::invokeMethod(
+		socket, [socket, port = m_clientPort]() { socket->connectToHost(QHostAddress::LocalHost, port); });
 }
 
 void QtTcpWrapper::setReadCallback(const std::function<void(const std::string&)>& callback)
