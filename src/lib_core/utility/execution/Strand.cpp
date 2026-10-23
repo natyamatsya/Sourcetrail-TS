@@ -57,8 +57,12 @@ Strand::Scheduler Strand::scheduler()
 
 void Strand::drain()
 {
+	// A batch at a time, then the pool's thread goes back to the pool: a strand that
+	// keeps getting work (a task holding, polled each pass) shares the pool with the
+	// other strands instead of keeping a thread to itself.
+	constexpr int batch = 16;
 	const Strand* const outer = std::exchange(t_running, this);
-	while (true)
+	for (int done = 0;; done++)
 	{
 		std::function<void()> work;
 		{
@@ -66,6 +70,13 @@ void Strand::drain()
 			if (m_queue.empty())
 			{
 				m_draining = false;
+				break;
+			}
+			if (done == batch)
+			{
+				// Still draining: the rest goes on in a drain scheduled anew.
+				stdexec::start_detached(
+					stdexec::schedule(m_pool) | stdexec::then([self = shared_from_this()]() { self->drain(); }));
 				break;
 			}
 			work = std::move(m_queue.front());

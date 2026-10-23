@@ -38,7 +38,23 @@ TaskScheduler::TaskScheduler(TabId schedulerId)
 
 TaskScheduler::~TaskScheduler()
 {
-	stopSchedulerLoop();
+	if (!m_strand)
+	{
+		stopSchedulerLoop();
+		return;
+	}
+	// On a strand nothing of it runs any more (a pass holds the scheduler alive), and
+	// no pass can be posted now: what is left is terminated here.
+	{
+		std::lock_guard<std::mutex> lock(m_loopMutex);
+		m_loopIsRunning = false;
+	}
+	for (const std::shared_ptr<TaskRunner>& runner: m_taskRunners)
+	{
+		runner->terminate();
+		CauseWork::ended(runner->cause());
+	}
+	m_taskRunners.clear();
 }
 
 void TaskScheduler::pushTask(std::shared_ptr<Task> task)
@@ -317,11 +333,15 @@ void TaskScheduler::runFront()
 		state = runUntilItWaits(runner);
 	}
 
-	runner->setHoldsQueue(state == STATE_RUNNING && runner->isParked());
-	if (runner->holdsQueue())
+	if (state == STATE_RUNNING)
 	{
-		return;	// stays at the front until it is woken
+		// Parked while it runs (runUntilItWaits returns RUNNING only then): it stays at
+		// the front and holds the queue while parked. A wake that came since has
+		// unparked it already, and it runs again.
+		runner->setHoldsQueue(runner->isParked());
+		return;
 	}
+	runner->setHoldsQueue(false);
 	m_taskRunners.pop_front();
 	if (state == STATE_HOLD)
 	{
@@ -363,10 +383,22 @@ Task::TaskState TaskScheduler::runUntilItWaits(const std::shared_ptr<TaskRunner>
 		}
 
 		state = runner->update(m_schedulerId);
-		if (state != STATE_RUNNING || runner->isParked())
+		if (state == STATE_RUNNING && !runner->isParked())
 		{
-			return state;
+			continue;
 		}
+		if (state == STATE_RUNNING || state == STATE_HOLD)
+		{
+			// It waits: unless the loop stopped while it ran, and nothing would come
+			// back to terminate it.
+			std::lock_guard<std::mutex> loopLock(m_loopMutex);
+			if (!m_loopIsRunning)
+			{
+				runner->terminate();
+				return STATE_FAILURE;
+			}
+		}
+		return state;
 	}
 }
 
@@ -387,7 +419,10 @@ std::function<void()> TaskScheduler::parkCurrentTask()
 		}
 		else if (parked)
 		{
-			parked->unpark();	// a scheduler of a scope of its own: its loop looks again
+			// The scheduler is gone, or it is not owned by a shared_ptr (a thread loop in
+			// a test): nothing posts a pass; a thread loop looks at its runners again
+			// each threadLoopInterval anyway.
+			parked->unpark();
 		}
 	};
 }

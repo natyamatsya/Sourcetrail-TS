@@ -14,7 +14,7 @@
 #include "StdexecPrelude.h"
 #include "TabIds.h"
 #include "Task.h"
-#include "TaskScheduler.h"
+#include "TaskWake.h"
 #include "logging.h"
 
 // Event-driven loop backing: a single-threaded stdexec run_loop drained on its
@@ -417,9 +417,8 @@ private:
 	// What the listeners running on the pool share with the task.
 	struct SideBySide
 	{
-		std::mutex mutex;
-		std::size_t running = 0;
-		std::function<void()> wake;
+		std::atomic<std::size_t> running = 0;
+		TaskWake allEnded;
 	};
 
 	void doEnter(std::shared_ptr<Blackboard>  /*blackboard*/) override {}
@@ -443,20 +442,13 @@ private:
 			startSideBySide();
 		}
 
-		std::unique_lock<std::mutex> lock(m_sideBySide->mutex);
-		if (m_sideBySide->running == 0)
+		// Parked until the last of them ended, holding the queue.
+		if (!m_sideBySide->allEnded.waitUntil([this]() { return m_sideBySide->running == 0; }))
 		{
-			lock.unlock();
-			report();
-			return STATE_SUCCESS;
+			return STATE_RUNNING;
 		}
-		m_sideBySide->wake = TaskScheduler::parkCurrentTask();
-		if (!m_sideBySide->wake)
-		{
-			lock.unlock();
-			TaskScheduler::waitForNextLook();
-		}
-		return STATE_RUNNING;
+		report();
+		return STATE_SUCCESS;
 	}
 
 	void startSideBySide()
@@ -494,17 +486,9 @@ private:
 
 	static void listenerDone(SideBySide& sideBySide)
 	{
-		std::function<void()> wake;
+		if (--sideBySide.running == 0)
 		{
-			const std::lock_guard<std::mutex> lock(sideBySide.mutex);
-			if (--sideBySide.running == 0)
-			{
-				wake = std::exchange(sideBySide.wake, nullptr);
-			}
-		}
-		if (wake)
-		{
-			wake();
+			sideBySide.allEnded.notify();
 		}
 	}
 

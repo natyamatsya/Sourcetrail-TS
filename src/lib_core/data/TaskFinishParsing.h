@@ -1,12 +1,12 @@
 #ifndef TASK_FINISH_PARSING_H
 #define TASK_FINISH_PARSING_H
 
-#include <functional>
+#include <atomic>
 #include <memory>
-#include <mutex>
 #include <vector>
 
 #include "Task.h"
+#include "TaskWake.h"
 
 class DialogView;
 class FileRegister;
@@ -28,13 +28,12 @@ private:
 
 	std::shared_ptr<PersistentStorage> m_storage;
 	std::shared_ptr<DialogView> m_dialogView;
-	// The decision on the report once it is shown, -1 until someone decided, and how
-	// to wake the task then (parked meanwhile).
+	// The decision on the report once it is shown: -1 until someone decided, when
+	// the task (waiting meanwhile) is woken.
 	struct Decision
 	{
-		std::mutex mutex;
-		int policy = -1;
-		std::function<void()> wake;
+		std::atomic<int> policy = -1;
+		TaskWake decided;
 	};
 	std::shared_ptr<Decision> m_decision;
 };

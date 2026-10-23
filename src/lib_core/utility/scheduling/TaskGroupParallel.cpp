@@ -3,7 +3,6 @@
 #include <thread>
 
 #include "ScopedFunctor.h"
-#include "TaskScheduler.h"
 
 TaskGroupParallel::TaskGroupParallel() = default;
 
@@ -35,42 +34,13 @@ void TaskGroupParallel::doEnter(std::shared_ptr<Blackboard> blackboard)
 Task::TaskState TaskGroupParallel::doUpdate(std::shared_ptr<Blackboard>  /*blackboard*/)
 {
 	using enum Task::TaskState;
-	if (m_tasks.size() != 0 && m_activeTaskCount > 0)
+	// Parked until a child ends, holding no thread of its scheduler.
+	if (m_tasks.size() != 0 && !m_childEnded.waitUntil([this]() { return m_activeTaskCount == 0; }))
 	{
-		// Parked until a child ends, holding no thread of its scheduler.
-		if (std::function<void()> wake = TaskScheduler::parkCurrentTask())
-		{
-			{
-				const std::lock_guard<std::mutex> lock(m_wakeMutex);
-				m_wake = std::move(wake);
-			}
-			if (m_activeTaskCount == 0)
-			{
-				this->wake();	// the last child ended meanwhile
-			}
-			return STATE_RUNNING;
-		}
-		TaskScheduler::waitForNextLook();
-		if (m_activeTaskCount > 0)
-		{
-			return STATE_RUNNING;
-		}
+		return STATE_RUNNING;
 	}
 
 	return (m_taskFailed ? STATE_FAILURE : STATE_SUCCESS);
-}
-
-void TaskGroupParallel::wake()
-{
-	std::function<void()> wake;
-	{
-		const std::lock_guard<std::mutex> lock(m_wakeMutex);
-		wake = std::exchange(m_wake, nullptr);
-	}
-	if (wake)
-	{
-		wake();
-	}
 }
 
 void TaskGroupParallel::doExit(std::shared_ptr<Blackboard>  /*blackboard*/)
@@ -127,7 +97,7 @@ void TaskGroupParallel::processTaskThreaded(std::shared_ptr<TaskInfo> taskInfo,
 	ScopedFunctor functor([&]()
 	{
 		m_activeTaskCount--;
-		wake();
+		m_childEnded.notify();
 	});
 
 	while (true)

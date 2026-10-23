@@ -9,7 +9,6 @@
 #include "MessageStatus.h"
 #endif
 #include "PersistentStorage.h"
-#include "TaskScheduler.h"
 #ifndef SRCTRL_MODULE_BUILD
 #include "TimeStamp.h"
 #endif
@@ -56,29 +55,14 @@ Task::TaskState TaskFinishParsing::doUpdate(std::shared_ptr<Blackboard> blackboa
 
 	if (m_decision)
 	{
-		int decision = -1;
-		bool parked = false;
+		// Parked until the decision wakes it, holding no thread.
+		if (!m_decision->decided.waitUntil([this]() { return m_decision->policy >= 0; }))
 		{
-			const std::lock_guard<std::mutex> lock(m_decision->mutex);
-			decision = m_decision->policy;
-			if (decision < 0)
-			{
-				// Parked until the decision wakes it, holding no thread.
-				m_decision->wake = TaskScheduler::parkCurrentTask();
-				parked = static_cast<bool>(m_decision->wake);
-			}
-		}
-		if (decision < 0)
-		{
-			if (!parked)
-			{
-				TaskScheduler::waitForNextLook();
-			}
 			return STATE_RUNNING;
 		}
 		MessageIndexingStatus(false).dispatch();
 
-		const auto policy = static_cast<DatabasePolicy>(decision);
+		const auto policy = static_cast<DatabasePolicy>(m_decision->policy.load());
 		if (policy == DATABASE_POLICY_KEEP)
 		{
 			blackboard->set("keep_database", true);
@@ -190,16 +174,8 @@ Task::TaskState TaskFinishParsing::doUpdate(std::shared_ptr<Blackboard> blackboa
 		errorInfo,
 		interruptedIndexing,
 		[decision = m_decision](DatabasePolicy policy) {
-			std::function<void()> wake;
-			{
-				const std::lock_guard<std::mutex> lock(decision->mutex);
-				decision->policy = static_cast<int>(policy);
-				wake = std::exchange(decision->wake, nullptr);
-			}
-			if (wake)
-			{
-				wake();
-			}
+			decision->policy = static_cast<int>(policy);
+			decision->decided.notify();
 		});
 	return STATE_RUNNING;
 }

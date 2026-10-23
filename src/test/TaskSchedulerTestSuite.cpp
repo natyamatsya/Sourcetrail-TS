@@ -639,3 +639,57 @@ TEST_CASE("a parked task is terminated when its scheduler on a strand stops")
 	REQUIRE(parking->terminated);
 	REQUIRE_FALSE(scheduler->hasTasksQueued());
 }
+
+namespace
+{
+// Parks once, and is woken by another thread as soon as it has: the wake can come
+// right between its update and the scheduler looking at it again.
+class WokenAtOnceTask: public Task
+{
+public:
+	std::atomic<bool> completed = false;
+	std::atomic<bool> parked = false;
+	std::function<void()> wake;
+
+private:
+	void doEnter(std::shared_ptr<Blackboard>  /*blackboard*/) override {}
+	TaskState doUpdate(std::shared_ptr<Blackboard>  /*blackboard*/) override
+	{
+		if (parked)
+		{
+			completed = true;
+			return STATE_SUCCESS;
+		}
+		wake = TaskScheduler::parkCurrentTask();
+		parked = true;
+		return STATE_RUNNING;
+	}
+	void doExit(std::shared_ptr<Blackboard>  /*blackboard*/) override {}
+	void doReset(std::shared_ptr<Blackboard>  /*blackboard*/) override {}
+};
+}	 // namespace
+
+TEST_CASE("a task woken right after it parked runs on, not dropped")
+{
+	const auto check = [](TaskScheduler& scheduler) {
+		for (int i = 0; i < 300; i++)
+		{
+			const auto task = std::make_shared<WokenAtOnceTask>();
+			scheduler.pushTask(task);
+			while (!task->parked)
+			{
+				std::this_thread::yield();
+			}
+			task->wake();
+			REQUIRE(eventually([&]() { return !scheduler.hasTasksQueued(); }));
+			REQUIRE(task->completed);
+		}
+	};
+
+	exec::static_thread_pool pool(2);
+	const auto onStrand = std::make_shared<TaskScheduler>(TabId::NONE);
+	onStrand->startSchedulerLoopOn(execution::Strand::create(pool.get_scheduler()));
+	check(*onStrand);
+	onStrand->stopSchedulerLoop();
+}
+
