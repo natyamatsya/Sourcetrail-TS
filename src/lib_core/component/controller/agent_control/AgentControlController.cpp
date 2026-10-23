@@ -20,6 +20,7 @@ bool AgentControlController::isListening() const
 
 #include <algorithm>
 #include <chrono>
+#include <concepts>
 #include <cstdint>
 #include <atomic>
 #include <format>
@@ -640,6 +641,13 @@ struct AgentControlController::Impl
 		stdexec::sync_wait(m_uiScope.on_empty());	 // join any in-flight snapshot capture
 	}
 
+	// Runs `work` on the GUI thread; stop() joins what is still running.
+	template <std::invocable Work>
+	void onGui(Work work)
+	{
+		m_uiScope.spawn(stdexec::schedule(m_schedulers->ui()) | stdexec::then(std::move(work)));
+	}
+
 	// ---- MessageListener overrides (message-processing thread) ----------------
 
 	void handleMessage(MessageAgentCommand* message) override
@@ -811,14 +819,13 @@ struct AgentControlController::Impl
 			// st.agent.snapshot: the bridge reads it once it has the ack (see
 			// publishFrame for why that order matters). Scoped so stop() joins it.
 			emitResult(requestId, true);
-			m_uiScope.spawn(
-				stdexec::schedule(m_schedulers->ui()) | stdexec::then([this, requestId, format]() {
-					const std::vector<std::uint8_t> buffer = utility::qt::captureUiSnapshot(format, requestId);
-					if (!buffer.empty())
-					{
-						m_snapshotChannel.send(buffer.data(), buffer.size());
-					}
-				}));
+			onGui([this, requestId, format]() {
+				const std::vector<std::uint8_t> buffer = utility::qt::captureUiSnapshot(format, requestId);
+				if (!buffer.empty())
+				{
+					m_snapshotChannel.send(buffer.data(), buffer.size());
+				}
+			});
 			return true;
 		}
 		case fb::Command_InvokeAction:
@@ -838,18 +845,14 @@ struct AgentControlController::Impl
 			// what the action posted to the GUI thread (a button's click): by then
 			// the click has dispatched what it does, and the activation machine says
 			// whether that is still going on.
-			m_uiScope.spawn(
-				stdexec::schedule(m_schedulers->ui()) |
-				stdexec::then([this, requestId, objectName = std::move(ref.objectName),
-								  path = std::move(ref.path), action = std::move(action),
-								  text = std::move(text), expectHash]() {
-					const CauseScope cause(requestId);
-					const utility::qt::ControlResult r =
-						utility::qt::invokeAction(objectName, path, action, text, expectHash);
-					m_uiScope.spawn(
-						stdexec::schedule(m_schedulers->ui()) |
-						stdexec::then([this, requestId, r]() { emitResult(requestId, r.ok, r.message); }));
-				}));
+			onGui([this, requestId, objectName = std::move(ref.objectName),
+					path = std::move(ref.path), action = std::move(action),
+					text = std::move(text), expectHash]() {
+				const CauseScope cause(requestId);
+				const utility::qt::ControlResult r =
+					utility::qt::invokeAction(objectName, path, action, text, expectHash);
+				onGui([this, requestId, r]() { emitResult(requestId, r.ok, r.message); });
+			});
 			return true;
 		}
 		case fb::Command_CaptureElement:
@@ -862,18 +865,16 @@ struct AgentControlController::Impl
 			}
 			DecodedRef ref = decodeElementRef(c->target());
 			const std::uint64_t expectHash = c->expect_hash();
-			m_uiScope.spawn(
-				stdexec::schedule(m_schedulers->ui()) |
-				stdexec::then([this, requestId, objectName = std::move(ref.objectName),
-								  path = std::move(ref.path), expectHash]() {
-					const utility::qt::CaptureResult r = utility::qt::captureElement(objectName, path, expectHash);
-					// Ack first, frame second: see publishFrame.
-					emitResult(requestId, r.ok, r.message);
-					if (r.ok)
-					{
-						publishFrame(requestId, r);
-					}
-				}));
+			onGui([this, requestId, objectName = std::move(ref.objectName),
+					path = std::move(ref.path), expectHash]() {
+				const utility::qt::CaptureResult r = utility::qt::captureElement(objectName, path, expectHash);
+				// Ack first, frame second: see publishFrame.
+				emitResult(requestId, r.ok, r.message);
+				if (r.ok)
+				{
+					publishFrame(requestId, r);
+				}
+			});
 			return true;
 		}
 		case fb::Command_GetFrame:
@@ -888,17 +889,16 @@ struct AgentControlController::Impl
 			const fb::Rect region = c->region() != nullptr ? *c->region() : fb::Rect(0, 0, 0, 0);
 			// The ack's message names the composited windows, so a dialog over the
 			// main window shows in the reply too.
-			m_uiScope.spawn(
-				stdexec::schedule(m_schedulers->ui()) | stdexec::then([this, requestId, maxWidth, region]() {
-					const utility::qt::CaptureResult r =
-						utility::qt::captureScreen(maxWidth, region.x(), region.y(), region.w(), region.h());
-					// Ack first, frame second: see publishFrame.
-					emitResult(requestId, r.ok, r.message);
-					if (r.ok)
-					{
-						publishFrame(requestId, r);
-					}
-				}));
+			onGui([this, requestId, maxWidth, region]() {
+				const utility::qt::CaptureResult r =
+					utility::qt::captureScreen(maxWidth, region.x(), region.y(), region.w(), region.h());
+				// Ack first, frame second: see publishFrame.
+				emitResult(requestId, r.ok, r.message);
+				if (r.ok)
+				{
+					publishFrame(requestId, r);
+				}
+			});
 			return true;
 		}
 		// The state machines answer here on the reader thread: they are thread-safe,
@@ -988,21 +988,19 @@ struct AgentControlController::Impl
 			// the ack does not wait for whatever they open (a menu, a dialog); once the
 			// last one is delivered the request waits for Settled like a navigation
 			// command, so the caller can read the state the gesture led to.
-			m_uiScope.spawn(
-				stdexec::schedule(m_schedulers->ui()) |
-				stdexec::then([this, requestId, atPoint, x, y, ref = std::move(ref), events = std::move(events)]() {
-					auto delivered = [this, alive = std::weak_ptr<void>(m_lifetime), requestId]() {
-						if (alive.lock())
-						{
-							expectSettle(requestId);
-						}
-					};
-					const CauseScope cause(requestId);
-					const utility::qt::ControlResult r = atPoint
-						? utility::qt::sendInputAt(x, y, events, delivered)
-						: utility::qt::sendInput(ref.objectName, ref.path, events, delivered);
-					emitResult(requestId, r.ok, r.message);
-				}));
+			onGui([this, requestId, atPoint, x, y, ref = std::move(ref), events = std::move(events)]() {
+				auto delivered = [this, alive = std::weak_ptr<void>(m_lifetime), requestId]() {
+					if (alive.lock())
+					{
+						expectSettle(requestId);
+					}
+				};
+				const CauseScope cause(requestId);
+				const utility::qt::ControlResult r = atPoint
+					? utility::qt::sendInputAt(x, y, events, delivered)
+					: utility::qt::sendInput(ref.objectName, ref.path, events, delivered);
+				emitResult(requestId, r.ok, r.message);
+			});
 			return true;
 		}
 		case fb::Command_QueryUi:
@@ -1011,16 +1009,14 @@ struct AgentControlController::Impl
 			std::string jsonPath = (c != nullptr && c->jsonpath() != nullptr) ? c->jsonpath()->str() : "";
 			// Evaluate the JSONPath over the live tree on the GUI thread; ack, then
 			// send a UiSnapshot of the matched nodes on st.agent.snapshot.
-			m_uiScope.spawn(
-				stdexec::schedule(m_schedulers->ui()) |
-				stdexec::then([this, requestId, jsonPath = std::move(jsonPath)]() {
-					const utility::qt::QueryResult r = utility::qt::queryUi(jsonPath, requestId);
-					emitResult(requestId, r.ok, r.message);
-					if (r.ok && !r.snapshot.empty())
-					{
-						m_snapshotChannel.send(r.snapshot.data(), r.snapshot.size());
-					}
-				}));
+			onGui([this, requestId, jsonPath = std::move(jsonPath)]() {
+				const utility::qt::QueryResult r = utility::qt::queryUi(jsonPath, requestId);
+				emitResult(requestId, r.ok, r.message);
+				if (r.ok && !r.snapshot.empty())
+				{
+					m_snapshotChannel.send(r.snapshot.data(), r.snapshot.size());
+				}
+			});
 			return true;
 		}
 		default:
@@ -1389,29 +1385,28 @@ struct AgentControlController::Impl
 			}
 			settled.swap(m_pendingSettle);
 		}
-		m_uiScope.spawn(
-			stdexec::schedule(m_schedulers->ui()) | stdexec::then([this, settled = std::move(settled)]() {
-				// The GUI work that ran first may have dispatched more (a view that
-				// requests data): then these wait for the idle edge that work brings.
-				if (!quiescent())
+		onGui([this, settled = std::move(settled)]() {
+			// The GUI work that ran first may have dispatched more (a view that
+			// requests data): then these wait for the idle edge that work brings.
+			if (!quiescent())
+			{
 				{
-					{
-						const std::lock_guard<std::mutex> lock(m_settleMutex);
-						m_pendingSettle.insert(m_pendingSettle.end(), settled.begin(), settled.end());
-					}
-					// That edge may have passed before they were back in the list.
-					if (quiescent())
-					{
-						flushSettled();
-					}
-					return;
+					const std::lock_guard<std::mutex> lock(m_settleMutex);
+					m_pendingSettle.insert(m_pendingSettle.end(), settled.begin(), settled.end());
 				}
-				for (const std::uint64_t requestId: settled)
+				// That edge may have passed before they were back in the list.
+				if (quiescent())
 				{
-					flatbuffers::FlatBufferBuilder builder;
-					publishEvent(builder, fb::Event_Settled, fb::CreateSettled(builder, requestId).Union(), requestId);
+					flushSettled();
 				}
-			}));
+				return;
+			}
+			for (const std::uint64_t requestId: settled)
+			{
+				flatbuffers::FlatBufferBuilder builder;
+				publishEvent(builder, fb::Event_Settled, fb::CreateSettled(builder, requestId).Union(), requestId);
+			}
+		});
 	}
 
 	// Handshake reply: publish an `AppInfo` event carrying this build's protocol

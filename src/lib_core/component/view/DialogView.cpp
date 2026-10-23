@@ -120,7 +120,7 @@ QuestionSender DialogView::asked(const std::string& message, const std::vector<s
 
 void DialogView::notify(const std::string& message, const std::vector<std::string>& options)
 {
-	stdexec::start_detached(asked(message, options) | stdexec::then([](int) noexcept {}));
+	whenAnswered(asked(message, options), [](int) {});
 }
 
 bool DialogView::presentsQuestions() const

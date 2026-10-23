@@ -70,6 +70,8 @@ private:
 	void handleMessage(MessageActivateOverview* message) override;
 	void handleMessage(MessageActivateTokens* message) override;
 	void handleMessage(MessageActivateTrail* message) override;
+	// "The graph will contain N nodes, proceed?": "Yes" sends `trail` again, confirmed.
+	void askToDrawLargeTrail(const MessageActivateTrail& trail, size_t nodeCount);
 	void handleMessage(MessageActivateTrailEdge* message) override;
 	void handleMessage(MessageDeactivateEdge* message) override;
 	void handleMessage(MessageFocusChanged* message) override;

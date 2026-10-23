@@ -2,6 +2,7 @@
 #define QUESTION_STATE_MACHINE_H
 
 #include <atomic>
+#include <concepts>
 #include <cstdint>
 #include <deque>
 #include <functional>
@@ -242,5 +243,18 @@ private:
 	QuestionPresenter* m_presenter;
 	std::uint64_t m_cause;
 };
+
+// Asks `question` and goes on: `answered(option)` runs once it is answered (-1 for
+// none), on the thread that answers it, on behalf of what asked.
+template <std::invocable<int> Answered>
+void whenAnswered(QuestionSender question, Answered answered)
+{
+	stdexec::start_detached(
+		std::move(question) |
+		stdexec::then([answered = std::move(answered), cause = currentCause()](int option) mutable noexcept {
+			const CauseScope scope(cause);
+			answered(option);
+		}));
+}
 
 #endif	  // QUESTION_STATE_MACHINE_H

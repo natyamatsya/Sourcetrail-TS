@@ -404,16 +404,24 @@ struct Application::ProjectLoad
 	bool ended = false;	// a step ended the load before its index opened
 	bool opened = false;	// the pipeline opened the index (finishLoad is left to do)
 	std::string failure;	// what an exception said
+
+	// Runs a step (one returning false ends the load), turning what it throws into
+	// the load's failure, as the load always has.
+	template <typename Step>
+	bool step(Step step) noexcept;
+
+	// On the I/O pool: reads the settings; what an interrupted run leaves to ask.
+	std::optional<Project::Question> readSettings() noexcept;
+	// On the I/O pool with the answer: keeps or discards the interrupted run's data
+	// and opens the index; what to tell when the index is in use. With `stopping`,
+	// the answer is the closing's, not a person's, and nothing is changed.
+	std::optional<Project::Question> openIndex(int option, bool stopping) noexcept;
 };
 
-namespace
+template <typename Step>
+bool Application::ProjectLoad::step(Step step) noexcept
 {
-// Runs a step of `load` (one returning false ends the load), turning what it
-// throws into the load's failure, as the load always has.
-template <typename Load, typename Step>
-bool loadStep(Load& load, Step step) noexcept
-{
-	if (load.ended)
+	if (ended)
 	{
 		return false;
 	}
@@ -425,28 +433,52 @@ bool loadStep(Load& load, Step step) noexcept
 		}
 		else if (!step())
 		{
-			load.ended = true;
+			ended = true;
 		}
 	}
 	catch (CppSQLite3Exception& e)
 	{
-		load.failure = "Failed to load project at \"" + load.path.str() +
-			"\" with sqlite exception: " + e.errorMessage();
-		load.ended = true;
+		failure = "Failed to load project at \"" + path.str() + "\" with sqlite exception: " + e.errorMessage();
+		ended = true;
 	}
 	catch (std::exception& e)
 	{
-		load.failure = "Failed to load project at \"" + load.path.str() + "\" with exception: " + e.what();
-		load.ended = true;
+		failure = "Failed to load project at \"" + path.str() + "\" with exception: " + e.what();
+		ended = true;
 	}
 	catch (...)
 	{
-		load.failure = "Failed to load project at \"" + load.path.str() + "\" with unknown exception.";
-		load.ended = true;
+		failure = "Failed to load project at \"" + path.str() + "\" with unknown exception.";
+		ended = true;
 	}
-	return !load.ended;
+	return !ended;
 }
-}	 // namespace
+
+std::optional<Project::Question> Application::ProjectLoad::readSettings() noexcept
+{
+	const CauseScope scope(cause);
+	if (!step([this]() { return project->readSettings(); }))
+	{
+		return std::nullopt;
+	}
+	return project->interruptedRunQuestion();
+}
+
+std::optional<Project::Question> Application::ProjectLoad::openIndex(int option, bool stopping) noexcept
+{
+	const CauseScope scope(cause);
+	if (stopping)
+	{
+		ended = true;	// keep or discard is for a person to say, not for the exit
+		return std::nullopt;
+	}
+	if (!step([&]() { return project->resolveInterruptedRun(option); }))
+	{
+		return failure.empty() ? std::optional(Project::indexInUse()) : std::nullopt;
+	}
+	opened = step([this]() { project->openIndex(); });
+	return std::nullopt;
+}
 
 void Application::handleMessage(MessageLoadProject* message)
 {
@@ -506,7 +538,7 @@ void Application::loadProject(const FilePath& path, const ShardConfig& shardConf
 	load->refreshMode = refreshMode;
 	m_loading = load;
 
-	const bool started = loadStep(*load, [&]() {
+	const bool started = load->step([&]() {
 		updateRecentProjects(path);
 
 		m_storageCache->clear();
@@ -524,55 +556,45 @@ void Application::loadProject(const FilePath& path, const ShardConfig& shardConf
 		m_project = load->project;
 		if (started)
 		{
-			loadStep(*load, [&]() { load->project->load(getDialogView(DialogView::UseCase::GENERAL)); });
+			load->step([&]() { load->project->load(getDialogView(DialogView::UseCase::GENERAL)); });
 		}
 		endLoad(load);
 		return;
 	}
 
-	if (!loadStep(*load, [&]() { return load->project->beginLoad(); }))
+	if (!load->step([&]() { return load->project->beginLoad(); }))
 	{
 		endLoad(load);
 		return;
 	}
 
-	// What the load asks: the question as a sender, or -1 at once when there is none.
-	const std::shared_ptr<DialogView> dialog = getDialogView(DialogView::UseCase::GENERAL);
-	const auto ask = [dialog, load](const std::optional<Project::Question>& question) noexcept {
-		const CauseScope cause(load->cause);	// the question remembers it
-		return question ? dialog->asked(question->text, question->options)
-						: QuestionStateMachine::instance()->asked({}, {}, nullptr);
-	};
 	const execution::AnyScheduler io = m_schedulers->io();
-
+	const auto ask = [this, load](const std::optional<Project::Question>& question) noexcept {
+		return askFor(*load, question);
+	};
 	m_pipelines.spawn(
-		stdexec::schedule(io) | stdexec::then([load]() noexcept -> std::optional<Project::Question> {
-			const CauseScope cause(load->cause);
-			if (!loadStep(*load, [&]() { return load->project->readSettings(); }))
-			{
-				return std::nullopt;
-			}
-			return load->project->interruptedRunQuestion();
-		}) |
+		stdexec::schedule(io) | stdexec::then([load]() noexcept { return load->readSettings(); }) |
 		stdexec::let_value(ask) |
 		// Answered on the thread that answered it: back to the files.
-		stdexec::continues_on(io) | stdexec::then([this, load](int option) noexcept -> std::optional<Project::Question> {
-			const CauseScope cause(load->cause);
-			if (pipelinesStopping())
-			{
-				load->ended = true;	// keep or discard is for a person to say, not for the exit
-				return std::nullopt;
-			}
-			if (!loadStep(*load, [&]() { return load->project->resolveInterruptedRun(option); }))
-			{
-				return load->failure.empty() ? std::optional(Project::indexInUse()) : std::nullopt;
-			}
-			load->opened = loadStep(*load, [&]() { load->project->openIndex(); });
-			return std::nullopt;
-		}) |
+		stdexec::continues_on(io) |
+		stdexec::then([this, load](int option) noexcept { return load->openIndex(option, pipelinesStopping()); }) |
 		stdexec::let_value(ask) |
-		stdexec::continues_on(m_appStrand->scheduler()) |
-		stdexec::then([this, load](int) noexcept { endLoad(load); }));
+		stdexec::continues_on(appScheduler()) | stdexec::then([this, load](int) noexcept { endLoad(load); }));
+}
+
+QuestionSender Application::askFor(const ProjectLoad& load, const std::optional<Project::Question>& question)
+{
+	const CauseScope cause(load.cause);	// the question remembers it
+	if (!question)
+	{
+		return QuestionStateMachine::instance()->asked({}, {}, nullptr);
+	}
+	return getDialogView(DialogView::UseCase::GENERAL)->asked(question->text, question->options);
+}
+
+execution::Strand::Scheduler Application::appScheduler() const
+{
+	return m_appStrand->scheduler();
 }
 
 bool Application::pipelinesStopping() const
@@ -598,7 +620,7 @@ void Application::endLoad(const std::shared_ptr<ProjectLoad>& load)
 	m_project = load->project;
 	if (load->opened)
 	{
-		loadStep(*load, [&]() { load->project->finishLoad(); });
+		load->step([&]() { load->project->finishLoad(); });
 		if (!load->failure.empty())
 		{
 			LOG_ERROR(load->failure);
@@ -719,7 +741,7 @@ void Application::refreshProject(RefreshMode refreshMode)
 			if (std::optional<Project::RefreshPlan> plan = m_project->planRefresh(refreshMode);
 				plan && !plan->questions.empty())
 			{
-				askThenRefresh(m_project, std::move(*plan), 0, currentCause());
+				askThenRefresh({m_project, std::move(*plan), 0, currentCause()});
 				return;
 			}
 		}
@@ -735,40 +757,45 @@ void Application::refreshProject(RefreshMode refreshMode)
 	IndexingStateMachine::instance()->requestHandled(m_project ? "the refresh did not start" : "no project is loaded");
 }
 
-void Application::askThenRefresh(
-	std::shared_ptr<Project> project, Project::RefreshPlan plan, std::size_t next, std::uint64_t cause)
+void Application::askThenRefresh(PendingRefresh refresh)
 {
-	const CauseScope scope(cause);
+	const CauseScope scope(refresh.cause);
 	const std::shared_ptr<DialogView> dialog = getDialogView(DialogView::UseCase::INDEXING);
-	if (m_project != project)
+	if (m_project != refresh.project)
 	{
 		IndexingStateMachine::instance()->requestHandled("another project was loaded meanwhile");
 		return;
 	}
-	if (next == plan.questions.size())
+	if (refresh.next == refresh.plan.questions.size())
 	{
-		project->refreshPlanned(dialog, plan);
+		refresh.project->refreshPlanned(dialog, refresh.plan);
 		IndexingStateMachine::instance()->requestHandled("the refresh did not start");
 		return;
 	}
 
-	const Project::Question& question = plan.questions[next];
-	auto answer = dialog->asked(question.text, question.options);
+	const Project::Question& question = refresh.plan.questions[refresh.next];
+	QuestionSender answer = dialog->asked(question.text, question.options);
 	m_pipelines.spawn(
-		std::move(answer) | stdexec::continues_on(m_appStrand->scheduler()) |
-		stdexec::then([this, project = std::move(project), plan = std::move(plan), next, cause](int option) mutable noexcept {
-			if (pipelinesStopping())
-			{
-				return;
-			}
-			if (option == 1)
-			{
-				const CauseScope scope(cause);
-				IndexingStateMachine::instance()->requestHandled("the refresh did not start");
-				return;
-			}
-			askThenRefresh(std::move(project), std::move(plan), next + 1, cause);
+		std::move(answer) | stdexec::continues_on(appScheduler()) |
+		stdexec::then([this, refresh = std::move(refresh)](int option) mutable noexcept {
+			refreshAnswered(std::move(refresh), option);
 		}));
+}
+
+void Application::refreshAnswered(PendingRefresh refresh, int option)
+{
+	if (pipelinesStopping())
+	{
+		return;
+	}
+	if (option == 1)
+	{
+		const CauseScope scope(refresh.cause);
+		IndexingStateMachine::instance()->requestHandled("the refresh did not start");
+		return;
+	}
+	refresh.next++;
+	askThenRefresh(std::move(refresh));
 }
 
 void Application::updateRecentProjects(const FilePath& projectSettingsFilePath)

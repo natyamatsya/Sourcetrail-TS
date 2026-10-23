@@ -21,11 +21,11 @@
 #include "MessageWindowClosed.h"
 #include "Project.h"
 #include "StdexecPrelude.h"
+#include "Strand.h"
 
 namespace execution
 {
 class ISchedulers;
-class Strand;
 }
 
 class Bookmark;
@@ -127,13 +127,27 @@ private:
 	// app's back on the app strand; without them in a row on this thread.
 	struct ProjectLoad;
 	void loadProject(const FilePath& path, const ShardConfig& shardConfig, RefreshMode refreshMode);
+	// What the load asks, as a sender: the question, or -1 at once when there is none.
+	QuestionSender askFor(const ProjectLoad& load, const std::optional<Project::Question>& question);
 	// On the app's thread: the project becomes the app's, unless a load asked for
 	// since (or a close) dropped it.
 	void endLoad(const std::shared_ptr<ProjectLoad>& load);
 
-	// Asks the refresh's questions from `next` on, one after the other without
-	// holding a thread, then refreshes on the app's thread, unless one cancelled it.
-	void askThenRefresh(std::shared_ptr<Project> project, Project::RefreshPlan plan, std::size_t next, std::uint64_t cause);
+	// A refresh whose questions are asked one after the other without holding a
+	// thread; it starts on the app's thread once the last is answered, unless one
+	// cancelled it.
+	struct PendingRefresh
+	{
+		std::shared_ptr<Project> project;
+		Project::RefreshPlan plan;
+		std::size_t next = 0;	// the question to ask next
+		std::uint64_t cause = 0;	// the refresh's request
+	};
+	void askThenRefresh(PendingRefresh refresh);
+	void refreshAnswered(PendingRefresh refresh, int option);
+
+	// The app strand's scheduler, where pipelines come back to the app's tasks.
+	execution::Strand::Scheduler appScheduler() const;
 
 	void refreshProject(RefreshMode refreshMode);
 	void updateRecentProjects(const FilePath& projectSettingsFilePath);

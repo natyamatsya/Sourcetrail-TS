@@ -124,6 +124,11 @@ private:
 
 	Project(const Project&);
 
+	// A run that cannot clear a source group partially asks whether to re-index all;
+	// the answer goes on with it on the app's scheduler.
+	void askToReindexAll(SourceGroupType type, std::shared_ptr<DialogView> dialogView);
+	void reindexAllAnswered(int option, std::shared_ptr<DialogView> dialogView);
+
 	void swapToTempStorage(std::shared_ptr<DialogView> dialogView);
 	bool swapToTempStorageFile(
 		const FilePath& indexDbFilePath,

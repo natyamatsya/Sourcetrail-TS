@@ -315,31 +315,7 @@ void GraphController::handleMessage(MessageActivateTrail* message)
 	}
 	else if (graph->getNodeCount() > 1000 && !message->largeGraphConfirmed)
 	{
-		// Asked without holding the tab's thread; "Yes" sends the trail again, and it is
-		// drawn without asking. Not as a replay, which is not drawn (buildGraph): the
-		// history takes it for the step it recorded already (same origin and target).
-		stdexec::start_detached(
-			Application::getInstance()
-				->getDialogView(DialogView::UseCase::GENERAL)
-				->asked(
-					"Warning!\n\nThe graph will contain " + std::to_string(graph->getNodeCount()) +
-						" nodes. "
-						"Layouting and drawing might take a while and the resulting graph could look "
-						"confusing. Please "
-						"consider reducing graph depth with the slider on the left.\n\n"
-						"Do you want to proceed?",
-					{"Yes", "No"}) |
-			stdexec::then([trail = *message, cause = currentCause()](int option) mutable noexcept {
-				const CauseScope scope(cause);
-				if (option != 0)
-				{
-					MessageStatus("Aborted graph display").dispatch();
-					return;
-				}
-				trail.largeGraphConfirmed = true;
-				trail.dispatch();
-			}));
-		MessageStatus("Waiting for the answer on the large graph").dispatch();
+		askToDrawLargeTrail(*message, graph->getNodeCount());
 		return;
 	}
 
@@ -375,6 +351,34 @@ void GraphController::handleMessage(MessageActivateTrail* message)
 	GraphView::GraphParams params;
 	params.centerActiveNode = message->isLast();
 	buildGraph(message, params);
+}
+
+void GraphController::askToDrawLargeTrail(const MessageActivateTrail& trail, size_t nodeCount)
+{
+	// Asked without holding the tab's thread; "Yes" sends the trail again, and it is
+	// drawn without asking. Not as a replay, which is not drawn (buildGraph): the
+	// history takes it for the step it recorded already (same origin and target).
+	whenAnswered(
+		Application::getInstance()
+			->getDialogView(DialogView::UseCase::GENERAL)
+			->asked(
+				"Warning!\n\nThe graph will contain " + std::to_string(nodeCount) +
+					" nodes. "
+					"Layouting and drawing might take a while and the resulting graph could look "
+					"confusing. Please "
+					"consider reducing graph depth with the slider on the left.\n\n"
+					"Do you want to proceed?",
+				{"Yes", "No"}),
+		[trail = trail](int option) mutable {
+			if (option != 0)
+			{
+				MessageStatus("Aborted graph display").dispatch();
+				return;
+			}
+			trail.largeGraphConfirmed = true;
+			trail.dispatch();
+		});
+	MessageStatus("Waiting for the answer on the large graph").dispatch();
 }
 
 void GraphController::handleMessage(MessageActivateTrailEdge* message)

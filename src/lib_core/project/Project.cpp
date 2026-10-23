@@ -628,37 +628,9 @@ void Project::buildIndexImpl(RefreshInfo info, std::shared_ptr<DialogView> dialo
 
 				if (abortIndexing)
 				{
-					const std::weak_ptr<Project> self = weak_from_this();
-					if (m_hasGUI && !self.expired())
+					if (m_hasGUI && !weak_from_this().expired())
 					{
-						// Asked without holding the app's thread: the answer goes on with
-						// the run there, on behalf of what started it.
-						stdexec::start_detached(
-							dialogView->asked(
-								"<p>This project contains a source group of type \"" +
-									sourceGroupTypeToString(sourceGroup->getType()) +
-									"\" that cannot be partially cleared. Do you want to re-index "
-									"the whole project instead?</p>",
-								{"Full Re-Index", "Cancel"}) |
-							stdexec::then([self, dialogView, cause = currentCause()](int option) noexcept {
-								Task::dispatch(TabIds::app(), std::make_shared<TaskLambda>([self, dialogView, cause, option]() {
-									const CauseScope scope(cause);
-									const std::shared_ptr<Project> project = self.lock();
-									if (!project || AppStateMachine::instance()->isClosing())
-									{
-										return;
-									}
-									if (option == 1)
-									{
-										MessageStatus("Cannot partially clear project. Indexing aborted.").dispatch();
-										project->m_refreshStage = RefreshStageType::NONE;
-										IndexingStateMachine::instance()->ended("cannot partially clear the project");
-										dialogView->clearDialogs();
-										return;
-									}
-									project->buildIndex(project->getRefreshInfo(RefreshMode::ALL_FILES), dialogView);
-								}));
-							}));
+						askToReindexAll(sourceGroup->getType(), dialogView);
 						return;
 					}
 					info = getRefreshInfo(RefreshMode::ALL_FILES);
@@ -1197,6 +1169,40 @@ void Project::swapToTempStorage(std::shared_ptr<DialogView> dialogView)
 
 	m_storageCache->setSubject(m_storage);
 	m_state = ProjectStateType::PROJECT_STATE_LOADED;
+}
+
+void Project::askToReindexAll(SourceGroupType type, std::shared_ptr<DialogView> dialogView)
+{
+	// Asked without holding the app's thread: the answer goes on with the run there,
+	// on behalf of what started it, unless the project or the app went away meanwhile.
+	whenAnswered(
+		dialogView->asked(
+			"<p>This project contains a source group of type \"" + sourceGroupTypeToString(type) +
+				"\" that cannot be partially cleared. Do you want to re-index the whole project "
+				"instead?</p>",
+			{"Full Re-Index", "Cancel"}),
+		[self = weak_from_this(), dialogView](int option) {
+			Task::dispatch(TabIds::app(), std::make_shared<TaskLambda>(withCurrentCause([self, dialogView, option]() {
+				const std::shared_ptr<Project> project = self.lock();
+				if (project && !AppStateMachine::instance()->isClosing())
+				{
+					project->reindexAllAnswered(option, dialogView);
+				}
+			})));
+		});
+}
+
+void Project::reindexAllAnswered(int option, std::shared_ptr<DialogView> dialogView)
+{
+	if (option == 1)
+	{
+		MessageStatus("Cannot partially clear project. Indexing aborted.").dispatch();
+		m_refreshStage = RefreshStageType::NONE;
+		IndexingStateMachine::instance()->ended("cannot partially clear the project");
+		dialogView->clearDialogs();
+		return;
+	}
+	buildIndex(getRefreshInfo(RefreshMode::ALL_FILES), dialogView);
 }
 
 bool Project::swapToTempStorageFile(
