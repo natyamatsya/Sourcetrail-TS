@@ -129,8 +129,7 @@ struct IndexingMachine
 		bool interrupted = false;
 
 		// reporting
-		std::optional<IndexingReport> report;
-		std::optional<DatabasePolicy> decision;
+		std::optional<IndexingReport> report;	// until it is decided on
 		IndexingPresenter* reportPresenter = nullptr;
 		std::function<void(DatabasePolicy)> decided;	// the reporter's, called once
 

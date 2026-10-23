@@ -188,7 +188,6 @@ void IndexingStateMachine::report(
 		auto transaction = m_machine.transaction();
 		Data& data = transaction.data();
 		data.report = report;
-		data.decision.reset();
 		data.reportPresenter = presenter;
 		data.decided = std::move(decided);
 		if (!transaction.move(Event::Report))
@@ -253,7 +252,7 @@ void IndexingStateMachine::detach(IndexingPresenter* presenter)
 		if (data.reportPresenter == presenter)
 		{
 			data.reportPresenter = nullptr;
-			reportAbandoned = data.report && !data.decision;
+			reportAbandoned = data.report.has_value();
 		}
 	}
 	if (reportAbandoned)
@@ -436,13 +435,13 @@ MachineFireResult IndexingStateMachine::decide(DatabasePolicy policy, EventSourc
 	{
 		auto transaction = m_machine.transaction();
 		Data& data = transaction.data();
-		// A waiting report is what a decision answers. Should the state ever disagree,
-		// the report's buttons must still release the pipeline, so the wait decides.
-		if (!data.report || data.decision)
+		// A waiting report is what a decision answers (and the decision takes it):
+		// whether one waits, not the state, so the report's buttons always release
+		// the pipeline.
+		if (!data.report)
 		{
 			return transaction.refuse(event);
 		}
-		data.decision = policy;
 		presenter = data.reportPresenter;
 		decided = std::move(data.decided);
 		data.report.reset();

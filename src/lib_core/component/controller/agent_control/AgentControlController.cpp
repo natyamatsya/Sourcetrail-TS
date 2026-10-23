@@ -29,7 +29,6 @@ bool AgentControlController::isListening() const
 #include <mutex>
 #include <optional>
 #include <regex>
-#include <set>
 #include <string>
 #include <thread>
 #include <vector>
@@ -74,8 +73,6 @@ bool AgentControlController::isListening() const
 #include "QtUiControl.h"
 #include "QtUiQuery.h"
 #include "TabIds.h"
-#include "TaskManager.h"
-#include "TaskScheduler.h"
 #include "NameHierarchy.h"
 #include "Node.h"
 #include "NodeType.h"
@@ -534,7 +531,8 @@ private:
 // Threads: agent commands are handled on the app TaskScheduler (MessageAgentCommand
 // is scheduled there), but the messages that change what is on screen —
 // activations, the code view — are scheduled on the current tab's scheduler, a
-// thread of its own, and parallel ones fan out further. So the state cache is
+// strand of its own, and a parallel message's listeners run side by side on the
+// compute pool. So the state cache is
 // guarded by m_stateMutex. Commands that only need the GUI thread skip the message
 // bus entirely (see handleGuiCommand).
 struct AgentControlController::Impl

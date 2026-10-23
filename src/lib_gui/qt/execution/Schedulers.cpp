@@ -35,8 +35,9 @@ unsigned defaultComputeThreads(unsigned requested) noexcept
 
 Schedulers& Schedulers::getInstance()
 {
-	// Four I/O threads: the app strand runs on them, and its tasks can block one
-	// (a question during indexing) while a load opens an index on another.
+	// Four I/O threads: the schedulers' strands (the app's, the background's, each
+	// tab's) run on them, beside a load's file work; a long task step holds one
+	// while the others go on.
 	static Schedulers s_instance(4, 0);
 	return s_instance;
 }
