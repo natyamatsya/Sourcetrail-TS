@@ -1,7 +1,7 @@
 #pragma once
 
 // Qt-backed implementation of execution::ISchedulers:
-//   - io()      : exec::static_thread_pool sized for I/O-bound work
+//   - io()      : execution::SharedQueuePool for I/O-bound work that may block
 //   - compute() : exec::static_thread_pool sized for CPU-bound work
 //   - ui()      : posts to the Qt GUI thread (via QtThreadScheduler)
 //

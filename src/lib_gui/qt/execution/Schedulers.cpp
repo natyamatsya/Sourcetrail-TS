@@ -1,6 +1,7 @@
 #include "Schedulers.h"
 
 #include "QtThreadScheduler.h"	// UiScheduler()
+#include "SharedQueuePool.h"
 #include "StdexecPrelude.h"		// exec::static_thread_pool
 #include "logging.h"
 
@@ -10,7 +11,11 @@ namespace execution::qt
 {
 struct Schedulers::Impl
 {
-	exec::static_thread_pool ioPool;
+	// The strands run their task steps on the I/O threads, and a step may block (a
+	// child process, a file, a subprocess's IPC): a shared queue keeps the other
+	// threads taking work meanwhile. Compute work is short and CPU-bound, which is
+	// what static_thread_pool's per-thread queues are made for (SharedQueuePool.h).
+	execution::SharedQueuePool ioPool;
 	exec::static_thread_pool computePool;
 
 	Impl(unsigned ioThreads, unsigned computeThreads)
@@ -57,7 +62,7 @@ Schedulers::~Schedulers()
 
 AnyScheduler Schedulers::io() const
 {
-	return m_impl->ioPool.get_scheduler();
+	return m_impl->ioPool.scheduler();
 }
 
 AnyScheduler Schedulers::compute() const
