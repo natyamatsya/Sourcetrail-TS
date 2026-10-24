@@ -133,7 +133,6 @@ if(SOURCETRAIL_CXX_MODULES_ENABLED)
 		UtilityEnumTestSuite.cpp
 		UtilityStringTestSuite.cpp
 		Vector2TestSuite.cpp
-		VersionTestSuite.cpp
 		helper/OptionalCxxTestUtils.cpp
 		helper/OptionalRustTestUtils.cpp
 		helper/OptionalSwiftTestUtils.cpp
