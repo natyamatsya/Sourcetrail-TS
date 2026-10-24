@@ -18,6 +18,7 @@ use std::sync::mpsc;
 
 use agent_mcp_bridge::catalog;
 use agent_mcp_bridge::instance::{InstanceManager, StartOpts};
+use agent_mcp_bridge::ipc::AppNotAnswering;
 use agent_mcp_bridge::protocol::{self, InputEvent, InputKind, InputTarget};
 use serde_json::{json, Value};
 use tokio::sync::oneshot;
@@ -67,9 +68,14 @@ impl ManagerHandle {
             .map_err(|_| McpError::internal_error("manager thread gone", None))?;
         // `{:#}`: the whole context chain ("attach to instance 'x': <why>"), not
         // just the outermost context.
-        let mut message = match rrx.await.map_err(|_| McpError::internal_error("manager dropped reply", None))? {
+        let (mut message, data) = match rrx.await.map_err(|_| McpError::internal_error("manager dropped reply", None))? {
             Ok(v) => return Ok(v),
-            Err(e) => format!("{e:#}"),
+            // An app that does not answer: what its state machines are busy with
+            // goes along as the error's data.
+            Err(e) => {
+                let report = e.chain().find_map(|c| c.downcast_ref::<AppNotAnswering>()).map(|n| n.report.clone());
+                (format!("{e:#}"), report)
+            }
         };
         // An app that stopped in its debugger during the call (a crash, a
         // breakpoint) answers nothing: say so rather than only "timed out".
@@ -80,7 +86,7 @@ impl ManagerHandle {
                 }
             }
         }
-        Err(McpError::internal_error(message, None))
+        Err(McpError::internal_error(message, data))
     }
 
     /// A job without the error formatting of [`Self::call`].

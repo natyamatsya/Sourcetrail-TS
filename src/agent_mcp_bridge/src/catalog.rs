@@ -51,7 +51,12 @@ describe('instances').
 Failure reporting: transport or protocol failures (app not running, timeout, command \
 rejected, no project loaded) come back as MCP tool errors. Resolution failures inside the \
 UI (element not found, action unsupported, stale expect_hash) are data: { ok: false, message }. \
-Unknown tool arguments are rejected, naming the field.
+Unknown tool arguments are rejected, naming the field. When the app does not answer (stuck, \
+busy past the limit, gone), the error's message ends with what is in progress, and its data \
+is { app_silent_ms, in_progress: [ { machine, state, for_ms, for_ms_at_least? } ], machines: [ { machine, \
+state, busy, for_ms, for_ms_at_least?, entered_by?: { from, event, source }, context?, \
+children } ] }: the state machines as a tree (app > project > indexing, ...), as the bridge \
+last saw them, which is current, since the app publishes every move.
 
 A question that blocks: Sourcetrail asks some questions (\"reindex the project?\") in a modal \
 box that holds the thread commands run on until it is answered, so ui_state and nav_* time \

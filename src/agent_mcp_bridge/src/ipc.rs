@@ -10,6 +10,7 @@ use serde_json::{json, Value};
 use std::collections::VecDeque;
 use std::time::{Duration, Instant};
 
+use crate::machine_view::{self, MachineView};
 use crate::protocol::{self, channel, Incoming};
 
 const SEND_TIMEOUT_MS: u64 = 1000;
@@ -93,6 +94,24 @@ struct Liveness {
     probe: Option<(u64, Instant)>,
 }
 
+/// A wait that gave up because the app did not answer, or answered everything but
+/// the reply: the message, and what its state machines were doing as the bridge
+/// last saw them (`machine_view::MachineView::report`). The MCP server hands
+/// `report` to the client as the error's data.
+#[derive(Debug)]
+pub struct AppNotAnswering {
+    pub message: String,
+    pub report: Value,
+}
+
+impl std::fmt::Display for AppNotAnswering {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str(&self.message)
+    }
+}
+
+impl std::error::Error for AppNotAnswering {}
+
 /// A reply that waits in the app's queue while a question holds it: the question
 /// is to be answered first. Its own type, so a load that looks for the question
 /// next tells it from an app that stopped answering.
@@ -147,6 +166,9 @@ pub struct Bridge {
     last_frame: Option<(f64, f64, f64)>,
     // The last command sent: its id, and whether it waits in the app's queue.
     last_sent: Option<(u64, bool)>,
+    // The app's state machines as the bridge last saw them (see machine_view):
+    // what a "not answering" error reports the app was busy with.
+    machines: MachineView,
     // Liveness probes whose replies have not been read yet. Their replies are the
     // bridge's own business and stay out of the event log.
     probes: VecDeque<u64>,
@@ -188,6 +210,7 @@ impl Bridge {
             dropped_frames: 0,
             last_frame: None,
             last_sent: None,
+            machines: MachineView::default(),
             probes: VecDeque::new(),
         };
         // Best-effort handshake: detect protocol skew up front, but never fail the
@@ -467,10 +490,12 @@ impl Bridge {
             return Ok(());
         }
         match alive.probe {
-            Some((_, sent)) if now - sent >= UNRESPONSIVE => Err(self.unresponsive(what, request_id, UNRESPONSIVE)),
+            Some((_, sent)) if now - sent >= UNRESPONSIVE => Err(self.unresponsive(what, request_id, now - alive.heard)),
             None if now - alive.heard >= PROBE_EVERY => {
                 let id = self.next_id();
-                self.send(&protocol::get_machines(id, "question"))?;
+                // All of them: the reply refreshes the machine view, and the
+                // question machine in it says whether a question holds the reply.
+                self.send(&protocol::get_machines(id, ""))?;
                 if self.probes.len() >= 16 {
                     self.probes.pop_front();
                 }
@@ -495,6 +520,7 @@ impl Bridge {
         match incoming {
             Incoming::CommandResult { request_id: rid, .. } if self.probes.contains(rid) => Ok(true),
             Incoming::MachineStates { request_id: rid, machines } if self.probes.contains(rid) => {
+                self.machines.note_states(machines, machine_view::now_ms());
                 self.probes.retain(|probe| probe != rid);
                 if alive.probe.is_some_and(|(id, _)| id == *rid) {
                     alive.probe = None;
@@ -561,25 +587,50 @@ impl Bridge {
 
     /// The app answered all along, but `what` did not come.
     fn busy_timeout(&self, what: &str, request_id: u64, waited: Duration) -> anyhow::Error {
-        anyhow!(
-            "{what} for request {request_id} did not come within {waited:?}, though the app kept \
-             answering: its queue is busy with something else (with a debugger attached, \
-             instance_debug_command \"~*k\" shows what)"
+        self.not_answering(
+            format!(
+                "{what} for request {request_id} did not come within {waited:?}, though the app kept \
+                 answering: its queue is busy with something else (with a debugger attached, \
+                 instance_debug_command \"~*k\" shows what)"
+            ),
+            Duration::ZERO,
         )
     }
 
     /// The app stopped answering while `what` was awaited, `silent` long.
     fn unresponsive(&self, what: &str, request_id: u64, silent: Duration) -> anyhow::Error {
         if self.cmd_receivers() == 0 {
-            return anyhow!(
-                "the app went away awaiting {what} for request {request_id}: it likely crashed or exited"
+            return self.not_answering(
+                format!("the app went away awaiting {what} for request {request_id}: it likely crashed or exited"),
+                silent,
             );
         }
-        anyhow!(
-            "the app has not answered for {silent:?} awaiting {what} for request {request_id}, \
-             not even the state machines its reader thread answers: it is hung (with a debugger \
-             attached, instance_debug_command \"~*k\" shows where)"
+        self.not_answering(
+            format!(
+                "the app has not answered for {silent:.1?} awaiting {what} for request {request_id}, \
+                 not even the state machines its reader thread answers: it is stuck or hung (with a \
+                 debugger attached, instance_debug_command \"~*k\" shows where)"
+            ),
+            silent,
         )
+    }
+
+    /// `message`, with what the app's state machines were busy with as the bridge
+    /// last saw them: a line in the message, and the whole tree as the report.
+    fn not_answering(&self, message: String, silent: Duration) -> anyhow::Error {
+        let now = machine_view::now_ms();
+        let in_progress = self.machines.summary(now);
+        let summary = if self.machines.is_empty() {
+            String::new()
+        } else if in_progress.is_empty() {
+            "; in progress: nothing, by the state machines".to_string()
+        } else {
+            format!("; in progress: {}", in_progress.join(", "))
+        };
+        anyhow::Error::new(AppNotAnswering {
+            message: format!("{message}{summary}"),
+            report: self.machines.report(silent.as_millis() as u64, now),
+        })
     }
 
     /// Record one raw `EventEnvelope` into the observation log (bounded ring).
@@ -587,6 +638,16 @@ impl Bridge {
     /// for reply correlation is lost to `poll_events`.
     fn record_event(&mut self, bytes: &[u8]) {
         if let Ok(v) = protocol::event_to_json(bytes) {
+            let at_ms = v["timestamp_ms"].as_u64().unwrap_or_else(machine_view::now_ms);
+            match v["type"].as_str() {
+                Some("MachineTransition") => self.machines.note_transition(&v, at_ms),
+                Some("MachineStates") => {
+                    if let Some(machines) = v["machines"].as_array() {
+                        self.machines.note_states(machines, at_ms);
+                    }
+                }
+                _ => {}
+            }
             // A probe's reply that came after its wait ended.
             if let Some(rid) = v["request_id"].as_u64().filter(|rid| self.probes.contains(rid)) {
                 if v["type"] == "MachineStates" {
@@ -643,6 +704,9 @@ impl Bridge {
                     continue;
                 }
             };
+            if let Some(machines) = json["machines"].as_array() {
+                self.machines.note_states(machines, machine_view::now_ms());
+            }
             if rid == request_id {
                 return Ok(json);
             }

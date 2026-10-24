@@ -11,6 +11,8 @@
 //!                    one topic per tool area.
 //!   * [`debugger`] — the platform debugger (cdb / lldb) behind an instance:
 //!                    crash dumps, live and post-mortem debugging.
+//!   * [`machine_view`] — the bridge's view of the app's state machines, reported
+//!                    when the app does not answer.
 //!
 //! The `mcp` feature (see `bin/server.rs`) wraps [`ipc::Bridge`] in an `rmcp`
 //! stdio server; the default build exposes only the core + a smoke-test binary.
@@ -27,6 +29,7 @@ pub mod ipc;
 pub mod instance;
 pub mod catalog;
 pub mod debugger;
+pub mod machine_view;
 
 pub use instance::InstanceManager;
 pub use ipc::Bridge;

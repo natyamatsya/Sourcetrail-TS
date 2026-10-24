@@ -175,6 +175,24 @@ An indexing run ends by reopening the project on its new index, so `until: ["idl
 reindex?") returns at once with the question instead of waiting for the load.
 `describe('machines')` has both lifecycles.
 
+The bridge keeps its own view of the machines from the states the app answers and the
+transitions it publishes, which go out as machines move, not through the command
+reader. When the app does not answer, the error says what was in progress
+(`in progress: indexing preparing 8.4 s`), and its data is the whole view as a tree,
+the way `top` shows processes:
+
+```text
+{ app_silent_ms,
+  in_progress: [ { machine: "indexing", state: "preparing", for_ms: 8386 } ],
+  machines: [ { machine: "app", state: "running", busy: false, for_ms, children: [
+    { machine: "project", state: "ready", children: [
+      { machine: "indexing", state: "preparing", busy: true, for_ms: 8386,
+        entered_by: { from: "pending", event: "prepare", source: "app" }, context: {...} } ] } ] } ] }
+```
+
+All durations are numbers of milliseconds (`app_silent_ms`, `for_ms`); `for_ms_at_least`
+marks a state the bridge first saw in a snapshot, so it does not know when it began.
+
 ## Synthetic input
 
 `ui_input` posts mouse, wheel and key events to the app's own widgets (protocol v5),
