@@ -190,10 +190,10 @@ void QtProjectWizardContentPreferences::populate(QGridLayout* layout, int& row)
 	m_screenAutoScaling = addComboBoxWithWidgets(tr("Auto Scaling to DPI"),
 		tr("<p>Define if automatic scaling to screen DPI resolution is active. "
 			"This setting manipulates the environment flag %1 of the Qt framework "
-			"(<a href=\"http://doc.qt.io/qt-5/highdpi.html\">http://doc.qt.io/qt-5/highdpi.html</a>). "
+			"(<a href=\"https://doc.qt.io/qt-6/highdpi.html\">https://doc.qt.io/qt-6/highdpi.html</a>). "
 			"Choose <b>system</b> to stick to the setting of your current environment.</p>"
 			"<p>Changes to this setting require a <b>restart</b> of the application to take effect.</p>"
-		).arg(QT_AUTO_SCREEN_SCALE_FACTOR), {m_screenAutoScalingInfoLabel}, layout, row);
+		).arg(QT_ENABLE_HIGHDPI_SCALING), {m_screenAutoScalingInfoLabel}, layout, row);
 	m_screenAutoScaling->addItem(tr("system"), -1);
 	m_screenAutoScaling->addItem(tr("off"), 0);
 	m_screenAutoScaling->addItem(tr("on"), 1);
@@ -204,7 +204,7 @@ void QtProjectWizardContentPreferences::populate(QGridLayout* layout, int& row)
 	m_screenScaleFactor = addComboBoxWithWidgets(tr("Scale Factor"),
 		tr("<p>Define a screen scale factor for the user interface of the application. "
 			"This setting manipulates the environment flag %1 of the Qt framework "
-			"(<a href=\"http://doc.qt.io/qt-5/highdpi.html\">http://doc.qt.io/qt-5/highdpi.html</a>). "
+			"(<a href=\"https://doc.qt.io/qt-6/highdpi.html\">https://doc.qt.io/qt-6/highdpi.html</a>). "
 			"Choose <b>system</b> to stick to the setting of your current environment.</p>"
 			"<p>Changes to this setting require a <b>restart</b> of the application to take effect.</p>"
 		).arg(QT_SCALE_FACTOR), {m_screenScaleFactorInfoLabel}, layout, row);
@@ -551,7 +551,7 @@ void QtProjectWizardContentPreferences::uiAutoScalingChanges(int index)
 {
 	if (index == 0)
 	{
-		QString autoScale = isQtAutoScreenScaleFactorEnabled() ? tr("on") : tr("off");
+		QString autoScale = isQtHighDpiScalingEnabled() ? tr("on") : tr("off");
 		m_screenAutoScalingInfoLabel->setText(tr("detected: <b>%1</b>").arg(autoScale));
 		m_screenAutoScalingInfoLabel->show();
 	}

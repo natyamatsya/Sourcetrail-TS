@@ -4,19 +4,19 @@
 
 namespace utility
 {
-const char QT_AUTO_SCREEN_SCALE_FACTOR[] = "QT_AUTO_SCREEN_SCALE_FACTOR";
+const char QT_ENABLE_HIGHDPI_SCALING[] = "QT_ENABLE_HIGHDPI_SCALING";
 
-bool isQtAutoScreenScaleFactorEnabled()
+bool isQtHighDpiScalingEnabled()
 {
-	return qgetenv(QT_AUTO_SCREEN_SCALE_FACTOR) == "1";
+	return qgetenv(QT_ENABLE_HIGHDPI_SCALING) != "0";
 }
 
-void setQtAutoScreenScaleFactorEnabled(bool enable)
+void setQtHighDpiScalingEnabled(bool enable)
 {
 	QByteArray value;
 	value.setNum(enable ? 1 : 0);
 
-	qputenv(QT_AUTO_SCREEN_SCALE_FACTOR, value);
+	qputenv(QT_ENABLE_HIGHDPI_SCALING, value);
 }
 
 const char QT_SCALE_FACTOR[] = "QT_SCALE_FACTOR";

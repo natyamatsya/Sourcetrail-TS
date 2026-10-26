@@ -3,16 +3,18 @@
 
 #include <optional>
 
-// Qt high-DPI scaling is driven purely by the QT_SCALE_FACTOR / QT_AUTO_SCREEN_SCALE_FACTOR environment
+// Qt high-DPI scaling is driven purely by the QT_SCALE_FACTOR / QT_ENABLE_HIGHDPI_SCALING environment
 // variables (qputenv/qgetenv -- QtCore only, no widgets). These live in the base `lib` rather than lib_gui's
 // widget-heavy utilityQt so the shared app bootstrap (setupApp) can set them without dragging Qt Widgets
 // into the headless indexer.
 namespace utility
 {
-extern const char QT_AUTO_SCREEN_SCALE_FACTOR[];
+// Qt 6 scales to the screen's DPI unless QT_ENABLE_HIGHDPI_SCALING is 0 (it ignores Qt 5's
+// QT_AUTO_SCREEN_SCALE_FACTOR).
+extern const char QT_ENABLE_HIGHDPI_SCALING[];
 
-bool isQtAutoScreenScaleFactorEnabled();
-void setQtAutoScreenScaleFactorEnabled(bool enable);
+bool isQtHighDpiScalingEnabled();
+void setQtHighDpiScalingEnabled(bool enable);
 
 extern const char QT_SCALE_FACTOR[];
 

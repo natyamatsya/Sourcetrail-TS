@@ -425,7 +425,7 @@ The Preferences window lets you define settings for all projects. You can open t
 | Animations | Define if animations are used within the user interface.
 | Built-In Types | Define whether built-in types such as int or bool are shown when referenced in the graph view.
 | Directory in File Title | Enable display of the parent directory of a code file relative to the project file.
-| Auto Scaling to DPI | **(Linux only)** Define if automatic scaling to screen DPI resolution is active. This setting manipulates the environment flag `QT_AUTO_SCREEN_SCALE_FACTOR` of the Qt framework. Choose 'system' to stick to the setting of your current environment.
+| Auto Scaling to DPI | **(Linux only)** Define if automatic scaling to screen DPI resolution is active. This setting manipulates the environment flag `QT_ENABLE_HIGHDPI_SCALING` of the Qt framework. Choose 'system' to stick to the setting of your current environment.
 | Scale Factor | **(Linux only)** Define a screen scale factor for the user interface of the application. This setting manipulates the environment flag `QT_SCALE_FACTOR` of the Qt framework. Choose 'system' to stick to the setting of your current environment.
 | Scroll Speed | Define a multiplyer for the default scroll speed. Values smaller than 1 slow down scrolling while values greater than 1 increase the scroll speed.
 | Graph Zoom | Switch the default mouse wheel behavior in the graph between scrolling and zooming.

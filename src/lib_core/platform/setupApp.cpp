@@ -106,7 +106,7 @@ void setupAppEnvironment(int  /*argc*/, char*  /*argv*/[])
 	int autoScaling = appSettings.getScreenAutoScaling();
 	if (autoScaling != -1)
 	{
-		setQtAutoScreenScaleFactorEnabled(autoScaling != 0);
+		setQtHighDpiScalingEnabled(autoScaling != 0);
 	}
 
 	float scaleFactor = appSettings.getScreenScaleFactor();
