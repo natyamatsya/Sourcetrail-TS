@@ -6,8 +6,7 @@
 #include <utility>
 #include <vector>
 
-#include <exec/timed_thread_scheduler.hpp>
-
+#include "WorkPools.h"
 #include "logging.h"
 
 namespace execution
@@ -24,13 +23,6 @@ Queues& queues()
 {
 	static Queues queues;
 	return queues;
-}
-
-exec::timed_thread_scheduler timer()
-{
-	// Never destroyed: a wait still pending at exit is not waited for.
-	static exec::timed_thread_context* const context = new exec::timed_thread_context();
-	return context->get_scheduler();
 }
 }	 // namespace
 
@@ -103,8 +95,6 @@ void post(TabId tab, std::function<void()> work, bool front)
 
 void postAfter(TabId tab, std::chrono::milliseconds delay, std::function<void()> work)
 {
-	stdexec::start_detached(
-		exec::schedule_after(timer(), delay) |
-		stdexec::then(withCurrentCause([tab, work = std::move(work)]() { post(tab, work); })));
+	afterDelay(delay, withCurrentCause([tab, work = std::move(work)]() { post(tab, work); }));
 }
 }	 // namespace execution

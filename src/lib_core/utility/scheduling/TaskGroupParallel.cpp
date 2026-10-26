@@ -1,32 +1,54 @@
 #include "TaskGroupParallel.h"
 
-#include <thread>
+#include <chrono>
 
-#include "ScopedFunctor.h"
+#include "Strand.h"
+#include "TaskScheduler.h"
+#include "WorkPools.h"
+#include "logging.h"
+
+namespace
+{
+// How many updates a child gets in a turn before its strand goes back to the pool
+// (a child that never waits must not keep a pool thread to itself).
+constexpr int updatesPerTurn = 8;
+
+// How long doTerminate waits for the children to end before it gives up on them.
+constexpr std::chrono::seconds terminateLimit {30};
+}	 // namespace
+
+struct TaskGroupParallel::Child
+{
+	explicit Child(std::shared_ptr<Task> task)
+		: runner(std::make_shared<TaskRunner>(std::move(task)))
+		, strand(execution::Strand::create(execution::workPool()))
+	{
+	}
+
+	const std::shared_ptr<TaskRunner> runner;
+	const std::shared_ptr<execution::Strand> strand;
+	std::shared_ptr<Blackboard> blackboard;	// the group's, set as it starts
+	std::atomic<bool> ended = true;	// not started, or done
+};
 
 TaskGroupParallel::TaskGroupParallel() = default;
 
 void TaskGroupParallel::addTask(std::shared_ptr<Task> task)
 {
-	m_tasks.push_back(std::make_shared<TaskInfo>(std::make_shared<TaskRunner>(task)));
+	m_shared->children.push_back(std::make_shared<Child>(std::move(task)));
 }
 
 void TaskGroupParallel::doEnter(std::shared_ptr<Blackboard> blackboard)
 {
-	m_taskFailed = false;
+	m_shared->failed = false;
 
-	if (m_needsToStartThreads)
+	if (!m_started)
 	{
-		m_needsToStartThreads = false;
-		m_activeTaskCount = static_cast<int>(m_tasks.size());
-		for (size_t i = 0; i < m_tasks.size(); i++)
+		m_started = true;
+		for (const std::shared_ptr<Child>& child: m_shared->children)
 		{
-			m_tasks[i]->active = true;
-			m_tasks[i]->thread = std::make_shared<std::thread>(
-				&TaskGroupParallel::processTaskThreaded,
-				this,
-				m_tasks[i],
-				blackboard);
+			child->blackboard = blackboard;
+			start(m_shared, child);
 		}
 	}
 }
@@ -34,84 +56,113 @@ void TaskGroupParallel::doEnter(std::shared_ptr<Blackboard> blackboard)
 Task::TaskState TaskGroupParallel::doUpdate(std::shared_ptr<Blackboard>  /*blackboard*/)
 {
 	using enum Task::TaskState;
-	// Parked until a child ends, holding no thread of its scheduler.
-	if (m_tasks.size() != 0 && !m_childEnded.waitUntil([this]() { return m_activeTaskCount == 0; }))
+	// Parked until the last child ended, holding no thread of its scheduler.
+	const std::shared_ptr<Shared>& shared = m_shared;
+	if (!shared->childEnded.waitUntil([&shared]() {
+			const std::lock_guard<std::mutex> lock(shared->mutex);
+			return shared->running == 0;
+		}))
 	{
 		return STATE_RUNNING;
 	}
 
-	return (m_taskFailed ? STATE_FAILURE : STATE_SUCCESS);
+	return (shared->failed ? STATE_FAILURE : STATE_SUCCESS);
 }
 
-void TaskGroupParallel::doExit(std::shared_ptr<Blackboard>  /*blackboard*/)
-{
-	for (size_t i = 0; i < m_tasks.size(); i++)
-	{
-		m_tasks[i]->thread->join();
-		m_tasks[i]->thread.reset();
-	}
-}
+void TaskGroupParallel::doExit(std::shared_ptr<Blackboard>  /*blackboard*/) {}
 
 void TaskGroupParallel::doReset(std::shared_ptr<Blackboard> blackboard)
 {
-	for (size_t i = 0; i < m_tasks.size(); i++)
+	for (const std::shared_ptr<Child>& child: m_shared->children)
 	{
-		m_tasks[i]->taskRunner->reset();
-		if (!m_tasks[i]->active)
+		child->runner->reset();
+		if (child->ended)
 		{
-			m_activeTaskCount++;
-
-			m_tasks[i]->thread->join();
-			m_tasks[i]->active = true;
-			m_tasks[i]->thread = std::make_shared<std::thread>(
-				&TaskGroupParallel::processTaskThreaded,
-				this,
-				m_tasks[i],
-				blackboard);
+			child->blackboard = blackboard;
+			start(m_shared, child);
 		}
 	}
 }
 
 void TaskGroupParallel::doTerminate()
 {
-	for (size_t i = 0; i < m_tasks.size(); i++)
+	for (const std::shared_ptr<Child>& child: m_shared->children)
 	{
-		m_tasks[i]->taskRunner->terminate();
+		child->runner->terminate();
+	}
+	// A parked child looks again, and ends.
+	for (const std::shared_ptr<Child>& child: m_shared->children)
+	{
+		if (!child->ended)
+		{
+			child->runner->unpark();
+			child->strand->post([shared = m_shared, child]() { turn(shared, child); });
+		}
 	}
 
-	for (size_t i = 0; i < m_tasks.size(); i++)
+	std::unique_lock<std::mutex> lock(m_shared->mutex);
+	if (!m_shared->allEnded.wait_for(lock, terminateLimit, [this]() { return m_shared->running == 0; }))
 	{
-		if (m_tasks[i]->thread)
-		{
-			m_tasks[i]->thread->join();
-			m_tasks[i]->thread.reset();
-		}
+		LOG_WARNING(
+			"a parallel task group was terminated with " + std::to_string(m_shared->running) +
+			" children still running: they are left to end on their own");
 	}
 }
 
-void TaskGroupParallel::processTaskThreaded(std::shared_ptr<TaskInfo> taskInfo,
-	std::shared_ptr<Blackboard> blackboard)
+void TaskGroupParallel::start(const std::shared_ptr<Shared>& shared, const std::shared_ptr<Child>& child)
+{
+	child->ended = false;
+	{
+		const std::lock_guard<std::mutex> lock(shared->mutex);
+		shared->running++;
+	}
+	child->strand->post([shared, child]() { turn(shared, child); });
+}
+
+void TaskGroupParallel::turn(const std::shared_ptr<Shared>& shared, const std::shared_ptr<Child>& child)
 {
 	using enum Task::TaskState;
-	[[maybe_unused]]
-	ScopedFunctor functor([&]()
-	{
-		m_activeTaskCount--;
-		m_childEnded.notify();
-	});
+	// Unparks the child and has it look again, in a turn of its own. Weak: what
+	// keeps the wake (a timer, a task waiting in the child) must not keep the child.
+	const std::function<void()> wake = [weakShared = std::weak_ptr<Shared>(shared),
+										weakChild = std::weak_ptr<Child>(child)]() {
+		const std::shared_ptr<Child> parked = weakChild.lock();
+		const std::shared_ptr<Shared> alive = weakShared.lock();
+		if (parked && alive)
+		{
+			parked->runner->unpark();
+			parked->strand->post([alive, parked]() { turn(alive, parked); });
+		}
+	};
 
-	while (true)
+	for (int update = 0; update < updatesPerTurn; update++)
 	{
-		TaskState state = taskInfo->taskRunner->update(blackboard);
+		if (child->ended)
+		{
+			return;	// a turn a wake posted after it ended
+		}
 
+		const TaskState state = TaskScheduler::updateDriven(child->runner, wake, child->blackboard);
 		if (state == STATE_SUCCESS || state == STATE_FAILURE)
 		{
 			if (state == STATE_FAILURE)
 			{
-				m_taskFailed = true;
+				shared->failed = true;
 			}
-			taskInfo->active = false;
-			break;
+			child->ended = true;
+			{
+				const std::lock_guard<std::mutex> lock(shared->mutex);
+				shared->running--;
+			}
+			shared->allEnded.notify_all();
+			shared->childEnded.notify();
+			return;
+		}
+		if (child->runner->isParked())
+		{
+			return;	// `wake` posts its next turn
 		}
 	}
+	// It runs on: the rest in a turn posted anew, after what else waits for the pool.
+	child->strand->post([shared, child]() { turn(shared, child); });
 }

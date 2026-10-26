@@ -5,6 +5,7 @@
 #include <stdexcept>
 #include <functional>
 #include <mutex>
+#include <optional>
 #include <chrono>
 #include <thread>
 #include <vector>
@@ -21,6 +22,8 @@
 #include "Strand.h"
 #include "TaskLambda.h"
 #include "TaskScheduler.h"
+#include "TaskWake.h"
+#include "WorkPools.h"
 
 using enum Task::TaskState;
 
@@ -799,4 +802,133 @@ TEST_CASE("serial queue drops what is queued when it stops, and counts it as end
 	REQUIRE_FALSE(queue->post([]() {}));	// nothing more
 	release = true;
 	REQUIRE(eventually([&]() { return CauseWork::pending(31) == 0; }));
+}
+
+namespace
+{
+// Waits, parked, until released (or terminated); then succeeds.
+class WaitingTask: public Task
+{
+public:
+	void release()
+	{
+		released = true;
+		m_wake.notify();
+	}
+	void terminate() override
+	{
+		release();
+	}
+
+	std::atomic<bool> released = false;
+	std::atomic<int> updates = 0;
+
+private:
+	void doEnter(std::shared_ptr<Blackboard>) override {}
+	TaskState doUpdate(std::shared_ptr<Blackboard>) override
+	{
+		updates++;
+		return m_wake.waitUntil([this]() { return released.load(); }) ? TaskState::STATE_SUCCESS
+																		: TaskState::STATE_RUNNING;
+	}
+	void doExit(std::shared_ptr<Blackboard>) override {}
+	void doReset(std::shared_ptr<Blackboard>) override {}
+
+	TaskWake m_wake;
+};
+
+// Looks again a few times after a rest, then succeeds.
+class RestingTask: public Task
+{
+public:
+	explicit RestingTask(int rests): m_rests(rests) {}
+
+	std::atomic<bool> done = false;
+
+private:
+	void doEnter(std::shared_ptr<Blackboard>) override {}
+	TaskState doUpdate(std::shared_ptr<Blackboard>) override
+	{
+		if (m_rests-- > 0)
+		{
+			TaskScheduler::restFor(std::chrono::milliseconds(10));
+			return TaskState::STATE_RUNNING;
+		}
+		done = true;
+		return TaskState::STATE_SUCCESS;
+	}
+	void doExit(std::shared_ptr<Blackboard>) override {}
+	void doReset(std::shared_ptr<Blackboard>) override {}
+
+	int m_rests;
+};
+
+// The work pool for a test, and back to the fallback after it.
+class TestWorkPool
+{
+public:
+	explicit TestWorkPool(std::size_t threads): m_pool(threads)
+	{
+		execution::setWorkPool(execution::AnyScheduler(m_pool.get_scheduler()));
+	}
+	~TestWorkPool()
+	{
+		execution::setWorkPool(std::nullopt);
+	}
+
+private:
+	exec::static_thread_pool m_pool;
+};
+}	 // namespace
+
+TEST_CASE("parallel group's children that wait hold no pool thread")
+{
+	exec::static_thread_pool pool(1);
+	const auto strand = execution::Strand::create(pool.get_scheduler());
+	const auto scheduler = std::make_shared<TaskScheduler>(TabId::NONE);
+	scheduler->startSchedulerLoopOn(strand);
+	const TestWorkPool work(1);	// one thread for all the children
+
+	const auto waiting = std::make_shared<WaitingTask>();
+	const auto resting = std::make_shared<RestingTask>(5);
+	std::atomic<int> ran = 0;
+	const auto group = std::make_shared<TaskGroupParallel>();
+	group->addTask(waiting);
+	group->addTask(resting);
+	group->addTask(std::make_shared<TaskLambda>([&]() { ran++; }));
+	scheduler->pushTask(group);
+
+	// The waiting child is parked, so the others get the one thread.
+	REQUIRE(eventually([&]() { return resting->done && ran == 1; }));
+	REQUIRE(scheduler->hasTasksQueued());
+	REQUIRE(waiting->updates <= 2);	// woken, not polled
+
+	waiting->release();
+	REQUIRE(eventually([&]() { return !scheduler->hasTasksQueued(); }));
+	scheduler->stopSchedulerLoop();
+}
+
+TEST_CASE("parallel group terminated ends its waiting children")
+{
+	exec::static_thread_pool pool(1);
+	const auto strand = execution::Strand::create(pool.get_scheduler());
+	const auto scheduler = std::make_shared<TaskScheduler>(TabId::NONE);
+	scheduler->startSchedulerLoopOn(strand);
+	const TestWorkPool work(2);
+
+	const auto first = std::make_shared<WaitingTask>();
+	const auto second = std::make_shared<WaitingTask>();
+	const auto group = std::make_shared<TaskGroupParallel>();
+	group->addTask(first);
+	group->addTask(second);
+	scheduler->pushTask(group);
+	REQUIRE(eventually([&]() { return first->updates > 0 && second->updates > 0; }));
+
+	const auto terminated = std::chrono::steady_clock::now();
+	group->terminate();	// returns once the children ended
+	REQUIRE(std::chrono::steady_clock::now() - terminated < std::chrono::seconds(5));
+	REQUIRE(first->released);
+	REQUIRE(second->released);
+	REQUIRE(eventually([&]() { return !scheduler->hasTasksQueued(); }));
+	scheduler->stopSchedulerLoop();
 }

@@ -3,9 +3,13 @@
 
 #include "IntermediateStorage.h"
 #include <condition_variable>
+#include <cstddef>
+#include <functional>
 #include <list>
+#include <map>
 #include <memory>
 #include <mutex>
+#include <optional>
 
 class StorageProvider
 {
@@ -36,6 +40,15 @@ public:
 	//! fixed-interval polling the merge/inject tasks used to do.
 	WaitResult waitForCountOrDone(int minCount);
 
+	//! What waitForCountOrDone(minCount) would return now; empty while it would wait.
+	std::optional<WaitResult> countOrDone(int minCount) const;
+
+	//! `changed` is called (outside the provider's lock) whenever the storages
+	//! change or the producers are done: for a task that waits without blocking a
+	//! thread. The id removes it.
+	std::size_t addChangeListener(std::function<void()> changed);
+	void removeChangeListener(std::size_t id);
+
 	//! Marks the producing side finished (or tearing down): releases all waiters.
 	//! Idempotent. Consumers drain the remainder and stop once it is empty.
 	void setDone();
@@ -47,6 +60,13 @@ private:
 	mutable std::mutex m_storagesMutex;
 	std::condition_variable m_storagesChanged;
 	bool m_done = false;
+
+	// Tells the listeners: after the storages changed, outside the lock.
+	void changed();
+
+	mutable std::mutex m_listenersMutex;
+	std::map<std::size_t, std::function<void()>> m_listeners;
+	std::size_t m_nextListener = 1;
 };
 
 #endif	  // STORAGE_PROVIDER_H

@@ -25,6 +25,18 @@ TaskInjectStorage::TaskInjectStorage(
 	std::shared_ptr<StorageProvider> storageProvider, std::weak_ptr<Storage> target)
 	: m_storageProvider(storageProvider), m_target(target)
 {
+	m_changeListener = m_storageProvider->addChangeListener(
+		[changed = std::weak_ptr<TaskWake>(m_storagesChanged)]() {
+			if (const std::shared_ptr<TaskWake> wake = changed.lock())
+			{
+				wake->notify();
+			}
+		});
+}
+
+TaskInjectStorage::~TaskInjectStorage()
+{
+	m_storageProvider->removeChangeListener(m_changeListener);
 }
 
 void TaskInjectStorage::doEnter(std::shared_ptr<Blackboard>  /*blackboard*/) {}
@@ -33,10 +45,18 @@ Task::TaskState TaskInjectStorage::doUpdate(std::shared_ptr<Blackboard>  /*black
 {
 	using enum Task::TaskState;
 
-	// Block until a storage is available or the producers are done (replaces the
-	// old 25 ms poll). When done, keep draining the remainder (READY while count
-	// >= 1); end once done AND empty.
-	if (m_storageProvider->waitForCountOrDone(1) == StorageProvider::WaitResult::DONE)
+	// Parked until a storage is available or the producers are done, holding no
+	// thread. When done, keep draining the remainder (READY while count >= 1); end
+	// once done AND empty.
+	std::optional<StorageProvider::WaitResult> result;
+	if (!m_storagesChanged->waitUntil([&]() {
+			result = m_storageProvider->countOrDone(1);
+			return result.has_value();
+		}))
+	{
+		return STATE_RUNNING;
+	}
+	if (*result == StorageProvider::WaitResult::DONE)
 	{
 		if (!m_summaryLogged)
 		{
@@ -94,7 +114,7 @@ void TaskInjectStorage::doReset(std::shared_ptr<Blackboard>  /*blackboard*/) {}
 
 void TaskInjectStorage::terminate()
 {
-	// Release a blocked doUpdate so TaskGroupParallel::doTerminate's join returns.
+	// Release a waiting doUpdate: the task ends, and so does its parallel group.
 	m_storageProvider->setDone();
 }
 

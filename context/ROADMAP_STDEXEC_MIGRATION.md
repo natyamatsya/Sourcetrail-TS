@@ -69,8 +69,8 @@ message's run as senders on `compute()` (no thread per listener); the work handl
 posted to a scheduler as a `TaskLambda` is posted to the queue; `Settled` comes from
 the work's completion (`CauseWork`). `TaskScheduler` is left with the indexer's task
 trees, on the app's strand beside the app's queue, where `TaskLambda` remains a step
-of a tree. Left for Phase 3: those trees (`TaskGroupParallel` still starts a thread per
-child there) and the remaining `std::thread` sites.
+of a tree. Left for Phase 3: those trees (their parallel groups run on the work pool now)
+and the remaining `std::thread` sites.
 
 ## Later — subsystem migration (Phase 3+)
 
@@ -78,8 +78,15 @@ Incrementally replace the remaining old-async users with sender pipelines, then
 retire `Task`/`TaskScheduler`/`TaskGroup*` entirely:
 
 - **Indexer**: `TaskBuildIndex` (cancellation already stdexec), `TaskMergeStorages`,
-  `TaskInjectStorage`, `TaskFillIndexerCommandQueue` — `TaskGroupParallel` → pool
-  schedules.
+  `TaskInjectStorage`, `TaskFillIndexerCommandQueue`.
+  *Done:* `TaskGroupParallel` runs each child on a strand of its own over the work pool
+  (`execution::workPool()`, the app's compute pool), in turns, instead of a thread per
+  child. The children wait parked, holding no thread: merge and inject until the
+  `StorageProvider` reports a change, the polls (`TaskDecoratorRepeat`'s delay, the
+  command queue's refill, the build's progress) with `TaskScheduler::restFor` on a
+  timer. A driver other than a scheduler gives its runner parking through
+  `TaskScheduler::updateDriven`. Left: `TaskBuildIndex`'s supervisor thread per indexer
+  process, and the trees themselves as senders.
 - **Storage**: bulk writes already use `exec::static_thread_pool`
   (`ConcurrentTursoWriter`); fold the surrounding `Task` wrappers into senders.
 - **GUI**: header-search `std::thread`s (`QtProjectWizardContent*`) → `io()` +

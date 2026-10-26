@@ -55,8 +55,8 @@ public:
 	//! A queue whose items run on `strand`.
 	static std::shared_ptr<SerialQueue> create(std::shared_ptr<Strand> strand);
 
-	//! A queue on a strand of its own over a small pool kept for queues with no
-	//! pool to share (headless, tests).
+	//! A queue on a strand of its own over the fallback pool (WorkPools.h), for
+	//! queues with no pool to share (headless, tests).
 	static std::shared_ptr<SerialQueue> createWithOwnPool();
 
 	//! Queues `item` after what is queued (`front`: before it), on behalf of the

@@ -48,6 +48,7 @@
 #include "StorageCache.h"
 #include "TabIds.h"
 #include "TabQueues.h"
+#include "WorkPools.h"
 #include "ISchedulers.h"
 #include "Strand.h"
 #include "TaskManager.h"
@@ -183,6 +184,7 @@ void Application::destroyInstance()
 	MessageQueue::getInstance()->stopMessageLoop();
 	// What is queued to the app, the background and the tabs is dropped.
 	execution::stopQueues();
+	execution::setWorkPool(std::nullopt);	// the app's pools go with it
 	// A strand loop's pass may hold its scheduler past its removal: end them here.
 	TaskManager::stopSchedulerLoops();
 
@@ -759,6 +761,10 @@ void Application::startMessagingAndScheduling()
 		indexer->startSchedulerLoopThreaded();
 	}
 	startQueue(TabIds::background());
+	if (m_schedulers != nullptr)
+	{
+		execution::setWorkPool(m_schedulers->compute());	// the indexer's parallel streams
+	}
 
 	MessageQueue* queue = MessageQueue::getInstance().get();
 	queue->addMessageFilter(std::make_shared<MessageFilterErrorCountUpdate>());

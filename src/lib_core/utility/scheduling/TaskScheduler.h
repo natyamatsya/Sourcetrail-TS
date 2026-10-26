@@ -58,6 +58,19 @@ public:
 	//! as a thread loop would before looking at it again.
 	static void waitForNextLook();
 
+	//! For a task in its update that wants to look again after `delay` (a poll): its
+	//! runner is parked meanwhile and woken by a timer, holding no thread. Where
+	//! nothing parks it, the thread sleeps that long. The task returns STATE_RUNNING.
+	static void restFor(std::chrono::milliseconds delay);
+
+	//! Updates `runner` with `blackboard` for a driver that is not a scheduler (a
+	//! parallel group's child): a task in it that parks waits until `wake` is called
+	//! (from any thread), and `wake` unparks the runner and has the driver go on.
+	static Task::TaskState updateDriven(
+		const std::shared_ptr<TaskRunner>& runner,
+		std::function<void()> wake,
+		const std::shared_ptr<Blackboard>& blackboard);
+
 private:
 	void processTasks();
 

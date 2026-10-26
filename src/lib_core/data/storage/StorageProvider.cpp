@@ -1,5 +1,7 @@
 #include "StorageProvider.h"
 
+#include <vector>
+
 #include "logging.h"
 
 int StorageProvider::getStorageCount() const
@@ -16,6 +18,7 @@ void StorageProvider::clear()
 	}
 	// Wake waiters so they re-check; on interrupt setDone() follows shortly after.
 	m_storagesChanged.notify_all();
+	changed();
 }
 
 void StorageProvider::insert(std::shared_ptr<IntermediateStorage> storage)
@@ -35,6 +38,7 @@ void StorageProvider::insert(std::shared_ptr<IntermediateStorage> storage)
 		m_storages.insert(it, storage);
 	}
 	m_storagesChanged.notify_all();
+	changed();
 }
 
 std::shared_ptr<IntermediateStorage> StorageProvider::consumeSecondLargestStorage()
@@ -86,6 +90,47 @@ void StorageProvider::setDone()
 		m_done = true;
 	}
 	m_storagesChanged.notify_all();
+	changed();
+}
+
+std::optional<StorageProvider::WaitResult> StorageProvider::countOrDone(int minCount) const
+{
+	std::lock_guard<std::mutex> lock(m_storagesMutex);
+	if (static_cast<int>(m_storages.size()) >= minCount)
+	{
+		return WaitResult::READY;
+	}
+	return m_done ? std::optional(WaitResult::DONE) : std::nullopt;
+}
+
+std::size_t StorageProvider::addChangeListener(std::function<void()> changed)
+{
+	std::lock_guard<std::mutex> lock(m_listenersMutex);
+	const std::size_t id = m_nextListener++;
+	m_listeners.emplace(id, std::move(changed));
+	return id;
+}
+
+void StorageProvider::removeChangeListener(std::size_t id)
+{
+	std::lock_guard<std::mutex> lock(m_listenersMutex);
+	m_listeners.erase(id);
+}
+
+void StorageProvider::changed()
+{
+	std::vector<std::function<void()>> listeners;
+	{
+		std::lock_guard<std::mutex> lock(m_listenersMutex);
+		for (const auto& [id, listener]: m_listeners)
+		{
+			listeners.push_back(listener);
+		}
+	}
+	for (const std::function<void()>& listener: listeners)
+	{
+		listener();
+	}
 }
 
 bool StorageProvider::isDone() const

@@ -3,6 +3,7 @@
 #include <exception>
 #include <string>
 
+#include "WorkPools.h"
 #include "logging.h"
 
 namespace execution
@@ -29,9 +30,7 @@ std::shared_ptr<SerialQueue> SerialQueue::create(std::shared_ptr<Strand> strand)
 
 std::shared_ptr<SerialQueue> SerialQueue::createWithOwnPool()
 {
-	// Never destroyed: its threads are idle once the queues on it stopped.
-	static exec::static_thread_pool* const pool = new exec::static_thread_pool(4);
-	return create(Strand::create(AnyScheduler(pool->get_scheduler())));
+	return create(Strand::create(fallbackPool()));
 }
 
 SerialQueue::SerialQueue(std::shared_ptr<Strand> strand): m_strand(std::move(strand)) {}

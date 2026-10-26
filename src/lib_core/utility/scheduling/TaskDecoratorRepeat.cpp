@@ -1,7 +1,8 @@
 #include "TaskDecoratorRepeat.h"
 
 #include <chrono>
-#include <thread>
+
+#include "TaskScheduler.h"
 
 TaskDecoratorRepeat::TaskDecoratorRepeat(ConditionType condition, TaskState exitState, size_t delayMS)
 	: m_condition(condition), m_exitState(exitState), m_delayMS(delayMS)
@@ -31,7 +32,11 @@ Task::TaskState TaskDecoratorRepeat::doUpdate(std::shared_ptr<Blackboard> blackb
 		break;
 	}
 
-	std::this_thread::sleep_for(std::chrono::milliseconds(m_delayMS));
+	// Looks again after the delay, parked meanwhile (TaskScheduler::restFor).
+	if (state == STATE_RUNNING && m_delayMS > 0)
+	{
+		TaskScheduler::restFor(std::chrono::milliseconds(m_delayMS));
+	}
 
 	return state;
 }

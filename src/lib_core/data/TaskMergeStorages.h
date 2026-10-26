@@ -5,16 +5,18 @@
 #include <memory>
 
 #include "Task.h"
+#include "TaskWake.h"
 
 class StorageProvider;
 
 //! In-memory pre-merge: while indexers run, repeatedly merges the 2nd- and
 //! 3rd-largest intermediate storages so the (serial) storage writer sees fewer,
-//! bigger, pre-deduplicated storages. Event-driven: blocks on the provider until
-//! enough storages exist or producers are done -- no polling.
+//! bigger, pre-deduplicated storages. Event-driven: parked, holding no thread, until
+//! the provider has enough storages or the producers are done -- no polling.
 class TaskMergeStorages: public Task
 {
 public:
+	~TaskMergeStorages() override;
 	TaskMergeStorages(std::shared_ptr<StorageProvider> storageProvider);
 
 private:
@@ -25,6 +27,9 @@ private:
 	void terminate() override;
 
 	std::shared_ptr<StorageProvider> m_storageProvider;
+	// Notified when the provider's storages change: the task waits for it parked.
+	std::shared_ptr<TaskWake> m_storagesChanged = std::make_shared<TaskWake>();
+	std::size_t m_changeListener = 0;
 
 	// instrumentation (accumulated across repeat iterations; summary logged once)
 	size_t m_mergeCount = 0;

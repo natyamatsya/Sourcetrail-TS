@@ -15,6 +15,18 @@ import srctrl.utility;
 TaskMergeStorages::TaskMergeStorages(std::shared_ptr<StorageProvider> storageProvider)
 	: m_storageProvider(storageProvider)
 {
+	m_changeListener = m_storageProvider->addChangeListener(
+		[changed = std::weak_ptr<TaskWake>(m_storagesChanged)]() {
+			if (const std::shared_ptr<TaskWake> wake = changed.lock())
+			{
+				wake->notify();
+			}
+		});
+}
+
+TaskMergeStorages::~TaskMergeStorages()
+{
+	m_storageProvider->removeChangeListener(m_changeListener);
 }
 
 void TaskMergeStorages::doEnter(std::shared_ptr<Blackboard>  /*blackboard*/) {}
@@ -23,9 +35,17 @@ Task::TaskState TaskMergeStorages::doUpdate(std::shared_ptr<Blackboard>  /*black
 {
 	using enum Task::TaskState;
 
-	// Block until at least 3 storages exist (the largest is left for the writer)
-	// or the producers are done. Replaces the old 250 ms poll.
-	if (m_storageProvider->waitForCountOrDone(3) == StorageProvider::WaitResult::DONE)
+	// Parked until at least 3 storages exist (the largest is left for the writer) or
+	// the producers are done, holding no thread.
+	std::optional<StorageProvider::WaitResult> result;
+	if (!m_storagesChanged->waitUntil([&]() {
+			result = m_storageProvider->countOrDone(3);
+			return result.has_value();
+		}))
+	{
+		return STATE_RUNNING;
+	}
+	if (*result == StorageProvider::WaitResult::DONE)
 	{
 		if (!m_summaryLogged)
 		{
@@ -68,6 +88,6 @@ void TaskMergeStorages::doReset(std::shared_ptr<Blackboard>  /*blackboard*/) {}
 
 void TaskMergeStorages::terminate()
 {
-	// Release a blocked doUpdate so TaskGroupParallel::doTerminate's join returns.
+	// Release a waiting doUpdate: the task ends, and so does its parallel group.
 	m_storageProvider->setDone();
 }

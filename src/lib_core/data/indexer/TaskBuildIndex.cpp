@@ -1,5 +1,7 @@
 #include "TaskBuildIndex.h"
 
+#include "TaskScheduler.h"
+
 #include "language_package_flags.h"
 #include "AppPath.h"
 #include "IndexerCommandType.h"
@@ -379,7 +381,7 @@ Task::TaskState TaskBuildIndex::doUpdate(std::shared_ptr<Blackboard> blackboard)
 			m_lastWatchdogLogTime = now;
 		}
 
-		std::this_thread::sleep_for(std::chrono::milliseconds(50));
+		TaskScheduler::restFor(std::chrono::milliseconds(50));	// parked meanwhile
 
 		return STATE_RUNNING;
 	}
