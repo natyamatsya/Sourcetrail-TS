@@ -5,8 +5,8 @@
 #include "MessageActivateOverview.h"
 #include "MessageSearch.h"
 #include "MessageSearchAutocomplete.h"
-#include "SearchStateMachine.h"
 #endif
+#include "SearchStateMachine.h"
 #include "QtActions.h"
 #include "QtResources.h"
 #include "QtSearchBarButton.h"

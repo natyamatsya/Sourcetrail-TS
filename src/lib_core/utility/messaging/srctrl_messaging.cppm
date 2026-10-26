@@ -62,6 +62,7 @@ extern "C++" {
 #include "MessageListener.h"
 #include "Message.h"
 #include "MessageActivateBase.h"
+#include "MessageActivateBoundaries.h"
 #include "MessageActivateEdge.h"
 #include "MessageActivateErrors.h"
 #include "MessageActivateFile.h"

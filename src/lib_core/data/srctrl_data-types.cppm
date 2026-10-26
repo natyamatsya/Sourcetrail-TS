@@ -44,6 +44,9 @@ extern "C++" {
 #include "NodeModifier.h"
 // NodeAttributeKind (sparse node_attribute key) -- another intToEnum enum, consumed by StorageNodeAttribute.
 #include "NodeAttributeKind.h"
+// LanguageMask (which languages produced a node) -- a plain int bitmask + its string helpers, held by
+// Node (:graph) and StorageNode.
+#include "LanguageMask.h"
 
 // close the purview-wide extern "C++" linkage block
 }

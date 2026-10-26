@@ -14,8 +14,8 @@
 #include "GraphViewStyle.h"
 #include "MessageFocusedSearchView.h"
 #include "NodeTypeSet.h"
-#include "SearchStateMachine.h"
 #endif
+#include "SearchStateMachine.h"
 #include "compatibilityQt.h"
 #ifndef SRCTRL_MODULE_BUILD
 #include "utility.h"

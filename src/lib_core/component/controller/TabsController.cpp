@@ -7,8 +7,8 @@
 #include "MessageScrollToLine.h"
 #include "MessageSearch.h"
 #include "MessageWindowChanged.h"
-#include "ProjectStateMachine.h"
 #endif
+#include "ProjectStateMachine.h"
 #include "ScreenSearchInterfaces.h"
 #include "TabIds.h"
 #include "TabQueues.h"
