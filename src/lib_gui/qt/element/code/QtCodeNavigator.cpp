@@ -209,11 +209,15 @@ void QtCodeNavigator::updateReferenceCount(
 {
 	if (referenceIndex != referenceCount)
 	{
-		m_refLabel->setText(tr("%1/%2 references").arg(referenceIndex + 1).arg(referenceCount));
+		m_refLabel->setText(
+			(referenceCount == 1 ? tr("%1/%2 reference") : tr("%1/%2 references"))
+				.arg(referenceIndex + 1)
+				.arg(referenceCount));
 	}
 	else
 	{
-		m_refLabel->setText(tr("%1 references").arg(referenceCount));
+		m_refLabel->setText(
+			(referenceCount == 1 ? tr("%1 reference") : tr("%1 references")).arg(referenceCount));
 	}
 
 	m_refLabel->setMinimumWidth(
