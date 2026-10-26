@@ -10,7 +10,7 @@
 	padding-left: 10;
 }
 
-#search_box {
+#screen_search_text {
 	background: <color:screen_search/box/background>;
 	border: none;
 	color: <color:screen_search/box/text>;
@@ -35,7 +35,7 @@
 	max-height: 40px;
 }
 
-#search_button, #prev_button, #next_button, #close_button {
+#screen_search_button, #prev_button, #next_button, #screen_search_close_button {
 	background: <color:screen_search/button/normal>;
 	width: 20px;
 	min-height: 20px;
@@ -44,7 +44,7 @@
 	margin: 4px 0;
 }
 
-#search_button {
+#screen_search_button {
 	border-bottom-left-radius: 10px;
 	border-top-left-radius: 10px;
 	padding-left: 2px;
@@ -71,7 +71,7 @@
 	background: <color:screen_search/button/press>;
 }
 
-#close_button {
+#screen_search_close_button {
 	background: transparent;
 	margin: 4px 6px;
 	padding-top: 1px;

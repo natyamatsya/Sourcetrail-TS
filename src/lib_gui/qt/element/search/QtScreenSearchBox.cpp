@@ -42,7 +42,7 @@ QtScreenSearchBox::QtScreenSearchBox(
 	// search field
 	{
 		m_searchButton = new QtSelfRefreshIconButton("", QtResources::SEARCH_VIEW_SEARCH, "screen_search/button");
-		m_searchButton->setObjectName(QStringLiteral("search_button"));
+		m_searchButton->setObjectName(QStringLiteral("screen_search_button"));
 		m_searchButton->setAccessibleName(tr("Search on screen"));
 		m_searchButton->setIconSize(QSize(12, 12));
 		layout->addWidget(m_searchButton);
@@ -50,7 +50,7 @@ QtScreenSearchBox::QtScreenSearchBox(
 		connect(m_searchButton, &QPushButton::clicked, this, &QtScreenSearchBox::setFocus);
 
 		m_searchBox = new QLineEdit(this);
-		m_searchBox->setObjectName(QStringLiteral("search_box"));
+		m_searchBox->setObjectName(QStringLiteral("screen_search_text"));
 		m_searchBox->setToolTip(QtActions::findOnScreen().tooltip());
 		m_searchBox->setAttribute(Qt::WA_MacShowFocusRect, false);	  // remove blue focus box on Mac
 		layout->addWidget(m_searchBox);
@@ -105,7 +105,7 @@ QtScreenSearchBox::QtScreenSearchBox(
 	{
 		m_closeButton = new QtSelfRefreshIconButton("", QtResources::SCREEN_SEARCH_VIEW_CLOSE, "screen_search/button");
 		m_closeButton->setToolTip(QtActions::screenSearchClose().tooltip());
-		m_closeButton->setObjectName(QStringLiteral("close_button"));
+		m_closeButton->setObjectName(QStringLiteral("screen_search_close_button"));
 		m_closeButton->setAccessibleName(QtActions::screenSearchClose().name());
 		m_closeButton->setIconSize(QSize(15, 15));
 		layout->addWidget(m_closeButton);
