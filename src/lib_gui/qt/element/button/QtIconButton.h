@@ -15,6 +15,7 @@ public:
 	void setColor(QColor color);
 
 protected:
+	bool event(QEvent* event) override;
 	void enterEvent(QEnterEvent* event) override;
 	void leaveEvent(QEvent* event) override;
 
@@ -25,6 +26,7 @@ private:
 	const FilePath m_hoveredIconPath;
 
 	QColor m_color;
+	QString m_toolTipName;	// the accessible name the tooltip gave
 };
 
 #endif	  // QT_ICON_BUTTON_H

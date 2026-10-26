@@ -116,7 +116,7 @@ QAccessibleInterface* childMatching(QAccessibleInterface* parent, const RefStep&
 			continue;
 		}
 		const std::string role = accessibleRoleName(child->role());
-		const std::string name = child->text(QAccessible::Name).toStdString();
+		const std::string name = accessibleElementName(child).toStdString();
 		if (role == step.role && name == step.name && counts[{role, name}]++ == step.index)
 		{
 			return child;
@@ -162,7 +162,7 @@ QAccessibleInterface* resolve(const std::string& objectName, const std::vector<R
 				continue;
 			}
 			const std::string role = accessibleRoleName(iface->role());
-			const std::string name = iface->text(QAccessible::Name).toStdString();
+			const std::string name = accessibleElementName(iface).toStdString();
 			if (role == path[0].role && name == path[0].name && counts[{role, name}]++ == path[0].index)
 			{
 				current = iface;

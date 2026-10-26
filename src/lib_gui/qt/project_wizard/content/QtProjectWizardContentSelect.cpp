@@ -189,6 +189,8 @@ void QtProjectWizardContentSelect::populate(QGridLayout* layout, int&  /*row*/)
 				b->setStyleSheet(QStringLiteral("font-weight: bold"));
 			}
 
+			// Its text is broken into lines and starred; its name is the type's.
+			b->setAccessibleName(QString::fromStdString(sourceGroupTypeToProjectSetupString(sourceGroupIt.type)));
 			b->setProperty("source_group_type", QVariant::fromValue(sourceGroupIt.type));
 			b->setProperty("recommended", sourceGroupIt.recommended);
 			sourceGroupButtons->addButton(b);

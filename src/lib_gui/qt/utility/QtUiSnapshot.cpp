@@ -228,7 +228,7 @@ flatbuffers::Offset<fb::UiNode> buildAccessibleNode(
 			continue;
 		}
 		const std::string cr = accessibleRoleName(child->role());
-		const std::string cn = child->text(QAccessible::Name).toStdString();
+		const std::string cn = accessibleElementName(child).toStdString();
 		path.push_back({cr, cn, counts[{cr, cn}]++});
 		children.push_back(buildAccessibleNode(b, child, path, names, anchor));
 		path.pop_back();
@@ -236,7 +236,7 @@ flatbuffers::Offset<fb::UiNode> buildAccessibleNode(
 	const auto kids = b.CreateVector(children);
 	const auto ref = buildRef(b, path, anchor);
 	const auto role = b.CreateString(accessibleRoleName(iface->role()));
-	const auto name = b.CreateString(iface->text(QAccessible::Name).toStdString());
+	const auto name = b.CreateString(accessibleElementName(iface).toStdString());
 	const auto value = b.CreateString(iface->text(QAccessible::Value).toStdString());
 	const auto description = b.CreateString(iface->text(QAccessible::Description).toStdString());
 
@@ -312,7 +312,7 @@ std::vector<std::uint8_t> captureUiSnapshot(
 			if (QAccessibleInterface* iface = QAccessible::queryAccessibleInterface(widget))
 			{
 				const std::string role = accessibleRoleName(iface->role());
-				const std::string name = iface->text(QAccessible::Name).toStdString();
+				const std::string name = accessibleElementName(iface).toStdString();
 				std::vector<StepData> path{{role, name, counts[{role, name}]++}};
 				roots.push_back(buildAccessibleNode(builder, iface, path, names, {}));
 				detail::hashMixU64(treeHash, structuralHash(iface));

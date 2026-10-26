@@ -5,6 +5,7 @@
 
 #if QT_CONFIG(accessibility)
 #include <QAccessible>
+#include <QWidget>
 
 namespace utility::qt
 {
@@ -46,6 +47,20 @@ inline const char* accessibleRoleName(QAccessible::Role role)
 	case QAccessible::Client: return "client";
 	default: return "unknown";
 	}
+}
+
+//! The element's name as the snapshot records it and a ref matches it: the name its widget
+//! was given (setAccessibleName), else what Qt's accessibility reports. Qt's macOS and Linux
+//! combo box reports its current text as its name even when it was given one; the label a
+//! form names it after is what tells it apart.
+inline QString accessibleElementName(QAccessibleInterface* iface)
+{
+	if (const QWidget* widget = qobject_cast<const QWidget*>(iface->object());
+		widget != nullptr && !widget->accessibleName().isEmpty())
+	{
+		return widget->accessibleName();
+	}
+	return iface->text(QAccessible::Name);
 }
 }	 // namespace utility::qt
 #endif	// QT_CONFIG(accessibility)

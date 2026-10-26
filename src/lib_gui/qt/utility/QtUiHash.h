@@ -51,7 +51,7 @@ inline std::uint64_t structuralHash(QAccessibleInterface* iface)
 	using namespace detail;
 	std::uint64_t h = kFnvOffset;
 	hashMixStr(h, accessibleRoleName(iface->role()));
-	hashMixStr(h, iface->text(QAccessible::Name).toStdString());
+	hashMixStr(h, accessibleElementName(iface).toStdString());
 	if (QAccessibleActionInterface* actions = iface->actionInterface())
 	{
 		for (const QString& action: actions->actionNames())

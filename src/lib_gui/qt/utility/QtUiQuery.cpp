@@ -74,7 +74,7 @@ QJsonObject buildJsonNode(
 			continue;
 		}
 		const QString cr = QString::fromLatin1(accessibleRoleName(child->role()));
-		const QString cn = child->text(QAccessible::Name);
+		const QString cn = accessibleElementName(child);
 		path.push_back({cr, cn, counts[{cr, cn}]++});
 		children.append(buildJsonNode(child, path, names, anchor));
 		path.pop_back();
@@ -92,7 +92,7 @@ QJsonObject buildJsonNode(
 	return QJsonObject{
 		{"ref", refJson(path, anchor)},
 		{"role", QString::fromLatin1(accessibleRoleName(iface->role()))},
-		{"name", iface->text(QAccessible::Name)},
+		{"name", accessibleElementName(iface)},
 		{"value", iface->text(QAccessible::Value)},
 		{"description", iface->text(QAccessible::Description)},
 		{"rect", QJsonObject{{"x", r.x()}, {"y", r.y()}, {"w", r.width()}, {"h", r.height()}}},
@@ -161,7 +161,7 @@ QueryResult queryUi(const std::string& jsonPath, std::uint64_t requestId)
 			continue;
 		}
 		const QString role = QString::fromLatin1(accessibleRoleName(iface->role()));
-		const QString name = iface->text(QAccessible::Name);
+		const QString name = accessibleElementName(iface);
 		std::vector<Step> path{{role, name, counts[{role, name}]++}};
 		roots.append(buildJsonNode(iface, path, names, {}));
 	}

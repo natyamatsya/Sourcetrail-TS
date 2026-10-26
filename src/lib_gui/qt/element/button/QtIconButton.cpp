@@ -27,6 +27,19 @@ void QtIconButton::setColor(QColor color)
 	leaveEvent(nullptr);
 }
 
+bool QtIconButton::event(QEvent* event)
+{
+	// An icon has no text to be named by (by screen readers, by agent control): unless it was
+	// named otherwise, it is called what its tooltip says.
+	if (event->type() == QEvent::ToolTipChange &&
+		(accessibleName().isEmpty() || accessibleName() == m_toolTipName))
+	{
+		m_toolTipName = toolTip();
+		setAccessibleName(m_toolTipName);
+	}
+	return QPushButton::event(event);
+}
+
 void QtIconButton::enterEvent(QEnterEvent * /*event*/)
 {
 	if (!m_hoveredIconPath.empty() && isEnabled())
