@@ -182,7 +182,10 @@ QueryResult queryUi(const std::string& jsonPath, std::uint64_t requestId)
 	std::vector<flatbuffers::Offset<fb::UiNode>> nodes;
 	for (const QJsonValue& match: *matched)
 	{
-		if (match.isObject())
+		// Elements only: `..` also descends into each element's ref, whose path steps
+		// carry a role and a name too, and a filter on those matched them as well
+		// (empty elements with no rect, hash or ref, one per step naming the role).
+		if (match.isObject() && match.toObject().contains(QStringLiteral("hash")))
 		{
 			nodes.push_back(jsonToUiNode(builder, match.toObject()));
 		}
