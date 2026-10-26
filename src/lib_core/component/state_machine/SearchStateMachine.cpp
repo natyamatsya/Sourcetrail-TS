@@ -145,6 +145,28 @@ MachineFireResult SearchStateMachine::dismiss(EventSource source)
 	return {true, "dismissed"};
 }
 
+MachineFireResult SearchStateMachine::search(EventSource source)
+{
+	SearchPresenter presenter;
+	std::string query;
+	{
+		auto transaction = m_machine.transaction();
+		SearchMachine::Data& data = transaction.data();
+		if (!data.presenter)
+		{
+			return {false, "there is no search box to search from (is a project loaded?)"};
+		}
+		query = data.query;
+		data.outcome = query.empty() ? std::string("searched for what the box holds")
+									 : std::format("searched for '{}' as typed", query);
+		data.matches.clear();
+		transaction.move(Event::Search, source);
+		presenter = data.presenter;
+	}
+	presenter.submitQuery();
+	return {true, query.empty() ? std::string("searching") : std::format("searching for '{}'", query)};
+}
+
 bool SearchStateMachine::awaits(const std::string& query) const
 {
 	return m_machine.read([&](const SearchMachine::Data& data, State state) {
@@ -162,7 +184,10 @@ bool SearchStateMachine::completed(const std::string& query, const std::vector<S
 	}
 	if (matches.empty())
 	{
-		data.outcome = std::format("nothing matches '{}'", query);
+		// A full-text query has no completions: Enter (search) runs it.
+		data.outcome = query.starts_with(SearchMatch::FULLTEXT_SEARCH_CHARACTER)
+			? std::format("'{}' is a full-text query: search runs it", query)
+			: std::format("nothing matches '{}'", query);
 		transaction.move(Event::FoundNone);
 		return true;	// the box closes an empty list
 	}
@@ -222,6 +247,8 @@ MachineFireResult SearchStateMachine::fire(const std::string& event, const std::
 	}
 	case Event::Dismiss:
 		return dismiss(source);
+	case Event::Search:
+		return search(source);
 	default:
 		return m_machine.unknownEvent(event);
 	}

@@ -87,3 +87,8 @@ void QtSearchView::dismissSuggestions()
 {
 	execution::qt::onUi(QtViewWidgetWrapper::getWidgetOfView(this), [this]() { m_widget->dismissSuggestions(); });
 }
+
+void QtSearchView::submitQuery()
+{
+	execution::qt::onUi(QtViewWidgetWrapper::getWidgetOfView(this), [this]() { m_widget->submitQuery(); });
+}

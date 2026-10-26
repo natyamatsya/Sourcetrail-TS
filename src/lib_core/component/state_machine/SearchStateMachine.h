@@ -12,18 +12,21 @@
 #include "SearchMatch.h"
 
 // Shows what the search machine does to the search box for someone else (an agent):
-// presentQuery(query) shows a query as typed, dismissSuggestions() closes the list.
+// presentQuery(query) shows a query as typed, dismissSuggestions() closes the list,
+// submitQuery() searches for what the box holds (Enter, the search button).
 // What a person does there the box reports itself.
 template <typename T>
 concept PresentsSearch = requires(T& presenter, const std::string& query) {
 	presenter.presentQuery(query);
 	presenter.dismissSuggestions();
+	presenter.submitQuery();
 };
 
 struct SearchPresenterOperations
 {
 	void (*presentQuery)(void* presenter, const std::string& query);
 	void (*dismissSuggestions)(void* presenter);
+	void (*submitQuery)(void* presenter);
 };
 
 // Any PresentsSearch, by reference (Presenter.h).
@@ -46,12 +49,17 @@ public:
 	{
 		m_operations->dismissSuggestions(m_presenter);
 	}
+	void submitQuery() const
+	{
+		m_operations->submitQuery(m_presenter);
+	}
 
 private:
 	template <PresentsSearch T>
 	static constexpr SearchPresenterOperations operations {
 		[](void* presenter, const std::string& query) { static_cast<T*>(presenter)->presentQuery(query); },
-		[](void* presenter) { static_cast<T*>(presenter)->dismissSuggestions(); }};
+		[](void* presenter) { static_cast<T*>(presenter)->dismissSuggestions(); },
+		[](void* presenter) { static_cast<T*>(presenter)->submitQuery(); }};
 };
 
 // The search box's autocompletion, from a query typed until the list it brings up is
@@ -59,11 +67,14 @@ private:
 //
 //   idle --type--> completing --completed--> suggesting --select/dismiss--> idle
 //   completing --found_none/dismiss--> idle; completing/suggesting --type--> completing
+//   any --search--> idle
 //
 // A person typing sends `type` (the search box does), and closing the list or
 // searching sends `dismiss`; an agent sends the same, and `select` picks one of the
-// suggestions: its search runs as a click on it in the list would. Completions for a
-// query typed over since are not shown.
+// suggestions: its search runs as a click on it in the list would. `search` searches
+// for what the box holds, as Enter or the search button does: a full-text search for
+// a query starting with '?', and for text no suggestion was picked for. Completions
+// for a query typed over since are not shown.
 struct SearchMachine
 {
 	enum class State
@@ -78,7 +89,8 @@ struct SearchMachine
 		Completed,
 		FoundNone,
 		Select,
-		Dismiss
+		Dismiss,
+		Search
 	};
 
 	struct Data
@@ -99,7 +111,8 @@ struct SearchMachine
 		named(Event::Completed, "completed"),
 		named(Event::FoundNone, "found_none"),
 		control(Event::Select, "select"),
-		control(Event::Dismiss, "dismiss")};
+		control(Event::Dismiss, "dismiss"),
+		control(Event::Search, "search")};
 	static constexpr auto transitions = std::to_array<StateMachine<State, Event>::Transition>({
 		{State::Idle, Event::Type, State::Completing},
 		{State::Completing, Event::Type, State::Completing},
@@ -109,6 +122,9 @@ struct SearchMachine
 		{State::Completing, Event::Dismiss, State::Idle},
 		{State::Suggesting, Event::Select, State::Idle},
 		{State::Suggesting, Event::Dismiss, State::Idle},
+		{State::Idle, Event::Search, State::Idle},
+		{State::Completing, Event::Search, State::Idle},
+		{State::Suggesting, Event::Search, State::Idle},
 	});
 
 	static std::string context(State state, const Data& data);
@@ -134,6 +150,9 @@ public:
 	MachineFireResult select(std::size_t index, EventSource source);
 	// Closes the suggestions, or stops waiting for them.
 	MachineFireResult dismiss(EventSource source);
+	// Searches for what the search box holds, as Enter does (an agent's: a person's
+	// Enter reaches the box itself).
+	MachineFireResult search(EventSource source);
 
 	// The search controller's side: whether completions for `query` are still waited
 	// for, and they are here: true when they are to be shown.

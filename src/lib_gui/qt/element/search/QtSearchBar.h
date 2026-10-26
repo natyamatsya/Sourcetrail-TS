@@ -29,6 +29,7 @@ public:
 	// What an agent does in the search box (QtSmartSearchBox).
 	void showQuery(const QString& query);
 	void dismissSuggestions();
+	void submitQuery();
 
 	QAbstractItemView* getCompleterPopup();
 

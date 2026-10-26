@@ -27,6 +27,7 @@ public:
 	// What the search machine shows of an agent's doing (PresentsSearch).
 	void presentQuery(const std::string& query);
 	void dismissSuggestions();
+	void submitQuery();
 
 private:
 	void setStyleSheet();

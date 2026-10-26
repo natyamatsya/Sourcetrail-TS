@@ -485,6 +485,9 @@ context.outcome \"nothing matches ...\".
   select { index } | { name }      suggesting: searches for that suggestion, as clicking it \
 in the list does; the activation follows (watch activation, or ui_state.active_nodes).
   dismiss                          completing/suggesting: closes the list.
+  search                           any state: searches for what the box holds, as Enter or \
+the search button does: a query starting with ? (case-insensitive) or ?? (case-sensitive) is \
+a full-text search, and so is text no suggestion was picked for.
   Recipe: machine_send { machine: \"search\", event: \"type\", args: { query: \"Foo\" }, \
 until: [\"suggesting\", \"idle\"] }, then select.
 

@@ -708,9 +708,14 @@ struct FakeSearchPresenter
 	{
 		dismissed++;
 	}
+	void submitQuery()
+	{
+		submitted++;
+	}
 
 	std::vector<std::string> queries;
 	int dismissed = 0;
+	int submitted = 0;
 };
 
 TEST_CASE("search suggests what was typed last, and searches for what is selected")
@@ -732,7 +737,7 @@ TEST_CASE("search suggests what was typed last, and searches for what is selecte
 	MachineSnapshot snapshot = machine.snapshot();
 	REQUIRE(snapshot.state == "suggesting");
 	REQUIRE(snapshot.context.find(R"("name":"FooBar")") != std::string::npos);
-	REQUIRE(snapshot.events == std::vector<std::string> {"type", "select", "dismiss"});
+	REQUIRE(snapshot.events == std::vector<std::string> {"type", "select", "dismiss", "search"});
 
 	REQUIRE_FALSE(machine.fire("select", R"({"index":2})", EventSource::Agent).ok);
 	REQUIRE_FALSE(machine.fire("select", R"({"name":"Bar"})", EventSource::Agent).ok);
@@ -757,9 +762,20 @@ TEST_CASE("search suggests what was typed last, and searches for what is selecte
 	REQUIRE_FALSE(machine.completed("Baz", {SearchMatch("Baz")}));
 	REQUIRE(presenter.dismissed == 1);	// the person closed it themselves
 
+	// Searching for what is typed (Enter): the box searches, from any state.
+	REQUIRE(machine.fire("type", R"({"query":"?needle"})", EventSource::Agent).ok);
+	REQUIRE(machine.completed("?needle", {}));
+	REQUIRE(machine.snapshot().context.find("is a full-text query: search runs it") != std::string::npos);
+	REQUIRE(machine.fire("search", "", EventSource::Agent).ok);
+	REQUIRE(presenter.submitted == 1);
+	snapshot = machine.snapshot();
+	REQUIRE(snapshot.state == "idle");
+	REQUIRE(snapshot.context.find("searched for '?needle' as typed") != std::string::npos);
+
 	machine.detach(presenter);
+	REQUIRE_FALSE(machine.fire("search", "", EventSource::Agent).ok);	// no box to search from
 	REQUIRE(machine.fire("type", R"({"query":"Q"})", EventSource::Agent).ok);
-	REQUIRE(presenter.queries.size() == 2);
+	REQUIRE(presenter.queries.size() == 3);
 }
 
 struct FakeBookmarkPresenter

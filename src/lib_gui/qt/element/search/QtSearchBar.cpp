@@ -142,3 +142,9 @@ void QtSearchBar::dismissSuggestions()
 {
 	m_searchBox->dismissSuggestions();
 }
+
+void QtSearchBar::submitQuery()
+{
+	m_searchBox->dismissSuggestions();
+	m_searchBox->startSearch();
+}
