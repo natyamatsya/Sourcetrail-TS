@@ -68,8 +68,11 @@ bool QtProjectWizardContentPathsHeaderSearchGlobal::check()
 		QString compilerHeaderPaths;
 		for (const FilePath& headerPath: m_list->getPathsAsDisplayed())
 		{
-			if (headerPath != ResourcePaths::getCxxCompilerHeaderDirectoryPath() &&
-				headerPath.getCanonical().getConcatenated("/stdarg.h").exists())
+			if (headerPath == ResourcePaths::getCxxCompilerHeaderDirectoryPath())
+			{
+				continue;	 // Sourcetrail's own, which setPaths puts first: collected too, it was listed twice
+			}
+			if (headerPath.getCanonical().getConcatenated("/stdarg.h").exists())
 			{
 				compilerHeaderPaths += QString::fromStdString(headerPath.str()) + "\n";
 			}
