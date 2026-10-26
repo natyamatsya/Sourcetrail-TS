@@ -463,20 +463,47 @@ std::expected<void, PrepareIndexingError> SourceGroupCxxCMakeFileAPI::prepareInd
 	if (!configured)
 	{
 		const auto& [code, cmakeError, exceptionType]{configured.error()};
-		MessageStatus(
-			std::format(
-				"Can't refresh project. Failed to generate CMake File API reply in: {} ({})",
-				buildDir.str(),
-				to_std_sv(code)),
-			true)
-			.dispatch();
-		// CMake's own error, where a person sees it (and an agent, as a question).
-		std::string notice{
-			std::format("Can't refresh project: {} with {}.", to_std_sv(code), configuredBy)};
+		const auto failed = [&]() -> std::expected<void, PrepareIndexingError> {
+			MessageStatus(
+				std::format(
+					"Can't refresh project. Failed to generate CMake File API reply in: {} ({})",
+					buildDir.str(),
+					to_std_sv(code)),
+				true)
+				.dispatch();
+			return std::unexpected(PrepareIndexingError::ConfigurationIncomplete);
+		};
+		std::string cmakeSays{std::format("{} with {}.", to_std_sv(code), configuredBy)};
 		if (!cmakeError.empty())
-			notice += std::format("\n\n{}", cmakeError);
-		Application::getInstance()->showNotice(notice, {"OK"});
-		return std::unexpected(PrepareIndexingError::ConfigurationIncomplete);
+			cmakeSays += std::format("\n\n{}", cmakeError);
+
+		// A changed project CMake cannot configure here (it may need the build
+		// environment it was configured in): the reply CMake wrote last can still do.
+		if (stale)
+		{
+			const auto application{Application::getInstance()};
+			const bool useLastReply{
+				!application->hasGUI() ||
+				application->handleDialog(
+					std::format(
+						"The CMake project changed, but re-configuring it failed: {}\n\nIndex with "
+						"the File API reply of the last configure instead?",
+						cmakeSays),
+					{"Use Last Reply", "Cancel"}) == 0};
+			if (useLastReply)
+			{
+				LOG_WARNING("SourceGroupCxxCMakeFileAPI: re-configuring failed, using the last reply");
+				MessageStatus("CMake could not re-configure the project: using its last File API reply.", true)
+					.dispatch();
+				return checkReplyMatchesSettings(reader);
+			}
+			return failed();
+		}
+
+		// CMake's own error, where a person sees it (and an agent, as a question).
+		Application::getInstance()->showNotice(
+			std::format("Can't refresh project: {}", cmakeSays), {"OK"});
+		return failed();
 	}
 	return checkReplyMatchesSettings(reader);
 }
