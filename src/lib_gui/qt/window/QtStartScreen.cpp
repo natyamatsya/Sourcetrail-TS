@@ -7,16 +7,19 @@
 #include "MessageLoadProject.h"
 #include "ProjectSettings.h"
 #endif
+#include "Application.h"
+#include "DialogView.h"
 #include "QtContextMenu.h"
-#include "QtMessageBox.h"
 #include "QtResources.h"
 #include "Version.h"
 #include "utilityQt.h"
 
+#include <QApplication>
 #include <QCheckBox>
 #include <QDesktopServices>
 #include <QHBoxLayout>
 #include <QLabel>
+#include <QPointer>
 #include <QString>
 #include <QVBoxLayout>
 
@@ -43,7 +46,13 @@ void QtRecentProjectButton::setProjectPath(const FilePath &projectFilePath)
 {
 	m_projectFilePath = projectFilePath;
 
-	setText(QString::fromStdString(m_projectFilePath.withoutExtension().fileName()));
+	// The project's name: "proj" for proj.srctrl.toml, not "proj.srctrl".
+	FilePath name = m_projectFilePath.withoutExtension();
+	if (name.extension() == ".srctrl")
+	{
+		name = name.withoutExtension();
+	}
+	setText(QString::fromStdString(name.fileName()));
 	setFixedWidth(fontMetrics().boundingRect(text()).width() + 45);
 
 	if (m_projectFilePath.exists())
@@ -192,18 +201,27 @@ void QtStartScreen::handleButtonClicked()
 	}
 	else
 	{
-		QtMessageBox msgBox(this);
-		msgBox.setWindowTitle(tr("Missing Project File"));
-		msgBox.setText(tr("<strong>Missing Project File</strong>"));
-		msgBox.setInformativeText(tr("<p>Couldn't find \"%1\"</p><p>Do you want to remove it from recent projects?</p>").arg(button->text()));
-		msgBox.setDetailedText(tr("Couldn't find %1").arg(QString::fromStdString(recentProjectPath.str())));
-
-		QPushButton *removeButton = msgBox.addButton(tr("Remove"), QtMessageBox::YesRole);
-		msgBox.addButton(tr("Keep"), QtMessageBox::NoRole);
-		msgBox.setIcon(QtMessageBox::Question);
-
-		if (msgBox.execModal() == removeButton)
-			removeRecentProjectPath(recentProjectPath);
+		// A question (QuestionStateMachine): an agent sees and answers it as the box's buttons
+		// do, and the box is centred on the window.
+		whenAnswered(
+			Application::getInstance()->getDialogView(DialogView::UseCase::GENERAL)->asked(
+				tr("Missing project file: couldn't find \"%1\".\n\nDo you want to remove it from the recent projects?")
+					.arg(QString::fromStdString(recentProjectPath.str()))
+					.toStdString(),
+				{tr("Remove").toStdString(), tr("Keep").toStdString()}),
+			[screen = QPointer<QtStartScreen>(this), recentProjectPath](int option) {
+				if (option != 0)
+				{
+					return;
+				}
+				// Answered on the thread that answered it: the buttons are the GUI thread's.
+				QMetaObject::invokeMethod(qApp, [screen, recentProjectPath]() {
+					if (screen)
+					{
+						screen->removeRecentProjectPath(recentProjectPath);
+					}
+				});
+			});
 	}
 }
 
