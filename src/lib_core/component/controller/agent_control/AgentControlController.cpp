@@ -956,6 +956,8 @@ struct AgentControlController::Impl
 				publishMachineStates(builder, requestId, {});
 				return true;
 			}
+			// What the event sets going (a run, a load) is on the request's behalf.
+			const CauseScope cause(requestId);
 			const MachineFireResult result = machine->fire(
 				c->event() != nullptr ? c->event()->str() : "",
 				c->args() != nullptr ? c->args()->str() : "",
