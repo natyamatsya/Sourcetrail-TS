@@ -137,8 +137,10 @@ void QtCodeFileTitleButton::updateTexts()
 		toolTip = "incomplete " + toolTip;
 	}
 
+	// The index stores mtimes to the second, the disk has sub-seconds: compare at the
+	// stored precision, or every file just indexed reads as changed since.
 	if ((!m_filePath.recheckExists()) ||
-		(FileSystem::getLastWriteTime(m_filePath) > m_modificationTime))
+		(TimeStamp(FileSystem::getLastWriteTime(m_filePath).toString()) > m_modificationTime))
 	{
 		title += "*";
 		toolTip = "out-of-date " + toolTip;
