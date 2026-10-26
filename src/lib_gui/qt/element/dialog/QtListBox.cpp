@@ -207,7 +207,10 @@ void QtListBox::canceledEditDialog()
 	m_editDialog->hide();
 	m_editDialog.reset();
 
+	// Back to the window it was opened from, with the focus: raising alone leaves the focus where
+	// the system put it when the dialog closed (the main window).
 	window()->raise();
+	window()->activateWindow();
 }
 
 void QtListBox::savedEditDialog()

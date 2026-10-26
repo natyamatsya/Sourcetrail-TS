@@ -191,5 +191,8 @@ void QtProjectWizardContent::closedFilesDialog()
 	m_filesDialog->deleteLater();
 	m_filesDialog = nullptr;
 
+	// Back to the window it was opened from, with the focus: raising alone leaves the focus where
+	// the system put it when the dialog closed (the main window).
 	window()->raise();
+	window()->activateWindow();
 }

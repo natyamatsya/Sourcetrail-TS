@@ -846,7 +846,9 @@ void QtProjectWizard::windowStackChanged()
 	else
 	{
 		setEnabled(true);
+		// With the focus: the type selection's window closing handed it to the main window.
 		raise();
+		activateWindow();
 
 		// The type selection closed without a type chosen.
 		if (std::exchange(m_choosingType, false) && !m_typeSelected && !m_applying)

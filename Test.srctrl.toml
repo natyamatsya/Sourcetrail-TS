@@ -1,0 +1,17 @@
+version = '8'
+
+[[source_groups]]
+id = 'cf48ca8d-1e48-4fda-be3f-45487fbdb400'
+name = 'C/C++ from CMake File API'
+status = 'enabled'
+type = 'C/C++ from CMake File API'
+
+    [source_groups.cmake]
+    build_directory = '/Users/fischi/dev/github/natyamatsya/Sourcetrail-TS/build/'
+    configuration = ''
+    preset_name = ''
+    source_directory = '/Users/fischi/dev/github/natyamatsya/Sourcetrail-TS/'
+    target_glob = ''
+
+    [source_groups.indexed_header_paths]
+    indexed_header_path = ''

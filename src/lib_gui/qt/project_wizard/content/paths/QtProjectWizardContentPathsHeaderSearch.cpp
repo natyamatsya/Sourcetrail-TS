@@ -348,7 +348,10 @@ void QtProjectWizardContentPathsHeaderSearch::closedPathsDialog()
 	m_pathsDialog->hide();
 	m_pathsDialog.reset();
 
+	// Back to the window it was opened from, with the focus: raising alone leaves the focus where
+	// the system put it when the dialog closed (the main window).
 	window()->raise();
+	window()->activateWindow();
 }
 
 void QtProjectWizardContentPathsHeaderSearch::showDetectedIncludesResult(
