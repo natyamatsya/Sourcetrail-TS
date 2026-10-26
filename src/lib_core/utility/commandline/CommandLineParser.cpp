@@ -99,6 +99,8 @@ void CommandLineParser::preparse(std::vector<std::string>& args)
 	if (result.error)
 	{
 		std::cerr << "ERROR: " << *result.error << std::endl;
+		m_quit = true;
+		m_failed = true;
 		return;
 	}
 
@@ -123,6 +125,8 @@ void CommandLineParser::parse()
 
 			if (status != CommandlineCommand::ReturnStatus::CMD_OK)
 				m_quit = true;
+			if (status == CommandlineCommand::ReturnStatus::CMD_FAILURE)
+				m_failed = true;
 			else if (m_projectFile.empty() && m_errorString.empty())
 				// CMD_OK means: now load the project. Without one, nothing would ever
 				// end a headless run.
@@ -162,6 +166,11 @@ bool CommandLineParser::runWithoutGUI() const
 bool CommandLineParser::exitApplication() const
 {
 	return m_quit;
+}
+
+int CommandLineParser::exitCode() const
+{
+	return m_failed ? 1 : 0;
 }
 
 const std::string& CommandLineParser::getScreenshotPath() const

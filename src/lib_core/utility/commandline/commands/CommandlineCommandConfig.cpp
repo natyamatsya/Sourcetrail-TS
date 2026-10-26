@@ -82,7 +82,7 @@ CommandlineCommand::ReturnStatus CommandlineCommandConfig::parse(std::vector<std
 	if (settings == nullptr)
 	{
 		LOG_ERROR("No application settings loaded");
-		return ReturnStatus::CMD_QUIT;
+		return ReturnStatus::CMD_FAILURE;
 	}
 
 	if (m_opts.show)

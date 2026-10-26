@@ -64,6 +64,9 @@ public:
 
 	bool runWithoutGUI() const;
 	bool exitApplication() const;
+	//! The process's exit code when exitApplication(): 0 when the command did its work
+	//! (or printed help), 1 when it or the options failed.
+	int exitCode() const;
 
 	bool hasError() const;
 	std::string getError();
@@ -109,6 +112,7 @@ private:
 	ShardConfig m_shardConfig;
 
 	bool m_quit = false;
+	bool m_failed = false;
 	bool m_withoutGUI = false;
 
 	std::string m_errorString;

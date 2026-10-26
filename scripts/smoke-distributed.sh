@@ -164,14 +164,15 @@ for i in 1 2; do
 done
 
 # ---------------------------------------------------------------- guard
-# The CLI does not distinguish process exit codes (parse() only sets an internal
-# quit flag), so assert on the diagnostic + the fact that no output DB is written.
+# A rejected merge exits non-zero, prints the diagnostic and writes no output DB.
 note "merge guard: inconsistent shard set (same stripe twice) must be rejected"
 rm -f "$WORK/reject.db"
+GUARD_EXIT=0
 (cd "$WORK" && "$APP" merge "$FIXTURE" "$WORK/shard1.db" "$WORK/shard1.db" \
-    --output "$WORK/reject.db" > "$WORK/guard.log" 2>&1)
-if grep -q 'inconsistent or incomplete' "$WORK/guard.log" && [ ! -f "$WORK/reject.db" ]; then
-    pass "merge rejected inconsistent shard set (no output DB written)"
+    --output "$WORK/reject.db" > "$WORK/guard.log" 2>&1) || GUARD_EXIT=$?
+if [ "$GUARD_EXIT" -ne 0 ] && grep -q 'inconsistent or incomplete' "$WORK/guard.log" \
+        && [ ! -f "$WORK/reject.db" ]; then
+    pass "merge rejected inconsistent shard set (exit $GUARD_EXIT, no output DB written)"
 else
     fail "merge did not reject inconsistent shard set"; tail -5 "$WORK/guard.log"
 fi

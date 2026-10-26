@@ -83,5 +83,30 @@ TEST_CASE("command line")
 		REQUIRE(parser.getError().find("No project file given") != std::string::npos);
 	}
 
+	SECTION("a command's failure is the process's exit code, its help is not")
+	{
+		std::stringstream redStream;
+		auto* oldOut = std::cout.rdbuf(redStream.rdbuf());
+		auto* oldErr = std::cerr.rdbuf(redStream.rdbuf());
+
+		std::vector<std::string> failing({"index", "--no-such-option"});
+		commandline::CommandLineParser failed("2");
+		failed.preparse(failing);
+		failed.parse();
+
+		std::vector<std::string> help({"index", "--help"});
+		commandline::CommandLineParser helped("2");
+		helped.preparse(help);
+		helped.parse();
+
+		std::cout.rdbuf(oldOut);
+		std::cerr.rdbuf(oldErr);
+
+		REQUIRE(failed.exitApplication());
+		REQUIRE(failed.exitCode() == 1);
+		REQUIRE(helped.exitApplication());
+		REQUIRE(helped.exitCode() == 0);
+	}
+
 	ApplicationSettings::getInstance()->load(appSettingsPath);
 }

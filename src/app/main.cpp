@@ -158,7 +158,7 @@ int main(int argc, char* argv[])
 	commandLineParser.preparse(argc, argv);
 	if (commandLineParser.exitApplication())
 	{
-		return 0;
+		return commandLineParser.exitCode();
 	}
 
 	setupAppEnvironment(argc, argv);
@@ -190,7 +190,7 @@ int main(int argc, char* argv[])
 
 		if (commandLineParser.exitApplication())
 		{
-			return 0;
+			return commandLineParser.exitCode();
 		}
 
 		if (commandLineParser.hasError())
