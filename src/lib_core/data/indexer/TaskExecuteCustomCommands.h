@@ -1,6 +1,7 @@
 #ifndef TASK_EXECUTE_CUSTOM_COMMANDS_H
 #define TASK_EXECUTE_CUSTOM_COMMANDS_H
 
+#include <atomic>
 #include <set>
 #include <vector>
 
@@ -48,7 +49,7 @@ private:
 	const size_t m_indexerThreadCount;
 	const FilePath m_projectDirectory;
 
-	bool m_interrupted = false;
+	std::atomic<bool> m_interrupted = false;	// set by the message thread, read by the workers
 	size_t m_indexerCommandCount;
 	std::vector<std::shared_ptr<IndexerCommand>> m_serialCommands;
 	std::vector<std::shared_ptr<IndexerCommand>> m_parallelCommands;

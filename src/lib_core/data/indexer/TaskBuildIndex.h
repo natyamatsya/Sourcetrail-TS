@@ -127,6 +127,7 @@ protected:
 	// bool. A stop callback (registered in start()) raises the IPC interrupt flag so
 	// subprocesses exit gracefully; the babysitter loops observe stop_requested().
 	stdexec::inplace_stop_source m_stopSource;
+	std::uint64_t m_cause = 0;	// what the run works for: its supervisors carry it on
 
 	size_t m_indexingFileCount = 0;
 	size_t m_lastWatchdogIndexedSourceFileCount = 0;
@@ -186,4 +187,4 @@ protected:
 	std::optional<stdexec::inplace_stop_callback<StopCallback>> m_stopCallback;
 };
 
-#endif	  // TASK_PARSE_H
+#endif	  // TASK_BUILD_INDEX_H

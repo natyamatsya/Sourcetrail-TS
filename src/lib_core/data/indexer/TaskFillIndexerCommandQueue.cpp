@@ -104,7 +104,7 @@ void TaskFillIndexerCommandsQueue::begin(IndexingRunState& state)
 
 	fillCommandQueue(state);
 
-	state.begin(state.commandQueueStarted);
+	state.reach(state.commandQueueStarted);
 }
 
 bool TaskFillIndexerCommandsQueue::refill(IndexingRunState& state)
@@ -128,7 +128,7 @@ void TaskFillIndexerCommandsQueue::end(IndexingRunState& state)
 			LOG_INFO_STREAM(<< "Skipped " << m_swiftDedup.skippedCount
 				<< " duplicate Swift package commands in this indexing run.");
 
-	state.commandQueueStopped = true;
+	state.reach(state.commandQueueStopped);
 
 	// The command queue won't grow any further: wake subprocesses blocked waiting
 	// for a command so they observe the stop and exit promptly, rather than waiting

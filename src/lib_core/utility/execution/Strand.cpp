@@ -5,6 +5,10 @@
 
 #include "Strand.h"
 
+#include <optional>
+
+#include "MessageCause.h"
+
 #include <exception>
 #include <string>
 
@@ -23,12 +27,12 @@ namespace
 thread_local const Strand* t_running = nullptr;
 }	 // namespace
 
-std::shared_ptr<Strand> Strand::create(AnyScheduler pool)
+std::shared_ptr<Strand> Strand::create(AnyScheduler pool, std::uint64_t cause)
 {
-	return std::shared_ptr<Strand>(new Strand(std::move(pool)));
+	return std::shared_ptr<Strand>(new Strand(std::move(pool), cause));
 }
 
-Strand::Strand(AnyScheduler pool): m_pool(std::move(pool)) {}
+Strand::Strand(AnyScheduler pool, std::uint64_t cause): m_pool(std::move(pool)), m_cause(cause) {}
 
 void Strand::post(std::function<void()> work)
 {
@@ -84,6 +88,11 @@ void Strand::drain()
 		}
 		try
 		{
+			std::optional<CauseScope> cause;
+			if (m_cause != 0)
+			{
+				cause.emplace(m_cause);
+			}
 			work();
 		}
 		catch (const std::exception& e)

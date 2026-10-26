@@ -8,7 +8,6 @@
 #include "MessageStatus.h"
 #endif
 #include "PersistentStorage.h"
-#include "ScopedFunctor.h"
 #ifndef SRCTRL_MODULE_BUILD
 #include "TimeStamp.h"
 #endif
@@ -27,27 +26,11 @@ TaskFinishParsing::TaskFinishParsing(
 {
 }
 
-void TaskFinishParsing::abandoned()
-{
-	m_dialogView->clearDialogs();
-
-	MessageStatus("An unknown exception was thrown during indexing.", true, false).dispatch();
-	// The terminal MessageIndexingFinished of a terminated run comes from the pipeline's owner
-	// (Project::startIndexing, as the run completes stopped) -- dispatching it here too would
-	// double the terminal event.
-}
-
+// A run that ends before the decision (stopped, or a step threw) is cleaned up after by
+// the pipeline's owner (Project::startIndexing): its dialogs, its status and its one
+// terminal MessageIndexingFinished.
 exec::task<DatabasePolicy> TaskFinishParsing::run(const IndexingRunState& state)
 {
-	// Ended before the decision (stopped, or a throw): the coroutine unwinds through here.
-	bool decided = false;
-	[[maybe_unused]] ScopedFunctor unwound([this, &decided]() {
-		if (!decided)
-		{
-			abandoned();
-		}
-	});
-
 #ifdef SOURCETRAIL_TURSO_CONCURRENT
 	// Drain the concurrent Turso writers before any read of the finished database.
 	m_storage->finishConcurrentTurso();
@@ -58,7 +41,6 @@ exec::task<DatabasePolicy> TaskFinishParsing::run(const IndexingRunState& state)
 
 	// Waits for the decision, holding no thread.
 	co_await m_decision->decided.until([decision = m_decision]() { return decision->policy >= 0; });
-	decided = true;
 	MessageIndexingStatus(false).dispatch();
 	m_storage.reset();
 	co_return static_cast<DatabasePolicy>(m_decision->policy.load());

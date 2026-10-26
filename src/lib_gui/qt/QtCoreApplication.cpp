@@ -18,6 +18,7 @@
 #include "ProcessMonitor.h"
 #include "ProjectStateMachine.h"
 #include "logging.h"
+#include "utilityApp.h"
 
 // Imports come AFTER all textual #includes (include-before-import rule).
 #ifdef SRCTRL_MODULE_BUILD
@@ -118,7 +119,7 @@ void QtCoreApplication::lookAtTheRun()
 	look.started = progress.started;
 	look.finished = progress.finished;
 	look.total = progress.total;
-	look.liveProcesses = ProcessMonitor::running();
+	look.liveProcesses = ProcessMonitor::running() + utility::runningProcessCount();
 	look.lastActivity = Clock::time_point(
 		std::chrono::duration_cast<Clock::duration>(std::chrono::milliseconds(m_lastActivityMs.load())));
 

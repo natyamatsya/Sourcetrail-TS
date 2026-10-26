@@ -42,6 +42,8 @@ ProcessOutput executeProcess(
 	bool logProcessOutput = false);
 
 void killRunningProcesses();
+//! How many processes executeProcess runs now.
+std::size_t runningProcessCount();
 
 int getIdealThreadCount();
 

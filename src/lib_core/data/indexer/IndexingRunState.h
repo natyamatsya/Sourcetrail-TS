@@ -32,12 +32,12 @@ struct IndexingRunState
 	{
 		indexSeconds.fetch_add(seconds);
 	}
-	void begin(std::atomic<bool>& stage)
+	void reach(std::atomic<bool>& stage)
 	{
 		stage = true;
 		stagesChanged.notify();
 	}
-	auto begun(const std::atomic<bool>& stage)
+	auto reached(const std::atomic<bool>& stage)
 	{
 		return stagesChanged.until([&stage]() { return stage.load(); });
 	}

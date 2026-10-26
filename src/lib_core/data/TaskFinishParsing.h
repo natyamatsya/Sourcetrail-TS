@@ -21,13 +21,11 @@ class TaskFinishParsing
 public:
 	TaskFinishParsing(std::shared_ptr<PersistentStorage> storage, std::shared_ptr<DialogView> dialogView);
 
-	//! The decision on the run's data. Stopped or failing meanwhile, the dialogs go
-	//! and the status says so.
+	//! The decision on the run's data.
 	exec::task<DatabasePolicy> run(const IndexingRunState& state);
 
 private:
 	void report(const IndexingRunState& state);
-	void abandoned();
 
 	std::shared_ptr<PersistentStorage> m_storage;
 	std::shared_ptr<DialogView> m_dialogView;

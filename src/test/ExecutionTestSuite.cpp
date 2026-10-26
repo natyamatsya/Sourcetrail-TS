@@ -222,6 +222,23 @@ TEST_CASE("parallelFor runs every part, also when no pool thread is free")
 	REQUIRE(others == 7);
 }
 
+TEST_CASE("a strand with a cause runs its work on behalf of it")
+{
+	const auto strand = execution::Strand::create(execution::fallbackPool(), 42);
+	std::atomic<std::uint64_t> seen = 0;
+	strand->post([&]() { seen = currentCause(); });
+	REQUIRE(eventually([&]() { return seen.load() == 42; }));
+
+	// Without one, an item keeps the cause it brings along.
+	const auto plain = execution::Strand::create(execution::fallbackPool());
+	std::atomic<std::uint64_t> carried = 1;
+	{
+		const CauseScope scope(7);
+		plain->post(withCurrentCause([&]() { carried = currentCause(); }));
+	}
+	REQUIRE(eventually([&]() { return carried.load() == 7; }));
+}
+
 TEST_CASE("a condition's wait completes at once when what it waits for holds")
 {
 	execution::Condition condition;

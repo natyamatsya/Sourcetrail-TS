@@ -308,6 +308,12 @@ inline ProcessOutput executeProcess(const std::string& command, const std::vecto
 	return ret;
 }
 
+inline std::size_t runningProcessCount()
+{
+	std::lock_guard<std::mutex> lock(s_runningProcessesMutex);
+	return s_runningProcesses.size();
+}
+
 inline void killRunningProcesses()
 {
 	std::lock_guard<std::mutex> lock(s_runningProcessesMutex);

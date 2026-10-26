@@ -44,7 +44,7 @@ public:
 		std::size_t started = 0;	// the run's files
 		std::size_t finished = 0;
 		std::size_t total = 0;
-		std::size_t liveProcesses = 0;	// indexer processes running now
+		std::size_t liveProcesses = 0;	// child processes running now (indexers, a PCH build, custom commands)
 		Clock::time_point lastActivity;	// the last status or progress message
 	};
 

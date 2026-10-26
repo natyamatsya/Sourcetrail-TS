@@ -7,6 +7,7 @@
 #include "IndexerCommandType.h"
 #include "DialogView.h"
 #include "IndexingRunState.h"
+#include "MessageCause.h"
 #include "FileLogger.h"
 #include "MessageIndexingStatus.h"
 #include "ParserClientImpl.h"
@@ -241,6 +242,7 @@ exec::task<void> TaskBuildIndex::run(IndexingRunState& state)
 
 void TaskBuildIndex::start(IndexingRunState& state)
 {
+	m_cause = currentCause();
 	m_interprocessIndexingStatusManager.setIndexingInterrupted(false);
 	m_interprocessIndexingStatusManager.setQueueStopped(false);
 
@@ -337,7 +339,7 @@ void TaskBuildIndex::start(IndexingRunState& state)
 		}
 	}
 
-	state.begin(state.indexersStarted);
+	state.reach(state.indexersStarted);
 }
 
 TaskBuildIndex::Look TaskBuildIndex::look(IndexingRunState& state)
@@ -465,7 +467,7 @@ void TaskBuildIndex::end(IndexingRunState& state)
 
 	if (m_stopSource.stop_requested())
 	{
-		state.indexersStopped = true;
+		state.reach(state.indexersStopped);
 		m_storageProvider->setDone();	 // release the merge/inject waiters
 		logIndexingSummary(state);
 		return;
@@ -498,7 +500,7 @@ void TaskBuildIndex::end(IndexingRunState& state)
 		m_storageProvider->insert(storage);
 	}
 
-	state.indexersStopped = true;
+	state.reach(state.indexersStopped);
 	m_storageProvider->setDone();	 // release the merge/inject waiters
 	logIndexingSummary(state);
 }
@@ -627,7 +629,10 @@ void TaskBuildIndex::startSupervisor(std::shared_ptr<Supervisor> supervisor)
 		const std::lock_guard<std::mutex> lock(m_supervisorsMutex);
 		m_runningSupervisorCount++;
 	}
-	m_processes->post([this, supervisor = std::move(supervisor)]() { launch(supervisor); });
+	m_processes->post([this, supervisor = std::move(supervisor)]() {
+		const CauseScope cause(m_cause);
+		launch(supervisor);
+	});
 }
 
 void TaskBuildIndex::launch(const std::shared_ptr<Supervisor>& supervisor)
@@ -774,7 +779,10 @@ void TaskBuildIndex::again(const std::shared_ptr<Supervisor>& supervisor, std::c
 {
 	// The supervisor has not ended, so the task and its monitor wait for it.
 	execution::afterDelay(delay, [this, supervisor]() {
-		m_processes->post([this, supervisor]() { launch(supervisor); });
+		m_processes->post([this, supervisor]() {
+			const CauseScope cause(m_cause);
+			launch(supervisor);
+		});
 	});
 }
 

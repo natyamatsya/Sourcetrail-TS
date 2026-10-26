@@ -34,7 +34,9 @@ class Strand: public std::enable_shared_from_this<Strand>
 public:
 	class Scheduler;
 
-	static std::shared_ptr<Strand> create(AnyScheduler pool);
+	//! `cause`: what everything run on it works for (an indexing run's request), so
+	//! what it dispatches carries it on; 0: each item's own.
+	static std::shared_ptr<Strand> create(AnyScheduler pool, std::uint64_t cause = 0);
 
 	//! Runs `work` after what was posted before it, on a thread of the pool.
 	void post(std::function<void()> work);
@@ -45,11 +47,12 @@ public:
 	[[nodiscard]] Scheduler scheduler();
 
 private:
-	explicit Strand(AnyScheduler pool);
+	Strand(AnyScheduler pool, std::uint64_t cause);
 
 	void drain();
 
 	AnyScheduler m_pool;
+	const std::uint64_t m_cause;
 	std::mutex m_mutex;
 	std::deque<std::function<void()>> m_queue;
 	bool m_draining = false;	// a drain is scheduled on the pool or running

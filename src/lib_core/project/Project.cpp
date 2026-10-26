@@ -555,7 +555,6 @@ std::vector<std::shared_ptr<const SourceGroup>> Project::getSourceGroups() const
 
 struct Project::IndexingRun
 {
-	Project* project = nullptr;	// waits for the run as it goes (stopIndexing)
 	std::shared_ptr<DialogView> dialogView;
 	std::shared_ptr<PersistentStorage> tempStorage;
 	FilePath tempIndexDbFilePath;
@@ -572,7 +571,7 @@ struct Project::IndexingRun
 	std::shared_ptr<TaskInjectStorage> inject;
 	std::shared_ptr<TaskExecuteCustomCommands> customCommands;
 	std::shared_ptr<TaskFinishParsing> finishParsing;
-	bool shard = false;	// a shard run: no swap or discard at the end
+	std::optional<ShardConfig> shard;	// a shard run: no swap or discard at the end
 	std::size_t stripedFileCount = 0;
 
 	// Requested by stopIndexing: the step running stops.
@@ -592,10 +591,23 @@ struct Project::IndexingRun
 		customCommands.reset();
 		finishParsing.reset();
 	}
-	// The run counts as the work of the request that started it (CauseWork).
+	// The run counts as the work of the request that started it (CauseWork), and
+	// what it dispatches carries that cause (its strands run under it).
 	CauseWork::Held work;
 	// Where the run's own steps run, one after another.
-	const std::shared_ptr<execution::Strand> strand = execution::Strand::create(execution::workPool());
+	const std::shared_ptr<execution::Strand> strand = execution::Strand::create(execution::workPool(), work.cause());
+
+	// A stop ends the processes the synchronous steps wait for (the custom commands,
+	// a precompiled header's build), not only the indexers: a run is stopped as its
+	// project or the app goes. Declared after `stop`, so it goes first.
+	struct KillProcesses
+	{
+		void operator()() const noexcept
+		{
+			utility::killRunningProcesses();
+		}
+	};
+	std::optional<stdexec::inplace_stop_callback<KillProcesses>> killOnStop;
 };
 
 namespace
@@ -615,18 +627,19 @@ struct RunEnd
 	bool refreshAgain = false;
 };
 
-// Runs `stream` once `stage` of the run began.
-exec::task<void> onceBegun(IndexingRunState& state, const std::atomic<bool>& stage, exec::task<void> stream)
+// Runs `stream` once the run reached `stage`.
+exec::task<void> onceReached(IndexingRunState& state, const std::atomic<bool>& stage, exec::task<void> stream)
 {
-	co_await state.begun(stage);
+	co_await state.reached(stage);
 	co_await std::move(stream);
 }
 
-// Runs `stream` on a strand of its own over the work pool: side by side with the
-// run's other streams.
-auto onStrandOfItsOwn(exec::task<void> stream)
+// Runs `stream` on a strand of its own over the work pool, on behalf of `cause`: side
+// by side with the run's other streams.
+auto onStrandOfItsOwn(std::uint64_t cause, exec::task<void> stream)
 {
-	return stdexec::starts_on(execution::Strand::create(execution::workPool())->scheduler(), std::move(stream));
+	return stdexec::starts_on(
+		execution::Strand::create(execution::workPool(), cause)->scheduler(), std::move(stream));
 }
 
 std::string describe(const std::exception_ptr& error)
@@ -781,7 +794,6 @@ void Project::buildIndexImpl(RefreshInfo info, std::shared_ptr<DialogView> dialo
 	tempStorage->setBulkWritePragmas(true);
 
 	const auto run = std::make_shared<IndexingRun>();
-	run->project = this;
 	run->dialogView = dialogView;
 	run->tempStorage = tempStorage;
 	run->tempIndexDbFilePath = tempIndexDbFilePath;
@@ -1067,7 +1079,10 @@ void Project::buildIndexImpl(RefreshInfo info, std::shared_ptr<DialogView> dialo
 	}
 
 	run->finishParsing = std::make_shared<TaskFinishParsing>(tempStorage, dialogView);
-	run->shard = m_shardConfig.isActive();
+	if (m_shardConfig.isActive())
+	{
+		run->shard = m_shardConfig;
+	}
 	run->stripedFileCount = info.filesToIndex.size();
 
 
@@ -1112,11 +1127,12 @@ void Project::startIndexing(std::shared_ptr<IndexingRun> run)
 			// The refill, the build once the queue has commands, merging and writing
 			// once the indexers run: side by side, all to their end. One that throws
 			// stops the others.
+			const std::uint64_t cause = run->work.cause();
 			co_await stdexec::when_all(
-				onStrandOfItsOwn(run->fillQueue->run(state)),
-				onStrandOfItsOwn(onceBegun(state, state.commandQueueStarted, run->buildIndex->run(state))),
-				onStrandOfItsOwn(onceBegun(state, state.indexersStarted, run->merge->run())),
-				onStrandOfItsOwn(onceBegun(state, state.indexersStarted, run->inject->run())));
+				onStrandOfItsOwn(cause, run->fillQueue->run(state)),
+				onStrandOfItsOwn(cause, onceReached(state, state.commandQueueStarted, run->buildIndex->run(state))),
+				onStrandOfItsOwn(cause, onceReached(state, state.indexersStarted, run->merge->run())),
+				onStrandOfItsOwn(cause, onceReached(state, state.indexersStarted, run->inject->run())));
 			state.addIndexSeconds(TimeStamp::durationSeconds(parseStart));
 
 			// Overridden by the dialogs that come later: not hidden again.
@@ -1142,7 +1158,7 @@ void Project::startIndexing(std::shared_ptr<IndexingRun> run)
 		{
 			// Shard run: no swap/discard -- the shard DB stays at its output path.
 			// Record the manifest so `merge` can verify stripe consistency.
-			const ShardConfig& shardConfig = run->project->m_shardConfig;
+			const ShardConfig& shardConfig = *run->shard;
 			run->tempStorage->setMetaValue("shard_index", std::to_string(shardConfig.index));
 			run->tempStorage->setMetaValue("shard_count", std::to_string(shardConfig.count));
 			run->tempStorage->setMetaValue("shard_file_count", std::to_string(run->stripedFileCount));
@@ -1169,11 +1185,19 @@ void Project::startIndexing(std::shared_ptr<IndexingRun> run)
 
 	// However the run ends abnormally (a failed or throwing step, or stopped), it
 	// still reaches exactly one MessageIndexingFinished; a success dispatches its own.
-	auto ended = [weakProject = weak_from_this()](bool terminated) {
-		execution::post(TabIds::app(), [weakProject, terminated]() {
+	// Its dialogs go, wherever it was.
+	const std::uint64_t cause = run->work.cause();
+	auto ended = [weakProject = weak_from_this(), dialogView = run->dialogView, cause](bool terminated) {
+		const CauseScope scope(cause);	// the post counts as the request's work
+		execution::post(TabIds::app(), [weakProject, dialogView, terminated]() {
 			if (const std::shared_ptr<Project> project = weakProject.lock())
 			{
 				project->m_refreshStage = RefreshStageType::NONE;
+			}
+			dialogView->clearDialogs();
+			if (!terminated)
+			{
+				MessageStatus("Indexing failed; see the errors above.", true, false).dispatch();
 			}
 			IndexingStateMachine::instance()->ended(
 				terminated ? "indexing was terminated before completion" : "an indexing pipeline stage failed");
@@ -1188,15 +1212,17 @@ void Project::startIndexing(std::shared_ptr<IndexingRun> run)
 
 	m_indexingRun = run;
 	const stdexec::inplace_stop_token stop = run->stop.get_token();
+	run->killOnStop.emplace(stop, IndexingRun::KillProcesses {});
 	m_indexing.spawn(stdexec::write_env(
 		stdexec::starts_on(run->strand->scheduler(), steps(run)) |
-			stdexec::then([ended, weakProject = weak_from_this(), dialogView = run->dialogView](RunEnd end) {
+			stdexec::then([ended, weakProject = weak_from_this(), dialogView = run->dialogView, cause](RunEnd end) {
 				if (!end.decided)
 				{
 					ended(false);
 					return;
 				}
 				// On the app's queue, where the project's state is.
+				const CauseScope scope(cause);
 				execution::post(TabIds::app(), [weakProject, dialogView, end]() {
 					if (const std::shared_ptr<Project> project = weakProject.lock())
 					{
