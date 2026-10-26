@@ -167,7 +167,7 @@ struct InvokeActionArgs {
     /// Accessible action name from the node's `actions` (e.g. "Press", "Toggle", "ShowMenu").
     #[serde(default)]
     action: String,
-    /// Optional: set the element's editable text/value (line edits, combos).
+    /// Optional: set the element's editable text/value (line edits), or pick a combo box's item by its text.
     #[serde(default)]
     text: String,
     /// Optional optimistic-control guard: pass the snapshot node's `hash`; the

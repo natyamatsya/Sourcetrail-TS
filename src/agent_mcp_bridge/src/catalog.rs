@@ -325,11 +325,13 @@ visible widgets carry is refused, saying so.
 
 ui_query { query, instance? } -> the ui_snapshot shape, roots = the matches
   JSONPath (RFC 9535) evaluated in the app over the accessibility tree, so only matches \
-cross the wire. Example: $.roots..[?(@.role=='button' && @.name=='OK')].
+cross the wire. Example: $.roots..[?(@.role=='button' && @.name=='OK')]. Matches carry \
+their state bits as in ui_snapshot (checked, disabled, ...), not their children.
 
 ui_invoke { ref, action?, text?, expect_hash=0, instance? } -> { ok, message, drawn? }
   Runs an accessible action from the node's `actions` (Press, Toggle, ShowMenu, ...) or \
-sets an editable field's `text`. expect_hash (the node's `hash`) refuses the action if the \
+sets an editable field's `text`; on a combo box without one, `text` picks the item it names, \
+as choosing it from the list does (no such item: ok: false, listing them). expect_hash (the node's `hash`) refuses the action if the \
 element changed since the snapshot. Not found / unsupported / a disabled button -> ok: \
 false; so is an element outside the modal window in front (a question box), as a person's \
 clicks are: answer that first. An action that \

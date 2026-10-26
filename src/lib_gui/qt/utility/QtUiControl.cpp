@@ -19,6 +19,7 @@
 #include <QBuffer>
 #include <QByteArray>
 #include <QColor>
+#include <QComboBox>
 #include <QContextMenuEvent>
 #include <QEnterEvent>
 #include <QEvent>
@@ -33,6 +34,7 @@
 #include <QPointer>
 #include <QRect>
 #include <QString>
+#include <QStringList>
 #include <QTimer>
 #include <QWheelEvent>
 
@@ -241,7 +243,36 @@ ControlResult invokeAction(
 		}
 	}
 
-	if (!text.empty())
+	auto* comboBox = qobject_cast<QComboBox*>(iface->object());
+	if (!text.empty() && comboBox != nullptr && !comboBox->isEditable())
+	{
+		// A list to pick from has no text to edit: pick the item, as a person does from its
+		// list. `activated` is what the dialogs act on (a colour scheme's preview, ...).
+		if (!comboBox->isEnabled())
+		{
+			return {false, "element is disabled: " + refToString(objectName, path)};
+		}
+		const int index = comboBox->findText(QString::fromStdString(text));
+		if (index < 0)
+		{
+			QStringList items;
+			for (int i = 0; i < comboBox->count(); ++i)
+			{
+				items.append(QStringLiteral("\"%1\"").arg(comboBox->itemText(i)));
+			}
+			return {false, "no item \"" + text + "\" to pick in " + refToString(objectName, path) +
+					": it has " + items.join(QStringLiteral(", ")).toStdString()};
+		}
+		QMetaObject::invokeMethod(
+			comboBox,
+			withCurrentCause([comboBox, index]() {
+				comboBox->setCurrentIndex(index);
+				emit comboBox->activated(index);
+				emit comboBox->textActivated(comboBox->itemText(index));
+			}),
+			Qt::QueuedConnection);
+	}
+	else if (!text.empty())
 	{
 		QAccessibleEditableTextInterface* editable = iface->editableTextInterface();
 		if (editable == nullptr)
