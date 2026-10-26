@@ -527,6 +527,8 @@ cmake_preset, header_search_paths, compiler_flags, cpp_standard, custom_command.
 (choosing_type, context.types).
   select_type { type }             choosing_type: picks the type there.
   remove_source_group { source_group? }   editing: removes it (default: the one shown).
+  duplicate_source_group { source_group? }   editing: adds a copy (\"<name> - Copy\") right \
+after it and shows the copy (default: the one shown).
   create                           editing: saves the project (create or save) and loads it: \
 closed, context.outcome; the project machine takes over.
   cancel                           editing: closes the wizard; choosing_type: closes the type \

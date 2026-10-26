@@ -119,6 +119,7 @@ MachineFireResult ProjectWizardStateMachine::request(Request request, EventSourc
 		std::pair {Kind::AddSourceGroup, Event::AddSourceGroup},
 		std::pair {Kind::SelectType, Event::SelectType},
 		std::pair {Kind::RemoveSourceGroup, Event::RemoveSourceGroup},
+		std::pair {Kind::DuplicateSourceGroup, Event::DuplicateSourceGroup},
 		std::pair {Kind::Create, Event::Create},
 		std::pair {Kind::Cancel, Event::Cancel},
 	};
@@ -143,9 +144,14 @@ MachineFireResult ProjectWizardStateMachine::request(Request request, EventSourc
 		{
 			return {false, std::format("there is no source group {} ({} in the project)", *request.sourceGroup, view->sourceGroups.size())};
 		}
-		if (request.kind == Kind::RemoveSourceGroup && !request.sourceGroup && view && !view->sourceGroup)
+		if ((request.kind == Kind::RemoveSourceGroup || request.kind == Kind::DuplicateSourceGroup) &&
+			!request.sourceGroup && view && !view->sourceGroup)
 		{
-			return {false, R"(remove_source_group needs {"source_group": n}, or a source group shown)"};
+			return {
+				false,
+				std::format(
+					R"({} needs {{"source_group": n}}, or a source group shown)",
+					request.kind == Kind::RemoveSourceGroup ? "remove_source_group" : "duplicate_source_group")};
 		}
 		if (!request.fields.empty() && view && !view->sourceGroup)
 		{
@@ -313,13 +319,16 @@ MachineFireResult ProjectWizardStateMachine::fire(const std::string& event, cons
 	}
 	case Event::Show:
 	case Event::RemoveSourceGroup:
+	case Event::DuplicateSourceGroup:
 	{
 		const auto parsed = parseArgs<json::SourceGroupArgs>(event, args, R"({"source_group"?: n})");
 		if (!parsed)
 		{
 			return {false, parsed.error()};
 		}
-		request.kind = *control == Event::Show ? Kind::Show : Kind::RemoveSourceGroup;
+		request.kind = *control == Event::Show				  ? Kind::Show
+			: *control == Event::RemoveSourceGroup ? Kind::RemoveSourceGroup
+												   : Kind::DuplicateSourceGroup;
 		request.sourceGroup = parsed->source_group;
 		break;
 	}

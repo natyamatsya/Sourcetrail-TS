@@ -427,6 +427,7 @@ void QtProjectWizard::populateWindow(QWidget* widget)
 		m_removeButton->setIconSize(QSize(20, 20));
 		m_duplicateButton->setIconSize(QSize(20, 20));
 
+		// QtIconButton names itself after its tooltip.
 		addButton->setToolTip(QStringLiteral("Add Source Group"));
 		m_removeButton->setToolTip(QStringLiteral("Remove Source Group"));
 		m_duplicateButton->setToolTip(QStringLiteral("Copy Source Group"));
@@ -1174,6 +1175,30 @@ void QtProjectWizard::apply(const ProjectWizardRequest& request)
 		}
 		removeSourceGroup(row);
 		machine->applied(view());
+		return;
+	}
+	case Kind::DuplicateSourceGroup:
+	{
+		const int row = request.sourceGroup ? static_cast<int>(*request.sourceGroup) : m_previouslySelectedIndex;
+		if (row < 0 || row >= int(m_allSourceGroupSettings.size()))
+		{
+			machine->failed(view(), "no source group to duplicate");
+			return;
+		}
+		if (row != m_previouslySelectedIndex)
+		{
+			m_sourceGroupList->setCurrentRow(row);	// what a person copies is the group shown
+			if (m_previouslySelectedIndex != row)
+			{
+				machine->failed(view(), failure("the page shown could not be left"));
+				return;
+			}
+		}
+		const std::size_t groups = m_allSourceGroupSettings.size();
+		duplicateSelectedSourceGroup();
+		m_allSourceGroupSettings.size() > groups
+			? machine->applied(view())
+			: machine->failed(view(), failure("the page shown could not be left"));
 		return;
 	}
 	case Kind::Create:

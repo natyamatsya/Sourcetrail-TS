@@ -25,6 +25,7 @@ struct ProjectWizardRequest
 		AddSourceGroup,	// of `type`, or open the type selection without one
 		SelectType,	// in the type selection
 		RemoveSourceGroup,
+		DuplicateSourceGroup,	// a copy right after it, shown
 		Create,	// create or save the project, and load it
 		Cancel	// close the wizard, or the type selection
 	};
@@ -33,7 +34,7 @@ struct ProjectWizardRequest
 	std::optional<std::string> projectName;
 	std::optional<std::string> projectLocation;
 	std::map<std::string, SourceGroupField> fields;
-	std::optional<std::size_t> sourceGroup;	// Show, RemoveSourceGroup (default: the shown one)
+	std::optional<std::size_t> sourceGroup;	// Show, Remove/DuplicateSourceGroup (default: the shown one)
 	SourceGroupType type = SourceGroupType::UNKNOWN;
 };
 
@@ -98,7 +99,7 @@ private:
 // project is created or the wizard closed:
 //
 //   closed --new/edit--> applying --opened--> editing --create--> applying --created--> closed
-//   editing --set/show/add_source_group/remove_source_group--> applying --applied/failed--> editing
+//   editing --set/show/add/remove/duplicate_source_group--> applying --applied/failed--> editing
 //   editing --choosing--> choosing_type --select_type--> applying; choosing_type --selected/back--> editing
 //   editing --cancel--> applying --canceled--> closed
 //
@@ -124,6 +125,7 @@ struct ProjectWizardMachine
 		AddSourceGroup,
 		SelectType,
 		RemoveSourceGroup,
+		DuplicateSourceGroup,
 		Create,
 		Cancel,
 		Opened,
@@ -161,6 +163,7 @@ struct ProjectWizardMachine
 		control(Event::AddSourceGroup, "add_source_group"),
 		control(Event::SelectType, "select_type"),
 		control(Event::RemoveSourceGroup, "remove_source_group"),
+		control(Event::DuplicateSourceGroup, "duplicate_source_group"),
 		control(Event::Create, "create"),
 		control(Event::Cancel, "cancel"),
 		named(Event::Opened, "opened"),
@@ -180,6 +183,7 @@ struct ProjectWizardMachine
 		{State::Editing, Event::Show, State::Applying},
 		{State::Editing, Event::AddSourceGroup, State::Applying},
 		{State::Editing, Event::RemoveSourceGroup, State::Applying},
+		{State::Editing, Event::DuplicateSourceGroup, State::Applying},
 		{State::Editing, Event::Create, State::Applying},
 		{State::Editing, Event::Cancel, State::Applying},
 		{State::Editing, Event::Choosing, State::ChoosingType},
