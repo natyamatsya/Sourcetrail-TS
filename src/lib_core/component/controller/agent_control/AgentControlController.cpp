@@ -25,6 +25,7 @@ bool AgentControlController::isListening() const
 #include <atomic>
 #include <format>
 #include <functional>
+#include <map>
 #include <memory>
 #include <mutex>
 #include <optional>
@@ -673,14 +674,15 @@ struct AgentControlController::Impl
 		}
 		{
 			const std::lock_guard<std::mutex> lock(m_stateMutex);
-			m_activeNodeIds = std::move(ids);
+			TabView& view = m_tabViews[tabOf(*message)];
+			view.activeNodeIds = std::move(ids);
 			// The code view now lists the activated nodes' references across files,
 			// so no single file is "the" one shown; a file node is the exception
 			// (MessageActivateFile sets that one).
 			if (!showsFile)
 			{
-				m_currentFile.clear();
-				m_scrollLine = 0;
+				view.currentFile.clear();
+				view.scrollLine = 0;
 			}
 		}
 		const auto event = fb::CreateNodesActivated(builder, builder.CreateVector(nodes));
@@ -689,13 +691,11 @@ struct AgentControlController::Impl
 
 	// The overview (the toolbar's home button, or Back to where a session began)
 	// activates no node: nothing is active any more, and the code view shows no file.
-	void handleMessage(MessageActivateOverview*) override
+	void handleMessage(MessageActivateOverview* message) override
 	{
 		{
 			const std::lock_guard<std::mutex> lock(m_stateMutex);
-			m_activeNodeIds.clear();
-			m_currentFile.clear();
-			m_scrollLine = 0;
+			m_tabViews[tabOf(*message)] = TabView{};
 		}
 		flatbuffers::FlatBufferBuilder builder;
 		const auto event = fb::CreateNodesActivated(builder, builder.CreateVector(std::vector<flatbuffers::Offset<fb::NodeRef>>{}));
@@ -707,8 +707,9 @@ struct AgentControlController::Impl
 		const std::string file = message->filePath.str();
 		{
 			const std::lock_guard<std::mutex> lock(m_stateMutex);
-			m_currentFile = file;
-			m_scrollLine = 0;
+			TabView& view = m_tabViews[tabOf(*message)];
+			view.currentFile = file;
+			view.scrollLine = 0;
 		}
 		flatbuffers::FlatBufferBuilder builder;
 		const auto event = fb::CreateFileActivated(builder, builder.CreateString(file));
@@ -719,13 +720,20 @@ struct AgentControlController::Impl
 	void handleMessage(MessageScrollToLine* message) override
 	{
 		const std::lock_guard<std::mutex> lock(m_stateMutex);
-		m_currentFile = message->filePath.str();
-		m_scrollLine = static_cast<std::uint32_t>(message->line);
+		TabView& view = m_tabViews[tabOf(*message)];
+		view.currentFile = message->filePath.str();
+		view.scrollLine = static_cast<std::uint32_t>(message->line);
 	}
 
 	void handleMessage(MessageSearch* message) override
 	{
 		publishSearchCompleted(message->getMatches());
+	}
+
+	static TabId tabOf(const MessageBase& message)
+	{
+		const TabId tab = message.getSchedulerId();
+		return tab != TabId::NONE ? tab : TabIds::currentTab();
 	}
 
 	// The matches of the last search, a person's or an agent's, for ui_state and
@@ -777,6 +785,13 @@ struct AgentControlController::Impl
 		{
 			const std::lock_guard<std::mutex> lock(m_stateMutex);
 			m_tabsCache = message->tabs;
+			// A closed tab's view goes with it.
+			std::erase_if(m_tabViews, [&](const auto& entry) {
+				return entry.first != TabId::NONE &&
+					std::ranges::none_of(message->tabs, [&](const MessageTabsChanged::TabInfo& tab) {
+						return tab.tabId == entry.first;
+					});
+			});
 		}
 		flatbuffers::FlatBufferBuilder builder;
 		std::vector<flatbuffers::Offset<fb::TabInfo>> tabs;
@@ -1401,9 +1416,22 @@ struct AgentControlController::Impl
 		std::vector<MessageTabsChanged::TabInfo> tabsCache;
 		{
 			const std::lock_guard<std::mutex> lock(m_stateMutex);
-			activeNodeIds = m_activeNodeIds;
-			currentFile = m_currentFile;
-			scrollLine = m_scrollLine;
+			// What the tab on screen shows: each tab keeps its own activation, and
+			// an empty new tab shows none.
+			TabId shownTab = TabId::NONE;
+			for (const MessageTabsChanged::TabInfo& tab: m_tabsCache)
+			{
+				if (tab.active)
+				{
+					shownTab = tab.tabId;
+				}
+			}
+			if (const auto it = m_tabViews.find(shownTab); it != m_tabViews.end())
+			{
+				activeNodeIds = it->second.activeNodeIds;
+				currentFile = it->second.currentFile;
+				scrollLine = it->second.scrollLine;
+			}
 			lastSearchMatches = m_lastSearchMatches;
 			tabsCache = m_tabsCache;
 		}
@@ -1710,9 +1738,15 @@ struct AgentControlController::Impl
 	// State cache, written by message handlers on the app and tab schedulers and
 	// read by publishUiState: guarded by m_stateMutex.
 	std::mutex m_stateMutex;
-	std::vector<Id> m_activeNodeIds;
-	std::string m_currentFile;	   // the file the code view shows on its own, if any
-	std::uint32_t m_scrollLine = 0;	   // its line, from the last MessageScrollToLine
+	// What a tab's graph and code view show, by tab: the activation messages carry
+	// the tab they are for (their scheduler id).
+	struct TabView
+	{
+		std::vector<Id> activeNodeIds;
+		std::string currentFile;	  // the file the code view shows on its own, if any
+		std::uint32_t scrollLine = 0;	  // its line, from the last MessageScrollToLine
+	};
+	std::map<TabId, TabView> m_tabViews;
 	std::vector<SearchMatch> m_lastSearchMatches;
 	std::vector<MessageTabsChanged::TabInfo> m_tabsCache;
 	fb::AppState m_appState = fb::AppState_NoProject;
