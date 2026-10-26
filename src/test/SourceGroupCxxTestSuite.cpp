@@ -373,7 +373,7 @@ TEST_CASE("source group cxx cdb prebuilds the modules a partial refresh's files 
 
 		REQUIRE(commands.size() == 1);
 		const auto command = commands.front()->target<IndexerCommandCxx>();
-		REQUIRE(command);
+		REQUIRE(command.has_value());
 		REQUIRE(std::ranges::contains(
 			command->getCompilerFlags(), "-fprebuilt-module-path=" + FilePath(cache.string()).str()));
 		REQUIRE(std::filesystem::exists(cache / "geo.pcm"));
