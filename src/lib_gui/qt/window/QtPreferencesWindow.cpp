@@ -87,7 +87,7 @@ void QtPreferencesWindow::handleNext()
 		app->getDialogView(DialogView::UseCase::PROJECT_SETUP)->notify(
 			tr("<p>Please <b>restart</b> the application for all changes to take effect.</p>"
 			"<p>Note: ""These changes may harm ""the execution of the application. "
-			"In case the application is not useable ""anymore, please run the "
+			"In case the application is not usable ""anymore, please run the "
 			"<b>resetPreferences.sh</b> script located in your install directory.</p>").toStdString());
 	}
 

@@ -585,7 +585,7 @@ QtActions::Info QtActions::customTrailDialog()
 
 QtActions::Info QtActions::toOverview()
 {
-	return Info(tr("&To overview"), KEYBOARD_TO_OVERVIEW);
+	return Info(tr("&To Overview"), KEYBOARD_TO_OVERVIEW);
 }
 
 QtActions::Info QtActions::saveGraphAsImage()
@@ -881,7 +881,7 @@ QtActions::Info QtActions::showKeyboardShortcuts()
 
 QtActions::Info QtActions::showLegend()
 {
-	return Info(tr("Show legend"), KEYBOARD_SHOW_LEGEND);
+	return Info(tr("Show Legend"), KEYBOARD_SHOW_LEGEND);
 }
 
 // Miscellaneous:

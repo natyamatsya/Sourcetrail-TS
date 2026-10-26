@@ -82,6 +82,7 @@ bool QtLocationPicker::pickDirectory() const
 void QtLocationPicker::setPickDirectory(bool pickDirectory)
 {
 	m_pickDirectory = pickDirectory;
+	m_button->setToolTip(pickDirectory ? QStringLiteral("pick directory") : QStringLiteral("pick file"));
 }
 
 void QtLocationPicker::setFileFilter(const QString& fileFilter)
