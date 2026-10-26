@@ -12,6 +12,8 @@
 
 #include "CMakeFileAPIReader.h"
 
+#include <format>
+
 #include <QDir>
 #include <QFile>
 #include <QFileInfo>
@@ -630,11 +632,11 @@ std::expected<void, CMakeFileAPIReader::ConfigureError> CMakeFileAPIReader::ensu
 		args << QString::fromStdString(m_buildDir.str());
 	}
 
-	const std::string commandLine{"cmake " + args.join(QStringLiteral(" ")).toStdString()};
+	const std::string commandLine{std::format("cmake {}", args.join(QStringLiteral(" ")).toStdString())};
 	proc.start(QStringLiteral("cmake"), args);
 	if (!proc.waitForStarted())
 	{
-		LOG_ERROR("CMakeFileAPIReader: cmake failed to start: " + commandLine);
+		LOG_ERROR(std::format("CMakeFileAPIReader: cmake failed to start: {}", commandLine));
 		return std::unexpected(utility::makeExpectedError(
 			ConfigureErrorCode::CMakeNotStarted, proc.errorString().toStdString()));
 	}
@@ -642,22 +644,21 @@ std::expected<void, CMakeFileAPIReader::ConfigureError> CMakeFileAPIReader::ensu
 	{
 		proc.kill();
 		proc.waitForFinished();
-		LOG_ERROR("CMakeFileAPIReader: cmake timed out: " + commandLine);
+		LOG_ERROR(std::format("CMakeFileAPIReader: cmake timed out: {}", commandLine));
 		return std::unexpected(utility::makeExpectedError(
-			ConfigureErrorCode::CMakeTimedOut,
-			"'" + commandLine + "' did not finish within 5 minutes."));
+			ConfigureErrorCode::CMakeTimedOut, std::format("'{}' did not finish within 5 minutes.", commandLine)));
 	}
 	const std::string output{proc.readAll().toStdString()};
 	if (proc.exitStatus() != QProcess::NormalExit || proc.exitCode() != 0)
 	{
-		LOG_WARNING(
-			"CMakeFileAPIReader: cmake exited with code " +
-			std::to_string(proc.exitCode()) + ": " + output +
-			"\nHint: the project may need its build environment (compiler on PATH, "
-			"dev shell). Either launch Sourcetrail from that environment, or run "
-			"'cmake --preset <preset>' there yourself — the Sourcetrail query file "
-			"is already in place, so any configure produces the reply and the next "
-			"refresh picks it up without running CMake.");
+		LOG_WARNING(std::format(
+			"CMakeFileAPIReader: cmake exited with code {}: {}\nHint: the project may need its build "
+			"environment (compiler on PATH, dev shell). Either launch Sourcetrail from that environment, "
+			"or run 'cmake --preset <preset>' there yourself — the Sourcetrail query file is already in "
+			"place, so any configure produces the reply and the next refresh picks it up without running "
+			"CMake.",
+			proc.exitCode(),
+			output));
 		return std::unexpected(utility::makeExpectedError(
 			ConfigureErrorCode::CMakeFailed, configureErrorExcerpt(output)));
 	}
@@ -667,7 +668,7 @@ std::expected<void, CMakeFileAPIReader::ConfigureError> CMakeFileAPIReader::ensu
 
 	if (!hasReply())
 		return std::unexpected(utility::makeExpectedError(
-			ConfigureErrorCode::NoReplyWritten, "No reply in " + m_replyDir.str()));
+			ConfigureErrorCode::NoReplyWritten, std::format("No reply in {}", m_replyDir.str())));
 	return {};
 }
 
@@ -693,7 +694,7 @@ std::vector<std::string> CMakeFileAPIReader::getConfigurations() const
 		}
 		catch (const nlohmann::json::exception& e)
 		{
-			LOG_WARNING("CMakeFileAPIReader: codemodel parse error: " + std::string(e.what()));
+			LOG_WARNING(std::format("CMakeFileAPIReader: codemodel parse error: {}", e.what()));
 		}
 		break;
 	}
@@ -806,7 +807,7 @@ CMakeFileAPIReader::GetSourcesExpected CMakeFileAPIReader::getSourcesDetailed(
 	}
 	catch (const nlohmann::json::parse_error& e)
 	{
-		LOG_WARNING("CMakeFileAPIReader: codemodel parse error: " + std::string(e.what()));
+		LOG_WARNING(std::format("CMakeFileAPIReader: codemodel parse error: {}", e.what()));
 		return std::unexpected(utility::makeExpectedError(
 			GetSourcesErrorCode::CodemodelParseError,
 			"Failed to parse codemodel JSON: " + std::string(e.what())));
