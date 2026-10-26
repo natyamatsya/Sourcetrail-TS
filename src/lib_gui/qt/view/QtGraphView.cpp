@@ -33,6 +33,8 @@
 #include "UiPost.h"
 #include "utilityQt.h"
 
+#include <algorithm>
+
 #include <QBoxLayout>
 #include <QFrame>
 #include <QGraphicsScene>
@@ -777,6 +779,8 @@ void QtGraphView::scrolled(int)
 
 void QtGraphView::resized()
 {
+	fitTrailControls();
+
 	if (isTransitioning())
 	{
 		return;
@@ -1040,6 +1044,19 @@ QtGraphicsView *QtGraphView::getView() const
 void QtGraphView::doResize()
 {
 	getView()->setSceneRect(getSceneRect(m_oldNodes));
+}
+
+// The trail controls run down from the top and the zoom buttons sit at the bottom
+// (QtGraphicsView::resizeEvent): in a short graph view the trail depth slider ran over
+// the zoom-in button. It is shortened to leave the buttons room, down to a usable
+// length.
+void QtGraphView::fitTrailControls()
+{
+	const int sliderTop = 132;	   // below the trail buttons and the depth label
+	const int zoomInTop = getView()->height() - 50;
+	const int sliderHeight = std::clamp(zoomInTop - 4 - 8 - sliderTop - 6, 40, 100);
+	m_trailDepthSlider->setGeometry(0, sliderTop, 26, sliderHeight);
+	m_trailWidget->setGeometry(8, 8, 26, sliderTop + sliderHeight + 6);
 }
 
 QtGraphNode *QtGraphView::createNodeRecursive(QGraphicsView *view, QtGraphNode *parentNode, const DummyNode *node, bool multipleActive,

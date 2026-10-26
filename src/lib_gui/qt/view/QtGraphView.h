@@ -105,6 +105,7 @@ private:
 	QtGraphicsView *getView() const;
 
 	void doResize();
+	void fitTrailControls();
 
 	QtGraphNode *createNodeRecursive(QGraphicsView *view, QtGraphNode *parentNode, const DummyNode *node, bool multipleActive, bool interactive);
 	QtGraphEdge *createEdge(QGraphicsView *view, const DummyEdge *edge, std::set<Id> *visibleEdgeIds, Graph::TrailMode trailMode, QPointF pathOffset,
