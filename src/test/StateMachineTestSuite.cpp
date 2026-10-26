@@ -831,6 +831,18 @@ TEST_CASE("bookmark editor opens, takes its fields and saves them")
 	REQUIRE(snapshot.context.find("there is no bookmark 3") != std::string::npos);
 	REQUIRE_FALSE(machine.fire("edit", "", EventSource::Agent).ok);
 
+	// Deleting asks (the question machine) and stays idle; the controller reports a
+	// bookmark that is not there.
+	REQUIRE(snapshot.events == std::vector<std::string> {"create", "edit", "delete"});
+	REQUIRE_FALSE(machine.fire("delete", "", EventSource::Agent).ok);
+	REQUIRE(machine.fire("delete", R"({"id":3})", EventSource::Agent).ok);
+	REQUIRE(machine.snapshot().state == "idle");
+	machine.report("there is no bookmark 3");
+	REQUIRE(machine.snapshot().context.find("there is no bookmark 3") != std::string::npos);
+	machine.opened(editor, commit);
+	REQUIRE_FALSE(machine.fire("delete", R"({"id":7})", EventSource::Agent).ok);	// not while editing
+	REQUIRE(machine.fire("cancel", "", EventSource::Agent).ok);
+
 	machine.setOpeningLimit(std::chrono::milliseconds(20));
 	REQUIRE(machine.fire("create", R"({"node_id":12})", EventSource::Agent).ok);
 	REQUIRE(eventually([&]() { return machine.snapshot().state == "idle"; }));

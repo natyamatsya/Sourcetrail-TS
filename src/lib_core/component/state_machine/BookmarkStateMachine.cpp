@@ -4,6 +4,7 @@
 
 #include "MachineArgs.h"
 #include "MessageBookmarkCreate.h"
+#include "MessageBookmarkDelete.h"
 #include "MessageBookmarkEdit.h"
 #include "logging.h"
 
@@ -246,6 +247,29 @@ void BookmarkStateMachine::nothing(const std::string& why)
 	}
 }
 
+MachineFireResult BookmarkStateMachine::remove(std::uint64_t bookmarkId, EventSource source)
+{
+	{
+		auto transaction = m_machine.transaction();
+		if (!transaction.move(Event::Delete, source))
+		{
+			return transaction.refuse(Event::Delete);
+		}
+		transaction.data().outcome = std::format("asked whether to delete bookmark {}", bookmarkId);
+	}
+	MessageBookmarkDelete(bookmarkId).dispatch();
+	return {true, std::format("asking whether to delete bookmark {} (see question)", bookmarkId)};
+}
+
+void BookmarkStateMachine::report(const std::string& outcome)
+{
+	auto transaction = m_machine.transaction();
+	if (transaction.state() == State::Idle)
+	{
+		transaction.data().outcome = outcome;
+	}
+}
+
 void BookmarkStateMachine::setOpeningLimit(std::chrono::milliseconds limit)
 {
 	auto transaction = m_machine.transaction();
@@ -288,6 +312,19 @@ MachineFireResult BookmarkStateMachine::fire(const std::string& event, const std
 			return {false, parsed.error()};
 		}
 		return set(parsed->name, parsed->comment, parsed->category, source);
+	}
+	case Event::Delete:
+	{
+		const auto parsed = parseArgs<bookmark_machine_json::EditArgs>(event, args, R"({"id": n})");
+		if (!parsed)
+		{
+			return {false, parsed.error()};
+		}
+		if (parsed->id == 0)
+		{
+			return {false, R"(delete needs the bookmark's {"id": n} (ui_state.bookmarks))"};
+		}
+		return remove(parsed->id, source);
 	}
 	case Event::Save:
 		return save(std::nullopt, source);

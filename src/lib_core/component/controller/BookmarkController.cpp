@@ -22,6 +22,7 @@
 #include "MessageBookmarkButtonState.h"
 #endif
 #include "TabIds.h"
+#include "TabQueues.h"
 #include "logging.h"
 #ifndef SRCTRL_MODULE_BUILD
 #include "utility.h"
@@ -406,9 +407,32 @@ void BookmarkController::handleMessage(MessageBookmarkCreate* message)
 	showBookmarkCreator(message->nodeId);
 }
 
-void BookmarkController::handleMessage(MessageBookmarkDelete*  /*message*/)
+void BookmarkController::handleMessage(MessageBookmarkDelete* message)
 {
-	deleteBookmarkForActiveTokens();
+	if (message->bookmarkId == 0)
+	{
+		deleteBookmarkForActiveTokens();
+		return;
+	}
+	for (const std::shared_ptr<Bookmark>& bookmark: getAllBookmarks())
+	{
+		if (static_cast<std::uint64_t>(bookmark->getId()) == message->bookmarkId)
+		{
+			// A question (QuestionStateMachine): an agent answers it as the box's buttons do.
+			whenAnswered(
+				Application::getInstance()->getDialogView(DialogView::UseCase::GENERAL)->asked(
+					"Do you really want to delete the bookmark '" + bookmark->getName() + "'?",
+					{"Delete", "Keep"}),
+				[this, id = bookmark->getId()](int option) {
+					if (option == 0)
+					{
+						execution::post(TabIds::app(), [this, id]() { deleteBookmark(id); });
+					}
+				});
+			return;
+		}
+	}
+	BookmarkStateMachine::instance()->report(std::format("there is no bookmark {}", message->bookmarkId));
 }
 
 void BookmarkController::handleMessage(MessageBookmarkEdit* message)

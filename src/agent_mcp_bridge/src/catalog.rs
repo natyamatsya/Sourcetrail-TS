@@ -502,10 +502,12 @@ among context.editor.categories is created.
   save                             editing: creates or updates the bookmark and closes the \
 editor (refused without a name).
   cancel                           editing: closes it.
+  delete { id }                    idle: asks whether to delete bookmark id, as the \
+browser's delete button does (see question); context.outcome says when there is no such bookmark.
   context: editor { mode: create|edit, bookmark_id?, node_id?, name, comment, category, \
 categories } (editing); outcome (idle).
-  Deleting a bookmark or a category, and the bookmark button on a bookmarked symbol, ask a \
-question (see question).
+  Deleting a category, and the bookmark button on a bookmarked symbol, ask a question too \
+(see question). A bookmark is activated from the Bookmarks menu (ui_invoke its item).
 
 project_wizard: closed -> applying -> editing -> applying -> closed
   The project wizard (New Project / Edit Project). Every request below moves it to applying \

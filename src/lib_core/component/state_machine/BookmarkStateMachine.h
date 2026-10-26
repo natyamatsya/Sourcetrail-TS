@@ -68,12 +68,14 @@ private:
 //
 //   idle --create/edit--> opening --opened--> editing --save/cancel--> idle
 //   opening --nothing/timed_out--> idle; idle --opened--> editing (a person opened it)
+//   idle --delete--> idle
 //
 // `create` bookmarks what is active (or a node), as the bookmark button does: when it
 // is bookmarked already, the editor edits that bookmark. `edit` opens an existing
 // bookmark, as the browser's edit button does. A person's typing in the editor
 // changes its fields here as `set` does, without a move; its buttons send save and
-// cancel. Deleting a bookmark or a category asks a question (QuestionStateMachine).
+// cancel. Deleting a bookmark or a category asks a question (QuestionStateMachine):
+// `delete` asks it for a bookmark, as the browser's delete button does.
 struct BookmarkMachine
 {
 	enum class State
@@ -91,7 +93,8 @@ struct BookmarkMachine
 		TimedOut,
 		Set,
 		Save,
-		Cancel
+		Cancel,
+		Delete
 	};
 
 	// What the editor is opened on.
@@ -126,11 +129,13 @@ struct BookmarkMachine
 		named(Event::TimedOut, "timed_out"),
 		control(Event::Set, "set"),
 		control(Event::Save, "save"),
-		control(Event::Cancel, "cancel")};
+		control(Event::Cancel, "cancel"),
+		control(Event::Delete, "delete")};
 	static constexpr auto transitions = std::to_array<StateMachine<State, Event>::Transition>({
 		{State::Idle, Event::Create, State::Opening},
 		{State::Idle, Event::Edit, State::Opening},
 		{State::Idle, Event::Opened, State::Editing},
+		{State::Idle, Event::Delete, State::Idle},
 		{State::Opening, Event::Opened, State::Editing},
 		{State::Opening, Event::Nothing, State::Idle},
 		{State::Opening, Event::TimedOut, State::Idle},
@@ -172,13 +177,17 @@ public:
 	MachineFireResult save(
 		std::optional<BookmarkFields> fields, EventSource source, std::optional<std::uint64_t> editor = std::nullopt);
 	MachineFireResult cancel(EventSource source, std::optional<std::uint64_t> editor = std::nullopt);
+	// Asks whether to delete bookmark `bookmarkId` (MessageBookmarkDelete).
+	MachineFireResult remove(std::uint64_t bookmarkId, EventSource source);
 
 	// The editor's side: it opened (`commit` saves its fields): its id, for what it
 	// reports; a person changed its fields.
 	std::uint64_t opened(Editor editor, std::function<void(const BookmarkFields&)> commit);
 	void edited(std::uint64_t editor, const BookmarkFields& fields);
-	// The bookmark controller's side: a request opens nothing (`why`).
+	// The bookmark controller's side: a request opens nothing (`why`); how a request
+	// that opens no editor ended.
 	void nothing(const std::string& why);
+	void report(const std::string& outcome);
 
 	// How long `opening` waits for the editor (nobody to open it: no project).
 	void setOpeningLimit(std::chrono::milliseconds limit);

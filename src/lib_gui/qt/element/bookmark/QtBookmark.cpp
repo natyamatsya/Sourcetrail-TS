@@ -1,7 +1,6 @@
 #include "QtBookmark.h"
 
-#include "Application.h"
-#include "DialogView.h"
+#include "BookmarkStateMachine.h"
 #include "QtActions.h"
 #include "QtResources.h"
 #include "utilityQt.h"
@@ -216,16 +215,8 @@ void QtBookmark::editClicked()
 
 void QtBookmark::deleteClicked()
 {
-	// A question (QuestionStateMachine): an agent answers it as the box's buttons do.
-	whenAnswered(
-		Application::getInstance()->getDialogView(DialogView::UseCase::GENERAL)->asked(
-			"Do you really want to delete the bookmark '" + m_bookmark->getName() + "'?", {"Delete", "Keep"}),
-		[proxy = m_controllerProxy, id = m_bookmark->getId()](int option) {
-			if (option == 0)
-			{
-				proxy->executeAsTaskWithArgs(&BookmarkController::deleteBookmark, id);
-			}
-		});
+	// Asks first, as the bookmark machine's delete does (BookmarkController).
+	BookmarkStateMachine::instance()->remove(static_cast<std::uint64_t>(m_bookmark->getId()), EventSource::Ui);
 }
 
 void QtBookmark::elideButtonText()
