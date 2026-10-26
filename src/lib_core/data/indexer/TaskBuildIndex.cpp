@@ -14,6 +14,7 @@
 #include "StorageProvider.h"
 #include "TimeStamp.h"
 #include "UserPaths.h"
+#include "WorkPools.h"
 #include "utilityApp.h"
 #include "utilityExpected.h"
 
@@ -205,14 +206,18 @@ TaskBuildIndex::TaskBuildIndex(
 TaskBuildIndex::~TaskBuildIndex()
 {
 	// Safety net for abrupt teardown (destroyed without a clean doExit): stop the
-	// supervisors and kill any live subprocesses so the m_processThreads jthreads can
-	// join instead of hanging on a blocking executeProcess.
-	if (m_runningThreadCount > 0)
+	// supervisors and kill any live subprocesses, so they end before what they use.
+	if (m_runningSupervisorCount > 0)
 	{
 		m_stopSource.request_stop();
-		utility::killRunningProcesses();
+		killProcesses();
+		if (!waitForSupervisors(std::chrono::seconds(10)))
+		{
+			LOG_ERROR("indexer supervisors still running as their task goes");
+		}
 	}
-	// m_stopCallback unregisters (declared last), then m_processThreads jthreads join.
+	m_processes.reset();
+	// m_stopCallback unregisters (declared last).
 }
 
 void TaskBuildIndex::doEnter(std::shared_ptr<Blackboard> blackboard)
@@ -240,15 +245,18 @@ void TaskBuildIndex::doEnter(std::shared_ptr<Blackboard> blackboard)
 	// subprocesses stop gracefully; the babysitter loops observe m_stopSource directly.
 	m_stopCallback.emplace(m_stopSource.get_token(), StopCallback{ &m_interprocessIndexingStatusManager });
 
+	if (!m_processes)
+	{
+		m_processes = std::make_unique<ProcessMonitor>();
+	}
+
 	// start indexer processes
 	for (size_t i = 0; i < m_processCount; i++)
 	{
-		m_runningThreadCount++;
-
 		const ProcessId processId = static_cast<ProcessId>(i + 1);	// 0 remains reserved for the main process
 
 		m_interprocessIntermediateStorageManagers.push_back(std::make_shared<IntermediateStorageManagerImpl>(m_appUUID, processId, true));
-		m_processThreads.emplace_back(&TaskBuildIndex::runIndexerProcess, this, processId, logFilePath);
+		startSupervisor(cxxSupervisor(processId, logFilePath));
 	}
 
 	// Start the Rust indexer supervisors (crate fan-out R1): each babysits one
@@ -261,9 +269,12 @@ void TaskBuildIndex::doEnter(std::shared_ptr<Blackboard> blackboard)
 			const ProcessId rustProcessId{rustIndexerProcessId(m_processCount, k)};
 			m_rustStorageManagers.push_back(std::make_shared<IntermediateStorageManagerImpl>(
 				m_appUUID, rustProcessId, true));
-			m_runningThreadCount++;
-			m_processThreads.emplace_back(
-				&TaskBuildIndex::runRustIndexerProcess, this, rustProcessId, logFilePath);
+			startSupervisor(externalSupervisor(
+				rustProcessId,
+				logFilePath,
+				AppPath::getRustIndexerFilePath(),
+				IndexerCommandType::INDEXER_COMMAND_RUST,
+				"Rust indexer process"));
 		}
 	}
 
@@ -278,9 +289,12 @@ void TaskBuildIndex::doEnter(std::shared_ptr<Blackboard> blackboard)
 				swiftIndexerProcessId(m_processCount, m_rustSupervisorCount, k)};
 			m_swiftStorageManagers.push_back(std::make_shared<IntermediateStorageManagerImpl>(
 				m_appUUID, swiftProcessId, true));
-			m_runningThreadCount++;
-			m_processThreads.emplace_back(
-				&TaskBuildIndex::runSwiftIndexerProcess, this, swiftProcessId, logFilePath);
+			startSupervisor(externalSupervisor(
+				swiftProcessId,
+				logFilePath,
+				AppPath::getSwiftIndexerFilePath(),
+				IndexerCommandType::INDEXER_COMMAND_SWIFT,
+				"Swift indexer process"));
 		}
 	}
 
@@ -295,9 +309,12 @@ void TaskBuildIndex::doEnter(std::shared_ptr<Blackboard> blackboard)
 				zigIndexerProcessId(m_processCount, m_rustSupervisorCount, m_swiftSupervisorCount, k)};
 			m_zigStorageManagers.push_back(std::make_shared<IntermediateStorageManagerImpl>(
 				m_appUUID, zigProcessId, true));
-			m_runningThreadCount++;
-			m_processThreads.emplace_back(
-				&TaskBuildIndex::runZigIndexerProcess, this, zigProcessId, logFilePath);
+			startSupervisor(externalSupervisor(
+				zigProcessId,
+				logFilePath,
+				AppPath::getZigIndexerFilePath(),
+				IndexerCommandType::INDEXER_COMMAND_ZIG,
+				"Zig indexer process"));
 		}
 	}
 
@@ -310,7 +327,7 @@ Task::TaskState TaskBuildIndex::doUpdate(std::shared_ptr<Blackboard> blackboard)
 	using enum IndexerCommandType;
 	try
 	{
-		size_t runningThreadCount = m_runningThreadCount;
+		size_t runningThreadCount = m_runningSupervisorCount;
 
 		bool queueStopped = m_indexerCommandQueueStopped.load();
 		blackboard->get<bool>("indexer_command_queue_stopped", queueStopped);
@@ -391,7 +408,7 @@ Task::TaskState TaskBuildIndex::doUpdate(std::shared_ptr<Blackboard> blackboard)
 		m_stopSource.request_stop();
 		m_indexerCommandQueueStopped.store(true);
 		blackboard->set("interrupted_indexing", true);
-		utility::killRunningProcesses();
+		killProcesses();
 		return STATE_FAILURE;
 	}
 }
@@ -420,25 +437,22 @@ void TaskBuildIndex::doExit(std::shared_ptr<Blackboard> blackboard)
 	using enum IndexerCommandType;
 	// Cooperative teardown: on interruption the supervisors are already stopping
 	// (m_stopSource + the IPC interrupt flag). Give the subprocesses a brief window to
-	// exit gracefully, then kill any stragglers so the jthread joins below complete
-	// promptly. On normal completion m_runningThreadCount is already 0 -> no wait.
-	if (m_stopSource.stop_requested())
+	// exit gracefully, then kill any stragglers. On normal completion the supervisors
+	// have all ended already -> no wait.
+	if (m_stopSource.stop_requested() && !waitForSupervisors(std::chrono::seconds(3)))
 	{
-		const auto deadline = std::chrono::steady_clock::now() + std::chrono::seconds(3);
-		while (m_runningThreadCount > 0 && std::chrono::steady_clock::now() < deadline)
-		{
-			std::this_thread::sleep_for(std::chrono::milliseconds(50));
-		}
-		if (m_runningThreadCount > 0)
-		{
-			LOG_WARNING_STREAM(
-				<< "indexer interrupt: " << m_runningThreadCount.load()
-				<< " subprocess supervisor(s) still running after 3s; killing.");
-			utility::killRunningProcesses();
-		}
+		LOG_WARNING_STREAM(
+			<< "indexer interrupt: " << m_runningSupervisorCount.load()
+			<< " subprocess supervisor(s) still running after 3s; killing.");
+		killProcesses();
 	}
-
-	m_processThreads.clear();	// jthreads auto-join (fast: subprocesses done or killed)
+	// Their subprocesses are done or killed: the supervisors end promptly.
+	if (!waitForSupervisors(std::chrono::seconds(10)))
+	{
+		LOG_WARNING_STREAM(
+			<< "indexer teardown: " << m_runningSupervisorCount.load()
+			<< " subprocess supervisor(s) still running after 10s.");
+	}
 
 	if (m_stopSource.stop_requested())
 	{
@@ -500,13 +514,32 @@ void TaskBuildIndex::handleMessage(MessageIndexingInterrupted*  /*message*/)
 		"Interrupting Indexing", "Waiting for indexer\nthreads to finish");
 }
 
-void TaskBuildIndex::runIndexerProcess(ProcessId processId, const std::string& logFilePath)
+struct TaskBuildIndex::Supervisor
 {
-	using enum Task::TaskState;
-	using enum IndexerCommandType;
-	[[maybe_unused]]
-	ScopedFunctor runningThreadCounter([&]() { m_runningThreadCount--; });
+	ProcessId processId = ProcessId::NONE;
+	FilePath executable;
+	std::vector<std::string> arguments;
+	std::string commandLine;
+	std::string label;	// "CXX indexer process", "Rust indexer process", ...
+	// An external indexer's: the commands it waits for, and the queue it looks at.
+	std::optional<IndexerCommandType> commandType;
+	std::unique_ptr<IndexerCommandManagerImpl> commands;
 
+	size_t launchAttempt = 0;
+	size_t consecutiveFailureCount = 0;
+	int result = 1;	// the last exit code
+	bool finished = false;	// on the monitor's thread
+};
+
+namespace
+{
+constexpr size_t maxConsecutiveFailures = 200;
+constexpr std::chrono::milliseconds relaunchDelay {200};
+}	 // namespace
+
+std::shared_ptr<TaskBuildIndex::Supervisor> TaskBuildIndex::cxxSupervisor(
+	ProcessId processId, const std::string& logFilePath)
+{
 	const FilePath indexerProcessPath = AppPath::getCxxIndexerFilePath();
 	if (!indexerProcessPath.exists())
 	{
@@ -516,10 +549,14 @@ void TaskBuildIndex::runIndexerProcess(ProcessId processId, const std::string& l
 			"Cannot start CXX indexer process because executable is missing at \"" +
 				indexerProcessPath.str() + "\".");
 		LOG_ERROR_STREAM(<< error);
-		return;
+		return nullptr;
 	}
 
-	std::vector<std::string> commandArguments;
+	auto supervisor = std::make_shared<Supervisor>();
+	supervisor->processId = processId;
+	supervisor->executable = indexerProcessPath;
+	supervisor->label = "CXX indexer process";
+	std::vector<std::string>& commandArguments = supervisor->arguments;
 	commandArguments.push_back(to_string(processId));
 	commandArguments.push_back(m_appUUID);
 	commandArguments.push_back(AppPath::getSharedDataDirectoryPath().getAbsolute().str());
@@ -538,212 +575,240 @@ void TaskBuildIndex::runIndexerProcess(ProcessId processId, const std::string& l
 		commandArguments.push_back("--only-group-id=" + groupIt->second);
 	}
 
-	const std::string commandLine = buildProcessCommandLine(indexerProcessPath, commandArguments);
+	supervisor->commandLine = buildProcessCommandLine(indexerProcessPath, commandArguments);
 
 	LOG_INFO_STREAM(
 		<< "CXX indexer process " << processId << " configured: executable='"
 		<< indexerProcessPath.str() << "', args=" << commandArguments.size());
-
-	int result = 1;
-	size_t launchAttempt = 0;
-	size_t consecutiveFailureCount = 0;
-	const size_t maxConsecutiveFailures = 200;
-	while ((!m_indexerCommandQueueStopped.load() || result != 0) && !m_stopSource.stop_requested())
-	{
-		launchAttempt++;
-		LOG_INFO_STREAM(
-			<< "Launching CXX indexer process " << processId << " attempt " << launchAttempt
-			<< " (queueStopped=" << m_indexerCommandQueueStopped.load()
-			<< ", interrupted=" << m_stopSource.stop_requested() << ")");
-
-		const utility::ProcessOutput processOutput = utility::executeProcess(
-			indexerProcessPath.str(), commandArguments, FilePath(), false, INFINITE_TIMEOUT);
-		result = processOutput.exitCode;
-
-		LOG_INFO_STREAM(
-			<< "CXX indexer process " << processId << " attempt " << launchAttempt
-			<< " returned with " + std::to_string(result));
-
-		const IndexerProcessResult processResult = validateIndexerProcessOutput(
-			processOutput,
-			processId,
-			launchAttempt,
-			"CXX indexer process",
-			commandLine);
-		if (processResult)
-		{
-			consecutiveFailureCount = 0;
-			continue;
-		}
-
-		if (m_stopSource.stop_requested())
-			break;
-
-		LOG_ERROR_STREAM(<< processResult.error());
-		logCxxIndexerFailureContext(m_interprocessIndexingStatusManager, processId);
-
-		consecutiveFailureCount++;
-		if (consecutiveFailureCount >= maxConsecutiveFailures)
-		{
-			LOG_ERROR_STREAM(
-				<< "CXX indexer process " << processId << " attempt " << launchAttempt
-				<< " reached " << consecutiveFailureCount
-				<< " consecutive failures. interrupting indexing.");
-			m_stopSource.request_stop();
-			m_indexerCommandQueueStopped.store(true);
-			m_interprocessIndexingStatusManager.setIndexingInterrupted(true);
-			m_interprocessIndexingStatusManager.setQueueStopped(true);
-			utility::killRunningProcesses();
-			break;
-		}
-
-		LOG_WARNING_STREAM(
-			<< "CXX indexer process " << processId << " failure " << consecutiveFailureCount
-			<< "/" << maxConsecutiveFailures
-			<< ". restarting process to continue indexing.");
-		std::this_thread::sleep_for(std::chrono::milliseconds(200));
-	}
+	return supervisor;
 }
 
-void TaskBuildIndex::runRustIndexerProcess(ProcessId processId, const std::string& logFilePath)
-{
-	runExternalIndexerProcess(
-		processId,
-		logFilePath,
-		AppPath::getRustIndexerFilePath(),
-		IndexerCommandType::INDEXER_COMMAND_RUST,
-		"Rust indexer process");
-}
-
-void TaskBuildIndex::runSwiftIndexerProcess(ProcessId processId, const std::string& logFilePath)
-{
-	runExternalIndexerProcess(
-		processId,
-		logFilePath,
-		AppPath::getSwiftIndexerFilePath(),
-		IndexerCommandType::INDEXER_COMMAND_SWIFT,
-		"Swift indexer process");
-}
-
-void TaskBuildIndex::runZigIndexerProcess(ProcessId processId, const std::string& logFilePath)
-{
-	runExternalIndexerProcess(
-		processId,
-		logFilePath,
-		AppPath::getZigIndexerFilePath(),
-		IndexerCommandType::INDEXER_COMMAND_ZIG,
-		"Zig indexer process");
-}
-
-void TaskBuildIndex::runExternalIndexerProcess(
+std::shared_ptr<TaskBuildIndex::Supervisor> TaskBuildIndex::externalSupervisor(
 	ProcessId processId,
 	const std::string& logFilePath,
 	const FilePath& indexerPath,
 	IndexerCommandType commandType,
 	const std::string& humanName)
 {
-	[[maybe_unused]]
-	ScopedFunctor runningThreadCounter([&]() { m_runningThreadCount--; });
-	try
-	{
-
 	if (!indexerPath.exists())
 	{
 		LOG_WARNING(
 			humanName + " not found at \"" + indexerPath.str() +
 			"\" — files of this language will not be indexed");
-		return;
+		return nullptr;
 	}
 
-	std::vector<std::string> args;
+	auto supervisor = std::make_shared<Supervisor>();
+	supervisor->processId = processId;
+	supervisor->executable = indexerPath;
+	supervisor->label = humanName;
+	supervisor->commandType = commandType;
+	supervisor->commands = std::make_unique<IndexerCommandManagerImpl>(m_appUUID, ProcessId::NONE, false);
+	std::vector<std::string>& args = supervisor->arguments;
 	args.push_back(to_string(processId));
 	args.push_back(m_appUUID);
 	args.push_back(AppPath::getSharedDataDirectoryPath().getAbsolute().str());
 	args.push_back(UserPaths::getUserDataDirectoryPath().getAbsolute().str());
 	if (!logFilePath.empty())
 		args.push_back(logFilePath);
-	const std::string commandLine = buildProcessCommandLine(indexerPath, args);
+	supervisor->commandLine = buildProcessCommandLine(indexerPath, args);
+	return supervisor;
+}
 
-	size_t launchAttempt = 0;
-	size_t consecutiveFailureCount = 0;
-	const size_t maxConsecutiveFailures = 200;
-	IndexerCommandManagerImpl commandManager(m_appUUID, ProcessId::NONE, false);
-	while (!m_stopSource.stop_requested())
+void TaskBuildIndex::startSupervisor(std::shared_ptr<Supervisor> supervisor)
+{
+	if (!supervisor)
 	{
-		if (!commandManager.hasIndexerCommandType(commandType))
-		{
-			if (m_indexerCommandQueueStopped.load())
-				break;
-
-			std::this_thread::sleep_for(std::chrono::milliseconds(200));
-			continue;
-		}
-
-		launchAttempt++;
-		const utility::ProcessOutput processOutput = utility::executeProcess(
-			indexerPath.str(), args, FilePath(), false, INFINITE_TIMEOUT);
-		LOG_INFO_STREAM(
-			<< humanName << " " << processId << " attempt " << launchAttempt
-			<< " returned with " << processOutput.exitCode);
-		LOG_INFO_STREAM(
-			<< humanName << " " << processId << " attempt " << launchAttempt
-			<< " stdout:\n" << processOutput.output);
-		LOG_INFO_STREAM(
-			<< humanName << " " << processId << " attempt " << launchAttempt
-			<< " stderr:\n" << processOutput.error);
-
-		const IndexerProcessResult processResult = validateIndexerProcessOutput(
-			processOutput,
-			processId,
-			launchAttempt,
-			humanName,
-			commandLine);
-		if (processResult)
-		{
-			consecutiveFailureCount = 0;
-			if (!m_indexerCommandQueueStopped.load() && !m_stopSource.stop_requested())
-				std::this_thread::sleep_for(std::chrono::milliseconds(200));
-			continue;
-		}
-
-		if (m_stopSource.stop_requested())
-			break;
-
-		LOG_ERROR_STREAM(<< processResult.error());
-
-		// A single subprocess failure must not abort the whole run — restart
-		// it and keep draining the queue, matching the Rust supervisor. Only
-		// a sustained failure streak interrupts indexing.
-		consecutiveFailureCount++;
-		if (consecutiveFailureCount >= maxConsecutiveFailures)
-		{
-			LOG_ERROR_STREAM(
-				<< humanName << " " << processId << " attempt " << launchAttempt
-				<< " reached " << consecutiveFailureCount
-				<< " consecutive failures. interrupting indexing.");
-			m_stopSource.request_stop();
-			m_indexerCommandQueueStopped.store(true);
-			m_interprocessIndexingStatusManager.setIndexingInterrupted(true);
-			m_interprocessIndexingStatusManager.setQueueStopped(true);
-			utility::killRunningProcesses();
-			break;
-		}
-
-		LOG_WARNING_STREAM(
-			<< humanName << " " << processId << " failure " << consecutiveFailureCount
-			<< "/" << maxConsecutiveFailures
-			<< ". restarting process to continue indexing.");
-		std::this_thread::sleep_for(std::chrono::milliseconds(200));
+		return;	// its indexer is missing
 	}
+	{
+		const std::lock_guard<std::mutex> lock(m_supervisorsMutex);
+		m_runningSupervisorCount++;
+	}
+	m_processes->post([this, supervisor = std::move(supervisor)]() { launch(supervisor); });
+}
+
+void TaskBuildIndex::launch(const std::shared_ptr<Supervisor>& supervisor)
+{
+	using enum IndexerCommandType;
+	if (supervisor->finished)
+	{
+		return;
+	}
+	try
+	{
+		if (m_stopSource.stop_requested())
+		{
+			finish(*supervisor);
+			return;
+		}
+
+		if (!supervisor->commandType)
+		{
+			// While the command queue runs, or until the last run succeeded.
+			if (m_indexerCommandQueueStopped.load() && supervisor->result == 0)
+			{
+				finish(*supervisor);
+				return;
+			}
+			supervisor->launchAttempt++;
+			LOG_INFO_STREAM(
+				<< "Launching CXX indexer process " << supervisor->processId << " attempt "
+				<< supervisor->launchAttempt << " (queueStopped=" << m_indexerCommandQueueStopped.load()
+				<< ", interrupted=" << m_stopSource.stop_requested() << ")");
+		}
+		else
+		{
+			// While commands of its type remain.
+			if (!supervisor->commands->hasIndexerCommandType(*supervisor->commandType))
+			{
+				if (m_indexerCommandQueueStopped.load())
+				{
+					finish(*supervisor);
+					return;
+				}
+				again(supervisor, relaunchDelay);
+				return;
+			}
+			supervisor->launchAttempt++;
+		}
+
+		m_processes->start(
+			supervisor->executable.str(), supervisor->arguments, [this, supervisor](utility::ProcessOutput output) {
+				ended(supervisor, output);
+			});
 	}
 	catch (const std::exception& e)
 	{
-		LOG_ERROR_STREAM(
-			<< "TaskBuildIndex::runExternalIndexerProcess (" << humanName
-			<< ") exception: " << e.what());
+		LOG_ERROR_STREAM(<< "TaskBuildIndex::launch (" << supervisor->label << ") exception: " << e.what());
 		m_stopSource.request_stop();
 		m_indexerCommandQueueStopped.store(true);
-		utility::killRunningProcesses();
+		killProcesses();
+		finish(*supervisor);
+	}
+}
+
+void TaskBuildIndex::ended(const std::shared_ptr<Supervisor>& supervisor, const utility::ProcessOutput& output)
+{
+	if (supervisor->finished)
+	{
+		return;
+	}
+	try
+	{
+		const bool external = supervisor->commandType.has_value();
+		supervisor->result = output.exitCode;
+		LOG_INFO_STREAM(
+			<< supervisor->label << " " << supervisor->processId << " attempt " << supervisor->launchAttempt
+			<< " returned with " << output.exitCode);
+		if (external)
+		{
+			LOG_INFO_STREAM(
+				<< supervisor->label << " " << supervisor->processId << " attempt "
+				<< supervisor->launchAttempt << " stdout:\n" << output.output);
+			LOG_INFO_STREAM(
+				<< supervisor->label << " " << supervisor->processId << " attempt "
+				<< supervisor->launchAttempt << " stderr:\n" << output.error);
+		}
+
+		const IndexerProcessResult processResult = validateIndexerProcessOutput(
+			output, supervisor->processId, supervisor->launchAttempt, supervisor->label, supervisor->commandLine);
+		if (processResult)
+		{
+			supervisor->consecutiveFailureCount = 0;
+			// An external indexer that finished its commands looks again in a while.
+			if (external && !m_indexerCommandQueueStopped.load() && !m_stopSource.stop_requested())
+			{
+				again(supervisor, relaunchDelay);
+			}
+			else
+			{
+				launch(supervisor);
+			}
+			return;
+		}
+
+		if (m_stopSource.stop_requested())
+		{
+			finish(*supervisor);
+			return;
+		}
+
+		LOG_ERROR_STREAM(<< processResult.error());
+		if (!external)
+		{
+			logCxxIndexerFailureContext(m_interprocessIndexingStatusManager, supervisor->processId);
+		}
+
+		supervisor->consecutiveFailureCount++;
+		if (supervisor->consecutiveFailureCount >= maxConsecutiveFailures)
+		{
+			LOG_ERROR_STREAM(
+				<< supervisor->label << " " << supervisor->processId << " attempt " << supervisor->launchAttempt
+				<< " reached " << supervisor->consecutiveFailureCount
+				<< " consecutive failures. interrupting indexing.");
+			interruptAll();
+			finish(*supervisor);
+			return;
+		}
+
+		LOG_WARNING_STREAM(
+			<< supervisor->label << " " << supervisor->processId << " failure "
+			<< supervisor->consecutiveFailureCount << "/" << maxConsecutiveFailures
+			<< ". restarting process to continue indexing.");
+		again(supervisor, relaunchDelay);
+	}
+	catch (const std::exception& e)
+	{
+		LOG_ERROR_STREAM(<< "TaskBuildIndex::ended (" << supervisor->label << ") exception: " << e.what());
+		m_stopSource.request_stop();
+		m_indexerCommandQueueStopped.store(true);
+		killProcesses();
+		finish(*supervisor);
+	}
+}
+
+void TaskBuildIndex::again(const std::shared_ptr<Supervisor>& supervisor, std::chrono::milliseconds delay)
+{
+	// The supervisor has not ended, so the task and its monitor wait for it.
+	execution::afterDelay(delay, [this, supervisor]() {
+		m_processes->post([this, supervisor]() { launch(supervisor); });
+	});
+}
+
+void TaskBuildIndex::finish(Supervisor& supervisor)
+{
+	if (std::exchange(supervisor.finished, true))
+	{
+		return;
+	}
+	{
+		const std::lock_guard<std::mutex> lock(m_supervisorsMutex);
+		m_runningSupervisorCount--;
+	}
+	m_supervisorsEnded.notify_all();
+}
+
+bool TaskBuildIndex::waitForSupervisors(std::chrono::milliseconds limit)
+{
+	std::unique_lock<std::mutex> lock(m_supervisorsMutex);
+	return m_supervisorsEnded.wait_for(lock, limit, [this]() { return m_runningSupervisorCount == 0; });
+}
+
+void TaskBuildIndex::interruptAll()
+{
+	m_stopSource.request_stop();
+	m_indexerCommandQueueStopped.store(true);
+	m_interprocessIndexingStatusManager.setIndexingInterrupted(true);
+	m_interprocessIndexingStatusManager.setQueueStopped(true);
+	killProcesses();
+}
+
+void TaskBuildIndex::killProcesses()
+{
+	if (m_processes)
+	{
+		m_processes->killAll();
 	}
 }
 

@@ -85,8 +85,13 @@ retire `Task`/`TaskScheduler`/`TaskGroup*` entirely:
   `StorageProvider` reports a change, the polls (`TaskDecoratorRepeat`'s delay, the
   command queue's refill, the build's progress) with `TaskScheduler::restFor` on a
   timer. A driver other than a scheduler gives its runner parking through
-  `TaskScheduler::updateDriven`. Left: `TaskBuildIndex`'s supervisor thread per indexer
-  process, and the trees themselves as senders.
+  `TaskScheduler::updateDriven`.
+  *Done:* `TaskBuildIndex` supervises its indexer subprocesses from one thread, a
+  `ProcessMonitor` (a Qt event loop that starts the processes and reports each one's
+  end), instead of a thread per subprocess blocked in `executeProcess`: relaunching,
+  the failure streak and the 200 ms pauses (on the timer) are callbacks there.
+  Left: the trees themselves as senders, and `fetchIntermediateStorages`' 50 ms
+  back-pressure sleep.
 - **Storage**: bulk writes already use `exec::static_thread_pool`
   (`ConcurrentTursoWriter`); fold the surrounding `Task` wrappers into senders.
 - **GUI**: header-search `std::thread`s (`QtProjectWizardContent*`) → `io()` +

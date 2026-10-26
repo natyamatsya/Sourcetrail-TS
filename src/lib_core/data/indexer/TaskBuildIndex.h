@@ -12,9 +12,13 @@
 
 #include <atomic>
 #include <chrono>
+#include <condition_variable>
 #include <map>
+#include <memory>
+#include <mutex>
 #include <optional>
-#include <thread>
+
+#include "ProcessMonitor.h"
 
 class DialogView;
 class StorageProvider;
@@ -53,21 +57,36 @@ protected:
 	void terminate() override;
 
 	void handleMessage(MessageIndexingInterrupted* message) override;
-	
-	void runIndexerProcess(ProcessId processId, const std::string& logFilePath);
-	void runRustIndexerProcess(ProcessId processId, const std::string& logFilePath);
-	void runSwiftIndexerProcess(ProcessId processId, const std::string& logFilePath);
-	void runZigIndexerProcess(ProcessId processId, const std::string& logFilePath);
-	// Shared babysitter for an out-of-process language indexer (Rust, Swift, Zig):
-	// relaunches the subprocess while commands of its type remain, tolerating
-	// up to maxConsecutiveFailures transient failures before interrupting the
-	// whole run — so one crash never aborts indexing.
-	void runExternalIndexerProcess(
+
+	// One indexer subprocess's supervision, on the process monitor's thread: the
+	// subprocess is launched again while it is needed, tolerating up to
+	// maxConsecutiveFailures transient failures before the whole run is interrupted
+	// -- so one crash never aborts indexing. No thread waits for a subprocess.
+	struct Supervisor;
+
+	// The C++ indexer's supervisor: launches while the command queue runs (or the
+	// last run failed). Empty when the indexer is missing (indexing stops).
+	std::shared_ptr<Supervisor> cxxSupervisor(ProcessId processId, const std::string& logFilePath);
+	// An out-of-process language indexer's (Rust, Swift, Zig): launches while
+	// commands of its type remain. Empty when the indexer is missing.
+	std::shared_ptr<Supervisor> externalSupervisor(
 		ProcessId processId,
 		const std::string& logFilePath,
 		const FilePath& indexerPath,
 		IndexerCommandType commandType,
 		const std::string& humanName);
+	void startSupervisor(std::shared_ptr<Supervisor> supervisor);
+	// Launches its subprocess if it is still needed, else ends it.
+	void launch(const std::shared_ptr<Supervisor>& supervisor);
+	void ended(const std::shared_ptr<Supervisor>& supervisor, const utility::ProcessOutput& output);
+	// Launches again once `delay` has passed.
+	void again(const std::shared_ptr<Supervisor>& supervisor, std::chrono::milliseconds delay);
+	void finish(Supervisor& supervisor);
+	// Whether the supervisors all ended within `limit`.
+	bool waitForSupervisors(std::chrono::milliseconds limit);
+	// Interrupts the run: no more launches, the subprocesses killed.
+	void interruptAll();
+	void killProcesses();
 	bool fetchIntermediateStorages(std::shared_ptr<Blackboard> blackboard);
 	void logIndexingSummary(const std::shared_ptr<Blackboard>& blackboard) const;
 	void updateIndexingDialog(
@@ -107,10 +126,9 @@ protected:
 	size_t m_throttleStallCount = 0;
 	long long m_throttleStallMs = 0;
 
-	// Supervisor threads (one per indexer subprocess), auto-joined on destruction.
-	// Deterministic teardown relies on cooperative stop (m_stopSource) + the kill
-	// fallback in doExit/dtor so these joins always complete promptly.
-	std::vector<std::jthread> m_processThreads;
+	// Runs the indexer subprocesses and tells when each ended, from one thread.
+	// Created as indexing starts.
+	std::unique_ptr<ProcessMonitor> m_processes;
 	std::vector<std::shared_ptr<IntermediateStorageManagerImpl>>
 		m_interprocessIntermediateStorageManagers;
 	//! One per Rust supervisor (crate fan-out R1): ProcessIds
@@ -126,7 +144,10 @@ protected:
 	size_t m_swiftSupervisorCount = 1;
 	size_t m_zigSupervisorCount = 1;
 
-	std::atomic<size_t> m_runningThreadCount = 0;
+	// Supervisors that have not ended; the teardown waits for none.
+	std::atomic<size_t> m_runningSupervisorCount = 0;
+	std::mutex m_supervisorsMutex;
+	std::condition_variable m_supervisorsEnded;
 
 	// Fires when m_stopSource is stopped: raise the IPC interrupt flag so the indexer
 	// subprocesses stop gracefully. Declared last so it unregisters before m_stopSource

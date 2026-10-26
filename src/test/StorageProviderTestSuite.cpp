@@ -122,3 +122,25 @@ TEST_CASE("storage provider concurrent producers lose no storages")
 	REQUIRE(2 * STORAGES_PER_PRODUCER == consumed.load());
 	REQUIRE(provider.getStorageCount() == 0);
 }
+
+TEST_CASE("storage provider tells its listeners when it changes, and answers without waiting")
+{
+	StorageProvider provider;
+	std::atomic<int> changes = 0;
+	const std::size_t listener = provider.addChangeListener([&]() { changes++; });
+
+	REQUIRE_FALSE(provider.countOrDone(1).has_value());	// it would wait
+	provider.insert(makeStorage());
+	REQUIRE(changes == 1);
+	REQUIRE(provider.countOrDone(1) == StorageProvider::WaitResult::READY);
+	REQUIRE_FALSE(provider.countOrDone(2).has_value());
+
+	provider.setDone();
+	REQUIRE(changes == 2);
+	REQUIRE(provider.countOrDone(2) == StorageProvider::WaitResult::DONE);
+	REQUIRE(provider.countOrDone(1) == StorageProvider::WaitResult::READY);	// the remainder first
+
+	provider.removeChangeListener(listener);
+	provider.clear();
+	REQUIRE(changes == 2);
+}
