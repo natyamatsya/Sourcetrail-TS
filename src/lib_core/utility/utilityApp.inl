@@ -4,6 +4,7 @@
 
 #ifndef SRCTRL_MODULE_PURVIEW
 #include "ScopedFunctor.h"
+#include "productVersion.h"
 #include "logging.h"
 #include "utilityString.h"
 
@@ -27,9 +28,14 @@ namespace utility
 inline std::mutex s_runningProcessesMutex;
 inline std::set<std::shared_ptr<QProcess>> s_runningProcesses;
 
+inline std::string getHomepageLink()
+{
+	return product::homepageUrl;
+}
+
 inline std::string getDocumentationLink()
 {
-	return "https://github.com/petermost/Sourcetrail/blob/master/DOCUMENTATION.md";
+	return getHomepageLink() + "/blob/main/DOCUMENTATION.md";
 }
 
 inline std::string searchPath(const std::string& bin, bool& ok)

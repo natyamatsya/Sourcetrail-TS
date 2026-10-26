@@ -8,7 +8,7 @@
 module;
 
 // GMF: the Qt process machinery (incl. the QStringLiteral macro the .inl uses), ScopedFunctor
-// (std-only header), Platform, and the logging macros.
+// (std-only header), Platform, productVersion (product::homepageUrl), and the logging macros.
 #ifndef SRCTRL_IMPORT_STD
 #include <algorithm>
 #include <chrono>
@@ -28,6 +28,7 @@ module;
 
 #include "Platform.h"
 #include "ScopedFunctor.h"
+#include "productVersion.h"
 
 export module srctrl.process;
 

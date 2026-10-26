@@ -9,4 +9,12 @@
 #define PRODUCT_VERSION_SUFFIX  "@SOURCETRAIL_VERSION_SUFFIX@"
 // #define PRODUCT_VERSION_TWEAK   @Sourcetrail_VERSION_TWEAK@
 
+namespace product
+{
+// This fork's repository: project(... HOMEPAGE_URL) in CMakeLists.txt. A char array, not a
+// string_view: the header is also part of a module's global fragment, where <string_view> is
+// not included textually when the build imports std.
+inline constexpr char homepageUrl[] = "@Sourcetrail_HOMEPAGE_URL@";
+}	 // namespace product
+
 #endif

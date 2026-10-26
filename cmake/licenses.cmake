@@ -30,7 +30,7 @@ endfunction(AddLicense)
 
 function(configureLicenseFile outputFile)
 	ReadLicense(${CMAKE_SOURCE_DIR}/LICENSE.txt Sourcetrail_license)
-	set(LICENSE_APP "{ \"Sourcetrail\", \"${Sourcetrail_VERSION}\", \"http://sourcetrail.de\", Sourcetrail_license }")
+	set(LICENSE_APP "{ \"Sourcetrail\", \"${Sourcetrail_VERSION}\", \"${Sourcetrail_HOMEPAGE_URL}\", Sourcetrail_license }")
 
 	AddLicense("Qt" "${Qt6_VERSION}" "https://www.qt.io/" "${LICENSEFOLDER}/license_qt.txt")
 	AddLicense("Boost" "${Boost_VERSION}" "https://www.boost.org/" "${LICENSEFOLDER}/license_boost.txt")

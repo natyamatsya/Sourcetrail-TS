@@ -5,11 +5,20 @@
 #include "Version.h"
 #include "utilityQt.h"
 #include "QtResources.h"
+#ifndef SRCTRL_MODULE_BUILD
+#include "utilityApp.h"
+#endif
 
 #include <QHBoxLayout>
 #include <QLabel>
 #include <QPushButton>
+#include <QUrl>
 #include <QVBoxLayout>
+
+// Imports come AFTER all textual #includes (include-before-import rule).
+#ifdef SRCTRL_MODULE_BUILD
+import srctrl.process;
+#endif
 
 using namespace utility;
 using namespace std::string_literals;
@@ -63,19 +72,21 @@ void QtAbout::setupAbout()
 
 		layoutHorz1->addStretch();
 
+		const QString homepage = QString::fromStdString(utility::getHomepageLink());
 		QLabel* developerLabel = new QLabel(
 			"<b>Authors:</b><br />"
-			"<a href=\"https://github.com/petermost/Sourcetrail/blob/master/docs/COATI_AUTHORS.txt\""
+			"<a href=\"" + homepage + "/blob/main/docs/COATI_AUTHORS.txt\""
 			"style=\"color: white;\">The Coati Software Developer</a><br />"
 			"<br />"
-			"<b>Maintainer:</b><br />"
-			"Peter Most<br />"
+			"<b>Based on:</b><br />"
+			"<a href=\"https://github.com/petermost/Sourcetrail\""
+			"style=\"color: white;\">Sourcetrail</a>, maintained by Peter Most<br />"
 			"<a href=\"https://www.pera-software.com\""
 			"style=\"color: white;\">PERA Software Solutions GmbH</a><br />"
 			"<br />"
 			"<b>Repository:</b><br />"
-			"<a href=\"http://sourcetrail.de\""
-			"style=\"color: white;\">sourcetrail.de</a><br />");
+			"<a href=\"" + homepage + "\""
+			"style=\"color: white;\">" + QUrl(homepage).host() + QUrl(homepage).path() + "</a><br />");
 
 		developerLabel->setObjectName(QStringLiteral("small"));
 		developerLabel->setOpenExternalLinks(true);

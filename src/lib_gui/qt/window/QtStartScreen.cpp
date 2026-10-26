@@ -6,6 +6,7 @@
 #include "ApplicationSettings.h"
 #include "MessageLoadProject.h"
 #include "ProjectSettings.h"
+#include "utilityApp.h"
 #endif
 #include "Application.h"
 #include "DialogView.h"
@@ -27,6 +28,7 @@
 // following BMI-merged declarations trips "cannot add 'abi_tag' in a redeclaration").
 #ifdef SRCTRL_MODULE_BUILD
 import srctrl.messaging;
+import srctrl.process;
 import srctrl.settings;
 #endif
 
@@ -127,7 +129,7 @@ QtStartScreen::QtStartScreen(QWidget *parent)
 		githubButton->setSizePolicy(QSizePolicy::Fixed, QSizePolicy::Fixed);
 		connect(githubButton, &QPushButton::clicked, []()
 		{
-			QDesktopServices::openUrl(QUrl(QStringLiteral("https://github.com/petermost/Sourcetrail"), QUrl::TolerantMode));
+			QDesktopServices::openUrl(QUrl(QString::fromStdString(utility::getHomepageLink()), QUrl::TolerantMode));
 		});
 
 		col->addWidget(githubButton);

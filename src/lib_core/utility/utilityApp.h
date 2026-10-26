@@ -27,6 +27,8 @@ struct ProcessOutput
 	std::string processInfo;
 };
 
+// This fork's repository (project(... HOMEPAGE_URL) in CMakeLists.txt), and pages in it.
+std::string getHomepageLink();
 std::string getDocumentationLink();
 
 std::string searchPath(const std::string& bin, bool& ok);
