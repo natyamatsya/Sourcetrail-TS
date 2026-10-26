@@ -349,6 +349,28 @@ int compositeLayer(const QWidget* window)
 	return 0;
 }
 
+// Every visible top-level window, in the order a composite paints them: the last is in front.
+// Within a layer the larger window goes behind (a wizard over the main window).
+QList<QWidget*> windowsBackToFront()
+{
+	QList<QWidget*> windows;
+	for (QWidget* topLevel: QApplication::topLevelWidgets())
+	{
+		if (topLevel->isVisible() && topLevel->isWindow() && !topLevel->size().isEmpty())
+		{
+			windows.append(topLevel);
+		}
+	}
+
+	const auto area = [](const QWidget* w) { return static_cast<qint64>(w->width()) * w->height(); };
+	std::stable_sort(windows.begin(), windows.end(), [&](const QWidget* a, const QWidget* b) {
+		const int layerA = compositeLayer(a);
+		const int layerB = compositeLayer(b);
+		return layerA != layerB ? layerA < layerB : area(a) > area(b);
+	});
+	return windows;
+}
+
 // "'title' 800x600 (modal)" for the capture message.
 std::string describeWindow(const QWidget* window)
 {
@@ -374,25 +396,11 @@ std::string describeWindow(const QWidget* window)
 CaptureResult captureScreen(
 	std::uint32_t maxWidth, std::int32_t regionX, std::int32_t regionY, std::int32_t regionW, std::int32_t regionH)
 {
-	QList<QWidget*> windows;
-	for (QWidget* topLevel: QApplication::topLevelWidgets())
-	{
-		if (topLevel->isVisible() && topLevel->isWindow() && !topLevel->size().isEmpty())
-		{
-			windows.append(topLevel);
-		}
-	}
+	const QList<QWidget*> windows = windowsBackToFront();
 	if (windows.isEmpty())
 	{
 		return {false, "no visible window to capture", {}, 0, 0};
 	}
-
-	const auto area = [](const QWidget* w) { return static_cast<qint64>(w->width()) * w->height(); };
-	std::stable_sort(windows.begin(), windows.end(), [&](const QWidget* a, const QWidget* b) {
-		const int layerA = compositeLayer(a);
-		const int layerB = compositeLayer(b);
-		return layerA != layerB ? layerA < layerB : area(a) > area(b);
-	});
 
 	QRect canvas;
 	qreal dpr = 1.0;
@@ -650,24 +658,16 @@ void postGesture(
 	QMetaObject::invokeMethod(qApp, std::move(delivered), Qt::QueuedConnection);
 }
 
-// The deepest visible widget under the global point, front window first: an open
-// popup (a menu), then the active modal window, then the others. Reaches widgets
-// with no accessible element of their own.
+// The deepest visible widget under the global point, in the window a frame shows in front
+// there (windowsBackToFront): a menu, a modal box, a wizard over the main window. Reaches
+// widgets with no accessible element of their own.
 QWidget* widgetAt(const QPoint& global)
 {
-	QList<QWidget*> windows;
-	if (QWidget* popup = QApplication::activePopupWidget())
+	const QList<QWidget*> windows = windowsBackToFront();
+	for (auto it = windows.rbegin(); it != windows.rend(); ++it)
 	{
-		windows.append(popup);
-	}
-	if (QWidget* modal = QApplication::activeModalWidget())
-	{
-		windows.append(modal);
-	}
-	windows.append(QApplication::topLevelWidgets());
-	for (QWidget* window: windows)
-	{
-		if (!window->isVisible() || !window->isWindow() || !window->geometry().contains(global))
+		QWidget* window = *it;
+		if (!window->geometry().contains(global))
 		{
 			continue;
 		}
