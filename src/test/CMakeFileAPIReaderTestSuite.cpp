@@ -247,13 +247,14 @@ TEST_CASE("CMakeFileAPIReader resolveBinaryDir expands environment and directory
 		{"name": "relative", "binaryDir": "build/../build/rel"}
 	]})");
 	const FilePath source{sourceDir.string()};
-	const std::string root{tempDirectory.getPath().string()};
+	// Generic form (forward slashes), as FilePath gives it on Windows too.
+	const std::string root{tempDirectory.getPath().generic_string()};
 
 	CHECK(CMakeFileAPIReader::resolveBinaryDir(source, "env").str() == root + "/out/env");
 	CHECK(CMakeFileAPIReader::resolveBinaryDir(source, "parent").str() == root + "/build-source");
 	CHECK(
 		CMakeFileAPIReader::resolveBinaryDir(source, "relative").str() ==
-		sourceDir.string() + "/build/rel");
+		sourceDir.generic_string() + "/build/rel");
 }
 
 TEST_CASE("CMakeFileAPIReader matchesTargetFilter takes several patterns")
@@ -603,7 +604,8 @@ TEST_CASE("CMakeFileAPIReader ensureReply reconfigures a stale reply when asked"
 	CMakeFileAPIReader reader{buildDir};
 	REQUIRE(reader.ensureReply({}, source, "dev").has_value());
 	REQUIRE(reader.hasReply());
-	CHECK(reader.getConfigurations().size() == 1);
+	// One with a single-config generator, several with Visual Studio's (Windows' default).
+	CHECK_FALSE(reader.getConfigurations().empty());
 
 	const auto targetNames = [&reader]() {
 		std::vector<std::string> names;

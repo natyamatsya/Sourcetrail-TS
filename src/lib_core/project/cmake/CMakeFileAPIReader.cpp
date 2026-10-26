@@ -1198,6 +1198,13 @@ CMakeFileAPIReader::GetSourcesExpected CMakeFileAPIReader::getSourcesDetailed(
 			continue;
 		}
 
+		// Targets the build system generator adds (ALL_BUILD, ZERO_CHECK of Visual Studio and
+		// Xcode) are not the project's: nothing to index, and noise in the target list.
+		if (targetNl->is_object() && targetNl->value("isGeneratorProvided", false))
+		{
+			continue;
+		}
+
 		const auto targetType{targetNl->value("type", std::string{})};
 
 		// The target's own build/source directories (`paths` in the target reply, relative to the
