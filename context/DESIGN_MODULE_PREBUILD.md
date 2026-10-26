@@ -63,12 +63,13 @@ the blocking spawn.
 - `manifest.json` — `{ "interfaceUnits": [str] }` (the module path is `cacheDir`, which the
   main process already knows, so it isn't echoed back)
 
-### Known limitation: module partitions
-Partition dependencies are tracked (`export module foo:part;` provides `foo:part`; `import :part;`
-resolves against the current module), so topo order is correct. But the on-disk BMI name sanitizes
-`:` to `-` (a `:` is illegal in a Windows path), and whether `-fprebuilt-module-path` resolves a
-partition BMI under that name is not verified — partition support is best-effort until exercised by
-the planned stress test.
+### Module partitions and implementation units
+`export module foo:part;` and `module foo:part;` (an implementation partition) both provide
+`foo:part` and get a BMI; `module foo;` (an implementation unit) requires `foo`; `import :part;`
+resolves against the module a unit belongs to, interface or implementation. The on-disk BMI name
+sanitizes `:` to `-` (`foo-part.pcm`), which is the name clang's `-fprebuilt-module-path` looks for
+a partition under -- verified with interface and implementation partitions (tests in
+CxxParserTestSuite build them with the runner).
 
 ## Phases
 
@@ -220,6 +221,23 @@ exempt (they aren't declarations). We confirmed no compiler flag (`-fmodules`,
 `-fbuiltin-headers-in-system-modules`, `-fmodules-local-submodule-visibility`) fixes the `getenv`
 visibility either. So **declaration-class** gaps can't be generalized into the shim; they're a
 source-level fix in the offending module's global fragment, which the diagnostics pipeline points at.
+
+### Exploratory-testing fixes (explore/modules)
+- **Every file goes to the prebuild, every time.** The compile-database group used to hand it only
+  the files a refresh re-indexes; a partial refresh then purged every BMI and built none. It now
+  prepares all compile commands and emits commands only for the files to index.
+- **Once per run.** The command hashes for flag-aware refresh are computed with
+  `RefreshInfo::buildPrerequisites = false`, which skips the prebuild (it used to run three times
+  per run: counting, the run, the hashes). Module flags are therefore not part of the hashes.
+- **std and its libc++.** The std BMIs are built against the libc++ the toolchain's `std.cppm`
+  ships with (`-nostdinc++ -isystem <prefix>/include/c++/v1`), and the manifest's `sharedFlags`
+  hands those flags to every BMI build and every TU of the group: a BMI only loads into a TU that
+  sees the same headers, and LLVM 23's std.cppm does not compile against the macOS SDK's libc++.
+- **Cycles** are reported per unbuilt unit in `manifest.failures` (the subprocess has no logger).
+- **Imports in the index** are recorded where they are written, from the module whose interface a
+  unit builds or else from the importing file, and never for imports deserialized from a BMI. The
+  refresh's import dependencies follow the import edge's location, so editing an interface
+  re-indexes its importers.
 
 ## Risks / notes
 - One extra process spawn per index of a module project (one-time, not per-TU), plus the
