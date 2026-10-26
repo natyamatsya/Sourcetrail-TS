@@ -464,6 +464,7 @@ void TaskBuildIndex::doExit(std::shared_ptr<Blackboard> blackboard)
 
 	while (fetchIntermediateStorages(blackboard))
 		;
+	handOnStorages(blackboard, true);	// the producers are done: the writer takes the rest
 
 	std::vector<FilePath> crashedFiles =
 		m_interprocessIndexingStatusManager.getCrashedSourceFilePaths();
@@ -918,30 +919,43 @@ bool TaskBuildIndex::fetchIntermediateStorages(std::shared_ptr<Blackboard> black
 		}
 	}
 
-	if (drained.empty())
-		return false;
-
-	// Now insert drained storages into the provider, throttling if it's full.
-	const int maxQueuedStoragesBeforePause = 30;
-	for (auto& storage: drained)
+	// Now hand them to the provider while the writer keeps up. What it cannot take yet
+	// waits here for a later update: no thread waits for the writer.
+	for (std::shared_ptr<IntermediateStorage>& storage: drained)
 	{
-		while (m_storageProvider->getStorageCount() > maxQueuedStoragesBeforePause)
-		{
-			// Writer back-pressure: the (serial) storage writer is behind. Counted
-			// as B2-gate evidence for the sharded-ingest decision.
-			m_throttleStallCount++;
-			m_throttleStallMs += 50;
-			std::this_thread::sleep_for(std::chrono::milliseconds(50));
-		}
-
-		m_storageProvider->insert(storage);
+		m_pendingStorages.push_back(std::move(storage));
+	}
+	const size_t handed = handOnStorages(blackboard, false);
+	if (!m_pendingStorages.empty())
+	{
+		// Writer back-pressure: the (serial) storage writer is behind, for an update's
+		// rest. Counted as B2-gate evidence for the sharded-ingest decision.
+		m_throttleStallCount++;
+		m_throttleStallMs += 50;
 	}
 
-	blackboard->update<int>(
-		"indexed_source_file_count",
-		[n = static_cast<int>(drained.size())](int count) { return count + n; });
+	return !drained.empty() || handed > 0;
+}
 
-	return true;
+size_t TaskBuildIndex::handOnStorages(const std::shared_ptr<Blackboard>& blackboard, bool all)
+{
+	// As many as the provider holds before the writer is considered behind.
+	const int maxQueuedStoragesBeforePause = 30;
+	size_t handed = 0;
+	while (!m_pendingStorages.empty() &&
+		   (all || m_storageProvider->getStorageCount() <= maxQueuedStoragesBeforePause))
+	{
+		m_storageProvider->insert(std::move(m_pendingStorages.front()));
+		m_pendingStorages.pop_front();
+		handed++;
+	}
+
+	if (handed > 0)
+	{
+		blackboard->update<int>(
+			"indexed_source_file_count", [n = static_cast<int>(handed)](int count) { return count + n; });
+	}
+	return handed;
 }
 
 void TaskBuildIndex::updateIndexingDialog(std::shared_ptr<Blackboard> blackboard, const std::vector<FilePath>& sourcePaths)

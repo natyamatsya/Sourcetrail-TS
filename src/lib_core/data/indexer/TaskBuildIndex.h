@@ -13,6 +13,7 @@
 #include <atomic>
 #include <chrono>
 #include <condition_variable>
+#include <deque>
 #include <map>
 #include <memory>
 #include <mutex>
@@ -87,7 +88,10 @@ protected:
 	// Interrupts the run: no more launches, the subprocesses killed.
 	void interruptAll();
 	void killProcesses();
+	// Drains the subprocesses' storages and hands them on; whether any came or went.
 	bool fetchIntermediateStorages(std::shared_ptr<Blackboard> blackboard);
+	// Hands pending storages to the provider: while the writer keeps up, or `all`.
+	size_t handOnStorages(const std::shared_ptr<Blackboard>& blackboard, bool all);
 	void logIndexingSummary(const std::shared_ptr<Blackboard>& blackboard) const;
 	void updateIndexingDialog(
 		std::shared_ptr<Blackboard> blackboard, const std::vector<FilePath>& sourcePaths);
@@ -125,6 +129,9 @@ protected:
 	std::chrono::steady_clock::time_point m_indexingStartTime;
 	size_t m_throttleStallCount = 0;
 	long long m_throttleStallMs = 0;
+
+	// Drained, not yet handed to the provider: the writer was behind.
+	std::deque<std::shared_ptr<IntermediateStorage>> m_pendingStorages;
 
 	// Runs the indexer subprocesses and tells when each ended, from one thread.
 	// Created as indexing starts.
