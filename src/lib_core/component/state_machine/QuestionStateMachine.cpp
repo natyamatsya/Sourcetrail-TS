@@ -41,6 +41,12 @@ QuestionSender QuestionStateMachine::asked(
 	{
 		self = std::shared_ptr<QuestionStateMachine>(std::shared_ptr<void>(), this);
 	}
+	// A notice (DialogView::notify, a confirm without options) has an OK button: the
+	// box adds one. Without it among the options an agent could not answer it at all.
+	if (options.empty())
+	{
+		options = {"OK"};
+	}
 	return QuestionSender(std::move(self), std::move(text), std::move(options), presenter);
 }
 

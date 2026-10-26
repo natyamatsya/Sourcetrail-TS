@@ -203,6 +203,22 @@ TEST_CASE("state machine moves only along its table")
 	REQUIRE(machine.revision() == 2);
 }
 
+TEST_CASE("a notice without options is answered with OK")
+{
+	QuestionStateMachine machine;
+	FakeQuestionPresenter presenter;
+
+	std::future<int> answer = std::async(std::launch::async, [&]() {
+		return machine.ask("Please restart the application.", {}, presenter);
+	});
+	REQUIRE(eventually([&]() { return machine.snapshot().state == "asking"; }));
+	REQUIRE(contains(machine.snapshot().context, R"("options":["OK"])"));
+
+	REQUIRE(machine.fire("answer", R"({"label":"OK"})", EventSource::Agent).ok);
+	REQUIRE(answer.get() == 0);
+	REQUIRE(machine.snapshot().state == "idle");
+}
+
 TEST_CASE("question waits for an answer from remote control")
 {
 	QuestionStateMachine machine;
