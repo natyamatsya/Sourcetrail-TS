@@ -623,6 +623,25 @@ TEST_CASE("CMakeFileAPIReader ensureReply reconfigures a stale reply when asked"
 	CHECK(std::find(names.begin(), names.end(), "second") != names.end());
 }
 
+TEST_CASE("CMakeFileAPIReader ensureReply configures a build directory without a preset")
+{
+	if (!hasCMake())
+		SKIP("cmake is not on PATH");
+
+	namespace fs = std::filesystem;
+	const TestTempDirectory tempDirectory{"ensureReplyNoPreset"};
+	const fs::path sourceDir = tempDirectory.getPath() / "source";
+	fs::create_directories(sourceDir);	// no CMakePresets.json
+	std::ofstream{sourceDir / "CMakeLists.txt"}
+		<< "cmake_minimum_required(VERSION 3.21)\nproject(probe NONE)\nadd_custom_target(only)\n";
+
+	const FilePath buildDir{(tempDirectory.getPath() / "elsewhere" / "build").string()};
+	CMakeFileAPIReader reader{buildDir};
+	REQUIRE(reader.ensureReply({}, FilePath{sourceDir.string()}, {}).has_value());
+	REQUIRE(reader.hasReply());	// cmake -S <source> -B <build> made the directory
+	CHECK(reader.getSourcesDetailed()->targets.size() == 1);
+}
+
 TEST_CASE("CMakeFileAPIReader ensureReply returns CMake's error when configuring fails")
 {
 	if (!hasCMake())

@@ -7,6 +7,10 @@
 
 FilePath SourceGroupSettingsWithCxxCMakeBuildDirectory::resolveBuildDirectory() const
 {
+	if (m_presetName.empty())
+	{
+		return getBuildDirectoryExpandedAndAbsolute();
+	}
 	return CMakeFileAPIReader::resolveBinaryDir(
 		getSourceDirectoryExpandedAndAbsolute(), m_presetName);
 }

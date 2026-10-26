@@ -32,6 +32,24 @@ inline void SourceGroupSettingsWithCxxCMakeBuildDirectory::setSourceDirectory(co
 	m_sourceDirectory = path;
 }
 
+inline FilePath SourceGroupSettingsWithCxxCMakeBuildDirectory::getBuildDirectory() const
+{
+	return m_buildDirectory;
+}
+
+inline FilePath SourceGroupSettingsWithCxxCMakeBuildDirectory::getBuildDirectoryExpandedAndAbsolute() const
+{
+	return m_buildDirectory.empty()
+		? FilePath{}
+		: utility::getExpandedAndAbsolutePath(
+			  getBuildDirectory(), getProjectSettings()->getProjectDirectoryPath());
+}
+
+inline void SourceGroupSettingsWithCxxCMakeBuildDirectory::setBuildDirectory(const FilePath& path)
+{
+	m_buildDirectory = path;
+}
+
 inline const std::string& SourceGroupSettingsWithCxxCMakeBuildDirectory::getPresetName() const
 {
 	return m_presetName;
@@ -66,7 +84,8 @@ inline bool SourceGroupSettingsWithCxxCMakeBuildDirectory::equals(const SourceGr
 {
 	const auto* o = dynamic_cast<const SourceGroupSettingsWithCxxCMakeBuildDirectory*>(other);
 	return o && m_sourceDirectory == o->m_sourceDirectory && m_presetName == o->m_presetName &&
-		m_targetGlob == o->m_targetGlob && m_configuration == o->m_configuration;
+		m_buildDirectory == o->m_buildDirectory && m_targetGlob == o->m_targetGlob &&
+		m_configuration == o->m_configuration;
 }
 
 inline void SourceGroupSettingsWithCxxCMakeBuildDirectory::load(
@@ -75,6 +94,8 @@ inline void SourceGroupSettingsWithCxxCMakeBuildDirectory::load(
 	setSourceDirectory(
 		FilePath(config->getValueOrDefault(key + "/cmake/source_directory", std::string{})));
 	m_presetName = config->getValueOrDefault(key + "/cmake/preset_name", std::string{});
+	m_buildDirectory =
+		FilePath(config->getValueOrDefault(key + "/cmake/build_directory", std::string{}));
 	m_targetGlob = config->getValueOrDefault(key + "/cmake/target_glob", std::string{});
 	m_configuration = config->getValueOrDefault(key + "/cmake/configuration", std::string{});
 }
@@ -84,6 +105,7 @@ inline void SourceGroupSettingsWithCxxCMakeBuildDirectory::save(
 {
 	config->setValue(key + "/cmake/source_directory", getSourceDirectory().str());
 	config->setValue(key + "/cmake/preset_name", m_presetName);
+	config->setValue(key + "/cmake/build_directory", m_buildDirectory.str());
 	config->setValue(key + "/cmake/target_glob", m_targetGlob);
 	config->setValue(key + "/cmake/configuration", m_configuration);
 }

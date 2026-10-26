@@ -54,8 +54,12 @@ private:
 		std::size_t sourceFileCount{0};
 	};
 
-	void repopulatePresets(const QString& sourceDir, const std::string& presetToKeep);
-	std::string selectedPreset() const;
+	// Lists the source directory's presets, keeping `presetToKeep` (or the "no preset"
+	// choice) selected.
+	void repopulatePresets(
+		const QString& sourceDir, const std::string& presetToKeep, bool withoutPreset = false);
+	std::string selectedPreset() const;	// empty for none, and for "No preset"
+	bool noPresetSelected() const;
 	// The build directory of the selected preset, and what its reply has.
 	void readBuildDirectory();
 	void readTargets();
@@ -71,6 +75,7 @@ private:
 	QtLocationPicker* m_sourceDirPicker = nullptr;
 	QComboBox* m_presetCombo = nullptr;
 	QLabel* m_presetStatusLabel = nullptr;
+	QtLocationPicker* m_buildDirPicker = nullptr;	// without a preset
 	QLabel* m_buildDirLabel = nullptr;
 	QPushButton* m_runCMakeButton = nullptr;
 	QComboBox* m_configurationCombo = nullptr;

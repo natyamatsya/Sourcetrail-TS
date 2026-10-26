@@ -616,6 +616,13 @@ std::expected<void, CMakeFileAPIReader::ConfigureError> CMakeFileAPIReader::ensu
 		args << QStringLiteral("-S") << QString::fromStdString(sourceDir.str())
 			 << QStringLiteral("--preset") << QString::fromStdString(presetName);
 	}
+	else if (!sourceDir.empty())
+	{
+		// No preset: the build directory as given.
+		proc.setWorkingDirectory(QString::fromStdString(sourceDir.str()));
+		args << QStringLiteral("-S") << QString::fromStdString(sourceDir.str())
+			 << QStringLiteral("-B") << QString::fromStdString(m_buildDir.str());
+	}
 	else
 	{
 		// Legacy fallback: cmake <buildDir>

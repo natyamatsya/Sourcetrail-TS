@@ -142,10 +142,21 @@ void QtProjectWizardContentPathCMakeFileAPI::populate(QGridLayout* layout, int& 
 		QLabel* label = createFormSubLabel(QStringLiteral("Build Directory"));	// shown, not set
 		layout->addWidget(label, row, QtProjectWizardWindow::FRONT_COL, Qt::AlignRight);
 
-		m_buildDirLabel = new QLabel(QLatin1String(""), this);
+		// With a preset its binaryDir, shown; without one a directory to pick.
+		QWidget* buildDir = new QWidget(this);
+		QVBoxLayout* buildDirLayout = new QVBoxLayout(buildDir);
+		buildDirLayout->setContentsMargins(0, 0, 0, 0);
+		m_buildDirPicker = new QtLocationPicker(buildDir);
+		m_buildDirPicker->setPickDirectory(true);
+		m_buildDirPicker->setPlaceholderText(QStringLiteral(
+			"A configured build directory, or where CMake should configure the project"));
+		buildDirLayout->addWidget(m_buildDirPicker);
+		m_buildDirLabel = new QLabel(QLatin1String(""), buildDir);
 		m_buildDirLabel->setWordWrap(true);
 		m_buildDirLabel->setTextInteractionFlags(Qt::TextSelectableByMouse);
-		layout->addWidget(m_buildDirLabel, row, QtProjectWizardWindow::BACK_COL);
+		buildDirLayout->addWidget(m_buildDirLabel);
+		layout->addWidget(buildDir, row, QtProjectWizardWindow::BACK_COL);
+		connect(m_buildDirPicker, &QtLocationPicker::textChanged, this, [this]() { readBuildDirectory(); });
 		row++;
 
 		QHBoxLayout* buttons = new QHBoxLayout();
@@ -282,10 +293,16 @@ void QtProjectWizardContentPathCMakeFileAPI::load()
 	m_configurationCombo->blockSignals(false);
 	m_targetFilterEdit->setText(QString::fromStdString(m_settings->getTargetGlob()));
 
-	repopulatePresets(sourceDir, m_settings->getPresetName());
+	m_buildDirPicker->blockSignals(true);
+	m_buildDirPicker->setText(QString::fromStdString(m_settings->getBuildDirectory().str()));
+	m_buildDirPicker->blockSignals(false);
 
-	// Without a preset yet the first one (in file order) is selected: the settings say
-	// so too, so what an agent reads is what a person sees.
+	// A group without a preset but with a build directory keeps using it; otherwise
+	// the first preset (in file order) is selected, and the settings say so too, so
+	// what an agent reads is what a person sees.
+	const bool withoutPreset{
+		m_settings->getPresetName().empty() && !m_settings->getBuildDirectory().empty()};
+	repopulatePresets(sourceDir, withoutPreset ? std::string{} : m_settings->getPresetName(), withoutPreset);
 	if (m_settings->getPresetName().empty())
 	{
 		m_settings->setPresetName(selectedPreset());
@@ -296,6 +313,7 @@ void QtProjectWizardContentPathCMakeFileAPI::save()
 {
 	m_settings->setSourceDirectory(FilePath(m_sourceDirPicker->getText().toStdString()));
 	m_settings->setPresetName(selectedPreset());
+	m_settings->setBuildDirectory(FilePath(m_buildDirPicker->getText().trimmed().toStdString()));
 	m_settings->setConfiguration(m_configurationCombo->currentText().trimmed().toStdString());
 	m_settings->setTargetGlob(m_targetFilterEdit->text().trimmed().toStdString());
 }
@@ -313,15 +331,13 @@ bool QtProjectWizardContentPathCMakeFileAPI::check()
 	}
 
 	const std::string presetName{selectedPreset()};
-	if (presetName.empty())
+	if (presetName.empty() && m_buildDir.empty())
 	{
-		return fail(
-			m_presets.empty()
-				? QStringLiteral("The CMake source directory has no configure presets "
-								 "(CMakePresets.json or CMakeUserPresets.json).")
-				: QStringLiteral("Please select a configure preset."));
+		return fail(QStringLiteral(
+			"Please choose a build directory: one CMake has configured already, or where "
+			"Sourcetrail lets CMake configure the project."));
 	}
-	if (!std::ranges::contains(m_presets, presetName, &CMakeFileAPIReader::PresetInfo::name))
+	if (!presetName.empty() && !std::ranges::contains(m_presets, presetName, &CMakeFileAPIReader::PresetInfo::name))
 	{
 		std::vector<std::string> names{};
 		for (const CMakeFileAPIReader::PresetInfo& preset: m_presets)
@@ -335,7 +351,7 @@ bool QtProjectWizardContentPathCMakeFileAPI::check()
 			utility::join(names, std::string{", "}))));
 	}
 
-	if (m_buildDir.empty())
+	if (m_buildDir.empty())	// a preset's: without one the build directory was checked above
 	{
 		return fail(QString::fromStdString(std::format(
 			"The configure preset \"{}\" has no binaryDir, so its build directory is unknown. "
@@ -383,7 +399,13 @@ void QtProjectWizardContentPathCMakeFileAPI::describe(ProjectWizardView& view) c
 		}
 		presets.push_back({.value = preset.name, .label = label});
 	}
-	view.notes["cmake_preset"] = std::format("build directory: {}", buildDirectoryNote().toStdString());
+	presets.push_back(
+		{.value = "", .label = "no preset: CMake configures cmake_build_directory with -S/-B"});
+	view.notes["cmake_preset"] = !noPresetSelected()
+		? std::format("build directory: {}", buildDirectoryNote().toStdString())
+		: m_buildDir.empty()
+		? std::string{"no preset, and no cmake_build_directory chosen yet"}
+		: std::format("no preset; build directory {}: {}", m_buildDir.str(), buildDirectoryNote().toStdString());
 
 	if (!m_hasReply)
 	{
@@ -413,12 +435,12 @@ void QtProjectWizardContentPathCMakeFileAPI::describe(ProjectWizardView& view) c
 
 void QtProjectWizardContentPathCMakeFileAPI::onSourceDirChanged(const QString& text)
 {
-	repopulatePresets(text, selectedPreset());
+	repopulatePresets(text, selectedPreset(), noPresetSelected());
 }
 
 void QtProjectWizardContentPathCMakeFileAPI::onRefreshPresets()
 {
-	repopulatePresets(m_sourceDirPicker->getText(), selectedPreset());
+	repopulatePresets(m_sourceDirPicker->getText(), selectedPreset(), noPresetSelected());
 }
 
 void QtProjectWizardContentPathCMakeFileAPI::onPresetChanged()
@@ -426,7 +448,17 @@ void QtProjectWizardContentPathCMakeFileAPI::onPresetChanged()
 	const int index{m_presetCombo->currentIndex()};
 	const std::string presetName{selectedPreset()};
 	const auto preset{std::ranges::find(m_presets, presetName, &CMakeFileAPIReader::PresetInfo::name)};
-	if (index >= 0 && preset == m_presets.end())
+	if (noPresetSelected())
+	{
+		m_presetStatusLabel->setText(
+			m_presets.empty()
+				? QStringLiteral("The source directory has no CMakePresets.json: Sourcetrail uses "
+								 "the build directory below. It runs <tt>cmake -S &lt;source&gt; -B "
+								 "&lt;build&gt;</tt> when the build directory has no File API reply.")
+				: QStringLiteral("Sourcetrail uses the build directory below and runs <tt>cmake -S "
+								 "&lt;source&gt; -B &lt;build&gt;</tt> when it has no File API reply."));
+	}
+	else if (index >= 0 && preset == m_presets.end())
 	{
 		m_presetStatusLabel->setText(QStringLiteral(
 			"<span style=\"color:red\">Not one of the presets of the source directory.</span>"));
@@ -513,7 +545,7 @@ void QtProjectWizardContentPathCMakeFileAPI::onRunCMake()
 }
 
 void QtProjectWizardContentPathCMakeFileAPI::repopulatePresets(
-	const QString& sourceDir, const std::string& presetToKeep)
+	const QString& sourceDir, const std::string& presetToKeep, const bool withoutPreset)
 {
 	m_sourceDir = utility::getExpandedAndAbsolutePath(
 		FilePath(sourceDir.toStdString()), m_settings->getProjectDirectoryPath());
@@ -538,9 +570,14 @@ void QtProjectWizardContentPathCMakeFileAPI::repopulatePresets(
 			QString::fromStdString(std::format("{} (not found)", presetToKeep)),
 			QString::fromStdString(presetToKeep));
 	}
+	if (!m_sourceDir.empty() && m_sourceDir.exists())
+	{
+		m_presetCombo->addItem(QStringLiteral("No preset: the build directory below"), QString{});
+	}
 	m_presetCombo->setCurrentIndex(
-		presetToKeep.empty() ? (m_presetCombo->count() > 0 ? 0 : -1)
-							 : m_presetCombo->findData(QString::fromStdString(presetToKeep)));
+		withoutPreset || m_presets.empty() ? m_presetCombo->count() - 1
+		: presetToKeep.empty()             ? 0
+							   : m_presetCombo->findData(QString::fromStdString(presetToKeep)));
 	m_presetCombo->blockSignals(false);
 
 	if (m_sourceDir.empty() || !m_sourceDir.exists())
@@ -554,12 +591,6 @@ void QtProjectWizardContentPathCMakeFileAPI::repopulatePresets(
 		return;
 	}
 	onPresetChanged();
-	if (m_presets.empty())
-	{
-		m_presetStatusLabel->setText(QStringLiteral(
-			"No configure presets found. Make sure CMakePresets.json exists in the source "
-			"directory."));
-	}
 }
 
 std::string QtProjectWizardContentPathCMakeFileAPI::selectedPreset() const
@@ -567,12 +598,29 @@ std::string QtProjectWizardContentPathCMakeFileAPI::selectedPreset() const
 	return m_presetCombo->currentData().toString().toStdString();
 }
 
+bool QtProjectWizardContentPathCMakeFileAPI::noPresetSelected() const
+{
+	return m_presetCombo->currentIndex() >= 0 && selectedPreset().empty();
+}
+
 void QtProjectWizardContentPathCMakeFileAPI::readBuildDirectory()
 {
 	const std::string presetName{selectedPreset()};
-	m_buildDir = presetName.empty() || m_sourceDir.empty()
-		? FilePath{}
-		: CMakeFileAPIReader::resolveBinaryDir(m_sourceDir, presetName);
+	const QString pickedBuildDir{m_buildDirPicker->getText().trimmed()};
+	if (noPresetSelected())
+	{
+		m_buildDir = pickedBuildDir.isEmpty()
+			? FilePath{}
+			: utility::getExpandedAndAbsolutePath(
+				  FilePath(pickedBuildDir.toStdString()), m_settings->getProjectDirectoryPath());
+	}
+	else
+	{
+		m_buildDir = presetName.empty() || m_sourceDir.empty()
+			? FilePath{}
+			: CMakeFileAPIReader::resolveBinaryDir(m_sourceDir, presetName);
+	}
+	m_buildDirPicker->setVisible(noPresetSelected());
 	m_hasReply = !m_buildDir.empty() && CMakeFileAPIReader{m_buildDir}.hasReply();
 
 	m_buildDirLabel->setText(buildDirectoryNote().toHtmlEscaped());
@@ -694,7 +742,13 @@ QString QtProjectWizardContentPathCMakeFileAPI::buildDirectoryNote() const
 	const std::string presetName{selectedPreset()};
 	if (presetName.empty())
 	{
-		return {};
+		if (!noPresetSelected() || m_buildDir.empty())
+		{
+			return {};
+		}
+		return m_runningCMake ? QStringLiteral("Running CMake...")
+			: m_hasReply      ? QStringLiteral("Configured.")
+							  : QStringLiteral("Not configured yet: Sourcetrail runs CMake when indexing.");
 	}
 	if (!std::ranges::contains(m_presets, presetName, &CMakeFileAPIReader::PresetInfo::name))
 	{

@@ -139,6 +139,10 @@ const std::vector<Field>& fields()
 			"cmake_preset",
 			[](const CMake& c) { return c.getPresetName(); },
 			[](CMake& c, const std::string& v) { c.setPresetName(v); }),
+		pathField<CMake>(
+			"cmake_build_directory",
+			[](const CMake& c) { return c.getBuildDirectory(); },
+			[](CMake& c, const FilePath& v) { c.setBuildDirectory(v); }),
 		field<CMake, std::string>(
 			"cmake_target_glob",
 			[](const CMake& c) { return c.getTargetGlob(); },

@@ -24,8 +24,14 @@ public:
 	const std::string& getPresetName() const;
 	void setPresetName(const std::string& name);
 
-	// Resolves the binary directory by running cmake -S <sourceDir> --preset <presetName> -N.
-	// Returns an empty FilePath on failure.
+	// The build directory to use without a preset (a project without CMakePresets.json):
+	// configured with `cmake -S <sourceDir> -B <buildDir>`, or already configured.
+	FilePath getBuildDirectory() const;
+	FilePath getBuildDirectoryExpandedAndAbsolute() const;
+	void setBuildDirectory(const FilePath& path);
+
+	// The build directory used: the preset's binaryDir, or without a preset the build
+	// directory above. Returns an empty FilePath when it cannot be resolved.
 	FilePath resolveBuildDirectory() const;
 
 	// Optional: restrict indexing to targets matching this glob (e.g. "MyLib*").
@@ -44,6 +50,7 @@ protected:
 private:
 	FilePath m_sourceDirectory;
 	std::string m_presetName;
+	FilePath m_buildDirectory;
 	std::string m_targetGlob;
 	std::string m_configuration;
 };

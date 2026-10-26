@@ -172,6 +172,8 @@ public:
 	// Writes the query file and, if there is no reply yet or `reconfigure` is set,
 	// runs CMake to (re)generate it. When sourceDir and presetName are provided, runs:
 	//   cmake -S <sourceDir> --preset <presetName>
+	// with sourceDir alone:
+	//   cmake -S <sourceDir> -B <buildDir>
 	// Otherwise falls back to:
 	//   cmake <buildDir>
 	// progress() is called with status messages during the cmake run.

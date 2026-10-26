@@ -75,8 +75,12 @@ std::vector<FilePath> QtProjectWizardContentPathsIndexedHeaders::getIndexedPaths
 std::vector<FilePath> QtProjectWizardContentPathsIndexedHeaders::getIndexedPathsDerivedFromCMake(
 	const SourceGroupSettingsWithCxxCMakeBuildDirectory& settings)
 {
-	const FilePath buildDir{CMakeFileAPIReader::resolveBinaryDir(
-		settings.getSourceDirectoryExpandedAndAbsolute(), settings.getPresetName())};
+	// resolveBuildDirectory() spelled out: it is a classic-only member (module builds).
+	const FilePath buildDir{
+		settings.getPresetName().empty()
+			? settings.getBuildDirectoryExpandedAndAbsolute()
+			: CMakeFileAPIReader::resolveBinaryDir(
+				  settings.getSourceDirectoryExpandedAndAbsolute(), settings.getPresetName())};
 	if (buildDir.empty())
 	{
 		return {};
@@ -236,11 +240,9 @@ void QtProjectWizardContentPathsIndexedHeaders::buttonClicked()
 		const std::vector<FilePath> paths{getIndexedPathsDerivedFromCMake(*cmakeSettings)};
 		if (paths.empty())
 		{
-			m_window->tell(QString::fromStdString(std::format(
-				"The build directory of the preset \"{}\" has no CMake File API reply to select "
-				"from yet. Press \"Run CMake\" above (or index the project once), then select "
-				"again.",
-				cmakeSettings->getPresetName())));
+			m_window->tell(QStringLiteral(
+				"The build directory has no CMake File API reply to select from yet. Press \"Run "
+				"CMake\" above (or index the project once), then select again."));
 			return;
 		}
 		showSelectPathsDialog(

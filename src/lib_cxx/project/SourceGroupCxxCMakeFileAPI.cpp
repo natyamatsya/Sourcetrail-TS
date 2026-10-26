@@ -410,29 +410,36 @@ std::expected<void, PrepareIndexingError> SourceGroupCxxCMakeFileAPI::prepareInd
 
 	if (sourceDir.empty() || !sourceDir.exists())
 	{
-		MessageStatus(
-			"Can't refresh project. The CMake source directory does not exist: " + sourceDir.str(),
-			true)
-			.dispatch();
+		const std::string message{std::format(
+			"Can't refresh project. The CMake source directory does not exist: {}", sourceDir.str())};
+		MessageStatus(message, true).dispatch();
+		Application::getInstance()->showNotice(message, {"OK"});
 		return std::unexpected(PrepareIndexingError::SourcePathMissing);
 	}
 
-	if (presetName.empty())
+	if (presetName.empty() && m_settings->getBuildDirectory().empty())
 	{
-		MessageStatus("Can't refresh project. No CMake preset configured.", true).dispatch();
+		const std::string message{
+			"Can't refresh project. The CMake source group has neither a configure preset nor a "
+			"build directory."};
+		MessageStatus(message, true).dispatch();
+		Application::getInstance()->showNotice(message, {"OK"});
 		return std::unexpected(PrepareIndexingError::ConfigurationIncomplete);
 	}
 
-	MessageStatus("Resolving CMake build directory for preset '" + presetName + "'...", false, true)
+	const std::string configuredBy{
+		presetName.empty() ? std::string{"the build directory"} : std::format("preset '{}'", presetName)};
+	MessageStatus(std::format("Resolving the CMake build directory of {}...", configuredBy), false, true)
 		.dispatch();
 	const FilePath buildDir{getCachedBuildDir()};
 	if (buildDir.empty())
 	{
-		MessageStatus(
-			"Can't refresh project. Failed to resolve build directory for preset '" + presetName +
-			"'.",
-			true)
-			.dispatch();
+		const std::string message{std::format(
+			"Can't refresh project. Failed to resolve the CMake build directory of {}: it has no "
+			"binaryDir.",
+			configuredBy)};
+		MessageStatus(message, true).dispatch();
+		Application::getInstance()->showNotice(message, {"OK"});
 		return std::unexpected(PrepareIndexingError::ConfigurationIncomplete);
 	}
 
@@ -465,7 +472,7 @@ std::expected<void, PrepareIndexingError> SourceGroupCxxCMakeFileAPI::prepareInd
 			.dispatch();
 		// CMake's own error, where a person sees it (and an agent, as a question).
 		std::string notice{
-			std::format("Can't refresh project: {} with preset '{}'.", to_std_sv(code), presetName)};
+			std::format("Can't refresh project: {} with {}.", to_std_sv(code), configuredBy)};
 		if (!cmakeError.empty())
 			notice += std::format("\n\n{}", cmakeError);
 		Application::getInstance()->showNotice(notice, {"OK"});
