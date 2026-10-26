@@ -242,6 +242,31 @@ named `QtCodeNavigator::scrollTo`'s deferred lambda calling into a destroyed vie
 (`_purecall`), a context-less `QTimer::singleShot`. The same 20-run sequence then
 showed the fix: 10 crashes before, none after.
 
+## Testing a bridge build directly
+
+An MCP client keeps the bridge it started, so a bridge you just built or changed is
+not what its tools reach. `scripts/mcp_call.py` drives any `sourcetrail-mcp` binary
+over stdio instead, which is how exploratory testers check a fix to the bridge in
+their own worktree before anyone reloads it:
+
+```sh
+scripts/mcp_call.py --images shots target/release/sourcetrail-mcp \
+  '[["instance_start", {"id": "t1", "bin": "/path/to/build/app/Sourcetrail"}], ["ui_frame", {"instance": "t1"}]]'
+```
+
+Calls are a JSON list of `[tool, args]`, `@file` with one, or `-` for one per stdin
+line. The bridge stops the instances it started when it exits, so explore step by
+step with one bridge fed from a file you append to:
+
+```sh
+tail -n +1 -f calls.jsonl | scripts/mcp_call.py --images shots --log bridge.log \
+  target/release/sourcetrail-mcp - > replies.txt &
+echo '["ui_frame", {"instance": "t1"}]' >> calls.jsonl
+```
+
+Replies print as `== tool args ok|refused|ERROR` and their text; screenshots
+(`ui_frame`, `ui_capture`) land in `--images` as PNG files. It exits 1 if a call failed.
+
 ## Status
 
 Verified against the rel-cxx and reldbg builds on Windows, headless. Not yet
