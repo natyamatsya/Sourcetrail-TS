@@ -170,6 +170,12 @@ QtHistoryList::QtHistoryList(const std::vector<SearchMatch> &history, size_t cur
 		QListWidgetItem *item = new QListWidgetItem(m_list);
 		QtHistoryItem *line = new QtHistoryItem(history[i], i, i == currentIndex);
 		item->setSizeHint(line->getSizeHint());
+		// Its widget draws the row; the item names it for agents and screen readers.
+		item->setData(Qt::AccessibleTextRole, QString::fromStdString(history[i].getFullName()));
+		if (i == currentIndex)
+		{
+			item->setData(Qt::AccessibleDescriptionRole, tr("current"));
+		}
 		m_list->setItemWidget(item, line);
 	}
 
