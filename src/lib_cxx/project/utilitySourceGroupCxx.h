@@ -3,6 +3,7 @@
 
 #include <cstdint>
 #include <expected>
+#include <functional>
 #include <memory>
 #include <string>
 #include <string_view>
@@ -18,7 +19,6 @@ class DialogView;
 class FilePath;
 class SourceGroupSettingsWithCxxPchOptions;
 class StorageProvider;
-class Task;
 
 namespace utility
 {
@@ -30,7 +30,7 @@ namespace utility
 //! indexes the header's symbols into `storageProvider` exactly once (translation
 //! units skip re-recording PCH-loaded declarations), so a reused PCH would leave
 //! those symbols missing whenever the database was rebuilt from empty.
-std::shared_ptr<Task> createBuildPchTaskForInput(
+std::function<void()> createBuildPchWorkForInput(
 	const FilePath& pchInputFilePath,
 	const FilePath& pchOutputFilePath,
 	std::vector<std::string> compilerFlags,
@@ -38,7 +38,7 @@ std::shared_ptr<Task> createBuildPchTaskForInput(
 	std::shared_ptr<StorageProvider> storageProvider,
 	std::shared_ptr<DialogView> dialogView);
 
-std::shared_ptr<Task> createBuildPchTask(
+std::function<void()> createBuildPchWork(
 	const SourceGroupSettingsWithCxxPchOptions* settings,
 	std::vector<std::string> compilerFlags,
 	std::shared_ptr<StorageProvider> storageProvider,

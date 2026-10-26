@@ -1,6 +1,7 @@
 #ifndef SOURCE_GROUP_CXX_CMAKE_FILE_API_H
 #define SOURCE_GROUP_CXX_CMAKE_FILE_API_H
 
+#include <functional>
 #include <memory>
 #include <set>
 #include <string>
@@ -13,7 +14,6 @@
 class DialogView;
 class SourceGroupSettingsCxxCMakeFileAPI;
 class StorageProvider;
-class Task;
 
 class SourceGroupCxxCMakeFileAPI : public SourceGroup
 {
@@ -33,7 +33,7 @@ public:
 	//! Zero-config PCH: builds one Sourcetrail precompiled header per distinct
 	//! target_precompile_headers input (+ flags) before indexing, so the heavy
 	//! header is parsed once instead of per translation unit.
-	std::shared_ptr<Task> getPreIndexTask(
+	std::function<void()> getPreIndexWork(
 		std::shared_ptr<StorageProvider> storageProvider,
 		std::shared_ptr<DialogView> dialogView) const override;
 

@@ -7,7 +7,6 @@
 #include "MessageIndexingInterrupted.h"
 #include "MessageListener.h"
 #include "StdexecPrelude.h"	// stdexec::inplace_stop_source / inplace_stop_callback
-#include "Task.h"
 #include "InterprocessBackend.h"
 
 #include <atomic>
@@ -21,13 +20,16 @@
 
 #include "ProcessMonitor.h"
 
+#include <exec/task.hpp>
+
 class DialogView;
 class StorageProvider;
 class IndexerCommandList;
+struct IndexingRunState;
 
-class TaskBuildIndex
-	: public Task
-	, public MessageListener<MessageIndexingInterrupted>
+// The indexing stream: runs the indexer subprocesses on the command queue's commands,
+// and hands what they stored on to the merge and the writer.
+class TaskBuildIndex: public MessageListener<MessageIndexingInterrupted>
 {
 public:
 	//! A non-empty cxxClusterPlan (fan-out S3) overrides processCount: one C++
@@ -50,12 +52,21 @@ public:
 
 	~TaskBuildIndex() override;
 
+	//! Starts the indexers, looks at them every 50 ms until the queue is done (or the
+	//! run interrupted) and they ended, and hands on the rest. Throws when it failed.
+	//! Stopped, it ends at once: its destructor stops what still runs.
+	exec::task<void> run(IndexingRunState& state);
+
 protected:
-	void doEnter(std::shared_ptr<Blackboard> blackboard) override;
-	TaskState doUpdate(std::shared_ptr<Blackboard> blackboard) override;
-	void doExit(std::shared_ptr<Blackboard> blackboard) override;
-	void doReset(std::shared_ptr<Blackboard> blackboard) override;
-	void terminate() override;
+	enum class Look
+	{
+		Running,
+		Done,
+		Failed
+	};
+	void start(IndexingRunState& state);
+	Look look(IndexingRunState& state);
+	void end(IndexingRunState& state);
 
 	void handleMessage(MessageIndexingInterrupted* message) override;
 
@@ -89,12 +100,11 @@ protected:
 	void interruptAll();
 	void killProcesses();
 	// Drains the subprocesses' storages and hands them on; whether any came or went.
-	bool fetchIntermediateStorages(std::shared_ptr<Blackboard> blackboard);
+	bool fetchIntermediateStorages(IndexingRunState& state);
 	// Hands pending storages to the provider: while the writer keeps up, or `all`.
-	size_t handOnStorages(const std::shared_ptr<Blackboard>& blackboard, bool all);
-	void logIndexingSummary(const std::shared_ptr<Blackboard>& blackboard) const;
-	void updateIndexingDialog(
-		std::shared_ptr<Blackboard> blackboard, const std::vector<FilePath>& sourcePaths);
+	size_t handOnStorages(IndexingRunState& state, bool all);
+	void logIndexingSummary(const IndexingRunState& state) const;
+	void updateIndexingDialog(const IndexingRunState& state, const std::vector<FilePath>& sourcePaths);
 
 	static const std::string s_processName;
 
@@ -114,7 +124,7 @@ protected:
 	size_t m_processCount;
 
 	// Cooperative cancellation: request_stop() replaces the old racy `m_interrupted`
-	// bool. A stop callback (registered in doEnter) raises the IPC interrupt flag so
+	// bool. A stop callback (registered in start()) raises the IPC interrupt flag so
 	// subprocesses exit gracefully; the babysitter loops observe stop_requested().
 	stdexec::inplace_stop_source m_stopSource;
 

@@ -35,7 +35,6 @@
 
 #include "SourceGroupSettingsWithCxxPchOptions.h"
 #include "StorageProvider.h"
-#include "TaskLambda.h"
 #include "logging.h"
 #ifndef SRCTRL_MODULE_BUILD
 #include "utility.h"
@@ -87,7 +86,7 @@ std::expected<void, IndexerPrebuildError> runIndexerPrebuildMode(const std::stri
 	return {};
 }
 
-std::shared_ptr<Task> createBuildPchTaskForInput(
+std::function<void()> createBuildPchWorkForInput(
 	const FilePath& pchInputFilePath,
 	const FilePath& pchOutputFilePath,
 	std::vector<std::string> compilerFlags,
@@ -95,16 +94,14 @@ std::shared_ptr<Task> createBuildPchTaskForInput(
 	std::shared_ptr<StorageProvider> storageProvider,
 	std::shared_ptr<DialogView> dialogView)
 {
-	std::shared_ptr<TaskLambda> pchTask(std::make_shared<TaskLambda>([]() {}));
-
 	if (pchInputFilePath.empty() || pchOutputFilePath.empty())
 	{
-		return pchTask;
+		return {};
 	}
 	if (!pchInputFilePath.exists())
 	{
 		LOG_ERROR("Precompiled header input file \"" + pchInputFilePath.str() + "\" does not exist.");
-		return pchTask;
+		return {};
 	}
 
 	utility::removeIncludePchFlag(compilerFlags);
@@ -121,8 +118,7 @@ std::shared_ptr<Task> createBuildPchTaskForInput(
 	// prebuilt PCH would drop every precompiled-header symbol whenever the database
 	// was rebuilt from empty: a full refresh, or an incremental refresh that
 	// re-indexes all of the header's dependents (which orphans and clears it).
-	pchTask = std::make_shared<TaskLambda>(
-		[dialogView, storageProvider, pchInputFilePath, pchOutputFilePath, compilerFlags, compilerPath]()
+	return [dialogView, storageProvider, pchInputFilePath, pchOutputFilePath, compilerFlags, compilerPath]()
 	{
 		dialogView->showUnknownProgressDialog("Preparing Indexing", "Processing Precompiled Headers");
 		LOG_INFO("Generating precompiled header output for input file \"" + pchInputFilePath.str() + "\" at location \"" + pchOutputFilePath.str() + "\"");
@@ -172,11 +168,10 @@ std::shared_ptr<Task> createBuildPchTaskForInput(
 		{
 			storageProvider->insert(storage);
 		}
-	});
-	return pchTask;
+	};
 }
 
-std::shared_ptr<Task> createBuildPchTask(const SourceGroupSettingsWithCxxPchOptions *settings, std::vector<std::string> compilerFlags,
+std::function<void()> createBuildPchWork(const SourceGroupSettingsWithCxxPchOptions *settings, std::vector<std::string> compilerFlags,
 	std::shared_ptr<StorageProvider> storageProvider, std::shared_ptr<DialogView> dialogView)
 {
 	const FilePath pchInputFilePath = settings->getPchInputFilePathExpandedAndAbsolute();
@@ -184,13 +179,13 @@ std::shared_ptr<Task> createBuildPchTask(const SourceGroupSettingsWithCxxPchOpti
 
 	if (pchInputFilePath.empty() || pchDependenciesDirectoryPath.empty())
 	{
-		return std::make_shared<TaskLambda>([]() {});
+		return {};
 	}
 
 	const FilePath pchOutputFilePath =
 		pchDependenciesDirectoryPath.getConcatenated(pchInputFilePath.fileName()).replaceExtension("pch");
 
-	return createBuildPchTaskForInput(
+	return createBuildPchWorkForInput(
 		pchInputFilePath, pchOutputFilePath, std::move(compilerFlags), "", storageProvider, dialogView);
 }
 

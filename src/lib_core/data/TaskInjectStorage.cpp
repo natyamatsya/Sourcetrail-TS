@@ -26,10 +26,10 @@ TaskInjectStorage::TaskInjectStorage(
 	: m_storageProvider(storageProvider), m_target(target)
 {
 	m_changeListener = m_storageProvider->addChangeListener(
-		[changed = std::weak_ptr<TaskWake>(m_storagesChanged)]() {
-			if (const std::shared_ptr<TaskWake> wake = changed.lock())
+		[changed = std::weak_ptr<execution::Condition>(m_storagesChanged)]() {
+			if (const std::shared_ptr<execution::Condition> condition = changed.lock())
 			{
-				wake->notify();
+				condition->notify();
 			}
 		});
 }
@@ -39,83 +39,68 @@ TaskInjectStorage::~TaskInjectStorage()
 	m_storageProvider->removeChangeListener(m_changeListener);
 }
 
-void TaskInjectStorage::doEnter(std::shared_ptr<Blackboard>  /*blackboard*/) {}
-
-Task::TaskState TaskInjectStorage::doUpdate(std::shared_ptr<Blackboard>  /*blackboard*/)
+exec::task<void> TaskInjectStorage::run()
 {
-	using enum Task::TaskState;
-
-	// Parked until a storage is available or the producers are done, holding no
-	// thread. When done, keep draining the remainder (READY while count >= 1); end
-	// once done AND empty.
-	std::optional<StorageProvider::WaitResult> result;
-	if (!m_storagesChanged->waitUntil([&]() {
+	while (true)
+	{
+		// Waits until a storage is available or the producers are done, holding no
+		// thread. When done, keep draining the remainder (READY while count >= 1); end
+		// once done AND empty.
+		std::optional<StorageProvider::WaitResult> result;
+		co_await m_storagesChanged->until([&]() {
 			result = m_storageProvider->countOrDone(1);
 			return result.has_value();
-		}))
-	{
-		return STATE_RUNNING;
-	}
-	if (*result == StorageProvider::WaitResult::DONE)
-	{
-		if (!m_summaryLogged)
+		});
+		if (*result == StorageProvider::WaitResult::DONE)
 		{
-			m_summaryLogged = true;
-			LOG_INFO(
-				"storage writer: " + std::to_string(m_injectCount) + " injects (" +
-				std::to_string(m_injectedSourceLocationCount) + " source locations), busy " +
-				std::to_string(m_injectBusyMs) + " ms");
-		}
-		return STATE_FAILURE;	 // no more work will arrive -> ends the repeat loop
-	}
-
-	std::shared_ptr<IntermediateStorage> source = m_storageProvider->consumeLargestStorage();
-	if (source)
-	{
-		if (std::shared_ptr<Storage> target = m_target.lock())
-		{
-			const size_t sourceLocationCount = source->getSourceLocationCount();
-			const TimeStamp start = TimeStamp::now();
-#ifdef SOURCETRAIL_TURSO_CONCURRENT
-			auto* persistent = dynamic_cast<PersistentStorage*>(target.get());
-			if (persistent != nullptr && persistent->isConcurrentTursoSoleWriter())
+			if (!m_summaryLogged)
 			{
-				// Fan-out S4: the concurrent Turso writer is the sole ingest
-				// path — the serial SQLite inject is skipped; the drained result
-				// is exported to SQLite in finishConcurrentTurso().
+				m_summaryLogged = true;
+				LOG_INFO(
+					"storage writer: " + std::to_string(m_injectCount) + " injects (" +
+					std::to_string(m_injectedSourceLocationCount) + " source locations), busy " +
+					std::to_string(m_injectBusyMs) + " ms");
+			}
+			co_return;	// no more work will arrive
+		}
+
+		std::shared_ptr<IntermediateStorage> source = m_storageProvider->consumeLargestStorage();
+		if (!source)
+		{
+			continue;	// lost the race against another consumer -- retry
+		}
+		const std::shared_ptr<Storage> target = m_target.lock();
+		if (!target)
+		{
+			co_return;	// the target storage is gone -- nothing left to do
+		}
+		const size_t sourceLocationCount = source->getSourceLocationCount();
+		const TimeStamp start = TimeStamp::now();
+#ifdef SOURCETRAIL_TURSO_CONCURRENT
+		auto* persistent = dynamic_cast<PersistentStorage*>(target.get());
+		if (persistent != nullptr && persistent->isConcurrentTursoSoleWriter())
+		{
+			// Fan-out S4: the concurrent Turso writer is the sole ingest
+			// path — the serial SQLite inject is skipped; the drained result
+			// is exported to SQLite in finishConcurrentTurso().
+			persistent->submitToConcurrentTurso(*source);
+		}
+		else
+		{
+			target->inject(source.get());
+			// Piggyback: also mirror this storage into the concurrent Turso writer.
+			if (persistent != nullptr)
+			{
 				persistent->submitToConcurrentTurso(*source);
 			}
-			else
-			{
-				target->inject(source.get());
-				// Piggyback: also mirror this storage into the concurrent Turso writer.
-				if (persistent != nullptr)
-				{
-					persistent->submitToConcurrentTurso(*source);
-				}
-			}
-#else
-			target->inject(source.get());
-#endif
-			m_injectBusyMs += static_cast<long long>(TimeStamp::now().deltaMS(start));
-			m_injectCount++;
-			m_injectedSourceLocationCount += sourceLocationCount;
-			return STATE_SUCCESS;
 		}
-		return STATE_FAILURE;	 // target storage is gone -- nothing left to do
+#else
+		target->inject(source.get());
+#endif
+		m_injectBusyMs += static_cast<long long>(TimeStamp::now().deltaMS(start));
+		m_injectCount++;
+		m_injectedSourceLocationCount += sourceLocationCount;
 	}
-
-	return STATE_SUCCESS;	 // lost the race against another consumer -- retry
-}
-
-void TaskInjectStorage::doExit(std::shared_ptr<Blackboard>  /*blackboard*/) {}
-
-void TaskInjectStorage::doReset(std::shared_ptr<Blackboard>  /*blackboard*/) {}
-
-void TaskInjectStorage::terminate()
-{
-	// Release a waiting doUpdate: the task ends, and so does its parallel group.
-	m_storageProvider->setDone();
 }
 
 void TaskInjectStorage::handleMessage(MessageIndexingInterrupted*  /*message*/)

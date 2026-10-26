@@ -1,14 +1,14 @@
 #include "TaskFinishParsing.h"
 
-
-#include "Blackboard.h"
 #include "DialogView.h"
+#include "IndexingRunState.h"
 #ifndef SRCTRL_MODULE_BUILD
 #include "MessageIndexingFinished.h"
 #include "MessageIndexingStatus.h"
 #include "MessageStatus.h"
 #endif
 #include "PersistentStorage.h"
+#include "ScopedFunctor.h"
 #ifndef SRCTRL_MODULE_BUILD
 #include "TimeStamp.h"
 #endif
@@ -27,7 +27,7 @@ TaskFinishParsing::TaskFinishParsing(
 {
 }
 
-void TaskFinishParsing::terminate()
+void TaskFinishParsing::abandoned()
 {
 	m_dialogView->clearDialogs();
 
@@ -37,48 +37,35 @@ void TaskFinishParsing::terminate()
 	// double the terminal event.
 }
 
-void TaskFinishParsing::doEnter(std::shared_ptr<Blackboard>  /*blackboard*/)
+exec::task<DatabasePolicy> TaskFinishParsing::run(const IndexingRunState& state)
 {
-	using enum Task::TaskState;
-	using enum DatabasePolicy;
+	// Ended before the decision (stopped, or a throw): the coroutine unwinds through here.
+	bool decided = false;
+	[[maybe_unused]] ScopedFunctor unwound([this, &decided]() {
+		if (!decided)
+		{
+			abandoned();
+		}
+	});
+
 #ifdef SOURCETRAIL_TURSO_CONCURRENT
 	// Drain the concurrent Turso writers before any read of the finished database.
 	m_storage->finishConcurrentTurso();
 #endif
 	m_storage->setMode(SqliteIndexStorage::StorageModeType::STORAGE_MODE_READ);
+
+	report(state);
+
+	// Waits for the decision, holding no thread.
+	co_await m_decision->decided.until([decision = m_decision]() { return decision->policy >= 0; });
+	decided = true;
+	MessageIndexingStatus(false).dispatch();
+	m_storage.reset();
+	co_return static_cast<DatabasePolicy>(m_decision->policy.load());
 }
 
-Task::TaskState TaskFinishParsing::doUpdate(std::shared_ptr<Blackboard> blackboard)
+void TaskFinishParsing::report(const IndexingRunState& state)
 {
-	using enum Task::TaskState;
-	using enum DatabasePolicy;
-
-	if (m_decision)
-	{
-		// Parked until the decision wakes it, holding no thread.
-		if (!m_decision->decided.waitUntil([this]() { return m_decision->policy >= 0; }))
-		{
-			return STATE_RUNNING;
-		}
-		MessageIndexingStatus(false).dispatch();
-
-		const auto policy = static_cast<DatabasePolicy>(m_decision->policy.load());
-		if (policy == DATABASE_POLICY_KEEP)
-		{
-			blackboard->set("keep_database", true);
-		}
-		else if (policy == DATABASE_POLICY_DISCARD)
-		{
-			blackboard->set("discard_database", true);
-		}
-		else if (policy == DATABASE_POLICY_REFRESH)
-		{
-			blackboard->set("keep_database", true);
-			blackboard->set("refresh_database", true);
-		}
-		return STATE_SUCCESS;
-	}
-
 	TimeStamp start = TimeStamp::now();
 
 	m_dialogView->showUnknownProgressDialog("Finish Indexing", "Optimizing database");
@@ -86,30 +73,10 @@ Task::TaskState TaskFinishParsing::doUpdate(std::shared_ptr<Blackboard> blackboa
 	m_storage->optimizeMemory();
 	m_dialogView->hideUnknownProgressDialog();
 
-	double time = TimeStamp::durationSeconds(start);
-
-	if (blackboard->exists("clear_time"))
-	{
-		float clearTime = 0;
-		blackboard->get("clear_time", clearTime);
-		time += clearTime;
-	}
-
-	if (blackboard->exists("index_time"))
-	{
-		float indexTime = 0;
-		blackboard->get("index_time", indexTime);
-		time += indexTime;
-	}
-
-	int indexedSourceFileCount = 0;
-	blackboard->get("indexed_source_file_count", indexedSourceFileCount);
-
-	int sourceFileCount = 0;
-	blackboard->get("source_file_count", sourceFileCount);
-
-	bool interruptedIndexing = false;
-	blackboard->get("interrupted_indexing", interruptedIndexing);
+	const double time = TimeStamp::durationSeconds(start) + state.clearSeconds + state.indexSeconds;
+	const int indexedSourceFileCount = state.indexedSourceFileCount;
+	const int sourceFileCount = state.sourceFileCount;
+	const bool interruptedIndexing = state.interrupted;
 
 	ErrorCountInfo errorInfo = m_storage->getErrorCount();
 
@@ -162,8 +129,7 @@ Task::TaskState TaskFinishParsing::doUpdate(std::shared_ptr<Blackboard> blackboa
 		MessageStatus(degraded, true, false).dispatch();
 	}
 #endif
-	// The report holds no thread while it waits for the decision: the updates after
-	// this one look for it.
+	// The report holds no thread while it waits for the decision: run() waits for it.
 	m_decision = std::make_shared<Decision>();
 	m_dialogView->finishedIndexingDialog(
 		indexedSourceFileCount,
@@ -177,15 +143,4 @@ Task::TaskState TaskFinishParsing::doUpdate(std::shared_ptr<Blackboard> blackboa
 			decision->policy = static_cast<int>(policy);
 			decision->decided.notify();
 		});
-	return STATE_RUNNING;
-}
-
-void TaskFinishParsing::doExit(std::shared_ptr<Blackboard>  /*blackboard*/)
-{
-	m_storage.reset();
-}
-
-void TaskFinishParsing::doReset(std::shared_ptr<Blackboard>  /*blackboard*/)
-{
-	m_decision.reset();
 }

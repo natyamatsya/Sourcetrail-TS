@@ -19,7 +19,6 @@
 #endif
 #include "SourceGroupSettingsWithCppStandard.h"
 #include "SourceGroupSettingsWithCxxPathsAndFlags.h"
-#include "TaskLambda.h"
 #include "ToolChain.h"
 #include "logging.h"
 #ifndef SRCTRL_MODULE_BUILD
@@ -169,14 +168,14 @@ std::vector<std::shared_ptr<IndexerCommand>> SourceGroupCxxEmpty::getIndexerComm
 	return getIndexerCommandProvider(info)->consumeAllCommands();
 }
 
-std::shared_ptr<Task> SourceGroupCxxEmpty::getPreIndexTask(
+std::function<void()> SourceGroupCxxEmpty::getPreIndexWork(
 	std::shared_ptr<StorageProvider> storageProvider, std::shared_ptr<DialogView> dialogView) const
 {
 	const SourceGroupSettingsWithCxxPchOptions* pchSettings =
 		dynamic_cast<const SourceGroupSettingsWithCxxPchOptions*>(m_settings.get());
 	if (!pchSettings || pchSettings->getPchInputFilePath().empty())
 	{
-		return std::make_shared<TaskLambda>([]() {});
+		return {};
 	}
 
 	std::vector<std::string> compilerFlags = getBaseCompilerFlags();
@@ -195,7 +194,7 @@ std::shared_ptr<Task> SourceGroupCxxEmpty::getPreIndexTask(
 		utility::append(compilerFlags, pchSettings->getPchFlags());
 	}
 
-	return utility::createBuildPchTask(
+	return utility::createBuildPchWork(
 		dynamic_cast<const SourceGroupSettingsWithCxxPchOptions*>(m_settings.get()),
 		compilerFlags,
 		storageProvider,

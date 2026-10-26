@@ -8,17 +8,17 @@
 #include "FilePath.h"
 #include "MessageIndexingInterrupted.h"
 #include "MessageListener.h"
-#include "Task.h"
 #include "TimeStamp.h"
 
 class DialogView;
 class IndexerCommand;
 class IndexerCommandProvider;
 class PersistentStorage;
+struct IndexingRunState;
 
-class TaskExecuteCustomCommands
-	: public Task
-	, public MessageListener<MessageIndexingInterrupted>
+// Runs the custom source groups' commands, side by side on the work pool, and merges
+// what they wrote into the target.
+class TaskExecuteCustomCommands: public MessageListener<MessageIndexingInterrupted>
 {
 public:
 	TaskExecuteCustomCommands(
@@ -28,18 +28,18 @@ public:
 		size_t indexerThreadCount,
 		const FilePath& projectDirectory);
 
+	void run(IndexingRunState& state);
+
 private:
-	void doEnter(std::shared_ptr<Blackboard> blackboard) override;
-	TaskState doUpdate(std::shared_ptr<Blackboard> blackboard) override;
-	void doExit(std::shared_ptr<Blackboard> blackboard) override;
-	void doReset(std::shared_ptr<Blackboard> blackboard) override;
+	void collectCommands();
+	void runCommands(IndexingRunState& state);
 
 	void handleMessage(MessageIndexingInterrupted* message) override;
 
-	void executeParallelIndexerCommands(int threadId, std::shared_ptr<Blackboard> blackboard);
+	void executeParallelIndexerCommands(int threadId, IndexingRunState& state);
 	void runIndexerCommand(
 		std::shared_ptr<IndexerCommand> indexerCommand,
-		std::shared_ptr<Blackboard> blackboard,
+		IndexingRunState& state,
 		std::shared_ptr<PersistentStorage> storage);
 
 	std::unique_ptr<IndexerCommandProvider> m_indexerCommandProvider;
@@ -48,7 +48,6 @@ private:
 	const size_t m_indexerThreadCount;
 	const FilePath m_projectDirectory;
 
-	TimeStamp m_start;
 	bool m_interrupted = false;
 	size_t m_indexerCommandCount;
 	std::vector<std::shared_ptr<IndexerCommand>> m_serialCommands;

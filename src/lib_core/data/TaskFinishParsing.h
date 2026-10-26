@@ -3,37 +3,40 @@
 
 #include <atomic>
 #include <memory>
-#include <vector>
 
-#include "Task.h"
-#include "TaskWake.h"
+#include "Condition.h"
+#include "IndexingStateMachine.h"
+#include "StdexecPrelude.h"
+
+#include <exec/task.hpp>
 
 class DialogView;
-class FileRegister;
 class PersistentStorage;
-class StorageAccess;
+struct IndexingRunState;
 
-class TaskFinishParsing: public Task
+// The run's last step: readies the database for reading, reports the run, and waits
+// (holding no thread) for the decision on its data.
+class TaskFinishParsing
 {
 public:
 	TaskFinishParsing(std::shared_ptr<PersistentStorage> storage, std::shared_ptr<DialogView> dialogView);
 
-	void terminate() override;
+	//! The decision on the run's data. Stopped or failing meanwhile, the dialogs go
+	//! and the status says so.
+	exec::task<DatabasePolicy> run(const IndexingRunState& state);
 
 private:
-	void doEnter(std::shared_ptr<Blackboard> blackboard) override;
-	TaskState doUpdate(std::shared_ptr<Blackboard> blackboard) override;
-	void doExit(std::shared_ptr<Blackboard> blackboard) override;
-	void doReset(std::shared_ptr<Blackboard> blackboard) override;
+	void report(const IndexingRunState& state);
+	void abandoned();
 
 	std::shared_ptr<PersistentStorage> m_storage;
 	std::shared_ptr<DialogView> m_dialogView;
-	// The decision on the report once it is shown: -1 until someone decided, when
-	// the task (waiting meanwhile) is woken.
+	// The decision on the report once it is shown: -1 until someone decided. Shared
+	// with the report's callback, which may come after the step is gone.
 	struct Decision
 	{
 		std::atomic<int> policy = -1;
-		TaskWake decided;
+		execution::Condition decided;
 	};
 	std::shared_ptr<Decision> m_decision;
 };

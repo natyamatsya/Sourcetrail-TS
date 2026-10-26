@@ -11,7 +11,6 @@
 #ifndef SRCTRL_MODULE_BUILD
 #include "SourceGroupSettings.h"
 #endif
-#include "TaskLambda.h"
 
 // Imports come AFTER all textual #includes (include-before-import rule: textual libc++
 // following BMI-merged declarations trips "cannot add 'abi_tag' in a redeclaration").
@@ -52,10 +51,10 @@ std::vector<std::pair<FilePath, std::string>> SourceGroup::getAllSourceFileComma
 	return getSourceFileCommandHashes(info);
 }
 
-std::shared_ptr<Task> SourceGroup::getPreIndexTask(
+std::function<void()> SourceGroup::getPreIndexWork(
 	std::shared_ptr<StorageProvider>  /*storageProvider*/, std::shared_ptr<DialogView>  /*dialogView*/) const
 {
-	return std::make_shared<TaskLambda>([]() {});
+	return {};
 }
 
 std::optional<BuildModelSnapshot> SourceGroup::getBuildModelSnapshot() const

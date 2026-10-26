@@ -8,8 +8,8 @@
 #ifndef SRCTRL_MODULE_BUILD
 #include "ApplicationSettings.h"
 #endif
-#include "Blackboard.h"
 #include "DialogView.h"
+#include "IndexingRunState.h"
 #ifndef SRCTRL_MODULE_BUILD
 #include "ElementComponentKind.h"
 #include "FileSystem.h"
@@ -65,11 +65,23 @@ TaskExecuteCustomCommands::TaskExecuteCustomCommands(
 {
 }
 
-void TaskExecuteCustomCommands::doEnter(std::shared_ptr<Blackboard>  /*blackboard*/)
+void TaskExecuteCustomCommands::run(IndexingRunState& state)
 {
 	m_dialogView->hideUnknownProgressDialog();
-	m_start = TimeStamp::now();
+	const TimeStamp start = TimeStamp::now();
 
+	collectCommands();
+	if (!m_interrupted)
+	{
+		runCommands(state);
+	}
+
+	m_storage.reset();
+	state.addIndexSeconds(TimeStamp::durationSeconds(start));
+}
+
+void TaskExecuteCustomCommands::collectCommands()
+{
 	if (m_indexerCommandProvider)
 	{
 		for (const FilePath& sourceFilePath:
@@ -103,14 +115,8 @@ void TaskExecuteCustomCommands::doEnter(std::shared_ptr<Blackboard>  /*blackboar
 	}
 }
 
-Task::TaskState TaskExecuteCustomCommands::doUpdate(std::shared_ptr<Blackboard> blackboard)
+void TaskExecuteCustomCommands::runCommands(IndexingRunState& state)
 {
-	using enum Task::TaskState;
-	if (m_interrupted)
-	{
-		return STATE_SUCCESS;
-	}
-
 	m_dialogView->updateCustomIndexingDialog(0, 0, m_indexerCommandProvider->size(), {});
 
 	// The workers side by side on the work pool, this thread among them: worker 0 runs
@@ -122,10 +128,10 @@ Task::TaskState TaskExecuteCustomCommands::doUpdate(std::shared_ptr<Blackboard> 
 			{
 				std::shared_ptr<IndexerCommand> indexerCommand = m_serialCommands.back();
 				m_serialCommands.pop_back();
-				runIndexerCommand(indexerCommand, blackboard, m_storage);
+				runIndexerCommand(indexerCommand, state, m_storage);
 			}
 		}
-		executeParallelIndexerCommands(static_cast<int>(worker), blackboard);
+		executeParallelIndexerCommands(static_cast<int>(worker), state);
 	});
 
 	// clear errors here, because otherwise injecting into the main storage will show them twice
@@ -147,23 +153,10 @@ Task::TaskState TaskExecuteCustomCommands::doUpdate(std::shared_ptr<Blackboard> 
 			FileSystem::remove(sourceDatabaseFilePath);
 		}
 	}
-
-	return STATE_SUCCESS;
 }
-
-void TaskExecuteCustomCommands::doExit(std::shared_ptr<Blackboard> blackboard)
-{
-	m_storage.reset();
-	const float duration = static_cast<float>(TimeStamp::durationSeconds(m_start));
-	blackboard->update<float>(
-		"index_time", [duration](float currentDuration) { return currentDuration + duration; });
-}
-
-void TaskExecuteCustomCommands::doReset(std::shared_ptr<Blackboard>  /*blackboard*/) {}
 
 void TaskExecuteCustomCommands::handleMessage(MessageIndexingInterrupted*  /*message*/)
 {
-	using enum Task::TaskState;
 	LOG_INFO("Interrupting custom command execution.");
 
 	m_interrupted = true;
@@ -173,9 +166,8 @@ void TaskExecuteCustomCommands::handleMessage(MessageIndexingInterrupted*  /*mes
 }
 
 void TaskExecuteCustomCommands::executeParallelIndexerCommands(
-	int threadId, std::shared_ptr<Blackboard> blackboard)
+	int threadId, IndexingRunState& state)
 {
-	using enum Task::TaskState;
 	std::shared_ptr<PersistentStorage> storage;
 	while (!m_interrupted)
 	{
@@ -230,20 +222,18 @@ void TaskExecuteCustomCommands::executeParallelIndexerCommands(
 			indexerCommand->target<IndexerCommandCustom>()->setDatabaseFilePath(databaseFilePath);
 		}
 
-		runIndexerCommand(indexerCommand, blackboard, storage);
+		runIndexerCommand(indexerCommand, state, storage);
 	}
 }
 
 void TaskExecuteCustomCommands::runIndexerCommand(
 	std::shared_ptr<IndexerCommand> indexerCommand,
-	std::shared_ptr<Blackboard> blackboard,
+	IndexingRunState& state,
 	std::shared_ptr<PersistentStorage> storage)
 {
-	using enum Task::TaskState;
 	if (indexerCommand)
 	{
-		int indexedSourceFileCount = 0;
-		blackboard->get("indexed_source_file_count", indexedSourceFileCount);
+		const int indexedSourceFileCount = state.indexedSourceFileCount;
 
 		const FilePath sourcePath = indexerCommand->getSourceFilePath();
 
@@ -311,7 +301,6 @@ void TaskExecuteCustomCommands::runIndexerCommand(
 			MessageStatus(statusText, true, false, true).dispatch();
 		}
 
-		indexedSourceFileCount++;
-		blackboard->update<int>("indexed_source_file_count", [=](int count) { return count + 1; });
+		state.indexedSourceFileCount++;
 	}
 }

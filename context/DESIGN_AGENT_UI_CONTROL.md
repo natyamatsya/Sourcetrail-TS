@@ -698,9 +698,8 @@ drives through the same events:
   `reindex`. `Project` and `Application` report the pipeline's steps (`requested`,
   `prepare`, `begin`, `wrap_up`, `report`, `end`), so the machine never guesses from
   dialog titles. The report holds no thread while it waits for the decision: it goes
-  to a callback, and `TaskFinishParsing` parks until the decision wakes it
-  (`TaskParking::parkCurrentTask`); the sender running it (`execution::runTask`) gives
-  a parked task no turn until it is woken.
+  to a callback, and `TaskFinishParsing` waits for it with `co_await` on an
+  `execution::Condition`.
 
 **DialogView became the presenter.** The pipeline still calls `DialogView`
 (`startIndexingDialog`, `confirm`, `finishedIndexingDialog`, the progress updates),

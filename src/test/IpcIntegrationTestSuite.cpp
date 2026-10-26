@@ -7,9 +7,9 @@
 #include <thread>
 
 #include "AppPath.h"
-#include "Blackboard.h"
 #include "CombinedIndexerCommandProvider.h"
 #include "DialogView.h"
+#include "IndexingRunState.h"
 #include "IpcInterprocessIndexerCommandManager.h"
 #include "IpcInterprocessIntermediateStorageManager.h"
 #include "IpcInterprocessIndexingStatusManager.h"
@@ -22,6 +22,7 @@
 #include "StorageProvider.h"
 #include "TaskBuildIndex.h"
 #include "TaskFillIndexerCommandQueue.h"
+#include "StdexecPrelude.h"
 #include "utilityApp.h"
 
 #include "IntermediateStorage.h"
@@ -53,8 +54,6 @@ void assertTaskFillQueueDeduplicatesLanguageCommandsByWorkingDirectory(
 	const std::string& secondWorkingDirectory,
 	const std::string& optionalCxxSourcePath)
 {
-	using enum Task::TaskState;
-
 	IpcInterprocessIndexerCommandManager ownerMgr(dedupUuid, mainPid, true);
 	ownerMgr.clearIndexerCommands();
 
@@ -79,15 +78,17 @@ void assertTaskFillQueueDeduplicatesLanguageCommandsByWorkingDirectory(
 				makeLanguageCommand(secondWorkingDirectory)}),
 		"group-b");
 
-	auto blackboard = std::make_shared<Blackboard>();
-	blackboard->set<int>("source_file_count", static_cast<int>(provider->size()));
+	IndexingRunState state;
+	state.sourceFileCount = static_cast<int>(provider->size());
 
 	TaskFillIndexerCommandsQueue task(dedupUuid, std::move(provider), 16);
-	REQUIRE(task.update(blackboard) == STATE_SUCCESS);
+	task.begin(state);
+	REQUIRE(task.refill(state));
+	task.end(state);
 
-	int sourceFileCount = 0;
-	REQUIRE(blackboard->get<int>("source_file_count", sourceFileCount));
-	REQUIRE(sourceFileCount == withOptionalCxxCount(2));
+	REQUIRE(state.commandQueueStarted);
+	REQUIRE(state.commandQueueStopped);
+	REQUIRE(state.sourceFileCount == withOptionalCxxCount(2));
 
 	IpcInterprocessIndexerCommandManager reader(dedupUuid, workerPid, false);
 
@@ -420,7 +421,6 @@ TEST_CASE("ipc integration: full indexer workflow")
 	{
 		if constexpr (language_packages::buildRustLanguagePackage)
 		{
-			using enum Task::TaskState;
 			const std::string taskUuid = "ipc_task_build_rust_subprocess_test";
 			const std::string rustWorkingDirectory =
 				"/__sourcetrail_nonexistent_rust_task_crate__";
@@ -434,28 +434,14 @@ TEST_CASE("ipc integration: full indexer workflow")
 			auto dialogView = std::make_shared<DialogView>(DialogView::UseCase::INDEXING, nullptr);
 			TaskBuildIndex task(0, storageProvider, dialogView, taskUuid);
 
-			auto blackboard = std::make_shared<Blackboard>();
-			blackboard->set<int>("source_file_count", 1);
-			blackboard->set<int>("indexed_source_file_count", 0);
-			blackboard->set<bool>("indexer_command_queue_stopped", true);
+			IndexingRunState state;
+			state.sourceFileCount = 1;
+			state.commandQueueStopped = true;
 
-			Task::TaskState taskState = STATE_RUNNING;
-			const auto deadline = std::chrono::steady_clock::now() + std::chrono::seconds(20);
-			while (
-				taskState == STATE_RUNNING &&
-				std::chrono::steady_clock::now() < deadline)
-				taskState = task.update(blackboard);
-
-			REQUIRE(taskState == STATE_SUCCESS);
+			REQUIRE(stdexec::sync_wait(task.run(state)).has_value());
 			REQUIRE(commandOwner.indexerCommandCount() == 0);
-
-			bool threadsStopped = false;
-			REQUIRE(blackboard->get<bool>("indexer_threads_stopped", threadsStopped));
-			REQUIRE(threadsStopped == true);
-
-			int indexedSourceFileCount = 0;
-			REQUIRE(blackboard->get<int>("indexed_source_file_count", indexedSourceFileCount));
-			REQUIRE(indexedSourceFileCount == 1);
+			REQUIRE(state.indexersStopped);
+			REQUIRE(state.indexedSourceFileCount == 1);
 
 			REQUIRE(storageProvider->getStorageCount() == 1);
 			const std::shared_ptr<IntermediateStorage> storage = storageProvider->consumeLargestStorage();
@@ -638,7 +624,6 @@ TEST_CASE("ipc integration: full indexer workflow")
 	{
 		if constexpr (language_packages::buildSwiftLanguagePackage)
 		{
-			using enum Task::TaskState;
 			const std::string taskUuid = "ipc_task_build_swift_subprocess_test";
 
 			IpcInterprocessIndexerCommandManager commandOwner(taskUuid, mainPid, true);
@@ -652,28 +637,14 @@ TEST_CASE("ipc integration: full indexer workflow")
 			auto dialogView = std::make_shared<DialogView>(DialogView::UseCase::INDEXING, nullptr);
 			TaskBuildIndex task(0, storageProvider, dialogView, taskUuid);
 
-			auto blackboard = std::make_shared<Blackboard>();
-			blackboard->set<int>("source_file_count", 1);
-			blackboard->set<int>("indexed_source_file_count", 0);
-			blackboard->set<bool>("indexer_command_queue_stopped", true);
+			IndexingRunState state;
+			state.sourceFileCount = 1;
+			state.commandQueueStopped = true;
 
-			Task::TaskState taskState = STATE_RUNNING;
-			const auto deadline = std::chrono::steady_clock::now() + std::chrono::seconds(20);
-			while (
-				taskState == STATE_RUNNING &&
-				std::chrono::steady_clock::now() < deadline)
-				taskState = task.update(blackboard);
-
-			REQUIRE(taskState == STATE_SUCCESS);
+			REQUIRE(stdexec::sync_wait(task.run(state)).has_value());
 			REQUIRE(commandOwner.indexerCommandCount() == 0);
-
-			bool threadsStopped = false;
-			REQUIRE(blackboard->get<bool>("indexer_threads_stopped", threadsStopped));
-			REQUIRE(threadsStopped == true);
-
-			int indexedSourceFileCount = 0;
-			REQUIRE(blackboard->get<int>("indexed_source_file_count", indexedSourceFileCount));
-			REQUIRE(indexedSourceFileCount == 1);
+			REQUIRE(state.indexersStopped);
+			REQUIRE(state.indexedSourceFileCount == 1);
 
 			REQUIRE(storageProvider->getStorageCount() == 1);
 			const std::shared_ptr<IntermediateStorage> storage = storageProvider->consumeLargestStorage();
@@ -757,13 +728,14 @@ TEST_CASE("ipc integration: group-aware queue fill keeps every group available")
 	provider->addProvider(
 		std::make_shared<MemoryIndexerCommandProvider>(makeCommands("b", 5)), "group-b");
 
-	auto blackboard = std::make_shared<Blackboard>();
-	blackboard->set<int>("source_file_count", 10);
+	IndexingRunState state;
+	state.sourceFileCount = 10;
 	TaskFillIndexerCommandsQueue task(uuid, std::move(provider), 2);
 	IpcInterprocessIndexerCommandManager reader(uuid, static_cast<ProcessId>(1), false);
 
 	// First fill: 2 commands per group, not 2 in total.
-	REQUIRE(task.update(blackboard) == Task::TaskState::STATE_RUNNING);
+	task.begin(state);
+	REQUIRE_FALSE(task.refill(state));
 	{
 		auto counts = reader.indexerCommandCountsBySourceGroup();
 		REQUIRE(counts["group-a"] == 2);
@@ -777,7 +749,7 @@ TEST_CASE("ipc integration: group-aware queue fill keeps every group available")
 	REQUIRE(reader.popIndexerCommandBlocking(noSkips, 10, "group-b"));
 	REQUIRE(reader.popIndexerCommandBlocking(noSkips, 10, "group-b") == nullptr);
 
-	REQUIRE(task.update(blackboard) == Task::TaskState::STATE_RUNNING);
+	REQUIRE_FALSE(task.refill(state));
 	{
 		auto counts = reader.indexerCommandCountsBySourceGroup();
 		REQUIRE(counts["group-a"] == 2);
@@ -794,7 +766,7 @@ TEST_CASE("ipc integration: group-aware queue fill keeps every group available")
 		{
 			popped[command->getSourceGroupId()]++;
 		}
-		if (task.update(blackboard) == Task::TaskState::STATE_SUCCESS)
+		if (task.refill(state))
 			break;
 	}
 	while (const std::shared_ptr<IndexerCommand> command =

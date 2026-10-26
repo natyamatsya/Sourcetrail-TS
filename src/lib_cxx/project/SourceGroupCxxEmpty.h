@@ -1,6 +1,7 @@
 #ifndef SOURCE_GROUP_CXX_EMPTY_H
 #define SOURCE_GROUP_CXX_EMPTY_H
 
+#include <functional>
 #include <memory>
 #include <set>
 
@@ -18,7 +19,7 @@ public:
 	std::shared_ptr<IndexerCommandProvider> getIndexerCommandProvider(
 		const RefreshInfo& info) const override;
 	std::vector<std::shared_ptr<IndexerCommand>> getIndexerCommands(const RefreshInfo& info) const override;
-	std::shared_ptr<Task> getPreIndexTask(
+	std::function<void()> getPreIndexWork(
 		std::shared_ptr<StorageProvider> storageProvider,
 		std::shared_ptr<DialogView> dialogView) const override;
 

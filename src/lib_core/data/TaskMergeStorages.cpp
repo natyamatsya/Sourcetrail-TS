@@ -16,10 +16,10 @@ TaskMergeStorages::TaskMergeStorages(std::shared_ptr<StorageProvider> storagePro
 	: m_storageProvider(storageProvider)
 {
 	m_changeListener = m_storageProvider->addChangeListener(
-		[changed = std::weak_ptr<TaskWake>(m_storagesChanged)]() {
-			if (const std::shared_ptr<TaskWake> wake = changed.lock())
+		[changed = std::weak_ptr<execution::Condition>(m_storagesChanged)]() {
+			if (const std::shared_ptr<execution::Condition> condition = changed.lock())
 			{
-				wake->notify();
+				condition->notify();
 			}
 		});
 }
@@ -29,65 +29,46 @@ TaskMergeStorages::~TaskMergeStorages()
 	m_storageProvider->removeChangeListener(m_changeListener);
 }
 
-void TaskMergeStorages::doEnter(std::shared_ptr<Blackboard>  /*blackboard*/) {}
-
-Task::TaskState TaskMergeStorages::doUpdate(std::shared_ptr<Blackboard>  /*blackboard*/)
+exec::task<void> TaskMergeStorages::run()
 {
-	using enum Task::TaskState;
-
-	// Parked until at least 3 storages exist (the largest is left for the writer) or
-	// the producers are done, holding no thread.
-	std::optional<StorageProvider::WaitResult> result;
-	if (!m_storagesChanged->waitUntil([&]() {
+	while (true)
+	{
+		// Waits until at least 3 storages exist (the largest is left for the writer) or
+		// the producers are done, holding no thread.
+		std::optional<StorageProvider::WaitResult> result;
+		co_await m_storagesChanged->until([&]() {
 			result = m_storageProvider->countOrDone(3);
 			return result.has_value();
-		}))
-	{
-		return STATE_RUNNING;
-	}
-	if (*result == StorageProvider::WaitResult::DONE)
-	{
-		if (!m_summaryLogged)
+		});
+		if (*result == StorageProvider::WaitResult::DONE)
 		{
-			m_summaryLogged = true;
 			LOG_INFO(
 				"storage pre-merge: " + std::to_string(m_mergeCount) + " merges, busy " +
 				std::to_string(m_mergeBusyMs) + " ms");
+			co_return;	// no more work will arrive
 		}
-		return STATE_FAILURE;	 // no more work will arrive -> ends the repeat loop
+
+		std::shared_ptr<IntermediateStorage> target = m_storageProvider->consumeSecondLargestStorage();
+		std::shared_ptr<IntermediateStorage> source = m_storageProvider->consumeSecondLargestStorage();
+		if (target && source)
+		{
+			const TimeStamp start = TimeStamp::now();
+			target->inject(source.get());
+			m_mergeBusyMs += static_cast<long long>(TimeStamp::now().deltaMS(start));
+			m_mergeCount++;
+
+			m_storageProvider->insert(target);
+			continue;
+		}
+
+		// Lost the race against the writer -- put back what we got and retry.
+		if (target)
+		{
+			m_storageProvider->insert(target);
+		}
+		if (source)
+		{
+			m_storageProvider->insert(source);
+		}
 	}
-
-	std::shared_ptr<IntermediateStorage> target = m_storageProvider->consumeSecondLargestStorage();
-	std::shared_ptr<IntermediateStorage> source = m_storageProvider->consumeSecondLargestStorage();
-	if (target && source)
-	{
-		const TimeStamp start = TimeStamp::now();
-		target->inject(source.get());
-		m_mergeBusyMs += static_cast<long long>(TimeStamp::now().deltaMS(start));
-		m_mergeCount++;
-
-		m_storageProvider->insert(target);
-		return STATE_SUCCESS;
-	}
-
-	// Lost the race against the writer -- put back what we got and retry.
-	if (target)
-	{
-		m_storageProvider->insert(target);
-	}
-	if (source)
-	{
-		m_storageProvider->insert(source);
-	}
-	return STATE_SUCCESS;
-}
-
-void TaskMergeStorages::doExit(std::shared_ptr<Blackboard>  /*blackboard*/) {}
-
-void TaskMergeStorages::doReset(std::shared_ptr<Blackboard>  /*blackboard*/) {}
-
-void TaskMergeStorages::terminate()
-{
-	// Release a waiting doUpdate: the task ends, and so does its parallel group.
-	m_storageProvider->setDone();
 }

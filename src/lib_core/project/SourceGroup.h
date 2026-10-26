@@ -3,6 +3,7 @@
 
 #include <cstdint>
 #include <expected>
+#include <functional>
 #include <map>
 #include <memory>
 #include <optional>
@@ -24,7 +25,6 @@ class IndexerCommand;
 class IndexerCommandProvider;
 class SourceGroupSettings;
 class StorageProvider;
-class Task;
 
 struct RefreshInfo;
 
@@ -73,7 +73,9 @@ public:
 	//! the full current set to compare against the stored hashes).
 	std::vector<std::pair<FilePath, std::string>> getAllSourceFileCommandHashes() const;
 
-	virtual std::shared_ptr<Task> getPreIndexTask(
+	//! What to do before the run's indexers start (a precompiled header to build);
+	//! empty: nothing.
+	virtual std::function<void()> getPreIndexWork(
 		std::shared_ptr<StorageProvider> storageProvider,
 		std::shared_ptr<DialogView> dialogView) const;
 	virtual std::optional<BuildModelSnapshot> getBuildModelSnapshot() const;

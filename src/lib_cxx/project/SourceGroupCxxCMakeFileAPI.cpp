@@ -17,8 +17,6 @@
 #include "SourceGroupSettingsCxxCMakeFileAPI.h"
 #endif
 #include "SourceGroupSettingsWithCxxCMakeBuildDirectory.h"
-#include "TaskLambda.h"
-#include "TaskGroupSequence.h"
 #include "ToolChain.h"
 #include "logging.h"
 #ifndef SRCTRL_MODULE_BUILD
@@ -667,7 +665,7 @@ std::shared_ptr<IndexerCommandProvider> SourceGroupCxxCMakeFileAPI::getIndexerCo
 		std::vector<std::string> commandLine{buildCompilerFlagsForEntry(entry, buildDir, extraFlags)};
 
 		// Zero-config PCH: if this compile group has a target_precompile_headers
-		// input, feed the Sourcetrail-generated PCH (built in getPreIndexTask with
+		// input, feed the Sourcetrail-generated PCH (built in getPreIndexWork with
 		// the same flags, so clang accepts it).
 		if (entry.compileGroup && !entry.compileGroup->precompiledHeaders.empty())
 		{
@@ -810,20 +808,28 @@ FilePath SourceGroupCxxCMakeFileAPI::pchOutputPathFor(
 		.getConcatenated(key + ".pch");
 }
 
-std::shared_ptr<Task> SourceGroupCxxCMakeFileAPI::getPreIndexTask(
+std::function<void()> SourceGroupCxxCMakeFileAPI::getPreIndexWork(
 	std::shared_ptr<StorageProvider> storageProvider, std::shared_ptr<DialogView> dialogView) const
 {
-	auto sequence{std::make_shared<TaskGroupSequence>()};
+	std::vector<std::function<void()>> pchBuilds;
+	const auto inOrder = [&pchBuilds]() -> std::function<void()> {
+		if (pchBuilds.empty())
+			return {};
+		return [pchBuilds]() {
+			for (const std::function<void()>& build: pchBuilds)
+				build();
+		};
+	};
 
 	const FilePath buildDir{getCachedBuildDir()};
 	if (buildDir.empty() || !buildDir.exists())
-		return sequence;
+		return inOrder();
 
 	CMakeFileAPIReader reader{buildDir};
 	const auto entriesResult{
 		reader.getSourcesDetailed(m_settings->getConfiguration(), m_settings->getTargetGlob())};
 	if (!entriesResult.has_value())
-		return sequence;
+		return inOrder();
 
 	const std::vector<FilePathFilter> excludeFilters{
 		m_settings->getExcludeFiltersExpandedAndAbsolute()};
@@ -832,7 +838,7 @@ std::shared_ptr<Task> SourceGroupCxxCMakeFileAPI::getPreIndexTask(
 	// One PCH build per distinct (header, flags). Built for all matching source
 	// entries regardless of the current refresh scope, since any re-indexed TU in
 	// the group needs the PCH. Rebuilt on every index so its symbols are re-indexed
-	// into the (possibly cleared) database -- see createBuildPchTaskForInput.
+	// into the (possibly cleared) database -- see createBuildPchWorkForInput.
 	std::set<FilePath> builtPchOutputs;
 	int pchCount = 0;
 	for (const auto& entry : entriesResult->entries)
@@ -848,7 +854,7 @@ std::shared_ptr<Task> SourceGroupCxxCMakeFileAPI::getPreIndexTask(
 		if (!builtPchOutputs.insert(pchOutput).second)
 			continue;
 
-		sequence->addTask(utility::createBuildPchTaskForInput(
+		pchBuilds.push_back(utility::createBuildPchWorkForInput(
 			header, pchOutput, flags, entry.compileGroup->compilerPath, storageProvider, dialogView));
 		++pchCount;
 	}
@@ -856,7 +862,7 @@ std::shared_ptr<Task> SourceGroupCxxCMakeFileAPI::getPreIndexTask(
 	if (pchCount > 0)
 		LOG_INFO("Zero-config PCH: preparing " + std::to_string(pchCount) + " precompiled header(s)");
 
-	return sequence;
+	return inOrder();
 }
 
 std::vector<std::shared_ptr<IndexerCommand>> SourceGroupCxxCMakeFileAPI::getIndexerCommands(

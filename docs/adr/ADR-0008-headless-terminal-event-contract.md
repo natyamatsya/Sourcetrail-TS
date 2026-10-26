@@ -64,12 +64,11 @@ converted exactly once at the existing boundaries and never used for control flo
 ## Update (2026-10-26): the root is the pipeline coroutine
 
 The decision stands; its mechanism moved. The indexing pipeline is no longer a dispatched task
-tree but a coroutine of senders (`Project::startIndexing`, each stage run by
-`execution::runTask`), and `TaskFinally` is gone with the task scheduler. The coroutine's
-completion is now the root: its value (success or a failed stage), its error (a throw) and its
-stop (termination) each dispatch exactly one `MessageIndexingFinished`. A throwing stage still
-becomes `STATE_FAILURE` at its `TaskRunner`; that conversion is unit-tested in
-`TaskTestSuite`.
+tree but a coroutine (`Project::startIndexing`), its steps coroutines and plain functions, and
+`TaskFinally` and `TaskRunner` are gone with the task scheduler. The coroutine's completion is
+now the root: its value (the decision on the data, or none), its error (a step threw; the error
+is logged) and its stop (termination) each dispatch exactly one `MessageIndexingFinished`. A
+throwing stream of the parallel stage stops the others (`ExecutionTestSuite`).
 
 ## Update (2026-10-26): the watchdog knows what progress to expect
 

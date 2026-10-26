@@ -1,11 +1,10 @@
 #include "TaskFillIndexerCommandQueue.h"
 
-#include "TaskParking.h"
-
 #include <algorithm>
 #include <map>
 
-#include "Blackboard.h"
+#include "IndexingRunState.h"
+#include "WorkPools.h"
 #ifndef SRCTRL_MODULE_BUILD
 #include "CombinedIndexerCommandProvider.h"
 #include "FileSystem.h"
@@ -71,7 +70,17 @@ TaskFillIndexerCommandsQueue::TaskFillIndexerCommandsQueue(
 	}
 }
 
-void TaskFillIndexerCommandsQueue::doEnter(std::shared_ptr<Blackboard> blackboard)
+exec::task<void> TaskFillIndexerCommandsQueue::run(IndexingRunState& state)
+{
+	begin(state);
+	while (!refill(state))
+	{
+		co_await execution::delay(std::chrono::milliseconds(200));	// holding no thread
+	}
+	end(state);
+}
+
+void TaskFillIndexerCommandsQueue::begin(IndexingRunState& state)
 {
 	{
 		std::lock_guard<std::mutex> lock(m_commandsMutex);
@@ -93,37 +102,23 @@ void TaskFillIndexerCommandsQueue::doEnter(std::shared_ptr<Blackboard> blackboar
 		}
 	}
 
-	fillCommandQueue(blackboard);
+	fillCommandQueue(state);
 
-	blackboard->set<bool>("indexer_command_queue_started", true);
+	state.begin(state.commandQueueStarted);
 }
 
-Task::TaskState TaskFillIndexerCommandsQueue::doUpdate(std::shared_ptr<Blackboard> blackboard)
+bool TaskFillIndexerCommandsQueue::refill(IndexingRunState& state)
 {
-	using enum Task::TaskState;
-	if (m_interrupted)
+	if (fillCommandQueue(state))
 	{
-		return STATE_FAILURE;
+		return false;
 	}
-
-	if (!fillCommandQueue(blackboard))
-	{
-		std::lock_guard<std::mutex> lock(m_commandsMutex);
-
-		if (m_indexerCommandProvider->empty())
-		{
-			return STATE_SUCCESS;
-		}
-	}
-
-	TaskParking::restFor(std::chrono::milliseconds(200));	// parked meanwhile
-
-	return STATE_RUNNING;
+	std::lock_guard<std::mutex> lock(m_commandsMutex);
+	return m_indexerCommandProvider->empty();
 }
 
-void TaskFillIndexerCommandsQueue::doExit(std::shared_ptr<Blackboard> blackboard)
+void TaskFillIndexerCommandsQueue::end(IndexingRunState& state)
 {
-	using enum Task::TaskState;
 	if constexpr (language_packages::buildRustLanguagePackage)
 		if (m_rustDedup.skippedCount)
 			LOG_INFO_STREAM(<< "Skipped " << m_rustDedup.skippedCount
@@ -133,7 +128,7 @@ void TaskFillIndexerCommandsQueue::doExit(std::shared_ptr<Blackboard> blackboard
 			LOG_INFO_STREAM(<< "Skipped " << m_swiftDedup.skippedCount
 				<< " duplicate Swift package commands in this indexing run.");
 
-	blackboard->set<bool>("indexer_command_queue_stopped", true);
+	state.commandQueueStopped = true;
 
 	// The command queue won't grow any further: wake subprocesses blocked waiting
 	// for a command so they observe the stop and exit promptly, rather than waiting
@@ -141,24 +136,8 @@ void TaskFillIndexerCommandsQueue::doExit(std::shared_ptr<Blackboard> blackboard
 	m_indexerCommandManager.notifyWaiters();
 }
 
-void TaskFillIndexerCommandsQueue::doReset(std::shared_ptr<Blackboard>  /*blackboard*/)
-{
-	m_interrupted = false;
-
-	if constexpr (language_packages::buildRustLanguagePackage)
-		m_rustDedup.reset();
-	if constexpr (language_packages::buildSwiftLanguagePackage)
-		m_swiftDedup.reset();
-}
-
-void TaskFillIndexerCommandsQueue::terminate()
-{
-	m_interrupted = true;
-}
-
 void TaskFillIndexerCommandsQueue::handleMessage(MessageIndexingInterrupted*  /*message*/)
 {
-	using enum Task::TaskState;
 	std::lock_guard<std::mutex> lock(m_commandsMutex);
 
 	LOG_INFO(
@@ -250,9 +229,8 @@ void TaskFillIndexerCommandsQueue::consumeCommandsGrouped(
 	}
 }
 
-bool TaskFillIndexerCommandsQueue::fillCommandQueue(std::shared_ptr<Blackboard> blackboard)
+bool TaskFillIndexerCommandsQueue::fillCommandQueue(IndexingRunState& state)
 {
-	using enum Task::TaskState;
 	std::vector<std::shared_ptr<IndexerCommand>> commands;
 	size_t skippedRust = 0;
 	size_t skippedSwift = 0;
@@ -280,14 +258,11 @@ bool TaskFillIndexerCommandsQueue::fillCommandQueue(std::shared_ptr<Blackboard> 
 	{
 		m_rustDedup.skippedCount  += skippedRust;
 		m_swiftDedup.skippedCount += skippedSwift;
-		if (blackboard)
-			blackboard->update<int>(
-				"source_file_count",
-				[n = static_cast<int>(skippedCommands)](int count)
-				{
-					const int newCount = count - n;
-					return newCount >= 0 ? newCount : 0;
-				});
+		const int skipped = static_cast<int>(skippedCommands);
+		int count = state.sourceFileCount;
+		while (!state.sourceFileCount.compare_exchange_weak(count, count >= skipped ? count - skipped : 0))
+		{
+		}
 		if (skippedRust)
 			LOG_INFO_STREAM(<< "Skipping " << skippedRust
 				<< " duplicate Rust crate commands while filling queue.");

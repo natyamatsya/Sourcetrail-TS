@@ -16,7 +16,6 @@
 #include "MessageStatus.h"
 #include "SourceGroupSettingsCxxCdb.h"
 #endif
-#include "TaskLambda.h"
 #include "ToolChain.h"
 #ifndef SRCTRL_MODULE_BUILD
 #include "utility.h"
@@ -224,12 +223,12 @@ std::vector<std::shared_ptr<IndexerCommand>> SourceGroupCxxCdb::getIndexerComman
 	return getIndexerCommandProvider(info)->consumeAllCommands();
 }
 
-std::shared_ptr<Task> SourceGroupCxxCdb::getPreIndexTask(
+std::function<void()> SourceGroupCxxCdb::getPreIndexWork(
 	std::shared_ptr<StorageProvider> storageProvider, std::shared_ptr<DialogView> dialogView) const
 {
 	if (m_settings->getPchInputFilePath().empty())
 	{
-		return std::make_shared<TaskLambda>([]() {});
+		return {};
 	}
 
 	std::vector<std::string> compilerFlags;
@@ -290,7 +289,7 @@ std::shared_ptr<Task> SourceGroupCxxCdb::getPreIndexTask(
 
 	utility::append(compilerFlags, m_settings->getPchFlags());
 
-	return utility::createBuildPchTask(m_settings.get(), compilerFlags, storageProvider, dialogView);
+	return utility::createBuildPchWork(m_settings.get(), compilerFlags, storageProvider, dialogView);
 }
 
 std::shared_ptr<SourceGroupSettings> SourceGroupCxxCdb::getSourceGroupSettings()

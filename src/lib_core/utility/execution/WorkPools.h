@@ -9,7 +9,7 @@
  * The work pool is the app's compute pool once the app set it (the indexer's
  * parallel streams run there); before, and without one (headless, tests), a
  * small pool kept for the purpose. afterDelay() runs a function on a timer
- * thread once a delay has passed.
+ * thread once a delay has passed; delay() is the same as a sender.
  */
 //-----------------------------------------------------------------------
 
@@ -37,6 +37,13 @@ AnyScheduler fallbackPool();
 
 //! The shared timer's scheduler: exec::schedule_after on it completes on its thread.
 exec::timed_thread_scheduler timerScheduler();
+
+//! Completes on the work pool once `delay` has passed (a coroutine's poll), holding no
+//! thread meanwhile; stopped, it completes with set_stopped at once.
+inline auto delay(std::chrono::milliseconds delay)
+{
+	return exec::schedule_after(timerScheduler(), delay) | stdexec::continues_on(workPool());
+}
 
 //! Runs `work` on the timer's thread once `delay` has passed. Keep it short: post
 //! what takes longer elsewhere.

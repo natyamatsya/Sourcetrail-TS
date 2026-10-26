@@ -10,17 +10,19 @@
 
 #include "MessageIndexingInterrupted.h"
 #include "MessageListener.h"
-#include "Task.h"
+#include "StdexecPrelude.h"
 
 #include "InterprocessBackend.h"
+
+#include <exec/task.hpp>
 
 class CombinedIndexerCommandProvider;
 class IndexerCommand;
 class IndexerCommandProvider;
+struct IndexingRunState;
 
-class TaskFillIndexerCommandsQueue
-	: public Task
-	, public MessageListener<MessageIndexingInterrupted>
+// The refill: keeps the indexers' command queue topped up from the run's commands.
+class TaskFillIndexerCommandsQueue: public MessageListener<MessageIndexingInterrupted>
 {
 public:
 	struct DeduplicationState
@@ -40,16 +42,21 @@ public:
 		std::unique_ptr<IndexerCommandProvider> indexerCommandProvider,
 		size_t maximumQueueSize);
 
-protected:
-	void doEnter(std::shared_ptr<Blackboard> blackboard) override;
-	TaskState doUpdate(std::shared_ptr<Blackboard> blackboard) override;
-	void doExit(std::shared_ptr<Blackboard> blackboard) override;
-	void doReset(std::shared_ptr<Blackboard> blackboard) override;
-	void terminate() override;
+	//! begin(), refill() every 200 ms (holding no thread meanwhile) until every
+	//! command is queued, end().
+	exec::task<void> run(IndexingRunState& state);
 
+	//! Queues the first commands: the indexers may start.
+	void begin(IndexingRunState& state);
+	//! Tops the queue up; true once every command was queued.
+	bool refill(IndexingRunState& state);
+	//! The queue gets no more: the indexers waiting for a command stop.
+	void end(IndexingRunState& state);
+
+protected:
 	void handleMessage(MessageIndexingInterrupted* message) override;
 
-	bool fillCommandQueue(std::shared_ptr<Blackboard> blackboard);
+	bool fillCommandQueue(IndexingRunState& state);
 
 private:
 	//! Consume up to `count` commands (legacy path: any group, ordered by the
@@ -85,8 +92,6 @@ private:
 
 	DeduplicationState m_rustDedup;
 	DeduplicationState m_swiftDedup;
-
-	bool m_interrupted = false;
 };
 
 #endif	  // TASK_FILL_INDEXER_COMMAND_QUEUE_H

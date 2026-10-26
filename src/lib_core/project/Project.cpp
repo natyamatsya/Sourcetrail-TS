@@ -46,8 +46,8 @@
 #include "MessageStatus.h"
 #include "TabIds.h"
 #include "TabQueues.h"
-#include "TaskSender.h"
-#include "Blackboard.h"
+#include "IndexingRunState.h"
+#include "Strand.h"
 #include "TimeStamp.h"
 #include "WorkPools.h"
 #include "TextAccess.h"
@@ -559,24 +559,23 @@ struct Project::IndexingRun
 	std::shared_ptr<DialogView> dialogView;
 	std::shared_ptr<PersistentStorage> tempStorage;
 	FilePath tempIndexDbFilePath;
-	const std::shared_ptr<Blackboard> blackboard = std::make_shared<Blackboard>();
+	IndexingRunState state;
 	int sourceFileCount = 0;
 
 	// The steps, in their order; what is empty is left out.
-	std::shared_ptr<Task> cleanStorage;
+	std::shared_ptr<TaskCleanStorage> cleanStorage;
 	bool indexing = false;	// there are indexer commands: the streams below
-	std::vector<std::shared_ptr<Task>> preIndexTasks;
-	std::shared_ptr<Task> fillQueue;
-	std::shared_ptr<Task> buildIndex;
-	std::shared_ptr<Task> merge;
-	std::shared_ptr<Task> inject;
-	std::shared_ptr<Task> injectRest;
-	std::shared_ptr<Task> customCommands;
-	std::shared_ptr<Task> finishParsing;
+	std::vector<std::function<void()>> preIndexWork;
+	std::shared_ptr<TaskFillIndexerCommandsQueue> fillQueue;
+	std::shared_ptr<TaskBuildIndex> buildIndex;
+	std::shared_ptr<TaskMergeStorages> merge;
+	std::shared_ptr<TaskInjectStorage> inject;
+	std::shared_ptr<TaskExecuteCustomCommands> customCommands;
+	std::shared_ptr<TaskFinishParsing> finishParsing;
 	bool shard = false;	// a shard run: no swap or discard at the end
 	std::size_t stripedFileCount = 0;
 
-	// Requested by stopIndexing: the step running is terminated.
+	// Requested by stopIndexing: the step running stops.
 	stdexec::inplace_stop_source stop;
 
 	// Lets go of the steps and the target, which keep its database open: what
@@ -585,12 +584,11 @@ struct Project::IndexingRun
 	{
 		tempStorage.reset();
 		cleanStorage.reset();
-		preIndexTasks.clear();
+		preIndexWork.clear();
 		fillQueue.reset();
 		buildIndex.reset();
 		merge.reset();
 		inject.reset();
-		injectRest.reset();
 		customCommands.reset();
 		finishParsing.reset();
 	}
@@ -602,8 +600,6 @@ struct Project::IndexingRun
 
 namespace
 {
-using enum Task::TaskState;
-
 // How a run ended, for what follows it on the app's queue.
 struct RunEnd
 {
@@ -614,51 +610,39 @@ struct RunEnd
 		Discard
 	};
 
-	Task::TaskState state = STATE_FAILURE;
+	bool decided = false;	// false: the run ended without a decision on its data
 	Data data = Data::None;
 	bool refreshAgain = false;
 };
 
-// How often a stream looks whether what it waits for has begun.
-constexpr std::chrono::milliseconds startPoll {25};
-
-bool flagSet(Blackboard& blackboard, const std::string& key)
+// Runs `stream` once `stage` of the run began.
+exec::task<void> onceBegun(IndexingRunState& state, const std::atomic<bool>& stage, exec::task<void> stream)
 {
-	bool value = false;
-	blackboard.get(key, value);
-	return value;
+	co_await state.begun(stage);
+	co_await std::move(stream);
 }
 
-// Waits until `key` is set on the blackboard, then runs `task` once.
-exec::task<Task::TaskState> runOnceStarted(
-	std::shared_ptr<Blackboard> blackboard, std::string key, std::shared_ptr<Task> task)
+// Runs `stream` on a strand of its own over the work pool: side by side with the
+// run's other streams.
+auto onStrandOfItsOwn(exec::task<void> stream)
 {
-	while (!flagSet(*blackboard, key))
-	{
-		co_await execution::delay(startPoll);
-	}
-	co_return co_await execution::runTask(task, blackboard);
+	return stdexec::starts_on(execution::Strand::create(execution::workPool())->scheduler(), std::move(stream));
 }
 
-// Runs `task` again and again while it succeeds: a stream that ends with FAILURE
-// once there is nothing left (merge, inject). Succeeds then.
-exec::task<Task::TaskState> runWhileSuccess(std::shared_ptr<Blackboard> blackboard, std::shared_ptr<Task> task)
+std::string describe(const std::exception_ptr& error)
 {
-	for (bool again = false; co_await execution::runTask(task, blackboard, again) == STATE_SUCCESS; again = true)
+	try
 	{
+		std::rethrow_exception(error);
 	}
-	co_return STATE_SUCCESS;
-}
-
-// Waits until `key` is set on the blackboard, then runs `task` while it succeeds.
-exec::task<Task::TaskState> drainOnceStarted(
-	std::shared_ptr<Blackboard> blackboard, std::string key, std::shared_ptr<Task> task)
-{
-	while (!flagSet(*blackboard, key))
+	catch (const std::exception& e)
 	{
-		co_await execution::delay(startPoll);
+		return e.what();
 	}
-	co_return co_await runWhileSuccess(blackboard, task);
+	catch (...)
+	{
+		return "an unknown exception";
+	}
 }
 }	 // namespace
 
@@ -971,7 +955,10 @@ void Project::buildIndexImpl(RefreshInfo info, std::shared_ptr<DialogView> dialo
 		{
 			if (sourceGroup->getStatus() == SourceGroupStatusType::ENABLED)
 			{
-				run->preIndexTasks.push_back(sourceGroup->getPreIndexTask(storageProvider, dialogView));
+				if (std::function<void()> work = sourceGroup->getPreIndexWork(storageProvider, dialogView))
+				{
+					run->preIndexWork.push_back(std::move(work));
+				}
 			}
 		}
 
@@ -1060,10 +1047,6 @@ void Project::buildIndexImpl(RefreshInfo info, std::shared_ptr<DialogView> dialo
 				swiftSupervisorCount);
 		run->merge = std::make_shared<TaskMergeStorages>(storageProvider);
 		run->inject = std::make_shared<TaskInjectStorage>(storageProvider, tempStorage);
-
-		// what injects the remaining intermediate storages into the persistent storage
-		// once the producers are done
-		run->injectRest = std::make_shared<TaskInjectStorage>(storageProvider, tempStorage);
 	}
 	else
 	{
@@ -1104,32 +1087,18 @@ void Project::startIndexing(std::shared_ptr<IndexingRun> run)
 	// The run's steps, one after another, the indexer's streams side by side: what the
 	// task tree did, as a coroutine. A step that fails ends the run.
 	auto steps = [](std::shared_ptr<IndexingRun> run) -> exec::task<RunEnd> {
-		const std::shared_ptr<Blackboard>& blackboard = run->blackboard;
-		if (run->cleanStorage && co_await execution::runTask(run->cleanStorage, blackboard) == STATE_FAILURE)
+		IndexingRunState& state = run->state;
+		if (run->cleanStorage)
 		{
-			co_return RunEnd {};
+			run->cleanStorage->run(state);
 		}
-		blackboard->set<int>("source_file_count", run->sourceFileCount);
-		blackboard->set<int>("indexed_source_file_count", 0);
-		blackboard->set<bool>("interrupted_indexing", false);
-		blackboard->set<float>("index_time", 0.0f);
+		state.sourceFileCount = run->sourceFileCount;
 
 		if (run->indexing)
 		{
-			for (const char* flag:
-				 {"indexer_threads_started",
-				  "indexer_threads_stopped",
-				  "indexer_command_queue_started",
-				  "indexer_command_queue_stopped"})
+			for (const std::function<void()>& work: run->preIndexWork)
 			{
-				blackboard->set<bool>(flag, false);
-			}
-			for (const std::shared_ptr<Task>& preIndexTask: run->preIndexTasks)
-			{
-				if (co_await execution::runTask(preIndexTask, blackboard) == STATE_FAILURE)
-				{
-					co_return RunEnd {};
-				}
+				work();
 			}
 
 			// Parsing: the indexing dialog, the target in write mode, and its time kept.
@@ -1141,44 +1110,34 @@ void Project::startIndexing(std::shared_ptr<IndexingRun> run)
 				run->tempStorage->setMode(SqliteIndexStorage::StorageModeType::STORAGE_MODE_WRITE);
 			}
 			// The refill, the build once the queue has commands, merging and writing
-			// once the indexers run: side by side, all to their end.
-			const auto [filled, built, merged, injected] = co_await stdexec::when_all(
-				execution::runTask(run->fillQueue, blackboard),
-				runOnceStarted(blackboard, "indexer_command_queue_started", run->buildIndex),
-				drainOnceStarted(blackboard, "indexer_threads_started", run->merge),
-				drainOnceStarted(blackboard, "indexer_threads_started", run->inject));
-			const float parseDuration = static_cast<float>(TimeStamp::durationSeconds(parseStart));
-			blackboard->update<float>("index_time", [parseDuration](float time) { return time + parseDuration; });
-			for (const Task::TaskState state: {filled, built, merged, injected})
-			{
-				if (state == STATE_FAILURE)
-				{
-					co_return RunEnd {};
-				}
-			}
+			// once the indexers run: side by side, all to their end. One that throws
+			// stops the others.
+			co_await stdexec::when_all(
+				onStrandOfItsOwn(run->fillQueue->run(state)),
+				onStrandOfItsOwn(onceBegun(state, state.commandQueueStarted, run->buildIndex->run(state))),
+				onStrandOfItsOwn(onceBegun(state, state.indexersStarted, run->merge->run())),
+				onStrandOfItsOwn(onceBegun(state, state.indexersStarted, run->inject->run())));
+			state.addIndexSeconds(TimeStamp::durationSeconds(parseStart));
 
 			// Overridden by the dialogs that come later: not hidden again.
 			IndexingStateMachine::instance()->wrappingUp();
 			run->dialogView->showUnknownProgressDialog("Finish Indexing", "Saving\nRemaining Data");
 			// The producers are done: the rest, until the provider is empty.
-			co_await runWhileSuccess(blackboard, run->injectRest);
+			co_await run->inject->run();
 		}
 		else
 		{
 			run->dialogView->hideUnknownProgressDialog();
 		}
 
-		if (run->customCommands && co_await execution::runTask(run->customCommands, blackboard) == STATE_FAILURE)
+		if (run->customCommands)
 		{
-			co_return RunEnd {};
+			run->customCommands->run(state);
 		}
-		if (co_await execution::runTask(run->finishParsing, blackboard) == STATE_FAILURE)
-		{
-			co_return RunEnd {};
-		}
+		const DatabasePolicy policy = co_await run->finishParsing->run(state);
 
 		// The decision on the run's data: what follows the run carries it out.
-		RunEnd end {STATE_SUCCESS};
+		RunEnd end {true};
 		if (run->shard)
 		{
 			// Shard run: no swap/discard -- the shard DB stays at its output path.
@@ -1191,11 +1150,12 @@ void Project::startIndexing(std::shared_ptr<IndexingRun> run)
 				<< "shard " << shardConfig.index << "/" << shardConfig.count << " written to "
 				<< run->tempIndexDbFilePath.str());
 		}
-		else if (blackboard->exists("keep_database"))
+		else if (policy == DatabasePolicy::DATABASE_POLICY_KEEP || policy == DatabasePolicy::DATABASE_POLICY_REFRESH)
 		{
 			end.data = RunEnd::Data::Keep;
+			end.refreshAgain = policy == DatabasePolicy::DATABASE_POLICY_REFRESH;
 		}
-		else if (blackboard->exists("discard_database"))
+		else if (policy == DatabasePolicy::DATABASE_POLICY_DISCARD)
 		{
 			end.data = RunEnd::Data::Discard;
 		}
@@ -1203,7 +1163,6 @@ void Project::startIndexing(std::shared_ptr<IndexingRun> run)
 		{
 			co_return RunEnd {};	// no decision on the data
 		}
-		end.refreshAgain = blackboard->exists("refresh_database");
 		run->releaseSteps();
 		co_return end;
 	};
@@ -1232,7 +1191,7 @@ void Project::startIndexing(std::shared_ptr<IndexingRun> run)
 	m_indexing.spawn(stdexec::write_env(
 		stdexec::starts_on(run->strand->scheduler(), steps(run)) |
 			stdexec::then([ended, weakProject = weak_from_this(), dialogView = run->dialogView](RunEnd end) {
-				if (end.state == STATE_FAILURE)
+				if (!end.decided)
 				{
 					ended(false);
 					return;
@@ -1263,7 +1222,10 @@ void Project::startIndexing(std::shared_ptr<IndexingRun> run)
 					}
 				});
 			}) |
-			stdexec::upon_error([ended](std::exception_ptr) { ended(false); }) |
+			stdexec::upon_error([ended](std::exception_ptr error) {
+				LOG_ERROR("An indexing step failed: " + describe(error));
+				ended(false);
+			}) |
 			stdexec::upon_stopped([ended]() { ended(true); }),
 		stdexec::prop {stdexec::get_stop_token, stop}));
 }

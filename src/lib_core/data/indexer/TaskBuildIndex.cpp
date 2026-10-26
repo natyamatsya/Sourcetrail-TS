@@ -1,12 +1,12 @@
 #include "TaskBuildIndex.h"
 
-#include "TaskParking.h"
+#include <stdexcept>
 
 #include "language_package_flags.h"
 #include "AppPath.h"
 #include "IndexerCommandType.h"
-#include "Blackboard.h"
 #include "DialogView.h"
+#include "IndexingRunState.h"
 #include "FileLogger.h"
 #include "MessageIndexingStatus.h"
 #include "ParserClientImpl.h"
@@ -22,7 +22,6 @@ using namespace utility;
 
 namespace
 {
-	using enum Task::TaskState;
 	using enum IndexerCommandType;
 constexpr bool hasRustLanguagePackage{language_packages::buildRustLanguagePackage};
 constexpr bool hasSwiftLanguagePackage{language_packages::buildSwiftLanguagePackage};
@@ -205,7 +204,7 @@ TaskBuildIndex::TaskBuildIndex(
 
 TaskBuildIndex::~TaskBuildIndex()
 {
-	// Safety net for abrupt teardown (destroyed without a clean doExit): stop the
+	// Safety net for abrupt teardown (destroyed without a clean end()): stop the
 	// supervisors and kill any live subprocesses, so they end before what they use.
 	if (m_runningSupervisorCount > 0)
 	{
@@ -220,7 +219,27 @@ TaskBuildIndex::~TaskBuildIndex()
 	// m_stopCallback unregisters (declared last).
 }
 
-void TaskBuildIndex::doEnter(std::shared_ptr<Blackboard> blackboard)
+exec::task<void> TaskBuildIndex::run(IndexingRunState& state)
+{
+	start(state);
+	while (true)
+	{
+		const Look look = this->look(state);
+		if (look == Look::Running)
+		{
+			co_await execution::delay(std::chrono::milliseconds(50));	// holding no thread
+			continue;
+		}
+		end(state);
+		if (look == Look::Failed)
+		{
+			throw std::runtime_error("building the index failed; see the errors above");
+		}
+		co_return;
+	}
+}
+
+void TaskBuildIndex::start(IndexingRunState& state)
 {
 	m_interprocessIndexingStatusManager.setIndexingInterrupted(false);
 	m_interprocessIndexingStatusManager.setQueueStopped(false);
@@ -232,7 +251,7 @@ void TaskBuildIndex::doEnter(std::shared_ptr<Blackboard> blackboard)
 	m_lastWatchdogProgressTime = std::chrono::steady_clock::now();
 	m_lastWatchdogLogTime = m_lastWatchdogProgressTime;
 	m_indexingStartTime = m_lastWatchdogProgressTime;
-	updateIndexingDialog(blackboard, std::vector<FilePath>());
+	updateIndexingDialog(state, std::vector<FilePath>());
 
 	std::string logFilePath;
 	Logger* logger = LogManager::getInstance()->getLoggerByType("FileLogger");
@@ -318,19 +337,17 @@ void TaskBuildIndex::doEnter(std::shared_ptr<Blackboard> blackboard)
 		}
 	}
 
-	blackboard->set<bool>("indexer_threads_started", true);
+	state.begin(state.indexersStarted);
 }
 
-Task::TaskState TaskBuildIndex::doUpdate(std::shared_ptr<Blackboard> blackboard)
+TaskBuildIndex::Look TaskBuildIndex::look(IndexingRunState& state)
 {
-	using enum Task::TaskState;
 	using enum IndexerCommandType;
 	try
 	{
 		size_t runningThreadCount = m_runningSupervisorCount;
 
-		bool queueStopped = m_indexerCommandQueueStopped.load();
-		blackboard->get<bool>("indexer_command_queue_stopped", queueStopped);
+		const bool queueStopped = m_indexerCommandQueueStopped.load() || state.commandQueueStopped.load();
 		m_indexerCommandQueueStopped.store(queueStopped);
 		if (queueStopped && !m_interprocessIndexingStatusManager.getQueueStopped())
 			m_interprocessIndexingStatusManager.setQueueStopped(true);
@@ -339,28 +356,27 @@ Task::TaskState TaskBuildIndex::doUpdate(std::shared_ptr<Blackboard> blackboard)
 		if (!indexingFiles.empty())
 		{
 			m_lastKnownIndexingFiles = indexingFiles;
-			updateIndexingDialog(blackboard, indexingFiles);
+			updateIndexingDialog(state, indexingFiles);
 		}
 
 		if (queueStopped && runningThreadCount == 0)
 		{
 			LOG_INFO_STREAM(<< "command queue stopped and no running threads. done.");
-			return STATE_SUCCESS;
+			return Look::Done;
 		}
 		else if (m_stopSource.stop_requested())
 		{
 			LOG_INFO_STREAM(<< "interrupted indexing.");
-			blackboard->set("interrupted_indexing", true);
-			return STATE_SUCCESS;
+			state.interrupted = true;
+			return Look::Done;
 		}
 
-		if (fetchIntermediateStorages(blackboard))
+		if (fetchIntermediateStorages(state))
 		{
-			updateIndexingDialog(blackboard, std::vector<FilePath>());
+			updateIndexingDialog(state, std::vector<FilePath>());
 		}
 
-		int indexedSourceFileCount = 0;
-		blackboard->get("indexed_source_file_count", indexedSourceFileCount);
+		const int indexedSourceFileCount = state.indexedSourceFileCount;
 		const size_t currentIndexedSourceFileCount =
 			indexedSourceFileCount > 0 ? static_cast<size_t>(indexedSourceFileCount) : 0;
 		const size_t currentIndexingFileCount = m_indexingFileCount;
@@ -380,8 +396,7 @@ Task::TaskState TaskBuildIndex::doUpdate(std::shared_ptr<Blackboard> blackboard)
 			now - m_lastWatchdogProgressTime > std::chrono::seconds(30) &&
 			now - m_lastWatchdogLogTime > std::chrono::seconds(10))
 		{
-			int sourceFileCount = 0;
-			blackboard->get("source_file_count", sourceFileCount);
+			const int sourceFileCount = state.sourceFileCount;
 			const auto stalledSeconds = std::chrono::duration_cast<std::chrono::seconds>(
 				now - m_lastWatchdogProgressTime)
 											 .count();
@@ -398,22 +413,20 @@ Task::TaskState TaskBuildIndex::doUpdate(std::shared_ptr<Blackboard> blackboard)
 			m_lastWatchdogLogTime = now;
 		}
 
-		TaskParking::restFor(std::chrono::milliseconds(50));	// parked meanwhile
-
-		return STATE_RUNNING;
+		return Look::Running;
 	}
 	catch (const std::exception& e)
 	{
-		LOG_ERROR_STREAM(<< "TaskBuildIndex::doUpdate exception: " << e.what());
+		LOG_ERROR_STREAM(<< "TaskBuildIndex::look exception: " << e.what());
 		m_stopSource.request_stop();
 		m_indexerCommandQueueStopped.store(true);
-		blackboard->set("interrupted_indexing", true);
+		state.interrupted = true;
 		killProcesses();
-		return STATE_FAILURE;
+		return Look::Failed;
 	}
 }
 
-void TaskBuildIndex::logIndexingSummary(const std::shared_ptr<Blackboard>& blackboard) const
+void TaskBuildIndex::logIndexingSummary(const IndexingRunState& state) const
 {
 	// B2-gate numbers: indexing wall time vs writer back-pressure stalls. The
 	// storage writer / pre-merge log their busy totals separately (TaskInjectStorage
@@ -422,18 +435,14 @@ void TaskBuildIndex::logIndexingSummary(const std::shared_ptr<Blackboard>& black
 							std::chrono::steady_clock::now() - m_indexingStartTime)
 							.count();
 
-	int indexedSourceFileCount = 0;
-	blackboard->get("indexed_source_file_count", indexedSourceFileCount);
-
 	LOG_INFO_STREAM(
-		<< "indexing summary: wall " << wallMs << " ms, " << indexedSourceFileCount
+		<< "indexing summary: wall " << wallMs << " ms, " << state.indexedSourceFileCount.load()
 		<< " source files, writer back-pressure stalls " << m_throttleStallCount << " ("
 		<< m_throttleStallMs << " ms)");
 }
 
-void TaskBuildIndex::doExit(std::shared_ptr<Blackboard> blackboard)
+void TaskBuildIndex::end(IndexingRunState& state)
 {
-	using enum Task::TaskState;
 	using enum IndexerCommandType;
 	// Cooperative teardown: on interruption the supervisors are already stopping
 	// (m_stopSource + the IPC interrupt flag). Give the subprocesses a brief window to
@@ -456,15 +465,15 @@ void TaskBuildIndex::doExit(std::shared_ptr<Blackboard> blackboard)
 
 	if (m_stopSource.stop_requested())
 	{
-		blackboard->set<bool>("indexer_threads_stopped", true);
+		state.indexersStopped = true;
 		m_storageProvider->setDone();	 // release the merge/inject waiters
-		logIndexingSummary(blackboard);
+		logIndexingSummary(state);
 		return;
 	}
 
-	while (fetchIntermediateStorages(blackboard))
+	while (fetchIntermediateStorages(state))
 		;
-	handOnStorages(blackboard, true);	// the producers are done: the writer takes the rest
+	handOnStorages(state, true);	// the producers are done: the writer takes the rest
 
 	std::vector<FilePath> crashedFiles =
 		m_interprocessIndexingStatusManager.getCrashedSourceFilePaths();
@@ -489,17 +498,9 @@ void TaskBuildIndex::doExit(std::shared_ptr<Blackboard> blackboard)
 		m_storageProvider->insert(storage);
 	}
 
-	blackboard->set<bool>("indexer_threads_stopped", true);
+	state.indexersStopped = true;
 	m_storageProvider->setDone();	 // release the merge/inject waiters
-	logIndexingSummary(blackboard);
-}
-
-void TaskBuildIndex::doReset(std::shared_ptr<Blackboard>  /*blackboard*/) {}
-
-void TaskBuildIndex::terminate()
-{
-	// Cooperative stop; doExit()/the destructor kill any stragglers + join.
-	m_stopSource.request_stop();
+	logIndexingSummary(state);
 }
 
 void TaskBuildIndex::handleMessage(MessageIndexingInterrupted*  /*message*/)
@@ -508,7 +509,7 @@ void TaskBuildIndex::handleMessage(MessageIndexingInterrupted*  /*message*/)
 
 	// request_stop() fires the stop callback, which raises the IPC interrupt flag so
 	// subprocesses finish their current TU and exit; the babysitter loops stop
-	// relaunching. Stragglers are killed by the bounded fallback in doExit().
+	// relaunching. Stragglers are killed by the bounded fallback in end().
 	m_stopSource.request_stop();
 
 	m_dialogView->showUnknownProgressDialog(
@@ -813,9 +814,8 @@ void TaskBuildIndex::killProcesses()
 	}
 }
 
-bool TaskBuildIndex::fetchIntermediateStorages(std::shared_ptr<Blackboard> blackboard)
+bool TaskBuildIndex::fetchIntermediateStorages(IndexingRunState& state)
 {
-	using enum Task::TaskState;
 	using enum IndexerCommandType;
 	// Always drain IPC shared memory segments into a local queue first.
 	// This prevents the subprocess back-pressure check (storageCount < 2) from
@@ -925,7 +925,7 @@ bool TaskBuildIndex::fetchIntermediateStorages(std::shared_ptr<Blackboard> black
 	{
 		m_pendingStorages.push_back(std::move(storage));
 	}
-	const size_t handed = handOnStorages(blackboard, false);
+	const size_t handed = handOnStorages(state, false);
 	if (!m_pendingStorages.empty())
 	{
 		// Writer back-pressure: the (serial) storage writer is behind, for an update's
@@ -937,7 +937,7 @@ bool TaskBuildIndex::fetchIntermediateStorages(std::shared_ptr<Blackboard> black
 	return !drained.empty() || handed > 0;
 }
 
-size_t TaskBuildIndex::handOnStorages(const std::shared_ptr<Blackboard>& blackboard, bool all)
+size_t TaskBuildIndex::handOnStorages(IndexingRunState& state, bool all)
 {
 	// As many as the provider holds before the writer is considered behind.
 	const int maxQueuedStoragesBeforePause = 30;
@@ -952,19 +952,16 @@ size_t TaskBuildIndex::handOnStorages(const std::shared_ptr<Blackboard>& blackbo
 
 	if (handed > 0)
 	{
-		blackboard->update<int>(
-			"indexed_source_file_count", [n = static_cast<int>(handed)](int count) { return count + n; });
+		state.indexedSourceFileCount += static_cast<int>(handed);
 	}
 	return handed;
 }
 
-void TaskBuildIndex::updateIndexingDialog(std::shared_ptr<Blackboard> blackboard, const std::vector<FilePath>& sourcePaths)
+void TaskBuildIndex::updateIndexingDialog(const IndexingRunState& state, const std::vector<FilePath>& sourcePaths)
 {
 	// TODO: factor in unindexed files...
-	int sourceFileCount = 0;
-	int indexedSourceFileCount = 0;
-	blackboard->get("source_file_count", sourceFileCount);
-	blackboard->get("indexed_source_file_count", indexedSourceFileCount);
+	const int sourceFileCount = state.sourceFileCount;
+	const int indexedSourceFileCount = state.indexedSourceFileCount;
 
 	m_indexingFileCount += sourcePaths.size();
 

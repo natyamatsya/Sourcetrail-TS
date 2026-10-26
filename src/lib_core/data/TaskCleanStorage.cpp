@@ -1,17 +1,21 @@
 #include "TaskCleanStorage.h"
 
 #include "Application.h"
-#include "Blackboard.h"
 #include "DialogView.h"
+#include "IndexingRunState.h"
 #ifndef SRCTRL_MODULE_BUILD
 #include "FilePath.h"
 #endif
 #include "PersistentStorage.h"
+#ifndef SRCTRL_MODULE_BUILD
+#include "TimeStamp.h"
+#endif
 
 // Imports come AFTER all textual #includes (include-before-import rule: textual libc++
 // following BMI-merged declarations trips "cannot add 'abi_tag' in a redeclaration").
 #ifdef SRCTRL_MODULE_BUILD
 import srctrl.file;
+import srctrl.utility;
 #endif
 
 TaskCleanStorage::TaskCleanStorage(
@@ -26,13 +30,12 @@ TaskCleanStorage::TaskCleanStorage(
 {
 }
 
-void TaskCleanStorage::doEnter(std::shared_ptr<Blackboard>  /*blackboard*/)
+void TaskCleanStorage::run(IndexingRunState& state)
 {
-	using enum Task::TaskState;
 	m_dialogView->showUnknownProgressDialog(
 		"Clearing Files", std::to_string(m_filePaths.size()) + " Files");
 
-	m_start = TimeStamp::now();
+	const TimeStamp start = TimeStamp::now();
 
 	if (!m_filePaths.empty() || m_clearAllErrors)
 	{
@@ -41,11 +44,7 @@ void TaskCleanStorage::doEnter(std::shared_ptr<Blackboard>  /*blackboard*/)
 			storage->setMode(SqliteIndexStorage::StorageModeType::STORAGE_MODE_CLEAR);
 		}
 	}
-}
 
-Task::TaskState TaskCleanStorage::doUpdate(std::shared_ptr<Blackboard>  /*blackboard*/)
-{
-	using enum Task::TaskState;
 	if (std::shared_ptr<PersistentStorage> storage = m_storage.lock())
 	{
 		if (m_clearAllErrors)
@@ -61,14 +60,6 @@ Task::TaskState TaskCleanStorage::doUpdate(std::shared_ptr<Blackboard>  /*blackb
 
 	m_filePaths.clear();
 
-	return STATE_SUCCESS;
-}
-
-void TaskCleanStorage::doExit(std::shared_ptr<Blackboard> blackboard)
-{
-	blackboard->set("clear_time", TimeStamp::durationSeconds(m_start));
-
+	state.clearSeconds = TimeStamp::durationSeconds(start);
 	m_dialogView->hideProgressDialog();
 }
-
-void TaskCleanStorage::doReset(std::shared_ptr<Blackboard>  /*blackboard*/) {}

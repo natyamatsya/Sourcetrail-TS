@@ -1,6 +1,7 @@
 #ifndef SOURCE_GROUP_CXX_CDB_H
 #define SOURCE_GROUP_CXX_CDB_H
 
+#include <functional>
 #include <memory>
 #include <set>
 #include <vector>
@@ -28,7 +29,7 @@ public:
 	std::set<FilePath> getAllSourceFilePaths(std::shared_ptr<clang::tooling::CompilationDatabase> cdb) const;
 	std::shared_ptr<IndexerCommandProvider> getIndexerCommandProvider(const RefreshInfo& info) const override;
 	std::vector<std::shared_ptr<IndexerCommand>> getIndexerCommands(const RefreshInfo& info) const override;
-	std::shared_ptr<Task> getPreIndexTask(std::shared_ptr<StorageProvider> storageProvider, std::shared_ptr<DialogView> dialogView) const override;
+	std::function<void()> getPreIndexWork(std::shared_ptr<StorageProvider> storageProvider, std::shared_ptr<DialogView> dialogView) const override;
 
 private:
 	std::shared_ptr<SourceGroupSettings> getSourceGroupSettings() override;

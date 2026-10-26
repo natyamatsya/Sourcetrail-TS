@@ -60,7 +60,7 @@ inline int CxxPchBuildRunner::run(const FilePath& requestPath)
 		return 1;
 	}
 
-	// --- verbatim the former in-main PCH build (utilitySourceGroupCxx::createBuildPchTaskForInput) --
+	// --- verbatim the former in-main PCH build (utilitySourceGroupCxx::createBuildPchWorkForInput) --
 	CxxParser::initializeLLVM();
 
 	if (const auto created = FileSystem::createDirectories(pchOutputFilePath.getParentDirectory()); !created)

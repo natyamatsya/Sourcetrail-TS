@@ -73,8 +73,8 @@ the last `TaskScheduler`, which is gone (see below).
 ## Later — subsystem migration (Phase 3+)
 
 Incrementally replace the remaining old-async users with sender pipelines, then
-retire `Task`/`TaskScheduler`/`TaskGroup*` entirely. *Done:* `TaskScheduler`,
-`TaskManager` and the composite tasks; `Task` remains as the unit a sender runs.
+retire `Task`/`TaskScheduler`/`TaskGroup*` entirely. *Done:* all of it; the
+indexing steps are coroutines and plain functions (see below).
 
 - **Indexer**: `TaskBuildIndex` (cancellation already stdexec), `TaskMergeStorages`,
   `TaskInjectStorage`, `TaskFillIndexerCommandQueue`.
@@ -82,25 +82,29 @@ retire `Task`/`TaskScheduler`/`TaskGroup*` entirely. *Done:* `TaskScheduler`,
   (`execution::workPool()`, the app's compute pool), in turns, instead of a thread per
   child. The children wait parked, holding no thread: merge and inject until the
   `StorageProvider` reports a change, the polls (`TaskDecoratorRepeat`'s delay, the
-  command queue's refill, the build's progress) with `TaskParking::restFor` on a
-  timer. A driver gives its runner parking through `TaskParking::updateDriven`.
+  command queue's refill, the build's progress) on a timer. (Superseded below: the
+  steps are coroutines now.)
   *Done:* `TaskBuildIndex` supervises its indexer subprocesses from one thread, a
   `ProcessMonitor` (a Qt event loop that starts the processes and reports each one's
   end), instead of a thread per subprocess blocked in `executeProcess`: relaunching,
   the failure streak and the 200 ms pauses (on the timer) are callbacks there.
   *Done:* the writer's back-pressure holds what it drained while the provider is
   full and hands it on as the provider empties, without a sleep.
-  *Done:* the pipeline is a coroutine of senders (`Project::startIndexing`): each
-  step runs as `execution::runTask(task, blackboard)` (`TaskSender.h`, a strand of
-  its own over the work pool, turns while it runs, nothing while it waits parked;
-  stopping it terminates the task). The parallel stage is a `when_all` of streams
-  (the build; merge; inject; the rest of inject), the repeats are loops with
-  `execution::delay`, and its completion dispatches the run's one terminal
-  `MessageIndexingFinished` (ADR-0008) and posts the swap to the app's queue.
-  `TaskGroupParallel`, `TaskGroupSelector`, `TaskDecorator*`, `TaskFinally`,
-  `TaskSetValue`, `TaskReturnSuccessIf`, `TaskFindKeyOnBlackboard`, `TaskParseWrapper`,
-  `TaskScheduler` and `TaskManager` are deleted. `TaskGroupSequence` and `TaskLambda`
-  stay for the pre-index tasks a source group hands in, run as one step.
+  *Done:* the pipeline is a coroutine (`Project::startIndexing`) and so are the steps
+  that wait: the refill and the build poll with `co_await execution::delay`, merge and
+  inject wait on the provider's changes and the report on its decision with
+  `co_await condition.until(ready)` (`execution::Condition`: checked as the wait
+  starts and after each notify, holding no thread meanwhile, stoppable). The steps
+  that only work (clearing, the custom commands, a source group's pre-index work,
+  now a plain `std::function`) are function calls. The parallel stage is a
+  `when_all` of streams, each on a strand of its own over the work pool, started as
+  the stage it follows began (`IndexingRunState::begun`, no flag polls); a stream
+  that throws stops the others, and the run fails with the error logged. The steps
+  share a typed `IndexingRunState` instead of a string-keyed blackboard. Its
+  completion dispatches the run's one terminal `MessageIndexingFinished` (ADR-0008)
+  and posts the swap to the app's queue. `Task`, `TaskRunner`, `TaskParking`,
+  `TaskWake`, `TaskSender`, `Blackboard` and every task group and decorator are
+  deleted.
 - **Storage**: bulk writes already use `exec::static_thread_pool`
   (`ConcurrentTursoWriter`); fold the surrounding `Task` wrappers into senders.
 - **GUI**: header-search `std::thread`s (`QtProjectWizardContent*`) → `io()` +
