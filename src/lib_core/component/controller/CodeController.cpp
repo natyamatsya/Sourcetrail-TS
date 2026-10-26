@@ -1,5 +1,6 @@
 #include "CodeController.h"
 
+#include <algorithm>
 #include <memory>
 #include <format>
 #include <string_view>
@@ -264,8 +265,12 @@ void CodeController::handleMessage(MessageActivateTokens* message)
 
 	// send status message
 	{
-		size_t fileCount = m_collection->getSourceLocationFileCount();
-		size_t referenceCount = m_collection->getSourceLocationCount();
+		// The references the code navigator steps through (createReferences), not every source
+		// location: those include scopes, signatures, comments and qualifiers, and the status
+		// bar and the navigator gave two counts for one symbol.
+		const std::size_t referenceCount = m_references.size();
+		const auto fileCount = std::ranges::count_if(
+			m_files, [](const CodeFileParams& file) { return file.referenceCount > 0; });
 
 		std::string status;
 		for (const SearchMatch& match: message->getSearchMatches())
