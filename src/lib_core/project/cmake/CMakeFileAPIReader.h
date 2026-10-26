@@ -1,9 +1,11 @@
 #pragma once
 
+#include <cstdint>
 #include <expected>
 #include <functional>
 #include <optional>
 #include <string>
+#include <string_view>
 #include <vector>
 
 #include "FilePath.h"
@@ -119,17 +121,46 @@ public:
 	using GetSourcesError = utility::ExpectedError<GetSourcesErrorCode>;
 	using GetSourcesExpected = std::expected<GetSourcesResult, GetSourcesError>;
 
+	// A visible configure preset (not hidden, condition true on this host), as
+	// `cmake --list-presets` shows it.
+	struct PresetInfo
+	{
+		std::string name;
+		std::string displayName;	// may be empty
+		std::string description;	// may be empty
+	};
+
+	enum class ConfigureErrorCode : std::uint8_t
+	{
+		QueryNotWritable,
+		CMakeNotStarted,
+		CMakeTimedOut,
+		CMakeFailed,
+		NoReplyWritten,
+	};
+
+	// The message is CMake's own output (its errors) where it ran.
+	using ConfigureError = utility::ExpectedError<ConfigureErrorCode>;
+
 	explicit CMakeFileAPIReader(const FilePath& buildDir);
 
-	// Returns the non-hidden configure preset names from CMakePresets.json and
-	// CMakeUserPresets.json found in sourceDir. Returns an empty vector if no
-	// presets file exists or none are visible.
+	// The visible configure presets of CMakePresets.json and CMakeUserPresets.json
+	// (and the files they include) in sourceDir, in file order: hidden presets and
+	// presets whose `condition` is false on this host are left out, as
+	// `cmake --list-presets` does. Empty if there is no presets file.
+	[[nodiscard]] static std::vector<PresetInfo> discoverPresetInfos(const FilePath& sourceDir);
+
+	// The names of discoverPresetInfos().
 	static std::vector<std::string> discoverPresets(const FilePath& sourceDir);
 
-	// Resolves the binary directory for a named configure preset by running
-	//   cmake -S <sourceDir> --preset <presetName> -N
-	// and parsing the "Build directory:" line from its output.
-	// Returns an empty FilePath on failure.
+	// The preset files read for sourceDir: CMakePresets.json, CMakeUserPresets.json
+	// and everything they include (those that exist).
+	static std::vector<FilePath> getPresetFiles(const FilePath& sourceDir);
+
+	// Resolves the binary directory of a configure preset from the presets files:
+	// its (inherited) binaryDir with the preset macros expanded, relative to
+	// sourceDir. Returns an empty FilePath when the preset is unknown or has no
+	// binaryDir.
 	static FilePath resolveBinaryDir(const FilePath& sourceDir, const std::string& presetName);
 
 	// Returns true if a valid File API reply already exists in the build dir.
@@ -138,16 +169,25 @@ public:
 	// Returns the JSON entry points listed in index-*.json (kind + resolved file path).
 	std::vector<JsonEntryPoint> getJsonEntryPoints() const;
 
-	// Writes the query file. If the reply does not yet exist, triggers a
-	// reconfigure. When sourceDir and presetName are provided, runs:
+	// Writes the query file and, if there is no reply yet or `reconfigure` is set,
+	// runs CMake to (re)generate it. When sourceDir and presetName are provided, runs:
 	//   cmake -S <sourceDir> --preset <presetName>
 	// Otherwise falls back to:
 	//   cmake <buildDir>
 	// progress() is called with status messages during the cmake run.
-	bool ensureReply(
+	[[nodiscard]] std::expected<void, ConfigureError> ensureReply(
 		std::function<void(const std::string&)> progress = {},
 		const FilePath& sourceDir = {},
-		const std::string& presetName = {});
+		const std::string& presetName = {},
+		bool reconfigure = false);
+
+	// The configuration names the reply has (one for single-config generators,
+	// CMAKE_CONFIGURATION_TYPES for multi-config ones). Empty without a reply.
+	std::vector<std::string> getConfigurations() const;
+
+	// Whether a target name matches a target filter: empty matches every target,
+	// otherwise one or more wildcard patterns separated by ';' or ','.
+	[[nodiscard]] static bool matchesTargetFilter(const std::string& targetName, const std::string& targetFilter);
 
 	// Returns all source entries across all targets in the given configuration.
 	// Pass an empty string to use the first available configuration.
@@ -168,11 +208,12 @@ public:
 	// the cmakeFiles-v1 reply. Watch these for staleness detection.
 	std::vector<FilePath> getCMakeInputFiles() const;
 
-	// Returns true if any CMake input file has been modified after the reply
-	// index file was written, meaning the cached reply is stale and
-	// ensureReply() should be called again before the next indexing run.
+	// Returns true if any CMake input file -- or, given the source directory, a
+	// presets file -- has been modified after the reply index file was written,
+	// meaning the cached reply is stale and ensureReply(..., reconfigure = true)
+	// should run before the next indexing run.
 	// Returns false if the reply is absent (caller should call ensureReply()).
-	bool isReplyStale() const;
+	bool isReplyStale(const FilePath& sourceDir = {}) const;
 
 	// Returns the build directory this reader was constructed with.
 	const FilePath& buildDir() const;
@@ -193,3 +234,22 @@ private:
 	struct ReplyIndex;
 	std::optional<ReplyIndex> readIndex() const;
 };
+
+constexpr std::string_view to_std_sv(CMakeFileAPIReader::ConfigureErrorCode code) noexcept
+{
+	using enum CMakeFileAPIReader::ConfigureErrorCode;
+	switch (code)
+	{
+	case QueryNotWritable:
+		return "the CMake File API query file could not be written";
+	case CMakeNotStarted:
+		return "cmake could not be started (is it on PATH?)";
+	case CMakeTimedOut:
+		return "cmake did not finish in time";
+	case CMakeFailed:
+		return "CMake failed to configure the project";
+	case NoReplyWritten:
+		return "CMake configured the project but wrote no File API reply";
+	}
+	return "unknown error";
+}

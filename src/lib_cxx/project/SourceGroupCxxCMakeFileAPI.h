@@ -43,6 +43,11 @@ private:
 
 	std::vector<std::string> getBaseCompilerFlags() const;
 
+	//! After the reply is current: fails, telling the person why, when the
+	//! configuration is not in the reply or the target filter matches no target.
+	std::expected<void, PrepareIndexingError> checkReplyMatchesSettings(
+		const CMakeFileAPIReader& reader) const;
+
 	//! The full compiler flags for a source entry -- everything except the source
 	//! file itself and any -include-pch -- with CMake's own PCH fragments removed.
 	//! Shared by command generation and PCH generation so their flags (and hence

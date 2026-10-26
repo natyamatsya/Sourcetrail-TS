@@ -3,6 +3,7 @@
 #include "IndexerCommand.h"
 #endif
 
+#include "Application.h"
 #ifndef SRCTRL_MODULE_BUILD
 #include "ApplicationSettings.h"
 #endif
@@ -30,6 +31,7 @@
 #endif
 
 #include <algorithm>
+#include <format>
 #include <fstream>
 #include <unordered_map>
 
@@ -435,35 +437,86 @@ std::expected<void, PrepareIndexingError> SourceGroupCxxCMakeFileAPI::prepareInd
 	}
 
 	CMakeFileAPIReader reader{buildDir};
-	if (!reader.hasReply() || reader.isReplyStale())
-	{
-		if (reader.isReplyStale())
-		{
-			MessageStatus(
-				"CMake project has changed — regenerating File API reply...", false, true)
-				.dispatch();
-			m_cachedBuildDir = {};	// invalidate cached build dir too
-		}
-		else
-		{
-			MessageStatus("Writing CMake File API query and running cmake...", false, true)
-				.dispatch();
-		}
+	const bool stale{reader.isReplyStale(sourceDir)};
+	if (reader.hasReply() && !stale)
+		return checkReplyMatchesSettings(reader);
 
-		if (!reader.ensureReply(
-				[](const std::string& msg) { MessageStatus(msg, false, true).dispatch(); },
-				sourceDir,
-				presetName))
-		{
-			MessageStatus(
-				"Can't refresh project. Failed to generate CMake File API reply in: " +
-					buildDir.str(),
-				true)
-				.dispatch();
-			return std::unexpected(PrepareIndexingError::ConfigurationIncomplete);
-		}
+	MessageStatus(
+		stale ? "CMake project has changed — regenerating File API reply..."
+			  : "Writing CMake File API query and running cmake...",
+		false,
+		true)
+		.dispatch();
+
+	const auto configured{reader.ensureReply(
+		[](const std::string& msg) { MessageStatus(msg, false, true).dispatch(); },
+		sourceDir,
+		presetName,
+		stale)};
+	if (!configured)
+	{
+		const auto& [code, cmakeError, exceptionType]{configured.error()};
+		MessageStatus(
+			std::format(
+				"Can't refresh project. Failed to generate CMake File API reply in: {} ({})",
+				buildDir.str(),
+				to_std_sv(code)),
+			true)
+			.dispatch();
+		// CMake's own error, where a person sees it (and an agent, as a question).
+		std::string notice{
+			std::format("Can't refresh project: {} with preset '{}'.", to_std_sv(code), presetName)};
+		if (!cmakeError.empty())
+			notice += std::format("\n\n{}", cmakeError);
+		Application::getInstance()->showNotice(notice, {"OK"});
+		return std::unexpected(PrepareIndexingError::ConfigurationIncomplete);
 	}
-	return {};
+	return checkReplyMatchesSettings(reader);
+}
+
+std::expected<void, PrepareIndexingError> SourceGroupCxxCMakeFileAPI::checkReplyMatchesSettings(
+	const CMakeFileAPIReader& reader) const
+{
+	using enum CMakeFileAPIReader::GetSourcesErrorCode;
+
+	// A configuration or target filter that matches nothing would index nothing
+	// without a word; say what the reply has instead.
+	const std::string& configuration{m_settings->getConfiguration()};
+	const std::string& targetFilter{m_settings->getTargetGlob()};
+	const auto sources{reader.getSourcesDetailed(configuration, targetFilter)};
+	std::string problem{};
+	if (!sources && sources.error().code == ConfigurationNotFound)
+	{
+		problem = std::format(
+			"The build directory has no CMake configuration '{}'. Its configurations are: {}. "
+			"Leave the configuration empty to use the first.",
+			configuration,
+			utility::join(reader.getConfigurations(), std::string{", "}));
+	}
+	else if (!sources)
+	{
+		problem = std::format(
+			"Can't read the CMake File API reply ({}): {}",
+			CMakeFileAPIReader::getSourcesErrorCodeToString(sources.error().code),
+			sources.error().message);
+	}
+	else if (sources->matchedTargetCount == 0)
+	{
+		std::vector<std::string> targetNames{};
+		for (const auto& target : reader.getSourcesDetailed(configuration, {})->targets)
+			targetNames.push_back(target.name);
+		problem = std::format(
+			"No CMake target matches the target filter '{}'. The targets are: {}.",
+			targetFilter,
+			utility::join(targetNames, std::string{", "}));
+	}
+	if (problem.empty())
+		return {};
+
+	const std::string message{std::format("Can't refresh project. {}", problem)};
+	MessageStatus(message, true).dispatch();
+	Application::getInstance()->showNotice(message, {"OK"});
+	return std::unexpected(PrepareIndexingError::ConfigurationIncomplete);
 }
 
 std::set<FilePath> SourceGroupCxxCMakeFileAPI::filterToContainedFilePaths(

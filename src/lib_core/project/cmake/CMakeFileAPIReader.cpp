@@ -24,6 +24,7 @@
 
 #include <nlohmann/json.hpp>
 
+#include <algorithm>
 #include <sstream>
 #include <unordered_map>
 
@@ -121,6 +122,33 @@ bool matchesGlob(const std::string& name, const std::string& glob)
 	return QRegularExpression{pattern}.match(QString::fromStdString(name)).hasMatch();
 }
 
+// What a person needs of a failed configure's output: CMake's error messages
+// ("CMake Error..." up to the next "--" status line or blank-line-separated
+// block), else its last lines. Kept short enough for a message box.
+std::string configureErrorExcerpt(const std::string& output)
+{
+	const QStringList lines{QString::fromStdString(output).split(QLatin1Char('\n'))};
+	QStringList excerpt{};
+	bool inError{false};
+	for (const QString& line : lines)
+	{
+		if (line.startsWith(QLatin1String("CMake Error")))
+			inError = true;
+		else if (line.startsWith(QLatin1String("-- ")) || line.startsWith(QLatin1String("CMake Warning")))
+			inError = false;
+		if (inError)
+			excerpt.push_back(line);
+	}
+	if (excerpt.isEmpty())
+		excerpt = lines.mid(std::max<qsizetype>(0, lines.size() - 20));
+
+	constexpr qsizetype maxLength{4000};
+	QString text{excerpt.join(QLatin1Char('\n')).trimmed()};
+	if (text.size() > maxLength)
+		text = text.left(maxLength) + QStringLiteral("\n...");
+	return text.toStdString();
+}
+
 // ---------------------------------------------------------------------------
 // JSON Schema for codemodel-v2 (minimal — validates kind and version)
 // ---------------------------------------------------------------------------
@@ -188,61 +216,41 @@ std::vector<CMakeFileAPIReader::JsonEntryPoint> CMakeFileAPIReader::getJsonEntry
 	return result;
 }
 
-// Defined below; shared with binary-dir resolution so both follow preset
-// `include` chains.
-static QMap<QString, QJsonObject> collectPresets(const FilePath& sourceDir);
+// ---------------------------------------------------------------------------
+// Configure presets (cmake-presets(7))
+// ---------------------------------------------------------------------------
 
-std::vector<std::string> CMakeFileAPIReader::discoverPresets(const FilePath& sourceDir)
+namespace
 {
-	std::vector<std::string> result{};
 
-	// CMakePresets.json + CMakeUserPresets.json and everything they include.
-	const QMap<QString, QJsonObject> presets{collectPresets(sourceDir)};
-	for (auto it = presets.constBegin(); it != presets.constEnd(); ++it)
-	{
-		if (it.value()["hidden"].toBool(false))
-			continue;
-		result.push_back(it.key().toStdString());
-	}
-
-	return result;
-}
-
-// Expand the subset of CMake preset macro variables we care about.
-// Spec: https://cmake.org/cmake/help/latest/manual/cmake-presets.7.html#macro-expansion
-static QString expandPresetMacros(
-	const QString& value, const QString& sourceDir, const QString& presetName)
+struct PresetRecord
 {
-	QString result{value};
-	result.replace(QStringLiteral("${sourceDir}"), sourceDir);
-	result.replace(QStringLiteral("${presetName}"), presetName);
-	// ${sourceDirName} = last path component of sourceDir
-	result.replace(
-		QStringLiteral("${sourceDirName}"), QDir{sourceDir}.dirName());
-	// ${hostSystemName} — best-effort
-#if defined(Q_OS_WIN)
-	result.replace(QStringLiteral("${hostSystemName}"), QStringLiteral("Windows"));
-#elif defined(Q_OS_MAC)
-	result.replace(QStringLiteral("${hostSystemName}"), QStringLiteral("Darwin"));
-#else
-	result.replace(QStringLiteral("${hostSystemName}"), QStringLiteral("Linux"));
-#endif
-	return result;
-}
+	QJsonObject object;
+	QString fileDir;	// directory of the file that defines the preset (${fileDir})
+};
+
+// All configure presets of a source directory's presets files, in file order.
+struct PresetCollection
+{
+	QMap<QString, PresetRecord> byName;
+	QStringList order;
+	QStringList files;
+};
 
 // Collect the configure presets of one preset file, following its `include`
 // field (schema version 4+) depth-first. Included paths are relative to the
 // directory of the including file; a canonical-path set guards against cycles.
 // Includes are processed before the file's own presets so a preset defined in
 // the including file wins on (spec-invalid) name collisions.
-static void collectPresetsFromFile(
-	const FilePath& presetsFile, QSet<QString>& visitedFiles, QMap<QString, QJsonObject>& result)
+void collectPresetsFromFile(
+	const FilePath& presetsFile, QSet<QString>& visitedFiles, PresetCollection& result)
 {
 	const QFileInfo fileInfo{QString::fromStdString(presetsFile.str())};
 	const QString canonicalPath{fileInfo.canonicalFilePath()};
 	if (canonicalPath.isEmpty() || visitedFiles.contains(canonicalPath))
 		return;
 	visitedFiles.insert(canonicalPath);
+	result.files.push_back(fileInfo.absoluteFilePath());
 
 	const auto doc{readJsonFile(presetsFile)};
 	if (doc.isNull())
@@ -264,17 +272,20 @@ static void collectPresetsFromFile(
 	{
 		const auto obj{val.toObject()};
 		const auto name{obj["name"].toString()};
-		if (!name.isEmpty())
-			result.insert(name, obj);
+		if (name.isEmpty())
+			continue;
+		if (!result.byName.contains(name))
+			result.order.push_back(name);
+		result.byName.insert(name, {obj, baseDir.absolutePath()});
 	}
 }
 
-// Build a flat map of all configure presets from CMakePresets.json and
-// CMakeUserPresets.json found in sourceDir, including everything reachable
-// through their `include` chains.
-static QMap<QString, QJsonObject> collectPresets(const FilePath& sourceDir)
+// Build the configure presets of CMakePresets.json and CMakeUserPresets.json
+// found in sourceDir, including everything reachable through their `include`
+// chains.
+PresetCollection collectPresets(const FilePath& sourceDir)
 {
-	QMap<QString, QJsonObject> result{};
+	PresetCollection result{};
 	QSet<QString> visitedFiles{};
 	for (const auto& filename :
 		 {std::string{"CMakePresets.json"}, std::string{"CMakeUserPresets.json"}})
@@ -286,51 +297,266 @@ static QMap<QString, QJsonObject> collectPresets(const FilePath& sourceDir)
 	return result;
 }
 
-// Walk the inherits chain to find the first preset that defines binaryDir.
-static QString findBinaryDirTemplate(
-	const QString& presetName,
-	const QMap<QString, QJsonObject>& presets,
-	QSet<QString>& visited)
+QStringList parentPresetNames(const QJsonObject& preset)
 {
-	if (visited.contains(presetName))
-		return {};
-	visited.insert(presetName);
-
-	const auto it{presets.find(presetName)};
-	if (it == presets.end())
-		return {};
-
-	const auto& obj{*it};
-	if (obj.contains(QStringLiteral("binaryDir")))
-		return obj["binaryDir"].toString();
-
-	// Follow inherits (string or array of strings).
-	const auto inheritsVal{obj["inherits"]};
+	const auto inheritsVal{preset["inherits"]};
 	QStringList parents{};
 	if (inheritsVal.isString())
 		parents << inheritsVal.toString();
 	else if (inheritsVal.isArray())
 		for (const auto& v : inheritsVal.toArray())
 			parents << v.toString();
+	return parents;
+}
 
-	for (const auto& parent : parents)
+// The first value of `key` along the inherits chain (the preset's own first,
+// then its parents in order), or an undefined value.
+QJsonValue findInheritedField(
+	const QString& presetName,
+	const QString& key,
+	const PresetCollection& presets,
+	QSet<QString>& visited)
+{
+	if (visited.contains(presetName))
+		return QJsonValue{QJsonValue::Undefined};
+	visited.insert(presetName);
+
+	const auto it{presets.byName.find(presetName)};
+	if (it == presets.byName.end())
+		return QJsonValue{QJsonValue::Undefined};
+	if (it->object.contains(key))
+		return it->object[key];
+
+	for (const auto& parent : parentPresetNames(it->object))
 	{
-		const auto found{findBinaryDirTemplate(parent, presets, visited)};
-		if (!found.isEmpty())
+		const QJsonValue found{findInheritedField(parent, key, presets, visited)};
+		if (!found.isUndefined())
 			return found;
 	}
-	return {};
+	return QJsonValue{QJsonValue::Undefined};
+}
+
+QJsonValue inheritedField(
+	const QString& presetName, const QString& key, const PresetCollection& presets)
+{
+	QSet<QString> visited{};
+	return findInheritedField(presetName, key, presets, visited);
+}
+
+// The preset's `environment`, merged along the inherits chain (a preset's own
+// entries win over its parents', earlier parents over later ones).
+void collectEnvironment(
+	const QString& presetName,
+	const PresetCollection& presets,
+	QSet<QString>& visited,
+	QMap<QString, QJsonValue>& environment)
+{
+	if (visited.contains(presetName))
+		return;
+	visited.insert(presetName);
+
+	const auto it{presets.byName.find(presetName)};
+	if (it == presets.byName.end())
+		return;
+	const QJsonObject own{it->object["environment"].toObject()};
+	for (auto entry = own.begin(); entry != own.end(); ++entry)
+		if (!environment.contains(entry.key()))
+			environment.insert(entry.key(), entry.value());
+	for (const auto& parent : parentPresetNames(it->object))
+		collectEnvironment(parent, presets, visited, environment);
+}
+
+QString hostSystemName()
+{
+#if defined(Q_OS_WIN)
+	return QStringLiteral("Windows");
+#elif defined(Q_OS_MAC)
+	return QStringLiteral("Darwin");
+#else
+	return QStringLiteral("Linux");
+#endif
+}
+
+// Expands the preset macros of a value.
+// Spec: https://cmake.org/cmake/help/latest/manual/cmake-presets.7.html#macro-expansion
+// $env{} reads the preset's (inherited) `environment` first, its value expanded
+// in turn, then the process environment; $penv{} only the process environment.
+// Unknown macros stay as they are.
+QString expandPresetMacros(
+	const QString& value,
+	const FilePath& sourceDir,
+	const QString& presetName,
+	const PresetCollection& presets,
+	const int depth = 0)
+{
+	const auto it{presets.byName.find(presetName)};
+	const QString sourceDirString{QString::fromStdString(sourceDir.str())};
+
+	QSet<QString> visited{};
+	QMap<QString, QJsonValue> presetEnvironment{};
+	collectEnvironment(presetName, presets, visited, presetEnvironment);
+
+	static const QRegularExpression macro{
+		QStringLiteral(R"(\$\{([A-Za-z]+)\}|\$(env|penv)\{([^}]*)\})")};
+
+	QString result{};
+	qsizetype last{0};
+	auto matches{macro.globalMatch(value)};
+	while (matches.hasNext())
+	{
+		const auto match{matches.next()};
+		result += value.mid(last, match.capturedStart() - last);
+		last = match.capturedEnd();
+
+		QString replacement{match.captured(0)};
+		const QString name{match.captured(1)};
+		if (name == QLatin1String("sourceDir"))
+			replacement = sourceDirString;
+		else if (name == QLatin1String("sourceParentDir"))
+			replacement = QFileInfo{sourceDirString}.dir().absolutePath();
+		else if (name == QLatin1String("sourceDirName"))
+			replacement = QDir{sourceDirString}.dirName();
+		else if (name == QLatin1String("presetName"))
+			replacement = presetName;
+		else if (name == QLatin1String("generator"))
+			replacement = inheritedField(presetName, QStringLiteral("generator"), presets).toString();
+		else if (name == QLatin1String("hostSystemName"))
+			replacement = hostSystemName();
+		else if (name == QLatin1String("fileDir") && it != presets.byName.end())
+			replacement = it->fileDir;
+		else if (name == QLatin1String("dollar"))
+			replacement = QStringLiteral("$");
+		else if (name == QLatin1String("pathListSep"))
+			replacement = QDir::listSeparator();
+		else if (!match.captured(2).isEmpty())
+		{
+			const QString variable{match.captured(3)};
+			const auto presetValue{presetEnvironment.find(variable)};
+			if (match.captured(2) == QLatin1String("env") && presetValue != presetEnvironment.end() &&
+				presetValue->isString())
+				// An environment value has macros of its own (cycles end at a fixed depth).
+				replacement = depth < 8
+					? expandPresetMacros(presetValue->toString(), sourceDir, presetName, presets, depth + 1)
+					: presetValue->toString();
+			else
+				replacement = qEnvironmentVariable(variable.toUtf8().constData());
+		}
+		result += replacement;
+	}
+	result += value.mid(last);
+	return result;
+}
+
+// Evaluates a preset condition (schema version 3+). A missing or malformed
+// condition is true, as CMake treats an absent one.
+bool evaluateCondition(
+	const QJsonValue& condition,
+	const FilePath& sourceDir,
+	const QString& presetName,
+	const PresetCollection& presets)
+{
+	if (condition.isUndefined() || condition.isNull())
+		return true;
+	if (condition.isBool())
+		return condition.toBool();
+	if (!condition.isObject())
+		return true;
+
+	const QJsonObject object{condition.toObject()};
+	const QString type{object["type"].toString()};
+	const auto expand = [&](const QJsonValue& value) {
+		return expandPresetMacros(value.toString(), sourceDir, presetName, presets);
+	};
+
+	if (type == QLatin1String("const"))
+		return object["value"].toBool(true);
+	if (type == QLatin1String("equals") || type == QLatin1String("notEquals"))
+		return (expand(object["lhs"]) == expand(object["rhs"])) == (type == QLatin1String("equals"));
+	if (type == QLatin1String("inList") || type == QLatin1String("notInList"))
+	{
+		const QString needle{expand(object["string"])};
+		const QJsonArray list{object["list"].toArray()};
+		const bool found{std::ranges::any_of(
+			list, [&](const QJsonValue& entry) { return expand(entry) == needle; })};
+		return found == (type == QLatin1String("inList"));
+	}
+	if (type == QLatin1String("matches") || type == QLatin1String("notMatches"))
+	{
+		const QRegularExpression regex{expand(object["regex"])};
+		const bool matched{regex.isValid() && regex.match(expand(object["string"])).hasMatch()};
+		return matched == (type == QLatin1String("matches"));
+	}
+	if (type == QLatin1String("anyOf") || type == QLatin1String("allOf"))
+	{
+		const bool any{type == QLatin1String("anyOf")};
+		const QJsonArray conditions{object["conditions"].toArray()};
+		const auto holds = [&](const QJsonValue& entry) {
+			return evaluateCondition(entry, sourceDir, presetName, presets);
+		};
+		return any ? std::ranges::any_of(conditions, holds) : std::ranges::all_of(conditions, holds);
+	}
+	if (type == QLatin1String("not"))
+		return !evaluateCondition(object["condition"], sourceDir, presetName, presets);
+	return true;
+}
+
+bool isPresetVisible(
+	const QString& presetName, const PresetCollection& presets, const FilePath& sourceDir)
+{
+	const auto it{presets.byName.find(presetName)};
+	if (it == presets.byName.end() || it->object["hidden"].toBool(false))
+		return false;
+	// `condition` is inherited like the other fields.
+	return evaluateCondition(
+		inheritedField(presetName, QStringLiteral("condition"), presets),
+		sourceDir,
+		presetName,
+		presets);
+}
+
+}	 // namespace
+
+std::vector<CMakeFileAPIReader::PresetInfo> CMakeFileAPIReader::discoverPresetInfos(
+	const FilePath& sourceDir)
+{
+	std::vector<PresetInfo> result{};
+	const PresetCollection presets{collectPresets(sourceDir)};
+	for (const QString& name : presets.order)
+	{
+		if (!isPresetVisible(name, presets, sourceDir))
+			continue;
+		const QJsonObject& preset{presets.byName[name].object};
+		result.push_back(
+			{name.toStdString(),
+			 preset["displayName"].toString().toStdString(),
+			 preset["description"].toString().toStdString()});
+	}
+	return result;
+}
+
+std::vector<std::string> CMakeFileAPIReader::discoverPresets(const FilePath& sourceDir)
+{
+	std::vector<std::string> result{};
+	for (const PresetInfo& preset : discoverPresetInfos(sourceDir))
+		result.push_back(preset.name);
+	return result;
+}
+
+std::vector<FilePath> CMakeFileAPIReader::getPresetFiles(const FilePath& sourceDir)
+{
+	std::vector<FilePath> result{};
+	for (const QString& file : collectPresets(sourceDir).files)
+		result.emplace_back(file.toStdString());
+	return result;
 }
 
 FilePath CMakeFileAPIReader::resolveBinaryDir(
 	const FilePath& sourceDir, const std::string& presetName)
 {
-	const auto presets{collectPresets(sourceDir)};
+	const PresetCollection presets{collectPresets(sourceDir)};
 	const auto qPresetName{QString::fromStdString(presetName)};
-	const auto qSourceDir{QString::fromStdString(sourceDir.str())};
 
-	QSet<QString> visited{};
-	const auto tmpl{findBinaryDirTemplate(qPresetName, presets, visited)};
+	const QString tmpl{inheritedField(qPresetName, QStringLiteral("binaryDir"), presets).toString()};
 	if (tmpl.isEmpty())
 	{
 		LOG_WARNING(
@@ -338,21 +564,24 @@ FilePath CMakeFileAPIReader::resolveBinaryDir(
 		return {};
 	}
 
-	const auto expanded{expandPresetMacros(tmpl, qSourceDir, qPresetName)};
+	const auto expanded{expandPresetMacros(tmpl, sourceDir, qPresetName, presets)};
 	if (expanded.isEmpty())
 		return {};
 
 	// binaryDir may be relative to sourceDir.
-	const FilePath result{expanded.toStdString()};
-	if (result.isAbsolute())
-		return result;
-	return sourceDir.getConcatenated("/" + expanded.toStdString());
+	const FilePath result{QDir::cleanPath(
+		QDir::isAbsolutePath(expanded)
+			? expanded
+			: QString::fromStdString(sourceDir.str()) + QStringLiteral("/") + expanded)
+							  .toStdString()};
+	return result;
 }
 
-bool CMakeFileAPIReader::ensureReply(
+std::expected<void, CMakeFileAPIReader::ConfigureError> CMakeFileAPIReader::ensureReply(
 	std::function<void(const std::string&)> progress,
 	const FilePath& sourceDir,
-	const std::string& presetName)
+	const std::string& presetName,
+	const bool reconfigure)
 {
 	// 1. Write the query file so CMake knows what to generate.
 	{
@@ -363,20 +592,22 @@ bool CMakeFileAPIReader::ensureReply(
 		if (!f.open(QIODevice::WriteOnly | QIODevice::Truncate))
 		{
 			LOG_ERROR("CMakeFileAPIReader: cannot write query file: " + queryPath.toStdString());
-			return false;
+			return std::unexpected(utility::makeExpectedError(
+				ConfigureErrorCode::QueryNotWritable, queryPath.toStdString()));
 		}
 		f.write(R"({"requests":[{"kind":"codemodel","version":2},{"kind":"cmakeFiles","version":1},{"kind":"toolchains","version":1}]})"
 				"\n");
 	}
 
-	if (hasReply())
-		return true;
+	if (hasReply() && !reconfigure)
+		return {};
 
-	// 2. No reply yet — run cmake to generate it.
+	// 2. No (current) reply -- run cmake to generate it.
 	if (progress)
 		progress("Running cmake to generate File API reply...");
 
 	QProcess proc{};
+	proc.setProcessChannelMode(QProcess::MergedChannels);	// CMake writes its errors to stderr
 	QStringList args{};
 	if (!sourceDir.empty() && !presetName.empty())
 	{
@@ -392,30 +623,87 @@ bool CMakeFileAPIReader::ensureReply(
 		args << QString::fromStdString(m_buildDir.str());
 	}
 
-	proc.start("cmake", args);
-	if (!proc.waitForFinished(60'000))
+	const std::string commandLine{"cmake " + args.join(QStringLiteral(" ")).toStdString()};
+	proc.start(QStringLiteral("cmake"), args);
+	if (!proc.waitForStarted())
 	{
-		LOG_ERROR("CMakeFileAPIReader: cmake timed out or failed to start");
-		return false;
+		LOG_ERROR("CMakeFileAPIReader: cmake failed to start: " + commandLine);
+		return std::unexpected(utility::makeExpectedError(
+			ConfigureErrorCode::CMakeNotStarted, proc.errorString().toStdString()));
 	}
-	if (proc.exitCode() != 0)
+	if (!proc.waitForFinished(300'000))
+	{
+		proc.kill();
+		proc.waitForFinished();
+		LOG_ERROR("CMakeFileAPIReader: cmake timed out: " + commandLine);
+		return std::unexpected(utility::makeExpectedError(
+			ConfigureErrorCode::CMakeTimedOut,
+			"'" + commandLine + "' did not finish within 5 minutes."));
+	}
+	const std::string output{proc.readAll().toStdString()};
+	if (proc.exitStatus() != QProcess::NormalExit || proc.exitCode() != 0)
 	{
 		LOG_WARNING(
 			"CMakeFileAPIReader: cmake exited with code " +
-			std::to_string(proc.exitCode()) + ": " +
-			proc.readAllStandardError().toStdString() +
+			std::to_string(proc.exitCode()) + ": " + output +
 			"\nHint: the project may need its build environment (compiler on PATH, "
 			"dev shell). Either launch Sourcetrail from that environment, or run "
 			"'cmake --preset <preset>' there yourself — the Sourcetrail query file "
 			"is already in place, so any configure produces the reply and the next "
 			"refresh picks it up without running CMake.");
-		return false;
+		return std::unexpected(utility::makeExpectedError(
+			ConfigureErrorCode::CMakeFailed, configureErrorExcerpt(output)));
 	}
 
 	if (progress)
 		progress("CMake File API reply generated.");
 
-	return hasReply();
+	if (!hasReply())
+		return std::unexpected(utility::makeExpectedError(
+			ConfigureErrorCode::NoReplyWritten, "No reply in " + m_replyDir.str()));
+	return {};
+}
+
+std::vector<std::string> CMakeFileAPIReader::getConfigurations() const
+{
+	std::vector<std::string> result{};
+	for (const JsonEntryPoint& entryPoint : getJsonEntryPoints())
+	{
+		if (entryPoint.kind != "codemodel")
+			continue;
+		QFile file{QString::fromStdString(entryPoint.path.str())};
+		if (!file.open(QIODevice::ReadOnly))
+			return {};
+		try
+		{
+			const QByteArray bytes{file.readAll()};
+			const auto codemodel = nlohmann::json::parse(
+				std::string{bytes.constData(), static_cast<std::size_t>(bytes.size())});
+			for (const auto& configuration :
+				 codemodel.value("configurations", nlohmann::json::array()))
+				if (configuration.is_object())
+					result.push_back(configuration.value("name", std::string{}));
+		}
+		catch (const nlohmann::json::exception& e)
+		{
+			LOG_WARNING("CMakeFileAPIReader: codemodel parse error: " + std::string(e.what()));
+		}
+		break;
+	}
+	return result;
+}
+
+bool CMakeFileAPIReader::matchesTargetFilter(
+	const std::string& targetName, const std::string& targetFilter)
+{
+	if (QString::fromStdString(targetFilter).trimmed().isEmpty())
+		return true;
+	static const QRegularExpression separators{QStringLiteral("[;,]")};
+	const QStringList patterns{
+		QString::fromStdString(targetFilter).split(separators, Qt::SkipEmptyParts)};
+	return std::ranges::any_of(patterns, [&](const QString& pattern) {
+		return matchesGlob(targetName, pattern.trimmed().toStdString());
+	});
 }
 
 FilePath CMakeFileAPIReader::findIndexFile() const
@@ -817,7 +1105,7 @@ CMakeFileAPIReader::GetSourcesExpected CMakeFileAPIReader::getSourcesDetailed(
 		}
 
 		const auto targetName{tRef.value("name", std::string{})};
-		if (!matchesGlob(targetName, targetGlob))
+		if (!matchesTargetFilter(targetName, targetGlob))
 			continue;
 		++matchedTargetCount;
 
@@ -1229,7 +1517,7 @@ std::string CMakeFileAPIReader::getSourcesWarningCodeToString(const GetSourcesWa
 	return "unknown";
 }
 
-bool CMakeFileAPIReader::isReplyStale() const
+bool CMakeFileAPIReader::isReplyStale(const FilePath& sourceDir) const
 {
 	const FilePath indexFile{findIndexFile()};
 	if (indexFile.empty())
@@ -1237,7 +1525,14 @@ bool CMakeFileAPIReader::isReplyStale() const
 
 	const auto indexMtime{std::filesystem::last_write_time(indexFile.getPath())};
 
-	for (const FilePath& input : getCMakeInputFiles())
+	// The presets are no CMake input (cmakeFiles-v1 does not list them), but a
+	// changed preset (cache variables, generator, toolchain) changes the reply.
+	std::vector<FilePath> inputs{getCMakeInputFiles()};
+	if (!sourceDir.empty())
+		for (const FilePath& presetFile : getPresetFiles(sourceDir))
+			inputs.push_back(presetFile);
+
+	for (const FilePath& input : inputs)
 	{
 		if (!input.exists())
 			continue;

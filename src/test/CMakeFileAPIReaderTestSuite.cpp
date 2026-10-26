@@ -1,6 +1,7 @@
 #include "Catch2.hpp"
 
 #include <algorithm>
+#include <cstdlib>
 #include <filesystem>
 #include <fstream>
 
@@ -17,6 +18,12 @@
 #include "FilePath.h"
 #endif
 #include "TestTempDirectory.h"
+
+#if defined(_WIN32)
+#define SOURCETRAIL_TEST_NULL_DEVICE "NUL"
+#else
+#define SOURCETRAIL_TEST_NULL_DEVICE "/dev/null"
+#endif
 
 // Imports come AFTER all textual #includes (include-before-import rule: textual libc++
 // following BMI-merged declarations trips "cannot add 'abi_tag' in a redeclaration").
@@ -166,6 +173,96 @@ TEST_CASE("CMakeFileAPIReader discoverPresets returns empty for missing source d
 		CMakeFileAPIReader::discoverPresets(FilePath("/nonexistent/path/that/does/not/exist"));
 
 	REQUIRE(presets.empty());
+}
+
+namespace
+{
+// A source directory whose CMakePresets.json is `presetsJson`.
+void writePresets(const std::filesystem::path& sourceDir, const std::string& presetsJson)
+{
+	std::filesystem::create_directories(sourceDir);
+	std::ofstream{sourceDir / "CMakePresets.json"} << presetsJson;
+}
+
+std::string hostSystemName()
+{
+#if defined(_WIN32)
+	return "Windows";
+#elif defined(__APPLE__)
+	return "Darwin";
+#else
+	return "Linux";
+#endif
+}
+}	 // namespace
+
+TEST_CASE("CMakeFileAPIReader discoverPresetInfos keeps file order, names and descriptions")
+{
+	const TestTempDirectory tempDirectory{"presetInfos"};
+	writePresets(tempDirectory.getPath(), R"({"version": 6, "configurePresets": [
+		{"name": "zeta", "displayName": "Zeta build", "description": "The last letter", "binaryDir": "z"},
+		{"name": "alpha", "binaryDir": "a"}
+	]})");
+
+	const auto presets{
+		CMakeFileAPIReader::discoverPresetInfos(FilePath{tempDirectory.getPath().string()})};
+
+	REQUIRE(presets.size() == 2);
+	CHECK(presets[0].name == "zeta");	// as written, not sorted
+	CHECK(presets[0].displayName == "Zeta build");
+	CHECK(presets[0].description == "The last letter");
+	CHECK(presets[1].name == "alpha");
+	CHECK(presets[1].displayName.empty());
+}
+
+TEST_CASE("CMakeFileAPIReader discoverPresets leaves out presets whose condition is false")
+{
+	const TestTempDirectory tempDirectory{"presetConditions"};
+	const std::string host{hostSystemName()};
+	writePresets(tempDirectory.getPath(), R"({"version": 6, "configurePresets": [
+		{"name": "here", "binaryDir": "b", "condition": {"type": "equals", "lhs": "${hostSystemName}", "rhs": ")" + host + R"("}},
+		{"name": "elsewhere", "binaryDir": "b", "condition": {"type": "notEquals", "lhs": "${hostSystemName}", "rhs": ")" + host + R"("}},
+		{"name": "off-base", "hidden": true, "condition": false},
+		{"name": "inherits-off", "inherits": "off-base", "binaryDir": "b"},
+		{"name": "any", "binaryDir": "b", "condition": {"type": "anyOf", "conditions": [
+			{"type": "const", "value": false},
+			{"type": "inList", "string": "${presetName}", "list": ["x", "any"]}]}},
+		{"name": "never", "binaryDir": "b", "condition": {"type": "not", "condition": {"type": "matches", "string": "abc", "regex": "^a"}}}
+	]})");
+
+	const auto presets{
+		CMakeFileAPIReader::discoverPresets(FilePath{tempDirectory.getPath().string()})};
+
+	CHECK(presets == std::vector<std::string>{"here", "any"});
+}
+
+TEST_CASE("CMakeFileAPIReader resolveBinaryDir expands environment and directory macros")
+{
+	const TestTempDirectory tempDirectory{"presetMacros"};
+	const std::filesystem::path sourceDir{tempDirectory.getPath() / "source"};
+	writePresets(sourceDir, R"({"version": 6, "configurePresets": [
+		{"name": "env-base", "hidden": true, "environment": {"OUT_ROOT": "${sourceParentDir}/out"}},
+		{"name": "env", "inherits": "env-base", "binaryDir": "$env{OUT_ROOT}/${presetName}"},
+		{"name": "parent", "binaryDir": "${sourceParentDir}/build-${sourceDirName}"},
+		{"name": "relative", "binaryDir": "build/../build/rel"}
+	]})");
+	const FilePath source{sourceDir.string()};
+	const std::string root{tempDirectory.getPath().string()};
+
+	CHECK(CMakeFileAPIReader::resolveBinaryDir(source, "env").str() == root + "/out/env");
+	CHECK(CMakeFileAPIReader::resolveBinaryDir(source, "parent").str() == root + "/build-source");
+	CHECK(
+		CMakeFileAPIReader::resolveBinaryDir(source, "relative").str() ==
+		sourceDir.string() + "/build/rel");
+}
+
+TEST_CASE("CMakeFileAPIReader matchesTargetFilter takes several patterns")
+{
+	CHECK(CMakeFileAPIReader::matchesTargetFilter("core", ""));
+	CHECK(CMakeFileAPIReader::matchesTargetFilter("core", "core"));
+	CHECK(CMakeFileAPIReader::matchesTargetFilter("core", "app; core"));
+	CHECK(CMakeFileAPIReader::matchesTargetFilter("net_tests", "app,*_tests"));
+	CHECK_FALSE(CMakeFileAPIReader::matchesTargetFilter("core", "app;net*"));
 }
 
 // ---------------------------------------------------------------------------
@@ -450,6 +547,102 @@ TEST_CASE("CMakeFileAPIReader isReplyStale compares input mtimes against the ind
 	// Input newer than the index -> stale.
 	fs::last_write_time(input, fs::last_write_time(index) + std::chrono::seconds{2});
 	CHECK(reader.isReplyStale());
+}
+
+TEST_CASE("CMakeFileAPIReader isReplyStale counts a changed presets file")
+{
+	namespace fs = std::filesystem;
+	const TestTempDirectory tempDirectory{"isReplyStalePresets"};
+	const fs::path& root = tempDirectory.getPath();
+	const fs::path replyDir = root / "build/.cmake/api/v1/reply";
+	fs::create_directories(replyDir);
+	const fs::path sourceDir = root / "source";
+	writePresets(sourceDir, R"({"version": 6, "configurePresets": []})");
+	std::ofstream{replyDir / "index-test.json"} << R"({"objects":[]})";
+
+	const fs::path index = replyDir / "index-test.json";
+	const fs::path presets = sourceDir / "CMakePresets.json";
+	CMakeFileAPIReader reader{FilePath{(root / "build").string()}};
+	const FilePath source{sourceDir.string()};
+
+	fs::last_write_time(index, fs::last_write_time(presets) + std::chrono::seconds{2});
+	CHECK_FALSE(reader.isReplyStale(source));
+
+	fs::last_write_time(presets, fs::last_write_time(index) + std::chrono::seconds{2});
+	CHECK(reader.isReplyStale(source));
+	CHECK_FALSE(reader.isReplyStale());	// without the source dir only CMake's inputs count
+}
+
+// ---------------------------------------------------------------------------
+// ensureReply -- runs the real cmake on a project without languages (fast)
+// ---------------------------------------------------------------------------
+
+namespace
+{
+bool hasCMake()
+{
+	return std::system("cmake --version > " SOURCETRAIL_TEST_NULL_DEVICE " 2>&1") == 0;
+}
+}	 // namespace
+
+TEST_CASE("CMakeFileAPIReader ensureReply reconfigures a stale reply when asked")
+{
+	if (!hasCMake())
+		SKIP("cmake is not on PATH");
+
+	namespace fs = std::filesystem;
+	const TestTempDirectory tempDirectory{"ensureReply"};
+	const fs::path sourceDir = tempDirectory.getPath() / "source";
+	writePresets(sourceDir, R"({"version": 3, "configurePresets": [
+		{"name": "dev", "binaryDir": "${sourceDir}/../build"}]})");
+	std::ofstream{sourceDir / "CMakeLists.txt"}
+		<< "cmake_minimum_required(VERSION 3.21)\nproject(probe NONE)\nadd_custom_target(first)\n";
+
+	const FilePath source{sourceDir.string()};
+	const FilePath buildDir{CMakeFileAPIReader::resolveBinaryDir(source, "dev")};
+	CMakeFileAPIReader reader{buildDir};
+	REQUIRE(reader.ensureReply({}, source, "dev").has_value());
+	REQUIRE(reader.hasReply());
+	CHECK(reader.getConfigurations().size() == 1);
+
+	const auto targetNames = [&reader]() {
+		std::vector<std::string> names;
+		for (const auto& target : reader.getSourcesDetailed()->targets)
+			names.push_back(target.name);
+		return names;
+	};
+	CHECK(targetNames() == std::vector<std::string>{"first"});
+
+	std::ofstream{sourceDir / "CMakeLists.txt", std::ios::app} << "add_custom_target(second)\n";
+	// A reply exists: without reconfigure it is used as it is...
+	REQUIRE(reader.ensureReply({}, source, "dev").has_value());
+	CHECK(targetNames().size() == 1);
+	// ...with it, CMake runs again and the reply has the new target.
+	REQUIRE(reader.ensureReply({}, source, "dev", true).has_value());
+	const auto names{targetNames()};
+	CHECK(std::find(names.begin(), names.end(), "second") != names.end());
+}
+
+TEST_CASE("CMakeFileAPIReader ensureReply returns CMake's error when configuring fails")
+{
+	if (!hasCMake())
+		SKIP("cmake is not on PATH");
+
+	namespace fs = std::filesystem;
+	const TestTempDirectory tempDirectory{"ensureReplyFails"};
+	const fs::path sourceDir = tempDirectory.getPath() / "source";
+	writePresets(sourceDir, R"({"version": 3, "configurePresets": [
+		{"name": "dev", "binaryDir": "${sourceDir}/../build"}]})");
+	std::ofstream{sourceDir / "CMakeLists.txt"}
+		<< "cmake_minimum_required(VERSION 3.21)\nproject(probe NONE)\n"
+		   "message(FATAL_ERROR \"the probe refuses to configure\")\n";
+
+	const FilePath source{sourceDir.string()};
+	CMakeFileAPIReader reader{CMakeFileAPIReader::resolveBinaryDir(source, "dev")};
+	const auto result{reader.ensureReply({}, source, "dev")};
+	REQUIRE_FALSE(result.has_value());
+	CHECK(result.error().code == CMakeFileAPIReader::ConfigureErrorCode::CMakeFailed);
+	CHECK(result.error().message.find("the probe refuses to configure") != std::string::npos);
 }
 
 TEST_CASE("CMakeFileAPIReader isReplyStale returns false for missing reply")
