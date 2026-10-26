@@ -932,3 +932,39 @@ TEST_CASE("parallel group terminated ends its waiting children")
 	REQUIRE(eventually([&]() { return !scheduler->hasTasksQueued(); }));
 	scheduler->stopSchedulerLoop();
 }
+
+TEST_CASE("parallelFor runs every part, also when no pool thread is free")
+{
+	const TestWorkPool work(1);
+	// The one pool thread is busy: the caller runs the parts itself.
+	std::atomic<bool> release = false;
+	execution::runOnWorkPool([&]() {
+		while (!release)
+		{
+			std::this_thread::sleep_for(std::chrono::milliseconds(1));
+		}
+	});
+
+	std::vector<std::atomic<int>> ran(50);
+	execution::parallelFor(ran.size(), [&](std::size_t index) { ran[index]++; });
+	for (const std::atomic<int>& count: ran)
+	{
+		REQUIRE(count == 1);
+	}
+	release = true;
+
+	// What a part throws reaches the caller, once the rest ran.
+	std::atomic<int> others = 0;
+	REQUIRE_THROWS_AS(
+		execution::parallelFor(
+			8,
+			[&](std::size_t index) {
+				if (index == 3)
+				{
+					throw std::runtime_error("part 3");
+				}
+				others++;
+			}),
+		std::runtime_error);
+	REQUIRE(others == 7);
+}

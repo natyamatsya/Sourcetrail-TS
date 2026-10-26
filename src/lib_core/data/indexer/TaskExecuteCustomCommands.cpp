@@ -1,6 +1,10 @@
 #include <stdcompat/optional>  // was transitive via the now-guarded IndexerCommand.h (rule 5)
 #include "TaskExecuteCustomCommands.h"
 
+#include <algorithm>
+
+#include "WorkPools.h"
+
 #ifndef SRCTRL_MODULE_BUILD
 #include "ApplicationSettings.h"
 #endif
@@ -109,30 +113,20 @@ Task::TaskState TaskExecuteCustomCommands::doUpdate(std::shared_ptr<Blackboard> 
 
 	m_dialogView->updateCustomIndexingDialog(0, 0, m_indexerCommandProvider->size(), {});
 
-	std::vector<std::shared_ptr<std::thread>> indexerThreads;
-	for (size_t i = 1 /*this method is counting as the first thread*/; i < m_indexerThreadCount; i++)
-	{
-		indexerThreads.push_back(std::make_shared<std::thread>(
-			&TaskExecuteCustomCommands::executeParallelIndexerCommands,
-			this,
-			static_cast<int>(i),
-			blackboard));
-	}
-
-	while (!m_interrupted && !m_serialCommands.empty())
-	{
-		std::shared_ptr<IndexerCommand> indexerCommand = m_serialCommands.back();
-		m_serialCommands.pop_back();
-		runIndexerCommand(indexerCommand, blackboard, m_storage);
-	}
-
-	executeParallelIndexerCommands(0, blackboard);
-
-	for (std::shared_ptr<std::thread> indexerThread: indexerThreads)
-	{
-		indexerThread->join();
-	}
-	indexerThreads.clear();
+	// The workers side by side on the work pool, this thread among them: worker 0 runs
+	// the serial commands first, then takes parallel ones like the others.
+	execution::parallelFor(std::max<size_t>(m_indexerThreadCount, 1), [&](std::size_t worker) {
+		if (worker == 0)
+		{
+			while (!m_interrupted && !m_serialCommands.empty())
+			{
+				std::shared_ptr<IndexerCommand> indexerCommand = m_serialCommands.back();
+				m_serialCommands.pop_back();
+				runIndexerCommand(indexerCommand, blackboard, m_storage);
+			}
+		}
+		executeParallelIndexerCommands(static_cast<int>(worker), blackboard);
+	});
 
 	// clear errors here, because otherwise injecting into the main storage will show them twice
 	MessageErrorCountClear().dispatch();

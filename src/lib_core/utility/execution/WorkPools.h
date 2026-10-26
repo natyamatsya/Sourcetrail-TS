@@ -16,6 +16,7 @@
 #include "SenderAliases.h"
 
 #include <chrono>
+#include <cstddef>
 #include <functional>
 #include <optional>
 
@@ -35,4 +36,14 @@ AnyScheduler fallbackPool();
 //! Runs `work` on the timer's thread once `delay` has passed. Keep it short: post
 //! what takes longer elsewhere.
 void afterDelay(std::chrono::milliseconds delay, std::function<void()> work);
+
+//! Runs `work` on the work pool, on behalf of the current cause; what it throws is
+//! logged.
+void runOnWorkPool(std::function<void()> work);
+
+//! Runs part(0) .. part(count - 1) side by side on the work pool and returns once
+//! all ran; the first exception one threw is rethrown then. The calling thread takes
+//! parts too, so it gets through even when no pool thread is free (a caller on the
+//! pool itself).
+void parallelFor(std::size_t count, const std::function<void(std::size_t)>& part);
 }	 // namespace execution

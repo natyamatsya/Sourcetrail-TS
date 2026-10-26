@@ -1,5 +1,7 @@
 #include "PersistentStorage.h"
 
+#include "WorkPools.h"
+
 #include <queue>
 
 #ifndef SRCTRL_MODULE_BUILD
@@ -986,20 +988,15 @@ std::shared_ptr<SourceLocationCollection> PersistentStorage::getFullTextSearchLo
 		.dispatch();
 
 	{
-		std::vector<std::shared_ptr<std::thread>> threads;
 		std::mutex collectionMutex;
 		const u32string searchTerm32 = convertToUtf32(searchTerm);
-		for (const std::vector<FullTextSearchResult> &fileResults: utility::splitToEquallySizedParts(
-				 m_fullTextSearchIndex.searchForTerm(searchTerm), utility::getIdealThreadCount()))
-		{
-			std::shared_ptr<std::thread> thread = std::make_shared<std::thread>(
-				[this,
-				 &searchTerm32,
-				 &caseSensitive,
-				 &codec,
-				 /*no ref here!*/ fileResults,
-				 &collection,
-				 &collectionMutex]() {
+		const std::vector<std::vector<FullTextSearchResult>> parts = utility::splitToEquallySizedParts(
+			m_fullTextSearchIndex.searchForTerm(searchTerm), utility::getIdealThreadCount());
+		// The parts side by side on the work pool.
+		::execution::parallelFor(
+			parts.size(),
+			[this, &parts, &searchTerm32, &caseSensitive, &codec, &collection, &collectionMutex](std::size_t index) {
+					const std::vector<FullTextSearchResult>& fileResults = parts[index];
 					const int termLength = static_cast<int>(searchTerm32.length());
 					for (const FullTextSearchResult& fileResult: fileResults)
 					{
@@ -1054,13 +1051,6 @@ std::shared_ptr<SourceLocationCollection> PersistentStorage::getFullTextSearchLo
 						}
 					}
 				});
-			threads.push_back(thread);
-		}
-
-		for (std::shared_ptr<std::thread> thread: threads)
-		{
-			thread->join();
-		}
 	}
 
 	addCompleteFlagsToSourceLocationCollection(collection.get());
@@ -3935,36 +3925,24 @@ void PersistentStorage::buildFullTextSearchIndex() const
 
 	m_fullTextSearchIndex.clear();
 
-	std::vector<std::shared_ptr<std::thread>> threads;
+	std::vector<StorageFile> indexedFiles;
+	for (const StorageFile& file: m_sqliteIndexStorage.getAll<StorageFile>())
 	{
-		std::vector<StorageFile> indexedFiles;
-		for (const StorageFile& file: m_sqliteIndexStorage.getAll<StorageFile>())
+		if (file.indexed)
 		{
-			if (file.indexed)
-			{
-				indexedFiles.push_back(file);
-			}
-		}
-		for (std::vector<StorageFile> part:
-			 utility::splitToEquallySizedParts(indexedFiles, utility::getIdealThreadCount()))
-		{
-			std::shared_ptr<std::thread> thread = std::make_shared<std::thread>(
-				[&](const std::vector<StorageFile>& files) {
-					for (const StorageFile& file: files)
-					{
-						m_fullTextSearchIndex.addFile(
-							file.id,
-							codec.decode(m_sqliteIndexStorage.getFileContentById(file.id)->getText()));
-					}
-				},
-				part);
-			threads.push_back(thread);
+			indexedFiles.push_back(file);
 		}
 	}
-	for (std::shared_ptr<std::thread> thread: threads)
-	{
-		thread->join();
-	}
+	// The parts side by side on the work pool.
+	const std::vector<std::vector<StorageFile>> parts =
+		utility::splitToEquallySizedParts(indexedFiles, utility::getIdealThreadCount());
+	::execution::parallelFor(parts.size(), [&](std::size_t index) {
+		for (const StorageFile& file: parts[index])
+		{
+			m_fullTextSearchIndex.addFile(
+				file.id, codec.decode(m_sqliteIndexStorage.getFileContentById(file.id)->getText()));
+		}
+	});
 }
 
 void PersistentStorage::buildHierarchyCache()

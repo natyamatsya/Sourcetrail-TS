@@ -1,4 +1,5 @@
 #include "QtProjectWizardContentPathsHeaderSearch.h"
+#include "WorkPools.h"
 #include "QtMessageBox.h"
 
 #include <cmath>
@@ -164,7 +165,7 @@ void QtProjectWizardContentPathsHeaderSearch::validateIncludesButtonClicked()
 	// TODO: regard Force Includes here, too!
 	m_window->saveContent();
 
-	std::thread([&]() {
+	execution::runOnWorkPool([this, m_settings = m_settings]() {
 		std::shared_ptr<SourceGroupSettingsWithSourceExtensions> extensionSettings =
 			std::dynamic_pointer_cast<SourceGroupSettingsWithSourceExtensions>(m_settings);
 		std::shared_ptr<SourceGroupSettingsWithSourcePaths> pathSettings =
@@ -238,7 +239,7 @@ void QtProjectWizardContentPathsHeaderSearch::validateIncludesButtonClicked()
 			}
 			execution::qt::onUi(this, [this, unresolvedIncludes]() { showValidationResult(unresolvedIncludes); });
 		}
-	}).detach();
+	});
 }
 
 
@@ -249,7 +250,7 @@ void QtProjectWizardContentPathsHeaderSearch::finishedSelectDetectIncludesRootPa
 		m_pathsDialog->getPaths());
 	closedPathsDialog();
 
-	std::thread([=, this]() {
+	execution::runOnWorkPool([=, this, m_settings = m_settings]() {
 		std::shared_ptr<SourceGroupSettingsWithSourceExtensions> extensionSettings =
 			std::dynamic_pointer_cast<SourceGroupSettingsWithSourceExtensions>(m_settings);
 		std::shared_ptr<SourceGroupSettingsWithSourcePaths> pathSettings =
@@ -319,7 +320,7 @@ void QtProjectWizardContentPathsHeaderSearch::finishedSelectDetectIncludesRootPa
 
 			execution::qt::onUi(this, [this, detectedHeaderSearchPaths]() { showDetectedIncludesResult(detectedHeaderSearchPaths); });
 		}
-	}).detach();
+	});
 }
 
 void QtProjectWizardContentPathsHeaderSearch::finishedAcceptDetectedIncludePathsDialog()

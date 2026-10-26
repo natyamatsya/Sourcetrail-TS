@@ -13,10 +13,8 @@
 #include <mutex>
 #include <optional>
 #include <ranges>
-#include <stop_token>
 #include <string>
 #include <string_view>
-#include <thread>
 #include <type_traits>
 #include <utility>
 #include <vector>
@@ -24,6 +22,7 @@
 #include "MessageCause.h"
 #include "RemoteStateMachine.h"
 #include "StateMachine.h"
+#include "WorkPools.h"
 
 // A state or an event with its name, as remote control spells it. `control`: an
 // event sent from outside (a dialog's buttons, an agent); the others come from the
@@ -158,8 +157,9 @@ consteval bool isWellFormed()
 // work it deferred runs.
 //
 // One timeout at a time: armed in a Transaction, it lasts until the machine moves,
-// and its handler runs in a Transaction of its own on a timer thread. It works on
-// the machine's data only, so it never outlives the machine.
+// and its handler runs in a Transaction of its own on the work pool, when the shared
+// timer says (execution::afterDelay): no machine keeps a thread for its timeouts. It
+// works on the machine's data only, so it never outlives the machine.
 //
 // A machine is a member of the class that gives it its operations; that class
 // meets RemoteMachine (snapshot, fire) for remote control. Copies of the handle share
@@ -270,13 +270,16 @@ public:
 		// Transaction of its own.
 		void timeout(std::chrono::milliseconds limit, std::function<void(Transaction&)> onTimeout)
 		{
-			Monitor& monitor = *m_monitor;
-			monitor.timeout = Timeout {revision(), std::chrono::steady_clock::now() + limit, std::move(onTimeout)};
-			if (!monitor.timer.joinable())
-			{
-				monitor.timer = std::jthread([&monitor](std::stop_token stop) { monitor.watch(stop); });
-			}
-			monitor.wake.notify_all();
+			const auto deadline = std::chrono::steady_clock::now() + limit;
+			m_monitor->timeout = Timeout {revision(), deadline, std::move(onTimeout)};
+			execution::afterDelay(limit, [weak = std::weak_ptr<Monitor>(m_monitor), deadline]() {
+				execution::runOnWorkPool([weak, deadline]() {
+					if (const std::shared_ptr<Monitor> monitor = weak.lock())
+					{
+						Monitor::expire(monitor, deadline);
+					}
+				});
+			});
 		}
 
 		// Runs `work` once the Transaction has ended, after its moves are published:
@@ -438,27 +441,7 @@ private:
 		Data data {};
 		std::uint64_t episodeCause = 0;	// what set the machine going from rest
 		std::weak_ptr<Monitor> self;
-		std::condition_variable_any wake;	// the timer: armed, ended or due
 		std::optional<Timeout> timeout;
-		std::jthread timer;	// started with the first timeout
-
-		~Monitor()
-		{
-			if (timer.joinable())
-			{
-				timer.request_stop();
-				// The last handle may go on the timer thread (a deferred work's):
-				// the thread returns without touching the monitor once stopped.
-				if (timer.get_id() == std::this_thread::get_id())
-				{
-					timer.detach();
-				}
-				else
-				{
-					timer.join();
-				}
-			}
-		}
 
 		// What the current state is about, as a JSON object. The lock is held.
 		std::string context() const
@@ -473,44 +456,20 @@ private:
 			}
 		}
 
-		void watch(std::stop_token stop)
+		// The timeout due at `deadline` is due: its handler runs, unless the machine
+		// moved since (which ended it) or it was armed anew (a later call is that one's).
+		static void expire(const std::shared_ptr<Monitor>& monitor, std::chrono::steady_clock::time_point deadline)
 		{
-			std::unique_lock<std::mutex> lock(mutex);
-			while (!stop.stop_requested())
+			std::unique_lock<std::mutex> lock(monitor->mutex);
+			if (!monitor->timeout || monitor->timeout->deadline != deadline ||
+				monitor->table.revision() != monitor->timeout->revision)
 			{
-				if (!timeout)
-				{
-					wake.wait(lock, stop, [this]() { return timeout.has_value(); });
-					continue;
-				}
-				const auto deadline = timeout->deadline;
-				if (wake.wait_until(lock, stop, deadline, [&]() { return !timeout || timeout->deadline != deadline; }) ||
-					stop.stop_requested())
-				{
-					continue;	// moved, re-armed, or stopping
-				}
-				Timeout due = std::move(*timeout);
-				timeout.reset();
-				if (table.revision() != due.revision)
-				{
-					continue;
-				}
-				std::shared_ptr<Monitor> alive = self.lock();
-				if (!alive)
-				{
-					continue;	// going
-				}
-				{
-					Transaction transaction(std::move(alive), std::move(lock));
-					due.onTimeout(transaction);
-				}
-				// The Transaction held the last handle if the machine is going now.
-				if (stop.stop_requested())
-				{
-					return;
-				}
-				lock = std::unique_lock<std::mutex>(mutex);
+				return;
 			}
+			Timeout due = std::move(*monitor->timeout);
+			monitor->timeout.reset();
+			Transaction transaction(monitor, std::move(lock));
+			due.onTimeout(transaction);
 		}
 	};
 

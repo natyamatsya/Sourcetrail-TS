@@ -1,4 +1,5 @@
 #include "QtProjectWizardContent.h"
+#include "WorkPools.h"
 
 #include <thread>
 
@@ -146,10 +147,10 @@ void QtProjectWizardContent::filesButtonClicked()
 	m_window->saveContent();
 	m_window->refreshContent();
 
-	std::thread([this]() {
+	execution::runOnWorkPool([this]() {
 		const std::vector<FilePath> filePaths = getFilePaths();
 		execution::qt::onUi(this, [this, filePaths]() { showFilesDialog(filePaths); });
-	}).detach();
+	});
 }
 
 void QtProjectWizardContent::showFilesDialog(const std::vector<FilePath>& filePaths)
