@@ -257,7 +257,9 @@ void QtErrorView::setErrorFilter(const ErrorFilter& filter)
 
 void QtErrorView::showErrorHelpMessage()
 {
-	execution::qt::onUi(this, [=, this]() { createErrorHelpButtonInfo().displayMessage(nullptr); });
+	execution::qt::onUi(this, [=, this]() {
+		createErrorHelpButtonInfo().displayMessage(QtViewWidgetWrapper::getWidgetOfView(this)->window());
+	});
 }
 
 void QtErrorView::errorFilterChanged(int i)

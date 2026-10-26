@@ -1,6 +1,8 @@
 #include "QtHelpButtonInfo.h"
 #include "QtMessageBox.h"
 
+#include <QApplication>
+
 QtHelpButtonInfo::QtHelpButtonInfo(const QString& title, const QString& text)
 	: m_title(title), m_text(text)
 {
@@ -8,7 +10,20 @@ QtHelpButtonInfo::QtHelpButtonInfo(const QString& title, const QString& text)
 
 void QtHelpButtonInfo::displayMessage(QWidget* messageBoxParent)
 {
-	QtMessageBox msgBox(messageBoxParent);
+	// Centred on the window it was asked from (else the one in front), not wherever the window
+	// manager puts a box without a parent.
+	QWidget* parent = messageBoxParent;
+	if (!parent)
+	{
+		parent = QApplication::activeModalWidget();
+	}
+	if (!parent)
+	{
+		parent = QApplication::activeWindow();
+	}
+
+	QtMessageBox msgBox(parent);
+	msgBox.setWindowTitle(QStringLiteral("Sourcetrail"));
 	msgBox.setIcon(QtMessageBox::Information);
 	msgBox.setTextInteractionFlags(Qt::TextSelectableByMouse | Qt::LinksAccessibleByMouse);
 	msgBox.setText("<b>" + m_title + "</b>");

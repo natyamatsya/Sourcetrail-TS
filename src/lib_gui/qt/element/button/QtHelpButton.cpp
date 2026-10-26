@@ -26,5 +26,5 @@ void QtHelpButton::setMessageBoxParent(QWidget* messageBoxParent)
 
 void QtHelpButton::handleHelpPress()
 {
-	m_info.displayMessage(m_messageBoxParent);
+	m_info.displayMessage(m_messageBoxParent ? m_messageBoxParent : window());
 }
