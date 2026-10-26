@@ -22,6 +22,10 @@
 #endif
 #include "utilityQt.h"
 
+#include <filesystem>
+#include <optional>
+#include <system_error>
+
 #include <QCheckBox>
 #include <QComboBox>
 #include <QFontComboBox>
@@ -444,6 +448,66 @@ void QtProjectWizardContentPreferences::save()
 
 bool QtProjectWizardContentPreferences::check()
 {
+	bool isNumber = false;
+	const float scrollSpeed = m_scrollSpeed->text().toFloat(&isNumber);
+	if (!isNumber || !(scrollSpeed > 0))
+	{
+		m_window->tell(tr("The Scroll Speed \"%1\" is not a positive number. Please enter a "
+						  "multiplier like 0.5 or 2.").arg(m_scrollSpeed->text()));
+		return false;
+	}
+
+	const auto port = [](const QLineEdit& lineEdit) -> std::optional<int> {
+		bool isInteger = false;
+		const int value = lineEdit.text().toInt(&isInteger);
+		if (!isInteger || value < 1 || value > 65535)
+		{
+			return std::nullopt;
+		}
+		return value;
+	};
+	const std::optional<int> sourcetrailPort = port(*m_sourcetrailPort);
+	if (!sourcetrailPort)
+	{
+		m_window->tell(tr("The Sourcetrail Port \"%1\" is not a port number. Please enter a "
+						  "number from 1 to 65535.").arg(m_sourcetrailPort->text()));
+		return false;
+	}
+	const std::optional<int> pluginPort = port(*m_pluginPort);
+	if (!pluginPort)
+	{
+		m_window->tell(tr("The Plugin Port \"%1\" is not a port number. Please enter a number "
+						  "from 1 to 65535.").arg(m_pluginPort->text()));
+		return false;
+	}
+	if (*sourcetrailPort == *pluginPort)
+	{
+		m_window->tell(tr("The Sourcetrail Port and the Plugin Port are both %1. Sourcetrail "
+						  "would send the messages meant for plugins to itself: please use "
+						  "two different ports.").arg(*sourcetrailPort));
+		return false;
+	}
+
+	if (m_logPath)
+	{
+		const QString logPath = m_logPath->getText().trimmed();
+		if (logPath.isEmpty())
+		{
+			m_window->tell(tr("Please define the Log Directory Path."));
+			return false;
+		}
+		// The file logger creates it too, but quietly: a directory it cannot create
+		// would leave the logs nowhere.
+		std::error_code error;
+		std::filesystem::create_directories(logPath.toStdString(), error);
+		if (!std::filesystem::is_directory(logPath.toStdString(), error))
+		{
+			m_window->tell(tr("The Log Directory Path \"%1\" is not a directory and could not "
+							  "be created.").arg(logPath));
+			return false;
+		}
+	}
+
 	return true;
 }
 
