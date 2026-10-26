@@ -69,5 +69,19 @@ TEST_CASE("command line")
 		REQUIRE(paths[3].str() == "/opt/include");
 	}
 
+	SECTION("command index without a project file is an error, not a run")
+	{
+		std::vector<std::string> args({"index", "--full"});
+
+		commandline::CommandLineParser parser("2");
+		parser.preparse(args);
+		parser.parse();
+
+		REQUIRE(parser.runWithoutGUI());
+		REQUIRE_FALSE(parser.exitApplication());
+		REQUIRE(parser.hasError());
+		REQUIRE(parser.getError().find("No project file given") != std::string::npos);
+	}
+
 	ApplicationSettings::getInstance()->load(appSettingsPath);
 }

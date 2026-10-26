@@ -216,7 +216,7 @@ CommandlineCommand::ReturnStatus CommandlineCommandMerge::merge() const
 			  << " nodes, " << stats.edgeCount << " edges, " << stats.fileCount << " files)"
 			  << std::endl;
 
-	return ReturnStatus::CMD_OK;
+	return ReturnStatus::CMD_QUIT;	// done: there is no project to load after it
 }
 
 }	 // namespace commandline

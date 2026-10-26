@@ -123,6 +123,11 @@ void CommandLineParser::parse()
 
 			if (status != CommandlineCommand::ReturnStatus::CMD_OK)
 				m_quit = true;
+			else if (m_projectFile.empty() && m_errorString.empty())
+				// CMD_OK means: now load the project. Without one, nothing would ever
+				// end a headless run.
+				m_errorString = "No project file given: Sourcetrail " + command->name() +
+					" needs one (see " + command->name() + " --help)";
 		}
 	}
 }
