@@ -148,6 +148,11 @@ void QtProjectWizardContentPaths::addDetection(QGridLayout* layout, int row)
 
 	QPushButton* button = new QPushButton(QStringLiteral("detect"));
 	button->setObjectName(QStringLiteral("windowButton"));
+
+	// The row has no label of its own to name them after (the combo box would be called
+	// what it shows, "gcc"), and a page can have two of them.
+	m_detectorBox->setAccessibleName(m_titleString + QStringLiteral(": auto detection from"));
+	button->setAccessibleName(m_titleString + QStringLiteral(": detect"));
 	connect(button, &QPushButton::clicked, this, &QtProjectWizardContentPaths::detectionClicked);
 
 	QHBoxLayout* hlayout = new QHBoxLayout();
