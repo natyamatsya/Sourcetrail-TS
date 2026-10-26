@@ -4,7 +4,8 @@
     mcp_call.py [--images DIR] [--log FILE] [--full] SERVER CALLS
 
 Tests a bridge you just built (or changed) before any MCP client loads it: SERVER is
-the binary (target/release/sourcetrail-mcp), CALLS what to call on it:
+the binary (`cargo build --release --features mcp` makes target/release/sourcetrail-mcp;
+without the feature it is not rebuilt), CALLS what to call on it:
 
     '[["instance_start", {"id": "t1", "bin": ".../app/Sourcetrail"}], ["ui_state", {"instance": "t1"}]]'
     @calls.json     the same list, from a file

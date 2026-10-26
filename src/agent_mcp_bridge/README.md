@@ -247,9 +247,11 @@ showed the fix: 10 crashes before, none after.
 An MCP client keeps the bridge it started, so a bridge you just built or changed is
 not what its tools reach. `scripts/mcp_call.py` drives any `sourcetrail-mcp` binary
 over stdio instead, which is how exploratory testers check a fix to the bridge in
-their own worktree before anyone reloads it:
+their own worktree before anyone reloads it. The server needs the `mcp` feature
+(see Build & run), without which `cargo build` leaves an old binary in place:
 
 ```sh
+cargo build --release --features mcp --bin sourcetrail-mcp
 scripts/mcp_call.py --images shots target/release/sourcetrail-mcp \
   '[["instance_start", {"id": "t1", "bin": "/path/to/build/app/Sourcetrail"}], ["ui_frame", {"instance": "t1"}]]'
 ```
