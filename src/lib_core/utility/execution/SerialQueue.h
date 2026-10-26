@@ -25,6 +25,7 @@
 //-----------------------------------------------------------------------
 
 #include "MessageCause.h"
+#include "MoveOnlyFunction.h"
 #include "StdexecPrelude.h"
 #include "Strand.h"
 
@@ -48,8 +49,8 @@ public:
 	//! is called instead for an item stop() drops unrun.
 	struct Item
 	{
-		std::move_only_function<void(std::function<void()> done)> run;
-		std::move_only_function<void()> dropped;
+		MoveOnlyFunction<void(std::function<void()> done)> run;
+		MoveOnlyFunction<void()> dropped;
 	};
 
 	//! A queue whose items run on `strand`.
