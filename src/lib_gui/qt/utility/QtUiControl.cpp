@@ -239,7 +239,23 @@ ControlResult invokeAction(
 		}
 		else
 		{
-			actions->doAction(QString::fromStdString(action));
+			// Posted too, for the same reason: a menu item whose action asks a question
+			// (View > Show Title Bars) ran the box's loop right here, and the ack waited
+			// for the box to close. The element is looked up again by its id, in case it
+			// went meanwhile.
+			const QAccessible::Id id = QAccessible::uniqueId(iface);
+			QMetaObject::invokeMethod(
+				qApp,
+				withCurrentCause([id, name = QString::fromStdString(action)]() {
+					if (QAccessibleInterface* target = QAccessible::accessibleInterface(id))
+					{
+						if (QAccessibleActionInterface* targetActions = target->actionInterface())
+						{
+							targetActions->doAction(name);
+						}
+					}
+				}),
+				Qt::QueuedConnection);
 		}
 	}
 
