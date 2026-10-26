@@ -8,6 +8,7 @@
 #include <optional>
 #include <ranges>
 #include <utility>
+#include <vector>
 
 #include <QWidget>	// pulls Qt GUI feature macros (QT_CONFIG) before the check below
 
@@ -19,6 +20,7 @@
 #include <QByteArray>
 #include <QColor>
 #include <QContextMenuEvent>
+#include <QEnterEvent>
 #include <QEvent>
 #include <QKeyEvent>
 #include <QLabel>
@@ -598,6 +600,66 @@ void postUnderCause(QWidget* receiver, QEvent* event)
 		Qt::QueuedConnection);
 }
 
+// The widget the agent's mouse is over, for the enter and leave events below.
+QPointer<QWidget> s_underMouse;
+
+// The widget and its parents, up to its window, innermost first.
+std::vector<QPointer<QWidget>> withParents(QWidget* widget)
+{
+	std::vector<QPointer<QWidget>> chain;
+	for (QWidget* w = widget; w != nullptr; w = w->isWindow() ? nullptr : w->parentWidget())
+	{
+		chain.emplace_back(w);
+	}
+	return chain;
+}
+
+// Posted input does not go through the window, which is what sends the enter and
+// leave events: a widget that shows controls while the mouse is over it (a
+// bookmark's edit and delete buttons) never saw the agent's mouse come. Sent here as
+// the window would, to the widgets the mouse leaves and those it enters.
+void moveMouseTo(QWidget* widget, const QPointF& global)
+{
+	if (s_underMouse == widget)
+	{
+		return;
+	}
+	std::vector<QPointer<QWidget>> left = withParents(s_underMouse);
+	std::vector<QPointer<QWidget>> entered = withParents(widget);
+	while (!left.empty() && !entered.empty() && left.back() == entered.back())
+	{
+		left.pop_back();
+		entered.pop_back();
+	}
+	s_underMouse = widget;
+	for (const QPointer<QWidget>& w: left)
+	{
+		if (w)
+		{
+			w->setAttribute(Qt::WA_UnderMouse, false);
+			QEvent leave(QEvent::Leave);
+			QCoreApplication::sendEvent(w, &leave);
+		}
+	}
+	for (auto it = entered.rbegin(); it != entered.rend(); ++it)
+	{
+		if (QWidget* w = *it)
+		{
+			w->setAttribute(Qt::WA_UnderMouse, true);
+			const QPointF local = w->mapFromGlobal(global);
+			QEnterEvent enter(local, local, global);
+			QCoreApplication::sendEvent(w, &enter);
+		}
+	}
+}
+
+// moveMouseTo, in turn with the posted events.
+void postMouseTo(QWidget* receiver, const QPointF& global)
+{
+	QMetaObject::invokeMethod(
+		receiver, withCurrentCause([receiver, global]() { moveMouseTo(receiver, global); }), Qt::QueuedConnection);
+}
+
 // Post the gesture to `receiver`, each event at the global point `toGlobal(event)`
 // gives, then `delivered`. Posted rather than sent: a press can open a menu or a
 // dialog whose exec() would otherwise block the caller, and the agent's ack with
@@ -619,10 +681,12 @@ void postGesture(
 		switch (event.kind)
 		{
 		case InputKind::MouseMove:
+			postMouseTo(receiver, global);
 			postUnderCause(receiver,
 				new QMouseEvent(QEvent::MouseMove, local, global, Qt::NoButton, toQtButtons(event.buttons), modifiers));
 			break;
 		case InputKind::MousePress:
+			postMouseTo(receiver, global);
 			postUnderCause(
 				receiver, new QMouseEvent(QEvent::MouseButtonPress, local, global, button, button, modifiers));
 			break;
@@ -721,6 +785,13 @@ ControlResult sendInput(
 	if (widget == nullptr)
 	{
 		return {false, "element has no widget to receive input: " + refToString(objectName, path)};
+	}
+	// A person cannot click what is not shown (a control that shows on hover, a page
+	// not current): delivered anyway, the input did nothing and said it was delivered.
+	if (!widget->isVisible())
+	{
+		return {false, "the element is not shown, so a person could not reach it (it may show while the mouse is over its "
+					   "row: hover that first): " + refToString(objectName, path)};
 	}
 	if (const std::optional<std::string> blocked = blockedByModal(widget))
 	{
