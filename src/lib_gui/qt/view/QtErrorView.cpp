@@ -83,7 +83,7 @@ QtErrorView::QtErrorView(ViewLayout* viewLayout)
 				return;
 			}
 
-			const Id errorId = qt_variant_cast<Id>(m_model->item(index.row(), static_cast<int>(Column::ID))->data(Qt::DisplayRole));
+			const Id errorId{m_model->item(index.row(), static_cast<int>(Column::ID))->data(Qt::DisplayRole).toLongLong()};
 
 			m_controllerProxy.executeAsTaskWithArgs(&ErrorController::showError, errorId);
 		}
@@ -309,8 +309,10 @@ void QtErrorView::addErrorToTable(const ErrorInfo& error)
 		m_model->insertRow(rowNumber);
 	}
 
+	// The id as a number: QtTable tells filled rows by their first column's text, which an Id
+	// QVariant has none of (every error landed in row 0, and the table looked empty).
 	QStandardItem* item = new QStandardItem();
-	item->setData(QVariant::fromValue(error.id), Qt::DisplayRole);
+	item->setData(QVariant(static_cast<qlonglong>(error.id)), Qt::DisplayRole);
 	m_model->setItem(rowNumber, static_cast<int>(Column::ID), item);
 
 	m_model->setItem(
