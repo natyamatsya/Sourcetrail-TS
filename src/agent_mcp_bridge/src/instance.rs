@@ -364,14 +364,14 @@ impl InstanceManager {
         if !opts.animations {
             cmd.arg("--no-animations");
         }
-        if opts.headless {
-            cmd.env("QT_QPA_PLATFORM", "offscreen");
-        }
         // Never let the child inherit our stdio: the MCP server speaks JSON-RPC on
         // stdout, and one console line from the app (the console logger writes to
         // std::cout) corrupts the protocol stream. Console output goes to a file
         // instead, so a crash's last words (qFatal, CRT asserts) survive.
         let stem = new_run_stem(id)?;
+        if opts.headless {
+            cmd.env("QT_QPA_PLATFORM", offscreen_platform(&stem)?);
+        }
         let console_file = with_suffix(&stem, ".console.txt");
         let console = std::fs::File::create(&console_file)
             .with_context(|| format!("create console file {}", console_file.display()))?;
@@ -777,6 +777,42 @@ fn new_run_stem(id: &str) -> Result<PathBuf> {
     Ok(dir.join(format!("{id}-{stamp}")))
 }
 
+/// The offscreen screen headless instances run on, in logical pixels.
+const OFFSCREEN_SCREEN: (u32, u32) = (1920, 1200);
+
+/// `QT_QPA_PLATFORM` for a headless instance: offscreen, on a screen as large as a
+/// desktop's. The offscreen plugin's own is 800x600, smaller than the main window
+/// (1150x700): Qt keeps popups and dialogs on the screen, so the search box's
+/// completion list and every question box were pushed left of where a person sees
+/// them, and an agent clicking what the frame showed hit the wrong place. The
+/// screen is set by the plugin's config file, written beside the console file.
+fn offscreen_platform(stem: &Path) -> Result<String> {
+    let config = with_suffix(stem, ".screen.json");
+    let (width, height) = OFFSCREEN_SCREEN;
+    let screens = json!({ "screens": [ {
+        "name": "OffscreenScreen", "x": 0, "y": 0, "width": width, "height": height,
+        "logicalDpi": 96, "logicalBaseDpi": 96, "dpr": 1
+    } ] });
+    std::fs::write(&config, serde_json::to_vec_pretty(&screens)?)
+        .with_context(|| format!("write offscreen screen config {}", config.display()))?;
+    Ok(format!("offscreen:configfile={}", platform_option_path(&config)))
+}
+
+/// A path for a QPA platform option, whose options are separated by ':' -- which a
+/// Windows drive letter is not allowed to add. Without it the path is resolved on
+/// the current drive, the one the app runs from (the log directory is in the
+/// user's profile, normally on the same drive).
+fn platform_option_path(path: &Path) -> String {
+    let text = path.display().to_string();
+    if cfg!(windows) {
+        let bytes = text.as_bytes();
+        if bytes.len() >= 2 && bytes[1] == b':' && bytes[0].is_ascii_alphabetic() {
+            return text[2..].replace('\\', "/");
+        }
+    }
+    text
+}
+
 /// `stem` with `suffix` appended (not an extension replaced: ids contain dots).
 fn with_suffix(stem: &Path, suffix: &str) -> PathBuf {
     let mut s = stem.as_os_str().to_owned();
@@ -858,6 +894,24 @@ fn sanitize(s: &str) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn the_offscreen_screen_is_a_desktop_s() {
+        let dir = std::env::temp_dir().join(format!("sourcetrail-mcp-screen-test-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let platform = offscreen_platform(&dir.join("run")).unwrap();
+        assert!(platform.starts_with("offscreen:configfile="), "{platform}");
+        let config: Value =
+            serde_json::from_slice(&std::fs::read(dir.join("run.screen.json")).unwrap()).unwrap();
+        assert_eq!(config["screens"][0]["width"], 1920);
+        assert_eq!(config["screens"][0]["height"], 1200);
+        std::fs::remove_dir_all(&dir).ok();
+        if cfg!(windows) {
+            assert_eq!(platform_option_path(Path::new(r"C:\Users\a\run.screen.json")), "/Users/a/run.screen.json");
+        } else {
+            assert_eq!(platform_option_path(Path::new("/tmp/a.json")), "/tmp/a.json");
+        }
+    }
 
     #[test]
     fn the_qt_prefix_comes_from_qt6_dir() {
