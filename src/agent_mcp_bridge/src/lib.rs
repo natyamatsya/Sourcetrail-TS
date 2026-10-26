@@ -13,6 +13,9 @@
 //!                    crash dumps, live and post-mortem debugging.
 //!   * [`machine_view`] — the bridge's view of the app's state machines, reported
 //!                    when the app does not answer.
+//!   * [`state_view`] — what a tool that changes the app reports of the state it
+//!                    led to: a summary, the whole state, or nothing, plus the
+//!                    changes since the state last reported.
 //!
 //! The `mcp` feature (see `bin/server.rs`) wraps [`ipc::Bridge`] in an `rmcp`
 //! stdio server; the default build exposes only the core + a smoke-test binary.
@@ -30,6 +33,7 @@ pub mod instance;
 pub mod catalog;
 pub mod debugger;
 pub mod machine_view;
+pub mod state_view;
 
 pub use instance::InstanceManager;
 pub use ipc::Bridge;

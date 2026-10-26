@@ -12,6 +12,7 @@ use std::time::{Duration, Instant};
 
 use crate::machine_view::{self, MachineView};
 use crate::protocol::{self, channel, Incoming};
+use crate::state_view::StateBaseline;
 
 const SEND_TIMEOUT_MS: u64 = 1000;
 const RECV_POLL_MS: u64 = 200;
@@ -172,6 +173,9 @@ pub struct Bridge {
     // Liveness probes whose replies have not been read yet. Their replies are the
     // bridge's own business and stay out of the event log.
     probes: VecDeque<u64>,
+    // The state last reported to the agent on this instance, which the changes a
+    // tool reports with its state are taken against (see state_view).
+    reported: StateBaseline,
 }
 
 impl Bridge {
@@ -212,6 +216,7 @@ impl Bridge {
             last_sent: None,
             machines: MachineView::default(),
             probes: VecDeque::new(),
+            reported: StateBaseline::default(),
         };
         // Best-effort handshake: detect protocol skew up front, but never fail the
         // connect over it (status/read-only use must work against a down or old app).
@@ -979,6 +984,13 @@ impl Bridge {
         let id = self.next_id();
         self.send(&protocol::get_ui_state(id))?;
         self.read_ui_state(id, timeout)
+    }
+
+    /// The state last reported to the agent on this instance, which a tool that
+    /// changes the app reports its changes against (see [`crate::state_view`]).
+    /// The reads above leave it alone: only what the agent is shown moves it.
+    pub fn reported_state(&mut self) -> &mut StateBaseline {
+        &mut self.reported
     }
 
     /// Capture the structural UI tree (accessibility, or the raw object tree). The

@@ -18,8 +18,9 @@ use std::sync::mpsc;
 
 use agent_mcp_bridge::catalog;
 use agent_mcp_bridge::instance::{InstanceManager, StartOpts};
-use agent_mcp_bridge::ipc::AppNotAnswering;
+use agent_mcp_bridge::ipc::{AppNotAnswering, Bridge};
 use agent_mcp_bridge::protocol::{self, InputEvent, InputKind, InputTarget};
+use agent_mcp_bridge::state_view::StateForm;
 use serde_json::{json, Value};
 use tokio::sync::oneshot;
 
@@ -247,6 +248,11 @@ struct ActivateNodeArgs {
     serialized_name: Option<String>,
     #[serde(default)]
     node_id: u64,
+    /// The state to return: "summary" (default: app_state, dialog, each machine's
+    /// state, active tab, error counts, a hash of the whole state), "full" (the
+    /// whole ui_state) or "none". Both carry `changes` since the last state shown.
+    #[serde(default)]
+    state: Option<String>,
     #[serde(default)]
     instance: String,
 }
@@ -256,6 +262,11 @@ struct ActivateNodeArgs {
 #[serde(deny_unknown_fields)]
 struct PathArgs {
     path: String,
+    /// The state to return: "summary" (default: app_state, dialog, each machine's
+    /// state, active tab, error counts, a hash of the whole state), "full" (the
+    /// whole ui_state) or "none". Both carry `changes` since the last state shown.
+    #[serde(default)]
+    state: Option<String>,
     #[serde(default)]
     instance: String,
 }
@@ -266,6 +277,11 @@ struct PathArgs {
 struct TabArgs {
     /// Tab id (from ui_state.tabs[].tab_id).
     tab_id: u64,
+    /// The state to return: "summary" (default: app_state, dialog, each machine's
+    /// state, active tab, error counts, a hash of the whole state), "full" (the
+    /// whole ui_state) or "none". Both carry `changes` since the last state shown.
+    #[serde(default)]
+    state: Option<String>,
     #[serde(default)]
     instance: String,
 }
@@ -375,6 +391,11 @@ struct ScrollArgs {
     path: String,
     /// 1-based line number.
     line: u32,
+    /// The state to return: "summary" (default: app_state, dialog, each machine's
+    /// state, active tab, error counts, a hash of the whole state), "full" (the
+    /// whole ui_state) or "none". Both carry `changes` since the last state shown.
+    #[serde(default)]
+    state: Option<String>,
     #[serde(default)]
     instance: String,
 }
@@ -403,6 +424,11 @@ fn default_history_last() -> usize {
 struct GraphNodeArgs {
     /// A node of the graph: ui_state.view_graph[].id.
     node_id: u64,
+    /// The state to return: "summary" (default: app_state, dialog, each machine's
+    /// state, active tab, error counts, a hash of the whole state), "full" (the
+    /// whole ui_state) or "none". Both carry `changes` since the last state shown.
+    #[serde(default)]
+    state: Option<String>,
     #[serde(default)]
     instance: String,
 }
@@ -416,6 +442,11 @@ struct ExpandArgs {
     /// false collapses.
     #[serde(default = "default_true")]
     expand: bool,
+    /// The state to return: "summary" (default: app_state, dialog, each machine's
+    /// state, active tab, error counts, a hash of the whole state), "full" (the
+    /// whole ui_state) or "none". Both carry `changes` since the last state shown.
+    #[serde(default)]
+    state: Option<String>,
     #[serde(default)]
     instance: String,
 }
@@ -430,6 +461,11 @@ fn default_true() -> bool {
 struct SplitArgs {
     /// A bundle or group: ui_state.view_graph[].id where `splittable` is true.
     bundle_id: u64,
+    /// The state to return: "summary" (default: app_state, dialog, each machine's
+    /// state, active tab, error counts, a hash of the whole state), "full" (the
+    /// whole ui_state) or "none". Both carry `changes` since the last state shown.
+    #[serde(default)]
+    state: Option<String>,
     #[serde(default)]
     instance: String,
 }
@@ -463,6 +499,11 @@ struct TrailArgs {
     /// Keep nodes outside the index (unresolved symbols) on the trail.
     #[serde(default)]
     include_non_indexed: bool,
+    /// The state to return: "summary" (default: app_state, dialog, each machine's
+    /// state, active tab, error counts, a hash of the whole state), "full" (the
+    /// whole ui_state) or "none". Both carry `changes` since the last state shown.
+    #[serde(default)]
+    state: Option<String>,
     #[serde(default)]
     instance: String,
 }
@@ -473,6 +514,11 @@ struct TrailArgs {
 struct HistoryArgs {
     /// "back" or "forward".
     direction: String,
+    /// The state to return: "summary" (default: app_state, dialog, each machine's
+    /// state, active tab, error counts, a hash of the whole state), "full" (the
+    /// whole ui_state) or "none". Both carry `changes` since the last state shown.
+    #[serde(default)]
+    state: Option<String>,
     #[serde(default)]
     instance: String,
 }
@@ -556,6 +602,11 @@ struct InputArgs {
     /// Or the events themselves, delivered in order (a drag: press, move..., release).
     #[serde(default)]
     events: Vec<InputEventArg>,
+    /// The state to return: "summary" (default: app_state, dialog, each machine's
+    /// state, active tab, error counts, a hash of the whole state), "full" (the
+    /// whole ui_state) or "none". Both carry `changes` since the last state shown.
+    #[serde(default)]
+    state: Option<String>,
     #[serde(default)]
     instance: String,
 }
@@ -603,6 +654,32 @@ struct MachineSendArgs {
 /// holds the bridge meanwhile).
 fn machine_timeout(timeout_s: Option<u64>) -> Duration {
     Duration::from_secs(timeout_s.unwrap_or(60).clamp(1, 300))
+}
+
+/// The `state` argument of a tool that changes the app: a summary unless asked.
+fn state_form(state: Option<&str>) -> Result<StateForm, McpError> {
+    state.map_or(Ok(StateForm::Summary), |s| {
+        one_of("state", s, &[("summary", StateForm::Summary), ("full", StateForm::Full), ("none", StateForm::None)])
+    })
+}
+
+/// Put the `state` a result carries into the form asked for, with the changes
+/// since the state last shown on this instance (see state_view). A result
+/// without one (a question that holds a load, input that did not settle) is
+/// left as it is.
+fn with_state(bridge: &mut Bridge, mut result: Value, form: StateForm) -> Value {
+    if let Some(fields) = result.as_object_mut() {
+        if let Some(state) = fields.remove("state") {
+            bridge.reported_state().report(fields, state, form);
+        }
+    }
+    result
+}
+
+/// The result of a command that waited for `Settled` and read the state it led
+/// to: `{ ok, settled, state, changes }`, the state in the form asked for.
+fn settled(bridge: &mut Bridge, state: Value, form: StateForm) -> Value {
+    with_state(bridge, json!({ "ok": true, "settled": true, "state": state }), form)
 }
 
 /// The events a ready-made gesture stands for, all at the target's center.
@@ -787,7 +864,17 @@ impl SourcetrailServer {
 
     #[tool(description = "Read the app's state: project, app_state (NoProject/Loading/Indexing/Ready/Busy), active nodes, graph, code view, search matches, tabs. Returns the ui_state object; describe('state').")]
     async fn ui_state(&self, Parameters(a): Parameters<InstanceArg>) -> Result<CallToolResult, McpError> {
-        ok_json(self.mgr.call(move |m| m.get_or_attach(&a.instance)?.bridge().get_ui_state()).await?)
+        ok_json(
+            self.mgr
+                .call(move |m| {
+                    let bridge = m.get_or_attach(&a.instance)?.bridge();
+                    let state = bridge.get_ui_state()?;
+                    // What the agent has seen is what the next changes are taken against.
+                    bridge.reported_state().seen(&state);
+                    Ok(state)
+                })
+                .await?,
+        )
     }
 
     #[tool(description = "Await transitions (app_state, indexing, activations) instead of re-polling ui_state. Returns { events: [ { seq, type, ... } ], latest_seq }; pass latest_seq back as since_seq.")]
@@ -808,9 +895,22 @@ impl SourcetrailServer {
 
     // --- project ---
 
-    #[tool(description = "Open a Sourcetrail project (.srctrlprj / .srctrl.toml) and wait until it is usable. Returns the ui_state once loading is done (Ready, or the indexing dialog in `dialog`).")]
+    #[tool(description = "Open a Sourcetrail project (.srctrlprj / .srctrl.toml) and wait until it is usable. Returns { ok, state, changes } once loaded (state: summary by default, full, none), or the question holding the load.")]
     async fn project_open(&self, Parameters(a): Parameters<PathArgs>) -> Result<CallToolResult, McpError> {
-        ok_json(self.mgr.call(move |m| m.get_or_attach(&a.instance)?.bridge().load_project(&a.path)).await?)
+        let form = state_form(a.state.as_deref())?;
+        ok_json(
+            self.mgr
+                .call(move |m| {
+                    let bridge = m.get_or_attach(&a.instance)?.bridge();
+                    let loaded = bridge.load_project(&a.path)?;
+                    // A question that holds the load comes back as it is: no state was read.
+                    if loaded.get("question").is_some() {
+                        return Ok(loaded);
+                    }
+                    Ok(with_state(bridge, json!({ "ok": true, "state": loaded }), form))
+                })
+                .await?,
+        )
     }
 
     // --- navigation ---
@@ -825,28 +925,60 @@ impl SourcetrailServer {
         ok_json(self.mgr.call(move |m| m.get_or_attach(&a.instance)?.bridge().find_element(&a.query)).await?)
     }
 
-    #[tool(description = "Show a code element in the graph and code view, by node_id or serialized_name. Returns the settled ui_state.")]
+    #[tool(description = "Show a code element in the graph and code view, by node_id or serialized_name. Returns { ok, settled, state, changes }; state: summary (default) | full | none, describe('state').")]
     async fn nav_activate_node(&self, Parameters(a): Parameters<ActivateNodeArgs>) -> Result<CallToolResult, McpError> {
+        let form = state_form(a.state.as_deref())?;
         ok_json(
             self.mgr
-                .call(move |m| m.get_or_attach(&a.instance)?.bridge().activate_node(a.serialized_name.as_deref(), a.node_id))
+                .call(move |m| {
+                    let bridge = m.get_or_attach(&a.instance)?.bridge();
+                    let state = bridge.activate_node(a.serialized_name.as_deref(), a.node_id)?;
+                    Ok(settled(bridge, state, form))
+                })
                 .await?,
         )
     }
 
-    #[tool(description = "Open a source file in the code view. Returns the settled ui_state.")]
+    #[tool(description = "Open a source file in the code view. Returns { ok, settled, state, changes }; state: summary (default) | full | none, describe('state').")]
     async fn nav_activate_file(&self, Parameters(a): Parameters<PathArgs>) -> Result<CallToolResult, McpError> {
-        ok_json(self.mgr.call(move |m| m.get_or_attach(&a.instance)?.bridge().activate_file(&a.path)).await?)
+        let form = state_form(a.state.as_deref())?;
+        ok_json(
+            self.mgr
+                .call(move |m| {
+                    let bridge = m.get_or_attach(&a.instance)?.bridge();
+                    let state = bridge.activate_file(&a.path)?;
+                    Ok(settled(bridge, state, form))
+                })
+                .await?,
+        )
     }
 
-    #[tool(description = "Switch to a tab by tab_id (from ui_state.tabs). Returns the settled ui_state.")]
+    #[tool(description = "Switch to a tab by tab_id (from ui_state.tabs). Returns { ok, settled, state, changes }; state: summary (default) | full | none, describe('state').")]
     async fn nav_activate_tab(&self, Parameters(a): Parameters<TabArgs>) -> Result<CallToolResult, McpError> {
-        ok_json(self.mgr.call(move |m| m.get_or_attach(&a.instance)?.bridge().activate_tab(a.tab_id)).await?)
+        let form = state_form(a.state.as_deref())?;
+        ok_json(
+            self.mgr
+                .call(move |m| {
+                    let bridge = m.get_or_attach(&a.instance)?.bridge();
+                    let state = bridge.activate_tab(a.tab_id)?;
+                    Ok(settled(bridge, state, form))
+                })
+                .await?,
+        )
     }
 
-    #[tool(description = "Scroll the code view to a 1-based line of a source file. Returns the settled ui_state.")]
+    #[tool(description = "Scroll the code view to a 1-based line of a source file. Returns { ok, settled, state, changes }; state: summary (default) | full | none, describe('state').")]
     async fn nav_scroll_to_line(&self, Parameters(a): Parameters<ScrollArgs>) -> Result<CallToolResult, McpError> {
-        ok_json(self.mgr.call(move |m| m.get_or_attach(&a.instance)?.bridge().scroll_to_line(&a.path, a.line)).await?)
+        let form = state_form(a.state.as_deref())?;
+        ok_json(
+            self.mgr
+                .call(move |m| {
+                    let bridge = m.get_or_attach(&a.instance)?.bridge();
+                    let state = bridge.scroll_to_line(&a.path, a.line)?;
+                    Ok(settled(bridge, state, form))
+                })
+                .await?,
+        )
     }
 
     #[tool(description = "What the commands sent led to: per request its command, ack, settle time and the events caused_by it (activations, machine transitions, dialogs); reads like ui_state are left out. Returns { requests: [...] }.")]
@@ -854,22 +986,49 @@ impl SourcetrailServer {
         ok_json(self.mgr.call(move |m| Ok(m.get_or_attach(&a.instance)?.bridge().request_log(a.request_id, a.last))).await?)
     }
 
-    #[tool(description = "Expand (or with expand=false collapse) a graph node's members, like its expand toggle. node_id from ui_state.view_graph. Returns the settled ui_state.")]
+    #[tool(description = "Expand (or with expand=false collapse) a graph node's members; node_id from ui_state.view_graph. Returns { ok, settled, state, changes }; state: summary (default) | full | none, describe('state').")]
     async fn graph_expand(&self, Parameters(a): Parameters<ExpandArgs>) -> Result<CallToolResult, McpError> {
-        ok_json(self.mgr.call(move |m| m.get_or_attach(&a.instance)?.bridge().expand_node(a.node_id, a.expand)).await?)
+        let form = state_form(a.state.as_deref())?;
+        ok_json(
+            self.mgr
+                .call(move |m| {
+                    let bridge = m.get_or_attach(&a.instance)?.bridge();
+                    let state = bridge.expand_node(a.node_id, a.expand)?;
+                    Ok(settled(bridge, state, form))
+                })
+                .await?,
+        )
     }
 
-    #[tool(description = "Hide a node (or an edge, by its id) in the graph, like its context menu's Hide. Returns the settled ui_state.")]
+    #[tool(description = "Hide a node (or an edge, by its id) in the graph, like its context menu's Hide. Returns { ok, settled, state, changes }; state: summary (default) | full | none, describe('state').")]
     async fn graph_hide(&self, Parameters(a): Parameters<GraphNodeArgs>) -> Result<CallToolResult, McpError> {
-        ok_json(self.mgr.call(move |m| m.get_or_attach(&a.instance)?.bridge().hide_node(a.node_id)).await?)
+        let form = state_form(a.state.as_deref())?;
+        ok_json(
+            self.mgr
+                .call(move |m| {
+                    let bridge = m.get_or_attach(&a.instance)?.bridge();
+                    let state = bridge.hide_node(a.node_id)?;
+                    Ok(settled(bridge, state, form))
+                })
+                .await?,
+        )
     }
 
-    #[tool(description = "Split a bundle or group of the graph into its nodes, like clicking it. bundle_id from ui_state.view_graph (splittable). Returns the settled ui_state.")]
+    #[tool(description = "Split a bundle or group of the graph into its nodes; bundle_id from ui_state.view_graph (splittable). Returns { ok, settled, state, changes }; state: summary (default) | full | none, describe('state').")]
     async fn graph_split(&self, Parameters(a): Parameters<SplitArgs>) -> Result<CallToolResult, McpError> {
-        ok_json(self.mgr.call(move |m| m.get_or_attach(&a.instance)?.bridge().split_bundle(a.bundle_id)).await?)
+        let form = state_form(a.state.as_deref())?;
+        ok_json(
+            self.mgr
+                .call(move |m| {
+                    let bridge = m.get_or_attach(&a.instance)?.bridge();
+                    let state = bridge.split_bundle(a.bundle_id)?;
+                    Ok(settled(bridge, state, form))
+                })
+                .await?,
+        )
     }
 
-    #[tool(description = "Show a trail: a function's callees or callers, a class's derived or base classes, a file's includes or includers; or the paths to target_id. Returns the settled ui_state.")]
+    #[tool(description = "Show a trail (callees/callers, derived/base classes, includes/includers) or the paths to target_id. Returns { ok, settled, state, changes }; state: summary (default) | full | none, describe('graph').")]
     async fn graph_trail(&self, Parameters(a): Parameters<TrailArgs>) -> Result<CallToolResult, McpError> {
         let incoming = a
             .direction
@@ -879,10 +1038,12 @@ impl SourcetrailServer {
             .unwrap_or(false);
         let horizontal =
             a.layout.as_deref().map(|l| one_of("layout", l, &[("horizontal", true), ("vertical", false)])).transpose()?;
+        let form = state_form(a.state.as_deref())?;
         ok_json(
             self.mgr
                 .call(move |m| {
-                    m.get_or_attach(&a.instance)?.bridge().activate_trail(&protocol::Trail {
+                    let bridge = m.get_or_attach(&a.instance)?.bridge();
+                    let state = bridge.activate_trail(&protocol::Trail {
                         node_id: a.node_id,
                         incoming,
                         target_id: a.target_id.unwrap_or(0),
@@ -891,16 +1052,26 @@ impl SourcetrailServer {
                         depth: a.depth,
                         horizontal,
                         include_non_indexed: a.include_non_indexed,
-                    })
+                    })?;
+                    Ok(settled(bridge, state, form))
                 })
                 .await?,
         )
     }
 
-    #[tool(description = "Navigate back or forward in the activation history, like the toolbar arrows. direction: back|forward. Returns the settled ui_state.")]
+    #[tool(description = "Navigate back or forward in the activation history, like the toolbar arrows. direction: back|forward. Returns { ok, settled, state, changes }; state: summary (default) | full | none, describe('state').")]
     async fn nav_history(&self, Parameters(a): Parameters<HistoryArgs>) -> Result<CallToolResult, McpError> {
         let forward = one_of("direction", &a.direction, &[("back", false), ("forward", true)])?;
-        ok_json(self.mgr.call(move |m| m.get_or_attach(&a.instance)?.bridge().history(forward)).await?)
+        let form = state_form(a.state.as_deref())?;
+        ok_json(
+            self.mgr
+                .call(move |m| {
+                    let bridge = m.get_or_attach(&a.instance)?.bridge();
+                    let state = bridge.history(forward)?;
+                    Ok(settled(bridge, state, form))
+                })
+                .await?,
+        )
     }
 
     // --- structural UI ---
@@ -944,7 +1115,7 @@ impl SourcetrailServer {
         )
     }
 
-    #[tool(description = "Mouse and keyboard on a `ref`, a global point `at`, or a pixel of the last ui_frame `at_frame` (graph nodes): a `gesture` or `events`. Returns { ok, message, settled, state }; describe('input').")]
+    #[tool(description = "Mouse and keyboard on a `ref`, a global point `at`, or a pixel of the last ui_frame `at_frame`: a `gesture` or `events`. Returns { ok, message, settled, state, changes }, state a summary by default; describe('input').")]
     async fn ui_input(&self, Parameters(a): Parameters<InputArgs>) -> Result<CallToolResult, McpError> {
         let targets = usize::from(a.target.is_some()) + usize::from(a.at.is_some()) + usize::from(a.at_frame.is_some());
         if targets != 1 {
@@ -954,6 +1125,7 @@ impl SourcetrailServer {
             return Err(McpError::invalid_params("give either a gesture or events", None));
         }
         let gesture = a.gesture.as_deref().map(gesture_events).transpose()?;
+        let form = state_form(a.state.as_deref())?;
         ok_json(
             self.mgr
                 .call(move |m| {
@@ -985,7 +1157,8 @@ impl SourcetrailServer {
                         }
                         (None, None) => InputTarget::Ref { object_name: &object_name, path: &path },
                     };
-                    bridge.send_input(&target, &events)
+                    let result = bridge.send_input(&target, &events)?;
+                    Ok(with_state(bridge, result, form))
                 })
                 .await?,
         )
@@ -1074,8 +1247,10 @@ impl ServerHandler for SourcetrailServer {
                  instance_start spawns an app (labelled by its git checkout) so versions run \
                  side by side; tools take an optional `instance` (default: the one running \
                  instance). Read with ui_state; resolve names with nav_find; then \
-                 nav_activate_node / nav_activate_file. app_state is the FSM. Tools were renamed \
-                 with area prefixes: describe('<old name>') gives the new one.",
+                 nav_activate_node / nav_activate_file. Tools that act return a summary of the \
+                 state and what changed (state: full for everything, describe('state')). \
+                 app_state is the FSM. Tools were renamed with area prefixes: \
+                 describe('<old name>') gives the new one.",
             )
     }
 }
@@ -1121,6 +1296,15 @@ mod tests {
         let buttons = [("left", 1), ("right", 2), ("middle", 3), ("none", 0)];
         let refused = one_of("button", "x", &buttons).unwrap_err().message.to_string();
         assert_eq!(refused, "button must be left, right, middle or none, not \"x\"");
+    }
+
+    #[test]
+    fn the_state_is_a_summary_unless_asked_for() {
+        assert_eq!(state_form(None).unwrap(), StateForm::Summary);
+        assert_eq!(state_form(Some(" Full ")).unwrap(), StateForm::Full);
+        assert_eq!(state_form(Some("none")).unwrap(), StateForm::None);
+        let refused = state_form(Some("all")).unwrap_err().message.to_string();
+        assert_eq!(refused, "state must be summary, full or none, not \"all\"");
     }
 
     #[test]

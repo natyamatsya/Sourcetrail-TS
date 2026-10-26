@@ -19,6 +19,7 @@ Wire contracts: [`abi-schemas/ipc-mcp-agent/`](../../abi-schemas/ipc-mcp-agent/)
 | `ipc::Bridge` | `thoth-ipc`, `protocol` — connect routes, act-and-observe ops | `cargo check` + `smoke` against a live app |
 | `instance` | `ipc::Bridge` — spawn, attach, resolve and stop app instances | `cargo test` (profiles, Qt lookup) |
 | `catalog` | `serde_json` — the `describe` topics (usage notes + result shapes) | `cargo test` |
+| `state_view` | `serde_json` — the summary, hash and changes the acting tools return | `cargo test` |
 | `bin/server` (`mcp` feature) | `rmcp`, `tokio` — the stdio MCP server | `cargo test --features mcp` |
 
 The wire/transport half builds without the MCP SDK, so it can be validated on its
@@ -77,10 +78,53 @@ definitions finds a whole area with one query:
 | `project_*` | `project_open` |
 | `machine_*` | `machine_state`, `machine_send` |
 
-Tools that change the app (`nav_activate_*`, `nav_scroll_to_line`, `nav_history`,
-`graph_*`) **auto-observe**: they return the `ui_state` once the app reports the command's
-effects settled. `app_state` is the FSM the agent keys off; `dialog` says what
-waits for an answer in front of the app.
+Tools that change the app (`project_open`, `nav_activate_*`, `nav_scroll_to_line`,
+`nav_history`, `graph_*`, `ui_input`) **auto-observe**: they return the state once the app
+reports the command's effects settled. `app_state` is the FSM the agent keys off; `dialog`
+says what waits for an answer in front of the app.
+
+### Compact state
+
+The whole `ui_state` is 5–10k tokens, and after an action an agent mostly needs to know
+what the action changed. So those tools take `state`: `"summary"` (the default), `"full"`
+or `"none"`, and return `{ ok, settled, state, changes }`:
+
+- **`summary`**: `{ app_state, dialog, machines: { <machine>: <state> }, active_tab: {
+  tab_id, title } | null, error_total, error_fatal, hash }`: each state machine's state
+  without its context, and a hash of the whole state (FNV-1a over it, `request_id` left
+  out), so equal hashes mean nothing changed.
+- **`changes`**: what moved since the state last shown on this instance, `null` on the
+  first: `{ hash_changed, app_state?, machines?: [ { machine, from, to } ], dialog?: {
+  closed?, opened? }, active_tab?: { from, to }, errors?: { from, to } }`, only what moved.
+  `{ hash_changed: true }` alone is a change the summary does not show (active nodes, the
+  graph, the code view): `ui_state` has it.
+- **`full`**: the whole `ui_state` as `state`, with `changes`. **`none`**: neither.
+
+```text
+nav_activate_node { node_id: 61 }
+-> { ok: true, settled: true,
+     state: { app_state: "Ready", dialog: "", active_tab: { tab_id: 10, title: "the_central_hub" },
+              machines: { activation: "idle", app: "running", bookmark: "idle", project: "ready", ... },
+              error_total: 0, error_fatal: 0, hash: "ae09456a00e59bb8" },
+     changes: { hash_changed: true,
+                active_tab: { from: { tab_id: 10, title: "overview" },
+                              to: { tab_id: 10, title: "the_central_hub" } } } }
+ui_input { ref: { object_name: "bookmark_button" }, gesture: "click" }
+-> { ok: true, message: "...", settled: true, state: { ..., dialog: "QtBookmarkCreator" },
+     changes: { hash_changed: true, dialog: { opened: "QtBookmarkCreator" },
+                machines: [ { machine: "bookmark", from: "idle", to: "editing" } ] } }
+```
+
+On the tutorial project a summary result is about 450 bytes of JSON (pretty-printed:
+600–1000), where the full one was 2.5–6k (4–10k) and grows with the graph.
+
+The bridge keeps the last state it showed per instance ([`src/state_view.rs`](src/state_view.rs)):
+`ui_state` moves it, and so does every call that returns a summary or the full state; a
+call with `"none"` does not, so the next one's changes include what it did. The changes
+compare two reads: a machine that moved and came back (an activation) shows no transition,
+only `hash_changed`; `events_history` has every move. The hash covers the machines'
+contexts and revisions too, so every activation changes it, even one that comes back to
+a view shown before. `ui_state` itself returns everything, unchanged.
 
 ```text
 NoProject ──load──▶ Loading ──project open, first tab activated──▶ Ready
@@ -201,8 +245,9 @@ hover, ctrl+wheel zoom. Aim with `at_frame: [x, y]`, a pixel of the last `ui_fra
 (its result carries the frame's origin and scale), with `at` (global coordinates), or
 with a `ref`; send a `gesture` (`click`, `double_click`, `right_click`, `hover`) or a
 list of `events`. The result names the widget that got the input and, like a
-navigation command, the state once the app settled: click a graph node and
-`state.active_nodes` is that node. `describe('input')` has the details. Dragging a
+navigation command, the state once the app settled with what changed: a dialog the click
+opened is `changes.dialog.opened`; with `state: "full"`, a clicked graph node is in
+`state.active_nodes`. `describe('input')` has the details. Dragging a
 dock separator does not work: the docks ask the platform which buttons are down.
 
 ## Debugging

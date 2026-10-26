@@ -35,9 +35,10 @@ semantic tool covers what you need.
 
 First contact, end to end:
   instance_start    { bin: \"<path to Sourcetrail>\" }          -> { id: \"main-1a2b3c\" }
-  project_open      { path: \"<project>.srctrlprj\" }           -> ui_state, Ready once loaded
+  project_open      { path: \"<project>.srctrlprj\" }           -> { ok, state, changes }, Ready once loaded
   nav_find         { query: \"MyClass\" }                       -> ranked matches
-  nav_activate_node { node_id: <matches[0].node_ids[0]> }       -> the settled ui_state
+  nav_activate_node { node_id: <matches[0].node_ids[0]> }       -> { ok, settled, state, changes }
+  ui_state          {}                                          -> everything: active nodes, graph, code view
   instance_stop     {}
 With one running instance, `instance` can be left out everywhere; otherwise pass the id \
 instance_start returned.
@@ -68,11 +69,14 @@ too (protocol v3+), for other boxes: ui_query { query: \"$.roots..[?(@.role=='bu
 @.name=='Cancel')]\" } finds a button (take the one whose rect is not empty), which ui_invoke \
 presses.
 
-Settled state: tools that change the app (nav_activate_*, nav_scroll_to_line, nav_history) \
-wait until the app reports Settled for the request, then return the ui_state object (shape \
-in describe('state')). Settled waits for the graph and code views to have drawn the result, \
-their animations included (the activation machine, describe('machines')): a ui_frame taken \
-right after shows it.
+Settled state: tools that change the app (nav_activate_*, nav_scroll_to_line, nav_history, \
+graph_*, ui_input) wait until the app reports Settled for the request, then return { ok, \
+settled, state, changes }: by default `state` is a summary (app_state, dialog, each machine's \
+state, the active tab, the error counts, a hash of the whole state) and `changes` what moved \
+since the state last shown. state: \"full\" returns the whole ui_state instead, \"none\" \
+neither; ui_state reads everything when the summary is not enough (describe('state')). Settled \
+waits for the graph and code views to have drawn the result, their animations included (the \
+activation machine, describe('machines')): a ui_frame taken right after shows it.
 
 Renamed tools: describe(<former name>) says what a tool is called now (get_ui_state -> \
 ui_state, search -> nav_search, start_instance -> instance_start, ...).
@@ -158,7 +162,7 @@ an instance or an open dump points at.",
     },
     Topic {
         name: "state",
-        summary: "The app's state: project, app_state FSM, active nodes, graph, code view, search matches, tabs.",
+        summary: "The app's state: project, app_state FSM, active nodes, graph, code view, search matches, tabs; the summary and changes tools that act return.",
         tools: &["ui_state"],
         doc: "\
 ui_state { instance? } -> {
@@ -196,7 +200,35 @@ node's references across files.
 
 graph is what the storage relates to the active nodes; view_graph is the graph as the view \
 draws it, and what the graph_* tools act on (describe('graph')): members inside their node \
-(parent: the index of that node in view_graph), and the bundles and groups the graph made.",
+(parent: the index of that node in view_graph), and the bundles and groups the graph made.
+
+The state a tool that acts returns (project_open, nav_activate_*, nav_scroll_to_line, \
+nav_history, graph_*, ui_input): the whole ui_state is 5-10k tokens, so they take \
+state: \"summary\" (the default) | \"full\" | \"none\" and return { ok, settled, state, changes }:
+  state, summary: { app_state, dialog, machines: { <machine>: <state> }, \
+active_tab: { tab_id, title } | null, error_total, error_fatal, hash }
+    Each machine's state without its context or events (machine_state has those). hash is \
+a hash of the whole ui_state (request_id left out): equal hashes, nothing changed. It covers \
+the machines' contexts and revisions too, so every activation changes it, even one that comes \
+back to a view shown before.
+  state, full: the whole ui_state as above.
+  state, none: neither state nor changes.
+  changes: what moved since the state last shown on this instance (by ui_state, or by a \
+call with a summary or the full state; a call with none moves nothing), null on the first: \
+{ hash_changed, app_state?: { from, to }, machines?: [ { machine, from, to } ], \
+dialog?: { closed?, opened? }, active_tab?: { from, to }, errors?: { from: { total, fatal }, \
+to } }. Only what moved is there: { hash_changed: false } is no change at all; \
+{ hash_changed: true } alone is a change the summary does not show (active nodes, graph, code \
+view): read ui_state for it. Taken between two reads, so a machine that moved and came back \
+(an activation: idle -> ... -> idle) is no transition; events_history has every move.
+  Example, nav_activate_node (the tab's title follows the active node): { ok: true, \
+settled: true, state: { app_state: \"Ready\", dialog: \"\", machines: { activation: \"idle\", \
+app: \"running\", bookmark: \"idle\", project: \"ready\", ... }, active_tab: { tab_id: 10, \
+title: \"the_central_hub\" }, error_total: 0, error_fatal: 0, hash: \"ae09456a00e59bb8\" }, \
+changes: { hash_changed: true, active_tab: { from: { tab_id: 10, title: \"overview\" }, to: \
+{ tab_id: 10, title: \"the_central_hub\" } } } }. A click on the bookmark button then: \
+changes: { hash_changed: true, dialog: { opened: \"QtBookmarkCreator\" }, machines: [ { \
+machine: \"bookmark\", from: \"idle\", to: \"editing\" } ] }.",
     },
     Topic {
         name: "events",
@@ -255,15 +287,20 @@ nav_find { query, instance? } -> { query, matches: [same as nav_search] }
   nav_search ranked for picking one: exact text, then prefix, then substring, then score. \
 Activate matches[0].node_ids[0].
 
-nav_activate_node { node_id? | serialized_name?, instance? } -> ui_state
+The ones that act return once the app settled, as { ok, settled, state, changes }: state \
+is a summary unless state: \"full\" (the whole ui_state) or \"none\" (neither); changes are \
+what moved since the state last shown. describe('state') has both shapes; ui_state reads \
+everything, e.g. which nodes are active.
+
+nav_activate_node { node_id? | serialized_name?, state=\"summary\", instance? } -> { ok, settled, state, changes }
   Shows the node in the graph and code view, like clicking it. node_id from a search match \
 or ui_state; serialized_name from ui_state's active_nodes/graph.
 
-nav_activate_file { path, instance? } -> ui_state       Opens a source file.
-nav_activate_tab { tab_id, instance? } -> ui_state      tab_id from ui_state.tabs.
-nav_scroll_to_line { path, line, instance? } -> ui_state
+nav_activate_file { path, state?, instance? } -> the same       Opens a source file.
+nav_activate_tab { tab_id, state?, instance? } -> the same      tab_id from ui_state.tabs.
+nav_scroll_to_line { path, line, state?, instance? } -> the same
   Scrolls the code view to a line (1-based) of a file.
-nav_history { direction: \"back\" | \"forward\", instance? } -> ui_state
+nav_history { direction: \"back\" | \"forward\", state?, instance? } -> the same
   The toolbar's back/forward navigation.",
     },
     Topic {
@@ -272,20 +309,21 @@ nav_history { direction: \"back\" | \"forward\", instance? } -> ui_state
         tools: &["graph_expand", "graph_hide", "graph_split", "graph_trail"],
         doc: "\
 The graph's own controls, on the current tab's graph (agent-control protocol v7). Each returns \
-the settled ui_state once the graph has drawn the result; ids come from ui_state.view_graph, \
+{ ok, settled, state, changes } once the graph has drawn the result, state a summary unless \
+state: \"full\" (the whole ui_state) or \"none\" (describe('state')); ids come from ui_state.view_graph, \
 which lists what the view draws: symbols (kind node; members carry parent, the index of their \
 node), and the bundles (\"12 callers\") and groups (by file, namespace...) it made.
 
-graph_expand { node_id, expand=true, instance? } -> ui_state
+graph_expand { node_id, expand=true, state?, instance? } -> { ok, settled, state, changes }
   A node whose view_graph entry has `expanded` has an expand toggle: true shows its members \
 (hidden_members says how many more), false collapses them.
-graph_hide { node_id, instance? } -> ui_state
+graph_hide { node_id, state?, instance? } -> { ok, settled, state, changes }
   Takes a node (or an edge, by its id from ui_state.graph) out of the graph.
-graph_split { bundle_id, instance? } -> ui_state
+graph_split { bundle_id, state?, instance? } -> { ok, settled, state, changes }
   Splits a bundle or group whose entry is splittable, as clicking it does. A file or \
 namespace group is not split: its id is that node's, so nav_activate_node shows it.
 graph_trail { node_id, direction=\"outgoing\" | \"incoming\", target_id?, edge_kinds?, \
-node_kinds?, depth=0, layout?, include_non_indexed=false, instance? } -> ui_state
+node_kinds?, depth=0, layout?, include_non_indexed=false, state?, instance? } -> { ok, settled, state, changes }
   The trail buttons and the custom trail dialog. outgoing shows what a function calls, the \
 classes derived from a class, what a file includes; incoming a function's callers, a class's \
 bases, a file's includers. edge_kinds default by the node's kind (functions: call, override; \
@@ -353,8 +391,8 @@ ui_capture { ref, include_properties=false, expect_hash=0, instance? } -> PNG im
 For what has no accessible action or nav_* tool, above all the graph: its nodes and edges \
 are drawn, not widgets, so they appear in no ui_snapshot; find them in ui_frame instead.
 
-ui_input { ref? | at?: [x, y] | at_frame?: [px, py], gesture? | events?, instance? } -> \
-{ ok, message, settled, state } | { ok: false, message }
+ui_input { ref? | at?: [x, y] | at_frame?: [px, py], gesture? | events?, state=\"summary\", instance? } -> \
+{ ok, message, settled, state, changes } | { ok, message, settled: false, note } | { ok: false, message }
   Target, exactly one of:
     ref        an element from ui_snapshot / ui_query (a scroll area such as the graph view \
                gets the input on its viewport)
@@ -374,9 +412,11 @@ with ui_query and press them with ui_invoke.
   While a modal window is in front (a question box), input for anything outside it is \
 refused (ok: false), as a person's is.
   The result: `message` names the widget that received the input; once its effects \
-drained, `state` is the ui_state (a clicked node is in active_nodes). settled: false means \
-they did not drain in time, e.g. the click opened a dialog that holds the app: look with \
-ui_frame.
+drained, `state` is the state they led to and `changes` what moved since the state last shown: \
+a summary by default (a dialog the click opened is changes.dialog.opened, a tab it switched \
+changes.active_tab), state: \"full\" for the whole ui_state (a clicked node is in active_nodes), \
+\"none\" for neither; describe('state'). settled: false means they did not drain in time, e.g. \
+the click opened a dialog that holds the app: look with ui_frame.
   Modifiers travel with each event; code that reads the global keyboard state instead does \
 not see them. Needs agent-control protocol v5.",
     },
@@ -385,14 +425,15 @@ not see them. Needs agent-control protocol v5.",
         summary: "Open a Sourcetrail project; indexing starts and app_state follows it.",
         tools: &["project_open"],
         doc: "\
-project_open { path, instance? } -> ui_state
+project_open { path, state=\"summary\", instance? } -> { ok, state, changes } | { app_state: \"Loading\", question, note }
   Loads a project (.srctrlprj / .srctrl.toml) and returns once the load is done, so the \
 state it returns is one to navigate from; instance_start { project } waits the same way. \
+state is a summary unless state: \"full\" (the whole ui_state) or \"none\" (describe('state')). \
 The app reports app_state Loading from the request until the project is open and the tab \
 the load opens has shown the overview, and refuses nav_* meanwhile (\"still loading\"), so \
 nothing of the load lands after a first navigation. A project with an up-to-date index \
 comes back Ready. One without an index comes back Ready with the indexing machine in \
-choosing_mode (ui_state.dialog \"Start Indexing\"), and nothing is indexed until it starts:
+choosing_mode (state.dialog \"Start Indexing\"), and nothing is indexed until it starts:
   machine_send { machine: \"indexing\", event: \"start\", until: [\"idle\"], timeout_s: 300 }
 returns once indexing is over and the project has reopened on the new index (app_state \
 Ready), so navigation can follow at once. describe('machines') has the whole lifecycle.
