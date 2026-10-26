@@ -1,6 +1,8 @@
 #ifndef QT_ACCESSIBLE_ROLE_H
 #define QT_ACCESSIBLE_ROLE_H
 
+#include <cstdint>
+
 #include <QtGlobal>
 
 #if QT_CONFIG(accessibility)
@@ -61,6 +63,23 @@ inline QString accessibleElementName(QAccessibleInterface* iface)
 		return widget->accessibleName();
 	}
 	return iface->text(QAccessible::Name);
+}
+
+//! The element's state as UiNode.state carries it, for ui_snapshot and ui_query alike.
+inline std::uint32_t accessibleStateBits(const QAccessible::State& s)
+{
+	std::uint32_t m = 0;
+	if (s.focused) m |= 1u << 0;
+	if (s.focusable) m |= 1u << 1;
+	if (s.checked) m |= 1u << 2;
+	if (s.checkable) m |= 1u << 3;
+	if (s.disabled) m |= 1u << 4;
+	if (s.selected) m |= 1u << 5;
+	if (s.selectable) m |= 1u << 6;
+	if (s.invisible) m |= 1u << 7;
+	if (s.expandable) m |= 1u << 8;
+	if (s.expanded) m |= 1u << 9;
+	return m;
 }
 }	 // namespace utility::qt
 #endif	// QT_CONFIG(accessibility)

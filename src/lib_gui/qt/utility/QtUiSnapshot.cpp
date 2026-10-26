@@ -189,22 +189,6 @@ flatbuffers::Offset<fb::UiNode> buildObjectNode(
 
 #if QT_CONFIG(accessibility)
 
-std::uint32_t stateBits(const QAccessible::State& s)
-{
-	std::uint32_t m = 0;
-	if (s.focused) m |= 1u << 0;
-	if (s.focusable) m |= 1u << 1;
-	if (s.checked) m |= 1u << 2;
-	if (s.checkable) m |= 1u << 3;
-	if (s.disabled) m |= 1u << 4;
-	if (s.selected) m |= 1u << 5;
-	if (s.selectable) m |= 1u << 6;
-	if (s.invisible) m |= 1u << 7;
-	if (s.expandable) m |= 1u << 8;
-	if (s.expanded) m |= 1u << 9;
-	return m;
-}
-
 // --- Route 1: accessibility tree (semantic backbone) -----------------------
 flatbuffers::Offset<fb::UiNode> buildAccessibleNode(
 	flatbuffers::FlatBufferBuilder& b,
@@ -260,7 +244,7 @@ flatbuffers::Offset<fb::UiNode> buildAccessibleNode(
 	nb.add_value(value);
 	nb.add_description(description);
 	nb.add_rect(&rect);
-	nb.add_state(stateBits(iface->state()));
+	nb.add_state(accessibleStateBits(iface->state()));
 	nb.add_actions(actionsVec);
 	nb.add_children(kids);
 	nb.add_hash(structuralHash(iface));

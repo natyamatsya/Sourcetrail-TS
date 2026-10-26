@@ -97,6 +97,7 @@ QJsonObject buildJsonNode(
 		{"description", iface->text(QAccessible::Description)},
 		{"rect", QJsonObject{{"x", r.x()}, {"y", r.y()}, {"w", r.width()}, {"h", r.height()}}},
 		{"actions", actions},
+		{"state", static_cast<qint64>(accessibleStateBits(iface->state()))},
 		// String so the 64-bit value survives QJsonValue's double; the agent never
 		// sees this JSON — it decodes UiNode.hash (a real u64) from the reply.
 		{"hash", QString::number(structuralHash(iface))},
@@ -144,6 +145,7 @@ flatbuffers::Offset<fb::UiNode> jsonToUiNode(flatbuffers::FlatBufferBuilder& b, 
 	nb.add_rect(&rect);
 	nb.add_actions(actionsVec);
 	nb.add_hash(node.value("hash").toString().toULongLong());
+	nb.add_state(static_cast<std::uint32_t>(node.value("state").toInteger()));
 	return nb.Finish();
 }
 }	 // namespace
