@@ -15,6 +15,7 @@
 
 // captureScreen and the dialog watch need no accessibility support.
 #include <QAbstractButton>
+#include <QAbstractItemView>
 #include <QAbstractScrollArea>
 #include <QApplication>
 #include <QBuffer>
@@ -36,6 +37,7 @@
 #include <QRect>
 #include <QString>
 #include <QTimer>
+#include <QTreeView>
 #include <QWheelEvent>
 
 #if QT_CONFIG(accessibility)
@@ -188,6 +190,36 @@ QAccessibleInterface* resolve(const std::string& objectName, const std::vector<R
 	}
 	return current;
 }
+// The model index of a checkable cell of a list or table view, for toggling its check
+// box: Qt's accessible Toggle of a cell changes its selection, not its check state,
+// where a person's click on the box checks it. Trees are left alone (their accessible
+// rows are flattened, not model rows).
+struct CheckableCell
+{
+	QAbstractItemModel* model;
+	QModelIndex index;
+};
+
+std::optional<CheckableCell> checkableCell(QAccessibleInterface& iface)
+{
+	QAccessibleTableCellInterface* cell = iface.tableCellInterface();
+	if (cell == nullptr || !iface.state().checkable)
+	{
+		return std::nullopt;
+	}
+	QAccessibleInterface* table = cell->table();
+	auto* view = table != nullptr ? qobject_cast<QAbstractItemView*>(table->object()) : nullptr;
+	if (view == nullptr || view->model() == nullptr || qobject_cast<QTreeView*>(view) != nullptr)
+	{
+		return std::nullopt;
+	}
+	const QModelIndex index = view->model()->index(cell->rowIndex(), cell->columnIndex(), view->rootIndex());
+	if (!index.isValid() || !(index.flags() & Qt::ItemIsUserCheckable))
+	{
+		return std::nullopt;
+	}
+	return CheckableCell {.model = view->model(), .index = index};
+}
 }	 // namespace
 
 ControlResult invokeAction(
@@ -237,6 +269,19 @@ ControlResult invokeAction(
 			}
 			// Under the request's cause: what the click dispatches is on its behalf.
 			QMetaObject::invokeMethod(button, withCurrentCause([button]() { button->click(); }), Qt::QueuedConnection);
+		}
+		else if (const std::optional<CheckableCell> cell =
+					 QString::fromStdString(action) == QAccessibleActionInterface::toggleAction()
+						 ? checkableCell(*iface)
+						 : std::nullopt)
+		{
+			const auto& [model, index] = *cell;
+			if (!(index.flags() & Qt::ItemIsEnabled))
+			{
+				return {false, "element is disabled: " + refToString(objectName, path)};
+			}
+			const bool checked = index.data(Qt::CheckStateRole).toInt() == Qt::Checked;
+			model->setData(index, checked ? Qt::Unchecked : Qt::Checked, Qt::CheckStateRole);
 		}
 		else
 		{
