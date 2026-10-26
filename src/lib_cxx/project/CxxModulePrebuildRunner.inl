@@ -54,7 +54,8 @@ namespace cxx_module_prebuild_runner_detail
 {
 struct ModuleScan
 {
-	std::string provides;			  // the module this file's `export module` declares, if any
+	std::string provides;			  // the module (or partition) this file builds a BMI for, if any
+	std::string module;				  // the primary module this file belongs to (resolves `:part`)
 	std::set<std::string> requires_;  // the modules this file `import`s
 };
 
@@ -84,9 +85,10 @@ inline std::string parseModuleName(const std::vector<clang::Token>& toks, size_t
 // and pull the module declaration and imports out of the token stream. Robust to comments/strings
 // (the lexer handles them). Known gaps vs the real scanner, all rare: module decls hidden behind
 // macros / #if are missed, and a decl inside `#if 0` is a false positive (the raw lexer doesn't
-// evaluate the preprocessor). `export module X` provides X; `import X` / `export import X` /
-// `import :part` requires X; header-unit imports (`import <h>` / `import "h"`) are skipped -- they
-// aren't source-group units.
+// evaluate the preprocessor). `export module X` provides X; `module X:part` (an implementation
+// partition, importable within X) provides X:part too; `module X` (an implementation unit) requires
+// X's interface; `import X` / `export import X` / `import :part` requires X; header-unit imports
+// (`import <h>` / `import "h"`) are skipped -- they aren't source-group units.
 inline ModuleScan scanModuleDeps(const FilePath& file)
 {
 	ModuleScan scan;
@@ -123,15 +125,16 @@ inline ModuleScan scanModuleDeps(const FilePath& file)
 	const auto recordRequire = [&](size_t start) {
 		size_t j = start;
 		std::string name = parseModuleName(toks, j);
-		if (name.rfind(':', 0) == 0)
+		if (name.starts_with(':'))
 		{
-			// `import :part;` -- a partition of the module this file defines. Resolve it against the
-			// current module's base name (empty provides means it's not a module unit -> ignore).
-			if (scan.provides.empty())
+			// `import :part;` -- a partition of the module this file belongs to (an interface or an
+			// implementation unit alike). Resolve it against that module's name; outside a module
+			// unit there is nothing to resolve against -> ignore.
+			if (scan.module.empty())
 			{
 				return;
 			}
-			name = scan.provides.substr(0, scan.provides.find(':')) + name;
+			name = scan.module + name;
 		}
 		if (!name.empty())
 		{
@@ -149,11 +152,36 @@ inline ModuleScan scanModuleDeps(const FilePath& file)
 				if (std::string name = parseModuleName(toks, j); !name.empty())
 				{
 					scan.provides = name;
+					scan.module = name.substr(0, name.find(':'));
 				}
 			}
 			else if (isId(toks[i + 1], "import"))
 			{
 				recordRequire(i + 2);
+			}
+		}
+		else if (isId(toks[i], "module") && toks[i].isAtStartOfLine())
+		{
+			// A module declaration without `export`. `module X:part;` is an implementation partition:
+			// it has no exported interface, but X's own units can `import :part;`, so it needs a BMI
+			// just like an interface partition. `module X;` is an implementation unit, which
+			// implicitly imports X's primary interface. `module;` (the global module fragment) and
+			// `module :private;` name nothing. Requiring the `;` keeps an identifier spelled `module`
+			// at the start of a line (`module = 1;`) from passing for a declaration.
+			size_t j = i + 1;
+			const std::string name = parseModuleName(toks, j);
+			if (!name.empty() && !name.starts_with(':') && j < toks.size() &&
+				toks[j].isOneOf(clang::tok::semi, clang::tok::l_square))
+			{
+				scan.module = name.substr(0, name.find(':'));
+				if (name.contains(':'))
+				{
+					scan.provides = name;
+				}
+				else
+				{
+					scan.requires_.insert(name);
+				}
 			}
 		}
 		else if (
@@ -472,13 +500,6 @@ inline int CxxModulePrebuildRunner::run(const FilePath& requestPath)
 		}
 	}
 
-	if (buildOrder.size() != providedModule.size())
-	{
-		LOG_ERROR(
-			"C++20 module dependency cycle detected; some BMIs will not be built and imports into "
-			"the cycle will not resolve.");
-	}
-
 	// --- 3. build each BMI into the cache, in dependency order (with the file's own flags) ---------
 	if (const auto created = FileSystem::createDirectories(cacheDir); !created)
 	{
@@ -578,6 +599,39 @@ inline int CxxModulePrebuildRunner::run(const FilePath& requestPath)
 			!built)
 		{
 			recordFailure(logicalName, file.str(), built.error());
+		}
+	}
+
+	// 3c. Units Kahn's algorithm never released sit on (or behind) an import cycle: none of them can
+	// be built. Report each as a failure, naming the in-group modules it waits on, so the
+	// cycle reaches the index log like any other failed BMI (a LOG_ERROR here would go nowhere: this
+	// subprocess has no logger).
+	if (buildOrder.size() != providedModule.size())
+	{
+		const std::set<FilePath> built(buildOrder.begin(), buildOrder.end());
+		for (const auto& [file, name]: providedModule)
+		{
+			if (built.contains(file))
+			{
+				continue;
+			}
+			std::string waitingOn;
+			for (const std::string& required: fileRequires[file])
+			{
+				const auto providerIt = moduleProviderFile.find(required);
+				if (providerIt != moduleProviderFile.end() && providerIt->second != file &&
+					!built.contains(providerIt->second))
+				{
+					waitingOn += std::format("{}'{}'", waitingOn.empty() ? "" : ", ", required);
+				}
+			}
+			recordFailure(
+				name,
+				file.str(),
+				std::format(
+					"not built: it is on, or depends on, a cycle of module imports (it waits on {}, "
+					"which can never be built first).",
+					waitingOn));
 		}
 	}
 

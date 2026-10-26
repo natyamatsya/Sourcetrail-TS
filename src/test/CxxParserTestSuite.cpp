@@ -6,7 +6,13 @@
 #include "utilityString.h"
 #endif
 
+#include <filesystem>
+#include <format>
+#include <fstream>
+#include <map>
+
 #ifndef SRCTRL_MODULE_BUILD
+#include "CxxModulePrebuildRunner.h"
 #include "CxxParser.h"
 #include "IndexerCommandCxx.h"
 #endif
@@ -5053,11 +5059,86 @@ TEST_CASE("cxx parser keeps a module and a namespace of the same name distinct")
 	REQUIRE(namespaceNode);
 }
 
-// NOTE: module IMPORT edges (visitImportDecl -> EDGE_IMPORT) are verified at runtime
-// but need an importable module's BMI built with a matching target/std to load, which
-// is the Phase-2 driver concern rather than an in-harness unit test. Confirmed manually:
-// `import foo;` against a target-matched foo.pcm records `IMPORT: global -> foo` + a
-// MODULE node for foo, 0 errors.
+namespace
+{
+// Builds the BMIs of `units` (file name -> source) the way indexing does -- with the module prebuild
+// runner -- into a fresh directory, which is returned: pass it as -fprebuilt-module-path. The
+// runner's manifest.json lands there too.
+FilePath prebuildModules(const std::string& testName, const std::map<std::string, std::string>& units)
+{
+	const std::filesystem::path directory =
+		std::filesystem::temp_directory_path() / "sourcetrail-module-tests" / testName;
+	std::filesystem::remove_all(directory);
+	std::filesystem::create_directories(directory);
+
+	std::string files;
+	for (const auto& [name, code]: units)
+	{
+		std::ofstream(directory / name) << code;
+		// The language standard parseCode() indexes with: a BMI only loads into a matching one.
+		files += std::format(
+			"{}{{\"path\": \"{}\", \"flags\": [\"{}\"]}}",
+			files.empty() ? "" : ", ",
+			(directory / name).string(),
+			ClangCompiler::stdOption(ClangCompiler::getLatestCppStandard()));
+	}
+	std::ofstream(directory / "request.json")
+		<< std::format("{{\"cacheDir\": \"{}\", \"files\": [{}]}}", directory.string(), files);
+
+	CxxModulePrebuildRunner::run(FilePath((directory / "request.json").string()));
+	return FilePath(directory.string());
+}
+
+std::string readManifest(const FilePath& directory)
+{
+	std::ifstream in(directory.getConcatenated("/manifest.json").str());
+	return std::string(std::istreambuf_iterator<char>(in), std::istreambuf_iterator<char>());
+}
+
+const std::map<std::string, std::string> mathModuleUnits = {
+	{"math.cppm",
+	 "export module math;\n"
+	 "export import :vec;\n"
+	 "import :detail;\n"
+	 "export int twice(int x) { return doubled(x); }\n"},
+	{"math-vec.cppm", "export module math:vec;\nexport struct Vec { int x; };\n"},
+	// An implementation partition: no `export`, yet math's own units import it.
+	{"math-detail.cppm", "module math:detail;\nint doubled(int x) { return 2 * x; }\n"},
+	// An implementation unit, which imports a partition too.
+	{"math_impl.cpp", "module math;\nimport :detail;\nint quadrupled(int x) { return doubled(doubled(x)); }\n"},
+};
+}	 // namespace
+
+TEST_CASE("module prebuild builds implementation partitions for the units that import them")
+{
+	const FilePath cache = prebuildModules("implementation-partition", mathModuleUnits);
+
+	const std::string manifest = readManifest(cache);
+	CAPTURE(manifest);
+	REQUIRE(manifest.contains("\"failures\":[]"));
+	REQUIRE(cache.getConcatenated("/math.pcm").exists());
+	REQUIRE(cache.getConcatenated("/math-vec.pcm").exists());
+	REQUIRE(cache.getConcatenated("/math-detail.pcm").exists());
+}
+
+TEST_CASE("module prebuild reports the modules an import cycle leaves unbuilt")
+{
+	const FilePath cache = prebuildModules(
+		"import-cycle",
+		{{"a.cppm", "export module a;\nimport b;\n"},
+		 {"b.cppm", "export module b;\nimport a;\n"},
+		 {"c.cppm", "export module c;\nimport a;\n"},
+		 {"d.cppm", "export module d;\n"}});
+
+	const std::string manifest = readManifest(cache);
+	CAPTURE(manifest);
+	REQUIRE(manifest.contains("\"module\":\"a\""));
+	REQUIRE(manifest.contains("\"module\":\"b\""));
+	REQUIRE(manifest.contains("\"module\":\"c\""));
+	REQUIRE(manifest.contains("cycle of module imports (it waits on 'a',"));
+	REQUIRE_FALSE(manifest.contains("\"module\":\"d\""));
+	REQUIRE(cache.getConcatenated("/d.pcm").exists());
+}
 
 /*
 void _test_TEST()

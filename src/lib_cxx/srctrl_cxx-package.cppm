@@ -13,6 +13,7 @@ module;
 #include <deque>
 #include <expected>
 #include <filesystem>
+#include <format>
 #include <fstream>
 #include <iostream>
 #include <map>
