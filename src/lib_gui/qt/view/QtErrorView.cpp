@@ -176,11 +176,12 @@ void QtErrorView::addErrors(
 	const std::vector<ErrorInfo>& errors, const ErrorCountInfo& errorCount, bool scrollTo)
 {
 	execution::qt::onUi(this, [=, this]() {
+		const int firstNewRow = m_table->getFilledRowCount();
 		for (const ErrorInfo& error: errors)
 		{
 			addErrorToTable(error);
 		}
-		m_table->updateRows();
+		m_table->updateRows(firstNewRow);
 
 		if (scrollTo)
 		{

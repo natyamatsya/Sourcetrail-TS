@@ -11,7 +11,9 @@ public:
 	QtTable(QWidget* parent = nullptr);
 	~QtTable() override;
 
-	void updateRows();
+	// Keeps the filler rows that fill the view and fits the rows' heights to their contents,
+	// those from `firstChangedRow` on: rows added at the end need not refit all the others.
+	void updateRows(int firstChangedRow = 0);
 	int getFilledRowCount();
 
 	void showFirstRow();

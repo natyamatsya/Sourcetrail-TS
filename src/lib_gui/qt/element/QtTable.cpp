@@ -1,5 +1,6 @@
 #include "QtTable.h"
 
+#include <algorithm>
 #include <cmath>
 
 #include <QHeaderView>
@@ -62,7 +63,7 @@ QtTable::QtTable(QWidget* parent): QTableView(parent)
 
 QtTable::~QtTable() = default;
 
-void QtTable::updateRows()
+void QtTable::updateRows(int firstChangedRow)
 {
 	while (model()->rowCount() <= m_rowsToFill)
 	{
@@ -96,7 +97,10 @@ void QtTable::updateRows()
 		clearSelection();
 	}
 
-	resizeRowsToContents();
+	for (int row = std::max(firstChangedRow, 0); row < model()->rowCount(); row++)
+	{
+		resizeRowToContents(row);
+	}
 }
 
 int QtTable::getFilledRowCount()
