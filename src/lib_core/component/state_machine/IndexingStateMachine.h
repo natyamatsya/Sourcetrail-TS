@@ -316,6 +316,15 @@ public:
 	{
 		return m_machine.snapshot();
 	}
+	State state() const
+	{
+		return m_machine.state();
+	}
+	//! The run's files: started, finished and of how many (while indexing or finishing).
+	IndexingMachine::Progress progress() const
+	{
+		return m_machine.read([](const Data& data, State) { return data.progress; });
+	}
 	MachineFireResult fire(const std::string& event, const std::string& args, EventSource source);
 
 	static const char* modeName(RefreshMode mode);

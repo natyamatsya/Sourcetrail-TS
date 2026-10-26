@@ -5,12 +5,14 @@
 
 #include <atomic>
 #include <cstdint>
+#include <memory>
 
 #include "MessageIndexingStatus.h"
 #include "MessageListener.h"
 #include "MessageQuitApplication.h"
 #include "MessageStatus.h"
 
+class HeadlessWatchdog;
 class QTimer;
 
 class QtCoreApplication
@@ -23,24 +25,25 @@ class QtCoreApplication
 
 public:
 	QtCoreApplication(int argc, char** argv);
-	~QtCoreApplication() override = default;
+	~QtCoreApplication() override;
 
 private:
 	void handleMessage(MessageQuitApplication* message) override;
 	void handleMessage(MessageIndexingStatus* message) override;
 	void handleMessage(MessageStatus* message) override;
 
-	// No-progress watchdog: the fundamental backstop for the hang classes the terminal-event
-	// plumbing cannot see (deadlocks, a parent waiting on a silently dead worker pool, IPC
-	// stalls). Message handlers stamp m_lastActivityMs from their (non-main) thread; a main-
-	// thread timer compares against it and aborts the process with a distinct exit code when
-	// nothing has moved for the configured span. SOURCETRAIL_HEADLESS_WATCHDOG_MINUTES
-	// overrides the default (30); 0 disables.
+	// The watchdog: the backstop for the hang classes the terminal-event plumbing cannot
+	// see. A main-thread timer looks at the run every few seconds (its state machines, its
+	// files, its indexer processes, and when a status or progress message last came, which
+	// the handlers stamp from their thread) and aborts it with a distinct exit code once
+	// HeadlessWatchdog says it will not end by itself. SOURCETRAIL_HEADLESS_WATCHDOG_MINUTES
+	// sets the long no-progress limit (default 30); 0 disables the watchdog.
 	void setupWatchdog();
 	void touchActivity();
+	void lookAtTheRun();
 
 	std::atomic<std::int64_t> m_lastActivityMs{0};
-	std::int64_t m_watchdogLimitMs{0};
+	std::unique_ptr<HeadlessWatchdog> m_watchdog;
 	QTimer* m_watchdogTimer{nullptr};
 };
 

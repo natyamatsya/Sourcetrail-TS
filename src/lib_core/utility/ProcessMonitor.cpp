@@ -1,5 +1,7 @@
 #include "ProcessMonitor.h"
 
+#include <atomic>
+
 #include <QCoreApplication>
 #include <QMetaObject>
 #include <QObject>
@@ -9,6 +11,32 @@
 #include "SerialQueue.h"
 #include "logging.h"
 #include "utilityString.h"
+
+namespace
+{
+std::atomic<std::size_t> s_running = 0;
+
+// Counts one process as running while it lives: held by what reports its end, so it
+// goes once that is done with (it ended, or its monitor dropped it).
+struct Running
+{
+	Running()
+	{
+		s_running++;
+	}
+	~Running()
+	{
+		s_running--;
+	}
+	Running(const Running&) = delete;
+	Running& operator=(const Running&) = delete;
+};
+}	 // namespace
+
+std::size_t ProcessMonitor::running()
+{
+	return s_running.load();
+}
 
 ProcessMonitor::ProcessMonitor()
 {
@@ -55,9 +83,10 @@ void ProcessMonitor::start(
 	if (m_queue)
 	{
 		m_waiters.emplace_back([queue = m_queue, command, arguments, ended = std::move(ended)]() {
+			auto running = std::make_shared<Running>();
 			utility::ProcessOutput output =
 				utility::executeProcess(command, arguments, FilePath(), false, utility::INFINITE_TIMEOUT);
-			queue->post([ended, output = std::move(output)]() { ended(output); });
+			queue->post([ended, output = std::move(output), running = std::move(running)]() { ended(output); });
 		});
 		return;
 	}
@@ -83,7 +112,8 @@ void ProcessMonitor::start(
 		});
 
 		// Ended: it exited, or it did not start. Once.
-		auto report = [process, output, ended, command, resolvedCommand, arguments, env](bool started) {
+		auto report = [process, output, ended, command, resolvedCommand, arguments, env, running = std::make_shared<Running>()](
+						  bool started) {
 			QObject::disconnect(process, nullptr, nullptr, nullptr);
 			*output += process->readAllStandardOutput().toStdString();
 			utility::ProcessOutput result;

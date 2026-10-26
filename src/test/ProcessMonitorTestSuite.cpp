@@ -1,5 +1,6 @@
 #include "Catch2.hpp"
 
+#include <algorithm>
 #include <atomic>
 #include <chrono>
 #include <mutex>
@@ -43,6 +44,7 @@ struct Ends
 	std::mutex mutex;
 	std::vector<utility::ProcessOutput> outputs;
 	std::set<std::thread::id> threads;
+	std::size_t leastRunning = 1000;	// ProcessMonitor::running() as each end is told
 
 	std::function<void(utility::ProcessOutput)> recorder()
 	{
@@ -50,6 +52,7 @@ struct Ends
 			const std::lock_guard<std::mutex> lock(mutex);
 			outputs.push_back(std::move(output));
 			threads.insert(std::this_thread::get_id());
+			leastRunning = (std::min)(leastRunning, ProcessMonitor::running());	// (): windows.h
 		};
 	}
 	std::size_t count()
@@ -102,6 +105,10 @@ void runThree(ProcessMonitor& monitor, Ends& ends, const std::string& program)
 	}
 	REQUIRE(succeeded == 2);
 	REQUIRE(failedToStart == 1);
+
+	// A process counts as running until its end was told, then no more.
+	REQUIRE(ends.leastRunning >= 1);
+	REQUIRE(eventually([]() { return ProcessMonitor::running() == 0; }));
 }
 }	 // namespace
 

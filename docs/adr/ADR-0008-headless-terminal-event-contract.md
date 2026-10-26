@@ -70,3 +70,19 @@ completion is now the root: its value (success or a failed stage), its error (a 
 stop (termination) each dispatch exactly one `MessageIndexingFinished`. A throwing stage still
 becomes `STATE_FAILURE` at its `TaskRunner`; that conversion is unit-tested in
 `TaskTestSuite`.
+
+## Update (2026-10-26): the watchdog knows what progress to expect
+
+Layer 3 no longer only times message silence. Every 5 s the headless app takes a look at the
+run (the app, project and indexing machines' states, the run's file counts, how many indexer
+processes `ProcessMonitor` runs, the last status message) and `HeadlessWatchdog` decides:
+
+- nothing left to do (no load, no indexing, no quit) for 30 s: nothing would ever end the run;
+- the indexing machine waiting for a person (the mode choice, the report) for 30 s;
+- indexing with no indexer process running and no file finished for 2 min;
+- otherwise, nothing moved for `SOURCETRAIL_HEADLESS_WATCHDOG_MINUTES` (default 30), so a slow
+  file keeps its time while its indexer runs.
+
+Each aborts with exit code 3 and says which rule fired; `0` still disables the watchdog. The
+CLI's own failures (bad options, a rejected merge) now exit with 1 instead of 0.
+

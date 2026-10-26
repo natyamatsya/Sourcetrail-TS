@@ -1,6 +1,7 @@
 #ifndef PROCESS_MONITOR_H
 #define PROCESS_MONITOR_H
 
+#include <cstddef>
 #include <functional>
 #include <memory>
 #include <thread>
@@ -52,6 +53,10 @@ public:
 
 	//! Kills the processes running now; their `ended` calls follow.
 	void killAll();
+
+	//! How many processes all monitors run now (started, not yet ended): a sign of
+	//! life for a watchdog.
+	static std::size_t running();
 
 private:
 	QThread m_thread;

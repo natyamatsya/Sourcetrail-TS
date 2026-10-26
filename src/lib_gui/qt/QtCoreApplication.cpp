@@ -12,6 +12,11 @@
 
 #include <QTimer>
 
+#include "AppStateMachine.h"
+#include "HeadlessWatchdog.h"
+#include "IndexingStateMachine.h"
+#include "ProcessMonitor.h"
+#include "ProjectStateMachine.h"
 #include "logging.h"
 
 // Imports come AFTER all textual #includes (include-before-import rule).
@@ -33,6 +38,8 @@ QtCoreApplication::QtCoreApplication(int argc, char** argv): QCoreApplication(ar
 {
 	setupWatchdog();
 }
+
+QtCoreApplication::~QtCoreApplication() = default;
 
 void QtCoreApplication::handleMessage(MessageQuitApplication* message)
 {
@@ -86,27 +93,47 @@ void QtCoreApplication::setupWatchdog()
 		return;
 	}
 
-	m_watchdogLimitMs = minutes * 60 * 1000;
+	HeadlessWatchdog::Limits limits;
+	limits.noProgress = std::chrono::minutes(minutes);
+	m_watchdog = std::make_unique<HeadlessWatchdog>(limits);
 	touchActivity();
 
 	// Created in the constructor, so the timer lives on the main thread with the event loop.
 	m_watchdogTimer = new QTimer(this);
-	m_watchdogTimer->setInterval(60 * 1000);
-	connect(m_watchdogTimer, &QTimer::timeout, this, [this]() {
-		const std::int64_t idleMs = nowMs() - m_lastActivityMs.load();
-		if (idleMs < m_watchdogLimitMs)
-		{
-			return;
-		}
-		const std::string message =
-			"Headless watchdog: no progress for " + std::to_string(idleMs / 60000) +
-			" minutes -- aborting the run (exit code 3). Tune or disable via "
-			"SOURCETRAIL_HEADLESS_WATCHDOG_MINUTES (0 = off).";
-		LOG_ERROR(message);
-		std::cerr << message << std::endl;
-		QCoreApplication::exit(3);
-	});
+	m_watchdogTimer->setInterval(5 * 1000);
+	connect(m_watchdogTimer, &QTimer::timeout, this, [this]() { lookAtTheRun(); });
 	m_watchdogTimer->start();
+}
+
+void QtCoreApplication::lookAtTheRun()
+{
+	using Clock = HeadlessWatchdog::Clock;
+	const IndexingMachine::Progress progress = IndexingStateMachine::instance()->progress();
+
+	HeadlessWatchdog::Look look;
+	look.at = Clock::now();
+	look.app = AppStateMachine::instance()->state();
+	look.project = ProjectStateMachine::instance()->state();
+	look.indexing = IndexingStateMachine::instance()->state();
+	look.started = progress.started;
+	look.finished = progress.finished;
+	look.total = progress.total;
+	look.liveProcesses = ProcessMonitor::running();
+	look.lastActivity = Clock::time_point(
+		std::chrono::duration_cast<Clock::duration>(std::chrono::milliseconds(m_lastActivityMs.load())));
+
+	const std::optional<std::string> reason = m_watchdog->check(look);
+	if (!reason)
+	{
+		return;
+	}
+	const std::string message = "Headless watchdog: " + *reason +
+		" -- aborting the run (exit code 3). Tune or disable via "
+		"SOURCETRAIL_HEADLESS_WATCHDOG_MINUTES (0 = off).";
+	LOG_ERROR(message);
+	std::cerr << message << std::endl;
+	m_watchdogTimer->stop();
+	QCoreApplication::exit(3);
 }
 
 void QtCoreApplication::touchActivity()

@@ -150,6 +150,10 @@ public:
 	{
 		return m_machine.snapshot();
 	}
+	State state() const
+	{
+		return m_machine.state();
+	}
 	MachineFireResult fire(const std::string& event, const std::string& args, EventSource source);
 
 private:
