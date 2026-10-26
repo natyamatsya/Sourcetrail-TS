@@ -99,10 +99,12 @@ if(SOURCETRAIL_CXX_MODULES_ENABLED)
 	# -> __builtin_operator_new) crashes in CodeGen (EmitBuiltinNewDeleteCall, CGExprCXX.cpp:1384) because
 	# the predeclared global operator is missing. There is no source-level injection that forces those decls
 	# back in (the fix is in clang's ASTWriter, PR #167468); disable reduced BMI until our toolchain ships it.
-	# PRIVATE: the flag only has to be on the BMI *producer* -- it makes this target's BMIs full, so any
-	# consumer (here or in another target) reads the retained operator new/delete and never needs the flag.
+	# PUBLIC, though only the BMI *producer* needs it (an importing TU ignores it): CMake gives a consumer
+	# in another target this target's own BMIs only if their compile options match, and otherwise
+	# synthesizes BMI-only copies with the consumer-visible options -- without this flag, so reduced
+	# again (the very BMIs this works around), and without the compiler launcher, so never cached.
 	if(CMAKE_CXX_COMPILER_ID MATCHES "Clang")
-		target_compile_options(Sourcetrail_lib_core PRIVATE -fno-modules-reduced-bmi)
+		target_compile_options(Sourcetrail_lib_core PUBLIC -fno-modules-reduced-bmi)
 		# NOTE: -Wdecls-in-multiple-modules was briefly enabled here to surface GM/named-module
 		# dual attachments (the srctrl.messaging park). Post-pivot (SRCTRL_EXPORT =
 		# export extern "C++") ALL first-party entities are global-module by design, so the

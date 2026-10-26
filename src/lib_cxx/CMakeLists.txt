@@ -41,9 +41,10 @@ if(SOURCETRAIL_CXX_MODULES_ENABLED)
 				data/parser/cxx/srctrl_cxx-visitor.cppm
 				data/parser/cxx/srctrl_cxx-frontend.cppm
 				srctrl_cxx-package.cppm)
-	# Same LLVM #166068 reduced-BMI workaround as lib_core (see its CMakeLists for the full story).
+	# Same LLVM #166068 reduced-BMI workaround as lib_core, PUBLIC for the same reason (see its
+	# CMakeLists for the full story).
 	if(CMAKE_CXX_COMPILER_ID MATCHES "Clang")
-		target_compile_options(Sourcetrail_lib_cxx PRIVATE -fno-modules-reduced-bmi)
+		target_compile_options(Sourcetrail_lib_cxx PUBLIC -fno-modules-reduced-bmi)
 		# NOTE: -Wdecls-in-multiple-modules was briefly enabled here to surface GM/named-module
 		# dual attachments (the srctrl.messaging park). Post-pivot (SRCTRL_EXPORT =
 		# export extern "C++") ALL first-party entities are global-module by design, so the
