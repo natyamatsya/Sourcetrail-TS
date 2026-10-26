@@ -331,7 +331,8 @@ ui_invoke { ref, action?, text?, expect_hash=0, instance? } -> { ok, message, dr
   Runs an accessible action from the node's `actions` (Press, Toggle, ShowMenu, ...) or \
 sets an editable field's `text`. expect_hash (the node's `hash`) refuses the action if the \
 element changed since the snapshot. Not found / unsupported / a disabled button -> ok: \
-false. An action that \
+false; so is an element outside the modal window in front (a question box), as a person's \
+clicks are: answer that first. An action that \
 started an activation (Back, Forward, Home, a search result) returns once the views have \
 drawn it: drawn: true (false: not within 5 s).
 
@@ -365,6 +366,8 @@ with ui_query and press them with ui_invoke.
       modifiers: [shift, ctrl, alt, meta], wheel_delta: 120 per notch up,
       key: Enter|Escape|Tab|Left|F5|\"a\"|<Qt::Key code>, text }
   The graph zooms with ctrl + wheel and pans with a left drag on empty space.
+  While a modal window is in front (a question box), input for anything outside it is \
+refused (ok: false), as a person's is.
   The result: `message` names the widget that received the input; once its effects \
 drained, `state` is the ui_state (a clicked node is in active_nodes). settled: false means \
 they did not drain in time, e.g. the click opened a dialog that holds the app: look with \

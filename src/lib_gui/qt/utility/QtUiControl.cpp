@@ -5,6 +5,7 @@
 #include <map>
 #include <memory>
 #include <mutex>
+#include <optional>
 #include <utility>
 
 #include <QWidget>	// pulls Qt GUI feature macros (QT_CONFIG) before the check below
@@ -44,9 +45,50 @@
 
 namespace utility::qt
 {
+namespace
+{
+std::string describeDialog();
+
+// Why `widget` gets no input from an agent, if it does not: a modal window is open
+// and `widget` is neither in it nor in a window opened from it (a menu, a combo's
+// list). A person's clicks do not reach it either. Delivered anyway, they would act
+// under the modal window: closing the dialog whose check asks the question would
+// delete it while the check waits for the answer.
+std::optional<std::string> blockedByModal(const QWidget* widget)
+{
+	const QWidget* modal = QApplication::activeModalWidget();
+	if (modal == nullptr || widget == nullptr)
+	{
+		return std::nullopt;
+	}
+	for (const QWidget* window = widget->window(); window != nullptr;
+		 window = window->parentWidget() != nullptr ? window->parentWidget()->window() : nullptr)
+	{
+		if (window == modal)
+		{
+			return std::nullopt;
+		}
+	}
+	return "a modal window is in front (" + describeDialog() +
+		"): answer it first (a question: machine_send question answer), or act within it";
+}
+}	 // namespace
+
 #if QT_CONFIG(accessibility)
 namespace
 {
+// The element's own widget, else its nearest ancestor's (a sub-element such as a
+// menu item or a cell has none).
+QWidget* widgetOf(QAccessibleInterface* iface)
+{
+	QWidget* widget = qobject_cast<QWidget*>(iface->object());
+	for (QAccessibleInterface* p = iface->parent(); widget == nullptr && p != nullptr; p = p->parent())
+	{
+		widget = qobject_cast<QWidget*>(p->object());
+	}
+	return widget;
+}
+
 // A compact, human-readable rendering of the selector for error messages:
 // `#anchor/role[name]/...`, or `/role[name]/...` from a top-level window.
 std::string refToString(const std::string& objectName, const std::vector<RefStep>& path)
@@ -158,6 +200,10 @@ ControlResult invokeAction(
 	if (expectHash != 0 && structuralHash(iface) != expectHash)
 	{
 		return {false, "element changed since snapshot: " + refToString(objectName, path)};
+	}
+	if (const std::optional<std::string> blocked = blockedByModal(widgetOf(iface)))
+	{
+		return {false, *blocked};
 	}
 
 	if (!action.empty())
@@ -645,6 +691,10 @@ ControlResult sendInputAt(
 	{
 		return {false, "no window covers the point " + std::to_string(x) + "," + std::to_string(y)};
 	}
+	if (const std::optional<std::string> blocked = blockedByModal(widget))
+	{
+		return {false, *blocked};
+	}
 	QWidget* receiver = inputReceiver(widget);
 	postGesture(
 		receiver,
@@ -667,16 +717,15 @@ ControlResult sendInput(
 	{
 		return {false, error};
 	}
-	// The element's own widget, else its nearest ancestor's (a sub-element such as
-	// a menu item or a cell has none); coordinates stay relative to the element.
-	QWidget* widget = qobject_cast<QWidget*>(iface->object());
-	for (QAccessibleInterface* p = iface->parent(); widget == nullptr && p != nullptr; p = p->parent())
-	{
-		widget = qobject_cast<QWidget*>(p->object());
-	}
+	// Coordinates stay relative to the element, whichever widget receives them.
+	QWidget* widget = widgetOf(iface);
 	if (widget == nullptr)
 	{
 		return {false, "element has no widget to receive input: " + refToString(objectName, path)};
+	}
+	if (const std::optional<std::string> blocked = blockedByModal(widget))
+	{
+		return {false, *blocked};
 	}
 	QWidget* receiver = inputReceiver(widget);
 	const QRect element = iface->rect();	// global
