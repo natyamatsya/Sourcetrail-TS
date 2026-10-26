@@ -233,19 +233,22 @@ void QtDialogView::showIndexingProgress(
 	size_t totalFileCount,
 	const std::vector<FilePath>& sourcePaths)
 {
-	execution::qt::onUi(m_mainWindow, [=, this]() {
-		if (!sourcePaths.empty())
+	// Sent from here, in order with the run's other status messages: sent from the GUI thread,
+	// they came after "Finished indexing" whenever it was busy (adding many errors), and the
+	// status bar went on to show "[61/61] Indexing file: ..." once the run was over.
+	if (!sourcePaths.empty())
+	{
+		std::vector<std::string> stati;
+		for (const FilePath& path: sourcePaths)
 		{
-			std::vector<std::string> stati;
-			for (const FilePath& path: sourcePaths)
-			{
-				stati.push_back(
-					"[" + std::to_string(startedFileCount) + "/" +
-					std::to_string(totalFileCount) + "] Indexing file: " + path.str());
-			}
-			MessageStatus(stati, false, false, m_dialogsVisible).dispatch();
+			stati.push_back(
+				"[" + std::to_string(startedFileCount) + "/" +
+				std::to_string(totalFileCount) + "] Indexing file: " + path.str());
 		}
+		MessageStatus(stati, false, false, m_dialogsVisible).dispatch();
+	}
 
+	execution::qt::onUi(m_mainWindow, [=, this]() {
 		QtIndexingProgressDialog* window = dynamic_cast<QtIndexingProgressDialog*>(
 			m_windowStack.getTopWindow());
 		if (!window)

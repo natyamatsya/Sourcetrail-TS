@@ -1,6 +1,7 @@
 #ifndef QT_DIALOG_VIEW_H
 #define QT_DIALOG_VIEW_H
 
+#include <atomic>
 #include <map>
 
 #include <QPointer>
@@ -100,7 +101,7 @@ private:
 	std::map<std::uint64_t, QPointer<QtMessageBox>> m_questionBoxes;	// open questions by id
 
 	bool m_uiBlocked = false;
-	bool m_dialogsVisible = true;
+	std::atomic<bool> m_dialogsVisible = true;	// written on the GUI thread, read by the indexer's
 };
 
 #endif	  // QT_DIALOG_VIEW_H
