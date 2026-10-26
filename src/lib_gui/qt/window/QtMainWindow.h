@@ -11,6 +11,7 @@
 #include <kddockwidgets/MainWindow.h>
 
 #include <memory>
+#include <optional>
 #include <vector>
 
 class Bookmark;
@@ -86,6 +87,11 @@ public:
 
 	void loadLayout();
 	void saveLayout();
+
+	// Sets KDDockWidgets' flags for the views' title bars as the window settings say
+	// (View > Show Title Bars). KDDW takes them only before a dock or main window
+	// exists: call it before the main window is created.
+	static void applyDockWidgetTitleBarSetting();
 
 	// Repair a degenerate restored main-window geometry (minimized / off-screen /
 	// too small) so the window is always visible and usable after loadLayout().
@@ -234,8 +240,11 @@ private:
 
 	QAction* m_showTitleBarsAction;
 
-	// Default OFF: thin tab-strip drag handles instead of full title bars.
-	bool m_showDockWidgetTitleBars = false;
+	// Default ON; OFF: thin tab-strip drag handles instead of full title bars.
+	bool m_showDockWidgetTitleBars = true;
+	// What the docks show: the setting as it was when they were created (KDDW's flags
+	// take effect on docks created afterwards, so a toggle waits for the next start).
+	std::optional<bool> m_dockWidgetTitleBarsShown;
 
 	QtWindowStack m_windowStack;
 	QtBuildJsonBrowser* m_buildJsonBrowser = nullptr;

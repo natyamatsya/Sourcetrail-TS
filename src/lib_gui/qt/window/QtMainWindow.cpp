@@ -2,6 +2,7 @@
 #include "UiPost.h"
 
 #include "Application.h"
+#include "DialogView.h"
 #ifndef SRCTRL_MODULE_BUILD
 #include "ApplicationSettings.h"
 #include "Bookmark.h"
@@ -376,8 +377,8 @@ void QtMainWindow::loadLayout()
 	{
 		showMaximized();
 	}
-	// Default OFF → thin tab-strip drag handles (see setShowDockWidgetTitleBars).
-	setShowDockWidgetTitleBars(settings.value(QStringLiteral("showTitleBars"), false).toBool());
+	// See applyDockWidgetTitleBarSetting.
+	setShowDockWidgetTitleBars(settings.value(QStringLiteral("showDockTitleBars"), true).toBool());
 	settings.endGroup();
 
 	// The KDDW layout carries the main window's visibility as it was when saved, and
@@ -505,7 +506,7 @@ void QtMainWindow::saveLayout()
 		settings.setValue(QStringLiteral("size"), size());
 		settings.setValue(QStringLiteral("position"), pos());
 	}
-	settings.setValue(QStringLiteral("showTitleBars"), m_showDockWidgetTitleBars);
+	settings.setValue(QStringLiteral("showDockTitleBars"), m_showDockWidgetTitleBars);
 	settings.endGroup();
 
 	KDDockWidgets::LayoutSaver saver;
@@ -1093,6 +1094,15 @@ void QtMainWindow::toggleView(View* view, bool fromMenu)
 void QtMainWindow::toggleShowDockWidgetTitleBars()
 {
 	setShowDockWidgetTitleBars(!m_showDockWidgetTitleBars);
+
+	// Nothing changes on screen until the next start: say so rather than seem to ignore it.
+	if (m_dockWidgetTitleBarsShown && *m_dockWidgetTitleBarsShown != m_showDockWidgetTitleBars)
+	{
+		Application::getInstance()->getDialogView(DialogView::UseCase::GENERAL)->notify(
+			m_showDockWidgetTitleBars
+				? "The views get their title bars when Sourcetrail starts next."
+				: "The views lose their title bars when Sourcetrail starts next.");
+	}
 }
 
 void QtMainWindow::showBookmarkCreator()
@@ -1396,20 +1406,34 @@ QtMainWindow::DockWidget* QtMainWindow::getDockWidgetForView(View* view)
 void QtMainWindow::setShowDockWidgetTitleBars(bool showTitleBars)
 {
 	m_showDockWidgetTitleBars = showTitleBars;
+	if (!m_dockWidgetTitleBarsShown)
+	{
+		m_dockWidgetTitleBarsShown = showTitleBars;
+	}
 
 	if (m_showTitleBarsAction)
 	{
 		m_showTitleBarsAction->setChecked(showTitleBars);
 	}
+}
+
+void QtMainWindow::applyDockWidgetTitleBarSetting()
+{
+	QSettings settings(
+		QString::fromStdString(UserPaths::getWindowSettingsFilePath().str()), QSettings::IniFormat);
+	// Default ON. The key is not the earlier "showTitleBars": that one was saved as false
+	// everywhere, but never applied (see below), so its views have always had title bars.
+	const bool showTitleBars =
+		settings.value(QStringLiteral("MainWindow/showDockTitleBars"), true).toBool();
 
 	// KDDW manages title bars globally through Config flags (not per-dock features as
-	// QDockWidget did). The default (title bars OFF) is the thin "tab-strip handle"
-	// look: no title bar row — each dock shows a slim tab (its name + close/float
-	// buttons) that doubles as the drag handle. AlwaysShowTabs keeps that handle on
-	// single, untabbed docks too. Toggling the View-menu action ON restores classic
-	// full title bars (and tabs only appear when docks are actually tabbed together).
-	// Flags apply cleanly when set before any dock exists — the case on the
-	// constructor's first loadLayout() call; a later toggle takes full effect next launch.
+	// QDockWidget did). Title bars OFF is the thin "tab-strip handle" look: no title
+	// bar row — each dock shows a slim tab (its name + float button) that doubles as
+	// the drag handle. AlwaysShowTabs keeps that handle on single, untabbed docks too.
+	// Title bars ON are the classic full title bars (and tabs only appear when docks
+	// are actually tabbed together). KDDW refuses flags once a main window exists
+	// ("Only use this function at startup"), so they are set here, before it is
+	// created; a toggle takes effect on the next start.
 	const KDDockWidgets::Config::Flags handleFlags =
 		KDDockWidgets::Config::Flag_HideTitleBarWhenTabsVisible |
 		KDDockWidgets::Config::Flag_AlwaysShowTabs |

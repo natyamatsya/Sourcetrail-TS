@@ -20,6 +20,7 @@ import srctrl.process;
 QtMainView::QtMainView(const ViewFactory* viewFactory, StorageAccess* storageAccess)
 	: MainView(viewFactory, storageAccess)
 {
+	QtMainWindow::applyDockWidgetTitleBarSetting();
 	m_window = new QtMainWindow();
 	m_window->show();
 }
