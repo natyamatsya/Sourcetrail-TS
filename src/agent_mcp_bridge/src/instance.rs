@@ -344,6 +344,20 @@ impl InstanceManager {
         if self.instances.contains_key(&id) {
             bail!("instance '{id}' already exists (stop it first or pass a distinct id)");
         }
+        // An app can serve this id without this bridge knowing it: one an earlier bridge
+        // started (its instances outlive it) or one launched by hand. A second app on the
+        // same channels is not an error anywhere else -- every command would just keep
+        // reaching the first one, an older binary maybe, while instance_list shows the new.
+        if let Ok(probe) = Bridge::connect_instance(&id) {
+            if probe.handshake()["ok"].as_bool() == Some(true) {
+                bail!(
+                    "instance_start: an app already serves agent instance '{id}', one this bridge \
+                     did not start (an earlier bridge's, or launched by hand). Drive it as it is \
+                     with `instance: \"{id}\"`, end it first (machine_send app quit, or its \
+                     process), or pass another id."
+                );
+            }
+        }
         self.prune_dumps();
         match self.spawn(&id, opts) {
             Ok(()) => {
