@@ -24,6 +24,12 @@ SRCTRL_EXPORT struct RefreshInfo
 	std::set<FilePath> nonIndexedFilesToClear;
 
 	RefreshMode mode = RefreshMode::NONE;
+
+	// Whether producing the indexer commands may run the work they depend on -- the C++20 module
+	// prebuild, which builds every module's BMI in a subprocess. Off when the commands are only
+	// inspected (their command hashes, for flag-aware refresh), which happens around every run and
+	// must not rebuild the BMIs each time.
+	bool buildPrerequisites = true;
 };
 
 #endif	  // REFRESH_INFO_H

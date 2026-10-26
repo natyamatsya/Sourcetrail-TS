@@ -1,5 +1,8 @@
 #include "Catch2.hpp"
 
+#include <algorithm>
+#include <filesystem>
+#include <format>
 #include <fstream>
 
 #ifndef SRCTRL_MODULE_BUILD
@@ -336,4 +339,49 @@ TEST_CASE("source gropup cxx c correct default standard")
 	REQUIRE(defaultCStandard == "c17");
 #endif
 	REQUIRE(defaultCppStandard == "c++23");
+}
+
+TEST_CASE("source group cxx cdb prebuilds the modules a partial refresh's files import")
+{
+	ScopedApplicationInstance scopedApplicationInstance;
+
+	const std::filesystem::path directory =
+		std::filesystem::temp_directory_path() / "sourcetrail-module-tests" / "cdb-partial-refresh";
+	std::filesystem::remove_all(directory);
+	std::filesystem::create_directories(directory);
+	std::ofstream(directory / "geo.cppm") << "export module geo;\nexport int area(int w, int h) { return w * h; }\n";
+	std::ofstream(directory / "main.cpp") << "import geo;\nint main() { return area(2, 3); }\n";
+	std::ofstream(directory / "compile_commands.json") << std::format(
+		R"([{{"directory": "{0}", "file": "geo.cppm", "arguments": ["clang++", "-std=c++20", "-c", "geo.cppm"]}},
+		    {{"directory": "{0}", "file": "main.cpp", "arguments": ["clang++", "-std=c++20", "-c", "main.cpp"]}}])",
+		directory.string());
+
+	ProjectSettings projectSettings;
+	projectSettings.setProjectFilePath("modules", FilePath(directory.string()));
+	std::shared_ptr<SourceGroupSettingsCxxCdb> sourceGroupSettings =
+		std::make_shared<SourceGroupSettingsCxxCdb>("fake_id", &projectSettings);
+	sourceGroupSettings->setCompilationDatabasePath(
+		FilePath((directory / "compile_commands.json").string()));
+	const SourceGroupCxxCdb sourceGroup(sourceGroupSettings);
+	const std::filesystem::path cache = directory / "module_cache";
+
+	SECTION("an importer refreshed on its own still finds the BMI of the unchanged module")
+	{
+		RefreshInfo info;
+		info.filesToIndex = {FilePath((directory / "main.cpp").string()).makeCanonical()};
+		const std::vector<std::shared_ptr<IndexerCommand>> commands = sourceGroup.getIndexerCommands(info);
+
+		REQUIRE(commands.size() == 1);
+		const auto command = commands.front()->target<IndexerCommandCxx>();
+		REQUIRE(command);
+		REQUIRE(std::ranges::contains(
+			command->getCompilerFlags(), "-fprebuilt-module-path=" + FilePath(cache.string()).str()));
+		REQUIRE(std::filesystem::exists(cache / "geo.pcm"));
+	}
+
+	SECTION("command hashes are computed without building any BMI")
+	{
+		REQUIRE(sourceGroup.getAllSourceFileCommandHashes().size() == 2);
+		REQUIRE_FALSE(std::filesystem::exists(cache));
+	}
 }

@@ -126,8 +126,10 @@ std::shared_ptr<IndexerCommandProvider> SourceGroupCxxEmpty::getIndexerCommandPr
 	{
 		fileFlags[sourcePath] = compilerFlags;
 	}
-	const CxxModulePrebuilder::Result modules = CxxModulePrebuilder::prebuild(
-		fileFlags, m_settings->getProjectDirectoryPath().getConcatenated("/module_cache"));
+	const CxxModulePrebuilder::Result modules = info.buildPrerequisites
+		? CxxModulePrebuilder::prebuild(
+			  fileFlags, m_settings->getProjectDirectoryPath().getConcatenated("/module_cache"))
+		: CxxModulePrebuilder::Result{};
 	if (modules.anyModules)
 	{
 		utility::append(compilerFlags, modules.sharedFlags);

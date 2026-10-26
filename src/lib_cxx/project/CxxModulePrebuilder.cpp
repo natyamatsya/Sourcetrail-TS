@@ -1,6 +1,7 @@
 #include "CxxModulePrebuilder.h"
 
 #include <cctype>
+#include <format>
 #include <fstream>
 #include <string_view>
 #include <format>
@@ -118,6 +119,7 @@ CxxModulePrebuilder::Result CxxModulePrebuilder::prebuild(
 	}
 
 	// Read back which files are interface units; the module path is cacheDir, which we already know.
+	std::size_t failureCount = 0;
 	try
 	{
 		std::ifstream in(manifestPath.str());
@@ -131,6 +133,7 @@ CxxModulePrebuilder::Result CxxModulePrebuilder::prebuild(
 		// of only by re-running the prebuild by hand.
 		for (const auto& failure: manifest.value("failures", nlohmann::json::array()))
 		{
+			++failureCount;
 			const std::string module = failure.value("module", std::string());
 			const std::string file = failure.value("file", std::string());
 			const std::string diagnostics = failure.value("diagnostics", std::string());
@@ -145,6 +148,15 @@ CxxModulePrebuilder::Result CxxModulePrebuilder::prebuild(
 		LOG_ERROR(std::string("module prebuild manifest was not valid JSON: ") + e.what());
 		return result;
 	}
+
+	// One line per prebuild even when it all worked: what was built where is the first thing to know
+	// when an import does not resolve, and it shows how often the (not cheap) prebuild runs.
+	LOG_INFO(std::format(
+		"C++20 module prebuild: {} module unit(s) in {} candidate file(s), {} failed; BMIs in \"{}\"",
+		result.interfaceUnits.size(),
+		candidateFiles.size(),
+		failureCount,
+		cacheDir.str()));
 
 	result.anyModules = true;
 	result.sharedFlags = {"-fprebuilt-module-path=" + cacheDir.str()};

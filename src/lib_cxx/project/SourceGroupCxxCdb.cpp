@@ -118,12 +118,15 @@ std::shared_ptr<IndexerCommandProvider> SourceGroupCxxCdb::getIndexerCommandProv
 	const std::set<FilePath> &sourceFilePaths = getAllSourceFilePaths(cdb);
 
 	// Prepare each TU's final flags first, so the module prebuild can see them (and inject its own
-	// flags back) before the IndexerCommandCxx objects are created.
+	// flags back) before the IndexerCommandCxx objects are created. Every source file of the group is
+	// prepared, not only those this refresh indexes: the prebuild has to see the module units the
+	// re-indexed files import even when those units themselves are unchanged.
 	struct PreparedCommand
 	{
 		FilePath sourcePath;
 		FilePath directory;
 		std::vector<std::string> flags;
+		bool toIndex = false;
 	};
 	std::vector<PreparedCommand> prepared;
 
@@ -139,7 +142,7 @@ std::shared_ptr<IndexerCommandProvider> SourceGroupCxxCdb::getIndexerCommandProv
 			}
 		}
 
-		if (info.filesToIndex.find(sourcePath) != info.filesToIndex.end() && sourceFilePaths.find(sourcePath) != sourceFilePaths.end())
+		if (sourceFilePaths.contains(sourcePath))
 		{
 			std::vector<std::string> commandLine = command.CommandLine;
 
@@ -157,7 +160,11 @@ std::shared_ptr<IndexerCommandProvider> SourceGroupCxxCdb::getIndexerCommandProv
 			// must be passed explicitly -- without it <filesystem>/<map>/etc. fail.
 			utility::append(commandLine, IndexerCommandCxx::getCompilerFlagsForSysroot(command.CommandLine));
 
-			prepared.push_back({sourcePath, FilePath(command.Directory), utility::concat(commandLine, compilerFlags)});
+			prepared.push_back(
+				{sourcePath,
+				 FilePath(command.Directory),
+				 utility::concat(commandLine, compilerFlags),
+				 info.filesToIndex.contains(sourcePath)});
 		}
 	}
 
@@ -182,7 +189,7 @@ std::shared_ptr<IndexerCommandProvider> SourceGroupCxxCdb::getIndexerCommandProv
 		cdbHandlesModules = cdbHandlesModules || carriesModuleFlags(pc.flags);
 	}
 	CxxModulePrebuilder::Result modules;
-	if (!cdbHandlesModules)
+	if (!cdbHandlesModules && info.buildPrerequisites)
 	{
 		modules = CxxModulePrebuilder::prebuild(
 			fileFlags, m_settings->getProjectDirectoryPath().getConcatenated("/module_cache"));
@@ -190,6 +197,10 @@ std::shared_ptr<IndexerCommandProvider> SourceGroupCxxCdb::getIndexerCommandProv
 
 	for (const PreparedCommand& pc: prepared)
 	{
+		if (!pc.toIndex)
+		{
+			continue;
+		}
 		std::vector<std::string> flags = pc.flags;
 		if (modules.anyModules)
 		{

@@ -48,6 +48,10 @@ std::vector<std::pair<FilePath, std::string>> SourceGroup::getAllSourceFileComma
 	RefreshInfo info;
 	info.filesToIndex = getAllSourceFilePaths();
 	info.mode = RefreshMode::ALL_FILES;
+	// Only the commands' hashes are wanted. Module flags (the prebuilt-module path, `-x c++-module`)
+	// are left out of them that way, which is right: they follow from the sources, whose changes the
+	// refresh detects by themselves, not from the configuration the hash watches.
+	info.buildPrerequisites = false;
 	return getSourceFileCommandHashes(info);
 }
 
