@@ -104,19 +104,22 @@ bool QtWindowBase::isSubWindow() const
 
 void QtWindowBase::moveToCenter()
 {
+	// Centred by the size the window has, not the one it would like: a window grown
+	// past its size hint by its content (setupDone, the layout's minimum on show)
+	// was otherwise placed off to the right and bottom.
 	if (parentWidget())
 	{
 		if (m_isSubWindow)
 		{
 			move(
-				parentWidget()->width() / 2 - sizeHint().width() / 2,
-				parentWidget()->height() / 2 - sizeHint().height() / 2);
+				parentWidget()->width() / 2 - width() / 2,
+				parentWidget()->height() / 2 - height() / 2);
 		}
 		else
 		{
 			move(
-				parentWidget()->pos().x() + parentWidget()->width() / 2 - sizeHint().width() / 2,
-				parentWidget()->pos().y() + parentWidget()->height() / 2 - sizeHint().height() / 2);
+				parentWidget()->pos().x() + parentWidget()->width() / 2 - width() / 2,
+				parentWidget()->pos().y() + parentWidget()->height() / 2 - height() / 2);
 		}
 	}
 }

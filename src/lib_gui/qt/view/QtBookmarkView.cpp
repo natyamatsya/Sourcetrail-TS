@@ -140,7 +140,12 @@ void QtBookmarkView::displayBookmarkBrowser(const std::vector<std::shared_ptr<Bo
 			m_bookmarkBrowser = new QtBookmarkBrowser(&m_controllerProxy, getMainWindowforMainView(getViewLayout()));
 
 		m_bookmarkBrowser->setBookmarks(bookmarks);
-		m_bookmarkBrowser->show();
+		if (!m_bookmarkBrowser->isVisible())
+		{
+			// Its layout widens it as it shows: centre it on the window once it has.
+			m_bookmarkBrowser->show();
+			m_bookmarkBrowser->moveToCenter();
+		}
 		m_bookmarkBrowser->raise();
 	});
 }
