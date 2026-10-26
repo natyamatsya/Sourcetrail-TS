@@ -349,6 +349,24 @@ inline std::optional<FilePath> findStdModuleSource(const std::string& fileName)
 	return std::nullopt;
 }
 
+// The libc++ headers the toolchain's std.cppm (<prefix>/share/libc++/v1/std.cppm) belongs to:
+// <prefix>/include/c++/v1. std.cppm only compiles against its own libc++ -- LLVM 23's includes
+// <text_encoding>, which the macOS SDK's older libc++ lacks -- and a BMI only loads into a TU that
+// sees the same headers, so every BMI build and every TU of a group that imports std uses them:
+// `-nostdinc++ -isystem <dir>`. Empty when the toolchain lays its headers out differently; the
+// group's own libc++ is used then, as before.
+inline std::vector<std::string> stdLibraryFlagsFor(const FilePath& stdModuleSource)
+{
+	const std::filesystem::path prefix =
+		std::filesystem::path(stdModuleSource.str()).parent_path().parent_path().parent_path().parent_path();
+	const std::filesystem::path headers = prefix / "include" / "c++" / "v1";
+	if (!std::filesystem::exists(headers / "__config"))
+	{
+		return {};
+	}
+	return {"-nostdinc++", "-isystem", headers.string()};
+}
+
 // A toolchain-compatibility prefix header, -include'd into every module BMI build. Xcode 27's SDK
 // cleanup dropped the INFINITY / NAN / HUGE_VAL* C math macros from the headers that <complex>/<cmath>
 // pull in, so a module whose global fragment includes them fails with "use of undeclared identifier
@@ -381,28 +399,21 @@ inline FilePath writeModuleCompatShim(const FilePath& cacheDir)
 // reserved-identifier suppression std.cppm needs, and a C++23 -std if the base flags carry none. The
 // math-macro compat shim is applied centrally by buildBmiInProcess. std.compat imports std, so std
 // must be built first (buildBmiInProcess puts the cache on the module path). On success returns {}; on
-// failure returns a message (a missing std.cppm, or the captured clang diagnostics).
+// failure returns the captured clang diagnostics.
 inline std::expected<void, std::string> buildStdModuleBmi(
 	const std::string& moduleName,
-	const std::string& sourceFileName,
+	const FilePath& source,
 	const FilePath& cacheDir,
 	const FilePath& compatShimPath,
-	const std::vector<std::string>& baseFlags)
+	std::vector<std::string> flags)
 {
-	const std::optional<FilePath> source = findStdModuleSource(sourceFileName);
-	if (!source)
-	{
-		return std::unexpected(
-			"the toolchain's " + sourceFileName + " was not found (looked next to libc++)");
-	}
 	const FilePath bmiPath = cacheDir.getConcatenated("/" + moduleName + ".pcm");
-	std::vector<std::string> flags = baseFlags;
 	if (!hasStdFlag(flags))
 	{
 		flags.push_back("-std=c++2b");
 	}
 	flags.push_back("-Wno-reserved-module-identifier");
-	return buildBmiInProcess(*source, bmiPath, cacheDir, flags, compatShimPath);
+	return buildBmiInProcess(source, bmiPath, cacheDir, flags, compatShimPath);
 }
 }	 // namespace cxx_module_prebuild_runner_detail
 
@@ -548,34 +559,48 @@ inline int CxxModulePrebuildRunner::run(const FilePath& requestPath)
 			}
 		}
 	}
-	const bool needStdCompat = externalRequires.count("std.compat") != 0;
-	if (externalRequires.count("std") != 0 || needStdCompat)
+	// The libc++ the std module was built against, which every other BMI and every TU of the group
+	// must see too (stdLibraryFlagsFor); handed back to the main process through the manifest.
+	std::vector<std::string> stdLibraryFlags;
+	const bool needStdCompat = externalRequires.contains("std.compat");
+	if (externalRequires.contains("std") || needStdCompat)
 	{
 		// Base the std build on a file that imports std: those flags carry the group's sysroot and
 		// libc++ include paths, which std.cppm needs to find its own internal headers.
 		std::vector<std::string> baseFlags;
 		for (const auto& [file, reqs]: fileRequires)
 		{
-			if (reqs.count("std") != 0 || reqs.count("std.compat") != 0)
+			if (reqs.contains("std") || reqs.contains("std.compat"))
 			{
 				baseFlags = fileFlags[file];
 				break;
 			}
 		}
-		if (const std::expected<void, std::string> built =
-				detail::buildStdModuleBmi("std", "std.cppm", cacheDir, compatShim, baseFlags);
-			!built)
-		{
-			recordFailure("std", std::string(), built.error());
-		}
-		if (needStdCompat)
-		{
+		const auto buildStd = [&](const std::string& moduleName, const std::string& sourceFileName) {
+			const std::optional<FilePath> source = detail::findStdModuleSource(sourceFileName);
+			if (!source)
+			{
+				recordFailure(
+					moduleName,
+					std::string(),
+					std::format("the toolchain's {} was not found (looked next to libc++)", sourceFileName));
+				return;
+			}
+			if (stdLibraryFlags.empty())
+			{
+				stdLibraryFlags = detail::stdLibraryFlagsFor(*source);
+			}
 			if (const std::expected<void, std::string> built = detail::buildStdModuleBmi(
-					"std.compat", "std.compat.cppm", cacheDir, compatShim, baseFlags);
+					moduleName, *source, cacheDir, compatShim, utility::concat(baseFlags, stdLibraryFlags));
 				!built)
 			{
-				recordFailure("std.compat", std::string(), built.error());
+				recordFailure(moduleName, std::string(), built.error());
 			}
+		};
+		buildStd("std", "std.cppm");
+		if (needStdCompat)
+		{
+			buildStd("std.compat", "std.compat.cppm");
 		}
 	}
 
@@ -589,7 +614,7 @@ inline int CxxModulePrebuildRunner::run(const FilePath& requestPath)
 		std::string bmiName = logicalName;
 		std::replace(bmiName.begin(), bmiName.end(), ':', '-');
 		const FilePath bmiPath = cacheDir.getConcatenated("/" + bmiName + ".pcm");
-		std::vector<std::string> buildFlags = fileFlags[file];
+		std::vector<std::string> buildFlags = utility::concat(fileFlags[file], stdLibraryFlags);
 		if (!detail::hasStdFlag(buildFlags))
 		{
 			buildFlags.push_back("-std=c++20");
@@ -649,6 +674,7 @@ inline int CxxModulePrebuildRunner::run(const FilePath& requestPath)
 		manifest["interfaceUnits"].push_back(file.str());
 	}
 	manifest["failures"] = failures;
+	manifest["sharedFlags"] = stdLibraryFlags;
 	std::ofstream manifestOut(cacheDir.getConcatenated("/manifest.json").str());
 	manifestOut << manifest.dump();
 

@@ -5064,23 +5064,32 @@ namespace
 // Builds the BMIs of `units` (file name -> source) the way indexing does -- with the module prebuild
 // runner -- into a fresh directory, which is returned: pass it as -fprebuilt-module-path. The
 // runner's manifest.json lands there too.
-FilePath prebuildModules(const std::string& testName, const std::map<std::string, std::string>& units)
+FilePath prebuildModules(
+	const std::string& testName,
+	const std::map<std::string, std::string>& units,
+	const std::vector<std::string>& extraFlags = {})
 {
 	const std::filesystem::path directory =
 		std::filesystem::temp_directory_path() / "sourcetrail-module-tests" / testName;
 	std::filesystem::remove_all(directory);
 	std::filesystem::create_directories(directory);
 
+	// The language standard parseCode() indexes with: a BMI only loads into a matching one.
+	std::string flags =
+		std::format("\"{}\"", ClangCompiler::stdOption(ClangCompiler::getLatestCppStandard()));
+	for (const std::string& flag: extraFlags)
+	{
+		flags += std::format(", \"{}\"", flag);
+	}
 	std::string files;
 	for (const auto& [name, code]: units)
 	{
 		std::ofstream(directory / name) << code;
-		// The language standard parseCode() indexes with: a BMI only loads into a matching one.
 		files += std::format(
-			"{}{{\"path\": \"{}\", \"flags\": [\"{}\"]}}",
+			"{}{{\"path\": \"{}\", \"flags\": [{}]}}",
 			files.empty() ? "" : ", ",
 			(directory / name).string(),
-			ClangCompiler::stdOption(ClangCompiler::getLatestCppStandard()));
+			flags);
 	}
 	std::ofstream(directory / "request.json")
 		<< std::format("{{\"cacheDir\": \"{}\", \"files\": [{}]}}", directory.string(), files);
@@ -5119,6 +5128,28 @@ TEST_CASE("module prebuild builds implementation partitions for the units that i
 	REQUIRE(cache.getConcatenated("/math.pcm").exists());
 	REQUIRE(cache.getConcatenated("/math-vec.pcm").exists());
 	REQUIRE(cache.getConcatenated("/math-detail.pcm").exists());
+}
+
+TEST_CASE("module prebuild builds the toolchain's std module for a unit that imports std")
+{
+#ifdef SOURCETRAIL_LLVM_INSTALL_PREFIX
+	if (!std::filesystem::exists(
+			std::filesystem::path(SOURCETRAIL_LLVM_INSTALL_PREFIX) / "share/libc++/v1/std.cppm"))
+	{
+		SKIP("the LLVM this build links ships no libc++ std.cppm");
+	}
+#endif
+	const FilePath cache = prebuildModules(
+		"import-std",
+		{{"hello.cppm",
+		  "export module hello;\nimport std;\nexport std::string greet() { return \"hello\"; }\n"}},
+		IndexerCommandCxx::getCompilerFlagsForSysroot({}));
+
+	const std::string manifest = readManifest(cache);
+	CAPTURE(manifest);
+	REQUIRE(manifest.contains("\"failures\":[]"));
+	REQUIRE(cache.getConcatenated("/std.pcm").exists());
+	REQUIRE(cache.getConcatenated("/hello.pcm").exists());
 }
 
 TEST_CASE("module prebuild reports the modules an import cycle leaves unbuilt")

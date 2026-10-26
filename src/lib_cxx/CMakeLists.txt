@@ -80,7 +80,9 @@ endif()
 # cover it anymore. lib_cxx is non-GUI and uses no Qt keywords, so just don't define emit.
 target_compile_definitions(Sourcetrail_lib_cxx PRIVATE QT_NO_EMIT)
 
+# PUBLIC: the module prebuild runner that reads it is an .inl, compiled into whatever includes it --
+# sourcetrail_indexer's main.cpp, not this library -- and without the prefix it finds no std.cppm.
 target_compile_definitions(Sourcetrail_lib_cxx
-	PRIVATE
+	PUBLIC
 		SOURCETRAIL_LLVM_INSTALL_PREFIX="${LLVM_INSTALL_PREFIX}"
 )

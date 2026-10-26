@@ -128,6 +128,8 @@ CxxModulePrebuilder::Result CxxModulePrebuilder::prebuild(
 		{
 			result.interfaceUnits.insert(FilePath(file));
 		}
+		// The libc++ the std module was built against: the TUs have to see the same headers.
+		result.sharedFlags = manifest.value("sharedFlags", std::vector<std::string>{});
 		// Surface any BMI build failures the (loggerless) prebuild subprocess reported, with the clang
 		// diagnostics it captured -- so a broken module is debuggable from the normal index log instead
 		// of only by re-running the prebuild by hand.
@@ -159,6 +161,6 @@ CxxModulePrebuilder::Result CxxModulePrebuilder::prebuild(
 		cacheDir.str()));
 
 	result.anyModules = true;
-	result.sharedFlags = {"-fprebuilt-module-path=" + cacheDir.str()};
+	result.sharedFlags.insert(result.sharedFlags.begin(), "-fprebuilt-module-path=" + cacheDir.str());
 	return result;
 }

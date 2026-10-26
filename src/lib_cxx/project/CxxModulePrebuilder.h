@@ -25,7 +25,8 @@ public:
 	{
 		bool anyModules = false;
 		// Flags to append to every translation unit of the source group so libclang can load the
-		// prebuilt BMIs (the `-fprebuilt-module-path=<cache>`).
+		// prebuilt BMIs: the `-fprebuilt-module-path=<cache>`, and when the group imports std, the
+		// libc++ include flags the std module was built with.
 		std::vector<std::string> sharedFlags;
 		// The module-interface units, which must additionally be indexed as `-x c++-module`.
 		std::set<FilePath> interfaceUnits;
