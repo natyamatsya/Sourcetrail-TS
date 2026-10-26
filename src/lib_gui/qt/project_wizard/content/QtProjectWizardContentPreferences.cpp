@@ -72,8 +72,12 @@ void QtProjectWizardContentPreferences::populate(QGridLayout* layout, int& row)
 
 	// font face
 	m_fontFacePlaceHolder = new QtComboBoxPlaceHolder();
-	m_fontFace = new QFontComboBox();
+	// Owned (and hidden) until the placeholder is opened: a parentless combo box was a
+	// window of its own that outlived the dialog, one more each time it opened.
+	m_fontFace = new QFontComboBox(this);
+	m_fontFace->hide();
 	m_fontFace->setEditable(false);
+	m_fontFace->setAccessibleName(tr("Font Face"));
 	addLabelAndWidget(tr("Font Face"), m_fontFacePlaceHolder, layout, row);
 
 	int rowNum = row;
@@ -87,6 +91,7 @@ void QtProjectWizardContentPreferences::populate(QGridLayout* layout, int& row)
 		m_fontFace->setCurrentText(name);
 
 		addWidget(m_fontFace, layout, rowNum);
+		m_fontFace->show();
 
 		QTimer::singleShot(10, this, [this]()
 		{
