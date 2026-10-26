@@ -119,6 +119,16 @@ bool QtProjectWizardContentPaths::check()
 	return true;
 }
 
+std::vector<FilePath> QtProjectWizardContentPaths::listPaths() const
+{
+	return m_list->getPathsAsDisplayed();
+}
+
+void QtProjectWizardContentPaths::setListPaths(const std::vector<FilePath>& paths)
+{
+	m_list->setPaths(paths);
+}
+
 void QtProjectWizardContentPaths::setTitleString(const QString& title)
 {
 	m_titleString = title;

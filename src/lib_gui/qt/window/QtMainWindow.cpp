@@ -184,11 +184,13 @@ QtMainWindow::QtMainWindow()
 	loadLayout();
 
 	ProjectWizardStateMachine::instance()->attach(*this);
+	PreferencesStateMachine::instance()->attach(*this);
 }
 
 QtMainWindow::~QtMainWindow()
 {
 	ProjectWizardStateMachine::instance()->detach(*this);
+	PreferencesStateMachine::instance()->detach(*this);
 
 	for (DockWidget& dockWidget: m_dockWidgets)
 	{
@@ -674,7 +676,27 @@ void QtMainWindow::about()
 void QtMainWindow::openSettings()
 {
 	QtPreferencesWindow* window = createWindow<QtPreferencesWindow>();
+	m_preferencesWindow = window;
 	window->setup();
+}
+
+void QtMainWindow::applyToPreferences(const PreferencesRequest& request)
+{
+	execution::qt::onUi(this, [this, request]() {
+		// A closed dialog is hidden until it is deleted (deleteLater).
+		if (m_preferencesWindow && m_preferencesWindow->isVisible())
+		{
+			m_preferencesWindow->apply(request);
+		}
+		else if (request.kind == PreferencesRequest::Kind::Open)
+		{
+			openSettings();	// opened
+		}
+		else
+		{
+			PreferencesStateMachine::instance()->canceled();	// the dialog is gone
+		}
+	});
 }
 
 void QtMainWindow::showDocumentation()

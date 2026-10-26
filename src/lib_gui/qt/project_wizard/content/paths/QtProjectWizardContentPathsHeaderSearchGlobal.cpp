@@ -100,6 +100,20 @@ bool QtProjectWizardContentPathsHeaderSearchGlobal::check()
 	return QtProjectWizardContentPaths::check();
 }
 
+std::vector<FilePath> QtProjectWizardContentPathsHeaderSearchGlobal::listPaths() const
+{
+	std::vector<FilePath> paths = m_list->getPathsAsDisplayed();
+	std::erase(paths, ResourcePaths::getCxxCompilerHeaderDirectoryPath());	// shown first, read-only
+	return paths;
+}
+
+void QtProjectWizardContentPathsHeaderSearchGlobal::setListPaths(const std::vector<FilePath>& paths)
+{
+	std::vector<FilePath> headerPaths = paths;
+	std::erase(headerPaths, ResourcePaths::getCxxCompilerHeaderDirectoryPath());
+	setPaths(headerPaths);
+}
+
 void QtProjectWizardContentPathsHeaderSearchGlobal::detectedPaths(const std::vector<FilePath>& paths)
 {
 	std::vector<FilePath> headerPaths;

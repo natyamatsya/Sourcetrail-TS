@@ -19,6 +19,7 @@
 #include "IndexingStateMachine.h"
 #include "ProjectSettings.h"
 #include "ProjectStateMachine.h"
+#include "PreferencesStateMachine.h"
 #include "ProjectWizardStateMachine.h"
 #include "QuestionStateMachine.h"
 #include "SearchStateMachine.h"
@@ -993,6 +994,66 @@ TEST_CASE("project wizard carries out requests and follows a person")
 	snapshot = machine.snapshot();
 	REQUIRE(snapshot.state == "closed");
 	REQUIRE(snapshot.context.find("no project is loaded") != std::string::npos);
+	machine.detach(presenter);
+}
+
+struct FakePreferencesPresenter
+{
+	void applyToPreferences(const PreferencesRequest& request)
+	{
+		requests.push_back(request);
+	}
+
+	std::vector<PreferencesRequest> requests;
+};
+
+TEST_CASE("preferences carry out requests and follow a person")
+{
+	using Kind = PreferencesRequest::Kind;
+	PreferencesStateMachine machine;
+	REQUIRE_FALSE(machine.fire("open", "", EventSource::Agent).ok);	// no window to show them in
+
+	FakePreferencesPresenter presenter;
+	machine.attach(presenter);
+	REQUIRE(machine.fire("open", "", EventSource::Agent).ok);
+	REQUIRE(presenter.requests.back().kind == Kind::Open);
+	REQUIRE(machine.snapshot().state == "applying");
+
+	const PreferenceFields fields {
+		{"animations", false}, {"font_size", std::string {"14"}}, {"header_search_paths", std::vector<std::string> {"/usr/include"}}};
+	machine.opened(fields);
+	MachineSnapshot snapshot = machine.snapshot();
+	REQUIRE(snapshot.state == "editing");
+	REQUIRE(contains(snapshot.context, R"("font_size":"14")"));
+
+	// What the machine can tell before the dialog is asked.
+	REQUIRE_FALSE(machine.fire("set", R"({"fields":{"font_sise":"15"}})", EventSource::Agent).ok);
+	REQUIRE_FALSE(machine.fire("set", R"({"fields":{}})", EventSource::Agent).ok);
+	REQUIRE_FALSE(machine.fire("open", "", EventSource::Agent).ok);
+
+	REQUIRE(machine.fire("set", R"({"fields":{"font_size":"15","animations":true}})", EventSource::Agent).ok);
+	REQUIRE(std::get<std::string>(presenter.requests.back().fields.at("font_size")) == "15");
+	REQUIRE(std::get<bool>(presenter.requests.back().fields.at("animations")));
+	machine.failed(fields, PreferenceFieldFailure {.error = PreferenceFieldError::NoSuchItem, .detail = "\"15\""}.message("font_size"));
+	snapshot = machine.snapshot();
+	REQUIRE(snapshot.state == "editing");
+	REQUIRE(contains(snapshot.context, "has no such item"));
+
+	REQUIRE(machine.fire("save", "", EventSource::Agent).ok);
+	machine.saved();
+	snapshot = machine.snapshot();
+	REQUIRE(snapshot.state == "closed");
+	REQUIRE(contains(snapshot.context, R"("outcome":"saved")"));
+	machine.canceled();	// the dialog closing after its save: no move
+	REQUIRE(contains(machine.snapshot().context, R"("outcome":"saved")"));
+
+	// A person opens the dialog and closes it.
+	machine.opened(fields);
+	REQUIRE(machine.snapshot().state == "editing");
+	machine.failed(fields, "a person's Save: no move");
+	REQUIRE_FALSE(contains(machine.snapshot().context, "no move"));
+	machine.canceled();
+	REQUIRE(machine.snapshot().state == "closed");
 	machine.detach(presenter);
 }
 

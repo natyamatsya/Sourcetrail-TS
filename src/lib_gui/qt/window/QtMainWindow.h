@@ -4,6 +4,7 @@
 #include <QPointer>
 
 #include "FilePath.h"
+#include "PreferencesStateMachine.h"
 #include "ProjectWizardStateMachine.h"
 #include "QtWindowStack.h"
 #include "QtWindowTitleProgress.h"
@@ -17,6 +18,7 @@
 class Bookmark;
 class MessageBase;
 class QtBuildJsonBrowser;
+class QtPreferencesWindow;
 class QtProjectWizard;
 class View;
 
@@ -164,6 +166,10 @@ public slots:
 	// (PresentsProjectWizard): open it, or pass the request on to it.
 	void applyToProjectWizard(const ProjectWizardRequest& request);
 
+	// What the preferences machine has the Preferences dialog do for an agent
+	// (PresentsPreferences): open it, or pass the request on to it.
+	void applyToPreferences(const PreferencesRequest& request);
+
 	static void find();
 	static void findFulltext();
 	void findOnScreen();
@@ -249,6 +255,7 @@ private:
 	QtWindowStack m_windowStack;
 	QtBuildJsonBrowser* m_buildJsonBrowser = nullptr;
 	QPointer<QtProjectWizard> m_projectWizard;	// the wizard open, if one is
+	QPointer<QtPreferencesWindow> m_preferencesWindow;	// the Preferences open, if they are
 
 	QtWindowTitleProgress m_windowTitleProgress;
 };

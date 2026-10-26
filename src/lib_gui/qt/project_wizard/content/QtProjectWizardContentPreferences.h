@@ -1,8 +1,14 @@
 #ifndef QT_PROJECT_WIZARD_CONTENT_PREFERENCES_H
 #define QT_PROJECT_WIZARD_CONTENT_PREFERENCES_H
 
+#include <expected>
+#include <string>
+#include <utility>
+#include <vector>
+
 #include <QComboBox>
 
+#include "PreferencesStateMachine.h"
 #include "QtLocationPicker.h"
 #include "QtProjectWizardContent.h"
 
@@ -41,6 +47,12 @@ public:
 	void load() override;
 	void save() override;
 	bool check() override;
+
+	// The fields as the dialog shows them, by name (PreferencesStateMachine), and setting
+	// one as a person does: a list's item by its text, a check box by clicking it.
+	PreferenceFields fields() const;
+	[[nodiscard]] std::expected<void, PreferenceFieldFailure> setField(
+		const std::string& name, const PreferenceField& value);
 
 private slots:
 	void colorSchemeChanged();
@@ -86,6 +98,10 @@ private:
 		QGridLayout* layout,
 		int& row);
 	QLineEdit* addLineEdit(const QString& label, const QString& helpText, QGridLayout* layout, int& row);
+
+	// The fields by name, in the dialog's order (font_face is the placeholder until opened).
+	std::vector<std::pair<std::string, QWidget*>> fieldWidgets() const;
+	[[nodiscard]] std::expected<void, PreferenceFieldFailure> setFontFace(const QString& name);
 
 	QFontComboBox* m_fontFace;
 	QtComboBoxPlaceHolder* m_fontFacePlaceHolder;

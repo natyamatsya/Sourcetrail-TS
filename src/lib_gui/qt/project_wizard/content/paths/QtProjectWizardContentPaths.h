@@ -29,6 +29,11 @@ public:
 
 	bool check() override;
 
+	// The list's paths as a person edits them (a global list's own read-only entries
+	// left out), and replacing them, for the Preferences machine.
+	virtual std::vector<FilePath> listPaths() const;
+	virtual void setListPaths(const std::vector<FilePath>& paths);
+
 protected:
 	void setTitleString(const QString& title);
 	void setHelpString(const QString& help);

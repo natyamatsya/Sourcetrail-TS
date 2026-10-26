@@ -25,6 +25,7 @@
 #include "IndexingStateMachine.h"
 #include "MessageQueue.h"
 #include "ProjectStateMachine.h"
+#include "PreferencesStateMachine.h"
 #include "ProjectWizardStateMachine.h"
 #include "BookmarkStateMachine.h"
 #include "QuestionStateMachine.h"
@@ -179,6 +180,7 @@ struct ControlledApp
 		StateMachineRegistry::instance().add(SearchStateMachine::instance());
 		StateMachineRegistry::instance().add(BookmarkStateMachine::instance());
 		StateMachineRegistry::instance().add(ProjectWizardStateMachine::instance());
+		StateMachineRegistry::instance().add(PreferencesStateMachine::instance());
 		// Started, as main reports it: until then the app is Loading.
 		if (AppStateMachine::instance()->isStarting())
 		{

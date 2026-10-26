@@ -51,7 +51,7 @@ fn parent(machine: &str) -> Option<&'static str> {
     match machine {
         "app" => None,
         "indexing" | "activation" | "search" | "bookmark" => Some("project"),
-        _ => Some("app"), // project, question, project_wizard, and any newer one
+        _ => Some("app"), // project, question, project_wizard, preferences, and any newer one
     }
 }
 
@@ -63,7 +63,7 @@ fn at_rest(machine: &str, state: &str) -> bool {
     match machine {
         "app" => state == "running",
         "project" => state == "ready" || state == "no_project",
-        "project_wizard" => state == "closed",
+        "project_wizard" | "preferences" => state == "closed",
         _ => state == "idle",
     }
 }

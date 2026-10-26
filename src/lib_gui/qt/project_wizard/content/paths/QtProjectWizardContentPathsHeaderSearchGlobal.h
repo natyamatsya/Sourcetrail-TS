@@ -15,6 +15,9 @@ public:
 
 	bool check() override;
 
+	std::vector<FilePath> listPaths() const override;
+	void setListPaths(const std::vector<FilePath>& paths) override;
+
 protected:
 	void detectedPaths(const std::vector<FilePath>& paths) override;
 

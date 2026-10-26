@@ -22,9 +22,12 @@
 #endif
 #include "utilityQt.h"
 
+#include <algorithm>
 #include <filesystem>
+#include <format>
 #include <optional>
 #include <system_error>
+#include <variant>
 
 #include <QCheckBox>
 #include <QComboBox>
@@ -514,6 +517,152 @@ bool QtProjectWizardContentPreferences::check()
 	}
 
 	return true;
+}
+
+std::vector<std::pair<std::string, QWidget*>> QtProjectWizardContentPreferences::fieldWidgets() const
+{
+	std::vector<std::pair<std::string, QWidget*>> widgets {
+		{"font_face", m_fontFace},	  // what Save reads; the placeholder only shows it
+		{"font_size", m_fontSize},
+		{"tab_width", m_tabWidth},
+		{"text_encoding", m_textEncoding},
+		{"color_scheme", m_colorSchemes},
+		{"follow_system_appearance", m_followSystemColorScheme},
+		{"dark_color_scheme", m_colorSchemesDark},
+		{"animations", m_useAnimations},
+		{"builtin_types", m_showBuiltinTypes},
+		{"hide_deprecated", m_hideDeprecated},
+		{"directory_in_file_title", m_showDirectoryInCode},
+		{"scroll_speed", m_scrollSpeed},
+		{"graph_zoom", m_graphZooming},
+		{"logging", m_loggingEnabled},
+		{"indexer_logging", m_verboseIndexerLoggingEnabled},
+		{"sourcetrail_port", m_sourcetrailPort},
+		{"plugin_port", m_pluginPort},
+		{"indexer_threads", m_threads}};
+	if (m_screenAutoScaling)
+	{
+		widgets.emplace_back("auto_scaling", m_screenAutoScaling);
+	}
+	if (m_screenScaleFactor)
+	{
+		widgets.emplace_back("scale_factor", m_screenScaleFactor);
+	}
+	if (m_logPath)
+	{
+		widgets.emplace_back("log_directory", m_logPath);
+	}
+	return widgets;
+}
+
+PreferenceFields QtProjectWizardContentPreferences::fields() const
+{
+	PreferenceFields fields;
+	for (const auto& [name, widget]: fieldWidgets())
+	{
+		if (const auto* checkBox = qobject_cast<const QCheckBox*>(widget))
+		{
+			fields.emplace(name, checkBox->isChecked());
+		}
+		else if (const auto* comboBox = qobject_cast<const QComboBox*>(widget))
+		{
+			fields.emplace(name, comboBox->currentText().toStdString());
+		}
+		else if (const auto* lineEdit = qobject_cast<const QLineEdit*>(widget))
+		{
+			fields.emplace(name, lineEdit->text().toStdString());
+		}
+		else if (auto* picker = qobject_cast<QtLocationPicker*>(widget))
+		{
+			fields.emplace(name, picker->getText().toStdString());
+		}
+	}
+	return fields;
+}
+
+std::expected<void, PreferenceFieldFailure> QtProjectWizardContentPreferences::setField(
+	const std::string& name, const PreferenceField& value)
+{
+	using enum PreferenceFieldError;
+	const std::vector<std::pair<std::string, QWidget*>> widgets = fieldWidgets();
+	const auto it = std::ranges::find(widgets, name, &std::pair<std::string, QWidget*>::first);
+	if (it == widgets.end())
+	{
+		return std::unexpected(PreferenceFieldFailure {.error = NotAPreference});
+	}
+	QWidget* const widget = it->second;
+	if (!widget->isEnabled())
+	{
+		return std::unexpected(PreferenceFieldFailure {.error = Disabled});
+	}
+
+	if (auto* checkBox = qobject_cast<QCheckBox*>(widget))
+	{
+		const bool* const checked = std::get_if<bool>(&value);
+		if (checked == nullptr)
+		{
+			return std::unexpected(PreferenceFieldFailure {.error = NotTrueOrFalse});
+		}
+		if (checkBox->isChecked() != *checked)
+		{
+			checkBox->click();	  // as a person does: what depends on it follows
+		}
+		return {};
+	}
+
+	const std::string* const text = std::get_if<std::string>(&value);
+	if (text == nullptr)
+	{
+		return std::unexpected(PreferenceFieldFailure {.error = NotAText});
+	}
+	if (name == "font_face")
+	{
+		return setFontFace(QString::fromStdString(*text));
+	}
+	if (auto* comboBox = qobject_cast<QComboBox*>(widget))
+	{
+		const int index = comboBox->findText(QString::fromStdString(*text));
+		if (index < 0)
+		{
+			std::string items;
+			for (int i = 0; i < comboBox->count(); i++)
+			{
+				items += std::format("{}\"{}\"", items.empty() ? "" : ", ", comboBox->itemText(i).toStdString());
+			}
+			return std::unexpected(
+				PreferenceFieldFailure {.error = NoSuchItem, .detail = std::format("\"{}\": it has {}", *text, items)});
+		}
+		comboBox->setCurrentIndex(index);
+		emit comboBox->activated(index);	// as choosing it does: a colour scheme previews
+		return {};
+	}
+	if (auto* lineEdit = qobject_cast<QLineEdit*>(widget))
+	{
+		lineEdit->setText(QString::fromStdString(*text));
+		return {};
+	}
+	if (auto* picker = qobject_cast<QtLocationPicker*>(widget))
+	{
+		picker->setText(QString::fromStdString(*text));
+		return {};
+	}
+	return std::unexpected(PreferenceFieldFailure {.error = NotAPreference});
+}
+
+std::expected<void, PreferenceFieldFailure> QtProjectWizardContentPreferences::setFontFace(const QString& name)
+{
+	// The monospaced fonts, as opening the placeholder lists them.
+	m_fontFace->setFontFilters(QFontComboBox::MonospacedFonts);
+	m_fontFace->setWritingSystem(QFontDatabase::Latin);
+	const int index = m_fontFace->findText(name);
+	if (index < 0)
+	{
+		return std::unexpected(PreferenceFieldFailure {.error = PreferenceFieldError::NoSuchFont});
+	}
+	m_fontFace->setCurrentIndex(index);
+	m_fontFacePlaceHolder->clear();
+	m_fontFacePlaceHolder->addItem(name);
+	return {};
 }
 
 void QtProjectWizardContentPreferences::colorSchemeChanged()

@@ -399,7 +399,7 @@ machine_send { machine: \"question\", event: \"answer\", args: { label: \"Reinde
     },
     Topic {
         name: "machines",
-        summary: "State machines: app startup, the project's load, indexing, questions, what the views show, the search box, the bookmark editor, the project wizard.",
+        summary: "State machines: app startup, the project's load, indexing, questions, what the views show, the search box, the bookmark editor, the project wizard, the preferences.",
         tools: &["machine_state", "machine_send"],
         doc: "\
 What waits for a person in Sourcetrail is a state machine: indexing (choose a mode, follow \
@@ -545,7 +545,30 @@ location }, source_groups [{ name, type, enabled }], fields, types (choosing_typ
 error; outcome (closed).
   Recipe, a project from a compilation database: new; set { project_name, project_location }; \
 add_source_group { type: \"cdb\" }; set { fields: { compilation_database: \
-\"C:/b/compile_commands.json\" } }; create.",
+\"C:/b/compile_commands.json\" } }; create.
+
+preferences: closed -> applying -> editing -> applying -> closed
+  The Preferences dialog (Edit > Preferences). Every request below moves it to applying while \
+the dialog carries it out; wait with until: [\"editing\", \"closed\"]. A failed request is back \
+at editing with context.error. Save's checks may ask a question first (see question). A \
+person's steps move the machine too: opening the dialog, saving, closing it.
+  open                             closed: opens the dialog.
+  set { fields: { ... } }          editing: fills fields as a person does (a colour scheme \
+previews at once): context.fields lists them with their values. Check boxes are true/false \
+(animations, builtin_types, hide_deprecated, follow_system_appearance, graph_zoom, logging, \
+indexer_logging, ...); lists take one of their items' text (font_size \"14\", color_scheme \
+\"dark\", indexer_threads \"default\" or \"4\", auto_scaling \"system\"|\"off\"|\"on\", \
+scale_factor \"125%\", font_face a monospaced font); text fields are strings (scroll_speed, \
+sourcetrail_port, plugin_port, log_directory); header_search_paths and framework_search_paths \
+are lists of paths. An unknown field, a value of the wrong kind or an item a list lacks is \
+refused, naming what there is.
+  save                             editing: Save: checks the fields (a bad port, scroll speed, \
+log directory: back at editing with context.error), saves them and closes: closed, \
+context.outcome \"saved\". Some changes then ask to restart (a question with OK).
+  cancel                           editing: closes the dialog without saving (a previewed \
+colour scheme is reverted).
+  context: fields, applying, error (editing); outcome (closed).
+  Recipe: open; set { fields: { font_size: \"16\", animations: false } }; save.",
     },
     Topic {
         name: "logs",
@@ -577,6 +600,8 @@ const TOPIC_ALIASES: &[(&str, &str)] = &[
     ("bookmarks", "machines"),
     ("wizard", "machines"),
     ("project_wizard", "machines"),
+    ("preferences", "machines"),
+    ("settings", "machines"),
 ];
 
 /// Tools as they were called before the area prefixes, and what they are now.

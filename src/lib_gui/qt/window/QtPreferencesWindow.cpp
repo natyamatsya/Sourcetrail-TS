@@ -40,14 +40,23 @@ QtPreferencesWindow::QtPreferencesWindow(QWidget* parent): QtProjectWizardWindow
 
 
 	QtProjectWizardContentGroup* summary = new QtProjectWizardContentGroup(this);
-	summary->addContent(new QtProjectWizardContentPreferences(this));
+	m_preferences = new QtProjectWizardContentPreferences(this);
+	summary->addContent(m_preferences);
 
 	if constexpr (language_packages::buildCxxLanguagePackage)
 	{
-		summary->addContent(new QtProjectWizardContentPathsHeaderSearchGlobal(this));
+		m_headerSearchPaths = new QtProjectWizardContentPathsHeaderSearchGlobal(this);
+		summary->addContent(m_headerSearchPaths);
 		if constexpr (utility::Platform::isMac())
-			summary->addContent(new QtProjectWizardContentPathsFrameworkSearchGlobal(this));
+		{
+			m_frameworkSearchPaths = new QtProjectWizardContentPathsFrameworkSearchGlobal(this);
+			summary->addContent(m_frameworkSearchPaths);
+		}
 	}
+
+	// Closed without saving (Cancel, Escape, the window's close button); after a save the
+	// machine is closed already and takes no notice.
+	connect(this, &QtWindow::canceled, this, []() { PreferencesStateMachine::instance()->canceled(); });
 
 	setPreferredSize(QSize(750, 500));
 	setContent(summary);
@@ -65,12 +74,79 @@ void QtPreferencesWindow::windowReady()
 	setPreviousVisible(false);
 
 	loadContent();
+	PreferencesStateMachine::instance()->opened(fields());
+}
+
+PreferenceFields QtPreferencesWindow::fields() const
+{
+	PreferenceFields fields = m_preferences->fields();
+	const auto addPaths = [&fields](const std::string& name, const QtProjectWizardContentPaths* content) {
+		if (content == nullptr)
+		{
+			return;
+		}
+		std::vector<std::string> paths;
+		for (const FilePath& path: content->listPaths())
+		{
+			paths.push_back(path.str());
+		}
+		fields.emplace(name, std::move(paths));
+	};
+	addPaths("header_search_paths", m_headerSearchPaths);
+	addPaths("framework_search_paths", m_frameworkSearchPaths);
+	return fields;
+}
+
+void QtPreferencesWindow::apply(const PreferencesRequest& request)
+{
+	const std::shared_ptr<PreferencesStateMachine> machine = PreferencesStateMachine::instance();
+	clearLastMessage();
+	switch (request.kind)
+	{
+		using enum PreferencesRequest::Kind;
+	case Open:
+		machine->opened(fields());	// open already
+		break;
+	case Set:
+		for (const auto& [name, value]: request.fields)
+		{
+			QtProjectWizardContentPaths* const paths = name == "header_search_paths" ? m_headerSearchPaths
+				: name == "framework_search_paths"									 ? m_frameworkSearchPaths
+																					 : nullptr;
+			if (paths != nullptr)
+			{
+				const auto* list = std::get_if<std::vector<std::string>>(&value);
+				if (list == nullptr)
+				{
+					machine->failed(fields(), PreferenceFieldFailure {.error = PreferenceFieldError::NotAList}.message(name));
+					return;
+				}
+				paths->setListPaths(std::vector<FilePath>(list->begin(), list->end()));
+			}
+			else if (const auto set = m_preferences->setField(name, value); !set)
+			{
+				machine->failed(fields(), set.error().message(name));
+				return;
+			}
+		}
+		machine->applied(fields());
+		break;
+	case Save:
+		handleNext();	// saved, or failed with what it told
+		break;
+	case Cancel:
+		handleClose();	// canceled
+		break;
+	}
 }
 
 void QtPreferencesWindow::handleNext()
 {
 	if (!content()->check())
 	{
+		// An agent's save: what the check told (a person's Save the machine takes no notice of).
+		PreferencesStateMachine::instance()->failed(
+			fields(), lastMessage().isEmpty() ? "not saved" : lastMessage().toStdString());
 		return;
 	}
 
@@ -121,5 +197,6 @@ void QtPreferencesWindow::handleNext()
 		MessageRefreshUI().dispatch();
 	}
 
+	PreferencesStateMachine::instance()->saved();
 	QtWindow::handleClose();
 }
