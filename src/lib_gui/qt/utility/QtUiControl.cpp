@@ -1,6 +1,7 @@
 #include "QtUiControl.h"
 
 #include <algorithm>
+#include <format>
 #include <functional>
 #include <map>
 #include <memory>
@@ -34,7 +35,6 @@
 #include <QPointer>
 #include <QRect>
 #include <QString>
-#include <QStringList>
 #include <QTimer>
 #include <QWheelEvent>
 
@@ -271,13 +271,12 @@ ControlResult invokeAction(
 		const int index = comboBox->findText(QString::fromStdString(text));
 		if (index < 0)
 		{
-			QStringList items;
+			std::string items;
 			for (int i = 0; i < comboBox->count(); ++i)
 			{
-				items.append(QStringLiteral("\"%1\"").arg(comboBox->itemText(i)));
+				items += std::format("{}\"{}\"", items.empty() ? "" : ", ", comboBox->itemText(i).toStdString());
 			}
-			return {false, "no item \"" + text + "\" to pick in " + refToString(objectName, path) +
-					": it has " + items.join(QStringLiteral(", ")).toStdString()};
+			return {false, std::format("no item \"{}\" to pick in {}: it has {}", text, refToString(objectName, path), items)};
 		}
 		QMetaObject::invokeMethod(
 			comboBox,
