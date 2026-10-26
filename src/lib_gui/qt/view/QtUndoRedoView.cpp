@@ -4,6 +4,8 @@
 #include "utilityQt.h"
 #include "QtViewWidgetWrapper.h"
 #include "QtResources.h"
+#include "TabIds.h"
+#include "UndoRedoController.h"
 
 using namespace utility;
 
@@ -26,11 +28,17 @@ void QtUndoRedoView::refreshView()
 	});
 }
 
+bool QtUndoRedoView::isShownTab()
+{
+	const UndoRedoController* controller = getController();
+	return controller == nullptr || controller->getTabId() == TabIds::currentTab();
+}
+
 void QtUndoRedoView::setRedoButtonEnabled(bool enabled)
 {
 	execution::qt::onUi(QtViewWidgetWrapper::getWidgetOfView(this), [=, this]()
 	{
-		m_widget->setRedoButtonEnabled(enabled);
+		m_widget->setRedoButtonEnabled(enabled, isShownTab());
 	});
 }
 
@@ -38,7 +46,7 @@ void QtUndoRedoView::setUndoButtonEnabled(bool enabled)
 {
 	execution::qt::onUi(QtViewWidgetWrapper::getWidgetOfView(this), [=, this]()
 	{
-		m_widget->setUndoButtonEnabled(enabled);
+		m_widget->setUndoButtonEnabled(enabled, isShownTab());
 	});
 }
 

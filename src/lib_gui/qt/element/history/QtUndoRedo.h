@@ -17,10 +17,15 @@ public:
 	QtUndoRedo();
 	~QtUndoRedo() override;
 
-	void setRedoButtonEnabled(bool enabled);
-	void setUndoButtonEnabled(bool enabled);
+	// `shown`: this tab is the one shown, whose history the context menus' Back and
+	// Forward follow.
+	void setRedoButtonEnabled(bool enabled, bool shown);
+	void setUndoButtonEnabled(bool enabled, bool shown);
 
 	void updateHistory(const std::vector<SearchMatch>& searchMatches, size_t currentIndex);
+
+protected:
+	void showEvent(QShowEvent* event) override;
 
 private slots:
 	void buttonPressed();

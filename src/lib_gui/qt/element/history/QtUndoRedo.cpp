@@ -65,16 +65,31 @@ QtUndoRedo::QtUndoRedo()
 
 QtUndoRedo::~QtUndoRedo() = default;
 
-void QtUndoRedo::setUndoButtonEnabled(bool enabled)
+void QtUndoRedo::setUndoButtonEnabled(bool enabled, bool shown)
 {
 	m_undoButton->setEnabled(enabled);
-	QtContextMenu::getInstance()->enableUndo(enabled);
+	if (shown)
+	{
+		QtContextMenu::getInstance()->enableUndo(enabled);
+	}
 }
 
-void QtUndoRedo::setRedoButtonEnabled(bool enabled)
+// The context menus' Back and Forward are one pair for every tab: the tab shown sets
+// them, as its own buttons are.
+void QtUndoRedo::showEvent(QShowEvent* event)
+{
+	QFrame::showEvent(event);
+	QtContextMenu::getInstance()->enableUndo(m_undoButton->isEnabled());
+	QtContextMenu::getInstance()->enableRedo(m_redoButton->isEnabled());
+}
+
+void QtUndoRedo::setRedoButtonEnabled(bool enabled, bool shown)
 {
 	m_redoButton->setEnabled(enabled);
-	QtContextMenu::getInstance()->enableRedo(enabled);
+	if (shown)
+	{
+		QtContextMenu::getInstance()->enableRedo(enabled);
+	}
 }
 
 void QtUndoRedo::updateHistory(const std::vector<SearchMatch>& searchMatches, size_t currentIndex)

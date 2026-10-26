@@ -24,6 +24,8 @@ public:
 	void updateHistory(const std::vector<SearchMatch>& searchMatches, size_t currentIndex) override;
 
 private:
+	// Whether this view's tab is the one shown (its history is the context menus').
+	bool isShownTab();
 
 	QtUndoRedo* m_widget;
 };

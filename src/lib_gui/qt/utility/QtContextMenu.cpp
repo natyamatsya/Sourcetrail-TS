@@ -78,11 +78,13 @@ QtContextMenu* QtContextMenu::getInstance()
 		s_undoAction->setStatusTip(tr("Go back to last active symbol"));
 		s_undoAction->setToolTip(tr("Go back to last active symbol"));
 		connect(s_undoAction, &QAction::triggered, s_instance, &QtContextMenu::undoActionTriggered);
+		s_undoAction->setEnabled(false);	// no history yet, as the Back button says
 
 		s_redoAction = new QAction(QtActions::forward().menuText(), s_instance);
 		s_redoAction->setStatusTip(tr("Go forward to next active symbol"));
 		s_redoAction->setToolTip(tr("Go forward to next active symbol"));
 		connect(s_redoAction, &QAction::triggered, s_instance, &QtContextMenu::redoActionTriggered);
+		s_redoAction->setEnabled(false);
 
 		s_copyFullPathAction = new QAction(tr("Copy Full Path"), s_instance);
 		s_copyFullPathAction->setStatusTip(tr("Copies the path of this file to the clipboard"));
