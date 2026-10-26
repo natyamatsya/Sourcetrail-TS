@@ -965,14 +965,14 @@ void SqliteIndexStorage::addElementComponents(const std::vector<StorageElementCo
 StorageError SqliteIndexStorage::addError(const StorageErrorData& data)
 {
 	using namespace sqlpp;
-	// NOTE: kept from the raw layer for byte-identical storage: messages are
-	// stored (and deduplicated) with single quotes doubled.
-	const std::string sanitizedMessage = utility::replace(data.message, "'", "''");
+	// The message as it is: the statements bind it, so doubling its single quotes (the
+	// escape of an SQL literal) stored them doubled, and the error list showed ''x''.
+	const std::string& message = data.message;
 
 	Id id = 0;
 #ifdef SOURCETRAIL_CLIENT_IDS
 	// Read-back-free dedup: consult an in-process (message, fatal) -> id map.
-	const std::pair<std::string, int> errorKey(sanitizedMessage, int(data.fatal));
+	const std::pair<std::string, int> errorKey(message, int(data.fatal));
 	if (!m_errorDedupSeeded)
 	{
 		try
@@ -1000,7 +1000,7 @@ StorageError SqliteIndexStorage::addError(const StorageErrorData& data)
 	{
 		for (const auto& row: db()(select(errorTable.id)
 									   .from(errorTable)
-									   .where(errorTable.message == sanitizedMessage &&
+									   .where(errorTable.message == message &&
 											  errorTable.fatal == static_cast<int>(data.fatal))
 									   .limit(1u)))
 		{
@@ -1021,7 +1021,7 @@ StorageError SqliteIndexStorage::addError(const StorageErrorData& data)
 		{
 			db()(insert_into(errorTable).set(
 				errorTable.id = static_cast<Id::type>(id),
-				errorTable.message = sanitizedMessage,
+				errorTable.message = message,
 				errorTable.fatal = static_cast<int>(data.fatal),
 				errorTable.indexed = static_cast<int>(data.indexed),
 				errorTable.translationUnit = data.translationUnit));
