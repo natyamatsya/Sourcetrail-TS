@@ -1547,7 +1547,13 @@ std::shared_ptr<Graph> PersistentStorage::getGraphForActiveTokenIds(
 		if (node.id > 0)
 		{
 			const NodeType nodeType(node.type);
-			if (nodeType.isPackage())
+			// A C++20 module is a package by kind, but unlike a namespace or a Rust module its
+			// contents are not its children (the declarations it exports live in namespaces): what
+			// it relates to is what it imports and what imports it. So it is drawn like a symbol,
+			// with its partitions and its IMPORT edges, instead of as a list of children.
+			const bool isCxxModule = nodeType.getKind() == NODE_MODULE &&
+				languageMaskHas(node.languages, LANGUAGE_CXX);
+			if (nodeType.isPackage() && !isCxxModule)
 			{
 				ids.clear();
 				m_hierarchyCache.addFirstChildIdsForNodeId(elementId, &ids, &edgeIds);
@@ -3214,51 +3220,69 @@ std::unordered_map<Id, std::set<Id>> PersistentStorage::getFileIdToIncludedFileI
 
 std::unordered_map<Id, std::set<Id>> PersistentStorage::getFileIdToImportingFileIdMap() const
 {
-	using enum SearchMatch::CommandType;
-	using enum SearchMatch::SearchType;
-	using enum TooltipOrigin;
-	using enum ElementComponentKind;
-	std::unordered_map<Id, std::set<Id>> fileIdToImportingFileIdMap;
+	// Which files import something defined in which file. Both ends are taken from locations, not
+	// from the edge's nodes: the importing file is where the import is written (the edge's own
+	// occurrence), because the edge may start at a symbol rather than a file -- a C++20 module
+	// interface imports as its module node. The imported files are wherever the imported element is
+	// located: a module's interface unit, a Java class's file.
+	std::vector<StorageEdge> imports;
+	m_sqliteIndexStorage.forEachOfType<StorageEdge>(
+		Edge::EDGE_IMPORT, [&imports](StorageEdge&& edge) { imports.push_back(std::move(edge)); });
+
+	std::vector<Id> elementIds;
+	elementIds.reserve(imports.size() * 2);
+	for (const StorageEdge& edge: imports)
 	{
-		std::vector<Id> importedElementIds;
-		std::map<Id, std::set<Id>> elementIdToImportingFileIds;
+		elementIds.push_back(edge.id);
+		elementIds.push_back(edge.targetNodeId);
+	}
 
-		m_sqliteIndexStorage.forEachOfType<StorageEdge>(
-			Edge::EDGE_IMPORT,
-			[&importedElementIds, &elementIdToImportingFileIds](StorageEdge&& edge) {
-				importedElementIds.push_back(edge.targetNodeId);
-				elementIdToImportingFileIds[edge.targetNodeId].insert(edge.sourceNodeId);
-			});
-
-		std::unordered_map<Id, Id> importedElementIdToFileNodeId;
+	std::unordered_map<Id, std::set<Id>> elementIdToSourceLocationIds;
+	std::vector<Id> sourceLocationIds;
+	for (const StorageOccurrence& occurrence: m_sqliteIndexStorage.getOccurrencesForElementIds(elementIds))
+	{
+		elementIdToSourceLocationIds[occurrence.elementId].insert(occurrence.sourceLocationId);
+		sourceLocationIds.push_back(occurrence.sourceLocationId);
+	}
+	std::unordered_map<Id, Id> sourceLocationIdToFileId;
+	for (const StorageSourceLocation& location:
+		 m_sqliteIndexStorage.getAllByIds<StorageSourceLocation>(sourceLocationIds))
+	{
+		sourceLocationIdToFileId[location.id] = location.fileNodeId;
+	}
+	const auto filesOf = [&](Id elementId) {
+		std::set<Id> fileIds;
+		if (const auto it = elementIdToSourceLocationIds.find(elementId);
+			it != elementIdToSourceLocationIds.end())
 		{
-			std::vector<Id> importedSourceLocationIds;
-			std::unordered_map<Id, Id> importedSourceLocationToElementIds;
-			for (const StorageOccurrence& occurrence:
-				 m_sqliteIndexStorage.getOccurrencesForElementIds(importedElementIds))
+			for (const Id sourceLocationId: it->second)
 			{
-				importedSourceLocationIds.push_back(occurrence.sourceLocationId);
-				importedSourceLocationToElementIds[occurrence.sourceLocationId] = occurrence.elementId;
-			}
-
-			for (const StorageSourceLocation& sourceLocation:
-				 m_sqliteIndexStorage.getAllByIds<StorageSourceLocation>(importedSourceLocationIds))
-			{
-				auto it = importedSourceLocationToElementIds.find(sourceLocation.id);
-				if (it != importedSourceLocationToElementIds.end())
+				if (const auto file = sourceLocationIdToFileId.find(sourceLocationId);
+					file != sourceLocationIdToFileId.end())
 				{
-					importedElementIdToFileNodeId[it->second] = sourceLocation.fileNodeId;
+					fileIds.insert(file->second);
 				}
 			}
 		}
+		return fileIds;
+	};
 
-		for (const auto& it: elementIdToImportingFileIds)
+	std::unordered_map<Id, std::set<Id>> fileIdToImportingFileIdMap;
+	for (const StorageEdge& edge: imports)
+	{
+		std::set<Id> importingFileIds = filesOf(edge.id);
+		if (importingFileIds.empty())
 		{
-			auto importedFileIt = importedElementIdToFileNodeId.find(it.first);
-			if (importedFileIt != importedElementIdToFileNodeId.end())
+			importingFileIds.insert(edge.sourceNodeId);
+		}
+		for (const Id importedFileId: filesOf(edge.targetNodeId))
+		{
+			for (const Id importingFileId: importingFileIds)
 			{
-				fileIdToImportingFileIdMap[importedFileIt->second].insert(
-					it.second.begin(), it.second.end());
+				if (importingFileId != importedFileId)
+				{
+					fileIdToImportingFileIdMap[importedFileId].insert(importingFileId);
+				}
 			}
 		}
 	}

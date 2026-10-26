@@ -1138,3 +1138,71 @@ TEST_CASE(
 	}
 	cleanup();
 }
+
+TEST_CASE("refresh info for updated files re-indexes the importers of a changed C++20 module interface")
+{
+	cleanup();
+	{
+		// geo.cppm builds module geo, which module app (app.cppm) and the plain file main.cpp import.
+		// The import edges start at the module app and at main.cpp's file; what connects them to
+		// files is where the imports are written and where geo is defined.
+		const FilePath interfacePath = sourceFolder().getConcatenated("geo.cppm");
+		const FilePath importingInterfacePath = sourceFolder().getConcatenated("app.cppm");
+		const FilePath importerPath = sourceFolder().getConcatenated("main.cpp");
+		const FilePath unrelatedPath = sourceFolder().getConcatenated("other.cpp");
+
+		std::vector<std::shared_ptr<SourceGroup>> sourceGroups;
+		sourceGroups.push_back(std::make_shared<SourceGroupTest>(
+			std::set<FilePath>{interfacePath, importingInterfacePath, importerPath, unrelatedPath}));
+
+		std::shared_ptr<PersistentStorage> storage =
+			std::make_shared<PersistentStorage>(indexDbPath(), bookmarkDbPath());
+		storage->setup();
+
+		const Id interfaceId = addVeryOldFileToStorage(interfacePath, true, true, storage);
+		addFileToFileSystem(interfacePath);
+		const Id importingInterfaceId =
+			addVeryNewFileToStorage(importingInterfacePath, true, true, storage);
+		addFileToFileSystem(importingInterfacePath);
+		const Id importerId = addVeryNewFileToStorage(importerPath, true, true, storage);
+		addFileToFileSystem(importerPath);
+		addVeryNewFileToStorage(unrelatedPath, true, true, storage);
+		addFileToFileSystem(unrelatedPath);
+
+		const auto addModule = [&](const std::string& name, Id fileId) {
+			const Id moduleId = storage
+									->addNode(StorageNodeData(
+										NODE_MODULE,
+										NameHierarchy::serialize(
+											NameHierarchy(name, NameDelimiterType::CXX_MODULE))))
+									.first;
+			storage->addOccurrence(StorageOccurrence(
+				moduleId,
+				storage->addSourceLocation(
+					StorageSourceLocationData(fileId, 1, 15, 1, 17, LocationType::TOKEN))));
+			return moduleId;
+		};
+		const auto addImport = [&](Id sourceId, Id moduleId, Id fileId) {
+			const Id edgeId = storage->addEdge(StorageEdgeData(Edge::EDGE_IMPORT, sourceId, moduleId));
+			storage->addOccurrence(StorageOccurrence(
+				edgeId,
+				storage->addSourceLocation(
+					StorageSourceLocationData(fileId, 2, 8, 2, 10, LocationType::TOKEN))));
+		};
+		const Id geo = addModule("geo", interfaceId);
+		const Id app = addModule("app", importingInterfaceId);
+		addImport(app, geo, importingInterfaceId);
+		addImport(importerId, geo, importerId);
+
+		storage->buildCaches();
+
+		const RefreshInfo refreshInfo =
+			RefreshInfoGenerator::getRefreshInfoForUpdatedFiles(sourceGroups, storage);
+
+		REQUIRE(3 == refreshInfo.filesToIndex.size());
+		REQUIRE(refreshInfo.filesToIndex.contains(interfacePath));
+		REQUIRE(refreshInfo.filesToIndex.contains(importingInterfacePath));
+		REQUIRE(refreshInfo.filesToIndex.contains(importerPath));
+	}
+	cleanup();
+}
