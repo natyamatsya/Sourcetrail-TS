@@ -1,6 +1,10 @@
 #include "QtProjectWizardContentPathsIndexedHeaders.h"
 #include "QtMessageBox.h"
 
+#include <format>
+
+#include "CMakeFileAPIReader.h"
+
 #ifndef SRCTRL_MODULE_BUILD
 #include "CompilationDatabase.h"
 #include "IndexerCommandCxx.h"
@@ -12,6 +16,7 @@
 #ifndef SRCTRL_MODULE_BUILD
 #include "SourceGroupSettingsCxxCdb.h"
 #endif
+#include "SourceGroupSettingsWithCxxCMakeBuildDirectory.h"
 #include "logging.h"
 #ifndef SRCTRL_MODULE_BUILD
 #include "utility.h"
@@ -67,6 +72,50 @@ std::vector<FilePath> QtProjectWizardContentPathsIndexedHeaders::getIndexedPaths
 	return topLevelPaths;
 }
 
+std::vector<FilePath> QtProjectWizardContentPathsIndexedHeaders::getIndexedPathsDerivedFromCMake(
+	const SourceGroupSettingsWithCxxCMakeBuildDirectory& settings)
+{
+	const FilePath buildDir{CMakeFileAPIReader::resolveBinaryDir(
+		settings.getSourceDirectoryExpandedAndAbsolute(), settings.getPresetName())};
+	if (buildDir.empty())
+	{
+		return {};
+	}
+	const auto sources{CMakeFileAPIReader{buildDir}.getSourcesDetailed(
+		settings.getConfiguration(), settings.getTargetGlob())};
+	if (!sources)
+	{
+		return {};
+	}
+
+	std::set<FilePath> indexedHeaderPaths;
+	for (const CMakeFileAPIReader::SourceEntry& entry: sources->entries)
+	{
+		if (!entry.compileGroup || entry.isGenerated)
+		{
+			continue;
+		}
+		indexedHeaderPaths.insert(entry.path.getParentDirectory());
+		for (const FilePath& include: entry.compileGroup->includes)
+		{
+			if (include.exists())
+			{
+				indexedHeaderPaths.insert(include.getCanonical());
+			}
+		}
+	}
+
+	std::vector<FilePath> topLevelPaths;
+	for (const FilePath& path: utility::getTopLevelPaths(indexedHeaderPaths))
+	{
+		if (path.exists())
+		{
+			topLevelPaths.push_back(path);
+		}
+	}
+	return topLevelPaths;
+}
+
 QtProjectWizardContentPathsIndexedHeaders::QtProjectWizardContentPathsIndexedHeaders(
 	std::shared_ptr<SourceGroupSettings> settings,
 	QtProjectWizardWindow* window,
@@ -79,7 +128,7 @@ QtProjectWizardContentPathsIndexedHeaders::QtProjectWizardContentPathsIndexedHea
 
 	setTitleString(QStringLiteral("Header Files & Directories to Index"));
 	setHelpString(QString::fromStdString(
-		"The provided " + m_projectKindName +
+		"The " + m_projectKindName +
 		" already specifies which source files are part of your project. But Sourcetrail still "
 		"needs to know which header files to index as part of your project and which to skip. "
 		"Choosing to skip indexing "
@@ -135,8 +184,8 @@ bool QtProjectWizardContentPathsIndexedHeaders::check()
 		if (m_window->ask(
 				QString::fromStdString(
 					"You didn't specify any Header Files & Directories to Index. Sourcetrail will only "
-					"index the source files listed in the " +
-					m_projectKindName + " file and none of the included header files."),
+					"index the source files the " +
+					m_projectKindName + " lists and none of the included header files."),
 				{"Continue", "Cancel"}) != 0)
 		{
 			return false;
@@ -150,59 +199,84 @@ void QtProjectWizardContentPathsIndexedHeaders::buttonClicked()
 {
 	save();
 
-	if (!m_filesDialog)
-	{
-		if (std::shared_ptr<SourceGroupSettingsCxxCdb> cdbSettings =
-				std::dynamic_pointer_cast<SourceGroupSettingsCxxCdb>(m_settings))
-		{
-			const FilePath cdbPath = cdbSettings->getCompilationDatabasePathExpandedAndAbsolute();
-			if (!cdbPath.exists())
-			{
-				QtMessageBox msgBox(m_window);
-				msgBox.setText(QStringLiteral("The provided Compilation Database path does not exist."));
-				msgBox.setDetailedText(QString::fromStdString(cdbPath.str()));
-				msgBox.execModal();
-				return;
-			}
-
-			m_filesDialog = new QtSelectPathsDialog(
-				"Select from Include Paths",
-				"The list contains all Include Paths found in the Compilation Database. Red paths "
-				"do not exist. Select the "
-				"paths containing the header files you want to index with Sourcetrail.",
-				m_window);
-			m_filesDialog->setup();
-
-			connect(
-				m_filesDialog,
-				&QtSelectPathsDialog::finished,
-				this,
-				&QtProjectWizardContentPathsIndexedHeaders::savedFilesDialog);
-			connect(
-				m_filesDialog,
-				&QtSelectPathsDialog::canceled,
-				this,
-				&QtProjectWizardContentPathsIndexedHeaders::closedFilesDialog);
-
-			const FilePath projectPath = cdbSettings->getProjectDirectoryPath();
-
-			dynamic_cast<QtSelectPathsDialog*>(m_filesDialog)
-				->setPathsList(
-					utility::convert<FilePath, FilePath>(
-						getIndexedPathsDerivedFromCDB(cdbSettings),
-						[&](const FilePath& path) {
-							return utility::getAsRelativeIfShorter(path, projectPath);
-						}),
-					cdbSettings->getIndexedHeaderPaths(),
-					m_settings->getProjectDirectoryPath());
-		}
-	}
-
 	if (m_filesDialog)
 	{
 		m_filesDialog->show();
 		m_filesDialog->raise();
+		return;
 	}
+
+	if (std::shared_ptr<SourceGroupSettingsCxxCdb> cdbSettings =
+			std::dynamic_pointer_cast<SourceGroupSettingsCxxCdb>(m_settings))
+	{
+		const FilePath cdbPath = cdbSettings->getCompilationDatabasePathExpandedAndAbsolute();
+		if (!cdbPath.exists())
+		{
+			QtMessageBox msgBox(m_window);
+			msgBox.setText(QStringLiteral("The provided Compilation Database path does not exist."));
+			msgBox.setDetailedText(QString::fromStdString(cdbPath.str()));
+			msgBox.execModal();
+			return;
+		}
+
+		showSelectPathsDialog(
+			QStringLiteral("Select from Include Paths"),
+			QStringLiteral(
+				"The list contains all Include Paths found in the Compilation Database. Red paths "
+				"do not exist. Select the paths containing the header files you want to index with "
+				"Sourcetrail."),
+			getIndexedPathsDerivedFromCDB(cdbSettings));
+	}
+	else if (
+		std::shared_ptr<SourceGroupSettingsWithCxxCMakeBuildDirectory> cmakeSettings =
+			std::dynamic_pointer_cast<SourceGroupSettingsWithCxxCMakeBuildDirectory>(m_settings))
+	{
+		// The page above was just saved too: its source directory, preset and targets.
+		m_window->saveContent();
+		const std::vector<FilePath> paths{getIndexedPathsDerivedFromCMake(*cmakeSettings)};
+		if (paths.empty())
+		{
+			m_window->tell(QString::fromStdString(std::format(
+				"The build directory of the preset \"{}\" has no CMake File API reply to select "
+				"from yet. Press \"Run CMake\" above (or index the project once), then select "
+				"again.",
+				cmakeSettings->getPresetName())));
+			return;
+		}
+		showSelectPathsDialog(
+			QStringLiteral("Select from CMake File API"),
+			QStringLiteral(
+				"The list contains the directories of the selected targets' source files and "
+				"their include paths, as CMake reports them. Select the paths containing the "
+				"header files you want to index with Sourcetrail."),
+			paths);
+	}
+}
+
+void QtProjectWizardContentPathsIndexedHeaders::showSelectPathsDialog(
+	const QString& title, const QString& description, const std::vector<FilePath>& paths)
+{
+	auto* dialog = new QtSelectPathsDialog(title, description, m_window);
+	m_filesDialog = dialog;
+	dialog->setup();
+
+	connect(dialog, &QtSelectPathsDialog::finished, this, &QtProjectWizardContentPathsIndexedHeaders::savedFilesDialog);
+	connect(dialog, &QtSelectPathsDialog::canceled, this, &QtProjectWizardContentPathsIndexedHeaders::closedFilesDialog);
+
+	const FilePath projectPath = m_settings->getProjectDirectoryPath();
+	std::vector<FilePath> checkedPaths;
+	if (const auto headerSettings = std::dynamic_pointer_cast<SourceGroupSettingsWithIndexedHeaderPaths>(m_settings))
+	{
+		checkedPaths = headerSettings->getIndexedHeaderPaths();
+	}
+	dialog->setPathsList(
+		utility::convert<FilePath, FilePath>(
+			paths, [&](const FilePath& path) { return utility::getAsRelativeIfShorter(path, projectPath); }),
+		checkedPaths,
+		projectPath);
+
+	dialog->show();
+	dialog->raise();
 }
 
 void QtProjectWizardContentPathsIndexedHeaders::savedFilesDialog()

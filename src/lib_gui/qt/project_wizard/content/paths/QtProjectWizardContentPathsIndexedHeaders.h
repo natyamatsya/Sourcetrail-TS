@@ -4,6 +4,7 @@
 #include "QtProjectWizardContentPaths.h"
 
 class SourceGroupSettingsCxxCdb;
+class SourceGroupSettingsWithCxxCMakeBuildDirectory;
 
 class QtProjectWizardContentPathsIndexedHeaders: public QtProjectWizardContentPaths
 {
@@ -12,6 +13,12 @@ class QtProjectWizardContentPathsIndexedHeaders: public QtProjectWizardContentPa
 public:
 	static std::vector<FilePath> getIndexedPathsDerivedFromCDB(
 		std::shared_ptr<const SourceGroupSettingsCxxCdb> settings);
+
+	// The directories of the source files of the targets the settings select, and the
+	// (non-system) include paths of their compile groups, as the build directory's
+	// CMake File API reply has them; empty without a reply.
+	static std::vector<FilePath> getIndexedPathsDerivedFromCMake(
+		const SourceGroupSettingsWithCxxCMakeBuildDirectory& settings);
 
 	QtProjectWizardContentPathsIndexedHeaders(
 		std::shared_ptr<SourceGroupSettings> settings,
@@ -31,6 +38,10 @@ private slots:
 	void savedFilesDialog();
 
 private:
+	// Shows the dialog to select from `paths`, which the source group's settings say.
+	void showSelectPathsDialog(
+		const QString& title, const QString& description, const std::vector<FilePath>& paths);
+
 	const std::string m_projectKindName;
 };
 
