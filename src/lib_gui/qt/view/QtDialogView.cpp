@@ -6,6 +6,7 @@
 #include <sstream>
 #include <thread>
 
+#include <QApplication>
 #include <QGuiApplication>
 #include <QSignalBlocker>
 #include <QTimer>
@@ -348,34 +349,40 @@ void QtDialogView::presentQuestion(
 			return;
 		}
 
-		QtMessageBox msgBox;
-		msgBox.setText(QString::fromStdString(text));
+		// Centred on the window in front (a wizard, a dialog), which the question is about. On the
+		// heap: closing that window while the box is open deletes the box with it.
+		QWidget* parent = QApplication::activeModalWidget();
+		if (!parent)
+		{
+			parent = QApplication::activeWindow();
+		}
+		const QPointer<QtMessageBox> msgBox = new QtMessageBox(parent ? parent : m_mainWindow);
+		msgBox->setWindowTitle(QStringLiteral("Sourcetrail"));
+		msgBox->setIcon(options.size() > 1 ? QtMessageBox::Question : QtMessageBox::Information);
+		msgBox->setText(QString::fromStdString(text));
 
 		for (const std::string& option: options)
 		{
-			msgBox.addButton(QString::fromStdString(option), QtMessageBox::AcceptRole);
+			msgBox->addButton(QString::fromStdString(option), QtMessageBox::AcceptRole);
 		}
 
 		// The answer is on behalf of whoever clicked (an agent's posted click carries
 		// its request, a person's has none: QtApplication::notify), not of what put the
 		// box up.
 		std::uint64_t clickCause = 0;
-		QObject::connect(&msgBox, &QMessageBox::buttonClicked, &msgBox, [&clickCause](QAbstractButton *) {
+		QObject::connect(msgBox, &QMessageBox::buttonClicked, msgBox, [&clickCause](QAbstractButton *) {
 			clickCause = currentCause();
 		});
 
-		m_questionBoxes[id] = &msgBox;
-		QAbstractButton *clickedButton = msgBox.execModal();
+		m_questionBoxes[id] = msgBox;
+		QAbstractButton *clickedButton = msgBox->execModal();
 		m_questionBoxes.erase(id);
 
 		int result = -1;
-		for (int i = 0; i < msgBox.buttons().size(); i++)
+		if (msgBox)
 		{
-			if (clickedButton == msgBox.buttons().at(i))
-			{
-				result = i;
-				break;
-			}
+			result = static_cast<int>(msgBox->buttons().indexOf(clickedButton));
+			delete msgBox;
 		}
 
 		// Does nothing when an agent's answer closed the box.
