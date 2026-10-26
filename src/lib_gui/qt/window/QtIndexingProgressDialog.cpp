@@ -65,7 +65,7 @@ void QtIndexingProgressDialog::updateIndexingProgress(
 {
 	updateMessage(
 		QString::number(fileCount) + "/" + QString::number(totalFileCount) + " File" +
-		(totalFileCount > 1 ? "s" : ""));
+		(totalFileCount != 1 ? "s" : ""));
 
 	size_t progress = 0;
 	if (totalFileCount > 0)

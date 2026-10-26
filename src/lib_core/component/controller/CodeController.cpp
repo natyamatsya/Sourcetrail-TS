@@ -171,17 +171,22 @@ void CodeController::handleMessage(MessageActivateOverview* message)
 		ss << "\n";
 	}
 
-	ss << "\t" + std::to_string(stats.fileCount) + " files";
+	// "1 file", not "1 files".
+	const auto counted = [](const auto count, const std::string& one, const std::string& many) {
+		return std::to_string(count) + " " + (count == 1 ? one : many);
+	};
+
+	ss << "\t" + counted(stats.fileCount, "file", "files");
 	ss << (stats.completedFileCount != stats.fileCount
 			   ? " (" + std::to_string(stats.completedFileCount) + " complete)"
 			   : "") +
 			"\n";
-	ss << "\t" + std::to_string(stats.fileLOCCount) + " lines of code\n";
+	ss << "\t" + counted(stats.fileLOCCount, "line of code", "lines of code") + "\n";
 	ss << "\n";
-	ss << "\t" + std::to_string(stats.nodeCount) + " symbols\n";
-	ss << "\t" + std::to_string(stats.edgeCount) + " references\n";
+	ss << "\t" + counted(stats.nodeCount, "symbol", "symbols") + "\n";
+	ss << "\t" + counted(stats.edgeCount, "reference", "references") + "\n";
 	ss << "\n";
-	ss << "\t" + std::to_string(errorCount.total) + " errors (" + std::to_string(errorCount.fatal) +
+	ss << "\t" + counted(errorCount.total, "error", "errors") + " (" + std::to_string(errorCount.fatal) +
 			" fatal)\n";
 	ss << "\n";
 
