@@ -25,6 +25,7 @@ QtBookmarkCategory::QtBookmarkCategory(ControllerProxy<BookmarkController>* cont
 	m_expandButton = new QPushButton();
 	m_expandButton->setObjectName(QStringLiteral("category_expand_button"));
 	m_expandButton->setToolTip(tr("Show/Hide bookmarks in this category"));
+	m_expandButton->setAccessibleName(tr("Show/Hide Bookmarks"));
 	m_expandButton->setAttribute(Qt::WA_LayoutUsesWidgetRect);
 	m_expandButton->setIcon(QPixmap(QString::fromUtf8(QtResources::BOOKMARK_VIEW_ARROW_DOWN)));
 	m_expandButton->setIconSize(QSize(8, 8));
@@ -41,6 +42,7 @@ QtBookmarkCategory::QtBookmarkCategory(ControllerProxy<BookmarkController>* cont
 	m_deleteButton = new QPushButton();
 	m_deleteButton->setObjectName(QStringLiteral("category_delete_button"));
 	m_deleteButton->setToolTip(tr("Delete this Bookmark Category and the containing Bookmarks"));
+	m_deleteButton->setAccessibleName(tr("Delete Category"));
 	m_deleteButton->setAttribute(Qt::WA_LayoutUsesWidgetRect);
 	m_deleteButton->setIconSize(QSize(20, 20));
 	m_deleteButton->setIcon(QPixmap(QString::fromUtf8(QtResources::BOOKMARK_VIEW_BOOKMARK_DELETE_ICON)));

@@ -37,6 +37,7 @@ QtBookmark::QtBookmark(ControllerProxy<BookmarkController>* controllerProxy)
 	m_toggleCommentButton = new QPushButton();
 	m_toggleCommentButton->setObjectName(QStringLiteral("comment_button"));
 	m_toggleCommentButton->setToolTip(tr("Show Comment"));
+	m_toggleCommentButton->setAccessibleName(tr("Show Comment"));
 	m_toggleCommentButton->setAttribute(Qt::WA_LayoutUsesWidgetRect);
 	m_toggleCommentButton->setIconSize(QSize(20, 20));
 	utility::setWidgetRetainsSpaceWhenHidden(m_toggleCommentButton);
@@ -52,6 +53,7 @@ QtBookmark::QtBookmark(ControllerProxy<BookmarkController>* controllerProxy)
 	m_editButton = new QPushButton();
 	m_editButton->setObjectName(QStringLiteral("edit_button"));
 	m_editButton->setToolTip(tr("Edit bookmark..."));
+	m_editButton->setAccessibleName(tr("Edit Bookmark"));
 	m_editButton->setAttribute(Qt::WA_LayoutUsesWidgetRect);
 	m_editButton->setIconSize(QSize(20, 20));
 	m_editButton->setIcon(QPixmap(QString::fromUtf8(QtResources::BOOKMARK_VIEW_BOOKMARK_EDIT_ICON)));
@@ -62,6 +64,7 @@ QtBookmark::QtBookmark(ControllerProxy<BookmarkController>* controllerProxy)
 	m_deleteButton = new QPushButton();
 	m_deleteButton->setObjectName(QStringLiteral("delete_button"));
 	m_deleteButton->setToolTip(tr("Delete bookmark..."));
+	m_deleteButton->setAccessibleName(tr("Delete Bookmark"));
 	m_deleteButton->setAttribute(Qt::WA_LayoutUsesWidgetRect);
 	m_deleteButton->setIconSize(QSize(20, 20));
 	m_deleteButton->setIcon(QPixmap(QString::fromUtf8(QtResources::BOOKMARK_VIEW_BOOKMARK_DELETE_ICON)));

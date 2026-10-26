@@ -136,6 +136,8 @@ void QtBookmarkBrowser::setBookmarks(const std::vector<std::shared_ptr<Bookmark>
 
 		QTreeWidgetItem* categoryItem = findOrCreateTreeCategory(bookmark->getCategory());
 		QTreeWidgetItem* treeWidgetItem = new QTreeWidgetItem(categoryItem);
+		// Its widget draws the row; the item names it for agents and screen readers.
+		treeWidgetItem->setData(0, Qt::AccessibleTextRole, QString::fromStdString(bookmark->getName()));
 		m_bookmarkTree->setItemWidget(treeWidgetItem, 0, qtBookmark);
 		categoryItem->addChild(treeWidgetItem);
 		qtBookmark->setTreeWidgetItem(categoryItem);
@@ -264,6 +266,10 @@ QTreeWidgetItem* QtBookmarkBrowser::findOrCreateTreeCategory(const BookmarkCateg
 
 	QTreeWidgetItem* newItem = new QTreeWidgetItem(m_bookmarkTree);
 	newItem->setWhatsThis(0, QString::fromStdString(category.getName()));
+	newItem->setData(
+		0,
+		Qt::AccessibleTextRole,
+		category.getName().empty() ? tr("No Category") : QString::fromStdString(category.getName()));
 
 	categoryItem->setTreeWidgetItem(newItem);
 
