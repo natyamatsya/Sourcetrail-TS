@@ -1418,14 +1418,8 @@ struct AgentControlController::Impl
 			const std::lock_guard<std::mutex> lock(m_stateMutex);
 			// What the tab on screen shows: each tab keeps its own activation, and
 			// an empty new tab shows none.
-			TabId shownTab = TabId::NONE;
-			for (const MessageTabsChanged::TabInfo& tab: m_tabsCache)
-			{
-				if (tab.active)
-				{
-					shownTab = tab.tabId;
-				}
-			}
+			const auto shown = std::ranges::find(m_tabsCache, true, &MessageTabsChanged::TabInfo::active);
+			const TabId shownTab {shown != m_tabsCache.end() ? shown->tabId : TabId::NONE};
 			if (const auto it = m_tabViews.find(shownTab); it != m_tabViews.end())
 			{
 				activeNodeIds = it->second.activeNodeIds;

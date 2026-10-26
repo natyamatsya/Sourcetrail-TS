@@ -1052,7 +1052,7 @@ void QtGraphView::doResize()
 // length.
 void QtGraphView::fitTrailControls()
 {
-	const int sliderTop = 132;	   // below the trail buttons and the depth label
+	constexpr int sliderTop {132};	  // below the trail buttons and the depth label
 	const int zoomInTop = getView()->height() - 50;
 	const int sliderHeight = std::clamp(zoomInTop - 4 - 8 - sliderTop - 6, 40, 100);
 	m_trailDepthSlider->setGeometry(0, sliderTop, 26, sliderHeight);

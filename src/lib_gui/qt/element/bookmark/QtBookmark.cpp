@@ -5,6 +5,9 @@
 #include "QtResources.h"
 #include "utilityQt.h"
 
+#include <format>
+#include <utility>
+
 #include <QHBoxLayout>
 #include <QPixmap>
 #include <QTimer>
@@ -216,7 +219,7 @@ void QtBookmark::editClicked()
 void QtBookmark::deleteClicked()
 {
 	// Asks first, as the bookmark machine's delete does (BookmarkController).
-	BookmarkStateMachine::instance()->remove(static_cast<std::uint64_t>(m_bookmark->getId()), EventSource::Ui);
+	BookmarkStateMachine::instance()->remove(std::to_underlying(m_bookmark->getId()), EventSource::Ui);
 }
 
 void QtBookmark::elideButtonText()
@@ -248,13 +251,13 @@ std::string QtBookmark::getDateString() const
 	}
 	else if (delta < 3600.0f)	 // less than an hour ago
 	{
-		const int minutes = int(delta / 60.0f);
-		result = std::to_string(minutes) + (minutes == 1 ? " minute ago" : " minutes ago");
+		const std::size_t minutes {delta / 60};
+		result = std::format("{} {} ago", minutes, minutes == 1 ? "minute" : "minutes");
 	}
 	else if (delta < (3600.0f * 6.0f))	  // less than 6 hours ago
 	{
-		const int hours = int(delta / 3600.0f);
-		result = std::to_string(hours) + (hours == 1 ? " hour ago" : " hours ago");
+		const std::size_t hours {delta / 3600};
+		result = std::format("{} {} ago", hours, hours == 1 ? "hour" : "hours");
 	}
 	else if (creationDate.isSameDay(now))	 // today
 	{

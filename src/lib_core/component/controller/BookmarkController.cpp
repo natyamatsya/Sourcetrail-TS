@@ -1,6 +1,8 @@
 #include "BookmarkController.h"
 
+#include <algorithm>
 #include <format>
+#include <utility>
 
 #include "BookmarkStateMachine.h"
 
@@ -414,25 +416,25 @@ void BookmarkController::handleMessage(MessageBookmarkDelete* message)
 		deleteBookmarkForActiveTokens();
 		return;
 	}
-	for (const std::shared_ptr<Bookmark>& bookmark: getAllBookmarks())
+	const std::vector<std::shared_ptr<Bookmark>> bookmarks = getAllBookmarks();
+	const auto bookmark = std::ranges::find_if(bookmarks, [message](const std::shared_ptr<Bookmark>& candidate) {
+		return std::to_underlying(candidate->getId()) == message->bookmarkId;
+	});
+	if (bookmark == bookmarks.end())
 	{
-		if (static_cast<std::uint64_t>(bookmark->getId()) == message->bookmarkId)
-		{
-			// A question (QuestionStateMachine): an agent answers it as the box's buttons do.
-			whenAnswered(
-				Application::getInstance()->getDialogView(DialogView::UseCase::GENERAL)->asked(
-					"Do you really want to delete the bookmark '" + bookmark->getName() + "'?",
-					{"Delete", "Keep"}),
-				[this, id = bookmark->getId()](int option) {
-					if (option == 0)
-					{
-						execution::post(TabIds::app(), [this, id]() { deleteBookmark(id); });
-					}
-				});
-			return;
-		}
+		BookmarkStateMachine::instance()->report(std::format("there is no bookmark {}", message->bookmarkId));
+		return;
 	}
-	BookmarkStateMachine::instance()->report(std::format("there is no bookmark {}", message->bookmarkId));
+	// A question (QuestionStateMachine): an agent answers it as the box's buttons do.
+	whenAnswered(
+		Application::getInstance()->getDialogView(DialogView::UseCase::GENERAL)->asked(
+			std::format("Do you really want to delete the bookmark '{}'?", (*bookmark)->getName()), {"Delete", "Keep"}),
+		[this, id = (*bookmark)->getId()](int option) {
+			if (option == 0)
+			{
+				execution::post(TabIds::app(), [this, id]() { deleteBookmark(id); });
+			}
+		});
 }
 
 void BookmarkController::handleMessage(MessageBookmarkEdit* message)
