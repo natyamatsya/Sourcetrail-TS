@@ -20,16 +20,20 @@ public:
 	CxxAstVisitorComponentModuleIndexer(
 		CxxAstVisitor* astVisitor, clang::ASTContext* astContext, CxxIndexingContext& index);
 
-	// `export module foo;` — record the module this TU defines (fires once per TU;
-	// a no-op for non-module translation units).
+	// `export module foo;` / `module foo:part;` — record the module (partition) this TU builds
+	// (fires once per TU; a no-op for implementation units and non-module translation units).
 	void visitTranslationUnitDecl(clang::TranslationUnitDecl* d);
 	// `import foo;` / `import :part;` / `import <header>;` — an IMPORT edge from the
-	// current module (or the TU) to the imported module.
+	// current module (or, outside an interface, the importing file) to the imported module.
 	void visitImportDecl(clang::ImportDecl* d);
 	// `export ...` — flag the declarations in the export region as exported.
 	void visitExportDecl(clang::ExportDecl* d);
 
 private:
+	// The module name after a `module` keyword (`a.b:part`), from its first to its last
+	// identifier; invalid when there is none to find.
+	clang::SourceRange getModuleNameRange(clang::SourceLocation keywordLocation) const;
+
 	clang::ASTContext* m_astContext;
 
 	// The mid-level indexing API: symbol identity, locations, the storage client, and the current

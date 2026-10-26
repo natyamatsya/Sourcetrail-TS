@@ -5140,6 +5140,51 @@ TEST_CASE("module prebuild reports the modules an import cycle leaves unbuilt")
 	REQUIRE(cache.getConcatenated("/d.pcm").exists());
 }
 
+TEST_CASE("cxx parser records an import from the importing file, not the imported module's own imports")
+{
+	const FilePath cache = prebuildModules("import-edges", mathModuleUnits);
+
+	std::shared_ptr<TestStorage> client = parseCode(
+		"import math;\n"
+		"int main() { return twice(Vec{1}.x); }\n",
+		{"-fprebuilt-module-path=" + cache.str()});
+
+	CAPTURE(client->imports, client->errors);
+	REQUIRE(client->errors.empty());
+	// math's own `export import :vec;` comes along with `import math;`, but it is math's import,
+	// recorded where math.cppm is indexed -- not this file's.
+	REQUIRE(client->imports.size() == 1);
+	REQUIRE(utility::containsElement<std::string>(client->imports, "input.cc -> math <1:8 1:11>"));
+}
+
+TEST_CASE("cxx parser locates a module partition at its name")
+{
+	std::shared_ptr<TestStorage> client =
+		parseCode("export module app.core:part;\n", {"-x", "c++-module"});
+
+	CAPTURE(client->modules);
+	REQUIRE(utility::containsElement<std::string>(client->modules, "app.core:part <1:15 1:27>"));
+}
+
+TEST_CASE("cxx parser records an implementation unit as importing its module, not defining it")
+{
+	const FilePath cache = prebuildModules("implementation-unit", mathModuleUnits);
+
+	std::shared_ptr<TestStorage> client = parseCode(
+		"module math;\n"
+		"int eight() { return twice(4); }\n",
+		{"-fprebuilt-module-path=" + cache.str()});
+
+	CAPTURE(client->imports, client->modules, client->errors);
+	REQUIRE(client->errors.empty());
+	REQUIRE(utility::containsElement<std::string>(client->imports, "input.cc -> math <1:8 1:11>"));
+	// No location for math here: its definition is math.cppm.
+	for (const std::string& module: client->modules)
+	{
+		REQUIRE_FALSE(module.contains('<'));
+	}
+}
+
 /*
 void _test_TEST()
 {
