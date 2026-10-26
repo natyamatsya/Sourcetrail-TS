@@ -40,10 +40,6 @@ RefreshInfo RefreshInfoGenerator::getRefreshInfoForUpdatedFiles(
 	{
 		const std::vector<FileInfo> fileInfosFromStorage = storage->getFileInfoForAllFiles();
 
-		// Files left incomplete by an interrupted index (complete = 0) must be
-		// re-indexed even though their content is unchanged.
-		const std::set<FilePath> incompleteFilePaths = storage->getIncompleteFiles();
-
 		// Files still claimed by an enabled source group (as a source or a contained
 		// header). A previously indexed file that is no longer claimed by any group has
 		// been removed from the project and must be cleared (step 2.4) -- unless it is
@@ -67,8 +63,7 @@ RefreshInfo RefreshInfoGenerator::getRefreshInfoForUpdatedFiles(
 		}
 
 		// A stored file needs (re-)indexing only when it no longer exists (removed from
-		// disk), its content actually changed, or a previous index left it incomplete.
-		// Otherwise it is unchanged and kept -- whether it is a source-group source or a
+		// disk) or its content actually changed. Otherwise it is unchanged and kept -- whether it is a source-group source or a
 		// header (e.g. a precompiled header) that is indexed only transitively via the
 		// files that include it. Treating a present, unchanged header as changed here
 		// would cascade through getReferencing() below and re-index every file that
@@ -77,9 +72,9 @@ RefreshInfo RefreshInfoGenerator::getRefreshInfoForUpdatedFiles(
 		// source -- both previously fell through to the "changed" branches).
 		for (const FileInfo& info: fileInfosFromStorage)
 		{
-			const bool changed = !info.path.exists() ||
-				incompleteFilePaths.find(info.path) != incompleteFilePaths.end() ||
-				didFileChange(info, storage);
+			// A file a previous index left incomplete (its errors) is unchanged here: re-indexing
+			// it is the incomplete mode's (getRefreshInfoForIncompleteFiles, --incomplete).
+			const bool changed = !info.path.exists() || didFileChange(info, storage);
 			if (changed)
 			{
 				changedFilePaths.insert(info.path);

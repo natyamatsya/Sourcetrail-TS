@@ -841,6 +841,40 @@ TEST_CASE(
 	cleanup();
 }
 
+TEST_CASE("refresh info for updated files leaves an unchanged incomplete file alone")
+{
+	cleanup();
+	{
+		const FilePath incompleteFilePath = sourceFolder().getConcatenated("incomplete_file.cpp");
+
+		std::vector<std::shared_ptr<SourceGroup>> sourceGroups;
+		sourceGroups.push_back(std::shared_ptr<SourceGroupTest>(new SourceGroupTest({incompleteFilePath})));
+
+		std::shared_ptr<PersistentStorage> storage = std::make_shared<PersistentStorage>(
+			indexDbPath(), bookmarkDbPath());
+		storage->setup();
+
+		addVeryNewFileToStorage(incompleteFilePath, true, false, storage);
+		addFileToFileSystem(incompleteFilePath);
+
+		storage->buildCaches();
+
+		const RefreshInfo updated = RefreshInfoGenerator::getRefreshInfoForUpdatedFiles(sourceGroups, storage);
+		REQUIRE(RefreshMode::UPDATED_FILES == updated.mode);
+		REQUIRE(0 == updated.filesToClear.size());
+		REQUIRE(0 == updated.filesToIndex.size());
+
+		const RefreshInfo incomplete = RefreshInfoGenerator::getRefreshInfoForIncompleteFiles(
+			sourceGroups, storage);
+		REQUIRE(RefreshMode::UPDATED_AND_INCOMPLETE_FILES == incomplete.mode);
+		REQUIRE(1 == incomplete.filesToClear.size());
+		REQUIRE(incomplete.filesToClear.contains(incompleteFilePath));
+		REQUIRE(1 == incomplete.filesToIndex.size());
+		REQUIRE(incomplete.filesToIndex.contains(incompleteFilePath));
+	}
+	cleanup();
+}
+
 TEST_CASE("refresh info for updated files does not clear unknown uptodate header file")
 {
 	cleanup();
