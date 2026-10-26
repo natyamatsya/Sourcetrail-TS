@@ -691,9 +691,14 @@ QString QtProjectWizardContentPathCMakeFileAPI::targetSummary() const
 
 QString QtProjectWizardContentPathCMakeFileAPI::buildDirectoryNote() const
 {
-	if (selectedPreset().empty())
+	const std::string presetName{selectedPreset()};
+	if (presetName.empty())
 	{
 		return {};
+	}
+	if (!std::ranges::contains(m_presets, presetName, &CMakeFileAPIReader::PresetInfo::name))
+	{
+		return QStringLiteral("Unknown: the preset is not one of the source directory's presets.");
 	}
 	if (m_buildDir.empty())
 	{
