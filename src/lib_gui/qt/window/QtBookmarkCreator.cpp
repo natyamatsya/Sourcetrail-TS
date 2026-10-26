@@ -178,5 +178,5 @@ void QtBookmarkCreator::onFieldsChanged()
 
 void QtBookmarkCreator::onNameChanged(const QString& text)
 {
-	setNextEnabled(text.length() > 0);
+	setNextEnabled(!text.trimmed().isEmpty());
 }

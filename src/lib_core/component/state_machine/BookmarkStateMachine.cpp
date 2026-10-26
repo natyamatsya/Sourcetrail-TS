@@ -7,6 +7,7 @@
 #include "MessageBookmarkDelete.h"
 #include "MessageBookmarkEdit.h"
 #include "logging.h"
+#include "utilityString.h"
 
 // glaze reflects these for JSON; MSVC cannot reflect types in an anonymous namespace.
 namespace bookmark_machine_json
@@ -163,6 +164,10 @@ MachineFireResult BookmarkStateMachine::save(
 		{
 			data.editor.fields = std::move(*fields);
 		}
+		// A name or category of spaces is none ("   " was saved as a bookmark's name),
+		// and spaces around them are not part of them.
+		data.editor.fields.name = utility::trim(data.editor.fields.name);
+		data.editor.fields.category = utility::trim(data.editor.fields.category);
 		if (data.editor.fields.name.empty())
 		{
 			return {false, "a bookmark needs a name (set { name })"};

@@ -797,8 +797,10 @@ TEST_CASE("bookmark editor opens, takes its fields and saves them")
 	REQUIRE(snapshot.context.find(R"("mode":"create")") != std::string::npos);
 	REQUIRE(snapshot.events == std::vector<std::string> {"set", "save", "cancel"});
 
-	REQUIRE(machine.fire("set", R"({"name":"Game","category":"core"})", EventSource::Agent).ok);
-	REQUIRE(presenter.shown == std::vector<std::string> {"Game"});
+	REQUIRE(machine.fire("set", R"({"name":"   "})", EventSource::Agent).ok);
+	REQUIRE_FALSE(machine.fire("save", "", EventSource::Agent).ok);	// a name of spaces is none
+	REQUIRE(machine.fire("set", R"({"name":" Game ","category":" core "})", EventSource::Agent).ok);
+	REQUIRE(presenter.shown == std::vector<std::string> {"   ", " Game "});
 	REQUIRE_FALSE(machine.fire("set", R"({"colour":"red"})", EventSource::Agent).ok);
 	REQUIRE(machine.fire("save", "", EventSource::Agent).ok);
 	REQUIRE(saved == std::vector<std::string> {"Game/core"});
