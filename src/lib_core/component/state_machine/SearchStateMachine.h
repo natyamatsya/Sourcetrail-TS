@@ -13,13 +13,15 @@
 
 // Shows what the search machine does to the search box for someone else (an agent):
 // presentQuery(query) shows a query as typed, dismissSuggestions() closes the list,
-// submitQuery() searches for what the box holds (Enter, the search button).
+// submitQuery() searches for what the box holds (Enter, the search button),
+// selectSuggestion(match) picks a suggestion as a click on it does (with the box's filters).
 // What a person does there the box reports itself.
 template <typename T>
-concept PresentsSearch = requires(T& presenter, const std::string& query) {
+concept PresentsSearch = requires(T& presenter, const std::string& query, const SearchMatch& match) {
 	presenter.presentQuery(query);
 	presenter.dismissSuggestions();
 	presenter.submitQuery();
+	presenter.selectSuggestion(match);
 };
 
 struct SearchPresenterOperations
@@ -27,6 +29,7 @@ struct SearchPresenterOperations
 	void (*presentQuery)(void* presenter, const std::string& query);
 	void (*dismissSuggestions)(void* presenter);
 	void (*submitQuery)(void* presenter);
+	void (*selectSuggestion)(void* presenter, const SearchMatch& match);
 };
 
 // Any PresentsSearch, by reference (Presenter.h).
@@ -53,13 +56,18 @@ public:
 	{
 		m_operations->submitQuery(m_presenter);
 	}
+	void selectSuggestion(const SearchMatch& match) const
+	{
+		m_operations->selectSuggestion(m_presenter, match);
+	}
 
 private:
 	template <PresentsSearch T>
 	static constexpr SearchPresenterOperations operations {
 		[](void* presenter, const std::string& query) { static_cast<T*>(presenter)->presentQuery(query); },
 		[](void* presenter) { static_cast<T*>(presenter)->dismissSuggestions(); },
-		[](void* presenter) { static_cast<T*>(presenter)->submitQuery(); }};
+		[](void* presenter) { static_cast<T*>(presenter)->submitQuery(); },
+		[](void* presenter, const SearchMatch& match) { static_cast<T*>(presenter)->selectSuggestion(match); }};
 };
 
 // The search box's autocompletion, from a query typed until the list it brings up is
@@ -71,7 +79,8 @@ private:
 //
 // A person typing sends `type` (the search box does), and closing the list or
 // searching sends `dismiss`; an agent sends the same, and `select` picks one of the
-// suggestions: its search runs as a click on it in the list would. `search` searches
+// suggestions: its search runs as a click on it in the list would, with the filters the
+// box holds (it reports what it holds: boxChanged), and an agent's `type` completes for them. `search` searches
 // for what the box holds, as Enter or the search button does: a full-text search for
 // a query starting with '?', and for text no suggestion was picked for. Completions
 // for a query typed over since are not shown.
@@ -99,6 +108,8 @@ struct SearchMachine
 		NodeTypeSet nodeTypes;	// what the query searches for (the box's filters)
 		std::vector<SearchMatch> matches;	// suggesting
 		std::string outcome;	// how the last query ended
+		std::vector<SearchMatch> tokens;	// what the search box holds (filters, the last search)
+		NodeTypeSet boxNodeTypes = NodeTypeSet::all();	// what its filters search for
 		SearchPresenter presenter;
 	};
 
@@ -153,6 +164,9 @@ public:
 	// Searches for what the search box holds, as Enter does (an agent's: a person's
 	// Enter reaches the box itself).
 	MachineFireResult search(EventSource source);
+
+	// The search box's side: what it holds now, and what its filters search for.
+	void boxChanged(std::vector<SearchMatch> tokens, NodeTypeSet nodeTypes);
 
 	// The search controller's side: whether completions for `query` are still waited
 	// for, and they are here: true when they are to be shown.

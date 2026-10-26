@@ -143,6 +143,11 @@ void QtSearchBar::dismissSuggestions()
 	m_searchBox->dismissSuggestions();
 }
 
+void QtSearchBar::selectSuggestion(const SearchMatch& match)
+{
+	m_searchBox->selectSuggestion(match);
+}
+
 void QtSearchBar::submitQuery()
 {
 	m_searchBox->dismissSuggestions();

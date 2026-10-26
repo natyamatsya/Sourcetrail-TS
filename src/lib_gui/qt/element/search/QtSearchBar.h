@@ -30,6 +30,7 @@ public:
 	void showQuery(const QString& query);
 	void dismissSuggestions();
 	void submitQuery();
+	void selectSuggestion(const SearchMatch& match);
 
 	QAbstractItemView* getCompleterPopup();
 

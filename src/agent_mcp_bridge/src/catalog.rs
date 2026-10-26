@@ -485,7 +485,10 @@ there) and asks for its completions: completing, then suggesting (context.sugges
 name, type, kind }], the first 30; more: how many are not listed), or idle with \
 context.outcome \"nothing matches ...\".
   select { index } | { name }      suggesting: searches for that suggestion, as clicking it \
-in the list does; the activation follows (watch activation, or ui_state.active_nodes).
+in the list does: with the filters the box holds (context.tokens, e.g. \"class\"); a previous \
+search in the box is replaced. context.outcome names the query that ran. The activation \
+follows (watch activation, or ui_state.active_nodes). An agent's type keeps the box's filters \
+and completes for what they search for.
   dismiss                          completing/suggesting: closes the list.
   search                           any state: searches for what the box holds, as Enter or \
 the search button does: a query starting with ? (case-insensitive) or ?? (case-sensitive) is \

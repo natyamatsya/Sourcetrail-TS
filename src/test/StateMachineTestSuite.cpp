@@ -729,8 +729,13 @@ struct FakeSearchPresenter
 	{
 		submitted++;
 	}
+	void selectSuggestion(const SearchMatch& match)
+	{
+		selected.push_back(match.getFullName());
+	}
 
 	std::vector<std::string> queries;
+	std::vector<std::string> selected;
 	int dismissed = 0;
 	int submitted = 0;
 };
@@ -762,7 +767,8 @@ TEST_CASE("search suggests what was typed last, and searches for what is selecte
 	snapshot = machine.snapshot();
 	REQUIRE(snapshot.state == "idle");
 	REQUIRE(snapshot.context.find("searched for 'FooBar'") != std::string::npos);
-	REQUIRE(presenter.dismissed == 1);
+	REQUIRE(presenter.selected == std::vector<std::string> {"FooBar"});	// the box searches, as on a click
+	REQUIRE(presenter.dismissed == 0);	// and closes its list itself
 
 	// A person types: the box has it already. Nothing found ends the query.
 	REQUIRE(machine.type("Qux", NodeTypeSet::all(), EventSource::Ui).ok);
@@ -777,7 +783,7 @@ TEST_CASE("search suggests what was typed last, and searches for what is selecte
 	REQUIRE(machine.type("Baz", NodeTypeSet::all(), EventSource::Ui).ok);
 	REQUIRE(machine.dismiss(EventSource::Ui).ok);
 	REQUIRE_FALSE(machine.completed("Baz", {SearchMatch("Baz")}));
-	REQUIRE(presenter.dismissed == 1);	// the person closed it themselves
+	REQUIRE(presenter.dismissed == 0);	// the person closed it themselves
 
 	// Searching for what is typed (Enter): the box searches, from any state.
 	REQUIRE(machine.fire("type", R"({"query":"?needle"})", EventSource::Agent).ok);
@@ -793,6 +799,40 @@ TEST_CASE("search suggests what was typed last, and searches for what is selecte
 	REQUIRE_FALSE(machine.fire("search", "", EventSource::Agent).ok);	// no box to search from
 	REQUIRE(machine.fire("type", R"({"query":"Q"})", EventSource::Agent).ok);
 	REQUIRE(presenter.queries.size() == 3);
+}
+
+TEST_CASE("search keeps the box's filters when a suggestion is selected")
+{
+	SearchStateMachine machine;
+	FakeSearchPresenter presenter;
+	machine.attach(presenter);
+	const SearchMatch filter = SearchMatch::createCommandsForNodeTypes(NodeTypeSet::all()).front();
+	REQUIRE(filter.isFilterCommand());
+
+	// The box holds a filter: selecting adds the suggestion to it, as a click does.
+	machine.boxChanged({filter}, NodeTypeSet::all());
+	REQUIRE(machine.snapshot().context.find(std::format(R"("tokens":["{}"])", filter.getFullName())) != std::string::npos);
+	REQUIRE(machine.fire("type", R"({"query":"Foo"})", EventSource::Agent).ok);
+	REQUIRE(machine.completed("Foo", {SearchMatch("Foo")}));
+	REQUIRE(machine.fire("select", R"({"index":0})", EventSource::Agent).ok);
+	REQUIRE(presenter.selected == std::vector<std::string> {"Foo"});
+	REQUIRE(machine.snapshot().context.find(std::format("searched for '{}' 'Foo'", filter.getFullName())) !=
+			std::string::npos);
+
+	// A previous search is replaced, not kept.
+	machine.boxChanged({SearchMatch("Foo")}, NodeTypeSet::all());
+	REQUIRE(machine.fire("type", R"({"query":"Bar"})", EventSource::Agent).ok);
+	REQUIRE(machine.completed("Bar", {SearchMatch("Bar")}));
+	REQUIRE(machine.fire("select", R"({"index":0})", EventSource::Agent).ok);
+	REQUIRE(machine.snapshot().context.find(R"(searched for 'Bar')") != std::string::npos);
+
+	// Without a box, the suggestion alone is searched for.
+	machine.detach(presenter);
+	machine.boxChanged({filter}, NodeTypeSet::all());
+	REQUIRE(machine.fire("type", R"({"query":"Baz"})", EventSource::Agent).ok);
+	REQUIRE(machine.completed("Baz", {SearchMatch("Baz")}));
+	REQUIRE(machine.fire("select", R"({"index":0})", EventSource::Agent).ok);
+	REQUIRE(machine.snapshot().context.find(R"(searched for 'Baz')") != std::string::npos);
 }
 
 struct FakeBookmarkPresenter

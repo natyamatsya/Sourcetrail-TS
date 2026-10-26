@@ -163,10 +163,22 @@ void QtSmartSearchBox::setAutocompletionList(const std::vector<SearchMatch>& aut
 void QtSmartSearchBox::showQuery(const QString& query)
 {
 	const QScopedValueRollback<bool> quiet(m_reportsDismissal, false);
-	clearMatches();
+	// As a person types after what the box holds: filters stay, a previous search goes (as
+	// addMatch replaces it).
+	if (lastMatchIsNoFilter())
+	{
+		clearMatches();
+	}
+	m_cursorIndex = m_matches.size();
 	updateElements();
 	setEditText(query);
 	layoutElements();
+}
+
+void QtSmartSearchBox::selectSuggestion(const SearchMatch& match)
+{
+	dismissSuggestions();
+	onAutocompletionActivated(match);
 }
 
 void QtSmartSearchBox::dismissSuggestions()
@@ -934,6 +946,9 @@ void QtSmartSearchBox::updateElements()
 	hideAutoCompletions();
 
 	layoutElements();
+
+	// What the box holds, for an agent's `type` and `select` (the search machine).
+	SearchStateMachine::instance()->boxChanged(utility::toVector(m_matches), getMatchAcceptedNodeTypes());
 }
 
 void QtSmartSearchBox::layoutElements()

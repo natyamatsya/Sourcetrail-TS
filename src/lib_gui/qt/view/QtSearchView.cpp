@@ -88,6 +88,11 @@ void QtSearchView::dismissSuggestions()
 	execution::qt::onUi(QtViewWidgetWrapper::getWidgetOfView(this), [this]() { m_widget->dismissSuggestions(); });
 }
 
+void QtSearchView::selectSuggestion(const SearchMatch& match)
+{
+	execution::qt::onUi(QtViewWidgetWrapper::getWidgetOfView(this), [this, match]() { m_widget->selectSuggestion(match); });
+}
+
 void QtSearchView::submitQuery()
 {
 	execution::qt::onUi(QtViewWidgetWrapper::getWidgetOfView(this), [this]() { m_widget->submitQuery(); });

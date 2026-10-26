@@ -28,6 +28,7 @@ public:
 	void presentQuery(const std::string& query);
 	void dismissSuggestions();
 	void submitQuery();
+	void selectSuggestion(const SearchMatch& match);
 
 private:
 	void setStyleSheet();

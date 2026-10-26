@@ -42,9 +42,11 @@ public:
 	
 	void setAutocompletionList(const std::vector<SearchMatch>& autocompletionList);
 	void setMatches(const std::vector<SearchMatch>& matches);
-	// Shows `query` as if typed, in place of what is in the box; its completions are
-	// asked for already (an agent typed it: the search machine).
+	// Shows `query` as if typed after the box's filters (a previous search goes); its
+	// completions are asked for already (an agent typed it: the search machine).
 	void showQuery(const QString& query);
+	// Picks a suggestion as a click on it does: added to the filters, and searched for.
+	void selectSuggestion(const SearchMatch& match);
 	// Closes the suggestions (an agent closed them, or searched for one).
 	void dismissSuggestions();
 	void setFocus();

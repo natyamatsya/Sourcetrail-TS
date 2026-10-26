@@ -22,6 +22,7 @@ struct Suggestion
 
 struct SearchContext
 {
+	std::optional<std::vector<std::string>> tokens;	// what the box holds
 	std::optional<std::string> query;
 	std::optional<std::vector<Suggestion>> suggestions;
 	std::optional<std::size_t> more;	// suggestions not listed
@@ -44,6 +45,21 @@ namespace
 {
 // How many suggestions the context lists.
 constexpr std::size_t listedSuggestions = 30;
+
+// The query a click on `match` runs in a box holding `tokens`: QtSmartSearchBox::addMatch keeps
+// them when the last one is a filter, and replaces them otherwise (a previous search).
+std::string queryWith(const std::vector<SearchMatch>& tokens, const SearchMatch& match)
+{
+	std::string query;
+	if (!tokens.empty() && tokens.back().isFilterCommand())
+	{
+		for (const SearchMatch& token: tokens)
+		{
+			query += std::format("'{}' ", token.getFullName());
+		}
+	}
+	return query + std::format("'{}'", match.getFullName());
+}
 }	 // namespace
 
 std::shared_ptr<SearchStateMachine> SearchStateMachine::instance()
@@ -56,6 +72,13 @@ void SearchStateMachine::attach(SearchPresenter presenter)
 {
 	auto transaction = m_machine.transaction();
 	transaction.data().presenter = presenter;
+}
+
+void SearchStateMachine::boxChanged(std::vector<SearchMatch> tokens, NodeTypeSet nodeTypes)
+{
+	auto transaction = m_machine.transaction();
+	transaction.data().tokens = std::move(tokens);
+	transaction.data().boxNodeTypes = nodeTypes;
 }
 
 void SearchStateMachine::detach(SearchPresenter presenter)
@@ -97,6 +120,7 @@ MachineFireResult SearchStateMachine::select(std::size_t index, EventSource sour
 	SearchMatch match;
 	NodeTypeSet nodeTypes;
 	SearchPresenter presenter;
+	std::string query;
 	{
 		auto transaction = m_machine.transaction();
 		if (!transaction.accepts(Event::Select))
@@ -110,17 +134,22 @@ MachineFireResult SearchStateMachine::select(std::size_t index, EventSource sour
 		}
 		match = data.matches[index];
 		nodeTypes = data.nodeTypes;
-		data.outcome = std::format("searched for '{}'", match.getFullName());
+		presenter = data.presenter;
+		// With the box, its filters stay, as on a click; without one, the suggestion alone.
+		query = presenter ? queryWith(data.tokens, match) : std::format("'{}'", match.getFullName());
+		data.outcome = std::format("searched for {}", query);
 		data.matches.clear();
 		transaction.move(Event::Select, source);
-		presenter = data.presenter;
 	}
-	if (presenter && source != EventSource::Ui)
+	if (presenter)
 	{
-		presenter.dismissSuggestions();
+		presenter.selectSuggestion(match);
 	}
-	MessageSearch({match}, nodeTypes).dispatch();
-	return {true, std::format("searching for '{}'", match.getFullName())};
+	else
+	{
+		MessageSearch({match}, nodeTypes).dispatch();
+	}
+	return {true, std::format("searching for {}", query)};
 }
 
 MachineFireResult SearchStateMachine::dismiss(EventSource source)
@@ -212,7 +241,10 @@ MachineFireResult SearchStateMachine::fire(const std::string& event, const std::
 		{
 			return {false, parsed.error()};
 		}
-		return type(parsed->query, NodeTypeSet::all(), source);
+		// What the box's filters search for, as a person typing there gets.
+		const NodeTypeSet nodeTypes = m_machine.read(
+			[](const SearchMachine::Data& data, State) { return data.boxNodeTypes; });
+		return type(parsed->query, nodeTypes, source);
 	}
 	case Event::Select:
 	{
@@ -257,6 +289,16 @@ MachineFireResult SearchStateMachine::fire(const std::string& event, const std::
 std::string SearchMachine::context(State state, const Data& data)
 {
 	search_machine_json::SearchContext context;
+	if (!data.tokens.empty())
+	{
+		std::vector<std::string> tokens;
+		tokens.reserve(data.tokens.size());
+		for (const SearchMatch& token: data.tokens)
+		{
+			tokens.push_back(token.getFullName());
+		}
+		context.tokens = std::move(tokens);
+	}
 	if (state != State::Idle)
 	{
 		context.query = data.query;
