@@ -92,9 +92,11 @@ void QtProjectWizardContentPathCDB::refresh()
 
 	if (m_fileCountLabel)
 	{
+		const std::size_t count = getFilePaths().size();
 		m_fileCountLabel->setText(
-			"<b>" + QString::number(getFilePaths().size()) +
-			"</b> source files were found in the compilation database.");
+			"<b>" + QString::number(count) + "</b>" +
+			(count == 1 ? " source file was found in the compilation database."
+						: " source files were found in the compilation database."));
 	}
 }
 
@@ -108,9 +110,10 @@ QString QtProjectWizardContentPathCDB::getFileNamesTitle() const
 	return QStringLiteral("Source Files");
 }
 
-QString QtProjectWizardContentPathCDB::getFileNamesDescription() const
+QString QtProjectWizardContentPathCDB::getFileNamesDescription(std::size_t count) const
 {
-	return QStringLiteral(" source files will be indexed.");
+	return QString::number(count) +
+		(count == 1 ? QStringLiteral(" source file will be indexed.") : QStringLiteral(" source files will be indexed."));
 }
 
 void QtProjectWizardContentPathCDB::pickedPath()

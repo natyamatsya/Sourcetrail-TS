@@ -25,6 +25,7 @@ QtProjectWizardContentPathCMakeFileAPI::QtProjectWizardContentPathCMakeFileAPI(
 	std::shared_ptr<SourceGroupSettingsCxxCMakeFileAPI> settings, QtProjectWizardWindow* window)
 	: QtProjectWizardContent(window), m_settings(settings)
 {
+	setIsRequired(true);
 }
 
 void QtProjectWizardContentPathCMakeFileAPI::populate(QGridLayout* layout, int& row)
@@ -89,10 +90,11 @@ void QtProjectWizardContentPathCMakeFileAPI::populate(QGridLayout* layout, int& 
 			&QPushButton::clicked,
 			this,
 			&QtProjectWizardContentPathCMakeFileAPI::onRefreshPresets);
+		row++;
 
 		m_presetStatusLabel = new QLabel(QLatin1String(""), this);
 		m_presetStatusLabel->setWordWrap(true);
-		layout->addWidget(m_presetStatusLabel, row, QtProjectWizardWindow::BACK_COL, Qt::AlignLeft);
+		layout->addWidget(m_presetStatusLabel, row, QtProjectWizardWindow::BACK_COL);
 		row++;
 	}
 
@@ -136,30 +138,28 @@ bool QtProjectWizardContentPathCMakeFileAPI::check()
 		FilePath(m_sourceDirPicker->getText().toStdString()),
 		m_settings->getProjectDirectoryPath());
 
+	if (m_sourceDirPicker->getText().trimmed().isEmpty())
+	{
+		return fail(QStringLiteral("Please choose the CMake source directory."));
+	}
 	if (sourceDir.empty() || !sourceDir.exists())
 	{
-		m_presetStatusLabel->setText(
-			QStringLiteral("<span style=\"color:red\">The source directory does not exist.</span>"));
-		return false;
+		return fail(QStringLiteral("The CMake source directory \"") +
+			QString::fromStdString(sourceDir.str()) + QStringLiteral("\" does not exist."));
 	}
 
 	const QString presetName = m_presetCombo->currentText();
 	if (presetName.isEmpty())
 	{
-		m_presetStatusLabel->setText(
-			QStringLiteral("<span style=\"color:red\">Please select a configure preset.</span>"));
-		return false;
+		return fail(QStringLiteral("Please select a configure preset."));
 	}
 
 	const FilePath buildDir = CMakeFileAPIReader::resolveBinaryDir(
 		sourceDir, presetName.toStdString());
 	if (buildDir.empty())
 	{
-		m_presetStatusLabel->setText(QStringLiteral(
-			"<span style=\"color:red\">Could not resolve binary directory for preset <b>") +
-			presetName +
-			QStringLiteral("</b>. Check that CMakePresets.json defines a <tt>binaryDir</tt>.</span>"));
-		return false;
+		return fail(QStringLiteral("Could not resolve the binary directory for preset \"") + presetName +
+			QStringLiteral("\". Check that CMakePresets.json defines a binaryDir."));
 	}
 
 	m_presetStatusLabel->setText(
@@ -167,6 +167,15 @@ bool QtProjectWizardContentPathCMakeFileAPI::check()
 		QString::fromStdString(buildDir.str()) +
 		QStringLiteral("</tt>"));
 	return true;
+}
+
+bool QtProjectWizardContentPathCMakeFileAPI::fail(const QString& message)
+{
+	// Next to the fields, and as the dialog every other page shows (which agent control reports).
+	m_presetStatusLabel->setText(
+		QStringLiteral("<span style=\"color:red\">") + message.toHtmlEscaped() + QStringLiteral("</span>"));
+	m_window->tell(message);
+	return false;
 }
 
 void QtProjectWizardContentPathCMakeFileAPI::onSourceDirChanged(const QString& text)

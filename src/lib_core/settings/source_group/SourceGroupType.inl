@@ -59,6 +59,29 @@ inline std::string sourceGroupTypeToProjectSetupString(SourceGroupType v)
 	return "unknown";
 }
 
+inline std::string sourceGroupTypeToDefaultName(SourceGroupType v)
+{
+	// The type's own string is what project files store; some of those read as names
+	// ("C++ Source Group"), others do not ("Rust Empty").
+	switch (v)
+	{
+	case SourceGroupType::RUST_EMPTY:
+		return "Rust Source Group";
+	case SourceGroupType::SWIFT_EMPTY:
+		return "Swift Source Group";
+	case SourceGroupType::ZIG_EMPTY:
+		return "Zig Source Group";
+	case SourceGroupType::C_EMPTY:
+	case SourceGroupType::CXX_EMPTY:
+	case SourceGroupType::CXX_CDB:
+	case SourceGroupType::CXX_CMAKE_FILE_API:
+	case SourceGroupType::CUSTOM_COMMAND:
+	case SourceGroupType::UNKNOWN:
+		break;
+	}
+	return sourceGroupTypeToString(v);
+}
+
 inline SourceGroupType stringToSourceGroupType(const std::string& v)
 {
 	if (v == sourceGroupTypeToString(SourceGroupType::C_EMPTY))

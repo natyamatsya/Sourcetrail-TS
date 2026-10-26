@@ -3,10 +3,30 @@
 #include <QCheckBox>
 #include <QComboBox>
 #include <QLabel>
+#include <QSysInfo>
 
 #include "SourceGroupSettingsWithCxxCrossCompilationOptions.h"
 #include "ToolChain.h"
 #include "logging.h"
+
+namespace
+{
+// This machine's architecture, as LLVM's target triples name it: the target a project has unless
+// it is cross-compiled.
+QString hostArchType()
+{
+	const QString arch = QSysInfo::currentCpuArchitecture();
+	if (arch == QLatin1String("arm64"))
+	{
+		return QStringLiteral("aarch64");
+	}
+	if (arch == QLatin1String("i386"))
+	{
+		return QStringLiteral("x86");
+	}
+	return arch;
+}
+}	 // namespace
 
 QtProjectWizardContentCrossCompilationOptions::QtProjectWizardContentCrossCompilationOptions(
 	std::shared_ptr<SourceGroupSettingsWithCxxCrossCompilationOptions> sourceGroupSettings,
@@ -67,7 +87,8 @@ void QtProjectWizardContentCrossCompilationOptions::populate(QGridLayout* layout
 		{
 			m_arch->insertItem(static_cast<int>(i), QString::fromStdString(archTypes[i]));
 		}
-		m_arch->setCurrentIndex(m_arch->findText("x86_64"));
+		const int hostArch = m_arch->findText(hostArchType());
+		m_arch->setCurrentIndex(hostArch != -1 ? hostArch : m_arch->findText(QStringLiteral("x86_64")));
 
 		gridLayout->addWidget(label, 0, 0, Qt::AlignRight);
 		gridLayout->addWidget(m_arch, 0, 1, Qt::AlignLeft);

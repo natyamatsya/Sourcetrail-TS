@@ -109,7 +109,8 @@ QString QtProjectWizardContentPathsSource::getFileNamesTitle() const
 	return QStringLiteral("Indexed Files");
 }
 
-QString QtProjectWizardContentPathsSource::getFileNamesDescription() const
+QString QtProjectWizardContentPathsSource::getFileNamesDescription(std::size_t count) const
 {
-	return QStringLiteral(" files will be indexed.");
+	return QString::number(count) +
+		(count == 1 ? QStringLiteral(" file will be indexed.") : QStringLiteral(" files will be indexed."));
 }

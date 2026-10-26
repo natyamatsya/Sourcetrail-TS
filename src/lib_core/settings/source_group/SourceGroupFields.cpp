@@ -197,6 +197,10 @@ const std::vector<Field>& fields()
 			"cargo_target_triple",
 			[](const Cargo& c) { return c.getCargoTargetTriple(); },
 			[](Cargo& c, const std::string& v) { c.setCargoTargetTriple(v); }),
+		field<Cargo, std::string>(
+			"rust_specialization_scope",
+			[](const Cargo& c) { return c.getRustSpecializationScope(); },
+			[](Cargo& c, const std::string& v) { c.setRustSpecializationScope(v); }),
 		pathField<Swift>(
 			"swift_toolchain",
 			[](const Swift& c) { return c.getSwiftToolchainPath(); },

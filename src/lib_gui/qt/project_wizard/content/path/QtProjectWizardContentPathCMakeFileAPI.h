@@ -29,6 +29,8 @@ private slots:
 
 private:
 	void repopulatePresets(const QString& sourceDir);
+	// Shows why the check failed; always false.
+	bool fail(const QString& message);
 
 	std::shared_ptr<SourceGroupSettingsCxxCMakeFileAPI> m_settings;
 

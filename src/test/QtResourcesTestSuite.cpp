@@ -91,6 +91,7 @@ const char *resourceNames[] = {
 	QtResources::HISTORY_LIST_ARROW,
 
 	QtResources::ICON_CDB_ICON,
+	QtResources::ICON_CMAKE_ICON,
 	QtResources::ICON_C_ICON,
 	QtResources::ICON_CPP_ICON,
 	QtResources::ICON_EMPTY_ICON,

@@ -18,7 +18,7 @@ public:
 
 	std::vector<FilePath> getFilePaths() const override;
 	QString getFileNamesTitle() const override;
-	QString getFileNamesDescription() const override;
+	QString getFileNamesDescription(std::size_t count) const override;
 };
 
 #endif	  // QT_PROJECT_WIZARD_CONTENT_PATHS_SOURCE_H

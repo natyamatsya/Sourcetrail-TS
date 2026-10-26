@@ -50,9 +50,9 @@ QString QtProjectWizardContent::getFileNamesTitle() const
 	return QStringLiteral("File List");
 }
 
-QString QtProjectWizardContent::getFileNamesDescription() const
+QString QtProjectWizardContent::getFileNamesDescription(std::size_t count) const
 {
-	return QStringLiteral("files");
+	return QString::number(count) + (count == 1 ? QStringLiteral(" file") : QStringLiteral(" files"));
 }
 
 bool QtProjectWizardContent::isRequired() const
@@ -159,7 +159,7 @@ void QtProjectWizardContent::showFilesDialog(const std::vector<FilePath>& filePa
 	{
 		m_filesDialog = new QtTextEditDialog(
 			getFileNamesTitle(),
-			QString::number(filePaths.size()) + " " + getFileNamesDescription(),
+			getFileNamesDescription(filePaths.size()),
 			m_window);
 		m_filesDialog->setup();
 

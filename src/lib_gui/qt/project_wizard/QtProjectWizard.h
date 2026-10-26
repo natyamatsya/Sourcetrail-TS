@@ -12,6 +12,7 @@
 #include "QtWindow.h"
 
 class QListWidget;
+class QScrollArea;
 class QPushButton;
 class QtProjectWizardContent;
 class QtProjectWizardContentGroup;
@@ -77,6 +78,7 @@ private:
 	QPushButton* m_duplicateButton;
 	QListWidget* m_sourceGroupList;
 	QWidget* m_contentWidget = nullptr;
+	QScrollArea* m_formArea = nullptr;
 
 private slots:
 	void generalButtonClicked();

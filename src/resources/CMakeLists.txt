@@ -76,6 +76,7 @@ qt_add_resources(Sourcetrail_res_gui Sourcetrail_resources
 		history_list/images/arrow.png
 		
 		icon/cdb_icon.png
+		icon/cmake_icon.png
 		icon/c_icon.png
 		icon/cpp_icon.png
 		icon/empty_icon.png

@@ -29,7 +29,8 @@ public:
 
 	virtual std::vector<FilePath> getFilePaths() const;
 	virtual QString getFileNamesTitle() const;
-	virtual QString getFileNamesDescription() const;
+	// The count of files the list shows, as a sentence for its header.
+	virtual QString getFileNamesDescription(std::size_t count) const;
 
 	bool isRequired() const;
 	void setIsRequired(bool isRequired);

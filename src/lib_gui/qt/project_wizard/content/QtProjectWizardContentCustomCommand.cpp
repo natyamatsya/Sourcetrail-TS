@@ -19,8 +19,9 @@ import srctrl.settings;
 
 QtProjectWizardContentCustomCommand::QtProjectWizardContentCustomCommand(
 	std::shared_ptr<SourceGroupSettingsCustomCommand> settings, QtProjectWizardWindow* window)
-	: QtProjectWizardContent(window), m_settings(settings) 
+	: QtProjectWizardContent(window), m_settings(settings)
 {
+	setIsRequired(true);
 }
 
 void QtProjectWizardContentCustomCommand::populate(QGridLayout* layout, int& row)

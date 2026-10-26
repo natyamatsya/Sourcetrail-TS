@@ -22,8 +22,7 @@ inline SourceGroupSettings::SourceGroupSettings(
 	: m_projectSettings(projectSettings)
 	, m_type(type)
 	, m_id(id)
-	, m_name(sourceGroupTypeToString(type))
-	 
+	, m_name(sourceGroupTypeToDefaultName(type))
 {
 }
 

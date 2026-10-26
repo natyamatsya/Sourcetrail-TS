@@ -33,6 +33,8 @@ Q_DECLARE_METATYPE(SourceGroupType)
 
 SRCTRL_EXPORT std::string sourceGroupTypeToString(SourceGroupType v);
 SRCTRL_EXPORT std::string sourceGroupTypeToProjectSetupString(SourceGroupType v);
+// The name a new source group of the type starts with.
+SRCTRL_EXPORT std::string sourceGroupTypeToDefaultName(SourceGroupType v);
 SRCTRL_EXPORT SourceGroupType stringToSourceGroupType(const std::string& v);
 
 #include "SourceGroupType.inl"

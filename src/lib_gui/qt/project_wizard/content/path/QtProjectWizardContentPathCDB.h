@@ -23,7 +23,7 @@ public:
 
 	std::vector<FilePath> getFilePaths() const override;
 	QString getFileNamesTitle() const override;
-	QString getFileNamesDescription() const override;
+	QString getFileNamesDescription(std::size_t count) const override;
 
 private slots:
 	void pickedPath();

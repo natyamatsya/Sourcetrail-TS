@@ -58,6 +58,7 @@ void QtProjectWizardContentSelect::populate(QGridLayout* layout, int&  /*row*/)
 	if constexpr (language_packages::buildCxxLanguagePackage)
 	{
 		sourceGroupInfos[LanguageType::C].push_back(SourceGroupInfo(SourceGroupType::CXX_CDB, true));
+		sourceGroupInfos[LanguageType::C].push_back(SourceGroupInfo(SourceGroupType::CXX_CMAKE_FILE_API));
 		sourceGroupInfos[LanguageType::C].push_back(SourceGroupInfo(SourceGroupType::C_EMPTY));
 		sourceGroupInfos[LanguageType::CXX].push_back(SourceGroupInfo(SourceGroupType::CXX_CDB, true));
 		sourceGroupInfos[LanguageType::CXX].push_back(SourceGroupInfo(SourceGroupType::CXX_CMAKE_FILE_API));
@@ -76,7 +77,7 @@ void QtProjectWizardContentSelect::populate(QGridLayout* layout, int&  /*row*/)
 		m_sourceGroupTypeIconName[SourceGroupType::C_EMPTY]            = QtResources::ICON_EMPTY_ICON;
 		m_sourceGroupTypeIconName[SourceGroupType::CXX_EMPTY]          = QtResources::ICON_EMPTY_ICON;
 		m_sourceGroupTypeIconName[SourceGroupType::CXX_CDB]            = QtResources::ICON_CDB_ICON;
-		m_sourceGroupTypeIconName[SourceGroupType::CXX_CMAKE_FILE_API] = QtResources::ICON_CDB_ICON;
+		m_sourceGroupTypeIconName[SourceGroupType::CXX_CMAKE_FILE_API] = QtResources::ICON_CMAKE_ICON;
 	}
 	if constexpr (language_packages::buildRustLanguagePackage)
 		m_sourceGroupTypeIconName[SourceGroupType::RUST_EMPTY] = QtResources::ICON_EMPTY_ICON;

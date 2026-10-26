@@ -75,6 +75,7 @@ public:
 	static const char HISTORY_LIST_ARROW[];
 
 	static const char ICON_CDB_ICON[];
+	static const char ICON_CMAKE_ICON[];
 	static const char ICON_C_ICON[];
 	static const char ICON_CPP_ICON[];
 	static const char ICON_EMPTY_ICON[];

@@ -39,6 +39,7 @@
 #include <QListWidget>
 #include <QScopedValueRollback>
 #include <QScrollArea>
+#include <QScrollBar>
 #include <QSysInfo>
 #include <QTimer>
 
@@ -322,7 +323,7 @@ QtProjectWizard::~QtProjectWizard()
 
 QSize QtProjectWizard::sizeHint() const
 {
-	return QSize(900, 600);
+	return QSize(930, 600);
 }
 
 void QtProjectWizard::newProject()
@@ -385,7 +386,7 @@ void QtProjectWizard::populateWindow(QWidget* widget)
 	{
 		QWidget* menu = new QWidget();
 		menu->setObjectName(QStringLiteral("project_menu"));
-		menu->setFixedWidth(200);
+		menu->setFixedWidth(230);
 		layout->addWidget(menu);
 
 		QVBoxLayout* menuLayout = new QVBoxLayout(menu);
@@ -403,6 +404,8 @@ void QtProjectWizard::populateWindow(QWidget* widget)
 
 		m_sourceGroupList = new QListWidget();
 		m_sourceGroupList->setAttribute(Qt::WA_MacShowFocusRect, false);
+		m_sourceGroupList->setHorizontalScrollBarPolicy(Qt::ScrollBarAlwaysOff);
+		m_sourceGroupList->setTextElideMode(Qt::ElideRight);
 		connect(
 			m_sourceGroupList,
 			&QListWidget::currentRowChanged,
@@ -465,13 +468,13 @@ void QtProjectWizard::populateWindow(QWidget* widget)
 	m_contentWidget = new QWidget();
 	m_contentWidget->setObjectName(QStringLiteral("form"));
 
-	QScrollArea* scrollArea = new QScrollArea();
-	scrollArea->setFrameShadow(QFrame::Plain);
-	scrollArea->setObjectName(QStringLiteral("formArea"));
-	scrollArea->setWidgetResizable(true);
+	m_formArea = new QScrollArea();
+	m_formArea->setFrameShadow(QFrame::Plain);
+	m_formArea->setObjectName(QStringLiteral("formArea"));
+	m_formArea->setWidgetResizable(true);
 
-	scrollArea->setWidget(m_contentWidget);
-	layout->addWidget(scrollArea);
+	m_formArea->setWidget(m_contentWidget);
+	layout->addWidget(m_formArea);
 
 	widget->setLayout(layout);
 }
@@ -547,6 +550,7 @@ void QtProjectWizard::updateSourceGroupList()
 		}
 
 		QListWidgetItem* item = new QListWidgetItem(name);
+		item->setToolTip(name);
 		m_sourceGroupList->addItem(item);
 	}
 	m_sourceGroupList->blockSignals(false);
@@ -592,6 +596,7 @@ void QtProjectWizard::generalButtonClicked()
 
 	qDeleteAll(m_contentWidget->children());
 	QtProjectWizardWindow::populateWindow(m_contentWidget);
+	m_formArea->verticalScrollBar()->setValue(0);	 // a new page starts at its top
 
 	loadContent();
 
@@ -701,6 +706,7 @@ void QtProjectWizard::selectedSourceGroupChanged(int index)
 
 	qDeleteAll(m_contentWidget->children());
 	QtProjectWizardWindow::populateWindow(m_contentWidget);
+	m_formArea->verticalScrollBar()->setValue(0);	 // a new page starts at its top
 
 	loadContent();
 
@@ -711,7 +717,9 @@ void QtProjectWizard::selectedSourceGroupChanged(int index)
 
 void QtProjectWizard::selectedSourceGroupNameChanged(const QString& name)
 {
-	m_sourceGroupList->item(m_sourceGroupList->currentRow())->setText(name);
+	QListWidgetItem* item = m_sourceGroupList->item(m_sourceGroupList->currentRow());
+	item->setText(name);
+	item->setToolTip(name);
 }
 
 void QtProjectWizard::removeSelectedSourceGroup()
@@ -952,6 +960,9 @@ void QtProjectWizard::createSourceGroup(std::shared_ptr<SourceGroupSettings> set
 
 	setNextEnabled(true);
 
+	// The page shown was checked and saved before the type was chosen; selecting the new group
+	// must not check it (and ask its questions) a second time.
+	setContent(nullptr);
 	m_previouslySelectedIndex = -1;
 
 	m_sourceGroupList->setCurrentRow(static_cast<int>(m_allSourceGroupSettings.size()) - 1);
@@ -1059,6 +1070,15 @@ void QtProjectWizard::apply(const ProjectWizardRequest& request)
 		if (m_editing && (request.projectName || request.projectLocation))
 		{
 			machine->failed(view(), "the name and location of a project are fixed once it exists");
+			return;
+		}
+		if (request.projectName &&
+			!QtProjectWizardContentProjectData::isValidProjectName(QString::fromStdString(*request.projectName)))
+		{
+			machine->failed(
+				view(),
+				"the project name is not a valid file name: letters, digits, '.', '_' and '-' only, "
+				"not starting with '-'");
 			return;
 		}
 		if (content())
