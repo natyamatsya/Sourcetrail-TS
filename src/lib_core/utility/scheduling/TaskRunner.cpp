@@ -1,23 +1,9 @@
 #include "TaskRunner.h"
 
 #include "Blackboard.h"
-#include "MessageCause.h"
-#include "TaskManager.h"
-#include "TaskScheduler.h"
 #include "logging.h"
 
-TaskRunner::TaskRunner(std::shared_ptr<Task> task): m_task(task), m_cause(currentCause()) {}
-
-Task::TaskState TaskRunner::update(TabId schedulerId)
-{
-	if (!m_blackboard)
-	{
-		m_blackboard = std::make_shared<Blackboard>();
-		m_blackboard->set<TabId>("scheduler_id", schedulerId);
-	}
-
-	return update(m_blackboard);
-}
+TaskRunner::TaskRunner(std::shared_ptr<Task> task): m_task(task) {}
 
 Task::TaskState TaskRunner::update(std::shared_ptr<Blackboard> blackboard)
 {
@@ -51,12 +37,6 @@ Task::TaskState TaskRunner::update(std::shared_ptr<Blackboard> blackboard)
 		LOG_ERROR("Unknown exception thrown during task running");
 	}
 
-	TabId schedulerId = TabId::NONE;
-	if (blackboard->get<TabId>("scheduler_id", schedulerId))
-	{
-		TaskManager::getScheduler(schedulerId)->terminateRunningTasks();
-	}
-
 	return STATE_FAILURE;
 }
 
@@ -78,21 +58,6 @@ void TaskRunner::unpark()
 bool TaskRunner::isParked() const
 {
 	return m_parked;
-}
-
-void TaskRunner::setHoldsQueue(bool holds)
-{
-	m_holdsQueue = holds;
-}
-
-bool TaskRunner::holdsQueue() const
-{
-	return m_holdsQueue;
-}
-
-std::uint64_t TaskRunner::cause() const
-{
-	return m_cause;
 }
 
 void TaskRunner::terminate()

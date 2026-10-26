@@ -1,23 +1,5 @@
 #include "Task.h"
 
-#include "TaskManager.h"
-#include "TaskScheduler.h"
-
-void Task::dispatch(TabId schedulerId, std::shared_ptr<Task> task)
-{
-	TaskManager::getScheduler(schedulerId)->pushTask(task);
-}
-
-void Task::dispatchNext(TabId schedulerId, std::shared_ptr<Task> task)
-{
-	TaskManager::getScheduler(schedulerId)->pushNextTask(task);
-}
-
-void Task::setIsBackgroundTask(bool background)
-{
-	m_isBackgroundTask = background;
-}
-
 Task::TaskState Task::update(std::shared_ptr<Blackboard> blackboard)
 {
 	using enum Task::TaskState;
@@ -27,12 +9,7 @@ Task::TaskState Task::update(std::shared_ptr<Blackboard> blackboard)
 		m_enterCalled = true;
 	}
 
-	TaskState state = doUpdate(blackboard);
-
-	if (m_isBackgroundTask && state == STATE_RUNNING)
-	{
-		state = STATE_HOLD;
-	}
+	const TaskState state = doUpdate(blackboard);
 
 	if ((state == STATE_SUCCESS || state == STATE_FAILURE) && !m_exitCalled)
 	{

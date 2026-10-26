@@ -699,9 +699,8 @@ drives through the same events:
   `prepare`, `begin`, `wrap_up`, `report`, `end`), so the machine never guesses from
   dialog titles. The report holds no thread while it waits for the decision: it goes
   to a callback, and `TaskFinishParsing` parks until the decision wakes it
-  (`TaskScheduler::parkCurrentTask`), as `TaskGroupParallel` parks until a child ends;
-  a parked task is left out of the scheduler's passes, and a thread loop looks at it
-  again each `threadLoopInterval`.
+  (`TaskParking::parkCurrentTask`); the sender running it (`execution::runTask`) gives
+  a parked task no turn until it is woken.
 
 **DialogView became the presenter.** The pipeline still calls `DialogView`
 (`startIndexingDialog`, `confirm`, `finishedIndexingDialog`, the progress updates),
@@ -783,8 +782,8 @@ commands and watch it.
   messages that change those views (`changesViews`: the activations, the history, graph
   expand/hide/bundle split, the code view's references and scrolls): `started` when one is
   pushed to the buffer or processed right away, `handled` once all its listeners have run.
-  In task mode that is a `TaskFinally` around the listeners' task group, plus a guard for
-  tasks a scheduler drops unrun; a followed message a filter drops counts as handled. What
+  In task mode that is the end of the listeners' item on their serial queue, or the queue
+  dropping it unrun; a followed message a filter drops counts as handled. What
   a listener dispatches on the way is counted before the message that dispatched it ends,
   so a whole activation (MessageActivateNodes → MessageActivateTokens, a search →
   MessageActivateOverview, Back → the replayed history) is one stretch of `activating`.

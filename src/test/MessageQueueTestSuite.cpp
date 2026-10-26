@@ -14,8 +14,6 @@
 #include "StdexecPrelude.h"
 #include "Strand.h"
 #include "TabIds.h"
-#include "TaskManager.h"
-#include "TaskScheduler.h"
 #ifndef SRCTRL_MODULE_BUILD
 #include "Message.h"
 #include "MessageListener.h"

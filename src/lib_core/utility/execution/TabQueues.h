@@ -8,8 +8,8 @@
  *
  * Each id a message or a piece of work is scheduled on (TabIds::app(), the
  * background, each tab) has a SerialQueue: a message's listeners run there as
- * one item (MessageQueue), and so does work posted there. The indexer's task
- * trees keep the app's TaskScheduler.
+ * one item (MessageQueue), and so does work posted there. The indexing pipeline
+ * runs its tasks as senders (execution::runTask).
  */
 //-----------------------------------------------------------------------
 

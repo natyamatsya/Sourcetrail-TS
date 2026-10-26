@@ -60,3 +60,13 @@ converted exactly once at the existing boundaries and never used for control flo
   environment via the env var rather than lowering the default.
 - `TaskFinally` is generic scheduling infrastructure; unit-tested for
   success/failure/throw/terminate and fire-once (`TaskSchedulerTestSuite`).
+
+## Update (2026-10-26): the root is the pipeline coroutine
+
+The decision stands; its mechanism moved. The indexing pipeline is no longer a dispatched task
+tree but a coroutine of senders (`Project::startIndexing`, each stage run by
+`execution::runTask`), and `TaskFinally` is gone with the task scheduler. The coroutine's
+completion is now the root: its value (success or a failed stage), its error (a throw) and its
+stop (termination) each dispatch exactly one `MessageIndexingFinished`. A throwing stage still
+becomes `STATE_FAILURE` at its `TaskRunner`; that conversion is unit-tested in
+`TaskTestSuite`.

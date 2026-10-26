@@ -199,7 +199,6 @@ if(SOURCETRAIL_CXX_MODULES_ENABLED)
 		"${CMAKE_CURRENT_SOURCE_DIR}/utility/commandline/commands/CommandlineCommandIndex.cpp"
 		"${CMAKE_CURRENT_SOURCE_DIR}/utility/commandline/commands/CommandlineCommandMerge.cpp"
 		"${CMAKE_CURRENT_SOURCE_DIR}/utility/logging/LogManagerNotifier.cpp"
-		"${CMAKE_CURRENT_SOURCE_DIR}/utility/scheduling/TaskScheduler.cpp"
 	)
 	# On MSVC, TUs that import a classic-on-Windows module (storage/messaging/indexer/interprocess)
 	# compile fully classic instead of importing. No-op elsewhere.

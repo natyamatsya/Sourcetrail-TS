@@ -32,9 +32,9 @@ void TaskFinishParsing::terminate()
 	m_dialogView->clearDialogs();
 
 	MessageStatus("An unknown exception was thrown during indexing.", true, false).dispatch();
-	// The terminal MessageIndexingFinished is owned by the pipeline root (the TaskFinally wrapped
-	// around the whole tree in Project::buildIndexImpl) -- dispatching it here too would double
-	// the terminal event on termination.
+	// The terminal MessageIndexingFinished of a terminated run comes from the pipeline's owner
+	// (Project::startIndexing, as the run completes stopped) -- dispatching it here too would
+	// double the terminal event.
 }
 
 void TaskFinishParsing::doEnter(std::shared_ptr<Blackboard>  /*blackboard*/)

@@ -1,6 +1,6 @@
 #include "TaskBuildIndex.h"
 
-#include "TaskScheduler.h"
+#include "TaskParking.h"
 
 #include "language_package_flags.h"
 #include "AppPath.h"
@@ -398,7 +398,7 @@ Task::TaskState TaskBuildIndex::doUpdate(std::shared_ptr<Blackboard> blackboard)
 			m_lastWatchdogLogTime = now;
 		}
 
-		TaskScheduler::restFor(std::chrono::milliseconds(50));	// parked meanwhile
+		TaskParking::restFor(std::chrono::milliseconds(50));	// parked meanwhile
 
 		return STATE_RUNNING;
 	}

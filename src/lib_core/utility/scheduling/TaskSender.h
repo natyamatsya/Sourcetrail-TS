@@ -56,7 +56,7 @@ private:
 //! Runs `task` with `blackboard` to its end, as a sender of how it ended
 //! (STATE_SUCCESS or STATE_FAILURE; a throw is a failure), on a strand of its own over
 //! the work pool: its updates in turns, a few at a time, and while it waits parked
-//! (TaskScheduler::parkCurrentTask, restFor) it holds no thread. `reset`: it ran
+//! (TaskParking::parkCurrentTask, restFor) it holds no thread. `reset`: it ran
 //! before and runs again. On behalf of the cause current as it is made. Stopping it
 //! terminates the task: it completes with set_stopped.
 class TaskSender

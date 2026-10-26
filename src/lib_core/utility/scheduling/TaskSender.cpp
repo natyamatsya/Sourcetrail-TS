@@ -1,6 +1,6 @@
 #include "TaskSender.h"
 
-#include "TaskScheduler.h"
+#include "TaskParking.h"
 
 namespace execution
 {
@@ -67,7 +67,7 @@ void TaskDriver::turn()
 	const CauseScope cause(m_cause);
 	for (int update = 0; update < updatesPerTurn; update++)
 	{
-		const Task::TaskState state = TaskScheduler::updateDriven(m_runner, wake, m_blackboard);
+		const Task::TaskState state = TaskParking::updateDriven(m_runner, wake, m_blackboard);
 		if (state == STATE_SUCCESS || state == STATE_FAILURE)
 		{
 			finish(state);

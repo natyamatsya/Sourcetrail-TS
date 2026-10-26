@@ -5,12 +5,12 @@
 #include <mutex>
 #include <utility>
 
-#include "TaskScheduler.h"
+#include "TaskParking.h"
 
 // A task that waits for something other threads bring about (its children ending, a
 // decision): in its update it asks waitUntil(done); the others call notify() once what
 // `done` reads has changed. Until then the task is parked, holding no thread
-// (TaskScheduler::parkCurrentTask), or, where nothing parks it, it waits a look.
+// (TaskParking::parkCurrentTask), or, where nothing parks it, it waits a look.
 class TaskWake
 {
 public:
@@ -23,11 +23,11 @@ public:
 		{
 			return true;
 		}
-		m_wake = TaskScheduler::parkCurrentTask();
+		m_wake = TaskParking::parkCurrentTask();
 		if (!m_wake)
 		{
 			lock.unlock();
-			TaskScheduler::waitForNextLook();
+			TaskParking::waitForNextLook();
 		}
 		return false;
 	}

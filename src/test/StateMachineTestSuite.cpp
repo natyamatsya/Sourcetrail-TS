@@ -28,8 +28,6 @@
 #include "StateMachine.h"
 #include "TabIds.h"
 #include "TabQueues.h"
-#include "TaskManager.h"
-#include "TaskScheduler.h"
 
 namespace
 {

@@ -1,6 +1,6 @@
 #include "TaskFillIndexerCommandQueue.h"
 
-#include "TaskScheduler.h"
+#include "TaskParking.h"
 
 #include <algorithm>
 #include <map>
@@ -116,7 +116,7 @@ Task::TaskState TaskFillIndexerCommandsQueue::doUpdate(std::shared_ptr<Blackboar
 		}
 	}
 
-	TaskScheduler::restFor(std::chrono::milliseconds(200));	// parked meanwhile
+	TaskParking::restFor(std::chrono::milliseconds(200));	// parked meanwhile
 
 	return STATE_RUNNING;
 }

@@ -67,15 +67,14 @@ small pool of its own.
 *Done:* a message's listeners are one item of its tab id's serial queue, a parallel
 message's run as senders on `compute()` (no thread per listener); the work handlers
 posted to a scheduler as a `TaskLambda` is posted to the queue; `Settled` comes from
-the work's completion (`CauseWork`). `TaskScheduler` is left with the indexer's task
-trees, on the app's strand beside the app's queue, where `TaskLambda` remains a step
-of a tree. Left for Phase 3: those trees (their parallel groups run on the work pool now)
-and the remaining `std::thread` sites.
+the work's completion (`CauseWork`). Phase 3 then took the indexer's task trees off
+the last `TaskScheduler`, which is gone (see below).
 
 ## Later — subsystem migration (Phase 3+)
 
 Incrementally replace the remaining old-async users with sender pipelines, then
-retire `Task`/`TaskScheduler`/`TaskGroup*` entirely:
+retire `Task`/`TaskScheduler`/`TaskGroup*` entirely. *Done:* `TaskScheduler`,
+`TaskManager` and the composite tasks; `Task` remains as the unit a sender runs.
 
 - **Indexer**: `TaskBuildIndex` (cancellation already stdexec), `TaskMergeStorages`,
   `TaskInjectStorage`, `TaskFillIndexerCommandQueue`.
@@ -83,22 +82,37 @@ retire `Task`/`TaskScheduler`/`TaskGroup*` entirely:
   (`execution::workPool()`, the app's compute pool), in turns, instead of a thread per
   child. The children wait parked, holding no thread: merge and inject until the
   `StorageProvider` reports a change, the polls (`TaskDecoratorRepeat`'s delay, the
-  command queue's refill, the build's progress) with `TaskScheduler::restFor` on a
-  timer. A driver other than a scheduler gives its runner parking through
-  `TaskScheduler::updateDriven`.
+  command queue's refill, the build's progress) with `TaskParking::restFor` on a
+  timer. A driver gives its runner parking through `TaskParking::updateDriven`.
   *Done:* `TaskBuildIndex` supervises its indexer subprocesses from one thread, a
   `ProcessMonitor` (a Qt event loop that starts the processes and reports each one's
   end), instead of a thread per subprocess blocked in `executeProcess`: relaunching,
   the failure streak and the 200 ms pauses (on the timer) are callbacks there.
-  Left: the trees themselves as senders, and `fetchIntermediateStorages`' 50 ms
-  back-pressure sleep.
+  *Done:* the writer's back-pressure holds what it drained while the provider is
+  full and hands it on as the provider empties, without a sleep.
+  *Done:* the pipeline is a coroutine of senders (`Project::startIndexing`): each
+  step runs as `execution::runTask(task, blackboard)` (`TaskSender.h`, a strand of
+  its own over the work pool, turns while it runs, nothing while it waits parked;
+  stopping it terminates the task). The parallel stage is a `when_all` of streams
+  (the build; merge; inject; the rest of inject), the repeats are loops with
+  `execution::delay`, and its completion dispatches the run's one terminal
+  `MessageIndexingFinished` (ADR-0008) and posts the swap to the app's queue.
+  `TaskGroupParallel`, `TaskGroupSelector`, `TaskDecorator*`, `TaskFinally`,
+  `TaskSetValue`, `TaskReturnSuccessIf`, `TaskFindKeyOnBlackboard`, `TaskParseWrapper`,
+  `TaskScheduler` and `TaskManager` are deleted. `TaskGroupSequence` and `TaskLambda`
+  stay for the pre-index tasks a source group hands in, run as one step.
 - **Storage**: bulk writes already use `exec::static_thread_pool`
   (`ConcurrentTursoWriter`); fold the surrounding `Task` wrappers into senders.
 - **GUI**: header-search `std::thread`s (`QtProjectWizardContent*`) → `io()` +
-  `onUi` for results.
+  `onUi` for results. *Done:* the wizard's searches run on the work pool
+  (`execution::runOnWorkPool`).
 
-~54 `std::thread` sites and ~20 `TaskGroupParallel` call sites are the long tail
-here; this is the bulk of the work and can proceed subsystem-by-subsystem.
+*Done:* the short-lived `std::thread` sites are gone: the full-text search and its
+index build and the custom commands use `execution::parallelFor` (the caller takes
+parts too), and the state machines' timeouts use the shared timer
+(`execution::afterDelay`). Left are long-lived threads that block by design: the
+message loop, the agent-control reader, and `ProcessMonitor`'s thread (with a thread
+per process only where there is no Qt application, in tests).
 
 ## Explicitly out of scope
 

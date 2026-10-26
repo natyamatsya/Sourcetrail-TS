@@ -13,9 +13,9 @@
 
 #endif
 
-// The single terminal event of an indexing run. Dispatched exactly once per run: by the final
-// pipeline stage on success, or by the pipeline's owner (Project's exception boundary / the
-// root TaskFinally decorator) on failure or termination. Headless mode maps `outcome` to the
+// The single terminal event of an indexing run. Dispatched exactly once per run, by the
+// pipeline's owner: as the pipeline coroutine completes (Project::startIndexing; success,
+// failure or termination), or at Project's exception boundary. Headless mode maps `outcome` to the
 // process exit code.
 SRCTRL_EXPORT class MessageIndexingFinished: public Message<MessageIndexingFinished>
 {
