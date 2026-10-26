@@ -363,7 +363,8 @@ visible widgets carry is refused, saying so.
 
 ui_query { query, instance? } -> the ui_snapshot shape, roots = the matches
   JSONPath (RFC 9535) evaluated in the app over the accessibility tree, so only matches \
-cross the wire. Example: $.roots..[?(@.role=='button' && @.name=='OK')]. Matches carry \
+cross the wire. Example: $.roots..[?(@.role=='button' && @.name=='OK')]; filters reach \
+nested members too: [?(@.ref.object_name=='search_button')], [?(@.rect.w > 600)]. Matches carry \
 their state bits as in ui_snapshot (checked, disabled, ...); a match comes without its \
 children (children: [] even when it has some): select them with .children[*], e.g. \
 $.roots..[?(@.role=='list' && @.name=='Targets')].children[*] for a list's items (Toggle \
