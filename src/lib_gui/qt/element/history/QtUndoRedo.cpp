@@ -30,16 +30,19 @@ QtUndoRedo::QtUndoRedo()
 	m_undoButton = new QtSearchBarButton(QtResources::UNDOREDO_VIEW_ARROW_LEFT);
 	m_undoButton->setObjectName(QStringLiteral("undo_button"));
 	m_undoButton->setToolTip(QtActions::back().tooltip());
+	m_undoButton->setAccessibleName(QtActions::back().name());
 	m_undoButton->setEnabled(false);
 
 	m_historyButton = new QtSearchBarButton(QtResources::UNDOREDO_VIEW_HISTORY);
 	m_historyButton->setObjectName(QStringLiteral("history_button"));
 	m_historyButton->setToolTip(tr("History"));
+	m_historyButton->setAccessibleName(tr("History"));
 	m_historyButton->setEnabled(false);
 
 	m_redoButton = new QtSearchBarButton(QtResources::UNDOREDO_VIEW_ARROW_RIGHT);
 	m_redoButton->setObjectName(QStringLiteral("redo_button"));
 	m_redoButton->setToolTip(QtActions::forward().tooltip());
+	m_redoButton->setAccessibleName(QtActions::forward().name());
 	m_redoButton->setEnabled(false);
 
 	QBoxLayout* layout = new QHBoxLayout();

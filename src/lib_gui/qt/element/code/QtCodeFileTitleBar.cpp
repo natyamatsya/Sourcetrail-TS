@@ -109,6 +109,7 @@ QtCodeFileTitleBar::QtCodeFileTitleBar(QWidget* parent, bool isHovering, bool is
 	m_snippetButton->addState(
 		STATE_DISABLED, QtResources::CODE_VIEW_SNIPPET_INACTIVE);
 	m_snippetButton->setToolTip(QStringLiteral("show snippets"));
+	m_snippetButton->setAccessibleName(tr("Show Snippets"));
 
 	m_maximizeButton = new QtIconStateButton(this);
 	m_maximizeButton->addState(
@@ -120,6 +121,7 @@ QtCodeFileTitleBar::QtCodeFileTitleBar(QWidget* parent, bool isHovering, bool is
 	m_maximizeButton->addState(
 		STATE_DISABLED, QtResources::CODE_VIEW_MAXIMIZE_INACTIVE);
 	m_maximizeButton->setToolTip(QStringLiteral("maximize"));
+	m_maximizeButton->setAccessibleName(tr("Maximize"));
 
 	for (QtIconStateButton* button: {m_snippetButton, m_maximizeButton})
 	{
