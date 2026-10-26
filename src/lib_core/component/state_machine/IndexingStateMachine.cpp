@@ -6,8 +6,7 @@
 #include "MessageIndexingInterrupted.h"
 #include "MessageRefresh.h"
 #include "TabIds.h"
-#include "Task.h"
-#include "TaskLambda.h"
+#include "TabQueues.h"
 #include "logging.h"
 
 // glaze reflects these for JSON; MSVC cannot reflect types in an anonymous namespace.
@@ -368,13 +367,13 @@ MachineFireResult IndexingStateMachine::start(std::optional<RefreshMode> mode, E
 	}
 	// On the app scheduler, as the dialog's start always ran: counting (when the
 	// mode was not counted yet) and building the index both belong there.
-	Task::dispatch(TabIds::app(), std::make_shared<TaskLambda>([this, onStart, info, countFiles, chosen]() {
+	execution::post(TabIds::app(), [this, onStart, info, countFiles, chosen]() {
 		if (onStart && (info || countFiles))
 		{
 			onStart(info ? *info : countFiles(chosen));
 		}
 		requestHandled("nothing to index");
-	}));
+	});
 	return {true, std::format("indexing starts with mode '{}'", modeName(chosen))};
 }
 
@@ -402,7 +401,7 @@ MachineFireResult IndexingStateMachine::cancel(EventSource source)
 	}
 	if (onCancel)
 	{
-		Task::dispatch(TabIds::app(), std::make_shared<TaskLambda>([onCancel]() { onCancel(); }));
+		execution::post(TabIds::app(), onCancel);
 	}
 	return {true, "canceled"};
 }
@@ -579,9 +578,7 @@ void IndexingStateMachine::count(RefreshMode mode)
 	{
 		return;
 	}
-	Task::dispatch(TabIds::app(), std::make_shared<TaskLambda>([this, countFiles, mode]() {
-		counted(mode, countFiles(mode));
-	}));
+	execution::post(TabIds::app(), [this, countFiles, mode]() { counted(mode, countFiles(mode)); });
 }
 
 void IndexingStateMachine::counted(RefreshMode mode, const RefreshInfo& info)

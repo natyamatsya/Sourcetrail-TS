@@ -75,6 +75,8 @@ public:
 	bool loopIsRunning() const;
 	bool hasMessagesQueued() const;
 
+	//! Whether messages go to the serial queue of their scheduler id (TabQueues.h),
+	//! one item each, instead of to their listeners on the loop's thread.
 	void setSendMessagesAsTasks(bool sendMessagesAsTasks);
 	//! Where a parallel message's listeners run side by side: `run` starts work on a
 	//! pool (the app's compute pool, as a sender). Without one they run in a row.

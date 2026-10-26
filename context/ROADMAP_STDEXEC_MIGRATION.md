@@ -45,25 +45,32 @@ A queued message is delivered like this (`src/lib/utility/messaging/MessageQueue
 ```
 Message<T>::dispatch() → pushMessage() → [run_loop drain]
   → sendMessage()        : iterate MessageListener<T>, call handleMessage()   (inline)
-  or sendMessageAsTask() : one ListenerTask for the message's listeners
-                           → Task::dispatch(schedulerId, task)
+  or sendMessageAsTask() : the message's listeners as one item of its queue
+                           → execution::queueOf(schedulerId)->push(...)
 ```
 
-The `ListenerTask` takes its turn in the scheduler's queue, so messages and the other
-tasks stay in order. It runs a message's listeners in a row; a parallel message's
-(an activation's graph and code) run side by side on `ISchedulers::compute()`, as
-senders, while the task waits parked and holds the queue. Every scheduler (the app's,
-the background's, each tab's) loops on a strand of its own over `ISchedulers::io()`,
-event-driven and holding no thread while idle. Headless (no schedulers) they loop on
-threads, and a parallel message's listeners run in a row.
+Every scheduler id (the app, the background, each tab) has a `SerialQueue`
+(`utility/execution/SerialQueue.h`, `TabQueues.h`) on a strand of its own over
+`ISchedulers::io()`: items run one at a time in the order queued, and an item may
+finish after it returns. A message's listeners are one item, in a row; a parallel
+message's (an activation's graph and code) run side by side on
+`ISchedulers::compute()`, and the next item starts once the last of them ended, so
+the item holds the queue but no thread. Work a handler has run later on a queue is an
+item too (`execution::post`, `postAfter` for the tooltips' delay on a timer), and the
+queue is a stdexec scheduler: the load's pipeline continues on the app's queue with
+`continues_on(appScheduler())`. Every item counts as its cause's work (`CauseWork`)
+until it finished or `stop()` dropped it. Headless (no schedulers) a queue runs on a
+small pool of its own.
 
 ## Next increment — "route message-handler execution onto `ISchedulers`"
 
-*Done:* every scheduler runs on a strand over `io()`; a message's listeners are one
-task, a parallel message's run as senders on `compute()` (no thread per listener);
-`Settled` comes from the work's completion (`CauseWork`), and the schedulers' idle hook
-is gone. Left for Phase 3: the indexer's `Task` trees (`TaskGroupParallel` still starts
-a thread per child there) and the remaining `std::thread` sites.
+*Done:* a message's listeners are one item of its tab id's serial queue, a parallel
+message's run as senders on `compute()` (no thread per listener); the work handlers
+posted to a scheduler as a `TaskLambda` is posted to the queue; `Settled` comes from
+the work's completion (`CauseWork`). `TaskScheduler` is left with the indexer's task
+trees, on the app's strand beside the app's queue, where `TaskLambda` remains a step
+of a tree. Left for Phase 3: those trees (`TaskGroupParallel` still starts a thread per
+child there) and the remaining `std::thread` sites.
 
 ## Later — subsystem migration (Phase 3+)
 

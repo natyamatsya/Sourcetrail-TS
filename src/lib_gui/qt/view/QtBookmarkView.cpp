@@ -32,7 +32,7 @@ void QtBookmarkView::refreshView()
 
 void QtBookmarkView::displayBookmarkCreator(const std::vector<std::string>& names, const std::vector<BookmarkCategory>& categories, Id nodeId)
 {
-	execution::qt::onUi(getMainWindowforMainView(getViewLayout()), [=, this]() 
+	::execution::qt::onUi(getMainWindowforMainView(getViewLayout()), [=, this]() 
 	{
 		QtBookmarkCreator* bookmarkCreator = new QtBookmarkCreator(&m_controllerProxy, getMainWindowforMainView(getViewLayout()));
 
@@ -71,7 +71,7 @@ void QtBookmarkView::displayBookmarkCreator(const std::vector<std::string>& name
 
 void QtBookmarkView::displayBookmarkCreator(std::shared_ptr<Bookmark> bookmark, const std::vector<BookmarkCategory>& categories)
 {
-	execution::qt::onUi(getMainWindowforMainView(getViewLayout()), [=, this]() 
+	::execution::qt::onUi(getMainWindowforMainView(getViewLayout()), [=, this]() 
 	{
 		QtBookmarkCreator* bookmarkCreator = new QtBookmarkCreator(&m_controllerProxy, getMainWindowforMainView(getViewLayout()), bookmark->getId());
 
@@ -114,7 +114,7 @@ void QtBookmarkView::openCreator(
 
 void QtBookmarkView::presentBookmarkFields(const BookmarkFields& fields)
 {
-	execution::qt::onUi(getMainWindowforMainView(getViewLayout()), [this, fields]() {
+	::execution::qt::onUi(getMainWindowforMainView(getViewLayout()), [this, fields]() {
 		if (m_creator)
 		{
 			m_creator->showFields(fields);
@@ -124,7 +124,7 @@ void QtBookmarkView::presentBookmarkFields(const BookmarkFields& fields)
 
 void QtBookmarkView::dismissBookmarkEditor()
 {
-	execution::qt::onUi(getMainWindowforMainView(getViewLayout()), [this]() {
+	::execution::qt::onUi(getMainWindowforMainView(getViewLayout()), [this]() {
 		if (m_creator)
 		{
 			m_creator->close();
@@ -134,7 +134,7 @@ void QtBookmarkView::dismissBookmarkEditor()
 
 void QtBookmarkView::displayBookmarkBrowser(const std::vector<std::shared_ptr<Bookmark>>& bookmarks)
 {
-	execution::qt::onUi(getMainWindowforMainView(getViewLayout()), [=, this]() 
+	::execution::qt::onUi(getMainWindowforMainView(getViewLayout()), [=, this]() 
 	{
 		if (m_bookmarkBrowser == nullptr)
 			m_bookmarkBrowser = new QtBookmarkBrowser(&m_controllerProxy, getMainWindowforMainView(getViewLayout()));
@@ -147,7 +147,7 @@ void QtBookmarkView::displayBookmarkBrowser(const std::vector<std::shared_ptr<Bo
 
 void QtBookmarkView::undisplayBookmarkBrowser()
 {
-	execution::qt::onUi(getMainWindowforMainView(getViewLayout()), [=, this]() 
+	::execution::qt::onUi(getMainWindowforMainView(getViewLayout()), [=, this]() 
 	{
 		if (m_bookmarkBrowser != nullptr)
 			m_bookmarkBrowser->hide();

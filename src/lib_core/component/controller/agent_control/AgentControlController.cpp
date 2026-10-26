@@ -528,11 +528,10 @@ private:
 };
 }	 // namespace
 
-// Threads: agent commands are handled on the app TaskScheduler (MessageAgentCommand
-// is scheduled there), but the messages that change what is on screen —
-// activations, the code view — are scheduled on the current tab's scheduler, a
-// strand of its own, and a parallel message's listeners run side by side on the
-// compute pool. So the state cache is
+// Threads: agent commands are handled on the app's queue (MessageAgentCommand is
+// scheduled there), but the messages that change what is on screen — activations,
+// the code view — on the current tab's queue, a strand of its own, and a parallel
+// message's listeners run side by side on the compute pool. So the state cache is
 // guarded by m_stateMutex. Commands that only need the GUI thread skip the message
 // bus entirely (see handleGuiCommand).
 struct AgentControlController::Impl

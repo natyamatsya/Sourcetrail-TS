@@ -1,6 +1,8 @@
 #include "Catch2.hpp"
 
+#include <algorithm>
 #include <atomic>
+#include <stdexcept>
 #include <functional>
 #include <mutex>
 #include <chrono>
@@ -13,6 +15,8 @@
 #include "TaskGroupSelector.h"
 #include "TaskGroupParallel.h"
 #include "TaskGroupSequence.h"
+#include "MessageCause.h"
+#include "SerialQueue.h"
 #include "StdexecPrelude.h"
 #include "Strand.h"
 #include "TaskLambda.h"
@@ -693,3 +697,106 @@ TEST_CASE("a task woken right after it parked runs on, not dropped")
 	onStrand->stopSchedulerLoop();
 }
 
+TEST_CASE("serial queue runs its items in order, on its strand")
+{
+	exec::static_thread_pool pool(2);
+	const auto strand = execution::Strand::create(pool.get_scheduler());
+	const auto queue = execution::SerialQueue::create(strand);
+
+	std::vector<int> order;	// written by the items only
+	std::atomic<int> left = 40;
+	for (int i = 0; i < 40; i++)	// more than a turn runs at once
+	{
+		queue->post([&, i]() {
+			order.push_back(queue->runsHere() ? i : -1);
+			left--;
+		});
+	}
+	queue->post([&]() { order.push_back(-100); left--; }, true);	// may run before the rest
+	queue->post([]() { throw std::runtime_error("an item that throws"); });	// logged; the rest go on
+	queue->post([&]() { left--; });
+	REQUIRE(eventually([&]() { return left == -2; }));
+	std::vector<int> expected;
+	for (int i = 0; i < 40; i++)
+	{
+		expected.push_back(i);
+	}
+	order.erase(std::remove(order.begin(), order.end(), -100), order.end());
+	REQUIRE(order == expected);
+}
+
+TEST_CASE("serial queue holds an item that finishes later, not a thread")
+{
+	exec::static_thread_pool pool(2);
+	exec::static_thread_pool elsewhere(1);
+	const auto strand = execution::Strand::create(pool.get_scheduler());
+	const auto queue = execution::SerialQueue::create(strand);
+
+	std::atomic<bool> release = false;
+	std::atomic<bool> nextRan = false;
+	std::atomic<bool> nextRanEarly = false;
+	queue->push({[&](std::function<void()> done) {
+					 // Finishes on another pool, once released.
+					 stdexec::start_detached(stdexec::schedule(elsewhere.get_scheduler()) | stdexec::then([&, done]() {
+												 while (!release)
+												 {
+													 std::this_thread::yield();
+												 }
+												 done();
+											 }));
+				 },
+				 {}});
+	queue->post([&]() {
+		nextRanEarly = !release;
+		nextRan = true;
+	});
+
+	// The strand is free meanwhile: other work runs there.
+	std::atomic<bool> strandFree = false;
+	stdexec::sync_wait(stdexec::schedule(strand->scheduler()) | stdexec::then([&]() { strandFree = true; }));
+	REQUIRE(strandFree);
+	REQUIRE_FALSE(nextRan);
+
+	release = true;
+	REQUIRE(eventually([&]() { return nextRan.load(); }));
+	REQUIRE_FALSE(nextRanEarly);
+
+	// As a sender: what follows schedule() runs as an item.
+	std::atomic<bool> onQueue = false;
+	stdexec::sync_wait(stdexec::schedule(queue->scheduler()) | stdexec::then([&]() { onQueue = queue->runsHere(); }));
+	REQUIRE(onQueue);
+}
+
+TEST_CASE("serial queue drops what is queued when it stops, and counts it as ended")
+{
+	exec::static_thread_pool pool(2);
+	const auto queue = execution::SerialQueue::create(execution::Strand::create(pool.get_scheduler()));
+
+	std::atomic<bool> release = false;
+	std::atomic<bool> started = false;
+	std::atomic<int> dropped = 0;
+	{
+		const CauseScope cause(31);
+		queue->push({[&](std::function<void()> done) {
+						 started = true;
+						 std::thread([&release, done]() {
+							 while (!release)
+							 {
+								 std::this_thread::yield();
+							 }
+							 done();
+						 }).detach();
+					 },
+					 {}});
+		queue->push({[](std::function<void()>) { FAIL("dropped work ran"); }, [&]() { dropped++; }});
+		queue->post([]() { throw std::runtime_error("an item that throws"); });
+	}
+	REQUIRE(eventually([&]() { return started.load(); }));
+	REQUIRE(CauseWork::pending(31) == 3);
+	queue->stop();
+	REQUIRE(dropped == 1);
+	REQUIRE(CauseWork::pending(31) == 1);	// the one that runs
+	REQUIRE_FALSE(queue->post([]() {}));	// nothing more
+	release = true;
+	REQUIRE(eventually([&]() { return CauseWork::pending(31) == 0; }));
+}

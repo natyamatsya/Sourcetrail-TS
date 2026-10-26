@@ -298,9 +298,11 @@ race handling.
 A request has settled when the work queued on its behalf is done and the views have
 drawn what it changed. Work is counted per cause (`CauseWork`, next to `CauseScope` in
 `MessageCause.h`): a message from when it is queued (`pushMessage`, or processed at once)
-until it is handled, filtered out or dropped unrun; a scheduler task from when it is
-pushed until it leaves the scheduler for good. Tasks run under the cause they were queued
-under, and listeners under their message's, so what they queue in turn is counted for the
+until it is handled, filtered out or dropped unrun; an item of a serial queue (a
+message's listeners, work posted there) from when it is queued until it finished or was
+dropped; an indexer task from when it is pushed until it leaves its scheduler for good.
+Items and tasks run under the cause they were queued under, and listeners under their
+message's, so what they queue in turn is counted for the
 same request before their own work ends: the count only reaches zero once the whole
 fan-out has run. The graph and code views report drawing to the activation machine.
 

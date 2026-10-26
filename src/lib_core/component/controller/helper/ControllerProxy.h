@@ -3,7 +3,7 @@
 
 #include <functional>
 
-#include "TaskLambda.h"
+#include "TabQueues.h"
 
 #include "View.h"
 
@@ -29,7 +29,7 @@ public:
 		ControllerType* controller = m_view->getController<ControllerType>();
 		if (controller)
 		{
-			Task::dispatch(m_schedulerId, std::make_shared<TaskLambda>([=] { callback(controller); }));
+			execution::post(m_schedulerId, [=] { callback(controller); });
 		}
 	}
 
@@ -39,7 +39,7 @@ public:
 		ControllerType* controller = m_view->getController<ControllerType>();
 		if (controller)
 		{
-			Task::dispatch(m_schedulerId, std::make_shared<TaskLambda>([=] { (controller->*callback)(args...); }));
+			execution::post(m_schedulerId, [=] { (controller->*callback)(args...); });
 		}
 	}
 

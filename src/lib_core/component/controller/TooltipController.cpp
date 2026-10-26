@@ -11,8 +11,7 @@
 #include "MessageActivateSourceLocations.h"
 #endif
 #include "TabIds.h"
-#include "TaskDecoratorDelay.h"
-#include "TaskLambda.h"
+#include "TabQueues.h"
 
 // Imports come AFTER all textual #includes (include-before-import rule: textual libc++
 // following BMI-merged declarations trips "cannot add 'abi_tag' in a redeclaration").
@@ -157,10 +156,7 @@ void TooltipController::requestTooltipShow(
 		delayMS = 300;
 	}
 
-	Task::dispatch(
-		TabIds::app(),
-		std::make_shared<TaskDecoratorDelay>(delayMS)->addChildTask(
-			std::make_shared<TaskLambda>([requestId, this]() {
+	execution::postAfter(TabIds::app(), std::chrono::milliseconds(delayMS), [requestId, this]() {
 				std::unique_ptr<TooltipRequest> request;
 				{
 					std::lock_guard<std::mutex> lock(m_showRequestMutex);
@@ -182,7 +178,7 @@ void TooltipController::requestTooltipShow(
 					getView()->showTooltip(request->info, getViewForOrigin(request->origin));
 					m_hideRequest = false;
 				}
-			})));
+	});
 }
 
 void TooltipController::requestTooltipHide()
@@ -193,14 +189,12 @@ void TooltipController::requestTooltipHide()
 	}
 	m_hideRequest = true;
 
-	Task::dispatch(
-		TabIds::app(),
-		std::make_shared<TaskDecoratorDelay>(500)->addChildTask(std::make_shared<TaskLambda>([this]() {
-			if (m_hideRequest)
-			{
-				m_hideRequest = false;
+	execution::postAfter(TabIds::app(), std::chrono::milliseconds(500), [this]() {
+		if (m_hideRequest)
+		{
+			m_hideRequest = false;
 
-				getView()->hideTooltip(false);
-			}
-		})));
+			getView()->hideTooltip(false);
+		}
+	});
 }

@@ -27,6 +27,7 @@
 #include "RemoteStateMachine.h"
 #include "StateMachine.h"
 #include "TabIds.h"
+#include "TabQueues.h"
 #include "TaskManager.h"
 #include "TaskScheduler.h"
 
@@ -164,17 +165,17 @@ bool contains(const std::string& text, const std::string& part)
 	return text.find(part) != std::string::npos;
 }
 
-// The mode choice and start run their work on the app scheduler.
+// The mode choice and start post their work to the app's queue.
 class RunningAppScheduler
 {
 public:
 	RunningAppScheduler()
 	{
-		TaskManager::getScheduler(TabIds::app())->startSchedulerLoopThreaded();
+		execution::startQueue(TabIds::app(), nullptr);
 	}
 	~RunningAppScheduler()
 	{
-		TaskManager::getScheduler(TabIds::app())->stopSchedulerLoop();
+		execution::stopQueue(TabIds::app());
 	}
 };
 }	 // namespace

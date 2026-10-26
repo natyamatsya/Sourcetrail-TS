@@ -28,7 +28,6 @@
 #endif
 #include "UiPost.h"
 #include "TabIds.h"
-#include "TaskLambda.h"
 #ifndef SRCTRL_MODULE_BUILD
 #include "utility.h"
 #endif

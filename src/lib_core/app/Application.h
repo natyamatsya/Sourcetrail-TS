@@ -22,6 +22,7 @@
 #include "MessageWindowClosed.h"
 #include "Project.h"
 #include "StdexecPrelude.h"
+#include "SerialQueue.h"
 #include "Strand.h"
 
 namespace execution
@@ -70,7 +71,9 @@ public:
 	//! Starts the task scheduler of `tab` (the app's, the background's, a tab's): on a
 	//! strand of its own over the I/O pool where the app has schedulers, so it holds
 	//! no thread while it has nothing to run; else on a thread of its own. Its strand.
-	std::shared_ptr<execution::Strand> startTaskScheduler(TabId tab);
+	// Starts `tab`'s serial queue (TabQueues.h), on a strand of its own over the I/O
+	// pool; the strand, or empty without the pool (a queue of its own then).
+	std::shared_ptr<execution::Strand> startQueue(TabId tab);
 
 	static std::string getUUID();
 
@@ -154,7 +157,7 @@ private:
 	void refreshAnswered(PendingRefresh refresh, int option);
 
 	// The app strand's scheduler, where pipelines come back to the app's tasks.
-	execution::Strand::Scheduler appScheduler() const;
+	execution::SerialQueue::Scheduler appScheduler() const;
 
 	void refreshProject(RefreshMode refreshMode);
 	void updateRecentProjects(const FilePath& projectSettingsFilePath);

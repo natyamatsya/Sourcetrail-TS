@@ -10,6 +10,7 @@
 // classic headers (entities not exported): stay textual
 #include "MessageCause.h"
 #include "MessageQueue.h"
+#include "TabQueues.h"
 #include "StdexecPrelude.h"
 #include "Strand.h"
 #include "TabIds.h"
@@ -475,7 +476,7 @@ TEST_CASE("a parallel message's listeners run side by side on the pool, and the 
 	exec::static_thread_pool io(2);
 	exec::static_thread_pool compute(2);
 	const auto strand = execution::Strand::create(io.get_scheduler());
-	TaskManager::getScheduler(TabIds::app())->startSchedulerLoopOn(strand);
+	execution::startQueue(TabIds::app(), strand);
 	MessageQueue* queue = MessageQueue::getInstance().get();
 	queue->setSendMessagesAsTasks(true);
 	queue->setListenerPool([scheduler = compute.get_scheduler()](std::function<void()> work) {
@@ -507,8 +508,7 @@ TEST_CASE("a parallel message's listeners run side by side on the pool, and the 
 	queue->stopMessageLoop();
 	queue->setListenerPool(nullptr);
 	queue->setSendMessagesAsTasks(false);
-	TaskManager::getScheduler(TabIds::app())->stopSchedulerLoop();
-	TaskManager::destroyScheduler(TabIds::app());
+	execution::stopQueue(TabIds::app());
 
 	REQUIRE(first.handled == 1);
 	REQUIRE(second.handled == 1);

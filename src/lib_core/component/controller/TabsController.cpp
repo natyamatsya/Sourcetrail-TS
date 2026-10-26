@@ -11,9 +11,7 @@
 #endif
 #include "ScreenSearchInterfaces.h"
 #include "TabIds.h"
-#include "TaskLambda.h"
-#include "TaskManager.h"
-#include "TaskScheduler.h"
+#include "TabQueues.h"
 
 // Imports come AFTER all textual #includes (include-before-import rule: textual libc++
 // following BMI-merged declarations trips "cannot add 'abi_tag' in a redeclaration").
@@ -59,11 +57,11 @@ void TabsController::addTab(TabId tabId, SearchMatch match)
 
 	if (const std::shared_ptr<Application> app = Application::getInstance())
 	{
-		app->startTaskScheduler(tabId);	// a tab's own serial context, beside the others
+		app->startQueue(tabId);	// a tab's own serial queue, beside the others
 	}
 	else
 	{
-		TaskManager::createScheduler(tabId)->startSchedulerLoopThreaded();
+		execution::startQueue(tabId, nullptr);
 	}
 
 	m_tabs.emplace(
@@ -116,25 +114,17 @@ void TabsController::showTab(TabId tabId)
 
 	broadcastTabs();
 
-	Task::dispatch(TabIds::app(), std::make_shared<TaskLambda>([this]() {
-					   m_screenSearchSender->clearMatches();
-				   }));
+	execution::post(TabIds::app(), [this]() { m_screenSearchSender->clearMatches(); });
 }
 
 void TabsController::removeTab(TabId tabId)
 {
-	// use app task scheduler thread to stop running tasks of tab
-	Task::dispatch(TabIds::background(), std::make_shared<TaskLambda>([tabId, this]() {
-					   m_screenSearchSender->clearMatches();
-
-					   TaskScheduler* scheduler = TaskManager::getScheduler(tabId).get();
-					   scheduler->terminateRunningTasks();
-					   scheduler->stopSchedulerLoop();
-
-					   TaskManager::destroyScheduler(tabId);
-
-					   getView()->destroyTab(tabId);
-				   }));
+	// From the background's queue: the tab's own stops, what is queued there dropped.
+	execution::post(TabIds::background(), [tabId, this]() {
+		m_screenSearchSender->clearMatches();
+		execution::stopQueue(tabId);
+		getView()->destroyTab(tabId);
+	});
 }
 
 void TabsController::destroyTab(TabId tabId)

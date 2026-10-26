@@ -47,6 +47,7 @@
 #endif
 #include "StorageCache.h"
 #include "TabIds.h"
+#include "TabQueues.h"
 #include "ISchedulers.h"
 #include "Strand.h"
 #include "TaskManager.h"
@@ -101,7 +102,6 @@ void Application::createInstance(
 	}
 
 	TaskManager::createScheduler(TabIds::app());
-	TaskManager::createScheduler(TabIds::background());
 	MessageQueue::getInstance();
 
 	s_instance = std::shared_ptr<Application>(new Application(hasGui));
@@ -181,6 +181,8 @@ void Application::destroyInstance()
 	}
 
 	MessageQueue::getInstance()->stopMessageLoop();
+	// What is queued to the app, the background and the tabs is dropped.
+	execution::stopQueues();
 	// A strand loop's pass may hold its scheduler past its removal: end them here.
 	TaskManager::stopSchedulerLoops();
 
@@ -190,7 +192,6 @@ void Application::destroyInstance()
 	{
 		stdexec::sync_wait(s_instance->m_pipelines.on_empty());
 	}
-	TaskManager::destroyScheduler(TabIds::background());
 	TaskManager::destroyScheduler(TabIds::app());
 
 	if (GarbageCollectorImpl* gc = GarbageCollectorImpl::getInstance())
@@ -644,22 +645,17 @@ QuestionSender Application::askFor(const ProjectLoad& load, const std::optional<
 	return getDialogView(DialogView::UseCase::GENERAL)->asked(question->text, question->options);
 }
 
-std::shared_ptr<execution::Strand> Application::startTaskScheduler(TabId tab)
+std::shared_ptr<execution::Strand> Application::startQueue(TabId tab)
 {
-	const std::shared_ptr<TaskScheduler> scheduler = TaskManager::createScheduler(tab);
-	if (m_schedulers == nullptr)
-	{
-		scheduler->startSchedulerLoopThreaded();
-		return nullptr;
-	}
-	std::shared_ptr<execution::Strand> strand = execution::Strand::create(m_schedulers->io());
-	scheduler->startSchedulerLoopOn(strand);
+	std::shared_ptr<execution::Strand> strand =
+		m_schedulers != nullptr ? execution::Strand::create(m_schedulers->io()) : nullptr;
+	execution::startQueue(tab, strand);
 	return strand;
 }
 
-execution::Strand::Scheduler Application::appScheduler() const
+execution::SerialQueue::Scheduler Application::appScheduler() const
 {
-	return m_appStrand->scheduler();
+	return execution::queueOf(TabIds::app())->scheduler();
 }
 
 bool Application::pipelinesStopping() const
@@ -749,10 +745,20 @@ void Application::handleMessage(MessageSwitchColorScheme* message)
 
 void Application::startMessagingAndScheduling()
 {
-	// The load's pipeline continues on the app's strand, serialized with the message
-	// handlers and the indexing tasks.
-	m_appStrand = startTaskScheduler(TabIds::app());
-	startTaskScheduler(TabIds::background());
+	// The app's queue: its messages, the work posted to it, the steps of the load's
+	// pipeline. The indexer's task trees run beside them on the same strand, on the
+	// app's TaskScheduler.
+	m_appStrand = startQueue(TabIds::app());
+	const std::shared_ptr<TaskScheduler> indexer = TaskManager::createScheduler(TabIds::app());
+	if (m_appStrand != nullptr)
+	{
+		indexer->startSchedulerLoopOn(m_appStrand);
+	}
+	else
+	{
+		indexer->startSchedulerLoopThreaded();
+	}
+	startQueue(TabIds::background());
 
 	MessageQueue* queue = MessageQueue::getInstance().get();
 	queue->addMessageFilter(std::make_shared<MessageFilterErrorCountUpdate>());

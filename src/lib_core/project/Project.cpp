@@ -49,6 +49,7 @@
 #include "TaskGroupParallel.h"
 #include "TaskGroupSelector.h"
 #include "TaskGroupSequence.h"
+#include "TabQueues.h"
 #include "TaskLambda.h"
 #include "TaskReturnSuccessIf.h"
 #include "TaskSetValue.h"
@@ -1054,15 +1055,12 @@ void Project::buildIndexImpl(RefreshInfo info, std::shared_ptr<DialogView> dialo
 			std::make_shared<TaskGroupSequence>()->addChildTasks(
 				std::make_shared<TaskFindKeyOnBlackboard>("keep_database"),
 				std::make_shared<TaskLambda>([dialogView, this]() {
-					Task::dispatch(TabIds::app(), std::make_shared<TaskLambda>([dialogView, this]() {
-									   swapToTempStorage(dialogView);
-								   }));
+					execution::post(TabIds::app(), [dialogView, this]() { swapToTempStorage(dialogView); });
 				})),
 			std::make_shared<TaskGroupSequence>()->addChildTasks(
 				std::make_shared<TaskFindKeyOnBlackboard>("discard_database"),
 				std::make_shared<TaskLambda>([this]() {
-					Task::dispatch(
-						TabIds::app(), std::make_shared<TaskLambda>([this]() { discardTempStorage(); }));
+					execution::post(TabIds::app(), [this]() { discardTempStorage(); });
 				}))));
 	}
 
@@ -1079,14 +1077,12 @@ void Project::buildIndexImpl(RefreshInfo info, std::shared_ptr<DialogView> dialo
 		std::make_shared<TaskGroupSequence>()->addChildTasks(
 			std::make_shared<TaskFindKeyOnBlackboard>("refresh_database"),
 			std::make_shared<TaskLambda>([dialogView, this]() {
-				Task::dispatch(TabIds::app(), std::make_shared<TaskLambda>([dialogView, this]() {
-								   MessageIndexingShowDialog().dispatch();
-								   MessageRefresh().refreshAll().dispatch();
-							   }));
+				execution::post(TabIds::app(), [dialogView, this]() {
+					MessageIndexingShowDialog().dispatch();
+					MessageRefresh().refreshAll().dispatch();
+				});
 			})),
-		std::make_shared<TaskGroupSequence>()->addChildTasks(std::make_shared<TaskLambda>([this]() {
-			Task::dispatch(TabIds::app(), std::make_shared<TaskLambda>([this]() {}));
-		}))));
+		std::make_shared<TaskGroupSequence>()->addChildTasks(std::make_shared<TaskLambda>([]() {}))));
 
 	taskSequential->setIsBackgroundTask(true);
 	// The pipeline root owns the terminal event: whatever way the tree ends abnormally (a failed
@@ -1182,13 +1178,13 @@ void Project::askToReindexAll(SourceGroupType type, std::shared_ptr<DialogView> 
 				"instead?</p>",
 			{"Full Re-Index", "Cancel"}),
 		[self = weak_from_this(), dialogView](int option) {
-			Task::dispatch(TabIds::app(), std::make_shared<TaskLambda>(withCurrentCause([self, dialogView, option]() {
+			execution::post(TabIds::app(), [self, dialogView, option]() {
 				const std::shared_ptr<Project> project = self.lock();
 				if (project && !AppStateMachine::instance()->isClosing())
 				{
 					project->reindexAllAnswered(option, dialogView);
 				}
-			})));
+			});
 		});
 }
 
