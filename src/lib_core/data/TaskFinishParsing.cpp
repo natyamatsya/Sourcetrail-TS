@@ -114,7 +114,7 @@ Task::TaskState TaskFinishParsing::doUpdate(std::shared_ptr<Blackboard> blackboa
 	ErrorCountInfo errorInfo = m_storage->getErrorCount();
 
 	std::string status;
-	status += "Finished indexing: ";
+	status += interruptedIndexing ? "Interrupted indexing: " : "Finished indexing: ";
 	status += std::to_string(indexedSourceFileCount) + "/" + std::to_string(sourceFileCount) +
 		" source files indexed; ";
 	status += TimeStamp::secondsToString(time);
