@@ -80,6 +80,7 @@
 
 #include <kddockwidgets/Config.h>
 #include <kddockwidgets/DockWidget.h>
+#include <kddockwidgets/core/DockWidget.h>
 #include <kddockwidgets/KDDockWidgets.h>
 #include <kddockwidgets/LayoutSaver.h>
 
@@ -996,15 +997,31 @@ void QtMainWindow::applyDefaultDockLayout()
 		code->open();
 		addDockWidget(code, KDDockWidgets::Location_OnRight, graph);
 	}
+	// The one-line search bar is given its height, not KDDW's fair share (a fifth of
+	// the window).
 	if (search)
 	{
 		search->open();
-		addDockWidget(search, KDDockWidgets::Location_OnTop);
+		addDockWidget(search, KDDockWidgets::Location_OnTop, nullptr, KDDockWidgets::InitialOption(QSize(0, 80)));
 	}
 	if (status)
 	{
 		status->open();
 		addDockWidget(status, KDDockWidgets::Location_OnBottom);
+	}
+	// Graph and code split the middle evenly. The graph is moved to the left while
+	// addView()'s tiling still shares the row with the three others, so it starts at
+	// a quarter of it, and the code view, split off from that quarter, takes all the
+	// row the search and status bars leave: the graph was left a sliver.
+	if (graph && code)
+	{
+		const int graphWidth = graph->dockWidget()->sizeInLayout().width();
+		const int codeWidth = code->dockWidget()->sizeInLayout().width();
+		const int grow = (graphWidth + codeWidth) / 2 - graphWidth;
+		if (grow > 0)
+		{
+			graph->dockWidget()->resizeInLayout(0, 0, grow, 0);
+		}
 	}
 
 	// Any other docks (e.g. plugins) tab into the centre on the right.
