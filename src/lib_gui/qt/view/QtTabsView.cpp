@@ -174,9 +174,11 @@ void QtTabsView::insertTab(bool showTab, const SearchMatch& match)
 							  : m_tabBar->count() + 1;
 	idx = m_tabBar->insertTab(idx, tr(" Empty Tab "));
 	m_tabBar->setTabData(idx, QVariant::fromValue(tabId));
+	m_tabBar->setAccessibleTabName(idx, tr("Empty Tab"));	// the text is padded with spaces
 
 	QPushButton* typeCircle = new QPushButton();
 	typeCircle->setObjectName(QStringLiteral("type_circle"));
+	typeCircle->setAccessibleName(tr("Show Tab"));
 	m_tabBar->setTabButton(idx, QTabBar::LeftSide, typeCircle);
 
 	connect(typeCircle, &QPushButton::clicked, [tabId, this]() {
@@ -193,6 +195,7 @@ void QtTabsView::insertTab(bool showTab, const SearchMatch& match)
 	QPushButton* closeButton = new QtSelfRefreshIconButton(QString(), QtResources::TABS_VIEW_CLOSE, "tab/bar/button");
 	closeButton->setObjectName(QStringLiteral("close_button"));
 	closeButton->setToolTip(QtActions::closeTab().tooltip());
+	closeButton->setAccessibleName(tr("Close %1").arg(tr("Empty Tab")));
 	closeButton->setIconSize(QSize(10, 10));
 	m_tabBar->setTabButton(idx, QTabBar::RightSide, closeButton);
 
@@ -291,6 +294,13 @@ void QtTabsView::setTabState(int idx, const std::vector<SearchMatch>& matches)
 	}
 
 	m_tabBar->setTabText(idx, ' ' + QString::fromStdString(name) + ' ');
+	// Named for agents and screen readers without the padding, and its close button
+	// after it, so that one tab's is told from another's.
+	m_tabBar->setAccessibleTabName(idx, QString::fromStdString(name));
+	if (QWidget* closeButton = m_tabBar->tabButton(idx, QTabBar::RightSide))
+	{
+		closeButton->setAccessibleName(tr("Close %1").arg(QString::fromStdString(name)));
+	}
 	m_tabBar->tabButton(idx, QTabBar::LeftSide)
 		->setStyleSheet(
 			QStringLiteral("#type_circle { background-color: ") + QString::fromStdString(color) +
