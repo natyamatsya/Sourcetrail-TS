@@ -21,6 +21,7 @@
 #include "utilityApp.h"
 #endif
 #include "utilityQt.h"
+#include "utilityQtComboBox.h"
 
 #include <algorithm>
 #include <filesystem>
@@ -624,13 +625,8 @@ std::expected<void, PreferenceFieldFailure> QtProjectWizardContentPreferences::s
 		const int index = comboBox->findText(QString::fromStdString(*text));
 		if (index < 0)
 		{
-			std::string items;
-			for (int i = 0; i < comboBox->count(); i++)
-			{
-				items += std::format("{}\"{}\"", items.empty() ? "" : ", ", comboBox->itemText(i).toStdString());
-			}
-			return std::unexpected(
-				PreferenceFieldFailure {.error = NoSuchItem, .detail = std::format("\"{}\": it has {}", *text, items)});
+			return std::unexpected(PreferenceFieldFailure {
+				.error = NoSuchItem, .detail = std::format("\"{}\": it has {}", *text, utility::quotedItems(*comboBox))});
 		}
 		comboBox->setCurrentIndex(index);
 		emit comboBox->activated(index);	// as choosing it does: a colour scheme previews

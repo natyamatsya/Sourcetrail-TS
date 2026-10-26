@@ -46,6 +46,7 @@
 #include "QtAccessibleRole.h"
 #include "QtUiAnchor.h"
 #include "QtUiHash.h"
+#include "utilityQtComboBox.h"
 #endif
 
 namespace utility::qt
@@ -271,12 +272,13 @@ ControlResult invokeAction(
 		const int index = comboBox->findText(QString::fromStdString(text));
 		if (index < 0)
 		{
-			std::string items;
-			for (int i = 0; i < comboBox->count(); ++i)
-			{
-				items += std::format("{}\"{}\"", items.empty() ? "" : ", ", comboBox->itemText(i).toStdString());
-			}
-			return {false, std::format("no item \"{}\" to pick in {}: it has {}", text, refToString(objectName, path), items)};
+			return {
+				false,
+				std::format(
+					"no item \"{}\" to pick in {}: it has {}",
+					text,
+					refToString(objectName, path),
+					utility::quotedItems(*comboBox))};
 		}
 		QMetaObject::invokeMethod(
 			comboBox,
@@ -687,9 +689,9 @@ void moveMouseTo(QWidget* widget, const QPointF& global)
 			QCoreApplication::sendEvent(w, &leave);
 		}
 	}
-	for (auto it = entered.rbegin(); it != entered.rend(); ++it)
+	for (const QPointer<QWidget>& entering: entered | std::views::reverse)
 	{
-		if (QWidget* w = *it)
+		if (QWidget* w = entering)
 		{
 			w->setAttribute(Qt::WA_UnderMouse, true);
 			const QPointF local = w->mapFromGlobal(global);
