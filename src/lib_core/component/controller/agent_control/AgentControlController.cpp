@@ -725,7 +725,13 @@ struct AgentControlController::Impl
 
 	void handleMessage(MessageSearch* message) override
 	{
-		const std::vector<SearchMatch> found = message->getMatches();
+		publishSearchCompleted(message->getMatches());
+	}
+
+	// The matches of the last search, a person's or an agent's, for ui_state and
+	// the SearchCompleted event.
+	void publishSearchCompleted(const std::vector<SearchMatch>& found)
+	{
 		{
 			const std::lock_guard<std::mutex> lock(m_stateMutex);
 			m_lastSearchMatches = found;
@@ -1058,9 +1064,12 @@ struct AgentControlController::Impl
 		case fb::Command_Search:
 			if (const auto* c = envelope->command_as_Search(); c && c->query())
 			{
-				const std::vector<SearchMatch> matches =
-					m_storageAccess->getAutocompletionMatches(c->query()->str(), NodeTypeSet::all(), true);
-				MessageSearch(matches, NodeTypeSet::all()).dispatch();
+				// A lookup: the agent activates what it picks. Dispatching MessageSearch
+				// here would search for every match, as a person entering them all into
+				// the search box does: activate them together, fill the box, and add a
+				// history step.
+				publishSearchCompleted(m_storageAccess->getAutocompletionMatches(
+					c->query()->str(), NodeTypeSet::all(), true));
 			}
 			break;
 		case fb::Command_ActivateNode:
