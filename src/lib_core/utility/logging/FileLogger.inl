@@ -7,6 +7,7 @@
 #include <cstdio>
 #include <ctime>
 #include <fstream>
+#include <locale>
 #include <sstream>
 #include <system_error>
 #endif
@@ -26,6 +27,9 @@ inline std::string FileLogger::generateDatedFileName(
 	}
 
 	std::stringstream filename;
+	// The global locale is the user's (setupDefaultLocale): its digit grouping made the
+	// year "2,026".
+	filename.imbue(std::locale::classic());
 	if (!prefix.empty())
 	{
 		filename << prefix << "_";

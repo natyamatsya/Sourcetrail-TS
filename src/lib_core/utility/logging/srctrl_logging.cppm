@@ -20,6 +20,7 @@ module;
 #include <format>
 #include <fstream>
 #include <iostream>
+#include <locale>
 #include <memory>
 #include <mutex>
 #include <source_location>
