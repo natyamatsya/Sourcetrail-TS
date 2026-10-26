@@ -6,6 +6,7 @@
 QtTextEditDialog::QtTextEditDialog(const QString& title, const QString& description, QWidget* parent)
 	: QtWindow(false, parent), m_title(title), m_description(description)
 {
+	setWindowTitle(title);
 }
 
 QSize QtTextEditDialog::sizeHint() const
@@ -49,6 +50,7 @@ void QtTextEditDialog::populateWindow(QWidget* widget)
 
 	m_text = new QPlainTextEdit();
 	m_text->setObjectName(QStringLiteral("textField"));
+	m_text->setAccessibleName(m_title);
 	m_text->setLineWrapMode(QPlainTextEdit::NoWrap);
 	m_text->setTabStopDistance(8 * m_text->fontMetrics().boundingRect('9').width());
 	layout->addWidget(m_text);

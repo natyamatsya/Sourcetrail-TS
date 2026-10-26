@@ -191,6 +191,11 @@ void QtListBox::showEditDialog()
 		connect(
 			m_editDialog.get(), &QtTextEditDialog::canceled, this, &QtListBox::canceledEditDialog);
 		connect(m_editDialog.get(), &QtTextEditDialog::finished, this, &QtListBox::savedEditDialog);
+
+		// A window of its own, without a parent to be centred on: centre it on the dialog
+		// the list is in (it opened in the screen's corner).
+		const QRect frame = window()->frameGeometry();
+		m_editDialog->move(frame.center() - QPoint(m_editDialog->width() / 2, m_editDialog->height() / 2));
 	}
 
 	m_editDialog->show();
