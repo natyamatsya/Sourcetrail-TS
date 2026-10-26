@@ -855,8 +855,11 @@ void Application::refreshAnswered(PendingRefresh refresh, int option)
 	}
 	if (option == 1)
 	{
+		// Why it did not start: the question's answer, as the mode choice's Cancel says.
 		const CauseScope scope(refresh.cause);
-		IndexingStateMachine::instance()->requestHandled("the refresh did not start");
+		const Project::Question& question = refresh.plan.questions[refresh.next];
+		IndexingStateMachine::instance()->requestHandled(
+			"canceled: the question was answered '" + question.options[1] + "'");
 		return;
 	}
 	refresh.next++;
