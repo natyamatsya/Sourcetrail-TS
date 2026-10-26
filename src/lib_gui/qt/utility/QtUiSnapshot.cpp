@@ -288,6 +288,7 @@ std::vector<std::uint8_t> captureUiSnapshot(
 	if (format == SnapshotFormat::Accessibility)
 	{
 		useAccessibility = true;
+		keepAccessibleCellsCurrent();
 		treeHash = detail::kFnvOffset;
 		const std::map<QString, int> names = countWidgetNames();	// one census: anchors need unique names
 		std::map<std::pair<std::string, std::string>, std::uint32_t> counts;

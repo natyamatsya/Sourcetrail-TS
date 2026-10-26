@@ -152,6 +152,7 @@ flatbuffers::Offset<fb::UiNode> jsonToUiNode(flatbuffers::FlatBufferBuilder& b, 
 
 QueryResult queryUi(const std::string& jsonPath, std::uint64_t requestId)
 {
+	keepAccessibleCellsCurrent();
 	QJsonArray roots;
 	const std::map<QString, int> names = countWidgetNames();	// one census: anchors need unique names
 	std::map<std::pair<QString, QString>, int> counts;

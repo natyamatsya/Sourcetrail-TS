@@ -229,6 +229,7 @@ ControlResult invokeAction(
 	const std::string& text,
 	std::uint64_t expectHash)
 {
+	keepAccessibleCellsCurrent();
 	std::string error;
 	QAccessibleInterface* iface = resolve(objectName, path, error);
 	if (iface == nullptr)

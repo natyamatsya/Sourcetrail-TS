@@ -7,6 +7,9 @@
 #include <QApplication>
 #include <QString>
 #include <QWidget>
+#if QT_CONFIG(accessibility)
+#include <QAccessible>
+#endif
 
 // Element-ref anchors, shared by the snapshot and the JSONPath query (which emit
 // refs) and by QtUiControl (which resolves them), so the three agree.
@@ -26,6 +29,21 @@
 // All of this runs on the GUI thread.
 namespace utility::qt
 {
+//! Keeps the accessible cells of item views current for an agent. Qt drops a view's
+//! cached cell interfaces on a model change only while accessibility is active (an
+//! assistive technology is attached); without one, the cells a snapshot built
+//! outlive a list's clear(): nameless and stateless, acting on nothing. Whatever
+//! reads the accessibility tree for an agent calls this first.
+inline void keepAccessibleCellsCurrent()
+{
+#if QT_CONFIG(accessibility)
+	if (!QAccessible::isActive())
+	{
+		QAccessible::setActive(true);
+	}
+#endif
+}
+
 //! How many visible widgets carry each objectName, application-wide.
 inline std::map<QString, int> countWidgetNames()
 {
