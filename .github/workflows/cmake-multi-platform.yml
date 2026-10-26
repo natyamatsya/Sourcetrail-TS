@@ -63,7 +63,9 @@ jobs:
         run: |
           # apt's flatbuffers-compiler is too old and generates code incompatible
           # with the flatbuffers crate; use the release build matching the crate.
-          curl -fsSL -o /tmp/flatc.zip \
+          # Every download here retries: GitHub's release downloads and the other
+          # hosts answer a transient 5xx now and then, which failed whole jobs.
+          curl -fsSL --retry 5 --retry-all-errors --retry-delay 5 -o /tmp/flatc.zip \
             https://github.com/google/flatbuffers/releases/download/v25.12.19-2026-02-06-03fffb2/Linux.flatc.binary.g++-13.zip
           sudo unzip -o /tmp/flatc.zip -d /usr/local/bin
           flatc --version
@@ -79,7 +81,7 @@ jobs:
           # choco's flatc is an unmaintained v1.12.0 whose install script fails;
           # fetch the official prebuilt flatc matching the flatbuffers crate.
           $url = "https://github.com/google/flatbuffers/releases/download/v25.12.19-2026-02-06-03fffb2/Windows.flatc.binary.zip"
-          Invoke-WebRequest -Uri $url -OutFile "$env:RUNNER_TEMP\flatc.zip"
+          Invoke-WebRequest -Uri $url -OutFile "$env:RUNNER_TEMP\flatc.zip" -MaximumRetryCount 5 -RetryIntervalSec 5
           Expand-Archive "$env:RUNNER_TEMP\flatc.zip" -DestinationPath "$env:RUNNER_TEMP\flatc"
           "$env:RUNNER_TEMP\flatc" | Out-File -FilePath $env:GITHUB_PATH -Append
 
@@ -112,7 +114,8 @@ jobs:
           version=0.17.0
           sha256=b607e9b9234790a008116ae5bdb71c6243b84b9fb42a53a9e70fde41c06c536a
           name="zig-aarch64-macos-${version}"
-          curl -fsSL -o "$RUNNER_TEMP/zig.tar.xz" "https://ziglang.org/download/${version}/${name}.tar.xz"
+          curl -fsSL --retry 5 --retry-all-errors --retry-delay 5 -o "$RUNNER_TEMP/zig.tar.xz" \
+            "https://ziglang.org/download/${version}/${name}.tar.xz"
           echo "${sha256}  $RUNNER_TEMP/zig.tar.xz" | shasum -a 256 -c -
           tar -xJf "$RUNNER_TEMP/zig.tar.xz" -C "$RUNNER_TEMP"
           echo "$RUNNER_TEMP/${name}" >> "$GITHUB_PATH"
@@ -191,7 +194,8 @@ jobs:
           # The C++ indexer uses recent libclang APIs (TextDiagnosticPrinter/
           # DiagnosticsEngine constructors changed); distro clang-18/19 is too old.
           # Install LLVM 22 from apt.llvm.org to match the developed-against version.
-          wget -qO /tmp/llvm.sh https://apt.llvm.org/llvm.sh
+          wget -q --tries=5 --waitretry=5 --retry-on-http-error=429,500,502,503,504 \
+            -O /tmp/llvm.sh https://apt.llvm.org/llvm.sh
           sudo bash /tmp/llvm.sh 22
           sudo apt-get install -y libclang-22-dev libclang-cpp22-dev llvm-22-dev
 
@@ -222,7 +226,7 @@ jobs:
         if: runner.os == 'Linux'
         run: |
           version=4.4.2
-          curl -fsSL -o /tmp/cmake.tar.gz \
+          curl -fsSL --retry 5 --retry-all-errors --retry-delay 5 -o /tmp/cmake.tar.gz \
             "https://github.com/Kitware/CMake/releases/download/v${version}/cmake-${version}-linux-x86_64.tar.gz"
           sudo tar -xzf /tmp/cmake.tar.gz -C /opt
           echo "/opt/cmake-${version}-linux-x86_64/bin" >> "$GITHUB_PATH"
