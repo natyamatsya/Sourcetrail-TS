@@ -11,6 +11,7 @@
 #include "RefreshInfo.h"
 #include "SourceGroup.h"
 #include "ShardConfig.h"
+#include "StdexecPrelude.h"
 
 struct FileInfo;
 class DialogView;
@@ -93,7 +94,16 @@ public:
 
 	void buildIndex(RefreshInfo info, std::shared_ptr<DialogView> dialogView);
 
+	//! Stops an indexing run and returns once it ended (it reports how). For the app
+	//! closing, and the project going.
+	void stopIndexing();
+
 private:
+	// What an indexing run does, its steps made (buildIndexImpl) and run in order by
+	// a coroutine on the work pool (startIndexing).
+	struct IndexingRun;
+	void startIndexing(std::shared_ptr<IndexingRun> run);
+
 	// The actual refresh/buildIndex bodies. The public entry points are std::expected exception
 	// boundaries around these: any escaping exception becomes a failed IndexingOutcome and a
 	// terminal MessageIndexingFinished, so a headless run can never lose its quit event to a
@@ -150,6 +160,10 @@ private:
 
 	std::string m_appUUID;
 	bool m_hasGUI;
+
+	// The indexing run, while one runs; the scope waits for it.
+	exec::async_scope m_indexing;
+	std::weak_ptr<IndexingRun> m_indexingRun;
 };
 
 #endif	  // PROJECT_H

@@ -43,11 +43,16 @@ AnyScheduler fallbackPool()
 	return AnyScheduler(pool->get_scheduler());
 }
 
-void afterDelay(std::chrono::milliseconds delay, std::function<void()> work)
+exec::timed_thread_scheduler timerScheduler()
 {
 	// Never destroyed: a wait still pending at exit is not waited for.
 	static exec::timed_thread_context* const timer = new exec::timed_thread_context();
-	stdexec::start_detached(exec::schedule_after(timer->get_scheduler(), delay) | stdexec::then(std::move(work)));
+	return timer->get_scheduler();
+}
+
+void afterDelay(std::chrono::milliseconds delay, std::function<void()> work)
+{
+	stdexec::start_detached(exec::schedule_after(timerScheduler(), delay) | stdexec::then(std::move(work)));
 }
 
 void runOnWorkPool(std::function<void()> work)

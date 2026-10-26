@@ -51,8 +51,6 @@
 #include "WorkPools.h"
 #include "ISchedulers.h"
 #include "Strand.h"
-#include "TaskManager.h"
-#include "TaskScheduler.h"
 #ifndef SRCTRL_MODULE_BUILD
 #include "UserPaths.h"
 #endif
@@ -102,7 +100,6 @@ void Application::createInstance(
 		collector->run(Application::getUUID());
 	}
 
-	TaskManager::createScheduler(TabIds::app());
 	MessageQueue::getInstance();
 
 	s_instance = std::shared_ptr<Application>(new Application(hasGui));
@@ -184,9 +181,12 @@ void Application::destroyInstance()
 	MessageQueue::getInstance()->stopMessageLoop();
 	// What is queued to the app, the background and the tabs is dropped.
 	execution::stopQueues();
+	// An indexing run ends here (it reports how), before the pools it runs on go.
+	if (s_instance && s_instance->m_project)
+	{
+		s_instance->m_project->stopIndexing();
+	}
 	execution::setWorkPool(std::nullopt);	// the app's pools go with it
-	// A strand loop's pass may hold its scheduler past its removal: end them here.
-	TaskManager::stopSchedulerLoops();
 
 	// What spawns pipelines (the message handlers, the tasks) has stopped: wait for
 	// the ones in flight.
@@ -194,7 +194,6 @@ void Application::destroyInstance()
 	{
 		stdexec::sync_wait(s_instance->m_pipelines.on_empty());
 	}
-	TaskManager::destroyScheduler(TabIds::app());
 
 	if (GarbageCollectorImpl* gc = GarbageCollectorImpl::getInstance())
 	{
@@ -748,22 +747,12 @@ void Application::handleMessage(MessageSwitchColorScheme* message)
 void Application::startMessagingAndScheduling()
 {
 	// The app's queue: its messages, the work posted to it, the steps of the load's
-	// pipeline. The indexer's task trees run beside them on the same strand, on the
-	// app's TaskScheduler.
+	// pipeline. An indexing run's steps run on the work pool (Project::startIndexing).
 	m_appStrand = startQueue(TabIds::app());
-	const std::shared_ptr<TaskScheduler> indexer = TaskManager::createScheduler(TabIds::app());
-	if (m_appStrand != nullptr)
-	{
-		indexer->startSchedulerLoopOn(m_appStrand);
-	}
-	else
-	{
-		indexer->startSchedulerLoopThreaded();
-	}
 	startQueue(TabIds::background());
 	if (m_schedulers != nullptr)
 	{
-		execution::setWorkPool(m_schedulers->compute());	// the indexer's parallel streams
+		execution::setWorkPool(m_schedulers->compute());	// indexing runs, and the like
 	}
 
 	MessageQueue* queue = MessageQueue::getInstance().get();

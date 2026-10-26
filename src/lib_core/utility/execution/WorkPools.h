@@ -15,6 +15,8 @@
 
 #include "SenderAliases.h"
 
+#include <exec/timed_thread_scheduler.hpp>
+
 #include <chrono>
 #include <cstddef>
 #include <functional>
@@ -32,6 +34,9 @@ void setWorkPool(std::optional<AnyScheduler> pool);
 //! A small pool kept for what has no pool to share (headless, tests): four threads,
 //! never destroyed.
 AnyScheduler fallbackPool();
+
+//! The shared timer's scheduler: exec::schedule_after on it completes on its thread.
+exec::timed_thread_scheduler timerScheduler();
 
 //! Runs `work` on the timer's thread once `delay` has passed. Keep it short: post
 //! what takes longer elsewhere.

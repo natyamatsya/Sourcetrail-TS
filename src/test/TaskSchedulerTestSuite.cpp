@@ -19,9 +19,13 @@
 #include "MessageCause.h"
 #include "SerialQueue.h"
 #include "StdexecPrelude.h"
+
+#include <exec/task.hpp>
+
 #include "Strand.h"
 #include "TaskLambda.h"
 #include "TaskScheduler.h"
+#include "TaskSender.h"
 #include "TaskWake.h"
 #include "WorkPools.h"
 
@@ -967,4 +971,48 @@ TEST_CASE("parallelFor runs every part, also when no pool thread is free")
 			}),
 		std::runtime_error);
 	REQUIRE(others == 7);
+}
+
+namespace
+{
+// Two tasks one after another, with a rest between: what a pipeline's stages do.
+exec::task<Task::TaskState> twoStages(std::shared_ptr<Blackboard> blackboard, std::atomic<int>& ran)
+{
+	const auto first = std::make_shared<TaskLambda>([&ran]() { ran++; });
+	if (co_await execution::runTask(first, blackboard) == Task::TaskState::STATE_FAILURE)
+	{
+		co_return Task::TaskState::STATE_FAILURE;
+	}
+	co_await execution::delay(std::chrono::milliseconds(5));
+	co_return co_await execution::runTask(std::make_shared<RestingTask>(3), blackboard);
+}
+}	 // namespace
+
+TEST_CASE("a coroutine runs tasks one after another, holding no thread while they rest")
+{
+	const TestWorkPool work(1);
+	std::atomic<int> ran = 0;
+	const auto strand = execution::Strand::create(execution::workPool());
+	const auto result = stdexec::sync_wait(
+		stdexec::starts_on(strand->scheduler(), twoStages(std::make_shared<Blackboard>(), ran)));
+	REQUIRE(result.has_value());
+	REQUIRE(std::get<0>(*result) == Task::TaskState::STATE_SUCCESS);
+	REQUIRE(ran == 1);
+}
+
+TEST_CASE("a stopped task sender terminates its task and completes stopped")
+{
+	const TestWorkPool work(1);
+	const auto waiting = std::make_shared<WaitingTask>();
+	exec::async_scope scope;
+	std::atomic<int> outcome = 0;
+	scope.spawn(
+		execution::runTask(waiting, std::make_shared<Blackboard>()) |
+		stdexec::then([&](Task::TaskState) { outcome = 1; }) | stdexec::upon_stopped([&]() { outcome = 2; }));
+	REQUIRE(eventually([&]() { return waiting->updates > 0; }));
+
+	scope.request_stop();
+	REQUIRE(eventually([&]() { return outcome == 2; }));
+	REQUIRE(waiting->released);	// terminated
+	stdexec::sync_wait(scope.on_empty());
 }
