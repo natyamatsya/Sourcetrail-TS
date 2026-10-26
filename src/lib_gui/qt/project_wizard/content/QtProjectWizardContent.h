@@ -11,6 +11,7 @@
 #include "QtProjectWizardWindow.h"
 
 class QtTextEditDialog;
+struct ProjectWizardView;
 
 class QtProjectWizardContent: public QWidget
 {
@@ -26,6 +27,10 @@ public:
 	virtual void save();
 	virtual void refresh();
 	virtual bool check();
+
+	// What the page offers an agent beyond the fields' values: the choices a field
+	// has, notes about it (ProjectWizardView::choices / notes).
+	virtual void describe(ProjectWizardView& view) const;
 
 	virtual std::vector<FilePath> getFilePaths() const;
 	virtual QString getFileNamesTitle() const;

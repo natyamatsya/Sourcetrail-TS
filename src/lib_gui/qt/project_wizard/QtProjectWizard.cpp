@@ -1027,6 +1027,10 @@ ProjectWizardView QtProjectWizard::view() const
 	{
 		view.sourceGroup = static_cast<std::size_t>(m_previouslySelectedIndex);
 		view.fields = readSourceGroupFields(*m_allSourceGroupSettings[m_previouslySelectedIndex]);
+		if (content())
+		{
+			content()->describe(view);
+		}
 	}
 	if constexpr (language_packages::buildCxxLanguagePackage)
 	{
@@ -1042,6 +1046,11 @@ ProjectWizardView QtProjectWizard::view() const
 	}
 	view.types.emplace_back("custom");
 	return view;
+}
+
+void QtProjectWizard::contentChanged()
+{
+	reportChanged();
 }
 
 void QtProjectWizard::reportChanged() const

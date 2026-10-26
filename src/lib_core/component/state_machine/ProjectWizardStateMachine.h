@@ -55,6 +55,15 @@ struct ProjectWizardView
 	std::vector<SourceGroup> sourceGroups;
 	std::optional<std::size_t> sourceGroup;	// the page shown: a source group's, or the general one
 	std::map<std::string, SourceGroupField> fields;	// the shown source group's
+
+	// A value a field can take, as the page offers it (a preset, a target...).
+	struct Choice
+	{
+		std::string value;
+		std::string label;	// what a person sees for it; may be empty
+	};
+	std::map<std::string, std::vector<Choice>> choices;	// by field name: what the page offers
+	std::map<std::string, std::string> notes;	// what the page tells about a field beside its value
 	std::vector<std::string> types;	// what can be added (the type selection)
 };
 

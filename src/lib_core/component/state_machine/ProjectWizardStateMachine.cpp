@@ -20,6 +20,12 @@ struct SourceGroup
 	bool enabled = true;
 };
 
+struct Choice
+{
+	std::string value;
+	std::optional<std::string> label;
+};
+
 struct WizardContext
 {
 	std::optional<std::string> mode;	// new | edit
@@ -28,6 +34,8 @@ struct WizardContext
 	std::optional<Project> project;
 	std::optional<std::vector<SourceGroup>> source_groups;
 	std::optional<std::map<std::string, SourceGroupField>> fields;
+	std::optional<std::map<std::string, std::vector<Choice>>> choices;
+	std::optional<std::map<std::string, std::string>> notes;
 	std::optional<std::vector<std::string>> types;
 	std::optional<std::string> applying;
 	std::optional<std::string> error;
@@ -378,6 +386,24 @@ std::string ProjectWizardMachine::context(State state, const Data& data)
 		if (view.sourceGroup)
 		{
 			context.fields = view.fields;
+			if (!view.choices.empty())
+			{
+				std::map<std::string, std::vector<json::Choice>> choices;
+				for (const auto& [field, offered]: view.choices)
+				{
+					std::vector<json::Choice>& values{choices[field]};
+					for (const auto& [value, label]: offered)
+					{
+						values.push_back(
+							{.value = value, .label = label.empty() ? std::nullopt : std::optional{label}});
+					}
+				}
+				context.choices = std::move(choices);
+			}
+			if (!view.notes.empty())
+			{
+				context.notes = view.notes;
+			}
 		}
 		if (state == State::ChoosingType)
 		{

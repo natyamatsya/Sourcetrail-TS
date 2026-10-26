@@ -544,8 +544,12 @@ closed, context.outcome; the project machine takes over.
   cancel                           editing: closes the wizard; choosing_type: closes the type \
 selection.
   context: mode (new | edit), page (general | source_group), source_group, project { name, \
-location }, source_groups [{ name, type, enabled }], fields, types (choosing_type), applying, \
-error; outcome (closed).
+location }, source_groups [{ name, type, enabled }], fields, choices, notes, types \
+(choosing_type), applying, error; outcome (closed). choices { field: [{ value, label? }] } \
+are the values the page offers for a field (a cmake group: its presets; once its build \
+directory is configured, its configurations and targets, for cmake_target_glob: names or \
+patterns joined by ';'); notes { field: text } what the page shows beside a field (the build \
+directory a preset resolves to, how many targets and files are indexed).
   Recipe, a project from a compilation database: new; set { project_name, project_location }; \
 add_source_group { type: \"cdb\" }; set { fields: { compilation_database: \
 \"C:/b/compile_commands.json\" } }; create.

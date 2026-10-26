@@ -31,6 +31,8 @@ public:
 	// went; New and Edit are the main window's.
 	void apply(const ProjectWizardRequest& request);
 
+	void contentChanged() override;
+
 public slots:
 	void newProject();
 

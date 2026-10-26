@@ -25,6 +25,7 @@ protected:
 	void save() override;
 	void refresh() override;
 	bool check() override;
+	void describe(ProjectWizardView& view) const override;
 
 private:
 	std::vector<QtProjectWizardContent*> m_contents;

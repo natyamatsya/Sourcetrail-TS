@@ -1,5 +1,7 @@
 #include "QtProjectWizardContentGroup.h"
 
+#include "ProjectWizardStateMachine.h"
+
 QtProjectWizardContentGroup::QtProjectWizardContentGroup(QtProjectWizardWindow* window)
 	: QtProjectWizardContent(window)
 {
@@ -92,4 +94,15 @@ bool QtProjectWizardContentGroup::check()
 	}
 
 	return true;
+}
+
+void QtProjectWizardContentGroup::describe(ProjectWizardView& view) const
+{
+	for (const QtProjectWizardContent* content: m_contents)
+	{
+		if (content)
+		{
+			content->describe(view);
+		}
+	}
 }

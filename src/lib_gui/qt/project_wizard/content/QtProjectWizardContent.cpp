@@ -40,6 +40,8 @@ bool QtProjectWizardContent::check()
 	return true;
 }
 
+void QtProjectWizardContent::describe(ProjectWizardView&  /*view*/) const {}
+
 std::vector<FilePath> QtProjectWizardContent::getFilePaths() const
 {
 	return {};

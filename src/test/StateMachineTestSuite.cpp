@@ -1097,6 +1097,34 @@ TEST_CASE("preferences carry out requests and follow a person")
 	machine.detach(presenter);
 }
 
+TEST_CASE("project wizard shows what a page offers for its fields")
+{
+	ProjectWizardStateMachine machine;
+	FakeWizardPresenter presenter;
+	machine.attach(presenter);
+	REQUIRE(machine.fire("new", "", EventSource::Agent).ok);
+
+	ProjectWizardView view;
+	view.sourceGroups = {{"C/C++ from CMake File API", "cmake", true}};
+	view.sourceGroup = 0;
+	view.fields = {{"cmake_preset", std::string("debug")}};
+	view.choices["cmake_preset"] = {
+		{.value = "debug", .label = "Debug (Ninja)"}, {.value = "multi", .label = ""}};
+	view.notes["cmake_preset"] = "build directory: /p/build/debug (configured)";
+	machine.opened(view);
+	std::string context{machine.snapshot().context};
+	REQUIRE(contains(context, R"x("choices":{"cmake_preset":[{"value":"debug","label":"Debug (Ninja)"},{"value":"multi"}]})x"));
+	REQUIRE(contains(context, R"x("notes":{"cmake_preset":"build directory: /p/build/debug (configured)"})x"));
+
+	// The general page has no fields, nor what they offer.
+	view.sourceGroup.reset();
+	machine.changed(view);
+	context = machine.snapshot().context;
+	REQUIRE_FALSE(contains(context, R"("choices")"));
+	REQUIRE_FALSE(contains(context, R"("notes")"));
+	machine.detach(presenter);
+}
+
 TEST_CASE("activation ends once its messages are handled and the views have drawn")
 {
 	const auto activation = std::make_shared<ActivationStateMachine>();

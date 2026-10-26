@@ -34,6 +34,10 @@ public:
 	QString lastMessage() const;
 	void clearLastMessage();
 
+	// A page's content changed on its own (work it ran in the background finished):
+	// what an agent sees of the page follows.
+	virtual void contentChanged();
+
 	static const int FRONT_COL = 0;
 	static const int HELP_COL = 1;
 	static const int LINE_COL = 2;

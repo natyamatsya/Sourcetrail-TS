@@ -141,6 +141,8 @@ int QtProjectWizardWindow::ask(const QString& text, const std::vector<std::strin
 	return Application::getInstance()->getDialogView(DialogView::UseCase::PROJECT_SETUP)->confirm(text.toStdString(), options);
 }
 
+void QtProjectWizardWindow::contentChanged() {}
+
 QString QtProjectWizardWindow::lastMessage() const
 {
 	return m_lastMessage;
