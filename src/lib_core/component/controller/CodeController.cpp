@@ -1,6 +1,8 @@
 #include "CodeController.h"
 
 #include <memory>
+#include <format>
+#include <string_view>
 
 #include "Application.h"
 #ifndef SRCTRL_MODULE_BUILD
@@ -172,8 +174,8 @@ void CodeController::handleMessage(MessageActivateOverview* message)
 	}
 
 	// "1 file", not "1 files".
-	const auto counted = [](const auto count, const std::string& one, const std::string& many) {
-		return std::to_string(count) + " " + (count == 1 ? one : many);
+	const auto counted = [](const auto count, const std::string_view one, const std::string_view many) {
+		return std::format("{} {}", count, count == 1 ? one : many);
 	};
 
 	ss << "\t" + counted(stats.fileCount, "file", "files");

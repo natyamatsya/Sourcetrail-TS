@@ -37,6 +37,11 @@ void copyNewFilesFromDirectory(const QString &src, const QString &dst);
 // (ActivationStateMachine::drawing) through the animation that shows the result.
 void holdWhileRunning(QAbstractAnimation *animation, std::shared_ptr<void> hold);
 
+// The window in front: the active modal one (a dialog, a message box), else the active window;
+// nullptr when the application is not active (an agent drives it headless). Boxes are parented
+// to it, so they are centred on the window they are about.
+QWidget *windowInFront();
+
 // Qt high-DPI scale-factor env helpers moved to lib/utility/qtScaleFactor.h (QtCore-only, so the headless
 // indexer's bootstrap doesn't need lib_gui). #include "qtScaleFactor.h" for isQtAutoScreenScaleFactorEnabled/
 // setQtAutoScreenScaleFactorEnabled/getQtScaleFactor/setQtScaleFactor.

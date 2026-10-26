@@ -9,6 +9,7 @@
 #include <deque>
 #include <expected>
 #include <filesystem>
+#include <format>
 #include <fstream>
 #include <iostream>
 #include <map>
@@ -481,8 +482,7 @@ inline int CxxModulePrebuildRunner::run(const FilePath& requestPath)
 	// --- 3. build each BMI into the cache, in dependency order (with the file's own flags) ---------
 	if (const auto created = FileSystem::createDirectories(cacheDir); !created)
 	{
-		LOG_ERROR(
-			"Could not create the C++ module cache \"" + cacheDir.str() + "\": " + created.error().message());
+		LOG_ERROR(std::format("Could not create the C++ module cache \"{}\": {}", cacheDir.str(), created.error().message()));
 		return 1;
 	}
 	// Purge stale BMIs so a renamed/deleted module can't leave an orphan .pcm that still resolves on

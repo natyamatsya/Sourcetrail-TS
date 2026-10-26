@@ -1,5 +1,7 @@
 #include "StorageConnection.h"
 
+#include <format>
+
 #include "BorrowedSqliteConnection.h"
 #ifndef SRCTRL_MODULE_BUILD
 #include "FileSystem.h"
@@ -19,9 +21,10 @@ StorageConnection::StorageConnection(const FilePath& dbFilePath)
 	{
 		if (const auto created = FileSystem::createDirectories(m_dbFilePath.getParentDirectory()); !created)
 		{
-			LOG_ERROR(
-				"Could not create the database directory \"" + m_dbFilePath.getParentDirectory().str() +
-				"\": " + created.error().message());
+			LOG_ERROR(std::format(
+				"Could not create the database directory \"{}\": {}",
+				m_dbFilePath.getParentDirectory().str(),
+				created.error().message()));
 		}
 	}
 

@@ -6,6 +6,7 @@
 #include <memory>
 #include <mutex>
 #include <optional>
+#include <ranges>
 #include <utility>
 
 #include <QWidget>	// pulls Qt GUI feature macros (QT_CONFIG) before the check below
@@ -363,7 +364,7 @@ QList<QWidget*> windowsBackToFront()
 	}
 
 	const auto area = [](const QWidget* w) { return static_cast<qint64>(w->width()) * w->height(); };
-	std::stable_sort(windows.begin(), windows.end(), [&](const QWidget* a, const QWidget* b) {
+	std::ranges::stable_sort(windows, [&](const QWidget* a, const QWidget* b) {
 		const int layerA = compositeLayer(a);
 		const int layerB = compositeLayer(b);
 		return layerA != layerB ? layerA < layerB : area(a) > area(b);
@@ -663,10 +664,8 @@ void postGesture(
 // widgets with no accessible element of their own.
 QWidget* widgetAt(const QPoint& global)
 {
-	const QList<QWidget*> windows = windowsBackToFront();
-	for (auto it = windows.rbegin(); it != windows.rend(); ++it)
+	for (QWidget* window: windowsBackToFront() | std::views::reverse)
 	{
-		QWidget* window = *it;
 		if (!window->geometry().contains(global))
 		{
 			continue;

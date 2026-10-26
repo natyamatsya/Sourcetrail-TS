@@ -1,5 +1,7 @@
 #include "setupApp.h"
 
+#include <format>
+
 #ifndef SRCTRL_MODULE_BUILD
 #include <AppPath.h>
 #include <ApplicationSettings.h>
@@ -48,9 +50,10 @@ static void setupUserDirectory(const FilePath &appPath, const FilePath &userData
 	if (!UserPaths::getUserDataDirectoryPath().exists()) {
 		if (const auto created = FileSystem::createDirectories(UserPaths::getUserDataDirectoryPath()); !created)
 		{
-			LOG_ERROR(
-				"Could not create the user data directory \"" + UserPaths::getUserDataDirectoryPath().str() +
-				"\": " + created.error().message());
+			LOG_ERROR(std::format(
+				"Could not create the user data directory \"{}\": {}",
+				UserPaths::getUserDataDirectoryPath().str(),
+				created.error().message()));
 		}
 
 		// Copy the default application settings as the legacy XML file; it is migrated

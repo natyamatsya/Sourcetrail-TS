@@ -1,4 +1,6 @@
 #include "QtErrorView.h"
+
+#include <utility>
 #include "UiPost.h"
 
 #ifndef SRCTRL_MODULE_BUILD
@@ -60,14 +62,14 @@ QtErrorView::QtErrorView(ViewLayout* viewLayout)
 
 	// Setup Table Headers
 	m_model->setColumnCount(static_cast<int>(COLUMN_MAX) + 1);
-	m_table->setColumnWidth(static_cast<int>(Column::ID), 40);
-	m_table->setColumnWidth(static_cast<int>(Column::TYPE), 80);
-	m_table->setColumnWidth(static_cast<int>(Column::MESSAGE), 450);
-	m_table->setColumnWidth(static_cast<int>(Column::FILE), 300);
-	m_table->setColumnWidth(static_cast<int>(Column::LINE), 50);
-	m_table->setColumnWidth(static_cast<int>(Column::TRANSLATION_UNIT), 300);
+	m_table->setColumnWidth(std::to_underlying(Column::ID), 40);
+	m_table->setColumnWidth(std::to_underlying(Column::TYPE), 80);
+	m_table->setColumnWidth(std::to_underlying(Column::MESSAGE), 450);
+	m_table->setColumnWidth(std::to_underlying(Column::FILE), 300);
+	m_table->setColumnWidth(std::to_underlying(Column::LINE), 50);
+	m_table->setColumnWidth(std::to_underlying(Column::TRANSLATION_UNIT), 300);
 
-	m_table->setColumnHidden(static_cast<int>(Column::ID), true);
+	m_table->setColumnHidden(std::to_underlying(Column::ID), true);
 
 	QStringList headers;
 	headers << QStringLiteral("ID") << QStringLiteral("Type") << QStringLiteral("Message")
@@ -78,12 +80,12 @@ QtErrorView::QtErrorView(ViewLayout* viewLayout)
 	connect(m_table, &QTableView::clicked, [=, this](const QModelIndex& index) {
 		if (index.isValid())
 		{
-			if (m_model->item(index.row(), static_cast<int>(Column::FILE)) == nullptr)
+			if (m_model->item(index.row(), std::to_underlying(Column::FILE)) == nullptr)
 			{
 				return;
 			}
 
-			const Id errorId{m_model->item(index.row(), static_cast<int>(Column::ID))->data(Qt::DisplayRole).toLongLong()};
+			const Id errorId{m_model->item(index.row(), std::to_underlying(Column::ID))->data(Qt::DisplayRole).toLongLong()};
 
 			m_controllerProxy.executeAsTaskWithArgs(&ErrorController::showError, errorId);
 		}
@@ -215,7 +217,7 @@ void QtErrorView::setErrorId(Id errorId)
 {
 	execution::qt::onUi(this, [=, this]() {
 		QList<QStandardItem*> items = m_model->findItems(QString::fromStdString(to_string(errorId)), 
-			Qt::MatchExactly, static_cast<int>(Column::ID));
+			Qt::MatchExactly, std::to_underlying(Column::ID));
 
 		if (items.size() == 1)
 		{
@@ -316,39 +318,39 @@ void QtErrorView::addErrorToTable(const ErrorInfo& error)
 	// QVariant has none of (every error landed in row 0, and the table looked empty).
 	QStandardItem* item = new QStandardItem();
 	item->setData(QVariant(static_cast<qlonglong>(error.id)), Qt::DisplayRole);
-	m_model->setItem(rowNumber, static_cast<int>(Column::ID), item);
+	m_model->setItem(rowNumber, std::to_underlying(Column::ID), item);
 
 	m_model->setItem(
 		rowNumber,
-		static_cast<int>(Column::TYPE),
+		std::to_underlying(Column::TYPE),
 		new QStandardItem(error.fatal ? QStringLiteral("FATAL") : QStringLiteral("ERROR")));
 	if (error.fatal)
 	{
-		m_model->item(rowNumber, static_cast<int>(Column::TYPE))->setForeground(QBrush(Qt::red));
+		m_model->item(rowNumber, std::to_underlying(Column::TYPE))->setForeground(QBrush(Qt::red));
 	}
-	m_model->item(rowNumber, static_cast<int>(Column::TYPE))->setIcon(s_errorIcon);
+	m_model->item(rowNumber, std::to_underlying(Column::TYPE))->setIcon(s_errorIcon);
 
 	m_model->setItem(
-		rowNumber, static_cast<int>(Column::MESSAGE), new QStandardItem(QString::fromStdString(error.message)));
+		rowNumber, std::to_underlying(Column::MESSAGE), new QStandardItem(QString::fromStdString(error.message)));
 
 	m_model->setItem(
-		rowNumber, static_cast<int>(Column::FILE), new QStandardItem(QString::fromStdString(error.filePath)));
-	m_model->item(rowNumber, static_cast<int>(Column::FILE))->setToolTip(QString::fromStdString(error.filePath));
+		rowNumber, std::to_underlying(Column::FILE), new QStandardItem(QString::fromStdString(error.filePath)));
+	m_model->item(rowNumber, std::to_underlying(Column::FILE))->setToolTip(QString::fromStdString(error.filePath));
 
 	item = new QStandardItem();
 	item->setData(QVariant(qlonglong(error.lineNumber)), Qt::DisplayRole);
-	m_model->setItem(rowNumber, static_cast<int>(Column::LINE), item);
+	m_model->setItem(rowNumber, std::to_underlying(Column::LINE), item);
 
 	m_model->setItem(
 		rowNumber,
-		static_cast<int>(Column::INDEXED),
+		std::to_underlying(Column::INDEXED),
 		new QStandardItem(error.indexed ? QStringLiteral("yes") : QStringLiteral("no")));
 
 	m_model->setItem(
 		rowNumber,
-		static_cast<int>(Column::TRANSLATION_UNIT),
+		std::to_underlying(Column::TRANSLATION_UNIT),
 		new QStandardItem(QString::fromStdString(error.translationUnit)));
-	m_model->item(rowNumber, static_cast<int>(Column::TRANSLATION_UNIT))
+	m_model->item(rowNumber, std::to_underlying(Column::TRANSLATION_UNIT))
 		->setToolTip(QString::fromStdString(error.translationUnit));
 }
 

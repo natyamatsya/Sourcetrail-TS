@@ -3,6 +3,7 @@
 #include <cctype>
 #include <fstream>
 #include <string_view>
+#include <format>
 
 #include <nlohmann/json.hpp>
 
@@ -90,8 +91,7 @@ CxxModulePrebuilder::Result CxxModulePrebuilder::prebuild(
 	// filesystem: request.json in, manifest.json + the .pcm cache out.
 	if (const auto created = FileSystem::createDirectories(cacheDir); !created)
 	{
-		LOG_ERROR(
-			"Could not create the C++ module cache \"" + cacheDir.str() + "\": " + created.error().message());
+		LOG_ERROR(std::format("Could not create the C++ module cache \"{}\": {}", cacheDir.str(), created.error().message()));
 		return result;
 	}
 	const FilePath requestPath = cacheDir.getConcatenated("/request.json");

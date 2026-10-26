@@ -2,6 +2,7 @@
 
 #include <fstream>
 #include <filesystem>
+#include <format>
 
 #include <nlohmann/json.hpp>
 
@@ -128,9 +129,10 @@ std::shared_ptr<Task> createBuildPchTaskForInput(
 
 		if (const auto created = FileSystem::createDirectories(pchOutputFilePath.getParentDirectory()); !created)
 		{
-			LOG_ERROR(
-				"Could not create the precompiled header directory \"" +
-				pchOutputFilePath.getParentDirectory().str() + "\": " + created.error().message());
+			LOG_ERROR(std::format(
+				"Could not create the precompiled header directory \"{}\": {}",
+				pchOutputFilePath.getParentDirectory().str(),
+				created.error().message()));
 			return;
 		}
 

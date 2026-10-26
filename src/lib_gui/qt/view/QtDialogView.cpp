@@ -5,8 +5,8 @@
 #include <chrono>
 #include <sstream>
 #include <thread>
+#include <format>
 
-#include <QApplication>
 #include <QGuiApplication>
 #include <QSignalBlocker>
 #include <QTimer>
@@ -28,6 +28,7 @@
 #include "StorageAccess.h"
 #endif
 #include "UiPost.h"
+#include "utilityQt.h"
 #include "TabIds.h"
 #ifndef SRCTRL_MODULE_BUILD
 #include "utility.h"
@@ -239,11 +240,10 @@ void QtDialogView::showIndexingProgress(
 	if (!sourcePaths.empty())
 	{
 		std::vector<std::string> stati;
+		stati.reserve(sourcePaths.size());
 		for (const FilePath& path: sourcePaths)
 		{
-			stati.push_back(
-				"[" + std::to_string(startedFileCount) + "/" +
-				std::to_string(totalFileCount) + "] Indexing file: " + path.str());
+			stati.push_back(std::format("[{}/{}] Indexing file: {}", startedFileCount, totalFileCount, path.str()));
 		}
 		MessageStatus(stati, false, false, m_dialogsVisible).dispatch();
 	}
@@ -354,11 +354,7 @@ void QtDialogView::presentQuestion(
 
 		// Centred on the window in front (a wizard, a dialog), which the question is about. On the
 		// heap: closing that window while the box is open deletes the box with it.
-		QWidget* parent = QApplication::activeModalWidget();
-		if (!parent)
-		{
-			parent = QApplication::activeWindow();
-		}
+		QWidget* parent = utility::windowInFront();
 		const QPointer<QtMessageBox> msgBox = new QtMessageBox(parent ? parent : m_mainWindow);
 		msgBox->setWindowTitle(QStringLiteral("Sourcetrail"));
 		msgBox->setIcon(options.size() > 1 ? QtMessageBox::Question : QtMessageBox::Information);

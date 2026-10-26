@@ -20,6 +20,7 @@
 #include "logging.h"
 
 #include <QAbstractAnimation>
+#include <QApplication>
 #include <QDir>
 #include <QFile>
 #include <QFontDatabase>
@@ -124,6 +125,15 @@ QtMainWindow *getMainWindowforMainView(ViewLayout *viewLayout)
 		viewLayout = view != nullptr ? view->getViewLayout() : nullptr;
 	}
 	return nullptr;
+}
+
+QWidget *windowInFront()
+{
+	if (QWidget *modal = QApplication::activeModalWidget())
+	{
+		return modal;
+	}
+	return QApplication::activeWindow();
 }
 
 void holdWhileRunning(QAbstractAnimation *animation, std::shared_ptr<void> hold)

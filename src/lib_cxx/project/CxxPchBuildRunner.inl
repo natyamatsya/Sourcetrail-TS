@@ -4,6 +4,7 @@
 #pragma once
 
 #ifndef SRCTRL_MODULE_PURVIEW
+#include <format>
 #include <fstream>
 #include <set>
 #include <string>
@@ -64,9 +65,10 @@ inline int CxxPchBuildRunner::run(const FilePath& requestPath)
 
 	if (const auto created = FileSystem::createDirectories(pchOutputFilePath.getParentDirectory()); !created)
 	{
-		LOG_ERROR(
-			"Could not create the precompiled header directory \"" +
-			pchOutputFilePath.getParentDirectory().str() + "\": " + created.error().message());
+		LOG_ERROR(std::format(
+			"Could not create the precompiled header directory \"{}\": {}",
+			pchOutputFilePath.getParentDirectory().str(),
+			created.error().message()));
 		return 1;
 	}
 

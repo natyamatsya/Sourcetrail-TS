@@ -4,6 +4,7 @@
 
 #include <optional>
 #include <type_traits>
+#include <format>
 
 #ifndef SRCTRL_MODULE_BUILD
 #include "ApplicationSettings.h"
@@ -859,7 +860,7 @@ void Application::refreshAnswered(PendingRefresh refresh, int option)
 		const CauseScope scope(refresh.cause);
 		const Project::Question& question = refresh.plan.questions[refresh.next];
 		IndexingStateMachine::instance()->requestHandled(
-			"canceled: the question was answered '" + question.options[1] + "'");
+			std::format("canceled: the question was answered '{}'", question.options[1]));
 		return;
 	}
 	refresh.next++;
