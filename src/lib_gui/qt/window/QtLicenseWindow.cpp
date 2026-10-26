@@ -86,6 +86,7 @@ static void addLicense(QWidget *parent, QBoxLayout *layout, const LicenseInfo &l
 QtLicenseWindow::QtLicenseWindow(QWidget* parent)
 	: QtWindow(false, parent)
 {
+	setWindowTitle(tr("License"));
 	setScrollAble(true);
 }
 

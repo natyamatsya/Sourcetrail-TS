@@ -25,6 +25,8 @@ import srctrl.messaging;
 
 QtPreferencesWindow::QtPreferencesWindow(QWidget* parent): QtProjectWizardWindow(parent)
 {
+	setWindowTitle(tr("Preferences"));
+
 	// save old application settings so they can be compared later
 	ApplicationSettings* appSettings = ApplicationSettings::getInstance().get();
 	m_appSettings.setHeaderSearchPaths(appSettings->getHeaderSearchPaths());

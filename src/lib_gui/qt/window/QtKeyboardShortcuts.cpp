@@ -42,6 +42,7 @@ void QtShortcutTable::wheelEvent(QWheelEvent* event)
 QtKeyboardShortcuts::QtKeyboardShortcuts(QWidget* parent)
 	: QtWindow(false, parent)
 {
+	setWindowTitle(tr("Keyboard Shortcuts"));
 	setScrollAble(true);
 }
 

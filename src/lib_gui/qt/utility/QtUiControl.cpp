@@ -870,8 +870,12 @@ std::string describeDialog()
 		if (widget->inherits("QtWindowStackElement") && widget->isVisible())
 		{
 			const QLabel* title = widget->findChild<QLabel*>(QStringLiteral("title"));
-			return (title != nullptr && !title->text().isEmpty()) ? title->text().toStdString()
-																 : widget->metaObject()->className();
+			if (title != nullptr && !title->text().isEmpty())
+			{
+				return title->text().toStdString();
+			}
+			return !widget->windowTitle().isEmpty() ? widget->windowTitle().toStdString()
+													: widget->metaObject()->className();
 		}
 	}
 	return "";

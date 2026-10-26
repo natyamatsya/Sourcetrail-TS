@@ -91,6 +91,9 @@ QtStartScreen::QtStartScreen(QWidget *parent)
 	, m_projectIcon(QString::fromUtf8(QtResources::ICON_EMPTY_ICON))
 	, m_githubIcon(QString::fromUtf8(QtResources::STARTSCREEN_GITHUB_ICON))
 {
+	// A window inside the main window: its title is no window's, so it names it here.
+	setWindowTitle(tr("Start Window"));
+	setAccessibleName(windowTitle());
 	refreshStyle();
 	addLogo();
 

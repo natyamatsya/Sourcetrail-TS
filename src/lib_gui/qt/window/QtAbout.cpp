@@ -17,6 +17,7 @@ using namespace std::string_literals;
 QtAbout::QtAbout(QWidget *parent)
 	: QtWindow(false, parent)
 {
+	setWindowTitle(tr("About Sourcetrail"));
 }
 
 QSize QtAbout::sizeHint() const
