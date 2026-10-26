@@ -378,7 +378,17 @@ void QtMainWindow::loadLayout()
 	// Default OFF → thin tab-strip drag handles (see setShowDockWidgetTitleBars).
 	setShowDockWidgetTitleBars(settings.value(QStringLiteral("showTitleBars"), false).toBool());
 	settings.endGroup();
+
+	// The KDDW layout carries the main window's visibility as it was when saved, and
+	// it is saved on exit, after the window closed: restored as is, it hides the
+	// window that QtMainView has already shown (MainView::setup() loads the layout a
+	// second time). Whether the window shows is not the layout's to decide.
+	const bool wasVisible = isVisible();
 	loadDockWidgetLayout();
+	if (wasVisible && !isVisible())
+	{
+		show();
+	}
 
 	// Both the MainWindow group above and the KDDW LayoutSaver restore in
 	// loadDockWidgetLayout() can bring back a degenerate main-window state — a
