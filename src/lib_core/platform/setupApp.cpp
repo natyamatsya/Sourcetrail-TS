@@ -12,6 +12,8 @@
 #include <productVersion.h>
 #include <qtScaleFactor.h>
 
+#include "logging.h"
+
 #include <QCoreApplication>
 #include <QDir>
 #include <QDirIterator>
@@ -44,7 +46,12 @@ static void setupUserDirectory(const FilePath &appPath, const FilePath &userData
 
 	// Create missing user directory and copy default configurations:
 	if (!UserPaths::getUserDataDirectoryPath().exists()) {
-		FileSystem::createDirectories(UserPaths::getUserDataDirectoryPath());
+		if (const auto created = FileSystem::createDirectories(UserPaths::getUserDataDirectoryPath()); !created)
+		{
+			LOG_ERROR(
+				"Could not create the user data directory \"" + UserPaths::getUserDataDirectoryPath().str() +
+				"\": " + created.error().message());
+		}
 
 		// Copy the default application settings as the legacy XML file; it is migrated
 		// to the current (JSON) format on first load (see ApplicationSettings::load).

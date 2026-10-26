@@ -82,8 +82,7 @@ bool QtProjectWizardContentProjectData::check()
 		return false;
 	}
 
-	static const QRegularExpression portableName(QStringLiteral("^[a-zA-Z0-9._][a-zA-Z0-9._-]*$"));
-	if (!portableName.match(m_projectName->text()).hasMatch())
+	if (!isValidProjectName(m_projectName->text()))
 	{
 		m_window->tell(
 			"The provided project name is not a valid file name. Please adjust the name "
@@ -127,7 +126,13 @@ bool QtProjectWizardContentProjectData::check()
 				QStringLiteral("The specified location does not exist. Do you want to create the directory?"),
 				{"Create", "Abort"}) == 0)
 		{
-			FileSystem::createDirectories(paths[0]);
+			if (const auto created = FileSystem::createDirectories(paths[0]); !created)
+			{
+				m_window->tell(QString::fromStdString(
+					"The directory \"" + paths[0].str() + "\" could not be created: " +
+					created.error().message() + ". Please pick a different location."));
+				return false;
+			}
 		}
 		else
 		{
@@ -136,6 +141,12 @@ bool QtProjectWizardContentProjectData::check()
 	}
 
 	return true;
+}
+
+bool QtProjectWizardContentProjectData::isValidProjectName(const QString& name)
+{
+	static const QRegularExpression portableName(QStringLiteral("^[a-zA-Z0-9._][a-zA-Z0-9._-]*$"));
+	return portableName.match(name).hasMatch();
 }
 
 void QtProjectWizardContentProjectData::onProjectNameEdited(QString text)

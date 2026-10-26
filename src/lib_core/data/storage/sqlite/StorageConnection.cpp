@@ -17,7 +17,12 @@ StorageConnection::StorageConnection(const FilePath& dbFilePath)
 {
 	if (!m_dbFilePath.getParentDirectory().empty() && !m_dbFilePath.getParentDirectory().exists())
 	{
-		FileSystem::createDirectories(m_dbFilePath.getParentDirectory());
+		if (const auto created = FileSystem::createDirectories(m_dbFilePath.getParentDirectory()); !created)
+		{
+			LOG_ERROR(
+				"Could not create the database directory \"" + m_dbFilePath.getParentDirectory().str() +
+				"\": " + created.error().message());
+		}
 	}
 
 	try

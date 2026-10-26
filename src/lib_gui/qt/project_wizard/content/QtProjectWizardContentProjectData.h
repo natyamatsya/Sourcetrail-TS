@@ -23,6 +23,9 @@ public:
 	void save() override;
 	bool check() override;
 
+	// A name the project file can carry on every platform: no path separators or reserved characters.
+	static bool isValidProjectName(const QString& name);
+
 public slots:
 	void onProjectNameEdited(QString text);
 

@@ -126,9 +126,12 @@ std::shared_ptr<Task> createBuildPchTaskForInput(
 		dialogView->showUnknownProgressDialog("Preparing Indexing", "Processing Precompiled Headers");
 		LOG_INFO("Generating precompiled header output for input file \"" + pchInputFilePath.str() + "\" at location \"" + pchOutputFilePath.str() + "\"");
 
-		if (!pchOutputFilePath.getParentDirectory().exists())
+		if (const auto created = FileSystem::createDirectories(pchOutputFilePath.getParentDirectory()); !created)
 		{
-			FileSystem::createDirectories(pchOutputFilePath.getParentDirectory());
+			LOG_ERROR(
+				"Could not create the precompiled header directory \"" +
+				pchOutputFilePath.getParentDirectory().str() + "\": " + created.error().message());
+			return;
 		}
 
 		// Build the PCH in a crash-isolated sourcetrail_indexer subprocess (--prebuild-pch): it

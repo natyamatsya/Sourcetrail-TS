@@ -88,7 +88,12 @@ CxxModulePrebuilder::Result CxxModulePrebuilder::prebuild(
 	// Hand the heavy, parse-arbitrary-user-code work (scan + BMI build) to a sourcetrail_indexer
 	// subprocess, so a crash/hang there takes down only the worker -- not the app. Channels are the
 	// filesystem: request.json in, manifest.json + the .pcm cache out.
-	FileSystem::createDirectories(cacheDir);
+	if (const auto created = FileSystem::createDirectories(cacheDir); !created)
+	{
+		LOG_ERROR(
+			"Could not create the C++ module cache \"" + cacheDir.str() + "\": " + created.error().message());
+		return result;
+	}
 	const FilePath requestPath = cacheDir.getConcatenated("/request.json");
 	const FilePath manifestPath = cacheDir.getConcatenated("/manifest.json");
 	FileSystem::remove(manifestPath);

@@ -12,6 +12,7 @@ module;
 #include <cctype>
 #include <chrono>
 #include <cstdlib>
+#include <expected>
 #include <filesystem>
 #include <format>
 #include <fstream>

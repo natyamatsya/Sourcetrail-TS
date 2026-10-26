@@ -4,8 +4,10 @@
 #include "SrctrlModule.h"
 
 #ifndef SRCTRL_MODULE_PURVIEW
+#include <expected>
 #include <set>
 #include <string>
+#include <system_error>
 #include <vector>
 
 #include "FileInfo.h"
@@ -38,7 +40,8 @@ public:
 	/** This method does nothing if the copy destination already exist. */
 	static bool copyDirectory(const FilePath &from, const FilePath &to);
 
-	static void createDirectories(const FilePath &path);
+	/** Creates the directory and its missing parents; the error says why it could not. */
+	[[nodiscard]] static std::expected<void, std::error_code> createDirectories(const FilePath &path);
 	static std::vector<FilePath> getDirectSubDirectories(const FilePath &path);
 };
 

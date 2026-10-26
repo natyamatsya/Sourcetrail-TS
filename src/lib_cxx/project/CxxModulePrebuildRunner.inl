@@ -479,7 +479,12 @@ inline int CxxModulePrebuildRunner::run(const FilePath& requestPath)
 	}
 
 	// --- 3. build each BMI into the cache, in dependency order (with the file's own flags) ---------
-	FileSystem::createDirectories(cacheDir);
+	if (const auto created = FileSystem::createDirectories(cacheDir); !created)
+	{
+		LOG_ERROR(
+			"Could not create the C++ module cache \"" + cacheDir.str() + "\": " + created.error().message());
+		return 1;
+	}
 	// Purge stale BMIs so a renamed/deleted module can't leave an orphan .pcm that still resolves on
 	// the next refresh.
 	for (const auto& entry: std::filesystem::directory_iterator(cacheDir.str()))

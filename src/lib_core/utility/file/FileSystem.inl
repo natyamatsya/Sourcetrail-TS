@@ -5,6 +5,7 @@
 #ifndef SRCTRL_MODULE_PURVIEW
 #include <cctype>
 #include <chrono>
+#include <expected>
 #include <filesystem>
 #include <system_error>
 #endif
@@ -288,10 +289,16 @@ inline bool FileSystem::copyDirectory(const FilePath &from, const FilePath &to)
 	return true;
 }
 
-inline void FileSystem::createDirectories(const FilePath &path)
+inline std::expected<void, std::error_code> FileSystem::createDirectories(const FilePath &path)
 {
-	std::filesystem::create_directories(path.str());
+	std::error_code ec;
+	std::filesystem::create_directories(path.getPath(), ec);
 	path.recheckExists();
+	if (ec)
+	{
+		return std::unexpected(ec);
+	}
+	return {};
 }
 
 inline std::vector<FilePath> FileSystem::getDirectSubDirectories(const FilePath &path)

@@ -62,9 +62,12 @@ inline int CxxPchBuildRunner::run(const FilePath& requestPath)
 	// --- verbatim the former in-main PCH build (utilitySourceGroupCxx::createBuildPchTaskForInput) --
 	CxxParser::initializeLLVM();
 
-	if (!pchOutputFilePath.getParentDirectory().exists())
+	if (const auto created = FileSystem::createDirectories(pchOutputFilePath.getParentDirectory()); !created)
 	{
-		FileSystem::createDirectories(pchOutputFilePath.getParentDirectory());
+		LOG_ERROR(
+			"Could not create the precompiled header directory \"" +
+			pchOutputFilePath.getParentDirectory().str() + "\": " + created.error().message());
+		return 1;
 	}
 
 	std::shared_ptr<IntermediateStorage> storage = std::make_shared<IntermediateStorage>();
