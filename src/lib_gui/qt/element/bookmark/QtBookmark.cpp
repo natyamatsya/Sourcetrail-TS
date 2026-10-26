@@ -248,13 +248,19 @@ std::string QtBookmark::getDateString() const
 
 	size_t delta = now.deltaS(creationDate);
 
-	if (delta < 3600.0f)	// less than an hour ago
+	if (delta < 60.0f)	  // less than a minute ago
 	{
-		result = std::to_string(int(delta / 60.0f)) + " minutes ago";
+		result = "just now";
+	}
+	else if (delta < 3600.0f)	 // less than an hour ago
+	{
+		const int minutes = int(delta / 60.0f);
+		result = std::to_string(minutes) + (minutes == 1 ? " minute ago" : " minutes ago");
 	}
 	else if (delta < (3600.0f * 6.0f))	  // less than 6 hours ago
 	{
-		result = std::to_string(int(delta / 3600.0f)) + " hours ago";
+		const int hours = int(delta / 3600.0f);
+		result = std::to_string(hours) + (hours == 1 ? " hour ago" : " hours ago");
 	}
 	else if (creationDate.isSameDay(now))	 // today
 	{
