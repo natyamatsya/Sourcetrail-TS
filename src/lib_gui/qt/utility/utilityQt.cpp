@@ -26,9 +26,11 @@
 #include <QFontDatabase>
 #include <QIcon>
 #include <QPainter>
+#include <QSvgRenderer>
 #include <QWidget>
 
 #include <set>
+#include <vector>
 
 // Imports AFTER all textual includes (include-before-import rule).
 #ifdef SRCTRL_MODULE_BUILD
@@ -96,18 +98,52 @@ QPixmap colorizePixmap(const QPixmap &pixmap, QColor color)
 	return QPixmap::fromImage(image);
 }
 
+namespace
+{
+// A line icon (.svg) drawn at its own size on one, two and three device pixels per pixel, so
+// it stays sharp on every screen; a bitmap icon as it is.
+std::vector<QPixmap> iconPixmaps(const FilePath &iconPath)
+{
+	const QString path{QString::fromStdString(iconPath.str())};
+	if (!path.endsWith(QLatin1String(".svg"), Qt::CaseInsensitive))
+	{
+		return {QPixmap{path}};
+	}
+
+	QSvgRenderer renderer{path};
+	const QSize size{renderer.defaultSize()};
+	std::vector<QPixmap> pixmaps;
+	for (const int scale: {1, 2, 3})
+	{
+		QPixmap pixmap{size * scale};
+		pixmap.fill(Qt::transparent);
+		{
+			QPainter painter{&pixmap};
+			renderer.render(&painter);
+		}
+		pixmap.setDevicePixelRatio(scale);
+		pixmaps.push_back(pixmap);
+	}
+	return pixmaps;
+}
+}	 // namespace
+
 QIcon createButtonIcon(const FilePath &iconPath, const std::string &colorId)
 {
 	ColorScheme *scheme = ColorScheme::getInstance().get();
 
-	QPixmap pixmap(QString::fromStdString(iconPath.str()));
-	QIcon icon(utility::colorizePixmap(pixmap, scheme->getColor(colorId + "/icon").c_str()));
+	const std::string disabledColorId{colorId + "/icon_disabled"};
+	const bool hasDisabledColor{scheme->hasColor(disabledColorId)};
 
-	if (scheme->hasColor(colorId + "/icon_disabled"))
+	QIcon icon;
+	for (const QPixmap &pixmap: iconPixmaps(iconPath))
 	{
-		icon.addPixmap(utility::colorizePixmap(pixmap, scheme->getColor(colorId + "/icon_disabled").c_str()), QIcon::Disabled);
+		icon.addPixmap(utility::colorizePixmap(pixmap, scheme->getColor(colorId + "/icon").c_str()));
+		if (hasDisabledColor)
+		{
+			icon.addPixmap(utility::colorizePixmap(pixmap, scheme->getColor(disabledColorId).c_str()), QIcon::Disabled);
+		}
 	}
-
 	return icon;
 }
 
