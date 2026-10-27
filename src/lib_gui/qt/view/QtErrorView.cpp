@@ -7,6 +7,7 @@
 #include "ColorScheme.h"
 #include "MessageProjectEdit.h"
 #endif
+#include "QtDockChrome.h"
 #include "QtHelpButton.h"
 #include "QtResources.h"
 #include "QtResources.h"
@@ -96,10 +97,19 @@ QtErrorView::QtErrorView(ViewLayout* viewLayout)
 
 	layout->addWidget(m_table);
 
-	// Setup Checkboxes
-	QBoxLayout* checkboxes = new QHBoxLayout();
-	checkboxes->setContentsMargins(10, 3, 0, 3);
-	checkboxes->setSpacing(0);
+	// The filters, the count and Edit Project: a bar the dock's header shows right of the tabs
+	// while it has room for it, else a row under the table.
+	QWidget* filterRow{new QWidget()};
+	QHBoxLayout* filterRowLayout{new QHBoxLayout(filterRow)};
+	filterRowLayout->setContentsMargins(8, 4, 8, 4);
+	layout->addWidget(filterRow);
+
+	QWidget* filterBar{new QWidget(filterRow)};
+	filterBar->setObjectName(QStringLiteral("filter_bar"));
+	QBoxLayout* checkboxes{new QHBoxLayout(filterBar)};
+	checkboxes->setContentsMargins(0, 0, 0, 0);
+	checkboxes->setSpacing(4);
+	filterRowLayout->addWidget(filterBar);
 
 	{
 		m_showFatals = createFilterCheckbox(
@@ -123,8 +133,6 @@ QtErrorView::QtErrorView(ViewLayout* viewLayout)
 		checkboxes->addWidget(m_allLabel);
 		m_allLabel->hide();
 
-		checkboxes->addSpacing(5);
-
 		m_allButton = new QPushButton(QLatin1String(""));
 		m_allButton->setObjectName(QStringLiteral("screen_button"));
 		connect(m_allButton, &QPushButton::clicked, [=, this]() {
@@ -138,7 +146,7 @@ QtErrorView::QtErrorView(ViewLayout* viewLayout)
 		checkboxes->addWidget(m_errorLabel);
 	}
 
-	checkboxes->addSpacing(10);
+	checkboxes->addSpacing(4);
 
 	{
 		m_editButton = new QtSelfRefreshIconButton(
@@ -152,9 +160,7 @@ QtErrorView::QtErrorView(ViewLayout* viewLayout)
 		checkboxes->addWidget(m_editButton);
 	}
 
-	checkboxes->addSpacing(10);
-
-	layout->addLayout(checkboxes);
+	QtDockChrome::offerBarToDockHeader(*widget, *filterBar);
 }
 
 void QtErrorView::createWidgetWrapper() {}
@@ -201,18 +207,17 @@ void QtErrorView::addErrors(
 
 		m_allLabel->setVisible(limited);
 		m_allLabel->setText(
-			"<b>Only displaying first " + QString::number(m_errorFilter.limit) + " errors</b>");
+			"Only displaying first " + QString::number(m_errorFilter.limit) + " errors");
 
 		m_allButton->setVisible(limited);
 		m_allButton->setText("Show all " + QString::number(errorCount.total));
 
 		m_errorLabel->setVisible(!limited);
 		m_errorLabel->setText(
-			"<b>displaying " + QString::number(errorCount.total) + " error" +
+			"displaying " + QString::number(errorCount.total) + " error" +
 			(errorCount.total != 1 ? "s" : "") +
 			(errorCount.fatal > 0 ? " (" + QString::number(errorCount.fatal) + " fatal)"
-								  : QLatin1String("")) +
-			"</b>");
+								  : QLatin1String("")));
 	});
 }
 
@@ -371,7 +376,6 @@ QCheckBox* QtErrorView::createFilterCheckbox(const QString& name, bool checked, 
 		qOverload<int>(&QtErrorView::errorFilterChanged));
 
 	layout->addWidget(checkbox);
-	layout->addSpacing(25);
 
 	return checkbox;
 }

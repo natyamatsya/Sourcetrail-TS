@@ -15,6 +15,7 @@
 #include "MessageClearStatusView.h"
 #include "MessageStatusFilterChanged.h"
 #endif
+#include "QtDockChrome.h"
 #include "QtTable.h"
 #include "QtViewWidgetWrapper.h"
 #include "utilityQt.h"
@@ -51,10 +52,19 @@ QtStatusView::QtStatusView(ViewLayout* viewLayout): StatusView(viewLayout)
 
 	layout->addWidget(m_table);
 
-	// Setup filters
-	QHBoxLayout* filters = new QHBoxLayout();
-	filters->setContentsMargins(10, 3, 0, 3);
-	filters->setSpacing(25);
+	// The filters and Clear Table: a bar the dock's header shows right of the tabs while it has
+	// room for it, else a row under the table.
+	QWidget* filterRow{new QWidget()};
+	QHBoxLayout* filterRowLayout{new QHBoxLayout(filterRow)};
+	filterRowLayout->setContentsMargins(8, 4, 8, 4);
+	layout->addWidget(filterRow);
+
+	QWidget* filterBar{new QWidget(filterRow)};
+	filterBar->setObjectName(QStringLiteral("filter_bar"));
+	QHBoxLayout* filters{new QHBoxLayout(filterBar)};
+	filters->setContentsMargins(0, 0, 0, 0);
+	filters->setSpacing(4);
+	filterRowLayout->addWidget(filterBar);
 
 	const StatusFilter filter = ApplicationSettings::getInstance()->getStatusFilter();
 	m_showInfo = createFilterCheckbox(
@@ -69,9 +79,8 @@ QtStatusView::QtStatusView(ViewLayout* viewLayout): StatusView(viewLayout)
 	connect(clearButton, &QPushButton::clicked, [=]() { MessageClearStatusView().dispatch(); });
 
 	filters->addWidget(clearButton);
-	filters->addSpacing(10);
 
-	layout->addLayout(filters);
+	QtDockChrome::offerBarToDockHeader(*widget, *filterBar);
 }
 
 void QtStatusView::createWidgetWrapper() {}
