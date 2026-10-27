@@ -171,12 +171,6 @@ QtMainWindow::QtMainWindow()
 
 	refreshStyle();
 
-	if constexpr (!utility::Platform::isMac())
-	{
-		// can only be done once, because resetting the style on the QCoreApplication causes crash
-		app->setStyleSheet(QtResources::loadStyleSheet(QtResources::MAIN_SCROLLBAR_CSS));
-	}
-
 	setupProjectMenu();
 	setupEditMenu();
 	setupViewMenu();
@@ -582,7 +576,9 @@ void QtMainWindow::setContentEnabled(bool enabled)
 
 void QtMainWindow::refreshStyle()
 {
-	setStyleSheet(QtResources::loadStyleSheet(QtResources::MAIN_CSS));
+	// The scroll bars' rules reach every scroll bar in the app from here: the dialogs are this
+	// window's children too. Set on the window, they follow a change of colour scheme.
+	setStyleSheet(QtResources::loadStyleSheets(QtResources::MAIN_CSS, QtResources::MAIN_SCROLLBAR_CSS));
 
 	QFont tooltipFont = QToolTip::font();
 	tooltipFont.setPixelSize(ApplicationSettings::getInstance()->getFontSize());
