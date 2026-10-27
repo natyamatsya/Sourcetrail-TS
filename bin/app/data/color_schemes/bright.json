@@ -537,6 +537,7 @@
          "header_text": "#5F636B",
          "icon_type": "grey",
          "line": "#BEBEBE",
+         "tab_hover": "#EEEFF1",
          "tab_selected": "#E3E5E9",
          "text": "black"
       },
@@ -546,6 +547,9 @@
          "handle": "#80999999",
          "line": "#80999999"
       },
-      "separator": "#A2A2A2"
+      "separator": "#A2A2A2",
+      "status": {
+         "error": "#C42B1C"
+      }
    }
 }
