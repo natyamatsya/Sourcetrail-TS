@@ -49,6 +49,8 @@ QtTable::QtTable(QWidget* parent): QTableView(parent)
 
 	setItemDelegate(new SelectableCellDelegate(this));
 
+	// No row numbers: the rows' stripes are enough to follow them.
+	verticalHeader()->hide();
 	verticalHeader()->sectionResizeMode(QHeaderView::Fixed);
 	verticalHeader()->setDefaultAlignment(Qt::AlignRight);
 

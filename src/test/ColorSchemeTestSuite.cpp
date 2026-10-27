@@ -176,3 +176,13 @@ TEST_CASE("every colour scheme has the colours the search bar's style sheets ask
 	// The buttons colour their line icons with these (QtSearchBarButton).
 	requireColors({"search/toolbar/icon", "search/toolbar/icon_disabled"});
 }
+
+TEST_CASE("every colour scheme has the colours the Status and Errors tables ask for")
+{
+	const std::vector<std::string> keys = styleSheetColorKeys(QtResources::TABBED_VIEW_CSS);
+	REQUIRE(!keys.empty());
+	requireColors(keys);
+
+	// The type of an error row (QtStatusView, QtErrorView).
+	requireColors({"table/text/error"});
+}

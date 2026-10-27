@@ -537,16 +537,17 @@
       "background": "#272728",
       "table": "#C5C5C5",
       "table_line_1": {
-         "active": "#969696",
+         "active": "#3B3B3F",
          "normal": "#272728"
       },
       "table_line_2": {
-         "active": "#969696",
-         "normal": "#343434"
+         "active": "#3B3B3F",
+         "normal": "#2C2C2E"
       },
       "text": {
-         "active": "black",
+         "active": "white",
          "disabled": "#AAA",
+         "error": "#FF6B6B",
          "normal": "white"
       }
    },

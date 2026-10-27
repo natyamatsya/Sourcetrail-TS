@@ -534,16 +534,17 @@
       "background": "white",
       "table": "#aaa",
       "table_line_1": {
-         "active": "grey",
+         "active": "#E3E5E9",
          "normal": "white"
       },
       "table_line_2": {
-         "active": "grey",
-         "normal": "#F1F1F1"
+         "active": "#E3E5E9",
+         "normal": "#F7F8FA"
       },
       "text": {
-         "active": "white",
+         "active": "black",
          "disabled": "#777",
+         "error": "#C42B1C",
          "normal": "black"
       }
    },
