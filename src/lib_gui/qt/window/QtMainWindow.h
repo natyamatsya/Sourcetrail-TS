@@ -104,6 +104,13 @@ public:
 	// Graph | Code middle, Status bottom). Used on first run and on reset.
 	void applyDefaultDockLayout();
 
+	// The Search card holds one row of controls. The layout gives every card its share of the
+	// window, so a growing window would grow empty space under that row: trim the card back
+	// to its content, after the window has its size. (Queued: the docks get their new sizes
+	// after the window's resize event.)
+	void fitSearchDockToContent();
+	void fitSearchDockToContentLater();
+
 	void loadDockWidgetLayout();
 	void loadWindow(bool showStartWindow);
 
