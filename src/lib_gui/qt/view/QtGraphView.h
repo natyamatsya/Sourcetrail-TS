@@ -22,6 +22,7 @@ class QSlider;
 class QtGraphEdge;
 class QtGraphicsView;
 class QtGraphNode;
+class QtGraphToolbar;
 class QtSelfRefreshIconButton;
 
 class QtGraphView : public QObject, public GraphView, public GraphFocusClient
@@ -105,7 +106,8 @@ private:
 	QtGraphicsView *getView() const;
 
 	void doResize();
-	void fitTrailControls();
+	void fitToolbar();
+	void showTrailControls(bool show);
 
 	QtGraphNode *createNodeRecursive(QGraphicsView *view, QtGraphNode *parentNode, const DummyNode *node, bool multipleActive, bool interactive);
 	QtGraphEdge *createEdge(QGraphicsView *view, const DummyEdge *edge, std::set<Id> *visibleEdgeIds, Graph::TrailMode trailMode, QPointF pathOffset,
@@ -154,6 +156,8 @@ private:
 	QtScrollSpeedChangeListener m_scrollSpeedChangeListenerHorizontal;
 	QtScrollSpeedChangeListener m_scrollSpeedChangeListenerVertical;
 
+	QtGraphToolbar *m_toolbar;
+
 	QWidget *m_trailWidget;
 	QtSelfRefreshIconButton *m_expandButton;
 	QtSelfRefreshIconButton *m_collapseButton;
@@ -163,7 +167,6 @@ private:
 	QSlider *m_trailDepthSlider;
 	QLabel *m_trailDepthLabel;
 
-	QWidget *m_groupWidget;
 	QtSelfRefreshIconButton *m_groupFileButton;
 	QtSelfRefreshIconButton *m_groupNamespaceButton;
 	QtSelfRefreshIconButton *m_groupLanguageButton;

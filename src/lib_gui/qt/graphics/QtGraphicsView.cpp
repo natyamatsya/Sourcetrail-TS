@@ -132,24 +132,53 @@ QtGraphicsView::QtGraphicsView(GraphFocusHandler* focusHandler, QWidget* parent)
 	m_zoomState->setObjectName(QStringLiteral("zoom_state"));
 	m_zoomState->hide();
 
-	m_zoomInButton = new QtSelfRefreshIconButton("", QtResources::GRAPH_VIEW_ZOOM_IN, "search/button", this);
+	// The zoom and legend buttons go into the graph view's toolbar (QtGraphView), which places
+	// them.
+	m_zoomInButton = new QtSelfRefreshIconButton("", QtResources::GRAPH_VIEW_ZOOM_IN, "graph/toolbar", this);
 	m_zoomInButton->setObjectName(QStringLiteral("zoom_in_button"));
 	m_zoomInButton->setAutoRepeat(true);
 	m_zoomInButton->setToolTip(QtActions::zoomIn().tooltip());
+	m_zoomInButton->setAccessibleName(tr("Zoom in"));
+	m_zoomInButton->setIconSize(QSize(16, 16));
 	connect(m_zoomInButton, &QPushButton::pressed, this, &QtGraphicsView::zoomInPressed);
 
-	m_zoomOutButton = new QtSelfRefreshIconButton("", QtResources::GRAPH_VIEW_ZOOM_OUT, "search/button", this);
+	m_zoomOutButton = new QtSelfRefreshIconButton("", QtResources::GRAPH_VIEW_ZOOM_OUT, "graph/toolbar", this);
 	m_zoomOutButton->setObjectName(QStringLiteral("zoom_out_button"));
 	m_zoomOutButton->setAutoRepeat(true);
 	m_zoomOutButton->setToolTip(QtActions::zoomOut().tooltip());
+	m_zoomOutButton->setAccessibleName(tr("Zoom out"));
+	m_zoomOutButton->setIconSize(QSize(16, 16));
 	connect(m_zoomOutButton, &QPushButton::pressed, this, &QtGraphicsView::zoomOutPressed);
 
-	m_legendButton = new QtSelfRefreshIconButton("", QtResources::GRAPH_VIEW_LEGEND, "search/button", this);
+	m_legendButton = new QtSelfRefreshIconButton("", QtResources::GRAPH_VIEW_LEGEND, "graph/toolbar", this);
 	m_legendButton->setObjectName(QStringLiteral("legend_button"));
 	m_legendButton->setToolTip(QtActions::showLegend().tooltip());
+	m_legendButton->setAccessibleName(tr("Legend"));
+	m_legendButton->setIconSize(QSize(16, 16));
 	connect(m_legendButton, &QPushButton::clicked, this, &QtGraphicsView::legendClicked);
 
 	m_tabId = TabIds::currentTab();
+}
+
+QtSelfRefreshIconButton& QtGraphicsView::zoomInButton() const
+{
+	return *m_zoomInButton;
+}
+
+QtSelfRefreshIconButton& QtGraphicsView::zoomOutButton() const
+{
+	return *m_zoomOutButton;
+}
+
+QtSelfRefreshIconButton& QtGraphicsView::legendButton() const
+{
+	return *m_legendButton;
+}
+
+void QtGraphicsView::placeZoomState(QPoint leftCentre)
+{
+	constexpr QSize size{48, 20};
+	m_zoomState->setGeometry(QRect{QPoint{leftCentre.x(), leftCentre.y() - size.height() / 2}, size});
 }
 
 float QtGraphicsView::getZoomFactor() const
@@ -259,14 +288,6 @@ void QtGraphicsView::updateZoom(float delta)
 void QtGraphicsView::resizeEvent(QResizeEvent* event)
 {
 	m_focusIndicator->setGeometry(QRect(0, 0, event->size().width(), 3));
-	m_zoomState->setGeometry(QRect(31, event->size().height() - 27, 65, 19));
-	m_zoomInButton->setGeometry(QRect(8, event->size().height() - 50, 19, 19));
-	m_zoomOutButton->setGeometry(QRect(8, event->size().height() - 27, 18, 19));
-	m_legendButton->setGeometry(QRect(event->size().width() - 24, event->size().height() - 24, 18, 18));
-
-	m_zoomInButton->setIconSize(QSize(15, 15));
-	m_zoomOutButton->setIconSize(QSize(15, 15));
-	m_legendButton->setIconSize(QSize(10, 10));
 
 	emit resized();
 }

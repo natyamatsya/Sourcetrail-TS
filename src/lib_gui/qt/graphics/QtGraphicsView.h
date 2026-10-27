@@ -23,6 +23,14 @@ class QtGraphicsView: public QGraphicsView, public MessageListener<MessageSaveAs
 public:
 	QtGraphicsView(GraphFocusHandler* focusHandler, QWidget* parent);
 
+	// The zoom and legend buttons, for the graph view's toolbar.
+	QtSelfRefreshIconButton& zoomInButton() const;
+	QtSelfRefreshIconButton& zoomOutButton() const;
+	QtSelfRefreshIconButton& legendButton() const;
+	// The zoom level shows for a moment after each change, beside the zoom buttons: the middle
+	// of its left edge, in this view's coordinates.
+	void placeZoomState(QPoint leftCentre);
+
 	float getZoomFactor() const;
 	void setAppZoomFactor(float appZoomFactor);
 
