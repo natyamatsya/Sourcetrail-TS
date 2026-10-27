@@ -1,0 +1,267 @@
+#ifndef QT_DOCK_CHROME_H
+#define QT_DOCK_CHROME_H
+
+#include <QColor>
+#include <QHash>
+#include <QIcon>
+#include <QWidget>
+
+#include <kddockwidgets/qtwidgets/ViewFactory.h>
+#include <kddockwidgets/qtwidgets/views/Group.h>
+#include <kddockwidgets/qtwidgets/views/Separator.h>
+#include <kddockwidgets/qtwidgets/views/SideBar.h>
+#include <kddockwidgets/qtwidgets/views/Stack.h>
+#include <kddockwidgets/qtwidgets/views/TitleBar.h>
+
+// Sourcetrail's docking chrome, the views KDDockWidgets builds the docks from (see
+// QtDockViewFactory): every dock group is a card with rounded corners on the window's canvas,
+// separated from the others by gutters instead of lines. A gutter carries a small pill to
+// resize by, a card's header a small grip to move the card by. Headers are slim and their
+// buttons faint until the header is hovered. The colours come from main.css as qproperty-*
+// values, so they follow the colour scheme.
+namespace QtDockChrome
+{
+// Width of the gutters between the cards, and of the canvas around them (logical pixels).
+inline constexpr int gutterWidth{6};
+}	 // namespace QtDockChrome
+
+// The small grip to pick a card up by: two columns of three dots, with an open hand cursor
+// (a closed one while dragging). It leaves the mouse to the header it sits on, which starts
+// the drag.
+class QtDockGrip: public QWidget
+{
+	Q_OBJECT
+	Q_PROPERTY(QColor dotColor READ dotColor WRITE setDotColor)
+	Q_PROPERTY(QColor dotHoverColor READ dotHoverColor WRITE setDotHoverColor)
+
+public:
+	explicit QtDockGrip(QWidget* parent);
+
+	QColor dotColor() const;
+	void setDotColor(const QColor& color);
+	QColor dotHoverColor() const;
+	void setDotHoverColor(const QColor& color);
+
+	QSize sizeHint() const override;
+
+protected:
+	void paintEvent(QPaintEvent* event) override;
+	void enterEvent(QEnterEvent* event) override;
+	void leaveEvent(QEvent* event) override;
+	void mousePressEvent(QMouseEvent* event) override;
+
+private:
+	QColor m_dotColor{0xB3, 0xB7, 0xBF};
+	QColor m_dotHoverColor{0x6F, 0x74, 0x7E};
+};
+
+// A dock group as a card. Its children paint square, so the rounded corners and the hairline
+// border are painted over them by a frame that lets the mouse through.
+class QtDockCard: public KDDockWidgets::QtWidgets::Group
+{
+	Q_OBJECT
+	Q_PROPERTY(QColor cardColor READ cardColor WRITE setCardColor)
+	Q_PROPERTY(QColor canvasColor READ canvasColor WRITE setCanvasColor)
+	Q_PROPERTY(QColor borderColor READ borderColor WRITE setBorderColor)
+	Q_PROPERTY(qreal radius READ radius WRITE setRadius)
+
+public:
+	QtDockCard(KDDockWidgets::Core::Group* controller, QWidget* parent);
+
+	void init() override;
+
+	QColor cardColor() const;
+	void setCardColor(const QColor& color);
+	QColor canvasColor() const;
+	void setCanvasColor(const QColor& color);
+	QColor borderColor() const;
+	void setBorderColor(const QColor& color);
+	qreal radius() const;
+	void setRadius(qreal radius);
+
+	// The corner radius it has where it is: none for an auto-hidden dock shown over the others,
+	// whose corners would show the canvas over them, nor alone in a floating window.
+	qreal effectiveRadius() const;
+	bool hasBorder() const;
+
+protected:
+	bool event(QEvent* event) override;
+	void paintEvent(QPaintEvent* event) override;
+
+private:
+	QWidget* m_frame{nullptr};
+	QColor m_cardColor{Qt::white};
+	QColor m_canvasColor{0xE6, 0xE7, 0xEA};
+	QColor m_borderColor{0xD2, 0xD4, 0xD9};
+	qreal m_radius{8};
+};
+
+// A gutter between cards, still the separator to drag. It shows a short pill to grab, which
+// gets stronger on hover.
+class QtDockGutter: public KDDockWidgets::QtWidgets::Separator
+{
+	Q_OBJECT
+	Q_PROPERTY(QColor canvasColor READ canvasColor WRITE setCanvasColor)
+	Q_PROPERTY(QColor handleColor READ handleColor WRITE setHandleColor)
+	Q_PROPERTY(QColor handleHoverColor READ handleHoverColor WRITE setHandleHoverColor)
+
+public:
+	QtDockGutter(KDDockWidgets::Core::Separator* controller, KDDockWidgets::Core::View* parent);
+
+	QColor canvasColor() const;
+	void setCanvasColor(const QColor& color);
+	QColor handleColor() const;
+	void setHandleColor(const QColor& color);
+	QColor handleHoverColor() const;
+	void setHandleHoverColor(const QColor& color);
+
+protected:
+	void paintEvent(QPaintEvent* event) override;
+	void enterEvent(QEnterEvent* event) override;
+	void leaveEvent(QEvent* event) override;
+	void mousePressEvent(QMouseEvent* event) override;
+	void mouseReleaseEvent(QMouseEvent* event) override;
+
+private:
+	KDDockWidgets::Core::Separator* const m_separator;
+	bool m_pressed{false};
+	QColor m_canvasColor{0xE6, 0xE7, 0xEA};
+	QColor m_handleColor{0xB3, 0xB7, 0xBF};
+	QColor m_handleHoverColor{0x6F, 0x74, 0x7E};
+};
+
+// A card's slim header: the grip, the title, and the buttons.
+class QtDockHeader: public KDDockWidgets::QtWidgets::TitleBar
+{
+	Q_OBJECT
+
+public:
+	QtDockHeader(KDDockWidgets::Core::TitleBar* controller, KDDockWidgets::Core::View* parent);
+
+protected:
+	void init() override;
+	bool event(QEvent* event) override;
+	void paintEvent(QPaintEvent* event) override;
+	void enterEvent(QEnterEvent* event) override;
+	void leaveEvent(QEvent* event) override;
+
+private:
+	void updateIconVisibility();
+
+	QtDockGrip* m_grip{nullptr};
+};
+
+// The stack of a card's tabs. When its tabs are the header (docks tabbed together), the grip
+// goes left of them, and the buttons next to them are faint until the tab strip is hovered.
+class QtDockTabStack: public KDDockWidgets::QtWidgets::Stack
+{
+	Q_OBJECT
+
+public:
+	QtDockTabStack(KDDockWidgets::Core::Stack* controller, QWidget* parent);
+
+	void init() override;
+
+protected:
+	bool event(QEvent* event) override;
+	bool eventFilter(QObject* watched, QEvent* event) override;
+
+private:
+	void updateCornerWidgets();
+
+	QtDockGrip* m_grip{nullptr};
+};
+
+// A header button: a 12 px monochrome glyph (its icon, used as a mask), faint until its
+// header is hovered, with a rounded highlight under the mouse.
+class QtDockHeaderButton: public KDDockWidgets::QtWidgets::Button
+{
+	Q_OBJECT
+	Q_PROPERTY(QColor glyphColor READ glyphColor WRITE setGlyphColor)
+
+public:
+	explicit QtDockHeaderButton(QWidget* parent);
+
+	QColor glyphColor() const;
+	void setGlyphColor(const QColor& color);
+
+	QSize sizeHint() const override;
+
+protected:
+	void paintEvent(QPaintEvent* event) override;
+	void enterEvent(QEnterEvent* event) override;
+	void leaveEvent(QEvent* event) override;
+
+private:
+	bool headerHovered() const;
+
+	QColor m_glyphColor{0x5F, 0x63, 0x6B};
+};
+
+// The side bar of auto-hidden docks, with pill buttons that carry only the dock's title.
+class QtDockSideBar: public KDDockWidgets::QtWidgets::SideBar
+{
+	Q_OBJECT
+
+public:
+	using SideBar::SideBar;
+
+protected:
+	KDDockWidgets::SideBarButton* createButton(KDDockWidgets::Core::DockWidget* dockWidget, SideBar* parent) const override;
+};
+
+class QtDockSideBarButton: public KDDockWidgets::SideBarButton
+{
+	Q_OBJECT
+	Q_PROPERTY(QColor pillColor READ pillColor WRITE setPillColor)
+	Q_PROPERTY(QColor pillHoverColor READ pillHoverColor WRITE setPillHoverColor)
+	Q_PROPERTY(QColor borderColor READ borderColor WRITE setBorderColor)
+	Q_PROPERTY(QColor textColor READ textColor WRITE setTextColor)
+
+public:
+	QtDockSideBarButton(KDDockWidgets::Core::DockWidget* dockWidget, KDDockWidgets::QtWidgets::SideBar* parent, bool vertical);
+
+	QColor pillColor() const;
+	void setPillColor(const QColor& color);
+	QColor pillHoverColor() const;
+	void setPillHoverColor(const QColor& color);
+	QColor borderColor() const;
+	void setBorderColor(const QColor& color);
+	QColor textColor() const;
+	void setTextColor(const QColor& color);
+
+	QSize sizeHint() const override;
+
+protected:
+	void paintEvent(QPaintEvent* event) override;
+
+private:
+	const bool m_vertical;
+	QColor m_pillColor{0xF7, 0xF7, 0xF8};
+	QColor m_pillHoverColor{0xE3, 0xE5, 0xE9};
+	QColor m_borderColor{0xD2, 0xD4, 0xD9};
+	QColor m_textColor{0x5F, 0x63, 0x6B};
+};
+
+// Builds the docks from the views above. It also names the title bar and tab bar buttons after
+// their dock ("Graph_close_button"), since KDDockWidgets names them by type ("closeButton"),
+// alike in every dock, so an agent could not address one by objectName. In a tab group they
+// act on the whole group and take the current tab's name.
+class QtDockViewFactory: public KDDockWidgets::QtWidgets::ViewFactory
+{
+public:
+	KDDockWidgets::Core::View* createGroup(KDDockWidgets::Core::Group* controller, KDDockWidgets::Core::View* parent) const override;
+	KDDockWidgets::Core::View* createTitleBar(KDDockWidgets::Core::TitleBar* controller, KDDockWidgets::Core::View* parent) const override;
+	KDDockWidgets::Core::View* createStack(KDDockWidgets::Core::Stack* controller, KDDockWidgets::Core::View* parent) const override;
+	KDDockWidgets::Core::View* createSeparator(KDDockWidgets::Core::Separator* controller, KDDockWidgets::Core::View* parent) const override;
+	KDDockWidgets::Core::View* createSideBar(KDDockWidgets::Core::SideBar* controller, KDDockWidgets::Core::View* parent) const override;
+
+	QAbstractButton* createTitleBarButton(QWidget* parent, KDDockWidgets::TitleBarButtonType type) const override;
+	QIcon iconForButtonType(KDDockWidgets::TitleBarButtonType type, qreal dpr) const override;
+	QString titleBarButtonObjectName(KDDockWidgets::TitleBarButtonType type, KDDockWidgets::Core::DockWidget* dockWidget) const override;
+
+private:
+	mutable QHash<int, QIcon> m_glyphs;
+};
+
+#endif	  // QT_DOCK_CHROME_H

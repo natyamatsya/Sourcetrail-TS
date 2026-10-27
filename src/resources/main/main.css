@@ -16,56 +16,104 @@ QToolBar {
 	border: none;
 }
 
-/* KDDockWidgets docking chrome — themed with the same window/dock/* colors the
-   old QDockWidget rules used, so detachable docks match the app's day/night theme.
-   In Qt style sheets a C++ '::' scope separator is written as '--', so
-   KDDockWidgets::QtWidgets::TitleBar becomes KDDockWidgets--QtWidgets--TitleBar. */
+/* Docking chrome (QtDockChrome): every dock group is a card with rounded corners on the
+   window's canvas, with gutters instead of separators between the cards. The chrome's own
+   widgets take their colours as qproperty values. In Qt style sheets a C++ '::' scope
+   separator is written as '--', so KDDockWidgets::QtWidgets::TitleBar becomes
+   KDDockWidgets--QtWidgets--TitleBar. */
+QWidget#MyCentralWidget,
+KDDockWidgets--QtWidgets--FloatingWindow {
+	background: <color:window/dock/canvas>;
+}
+
+QtDockCard {
+	qproperty-cardColor: <color:window/dock/card>;
+	qproperty-canvasColor: <color:window/dock/canvas>;
+	qproperty-borderColor: <color:window/dock/card_border>;
+	qproperty-radius: 9;
+}
+
+QtDockGutter {
+	qproperty-canvasColor: <color:window/dock/canvas>;
+	qproperty-handleColor: <color:window/dock/handle>;
+	qproperty-handleHoverColor: <color:window/dock/handle_hover>;
+}
+
+QtDockGrip {
+	qproperty-dotColor: <color:window/dock/handle>;
+	qproperty-dotHoverColor: <color:window/dock/handle_hover>;
+}
+
+/* The slim header along the card's top edge: grip, title, buttons. */
 KDDockWidgets--QtWidgets--TitleBar {
-	background: <color:window/dock/background>;
-	border-bottom: 1px solid <color:window/dock/line>;
-	color: <color:window/dock/text>;
-	/* Slim title bar (KDDW derives height from PM_HeaderDefaultSectionSizeVertical;
-	   min/max-height clamps that to the classic thin Sourcetrail look). */
+	background: <color:window/dock/header>;
+	border: none;
+	border-bottom: 1px solid <color:window/dock/card_border>;
+	color: <color:window/dock/header_text>;
+	font-size: 12px;
+	min-height: 26px;
+	max-height: 26px;
+}
+
+KDDockWidgets--QtWidgets--TitleBar QLabel {
+	background: transparent;
+}
+
+QtDockHeaderButton {
+	qproperty-glyphColor: <color:window/dock/header_text>;
+	background: transparent;
+	border: none;
+	min-width: 20px;
+	max-width: 20px;
 	min-height: 20px;
 	max-height: 20px;
 }
 
-KDDockWidgets--QtWidgets--TitleBar QLabel {
-	color: <color:window/dock/text>;
-	font-size: 9pt;
+/* Docks tabbed together: the tab strip is the header. */
+QtDockTabStack {
+	background: <color:window/dock/header>;
+}
+
+QtDockTabStack::pane {
+	background: <color:window/dock/card>;
+	border: none;
+	border-top: 1px solid <color:window/dock/card_border>;
+}
+
+KDDockWidgets--QtWidgets--TabBar {
 	background: transparent;
-	padding: 0px 2px;
 }
 
-/* Container around one (possibly tabbed) group of docks. */
-KDDockWidgets--QtWidgets--Group {
-	border: 1px solid <color:window/dock/line>;
-}
-
-/* Draggable splitter between docks. */
-KDDockWidgets--QtWidgets--Separator {
-	background: <color:window/dock/line>;
-}
-
-/* Tab bar shown when docks are tabbed together. */
 KDDockWidgets--QtWidgets--TabBar::tab {
-	background: <color:window/dock/background>;
+	background: transparent;
+	border: none;
+	border-radius: 6px;
+	color: <color:window/dock/header_text>;
+	font-size: 12px;
+	margin: 3px 1px;
+	padding: 2px 10px;
+}
+
+KDDockWidgets--QtWidgets--TabBar::tab:hover {
 	color: <color:window/dock/text>;
-	border: 1px solid <color:window/dock/line>;
-	padding: 2px 8px;
 }
 
 KDDockWidgets--QtWidgets--TabBar::tab:selected {
-	background: <color:window/dock/line>;
+	background: <color:window/dock/tab_selected>;
+	color: <color:window/dock/text>;
 }
 
-/* Title-bar close / float / auto-hide buttons — compact to fit the slim bar. */
-KDDockWidgets--QtWidgets--Button {
+/* The side bar of auto-hidden docks: pills. */
+KDDockWidgets--QtWidgets--SideBar {
 	background: transparent;
-	border: none;
-	max-height: 18px;
-	max-width: 18px;
-	icon-size: 14px;
+}
+
+QtDockSideBarButton {
+	qproperty-pillColor: <color:window/dock/header>;
+	qproperty-pillHoverColor: <color:window/dock/tab_selected>;
+	qproperty-borderColor: <color:window/dock/card_border>;
+	qproperty-textColor: <color:window/dock/header_text>;
+	font-size: 12px;
 }
 
 #screen_button {
