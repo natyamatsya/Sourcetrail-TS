@@ -67,6 +67,7 @@ private slots:
 
 private:
 	QtHoverButton* createScopeLine(QBoxLayout* layout);
+	static void setFileScopeLine(QPushButton& line, QPushButton& dots, const std::string& filePath);
 	void updateDots();
 	void updateScopeLineFocus(QPushButton* line, QPushButton* dots);
 

@@ -19,8 +19,7 @@
 #include "QtCodeArea.h"
 #include "QtCodeFile.h"
 #include "QtCodeSnippet.h"
-#include "QtResources.h"
-#include "QtSearchBarButton.h"
+#include "QtCodeGlyphButton.h"
 #ifndef SRCTRL_MODULE_BUILD
 #include "SourceLocation.h"
 #include "SourceLocationCollection.h"
@@ -46,17 +45,29 @@ import srctrl.messaging;
 import srctrl.settings;
 #endif
 
+namespace
+{
+// Space below the code, enough to clear the corners of the card around it: they reach as far
+// into the card as its radius (9 px) and its border (1 px), and a radius of 10 px still fits.
+constexpr int bottomInset{10};
+}	 // namespace
+
 QtCodeNavigator::QtCodeNavigator(QWidget* parent)
 	: QWidget(parent),  m_schedulerId(TabIds::ignore())
 {
 	using enum QtCodeNavigator::Mode;
+	setAttribute(Qt::WA_StyledBackground);	  // the card's colour below the code, from the style sheet
+
 	QVBoxLayout* layout = new QVBoxLayout();
 	layout->setSpacing(0);
-	layout->setContentsMargins(0, 0, 0, 0);
+	// The code stays off the card's bottom corners: the card paints its rounded corners over its
+	// content, and a view scrolling under them has to repaint all of itself on every step
+	// instead of moving what it has (see QtDockCard).
+	layout->setContentsMargins(0, 0, 0, bottomInset);
 	layout->setAlignment(Qt::AlignTop);
 	setLayout(layout);
 
-	const size_t indicatorHeight = 3;
+	const int indicatorHeight = 2;
 
 	{
 		m_focusIndicator = new QWidget(this);
@@ -70,13 +81,14 @@ QtCodeNavigator::QtCodeNavigator(QWidget* parent)
 		QWidget* navigation = new QWidget();
 		navigation->setObjectName(QStringLiteral("code_navigation"));
 
+		// One slim line: the references to step through, and the mode.
 		QHBoxLayout* navLayout = new QHBoxLayout();
-		navLayout->setSpacing(2);
-		navLayout->setContentsMargins(7, 7 - indicatorHeight, 7, 6);
+		navLayout->setSpacing(0);
+		navLayout->setContentsMargins(4, 4 - indicatorHeight, 4, 4);
 
 		{
-			m_prevReferenceButton = new QtSearchBarButton(QtResources::CODE_VIEW_ARROW_UP, QtSearchBarButton::Size::SMALL);
-			m_nextReferenceButton = new QtSearchBarButton(QtResources::CODE_VIEW_ARROW_DOWN, QtSearchBarButton::Size::SMALL);
+			m_prevReferenceButton = new QtCodeGlyphButton(QtCodeGlyph::ChevronUp);
+			m_nextReferenceButton = new QtCodeGlyphButton(QtCodeGlyph::ChevronDown);
 
 			m_prevReferenceButton->setObjectName(QStringLiteral("reference_button_previous"));
 			m_nextReferenceButton->setObjectName(QStringLiteral("reference_button_next"));
@@ -85,9 +97,6 @@ QtCodeNavigator::QtCodeNavigator(QWidget* parent)
 			m_nextReferenceButton->setToolTip(QtActions::nextReference().tooltip());
 			m_prevReferenceButton->setAccessibleName(QtActions::previousReference().name());
 			m_nextReferenceButton->setAccessibleName(QtActions::nextReference().name());
-
-			m_prevReferenceButton->setIconSize(QSize(12, 12));
-			m_nextReferenceButton->setIconSize(QSize(12, 12));
 
 			navLayout->addWidget(m_prevReferenceButton);
 			navLayout->addWidget(m_nextReferenceButton);
@@ -104,17 +113,16 @@ QtCodeNavigator::QtCodeNavigator(QWidget* parent)
 		}
 
 		{
-			m_prevLocalReferenceButton = new QtSearchBarButton(QtResources::CODE_VIEW_ARROW_UP, QtSearchBarButton::Size::SMALL);
-			m_nextLocalReferenceButton = new QtSearchBarButton(QtResources::CODE_VIEW_ARROW_DOWN, QtSearchBarButton::Size::SMALL);
+			m_prevLocalReferenceButton = new QtCodeGlyphButton(QtCodeGlyph::ChevronUp);
+			m_nextLocalReferenceButton = new QtCodeGlyphButton(QtCodeGlyph::ChevronDown);
 
 			m_prevLocalReferenceButton->setObjectName(QStringLiteral("local_reference_button_previous"));
 			m_nextLocalReferenceButton->setObjectName(QStringLiteral("local_reference_button_next"));
 
 			m_prevLocalReferenceButton->setToolTip(QtActions::previousLocalReference().tooltip());
 			m_nextLocalReferenceButton->setToolTip(QtActions::nextLocalReference().tooltip());
-
-			m_prevLocalReferenceButton->setIconSize(QSize(12, 12));
-			m_nextLocalReferenceButton->setIconSize(QSize(12, 12));
+			m_prevLocalReferenceButton->setAccessibleName(QtActions::previousLocalReference().name());
+			m_nextLocalReferenceButton->setAccessibleName(QtActions::nextLocalReference().name());
 
 			navLayout->addWidget(m_prevLocalReferenceButton);
 			navLayout->addWidget(m_nextLocalReferenceButton);
@@ -137,8 +145,8 @@ QtCodeNavigator::QtCodeNavigator(QWidget* parent)
 			m_localRefLabel->hide();
 		}
 
-		m_listButton = new QtSearchBarButton(QtResources::CODE_VIEW_LIST, QtSearchBarButton::Size::SMALL);
-		m_fileButton = new QtSearchBarButton(QtResources::CODE_VIEW_FILE, QtSearchBarButton::Size::SMALL);
+		m_listButton = new QtCodeGlyphButton(QtCodeGlyph::Snippets);
+		m_fileButton = new QtCodeGlyphButton(QtCodeGlyph::File);
 
 		m_listButton->setObjectName(QStringLiteral("mode_button_list"));
 		m_fileButton->setObjectName(QStringLiteral("mode_button_single"));
@@ -149,11 +157,16 @@ QtCodeNavigator::QtCodeNavigator(QWidget* parent)
 		m_listButton->setCheckable(true);
 		m_fileButton->setCheckable(true);
 
-		m_listButton->setIconSize(QSize(14, 14));
-		m_fileButton->setIconSize(QSize(14, 14));
-
-		navLayout->addWidget(m_listButton);
-		navLayout->addWidget(m_fileButton);
+		// The two modes as a segmented control: the current one raised from a sunken track.
+		QWidget* modeButtons = new QWidget();
+		modeButtons->setObjectName(QStringLiteral("mode_buttons"));
+		modeButtons->setAttribute(Qt::WA_StyledBackground);
+		QHBoxLayout* modeLayout = new QHBoxLayout(modeButtons);
+		modeLayout->setSpacing(0);
+		modeLayout->setContentsMargins(2, 2, 2, 2);
+		modeLayout->addWidget(m_listButton);
+		modeLayout->addWidget(m_fileButton);
+		navLayout->addWidget(modeButtons);
 
 		connect(m_listButton, &QPushButton::clicked, this, &QtCodeNavigator::setModeList);
 		connect(m_fileButton, &QPushButton::clicked, this, &QtCodeNavigator::setModeSingle);

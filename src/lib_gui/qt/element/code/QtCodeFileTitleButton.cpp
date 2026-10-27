@@ -10,6 +10,7 @@
 #include "MessageTabOpenWith.h"
 #endif
 #include "Project.h"
+#include "QtCodeGlyphButton.h"
 #include "QtContextMenu.h"
 #include "QtResources.h"
 
@@ -25,16 +26,22 @@ import srctrl.settings;
 
 using namespace std;
 
+namespace
+{
+constexpr int glyphSize{16};
+}	 // namespace
+
 QtCodeFileTitleButton::QtCodeFileTitleButton(QWidget* parent)
 	: QtSelfRefreshIconButton(QLatin1String(""), FilePath(), "code/file/title", parent)
 {
 	setObjectName(QStringLiteral("title_button"));
 	minimumSizeHint();	  // force font loading
 
-	setFixedHeight(static_cast<int>(std::max(fontMetrics().height() * 1.2, 28.0)));
+	setFixedHeight(static_cast<int>(std::max(fontMetrics().height() * 1.2, 24.0)));
 	setSizePolicy(sizePolicy().horizontalPolicy(), QSizePolicy::Fixed);
 
-	setIconSize(QSize(16, 16));
+	setIconSize(QSize(glyphSize, glyphSize));
+	updateIcon();
 
 	connect(this, &QtCodeFileTitleButton::clicked, this, &QtCodeFileTitleButton::clickedTitle);
 
@@ -231,6 +238,7 @@ void QtCodeFileTitleButton::refresh()
 {
 	QtSelfRefreshIconButton::refresh();
 
+	updateIcon();
 	updateHatching();
 }
 
@@ -256,18 +264,18 @@ void QtCodeFileTitleButton::openInTab()
 
 void QtCodeFileTitleButton::updateIcon()
 {
+	QtCodeGlyph glyph = QtCodeGlyph::File;
 	if (m_filePath.empty())
 	{
-		setIconPath(QtResources::CODE_VIEW_EDIT);
+		glyph = QtCodeGlyph::Edit;
 	}
 	else if (!m_isComplete)
 	{
-		setIconPath(QtResources::GRAPH_VIEW_FILE_INCOMPLETE);
+		glyph = QtCodeGlyph::FileIncomplete;
 	}
-	else
-	{
-		setIconPath(QtResources::CODE_VIEW_FILE);
-	}
+
+	const QColor color{QString::fromStdString(ColorScheme::getInstance()->getColor("code/header/muted"))};
+	setIcon(codeGlyphIcon(glyph, color, glyphSize));
 }
 
 void QtCodeFileTitleButton::updateHatching()

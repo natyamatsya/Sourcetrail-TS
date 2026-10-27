@@ -13,7 +13,7 @@
 
 class QLabel;
 class QPushButton;
-class QtSearchBarButton;
+class QtCodeGlyphButton;
 class SourceLocationCollection;
 class SourceLocationFile;
 
@@ -152,16 +152,16 @@ private:
 
 	QWidget* m_focusIndicator;
 
-	QtSearchBarButton* m_prevReferenceButton;
-	QtSearchBarButton* m_nextReferenceButton;
+	QtCodeGlyphButton* m_prevReferenceButton;
+	QtCodeGlyphButton* m_nextReferenceButton;
 	QLabel* m_refLabel;
 
-	QtSearchBarButton* m_prevLocalReferenceButton;
-	QtSearchBarButton* m_nextLocalReferenceButton;
+	QtCodeGlyphButton* m_prevLocalReferenceButton;
+	QtCodeGlyphButton* m_nextLocalReferenceButton;
 	QLabel* m_localRefLabel;
 
-	QtSearchBarButton* m_listButton;
-	QtSearchBarButton* m_fileButton;
+	QtCodeGlyphButton* m_listButton;
+	QtCodeGlyphButton* m_fileButton;
 
 	QFrame* m_separatorLine;
 
