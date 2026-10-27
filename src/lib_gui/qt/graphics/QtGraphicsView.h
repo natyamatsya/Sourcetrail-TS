@@ -8,6 +8,7 @@
 #include <QGraphicsView>
 
 #include <memory>
+#include <optional>
 
 class GraphFocusHandler;
 class QPushButton;
@@ -34,12 +35,17 @@ public:
 	float getZoomFactor() const;
 	void setAppZoomFactor(float appZoomFactor);
 
-	void setSceneRect(const QRectF& rect);
+	// The scene's rect, which an exported image shows. The view scrolls and centres within it
+	// widened by reservedLeft (scene units) to the left: room for what floats over the view's
+	// left edge, so the graph is laid out beside it.
+	void setSceneRect(const QRectF& rect, qreal reservedLeft = 0);
 
 	QtGraphNode* getNodeAtCursorPosition() const;
 	QtGraphEdge* getEdgeAtCursorPosition() const;
 
-	void ensureVisibleAnimated(const QRectF& rect, int xmargin = 50, int ymargin = 50);
+	// Scrolls rect into view, and then horizontally to horizontalValue if given.
+	void ensureVisibleAnimated(
+		const QRectF& rect, int xmargin = 50, int ymargin = 50, std::optional<int> horizontalValue = std::nullopt);
 
 	void updateZoom(float delta);
 
