@@ -43,6 +43,7 @@
 #include "QtBuildJsonBrowser.h"
 #include "QtContextMenu.h"
 #include "QtDockChrome.h"
+#include "QtDockControl.h"
 #include "QtFileDialog.h"
 #include "QtKeyboardShortcuts.h"
 #include "QtLicenseWindow.h"
@@ -190,10 +191,12 @@ QtMainWindow::QtMainWindow()
 
 	ProjectWizardStateMachine::instance()->attach(*this);
 	PreferencesStateMachine::instance()->attach(*this);
+	m_dockControl = std::make_unique<QtDockControl>(*this, *DockStateMachine::instance(), [this]() { resetWindowLayout(); });
 }
 
 QtMainWindow::~QtMainWindow()
 {
+	m_dockControl.reset();
 	ProjectWizardStateMachine::instance()->detach(*this);
 	PreferencesStateMachine::instance()->detach(*this);
 
@@ -237,6 +240,7 @@ void QtMainWindow::addView(View* view)
 	// New docks tile to the right of the current layout; the persisted KDDW layout
 	// (LayoutSaver, see loadDockWidgetLayout) overrides this on later launches.
 	addDockWidget(dock, KDDockWidgets::Location_OnRight);
+	m_dockControl->addDock(*dock);
 
 	QtViewToggle* toggle = new QtViewToggle(view, this);
 	connect(
