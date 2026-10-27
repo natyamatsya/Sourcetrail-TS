@@ -82,6 +82,14 @@ TEST_CASE("every colour scheme has the colours the scroll bars' style sheet asks
 	requireColors(keys);
 }
 
+TEST_CASE("every colour scheme has the colours the tab strip's style sheet asks for")
+{
+	const std::vector<std::string> keys = styleSheetColorKeys(QtResources::TABS_VIEW_CSS);
+	REQUIRE(!keys.empty());
+
+	requireColors(keys);
+}
+
 TEST_CASE("every colour scheme has the docking chrome's colours")
 {
 	// The docks are cards on a canvas; main.css paints them with these, in day and night

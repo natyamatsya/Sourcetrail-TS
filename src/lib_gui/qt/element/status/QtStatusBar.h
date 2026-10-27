@@ -3,7 +3,6 @@
 
 #include "ErrorCountInfo.h"
 #include "QtFlatButton.h"
-#include "QtVerticalLine.h"
 
 #include <QLabel>
 #include <QProgressBar>
@@ -45,19 +44,16 @@ private:
 	QtFlatButton *m_text;
 
 	// indexing widgets:	
-	QtVerticalLine *m_vlineIndexing;
 	QtFlatButton *m_indexingStatus;
 	QProgressBar *m_indexingProgress;
 	
 	// error(s) widgets:
-	QtVerticalLine *m_vlineError;
 	QtFlatButton *m_errorButton;
 	
 	// ide status widgets:
 	QLabel *m_ideStatusText;
 	
 	// encoding widgets:
-	QtVerticalLine *m_vlineTextEncoding;
 	QLabel *m_textEncoding;
 };
 

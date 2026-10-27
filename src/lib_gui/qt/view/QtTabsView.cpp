@@ -7,7 +7,7 @@
 #include "GraphViewStyle.h"
 #endif
 #include "QtActions.h"
-#include "QtSelfRefreshIconButton.h"
+#include "QtGlyphButton.h"
 #include "QtTabBar.h"
 #include "QtViewWidgetWrapper.h"
 #include "TabIds.h"
@@ -38,8 +38,9 @@ QtTabsView::QtTabsView(ViewLayout* viewLayout)
 	layout->setContentsMargins(0, 0, 0, 0);
 	layout->setSpacing(0);
 
+	// As wide as the canvas's gutter: the first tab lines up with the cards below.
 	QWidget* front = new QWidget();
-	front->setMinimumWidth(5);
+	front->setMinimumWidth(6);
 	front->setObjectName(QStringLiteral("side_area"));
 	layout->addWidget(front);
 
@@ -52,16 +53,15 @@ QtTabsView::QtTabsView(ViewLayout* viewLayout)
 
 	connect(m_tabBar, &QTabBar::currentChanged, this, &QtTabsView::changedTab);
 
-	QPushButton* addButton = new QtSelfRefreshIconButton(QStringLiteral(""), QtResources::TABS_VIEW_ADD, "tab/bar/button");
+	QPushButton* addButton = new QtGlyphButton(QtGlyphButton::Glyph::Add);
 	addButton->setObjectName(QStringLiteral("add_button"));
 	addButton->setToolTip(QtActions::newTab().tooltip());
 	addButton->setAccessibleName(QtActions::newTab().name());
-	addButton->setIconSize(QSize(14, 14));
 
 	QWidget* back = new QWidget();
 	back->setObjectName(QStringLiteral("side_area"));
 	QHBoxLayout* backLayout = new QHBoxLayout(back);
-	backLayout->setContentsMargins(3, 0, 5, 0);
+	backLayout->setContentsMargins(0, 0, 6, 0);
 	backLayout->setSpacing(0);
 	backLayout->addWidget(addButton);
 	backLayout->addStretch();
@@ -192,11 +192,10 @@ void QtTabsView::insertTab(bool showTab, const SearchMatch& match)
 		}
 	});
 
-	QPushButton* closeButton = new QtSelfRefreshIconButton(QString(), QtResources::TABS_VIEW_CLOSE, "tab/bar/button");
+	QPushButton* closeButton = new QtGlyphButton(QtGlyphButton::Glyph::Close);
 	closeButton->setObjectName(QStringLiteral("close_button"));
 	closeButton->setToolTip(QtActions::closeTab().tooltip());
 	closeButton->setAccessibleName(tr("Close %1").arg(tr("Empty Tab")));
-	closeButton->setIconSize(QSize(10, 10));
 	m_tabBar->setTabButton(idx, QTabBar::RightSide, closeButton);
 
 	connect(closeButton, &QPushButton::clicked, [tabId, this]() {
@@ -250,6 +249,10 @@ void QtTabsView::changedTab(int index)
 			circle->setProperty("selected", selected);
 			circle->style()->unpolish(circle);
 			circle->style()->polish(circle);
+		}
+		if (auto* closeButton = qobject_cast<QtGlyphButton*>(m_tabBar->tabButton(i, QTabBar::RightSide)))
+		{
+			closeButton->setEmphasized(selected);
 		}
 	}
 }
@@ -313,7 +316,7 @@ void QtTabsView::setStyleSheet()
 {
 	m_widget->setStyleSheet(QtResources::loadStyleSheet(QtResources::TABS_VIEW_CSS));
 
-	setWidgetBackgroundColor(m_widget, ColorScheme::getInstance()->getColor("tab/bar/background"));
+	setWidgetBackgroundColor(m_widget, ColorScheme::getInstance()->getColor("window/dock/canvas"));
 }
 
 void QtTabsView::closeTabsToRight(int tabNum)

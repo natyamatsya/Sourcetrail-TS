@@ -1,6 +1,7 @@
 #include "QtStatusBar.h"
 
 #ifndef SRCTRL_MODULE_BUILD
+#include "ColorScheme.h"
 #include "MessageErrorsAll.h"
 #include "MessageIndexingShowDialog.h"
 #include "MessageShowStatus.h"
@@ -11,14 +12,37 @@
 
 #include <QHBoxLayout>
 #include <QMovie>
+#include <QStyle>
 
 // Imports come AFTER all textual #includes (include-before-import rule: textual libc++
 // following BMI-merged declarations trips "cannot add 'abi_tag' in a redeclaration").
 #ifdef SRCTRL_MODULE_BUILD
 import srctrl.messaging;
+import srctrl.settings;
 #endif
 
 using namespace utility;
+
+namespace
+{
+// An error shows in the status bar's error colour (main.css: QStatusBar QPushButton[error=true]).
+void setShowsError(QWidget& widget, bool error)
+{
+	if (widget.property("error").toBool() == error)
+	{
+		return;
+	}
+	widget.setProperty("error", error);
+	widget.style()->unpolish(&widget);
+	widget.style()->polish(&widget);
+}
+
+QIcon errorDot()
+{
+	const QColor color{QString::fromStdString(ColorScheme::getInstance()->getColor("window/status/error"))};
+	return QIcon{colorizePixmap(QPixmap{QString::fromUtf8(QtResources::STATUSBAR_VIEW_DOT)}, color).scaledToHeight(12)};
+}
+}	 // namespace
 
 QtStatusBar::QtStatusBar()
 {
@@ -43,6 +67,7 @@ QtStatusBar::QtStatusBar()
 	// status text
 	{
 		m_text = new QtFlatButton(this);
+		m_text->setStyleSheet(QStringLiteral("QPushButton { margin-right: 0; spacing: none; text-align: left; }"));
 		m_text->setSizePolicy(QSizePolicy::Ignored, m_text->sizePolicy().verticalPolicy());
 		addWidget(m_text, 1);
 		setText("", false, false);
@@ -50,12 +75,10 @@ QtStatusBar::QtStatusBar()
 		connect(m_text, &QPushButton::clicked, this, &QtStatusBar::showStatus);
 	}
 		
+	// The permanent widgets have no lines between them: main.css spaces them out.
+
 	// indexing status
 	{
-		m_vlineIndexing = new QtVerticalLine(this);
-		m_vlineIndexing->hide();
-		addPermanentWidget(m_vlineIndexing);
-		
 		m_indexingStatus = new QtFlatButton(this);
 		m_indexingStatus->setMinimumWidth(150);
 		m_indexingStatus->setStyleSheet(QStringLiteral("QPushButton { margin-right: 0; spacing: none; }"));
@@ -81,14 +104,11 @@ QtStatusBar::QtStatusBar()
 	
 	// errors
 	{
-		m_vlineError = new QtVerticalLine(this);
-		m_vlineError->hide();
-		addPermanentWidget(m_vlineError);
-		
 		m_errorButton = new QtFlatButton(this);
 		m_errorButton->hide();
-		m_errorButton->setStyleSheet(QStringLiteral("QPushButton { color: #D00000; margin-right: 0; spacing: none; }"));
-		m_errorButton->setIcon(colorizePixmap(QPixmap(QString::fromUtf8(QtResources::STATUSBAR_VIEW_DOT)), QColor(0xD0, 0, 0)).scaledToHeight(12));
+		m_errorButton->setStyleSheet(QStringLiteral("QPushButton { margin-right: 0; spacing: none; }"));
+		setShowsError(*m_errorButton, true);
+		m_errorButton->setIcon(errorDot());
 		addPermanentWidget(m_errorButton);
 		
 		connect(m_errorButton, &QPushButton::clicked, this, &QtStatusBar::showErrors);
@@ -96,8 +116,6 @@ QtStatusBar::QtStatusBar()
 
 	// ide status
 	{
-		addPermanentWidget(new QtVerticalLine(this));
-		
 		m_ideStatusText = new QLabel(this);
 		m_ideStatusText->setToolTip(tr("IDE Status"));
 		addPermanentWidget(m_ideStatusText);
@@ -105,9 +123,6 @@ QtStatusBar::QtStatusBar()
 
 	// text encoding
 	{
-		m_vlineTextEncoding = new QtVerticalLine(this);
-		addPermanentWidget(m_vlineTextEncoding);
-		
 		m_textEncoding = new QLabel(this);
 		m_textEncoding->setToolTip(QtActions::textEncoding().tooltip());
 		addPermanentWidget(m_textEncoding);
@@ -116,10 +131,7 @@ QtStatusBar::QtStatusBar()
 
 void QtStatusBar::setText(const std::string &text, bool isError, bool showLoader)
 {
-	if (isError)
-		m_text->setStyleSheet(QStringLiteral("QPushButton { color: #D00000; margin-right: 0; spacing: none; text-align: left; }"));
-	else
-		m_text->setStyleSheet(QStringLiteral("QPushButton { margin-right: 0; spacing: none; text-align: left; }"));
+	setShowsError(*m_text, isError);
 
 	if (showLoader)
 		m_loader->show();
@@ -138,18 +150,14 @@ void QtStatusBar::setErrorCount(ErrorCountInfo errorCount)
 		m_errorButton->setText(errorText + (errorCount.fatal > 0 ? " " + fatalText : ""));
 		m_errorButton->setMinimumWidth(m_errorButton->fontMetrics().boundingRect(QString(m_errorButton->text().size(), 'a')).width());
 
-		if (errorCount.fatal > 0)
-			m_errorButton->setStyleSheet(QStringLiteral("QPushButton { color: #D00000; margin-right: 0; spacing: none; }"));
-		else
-			m_errorButton->setStyleSheet(QStringLiteral("QPushButton { margin-right: 0; spacing: none; }"));
+		setShowsError(*m_errorButton, errorCount.fatal > 0);
+		m_errorButton->setIcon(errorDot());	   // in the colour scheme's colour of the moment
 
 		m_errorButton->show();
-		m_vlineError->show();
 	}
 	else
 	{
 		m_errorButton->hide();
-		m_vlineError->hide();
 	}
 }
 
@@ -161,7 +169,6 @@ void QtStatusBar::setIdeStatus(const std::string &text)
 void QtStatusBar::showIndexingProgress(size_t progressPercent)
 {
 	m_indexingStatus->show();
-	m_vlineIndexing->show();
 
 	m_indexingProgress->setValue(static_cast<int>(progressPercent));
 }
@@ -169,7 +176,6 @@ void QtStatusBar::showIndexingProgress(size_t progressPercent)
 void QtStatusBar::hideIndexingProgress()
 {
 	m_indexingStatus->hide();
-	m_vlineIndexing->hide();
 }
 
 void QtStatusBar::setTextEncoding(const std::string &encoding)

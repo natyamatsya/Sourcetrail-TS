@@ -569,6 +569,7 @@
          "header_text": "#F0F0F0",
          "icon_type": "white",
          "line": "#A0A0A0",
+         "tab_hover": "#414141",
          "tab_selected": "#6E6E6E",
          "text": "white"
       },
@@ -579,6 +580,9 @@
          "handle_hover": "#B38A8F99",
          "track_hover": "#1A8A8F99"
       },
-      "separator": "#CCCCCC"
+      "separator": "#CCCCCC",
+      "status": {
+         "error": "#FF6B5E"
+      }
    }
 }
