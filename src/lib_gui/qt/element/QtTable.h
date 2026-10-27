@@ -11,18 +11,16 @@ public:
 	QtTable(QWidget* parent = nullptr);
 	~QtTable() override;
 
-	// Keeps the filler rows that fill the view and fits the rows' heights to their contents,
-	// those from `firstChangedRow` on: rows added at the end need not refit all the others.
-	void updateRows(int firstChangedRow = 0);
+	// Keeps the filler rows that fill the view. Every row is one line high, its text elided
+	// (the tooltip has it whole), so rows never need fitting to their contents: not when added,
+	// nor when the columns or the view change width.
+	void updateRows();
 	int getFilledRowCount();
 
 	void showFirstRow();
 	void showLastRow();
 
 	bool hasSelection() const;
-
-protected slots:
-	void columnResized(int column, int oldWidth, int newWidth);
 
 protected:
 	void resizeEvent(QResizeEvent* event) override;

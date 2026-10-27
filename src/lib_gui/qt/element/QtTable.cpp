@@ -1,6 +1,5 @@
 #include "QtTable.h"
 
-#include <algorithm>
 #include <cmath>
 
 #include <QHeaderView>
@@ -49,9 +48,12 @@ QtTable::QtTable(QWidget* parent): QTableView(parent)
 
 	setItemDelegate(new SelectableCellDelegate(this));
 
+	// One line per row, all of the same height: a long text is elided.
+	setWordWrap(false);
+
 	// No row numbers: the rows' stripes are enough to follow them.
 	verticalHeader()->hide();
-	verticalHeader()->sectionResizeMode(QHeaderView::Fixed);
+	verticalHeader()->setSectionResizeMode(QHeaderView::Fixed);
 	verticalHeader()->setDefaultAlignment(Qt::AlignRight);
 
 	horizontalHeader()->setStretchLastSection(true);
@@ -59,13 +61,11 @@ QtTable::QtTable(QWidget* parent): QTableView(parent)
 
 	setSelectionBehavior(QAbstractItemView::SelectRows);
 	setSelectionMode(QAbstractItemView::SingleSelection);
-
-	connect(horizontalHeader(), &QHeaderView::sectionResized, this, &QtTable::columnResized);
 }
 
 QtTable::~QtTable() = default;
 
-void QtTable::updateRows(int firstChangedRow)
+void QtTable::updateRows()
 {
 	while (model()->rowCount() <= m_rowsToFill)
 	{
@@ -91,17 +91,12 @@ void QtTable::updateRows(int firstChangedRow)
 		ApplicationSettings::getInstance()->getFontSize() * 0.7 * int(1 + std::log10(rowCount)));
 
 	verticalHeader()->setStyleSheet("::section { width: " + QString::number(width) + "px; }");
-	verticalHeader()->setDefaultSectionSize(ApplicationSettings::getInstance()->getFontSize() + 6);
+	verticalHeader()->setDefaultSectionSize(ApplicationSettings::getInstance()->getFontSize() + 8);
 
 	if (this->selectionModel()->hasSelection() &&
 		selectionModel()->selection().indexes()[0].row() >= model()->rowCount() - 2)
 	{
 		clearSelection();
-	}
-
-	for (int row = std::max(firstChangedRow, 0); row < model()->rowCount(); row++)
-	{
-		resizeRowToContents(row);
 	}
 }
 
@@ -134,11 +129,6 @@ void QtTable::showLastRow()
 bool QtTable::hasSelection() const
 {
 	return this->selectionModel()->hasSelection();
-}
-
-void QtTable::columnResized(int  /*column*/, int  /*oldWidth*/, int  /*newWidth*/)
-{
-	resizeRowsToContents();
 }
 
 void QtTable::resizeEvent(QResizeEvent* event)
