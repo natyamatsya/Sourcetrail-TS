@@ -211,6 +211,15 @@ QtCodeGlyphButton:pressed {
 	color: <color:code/snippet/syntax/text>;
 }
 
+/* A file's own scope line names no scope, it only marks the lines left out: a slim one. */
+#code_file #code_snippet #scope_name[file_scope=true], #code_file #code_snippet #dots[file_scope=true] {
+	font-size: <setting:font_size-4>px;
+	min-height: 14px;
+	max-height: 14px;
+	padding-bottom: 0px;
+	padding-top: 0px;
+}
+
 #code_file #code_snippet #dots {
 	background-color: <color:code/snippet/line_number/background>;
 	border-right: 3px solid transparent;

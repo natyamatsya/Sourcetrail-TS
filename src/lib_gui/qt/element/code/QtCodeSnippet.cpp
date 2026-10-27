@@ -46,7 +46,7 @@ QtCodeSnippet::QtCodeSnippet(const CodeSnippetParams& params, QtCodeNavigator* n
 		m_titleDots = m_dots.back();
 		if (m_titleId == 0)	   // title is a file path
 		{
-			m_title->setText(QString::fromStdString(FilePath(m_titleString).fileName()));
+			setFileScopeLine(*m_title, *m_titleDots, m_titleString);
 		}
 		else
 		{
@@ -65,7 +65,7 @@ QtCodeSnippet::QtCodeSnippet(const CodeSnippetParams& params, QtCodeNavigator* n
 		m_footerDots = m_dots.back();
 		if (m_footerId == 0)	// footer is a file path
 		{
-			m_footer->setText(QString::fromStdString(FilePath(m_footerString).fileName()));
+			setFileScopeLine(*m_footer, *m_footerDots, m_footerString);
 		}
 		else
 		{
@@ -298,6 +298,20 @@ QtHoverButton* QtCodeSnippet::createScopeLine(QBoxLayout* layout)
 	});
 
 	return line;
+}
+
+void QtCodeSnippet::setFileScopeLine(QPushButton& line, QPushButton& dots, const std::string& filePath)
+{
+	// The file's header already names the file: the line only marks the lines the snippet
+	// leaves out, and shows them on a click.
+	line.setAccessibleName(QString::fromStdString(FilePath(filePath).fileName()));
+	line.setToolTip(tr("Show the whole file"));
+
+	for (QPushButton* widget: {&line, &dots})
+	{
+		widget->setProperty("file_scope", true);
+		widget->style()->polish(widget);	// polished already (see createScopeLine)
+	}
 }
 
 void QtCodeSnippet::updateDots()
