@@ -59,8 +59,7 @@ QStatusBar QPushButton[error=true] {
    widgets take their colours as qproperty values. In Qt style sheets a C++ '::' scope
    separator is written as '--', so KDDockWidgets::QtWidgets::TitleBar becomes
    KDDockWidgets--QtWidgets--TitleBar. */
-QWidget#MyCentralWidget,
-KDDockWidgets--QtWidgets--FloatingWindow {
+QWidget#MyCentralWidget {
 	background: <color:window/dock/canvas>;
 }
 
@@ -69,6 +68,15 @@ QtDockCard {
 	qproperty-canvasColor: <color:window/dock/canvas>;
 	qproperty-borderColor: <color:window/dock/card_border>;
 	qproperty-radius: 9;
+}
+
+/* A floating window paints its canvas and frame itself: a style sheet background would fill
+   its see-through corners. */
+QtDockFloatingWindow {
+	qproperty-canvasColor: <color:window/dock/canvas>;
+	qproperty-borderColor: <color:window/dock/floating_border>;
+	qproperty-cardBorderColor: <color:window/dock/card_border>;
+	qproperty-radius: 10;
 }
 
 QtDockGutter {
@@ -91,6 +99,12 @@ KDDockWidgets--QtWidgets--TitleBar {
 	font-size: 12px;
 	min-height: 26px;
 	max-height: 26px;
+}
+
+/* Several cards in a floating window: the window's header row lies on the canvas above them. */
+KDDockWidgets--QtWidgets--TitleBar[dockFloatingSeveralCards="true"] {
+	background: transparent;
+	border-bottom: none;
 }
 
 KDDockWidgets--QtWidgets--TitleBar QLabel {

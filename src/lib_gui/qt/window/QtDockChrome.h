@@ -9,12 +9,14 @@
 #include <QWidget>
 
 #include <kddockwidgets/qtwidgets/ViewFactory.h>
+#include <kddockwidgets/qtwidgets/views/FloatingWindow.h>
 #include <kddockwidgets/qtwidgets/views/Group.h>
 #include <kddockwidgets/qtwidgets/views/Separator.h>
 #include <kddockwidgets/qtwidgets/views/SideBar.h>
 #include <kddockwidgets/qtwidgets/views/Stack.h>
 #include <kddockwidgets/qtwidgets/views/TitleBar.h>
 
+class QMainWindow;
 class QTabBar;
 class QTabWidget;
 
@@ -108,6 +110,64 @@ private:
 	QColor m_canvasColor{0xE6, 0xE7, 0xEA};
 	QColor m_borderColor{0xD2, 0xD4, 0xD9};
 	qreal m_radius{8};
+};
+
+// A floating window, with a soft frame: rounded corners and a hairline border. A single card in
+// it (one dock, or docks tabbed together) is the window, its header the window's; several cards
+// side by side sit on a canvas, under a header row for the whole window.
+//
+// Where the window can be see-through (macOS, whose floating windows have no native frame, see
+// QtDockChrome.cpp), its corners are: the window's content, and the system's shadow, are rounded.
+// KDDockWidgets resizes a frameless window from a margin along its edges that belongs to the
+// window itself, the content leaves it free: there it is all but transparent, so the window seems
+// to have the content's size and is resized from just outside its edges, as a native window is.
+// Elsewhere the window is opaque and square (Windows 11 rounds it itself), and its card sits on the
+// canvas with rounded corners, like the cards in the main window.
+class QtDockFloatingWindow: public KDDockWidgets::QtWidgets::FloatingWindow
+{
+	Q_OBJECT
+	Q_PROPERTY(QColor canvasColor READ canvasColor WRITE setCanvasColor)
+	Q_PROPERTY(QColor borderColor READ borderColor WRITE setBorderColor)
+	Q_PROPERTY(QColor cardBorderColor READ cardBorderColor WRITE setCardBorderColor)
+	Q_PROPERTY(qreal radius READ radius WRITE setRadius)
+
+public:
+	QtDockFloatingWindow(KDDockWidgets::Core::FloatingWindow* controller, QMainWindow* parent, Qt::WindowFlags windowFlags);
+
+	QColor canvasColor() const;
+	void setCanvasColor(const QColor& color);
+	QColor borderColor() const;
+	void setBorderColor(const QColor& color);
+	QColor cardBorderColor() const;
+	void setCardBorderColor(const QColor& color);
+	qreal radius() const;
+	void setRadius(qreal radius);
+
+	// Whether the window's corners are see-through.
+	bool isTranslucent() const;
+	// Whether it holds several cards side by side, under a header row of its own.
+	bool holdsSeveralCards() const;
+	// What looks like the window: all of it, or, see-through, all but the margin to resize it by.
+	QRect frameRect() const;
+	// The single card's content (header included), which the window's frame rounds; empty while it
+	// holds several cards, which round themselves.
+	QRect cardRect() const;
+	// The width of the margin KDDockWidgets resizes a frameless window by.
+	int resizeMargin() const;
+
+protected:
+	bool event(QEvent* event) override;
+	void paintEvent(QPaintEvent* event) override;
+	void updateMargins() override;
+
+private:
+	const bool m_translucent;
+	bool m_severalCards{false};
+	QWidget* m_frame{nullptr};
+	QColor m_canvasColor{0xE6, 0xE7, 0xEA};
+	QColor m_borderColor{0xC3, 0xC6, 0xCC};
+	QColor m_cardBorderColor{0xD2, 0xD4, 0xD9};
+	qreal m_radius{10};
 };
 
 // A gutter between cards, still the separator to drag. It shows a short pill to grab, which
@@ -280,6 +340,8 @@ public:
 	KDDockWidgets::Core::View* createStack(KDDockWidgets::Core::Stack* controller, KDDockWidgets::Core::View* parent) const override;
 	KDDockWidgets::Core::View* createSeparator(KDDockWidgets::Core::Separator* controller, KDDockWidgets::Core::View* parent) const override;
 	KDDockWidgets::Core::View* createSideBar(KDDockWidgets::Core::SideBar* controller, KDDockWidgets::Core::View* parent) const override;
+	KDDockWidgets::Core::View* createFloatingWindow(
+		KDDockWidgets::Core::FloatingWindow* controller, KDDockWidgets::Core::MainWindow* parent, Qt::WindowFlags windowFlags) const override;
 
 	QAbstractButton* createTitleBarButton(QWidget* parent, KDDockWidgets::TitleBarButtonType type) const override;
 	QIcon iconForButtonType(KDDockWidgets::TitleBarButtonType type, qreal dpr) const override;
