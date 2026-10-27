@@ -63,6 +63,9 @@ namespace
 {
 // The toolbar's distance from the graph view's edges.
 constexpr int toolbarMargin = 8;
+// The trail depth slider's length, and how short it may get in a short view.
+constexpr int trailDepthSliderLength = 64;
+constexpr int trailDepthSliderMinimumLength = 32;
 }	 // namespace
 
 QtGraphView::QtGraphView(ViewLayout *viewLayout)
@@ -154,7 +157,7 @@ QtGraphView::QtGraphView(ViewLayout *viewLayout)
 		m_trailDepthSlider = new QSlider(Qt::Vertical);
 		m_trailDepthSlider->setObjectName(QStringLiteral("depth_slider"));
 		m_trailDepthSlider->setToolTip(tr("adjust trail depth"));
-		m_trailDepthSlider->setFixedSize(QtGraphToolbar::controlSize, 64);
+		m_trailDepthSlider->setFixedSize(QtGraphToolbar::controlSize, trailDepthSliderLength);
 		m_trailDepthSlider->setMinimum(1);
 		m_trailDepthSlider->setMaximum(26);
 		m_trailDepthSlider->setValue(5);
@@ -1055,7 +1058,23 @@ void QtGraphView::fitToolbar()
 {
 	const QtGraphicsView *view = getView();
 	const int scrollBarHeight = view->style()->pixelMetric(QStyle::PM_ScrollBarExtent, nullptr, view);
-	m_toolbar->fitHeight(view->height() - scrollBarHeight - 2 * toolbarMargin);
+	const int height = view->height() - scrollBarHeight - 2 * toolbarMargin;
+
+	// The trail controls are one section, which cannot wrap: in a very short view they would
+	// run past the bottom, so their depth slider gives up length first, down to a usable
+	// minimum.
+	const int trailControlsHeight = m_collapseButton->parentWidget()->sizeHint().height() - m_trailDepthSlider->height()
+		+ trailDepthSliderLength + 2 * QtGraphToolbar::padding;
+	const int sliderLength = std::clamp(trailDepthSliderLength - (trailControlsHeight - height), trailDepthSliderMinimumLength,
+		trailDepthSliderLength);
+	if (sliderLength != m_trailDepthSlider->height())
+	{
+		m_trailDepthSlider->setFixedHeight(sliderLength);
+		// Their section's size hint follows at once, for the toolbar's layout below.
+		m_trailWidget->updateGeometry();
+	}
+
+	m_toolbar->fitHeight(height);
 }
 
 void QtGraphView::showTrailControls(bool show)
