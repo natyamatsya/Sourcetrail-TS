@@ -18,6 +18,7 @@
 class Bookmark;
 class MessageBase;
 class QtBuildJsonBrowser;
+class QtDockControl;
 class QtPreferencesWindow;
 class QtProjectWizard;
 class View;
@@ -256,6 +257,7 @@ private:
 	QtBuildJsonBrowser* m_buildJsonBrowser = nullptr;
 	QPointer<QtProjectWizard> m_projectWizard;	// the wizard open, if one is
 	QPointer<QtPreferencesWindow> m_preferencesWindow;	// the Preferences open, if they are
+	std::unique_ptr<QtDockControl> m_dockControl;	 // the docks for the docks machine
 
 	QtWindowTitleProgress m_windowTitleProgress;
 };

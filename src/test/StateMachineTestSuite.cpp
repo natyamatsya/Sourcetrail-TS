@@ -16,6 +16,7 @@
 #include "AppStateMachine.h"
 #include "BookmarkStateMachine.h"
 #include "ConcurrentStateMachine.h"
+#include "DockStateMachine.h"
 #include "IndexingStateMachine.h"
 #include "ProjectSettings.h"
 #include "ProjectStateMachine.h"
@@ -1095,6 +1096,195 @@ TEST_CASE("preferences carry out requests and follow a person")
 	machine.canceled();
 	REQUIRE(machine.snapshot().state == "closed");
 	machine.detach(presenter);
+}
+
+struct FakeDocksPresenter
+{
+	void applyToDocks(const DockRequest& request)
+	{
+		requests.push_back(request);
+	}
+
+	std::vector<DockRequest> requests;
+};
+
+// The classic layout: Search across the top, Graph and Code side by side, Status across the
+// bottom, in a layout of 1000 x 600.
+DockLayout classicDocks()
+{
+	const auto docked{[](std::string name, DockRect rect, DockSide side) {
+		DockState dock;
+		dock.name = std::move(name);
+		dock.open = true;
+		dock.visible = true;
+		dock.docked = rect;
+		dock.location = side;
+		dock.width = rect.width;
+		dock.height = rect.height;
+		return dock;
+	}};
+	return {
+		docked("Search", {0, 0, 1000, 90}, DockSide::Top),
+		docked("Graph", {0, 96, 497, 300}, DockSide::Left),
+		docked("Code", {503, 96, 497, 300}, DockSide::Right),
+		docked("Status", {0, 402, 1000, 198}, DockSide::Bottom)};
+}
+
+DockState& dockIn(DockLayout& docks, std::string_view name)
+{
+	return *std::ranges::find(docks, name, &DockState::name);
+}
+
+TEST_CASE("a dock's side in the layout is the edge it reaches alone")
+{
+	constexpr int slack{12};
+	REQUIRE(dockSideInLayout({0, 0, 1000, 90}, 1000, 600, slack) == DockSide::Top);	// across the top
+	REQUIRE(dockSideInLayout({0, 402, 1000, 198}, 1000, 600, slack) == DockSide::Bottom);
+	REQUIRE(dockSideInLayout({0, 96, 330, 300}, 1000, 600, slack) == DockSide::Left);	  // in the middle row
+	REQUIRE(dockSideInLayout({336, 96, 330, 300}, 1000, 600, slack) == DockSide::Center);
+	REQUIRE(dockSideInLayout({672, 96, 328, 504}, 1000, 600, slack) == DockSide::Right);
+	REQUIRE(dockSideInLayout({0, 0, 1000, 600}, 1000, 600, slack) == DockSide::Center);	// alone
+	REQUIRE(dockSideInLayout({336, 300, 330, 300}, 1000, 600, slack) == DockSide::Center);	// bottom, not across
+
+	REQUIRE(dockSideNamed("left") == DockSide::Left);
+	REQUIRE_FALSE(dockSideNamed("west").has_value());
+}
+
+TEST_CASE("docks refuse what the layout cannot do, saying why")
+{
+	using Kind = DockRequest::Kind;
+	using enum DockRequestError;
+	DockLayout docks{classicDocks()};
+	const auto refusal{[&](DockRequest request) {
+		const auto checked{checkDockRequest(docks, request)};
+		REQUIRE_FALSE(checked.has_value());
+		return checked.error().error;
+	}};
+	const auto accepted{[&](DockRequest request) { return checkDockRequest(docks, request).has_value(); }};
+
+	REQUIRE(checkDockRequest({}, {.kind = Kind::Reset}).error().error == NoLayout);
+	REQUIRE(refusal({.kind = Kind::Close}) == NoDock);
+	const auto unknown{checkDockRequest(docks, {.kind = Kind::Close, .dock = "Grpah"})};
+	REQUIRE(unknown.error().message() == "'Grpah' is no dock (there are Search, Graph, Code, Status)");
+
+	REQUIRE(refusal({.kind = Kind::Show, .dock = "Graph"}) == ShownAlready);
+	REQUIRE(refusal({.kind = Kind::Dock, .dock = "Graph", .other = "Code"}) == NoSide);
+	REQUIRE(refusal({.kind = Kind::Dock, .dock = "Graph", .to = DockSide::Center, .other = "Code"}) == NoSide);
+	REQUIRE(refusal({.kind = Kind::Dock, .dock = "Graph", .to = DockSide::Left, .other = "Graph"}) == SameDock);
+	REQUIRE(refusal({.kind = Kind::Dock, .dock = "Graph", .to = DockSide::Left, .other = "Cod"}) == UnknownDock);
+	REQUIRE(accepted({.kind = Kind::Dock, .dock = "Status", .to = DockSide::Right, .other = "Code"}));
+	REQUIRE(accepted({.kind = Kind::Dock, .dock = "Status", .to = DockSide::Left}));	// the layout's edge
+	REQUIRE(refusal({.kind = Kind::Tab, .dock = "Status"}) == NoTarget);
+	REQUIRE(refusal({.kind = Kind::SelectTab, .dock = "Status"}) == NotTabbed);
+	REQUIRE(refusal({.kind = Kind::Restore, .dock = "Status"}) == NotFloatingNorAutoHidden);
+	REQUIRE(refusal({.kind = Kind::Resize, .dock = "Graph"}) == NoSize);
+	REQUIRE(refusal({.kind = Kind::Resize, .dock = "Graph", .width = 0}) == BadSize);
+	REQUIRE(accepted({.kind = Kind::Resize, .dock = "Graph", .height = 200}));
+
+	// Code is floating, Status auto-hidden, Graph and Search tabbed together.
+	DockState& code{dockIn(docks, "Code")};
+	code.floating = true;
+	code.docked.reset();
+	code.location.reset();
+	DockState& status{dockIn(docks, "Status")};
+	status.autoHidden = DockSide::Bottom;
+	status.visible = false;
+	status.docked.reset();
+	for (const char* name: {"Graph", "Search"})
+	{
+		DockState& tabbed{dockIn(docks, name)};
+		tabbed.tabs = {"Graph", "Search"};
+		tabbed.currentTab = tabbed.name == "Graph";
+	}
+	REQUIRE(refusal({.kind = Kind::Float, .dock = "Code"}) == FloatingAlready);
+	REQUIRE(refusal({.kind = Kind::AutoHide, .dock = "Code"}) == Floating);
+	REQUIRE(refusal({.kind = Kind::AutoHide, .dock = "Status"}) == AutoHiddenAlready);
+	REQUIRE(refusal({.kind = Kind::Resize, .dock = "Status", .width = 300}) == AutoHidden);
+	REQUIRE(refusal({.kind = Kind::Dock, .dock = "Graph", .to = DockSide::Left, .other = "Code"}) == OtherNotDocked);
+	REQUIRE(refusal({.kind = Kind::Tab, .dock = "Graph", .other = "Status"}) == OtherNotShown);
+	REQUIRE(refusal({.kind = Kind::Tab, .dock = "Graph", .other = "Search"}) == TabbedAlready);
+	REQUIRE(accepted({.kind = Kind::Tab, .dock = "Graph", .other = "Code"}));	// into a floating one
+	REQUIRE(refusal({.kind = Kind::SelectTab, .dock = "Graph"}) == CurrentTabAlready);
+	REQUIRE(accepted({.kind = Kind::SelectTab, .dock = "Search"}));
+	REQUIRE(accepted({.kind = Kind::Show, .dock = "Status"}));	  // over the others
+	REQUIRE(accepted({.kind = Kind::Restore, .dock = "Status"}));
+	REQUIRE(accepted({.kind = Kind::Restore, .dock = "Code"}));
+
+	// Closing all but one: the last stays.
+	for (const char* name: {"Graph", "Search", "Code"})
+	{
+		dockIn(docks, name).open = false;
+		dockIn(docks, name).visible = false;
+	}
+	REQUIRE(refusal({.kind = Kind::Close, .dock = "Status"}) == LastDock);
+	REQUIRE(refusal({.kind = Kind::Close, .dock = "Code"}) == ClosedAlready);
+	REQUIRE(refusal({.kind = Kind::Float, .dock = "Code"}) == Closed);
+	REQUIRE(accepted({.kind = Kind::Show, .dock = "Code"}));
+}
+
+TEST_CASE("docks carry out an agent's requests and follow a person's changes")
+{
+	using Kind = DockRequest::Kind;
+	DockStateMachine machine;
+	REQUIRE_FALSE(machine.fire("float", R"({"dock":"Graph"})", EventSource::Agent).ok);	// no window
+
+	FakeDocksPresenter presenter;
+	machine.attach(presenter, classicDocks());
+	MachineSnapshot snapshot{machine.snapshot()};
+	REQUIRE(snapshot.state == "idle");
+	REQUIRE(contains(snapshot.context, R"({"name":"Graph","open":true,"visible":true,"floating":false,"location":"left","x":0,"y":96,"width":497,"height":300})"));
+
+	// The arguments, then what the layout can tell, before the window is asked.
+	REQUIRE_FALSE(machine.fire("float", R"({"dok":"Graph"})", EventSource::Agent).ok);
+	REQUIRE_FALSE(machine.fire("dock", R"({"dock":"Status","to":"west"})", EventSource::Agent).ok);
+	const MachineFireResult last{machine.fire("close", R"({"dock":"Grpah"})", EventSource::Agent)};
+	REQUIRE_FALSE(last.ok);
+	REQUIRE(contains(last.message, "'Grpah' is no dock (there are Search, Graph, Code, Status)"));
+	REQUIRE(presenter.requests.empty());
+
+	REQUIRE(machine.fire("dock", R"({"dock":"Status","to":"right","of":"Code"})", EventSource::Agent).ok);
+	REQUIRE(presenter.requests.back().kind == Kind::Dock);
+	REQUIRE(presenter.requests.back().to == DockSide::Right);
+	REQUIRE(presenter.requests.back().other == "Code");
+	snapshot = machine.snapshot();
+	REQUIRE(snapshot.state == "applying");
+	REQUIRE(contains(snapshot.context, R"("applying":"dock 'Status'")"));
+	REQUIRE(snapshot.events.empty());
+	REQUIRE_FALSE(machine.fire("reset", "", EventSource::Agent).ok);	// one request at a time
+
+	DockLayout docks{classicDocks()};
+	docks.back().location = DockSide::Right;
+	machine.changed(docks);	  // the window moving on meanwhile: no move
+	REQUIRE(machine.snapshot().state == "applying");
+	machine.applied(docks, "'Status' is docked right of 'Code'");
+	snapshot = machine.snapshot();
+	REQUIRE(snapshot.state == "idle");
+	REQUIRE(contains(snapshot.context, R"("outcome":"'Status' is docked right of 'Code'")"));
+	REQUIRE(contains(snapshot.context, R"("name":"Status","open":true,"visible":true,"floating":false,"location":"right")"));
+
+	REQUIRE(machine.fire("resize", R"({"dock":"Graph","width":400})", EventSource::Agent).ok);
+	REQUIRE(presenter.requests.back().width == 400);
+	REQUIRE_FALSE(presenter.requests.back().height.has_value());
+	machine.failed(docks, "'Graph' did not change as asked");
+	snapshot = machine.snapshot();
+	REQUIRE(snapshot.state == "idle");
+	REQUIRE(contains(snapshot.context, R"("error":"'Graph' did not change as asked")"));
+
+	// A person's change moves the machine, from the ui; the same layout again does not.
+	Recorder recorder("docks");
+	docks.front().autoHidden = DockSide::Top;
+	docks.front().docked.reset();
+	docks.front().location.reset();
+	machine.changed(docks);
+	machine.changed(docks);
+	REQUIRE(recorder.path() == std::vector<std::string>{"idle>idle:changed(ui)"});
+	REQUIRE(contains(machine.snapshot().context, R"("name":"Search","open":true,"visible":true,"floating":false,"auto_hidden":"top","overlay":false)"));
+
+	REQUIRE(machine.fire("reset", "", EventSource::Agent).ok);
+	REQUIRE(presenter.requests.back().kind == Kind::Reset);
+	machine.applied(classicDocks(), "the layout is reset");
+	machine.detach(presenter);
+	REQUIRE_FALSE(machine.fire("reset", "", EventSource::Agent).ok);
 }
 
 TEST_CASE("project wizard shows what a page offers for its fields")

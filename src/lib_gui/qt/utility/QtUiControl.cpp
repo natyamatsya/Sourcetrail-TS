@@ -694,6 +694,29 @@ void postUnderCause(QWidget* receiver, QEvent* event)
 		Qt::QueuedConnection);
 }
 
+// A mouse event at the global point `global`, posted to `receiver` as postUnderCause does, and
+// made when it is delivered, as the window makes a person's: for the widget that grabbed the
+// mouse meanwhile, if one did (a dock being dragged), and at the point in it then. A widget
+// the gesture moves (a gutter between docks, dragged) gets the next move where that left it.
+void postMouseUnderCause(
+	QWidget* receiver,
+	QEvent::Type type,
+	const QPointF& global,
+	Qt::MouseButton button,
+	Qt::MouseButtons buttons,
+	Qt::KeyboardModifiers modifiers)
+{
+	QMetaObject::invokeMethod(
+		receiver,
+		withCurrentCause([receiver, type, global, button, buttons, modifiers]() {
+			QWidget* const grabber{QWidget::mouseGrabber()};
+			QWidget* const target{grabber != nullptr ? grabber : receiver};
+			QMouseEvent event{type, target->mapFromGlobal(global), global, button, buttons, modifiers};
+			QCoreApplication::sendEvent(target, &event);
+		}),
+		Qt::QueuedConnection);
+}
+
 // The widget the agent's mouse is over, for the enter and leave events below.
 QPointer<QWidget> s_underMouse;
 
@@ -776,17 +799,14 @@ void postGesture(
 		{
 		case InputKind::MouseMove:
 			postMouseTo(receiver, global);
-			postUnderCause(receiver,
-				new QMouseEvent(QEvent::MouseMove, local, global, Qt::NoButton, toQtButtons(event.buttons), modifiers));
+			postMouseUnderCause(receiver, QEvent::MouseMove, global, Qt::NoButton, toQtButtons(event.buttons), modifiers);
 			break;
 		case InputKind::MousePress:
 			postMouseTo(receiver, global);
-			postUnderCause(
-				receiver, new QMouseEvent(QEvent::MouseButtonPress, local, global, button, button, modifiers));
+			postMouseUnderCause(receiver, QEvent::MouseButtonPress, global, button, button, modifiers);
 			break;
 		case InputKind::MouseRelease:
-			postUnderCause(
-				receiver, new QMouseEvent(QEvent::MouseButtonRelease, local, global, button, Qt::NoButton, modifiers));
+			postMouseUnderCause(receiver, QEvent::MouseButtonRelease, global, button, Qt::NoButton, modifiers);
 			// A real right-click also makes the window send a context-menu event;
 			// posted input does not go through the window, so post it here.
 			if (button == Qt::RightButton)
@@ -796,8 +816,7 @@ void postGesture(
 			}
 			break;
 		case InputKind::MouseDoubleClick:
-			postUnderCause(
-				receiver, new QMouseEvent(QEvent::MouseButtonDblClick, local, global, button, button, modifiers));
+			postMouseUnderCause(receiver, QEvent::MouseButtonDblClick, global, button, button, modifiers);
 			break;
 		case InputKind::Wheel:
 			postUnderCause(receiver,
@@ -815,6 +834,22 @@ void postGesture(
 		}
 	}
 	QMetaObject::invokeMethod(qApp, std::move(delivered), Qt::QueuedConnection);
+}
+
+// "delivered to ..." for the result: the widget `events` go to. Mouse events go to the widget
+// that grabbed the mouse, if one did (postMouseUnderCause).
+std::string deliveredTo(QWidget* receiver, const std::vector<InputEvent>& events)
+{
+	QWidget* const grabber{QWidget::mouseGrabber()};
+	const bool mouse{std::ranges::any_of(events, [](const InputEvent& event) {
+		return event.kind != InputKind::KeyPress && event.kind != InputKind::KeyRelease && event.kind != InputKind::Wheel;
+	})};
+	if (grabber == nullptr || grabber == receiver || !mouse)
+	{
+		return "delivered to " + describeReceiver(receiver);
+	}
+	return "delivered to " + describeReceiver(grabber) + ", which has grabbed the mouse (aimed at " +
+		describeReceiver(receiver) + ")";
 }
 
 // The deepest visible widget under the global point, in the window a frame shows in front
@@ -858,7 +893,7 @@ ControlResult sendInputAt(
 		events,
 		[point](const InputEvent& event) { return event.centered ? QPointF(point) : QPointF(event.x, event.y); },
 		std::move(delivered));
-	return {true, "delivered to " + describeReceiver(receiver)};
+	return {true, deliveredTo(receiver, events)};
 }
 
 #if QT_CONFIG(accessibility)
@@ -901,7 +936,7 @@ ControlResult sendInput(
 								  : QPointF(element.topLeft()) + QPointF(event.x, event.y);
 		},
 		std::move(delivered));
-	return {true, "delivered to " + describeReceiver(receiver)};
+	return {true, deliveredTo(receiver, events)};
 }
 #else
 ControlResult sendInput(
