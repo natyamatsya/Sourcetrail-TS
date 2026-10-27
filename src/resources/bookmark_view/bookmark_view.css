@@ -102,38 +102,26 @@
 	color: #707070;
 }
 
-/* Search bar buttons */
+/* Search bar buttons: flat icon buttons */
 
 #bookmark_button, #show_bookmark_button {
-	background: <color:search/button/normal>;
+	background: transparent;
 	border: none;
-	height: 30px;
-	width: 30px;
-}
-
-#bookmark_button:disabled, #show_bookmark_button:disabled {
-	background: <color:search/button/disabled>;
+	border-radius: 6px;
+	margin: 0px;
+	padding: 0px;
 }
 
 #bookmark_button:hover, #show_bookmark_button:hover {
-	background: <color:search/button/hover>;
+	background: <color:search/toolbar/hover>;
 }
 
 #bookmark_button:pressed, #show_bookmark_button:pressed {
-	background: <color:search/button/press>;
+	background: <color:search/toolbar/press>;
 }
 
-#bookmark_button {
-	border-bottom-left-radius: 12px;
-	border-top-left-radius: 12px;
-	margin: 0px;
-	margin-right: 2px;
-}
-
-#show_bookmark_button {
-	border-bottom-right-radius: 12px;
-	border-top-right-radius: 12px;
-	margin: 0px;
+#bookmark_button:disabled, #show_bookmark_button:disabled {
+	background: transparent;
 }
 
 /* Bookmark creator */

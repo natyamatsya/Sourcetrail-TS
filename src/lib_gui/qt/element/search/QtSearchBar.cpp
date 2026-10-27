@@ -27,7 +27,7 @@ QtSearchBar::QtSearchBar()
 	QBoxLayout* layout = new QHBoxLayout();
 	layout->setSpacing(0);
 	layout->setContentsMargins(0, 0, 0, 0);
-	layout->setAlignment(Qt::AlignTop);
+	layout->setAlignment(Qt::AlignVCenter);
 	setLayout(layout);
 
 	m_homeButton = new QtSearchBarButton(QtResources::SEARCH_VIEW_HOME);
@@ -36,15 +36,20 @@ QtSearchBar::QtSearchBar()
 	m_homeButton->setAccessibleName(QtActions::toOverview().name());
 	layout->addWidget(m_homeButton);
 	connect(m_homeButton, &QPushButton::clicked, this, &QtSearchBar::homeButtonClicked);
+	layout->addSpacing(4);
 
 	m_searchBoxContainer = new QWidget(this);
 	m_searchBoxContainer->setObjectName(QStringLiteral("search_box_container"));
 	m_searchBoxContainer->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Minimum);
 	layout->addWidget(m_searchBoxContainer);
+	layout->addSpacing(4);
 
+	// As tall as the buttons beside it, with the search button inside at its right end.
 	QBoxLayout* innerLayout = new QHBoxLayout();
-	innerLayout->setContentsMargins(12, 3, 5, 2);
+	innerLayout->setContentsMargins(6, 1, 1, 1);	// inside its 1 px border
+	innerLayout->setSpacing(4);
 	m_searchBoxContainer->setLayout(innerLayout);
+	m_searchBoxContainer->setMinimumHeight(28);
 
 	// The documenation uses 'case-insensitive' and 'case-sensitive'.
 	// DOCUMENTATION.md#user-content-full-text-search (utility::getDocumentationLink())
@@ -60,11 +65,11 @@ QtSearchBar::QtSearchBar()
 	connect(m_searchBox, &QtSmartSearchBox::search, this, &QtSearchBar::requestSearch);
 	connect(m_searchBox, &QtSmartSearchBox::fullTextSearch, this, &QtSearchBar::requestFullTextSearch);
 
-	m_searchButton = new QtSearchBarButton(QtResources::SEARCH_VIEW_SEARCH);
+	m_searchButton = new QtSearchBarButton(QtResources::SEARCH_VIEW_SEARCH, QtSearchBarButton::Size::FIELD);
 	m_searchButton->setObjectName(QStringLiteral("search_button"));
 	m_searchButton->setToolTip(QtActions::executeFindSymbol().tooltip());
 	m_searchButton->setAccessibleName(QtActions::executeFindSymbol().name());
-	layout->addWidget(m_searchButton);
+	innerLayout->addWidget(m_searchButton);
 
 	connect(m_searchButton, &QPushButton::clicked, m_searchBox, &QtSmartSearchBox::startSearch);
 
@@ -73,7 +78,7 @@ QtSearchBar::QtSearchBar()
 
 QSize QtSearchBar::sizeHint() const
 {
-	return QSize(400, 100);
+	return QSize(400, QFrame::sizeHint().height());
 }
 
 QString QtSearchBar::query() const

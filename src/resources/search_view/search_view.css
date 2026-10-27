@@ -6,18 +6,16 @@
 	background-color: transparent;
 }
 
+/* The field: a rounded box, its search button inside at the right end. */
 #search_box_container {
 	background: <color:search/field/background>;
-	border: 2px solid <color:search/field/border>;
-	border-bottom-left-radius: 12px;
-	border-top-left-radius: 12px;
-	margin-left: 5px;
-	margin-right: 2px;
+	border: 1px solid <color:search/field/border>;
+	border-radius: 6px;
 }
 
 #search_box {
 	font-family: "<setting:font_name>";
-	font-size: <setting:font_size+2>px;
+	font-size: <setting:font_size>px;
 	background-color: transparent;
 	border: none;
 	color: <color:search/field/text>;
@@ -26,9 +24,10 @@
 
 #search_box_element {
 	font-family: "<setting:font_name>";
-	font-size: <setting:font_size+2>px;
+	font-size: <setting:font_size>px;
 	border: none;
-	padding: 0px 0px;
+	border-radius: 4px;
+	padding: 0px 4px;
 	/* Properties are also set in 'QtSmartSearchBox::updateElements' */
 }
 
@@ -47,27 +46,26 @@
 	selection-background-color: <color:search/popup/highlight>;
 }
 
+/* Flat icon buttons. */
 #search_button, #home_button {
-	background: <color:search/button/normal>;
+	background: transparent;
 	border: none;
-	border-radius: 12px;
-	height: 30px;
-	width: 30px;
+	border-radius: 6px;
+	padding: 0px;
 }
 
 #search_button {
-	border-bottom-left-radius: 0px;
-	border-top-left-radius: 0px;
-}
-
-#search_button:disabled, #home_button:disabled {
-	background: <color:search/button/disabled>;
+	border-radius: 4px;
 }
 
 #search_button:hover, #home_button:hover {
-	background: <color:search/button/hover>;
+	background: <color:search/toolbar/hover>;
 }
 
 #search_button:pressed, #home_button:pressed {
-	background: <color:search/button/press>;
+	background: <color:search/toolbar/press>;
+}
+
+#search_button:disabled, #home_button:disabled {
+	background: transparent;
 }
