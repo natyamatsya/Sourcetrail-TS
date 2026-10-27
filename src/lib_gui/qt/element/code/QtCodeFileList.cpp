@@ -2,15 +2,12 @@
 
 #ifndef SRCTRL_MODULE_BUILD
 #include "FilePath.h"
-#include "ColorScheme.h"
 #endif
 #include "QtCodeFile.h"
 #include "QtCodeFileTitleBar.h"
 #include "QtCodeNavigator.h"
 #include "QtCodeSnippet.h"
 #include "utilityQt.h"
-#include "QtResources.h"
-#include "Platform.h"
 
 #include <QScrollBar>
 #include <QTimer>
@@ -20,7 +17,6 @@
 // following BMI-merged declarations trips "cannot add 'abi_tag' in a redeclaration").
 #ifdef SRCTRL_MODULE_BUILD
 import srctrl.file;
-import srctrl.settings;
 #endif
 
 using namespace utility;
@@ -63,15 +59,7 @@ QtCodeFileList::QtCodeFileList(QtCodeNavigator *navigator)
 	m_firstSnippetTitleBar->hide();
 
 	m_lastSnippetScrollBar = new QScrollBar(Qt::Horizontal, m_scrollArea);
-	if constexpr (utility::Platform::isMac())
-	{
-		// set style on scrollbar because it always has bright background by default
-		m_lastSnippetScrollBar->setStyleSheet(QtResources::loadStyleSheet(QtResources::MAIN_SCROLLBAR_CSS));
-	}
-	else
-	{
-		m_lastSnippetScrollBar->setObjectName(QStringLiteral("last_scroll_bar"));
-	}
+	m_lastSnippetScrollBar->setObjectName(QStringLiteral("last_scroll_bar"));
 
 	m_lastSnippetScrollBar->hide();
 	connect(m_lastSnippetScrollBar, &QScrollBar::valueChanged, this, &QtCodeFileList::scrollLastSnippet);
@@ -595,17 +583,6 @@ void QtCodeFileList::updateLastSnippetScrollBar(QScrollBar* mirroredScrollBar)
 				mirroredScrollBar->width(),
 				mirroredScrollBar->height());
 			m_lastSnippetScrollBar->show();
-
-			if constexpr (utility::Platform::isMac())
-			{
-				// set style on scrollbar because it always has bright background by default
-				QString style = m_lastSnippetScrollBar->styleSheet();
-				m_lastSnippetScrollBar->setStyleSheet(
-					style +
-					("\nQScrollBar:horizontal { background: " +
-					 ColorScheme::getInstance()->getColor("code/snippet/background") + "; }")
-						.c_str());
-			}
 		}
 		else
 		{

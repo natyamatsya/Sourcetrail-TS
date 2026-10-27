@@ -72,7 +72,10 @@ void QtSearchView::setStyleSheet()
 
 	if (m_widget->getCompleterPopup())
 	{
-		m_widget->getCompleterPopup()->setStyleSheet(css);
+		// The completer's popup is a window of its own, which the main window's scroll bar
+		// rules don't reach.
+		m_widget->getCompleterPopup()->setStyleSheet(
+			QtResources::loadStyleSheets(QtResources::SEARCH_VIEW_CSS, QtResources::MAIN_SCROLLBAR_CSS));
 	}
 }
 

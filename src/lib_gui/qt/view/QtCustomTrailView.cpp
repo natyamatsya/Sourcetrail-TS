@@ -465,16 +465,20 @@ void QtCustomTrailView::updateStyleSheet()
 
 	setStyleSheet(css);
 
+	// A completer's popup is a window of its own, which the main window's scroll bar rules
+	// don't reach.
+	const QString popupCss = css + QtResources::loadStyleSheet(QtResources::MAIN_SCROLLBAR_CSS);
+
 	QAbstractItemView* popup = m_searchBoxFrom->getCompleter()->popup();
 	if (popup != nullptr)
 	{
-		popup->setStyleSheet(css);
+		popup->setStyleSheet(popupCss);
 	}
 
 	popup = m_searchBoxTo->getCompleter()->popup();
 	if (popup != nullptr)
 	{
-		popup->setStyleSheet(css);
+		popup->setStyleSheet(popupCss);
 	}
 }
 
