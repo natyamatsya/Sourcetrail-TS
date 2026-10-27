@@ -42,6 +42,7 @@
 #include "QtActions.h"
 #include "QtBuildJsonBrowser.h"
 #include "QtContextMenu.h"
+#include "QtDockChrome.h"
 #include "QtFileDialog.h"
 #include "QtKeyboardShortcuts.h"
 #include "QtLicenseWindow.h"
@@ -160,6 +161,10 @@ QtMainWindow::QtMainWindow()
 
 	setWindowIcon(QIcon(QString::fromUtf8(QtResources::ICON_LOGO_1024_1024)));
 	setWindowFlags(Qt::Widget);
+
+	// The docks are cards on a canvas: as much of it around them as between them.
+	setCenterWidgetMargins(QMargins{
+		QtDockChrome::gutterWidth, QtDockChrome::gutterWidth, QtDockChrome::gutterWidth, QtDockChrome::gutterWidth});
 
 	QApplication *app = dynamic_cast<QApplication *>(QCoreApplication::instance());
 	app->installEventFilter(new MouseReleaseFilter(this));
@@ -1448,27 +1453,26 @@ void QtMainWindow::applyDockWidgetTitleBarSetting()
 		settings.value(QStringLiteral("MainWindow/showDockTitleBars"), true).toBool();
 
 	// KDDW manages title bars globally through Config flags (not per-dock features as
-	// QDockWidget did). Title bars OFF is the thin "tab-strip handle" look: no title
-	// bar row — each dock shows a slim tab (its name + float button) that doubles as
-	// the drag handle. AlwaysShowTabs keeps that handle on single, untabbed docks too.
-	// Title bars ON are the classic full title bars (and tabs only appear when docks
-	// are actually tabbed together). KDDW refuses flags once a main window exists
-	// ("Only use this function at startup"), so they are set here, before it is
-	// created; a toggle takes effect on the next start.
-	const KDDockWidgets::Config::Flags handleFlags =
+	// QDockWidget did). Docks tabbed together never have a title bar: their tabs are the
+	// card's header, with the grip and the buttons beside them (QtDockChrome). Title bars
+	// OFF is the thin "tab-strip handle" look everywhere: AlwaysShowTabs gives single,
+	// untabbed docks such a tab strip instead of a title bar too. Title bars ON are slim
+	// headers with the dock's name. KDDW refuses flags once a main window exists ("Only
+	// use this function at startup"), so they are set here, before it is created; a toggle
+	// takes effect on the next start.
+	const KDDockWidgets::Config::Flags tabHeaderFlags =
 		KDDockWidgets::Config::Flag_HideTitleBarWhenTabsVisible |
-		KDDockWidgets::Config::Flag_AlwaysShowTabs |
 		KDDockWidgets::Config::Flag_ShowButtonsOnTabBarIfTitleBarHidden;
 
 	auto& config = KDDockWidgets::Config::self();
-	auto flags = config.flags();
+	auto flags = config.flags() | tabHeaderFlags;
 	if (showTitleBars)
 	{
-		flags &= ~handleFlags;
+		flags &= ~KDDockWidgets::Config::Flags{KDDockWidgets::Config::Flag_AlwaysShowTabs};
 	}
 	else
 	{
-		flags |= handleFlags;
+		flags |= KDDockWidgets::Config::Flag_AlwaysShowTabs;
 	}
 	config.setFlags(flags);
 }

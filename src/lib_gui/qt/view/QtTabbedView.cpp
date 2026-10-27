@@ -4,6 +4,7 @@
 #ifndef SRCTRL_MODULE_BUILD
 #include "ColorScheme.h"
 #endif
+#include "QtDockChrome.h"
 #include "QtSelfRefreshIconButton.h"
 #include "QtViewWidgetWrapper.h"
 #include "utilityQt.h"
@@ -44,6 +45,10 @@ QtTabbedView::QtTabbedView(ViewLayout* viewLayout, const std::string& name)
 	QWidget::connect(m_closeButton, &QPushButton::clicked, [this]() { hideView(this); });
 	m_widget->tabBar()->installEventFilter(this);
 	widget->installEventFilter(this);
+
+	// "Status | Errors" are the dock's tabs: its header shows them, and has the close button.
+	QtDockChrome::offerTabsToDockHeader(*m_widget);
+	m_widget->installEventFilter(this);
 }
 
 void QtTabbedView::createWidgetWrapper() {}
@@ -58,6 +63,7 @@ void QtTabbedView::addViewWidget(View* view)
 	QWidget* tabWidget = QtViewWidgetWrapper::getWidgetOfView(view);
 	tabWidget->setObjectName(QStringLiteral("tab_content"));
 	m_widget->addTab(tabWidget, view->getName().c_str());
+	QtDockChrome::dockHeaderTabsChanged(*m_widget);
 
 	setStyleSheet();
 }
@@ -73,7 +79,28 @@ void QtTabbedView::setStyleSheet()
 {
 	setWidgetBackgroundColor(QtViewWidgetWrapper::getWidgetOfView(this), ColorScheme::getInstance()->getColor("tab/background"));
 
-	m_widget->setStyleSheet(QtResources::loadStyleSheet(QtResources::TABBED_VIEW_CSS));
+	QString css{QtResources::loadStyleSheet(QtResources::TABBED_VIEW_CSS)};
+	if (m_tabsInHeader)
+	{
+		// No tab strip above the pane: the header has the tabs.
+		css += QStringLiteral(
+			"QTabWidget::pane { border-top: none; top: 0px; }"
+			"QTabWidget #tab_content { border-top: none; }");
+	}
+	m_widget->setStyleSheet(css);
+}
+
+void QtTabbedView::updateTabsPlacement()
+{
+	const bool inHeader{QtDockChrome::tabsInDockHeader(*m_widget)};
+	if (inHeader == m_tabsInHeader)
+	{
+		return;
+	}
+	m_tabsInHeader = inHeader;
+	m_widget->tabBar()->setVisible(!inHeader);
+	m_closeButton->setVisible(!inHeader);
+	setStyleSheet();
 }
 
 bool QtTabbedView::eventFilter(QObject* obj, QEvent* event)
@@ -82,7 +109,11 @@ bool QtTabbedView::eventFilter(QObject* obj, QEvent* event)
 	{
 		m_closeButton->setGeometry(
 			m_widget->width() - 23, (m_widget->tabBar()->height() - 15) / 2 + 1, 15, 15);
-		m_closeButton->show();
+		m_closeButton->setVisible(!m_tabsInHeader);
+	}
+	else if (obj == m_widget && event->type() == QEvent::DynamicPropertyChange)
+	{
+		updateTabsPlacement();
 	}
 	return QObject::eventFilter(obj, event);
 }

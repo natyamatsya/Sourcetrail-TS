@@ -528,8 +528,16 @@
       },
       "dock": {
          "background": "#E0E0E0",
+         "canvas": "#E6E7EA",
+         "card": "#FFFFFF",
+         "card_border": "#D2D4D9",
+         "handle": "#B3B7BF",
+         "handle_hover": "#6F747E",
+         "header": "#F7F7F8",
+         "header_text": "#5F636B",
          "icon_type": "grey",
          "line": "#BEBEBE",
+         "tab_selected": "#E3E5E9",
          "text": "black"
       },
       "focus": "#FF5900",
