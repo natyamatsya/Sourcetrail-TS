@@ -6,18 +6,23 @@
 #include <QGuiApplication>
 #include <QHBoxLayout>
 #include <QLabel>
+#include <QMainWindow>
 #include <QMouseEvent>
 #include <QPaintEvent>
 #include <QPainter>
 #include <QPainterPath>
 #include <QPixmap>
 #include <QSignalBlocker>
+#include <QStyle>
 #include <QStyleOption>
 #include <QTabBar>
 #include <QTabWidget>
 
+#include <kddockwidgets/Config.h>
 #include <kddockwidgets/core/DockWidget.h>
+#include <kddockwidgets/core/FloatingWindow.h>
 #include <kddockwidgets/core/Group.h>
+#include <kddockwidgets/core/MainWindow.h>
 #include <kddockwidgets/core/Separator.h>
 #include <kddockwidgets/core/SideBar.h>
 #include <kddockwidgets/core/TitleBar.h>
@@ -36,7 +41,35 @@ constexpr char tabsOfferedProperty[]{"dockHeaderTabsOffered"};
 constexpr char tabsHostProperty[]{"dockHeaderTabsHost"};
 constexpr char tabsRevisionProperty[]{"dockHeaderTabsRevision"};
 
+constexpr char severalCardsProperty[]{"dockFloatingSeveralCards"};
+
 constexpr qreal glyphSize{12};
+
+// The opacity of a see-through floating window's margin to resize it by: macOS passes clicks on
+// fully transparent pixels through to the windows below, this keeps them, and shows nothing.
+constexpr qreal resizeMarginOpacity{0.02};
+
+bool usesNativeTitleBar()
+{
+	return KDDockWidgets::Config::self().flags().testFlag(KDDockWidgets::Config::Flag_NativeTitleBar);
+}
+
+// Whether floating windows have see-through, rounded corners. Only where they have no native
+// frame and the corners are sure to show what is behind them: on macOS. Linux on X11 needs a
+// compositing window manager for it, which only Qt's private API tells, and on Wayland
+// KDDockWidgets gives floating windows a native frame. Windows rounds floating windows itself
+// (Windows 11), and KDDockWidgets warns that see-through corners spoil their native shadow. The
+// way KDDockWidgets turns its own translucency off turns this off too.
+bool floatingWindowsSeeThrough()
+{
+#ifdef Q_OS_MACOS
+	return !usesNativeTitleBar() &&
+		!KDDockWidgets::Config::self().internalFlags().testFlag(KDDockWidgets::Config::InternalFlag_DisableTranslucency) &&
+		!qEnvironmentVariableIsSet("KDDW_NO_TRANSLUCENCY");
+#else
+	return false;
+#endif
+}
 
 void setHeaderHovered(QWidget& header, bool hovered)
 {
@@ -89,6 +122,29 @@ protected:
 private:
 	using QObject::QObject;
 };
+
+// The hairline border along a rectangle's edges, plus the corner squares its rounding reaches into.
+QRegion rimRegion(const QRect& rect, qreal radius)
+{
+	const int corner{static_cast<int>(std::ceil(radius)) + 1};
+	QRegion rim{QRegion{rect} - QRegion{rect.adjusted(1, 1, -1, -1)}};
+	rim += QRegion{rect.left(), rect.top(), corner, corner};
+	rim += QRegion{rect.right() - corner + 1, rect.top(), corner, corner};
+	rim += QRegion{rect.left(), rect.bottom() - corner + 1, corner, corner};
+	rim += QRegion{rect.right() - corner + 1, rect.bottom() - corner + 1, corner, corner};
+	return rim;
+}
+
+// The corners outside a rounded rectangle: what to paint over square content to round it.
+QPainterPath cornersOutside(const QRect& rect, qreal radius)
+{
+	const QRectF bounds{rect};
+	QPainterPath rounded;
+	rounded.addRoundedRect(bounds.adjusted(0.5, 0.5, -0.5, -0.5), radius, radius);
+	QPainterPath all;
+	all.addRect(bounds);
+	return all.subtracted(rounded);
+}
 
 // The rounded corners and the hairline border of a card, painted over its content, which
 // paints square: the four corners outside the rounded rectangle in the canvas colour, then the
@@ -165,21 +221,8 @@ private:
 		m_shapeSize = size();
 		m_shapeRadius = radius;
 
-		const QRectF bounds{rect()};
-		QPainterPath card;
-		card.addRoundedRect(bounds.adjusted(0.5, 0.5, -0.5, -0.5), radius, radius);
-		QPainterPath outside;
-		outside.addRect(bounds);
-		m_outside = outside.subtracted(card);
-
-		// The border along the edges, plus the corner squares the rounding reaches into.
-		const QRect all{rect()};
-		const int corner{static_cast<int>(std::ceil(radius)) + 1};
-		m_rim = QRegion{all} - QRegion{all.adjusted(1, 1, -1, -1)};
-		m_rim += QRegion{all.left(), all.top(), corner, corner};
-		m_rim += QRegion{all.right() - corner + 1, all.top(), corner, corner};
-		m_rim += QRegion{all.left(), all.bottom() - corner + 1, corner, corner};
-		m_rim += QRegion{all.right() - corner + 1, all.bottom() - corner + 1, corner, corner};
+		m_outside = cornersOutside(rect(), radius);
+		m_rim = rimRegion(rect(), radius);
 		setMask(m_rim);
 	}
 
@@ -187,6 +230,121 @@ private:
 	QSize m_shapeSize;
 	qreal m_shapeRadius{-1};
 	QPainterPath m_outside;
+	QRegion m_rim;
+};
+
+// A floating window's frame, painted over its content as a card's is (QtDockCardFrame): the
+// corners outside its rounded rectangles, and their hairline borders. See-through, the frame is
+// the window's, around a single card's content or the canvas under several cards; its corners
+// are cleared to the all but transparent margin around it. Opaque, the window has a square
+// border (unless it has a native frame), and a single card's corners show the canvas.
+class QtDockFloatingFrame: public QWidget
+{
+public:
+	explicit QtDockFloatingFrame(QtDockFloatingWindow& window)
+		: QWidget(&window)
+		, m_window(window)
+	{
+		setObjectName(QStringLiteral("dock_floating_frame"));
+		setAttribute(Qt::WA_TransparentForMouseEvents);
+		setAttribute(Qt::WA_NoSystemBackground);
+		setFocusPolicy(Qt::NoFocus);
+		window.installEventFilter(this);
+		setGeometry(window.rect());
+		raise();
+	}
+
+	void invalidate()
+	{
+		updateShape();
+		update();
+	}
+
+protected:
+	bool eventFilter(QObject* watched, QEvent* event) override
+	{
+		if (watched == &m_window && event->type() == QEvent::Resize)
+		{
+			setGeometry(m_window.rect());
+			updateShape();
+		}
+		return QWidget::eventFilter(watched, event);
+	}
+
+	void paintEvent(QPaintEvent* event) override
+	{
+		updateShape();
+		if (!event->region().intersects(m_rim))
+		{
+			return;
+		}
+
+		QPainter painter{this};
+		painter.setRenderHint(QPainter::Antialiasing);
+		const qreal radius{m_window.radius()};
+
+		if (m_window.isTranslucent())
+		{
+			const QRect frame{m_window.frameRect()};
+			painter.setCompositionMode(QPainter::CompositionMode_Source);
+			painter.fillPath(cornersOutside(frame, radius), withAlpha(m_window.canvasColor(), resizeMarginOpacity));
+			painter.setCompositionMode(QPainter::CompositionMode_SourceOver);
+			drawBorder(painter, frame, radius, m_window.borderColor());
+			return;
+		}
+
+		if (!usesNativeTitleBar())
+		{
+			drawBorder(painter, rect(), 0, m_window.borderColor());
+		}
+		const QRect card{m_window.cardRect()};
+		if (!card.isEmpty())
+		{
+			painter.fillPath(cornersOutside(card, radius), m_window.canvasColor());
+			drawBorder(painter, card, radius, m_window.cardBorderColor());
+		}
+	}
+
+private:
+	static void drawBorder(QPainter& painter, const QRect& rect, qreal radius, const QColor& color)
+	{
+		painter.setPen(QPen{color, 1.0});
+		painter.setBrush(Qt::NoBrush);
+		painter.drawRoundedRect(QRectF{rect}.adjusted(0.5, 0.5, -0.5, -0.5), radius, radius);
+	}
+
+	void updateShape()
+	{
+		const qreal radius{m_window.radius()};
+		const QRect frame{m_window.frameRect()};
+		const QRect card{m_window.cardRect()};
+		if (m_shapeFrame == frame && m_shapeCard == card && m_shapeRadius == radius)
+		{
+			return;
+		}
+		m_shapeFrame = frame;
+		m_shapeCard = card;
+		m_shapeRadius = radius;
+
+		if (m_window.isTranslucent())
+		{
+			m_rim = rimRegion(frame, radius);
+		}
+		else
+		{
+			m_rim = usesNativeTitleBar() ? QRegion{} : rimRegion(rect(), 0);
+			if (!card.isEmpty())
+			{
+				m_rim += rimRegion(card, radius);
+			}
+		}
+		setMask(m_rim.isEmpty() ? QRegion{0, 0, 1, 1} : m_rim);
+	}
+
+	QtDockFloatingWindow& m_window;
+	QRect m_shapeFrame;
+	QRect m_shapeCard;
+	qreal m_shapeRadius{-1};
 	QRegion m_rim;
 };
 
@@ -480,6 +638,182 @@ void QtDockCard::paintEvent(QPaintEvent* /*event*/)
 	}
 	QPainter painter{this};
 	painter.fillRect(rect(), m_cardColor);
+}
+
+// QtDockFloatingWindow
+
+QtDockFloatingWindow::QtDockFloatingWindow(
+	KDDockWidgets::Core::FloatingWindow* controller, QMainWindow* parent, Qt::WindowFlags windowFlags)
+	: FloatingWindow(controller, parent, windowFlags)
+	, m_translucent(floatingWindowsSeeThrough())
+{
+	if (m_translucent)
+	{
+		// Before the native window is created, which takes an alpha channel then.
+		setAttribute(Qt::WA_TranslucentBackground);
+	}
+	m_frame = new QtDockFloatingFrame(*this);
+	m_frame->show();
+
+	// One card or several: the margins and the header row change.
+	connect(this, &FloatingWindow::numGroupsChanged, this, &QtDockFloatingWindow::updateMargins);
+}
+
+QColor QtDockFloatingWindow::canvasColor() const
+{
+	return m_canvasColor;
+}
+
+void QtDockFloatingWindow::setCanvasColor(const QColor& color)
+{
+	m_canvasColor = color;
+	update();
+	m_frame->update();
+}
+
+QColor QtDockFloatingWindow::borderColor() const
+{
+	return m_borderColor;
+}
+
+void QtDockFloatingWindow::setBorderColor(const QColor& color)
+{
+	m_borderColor = color;
+	m_frame->update();
+}
+
+QColor QtDockFloatingWindow::cardBorderColor() const
+{
+	return m_cardBorderColor;
+}
+
+void QtDockFloatingWindow::setCardBorderColor(const QColor& color)
+{
+	m_cardBorderColor = color;
+	m_frame->update();
+}
+
+qreal QtDockFloatingWindow::radius() const
+{
+	return m_radius;
+}
+
+void QtDockFloatingWindow::setRadius(qreal radius)
+{
+	m_radius = radius;
+	update();
+	static_cast<QtDockFloatingFrame*>(m_frame)->invalidate();
+}
+
+bool QtDockFloatingWindow::isTranslucent() const
+{
+	return m_translucent;
+}
+
+bool QtDockFloatingWindow::holdsSeveralCards() const
+{
+	return m_severalCards;
+}
+
+QRect QtDockFloatingWindow::frameRect() const
+{
+	if (!m_translucent)
+	{
+		return rect();
+	}
+	const int margin{resizeMargin()};
+	return rect().marginsRemoved(QMargins{margin, margin, margin, margin});
+}
+
+QRect QtDockFloatingWindow::cardRect() const
+{
+	if (m_severalCards || layout() == nullptr)
+	{
+		return {};
+	}
+	return rect().marginsRemoved(layout()->contentsMargins());
+}
+
+int QtDockFloatingWindow::resizeMargin() const
+{
+	// FloatingWindow's own margin.
+	return static_cast<int>(std::round(4 * KDDockWidgets::QtWidgets::logicalDpiFactor(this)));
+}
+
+bool QtDockFloatingWindow::event(QEvent* event)
+{
+	// Keep the frame over whatever the window adds to itself.
+	if (event->type() == QEvent::ChildAdded && m_frame != nullptr &&
+		static_cast<QChildEvent*>(event)->child() != m_frame)
+	{
+		m_frame->raise();
+	}
+	return FloatingWindow::event(event);
+}
+
+void QtDockFloatingWindow::paintEvent(QPaintEvent* /*event*/)
+{
+	QPainter painter{this};
+	if (!m_translucent)
+	{
+		painter.fillRect(rect(), m_canvasColor);
+		return;
+	}
+
+	// The margin to resize by, all but transparent, then the window's rounded rectangle; the frame
+	// rounds the content over it.
+	painter.setCompositionMode(QPainter::CompositionMode_Source);
+	painter.fillRect(rect(), withAlpha(m_canvasColor, resizeMarginOpacity));
+	painter.setCompositionMode(QPainter::CompositionMode_SourceOver);
+	painter.setRenderHint(QPainter::Antialiasing);
+	painter.setPen(Qt::NoPen);
+	painter.setBrush(m_canvasColor);
+	painter.drawRoundedRect(QRectF{frameRect()}.adjusted(0.5, 0.5, -0.5, -0.5), m_radius, m_radius);
+}
+
+void QtDockFloatingWindow::updateMargins()
+{
+	QLayout* const content{layout()};
+	const KDDockWidgets::Core::FloatingWindow* const controller{floatingWindow()};
+	if (content == nullptr || controller == nullptr || controller->beingDeleted())
+	{
+		return;
+	}
+
+	// The margin KDDockWidgets resizes the window by stays the window's. Within it a single card
+	// fills the frame, see-through, or sits on the canvas, opaque, as far from the edges as the
+	// cards in the main window are. Several cards have the canvas around them, and their header
+	// row above them.
+	const bool severalCards{controller->groups().size() > 1};
+	const int margin{resizeMargin()};
+	const int gutter{QtDockChrome::gutterWidth};
+	const int canvas{m_translucent ? margin + gutter : std::max(margin, gutter)};
+	if (severalCards)
+	{
+		content->setContentsMargins(canvas, margin, canvas, canvas);
+	}
+	else
+	{
+		const int around{m_translucent ? margin : canvas};
+		content->setContentsMargins(around, around, around, around);
+	}
+
+	if (severalCards != m_severalCards)
+	{
+		m_severalCards = severalCards;
+		const KDDockWidgets::Core::TitleBar* const titleBar{controller->titleBar()};
+		if (QWidget* header{titleBar != nullptr ? KDDockWidgets::QtCommon::View_qt::asQWidget(titleBar->view()) : nullptr})
+		{
+			// The style sheet lays the header row of several cards on the canvas.
+			header->setProperty(severalCardsProperty, severalCards);
+			header->style()->unpolish(header);
+			header->style()->polish(header);
+			header->update();
+		}
+	}
+
+	static_cast<QtDockFloatingFrame*>(m_frame)->invalidate();
+	update();
 }
 
 // QtDockGutter
@@ -1058,6 +1392,14 @@ KDDockWidgets::Core::View* QtDockViewFactory::createSeparator(
 KDDockWidgets::Core::View* QtDockViewFactory::createSideBar(KDDockWidgets::Core::SideBar* controller, KDDockWidgets::Core::View* parent) const
 {
 	return new QtDockSideBar(controller, KDDockWidgets::QtCommon::View_qt::asQWidget(parent));
+}
+
+KDDockWidgets::Core::View* QtDockViewFactory::createFloatingWindow(
+	KDDockWidgets::Core::FloatingWindow* controller, KDDockWidgets::Core::MainWindow* parent, Qt::WindowFlags windowFlags) const
+{
+	auto* mainWindow{
+		qobject_cast<QMainWindow*>(KDDockWidgets::QtCommon::View_qt::asQWidget(parent != nullptr ? parent->view() : nullptr))};
+	return new QtDockFloatingWindow(controller, mainWindow, windowFlags);
 }
 
 QAbstractButton* QtDockViewFactory::createTitleBarButton(QWidget* parent, KDDockWidgets::TitleBarButtonType type) const
