@@ -74,6 +74,30 @@ TEST_CASE("every colour scheme has the colours the main style sheet asks for")
 	requireColors(keys);
 }
 
+TEST_CASE("every colour scheme has the colours the graph view's style sheet asks for")
+{
+	// Its toolbar floats over the graph, in each scheme's own colours.
+	const std::vector<std::string> keys = styleSheetColorKeys(QtResources::GRAPH_VIEW_CSS);
+	REQUIRE(!keys.empty());
+
+	requireColors(keys);
+}
+
+TEST_CASE("every colour scheme has the graph toolbar's colours")
+{
+	// The toolbar's icons take these too (QtSelfRefreshIconButton's "graph/toolbar" key).
+	requireColors({
+		"graph/toolbar/background",
+		"graph/toolbar/border",
+		"graph/toolbar/separator",
+		"graph/toolbar/icon",
+		"graph/toolbar/icon_disabled",
+		"graph/toolbar/hover",
+		"graph/toolbar/press",
+		"graph/toolbar/checked",
+	});
+}
+
 TEST_CASE("every colour scheme has the docking chrome's colours")
 {
 	// The docks are cards on a canvas; main.css paints them with these, in day and night

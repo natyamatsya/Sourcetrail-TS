@@ -393,6 +393,16 @@
          "union": {
             "like": "type"
          }
+      },
+      "toolbar": {
+         "background": "#E6073642",
+         "border": "#1D4A55",
+         "checked": "#33FFFFFF",
+         "hover": "#1AFFFFFF",
+         "icon": "#93A1A1",
+         "icon_disabled": "#4C6770",
+         "press": "#40FFFFFF",
+         "separator": "#1D4A55"
       }
    },
    "screen_search": {
