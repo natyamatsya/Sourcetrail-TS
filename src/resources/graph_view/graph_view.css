@@ -3,116 +3,90 @@ QGraphicsView, QGraphicsScene {
 	border: none;
 }
 
-QPushButton {
-	background: <color:search/button/normal>;
-	border: none;
-	color: <color:search/button/icon>;
-	border-radius: 5px;
-}
-
-QPushButton:disabled {
-	background: <color:search/button/disabled>;
-}
-
-QPushButton:hover, QPushButton:checked {
-	background: <color:search/button/hover>;
-}
-
-QPushButton:pressed {
-	background: <color:search/button/press>;
-}
-
 #focus_indicator {
 	background: <color:window/focus>;
 }
 
-#expand_button {
-	max-width: 26px;
-	max-height: 26px;
-	border-radius: 9px;
+/* The controls: one pill floating over the graph (QtGraphToolbar), which paints itself with
+   these colours. Its buttons are icon-only, with a round highlight under the mouse. */
+#graph_toolbar {
+	qproperty-backgroundColor: <color:graph/toolbar/background>;
+	qproperty-borderColor: <color:graph/toolbar/border>;
+	qproperty-separatorColor: <color:graph/toolbar/separator>;
 }
 
-#collapse_button {
-	border-radius: 0;
-	border-top-left-radius: 7px;
-	border-top-right-radius: 7px;
+#graph_toolbar QPushButton {
+	background: transparent;
+	border: none;
+	border-radius: 12px;
+	padding: 0;
 }
 
-#trail_button {
-	border-radius: 0;
+#graph_toolbar QPushButton:hover {
+	background: <color:graph/toolbar/hover>;
 }
 
+#graph_toolbar QPushButton:checked {
+	background: <color:graph/toolbar/checked>;
+}
+
+#graph_toolbar QPushButton:pressed {
+	background: <color:graph/toolbar/press>;
+}
+
+#graph_toolbar QPushButton:disabled {
+	background: transparent;
+}
+
+/* The trail depth: a slim slider and its value. */
 #depth_label {
-	background: <color:search/button/normal>;
-	color: <color:search/button/icon>;
+	background: transparent;
+	color: <color:graph/toolbar/icon>;
+	font-size: 11px;
+	font-weight: 500;
 }
 
 #depth_label:disabled {
-	background: <color:search/button/disabled>;
-	color: <color:search/button/icon_disabled>;
+	color: <color:graph/toolbar/icon_disabled>;
 }
 
 #depth_slider {
-	background: <color:search/button/normal>;
-	padding-bottom: 5px;
-	border-bottom-left-radius: 7px;
-	border-bottom-right-radius: 7px;
+	background: transparent;
 }
 
-#depth_slider:disabled {
-	background: <color:search/button/disabled>;
-}
-
-#depth_slider::groove {
-	margin: 5px;
+#depth_slider::groove:vertical {
+	background: <color:graph/toolbar/separator>;
+	border-radius: 1px;
+	margin: 5px 0;
 	width: 2px;
 }
 
-#depth_slider::handle {
-	height: 10px;
-	margin: 0px -4px;
+#depth_slider::add-page:vertical {
+	background: <color:graph/toolbar/icon>;
+	border-radius: 1px;
+	margin: 0 0 5px 0;
+	width: 2px;
+}
+
+#depth_slider::handle:vertical {
+	background: <color:graph/toolbar/icon>;
 	border-radius: 5px;
+	height: 10px;
+	margin: -5px -4px;
 }
 
-#depth_slider::handle:hover {
-	height: 12px;
-	margin: 0px -5px;
-	border-radius: 6px;
+#depth_slider::add-page:vertical:disabled,
+#depth_slider::handle:vertical:disabled {
+	background: <color:graph/toolbar/icon_disabled>;
 }
 
-#depth_slider::groove, #depth_slider::handle {
-	background: <color:search/button/icon>;
-}
-
-#depth_slider::groove:disabled, #depth_slider::handle:disabled {
-	background: <color:search/button/icon_disabled>;
-}
-
-#group_left_button {
-	border-radius: 0;
-	border-top-left-radius: 10px;
-	border-bottom-left-radius: 10px;
-	max-width: 26px;
-	max-height: 26px;
-	padding-left: 2px;
-}
-
-#group_middle_button {
-	border-radius: 0;
-	max-width: 26px;
-	max-height: 26px;
-}
-
-#group_right_button {
-	border-radius: 0;
-	border-top-right-radius: 10px;
-	border-bottom-right-radius: 10px;
-	max-width: 26px;
-	max-height: 26px;
-	padding-right: 2px;
-}
-
-#legend_button
-{
-	border-radius: 9px;
+/* The zoom level, for a moment after it changes: a small pill beside the zoom buttons. */
+#zoom_state {
+	background: <color:graph/toolbar/background>;
+	border: 1px solid <color:graph/toolbar/border>;
+	border-radius: 10px;
+	color: <color:graph/toolbar/icon>;
+	font-size: 11px;
+	font-weight: 500;
+	padding: 0;
 }

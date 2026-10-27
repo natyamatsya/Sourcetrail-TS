@@ -26,9 +26,11 @@
 #include <QFontDatabase>
 #include <QIcon>
 #include <QPainter>
+#include <QSvgRenderer>
 #include <QWidget>
 
 #include <set>
+#include <vector>
 
 // Imports AFTER all textual includes (include-before-import rule).
 #ifdef SRCTRL_MODULE_BUILD
@@ -96,16 +98,48 @@ QPixmap colorizePixmap(const QPixmap &pixmap, QColor color)
 	return QPixmap::fromImage(image);
 }
 
+namespace
+{
+// An icon's pixmaps: an image as it is; a drawing (.svg) rendered at its size for screens of
+// one, two and three pixels per point, so it stays crisp on each.
+std::vector<QPixmap> iconPixmaps(const FilePath &iconPath)
+{
+	const QString path{QString::fromStdString(iconPath.str())};
+	if (iconPath.extension() != ".svg")
+	{
+		return {QPixmap{path}};
+	}
+
+	QSvgRenderer renderer{path};
+	std::vector<QPixmap> pixmaps;
+	for (const int scale: {1, 2, 3})
+	{
+		QImage image{renderer.defaultSize() * scale, QImage::Format_ARGB32_Premultiplied};
+		image.fill(Qt::transparent);
+		{
+			QPainter painter{&image};
+			renderer.render(&painter);
+		}
+		image.setDevicePixelRatio(scale);
+		pixmaps.push_back(QPixmap::fromImage(image));
+	}
+	return pixmaps;
+}
+}	 // namespace
+
 QIcon createButtonIcon(const FilePath &iconPath, const std::string &colorId)
 {
 	ColorScheme *scheme = ColorScheme::getInstance().get();
 
-	QPixmap pixmap(QString::fromStdString(iconPath.str()));
-	QIcon icon(utility::colorizePixmap(pixmap, scheme->getColor(colorId + "/icon").c_str()));
-
-	if (scheme->hasColor(colorId + "/icon_disabled"))
+	QIcon icon;
+	for (const QPixmap &pixmap : iconPixmaps(iconPath))
 	{
-		icon.addPixmap(utility::colorizePixmap(pixmap, scheme->getColor(colorId + "/icon_disabled").c_str()), QIcon::Disabled);
+		icon.addPixmap(utility::colorizePixmap(pixmap, scheme->getColor(colorId + "/icon").c_str()));
+
+		if (scheme->hasColor(colorId + "/icon_disabled"))
+		{
+			icon.addPixmap(utility::colorizePixmap(pixmap, scheme->getColor(colorId + "/icon_disabled").c_str()), QIcon::Disabled);
+		}
 	}
 
 	return icon;

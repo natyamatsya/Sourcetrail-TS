@@ -26,6 +26,7 @@
 #include "QtGraphNodeGroup.h"
 #include "QtGraphNodeQualifier.h"
 #include "QtGraphNodeText.h"
+#include "QtGraphToolbar.h"
 #include "QtGraphicsView.h"
 #include "QtResources.h"
 #include "QtSelfRefreshIconButton.h"
@@ -46,7 +47,7 @@
 #include <QScrollBar>
 #include <QSequentialAnimationGroup>
 #include <QSlider>
-#include <QStackedLayout>
+#include <QStyle>
 
 // Imports come AFTER all textual #includes (include-before-import rule: textual libc++
 // following BMI-merged declarations trips "cannot add 'abi_tag' in a redeclaration").
@@ -57,6 +58,15 @@ import srctrl.view;
 #endif
 
 using namespace utility;
+
+namespace
+{
+// The toolbar's distance from the graph view's edges.
+constexpr int toolbarMargin = 8;
+// The trail depth slider's length, and how short it may get in a short view.
+constexpr int trailDepthSliderLength = 64;
+constexpr int trailDepthSliderMinimumLength = 32;
+}	 // namespace
 
 QtGraphView::QtGraphView(ViewLayout *viewLayout)
 	: GraphView(viewLayout)
@@ -97,80 +107,76 @@ QtGraphView::QtGraphView(ViewLayout *viewLayout)
 	connect(view->horizontalScrollBar(), &QScrollBar::valueChanged, this, &QtGraphView::scrolled);
 	connect(view->verticalScrollBar(), &QScrollBar::valueChanged, this, &QtGraphView::scrolled);
 
+	// The controls: one upright toolbar floating along the graph's left edge, clear of its
+	// centre where the active symbol is. Its sections: the trail controls (which fold away),
+	// the grouping, zoom, and the legend.
+	m_toolbar = new QtGraphToolbar(widget);
+	m_toolbar->move(toolbarMargin, toolbarMargin);
+
+	const auto toolbarButton = [](const FilePath &iconPath, const QString &objectName)
+	{
+		QtSelfRefreshIconButton *button = new QtSelfRefreshIconButton(QLatin1String(""), iconPath, "graph/toolbar");
+		button->setObjectName(objectName);
+		button->setIconSize(QSize(16, 16));
+		button->setFixedSize(QtGraphToolbar::controlSize, QtGraphToolbar::controlSize);
+		return button;
+	};
+
 	// trail controls
 	{
-		QStackedLayout *stack = new QStackedLayout();
+		m_expandButton = toolbarButton(QtResources::GRAPH_VIEW_GRAPH, QStringLiteral("expand_button"));
+		m_expandButton->setToolTip(tr("show trail controls"));
+		m_expandButton->setAccessibleName(tr("Show trail controls"));
+		connect(m_expandButton, &QPushButton::clicked, this, &QtGraphView::clickedExpand);
 
-		{
-			m_expandButton = new QtSelfRefreshIconButton(QLatin1String(""), QtResources::GRAPH_VIEW_GRAPH, "search/button");
-			m_expandButton->setObjectName(QStringLiteral("expand_button"));
-			m_expandButton->setToolTip(tr("show trail controls"));
-			m_expandButton->setAccessibleName(tr("Show trail controls"));
-			m_expandButton->setIconSize(QSize(16, 16));
-			m_expandButton->setGeometry(0, 0, 26, 26);
-			connect(m_expandButton, &QPushButton::clicked, this, &QtGraphView::clickedExpand);
-			stack->addWidget(m_expandButton);
-		}
+		m_collapseButton = toolbarButton(QtResources::GRAPH_VIEW_GRAPH_ARROW, QStringLiteral("collapse_button"));
+		m_collapseButton->setToolTip(tr("hide trail controls"));
+		m_collapseButton->setAccessibleName(tr("Hide trail controls"));
+		connect(m_collapseButton, &QPushButton::clicked, this, &QtGraphView::clickedCollapse);
 
-		{
-			QWidget *ui = new QWidget();
-			ui->setGeometry(0, 0, 26, 210);
-			stack->addWidget(ui);
+		m_trailWidget = new QWidget();
+		QVBoxLayout *trailLayout = new QVBoxLayout(m_trailWidget);
+		trailLayout->setContentsMargins(0, 0, 0, 0);
+		trailLayout->setSpacing(2);
 
-			m_collapseButton = new QtSelfRefreshIconButton(QLatin1String(""), QtResources::GRAPH_VIEW_GRAPH_ARROW, "search/button", ui);
-			m_collapseButton->setObjectName(QStringLiteral("collapse_button"));
-			m_collapseButton->setToolTip(tr("hide trail controls"));
-			m_collapseButton->setAccessibleName(tr("Hide trail controls"));
-			m_collapseButton->setIconSize(QSize(16, 16));
-			connect(m_collapseButton, &QPushButton::clicked, this, &QtGraphView::clickedCollapse);
+		m_customTrailButton = toolbarButton(QtResources::GRAPH_VIEW_GRAPH_CUSTOM, QStringLiteral("trail_button"));
+		m_customTrailButton->setToolTip(tr("custom trail"));
+		m_customTrailButton->setAccessibleName(tr("Custom trail"));
+		connect(m_customTrailButton, &QPushButton::clicked, this, &QtGraphView::clickedCustomTrail);
 
-			m_customTrailButton = new QtSelfRefreshIconButton(QLatin1String(""), FilePath(), "search/button", ui);
-			m_customTrailButton->setObjectName(QStringLiteral("trail_button"));
-			m_customTrailButton->setIconSize(QSize(16, 16));
-			m_customTrailButton->setToolTip(tr("custom trail"));
-			m_customTrailButton->setAccessibleName(tr("Custom trail"));
-			m_customTrailButton->setIconPath(QtResources::GRAPH_VIEW_GRAPH_CUSTOM);
-			connect(m_customTrailButton, &QPushButton::clicked, this, &QtGraphView::clickedCustomTrail);
+		m_backwardTrailButton = toolbarButton(FilePath(), QStringLiteral("trail_button"));
+		m_backwardTrailButton->setAccessibleName(tr("Backward trail"));
+		connect(m_backwardTrailButton, &QPushButton::clicked, this, &QtGraphView::clickedBackwardTrail);
 
-			m_forwardTrailButton = new QtSelfRefreshIconButton(QLatin1String(""), FilePath(), "search/button", ui);
-			m_forwardTrailButton->setObjectName(QStringLiteral("trail_button"));
-			// The tooltip follows the active symbol (callees, derived classes, ...);
-			// the name says which button this is.
-			m_forwardTrailButton->setAccessibleName(tr("Forward trail"));
-			m_forwardTrailButton->setIconSize(QSize(16, 16));
-			connect(m_forwardTrailButton, &QPushButton::clicked, this, &QtGraphView::clickedForwardTrail);
+		m_forwardTrailButton = toolbarButton(FilePath(), QStringLiteral("trail_button"));
+		// The tooltip follows the active symbol (callees, derived classes, ...);
+		// the name says which button this is.
+		m_forwardTrailButton->setAccessibleName(tr("Forward trail"));
+		connect(m_forwardTrailButton, &QPushButton::clicked, this, &QtGraphView::clickedForwardTrail);
 
-			m_backwardTrailButton = new QtSelfRefreshIconButton(QLatin1String(""), FilePath(), "search/button", ui);
-			m_backwardTrailButton->setObjectName(QStringLiteral("trail_button"));
-			m_backwardTrailButton->setAccessibleName(tr("Backward trail"));
-			m_backwardTrailButton->setIconSize(QSize(16, 16));
-			connect(m_backwardTrailButton, &QPushButton::clicked, this, &QtGraphView::clickedBackwardTrail);
+		m_trailDepthSlider = new QSlider(Qt::Vertical);
+		m_trailDepthSlider->setObjectName(QStringLiteral("depth_slider"));
+		m_trailDepthSlider->setToolTip(tr("adjust trail depth"));
+		m_trailDepthSlider->setFixedSize(QtGraphToolbar::controlSize, trailDepthSliderLength);
+		m_trailDepthSlider->setMinimum(1);
+		m_trailDepthSlider->setMaximum(26);
+		m_trailDepthSlider->setValue(5);
+		connect(m_trailDepthSlider, &QSlider::valueChanged, this, &QtGraphView::trailDepthChanged);
+		connect(m_trailDepthSlider, &QSlider::sliderReleased, this, &QtGraphView::trailDepthUpdated);
 
-			m_trailDepthLabel = new QLabel(ui);
-			m_trailDepthLabel->setObjectName(QStringLiteral("depth_label"));
-			m_trailDepthLabel->setToolTip(tr("adjust trail depth"));
-			m_trailDepthLabel->setAlignment(Qt::AlignCenter);
+		m_trailDepthLabel = new QLabel();
+		m_trailDepthLabel->setObjectName(QStringLiteral("depth_label"));
+		m_trailDepthLabel->setToolTip(tr("adjust trail depth"));
+		m_trailDepthLabel->setAlignment(Qt::AlignCenter);
+		m_trailDepthLabel->setFixedSize(QtGraphToolbar::controlSize, 16);
 
-			m_trailDepthSlider = new QSlider(Qt::Vertical, ui);
-			m_trailDepthSlider->setObjectName(QStringLiteral("depth_slider"));
-			m_trailDepthSlider->setToolTip(tr("adjust trail depth"));
-			m_trailDepthSlider->setMinimum(1);
-			m_trailDepthSlider->setMaximum(26);
-			m_trailDepthSlider->setValue(5);
-			connect(m_trailDepthSlider, &QSlider::valueChanged, this, &QtGraphView::trailDepthChanged);
-			connect(m_trailDepthSlider, &QSlider::sliderReleased, this, &QtGraphView::trailDepthUpdated);
+		trailLayout->addWidget(m_customTrailButton);
+		trailLayout->addWidget(m_backwardTrailButton);
+		trailLayout->addWidget(m_forwardTrailButton);
+		trailLayout->addWidget(m_trailDepthLabel);
+		trailLayout->addWidget(m_trailDepthSlider);
 
-			m_collapseButton->setGeometry(0, 0, 26, 20);
-			m_customTrailButton->setGeometry(0, 22, 26, 26);
-			m_backwardTrailButton->setGeometry(0, 50, 26, 26);
-			m_forwardTrailButton->setGeometry(0, 78, 26, 26);
-			m_trailDepthLabel->setGeometry(0, 106, 26, 26);
-			m_trailDepthSlider->setGeometry(0, 132, 26, 100);
-		}
-
-		m_trailWidget = new QWidget(widget);
-		m_trailWidget->setGeometry(8, 8, 26, 238);
-		m_trailWidget->setLayout(stack);
+		m_toolbar->addSection({m_expandButton, m_collapseButton, m_trailWidget});
 
 		if (ApplicationSettings::getInstance()->getGraphControlsVisible())
 		{
@@ -187,13 +193,9 @@ QtGraphView::QtGraphView(ViewLayout *viewLayout)
 
 	// group controls
 	{
-		m_groupFileButton = new QtSelfRefreshIconButton(QLatin1String(""), QtResources::GRAPH_VIEW_FILE, "search/button");
-		m_groupNamespaceButton = new QtSelfRefreshIconButton(QLatin1String(""), QtResources::GRAPH_VIEW_GROUP_NAMESPACE, "search/button");
-		m_groupLanguageButton = new QtSelfRefreshIconButton(QLatin1String(""), QtResources::GRAPH_VIEW_GROUP_LANGUAGE, "search/button");
-
-		m_groupFileButton->setObjectName(QStringLiteral("group_right_button"));
-		m_groupNamespaceButton->setObjectName(QStringLiteral("group_left_button"));
-		m_groupLanguageButton->setObjectName(QStringLiteral("group_middle_button"));
+		m_groupNamespaceButton = toolbarButton(QtResources::GRAPH_VIEW_GROUP_NAMESPACE, QStringLiteral("group_left_button"));
+		m_groupLanguageButton = toolbarButton(QtResources::GRAPH_VIEW_GROUP_LANGUAGE, QStringLiteral("group_middle_button"));
+		m_groupFileButton = toolbarButton(QtResources::GRAPH_VIEW_FILE, QStringLiteral("group_right_button"));
 
 		m_groupFileButton->setToolTip(tr("group by file"));
 		m_groupNamespaceButton->setToolTip(tr("group by package/namespace/module"));
@@ -202,10 +204,6 @@ QtGraphView::QtGraphView(ViewLayout *viewLayout)
 		m_groupFileButton->setCheckable(true);
 		m_groupNamespaceButton->setCheckable(true);
 		m_groupLanguageButton->setCheckable(true);
-
-		m_groupFileButton->setIconSize(QSize(14, 14));
-		m_groupNamespaceButton->setIconSize(QSize(14, 14));
-		m_groupLanguageButton->setIconSize(QSize(14, 14));
 
 		connect(m_groupFileButton, &QPushButton::clicked, [this]()
 		{
@@ -234,18 +232,27 @@ QtGraphView::QtGraphView(ViewLayout *viewLayout)
 			m_groupLanguageButton->setChecked(true);
 		}
 
-		m_groupWidget = new QWidget(widget);
-		m_groupWidget->setGeometry(38, 8, 82, 26);
+		m_toolbar->addSection({m_groupNamespaceButton, m_groupLanguageButton, m_groupFileButton});
+	}
 
-		QHBoxLayout *layout = new QHBoxLayout();
-		layout->setContentsMargins(0, 0, 0, 0);
-		layout->setSpacing(2);
+	// zoom and legend
+	{
+		QtSelfRefreshIconButton &zoomIn = view->zoomInButton();
+		QtSelfRefreshIconButton &zoomOut = view->zoomOutButton();
+		zoomIn.setFixedSize(QtGraphToolbar::controlSize, QtGraphToolbar::controlSize);
+		zoomOut.setFixedSize(QtGraphToolbar::controlSize, QtGraphToolbar::controlSize);
+		const QWidget &zoomSection = m_toolbar->addSection({&zoomIn, &zoomOut});
 
-		layout->addWidget(m_groupNamespaceButton);
-		layout->addWidget(m_groupLanguageButton);
-		layout->addWidget(m_groupFileButton);
+		QtSelfRefreshIconButton &legend = view->legendButton();
+		legend.setFixedSize(QtGraphToolbar::controlSize, QtGraphToolbar::controlSize);
+		m_toolbar->addSection({&legend});
 
-		m_groupWidget->setLayout(layout);
+		// The zoom level shows beside the zoom buttons, right of the toolbar.
+		connect(m_toolbar, &QtGraphToolbar::laidOut, view, [widget, view, zoom = &zoomSection, toolbar = m_toolbar]()
+		{
+			const QPoint centre = zoom->mapTo(widget, QPoint(0, zoom->height() / 2));
+			view->placeZoomState(view->mapFrom(widget, QPoint(toolbar->geometry().right() + 1 + toolbarMargin, centre.y())));
+		});
 	}
 }
 
@@ -265,8 +272,7 @@ void QtGraphView::refreshView()
 		view->setStyleSheet(css);
 		view->setAppZoomFactor(GraphViewStyle::getZoomFactor());
 
-		m_trailWidget->setStyleSheet(css);
-		m_groupWidget->setStyleSheet(css);
+		m_toolbar->setStyleSheet(css);
 
 		updateTrailButtons();
 	});
@@ -779,7 +785,7 @@ void QtGraphView::scrolled(int)
 
 void QtGraphView::resized()
 {
-	fitTrailControls();
+	fitToolbar();
 
 	if (isTransitioning())
 	{
@@ -812,7 +818,7 @@ void QtGraphView::trailDepthUpdated()
 
 void QtGraphView::clickedCollapse()
 {
-	dynamic_cast<QStackedLayout *>(m_trailWidget->layout())->setCurrentIndex(0);
+	showTrailControls(false);
 
 	ApplicationSettings::getInstance()->setGraphControlsVisible(false);
 	ApplicationSettings::getInstance()->save();
@@ -820,7 +826,7 @@ void QtGraphView::clickedCollapse()
 
 void QtGraphView::clickedExpand()
 {
-	dynamic_cast<QStackedLayout *>(m_trailWidget->layout())->setCurrentIndex(1);
+	showTrailControls(true);
 
 	ApplicationSettings::getInstance()->setGraphControlsVisible(true);
 	ApplicationSettings::getInstance()->save();
@@ -1046,17 +1052,36 @@ void QtGraphView::doResize()
 	getView()->setSceneRect(getSceneRect(m_oldNodes));
 }
 
-// The trail controls run down from the top and the zoom buttons sit at the bottom
-// (QtGraphicsView::resizeEvent): in a short graph view the trail depth slider ran over
-// the zoom-in button. It is shortened to leave the buttons room, down to a usable
-// length.
-void QtGraphView::fitTrailControls()
+// The toolbar keeps to the view's height, the horizontal scroll bar left clear: where the view
+// is short, its sections wrap into more columns.
+void QtGraphView::fitToolbar()
 {
-	constexpr int sliderTop {132};	  // below the trail buttons and the depth label
-	const int zoomInTop = getView()->height() - 50;
-	const int sliderHeight = std::clamp(zoomInTop - 4 - 8 - sliderTop - 6, 40, 100);
-	m_trailDepthSlider->setGeometry(0, sliderTop, 26, sliderHeight);
-	m_trailWidget->setGeometry(8, 8, 26, sliderTop + sliderHeight + 6);
+	const QtGraphicsView *view = getView();
+	const int scrollBarHeight = view->style()->pixelMetric(QStyle::PM_ScrollBarExtent, nullptr, view);
+	const int height = view->height() - scrollBarHeight - 2 * toolbarMargin;
+
+	// The trail controls are one section, which cannot wrap: in a very short view they would
+	// run past the bottom, so their depth slider gives up length first, down to a usable
+	// minimum.
+	const int trailControlsHeight = m_collapseButton->parentWidget()->sizeHint().height() - m_trailDepthSlider->height()
+		+ trailDepthSliderLength + 2 * QtGraphToolbar::padding;
+	const int sliderLength = std::clamp(trailDepthSliderLength - (trailControlsHeight - height), trailDepthSliderMinimumLength,
+		trailDepthSliderLength);
+	if (sliderLength != m_trailDepthSlider->height())
+	{
+		m_trailDepthSlider->setFixedHeight(sliderLength);
+		// Their section's size hint follows at once, for the toolbar's layout below.
+		m_trailWidget->updateGeometry();
+	}
+
+	m_toolbar->fitHeight(height);
+}
+
+void QtGraphView::showTrailControls(bool show)
+{
+	m_trailWidget->setVisible(show);
+	m_collapseButton->setVisible(show);
+	m_expandButton->setVisible(!show);
 }
 
 QtGraphNode *QtGraphView::createNodeRecursive(QGraphicsView *view, QtGraphNode *parentNode, const DummyNode *node, bool multipleActive,

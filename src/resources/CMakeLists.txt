@@ -49,17 +49,17 @@ qt_add_resources(Sourcetrail_res_gui Sourcetrail_resources
 		graph_view/images/default.png
 		graph_view/images/enum.png
 		graph_view/images/file_incomplete.png
-		graph_view/images/file.png
-		graph_view/images/graph_arrow.png
-		graph_view/images/graph_custom.png
-		graph_view/images/graph_down.png
-		graph_view/images/graph_left.png
-		graph_view/images/graph.png
-		graph_view/images/graph_right.png
-		graph_view/images/graph_up.png
-		graph_view/images/group_language.png
-		graph_view/images/group_namespace.png
-		graph_view/images/legend.png
+		graph_view/images/file.svg
+		graph_view/images/graph_arrow.svg
+		graph_view/images/graph_custom.svg
+		graph_view/images/graph_down.svg
+		graph_view/images/graph_left.svg
+		graph_view/images/graph.svg
+		graph_view/images/graph_right.svg
+		graph_view/images/graph_up.svg
+		graph_view/images/group_language.svg
+		graph_view/images/group_namespace.svg
+		graph_view/images/legend.svg
 		graph_view/images/macro.png
 		graph_view/images/namespace.png
 		graph_view/images/pattern.png
@@ -68,8 +68,8 @@ qt_add_resources(Sourcetrail_res_gui Sourcetrail_resources
 		graph_view/images/public.png
 		graph_view/images/template.png
 		graph_view/images/typedef.png
-		graph_view/images/zoom_in.png
-		graph_view/images/zoom_out.png
+		graph_view/images/zoom_in.svg
+		graph_view/images/zoom_out.svg
 		graph_view/graph_view.css
 		
 		history_list/history_list.css

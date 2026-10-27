@@ -403,6 +403,16 @@
          "union": {
             "like": "type"
          }
+      },
+      "toolbar": {
+         "background": "#E6F7F7F8",
+         "border": "#D2D4D9",
+         "checked": "#26000000",
+         "hover": "#12000000",
+         "icon": "#4A4E57",
+         "icon_disabled": "#B3B7BF",
+         "press": "#33000000",
+         "separator": "#DCDEE2"
       }
    },
    "screen_search": {
