@@ -76,12 +76,13 @@ TEST_CASE("every colour scheme has the colours the main style sheet asks for")
 
 TEST_CASE("every colour scheme has the docking chrome's colours")
 {
-	// The docks are cards on a canvas; main.css paints them with these, in day and night
-	// schemes alike.
+	// The docks are cards on a canvas, and floating windows have a frame; main.css paints them
+	// with these, in day and night schemes alike.
 	requireColors({
 		"window/dock/canvas",
 		"window/dock/card",
 		"window/dock/card_border",
+		"window/dock/floating_border",
 		"window/dock/header",
 		"window/dock/header_text",
 		"window/dock/handle",

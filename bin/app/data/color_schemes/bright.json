@@ -531,6 +531,7 @@
          "canvas": "#E6E7EA",
          "card": "#FFFFFF",
          "card_border": "#D2D4D9",
+         "floating_border": "#C3C6CC",
          "handle": "#B3B7BF",
          "handle_hover": "#6F747E",
          "header": "#F7F7F8",
