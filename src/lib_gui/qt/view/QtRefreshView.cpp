@@ -30,7 +30,7 @@ QtRefreshView::QtRefreshView(ViewLayout* viewLayout): RefreshView(viewLayout)
 	QBoxLayout* layout = new QHBoxLayout();
 	layout->setSpacing(0);
 	layout->setContentsMargins(0, 0, 0, 0);
-	layout->setAlignment(Qt::AlignTop);
+	layout->setAlignment(Qt::AlignVCenter);
 
 	QtSearchBarButton* refreshButton = new QtSearchBarButton(QtResources::REFRESH_VIEW_REFRESH);
 	refreshButton->setObjectName(QStringLiteral("refresh_button"));

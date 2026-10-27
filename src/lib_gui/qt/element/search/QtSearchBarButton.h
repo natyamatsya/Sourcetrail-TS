@@ -8,11 +8,12 @@ class QtSearchBarButton: public QtSelfRefreshIconButton
 public:
 	enum class Size
 	{
-		SMALL,
-		BIG
+		SMALL,	  // the code view's navigation buttons
+		TOOLBAR,  // the search bar's: a flat 28 px square with a 16 px line icon
+		FIELD	  // inside the search field: a flat 24 px square with a 16 px line icon
 	};
 
-	QtSearchBarButton(const FilePath& iconPath, Size size = Size::BIG);
+	QtSearchBarButton(const FilePath& iconPath, Size size = Size::TOOLBAR);
 
 protected:
 	void refresh() override;

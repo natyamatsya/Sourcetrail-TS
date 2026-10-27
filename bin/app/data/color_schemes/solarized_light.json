@@ -500,6 +500,13 @@
                "text": "#F7F7F7"
             }
          }
+      },
+      "toolbar": {
+         "hover": "#DFD8C2",
+         "icon": "#586E75",
+         "icon_disabled": "#B5B9A9",
+         "press": "#D3CBB2",
+         "segment": "#E6DFCA"
       }
    },
    "tab": {

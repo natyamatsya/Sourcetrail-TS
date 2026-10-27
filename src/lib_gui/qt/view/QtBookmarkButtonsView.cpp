@@ -35,7 +35,7 @@ QtBookmarkButtonsView::QtBookmarkButtonsView(ViewLayout* viewLayout)
 	QBoxLayout* layout = new QHBoxLayout();
 	layout->setSpacing(0);
 	layout->setContentsMargins(0, 0, 0, 0);
-	layout->setAlignment(Qt::AlignTop);
+	layout->setAlignment(Qt::AlignVCenter);
 	m_widget->setLayout(layout);
 
 	m_createBookmarkButton = new QtSearchBarButton(QtResources::BOOKMARK_VIEW_BOOKMARK_EDIT_BOOKMARK_ICON);

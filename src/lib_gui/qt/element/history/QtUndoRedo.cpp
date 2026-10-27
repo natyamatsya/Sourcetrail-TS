@@ -48,7 +48,7 @@ QtUndoRedo::QtUndoRedo()
 	QBoxLayout* layout = new QHBoxLayout();
 	layout->setSpacing(0);
 	layout->setContentsMargins(0, 0, 0, 0);
-	layout->setAlignment(Qt::AlignTop);
+	layout->setAlignment(Qt::AlignVCenter);
 	setLayout(layout);
 	layout->addWidget(m_undoButton);
 	layout->addWidget(m_historyButton);

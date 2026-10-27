@@ -32,11 +32,11 @@ const char QtResources::BOOKMARK_VIEW_ARROW_DOWN[]                  = ":/bookmar
 const char QtResources::BOOKMARK_VIEW_ARROW_LINE_DOWN[]             = ":/bookmark_view/images/arrow_line_down.png";
 const char QtResources::BOOKMARK_VIEW_ARROW_LINE_UP[]               = ":/bookmark_view/images/arrow_line_up.png";
 const char QtResources::BOOKMARK_VIEW_ARROW_RIGHT[]                 = ":/bookmark_view/images/arrow_right.png";
-const char QtResources::BOOKMARK_VIEW_BOOKMARK_ACTIVE[]             = ":/bookmark_view/images/bookmark_active.png";
+const char QtResources::BOOKMARK_VIEW_BOOKMARK_ACTIVE[]             = ":/bookmark_view/images/bookmark_active.svg";
 const char QtResources::BOOKMARK_VIEW_BOOKMARK_DELETE_ICON[]        = ":/bookmark_view/images/bookmark_delete_icon.png";
 const char QtResources::BOOKMARK_VIEW_BOOKMARK_EDIT_ICON[]          = ":/bookmark_view/images/bookmark_edit_icon.png";
-const char QtResources::BOOKMARK_VIEW_BOOKMARK_LIST_ICON[]          = ":/bookmark_view/images/bookmark_list_icon.png";
-const char QtResources::BOOKMARK_VIEW_BOOKMARK_EDIT_BOOKMARK_ICON[] = ":/bookmark_view/images/edit_bookmark_icon.png";
+const char QtResources::BOOKMARK_VIEW_BOOKMARK_LIST_ICON[]          = ":/bookmark_view/images/bookmark_list_icon.svg";
+const char QtResources::BOOKMARK_VIEW_BOOKMARK_EDIT_BOOKMARK_ICON[] = ":/bookmark_view/images/edit_bookmark_icon.svg";
 
 const char QtResources::CODE_VIEW_CSS[]                 = ":/code_view/code_view.css";
 const char QtResources::CODE_VIEW_ARROW_DOWN[]          = ":/code_view/images/arrow_down.png";
@@ -118,14 +118,14 @@ const char QtResources::MAIN_CSS[]           = ":/main/main.css";
 const char QtResources::MAIN_SCROLLBAR_CSS[] = ":/main/scrollbar.css";
 
 const char QtResources::REFRESH_VIEW_CSS[]     = ":/refresh_view/refresh_view.css";
-const char QtResources::REFRESH_VIEW_REFRESH[] = ":/refresh_view/images/refresh.png";
+const char QtResources::REFRESH_VIEW_REFRESH[] = ":/refresh_view/images/refresh.svg";
 
 const char QtResources::SCREEN_SEARCH_VIEW_CLOSE[] = ":/screen_search_view/images/close.png";
 const char QtResources::SCREEN_SEARCH_VIEW_CSS[]   = ":/screen_search_view/screen_search_view.css";
 
 const char QtResources::SEARCH_VIEW_ARROW[]  = ":/search_view/images/arrow.png";
-const char QtResources::SEARCH_VIEW_HOME[]   = ":/search_view/images/home.png";
-const char QtResources::SEARCH_VIEW_SEARCH[] = ":/search_view/images/search.png";
+const char QtResources::SEARCH_VIEW_HOME[]   = ":/search_view/images/home.svg";
+const char QtResources::SEARCH_VIEW_SEARCH[] = ":/search_view/images/search.svg";
 const char QtResources::SEARCH_VIEW_CSS[]    = ":/search_view/search_view.css";
 
 const char QtResources::STARTSCREEN_CSS[]         = ":/startscreen/startscreen.css";
@@ -145,9 +145,9 @@ const char QtResources::TABS_VIEW_CSS[]   = ":/tabs_view/tabs_view.css";
 
 const char QtResources::TOOLTIP_VIEW_CSS[] = ":/tooltip_view/tooltip_view.css";
 
-const char QtResources::UNDOREDO_VIEW_ARROW_LEFT[]  = ":/undoredo_view/images/arrow_left.png";
-const char QtResources::UNDOREDO_VIEW_ARROW_RIGHT[] = ":/undoredo_view/images/arrow_right.png";
-const char QtResources::UNDOREDO_VIEW_HISTORY[]     = ":/undoredo_view/images/history.png";
+const char QtResources::UNDOREDO_VIEW_ARROW_LEFT[]  = ":/undoredo_view/images/arrow_left.svg";
+const char QtResources::UNDOREDO_VIEW_ARROW_RIGHT[] = ":/undoredo_view/images/arrow_right.svg";
+const char QtResources::UNDOREDO_VIEW_HISTORY[]     = ":/undoredo_view/images/history.svg";
 const char QtResources::UNDOREDO_VIEW_CSS[]         = ":/undoredo_view/undoredo_view.css";
 
 const char QtResources::WINDOW_DOTS[]                      = ":/window/dots.png";

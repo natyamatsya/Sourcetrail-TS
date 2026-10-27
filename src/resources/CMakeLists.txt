@@ -14,11 +14,11 @@ qt_add_resources(Sourcetrail_res_gui Sourcetrail_resources
 		bookmark_view/images/arrow_line_down.png
 		bookmark_view/images/arrow_line_up.png
 		bookmark_view/images/arrow_right.png
-		bookmark_view/images/bookmark_active.png
+		bookmark_view/images/bookmark_active.svg
 		bookmark_view/images/bookmark_delete_icon.png
 		bookmark_view/images/bookmark_edit_icon.png
-		bookmark_view/images/bookmark_list_icon.png
-		bookmark_view/images/edit_bookmark_icon.png
+		bookmark_view/images/bookmark_list_icon.svg
+		bookmark_view/images/edit_bookmark_icon.svg
 		bookmark_view/bookmark_view.css
 		
 		code_view/code_view.css
@@ -101,14 +101,14 @@ qt_add_resources(Sourcetrail_res_gui Sourcetrail_resources
 		main/scrollbar.css
 		
 		refresh_view/refresh_view.css
-		refresh_view/images/refresh.png
+		refresh_view/images/refresh.svg
 		
 		screen_search_view/images/close.png
 		screen_search_view/screen_search_view.css
 		
 		search_view/images/arrow.png
-		search_view/images/home.png
-		search_view/images/search.png
+		search_view/images/home.svg
+		search_view/images/search.svg
 		search_view/search_view.css
 		
 		startscreen/delete_icon.png
@@ -128,9 +128,9 @@ qt_add_resources(Sourcetrail_res_gui Sourcetrail_resources
 		
 		tooltip_view/tooltip_view.css
 		
-		undoredo_view/images/arrow_left.png
-		undoredo_view/images/arrow_right.png
-		undoredo_view/images/history.png
+		undoredo_view/images/arrow_left.svg
+		undoredo_view/images/arrow_right.svg
+		undoredo_view/images/history.svg
 		undoredo_view/undoredo_view.css
 		
 		window/dots.png

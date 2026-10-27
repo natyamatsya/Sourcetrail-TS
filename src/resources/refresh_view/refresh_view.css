@@ -2,27 +2,22 @@
 	background: transparent;
 }
 
+/* A flat icon button, like the search bar's others. */
 QPushButton {
-	background: <color:search/button/normal>;
+	background: transparent;
 	border: none;
-	height: 30px;
-	width: 30px;
+	border-radius: 6px;
+	padding: 0px;
 }
 
 QPushButton:hover, QPushButton:checked {
-	background: <color:search/button/hover>;
-}
-
-QPushButton:disabled {
-	background: <color:search/button/disabled>;
+	background: <color:search/toolbar/hover>;
 }
 
 QPushButton:pressed {
-	background: <color:search/button/press>;
+	background: <color:search/toolbar/press>;
 }
 
-#refresh_button {
-	/*border-bottom-left-radius: 12px;*/
-	/*border-top-left-radius: 12px;*/
-	border-radius: 12px;
+QPushButton:disabled {
+	background: transparent;
 }

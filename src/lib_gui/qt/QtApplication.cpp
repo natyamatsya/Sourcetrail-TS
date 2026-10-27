@@ -49,6 +49,10 @@ QtApplication::QtApplication(int& argc, char** argv): QApplication(argc, argv)
 	// are gutters as wide as the canvas around them.
 	dockConfig.setSeparatorThickness(QtDockChrome::gutterWidth);
 
+	// KDDockWidgets keeps every dock at least 90 px tall, which left the Search card, a single
+	// row of controls, with empty space under them. A dock's own minimum still holds.
+	dockConfig.setAbsoluteWidgetMinSize(KDDockWidgets::Size{80, 40});
+
 	connect(
 		this,
 		&QGuiApplication::applicationStateChanged,

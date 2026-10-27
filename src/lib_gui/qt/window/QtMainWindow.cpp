@@ -476,6 +476,7 @@ void QtMainWindow::loadDockWidgetLayout()
 	{
 		applyDefaultDockLayout();
 	}
+	fitSearchDockToContentLater();
 
 	for (const DockWidget& dock: m_dockWidgets)
 	{
@@ -664,6 +665,67 @@ void QtMainWindow::resizeEvent(QResizeEvent* event)
 {
 	m_windowStack.centerSubWindows();
 	Super::resizeEvent(event);
+	fitSearchDockToContentLater();
+}
+
+void QtMainWindow::fitSearchDockToContentLater()
+{
+	QTimer::singleShot(0, this, &QtMainWindow::fitSearchDockToContent);
+}
+
+void QtMainWindow::fitSearchDockToContent()
+{
+	KDDockWidgets::QtWidgets::DockWidget* search{nullptr};
+	for (const DockWidget& dock: m_dockWidgets)
+	{
+		if (std::string(dock.view->getName()) == "Search")
+		{
+			search = dock.widget;
+			break;
+		}
+	}
+	// Only a card of its own, in the window's layout: not floating, auto-hidden or tabbed.
+	if (search == nullptr || !search->isVisible() || search->isFloating() ||
+		search->dockWidget()->isOverlayed() || search->dockWidget()->isInSideBar() ||
+		search->dockWidget()->isTabbed())
+	{
+		return;
+	}
+
+	const QtDockCard* card{nullptr};
+	for (QWidget* parent{search->parentWidget()}; parent != nullptr && card == nullptr; parent = parent->parentWidget())
+	{
+		card = qobject_cast<const QtDockCard*>(parent);
+	}
+	if (card == nullptr)
+	{
+		return;
+	}
+
+	// Side by side with other cards it shares their height: trimming it would trim them.
+	const QRect cardRect{card->mapTo(this, QPoint{}), card->size()};
+	for (const QtDockCard* other: findChildren<QtDockCard*>())
+	{
+		const QRect otherRect{other->mapTo(this, QPoint{}), other->size()};
+		if (other != card && other->isVisible() && other->QWidget::window() == this &&
+			otherRect.top() < cardRect.bottom() && otherRect.bottom() > cardRect.top())
+		{
+			return;
+		}
+	}
+
+	const int excess{search->height() - search->minimumSizeHint().height()};
+	if (excess <= 0)
+	{
+		return;
+	}
+	// Give the space to the card below, or above when it is the bottom one.
+	const int heightBefore{search->dockWidget()->sizeInLayout().height()};
+	search->dockWidget()->resizeInLayout(0, 0, 0, -excess);
+	if (search->dockWidget()->sizeInLayout().height() == heightBefore)
+	{
+		search->dockWidget()->resizeInLayout(0, -excess, 0, 0);
+	}
 }
 
 bool QtMainWindow::focusNextPrevChild(bool  /*next*/)
@@ -989,6 +1051,7 @@ void QtMainWindow::resetWindowLayout()
 		UserPaths::getWindowSettingsFilePath());
 
 	applyDefaultDockLayout();
+	fitSearchDockToContentLater();
 }
 
 void QtMainWindow::applyDefaultDockLayout()

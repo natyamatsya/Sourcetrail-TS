@@ -1,38 +1,27 @@
+/* Back, history and forward: one pill of flat buttons, each with a round highlight inside. */
 #undo_redo_bar {
-	background: transparent;
+	background: <color:search/toolbar/segment>;
+	border: none;
+	border-radius: 14px;
+	margin-right: 4px;
 }
 
 QPushButton {
-	background: <color:search/button/normal>;
+	background: transparent;
 	border: none;
-	height: 30px;
-	width: 30px;
-}
-
-#undo_button {
-	border-bottom-left-radius: 12px;
-	border-top-left-radius: 12px;
-}
-
-#redo_button {
-	border-bottom-right-radius: 12px;
-	border-top-right-radius: 12px;
-}
-
-#history_button {
-	width: 14px;
-	margin-left: 2px;
-	margin-right: 2px;
-}
-
-QPushButton:disabled {
-	background: <color:search/button/disabled>;
+	border-radius: 12px;
+	margin: 2px;
+	padding: 0px;
 }
 
 QPushButton:hover {
-	background: <color:search/button/hover>;
+	background: <color:search/toolbar/hover>;
 }
 
 QPushButton:pressed {
-	background: <color:search/button/press>;
+	background: <color:search/toolbar/press>;
+}
+
+QPushButton:disabled {
+	background: transparent;
 }

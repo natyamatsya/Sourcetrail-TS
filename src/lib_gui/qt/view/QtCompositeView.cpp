@@ -43,9 +43,11 @@ QtCompositeView::QtCompositeView(
 		m_layout = new QVBoxLayout();
 	}
 
-	m_layout->setSpacing(5);
-	m_layout->setContentsMargins(8, 8 - indicatorHeight, 8, 7);
-	m_layout->setAlignment(Qt::AlignTop);
+	// The search bar's controls are 28 px tall, 8 px from the card's edges and 4 px apart;
+	// in a taller card they stay in the middle.
+	m_layout->setSpacing(4);
+	m_layout->setContentsMargins(8, 8 - indicatorHeight, 8, 8);
+	m_layout->setAlignment(Qt::AlignVCenter);
 
 	topLayout->addLayout(m_layout);
 

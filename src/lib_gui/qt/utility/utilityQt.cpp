@@ -131,17 +131,18 @@ QIcon createButtonIcon(const FilePath &iconPath, const std::string &colorId)
 {
 	ColorScheme *scheme = ColorScheme::getInstance().get();
 
+	const std::string disabledColorId{colorId + "/icon_disabled"};
+	const bool hasDisabledColor{scheme->hasColor(disabledColorId)};
+
 	QIcon icon;
-	for (const QPixmap &pixmap : iconPixmaps(iconPath))
+	for (const QPixmap &pixmap: iconPixmaps(iconPath))
 	{
 		icon.addPixmap(utility::colorizePixmap(pixmap, scheme->getColor(colorId + "/icon").c_str()));
-
-		if (scheme->hasColor(colorId + "/icon_disabled"))
+		if (hasDisabledColor)
 		{
-			icon.addPixmap(utility::colorizePixmap(pixmap, scheme->getColor(colorId + "/icon_disabled").c_str()), QIcon::Disabled);
+			icon.addPixmap(utility::colorizePixmap(pixmap, scheme->getColor(disabledColorId).c_str()), QIcon::Disabled);
 		}
 	}
-
 	return icon;
 }
 

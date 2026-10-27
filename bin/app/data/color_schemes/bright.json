@@ -445,7 +445,7 @@
       },
       "field": {
          "background": "white",
-         "border": "#B0B0B0",
+         "border": "#C9CCD2",
          "highlight": "#929292",
          "text": "black"
       },
@@ -497,6 +497,13 @@
                "text": "black"
             }
          }
+      },
+      "toolbar": {
+         "hover": "#E6E8EB",
+         "icon": "#5F636B",
+         "icon_disabled": "#BDC0C6",
+         "press": "#D8DBE0",
+         "segment": "#F2F3F5"
       }
    },
    "tab": {
