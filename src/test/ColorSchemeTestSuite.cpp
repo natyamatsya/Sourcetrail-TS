@@ -89,3 +89,28 @@ TEST_CASE("every colour scheme has the docking chrome's colours")
 		"window/dock/tab_selected",
 	});
 }
+
+TEST_CASE("every colour scheme has the colours the code view's style sheet asks for")
+{
+	const std::vector<std::string> keys = styleSheetColorKeys(QtResources::CODE_VIEW_CSS);
+	REQUIRE(!keys.empty());
+
+	requireColors(keys);
+}
+
+TEST_CASE("every colour scheme has the code view's header colours")
+{
+	// The code view's headers sit on the card; code_view.css paints them with these, and the
+	// file title's icon takes code/header/muted.
+	requireColors({
+		"code/header/background",
+		"code/header/text",
+		"code/header/muted",
+		"code/header/hover",
+		"code/header/press",
+		"code/header/line",
+		"code/header/checked",
+		"code/header/pill/background",
+		"code/header/pill/text",
+	});
+}

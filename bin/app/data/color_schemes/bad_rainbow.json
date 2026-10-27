@@ -17,6 +17,19 @@
             "text": "black"
          }
       },
+      "header": {
+         "background": "#494949",
+         "checked": "#6E6E6E",
+         "hover": "#555555",
+         "line": "#575757",
+         "muted": "#C8C8C8",
+         "pill": {
+            "background": "#5A5A5A",
+            "text": "#E6E6E6"
+         },
+         "press": "#5F5F5F",
+         "text": "#F4F4F4"
+      },
       "navigation": {
          "background": "#494949",
          "line": "#FFF",
