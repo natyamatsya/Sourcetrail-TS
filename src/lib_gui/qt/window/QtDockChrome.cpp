@@ -35,6 +35,10 @@ constexpr char headerHoveredProperty[]{"dockHeaderHovered"};
 constexpr char tabsOfferedProperty[]{"dockHeaderTabsOffered"};
 constexpr char tabsHostProperty[]{"dockHeaderTabsHost"};
 constexpr char tabsRevisionProperty[]{"dockHeaderTabsRevision"};
+// And between a page offering a bar and the header showing it (QtDockChrome::offerBarToDockHeader).
+constexpr char barProperty[]{"dockHeaderBar"};
+constexpr char barHolderProperty[]{"dockHeaderBarHolder"};
+constexpr char barSizePolicyProperty[]{"dockHeaderBarSizePolicy"};
 
 constexpr qreal glyphSize{12};
 
@@ -277,6 +281,16 @@ QTabWidget* offeredTabs(KDDockWidgets::Core::DockWidget* dockWidget)
 	}
 	return nullptr;
 }
+
+QWidget* offeredBar(const QWidget& page)
+{
+	return qobject_cast<QWidget*>(page.property(barProperty).value<QObject*>());
+}
+
+QWidget* barHolder(const QWidget& bar)
+{
+	return qobject_cast<QWidget*>(bar.property(barHolderProperty).value<QObject*>());
+}
 }	 // namespace
 
 // QtDockChrome
@@ -294,6 +308,18 @@ bool QtDockChrome::tabsInDockHeader(const QTabWidget& tabs)
 void QtDockChrome::dockHeaderTabsChanged(QTabWidget& tabs)
 {
 	tabs.setProperty(tabsRevisionProperty, tabs.property(tabsRevisionProperty).toInt() + 1);
+}
+
+void QtDockChrome::offerBarToDockHeader(QWidget& page, QWidget& bar)
+{
+	QWidget* const holder{bar.parentWidget()};
+	page.setProperty(barProperty, QVariant::fromValue(static_cast<QObject*>(&bar)));
+	bar.setProperty(barHolderProperty, QVariant::fromValue(static_cast<QObject*>(holder)));
+	if (holder != nullptr)
+	{
+		// In the header, the bar outlives its page otherwise.
+		QObject::connect(holder, &QObject::destroyed, &bar, &QObject::deleteLater);
+	}
 }
 
 // QtDockGrip
@@ -610,6 +636,10 @@ bool QtDockHeader::event(QEvent* event)
 			// Tabs in a hidden header could not be reached: they go back to their view.
 			updateHostedTabs();
 			break;
+		case QEvent::Resize:
+			// The page's bar stays in the header while there is room for it.
+			updateHostedBar();
+			break;
 		case QEvent::LayoutRequest:
 			// Posted when the dock's icon changes, among others.
 			updateIconVisibility();
@@ -626,6 +656,10 @@ bool QtDockHeader::eventFilter(QObject* watched, QEvent* event)
 		static_cast<QDynamicPropertyChangeEvent*>(event)->propertyName() == tabsRevisionProperty)
 	{
 		syncTabs();
+	}
+	else if (watched == m_watchedBar && event->type() == QEvent::LayoutRequest)
+	{
+		updateHostedBar();	  // it grew or shrank
 	}
 	return TitleBar::eventFilter(watched, event);
 }
@@ -729,19 +763,28 @@ void QtDockHeader::hostTabs(QTabWidget& tabs)
 
 	m_hostedTabs = &tabs;
 	m_hostedTabsCurrentChanged = connect(&tabs, &QTabWidget::currentChanged, m_tabs, &QTabBar::setCurrentIndex);
+	m_hostedTabsPageChanged = connect(&tabs, &QTabWidget::currentChanged, this, &QtDockHeader::updateHostedBar);
 	m_hostedTabsDestroyed = connect(&tabs, &QObject::destroyed, this, &QtDockHeader::releaseTabs);
 	tabs.installEventFilter(this);
 	syncTabs();
 	m_tabs->show();
 
 	tabs.setProperty(tabsHostProperty, QVariant::fromValue(reinterpret_cast<quintptr>(this)));
+	updateHostedBar();
 	update();
 }
 
 void QtDockHeader::releaseTabs()
 {
 	disconnect(m_hostedTabsCurrentChanged);
+	disconnect(m_hostedTabsPageChanged);
 	disconnect(m_hostedTabsDestroyed);
+	returnBar();
+	if (m_watchedBar != nullptr)
+	{
+		m_watchedBar->removeEventFilter(this);
+	}
+	m_watchedBar = nullptr;
 	if (m_hostedTabs != nullptr)
 	{
 		m_hostedTabs->removeEventFilter(this);
@@ -776,6 +819,116 @@ void QtDockHeader::syncTabs()
 		m_tabs->setTabToolTip(index, m_hostedTabs->tabToolTip(index));
 	}
 	m_tabs->setCurrentIndex(m_hostedTabs->currentIndex());
+}
+
+void QtDockHeader::updateHostedBar()
+{
+	if (inDtor() || m_tabs == nullptr)
+	{
+		return;
+	}
+	QWidget* const page{m_hostedTabs != nullptr ? m_hostedTabs->currentWidget() : nullptr};
+	QWidget* const bar{page != nullptr ? offeredBar(*page) : nullptr};
+	if (bar != m_watchedBar)
+	{
+		if (m_watchedBar != nullptr)
+		{
+			m_watchedBar->removeEventFilter(this);
+		}
+		m_watchedBar = bar;
+		if (bar != nullptr)
+		{
+			bar->installEventFilter(this);
+		}
+	}
+
+	QWidget* const wanted{bar != nullptr && hasRoomFor(*bar) ? bar : nullptr};
+	if (wanted == m_bar)
+	{
+		return;
+	}
+	returnBar();
+	if (wanted != nullptr)
+	{
+		takeBar(*wanted);
+	}
+}
+
+bool QtDockHeader::hasRoomFor(const QWidget& bar) const
+{
+	// What the header shows besides the bar, and the bar with its divider, side by side.
+	const int spacing{std::max(m_layout->spacing(), 0)};
+	const QMargins margins{m_layout->contentsMargins()};
+	int needed{margins.left() + margins.right()};
+	for (int index{0}; index < m_layout->count(); ++index)
+	{
+		QLayoutItem* const item{m_layout->itemAt(index)};
+		const QWidget* const widget{item->widget()};
+		if (widget == nullptr || widget == m_bar || widget == m_barDivider || widget->isHidden())
+		{
+			continue;
+		}
+		needed += item->sizeHint().width() + spacing;
+	}
+	needed += 1 + spacing + bar.sizeHint().width();
+	return needed <= width();
+}
+
+void QtDockHeader::takeBar(QWidget& bar)
+{
+	if (m_barDivider == nullptr)
+	{
+		m_barDivider = new QWidget(this);
+		m_barDivider->setObjectName(QStringLiteral("dock_header_divider"));
+		m_barDivider->setFixedSize(1, 14);
+	}
+
+	// Its width does not count towards the header's minimum: the header gives the bar back
+	// when there is no room for it (hasRoomFor), rather than making the card wider.
+	bar.setProperty(barSizePolicyProperty, QVariant::fromValue(bar.sizePolicy()));
+	QSizePolicy policy{bar.sizePolicy()};
+	policy.setHorizontalPolicy(QSizePolicy::Ignored);
+	bar.setSizePolicy(policy);
+
+	const int index{m_layout->indexOf(m_tabs) + 1};
+	m_layout->insertWidget(index, m_barDivider);
+	m_layout->insertWidget(index + 1, &bar, 1);	   // the room up to the buttons
+	m_barDivider->show();
+	bar.show();
+	m_bar = &bar;
+
+	if (QWidget* const holder{barHolder(bar)})
+	{
+		holder->hide();
+	}
+}
+
+void QtDockHeader::returnBar()
+{
+	if (m_barDivider != nullptr)
+	{
+		m_layout->removeWidget(m_barDivider);
+		m_barDivider->hide();
+	}
+
+	QWidget* const bar{m_bar};
+	m_bar = nullptr;
+	if (bar == nullptr)
+	{
+		return;
+	}
+	m_layout->removeWidget(bar);
+	bar->setSizePolicy(bar->property(barSizePolicyProperty).value<QSizePolicy>());
+
+	QWidget* const holder{barHolder(*bar)};
+	if (holder == nullptr || holder->layout() == nullptr)
+	{
+		bar->hide();
+		return;
+	}
+	holder->layout()->addWidget(bar);
+	bar->show();
+	holder->show();
 }
 
 // QtDockTabStack

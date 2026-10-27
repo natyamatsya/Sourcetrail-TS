@@ -37,6 +37,12 @@ void offerTabsToDockHeader(QTabWidget& tabs);
 bool tabsInDockHeader(const QTabWidget& tabs);
 // Tell the hosting header that tabs were added, removed or renamed.
 void dockHeaderTabsChanged(QTabWidget& tabs);
+
+// A page of offered tabs can put a bar of its own into the header too, right of the tabs: its
+// filters, say. The bar sits alone in a holder of the page's, which shows it while the header
+// does not: while the header hosts the tabs, the page is current and the header has room for
+// it, the bar is in the header and the holder hidden. Offer it once the bar is in its holder.
+void offerBarToDockHeader(QWidget& page, QWidget& bar);
 }	 // namespace QtDockChrome
 
 // The small grip to pick a card up by: two columns of three dots, with an open hand cursor
@@ -169,11 +175,21 @@ private:
 	void releaseTabs();
 	void syncTabs();
 
+	// The bar of the hosted tabs' current page (QtDockChrome::offerBarToDockHeader).
+	void updateHostedBar();
+	bool hasRoomFor(const QWidget& bar) const;
+	void takeBar(QWidget& bar);
+	void returnBar();
+
 	QtDockGrip* m_grip{nullptr};
 	QTabBar* m_tabs{nullptr};
 	QPointer<QTabWidget> m_hostedTabs;
 	QMetaObject::Connection m_hostedTabsCurrentChanged;
+	QMetaObject::Connection m_hostedTabsPageChanged;
 	QMetaObject::Connection m_hostedTabsDestroyed;
+	QWidget* m_barDivider{nullptr};
+	QPointer<QWidget> m_bar;		   // in the header
+	QPointer<QWidget> m_watchedBar;	   // the current page's, watched for its size
 };
 
 // The stack of a card's tabs. When its tabs are the header (docks tabbed together), the grip
