@@ -5,9 +5,7 @@
 #include "MessageErrorsForFile.h"
 #endif
 #include "Project.h"
-#include "QtIconStateButton.h"
-#include "QtResources.h"
-#include "QtSelfRefreshIconButton.h"
+#include "QtCodeGlyphButton.h"
 
 #include <QHBoxLayout>
 #include <QLabel>
@@ -23,7 +21,6 @@ import srctrl.messaging;
 QtCodeFileTitleBar::QtCodeFileTitleBar(QWidget* parent, bool isHovering, bool isSingle)
 	: QtHoverButton(parent)
 {
-	using enum QtIconStateButton::ButtonState;
 	setObjectName(QStringLiteral("title_bar"));
 	setProperty("hovering", isHovering);
 	setAttribute(Qt::WA_LayoutUsesWidgetRect);	  // fixes layouting on Mac
@@ -39,34 +36,28 @@ QtCodeFileTitleBar::QtCodeFileTitleBar(QWidget* parent, bool isHovering, bool is
 	titleLayout->setAlignment(Qt::AlignLeft);
 	setLayout(titleLayout);
 
-	m_expandButton = new QtSelfRefreshIconButton(
-		QLatin1String(""),
-		QtResources::CODE_VIEW_SNIPPET_ARROW_RIGHT,
-		"code/file/title",
-		this);
-	m_collapseButton = new QtSelfRefreshIconButton(
-		QLatin1String(""), QtResources::CODE_VIEW_SNIPPET_ARROW_DOWN, "code/file/title", this);
+	m_expandButton = new QtCodeGlyphButton(QtCodeGlyph::ChevronRight, this);
+	m_collapseButton = new QtCodeGlyphButton(QtCodeGlyph::ChevronDown, this);
 
 	m_expandButton->setToolTip(QStringLiteral("expand"));
 	m_collapseButton->setToolTip(QStringLiteral("collapse"));
 	m_expandButton->setAccessibleName(tr("Expand"));
 	m_collapseButton->setAccessibleName(tr("Collapse"));
 
-	for (QtSelfRefreshIconButton* button: {m_expandButton, m_collapseButton})
+	for (QtCodeGlyphButton* button: {m_expandButton, m_collapseButton})
 	{
-		button->setIconSize(QSize(9, 9));
 		button->setObjectName(QStringLiteral("expand_button"));
 		titleLayout->addWidget(button);
 	}
 
 	connect(
 		m_expandButton,
-		&QtSelfRefreshIconButton::clicked,
+		&QtCodeGlyphButton::clicked,
 		this,
 		&QtCodeFileTitleBar::clickedExpandButton);
 	connect(
 		m_collapseButton,
-		&QtSelfRefreshIconButton::clicked,
+		&QtCodeGlyphButton::clicked,
 		this,
 		&QtCodeFileTitleBar::clickedCollapseButton);
 
@@ -97,44 +88,24 @@ QtCodeFileTitleBar::QtCodeFileTitleBar(QWidget* parent, bool isHovering, bool is
 		MessageErrorsForFile(m_titleButton->getFilePath()).dispatch();
 	});
 
-	QColor inactiveColor(0x5E, 0x5D, 0x5D);
-
-	m_snippetButton = new QtIconStateButton(this);
-	m_snippetButton->addState(
-		STATE_DEFAULT, QtResources::CODE_VIEW_SNIPPET_ACTIVE);
-	m_snippetButton->addState(
-		STATE_HOVERED,
-		QtResources::CODE_VIEW_SNIPPET_INACTIVE,
-		inactiveColor);
-	m_snippetButton->addState(
-		STATE_DISABLED, QtResources::CODE_VIEW_SNIPPET_INACTIVE);
+	m_snippetButton = new QtCodeGlyphButton(QtCodeGlyph::Snippets, this);
 	m_snippetButton->setToolTip(QStringLiteral("show snippets"));
 	m_snippetButton->setAccessibleName(tr("Show Snippets"));
 
-	m_maximizeButton = new QtIconStateButton(this);
-	m_maximizeButton->addState(
-		STATE_DEFAULT, QtResources::CODE_VIEW_MAXIMIZE_ACTIVE);
-	m_maximizeButton->addState(
-		STATE_HOVERED,
-		QtResources::CODE_VIEW_MAXIMIZE_INACTIVE,
-		inactiveColor);
-	m_maximizeButton->addState(
-		STATE_DISABLED, QtResources::CODE_VIEW_MAXIMIZE_INACTIVE);
+	m_maximizeButton = new QtCodeGlyphButton(QtCodeGlyph::Maximize, this);
 	m_maximizeButton->setToolTip(QStringLiteral("maximize"));
 	m_maximizeButton->setAccessibleName(tr("Maximize"));
 
-	for (QtIconStateButton* button: {m_snippetButton, m_maximizeButton})
+	for (QtCodeGlyphButton* button: {m_snippetButton, m_maximizeButton})
 	{
-		button->setIconSize(QSize(16, 16));
 		button->setObjectName(QStringLiteral("file_button"));
 		button->setEnabled(false);
+		button->setFaintUntilHovered(this);
 		titleLayout->addWidget(button);
 	}
 
-	connect(
-		m_snippetButton, &QtIconStateButton::clicked, this, &QtCodeFileTitleBar::clickedSnippetButton);
-	connect(
-		m_maximizeButton, &QtIconStateButton::clicked, this, &QtCodeFileTitleBar::clickedMaximizeButton);
+	connect(m_snippetButton, &QtCodeGlyphButton::clicked, this, &QtCodeFileTitleBar::clickedSnippetButton);
+	connect(m_maximizeButton, &QtCodeGlyphButton::clicked, this, &QtCodeFileTitleBar::clickedMaximizeButton);
 
 	if (isSingle)
 	{
@@ -146,8 +117,6 @@ QtCodeFileTitleBar::QtCodeFileTitleBar(QWidget* parent, bool isHovering, bool is
 	{
 		m_snippetButton->hide();
 	}
-
-	titleLayout->addSpacing(5);
 }
 
 QtCodeFileTitleButton* QtCodeFileTitleBar::getTitleButton() const
@@ -218,9 +187,6 @@ void QtCodeFileTitleBar::setMinimized()
 	m_collapseButton->setVisible(false);
 	m_snippetButton->setEnabled(true);
 	m_maximizeButton->setEnabled(true);
-
-	m_snippetButton->hoverOut();
-	m_maximizeButton->hoverOut();
 }
 
 void QtCodeFileTitleBar::setSnippets()
@@ -229,9 +195,6 @@ void QtCodeFileTitleBar::setSnippets()
 	m_collapseButton->setVisible(true);
 	m_snippetButton->setEnabled(false);
 	m_maximizeButton->setEnabled(true);
-
-	m_snippetButton->hoverOut();
-	m_maximizeButton->hoverOut();
 }
 
 void QtCodeFileTitleBar::setMaximized()
@@ -240,9 +203,6 @@ void QtCodeFileTitleBar::setMaximized()
 	m_collapseButton->setVisible(false);
 	m_snippetButton->setEnabled(true);
 	m_maximizeButton->setEnabled(false);
-
-	m_snippetButton->hoverOut();
-	m_maximizeButton->hoverOut();
 }
 
 void QtCodeFileTitleBar::updateFromOther(const QtCodeFileTitleBar* other)
@@ -266,12 +226,21 @@ void QtCodeFileTitleBar::updateFromOther(const QtCodeFileTitleBar* other)
 	m_snippetButton->setEnabled(other->m_snippetButton->isEnabled());
 	m_maximizeButton->setEnabled(other->m_maximizeButton->isEnabled());
 
-	m_snippetButton->hoverOut();
-	m_maximizeButton->hoverOut();
-
 	disconnect();
 
 	connect(this, &QPushButton::clicked, this, &QtCodeFileTitleBar::clickedTitleBar);
+}
+
+void QtCodeFileTitleBar::enterEvent(QEnterEvent* event)
+{
+	QtHoverButton::enterEvent(event);
+	QtCodeGlyphButton::updateFaintButtons(*this);
+}
+
+void QtCodeFileTitleBar::leaveEvent(QEvent* event)
+{
+	QtHoverButton::leaveEvent(event);
+	QtCodeGlyphButton::updateFaintButtons(*this);
 }
 
 void QtCodeFileTitleBar::clickedTitleBar()

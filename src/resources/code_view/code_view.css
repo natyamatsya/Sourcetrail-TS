@@ -1,31 +1,32 @@
 #code_container, #code_file_list {
-	background-color: <color:code/background>;
+	background-color: <color:code/header/background>;
 }
 
 #code_file_single {
 	background-color: <color:code/snippet/background>;
 }
 
-#code_navigation {
-	background-color: <color:code/navigation/background>;
-}
-
 #code_container, #code_file_list {
 	border: none;
 }
 
+/* The top line: the references to step through, and the mode. Flat, on the card. */
+#code_navigation {
+	background-color: <color:code/header/background>;
+}
+
 #separator_gap {
-	background-color: <color:code/navigation/background>;
+	background-color: <color:code/header/background>;
 	border: none;
 }
 
 #separator_line {
-	background-color: <color:code/navigation/line>;
+	background-color: <color:code/header/line>;
 	border: none;
 }
 
 #focus_indicator {
-	background: <color:code/navigation/background>;
+	background: <color:code/header/background>;
 }
 
 #focus_indicator[focused=true] {
@@ -33,93 +34,59 @@
 }
 
 #code_navigation QLabel {
-	color: <color:code/file/title/text>;
-	font-size: <setting:font_size>px;
+	color: <color:code/header/muted>;
+	font-size: <setting:font_size-2>px;
 }
 
-#code_navigation QPushButton {
-	background: <color:search/button/normal>;
+QtCodeGlyphButton {
+	qproperty-glyphColor: <color:code/header/muted>;
+	background: transparent;
 	border: none;
-	color: <color:search/button/icon>;
-	height: 24px;
-	width: 24px;
+	border-radius: 6px;
 }
 
-#code_navigation QPushButton:hover, #code_navigation QPushButton:checked {
-	background: <color:search/button/hover>;
+QtCodeGlyphButton:hover {
+	background: <color:code/header/hover>;
 }
 
-#code_navigation QPushButton:disabled {
-	background: <color:search/button/disabled>;
+QtCodeGlyphButton:pressed {
+	background: <color:code/header/press>;
 }
 
-#code_navigation QPushButton:pressed {
-	background: <color:search/button/press>;
-}
-
-#code_navigation #reference_button_previous {
-	/*width: 20px;*/
-	padding-bottom: 2px;
-
-	border-bottom-left-radius: 11px;
-	border-top-left-radius: 11px;
-}
-
-#code_navigation #reference_button_next {
-	/*width: 20px;*/
-	padding-top: 3px;
-
-	border-bottom-right-radius: 11px;
-	border-top-right-radius: 11px;
-}
-
-#code_navigation #file_button_previous, #code_navigation #file_button_next {
-	width: 22px;
-}
-
-#code_navigation #file_button_previous, #code_navigation #local_reference_button_previous {
-	border-bottom-left-radius: 11px;
-	border-top-left-radius: 11px;
-}
-
-#code_navigation #local_reference_button_previous {
-	padding-bottom: 2px;
-}
-
-#code_navigation #local_reference_button_next {
-	padding-top: 3px;
-}
-
-#code_navigation #file_button_next, #code_navigation #local_reference_button_next {
-	border-bottom-right-radius: 11px;
-	border-top-right-radius: 11px;
+#code_navigation QtCodeGlyphButton {
+	min-width: 24px;
+	max-width: 24px;
+	min-height: 24px;
+	max-height: 24px;
 }
 
 #code_navigation #references_label {
+	background: transparent;
 	border: none;
-	border-radius: 10px;
-	color: <color:code/navigation/text>;
-	font-size: <setting:font_size>px;
-	padding: 0px 3px;
-	margin: 4px 6px 4px 6px;
+	padding: 0px;
+	margin: 0px 8px 0px 4px;
 }
 
-#code_navigation #mode_button_list {
-	padding-left: 2px;
+#code_navigation #mode_buttons {
+	background: <color:code/header/hover>;
+	border-radius: 6px;
 }
 
-#code_navigation #mode_button_single {
-	padding-right: 2px;
+#code_navigation #mode_buttons QtCodeGlyphButton {
+	qproperty-checkedGlyphColor: <color:code/header/text>;
+	border-radius: 4px;
+	min-width: 24px;
+	max-width: 24px;
+	min-height: 20px;
+	max-height: 20px;
 }
 
-#code_navigation #mode_button_list {
-	border-bottom-left-radius: 11px;
-	border-top-left-radius: 11px;
+#code_navigation #mode_buttons QtCodeGlyphButton:hover {
+	background: <color:code/header/press>;
 }
 
-#code_navigation #mode_button_single {
-	border-bottom-right-radius: 11px;
-	border-top-right-radius: 11px;
+#code_navigation #mode_buttons QtCodeGlyphButton:checked {
+	background: <color:code/header/checked>;
 }
 
 #code_file {
@@ -130,66 +97,95 @@
 }
 
 #code_file[last=true] {
-	border-bottom: 1px solid <color:code/file/background>;
+	border-bottom: 1px solid <color:code/header/line>;
 }
 
+/* A file's header: one slim line on the card, a hairline above it. */
 #title_bar, #title_bar_single {
-	background-color: <color:code/file/background>;
-	font-size: <setting:font_size>px;
+	background-color: <color:code/header/background>;
 	border: none;
+	border-left: 2px solid transparent;
+	font-size: <setting:font_size-2>px;
 }
 
 #title_bar[hovering=false] {
-	border-top: 1px solid <color:code/navigation/line>;
+	border-top: 1px solid <color:code/header/line>;
 }
 
 #title_bar[focused=true] {
-	border-left: 4px solid <color:window/focus>;
+	border-left: 2px solid <color:window/focus>;
 }
 
 #title_bar_single {
-	background-color: <color:code/file/background>;
-	padding-right: 5px;
+	border-top: 1px solid <color:code/header/line>;
+	border-bottom: 1px solid <color:code/header/line>;
+	padding-left: 4px;
+	padding-right: 4px;
 }
 
-#title_bar #screen_button, #title_bar_single #screen_button {
-	margin-right: 7px;
+/* The first file's header, kept at the top while its snippets scroll under it. */
+#title_bar[sticky=true] {
+	border-bottom: 1px solid <color:code/header/line>;
 }
 
 #title_button {
 	background-color: transparent;
 	border: none;
-	border-radius: 3px;
-	color: <color:code/file/title/text>;
-	font-size: <setting:font_size>px;
-	padding: 2px 4px;
-	margin: 1px 8px 1px 2px;
-}
-
-#title_bar_single #title_button {
-	margin: 3px 8px;
+	border-radius: 6px;
+	color: <color:code/header/text>;
+	font-size: <setting:font_size-2>px;
+	font-weight: 500;
+	padding: 0px 6px 0px 4px;
+	margin: 0px 4px 0px 0px;
+	text-align: left;
 }
 
 #title_button:hover {
-	background-color: <color:code/file/title/hover>;
+	background-color: <color:code/header/hover>;
 }
 
 #title_button:pressed {
-	background-color: <color:code/file/title/press>;
+	background-color: <color:code/header/press>;
 }
 
 #title_button[nonindexed=true] {
-	border: 1px solid <color:code/file/title/border>;
+	border: 1px solid <color:code/header/line>;
 }
 
+/* The reference count, a pill. */
 #references_label {
-	background-color: <color:code/file/ref_count/background>;
+	background-color: <color:code/header/pill/background>;
 	border: none;
-	border-radius: 10px;
-	color: <color:code/file/ref_count/text>;
-	font-size: <setting:font_size-2>px;
-	padding: 0px 3px;
-	margin: 4px 6px 4px 0px;
+	border-radius: 8px;
+	color: <color:code/header/pill/text>;
+	font-size: <setting:font_size-3>px;
+	min-height: 16px;
+	max-height: 16px;
+	padding: 0px 7px;
+	margin: 0px 4px;
+}
+
+#title_bar QtCodeGlyphButton, #title_bar_single QtCodeGlyphButton {
+	min-width: 22px;
+	max-width: 22px;
+	min-height: 22px;
+	max-height: 22px;
+}
+
+#title_bar #expand_button {
+	margin-left: 4px;
+}
+
+#title_bar #file_button, #title_bar_single #file_button {
+	margin-left: 2px;
+}
+
+#title_bar #file_button {
+	margin-right: 6px;
+}
+
+#title_bar #screen_button, #title_bar_single #screen_button {
+	margin-right: 4px;
 }
 
 #code_file #code_snippet {
@@ -250,28 +246,6 @@
 	color: <color:code/snippet/syntax/text>;
 	selection-color: <color:code/snippet/selection/text>;
 	selection-background-color: <color:code/snippet/selection/background>;
-}
-
-#title_bar #expand_button, #title_bar_single #expand_button {
-	background: transparent;
-	border: none;
-	margin: 3px;
-	max-height: 16px;
-	max-width: 16px;
-	margin-left: 8px;
-	margin-right: 0px;
-}
-
-#title_bar #file_button, #title_bar_single #file_button {
-	background: transparent;
-	border: none;
-	margin: 3px;
-	max-height: 16px;
-	max-width: 16px;
-}
-
-#title_bar #file_button:enabled, #title_bar_single #file_button:enabled {
-	border-image: url(<setting:gui_path>code_view/images/button_background.png);
 }
 
 #last_scroll_bar {

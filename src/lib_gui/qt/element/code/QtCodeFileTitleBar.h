@@ -6,9 +6,10 @@
 
 class QLabel;
 class QtCodeFileTitleButton;
-class QtIconStateButton;
-class QtSelfRefreshIconButton;
+class QtCodeGlyphButton;
 
+// A file's header line in the code view: expand or collapse, the file's name, its reference
+// count as a pill, and the buttons for its snippets or the whole file, faint until hovered.
 class QtCodeFileTitleBar: public QtHoverButton
 {
 	Q_OBJECT
@@ -37,6 +38,10 @@ public:
 
 	void updateFromOther(const QtCodeFileTitleBar* other);
 
+protected:
+	void enterEvent(QEnterEvent* event) override;
+	void leaveEvent(QEvent* event) override;
+
 private slots:
 	void clickedTitleBar();
 	void clickedExpandButton();
@@ -49,11 +54,11 @@ private:
 	QPushButton* m_showErrorsButton;
 	QLabel* m_referenceCount;
 
-	QtSelfRefreshIconButton* m_expandButton;
-	QtSelfRefreshIconButton* m_collapseButton;
+	QtCodeGlyphButton* m_expandButton;
+	QtCodeGlyphButton* m_collapseButton;
 
-	QtIconStateButton* m_snippetButton;
-	QtIconStateButton* m_maximizeButton;
+	QtCodeGlyphButton* m_snippetButton;
+	QtCodeGlyphButton* m_maximizeButton;
 };
 
 #endif	  // QT_CODE_FILE_TITLE_BAR_H

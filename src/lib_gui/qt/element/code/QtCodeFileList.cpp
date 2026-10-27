@@ -13,6 +13,7 @@
 #include "Platform.h"
 
 #include <QScrollBar>
+#include <QStyle>
 #include <QTimer>
 #include <QVBoxLayout>
 
@@ -60,6 +61,8 @@ QtCodeFileList::QtCodeFileList(QtCodeNavigator *navigator)
 	m_scrollArea->setWidget(m_filesArea);
 
 	m_firstSnippetTitleBar = new QtCodeFileTitleBar(m_scrollArea, true);
+	m_firstSnippetTitleBar->setProperty("sticky", true);
+	m_firstSnippetTitleBar->style()->polish(m_firstSnippetTitleBar);
 	m_firstSnippetTitleBar->hide();
 
 	m_lastSnippetScrollBar = new QScrollBar(Qt::Horizontal, m_scrollArea);
