@@ -560,8 +560,16 @@
       },
       "dock": {
          "background": "#808080",
+         "canvas": "#3A3A3A",
+         "card": "#494949",
+         "card_border": "#626262",
+         "handle": "#707070",
+         "handle_hover": "#C8C8C8",
+         "header": "#555555",
+         "header_text": "#F0F0F0",
          "icon_type": "white",
          "line": "#A0A0A0",
+         "tab_selected": "#6E6E6E",
          "text": "white"
       },
       "focus": "#9BF51D",
