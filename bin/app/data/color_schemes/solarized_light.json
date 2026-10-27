@@ -408,7 +408,7 @@
          }
       },
       "toolbar": {
-         "background": "#E6EEE8D5",
+         "background": "#EEE8D5",
          "border": "#DDD6C1",
          "checked": "#26000000",
          "hover": "#12000000",

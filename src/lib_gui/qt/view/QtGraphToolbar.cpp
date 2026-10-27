@@ -71,8 +71,8 @@ QWidget& QtGraphToolbar::addSection(std::initializer_list<QWidget*> controls)
 	QWidget* section{new QWidget(this)};
 	section->setObjectName(QStringLiteral("graph_toolbar_section"));
 
-	// Faint at rest (see setFirm). The pill itself is not faded, so it keeps the graph's
-	// lines and labels from showing through the controls.
+	// Faint at rest (see setFirm). The pill itself is not faded: it is opaque, so the graph's
+	// lines and labels do not show through the controls.
 	QGraphicsOpacityEffect* opacity{new QGraphicsOpacityEffect(section)};
 	opacity->setOpacity(m_firm ? 1.0 : restingOpacity);
 	section->setGraphicsEffect(opacity);
@@ -116,13 +116,8 @@ void QtGraphToolbar::paintEvent(QPaintEvent* /*event*/)
 	painter.setRenderHint(QPainter::Antialiasing);
 
 	const QRectF pill{QRectF{rect()}.adjusted(0.5, 0.5, -0.5, -0.5)};
-	QColor background{m_backgroundColor};
-	if (m_firm)
-	{
-		background.setAlpha(255);
-	}
 	painter.setPen(QPen{m_borderColor, 1.0});
-	painter.setBrush(background);
+	painter.setBrush(m_backgroundColor);
 	painter.drawRoundedRect(pill, cornerRadius - 0.5, cornerRadius - 0.5);
 
 	painter.setRenderHint(QPainter::Antialiasing, false);

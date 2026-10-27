@@ -9,8 +9,8 @@
 #include <vector>
 
 // The graph view's controls: one slim upright pill floating over the graph, its controls
-// stacked in sections divided by hairlines. It is slightly translucent and its controls faint
-// until the mouse is over it. Where the view is too short for a single column, the sections
+// stacked in sections divided by hairlines. It is opaque, a graph scrolled under it hidden,
+// and its controls are faint until the mouse is over it. Where the view is too short for a single column, the sections
 // wrap into further columns. The colours come from graph_view.css as qproperty-* values, so
 // they follow the colour scheme.
 class QtGraphToolbar: public QFrame
