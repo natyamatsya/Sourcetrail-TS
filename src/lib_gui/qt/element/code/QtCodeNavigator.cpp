@@ -45,13 +45,25 @@ import srctrl.messaging;
 import srctrl.settings;
 #endif
 
+namespace
+{
+// Space below the code, enough to clear the corners of the card around it: they reach as far
+// into the card as its radius (9 px) and its border (1 px), and a radius of 10 px still fits.
+constexpr int bottomInset{10};
+}	 // namespace
+
 QtCodeNavigator::QtCodeNavigator(QWidget* parent)
 	: QWidget(parent),  m_schedulerId(TabIds::ignore())
 {
 	using enum QtCodeNavigator::Mode;
+	setAttribute(Qt::WA_StyledBackground);	  // the card's colour below the code, from the style sheet
+
 	QVBoxLayout* layout = new QVBoxLayout();
 	layout->setSpacing(0);
-	layout->setContentsMargins(0, 0, 0, 0);
+	// The code stays off the card's bottom corners: the card paints its rounded corners over its
+	// content, and a view scrolling under them has to repaint all of itself on every step
+	// instead of moving what it has (see QtDockCard).
+	layout->setContentsMargins(0, 0, 0, bottomInset);
 	layout->setAlignment(Qt::AlignTop);
 	setLayout(layout);
 
