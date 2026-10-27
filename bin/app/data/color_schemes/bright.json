@@ -543,8 +543,9 @@
       "focus": "#FF5900",
       "scrollbar": {
          "background": "transparent",
-         "handle": "#80999999",
-         "line": "#80999999"
+         "handle": "#596F747E",
+         "handle_hover": "#A66F747E",
+         "track_hover": "#0F000000"
       },
       "separator": "#A2A2A2"
    }
