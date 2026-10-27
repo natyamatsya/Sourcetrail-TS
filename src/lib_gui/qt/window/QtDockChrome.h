@@ -4,6 +4,8 @@
 #include <QColor>
 #include <QHash>
 #include <QIcon>
+#include <QMetaObject>
+#include <QPointer>
 #include <QWidget>
 
 #include <kddockwidgets/qtwidgets/ViewFactory.h>
@@ -12,6 +14,9 @@
 #include <kddockwidgets/qtwidgets/views/SideBar.h>
 #include <kddockwidgets/qtwidgets/views/Stack.h>
 #include <kddockwidgets/qtwidgets/views/TitleBar.h>
+
+class QTabBar;
+class QTabWidget;
 
 // Sourcetrail's docking chrome, the views KDDockWidgets builds the docks from (see
 // QtDockViewFactory): every dock group is a card with rounded corners on the window's canvas,
@@ -23,6 +28,15 @@ namespace QtDockChrome
 {
 // Width of the gutters between the cards, and of the canvas around them (logical pixels).
 inline constexpr int gutterWidth{6};
+
+// A view whose QTabWidget can show its tabs in its dock's header instead, for example the
+// Status view's "Status | Errors": offer them once. While a header hosts them,
+// tabsInDockHeader() is true, and the tab widget gets a QEvent::DynamicPropertyChange whenever
+// that changes: hide the tab widget's own tab bar meanwhile.
+void offerTabsToDockHeader(QTabWidget& tabs);
+bool tabsInDockHeader(const QTabWidget& tabs);
+// Tell the hosting header that tabs were added, removed or renamed.
+void dockHeaderTabsChanged(QTabWidget& tabs);
 }	 // namespace QtDockChrome
 
 // The small grip to pick a card up by: two columns of three dots, with an open hand cursor
@@ -130,25 +144,36 @@ private:
 	QColor m_handleHoverColor{0x6F, 0x74, 0x7E};
 };
 
-// A card's slim header: the grip, the title, and the buttons.
+// A card's slim header: the grip, the title, and the buttons. It shows the tabs a dock offers
+// (QtDockChrome::offerTabsToDockHeader) in place of the title.
 class QtDockHeader: public KDDockWidgets::QtWidgets::TitleBar
 {
 	Q_OBJECT
 
 public:
 	QtDockHeader(KDDockWidgets::Core::TitleBar* controller, KDDockWidgets::Core::View* parent);
+	~QtDockHeader() override;
 
 protected:
 	void init() override;
 	bool event(QEvent* event) override;
+	bool eventFilter(QObject* watched, QEvent* event) override;
 	void paintEvent(QPaintEvent* event) override;
 	void enterEvent(QEnterEvent* event) override;
 	void leaveEvent(QEvent* event) override;
 
 private:
 	void updateIconVisibility();
+	void updateHostedTabs();
+	void hostTabs(QTabWidget& tabs);
+	void releaseTabs();
+	void syncTabs();
 
 	QtDockGrip* m_grip{nullptr};
+	QTabBar* m_tabs{nullptr};
+	QPointer<QTabWidget> m_hostedTabs;
+	QMetaObject::Connection m_hostedTabsCurrentChanged;
+	QMetaObject::Connection m_hostedTabsDestroyed;
 };
 
 // The stack of a card's tabs. When its tabs are the header (docks tabbed together), the grip

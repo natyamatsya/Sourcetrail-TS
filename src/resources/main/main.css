@@ -80,11 +80,13 @@ QtDockTabStack::pane {
 	border-top: 1px solid <color:window/dock/card_border>;
 }
 
-KDDockWidgets--QtWidgets--TabBar {
+KDDockWidgets--QtWidgets--TabBar,
+QTabBar#dock_header_tabs {
 	background: transparent;
 }
 
-KDDockWidgets--QtWidgets--TabBar::tab {
+KDDockWidgets--QtWidgets--TabBar::tab,
+QTabBar#dock_header_tabs::tab {
 	background: transparent;
 	border: none;
 	border-radius: 6px;
@@ -94,11 +96,13 @@ KDDockWidgets--QtWidgets--TabBar::tab {
 	padding: 2px 10px;
 }
 
-KDDockWidgets--QtWidgets--TabBar::tab:hover {
+KDDockWidgets--QtWidgets--TabBar::tab:hover,
+QTabBar#dock_header_tabs::tab:hover {
 	color: <color:window/dock/text>;
 }
 
-KDDockWidgets--QtWidgets--TabBar::tab:selected {
+KDDockWidgets--QtWidgets--TabBar::tab:selected,
+QTabBar#dock_header_tabs::tab:selected {
 	background: <color:window/dock/tab_selected>;
 	color: <color:window/dock/text>;
 }

@@ -187,7 +187,9 @@ QList<QString> listAllEntries(const QString &directory)
 		// Filter out Qt internal directories/resources:
 		if (entry.startsWith(":/qpdf") || entry.startsWith(":/qt-project.org") ||
 			// vcpkg-build resources:
-			entry.startsWith(":/cursor-atlas.png") || entry.startsWith(":/cursor.json"))
+			entry.startsWith(":/cursor-atlas.png") || entry.startsWith(":/cursor.json") ||
+			// KDDockWidgets' icons, linked in with the docks (QtDockChromeTestSuite):
+			entry.startsWith(":/img/"))
 		{
 			continue;
 		}

@@ -11,8 +11,10 @@
 #include <QPainter>
 #include <QPainterPath>
 #include <QPixmap>
+#include <QSignalBlocker>
 #include <QStyleOption>
 #include <QTabBar>
+#include <QTabWidget>
 
 #include <kddockwidgets/core/DockWidget.h>
 #include <kddockwidgets/core/Group.h>
@@ -27,8 +29,12 @@
 
 namespace
 {
-// A dynamic property: a header's hover state, for its buttons.
+// Dynamic properties: a header's hover state for its buttons, and the protocol between a view
+// offering its tabs and the header hosting them (see QtDockChrome::offerTabsToDockHeader).
 constexpr char headerHoveredProperty[]{"dockHeaderHovered"};
+constexpr char tabsOfferedProperty[]{"dockHeaderTabsOffered"};
+constexpr char tabsHostProperty[]{"dockHeaderTabsHost"};
+constexpr char tabsRevisionProperty[]{"dockHeaderTabsRevision"};
 
 constexpr qreal glyphSize{12};
 
@@ -250,7 +256,45 @@ QIcon drawGlyph(KDDockWidgets::TitleBarButtonType type)
 	}
 	return icon;
 }
+
+QTabWidget* offeredTabs(KDDockWidgets::Core::DockWidget* dockWidget)
+{
+	if (dockWidget == nullptr)
+	{
+		return nullptr;
+	}
+	const QWidget* dock{KDDockWidgets::QtCommon::View_qt::asQWidget(dockWidget->view())};
+	if (dock == nullptr)
+	{
+		return nullptr;
+	}
+	for (QTabWidget* tabs: dock->findChildren<QTabWidget*>())
+	{
+		if (tabs->property(tabsOfferedProperty).toBool())
+		{
+			return tabs;
+		}
+	}
+	return nullptr;
+}
 }	 // namespace
+
+// QtDockChrome
+
+void QtDockChrome::offerTabsToDockHeader(QTabWidget& tabs)
+{
+	tabs.setProperty(tabsOfferedProperty, true);
+}
+
+bool QtDockChrome::tabsInDockHeader(const QTabWidget& tabs)
+{
+	return tabs.property(tabsHostProperty).isValid();
+}
+
+void QtDockChrome::dockHeaderTabsChanged(QTabWidget& tabs)
+{
+	tabs.setProperty(tabsRevisionProperty, tabs.property(tabsRevisionProperty).toInt() + 1);
+}
 
 // QtDockGrip
 
@@ -536,6 +580,12 @@ QtDockHeader::QtDockHeader(KDDockWidgets::Core::TitleBar* controller, KDDockWidg
 {
 }
 
+QtDockHeader::~QtDockHeader()
+{
+	// Give the tabs back to their view, which shows them itself again.
+	releaseTabs();
+}
+
 void QtDockHeader::init()
 {
 	TitleBar::init();
@@ -547,12 +597,19 @@ void QtDockHeader::init()
 	m_grip = new QtDockGrip(this);
 	m_layout->insertWidget(0, m_grip);
 	updateIconVisibility();
+
+	connect(this, &TitleBar::currentDockWidgetChanged, this, &QtDockHeader::updateHostedTabs);
 }
 
 bool QtDockHeader::event(QEvent* event)
 {
 	switch (event->type())
 	{
+		case QEvent::ShowToParent:
+		case QEvent::HideToParent:
+			// Tabs in a hidden header could not be reached: they go back to their view.
+			updateHostedTabs();
+			break;
 		case QEvent::LayoutRequest:
 			// Posted when the dock's icon changes, among others.
 			updateIconVisibility();
@@ -561,6 +618,16 @@ bool QtDockHeader::event(QEvent* event)
 			break;
 	}
 	return TitleBar::event(event);
+}
+
+bool QtDockHeader::eventFilter(QObject* watched, QEvent* event)
+{
+	if (watched == m_hostedTabs && event->type() == QEvent::DynamicPropertyChange &&
+		static_cast<QDynamicPropertyChangeEvent*>(event)->propertyName() == tabsRevisionProperty)
+	{
+		syncTabs();
+	}
+	return TitleBar::eventFilter(watched, event);
 }
 
 void QtDockHeader::paintEvent(QPaintEvent* /*event*/)
@@ -574,6 +641,11 @@ void QtDockHeader::paintEvent(QPaintEvent* /*event*/)
 	QStyleOption option;
 	option.initFrom(this);
 	style()->drawPrimitive(QStyle::PE_Widget, &option, &painter, this);
+
+	if (m_hostedTabs != nullptr)
+	{
+		return;	   // its tabs are the title
+	}
 
 	int left{6};
 	for (const QWidget* before: {static_cast<QWidget*>(m_grip), static_cast<QWidget*>(m_dockWidgetIcon)})
@@ -614,6 +686,96 @@ void QtDockHeader::updateIconVisibility()
 	{
 		m_dockWidgetIcon->setVisible(!m_dockWidgetIcon->pixmap().isNull());
 	}
+}
+
+void QtDockHeader::updateHostedTabs()
+{
+	if (inDtor() || titleBar() == nullptr || m_dockWidgetIcon == nullptr)
+	{
+		return;
+	}
+	QTabWidget* const offered{isHidden() ? nullptr : offeredTabs(titleBar()->currentDockWidget())};
+	if (offered == m_hostedTabs)
+	{
+		return;
+	}
+	releaseTabs();
+	if (offered != nullptr)
+	{
+		hostTabs(*offered);
+	}
+}
+
+void QtDockHeader::hostTabs(QTabWidget& tabs)
+{
+	if (m_tabs == nullptr)
+	{
+		m_tabs = new QTabBar(this);
+		m_tabs->setObjectName(QStringLiteral("dock_header_tabs"));
+		m_tabs->setDrawBase(false);
+		m_tabs->setExpanding(false);
+		m_tabs->setUsesScrollButtons(true);
+		m_tabs->setElideMode(Qt::ElideRight);
+		m_tabs->setFocusPolicy(Qt::NoFocus);
+		m_layout->insertWidget(m_layout->indexOf(m_dockWidgetIcon) + 1, m_tabs);
+
+		connect(m_tabs, &QTabBar::currentChanged, this, [this](int index) {
+			if (m_hostedTabs != nullptr && index >= 0)
+			{
+				m_hostedTabs->setCurrentIndex(index);
+			}
+		});
+	}
+
+	m_hostedTabs = &tabs;
+	m_hostedTabsCurrentChanged = connect(&tabs, &QTabWidget::currentChanged, m_tabs, &QTabBar::setCurrentIndex);
+	m_hostedTabsDestroyed = connect(&tabs, &QObject::destroyed, this, &QtDockHeader::releaseTabs);
+	tabs.installEventFilter(this);
+	syncTabs();
+	m_tabs->show();
+
+	tabs.setProperty(tabsHostProperty, QVariant::fromValue(reinterpret_cast<quintptr>(this)));
+	update();
+}
+
+void QtDockHeader::releaseTabs()
+{
+	disconnect(m_hostedTabsCurrentChanged);
+	disconnect(m_hostedTabsDestroyed);
+	if (m_hostedTabs != nullptr)
+	{
+		m_hostedTabs->removeEventFilter(this);
+		// Another header may have taken them over meanwhile (the dock moved): leave them there.
+		if (m_hostedTabs->property(tabsHostProperty).value<quintptr>() == reinterpret_cast<quintptr>(this))
+		{
+			m_hostedTabs->setProperty(tabsHostProperty, QVariant{});
+		}
+	}
+	m_hostedTabs = nullptr;
+	if (m_tabs != nullptr)
+	{
+		m_tabs->hide();
+	}
+	update();
+}
+
+void QtDockHeader::syncTabs()
+{
+	if (m_tabs == nullptr || m_hostedTabs == nullptr)
+	{
+		return;
+	}
+	const QSignalBlocker blocker{m_tabs};
+	while (m_tabs->count() > 0)
+	{
+		m_tabs->removeTab(0);
+	}
+	for (int index{0}; index < m_hostedTabs->count(); ++index)
+	{
+		m_tabs->addTab(m_hostedTabs->tabText(index));
+		m_tabs->setTabToolTip(index, m_hostedTabs->tabToolTip(index));
+	}
+	m_tabs->setCurrentIndex(m_hostedTabs->currentIndex());
 }
 
 // QtDockTabStack

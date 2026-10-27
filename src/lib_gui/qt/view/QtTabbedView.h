@@ -26,10 +26,13 @@ public:
 
 private:
 	void setStyleSheet();
+	// Its tabs show in the dock's header while that hosts them (QtDockChrome).
+	void updateTabsPlacement();
 	bool eventFilter(QObject* obj, QEvent* event) override;
 
 	QTabWidget* m_widget;
 	QtSelfRefreshIconButton* m_closeButton;
+	bool m_tabsInHeader{false};
 };
 
 #endif	  // QT_TABBED_VIEW
