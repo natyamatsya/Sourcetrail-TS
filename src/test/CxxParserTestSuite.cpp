@@ -5085,14 +5085,15 @@ FilePath prebuildModules(
 	for (const auto& [name, code]: units)
 	{
 		std::ofstream(directory / name) << code;
+		// Generic (forward-slash) paths: Windows' backslashes are escapes in JSON.
 		files += std::format(
 			"{}{{\"path\": \"{}\", \"flags\": [{}]}}",
 			files.empty() ? "" : ", ",
-			(directory / name).string(),
+			(directory / name).generic_string(),
 			flags);
 	}
 	std::ofstream(directory / "request.json")
-		<< std::format("{{\"cacheDir\": \"{}\", \"files\": [{}]}}", directory.string(), files);
+		<< std::format("{{\"cacheDir\": \"{}\", \"files\": [{}]}}", directory.generic_string(), files);
 
 	CxxModulePrebuildRunner::run(FilePath((directory / "request.json").string()));
 	return FilePath(directory.string());

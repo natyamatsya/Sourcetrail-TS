@@ -354,7 +354,7 @@ TEST_CASE("source group cxx cdb prebuilds the modules a partial refresh's files 
 	std::ofstream(directory / "compile_commands.json") << std::format(
 		R"([{{"directory": "{0}", "file": "geo.cppm", "arguments": ["clang++", "-std=c++20", "-c", "geo.cppm"]}},
 		    {{"directory": "{0}", "file": "main.cpp", "arguments": ["clang++", "-std=c++20", "-c", "main.cpp"]}}])",
-		directory.string());
+		directory.generic_string());	// forward slashes: Windows' backslashes are escapes in JSON
 
 	ProjectSettings projectSettings;
 	projectSettings.setProjectFilePath("modules", FilePath(directory.string()));
