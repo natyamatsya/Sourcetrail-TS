@@ -58,12 +58,15 @@ QtErrorView::QtErrorView(ViewLayout* viewLayout)
 	m_table = new QtTable(widget);
 	m_model = new QStandardItemModel(widget);
 	m_table->setSortingEnabled(true);
+	// One line per error: paths are shortened in the middle, their tooltips have them whole.
+	m_table->setWordWrap(false);
+	m_table->setTextElideMode(Qt::ElideMiddle);
 	m_table->setModel(m_model);
 
 	// Setup Table Headers
 	m_model->setColumnCount(static_cast<int>(COLUMN_MAX) + 1);
 	m_table->setColumnWidth(std::to_underlying(Column::ID), 40);
-	m_table->setColumnWidth(std::to_underlying(Column::TYPE), 80);
+	m_table->setColumnWidth(std::to_underlying(Column::TYPE), 96);
 	m_table->setColumnWidth(std::to_underlying(Column::MESSAGE), 450);
 	m_table->setColumnWidth(std::to_underlying(Column::FILE), 300);
 	m_table->setColumnWidth(std::to_underlying(Column::LINE), 50);
@@ -326,12 +329,14 @@ void QtErrorView::addErrorToTable(const ErrorInfo& error)
 		new QStandardItem(error.fatal ? QStringLiteral("FATAL") : QStringLiteral("ERROR")));
 	if (error.fatal)
 	{
-		m_model->item(rowNumber, std::to_underlying(Column::TYPE))->setForeground(QBrush(Qt::red));
+		m_model->item(rowNumber, std::to_underlying(Column::TYPE))
+			->setForeground(QBrush(QColor(ColorScheme::getInstance()->getColor("table/text/error").c_str())));
 	}
 	m_model->item(rowNumber, std::to_underlying(Column::TYPE))->setIcon(s_errorIcon);
 
 	m_model->setItem(
 		rowNumber, std::to_underlying(Column::MESSAGE), new QStandardItem(QString::fromStdString(error.message)));
+	m_model->item(rowNumber, std::to_underlying(Column::MESSAGE))->setToolTip(QString::fromStdString(error.message));
 
 	m_model->setItem(
 		rowNumber, std::to_underlying(Column::FILE), new QStandardItem(QString::fromStdString(error.filePath)));

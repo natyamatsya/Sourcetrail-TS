@@ -536,16 +536,17 @@
       "background": "#494949",
       "table": "#D4D4D4",
       "table_line_1": {
-         "active": "#7B7B7B",
+         "active": "#6E6E6E",
          "normal": "#494949"
       },
       "table_line_2": {
-         "active": "#7B7B7B",
-         "normal": "#383838"
+         "active": "#6E6E6E",
+         "normal": "#424242"
       },
       "text": {
-         "active": "black",
+         "active": "white",
          "disabled": "#AAA",
+         "error": "#FF8080",
          "normal": "#D4D4D4"
       }
    },

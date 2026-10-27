@@ -89,3 +89,13 @@ TEST_CASE("every colour scheme has the docking chrome's colours")
 		"window/dock/tab_selected",
 	});
 }
+
+TEST_CASE("every colour scheme has the colours the Status and Errors tables ask for")
+{
+	const std::vector<std::string> keys = styleSheetColorKeys(QtResources::TABBED_VIEW_CSS);
+	REQUIRE(!keys.empty());
+	requireColors(keys);
+
+	// The type of an error row (QtStatusView, QtErrorView).
+	requireColors({"table/text/error"});
+}

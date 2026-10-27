@@ -129,7 +129,8 @@ void QtStatusView::addStatus(const std::vector<Status>& status)
 
 			if (s.type == StatusType::STATUS_ERROR)
 			{
-				m_model->item(rowNumber, static_cast<int>(STATUSVIEW_COLUMN::TYPE))->setForeground(QBrush(Qt::red));
+				m_model->item(rowNumber, static_cast<int>(STATUSVIEW_COLUMN::TYPE))
+					->setForeground(QBrush(QColor(ColorScheme::getInstance()->getColor("table/text/error").c_str())));
 			}
 		}
 
