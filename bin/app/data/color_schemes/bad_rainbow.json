@@ -506,6 +506,13 @@
                "text": "#3D3D3D"
             }
          }
+      },
+      "toolbar": {
+         "hover": "#5E5E5E",
+         "icon": "#F0F0F0",
+         "icon_disabled": "#808080",
+         "press": "#6E6E6E",
+         "segment": "#555555"
       }
    },
    "tab": {

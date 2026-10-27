@@ -477,6 +477,13 @@
                "text": "#F7F7F7"
             }
          }
+      },
+      "toolbar": {
+         "hover": "#3B3B3F",
+         "icon": "#B4B5BB",
+         "icon_disabled": "#5A5A60",
+         "press": "#47474C",
+         "segment": "#303032"
       }
    },
    "tab": {

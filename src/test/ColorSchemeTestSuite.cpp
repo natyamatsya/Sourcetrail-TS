@@ -89,3 +89,24 @@ TEST_CASE("every colour scheme has the docking chrome's colours")
 		"window/dock/tab_selected",
 	});
 }
+
+TEST_CASE("every colour scheme has the colours the search bar's style sheets ask for")
+{
+	// The search bar's flat buttons and field, in day and night schemes alike.
+	for (const char* styleSheet: {
+			 QtResources::SEARCH_VIEW_CSS,
+			 QtResources::UNDOREDO_VIEW_CSS,
+			 QtResources::REFRESH_VIEW_CSS,
+			 QtResources::BOOKMARK_VIEW_CSS,
+		 })
+	{
+		INFO(styleSheet);
+		const std::vector<std::string> keys = styleSheetColorKeys(styleSheet);
+		REQUIRE(!keys.empty());
+
+		requireColors(keys);
+	}
+
+	// The buttons colour their line icons with these (QtSearchBarButton).
+	requireColors({"search/toolbar/icon", "search/toolbar/icon_disabled"});
+}
