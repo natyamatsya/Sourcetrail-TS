@@ -16,11 +16,42 @@ QToolBar {
 	border: none;
 }
 
-/* The strip of open tabs (QtTabsView) sits on the canvas, like the cards. */
+/* The strip of open tabs (QtTabsView) and the status bar sit on the canvas, like the cards:
+   no lines of their own, spacing instead. */
 QToolBar#ToolTabs {
 	background: <color:window/dock/canvas>;
 	padding: 0px;
 	spacing: 0px;
+}
+
+QStatusBar {
+	background: <color:window/dock/canvas>;
+	border: none;
+	color: <color:window/dock/header_text>;
+	font-size: 11px;
+	min-height: 24px;
+	max-height: 24px;
+}
+
+QStatusBar::item {
+	border: none;
+}
+
+QStatusBar QLabel,
+QStatusBar QPushButton {
+	background: transparent;
+	border: none;
+	color: <color:window/dock/header_text>;
+	font-size: 11px;
+	padding: 0px 8px;
+}
+
+QStatusBar QPushButton:hover {
+	color: <color:window/dock/text>;
+}
+
+QStatusBar QPushButton[error=true] {
+	color: <color:window/status/error>;
 }
 
 /* Docking chrome (QtDockChrome): every dock group is a card with rounded corners on the
