@@ -410,6 +410,13 @@ with ui_query and press them with ui_invoke.
       modifiers: [shift, ctrl, alt, meta], wheel_delta: 120 per notch up,
       key: Enter|Escape|Tab|Left|F5|\"a\"|<Qt::Key code>, text }
   The graph zooms with ctrl + wheel and pans with a left drag on empty space.
+  Docks move and resize as a person's mouse moves them. A drag on a card's grip (the dots, \
+dock_grip, left of its title) lifts it: over another card, the drop indicators show; the \
+release over one docks it there (the center one tabs it in). A drag on a gutter between cards \
+(dock_gutter) resizes them. A drag may stop before its release: ui_frame then shows the \
+indicators, and the release in a later ui_input goes where the drag is (the widget that grabbed \
+the mouse), wherever it is aimed. The docks machine says where the docks went \
+(describe('machines')), and arranges them by name too.
   While a modal window is in front (a question box), input for anything outside it is \
 refused (ok: false), as a person's is.
   The result: `message` names the widget that received the input; once its effects \
@@ -444,7 +451,7 @@ machine_send { machine: \"question\", event: \"answer\", args: { label: \"Reinde
     },
     Topic {
         name: "machines",
-        summary: "State machines: app startup, the project's load, indexing, questions, what the views show, the search box, the bookmark editor, the project wizard, the preferences.",
+        summary: "State machines: app startup, the project's load, indexing, questions, what the views show, the search box, the bookmark editor, the project wizard, the preferences, the docks.",
         tools: &["machine_state", "machine_send"],
         doc: "\
 What waits for a person in Sourcetrail is a state machine: indexing (choose a mode, follow \
@@ -620,7 +627,42 @@ context.outcome \"saved\". Some changes then ask to restart (a question with OK)
   cancel                           editing: closes the dialog without saving (a previewed \
 colour scheme is reverted).
   context: fields, applying, error (editing); outcome (closed).
-  Recipe: open; set { fields: { font_size: \"16\", animations: false } }; save.",
+  Recipe: open; set { fields: { font_size: \"16\", animations: false } }; save.
+
+docks: idle -> applying -> idle
+  The main window's docks (Search, Graph, Code, Status) and how they are arranged, by the \
+docks' own calls, as their buttons and drags do: what a person sees and the layout saved on \
+exit follow. Every request below moves it to applying while the window carries it out; wait \
+with until: [\"idle\"]: context.outcome says what it did, or context.error how it fell short. A \
+request the layout rules out is refused at once, saying why (an unknown dock, listing the \
+docks; closing the last open one; tabbing a dock into itself...). A person's docking (a \
+drag, a gutter, a dock's buttons, the View menu) is a changed move, source ui, once it \
+settled; so is an agent's ui_input drag (describe('input')).
+  show { dock }                    a closed dock opens where it was; an auto-hidden one shows \
+over the others (overlay); a tab behind another becomes the current one.
+  close { dock }                   closes it, as its close button does.
+  float { dock }                   into a window of its own, as its float button does.
+  dock { dock, to, of? }           docks it at side `to` (left | right | top | bottom) of the \
+dock `of`, or of the whole layout without one (a floating or auto-hidden dock too).
+  tab { dock, into }               into `into`'s tabs (a docked or a floating dock's).
+  select_tab { dock }              makes its tab the current one.
+  auto_hide { dock }               into the side bar at the window's nearest edge, as its \
+auto-hide button does; show shows it over the others, restore puts it back.
+  restore { dock }                 an auto-hidden dock back into the layout, a floating one \
+back where it was docked.
+  resize { dock, width?, height? } its card to that size, moving the gutters around it (a \
+floating dock: its window); context.outcome says the size it got, which the docks around \
+it and their minimum sizes may limit.
+  reset                            View > Reset Layout: Search across the top, Graph and \
+Code side by side, Status across the bottom.
+  context: docks [{ name, open, visible, floating, auto_hidden? (the side bar's side), \
+overlay?, location? (docked: left | right | top | bottom | center, the side of the layout it \
+is at), x?, y? (docked: its card's top-left in the layout), width?, height? (its card, a \
+floating one's window), tabs? (the docks in its card, itself included, in order), \
+current_tab? }]; applying; outcome or error (what the last request did).
+  Recipe: the code view right of the graph, the status tabbed with it: machine_send { \
+machine: \"docks\", event: \"dock\", args: { dock: \"Code\", to: \"right\", of: \"Graph\" }, until: \
+[\"idle\"] }, then event \"tab\", args { dock: \"Status\", into: \"Code\" }.",
     },
     Topic {
         name: "logs",
@@ -654,6 +696,9 @@ const TOPIC_ALIASES: &[(&str, &str)] = &[
     ("project_wizard", "machines"),
     ("preferences", "machines"),
     ("settings", "machines"),
+    ("docks", "machines"),
+    ("dock", "machines"),
+    ("layout", "machines"),
 ];
 
 /// Tools as they were called before the area prefixes, and what they are now.
@@ -814,6 +859,26 @@ mod tests {
                     assert!(t.doc.contains(tool), "topic {} does not document {tool}", t.name);
                 }
             }
+        }
+    }
+
+    #[test]
+    fn the_docks_machine_is_documented_with_its_events() {
+        let machines = topic("docks").expect("describe('docks') finds a topic");
+        assert_eq!(machines.name, "machines");
+        for event in [
+            "show { dock }",
+            "close { dock }",
+            "float { dock }",
+            "dock { dock, to, of? }",
+            "tab { dock, into }",
+            "select_tab { dock }",
+            "auto_hide { dock }",
+            "restore { dock }",
+            "resize { dock, width?, height? }",
+            "reset",
+        ] {
+            assert!(machines.doc.contains(event), "the docks machine's {event} is not documented");
         }
     }
 
