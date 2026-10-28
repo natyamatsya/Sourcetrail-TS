@@ -1071,7 +1071,11 @@ bool detectCMakePreset(Detection& detection)
 	proposal.reasons.insert(
 		proposal.reasons.begin(),
 		std::format(
-			"Found CMakePresets.json: using configure preset '{}'{}{}", preset.name, label, generator));
+			"Found {}: using configure preset '{}'{}{}",
+			preset.file.empty() ? std::string{"CMakePresets.json"} : shown(fs::path{preset.file.str()}, detection.folder),
+			preset.name,
+			label,
+			generator));
 	if (chosen.configured)
 	{
 		const std::string which{

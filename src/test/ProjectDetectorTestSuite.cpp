@@ -134,6 +134,24 @@ TEST_CASE("ProjectDetector uses the first usable configure preset")
 	CHECK(mentions(proposal.reasons, "Other presets to choose from: 'release'"));
 }
 
+TEST_CASE("ProjectDetector names the presets file the chosen preset is in")
+{
+	const TestTempDirectory temp{"detectUserPreset"};
+	const fs::path folder{temp.getPath() / "app"};
+	write(folder / "CMakeLists.txt", "project(app)\n");
+	write(folder / "CMakePresets.json", R"({"version": 3, "configurePresets": [
+		{"name": "base", "hidden": true, "binaryDir": "${sourceDir}/build/${presetName}"}
+	]})");
+	write(folder / "CMakeUserPresets.json", R"({"version": 3, "configurePresets": [
+		{"name": "mine", "inherits": "base"}
+	]})");
+
+	const ProjectProposal proposal{detect(folder)};
+
+	CHECK(text(proposal, "cmake_preset") == "mine");
+	CHECK(proposal.reasons.front().contains("Found CMakeUserPresets.json: using configure preset 'mine'"));
+}
+
 TEST_CASE("ProjectDetector prefers a configure preset whose build directory is configured")
 {
 	const TestTempDirectory temp{"detectConfiguredPreset"};

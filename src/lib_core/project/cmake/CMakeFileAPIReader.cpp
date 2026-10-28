@@ -261,6 +261,7 @@ struct PresetRecord
 {
 	QJsonObject object;
 	QString fileDir;	// directory of the file that defines the preset (${fileDir})
+	QString file;	// that file
 };
 
 // All configure presets of a source directory's presets files, in file order.
@@ -310,7 +311,7 @@ void collectPresetsFromFile(
 			continue;
 		if (!result.byName.contains(name))
 			result.order.push_back(name);
-		result.byName.insert(name, {obj, baseDir.absolutePath()});
+		result.byName.insert(name, {obj, baseDir.absolutePath(), fileInfo.absoluteFilePath()});
 	}
 }
 
@@ -618,7 +619,8 @@ std::vector<CMakeFileAPIReader::PresetInfo> CMakeFileAPIReader::discoverPresetIn
 			 .displayName = preset["displayName"].toString().toStdString(),
 			 .description = preset["description"].toString().toStdString(),
 			 .generator = inheritedField(name, QStringLiteral("generator"), presets).toString().toStdString(),
-			 .undefinedEnvironment = undefinedEnvironment(name, presets)});
+			 .undefinedEnvironment = undefinedEnvironment(name, presets),
+			 .file = FilePath{presets.byName[name].file.toStdString()}});
 	}
 	return result;
 }
