@@ -462,14 +462,29 @@ inline void CxxAstVisitorComponentDeclarationIndexer::visitNamespaceAliasDecl(cl
 	}
 }
 
+// A typedef or alias is a TYPEDEF, unless it is the name of a tag: of one without a name of its own
+// (typedef struct { ... } X;), or of one with its own name (typedef struct X { ... } X;, C's way to
+// name a struct without "struct"), which is the same node. Then it is the tag's kind.
+inline SymbolKind CxxAstVisitorComponentDeclarationIndexer::getTypedefSymbolKind(
+	const clang::TypedefNameDecl& d)
+{
+	if (const clang::TagDecl* anonymousTagDecl = d.getAnonDeclWithTypedefName())
+	{
+		return utility::convertTagKind(anonymousTagDecl->getTagKind());
+	}
+	if (const clang::TagDecl* tagDecl = d.getUnderlyingType()->getAsTagDecl();
+		tagDecl && m_index.getOrCreateSymbolId(tagDecl) == m_index.getOrCreateSymbolId(&d))
+	{
+		return utility::convertTagKind(tagDecl->getTagKind());
+	}
+	return SymbolKind::TYPEDEF;
+}
+
 inline void CxxAstVisitorComponentDeclarationIndexer::visitTypedefDecl(clang::TypedefDecl* d)
 {
 	if (getAstVisitor()->shouldVisitDecl(d))
 	{
-		const SymbolKind symbolKind = d->getAnonDeclWithTypedefName() == nullptr
-			? SymbolKind::TYPEDEF
-			: utility::convertTagKind(d->getAnonDeclWithTypedefName()->getTagKind());
-		m_index.recordDeclaration(d, symbolKind);
+		m_index.recordDeclaration(d, getTypedefSymbolKind(*d));
 	}
 }
 
@@ -477,10 +492,7 @@ inline void CxxAstVisitorComponentDeclarationIndexer::visitTypeAliasDecl(clang::
 {
 	if (getAstVisitor()->shouldVisitDecl(d))
 	{
-		const SymbolKind symbolKind = d->getAnonDeclWithTypedefName() == nullptr
-			? SymbolKind::TYPEDEF
-			: utility::convertTagKind(d->getAnonDeclWithTypedefName()->getTagKind());
-		m_index.recordDeclaration(d, symbolKind);
+		m_index.recordDeclaration(d, getTypedefSymbolKind(*d));
 	}
 }
 

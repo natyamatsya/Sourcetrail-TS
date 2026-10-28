@@ -692,6 +692,28 @@ TEST_CASE("cxx parser finds name of anonymous union declared inside typedef")
 	REQUIRE(utility::containsElement<std::string>(client->unions, "Foo <5:3 5:5>"));
 }
 
+TEST_CASE("cxx parser finds a typedef naming its own tag as that tag")
+{
+	// C's way to name a struct without "struct": the typedef and the tag are one node, the tag's.
+	std::shared_ptr<TestStorage> client = parseCCode(
+		"typedef struct ops { int area; } ops;\n"
+		"typedef enum color { RED } color;\n"
+		"typedef union value { int i; } value;\n"
+		"typedef struct ops ops_t;\n");
+
+	REQUIRE(containsElement(client->structs, "ops <1:34 1:36>"s));
+	REQUIRE(containsElement(client->enums, "color <2:28 2:32>"s));
+	REQUIRE(containsElement(client->unions, "value <3:32 3:36>"s));
+	REQUIRE(client->typedefs == std::vector<std::string>{"ops_t <4:20 4:24>"});
+
+	std::shared_ptr<TestStorage> cxxClient = parseCode(
+		"struct S;\n"
+		"typedef struct S S;\n"
+		"struct S { int i; };\n");
+	REQUIRE(containsElement(cxxClient->structs, "S <2:18 2:18>"s));
+	REQUIRE(cxxClient->typedefs.empty());
+}
+
 TEST_CASE("cxx parser finds name of anonymous struct declared inside type alias")
 {
 	std::shared_ptr<TestStorage> client = parseCode(
