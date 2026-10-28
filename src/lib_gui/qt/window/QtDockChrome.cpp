@@ -1214,7 +1214,8 @@ void QtDockHeader::returnBar()
 
 	QWidget* const bar{m_bar};
 	m_bar = nullptr;
-	if (bar == nullptr)
+	// Another header may have taken it over meanwhile (the dock moved): leave it there.
+	if (bar == nullptr || bar->parentWidget() != this)
 	{
 		return;
 	}
