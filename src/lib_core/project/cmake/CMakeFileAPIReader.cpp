@@ -345,13 +345,15 @@ QJsonValue inheritedField(
 	return findInheritedField(presetName, key, presets, visited);
 }
 
-// The preset's `environment`, merged along the inherits chain (a preset's own
-// entries win over its parents', earlier parents over later ones).
-void collectEnvironment(
+// The preset's object field `key` (`environment`, `cacheVariables`), merged along the
+// inherits chain (a preset's own entries win over its parents', earlier parents over
+// later ones).
+void collectMergedObject(
 	const QString& presetName,
+	const QString& key,
 	const PresetCollection& presets,
 	QSet<QString>& visited,
-	QMap<QString, QJsonValue>& environment)
+	QMap<QString, QJsonValue>& merged)
 {
 	if (visited.contains(presetName))
 		return;
@@ -360,12 +362,63 @@ void collectEnvironment(
 	const auto it{presets.byName.find(presetName)};
 	if (it == presets.byName.end())
 		return;
-	const QJsonObject own{it->object["environment"].toObject()};
+	const QJsonObject own{it->object[key].toObject()};
 	for (auto entry = own.begin(); entry != own.end(); ++entry)
-		if (!environment.contains(entry.key()))
-			environment.insert(entry.key(), entry.value());
+		if (!merged.contains(entry.key()))
+			merged.insert(entry.key(), entry.value());
 	for (const auto& parent : parentPresetNames(it->object))
-		collectEnvironment(parent, presets, visited, environment);
+		collectMergedObject(parent, key, presets, visited, merged);
+}
+
+// The preset's `environment`, merged along the inherits chain.
+void collectEnvironment(
+	const QString& presetName,
+	const PresetCollection& presets,
+	QSet<QString>& visited,
+	QMap<QString, QJsonValue>& environment)
+{
+	collectMergedObject(presetName, QStringLiteral("environment"), presets, visited, environment);
+}
+
+// The variables of $env{} / $penv{} macros in the values a configure with the preset
+// expands (binaryDir, toolchainFile, cacheVariables) that are set nowhere: not in the
+// preset's (inherited) environment for $env{}, not in this process's environment.
+std::vector<std::string> undefinedEnvironment(const QString& presetName, const PresetCollection& presets)
+{
+	QSet<QString> visited{};
+	QMap<QString, QJsonValue> presetEnvironment{};
+	collectEnvironment(presetName, presets, visited, presetEnvironment);
+
+	QStringList values{};
+	for (const QString& key : {QStringLiteral("binaryDir"), QStringLiteral("toolchainFile")})
+		values << inheritedField(presetName, key, presets).toString();
+	QSet<QString> visitedForCache{};
+	QMap<QString, QJsonValue> cacheVariables{};
+	collectMergedObject(
+		presetName, QStringLiteral("cacheVariables"), presets, visitedForCache, cacheVariables);
+	for (const QJsonValue& value : std::as_const(cacheVariables))
+		values << (value.isObject() ? value.toObject()["value"].toString() : value.toString());
+
+	static const QRegularExpression macro{QStringLiteral(R"(\$(env|penv)\{([^}]*)\})")};
+	std::vector<std::string> undefined{};
+	for (const QString& value : std::as_const(values))
+	{
+		auto matches{macro.globalMatch(value)};
+		while (matches.hasNext())
+		{
+			const auto match{matches.next()};
+			const QString variable{match.captured(2)};
+			const auto presetValue{presetEnvironment.find(variable)};
+			const bool inPreset{
+				match.captured(1) == QLatin1String("env") && presetValue != presetEnvironment.end() &&
+				presetValue->isString()};
+			const std::string name{variable.toStdString()};
+			if (!inPreset && !qEnvironmentVariableIsSet(variable.toUtf8().constData()) &&
+				!std::ranges::contains(undefined, name))
+				undefined.push_back(name);
+		}
+	}
+	return undefined;
 }
 
 QString hostSystemName()
@@ -529,9 +582,11 @@ std::vector<CMakeFileAPIReader::PresetInfo> CMakeFileAPIReader::discoverPresetIn
 			continue;
 		const QJsonObject& preset{presets.byName[name].object};
 		result.push_back(
-			{name.toStdString(),
-			 preset["displayName"].toString().toStdString(),
-			 preset["description"].toString().toStdString()});
+			{.name = name.toStdString(),
+			 .displayName = preset["displayName"].toString().toStdString(),
+			 .description = preset["description"].toString().toStdString(),
+			 .generator = inheritedField(name, QStringLiteral("generator"), presets).toString().toStdString(),
+			 .undefinedEnvironment = undefinedEnvironment(name, presets)});
 	}
 	return result;
 }

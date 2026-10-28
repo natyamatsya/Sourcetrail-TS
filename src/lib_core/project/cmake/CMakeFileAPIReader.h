@@ -128,6 +128,11 @@ public:
 		std::string name;
 		std::string displayName;	// may be empty
 		std::string description;	// may be empty
+		std::string generator;	// inherited; empty when the preset leaves it to CMake
+		// The environment variables the preset's binaryDir, toolchainFile and cacheVariables
+		// read ($env{} / $penv{}) that neither its environment nor this process sets: a
+		// configure with it is likely to fail (a vcpkg toolchain without VCPKG_ROOT...).
+		std::vector<std::string> undefinedEnvironment;
 	};
 
 	enum class ConfigureErrorCode : std::uint8_t

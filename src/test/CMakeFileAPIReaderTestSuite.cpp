@@ -215,6 +215,30 @@ TEST_CASE("CMakeFileAPIReader discoverPresetInfos keeps file order, names and de
 	CHECK(presets[1].displayName.empty());
 }
 
+TEST_CASE("CMakeFileAPIReader discoverPresetInfos gives the generator and the environment that is not set")
+{
+	const TestTempDirectory tempDirectory{"presetGenerator"};
+	writePresets(tempDirectory.getPath(), R"({"version": 6, "configurePresets": [
+		{"name": "base", "hidden": true, "generator": "Ninja", "environment": {"OWN_ROOT": "/opt/own"}},
+		{"name": "child", "inherits": "base", "binaryDir": "$env{OWN_ROOT}/b",
+		 "toolchainFile": "$env{SOURCETRAIL_TEST_UNSET_A}/tc.cmake",
+		 "cacheVariables": {"X": {"type": "PATH", "value": "$penv{SOURCETRAIL_TEST_UNSET_B}"}, "Y": "$penv{OWN_ROOT}"}},
+		{"name": "plain", "binaryDir": "b"}
+	]})");
+
+	const auto presets{
+		CMakeFileAPIReader::discoverPresetInfos(FilePath{tempDirectory.getPath().string()})};
+
+	REQUIRE(presets.size() == 2);
+	CHECK(presets[0].generator == "Ninja");	// inherited
+	// $penv{} reads only the process environment, which has no OWN_ROOT.
+	CHECK(
+		presets[0].undefinedEnvironment ==
+		std::vector<std::string>{"SOURCETRAIL_TEST_UNSET_A", "SOURCETRAIL_TEST_UNSET_B", "OWN_ROOT"});
+	CHECK(presets[1].generator.empty());
+	CHECK(presets[1].undefinedEnvironment.empty());
+}
+
 TEST_CASE("CMakeFileAPIReader discoverPresets leaves out presets whose condition is false")
 {
 	const TestTempDirectory tempDirectory{"presetConditions"};
