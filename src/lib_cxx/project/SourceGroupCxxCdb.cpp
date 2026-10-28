@@ -28,6 +28,9 @@
 
 #include <filesystem>
 #include <format>
+#include <string>
+#include <unordered_map>
+#include <unordered_set>
 
 #include <clang/Tooling/JSONCompilationDatabase.h>
 #include <clang/Tooling/Tooling.h>
@@ -49,19 +52,40 @@ namespace
 // normalizes the database's files, then canonical. Resolved through the file system instead, a
 // command whose directory is gone ("nodir/../main.cpp") named no file, and the file was dropped
 // without a word instead of failing with its missing working directory.
-FilePath commandSourcePath(const clang::tooling::CompileCommand& command, const FilePath& cdbPath)
+//
+// Each distinct path is made canonical once: a large database names its files over and over, and a
+// realpath per command took seconds.
+class CommandSourcePaths
 {
-	std::filesystem::path path(command.Filename);
-	if (!path.is_absolute())
+public:
+	explicit CommandSourcePaths(const FilePath& cdbPath)
+		: m_cdbDirectory(cdbPath.getParentDirectory().getPath())
 	{
-		path = std::filesystem::path(command.Directory) / path;
 	}
-	if (!path.is_absolute())
+
+	const FilePath& operator()(const clang::tooling::CompileCommand& command)
 	{
-		path = cdbPath.getParentDirectory().getPath() / path;
+		std::filesystem::path path(command.Filename);
+		if (!path.is_absolute())
+		{
+			path = std::filesystem::path(command.Directory) / path;
+		}
+		if (!path.is_absolute())
+		{
+			path = m_cdbDirectory / path;
+		}
+		const auto [it, inserted] = m_canonicalPaths.try_emplace(path.lexically_normal().string());
+		if (inserted)
+		{
+			it->second = FilePath(it->first).makeCanonical();
+		}
+		return it->second;
 	}
-	return FilePath(path.lexically_normal().string()).makeCanonical();
-}
+
+private:
+	const std::filesystem::path m_cdbDirectory;
+	std::unordered_map<std::string, FilePath> m_canonicalPaths;
+};
 
 // The directory a compile command runs in. The format wants it absolute; a relative one (".") is
 // taken against the database's directory, as its files are, not the indexer's working directory.
@@ -235,10 +259,18 @@ std::shared_ptr<IndexerCommandProvider> SourceGroupCxxCdb::getIndexerCommandProv
 		bool toIndex = false;
 	};
 	std::vector<PreparedCommand> prepared;
+	// A database can list a command more than once (a build run twice into it, concatenated
+	// fragments): 100 copies of one command indexed the file 100 times. Identical commands -- same
+	// file, directory and flags -- are indexed once. Different commands for one file (a library
+	// compiled for its static and its shared target) stay: the indexer indexes each configuration,
+	// and the file's command hash covers them all.
+	std::unordered_set<std::string> preparedKeys;
+	std::size_t duplicateCount = 0;
 
+	CommandSourcePaths commandSourcePath(cdbPath);
 	for (const clang::tooling::CompileCommand &command : cdb->getAllCompileCommands())
 	{
-		const FilePath sourcePath = commandSourcePath(command, cdbPath);
+		const FilePath& sourcePath = commandSourcePath(command);
 
 		if (sourceFilePaths.contains(sourcePath))
 		{
@@ -258,12 +290,31 @@ std::shared_ptr<IndexerCommandProvider> SourceGroupCxxCdb::getIndexerCommandProv
 			// must be passed explicitly -- without it <filesystem>/<map>/etc. fail.
 			utility::append(commandLine, IndexerCommandCxx::getCompilerFlagsForSysroot(command.CommandLine));
 
-			prepared.push_back(
-				{sourcePath,
-				 commandDirectory(command, cdbPath),
-				 utility::concat(commandLine, compilerFlags),
-				 info.filesToIndex.contains(sourcePath)});
+			PreparedCommand preparedCommand{
+				sourcePath,
+				commandDirectory(command, cdbPath),
+				utility::concat(commandLine, compilerFlags),
+				info.filesToIndex.contains(sourcePath)};
+
+			std::string key = preparedCommand.sourcePath.str() + '\0' + preparedCommand.directory.str();
+			for (const std::string& flag: preparedCommand.flags)
+			{
+				key += '\0' + flag;
+			}
+			if (!preparedKeys.insert(std::move(key)).second)
+			{
+				++duplicateCount;
+				continue;
+			}
+			prepared.push_back(std::move(preparedCommand));
 		}
+	}
+	if (duplicateCount > 0)
+	{
+		LOG_WARNING(std::format(
+			"The compilation database \"{}\" lists {} duplicate compile commands; each is indexed once.",
+			cdbPath.str(),
+			duplicateCount));
 	}
 
 	// C++20 modules: build BMIs for the source group's module-interface units (crash-isolated in a
@@ -349,9 +400,10 @@ std::function<void()> SourceGroupCxxCdb::getPreIndexWork(
 		{
 			const std::shared_ptr<clang::tooling::CompilationDatabase> cdb = loadedCdb.value();
 			const std::set<FilePath> sourceFilePaths = getAllSourceFilePaths(cdb);
+			CommandSourcePaths commandSourcePath(cdbPath);
 			for (const clang::tooling::CompileCommand& command: cdb->getAllCompileCommands())
 			{
-				const FilePath sourcePath = commandSourcePath(command, cdbPath);
+				const FilePath& sourcePath = commandSourcePath(command);
 
 				if (sourceFilePaths.find(sourcePath) != sourceFilePaths.end() &&
 					utility::containsIncludePchFlag(command.CommandLine))

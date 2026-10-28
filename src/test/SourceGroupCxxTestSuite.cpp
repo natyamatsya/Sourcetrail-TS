@@ -20,6 +20,8 @@
 #endif
 #include "SourceGroupCxxCdb.h"
 #include "SourceGroupCxxEmpty.h"
+#include "SourceGroupFactory.h"
+#include "SourceGroupFactoryModuleCxx.h"
 #ifndef SRCTRL_MODULE_BUILD
 #include "SourceGroupSettingsCEmpty.h"
 #include "SourceGroupSettingsCppEmpty.h"
@@ -537,4 +539,60 @@ TEST_CASE("source group cxx cdb indexes a file whose command's directory is gone
 			R"([{"directory": ".", "file": "main.cpp", "arguments": ["clang++", "-c", "main.cpp"]}])");
 		REQUIRE(command.getWorkingDirectory().str() == FilePath(dir).str());
 	}
+}
+
+TEST_CASE("source group cxx cdb indexes identical compile commands once, distinct ones each")
+{
+	// 100 copies of one command indexed the file 100 times, and 200,000 effectively hung.
+	ScopedApplicationInstance scopedApplicationInstance;
+	const TestTempDirectory directory{"SourceGroupCxxTestSuite"};
+	std::ofstream(directory.getPath() / "main.cpp") << "int main() {}\n";
+	const std::string command = std::format(
+		R"({{"directory": "{}", "file": "main.cpp", "arguments": ["clang++", "-c", "main.cpp"]}})",
+		directory.getPath().generic_string());
+	const std::string otherConfiguration = std::format(
+		R"({{"directory": "{}", "file": "main.cpp", "arguments": ["clang++", "-DOTHER", "-c", "main.cpp"]}})",
+		directory.getPath().generic_string());
+	std::ofstream(directory.getPath() / "compile_commands.json")
+		<< "[" << command << "," << command << "," << otherConfiguration << "," << command << "]";
+
+	ProjectSettings projectSettings;
+	projectSettings.setProjectFilePath("dups", FilePath(directory.getPath().string()));
+	std::shared_ptr<SourceGroupSettingsCxxCdb> sourceGroupSettings =
+		std::make_shared<SourceGroupSettingsCxxCdb>("fake_id", &projectSettings);
+	sourceGroupSettings->setCompilationDatabasePath(FilePath(directory.getFilePath("compile_commands.json")));
+	const SourceGroupCxxCdb sourceGroup(sourceGroupSettings);
+
+	RefreshInfo info;
+	info.filesToIndex = sourceGroup.getAllSourceFilePaths();
+	const std::vector<std::shared_ptr<IndexerCommand>> commands = sourceGroup.getIndexerCommands(info);
+
+	REQUIRE(commands.size() == 2);
+	const auto flagsOf = [&](std::size_t i) { return commands[i]->target<IndexerCommandCxx>()->getCompilerFlags(); };
+	REQUIRE(std::ranges::contains(flagsOf(0), "-DOTHER") != std::ranges::contains(flagsOf(1), "-DOTHER"));
+}
+
+TEST_CASE("source group factory creates a source group configured twice once")
+{
+	// 100 identical source groups indexed every file 100 times.
+	SourceGroupFactory::getInstance()->addModule(std::make_shared<SourceGroupFactoryModuleCxx>());
+	ProjectSettings projectSettings;
+	projectSettings.setProjectFilePath("twice", FilePath("/tmp"));
+	const auto cdbGroup = [&](const std::string& id, const std::string& name, const std::string& cdbPath) {
+		std::shared_ptr<SourceGroupSettingsCxxCdb> settings =
+			std::make_shared<SourceGroupSettingsCxxCdb>(id, &projectSettings);
+		settings->setName(name);
+		settings->setCompilationDatabasePath(FilePath(cdbPath));
+		return std::shared_ptr<SourceGroupSettings>(settings);
+	};
+
+	const std::vector<std::shared_ptr<SourceGroup>> groups = SourceGroupFactory::getInstance()->createSourceGroups(
+		{cdbGroup("g0", "cdb", "/tmp/a/compile_commands.json"),
+		 cdbGroup("g1", "cdb copy", "/tmp/a/compile_commands.json"),
+		 cdbGroup("g2", "cdb", "/tmp/b/compile_commands.json"),
+		 cdbGroup("g3", "cdb", "/tmp/a/compile_commands.json")});
+
+	REQUIRE(groups.size() == 2);
+	REQUIRE(groups[0]->getSourceGroupId() == "g0");
+	REQUIRE(groups[1]->getSourceGroupId() == "g2");
 }

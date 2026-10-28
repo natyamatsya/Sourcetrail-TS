@@ -3,7 +3,10 @@
 #pragma once
 
 #ifndef SRCTRL_MODULE_PURVIEW
+#include <filesystem>
 #include <format>
+#include <mutex>
+#include <system_error>
 
 #include <clang/Tooling/CompilationDatabase.h>
 
@@ -45,6 +48,32 @@ inline std::expected<std::shared_ptr<clang::tooling::CompilationDatabase>, CdbLo
 			ParseFailed, std::format("The compilation database \"{}\" is empty.", cdbPath.str())});
 	}
 
+	// One refresh loads the database several times (the check, the files to index, the commands, the
+	// command hashes), and parsing a large one takes seconds each time: the last database loaded is
+	// kept while its file is unchanged (same size and modification time).
+	struct Loaded
+	{
+		std::string path;
+		std::uintmax_t size = 0;
+		std::filesystem::file_time_type modified;
+		std::shared_ptr<clang::tooling::CompilationDatabase> cdb;
+	};
+	static std::mutex loadedMutex;
+	static Loaded loaded;
+	std::error_code ec;
+	const std::uintmax_t size = std::filesystem::file_size(cdbPath.getPath(), ec);
+	const std::filesystem::file_time_type modified =
+		ec ? std::filesystem::file_time_type() : std::filesystem::last_write_time(cdbPath.getPath(), ec);
+	if (!ec)
+	{
+		const std::lock_guard<std::mutex> lock(loadedMutex);
+		if (loaded.cdb != nullptr && loaded.path == cdbPath.str() && loaded.size == size &&
+			loaded.modified == modified)
+		{
+			return loaded.cdb;
+		}
+	}
+
 	std::string errorString;
 	std::unique_ptr<clang::tooling::CompilationDatabase> cdb = clang::tooling::JSONCompilationDatabase::loadFromFile(
 		cdbPath.str(), errorString, clang::tooling::JSONCommandLineSyntax::AutoDetect);
@@ -62,8 +91,14 @@ inline std::expected<std::shared_ptr<clang::tooling::CompilationDatabase>, CdbLo
 			std::format("The compilation database \"{}\" has no compile commands.", cdbPath.str())});
 	}
 
-	return std::shared_ptr<clang::tooling::CompilationDatabase>(
+	std::shared_ptr<clang::tooling::CompilationDatabase> expanded(
 		expandResponseFiles(std::move(cdb), llvm::vfs::getRealFileSystem()));
+	if (!ec)
+	{
+		const std::lock_guard<std::mutex> lock(loadedMutex);
+		loaded = Loaded{cdbPath.str(), size, modified, expanded};
+	}
+	return expanded;
 }
 
 inline std::expected<std::shared_ptr<clang::tooling::CompilationDatabase>, CdbLoadError> loadCDB(
