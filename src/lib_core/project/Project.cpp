@@ -577,6 +577,17 @@ RefreshInfo Project::getRefreshInfo(RefreshMode mode) const
 	}
 }
 
+std::function<std::set<FilePath>()> Project::changedFilesCheck() const
+{
+	if (!hasIndex() || isIndexing() || !m_storage)
+	{
+		return {};
+	}
+	return [storage = std::shared_ptr<const PersistentStorage>(m_storage)]() {
+		return RefreshInfoGenerator::getChangedFilePaths(storage);
+	};
+}
+
 std::vector<std::shared_ptr<const SourceGroup>> Project::getSourceGroups() const
 {
 	std::vector<std::shared_ptr<const SourceGroup>> sourceGroups{};

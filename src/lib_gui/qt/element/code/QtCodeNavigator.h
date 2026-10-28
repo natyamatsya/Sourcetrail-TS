@@ -7,6 +7,7 @@
 #include "ErrorInfo.h"
 #include "LocationType.h"
 #include "MessageListener.h"
+#include "MessageIndexOutdated.h"
 #include "MessageWindowFocus.h"
 #include "QtCodeFileList.h"
 #include "QtCodeFileSingle.h"
@@ -21,6 +22,7 @@ class QtCodeNavigator
 	: public QWidget
 	, public CodeFocusHandler
 	, public MessageListener<MessageWindowFocus>
+	, public MessageListener<MessageIndexOutdated>
 {
 	Q_OBJECT
 
@@ -129,6 +131,7 @@ private slots:
 
 private:
 	void handleMessage(MessageWindowFocus* message) override;
+	void handleMessage(MessageIndexOutdated* message) override;
 
 
 	QtCodeNavigable* m_current;

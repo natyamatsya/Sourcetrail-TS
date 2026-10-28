@@ -193,3 +193,9 @@ TEST_CASE("every colour scheme has the colours the Status and Errors tables ask 
 	// The type of an error row (QtStatusView, QtErrorView).
 	requireColors({"table/text/error"});
 }
+
+TEST_CASE("every colour scheme has the status bar's dots")
+{
+	// QtStatusBar colours its dots with these: the errors, the indexed files changed on disk.
+	requireColors({"window/status/error", "window/status/outdated"});
+}

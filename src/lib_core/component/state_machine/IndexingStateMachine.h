@@ -205,6 +205,7 @@ struct IndexingMachine
 		std::function<void(DatabasePolicy)> decided;	// the reporter's, called once
 
 		std::string outcome;	// how the last request or run ended
+		std::size_t changedFiles = 0;	// indexed files changed on disk since (IndexFreshness)
 	};
 
 	static constexpr std::string_view name = "indexing";
@@ -305,6 +306,8 @@ public:
 	DatabasePolicy report(const IndexingReport& report, IndexingPresenter presenter);
 	// The run or request is over; an empty `outcome` keeps the report's decision.
 	void ended(const std::string& outcome);
+	// A check found this many indexed files changed on disk: an update would index them.
+	void changedFiles(std::size_t count);
 	// The presenter goes away: forget it, and let a report waiting on it go on.
 	void detach(IndexingPresenter presenter);
 

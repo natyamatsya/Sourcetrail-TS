@@ -105,6 +105,10 @@ public:
 	void setShardConfig(const ShardConfig& config);
 
 	RefreshInfo getRefreshInfo(RefreshMode mode) const;
+	//! What finds the indexed files changed on disk (RefreshInfoGenerator::getChangedFilePaths),
+	//! to run on another thread: it keeps the index it reads open. Empty without an index
+	//! or while indexing.
+	std::function<std::set<FilePath>()> changedFilesCheck() const;
 	std::vector<std::shared_ptr<const SourceGroup>> getSourceGroups() const;
 
 	void buildIndex(RefreshInfo info, std::shared_ptr<DialogView> dialogView);

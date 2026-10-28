@@ -48,6 +48,12 @@ void StatusBarController::handleMessage(MessageIndexingFinished*  /*message*/)
 void StatusBarController::handleMessage(MessageIndexingStarted*  /*message*/)
 {
 	getView()->showIndexingProgress(0);
+	getView()->showChangedFiles(0);	// the run takes them in; a check after it finds what is left
+}
+
+void StatusBarController::handleMessage(MessageIndexOutdated* message)
+{
+	getView()->showChangedFiles(message->changedFileCount);
 }
 
 void StatusBarController::handleMessage(MessageIndexingStatus* message)

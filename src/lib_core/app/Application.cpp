@@ -33,7 +33,9 @@
 #endif
 #include "MainView.h"
 // classic headers (entities not exported): stay textual
+#include "IndexFreshness.h"
 #include "MessageCause.h"
+#include "MessageIndexOutdated.h"
 #include "MessageQueue.h"
 #ifndef SRCTRL_MODULE_BUILD
 #include "MessageFilterErrorCountUpdate.h"
@@ -486,6 +488,10 @@ void Application::handleMessage(MessageCloseProject*  /*message*/)
 		m_loading->stop.request_stop();	// a load in flight withdraws its question and ends
 		m_loading.reset();
 	}
+	if (IndexFreshness::instance().update({}))
+	{
+		indexFreshnessChanged(0);
+	}
 	updateTitle();
 	m_mainView->clear();
 	ProjectStateMachine::instance()->closed();
@@ -504,6 +510,54 @@ void Application::handleMessage(MessageActivateOverview*  /*message*/)
 void Application::handleMessage(MessageActivateTokens*  /*message*/)
 {
 	ProjectStateMachine::instance()->shown();
+
+	// After activations too (someone may edit while browsing), but not on every one.
+	if (std::chrono::steady_clock::now() - m_lastFreshnessCheck > std::chrono::seconds(10))
+	{
+		checkIndexFreshness(std::chrono::milliseconds(1000));
+	}
+}
+
+void Application::handleMessage(MessageWindowFocus* message)
+{
+	// Back from the editor: what changed there shows.
+	if (message->focusIn)
+	{
+		checkIndexFreshness(std::chrono::milliseconds(300));
+	}
+}
+
+void Application::checkIndexFreshness(std::chrono::milliseconds delay)
+{
+	if (!m_hasGUI || m_freshnessCheckQueued.exchange(true))
+	{
+		return;
+	}
+	execution::postAfter(TabIds::app(), delay, [this]() {
+		m_freshnessCheckQueued = false;
+		m_lastFreshnessCheck = std::chrono::steady_clock::now();
+		const std::function<std::set<FilePath>()> check = m_project ? m_project->changedFilesCheck()
+																	: std::function<std::set<FilePath>()>();
+		if (!check)
+		{
+			return;
+		}
+		// Stats every indexed file (and reads those that are newer): not on the app's queue.
+		execution::post(TabIds::background(), [check]() {
+			std::set<FilePath> changedFiles = check();
+			const std::size_t count = changedFiles.size();
+			if (IndexFreshness::instance().update(std::move(changedFiles)))
+			{
+				indexFreshnessChanged(count);
+			}
+		});
+	});
+}
+
+void Application::indexFreshnessChanged(std::size_t changedFileCount)
+{
+	IndexingStateMachine::instance()->changedFiles(changedFileCount);
+	MessageIndexOutdated(changedFileCount).dispatch();
 }
 
 void Application::handleMessage(MessageWindowClosed*  /*message*/)
@@ -523,6 +577,12 @@ void Application::handleMessage(MessageIndexingFinished* message)
 
 	if (m_hasGUI)
 	{
+		// The index is new (or newly loaded): what changed is found anew.
+		if (IndexFreshness::instance().update({}))
+		{
+			indexFreshnessChanged(0);
+		}
+		checkIndexFreshness(std::chrono::milliseconds(300));
 		MessageRefreshUI().afterIndexing().dispatch();
 	}
 	else

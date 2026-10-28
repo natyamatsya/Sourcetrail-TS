@@ -518,7 +518,11 @@ interrupted run is kept too.
   context: modes, mode, reason?, counting, files_to_index, files_to_clear (choosing_mode); progress \
 { started, finished, total, file }, interrupted (preparing..finishing); report { indexed, \
 total_indexed, completed, total, seconds, errors, fatal, interrupted } (reporting); outcome \
-(how the last request or run ended: kept, discarded, canceled, nothing to refresh...).
+(how the last request or run ended: kept, discarded, canceled, nothing to refresh...); \
+changed_files (idle: indexed files changed on disk since, by the rule an update uses; the \
+status bar's \"N files changed \u{2013} Update\" button, object name changed_files, runs \
+the direct update, and the search bar's Refresh shows a dot meanwhile). The app checks \
+when its window comes to the front and after an activation (at most every 10 s).
   Recipe: index a project that has none, and wait for it:
     machine_send { machine: \"indexing\", event: \"start\", until: [\"idle\"], timeout_s: 300 }
   Reindex everything: machine_send { machine: \"indexing\", event: \"refresh\", args: { mode: \

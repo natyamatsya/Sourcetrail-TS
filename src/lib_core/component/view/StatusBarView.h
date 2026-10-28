@@ -21,6 +21,9 @@ public:
 	virtual void showIndexingProgress(size_t progressPercent) = 0;
 	virtual void hideIndexingProgress() = 0;
 
+	// "N files changed - Update", or nothing for 0: the indexed files changed on disk.
+	virtual void showChangedFiles(size_t changedFileCount) = 0;
+
 	virtual void showTextEncoding(const std::string &encoding) = 0;
 	
 protected:

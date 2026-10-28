@@ -25,6 +25,7 @@ public:
 
 	void showIndexingProgress(size_t progressPercent) override;
 	void hideIndexingProgress() override;
+	void showChangedFiles(size_t changedFileCount) override;
 
 	void showTextEncoding(const std::string &encoding) override;
 	

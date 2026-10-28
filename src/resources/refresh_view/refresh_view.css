@@ -21,3 +21,9 @@ QPushButton:pressed {
 QPushButton:disabled {
 	background: transparent;
 }
+
+/* Indexed files changed on disk since they were indexed: Refresh updates them. */
+QLabel#outdated_dot {
+	background: <color:search/toolbar/outdated>;
+	border-radius: 3px;
+}

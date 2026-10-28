@@ -25,6 +25,11 @@ public:
 	static RefreshInfo getRefreshInfoForAllFiles(
 		const std::vector<std::shared_ptr<SourceGroup>>& sourceGroups);
 
+	//! The indexed files that changed on disk since they were indexed, by the rule an
+	//! update uses (removed, or newer with other content): what the status bar's
+	//! "N files changed" counts and a code file's title marks with "*".
+	static std::set<FilePath> getChangedFilePaths(std::shared_ptr<const PersistentStorage> storage);
+
 private:
 	static std::set<FilePath> getAllSourceFilePaths(
 		const std::vector<std::shared_ptr<SourceGroup>>& sourceGroups);

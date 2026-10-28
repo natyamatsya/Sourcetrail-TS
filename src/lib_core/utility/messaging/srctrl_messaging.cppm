@@ -126,6 +126,7 @@ extern "C++" {
 #include "MessageProjectEdit.h"
 #include "MessageProjectNew.h"
 #include "MessageQuitApplication.h"
+#include "MessageIndexOutdated.h"
 #include "MessageRefresh.h"
 #include "MessageRefreshUI.h"
 #include "MessageRefreshUIState.h"

@@ -45,6 +45,7 @@ struct IndexingContext
 	std::optional<bool> interrupted;
 	std::optional<ReportContext> report;
 	std::optional<std::string> outcome;
+	std::optional<std::size_t> changed_files;
 };
 
 struct ModeArgs
@@ -241,6 +242,12 @@ void IndexingStateMachine::ended(const std::string& outcome)
 	resetChoice(data);
 	data.report.reset();
 	transaction.move(Event::End);
+}
+
+void IndexingStateMachine::changedFiles(std::size_t count)
+{
+	// Context only, as progress: no transition.
+	m_machine.transaction().data().changedFiles = count;
 }
 
 void IndexingStateMachine::detach(IndexingPresenter presenter)
@@ -666,6 +673,11 @@ std::string IndexingMachine::context(State state, const Data& data)
 		}
 		break;
 	case State::Idle:
+		if (data.changedFiles > 0)
+		{
+			context.changed_files = data.changedFiles;
+		}
+		break;
 	case State::Pending:
 		break;
 	}

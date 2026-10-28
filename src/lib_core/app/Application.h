@@ -2,6 +2,8 @@
 #define APPLICATION_H
 
 #include <atomic>
+#include <chrono>
+#include <set>
 #include <functional>
 #include <memory>
 #include <string>
@@ -20,6 +22,7 @@
 #include "MessageRefreshUI.h"
 #include "MessageSwitchColorScheme.h"
 #include "MessageWindowClosed.h"
+#include "MessageWindowFocus.h"
 #include "Project.h"
 #include "StdexecPrelude.h"
 #include "SerialQueue.h"
@@ -52,6 +55,7 @@ class Application
 	, public MessageListener<MessageRefreshUI>
 	, public MessageListener<MessageSwitchColorScheme>
 	, public MessageListener<MessageWindowClosed>
+	, public MessageListener<MessageWindowFocus>
 {
 public:
 	static void createInstance(
@@ -132,6 +136,12 @@ private:
 	void handleMessage(MessageRefreshUI* message) override;
 	void handleMessage(MessageSwitchColorScheme* message) override;
 	void handleMessage(MessageWindowClosed* message) override;
+	void handleMessage(MessageWindowFocus* message) override;
+
+	// Looks for indexed files changed on disk (IndexFreshness), on the background queue,
+	// once `delay` has passed; checks asked for meanwhile are that one.
+	void checkIndexFreshness(std::chrono::milliseconds delay);
+	static void indexFreshnessChanged(std::size_t changedFileCount);
 
 	void startMessagingAndScheduling();
 
@@ -178,6 +188,8 @@ private:
 
 	const bool m_hasGUI;
 	std::atomic<bool> m_restoresTabSession = false;
+	std::atomic<bool> m_freshnessCheckQueued = false;
+	std::chrono::steady_clock::time_point m_lastFreshnessCheck;	// on the app's queue
 	bool m_loadedWindow = false;
 
 	// Non-owning: the concrete schedulers are a process-wide singleton owned by

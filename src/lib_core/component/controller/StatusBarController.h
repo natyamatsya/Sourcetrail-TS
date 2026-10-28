@@ -10,6 +10,7 @@
 #include "MessageIndexingFinished.h"
 #include "MessageIndexingStarted.h"
 #include "MessageIndexingStatus.h"
+#include "MessageIndexOutdated.h"
 #include "MessageListener.h"
 #include "MessagePingReceived.h"
 #include "MessageRefresh.h"
@@ -26,6 +27,7 @@ class StatusBarController
 	, public MessageListener<MessageIndexingFinished>
 	, public MessageListener<MessageIndexingStarted>
 	, public MessageListener<MessageIndexingStatus>
+	, public MessageListener<MessageIndexOutdated>
 	, public MessageListener<MessagePingReceived>
 	, public MessageListener<MessageRefresh>
 	, public MessageListener<MessageStatus>
@@ -45,6 +47,7 @@ private:
 	void handleMessage(MessageIndexingFinished* message) override;
 	void handleMessage(MessageIndexingStarted* message) override;
 	void handleMessage(MessageIndexingStatus* message) override;
+	void handleMessage(MessageIndexOutdated* message) override;
 	void handleMessage(MessagePingReceived* message) override;
 	void handleMessage(MessageRefresh* message) override;
 	void handleMessage(MessageStatus* message) override;

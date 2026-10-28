@@ -24,6 +24,8 @@ public:
 
 	void showIndexingProgress(size_t progressPercent);
 	void hideIndexingProgress();
+
+	void showChangedFiles(size_t changedFileCount);
 	
 	void setTextEncoding(const std::string &encoding);
 	
@@ -34,6 +36,7 @@ private slots:
 	static void showStatus();
 	static void showErrors();
 	static void clickedIndexingProgress();
+	static void clickedChangedFiles();
 
 private:
 	// loader widgets:
@@ -47,6 +50,9 @@ private:
 	QtFlatButton *m_indexingStatus;
 	QProgressBar *m_indexingProgress;
 	
+	// the indexed files changed on disk since:
+	QtFlatButton *m_changedFiles;
+
 	// error(s) widgets:
 	QtFlatButton *m_errorButton;
 	
