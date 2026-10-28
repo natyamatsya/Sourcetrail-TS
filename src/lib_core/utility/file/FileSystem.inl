@@ -3,6 +3,8 @@
 #pragma once
 
 #ifndef SRCTRL_MODULE_PURVIEW
+#include "logging.h"
+
 #include <cctype>
 #include <chrono>
 #include <expected>
@@ -23,6 +25,59 @@ inline std::string toLowerCaseAscii(std::string in)
 	}
 	return in;
 }
+
+// Whether a recursive walk may enter the directory `entry`. One it cannot read (no permission) is
+// skipped with a warning naming it: the walk's increment into it failed and, failing, ended the
+// whole walk, so one `chmod 000` subfolder made a source group find no files at all.
+inline bool canEnterDirectory(const std::filesystem::directory_entry& entry)
+{
+	std::error_code ec;
+	if (!entry.is_directory(ec))
+	{
+		return true;	// nothing to enter
+	}
+	const std::filesystem::directory_iterator probe(entry.path(), ec);
+	if (ec)
+	{
+		LOG_WARNING_STREAM(
+			<< "Skipping the directory \"" << entry.path().generic_string() << "\": " << ec.message());
+		return false;
+	}
+	return true;
+}
+
+// Opens a recursive walk of `path`; a root it cannot read is warned about, and walks nothing.
+inline std::filesystem::recursive_directory_iterator walkDirectory(
+	const FilePath& path, std::filesystem::directory_options options)
+{
+	std::error_code ec;
+	std::filesystem::recursive_directory_iterator it(
+		path.getPath(), options | std::filesystem::directory_options::skip_permission_denied, ec);
+	if (ec)
+	{
+		LOG_WARNING_STREAM(<< "Skipping the directory \"" << path.str() << "\": " << ec.message());
+		return {};
+	}
+	return it;
+}
+
+// Advances a recursive walk, first keeping it out of a directory it cannot read. A failed increment
+// still ends the walk (the iterator becomes the end), but says so.
+inline void advanceWalk(std::filesystem::recursive_directory_iterator& it)
+{
+	if (it.recursion_pending() && !canEnterDirectory(*it))
+	{
+		it.disable_recursion_pending();
+	}
+	std::error_code ec;
+	const std::filesystem::path current = it->path();
+	it.increment(ec);
+	if (ec)
+	{
+		LOG_WARNING_STREAM(
+			<< "Stopped listing files after \"" << current.generic_string() << "\": " << ec.message());
+	}
+}
 }	 // namespace file_system_detail
 
 inline std::vector<FilePath> FileSystem::getFilePathsFromDirectory(const FilePath &path, const std::vector<std::string> &extensions)
@@ -32,13 +87,11 @@ inline std::vector<FilePath> FileSystem::getFilePathsFromDirectory(const FilePat
 
 	if (path.isDirectory())
 	{
-		std::error_code ec;
-		std::filesystem::recursive_directory_iterator it(path.getPath(), ec);
+		std::filesystem::recursive_directory_iterator it =
+			file_system_detail::walkDirectory(path, std::filesystem::directory_options::none);
 		std::filesystem::recursive_directory_iterator endit;
-		for (; it != endit; it.increment(ec))
+		for (; it != endit; file_system_detail::advanceWalk(it))
 		{
-			ec.clear();
-
 			std::error_code symlinkEc;
 			if (std::filesystem::is_symlink(*it, symlinkEc))
 			{
@@ -92,14 +145,12 @@ inline std::vector<FileInfo> FileSystem::getFileInfosFromPaths(const std::vector
 			std::filesystem::path startCanonical = std::filesystem::canonical(path.getPath(), ec);
 			if (!ec)
 				symlinkDirs.insert(startCanonical);
-			ec.clear();
 
-			std::filesystem::recursive_directory_iterator it(path.getPath(), std::filesystem::directory_options::follow_directory_symlink, ec);
+			std::filesystem::recursive_directory_iterator it = file_system_detail::walkDirectory(
+				path, std::filesystem::directory_options::follow_directory_symlink);
 			std::filesystem::recursive_directory_iterator endit;
-			for (; it != endit; it.increment(ec))
+			for (; it != endit; file_system_detail::advanceWalk(it))
 			{
-				ec.clear();
-
 				std::error_code symlinkEc;
 				if (std::filesystem::is_symlink(*it, symlinkEc))
 				{
@@ -174,13 +225,11 @@ inline std::set<FilePath> FileSystem::getSymLinkedDirectories(const std::vector<
 	{
 		if (path.isDirectory())
 		{
-			std::error_code ec;
-			std::filesystem::recursive_directory_iterator it(path.getPath(), std::filesystem::directory_options::follow_directory_symlink, ec);
+			std::filesystem::recursive_directory_iterator it = file_system_detail::walkDirectory(
+				path, std::filesystem::directory_options::follow_directory_symlink);
 			std::filesystem::recursive_directory_iterator endit;
-			for (; it != endit; it.increment(ec))
+			for (; it != endit; file_system_detail::advanceWalk(it))
 			{
-				ec.clear();
-
 				std::error_code symlinkEc;
 				if (std::filesystem::is_symlink(*it, symlinkEc))
 				{
