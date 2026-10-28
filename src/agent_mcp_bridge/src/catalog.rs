@@ -165,7 +165,7 @@ an instance or an open dump points at.",
         summary: "The app's state: project, app_state FSM, active nodes, graph, code view, search matches, tabs; the summary and changes tools that act return.",
         tools: &["ui_state"],
         doc: "\
-ui_state { instance? } -> {
+ui_state { instance?, fields?: [string], node?: string, limit?: n } -> {
   request_id, project_file_path,
   app_state: NoProject | Loading | Indexing | Ready | Busy,
   indexing_active, error_total, error_fatal,
@@ -178,6 +178,13 @@ ui_state { instance? } -> {
   dialog: string,
   view_graph: [ { kind: node | bundle | group, id, name, node_kind, parent?, active?, \
 expanded?, hidden_members?, bundled?, splittable?, group? } ] }
+
+Less of it: fields keeps those top-level fields (request_id always), e.g. [\"app_state\", \
+\"active_nodes\"]; node keeps the graph's edges that touch that node (its node_id or \
+serialized_name) and the nodes at their ends, to check one symbol's relations; limit keeps at \
+most that many items in each list (graph.nodes, graph.edges, view_graph, search_matches, ...) \
+and adds truncated: { \"graph.nodes\": 11719, ... } with the lengths of the lists it cut. For \
+a big graph the whole state runs to megabytes.
 
 app_state is the FSM to key off. NoProject -> Loading (a load was requested, by \
 project_open or in the app, until the project is open and its first tab has shown the \
@@ -592,7 +599,8 @@ name and location (a new project's only), and the shown source group's fields: \
 context.fields lists them with their values (strings, lists of strings, true/false), e.g. \
 source_paths, extensions, exclude_filters, compilation_database, cmake_source_directory, \
 cmake_preset, header_search_paths, compiler_flags, cpp_standard, custom_command.
-  show { source_group? }           editing: that source group's page, or the general one.
+  show { source_group? }           editing: that source group's page, by its index in \
+context.source_groups (0 is the first), or the general one without it.
   add_source_group { type? }       editing: adds a source group of type cdb | cmake | cpp | c \
 | rust | swift | custom and shows it; without a type the type selection opens \
 (choosing_type, context.types).

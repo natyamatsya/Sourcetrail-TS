@@ -207,6 +207,97 @@ impl StateBaseline {
     }
 }
 
+/// What of the whole state `ui_state` returns when asked for less: the
+/// top-level `fields` (all when empty), only the graph's edges that touch
+/// `node` (a node id or a serialized name) and the nodes at their ends, and at
+/// most `limit` items in each list, with `truncated` naming each cut list and
+/// how long it was. A state for a big graph runs to megabytes otherwise.
+pub fn select(mut state: Value, fields: &[String], node: Option<&str>, limit: Option<usize>) -> Value {
+    if let Some(node) = node {
+        keep_edges_of(&mut state, node);
+    }
+
+    if !fields.is_empty() {
+        if let Value::Object(map) = &mut state {
+            map.retain(|key, _| key == REQUEST_ID || fields.iter().any(|f| f == key));
+        }
+    }
+
+    if let Some(limit) = limit {
+        let mut truncated = Map::new();
+        if let Value::Object(map) = &mut state {
+            for (key, value) in map.iter_mut() {
+                cut(key, value, limit, &mut truncated);
+                if key == "graph" {
+                    if let Value::Object(graph) = value {
+                        for (part, list) in graph.iter_mut() {
+                            cut(&format!("graph.{part}"), list, limit, &mut truncated);
+                        }
+                    }
+                }
+            }
+            if !truncated.is_empty() {
+                map.insert("truncated".into(), Value::Object(truncated));
+            }
+        }
+    }
+    state
+}
+
+/// Cuts `value`, if it is a list longer than `limit`, noting its length as `name`.
+fn cut(name: &str, value: &mut Value, limit: usize, truncated: &mut Map<String, Value>) {
+    if let Value::Array(list) = value {
+        if list.len() > limit {
+            truncated.insert(name.to_owned(), json!(list.len()));
+            list.truncate(limit);
+        }
+    }
+}
+
+/// Leaves the graph with the edges whose source or target is `node` (its id, or
+/// its serialized name), and the nodes they connect.
+fn keep_edges_of(state: &mut Value, node: &str) {
+    let Some(graph) = state.get_mut("graph").and_then(Value::as_object_mut) else {
+        return;
+    };
+    let nodes = graph.get("nodes").and_then(Value::as_array).cloned().unwrap_or_default();
+    // Edges name their ends by serialized name; a node id is looked up among the nodes.
+    let name = match node.parse::<u64>() {
+        Ok(id) => nodes
+            .iter()
+            .find(|n| n["node_id"].as_u64() == Some(id))
+            .and_then(|n| n["serialized_name"].as_str())
+            .unwrap_or_default()
+            .to_owned(),
+        Err(_) => node.to_owned(),
+    };
+
+    let edges: Vec<Value> = graph
+        .get("edges")
+        .and_then(Value::as_array)
+        .map(|edges| {
+            edges
+                .iter()
+                .filter(|e| !name.is_empty() && (e["source"] == name.as_str() || e["target"] == name.as_str()))
+                .cloned()
+                .collect()
+        })
+        .unwrap_or_default();
+    let ends: std::collections::BTreeSet<&str> = edges
+        .iter()
+        .flat_map(|e| [e["source"].as_str(), e["target"].as_str()])
+        .flatten()
+        .chain(std::iter::once(name.as_str()))
+        .collect();
+    let nodes: Vec<Value> = nodes
+        .into_iter()
+        .filter(|n| n["serialized_name"].as_str().is_some_and(|s| ends.contains(s)))
+        .collect();
+
+    graph.insert("nodes".into(), Value::Array(nodes));
+    graph.insert("edges".into(), Value::Array(edges));
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -373,5 +464,63 @@ mod tests {
         baseline.seen(&ui_state(1, "ready", "", (3, "Foo")));
         let r = reported(&mut baseline, ui_state(2, "ready", "", (3, "Foo")), StateForm::Summary);
         assert_eq!(r["changes"], json!({ "hash_changed": false }));
+    }
+
+    /// A state with a graph of three nodes and two edges, and long lists.
+    fn graph_state() -> Value {
+        let mut state = ui_state(3, "ready", "", (1, "Overview"));
+        state["graph"] = json!({
+            "nodes": [
+                { "node_id": 1, "serialized_name": "::a", "display_name": "a", "node_kind": 4096 },
+                { "node_id": 2, "serialized_name": "::b", "display_name": "b", "node_kind": 4096 },
+                { "node_id": 3, "serialized_name": "::c", "display_name": "c", "node_kind": 4096 },
+            ],
+            "edges": [
+                { "edge_id": 10, "edge_type": 8, "source": "::a", "target": "::b" },
+                { "edge_id": 11, "edge_type": 8, "source": "::b", "target": "::c" },
+            ],
+        });
+        state["search_matches"] = json!([{ "text": "x" }, { "text": "y" }, { "text": "z" }]);
+        state
+    }
+
+    #[test]
+    fn select_without_arguments_is_the_whole_state() {
+        assert_eq!(select(graph_state(), &[], None, None), graph_state());
+    }
+
+    #[test]
+    fn select_keeps_the_fields_asked_for() {
+        let state = select(graph_state(), &["app_state".into(), "active_nodes".into()], None, None);
+        let keys: Vec<&str> = state.as_object().unwrap().keys().map(String::as_str).collect();
+        assert_eq!(keys.len(), 3, "{keys:?}");
+        assert_eq!(state["app_state"], "Ready");
+        assert_eq!(state["request_id"], 3);
+    }
+
+    #[test]
+    fn select_keeps_a_nodes_edges_by_id_or_name() {
+        for node in ["1", "::a"] {
+            let state = select(graph_state(), &[], Some(node), None);
+            assert_eq!(state["graph"]["edges"].as_array().unwrap().len(), 1, "{node}");
+            assert_eq!(state["graph"]["edges"][0]["edge_id"], 10);
+            let names: Vec<&str> =
+                state["graph"]["nodes"].as_array().unwrap().iter().map(|n| n["serialized_name"].as_str().unwrap()).collect();
+            assert_eq!(names, ["::a", "::b"]);
+        }
+        let middle = select(graph_state(), &[], Some("2"), None);
+        assert_eq!(middle["graph"]["edges"].as_array().unwrap().len(), 2);
+        assert_eq!(middle["graph"]["nodes"].as_array().unwrap().len(), 3);
+    }
+
+    #[test]
+    fn select_cuts_lists_and_says_how_long_they_were() {
+        let state = select(graph_state(), &[], None, Some(2));
+        assert_eq!(state["search_matches"].as_array().unwrap().len(), 2);
+        assert_eq!(state["graph"]["nodes"].as_array().unwrap().len(), 2);
+        assert_eq!(state["truncated"]["search_matches"], 3);
+        assert_eq!(state["truncated"]["graph.nodes"], 3);
+        assert!(state["truncated"].get("graph.edges").is_none());
+        assert!(state["truncated"].get("tabs").is_none());
     }
 }

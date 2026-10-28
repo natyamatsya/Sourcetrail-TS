@@ -140,6 +140,26 @@ struct InstanceArg {
 #[derive(serde::Deserialize, rmcp::schemars::JsonSchema)]
 #[schemars(crate = "rmcp::schemars")]
 #[serde(deny_unknown_fields)]
+struct UiStateArgs {
+    #[serde(default)]
+    instance: String,
+    /// Only these top-level fields (app_state, active_nodes, graph, view_graph,
+    /// machines, ...); empty for all.
+    #[serde(default)]
+    fields: Vec<String>,
+    /// Only the graph's edges that touch this node (its node_id or serialized
+    /// name), and the nodes at their ends.
+    #[serde(default)]
+    node: Option<String>,
+    /// At most this many items in each list (graph nodes and edges, view_graph,
+    /// search_matches, ...); `truncated` says which were cut and how long they were.
+    #[serde(default)]
+    limit: Option<usize>,
+}
+
+#[derive(serde::Deserialize, rmcp::schemars::JsonSchema)]
+#[schemars(crate = "rmcp::schemars")]
+#[serde(deny_unknown_fields)]
 struct RefPathStep {
     role: String,
     #[serde(default)]
@@ -862,8 +882,8 @@ impl SourcetrailServer {
 
     // --- state + events ---
 
-    #[tool(description = "Read the app's state: project, app_state (NoProject/Loading/Indexing/Ready/Busy), active nodes, graph, code view, search matches, tabs. Returns the ui_state object; describe('state').")]
-    async fn ui_state(&self, Parameters(a): Parameters<InstanceArg>) -> Result<CallToolResult, McpError> {
+    #[tool(description = "Read the app's state: app_state, active nodes, graph, code view, search matches, tabs; fields, node and limit return less of it. Returns the ui_state object; describe('state').")]
+    async fn ui_state(&self, Parameters(a): Parameters<UiStateArgs>) -> Result<CallToolResult, McpError> {
         ok_json(
             self.mgr
                 .call(move |m| {
@@ -871,7 +891,7 @@ impl SourcetrailServer {
                     let state = bridge.get_ui_state()?;
                     // What the agent has seen is what the next changes are taken against.
                     bridge.reported_state().seen(&state);
-                    Ok(state)
+                    Ok(agent_mcp_bridge::state_view::select(state, &a.fields, a.node.as_deref(), a.limit))
                 })
                 .await?,
         )
