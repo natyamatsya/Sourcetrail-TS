@@ -714,6 +714,27 @@ TEST_CASE("cxx parser finds a typedef naming its own tag as that tag")
 	REQUIRE(cxxClient->typedefs.empty());
 }
 
+TEST_CASE("cxx parser records no type use or inheritance of a type by itself")
+{
+	std::shared_ptr<TestStorage> cClient = parseCCode("typedef struct ops { int area; } ops;\n");
+	REQUIRE_FALSE(containsElement(cClient->typeUses, "ops -> ops <1:16 1:18>"s));
+
+	std::shared_ptr<TestStorage> client = parseCode(
+		"template <typename T> struct Base {};\n"
+		"struct Value: Base<Value> {};\n"
+		"template <typename L> struct Traits: Traits<decltype(&L::operator())> {};\n");
+
+	// The class as its base's template argument is a use by the base.
+	REQUIRE(containsElement(client->typeUses, "Base<Value> -> Value <2:20 2:24>"s));
+	REQUIRE(containsElement(client->inheritances, "Value -> Base<Value> <2:15 2:18>"s));
+	for (const std::string& edge: utility::concat(client->typeUses, client->inheritances))
+	{
+		INFO(edge);
+		REQUIRE_FALSE(edge.starts_with("Value -> Value "));
+		REQUIRE_FALSE(edge.starts_with("Traits<typename L> -> Traits<typename L> "));
+	}
+}
+
 TEST_CASE("cxx parser finds name of anonymous struct declared inside type alias")
 {
 	std::shared_ptr<TestStorage> client = parseCode(

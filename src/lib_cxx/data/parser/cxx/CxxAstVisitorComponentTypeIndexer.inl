@@ -244,19 +244,30 @@ inline void CxxAstVisitorComponentTypeIndexer::visitTypeLoc(clang::TypeLoc tl)
 
 			const ParseLocation parseLocation = m_index.getParseLocation(loc);
 
-			m_index.recordReference(m_typeRefKind->isTraversingInheritance() ? ReferenceKind::INHERITANCE : ReferenceKind::TYPE_USAGE,
-				symbolId, m_index.getOrCreateSymbolId(m_index.getContext(1)),	// we skip the last element because it refers to this typeloc.
-				parseLocation);
+			// A type does not use or inherit from itself: the typedef of its own tag
+			// (typedef struct X {...} X;), a class as its base's template argument
+			// (Value : enable_shared_from_this<Value>, which records the use from the base too),
+			// a template inheriting from one of its specializations, which has its node
+			// (UnaryLambdaTraits<L> : UnaryLambdaTraits<decltype(&L::operator())>).
+			const auto recordUnlessSelf = [&](ReferenceKind kind, Id contextSymbolId)
+			{
+				if (contextSymbolId != symbolId)
+				{
+					m_index.recordReference(kind, symbolId, contextSymbolId, parseLocation);
+				}
+			};
+
+			recordUnlessSelf(
+				m_typeRefKind->isTraversingInheritance() ? ReferenceKind::INHERITANCE : ReferenceKind::TYPE_USAGE,
+				m_index.getOrCreateSymbolId(m_index.getContext(1)));	// we skip the last element because it refers to this typeloc.
 
 			if (m_typeRefKind->isTraversingTemplateArgument())
 			{
 				if (const clang::NamedDecl* namedContextDecl = m_index.getTopmostContextDecl(2))
 				{
-					m_index.recordReference(
+					recordUnlessSelf(
 						ReferenceKind::TYPE_USAGE,
-						symbolId,
-						m_index.getOrCreateSymbolId(namedContextDecl),	  // we use the closest named decl here
-						parseLocation);
+						m_index.getOrCreateSymbolId(namedContextDecl));	   // we use the closest named decl here
 				}
 			}
 		}
