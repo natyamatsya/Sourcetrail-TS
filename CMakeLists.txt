@@ -408,6 +408,9 @@ find_package(Qt6 ${QT_MIN_VERSION} CONFIG REQUIRED
 		Widgets 
 )
 message(STATUS "Found Qt ${Qt6_VERSION}")
+# Qt6::GuiPrivate: the agent's input goes through Qt's platform interface (QWindowSystemInterface,
+# QtUiControl.cpp), as a person's does. A component of its own since Qt 6.9; part of Gui before.
+find_package(Qt6 ${QT_MIN_VERSION} CONFIG QUIET COMPONENTS GuiPrivate)
 
 add_library(External_lib_qt INTERFACE)
 

@@ -93,6 +93,9 @@ target_link_libraries(Sourcetrail_lib_gui
 
 		# Qt<->stdexec bridge in qt/execution/ needs stdexec directly.
 		STDEXEC::stdexec
+	PRIVATE
+		# QtUiControl hands the agent's input to Qt as a platform plugin hands it a person's.
+		Qt6::GuiPrivate
 )
 
 # Module build: converted consumer TUs `import srctrl.*;` instead of #including the modularized

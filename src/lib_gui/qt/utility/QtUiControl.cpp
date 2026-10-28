@@ -22,6 +22,11 @@
 #include <QByteArray>
 #include <QColor>
 #include <QComboBox>
+#include <QWindow>
+#include <qpa/qwindowsysteminterface.h>
+#include <QGuiApplication>
+#include <QElapsedTimer>
+#include <QCursor>
 #include <QContextMenuEvent>
 #include <QStyleHints>
 #include <QEnterEvent>
@@ -681,148 +686,143 @@ std::string describeReceiver(const QWidget* receiver)
 	return text;
 }
 
-// Delivers `event` to `receiver` on a later turn of the event loop, under the cause
-// current now: what the event dispatches is on behalf of the request that sent it.
-// Queued calls run in order, and inside a nested event loop, as posted events do; a
-// deleted receiver drops it.
-void postUnderCause(QWidget* receiver, QEvent* event)
+// The agent's pointer and buttons, as the platform reports a person's: the press's window
+// takes the moves and the release while a button is held (the platform's implicit grab), and a
+// press soon after one at the same place is reported so that Qt makes it a double click.
+struct Pointer
 {
-	QMetaObject::invokeMethod(
-		receiver,
-		withCurrentCause([receiver, event = std::shared_ptr<QEvent>(event)]() {
-			QCoreApplication::sendEvent(receiver, event.get());
-		}),
-		Qt::QueuedConnection);
-}
+	QPointer<QWindow> pressWindow;
+	Qt::MouseButtons held;
+	QElapsedTimer clock;
+	int lastTimestamp = 0;
 
-// A press went to an open popup (a menu) and closed it: as for a person's, its release (and a
-// context-menu event) reach no widget underneath (QWidgetWindow swallows them).
-bool s_pressClosedPopup{false};
-
-// A mouse event at the global point `global`, posted to `receiver` as postUnderCause does, and
-// made when it is delivered, as the window makes a person's: for the open popup (a menu), which
-// takes all mouse input while it is open; else for the widget that grabbed the mouse meanwhile,
-// if one did (a dock being dragged); and at the point in it then. A widget the gesture moves (a
-// gutter between docks, dragged) gets the next move where that left it.
-void postMouseUnderCause(
-	QWidget* receiver,
-	QEvent::Type type,
-	const QPointF& global,
-	Qt::MouseButton button,
-	Qt::MouseButtons buttons,
-	Qt::KeyboardModifiers modifiers)
-{
-	QMetaObject::invokeMethod(
-		receiver,
-		withCurrentCause([receiver, type, global, button, buttons, modifiers]() {
-			QWidget* const popup{QApplication::activePopupWidget()};
-			if (type == QEvent::MouseButtonRelease && s_pressClosedPopup && popup == nullptr)
-			{
-				s_pressClosedPopup = false;
-				return;
-			}
-			QWidget* const grabber{QWidget::mouseGrabber()};
-			QWidget* const target{popup != nullptr ? popup : grabber != nullptr ? grabber : receiver};
-			QMouseEvent event{type, target->mapFromGlobal(global), global, button, buttons, modifiers};
-			QCoreApplication::sendEvent(target, &event);
-			if (type == QEvent::MouseButtonPress)
-			{
-				s_pressClosedPopup = popup != nullptr && QApplication::activePopupWidget() != popup;
-			}
-		}),
-		Qt::QueuedConnection);
-}
-
-// The context-menu event a person's right click makes, for the widget under the mouse: not when
-// the click closed a popup instead.
-void postContextMenuUnderCause(QWidget* receiver, const QPointF& local, const QPointF& global, Qt::KeyboardModifiers modifiers)
-{
-	QMetaObject::invokeMethod(
-		receiver,
-		withCurrentCause([receiver, local, global, modifiers]() {
-			if (s_pressClosedPopup || QApplication::activePopupWidget() != nullptr)
-			{
-				return;
-			}
-			QContextMenuEvent event{QContextMenuEvent::Mouse, local.toPoint(), global.toPoint(), modifiers};
-			QCoreApplication::sendEvent(receiver, &event);
-		}),
-		Qt::QueuedConnection);
-}
-
-// Whether the platform sends the context-menu event on the press (macOS, Linux) or on the
-// release (Windows): Qt's own setting, which the window follows for a person's click.
-bool contextMenuOnPress()
-{
-	return QGuiApplication::styleHints()->contextMenuTrigger() == Qt::ContextMenuTrigger::Press;
-}
-
-// The widget the agent's mouse is over, for the enter and leave events below.
-QPointer<QWidget> s_underMouse;
-
-// The widget and its parents, up to its window, innermost first.
-std::vector<QPointer<QWidget>> withParents(QWidget* widget)
-{
-	std::vector<QPointer<QWidget>> chain;
-	for (QWidget* w = widget; w != nullptr; w = w->isWindow() ? nullptr : w->parentWidget())
+	int nextTimestamp(int after)
 	{
-		chain.emplace_back(w);
+		if (!clock.isValid())
+		{
+			clock.start();
+		}
+		lastTimestamp = std::max(lastTimestamp + after, static_cast<int>(clock.elapsed()));
+		return lastTimestamp;
 	}
-	return chain;
+};
+Pointer s_pointer;
+
+// The window a person's mouse event at `global` goes to: the press's window while a button is
+// held, else the window under the point (a popup in front included), else `fallback`'s.
+QWindow* windowForMouse(const QPointF& global, const QWidget* fallback)
+{
+	if (s_pointer.held != Qt::NoButton && s_pointer.pressWindow)
+	{
+		return s_pointer.pressWindow;
+	}
+	if (QWindow* window = QGuiApplication::topLevelAt(global.toPoint()))
+	{
+		return window;
+	}
+	return fallback->window()->windowHandle();
 }
 
-// Posted input does not go through the window, which is what sends the enter and
-// leave events: a widget that shows controls while the mouse is over it (a
-// bookmark's edit and delete buttons) never saw the agent's mouse come. Sent here as
-// the window would, to the widgets the mouse leaves and those it enters.
-void moveMouseTo(QWidget* widget, const QPointF& global)
+// The pointer moves to `global`, as a person's does before anything happens there: headless
+// (offscreen), QCursor::setPos moves the platform's pointer, which reports the move and the
+// enter and leave between windows as an OS does; on a screen the person's own pointer stays
+// where it is (the agent does not take it), and the move goes to the window as the platform
+// reports one; KDDockWidgets follows the agent's pointer from its events then.
+void movePointerTo(const QPointF& global, const QWidget* fallback)
 {
-	if (s_underMouse == widget)
+	if (QGuiApplication::platformName() == QLatin1String("offscreen"))
 	{
+		if (QCursor::pos() != global.toPoint())
+		{
+			QCursor::setPos(global.toPoint());
+			// The platform queues the move, enter and leave; an OS reports them as the pointer
+			// moves, before what happens at the new place.
+			QWindowSystemInterface::flushWindowSystemEvents();
+		}
 		return;
 	}
-	std::vector<QPointer<QWidget>> left = withParents(s_underMouse);
-	std::vector<QPointer<QWidget>> entered = withParents(widget);
-	while (!left.empty() && !entered.empty() && left.back() == entered.back())
-	{
-		left.pop_back();
-		entered.pop_back();
-	}
-	s_underMouse = widget;
-	for (const QPointer<QWidget>& w: left)
-	{
-		if (w)
-		{
-			w->setAttribute(Qt::WA_UnderMouse, false);
-			QEvent leave(QEvent::Leave);
-			QCoreApplication::sendEvent(w, &leave);
-		}
-	}
-	for (const QPointer<QWidget>& entering: entered | std::views::reverse)
-	{
-		if (QWidget* w = entering)
-		{
-			w->setAttribute(Qt::WA_UnderMouse, true);
-			const QPointF local = w->mapFromGlobal(global);
-			QEnterEvent enter(local, local, global);
-			QCoreApplication::sendEvent(w, &enter);
-		}
-	}
+	QWindow* const window{windowForMouse(global, fallback)};
+	QWindowSystemInterface::handleMouseEvent<QWindowSystemInterface::SynchronousDelivery>(window,
+		static_cast<ulong>(s_pointer.nextTimestamp(1)), window->mapFromGlobal(global), global, s_pointer.held,
+		Qt::NoButton, QEvent::MouseMove, QGuiApplication::keyboardModifiers());
 }
 
-// moveMouseTo, in turn with the posted events.
-void postMouseTo(QWidget* receiver, const QPointF& global)
+// One of the agent's events, handed to Qt as a platform plugin hands it a person's
+// (QWindowSystemInterface): through the window, with Qt's popup routing, mouse grab,
+// context-menu event, double click, keyboard focus, shortcuts, enter and leave.
+// QtUiControlInputTestSuite holds it to a person's input.
+void deliver(const InputEvent& event, const QPointF& global, const QWidget* fallback)
 {
-	QMetaObject::invokeMethod(
-		receiver, withCurrentCause([receiver, global]() { moveMouseTo(receiver, global); }), Qt::QueuedConnection);
+	const Qt::KeyboardModifiers modifiers = toQtModifiers(event.modifiers);
+	const Qt::MouseButton button = toQtButton(event.button);
+	switch (event.kind)
+	{
+	case InputKind::MouseMove:
+		movePointerTo(global, fallback);
+		break;
+	case InputKind::MousePress:
+	case InputKind::MouseDoubleClick:
+	{
+		movePointerTo(global, fallback);
+		QWindow* const window{windowForMouse(global, fallback)};
+		s_pointer.held |= button;
+		s_pointer.pressWindow = window;
+		// A double click is the second press within the double-click interval of the first.
+		const int timestamp{s_pointer.nextTimestamp(event.kind == InputKind::MouseDoubleClick ? 1 : 1000)};
+		QWindowSystemInterface::handleMouseEvent<QWindowSystemInterface::SynchronousDelivery>(window,
+			static_cast<ulong>(timestamp), window->mapFromGlobal(global), global, s_pointer.held, button,
+			QEvent::MouseButtonPress, modifiers);
+		break;
+	}
+	case InputKind::MouseRelease:
+	{
+		movePointerTo(global, fallback);
+		QWindow* const window{windowForMouse(global, fallback)};
+		s_pointer.held &= ~button;
+		QWindowSystemInterface::handleMouseEvent<QWindowSystemInterface::SynchronousDelivery>(window,
+			static_cast<ulong>(s_pointer.nextTimestamp(1)), window->mapFromGlobal(global), global, s_pointer.held,
+			button, QEvent::MouseButtonRelease, modifiers);
+		break;
+	}
+	case InputKind::Wheel:
+	{
+		movePointerTo(global, fallback);
+		QWindow* const window{windowForMouse(global, fallback)};
+		QWindowSystemInterface::handleWheelEvent(window, static_cast<ulong>(s_pointer.nextTimestamp(1)),
+			window->mapFromGlobal(global), global, QPoint{}, QPoint{0, event.wheelDelta}, modifiers, Qt::NoScrollPhase);
+		QWindowSystemInterface::flushWindowSystemEvents();	  // queued: delivered here, in turn
+		break;
+	}
+	case InputKind::KeyPress:
+	case InputKind::KeyRelease:
+	{
+		// Keys go to the window with the keyboard focus, and in it to the focused widget, as a
+		// person's do; shortcuts first.
+		QWindow* const focused{QGuiApplication::focusWindow()};
+		QWindow* const window{focused != nullptr ? focused : fallback->window()->windowHandle()};
+#if defined(Q_OS_MACOS)
+		// The macOS platform offers a key press to the shortcuts before it reports it as a key.
+		if (event.kind == InputKind::KeyPress &&
+			QWindowSystemInterface::handleShortcutEvent(window, static_cast<ulong>(s_pointer.nextTimestamp(1)),
+				static_cast<int>(event.key), modifiers, 0, 0, 0, QString::fromStdString(event.text)))
+		{
+			break;
+		}
+#endif
+		QWindowSystemInterface::handleKeyEvent<QWindowSystemInterface::SynchronousDelivery>(window,
+			event.kind == InputKind::KeyPress ? QEvent::KeyPress : QEvent::KeyRelease, static_cast<int>(event.key),
+			modifiers, QString::fromStdString(event.text));
+		break;
+	}
+	}
 }
 
-// Post the gesture to `receiver`, each event at the global point `toGlobal(event)`
-// gives, then `delivered`. Posted rather than sent: a press can open a menu or a
-// dialog whose exec() would otherwise block the caller, and the agent's ack with
-// it. Posted events and the queued call run in order, so `delivered` follows the
-// last event (inside a nested event loop, if one of them opened one). A deleted
-// receiver drops its pending events.
+// Post the gesture, each event at the global point `toGlobal(event)` gives, then `delivered`.
+// Each goes to Qt as the platform hands it a person's (deliver), so it reaches the widgets as a
+// person's does. Posted rather than sent: a press can open a menu or a dialog whose exec()
+// would otherwise block the caller, and the agent's ack with it. The posted calls run in order,
+// so `delivered` follows the last event (inside a nested event loop, if one of them opened one).
+// A deleted receiver drops its pending events.
 void postGesture(
 	QWidget* receiver,
 	const std::vector<InputEvent>& events,
@@ -831,69 +831,39 @@ void postGesture(
 {
 	for (const InputEvent& event: events)
 	{
-		const QPointF global = toGlobal(event);
-		const QPointF local = receiver->mapFromGlobal(global);
-		const Qt::KeyboardModifiers modifiers = toQtModifiers(event.modifiers);
-		const Qt::MouseButton button = toQtButton(event.button);
-		switch (event.kind)
-		{
-		case InputKind::MouseMove:
-			postMouseTo(receiver, global);
-			postMouseUnderCause(receiver, QEvent::MouseMove, global, Qt::NoButton, toQtButtons(event.buttons), modifiers);
-			break;
-		case InputKind::MousePress:
-			postMouseTo(receiver, global);
-			postMouseUnderCause(receiver, QEvent::MouseButtonPress, global, button, button, modifiers);
-			// A real right click also makes the window send a context-menu event, on the press or
-			// the release as the platform does; posted input does not go through the window, so
-			// post it here.
-			if (button == Qt::RightButton && contextMenuOnPress())
-			{
-				postContextMenuUnderCause(receiver, local, global, modifiers);
-			}
-			break;
-		case InputKind::MouseRelease:
-			postMouseUnderCause(receiver, QEvent::MouseButtonRelease, global, button, Qt::NoButton, modifiers);
-			if (button == Qt::RightButton && !contextMenuOnPress())
-			{
-				postContextMenuUnderCause(receiver, local, global, modifiers);
-			}
-			break;
-		case InputKind::MouseDoubleClick:
-			postMouseUnderCause(receiver, QEvent::MouseButtonDblClick, global, button, button, modifiers);
-			break;
-		case InputKind::Wheel:
-			postUnderCause(receiver,
-				new QWheelEvent(local, global, QPoint(0, 0), QPoint(0, event.wheelDelta), toQtButtons(event.buttons),
-					modifiers, Qt::NoScrollPhase, /*inverted*/ false));
-			break;
-		case InputKind::KeyPress:
-			postUnderCause(receiver,
-				new QKeyEvent(QEvent::KeyPress, static_cast<int>(event.key), modifiers, QString::fromStdString(event.text)));
-			break;
-		case InputKind::KeyRelease:
-			postUnderCause(receiver,
-				new QKeyEvent(QEvent::KeyRelease, static_cast<int>(event.key), modifiers, QString::fromStdString(event.text)));
-			break;
-		}
+		QMetaObject::invokeMethod(
+			receiver,
+			withCurrentCause([receiver, event, global = toGlobal(event)]() {
+				deliver(event, global, receiver);
+				// What the platform reported meanwhile (a window shown under the pointer entered)
+				// comes before the next event, as time passes between a person's.
+				QWindowSystemInterface::flushWindowSystemEvents();
+			}),
+			Qt::QueuedConnection);
 	}
 	QMetaObject::invokeMethod(qApp, std::move(delivered), Qt::QueuedConnection);
 }
 
-// "delivered to ..." for the result: the widget `events` go to. Mouse events go to the widget
-// that grabbed the mouse, if one did (postMouseUnderCause).
+// "delivered to ..." for the result: the widget `events` aim at, and where mouse input goes
+// meanwhile (an open popup, the widget that grabbed the mouse), or keys (the focused widget).
 std::string deliveredTo(QWidget* receiver, const std::vector<InputEvent>& events)
 {
-	QWidget* const grabber{QWidget::mouseGrabber()};
 	const bool mouse{std::ranges::any_of(events, [](const InputEvent& event) {
-		return event.kind != InputKind::KeyPress && event.kind != InputKind::KeyRelease && event.kind != InputKind::Wheel;
+		return event.kind != InputKind::KeyPress && event.kind != InputKind::KeyRelease;
 	})};
-	if (grabber == nullptr || grabber == receiver || !mouse)
+	QWidget* const takesMouse{QApplication::activePopupWidget() != nullptr ? QApplication::activePopupWidget()
+																			: QWidget::mouseGrabber()};
+	QWidget* const focused{QApplication::focusWidget()};
+	std::string text{"delivered to " + describeReceiver(receiver)};
+	if (mouse && takesMouse != nullptr && takesMouse != receiver)
 	{
-		return "delivered to " + describeReceiver(receiver);
+		text += ", where " + describeReceiver(takesMouse) + " takes the mouse";
 	}
-	return "delivered to " + describeReceiver(grabber) + ", which has grabbed the mouse (aimed at " +
-		describeReceiver(receiver) + ")";
+	if (!mouse && focused != nullptr && focused != receiver)
+	{
+		text += ", where " + describeReceiver(focused) + " has the keyboard focus";
+	}
+	return text;
 }
 
 // The deepest visible widget under the global point, in the window a frame shows in front

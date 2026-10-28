@@ -424,6 +424,14 @@ release over one docks it there (the center one tabs it in). A drag on a gutter 
 indicators, and the release in a later ui_input goes where the drag is (the widget that grabbed \
 the mouse), wherever it is aimed. The docks machine says where the docks went \
 (describe('machines')), and arranges them by name too.
+  The input goes to Qt as the platform reports a person's (QWindowSystemInterface), so it \
+reaches the widgets as theirs does: the pointer moves to each point first (enter, leave and \
+hover follow); while a button is held the press's window takes the moves and the release; an \
+open popup (a menu) takes the mouse, and a click beside it closes it and reaches nothing else; \
+a right click sends the context-menu event on the press or the release as the platform does; \
+two presses in a row make a double click. Keys go to the widget with the keyboard focus, \
+shortcuts first, wherever the event is aimed: click a field before typing into it. \
+Headless, the platform's pointer moves; on a screen the person's pointer stays where it is.
   While a modal window is in front (a question box), input for anything outside it is \
 refused (ok: false), as a person's is.
   The result: `message` names the widget that received the input; once its effects \
@@ -432,8 +440,7 @@ a summary by default (a dialog the click opened is changes.dialog.opened, a tab 
 changes.active_tab), state: \"full\" for the whole ui_state (a clicked node is in active_nodes), \
 \"none\" for neither; describe('state'). settled: false means they did not drain in time, e.g. \
 the click opened a dialog that holds the app: look with ui_frame.
-  Modifiers travel with each event; code that reads the global keyboard state instead does \
-not see them. Needs agent-control protocol v5.",
+  Modifiers travel with each event. Needs agent-control protocol v5.",
     },
     Topic {
         name: "project",
