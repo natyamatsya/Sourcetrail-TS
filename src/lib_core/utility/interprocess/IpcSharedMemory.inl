@@ -261,6 +261,17 @@ inline IpcSharedMemory::ScopedAccess::ScopedAccess(IpcSharedMemory* memory)
 			<< " retries on '" << m_memory->getMutexName() << "'");
 }
 
+inline IpcSharedMemory::ScopedAccess::ScopedAccess(
+	IpcSharedMemory* memory, const std::chrono::milliseconds lockTimeout)
+	: m_memory(memory)
+{
+	if (!m_memory->m_mutex.lock(static_cast<std::uint64_t>(lockTimeout.count())))
+		throw std::runtime_error(
+			"IpcSharedMemory::ScopedAccess lock timeout on " + m_memory->getMutexName() + " after " +
+			std::to_string(lockTimeout.count()) + " ms");
+	m_locked = true;
+}
+
 inline IpcSharedMemory::ScopedAccess::~ScopedAccess()
 {
 	if (!m_locked)
