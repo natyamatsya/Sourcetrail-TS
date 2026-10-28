@@ -94,7 +94,8 @@ template <typename T>
 T ConfigManager::getValueOrDefault(const std::string& key, T defaultValue) const
 {
 	T value;
-	if (getValue(key, value))
+	// A key left out takes the default, quietly: leaving it out is what the default is for.
+	if (isValueDefined(key) && getValue(key, value))
 	{
 		return value;
 	}
@@ -105,7 +106,8 @@ template <typename T>
 std::vector<T> ConfigManager::getValuesOrDefaults(const std::string& key, std::vector<T> defaultValues) const
 {
 	std::vector<T> values;
-	if (getValues(key, values))
+	// A key left out takes the default, quietly: leaving it out is what the default is for.
+	if (isValueDefined(key) && getValues(key, values))
 	{
 		return values;
 	}

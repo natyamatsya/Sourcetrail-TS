@@ -73,29 +73,13 @@ private:
 template <typename T>
 T Settings::getValue(const std::string& key, T defaultValue) const
 {
-	if (m_config)
-	{
-		T value;
-		if (m_config->getValue(key, value))
-		{
-			return value;
-		}
-	}
-	return defaultValue;
+	return m_config ? m_config->getValueOrDefault(key, std::move(defaultValue)) : defaultValue;
 }
 
 template <typename T>
 std::vector<T> Settings::getValues(const std::string& key, std::vector<T> defaultValues) const
 {
-	if (m_config)
-	{
-		std::vector<T> values;
-		if (m_config->getValues(key, values))
-		{
-			return values;
-		}
-	}
-	return defaultValues;
+	return m_config ? m_config->getValuesOrDefaults(key, std::move(defaultValues)) : defaultValues;
 }
 
 template <typename T>
