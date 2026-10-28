@@ -23,7 +23,10 @@
 #include "TaskBuildIndex.h"
 #include "TaskFillIndexerCommandQueue.h"
 #include "StdexecPrelude.h"
+#include "TestTempDirectory.h"
 #include "utilityApp.h"
+
+#include <fstream>
 
 #include "IntermediateStorage.h"
 
@@ -828,4 +831,47 @@ TEST_CASE("ipc integration: per-group command pop filter")
 	REQUIRE(second->getSourceGroupId() == "group-a");
 	REQUIRE(reader.indexerCommandCount() == 0);
 	ownerMgr.clearIndexerCommands();
+}
+
+TEST_CASE("ipc integration: a source file is indexed once, however many chunks its storage takes")
+{
+	if constexpr (language_packages::buildCxxLanguagePackage)
+	{
+		// The indexer splits a storage above its chunk budget (7 MB, ADR-0002); each chunk
+		// counted as a source file indexed: "Finished indexing: 11/9 source files indexed" for
+		// cxxopts, whose two test TUs took two chunks each.
+		const TestTempDirectory temp{"IpcIntegrationChunkedStorage"};
+		const std::filesystem::path sourcePath{temp.getPath() / "big.cpp"};
+		{
+			std::ofstream source{sourcePath};
+			for (int i = 0; i < 60000; i++)
+			{
+				source << "int function" << i << "(int value) { return value + " << i << "; }\n";
+			}
+		}
+
+		const std::string taskUuid = "ipc_task_build_chunked_storage_test";
+		IpcInterprocessIndexerCommandManager commandOwner(taskUuid, ProcessId::NONE, true);
+		commandOwner.clearIndexerCommands();
+		commandOwner.pushIndexerCommands({makeOptionalCxxCommand(
+			sourcePath.generic_string(),
+			std::set<FilePath>{FilePath{temp.getPath().generic_string()}},
+			temp.getPath().generic_string(),
+			std::vector<std::string>{"-std=c++17"})});
+
+		auto storageProvider = std::make_shared<StorageProvider>();
+		auto dialogView = std::make_shared<DialogView>(DialogView::UseCase::INDEXING, nullptr);
+		TaskBuildIndex task(1, storageProvider, dialogView, taskUuid);
+
+		IndexingRunState state;
+		state.sourceFileCount = 1;
+		state.commandQueueStopped = true;
+
+		REQUIRE(stdexec::sync_wait(task.run(state)).has_value());
+		REQUIRE(commandOwner.indexerCommandCount() == 0);
+		REQUIRE(storageProvider->getStorageCount() > 1);	// it was chunked
+		REQUIRE(state.indexedSourceFileCount == 1);
+	}
+	else
+		SUCCEED("C++ language package disabled.");
 }

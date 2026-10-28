@@ -102,7 +102,7 @@ protected:
 	// Drains the subprocesses' storages and hands them on; whether any came or went.
 	bool fetchIntermediateStorages(IndexingRunState& state);
 	// Hands pending storages to the provider: while the writer keeps up, or `all`.
-	size_t handOnStorages(IndexingRunState& state, bool all);
+	size_t handOnStorages(bool all);
 	void logIndexingSummary(const IndexingRunState& state) const;
 	void updateIndexingDialog(const IndexingRunState& state, const std::vector<FilePath>& sourcePaths);
 
