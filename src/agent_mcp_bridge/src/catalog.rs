@@ -619,7 +619,8 @@ name and location (a new project's only), and the shown source group's fields: \
 context.fields lists them with their values (strings, lists of strings, true/false), e.g. \
 source_paths, extensions, exclude_filters, compilation_database, cmake_source_directory, \
 cmake_preset, cmake_arguments (without a preset: what the configure adds to cmake -S -B, one \
-argument each, e.g. [\"-DBUILD_TESTS=OFF\"]), header_search_paths, compiler_flags, \
+argument each, e.g. [\"-DBUILD_TESTS=OFF\"]), cmake_index_linked_targets (true: also index \
+the targets the filtered ones link to, transitively), header_search_paths, compiler_flags, \
 cpp_standard, custom_command.
   show { source_group? }           editing: that source group's page, by its index in \
 context.source_groups (0 is the first), or the general one without it.
@@ -640,7 +641,8 @@ location }, source_groups [{ name, type, enabled }], fields, choices, notes, typ
 are the values the page offers for a field (a cmake group: its presets; once its build \
 directory is configured, its configurations and targets, for cmake_target_glob: names or \
 patterns joined by ';'); notes { field: text } what the page shows beside a field (the build \
-directory a preset resolves to, how many targets and files are indexed; cmake_error: the \
+directory a preset resolves to, how many targets and files are indexed and which of the \
+filter's patterns match no target, \"nosuch*: no target.\"; cmake_error: the \
 first error of the build directory's last configure that failed, and when directories it \
 adds are missing in a git checkout, the git submodule command). detected { folder, \
 source_group_type, reasons, notices? } (a project from a folder): why it is as proposed, the \

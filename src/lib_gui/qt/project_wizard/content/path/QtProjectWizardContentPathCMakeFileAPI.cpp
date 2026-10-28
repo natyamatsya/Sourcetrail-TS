@@ -370,6 +370,17 @@ void QtProjectWizardContentPathCMakeFileAPI::populate(QGridLayout* layout, int& 
 			&QtProjectWizardContentPathCMakeFileAPI::onTargetChecked);
 		row++;
 
+		m_indexLinkedTargetsCheck = new QCheckBox(QStringLiteral("Also index the targets these link to"), this);
+		m_indexLinkedTargetsCheck->setObjectName(QStringLiteral("indexLinkedTargets"));
+		m_indexLinkedTargetsCheck->setAccessibleName(QStringLiteral("Also index the targets these link to"));
+		m_indexLinkedTargetsCheck->setToolTip(QStringLiteral(
+			"With some targets checked: also index the targets they link to or depend on, transitively. "
+			"A program checked alone otherwise misses the definitions its libraries compile (with "
+			"CLI11_PRECOMPILED, every one of CLI11's)."));
+		layout->addWidget(m_indexLinkedTargetsCheck, row, QtProjectWizardWindow::BACK_COL);
+		connect(m_indexLinkedTargetsCheck, &QCheckBox::toggled, this, [this]() { showTargets(); });
+		row++;
+
 		m_targetSummaryLabel = new QLabel(QLatin1String(""), this);
 		m_targetSummaryLabel->setObjectName(QStringLiteral("description"));
 		m_targetSummaryLabel->setWordWrap(true);
@@ -404,6 +415,9 @@ void QtProjectWizardContentPathCMakeFileAPI::load()
 	m_configurationCombo->setCurrentText(QString::fromStdString(m_settings->getConfiguration()));
 	m_configurationCombo->blockSignals(false);
 	m_targetFilterEdit->setText(QString::fromStdString(m_settings->getTargetGlob()));
+	m_indexLinkedTargetsCheck->blockSignals(true);
+	m_indexLinkedTargetsCheck->setChecked(m_settings->getIndexLinkedTargets());
+	m_indexLinkedTargetsCheck->blockSignals(false);
 
 	m_buildDirPicker->blockSignals(true);
 	m_buildDirPicker->setText(QString::fromStdString(m_settings->getBuildDirectory().str()));
@@ -429,6 +443,7 @@ void QtProjectWizardContentPathCMakeFileAPI::save()
 	m_settings->setBuildDirectory(FilePath(m_buildDirPicker->getText().trimmed().toStdString()));
 	m_settings->setConfiguration(m_configurationCombo->currentText().trimmed().toStdString());
 	m_settings->setTargetGlob(m_targetFilterEdit->text().trimmed().toStdString());
+	m_settings->setIndexLinkedTargets(m_indexLinkedTargetsCheck->isChecked());
 	m_settings->setCMakeArguments(cmakeArguments().value_or(std::vector<std::string>{}));
 }
 
@@ -842,11 +857,13 @@ void QtProjectWizardContentPathCMakeFileAPI::readBuildDirectory()
 void QtProjectWizardContentPathCMakeFileAPI::readTargets()
 {
 	m_targets.clear();
+	m_targetEntries.clear();
 	if (m_hasReply)
 	{
 		const std::string configuration{m_configurationCombo->currentText().trimmed().toStdString()};
 		if (const auto sources{CMakeFileAPIReader{m_buildDir}.getSourcesDetailed(configuration, {})})
 		{
+			m_targetEntries = sources->targets;
 			for (const CMakeFileAPIReader::TargetEntry& target: sources->targets)
 			{
 				// CMake's helper targets for C++20 module collation are not the project's.
@@ -908,9 +925,17 @@ QString QtProjectWizardContentPathCMakeFileAPI::targetText(const Target& target,
 	return QString::fromStdString(text);
 }
 
-std::size_t QtProjectWizardContentPathCMakeFileAPI::checkedFileCount() const
+std::string QtProjectWizardContentPathCMakeFileAPI::effectiveTargetFilter() const
 {
 	const std::string filter{m_targetFilterEdit->text().trimmed().toStdString()};
+	return m_indexLinkedTargetsCheck->isChecked()
+		? CMakeFileAPIReader::filterWithDependencies(m_targetEntries, filter)
+		: filter;
+}
+
+std::size_t QtProjectWizardContentPathCMakeFileAPI::checkedFileCount() const
+{
+	const std::string filter{effectiveTargetFilter()};
 	std::set<FilePath> files;
 	for (const Target& target: m_targets)
 	{
@@ -925,6 +950,9 @@ std::size_t QtProjectWizardContentPathCMakeFileAPI::checkedFileCount() const
 void QtProjectWizardContentPathCMakeFileAPI::showTargets()
 {
 	const std::string filter{m_targetFilterEdit->text().trimmed().toStdString()};
+	const std::string effective{effectiveTargetFilter()};
+	m_indexLinkedTargetsCheck->setVisible(m_hasReply && !m_targets.empty());
+	m_indexLinkedTargetsCheck->setEnabled(!filter.empty());
 
 	// The checked targets first, then by kind (libraries, executables, tests, utilities),
 	// then by name: what is indexed is at the top. Not re-sorted on a check, so a row
@@ -967,14 +995,21 @@ void QtProjectWizardContentPathCMakeFileAPI::showTargets()
 			heading->setFont(font);
 		}
 
-		QListWidgetItem* item{new QListWidgetItem(targetText(*target, checked && !allChecked), m_targetList)};
+		// Indexed because a checked target links to it: half checked, said so.
+		const bool linked{!checked && CMakeFileAPIReader::matchesTargetFilter(target->name, effective)};
+		QString text{targetText(*target, checked && !allChecked)};
+		if (linked)
+		{
+			text += QStringLiteral(" \u2013 linked");
+		}
+		QListWidgetItem* item{new QListWidgetItem(text, m_targetList)};
 		item->setData(Qt::UserRole, QString::fromStdString(target->name));
 		item->setFlags(item->flags() | Qt::ItemIsUserCheckable);
 		if (target->sourceFileCount == 0)
 		{
 			item->setFlags(item->flags() & ~Qt::ItemIsEnabled);	// nothing to index either way
 		}
-		item->setCheckState(checked ? Qt::Checked : Qt::Unchecked);
+		item->setCheckState(checked ? Qt::Checked : linked ? Qt::PartiallyChecked : Qt::Unchecked);
 	}
 	m_targetList->blockSignals(false);
 	m_targetList->setVisible(!m_targets.empty());
@@ -1024,22 +1059,38 @@ QString QtProjectWizardContentPathCMakeFileAPI::targetSummary() const
 				  "directory: Run CMake, or index the project.");
 	}
 	const std::string filter{m_targetFilterEdit->text().trimmed().toStdString()};
+	const std::string effective{effectiveTargetFilter()};
 	std::size_t matched{0};
+	std::size_t linked{0};
+	std::vector<std::string> names;
 	for (const Target& target: m_targets)
 	{
+		names.push_back(target.name);
 		if (CMakeFileAPIReader::matchesTargetFilter(target.name, filter))
 		{
 			matched++;
 		}
+		else if (CMakeFileAPIReader::matchesTargetFilter(target.name, effective))
+		{
+			linked++;
+		}
 	}
 	// Each file once: targets share sources (a library's, its tests').
 	const std::size_t files{checkedFileCount()};
+	// A pattern that matches nothing is likely a typo: said, per pattern.
+	std::string unmatched;
+	for (const std::string& pattern: CMakeFileAPIReader::unmatchedPatterns(names, filter))
+	{
+		unmatched += std::format(" {}: no target.", pattern);
+	}
 	return QString::fromStdString(std::format(
-		"{} of {} target{}, {} to index.",
+		"{} of {} target{}{}, {} to index.{}",
 		matched,
 		m_targets.size(),
 		m_targets.size() == 1 ? "" : "s",
-		fileCount(files)));
+		linked > 0 ? std::format(" and {} they link to", linked) : std::string{},
+		fileCount(files),
+		unmatched));
 }
 
 QString QtProjectWizardContentPathCMakeFileAPI::buildDirectoryNote() const

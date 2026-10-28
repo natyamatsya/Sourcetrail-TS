@@ -151,6 +151,10 @@ const std::vector<Field>& fields()
 			"cmake_arguments",
 			[](const CMake& c) { return c.getCMakeArguments(); },
 			[](CMake& c, const Strings& v) { c.setCMakeArguments(v); }),
+		field<CMake, bool>(
+			"cmake_index_linked_targets",
+			[](const CMake& c) { return c.getIndexLinkedTargets(); },
+			[](CMake& c, bool v) { c.setIndexLinkedTargets(v); }),
 		field<CMake, std::string>(
 			"cmake_configuration",
 			[](const CMake& c) { return c.getConfiguration(); },

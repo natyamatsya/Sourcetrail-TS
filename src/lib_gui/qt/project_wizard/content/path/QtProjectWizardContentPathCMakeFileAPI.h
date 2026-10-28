@@ -63,8 +63,10 @@ private:
 	static std::string targetKind(const Target& target);
 	// The target's row text, with what it adds to the checked targets' files when checked.
 	QString targetText(const Target& target, bool checked) const;
-	// The files the checked targets have, each once.
+	// The files the indexed targets have, each once.
 	std::size_t checkedFileCount() const;
+	// The filter indexing uses: the typed one, with the targets they link to when asked.
+	std::string effectiveTargetFilter() const;
 	// Updates the checked rows' texts (what each adds) after a check.
 	void updateTargetTexts();
 
@@ -109,6 +111,7 @@ private:
 	QListWidget* m_targetList = nullptr;
 	QLineEdit* m_targetListFilterEdit = nullptr;	// narrows the list; not the indexing filter
 	QCheckBox* m_showEmptyTargetsCheck = nullptr;
+	QCheckBox* m_indexLinkedTargetsCheck = nullptr;
 	QLabel* m_targetSummaryLabel = nullptr;
 
 	FilePath m_sourceDir;	// expanded and absolute
@@ -123,6 +126,7 @@ private:
 	bool m_missesSubmodules = false;	// ... and it looks like a checkout without its submodules
 	std::vector<std::string> m_configurations;
 	std::vector<Target> m_targets;
+	std::vector<CMakeFileAPIReader::TargetEntry> m_targetEntries;	// with their dependencies
 };
 
 #endif	  // QT_PROJECT_WIZARD_CONTENT_PATH_CMAKE_FILE_API_H

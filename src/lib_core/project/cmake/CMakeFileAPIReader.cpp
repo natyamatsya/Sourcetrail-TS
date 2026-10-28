@@ -903,6 +903,52 @@ std::vector<std::string> CMakeFileAPIReader::splitCompileFragment(const std::str
 	return tokens;
 }
 
+std::string CMakeFileAPIReader::filterWithDependencies(
+	const std::vector<TargetEntry>& targets, const std::string& targetFilter)
+{
+	if (QString::fromStdString(targetFilter).trimmed().isEmpty())
+		return targetFilter;
+
+	std::vector<std::string> names{};
+	std::vector<std::string> pending{};
+	for (const TargetEntry& target : targets)
+		if (matchesTargetFilter(target.name, targetFilter))
+			pending.push_back(target.name);
+	while (!pending.empty())
+	{
+		const std::string name{std::move(pending.back())};
+		pending.pop_back();
+		if (std::ranges::contains(names, name))
+			continue;
+		names.push_back(name);
+		const auto target{std::ranges::find(targets, name, &TargetEntry::name)};
+		if (target != targets.end())
+			for (const std::string& dependency : target->dependencies)
+				pending.push_back(dependency);
+	}
+	std::ranges::sort(names);
+	std::string filter{};
+	for (const std::string& name : names)
+		filter += (filter.empty() ? "" : ";") + name;
+	// A filter that matched nothing stays as it was, so it still says so.
+	return filter.empty() ? targetFilter : filter;
+}
+
+std::vector<std::string> CMakeFileAPIReader::unmatchedPatterns(
+	const std::vector<std::string>& targetNames, const std::string& targetFilter)
+{
+	std::vector<std::string> unmatched{};
+	for (const QString& part : QString::fromStdString(targetFilter).split(QRegularExpression(QStringLiteral("[;,]"))))
+	{
+		const std::string pattern{part.trimmed().toStdString()};
+		if (!pattern.empty() && std::ranges::none_of(targetNames, [&](const std::string& name) {
+				return matchesTargetFilter(name, pattern);
+			}))
+			unmatched.push_back(pattern);
+	}
+	return unmatched;
+}
+
 bool CMakeFileAPIReader::matchesTargetFilter(
 	const std::string& targetName, const std::string& targetFilter)
 {

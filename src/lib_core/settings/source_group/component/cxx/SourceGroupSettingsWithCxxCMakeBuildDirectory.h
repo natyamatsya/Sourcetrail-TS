@@ -46,6 +46,11 @@ public:
 	const std::vector<std::string>& getCMakeArguments() const;
 	void setCMakeArguments(const std::vector<std::string>& arguments);
 
+	// With a target filter: also index the targets the matched ones depend on (link to,
+	// or need built first), transitively.
+	bool getIndexLinkedTargets() const;
+	void setIndexLinkedTargets(bool index);
+
 	// Optional: CMake configuration name (e.g. "Debug", "Release").
 	const std::string& getConfiguration() const;
 	void setConfiguration(const std::string& config);
@@ -62,6 +67,7 @@ private:
 	std::string m_targetGlob;
 	std::string m_configuration;
 	std::vector<std::string> m_cmakeArguments;
+	bool m_indexLinkedTargets = false;
 };
 
 #include "SourceGroupSettingsWithCxxCMakeBuildDirectory.inl"

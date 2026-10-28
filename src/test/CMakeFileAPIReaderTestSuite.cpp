@@ -917,3 +917,29 @@ TEST_CASE("JSONPath evaluate does not corrupt codemodel configurations array")
 		CHECK_FALSE(configs.at(i).toObject().isEmpty());
 	}
 }
+
+TEST_CASE("CMakeFileAPIReader filterWithDependencies adds what the matched targets depend on")
+{
+	using Target = CMakeFileAPIReader::TargetEntry;
+	const std::vector<Target> targets{
+		Target{.name = "minimal", .type = "EXECUTABLE", .sourceDir = {}, .dependencies = {"CLI11"}},
+		Target{.name = "CLI11", .type = "STATIC_LIBRARY", .sourceDir = {}, .dependencies = {"CLI11_detail"}},
+		Target{.name = "CLI11_detail", .type = "OBJECT_LIBRARY", .sourceDir = {}, .dependencies = {}},
+		Target{.name = "other", .type = "EXECUTABLE", .sourceDir = {}, .dependencies = {"CLI11"}},
+	};
+
+	// Transitively, each once, and nothing that only depends on them.
+	CHECK(CMakeFileAPIReader::filterWithDependencies(targets, "minimal") == "CLI11;CLI11_detail;minimal");
+	CHECK(CMakeFileAPIReader::filterWithDependencies(targets, "min*;nosuch") == "CLI11;CLI11_detail;minimal");
+	// All targets stays all; a filter matching nothing stays as it is.
+	CHECK(CMakeFileAPIReader::filterWithDependencies(targets, "").empty());
+	CHECK(CMakeFileAPIReader::filterWithDependencies(targets, "nosuch*") == "nosuch*");
+}
+
+TEST_CASE("CMakeFileAPIReader unmatchedPatterns names the patterns no target matches")
+{
+	const std::vector<std::string> names{"minimal", "CLI11", "app_test"};
+	CHECK(CMakeFileAPIReader::unmatchedPatterns(names, "minimal;CLI11;nosuch*") == std::vector<std::string>{"nosuch*"});
+	CHECK(CMakeFileAPIReader::unmatchedPatterns(names, " *_test , nope ") == std::vector<std::string>{"nope"});
+	CHECK(CMakeFileAPIReader::unmatchedPatterns(names, "").empty());
+}

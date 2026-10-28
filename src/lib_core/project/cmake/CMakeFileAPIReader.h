@@ -229,6 +229,15 @@ public:
 	// otherwise one or more wildcard patterns separated by ';' or ','.
 	[[nodiscard]] static bool matchesTargetFilter(const std::string& targetName, const std::string& targetFilter);
 
+	// The targets a filter matches and those they depend on (link to, or need built
+	// first), transitively, as a filter of their names. Empty stays empty (all targets).
+	[[nodiscard]] static std::string filterWithDependencies(
+		const std::vector<TargetEntry>& targets, const std::string& targetFilter);
+
+	// The filter's patterns no target matches ("nosuch*").
+	[[nodiscard]] static std::vector<std::string> unmatchedPatterns(
+		const std::vector<std::string>& targetNames, const std::string& targetFilter);
+
 	// Returns all source entries across all targets in the given configuration.
 	// Pass an empty string to use the first available configuration.
 	// Returns an empty vector if the reply is absent or malformed.
