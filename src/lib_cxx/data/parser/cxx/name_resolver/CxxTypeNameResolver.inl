@@ -73,6 +73,12 @@ inline std::unique_ptr<CxxTypeName> CxxTypeNameResolver::getName(const clang::Ty
 			}
 			break;
 		}
+		case clang::Type::Using:
+		{
+			// `using std::string_view;` makes `string_view` name std::string_view: it is a use of
+			// that type, not of a type of the using-declaration's scope.
+			return getName(clang::dyn_cast<clang::UsingType>(type)->desugar());
+		}
 		case clang::Type::MemberPointer:
 		case clang::Type::Pointer:
 		{

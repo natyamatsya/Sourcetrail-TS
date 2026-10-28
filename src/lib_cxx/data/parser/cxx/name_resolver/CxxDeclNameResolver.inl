@@ -28,6 +28,31 @@ inline CxxName CxxDeclNameResolver::getName(const clang::NamedDecl* declaration)
 {
 	declaration = utility::getFirstDecl(declaration);
 
+	// A using-declaration is a use of what it brings into scope, so it is named by that: by the
+	// name it is spelled with (`std::string_view` for std::__1::string_view, `Ts::operator()`) it
+	// would be a node of its own that no declaration has.
+	if (const clang::UsingDecl* usingDecl = clang::dyn_cast_or_null<clang::UsingDecl>(declaration))
+	{
+		if (usingDecl->shadow_size() > 0)
+		{
+			const clang::UsingShadowDecl* shadowDecl = *usingDecl->shadow_begin();
+			// `using Base::Base;` inherits all of Base's constructors: it uses the base class.
+			if (const clang::ConstructorUsingShadowDecl* constructorShadowDecl =
+					clang::dyn_cast<clang::ConstructorUsingShadowDecl>(shadowDecl))
+			{
+				if (const clang::CXXRecordDecl* baseDecl = constructorShadowDecl->getNominatedBaseClass())
+				{
+					return getName(baseDecl);
+				}
+			}
+			// An overload set has no node of its own; it keeps the name as spelled.
+			else if (usingDecl->shadow_size() == 1)
+			{
+				return getName(shadowDecl->getTargetDecl()->getUnderlyingDecl());
+			}
+		}
+	}
+
 	if ((declaration) && (clang::isa<clang::CXXRecordDecl>(declaration)) &&
 		(clang::dyn_cast<clang::CXXRecordDecl>(declaration)->isLambda()))
 	{
@@ -207,6 +232,14 @@ inline CxxName CxxDeclNameResolver::getDeclName(const clang::NamedDecl* declarat
 						->getBeginLoc());
 				functionName = "lambda at " + std::to_string(presumedBegin.getLine()) + ":" +
 					std::to_string(presumedBegin.getColumn());
+			}
+			else if (const clang::CXXConstructorDecl* constructorDecl =
+						 clang::dyn_cast<clang::CXXConstructorDecl>(functionDecl);
+					 constructorDecl && constructorDecl->isInheritingConstructor())
+			{
+				// Clang names a constructor inherited by `using Base::Base;` after the base class;
+				// it is a constructor of the derived class, named like that class's others.
+				functionName = constructorDecl->getParent()->getNameAsString();
 			}
 			else if (clang::FunctionTemplateDecl* templateFunctionDeclaration = functionDecl->getDescribedFunctionTemplate())
 			{

@@ -6,6 +6,7 @@
 #include "utilityString.h"
 #endif
 
+#include <algorithm>
 #include <filesystem>
 #include <format>
 #include <fstream>
@@ -2636,7 +2637,7 @@ TEST_CASE("cxx parser finds using decl in function context")
 		"}\n");
 
 	REQUIRE(utility::containsElement<std::string>(
-		client->usages, "void bar() -> foo::a <7:13 7:13>"));
+		client->usages, "void bar() -> int foo::a <7:13 7:13>"));
 }
 
 TEST_CASE("cxx parser finds using decl in file context")
@@ -2649,7 +2650,73 @@ TEST_CASE("cxx parser finds using decl in file context")
 		"using foo::a;\n");
 
 	REQUIRE(
-		utility::containsElement<std::string>(client->usages, "input.cc -> foo::a <5:12 5:12>"));
+		utility::containsElement<std::string>(client->usages, "input.cc -> int foo::a <5:12 5:12>"));
+}
+
+TEST_CASE("cxx parser finds type uses through a using-declaration")
+{
+	// `using ns::Type;` makes `Type` name ns::Type: the parameter's type and the functional cast
+	// use ns::Type, and the using-declaration itself is a use of it, not of a `lib::Type` or
+	// `ns::Type` of its own.
+	std::shared_ptr<TestStorage> client = parseCode(
+		"namespace ns { struct Type {}; }\n"
+		"namespace lib {\n"
+		"using ns::Type;\n"
+		"inline int take(Type) { return 0; }\n"
+		"}\n"
+		"int use() { return lib::take(lib::Type{}); }\n");
+
+	CAPTURE(client->functions, client->typeUses, client->usages);
+	REQUIRE(client->errors.empty());
+	REQUIRE(containsElement(client->functions, "int lib::take(ns::Type) <4:1 <4:1 <4:12 4:15> 4:21> 4:35>"s));
+	REQUIRE(containsElement(client->typeUses, "int lib::take(ns::Type) -> ns::Type <4:17 4:20>"s));
+	REQUIRE(containsElement(client->typeUses, "int use() -> ns::Type <6:35 6:38>"s));
+	REQUIRE(containsElement(client->usages, "input.cc -> ns::Type <3:11 3:14>"s));
+}
+
+TEST_CASE("cxx parser names an inherited constructor after the class that inherits it")
+{
+	// Clang names the constructors that `using Base::Base;` inherits after the base class; they
+	// are the derived class's, and the using-declaration uses the base class.
+	std::shared_ptr<TestStorage> client = parseCode(
+		"template <class T> struct Base { Base(T*) {} };\n"
+		"template <class T> struct Derived : Base<T> { using Base<T>::Base; };\n"
+		"int i = 0;\n"
+		"Derived<int> d(&i);\n");
+
+	CAPTURE(client->methods, client->calls, client->usages);
+	REQUIRE(client->errors.empty());
+	REQUIRE(containsElement(client->methods, "public void Derived<int>::Derived(int *) <2:62 <2:62 2:65> 2:65>"s));
+	REQUIRE(containsElement(client->usages, "Derived<int> -> Base<int> <2:62 2:65>"s));
+	for (const std::string& name: utility::concat(client->methods, client->usages))
+	{
+		REQUIRE_FALSE(name.contains("Derived<int>::Base"));
+		REQUIRE_FALSE(name.contains("Base<int>::Derived"));
+	}
+}
+
+TEST_CASE("cxx parser finds the members a pack using-declaration brings in")
+{
+	std::shared_ptr<TestStorage> client = parseCode(
+		"template <class... Ts> struct overloaded : Ts... { using Ts::operator()...; };\n"
+		"struct A { int operator()(int) { return 1; } };\n"
+		"struct B { int operator()(char) { return 2; } };\n"
+		"overloaded<A, B> o;\n");
+
+	CAPTURE(client->usages);
+	REQUIRE(client->errors.empty());
+	// one usage per member: the operator() of A and that of B
+	const auto usesMember = [&](const std::string& member)
+	{
+		return std::ranges::any_of(
+			client->usages, [&](const std::string& usage) { return usage.ends_with(" -> " + member); });
+	};
+	REQUIRE(usesMember("int A::operator()(int) <1:62 1:69>"));
+	REQUIRE(usesMember("int B::operator()(char) <1:62 1:69>"));
+	for (const std::string& usage: client->usages)
+	{
+		REQUIRE_FALSE(usage.contains("unsolved-type"));
+	}
 }
 
 TEST_CASE("cxx parser finds call in function")
