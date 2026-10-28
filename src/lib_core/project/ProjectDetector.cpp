@@ -454,17 +454,19 @@ struct BuildDirectory
 	fs::file_time_type time;	// when it was last configured or built
 };
 
-// `dir` as CMake configured it for `sourceDir`: its CMakeCache.txt names that source
-// directory, or it has a File API reply.
+// `dir` as CMake configured it for `sourceDir`: CMake configured and generated it (a failed
+// configure leaves a CMakeCache.txt, too; CMakeFileAPIReader::isConfigured), and its
+// CMakeCache.txt names that source directory, or it has a File API reply.
 std::optional<BuildDirectory> configuredFor(const fs::path& dir, const fs::path& sourceDir)
 {
 	const fs::path cache{dir / "CMakeCache.txt"};
-	const bool hasReply{CMakeFileAPIReader{FilePath{generic(dir)}}.hasReply()};
-	const bool hasCache{isFile(cache)};
-	if (!hasCache && !hasReply)
+	const CMakeFileAPIReader reader{FilePath{generic(dir)}};
+	if (!reader.isConfigured())
 	{
 		return std::nullopt;
 	}
+	const bool hasReply{reader.hasReply()};
+	const bool hasCache{isFile(cache)};
 	BuildDirectory build{.path = dir, .hasReply = hasReply, .generator = {}, .time = {}};
 	if (hasCache)
 	{

@@ -324,6 +324,72 @@ TEST_CASE("CMakeFileAPIReader hasReply returns false for empty dir")
 	REQUIRE_FALSE(reader.hasReply());
 }
 
+// ---------------------------------------------------------------------------
+// isConfigured / lastConfigureFailed — what a configure left in the build dir
+// ---------------------------------------------------------------------------
+
+namespace
+{
+void writeFile(const std::filesystem::path& path)
+{
+	std::filesystem::create_directories(path.parent_path());
+	std::ofstream{path} << "{}\n";
+}
+}	 // namespace
+
+TEST_CASE("CMakeFileAPIReader isConfigured is false after a configure that failed")
+{
+	// leveldb without its googletest submodule: the configure fails, and CMakeCache.txt and
+	// CMakeFiles/ are there, but no build file.
+	const TestTempDirectory temp{"CMakeFileAPIReaderFailedConfigure"};
+	const std::filesystem::path buildDir{temp.getPath()};
+	writeFile(buildDir / "CMakeCache.txt");
+	writeFile(buildDir / "CMakeFiles" / "CMakeConfigureLog.yaml");
+	const CMakeFileAPIReader reader{FilePath{buildDir.generic_string()}};
+
+	CHECK_FALSE(reader.lastConfigureFailed());	// CMake before writing error replies
+	CHECK_FALSE(reader.isConfigured());
+
+	// CMake that writes an error reply says so.
+	writeFile(buildDir / ".cmake/api/v1/reply/error-2026-10-28T03-39-29-0580.json");
+	CHECK(reader.lastConfigureFailed());
+	CHECK_FALSE(reader.isConfigured());
+}
+
+TEST_CASE("CMakeFileAPIReader isConfigured is true for a generated build directory")
+{
+	const TestTempDirectory temp{"CMakeFileAPIReaderGeneratedBuildDir"};
+	const std::filesystem::path buildDir{temp.getPath()};
+	writeFile(buildDir / "CMakeCache.txt");
+	const CMakeFileAPIReader reader{FilePath{buildDir.generic_string()}};
+	CHECK_FALSE(reader.isConfigured());
+
+	SECTION("by Ninja")
+	{
+		writeFile(buildDir / "build.ninja");
+		CHECK(reader.isConfigured());
+	}
+	SECTION("by Xcode")
+	{
+		std::filesystem::create_directories(buildDir / "app.xcodeproj");
+		CHECK(reader.isConfigured());
+	}
+	SECTION("with a reply, until a later configure fails")
+	{
+		writeFile(buildDir / ".cmake/api/v1/reply/index-2026-10-28T03-00-00-0000.json");
+		CHECK(reader.isConfigured());
+		CHECK_FALSE(reader.lastConfigureFailed());
+
+		// An error reply older than the index is from a configure that failed before.
+		writeFile(buildDir / ".cmake/api/v1/reply/error-2026-10-27T03-00-00-0000.json");
+		CHECK(reader.isConfigured());
+
+		writeFile(buildDir / ".cmake/api/v1/reply/error-2026-10-28T04-00-00-0000.json");
+		CHECK(reader.lastConfigureFailed());
+		CHECK_FALSE(reader.isConfigured());
+	}
+}
+
 TEST_CASE("CMakeFileAPIReader getJsonEntryPoints returns codemodel entry")
 {
 	CMakeFileAPIReader reader{fixtureBuildDir()};

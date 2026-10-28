@@ -531,9 +531,10 @@ void QtProjectWizardContentPathCMakeFileAPI::onRunCMake()
 							 presetName,
 							 to_std_sv(configured.error().code),
 							 configured.error().message)};
-		execution::qt::onUi(this, [this, error]() {
+		execution::qt::onUi(this, [this, buildDir, error]() {
 			m_runningCMake = false;
 			m_runCMakeButton->setEnabled(true);
+			m_failedBuildDir = error.empty() ? FilePath{} : buildDir;
 			readBuildDirectory();
 			m_window->contentChanged();
 			if (!error.empty())
@@ -585,7 +586,8 @@ void QtProjectWizardContentPathCMakeFileAPI::repopulatePresets(
 		m_presetStatusLabel->setText(QLatin1String(""));
 		m_buildDir = FilePath{};
 		m_hasReply = false;
-		m_hasCache = false;
+		m_configured = false;
+		m_configureFailed = false;
 		m_configurations.clear();
 		m_targets.clear();
 		readBuildDirectory();
@@ -622,8 +624,13 @@ void QtProjectWizardContentPathCMakeFileAPI::readBuildDirectory()
 			: CMakeFileAPIReader::resolveBinaryDir(m_sourceDir, presetName);
 	}
 	m_buildDirPicker->setVisible(noPresetSelected());
-	m_hasReply = !m_buildDir.empty() && CMakeFileAPIReader{m_buildDir}.hasReply();
-	m_hasCache = !m_buildDir.empty() && m_buildDir.getConcatenated("CMakeCache.txt").exists();
+	const CMakeFileAPIReader reader{m_buildDir};
+	m_hasReply = !m_buildDir.empty() && reader.hasReply();
+	// A configure that failed leaves CMakeCache.txt behind: configured means CMake generated
+	// the build directory, too, as ProjectDetector counts it.
+	m_configured = !m_buildDir.empty() && reader.isConfigured();
+	m_configureFailed =
+		!m_buildDir.empty() && (reader.lastConfigureFailed() || m_failedBuildDir == m_buildDir);
 
 	m_buildDirLabel->setText(buildDirectoryNote().toHtmlEscaped());
 	m_runCMakeButton->setEnabled(!m_buildDir.empty() && !m_runningCMake);
@@ -748,10 +755,11 @@ QString QtProjectWizardContentPathCMakeFileAPI::buildDirectoryNote() const
 		{
 			return {};
 		}
-		return m_runningCMake ? QStringLiteral("Running CMake...")
-			: m_hasReply      ? QStringLiteral("Configured.")
-			: m_hasCache      ? QStringLiteral("Configured by CMake; Sourcetrail asks it for the targets when indexing.")
-							  : QStringLiteral("Not configured yet: Sourcetrail runs CMake when indexing.");
+		return m_runningCMake  ? QStringLiteral("Running CMake...")
+			: m_configureFailed ? QStringLiteral("CMake failed to configure it: Run CMake shows its errors.")
+			: m_hasReply        ? QStringLiteral("Configured.")
+			: m_configured      ? QStringLiteral("Configured by CMake; Sourcetrail asks it for the targets when indexing.")
+								: QStringLiteral("Not configured yet: Sourcetrail runs CMake when indexing.");
 	}
 	if (!std::ranges::contains(m_presets, presetName, &CMakeFileAPIReader::PresetInfo::name))
 	{
@@ -762,10 +770,11 @@ QString QtProjectWizardContentPathCMakeFileAPI::buildDirectoryNote() const
 		return QStringLiteral("Unknown: the preset has no binaryDir.");
 	}
 	std::string state{
-		m_runningCMake ? "running CMake..."
-		: m_hasReply   ? "configured"
-		: m_hasCache   ? "configured by CMake; Sourcetrail asks it for the targets when indexing"
-					   : "not configured yet; Sourcetrail runs CMake when indexing"};
+		m_runningCMake    ? "running CMake..."
+		: m_configureFailed ? "CMake failed to configure it; Run CMake shows its errors"
+		: m_hasReply        ? "configured"
+		: m_configured      ? "configured by CMake; Sourcetrail asks it for the targets when indexing"
+							: "not configured yet; Sourcetrail runs CMake when indexing"};
 	return QString::fromStdString(std::format("{} ({})", m_buildDir.str(), state));
 }
 

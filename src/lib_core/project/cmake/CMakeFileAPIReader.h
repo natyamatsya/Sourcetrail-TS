@@ -171,6 +171,17 @@ public:
 	// Returns true if a valid File API reply already exists in the build dir.
 	bool hasReply() const;
 
+	// Whether CMake's last configure of the build dir failed: CMake then writes
+	// reply/error-<time>.json instead of reply/index-<time>.json, and the newer of them
+	// tells. (Older CMake versions write no error reply.)
+	bool lastConfigureFailed() const;
+
+	// Whether CMake configured and generated the build dir: its last configure did not fail,
+	// and it has a reply, or CMakeCache.txt and a generated build system (build.ninja,
+	// Makefile, a .sln or an .xcodeproj). A configure that fails leaves CMakeCache.txt behind,
+	// but generates nothing.
+	bool isConfigured() const;
+
 	// Returns the JSON entry points listed in index-*.json (kind + resolved file path).
 	std::vector<JsonEntryPoint> getJsonEntryPoints() const;
 
