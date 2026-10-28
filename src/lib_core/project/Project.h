@@ -62,11 +62,14 @@ public:
 	};
 	bool beginLoad();
 	bool readSettings();
-	//! The question an interrupted indexing run leaves (keep its data or discard it).
+	//! The question an indexing run left behind asks (keep its data or discard it), as
+	//! its data says how it ended: a run that finished offers its index first, one
+	//! that did not (a crash, the app closed while indexing) the complete one from before.
 	std::optional<Question> interruptedRunQuestion() const;
-	//! Keeps the interrupted run's data on option 0, else discards it; takes it when
-	//! there is no other index. False when the index is in use by another process:
-	//! indexInUse() says so.
+	//! Keeps the run's data on the question's keep option, else discards it (also on
+	//! -1, no answer); takes it when there is no other index. Kept data of a run that
+	//! did not finish has the load index the rest. False when the index is in use by
+	//! another process: indexInUse() says so.
 	bool resolveInterruptedRun(int option);
 	static Question indexInUse();
 	void openIndex();
@@ -177,6 +180,8 @@ private:
 	ProjectStateType m_state = ProjectStateType::PROJECT_STATE_NOT_LOADED;
 	// Why the index could not be used (PROJECT_STATE_DB_CORRUPTED), when it is known.
 	std::string m_loadProblem;
+	// The load kept the data of a run that did not finish: finishLoad indexes the rest.
+	bool m_continueIndexing = false;
 	RefreshStageType m_refreshStage = RefreshStageType::NONE;
 
 	std::shared_ptr<PersistentStorage> m_storage;

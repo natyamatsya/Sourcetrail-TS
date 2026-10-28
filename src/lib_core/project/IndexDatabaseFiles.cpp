@@ -48,7 +48,32 @@ struct Connection
 	// Without creating the file.
 	bool open(const FilePath& db)
 	{
-		return sqlite3_open_v2(db.str().c_str(), &handle, SQLITE_OPEN_READWRITE, nullptr) == SQLITE_OK;
+		if (sqlite3_open_v2(db.str().c_str(), &handle, SQLITE_OPEN_READWRITE, nullptr) != SQLITE_OK)
+		{
+			return false;
+		}
+		sqlite3_busy_timeout(handle, 2000);	// a connection of the run that is still closing
+		return true;
+	}
+};
+
+// Finalized however the function that prepared it ends.
+struct Statement
+{
+	sqlite3_stmt* handle = nullptr;
+
+	Statement(sqlite3* connection, const char* sql)
+	{
+		if (sqlite3_prepare_v2(connection, sql, -1, &handle, nullptr) != SQLITE_OK)
+		{
+			handle = nullptr;
+		}
+	}
+	Statement(const Statement&) = delete;
+	Statement& operator=(const Statement&) = delete;
+	~Statement()
+	{
+		sqlite3_finalize(handle);
 	}
 };
 
@@ -119,8 +144,12 @@ std::expected<void, IndexSwapError> replace(
 		// connection still open (another process browsing it): renamed over, the file
 		// would be read with that log, a different database's pages.
 		{
+			// A read: SQLite opens the log only then (and recovers one a crash left).
 			Connection connection;
-			connection.open(indexDb);
+			if (connection.open(indexDb))
+			{
+				sqlite3_exec(connection.handle, "SELECT count(*) FROM sqlite_master", nullptr, nullptr, nullptr);
+			}
 		}
 		if (fileExists(writeAheadLog(indexDb)))
 		{
@@ -141,6 +170,66 @@ std::expected<void, IndexSwapError> replace(
 		return std::unexpected(IndexSwapError::ReplaceFailed);
 	}
 	return {};
+}
+
+std::optional<IndexingRunMark> runMark(const FilePath& db)
+{
+	if (!fileExists(db.getPath()))
+	{
+		return std::nullopt;
+	}
+	Connection connection;
+	if (!connection.open(db))
+	{
+		return std::nullopt;
+	}
+	const Statement statement(connection.handle, "SELECT value FROM meta WHERE key = ?1");
+	if (statement.handle == nullptr)
+	{
+		return std::nullopt;
+	}
+	sqlite3_bind_text(statement.handle, 1, runMarkKey, -1, SQLITE_STATIC);
+	if (sqlite3_step(statement.handle) != SQLITE_ROW)
+	{
+		return std::nullopt;
+	}
+	const char* text = reinterpret_cast<const char*>(sqlite3_column_text(statement.handle, 0));
+	const std::string_view value = text != nullptr ? text : "";
+	for (const IndexingRunMark mark: {IndexingRunMark::Running, IndexingRunMark::Stopped, IndexingRunMark::Finished})
+	{
+		if (value == to_std_sv(mark))
+		{
+			return mark;
+		}
+	}
+	return std::nullopt;
+}
+
+void markStopped(const FilePath& db)
+{
+	if (!fileExists(db.getPath()))
+	{
+		return;
+	}
+	Connection connection;
+	if (!connection.open(db))
+	{
+		return;
+	}
+	const Statement statement(connection.handle, "UPDATE meta SET value = ?1 WHERE key = ?2 AND value = ?3");
+	if (statement.handle == nullptr)
+	{
+		return;
+	}
+	const std::string_view stopped = to_std_sv(IndexingRunMark::Stopped);
+	const std::string_view running = to_std_sv(IndexingRunMark::Running);
+	sqlite3_bind_text(statement.handle, 1, stopped.data(), static_cast<int>(stopped.size()), SQLITE_STATIC);
+	sqlite3_bind_text(statement.handle, 2, runMarkKey, -1, SQLITE_STATIC);
+	sqlite3_bind_text(statement.handle, 3, running.data(), static_cast<int>(running.size()), SQLITE_STATIC);
+	if (sqlite3_step(statement.handle) != SQLITE_DONE)
+	{
+		LOG_WARNING("Cannot mark the indexing data of " + db.str() + " stopped: " + sqlite3_errmsg(connection.handle));
+	}
 }
 
 void remove(const FilePath& db)

@@ -1,6 +1,10 @@
 #include "Catch2.hpp"
 
 #include <fstream>
+#ifndef _WIN32
+#include <sys/wait.h>
+#include <unistd.h>
+#endif
 #include <optional>
 
 #include "FilePath.h"
@@ -161,3 +165,69 @@ TEST_CASE("an index is not replaced by one still being written")
 	REQUIRE(replaced.error() == IndexSwapError::TempIndexInUse);
 	REQUIRE(nodeCount(indexDb) == 1);
 }
+
+TEST_CASE("an indexing run's mark says how far it got")
+{
+	const TestTempDirectory directory {"IndexDatabaseFilesTestSuite"};
+	const FilePath tempIndexDb(directory.getFilePath("project.srctrl.db.tmp"));
+	REQUIRE_FALSE(index_database::runMark(tempIndexDb));
+
+	writeIndex(tempIndexDb, 1);
+	REQUIRE_FALSE(index_database::runMark(tempIndexDb));
+	{
+		StorageConnection connection(tempIndexDb);
+		SqliteIndexStorage storage(connection);
+		storage.insertOrUpdateMetaValue(index_database::runMarkKey, std::string(to_std_sv(IndexingRunMark::Running)));
+	}
+	REQUIRE(index_database::runMark(tempIndexDb) == IndexingRunMark::Running);
+
+	index_database::markStopped(tempIndexDb);
+	REQUIRE(index_database::runMark(tempIndexDb) == IndexingRunMark::Stopped);
+}
+
+TEST_CASE("a finished run is not marked stopped")
+{
+	const TestTempDirectory directory {"IndexDatabaseFilesTestSuite"};
+	const FilePath tempIndexDb(directory.getFilePath("project.srctrl.db.tmp"));
+	writeIndex(tempIndexDb, 1);
+	{
+		StorageConnection connection(tempIndexDb);
+		SqliteIndexStorage storage(connection);
+		storage.insertOrUpdateMetaValue(index_database::runMarkKey, std::string(to_std_sv(IndexingRunMark::Finished)));
+	}
+
+	index_database::markStopped(tempIndexDb);
+
+	REQUIRE(index_database::runMark(tempIndexDb) == IndexingRunMark::Finished);
+}
+
+#ifndef _WIN32
+// A process that ended without closing the index (a crash, or an exit that skips the
+// teardown) leaves its write-ahead log: nobody holds it, and it is merged, not in use.
+TEST_CASE("an index a process left with its log is replaced")
+{
+	const TestTempDirectory directory {"IndexDatabaseFilesTestSuite"};
+	const FilePath indexDb(directory.getFilePath("project.srctrl.db"));
+	const FilePath tempIndexDb(directory.getFilePath("project.srctrl.db.tmp"));
+	writeIndex(indexDb, 1);
+	writeIndex(tempIndexDb, 3);
+
+	const pid_t child = fork();
+	if (child == 0)
+	{
+		StorageConnection connection(indexDb);
+		SqliteIndexStorage storage(connection);
+		storage.beginTransaction();
+		storage.addNode(StorageNodeData(NODE_CLASS, "written before the crash"));
+		storage.commitTransaction();
+		_exit(0);
+	}
+	int status = 0;
+	waitpid(child, &status, 0);
+	REQUIRE(FilePath(directory.getFilePath("project.srctrl.db-wal")).recheckExists());
+
+	REQUIRE(replace(indexDb, tempIndexDb));
+
+	REQUIRE(nodeCount(indexDb) == 3);
+}
+#endif

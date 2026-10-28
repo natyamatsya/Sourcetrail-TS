@@ -179,6 +179,16 @@ bool Project::readSettings()
 	return m_settings->reload();
 }
 
+namespace
+{
+// A run left behind that finished offers its index first; one that indexed only some
+// of the files offers the complete index from before first.
+bool offersItsIndexFirst(std::optional<IndexingRunMark> mark)
+{
+	return mark == IndexingRunMark::Finished;
+}
+}	 // namespace
+
 std::optional<Project::Question> Project::interruptedRunQuestion() const
 {
 	if (!m_settings->getTempDBFilePath().exists() || !m_settings->getDBFilePath().exists() ||
@@ -186,13 +196,24 @@ std::optional<Project::Question> Project::interruptedRunQuestion() const
 	{
 		return std::nullopt;	// nothing left, or the run of a process indexing now
 	}
+	const std::optional<IndexingRunMark> mark = index_database::runMark(m_settings->getTempDBFilePath());
+	if (offersItsIndexFirst(mark))
+	{
+		return Question {
+			"The last indexing of this project finished, but its index did not replace the previous one "
+			"(Sourcetrail was closed first, or the index was in use). Do you want to use the new index, or "
+			"keep the previous one?",
+			{"Use the New Index", "Keep the Previous Index"}};
+	}
+	const std::string what = mark == IndexingRunMark::Stopped
+		? "Sourcetrail was closed while indexing this project, before the indexing finished."
+		: "Sourcetrail has been closed unexpectedly while indexing this project.";
 	return Question {
-		"Sourcetrail has been closed unexpectedly while indexing this project. "
-		"You can either choose to keep "
-		"the data that has already been indexed or discard that data and restore "
-		"the state of your project "
-		"before indexing?",
-		{"Keep and Continue", "Discard and Restore"}};
+		what +
+			" The previous index is complete; the interrupted indexing covers only part of the files. "
+			"Do you want to discard its data and restore the previous index, or keep its data and index "
+			"the remaining files?",
+		{"Discard and Restore", "Keep and Continue"}};
 }
 
 bool Project::resolveInterruptedRun(int option)
@@ -209,7 +230,9 @@ bool Project::resolveInterruptedRun(int option)
 		LOG_INFO("Another process is indexing this project: its temporary indexing data stays");
 		return true;
 	}
-	if (!dbPath.exists() || option == 0)
+	const std::optional<IndexingRunMark> mark = index_database::runMark(tempDbPath);
+	const bool keep = offersItsIndexFirst(mark) ? option == 0 : option == 1;
+	if (!dbPath.exists() || keep)
 	{
 		LOG_INFO(
 			dbPath.exists() ? "Switching to temporary indexing data on user's decision"
@@ -218,6 +241,7 @@ bool Project::resolveInterruptedRun(int option)
 		const std::expected<void, IndexSwapError> moved = moveTempStorageFile(dbPath, tempDbPath);
 		if (!moved && (moved.error() == IndexSwapError::IndexInUse || moved.error() == IndexSwapError::TempIndexInUse))
 		{
+			LOG_ERROR("Cannot switch to the temporary indexing data: " + std::string(to_std_sv(moved.error())));
 			m_state = ProjectStateType::PROJECT_STATE_NOT_LOADED;
 			MessageStatus("Unable to load project", true, false).dispatch();
 			return false;
@@ -231,6 +255,8 @@ bool Project::resolveInterruptedRun(int option)
 			MessageStatus(message, true, false).dispatch();
 			index_database::remove(tempDbPath);
 		}
+		// Kept data of a run that did not finish: the load goes on to index the rest.
+		m_continueIndexing = moved && !offersItsIndexFirst(mark);
 		return true;
 	}
 	LOG_INFO("Discarding temporary indexing data on user's decision");
@@ -355,7 +381,9 @@ void Project::finishLoad(bool directRefresh)
 		}
 	}
 
-	if (m_state != ProjectStateType::PROJECT_STATE_LOADED && m_hasGUI)
+	// Kept data of an interrupted run: what it did not index is indexed now, as asked.
+	const bool continueIndexing = std::exchange(m_continueIndexing, false);
+	if ((m_state != ProjectStateType::PROJECT_STATE_LOADED || continueIndexing) && m_hasGUI)
 	{
 		// Pending from here, not from when the refresh is handled: the load is over
 		// once the project is open, and the request it leaves must already show.
@@ -363,7 +391,7 @@ void Project::finishLoad(bool directRefresh)
 		// A person's load indexes at once where one mode does; an agent's opens the
 		// mode choice it waits for.
 		MessageRefresh refresh;
-		if (directRefresh)
+		if (directRefresh || continueIndexing)
 		{
 			refresh.direct();
 		}
@@ -915,6 +943,11 @@ void Project::buildIndexImpl(RefreshInfo info, std::shared_ptr<DialogView> dialo
 	tempStorage->setProjectSettingsText(
 		TextAccess::createFromFile(getProjectSettingsFilePath())->getText());
 	tempStorage->updateVersion();
+	if (!m_shardConfig.isActive())
+	{
+		// Until the run says how it ended: what a crash leaves.
+		tempStorage->setMetaValue(index_database::runMarkKey, std::string(to_std_sv(IndexingRunMark::Running)));
+	}
 
 	std::unique_ptr<CombinedIndexerCommandProvider> indexerCommandProvider =
 		std::make_unique<CombinedIndexerCommandProvider>();
@@ -1274,6 +1307,10 @@ void Project::startIndexing(std::shared_ptr<IndexingRun> run)
 		{
 			end.data = RunEnd::Data::Keep;
 			end.refreshAgain = policy == DatabasePolicy::DATABASE_POLICY_REFRESH;
+			// Should the swap not happen (the app closes first, or it fails), the
+			// next load offers this index.
+			run->tempStorage->setMetaValue(
+				index_database::runMarkKey, std::string(to_std_sv(IndexingRunMark::Finished)));
 		}
 		else if (policy == DatabasePolicy::DATABASE_POLICY_DISCARD)
 		{
@@ -1386,11 +1423,22 @@ void Project::startIndexing(std::shared_ptr<IndexingRun> run)
 
 void Project::stopIndexing()
 {
+	std::optional<FilePath> stoppedRunDb;
 	if (const std::shared_ptr<IndexingRun> run = m_indexingRun.lock())
 	{
 		run->stop.request_stop();
+		if (!run->shard)
+		{
+			stoppedRunDb = run->tempIndexDbFilePath;
+		}
 	}
 	stdexec::sync_wait(m_indexing.on_empty());
+	// A run stopped before it finished (the app closing): its data says so, not what
+	// a crash leaves, for the question its project's next load asks.
+	if (stoppedRunDb)
+	{
+		index_database::markStopped(*stoppedRunDb);
+	}
 }
 
 IndexingOutcome Project::swapToTempStorage()
