@@ -203,6 +203,7 @@ public:
 	bool shouldVisitStmt(const clang::Stmt* stmt) const;
 	bool shouldVisitDecl(const clang::Decl* decl) const;
 	bool shouldVisitReference(const clang::SourceLocation& referenceLocation) const;
+	bool isSpelledInSystemMacro(const clang::SourceLocation& location) const;
 
 	bool isLocatedInProjectFile(clang::SourceLocation loc) const;
 

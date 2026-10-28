@@ -192,7 +192,9 @@ inline void CxxAstVisitorComponentTypeIndexer::visitTypeLoc(clang::TypeLoc tl)
 		return;
 	}
 
+	// A type spelled in a system header's macro (every NULL's void) is not a type the code uses.
 	if ((getAstVisitor()->shouldVisitReference(tl.getBeginLoc())) &&
+		!getAstVisitor()->isSpelledInSystemMacro(tl.getBeginLoc()) &&
 		(getAstVisitor()->shouldHandleTypeLoc(tl)))
 	{
 		if (const clang::TemplateTypeParmTypeLoc &ttptl = tl.getAs<clang::TemplateTypeParmTypeLoc>())

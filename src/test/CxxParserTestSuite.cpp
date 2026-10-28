@@ -3348,6 +3348,19 @@ TEST_CASE("cxx parser finds usage of field in initialization list")
 		client->usages, "void App::App() -> int App::bar <4:5 4:7>"));
 }
 
+TEST_CASE("cxx parser records no type use spelled in a system header's macro")
+{
+	// Every NULL is ((void*)0) from stddef.h: not a use of void by the code.
+	std::shared_ptr<TestStorage> client = parseCCode(
+		"#include <stddef.h>\n"
+		"#define MY_NULL ((void*)0)\n"
+		"void f(void) { void* p = NULL; void* q = MY_NULL; (void)p; (void)q; }\n");
+
+	REQUIRE(client->errors.empty());
+	REQUIRE_FALSE(containsElement(client->typeUses, "void f() -> void <3:26 3:29>"s));
+	REQUIRE(containsElement(client->typeUses, "void f() -> void <3:42 3:48>"s));
+}
+
 TEST_CASE("cxx parser finds usage of fields in designated initializers")
 {
 	// How a C struct of function pointers is filled: each designated field is used there.

@@ -911,6 +911,13 @@ inline bool CxxAstVisitor::shouldVisitReference(const clang::SourceLocation& ref
 	return false;
 }
 
+// Whether `location` is in the body of a macro defined in a system header (NULL's ((void*)0)):
+// what is spelled there is not the project's, though it is expanded in a project file.
+inline bool CxxAstVisitor::isSpelledInSystemMacro(const clang::SourceLocation& location) const
+{
+	return location.isMacroID() && m_astContext->getSourceManager().isInSystemMacro(location);
+}
+
 inline bool CxxAstVisitor::isLocatedInProjectFile(clang::SourceLocation loc) const
 {
 	if (loc.isInvalid())
