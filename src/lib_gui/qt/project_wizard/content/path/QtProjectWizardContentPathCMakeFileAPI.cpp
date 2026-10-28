@@ -645,9 +645,12 @@ void QtProjectWizardContentPathCMakeFileAPI::readBuildDirectory()
 		m_configurationCombo->addItem(QString::fromStdString(name));
 	}
 	m_configurationCombo->setCurrentText(configuration);
+	// A single-config generator with an empty CMAKE_BUILD_TYPE has one configuration, named "".
 	m_configurationCombo->lineEdit()->setPlaceholderText(
 		m_configurations.empty()
 			? QStringLiteral("The first configuration of the build directory")
+			: m_configurations.front().empty()
+			? QStringLiteral("The build directory's configuration (CMAKE_BUILD_TYPE is not set)")
 			: QString::fromStdString(
 				  std::format("The first configuration: {}", m_configurations.front())));
 	m_configurationCombo->blockSignals(false);
