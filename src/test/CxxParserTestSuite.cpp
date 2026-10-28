@@ -2763,6 +2763,39 @@ TEST_CASE("cxx parser names pack and lambda template arguments by what they are"
 	}
 }
 
+TEST_CASE("cxx parser names a closure type behind an alias template like the lambda")
+{
+	// std::forward's parameter is `remove_reference_t<T>&`, magic_enum tests `std::decay_t<F>`:
+	// alias templates whose type is a closure type. They were named `unsolved-type` (forward's
+	// parameter) and their type uses went to `global`.
+	std::shared_ptr<TestStorage> client = parseCode(
+		"template <class T> struct remove_reference { using type = T; };\n"
+		"template <class T> struct remove_reference<T&> { using type = T; };\n"
+		"template <class T> using remove_reference_t = typename remove_reference<T>::type;\n"
+		"template <class T> T&& forward(remove_reference_t<T>& t) { return static_cast<T&&>(t); }\n"
+		"template <class T> using decay_t = typename remove_reference<T>::type;\n"
+		"template <class T> constexpr bool is_small_v = sizeof(decay_t<T>) < 64;\n"
+		"template <class F> int call(F&& f) { return forward<F>(f)(1) + is_small_v<F>; }\n"
+		"int main() { auto l = [](int i) { return i; }; return call(l); }\n");
+
+	CAPTURE(client->functions, client->globalVariables, client->typeUses);
+	REQUIRE(client->errors.empty());
+	REQUIRE(containsElement(
+		client->functions,
+		"main::lambda at 8:23 & forward<main::lambda at 8:23 &>(main::lambda at 8:23 &) "
+		"<4:20 <4:20 <4:24 4:30> 4:56> 4:88>"s));
+	REQUIRE(std::ranges::any_of(client->typeUses, [](const std::string& typeUse) {
+		return typeUse.starts_with(
+			"constexpr bool is_small_v<main::lambda at 8:23 &> -> int main::lambda at 8:23(int) const <");
+	}));
+	for (const std::string& name:
+		 utility::concat(utility::concat(client->functions, client->globalVariables), client->typeUses))
+	{
+		REQUIRE_FALSE(name.contains("unsolved-type"));
+		REQUIRE_FALSE(name.contains("-> global"));
+	}
+}
+
 TEST_CASE("cxx parser finds call in function")
 {
 	std::shared_ptr<TestStorage> client = parseCode(

@@ -16,6 +16,9 @@ public:
 
 	std::unique_ptr<CxxTypeName> getName(const clang::QualType& qualType, const clang::VarDecl *varDecl = nullptr);
 	std::unique_ptr<CxxTypeName> getName(const clang::Type* type);
+
+private:
+	std::unique_ptr<CxxTypeName> getTagName(const clang::TagDecl* tagDecl);
 };
 
 // Classic build: converge on the family apex, whose bottom includes all resolver bodies once
