@@ -134,6 +134,24 @@ TEST_CASE("ProjectDetector uses the first usable configure preset")
 	CHECK(mentions(proposal.reasons, "Other presets to choose from: 'release'"));
 }
 
+TEST_CASE("ProjectDetector names the presets file the chosen preset is in")
+{
+	const TestTempDirectory temp{"detectUserPreset"};
+	const fs::path folder{temp.getPath() / "app"};
+	write(folder / "CMakeLists.txt", "project(app)\n");
+	write(folder / "CMakePresets.json", R"({"version": 3, "configurePresets": [
+		{"name": "base", "hidden": true, "binaryDir": "${sourceDir}/build/${presetName}"}
+	]})");
+	write(folder / "CMakeUserPresets.json", R"({"version": 3, "configurePresets": [
+		{"name": "mine", "inherits": "base"}
+	]})");
+
+	const ProjectProposal proposal{detect(folder)};
+
+	CHECK(text(proposal, "cmake_preset") == "mine");
+	CHECK(proposal.reasons.front().contains("Found CMakeUserPresets.json: using configure preset 'mine'"));
+}
+
 TEST_CASE("ProjectDetector prefers a configure preset whose build directory is configured")
 {
 	const TestTempDirectory temp{"detectConfiguredPreset"};
@@ -285,6 +303,19 @@ TEST_CASE("ProjectDetector uses a build directory CMake configured for the folde
 	CHECK(text(proposal, "cmake_build_directory") == generic(folder / "build" / "debug"));
 	CHECK(proposal.reasons.front().contains("build/debug"));
 	CHECK(proposal.reasons.front().contains("(Unix Makefiles)"));
+}
+
+TEST_CASE("ProjectDetector mentions a compilation database beside CMakeLists.txt")
+{
+	const TestTempDirectory temp{"detectCMakeAndDatabase"};
+	const fs::path folder{temp.getPath() / "lib"};
+	write(folder / "CMakeLists.txt", "project(lib)\n");
+	write(folder / "build" / "compile_commands.json", "[]\n");
+
+	const ProjectProposal proposal{detect(folder)};
+
+	CHECK(proposal.sourceGroupType == SourceGroupType::CXX_CMAKE_FILE_API);
+	CHECK(mentions(proposal.notices, "Also found the compilation database build/compile_commands.json"));
 }
 
 TEST_CASE("ProjectDetector lets CMake configure a build directory beside the project file")
@@ -500,6 +531,30 @@ TEST_CASE("ProjectDetector lists git submodules and whether they are checked out
 	// The build compiles the checked-out submodule: it is not excluded.
 	CHECK(!proposal.fields.contains("exclude_filters"));
 	CHECK(mentions(proposal.reasons, "third_party/ holds dependencies the build compiles"));
+}
+
+TEST_CASE("ProjectDetector says so when no submodule is checked out")
+{
+	// leveldb without 'git submodule update --init': third_party/googletest and benchmark are
+	// empty directories.
+	const TestTempDirectory temp{"detectSubmodulesMissing"};
+	const fs::path root{temp.getPath() / "leveldb"};
+	write(root / ".git" / "HEAD", "ref: refs/heads/main\n");
+	write(root / ".gitmodules", R"([submodule "googletest"]
+	path = third_party/googletest
+[submodule "benchmark"]
+	path = third_party/benchmark
+)");
+	fs::create_directories(root / "third_party" / "googletest");
+	fs::create_directories(root / "third_party" / "benchmark");
+	write(root / "CMakeLists.txt", "project(leveldb)\nadd_subdirectory(third_party/googletest)\n");
+
+	const ProjectProposal proposal{detect(root)};
+
+	CHECK(mentions(proposal.notices, "2 git submodules: third_party/googletest and third_party/benchmark; none is checked out"));
+	CHECK(!mentions(proposal.notices, "not checked out ("));
+	CHECK(mentions(proposal.reasons, "third_party/ holds dependencies the build compiles: they are not checked out"));
+	CHECK(!mentions(proposal.reasons, "indexed with the project"));
 }
 
 TEST_CASE("ProjectDetector excludes vendored submodules an empty group does not build")

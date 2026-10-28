@@ -475,7 +475,7 @@ void TaskBuildIndex::end(IndexingRunState& state)
 
 	while (fetchIntermediateStorages(state))
 		;
-	handOnStorages(state, true);	// the producers are done: the writer takes the rest
+	handOnStorages(true);	// the producers are done: the writer takes the rest
 
 	std::vector<FilePath> crashedFiles =
 		m_interprocessIndexingStatusManager.getCrashedSourceFilePaths();
@@ -830,13 +830,18 @@ bool TaskBuildIndex::fetchIntermediateStorages(IndexingRunState& state)
 	// deadlocking when the provider queue is full — IPC must be drained regardless.
 	std::vector<std::shared_ptr<IntermediateStorage>> drained;
 
-	// Drain via finished-process signals first.
+	// Drain via finished-process signals first. An indexer signals once per source file it
+	// finished: that counts the file indexed. Its storage may come in several chunks
+	// (ADR-0002), which counted as several files ("11/9 source files indexed").
+	bool counted = false;
 	TimeStamp t = TimeStamp::now();
 	while (TimeStamp::now().deltaMS(t) < 500)
 	{
 		ProcessId finishedProcessId = m_interprocessIndexingStatusManager.getNextFinishedProcessId();
 		if (finishedProcessId == ProcessId::NONE)
 			break;
+		state.indexedSourceFileCount++;
+		counted = true;
 
 		std::shared_ptr<IntermediateStorageManagerImpl> storageManager;
 		if constexpr (hasSwiftLanguagePackage)
@@ -933,7 +938,7 @@ bool TaskBuildIndex::fetchIntermediateStorages(IndexingRunState& state)
 	{
 		m_pendingStorages.push_back(std::move(storage));
 	}
-	const size_t handed = handOnStorages(state, false);
+	const size_t handed = handOnStorages(false);
 	if (!m_pendingStorages.empty())
 	{
 		// Writer back-pressure: the (serial) storage writer is behind, for an update's
@@ -942,10 +947,10 @@ bool TaskBuildIndex::fetchIntermediateStorages(IndexingRunState& state)
 		m_throttleStallMs += 50;
 	}
 
-	return !drained.empty() || handed > 0;
+	return !drained.empty() || handed > 0 || counted;
 }
 
-size_t TaskBuildIndex::handOnStorages(IndexingRunState& state, bool all)
+size_t TaskBuildIndex::handOnStorages(bool all)
 {
 	// As many as the provider holds before the writer is considered behind.
 	const int maxQueuedStoragesBeforePause = 30;
@@ -956,11 +961,6 @@ size_t TaskBuildIndex::handOnStorages(IndexingRunState& state, bool all)
 		m_storageProvider->insert(std::move(m_pendingStorages.front()));
 		m_pendingStorages.pop_front();
 		handed++;
-	}
-
-	if (handed > 0)
-	{
-		state.indexedSourceFileCount += static_cast<int>(handed);
 	}
 	return handed;
 }

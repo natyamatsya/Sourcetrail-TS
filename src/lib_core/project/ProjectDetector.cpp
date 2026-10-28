@@ -772,8 +772,14 @@ Strings vendoredExclusions(Detection& detection, const std::function<bool(const 
 		}
 		if (usedByBuild && usedByBuild(dir))
 		{
+			// Submodules not checked out are empty directories: nothing of them is indexed (the
+			// submodule notice says how to get them).
+			const bool checkedOut{
+				std::ranges::any_of(inner, [](const fs::path& project) { return !isEmptyDirectory(project); })};
 			detection.proposal.reasons.push_back(std::format(
-				"{}/ holds dependencies the build compiles: indexed with the project", shownDir));
+				"{}/ holds dependencies the build compiles: {}",
+				shownDir,
+				checkedOut ? "indexed with the project" : "they are not checked out, so there is nothing of them to index"));
 			continue;
 		}
 		excluded.push_back(generic(dir));
@@ -914,8 +920,8 @@ void noteGit(Detection& detection)
 	else if (missing.size() == paths.size())
 	{
 		text += std::format(
-			"; {} not checked out ({} sources and headers are missing: 'git submodule update --init')",
-			paths.size() == 1 ? "it is" : "none is",
+			"; {} checked out ({} sources and headers are missing: 'git submodule update --init')",
+			paths.size() == 1 ? "it is not" : "none is",
 			paths.size() == 1 ? "its" : "their");
 	}
 	else
@@ -1065,7 +1071,11 @@ bool detectCMakePreset(Detection& detection)
 	proposal.reasons.insert(
 		proposal.reasons.begin(),
 		std::format(
-			"Found CMakePresets.json: using configure preset '{}'{}{}", preset.name, label, generator));
+			"Found {}: using configure preset '{}'{}{}",
+			preset.file.empty() ? std::string{"CMakePresets.json"} : shown(fs::path{preset.file.str()}, detection.folder),
+			preset.name,
+			label,
+			generator));
 	if (chosen.configured)
 	{
 		const std::string which{
@@ -1166,6 +1176,15 @@ bool detectCMake(Detection& detection)
 	if (!detectCMakePreset(detection))
 	{
 		detectCMakeBuildDirectory(detection);
+	}
+	// CMake decides, but the database is an alternative: its exact commands, without running CMake.
+	if (const std::optional<fs::path> database{
+			newestCompilationDatabase(detection.folder, buildTreeCandidates(detection.folder))})
+	{
+		proposal.notices.push_back(std::format(
+			"Also found the compilation database {}: to index its commands instead of asking CMake, "
+			"use a source group 'C/C++ from Compilation Database' on it in place of the CMake one",
+			shown(*database, detection.folder)));
 	}
 	if (!hasCMake)
 	{

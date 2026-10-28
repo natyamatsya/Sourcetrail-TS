@@ -133,6 +133,9 @@ public:
 		// read ($env{} / $penv{}) that neither its environment nor this process sets: a
 		// configure with it is likely to fail (a vcpkg toolchain without VCPKG_ROOT...).
 		std::vector<std::string> undefinedEnvironment;
+		// The presets file that defines it: CMakePresets.json, CMakeUserPresets.json or one
+		// they include.
+		FilePath file;
 	};
 
 	enum class ConfigureErrorCode : std::uint8_t

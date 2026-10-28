@@ -11,6 +11,7 @@
 struct IndexingRunState
 {
 	std::atomic<int> sourceFileCount = 0;	// to index (less the duplicates skipped)
+	// the indexers finished (each says so once per file; its storage may come in chunks)
 	std::atomic<int> indexedSourceFileCount = 0;
 	std::atomic<bool> interrupted = false;
 	std::atomic<double> clearSeconds = 0;	// clearing the files to re-index

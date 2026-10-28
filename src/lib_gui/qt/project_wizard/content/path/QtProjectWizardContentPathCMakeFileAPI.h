@@ -67,6 +67,9 @@ private:
 	void updateTargetSummary();
 	QString targetSummary() const;
 	QString buildDirectoryNote() const;
+	// How the build directory is, in the words both notes use (with a preset after its path, in
+	// parentheses; without one, as a sentence).
+	std::string buildDirectoryState() const;
 	// Shows why the check failed; always false.
 	bool fail(const QString& message);
 

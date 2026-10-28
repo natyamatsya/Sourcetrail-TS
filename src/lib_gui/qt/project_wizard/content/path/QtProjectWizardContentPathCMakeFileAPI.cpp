@@ -1,8 +1,10 @@
 #include "QtProjectWizardContentPathCMakeFileAPI.h"
 
 #include <algorithm>
+#include <cctype>
 #include <format>
 #include <ranges>
+#include <string>
 
 #include <QComboBox>
 #include <QHBoxLayout>
@@ -405,7 +407,7 @@ void QtProjectWizardContentPathCMakeFileAPI::describe(ProjectWizardView& view) c
 		? std::format("build directory: {}", buildDirectoryNote().toStdString())
 		: m_buildDir.empty()
 		? std::string{"no preset, and no cmake_build_directory chosen yet"}
-		: std::format("no preset; build directory {}: {}", m_buildDir.str(), buildDirectoryNote().toStdString());
+		: std::format("no preset; build directory {} ({})", m_buildDir.str(), buildDirectoryState());
 
 	if (!m_hasReply)
 	{
@@ -527,8 +529,8 @@ void QtProjectWizardContentPathCMakeFileAPI::onRunCMake()
 		const std::string error{
 			configured ? std::string{}
 					   : std::format(
-							 "Running CMake with preset \"{}\" failed: {}.\n\n{}",
-							 presetName,
+							 "Running CMake{} failed: {}.\n\n{}",
+							 presetName.empty() ? std::string{} : std::format(" with preset \"{}\"", presetName),
 							 to_std_sv(configured.error().code),
 							 configured.error().message)};
 		execution::qt::onUi(this, [this, buildDir, error]() {
@@ -645,9 +647,12 @@ void QtProjectWizardContentPathCMakeFileAPI::readBuildDirectory()
 		m_configurationCombo->addItem(QString::fromStdString(name));
 	}
 	m_configurationCombo->setCurrentText(configuration);
+	// A single-config generator with an empty CMAKE_BUILD_TYPE has one configuration, named "".
 	m_configurationCombo->lineEdit()->setPlaceholderText(
 		m_configurations.empty()
 			? QStringLiteral("The first configuration of the build directory")
+			: m_configurations.front().empty()
+			? QStringLiteral("The build directory's configuration (CMAKE_BUILD_TYPE is not set)")
 			: QString::fromStdString(
 				  std::format("The first configuration: {}", m_configurations.front())));
 	m_configurationCombo->blockSignals(false);
@@ -755,11 +760,10 @@ QString QtProjectWizardContentPathCMakeFileAPI::buildDirectoryNote() const
 		{
 			return {};
 		}
-		return m_runningCMake  ? QStringLiteral("Running CMake...")
-			: m_configureFailed ? QStringLiteral("CMake failed to configure it: Run CMake shows its errors.")
-			: m_hasReply        ? QStringLiteral("Configured.")
-			: m_configured      ? QStringLiteral("Configured by CMake; Sourcetrail asks it for the targets when indexing.")
-								: QStringLiteral("Not configured yet: Sourcetrail runs CMake when indexing.");
+		// The same words as with a preset, as a sentence.
+		std::string sentence{buildDirectoryState()};
+		sentence.front() = static_cast<char>(std::toupper(static_cast<unsigned char>(sentence.front())));
+		return QString::fromStdString(sentence.ends_with("...") ? sentence : sentence + '.');
 	}
 	if (!std::ranges::contains(m_presets, presetName, &CMakeFileAPIReader::PresetInfo::name))
 	{
@@ -769,13 +773,16 @@ QString QtProjectWizardContentPathCMakeFileAPI::buildDirectoryNote() const
 	{
 		return QStringLiteral("Unknown: the preset has no binaryDir.");
 	}
-	std::string state{
-		m_runningCMake    ? "running CMake..."
-		: m_configureFailed ? "CMake failed to configure it; Run CMake shows its errors"
+	return QString::fromStdString(std::format("{} ({})", m_buildDir.str(), buildDirectoryState()));
+}
+
+std::string QtProjectWizardContentPathCMakeFileAPI::buildDirectoryState() const
+{
+	return m_runningCMake  ? "running CMake..."
+		: m_configureFailed ? "CMake failed to configure it: Run CMake shows its errors"
 		: m_hasReply        ? "configured"
-		: m_configured      ? "configured by CMake; Sourcetrail asks it for the targets when indexing"
-							: "not configured yet; Sourcetrail runs CMake when indexing"};
-	return QString::fromStdString(std::format("{} ({})", m_buildDir.str(), state));
+		: m_configured      ? "configured by CMake: Sourcetrail asks it for the targets when indexing"
+							: "not configured yet: Sourcetrail runs CMake when indexing";
 }
 
 bool QtProjectWizardContentPathCMakeFileAPI::fail(const QString& message)
