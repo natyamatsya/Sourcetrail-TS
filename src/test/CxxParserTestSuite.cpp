@@ -5445,6 +5445,32 @@ TEST_CASE("cxx parser parses multiple files")
 	REQUIRE(testStorage->includes.size() == 1);
 }
 
+TEST_CASE("cxx parser indexes a compile command without a working directory")
+{
+	// An empty C/C++ source group gives no working directory: that is no missing one.
+	const FilePath sourceFilePath("data/CxxParserTestSuite/code.cpp");
+	std::shared_ptr<IndexerCommandCxx> indexerCommand = std::make_shared<IndexerCommandCxx>(
+		sourceFilePath,
+		std::set<FilePath>{FilePath("data/CxxParserTestSuite/")},
+		std::set<FilePathFilter>{},
+		std::set<FilePathFilter>{},
+		FilePath(""),
+		std::vector<std::string>{
+			ClangCompiler::stdOption(ClangCompiler::getLatestCppStandard()), sourceFilePath.str()},
+		std::string{});
+
+	std::shared_ptr<IntermediateStorage> storage = std::make_shared<IntermediateStorage>();
+	const std::shared_ptr<ParserClientImpl> parserClient = std::make_shared<ParserClientImpl>(storage);
+	CxxParser parser(
+		*parserClient, std::make_shared<TestFileRegister>(), std::make_shared<IndexerStateInfo>());
+
+	parser.buildIndex(indexerCommand);
+
+	std::shared_ptr<TestStorage> testStorage = TestStorage::create(storage);
+	REQUIRE(testStorage->errors.empty());
+	REQUIRE_FALSE(testStorage->classes.empty());
+}
+
 TEST_CASE("cxx parser reports a compile command whose working directory does not exist")
 {
 	// A stale compilation database names a build directory that is gone. ClangTool cannot change

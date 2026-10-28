@@ -90,8 +90,10 @@ inline std::optional<std::string> findMissingWorkingDirectory(
 	for (const clang::tooling::CompileCommand& command:
 		 compilationDatabase.getCompileCommands(sourceFilePath.str()))
 	{
+		// No directory is none to change into (an empty C/C++ source group gives none): only one
+		// that is named and gone is missing.
 		std::error_code error;
-		if (!std::filesystem::is_directory(command.Directory, error))
+		if (!command.Directory.empty() && !std::filesystem::is_directory(command.Directory, error))
 		{
 			return command.Directory;
 		}
