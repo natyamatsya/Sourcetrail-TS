@@ -5,10 +5,12 @@
 #include <format>
 #include <optional>
 #include <ranges>
+#include <utility>
 
 #include "MachineArgs.h"
 #include "MessageSearch.h"
 #include "MessageSearchAutocomplete.h"
+#include "ProjectStateMachine.h"
 
 // glaze reflects these for JSON; MSVC cannot reflect types in an anonymous namespace.
 namespace search_machine_json
@@ -64,8 +66,19 @@ std::string queryWith(const std::vector<SearchMatch>& tokens, const SearchMatch&
 
 std::shared_ptr<SearchStateMachine> SearchStateMachine::instance()
 {
-	static const std::shared_ptr<SearchStateMachine> machine = std::make_shared<SearchStateMachine>();
+	static const std::shared_ptr<SearchStateMachine> machine =
+		std::make_shared<SearchStateMachine>(ProjectStateMachine::instance());
 	return machine;
+}
+
+SearchStateMachine::SearchStateMachine(std::shared_ptr<const ProjectStateMachine> project)
+	: m_project(std::move(project))
+{
+}
+
+bool SearchStateMachine::hasProject() const
+{
+	return !m_project || m_project->state() != ProjectStateMachine::State::NoProject;
 }
 
 void SearchStateMachine::attach(SearchPresenter presenter)
@@ -95,6 +108,10 @@ MachineFireResult SearchStateMachine::type(const std::string& query, NodeTypeSet
 	if (query.empty())
 	{
 		return {false, "type needs a query"};
+	}
+	if (!hasProject())
+	{
+		return {false, "no project is loaded: there is nothing to complete"};
 	}
 	SearchPresenter presenter;
 	{
@@ -176,6 +193,10 @@ MachineFireResult SearchStateMachine::dismiss(EventSource source)
 
 MachineFireResult SearchStateMachine::search(EventSource source)
 {
+	if (!hasProject())
+	{
+		return {false, "no project is loaded: there is nothing to search"};
+	}
 	SearchPresenter presenter;
 	std::string query;
 	{
@@ -183,7 +204,7 @@ MachineFireResult SearchStateMachine::search(EventSource source)
 		SearchMachine::Data& data = transaction.data();
 		if (!data.presenter)
 		{
-			return {false, "there is no search box to search from (is a project loaded?)"};
+			return {false, "there is no search box to search from"};
 		}
 		query = data.query;
 		data.outcome = query.empty() ? std::string("searched for what the box holds")

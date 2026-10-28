@@ -838,6 +838,33 @@ TEST_CASE("search suggests what was typed last, and searches for what is selecte
 	REQUIRE(presenter.queries.size() == 3);
 }
 
+// Without a project no tab's controller answers a query: what was typed waited in "completing"
+// for good, and a search said there was no search box though the box showed.
+TEST_CASE("search without a project refuses, saying so")
+{
+	const auto app = std::make_shared<AppStateMachine>();
+	app->started();
+	const auto project = std::make_shared<ProjectStateMachine>(app);
+	SearchStateMachine machine(project);
+	FakeSearchPresenter presenter;
+	machine.attach(presenter);
+
+	const MachineFireResult typed = machine.fire("type", R"({"query":"Foo"})", EventSource::Agent);
+	REQUIRE_FALSE(typed.ok);
+	REQUIRE(typed.message == "no project is loaded: there is nothing to complete");
+	REQUIRE(machine.snapshot().state == "idle");
+	REQUIRE(presenter.queries.empty());
+	const MachineFireResult searched = machine.fire("search", "", EventSource::Agent);
+	REQUIRE_FALSE(searched.ok);
+	REQUIRE(searched.message == "no project is loaded: there is nothing to search");
+	REQUIRE(presenter.submitted == 0);
+
+	project->requested("a.srctrl.toml");
+	project->loaded();
+	REQUIRE(machine.fire("type", R"({"query":"Foo"})", EventSource::Agent).ok);
+	REQUIRE(machine.snapshot().state == "completing");
+}
+
 TEST_CASE("search keeps the box's filters when a suggestion is selected")
 {
 	SearchStateMachine machine;
