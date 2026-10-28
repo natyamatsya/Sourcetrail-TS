@@ -1,6 +1,7 @@
 #ifndef QT_PROJECT_WIZARD_CONTENT_PATH_CMAKE_FILE_API_H
 #define QT_PROJECT_WIZARD_CONTENT_PATH_CMAKE_FILE_API_H
 
+#include <expected>
 #include <string>
 #include <vector>
 
@@ -44,6 +45,7 @@ private slots:
 	void onTargetFilterEdited();
 	void onTargetChecked();
 	void onRunCMake();
+	void onShowCMakeLog();
 
 private:
 	// A target of the reply, with the source files it has in the configuration shown.
@@ -67,6 +69,11 @@ private:
 	void updateTargetSummary();
 	QString targetSummary() const;
 	QString buildDirectoryNote() const;
+	// The last configure's error under the build directory, with its log; hidden when it
+	// did not fail.
+	void showConfigureError();
+	// The CMake Arguments field's words; the reason when they cannot be split.
+	std::expected<std::vector<std::string>, std::string> cmakeArguments() const;
 	// Shows why the check failed; always false.
 	bool fail(const QString& message);
 
@@ -78,6 +85,12 @@ private:
 	QtLocationPicker* m_buildDirPicker = nullptr;	// without a preset
 	QLabel* m_buildDirLabel = nullptr;
 	QPushButton* m_runCMakeButton = nullptr;
+	QPushButton* m_refreshPresetsButton = nullptr;
+	QLabel* m_cmakeArgumentsLabel = nullptr;
+	QWidget* m_cmakeArgumentsRow = nullptr;
+	QLineEdit* m_cmakeArgumentsEdit = nullptr;
+	QWidget* m_configureErrorRow = nullptr;
+	QLabel* m_configureErrorLabel = nullptr;
 	QComboBox* m_configurationCombo = nullptr;
 	QLineEdit* m_targetFilterEdit = nullptr;
 	QListWidget* m_targetList = nullptr;
@@ -91,6 +104,8 @@ private:
 	bool m_configureFailed = false;	// CMake's last configure of the build directory failed
 	bool m_runningCMake = false;
 	FilePath m_failedBuildDir;	// where Run CMake failed last (older CMake versions write no error reply)
+	std::string m_configureError;	// the first error of the last configure that failed
+	bool m_missesSubmodules = false;	// ... and it looks like a checkout without its submodules
 	std::vector<std::string> m_configurations;
 	std::vector<Target> m_targets;
 };

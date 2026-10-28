@@ -147,6 +147,10 @@ const std::vector<Field>& fields()
 			"cmake_target_glob",
 			[](const CMake& c) { return c.getTargetGlob(); },
 			[](CMake& c, const std::string& v) { c.setTargetGlob(v); }),
+		field<CMake, Strings>(
+			"cmake_arguments",
+			[](const CMake& c) { return c.getCMakeArguments(); },
+			[](CMake& c, const Strings& v) { c.setCMakeArguments(v); }),
 		field<CMake, std::string>(
 			"cmake_configuration",
 			[](const CMake& c) { return c.getConfiguration(); },

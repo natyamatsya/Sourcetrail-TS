@@ -670,7 +670,8 @@ std::expected<void, CMakeFileAPIReader::ConfigureError> CMakeFileAPIReader::ensu
 	std::function<void(const std::string&)> progress,
 	const FilePath& sourceDir,
 	const std::string& presetName,
-	const bool reconfigure)
+	const bool reconfigure,
+	const std::vector<std::string>& cmakeArguments)
 {
 	// 1. Write the query file so CMake knows what to generate.
 	{
@@ -718,6 +719,13 @@ std::expected<void, CMakeFileAPIReader::ConfigureError> CMakeFileAPIReader::ensu
 		proc.setWorkingDirectory(QString::fromStdString(m_buildDir.str()));
 		args << QString::fromStdString(m_buildDir.str());
 	}
+	for (const std::string& argument: cmakeArguments)
+	{
+		if (!argument.empty())
+		{
+			args << QString::fromStdString(argument);
+		}
+	}
 
 	const std::string commandLine{std::format("cmake {}", args.join(QStringLiteral(" ")).toStdString())};
 	proc.start(QStringLiteral("cmake"), args);
@@ -736,6 +744,14 @@ std::expected<void, CMakeFileAPIReader::ConfigureError> CMakeFileAPIReader::ensu
 			ConfigureErrorCode::CMakeTimedOut, std::format("'{}' did not finish within 5 minutes.", commandLine)));
 	}
 	const std::string output{proc.readAll().toStdString()};
+	{
+		// Kept for the wizard's "Show log", also after a restart.
+		QFile log{QString::fromStdString(configureLogPath().str())};
+		if (log.open(QIODevice::WriteOnly | QIODevice::Truncate))
+		{
+			log.write(QByteArray::fromStdString(std::format("$ {}\n\n{}", commandLine, output)));
+		}
+	}
 	if (proc.exitStatus() != QProcess::NormalExit || proc.exitCode() != 0)
 	{
 		LOG_WARNING(std::format(
@@ -757,6 +773,53 @@ std::expected<void, CMakeFileAPIReader::ConfigureError> CMakeFileAPIReader::ensu
 		return std::unexpected(utility::makeExpectedError(
 			ConfigureErrorCode::NoReplyWritten, std::format("No reply in {}", m_replyDir.str())));
 	return {};
+}
+
+FilePath CMakeFileAPIReader::configureLogPath() const
+{
+	return m_queryDir.getConcatenated(FilePath{"configure.log"});
+}
+
+std::string CMakeFileAPIReader::lastConfigureLog() const
+{
+	QFile log{QString::fromStdString(configureLogPath().str())};
+	if (!log.open(QIODevice::ReadOnly))
+		return {};
+	return log.readAll().toStdString();
+}
+
+std::string CMakeFileAPIReader::firstConfigureError(const std::string& output)
+{
+	// "CMake Error at CMakeLists.txt:12 (add_subdirectory):" and its message: the indented
+	// lines after it, blank lines among them ("The source directory\n\n    <path>\n\n  does
+	// not contain a CMakeLists.txt file.").
+	const QStringList lines{QString::fromStdString(output).split(QLatin1Char('\n'))};
+	for (qsizetype i = 0; i < lines.size(); i++)
+	{
+		if (!lines[i].startsWith(QLatin1String("CMake Error")))
+			continue;
+		QString error{lines[i].trimmed()};
+		for (qsizetype j = i + 1; j < lines.size(); j++)
+		{
+			if (lines[j].trimmed().isEmpty())
+				continue;
+			if (!lines[j].startsWith(QLatin1Char(' ')))
+				break;
+			error += QLatin1Char(' ') + lines[j].trimmed();
+		}
+		return error.toStdString();
+	}
+	return {};
+}
+
+bool CMakeFileAPIReader::missesSubmodules(const std::string& output, const FilePath& sourceDir)
+{
+	// A submodule not checked out is an empty directory; one not created at all is not there.
+	const bool directoryMissing{
+		output.find("does not contain a CMakeLists.txt file") != std::string::npos ||
+		output.find("which is not an existing directory") != std::string::npos};
+	return directoryMissing && !sourceDir.empty() &&
+		sourceDir.getConcatenated(FilePath{".gitmodules"}).exists();
 }
 
 std::vector<std::string> CMakeFileAPIReader::getConfigurations() const

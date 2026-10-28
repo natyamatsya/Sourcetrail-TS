@@ -70,6 +70,16 @@ inline void SourceGroupSettingsWithCxxCMakeBuildDirectory::setTargetGlob(const s
 	m_targetGlob = glob;
 }
 
+inline const std::vector<std::string>& SourceGroupSettingsWithCxxCMakeBuildDirectory::getCMakeArguments() const
+{
+	return m_cmakeArguments;
+}
+
+inline void SourceGroupSettingsWithCxxCMakeBuildDirectory::setCMakeArguments(const std::vector<std::string>& arguments)
+{
+	m_cmakeArguments = arguments;
+}
+
 inline const std::string& SourceGroupSettingsWithCxxCMakeBuildDirectory::getConfiguration() const
 {
 	return m_configuration;
@@ -85,7 +95,7 @@ inline bool SourceGroupSettingsWithCxxCMakeBuildDirectory::equals(const SourceGr
 	const auto* o = dynamic_cast<const SourceGroupSettingsWithCxxCMakeBuildDirectory*>(other);
 	return o && m_sourceDirectory == o->m_sourceDirectory && m_presetName == o->m_presetName &&
 		m_buildDirectory == o->m_buildDirectory && m_targetGlob == o->m_targetGlob &&
-		m_configuration == o->m_configuration;
+		m_configuration == o->m_configuration && m_cmakeArguments == o->m_cmakeArguments;
 }
 
 inline void SourceGroupSettingsWithCxxCMakeBuildDirectory::load(
@@ -98,6 +108,8 @@ inline void SourceGroupSettingsWithCxxCMakeBuildDirectory::load(
 		FilePath(config->getValueOrDefault(key + "/cmake/build_directory", std::string{}));
 	m_targetGlob = config->getValueOrDefault(key + "/cmake/target_glob", std::string{});
 	m_configuration = config->getValueOrDefault(key + "/cmake/configuration", std::string{});
+	m_cmakeArguments =
+		config->getValuesOrDefaults(key + "/cmake/cmake_arguments/cmake_argument", std::vector<std::string>());
 }
 
 inline void SourceGroupSettingsWithCxxCMakeBuildDirectory::save(
@@ -108,4 +120,5 @@ inline void SourceGroupSettingsWithCxxCMakeBuildDirectory::save(
 	config->setValue(key + "/cmake/build_directory", m_buildDirectory.str());
 	config->setValue(key + "/cmake/target_glob", m_targetGlob);
 	config->setValue(key + "/cmake/configuration", m_configuration);
+	config->setValues(key + "/cmake/cmake_arguments/cmake_argument", m_cmakeArguments);
 }

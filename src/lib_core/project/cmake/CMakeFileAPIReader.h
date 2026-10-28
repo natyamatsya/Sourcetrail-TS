@@ -192,12 +192,29 @@ public:
 	//   cmake -S <sourceDir> -B <buildDir>
 	// Otherwise falls back to:
 	//   cmake <buildDir>
-	// progress() is called with status messages during the cmake run.
+	// `cmakeArguments` follow those (cache variables like -DBUILD_TESTS=OFF, -G ...).
+	// progress() is called with status messages during the cmake run. CMake's output is
+	// kept in configureLogPath().
 	[[nodiscard]] std::expected<void, ConfigureError> ensureReply(
 		std::function<void(const std::string&)> progress = {},
 		const FilePath& sourceDir = {},
 		const std::string& presetName = {},
-		bool reconfigure = false);
+		bool reconfigure = false,
+		const std::vector<std::string>& cmakeArguments = {});
+
+	// Where ensureReply keeps the output of the last cmake it ran (Sourcetrail's query
+	// directory), and that output: empty when it ran none.
+	FilePath configureLogPath() const;
+	std::string lastConfigureLog() const;
+
+	// The first error in CMake's output, in a line: "CMake Error at CMakeLists.txt:12
+	// (add_subdirectory): The source directory ... does not contain a CMakeLists.txt
+	// file." Empty when it reports none.
+	[[nodiscard]] static std::string firstConfigureError(const std::string& output);
+
+	// Whether CMake's errors are what a git checkout without its submodules gives: a
+	// directory it adds has no CMakeLists.txt, and `sourceDir` has a .gitmodules.
+	[[nodiscard]] static bool missesSubmodules(const std::string& output, const FilePath& sourceDir);
 
 	// The configuration names the reply has (one for single-config generators,
 	// CMAKE_CONFIGURATION_TYPES for multi-config ones). Empty without a reply.

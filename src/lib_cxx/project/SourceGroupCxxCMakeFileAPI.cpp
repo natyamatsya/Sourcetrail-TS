@@ -459,7 +459,8 @@ std::expected<void, PrepareIndexingError> SourceGroupCxxCMakeFileAPI::prepareInd
 		[](const std::string& msg) { MessageStatus(msg, false, true).dispatch(); },
 		sourceDir,
 		presetName,
-		stale)};
+		stale,
+		presetName.empty() ? m_settings->getCMakeArguments() : std::vector<std::string>{})};
 	if (!configured)
 	{
 		const auto& [code, cmakeError, exceptionType]{configured.error()};

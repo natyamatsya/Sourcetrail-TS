@@ -5,13 +5,17 @@
 #include <ranges>
 
 #include <QComboBox>
+#include <QDialog>
+#include <QDialogButtonBox>
 #include <QHBoxLayout>
+#include <QPlainTextEdit>
 #include <QLabel>
 #include <QLineEdit>
 #include <QListWidget>
 #include <QPushButton>
 
 #include "CMakeFileAPIReader.h"
+#include "EditorCommand.h"
 #include "ProjectWizardStateMachine.h"
 #include "QtLocationPicker.h"
 #ifndef SRCTRL_MODULE_BUILD
@@ -61,6 +65,25 @@ std::string fileCount(std::size_t count)
 QString toHtml(const std::string& text)
 {
 	return QString::fromStdString(text).toHtmlEscaped();
+}
+
+// The arguments as one line to edit: a word with blanks or quotes in double quotes.
+QString joinArguments(const std::vector<std::string>& arguments)
+{
+	QStringList words;
+	for (const std::string& argument: arguments)
+	{
+		QString word{QString::fromStdString(argument)};
+		if (word.isEmpty() || word.contains(QLatin1Char(' ')) || word.contains(QLatin1Char('"')) ||
+			word.contains(QLatin1Char('\'')))
+		{
+			word.replace(QLatin1String("\\"), QLatin1String("\\\\"));
+			word.replace(QLatin1String("\""), QLatin1String("\\\""));
+			word = QLatin1Char('"') + word + QLatin1Char('"');
+		}
+		words << word;
+	}
+	return words.join(QLatin1Char(' '));
 }
 }	 // namespace
 
@@ -163,6 +186,7 @@ void QtProjectWizardContentPathCMakeFileAPI::populate(QGridLayout* layout, int& 
 		buttons->setContentsMargins(0, 0, 0, 0);
 
 		QPushButton* refreshButton = new QPushButton(QStringLiteral("Refresh Presets"), this);
+		m_refreshPresetsButton = refreshButton;
 		refreshButton->setObjectName(QStringLiteral("refreshButton"));
 		connect(
 			refreshButton,
@@ -185,6 +209,61 @@ void QtProjectWizardContentPathCMakeFileAPI::populate(QGridLayout* layout, int& 
 		buttons->addStretch();
 
 		layout->addLayout(buttons, row, QtProjectWizardWindow::BACK_COL);
+		row++;
+
+		// What CMake said when it failed, until it configures the build directory.
+		m_configureErrorRow = new QWidget(this);
+		m_configureErrorRow->setObjectName(QStringLiteral("cmakeError"));
+		QVBoxLayout* errorLayout = new QVBoxLayout(m_configureErrorRow);
+		errorLayout->setContentsMargins(0, 0, 0, 0);
+		m_configureErrorLabel = new QLabel(QLatin1String(""), m_configureErrorRow);
+		m_configureErrorLabel->setAccessibleName(QStringLiteral("CMake Error"));
+		m_configureErrorLabel->setWordWrap(true);
+		m_configureErrorLabel->setTextInteractionFlags(Qt::TextSelectableByMouse);
+		errorLayout->addWidget(m_configureErrorLabel);
+		QPushButton* showLogButton = new QPushButton(QStringLiteral("Show Log"), m_configureErrorRow);
+		showLogButton->setObjectName(QStringLiteral("showCMakeLogButton"));
+		showLogButton->setToolTip(QStringLiteral("All CMake printed when it configured the build directory last"));
+		connect(showLogButton, &QPushButton::clicked, this, &QtProjectWizardContentPathCMakeFileAPI::onShowCMakeLog);
+		QHBoxLayout* logButtons = new QHBoxLayout();
+		logButtons->setContentsMargins(0, 0, 0, 0);
+		logButtons->addWidget(showLogButton);
+		logButtons->addStretch();
+		errorLayout->addLayout(logButtons);
+		layout->addWidget(m_configureErrorRow, row, QtProjectWizardWindow::BACK_COL);
+		m_configureErrorRow->hide();
+		row++;
+	}
+
+	// --- CMake arguments (without a preset) ---
+	{
+		m_cmakeArgumentsLabel = createFormSubLabel(QStringLiteral("CMake Arguments"));	// optional
+		layout->addWidget(m_cmakeArgumentsLabel, row, QtProjectWizardWindow::FRONT_COL, Qt::AlignRight);
+
+		m_cmakeArgumentsRow = new QWidget(this);
+		QHBoxLayout* argumentsLayout = new QHBoxLayout(m_cmakeArgumentsRow);
+		argumentsLayout->setContentsMargins(0, 0, 0, 0);
+		m_cmakeArgumentsEdit = new QLineEdit(m_cmakeArgumentsRow);
+		m_cmakeArgumentsEdit->setObjectName(QStringLiteral("cmakeArguments"));
+		m_cmakeArgumentsEdit->setAccessibleName(QStringLiteral("CMake Arguments"));
+		m_cmakeArgumentsEdit->setPlaceholderText(
+			QStringLiteral("Cache variables and options, e.g. -DBUILD_TESTS=OFF -G Ninja"));
+		m_cmakeArgumentsEdit->setAttribute(Qt::WA_MacShowFocusRect, false);
+		argumentsLayout->addWidget(m_cmakeArgumentsEdit);
+		layout->addWidget(m_cmakeArgumentsRow, row, QtProjectWizardWindow::BACK_COL);
+
+		addHelpButton(
+			QStringLiteral("CMake Arguments"),
+			QStringLiteral(
+				"<p>What Sourcetrail adds when it configures the build directory without a "
+				"preset:</p><pre>cmake -S &lt;source&gt; -B &lt;build&gt; &lt;arguments&gt;</pre>"
+				"<p>Cache variables like <tt>-DLEVELDB_BUILD_TESTS=OFF</tt>, a generator "
+				"(<tt>-G Ninja</tt>), a toolchain file. Separated by blanks; put an argument with "
+				"blanks in quotes. They are used by Run CMake and when indexing re-configures the "
+				"project; they are not passed through a shell.</p>"
+				"<p>With a preset, set them in the preset (CMakeUserPresets.json) instead.</p>"),
+			layout,
+			row);
 		row++;
 	}
 
@@ -296,6 +375,7 @@ void QtProjectWizardContentPathCMakeFileAPI::load()
 	m_buildDirPicker->blockSignals(true);
 	m_buildDirPicker->setText(QString::fromStdString(m_settings->getBuildDirectory().str()));
 	m_buildDirPicker->blockSignals(false);
+	m_cmakeArgumentsEdit->setText(joinArguments(m_settings->getCMakeArguments()));
 
 	// A group without a preset but with a build directory keeps using it; otherwise
 	// the first preset (in file order) is selected, and the settings say so too, so
@@ -316,6 +396,7 @@ void QtProjectWizardContentPathCMakeFileAPI::save()
 	m_settings->setBuildDirectory(FilePath(m_buildDirPicker->getText().trimmed().toStdString()));
 	m_settings->setConfiguration(m_configurationCombo->currentText().trimmed().toStdString());
 	m_settings->setTargetGlob(m_targetFilterEdit->text().trimmed().toStdString());
+	m_settings->setCMakeArguments(cmakeArguments().value_or(std::vector<std::string>{}));
 }
 
 bool QtProjectWizardContentPathCMakeFileAPI::check()
@@ -331,6 +412,10 @@ bool QtProjectWizardContentPathCMakeFileAPI::check()
 	}
 
 	const std::string presetName{selectedPreset()};
+	if (const auto arguments = cmakeArguments(); !arguments)
+	{
+		return fail(QString::fromStdString(arguments.error()));
+	}
 	if (presetName.empty() && m_buildDir.empty())
 	{
 		return fail(QStringLiteral(
@@ -406,6 +491,25 @@ void QtProjectWizardContentPathCMakeFileAPI::describe(ProjectWizardView& view) c
 		: m_buildDir.empty()
 		? std::string{"no preset, and no cmake_build_directory chosen yet"}
 		: std::format("no preset; build directory {}: {}", m_buildDir.str(), buildDirectoryNote().toStdString());
+
+	if (m_configureFailed)
+	{
+		view.notes["cmake_error"] = m_configureError.empty()
+			? std::string{"CMake failed to configure the build directory"}
+			: m_configureError;
+		if (m_missesSubmodules)
+		{
+			view.notes["cmake_error"] +=
+				" (a directory it adds is missing: run 'git submodule update --init --recursive' in the "
+				"source directory)";
+		}
+	}
+	if (noPresetSelected())
+	{
+		view.notes["cmake_arguments"] =
+			"without a preset: what the configure adds to cmake -S <source> -B <build>, one argument each "
+			"(e.g. -DBUILD_TESTS=OFF)";
+	}
 
 	if (!m_hasReply)
 	{
@@ -514,6 +618,12 @@ void QtProjectWizardContentPathCMakeFileAPI::onRunCMake()
 	{
 		return;
 	}
+	const auto arguments = cmakeArguments();
+	if (!arguments)
+	{
+		fail(QString::fromStdString(arguments.error()));
+		return;
+	}
 	m_runningCMake = true;
 	m_runCMakeButton->setEnabled(false);
 	m_buildDirLabel->setText(buildDirectoryNote().toHtmlEscaped());
@@ -521,9 +631,10 @@ void QtProjectWizardContentPathCMakeFileAPI::onRunCMake()
 	execution::runOnWorkPool([this,
 							  buildDir = m_buildDir,
 							  sourceDir = m_sourceDir,
-							  presetName = selectedPreset()]() {
+							  presetName = selectedPreset(),
+							  arguments = noPresetSelected() ? *arguments : std::vector<std::string>{}]() {
 		CMakeFileAPIReader reader{buildDir};
-		const auto configured{reader.ensureReply({}, sourceDir, presetName, true)};
+		const auto configured{reader.ensureReply({}, sourceDir, presetName, true, arguments)};
 		const std::string error{
 			configured ? std::string{}
 					   : std::format(
@@ -634,6 +745,12 @@ void QtProjectWizardContentPathCMakeFileAPI::readBuildDirectory()
 
 	m_buildDirLabel->setText(buildDirectoryNote().toHtmlEscaped());
 	m_runCMakeButton->setEnabled(!m_buildDir.empty() && !m_runningCMake);
+	m_cmakeArgumentsLabel->setVisible(noPresetSelected());
+	m_cmakeArgumentsRow->setVisible(noPresetSelected());
+	// Presets come from a presets file: without one there is nothing to refresh.
+	m_refreshPresetsButton->setVisible(
+		!m_sourceDir.empty() && !CMakeFileAPIReader::getPresetFiles(m_sourceDir).empty());
+	showConfigureError();
 
 	m_configurations = m_hasReply ? CMakeFileAPIReader{m_buildDir}.getConfigurations()
 								  : std::vector<std::string>{};
@@ -776,6 +893,72 @@ QString QtProjectWizardContentPathCMakeFileAPI::buildDirectoryNote() const
 		: m_configured      ? "configured by CMake; Sourcetrail asks it for the targets when indexing"
 							: "not configured yet; Sourcetrail runs CMake when indexing"};
 	return QString::fromStdString(std::format("{} ({})", m_buildDir.str(), state));
+}
+
+void QtProjectWizardContentPathCMakeFileAPI::showConfigureError()
+{
+	m_configureError.clear();
+	m_missesSubmodules = false;
+	if (!m_configureFailed || m_runningCMake)
+	{
+		m_configureErrorRow->hide();
+		return;
+	}
+
+	const std::string log{CMakeFileAPIReader{m_buildDir}.lastConfigureLog()};
+	m_configureError = CMakeFileAPIReader::firstConfigureError(log);
+	m_missesSubmodules = CMakeFileAPIReader::missesSubmodules(log, m_sourceDir);
+
+	QString text{QStringLiteral("<span style=\"color:red\">CMake failed to configure the build directory")};
+	text += m_configureError.empty() ? QStringLiteral(".") : QStringLiteral(": ") + toHtml(m_configureError);
+	text += QStringLiteral("</span>");
+	if (m_missesSubmodules)
+	{
+		text += QStringLiteral(
+			"<br>A directory it adds is missing: the source directory is a git checkout without its "
+			"submodules. Run <tt>git submodule update --init --recursive</tt> there, then Run CMake.");
+	}
+	else if (noPresetSelected())
+	{
+		text += QStringLiteral("<br>Options the project needs (<tt>-D...=OFF</tt>) go in CMake Arguments.");
+	}
+	m_configureErrorLabel->setText(text);
+	m_configureErrorRow->show();
+}
+
+void QtProjectWizardContentPathCMakeFileAPI::onShowCMakeLog()
+{
+	const std::string log{CMakeFileAPIReader{m_buildDir}.lastConfigureLog()};
+
+	QDialog dialog(this);
+	dialog.setWindowTitle(QStringLiteral("CMake Log"));
+	dialog.setObjectName(QStringLiteral("cmakeLogDialog"));
+	QVBoxLayout* dialogLayout = new QVBoxLayout(&dialog);
+	QPlainTextEdit* text = new QPlainTextEdit(&dialog);
+	text->setAccessibleName(QStringLiteral("CMake Log"));
+	text->setReadOnly(true);
+	text->setLineWrapMode(QPlainTextEdit::NoWrap);
+	text->setPlainText(
+		log.empty() ? QStringLiteral("Sourcetrail has not run CMake in this build directory.")
+					: QString::fromStdString(log));
+	dialogLayout->addWidget(text);
+	QDialogButtonBox* buttons = new QDialogButtonBox(QDialogButtonBox::Close, &dialog);
+	connect(buttons, &QDialogButtonBox::rejected, &dialog, &QDialog::reject);
+	dialogLayout->addWidget(buttons);
+	dialog.resize(800, 500);
+	dialog.exec();
+}
+
+std::expected<std::vector<std::string>, std::string> QtProjectWizardContentPathCMakeFileAPI::cmakeArguments() const
+{
+	const std::string text{m_cmakeArgumentsEdit->text().trimmed().toStdString()};
+	if (text.empty())
+	{
+		return std::vector<std::string>{};
+	}
+	return editor_command::split(text).transform_error([&](editor_command::EditorCommandError) {
+		return std::format("The CMake Arguments \"{}\" have a quote that is not closed.", text);
+	});
 }
 
 bool QtProjectWizardContentPathCMakeFileAPI::fail(const QString& message)
