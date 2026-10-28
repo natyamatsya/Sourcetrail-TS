@@ -965,3 +965,29 @@ TEST_CASE("CMakeFileAPIReader discoverPresetInfos tells how a preset configures"
 	CHECK(release.cacheVariables == std::vector<std::pair<std::string, std::string>>{
 		{"BUILD_TESTS", "FALSE"}, {"CMAKE_BUILD_TYPE", "Release"}});
 }
+
+TEST_CASE("CMakeFileAPIReader builtConfiguration finds the configuration built last")
+{
+	namespace fs = std::filesystem;
+	const TestTempDirectory tempDirectory{"builtConfiguration"};
+	const fs::path buildDir = tempDirectory.getPath() / "build";
+	fs::create_directories(buildDir);
+	const CMakeFileAPIReader reader{FilePath{buildDir.string()}};
+	const std::vector<std::string> configurations{"Debug", "Release"};
+
+	// Nothing built: none; a single configuration: nothing to choose.
+	CHECK(reader.builtConfiguration(configurations).empty());
+	CHECK(reader.builtConfiguration({"Release"}).empty());
+
+	// Without a .ninja_log: the directory its outputs went to.
+	fs::create_directories(buildDir / "CMakeFiles" / "app.dir" / "Release");
+	std::ofstream{buildDir / "CMakeFiles" / "app.dir" / "Release" / "main.cpp.o"} << "o";
+	CHECK(reader.builtConfiguration(configurations) == "Release");
+
+	// Ninja Multi-Config's log: its last output says (only Debug was built since).
+	std::ofstream{buildDir / ".ninja_log"} << "# ninja log v6\n"
+											  "0\t10\t100\tCMakeFiles/app.dir/Release/main.cpp.o\tabc\n"
+											  "0\t10\t200\tCMakeFiles/app.dir/Debug/main.cpp.o\tdef\n"
+											  "10\t20\t200\tDebug/app\tghi\n";
+	CHECK(reader.builtConfiguration(configurations) == "Debug");
+}

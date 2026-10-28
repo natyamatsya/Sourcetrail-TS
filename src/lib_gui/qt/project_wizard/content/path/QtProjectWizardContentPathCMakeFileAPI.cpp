@@ -896,11 +896,13 @@ void QtProjectWizardContentPathCMakeFileAPI::readBuildDirectory()
 		m_configurationCombo->addItem(QString::fromStdString(name));
 	}
 	m_configurationCombo->setCurrentText(configuration);
+	// Empty means the configuration built last (CMakeFileAPIReader::builtConfiguration),
+	// else the first.
+	const std::string built{m_hasReply ? CMakeFileAPIReader{m_buildDir}.builtConfiguration(m_configurations) : std::string{}};
 	m_configurationCombo->lineEdit()->setPlaceholderText(
-		m_configurations.empty()
-			? QStringLiteral("The first configuration of the build directory")
-			: QString::fromStdString(
-				  std::format("The first configuration: {}", m_configurations.front())));
+		m_configurations.empty() ? QStringLiteral("The first configuration of the build directory")
+			: !built.empty()     ? QString::fromStdString(std::format("The configuration built last: {}", built))
+								 : QString::fromStdString(std::format("The first configuration: {}", m_configurations.front())));
 	m_configurationCombo->blockSignals(false);
 
 	readTargets();

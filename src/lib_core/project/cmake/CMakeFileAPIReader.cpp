@@ -12,6 +12,7 @@
 
 #include "CMakeFileAPIReader.h"
 
+#include <filesystem>
 #include <format>
 
 #include <QDir>
@@ -789,6 +790,64 @@ std::expected<void, CMakeFileAPIReader::ConfigureError> CMakeFileAPIReader::ensu
 	return {};
 }
 
+std::string CMakeFileAPIReader::builtConfiguration(const std::vector<std::string>& configurations) const
+{
+	namespace fs = std::filesystem;
+	if (configurations.size() < 2)
+		return {};
+	const fs::path buildDir{m_buildDir.str()};
+
+	// Ninja (Multi-Config) logs each output it built, oldest first: the last line with a
+	// configuration's directory in its output tells. Only its end is read.
+	{
+		QFile log{QString::fromStdString((buildDir / ".ninja_log").string())};
+		if (log.open(QIODevice::ReadOnly))
+		{
+			constexpr qint64 tail{256 * 1024};
+			log.seek(std::max<qint64>(0, log.size() - tail));
+			const QStringList lines{QString::fromUtf8(log.readAll()).split(QLatin1Char('\n'))};
+			for (auto line = lines.crbegin(); line != lines.crend(); ++line)
+			{
+				const QStringList fields{line->split(QLatin1Char('\t'))};
+				if (fields.size() < 4)
+					continue;
+				const std::string output{fields[3].toStdString()};
+				for (const std::string& configuration : configurations)
+					if (!configuration.empty() &&
+						(output.starts_with(configuration + "/") || output.contains("/" + configuration + "/")))
+						return configuration;
+			}
+		}
+	}
+
+	// Otherwise (Xcode, Visual Studio, Makefiles per configuration): the newest of the
+	// directories a configuration's outputs go to.
+	std::string newest{};
+	std::optional<fs::file_time_type> newestTime{};
+	for (const std::string& configuration : configurations)
+	{
+		if (configuration.empty())
+			continue;
+		std::vector<fs::path> directories{buildDir / configuration};
+		std::error_code error{};
+		for (const fs::directory_entry& entry : fs::directory_iterator(buildDir / "CMakeFiles", error))
+			if (entry.path().extension() == ".dir")
+				directories.push_back(entry.path() / configuration);
+		for (const fs::path& directory : directories)
+		{
+			if (!fs::is_directory(directory, error) || fs::is_empty(directory, error))
+				continue;
+			const fs::file_time_type time{fs::last_write_time(directory, error)};
+			if (!error && (!newestTime || time > *newestTime))
+			{
+				newestTime = time;
+				newest = configuration;
+			}
+		}
+	}
+	return newest;
+}
+
 FilePath CMakeFileAPIReader::configureLogPath() const
 {
 	return m_queryDir.getConcatenated(FilePath{"configure.log"});
@@ -1124,11 +1183,20 @@ CMakeFileAPIReader::GetSourcesExpected CMakeFileAPIReader::getSourcesDetailed(
 	nlohmann::json chosenConfigNl{};
 	bool hasChosenConfig{false};
 	std::vector<std::string> configNames{};
+	// None asked for: the one built last, else the first.
+	std::string wantedConfiguration{configuration};
+	if (wantedConfiguration.empty() && configsNl.size() > 1)
+	{
+		std::vector<std::string> names{};
+		for (const auto& c : configsNl)
+			names.push_back(c.value("name", std::string{}));
+		wantedConfiguration = builtConfiguration(names);
+	}
 	for (const auto& c : configsNl)
 	{
 		const auto name{c.value("name", std::string{})};
 		configNames.push_back(name.empty() ? "<empty>" : name);
-		if (!hasChosenConfig && (configuration.empty() || name == configuration))
+		if (!hasChosenConfig && (wantedConfiguration.empty() || name == wantedConfiguration))
 		{
 			chosenConfigNl = c;
 			hasChosenConfig = true;

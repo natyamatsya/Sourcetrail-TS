@@ -224,6 +224,12 @@ public:
 	// CMAKE_CONFIGURATION_TYPES for multi-config ones). Empty without a reply.
 	std::vector<std::string> getConfigurations() const;
 
+	// Of `configurations` (a multi-config generator's), the one built last: the newest
+	// output in .ninja_log under its directory, else the newest of the directories its
+	// outputs go to (<build>/<config>, CMakeFiles/<target>.dir/<config>). Empty when none
+	// was built. An empty configuration setting means this one, else the first.
+	std::string builtConfiguration(const std::vector<std::string>& configurations) const;
+
 	// A compileCommandFragment's arguments, unquoted as the generator's shell would: on
 	// Windows as a command line, elsewhere as a POSIX shell does, single quotes included
 	// (the Xcode generator writes '-std=c++17').
