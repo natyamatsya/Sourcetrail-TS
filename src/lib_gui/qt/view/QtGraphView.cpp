@@ -250,6 +250,11 @@ QtGraphView::QtGraphView(ViewLayout *viewLayout)
 		// The zoom level shows beside the zoom buttons, right of the toolbar.
 		connect(m_toolbar, &QtGraphToolbar::laidOut, view, [widget, view, zoom = &zoomSection, toolbar = m_toolbar]()
 		{
+			// The graph starts right of the toolbar: a graph wider than the room left, or one
+			// panned, still never passes under it.
+			const int toolbarRight = view->mapFrom(widget, QPoint(toolbar->geometry().right() + 1, 0)).x();
+			view->reserveLeftEdge(toolbar->isHidden() ? 0 : std::max(0, toolbarRight + toolbarMargin));
+
 			const QPoint centre = zoom->mapTo(widget, QPoint(0, zoom->height() / 2));
 			view->placeZoomState(view->mapFrom(widget, QPoint(toolbar->geometry().right() + 1 + toolbarMargin, centre.y())));
 		});

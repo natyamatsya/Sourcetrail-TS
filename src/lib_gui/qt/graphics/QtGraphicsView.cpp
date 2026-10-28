@@ -192,6 +192,14 @@ void QtGraphicsView::setAppZoomFactor(float appZoomFactor)
 	updateTransform();
 }
 
+void QtGraphicsView::reserveLeftEdge(int pixels)
+{
+	if (viewportMargins().left() != pixels)
+	{
+		setViewportMargins(pixels, 0, 0, 0);
+	}
+}
+
 void QtGraphicsView::setSceneRect(const QRectF& rect, qreal reservedLeft)
 {
 	QGraphicsView::setSceneRect(rect.adjusted(-reservedLeft, 0, 0, 0));

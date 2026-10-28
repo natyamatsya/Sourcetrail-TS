@@ -31,6 +31,9 @@ public:
 	// The zoom level shows for a moment after each change, beside the zoom buttons: the middle
 	// of its left edge, in this view's coordinates.
 	void placeZoomState(QPoint leftCentre);
+	// Keeps the graph out of a strip along the view's left edge, where the toolbar floats: the
+	// viewport starts right of it, so no node is drawn under the toolbar, at any width or scroll.
+	void reserveLeftEdge(int pixels);
 
 	float getZoomFactor() const;
 	void setAppZoomFactor(float appZoomFactor);
