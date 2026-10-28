@@ -502,6 +502,30 @@ TEST_CASE("ProjectDetector lists git submodules and whether they are checked out
 	CHECK(mentions(proposal.reasons, "third_party/ holds dependencies the build compiles"));
 }
 
+TEST_CASE("ProjectDetector says so when no submodule is checked out")
+{
+	// leveldb without 'git submodule update --init': third_party/googletest and benchmark are
+	// empty directories.
+	const TestTempDirectory temp{"detectSubmodulesMissing"};
+	const fs::path root{temp.getPath() / "leveldb"};
+	write(root / ".git" / "HEAD", "ref: refs/heads/main\n");
+	write(root / ".gitmodules", R"([submodule "googletest"]
+	path = third_party/googletest
+[submodule "benchmark"]
+	path = third_party/benchmark
+)");
+	fs::create_directories(root / "third_party" / "googletest");
+	fs::create_directories(root / "third_party" / "benchmark");
+	write(root / "CMakeLists.txt", "project(leveldb)\nadd_subdirectory(third_party/googletest)\n");
+
+	const ProjectProposal proposal{detect(root)};
+
+	CHECK(mentions(proposal.notices, "2 git submodules: third_party/googletest and third_party/benchmark; none is checked out"));
+	CHECK(!mentions(proposal.notices, "not checked out ("));
+	CHECK(mentions(proposal.reasons, "third_party/ holds dependencies the build compiles: they are not checked out"));
+	CHECK(!mentions(proposal.reasons, "indexed with the project"));
+}
+
 TEST_CASE("ProjectDetector excludes vendored submodules an empty group does not build")
 {
 	const TestTempDirectory temp{"detectVendoredSubmodule"};
