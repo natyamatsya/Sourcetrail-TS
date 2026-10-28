@@ -2,6 +2,7 @@
 #define QT_CODE_FIELD_H
 
 #include <memory>
+#include <optional>
 #include <set>
 
 #include <QPlainTextEdit>
@@ -33,6 +34,12 @@ public:
 
 	QSize sizeHint() const override;
 
+	// The code's size: the widest line and all lines together. Measured without laying the text
+	// out, which for a big file took most of the time it took to show (the code font is
+	// monospaced, and every line is one line high).
+	QSize contentSize() const;
+	int lineHeight() const;
+
 	size_t getStartLineNumber() const;
 	size_t getEndLineNumber() const;
 
@@ -46,6 +53,7 @@ public:
 	void annotateText();
 
 protected:
+	void changeEvent(QEvent* event) override;
 	void paintEvent(QPaintEvent* event) override;
 	void enterEvent(QEnterEvent* event) override;
 	void leaveEvent(QEvent* event) override;
@@ -157,6 +165,8 @@ private:
 	std::vector<std::vector<ColumnOffset>> m_surrogateCharacterLocations;
 
 	int m_endTextEditPosition = 0;
+
+	mutable std::optional<QSize> m_contentSize;	   // contentSize(), until the font changes
 
 	Id m_openInTabLocationId;
 };

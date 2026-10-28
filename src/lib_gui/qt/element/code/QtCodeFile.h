@@ -41,6 +41,8 @@ public:
 	std::vector<QtCodeSnippet*> getVisibleSnippets() const;
 	QtCodeSnippet* getSnippetForLocationId(Id locationId) const;
 	QtCodeSnippet* getSnippetForLine(unsigned int line) const;
+	// The whole file's code, when it shows the whole file.
+	QtCodeArea* getWholeFileArea() const;
 
 	std::pair<QtCodeSnippet*, Id> getFirstSnippetWithActiveLocationId(Id tokenId) const;
 

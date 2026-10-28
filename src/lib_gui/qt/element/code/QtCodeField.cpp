@@ -126,29 +126,84 @@ QtCodeField::~QtCodeField() = default;
 
 QSize QtCodeField::sizeHint() const
 {
-	double height = 0;
-	int width = 0;
+	const QSize content{contentSize()};
+	return QSize(content.width() + 1, content.height() + 5);
+}
 
-	QFontMetrics fm = fontMetrics();
-	for (QTextBlock block = document()->firstBlock(); block.isValid(); block = block.next())
+QSize QtCodeField::contentSize() const
+{
+	if (m_contentSize)
 	{
-		QRectF rect = blockBoundingGeometry(block);
-		height += rect.height();
-
-		const int blockWidth = fm.boundingRect(
-									 0,
-									 0,
-									 1000000,
-									 1000000,
-									 Qt::AlignLeft | Qt::AlignTop | Qt::TextExpandTabs,
-									 block.text(),
-									 static_cast<int>(tabStopDistance()))
-								   .width();
-
-		width = std::max(blockWidth, width);
+		return *m_contentSize;
 	}
 
-	return QSize(width + 1, static_cast<int>(height + 5));
+	// The lines with the most columns (tabs to their stops) are measured: with a monospaced
+	// font one of them is the widest. A few of them, as wide characters (CJK) can make a
+	// shorter line wider.
+	constexpr std::size_t measured{16};
+	const QFontMetrics fm{fontMetrics()};
+	const int spaceWidth{std::max(1, fm.horizontalAdvance(QLatin1Char(' ')))};
+	const int tabColumns{std::max(1, static_cast<int>(tabStopDistance()) / spaceWidth)};
+
+	const auto expandTabs = [tabColumns](const QString& text) {
+		QString expanded;
+		expanded.reserve(text.size());
+		for (const QChar c: text)
+		{
+			if (c == QLatin1Char('\t'))
+			{
+				expanded.append(QString(tabColumns - static_cast<int>(expanded.size() % tabColumns), QLatin1Char(' ')));
+			}
+			else
+			{
+				expanded.append(c);
+			}
+		}
+		return expanded;
+	};
+
+	std::vector<std::pair<qsizetype, QTextBlock>> widest;	 // columns, line
+	for (QTextBlock block = document()->firstBlock(); block.isValid(); block = block.next())
+	{
+		const QString text{block.text()};
+		qsizetype columns{0};
+		for (const QChar c: text)
+		{
+			columns = c == QLatin1Char('\t') ? (columns / tabColumns + 1) * tabColumns : columns + 1;
+		}
+		if (widest.size() < measured || columns > widest.back().first)
+		{
+			widest.emplace_back(columns, block);
+			std::ranges::sort(widest, std::greater{}, &std::pair<qsizetype, QTextBlock>::first);
+			if (widest.size() > measured)
+			{
+				widest.pop_back();
+			}
+		}
+	}
+
+	int width{0};
+	for (const auto& [columns, block]: widest)
+	{
+		width = std::max(width, fm.horizontalAdvance(expandTabs(block.text())));
+	}
+
+	m_contentSize = QSize(width, lineHeight() * blockCount());
+	return *m_contentSize;
+}
+
+int QtCodeField::lineHeight() const
+{
+	return static_cast<int>(blockBoundingRect(document()->firstBlock()).height());
+}
+
+void QtCodeField::changeEvent(QEvent* event)
+{
+	if (event->type() == QEvent::FontChange)
+	{
+		m_contentSize.reset();
+	}
+	QPlainTextEdit::changeEvent(event);
 }
 
 size_t QtCodeField::getStartLineNumber() const
@@ -163,7 +218,7 @@ size_t QtCodeField::getEndLineNumber() const
 
 int QtCodeField::totalLineHeight() const
 {
-	return static_cast<int>(blockBoundingRect(firstVisibleBlock()).height() * blockCount());
+	return contentSize().height();
 }
 
 std::string QtCodeField::getCode() const

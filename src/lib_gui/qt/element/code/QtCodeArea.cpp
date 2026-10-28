@@ -136,14 +136,12 @@ QtCodeArea::~QtCodeArea()
 
 QSize QtCodeArea::sizeHint() const
 {
-	double height = 0;
-	double width = 0;
-
-	for (QTextBlock block = document()->firstBlock(); block.isValid(); block = block.next())
+	const QSize content{contentSize()};
+	const qreal margins{2 * document()->documentMargin()};
+	int height{content.height()};
+	if (m_maximumShownHeight > 0)
 	{
-		QRectF rect = blockBoundingGeometry(block);
-		height += rect.height();
-		width = std::max(rect.width(), width);
+		height = std::min(height, m_maximumShownHeight - 5);
 	}
 
 	if (horizontalScrollBar()->minimum() != horizontalScrollBar()->maximum() &&
@@ -152,7 +150,56 @@ QSize QtCodeArea::sizeHint() const
 		height += horizontalScrollBar()->height();
 	}
 
-	return QSize(static_cast<int>(width + lineNumberAreaWidth() + 1), static_cast<int>(height + 5));
+	return QSize(static_cast<int>(content.width() + margins) + lineNumberAreaWidth() + 1, height + 5);
+}
+
+void QtCodeArea::setMaximumShownHeight(int pixels)
+{
+	if (m_maximumShownHeight != pixels)
+	{
+		m_maximumShownHeight = pixels;
+		updateGeometry();
+	}
+}
+
+bool QtCodeArea::scrollsItself() const
+{
+	return m_maximumShownHeight > 0 && contentSize().height() + 5 > m_maximumShownHeight;
+}
+
+void QtCodeArea::scrollToLine(size_t lineNumber, size_t endLineNumber, CodeScrollParams::Target target)
+{
+	using enum CodeScrollParams::Target;
+	QScrollBar* scrollBar = verticalScrollBar();
+	if (scrollBar->minimum() == scrollBar->maximum())
+	{
+		return;
+	}
+
+	// The scroll bar counts lines (QPlainTextEdit): the value is the top line's index.
+	const int first{static_cast<int>(lineNumber - getStartLineNumber())};
+	const int last{endLineNumber > lineNumber ? static_cast<int>(endLineNumber - getStartLineNumber()) : first};
+	const int shown{std::max(1, viewport()->height() / std::max(1, lineHeight()))};
+	const int top{scrollBar->value()};
+
+	int value{top};
+	if (target == TOP)
+	{
+		value = first;
+	}
+	else if (target == CENTER)
+	{
+		value = (first + last + 1) / 2 - shown / 2;
+	}
+	else if (first < top)
+	{
+		value = first;
+	}
+	else if (last >= top + shown)
+	{
+		value = std::min(first, last - shown + 1);
+	}
+	scrollBar->setValue(value);
 }
 
 void QtCodeArea::lineNumberAreaPaintEvent(QPaintEvent* event)
@@ -321,11 +368,6 @@ int QtCodeArea::lineNumberAreaWidth() const
 	return 0;
 }
 
-int QtCodeArea::lineHeight() const
-{
-	return static_cast<int>(blockBoundingRect(firstVisibleBlock()).height());
-}
-
 void QtCodeArea::updateLineNumberAreaWidthForDigits(int digits)
 {
 	m_digits = digits;
@@ -484,7 +526,8 @@ QRectF QtCodeArea::getLineRectForLineNumber(size_t lineNumber) const
 
 	QTextBlock block = document()->findBlockByLineNumber(
 		static_cast<int>(lineNumber - getStartLineNumber()));
-	return blockBoundingGeometry(block);
+	// On the viewport: counted from the top line shown, when it scrolls itself.
+	return blockBoundingGeometry(block).translated(0, contentOffset().y());
 }
 
 void QtCodeArea::findScreenMatches(

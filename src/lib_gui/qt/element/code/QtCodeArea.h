@@ -5,6 +5,7 @@
 #include <vector>
 
 #include "CodeFocusHandler.h"
+#include "CodeScrollParams.h"
 #include "QtCodeField.h"
 #include "QtScrollSpeedChangeListener.h"
 
@@ -63,8 +64,15 @@ public:
 	void lineNumberAreaPaintEvent(QPaintEvent* event);
 	int lineNumberDigits() const;
 	int lineNumberAreaWidth() const;
-	int lineHeight() const;
 	void updateLineNumberAreaWidthForDigits(int digits);
+
+	// At most this high (0: as high as its code): a whole file in the list then scrolls its
+	// lines itself, as in the single-file view, and only the lines that show are laid out.
+	void setMaximumShownHeight(int pixels);
+	bool scrollsItself() const;
+	// Scrolls its own lines (when it scrolls itself) until lineNumber, to endLineNumber if
+	// given, shows as `target` says.
+	void scrollToLine(size_t lineNumber, size_t endLineNumber, CodeScrollParams::Target target);
 
 	void updateSourceLocations(std::shared_ptr<SourceLocationFile> locationFile);
 	void updateContent();
@@ -152,6 +160,8 @@ private:
 
 	bool m_isActiveFile = false;
 	bool m_showLineNumbers;
+
+	int m_maximumShownHeight = 0;
 
 	QtScrollSpeedChangeListener m_scrollSpeedChangeListener;
 };

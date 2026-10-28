@@ -21,6 +21,12 @@ public:
 	virtual ~QtCodeNavigable();
 
 	virtual QAbstractScrollArea* getScrollArea() = 0;
+	// What scrolls when the code is scrolled (the keys, a position to go back to): the scroll
+	// area, or what scrolls inside it.
+	virtual QAbstractScrollArea* getPositionScrollArea()
+	{
+		return getScrollArea();
+	}
 
 	virtual void updateSourceLocations(const CodeSnippetParams& params) = 0;
 	virtual void updateFiles() = 0;

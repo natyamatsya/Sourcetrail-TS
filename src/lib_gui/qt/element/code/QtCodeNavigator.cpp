@@ -660,7 +660,7 @@ void QtCodeNavigator::scrollTo(const CodeScrollParams& params, bool animated, bo
 		if ((m_mode == MODE_LIST) == params.inListMode)
 		{
 			func = [=, this]() {
-				QAbstractScrollArea* area = m_current->getScrollArea();
+				QAbstractScrollArea* area = m_current->getPositionScrollArea();
 				if (area)
 				{
 					area->verticalScrollBar()->setValue(static_cast<int>(params.value));
@@ -771,7 +771,11 @@ void QtCodeNavigator::keyPressEvent(QKeyEvent *event)
 		{
 			if (m_mode == MODE_LIST)
 			{
-				scrollArea = m_list->getScrollArea();
+				scrollArea = m_list->getPositionScrollArea();
+				if (scrollArea != m_list->getScrollArea())
+				{
+					step = 3;	 // a whole file scrolling itself counts lines, as the single view
+				}
 			}
 			else
 			{

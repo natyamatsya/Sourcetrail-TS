@@ -147,6 +147,11 @@ QtCodeSnippet* QtCodeFile::getSnippetForLocationId(Id locationId) const
 	return nullptr;
 }
 
+QtCodeArea* QtCodeFile::getWholeFileArea() const
+{
+	return m_isWholeFile && m_snippets.size() == 1 ? m_snippets.front()->getArea() : nullptr;
+}
+
 QtCodeSnippet* QtCodeFile::getSnippetForLine(unsigned int line) const
 {
 	for (QtCodeSnippet* snippet: m_snippets)

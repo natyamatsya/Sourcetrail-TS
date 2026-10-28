@@ -1,5 +1,7 @@
 #include "QtCodeFileList.h"
 
+#include "QtCodeArea.h"
+
 #ifndef SRCTRL_MODULE_BUILD
 #include "FilePath.h"
 #endif
@@ -182,11 +184,47 @@ void QtCodeFileList::addFile(const CodeFileParams& params)
 
 		file->setSnippets();
 	}
+
+	updateWholeFileHeights();
 }
 
 QScrollArea* QtCodeFileList::getScrollArea()
 {
 	return m_scrollArea;
+}
+
+QAbstractScrollArea* QtCodeFileList::getPositionScrollArea()
+{
+	QtCodeArea* alone{nullptr};
+	for (const QtCodeFile* file: m_files)
+	{
+		if (file->isHidden())
+		{
+			continue;
+		}
+		if (alone || !file->getWholeFileArea())
+		{
+			return m_scrollArea;
+		}
+		alone = file->getWholeFileArea();
+	}
+	return alone && alone->scrollsItself() ? static_cast<QAbstractScrollArea*>(alone) : m_scrollArea;
+}
+
+void QtCodeFileList::updateWholeFileHeights()
+{
+	for (QtCodeFile* file: m_files)
+	{
+		QtCodeArea* area{file->getWholeFileArea()};
+		if (!area)
+		{
+			continue;
+		}
+		// The list's height without what the file shows besides its code (its title bar).
+		const int besides{file->sizeHint().height() - area->sizeHint().height()};
+		area->setMaximumShownHeight(std::max(m_scrollArea->viewport()->height() - besides, 5 * area->lineHeight()));
+		connect(area->verticalScrollBar(), &QScrollBar::valueChanged, m_navigator, &QtCodeNavigator::scrolled, Qt::UniqueConnection);
+	}
 }
 
 void QtCodeFileList::updateSourceLocations(const CodeSnippetParams& params)
@@ -269,6 +307,12 @@ void QtCodeFileList::scrollTo(
 			lineNumber = 1;
 			focusTarget = false;
 		}
+	}
+
+	// A whole file that scrolls itself shows the line first: its rect is where it shows then.
+	if (snippet->getArea()->scrollsItself())
+	{
+		snippet->getArea()->scrollToLine(lineNumber, endLineNumber, target);
 	}
 
 	QRectF lineRect = snippet->getLineRectForLineNumber(lineNumber);
@@ -409,6 +453,7 @@ std::pair<QtCodeSnippet*, Id> QtCodeFileList::getFirstSnippetAndActiveLocationId
 
 void QtCodeFileList::resizeEvent(QResizeEvent*  /*event*/)
 {
+	updateWholeFileHeights();
 	clearSnippetTitleAndScrollBar();
 	updateSnippetTitleAndScrollBar();
 }

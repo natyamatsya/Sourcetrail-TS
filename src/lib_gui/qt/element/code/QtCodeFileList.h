@@ -40,6 +40,8 @@ public:
 
 	// QtCodeNavigable implementation
 	QScrollArea* getScrollArea() override;
+	// A whole file alone in the list scrolls its lines itself.
+	QAbstractScrollArea* getPositionScrollArea() override;
 
 	void updateSourceLocations(const CodeSnippetParams& params) override;
 	void updateFiles() override;
@@ -82,6 +84,9 @@ private slots:
 private:
 	void updateFirstSnippetTitleBar(QtCodeFile* file, int fileTitleBarOffset = 0);
 	void updateLastSnippetScrollBar(QScrollBar* mirroredScrollBar);
+	// A whole file is at most as high as the list shows: it scrolls its lines itself then,
+	// and only what shows is laid out (QPlainTextEdit's way), not all of a big file.
+	void updateWholeFileHeights();
 
 	QtCodeNavigator* m_navigator;
 	QtCodeFileListScrollArea* m_scrollArea;
