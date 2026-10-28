@@ -394,13 +394,24 @@ void UndoRedoController::handleMessage(MessageIndexingFinished*  /*message*/)
 
 void UndoRedoController::handleMessage(MessageRefreshUIState* message)
 {
+	// Nothing shown yet: the overview. A tab that showed one activation only replays it
+	// like any other (it was taken for none, and such a tab showed the overview after a
+	// reindex).
+	if (m_iterator == m_list.begin())
+	{
+		MessageActivateOverview msg;
+		msg.setSchedulerId(getSchedulerId());
+		msg.dispatch();
+		return;
+	}
+
 	std::list<Command>::iterator startIterator = m_iterator;
 	do
 	{
 		std::advance(startIterator, -1);
 	} while (startIterator != m_list.begin() && startIterator->order != Command::Order::ORDER_ACTIVATE);
 
-	if (startIterator == m_list.begin() ||
+	if (startIterator->order != Command::Order::ORDER_ACTIVATE ||
 		(message->isAfterIndexing &&
 		 dynamic_cast<MessageActivateErrors*>(startIterator->message.get()) &&
 		 m_storageAccess->getErrorCount().total == 0))
