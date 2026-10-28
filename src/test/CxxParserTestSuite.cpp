@@ -4693,6 +4693,42 @@ TEST_CASE("cxx parser parses multiple files")
 	REQUIRE(testStorage->includes.size() == 1);
 }
 
+TEST_CASE("cxx parser reports a compile command whose working directory does not exist")
+{
+	// A stale compilation database names a build directory that is gone. ClangTool cannot change
+	// into it and would abort the process; the parser reports it as the file's error instead.
+	const std::string missingDirectory =
+		(std::filesystem::temp_directory_path() / "sourcetrail-test-no-such-build-dir").string();
+	REQUIRE_FALSE(std::filesystem::exists(missingDirectory));
+
+	const FilePath sourceFilePath("data/CxxParserTestSuite/code.cpp");
+	std::shared_ptr<IndexerCommandCxx> indexerCommand = std::make_shared<IndexerCommandCxx>(
+		sourceFilePath,
+		std::set<FilePath>{FilePath("data/CxxParserTestSuite/")},
+		std::set<FilePathFilter>{},
+		std::set<FilePathFilter>{},
+		FilePath(missingDirectory),
+		std::vector<std::string>{
+			ClangCompiler::stdOption(ClangCompiler::getLatestCppStandard()), sourceFilePath.str()},
+		std::string{});
+
+	std::shared_ptr<IntermediateStorage> storage = std::make_shared<IntermediateStorage>();
+	const std::shared_ptr<ParserClientImpl> parserClient = std::make_shared<ParserClientImpl>(storage);
+	CxxParser parser(
+		*parserClient, std::make_shared<TestFileRegister>(), std::make_shared<IndexerStateInfo>());
+
+	parser.buildIndex(indexerCommand);
+
+	std::shared_ptr<TestStorage> testStorage = TestStorage::create(storage);
+	REQUIRE(testStorage->errors.size() == 1);
+	REQUIRE(
+		testStorage->errors.front() ==
+		"The working directory of this file's compile command does not exist: " + missingDirectory +
+			" <1:1 1:1>");
+	REQUIRE(storage->getErrors().front().fatal);
+	REQUIRE(testStorage->classes.empty());
+}
+
 
 TEST_CASE("cxx parser finds braces of class decl")
 {
