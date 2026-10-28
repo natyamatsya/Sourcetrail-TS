@@ -233,14 +233,6 @@ inline CxxName CxxDeclNameResolver::getDeclName(const clang::NamedDecl* declarat
 				functionName = "lambda at " + std::to_string(presumedBegin.getLine()) + ":" +
 					std::to_string(presumedBegin.getColumn());
 			}
-			else if (const clang::CXXConstructorDecl* constructorDecl =
-						 clang::dyn_cast<clang::CXXConstructorDecl>(functionDecl);
-					 constructorDecl && constructorDecl->isInheritingConstructor())
-			{
-				// Clang names a constructor inherited by `using Base::Base;` after the base class;
-				// it is a constructor of the derived class, named like that class's others.
-				functionName = constructorDecl->getParent()->getNameAsString();
-			}
 			else if (clang::FunctionTemplateDecl* templateFunctionDeclaration = functionDecl->getDescribedFunctionTemplate())
 			{
 				templateArguments = getTemplateParameterStrings(templateFunctionDeclaration);
@@ -263,6 +255,21 @@ inline CxxName CxxDeclNameResolver::getDeclName(const clang::NamedDecl* declarat
 						}
 						templateArguments.push_back(getTemplateArgumentName(templateArgument));
 					}
+				}
+			}
+
+			// A constructor or destructor is named after its class. Clang's name for it is the
+			// class's injected name, which in a class template carries the template's parameters
+			// (`static_str<N>`), and a constructor inherited by `using Base::Base;` has the base
+			// class's name.
+			if (clang::isa<clang::CXXConstructorDecl, clang::CXXDestructorDecl>(functionDecl))
+			{
+				const clang::CXXRecordDecl* recordDecl =
+					clang::cast<clang::CXXMethodDecl>(functionDecl)->getParent();
+				if (!recordDecl->isLambda() && recordDecl->getIdentifier())
+				{
+					functionName = (clang::isa<clang::CXXDestructorDecl>(functionDecl) ? "~" : "") +
+						recordDecl->getName().str();
 				}
 			}
 

@@ -4725,7 +4725,29 @@ TEST_CASE("cxx parser finds template class constructor usage of field")
 		"};\n");
 
 	REQUIRE(utility::containsElement<std::string>(
-		client->usages, "void A<typename T>::A<T>() -> T A<typename T>::foo <4:7 4:9>"));
+		client->usages, "void A<typename T>::A() -> T A<typename T>::foo <4:7 4:9>"));
+}
+
+TEST_CASE("cxx parser names a class template's constructors and destructor after the class")
+{
+	// Clang's name for them is the injected class name, `A<T>`; an instantiation's are `A`.
+	std::shared_ptr<TestStorage> client = parseCode(
+		"template <typename T>\n"
+		"struct A\n"
+		"{\n"
+		"	A() {}\n"
+		"	explicit A(T) {}\n"
+		"	~A() {}\n"
+		"};\n"
+		"A<int> a;\n");
+
+	CAPTURE(client->methods, client->templateSpecializations);
+	REQUIRE(client->errors.empty());
+	REQUIRE(containsElement(client->methods, "public void A<typename T>::A() <4:2 <4:2 <4:2 4:2> 4:4> 4:7>"s));
+	REQUIRE(containsElement(client->methods, "public void A<typename T>::A(T) <5:2 <5:2 <5:11 5:11> 5:14> 5:17>"s));
+	REQUIRE(containsElement(client->methods, "public void A<typename T>::~A() <6:2 <6:2 <6:2 6:3> 6:5> 6:8>"s));
+	REQUIRE(containsElement(client->templateSpecializations, "void A<int>::A() -> void A<typename T>::A() <4:2 4:2>"s));
+	REQUIRE(containsElement(client->templateSpecializations, "void A<int>::~A() -> void A<typename T>::~A() <6:2 6:2>"s));
 }
 
 TEST_CASE("cxx parser finds correct method return type of template class in declaration")
