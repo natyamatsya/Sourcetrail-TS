@@ -1509,6 +1509,55 @@ TEST_CASE(
 		"void A<int>::foo<float>() -> void A<typename T>::foo<typename U>() <6:7 6:9>"));
 }
 
+TEST_CASE("cxx parser records a called method of a file that is not indexed as a method")
+{
+	// Only input.cc is indexed: the methods are known from the calls alone.
+	class InputOnlyFileRegister: public FileRegister
+	{
+	public:
+		InputOnlyFileRegister(): FileRegister(FilePath(), std::set<FilePath>(), {FilePathFilter("")}) {}
+		bool hasFilePath(const FilePath& filePath) const override
+		{
+			return filePath.fileName() == "input.cc";
+		}
+	};
+
+	const std::filesystem::path headerDirectory =
+		std::filesystem::temp_directory_path() / "sourcetrail-test-not-indexed";
+	std::filesystem::create_directories(headerDirectory);
+	std::ofstream(headerDirectory / "comparator.h")
+		<< "struct Comparator\n"
+		   "{\n"
+		   "	Comparator() {}\n"
+		   "	int compare(int a, int b) const { return a - b; }\n"
+		   "	static int make() { return 0; }\n"
+		   "	int operator()(int a) const { return a; }\n"
+		   "};\n";
+
+	std::shared_ptr<IntermediateStorage> storage = std::make_shared<IntermediateStorage>();
+	const std::shared_ptr<ParserClientImpl> parserClient = std::make_shared<ParserClientImpl>(storage);
+	CxxParser parser(
+		*parserClient, std::make_shared<InputOnlyFileRegister>(), std::make_shared<IndexerStateInfo>());
+	parser.buildIndex(
+		"input.cc",
+		TextAccess::createFromString(
+			"#include \"comparator.h\"\n"
+			"int f() { Comparator c; return c.compare(1, 2) + Comparator::make() + c(3); }\n"),
+		{"-I" + headerDirectory.string(), ClangCompiler::stdOption(ClangCompiler::getLatestCppStandard())});
+
+	std::map<std::string, NodeKind> kinds;
+	for (const StorageNode& node: storage->getStorageNodes())
+	{
+		kinds.emplace(
+			NameHierarchy::deserialize(node.serializedName).getQualifiedName(), intToEnum<NodeKind>(node.type));
+	}
+	REQUIRE(kinds["Comparator::compare"] == NODE_METHOD);
+	REQUIRE(kinds["Comparator::make"] == NODE_METHOD);
+	REQUIRE(kinds["Comparator::operator()"] == NODE_METHOD);
+	REQUIRE(kinds["Comparator::Comparator"] == NODE_METHOD);
+	REQUIRE(kinds["f"] == NODE_FUNCTION);
+}
+
 TEST_CASE("cxx parser finds lambda definition and call in function")
 {
 	std::shared_ptr<TestStorage> client = parseCode(

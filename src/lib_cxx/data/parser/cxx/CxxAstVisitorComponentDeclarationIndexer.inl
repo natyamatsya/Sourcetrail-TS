@@ -294,7 +294,7 @@ inline void CxxAstVisitorComponentDeclarationIndexer::visitFunctionDecl(clang::F
 	if (getAstVisitor()->shouldVisitDecl(d))
 	{
 		Id symbolId = m_index.getOrCreateSymbolId(d);
-		m_index.recordSymbolKind(symbolId, clang::isa<clang::CXXMethodDecl>(d) ? SymbolKind::METHOD : SymbolKind::FUNCTION);
+		m_index.recordSymbolKind(symbolId, utility::getFunctionKind(d));
 		m_index.recordLocation(symbolId, m_index.getParseLocation(d->getNameInfo().getSourceRange()), ParseLocationType::TOKEN);
 		m_index.recordLocation(symbolId, m_index.getParseLocationOfFunctionBody(d), ParseLocationType::SCOPE);
 		m_index.recordAccessKind(symbolId, utility::convertAccessSpecifier(d->getAccess()));
@@ -346,7 +346,7 @@ inline void CxxAstVisitorComponentDeclarationIndexer::visitFunctionDecl(clang::F
 				if (clang::FunctionTemplateDecl *primaryTemplate = d->getPrimaryTemplate())
 				{
 					Id templateId = m_index.getOrCreateSymbolId(primaryTemplate->getTemplatedDecl());
-					m_index.recordSymbolKind(templateId, SymbolKind::FUNCTION);
+					m_index.recordSymbolKind(templateId, utility::getFunctionKind(primaryTemplate->getTemplatedDecl()));
 					m_index.recordReference(ReferenceKind::TEMPLATE_SPECIALIZATION, templateId, symbolId, m_index.getParseLocation(d->getLocation()));
 				}
 			}
@@ -407,12 +407,12 @@ inline void CxxAstVisitorComponentDeclarationIndexer::visitCXXMethodDecl(clang::
 		for (clang::CXXMethodDecl::method_iterator it = d->begin_overridden_methods(); it != d->end_overridden_methods(); it++)
 		{
 			Id overrideId = m_index.getOrCreateSymbolId(*it);
-			m_index.recordSymbolKind(overrideId, SymbolKind::FUNCTION);
+			m_index.recordSymbolKind(overrideId, SymbolKind::METHOD);
 			m_index.recordReference(ReferenceKind::OVERRIDE, overrideId, symbolId, location);
 		}
 
 		// record edge from Foo::bar<int>() to Foo::bar<T>()
-		m_index.recordTemplateMemberSpecialization(d->getMemberSpecializationInfo(), symbolId, location, SymbolKind::FUNCTION);
+		m_index.recordTemplateMemberSpecialization(d->getMemberSpecializationInfo(), symbolId, location, SymbolKind::METHOD);
 	}
 }
 

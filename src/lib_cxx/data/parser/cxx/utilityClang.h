@@ -41,6 +41,8 @@ SymbolKind convertTagKind(const clang::TagTypeKind tagKind);
 bool isLocalVariable(const clang::ValueDecl* d);
 bool isParameter(const clang::ValueDecl* d);
 SymbolKind getSymbolKind(const clang::VarDecl* d);
+// METHOD for a member function (a constructor, an operator, a lambda's call operator), else FUNCTION.
+SymbolKind getFunctionKind(const clang::Decl* d);
 std::string getFileNameOfFileEntry(const clang::FileEntryRef &entry);
 
 ParseLocation getParseLocation(

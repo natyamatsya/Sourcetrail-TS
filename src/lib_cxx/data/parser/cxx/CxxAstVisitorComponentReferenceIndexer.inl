@@ -107,7 +107,7 @@ inline void CxxAstVisitorComponentReferenceIndexer::visitDeclRefExpr(clang::Decl
 			const ReferenceKind refKind = consumeDeclRefContextKind();
 			if (refKind == ReferenceKind::CALL)
 			{
-				m_index.recordSymbolKind(symbolId, SymbolKind::FUNCTION);
+				m_index.recordSymbolKind(symbolId, utility::getFunctionKind(decl));
 			}
 			const Id contextSymbolId = m_index.getOrCreateSymbolId(m_index.getContext());
 			m_index.recordReference(refKind, symbolId, contextSymbolId, m_index.getParseLocation(s->getLocation()));
@@ -123,7 +123,8 @@ inline void CxxAstVisitorComponentReferenceIndexer::visitMemberExpr(clang::Membe
 
 		if (refKind == ReferenceKind::CALL)
 		{
-			m_index.recordSymbolKind(m_index.getOrCreateSymbolId(s->getMemberDecl()), SymbolKind::FUNCTION);
+			m_index.recordSymbolKind(
+				m_index.getOrCreateSymbolId(s->getMemberDecl()), utility::getFunctionKind(s->getMemberDecl()));
 		}
 		m_index.recordReference(s->getMemberDecl(), refKind, s->getMemberLoc());
 	}
@@ -201,7 +202,7 @@ inline void CxxAstVisitorComponentReferenceIndexer::visitCXXConstructExpr(clang:
 		const ReferenceKind refKind = consumeDeclRefContextKind();
 		if (refKind == ReferenceKind::CALL)
 		{
-			m_index.recordSymbolKind(symbolId, SymbolKind::FUNCTION);
+			m_index.recordSymbolKind(symbolId, SymbolKind::METHOD);
 		}
 
 		m_index.recordReference(

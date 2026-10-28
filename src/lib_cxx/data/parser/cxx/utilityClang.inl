@@ -125,6 +125,11 @@ inline bool utility::isParameter(const clang::ValueDecl *d)
 	return llvm::isa<clang::ParmVarDecl>(d);
 }
 
+inline SymbolKind utility::getFunctionKind(const clang::Decl* d)
+{
+	return clang::isa_and_nonnull<clang::CXXMethodDecl>(d) ? SymbolKind::METHOD : SymbolKind::FUNCTION;
+}
+
 inline SymbolKind utility::getSymbolKind(const clang::VarDecl* d)
 {
 	using enum SymbolKind;
