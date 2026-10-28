@@ -631,12 +631,28 @@ void Project::refreshPlannedImpl(std::shared_ptr<DialogView> dialogView, const R
 				enabledModes.end(), {RefreshMode::UPDATED_FILES, RefreshMode::UPDATED_AND_INCOMPLETE_FILES});
 		}
 
+		// The choice can outlive the project (closed, or replaced, while it is open):
+		// its answers reach the project only while it is there.
+		const std::weak_ptr<Project> weakProject = weak_from_this();
 		dialogView->startIndexingDialog(
-			this,
+			[weakProject](RefreshMode mode) {
+				const std::shared_ptr<Project> project = weakProject.lock();
+				return project ? project->getRefreshInfo(mode) : RefreshInfo();
+			},
 			enabledModes,
 			refreshMode,
-			[this, dialogView](const RefreshInfo& info) { buildIndex(info, dialogView); },
-			[this]() { m_refreshStage = RefreshStageType::NONE; },
+			[weakProject, dialogView](const RefreshInfo& info) {
+				if (const std::shared_ptr<Project> project = weakProject.lock())
+				{
+					project->buildIndex(info, dialogView);
+				}
+			},
+			[weakProject]() {
+				if (const std::shared_ptr<Project> project = weakProject.lock())
+				{
+					project->m_refreshStage = RefreshStageType::NONE;
+				}
+			},
 			plan.reason);
 	}
 	else if (m_hasGUI)

@@ -482,7 +482,7 @@ void Application::handleMessage(MessageCloseProject*  /*message*/)
 		return;
 	}
 
-	m_project.reset();
+	unloadProject();
 	if (m_loading)
 	{
 		m_loading->stop.request_stop();	// a load in flight withdraws its question and ends
@@ -633,7 +633,7 @@ void Application::handleMessage(MessageLoadProject* message)
 		projectMachine->requested(projectSettingsFilePath.str());
 		MessageStatus("Loading Project: " + projectSettingsFilePath.str(), false, true).dispatch();
 
-		m_project.reset();
+		unloadProject();
 
 		if (m_hasGUI)
 		{
@@ -642,6 +642,17 @@ void Application::handleMessage(MessageLoadProject* message)
 
 		loadProject(projectSettingsFilePath, message->shardConfig, message->refreshMode, !message->byAgent);
 	}
+}
+
+void Application::unloadProject()
+{
+	// A mode choice open for the project goes with it: started, it indexed a project
+	// that was gone.
+	if (IndexingStateMachine::instance()->state() == IndexingStateMachine::State::ChoosingMode)
+	{
+		IndexingStateMachine::instance()->cancel(EventSource::App);
+	}
+	m_project.reset();
 }
 
 void Application::loadProject(
