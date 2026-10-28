@@ -2828,6 +2828,21 @@ TEST_CASE("cxx parser finds using directive decl in file context")
 	REQUIRE(utility::containsElement<std::string>(client->usages, "input.cc -> std <1:17 1:19>"));
 }
 
+TEST_CASE("cxx parser finds using declaration of an overload set as usage of each overload")
+{
+	std::shared_ptr<TestStorage> client = parseCode(
+		"namespace ns { struct A {}; struct B {}; int operator<<(A, int); int operator<<(B, int);\n"
+		"template <typename T> int f(T); int f(); }\n"
+		"using ns::operator<<;\n"
+		"using ns::f;\n");
+
+	REQUIRE(containsElement(client->usages, "input.cc -> int ns::operator<<(ns::A, int) <3:11 3:18>"s));
+	REQUIRE(containsElement(client->usages, "input.cc -> int ns::operator<<(ns::B, int) <3:11 3:18>"s));
+	REQUIRE(containsElement(client->usages, "input.cc -> int ns::f<typename T>(T) <4:11 4:11>"s));
+	REQUIRE(containsElement(client->usages, "input.cc -> int ns::f() <4:11 4:11>"s));
+	REQUIRE(client->usages.size() == 4);	// no placeholder ns::operator<< or ns::f
+}
+
 TEST_CASE("cxx parser finds using decl in function context")
 {
 	std::shared_ptr<TestStorage> client = parseCode(

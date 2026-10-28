@@ -525,19 +525,33 @@ inline void CxxAstVisitorComponentDeclarationIndexer::visitUsingDecl(clang::Usin
 	if (getAstVisitor()->shouldVisitDecl(d))
 	{
 		const ParseLocation location = m_index.getParseLocation(d->getLocation());
+		const Id contextSymbolId = m_index.getOrCreateSymbolId(
+			m_index.getContext(),
+			NameHierarchy(
+				getAstVisitor()->getCanonicalFilePathCache()->getCanonicalFilePath(location.fileId).str(),
+				NameDelimiterType::FILE));
 
-		m_index.recordReference(
-			ReferenceKind::USAGE,
-			m_index.getOrCreateSymbolId(d),
-			m_index.getOrCreateSymbolId(
-				m_index.getContext(),
-				NameHierarchy(
-					getAstVisitor()
-						->getCanonicalFilePathCache()
-						->getCanonicalFilePath(location.fileId)
-						.str(),
-					NameDelimiterType::FILE)),
-			location);
+		// A using-declaration is named by what it brings into scope. An overload set
+		// (`using ns::operator<<;`) has no node of its own: it uses each function it names. (Inherited
+		// constructors, `using Base::Base;`, are named by the base class.)
+		const bool isOverloadSet = d->shadow_size() > 1 &&
+			!clang::isa<clang::ConstructorUsingShadowDecl>(*d->shadow_begin());
+		if (isOverloadSet)
+		{
+			for (const clang::UsingShadowDecl* shadowDecl: d->shadows())
+			{
+				m_index.recordReference(
+					ReferenceKind::USAGE,
+					m_index.getOrCreateSymbolId(shadowDecl->getTargetDecl()->getUnderlyingDecl()),
+					contextSymbolId,
+					location);
+			}
+		}
+		else
+		{
+			m_index.recordReference(
+				ReferenceKind::USAGE, m_index.getOrCreateSymbolId(d), contextSymbolId, location);
+		}
 	}
 }
 
