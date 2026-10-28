@@ -63,8 +63,9 @@ std::shared_ptr<TestStorage> parseCode(const std::string &code, const std::vecto
 	return TestStorage::create(storage);
 }
 
-// Like parseCode, but in the given language standard (e.g. "c++17") instead of the latest one.
-std::shared_ptr<TestStorage> parseCodeInStandard(const std::string& code, const std::string& languageStandard)
+// Like parseCode, but the translation unit is `fileName`, compiled with `compilerFlags` alone.
+std::shared_ptr<TestStorage> parseTranslationUnit(
+	const std::string& fileName, const std::string& code, const std::vector<std::string>& compilerFlags)
 {
 	std::shared_ptr<IntermediateStorage> storage = std::make_shared<IntermediateStorage>();
 	const std::shared_ptr<ParserClientImpl> parserClient = std::make_shared<ParserClientImpl>(storage);
@@ -72,12 +73,15 @@ std::shared_ptr<TestStorage> parseCodeInStandard(const std::string& code, const 
 		*parserClient,
 		std::make_shared<TestFileRegister>(),
 		std::make_shared<IndexerStateInfo>());
-	parser.buildIndex(
-		"input.cc",
-		TextAccess::createFromString(code),
-		{ClangCompiler::stdOption(languageStandard)});
+	parser.buildIndex(fileName, TextAccess::createFromString(code), compilerFlags);
 
 	return TestStorage::create(storage);
+}
+
+// Like parseCode, but in the given language standard (e.g. "c++17") instead of the latest one.
+std::shared_ptr<TestStorage> parseCodeInStandard(const std::string& code, const std::string& languageStandard)
+{
+	return parseTranslationUnit("input.cc", code, {ClangCompiler::stdOption(languageStandard)});
 }
 
 // Like parseCode, but hands back the raw IntermediateStorage so a test can
@@ -280,6 +284,39 @@ TEST_CASE("cxx parser finds static function declaration")
 
 	REQUIRE(utility::containsElement<std::string>(
 		client->functions, "static int ceil(float) (input.cc) <1:1 <1:1 <1:12 1:15> 1:24> 4:1>"));
+}
+
+TEST_CASE("cxx parser names a static function and variable by the file that declares them")
+{
+	// A header's static (inline) function is one node for every TU that includes it -- named by
+	// the header, not by the TU -- while the same-named statics of two source files stay two.
+	const std::filesystem::path directory =
+		std::filesystem::temp_directory_path() / "sourcetrail-cxx-parser-tests" / "static-by-declaring-file";
+	std::filesystem::create_directories(directory);
+	std::ofstream(directory / "shapes.h") << "static inline int twice(int x) { return 2 * x; }\n"
+											 "static int s_count = 0;\n";
+
+	const std::vector<std::string> flags = {"-I" + directory.string(), "-std=c11"};
+	const std::string code =
+		"#include \"shapes.h\"\n"
+		"static int helper(int v) { return twice(v) + s_count; }\n"
+		"static int s_local = 0;\n"
+		"int use(void) { return helper(1) + s_local; }\n";
+	std::shared_ptr<TestStorage> a = parseTranslationUnit("a.c", code, flags);
+	std::shared_ptr<TestStorage> b = parseTranslationUnit("b.c", code, flags);
+
+	CAPTURE(a->functions, a->globalVariables, b->functions, b->globalVariables);
+	REQUIRE(a->errors.empty());
+	REQUIRE(b->errors.empty());
+	for (const std::shared_ptr<TestStorage>& client: {a, b})
+	{
+		REQUIRE(containsElement(client->functions, "static int twice(int) (shapes.h) <1:1 <1:1 <1:19 1:23> 1:30> 1:48>"s));
+		REQUIRE(containsElement(client->globalVariables, "int s_count (shapes.h) <2:12 2:18>"s));
+	}
+	REQUIRE(containsElement(a->functions, "static int helper(int) (a.c) <2:1 <2:1 <2:12 2:17> 2:24> 2:55>"s));
+	REQUIRE(containsElement(b->functions, "static int helper(int) (b.c) <2:1 <2:1 <2:12 2:17> 2:24> 2:55>"s));
+	REQUIRE(containsElement(a->globalVariables, "int s_local (a.c) <3:12 3:18>"s));
+	REQUIRE(containsElement(b->globalVariables, "int s_local (b.c) <3:12 3:18>"s));
 }
 
 TEST_CASE("cxx parser finds method declaration")

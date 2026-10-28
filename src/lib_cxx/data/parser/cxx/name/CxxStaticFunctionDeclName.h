@@ -15,12 +15,12 @@ public:
 		std::vector<std::string> templateParameterNames,
 		std::unique_ptr<CxxTypeName> returnTypeName,
 		std::vector<std::unique_ptr<CxxTypeName>> parameterTypeNames,
-		std::string translationUnitFileName);
+		std::string declaringFileName);
 
 	NameHierarchy toNameHierarchy() const;
 
 private:
-	std::string m_translationUnitFileName;
+	std::string m_declaringFileName;
 };
 
 #include "CxxStaticFunctionDeclName.inl"

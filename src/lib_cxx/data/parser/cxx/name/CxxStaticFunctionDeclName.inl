@@ -8,7 +8,7 @@ inline CxxStaticFunctionDeclName::CxxStaticFunctionDeclName(
 	std::vector<std::string> templateParameterNames,
 	std::unique_ptr<CxxTypeName> returnTypeName,
 	std::vector<std::unique_ptr<CxxTypeName>> parameterTypeNames,
-	std::string translationUnitFileName)
+	std::string declaringFileName)
 	: CxxFunctionDeclName(
 		  std::move(name),
 		  std::move(templateParameterNames),
@@ -16,7 +16,7 @@ inline CxxStaticFunctionDeclName::CxxStaticFunctionDeclName(
 		  std::move(parameterTypeNames),
 		  CxxQualifierFlags::QualifierType::NONE,
 		  true)
-	, m_translationUnitFileName(std::move(translationUnitFileName))
+	, m_declaringFileName(std::move(declaringFileName))
 {
 }
 
@@ -26,6 +26,6 @@ inline NameHierarchy CxxStaticFunctionDeclName::toNameHierarchy() const
 	NameElement& last = ret.back();
 	last.setSignature(
 		last.getSignature().getPrefix(),
-		last.getSignature().getPostfix() + " (" + m_translationUnitFileName + ')');
+		last.getSignature().getPostfix() + " (" + m_declaringFileName + ')');
 	return ret;
 }

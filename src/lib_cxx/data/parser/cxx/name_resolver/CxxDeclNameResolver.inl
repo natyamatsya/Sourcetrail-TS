@@ -288,6 +288,9 @@ inline CxxName CxxDeclNameResolver::getDeclName(const clang::NamedDecl* declarat
 					typeNameResolver.getName(functionDecl->parameters()[i]->getType())));
 			}
 
+			// A static function is one per file that defines it: named by that file, a header's
+			// static (inline) function is one node however many TUs include it, while same-named
+			// statics of two .c files stay apart.
 			if (!clang::isa<clang::CXXMethodDecl>(declaration) && isStatic)
 			{
 				return CxxName::make<CxxStaticFunctionDeclName>(
@@ -295,7 +298,7 @@ inline CxxName CxxDeclNameResolver::getDeclName(const clang::NamedDecl* declarat
 					std::move(templateArguments),
 					std::move(returnTypeName),
 					std::move(parameterTypeNames),
-					getTranslationUnitMainFileName(declaration));
+					getCanonicalFilePathCache()->getDeclarationFileName(declaration));
 			}
 
 			return CxxName::make<CxxFunctionDeclName>(
@@ -366,22 +369,13 @@ inline CxxName CxxDeclNameResolver::getDeclName(const clang::NamedDecl* declarat
 				std::string varName = declNameString;
 				if (utility::getSymbolKind(varDecl) == SymbolKind::GLOBAL_VARIABLE && varDecl->getStorageClass() == clang::SC_Static)
 				{
-					// if a global variable is static it is only visible in the current translation
-					// unit. Therefore if multiple instances of that global variable may be
-					// generated (one for each translation unit) we add the name of the translation
-					// unit's source file. If that global variable definition is const, we add the
-					// name of the (maybe header) file that variable is defined in instead. This
-					// causes different instances of the variable that all MUST contain the same
-					// value to be merged into a single node in Sourcetrail.
-					std::string scopeFileName;
-					if (varDecl->isConstexpr() || varDecl->getType().isConstQualified())
-					{
-						scopeFileName = getCanonicalFilePathCache()->getDeclarationFileName(declaration);
-					}
-					else
-					{
-						scopeFileName = getTranslationUnitMainFileName(declaration);
-					}
+					// A static global variable is only visible in its translation unit, so
+					// same-named ones of different files are different variables: we add the name
+					// of the (maybe header) file that declares it. A header's static variable is one
+					// node for all TUs that include it -- one declaration in the source -- as is a
+					// header's static function.
+					const std::string scopeFileName =
+						getCanonicalFilePathCache()->getDeclarationFileName(declaration);
 
 					if (!scopeFileName.empty())
 					{
@@ -457,14 +451,6 @@ inline CxxName CxxDeclNameResolver::getDeclName(const clang::NamedDecl* declarat
 	// LOG_ERROR("could not resolve name of decl at: " +
 	// declaration->getLocation().printToString(sourceManager));
 	return CxxName::make<CxxDeclName>(getNameForAnonymousSymbol("symbol", declaration));
-}
-
-inline std::string CxxDeclNameResolver::getTranslationUnitMainFileName(const clang::Decl* declaration)
-{
-	const clang::SourceManager& sourceManager = declaration->getASTContext().getSourceManager();
-	return getCanonicalFilePathCache()
-		->getCanonicalFilePath(sourceManager.getMainFileID(), sourceManager)
-		.fileName();
 }
 
 inline std::string CxxDeclNameResolver::getNameForAnonymousSymbol(

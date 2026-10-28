@@ -27,7 +27,6 @@ public:
 private:
 	CxxName getContextName(const clang::DeclContext* declaration);
 	CxxName getDeclName(const clang::NamedDecl* declaration);
-	std::string getTranslationUnitMainFileName(const clang::Decl* declaration);
 	std::string getNameForAnonymousSymbol(
 		const std::string& symbolKindName, const clang::Decl* declaration);
 	std::vector<std::string> getTemplateParameterStrings(const clang::TemplateDecl* templateDecl);
