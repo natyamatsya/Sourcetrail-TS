@@ -517,3 +517,9 @@ inline std::string CxxDeclNameResolver::getTemplateArgumentName(const clang::Tem
 {
 	return CxxTemplateArgumentNameResolver(this).getTemplateArgumentName(argument);
 }
+
+inline std::string CxxDeclNameResolver::getWrittenTemplateArgumentName(
+	const clang::TemplateArgumentLoc& argument)
+{
+	return CxxTemplateArgumentNameResolver(this).getWrittenTemplateArgumentName(argument);
+}

@@ -9,6 +9,7 @@
 #include <clang/AST/DeclTemplate.h>
 #include <clang/AST/Expr.h>
 #include <clang/AST/PrettyPrinter.h>
+#include <clang/AST/TemplateBase.h>
 #endif
 
 
@@ -63,4 +64,16 @@ inline std::string CxxTemplateArgumentNameResolver::getTemplateArgumentName(
 	}
 
 	return "";
+}
+
+inline std::string CxxTemplateArgumentNameResolver::getWrittenTemplateArgumentName(
+	const clang::TemplateArgumentLoc& argument)
+{
+	clang::PrintingPolicy pp = utility::makePrintingPolicyForCPlusPlus();
+
+	constexpr bool includeType = false;
+	std::string buf;
+	llvm::raw_string_ostream os(buf);
+	argument.getArgument().print(pp, os, includeType);
+	return os.str();
 }

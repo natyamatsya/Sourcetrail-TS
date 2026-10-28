@@ -4240,8 +4240,8 @@ TEST_CASE(
 }
 
 TEST_CASE(
-	"cxx parser replaces dependent template arguments of explicit template specialization with "
-	"name of base template")
+	"cxx parser names dependent template arguments of explicit template specialization as "
+	"written")
 {
 	std::shared_ptr<TestStorage> client = parseCode(
 		"template <typename T>\n"
@@ -4252,7 +4252,41 @@ TEST_CASE(
 		"class vector<Foo1, A<Foo1>> { };\n");
 
 	REQUIRE(utility::containsElement<std::string>(
-		client->classes, "vector<class Foo1, A<typename T>> <5:1 <6:7 6:12> 6:31>"));
+		client->classes, "vector<class Foo1, A<Foo1>> <5:1 <6:7 6:12> 6:31>"));
+}
+
+TEST_CASE("cxx parser tells partial class template specializations apart by their arguments")
+{
+	// Each partial specialization is its own node, and an instantiation is specialized from the
+	// one it was instantiated from. Converted, the arguments are canonical -- `T` in `T *` has no
+	// name -- so they used to be `unsolved-type` (T * and T & merged), `class T` (const T merged
+	// with the primary), the primary's own parameters (`A<typename T>`) or canonical spellings.
+	std::shared_ptr<TestStorage> client = parseCode(
+		"template <typename T> struct A {};\n"
+		"template <typename T> struct Trait {};\n"
+		"template <typename T> struct Trait<T*> {};\n"
+		"template <typename T> struct Trait<T&> {};\n"
+		"template <typename T> struct Trait<A<T>> {};\n"
+		"template <typename T> struct Trait<const T> {};\n"
+		"template <typename T, typename = void> struct has {};\n"
+		"template <typename T> struct has<T, decltype(void(T::x))> {};\n"
+		"Trait<int*> p; Trait<int&> r; Trait<A<int>> a; Trait<const int> c;\n");
+
+	CAPTURE(client->structs, client->templateSpecializations);
+	REQUIRE(client->errors.empty());
+	REQUIRE(containsElement(client->structs, "Trait<typename T> <2:1 <2:30 2:34> 2:37>"s));
+	REQUIRE(containsElement(client->structs, "Trait<T *> <3:1 <3:30 3:34> 3:41>"s));
+	REQUIRE(containsElement(client->structs, "Trait<T &> <4:1 <4:30 4:34> 4:41>"s));
+	REQUIRE(containsElement(client->structs, "Trait<A<T>> <5:1 <5:30 5:34> 5:43>"s));
+	REQUIRE(containsElement(client->structs, "Trait<const T> <6:1 <6:30 6:34> 6:46>"s));
+	// not the canonical `decltype(void(type-parameter-0-0::x))`
+	REQUIRE(containsElement(client->structs, "has<typename T, decltype(void(T::x))> <8:1 <8:30 8:32> 8:60>"s));
+
+	REQUIRE(containsElement(client->templateSpecializations, "Trait<int *> -> Trait<T *> <3:30 3:34>"s));
+	REQUIRE(containsElement(client->templateSpecializations, "Trait<int &> -> Trait<T &> <4:30 4:34>"s));
+	REQUIRE(containsElement(client->templateSpecializations, "Trait<A<int>> -> Trait<A<T>> <5:30 5:34>"s));
+	REQUIRE(containsElement(client->templateSpecializations, "Trait<const int> -> Trait<const T> <6:30 6:34>"s));
+	REQUIRE(containsElement(client->templateSpecializations, "Trait<const T> -> Trait<typename T> <6:30 6:34>"s));
 }
 
 TEST_CASE(
