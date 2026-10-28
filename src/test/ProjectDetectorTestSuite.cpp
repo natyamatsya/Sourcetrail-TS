@@ -144,6 +144,30 @@ TEST_CASE("ProjectDetector prefers a configure preset whose build directory is c
 	CHECK(mentions(proposal.reasons, "out/release is configured already"));
 }
 
+TEST_CASE("ProjectDetector prefers the configure preset made for this computer")
+{
+	const TestTempDirectory temp{"detectPlatformPreset"};
+	const fs::path folder{temp.getPath() / "lib"};
+	write(folder / "CMakeLists.txt", "project(lib)\n");
+	write(folder / "CMakePresets.json", R"({"version": 3, "configurePresets": [
+		{"name": "dev", "hidden": true, "binaryDir": "${sourceDir}/build"},
+		{"name": "dev-win", "inherits": "dev", "description": "Windows preset for library developers"},
+		{"name": "dev-linux", "inherits": "dev", "description": "Linux preset for library developers"},
+		{"name": "dev-mac", "inherits": "dev"}
+	]})");
+
+	const ProjectProposal proposal{detect(folder)};
+
+#if defined(_WIN32)
+	CHECK(text(proposal, "cmake_preset") == "dev-win");
+#elif defined(__APPLE__)
+	CHECK(text(proposal, "cmake_preset") == "dev-mac");
+	CHECK(mentions(proposal.reasons, "'dev-win' looks made for Windows, and this is macOS"));
+#else
+	CHECK(text(proposal, "cmake_preset") == "dev-linux");
+#endif
+}
+
 TEST_CASE("ProjectDetector uses CMake without a preset when no preset is usable")
 {
 	const TestTempDirectory temp{"detectNoUsablePreset"};

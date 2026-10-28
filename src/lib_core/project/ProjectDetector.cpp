@@ -528,6 +528,79 @@ constexpr bool isWindows{true};
 constexpr bool isWindows{false};
 #endif
 
+enum class Platform : std::uint8_t
+{
+	Windows,
+	Mac,
+	Linux,
+};
+
+#if defined(_WIN32)
+constexpr Platform hostPlatform{Platform::Windows};
+#elif defined(__APPLE__)
+constexpr Platform hostPlatform{Platform::Mac};
+#else
+constexpr Platform hostPlatform{Platform::Linux};
+#endif
+
+std::string_view platformName(Platform platform)
+{
+	switch (platform)
+	{
+	case Platform::Windows:
+		return "Windows";
+	case Platform::Mac:
+		return "macOS";
+	case Platform::Linux:
+		return "Linux";
+	}
+	return {};
+}
+
+// The platform a preset's name, display name or description says it is for, if any
+// ("dev-win", "Windows preset for ...", "macos-release").
+std::optional<Platform> presetPlatform(const CMakeFileAPIReader::PresetInfo& preset)
+{
+	static const std::regex token{R"([a-z0-9]+)"};
+	const std::string text{lower(preset.name + " " + preset.displayName + " " + preset.description)};
+	for (std::sregex_iterator it{text.begin(), text.end(), token}, end; it != end; ++it)
+	{
+		const std::string word{it->str()};
+		static constexpr std::array windowsWords{"win", "windows", "win32", "win64", "msvc", "vs", "mingw", "clangcl"};
+		static constexpr std::array macWords{"mac", "macos", "osx", "darwin", "apple", "xcode"};
+		static constexpr std::array linuxWords{"linux", "unix", "ubuntu", "debian", "fedora"};
+		if (std::ranges::contains(windowsWords, word))
+		{
+			return Platform::Windows;
+		}
+		if (std::ranges::contains(macWords, word))
+		{
+			return Platform::Mac;
+		}
+		if (std::ranges::contains(linuxWords, word))
+		{
+			return Platform::Linux;
+		}
+	}
+	return std::nullopt;
+}
+
+// How well a preset fits this computer: 0 made for it, 1 for no platform in particular,
+// 2 for a related one (Linux and macOS), 3 for another.
+int platformFit(const CMakeFileAPIReader::PresetInfo& preset)
+{
+	const std::optional<Platform> platform{presetPlatform(preset)};
+	if (!platform)
+	{
+		return 1;
+	}
+	if (*platform == hostPlatform)
+	{
+		return 0;
+	}
+	return *platform != Platform::Windows && hostPlatform != Platform::Windows ? 2 : 3;
+}
+
 // Why a CMake generator cannot run here; empty when it can (or is CMake's choice).
 std::string generatorProblem(const std::string& generator, const std::function<bool(const std::string&)>& hasExecutable)
 {
@@ -925,9 +998,22 @@ bool detectCMakePreset(Detection& detection)
 		return false;
 	}
 
-	const auto configured{std::ranges::find_if(usable, [](const Usable& u) { return u.configured.has_value(); })};
-	const Usable& chosen{configured != usable.end() ? *configured : usable.front()};
+	// A configured one first, then the one that fits this computer best, then the first.
+	const auto rank = [](const Usable& u) { return std::pair{u.configured ? 0 : 1, platformFit(*u.preset)}; };
+	const Usable& chosen{*std::ranges::min_element(usable, {}, rank)};
 	const CMakeFileAPIReader::PresetInfo& preset{*chosen.preset};
+	for (const Usable& other: usable)
+	{
+		if (&other == &chosen || other.configured || platformFit(*other.preset) <= platformFit(preset))
+		{
+			continue;
+		}
+		if (const std::optional<Platform> platform{presetPlatform(*other.preset)}; platform && *platform != hostPlatform)
+		{
+			proposal.reasons.push_back(std::format(
+				"Configure preset '{}' looks made for {}, and this is {}", other.preset->name, platformName(*platform), platformName(hostPlatform)));
+		}
+	}
 
 	cmakeGroup(detection).fields["cmake_preset"] = preset.name;
 	const std::string generator{preset.generator.empty() ? std::string{} : std::format(" ({})", preset.generator)};
@@ -995,12 +1081,13 @@ void detectCMakeBuildDirectory(Detection& detection)
 	proposal.fields["cmake_build_directory"] = generic(ownBuild);
 	proposal.reasons.insert(
 		proposal.reasons.begin(),
-		std::format("Found CMakeLists.txt without presets: CMake configures {} for Sourcetrail", shown(ownBuild, detection.folder)));
-	proposal.reasons.push_back(std::format(
-		"Indexing runs 'cmake -S {} -B {}' (or Run CMake on the source group's page); the build "
-		"directory sits beside the project file",
-		shown(detection.folder, detection.location),
-		shown(ownBuild, detection.location)));
+		std::format(
+			"Found CMakeLists.txt without presets: CMake configures it for Sourcetrail in {}, beside the "
+			"project file",
+			ownBuild.filename().string()));
+	proposal.reasons.emplace_back(
+		"Indexing runs 'cmake -S <folder> -B <build directory>' while the build directory has no "
+		"File API reply (or Run CMake on the source group's page, to pick targets first)");
 }
 
 bool detectCMake(Detection& detection)
