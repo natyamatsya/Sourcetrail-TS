@@ -157,6 +157,7 @@ public:
 	bool VisitReturnStmt(clang::ReturnStmt* s);
 	bool VisitCompoundStmt(clang::CompoundStmt* s);
 	bool VisitInitListExpr(clang::InitListExpr* s);
+	bool VisitDesignatedInitExpr(clang::DesignatedInitExpr* s);
 
 
 	bool VisitImportDecl(clang::ImportDecl* d);

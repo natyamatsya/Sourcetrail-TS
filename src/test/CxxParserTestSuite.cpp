@@ -63,6 +63,20 @@ std::shared_ptr<TestStorage> parseCode(const std::string &code, const std::vecto
 	return TestStorage::create(storage);
 }
 
+// Like parseCode, but parses the code as C11.
+std::shared_ptr<TestStorage> parseCCode(const std::string& code)
+{
+	std::shared_ptr<IntermediateStorage> storage = std::make_shared<IntermediateStorage>();
+	const std::shared_ptr<ParserClientImpl> parserClient = std::make_shared<ParserClientImpl>(storage);
+	CxxParser parser(
+		*parserClient,
+		std::make_shared<TestFileRegister>(),
+		std::make_shared<IndexerStateInfo>());
+	parser.buildIndex(
+		"input.c", TextAccess::createFromString(code), {"-x", "c", ClangCompiler::stdOption("c11")});
+	return TestStorage::create(storage);
+}
+
 // Like parseCode, but hands back the raw IntermediateStorage so a test can
 // inspect node modifiers and node_attribute rows (TestStorage flattens both away).
 std::shared_ptr<IntermediateStorage> parseCodeToStorage(
@@ -3034,6 +3048,48 @@ TEST_CASE("cxx parser finds usage of field in initialization list")
 
 	REQUIRE(utility::containsElement<std::string>(
 		client->usages, "void App::App() -> int App::bar <4:5 4:7>"));
+}
+
+TEST_CASE("cxx parser finds usage of fields in designated initializers")
+{
+	// How a C struct of function pointers is filled: each designated field is used there.
+	std::shared_ptr<TestStorage> client = parseCCode(
+		"typedef struct ops { int (*area)(int); struct { int x, y; } pos; union { int u; }; } ops;\n"
+		"static int area(int w) { return w; }\n"
+		"ops g_ops = { .area = area, .pos.x = 1, .u = 3 };\n"
+		"ops g_arr[2] = { [1] = { .area = area }, [0].pos.y = 4 };\n"
+		"void f(void) { ops local = { .area = 0 }; (void)local; }\n");
+
+	REQUIRE(client->errors.empty());
+	REQUIRE(containsElement(client->usages, "ops g_ops -> int(int) * ops::area <3:16 3:19>"s));
+	REQUIRE(containsElement(client->usages, "void f() -> int(int) * ops::area <5:31 5:34>"s));
+	REQUIRE(containsElement(client->usages, "ops [] g_arr -> int(int) * ops::area <4:27 4:30>"s));
+
+	// Nested (".pos.x") and after an array designator ("[0].pos.y"): each field.
+	const auto usagesAt = [&](const std::string& location)
+	{
+		return std::count_if(
+			client->usages.begin(),
+			client->usages.end(),
+			[&](const std::string& usage) { return usage.ends_with(location); });
+	};
+	REQUIRE(usagesAt(" <3:30 3:32>") == 1);	   // pos
+	REQUIRE(usagesAt(" <3:34 3:34>") == 1);	   // x
+	REQUIRE(usagesAt(" <4:46 4:48>") == 1);	   // pos
+	REQUIRE(usagesAt(" <4:50 4:50>") == 1);	   // y
+
+	// A member of an anonymous union is designated alone, not with the union it is in.
+	REQUIRE(usagesAt(" <3:42 3:42>") == 1);	   // u
+}
+
+TEST_CASE("cxx parser finds usage of fields in C++20 designated initializers")
+{
+	std::shared_ptr<TestStorage> client = parseCode(
+		"struct Point { int x; int y; };\n"
+		"Point p = { .x = 1, .y = 2 };\n");
+
+	REQUIRE(containsElement(client->usages, "Point p -> int Point::x <2:14 2:14>"s));
+	REQUIRE(containsElement(client->usages, "Point p -> int Point::y <2:22 2:22>"s));
 }
 
 TEST_CASE("cxx parser finds usage of member in call expression to unresolved member expression")
