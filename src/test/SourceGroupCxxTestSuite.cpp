@@ -385,3 +385,41 @@ TEST_CASE("source group cxx cdb prebuilds the modules a partial refresh's files 
 		REQUIRE_FALSE(std::filesystem::exists(cache));
 	}
 }
+
+TEST_CASE("source group cxx cdb hashes a file compiled twice once, the same each time")
+{
+	ScopedApplicationInstance scopedApplicationInstance;
+
+	// A library's objects compiled for its static and its shared target.
+	const std::filesystem::path directory =
+		std::filesystem::temp_directory_path() / "sourcetrail-cdb-tests" / "compiled-twice";
+	std::filesystem::remove_all(directory);
+	std::filesystem::create_directories(directory);
+	std::ofstream(directory / "lib.cpp") << "int f() { return 1; }\n";
+	const auto writeDatabase = [&](const std::string& firstFlag, const std::string& secondFlag) {
+		std::ofstream(directory / "compile_commands.json") << std::format(
+			R"([{{"directory": "{0}", "file": "lib.cpp", "arguments": ["clang++", "{1}", "-c", "lib.cpp"]}},
+			    {{"directory": "{0}", "file": "lib.cpp", "arguments": ["clang++", "{2}", "-c", "lib.cpp"]}}])",
+			directory.generic_string(),
+			firstFlag,
+			secondFlag);
+	};
+
+	ProjectSettings projectSettings;
+	projectSettings.setProjectFilePath("twice", FilePath(directory.string()));
+	std::shared_ptr<SourceGroupSettingsCxxCdb> sourceGroupSettings =
+		std::make_shared<SourceGroupSettingsCxxCdb>("fake_id", &projectSettings);
+	sourceGroupSettings->setCompilationDatabasePath(FilePath((directory / "compile_commands.json").string()));
+
+	writeDatabase("-DSTATIC", "-fPIC");
+	const auto hashes = SourceGroupCxxCdb(sourceGroupSettings).getAllSourceFileCommandHashes();
+	REQUIRE(hashes.size() == 1);
+
+	// The commands' order does not matter; a changed command does.
+	writeDatabase("-fPIC", "-DSTATIC");
+	REQUIRE(SourceGroupCxxCdb(sourceGroupSettings).getAllSourceFileCommandHashes() == hashes);
+	writeDatabase("-fPIC", "-DSHARED");
+	const auto changed = SourceGroupCxxCdb(sourceGroupSettings).getAllSourceFileCommandHashes();
+	REQUIRE(changed.size() == 1);
+	REQUIRE(changed.front().second != hashes.front().second);
+}

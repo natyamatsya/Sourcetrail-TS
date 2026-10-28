@@ -8,6 +8,10 @@
 #include "ProjectSettings.h"
 #endif
 #include "RefreshInfo.h"
+
+#include <algorithm>
+#include <map>
+
 #ifndef SRCTRL_MODULE_BUILD
 #include "SourceGroupSettings.h"
 #endif
@@ -28,17 +32,33 @@ std::shared_ptr<IndexerCommandProvider> SourceGroup::getIndexerCommandProvider(c
 std::vector<std::pair<FilePath, std::string>> SourceGroup::getSourceFileCommandHashes(
 	const RefreshInfo& info) const
 {
-	// Consumed by iteration only (never point-looked-up), so a flat vector is
-	// cheaper to build and iterate than a node-based map. One command per source
-	// file within a group keeps the paths unique.
-	std::vector<std::pair<FilePath, std::string>> hashes;
+	// One hash per source file. A compilation database can compile a file more than
+	// once (a library's objects for its static and its shared target): the file's hash
+	// is then all of its commands' hashes, in a fixed order. With one hash per command,
+	// the database kept the last one written, and every refresh found the others
+	// "changed" and re-indexed the file and all that depends on it.
+	std::map<FilePath, std::vector<std::string>> commandHashes;
 	for (const std::shared_ptr<IndexerCommand>& command: getIndexerCommands(info))
 	{
 		std::string hash = command->getIndexerCommandHash();
 		if (!hash.empty())
 		{
-			hashes.emplace_back(command->getSourceFilePath(), std::move(hash));
+			commandHashes[command->getSourceFilePath()].push_back(std::move(hash));
 		}
+	}
+
+	// Consumed by iteration only (never point-looked-up), so a flat vector.
+	std::vector<std::pair<FilePath, std::string>> hashes;
+	hashes.reserve(commandHashes.size());
+	for (auto& [path, fileHashes]: commandHashes)
+	{
+		std::ranges::sort(fileHashes);
+		std::string hash = fileHashes.front();
+		for (std::size_t i = 1; i < fileHashes.size(); ++i)
+		{
+			hash += "+" + fileHashes[i];
+		}
+		hashes.emplace_back(path, std::move(hash));
 	}
 	return hashes;
 }
