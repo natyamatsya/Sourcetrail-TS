@@ -55,7 +55,7 @@ void setWidgetRetainsSpaceWhenHidden(QWidget *widget)
 	widget->setSizePolicy(pol);
 }
 
-void loadFontsFromDirectory(const FilePath &path, const std::string &extension)
+std::set<std::string> loadFontsFromDirectory(const FilePath &path, const std::string &extension)
 {
 	std::vector<std::string> extensions;
 	extensions.push_back(extension);
@@ -76,13 +76,16 @@ void loadFontsFromDirectory(const FilePath &path, const std::string &extension)
 		}
 	}
 
+	// A family comes in several files (regular, bold, italic, ...).
+	std::set<std::string> families;
 	for (int loadedFontId : loadedFontIds)
 	{
-		for (QString &family : QFontDatabase::applicationFontFamilies(loadedFontId))
+		for (const QString &family : QFontDatabase::applicationFontFamilies(loadedFontId))
 		{
-			LOG_INFO("Loaded FontFamily: " + family.toStdString());
+			families.insert(family.toStdString());
 		}
 	}
+	return families;
 }
 
 QPixmap colorizePixmap(const QPixmap &pixmap, QColor color)

@@ -2,6 +2,7 @@
 #define UTILITY_QT_H
 
 #include <memory>
+#include <set>
 #include <string>
 
 #include <QVariant>
@@ -24,7 +25,8 @@ namespace utility
 void setWidgetBackgroundColor(QWidget *widget, const std::string &color);
 void setWidgetRetainsSpaceWhenHidden(QWidget *widget);
 
-void loadFontsFromDirectory(const FilePath &path, const std::string &extension = ".otf");
+// Adds the fonts in `path` to the application's: the families they hold, each once.
+std::set<std::string> loadFontsFromDirectory(const FilePath &path, const std::string &extension = ".otf");
 
 QPixmap colorizePixmap(const QPixmap &pixmap, QColor color);
 QIcon createButtonIcon(const FilePath &iconPath, const std::string &colorId);

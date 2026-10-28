@@ -226,6 +226,14 @@ int main(int argc, char* argv[])
 
 		setupLogging();
 
+		// The bundled fonts before the first style load (createInstance), which names them: a
+		// family the style asks for before it is there makes Qt search for a substitute. They
+		// are logged once logging is on, after createInstance.
+		std::set<std::string> fontFamilies{
+			utility::loadFontsFromDirectory(ResourcePaths::getFontsDirectoryPath(), ".otf")};
+		fontFamilies.merge(
+			utility::loadFontsFromDirectory(ResourcePaths::getFontsDirectoryPath(), ".ttf"));
+
 		// Resolve the color scheme through the system Day/Night appearance (when the
 		// user opted in). Installed before createInstance() so the very first style
 		// load already reflects the OS appearance; the watcher reacts to live changes.
@@ -263,10 +271,12 @@ int main(int argc, char* argv[])
 		if (!applicationSettings->getLoggingEnabled())
 			closeConsoleWindow();
 
-		addLanguagePackages();
+		for (const std::string& family: fontFamilies)
+		{
+			LOG_INFO("Loaded FontFamily: " + family);
+		}
 
-		utility::loadFontsFromDirectory(ResourcePaths::getFontsDirectoryPath(), ".otf");
-		utility::loadFontsFromDirectory(ResourcePaths::getFontsDirectoryPath(), ".ttf");
+		addLanguagePackages();
 
 		if (commandLineParser.hasError())
 		{
