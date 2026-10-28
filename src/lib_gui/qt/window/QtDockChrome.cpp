@@ -1363,7 +1363,7 @@ void QtDockHeaderButton::paintEvent(QPaintEvent* /*event*/)
 	{
 		painter.setPen(Qt::NoPen);
 		painter.setBrush(withAlpha(m_glyphColor, isDown() ? 0.24 : 0.13));
-		painter.drawRoundedRect(QRectF{rect()}.adjusted(1, 1, -1, -1), 5, 5);
+		painter.drawRoundedRect(QRectF{rect()}.adjusted(1, 1, -1, -1), QtDockChrome::controlRadius, QtDockChrome::controlRadius);
 	}
 
 	const qreal ratio{devicePixelRatioF()};

@@ -31,6 +31,13 @@ namespace QtDockChrome
 // Width of the gutters between the cards, and of the canvas around them (logical pixels).
 inline constexpr int gutterWidth{6};
 
+// The corner radii, one scale for the whole window: cards and floating windows are rounded by
+// cardRadius, controls (buttons, fields, a button's highlight) by controlRadius, and pills
+// (tabs, chips, counters, the graph's toolbar) fully: by half their height. Style sheets use
+// the same values.
+inline constexpr qreal cardRadius{10};
+inline constexpr qreal controlRadius{6};
+
 // A view whose QTabWidget can show its tabs in its dock's header instead, for example the
 // Status view's "Status | Errors": offer them once. While a header hosts them,
 // tabsInDockHeader() is true, and the tab widget gets a QEvent::DynamicPropertyChange whenever
@@ -115,7 +122,7 @@ private:
 	QColor m_cardColor{Qt::white};
 	QColor m_canvasColor{0xE6, 0xE7, 0xEA};
 	QColor m_borderColor{0xD2, 0xD4, 0xD9};
-	qreal m_radius{8};
+	qreal m_radius{QtDockChrome::cardRadius};
 };
 
 // A floating window, with a soft frame: rounded corners and a hairline border. A single card in
@@ -173,7 +180,7 @@ private:
 	QColor m_canvasColor{0xE6, 0xE7, 0xEA};
 	QColor m_borderColor{0xC3, 0xC6, 0xCC};
 	QColor m_cardBorderColor{0xD2, 0xD4, 0xD9};
-	qreal m_radius{10};
+	qreal m_radius{QtDockChrome::cardRadius};
 };
 
 // A gutter between cards, still the separator to drag. It shows a short pill to grab, which

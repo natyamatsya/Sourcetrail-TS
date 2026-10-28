@@ -26,7 +26,7 @@
 	font-family: "<setting:font_name>";
 	font-size: <setting:font_size>px;
 	border: none;
-	border-radius: 4px;
+	border-radius: 6px;
 	padding: 0px 4px;
 	/* Properties are also set in 'QtSmartSearchBox::updateElements' */
 }
@@ -52,10 +52,6 @@
 	border: none;
 	border-radius: 6px;
 	padding: 0px;
-}
-
-#search_button {
-	border-radius: 4px;
 }
 
 #search_button:hover, #home_button:hover {

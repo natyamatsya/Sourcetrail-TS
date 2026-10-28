@@ -67,14 +67,16 @@ QtCodeGlyphButton:pressed {
 	margin: 0px 8px 0px 4px;
 }
 
+/* A segmented control is a pill, as the search bar's back and forward: 24 px high, 12 px round,
+   its segments 20 px high and fully round inside it. */
 #code_navigation #mode_buttons {
 	background: <color:code/header/hover>;
-	border-radius: 6px;
+	border-radius: 12px;
 }
 
 #code_navigation #mode_buttons QtCodeGlyphButton {
 	qproperty-checkedGlyphColor: <color:code/header/text>;
-	border-radius: 4px;
+	border-radius: 10px;
 	min-width: 24px;
 	max-width: 24px;
 	min-height: 20px;

@@ -48,7 +48,7 @@ import srctrl.settings;
 namespace
 {
 // Space below the code, enough to clear the corners of the card around it: they reach as far
-// into the card as its radius (9 px) and its border (1 px), and a radius of 10 px still fits.
+// into the card as its radius (10 px), and no further than this.
 constexpr int bottomInset{10};
 }	 // namespace
 
