@@ -1352,6 +1352,29 @@ TEST_CASE("cxx parser finds lambda definition and call in function")
 	REQUIRE(containsElement(client->calls, "void lambdaCaller() -> void lambdaCaller::lambda at 3:2() constexpr <3:8 3:8>"s));
 }
 
+TEST_CASE("cxx parser finds calls in instantiations of generic lambda")
+{
+	// The generic call operator's calls are dependent; its instantiations make them.
+	std::shared_ptr<TestStorage> client = parseCode(
+		"template <int N> int work() { return N; }\n"
+		"template <int N> struct Int { static constexpr int value = N; };\n"
+		"int caller()\n"
+		"{\n"
+		"	auto generic = [](auto v) { return work<decltype(v)::value>(); };\n"
+		"	return generic(Int<3>{}) + generic(Int<4>{});\n"
+		"}\n");
+
+	REQUIRE(containsElement(
+		client->calls, "int caller::lambda at 5:17(Int<3>) constexpr -> int work<3>() <5:37 5:40>"s));
+	REQUIRE(containsElement(
+		client->calls, "int caller::lambda at 5:17(Int<4>) constexpr -> int work<4>() <5:37 5:40>"s));
+	REQUIRE(containsElement(
+		client->templateSpecializations,
+		"int caller::lambda at 5:17(Int<3>) constexpr -> auto caller::lambda at 5:17(v:auto) constexpr <5:17 5:17>"s));
+	REQUIRE(containsElement(
+		client->methods, "public int caller::lambda at 5:17(Int<3>) constexpr <5:17 5:17>"s));
+}
+
 TEST_CASE("cxx parser finds mutable lambda definition")
 {
 	std::shared_ptr<TestStorage> client = parseCode(

@@ -320,7 +320,24 @@ inline bool CxxAstVisitor::TraverseCXXRecordDecl(clang::CXXRecordDecl* d)
 
 	if (d->isLambda())
 	{
-		return TraverseFunctionDecl(d->getLambdaCallOperator());
+		TraverseFunctionDecl(d->getLambdaCallOperator());
+
+		// A generic lambda's call operator is a template whose calls are dependent: the calls
+		// made are in its instantiations, which are traversed like a function template's.
+		if (const clang::FunctionTemplateDecl* callOperatorTemplate = d->getDependentLambdaCallOperator())
+		{
+			for (clang::FunctionDecl* instantiation: callOperatorTemplate->specializations())
+			{
+				const clang::TemplateSpecializationKind kind = instantiation->getTemplateSpecializationKind();
+				if ((kind == clang::TSK_ImplicitInstantiation ||
+					 kind == clang::TSK_ExplicitInstantiationDefinition) &&
+					!TraverseDecl(instantiation))
+				{
+					return false;
+				}
+			}
+		}
+		return true;
 	}
 
 	WalkUpFromCXXRecordDecl(d);
