@@ -1,9 +1,13 @@
 #include "QtProjectWizardContentPathCMakeFileAPI.h"
 
 #include <algorithm>
+#include <array>
+#include <set>
+#include <tuple>
 #include <format>
 #include <ranges>
 
+#include <QCheckBox>
 #include <QComboBox>
 #include <QDialog>
 #include <QDialogButtonBox>
@@ -252,7 +256,7 @@ void QtProjectWizardContentPathCMakeFileAPI::populate(QGridLayout* layout, int& 
 		argumentsLayout->addWidget(m_cmakeArgumentsEdit);
 		layout->addWidget(m_cmakeArgumentsRow, row, QtProjectWizardWindow::BACK_COL);
 
-		addHelpButton(
+		m_cmakeArgumentsHelp = addHelpButton(
 			QStringLiteral("CMake Arguments"),
 			QStringLiteral(
 				"<p>What Sourcetrail adds when it configures the build directory without a "
@@ -324,11 +328,40 @@ void QtProjectWizardContentPathCMakeFileAPI::populate(QGridLayout* layout, int& 
 			row);
 		row++;
 
+		// A long list (CLI11 has 92 targets, 30 of them CTest's): narrowed by name, the
+		// targets without sources hidden unless asked for.
+		QWidget* listTools = new QWidget(this);
+		QHBoxLayout* listToolsLayout = new QHBoxLayout(listTools);
+		listToolsLayout->setContentsMargins(0, 0, 0, 0);
+		m_targetListFilterEdit = new QLineEdit(listTools);
+		m_targetListFilterEdit->setObjectName(QStringLiteral("targetListFilter"));
+		m_targetListFilterEdit->setAccessibleName(QStringLiteral("Find Targets"));
+		m_targetListFilterEdit->setPlaceholderText(QStringLiteral("Find targets by name"));
+		m_targetListFilterEdit->setClearButtonEnabled(true);
+		m_targetListFilterEdit->setAttribute(Qt::WA_MacShowFocusRect, false);
+		listToolsLayout->addWidget(m_targetListFilterEdit, 1);
+		m_showEmptyTargetsCheck = new QCheckBox(QStringLiteral("Show targets without sources"), listTools);
+		m_showEmptyTargetsCheck->setObjectName(QStringLiteral("showEmptyTargets"));
+		m_showEmptyTargetsCheck->setAccessibleName(QStringLiteral("Show targets without sources"));
+		listToolsLayout->addWidget(m_showEmptyTargetsCheck);
+		layout->addWidget(listTools, row, QtProjectWizardWindow::BACK_COL);
+		connect(
+			m_targetListFilterEdit,
+			&QLineEdit::textChanged,
+			this,
+			&QtProjectWizardContentPathCMakeFileAPI::onTargetListFilterEdited);
+		connect(
+			m_showEmptyTargetsCheck,
+			&QCheckBox::toggled,
+			this,
+			&QtProjectWizardContentPathCMakeFileAPI::onTargetListFilterEdited);
+		row++;
+
 		m_targetList = new QListWidget(this);
 		m_targetList->setAccessibleName(QStringLiteral("Targets"));
 		m_targetList->setObjectName(QStringLiteral("targetList"));
 		m_targetList->setAttribute(Qt::WA_MacShowFocusRect, false);
-		m_targetList->setMaximumHeight(140);
+		m_targetList->setMaximumHeight(220);
 		layout->addWidget(m_targetList, row, QtProjectWizardWindow::BACK_COL);
 		connect(
 			m_targetList,
@@ -588,6 +621,38 @@ void QtProjectWizardContentPathCMakeFileAPI::onTargetFilterEdited()
 	showTargets();
 }
 
+void QtProjectWizardContentPathCMakeFileAPI::onTargetListFilterEdited()
+{
+	const QString text{m_targetListFilterEdit->text().trimmed()};
+	for (int i = 0; i < m_targetList->count(); i++)
+	{
+		QListWidgetItem* item{m_targetList->item(i)};
+		if (!item->data(Qt::UserRole).isValid())	// a group's heading: shown with its rows
+		{
+			continue;
+		}
+		const bool empty{!item->flags().testFlag(Qt::ItemIsEnabled)};
+		item->setHidden(
+			(empty && !m_showEmptyTargetsCheck->isChecked()) ||
+			(!text.isEmpty() && !item->data(Qt::UserRole).toString().contains(text, Qt::CaseInsensitive)));
+	}
+	// A heading goes with the last of its rows.
+	for (int i = 0; i < m_targetList->count(); i++)
+	{
+		QListWidgetItem* heading{m_targetList->item(i)};
+		if (heading->data(Qt::UserRole).isValid())
+		{
+			continue;
+		}
+		bool anyShown{false};
+		for (int j = i + 1; j < m_targetList->count() && m_targetList->item(j)->data(Qt::UserRole).isValid(); j++)
+		{
+			anyShown = anyShown || !m_targetList->item(j)->isHidden();
+		}
+		heading->setHidden(!anyShown);
+	}
+}
+
 void QtProjectWizardContentPathCMakeFileAPI::onTargetChecked()
 {
 	// The checked targets become the filter; all of them, the empty filter.
@@ -596,7 +661,7 @@ void QtProjectWizardContentPathCMakeFileAPI::onTargetChecked()
 	for (int i = 0; i < m_targetList->count(); i++)
 	{
 		const QListWidgetItem* item{m_targetList->item(i)};
-		if (!item->flags().testFlag(Qt::ItemIsEnabled))
+		if (!item->data(Qt::UserRole).isValid() || !item->flags().testFlag(Qt::ItemIsEnabled))
 		{
 			continue;
 		}
@@ -609,6 +674,7 @@ void QtProjectWizardContentPathCMakeFileAPI::onTargetChecked()
 	m_targetFilterEdit->setText(
 		static_cast<int>(checked.size()) == checkable ? QString{}
 													  : QString::fromStdString(utility::join(checked, ';')));
+	updateTargetTexts();
 	updateTargetSummary();
 }
 
@@ -747,6 +813,7 @@ void QtProjectWizardContentPathCMakeFileAPI::readBuildDirectory()
 	m_runCMakeButton->setEnabled(!m_buildDir.empty() && !m_runningCMake);
 	m_cmakeArgumentsLabel->setVisible(noPresetSelected());
 	m_cmakeArgumentsRow->setVisible(noPresetSelected());
+	m_cmakeArgumentsHelp->setVisible(noPresetSelected());
 	// Presets come from a presets file: without one there is nothing to refresh.
 	m_refreshPresetsButton->setVisible(
 		!m_sourceDir.empty() && !CMakeFileAPIReader::getPresetFiles(m_sourceDir).empty());
@@ -794,6 +861,7 @@ void QtProjectWizardContentPathCMakeFileAPI::readTargets()
 				if (target != m_targets.end() && entry.compileGroup && !entry.isGenerated)
 				{
 					target->sourceFileCount++;
+					target->sources.push_back(entry.path);
 				}
 			}
 		}
@@ -801,32 +869,143 @@ void QtProjectWizardContentPathCMakeFileAPI::readTargets()
 	showTargets();
 }
 
+std::string QtProjectWizardContentPathCMakeFileAPI::targetKind(const Target& target)
+{
+	if (target.type.ends_with("_LIBRARY"))
+	{
+		return "library";
+	}
+	if (target.type == "EXECUTABLE")
+	{
+		// What CTest runs: named so by convention.
+		const std::string name{utility::toLowerCase(target.name)};
+		return name.contains("test") ? "test" : "executable";
+	}
+	return "utility";
+}
+
+QString QtProjectWizardContentPathCMakeFileAPI::targetText(const Target& target, bool checked) const
+{
+	std::string text{std::format("{}  ({}, {})", target.name, targetTypeName(target.type), fileCount(target.sourceFileCount))};
+	if (checked && target.sourceFileCount > 0)
+	{
+		// What it adds: its files no other checked target has.
+		const std::string filter{m_targetFilterEdit->text().trimmed().toStdString()};
+		std::size_t own{0};
+		for (const FilePath& source: target.sources)
+		{
+			const bool elsewhere{std::ranges::any_of(m_targets, [&](const Target& other) {
+				return &other != &target && CMakeFileAPIReader::matchesTargetFilter(other.name, filter) &&
+					std::ranges::contains(other.sources, source);
+			})};
+			own += elsewhere ? 0 : 1;
+		}
+		if (own != target.sourceFileCount)
+		{
+			text += std::format(" \u2013 adds {}", own);
+		}
+	}
+	return QString::fromStdString(text);
+}
+
+std::size_t QtProjectWizardContentPathCMakeFileAPI::checkedFileCount() const
+{
+	const std::string filter{m_targetFilterEdit->text().trimmed().toStdString()};
+	std::set<FilePath> files;
+	for (const Target& target: m_targets)
+	{
+		if (CMakeFileAPIReader::matchesTargetFilter(target.name, filter))
+		{
+			files.insert(target.sources.begin(), target.sources.end());
+		}
+	}
+	return files.size();
+}
+
 void QtProjectWizardContentPathCMakeFileAPI::showTargets()
 {
 	const std::string filter{m_targetFilterEdit->text().trimmed().toStdString()};
-	m_targetList->blockSignals(true);
-	m_targetList->clear();
+
+	// The checked targets first, then by kind (libraries, executables, tests, utilities),
+	// then by name: what is indexed is at the top. Not re-sorted on a check, so a row
+	// stays under the mouse.
+	static constexpr std::array kinds {"library", "executable", "test", "utility"};
+	std::vector<const Target*> ordered;
 	for (const Target& target: m_targets)
 	{
-		QListWidgetItem* item{new QListWidgetItem(
-			QString::fromStdString(std::format(
-				"{}  ({}, {})",
-				target.name,
-				targetTypeName(target.type),
-				fileCount(target.sourceFileCount))),
-			m_targetList)};
-		item->setData(Qt::UserRole, QString::fromStdString(target.name));
+		ordered.push_back(&target);
+	}
+	const bool allChecked{filter.empty()};
+	std::ranges::stable_sort(ordered, [&](const Target* a, const Target* b) {
+		const bool aChecked{!allChecked && CMakeFileAPIReader::matchesTargetFilter(a->name, filter)};
+		const bool bChecked{!allChecked && CMakeFileAPIReader::matchesTargetFilter(b->name, filter)};
+		const auto kindIndex = [](const Target* target) {
+			return std::ranges::find(kinds, targetKind(*target)) - kinds.begin();
+		};
+		return std::tuple(!aChecked, kindIndex(a), a->name) < std::tuple(!bChecked, kindIndex(b), b->name);
+	});
+
+	m_targetList->blockSignals(true);
+	m_targetList->clear();
+	std::string group;
+	for (const Target* target: ordered)
+	{
+		const bool checked{CMakeFileAPIReader::matchesTargetFilter(target->name, filter)};
+		const std::string targetGroup{!allChecked && checked ? std::string("checked") : targetKind(*target)};
+		if (targetGroup != group)
+		{
+			group = targetGroup;
+			QListWidgetItem* heading{new QListWidgetItem(
+				QString::fromStdString(group == "checked" ? "Checked" : group == "library" ? "Libraries"
+										   : group == "executable"                      ? "Executables"
+										   : group == "test"                            ? "Tests"
+																						: "Utilities"),
+				m_targetList)};
+			heading->setFlags(Qt::NoItemFlags);
+			QFont font{heading->font()};
+			font.setBold(true);
+			heading->setFont(font);
+		}
+
+		QListWidgetItem* item{new QListWidgetItem(targetText(*target, checked && !allChecked), m_targetList)};
+		item->setData(Qt::UserRole, QString::fromStdString(target->name));
 		item->setFlags(item->flags() | Qt::ItemIsUserCheckable);
-		if (target.sourceFileCount == 0)
+		if (target->sourceFileCount == 0)
 		{
 			item->setFlags(item->flags() & ~Qt::ItemIsEnabled);	// nothing to index either way
 		}
-		item->setCheckState(
-			CMakeFileAPIReader::matchesTargetFilter(target.name, filter) ? Qt::Checked : Qt::Unchecked);
+		item->setCheckState(checked ? Qt::Checked : Qt::Unchecked);
 	}
 	m_targetList->blockSignals(false);
 	m_targetList->setVisible(!m_targets.empty());
+	m_targetListFilterEdit->parentWidget()->setVisible(m_targets.size() > 8);
+
+	const std::size_t empty{static_cast<std::size_t>(
+		std::ranges::count(m_targets, std::size_t{0}, &Target::sourceFileCount))};
+	m_showEmptyTargetsCheck->setText(QString::fromStdString(std::format("Show {} without sources", empty)));
+	m_showEmptyTargetsCheck->setVisible(empty > 0);
+	onTargetListFilterEdited();
 	updateTargetSummary();
+}
+
+void QtProjectWizardContentPathCMakeFileAPI::updateTargetTexts()
+{
+	const std::string filter{m_targetFilterEdit->text().trimmed().toStdString()};
+	m_targetList->blockSignals(true);
+	for (int i = 0; i < m_targetList->count(); i++)
+	{
+		QListWidgetItem* item{m_targetList->item(i)};
+		if (!item->data(Qt::UserRole).isValid())
+		{
+			continue;
+		}
+		const auto target{std::ranges::find(m_targets, item->data(Qt::UserRole).toString().toStdString(), &Target::name)};
+		if (target != m_targets.end())
+		{
+			item->setText(targetText(*target, !filter.empty() && item->checkState() == Qt::Checked));
+		}
+	}
+	m_targetList->blockSignals(false);
 }
 
 void QtProjectWizardContentPathCMakeFileAPI::updateTargetSummary()
@@ -846,15 +1025,15 @@ QString QtProjectWizardContentPathCMakeFileAPI::targetSummary() const
 	}
 	const std::string filter{m_targetFilterEdit->text().trimmed().toStdString()};
 	std::size_t matched{0};
-	std::size_t files{0};
 	for (const Target& target: m_targets)
 	{
 		if (CMakeFileAPIReader::matchesTargetFilter(target.name, filter))
 		{
 			matched++;
-			files += target.sourceFileCount;
 		}
 	}
+	// Each file once: targets share sources (a library's, its tests').
+	const std::size_t files{checkedFileCount()};
 	return QString::fromStdString(std::format(
 		"{} of {} target{}, {} to index.",
 		matched,

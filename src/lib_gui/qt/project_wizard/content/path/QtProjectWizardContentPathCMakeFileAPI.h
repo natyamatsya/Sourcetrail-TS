@@ -9,6 +9,7 @@
 #include "FilePath.h"
 #include "QtProjectWizardContent.h"
 
+class QCheckBox;
 class QComboBox;
 class QLabel;
 class QLineEdit;
@@ -44,6 +45,7 @@ private slots:
 	void onConfigurationChanged();
 	void onTargetFilterEdited();
 	void onTargetChecked();
+	void onTargetListFilterEdited();
 	void onRunCMake();
 	void onShowCMakeLog();
 
@@ -54,7 +56,17 @@ private:
 		std::string name;
 		std::string type;
 		std::size_t sourceFileCount{0};
+		std::vector<FilePath> sources;	// the translation units it compiles (not generated ones)
 	};
+
+	// What a target is, for its group in the list: library, executable, test or utility.
+	static std::string targetKind(const Target& target);
+	// The target's row text, with what it adds to the checked targets' files when checked.
+	QString targetText(const Target& target, bool checked) const;
+	// The files the checked targets have, each once.
+	std::size_t checkedFileCount() const;
+	// Updates the checked rows' texts (what each adds) after a check.
+	void updateTargetTexts();
 
 	// Lists the source directory's presets, keeping `presetToKeep` (or the "no preset"
 	// choice) selected.
@@ -89,11 +101,14 @@ private:
 	QLabel* m_cmakeArgumentsLabel = nullptr;
 	QWidget* m_cmakeArgumentsRow = nullptr;
 	QLineEdit* m_cmakeArgumentsEdit = nullptr;
+	QWidget* m_cmakeArgumentsHelp = nullptr;
 	QWidget* m_configureErrorRow = nullptr;
 	QLabel* m_configureErrorLabel = nullptr;
 	QComboBox* m_configurationCombo = nullptr;
 	QLineEdit* m_targetFilterEdit = nullptr;
 	QListWidget* m_targetList = nullptr;
+	QLineEdit* m_targetListFilterEdit = nullptr;	// narrows the list; not the indexing filter
+	QCheckBox* m_showEmptyTargetsCheck = nullptr;
 	QLabel* m_targetSummaryLabel = nullptr;
 
 	FilePath m_sourceDir;	// expanded and absolute
