@@ -1494,13 +1494,25 @@ std::expected<ProjectProposal, ProjectDetectionError> detectProject(
 {
 	std::error_code error;
 	const fs::path path{fs::path{folder}};
-	if (folder.empty() || !fs::exists(path, error))
+	if (folder.empty())
 	{
 		return std::unexpected(ProjectDetectionError::FolderMissing);
+	}
+	if (!fs::exists(path, error))
+	{
+		// A folder under one it may not read cannot even be looked up: that is no missing folder.
+		return std::unexpected(
+			error == std::errc::permission_denied ? ProjectDetectionError::FolderUnreadable
+												  : ProjectDetectionError::FolderMissing);
 	}
 	if (!isDirectory(path))
 	{
 		return std::unexpected(ProjectDetectionError::NotAFolder);
+	}
+	if (const fs::directory_iterator probe{path, error}; error)
+	{
+		// A folder it may not list: the scan would find nothing, and propose an empty project.
+		return std::unexpected(ProjectDetectionError::FolderUnreadable);
 	}
 
 	const fs::path dir{resolvedPath(fs::absolute(path, error))};

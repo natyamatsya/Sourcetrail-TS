@@ -60,6 +60,7 @@ enum class ProjectDetectionError : std::uint8_t
 {
 	FolderMissing,
 	NotAFolder,
+	FolderUnreadable,	// it, or a folder above it, may not be read (permission denied)
 };
 
 constexpr std::string_view to_std_sv(ProjectDetectionError error) noexcept
@@ -71,6 +72,8 @@ constexpr std::string_view to_std_sv(ProjectDetectionError error) noexcept
 		return "the folder does not exist";
 	case NotAFolder:
 		return "the path is not a folder";
+	case FolderUnreadable:
+		return "permission denied: the folder cannot be read";
 	}
 	return "unknown error";
 }
