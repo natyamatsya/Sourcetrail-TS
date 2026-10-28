@@ -165,11 +165,20 @@ bool isVendorDirectoryName(const std::string& name)
 	return std::ranges::contains(names, lower(name));
 }
 
-// A build tree by its content: CMake's, Meson's, or one with a compilation database.
+// A build tree by its content: CMake's, Meson's, Ninja's, or one with a compilation database.
 bool looksConfigured(const fs::path& dir)
 {
 	return isFile(dir / "CMakeCache.txt") || isDirectory(dir / "meson-private") ||
-		isFile(dir / "compile_commands.json");
+		isFile(dir / "compile_commands.json") || isFile(dir / "build.ninja") || isDirectory(dir / "CMakeFiles");
+}
+
+// A build tree: one of the usual names for one (build, out, cmake-build-debug ...), or a
+// build-* directory with a build in it (build-aux, Autotools' scripts, is none).
+bool isBuildTree(const fs::path& dir)
+{
+	const std::string n{lower(dir.filename().string())};
+	return n == "build" || n == "out" || n == "_build" || n == "builddir" || n.starts_with("cmake-build-") ||
+		n.ends_with(".srctrl-build") || looksConfigured(dir);
 }
 
 // A project of its own: its license, its build files, its repository.
@@ -257,7 +266,7 @@ SourceScan scanSources(const fs::path& folder, const std::set<fs::path>& skipped
 		{
 			scan.headers.push_back(path);
 		}
-		if (extension != ".h" && scan.samples.size() < maxSamples)
+		if (extension != ".h" && extension != ".c" && scan.samples.size() < maxSamples)
 		{
 			scan.samples.push_back(path);
 		}
@@ -722,7 +731,7 @@ Strings vendoredExclusions(Detection& detection, const std::function<bool(const 
 		{
 			vendorDirs.push_back(dir);
 		}
-		else if (!name.starts_with('.') && !isBuildDirectoryName(name))
+		else if (!name.starts_with('.') && !isBuildTree(dir))
 		{
 			for (const fs::path& inner: subdirectories(dir))
 			{
@@ -988,12 +997,14 @@ bool detectCMakePreset(Detection& detection)
 		usable.push_back({&preset, binary, configuredFor(binary, detection.folder)});
 	}
 
+	Strings passedOver;
 	for (const std::string& skip: skipped)
 	{
-		proposal.reasons.push_back(std::format("Skipped configure preset {}", skip));
+		passedOver.push_back(std::format("Skipped configure preset {}", skip));
 	}
 	if (usable.empty())
 	{
+		proposal.reasons.insert(proposal.reasons.end(), passedOver.begin(), passedOver.end());
 		proposal.reasons.emplace_back("No configure preset is usable here: CMake is used without a preset");
 		return false;
 	}
@@ -1010,8 +1021,11 @@ bool detectCMakePreset(Detection& detection)
 		}
 		if (const std::optional<Platform> platform{presetPlatform(*other.preset)}; platform && *platform != hostPlatform)
 		{
-			proposal.reasons.push_back(std::format(
-				"Configure preset '{}' looks made for {}, and this is {}", other.preset->name, platformName(*platform), platformName(hostPlatform)));
+			passedOver.push_back(std::format(
+				"Configure preset '{}' looks made for {}, and this is {}",
+				other.preset->name,
+				platformName(*platform),
+				platformName(hostPlatform)));
 		}
 	}
 
@@ -1027,14 +1041,15 @@ bool detectCMakePreset(Detection& detection)
 	if (chosen.configured)
 	{
 		proposal.reasons.push_back(std::format(
-			"Its build directory {} is configured already{}",
+			"Its build directory ({}) is configured already{}",
 			shown(chosen.binaryDir, detection.folder),
-			chosen.configured->hasReply ? " (with a CMake File API reply)" : ""));
+			chosen.configured->hasReply ? ", with a CMake File API reply" : ""));
 	}
 	else
 	{
 		proposal.reasons.push_back(std::format(
-			"CMake configures its build directory {} when indexing (or with Run CMake on the source group's page)",
+			"CMake configures its build directory ({}) when indexing, or with Run CMake on the source "
+			"group's page",
 			shown(chosen.binaryDir, detection.folder)));
 	}
 	if (usable.size() > 1)
@@ -1049,6 +1064,7 @@ bool detectCMakePreset(Detection& detection)
 		}
 		proposal.reasons.push_back(std::format("Other presets to choose from: {}", listed(others)));
 	}
+	proposal.reasons.insert(proposal.reasons.end(), passedOver.begin(), passedOver.end());
 	return true;
 }
 
@@ -1162,6 +1178,21 @@ Strings includeDirectories(const fs::path& folder)
 		}
 	};
 
+	// The folder itself when it holds headers: sources include them by name (stb, single-file
+	// libraries).
+	std::error_code error;
+	for (fs::directory_iterator it{folder, fs::directory_options::skip_permission_denied, error}, end;
+		 !error && it != end;
+		 it.increment(error))
+	{
+		const std::string extension{lower(it->path().extension().string())};
+		if (extension == ".h" || std::ranges::contains(cppHeaderExtensions, extension))
+		{
+			add(folder);
+			break;
+		}
+	}
+
 	std::vector<std::pair<fs::path, int>> pending{{folder, 0}};
 	while (!pending.empty())
 	{
@@ -1170,7 +1201,7 @@ Strings includeDirectories(const fs::path& folder)
 		for (const fs::path& inner: subdirectories(dir))
 		{
 			const std::string name{inner.filename().string()};
-			if (name.starts_with('.') || isBuildDirectoryName(name) || name == "node_modules")
+			if (name.starts_with('.') || isBuildTree(inner) || name == "node_modules")
 			{
 				continue;
 			}
@@ -1212,7 +1243,7 @@ void detectEmptyGroup(Detection& detection)
 	for (const fs::path& dir: subdirectories(detection.folder))
 	{
 		const std::string name{dir.filename().string()};
-		if (!name.starts_with('.') && (isBuildDirectoryName(name) || looksConfigured(dir)))
+		if (!name.starts_with('.') && isBuildTree(dir))
 		{
 			excluded.push_back(generic(dir));
 			skipped.insert(dir);
@@ -1239,10 +1270,10 @@ void detectEmptyGroup(Detection& detection)
 	const std::size_t cSources{countOf(scan, ".c")};
 	const std::size_t hHeaders{countOf(scan, ".h")};
 
-	// .h files alone are C++ when they read as C++.
+	// The language most files are in; .h files alone are C++ when they read as C++.
 	const std::optional<fs::path> cppHeader{
 		cppSources == 0 && cppHeaders == 0 && cSources == 0 ? cppHeaderAmong(scan.headers) : std::nullopt};
-	const bool cpp{cppSources > 0 || cppHeaders > 0 || cppHeader.has_value()};
+	const bool cpp{(cppSources + cppHeaders > 0 && cppSources + cppHeaders >= cSources) || cppHeader.has_value()};
 	proposal.sourceGroupType = cpp ? SourceGroupType::CXX_EMPTY : SourceGroupType::C_EMPTY;
 	proposal.fields["source_paths"] = Strings{generic(detection.folder)};
 
@@ -1274,29 +1305,39 @@ void detectEmptyGroup(Detection& detection)
 	}
 	proposal.fields["extensions"] = extensions;
 
-	const std::string files{std::format(
-		"{} C++ source{}, {} C++ header{}, {} .c and {} .h file{}{}",
-		cppSources,
-		cppSources == 1 ? "" : "s",
-		cppHeaders,
-		cppHeaders == 1 ? "" : "s",
-		cSources,
-		hHeaders,
-		hHeaders == 1 ? "" : "s",
-		scan.truncated ? " (in the part of the folder looked at)" : "")};
-	const std::string language{cpp ? "C++" : "C"};
-	if (cppSources + cppHeaders + cSources + hHeaders == 0)
+	Strings counts;
+	for (const auto& [count, what]: {
+			 std::pair{cppSources, "C++ source"}, std::pair{cppHeaders, "C++ header"}, std::pair{cSources, ".c file"},
+			 std::pair{hHeaders, ".h file"}})
 	{
-		proposal.reasons.insert(
-			proposal.reasons.begin(),
-			"No build system was found, and no C or C++ files: an empty C++ group on the folder");
+		if (count > 0)
+		{
+			counts.push_back(std::format("{} {}{}", count, what, count == 1 ? "" : "s"));
+		}
 	}
-	else
+	const std::string files{
+		counts.empty() ? std::string{"no C or C++ files"}
+					   : listed(counts) + (scan.truncated ? " in the part of the folder looked at" : "")};
+
+	// The build files found that are not read (yet): why the group is an empty one.
+	Strings buildFiles;
+	for (const char* name:
+		 {"Makefile", "makefile", "GNUmakefile", "meson.build", "configure.ac", "SConstruct", "BUILD.bazel", "BUILD.gn",
+		  "premake5.lua", "xmake.lua"})
 	{
-		proposal.reasons.insert(
-			proposal.reasons.begin(),
-			std::format("No build system was found: an empty {} group on the folder ({})", language, files));
+		if (isFile(detection.folder / name))
+		{
+			buildFiles.emplace_back(name);
+		}
 	}
+	proposal.reasons.insert(
+		proposal.reasons.begin(),
+		std::format(
+			"{}: an empty {} group on the folder ({})",
+			buildFiles.empty() ? std::string{"No build system found"}
+							   : std::format("Found {}, which is not read", listed(buildFiles)),
+			cpp ? "C++" : "C",
+			files));
 	if (cppHeader)
 	{
 		proposal.reasons.push_back(
@@ -1308,6 +1349,14 @@ void detectEmptyGroup(Detection& detection)
 			"There are no C++ source files (a header-only library): its headers ({}) are indexed as "
 			"source files",
 			listed(extensions)));
+	}
+	if (!cpp && cppSources > 0)
+	{
+		proposal.reasons.push_back(std::format(
+			"The {} C++ source file{} {} not in this C group: add a C++ source group for them",
+			cppSources,
+			cppSources == 1 ? "" : "s",
+			cppSources == 1 ? "is" : "are"));
 	}
 	if (cpp && cSources > 0)
 	{

@@ -141,7 +141,7 @@ TEST_CASE("ProjectDetector prefers a configure preset whose build directory is c
 	const ProjectProposal proposal{detect(folder)};
 
 	CHECK(text(proposal, "cmake_preset") == "release");
-	CHECK(mentions(proposal.reasons, "out/release is configured already"));
+	CHECK(mentions(proposal.reasons, "(out/release) is configured already"));
 }
 
 TEST_CASE("ProjectDetector prefers the configure preset made for this computer")
@@ -309,6 +309,27 @@ TEST_CASE("ProjectDetector proposes an empty C group with the Makefile's standar
 		CHECK(text(proposal, "c_standard") == "c99");
 	}
 	CHECK(!proposal.fields.contains("exclude_filters"));
+}
+
+TEST_CASE("ProjectDetector proposes C for mostly C files, with the folder's headers")
+{
+	const TestTempDirectory temp{"detectMostlyC"};
+	const fs::path folder{temp.getPath() / "single"};
+	write(folder / "single_image.h", "int load(const char* name);\n");
+	write(folder / "tests" / "a.c", "#include \"single_image.h\"\n");
+	write(folder / "tests" / "b.c", "int b(void) { return 0; }\n");
+	write(folder / "tests" / "c.cpp", "int c() { return 0; }\n");
+	write(folder / "build-aux" / "gen.c", "int gen(void) { return 0; }\n");	// scripts, not a build tree
+	write(folder / "build-debug" / "build.ninja");	// a build tree
+	write(folder / "build-debug" / "x.c", "int x(void) { return 0; }\n");
+
+	const ProjectProposal proposal{detect(folder)};
+
+	CHECK(proposal.sourceGroupType == SourceGroupType::C_EMPTY);
+	CHECK(proposal.reasons.front() == "No build system found: an empty C group on the folder (1 C++ source, 3 .c files and 1 .h file)");
+	CHECK(strings(proposal, "header_search_paths") == Strings{generic(folder)});
+	CHECK(strings(proposal, "exclude_filters") == Strings{generic(folder / "build-debug")});
+	CHECK(mentions(proposal.reasons, "The 1 C++ source file is not in this C group"));
 }
 
 TEST_CASE("ProjectDetector notes Meson as not detected yet")
