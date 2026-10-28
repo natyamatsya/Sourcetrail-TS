@@ -87,6 +87,11 @@ inline void NameHierarchy::pop()
 	m_elements.pop_back();
 }
 
+inline const NameElement &NameHierarchy::front() const
+{
+	return m_elements.front();
+}
+
 inline NameElement &NameHierarchy::back()
 {
 	return m_elements.back();

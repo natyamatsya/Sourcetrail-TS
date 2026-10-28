@@ -39,6 +39,7 @@ public:
 	void push(std::string name);
 	void pop();
 
+	const NameElement &front() const;
 	NameElement &back();
 	const NameElement &back() const;
 

@@ -1363,6 +1363,70 @@ TEST_CASE("cxx parser finds mutable lambda definition")
 	REQUIRE(containsElement(client->functions, "void lambdaWrapper() <1:1 <1:1 <1:6 1:18> 1:20> 4:1>"s));
 }
 
+TEST_CASE("cxx parser records what is declared in main as a child of that file's main")
+{
+	// main() is made unique per file; its lambdas and local types used to hang off a main() node
+	// common to all files instead, without a location or kind.
+	const std::shared_ptr<IntermediateStorage> storage = parseCodeToStorage(
+		"int main()\n"
+		"{\n"
+		"	enum class Local { A };\n"
+		"	auto lambda = [](Local l) { return (int)l; };\n"
+		"	return lambda(Local::A);\n"
+		"}\n");
+
+	std::vector<Id> mainIds;
+	std::map<Id, std::string> names;
+	std::set<std::string> qualifiedNames;
+	for (const StorageNode& node: storage->getStorageNodes())
+	{
+		const NameHierarchy name = NameHierarchy::deserialize(node.serializedName);
+		names.emplace(node.id, name.getRawName());
+		qualifiedNames.insert(name.getQualifiedName());
+		if (name.getQualifiedName() == "main")
+		{
+			REQUIRE(node.serializedName.find(".:main:.") != std::string::npos);
+			mainIds.push_back(node.id);
+		}
+	}
+	REQUIRE(mainIds.size() == 1);
+
+	std::set<std::string> mainChildren;
+	for (const StorageEdge& edge: storage->getStorageEdges())
+	{
+		if (edge.type == Edge::EDGE_MEMBER && edge.sourceNodeId == mainIds.front())
+		{
+			mainChildren.insert(names[edge.targetNodeId]);
+		}
+	}
+	REQUIRE(mainChildren == std::set<std::string>{"Local", "lambda at 4:16"});
+	// Shown without the file, as main() itself is.
+	REQUIRE(qualifiedNames.contains("main::Local"));
+	REQUIRE(qualifiedNames.contains("main::lambda at 4:16"));
+}
+
+TEST_CASE("cxx parser records a type declared in main as a child of main when named through an alias")
+{
+	// The alias's typedef is outside main(); the type it names is declared in it.
+	const std::shared_ptr<IntermediateStorage> storage = parseCodeToStorage(
+		"template <bool B, typename R> struct EnableIf { using type = R; };\n"
+		"template <typename D, typename R> using enable_if_t = typename EnableIf<true, R>::type;\n"
+		"template <typename E> auto value() -> enable_if_t<E, E> { return E{}; }\n"
+		"int main() { enum class Flags { A }; return (int)value<Flags>(); }\n");
+
+	size_t mainCount = 0;
+	for (const StorageNode& node: storage->getStorageNodes())
+	{
+		const NameHierarchy name = NameHierarchy::deserialize(node.serializedName);
+		if (name.size() > 0 && name.front().getName() == "main")
+		{
+			REQUIRE(node.serializedName.find(".:main:.") != std::string::npos);
+			mainCount += name.size() == 1 ? 1 : 0;
+		}
+	}
+	REQUIRE(mainCount == 1);
+}
+
 TEST_CASE("cxx parser finds local variable declared in lambda capture")
 {
 	std::shared_ptr<TestStorage> client = parseCode(

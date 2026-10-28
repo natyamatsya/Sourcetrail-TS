@@ -29,6 +29,8 @@ public:
 	Id getOrCreateSymbolId(CxxContext context, const NameHierarchy& fallback);
 
 private:
+	void uniquifyInMainFunction(NameHierarchy& symbolName, const clang::FunctionDecl* mainDecl);
+
 	ParserClient& m_client;
 	CanonicalFilePathCache& m_canonicalFilePathCache;
 

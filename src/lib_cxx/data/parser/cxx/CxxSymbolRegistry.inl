@@ -15,6 +15,45 @@
 #include "utilityMainFunction.h"
 #endif
 
+// ODR-safe home for the registry's helpers (see utilityMainFunction.inl).
+namespace cxx_symbol_registry_detail
+{
+// The global main() that `decl` is declared in, if it is: what a lambda, a local class or enum, or
+// a member of one, is declared in.
+inline const clang::FunctionDecl* getEnclosingMainFunction(const clang::Decl& decl)
+{
+	for (const clang::DeclContext* context = decl.getDeclContext(); context;
+		 context = context->getParent())
+	{
+		if (const auto* function = clang::dyn_cast<clang::FunctionDecl>(context);
+			function && function->isMain())
+		{
+			return function;
+		}
+	}
+	return nullptr;
+}
+
+// The global main() that the declaration a type names is declared in: its typedef's, else its
+// tag's (class, enum, closure type) -- a typedef outside main() can name a type declared in it
+// (std::decay_t<Local>).
+inline const clang::FunctionDecl* getEnclosingMainFunction(const clang::Type& type)
+{
+	if (const auto* typedefType = type.getAs<clang::TypedefType>())
+	{
+		if (const clang::FunctionDecl* mainDecl = getEnclosingMainFunction(*typedefType->getDecl()))
+		{
+			return mainDecl;
+		}
+	}
+	if (const clang::TagDecl* tagDecl = type.getAsTagDecl())
+	{
+		return getEnclosingMainFunction(*tagDecl);
+	}
+	return nullptr;
+}
+}	 // namespace cxx_symbol_registry_detail
+
 inline CxxSymbolRegistry::CxxSymbolRegistry(
 	ParserClient& client, CanonicalFilePathCache& canonicalFilePathCache)
 	: m_client(client), m_canonicalFilePathCache(canonicalFilePathCache)
@@ -42,6 +81,11 @@ inline Id CxxSymbolRegistry::getOrCreateSymbolId(const clang::NamedDecl* decl)
 				uniquifyMainFunction(
 					&symbolName, m_canonicalFilePathCache.getDeclarationFilePath(decl).str());
 			}
+			else if (isInMainFunction(symbolName))
+			{
+				uniquifyInMainFunction(
+					symbolName, cxx_symbol_registry_detail::getEnclosingMainFunction(*decl));
+			}
 		}
 	}
 
@@ -67,6 +111,12 @@ inline Id CxxSymbolRegistry::getOrCreateSymbolId(const clang::Type* type)
 		if (typeName)
 		{
 			symbolName = typeName->toNameHierarchy();
+
+			if (isInMainFunction(symbolName))
+			{
+				uniquifyInMainFunction(
+					symbolName, cxx_symbol_registry_detail::getEnclosingMainFunction(*type));
+			}
 		}
 	}
 
@@ -106,4 +156,17 @@ inline Id CxxSymbolRegistry::getOrCreateSymbolId(CxxContext context, const NameH
 	}
 
 	return m_client.recordSymbol(fallback);	   // TODO: cache result somehow
+}
+
+// main() is made unique per file (uniquifyMainFunction); a name declared in it is made unique the
+// same way, with the file of the main() it is declared in (mainDecl, if found), so it is a child of
+// that file's main() rather than of a main() node common to all files.
+inline void CxxSymbolRegistry::uniquifyInMainFunction(
+	NameHierarchy& symbolName, const clang::FunctionDecl* mainDecl)
+{
+	if (mainDecl)
+	{
+		uniquifyMainFunction(
+			&symbolName, m_canonicalFilePathCache.getDeclarationFilePath(mainDecl).str());
+	}
 }
