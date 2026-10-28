@@ -440,7 +440,7 @@ void Project::guarded(
 			}
 			catch (CppSQLite3Exception& e)	// no std::exception: it would be "[unknown exception type]"
 			{
-				throw std::runtime_error("SQLite error " + std::to_string(e.errorCode()) + ": " + e.errorMessage());
+				throw std::runtime_error(e.errorMessage());
 			}
 		});
 	if (!outcome)
@@ -595,9 +595,20 @@ void Project::refreshPlannedImpl(std::shared_ptr<DialogView> dialogView, const R
 		m_settings->getAllSourceGroupSettings());
 	for (const std::shared_ptr<SourceGroup>& sourceGroup: m_sourceGroups)
 	{
-		if (sourceGroup->getStatus() == SourceGroupStatusType::ENABLED && !sourceGroup->prepareIndexing())
+		if (sourceGroup->getStatus() != SourceGroupStatusType::ENABLED)
 		{
-			m_refreshStage = RefreshStageType::NONE;
+			continue;
+		}
+		if (const std::expected<void, PrepareIndexingError> prepared = sourceGroup->prepareIndexing(); !prepared)
+		{
+			// The source group showed its reason; the run ends with it (a headless run
+			// exits 1, it exited 0).
+			endRefused(
+				utility::makeExpectedError(
+					IndexingErrorCode::PipelineFailed,
+					"Cannot index the project: " + std::string(to_std_sv(prepared.error())) + "."),
+				dialogView,
+				false);
 			return;
 		}
 	}
@@ -945,9 +956,16 @@ void Project::buildIndexImpl(RefreshInfo info, std::shared_ptr<DialogView> dialo
 		}
 	}
 
-	std::shared_ptr<PersistentStorage> tempStorage = std::make_shared<PersistentStorage>(
-		tempIndexDbFilePath, bookmarkDbFilePath);
-	tempStorage->setup();
+	std::shared_ptr<PersistentStorage> tempStorage;
+	try
+	{
+		tempStorage = std::make_shared<PersistentStorage>(tempIndexDbFilePath, bookmarkDbFilePath);
+		tempStorage->setup();
+	}
+	catch (CppSQLite3Exception& e)
+	{
+		throw std::runtime_error("cannot create " + tempIndexDbFilePath.str() + ": " + e.errorMessage());
+	}
 	// Indexing target is throwaway until the final swap: skip fsync per commit.
 	// Restored to NORMAL in TaskFinishParsing before optimize/swap.
 	tempStorage->setBulkWritePragmas(true);

@@ -43,6 +43,9 @@ private:
 	void lookAtTheRun();
 
 	std::atomic<std::int64_t> m_lastActivityMs{0};
+	// The first failure's exit code: a later quit (the refresh's own, after the run
+	// reported) does not make a failed run exit 0.
+	std::atomic<int> m_exitCode{0};
 	std::unique_ptr<HeadlessWatchdog> m_watchdog;
 	QTimer* m_watchdogTimer{nullptr};
 };

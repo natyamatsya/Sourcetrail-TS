@@ -47,9 +47,10 @@ void QtCoreApplication::handleMessage(MessageQuitApplication* message)
 	std::cout << "Quitting" << std::endl;
 	// Message handlers run off the main thread; hop onto it for exit(). The exit code carries
 	// the indexing outcome (0 = success), so headless callers can trust the process result.
-	const int exitCode = message->exitCode;
+	int noFailureYet = 0;
+	m_exitCode.compare_exchange_strong(noFailureYet, message->exitCode);
 	QMetaObject::invokeMethod(
-		this, [exitCode]() { QCoreApplication::exit(exitCode); }, Qt::QueuedConnection);
+		this, [this]() { QCoreApplication::exit(m_exitCode.load()); }, Qt::QueuedConnection);
 }
 
 void QtCoreApplication::handleMessage(MessageIndexingStatus* message)

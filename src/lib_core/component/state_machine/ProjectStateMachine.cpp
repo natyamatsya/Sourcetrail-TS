@@ -26,6 +26,30 @@ struct LoadArgs
 };
 }	 // namespace project_machine_json
 
+namespace
+{
+// Why the open project cannot go now: an indexing run holds it (from preparing until
+// its data is decided on and swapped in). Asked up front, so that `close` is refused
+// rather than moving to unloading and back.
+std::optional<std::string> busyIndexing(const char* what)
+{
+	using State = IndexingMachine::State;
+	switch (IndexingStateMachine::instance()->state())
+	{
+	case State::Preparing:
+	case State::Indexing:
+	case State::Finishing:
+	case State::Reporting:
+		return std::format("cannot {} while indexing: interrupt the indexing first", what);
+	case State::Idle:
+	case State::Pending:
+	case State::ChoosingMode:
+		break;
+	}
+	return std::nullopt;
+}
+}	 // namespace
+
 std::shared_ptr<ProjectStateMachine> ProjectStateMachine::instance()
 {
 	static const std::shared_ptr<ProjectStateMachine> machine =
@@ -40,6 +64,10 @@ MachineFireResult ProjectStateMachine::load(const std::string& path, RefreshMode
 	if (path.empty())
 	{
 		return {false, "load needs a project path"};
+	}
+	if (const std::optional<std::string> busy = busyIndexing("load a project"))
+	{
+		return {false, *busy};
 	}
 	bool waiting = false;
 	{
@@ -73,6 +101,10 @@ MachineFireResult ProjectStateMachine::load(const std::string& path, RefreshMode
 
 MachineFireResult ProjectStateMachine::close(EventSource source)
 {
+	if (const std::optional<std::string> busy = busyIndexing("close the project"))
+	{
+		return {false, *busy};
+	}
 	{
 		auto transaction = m_machine.transaction();
 		if (!transaction.accepts(Event::Close))

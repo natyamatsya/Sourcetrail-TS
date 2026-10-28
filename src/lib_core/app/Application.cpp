@@ -883,9 +883,12 @@ void Application::refreshProject(RefreshMode refreshMode, bool direct)
 
 		m_project->refresh(getDialogView(DialogView::UseCase::INDEXING), refreshMode, direct);
 
-		if (!m_hasGUI && !m_project->isIndexing())
+		// Headless, a refresh of an open project ends with MessageIndexingFinished, whose
+		// outcome is the exit code (a quit of its own here could exit 0 first). One that
+		// did not load has nothing to index: a failure.
+		if (!m_hasGUI && !m_project->isIndexing() && !m_project->isOpen())
 		{
-			MessageQuitApplication().dispatch();
+			MessageQuitApplication(1).dispatch();
 		}
 	}
 

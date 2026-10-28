@@ -1757,3 +1757,27 @@ TEST_CASE("concurrent state machine episode ends at rest")
 	StateMachineRegistry::instance().removeObserver(id);
 	REQUIRE(causes == std::vector<std::uint64_t> {9, 9, 0, 11, 11, 0});
 }
+
+// Closing during a reindex moved the project to unloading ("closing"), then back to
+// ready with "cannot close the project while indexing".
+TEST_CASE("project close and load are refused up front while indexing")
+{
+	const auto app = std::make_shared<AppStateMachine>();
+	app->started();
+	const auto project = std::make_shared<ProjectStateMachine>(app);
+	project->requested("a.srctrl.toml");
+	project->loaded();
+	const std::shared_ptr<IndexingStateMachine> indexing = IndexingStateMachine::instance();
+	indexing->requested();
+	indexing->preparing();
+
+	const MachineFireResult close = project->fire("close", "", EventSource::Agent);
+	REQUIRE_FALSE(close.ok);
+	REQUIRE(contains(close.message, "while indexing"));
+	REQUIRE_FALSE(project->fire("load", R"({"path":"b.srctrl.toml"})", EventSource::Agent).ok);
+	REQUIRE(project->snapshot().state == "ready");
+
+	indexing->ended("");
+	REQUIRE(project->fire("close", "", EventSource::Agent).ok);
+	REQUIRE(project->snapshot().state == "unloading");
+}
