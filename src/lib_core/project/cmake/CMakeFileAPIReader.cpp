@@ -613,11 +613,25 @@ std::vector<CMakeFileAPIReader::PresetInfo> CMakeFileAPIReader::discoverPresetIn
 		if (!isPresetVisible(name, presets, sourceDir))
 			continue;
 		const QJsonObject& preset{presets.byName[name].object};
+		QSet<QString> visited{};
+		QMap<QString, QJsonValue> cache{};
+		collectMergedObject(name, QStringLiteral("cacheVariables"), presets, visited, cache);
+		std::vector<std::pair<std::string, std::string>> cacheVariables{};
+		for (auto entry = cache.cbegin(); entry != cache.cend(); ++entry)
+		{
+			const QJsonValue value{entry.value().isObject() ? entry.value().toObject()["value"] : entry.value()};
+			cacheVariables.emplace_back(
+				entry.key().toStdString(),
+				value.isBool() ? (value.toBool() ? "TRUE" : "FALSE") : value.toVariant().toString().toStdString());
+		}
 		result.push_back(
 			{.name = name.toStdString(),
 			 .displayName = preset["displayName"].toString().toStdString(),
 			 .description = preset["description"].toString().toStdString(),
 			 .generator = inheritedField(name, QStringLiteral("generator"), presets).toString().toStdString(),
+			 .toolchainFile = inheritedField(name, QStringLiteral("toolchainFile"), presets).toString().toStdString(),
+			 .binaryDir = inheritedField(name, QStringLiteral("binaryDir"), presets).toString().toStdString(),
+			 .cacheVariables = std::move(cacheVariables),
 			 .undefinedEnvironment = undefinedEnvironment(name, presets)});
 	}
 	return result;

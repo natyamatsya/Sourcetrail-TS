@@ -129,6 +129,10 @@ public:
 		std::string displayName;	// may be empty
 		std::string description;	// may be empty
 		std::string generator;	// inherited; empty when the preset leaves it to CMake
+		std::string toolchainFile;	// inherited, as written (macros not expanded); may be empty
+		std::string binaryDir;	// inherited, as written (macros not expanded); may be empty
+		// The cache variables it sets, inherited ones included, by name: a bool as TRUE/FALSE.
+		std::vector<std::pair<std::string, std::string>> cacheVariables;
 		// The environment variables the preset's binaryDir, toolchainFile and cacheVariables
 		// read ($env{} / $penv{}) that neither its environment nor this process sets: a
 		// configure with it is likely to fail (a vcpkg toolchain without VCPKG_ROOT...).

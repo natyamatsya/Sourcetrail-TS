@@ -943,3 +943,25 @@ TEST_CASE("CMakeFileAPIReader unmatchedPatterns names the patterns no target mat
 	CHECK(CMakeFileAPIReader::unmatchedPatterns(names, " *_test , nope ") == std::vector<std::string>{"nope"});
 	CHECK(CMakeFileAPIReader::unmatchedPatterns(names, "").empty());
 }
+
+TEST_CASE("CMakeFileAPIReader discoverPresetInfos tells how a preset configures")
+{
+	namespace fs = std::filesystem;
+	const TestTempDirectory tempDirectory{"presetDetails"};
+	const fs::path sourceDir = tempDirectory.getPath() / "source";
+	writePresets(sourceDir, R"({"version": 3, "configurePresets": [
+		{"name": "base", "hidden": true, "generator": "Ninja", "binaryDir": "${sourceDir}/build/${presetName}",
+		 "cacheVariables": {"BUILD_TESTS": false, "CMAKE_BUILD_TYPE": "Debug"}},
+		{"name": "release", "inherits": "base", "toolchainFile": "/opt/tc.cmake",
+		 "cacheVariables": {"CMAKE_BUILD_TYPE": {"type": "STRING", "value": "Release"}}}]})");
+
+	const auto presets{CMakeFileAPIReader::discoverPresetInfos(FilePath{sourceDir.string()})};
+	REQUIRE(presets.size() == 1);
+	const CMakeFileAPIReader::PresetInfo& release{presets.front()};
+	CHECK(release.generator == "Ninja");
+	CHECK(release.toolchainFile == "/opt/tc.cmake");
+	CHECK(release.binaryDir == "${sourceDir}/build/${presetName}");
+	// Its own value wins over the inherited one; a bool reads as CMake writes it.
+	CHECK(release.cacheVariables == std::vector<std::pair<std::string, std::string>>{
+		{"BUILD_TESTS", "FALSE"}, {"CMAKE_BUILD_TYPE", "Release"}});
+}

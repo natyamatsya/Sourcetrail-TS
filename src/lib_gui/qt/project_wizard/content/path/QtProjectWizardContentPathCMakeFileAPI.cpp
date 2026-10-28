@@ -71,6 +71,32 @@ QString toHtml(const std::string& text)
 	return QString::fromStdString(text).toHtmlEscaped();
 }
 
+// What a preset configures with: generator, toolchain, build directory, cache variables.
+// One line each, for the combo's tooltip and below it.
+std::vector<std::string> presetDetails(const CMakeFileAPIReader::PresetInfo& preset)
+{
+	std::vector<std::string> details;
+	details.push_back(std::format("Generator: {}", preset.generator.empty() ? "CMake's default" : preset.generator));
+	if (!preset.toolchainFile.empty())
+	{
+		details.push_back(std::format("Toolchain: {}", preset.toolchainFile));
+	}
+	if (!preset.binaryDir.empty())
+	{
+		details.push_back(std::format("Build directory: {}", preset.binaryDir));
+	}
+	if (!preset.cacheVariables.empty())
+	{
+		std::string variables;
+		for (const auto& [name, value]: preset.cacheVariables)
+		{
+			variables += std::format("{}-D{}={}", variables.empty() ? "" : " ", name, value);
+		}
+		details.push_back(std::format("Cache variables: {}", variables));
+	}
+	return details;
+}
+
 // The arguments as one line to edit: a word with blanks or quotes in double quotes.
 QString joinArguments(const std::vector<std::string>& arguments)
 {
@@ -534,8 +560,17 @@ void QtProjectWizardContentPathCMakeFileAPI::describe(ProjectWizardView& view) c
 	}
 	presets.push_back(
 		{.value = "", .label = "no preset: CMake configures cmake_build_directory with -S/-B"});
+	std::string presetNote;
+	if (const auto preset{std::ranges::find(m_presets, selectedPreset(), &CMakeFileAPIReader::PresetInfo::name)};
+		preset != m_presets.end())
+	{
+		for (const std::string& line: presetDetails(*preset))
+		{
+			presetNote += "; " + line;
+		}
+	}
 	view.notes["cmake_preset"] = !noPresetSelected()
-		? std::format("build directory: {}", buildDirectoryNote().toStdString())
+		? std::format("build directory: {}{}", buildDirectoryNote().toStdString(), presetNote)
 		: m_buildDir.empty()
 		? std::string{"no preset, and no cmake_build_directory chosen yet"}
 		: std::format("no preset; build directory {}: {}", m_buildDir.str(), buildDirectoryNote().toStdString());
@@ -578,7 +613,11 @@ void QtProjectWizardContentPathCMakeFileAPI::describe(ProjectWizardView& view) c
 	{
 		targets.push_back(
 			{.value = target.name,
-			 .label = std::format("{}, {}", targetTypeName(target.type), fileCount(target.sourceFileCount))});
+			 .label = std::format(
+				 "{}, {}{}",
+				 targetTypeName(target.type),
+				 fileCount(target.sourceFileCount),
+				 target.standard.empty() ? std::string{} : ", " + target.standard)});
 	}
 	view.notes["cmake_target_glob"] =
 		"names and wildcard patterns separated by ';' (empty: all targets); " +
@@ -615,10 +654,19 @@ void QtProjectWizardContentPathCMakeFileAPI::onPresetChanged()
 		m_presetStatusLabel->setText(QStringLiteral(
 			"<span style=\"color:red\">Not one of the presets of the source directory.</span>"));
 	}
+	else if (preset != m_presets.end())
+	{
+		// What the preset means, not only its name: its description, then how it configures.
+		QString text{toHtml(preset->description)};
+		for (const std::string& line: presetDetails(*preset))
+		{
+			text += (text.isEmpty() ? QString{} : QStringLiteral("<br>")) + toHtml(line);
+		}
+		m_presetStatusLabel->setText(text);
+	}
 	else
 	{
-		m_presetStatusLabel->setText(
-			preset != m_presets.end() ? toHtml(preset->description) : QString{});
+		m_presetStatusLabel->setText(QString{});
 	}
 	readBuildDirectory();
 }
@@ -751,8 +799,12 @@ void QtProjectWizardContentPathCMakeFileAPI::repopulatePresets(
 	for (const CMakeFileAPIReader::PresetInfo& preset: m_presets)
 	{
 		m_presetCombo->addItem(presetLabel(preset), QString::fromStdString(preset.name));
-		m_presetCombo->setItemData(
-			m_presetCombo->count() - 1, QString::fromStdString(preset.description), Qt::ToolTipRole);
+		std::string tooltip{preset.description};
+		for (const std::string& line: presetDetails(preset))
+		{
+			tooltip += (tooltip.empty() ? "" : "\n") + line;
+		}
+		m_presetCombo->setItemData(m_presetCombo->count() - 1, QString::fromStdString(tooltip), Qt::ToolTipRole);
 	}
 	// A preset that is not (any more) among them stays selected, marked, so the check
 	// says so instead of another preset being used without a word.
@@ -875,10 +927,38 @@ void QtProjectWizardContentPathCMakeFileAPI::readTargets()
 			for (const CMakeFileAPIReader::SourceEntry& entry: sources->entries)
 			{
 				const auto target{std::ranges::find(m_targets, entry.targetName, &Target::name)};
-				if (target != m_targets.end() && entry.compileGroup && !entry.isGenerated)
+				if (target == m_targets.end() || !entry.compileGroup)
 				{
-					target->sourceFileCount++;
-					target->sources.push_back(entry.path);
+					continue;
+				}
+				if (entry.isGenerated)
+				{
+					target->generatedCount++;
+					continue;
+				}
+				target->sourceFileCount++;
+				target->sources.push_back(entry.path);
+				const CMakeFileAPIReader::CompileGroup& group{*entry.compileGroup};
+				for (const FilePath& include: group.includes)
+				{
+					if (!std::ranges::contains(target->includes, include.str()))
+					{
+						target->includes.push_back(include.str());
+					}
+				}
+				for (const std::string& define: group.defines)
+				{
+					if (!std::ranges::contains(target->defines, define))
+					{
+						target->defines.push_back(define);
+					}
+				}
+				for (const std::string& flag: group.compileFlags)
+				{
+					if (flag.starts_with("-std=") || flag.starts_with("/std:"))
+					{
+						target->standard = flag.substr(5);
+					}
 				}
 			}
 		}
@@ -899,6 +979,38 @@ std::string QtProjectWizardContentPathCMakeFileAPI::targetKind(const Target& tar
 		return name.contains("test") ? "test" : "executable";
 	}
 	return "utility";
+}
+
+QString QtProjectWizardContentPathCMakeFileAPI::targetDetails(const Target& target)
+{
+	// A few of each, and how many there are.
+	const auto some = [](const std::vector<std::string>& values, std::size_t shown) {
+		std::string text;
+		for (std::size_t i = 0; i < values.size() && i < shown; i++)
+		{
+			text += "\n    " + values[i];
+		}
+		if (values.size() > shown)
+		{
+			text += std::format("\n    ... and {} more", values.size() - shown);
+		}
+		return text;
+	};
+	std::vector<std::string> files;
+	for (const FilePath& source: target.sources)
+	{
+		files.push_back(source.fileName());
+	}
+	std::string text{std::format("{} ({})", target.name, targetTypeName(target.type))};
+	text += std::format("\nStandard: {}", target.standard.empty() ? "the compiler's default" : target.standard);
+	text += std::format("\nSources: {}{}", target.sourceFileCount, some(files, 8));
+	if (target.generatedCount > 0)
+	{
+		text += std::format("\nGenerated sources: {} (not indexed until built)", target.generatedCount);
+	}
+	text += std::format("\nInclude paths: {}{}", target.includes.size(), some(target.includes, 6));
+	text += std::format("\nDefines: {}{}", target.defines.size(), some(target.defines, 6));
+	return QString::fromStdString(text);
 }
 
 QString QtProjectWizardContentPathCMakeFileAPI::targetText(const Target& target, bool checked) const
@@ -1004,6 +1116,8 @@ void QtProjectWizardContentPathCMakeFileAPI::showTargets()
 		}
 		QListWidgetItem* item{new QListWidgetItem(text, m_targetList)};
 		item->setData(Qt::UserRole, QString::fromStdString(target->name));
+		item->setToolTip(targetDetails(*target));
+		item->setData(Qt::AccessibleDescriptionRole, targetDetails(*target));	// what agents read
 		item->setFlags(item->flags() | Qt::ItemIsUserCheckable);
 		if (target->sourceFileCount == 0)
 		{

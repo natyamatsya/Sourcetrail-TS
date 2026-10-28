@@ -57,7 +57,15 @@ private:
 		std::string type;
 		std::size_t sourceFileCount{0};
 		std::vector<FilePath> sources;	// the translation units it compiles (not generated ones)
+		// What its compile groups say, for its tooltip.
+		std::vector<std::string> includes;
+		std::vector<std::string> defines;
+		std::string standard;	// "c++17", from its -std flag; empty without one
+		std::size_t generatedCount{0};
 	};
+
+	// The row's tooltip: what the target compiles, and how.
+	static QString targetDetails(const Target& target);
 
 	// What a target is, for its group in the list: library, executable, test or utility.
 	static std::string targetKind(const Target& target);
