@@ -128,6 +128,7 @@ constexpr std::string_view to_std_sv(DockRequest::Kind kind) noexcept
 enum class DockRequestError : std::uint8_t
 {
 	NoLayout,
+	LayoutUnknown,
 	NoDock,
 	UnknownDock,
 	SameDock,
@@ -157,6 +158,7 @@ constexpr std::string_view to_std_sv(DockRequestError error) noexcept
 	switch (error)
 	{
 	case NoLayout: return "there is no window with docks";
+	case LayoutUnknown: return "the window has not reported its docks yet: ask again in a moment";
 	case NoDock: return "needs `dock`, the name of one";
 	case UnknownDock: return "is no dock";
 	case SameDock: return "cannot go beside or into itself";

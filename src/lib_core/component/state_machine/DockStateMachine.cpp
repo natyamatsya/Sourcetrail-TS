@@ -344,6 +344,12 @@ MachineFireResult DockStateMachine::request(Request request, EventSource source)
 		{
 			return {false, std::string(to_std_sv(DockRequestError::NoLayout))};
 		}
+		// The window reports its docks once they settle after it opens (QtDockControl); a request
+		// before that would be checked against no docks at all.
+		if (data.docks.empty())
+		{
+			return {false, std::string(to_std_sv(DockRequestError::LayoutUnknown))};
+		}
 		if (const auto checked{checkDockRequest(data.docks, request)}; !checked)
 		{
 			return {false, std::format("{}: {}", m_machine.eventName(event), checked.error().message())};

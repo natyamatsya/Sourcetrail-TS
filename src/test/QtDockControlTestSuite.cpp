@@ -46,6 +46,15 @@ public:
 			control.addDock(*dock);
 		}
 		classicLayout();
+
+		// The machine knows the docks once their layout settled and was reported, as the app's
+		// window does long before an agent asks: a change before that would be the start.
+		QElapsedTimer timer;
+		timer.start();
+		while (machine.snapshot().context.find(R"("name":"Status")") == std::string::npos && timer.elapsed() < 2000)
+		{
+			QApplication::processEvents(QEventLoop::AllEvents, 20);
+		}
 	}
 
 	~DockWindow()
@@ -249,13 +258,14 @@ TEST_CASE("an agent's mouse drags docks by their grips and resizes them by their
 		REQUIRE(gutter != nullptr);
 		REQUIRE(gutter->objectName() == QStringLiteral("dock_gutter"));
 		const int graphWidth{window.dock("Graph").width};
+		const auto revision{window.machine.snapshot().revision};
 		const QPoint pressed{window.widget().mapToGlobal(gutterPoint)};
 		drag(gutter, pressed, pressed + QPoint{60, 0});
 		REQUIRE(std::abs(window.dock("Graph").width - (graphWidth + 60)) <= QtDockChrome::gutterWidth);
 
 		// The machine follows, once the person's change settled.
-		waitFor([&]() { return window.machine.snapshot().revision > 0; });
-		REQUIRE(window.machine.snapshot().revision > 0);
+		waitFor([&]() { return window.machine.snapshot().revision > revision; });
+		REQUIRE(window.machine.snapshot().revision > revision);
 
 		// Status, by the grip of its card, over Code, which shows the drop indicators, then onto the
 		// center one: Status is a tab of Code's.
