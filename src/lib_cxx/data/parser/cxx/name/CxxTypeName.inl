@@ -42,6 +42,10 @@ inline NameHierarchy CxxTypeName::toNameHierarchy() const
 	NameHierarchy ret = getParent() ? getParent().toNameHierarchy()
 									: NameHierarchy(NameDelimiterType::CXX);
 	ret.push(m_name + getTemplateSuffix(m_templateArguments));
+	if (m_signature.isValid())
+	{
+		ret.back().setSignature(m_signature.getPrefix(), m_signature.getPostfix());
+	}
 	return ret;
 }
 
@@ -60,6 +64,11 @@ inline void CxxTypeName::addQualifier(const CxxQualifierFlags::QualifierType qua
 inline void CxxTypeName::addModifier(Modifier modifier)
 {
 	m_modifiers.emplace_back(std::move(modifier));
+}
+
+inline void CxxTypeName::setSignature(NameElement::Signature signature)
+{
+	m_signature = std::move(signature);
 }
 
 inline std::string CxxTypeName::toString() const

@@ -300,23 +300,11 @@ inline CxxName CxxDeclNameResolver::getDeclName(const clang::NamedDecl* declarat
 			std::unique_ptr<CxxTypeName> returnTypeName = CxxTypeName::makeUnsolvedIfNull(
 				typeNameResolver.getName(functionDecl->getReturnType()));
 
+			// An instantiation's function parameter pack is one parameter per element, named like
+			// its template arguments: f<int, char>(int, char).
 			std::vector<std::unique_ptr<CxxTypeName>> parameterTypeNames;
 			for (unsigned int i = 0; i < functionDecl->param_size(); i++)
 			{
-				if (const clang::SubstTemplateTypeParmType* substType =
-						clang::dyn_cast_or_null<clang::SubstTemplateTypeParmType>(
-							functionDecl->parameters()[i]->getType().getTypePtr()))
-				{
-					if (const clang::TemplateTypeParmDecl* templateParamType =
-							substType->getReplacedParameter())
-					{
-						if (templateParamType->isParameterPack())
-						{
-							parameterTypeNames.push_back(std::make_unique<CxxTypeName>("..."));
-							break;
-						}
-					}
-				}
 				parameterTypeNames.push_back(CxxTypeName::makeUnsolvedIfNull(
 					typeNameResolver.getName(functionDecl->parameters()[i]->getType())));
 			}

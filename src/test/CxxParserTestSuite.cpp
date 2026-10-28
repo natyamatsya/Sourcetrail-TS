@@ -2719,6 +2719,50 @@ TEST_CASE("cxx parser finds the members a pack using-declaration brings in")
 	}
 }
 
+TEST_CASE("cxx parser names pack and lambda template arguments by what they are")
+{
+	// A pack is named by its elements and a lambda's closure type like the lambda, so different
+	// instantiations are different nodes, and a use of a closure type is a use of the lambda.
+	// They used to be `overloaded<<...>>` for every instantiation, `call<unsolved-type>`, and a
+	// `global` node for every closure type use.
+	std::shared_ptr<TestStorage> client = parseCode(
+		"template <class... Ts> struct overloaded : Ts... { using Ts::operator()...; };\n"
+		"template <class... Ts> overloaded(Ts...) -> overloaded<Ts...>;\n"
+		"template <class F> int call(F f) { return f(1); }\n"
+		"int main() {\n"
+		"	auto ov = overloaded{ [](int) { return 1; }, [](char) { return 2; } };\n"
+		"	auto one = overloaded{ [](double) { return 3; } };\n"
+		"	auto gen = [](int i) { return i; };\n"
+		"	return ov(1) + one(1.0) + call(gen) + call([](int i) { return -i; });\n"
+		"}\n");
+
+	CAPTURE(client->structs, client->functions, client->typeUses);
+	REQUIRE(client->errors.empty());
+	REQUIRE(containsElement(client->structs, "overloaded<main::lambda at 5:24, main::lambda at 5:47> <1:1 <1:31 1:40> 1:77>"s));
+	REQUIRE(containsElement(client->structs, "overloaded<main::lambda at 6:25> <1:1 <1:31 1:40> 1:77>"s));
+	REQUIRE(containsElement(
+		client->functions,
+		"int call<main::lambda at 7:13>(main::lambda at 7:13) <3:20 <3:20 <3:24 3:27> 3:32> 3:49>"s));
+	REQUIRE(containsElement(
+		client->functions,
+		"int call<main::lambda at 8:45>(main::lambda at 8:45) <3:20 <3:20 <3:24 3:27> 3:32> 3:49>"s));
+	const auto usesType = [&](const std::string& typeUse)
+	{
+		return std::ranges::any_of(
+			client->typeUses, [&](const std::string& use) { return use.starts_with(typeUse + " <"); });
+	};
+	REQUIRE(usesType("int main() -> overloaded<main::lambda at 6:25>"));
+	REQUIRE(usesType("int main() -> int main::lambda at 7:13(int) const"));
+	REQUIRE(usesType("overloaded<main::lambda at 6:25> -> int main::lambda at 6:25(double) const"));
+	for (const std::string& name: utility::concat(utility::concat(client->structs, client->functions), client->typeUses))
+	{
+		REQUIRE_FALSE(name.contains("<...>"));
+		REQUIRE_FALSE(name.contains("unsolved-type"));
+		REQUIRE_FALSE(name.contains("-> global"));
+		REQUIRE_FALSE(name.contains("(lambda at "));
+	}
+}
+
 TEST_CASE("cxx parser finds call in function")
 {
 	std::shared_ptr<TestStorage> client = parseCode(
@@ -3585,9 +3629,7 @@ TEST_CASE("cxx parser finds use of dependent template specialization type")
 		client->typeUses, "B<bool>::type f -> B<bool>::type <14:10 14:13>"));
 }
 
-TEST_CASE(
-	"cxx parser creates single node for all possible parameter pack expansions of template "
-	"function")
+TEST_CASE("cxx parser creates a node for each parameter pack expansion of template function")
 {
 	std::shared_ptr<TestStorage> client = parseCode(
 		"template<typename T>\n"
@@ -3598,11 +3640,20 @@ TEST_CASE(
 		"\n"
 		"void foo() { long sum = adder(1, 2, 3, 8, 7); }\n");
 
+	// Each expansion is a function of its own, calling the next: they used to be one node
+	// `adder<int, <...>>(int, ...)` that called itself.
+	CAPTURE(client->functions, client->calls);
 	REQUIRE(utility::containsElement<std::string>(
-		client->functions, "int adder<int, <...>>(int, ...) <5:1 <5:1 <5:3 5:7> 5:30> 5:65>"));
+		client->functions,
+		"int adder<int, int, int, int, int>(int, int, int, int, int) <5:1 <5:1 <5:3 5:7> 5:30> 5:65>"));
+	REQUIRE(utility::containsElement<std::string>(
+		client->functions, "int adder<int, int>(int, int) <5:1 <5:1 <5:3 5:7> 5:30> 5:65>"));
 	REQUIRE(utility::containsElement<std::string>(
 		client->calls,
-		"int adder<int, <...>>(int, ...) -> int adder<int, <...>>(int, ...) <5:49 5:53>"));
+		"int adder<int, int, int, int, int>(int, int, int, int, int) -> "
+		"int adder<int, int, int, int>(int, int, int, int) <5:49 5:53>"));
+	REQUIRE(utility::containsElement<std::string>(
+		client->calls, "int adder<int, int>(int, int) -> int adder<int>(int) <5:49 5:53>"));
 }
 
 TEST_CASE("cxx parser finds type template argument of explicit template instantiation")
@@ -3657,9 +3708,9 @@ TEST_CASE(
 		"   A<int, float>();\n"
 		"}\n");
 
-	REQUIRE(utility::containsElement<std::string>(client->typeUses, "A<<...>> -> int <7:6 7:8>"));
-	REQUIRE(
-		utility::containsElement<std::string>(client->typeUses, "A<<...>> -> float <7:11 7:15>"));
+	REQUIRE(utility::containsElement<std::string>(client->typeUses, "A<int, float> -> int <7:6 7:8>"));
+	REQUIRE(utility::containsElement<std::string>(
+		client->typeUses, "A<int, float> -> float <7:11 7:15>"));
 	REQUIRE(
 		utility::containsElement<std::string>(client->typeUses, "int main() -> int <7:6 7:8>"));
 	REQUIRE(utility::containsElement<std::string>(
@@ -3867,9 +3918,9 @@ TEST_CASE(
 		"}\n");
 
 	REQUIRE(utility::containsElement<std::string>(
-		client->typeUses, "B<<...>> -> A<typename T> <11:4 11:4>"));
+		client->typeUses, "B<A, A> -> A<typename T> <11:4 11:4>"));
 	REQUIRE(utility::containsElement<std::string>(
-		client->typeUses, "B<<...>> -> A<typename T> <11:7 11:7>"));
+		client->typeUses, "B<A, A> -> A<typename T> <11:7 11:7>"));
 	REQUIRE(utility::containsElement<std::string>(
 		client->typeUses, "int main() -> A<typename T> <11:4 11:4>"));
 	REQUIRE(utility::containsElement<std::string>(
