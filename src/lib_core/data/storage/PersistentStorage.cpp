@@ -2450,9 +2450,13 @@ std::shared_ptr<SourceLocationCollection> PersistentStorage::getErrorSourceLocat
 	return collection;
 }
 
-void PersistentStorage::addNodeBookmark(const NodeBookmark& bookmark)
+std::expected<void, BookmarkSaveError> PersistentStorage::addNodeBookmark(const NodeBookmark& bookmark)
 {
 	const Id categoryId = addBookmarkCategory(bookmark.getCategory().getName());
+	if (categoryId == 0)
+	{
+		return std::unexpected(BookmarkSaveError::CategoryNotSaved);
+	}
 	const BookmarkId bookmarkId = m_sqliteBookmarkStorage
 					  .addBookmark(StorageBookmarkData(
 						  bookmark.getName(),
@@ -2460,17 +2464,32 @@ void PersistentStorage::addNodeBookmark(const NodeBookmark& bookmark)
 						  bookmark.getTimeStamp().toString(),
 						  categoryId))
 					  .bookmarkId;
+	if (bookmarkId == BookmarkId::NONE)
+	{
+		return std::unexpected(BookmarkSaveError::BookmarkNotSaved);
+	}
 
 	for (const Id& nodeId: bookmark.getNodeIds())
 	{
-		m_sqliteBookmarkStorage.addBookmarkedNode(
-			StorageBookmarkedNodeData(bookmarkId, m_sqliteIndexStorage.getNodeById(nodeId).serializedName));
+		if (m_sqliteBookmarkStorage
+				.addBookmarkedNode(
+					StorageBookmarkedNodeData(bookmarkId, m_sqliteIndexStorage.getNodeById(nodeId).serializedName))
+				.id == 0)
+		{
+			m_sqliteBookmarkStorage.removeBookmark(bookmarkId);
+			return std::unexpected(BookmarkSaveError::ElementNotSaved);
+		}
 	}
+	return {};
 }
 
-void PersistentStorage::addEdgeBookmark(const EdgeBookmark& bookmark)
+std::expected<void, BookmarkSaveError> PersistentStorage::addEdgeBookmark(const EdgeBookmark& bookmark)
 {
 	const Id categoryId = addBookmarkCategory(bookmark.getCategory().getName());
+	if (categoryId == 0)
+	{
+		return std::unexpected(BookmarkSaveError::CategoryNotSaved);
+	}
 	const BookmarkId bookmarkId = m_sqliteBookmarkStorage
 					  .addBookmark(StorageBookmarkData(
 						  bookmark.getName(),
@@ -2478,19 +2497,30 @@ void PersistentStorage::addEdgeBookmark(const EdgeBookmark& bookmark)
 						  bookmark.getTimeStamp().toString(),
 						  categoryId))
 					  .bookmarkId;
+	if (bookmarkId == BookmarkId::NONE)
+	{
+		return std::unexpected(BookmarkSaveError::BookmarkNotSaved);
+	}
 	for (const Id& edgeId: bookmark.getEdgeIds())
 	{
 		const StorageEdge storageEdge = m_sqliteIndexStorage.getEdgeById(edgeId);
 
 		bool sourceNodeActive = storageEdge.sourceNodeId == bookmark.getActiveNodeId();
-		m_sqliteBookmarkStorage.addBookmarkedEdge(StorageBookmarkedEdgeData(
-			bookmarkId,
-			// todo: optimization for multiple edges in same bookmark: use a local cache here
-			m_sqliteIndexStorage.getNodeById(storageEdge.sourceNodeId).serializedName,
-			m_sqliteIndexStorage.getNodeById(storageEdge.targetNodeId).serializedName,
-			storageEdge.type,
-			sourceNodeActive));
+		if (m_sqliteBookmarkStorage
+				.addBookmarkedEdge(StorageBookmarkedEdgeData(
+					bookmarkId,
+					// todo: optimization for multiple edges in same bookmark: use a local cache here
+					m_sqliteIndexStorage.getNodeById(storageEdge.sourceNodeId).serializedName,
+					m_sqliteIndexStorage.getNodeById(storageEdge.targetNodeId).serializedName,
+					storageEdge.type,
+					sourceNodeActive))
+				.id == 0)
+		{
+			m_sqliteBookmarkStorage.removeBookmark(bookmarkId);
+			return std::unexpected(BookmarkSaveError::ElementNotSaved);
+		}
 	}
+	return {};
 }
 
 Id PersistentStorage::addBookmarkCategory(const std::string& name)
@@ -2508,7 +2538,7 @@ Id PersistentStorage::addBookmarkCategory(const std::string& name)
 	return id;
 }
 
-void PersistentStorage::updateBookmark(
+std::expected<void, BookmarkSaveError> PersistentStorage::updateBookmark(
 	const BookmarkId bookmarkId,
 	const std::string& name,
 	const std::string& comment,
@@ -2516,7 +2546,15 @@ void PersistentStorage::updateBookmark(
 {
 	const Id categoryId = addBookmarkCategory(
 		categoryName);	  // only creates category if id didn't exist before;
-	m_sqliteBookmarkStorage.updateBookmark(bookmarkId, name, comment, categoryId);
+	if (categoryId == 0)
+	{
+		return std::unexpected(BookmarkSaveError::CategoryNotSaved);
+	}
+	if (!m_sqliteBookmarkStorage.updateBookmark(bookmarkId, name, comment, categoryId))
+	{
+		return std::unexpected(BookmarkSaveError::BookmarkNotSaved);
+	}
+	return {};
 }
 
 void PersistentStorage::removeBookmark(const BookmarkId bookmarkId)

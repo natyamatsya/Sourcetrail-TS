@@ -22,6 +22,7 @@
 #include "MessageActivateEdge.h"
 #include "MessageActivateNodes.h"
 #include "MessageBookmarkButtonState.h"
+#include "MessageStatus.h"
 #endif
 #include "TabIds.h"
 #include "TabQueues.h"
@@ -99,6 +100,7 @@ void BookmarkController::createBookmark(
 	TabId tabId = TabIds::currentTab();
 
 	BookmarkCategory bookmarkCategory(0, category.empty() ? s_defaultCategoryName : category);
+	std::expected<void, BookmarkSaveError> saved;
 
 	if (!m_activeEdgeIds[tabId].empty())
 	{
@@ -116,7 +118,7 @@ void BookmarkController::createBookmark(
 			LOG_ERROR("Cannot create bookmark for edge if no active node exists");
 		}
 
-		m_storageAccess->addEdgeBookmark(bookmark);
+		saved = m_storageAccess->addEdgeBookmark(bookmark);
 	}
 	else
 	{
@@ -132,10 +134,18 @@ void BookmarkController::createBookmark(
 			bookmark.setNodeIds(m_activeNodeIds[TabIds::currentTab()]);
 		}
 
-		m_storageAccess->addNodeBookmark(bookmark);
+		saved = m_storageAccess->addNodeBookmark(bookmark);
 	}
 
 	m_bookmarkCache.clear();
+
+	if (!saved)
+	{
+		// Not "created", and the star stays as it was.
+		reportNotSaved(name, saved.error());
+		update();
+		return;
+	}
 
 	if (!nodeId ||
 		(m_activeNodeIds[TabIds::currentTab()].size() == 1 &&
@@ -155,12 +165,24 @@ void BookmarkController::editBookmark(
 	using enum Bookmark::BookmarkOrder;
 	LOG_INFO_STREAM(<< "Attempting to update Bookmark " << bookmarkId);
 
-	m_storageAccess->updateBookmark(
-		bookmarkId, name, comment, category.size() ? category : s_defaultCategoryName);
+	if (const std::expected<void, BookmarkSaveError> saved = m_storageAccess->updateBookmark(
+			bookmarkId, name, comment, category.size() ? category : s_defaultCategoryName);
+		!saved)
+	{
+		reportNotSaved(name, saved.error());
+	}
 
 	cleanBookmarkCategories();
 
 	update();
+}
+
+void BookmarkController::reportNotSaved(const std::string& name, BookmarkSaveError error)
+{
+	const std::string message = std::format("The bookmark '{}' was not saved: {}.", name, to_std_sv(error));
+	LOG_ERROR(message);
+	MessageStatus(message, true, false).dispatch();
+	BookmarkStateMachine::instance()->report(std::format("'{}' not saved: {}", name, to_std_sv(error)));
 }
 
 void BookmarkController::deleteBookmark(BookmarkId bookmarkId)

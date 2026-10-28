@@ -11,6 +11,9 @@
 #include "StorageNodeAttribute.h"
 #endif
 #include "TestTempDirectory.h"
+#ifndef SRCTRL_MODULE_BUILD
+#include "TextAccess.h"
+#endif
 
 // Imports come AFTER all textual #includes (include-before-import rule: textual libc++
 // following BMI-merged declarations trips "cannot add 'abi_tag' in a redeclaration").
@@ -275,4 +278,41 @@ TEST_CASE("storage finds a malformed database not well formed")
 	StorageConnection connection(databasePath);
 	const SqliteIndexStorage storage(connection);
 	REQUIRE_FALSE(storage.isWellFormed());
+}
+
+// A header with a NUL in a comment lost its stored content: inlined into the SQL, the
+// text ended at the NUL ("unrecognized token: \"'// header \"").
+TEST_CASE("storage keeps text with a NUL")
+{
+	using namespace std::string_literals;
+	const TestTempDirectory tempDirectory{"SqliteIndexStorageTestSuite"};
+	const FilePath databasePath(tempDirectory.getFilePath("test.sqlite"));
+	const FilePath headerPath(tempDirectory.getFilePath("h.h"));
+	const std::string content = "// header \0 comment\nint x;\n"s;
+	{
+		std::ofstream header(headerPath.str(), std::ios::binary);
+		header.write(content.data(), static_cast<std::streamsize>(content.size()));
+	}
+
+	StorageConnection connection(databasePath);
+	SqliteIndexStorage storage(connection);
+	storage.setup();
+	storage.beginTransaction();
+	const Id fileId = storage.addNode(StorageNodeData(NODE_FILE, "h\0.h"s));
+	REQUIRE(storage.addFile(StorageFile(fileId, headerPath.str(), "cpp", "", true, true)));
+	storage.addLocalSymbol(StorageLocalSymbolData("local\0symbol"s));
+	storage.addError(StorageErrorData("error \0 message"s, "unit\0.cpp"s, false, true));
+	storage.addNodeAttribute(StorageNodeAttribute(fileId, NodeAttributeKind::DEPRECATED, "attribute\0value"s));
+	storage.insertOrUpdateMetaValue("key\0x"s, "value\0y"s);
+	storage.setFileCommandHash("path\0p"s, "hash\0h"s);
+	storage.commitTransaction();
+
+	REQUIRE(storage.getFileContentByPath(headerPath.str())->getText() == content);
+	REQUIRE(storage.getNodeBySerializedName("h\0.h"s).id == fileId);
+	REQUIRE(storage.getAll<StorageLocalSymbol>().front().name == "local\0symbol"s);
+	REQUIRE(storage.getAll<StorageError>().front().message == "error \0 message"s);
+	REQUIRE(storage.getAll<StorageError>().front().translationUnit == "unit\0.cpp"s);
+	REQUIRE(storage.getMetaValue("key\0x"s) == "value\0y"s);
+	REQUIRE(storage.getFileCommandHashes().at("path\0p"s) == "hash\0h"s);
+	REQUIRE(storage.getNodeAttributesByNodeIds({fileId}).front().value == "attribute\0value"s);
 }

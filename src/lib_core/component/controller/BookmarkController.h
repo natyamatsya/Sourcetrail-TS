@@ -1,6 +1,8 @@
 #ifndef BOOKMARK_CONTROLLER_H
 #define BOOKMARK_CONTROLLER_H
 
+#include <cstdint>
+
 #include "ActivationListener.h"
 #include "Bookmark.h"
 #include "Controller.h"
@@ -15,6 +17,7 @@
 #include "NodeBookmark.h"
 
 class StorageAccess;
+enum class BookmarkSaveError : std::uint8_t;
 
 class BookmarkController
 	: public Controller
@@ -49,6 +52,8 @@ public:
 	void showBookmarkEditor(const std::shared_ptr<Bookmark> bookmark);
 
 private:
+	// A save that failed: the status bar and the bookmark machine's outcome say so.
+	static void reportNotSaved(const std::string& name, BookmarkSaveError error);
 	class BookmarkCache
 	{
 	public:

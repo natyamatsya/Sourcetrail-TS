@@ -227,11 +227,11 @@ public:
 	std::shared_ptr<SourceLocationCollection> getErrorSourceLocations(
 		const std::vector<ErrorInfo>& errors) const override;
 	
-	void addNodeBookmark(const NodeBookmark& bookmark) override;
-	void addEdgeBookmark(const EdgeBookmark& bookmark) override;
+	std::expected<void, BookmarkSaveError> addNodeBookmark(const NodeBookmark& bookmark) override;
+	std::expected<void, BookmarkSaveError> addEdgeBookmark(const EdgeBookmark& bookmark) override;
 	Id addBookmarkCategory(const std::string& categoryName) override;
 
-	void updateBookmark(
+	std::expected<void, BookmarkSaveError> updateBookmark(
 		const BookmarkId bookmarkId,
 		const std::string& name,
 		const std::string& comment,

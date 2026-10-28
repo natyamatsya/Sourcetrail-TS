@@ -4,8 +4,11 @@
 #include "SrctrlModule.h"
 
 #ifndef SRCTRL_MODULE_PURVIEW
+#include <cstdint>
+#include <expected>
 #include <memory>
 #include <string>
+#include <string_view>
 #include <vector>
 
 #include "types.h"
@@ -33,6 +36,32 @@ class TextAccess;
 
 struct FileInfo;
 #endif
+
+// Why a bookmark was not saved (the storage logged SQLite's error).
+SRCTRL_EXPORT enum class BookmarkSaveError : std::uint8_t
+{
+	NoIndex,
+	CategoryNotSaved,
+	BookmarkNotSaved,
+	ElementNotSaved
+};
+
+SRCTRL_EXPORT constexpr std::string_view to_std_sv(BookmarkSaveError error) noexcept
+{
+	using enum BookmarkSaveError;
+	switch (error)
+	{
+	case NoIndex:
+		return "no project is open";
+	case CategoryNotSaved:
+		return "its category could not be saved";
+	case BookmarkNotSaved:
+		return "it could not be saved";
+	case ElementNotSaved:
+		return "what it marks could not be saved";
+	}
+	return "unknown error";
+}
 
 SRCTRL_EXPORT class StorageAccess
 {
@@ -117,11 +146,11 @@ public:
 		const std::vector<ErrorInfo>& errors) const = 0;
 
 	// todo: remove bookmark related methods from storage access
-	virtual void addNodeBookmark(const NodeBookmark& bookmark) = 0;
-	virtual void addEdgeBookmark(const EdgeBookmark& bookmark) = 0;
+	virtual std::expected<void, BookmarkSaveError> addNodeBookmark(const NodeBookmark& bookmark) = 0;
+	virtual std::expected<void, BookmarkSaveError> addEdgeBookmark(const EdgeBookmark& bookmark) = 0;
 	virtual Id addBookmarkCategory(const std::string& categoryName) = 0;
 
-	virtual void updateBookmark(
+	virtual std::expected<void, BookmarkSaveError> updateBookmark(
 		const BookmarkId bookmarkId,
 		const std::string& name,
 		const std::string& comment,
