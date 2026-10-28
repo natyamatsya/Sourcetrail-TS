@@ -305,6 +305,19 @@ TEST_CASE("ProjectDetector uses a build directory CMake configured for the folde
 	CHECK(proposal.reasons.front().contains("(Unix Makefiles)"));
 }
 
+TEST_CASE("ProjectDetector mentions a compilation database beside CMakeLists.txt")
+{
+	const TestTempDirectory temp{"detectCMakeAndDatabase"};
+	const fs::path folder{temp.getPath() / "lib"};
+	write(folder / "CMakeLists.txt", "project(lib)\n");
+	write(folder / "build" / "compile_commands.json", "[]\n");
+
+	const ProjectProposal proposal{detect(folder)};
+
+	CHECK(proposal.sourceGroupType == SourceGroupType::CXX_CMAKE_FILE_API);
+	CHECK(mentions(proposal.notices, "Also found the compilation database build/compile_commands.json"));
+}
+
 TEST_CASE("ProjectDetector lets CMake configure a build directory beside the project file")
 {
 	const TestTempDirectory temp{"detectOwnBuildDir"};

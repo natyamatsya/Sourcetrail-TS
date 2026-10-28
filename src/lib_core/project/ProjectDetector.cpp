@@ -1177,6 +1177,15 @@ bool detectCMake(Detection& detection)
 	{
 		detectCMakeBuildDirectory(detection);
 	}
+	// CMake decides, but the database is an alternative: its exact commands, without running CMake.
+	if (const std::optional<fs::path> database{
+			newestCompilationDatabase(detection.folder, buildTreeCandidates(detection.folder))})
+	{
+		proposal.notices.push_back(std::format(
+			"Also found the compilation database {}: to index its commands instead of asking CMake, "
+			"use a source group 'C/C++ from Compilation Database' on it in place of the CMake one",
+			shown(*database, detection.folder)));
+	}
 	if (!hasCMake)
 	{
 		proposal.reasons.emplace_back(
