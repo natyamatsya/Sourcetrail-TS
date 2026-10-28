@@ -16,7 +16,13 @@ public:
 		NONE = 0,
 		
 		CONST     = 1 << 0,
-		CONSTEXPR = 1 << 1
+		CONSTEXPR = 1 << 1,
+
+		// A method's cv- and ref-qualifiers: they tell its overloads apart, so they are part of
+		// its name (`get() const` and `get()`, `r() &` and `r() &&` are different functions).
+		VOLATILE  = 1 << 2,
+		LVALUE_REFERENCE = 1 << 3,
+		RVALUE_REFERENCE = 1 << 4
 	};
 
 	CxxQualifierFlags(QualifierType qualifier = QualifierType::NONE);
@@ -24,6 +30,7 @@ public:
 	void addQualifier(QualifierType qualifier);
 
 	bool empty() const;
+	bool has(QualifierType qualifier) const;
 	std::string toString() const;
 
 private:

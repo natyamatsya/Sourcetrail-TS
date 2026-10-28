@@ -4,6 +4,8 @@
 #pragma once
 
 #ifndef SRCTRL_MODULE_PURVIEW
+#include <utility>
+
 #include "utilityEnum.h"
 #endif
 
@@ -22,13 +24,31 @@ inline bool CxxQualifierFlags::empty() const
 	return m_flags == QualifierType::NONE;
 }
 
+inline bool CxxQualifierFlags::has(QualifierType qualifier) const
+{
+	return (m_flags & qualifier) == qualifier;
+}
+
+// Every qualifier that is set, in the order C++ spells them: `constexpr const volatile &`.
 inline std::string CxxQualifierFlags::toString() const
 {
-	if ((m_flags & QualifierType::CONSTEXPR) == QualifierType::CONSTEXPR)
-		return "constexpr";
-	
-	if ((m_flags & QualifierType::CONST) == QualifierType::CONST)
-		return "const";
-	
-	return "";
+	static constexpr std::pair<QualifierType, const char*> spellings[] = {
+		{QualifierType::CONSTEXPR, "constexpr"},
+		{QualifierType::CONST, "const"},
+		{QualifierType::VOLATILE, "volatile"},
+		{QualifierType::LVALUE_REFERENCE, "&"},
+		{QualifierType::RVALUE_REFERENCE, "&&"},
+	};
+
+	std::string result;
+	for (const auto& [qualifier, spelling]: spellings)
+	{
+		if (has(qualifier))
+		{
+			if (!result.empty())
+				result += ' ';
+			result += spelling;
+		}
+	}
+	return result;
 }

@@ -234,15 +234,30 @@ inline CxxName CxxDeclNameResolver::getDeclName(const clang::NamedDecl* declarat
 			}
 
 			bool isStatic = false;
-			CxxQualifierFlags constQualifier;
+			CxxQualifierFlags methodQualifiers;
 
+			// The name is the method's identity, so it carries what tells overloads apart -- the
+			// cv- and ref-qualifiers -- and nothing else. constexpr is not part of the signature,
+			// and a defaulted or implicit member is constexpr in one -std and not in another, so
+			// with it the same member would become one node per language standard.
 			if (const clang::CXXMethodDecl* methodDecl = clang::dyn_cast<const clang::CXXMethodDecl>(declaration))
 			{
 				isStatic = methodDecl->isStatic();
-				if (methodDecl->isConstexpr())
-					constQualifier.addQualifier(CxxQualifierFlags::QualifierType::CONSTEXPR);
-				else if (methodDecl->isConst())
-					constQualifier.addQualifier(CxxQualifierFlags::QualifierType::CONST);
+				if (methodDecl->isConst())
+					methodQualifiers.addQualifier(CxxQualifierFlags::QualifierType::CONST);
+				if (methodDecl->isVolatile())
+					methodQualifiers.addQualifier(CxxQualifierFlags::QualifierType::VOLATILE);
+				switch (methodDecl->getRefQualifier())
+				{
+				case clang::RQ_LValue:
+					methodQualifiers.addQualifier(CxxQualifierFlags::QualifierType::LVALUE_REFERENCE);
+					break;
+				case clang::RQ_RValue:
+					methodQualifiers.addQualifier(CxxQualifierFlags::QualifierType::RVALUE_REFERENCE);
+					break;
+				case clang::RQ_None:
+					break;
+				}
 			}
 			else
 				isStatic = functionDecl->getStorageClass() == clang::SC_Static;
@@ -288,7 +303,7 @@ inline CxxName CxxDeclNameResolver::getDeclName(const clang::NamedDecl* declarat
 				std::move(templateArguments),
 				std::move(returnTypeName),
 				std::move(parameterTypeNames),
-				constQualifier,
+				methodQualifiers,
 				isStatic);
 		}
 		else if (const clang::FunctionTemplateDecl *functionTemplateDecl = clang::dyn_cast<clang::FunctionTemplateDecl>(declaration))

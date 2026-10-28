@@ -63,6 +63,23 @@ std::shared_ptr<TestStorage> parseCode(const std::string &code, const std::vecto
 	return TestStorage::create(storage);
 }
 
+// Like parseCode, but in the given language standard (e.g. "c++17") instead of the latest one.
+std::shared_ptr<TestStorage> parseCodeInStandard(const std::string& code, const std::string& languageStandard)
+{
+	std::shared_ptr<IntermediateStorage> storage = std::make_shared<IntermediateStorage>();
+	const std::shared_ptr<ParserClientImpl> parserClient = std::make_shared<ParserClientImpl>(storage);
+	CxxParser parser(
+		*parserClient,
+		std::make_shared<TestFileRegister>(),
+		std::make_shared<IndexerStateInfo>());
+	parser.buildIndex(
+		"input.cc",
+		TextAccess::createFromString(code),
+		{ClangCompiler::stdOption(languageStandard)});
+
+	return TestStorage::create(storage);
+}
+
 // Like parseCode, but hands back the raw IntermediateStorage so a test can
 // inspect node modifiers and node_attribute rows (TestStorage flattens both away).
 std::shared_ptr<IntermediateStorage> parseCodeToStorage(
@@ -314,6 +331,62 @@ TEST_CASE("cxx parser finds explicit bool conversion operator")
 	// Find usage:
 	INFO(join(client->calls, "\n"s));
 	REQUIRE(containsElement(client->calls, "void f() -> bool B::operator bool() const <9:8 9:8>"s));
+}
+
+TEST_CASE("cxx parser tells cv- and ref-qualified method overloads apart")
+{
+	// Each pair is two overloads, so two nodes; a call goes to the one it resolves to.
+	std::shared_ptr<TestStorage> client = parseCode(
+		"struct S {\n"
+		"	constexpr int get() const { return 1; }\n"
+		"	constexpr int get() { return 2; }\n"
+		"	void r() & {}\n"
+		"	void r() && {}\n"
+		"	void r() const && {}\n"
+		"	void v() volatile {}\n"
+		"	void v() {}\n"
+		"};\n"
+		"void use() {\n"
+		"	S s; const S cs;\n"
+		"	s.get(); cs.get();\n"
+		"	s.r(); S{}.r();\n"
+		"}\n");
+
+	CAPTURE(client->methods, client->calls);
+	REQUIRE(client->errors.empty());
+	REQUIRE(containsElement(client->methods, "public int S::get() const <2:2 <2:2 <2:16 2:18> 2:26> 2:40>"s));
+	REQUIRE(containsElement(client->methods, "public int S::get() <3:2 <3:2 <3:16 3:18> 3:20> 3:34>"s));
+	REQUIRE(containsElement(client->methods, "public void S::r() & <4:2 <4:2 <4:7 4:7> 4:11> 4:14>"s));
+	REQUIRE(containsElement(client->methods, "public void S::r() && <5:2 <5:2 <5:7 5:7> 5:12> 5:15>"s));
+	REQUIRE(containsElement(client->methods, "public void S::r() const && <6:2 <6:2 <6:7 6:7> 6:18> 6:21>"s));
+	REQUIRE(containsElement(client->methods, "public void S::v() volatile <7:2 <7:2 <7:7 7:7> 7:18> 7:21>"s));
+	REQUIRE(containsElement(client->methods, "public void S::v() <8:2 <8:2 <8:7 8:7> 8:9> 8:12>"s));
+
+	REQUIRE(containsElement(client->calls, "void use() -> int S::get() <12:4 12:6>"s));
+	REQUIRE(containsElement(client->calls, "void use() -> int S::get() const <12:14 12:16>"s));
+	REQUIRE(containsElement(client->calls, "void use() -> void S::r() & <13:4 13:4>"s));
+	REQUIRE(containsElement(client->calls, "void use() -> void S::r() && <13:13 13:13>"s));
+}
+
+TEST_CASE("cxx parser names a member the same in every language standard")
+{
+	// A defaulted destructor and the implicit members are constexpr in C++20 and not in C++17.
+	// constexpr is not part of a function's signature, so it is not part of its name either:
+	// TUs of different standards that share a header must agree on that header's members.
+	const std::string code =
+		"struct Base { virtual ~Base() = default; };\n"
+		"struct Widget { int w = 0; };\n"
+		"void use() { Base b; Widget w; Widget w2 = w; }\n";
+
+	std::shared_ptr<TestStorage> cpp17 = parseCodeInStandard(code, "c++17");
+	std::shared_ptr<TestStorage> cpp20 = parseCodeInStandard(code, "c++20");
+
+	CAPTURE(cpp17->methods, cpp20->methods);
+	REQUIRE(cpp17->errors.empty());
+	REQUIRE(cpp20->errors.empty());
+	REQUIRE(containsElement(cpp17->methods, "public void Base::~Base() <1:15 <1:23 1:27> 1:39>"s));
+	REQUIRE(cpp17->methods == cpp20->methods);
+	REQUIRE(cpp17->calls == cpp20->calls);
 }
 
 TEST_CASE("cxx parser finds method declaration and definition")
@@ -1349,7 +1422,7 @@ TEST_CASE("cxx parser finds lambda definition and call in function")
 		"}\n");
 
 	REQUIRE(containsElement(client->functions, "void lambdaCaller() <1:1 <1:1 <1:6 1:17> 1:19> 4:1>"s));
-	REQUIRE(containsElement(client->calls, "void lambdaCaller() -> void lambdaCaller::lambda at 3:2() constexpr <3:8 3:8>"s));
+	REQUIRE(containsElement(client->calls, "void lambdaCaller() -> void lambdaCaller::lambda at 3:2() const <3:8 3:8>"s));
 }
 
 TEST_CASE("cxx parser finds mutable lambda definition")
@@ -1716,9 +1789,9 @@ TEST_CASE("cxx parser finds implicit copy constructor")
 		"	TestClass b(a);\n"
 		"}\n");
 
-	REQUIRE(containsElement(client->methods, "public void TestClass::TestClass() constexpr <1:7 <1:7 1:15> 1:15>"s));
-	REQUIRE(containsElement(client->methods, "public void TestClass::TestClass(const TestClass &) constexpr <1:7 <1:7 1:15> 1:15>"s));
-	REQUIRE(containsElement(client->methods, "public void TestClass::TestClass(TestClass &&) constexpr <1:7 <1:7 1:15> 1:15>"s));
+	REQUIRE(containsElement(client->methods, "public void TestClass::TestClass() <1:7 <1:7 1:15> 1:15>"s));
+	REQUIRE(containsElement(client->methods, "public void TestClass::TestClass(const TestClass &) <1:7 <1:7 1:15> 1:15>"s));
+	REQUIRE(containsElement(client->methods, "public void TestClass::TestClass(TestClass &&) <1:7 <1:7 1:15> 1:15>"s));
 }
 
 ///////////////////////////////////////////////////////////////////////////////
@@ -2100,8 +2173,8 @@ TEST_CASE("cxx parser finds concept in single type constraints")
 	REQUIRE(client->usages[6] == "auto add5<Plusable x:auto, Plusable y:auto>(x:auto, y:auto) -> Plusable<typename T> <21:22 21:29>"s);
 	REQUIRE(client->usages[7] == "auto add5<Plusable x:auto, Plusable y:auto>(x:auto, y:auto) -> Plusable<typename T> <21:39 21:46>"s);
 
-	REQUIRE(client->usages[8] == "auto lambda at 23:15(a:auto, b:auto) constexpr -> Plusable<typename T> <23:18 23:25>"s);
-	REQUIRE(client->usages[9] == "auto lambda at 23:15(a:auto, b:auto) constexpr -> Plusable<typename T> <23:35 23:42>"s);
+	REQUIRE(client->usages[8] == "auto lambda at 23:15(a:auto, b:auto) const -> Plusable<typename T> <23:18 23:25>"s);
+	REQUIRE(client->usages[9] == "auto lambda at 23:15(a:auto, b:auto) const -> Plusable<typename T> <23:35 23:42>"s);
 
 	REQUIRE(client->usages[10] == "Adder0<Plusable T> -> Plusable<typename T> <28:12 28:19>"s);
 	REQUIRE(client->usages[11] == "T Adder1::add1<typename T>(T, T) -> Plusable<typename T> <37:13 37:20>"s);
@@ -2216,8 +2289,8 @@ TEST_CASE("cxx parser finds concept in multiple type constraints")
 	REQUIRE(client->usages[9] == "auto add50<Plusable x:auto, Minusable y:auto>(x:auto, y:auto) -> Minusable<typename T> <27:3 27:11>"s);
 	REQUIRE(client->usages[10] == "auto add50<Plusable x:auto, Minusable y:auto>(x:auto, y:auto) -> Minusable<typename T> <27:41 27:49>"s);
 
-	REQUIRE(client->usages[11] == "auto lambda at 29:16(a:auto, b:auto) constexpr -> Plusable<typename T> <29:19 29:26>"s);
-	REQUIRE(client->usages[12] == "auto lambda at 29:16(a:auto, b:auto) constexpr -> Minusable<typename T> <29:36 29:44>"s);
+	REQUIRE(client->usages[11] == "auto lambda at 29:16(a:auto, b:auto) const -> Plusable<typename T> <29:19 29:26>"s);
+	REQUIRE(client->usages[12] == "auto lambda at 29:16(a:auto, b:auto) const -> Minusable<typename T> <29:36 29:44>"s);
 
 	REQUIRE(client->usages[13] == "Adder00<Plusable T, Minusable U> -> Plusable<typename T> <34:12 34:19>"s);
 	REQUIRE(client->usages[14] == "Adder00<Plusable T, Minusable U> -> Minusable<typename T> <34:24 34:32>"s);
@@ -2646,7 +2719,7 @@ TEST_CASE("cxx parser finds implicit constructor without definition call")
 		"	App app;\n"
 		"}\n");
 
-	REQUIRE(containsElement(client->calls, "int main() -> void App::App() constexpr <6:6 6:8>"s));
+	REQUIRE(containsElement(client->calls, "int main() -> void App::App() <6:6 6:8>"s));
 }
 
 TEST_CASE("cxx parser finds explicit constructor call")
@@ -2721,7 +2794,7 @@ TEST_CASE("cxx parser finds call of implicitly defined destructor at delete keyw
 		"	delete f; \n"
 		"}\n");
 
-	REQUIRE(containsElement(client->calls, "void foo() -> void Foo::~Foo() constexpr <8:2 8:7>"s));
+	REQUIRE(containsElement(client->calls, "void foo() -> void Foo::~Foo() <8:2 8:7>"s));
 }
 
 TEST_CASE("cxx parser finds explicit constructor call of field")
@@ -2737,7 +2810,7 @@ TEST_CASE("cxx parser finds explicit constructor call of field")
 		"	Item item;\n"
 		"};\n");
 
-	REQUIRE(containsElement(client->calls, "void App::App() -> void Item::Item() constexpr <7:10 7:13>"s));
+	REQUIRE(containsElement(client->calls, "void App::App() -> void Item::Item() <7:10 7:13>"s));
 }
 
 TEST_CASE("cxx parser finds function call in member initialization")
@@ -4475,7 +4548,7 @@ TEST_CASE("cxx parser finds lambda calling a function")
 		"	}();\n"
 		"}\n");
 
-	REQUIRE(containsElement(client->calls, "void lambdaCaller::lambda at 4:2() constexpr -> void func() <6:3 6:6>"s));
+	REQUIRE(containsElement(client->calls, "void lambdaCaller::lambda at 4:2() const -> void func() <6:3 6:6>"s));
 }
 
 TEST_CASE("cxx parser finds local variable in lambda capture")
@@ -4636,7 +4709,7 @@ TEST_CASE("cxx parser finds implicit constructor call in initialization")
 		"	A m_a;\n"
 		"};\n");
 
-	REQUIRE(containsElement(client->calls, "void B::B() -> void A::A() constexpr <6:2 6:2>"s));
+	REQUIRE(containsElement(client->calls, "void B::B() -> void A::A() <6:2 6:2>"s));
 }
 
 TEST_CASE("cxx parser parses multiple files")
