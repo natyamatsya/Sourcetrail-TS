@@ -4,6 +4,7 @@
 
 #include <QApplication>
 #include <QCheckBox>
+#include <QElapsedTimer>
 #include <QHBoxLayout>
 #include <QImage>
 #include <QLabel>
@@ -12,6 +13,7 @@
 #include <QTabBar>
 #include <QTabWidget>
 #include <QVBoxLayout>
+#include <QWindow>
 
 #include <kddockwidgets/Config.h>
 #include <kddockwidgets/KDDockWidgets.h>
@@ -23,6 +25,7 @@
 #include <kddockwidgets/qtwidgets/views/MainWindow.h>
 
 #include <array>
+#include <functional>
 #include <memory>
 
 namespace
@@ -208,6 +211,18 @@ QtDockFloatingWindow* floatingWindowOf(const KDDockWidgets::QtWidgets::DockWidge
 	return qobject_cast<QtDockFloatingWindow*>(KDDockWidgets::QtCommon::View_qt::asQWidget(window->view()));
 }
 
+// Lets the events come until `done`, for 2 s at most: a window's platform, Windows' in
+// particular, reports its showing and its geometry some events later.
+void waitFor(const std::function<bool()>& done)
+{
+	QElapsedTimer timer;
+	timer.start();
+	while (!done() && timer.elapsed() < 2000)
+	{
+		QApplication::processEvents(QEventLoop::AllEvents, 20);
+	}
+}
+
 bool headerRowOnCanvas(const QtDockFloatingWindow& window)
 {
 	const QWidget* header{KDDockWidgets::QtCommon::View_qt::asQWidget(window.floatingWindow()->titleBar()->view())};
@@ -234,7 +249,13 @@ TEST_CASE("a floating window frames its cards with rounded corners")
 		QtDockFloatingWindow* window{floatingWindowOf(*graph)};
 		REQUIRE(window != nullptr);
 		window->resize(400, 300);
-		QApplication::processEvents();
+		// Shown and at that size before it is looked at and dragged: a geometry the platform
+		// reports late would undo the drag's.
+		waitFor([&]() {
+			return window->windowHandle() != nullptr && window->windowHandle()->isExposed() &&
+				window->size() == QSize{400, 300};
+		});
+		REQUIRE(window->size() == QSize{400, 300});
 
 		// A single card fills the window's frame (see-through), or sits on its canvas (opaque),
 		// and leaves the margin to resize the window by to the window.
