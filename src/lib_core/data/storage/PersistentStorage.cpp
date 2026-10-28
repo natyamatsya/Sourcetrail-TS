@@ -622,6 +622,11 @@ bool PersistentStorage::isIncompatible() const
 	return m_sqliteIndexStorage.isIncompatible();
 }
 
+bool PersistentStorage::isWellFormed() const
+{
+	return m_sqliteIndexStorage.isWellFormed();
+}
+
 std::string PersistentStorage::getMetaValue(const std::string& key) const
 {
 	return m_sqliteIndexStorage.getMetaValue(key);

@@ -1,5 +1,7 @@
 #include "Catch2.hpp"
 
+#include <fstream>
+
 #ifndef SRCTRL_MODULE_BUILD
 #include "FileSystem.h"
 #endif
@@ -245,4 +247,32 @@ TEST_CASE("storage keeps the stronger definition kind across duplicate inserts")
 	REQUIRE(DefinitionKind::EXPLICIT == explicitSecond);
 	REQUIRE(DefinitionKind::EXPLICIT == sameBatch);
 	REQUIRE(DefinitionKind::IMPLICIT == implicitOnly);
+}
+
+TEST_CASE("storage finds a malformed database not well formed")
+{
+	const TestTempDirectory tempDirectory{"SqliteIndexStorageTestSuite"};
+	const FilePath databasePath(tempDirectory.getFilePath("test.sqlite"));
+	{
+		StorageConnection connection(databasePath);
+		SqliteIndexStorage storage(connection);
+		storage.setup();
+		storage.beginTransaction();
+		for (int i = 0; i < 2000; i++)
+		{
+			storage.addNode(StorageNodeData(NODE_CLASS, "a rather long node name to fill pages " + std::to_string(i)));
+		}
+		storage.commitTransaction();
+		REQUIRE(storage.isWellFormed());
+	}
+	{
+		// Pages in the middle of the file overwritten, as a crash or a second writer can.
+		std::fstream file(databasePath.str(), std::ios::in | std::ios::out | std::ios::binary);
+		file.seekp(8 * 4096);
+		const std::string garbage(4 * 4096, '\xA5');
+		file.write(garbage.data(), static_cast<std::streamsize>(garbage.size()));
+	}
+	StorageConnection connection(databasePath);
+	const SqliteIndexStorage storage(connection);
+	REQUIRE_FALSE(storage.isWellFormed());
 }

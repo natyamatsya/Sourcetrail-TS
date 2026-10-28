@@ -2,6 +2,7 @@
 
 #include <algorithm>
 #include <chrono>
+#include <filesystem>
 
 #include <exec/task.hpp>
 
@@ -180,9 +181,10 @@ bool Project::readSettings()
 
 std::optional<Project::Question> Project::interruptedRunQuestion() const
 {
-	if (!m_settings->getTempDBFilePath().exists() || !m_settings->getDBFilePath().exists())
+	if (!m_settings->getTempDBFilePath().exists() || !m_settings->getDBFilePath().exists() ||
+		IndexingLock::isHeld(m_settings->getDBFilePath()))
 	{
-		return std::nullopt;
+		return std::nullopt;	// nothing left, or the run of a process indexing now
 	}
 	return Question {
 		"Sourcetrail has been closed unexpectedly while indexing this project. "
@@ -200,6 +202,11 @@ bool Project::resolveInterruptedRun(int option)
 
 	if (!tempDbPath.exists())
 	{
+		return true;
+	}
+	if (IndexingLock::isHeld(dbPath))
+	{
+		LOG_INFO("Another process is indexing this project: its temporary indexing data stays");
 		return true;
 	}
 	if (!dbPath.exists() || option == 0)
@@ -244,6 +251,7 @@ Project::Question Project::indexInUse()
 
 void Project::openIndex()
 {
+	m_loadProblem.clear();
 	const FilePath dbPath = m_settings->getDBFilePath();
 	const FilePath bookmarkDbPath = m_settings->getBookmarkDBFilePath();
 
@@ -268,6 +276,22 @@ void Project::openIndex()
 		else
 		{
 			m_state = ProjectStateType::PROJECT_STATE_OUTDATED;
+		}
+	}
+
+	// The index's structure, which a crash or another process can have broken: SQLite's
+	// quick_check reads all of it (half a second for 100 MB), so a bigger index opens
+	// unchecked.
+	if (hasIndex())
+	{
+		constexpr std::uintmax_t wellFormedCheckLimit = 256 * 1024 * 1024;
+		std::error_code error;
+		const std::uintmax_t size = std::filesystem::file_size(dbPath.getPath(), error);
+		if (!error && size <= wellFormedCheckLimit && !m_storage->isWellFormed())
+		{
+			LOG_ERROR("The index database is malformed: " + dbPath.str());
+			m_state = ProjectStateType::PROJECT_STATE_DB_CORRUPTED;
+			m_loadProblem = "Its database is malformed.";
 		}
 	}
 
@@ -449,10 +473,9 @@ std::optional<Project::RefreshPlan> Project::planRefresh(RefreshMode refreshMode
 		break;
 
 	case ProjectStateType::PROJECT_STATE_DB_CORRUPTED:
-		question =
-			"There was a problem loading the index of this project. The project needs to get "
-			"fully reindexed. "
-			"Do you want to reindex the project?";
+		question = "There was a problem loading the index of this project. " +
+			(m_loadProblem.empty() ? std::string() : m_loadProblem + " ") +
+			"The project needs to get fully reindexed. Do you want to reindex the project?";
 		plan.needsFullRefresh = true;
 		break;
 
@@ -721,6 +744,7 @@ void Project::buildIndex(RefreshInfo info, std::shared_ptr<DialogView> dialogVie
 	{
 		LOG_ERROR(utility::expectedErrorToString(outcome.error()));
 		m_refreshStage = RefreshStageType::NONE;
+		m_indexingLock.reset();
 		IndexingStateMachine::instance()->ended(utility::expectedErrorToString(outcome.error()));
 		MessageIndexingFinished(outcome).dispatch();
 	}
@@ -795,6 +819,31 @@ void Project::buildIndexImpl(RefreshInfo info, std::shared_ptr<DialogView> dialo
 				break;
 			}
 		}
+	}
+
+	// One run per project, across processes: two write the same temporary database
+	// and swap it over the index twice. A shard run writes a database of its own.
+	if (!m_shardConfig.isActive())
+	{
+		std::expected<IndexingLock, IndexingLockError> lock = IndexingLock::acquire(m_settings->getDBFilePath());
+		if (!lock)
+		{
+			const std::string message = "Cannot index the project: " + std::string(to_std_sv(lock.error())) + ".";
+			LOG_ERROR(message);
+			if (m_hasGUI)
+			{
+				dialogView->clearDialogs();
+				dialogView->notify(message);
+			}
+			MessageStatus(message, true, false).dispatch();
+			m_refreshStage = RefreshStageType::NONE;
+			IndexingStateMachine::instance()->ended(message);
+			MessageIndexingFinished(
+				std::unexpected(utility::makeExpectedError(IndexingErrorCode::IndexingLocked, message)))
+				.dispatch();
+			return;
+		}
+		m_indexingLock.emplace(std::move(*lock));
 	}
 
 	IndexingStateMachine::instance()->preparing();
@@ -1248,6 +1297,7 @@ void Project::startIndexing(std::shared_ptr<IndexingRun> run)
 			if (const std::shared_ptr<Project> project = weakProject.lock())
 			{
 				project->m_refreshStage = RefreshStageType::NONE;
+				project->m_indexingLock.reset();
 			}
 			dialogView->clearDialogs();
 			if (!terminated)
@@ -1301,6 +1351,7 @@ void Project::startIndexing(std::shared_ptr<IndexingRun> run)
 							project->discardTempStorage();
 						}
 						project->m_refreshStage = RefreshStageType::NONE;
+						project->m_indexingLock.reset();
 					}
 					if (!outcome)
 					{

@@ -110,6 +110,9 @@ public:
 
 	bool isEmpty() const;
 	bool isIncompatible() const;
+	//! Whether the index database's structure is sound (SQLite's quick_check, which
+	//! reads all of it).
+	bool isWellFormed() const;
 	std::string getMetaValue(const std::string& key) const;
 	void setMetaValue(const std::string& key, const std::string& value);
 

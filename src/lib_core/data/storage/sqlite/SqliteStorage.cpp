@@ -188,6 +188,20 @@ bool SqliteStorage::isIncompatible() const
 	return isEmpty() || storageVersion != getStaticVersion();
 }
 
+bool SqliteStorage::isWellFormed() const
+{
+	try
+	{
+		StorageQuery result = m_database.execQuery("PRAGMA quick_check(1);");
+		return !result.eof() && result.getStringField(0) == "ok";
+	}
+	catch (CppSQLite3Exception& e)
+	{
+		LOG_ERROR(std::to_string(e.errorCode()) + ": " + e.errorMessage());
+	}
+	return false;
+}
+
 void SqliteStorage::setTime()
 {
 	insertOrUpdateMetaValue("timestamp", TimeStamp::now().toString());

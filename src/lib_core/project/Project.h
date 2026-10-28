@@ -10,6 +10,7 @@
 #include <vector>
 
 #include "IndexDatabaseFiles.h"
+#include "IndexingLock.h"
 #include "IndexingOutcome.h"
 #include "RefreshInfo.h"
 #include "SourceGroup.h"
@@ -174,6 +175,8 @@ private:
 	StorageCache* const m_storageCache;
 
 	ProjectStateType m_state = ProjectStateType::PROJECT_STATE_NOT_LOADED;
+	// Why the index could not be used (PROJECT_STATE_DB_CORRUPTED), when it is known.
+	std::string m_loadProblem;
 	RefreshStageType m_refreshStage = RefreshStageType::NONE;
 
 	std::shared_ptr<PersistentStorage> m_storage;
@@ -185,6 +188,8 @@ private:
 	// The indexing run, while one runs; the scope waits for it.
 	exec::async_scope m_indexing;
 	std::weak_ptr<IndexingRun> m_indexingRun;
+	// Held from the run's start until its data is swapped in or discarded.
+	std::optional<IndexingLock> m_indexingLock;
 };
 
 #endif	  // PROJECT_H
