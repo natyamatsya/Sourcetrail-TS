@@ -42,7 +42,7 @@ import srctrl.utility;
 #endif
 
 
-const size_t SqliteIndexStorage::s_storageVersion = 29;
+const size_t SqliteIndexStorage::s_storageVersion = 30;
 
 namespace
 {
