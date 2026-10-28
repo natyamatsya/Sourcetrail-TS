@@ -591,6 +591,10 @@
       },
       "dock": {
          "background": "#808080",
+         "button": {
+            "icon": "#F0F0F0",
+            "icon_disabled": "#707070"
+         },
          "canvas": "#3A3A3A",
          "card": "#494949",
          "card_border": "#626262",

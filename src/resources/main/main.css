@@ -214,7 +214,7 @@ QWidget#filter_bar QPushButton {
 	border-radius: 6px;
 	color: <color:window/dock/header_text>;
 	font-size: 11px;
-	icon-size: 12px;
+	icon-size: 16px;
 	margin: 0px;
 	padding: 2px 8px;
 }
