@@ -192,9 +192,9 @@ void QtGraphicsView::setAppZoomFactor(float appZoomFactor)
 	updateTransform();
 }
 
-void QtGraphicsView::setSceneRect(const QRectF& rect)
+void QtGraphicsView::setSceneRect(const QRectF& rect, qreal reservedLeft)
 {
-	QGraphicsView::setSceneRect(rect);
+	QGraphicsView::setSceneRect(rect.adjusted(-reservedLeft, 0, 0, 0));
 	scene()->setSceneRect(rect);
 	m_imageCached = toQImage();
 	m_tabId = TabIds::currentTab();
@@ -228,7 +228,8 @@ QtGraphEdge* QtGraphicsView::getEdgeAtCursorPosition() const
 	return edge;
 }
 
-void QtGraphicsView::ensureVisibleAnimated(const QRectF& rect, int xmargin, int ymargin)
+void QtGraphicsView::ensureVisibleAnimated(
+	const QRectF& rect, int xmargin, int ymargin, std::optional<int> horizontalValue)
 {
 	int xval = horizontalScrollBar()->value();
 	int yval = verticalScrollBar()->value();
@@ -236,6 +237,10 @@ void QtGraphicsView::ensureVisibleAnimated(const QRectF& rect, int xmargin, int 
 	setInteractive(false);
 
 	ensureVisible(rect, xmargin, ymargin);
+	if (horizontalValue)
+	{
+		horizontalScrollBar()->setValue(*horizontalValue);
+	}
 
 	if (ApplicationSettings::getInstance()->getUseAnimations() && isVisible())
 	{
@@ -287,7 +292,8 @@ void QtGraphicsView::updateZoom(float delta)
 
 void QtGraphicsView::resizeEvent(QResizeEvent* event)
 {
-	m_focusIndicator->setGeometry(QRect(0, 0, event->size().width(), 3));
+	// A 2 px bar along the top, as the other views' focus indicators.
+	m_focusIndicator->setGeometry(QRect(0, 0, event->size().width(), 2));
 
 	emit resized();
 }

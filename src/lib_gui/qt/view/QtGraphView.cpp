@@ -719,7 +719,7 @@ void QtGraphView::updateScrollBars()
 	}
 	else if (!m_centerActiveNode)
 	{
-		performScroll(hb, (hb->minimum() + hb->maximum()) / 2);
+		performScroll(hb, scrollBesideToolbar().value_or((hb->minimum() + hb->maximum()) / 2));
 		performScroll(vb, (vb->minimum() + vb->maximum()) / 2);
 	}
 
@@ -1049,7 +1049,7 @@ QtGraphicsView *QtGraphView::getView() const
 
 void QtGraphView::doResize()
 {
-	getView()->setSceneRect(getSceneRect(m_oldNodes));
+	getView()->setSceneRect(getSceneRect(m_oldNodes), toolbarReserve());
 }
 
 // The toolbar keeps to the view's height, the horizontal scroll bar left clear: where the view
@@ -1277,6 +1277,45 @@ QRectF QtGraphView::getSceneRect(const std::list<QtGraphNode *> &items) const
 	return sceneRect.adjusted(-75, -75, 75, 75).translated(m_sceneRectOffset);
 }
 
+// The graph is laid out beside the toolbar, not under it: the view centres it in the room right
+// of the toolbar, and scrolled to the left its first nodes stop there. Panning can still move
+// nodes under the toolbar, and so can a graph too wide for the room.
+int QtGraphView::toolbarReservePixels() const
+{
+	const QtGraphicsView *view = getView();
+	if (m_toolbar->isHidden())
+	{
+		return 0;
+	}
+	const int toolbarRight = view->viewport()->mapFromGlobal(m_toolbar->mapToGlobal(QPoint(m_toolbar->width(), 0))).x();
+	return std::max(0, toolbarRight + toolbarMargin);
+}
+
+qreal QtGraphView::toolbarReserve() const
+{
+	const qreal scale = getView()->transform().m11();
+	return scale > 0 ? toolbarReservePixels() / scale : 0;
+}
+
+std::optional<int> QtGraphView::scrollBesideToolbar() const
+{
+	const QtGraphicsView *view = getView();
+	const std::list<QtGraphNode *> &nodes = m_nodes.empty() ? m_oldNodes : m_nodes;
+	if (nodes.empty())
+	{
+		return std::nullopt;
+	}
+
+	const QRect graph = view->mapFromScene(itemsBoundingRect(nodes)).boundingRect();
+	const int left = toolbarReservePixels();
+	const int room = view->viewport()->width() - left;
+	if (graph.width() > room)
+	{
+		return std::nullopt;
+	}
+	return view->horizontalScrollBar()->value() + graph.left() - (left + (room - graph.width()) / 2);
+}
+
 void QtGraphView::centerNode(QtGraphNode *node)
 {
 	QtGraphicsView *view = getView();
@@ -1296,7 +1335,7 @@ void QtGraphView::centerNode(QtGraphNode *node)
 		rect.setWidth(view->width() - 200);
 	}
 
-	view->ensureVisibleAnimated(rect, 100, 100);
+	view->ensureVisibleAnimated(rect, 100, 100, scrollBesideToolbar());
 }
 
 void QtGraphView::compareNodesRecursive(std::list<QtGraphNode *> newSubNodes, std::list<QtGraphNode *> oldSubNodes,
@@ -1431,7 +1470,7 @@ void QtGraphView::createTransition()
 
 		QPropertyAnimation *anim = new QPropertyAnimation(view, QByteArrayLiteral("sceneRect"));
 		anim->setStartValue(view->sceneRect());
-		anim->setEndValue(getSceneRect(m_nodes));
+		anim->setEndValue(getSceneRect(m_nodes).adjusted(-toolbarReserve(), 0, 0, 0));
 
 		anim->setDuration(300);
 

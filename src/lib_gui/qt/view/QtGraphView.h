@@ -9,6 +9,7 @@
 #include <QGraphicsView>
 #include <QPointF>
 
+#include <optional>
 #include <set>
 
 struct DummyEdge;
@@ -116,6 +117,12 @@ private:
 
 	static QRectF itemsBoundingRect(const std::list<QtGraphNode *> &items);
 	QRectF getSceneRect(const std::list<QtGraphNode *> &items) const;
+	// The room the toolbar takes from the view's left edge, in view pixels and in scene units.
+	int toolbarReservePixels() const;
+	qreal toolbarReserve() const;
+	// The horizontal scroll value that centres the graph in the room right of the toolbar, if
+	// it fits there.
+	std::optional<int> scrollBesideToolbar() const;
 
 	void centerNode(QtGraphNode *node);
 

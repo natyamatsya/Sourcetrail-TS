@@ -37,23 +37,12 @@ const char *resourceNames[] = {
 	QtResources::BOOKMARK_VIEW_BOOKMARK_EDIT_BOOKMARK_ICON,
 
 	QtResources::CODE_VIEW_CSS,
-	QtResources::CODE_VIEW_ARROW_DOWN,
 	QtResources::CODE_VIEW_ARROW_LEFT,
 	QtResources::CODE_VIEW_ARROW_RIGHT,
-	QtResources::CODE_VIEW_ARROW_UP,
-	QtResources::CODE_VIEW_BUTTON_BACKGROUND,
 	QtResources::CODE_VIEW_EDIT,
-	QtResources::CODE_VIEW_FILE,
-	QtResources::CODE_VIEW_LIST,
-	QtResources::CODE_VIEW_MAXIMIZE_ACTIVE,
-	QtResources::CODE_VIEW_MAXIMIZE_INACTIVE,
 	QtResources::CODE_VIEW_PATTERN_BRIGHT,
 	QtResources::CODE_VIEW_PATTERN_DARK,
 	QtResources::CODE_VIEW_PATTERN_GREY,
-	QtResources::CODE_VIEW_SNIPPET_ACTIVE,
-	QtResources::CODE_VIEW_SNIPPET_ARROW_DOWN,
-	QtResources::CODE_VIEW_SNIPPET_ARROW_RIGHT,
-	QtResources::CODE_VIEW_SNIPPET_INACTIVE,
 
 	QtResources::CUSTOM_TRAIL_VIEW_CSS,
 	QtResources::CUSTOM_TRAIL_VIEW_CIRCLE,
@@ -87,6 +76,21 @@ const char *resourceNames[] = {
 	QtResources::GRAPH_VIEW_ZOOM_OUT,
 	QtResources::GRAPH_VIEW_CSS,
 
+	QtResources::GLYPH_ADD,
+	QtResources::GLYPH_AUTO_HIDE,
+	QtResources::GLYPH_CHEVRON_DOWN,
+	QtResources::GLYPH_CHEVRON_RIGHT,
+	QtResources::GLYPH_CHEVRON_UP,
+	QtResources::GLYPH_CLOSE,
+	QtResources::GLYPH_EDIT,
+	QtResources::GLYPH_FILE_INCOMPLETE,
+	QtResources::GLYPH_FLOAT,
+	QtResources::GLYPH_MAXIMIZE,
+	QtResources::GLYPH_MINIMIZE,
+	QtResources::GLYPH_SNIPPETS,
+	QtResources::GLYPH_UNAUTO_HIDE,
+	QtResources::GLYPH_UNFOLD,
+
 	QtResources::HISTORY_LIST_CSS,
 	QtResources::HISTORY_LIST_ARROW,
 
@@ -106,12 +110,6 @@ const char *resourceNames[] = {
 
 	QtResources::KEYBOARD_SHORTCUTS_CSS,
 
-	QtResources::MAIN_CLOSE_BLACK,
-	QtResources::MAIN_CLOSE_GREY,
-	QtResources::MAIN_CLOSE_WHITE,
-	QtResources::MAIN_FLOAT_BLACK,
-	QtResources::MAIN_FLOAT_GREY,
-	QtResources::MAIN_FLOAT_WHITE,
 	QtResources::MAIN_CSS,
 	QtResources::MAIN_SCROLLBAR_CSS,
 
@@ -137,8 +135,6 @@ const char *resourceNames[] = {
 	QtResources::TABBED_VIEW_ARROW_UP,
 	QtResources::TABBED_VIEW_CSS,
 
-	QtResources::TABS_VIEW_ADD,
-	QtResources::TABS_VIEW_CLOSE,
 	QtResources::TABS_VIEW_CSS,
 
 	QtResources::TOOLTIP_VIEW_CSS,

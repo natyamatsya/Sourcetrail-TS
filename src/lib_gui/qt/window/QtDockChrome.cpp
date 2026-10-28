@@ -1,5 +1,8 @@
 #include "QtDockChrome.h"
 
+#include "QtLineGlyph.h"
+#include "QtResources.h"
+
 #include <QApplication>
 #include <QBoxLayout>
 #include <QEvent>
@@ -29,7 +32,6 @@
 #include <kddockwidgets/qtcommon/View.h>
 
 #include <algorithm>
-#include <array>
 #include <cmath>
 
 namespace
@@ -46,8 +48,6 @@ constexpr char barHolderProperty[]{"dockHeaderBarHolder"};
 constexpr char barSizePolicyProperty[]{"dockHeaderBarSizePolicy"};
 
 constexpr char severalCardsProperty[]{"dockFloatingSeveralCards"};
-
-constexpr qreal glyphSize{12};
 
 // The opacity of a see-through floating window's margin to resize it by: macOS passes clicks on
 // fully transparent pixels through to the windows below, this keeps them, and shows nothing.
@@ -352,71 +352,38 @@ private:
 	QRegion m_rim;
 };
 
-// The header buttons' glyphs, drawn on a 12 px grid in black: the buttons use them as a mask
-// and paint them in their glyph colour.
-QIcon drawGlyph(KDDockWidgets::TitleBarButtonType type)
+// The header buttons' glyphs, in black: the buttons use them as a mask and paint them in their
+// glyph colour.
+QIcon headerGlyph(KDDockWidgets::TitleBarButtonType type)
 {
 	using KDDockWidgets::TitleBarButtonType;
 
-	QIcon icon;
-	for (const qreal scale: {1.0, 2.0, 3.0})
+	const char* path{nullptr};
+	switch (type)
 	{
-		const int pixels{static_cast<int>(glyphSize * scale)};
-		QPixmap pixmap{pixels, pixels};
-		pixmap.setDevicePixelRatio(scale);
-		pixmap.fill(Qt::transparent);
-
-		QPainter painter{&pixmap};
-		painter.setRenderHint(QPainter::Antialiasing);
-		painter.setPen(QPen{Qt::black, 1.2, Qt::SolidLine, Qt::RoundCap, Qt::RoundJoin});
-		painter.setBrush(Qt::NoBrush);
-
-		switch (type)
-		{
-			case TitleBarButtonType::Close:
-				painter.drawLine(QPointF{3, 3}, QPointF{9, 9});
-				painter.drawLine(QPointF{9, 3}, QPointF{3, 9});
-				break;
-			case TitleBarButtonType::Float:
-			case TitleBarButtonType::Normal:
-			{
-				// A window with an arrow out of its corner.
-				QPainterPath box;
-				box.moveTo(9.5, 7);
-				box.lineTo(9.5, 9.5);
-				box.lineTo(2.5, 9.5);
-				box.lineTo(2.5, 2.5);
-				box.lineTo(5, 2.5);
-				painter.drawPath(box);
-				painter.drawLine(QPointF{6, 6}, QPointF{10, 2});
-				painter.drawPolyline(std::array{QPointF{7, 2}, QPointF{10, 2}, QPointF{10, 5}}.data(), 3);
-				break;
-			}
-			case TitleBarButtonType::Maximize:
-				painter.drawRoundedRect(QRectF{2.5, 2.5, 7, 7}, 1, 1);
-				break;
-			case TitleBarButtonType::Minimize:
-				painter.drawLine(QPointF{3, 8.5}, QPointF{9, 8.5});
-				break;
-			case TitleBarButtonType::AutoHide:
-				// Off to the side bar: an arrow towards an edge.
-				painter.drawLine(QPointF{2.5, 2}, QPointF{2.5, 10});
-				painter.drawLine(QPointF{10, 6}, QPointF{5, 6});
-				painter.drawPolyline(std::array{QPointF{7.5, 3.5}, QPointF{5, 6}, QPointF{7.5, 8.5}}.data(), 3);
-				break;
-			case TitleBarButtonType::UnautoHide:
-				// Back from the side bar: an arrow away from the edge.
-				painter.drawLine(QPointF{2.5, 2}, QPointF{2.5, 10});
-				painter.drawLine(QPointF{5, 6}, QPointF{10, 6});
-				painter.drawPolyline(std::array{QPointF{7.5, 3.5}, QPointF{10, 6}, QPointF{7.5, 8.5}}.data(), 3);
-				break;
-			case TitleBarButtonType::AllTitleBarButtonTypes:
-				break;
-		}
-		painter.end();
-		icon.addPixmap(pixmap);
+		case TitleBarButtonType::Close:
+			path = QtResources::GLYPH_CLOSE;
+			break;
+		case TitleBarButtonType::Float:
+		case TitleBarButtonType::Normal:
+			path = QtResources::GLYPH_FLOAT;	// a window with an arrow out of its corner
+			break;
+		case TitleBarButtonType::Maximize:
+			path = QtResources::GLYPH_MAXIMIZE;
+			break;
+		case TitleBarButtonType::Minimize:
+			path = QtResources::GLYPH_MINIMIZE;
+			break;
+		case TitleBarButtonType::AutoHide:
+			path = QtResources::GLYPH_AUTO_HIDE;	// off to the side bar: an arrow towards an edge
+			break;
+		case TitleBarButtonType::UnautoHide:
+			path = QtResources::GLYPH_UNAUTO_HIDE;	  // back from the side bar
+			break;
+		case TitleBarButtonType::AllTitleBarButtonTypes:
+			break;
 	}
-	return icon;
+	return path != nullptr ? QtLineGlyph::icon(QString::fromUtf8(path), Qt::black) : QIcon{};
 }
 
 QTabWidget* offeredTabs(KDDockWidgets::Core::DockWidget* dockWidget)
@@ -1247,7 +1214,8 @@ void QtDockHeader::returnBar()
 
 	QWidget* const bar{m_bar};
 	m_bar = nullptr;
-	if (bar == nullptr)
+	// Another header may have taken it over meanwhile (the dock moved): leave it there.
+	if (bar == nullptr || bar->parentWidget() != this)
 	{
 		return;
 	}
@@ -1362,12 +1330,12 @@ void QtDockHeaderButton::paintEvent(QPaintEvent* /*event*/)
 	if (hovered)
 	{
 		painter.setPen(Qt::NoPen);
-		painter.setBrush(withAlpha(m_glyphColor, isDown() ? 0.24 : 0.13));
-		painter.drawRoundedRect(QRectF{rect()}.adjusted(1, 1, -1, -1), 5, 5);
+		painter.setBrush(withAlpha(m_glyphColor, isDown() ? QtLineGlyph::pressedAlpha : QtLineGlyph::hoverAlpha));
+		painter.drawRoundedRect(QRectF{rect()}.adjusted(1, 1, -1, -1), QtDockChrome::controlRadius, QtDockChrome::controlRadius);
 	}
 
 	const qreal ratio{devicePixelRatioF()};
-	const QPixmap mask{icon().pixmap(QSize{static_cast<int>(glyphSize), static_cast<int>(glyphSize)}, ratio)};
+	const QPixmap mask{icon().pixmap(QSize{QtLineGlyph::size, QtLineGlyph::size}, ratio)};
 	if (mask.isNull())
 	{
 		return;
@@ -1384,13 +1352,13 @@ void QtDockHeaderButton::paintEvent(QPaintEvent* /*event*/)
 
 	if (!isEnabled())
 	{
-		painter.setOpacity(0.3);
+		painter.setOpacity(QtLineGlyph::disabledOpacity);
 	}
 	else if (!hovered && !headerHovered())
 	{
-		painter.setOpacity(0.45);
+		painter.setOpacity(QtLineGlyph::faintOpacity);
 	}
-	const QPointF topLeft{QRectF{rect()}.center() - QPointF{glyphSize / 2, glyphSize / 2}};
+	const QPointF topLeft{QRectF{rect()}.center() - QPointF{QtLineGlyph::size / 2.0, QtLineGlyph::size / 2.0}};
 	painter.drawPixmap(QPointF{std::round(topLeft.x()), std::round(topLeft.y())}, glyph);
 }
 
@@ -1600,7 +1568,7 @@ QIcon QtDockViewFactory::iconForButtonType(KDDockWidgets::TitleBarButtonType typ
 	auto glyph{m_glyphs.constFind(key)};
 	if (glyph == m_glyphs.cend())
 	{
-		glyph = m_glyphs.insert(key, drawGlyph(type));
+		glyph = m_glyphs.insert(key, headerGlyph(type));
 	}
 	return *glyph;
 }

@@ -21,23 +21,12 @@ public:
 	static const char BOOKMARK_VIEW_BOOKMARK_EDIT_BOOKMARK_ICON[];
 
 	static const char CODE_VIEW_CSS[];
-	static const char CODE_VIEW_ARROW_DOWN[];
 	static const char CODE_VIEW_ARROW_LEFT[];
 	static const char CODE_VIEW_ARROW_RIGHT[];
-	static const char CODE_VIEW_ARROW_UP[];
-	static const char CODE_VIEW_BUTTON_BACKGROUND[];
 	static const char CODE_VIEW_EDIT[];
-	static const char CODE_VIEW_FILE[];
-	static const char CODE_VIEW_LIST[];
-	static const char CODE_VIEW_MAXIMIZE_ACTIVE[];
-	static const char CODE_VIEW_MAXIMIZE_INACTIVE[];
 	static const char CODE_VIEW_PATTERN_BRIGHT[];
 	static const char CODE_VIEW_PATTERN_DARK[];
 	static const char CODE_VIEW_PATTERN_GREY[];
-	static const char CODE_VIEW_SNIPPET_ACTIVE[];
-	static const char CODE_VIEW_SNIPPET_ARROW_DOWN[];
-	static const char CODE_VIEW_SNIPPET_ARROW_RIGHT[];
-	static const char CODE_VIEW_SNIPPET_INACTIVE[];
 
 	static const char CUSTOM_TRAIL_VIEW_CSS[];
 	static const char CUSTOM_TRAIL_VIEW_CIRCLE[];
@@ -71,6 +60,21 @@ public:
 	static const char GRAPH_VIEW_ZOOM_OUT[];
 	static const char GRAPH_VIEW_CSS[];
 
+	static const char GLYPH_ADD[];
+	static const char GLYPH_AUTO_HIDE[];
+	static const char GLYPH_CHEVRON_DOWN[];
+	static const char GLYPH_CHEVRON_RIGHT[];
+	static const char GLYPH_CHEVRON_UP[];
+	static const char GLYPH_CLOSE[];
+	static const char GLYPH_EDIT[];
+	static const char GLYPH_FILE_INCOMPLETE[];
+	static const char GLYPH_FLOAT[];
+	static const char GLYPH_MAXIMIZE[];
+	static const char GLYPH_MINIMIZE[];
+	static const char GLYPH_SNIPPETS[];
+	static const char GLYPH_UNAUTO_HIDE[];
+	static const char GLYPH_UNFOLD[];
+
 	static const char HISTORY_LIST_CSS[];
 	static const char HISTORY_LIST_ARROW[];
 
@@ -90,12 +94,6 @@ public:
 
 	static const char KEYBOARD_SHORTCUTS_CSS[];
 
-	static const char MAIN_CLOSE_BLACK[];
-	static const char MAIN_CLOSE_GREY[];
-	static const char MAIN_CLOSE_WHITE[];
-	static const char MAIN_FLOAT_BLACK[];
-	static const char MAIN_FLOAT_GREY[];
-	static const char MAIN_FLOAT_WHITE[];
 	static const char MAIN_CSS[];
 	static const char MAIN_SCROLLBAR_CSS[];
 
@@ -121,8 +119,6 @@ public:
 	static const char TABBED_VIEW_ARROW_UP[];
 	static const char TABBED_VIEW_CSS[];
 
-	static const char TABS_VIEW_ADD[];
-	static const char TABS_VIEW_CLOSE[];
 	static const char TABS_VIEW_CSS[];
 
 	static const char TOOLTIP_VIEW_CSS[];

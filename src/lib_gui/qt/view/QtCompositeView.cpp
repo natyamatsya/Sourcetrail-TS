@@ -24,7 +24,9 @@ QtCompositeView::QtCompositeView(
 	topLayout->setSpacing(0);
 	topLayout->setContentsMargins(0, 0, 0, 0);
 
-	const size_t indicatorHeight = 3;
+	// The focus indicator: a 2 px bar in window/focus along the card's top, under its header,
+	// as the graph's and the code view's.
+	const int indicatorHeight = 2;
 
 	{
 		m_focusIndicator = new QWidget();

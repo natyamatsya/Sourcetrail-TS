@@ -18,6 +18,7 @@
 #include "ColorScheme.h"
 #endif
 #include "logging.h"
+#include "QtLineGlyph.h"
 
 #include <QAbstractAnimation>
 #include <QApplication>
@@ -26,7 +27,6 @@
 #include <QFontDatabase>
 #include <QIcon>
 #include <QPainter>
-#include <QSvgRenderer>
 #include <QWidget>
 
 #include <set>
@@ -98,50 +98,26 @@ QPixmap colorizePixmap(const QPixmap &pixmap, QColor color)
 	return QPixmap::fromImage(image);
 }
 
-namespace
-{
-// An icon's pixmaps: an image as it is; a drawing (.svg) rendered at its size for screens of
-// one, two and three pixels per point, so it stays crisp on each.
-std::vector<QPixmap> iconPixmaps(const FilePath &iconPath)
-{
-	const QString path{QString::fromStdString(iconPath.str())};
-	if (iconPath.extension() != ".svg")
-	{
-		return {QPixmap{path}};
-	}
-
-	QSvgRenderer renderer{path};
-	std::vector<QPixmap> pixmaps;
-	for (const int scale: {1, 2, 3})
-	{
-		QImage image{renderer.defaultSize() * scale, QImage::Format_ARGB32_Premultiplied};
-		image.fill(Qt::transparent);
-		{
-			QPainter painter{&image};
-			renderer.render(&painter);
-		}
-		image.setDevicePixelRatio(scale);
-		pixmaps.push_back(QPixmap::fromImage(image));
-	}
-	return pixmaps;
-}
-}	 // namespace
-
 QIcon createButtonIcon(const FilePath &iconPath, const std::string &colorId)
 {
 	ColorScheme *scheme = ColorScheme::getInstance().get();
 
+	const QColor color{scheme->getColor(colorId + "/icon").c_str()};
 	const std::string disabledColorId{colorId + "/icon_disabled"};
-	const bool hasDisabledColor{scheme->hasColor(disabledColorId)};
+	const QColor disabledColor{
+		scheme->hasColor(disabledColorId) ? QColor{scheme->getColor(disabledColorId).c_str()} : QColor{}};
 
-	QIcon icon;
-	for (const QPixmap &pixmap: iconPixmaps(iconPath))
+	// A line icon (.svg) is drawn as all of them are; an image is coloured as it is.
+	if (iconPath.extension() == ".svg")
 	{
-		icon.addPixmap(utility::colorizePixmap(pixmap, scheme->getColor(colorId + "/icon").c_str()));
-		if (hasDisabledColor)
-		{
-			icon.addPixmap(utility::colorizePixmap(pixmap, scheme->getColor(disabledColorId).c_str()), QIcon::Disabled);
-		}
+		return QtLineGlyph::icon(QString::fromStdString(iconPath.str()), color, disabledColor);
+	}
+
+	const QPixmap pixmap{QString::fromStdString(iconPath.str())};
+	QIcon icon{utility::colorizePixmap(pixmap, color)};
+	if (disabledColor.isValid())
+	{
+		icon.addPixmap(utility::colorizePixmap(pixmap, disabledColor), QIcon::Disabled);
 	}
 	return icon;
 }

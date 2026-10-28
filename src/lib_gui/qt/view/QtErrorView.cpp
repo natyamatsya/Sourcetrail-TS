@@ -149,10 +149,11 @@ QtErrorView::QtErrorView(ViewLayout* viewLayout)
 	checkboxes->addSpacing(4);
 
 	{
+		// A line glyph in the header's colour, as the header's other buttons.
 		m_editButton = new QtSelfRefreshIconButton(
 			tr("Edit Project"),
-			QtResources::CODE_VIEW_EDIT,
-			"window/button");
+			QtResources::GLYPH_EDIT,
+			"window/dock/button");
 		m_editButton->setObjectName(QStringLiteral("screen_button"));
 		m_editButton->setToolTip(tr("edit project"));
 		connect(m_editButton, &QPushButton::clicked, []() { MessageProjectEdit().dispatch(); });
@@ -187,12 +188,11 @@ void QtErrorView::addErrors(
 	const std::vector<ErrorInfo>& errors, const ErrorCountInfo& errorCount, bool scrollTo)
 {
 	execution::qt::onUi(this, [=, this]() {
-		const int firstNewRow = m_table->getFilledRowCount();
 		for (const ErrorInfo& error: errors)
 		{
 			addErrorToTable(error);
 		}
-		m_table->updateRows(firstNewRow);
+		m_table->updateRows();
 
 		if (scrollTo)
 		{
@@ -303,7 +303,9 @@ void QtErrorView::setStyleSheet() const
 	m_showNonIndexedErrors->setPalette(palette);
 	m_showNonIndexedFatals->setPalette(palette);
 
-	m_helpButton->setColor(QColor(ColorScheme::getInstance()->getColor("table/text/normal").c_str()));
+	// It sits in the bar with the filters, in the dock's header or under the table: in the
+	// header's colour.
+	m_helpButton->setColor(QColor(ColorScheme::getInstance()->getColor("window/dock/header_text").c_str()));
 
 	m_table->updateRows();
 }

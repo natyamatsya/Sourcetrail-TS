@@ -405,7 +405,7 @@
          }
       },
       "toolbar": {
-         "background": "#E6F7F7F8",
+         "background": "#F7F7F8",
          "border": "#D2D4D9",
          "checked": "#26000000",
          "hover": "#12000000",
@@ -559,6 +559,10 @@
       },
       "dock": {
          "background": "#E0E0E0",
+         "button": {
+            "icon": "#5F636B",
+            "icon_disabled": "#B3B7BF"
+         },
          "canvas": "#E6E7EA",
          "card": "#FFFFFF",
          "card_border": "#D2D4D9",

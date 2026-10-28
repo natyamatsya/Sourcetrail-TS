@@ -131,6 +131,13 @@ TEST_CASE("every colour scheme has the docking chrome's colours")
 	});
 }
 
+TEST_CASE("every colour scheme has the colours of the dock headers' bar buttons")
+{
+	// A view's bar in its dock's header (the Errors view's Edit Project) colours its line icon
+	// with these (QtSelfRefreshIconButton's "window/dock/button" key).
+	requireColors({"window/dock/button/icon", "window/dock/button/icon_disabled"});
+}
+
 TEST_CASE("every colour scheme has the colours the code view's style sheet asks for")
 {
 	const std::vector<std::string> keys = styleSheetColorKeys(QtResources::CODE_VIEW_CSS);

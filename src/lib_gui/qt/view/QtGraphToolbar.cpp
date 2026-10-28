@@ -1,5 +1,7 @@
 #include "QtGraphToolbar.h"
 
+#include "QtLineGlyph.h"
+
 #include <QEvent>
 #include <QGraphicsOpacityEffect>
 #include <QVBoxLayout>
@@ -16,8 +18,9 @@ constexpr int controlSpacing{2};
 // The pill is fully rounded: a single column is a stadium; more columns keep its ends' curve.
 constexpr qreal cornerRadius{QtGraphToolbar::controlSize / 2.0 + QtGraphToolbar::padding};
 
-// How strong the controls are at rest; the mouse over the toolbar brings them up to full.
-constexpr qreal restingOpacity{0.7};
+// How strong the controls are at rest, as every faint glyph; the mouse over the toolbar brings
+// them up to full.
+constexpr qreal restingOpacity{QtLineGlyph::faintOpacity};
 
 bool showsAnyControl(const QWidget& section)
 {
@@ -71,8 +74,8 @@ QWidget& QtGraphToolbar::addSection(std::initializer_list<QWidget*> controls)
 	QWidget* section{new QWidget(this)};
 	section->setObjectName(QStringLiteral("graph_toolbar_section"));
 
-	// Faint at rest (see setFirm). The pill itself is not faded, so it keeps the graph's
-	// lines and labels from showing through the controls.
+	// Faint at rest (see setFirm). The pill itself is not faded: it is opaque, so the graph's
+	// lines and labels do not show through the controls.
 	QGraphicsOpacityEffect* opacity{new QGraphicsOpacityEffect(section)};
 	opacity->setOpacity(m_firm ? 1.0 : restingOpacity);
 	section->setGraphicsEffect(opacity);
@@ -116,13 +119,8 @@ void QtGraphToolbar::paintEvent(QPaintEvent* /*event*/)
 	painter.setRenderHint(QPainter::Antialiasing);
 
 	const QRectF pill{QRectF{rect()}.adjusted(0.5, 0.5, -0.5, -0.5)};
-	QColor background{m_backgroundColor};
-	if (m_firm)
-	{
-		background.setAlpha(255);
-	}
 	painter.setPen(QPen{m_borderColor, 1.0});
-	painter.setBrush(background);
+	painter.setBrush(m_backgroundColor);
 	painter.drawRoundedRect(pill, cornerRadius - 0.5, cornerRadius - 0.5);
 
 	painter.setRenderHint(QPainter::Antialiasing, false);

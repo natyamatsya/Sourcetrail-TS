@@ -67,7 +67,7 @@ QtDockCard {
 	qproperty-cardColor: <color:window/dock/card>;
 	qproperty-canvasColor: <color:window/dock/canvas>;
 	qproperty-borderColor: <color:window/dock/card_border>;
-	qproperty-radius: 9;
+	qproperty-radius: 10;
 }
 
 /* A floating window paints its canvas and frame itself: a style sheet background would fill
@@ -90,15 +90,17 @@ QtDockGrip {
 	qproperty-dotHoverColor: <color:window/dock/handle_hover>;
 }
 
-/* The slim header along the card's top edge: grip, title, buttons. */
+/* The slim header along the card's top edge: grip, title, buttons. 28 px high, as the header
+   lines inside the cards (the code view's navigation and file headers) and the search bar's
+   controls. */
 KDDockWidgets--QtWidgets--TitleBar {
 	background: <color:window/dock/header>;
 	border: none;
 	border-bottom: 1px solid <color:window/dock/card_border>;
 	color: <color:window/dock/header_text>;
 	font-size: 12px;
-	min-height: 26px;
-	max-height: 26px;
+	min-height: 28px;
+	max-height: 28px;
 }
 
 /* Several cards in a floating window: the window's header row lies on the canvas above them. */
@@ -141,11 +143,17 @@ KDDockWidgets--QtWidgets--TabBar::tab,
 QTabBar#dock_header_tabs::tab {
 	background: transparent;
 	border: none;
-	border-radius: 6px;
+	border-radius: 10px;
 	color: <color:window/dock/header_text>;
 	font-size: 12px;
-	margin: 3px 1px;
-	padding: 2px 10px;
+	height: 20px;
+	margin: 4px 1px;
+	padding: 0px 10px;
+}
+
+/* In a header the tabs share its 2 px inset: their own margin centres them in it, as the chips. */
+QTabBar#dock_header_tabs::tab {
+	margin: 2px 1px;
 }
 
 KDDockWidgets--QtWidgets--TabBar::tab:hover,
@@ -168,11 +176,12 @@ QWidget#dock_header_divider {
 QWidget#filter_bar QCheckBox {
 	background: transparent;
 	border: 1px solid <color:window/dock/card_border>;
-	border-radius: 9px;
+	border-radius: 10px;
 	color: <color:window/dock/header_text>;
 	font-size: 11px;
-	min-height: 16px;
-	padding: 1px 8px 1px 7px;
+	min-height: 18px;
+	max-height: 18px;
+	padding: 0px 8px 0px 7px;
 	spacing: 5px;
 }
 
@@ -207,7 +216,7 @@ QWidget#filter_bar QPushButton {
 	border-radius: 6px;
 	color: <color:window/dock/header_text>;
 	font-size: 11px;
-	icon-size: 12px;
+	icon-size: 16px;
 	margin: 0px;
 	padding: 2px 8px;
 }
@@ -239,7 +248,7 @@ QtDockSideBarButton {
 #screen_button {
 	background-color: <color:window/button/background>;
 	border: 1px solid <color:window/button/border>;
-	border-radius: 5px;
+	border-radius: 6px;
 	color: <color:window/button/text>;
 	font-size: <setting:font_size>px;
 	padding: 4px 6px;

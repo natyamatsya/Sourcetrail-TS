@@ -118,7 +118,6 @@ void QtStatusView::clear()
 void QtStatusView::addStatus(const std::vector<Status>& status)
 {
 	execution::qt::onUi(this, [=, this]() {
-		const int firstNewRow = m_table->getFilledRowCount();
 		for (const Status& s: status)
 		{
 			const int rowNumber = m_table->getFilledRowCount();
@@ -135,6 +134,7 @@ void QtStatusView::addStatus(const std::vector<Status>& status)
 				rowNumber,
 				static_cast<int>(STATUSVIEW_COLUMN::STATUS),
 				new QStandardItem(QString::fromStdString(s.message)));
+			m_model->item(rowNumber, static_cast<int>(STATUSVIEW_COLUMN::STATUS))->setToolTip(QString::fromStdString(s.message));
 
 			if (s.type == StatusType::STATUS_ERROR)
 			{
@@ -143,7 +143,7 @@ void QtStatusView::addStatus(const std::vector<Status>& status)
 			}
 		}
 
-		m_table->updateRows(firstNewRow);
+		m_table->updateRows();
 
 		if (!m_table->hasSelection())
 		{

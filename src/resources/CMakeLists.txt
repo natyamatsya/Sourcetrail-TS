@@ -22,23 +22,12 @@ qt_add_resources(Sourcetrail_res_gui Sourcetrail_resources
 		bookmark_view/bookmark_view.css
 		
 		code_view/code_view.css
-		code_view/images/arrow_down.png
 		code_view/images/arrow_left.png
 		code_view/images/arrow_right.png
-		code_view/images/arrow_up.png
-		code_view/images/button_background.png
 		code_view/images/edit.png
-		code_view/images/file.png
-		code_view/images/list.png
-		code_view/images/maximize_active.png
-		code_view/images/maximize_inactive.png
 		code_view/images/pattern_bright.png
 		code_view/images/pattern_dark.png
 		code_view/images/pattern_grey.png
-		code_view/images/snippet_active.png
-		code_view/images/snippet_arrow_down.png
-		code_view/images/snippet_arrow_right.png
-		code_view/images/snippet_inactive.png
 		
 		custom_trail_view/custom_trail_view.css
 		custom_trail_view/images/circle.png
@@ -72,6 +61,21 @@ qt_add_resources(Sourcetrail_res_gui Sourcetrail_resources
 		graph_view/images/zoom_out.svg
 		graph_view/graph_view.css
 		
+		glyphs/add.svg
+		glyphs/auto_hide.svg
+		glyphs/chevron_down.svg
+		glyphs/chevron_right.svg
+		glyphs/chevron_up.svg
+		glyphs/close.svg
+		glyphs/edit.svg
+		glyphs/file_incomplete.svg
+		glyphs/float.svg
+		glyphs/maximize.svg
+		glyphs/minimize.svg
+		glyphs/snippets.svg
+		glyphs/unauto_hide.svg
+		glyphs/unfold.svg
+		
 		history_list/history_list.css
 		history_list/images/arrow.png
 		
@@ -91,12 +95,6 @@ qt_add_resources(Sourcetrail_res_gui Sourcetrail_resources
 		
 		keyboard_shortcuts/keyboard_shortcuts.css
 		
-		main/images/close_black.png
-		main/images/close_grey.png
-		main/images/close_white.png
-		main/images/float_black.png
-		main/images/float_grey.png
-		main/images/float_white.png
 		main/main.css
 		main/scrollbar.css
 		
@@ -122,8 +120,6 @@ qt_add_resources(Sourcetrail_res_gui Sourcetrail_resources
 		tabbed_view/arrow_up.png
 		tabbed_view/tabbed_view.css
 		
-		tabs_view/images/add.png
-		tabs_view/images/close.png
 		tabs_view/tabs_view.css
 		
 		tooltip_view/tooltip_view.css
