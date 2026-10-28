@@ -45,7 +45,7 @@ inline Id CxxIndexingContext::recordDeclaration(const clang::NamedDecl* d, Symbo
 	const Id symbolId = m_symbols.getOrCreateSymbolId(d);
 	m_client.recordSymbolKind(symbolId, kind);
 	m_client.recordLocation(symbolId, m_locations.getParseLocation(d->getLocation()), ParseLocationType::TOKEN);
-	m_client.recordAccessKind(symbolId, utility::convertAccessSpecifier(d->getAccess()));
+	recordAccessKind(symbolId, utility::convertAccessSpecifier(d->getAccess()));
 	m_client.recordDefinitionKind(symbolId, utility::getDefinitionKind(d));
 	recordDeprecation(symbolId, d);
 	return symbolId;
@@ -167,8 +167,14 @@ inline void CxxIndexingContext::recordSymbolKind(Id symbolId, SymbolKind symbolK
 	m_client.recordSymbolKind(symbolId, symbolKind);
 }
 
+// C has no access: clang gives a C struct's members public access, which the graph would show as a
+// "public" section.
 inline void CxxIndexingContext::recordAccessKind(Id symbolId, AccessKind accessKind)
 {
+	if (!m_astContext.getLangOpts().CPlusPlus)
+	{
+		return;
+	}
 	m_client.recordAccessKind(symbolId, accessKind);
 }
 

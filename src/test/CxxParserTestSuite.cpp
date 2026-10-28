@@ -692,6 +692,16 @@ TEST_CASE("cxx parser finds name of anonymous union declared inside typedef")
 	REQUIRE(utility::containsElement<std::string>(client->unions, "Foo <5:3 5:5>"));
 }
 
+TEST_CASE("cxx parser records no access for the members of a C struct")
+{
+	// C has no access; the graph shows members without one in a section without a heading.
+	std::shared_ptr<TestStorage> client = parseCCode("struct ops { int area; };\n");
+	REQUIRE(client->fields == std::vector<std::string>{"int ops::area <1:18 1:21>"});
+
+	std::shared_ptr<TestStorage> cxxClient = parseCode("struct ops { int area; };\n");
+	REQUIRE(cxxClient->fields == std::vector<std::string>{"public int ops::area <1:18 1:21>"});
+}
+
 TEST_CASE("cxx parser finds a typedef naming its own tag as that tag")
 {
 	// C's way to name a struct without "struct": the typedef and the tag are one node, the tag's.
