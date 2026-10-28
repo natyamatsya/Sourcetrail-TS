@@ -90,7 +90,7 @@ private:
 		NodeTypeSet acceptedNodeTypes,
 		std::vector<SearchIndex::SearchPath>* results) const;
 
-	static std::multiset<SearchResult> createScoredResults(
+	static std::vector<SearchResult> createScoredResults(
 		const std::vector<SearchPath>& paths,
 		NodeTypeSet acceptedNodeTypes,
 		size_t maxResultCount);
@@ -107,8 +107,17 @@ private:
 		std::map<std::string, SearchResult>* scoresCache,
 		SearchResult* result);
 	static int scoreText(const std::string& text, const std::vector<size_t>& indices);
+	//! The placement of `lowerQuery`'s letters in `text` that scoreText scores best;
+	//! empty when they are not all in it.
+	static std::vector<size_t> bestIndices(const std::string& text, const std::string& lowerQuery);
 
 public:
+	//! What a match earns for the name it hits rather than for its letters: the whole
+	//! name, its last part (with the query's qualifiers among the name's, so `fmt::vformat`
+	//! finds `fmt::v12::vformat` in its inline namespace), or its end. The query is
+	//! the text's letters at `indices`.
+	static int nameBonus(const std::string& text, const std::vector<size_t>& indices);
+
 	static SearchResult rescoreText(
 		const std::string& fulltext,
 		const std::string& text,
