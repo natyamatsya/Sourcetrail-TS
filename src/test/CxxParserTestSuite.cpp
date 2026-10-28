@@ -3267,6 +3267,28 @@ TEST_CASE("cxx parser finds call of explicitly defined non-trivial destructor")
 	REQUIRE(containsElement(client->calls, "int main() -> void App::~App() <11:3 11:3>"s));
 }
 
+TEST_CASE("cxx parser survives the destructor of a class with a member of incomplete type")
+{
+	// fmt's printf-test.cc with fmt/xchar.h missing crashed the indexer in CFG::buildCFG: gmock's
+	// StringMatchResultListener holds a std::stringstream the TU no longer completes, which makes the
+	// field and the class invalid; building the CFG of its implicit destructor (defined for the
+	// vtable and the local below) read the member's missing definition. A missing include comes
+	// first, as there; the valid code after it keeps its destructor call.
+	std::shared_ptr<TestStorage> client = parseCode(
+		"#include \"missing.h\"\n"
+		"class Incomplete;\n"
+		"struct Base { virtual ~Base() {} };\n"
+		"struct Holder : Base { Holder() {} Incomplete member; };\n"
+		"struct Valid { ~Valid() {} };\n"
+		"void use() { Holder holder; Valid valid; }\n");
+
+	INFO(join(client->errors, "\n"s));
+	REQUIRE(client->errors.size() == 1);	// what follows a fatal error is not reported
+	REQUIRE(client->errors.front() == "'missing.h' file not found <1:10 1:10>");
+	INFO(join(client->calls, "\n"s));
+	REQUIRE(containsElement(client->calls, "void use() -> void Valid::~Valid() <6:42 6:42>"s));
+}
+
 TEST_CASE("cxx parser finds call of explicitly defined destructor at delete keyword")
 {
 	std::shared_ptr<TestStorage> client = parseCode(
@@ -6098,3 +6120,4 @@ TEST_CASE("cxx parser records no channel atoms without declared prefixes")
 		"const char* g_memoryNamePrefix = \"srctrl_ipc_mem_\";\n", {});
 	REQUIRE(channelAtomNames(storage).empty());
 }
+
