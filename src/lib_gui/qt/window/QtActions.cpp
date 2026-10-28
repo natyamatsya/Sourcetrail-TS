@@ -25,17 +25,14 @@ using namespace aidkit::qt;
 namespace
 {
 
+// Each one once: two combinations can read the same on a platform.
 QString join(const QList<QString> &list)
 {
-	QString str;
-
-	auto it = list.begin();
-	if (it != list.end()) {
-		str.append(*it++);
-		while (it != list.end())
-			str.append(" | ").append(*it++);
-	}
-	return str;
+	QList<QString> distinct;
+	for (const QString &item : list)
+		if (!distinct.contains(item))
+			distinct.append(item);
+	return distinct.join(" | ");
 }
 
 class QtInputCombination
@@ -305,7 +302,9 @@ constexpr QtStandardKeyCombination MENU_NEW_TAB(QKeySequence::AddTab);
 constexpr QtKeyCombination KEYBOARD_SELECT_NEXT_TAB(    Qt::Key_Tab, Ctrl);
 constexpr QtKeyCombination KEYBOARD_SELECT_PREVIOUS_TAB(Qt::Key_Tab, Ctrl | Shift);
 
-constexpr QtStandardKeyCombination MENU_CLOSE_TAB(QKeySequence::Close);
+// Not QKeySequence::Close: on macOS its first binding is Ctrl+F4 (KEYBOARD_CLOSE_TAB), so the
+// menu read "⌘F4 | ⌘F4" and ⌘W did nothing.
+constexpr QtKeyCombination         MENU_CLOSE_TAB(Qt::Key_W, Ctrl);
 constexpr QtKeyCombination         KEYBOARD_CLOSE_TAB(Qt::Key_F4, Ctrl);
 constexpr QtMouseActionCombination MOUSE_CLOSE_TAB(MouseAction::MiddleClick);
 

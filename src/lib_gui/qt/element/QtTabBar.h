@@ -2,6 +2,7 @@
 #define QT_TAB_BAR_H
 
 #include <QTabBar>
+#include <QVariant>
 
 class QtTabBar: public QTabBar
 {
@@ -25,6 +26,10 @@ protected:
 	void contextMenuEvent(QContextMenuEvent* event) override;
 
 	void mouseReleaseEvent(QMouseEvent *event) override;
+
+private:
+	// Where the tab with data `tab` is now (-1: gone); a tab without data stays at `index`.
+	int indexOfTab(const QVariant& tab, int index) const;
 };
 
 #endif	  // QT_TAB_BAR_H
