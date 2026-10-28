@@ -300,7 +300,7 @@ inline std::optional<std::filesystem::path> utility::resolveCompilerResourceDir(
 	if (output.exitCode == 0 && !output.output.empty())
 	{
 		std::filesystem::path dir(utility::trim(output.output));
-		if (std::filesystem::exists(dir))
+		if (std::error_code ec; std::filesystem::exists(dir, ec))
 		{
 			result = dir;
 		}
@@ -311,7 +311,7 @@ inline std::optional<std::filesystem::path> utility::resolveCompilerResourceDir(
 	if (!result)
 	{
 		std::filesystem::path dir{clang_compat::getResourcesPath(compilerPathStr)};
-		if (std::filesystem::exists(dir))
+		if (std::error_code ec; std::filesystem::exists(dir, ec))
 		{
 			result = dir;
 		}

@@ -341,7 +341,7 @@ inline std::optional<FilePath> findStdModuleSource(const std::string& fileName)
 	for (const std::filesystem::path& prefix: prefixes)
 	{
 		const std::filesystem::path candidate = prefix / "share" / "libc++" / "v1" / fileName;
-		if (std::filesystem::exists(candidate))
+		if (std::error_code ec; std::filesystem::exists(candidate, ec))
 		{
 			return FilePath(candidate.string());
 		}
@@ -360,7 +360,7 @@ inline std::vector<std::string> stdLibraryFlagsFor(const FilePath& stdModuleSour
 	const std::filesystem::path prefix =
 		std::filesystem::path(stdModuleSource.str()).parent_path().parent_path().parent_path().parent_path();
 	const std::filesystem::path headers = prefix / "include" / "c++" / "v1";
-	if (!std::filesystem::exists(headers / "__config"))
+	if (std::error_code ec; !std::filesystem::exists(headers / "__config", ec))
 	{
 		return {};
 	}
@@ -519,11 +519,14 @@ inline int CxxModulePrebuildRunner::run(const FilePath& requestPath)
 	}
 	// Purge stale BMIs so a renamed/deleted module can't leave an orphan .pcm that still resolves on
 	// the next refresh.
-	for (const auto& entry: std::filesystem::directory_iterator(cacheDir.str()))
+	std::error_code purgeEc;
+	for (std::filesystem::directory_iterator end, entry(cacheDir.getPath(), purgeEc); !purgeEc && entry != end;
+		 entry.increment(purgeEc))
 	{
-		if (entry.path().extension() == ".pcm")
+		if (entry->path().extension() == ".pcm")
 		{
-			std::filesystem::remove(entry.path());
+			std::error_code removeEc;
+			std::filesystem::remove(entry->path(), removeEc);
 		}
 	}
 

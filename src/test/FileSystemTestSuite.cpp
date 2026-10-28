@@ -1,5 +1,7 @@
 #include "Catch2.hpp"
 
+#include <filesystem>
+#include <fstream>
 #include <string>
 #include <vector>
 
@@ -8,6 +10,7 @@
 #include "utility.h"
 #endif
 #include "Platform.h"
+#include "TestTempDirectory.h"
 
 // Imports come AFTER all textual #includes (include-before-import rule: textual libc++
 // following BMI-merged declarations trips "cannot add 'abi_tag' in a redeclaration").
@@ -157,3 +160,31 @@ TEST_CASE("find symlinked directories")
 
 	REQUIRE(dirs.size() == 2);
 }
+
+#if !defined(_WIN32)
+TEST_CASE("file system answers for a symlink loop instead of throwing")
+{
+	const TestTempDirectory tempDirectory{"FileSystemTestSuite"};
+	const std::filesystem::path loop = tempDirectory.getPath() / "loop";
+	std::filesystem::create_symlink(loop.filename(), loop);
+	const FilePath path(loop.string());
+
+	REQUIRE(FileSystem::getFileByteSize(path) == 0);
+	REQUIRE_FALSE(FileSystem::getLastWriteTime(path).isValid());
+	REQUIRE_FALSE(FileSystem::getFileInfoForPath(path).path.exists());
+	REQUIRE(FileSystem::getDirectSubDirectories(FilePath(tempDirectory.getPath().string())).empty());
+}
+
+TEST_CASE("file system reports a failed rename or copy instead of throwing")
+{
+	const TestTempDirectory tempDirectory{"FileSystemTestSuite"};
+	const FilePath from(tempDirectory.getFilePath("from.txt"));
+	std::ofstream(from.str()) << "x";
+	// Into a directory that does not exist: the call fails, it does not throw.
+	const FilePath to(tempDirectory.getFilePath("missing/to.txt"));
+
+	REQUIRE_FALSE(FileSystem::rename(from, to));
+	REQUIRE_FALSE(FileSystem::copyFile(from, to));
+	REQUIRE(from.recheckExists());
+}
+#endif

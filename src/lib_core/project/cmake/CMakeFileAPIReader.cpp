@@ -1866,7 +1866,10 @@ bool CMakeFileAPIReader::isReplyStale(const FilePath& sourceDir) const
 	if (indexFile.empty())
 		return false;
 
-	const auto indexMtime{std::filesystem::last_write_time(indexFile.getPath())};
+	std::error_code indexEc;
+	const auto indexMtime{std::filesystem::last_write_time(indexFile.getPath(), indexEc)};
+	if (indexEc)
+		return false;
 
 	// The presets are no CMake input (cmakeFiles-v1 does not list them), but a
 	// changed preset (cache variables, generator, toolchain) changes the reply.
@@ -1877,9 +1880,9 @@ bool CMakeFileAPIReader::isReplyStale(const FilePath& sourceDir) const
 
 	for (const FilePath& input : inputs)
 	{
-		if (!input.exists())
-			continue;
-		if (std::filesystem::last_write_time(input.getPath()) > indexMtime)
+		std::error_code inputEc;
+		const auto inputMtime{std::filesystem::last_write_time(input.getPath(), inputEc)};
+		if (!inputEc && inputMtime > indexMtime)
 			return true;
 	}
 	return false;

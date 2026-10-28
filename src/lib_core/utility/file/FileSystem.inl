@@ -223,14 +223,17 @@ inline std::set<FilePath> FileSystem::getSymLinkedDirectories(const std::vector<
 
 inline unsigned long long FileSystem::getFileByteSize(const FilePath &filePath)
 {
-	return std::filesystem::file_size(filePath.getPath());
+	// 0 for a file whose size cannot be read (gone, a symlink loop, no permission) -- never a throw.
+	std::error_code ec;
+	const std::uintmax_t size = std::filesystem::file_size(filePath.getPath(), ec);
+	return ec ? 0 : size;
 }
 
 inline TimeStamp FileSystem::getLastWriteTime(const FilePath &filePath)
 {
-	if (filePath.exists())
+	std::error_code ec;
+	if (const auto ft = std::filesystem::last_write_time(filePath.getPath(), ec); !ec)
 	{
-		auto ft = std::filesystem::last_write_time(filePath.getPath());
 #if defined(_LIBCPP_VERSION)
 		// libc++ does not implement std::chrono::clock_cast yet; file_clock::to_sys
 		// is the spelling it provides. MSVC conversely lacks file_clock::to_sys.
@@ -260,9 +263,11 @@ inline bool FileSystem::rename(const FilePath &from, const FilePath &to)
 		return false;
 	}
 
-	std::filesystem::rename(from.getPath(), to.getPath());
+	std::error_code ec;
+	std::filesystem::rename(from.getPath(), to.getPath(), ec);
+	from.recheckExists();
 	to.recheckExists();
-	return true;
+	return !ec;
 }
 
 inline bool FileSystem::copyFile(const FilePath &from, const FilePath &to)
@@ -272,9 +277,10 @@ inline bool FileSystem::copyFile(const FilePath &from, const FilePath &to)
 		return false;
 	}
 
-	std::filesystem::copy_file(from.getPath(), to.getPath());
+	std::error_code ec;
+	std::filesystem::copy_file(from.getPath(), to.getPath(), ec);
 	to.recheckExists();
-	return true;
+	return !ec;
 }
 
 inline bool FileSystem::copyDirectory(const FilePath &from, const FilePath &to)
@@ -284,9 +290,10 @@ inline bool FileSystem::copyDirectory(const FilePath &from, const FilePath &to)
 		return false;
 	}
 
-	std::filesystem::copy(from.getPath(), to.getPath(), std::filesystem::copy_options::recursive);
+	std::error_code ec;
+	std::filesystem::copy(from.getPath(), to.getPath(), std::filesystem::copy_options::recursive, ec);
 	to.recheckExists();
-	return true;
+	return !ec;
 }
 
 inline std::expected<void, std::error_code> FileSystem::createDirectories(const FilePath &path)
@@ -307,9 +314,11 @@ inline std::vector<FilePath> FileSystem::getDirectSubDirectories(const FilePath 
 
 	if (path.exists() && path.isDirectory())
 	{
-		for (std::filesystem::directory_iterator end, dir(path.str()); dir != end; dir++)
+		std::error_code ec;
+		for (std::filesystem::directory_iterator end, dir(path.getPath(), ec); !ec && dir != end; dir.increment(ec))
 		{
-			if (std::filesystem::is_directory(dir->path()))
+			std::error_code dirEc;
+			if (std::filesystem::is_directory(dir->path(), dirEc))
 			{
 				v.push_back(FilePath(dir->path().string()));
 			}

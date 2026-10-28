@@ -9,11 +9,18 @@
 #include <cstdlib>
 #include <filesystem>
 #include <string_view>
+#include <system_error>
+#include <utility>
 #include <vector>
 #endif
 
 // The default ctor, copy/move ctors, copy/move assignment, and dtor are all `= default` in the header --
 // the compiler-generated versions copy/move m_path and the (in-class-initialized) cache flags exactly.
+//
+// Every std::filesystem call here takes the std::error_code overload: a path the OS refuses to resolve
+// (a symlink loop's ELOOP, ENAMETOOLONG, EACCES on a parent) is an answer -- "does not exist", "not a
+// directory", "left as given" -- never an exception. The throwing overloads under these noexcept and
+// unguarded members terminated the app on any such path.
 
 inline FilePath::FilePath(const char filePath[])
     : FilePath(std::string(filePath))
@@ -26,8 +33,13 @@ inline FilePath::FilePath(const std::string& filePath)
 }
 
 inline FilePath::FilePath(const std::string& filePath, const std::string& base)
-	: m_path(std::filesystem::absolute(std::filesystem::path(base) / filePath))
+	: m_path(std::filesystem::path(base) / filePath)
 {
+	std::error_code ec;
+	if (std::filesystem::path absolute = std::filesystem::absolute(m_path, ec); !ec)
+	{
+		m_path = std::move(absolute);
+	}
 }
 
 inline const std::filesystem::path &FilePath::getPath() const
@@ -44,7 +56,8 @@ inline bool FilePath::exists() const noexcept
 {
 	if (!m_exists)
 	{
-		m_exists = std::filesystem::exists(getPath());
+		std::error_code ec;
+		m_exists = std::filesystem::exists(getPath(), ec) && !ec;
 	}
 
 	return *m_exists;
@@ -60,7 +73,8 @@ inline bool FilePath::isDirectory() const
 {
 	if (!m_isDirectory)
 	{
-		m_isDirectory = std::filesystem::is_directory(getPath());
+		std::error_code ec;
+		m_isDirectory = std::filesystem::is_directory(getPath(), ec) && !ec;
 	}
 
 	return *m_isDirectory;
@@ -120,7 +134,11 @@ inline FilePath FilePath::getParentDirectory() const
 
 inline FilePath& FilePath::makeAbsolute()
 {
-	m_path = std::filesystem::absolute(getPath());
+	std::error_code ec;
+	if (std::filesystem::path absolute = std::filesystem::absolute(getPath(), ec); !ec)
+	{
+		m_path = std::move(absolute);
+	}
 	return *this;
 }
 
@@ -137,17 +155,16 @@ inline FilePath& FilePath::makeCanonical()
 	{
 		return *this;
 	}
-	try
+	std::error_code ec;
+	std::filesystem::path canonical = std::filesystem::canonical(getPath(), ec);
+	if (ec)
 	{
-		m_path = std::filesystem::canonical(getPath());
-		m_canonicalized = true;
+		LOG_ERROR_STREAM(<< "Cannot canonicalize \"" << str() << "\": " << ec.message());
 		return *this;
 	}
-	catch (const std::filesystem::filesystem_error &e)
-	{
-		LOG_ERROR_STREAM(<< e.what());
-		return *this;
-	}
+	m_path = std::move(canonical);
+	m_canonicalized = true;
+	return *this;
 }
 
 inline FilePath FilePath::getCanonical() const
@@ -262,7 +279,8 @@ inline FilePath& FilePath::makeRelativeTo(const FilePath& other)
 
 	if (itB != b.end())
 	{
-		if (!std::filesystem::is_directory(b))
+		std::error_code ec;
+		if (!std::filesystem::is_directory(b, ec))
 		{
 			itB++;
 		}
@@ -422,7 +440,11 @@ inline bool FilePath::operator==(const FilePath& other) const
 {
 	if (exists() && other.exists())
 	{
-		return std::filesystem::equivalent(getPath(), other.getPath());
+		std::error_code ec;
+		if (const bool equivalent = std::filesystem::equivalent(getPath(), other.getPath(), ec); !ec)
+		{
+			return equivalent;
+		}
 	}
 
 	return m_path.compare(other.getPath()) == 0;
