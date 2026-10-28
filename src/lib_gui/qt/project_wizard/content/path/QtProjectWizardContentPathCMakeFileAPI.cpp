@@ -1,8 +1,10 @@
 #include "QtProjectWizardContentPathCMakeFileAPI.h"
 
 #include <algorithm>
+#include <cctype>
 #include <format>
 #include <ranges>
+#include <string>
 
 #include <QComboBox>
 #include <QHBoxLayout>
@@ -405,7 +407,7 @@ void QtProjectWizardContentPathCMakeFileAPI::describe(ProjectWizardView& view) c
 		? std::format("build directory: {}", buildDirectoryNote().toStdString())
 		: m_buildDir.empty()
 		? std::string{"no preset, and no cmake_build_directory chosen yet"}
-		: std::format("no preset; build directory {}: {}", m_buildDir.str(), buildDirectoryNote().toStdString());
+		: std::format("no preset; build directory {} ({})", m_buildDir.str(), buildDirectoryState());
 
 	if (!m_hasReply)
 	{
@@ -758,11 +760,10 @@ QString QtProjectWizardContentPathCMakeFileAPI::buildDirectoryNote() const
 		{
 			return {};
 		}
-		return m_runningCMake  ? QStringLiteral("Running CMake...")
-			: m_configureFailed ? QStringLiteral("CMake failed to configure it: Run CMake shows its errors.")
-			: m_hasReply        ? QStringLiteral("Configured.")
-			: m_configured      ? QStringLiteral("Configured by CMake; Sourcetrail asks it for the targets when indexing.")
-								: QStringLiteral("Not configured yet: Sourcetrail runs CMake when indexing.");
+		// The same words as with a preset, as a sentence.
+		std::string sentence{buildDirectoryState()};
+		sentence.front() = static_cast<char>(std::toupper(static_cast<unsigned char>(sentence.front())));
+		return QString::fromStdString(sentence.ends_with("...") ? sentence : sentence + '.');
 	}
 	if (!std::ranges::contains(m_presets, presetName, &CMakeFileAPIReader::PresetInfo::name))
 	{
@@ -772,13 +773,16 @@ QString QtProjectWizardContentPathCMakeFileAPI::buildDirectoryNote() const
 	{
 		return QStringLiteral("Unknown: the preset has no binaryDir.");
 	}
-	std::string state{
-		m_runningCMake    ? "running CMake..."
-		: m_configureFailed ? "CMake failed to configure it; Run CMake shows its errors"
+	return QString::fromStdString(std::format("{} ({})", m_buildDir.str(), buildDirectoryState()));
+}
+
+std::string QtProjectWizardContentPathCMakeFileAPI::buildDirectoryState() const
+{
+	return m_runningCMake  ? "running CMake..."
+		: m_configureFailed ? "CMake failed to configure it: Run CMake shows its errors"
 		: m_hasReply        ? "configured"
-		: m_configured      ? "configured by CMake; Sourcetrail asks it for the targets when indexing"
-							: "not configured yet; Sourcetrail runs CMake when indexing"};
-	return QString::fromStdString(std::format("{} ({})", m_buildDir.str(), state));
+		: m_configured      ? "configured by CMake: Sourcetrail asks it for the targets when indexing"
+							: "not configured yet: Sourcetrail runs CMake when indexing";
 }
 
 bool QtProjectWizardContentPathCMakeFileAPI::fail(const QString& message)
