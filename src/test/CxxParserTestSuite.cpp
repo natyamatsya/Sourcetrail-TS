@@ -1568,6 +1568,31 @@ TEST_CASE("cxx parser records a called method of a file that is not indexed as a
 	REQUIRE(kinds["f"] == NODE_FUNCTION);
 }
 
+TEST_CASE("cxx parser records written deduction guides only")
+{
+	// Class template argument deduction makes a guide of each constructor; they are not written.
+	std::shared_ptr<TestStorage> client = parseCode(
+		"template <typename T> struct Box { Box(T) {} };\n"
+		"Box b{1};\n"
+		"template <typename T> struct Pair { Pair(T, T) {} };\n"
+		"template <typename T> Pair(T, T) -> Pair<T>;\n"
+		"Pair p{1, 2};\n");
+
+	std::vector<std::string> deductionGuides;
+	for (const std::string& function: client->functions)
+	{
+		if (function.find("deduction guide") != std::string::npos)
+		{
+			deductionGuides.push_back(function);
+		}
+	}
+	REQUIRE(
+		deductionGuides ==
+		std::vector<std::string>{
+			"Pair<typename T> <deduction guide for Pair><typename T>(T, T) <4:23 <4:23 4:26> 4:43>",
+			"Pair<int> <deduction guide for Pair><int>(int, int) <4:23 <4:23 4:26> 4:43>"});
+}
+
 TEST_CASE("cxx parser finds lambda definition and call in function")
 {
 	std::shared_ptr<TestStorage> client = parseCode(
