@@ -124,6 +124,7 @@ if(SOURCETRAIL_CXX_MODULES_ENABLED)
 		SourceGroupTestSuite.cpp
 		SourceLocationCollectionTestSuite.cpp
 		SqliteBookmarkStorageTestSuite.cpp
+		TabSessionTestSuite.cpp
 		SqliteIndexStorageTestSuite.cpp
 		StorageProviderTestSuite.cpp
 		StorageTestSuite.cpp

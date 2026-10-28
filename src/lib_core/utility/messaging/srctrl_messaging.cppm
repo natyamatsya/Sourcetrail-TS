@@ -110,6 +110,7 @@ extern "C++" {
 #include "MessageGraphNodeHide.h"
 #include "MessageGraphNodeMove.h"
 #include "MessageHistoryRedo.h"
+#include "MessageHistoryRestore.h"
 #include "MessageHistoryToPosition.h"
 #include "MessageHistoryUndo.h"
 #include "MessageIndexingFinished.h"

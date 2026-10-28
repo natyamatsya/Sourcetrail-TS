@@ -133,6 +133,10 @@ public:
 	virtual std::vector<EdgeBookmark> getAllEdgeBookmarks() const = 0;
 	virtual std::vector<BookmarkCategory> getAllBookmarkCategories() const = 0;
 
+	// The tabs' session, kept with the bookmarks (tab_session::toJson); empty when none.
+	virtual std::string getTabSession() const = 0;
+	virtual void setTabSession(const std::string& session) = 0;
+
 	virtual TooltipInfo getTooltipInfoForTokenIds(
 		const std::vector<Id>& tokenIds, TooltipOrigin origin) const = 0;
 	virtual TooltipInfo getTooltipInfoForSourceLocationIdsAndLocalSymbolIds(

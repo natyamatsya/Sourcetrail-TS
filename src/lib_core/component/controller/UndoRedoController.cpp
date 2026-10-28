@@ -481,6 +481,40 @@ void UndoRedoController::handleMessage(MessageShowScope* message)
 	processCommand(command);
 }
 
+void UndoRedoController::handleMessage(MessageHistoryRestore* message)
+{
+	// Before what the tab shows: Back replays them, by their names (replayCommand), as
+	// after a reindex.
+	std::list<Command> restored;
+	for (const std::vector<SearchMatch>& matches: message->entries)
+	{
+		auto activation = std::make_shared<MessageActivateTokens>(message);
+		for (const SearchMatch& match: matches)
+		{
+			if (match.searchType == SearchMatch::SearchType::SEARCH_TOKEN && !match.tokenNames.empty())
+			{
+				utility::append(activation->tokenIds, match.tokenIds);
+				activation->searchMatches.push_back(match);
+			}
+		}
+		if (!activation->searchMatches.empty())
+		{
+			restored.emplace_back(activation, Command::Order::ORDER_ACTIVATE);
+		}
+	}
+	if (restored.empty())
+	{
+		return;
+	}
+
+	m_list.splice(m_list.begin(), restored);
+	if (m_iterator != m_list.begin())
+	{
+		getView()->setUndoButtonEnabled(true);
+	}
+	updateHistory();
+}
+
 void UndoRedoController::replayCommands()
 {
 	std::list<Command>::iterator startIterator = m_iterator;

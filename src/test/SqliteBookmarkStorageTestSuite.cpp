@@ -123,3 +123,25 @@ TEST_CASE("edit nodeBookmark")
 	REQUIRE(updatedName == storageBookmark.name);
 	REQUIRE(updatedComment == storageBookmark.comment);
 }
+
+TEST_CASE("bookmark storage keeps the tabs' session")
+{
+	const TestTempDirectory tempDirectory{"SqliteBookmarkStorageTestSuite"};
+	const FilePath databasePath(tempDirectory.getFilePath("sessionTest.sqlite"));
+	FileSystem::remove(databasePath);
+	{
+		StorageConnection connection(databasePath);
+		SqliteBookmarkStorage storage(connection);
+		storage.setup();
+		REQUIRE(storage.getSession().empty());
+		storage.setSession(R"({"version":1})");
+		storage.setSession(R"({"version":1,"tabs":[]})");
+	}
+	{
+		StorageConnection connection(databasePath);
+		SqliteBookmarkStorage storage(connection);
+		storage.setup();
+		REQUIRE(storage.getSession() == R"({"version":1,"tabs":[]})");
+	}
+	FileSystem::remove(databasePath);
+}

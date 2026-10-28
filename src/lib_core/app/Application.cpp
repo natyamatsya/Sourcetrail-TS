@@ -689,6 +689,7 @@ void Application::endLoad(const std::shared_ptr<ProjectLoad>& load)
 	}
 
 	m_project = load->project;
+	m_restoresTabSession = load->directRefresh;
 	if (load->opened)
 	{
 		load->step([&]() { load->project->finishLoad(load->directRefresh); });

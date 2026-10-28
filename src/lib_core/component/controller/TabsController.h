@@ -1,6 +1,7 @@
 #ifndef TABS_CONTROLLER_H
 #define TABS_CONTROLLER_H
 
+#include <deque>
 #include <string>
 
 #include "MessageActivateErrors.h"
@@ -16,6 +17,7 @@
 
 #include "Controller.h"
 #include "Tab.h"
+#include "TabSession.h"
 #include "TabsView.h"
 
 struct SearchMatch;
@@ -67,6 +69,11 @@ private:
 	// m_tabsMutex held.
 	void broadcastTabs();
 
+	// Opens the tabs of the project's last session; false when there is none to open.
+	bool restoreSession();
+	// Keeps the session with the project's bookmarks. Call with m_tabsMutex held.
+	void saveSession();
+
 	ViewLayout* m_mainLayout;
 	const ViewFactory* m_viewFactory;
 	StorageAccess* m_storageAccess;
@@ -77,6 +84,17 @@ private:
 	std::mutex m_tabsMutex;
 
 	bool m_isCreatingTab = false;
+
+	// What the tabs show, kept for the next time the project opens (TabSession.h).
+	struct RestoredTab
+	{
+		std::vector<SearchMatch> shown;	// what it shows again
+		std::vector<std::vector<SearchMatch>> before;	// for Back, oldest first
+		std::vector<tab_session::Entry> history;	// all of it, as the session keeps it
+	};
+	tab_session::Recorder m_session;
+	std::deque<RestoredTab> m_restoring;	// opened in this order, by addTab
+	bool m_sessionPaused = true;	// while the tabs are cleared, and until one opens
 	std::tuple<Id, FilePath, size_t> m_scrollToLine;
 };
 

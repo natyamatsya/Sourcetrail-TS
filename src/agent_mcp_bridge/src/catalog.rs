@@ -454,7 +454,12 @@ returns once indexing is over and the project has reopened on the new index (app
 Ready), so navigation can follow at once. describe('machines') has the whole lifecycle.
   A load that asks first (the index is outdated or from another version: \"reindex?\") \
 returns at once with { app_state: \"Loading\", question, note } (protocol v6): answer it with \
-machine_send { machine: \"question\", event: \"answer\", args: { label: \"Reindex\" } }.",
+machine_send { machine: \"question\", event: \"answer\", args: { label: \"Reindex\" } }.
+  A person's load (the start screen, Recent Projects: also when an agent clicks them) \
+restores the tabs of the project's last session (kept with its bookmarks: what each tab \
+showed, its recent history for Back, the tab in front; what is gone since is left out) \
+instead of the overview, and refreshes directly (describe('machines')). project_open \
+starts from the overview, as above.",
     },
     Topic {
         name: "machines",

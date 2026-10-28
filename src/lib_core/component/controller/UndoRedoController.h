@@ -22,6 +22,7 @@
 #include "MessageGraphNodeHide.h"
 #include "MessageGraphNodeMove.h"
 #include "MessageHistoryRedo.h"
+#include "MessageHistoryRestore.h"
 #include "MessageHistoryToPosition.h"
 #include "MessageHistoryUndo.h"
 #include "MessageIndexingFinished.h"
@@ -58,6 +59,7 @@ class UndoRedoController
 	, public MessageListener<MessageGraphNodeHide>
 	, public MessageListener<MessageGraphNodeMove>
 	, public MessageListener<MessageHistoryRedo>
+	, public MessageListener<MessageHistoryRestore>
 	, public MessageListener<MessageHistoryToPosition>
 	, public MessageListener<MessageHistoryUndo>
 	, public MessageListener<MessageIndexingFinished>
@@ -113,6 +115,7 @@ private:
 	void handleMessage(MessageGraphNodeHide* message) override;
 	void handleMessage(MessageGraphNodeMove* message) override;
 	void handleMessage(MessageHistoryRedo* message) override;
+	void handleMessage(MessageHistoryRestore* message) override;
 	void handleMessage(MessageHistoryToPosition* message) override;
 	void handleMessage(MessageHistoryUndo* message) override;
 	void handleMessage(MessageIndexingFinished* message) override;

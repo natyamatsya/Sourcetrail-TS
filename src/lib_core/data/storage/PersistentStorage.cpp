@@ -2624,6 +2624,18 @@ std::vector<EdgeBookmark> PersistentStorage::getAllEdgeBookmarks() const
 	return edgeBookmarks;
 }
 
+std::string PersistentStorage::getTabSession() const
+{
+	const std::lock_guard<std::mutex> lock(m_tabSessionMutex);
+	return m_sqliteBookmarkStorage.getSession();
+}
+
+void PersistentStorage::setTabSession(const std::string& session)
+{
+	const std::lock_guard<std::mutex> lock(m_tabSessionMutex);
+	m_sqliteBookmarkStorage.setSession(session);
+}
+
 std::vector<BookmarkCategory> PersistentStorage::getAllBookmarkCategories() const
 {
 	std::vector<BookmarkCategory> categories;

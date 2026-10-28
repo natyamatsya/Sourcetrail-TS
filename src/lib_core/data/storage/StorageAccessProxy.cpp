@@ -314,6 +314,15 @@ void StorageAccessProxy::removeBookmarkCategory(const Id id)
 DEF_GETTER_0(getAllNodeBookmarks, std::vector<NodeBookmark>, {})
 DEF_GETTER_0(getAllEdgeBookmarks, std::vector<EdgeBookmark>, {})
 DEF_GETTER_0(getAllBookmarkCategories, std::vector<BookmarkCategory>, {})
+DEF_GETTER_0(getTabSession, std::string, {})
+
+void StorageAccessProxy::setTabSession(const std::string& session)
+{
+	if (std::shared_ptr<StorageAccess> subject = m_subject.lock())
+	{
+		subject->setTabSession(session);
+	}
+}
 DEF_GETTER_2(
 	getTooltipInfoForTokenIds, const std::vector<Id>&, TooltipOrigin, TooltipInfo, TooltipInfo())
 DEF_GETTER_2(

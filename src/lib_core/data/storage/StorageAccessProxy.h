@@ -101,6 +101,9 @@ public:
 	std::vector<EdgeBookmark> getAllEdgeBookmarks() const override;
 	std::vector<BookmarkCategory> getAllBookmarkCategories() const override;
 
+	std::string getTabSession() const override;
+	void setTabSession(const std::string& session) override;
+
 	TooltipInfo getTooltipInfoForTokenIds(
 		const std::vector<Id>& tokenIds, TooltipOrigin origin) const override;
 	TooltipInfo getTooltipInfoForSourceLocationIdsAndLocalSymbolIds(

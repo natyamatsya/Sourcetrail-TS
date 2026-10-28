@@ -91,6 +91,12 @@ public:
 	std::shared_ptr<const Project> getCurrentProject() const;
 	FilePath getCurrentProjectPath() const;
 	bool isProjectLoaded() const;
+	// Whether the project's tabs are restored from its last session: a person's load
+	// does; an agent's (project_open) starts from the overview it expects.
+	bool restoresTabSession() const
+	{
+		return m_restoresTabSession;
+	}
 
 	bool hasGUI();
 
@@ -171,6 +177,7 @@ private:
 	bool checkSharedMemory();
 
 	const bool m_hasGUI;
+	std::atomic<bool> m_restoresTabSession = false;
 	bool m_loadedWindow = false;
 
 	// Non-owning: the concrete schedulers are a process-wide singleton owned by
