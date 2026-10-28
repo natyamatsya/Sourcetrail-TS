@@ -527,8 +527,8 @@ void QtProjectWizardContentPathCMakeFileAPI::onRunCMake()
 		const std::string error{
 			configured ? std::string{}
 					   : std::format(
-							 "Running CMake with preset \"{}\" failed: {}.\n\n{}",
-							 presetName,
+							 "Running CMake{} failed: {}.\n\n{}",
+							 presetName.empty() ? std::string{} : std::format(" with preset \"{}\"", presetName),
 							 to_std_sv(configured.error().code),
 							 configured.error().message)};
 		execution::qt::onUi(this, [this, buildDir, error]() {
