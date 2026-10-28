@@ -292,7 +292,8 @@ void QtGraphicsView::updateZoom(float delta)
 
 void QtGraphicsView::resizeEvent(QResizeEvent* event)
 {
-	m_focusIndicator->setGeometry(QRect(0, 0, event->size().width(), 3));
+	// A 2 px bar along the top, as the other views' focus indicators.
+	m_focusIndicator->setGeometry(QRect(0, 0, event->size().width(), 2));
 
 	emit resized();
 }
