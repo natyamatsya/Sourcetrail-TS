@@ -24,6 +24,7 @@ module;
 #include <llvm/ADT/DenseMap.h>
 
 #include <clang/AST/ASTContext.h>
+#include <clang/AST/ASTLambda.h>
 #include <clang/AST/Decl.h>
 #include <clang/AST/DeclCXX.h>
 #include <clang/AST/DeclTemplate.h>

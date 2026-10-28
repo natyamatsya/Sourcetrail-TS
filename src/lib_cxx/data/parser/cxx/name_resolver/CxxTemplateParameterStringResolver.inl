@@ -55,7 +55,9 @@ inline std::string CxxTemplateParameterStringResolver::getTemplateParameterStrin
 
 inline std::string CxxTemplateParameterStringResolver::getTemplateParameterTypeString(const clang::NonTypeTemplateParmDecl* parameter)
 {
-	std::string typeString = CxxTypeName::makeUnsolvedIfNull(CxxTypeNameResolver(this).getName(parameter->getType()))->toString();
+	CxxTypeNameResolver typeNameResolver(this);
+	typeNameResolver.nameTypesOf(parameter);
+	std::string typeString = CxxTypeName::makeUnsolvedIfNull(typeNameResolver.getName(parameter->getType()))->toString();
 
 	if (parameter->isTemplateParameterPack())
 	{

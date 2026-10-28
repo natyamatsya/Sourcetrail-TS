@@ -19,6 +19,10 @@ public:
 
 private:
 	std::unique_ptr<CxxTypeName> getTagName(const clang::TagDecl* tagDecl);
+	const clang::CXXRecordDecl* getNonDependentMemberTypedefTemplate(
+		const clang::TypedefNameDecl* typedefDecl) const;
+	const clang::ClassTemplateSpecializationDecl* getInstantiationOf(
+		const clang::CXXRecordDecl* templateDecl) const;
 };
 
 // Classic build: converge on the family apex, whose bottom includes all resolver bodies once

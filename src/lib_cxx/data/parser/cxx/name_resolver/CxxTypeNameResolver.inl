@@ -65,10 +65,25 @@ inline std::unique_ptr<CxxTypeName> CxxTypeNameResolver::getName(const clang::Ty
 		}
 		case clang::Type::Typedef:
 		{
-			CxxName declNameErased = resolveDeclName(
-				type->getAs<clang::TypedefType>()->getDecl());
+			const clang::TypedefNameDecl* typedefDecl = type->getAs<clang::TypedefType>()->getDecl();
+			CxxName declNameErased = resolveDeclName(typedefDecl);
 			if (const auto declName = declNameErased.target<CxxDeclName>())
 			{
+				if (const clang::CXXRecordDecl* templateDecl = getNonDependentMemberTypedefTemplate(typedefDecl))
+				{
+					if (const clang::ClassTemplateSpecializationDecl* specializationDecl =
+							getInstantiationOf(templateDecl))
+					{
+						return std::make_unique<CxxTypeName>(
+							declName->getName(),
+							std::vector<std::string>(),
+							resolveDeclName(specializationDecl));
+					}
+					if (!templateDecl->Encloses(getNamedDeclaration()->getDeclContext()))
+					{
+						return getName(typedefDecl->getUnderlyingType());
+					}
+				}
 				return std::make_unique<CxxTypeName>(
 					declName->getName(), std::vector<std::string>(), declName->getParent());
 			}
@@ -185,7 +200,7 @@ inline std::unique_ptr<CxxTypeName> CxxTypeNameResolver::getName(const clang::Ty
 												   ->getTemplatedDecl());
 					for (const clang::TemplateArgument &templateArgument : templateSpecializationType->template_arguments())
 					{
-						if (templateArgument.isDependent())
+						if (templateArgument.isDependent() && !spellsDependentSpecializations())
 						{
 							return std::make_unique<CxxTypeName>(
 								declName->getName(),
@@ -386,6 +401,48 @@ inline std::unique_ptr<CxxTypeName> CxxTypeNameResolver::getTagName(const clang:
 			lambdaName->getName(), lambdaName->getTemplateParameterNames(), lambdaName->getParent());
 		typeName->setSignature(declNameErased.toNameHierarchy().back().getSignature());
 		return typeName;
+	}
+	return nullptr;
+}
+
+inline const clang::CXXRecordDecl* CxxTypeNameResolver::getNonDependentMemberTypedefTemplate(
+	const clang::TypedefNameDecl* typedefDecl) const
+{
+	// A member typedef that does not depend on its class template's parameters is not
+	// instantiated into a declaration's type: `size_type` of an instantiated member, or of an
+	// `auto` deduced from one's return type, is the class template's own typedef.
+	const clang::CXXRecordDecl* typedefContext =
+		clang::dyn_cast<clang::CXXRecordDecl>(typedefDecl->getDeclContext());
+	if (getNamedDeclaration() == nullptr || typedefContext == nullptr ||
+		typedefDecl->getUnderlyingType()->isDependentType() ||
+		(!typedefContext->getDescribedClassTemplate() &&
+		 !clang::isa<clang::ClassTemplatePartialSpecializationDecl>(typedefContext)))
+	{
+		return nullptr;
+	}
+	return typedefContext;
+}
+
+inline const clang::ClassTemplateSpecializationDecl* CxxTypeNameResolver::getInstantiationOf(
+	const clang::CXXRecordDecl* templateDecl) const
+{
+	// the instantiation of the class template that the named declaration is a member of, if any
+	for (const clang::DeclContext* context = getNamedDeclaration()->getDeclContext(); context != nullptr;
+		 context = context->getParent())
+	{
+		const clang::ClassTemplateSpecializationDecl* specializationDecl =
+			clang::dyn_cast<clang::ClassTemplateSpecializationDecl>(context);
+		if (specializationDecl == nullptr ||
+			clang::isa<clang::ClassTemplatePartialSpecializationDecl>(specializationDecl))
+		{
+			continue;
+		}
+		const clang::CXXRecordDecl* patternDecl = specializationDecl->getTemplateInstantiationPattern();
+		if (patternDecl != nullptr &&
+			patternDecl->getCanonicalDecl() == templateDecl->getCanonicalDecl())
+		{
+			return specializationDecl;
+		}
 	}
 	return nullptr;
 }

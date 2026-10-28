@@ -2865,6 +2865,87 @@ TEST_CASE("cxx parser names pack and lambda template arguments by what they are"
 	}
 }
 
+TEST_CASE("cxx parser names a dependent specialization in a template's signature as written")
+{
+	// `f(vec<T>)` and `f(vec<T*>)` are two function templates. Their parameters were both named
+	// as the template they specialize, `vec<typename T>`, so they were one node. The type use
+	// still goes to the template.
+	std::shared_ptr<TestStorage> client = parseCode(
+		"template <typename T> struct vec {};\n"
+		"template <typename T> void f(vec<T>) {}\n"
+		"template <typename T> void f(vec<T*>) {}\n"
+		"template <unsigned... I> struct seq {};\n"
+		"struct S { template <unsigned... I> S(seq<I...>) {} };\n");
+
+	CAPTURE(client->functions, client->methods, client->typeUses);
+	REQUIRE(client->errors.empty());
+	REQUIRE(containsElement(client->functions, "void f<typename T>(vec<T>) <2:1 <2:23 <2:28 2:28> 2:36> 2:39>"s));
+	REQUIRE(containsElement(client->functions, "void f<typename T>(vec<T *>) <3:1 <3:23 <3:28 3:28> 3:37> 3:40>"s));
+	REQUIRE(containsElement(client->methods, "public void S::S<unsigned int... I>(seq<I...>) <5:12 <5:37 <5:37 5:37> 5:48> 5:51>"s));
+	REQUIRE(containsElement(client->typeUses, "void f<typename T>(vec<T>) -> vec<typename T> <2:30 2:32>"s));
+	REQUIRE(containsElement(client->typeUses, "void f<typename T>(vec<T *>) -> vec<typename T> <3:30 3:32>"s));
+}
+
+TEST_CASE("cxx parser names a class template's non-dependent member typedef as the instantiation's")
+{
+	// `typedef unsigned size_type;` does not depend on T, so an instantiated member's `size_type`
+	// is the class template's own typedef: it was named `arr<class T, unsigned int N>::size_type`
+	// in arr<int, 3>'s signatures (libc++'s `array<class _Tp, size_t _Size>::size_type`), and so
+	// was a variable whose type is deduced from one. An unnamed non-type template parameter
+	// `enable_if_t<...>` was the alias template's own parameters, so SFINAE overloads merged.
+	std::shared_ptr<TestStorage> client = parseCode(
+		"template <class T, unsigned N> struct arr {\n"
+		"	typedef unsigned size_type;\n"
+		"	typedef T& reference;\n"
+		"	reference at(size_type i);\n"
+		"	size_type size() const { return N; }\n"
+		"};\n"
+		"auto n = arr<bool, 2>().size();\n"
+		"int x = arr<int, 3>().at(0);\n"
+		"template <bool B, class T = void> struct enable_if {};\n"
+		"template <class T> struct enable_if<true, T> { using type = T; };\n"
+		"template <bool B, class T> using enable_if_t = typename enable_if<B, T>::type;\n"
+		"template <class V, enable_if_t<sizeof(V) == 4, int> = 0> void g(V) {}\n"
+		"template <class V, enable_if_t<sizeof(V) == 8, int> = 0> void g(V) {}\n");
+
+	CAPTURE(client->methods, client->globalVariables, client->functions);
+	REQUIRE(client->errors.empty());
+	REQUIRE(containsElement(client->methods, "public arr<int, 3>::reference arr<int, 3>::at(arr<int, 3>::size_type) <4:2 <4:12 4:13> 4:26>"s));
+	REQUIRE(containsElement(client->methods, "public arr<bool, 2>::size_type arr<bool, 2>::size() const <5:2 <5:2 <5:12 5:15> 5:23> 5:37>"s));
+	REQUIRE(containsElement(
+		client->methods,
+		"public arr<class T, unsigned int N>::size_type arr<class T, unsigned int N>::size() const <5:2 <5:2 <5:12 5:15> 5:23> 5:37>"s));
+	REQUIRE(containsElement(client->globalVariables, "unsigned int n <7:6 7:6>"s));
+	REQUIRE(containsElement(client->functions, "void g<class V, enable_if_t<sizeof(V) == 4, int>>(V) <12:1 <12:58 <12:63 12:63> 12:66> 12:69>"s));
+	REQUIRE(containsElement(client->functions, "void g<class V, enable_if_t<sizeof(V) == 8, int>>(V) <13:1 <13:58 <13:63 13:63> 13:66> 13:69>"s));
+	for (const std::string& name: utility::concat(client->methods, client->globalVariables))
+	{
+		REQUIRE_FALSE((name.contains("arr<int, 3>") && name.contains("class T")));
+		REQUIRE_FALSE((name.contains("arr<bool, 2>") && name.contains("class T")));
+	}
+}
+
+TEST_CASE("cxx parser names a closure type's destructor as a member of the lambda")
+{
+	// A closure that captures a class with a destructor has one too, and destroying the closure
+	// calls it. It was named like the call operator without its const, `setup::lambda at 3:26()`:
+	// a second, placeholder node of the lambda receiving that call (CLI11's callback lambdas).
+	std::shared_ptr<TestStorage> client = parseCode(
+		"struct R { ~R() {} };\n"
+		"template <class F> void take(F f) { f(); }\n"
+		"void setup() { R r; take([r]() {}); }\n");
+
+	CAPTURE(client->methods, client->calls);
+	REQUIRE(client->errors.empty());
+	REQUIRE(std::ranges::any_of(client->calls, [](const std::string& call) {
+		return call.contains(" -> void setup::lambda at 3:26::~lambda at 3:26() <");
+	}));
+	for (const std::string& call: client->calls)
+	{
+		REQUIRE_FALSE(call.contains("-> void setup::lambda at 3:26() <"));
+	}
+}
+
 TEST_CASE("cxx parser names a closure type behind an alias template like the lambda")
 {
 	// std::forward's parameter is `remove_reference_t<T>&`, magic_enum tests `std::decay_t<F>`:
@@ -4704,7 +4785,29 @@ TEST_CASE("cxx parser finds template class constructor usage of field")
 		"};\n");
 
 	REQUIRE(utility::containsElement<std::string>(
-		client->usages, "void A<typename T>::A<T>() -> T A<typename T>::foo <4:7 4:9>"));
+		client->usages, "void A<typename T>::A() -> T A<typename T>::foo <4:7 4:9>"));
+}
+
+TEST_CASE("cxx parser names a class template's constructors and destructor after the class")
+{
+	// Clang's name for them is the injected class name, `A<T>`; an instantiation's are `A`.
+	std::shared_ptr<TestStorage> client = parseCode(
+		"template <typename T>\n"
+		"struct A\n"
+		"{\n"
+		"	A() {}\n"
+		"	explicit A(T) {}\n"
+		"	~A() {}\n"
+		"};\n"
+		"A<int> a;\n");
+
+	CAPTURE(client->methods, client->templateSpecializations);
+	REQUIRE(client->errors.empty());
+	REQUIRE(containsElement(client->methods, "public void A<typename T>::A() <4:2 <4:2 <4:2 4:2> 4:4> 4:7>"s));
+	REQUIRE(containsElement(client->methods, "public void A<typename T>::A(T) <5:2 <5:2 <5:11 5:11> 5:14> 5:17>"s));
+	REQUIRE(containsElement(client->methods, "public void A<typename T>::~A() <6:2 <6:2 <6:2 6:3> 6:5> 6:8>"s));
+	REQUIRE(containsElement(client->templateSpecializations, "void A<int>::A() -> void A<typename T>::A() <4:2 4:2>"s));
+	REQUIRE(containsElement(client->templateSpecializations, "void A<int>::~A() -> void A<typename T>::~A() <6:2 6:2>"s));
 }
 
 TEST_CASE("cxx parser finds correct method return type of template class in declaration")
