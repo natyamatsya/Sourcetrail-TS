@@ -23,6 +23,7 @@ bool AgentControlController::isListening() const
 #include <concepts>
 #include <cstdint>
 #include <atomic>
+#include <expected>
 #include <format>
 #include <functional>
 #include <map>
@@ -1092,16 +1093,13 @@ struct AgentControlController::Impl
 		case fb::Command_ActivateNode:
 			if (const auto* c = envelope->command_as_ActivateNode())
 			{
-				Id nodeId = toId(c->node_id());
-				if (nodeId == 0 && c->serialized_name())
+				const std::expected<Id, std::string> nodeId = indexedNode(*c);
+				if (!nodeId)
 				{
-					nodeId = m_storageAccess->getNodeIdForNameHierarchy(
-						NameHierarchy::deserialize(c->serialized_name()->str()));
+					emitResult(requestId, false, "rejected: " + nodeId.error());
+					return;
 				}
-				if (!(nodeId == 0))
-				{
-					MessageActivateNodes(nodeId).dispatch();
-				}
+				MessageActivateNodes(*nodeId).dispatch();
 			}
 			break;
 		case fb::Command_ActivateFile:
@@ -1185,6 +1183,37 @@ struct AgentControlController::Impl
 		// handleCommand runs *inside* the drain (as the MessageAgentCommand
 		// listener), so the effects are enqueued but not yet processed.
 		expectSettle(requestId);
+	}
+
+	// The node an ActivateNode names, by id or by serialized name, if the index has it.
+	// Activating one it does not have opened an empty tab ("1 result") and a history
+	// step; a display name passed as a serialized name found nothing and did nothing,
+	// and both were acknowledged as done.
+	std::expected<Id, std::string> indexedNode(const fb::ActivateNode& command) const
+	{
+		if (const Id nodeId = toId(command.node_id()); !(nodeId == 0))
+		{
+			// A missing node has no name: its row is not there.
+			if (m_storageAccess->getNameHierarchyForNodeId(nodeId).size() == 0)
+			{
+				return std::unexpected(std::format("no such node: node_id {}", command.node_id()));
+			}
+			return nodeId;
+		}
+		if (command.serialized_name() == nullptr || command.serialized_name()->size() == 0)
+		{
+			return std::unexpected(std::string("activate_node needs a node_id or a serialized_name"));
+		}
+		const std::string name = command.serialized_name()->str();
+		const Id nodeId = m_storageAccess->getNodeIdForNameHierarchy(NameHierarchy::deserialize(name));
+		if (nodeId == 0)
+		{
+			return std::unexpected(std::format(
+				"no such node: serialized_name '{}' (a serialized name as ui_state gives it; nav_find "
+				"turns a display name into a node_id)",
+				name));
+		}
+		return nodeId;
 	}
 
 	// The graph's controls (protocol v7), on what the current tab's graph view shows,

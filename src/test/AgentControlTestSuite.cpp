@@ -422,4 +422,30 @@ TEST_CASE("agent control still acknowledges after a burst of events the agent di
 	REQUIRE(app.agent->ack(app.agent->send(getMachines("app"))));
 }
 
+// The index has no node 999999999: activating it opened an empty tab ("1 result") and a history
+// step, and a display name given as a serialized name did nothing; both were acknowledged.
+TEST_CASE("agent control refuses to activate a node the index does not have")
+{
+	ControlledApp app;
+	const MessageLoop loop;
+	ProjectStateMachine::instance()->requested("a.srctrl.toml");
+	ProjectStateMachine::instance()->loaded();	// Ready, over a storage without nodes
+
+	const auto activate = [&](std::uint64_t nodeId, const char* serializedName) {
+		return app.agent->ack(app.agent->send([&](flatbuffers::FlatBufferBuilder& builder) {
+			return std::pair {
+				fb::Command_ActivateNode,
+				fb::CreateActivateNodeDirect(builder, serializedName, nodeId).Union()};
+		}));
+	};
+	REQUIRE(activate(999999999, nullptr) == std::pair {false, std::string("rejected: no such node: node_id 999999999")});
+	const auto byName = activate(0, "Circle");
+	REQUIRE(byName);
+	REQUIRE_FALSE(byName->first);
+	REQUIRE(byName->second.starts_with("rejected: no such node: serialized_name 'Circle'"));
+	REQUIRE(activate(0, nullptr) == std::pair {false, std::string("rejected: activate_node needs a node_id or a serialized_name")});
+
+	ProjectStateMachine::instance()->closed();	// back to no_project
+}
+
 #endif	  // SOURCETRAIL_AGENT_CONTROL
