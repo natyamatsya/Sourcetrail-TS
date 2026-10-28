@@ -1631,11 +1631,44 @@ struct AgentControlController::Impl
 		// No bridge attached: skip the send, which thoth-ipc would otherwise report
 		// as failed for every app event. The seq still advances, so a bridge that
 		// attaches later sees the gap and knows it missed events.
-		if (m_eventsChannel.recv_count() > 0)
+		if (m_eventsChannel.recv_count() == 0)
 		{
-			m_eventsChannel.send(builder.GetBufferPointer(), builder.GetSize());
+			return;
+		}
+		// The bridge reads events only while it waits for a reply. A send that finds the
+		// ring full waits, then pushes by force, which disconnects a receiver that does not
+		// read: after a burst of events between two commands, the bridge got no event, and
+		// no reply, ever again. So what the app only reports is dropped when the ring is
+		// full (the seq gap says so), and a reply, which the bridge is about to read, waits
+		// for room.
+		if (isReply(type))
+		{
+			m_eventsChannel.send(builder.GetBufferPointer(), builder.GetSize(), replyWaitMs);
+		}
+		else
+		{
+			m_eventsChannel.try_send(builder.GetBufferPointer(), builder.GetSize(), 0);
 		}
 	}
+
+	// Events the bridge waits for, after a command of its own.
+	static bool isReply(fb::Event type)
+	{
+		switch (type)
+		{
+		case fb::Event_CommandResult:
+		case fb::Event_MachineStates:
+		case fb::Event_AppInfo:
+		case fb::Event_Settled:
+		case fb::Event_SearchCompleted:
+			return true;
+		default:
+			return false;
+		}
+	}
+
+	// How long a reply waits for the bridge to make room before it is pushed by force.
+	static constexpr std::uint64_t replyWaitMs = 2000;
 
 	// The coarse application state, derived from the app, project and indexing state
 	// machines. Loading covers the app starting and a project loading: from the

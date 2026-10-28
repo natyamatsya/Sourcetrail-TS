@@ -7,6 +7,7 @@
 #include <cstdint>
 #include <functional>
 #include <optional>
+#include <thread>
 #include <string>
 #include <utility>
 #include <vector>
@@ -24,6 +25,7 @@
 #include "ISchedulers.h"
 #include "IndexingStateMachine.h"
 #include "MessageQueue.h"
+#include "MessageTabsChanged.h"
 #include "ProjectStateMachine.h"
 #include "PreferencesStateMachine.h"
 #include "ProjectWizardStateMachine.h"
@@ -384,6 +386,40 @@ TEST_CASE("agent control skips a malformed command")
 	app.agent->sendBytes({0x01, 0x02, 0x03});
 	const std::uint64_t request = app.agent->send(getUiState);
 	REQUIRE(app.agent->uiState(request) == fb::AppState_NoProject);
+}
+
+// The agent reads the events only while it waits for a reply. A burst of events in between (60
+// tabs open, a refresh, tabs closing: about 150 NodesActivated and TabsChanged in 100 ms) filled
+// the events ring; the next send gave up waiting after 100 ms and pushed by force, which
+// disconnects a receiver that does not read. From then on the app sent no events at all (it had
+// no receiver), and every acknowledged command timed out for good while ui_state still answered.
+TEST_CASE("agent control still acknowledges after a burst of events the agent did not read")
+{
+	ControlledApp app;
+	const MessageLoop loop;
+
+	std::vector<MessageTabsChanged::TabInfo> tabs;
+	for (unsigned i = 0; i < 60; i++)
+	{
+		tabs.push_back({static_cast<TabId>(i + 1), "Tab number " + std::to_string(i), i == 0});
+	}
+	for (int i = 0; i < 600; i++)
+	{
+		MessageTabsChanged(tabs).dispatch();
+	}
+	const auto deadline = std::chrono::steady_clock::now() + 10s;
+	while (MessageQueue::getInstance()->hasMessagesQueued() && std::chrono::steady_clock::now() < deadline)
+	{
+		std::this_thread::sleep_for(10ms);
+	}
+	std::this_thread::sleep_for(300ms);	// the last ones are handled
+
+	// Unread events wait in the ring, older ones dropped; the replies come after them.
+	const std::uint64_t request = app.agent->send(getMachines("app"));
+	const auto events = app.agent->eventsUntil(
+		[request](const fb::EventEnvelope& envelope) { return isMachineStatesOf(envelope, request); }, 5s);
+	REQUIRE(machinesIn(events, request) == std::vector<std::string> {"app"});
+	REQUIRE(app.agent->ack(app.agent->send(getMachines("app"))));
 }
 
 #endif	  // SOURCETRAIL_AGENT_CONTROL
