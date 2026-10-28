@@ -4,9 +4,16 @@
 #include "utilityString.h"
 #endif
 
+#include <format>
+#include <map>
+#include <set>
+#include <string>
+#include <vector>
+
 #ifndef SRCTRL_MODULE_BUILD
 #include "Graph.h"
 #include "IntermediateStorage.h"
+#include "ParserClientImpl.h"
 #endif
 #include "PersistentStorage.h"
 #ifndef SRCTRL_MODULE_BUILD
@@ -14,9 +21,26 @@
 #endif
 #include "TestTempDirectory.h"
 
+#include "language_packages.h"
+
+#if BUILD_CXX_LANGUAGE_PACKAGE
+#ifndef SRCTRL_MODULE_BUILD
+#include "CxxParser.h"
+#include "TextAccess.h"
+#endif
+#include "IndexerStateInfo.h"
+#include "TestFileRegister.h"
+#include "ToolChain.h"
+#endif
+
 // Imports come AFTER all textual #includes (include-before-import rule: textual libc++
 // following BMI-merged declarations trips "cannot add 'abi_tag' in a redeclaration").
 #ifdef SRCTRL_MODULE_BUILD
+#if BUILD_CXX_LANGUAGE_PACKAGE
+import srctrl.cxx;
+import srctrl.file;
+#endif
+import srctrl.indexer;
 import srctrl.storage;
 import srctrl.utility;
 #endif
@@ -64,6 +88,111 @@ NameHierarchy createNameHierarchy(std::string s)
 		nameHierarchy.push(element);
 	}
 	return nameHierarchy;
+}
+
+// One translation unit as an indexer records it: its declarations and definitions, and its
+// references, through the parser client.
+struct RecordedSymbol
+{
+	std::string name;
+	SymbolKind kind;
+	size_t line;
+};
+
+struct RecordedReference
+{
+	ReferenceKind kind;
+	std::string context;
+	std::string referenced;
+	size_t line;
+};
+
+std::shared_ptr<IntermediateStorage> recordTranslationUnit(
+	const std::string& filePath,
+	const std::vector<RecordedSymbol>& symbols,
+	const std::vector<RecordedReference>& references)
+{
+	std::shared_ptr<IntermediateStorage> intermediateStorage = std::make_shared<IntermediateStorage>();
+	ParserClientImpl client(intermediateStorage);
+	const Id fileId = client.recordFile(FilePath(filePath), true);
+	for (const RecordedSymbol& symbol: symbols)
+	{
+		const Id symbolId = client.recordSymbol(createNameHierarchy(symbol.name));
+		client.recordSymbolKind(symbolId, symbol.kind);
+		client.recordDefinitionKind(symbolId, DefinitionKind::EXPLICIT);
+		client.recordLocation(
+			symbolId, ParseLocation(fileId, symbol.line, 1, symbol.line, 10), ParseLocationType::TOKEN);
+	}
+	for (const RecordedReference& reference: references)
+	{
+		client.recordReference(
+			reference.kind,
+			client.recordSymbol(createNameHierarchy(reference.referenced)),
+			client.recordSymbol(createNameHierarchy(reference.context)),
+			ParseLocation(fileId, reference.line, 12, reference.line, 20));
+	}
+	return intermediateStorage;
+}
+
+// Everything the index holds, by name rather than by id, so two indexes built in different orders
+// compare equal when they hold the same.
+std::set<std::string> describeIndex(const PersistentStorage& storage)
+{
+	std::map<Id, std::string> names;
+	for (const StorageNode& node: storage.getStorageNodes())
+	{
+		names.emplace(node.id, node.serializedName);
+	}
+	for (const StorageEdge& edge: storage.getStorageEdges())
+	{
+		names.emplace(
+			edge.id,
+			std::format("{} {} -> {}", static_cast<int>(edge.type), names[edge.sourceNodeId], names[edge.targetNodeId]));
+	}
+
+	std::set<std::string> lines;
+	for (const StorageNode& node: storage.getStorageNodes())
+	{
+		lines.insert(std::format("node {} {}", static_cast<int>(node.type), node.serializedName));
+	}
+	for (const StorageEdge& edge: storage.getStorageEdges())
+	{
+		lines.insert("edge " + names[edge.id]);
+	}
+	for (const StorageSymbol& symbol: storage.getStorageSymbols())
+	{
+		lines.insert(std::format("symbol {} {}", names[symbol.id], static_cast<int>(symbol.definitionKind)));
+	}
+	std::map<Id, StorageSourceLocation> locations;
+	for (const StorageSourceLocation& location: storage.getStorageSourceLocations())
+	{
+		locations.emplace(location.id, location);
+	}
+	for (const StorageOccurrence& occurrence: storage.getStorageOccurrences())
+	{
+		const StorageSourceLocation& location = locations[occurrence.sourceLocationId];
+		lines.insert(std::format(
+			"occurrence {} at {}:{}:{}",
+			names[occurrence.elementId],
+			names[location.fileNodeId],
+			location.startLine,
+			location.startCol));
+	}
+	return lines;
+}
+
+bool hasEdge(const PersistentStorage& storage, Edge::EdgeType type, const std::string& source, const std::string& target)
+{
+	const Id sourceId = storage.getNodeIdForNameHierarchy(createNameHierarchy(source));
+	const Id targetId = storage.getNodeIdForNameHierarchy(createNameHierarchy(target));
+	for (const StorageEdge& edge: storage.getStorageEdges())
+	{
+		if (edge.type == type && edge.sourceNodeId == sourceId && edge.targetNodeId == targetId)
+		{
+			return true;
+		}
+	}
+	return false;
 }
 
 /*
@@ -451,3 +580,176 @@ TEST_CASE("storage boundary graph holds the atoms and what binds to them")
 	REQUIRE(graph->getNodeById(storedAtomId)->isLanguageBoundary());
 	REQUIRE(!graph->getNodeById(storedCxxId)->isLanguageBoundary());
 }
+
+TEST_CASE("storage refresh of one file leaves the index a full index would have")
+{
+	// b.cc is not cleared. It declares ns::B, defines ns::write, which calls ns::doWrite, and
+	// takes a ns::B, as the declaration in a.cc does.
+	const std::shared_ptr<IntermediateStorage> b = recordTranslationUnit(
+		"b.cc",
+		{{"ns", SymbolKind::NAMESPACE, 1},
+		 {"ns::B", SymbolKind::STRUCT, 2},
+		 {"ns::write", SymbolKind::FUNCTION, 3},
+		 {"ns::doWrite", SymbolKind::FUNCTION, 4}},
+		{{ReferenceKind::CALL, "ns::write", "ns::doWrite", 5},
+		 {ReferenceKind::TYPE_USAGE, "ns::write", "ns::B", 3}});
+
+	// a.cc before the change: it forward-declares ns::write, declares ns::A and ns::Gone with a
+	// member, and calls outer::inner::leaf, which is declared in no indexed file.
+	const std::shared_ptr<IntermediateStorage> aBefore = recordTranslationUnit(
+		"a.cc",
+		{{"ns", SymbolKind::NAMESPACE, 1},
+		 {"ns::A", SymbolKind::STRUCT, 2},
+		 {"ns::write", SymbolKind::FUNCTION, 3},
+		 {"ns::Gone", SymbolKind::STRUCT, 4},
+		 {"ns::Gone::member", SymbolKind::FIELD, 5},
+		 {"ns::run", SymbolKind::FUNCTION, 6}},
+		{{ReferenceKind::TYPE_USAGE, "ns::write", "ns::B", 3},
+		 {ReferenceKind::TYPE_USAGE, "ns::A", "ns::B", 2},
+		 {ReferenceKind::CALL, "ns::run", "outer::inner::leaf", 7}});
+
+	// a.cc after the change: ns::Gone and the call to outer::inner::leaf are gone, ns::Added is new.
+	const std::shared_ptr<IntermediateStorage> aAfter = recordTranslationUnit(
+		"a.cc",
+		{{"ns", SymbolKind::NAMESPACE, 1},
+		 {"ns::A", SymbolKind::STRUCT, 2},
+		 {"ns::write", SymbolKind::FUNCTION, 3},
+		 {"ns::Added", SymbolKind::STRUCT, 4},
+		 {"ns::run", SymbolKind::FUNCTION, 6}},
+		{{ReferenceKind::TYPE_USAGE, "ns::write", "ns::B", 3},
+		 {ReferenceKind::TYPE_USAGE, "ns::A", "ns::B", 2}});
+
+	TestStorage full;
+	full.inject(b.get());
+	full.inject(aAfter.get());
+
+	TestStorage refreshed;
+	refreshed.inject(aBefore.get());
+	refreshed.inject(b.get());
+	REQUIRE(hasEdge(refreshed, Edge::EDGE_CALL, "ns::run", "outer::inner::leaf"));
+
+	// as a refresh does (TaskCleanStorage, then the injection of the reindexed files)
+	refreshed.setMode(SqliteIndexStorage::StorageModeType::STORAGE_MODE_CLEAR);
+	refreshed.clearFileElements({FilePath("a.cc")}, [](int) {});
+
+	// What b.cc recorded stays: the namespace's member edge to ns::B, which b.cc recorded although
+	// ns occurs in a.cc as well, the call located in b.cc, although a.cc declares the caller, and
+	// the type usage in b.cc, although a.cc has the same.
+	REQUIRE(hasEdge(refreshed, Edge::EDGE_MEMBER, "ns", "ns::B"));
+	REQUIRE(hasEdge(refreshed, Edge::EDGE_MEMBER, "ns", "ns::write"));
+	REQUIRE(hasEdge(refreshed, Edge::EDGE_CALL, "ns::write", "ns::doWrite"));
+	REQUIRE(hasEdge(refreshed, Edge::EDGE_TYPE_USAGE, "ns::write", "ns::B"));
+	// What only a.cc recorded goes, with the nodes nothing else names.
+	REQUIRE(!hasEdge(refreshed, Edge::EDGE_TYPE_USAGE, "ns::A", "ns::B"));
+	REQUIRE(refreshed.getNodeIdForNameHierarchy(createNameHierarchy("ns::Gone::member")) == 0);
+	REQUIRE(refreshed.getNodeIdForNameHierarchy(createNameHierarchy("ns::Gone")) == 0);
+	REQUIRE(refreshed.getNodeIdForNameHierarchy(createNameHierarchy("outer::inner::leaf")) == 0);
+	REQUIRE(refreshed.getNodeIdForNameHierarchy(createNameHierarchy("outer")) == 0);
+
+	refreshed.setMode(SqliteIndexStorage::StorageModeType::STORAGE_MODE_WRITE);
+	refreshed.inject(aAfter.get());
+
+	REQUIRE(describeIndex(refreshed) == describeIndex(full));
+}
+
+TEST_CASE("storage refresh of every file but one leaves the index a full index would have")
+{
+	// The other way around: the file that recorded the namespace's members is the one cleared.
+	const std::shared_ptr<IntermediateStorage> header = recordTranslationUnit(
+		"db.h",
+		{{"leveldb", SymbolKind::NAMESPACE, 1},
+		 {"leveldb::DB", SymbolKind::CLASS, 2},
+		 {"leveldb::DB::Open", SymbolKind::METHOD, 3}},
+		{});
+	const std::shared_ptr<IntermediateStorage> source = recordTranslationUnit(
+		"hash.cc",
+		{{"leveldb", SymbolKind::NAMESPACE, 1}, {"leveldb::Hash", SymbolKind::FUNCTION, 2}},
+		{{ReferenceKind::CALL, "leveldb::Hash", "leveldb::DB::Open", 3}});
+
+	TestStorage full;
+	full.inject(header.get());
+	full.inject(source.get());
+
+	TestStorage refreshed;
+	refreshed.inject(header.get());
+	refreshed.inject(source.get());
+	refreshed.setMode(SqliteIndexStorage::StorageModeType::STORAGE_MODE_CLEAR);
+	refreshed.clearFileElements({FilePath("db.h")}, [](int) {});
+
+	// leveldb::DB::Open is still called from hash.cc, so it and its parents stay, with their
+	// member edges.
+	REQUIRE(hasEdge(refreshed, Edge::EDGE_MEMBER, "leveldb", "leveldb::DB"));
+	REQUIRE(hasEdge(refreshed, Edge::EDGE_MEMBER, "leveldb::DB", "leveldb::DB::Open"));
+	REQUIRE(hasEdge(refreshed, Edge::EDGE_MEMBER, "leveldb", "leveldb::Hash"));
+
+	refreshed.setMode(SqliteIndexStorage::StorageModeType::STORAGE_MODE_WRITE);
+	refreshed.inject(header.get());
+
+	REQUIRE(describeIndex(refreshed) == describeIndex(full));
+}
+
+#if BUILD_CXX_LANGUAGE_PACKAGE
+namespace
+{
+std::shared_ptr<IntermediateStorage> parseFile(const std::string& filePath, const std::string& code)
+{
+	std::shared_ptr<IntermediateStorage> intermediateStorage = std::make_shared<IntermediateStorage>();
+	ParserClientImpl client(intermediateStorage);
+	CxxParser parser(client, std::make_shared<TestFileRegister>(), std::make_shared<IndexerStateInfo>());
+	parser.buildIndex(
+		filePath,
+		TextAccess::createFromString(code),
+		std::vector<std::string>{ClangCompiler::stdOption(ClangCompiler::getLatestCppStandard())});
+	return intermediateStorage;
+}
+}	 // namespace
+
+TEST_CASE("storage refresh of one parsed file leaves the index a full index would have")
+{
+	// leveldb's db/filename.cc forward-declares WriteStringToFileSync, which util/env.cc defines;
+	// clearing filename.cc deleted the call in env.cc and the namespace's member edges to all
+	// that env.cc declares.
+	const std::shared_ptr<IntermediateStorage> env = parseFile(
+		"env.cc",
+		"namespace leveldb {\n"
+		"struct Env {};\n"
+		"static int DoWriteStringToFile(Env* env) { return 0; }\n"
+		"int WriteStringToFileSync(Env* env) { return DoWriteStringToFile(env); }\n"
+		"}\n");
+	const std::shared_ptr<IntermediateStorage> filenameBefore = parseFile(
+		"filename.cc",
+		"namespace leveldb {\n"
+		"struct Env;\n"
+		"int WriteStringToFileSync(Env* env);\n"
+		"struct Gone { int member; };\n"
+		"int SetCurrentFile(Env* env) { return WriteStringToFileSync(env); }\n"
+		"}\n");
+	const std::shared_ptr<IntermediateStorage> filenameAfter = parseFile(
+		"filename.cc",
+		"namespace leveldb {\n"
+		"struct Env;\n"
+		"int WriteStringToFileSync(Env* env);\n"
+		"struct Added {};\n"
+		"int SetCurrentFile(Env* env) { return WriteStringToFileSync(env); }\n"
+		"}\n");
+
+	TestStorage full;
+	full.inject(env.get());
+	full.inject(filenameAfter.get());
+
+	TestStorage refreshed;
+	refreshed.inject(filenameBefore.get());
+	refreshed.inject(env.get());
+
+	refreshed.setMode(SqliteIndexStorage::StorageModeType::STORAGE_MODE_CLEAR);
+	refreshed.clearFileElements({FilePath("filename.cc")}, [](int) {});
+
+	REQUIRE(hasEdge(refreshed, Edge::EDGE_MEMBER, "leveldb", "leveldb::Env"));
+	REQUIRE(refreshed.getNodeIdForNameHierarchy(createNameHierarchy("leveldb::Gone")) == 0);
+
+	refreshed.setMode(SqliteIndexStorage::StorageModeType::STORAGE_MODE_WRITE);
+	refreshed.inject(filenameAfter.get());
+
+	REQUIRE(describeIndex(refreshed) == describeIndex(full));
+}
+#endif

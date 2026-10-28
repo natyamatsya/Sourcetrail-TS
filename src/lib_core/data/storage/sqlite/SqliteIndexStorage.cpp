@@ -1166,39 +1166,6 @@ void SqliteIndexStorage::removeElementsWithLocationInFiles(
 		updateStatusCallback(4);
 	}
 
-	// delete all edges in element_id_to_clear
-	executeStatement(
-		"DELETE FROM element WHERE element.id IN "
-		"	(SELECT element_id_to_clear.id FROM element_id_to_clear INNER JOIN edge ON "
-		"(element_id_to_clear.id = edge.id))");
-
-	if (updateStatusCallback != nullptr)
-	{
-		updateStatusCallback(30);
-	}
-
-	// delete all edges originating from element_id_to_clear
-	executeStatement(
-		"DELETE FROM element WHERE element.id IN (SELECT id FROM edge WHERE source_node_id IN "
-		"(SELECT id FROM element_id_to_clear))");
-
-	if (updateStatusCallback != nullptr)
-	{
-		updateStatusCallback(31);
-	}
-
-	// remove all non existing ids from element_id_to_clear (they have been cleared by now and we
-	// can disregard them)
-	executeStatement(
-		"DELETE FROM element_id_to_clear WHERE id NOT IN ("
-		"	SELECT id FROM element"
-		")");
-
-	if (updateStatusCallback != nullptr)
-	{
-		updateStatusCallback(33);
-	}
-
 	// remove all files from element_id_to_clear (they will be cleared later)
 	executeStatement(
 		"DELETE FROM element_id_to_clear WHERE id IN ("
@@ -1207,7 +1174,7 @@ void SqliteIndexStorage::removeElementsWithLocationInFiles(
 
 	if (updateStatusCallback != nullptr)
 	{
-		updateStatusCallback(34);
+		updateStatusCallback(10);
 	}
 
 	// delete source locations from fileIds (this also deletes the respective occurrences)
@@ -1217,10 +1184,11 @@ void SqliteIndexStorage::removeElementsWithLocationInFiles(
 
 	if (updateStatusCallback != nullptr)
 	{
-		updateStatusCallback(45);
+		updateStatusCallback(30);
 	}
 
-	// remove all ids from element_id_to_clear that still have occurrences
+	// remove all ids from element_id_to_clear that still have occurrences: they are located in a
+	// file that is not cleared, which keeps them, whatever else was recorded in the cleared files
 	executeStatement(
 		"DELETE FROM element_id_to_clear WHERE id IN ("
 		"	SELECT element_id_to_clear.id FROM element_id_to_clear INNER JOIN occurrence ON "
@@ -1229,19 +1197,137 @@ void SqliteIndexStorage::removeElementsWithLocationInFiles(
 
 	if (updateStatusCallback != nullptr)
 	{
+		updateStatusCallback(40);
+	}
+
+	// The edges left in element_id_to_clear had all their occurrences in the cleared files, so the
+	// files that recorded them are reindexed and record them again if they are still there. An edge
+	// is not deleted for where its source node occurs: a namespace occurs in every file, and a call
+	// in env.cc stays when a file that only declares the caller is cleared.
+
+	// add the nodes at both ends of these edges that have no occurrences (a function only called
+	// from the cleared files): they may be left without a reason to exist
+	executeStatement(
+		"INSERT OR IGNORE INTO element_id_to_clear "
+		"	SELECT node_id FROM ("
+		"		SELECT edge.source_node_id AS node_id FROM edge INNER JOIN element_id_to_clear ON "
+		"			edge.id = element_id_to_clear.id "
+		"		UNION "
+		"		SELECT edge.target_node_id AS node_id FROM edge INNER JOIN element_id_to_clear ON "
+		"			edge.id = element_id_to_clear.id"
+		"	) "
+		"	WHERE NOT EXISTS (SELECT * FROM occurrence WHERE occurrence.element_id = node_id) AND "
+		"		NOT EXISTS (SELECT * FROM file WHERE file.id = node_id)");
+
+	if (updateStatusCallback != nullptr)
+	{
+		updateStatusCallback(45);
+	}
+
+	// delete these edges
+	executeStatement(
+		"DELETE FROM element WHERE id IN ("
+		"	SELECT edge.id FROM edge INNER JOIN element_id_to_clear ON "
+		"		edge.id = element_id_to_clear.id"
+		")");
+
+	executeStatement(
+		"DELETE FROM element_id_to_clear WHERE id NOT IN ("
+		"	SELECT id FROM element"
+		")");
+
+	if (updateStatusCallback != nullptr)
+	{
 		updateStatusCallback(59);
 	}
 
-	// remove all ids from element_id_to_clear that still have an edge pointing to them
+	// What is left are nodes, local symbols and errors without occurrences. Member edges have no
+	// occurrences, so nothing tells which file recorded them; they follow from the node names
+	// instead (every file naming a::b records a -> a::b), so they stay as long as both nodes do.
+	const std::string memberEdgeType = std::to_string(static_cast<int>(Edge::EDGE_MEMBER));
+
+	// remove all ids from element_id_to_clear that are still the source or target of an edge other
+	// than a member edge
 	executeStatement(
-		"DELETE FROM element_id_to_clear WHERE id IN ("
-		"	SELECT target_node_id FROM edge"
-		")");
+		"DELETE FROM element_id_to_clear WHERE EXISTS ("
+		"	SELECT * FROM edge WHERE edge.source_node_id = element_id_to_clear.id AND "
+		"		edge.type != " +
+		memberEdgeType +
+		") OR EXISTS ("
+		"	SELECT * FROM edge WHERE edge.target_node_id = element_id_to_clear.id AND "
+		"		edge.type != " +
+		memberEdgeType + ")");
+
+	if (updateStatusCallback != nullptr)
+	{
+		updateStatusCallback(66);
+	}
+
+	// add the parents (and their parents) of these nodes that have no occurrences and no edges but
+	// member edges either (outer::inner of a call to outer::inner::leaf)
+	executeStatement(
+		"WITH RECURSIVE bare_parent(id) AS ("
+		"	SELECT edge.source_node_id FROM edge INNER JOIN element_id_to_clear ON "
+		"		edge.target_node_id = element_id_to_clear.id "
+		"	WHERE edge.type = " +
+		memberEdgeType +
+		"	UNION "
+		"	SELECT edge.source_node_id FROM edge INNER JOIN bare_parent ON "
+		"		edge.target_node_id = bare_parent.id "
+		"	WHERE edge.type = " +
+		memberEdgeType +
+		" AND NOT EXISTS (SELECT * FROM occurrence WHERE occurrence.element_id = bare_parent.id) "
+		"		AND NOT EXISTS ("
+		"		SELECT * FROM edge AS other WHERE other.type != " +
+		memberEdgeType +
+		" AND (other.source_node_id = bare_parent.id OR other.target_node_id = bare_parent.id)"
+		"	)"
+		") "
+		"INSERT OR IGNORE INTO element_id_to_clear "
+		"	SELECT id FROM bare_parent "
+		"	WHERE NOT EXISTS (SELECT * FROM occurrence WHERE occurrence.element_id = bare_parent.id) "
+		"		AND NOT EXISTS (SELECT * FROM file WHERE file.id = bare_parent.id) AND NOT EXISTS ("
+		"			SELECT * FROM edge WHERE edge.type != " +
+		memberEdgeType +
+		" AND (edge.source_node_id = bare_parent.id OR edge.target_node_id = bare_parent.id)"
+		"		)");
 
 	if (updateStatusCallback != nullptr)
 	{
 		updateStatusCallback(74);
 	}
+
+	// remove all ids from element_id_to_clear that are the parent, or an ancestor, of a node that
+	// stays: a node's parents stay with it
+	executeStatement(
+		"WITH RECURSIVE kept_ancestor(id) AS ("
+		"	SELECT edge.source_node_id FROM edge INNER JOIN element_id_to_clear ON "
+		"		edge.source_node_id = element_id_to_clear.id "
+		"	WHERE edge.type = " +
+		memberEdgeType +
+		" AND NOT EXISTS (SELECT * FROM element_id_to_clear AS child WHERE "
+		"		child.id = edge.target_node_id) "
+		"	UNION "
+		"	SELECT edge.source_node_id FROM edge INNER JOIN kept_ancestor ON "
+		"		edge.target_node_id = kept_ancestor.id "
+		"	WHERE edge.type = " +
+		memberEdgeType +
+		" AND EXISTS (SELECT * FROM element_id_to_clear AS parent WHERE "
+		"		parent.id = edge.source_node_id)"
+		") "
+		"DELETE FROM element_id_to_clear WHERE id IN (SELECT id FROM kept_ancestor)");
+
+	if (updateStatusCallback != nullptr)
+	{
+		updateStatusCallback(80);
+	}
+
+	// delete the member edges pointing to the nodes that go (their sources go, too, or are kept)
+	executeStatement(
+		"DELETE FROM element WHERE id IN ("
+		"	SELECT edge.id FROM edge INNER JOIN element_id_to_clear ON "
+		"		edge.target_node_id = element_id_to_clear.id"
+		")");
 
 	// delete all elements that are still listed in element_id_to_clear
 	executeStatement(
