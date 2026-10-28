@@ -6,6 +6,7 @@
 #include <set>
 #include <vector>
 
+#include "CdbLoad.h"
 #include "SourceGroup.h"
 
 class FilePath;
@@ -22,6 +23,11 @@ class SourceGroupCxxCdb: public SourceGroup
 {
 public:
 	SourceGroupCxxCdb(std::shared_ptr<SourceGroupSettingsCxxCdb> settings);
+
+	//! Whether the compilation database at `cdbPath` can be indexed: it loads (see utility::loadCDB)
+	//! and at least one of the files its commands compile exists. Files that do not exist beside
+	//! ones that do are logged, not an error.
+	static std::expected<void, utility::CdbLoadError> checkCompilationDatabase(const FilePath& cdbPath);
 
 	std::expected<void, PrepareIndexingError> prepareIndexing() override;
 	std::set<FilePath> filterToContainedFilePaths(const std::set<FilePath>& filePaths) const override;

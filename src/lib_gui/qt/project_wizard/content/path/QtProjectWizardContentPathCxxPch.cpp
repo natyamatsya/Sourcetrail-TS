@@ -71,9 +71,7 @@ bool QtProjectWizardContentPathCxxPch::check()
 		{
 			m_window->tell(
 				tr("Unable to open and read the provided compilation database file.") + "\n" +
-				QString::fromStdString(
-					loadedCdb.error().message.empty() ? std::string(utility::to_std_sv(loadedCdb.error().code))
-													  : loadedCdb.error().message));
+				QString::fromStdString(utility::describe(loadedCdb.error())));
 			return false;
 		}
 		const std::shared_ptr<clang::tooling::CompilationDatabase> cdb = loadedCdb.value();

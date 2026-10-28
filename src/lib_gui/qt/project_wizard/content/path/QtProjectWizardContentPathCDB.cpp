@@ -93,11 +93,41 @@ void QtProjectWizardContentPathCDB::refresh()
 	if (m_fileCountLabel)
 	{
 		const std::size_t count = getFilePaths().size();
-		m_fileCountLabel->setText(
-			"<b>" + QString::number(count) + "</b>" +
+		QString text = "<b>" + QString::number(count) + "</b>" +
 			(count == 1 ? " source file was found in the compilation database."
-						: " source files were found in the compilation database."));
+						: " source files were found in the compilation database.");
+		// None found: say why, where the count is read (a database that does not parse, lists
+		// nothing, or names files that are not there).
+		if (count == 0 && !m_settings->getCompilationDatabasePath().empty())
+		{
+			if (const auto checked = SourceGroupCxxCdb::checkCompilationDatabase(
+					m_settings->getCompilationDatabasePathExpandedAndAbsolute());
+				!checked)
+			{
+				text += "<br />" + QString::fromStdString(utility::describe(checked.error())).toHtmlEscaped();
+			}
+		}
+		m_fileCountLabel->setText(text);
 	}
+}
+
+bool QtProjectWizardContentPathCDB::check()
+{
+	if (!QtProjectWizardContentPath::check())
+	{
+		return false;
+	}
+
+	// The database has to be one Sourcetrail can index: it parses, lists compile commands, and
+	// compiles at least one file that exists. Checked as typed, not as last saved.
+	const FilePath cdbPath = utility::getExpandedAndAbsolutePath(
+		FilePath(m_picker->getText().toStdString()), m_settings->getProjectDirectoryPath());
+	if (const auto checked = SourceGroupCxxCdb::checkCompilationDatabase(cdbPath); !checked)
+	{
+		m_window->tell(QString::fromStdString(utility::describe(checked.error())));
+		return false;
+	}
+	return true;
 }
 
 std::vector<FilePath> QtProjectWizardContentPathCDB::getFilePaths() const

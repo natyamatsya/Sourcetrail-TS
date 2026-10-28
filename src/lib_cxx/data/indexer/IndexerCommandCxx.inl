@@ -26,12 +26,11 @@ inline std::vector<FilePath> IndexerCommandCxx::getSourceFilesFromCDB(const File
 		utility::loadCDB(cdbPath);
 	if (!cdb)
 	{
-		// A missing path is the normal "no compilation database here" case; only a parse failure is
-		// worth surfacing to the user.
-		if (cdb.error().code == utility::CdbLoadError::Code::ParseFailed)
+		// A missing path is the normal "no compilation database here" case; a database that is
+		// there but unusable is worth surfacing to the user.
+		if (cdb.error().code != utility::CdbLoadError::Code::PathMissing)
 		{
-			const std::string message =
-				"Loading Clang compilation database failed with error: \"" + cdb.error().message + "\"";
+			const std::string message = utility::describe(cdb.error());
 			LOG_ERROR(message);
 			MessageStatus(message, true).dispatch();
 		}
