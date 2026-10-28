@@ -2886,6 +2886,27 @@ TEST_CASE("cxx parser names a dependent specialization in a template's signature
 	REQUIRE(containsElement(client->typeUses, "void f<typename T>(vec<T *>) -> vec<typename T> <3:30 3:32>"s));
 }
 
+TEST_CASE("cxx parser names a closure type's destructor as a member of the lambda")
+{
+	// A closure that captures a class with a destructor has one too, and destroying the closure
+	// calls it. It was named like the call operator without its const, `setup::lambda at 3:26()`:
+	// a second, placeholder node of the lambda receiving that call (CLI11's callback lambdas).
+	std::shared_ptr<TestStorage> client = parseCode(
+		"struct R { ~R() {} };\n"
+		"template <class F> void take(F f) { f(); }\n"
+		"void setup() { R r; take([r]() {}); }\n");
+
+	CAPTURE(client->methods, client->calls);
+	REQUIRE(client->errors.empty());
+	REQUIRE(std::ranges::any_of(client->calls, [](const std::string& call) {
+		return call.contains(" -> void setup::lambda at 3:26::~lambda at 3:26() <");
+	}));
+	for (const std::string& call: client->calls)
+	{
+		REQUIRE_FALSE(call.contains("-> void setup::lambda at 3:26() <"));
+	}
+}
+
 TEST_CASE("cxx parser names a closure type behind an alias template like the lambda")
 {
 	// std::forward's parameter is `remove_reference_t<T>&`, magic_enum tests `std::decay_t<F>`:
