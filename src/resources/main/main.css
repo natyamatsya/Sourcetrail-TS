@@ -90,15 +90,17 @@ QtDockGrip {
 	qproperty-dotHoverColor: <color:window/dock/handle_hover>;
 }
 
-/* The slim header along the card's top edge: grip, title, buttons. */
+/* The slim header along the card's top edge: grip, title, buttons. 28 px high, as the header
+   lines inside the cards (the code view's navigation and file headers) and the search bar's
+   controls. */
 KDDockWidgets--QtWidgets--TitleBar {
 	background: <color:window/dock/header>;
 	border: none;
 	border-bottom: 1px solid <color:window/dock/card_border>;
 	color: <color:window/dock/header_text>;
 	font-size: 12px;
-	min-height: 26px;
-	max-height: 26px;
+	min-height: 28px;
+	max-height: 28px;
 }
 
 /* Several cards in a floating window: the window's header row lies on the canvas above them. */
@@ -145,13 +147,13 @@ QTabBar#dock_header_tabs::tab {
 	color: <color:window/dock/header_text>;
 	font-size: 12px;
 	height: 20px;
-	margin: 3px 1px;
+	margin: 4px 1px;
 	padding: 0px 10px;
 }
 
 /* In a header the tabs share its 2 px inset: their own margin centres them in it, as the chips. */
 QTabBar#dock_header_tabs::tab {
-	margin: 1px 1px;
+	margin: 2px 1px;
 }
 
 KDDockWidgets--QtWidgets--TabBar::tab:hover,
