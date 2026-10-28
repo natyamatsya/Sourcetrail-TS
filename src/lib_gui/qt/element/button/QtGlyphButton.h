@@ -4,8 +4,8 @@
 #include <QColor>
 #include <QPushButton>
 
-// A small round button showing a monochrome line glyph (12px, the stroke of the dock headers'
-// buttons), faint until the mouse is over it or it is emphasized, e.g. as the current tab's.
+// A small round button showing a line glyph (QtLineGlyph), faint until the mouse is over it or
+// it is emphasized, e.g. as the current tab's.
 // The style sheet colours it through qproperty-glyphColor; its size comes from the style
 // sheet too.
 class QtGlyphButton: public QPushButton

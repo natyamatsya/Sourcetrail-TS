@@ -71,6 +71,21 @@ public:
 	static const char GRAPH_VIEW_ZOOM_OUT[];
 	static const char GRAPH_VIEW_CSS[];
 
+	static const char GLYPH_ADD[];
+	static const char GLYPH_AUTO_HIDE[];
+	static const char GLYPH_CHEVRON_DOWN[];
+	static const char GLYPH_CHEVRON_RIGHT[];
+	static const char GLYPH_CHEVRON_UP[];
+	static const char GLYPH_CLOSE[];
+	static const char GLYPH_EDIT[];
+	static const char GLYPH_FILE_INCOMPLETE[];
+	static const char GLYPH_FLOAT[];
+	static const char GLYPH_MAXIMIZE[];
+	static const char GLYPH_MINIMIZE[];
+	static const char GLYPH_SNIPPETS[];
+	static const char GLYPH_UNAUTO_HIDE[];
+	static const char GLYPH_UNFOLD[];
+
 	static const char HISTORY_LIST_CSS[];
 	static const char HISTORY_LIST_ARROW[];
 

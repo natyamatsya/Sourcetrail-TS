@@ -12,6 +12,7 @@
 #include "Project.h"
 #include "QtCodeGlyphButton.h"
 #include "QtContextMenu.h"
+#include "QtLineGlyph.h"
 #include "QtResources.h"
 
 #include <QMouseEvent>
@@ -26,11 +27,6 @@ import srctrl.settings;
 
 using namespace std;
 
-namespace
-{
-constexpr int glyphSize{16};
-}	 // namespace
-
 QtCodeFileTitleButton::QtCodeFileTitleButton(QWidget* parent)
 	: QtSelfRefreshIconButton(QLatin1String(""), FilePath(), "code/file/title", parent)
 {
@@ -40,7 +36,7 @@ QtCodeFileTitleButton::QtCodeFileTitleButton(QWidget* parent)
 	setFixedHeight(static_cast<int>(std::max(fontMetrics().height() * 1.2, 24.0)));
 	setSizePolicy(sizePolicy().horizontalPolicy(), QSizePolicy::Fixed);
 
-	setIconSize(QSize(glyphSize, glyphSize));
+	setIconSize(QSize(QtLineGlyph::size, QtLineGlyph::size));
 	updateIcon();
 
 	connect(this, &QtCodeFileTitleButton::clicked, this, &QtCodeFileTitleButton::clickedTitle);
@@ -275,7 +271,7 @@ void QtCodeFileTitleButton::updateIcon()
 	}
 
 	const QColor color{QString::fromStdString(ColorScheme::getInstance()->getColor("code/header/muted"))};
-	setIcon(codeGlyphIcon(glyph, color, glyphSize));
+	setIcon(codeGlyphIcon(glyph, color));
 }
 
 void QtCodeFileTitleButton::updateHatching()

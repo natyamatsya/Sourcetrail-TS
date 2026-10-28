@@ -87,6 +87,21 @@ const char *resourceNames[] = {
 	QtResources::GRAPH_VIEW_ZOOM_OUT,
 	QtResources::GRAPH_VIEW_CSS,
 
+	QtResources::GLYPH_ADD,
+	QtResources::GLYPH_AUTO_HIDE,
+	QtResources::GLYPH_CHEVRON_DOWN,
+	QtResources::GLYPH_CHEVRON_RIGHT,
+	QtResources::GLYPH_CHEVRON_UP,
+	QtResources::GLYPH_CLOSE,
+	QtResources::GLYPH_EDIT,
+	QtResources::GLYPH_FILE_INCOMPLETE,
+	QtResources::GLYPH_FLOAT,
+	QtResources::GLYPH_MAXIMIZE,
+	QtResources::GLYPH_MINIMIZE,
+	QtResources::GLYPH_SNIPPETS,
+	QtResources::GLYPH_UNAUTO_HIDE,
+	QtResources::GLYPH_UNFOLD,
+
 	QtResources::HISTORY_LIST_CSS,
 	QtResources::HISTORY_LIST_ARROW,
 

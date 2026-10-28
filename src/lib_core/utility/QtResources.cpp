@@ -89,6 +89,21 @@ const char QtResources::GRAPH_VIEW_ZOOM_IN[]         = ":/graph_view/images/zoom
 const char QtResources::GRAPH_VIEW_ZOOM_OUT[]        = ":/graph_view/images/zoom_out.svg";
 const char QtResources::GRAPH_VIEW_CSS[]             = ":/graph_view/graph_view.css";
 
+const char QtResources::GLYPH_ADD[]             = ":/glyphs/add.svg";
+const char QtResources::GLYPH_AUTO_HIDE[]       = ":/glyphs/auto_hide.svg";
+const char QtResources::GLYPH_CHEVRON_DOWN[]    = ":/glyphs/chevron_down.svg";
+const char QtResources::GLYPH_CHEVRON_RIGHT[]   = ":/glyphs/chevron_right.svg";
+const char QtResources::GLYPH_CHEVRON_UP[]      = ":/glyphs/chevron_up.svg";
+const char QtResources::GLYPH_CLOSE[]           = ":/glyphs/close.svg";
+const char QtResources::GLYPH_EDIT[]            = ":/glyphs/edit.svg";
+const char QtResources::GLYPH_FILE_INCOMPLETE[] = ":/glyphs/file_incomplete.svg";
+const char QtResources::GLYPH_FLOAT[]           = ":/glyphs/float.svg";
+const char QtResources::GLYPH_MAXIMIZE[]        = ":/glyphs/maximize.svg";
+const char QtResources::GLYPH_MINIMIZE[]        = ":/glyphs/minimize.svg";
+const char QtResources::GLYPH_SNIPPETS[]        = ":/glyphs/snippets.svg";
+const char QtResources::GLYPH_UNAUTO_HIDE[]     = ":/glyphs/unauto_hide.svg";
+const char QtResources::GLYPH_UNFOLD[]          = ":/glyphs/unfold.svg";
+
 const char QtResources::HISTORY_LIST_CSS[]   = ":/history_list/history_list.css";
 const char QtResources::HISTORY_LIST_ARROW[] = ":/history_list/images/arrow.png";
 

@@ -1,5 +1,7 @@
 #include "QtGraphToolbar.h"
 
+#include "QtLineGlyph.h"
+
 #include <QEvent>
 #include <QGraphicsOpacityEffect>
 #include <QVBoxLayout>
@@ -16,8 +18,9 @@ constexpr int controlSpacing{2};
 // The pill is fully rounded: a single column is a stadium; more columns keep its ends' curve.
 constexpr qreal cornerRadius{QtGraphToolbar::controlSize / 2.0 + QtGraphToolbar::padding};
 
-// How strong the controls are at rest; the mouse over the toolbar brings them up to full.
-constexpr qreal restingOpacity{0.7};
+// How strong the controls are at rest, as every faint glyph; the mouse over the toolbar brings
+// them up to full.
+constexpr qreal restingOpacity{QtLineGlyph::faintOpacity};
 
 bool showsAnyControl(const QWidget& section)
 {

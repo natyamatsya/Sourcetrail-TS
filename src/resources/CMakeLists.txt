@@ -72,6 +72,21 @@ qt_add_resources(Sourcetrail_res_gui Sourcetrail_resources
 		graph_view/images/zoom_out.svg
 		graph_view/graph_view.css
 		
+		glyphs/add.svg
+		glyphs/auto_hide.svg
+		glyphs/chevron_down.svg
+		glyphs/chevron_right.svg
+		glyphs/chevron_up.svg
+		glyphs/close.svg
+		glyphs/edit.svg
+		glyphs/file_incomplete.svg
+		glyphs/float.svg
+		glyphs/maximize.svg
+		glyphs/minimize.svg
+		glyphs/snippets.svg
+		glyphs/unauto_hide.svg
+		glyphs/unfold.svg
+		
 		history_list/history_list.css
 		history_list/images/arrow.png
 		

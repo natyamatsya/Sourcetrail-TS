@@ -5,10 +5,7 @@
 #include <QIcon>
 #include <QPushButton>
 
-class QPainter;
-
-// The code view's small line icons: drawn, not loaded, so they stay crisp at any scale and take
-// any colour. They share one stroke and a 16 px grid.
+// The code view's line icons (QtLineGlyph).
 enum class QtCodeGlyph
 {
 	ChevronUp,
@@ -21,12 +18,11 @@ enum class QtCodeGlyph
 	Edit
 };
 
-// Draws the glyph into box (any size: the 16 px grid is scaled to it) with the painter's pen
-// colour.
-void drawCodeGlyph(QPainter& painter, QtCodeGlyph glyph, const QRectF& box, const QColor& color);
+// The glyph's drawing (a resource path).
+QString codeGlyphPath(QtCodeGlyph glyph);
 
-// The glyph as an icon of size x size logical pixels, in color, for every screen scale.
-QIcon codeGlyphIcon(QtCodeGlyph glyph, const QColor& color, int size);
+// The glyph as an icon in color, for every screen scale.
+QIcon codeGlyphIcon(QtCodeGlyph glyph, const QColor& color);
 
 // A flat button showing a glyph. The style sheet gives it its glyph colours
 // (qproperty-glyphColor, qproperty-checkedGlyphColor) and its background, hover and checked

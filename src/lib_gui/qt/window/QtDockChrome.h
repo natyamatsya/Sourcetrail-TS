@@ -280,7 +280,7 @@ private:
 	QtDockGrip* m_grip{nullptr};
 };
 
-// A header button: a 12 px monochrome glyph (its icon, used as a mask), faint until its
+// A header button: a line glyph (QtLineGlyph; its icon, used as a mask), faint until its
 // header is hovered, with a rounded highlight under the mouse.
 class QtDockHeaderButton: public KDDockWidgets::QtWidgets::Button
 {
