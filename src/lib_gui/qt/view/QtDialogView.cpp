@@ -171,6 +171,7 @@ void QtDialogView::presentModeChoice(const std::vector<RefreshMode>& modes, Refr
 			IndexingStateMachine::instance()->cancel(EventSource::Ui);
 			stopCounting();
 			setUIBlocked(false);
+			endPreparationStatus();
 		});
 
 		window->hide();	 // until the files of the initial mode are counted
@@ -221,8 +222,17 @@ void QtDialogView::dismissModeChoice(bool started)
 		if (!started)
 		{
 			setUIBlocked(false);
+			endPreparationStatus();
 		}
 	});
+}
+
+// What preparing the run left in the status bar ("Resolving the CMake build directory of ...",
+// with the spinner) stayed there, spinning, once the run was canceled in the mode choice:
+// nothing after it reports a status.
+void QtDialogView::endPreparationStatus()
+{
+	MessageStatus("", false, false).dispatch();
 }
 
 void QtDialogView::stopCounting()
