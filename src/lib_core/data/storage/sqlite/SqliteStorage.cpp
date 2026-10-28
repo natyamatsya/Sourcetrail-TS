@@ -161,7 +161,15 @@ void SqliteStorage::rollbackTransaction()
 
 void SqliteStorage::optimizeMemory() const
 {
-	executeStatement("VACUUM;");
+	// VACUUM gives back the pages deleted rows left free: worth it once they are a good part
+	// of the file (an update deletes the changed files' rows first). Rewriting the whole file
+	// after every run, with next to nothing free, took most of a run's 1 s finishing phase.
+	const long long pages{executeStatementScalar("PRAGMA page_count;", 0)};
+	const long long freePages{executeStatementScalar("PRAGMA freelist_count;", 0)};
+	if (pages <= 0 || freePages * 4 >= pages)	 // unknown: as before
+	{
+		executeStatement("VACUUM;");
+	}
 }
 
 FilePath SqliteStorage::getDbFilePath() const
