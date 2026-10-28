@@ -10,6 +10,7 @@
 QtIndexingStartDialog::QtIndexingStartDialog(
 	const std::vector<RefreshMode>& enabledModes,
 	const RefreshMode initialMode,
+	const QString& reason,
 	QWidget* parent)
 	: QtIndexingDialog(true, parent)
 {
@@ -17,6 +18,18 @@ QtIndexingStartDialog::QtIndexingStartDialog(
 
 	QtIndexingDialog::createTitleLabel(QStringLiteral("Start Indexing"), m_layout);
 	m_layout->addSpacing(5);
+
+	// Why the choice opened (the project's settings changed), in place of a question
+	// asked before it.
+	if (!reason.isEmpty())
+	{
+		QLabel* reasonLabel = QtIndexingDialog::createMessageLabel(m_layout);
+		reasonLabel->setObjectName(QStringLiteral("reason"));
+		reasonLabel->setAccessibleName(QStringLiteral("Why indexing is suggested"));
+		reasonLabel->setWordWrap(true);
+		reasonLabel->setText(reason);
+		m_layout->addSpacing(10);
+	}
 
 	m_clearLabel = QtIndexingDialog::createMessageLabel(m_layout);
 	m_indexLabel = QtIndexingDialog::createMessageLabel(m_layout);
@@ -112,11 +125,11 @@ QtIndexingStartDialog::QtIndexingStartDialog(
 
 		buttons->addStretch();
 
-		QPushButton* startButton = new QPushButton(QStringLiteral("Start"));
-		startButton->setObjectName(QStringLiteral("windowButton"));
-		startButton->setDefault(true);
-		connect(startButton, &QPushButton::clicked, this, &QtIndexingStartDialog::onStartPressed);
-		buttons->addWidget(startButton);
+		m_startButton = new QPushButton(QStringLiteral("Start"));
+		m_startButton->setObjectName(QStringLiteral("windowButton"));
+		m_startButton->setDefault(true);
+		connect(m_startButton, &QPushButton::clicked, this, &QtIndexingStartDialog::onStartPressed);
+		buttons->addWidget(m_startButton);
 		m_layout->addLayout(buttons);
 	}
 
@@ -144,6 +157,14 @@ void QtIndexingStartDialog::updateRefreshInfo(const RefreshInfo& info)
 
 	m_clearLabel->setVisible(clearCount && info.mode != RefreshMode::ALL_FILES);
 	m_indexLabel->setVisible(true);
+
+	// An update with nothing to index or clear would do nothing.
+	const bool nothingToDo = info.mode != RefreshMode::ALL_FILES && clearCount == 0 && indexCount == 0;
+	if (nothingToDo)
+	{
+		m_indexLabel->setText(QStringLiteral("All files are up to date."));
+	}
+	m_startButton->setEnabled(!nothingToDo);
 }
 
 void QtIndexingStartDialog::resizeEvent(QResizeEvent* event)
@@ -164,7 +185,10 @@ void QtIndexingStartDialog::keyPressEvent(QKeyEvent* event)
 		onCancelPressed();
 		break;
 	case Qt::Key_Return:
-		onStartPressed();
+		if (m_startButton->isEnabled())
+		{
+			onStartPressed();
+		}
 		break;
 	}
 

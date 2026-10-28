@@ -1,6 +1,8 @@
 #include "IDECommunicationController.h"
 
+#include "EditorCommand.h"
 #ifndef SRCTRL_MODULE_BUILD
+#include "ApplicationSettings.h"
 #include "FileSystem.h"
 #include "MessageActivateWindow.h"
 #include "MessagePingReceived.h"
@@ -205,6 +207,46 @@ void IDECommunicationController::handleMessage(MessageMoveIDECursor* message)
 		.dispatch();
 
 	sendMessage(networkMessage);
+}
+
+void IDECommunicationController::handleMessage(MessagePingReceived* message)
+{
+	const std::lock_guard<std::mutex> lock(m_ideMutex);
+	m_connectedIde = message->ideName;
+}
+
+void IDECommunicationController::handleMessage(MessageOpenInEditor* message)
+{
+	// A connected IDE plugin goes on doing it, as Show in IDE does.
+	bool pluginConnected = false;
+	{
+		const std::lock_guard<std::mutex> lock(m_ideMutex);
+		pluginConnected = m_enabled && !m_connectedIde.empty();
+	}
+	if (pluginConnected)
+	{
+		MessageMoveIDECursor(message->filePath, message->line, message->column).dispatch();
+		return;
+	}
+
+	const std::string command =
+		editor_command::effectiveCommand(ApplicationSettings::getInstance()->getEditorCommand());
+	const std::string location = message->filePath.str() + ":" + std::to_string(message->line) + ":" +
+		std::to_string(message->column);
+	const std::expected<std::string, editor_command::EditorCommandError> opened =
+		editor_command::open(command, message->filePath, message->line, message->column);
+	if (opened)
+	{
+		MessageStatus("Opened " + location + " in " + *opened).dispatch();
+	}
+	else
+	{
+		MessageStatus(
+			"Could not open " + location + ": " + editor_command::toString(opened.error()) +
+				" (Preferences > Editor command: \"" + command + "\")",
+			true)
+			.dispatch();
+	}
 }
 
 void IDECommunicationController::handleMessage(MessagePluginPortChange*  /*message*/)

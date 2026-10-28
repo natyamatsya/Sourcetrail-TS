@@ -43,6 +43,10 @@ private:
 
 	std::vector<std::string> getBaseCompilerFlags() const;
 
+	//! The target filter indexing uses: the setting's, with the targets the matched ones
+	//! depend on when getIndexLinkedTargets() says so.
+	std::string effectiveTargetFilter(const CMakeFileAPIReader& reader) const;
+
 	//! After the reply is current: fails, telling the person why, when the
 	//! configuration is not in the reply or the target filter matches no target.
 	std::expected<void, PrepareIndexingError> checkReplyMatchesSettings(

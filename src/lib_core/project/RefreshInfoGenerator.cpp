@@ -101,7 +101,7 @@ RefreshInfo RefreshInfoGenerator::getRefreshInfoForUpdatedFiles(
 		{
 			// A file a previous index left incomplete (its errors) is unchanged here: re-indexing
 			// it is the incomplete mode's (getRefreshInfoForIncompleteFiles, --incomplete).
-			const bool changed = !info.path.exists() || didFileChange(info, storage);
+			const bool changed = didFileChange(info, storage);
 			if (changed)
 			{
 				changedFilePaths.insert(info.path);
@@ -333,9 +333,27 @@ std::set<FilePath> RefreshInfoGenerator::getAllSourceFilePaths(
 	return allSourceFilePaths;
 }
 
+std::set<FilePath> RefreshInfoGenerator::getChangedFilePaths(std::shared_ptr<const PersistentStorage> storage)
+{
+	std::set<FilePath> changedFilePaths;
+	for (const FileInfo& info: storage->getFileInfoForAllFiles())
+	{
+		if (didFileChange(info, storage))
+		{
+			changedFilePaths.insert(info.path);
+		}
+	}
+	return changedFilePaths;
+}
+
 bool RefreshInfoGenerator::didFileChange(
 	const FileInfo& info, std::shared_ptr<const PersistentStorage> storage)
 {
+	if (!info.path.exists())
+	{
+		return true;
+	}
+
 	FileInfo diskFileInfo = FileSystem::getFileInfoForPath(info.path);
 	// The stored mtime is second-precision (persisted via TimeStamp::toString), while
 	// the disk mtime carries sub-seconds. Compare at the stored precision, otherwise a

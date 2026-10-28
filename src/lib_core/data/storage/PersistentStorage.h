@@ -240,6 +240,9 @@ public:
 	std::vector<EdgeBookmark> getAllEdgeBookmarks() const override;
 	std::vector<BookmarkCategory> getAllBookmarkCategories() const override;
 
+	std::string getTabSession() const override;
+	void setTabSession(const std::string& session) override;
+
 	TooltipInfo getTooltipInfoForTokenIds(
 		const std::vector<Id>& tokenIds, TooltipOrigin origin) const override;
 	TooltipSnippet getTooltipSnippetForNode(const StorageNode& node) const;
@@ -321,6 +324,7 @@ private:
 	mutable FullTextSearchIndex m_fullTextSearchIndex;
 	mutable std::string m_fullTextSearchCodec;
 	mutable std::mutex m_fullTextSearchMutex;
+	mutable std::mutex m_tabSessionMutex;	// the session is written from the background queue
 
 	// Composition root for the storage connections: one owning connection per
 	// database file; the storages below only borrow them (declared first so they

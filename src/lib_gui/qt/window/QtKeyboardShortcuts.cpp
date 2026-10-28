@@ -138,6 +138,7 @@ QTableWidget* QtKeyboardShortcuts::createGeneralShortcutsTable()
 		QtActions::forward(),
 		QtActions::refresh(),
 		QtActions::fullRefresh(),
+		QtActions::openInEditor(),
 		QtActions::findSymbol(),
 		QtActions::findText(),
 		QtActions::findOnScreen(),

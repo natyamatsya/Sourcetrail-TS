@@ -81,6 +81,7 @@ public:
 	// Edit keys:
 
 	static Info refresh();
+	static Info openInEditor();
 	static Info fullRefresh();
 	static Info findSymbol();
 	static Info executeFindSymbol();

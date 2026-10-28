@@ -12,6 +12,7 @@
 
 #include "CMakeFileAPIReader.h"
 
+#include <filesystem>
 #include <format>
 
 #include <QDir>
@@ -614,11 +615,25 @@ std::vector<CMakeFileAPIReader::PresetInfo> CMakeFileAPIReader::discoverPresetIn
 		if (!isPresetVisible(name, presets, sourceDir))
 			continue;
 		const QJsonObject& preset{presets.byName[name].object};
+		QSet<QString> visited{};
+		QMap<QString, QJsonValue> cache{};
+		collectMergedObject(name, QStringLiteral("cacheVariables"), presets, visited, cache);
+		std::vector<std::pair<std::string, std::string>> cacheVariables{};
+		for (auto entry = cache.cbegin(); entry != cache.cend(); ++entry)
+		{
+			const QJsonValue value{entry.value().isObject() ? entry.value().toObject()["value"] : entry.value()};
+			cacheVariables.emplace_back(
+				entry.key().toStdString(),
+				value.isBool() ? (value.toBool() ? "TRUE" : "FALSE") : value.toVariant().toString().toStdString());
+		}
 		result.push_back(
 			{.name = name.toStdString(),
 			 .displayName = preset["displayName"].toString().toStdString(),
 			 .description = preset["description"].toString().toStdString(),
 			 .generator = inheritedField(name, QStringLiteral("generator"), presets).toString().toStdString(),
+			 .toolchainFile = inheritedField(name, QStringLiteral("toolchainFile"), presets).toString().toStdString(),
+			 .binaryDir = inheritedField(name, QStringLiteral("binaryDir"), presets).toString().toStdString(),
+			 .cacheVariables = std::move(cacheVariables),
 			 .undefinedEnvironment = undefinedEnvironment(name, presets),
 			 .file = FilePath{presets.byName[name].file.toStdString()}});
 	}
@@ -672,7 +687,8 @@ std::expected<void, CMakeFileAPIReader::ConfigureError> CMakeFileAPIReader::ensu
 	std::function<void(const std::string&)> progress,
 	const FilePath& sourceDir,
 	const std::string& presetName,
-	const bool reconfigure)
+	const bool reconfigure,
+	const std::vector<std::string>& cmakeArguments)
 {
 	// 1. Write the query file so CMake knows what to generate.
 	{
@@ -720,6 +736,13 @@ std::expected<void, CMakeFileAPIReader::ConfigureError> CMakeFileAPIReader::ensu
 		proc.setWorkingDirectory(QString::fromStdString(m_buildDir.str()));
 		args << QString::fromStdString(m_buildDir.str());
 	}
+	for (const std::string& argument: cmakeArguments)
+	{
+		if (!argument.empty())
+		{
+			args << QString::fromStdString(argument);
+		}
+	}
 
 	const std::string commandLine{std::format("cmake {}", args.join(QStringLiteral(" ")).toStdString())};
 	proc.start(QStringLiteral("cmake"), args);
@@ -738,6 +761,14 @@ std::expected<void, CMakeFileAPIReader::ConfigureError> CMakeFileAPIReader::ensu
 			ConfigureErrorCode::CMakeTimedOut, std::format("'{}' did not finish within 5 minutes.", commandLine)));
 	}
 	const std::string output{proc.readAll().toStdString()};
+	{
+		// Kept for the wizard's "Show log", also after a restart.
+		QFile log{QString::fromStdString(configureLogPath().str())};
+		if (log.open(QIODevice::WriteOnly | QIODevice::Truncate))
+		{
+			log.write(QByteArray::fromStdString(std::format("$ {}\n\n{}", commandLine, output)));
+		}
+	}
 	if (proc.exitStatus() != QProcess::NormalExit || proc.exitCode() != 0)
 	{
 		LOG_WARNING(std::format(
@@ -759,6 +790,111 @@ std::expected<void, CMakeFileAPIReader::ConfigureError> CMakeFileAPIReader::ensu
 		return std::unexpected(utility::makeExpectedError(
 			ConfigureErrorCode::NoReplyWritten, std::format("No reply in {}", m_replyDir.str())));
 	return {};
+}
+
+std::string CMakeFileAPIReader::builtConfiguration(const std::vector<std::string>& configurations) const
+{
+	namespace fs = std::filesystem;
+	if (configurations.size() < 2)
+		return {};
+	const fs::path buildDir{m_buildDir.str()};
+
+	// Ninja (Multi-Config) logs each output it built, oldest first: the last line with a
+	// configuration's directory in its output tells. Only its end is read.
+	{
+		QFile log{QString::fromStdString((buildDir / ".ninja_log").string())};
+		if (log.open(QIODevice::ReadOnly))
+		{
+			constexpr qint64 tail{256 * 1024};
+			log.seek(std::max<qint64>(0, log.size() - tail));
+			const QStringList lines{QString::fromUtf8(log.readAll()).split(QLatin1Char('\n'))};
+			for (auto line = lines.crbegin(); line != lines.crend(); ++line)
+			{
+				const QStringList fields{line->split(QLatin1Char('\t'))};
+				if (fields.size() < 4)
+					continue;
+				const std::string output{fields[3].toStdString()};
+				for (const std::string& configuration : configurations)
+					if (!configuration.empty() &&
+						(output.starts_with(configuration + "/") || output.contains("/" + configuration + "/")))
+						return configuration;
+			}
+		}
+	}
+
+	// Otherwise (Xcode, Visual Studio, Makefiles per configuration): the newest of the
+	// directories a configuration's outputs go to.
+	std::string newest{};
+	std::optional<fs::file_time_type> newestTime{};
+	for (const std::string& configuration : configurations)
+	{
+		if (configuration.empty())
+			continue;
+		std::vector<fs::path> directories{buildDir / configuration};
+		std::error_code error{};
+		for (const fs::directory_entry& entry : fs::directory_iterator(buildDir / "CMakeFiles", error))
+			if (entry.path().extension() == ".dir")
+				directories.push_back(entry.path() / configuration);
+		for (const fs::path& directory : directories)
+		{
+			if (!fs::is_directory(directory, error) || fs::is_empty(directory, error))
+				continue;
+			const fs::file_time_type time{fs::last_write_time(directory, error)};
+			if (!error && (!newestTime || time > *newestTime))
+			{
+				newestTime = time;
+				newest = configuration;
+			}
+		}
+	}
+	return newest;
+}
+
+FilePath CMakeFileAPIReader::configureLogPath() const
+{
+	return m_queryDir.getConcatenated(FilePath{"configure.log"});
+}
+
+std::string CMakeFileAPIReader::lastConfigureLog() const
+{
+	QFile log{QString::fromStdString(configureLogPath().str())};
+	if (!log.open(QIODevice::ReadOnly))
+		return {};
+	return log.readAll().toStdString();
+}
+
+std::string CMakeFileAPIReader::firstConfigureError(const std::string& output)
+{
+	// "CMake Error at CMakeLists.txt:12 (add_subdirectory):" and its message: the indented
+	// lines after it, blank lines among them ("The source directory\n\n    <path>\n\n  does
+	// not contain a CMakeLists.txt file.").
+	const QStringList lines{QString::fromStdString(output).split(QLatin1Char('\n'))};
+	for (qsizetype i = 0; i < lines.size(); i++)
+	{
+		if (!lines[i].startsWith(QLatin1String("CMake Error")))
+			continue;
+		QString error{lines[i].trimmed()};
+		for (qsizetype j = i + 1; j < lines.size(); j++)
+		{
+			if (lines[j].trimmed().isEmpty())
+				continue;
+			if (!lines[j].startsWith(QLatin1Char(' ')))
+				break;
+			error += QLatin1Char(' ') + lines[j].trimmed();
+		}
+		return error.toStdString();
+	}
+	return {};
+}
+
+bool CMakeFileAPIReader::missesSubmodules(const std::string& output, const FilePath& sourceDir)
+{
+	// A submodule not checked out is an empty directory; one not created at all is not there.
+	const bool directoryMissing{
+		output.find("does not contain a CMakeLists.txt file") != std::string::npos ||
+		output.find("which is not an existing directory") != std::string::npos};
+	return directoryMissing && !sourceDir.empty() &&
+		sourceDir.getConcatenated(FilePath{".gitmodules"}).exists();
 }
 
 std::vector<std::string> CMakeFileAPIReader::getConfigurations() const
@@ -840,6 +976,52 @@ std::vector<std::string> CMakeFileAPIReader::splitCompileFragment(const std::str
 		tokens.push_back(token);
 #endif
 	return tokens;
+}
+
+std::string CMakeFileAPIReader::filterWithDependencies(
+	const std::vector<TargetEntry>& targets, const std::string& targetFilter)
+{
+	if (QString::fromStdString(targetFilter).trimmed().isEmpty())
+		return targetFilter;
+
+	std::vector<std::string> names{};
+	std::vector<std::string> pending{};
+	for (const TargetEntry& target : targets)
+		if (matchesTargetFilter(target.name, targetFilter))
+			pending.push_back(target.name);
+	while (!pending.empty())
+	{
+		const std::string name{std::move(pending.back())};
+		pending.pop_back();
+		if (std::ranges::contains(names, name))
+			continue;
+		names.push_back(name);
+		const auto target{std::ranges::find(targets, name, &TargetEntry::name)};
+		if (target != targets.end())
+			for (const std::string& dependency : target->dependencies)
+				pending.push_back(dependency);
+	}
+	std::ranges::sort(names);
+	std::string filter{};
+	for (const std::string& name : names)
+		filter += (filter.empty() ? "" : ";") + name;
+	// A filter that matched nothing stays as it was, so it still says so.
+	return filter.empty() ? targetFilter : filter;
+}
+
+std::vector<std::string> CMakeFileAPIReader::unmatchedPatterns(
+	const std::vector<std::string>& targetNames, const std::string& targetFilter)
+{
+	std::vector<std::string> unmatched{};
+	for (const QString& part : QString::fromStdString(targetFilter).split(QRegularExpression(QStringLiteral("[;,]"))))
+	{
+		const std::string pattern{part.trimmed().toStdString()};
+		if (!pattern.empty() && std::ranges::none_of(targetNames, [&](const std::string& name) {
+				return matchesTargetFilter(name, pattern);
+			}))
+			unmatched.push_back(pattern);
+	}
+	return unmatched;
 }
 
 bool CMakeFileAPIReader::matchesTargetFilter(
@@ -1003,11 +1185,20 @@ CMakeFileAPIReader::GetSourcesExpected CMakeFileAPIReader::getSourcesDetailed(
 	nlohmann::json chosenConfigNl{};
 	bool hasChosenConfig{false};
 	std::vector<std::string> configNames{};
+	// None asked for: the one built last, else the first.
+	std::string wantedConfiguration{configuration};
+	if (wantedConfiguration.empty() && configsNl.size() > 1)
+	{
+		std::vector<std::string> names{};
+		for (const auto& c : configsNl)
+			names.push_back(c.value("name", std::string{}));
+		wantedConfiguration = builtConfiguration(names);
+	}
 	for (const auto& c : configsNl)
 	{
 		const auto name{c.value("name", std::string{})};
 		configNames.push_back(name.empty() ? "<empty>" : name);
-		if (!hasChosenConfig && (configuration.empty() || name == configuration))
+		if (!hasChosenConfig && (wantedConfiguration.empty() || name == wantedConfiguration))
 		{
 			chosenConfigNl = c;
 			hasChosenConfig = true;

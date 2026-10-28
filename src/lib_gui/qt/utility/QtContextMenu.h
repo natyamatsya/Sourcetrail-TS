@@ -18,6 +18,8 @@ public:
 	void addAction(QAction* action);
 	void addUndoActions();
 	void addFileActions(const FilePath& filePath);
+	// "Open in Editor" for `filePath` at `line` and `column` (1-based); disabled without a file.
+	void addOpenInEditorAction(const FilePath& filePath, std::size_t line = 1, std::size_t column = 1);
 
 	static QtContextMenu* getInstance();
 
@@ -34,6 +36,7 @@ private slots:
 
 	static void copyFullPathActionTriggered();
 	static void openContainingFolderActionTriggered();
+	static void openInEditorActionTriggered();
 
 private:
 	QtContextMenu();
@@ -45,6 +48,9 @@ private:
 
 	static QAction* s_copyFullPathAction;
 	static QAction* s_openContainingFolderAction;
+	static QAction* s_openInEditorAction;
+	static std::size_t s_line;
+	static std::size_t s_column;
 
 	static FilePath s_filePath;
 

@@ -3,6 +3,7 @@
 #ifndef SRCTRL_MODULE_BUILD
 #include "MessageHistoryRedo.h"
 #include "MessageHistoryUndo.h"
+#include "MessageOpenInEditor.h"
 #endif
 #include "logging.h"
 #include "QtActions.h"
@@ -27,6 +28,9 @@ QAction* QtContextMenu::s_redoAction;
 
 QAction* QtContextMenu::s_copyFullPathAction;
 QAction* QtContextMenu::s_openContainingFolderAction;
+QAction* QtContextMenu::s_openInEditorAction;
+std::size_t QtContextMenu::s_line = 1;
+std::size_t QtContextMenu::s_column = 1;
 
 FilePath QtContextMenu::s_filePath;
 
@@ -68,6 +72,16 @@ void QtContextMenu::addFileActions(const FilePath& filePath)
 	addAction(s_openContainingFolderAction);
 }
 
+void QtContextMenu::addOpenInEditorAction(const FilePath& filePath, std::size_t line, std::size_t column)
+{
+	s_filePath = filePath;
+	s_line = line;
+	s_column = column;
+
+	s_openInEditorAction->setEnabled(!s_filePath.empty());
+	addAction(s_openInEditorAction);
+}
+
 QtContextMenu* QtContextMenu::getInstance()
 {
 	if (s_instance == nullptr)
@@ -95,6 +109,11 @@ QtContextMenu* QtContextMenu::getInstance()
 		s_openContainingFolderAction->setStatusTip(tr("Opens the folder that contains this file"));
 		s_openContainingFolderAction->setToolTip(tr("Opens the folder that contains this file"));
 		connect(s_openContainingFolderAction, &QAction::triggered, s_instance, &QtContextMenu::openContainingFolderActionTriggered);
+
+		s_openInEditorAction = new QAction(QtActions::openInEditor().menuText(), s_instance);
+		s_openInEditorAction->setStatusTip(tr("Opens this file at this line in the editor (Preferences: Editor command)"));
+		s_openInEditorAction->setToolTip(tr("Opens this file at this line in the editor (Preferences: Editor command)"));
+		connect(s_openInEditorAction, &QAction::triggered, s_instance, &QtContextMenu::openInEditorActionTriggered);
 	}
 
 	return s_instance;
@@ -138,6 +157,11 @@ void QtContextMenu::openContainingFolderActionTriggered()
 	{
 		LOG_ERROR("Unable to open directory: " + dir.str());
 	}
+}
+
+void QtContextMenu::openInEditorActionTriggered()
+{
+	MessageOpenInEditor(s_filePath, static_cast<unsigned int>(s_line), static_cast<unsigned int>(s_column)).dispatch();
 }
 
 QtContextMenu::QtContextMenu() = default;

@@ -66,10 +66,14 @@ public:
 	bool resolveInterruptedRun(int option);
 	static Question indexInUse();
 	void openIndex();
-	void finishLoad();
+	//! `directRefresh`: the refresh an index that is not up to date leaves is a
+	//! person's (MessageRefresh::direct).
+	void finishLoad(bool directRefresh = false);
 
-	//! Refreshes on the calling thread, asking what it asks and waiting.
-	void refresh(std::shared_ptr<DialogView> dialogView, RefreshMode refreshMode);
+	//! Refreshes on the calling thread, asking what it asks and waiting. `direct`: a
+	//! person's refresh (MessageRefresh::direct), which skips the mode choice where
+	//! one mode does.
+	void refresh(std::shared_ptr<DialogView> dialogView, RefreshMode refreshMode, bool direct = false);
 
 	//! What a refresh asks before it starts (reindex an outdated index? index with
 	//! verbose logging?), for a caller that asks without waiting: option 1 of any
@@ -79,9 +83,20 @@ public:
 		RefreshMode mode = RefreshMode::NONE;
 		bool needsFullRefresh = false;
 		bool fullRefresh = false;
+		//! Starts without the mode choice when one mode does; else the choice says why
+		//! it opens (`reason`), in place of a question before it.
+		bool direct = false;
+		std::string reason;
 		std::vector<Question> questions;
+
+		//! Whether a person chooses the mode (with a GUI): every refresh but a direct
+		//! one with nothing to choose about.
+		bool choosesMode() const
+		{
+			return !direct || !reason.empty();
+		}
 	};
-	std::optional<RefreshPlan> planRefresh(RefreshMode refreshMode) const;
+	std::optional<RefreshPlan> planRefresh(RefreshMode refreshMode, bool direct = false) const;
 	//! The refresh once its questions were answered and none cancelled it.
 	void refreshPlanned(std::shared_ptr<DialogView> dialogView, const RefreshPlan& plan);
 
@@ -90,6 +105,10 @@ public:
 	void setShardConfig(const ShardConfig& config);
 
 	RefreshInfo getRefreshInfo(RefreshMode mode) const;
+	//! What finds the indexed files changed on disk (RefreshInfoGenerator::getChangedFilePaths),
+	//! to run on another thread: it keeps the index it reads open. Empty without an index
+	//! or while indexing.
+	std::function<std::set<FilePath>()> changedFilesCheck() const;
 	std::vector<std::shared_ptr<const SourceGroup>> getSourceGroups() const;
 
 	void buildIndex(RefreshInfo info, std::shared_ptr<DialogView> dialogView);
@@ -108,7 +127,7 @@ private:
 	// boundaries around these: any escaping exception becomes a failed IndexingOutcome and a
 	// terminal MessageIndexingFinished, so a headless run can never lose its quit event to a
 	// throw (the generic task runner would otherwise just log and drop it).
-	void refreshImpl(std::shared_ptr<DialogView> dialogView, RefreshMode refreshMode);
+	void refreshImpl(std::shared_ptr<DialogView> dialogView, RefreshMode refreshMode, bool direct);
 	void refreshPlannedImpl(std::shared_ptr<DialogView> dialogView, const RefreshPlan& plan);
 	void refreshGuarded(const std::function<void()>& refresh);
 	void buildIndexImpl(RefreshInfo info, std::shared_ptr<DialogView> dialogView);

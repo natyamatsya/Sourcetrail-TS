@@ -1078,6 +1078,16 @@ bool detectCMakePreset(Detection& detection)
 			generator));
 	if (chosen.configured)
 	{
+		// A multi-config build directory is indexed in the configuration built there last
+		// (an empty configuration means it), not in its first.
+		const CMakeFileAPIReader reader{FilePath{chosen.binaryDir.string()}};
+		const std::vector<std::string> configurations{reader.getConfigurations()};
+		if (const std::string built{reader.builtConfiguration(configurations)};
+			!built.empty() && built != configurations.front())
+		{
+			proposal.reasons.push_back(std::format(
+				"Configuration {}: the one built last there (its first is {})", built, configurations.front()));
+		}
 		const std::string which{
 			configuredCount > 1 ? std::format(", built last of the {} configured", configuredCount) : std::string{}};
 		proposal.reasons.push_back(

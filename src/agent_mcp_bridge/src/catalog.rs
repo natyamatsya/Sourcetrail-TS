@@ -454,7 +454,12 @@ returns once indexing is over and the project has reopened on the new index (app
 Ready), so navigation can follow at once. describe('machines') has the whole lifecycle.
   A load that asks first (the index is outdated or from another version: \"reindex?\") \
 returns at once with { app_state: \"Loading\", question, note } (protocol v6): answer it with \
-machine_send { machine: \"question\", event: \"answer\", args: { label: \"Reindex\" } }.",
+machine_send { machine: \"question\", event: \"answer\", args: { label: \"Reindex\" } }.
+  A person's load (the start screen, Recent Projects: also when an agent clicks them) \
+restores the tabs of the project's last session (kept with its bookmarks: what each tab \
+showed, its recent history for Back, the tab in front; what is gone since is left out) \
+instead of the overview, and refreshes directly (describe('machines')). project_open \
+starts from the overview, as above.",
     },
     Topic {
         name: "machines",
@@ -491,21 +496,36 @@ among the transitions.
 
 indexing: idle -> pending -> choosing_mode -> pending -> preparing -> indexing -> finishing \
 -> reporting -> finishing -> idle
-  refresh { mode?: updated|all }   idle: asks for a refresh, as the menu's Refresh does. The \
-mode choice opens (choosing_mode), or the app asks a question first (the index is outdated: \
-see question), or finds nothing to do and returns to idle with context.outcome saying why.
+  refresh { mode?: updated|all, direct?: bool }   idle: asks for a refresh. The mode choice \
+opens (choosing_mode), or the app asks a question first (the index is outdated: see \
+question), or finds nothing to do and returns to idle with context.outcome saying why. \
+direct: true refreshes as a person's Refresh (the menu, Cmd+R, the search bar's button) \
+does: no mode choice where one mode does (an update, or only \"all\" for an empty, \
+out-of-version or corrupted index), so idle -> pending -> preparing at once, or back to idle \
+with outcome \"Nothing to refresh, all files are up-to-date.\"; an update runs behind the \
+status bar's progress. When the project's settings changed, the choice opens with \
+context.reason saying so (all files preselected) instead of a question before it. A \
+person's project load (the start screen, Recent Projects) leaves the same direct refresh; \
+project_open (an agent's load) keeps the mode choice.
   select_mode { mode }             choosing_mode: updated | incomplete | all, among \
 context.modes; context.files_to_index follows once counted (context.counting meanwhile).
   start { mode? }                  choosing_mode: indexes (with the selected mode by default).
   cancel                           choosing_mode: closes the choice.
   interrupt                        preparing/indexing: stops; what is indexed so far is kept \
 for the report.
-  keep | discard | reindex         reporting: the decision on the run's data. Offscreen \
-(headless) the report is kept without asking, so reporting passes straight on.
-  context: modes, mode, counting, files_to_index, files_to_clear (choosing_mode); progress \
+  keep | discard | reindex         reporting: the decision on the run's data, asked only of \
+an interrupted run (its Keep/Discard dialog). A run that finished is kept without asking: \
+reporting passes straight on (source app), and its summary is the status bar's text \
+(\"Finished indexing: N source files indexed; time; errors\"). Offscreen (headless) an \
+interrupted run is kept too.
+  context: modes, mode, reason?, counting, files_to_index, files_to_clear (choosing_mode); progress \
 { started, finished, total, file }, interrupted (preparing..finishing); report { indexed, \
 total_indexed, completed, total, seconds, errors, fatal, interrupted } (reporting); outcome \
-(how the last request or run ended: kept, discarded, canceled, nothing to refresh...).
+(how the last request or run ended: kept, discarded, canceled, nothing to refresh...); \
+changed_files (idle: indexed files changed on disk since, by the rule an update uses; the \
+status bar's \"N files changed \u{2013} Update\" button, object name changed_files, runs \
+the direct update, and the search bar's Refresh shows a dot meanwhile). The app checks \
+when its window comes to the front and after an activation (at most every 10 s).
   Recipe: index a project that has none, and wait for it:
     machine_send { machine: \"indexing\", event: \"start\", until: [\"idle\"], timeout_s: 300 }
   Reindex everything: machine_send { machine: \"indexing\", event: \"refresh\", args: { mode: \
@@ -601,7 +621,10 @@ paths). Ends at editing, or at closed with context.outcome (no such folder).
 name and location (a new project's only), and the shown source group's fields: \
 context.fields lists them with their values (strings, lists of strings, true/false), e.g. \
 source_paths, extensions, exclude_filters, compilation_database, cmake_source_directory, \
-cmake_preset, header_search_paths, compiler_flags, cpp_standard, custom_command.
+cmake_preset, cmake_arguments (without a preset: what the configure adds to cmake -S -B, one \
+argument each, e.g. [\"-DBUILD_TESTS=OFF\"]), cmake_index_linked_targets (true: also index \
+the targets the filtered ones link to, transitively), header_search_paths, compiler_flags, \
+cpp_standard, custom_command.
   show { source_group? }           editing: that source group's page, by its index in \
 context.source_groups (0 is the first), or the general one without it.
   add_source_group { type? }       editing: adds a source group of type cdb | cmake | cpp | c \
@@ -621,7 +644,10 @@ location }, source_groups [{ name, type, enabled }], fields, choices, notes, typ
 are the values the page offers for a field (a cmake group: its presets; once its build \
 directory is configured, its configurations and targets, for cmake_target_glob: names or \
 patterns joined by ';'); notes { field: text } what the page shows beside a field (the build \
-directory a preset resolves to, how many targets and files are indexed). detected { folder, \
+directory a preset resolves to, how many targets and files are indexed and which of the \
+filter's patterns match no target, \"nosuch*: no target.\"; cmake_error: the \
+first error of the build directory's last configure that failed, and when directories it \
+adds are missing in a git checkout, the git submodule command). detected { folder, \
 source_group_type, reasons, notices? } (a project from a folder): why it is as proposed, the \
 first reason the summary; notices what was found besides and decides nothing (the git \
 repository and branch, its submodules and which are not checked out, build systems not read \
@@ -645,7 +671,8 @@ previews at once): context.fields lists them with their values. Check boxes are 
 indexer_logging, ...); lists take one of their items' text (font_size \"14\", color_scheme \
 \"dark\", indexer_threads \"default\" or \"4\", auto_scaling \"system\"|\"off\"|\"on\", \
 scale_factor \"125%\", font_face a monospaced font); text fields are strings (scroll_speed, \
-sourcetrail_port, plugin_port, log_directory); header_search_paths and framework_search_paths \
+sourcetrail_port, plugin_port, log_directory, editor_command: Open in Editor's command with \
+{file}, {line}, {column}, empty for the detected editor); header_search_paths and framework_search_paths \
 are lists of paths. An unknown field, a value of the wrong kind or an item a list lacks is \
 refused, naming what there is.
   save                             editing: Save: checks the fields (a bad port, scroll speed, \

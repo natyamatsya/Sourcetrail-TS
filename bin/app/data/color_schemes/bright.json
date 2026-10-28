@@ -502,6 +502,7 @@
          "hover": "#E6E8EB",
          "icon": "#5F636B",
          "icon_disabled": "#BDC0C6",
+         "outdated": "#D97706",
          "press": "#D8DBE0",
          "segment": "#F2F3F5"
       }
@@ -586,7 +587,8 @@
       },
       "separator": "#A2A2A2",
       "status": {
-         "error": "#C42B1C"
+         "error": "#C42B1C",
+         "outdated": "#D97706"
       }
    }
 }

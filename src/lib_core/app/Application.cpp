@@ -33,7 +33,9 @@
 #endif
 #include "MainView.h"
 // classic headers (entities not exported): stay textual
+#include "IndexFreshness.h"
 #include "MessageCause.h"
+#include "MessageIndexOutdated.h"
 #include "MessageQueue.h"
 #ifndef SRCTRL_MODULE_BUILD
 #include "MessageFilterErrorCountUpdate.h"
@@ -370,6 +372,7 @@ struct Application::ProjectLoad
 	FilePath path;
 	std::uint64_t cause = 0;	// what asked for the load: all its steps are on its behalf
 	RefreshMode refreshMode = RefreshMode::NONE;
+	bool directRefresh = false;	// a person's load: the refresh it leaves is MessageRefresh::direct
 	std::shared_ptr<Project> project;
 	bool ended = false;	// a step ended the load before its index opened
 	bool opened = false;	// the pipeline opened the index (finishLoad is left to do)
@@ -485,6 +488,10 @@ void Application::handleMessage(MessageCloseProject*  /*message*/)
 		m_loading->stop.request_stop();	// a load in flight withdraws its question and ends
 		m_loading.reset();
 	}
+	if (IndexFreshness::instance().update({}))
+	{
+		indexFreshnessChanged(0);
+	}
 	updateTitle();
 	m_mainView->clear();
 	ProjectStateMachine::instance()->closed();
@@ -503,6 +510,54 @@ void Application::handleMessage(MessageActivateOverview*  /*message*/)
 void Application::handleMessage(MessageActivateTokens*  /*message*/)
 {
 	ProjectStateMachine::instance()->shown();
+
+	// After activations too (someone may edit while browsing), but not on every one.
+	if (std::chrono::steady_clock::now() - m_lastFreshnessCheck > std::chrono::seconds(10))
+	{
+		checkIndexFreshness(std::chrono::milliseconds(1000));
+	}
+}
+
+void Application::handleMessage(MessageWindowFocus* message)
+{
+	// Back from the editor: what changed there shows.
+	if (message->focusIn)
+	{
+		checkIndexFreshness(std::chrono::milliseconds(300));
+	}
+}
+
+void Application::checkIndexFreshness(std::chrono::milliseconds delay)
+{
+	if (!m_hasGUI || m_freshnessCheckQueued.exchange(true))
+	{
+		return;
+	}
+	execution::postAfter(TabIds::app(), delay, [this]() {
+		m_freshnessCheckQueued = false;
+		m_lastFreshnessCheck = std::chrono::steady_clock::now();
+		const std::function<std::set<FilePath>()> check = m_project ? m_project->changedFilesCheck()
+																	: std::function<std::set<FilePath>()>();
+		if (!check)
+		{
+			return;
+		}
+		// Stats every indexed file (and reads those that are newer): not on the app's queue.
+		execution::post(TabIds::background(), [check]() {
+			std::set<FilePath> changedFiles = check();
+			const std::size_t count = changedFiles.size();
+			if (IndexFreshness::instance().update(std::move(changedFiles)))
+			{
+				indexFreshnessChanged(count);
+			}
+		});
+	});
+}
+
+void Application::indexFreshnessChanged(std::size_t changedFileCount)
+{
+	IndexingStateMachine::instance()->changedFiles(changedFileCount);
+	MessageIndexOutdated(changedFileCount).dispatch();
 }
 
 void Application::handleMessage(MessageWindowClosed*  /*message*/)
@@ -522,6 +577,12 @@ void Application::handleMessage(MessageIndexingFinished* message)
 
 	if (m_hasGUI)
 	{
+		// The index is new (or newly loaded): what changed is found anew.
+		if (IndexFreshness::instance().update({}))
+		{
+			indexFreshnessChanged(0);
+		}
+		checkIndexFreshness(std::chrono::milliseconds(300));
 		MessageRefreshUI().afterIndexing().dispatch();
 	}
 	else
@@ -563,7 +624,8 @@ void Application::handleMessage(MessageLoadProject* message)
 		if (message->settingsChanged && m_hasGUI)
 		{
 			m_project->setStateOutdated();
-			refreshProject(RefreshMode::ALL_FILES);
+			// The edit's question is asked in the mode choice: one dialog.
+			refreshProject(RefreshMode::ALL_FILES, true);
 		}
 	}
 	else
@@ -578,14 +640,16 @@ void Application::handleMessage(MessageLoadProject* message)
 			m_mainView->clear();
 		}
 
-		loadProject(projectSettingsFilePath, message->shardConfig, message->refreshMode);
+		loadProject(projectSettingsFilePath, message->shardConfig, message->refreshMode, !message->byAgent);
 	}
 }
 
-void Application::loadProject(const FilePath& path, const ShardConfig& shardConfig, RefreshMode refreshMode)
+void Application::loadProject(
+	const FilePath& path, const ShardConfig& shardConfig, RefreshMode refreshMode, bool directRefresh)
 {
 	const auto load = std::make_shared<ProjectLoad>();
 	load->path = path;
+	load->directRefresh = directRefresh;
 	load->cause = currentCause();
 	load->work.emplace(load->cause);
 	load->refreshMode = refreshMode;
@@ -685,9 +749,10 @@ void Application::endLoad(const std::shared_ptr<ProjectLoad>& load)
 	}
 
 	m_project = load->project;
+	m_restoresTabSession = load->directRefresh;
 	if (load->opened)
 	{
-		load->step([&]() { load->project->finishLoad(); });
+		load->step([&]() { load->project->finishLoad(load->directRefresh); });
 		if (!load->failure.empty())
 		{
 			LOG_ERROR(load->failure);
@@ -719,7 +784,7 @@ void Application::handleMessage(MessageRefresh* message)
 {
 	TRACE("app refresh");
 
-	refreshProject(message->all ? RefreshMode::ALL_FILES : RefreshMode::UPDATED_FILES);
+	refreshProject(message->all ? RefreshMode::ALL_FILES : RefreshMode::UPDATED_FILES, message->isDirect);
 }
 
 void Application::handleMessage(MessageRefreshUI* message)
@@ -797,7 +862,7 @@ void Application::loadWindow(bool showStartWindow)
 	}
 }
 
-void Application::refreshProject(RefreshMode refreshMode)
+void Application::refreshProject(RefreshMode refreshMode, bool direct)
 {
 	// The indexing machine follows the request from here: what the project does
 	// with it moves it on, and a request nothing came of returns it to idle.
@@ -808,7 +873,7 @@ void Application::refreshProject(RefreshMode refreshMode)
 		// With questions to ask, their answers decide, and the request ends there.
 		if (m_appStrand != nullptr)
 		{
-			if (std::optional<Project::RefreshPlan> plan = m_project->planRefresh(refreshMode);
+			if (std::optional<Project::RefreshPlan> plan = m_project->planRefresh(refreshMode, direct);
 				plan && !plan->questions.empty())
 			{
 				askThenRefresh({m_project, std::move(*plan), 0, currentCause(), CauseWork::Held()});
@@ -816,7 +881,7 @@ void Application::refreshProject(RefreshMode refreshMode)
 			}
 		}
 
-		m_project->refresh(getDialogView(DialogView::UseCase::INDEXING), refreshMode);
+		m_project->refresh(getDialogView(DialogView::UseCase::INDEXING), refreshMode, direct);
 
 		if (!m_hasGUI && !m_project->isIndexing())
 		{

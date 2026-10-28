@@ -28,6 +28,8 @@ bool DialogView::dialogsHidden() const
 	return false;
 }
 
+void DialogView::setDialogsVisible(bool  /*visible*/) {}
+
 void DialogView::clearDialogs() {}
 
 void DialogView::showUnknownProgressDialog(const std::string&  /*title*/, const std::string&  /*message*/)
@@ -47,7 +49,8 @@ void DialogView::startIndexingDialog(
 	const std::vector<RefreshMode>& enabledModes,
 	const RefreshMode initialMode,
 	std::function<void(const RefreshInfo& info)> onStartIndexing,
-	std::function<void()> onCancelIndexing)
+	std::function<void()> onCancelIndexing,
+	const std::string& reason)
 {
 	IndexingStateMachine::instance()->chooseMode(
 		[project](RefreshMode mode) { return project->getRefreshInfo(mode); },
@@ -55,7 +58,8 @@ void DialogView::startIndexingDialog(
 		initialMode,
 		std::move(onStartIndexing),
 		std::move(onCancelIndexing),
-		*this);
+		*this,
+		reason);
 }
 
 void DialogView::updateIndexingDialog(
@@ -151,7 +155,10 @@ void DialogView::presentQuestion(
 
 void DialogView::dismissQuestion(std::uint64_t  /*id*/) {}
 
-void DialogView::presentModeChoice(const std::vector<RefreshMode>&  /*modes*/, RefreshMode  /*mode*/) {}
+void DialogView::presentModeChoice(
+	const std::vector<RefreshMode>&  /*modes*/, RefreshMode  /*mode*/, const std::string&  /*reason*/)
+{
+}
 
 void DialogView::presentCounting() {}
 

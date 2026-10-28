@@ -294,6 +294,10 @@ constexpr QtStandardKeyCombination MENU_FULL_REFRESH(QKeySequence::Refresh, Shif
 
 constexpr QtKeyCombination KEYBOARD_REFRESH_UI(Qt::Key_R, Ctrl | Alt);
 
+// Editor:
+
+constexpr QtKeyCombination MENU_OPEN_IN_EDITOR(Qt::Key_O, Ctrl | Shift);
+
 // Tabs:
 
 constexpr QtStandardKeyCombination MENU_NEW_TAB(QKeySequence::AddTab);
@@ -541,7 +545,12 @@ QtActions::Info QtActions::exit()
 
 QtActions::Info QtActions::refresh()
 {
-	return Info(tr("&Refresh..."), MENU_REFRESH);
+	return Info(tr("&Refresh"), MENU_REFRESH);
+}
+
+QtActions::Info QtActions::openInEditor()
+{
+	return Info(tr("Open in &Editor"), MENU_OPEN_IN_EDITOR);
 }
 
 QtActions::Info QtActions::fullRefresh()

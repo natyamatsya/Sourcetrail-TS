@@ -2,6 +2,8 @@
 #define APPLICATION_H
 
 #include <atomic>
+#include <chrono>
+#include <set>
 #include <functional>
 #include <memory>
 #include <string>
@@ -20,6 +22,7 @@
 #include "MessageRefreshUI.h"
 #include "MessageSwitchColorScheme.h"
 #include "MessageWindowClosed.h"
+#include "MessageWindowFocus.h"
 #include "Project.h"
 #include "StdexecPrelude.h"
 #include "SerialQueue.h"
@@ -52,6 +55,7 @@ class Application
 	, public MessageListener<MessageRefreshUI>
 	, public MessageListener<MessageSwitchColorScheme>
 	, public MessageListener<MessageWindowClosed>
+	, public MessageListener<MessageWindowFocus>
 {
 public:
 	static void createInstance(
@@ -91,6 +95,12 @@ public:
 	std::shared_ptr<const Project> getCurrentProject() const;
 	FilePath getCurrentProjectPath() const;
 	bool isProjectLoaded() const;
+	// Whether the project's tabs are restored from its last session: a person's load
+	// does; an agent's (project_open) starts from the overview it expects.
+	bool restoresTabSession() const
+	{
+		return m_restoresTabSession;
+	}
 
 	bool hasGUI();
 
@@ -126,6 +136,12 @@ private:
 	void handleMessage(MessageRefreshUI* message) override;
 	void handleMessage(MessageSwitchColorScheme* message) override;
 	void handleMessage(MessageWindowClosed* message) override;
+	void handleMessage(MessageWindowFocus* message) override;
+
+	// Looks for indexed files changed on disk (IndexFreshness), on the background queue,
+	// once `delay` has passed; checks asked for meanwhile are that one.
+	void checkIndexFreshness(std::chrono::milliseconds delay);
+	static void indexFreshnessChanged(std::size_t changedFileCount);
 
 	void startMessagingAndScheduling();
 
@@ -135,7 +151,8 @@ private:
 	// opens on the I/O pool, a question holds no thread, and the project becomes the
 	// app's back on the app strand; without them in a row on this thread.
 	struct ProjectLoad;
-	void loadProject(const FilePath& path, const ShardConfig& shardConfig, RefreshMode refreshMode);
+	// `directRefresh`: a person's load (MessageLoadProject::byAgent is not set).
+	void loadProject(const FilePath& path, const ShardConfig& shardConfig, RefreshMode refreshMode, bool directRefresh);
 	// What the load asks, as a sender: the question, or -1 at once when there is none.
 	QuestionSender askFor(const ProjectLoad& load, const std::optional<Project::Question>& question);
 	// On the app's thread: the project becomes the app's, unless a load asked for
@@ -159,7 +176,8 @@ private:
 	// The app strand's scheduler, where pipelines come back to the app's tasks.
 	execution::SerialQueue::Scheduler appScheduler() const;
 
-	void refreshProject(RefreshMode refreshMode);
+	// `direct`: a person's refresh (MessageRefresh::direct).
+	void refreshProject(RefreshMode refreshMode, bool direct = false);
 	void updateRecentProjects(const FilePath& projectSettingsFilePath);
 
 	void logStorageStats() const;
@@ -169,6 +187,9 @@ private:
 	bool checkSharedMemory();
 
 	const bool m_hasGUI;
+	std::atomic<bool> m_restoresTabSession = false;
+	std::atomic<bool> m_freshnessCheckQueued = false;
+	std::chrono::steady_clock::time_point m_lastFreshnessCheck;	// on the app's queue
 	bool m_loadedWindow = false;
 
 	// Non-owning: the concrete schedulers are a process-wide singleton owned by

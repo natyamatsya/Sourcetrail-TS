@@ -4,6 +4,7 @@
 #include "ColorScheme.h"
 #include "MessageErrorsAll.h"
 #include "MessageIndexingShowDialog.h"
+#include "MessageRefresh.h"
 #include "MessageShowStatus.h"
 #endif
 #include "QtActions.h"
@@ -35,6 +36,12 @@ void setShowsError(QWidget& widget, bool error)
 	widget.setProperty("error", error);
 	widget.style()->unpolish(&widget);
 	widget.style()->polish(&widget);
+}
+
+QIcon outdatedDot()
+{
+	const QColor color{QString::fromStdString(ColorScheme::getInstance()->getColor("window/status/outdated"))};
+	return QIcon{colorizePixmap(QPixmap{QString::fromUtf8(QtResources::STATUSBAR_VIEW_DOT)}, color).scaledToHeight(12)};
 }
 
 QIcon errorDot()
@@ -102,6 +109,19 @@ QtStatusBar::QtStatusBar()
 		addPermanentWidget(m_indexingStatus);
 	}
 	
+	// indexed files changed on disk: one click updates the index
+	{
+		m_changedFiles = new QtFlatButton(this);
+		m_changedFiles->setObjectName(QStringLiteral("changed_files"));
+		m_changedFiles->setAccessibleName(tr("Update changed files"));
+		m_changedFiles->setStyleSheet(QStringLiteral("QPushButton { margin-right: 0; spacing: none; }"));
+		m_changedFiles->setIcon(outdatedDot());
+		m_changedFiles->hide();
+		addPermanentWidget(m_changedFiles);
+
+		connect(m_changedFiles, &QPushButton::clicked, this, &QtStatusBar::clickedChangedFiles);
+	}
+
 	// errors
 	{
 		m_errorButton = new QtFlatButton(this);
@@ -178,6 +198,24 @@ void QtStatusBar::hideIndexingProgress()
 	m_indexingStatus->hide();
 }
 
+void QtStatusBar::showChangedFiles(size_t changedFileCount)
+{
+	if (changedFileCount == 0)
+	{
+		m_changedFiles->hide();
+		return;
+	}
+
+	m_changedFiles->setText(
+		changedFileCount == 1 ? tr("1 file changed \u2013 Update")
+							  : tr("%1 files changed \u2013 Update").arg(changedFileCount));
+	m_changedFiles->setToolTip(
+		tr("Indexed files changed on disk since they were indexed. Click to index them anew (%1).")
+			.arg(QtActions::refresh().shortcut()));
+	m_changedFiles->setIcon(outdatedDot());	   // in the colour scheme's colour of the moment
+	m_changedFiles->show();
+}
+
 void QtStatusBar::setTextEncoding(const std::string &encoding)
 {
 	m_textEncoding->setText(QString::fromStdString(encoding));
@@ -201,4 +239,9 @@ void QtStatusBar::showErrors()
 void QtStatusBar::clickedIndexingProgress()
 {
 	MessageIndexingShowDialog().dispatch();
+}
+
+void QtStatusBar::clickedChangedFiles()
+{
+	MessageRefresh().direct().dispatch();
 }

@@ -459,7 +459,8 @@ std::expected<void, PrepareIndexingError> SourceGroupCxxCMakeFileAPI::prepareInd
 		[](const std::string& msg) { MessageStatus(msg, false, true).dispatch(); },
 		sourceDir,
 		presetName,
-		stale)};
+		stale,
+		presetName.empty() ? m_settings->getCMakeArguments() : std::vector<std::string>{})};
 	if (!configured)
 	{
 		const auto& [code, cmakeError, exceptionType]{configured.error()};
@@ -508,6 +509,15 @@ std::expected<void, PrepareIndexingError> SourceGroupCxxCMakeFileAPI::prepareInd
 	return checkReplyMatchesSettings(reader);
 }
 
+std::string SourceGroupCxxCMakeFileAPI::effectiveTargetFilter(const CMakeFileAPIReader& reader) const
+{
+	const std::string& filter{m_settings->getTargetGlob()};
+	if (!m_settings->getIndexLinkedTargets() || filter.empty())
+		return filter;
+	const auto all{reader.getSourcesDetailed(m_settings->getConfiguration(), {})};
+	return all ? CMakeFileAPIReader::filterWithDependencies(all->targets, filter) : filter;
+}
+
 std::expected<void, PrepareIndexingError> SourceGroupCxxCMakeFileAPI::checkReplyMatchesSettings(
 	const CMakeFileAPIReader& reader) const
 {
@@ -516,7 +526,7 @@ std::expected<void, PrepareIndexingError> SourceGroupCxxCMakeFileAPI::checkReply
 	// A configuration or target filter that matches nothing would index nothing
 	// without a word; say what the reply has instead.
 	const std::string& configuration{m_settings->getConfiguration()};
-	const std::string& targetFilter{m_settings->getTargetGlob()};
+	const std::string targetFilter{effectiveTargetFilter(reader)};
 	const auto sources{reader.getSourcesDetailed(configuration, targetFilter)};
 	std::string problem{};
 	if (!sources && sources.error().code == ConfigurationNotFound)
@@ -571,7 +581,7 @@ std::set<FilePath> SourceGroupCxxCMakeFileAPI::getAllSourceFilePaths() const
 
 	CMakeFileAPIReader reader{buildDir};
 	const auto entriesResult{reader.getSourcesDetailed(
-		m_settings->getConfiguration(), m_settings->getTargetGlob())};
+		m_settings->getConfiguration(), effectiveTargetFilter(reader))};
 	if (!entriesResult.has_value())
 	{
 		const auto& error{entriesResult.error()};
@@ -612,10 +622,10 @@ std::optional<BuildModelSnapshot> SourceGroupCxxCMakeFileAPI::getBuildModelSnaps
 	BuildModelSnapshot snapshot{};
 	snapshot.provider = BuildModelProvider::CMAKE_FILE_API;
 	snapshot.configuration = m_settings->getConfiguration();
-	snapshot.targetGlob = m_settings->getTargetGlob();
 	snapshot.buildDir = buildDir;
 
 	CMakeFileAPIReader reader{buildDir};
+	snapshot.targetGlob = effectiveTargetFilter(reader);
 	for (const auto& entryPoint : reader.getJsonEntryPoints())
 		snapshot.jsonEntryPoints.push_back({entryPoint.kind, entryPoint.path});
 
@@ -719,7 +729,7 @@ std::shared_ptr<IndexerCommandProvider> SourceGroupCxxCMakeFileAPI::getIndexerCo
 
 	CMakeFileAPIReader reader{buildDir};
 	const auto entriesResult{reader.getSourcesDetailed(
-		m_settings->getConfiguration(), m_settings->getTargetGlob())};
+		m_settings->getConfiguration(), effectiveTargetFilter(reader))};
 	if (!entriesResult.has_value())
 	{
 		const auto& error{entriesResult.error()};
@@ -914,7 +924,7 @@ std::function<void()> SourceGroupCxxCMakeFileAPI::getPreIndexWork(
 
 	CMakeFileAPIReader reader{buildDir};
 	const auto entriesResult{
-		reader.getSourcesDetailed(m_settings->getConfiguration(), m_settings->getTargetGlob())};
+		reader.getSourcesDetailed(m_settings->getConfiguration(), effectiveTargetFilter(reader))};
 	if (!entriesResult.has_value())
 		return inOrder();
 

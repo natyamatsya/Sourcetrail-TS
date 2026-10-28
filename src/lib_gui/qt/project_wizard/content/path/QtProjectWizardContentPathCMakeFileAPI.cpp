@@ -1,20 +1,31 @@
 #include "QtProjectWizardContentPathCMakeFileAPI.h"
 
 #include <algorithm>
+#include <array>
 #include <cctype>
+#include <set>
+#include <tuple>
 #include <format>
 #include <ranges>
 #include <string>
 
+#include <QCheckBox>
 #include <QComboBox>
+#include <QDialog>
+#include <QDialogButtonBox>
 #include <QHBoxLayout>
+#include <QPlainTextEdit>
+#include <QTimer>
 #include <QLabel>
 #include <QLineEdit>
 #include <QListWidget>
 #include <QPushButton>
 
 #include "CMakeFileAPIReader.h"
+#include "EditorCommand.h"
+#include "ProjectDetector.h"
 #include "ProjectWizardStateMachine.h"
+#include "SourceGroupType.h"
 #include "QtLocationPicker.h"
 #ifndef SRCTRL_MODULE_BUILD
 #include "SourceGroupSettingsCxxCMakeFileAPI.h"
@@ -64,6 +75,51 @@ QString toHtml(const std::string& text)
 {
 	return QString::fromStdString(text).toHtmlEscaped();
 }
+
+// What a preset configures with: generator, toolchain, build directory, cache variables.
+// One line each, for the combo's tooltip and below it.
+std::vector<std::string> presetDetails(const CMakeFileAPIReader::PresetInfo& preset)
+{
+	std::vector<std::string> details;
+	details.push_back(std::format("Generator: {}", preset.generator.empty() ? "CMake's default" : preset.generator));
+	if (!preset.toolchainFile.empty())
+	{
+		details.push_back(std::format("Toolchain: {}", preset.toolchainFile));
+	}
+	if (!preset.binaryDir.empty())
+	{
+		details.push_back(std::format("Build directory: {}", preset.binaryDir));
+	}
+	if (!preset.cacheVariables.empty())
+	{
+		std::string variables;
+		for (const auto& [name, value]: preset.cacheVariables)
+		{
+			variables += std::format("{}-D{}={}", variables.empty() ? "" : " ", name, value);
+		}
+		details.push_back(std::format("Cache variables: {}", variables));
+	}
+	return details;
+}
+
+// The arguments as one line to edit: a word with blanks or quotes in double quotes.
+QString joinArguments(const std::vector<std::string>& arguments)
+{
+	QStringList words;
+	for (const std::string& argument: arguments)
+	{
+		QString word{QString::fromStdString(argument)};
+		if (word.isEmpty() || word.contains(QLatin1Char(' ')) || word.contains(QLatin1Char('"')) ||
+			word.contains(QLatin1Char('\'')))
+		{
+			word.replace(QLatin1String("\\"), QLatin1String("\\\\"));
+			word.replace(QLatin1String("\""), QLatin1String("\\\""));
+			word = QLatin1Char('"') + word + QLatin1Char('"');
+		}
+		words << word;
+	}
+	return words.join(QLatin1Char(' '));
+}
 }	 // namespace
 
 QtProjectWizardContentPathCMakeFileAPI::QtProjectWizardContentPathCMakeFileAPI(
@@ -102,6 +158,20 @@ void QtProjectWizardContentPathCMakeFileAPI::populate(QGridLayout* layout, int& 
 			&QtLocationPicker::textChanged,
 			this,
 			&QtProjectWizardContentPathCMakeFileAPI::onSourceDirChanged);
+
+		// What was proposed from the source directory, as New Project from Folder does.
+		m_detectedLabel = new QLabel(QLatin1String(""), this);
+		m_detectedLabel->setObjectName(QStringLiteral("description"));
+		m_detectedLabel->setAccessibleName(QStringLiteral("Detected"));
+		m_detectedLabel->setWordWrap(true);
+		m_detectedLabel->hide();
+		layout->addWidget(m_detectedLabel, row, QtProjectWizardWindow::BACK_COL);
+		row++;
+
+		m_detectTimer = new QTimer(this);
+		m_detectTimer->setSingleShot(true);
+		m_detectTimer->setInterval(400);
+		connect(m_detectTimer, &QTimer::timeout, this, &QtProjectWizardContentPathCMakeFileAPI::onDetect);
 	}
 
 	// --- Preset combo ---
@@ -165,6 +235,7 @@ void QtProjectWizardContentPathCMakeFileAPI::populate(QGridLayout* layout, int& 
 		buttons->setContentsMargins(0, 0, 0, 0);
 
 		QPushButton* refreshButton = new QPushButton(QStringLiteral("Refresh Presets"), this);
+		m_refreshPresetsButton = refreshButton;
 		refreshButton->setObjectName(QStringLiteral("refreshButton"));
 		connect(
 			refreshButton,
@@ -187,6 +258,61 @@ void QtProjectWizardContentPathCMakeFileAPI::populate(QGridLayout* layout, int& 
 		buttons->addStretch();
 
 		layout->addLayout(buttons, row, QtProjectWizardWindow::BACK_COL);
+		row++;
+
+		// What CMake said when it failed, until it configures the build directory.
+		m_configureErrorRow = new QWidget(this);
+		m_configureErrorRow->setObjectName(QStringLiteral("cmakeError"));
+		QVBoxLayout* errorLayout = new QVBoxLayout(m_configureErrorRow);
+		errorLayout->setContentsMargins(0, 0, 0, 0);
+		m_configureErrorLabel = new QLabel(QLatin1String(""), m_configureErrorRow);
+		m_configureErrorLabel->setAccessibleName(QStringLiteral("CMake Error"));
+		m_configureErrorLabel->setWordWrap(true);
+		m_configureErrorLabel->setTextInteractionFlags(Qt::TextSelectableByMouse);
+		errorLayout->addWidget(m_configureErrorLabel);
+		QPushButton* showLogButton = new QPushButton(QStringLiteral("Show Log"), m_configureErrorRow);
+		showLogButton->setObjectName(QStringLiteral("showCMakeLogButton"));
+		showLogButton->setToolTip(QStringLiteral("All CMake printed when it configured the build directory last"));
+		connect(showLogButton, &QPushButton::clicked, this, &QtProjectWizardContentPathCMakeFileAPI::onShowCMakeLog);
+		QHBoxLayout* logButtons = new QHBoxLayout();
+		logButtons->setContentsMargins(0, 0, 0, 0);
+		logButtons->addWidget(showLogButton);
+		logButtons->addStretch();
+		errorLayout->addLayout(logButtons);
+		layout->addWidget(m_configureErrorRow, row, QtProjectWizardWindow::BACK_COL);
+		m_configureErrorRow->hide();
+		row++;
+	}
+
+	// --- CMake arguments (without a preset) ---
+	{
+		m_cmakeArgumentsLabel = createFormSubLabel(QStringLiteral("CMake Arguments"));	// optional
+		layout->addWidget(m_cmakeArgumentsLabel, row, QtProjectWizardWindow::FRONT_COL, Qt::AlignRight);
+
+		m_cmakeArgumentsRow = new QWidget(this);
+		QHBoxLayout* argumentsLayout = new QHBoxLayout(m_cmakeArgumentsRow);
+		argumentsLayout->setContentsMargins(0, 0, 0, 0);
+		m_cmakeArgumentsEdit = new QLineEdit(m_cmakeArgumentsRow);
+		m_cmakeArgumentsEdit->setObjectName(QStringLiteral("cmakeArguments"));
+		m_cmakeArgumentsEdit->setAccessibleName(QStringLiteral("CMake Arguments"));
+		m_cmakeArgumentsEdit->setPlaceholderText(
+			QStringLiteral("Cache variables and options, e.g. -DBUILD_TESTS=OFF -G Ninja"));
+		m_cmakeArgumentsEdit->setAttribute(Qt::WA_MacShowFocusRect, false);
+		argumentsLayout->addWidget(m_cmakeArgumentsEdit);
+		layout->addWidget(m_cmakeArgumentsRow, row, QtProjectWizardWindow::BACK_COL);
+
+		m_cmakeArgumentsHelp = addHelpButton(
+			QStringLiteral("CMake Arguments"),
+			QStringLiteral(
+				"<p>What Sourcetrail adds when it configures the build directory without a "
+				"preset:</p><pre>cmake -S &lt;source&gt; -B &lt;build&gt; &lt;arguments&gt;</pre>"
+				"<p>Cache variables like <tt>-DLEVELDB_BUILD_TESTS=OFF</tt>, a generator "
+				"(<tt>-G Ninja</tt>), a toolchain file. Separated by blanks; put an argument with "
+				"blanks in quotes. They are used by Run CMake and when indexing re-configures the "
+				"project; they are not passed through a shell.</p>"
+				"<p>With a preset, set them in the preset (CMakeUserPresets.json) instead.</p>"),
+			layout,
+			row);
 		row++;
 	}
 
@@ -247,17 +373,57 @@ void QtProjectWizardContentPathCMakeFileAPI::populate(QGridLayout* layout, int& 
 			row);
 		row++;
 
+		// A long list (CLI11 has 92 targets, 30 of them CTest's): narrowed by name, the
+		// targets without sources hidden unless asked for.
+		QWidget* listTools = new QWidget(this);
+		QHBoxLayout* listToolsLayout = new QHBoxLayout(listTools);
+		listToolsLayout->setContentsMargins(0, 0, 0, 0);
+		m_targetListFilterEdit = new QLineEdit(listTools);
+		m_targetListFilterEdit->setObjectName(QStringLiteral("targetListFilter"));
+		m_targetListFilterEdit->setAccessibleName(QStringLiteral("Find Targets"));
+		m_targetListFilterEdit->setPlaceholderText(QStringLiteral("Find targets by name"));
+		m_targetListFilterEdit->setClearButtonEnabled(true);
+		m_targetListFilterEdit->setAttribute(Qt::WA_MacShowFocusRect, false);
+		listToolsLayout->addWidget(m_targetListFilterEdit, 1);
+		m_showEmptyTargetsCheck = new QCheckBox(QStringLiteral("Show targets without sources"), listTools);
+		m_showEmptyTargetsCheck->setObjectName(QStringLiteral("showEmptyTargets"));
+		m_showEmptyTargetsCheck->setAccessibleName(QStringLiteral("Show targets without sources"));
+		listToolsLayout->addWidget(m_showEmptyTargetsCheck);
+		layout->addWidget(listTools, row, QtProjectWizardWindow::BACK_COL);
+		connect(
+			m_targetListFilterEdit,
+			&QLineEdit::textChanged,
+			this,
+			&QtProjectWizardContentPathCMakeFileAPI::onTargetListFilterEdited);
+		connect(
+			m_showEmptyTargetsCheck,
+			&QCheckBox::toggled,
+			this,
+			&QtProjectWizardContentPathCMakeFileAPI::onTargetListFilterEdited);
+		row++;
+
 		m_targetList = new QListWidget(this);
 		m_targetList->setAccessibleName(QStringLiteral("Targets"));
 		m_targetList->setObjectName(QStringLiteral("targetList"));
 		m_targetList->setAttribute(Qt::WA_MacShowFocusRect, false);
-		m_targetList->setMaximumHeight(140);
+		m_targetList->setMaximumHeight(220);
 		layout->addWidget(m_targetList, row, QtProjectWizardWindow::BACK_COL);
 		connect(
 			m_targetList,
 			&QListWidget::itemChanged,
 			this,
 			&QtProjectWizardContentPathCMakeFileAPI::onTargetChecked);
+		row++;
+
+		m_indexLinkedTargetsCheck = new QCheckBox(QStringLiteral("Also index the targets these link to"), this);
+		m_indexLinkedTargetsCheck->setObjectName(QStringLiteral("indexLinkedTargets"));
+		m_indexLinkedTargetsCheck->setAccessibleName(QStringLiteral("Also index the targets these link to"));
+		m_indexLinkedTargetsCheck->setToolTip(QStringLiteral(
+			"With some targets checked: also index the targets they link to or depend on, transitively. "
+			"A program checked alone otherwise misses the definitions its libraries compile (with "
+			"CLI11_PRECOMPILED, every one of CLI11's)."));
+		layout->addWidget(m_indexLinkedTargetsCheck, row, QtProjectWizardWindow::BACK_COL);
+		connect(m_indexLinkedTargetsCheck, &QCheckBox::toggled, this, [this]() { showTargets(); });
 		row++;
 
 		m_targetSummaryLabel = new QLabel(QLatin1String(""), this);
@@ -294,10 +460,14 @@ void QtProjectWizardContentPathCMakeFileAPI::load()
 	m_configurationCombo->setCurrentText(QString::fromStdString(m_settings->getConfiguration()));
 	m_configurationCombo->blockSignals(false);
 	m_targetFilterEdit->setText(QString::fromStdString(m_settings->getTargetGlob()));
+	m_indexLinkedTargetsCheck->blockSignals(true);
+	m_indexLinkedTargetsCheck->setChecked(m_settings->getIndexLinkedTargets());
+	m_indexLinkedTargetsCheck->blockSignals(false);
 
 	m_buildDirPicker->blockSignals(true);
 	m_buildDirPicker->setText(QString::fromStdString(m_settings->getBuildDirectory().str()));
 	m_buildDirPicker->blockSignals(false);
+	m_cmakeArgumentsEdit->setText(joinArguments(m_settings->getCMakeArguments()));
 
 	// A group without a preset but with a build directory keeps using it; otherwise
 	// the first preset (in file order) is selected, and the settings say so too, so
@@ -318,6 +488,8 @@ void QtProjectWizardContentPathCMakeFileAPI::save()
 	m_settings->setBuildDirectory(FilePath(m_buildDirPicker->getText().trimmed().toStdString()));
 	m_settings->setConfiguration(m_configurationCombo->currentText().trimmed().toStdString());
 	m_settings->setTargetGlob(m_targetFilterEdit->text().trimmed().toStdString());
+	m_settings->setIndexLinkedTargets(m_indexLinkedTargetsCheck->isChecked());
+	m_settings->setCMakeArguments(cmakeArguments().value_or(std::vector<std::string>{}));
 }
 
 bool QtProjectWizardContentPathCMakeFileAPI::check()
@@ -333,6 +505,10 @@ bool QtProjectWizardContentPathCMakeFileAPI::check()
 	}
 
 	const std::string presetName{selectedPreset()};
+	if (const auto arguments = cmakeArguments(); !arguments)
+	{
+		return fail(QString::fromStdString(arguments.error()));
+	}
 	if (presetName.empty() && m_buildDir.empty())
 	{
 		return fail(QStringLiteral(
@@ -403,11 +579,39 @@ void QtProjectWizardContentPathCMakeFileAPI::describe(ProjectWizardView& view) c
 	}
 	presets.push_back(
 		{.value = "", .label = "no preset: CMake configures cmake_build_directory with -S/-B"});
+	std::string presetNote;
+	if (const auto preset{std::ranges::find(m_presets, selectedPreset(), &CMakeFileAPIReader::PresetInfo::name)};
+		preset != m_presets.end())
+	{
+		for (const std::string& line: presetDetails(*preset))
+		{
+			presetNote += "; " + line;
+		}
+	}
 	view.notes["cmake_preset"] = !noPresetSelected()
-		? std::format("build directory: {}", buildDirectoryNote().toStdString())
+		? std::format("build directory: {}{}", buildDirectoryNote().toStdString(), presetNote)
 		: m_buildDir.empty()
 		? std::string{"no preset, and no cmake_build_directory chosen yet"}
 		: std::format("no preset; build directory {} ({})", m_buildDir.str(), buildDirectoryState());
+
+	if (m_configureFailed)
+	{
+		view.notes["cmake_error"] = m_configureError.empty()
+			? std::string{"CMake failed to configure the build directory"}
+			: m_configureError;
+		if (m_missesSubmodules)
+		{
+			view.notes["cmake_error"] +=
+				" (a directory it adds is missing: run 'git submodule update --init --recursive' in the "
+				"source directory)";
+		}
+	}
+	if (noPresetSelected())
+	{
+		view.notes["cmake_arguments"] =
+			"without a preset: what the configure adds to cmake -S <source> -B <build>, one argument each "
+			"(e.g. -DBUILD_TESTS=OFF)";
+	}
 
 	if (!m_hasReply)
 	{
@@ -428,7 +632,11 @@ void QtProjectWizardContentPathCMakeFileAPI::describe(ProjectWizardView& view) c
 	{
 		targets.push_back(
 			{.value = target.name,
-			 .label = std::format("{}, {}", targetTypeName(target.type), fileCount(target.sourceFileCount))});
+			 .label = std::format(
+				 "{}, {}{}",
+				 targetTypeName(target.type),
+				 fileCount(target.sourceFileCount),
+				 target.standard.empty() ? std::string{} : ", " + target.standard)});
 	}
 	view.notes["cmake_target_glob"] =
 		"names and wildcard patterns separated by ';' (empty: all targets); " +
@@ -438,6 +646,90 @@ void QtProjectWizardContentPathCMakeFileAPI::describe(ProjectWizardView& view) c
 void QtProjectWizardContentPathCMakeFileAPI::onSourceDirChanged(const QString& text)
 {
 	repopulatePresets(text, selectedPreset(), noPresetSelected());
+	// A source directory picked (not loaded): propose the rest from it.
+	m_detectTimer->start();
+}
+
+void QtProjectWizardContentPathCMakeFileAPI::onDetect()
+{
+	if (m_sourceDir.empty() || !m_sourceDir.exists() || m_detecting)
+	{
+		return;
+	}
+	m_detecting = true;
+	const std::string folder{m_sourceDir.str()};
+	const std::string projectLocation{m_settings->getProjectDirectoryPath().str()};
+	execution::runOnWorkPool([this, folder, projectLocation]() {
+		const auto proposal{detectProject(folder, {.projectLocation = projectLocation, .hasExecutable = {}})};
+		execution::qt::onUi(this, [this, folder, proposal]() {
+			m_detecting = false;
+			// Picked another meanwhile: that one's detection follows.
+			if (proposal && m_sourceDir.str() == folder)
+			{
+				applyDetection(*proposal);
+			}
+		});
+	});
+}
+
+void QtProjectWizardContentPathCMakeFileAPI::applyDetection(const ProjectProposal& proposal)
+{
+	if (proposal.sourceGroupType != SourceGroupType::CXX_CMAKE_FILE_API)
+	{
+		m_detectedLabel->hide();
+		return;
+	}
+	const auto text = [&](const std::string& field) -> std::string {
+		const auto it{proposal.fields.find(field)};
+		return it != proposal.fields.end() && std::holds_alternative<std::string>(it->second)
+			? std::get<std::string>(it->second)
+			: std::string{};
+	};
+	const auto list = [&](const std::string& field) -> std::vector<std::string> {
+		const auto it{proposal.fields.find(field)};
+		return it != proposal.fields.end() && std::holds_alternative<std::vector<std::string>>(it->second)
+			? std::get<std::vector<std::string>>(it->second)
+			: std::vector<std::string>{};
+	};
+
+	// What is on the page so far, then what the folder suggests where nothing is set.
+	m_window->saveContent();
+	std::vector<std::string> filled;
+	m_settings->setPresetName(text("cmake_preset"));
+	if (const std::string buildDir{text("cmake_build_directory")};
+		!buildDir.empty() && m_settings->getBuildDirectory().empty())
+	{
+		m_settings->setBuildDirectory(FilePath(buildDir));
+		filled.push_back("the build directory");
+	}
+	if (const std::vector<std::string> headers{list("indexed_header_paths")};
+		!headers.empty() && m_settings->getIndexedHeaderPaths().empty())
+	{
+		std::vector<FilePath> paths;
+		for (const std::string& header: headers)
+		{
+			paths.emplace_back(header);
+		}
+		m_settings->setIndexedHeaderPaths(paths);
+		filled.push_back("the headers to index");
+	}
+	if (const std::string name{m_settings->getName()};
+		!proposal.projectName.empty() &&
+		(name.empty() || name == sourceGroupTypeToString(SourceGroupType::CXX_CMAKE_FILE_API)))
+	{
+		m_settings->setName(proposal.projectName);
+		filled.push_back("the name");
+	}
+	m_window->loadContent();
+
+	std::string detected{proposal.reasons.empty() ? std::string{} : proposal.reasons.front()};
+	if (!filled.empty())
+	{
+		detected += std::format(" (filled in: {})", utility::join(filled, std::string{", "}));
+	}
+	m_detectedLabel->setText(toHtml(detected));
+	m_detectedLabel->setVisible(!detected.empty());
+	m_window->contentChanged();
 }
 
 void QtProjectWizardContentPathCMakeFileAPI::onRefreshPresets()
@@ -465,10 +757,19 @@ void QtProjectWizardContentPathCMakeFileAPI::onPresetChanged()
 		m_presetStatusLabel->setText(QStringLiteral(
 			"<span style=\"color:red\">Not one of the presets of the source directory.</span>"));
 	}
+	else if (preset != m_presets.end())
+	{
+		// What the preset means, not only its name: its description, then how it configures.
+		QString text{toHtml(preset->description)};
+		for (const std::string& line: presetDetails(*preset))
+		{
+			text += (text.isEmpty() ? QString{} : QStringLiteral("<br>")) + toHtml(line);
+		}
+		m_presetStatusLabel->setText(text);
+	}
 	else
 	{
-		m_presetStatusLabel->setText(
-			preset != m_presets.end() ? toHtml(preset->description) : QString{});
+		m_presetStatusLabel->setText(QString{});
 	}
 	readBuildDirectory();
 }
@@ -486,6 +787,38 @@ void QtProjectWizardContentPathCMakeFileAPI::onTargetFilterEdited()
 	showTargets();
 }
 
+void QtProjectWizardContentPathCMakeFileAPI::onTargetListFilterEdited()
+{
+	const QString text{m_targetListFilterEdit->text().trimmed()};
+	for (int i = 0; i < m_targetList->count(); i++)
+	{
+		QListWidgetItem* item{m_targetList->item(i)};
+		if (!item->data(Qt::UserRole).isValid())	// a group's heading: shown with its rows
+		{
+			continue;
+		}
+		const bool empty{!item->flags().testFlag(Qt::ItemIsEnabled)};
+		item->setHidden(
+			(empty && !m_showEmptyTargetsCheck->isChecked()) ||
+			(!text.isEmpty() && !item->data(Qt::UserRole).toString().contains(text, Qt::CaseInsensitive)));
+	}
+	// A heading goes with the last of its rows.
+	for (int i = 0; i < m_targetList->count(); i++)
+	{
+		QListWidgetItem* heading{m_targetList->item(i)};
+		if (heading->data(Qt::UserRole).isValid())
+		{
+			continue;
+		}
+		bool anyShown{false};
+		for (int j = i + 1; j < m_targetList->count() && m_targetList->item(j)->data(Qt::UserRole).isValid(); j++)
+		{
+			anyShown = anyShown || !m_targetList->item(j)->isHidden();
+		}
+		heading->setHidden(!anyShown);
+	}
+}
+
 void QtProjectWizardContentPathCMakeFileAPI::onTargetChecked()
 {
 	// The checked targets become the filter; all of them, the empty filter.
@@ -494,7 +827,7 @@ void QtProjectWizardContentPathCMakeFileAPI::onTargetChecked()
 	for (int i = 0; i < m_targetList->count(); i++)
 	{
 		const QListWidgetItem* item{m_targetList->item(i)};
-		if (!item->flags().testFlag(Qt::ItemIsEnabled))
+		if (!item->data(Qt::UserRole).isValid() || !item->flags().testFlag(Qt::ItemIsEnabled))
 		{
 			continue;
 		}
@@ -507,6 +840,7 @@ void QtProjectWizardContentPathCMakeFileAPI::onTargetChecked()
 	m_targetFilterEdit->setText(
 		static_cast<int>(checked.size()) == checkable ? QString{}
 													  : QString::fromStdString(utility::join(checked, ';')));
+	updateTargetTexts();
 	updateTargetSummary();
 }
 
@@ -516,6 +850,12 @@ void QtProjectWizardContentPathCMakeFileAPI::onRunCMake()
 	{
 		return;
 	}
+	const auto arguments = cmakeArguments();
+	if (!arguments)
+	{
+		fail(QString::fromStdString(arguments.error()));
+		return;
+	}
 	m_runningCMake = true;
 	m_runCMakeButton->setEnabled(false);
 	m_buildDirLabel->setText(buildDirectoryNote().toHtmlEscaped());
@@ -523,9 +863,10 @@ void QtProjectWizardContentPathCMakeFileAPI::onRunCMake()
 	execution::runOnWorkPool([this,
 							  buildDir = m_buildDir,
 							  sourceDir = m_sourceDir,
-							  presetName = selectedPreset()]() {
+							  presetName = selectedPreset(),
+							  arguments = noPresetSelected() ? *arguments : std::vector<std::string>{}]() {
 		CMakeFileAPIReader reader{buildDir};
-		const auto configured{reader.ensureReply({}, sourceDir, presetName, true)};
+		const auto configured{reader.ensureReply({}, sourceDir, presetName, true, arguments)};
 		const std::string error{
 			configured ? std::string{}
 					   : std::format(
@@ -561,8 +902,12 @@ void QtProjectWizardContentPathCMakeFileAPI::repopulatePresets(
 	for (const CMakeFileAPIReader::PresetInfo& preset: m_presets)
 	{
 		m_presetCombo->addItem(presetLabel(preset), QString::fromStdString(preset.name));
-		m_presetCombo->setItemData(
-			m_presetCombo->count() - 1, QString::fromStdString(preset.description), Qt::ToolTipRole);
+		std::string tooltip{preset.description};
+		for (const std::string& line: presetDetails(preset))
+		{
+			tooltip += (tooltip.empty() ? "" : "\n") + line;
+		}
+		m_presetCombo->setItemData(m_presetCombo->count() - 1, QString::fromStdString(tooltip), Qt::ToolTipRole);
 	}
 	// A preset that is not (any more) among them stays selected, marked, so the check
 	// says so instead of another preset being used without a word.
@@ -636,6 +981,13 @@ void QtProjectWizardContentPathCMakeFileAPI::readBuildDirectory()
 
 	m_buildDirLabel->setText(buildDirectoryNote().toHtmlEscaped());
 	m_runCMakeButton->setEnabled(!m_buildDir.empty() && !m_runningCMake);
+	m_cmakeArgumentsLabel->setVisible(noPresetSelected());
+	m_cmakeArgumentsRow->setVisible(noPresetSelected());
+	m_cmakeArgumentsHelp->setVisible(noPresetSelected());
+	// Presets come from a presets file: without one there is nothing to refresh.
+	m_refreshPresetsButton->setVisible(
+		!m_sourceDir.empty() && !CMakeFileAPIReader::getPresetFiles(m_sourceDir).empty());
+	showConfigureError();
 
 	m_configurations = m_hasReply ? CMakeFileAPIReader{m_buildDir}.getConfigurations()
 								  : std::vector<std::string>{};
@@ -648,13 +1000,15 @@ void QtProjectWizardContentPathCMakeFileAPI::readBuildDirectory()
 	}
 	m_configurationCombo->setCurrentText(configuration);
 	// A single-config generator with an empty CMAKE_BUILD_TYPE has one configuration, named "".
+	// Empty means the configuration built last (CMakeFileAPIReader::builtConfiguration),
+	// else the first.
+	const std::string built{m_hasReply ? CMakeFileAPIReader{m_buildDir}.builtConfiguration(m_configurations) : std::string{}};
 	m_configurationCombo->lineEdit()->setPlaceholderText(
-		m_configurations.empty()
-			? QStringLiteral("The first configuration of the build directory")
+		m_configurations.empty() ? QStringLiteral("The first configuration of the build directory")
+			: !built.empty()     ? QString::fromStdString(std::format("The configuration built last: {}", built))
 			: m_configurations.front().empty()
 			? QStringLiteral("The build directory's configuration (CMAKE_BUILD_TYPE is not set)")
-			: QString::fromStdString(
-				  std::format("The first configuration: {}", m_configurations.front())));
+			: QString::fromStdString(std::format("The first configuration: {}", m_configurations.front())));
 	m_configurationCombo->blockSignals(false);
 
 	readTargets();
@@ -663,11 +1017,13 @@ void QtProjectWizardContentPathCMakeFileAPI::readBuildDirectory()
 void QtProjectWizardContentPathCMakeFileAPI::readTargets()
 {
 	m_targets.clear();
+	m_targetEntries.clear();
 	if (m_hasReply)
 	{
 		const std::string configuration{m_configurationCombo->currentText().trimmed().toStdString()};
 		if (const auto sources{CMakeFileAPIReader{m_buildDir}.getSourcesDetailed(configuration, {})})
 		{
+			m_targetEntries = sources->targets;
 			for (const CMakeFileAPIReader::TargetEntry& target: sources->targets)
 			{
 				// CMake's helper targets for C++20 module collation are not the project's.
@@ -679,9 +1035,38 @@ void QtProjectWizardContentPathCMakeFileAPI::readTargets()
 			for (const CMakeFileAPIReader::SourceEntry& entry: sources->entries)
 			{
 				const auto target{std::ranges::find(m_targets, entry.targetName, &Target::name)};
-				if (target != m_targets.end() && entry.compileGroup && !entry.isGenerated)
+				if (target == m_targets.end() || !entry.compileGroup)
 				{
-					target->sourceFileCount++;
+					continue;
+				}
+				if (entry.isGenerated)
+				{
+					target->generatedCount++;
+					continue;
+				}
+				target->sourceFileCount++;
+				target->sources.push_back(entry.path);
+				const CMakeFileAPIReader::CompileGroup& group{*entry.compileGroup};
+				for (const FilePath& include: group.includes)
+				{
+					if (!std::ranges::contains(target->includes, include.str()))
+					{
+						target->includes.push_back(include.str());
+					}
+				}
+				for (const std::string& define: group.defines)
+				{
+					if (!std::ranges::contains(target->defines, define))
+					{
+						target->defines.push_back(define);
+					}
+				}
+				for (const std::string& flag: group.compileFlags)
+				{
+					if (flag.starts_with("-std=") || flag.starts_with("/std:"))
+					{
+						target->standard = flag.substr(5);
+					}
 				}
 			}
 		}
@@ -689,32 +1074,195 @@ void QtProjectWizardContentPathCMakeFileAPI::readTargets()
 	showTargets();
 }
 
+std::string QtProjectWizardContentPathCMakeFileAPI::targetKind(const Target& target)
+{
+	if (target.type.ends_with("_LIBRARY"))
+	{
+		return "library";
+	}
+	if (target.type == "EXECUTABLE")
+	{
+		// What CTest runs: named so by convention.
+		const std::string name{utility::toLowerCase(target.name)};
+		return name.contains("test") ? "test" : "executable";
+	}
+	return "utility";
+}
+
+QString QtProjectWizardContentPathCMakeFileAPI::targetDetails(const Target& target)
+{
+	// A few of each, and how many there are.
+	const auto some = [](const std::vector<std::string>& values, std::size_t shown) {
+		std::string text;
+		for (std::size_t i = 0; i < values.size() && i < shown; i++)
+		{
+			text += "\n    " + values[i];
+		}
+		if (values.size() > shown)
+		{
+			text += std::format("\n    ... and {} more", values.size() - shown);
+		}
+		return text;
+	};
+	std::vector<std::string> files;
+	for (const FilePath& source: target.sources)
+	{
+		files.push_back(source.fileName());
+	}
+	std::string text{std::format("{} ({})", target.name, targetTypeName(target.type))};
+	text += std::format("\nStandard: {}", target.standard.empty() ? "the compiler's default" : target.standard);
+	text += std::format("\nSources: {}{}", target.sourceFileCount, some(files, 8));
+	if (target.generatedCount > 0)
+	{
+		text += std::format("\nGenerated sources: {} (not indexed until built)", target.generatedCount);
+	}
+	text += std::format("\nInclude paths: {}{}", target.includes.size(), some(target.includes, 6));
+	text += std::format("\nDefines: {}{}", target.defines.size(), some(target.defines, 6));
+	return QString::fromStdString(text);
+}
+
+QString QtProjectWizardContentPathCMakeFileAPI::targetText(const Target& target, bool checked) const
+{
+	std::string text{std::format("{}  ({}, {})", target.name, targetTypeName(target.type), fileCount(target.sourceFileCount))};
+	if (checked && target.sourceFileCount > 0)
+	{
+		// What it adds: its files no other checked target has.
+		const std::string filter{m_targetFilterEdit->text().trimmed().toStdString()};
+		std::size_t own{0};
+		for (const FilePath& source: target.sources)
+		{
+			const bool elsewhere{std::ranges::any_of(m_targets, [&](const Target& other) {
+				return &other != &target && CMakeFileAPIReader::matchesTargetFilter(other.name, filter) &&
+					std::ranges::contains(other.sources, source);
+			})};
+			own += elsewhere ? 0 : 1;
+		}
+		if (own != target.sourceFileCount)
+		{
+			text += std::format(" \u2013 adds {}", own);
+		}
+	}
+	return QString::fromStdString(text);
+}
+
+std::string QtProjectWizardContentPathCMakeFileAPI::effectiveTargetFilter() const
+{
+	const std::string filter{m_targetFilterEdit->text().trimmed().toStdString()};
+	return m_indexLinkedTargetsCheck->isChecked()
+		? CMakeFileAPIReader::filterWithDependencies(m_targetEntries, filter)
+		: filter;
+}
+
+std::size_t QtProjectWizardContentPathCMakeFileAPI::checkedFileCount() const
+{
+	const std::string filter{effectiveTargetFilter()};
+	std::set<FilePath> files;
+	for (const Target& target: m_targets)
+	{
+		if (CMakeFileAPIReader::matchesTargetFilter(target.name, filter))
+		{
+			files.insert(target.sources.begin(), target.sources.end());
+		}
+	}
+	return files.size();
+}
+
 void QtProjectWizardContentPathCMakeFileAPI::showTargets()
 {
 	const std::string filter{m_targetFilterEdit->text().trimmed().toStdString()};
-	m_targetList->blockSignals(true);
-	m_targetList->clear();
+	const std::string effective{effectiveTargetFilter()};
+	m_indexLinkedTargetsCheck->setVisible(m_hasReply && !m_targets.empty());
+	m_indexLinkedTargetsCheck->setEnabled(!filter.empty());
+
+	// The checked targets first, then by kind (libraries, executables, tests, utilities),
+	// then by name: what is indexed is at the top. Not re-sorted on a check, so a row
+	// stays under the mouse.
+	static constexpr std::array kinds {"library", "executable", "test", "utility"};
+	std::vector<const Target*> ordered;
 	for (const Target& target: m_targets)
 	{
-		QListWidgetItem* item{new QListWidgetItem(
-			QString::fromStdString(std::format(
-				"{}  ({}, {})",
-				target.name,
-				targetTypeName(target.type),
-				fileCount(target.sourceFileCount))),
-			m_targetList)};
-		item->setData(Qt::UserRole, QString::fromStdString(target.name));
+		ordered.push_back(&target);
+	}
+	const bool allChecked{filter.empty()};
+	std::ranges::stable_sort(ordered, [&](const Target* a, const Target* b) {
+		const bool aChecked{!allChecked && CMakeFileAPIReader::matchesTargetFilter(a->name, filter)};
+		const bool bChecked{!allChecked && CMakeFileAPIReader::matchesTargetFilter(b->name, filter)};
+		const auto kindIndex = [](const Target* target) {
+			return std::ranges::find(kinds, targetKind(*target)) - kinds.begin();
+		};
+		return std::tuple(!aChecked, kindIndex(a), a->name) < std::tuple(!bChecked, kindIndex(b), b->name);
+	});
+
+	m_targetList->blockSignals(true);
+	m_targetList->clear();
+	std::string group;
+	for (const Target* target: ordered)
+	{
+		const bool checked{CMakeFileAPIReader::matchesTargetFilter(target->name, filter)};
+		const std::string targetGroup{!allChecked && checked ? std::string("checked") : targetKind(*target)};
+		if (targetGroup != group)
+		{
+			group = targetGroup;
+			QListWidgetItem* heading{new QListWidgetItem(
+				QString::fromStdString(group == "checked" ? "Checked" : group == "library" ? "Libraries"
+										   : group == "executable"                      ? "Executables"
+										   : group == "test"                            ? "Tests"
+																						: "Utilities"),
+				m_targetList)};
+			heading->setFlags(Qt::NoItemFlags);
+			QFont font{heading->font()};
+			font.setBold(true);
+			heading->setFont(font);
+		}
+
+		// Indexed because a checked target links to it: half checked, said so.
+		const bool linked{!checked && CMakeFileAPIReader::matchesTargetFilter(target->name, effective)};
+		QString text{targetText(*target, checked && !allChecked)};
+		if (linked)
+		{
+			text += QStringLiteral(" \u2013 linked");
+		}
+		QListWidgetItem* item{new QListWidgetItem(text, m_targetList)};
+		item->setData(Qt::UserRole, QString::fromStdString(target->name));
+		item->setToolTip(targetDetails(*target));
+		item->setData(Qt::AccessibleDescriptionRole, targetDetails(*target));	// what agents read
 		item->setFlags(item->flags() | Qt::ItemIsUserCheckable);
-		if (target.sourceFileCount == 0)
+		if (target->sourceFileCount == 0)
 		{
 			item->setFlags(item->flags() & ~Qt::ItemIsEnabled);	// nothing to index either way
 		}
-		item->setCheckState(
-			CMakeFileAPIReader::matchesTargetFilter(target.name, filter) ? Qt::Checked : Qt::Unchecked);
+		item->setCheckState(checked ? Qt::Checked : linked ? Qt::PartiallyChecked : Qt::Unchecked);
 	}
 	m_targetList->blockSignals(false);
 	m_targetList->setVisible(!m_targets.empty());
+	m_targetListFilterEdit->parentWidget()->setVisible(m_targets.size() > 8);
+
+	const std::size_t empty{static_cast<std::size_t>(
+		std::ranges::count(m_targets, std::size_t{0}, &Target::sourceFileCount))};
+	m_showEmptyTargetsCheck->setText(QString::fromStdString(std::format("Show {} without sources", empty)));
+	m_showEmptyTargetsCheck->setVisible(empty > 0);
+	onTargetListFilterEdited();
 	updateTargetSummary();
+}
+
+void QtProjectWizardContentPathCMakeFileAPI::updateTargetTexts()
+{
+	const std::string filter{m_targetFilterEdit->text().trimmed().toStdString()};
+	m_targetList->blockSignals(true);
+	for (int i = 0; i < m_targetList->count(); i++)
+	{
+		QListWidgetItem* item{m_targetList->item(i)};
+		if (!item->data(Qt::UserRole).isValid())
+		{
+			continue;
+		}
+		const auto target{std::ranges::find(m_targets, item->data(Qt::UserRole).toString().toStdString(), &Target::name)};
+		if (target != m_targets.end())
+		{
+			item->setText(targetText(*target, !filter.empty() && item->checkState() == Qt::Checked));
+		}
+	}
+	m_targetList->blockSignals(false);
 }
 
 void QtProjectWizardContentPathCMakeFileAPI::updateTargetSummary()
@@ -733,22 +1281,38 @@ QString QtProjectWizardContentPathCMakeFileAPI::targetSummary() const
 				  "directory: Run CMake, or index the project.");
 	}
 	const std::string filter{m_targetFilterEdit->text().trimmed().toStdString()};
+	const std::string effective{effectiveTargetFilter()};
 	std::size_t matched{0};
-	std::size_t files{0};
+	std::size_t linked{0};
+	std::vector<std::string> names;
 	for (const Target& target: m_targets)
 	{
+		names.push_back(target.name);
 		if (CMakeFileAPIReader::matchesTargetFilter(target.name, filter))
 		{
 			matched++;
-			files += target.sourceFileCount;
+		}
+		else if (CMakeFileAPIReader::matchesTargetFilter(target.name, effective))
+		{
+			linked++;
 		}
 	}
+	// Each file once: targets share sources (a library's, its tests').
+	const std::size_t files{checkedFileCount()};
+	// A pattern that matches nothing is likely a typo: said, per pattern.
+	std::string unmatched;
+	for (const std::string& pattern: CMakeFileAPIReader::unmatchedPatterns(names, filter))
+	{
+		unmatched += std::format(" {}: no target.", pattern);
+	}
 	return QString::fromStdString(std::format(
-		"{} of {} target{}, {} to index.",
+		"{} of {} target{}{}, {} to index.{}",
 		matched,
 		m_targets.size(),
 		m_targets.size() == 1 ? "" : "s",
-		fileCount(files)));
+		linked > 0 ? std::format(" and {} they link to", linked) : std::string{},
+		fileCount(files),
+		unmatched));
 }
 
 QString QtProjectWizardContentPathCMakeFileAPI::buildDirectoryNote() const
@@ -783,6 +1347,72 @@ std::string QtProjectWizardContentPathCMakeFileAPI::buildDirectoryState() const
 		: m_hasReply        ? "configured"
 		: m_configured      ? "configured by CMake: Sourcetrail asks it for the targets when indexing"
 							: "not configured yet: Sourcetrail runs CMake when indexing";
+}
+
+void QtProjectWizardContentPathCMakeFileAPI::showConfigureError()
+{
+	m_configureError.clear();
+	m_missesSubmodules = false;
+	if (!m_configureFailed || m_runningCMake)
+	{
+		m_configureErrorRow->hide();
+		return;
+	}
+
+	const std::string log{CMakeFileAPIReader{m_buildDir}.lastConfigureLog()};
+	m_configureError = CMakeFileAPIReader::firstConfigureError(log);
+	m_missesSubmodules = CMakeFileAPIReader::missesSubmodules(log, m_sourceDir);
+
+	QString text{QStringLiteral("<span style=\"color:red\">CMake failed to configure the build directory")};
+	text += m_configureError.empty() ? QStringLiteral(".") : QStringLiteral(": ") + toHtml(m_configureError);
+	text += QStringLiteral("</span>");
+	if (m_missesSubmodules)
+	{
+		text += QStringLiteral(
+			"<br>A directory it adds is missing: the source directory is a git checkout without its "
+			"submodules. Run <tt>git submodule update --init --recursive</tt> there, then Run CMake.");
+	}
+	else if (noPresetSelected())
+	{
+		text += QStringLiteral("<br>Options the project needs (<tt>-D...=OFF</tt>) go in CMake Arguments.");
+	}
+	m_configureErrorLabel->setText(text);
+	m_configureErrorRow->show();
+}
+
+void QtProjectWizardContentPathCMakeFileAPI::onShowCMakeLog()
+{
+	const std::string log{CMakeFileAPIReader{m_buildDir}.lastConfigureLog()};
+
+	QDialog dialog(this);
+	dialog.setWindowTitle(QStringLiteral("CMake Log"));
+	dialog.setObjectName(QStringLiteral("cmakeLogDialog"));
+	QVBoxLayout* dialogLayout = new QVBoxLayout(&dialog);
+	QPlainTextEdit* text = new QPlainTextEdit(&dialog);
+	text->setAccessibleName(QStringLiteral("CMake Log"));
+	text->setReadOnly(true);
+	text->setLineWrapMode(QPlainTextEdit::NoWrap);
+	text->setPlainText(
+		log.empty() ? QStringLiteral("Sourcetrail has not run CMake in this build directory.")
+					: QString::fromStdString(log));
+	dialogLayout->addWidget(text);
+	QDialogButtonBox* buttons = new QDialogButtonBox(QDialogButtonBox::Close, &dialog);
+	connect(buttons, &QDialogButtonBox::rejected, &dialog, &QDialog::reject);
+	dialogLayout->addWidget(buttons);
+	dialog.resize(800, 500);
+	dialog.exec();
+}
+
+std::expected<std::vector<std::string>, std::string> QtProjectWizardContentPathCMakeFileAPI::cmakeArguments() const
+{
+	const std::string text{m_cmakeArgumentsEdit->text().trimmed().toStdString()};
+	if (text.empty())
+	{
+		return std::vector<std::string>{};
+	}
+	return editor_command::split(text).transform_error([&](editor_command::EditorCommandError) {
+		return std::format("The CMake Arguments \"{}\" have a quote that is not closed.", text);
+	});
 }
 
 bool QtProjectWizardContentPathCMakeFileAPI::fail(const QString& message)

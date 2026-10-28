@@ -5,6 +5,7 @@
 #include "RefreshInfo.h"
 
 class QLabel;
+class QPushButton;
 class QRadioButton;
 
 class QtIndexingStartDialog: public QtIndexingDialog
@@ -19,6 +20,7 @@ public:
 	QtIndexingStartDialog(
 		const std::vector<RefreshMode>& enabledModes,
 		const RefreshMode initialMode,
+		const QString& reason = {},
 		QWidget* parent = nullptr);
 	QSize sizeHint() const override;
 
@@ -35,6 +37,7 @@ private:
 
 	QLabel* m_clearLabel;
 	QLabel* m_indexLabel;
+	QPushButton* m_startButton = nullptr;
 	std::map<RefreshMode, QRadioButton*> m_refreshModeButtons;
 };
 

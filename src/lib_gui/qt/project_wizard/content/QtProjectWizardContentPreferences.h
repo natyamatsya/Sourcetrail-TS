@@ -139,6 +139,7 @@ private:
 
 	QLineEdit* m_sourcetrailPort;
 	QLineEdit* m_pluginPort;
+	QLineEdit* m_editorCommand;
 
 	QComboBox* m_threads;
 	QLabel* m_threadsInfoLabel;

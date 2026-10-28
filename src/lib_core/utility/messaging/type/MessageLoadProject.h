@@ -46,6 +46,10 @@ public:
 	const bool settingsChanged;
 	const RefreshMode refreshMode;
 	const ShardConfig shardConfig;
+	// An agent's load (the project machine's `load`): the refresh it leaves opens the
+	// mode choice the agent waits for. A person's load starts indexing at once where
+	// one mode does (MessageRefresh::direct).
+	bool byAgent = false;
 };
 
 #endif	  // MESSAGE_LOAD_PROJECT_H

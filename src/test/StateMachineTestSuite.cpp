@@ -110,9 +110,10 @@ public:
 class FakeIndexingPresenter
 {
 public:
-	void presentModeChoice(const std::vector<RefreshMode>&  /*modes*/, RefreshMode  /*mode*/)
+	void presentModeChoice(const std::vector<RefreshMode>&  /*modes*/, RefreshMode  /*mode*/, const std::string& reason)
 	{
 		choicePresented = true;
+		choiceReason = reason;
 	}
 	void presentCounting() {}
 	void presentRefreshInfo(const RefreshInfo& info)
@@ -139,6 +140,7 @@ public:
 	std::vector<RefreshMode> shownModes;
 	bool answersReports = true;
 	std::atomic<bool> choicePresented = false;
+	std::string choiceReason;
 	std::atomic<bool> choiceDismissed = false;
 	std::atomic<bool> choiceDismissedStarted = false;
 	std::atomic<bool> reportPresented = false;
@@ -450,6 +452,40 @@ TEST_CASE("indexing mode choice counts the files and starts with the chosen mode
 	REQUIRE(presenter.choiceDismissedStarted);
 	// The fake pipeline did not prepare anything: the request ends.
 	REQUIRE(eventually([&]() { return machine.snapshot().state == "idle"; }));
+}
+
+TEST_CASE("indexing mode choice says why it opened")
+{
+	IndexingStateMachine machine;
+	FakeIndexingPresenter presenter;
+
+	// The project's settings changed: the choice says so, in place of a question.
+	machine.requested();
+	machine.chooseMode(
+		nullptr,
+		{RefreshMode::ALL_FILES, RefreshMode::UPDATED_FILES},
+		RefreshMode::ALL_FILES,
+		[](const RefreshInfo&) {},
+		[]() {},
+		presenter,
+		"The project's settings changed.");
+	REQUIRE(presenter.choiceReason == "The project's settings changed.");
+	REQUIRE(contains(machine.snapshot().context, R"("reason":"The project's settings changed.")"));
+
+	REQUIRE(machine.fire("cancel", "", EventSource::Agent).ok);
+	REQUIRE_FALSE(contains(machine.snapshot().context, "reason"));
+}
+
+TEST_CASE("indexing refresh takes direct as an option")
+{
+	IndexingStateMachine machine;
+
+	REQUIRE_FALSE(machine.fire("refresh", R"({"direct":"yes"})", EventSource::Agent).ok);
+	REQUIRE(machine.snapshot().state == "idle");
+	const MachineFireResult direct = machine.fire("refresh", R"({"direct":true})", EventSource::Agent);
+	REQUIRE(direct.ok);
+	REQUIRE(contains(direct.message, "without the mode choice"));
+	REQUIRE(machine.snapshot().state == "pending");
 }
 
 TEST_CASE("indexing mode choice canceled returns to idle")

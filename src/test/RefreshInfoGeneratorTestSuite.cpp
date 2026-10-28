@@ -1315,3 +1315,29 @@ TEST_CASE("refresh info for updated files keeps the sources when the group names
 	}
 	cleanup();
 }
+
+TEST_CASE("changed files are those an update would find changed")
+{
+	cleanup();
+	{
+		const FilePath changedPath = sourceFolder().getConcatenated("changed.h");
+		const FilePath unchangedPath = sourceFolder().getConcatenated("unchanged.h");
+		const FilePath removedPath = sourceFolder().getConcatenated("removed.h");
+		addFileToFileSystem(changedPath);
+		addFileToFileSystem(unchangedPath);
+
+		std::shared_ptr<PersistentStorage> storage = std::make_shared<PersistentStorage>(
+			indexDbPath(), bookmarkDbPath());
+		storage->setup();
+		// Indexed a day ago, its content not stored: newer on disk reads as changed.
+		addVeryOldFileToStorage(changedPath, false, true, storage);
+		// "Indexed" tomorrow: not newer on disk.
+		addVeryNewFileToStorage(unchangedPath, false, true, storage);
+		addVeryNewFileToStorage(removedPath, false, true, storage);
+		storage->buildCaches();
+
+		const std::set<FilePath> changed = RefreshInfoGenerator::getChangedFilePaths(storage);
+		REQUIRE(changed == std::set<FilePath> {changedPath, removedPath});
+	}
+	cleanup();
+}

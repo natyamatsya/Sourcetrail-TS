@@ -188,6 +188,13 @@ void UndoRedoController::handleMessage(MessageChangeFileView* message)
 
 void UndoRedoController::handleMessage(MessageCodeShowDefinition* message)
 {
+	// Showing it elsewhere (the IDE, the editor) changes nothing here to go back to, and a
+	// replay must not open the editor again.
+	if (message->inIDE || message->openInEditor)
+	{
+		return;
+	}
+
 	if (sameMessageTypeAsLast(message) &&
 		static_cast<MessageCodeShowDefinition*>(lastMessage())->nodeId == message->nodeId)
 	{
@@ -394,13 +401,24 @@ void UndoRedoController::handleMessage(MessageIndexingFinished*  /*message*/)
 
 void UndoRedoController::handleMessage(MessageRefreshUIState* message)
 {
+	// Nothing shown yet: the overview. A tab that showed one activation only replays it
+	// like any other (it was taken for none, and such a tab showed the overview after a
+	// reindex).
+	if (m_iterator == m_list.begin())
+	{
+		MessageActivateOverview msg;
+		msg.setSchedulerId(getSchedulerId());
+		msg.dispatch();
+		return;
+	}
+
 	std::list<Command>::iterator startIterator = m_iterator;
 	do
 	{
 		std::advance(startIterator, -1);
 	} while (startIterator != m_list.begin() && startIterator->order != Command::Order::ORDER_ACTIVATE);
 
-	if (startIterator == m_list.begin() ||
+	if (startIterator->order != Command::Order::ORDER_ACTIVATE ||
 		(message->isAfterIndexing &&
 		 dynamic_cast<MessageActivateErrors*>(startIterator->message.get()) &&
 		 m_storageAccess->getErrorCount().total == 0))
@@ -468,6 +486,40 @@ void UndoRedoController::handleMessage(MessageShowScope* message)
 {
 	Command command(std::make_shared<MessageShowScope>(*message), Command::Order::ORDER_VIEW);
 	processCommand(command);
+}
+
+void UndoRedoController::handleMessage(MessageHistoryRestore* message)
+{
+	// Before what the tab shows: Back replays them, by their names (replayCommand), as
+	// after a reindex.
+	std::list<Command> restored;
+	for (const std::vector<SearchMatch>& matches: message->entries)
+	{
+		auto activation = std::make_shared<MessageActivateTokens>(message);
+		for (const SearchMatch& match: matches)
+		{
+			if (match.searchType == SearchMatch::SearchType::SEARCH_TOKEN && !match.tokenNames.empty())
+			{
+				utility::append(activation->tokenIds, match.tokenIds);
+				activation->searchMatches.push_back(match);
+			}
+		}
+		if (!activation->searchMatches.empty())
+		{
+			restored.emplace_back(activation, Command::Order::ORDER_ACTIVATE);
+		}
+	}
+	if (restored.empty())
+	{
+		return;
+	}
+
+	m_list.splice(m_list.begin(), restored);
+	if (m_iterator != m_list.begin())
+	{
+		getView()->setUndoButtonEnabled(true);
+	}
+	updateHistory();
 }
 
 void UndoRedoController::replayCommands()

@@ -400,3 +400,13 @@ void SqliteBookmarkStorage::setupTables()
 }
 
 void SqliteBookmarkStorage::setupPrecompiledStatements() {}
+
+std::string SqliteBookmarkStorage::getSession() const
+{
+	return getMetaValue("session");
+}
+
+void SqliteBookmarkStorage::setSession(const std::string& session)
+{
+	insertOrUpdateMetaValue("session", session);
+}

@@ -1024,10 +1024,13 @@ void QtCodeArea::contextMenuEvent(QContextMenuEvent* event)
 		checkOpenInTabActionEnabled(event->pos());
 		m_setIDECursorPositionAction->setEnabled(!getSourceLocationFile()->getFilePath().empty());
 
+		const LineColumn lineColumn = toLineColumn(this->cursorForPosition(event->pos()).position());
+
 		QtContextMenu menu(event, this);
 		menu.addAction(m_openInTabAction);
 		menu.addUndoActions();
 		menu.addSeparator();
+		menu.addOpenInEditorAction(getSourceLocationFile()->getFilePath(), lineColumn.line, lineColumn.column);
 		menu.addFileActions(getSourceLocationFile()->getFilePath());
 		menu.addSeparator();
 		menu.addAction(m_copyAction);

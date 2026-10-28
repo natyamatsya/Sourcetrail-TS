@@ -33,6 +33,10 @@ public:
 	std::vector<StorageBookmarkCategory> getAllBookmarkCategories() const;
 	StorageBookmarkCategory getBookmarkCategoryByName(const std::string& name) const;
 
+	// The tabs' session (tab_session::toJson), in the meta table: empty when none was kept.
+	std::string getSession() const;
+	void setSession(const std::string& session);
+
 private:
 	static const size_t s_storageVersion;
 

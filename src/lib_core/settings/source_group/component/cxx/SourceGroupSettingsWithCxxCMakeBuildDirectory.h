@@ -7,6 +7,9 @@
 #include "SourceGroupSettingsComponent.h"
 
 #ifndef SRCTRL_MODULE_PURVIEW
+#include <string>
+#include <vector>
+
 #include "FilePath.h"
 #endif
 
@@ -38,6 +41,16 @@ public:
 	const std::string& getTargetGlob() const;
 	void setTargetGlob(const std::string& glob);
 
+	// Without a preset: what the configure adds to `cmake -S <source> -B <build>`, one
+	// argument each: cache variables (-DBUILD_TESTS=OFF), a generator (-G Ninja), ...
+	const std::vector<std::string>& getCMakeArguments() const;
+	void setCMakeArguments(const std::vector<std::string>& arguments);
+
+	// With a target filter: also index the targets the matched ones depend on (link to,
+	// or need built first), transitively.
+	bool getIndexLinkedTargets() const;
+	void setIndexLinkedTargets(bool index);
+
 	// Optional: CMake configuration name (e.g. "Debug", "Release").
 	const std::string& getConfiguration() const;
 	void setConfiguration(const std::string& config);
@@ -53,6 +66,8 @@ private:
 	FilePath m_buildDirectory;
 	std::string m_targetGlob;
 	std::string m_configuration;
+	std::vector<std::string> m_cmakeArguments;
+	bool m_indexLinkedTargets = false;
 };
 
 #include "SourceGroupSettingsWithCxxCMakeBuildDirectory.inl"

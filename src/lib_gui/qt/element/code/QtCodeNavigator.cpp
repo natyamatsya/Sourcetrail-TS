@@ -974,6 +974,12 @@ void QtCodeNavigator::setModeSingle()
 	CodeFocusHandler::focusView();
 }
 
+void QtCodeNavigator::handleMessage(MessageIndexOutdated*  /*message*/)
+{
+	// The files' titles mark what the check found changed.
+	execution::qt::onUi(this, [this]() { m_current->onWindowFocus(); });
+}
+
 void QtCodeNavigator::handleMessage(MessageWindowFocus* message)
 {
 	if (message->focusIn)

@@ -5,6 +5,7 @@
 #include "ApplicationSettings.h"
 #include "ColorScheme.h"
 #include "FileSystem.h"
+#include "IndexFreshness.h"
 #include "MessageActivateFile.h"
 #include "MessageProjectEdit.h"
 #include "MessageTabOpenWith.h"
@@ -140,10 +141,14 @@ void QtCodeFileTitleButton::updateTexts()
 		toolTip = "incomplete " + toolTip;
 	}
 
+	// Out of date by the rule an update uses: newer on disk and found changed by the last
+	// check (IndexFreshness: its content differs). A file saved without changes, or put
+	// back as it was, is not; the status bar's "N files changed" counts the same files.
 	// The index stores mtimes to the second, the disk has sub-seconds: compare at the
 	// stored precision, or every file just indexed reads as changed since.
 	if ((!m_filePath.recheckExists()) ||
-		(TimeStamp(FileSystem::getLastWriteTime(m_filePath).toString()) > m_modificationTime))
+		(TimeStamp(FileSystem::getLastWriteTime(m_filePath).toString()) > m_modificationTime &&
+		 IndexFreshness::instance().isChanged(m_filePath)))
 	{
 		title += "*";
 		toolTip = "out-of-date " + toolTip;
@@ -226,6 +231,7 @@ void QtCodeFileTitleButton::contextMenuEvent(QContextMenuEvent* event)
 	menu.addAction(m_openInTabAction);
 	menu.addUndoActions();
 	menu.addSeparator();
+	menu.addOpenInEditorAction(m_filePath);
 	menu.addFileActions(path);
 	menu.show();
 }

@@ -75,6 +75,11 @@ public:
 	bool getShowDirectoryInCodeFileTitle() const;
 	void setShowDirectoryInCodeFileTitle(bool showDirectory);
 
+	//! "Open in Editor": the command with {file}, {line} and {column} (EditorCommand.h);
+	//! empty for the editor detected on this machine.
+	std::string getEditorCommand() const;
+	void setEditorCommand(const std::string& command);
+
 	int getWindowBaseWidth() const;
 	int getWindowBaseHeight() const;
 

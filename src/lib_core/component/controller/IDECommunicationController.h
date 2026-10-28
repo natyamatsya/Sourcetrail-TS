@@ -1,6 +1,7 @@
 #ifndef IDE_COMMUNICATION_CONTROLLER_H
 #define IDE_COMMUNICATION_CONTROLLER_H
 
+#include <mutex>
 #include <string>
 
 #include "Controller.h"
@@ -8,6 +9,8 @@
 
 #include "MessageListener.h"
 #include "MessageMoveIDECursor.h"
+#include "MessageOpenInEditor.h"
+#include "MessagePingReceived.h"
 #include "MessagePluginPortChange.h"
 #include "MessageWindowFocus.h"
 
@@ -17,6 +20,8 @@ class IDECommunicationController
 	: public Controller
 	, public MessageListener<MessageWindowFocus>
 	, public MessageListener<MessageMoveIDECursor>
+	, public MessageListener<MessageOpenInEditor>
+	, public MessageListener<MessagePingReceived>
 	, public MessageListener<MessagePluginPortChange>
 {
 public:
@@ -45,12 +50,18 @@ private:
 
 	void handleMessage(MessageWindowFocus* message) override;
 	void handleMessage(MessageMoveIDECursor* message) override;
+	void handleMessage(MessageOpenInEditor* message) override;
+	void handleMessage(MessagePingReceived* message) override;
 	void handleMessage(MessagePluginPortChange* message) override;
 	virtual void sendMessage(const std::string& message) const = 0;
 
 	StorageAccess* m_storageAccess;
 
 	bool m_enabled = true;
+
+	// The IDE whose plugin answered the last ping; empty for none.
+	mutable std::mutex m_ideMutex;
+	std::string m_connectedIde;
 };
 
 #endif	  // IDE_COMMUNICATION_CONTROLLER_H

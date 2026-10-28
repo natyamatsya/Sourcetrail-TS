@@ -42,6 +42,11 @@ void QtStatusBarView::hideIndexingProgress()
 	execution::qt::onUi(m_statusBar, [=, this]() { m_statusBar->hideIndexingProgress(); });
 }
 
+void QtStatusBarView::showChangedFiles(size_t changedFileCount)
+{
+	execution::qt::onUi(m_statusBar, [=, this]() { m_statusBar->showChangedFiles(changedFileCount); });
+}
+
 void QtStatusBarView::showTextEncoding(const std::string &encoding)
 {
 	execution::qt::onUi(m_statusBar, [=, this]() { m_statusBar->setTextEncoding(encoding); });

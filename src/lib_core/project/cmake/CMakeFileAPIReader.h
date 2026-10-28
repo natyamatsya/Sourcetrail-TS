@@ -129,6 +129,10 @@ public:
 		std::string displayName;	// may be empty
 		std::string description;	// may be empty
 		std::string generator;	// inherited; empty when the preset leaves it to CMake
+		std::string toolchainFile;	// inherited, as written (macros not expanded); may be empty
+		std::string binaryDir;	// inherited, as written (macros not expanded); may be empty
+		// The cache variables it sets, inherited ones included, by name: a bool as TRUE/FALSE.
+		std::vector<std::pair<std::string, std::string>> cacheVariables;
 		// The environment variables the preset's binaryDir, toolchainFile and cacheVariables
 		// read ($env{} / $penv{}) that neither its environment nor this process sets: a
 		// configure with it is likely to fail (a vcpkg toolchain without VCPKG_ROOT...).
@@ -195,16 +199,39 @@ public:
 	//   cmake -S <sourceDir> -B <buildDir>
 	// Otherwise falls back to:
 	//   cmake <buildDir>
-	// progress() is called with status messages during the cmake run.
+	// `cmakeArguments` follow those (cache variables like -DBUILD_TESTS=OFF, -G ...).
+	// progress() is called with status messages during the cmake run. CMake's output is
+	// kept in configureLogPath().
 	[[nodiscard]] std::expected<void, ConfigureError> ensureReply(
 		std::function<void(const std::string&)> progress = {},
 		const FilePath& sourceDir = {},
 		const std::string& presetName = {},
-		bool reconfigure = false);
+		bool reconfigure = false,
+		const std::vector<std::string>& cmakeArguments = {});
+
+	// Where ensureReply keeps the output of the last cmake it ran (Sourcetrail's query
+	// directory), and that output: empty when it ran none.
+	FilePath configureLogPath() const;
+	std::string lastConfigureLog() const;
+
+	// The first error in CMake's output, in a line: "CMake Error at CMakeLists.txt:12
+	// (add_subdirectory): The source directory ... does not contain a CMakeLists.txt
+	// file." Empty when it reports none.
+	[[nodiscard]] static std::string firstConfigureError(const std::string& output);
+
+	// Whether CMake's errors are what a git checkout without its submodules gives: a
+	// directory it adds has no CMakeLists.txt, and `sourceDir` has a .gitmodules.
+	[[nodiscard]] static bool missesSubmodules(const std::string& output, const FilePath& sourceDir);
 
 	// The configuration names the reply has (one for single-config generators,
 	// CMAKE_CONFIGURATION_TYPES for multi-config ones). Empty without a reply.
 	std::vector<std::string> getConfigurations() const;
+
+	// Of `configurations` (a multi-config generator's), the one built last: the newest
+	// output in .ninja_log under its directory, else the newest of the directories its
+	// outputs go to (<build>/<config>, CMakeFiles/<target>.dir/<config>). Empty when none
+	// was built. An empty configuration setting means this one, else the first.
+	std::string builtConfiguration(const std::vector<std::string>& configurations) const;
 
 	// A compileCommandFragment's arguments, unquoted as the generator's shell would: on
 	// Windows as a command line, elsewhere as a POSIX shell does, single quotes included
@@ -214,6 +241,15 @@ public:
 	// Whether a target name matches a target filter: empty matches every target,
 	// otherwise one or more wildcard patterns separated by ';' or ','.
 	[[nodiscard]] static bool matchesTargetFilter(const std::string& targetName, const std::string& targetFilter);
+
+	// The targets a filter matches and those they depend on (link to, or need built
+	// first), transitively, as a filter of their names. Empty stays empty (all targets).
+	[[nodiscard]] static std::string filterWithDependencies(
+		const std::vector<TargetEntry>& targets, const std::string& targetFilter);
+
+	// The filter's patterns no target matches ("nosuch*").
+	[[nodiscard]] static std::vector<std::string> unmatchedPatterns(
+		const std::vector<std::string>& targetNames, const std::string& targetFilter);
 
 	// Returns all source entries across all targets in the given configuration.
 	// Pass an empty string to use the first available configuration.

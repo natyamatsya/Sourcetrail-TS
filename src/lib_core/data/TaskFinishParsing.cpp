@@ -1,5 +1,7 @@
 #include "TaskFinishParsing.h"
 
+#include <algorithm>
+
 #include "DialogView.h"
 #include "IndexingRunState.h"
 #ifndef SRCTRL_MODULE_BUILD
@@ -56,16 +58,27 @@ void TaskFinishParsing::report(const IndexingRunState& state)
 	m_dialogView->hideUnknownProgressDialog();
 
 	const double time = TimeStamp::durationSeconds(start) + state.clearSeconds + state.indexSeconds;
-	const int indexedSourceFileCount = state.indexedSourceFileCount;
 	const int sourceFileCount = state.sourceFileCount;
 	const bool interruptedIndexing = state.interrupted;
+	// indexedSourceFileCount counts the storages handed on, which can be more than one
+	// per file (it read "33/26 source files indexed"): a run that finished indexed them
+	// all, an interrupted one at most all.
+	const int indexedSourceFileCount =
+		interruptedIndexing ? std::min<int>(state.indexedSourceFileCount, sourceFileCount) : sourceFileCount;
 
 	ErrorCountInfo errorInfo = m_storage->getErrorCount();
 
 	std::string status;
-	status += interruptedIndexing ? "Interrupted indexing: " : "Finished indexing: ";
-	status += std::to_string(indexedSourceFileCount) + "/" + std::to_string(sourceFileCount) +
-		" source files indexed; ";
+	if (interruptedIndexing)
+	{
+		status += "Interrupted indexing: " + std::to_string(indexedSourceFileCount) + "/" +
+			std::to_string(sourceFileCount) + " source files indexed; ";
+	}
+	else
+	{
+		status += "Finished indexing: " + std::to_string(sourceFileCount) + " source file" +
+			(sourceFileCount != 1 ? "s" : "") + " indexed; ";
+	}
 	status += TimeStamp::secondsToString(time);
 	status += "; " + std::to_string(errorInfo.total) + " error" +
 		(errorInfo.total != 1 ? "s" : "");

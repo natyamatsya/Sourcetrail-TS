@@ -104,6 +104,7 @@ if(SOURCETRAIL_CXX_MODULES_ENABLED)
 		CxxParserTestSuite.cpp
 		FileManagerTestSuite.cpp
 		FilePathFilterTestSuite.cpp
+		EditorCommandTestSuite.cpp
 		FilePathTestSuite.cpp
 		FileSystemTestSuite.cpp
 		GraphTestSuite.cpp
@@ -124,6 +125,7 @@ if(SOURCETRAIL_CXX_MODULES_ENABLED)
 		SourceGroupTestSuite.cpp
 		SourceLocationCollectionTestSuite.cpp
 		SqliteBookmarkStorageTestSuite.cpp
+		TabSessionTestSuite.cpp
 		SqliteIndexStorageTestSuite.cpp
 		StorageProviderTestSuite.cpp
 		StorageTestSuite.cpp

@@ -199,6 +199,7 @@ public slots:
 	static void closeWindow();
 	static void refresh();
 	static void forceRefresh();
+	static void openInEditor();
 
 	static void undo();
 	static void redo();
