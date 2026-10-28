@@ -45,6 +45,10 @@ inline const size_t ProjectSettings::VERSION = 8;
 inline LanguageType ProjectSettings::getLanguageOfProject(const FilePath& filePath)
 {
 	LanguageType languageType = LanguageType::UNKNOWN;
+	if (!filePath.exists())
+	{
+		return languageType;	// a recent project since moved or deleted: nothing to ask
+	}
 
 	ProjectSettings projectSettings;
 	projectSettings.load(filePath);
