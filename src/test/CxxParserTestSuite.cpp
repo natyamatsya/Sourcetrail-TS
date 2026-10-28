@@ -5217,8 +5217,8 @@ TEST_CASE("cxx parser reports a compile command whose working directory does not
 	REQUIRE(testStorage->errors.size() == 1);
 	REQUIRE(
 		testStorage->errors.front() ==
-		"The working directory of this file's compile command does not exist: " + missingDirectory +
-			" <1:1 1:1>");
+		"The working directory of this file's compile command does not exist: " +
+			FilePath(missingDirectory).str() + " <1:1 1:1>");	 // as FilePath spells it: / on Windows too
 	REQUIRE(storage->getErrors().front().fatal);
 	REQUIRE(testStorage->classes.empty());
 }
