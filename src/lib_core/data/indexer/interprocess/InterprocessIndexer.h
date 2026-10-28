@@ -7,7 +7,9 @@
 #include "InterprocessBackend.h"
 #include "utilityExpected.h"
 
+#include <atomic>
 #include <expected>
+#include <functional>
 #endif
 
 SRCTRL_EXPORT enum class InterprocessIndexerErrorCode
@@ -23,10 +25,19 @@ SRCTRL_EXPORT class InterprocessIndexer
 public:
 	using WorkResult = std::expected<void, InterprocessIndexerError>;
 
+	//! Whether the app that started this indexer still runs. Only the app ends the
+	//! indexer's wait for commands (it stops the queue or interrupts), so an indexer
+	//! whose app was killed would wait forever without asking.
+	using ParentAlive = std::function<bool()>;
+
 	//! A non-empty onlyGroupId pins this indexer to commands of one source
-	//! group (fan-out S2); empty processes commands of any group.
+	//! group (fan-out S2); empty processes commands of any group. Work ends once
+	//! `parentAlive` says no (checked every 100 ms).
 	InterprocessIndexer(
-		const std::string& uuid, ProcessId processId, const std::string& onlyGroupId = std::string());
+		const std::string& uuid,
+		ProcessId processId,
+		const std::string& onlyGroupId = std::string(),
+		ParentAlive parentAlive = []() { return true; });
 
 	WorkResult work();
 
@@ -38,6 +49,8 @@ private:
 	const std::string m_uuid;
 	const ProcessId m_processId;
 	const std::string m_onlyGroupId;
+	const ParentAlive m_parentAlive;
+	std::atomic<bool> m_parentGone = false;
 };
 
 #ifndef SRCTRL_MODULE_PURVIEW

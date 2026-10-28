@@ -11,6 +11,8 @@
 #include "Presenter.h"
 #include "SearchMatch.h"
 
+class ProjectStateMachine;
+
 // Shows what the search machine does to the search box for someone else (an agent):
 // presentQuery(query) shows a query as typed, dismissSuggestions() closes the list,
 // submitQuery() searches for what the box holds (Enter, the search button),
@@ -148,6 +150,9 @@ public:
 
 	static std::shared_ptr<SearchStateMachine> instance();
 
+	//! `project`: what there is to search; none, always a project (tests).
+	explicit SearchStateMachine(std::shared_ptr<const ProjectStateMachine> project = nullptr);
+
 	// The search box: shows what an agent does there (one at a time).
 	void attach(SearchPresenter presenter);
 	void detach(SearchPresenter presenter);
@@ -182,6 +187,11 @@ public:
 private:
 	using Event = SearchMachine::Event;
 
+	// Without a project nothing answers a query (MessageSearchAutocomplete goes to a tab's
+	// controller, and there is no tab): what is typed would wait in "completing" for good.
+	bool hasProject() const;
+
+	std::shared_ptr<const ProjectStateMachine> m_project;
 	ConcurrentStateMachine<SearchMachine> m_machine;
 };
 

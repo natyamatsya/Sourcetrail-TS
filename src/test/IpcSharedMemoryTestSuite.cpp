@@ -1,14 +1,21 @@
 #include "Catch2.hpp"
 
+#include <algorithm>
+#include <chrono>
 #include <cstring>
 #include <memory>
+#include <string>
 #include <thread>
 #include <vector>
+
+#include <unistd.h>
 
 #include <flatbuffers/flatbuffers.h>
 
 #ifndef SRCTRL_MODULE_BUILD
+#include "GarbageCollectorSerializer.h"
 #include "IpcSharedMemory.h"
+#include "IpcSharedMemoryGarbageCollector.h"
 #endif
 #include "intermediate_storage_generated.h"
 
@@ -181,4 +188,58 @@ TEST_CASE("ipc shared memory")
 		// After destructor, creating with OPEN_ONLY should fail
 		REQUIRE_THROWS(IpcSharedMemory(memName, 4096, OPEN_ONLY));
 	}
+}
+
+namespace
+{
+// Whether the garbage collector segment behind `memory` lists the instance `uuid`.
+bool listsInstance(IpcSharedMemory& memory, const std::string& uuid)
+{
+	const IpcSharedMemory::ScopedAccess access(&memory, std::chrono::milliseconds(500));
+	std::size_t len = 0;
+	const uint8_t* buf = access.read(&len);
+	if (len < 4 || std::memcmp(buf, "\0\0\0\0", 4) == 0)
+		return false;
+	const IpcSerializer::GarbageCollectorData data = IpcSerializer::deserializeGarbageCollector(buf, len);
+	return std::ranges::any_of(data.instances, [&](const auto& instance) { return instance.first == uuid; });
+}
+}	 // namespace
+
+// Another process holding the collector's lock for long (stopped in a debugger) or for good
+// (crashed) once ended every instance on the machine: the collector thread let the lock
+// timeout escape, and the app aborted. An update now fails and is tried again.
+TEST_CASE("ipc garbage collector outlives a holder of its lock")
+{
+	using enum IpcSharedMemory::AccessMode;
+	const std::string memName = "gc_ipc_test_" + std::to_string(::getpid());
+	const std::string uuid = "gc-test-instance";
+	IpcSharedMemory::deleteSharedMemory(memName);
+	{
+		IpcSharedMemory holder(memName, 65536, OPEN_OR_CREATE);
+		IpcSharedMemoryGarbageCollector collector(memName);
+		{
+			const IpcSharedMemory::ScopedAccess held(&holder);
+
+			const IpcSharedMemoryGarbageCollector::UpdateResult updated = collector.update();
+			REQUIRE_FALSE(updated);
+			REQUIRE(updated.error().code == IpcGarbageCollectorErrorCode::SharedMemoryUnavailable);
+
+			collector.run(uuid);	// its first updates fail: the process lives on
+			std::this_thread::sleep_for(std::chrono::milliseconds(1500));
+		}
+
+		// The lock is free: a later update gets through.
+		bool listed = false;
+		const auto deadline = std::chrono::steady_clock::now() + std::chrono::seconds(5);
+		while (!listed && std::chrono::steady_clock::now() < deadline)
+		{
+			listed = listsInstance(holder, uuid);
+			if (!listed)
+				std::this_thread::sleep_for(std::chrono::milliseconds(100));
+		}
+		REQUIRE(listed);
+		collector.stop();
+		REQUIRE_FALSE(listsInstance(holder, uuid));
+	}
+	IpcSharedMemory::deleteSharedMemory(memName);
 }

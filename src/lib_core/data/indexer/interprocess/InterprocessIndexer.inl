@@ -22,16 +22,18 @@
 #include <mutex>
 #include <set>
 #include <thread>
+#include <utility>
 #endif
 
 inline InterprocessIndexer::InterprocessIndexer(
-	const std::string& uuid, ProcessId processId, const std::string& onlyGroupId)
+	const std::string& uuid, ProcessId processId, const std::string& onlyGroupId, ParentAlive parentAlive)
 	: m_interprocessIndexerCommandManager(uuid, processId, false)
 	, m_interprocessIndexingStatusManager(uuid, processId, false)
 	, m_interprocessIntermediateStorageManager(uuid, processId, false)
 	, m_uuid(uuid)
 	, m_processId(processId)
 	, m_onlyGroupId(onlyGroupId)
+	, m_parentAlive(std::move(parentAlive))
 {
 	if (!m_onlyGroupId.empty())
 		LOG_INFO_STREAM(<< m_processId << " pinned to source group " << m_onlyGroupId);
@@ -91,10 +93,30 @@ inline InterprocessIndexer::WorkResult InterprocessIndexer::work()
 					if (!updaterThreadRunning)
 						break;
 
-					if (!m_interprocessIndexingStatusManager.getIndexingInterrupted())
-						continue;
+					if (!m_parentAlive())
+					{
+						LOG_WARNING_STREAM(<< m_processId << " the app that started this indexer is gone; stopping.");
+						m_parentGone = true;
+					}
+					else
+					{
+						// A lock timeout here must not end the process from this thread: the
+						// work loop meets the same segment and reports its error.
+						const auto interrupted = utility::expectedFromExceptions<bool>(
+							InterprocessIndexerErrorCode::ExecutionException,
+							InterprocessIndexerErrorCode::ExecutionUnknownException,
+							"polling the indexing interrupt",
+							[&]() { return m_interprocessIndexingStatusManager.getIndexingInterrupted(); });
+						if (!interrupted)
+						{
+							LOG_ERROR_STREAM(<< m_processId << " " << interrupted.error());
+							continue;
+						}
+						if (!*interrupted)
+							continue;
+						LOG_INFO_STREAM(<< m_processId << " received indexer interrupt command.");
+					}
 
-					LOG_INFO_STREAM(<< m_processId << " received indexer interrupt command.");
 					if (indexer)
 						indexer->interrupt();
 					updaterThreadRunning = false;
@@ -115,6 +137,9 @@ inline InterprocessIndexer::WorkResult InterprocessIndexer::work()
 				const std::shared_ptr<IndexerCommand> indexerCommand =
 					m_interprocessIndexerCommandManager.popIndexerCommandBlocking(
 						skipTypes, 500, m_onlyGroupId);
+
+				if (m_parentGone)
+					return;
 
 				if (!indexerCommand)
 				{
@@ -182,7 +207,11 @@ inline InterprocessIndexer::WorkResult InterprocessIndexer::work()
 					for (const std::shared_ptr<IntermediateStorage>& chunk: chunks)
 					{
 						while (m_interprocessIntermediateStorageManager.getIntermediateStorageCount() >= 2)
+						{
+							if (m_parentGone)
+								return;	// nobody takes them any more
 							std::this_thread::sleep_for(std::chrono::milliseconds(25));
+						}
 						m_interprocessIntermediateStorageManager.pushIntermediateStorage(chunk);
 					}
 				}

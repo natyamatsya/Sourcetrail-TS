@@ -4,6 +4,7 @@
 #include "SrctrlModule.h"
 
 #ifndef SRCTRL_MODULE_PURVIEW
+#include <chrono>
 #include <cstddef>
 #include <cstdint>
 #include <atomic>
@@ -42,7 +43,14 @@ public:
 	class ScopedAccess
 	{
 	public:
+		//! Waits up to 10 s for the lock and throws std::runtime_error if it does not
+		//! come; the segment's later accesses then fail at once (the lock counts as
+		//! broken).
 		ScopedAccess(IpcSharedMemory* memory);
+		//! Waits up to `lockTimeout` for the lock and throws std::runtime_error if it
+		//! does not come, leaving the lock as it is: for a caller that tries again later
+		//! (its holder may release it, or die and be recovered, meanwhile).
+		ScopedAccess(IpcSharedMemory* memory, std::chrono::milliseconds lockTimeout);
 		~ScopedAccess();
 
 		ScopedAccess(const ScopedAccess&) = delete;

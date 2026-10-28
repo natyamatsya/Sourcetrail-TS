@@ -87,6 +87,7 @@ private:
 	void updateErrorCount(size_t errorCount, size_t fatalCount);
 	// Stops the "Processing Files" indicator of the mode choice, or hides it once shown.
 	void stopCounting();
+	void endPreparationStatus();
 
 	template <typename DialogType, typename... ParamTypes>
 	DialogType* createWindow(ParamTypes... params);

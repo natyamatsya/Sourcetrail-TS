@@ -183,6 +183,16 @@ struct Scene
 		action->setShortcut(QKeySequence(Qt::CTRL | Qt::Key_R));
 		window.addAction(action);
 		QObject::connect(action, &QAction::triggered, [this]() { recorder.events.emplace_back("probe_action triggered"); });
+		// Shortcuts with Shift and with Alt (Option): the platform matches those through the
+		// modifiers too.
+		auto* shiftAction{new QAction(&window)};
+		shiftAction->setShortcut(QKeySequence(Qt::SHIFT | Qt::Key_F2));
+		window.addAction(shiftAction);
+		QObject::connect(shiftAction, &QAction::triggered, [this]() { recorder.events.emplace_back("probe_shift_action triggered"); });
+		auto* altAction{new QAction(&window)};
+		altAction->setShortcut(QKeySequence(Qt::ALT | Qt::Key_F3));
+		window.addAction(altAction);
+		QObject::connect(altAction, &QAction::triggered, [this]() { recorder.events.emplace_back("probe_alt_action triggered"); });
 		window.show();
 		window.activateWindow();
 		edit->setFocus();
@@ -458,5 +468,36 @@ TEST_CASE("an agent's input reaches the widgets as a person's does")
 			{key(InputKind::KeyPress, Qt::Key_R, Qt::ControlModifier, QString{}, onProbe),
 			 key(InputKind::KeyRelease, Qt::Key_R, Qt::ControlModifier, QString{}, onProbe)})};
 		CHECK(has(events, "probe_action triggered"));
+	}
+
+	SECTION("a shortcut with shift triggers its action")
+	{
+		const auto events{requireSame(
+			nothing,
+			{key(InputKind::KeyPress, Qt::Key_F2, Qt::ShiftModifier, QString{}, onProbe),
+			 key(InputKind::KeyRelease, Qt::Key_F2, Qt::ShiftModifier, QString{}, onProbe)})};
+		CHECK(has(events, "probe_shift_action triggered"));
+	}
+
+	SECTION("a shortcut with alt triggers its action")
+	{
+		const auto events{requireSame(
+			nothing,
+			{key(InputKind::KeyPress, Qt::Key_F3, Qt::AltModifier, QString{}, onProbe),
+			 key(InputKind::KeyRelease, Qt::Key_F3, Qt::AltModifier, QString{}, onProbe)})};
+		CHECK(has(events, "probe_alt_action triggered"));
+	}
+
+	SECTION("a key keeps its shift and alt on the way to the focused widget")
+	{
+		// What the views read their own keys from (QtActions::detectAction: Shift+Y is Forward).
+		const auto events{requireSame(
+			nothing,
+			{key(InputKind::KeyPress, Qt::Key_Y, Qt::ShiftModifier, QStringLiteral("Y"), onProbe),
+			 key(InputKind::KeyRelease, Qt::Key_Y, Qt::ShiftModifier, QStringLiteral("Y"), onProbe),
+			 key(InputKind::KeyPress, Qt::Key_Right, Qt::AltModifier, QString{}, onProbe),
+			 key(InputKind::KeyRelease, Qt::Key_Right, Qt::AltModifier, QString{}, onProbe)})};
+		CHECK(has(events, "probe_edit key-press Shift+Y"));
+		CHECK(has(events, "probe_edit key-press Alt+Right"));
 	}
 }

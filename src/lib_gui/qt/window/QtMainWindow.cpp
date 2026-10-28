@@ -621,6 +621,12 @@ void QtMainWindow::keyPressEvent(QKeyEvent *event)
 			MessageHistoryUndo().dispatch();
 			break;
 
+		// As the graph and the code view do: a key no view took (the window was not active,
+		// or the focus was elsewhere) went Back on Y and nowhere on Shift+Y.
+		case Action::RedoHistory:
+			MessageHistoryRedo().dispatch();
+			break;
+
 		case Action::Cancel:
 			emit hideScreenSearch();
 			emit hideIndexingDialog();
