@@ -145,6 +145,16 @@ inline void ApplicationSettings::setShowDirectoryInCodeFileTitle(bool showDirect
 	setValue<bool>("application/directory_in_code_title", showDirectory);
 }
 
+inline std::string ApplicationSettings::getEditorCommand() const
+{
+	return getValue<std::string>("application/editor_command", "");
+}
+
+inline void ApplicationSettings::setEditorCommand(const std::string& command)
+{
+	setValue<std::string>("application/editor_command", command);
+}
+
 inline std::string ApplicationSettings::getColorSchemeName() const
 {
 	return getValue<std::string>("application/color_scheme", "bright");

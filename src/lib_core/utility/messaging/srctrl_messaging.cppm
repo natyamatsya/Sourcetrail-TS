@@ -121,6 +121,7 @@ extern "C++" {
 #include "MessageLoadProject.h"
 #include "MessageLogFilterChanged.h"
 #include "MessageMoveIDECursor.h"
+#include "MessageOpenInEditor.h"
 #include "MessagePingReceived.h"
 #include "MessagePluginPortChange.h"
 #include "MessageProjectEdit.h"

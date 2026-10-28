@@ -18,6 +18,7 @@
 #include "MessageBookmarkCreate.h"
 #include "MessageCloseProject.h"
 #include "MessageCodeReference.h"
+#include "MessageCodeShowDefinition.h"
 #include "MessageCustomTrailShow.h"
 #include "MessageErrorsHelpMessage.h"
 #include "MessageFind.h"
@@ -1042,6 +1043,11 @@ void QtMainWindow::refresh()
 	MessageRefresh().direct().dispatch();
 }
 
+void QtMainWindow::openInEditor()
+{
+	MessageCodeShowDefinition::inEditor(0).dispatch();
+}
+
 void QtMainWindow::forceRefresh()
 {
 	MessageIndexingShowDialog().dispatch();
@@ -1358,6 +1364,9 @@ void QtMainWindow::setupEditMenu()
 	menu->addSeparator();
 
 	menu->addAction(QtActions::customTrailDialog().text(), QtActions::customTrailDialog().shortcut(), this, &QtMainWindow::customTrail);
+
+	// The active symbol's definition, in the editor (or the connected IDE).
+	menu->addAction(QtActions::openInEditor().text(), QtActions::openInEditor().shortcut(), this, &QtMainWindow::openInEditor);
 
 	menu->addSeparator();
 

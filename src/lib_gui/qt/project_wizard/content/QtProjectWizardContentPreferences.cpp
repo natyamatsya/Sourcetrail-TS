@@ -4,6 +4,7 @@
 
 #ifndef SRCTRL_MODULE_BUILD
 #include "ApplicationSettings.h"
+#include "EditorCommand.h"
 #include "FileLogger.h"
 #include "FileSystem.h"
 #include "MessageSwitchColorScheme.h"
@@ -279,6 +280,36 @@ void QtProjectWizardContentPreferences::populate(QGridLayout* layout, int& row)
 
 	addGap(layout, row);
 
+	// Editor
+	addTitle(tr("EDITOR"), layout, row);
+
+	m_editorCommand = addLineEdit(tr("Editor Command"),
+		tr("<p>What <b>Open in Editor</b> runs (%1, and the code view's, file title's and graph "
+		   "node's context menus) when no IDE plug-in is connected. <b>{file}</b>, <b>{line}</b> and "
+		   "<b>{column}</b> are filled in; without {file} the file is the last argument. It runs "
+		   "without a shell: quote words with blanks, a file name is always one argument.</p>"
+		   "<p>Examples: <code>code -g {file}:{line}:{column}</code>, <code>subl "
+		   "{file}:{line}:{column}</code>, <code>zed {file}:{line}:{column}</code>, <code>mate -l "
+		   "{line} {file}</code>, <code>clion --line {line} {file}</code>.</p>"
+		   "<p>Empty: the editor found on this computer ($VISUAL or $EDITOR when it is one of these, "
+		   "else the first of code, cursor, zed, subl, mate), shown greyed. With none, the system's "
+		   "default app opens the file (without the line).</p>"
+		   "<p>A terminal editor (vim, nano, emacs) needs a terminal to run in, which Sourcetrail "
+		   "does not open: name one in the command, e.g. <code>open -na Terminal --args vim "
+		   "+{line} {file}</code> or <code>x-terminal-emulator -e vim +{line} {file}</code>.</p>")
+			.arg(QtActions::openInEditor().shortcut()),
+		layout,
+		row);
+	m_editorCommand->setObjectName(QStringLiteral("editor_command"));
+	m_editorCommand->setAccessibleName(tr("Editor Command"));
+	{
+		const std::string detected = editor_command::detectCommand();
+		m_editorCommand->setPlaceholderText(
+			detected.empty() ? tr("the system's default app") : QString::fromStdString(detected));
+	}
+
+	addGap(layout, row);
+
 	// Plugins
 	addTitle(tr("PLUGIN"), layout, row);
 
@@ -326,6 +357,7 @@ void QtProjectWizardContentPreferences::load()
 	m_tabWidth->setCurrentIndex(appSettings->getCodeTabWidth() - 1);
 
 	m_textEncoding->setCurrentText(QString::fromStdString(appSettings->getTextEncoding()));
+	m_editorCommand->setText(QString::fromStdString(appSettings->getEditorCommand()));
 
 	const auto selectColorScheme = [this](QComboBox* comboBox, const FilePath& colorSchemePath)
 	{
@@ -452,6 +484,8 @@ void QtProjectWizardContentPreferences::save()
 
 	appSettings->setIndexerThreadCount(m_threads->currentIndex());	  // index and value are the same
 
+	appSettings->setEditorCommand(m_editorCommand->text().trimmed().toStdString());
+
 	appSettings->save();
 }
 
@@ -464,6 +498,16 @@ bool QtProjectWizardContentPreferences::check()
 		m_window->tell(tr("The Scroll Speed \"%1\" is not a positive number. Please enter a "
 						  "multiplier like 0.5 or 2.").arg(m_scrollSpeed->text()));
 		return false;
+	}
+
+	if (const QString command = m_editorCommand->text().trimmed(); !command.isEmpty())
+	{
+		if (const auto words = editor_command::split(command.toStdString()); !words)
+		{
+			m_window->tell(tr("The Editor Command \"%1\" cannot be used: %2.")
+							   .arg(command, QString::fromStdString(editor_command::toString(words.error()))));
+			return false;
+		}
 	}
 
 	const auto port = [](const QLineEdit& lineEdit) -> std::optional<int> {
@@ -540,6 +584,7 @@ std::vector<std::pair<std::string, QWidget*>> QtProjectWizardContentPreferences:
 		{"indexer_logging", m_verboseIndexerLoggingEnabled},
 		{"sourcetrail_port", m_sourcetrailPort},
 		{"plugin_port", m_pluginPort},
+		{"editor_command", m_editorCommand},
 		{"indexer_threads", m_threads}};
 	if (m_screenAutoScaling)
 	{

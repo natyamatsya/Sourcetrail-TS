@@ -662,7 +662,8 @@ previews at once): context.fields lists them with their values. Check boxes are 
 indexer_logging, ...); lists take one of their items' text (font_size \"14\", color_scheme \
 \"dark\", indexer_threads \"default\" or \"4\", auto_scaling \"system\"|\"off\"|\"on\", \
 scale_factor \"125%\", font_face a monospaced font); text fields are strings (scroll_speed, \
-sourcetrail_port, plugin_port, log_directory); header_search_paths and framework_search_paths \
+sourcetrail_port, plugin_port, log_directory, editor_command: Open in Editor's command with \
+{file}, {line}, {column}, empty for the detected editor); header_search_paths and framework_search_paths \
 are lists of paths. An unknown field, a value of the wrong kind or an item a list lacks is \
 refused, naming what there is.
   save                             editing: Save: checks the fields (a bad port, scroll speed, \

@@ -188,6 +188,13 @@ void UndoRedoController::handleMessage(MessageChangeFileView* message)
 
 void UndoRedoController::handleMessage(MessageCodeShowDefinition* message)
 {
+	// Showing it elsewhere (the IDE, the editor) changes nothing here to go back to, and a
+	// replay must not open the editor again.
+	if (message->inIDE || message->openInEditor)
+	{
+		return;
+	}
+
 	if (sameMessageTypeAsLast(message) &&
 		static_cast<MessageCodeShowDefinition*>(lastMessage())->nodeId == message->nodeId)
 	{

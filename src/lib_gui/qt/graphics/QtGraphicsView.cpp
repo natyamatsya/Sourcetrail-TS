@@ -95,6 +95,11 @@ QtGraphicsView::QtGraphicsView(GraphFocusHandler* focusHandler, QWidget* parent)
 	m_showInIDEAction->setToolTip(tr("Show definition of this symbol in the IDE (via plug-in)"));
 	connect(m_showInIDEAction, &QAction::triggered, this, &QtGraphicsView::showInIDE);
 
+	m_openInEditorAction = new QAction(QtActions::openInEditor().menuText(), this);
+	m_openInEditorAction->setStatusTip(tr("Open the definition of this symbol in the editor"));
+	m_openInEditorAction->setToolTip(tr("Open the definition of this symbol in the editor"));
+	connect(m_openInEditorAction, &QAction::triggered, this, &QtGraphicsView::openInEditor);
+
 	m_showDefinitionAction = new QAction(QtActions::showDefinitionWithMouse().menuText(), this);
 	m_showDefinitionAction->setStatusTip(tr("Show definition of this symbol in the code"));
 	m_showDefinitionAction->setToolTip(tr("Show definition of this symbol in the code"));
@@ -533,6 +538,7 @@ void QtGraphicsView::contextMenuEvent(QContextMenuEvent* event)
 	m_collapseAction->setEnabled(m_collapseNodeId != 0);
 	m_expandAction->setEnabled(m_expandNodeId != 0);
 	m_showInIDEAction->setEnabled(m_hideNodeId != 0);
+	m_openInEditorAction->setEnabled(m_hideNodeId != 0);
 	m_showDefinitionAction->setEnabled(m_hideNodeId != 0);
 	m_hideNodeAction->setEnabled(m_hideNodeId != 0);
 	m_hideEdgeAction->setEnabled(m_hideEdgeId != 0);
@@ -548,6 +554,7 @@ void QtGraphicsView::contextMenuEvent(QContextMenuEvent* event)
 	menu.addSeparator();
 
 	menu.addAction(m_showDefinitionAction);
+	menu.addAction(m_openInEditorAction);
 	menu.addAction(m_showInIDEAction);
 
 	if (m_collapseNodeId)
@@ -756,6 +763,11 @@ void QtGraphicsView::expandNode()
 void QtGraphicsView::showInIDE()
 {
 	MessageCodeShowDefinition(m_hideNodeId, true).dispatch();
+}
+
+void QtGraphicsView::openInEditor()
+{
+	MessageCodeShowDefinition::inEditor(m_hideNodeId).dispatch();
 }
 
 void QtGraphicsView::showDefinition()

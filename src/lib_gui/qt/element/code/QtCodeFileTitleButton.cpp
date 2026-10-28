@@ -231,6 +231,7 @@ void QtCodeFileTitleButton::contextMenuEvent(QContextMenuEvent* event)
 	menu.addAction(m_openInTabAction);
 	menu.addUndoActions();
 	menu.addSeparator();
+	menu.addOpenInEditorAction(m_filePath);
 	menu.addFileActions(path);
 	menu.show();
 }

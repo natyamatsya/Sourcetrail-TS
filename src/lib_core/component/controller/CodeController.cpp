@@ -11,6 +11,7 @@
 #include "FileInfo.h"
 #include "MessageFocusView.h"
 #include "MessageMoveIDECursor.h"
+#include "MessageOpenInEditor.h"
 #include "MessageShowError.h"
 #include "MessageStatus.h"
 #include "SourceLocation.h"
@@ -380,11 +381,20 @@ void CodeController::handleMessage(MessageCodeShowDefinition* message)
 	TRACE("code show definition");
 
 	Id nodeId = message->nodeId;
+	if (!nodeId && message->openInEditor && !m_codeParams.activeTokenIds.empty())
+	{
+		nodeId = m_codeParams.activeTokenIds.front();	// the active symbol
+	}
 
 	std::shared_ptr<SourceLocationCollection> collection =
 		m_storageAccess->getSourceLocationsForTokenIds({nodeId});
 	if (!collection->getSourceLocationFileCount())
 	{
+		if (message->openInEditor)
+		{
+			MessageStatus("Nothing to open in the editor: no symbol with a location is active.").dispatch();
+			return;
+		}
 		LOG_ERROR("MessageCodeShowDefinition did not contain a nodeId with location files.");
 		return;
 	}
@@ -436,6 +446,14 @@ void CodeController::handleMessage(MessageCodeShowDefinition* message)
 	else	// otherwise first file
 	{
 		filePath = collection->getSourceLocationFiles().begin()->second->getFilePath();
+	}
+
+	if (message->openInEditor)
+	{
+		MessageOpenInEditor(
+			filePath, static_cast<unsigned int>(lineNumber), static_cast<unsigned int>(columnNumber))
+			.dispatch();
+		return;
 	}
 
 	if (message->inIDE)
