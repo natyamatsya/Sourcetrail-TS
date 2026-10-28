@@ -9,6 +9,8 @@ import sqlpp23.sqlite3;
 
 #include "SqliteStorage.h"
 
+#include <stdexcept>
+
 #ifndef SRCTRL_SQLPP23_MODULE
 #include <sqlpp23/sqlpp23.h>
 #endif
@@ -228,7 +230,9 @@ void SqliteStorage::setupMetaTable()
 	{
 		LOG_ERROR(std::to_string(e.errorCode()) + ": " + e.errorMessage());
 
-		throw(std::exception());
+		throw std::runtime_error(
+			"cannot create the meta table of " + m_dbFilePath.str() + ": SQLite error " + std::to_string(e.errorCode()) + ": " +
+			e.errorMessage());
 	}
 }
 

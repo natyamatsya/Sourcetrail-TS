@@ -231,3 +231,28 @@ TEST_CASE("an index a process left with its log is replaced")
 	REQUIRE(nodeCount(indexDb) == 3);
 }
 #endif
+
+// A 238-character project name: its index's files could not be made, which showed as
+// a damaged index whose reindex failed and asked again.
+TEST_CASE("an index name too long for the file system is a problem named so")
+{
+	const TestTempDirectory directory {"IndexDatabaseFilesTestSuite"};
+	const std::string longName(240, 'p');
+	const FilePath indexDb(directory.getFilePath(longName + ".srctrl.db"));
+	const FilePath tempIndexDb(directory.getFilePath(longName + ".srctrl.db.tmp"));
+
+	const std::optional<std::string> problem = index_database::nameProblem(indexDb, tempIndexDb);
+
+	REQUIRE(problem);
+	REQUIRE(problem->find("too long") != std::string::npos);
+	REQUIRE(problem->find("at most 233 bytes") != std::string::npos);
+}
+
+TEST_CASE("an index name the file system allows is no problem")
+{
+	const TestTempDirectory directory {"IndexDatabaseFilesTestSuite"};
+	const std::string name(233, 'p');
+
+	REQUIRE_FALSE(index_database::nameProblem(
+		FilePath(directory.getFilePath(name + ".srctrl.db")), FilePath(directory.getFilePath(name + ".srctrl.db.tmp"))));
+}

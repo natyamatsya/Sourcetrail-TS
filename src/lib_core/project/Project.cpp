@@ -20,6 +20,7 @@
 #include "ProjectStateMachine.h"
 #include "MemoryIndexerCommandProvider.h"
 #include "PersistentStorage.h"
+#include "CppSQLite3.h"
 #include "ProjectSettings.h"
 #include "RefreshInfoGenerator.h"
 #include "SourceGroup.h"
@@ -280,6 +281,7 @@ void Project::openIndex()
 	m_loadProblem.clear();
 	const FilePath dbPath = m_settings->getDBFilePath();
 	const FilePath bookmarkDbPath = m_settings->getBookmarkDBFilePath();
+	m_indexFilesProblem = index_database::nameProblem(dbPath, m_settings->getTempDBFilePath());
 
 	m_storage = std::make_shared<PersistentStorage>(dbPath, bookmarkDbPath);
 
@@ -332,6 +334,13 @@ void Project::openIndex()
 		m_state = ProjectStateType::PROJECT_STATE_DB_CORRUPTED;
 	}
 
+	if (m_indexFilesProblem)
+	{
+		LOG_ERROR(*m_indexFilesProblem);
+		m_state = ProjectStateType::PROJECT_STATE_DB_CORRUPTED;
+		m_loadProblem = *m_indexFilesProblem;
+	}
+
 	m_sourceGroups = SourceGroupFactory::getInstance()->createSourceGroups(
 		m_settings->getAllSourceGroupSettings());
 
@@ -377,7 +386,11 @@ void Project::finishLoad(bool directRefresh)
 				.dispatch();
 			break;
 		default:
-			MessageStatus("Project could not be loaded.", false, false).dispatch();
+			MessageStatus(
+				m_loadProblem.empty() ? "Project could not be loaded." : "Project could not be loaded. " + m_loadProblem,
+				!m_loadProblem.empty(),
+				false)
+				.dispatch();
 		}
 	}
 
@@ -405,32 +418,66 @@ void Project::refresh(std::shared_ptr<DialogView> dialogView, RefreshMode refres
 	// whose runner would swallow an escaping exception with a single log line -- and without a
 	// terminal MessageIndexingFinished a headless run waits forever. Convert any escape into a
 	// failed outcome and dispatch the terminal event ourselves.
-	refreshGuarded([&]() { refreshImpl(dialogView, refreshMode, direct); });
+	guarded("refreshing the project failed", dialogView, [&]() { refreshImpl(dialogView, refreshMode, direct); });
 }
 
 void Project::refreshPlanned(std::shared_ptr<DialogView> dialogView, const RefreshPlan& plan)
 {
-	refreshGuarded([&]() { refreshPlannedImpl(dialogView, plan); });
+	guarded("refreshing the project failed", dialogView, [&]() { refreshPlannedImpl(dialogView, plan); });
 }
 
-void Project::refreshGuarded(const std::function<void()>& refresh)
+void Project::guarded(
+	const std::string& context, const std::shared_ptr<DialogView>& dialogView, const std::function<void()>& step)
 {
 	const IndexingOutcome outcome = utility::expectedFromExceptions<void>(
 		IndexingErrorCode::PipelineFailed,
 		IndexingErrorCode::PipelineFailed,
-		"project refresh failed",
-		refresh);
+		context,
+		[&]() {
+			try
+			{
+				step();
+			}
+			catch (CppSQLite3Exception& e)	// no std::exception: it would be "[unknown exception type]"
+			{
+				throw std::runtime_error("SQLite error " + std::to_string(e.errorCode()) + ": " + e.errorMessage());
+			}
+		});
 	if (!outcome)
 	{
-		LOG_ERROR(utility::expectedErrorToString(outcome.error()));
-		m_refreshStage = RefreshStageType::NONE;
-		IndexingStateMachine::instance()->ended(utility::expectedErrorToString(outcome.error()));
-		MessageIndexingFinished(outcome).dispatch();
+		endRefused(outcome.error(), dialogView);
 	}
+}
+
+void Project::endRefused(const IndexingError& error, const std::shared_ptr<DialogView>& dialogView, bool notify)
+{
+	const std::string message = utility::expectedErrorToString(error);
+	LOG_ERROR(message);
+	// Whatever was showing (the progress of preparing, a choice) goes: a dialog left
+	// up holds the window.
+	if (dialogView)
+	{
+		dialogView->clearDialogs();
+		if (m_hasGUI && notify)
+		{
+			dialogView->notify(message);
+		}
+	}
+	MessageStatus(message, true, false).dispatch();
+	m_refreshStage = RefreshStageType::NONE;
+	m_indexingLock.reset();
+	IndexingStateMachine::instance()->ended(message);
+	MessageIndexingFinished(std::unexpected(error)).dispatch();
 }
 
 void Project::refreshImpl(std::shared_ptr<DialogView> dialogView, RefreshMode refreshMode, bool direct)
 {
+	if (m_indexFilesProblem)
+	{
+		// No reindex can help: asking for one only asked again.
+		endRefused(utility::makeExpectedError(IndexingErrorCode::PipelineFailed, *m_indexFilesProblem), dialogView);
+		return;
+	}
 	const std::optional<RefreshPlan> plan = planRefresh(refreshMode, direct);
 	if (!plan)
 	{
@@ -453,9 +500,9 @@ std::optional<Project::RefreshPlan> Project::planRefresh(RefreshMode refreshMode
 		return std::nullopt;
 	}
 
-	if (m_state == ProjectStateType::PROJECT_STATE_NOT_LOADED)
+	if (m_state == ProjectStateType::PROJECT_STATE_NOT_LOADED || m_indexFilesProblem)
 	{
-		return std::nullopt;
+		return std::nullopt;	// the refresh says why (refreshImpl)
 	}
 
 	RefreshPlan plan;
@@ -763,19 +810,7 @@ void Project::buildIndex(RefreshInfo info, std::shared_ptr<DialogView> dialogVie
 {
 	// Same std::expected boundary as refresh(): buildIndex is also entered directly by the GUI
 	// indexing dialog's callback.
-	const IndexingOutcome outcome = utility::expectedFromExceptions<void>(
-		IndexingErrorCode::PipelineFailed,
-		IndexingErrorCode::PipelineFailed,
-		"assembling the indexing pipeline failed",
-		[&]() { buildIndexImpl(std::move(info), dialogView); });
-	if (!outcome)
-	{
-		LOG_ERROR(utility::expectedErrorToString(outcome.error()));
-		m_refreshStage = RefreshStageType::NONE;
-		m_indexingLock.reset();
-		IndexingStateMachine::instance()->ended(utility::expectedErrorToString(outcome.error()));
-		MessageIndexingFinished(outcome).dispatch();
-	}
+	guarded("setting up the indexing failed", dialogView, [&]() { buildIndexImpl(std::move(info), dialogView); });
 }
 
 void Project::buildIndexImpl(RefreshInfo info, std::shared_ptr<DialogView> dialogView)
@@ -856,19 +891,11 @@ void Project::buildIndexImpl(RefreshInfo info, std::shared_ptr<DialogView> dialo
 		std::expected<IndexingLock, IndexingLockError> lock = IndexingLock::acquire(m_settings->getDBFilePath());
 		if (!lock)
 		{
-			const std::string message = "Cannot index the project: " + std::string(to_std_sv(lock.error())) + ".";
-			LOG_ERROR(message);
-			if (m_hasGUI)
-			{
-				dialogView->clearDialogs();
-				dialogView->notify(message);
-			}
-			MessageStatus(message, true, false).dispatch();
-			m_refreshStage = RefreshStageType::NONE;
-			IndexingStateMachine::instance()->ended(message);
-			MessageIndexingFinished(
-				std::unexpected(utility::makeExpectedError(IndexingErrorCode::IndexingLocked, message)))
-				.dispatch();
+			endRefused(
+				utility::makeExpectedError(
+					IndexingErrorCode::IndexingLocked,
+					"Cannot index the project: " + std::string(to_std_sv(lock.error())) + "."),
+				dialogView);
 			return;
 		}
 		m_indexingLock.emplace(std::move(*lock));

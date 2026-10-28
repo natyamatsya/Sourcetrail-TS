@@ -4,8 +4,10 @@
 #include <memory>
 #include <optional>
 
+#include "DialogView.h"
 #include "FilePath.h"
 #include "IndexDatabaseFiles.h"
+#include "IndexingStateMachine.h"
 #include "Project.h"
 #include "ProjectSettings.h"
 #include "SqliteIndexStorage.h"
@@ -146,4 +148,42 @@ TEST_CASE("using a finished run's index takes it")
 	REQUIRE(left.project->resolveInterruptedRun(left.option("Use the New Index")));
 
 	REQUIRE(left.indexNodeCount() == 3);
+}
+
+namespace
+{
+class RecordingDialogView: public DialogView
+{
+public:
+	RecordingDialogView(): DialogView(UseCase::INDEXING, nullptr) {}
+
+	void clearDialogs() override
+	{
+		cleared++;
+	}
+
+	int cleared = 0;
+};
+}	 // namespace
+
+// A project whose index files cannot be made (a 240-character name): the reindex
+// failed with "std::exception" behind a progress dialog that stayed up, and asked for
+// a reindex again.
+TEST_CASE("a refresh no reindex can help ends at once, with the dialogs gone and the reason")
+{
+	const TestTempDirectory directory {"ProjectTestSuite"};
+	const FilePath settingsPath(directory.getFilePath(std::string(240, 'p') + ".srctrl.toml"));
+	std::ofstream {settingsPath.str()} << "version = '8'\n";
+	const auto project = std::make_shared<Project>(
+		std::make_shared<ProjectSettings>(settingsPath), nullptr, "ProjectTestSuite", false);
+	REQUIRE(project->readSettings());
+	project->openIndex();
+	const auto dialogView = std::make_shared<RecordingDialogView>();
+
+	REQUIRE_FALSE(project->planRefresh(RefreshMode::ALL_FILES));	// no question to ask
+	project->refresh(dialogView, RefreshMode::ALL_FILES);
+
+	REQUIRE(dialogView->cleared == 1);
+	REQUIRE_FALSE(project->isIndexing());
+	REQUIRE(IndexingStateMachine::instance()->snapshot().context.find("too long") != std::string::npos);
 }

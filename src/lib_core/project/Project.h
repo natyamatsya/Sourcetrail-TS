@@ -136,7 +136,12 @@ private:
 	// throw (the generic task runner would otherwise just log and drop it).
 	void refreshImpl(std::shared_ptr<DialogView> dialogView, RefreshMode refreshMode, bool direct);
 	void refreshPlannedImpl(std::shared_ptr<DialogView> dialogView, const RefreshPlan& plan);
-	void refreshGuarded(const std::function<void()>& refresh);
+	// Runs `step`, ending the refresh with what it throws (`context`: what failed).
+	void guarded(
+		const std::string& context, const std::shared_ptr<DialogView>& dialogView, const std::function<void()>& step);
+	// Ends a refresh or run that does not go on: its dialogs go, the person (`notify`) and
+	// the machine are told why, and MessageIndexingFinished carries the error.
+	void endRefused(const IndexingError& error, const std::shared_ptr<DialogView>& dialogView, bool notify = true);
 	void buildIndexImpl(RefreshInfo info, std::shared_ptr<DialogView> dialogView);
 
 	ShardConfig m_shardConfig;
@@ -180,6 +185,8 @@ private:
 	ProjectStateType m_state = ProjectStateType::PROJECT_STATE_NOT_LOADED;
 	// Why the index could not be used (PROJECT_STATE_DB_CORRUPTED), when it is known.
 	std::string m_loadProblem;
+	// Why SQLite cannot make the index's files where the project is: no reindex helps.
+	std::optional<std::string> m_indexFilesProblem;
 	// The load kept the data of a run that did not finish: finishLoad indexes the rest.
 	bool m_continueIndexing = false;
 	RefreshStageType m_refreshStage = RefreshStageType::NONE;

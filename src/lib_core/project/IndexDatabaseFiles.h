@@ -5,6 +5,7 @@
 #include <cstdint>
 #include <expected>
 #include <optional>
+#include <string>
 #include <string_view>
 
 class FilePath;
@@ -77,6 +78,11 @@ std::expected<void, IndexSwapError> check(const FilePath& db, std::size_t storag
 // as they were; when `tempIndexDb` is gone, what SQLite left beside it goes too.
 std::expected<void, IndexSwapError> replace(
 	const FilePath& indexDb, const FilePath& tempIndexDb, std::size_t storageVersion);
+
+// Why SQLite cannot make the files of an index at `indexDb` (and of the temporary
+// database beside it, `tempIndexDb`): a name longer than the file system allows (the
+// longest is the journal of the temporary database). Nothing when it can.
+std::optional<std::string> nameProblem(const FilePath& indexDb, const FilePath& tempIndexDb);
 
 // The meta key of the IndexingRunMark.
 inline constexpr const char* runMarkKey = "indexing_run";

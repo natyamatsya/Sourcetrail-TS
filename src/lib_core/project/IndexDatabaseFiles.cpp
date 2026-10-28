@@ -8,6 +8,10 @@
 
 #include <sqlite3.h>
 
+#ifndef _WIN32
+#include <unistd.h>
+#endif
+
 #include "FilePath.h"
 #include "logging.h"
 
@@ -170,6 +174,30 @@ std::expected<void, IndexSwapError> replace(
 		return std::unexpected(IndexSwapError::ReplaceFailed);
 	}
 	return {};
+}
+
+std::optional<std::string> nameProblem(const FilePath& indexDb, const FilePath& tempIndexDb)
+{
+	// The longest name SQLite makes beside them: the temporary database's rollback journal.
+	const std::string longest = tempIndexDb.fileName() + "-journal";
+	long limit = 255;
+#ifndef _WIN32
+	const std::filesystem::path directory = indexDb.getPath().parent_path();
+	if (const long found = ::pathconf(directory.empty() ? "." : directory.c_str(), _PC_NAME_MAX); found > 0)
+	{
+		limit = found;
+	}
+#endif
+	if (static_cast<long>(longest.size()) <= limit)
+	{
+		return std::nullopt;
+	}
+	// "<name>.srctrl.db": what the name may have, with what SQLite adds to it.
+	const std::size_t nameSize = indexDb.withoutExtension().withoutExtension().fileName().size();
+	const long nameLimit = limit - static_cast<long>(longest.size() - nameSize);
+	return "The project's name is too long for its index files: \"" + longest + "\" has " +
+		std::to_string(longest.size()) + " bytes, and the file system allows " + std::to_string(limit) +
+		". Give the project a name of at most " + std::to_string(nameLimit) + " bytes.";
 }
 
 std::optional<IndexingRunMark> runMark(const FilePath& db)

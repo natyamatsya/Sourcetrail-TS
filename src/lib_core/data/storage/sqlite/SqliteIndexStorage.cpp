@@ -9,6 +9,7 @@ import sqlpp23.sqlite3;
 
 #include "SqliteIndexStorage.h"
 
+#include <stdexcept>
 #include <utility>
 
 #ifndef SRCTRL_SQLPP23_MODULE
@@ -2620,7 +2621,9 @@ void SqliteIndexStorage::setupTables()
 	{
 		LOG_ERROR(std::to_string(e.errorCode()) + ": " + e.errorMessage());
 
-		throw(std::exception());
+		throw std::runtime_error(
+			"cannot create the index tables of " + m_dbFilePath.str() + ": SQLite error " + std::to_string(e.errorCode()) + ": " +
+			e.errorMessage());
 	}
 }
 
