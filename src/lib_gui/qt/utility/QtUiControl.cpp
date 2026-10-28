@@ -23,6 +23,7 @@
 #include <QColor>
 #include <QComboBox>
 #include <QContextMenuEvent>
+#include <QStyleHints>
 #include <QEnterEvent>
 #include <QEvent>
 #include <QKeyEvent>
@@ -694,10 +695,15 @@ void postUnderCause(QWidget* receiver, QEvent* event)
 		Qt::QueuedConnection);
 }
 
+// A press went to an open popup (a menu) and closed it: as for a person's, its release (and a
+// context-menu event) reach no widget underneath (QWidgetWindow swallows them).
+bool s_pressClosedPopup{false};
+
 // A mouse event at the global point `global`, posted to `receiver` as postUnderCause does, and
-// made when it is delivered, as the window makes a person's: for the widget that grabbed the
-// mouse meanwhile, if one did (a dock being dragged), and at the point in it then. A widget
-// the gesture moves (a gutter between docks, dragged) gets the next move where that left it.
+// made when it is delivered, as the window makes a person's: for the open popup (a menu), which
+// takes all mouse input while it is open; else for the widget that grabbed the mouse meanwhile,
+// if one did (a dock being dragged); and at the point in it then. A widget the gesture moves (a
+// gutter between docks, dragged) gets the next move where that left it.
 void postMouseUnderCause(
 	QWidget* receiver,
 	QEvent::Type type,
@@ -709,12 +715,46 @@ void postMouseUnderCause(
 	QMetaObject::invokeMethod(
 		receiver,
 		withCurrentCause([receiver, type, global, button, buttons, modifiers]() {
+			QWidget* const popup{QApplication::activePopupWidget()};
+			if (type == QEvent::MouseButtonRelease && s_pressClosedPopup && popup == nullptr)
+			{
+				s_pressClosedPopup = false;
+				return;
+			}
 			QWidget* const grabber{QWidget::mouseGrabber()};
-			QWidget* const target{grabber != nullptr ? grabber : receiver};
+			QWidget* const target{popup != nullptr ? popup : grabber != nullptr ? grabber : receiver};
 			QMouseEvent event{type, target->mapFromGlobal(global), global, button, buttons, modifiers};
 			QCoreApplication::sendEvent(target, &event);
+			if (type == QEvent::MouseButtonPress)
+			{
+				s_pressClosedPopup = popup != nullptr && QApplication::activePopupWidget() != popup;
+			}
 		}),
 		Qt::QueuedConnection);
+}
+
+// The context-menu event a person's right click makes, for the widget under the mouse: not when
+// the click closed a popup instead.
+void postContextMenuUnderCause(QWidget* receiver, const QPointF& local, const QPointF& global, Qt::KeyboardModifiers modifiers)
+{
+	QMetaObject::invokeMethod(
+		receiver,
+		withCurrentCause([receiver, local, global, modifiers]() {
+			if (s_pressClosedPopup || QApplication::activePopupWidget() != nullptr)
+			{
+				return;
+			}
+			QContextMenuEvent event{QContextMenuEvent::Mouse, local.toPoint(), global.toPoint(), modifiers};
+			QCoreApplication::sendEvent(receiver, &event);
+		}),
+		Qt::QueuedConnection);
+}
+
+// Whether the platform sends the context-menu event on the press (macOS, Linux) or on the
+// release (Windows): Qt's own setting, which the window follows for a person's click.
+bool contextMenuOnPress()
+{
+	return QGuiApplication::styleHints()->contextMenuTrigger() == Qt::ContextMenuTrigger::Press;
 }
 
 // The widget the agent's mouse is over, for the enter and leave events below.
@@ -804,15 +844,19 @@ void postGesture(
 		case InputKind::MousePress:
 			postMouseTo(receiver, global);
 			postMouseUnderCause(receiver, QEvent::MouseButtonPress, global, button, button, modifiers);
+			// A real right click also makes the window send a context-menu event, on the press or
+			// the release as the platform does; posted input does not go through the window, so
+			// post it here.
+			if (button == Qt::RightButton && contextMenuOnPress())
+			{
+				postContextMenuUnderCause(receiver, local, global, modifiers);
+			}
 			break;
 		case InputKind::MouseRelease:
 			postMouseUnderCause(receiver, QEvent::MouseButtonRelease, global, button, Qt::NoButton, modifiers);
-			// A real right-click also makes the window send a context-menu event;
-			// posted input does not go through the window, so post it here.
-			if (button == Qt::RightButton)
+			if (button == Qt::RightButton && !contextMenuOnPress())
 			{
-				postUnderCause(receiver,
-					new QContextMenuEvent(QContextMenuEvent::Mouse, local.toPoint(), global.toPoint(), modifiers));
+				postContextMenuUnderCause(receiver, local, global, modifiers);
 			}
 			break;
 		case InputKind::MouseDoubleClick:

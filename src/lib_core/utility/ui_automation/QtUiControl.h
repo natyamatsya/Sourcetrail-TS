@@ -108,8 +108,11 @@ struct InputEvent
 //! Queue a gesture for the element `objectName` + `path` address (a scroll area,
 //! like the graph view, receives it on its viewport). The events are posted, not
 //! sent, so a press that opens a menu or a dialog cannot block the caller; after
-//! the last one `delivered` runs on the GUI thread. A right-button release also
-//! posts the context-menu event a real one would cause. On success the message
+//! the last one `delivered` runs on the GUI thread. They reach the widgets as a
+//! person's do through the window: an open popup takes the mouse (a press that
+//! closes it is all it gets), and a right click causes the context-menu event on the
+//! press or the release as the platform does (QStyleHints::contextMenuTrigger);
+//! QtUiControlInputTestSuite compares both paths. On success the message
 //! names the receiving widget. MUST run on the Qt GUI thread; needs accessibility
 //! support to resolve the ref.
 ControlResult sendInput(
