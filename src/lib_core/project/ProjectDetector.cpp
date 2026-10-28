@@ -11,7 +11,6 @@
 #include <regex>
 #include <set>
 #include <system_error>
-#include <tuple>
 
 #include <QStandardPaths>
 #include <QString>
@@ -1020,14 +1019,20 @@ bool detectCMakePreset(Detection& detection)
 	}
 
 	// A configured one first, the one built last among them; then the one that fits this
-	// computer best; then the first.
-	const auto rank = [](const Usable& u) {
-		return std::tuple{
-			u.configured ? 0 : 1,
-			u.configured ? fs::file_time_type::max() - u.configured->time : fs::file_time_type::duration{},
-			platformFit(*u.preset)};
+	// computer best; then the first. (Times are compared, not subtracted: libstdc++'s file
+	// clock counts from 2174, so today's times are negative.)
+	const auto before = [](const Usable& a, const Usable& b) {
+		if (a.configured.has_value() != b.configured.has_value())
+		{
+			return a.configured.has_value();
+		}
+		if (a.configured && a.configured->time != b.configured->time)
+		{
+			return a.configured->time > b.configured->time;
+		}
+		return platformFit(*a.preset) < platformFit(*b.preset);
 	};
-	const Usable& chosen{*std::ranges::min_element(usable, {}, rank)};
+	const Usable& chosen{*std::ranges::min_element(usable, before)};
 	const auto configuredCount{std::ranges::count_if(usable, [](const Usable& u) { return u.configured.has_value(); })};
 	const CMakeFileAPIReader::PresetInfo& preset{*chosen.preset};
 	for (const Usable& other: usable)
