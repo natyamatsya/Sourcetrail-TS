@@ -1038,6 +1038,44 @@ TEST_CASE("project wizard carries out requests and follows a person")
 	machine.detach(presenter);
 }
 
+TEST_CASE("project wizard opens on the project detected in a folder")
+{
+	using Kind = ProjectWizardRequest::Kind;
+	ProjectWizardStateMachine machine;
+	FakeWizardPresenter presenter;
+	machine.attach(presenter);
+
+	REQUIRE_FALSE(machine.fire("new_from_folder", "", EventSource::Agent).ok);
+	REQUIRE_FALSE(machine.fire("new_from_folder", R"({"folder":""})", EventSource::Agent).ok);
+	REQUIRE(machine.fire("new_from_folder", R"({"folder":"C:/src/fmt","project_location":"C:/projects"})", EventSource::Agent).ok);
+	REQUIRE(presenter.requests.back().kind == Kind::NewFromFolder);
+	REQUIRE(presenter.requests.back().folder == "C:/src/fmt");
+	REQUIRE(presenter.requests.back().projectLocation == "C:/projects");
+	REQUIRE(machine.snapshot().state == "applying");
+
+	ProjectWizardView view;
+	view.projectName = "fmt";
+	view.sourceGroups = {{"C++ Source Group", "cmake", true}};
+	view.detected = ProjectWizardView::Detection {
+		.folder = "C:/src/fmt",
+		.sourceGroupType = "cmake",
+		.reasons = {"Found CMakeLists.txt without presets"},
+		.notices = {"Git repository fmt, branch master"}};
+	machine.opened(view);
+	const MachineSnapshot snapshot = machine.snapshot();
+	REQUIRE(snapshot.state == "editing");
+	REQUIRE(contains(
+		snapshot.context,
+		R"("detected":{"folder":"C:/src/fmt","source_group_type":"cmake","reasons":["Found CMakeLists.txt without presets"],"notices":["Git repository fmt, branch master"]})"));
+
+	// A folder with nothing to detect in it: the wizard does not open.
+	machine.canceled();
+	REQUIRE(machine.fire("new_from_folder", R"({"folder":"C:/nope"})", EventSource::Agent).ok);
+	machine.notOpened("C:/nope: the folder does not exist");
+	REQUIRE(contains(machine.snapshot().context, "the folder does not exist"));
+	machine.detach(presenter);
+}
+
 struct FakePreferencesPresenter
 {
 	void applyToPreferences(const PreferencesRequest& request)

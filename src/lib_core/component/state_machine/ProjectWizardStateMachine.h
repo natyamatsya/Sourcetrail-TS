@@ -19,6 +19,7 @@ struct ProjectWizardRequest
 	enum class Kind
 	{
 		New,	// open the wizard on a new project
+		NewFromFolder,	// open it on the project detected in `folder`
 		Edit,	// open it on the project loaded
 		Set,	// the project's and the shown source group's fields
 		Show,	// a page: the general one, or a source group's
@@ -31,6 +32,7 @@ struct ProjectWizardRequest
 	};
 
 	Kind kind = Kind::New;
+	std::string folder;	// NewFromFolder
 	std::optional<std::string> projectName;
 	std::optional<std::string> projectLocation;
 	std::map<std::string, SourceGroupField> fields;
@@ -65,6 +67,17 @@ struct ProjectWizardView
 	std::map<std::string, std::vector<Choice>> choices;	// by field name: what the page offers
 	std::map<std::string, std::string> notes;	// what the page tells about a field beside its value
 	std::vector<std::string> types;	// what can be added (the type selection)
+
+	// What New Project from Folder found (ProjectDetector): why the project is as proposed,
+	// and what else it noticed (the git repository, its submodules...).
+	struct Detection
+	{
+		std::string folder;
+		std::string sourceGroupType;	// sourceGroupTypeId of the group proposed
+		std::vector<std::string> reasons;
+		std::vector<std::string> notices;
+	};
+	std::optional<Detection> detected;	// a new project from a folder
 };
 
 // Shows the wizard's states for an agent: opens the wizard, and has it carry out what
@@ -107,7 +120,7 @@ private:
 // The project wizard ("New Project" / "Edit Project"), from opening it until the
 // project is created or the wizard closed:
 //
-//   closed --new/edit--> applying --opened--> editing --create--> applying --created--> closed
+//   closed --new/new_from_folder/edit--> applying --opened--> editing --create--> applying --created--> closed
 //   editing --set/show/add/remove/duplicate_source_group--> applying --applied/failed--> editing
 //   editing --choosing--> choosing_type --select_type--> applying; choosing_type --selected/back--> editing
 //   editing --cancel--> applying --canceled--> closed
@@ -128,6 +141,7 @@ struct ProjectWizardMachine
 	enum class Event
 	{
 		New,
+		NewFromFolder,
 		Edit,
 		Set,
 		Show,
@@ -166,6 +180,7 @@ struct ProjectWizardMachine
 		named(State::Applying, "applying")};
 	static constexpr std::array events {
 		control(Event::New, "new"),
+		control(Event::NewFromFolder, "new_from_folder"),
 		control(Event::Edit, "edit"),
 		control(Event::Set, "set"),
 		control(Event::Show, "show"),
@@ -186,6 +201,7 @@ struct ProjectWizardMachine
 		named(Event::Canceled, "canceled")};
 	static constexpr auto transitions = std::to_array<StateMachine<State, Event>::Transition>({
 		{State::Closed, Event::New, State::Applying},
+		{State::Closed, Event::NewFromFolder, State::Applying},
 		{State::Closed, Event::Edit, State::Applying},
 		{State::Closed, Event::Opened, State::Editing},
 		{State::Editing, Event::Set, State::Applying},
