@@ -756,6 +756,58 @@ std::vector<std::string> CMakeFileAPIReader::getConfigurations() const
 	return result;
 }
 
+std::vector<std::string> CMakeFileAPIReader::splitCompileFragment(const std::string& fragment)
+{
+	std::vector<std::string> tokens{};
+#if defined(_WIN32)
+	for (const QString& token : QProcess::splitCommand(QString::fromStdString(fragment).trimmed()))
+		tokens.push_back(token.toStdString());
+#else
+	std::string token{};
+	bool inToken{false};
+	char quote{0};
+	for (std::size_t i = 0; i < fragment.size(); i++)
+	{
+		const char c{fragment[i]};
+		if (quote == '\'')
+		{
+			if (c == '\'')
+				quote = 0;
+			else
+				token += c;
+			continue;
+		}
+		if (quote == '"')
+		{
+			if (c == '"')
+				quote = 0;
+			else if (c == '\\' && i + 1 < fragment.size() && std::string_view{"\"\\$`"}.contains(fragment[i + 1]))
+				token += fragment[++i];
+			else
+				token += c;
+			continue;
+		}
+		if (c == ' ' || c == '\t' || c == '\n' || c == '\r')
+		{
+			if (inToken)
+				tokens.push_back(std::exchange(token, {}));
+			inToken = false;
+			continue;
+		}
+		inToken = true;
+		if (c == '\'' || c == '"')
+			quote = c;
+		else if (c == '\\' && i + 1 < fragment.size())
+			token += fragment[++i];
+		else
+			token += c;
+	}
+	if (inToken)
+		tokens.push_back(token);
+#endif
+	return tokens;
+}
+
 bool CMakeFileAPIReader::matchesTargetFilter(
 	const std::string& targetName, const std::string& targetFilter)
 {
@@ -1401,12 +1453,8 @@ CMakeFileAPIReader::GetSourcesExpected CMakeFileAPIReader::getSourcesDetailed(
 
 			for (const auto& frag : cg.value("compileCommandFragments", nlohmann::json::array()))
 			{
-				const QString fragment =
-					QString::fromStdString(frag.value("fragment", std::string{})).trimmed();
-				if (fragment.isEmpty())
-					continue;
-				for (const QString& token : QProcess::splitCommand(fragment))
-					group.compileFlags.push_back(token.toStdString());
+				for (std::string& token : splitCompileFragment(frag.value("fragment", std::string{})))
+					group.compileFlags.push_back(std::move(token));
 			}
 
 			// MSVC fragments are '/'-spelled options the clang-based indexer

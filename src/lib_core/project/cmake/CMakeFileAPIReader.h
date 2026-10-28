@@ -192,6 +192,11 @@ public:
 	// CMAKE_CONFIGURATION_TYPES for multi-config ones). Empty without a reply.
 	std::vector<std::string> getConfigurations() const;
 
+	// A compileCommandFragment's arguments, unquoted as the generator's shell would: on
+	// Windows as a command line, elsewhere as a POSIX shell does, single quotes included
+	// (the Xcode generator writes '-std=c++17').
+	[[nodiscard]] static std::vector<std::string> splitCompileFragment(const std::string& fragment);
+
 	// Whether a target name matches a target filter: empty matches every target,
 	// otherwise one or more wildcard patterns separated by ';' or ','.
 	[[nodiscard]] static bool matchesTargetFilter(const std::string& targetName, const std::string& targetFilter);

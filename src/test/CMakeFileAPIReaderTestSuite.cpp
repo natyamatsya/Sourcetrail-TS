@@ -281,6 +281,24 @@ TEST_CASE("CMakeFileAPIReader resolveBinaryDir expands environment and directory
 		sourceDir.generic_string() + "/build/rel");
 }
 
+TEST_CASE("CMakeFileAPIReader splitCompileFragment unquotes as the generator's shell")
+{
+#if defined(_WIN32)
+	CHECK(
+		CMakeFileAPIReader::splitCompileFragment(R"(-O2 "-DNAME=a b" /std:c++17)") ==
+		std::vector<std::string>{"-O2", "-DNAME=a b", "/std:c++17"});
+#else
+	// The Xcode generator quotes with single quotes, Ninja and Makefiles with double quotes.
+	CHECK(
+		CMakeFileAPIReader::splitCompileFragment(R"(-O3 -DNDEBUG '-std=c++17' -fvisibility=hidden)") ==
+		std::vector<std::string>{"-O3", "-DNDEBUG", "-std=c++17", "-fvisibility=hidden"});
+	CHECK(
+		CMakeFileAPIReader::splitCompileFragment(R"(  "-DMSG=\"hi there\"" -DA=b\ c '' x)") ==
+		std::vector<std::string>{"-DMSG=\"hi there\"", "-DA=b c", "", "x"});
+#endif
+	CHECK(CMakeFileAPIReader::splitCompileFragment("   ").empty());
+}
+
 TEST_CASE("CMakeFileAPIReader matchesTargetFilter takes several patterns")
 {
 	CHECK(CMakeFileAPIReader::matchesTargetFilter("core", ""));
