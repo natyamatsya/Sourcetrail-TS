@@ -51,4 +51,15 @@ SRCTRL_EXPORT struct StorageEdge: public StorageEdgeData
 	Id id;
 };
 
+// A file that recorded an edge without occurrences of its own (implicit code, a location in a
+// macro). The edge belongs to it as an edge belongs to the files of its occurrences: clearing
+// the file clears the edge.
+SRCTRL_EXPORT struct StorageEdgeFile
+{
+	StorageEdgeFile(Id edgeId, Id fileNodeId): edgeId(edgeId), fileNodeId(fileNodeId) {}
+
+	Id edgeId;
+	Id fileNodeId;
+};
+
 #endif	  // STORAGE_EDGE_H

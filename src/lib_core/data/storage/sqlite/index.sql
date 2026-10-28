@@ -90,6 +90,18 @@ CREATE TABLE IF NOT EXISTS occurrence(
 	FOREIGN KEY(source_location_id) REFERENCES source_location(id) ON DELETE CASCADE
 );
 
+-- The files that recorded an edge without occurrences of its own (implicit code, a location in a
+-- macro): clearing them clears the edge, as clearing an occurrence's file does.
+CREATE TABLE IF NOT EXISTS edge_file(
+	edge_id INTEGER NOT NULL,
+	file_node_id INTEGER NOT NULL,
+	PRIMARY KEY(edge_id, file_node_id),
+	FOREIGN KEY(edge_id) REFERENCES element(id) ON DELETE CASCADE,
+	FOREIGN KEY(file_node_id) REFERENCES node(id) ON DELETE CASCADE
+);
+
+CREATE INDEX IF NOT EXISTS edge_file_file_node_id_index ON edge_file(file_node_id);
+
 CREATE TABLE IF NOT EXISTS component_access(
 	node_id INTEGER NOT NULL,
 	type INTEGER NOT NULL,

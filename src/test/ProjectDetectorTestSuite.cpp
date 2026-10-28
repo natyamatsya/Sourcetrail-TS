@@ -63,12 +63,18 @@ std::string generic(const fs::path& path)
 	return path.generic_string();
 }
 
-// A CMakeCache.txt of a build directory CMake configured for `source`.
-void writeCache(const fs::path& buildDir, const fs::path& source, const std::string& generator = "Ninja")
+// A CMakeCache.txt of a build directory CMake configured for `source`, and the build file
+// CMake generated (a configure that fails writes the cache, but generates nothing).
+void writeCache(
+	const fs::path& buildDir, const fs::path& source, const std::string& generator = "Ninja", bool generated = true)
 {
 	write(
 		buildDir / "CMakeCache.txt",
 		"CMAKE_GENERATOR:INTERNAL=" + generator + "\nCMAKE_HOME_DIRECTORY:INTERNAL=" + generic(source) + "\n");
+	if (generated)
+	{
+		write(buildDir / (generator == "Ninja" ? "build.ninja" : "Makefile"));
+	}
 }
 }	 // namespace
 
@@ -161,7 +167,8 @@ TEST_CASE("ProjectDetector prefers the configured preset built last")
 		const fs::path buildDir{folder / "out" / preset};
 		writeCache(buildDir, folder);
 		write(buildDir / ".ninja_log");
-		for (const fs::path& file: {buildDir, buildDir / "CMakeCache.txt", buildDir / ".ninja_log"})
+		for (const fs::path& file:
+			 {buildDir, buildDir / "CMakeCache.txt", buildDir / "build.ninja", buildDir / ".ninja_log"})
 		{
 			fs::last_write_time(file, now - std::chrono::hours{48});
 		}
@@ -173,6 +180,52 @@ TEST_CASE("ProjectDetector prefers the configured preset built last")
 
 	CHECK(text(proposal, "cmake_preset") == "current");
 	CHECK(mentions(proposal.reasons, "(out/current, built last of the 2 configured) is configured by CMake already"));
+}
+
+TEST_CASE("ProjectDetector does not count a build directory whose configure failed as configured")
+{
+	// leveldb without its submodules: the configure fails, and leaves CMakeCache.txt behind.
+	const TestTempDirectory temp{"detectFailedPreset"};
+	const fs::path folder{temp.getPath() / "app"};
+	write(folder / "CMakeLists.txt", "project(app)\n");
+	write(folder / "CMakePresets.json", R"({"version": 3, "configurePresets": [
+		{"name": "failed", "binaryDir": "${sourceDir}/out/failed"},
+		{"name": "release", "binaryDir": "${sourceDir}/out/release"},
+		{"name": "debug", "binaryDir": "${sourceDir}/out/debug"}
+	]})");
+	const auto now{fs::file_time_type::clock::now()};
+	writeCache(folder / "out" / "release", folder);
+	writeCache(folder / "out" / "debug", folder);
+	// The failed one is the newest, so it would be chosen if it counted.
+	writeCache(folder / "out" / "failed", folder, "Ninja", false);
+	for (const char* preset: {"release", "debug"})
+	{
+		for (const fs::path& file: {fs::path{}, fs::path{"CMakeCache.txt"}, fs::path{"build.ninja"}})
+		{
+			fs::last_write_time(folder / "out" / preset / file, now - std::chrono::hours{48});
+		}
+	}
+	fs::last_write_time(folder / "out" / "release" / "build.ninja", now - std::chrono::hours{24});
+
+	const ProjectProposal proposal{detect(folder)};
+
+	CHECK(text(proposal, "cmake_preset") == "release");
+	CHECK(mentions(proposal.reasons, "(out/release, built last of the 2 configured) is configured by CMake already"));
+}
+
+TEST_CASE("ProjectDetector does not use a build directory whose configure failed")
+{
+	const TestTempDirectory temp{"detectFailedBuildDir"};
+	const fs::path folder{temp.getPath() / "lib"};
+	write(folder / "CMakeLists.txt", "project(lib)\n");
+	writeCache(folder / "build", folder, "Unix Makefiles", false);
+	write(folder / "build" / ".cmake/api/v1/reply/error-2026-10-28T03-39-29-0580.json", "{}\n");
+
+	const ProjectProposal proposal{detect(folder)};
+
+	CHECK(proposal.sourceGroupType == SourceGroupType::CXX_CMAKE_FILE_API);
+	CHECK(text(proposal, "cmake_build_directory") != generic(folder / "build"));
+	CHECK(!mentions(proposal.reasons, "CMake configured for it"));
 }
 
 TEST_CASE("ProjectDetector prefers the configure preset made for this computer")

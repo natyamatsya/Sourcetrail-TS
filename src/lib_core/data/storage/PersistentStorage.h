@@ -94,6 +94,8 @@ public:
 
 	void startInjection() override;
 	void finishInjection() override;
+	bool keepsEdgeFiles() const override;
+	void addEdgeFiles(const std::vector<StorageEdgeFile>& edgeFiles) override;
 	void rollbackInjection();
 
 	const std::vector<ErrorInfo> getErrorInfos() const;

@@ -193,6 +193,38 @@ bool CMakeFileAPIReader::hasReply() const
 	return !findIndexFile().empty();
 }
 
+bool CMakeFileAPIReader::lastConfigureFailed() const
+{
+	const FilePath errorFile{findFileWithPrefix(m_replyDir, "error-")};
+	if (errorFile.empty())
+		return false;
+	const FilePath indexFile{findIndexFile()};
+	// Both are named by when CMake wrote them (index-2026-10-28T03-39-29-0580.json), after a
+	// prefix of the same length.
+	return indexFile.empty() ||
+		errorFile.fileName().substr(std::string_view{"error-"}.size()) >
+		indexFile.fileName().substr(std::string_view{"index-"}.size());
+}
+
+bool CMakeFileAPIReader::isConfigured() const
+{
+	if (lastConfigureFailed())
+		return false;
+	if (hasReply())
+		return true;
+	if (!m_buildDir.getConcatenated("/CMakeCache.txt").exists())
+		return false;
+	const QDir dir{QString::fromStdString(m_buildDir.str())};
+	return !dir.entryList(
+				   {QStringLiteral("build.ninja"),
+					QStringLiteral("Makefile"),
+					QStringLiteral("*.sln"),
+					QStringLiteral("*.slnx"),
+					QStringLiteral("*.xcodeproj")},
+				   QDir::Files | QDir::Dirs | QDir::NoDotAndDotDot)
+				.isEmpty();
+}
+
 std::vector<CMakeFileAPIReader::JsonEntryPoint> CMakeFileAPIReader::getJsonEntryPoints() const
 {
 	const FilePath indexPath{findIndexFile()};

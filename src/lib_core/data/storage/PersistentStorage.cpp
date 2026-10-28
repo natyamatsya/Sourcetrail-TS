@@ -516,6 +516,16 @@ void PersistentStorage::startInjection()
 #endif
 }
 
+bool PersistentStorage::keepsEdgeFiles() const
+{
+	return true;
+}
+
+void PersistentStorage::addEdgeFiles(const std::vector<StorageEdgeFile>& edgeFiles)
+{
+	m_sqliteIndexStorage.addEdgeFiles(edgeFiles);
+}
+
 void PersistentStorage::finishInjection()
 {
 	m_sqliteIndexStorage.commitTransaction();
