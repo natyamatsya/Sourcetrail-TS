@@ -25,6 +25,7 @@
 #include "QtGraphNodeData.h"
 #include "QtGraphNodeExpandToggle.h"
 #include "QtSelfRefreshIconButton.h"
+#include "UiPost.h"
 #include "utilityQt.h"
 #include "QtResources.h"
 
@@ -204,7 +205,6 @@ void QtGraphicsView::setSceneRect(const QRectF& rect, qreal reservedLeft)
 {
 	QGraphicsView::setSceneRect(rect.adjusted(-reservedLeft, 0, 0, 0));
 	scene()->setSceneRect(rect);
-	m_imageCached = toQImage();
 	m_tabId = TabIds::currentTab();
 }
 
@@ -822,8 +822,11 @@ void QtGraphicsView::updateTransform()
 
 void QtGraphicsView::handleMessage(MessageSaveAsImage* message)
 {
-	if ( (message->getSchedulerId() == getSchedulerId()) && !m_imageCached.isNull() )
+	if (message->getSchedulerId() != getSchedulerId())
 	{
-		m_imageCached.save(message->path);
+		return;
 	}
+	// Drawn when asked for, on the GUI thread: drawing the whole scene after every change
+	// (as this did) took a 1.85 GB image and most of a big graph's drawing time.
+	execution::qt::onUi(this, [this, path = message->path]() { toQImage().save(path); });
 }

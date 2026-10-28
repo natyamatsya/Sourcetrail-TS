@@ -157,7 +157,6 @@ private:
 
 	QtSelfRefreshIconButton* m_legendButton;
 
-	QImage m_imageCached;
 	TabId m_tabId;
 };
 
