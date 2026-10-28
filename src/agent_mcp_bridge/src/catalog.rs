@@ -478,7 +478,10 @@ carries the same list as `machines`.
 machine_send { machine, event, args?: {...}, until?: [state], timeout_s=60, instance? }
   -> { ok, message, machine, transitions } (+ reached with until)
   A refused event is ok: false with the machine as it is (its state and accepted events). \
-`transitions` are the moves seen meanwhile; with until the call returns once the machine is \
+`transitions` are the moves seen meanwhile (machine_state's too); a move of the machine itself \
+carries only the context fields that differ from `machine`'s (the machine as it is now; a field \
+it has gained since reads null), other machines' moves their whole context. With until the \
+call returns once the machine is \
 in one of those states, or after timeout_s (at most 300; the call holds the bridge meanwhile) \
 with reached: false. It also ends, reached: false, when the app asks a question meanwhile: \
 the question's move is among the transitions; answer it (see question) and wait again. A \

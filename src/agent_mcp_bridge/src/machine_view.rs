@@ -223,9 +223,82 @@ impl MachineView {
     }
 }
 
+/// The transitions of a `machine_send` / `machine_state` reply, their contexts compacted. The
+/// reply's `machine` carries the machine's whole context as it is now, so a transition of that
+/// machine keeps only the context fields that differ from it (a field the machine no longer
+/// has is null): the project wizard's context, with its choices of 92 targets, was repeated in
+/// every transition, 25-30k tokens a call. Other machines' transitions (a question asked
+/// meanwhile, the project reopening) keep their contexts.
+pub fn compact_transitions(snapshot: &Value, transitions: Vec<Value>) -> Vec<Value> {
+    let machine = &snapshot["machine"];
+    let now = &snapshot["context"];
+    transitions
+        .into_iter()
+        .map(|mut transition| {
+            if machine.is_null() || transition["machine"] != *machine {
+                return transition;
+            }
+            let compacted = match (transition["context"].as_object(), now.as_object()) {
+                (Some(then), Some(now)) => {
+                    let mut differing = Map::new();
+                    for (key, value) in then {
+                        if now.get(key) != Some(value) {
+                            differing.insert(key.clone(), value.clone());
+                        }
+                    }
+                    for key in now.keys() {
+                        if !then.contains_key(key) {
+                            differing.insert(key.clone(), Value::Null);
+                        }
+                    }
+                    Value::Object(differing)
+                }
+                _ if transition["context"] == *now => json!({}),
+                _ => return transition,
+            };
+            transition["context"] = compacted;
+            transition
+        })
+        .collect()
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn a_transition_of_the_replying_machine_keeps_only_what_differs_from_it_now() {
+        let choices = json!({ "cmake_target_glob": [{ "value": "leveldb" }, { "value": "leveldbutil" }] });
+        let snapshot = json!({ "machine": "project_wizard", "state": "editing",
+            "context": { "page": "source_group", "fields": { "name": "b" }, "choices": choices } });
+        let transitions = vec![
+            json!({ "machine": "project_wizard", "from": "editing", "to": "applying", "event": "set",
+                    "context": { "applying": "set", "page": "source_group", "fields": { "name": "a" },
+                                 "choices": choices } }),
+            json!({ "machine": "project_wizard", "from": "applying", "to": "editing", "event": "applied",
+                    "context": { "page": "source_group", "fields": { "name": "b" }, "choices": choices } }),
+            json!({ "machine": "question", "from": "idle", "to": "asking", "event": "ask",
+                    "context": { "id": 1, "text": "Please enter a project name.", "options": ["OK"] } }),
+        ];
+
+        let compacted = compact_transitions(&snapshot, transitions);
+
+        assert_eq!(compacted[0]["context"], json!({ "applying": "set", "fields": { "name": "a" } }));
+        assert_eq!(compacted[1]["context"], json!({}));
+        assert_eq!(compacted[0]["event"], "set");
+        // Another machine's transition keeps its context: the question's text is the point.
+        assert_eq!(compacted[2]["context"]["text"], "Please enter a project name.");
+    }
+
+    #[test]
+    fn a_field_the_machine_has_gained_since_reads_null_in_the_transition() {
+        let snapshot = json!({ "machine": "indexing", "state": "idle", "context": { "outcome": "kept" } });
+        let transitions = vec![json!({ "machine": "indexing", "to": "finishing", "context": { "progress": 3 } })];
+
+        let compacted = compact_transitions(&snapshot, transitions);
+
+        assert_eq!(compacted[0]["context"], json!({ "progress": 3, "outcome": null }));
+    }
 
     fn state(machine: &str, state: &str, revision: u64) -> Value {
         json!({ "machine": machine, "state": state, "events": [], "context": {}, "revision": revision })

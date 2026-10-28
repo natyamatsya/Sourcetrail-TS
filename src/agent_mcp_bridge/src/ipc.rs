@@ -1274,8 +1274,8 @@ impl Bridge {
             return Ok(json!({
                 "ok": reply.ok,
                 "message": reply.message,
+                "transitions": machine_view::compact_transitions(&snapshot, transitions),
                 "machine": snapshot,
-                "transitions": transitions,
             }));
         }
         let deadline = Instant::now() + timeout;
@@ -1288,8 +1288,8 @@ impl Bridge {
         Ok(json!({
             "ok": true,
             "message": reply.message,
+            "transitions": machine_view::compact_transitions(&snapshot, transitions),
             "machine": snapshot,
-            "transitions": transitions,
             "reached": reached,
         }))
     }
@@ -1309,7 +1309,11 @@ impl Bridge {
         if reached {
             reached = self.await_reopened_project(machine, &snapshot, deadline, &mut transitions)?;
         }
-        Ok(json!({ "machine": snapshot, "transitions": transitions, "reached": reached }))
+        Ok(json!({
+            "transitions": machine_view::compact_transitions(&snapshot, transitions),
+            "machine": snapshot,
+            "reached": reached,
+        }))
     }
 
     /// An indexing run reopens the project on its new index, and asks for that
