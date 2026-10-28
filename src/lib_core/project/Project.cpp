@@ -120,6 +120,11 @@ bool Project::isIndexing() const
 	return m_refreshStage == RefreshStageType::INDEXING;
 }
 
+bool Project::refreshFailedToPrepare() const
+{
+	return m_refreshFailedToPrepare;
+}
+
 bool Project::settingsEqualExceptNameAndLocation(const ProjectSettings& otherSettings) const
 {
 	return m_settings->equalsExceptNameAndLocation(otherSettings);
@@ -484,6 +489,7 @@ void Project::refreshPlannedImpl(std::shared_ptr<DialogView> dialogView, const R
 	RefreshMode refreshMode = plan.mode;
 
 	m_refreshStage = RefreshStageType::REFRESHING;
+	m_refreshFailedToPrepare = false;
 
 	m_settings->reload();
 
@@ -494,6 +500,7 @@ void Project::refreshPlannedImpl(std::shared_ptr<DialogView> dialogView, const R
 		if (sourceGroup->getStatus() == SourceGroupStatusType::ENABLED && !sourceGroup->prepareIndexing())
 		{
 			m_refreshStage = RefreshStageType::NONE;
+			m_refreshFailedToPrepare = true;
 			return;
 		}
 	}

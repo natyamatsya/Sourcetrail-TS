@@ -39,6 +39,9 @@ public:
 	bool isOpen() const;
 	//! The index loaded and browsable (it may be outdated).
 	bool hasIndex() const;
+	//! The last refresh stopped before indexing: a source group could not be prepared (it told
+	//! why). A headless run ends with a failure then.
+	bool refreshFailedToPrepare() const;
 
 	bool settingsEqualExceptNameAndLocation(const ProjectSettings& otherSettings) const;
 	void setStateOutdated();
@@ -173,6 +176,7 @@ private:
 
 	ProjectStateType m_state = ProjectStateType::PROJECT_STATE_NOT_LOADED;
 	RefreshStageType m_refreshStage = RefreshStageType::NONE;
+	bool m_refreshFailedToPrepare = false;
 
 	std::shared_ptr<PersistentStorage> m_storage;
 	std::vector<std::shared_ptr<SourceGroup>> m_sourceGroups;

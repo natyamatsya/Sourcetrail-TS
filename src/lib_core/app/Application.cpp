@@ -885,7 +885,10 @@ void Application::refreshProject(RefreshMode refreshMode, bool direct)
 
 		if (!m_hasGUI && !m_project->isIndexing())
 		{
-			MessageQuitApplication().dispatch();
+			// A project that failed to load, or a source group that could not be prepared, ends
+			// the run with nothing indexed: a failure to the script reading the exit code.
+			const bool failed = !m_project->isOpen() || m_project->refreshFailedToPrepare();
+			MessageQuitApplication(failed ? 1 : 0).dispatch();
 		}
 	}
 
