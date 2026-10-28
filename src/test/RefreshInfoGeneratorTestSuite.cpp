@@ -1206,3 +1206,112 @@ TEST_CASE("refresh info for updated files re-indexes the importers of a changed 
 	}
 	cleanup();
 }
+
+TEST_CASE("refresh info for updated files clears a source removed from the project below a header path")
+{
+	cleanup();
+	{
+		// util/explore_extra.cc, deleted from the leveldb target's sources, still lies below the
+		// project root, which the CMake group indexes headers from: it is still contained, but it
+		// was indexed as a translation unit (its command hash is stored), so it is removed.
+		const FilePath keptSourcePath = sourceFolder().getConcatenated("kept.cc");
+		const FilePath removedSourcePath = sourceFolder().getConcatenated("explore_extra.cc");
+		const FilePath headerPath = sourceFolder().getConcatenated("hash.h");
+
+		std::vector<std::shared_ptr<SourceGroup>> sourceGroups;
+		sourceGroups.push_back(std::make_shared<SourceGroupTest>(
+			std::set<FilePath>{keptSourcePath},
+			std::set<FilePath>{keptSourcePath, removedSourcePath, headerPath}));
+
+		std::shared_ptr<PersistentStorage> storage =
+			std::make_shared<PersistentStorage>(indexDbPath(), bookmarkDbPath());
+		storage->setup();
+
+		const Id keptSourceId = addVeryNewFileToStorage(keptSourcePath, true, true, storage);
+		addFileToFileSystem(keptSourcePath);
+		const Id removedSourceId = addVeryNewFileToStorage(removedSourcePath, true, true, storage);
+		addFileToFileSystem(removedSourcePath);
+		const Id headerId = addVeryNewFileToStorage(headerPath, true, true, storage);
+		addFileToFileSystem(headerPath);
+		storage->addEdge(StorageEdgeData(Edge::EDGE_INCLUDE, keptSourceId, headerId));
+		storage->addEdge(StorageEdgeData(Edge::EDGE_INCLUDE, removedSourceId, headerId));
+		storage->setFileCommandHash(keptSourcePath.str(), "kept");
+		storage->setFileCommandHash(removedSourcePath.str(), "removed");
+
+		storage->buildCaches();
+
+		const RefreshInfo refreshInfo =
+			RefreshInfoGenerator::getRefreshInfoForUpdatedFiles(sourceGroups, storage);
+
+		// The header, included by the unchanged source as well, stays.
+		REQUIRE(refreshInfo.filesToClear == std::set<FilePath>{removedSourcePath});
+		REQUIRE(refreshInfo.nonIndexedFilesToClear.empty());
+		REQUIRE(refreshInfo.filesToIndex.empty());
+	}
+	cleanup();
+}
+
+TEST_CASE("refresh info for updated files keeps a removed source an unchanged source includes")
+{
+	cleanup();
+	{
+		const FilePath keptSourcePath = sourceFolder().getConcatenated("kept.cc");
+		const FilePath removedSourcePath = sourceFolder().getConcatenated("included.cc");
+
+		std::vector<std::shared_ptr<SourceGroup>> sourceGroups;
+		sourceGroups.push_back(std::make_shared<SourceGroupTest>(
+			std::set<FilePath>{keptSourcePath}, std::set<FilePath>{keptSourcePath, removedSourcePath}));
+
+		std::shared_ptr<PersistentStorage> storage =
+			std::make_shared<PersistentStorage>(indexDbPath(), bookmarkDbPath());
+		storage->setup();
+
+		const Id keptSourceId = addVeryNewFileToStorage(keptSourcePath, true, true, storage);
+		addFileToFileSystem(keptSourcePath);
+		const Id removedSourceId = addVeryNewFileToStorage(removedSourcePath, true, true, storage);
+		addFileToFileSystem(removedSourcePath);
+		storage->addEdge(StorageEdgeData(Edge::EDGE_INCLUDE, keptSourceId, removedSourceId));
+		storage->setFileCommandHash(keptSourcePath.str(), "kept");
+		storage->setFileCommandHash(removedSourcePath.str(), "removed");
+
+		storage->buildCaches();
+
+		const RefreshInfo refreshInfo =
+			RefreshInfoGenerator::getRefreshInfoForUpdatedFiles(sourceGroups, storage);
+
+		REQUIRE(refreshInfo.filesToClear.empty());
+		REQUIRE(refreshInfo.filesToIndex.empty());
+	}
+	cleanup();
+}
+
+TEST_CASE("refresh info for updated files keeps the sources when the group names none")
+{
+	cleanup();
+	{
+		// A CMake build directory whose File API reply cannot be read lists no sources; that is no
+		// reason to clear every translation unit.
+		const FilePath sourcePath = sourceFolder().getConcatenated("source.cc");
+
+		std::vector<std::shared_ptr<SourceGroup>> sourceGroups;
+		sourceGroups.push_back(
+			std::make_shared<SourceGroupTest>(std::set<FilePath>{}, std::set<FilePath>{sourcePath}));
+
+		std::shared_ptr<PersistentStorage> storage =
+			std::make_shared<PersistentStorage>(indexDbPath(), bookmarkDbPath());
+		storage->setup();
+
+		addVeryNewFileToStorage(sourcePath, true, true, storage);
+		addFileToFileSystem(sourcePath);
+		storage->setFileCommandHash(sourcePath.str(), "source");
+
+		storage->buildCaches();
+
+		const RefreshInfo refreshInfo =
+			RefreshInfoGenerator::getRefreshInfoForUpdatedFiles(sourceGroups, storage);
+
+		REQUIRE(refreshInfo.filesToClear.empty());
+		REQUIRE(refreshInfo.filesToIndex.empty());
+	}
+	cleanup();
+}

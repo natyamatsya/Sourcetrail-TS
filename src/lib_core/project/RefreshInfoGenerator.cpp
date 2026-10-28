@@ -37,6 +37,10 @@ RefreshInfo RefreshInfoGenerator::getRefreshInfoForUpdatedFiles(
 	// source that is not yet indexed and, in step 2.3, to protect referenced headers.
 	const std::set<FilePath> allSourceFilePathsFromSourcegroups = getAllSourceFilePaths(sourceGroups);
 
+	// The compile-command hash of every file a previous index indexed as a translation unit
+	// (persisted after each indexing run; databases from before have none).
+	const std::unordered_map<std::string, std::string> storedHashes = storage->getFileCommandHashes();
+
 	{
 		const std::vector<FileInfo> fileInfosFromStorage = storage->getFileInfoForAllFiles();
 
@@ -54,11 +58,34 @@ RefreshInfo RefreshInfoGenerator::getRefreshInfoForUpdatedFiles(
 			}
 			for (const std::shared_ptr<SourceGroup>& sourceGroup: sourceGroups)
 			{
-				if (sourceGroup->getStatus() == SourceGroupStatusType::ENABLED)
+				if (sourceGroup->getStatus() != SourceGroupStatusType::ENABLED)
 				{
-					utility::append(
-						containedFilePaths, sourceGroup->filterToContainedFilePaths(storedFilePaths));
+					continue;
 				}
+
+				std::set<FilePath> groupContainedFilePaths =
+					sourceGroup->filterToContainedFilePaths(storedFilePaths);
+
+				// A file indexed as a translation unit belongs to the project while it is a
+				// source. A source removed from its CMake target (or the compilation database)
+				// that lies below an indexed header path, often the project root, was still
+				// claimed as a header and stayed indexed with its symbols and edges. Now it is a
+				// removal candidate: step 2.4 clears it unless an unchanged source includes it.
+				// Not for a group that names no source at all: that is a CMake build directory
+				// whose File API reply cannot be read, which would clear every translation unit.
+				if (!sourceGroup->getAllSourceFilePaths().empty())
+				{
+					for (const auto& [path, hash]: storedHashes)
+					{
+						const FilePath translationUnitPath(path);
+						if (!allSourceFilePathsFromSourcegroups.contains(translationUnitPath))
+						{
+							groupContainedFilePaths.erase(translationUnitPath);
+						}
+					}
+				}
+
+				utility::append(containedFilePaths, groupContainedFilePaths);
 			}
 		}
 
@@ -115,7 +142,6 @@ RefreshInfo RefreshInfoGenerator::getRefreshInfoForUpdatedFiles(
 	// without a stored hash (older databases, never-indexed files) are skipped, so
 	// upgrading never triggers a spurious full re-index.
 	{
-		const std::unordered_map<std::string, std::string> storedHashes = storage->getFileCommandHashes();
 		if (!storedHashes.empty())
 		{
 			for (const std::shared_ptr<SourceGroup>& sourceGroup: sourceGroups)
