@@ -66,6 +66,7 @@ public:
 	std::vector<Id> addSourceLocations(const std::vector<StorageSourceLocation>& locations);
 	bool addOccurrence(const StorageOccurrence& data);
 	bool addOccurrences(const std::vector<StorageOccurrence>& occurrences);
+	bool addEdgeFiles(const std::vector<StorageEdgeFile>& edgeFiles);
 	bool addComponentAccess(const StorageComponentAccess& componentAccess);
 	bool addComponentAccesses(const std::vector<StorageComponentAccess>& componentAccesses);
 	bool addNodeAttribute(const StorageNodeAttribute& nodeAttribute);

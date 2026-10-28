@@ -232,6 +232,85 @@ inline void Storage::inject(Storage* injected)
 		addOccurrences(occurrences);
 	}
 
+	if (keepsEdgeFiles())
+	{
+		// TRACE("inject edge files");
+
+		// An edge without occurrences of its own (a use in implicit code, a location in a macro)
+		// belongs to the files that recorded it, as an edge with occurrences belongs to theirs:
+		// where its source node occurs in the injected storage, else where its target node does,
+		// else every file the injected storage indexed. Member edges are left out: they follow
+		// from the node names.
+		std::unordered_set<Id> elementsWithOccurrences;
+		for (const StorageOccurrence& occurrence: injected->getStorageOccurrences())
+		{
+			elementsWithOccurrences.insert(occurrence.elementId);
+		}
+
+		std::vector<StorageEdge> bareEdges;
+		std::unordered_map<Id, std::set<Id>> nodeFileIds;
+		for (const StorageEdge& edge: injected->getStorageEdges())
+		{
+			if (edge.type != Edge::EDGE_MEMBER && !elementsWithOccurrences.contains(edge.id))
+			{
+				bareEdges.push_back(edge);
+				nodeFileIds.try_emplace(edge.sourceNodeId);
+				nodeFileIds.try_emplace(edge.targetNodeId);
+			}
+		}
+
+		if (!bareEdges.empty())
+		{
+			std::unordered_map<Id, Id> locationFileIds;
+			for (const StorageSourceLocation& location: injected->getStorageSourceLocations())
+			{
+				locationFileIds.emplace(location.id, location.fileNodeId);
+			}
+			for (const StorageOccurrence& occurrence: injected->getStorageOccurrences())
+			{
+				const auto node = nodeFileIds.find(occurrence.elementId);
+				const auto location = locationFileIds.find(occurrence.sourceLocationId);
+				if (node != nodeFileIds.end() && location != locationFileIds.end())
+				{
+					node->second.insert(location->second);
+				}
+			}
+			std::set<Id> indexedFileIds;
+			for (const StorageFile& file: injected->getStorageFiles())
+			{
+				if (file.indexed)
+				{
+					indexedFileIds.insert(file.id);
+				}
+			}
+
+			std::vector<StorageEdgeFile> edgeFiles;
+			for (const StorageEdge& edge: bareEdges)
+			{
+				const auto ownEdge = injectedIdToOwnElementId.find(edge.id);
+				if (ownEdge == injectedIdToOwnElementId.end())
+				{
+					continue;
+				}
+				const std::set<Id>& sourceFileIds = nodeFileIds[edge.sourceNodeId];
+				const std::set<Id>& targetFileIds = nodeFileIds[edge.targetNodeId];
+				const std::set<Id>& fileIds = !sourceFileIds.empty() ? sourceFileIds
+					: !targetFileIds.empty()                         ? targetFileIds
+																	 : indexedFileIds;
+				for (const Id fileId: fileIds)
+				{
+					const auto ownFile = injectedIdToOwnElementId.find(fileId);
+					if (ownFile != injectedIdToOwnElementId.end())
+					{
+						edgeFiles.emplace_back(ownEdge->second, ownFile->second);
+					}
+				}
+			}
+
+			addEdgeFiles(edgeFiles);
+		}
+	}
+
 	{
 		// TRACE("inject element components");
 
@@ -298,6 +377,16 @@ inline void Storage::startInjection()
 }
 
 inline void Storage::finishInjection()
+{
+	// may be implemented in derived
+}
+
+inline bool Storage::keepsEdgeFiles() const
+{
+	return false;
+}
+
+inline void Storage::addEdgeFiles(const std::vector<StorageEdgeFile>& /*edgeFiles*/)
 {
 	// may be implemented in derived
 }

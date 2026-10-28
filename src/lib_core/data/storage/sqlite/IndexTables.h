@@ -360,6 +360,28 @@ namespace idx {
   };
   using Occurrence = ::sqlpp::table_t<Occurrence_>;
 
+  struct EdgeFile_ {
+    struct EdgeId {
+      SQLPP_CREATE_NAME_TAG_FOR_SQL_AND_CPP(edge_id, edgeId);
+      using data_type = ::sqlpp::integral;
+      using has_default = std::false_type;
+    };
+    struct FileNodeId {
+      SQLPP_CREATE_NAME_TAG_FOR_SQL_AND_CPP(file_node_id, fileNodeId);
+      using data_type = ::sqlpp::integral;
+      using has_default = std::false_type;
+    };
+    SQLPP_CREATE_NAME_TAG_FOR_SQL_AND_CPP(edge_file, edgeFile);
+    template<typename T>
+    using _table_columns = sqlpp::table_columns<T,
+               EdgeId,
+               FileNodeId>;
+    using _required_insert_columns = sqlpp::detail::type_set<
+               sqlpp::column_t<sqlpp::table_t<EdgeFile_>, EdgeId>,
+               sqlpp::column_t<sqlpp::table_t<EdgeFile_>, FileNodeId>>;
+  };
+  using EdgeFile = ::sqlpp::table_t<EdgeFile_>;
+
   struct ComponentAccess_ {
     struct NodeId {
       SQLPP_CREATE_NAME_TAG_FOR_SQL_AND_CPP(node_id, nodeId);

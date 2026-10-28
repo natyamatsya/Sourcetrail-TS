@@ -42,7 +42,7 @@ import srctrl.utility;
 #endif
 
 
-const size_t SqliteIndexStorage::s_storageVersion = 28;
+const size_t SqliteIndexStorage::s_storageVersion = 29;
 
 namespace
 {
@@ -70,6 +70,7 @@ constexpr idx::FileCommandHash fileCommandHashTable;
 constexpr idx::LocalSymbol localSymbolTable;
 constexpr idx::SourceLocation sourceLocationTable;
 constexpr idx::Occurrence occurrenceTable;
+constexpr idx::EdgeFile edgeFileTable;
 constexpr idx::ComponentAccess componentAccessTable;
 constexpr idx::NodeAttribute nodeAttributeTable;
 constexpr idx::Error errorTable;
@@ -905,6 +906,23 @@ bool SqliteIndexStorage::addOccurrences(const std::vector<StorageOccurrence>& oc
 		});
 }
 
+bool SqliteIndexStorage::addEdgeFiles(const std::vector<StorageEdgeFile>& edgeFiles)
+{
+	using namespace sqlpp;
+	return insertInChunks(
+		db(),
+		edgeFiles,
+		[] {
+			return ::sqlpp::sqlite3::insert_or_ignore().into(edgeFileTable).columns(
+				edgeFileTable.edgeId, edgeFileTable.fileNodeId);
+		},
+		[](auto& insert, const StorageEdgeFile& edgeFile) {
+			insert.add_values(
+				edgeFileTable.edgeId = static_cast<Id::type>(edgeFile.edgeId),
+				edgeFileTable.fileNodeId = static_cast<Id::type>(edgeFile.fileNodeId));
+		});
+}
+
 bool SqliteIndexStorage::addComponentAccess(const StorageComponentAccess& componentAccess)
 {
 	return addComponentAccesses({componentAccess});
@@ -1132,6 +1150,7 @@ void SqliteIndexStorage::removeElementsWithLocationInFiles(
 
 	// preparing
 	executeStatement("DROP TABLE IF EXISTS main.element_id_to_clear;");
+	executeStatement("DROP TABLE IF EXISTS main.declared_node_id_to_clear;");
 
 	if (updateStatusCallback != nullptr)
 	{
@@ -1140,6 +1159,10 @@ void SqliteIndexStorage::removeElementsWithLocationInFiles(
 
 	executeStatement(
 		"CREATE TABLE IF NOT EXISTS element_id_to_clear("
+		"id INTEGER NOT NULL, "
+		"PRIMARY KEY(id));");
+	executeStatement(
+		"CREATE TABLE IF NOT EXISTS declared_node_id_to_clear("
 		"id INTEGER NOT NULL, "
 		"PRIMARY KEY(id));");
 
@@ -1161,6 +1184,12 @@ void SqliteIndexStorage::removeElementsWithLocationInFiles(
 		")"
 		"	GROUP BY (occurrence.element_id)");
 
+	// and the edges without occurrences that fileIds recorded
+	executeStatement(
+		"INSERT OR IGNORE INTO element_id_to_clear "
+		"	SELECT edge_id FROM edge_file WHERE file_node_id IN (" +
+		utility::join(utility::toStrings(fileIds), ',') + ")");
+
 	if (updateStatusCallback != nullptr)
 	{
 		updateStatusCallback(4);
@@ -1177,9 +1206,36 @@ void SqliteIndexStorage::removeElementsWithLocationInFiles(
 		updateStatusCallback(10);
 	}
 
-	// delete source locations from fileIds (this also deletes the respective occurrences)
+	// store the ids of the nodes declared in fileIds and nowhere else (a declaration's
+	// occurrence is a token, signature or scope, not a qualifier, which is a use)
+	executeStatement(
+		"INSERT INTO declared_node_id_to_clear "
+		"	SELECT DISTINCT occurrence.element_id FROM occurrence "
+		"	INNER JOIN source_location ON occurrence.source_location_id = source_location.id "
+		"	INNER JOIN node ON node.id = occurrence.element_id "
+		"	WHERE source_location.file_node_id IN (" +
+		utility::join(utility::toStrings(fileIds), ',') +
+		") AND source_location.type IN (" +
+		std::to_string(static_cast<int>(LocationType::TOKEN)) + ',' +
+		std::to_string(static_cast<int>(LocationType::SCOPE)) + ',' +
+		std::to_string(static_cast<int>(LocationType::SIGNATURE)) +
+		") AND NOT EXISTS ("
+		"		SELECT * FROM occurrence AS other "
+		"		INNER JOIN source_location AS other_location ON "
+		"			other.source_location_id = other_location.id "
+		"		WHERE other.element_id = occurrence.element_id AND "
+		"			other_location.file_node_id NOT IN (" +
+		utility::join(utility::toStrings(fileIds), ',') +
+		")"
+		"	)");
+
+	// delete source locations from fileIds (this also deletes the respective occurrences), and
+	// what fileIds recorded of the edges without occurrences
 	executeStatement(
 		"DELETE FROM source_location WHERE file_node_id IN (" +
+		utility::join(utility::toStrings(fileIds), ',') + ");");
+	executeStatement(
+		"DELETE FROM edge_file WHERE file_node_id IN (" +
 		utility::join(utility::toStrings(fileIds), ',') + ");");
 
 	if (updateStatusCallback != nullptr)
@@ -1187,12 +1243,15 @@ void SqliteIndexStorage::removeElementsWithLocationInFiles(
 		updateStatusCallback(30);
 	}
 
-	// remove all ids from element_id_to_clear that still have occurrences: they are located in a
-	// file that is not cleared, which keeps them, whatever else was recorded in the cleared files
+	// remove all ids from element_id_to_clear that still have occurrences, or edge files: they
+	// are located in, or were recorded by, a file that is not cleared, which keeps them, whatever
+	// else was recorded in the cleared files
 	executeStatement(
 		"DELETE FROM element_id_to_clear WHERE id IN ("
 		"	SELECT element_id_to_clear.id FROM element_id_to_clear INNER JOIN occurrence ON "
 		"		element_id_to_clear.id = occurrence.element_id"
+		") OR EXISTS ("
+		"	SELECT * FROM edge_file WHERE edge_file.edge_id = element_id_to_clear.id"
 		")");
 
 	if (updateStatusCallback != nullptr)
@@ -1200,10 +1259,25 @@ void SqliteIndexStorage::removeElementsWithLocationInFiles(
 		updateStatusCallback(40);
 	}
 
-	// The edges left in element_id_to_clear had all their occurrences in the cleared files, so the
-	// files that recorded them are reindexed and record them again if they are still there. An edge
-	// is not deleted for where its source node occurs: a namespace occurs in every file, and a call
-	// in env.cc stays when a file that only declares the caller is cleared.
+	// The edges left in element_id_to_clear had all their occurrences (or edge files) in the
+	// cleared files, so the files that recorded them are reindexed and record them again if they
+	// are still there. An edge is not deleted because its source node occurs in a cleared file: a
+	// namespace occurs in every file, and a call in env.cc stays when a file that only declares the
+	// caller is cleared.
+	const std::string memberEdgeType = std::to_string(static_cast<int>(Edge::EDGE_MEMBER));
+
+	// But the edges of a node declared in the cleared files and nowhere else go, wherever they
+	// are located: only the files indexing its declarations record what it uses. A test function
+	// in cxxopts' options.cpp uses an enum constant in a default argument located in cxxopts.hpp;
+	// clearing options.cpp, whose test functions __COUNTER__ numbers anew, left the old ones
+	// behind with that use. Not so for a node only used there (as a qualifier: std::array<int, 3>
+	// in magic_enum_containers.hpp): its uses in test.cpp are test.cpp's.
+	executeStatement(
+		"INSERT OR IGNORE INTO element_id_to_clear "
+		"	SELECT edge.id FROM edge INNER JOIN declared_node_id_to_clear ON "
+		"		edge.source_node_id = declared_node_id_to_clear.id "
+		"	WHERE edge.type != " +
+		memberEdgeType);
 
 	// add the nodes at both ends of these edges that have no occurrences (a function only called
 	// from the cleared files): they may be left without a reason to exist
@@ -1241,10 +1315,9 @@ void SqliteIndexStorage::removeElementsWithLocationInFiles(
 		updateStatusCallback(59);
 	}
 
-	// What is left are nodes, local symbols and errors without occurrences. Member edges have no
-	// occurrences, so nothing tells which file recorded them; they follow from the node names
-	// instead (every file naming a::b records a -> a::b), so they stay as long as both nodes do.
-	const std::string memberEdgeType = std::to_string(static_cast<int>(Edge::EDGE_MEMBER));
+	// What is left are nodes, local symbols and errors without occurrences. Member edges have
+	// neither occurrences nor edge files: they follow from the node names (every file naming a::b
+	// records a -> a::b), so they stay as long as both nodes do.
 
 	// remove all ids from element_id_to_clear that are still the source or target of an edge other
 	// than a member edge
@@ -1342,6 +1415,7 @@ void SqliteIndexStorage::removeElementsWithLocationInFiles(
 
 	// cleaning up
 	executeStatement("DROP TABLE IF EXISTS main.element_id_to_clear;");
+	executeStatement("DROP TABLE IF EXISTS main.declared_node_id_to_clear;");
 
 	if (updateStatusCallback != nullptr)
 	{
@@ -2370,6 +2444,7 @@ void SqliteIndexStorage::clearTables()
 		m_database.execDML("DROP TABLE IF EXISTS main.error;");
 		m_database.execDML("DROP TABLE IF EXISTS main.node_attribute;");
 		m_database.execDML("DROP TABLE IF EXISTS main.component_access;");
+		m_database.execDML("DROP TABLE IF EXISTS main.edge_file;");
 		m_database.execDML("DROP TABLE IF EXISTS main.occurrence;");
 		m_database.execDML("DROP TABLE IF EXISTS main.source_location;");
 		m_database.execDML("DROP TABLE IF EXISTS main.local_symbol;");
@@ -2502,6 +2577,19 @@ void SqliteIndexStorage::setupTables()
 			"PRIMARY KEY(element_id, source_location_id), "
 			"FOREIGN KEY(element_id) REFERENCES element(id) ON DELETE CASCADE, "
 			"FOREIGN KEY(source_location_id) REFERENCES source_location(id) ON DELETE CASCADE);");
+
+		m_database.execDML(
+			"CREATE TABLE IF NOT EXISTS edge_file("
+			"edge_id INTEGER NOT NULL, "
+			"file_node_id INTEGER NOT NULL, "
+			"PRIMARY KEY(edge_id, file_node_id), "
+			"FOREIGN KEY(edge_id) REFERENCES element(id) ON DELETE CASCADE, "
+			"FOREIGN KEY(file_node_id) REFERENCES node(id) ON DELETE CASCADE);");
+
+		// Clearing a file looks its edge files up by file; the deletes cascading from the
+		// files' nodes need it, too.
+		m_database.execDML(
+			"CREATE INDEX IF NOT EXISTS edge_file_file_node_id_index ON edge_file(file_node_id);");
 
 		m_database.execDML(
 			"CREATE TABLE IF NOT EXISTS component_access("

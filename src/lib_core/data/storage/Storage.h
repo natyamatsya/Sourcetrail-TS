@@ -9,6 +9,8 @@
 #include <mutex>
 #include <set>
 #include <string>
+#include <unordered_map>
+#include <unordered_set>
 #include <vector>
 
 #include "StorageComponentAccess.h"
@@ -73,6 +75,11 @@ public:
 private:
 	virtual void startInjection();
 	virtual void finishInjection();
+
+	// Whether inject() hands addEdgeFiles() the files that recorded the injected edges without
+	// occurrences of their own. Only an index that clears files keeps them.
+	virtual bool keepsEdgeFiles() const;
+	virtual void addEdgeFiles(const std::vector<StorageEdgeFile>& edgeFiles);
 
 	std::mutex m_dataMutex;
 };

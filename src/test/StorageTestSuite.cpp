@@ -4,6 +4,7 @@
 #include "utilityString.h"
 #endif
 
+#include <algorithm>
 #include <format>
 #include <map>
 #include <set>
@@ -105,6 +106,8 @@ struct RecordedReference
 	std::string context;
 	std::string referenced;
 	size_t line;
+	// false: a use in implicit code or in a macro, which the indexer records without a location
+	bool located = true;
 };
 
 std::shared_ptr<IntermediateStorage> recordTranslationUnit(
@@ -129,7 +132,7 @@ std::shared_ptr<IntermediateStorage> recordTranslationUnit(
 			reference.kind,
 			client.recordSymbol(createNameHierarchy(reference.referenced)),
 			client.recordSymbol(createNameHierarchy(reference.context)),
-			ParseLocation(fileId, reference.line, 12, reference.line, 20));
+			reference.located ? ParseLocation(fileId, reference.line, 12, reference.line, 20) : ParseLocation());
 	}
 	return intermediateStorage;
 }
@@ -592,10 +595,13 @@ TEST_CASE("storage refresh of one file leaves the index a full index would have"
 		 {"ns::write", SymbolKind::FUNCTION, 3},
 		 {"ns::doWrite", SymbolKind::FUNCTION, 4}},
 		{{ReferenceKind::CALL, "ns::write", "ns::doWrite", 5},
-		 {ReferenceKind::TYPE_USAGE, "ns::write", "ns::B", 3}});
+		 {ReferenceKind::TYPE_USAGE, "ns::write", "ns::B", 3},
+		 {ReferenceKind::TYPE_USAGE, "ns::doWrite", "ns::Implicit", 4, false}});
 
 	// a.cc before the change: it forward-declares ns::write, declares ns::A and ns::Gone with a
-	// member, and calls outer::inner::leaf, which is declared in no indexed file.
+	// member, and calls outer::inner::leaf, which is declared in no indexed file. ns::run uses
+	// ns::GoneImplicit in implicit code (a template instantiation), and a macro defines a variable
+	// that uses itself, neither with a location (doctest's DOCTEST_ANON_VAR_25).
 	const std::shared_ptr<IntermediateStorage> aBefore = recordTranslationUnit(
 		"a.cc",
 		{{"ns", SymbolKind::NAMESPACE, 1},
@@ -606,9 +612,12 @@ TEST_CASE("storage refresh of one file leaves the index a full index would have"
 		 {"ns::run", SymbolKind::FUNCTION, 6}},
 		{{ReferenceKind::TYPE_USAGE, "ns::write", "ns::B", 3},
 		 {ReferenceKind::TYPE_USAGE, "ns::A", "ns::B", 2},
-		 {ReferenceKind::CALL, "ns::run", "outer::inner::leaf", 7}});
+		 {ReferenceKind::CALL, "ns::run", "outer::inner::leaf", 7},
+		 {ReferenceKind::TYPE_USAGE, "ns::run", "ns::GoneImplicit", 6, false},
+		 {ReferenceKind::USAGE, "ANON_VAR_8", "ANON_VAR_8", 8, false}});
 
-	// a.cc after the change: ns::Gone and the call to outer::inner::leaf are gone, ns::Added is new.
+	// a.cc after the change: ns::Gone, the call to outer::inner::leaf and the uses without a
+	// location are gone, ns::Added is new, and ns::run uses ns::Implicit in implicit code.
 	const std::shared_ptr<IntermediateStorage> aAfter = recordTranslationUnit(
 		"a.cc",
 		{{"ns", SymbolKind::NAMESPACE, 1},
@@ -617,7 +626,8 @@ TEST_CASE("storage refresh of one file leaves the index a full index would have"
 		 {"ns::Added", SymbolKind::STRUCT, 4},
 		 {"ns::run", SymbolKind::FUNCTION, 6}},
 		{{ReferenceKind::TYPE_USAGE, "ns::write", "ns::B", 3},
-		 {ReferenceKind::TYPE_USAGE, "ns::A", "ns::B", 2}});
+		 {ReferenceKind::TYPE_USAGE, "ns::A", "ns::B", 2},
+		 {ReferenceKind::TYPE_USAGE, "ns::run", "ns::Implicit", 6, false}});
 
 	TestStorage full;
 	full.inject(b.get());
@@ -639,7 +649,11 @@ TEST_CASE("storage refresh of one file leaves the index a full index would have"
 	REQUIRE(hasEdge(refreshed, Edge::EDGE_MEMBER, "ns", "ns::write"));
 	REQUIRE(hasEdge(refreshed, Edge::EDGE_CALL, "ns::write", "ns::doWrite"));
 	REQUIRE(hasEdge(refreshed, Edge::EDGE_TYPE_USAGE, "ns::write", "ns::B"));
-	// What only a.cc recorded goes, with the nodes nothing else names.
+	REQUIRE(hasEdge(refreshed, Edge::EDGE_TYPE_USAGE, "ns::doWrite", "ns::Implicit"));
+	// What only a.cc recorded goes, with the nodes nothing else names, also without locations.
+	REQUIRE(!hasEdge(refreshed, Edge::EDGE_TYPE_USAGE, "ns::run", "ns::GoneImplicit"));
+	REQUIRE(refreshed.getNodeIdForNameHierarchy(createNameHierarchy("ns::GoneImplicit")) == 0);
+	REQUIRE(refreshed.getNodeIdForNameHierarchy(createNameHierarchy("ANON_VAR_8")) == 0);
 	REQUIRE(!hasEdge(refreshed, Edge::EDGE_TYPE_USAGE, "ns::A", "ns::B"));
 	REQUIRE(refreshed.getNodeIdForNameHierarchy(createNameHierarchy("ns::Gone::member")) == 0);
 	REQUIRE(refreshed.getNodeIdForNameHierarchy(createNameHierarchy("ns::Gone")) == 0);
@@ -702,13 +716,27 @@ std::shared_ptr<IntermediateStorage> parseFile(const std::string& filePath, cons
 		std::vector<std::string>{ClangCompiler::stdOption(ClangCompiler::getLatestCppStandard())});
 	return intermediateStorage;
 }
+
+// The edges of `storage` without occurrences of their own, member edges left out.
+size_t countEdgesWithoutOccurrences(const IntermediateStorage& storage)
+{
+	std::set<Id> elementsWithOccurrences;
+	for (const StorageOccurrence& occurrence: storage.getStorageOccurrences())
+	{
+		elementsWithOccurrences.insert(occurrence.elementId);
+	}
+	return static_cast<size_t>(std::ranges::count_if(storage.getStorageEdges(), [&](const StorageEdge& edge) {
+		return edge.type != Edge::EDGE_MEMBER && !elementsWithOccurrences.contains(edge.id);
+	}));
+}
 }	 // namespace
 
 TEST_CASE("storage refresh of one parsed file leaves the index a full index would have")
 {
 	// leveldb's db/filename.cc forward-declares WriteStringToFileSync, which util/env.cc defines;
 	// clearing filename.cc deleted the call in env.cc and the namespace's member edges to all
-	// that env.cc declares.
+	// that env.cc declares. Before, filename.cc instantiated a template with a lambda (repro's
+	// lib::overloaded), whose return type the indexer records without a location.
 	const std::shared_ptr<IntermediateStorage> env = parseFile(
 		"env.cc",
 		"namespace leveldb {\n"
@@ -722,7 +750,12 @@ TEST_CASE("storage refresh of one parsed file leaves the index a full index woul
 		"struct Env;\n"
 		"int WriteStringToFileSync(Env* env);\n"
 		"struct Gone { int member; };\n"
-		"int SetCurrentFile(Env* env) { return WriteStringToFileSync(env); }\n"
+		"template <class... Ts> struct overloaded : Ts... { using Ts::operator()...; };\n"
+		"template <class... Ts> overloaded(Ts...) -> overloaded<Ts...>;\n"
+		"int SetCurrentFile(Env* env) {\n"
+		"  auto ov = overloaded{[](char) { return 1; }};\n"
+		"  return ov('c') + WriteStringToFileSync(env);\n"
+		"}\n"
 		"}\n");
 	const std::shared_ptr<IntermediateStorage> filenameAfter = parseFile(
 		"filename.cc",
@@ -732,6 +765,9 @@ TEST_CASE("storage refresh of one parsed file leaves the index a full index woul
 		"struct Added {};\n"
 		"int SetCurrentFile(Env* env) { return WriteStringToFileSync(env); }\n"
 		"}\n");
+
+	// The lambda's return type is a use in implicit code (the instantiation), without a location.
+	REQUIRE(countEdgesWithoutOccurrences(*filenameBefore) > countEdgesWithoutOccurrences(*filenameAfter));
 
 	TestStorage full;
 	full.inject(env.get());
