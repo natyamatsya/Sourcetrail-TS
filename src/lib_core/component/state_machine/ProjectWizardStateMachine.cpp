@@ -26,6 +26,14 @@ struct Choice
 	std::optional<std::string> label;
 };
 
+struct Detected
+{
+	std::string folder;
+	std::optional<std::string> source_group_type;
+	std::vector<std::string> reasons;
+	std::optional<std::vector<std::string>> notices;
+};
+
 struct WizardContext
 {
 	std::optional<std::string> mode;	// new | edit
@@ -37,6 +45,7 @@ struct WizardContext
 	std::optional<std::map<std::string, std::vector<Choice>>> choices;
 	std::optional<std::map<std::string, std::string>> notes;
 	std::optional<std::vector<std::string>> types;
+	std::optional<Detected> detected;
 	std::optional<std::string> applying;
 	std::optional<std::string> error;
 	std::optional<std::string> outcome;
@@ -47,6 +56,12 @@ struct SetArgs
 	std::optional<std::string> project_name;
 	std::optional<std::string> project_location;
 	std::map<std::string, SourceGroupField> fields;
+};
+
+struct FolderArgs
+{
+	std::string folder;
+	std::optional<std::string> project_location;
 };
 
 struct SourceGroupArgs
@@ -121,6 +136,7 @@ MachineFireResult ProjectWizardStateMachine::request(Request request, EventSourc
 	using Kind = Request::Kind;
 	static constexpr std::array events {
 		std::pair {Kind::New, Event::New},
+		std::pair {Kind::NewFromFolder, Event::NewFromFolder},
 		std::pair {Kind::Edit, Event::Edit},
 		std::pair {Kind::Set, Event::Set},
 		std::pair {Kind::Show, Event::Show},
@@ -307,6 +323,22 @@ MachineFireResult ProjectWizardStateMachine::fire(const std::string& event, cons
 											  : Kind::Cancel;
 		break;
 	}
+	case Event::NewFromFolder:
+	{
+		const auto parsed = parseArgs<json::FolderArgs>(event, args, R"({"folder": "...", "project_location"?: "..."})");
+		if (!parsed)
+		{
+			return {false, parsed.error()};
+		}
+		if (parsed->folder.empty())
+		{
+			return {false, R"(new_from_folder needs {"folder": "..."}: the folder to detect the project in)"};
+		}
+		request.kind = Kind::NewFromFolder;
+		request.folder = parsed->folder;
+		request.projectLocation = parsed->project_location;
+		break;
+	}
 	case Event::Set:
 	{
 		const auto parsed = parseArgs<json::SetArgs>(
@@ -408,6 +440,15 @@ std::string ProjectWizardMachine::context(State state, const Data& data)
 		if (state == State::ChoosingType)
 		{
 			context.types = view.types;
+		}
+		if (view.detected)
+		{
+			const ProjectWizardView::Detection& detection{*view.detected};
+			context.detected = json::Detected {
+				.folder = detection.folder,
+				.source_group_type = detection.sourceGroupType.empty() ? std::nullopt : std::optional {detection.sourceGroupType},
+				.reasons = detection.reasons,
+				.notices = detection.notices.empty() ? std::nullopt : std::optional {detection.notices}};
 		}
 	}
 	if (state == State::Applying && !data.request.empty())

@@ -74,6 +74,7 @@ public:
 	// Project keys:
 
 	static Info newProject();
+	static Info newProjectFromFolder();
 	static Info openProject();
 	static Info exit();
 

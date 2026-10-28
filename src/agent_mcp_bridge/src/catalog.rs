@@ -577,6 +577,14 @@ an invalid name) asks a question first (see question): answer it, the request th
 with that text. A person's steps move the machine too: opening the wizard, the type \
 selection, creating, closing; the context follows their page changes once they leave a page.
   new                              closed: opens the wizard on a new project.
+  new_from_folder { folder, project_location? }   closed: opens it on the project detected \
+in folder, as Project > New Project from Folder does: the name (the folder's), the location \
+(project_location, default the folder) and one source group with its fields filled in, shown \
+on the general page; nothing is created until create. C/C++, in this order: a cmake group with \
+a usable configure preset (a configured one first, then one made for this computer), a cmake \
+group on a configured build directory or one beside the project file, a cdb group on a \
+compile_commands.json, an empty cpp/c group on the folder (extensions, standard, include \
+paths). Ends at editing, or at closed with context.outcome (no such folder).
   edit                             closed: opens it on the project loaded.
   set { project_name?, project_location?, fields?: { ... } }   editing: the general page's \
 name and location (a new project's only), and the shown source group's fields: \
@@ -601,7 +609,14 @@ location }, source_groups [{ name, type, enabled }], fields, choices, notes, typ
 are the values the page offers for a field (a cmake group: its presets; once its build \
 directory is configured, its configurations and targets, for cmake_target_glob: names or \
 patterns joined by ';'); notes { field: text } what the page shows beside a field (the build \
-directory a preset resolves to, how many targets and files are indexed).
+directory a preset resolves to, how many targets and files are indexed). detected { folder, \
+source_group_type, reasons, notices? } (a project from a folder): why it is as proposed, the \
+first reason the summary; notices what was found besides and decides nothing (the git \
+repository and branch, its submodules and which are not checked out, build systems not read \
+yet such as Meson or Makefiles).
+  Recipe, a project from a folder: new_from_folder { folder: \"C:/src/fmt\", \
+project_location: \"C:/projects/fmt\" }; read context.detected and the group's fields (show \
+{ source_group: 0 }), set what should differ; create; then index (indexing start).
   Recipe, a project from a compilation database: new; set { project_name, project_location }; \
 add_source_group { type: \"cdb\" }; set { fields: { compilation_database: \
 \"C:/b/compile_commands.json\" } }; create.

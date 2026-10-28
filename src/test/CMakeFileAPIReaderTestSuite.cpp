@@ -215,6 +215,30 @@ TEST_CASE("CMakeFileAPIReader discoverPresetInfos keeps file order, names and de
 	CHECK(presets[1].displayName.empty());
 }
 
+TEST_CASE("CMakeFileAPIReader discoverPresetInfos gives the generator and the environment that is not set")
+{
+	const TestTempDirectory tempDirectory{"presetGenerator"};
+	writePresets(tempDirectory.getPath(), R"({"version": 6, "configurePresets": [
+		{"name": "base", "hidden": true, "generator": "Ninja", "environment": {"OWN_ROOT": "/opt/own"}},
+		{"name": "child", "inherits": "base", "binaryDir": "$env{OWN_ROOT}/b",
+		 "toolchainFile": "$env{SOURCETRAIL_TEST_UNSET_A}/tc.cmake",
+		 "cacheVariables": {"X": {"type": "PATH", "value": "$penv{SOURCETRAIL_TEST_UNSET_B}"}, "Y": "$penv{OWN_ROOT}"}},
+		{"name": "plain", "binaryDir": "b"}
+	]})");
+
+	const auto presets{
+		CMakeFileAPIReader::discoverPresetInfos(FilePath{tempDirectory.getPath().string()})};
+
+	REQUIRE(presets.size() == 2);
+	CHECK(presets[0].generator == "Ninja");	// inherited
+	// $penv{} reads only the process environment, which has no OWN_ROOT.
+	CHECK(
+		presets[0].undefinedEnvironment ==
+		std::vector<std::string>{"SOURCETRAIL_TEST_UNSET_A", "SOURCETRAIL_TEST_UNSET_B", "OWN_ROOT"});
+	CHECK(presets[1].generator.empty());
+	CHECK(presets[1].undefinedEnvironment.empty());
+}
+
 TEST_CASE("CMakeFileAPIReader discoverPresets leaves out presets whose condition is false")
 {
 	const TestTempDirectory tempDirectory{"presetConditions"};
@@ -255,6 +279,24 @@ TEST_CASE("CMakeFileAPIReader resolveBinaryDir expands environment and directory
 	CHECK(
 		CMakeFileAPIReader::resolveBinaryDir(source, "relative").str() ==
 		sourceDir.generic_string() + "/build/rel");
+}
+
+TEST_CASE("CMakeFileAPIReader splitCompileFragment unquotes as the generator's shell")
+{
+#if defined(_WIN32)
+	CHECK(
+		CMakeFileAPIReader::splitCompileFragment(R"(-O2 "-DNAME=a b" /std:c++17)") ==
+		std::vector<std::string>{"-O2", "-DNAME=a b", "/std:c++17"});
+#else
+	// The Xcode generator quotes with single quotes, Ninja and Makefiles with double quotes.
+	CHECK(
+		CMakeFileAPIReader::splitCompileFragment(R"(-O3 -DNDEBUG '-std=c++17' -fvisibility=hidden)") ==
+		std::vector<std::string>{"-O3", "-DNDEBUG", "-std=c++17", "-fvisibility=hidden"});
+	CHECK(
+		CMakeFileAPIReader::splitCompileFragment(R"(  "-DMSG=\"hi there\"" -DA=b\ c '' x)") ==
+		std::vector<std::string>{"-DMSG=\"hi there\"", "-DA=b c", "", "x"});
+#endif
+	CHECK(CMakeFileAPIReader::splitCompileFragment("   ").empty());
 }
 
 TEST_CASE("CMakeFileAPIReader matchesTargetFilter takes several patterns")

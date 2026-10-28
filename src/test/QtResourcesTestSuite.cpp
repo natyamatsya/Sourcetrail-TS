@@ -85,6 +85,7 @@ const char *resourceNames[] = {
 	QtResources::GLYPH_EDIT,
 	QtResources::GLYPH_FILE_INCOMPLETE,
 	QtResources::GLYPH_FLOAT,
+	QtResources::GLYPH_FOLDER_DETECT,
 	QtResources::GLYPH_MAXIMIZE,
 	QtResources::GLYPH_MINIMIZE,
 	QtResources::GLYPH_SNIPPETS,

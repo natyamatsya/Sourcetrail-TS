@@ -142,6 +142,7 @@ QTableWidget* QtKeyboardShortcuts::createGeneralShortcutsTable()
 		QtActions::findText(),
 		QtActions::findOnScreen(),
 		QtActions::newProject(),
+		QtActions::newProjectFromFolder(),
 		QtActions::openProject(),
 		QtActions::closeTab(),
 		QtActions::refreshUI(),

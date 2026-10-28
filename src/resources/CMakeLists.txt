@@ -70,6 +70,7 @@ qt_add_resources(Sourcetrail_res_gui Sourcetrail_resources
 		glyphs/edit.svg
 		glyphs/file_incomplete.svg
 		glyphs/float.svg
+		glyphs/folder_detect.svg
 		glyphs/maximize.svg
 		glyphs/minimize.svg
 		glyphs/snippets.svg

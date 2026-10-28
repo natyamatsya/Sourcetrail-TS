@@ -40,6 +40,7 @@ public:
 signals:
 	void openOpenProjectDialog();
 	void openNewProjectDialog();
+	void openNewProjectFromFolderDialog();
 
 private slots:
 	void handleButtonClicked();

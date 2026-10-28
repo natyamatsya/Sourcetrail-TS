@@ -128,6 +128,11 @@ public:
 		std::string name;
 		std::string displayName;	// may be empty
 		std::string description;	// may be empty
+		std::string generator;	// inherited; empty when the preset leaves it to CMake
+		// The environment variables the preset's binaryDir, toolchainFile and cacheVariables
+		// read ($env{} / $penv{}) that neither its environment nor this process sets: a
+		// configure with it is likely to fail (a vcpkg toolchain without VCPKG_ROOT...).
+		std::vector<std::string> undefinedEnvironment;
 	};
 
 	enum class ConfigureErrorCode : std::uint8_t
@@ -186,6 +191,11 @@ public:
 	// The configuration names the reply has (one for single-config generators,
 	// CMAKE_CONFIGURATION_TYPES for multi-config ones). Empty without a reply.
 	std::vector<std::string> getConfigurations() const;
+
+	// A compileCommandFragment's arguments, unquoted as the generator's shell would: on
+	// Windows as a command line, elsewhere as a POSIX shell does, single quotes included
+	// (the Xcode generator writes '-std=c++17').
+	[[nodiscard]] static std::vector<std::string> splitCompileFragment(const std::string& fragment);
 
 	// Whether a target name matches a target filter: empty matches every target,
 	// otherwise one or more wildcard patterns separated by ';' or ','.

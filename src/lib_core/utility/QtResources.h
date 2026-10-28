@@ -69,6 +69,7 @@ public:
 	static const char GLYPH_EDIT[];
 	static const char GLYPH_FILE_INCOMPLETE[];
 	static const char GLYPH_FLOAT[];
+	static const char GLYPH_FOLDER_DETECT[];
 	static const char GLYPH_MAXIMIZE[];
 	static const char GLYPH_MINIMIZE[];
 	static const char GLYPH_SNIPPETS[];

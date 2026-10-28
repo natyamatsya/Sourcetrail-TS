@@ -345,13 +345,15 @@ QJsonValue inheritedField(
 	return findInheritedField(presetName, key, presets, visited);
 }
 
-// The preset's `environment`, merged along the inherits chain (a preset's own
-// entries win over its parents', earlier parents over later ones).
-void collectEnvironment(
+// The preset's object field `key` (`environment`, `cacheVariables`), merged along the
+// inherits chain (a preset's own entries win over its parents', earlier parents over
+// later ones).
+void collectMergedObject(
 	const QString& presetName,
+	const QString& key,
 	const PresetCollection& presets,
 	QSet<QString>& visited,
-	QMap<QString, QJsonValue>& environment)
+	QMap<QString, QJsonValue>& merged)
 {
 	if (visited.contains(presetName))
 		return;
@@ -360,12 +362,63 @@ void collectEnvironment(
 	const auto it{presets.byName.find(presetName)};
 	if (it == presets.byName.end())
 		return;
-	const QJsonObject own{it->object["environment"].toObject()};
+	const QJsonObject own{it->object[key].toObject()};
 	for (auto entry = own.begin(); entry != own.end(); ++entry)
-		if (!environment.contains(entry.key()))
-			environment.insert(entry.key(), entry.value());
+		if (!merged.contains(entry.key()))
+			merged.insert(entry.key(), entry.value());
 	for (const auto& parent : parentPresetNames(it->object))
-		collectEnvironment(parent, presets, visited, environment);
+		collectMergedObject(parent, key, presets, visited, merged);
+}
+
+// The preset's `environment`, merged along the inherits chain.
+void collectEnvironment(
+	const QString& presetName,
+	const PresetCollection& presets,
+	QSet<QString>& visited,
+	QMap<QString, QJsonValue>& environment)
+{
+	collectMergedObject(presetName, QStringLiteral("environment"), presets, visited, environment);
+}
+
+// The variables of $env{} / $penv{} macros in the values a configure with the preset
+// expands (binaryDir, toolchainFile, cacheVariables) that are set nowhere: not in the
+// preset's (inherited) environment for $env{}, not in this process's environment.
+std::vector<std::string> undefinedEnvironment(const QString& presetName, const PresetCollection& presets)
+{
+	QSet<QString> visited{};
+	QMap<QString, QJsonValue> presetEnvironment{};
+	collectEnvironment(presetName, presets, visited, presetEnvironment);
+
+	QStringList values{};
+	for (const QString& key : {QStringLiteral("binaryDir"), QStringLiteral("toolchainFile")})
+		values << inheritedField(presetName, key, presets).toString();
+	QSet<QString> visitedForCache{};
+	QMap<QString, QJsonValue> cacheVariables{};
+	collectMergedObject(
+		presetName, QStringLiteral("cacheVariables"), presets, visitedForCache, cacheVariables);
+	for (const QJsonValue& value : std::as_const(cacheVariables))
+		values << (value.isObject() ? value.toObject()["value"].toString() : value.toString());
+
+	static const QRegularExpression macro{QStringLiteral(R"(\$(env|penv)\{([^}]*)\})")};
+	std::vector<std::string> undefined{};
+	for (const QString& value : std::as_const(values))
+	{
+		auto matches{macro.globalMatch(value)};
+		while (matches.hasNext())
+		{
+			const auto match{matches.next()};
+			const QString variable{match.captured(2)};
+			const auto presetValue{presetEnvironment.find(variable)};
+			const bool inPreset{
+				match.captured(1) == QLatin1String("env") && presetValue != presetEnvironment.end() &&
+				presetValue->isString()};
+			const std::string name{variable.toStdString()};
+			if (!inPreset && !qEnvironmentVariableIsSet(variable.toUtf8().constData()) &&
+				!std::ranges::contains(undefined, name))
+				undefined.push_back(name);
+		}
+	}
+	return undefined;
 }
 
 QString hostSystemName()
@@ -529,9 +582,11 @@ std::vector<CMakeFileAPIReader::PresetInfo> CMakeFileAPIReader::discoverPresetIn
 			continue;
 		const QJsonObject& preset{presets.byName[name].object};
 		result.push_back(
-			{name.toStdString(),
-			 preset["displayName"].toString().toStdString(),
-			 preset["description"].toString().toStdString()});
+			{.name = name.toStdString(),
+			 .displayName = preset["displayName"].toString().toStdString(),
+			 .description = preset["description"].toString().toStdString(),
+			 .generator = inheritedField(name, QStringLiteral("generator"), presets).toString().toStdString(),
+			 .undefinedEnvironment = undefinedEnvironment(name, presets)});
 	}
 	return result;
 }
@@ -699,6 +754,58 @@ std::vector<std::string> CMakeFileAPIReader::getConfigurations() const
 		break;
 	}
 	return result;
+}
+
+std::vector<std::string> CMakeFileAPIReader::splitCompileFragment(const std::string& fragment)
+{
+	std::vector<std::string> tokens{};
+#if defined(_WIN32)
+	for (const QString& token : QProcess::splitCommand(QString::fromStdString(fragment).trimmed()))
+		tokens.push_back(token.toStdString());
+#else
+	std::string token{};
+	bool inToken{false};
+	char quote{0};
+	for (std::size_t i = 0; i < fragment.size(); i++)
+	{
+		const char c{fragment[i]};
+		if (quote == '\'')
+		{
+			if (c == '\'')
+				quote = 0;
+			else
+				token += c;
+			continue;
+		}
+		if (quote == '"')
+		{
+			if (c == '"')
+				quote = 0;
+			else if (c == '\\' && i + 1 < fragment.size() && std::string_view{"\"\\$`"}.contains(fragment[i + 1]))
+				token += fragment[++i];
+			else
+				token += c;
+			continue;
+		}
+		if (c == ' ' || c == '\t' || c == '\n' || c == '\r')
+		{
+			if (inToken)
+				tokens.push_back(std::exchange(token, {}));
+			inToken = false;
+			continue;
+		}
+		inToken = true;
+		if (c == '\'' || c == '"')
+			quote = c;
+		else if (c == '\\' && i + 1 < fragment.size())
+			token += fragment[++i];
+		else
+			token += c;
+	}
+	if (inToken)
+		tokens.push_back(token);
+#endif
+	return tokens;
 }
 
 bool CMakeFileAPIReader::matchesTargetFilter(
@@ -1346,12 +1453,8 @@ CMakeFileAPIReader::GetSourcesExpected CMakeFileAPIReader::getSourcesDetailed(
 
 			for (const auto& frag : cg.value("compileCommandFragments", nlohmann::json::array()))
 			{
-				const QString fragment =
-					QString::fromStdString(frag.value("fragment", std::string{})).trimmed();
-				if (fragment.isEmpty())
-					continue;
-				for (const QString& token : QProcess::splitCommand(fragment))
-					group.compileFlags.push_back(token.toStdString());
+				for (std::string& token : splitCompileFragment(frag.value("fragment", std::string{})))
+					group.compileFlags.push_back(std::move(token));
 			}
 
 			// MSVC fragments are '/'-spelled options the clang-based indexer
