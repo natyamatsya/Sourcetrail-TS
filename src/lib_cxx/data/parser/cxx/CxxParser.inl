@@ -30,6 +30,10 @@
 #include <llvm/Option/ArgList.h>
 #include <llvm/Support/TargetSelect.h>
 #include <llvm/Support/VirtualFileSystem.h>
+
+#include <filesystem>
+#include <optional>
+#include <system_error>
 #endif
 
 // ODR-safe home for the tool-invocation helpers: anonymous namespaces are an ODR trap in
@@ -73,6 +77,26 @@ inline std::vector<std::string> prependSyntaxOnlyToolArgs(
 inline std::vector<std::string> appendFilePath(const std::vector<std::string>& args, llvm::StringRef filePath)
 {
 	return utility::concat(args, {filePath.str()});
+}
+
+// The first working directory among the source file's compile commands that is not a directory
+// on this machine, if any. ClangTool::run changes into each command's directory and, when it
+// cannot, ends the whole process through llvm::report_fatal_error -- so a stale compilation
+// database (a removed build directory, one generated on CI or another machine) must be caught
+// before the tool runs.
+inline std::optional<std::string> findMissingWorkingDirectory(
+	const clang::tooling::CompilationDatabase& compilationDatabase, const FilePath& sourceFilePath)
+{
+	for (const clang::tooling::CompileCommand& command:
+		 compilationDatabase.getCompileCommands(sourceFilePath.str()))
+	{
+		std::error_code error;
+		if (!std::filesystem::is_directory(command.Directory, error))
+		{
+			return command.Directory;
+		}
+	}
+	return std::nullopt;
 }
 
 // custom implementation of clang::runToolOnCodeWithArgs which also sets our custom DiagnosticConsumer
@@ -228,6 +252,20 @@ inline void CxxParser::runTool(
 	const std::string& compilerPath)
 {
 	initializeLLVM();
+
+	if (const std::optional<std::string> missingDirectory =
+			cxx_parser_detail::findMissingWorkingDirectory(*compilationDatabase, sourceFilePath))
+	{
+		const Id fileId = m_client.recordFile(sourceFilePath, true);
+		m_client.recordError(
+			"The working directory of this file's compile command does not exist: " +
+				*missingDirectory,
+			true,
+			true,
+			sourceFilePath,
+			ParseLocation(fileId, 1, 1));
+		return;
+	}
 
 	clang::tooling::ClangTool tool(*compilationDatabase, std::vector<std::string>(1, sourceFilePath.str()));
 

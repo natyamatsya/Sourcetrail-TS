@@ -6,6 +6,7 @@
 #include "MessageFlushUpdates.h"
 #include "utility.h"
 #include "SearchMatch.h"
+#include "utilityMainFunction.h"
 #endif
 
 #include "Application.h"
@@ -533,7 +534,10 @@ void UndoRedoController::replayCommand(std::list<Command>::iterator it)
 
 			for (SearchMatch match: matches)
 			{
-				if (!isMainFunction(match))
+				// A main() and what is declared in it are unique per file in the index, but not by
+				// their names: keep their ids.
+				if (!isMainFunction(match) &&
+					(match.tokenNames.empty() || !isInMainFunction(match.tokenNames.front())))
 				{
 					match.tokenIds = m_storageAccess->getNodeIdsForNameHierarchies(match.tokenNames);
 				}

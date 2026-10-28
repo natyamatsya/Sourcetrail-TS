@@ -321,7 +321,24 @@ inline bool CxxAstVisitor::TraverseCXXRecordDecl(clang::CXXRecordDecl* d)
 
 	if (d->isLambda())
 	{
-		return TraverseFunctionDecl(d->getLambdaCallOperator());
+		TraverseFunctionDecl(d->getLambdaCallOperator());
+
+		// A generic lambda's call operator is a template whose calls are dependent: the calls
+		// made are in its instantiations, which are traversed like a function template's.
+		if (const clang::FunctionTemplateDecl* callOperatorTemplate = d->getDependentLambdaCallOperator())
+		{
+			for (clang::FunctionDecl* instantiation: callOperatorTemplate->specializations())
+			{
+				const clang::TemplateSpecializationKind kind = instantiation->getTemplateSpecializationKind();
+				if ((kind == clang::TSK_ImplicitInstantiation ||
+					 kind == clang::TSK_ExplicitInstantiationDefinition) &&
+					!TraverseDecl(instantiation))
+				{
+					return false;
+				}
+			}
+		}
+		return true;
 	}
 
 	WalkUpFromCXXRecordDecl(d);
@@ -332,7 +349,7 @@ inline bool CxxAstVisitor::TraverseCXXRecordDecl(clang::CXXRecordDecl* d)
 	{
 		for (const auto& base: d->bases())
 		{
-			if (!traverseCXXBaseSpecifier(base))
+			if (!TraverseCXXBaseSpecifier(base))
 			{
 				return false;
 			}
@@ -343,7 +360,9 @@ inline bool CxxAstVisitor::TraverseCXXRecordDecl(clang::CXXRecordDecl* d)
 	return true;
 }
 
-inline bool CxxAstVisitor::traverseCXXBaseSpecifier(const clang::CXXBaseSpecifier& d)
+// Overrides the base visitor's hook, so the bases of a partial specialization, which the base
+// visitor traverses, are inheritance too.
+inline bool CxxAstVisitor::TraverseCXXBaseSpecifier(const clang::CXXBaseSpecifier& d)
 {
 	forEachComponent([&](auto& component) { component.beginTraverseCXXBaseSpecifier(); });
 	bool ret = TraverseTypeLoc(d.getTypeSourceInfo()->getTypeLoc());
@@ -593,6 +612,19 @@ inline bool CxxAstVisitor::TraverseClassTemplateSpecializationDecl(clang::ClassT
 		}
 	}
 
+	// The bases as written. An instantiation's bases are written in its template: the declaration
+	// indexer records them there (visitClassTemplateSpecializationDecl).
+	if (ReturnValue && D->isExplicitSpecialization() && D->isCompleteDefinition())
+	{
+		for (const clang::CXXBaseSpecifier& base: D->bases())
+		{
+			if (!TraverseCXXBaseSpecifier(base))
+			{
+				ReturnValue = false;
+			}
+		}
+	}
+
 	if (ReturnValue && ShouldVisitChildren)
 	{
 		traverseDeclContextHelper(clang::dyn_cast<clang::DeclContext>(D));
@@ -783,6 +815,7 @@ DEF_VISIT_TYPE_PTR(DeclStmt)
 DEF_VISIT_TYPE_PTR(ReturnStmt)
 DEF_VISIT_TYPE_PTR(CompoundStmt)
 DEF_VISIT_TYPE_PTR(InitListExpr)
+DEF_VISIT_TYPE_PTR(DesignatedInitExpr)
 DEF_VISIT_TYPE_PTR(ImportDecl)
 DEF_VISIT_TYPE_PTR(ExportDecl)
 DEF_VISIT_TYPE_PTR(TagDecl)

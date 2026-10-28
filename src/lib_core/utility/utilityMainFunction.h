@@ -13,6 +13,7 @@ class NameHierarchy;
 // SearchMatch in data/search -- this header is NameHierarchy-only and part of srctrl.data:name.)
 
 SRCTRL_EXPORT bool isMainFunction(const NameHierarchy &nameHierarchy);
+SRCTRL_EXPORT bool isInMainFunction(const NameHierarchy &nameHierarchy);
 SRCTRL_EXPORT void uniquifyMainFunction(NameHierarchy *main, const std::string &uniqueAppendix);
 SRCTRL_EXPORT bool isUniquifiedMainFunction(const NameHierarchy &nameHierarchy);
 SRCTRL_EXPORT void deuniquifyMainFunction(NameHierarchy *main);

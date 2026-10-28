@@ -129,6 +129,33 @@ inline void CxxAstVisitorComponentReferenceIndexer::visitMemberExpr(clang::Membe
 	}
 }
 
+// A field designator (".a = x", each of ".a.b = x") is a use of its field at the field's name: how
+// a C struct of function pointers is filled. An array designator ("[2] = x") names no field; its
+// index is an expression of its own.
+inline void CxxAstVisitorComponentReferenceIndexer::visitDesignatedInitExpr(clang::DesignatedInitExpr* s)
+{
+	for (const clang::DesignatedInitExpr::Designator& designator: s->designators())
+	{
+		if (!designator.isFieldDesignator())
+		{
+			continue;
+		}
+
+		// A designator of a member of an anonymous struct or union is preceded by one of that
+		// struct or union, at the same location: that one is not written.
+		const clang::FieldDecl* fieldDecl = designator.getFieldDecl();
+		if (fieldDecl == nullptr || fieldDecl->isAnonymousStructOrUnion())
+		{
+			continue;
+		}
+
+		if (getAstVisitor()->shouldVisitReference(designator.getFieldLoc()))
+		{
+			m_index.recordReference(fieldDecl, ReferenceKind::USAGE, designator.getFieldLoc());
+		}
+	}
+}
+
 inline void CxxAstVisitorComponentReferenceIndexer::visitCXXConstructExpr(clang::CXXConstructExpr* s)
 {
 	const clang::CXXConstructorDecl* constructorDecl = s->getConstructor();

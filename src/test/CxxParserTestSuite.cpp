@@ -85,6 +85,21 @@ std::shared_ptr<TestStorage> parseCodeInStandard(const std::string& code, const 
 	return parseTranslationUnit("input.cc", code, {ClangCompiler::stdOption(languageStandard)});
 }
 
+// Like parseCode, but parses the code as C11.
+std::shared_ptr<TestStorage> parseCCode(const std::string& code)
+{
+	std::shared_ptr<IntermediateStorage> storage = std::make_shared<IntermediateStorage>();
+	const std::shared_ptr<ParserClientImpl> parserClient = std::make_shared<ParserClientImpl>(storage);
+	CxxParser parser(
+		*parserClient,
+		std::make_shared<TestFileRegister>(),
+		std::make_shared<IndexerStateInfo>());
+	parser.buildIndex(
+		"input.c", TextAccess::createFromString(code), {"-x", "c", ClangCompiler::stdOption("c11")});
+	return TestStorage::create(storage);
+}
+
+
 // Like parseCode, but hands back the raw IntermediateStorage so a test can
 // inspect node modifiers and node_attribute rows (TestStorage flattens both away).
 std::shared_ptr<IntermediateStorage> parseCodeToStorage(
@@ -1463,6 +1478,29 @@ TEST_CASE("cxx parser finds lambda definition and call in function")
 	REQUIRE(containsElement(client->calls, "void lambdaCaller() -> void lambdaCaller::lambda at 3:2() const <3:8 3:8>"s));
 }
 
+TEST_CASE("cxx parser finds calls in instantiations of generic lambda")
+{
+	// The generic call operator's calls are dependent; its instantiations make them.
+	std::shared_ptr<TestStorage> client = parseCode(
+		"template <int N> int work() { return N; }\n"
+		"template <int N> struct Int { static constexpr int value = N; };\n"
+		"int caller()\n"
+		"{\n"
+		"	auto generic = [](auto v) { return work<decltype(v)::value>(); };\n"
+		"	return generic(Int<3>{}) + generic(Int<4>{});\n"
+		"}\n");
+
+	REQUIRE(containsElement(
+		client->calls, "int caller::lambda at 5:17(Int<3>) const -> int work<3>() <5:37 5:40>"s));
+	REQUIRE(containsElement(
+		client->calls, "int caller::lambda at 5:17(Int<4>) const -> int work<4>() <5:37 5:40>"s));
+	REQUIRE(containsElement(
+		client->templateSpecializations,
+		"int caller::lambda at 5:17(Int<3>) const -> auto caller::lambda at 5:17(v:auto) const <5:17 5:17>"s));
+	REQUIRE(containsElement(
+		client->methods, "public int caller::lambda at 5:17(Int<3>) const <5:17 5:17>"s));
+}
+
 TEST_CASE("cxx parser finds mutable lambda definition")
 {
 	std::shared_ptr<TestStorage> client = parseCode(
@@ -1472,6 +1510,70 @@ TEST_CASE("cxx parser finds mutable lambda definition")
 		"}\n");
 
 	REQUIRE(containsElement(client->functions, "void lambdaWrapper() <1:1 <1:1 <1:6 1:18> 1:20> 4:1>"s));
+}
+
+TEST_CASE("cxx parser records what is declared in main as a child of that file's main")
+{
+	// main() is made unique per file; its lambdas and local types used to hang off a main() node
+	// common to all files instead, without a location or kind.
+	const std::shared_ptr<IntermediateStorage> storage = parseCodeToStorage(
+		"int main()\n"
+		"{\n"
+		"	enum class Local { A };\n"
+		"	auto lambda = [](Local l) { return (int)l; };\n"
+		"	return lambda(Local::A);\n"
+		"}\n");
+
+	std::vector<Id> mainIds;
+	std::map<Id, std::string> names;
+	std::set<std::string> qualifiedNames;
+	for (const StorageNode& node: storage->getStorageNodes())
+	{
+		const NameHierarchy name = NameHierarchy::deserialize(node.serializedName);
+		names.emplace(node.id, name.getRawName());
+		qualifiedNames.insert(name.getQualifiedName());
+		if (name.getQualifiedName() == "main")
+		{
+			REQUIRE(node.serializedName.find(".:main:.") != std::string::npos);
+			mainIds.push_back(node.id);
+		}
+	}
+	REQUIRE(mainIds.size() == 1);
+
+	std::set<std::string> mainChildren;
+	for (const StorageEdge& edge: storage->getStorageEdges())
+	{
+		if (edge.type == Edge::EDGE_MEMBER && edge.sourceNodeId == mainIds.front())
+		{
+			mainChildren.insert(names[edge.targetNodeId]);
+		}
+	}
+	REQUIRE(mainChildren == std::set<std::string>{"Local", "lambda at 4:16"});
+	// Shown without the file, as main() itself is.
+	REQUIRE(qualifiedNames.contains("main::Local"));
+	REQUIRE(qualifiedNames.contains("main::lambda at 4:16"));
+}
+
+TEST_CASE("cxx parser records a type declared in main as a child of main when named through an alias")
+{
+	// The alias's typedef is outside main(); the type it names is declared in it.
+	const std::shared_ptr<IntermediateStorage> storage = parseCodeToStorage(
+		"template <bool B, typename R> struct EnableIf { using type = R; };\n"
+		"template <typename D, typename R> using enable_if_t = typename EnableIf<true, R>::type;\n"
+		"template <typename E> auto value() -> enable_if_t<E, E> { return E{}; }\n"
+		"int main() { enum class Flags { A }; return (int)value<Flags>(); }\n");
+
+	size_t mainCount = 0;
+	for (const StorageNode& node: storage->getStorageNodes())
+	{
+		const NameHierarchy name = NameHierarchy::deserialize(node.serializedName);
+		if (name.size() > 0 && name.front().getName() == "main")
+		{
+			REQUIRE(node.serializedName.find(".:main:.") != std::string::npos);
+			mainCount += name.size() == 1 ? 1 : 0;
+		}
+	}
+	REQUIRE(mainCount == 1);
 }
 
 TEST_CASE("cxx parser finds local variable declared in lambda capture")
@@ -3203,6 +3305,48 @@ TEST_CASE("cxx parser finds usage of field in initialization list")
 		client->usages, "void App::App() -> int App::bar <4:5 4:7>"));
 }
 
+TEST_CASE("cxx parser finds usage of fields in designated initializers")
+{
+	// How a C struct of function pointers is filled: each designated field is used there.
+	std::shared_ptr<TestStorage> client = parseCCode(
+		"typedef struct ops { int (*area)(int); struct { int x, y; } pos; union { int u; }; } ops;\n"
+		"static int area(int w) { return w; }\n"
+		"ops g_ops = { .area = area, .pos.x = 1, .u = 3 };\n"
+		"ops g_arr[2] = { [1] = { .area = area }, [0].pos.y = 4 };\n"
+		"void f(void) { ops local = { .area = 0 }; (void)local; }\n");
+
+	REQUIRE(client->errors.empty());
+	REQUIRE(containsElement(client->usages, "ops g_ops -> int(int) * ops::area <3:16 3:19>"s));
+	REQUIRE(containsElement(client->usages, "void f() -> int(int) * ops::area <5:31 5:34>"s));
+	REQUIRE(containsElement(client->usages, "ops [] g_arr -> int(int) * ops::area <4:27 4:30>"s));
+
+	// Nested (".pos.x") and after an array designator ("[0].pos.y"): each field.
+	const auto usagesAt = [&](const std::string& location)
+	{
+		return std::count_if(
+			client->usages.begin(),
+			client->usages.end(),
+			[&](const std::string& usage) { return usage.ends_with(location); });
+	};
+	REQUIRE(usagesAt(" <3:30 3:32>") == 1);	   // pos
+	REQUIRE(usagesAt(" <3:34 3:34>") == 1);	   // x
+	REQUIRE(usagesAt(" <4:46 4:48>") == 1);	   // pos
+	REQUIRE(usagesAt(" <4:50 4:50>") == 1);	   // y
+
+	// A member of an anonymous union is designated alone, not with the union it is in.
+	REQUIRE(usagesAt(" <3:42 3:42>") == 1);	   // u
+}
+
+TEST_CASE("cxx parser finds usage of fields in C++20 designated initializers")
+{
+	std::shared_ptr<TestStorage> client = parseCode(
+		"struct Point { int x; int y; };\n"
+		"Point p = { .x = 1, .y = 2 };\n");
+
+	REQUIRE(containsElement(client->usages, "Point p -> int Point::x <2:14 2:14>"s));
+	REQUIRE(containsElement(client->usages, "Point p -> int Point::y <2:22 2:22>"s));
+}
+
 TEST_CASE("cxx parser finds usage of member in call expression to unresolved member expression")
 {
 	std::shared_ptr<TestStorage> client = parseCode(
@@ -4392,6 +4536,61 @@ TEST_CASE("record base class of implicit template class specialization")
 		client->inheritances, "Vector2<class T> -> VectorBase<class T, unsigned int N> <5:24 5:33>"));
 }
 
+TEST_CASE("cxx parser finds inheritance of explicit class template specialization")
+{
+	std::shared_ptr<TestStorage> client = parseCode(
+		"template <typename T> class A {};\n"
+		"template <typename T> class B {};\n"
+		"template <> class B<bool>: public A<bool> {};\n");
+
+	REQUIRE(containsElement(client->inheritances, "B<bool> -> A<bool> <3:35 3:35>"s));
+}
+
+TEST_CASE("cxx parser finds inheritance of partial class template specialization")
+{
+	std::shared_ptr<TestStorage> client = parseCode(
+		"template <typename T> class A {};\n"
+		"template <typename T> class B {};\n"
+		"template <typename T> class B<T*>: public A<T> {};\n");
+
+	REQUIRE(client->inheritances.size() == 1);
+	REQUIRE(client->inheritances.front().ends_with(" -> A<typename T> <3:43 3:43>"));
+	REQUIRE(client->typeUses.empty());
+}
+
+TEST_CASE("cxx parser finds inheritance of class template instantiations at the template's base")
+{
+	// An instantiation's bases are written in the template it is instantiated from: the primary
+	// template, or a partial specialization.
+	std::shared_ptr<TestStorage> client = parseCode(
+		"class Base {};\n"
+		"template <typename T> class A: public Base {};\n"
+		"template <typename T> class B: public A<T> {};\n"
+		"template <typename T> class B<T*>: public A<T*> {};\n"
+		"B<int> b;\n"
+		"B<int*> c;\n"
+		"template class B<char>;\n");
+
+	REQUIRE(containsElement(client->inheritances, "B<int> -> A<int> <3:39 3:39>"s));
+	REQUIRE(containsElement(client->inheritances, "A<int> -> Base <2:39 2:42>"s));
+	REQUIRE(containsElement(client->inheritances, "B<int *> -> A<int *> <4:43 4:43>"s));
+	REQUIRE(containsElement(client->inheritances, "A<int *> -> Base <2:39 2:42>"s));
+	REQUIRE(containsElement(client->inheritances, "B<char> -> A<char> <3:39 3:39>"s));
+	REQUIRE(containsElement(client->inheritances, "A<char> -> Base <2:39 2:42>"s));
+	REQUIRE(client->inheritances.size() == 9);
+}
+
+TEST_CASE("cxx parser finds inheritance of implicit class template instantiation from a lambda")
+{
+	std::shared_ptr<TestStorage> client = parseCode(
+		"template <typename... Ts> struct overloaded: Ts... { using Ts::operator()...; };\n"
+		"void f() { auto o = overloaded{[](int) {}}; }\n");
+
+	// The closure type is named by its lambda, not left unnamed ("global").
+	REQUIRE(client->inheritances.size() == 1);
+	REQUIRE(client->inheritances.front().ends_with(" -> void f::lambda at 2:32(int) const <1:46 1:47>"));
+}
+
 TEST_CASE("cxx parser finds template class specialization with template argument")
 {
 	std::shared_ptr<TestStorage> client = parseCode(
@@ -4986,6 +5185,42 @@ TEST_CASE("cxx parser parses multiple files")
 
 	REQUIRE(testStorage->files.size() == 2);
 	REQUIRE(testStorage->includes.size() == 1);
+}
+
+TEST_CASE("cxx parser reports a compile command whose working directory does not exist")
+{
+	// A stale compilation database names a build directory that is gone. ClangTool cannot change
+	// into it and would abort the process; the parser reports it as the file's error instead.
+	const std::string missingDirectory =
+		(std::filesystem::temp_directory_path() / "sourcetrail-test-no-such-build-dir").string();
+	REQUIRE_FALSE(std::filesystem::exists(missingDirectory));
+
+	const FilePath sourceFilePath("data/CxxParserTestSuite/code.cpp");
+	std::shared_ptr<IndexerCommandCxx> indexerCommand = std::make_shared<IndexerCommandCxx>(
+		sourceFilePath,
+		std::set<FilePath>{FilePath("data/CxxParserTestSuite/")},
+		std::set<FilePathFilter>{},
+		std::set<FilePathFilter>{},
+		FilePath(missingDirectory),
+		std::vector<std::string>{
+			ClangCompiler::stdOption(ClangCompiler::getLatestCppStandard()), sourceFilePath.str()},
+		std::string{});
+
+	std::shared_ptr<IntermediateStorage> storage = std::make_shared<IntermediateStorage>();
+	const std::shared_ptr<ParserClientImpl> parserClient = std::make_shared<ParserClientImpl>(storage);
+	CxxParser parser(
+		*parserClient, std::make_shared<TestFileRegister>(), std::make_shared<IndexerStateInfo>());
+
+	parser.buildIndex(indexerCommand);
+
+	std::shared_ptr<TestStorage> testStorage = TestStorage::create(storage);
+	REQUIRE(testStorage->errors.size() == 1);
+	REQUIRE(
+		testStorage->errors.front() ==
+		"The working directory of this file's compile command does not exist: " + missingDirectory +
+			" <1:1 1:1>");
+	REQUIRE(storage->getErrors().front().fatal);
+	REQUIRE(testStorage->classes.empty());
 }
 
 

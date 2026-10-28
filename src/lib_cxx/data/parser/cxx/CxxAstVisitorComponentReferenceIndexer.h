@@ -13,10 +13,10 @@ SRCTRL_EXPORT class CxxAstVisitorComponentTypeRefKind;
 SRCTRL_EXPORT class CxxAstVisitorComponentDeclRefKind;
 
 // Records the reference edges the AST expresses: calls, type usages, constructions, deletions,
-// concept-constraint uses, member/decl references and constructor initializers. It classifies each
-// decl-reference by consulting the traversal-state components (inheritance / template-argument /
-// decl-ref kind) via consumeDeclRefContextKind, then emits the edge through the shared
-// CxxIndexingContext. Split out of the former monolithic indexer.
+// concept-constraint uses, member/decl references, designated and constructor initializers. It
+// classifies each decl-reference by consulting the traversal-state components (inheritance /
+// template-argument / decl-ref kind) via consumeDeclRefContextKind, then emits the edge through
+// the shared CxxIndexingContext. Split out of the former monolithic indexer.
 SRCTRL_EXPORT class CxxAstVisitorComponentReferenceIndexer: public CxxAstVisitorComponent
 {
 public:
@@ -31,6 +31,7 @@ public:
 	void visitConceptReference(clang::ConceptReference* d);
 	void visitDeclRefExpr(clang::DeclRefExpr* s);
 	void visitMemberExpr(clang::MemberExpr* s);
+	void visitDesignatedInitExpr(clang::DesignatedInitExpr* s);
 	void visitCXXConstructExpr(clang::CXXConstructExpr* s);
 	void visitCXXDeleteExpr(clang::CXXDeleteExpr* s);
 	void visitLambdaExpr(clang::LambdaExpr* s);

@@ -138,6 +138,7 @@ public:
 	void visitReturnStmt(clang::ReturnStmt*  /*s*/) {}
 	void visitCompoundStmt(clang::CompoundStmt*  /*s*/) {}
 	void visitInitListExpr(clang::InitListExpr*  /*s*/) {}
+	void visitDesignatedInitExpr(clang::DesignatedInitExpr*  /*s*/) {}
 	void visitDeclRefExpr(clang::DeclRefExpr*  /*s*/) {}
 	void visitMemberExpr(clang::MemberExpr*  /*s*/) {}
 	void visitCXXDependentScopeMemberExpr(clang::CXXDependentScopeMemberExpr*  /*s*/) {}
