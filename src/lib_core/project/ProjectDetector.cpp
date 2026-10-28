@@ -482,11 +482,15 @@ std::optional<BuildDirectory> configuredFor(const fs::path& dir, const fs::path&
 		}
 	}
 	// A build touches .ninja_log (Ninja) or the generated build files: the newest of them
-	// tells which build directory is in use.
-	build.time = modified(dir).value_or(fs::file_time_type{});
+	// tells which build directory is in use. A file that is not there does not count (not as
+	// the clock's epoch: libstdc++'s is 2174, after any file's time).
+	build.time = modified(dir).value_or(fs::file_time_type::min());
 	for (const char* file: {"CMakeCache.txt", "build.ninja", ".ninja_log", ".ninja_deps", "Makefile", "compile_commands.json"})
 	{
-		build.time = std::max(build.time, modified(dir / file).value_or(fs::file_time_type{}));
+		if (const std::optional<fs::file_time_type> time{modified(dir / file)})
+		{
+			build.time = std::max(build.time, *time);
+		}
 	}
 	return build;
 }
