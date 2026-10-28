@@ -302,6 +302,7 @@ TEST_CASE("ProjectDetector proposes an empty C group with the Makefile's standar
 	const ProjectProposal proposal{detect(folder)};
 
 	CHECK(proposal.sourceGroupType == SourceGroupType::C_EMPTY);
+	CHECK(proposal.reasons.front() == "Found Makefile, which is not read: an empty C group on the folder (1 .c file and 1 .h file)");
 	CHECK(strings(proposal, "extensions") == Strings{".c"});
 	CHECK(strings(proposal, "header_search_paths") == Strings{generic(folder / "inc")});
 	if (std::ranges::contains(ClangCompiler::getAvailableCStandards(), "c99"))

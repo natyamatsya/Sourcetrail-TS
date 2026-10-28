@@ -2,6 +2,7 @@
 
 #include <algorithm>
 #include <array>
+#include <cctype>
 #include <chrono>
 #include <filesystem>
 #include <format>
@@ -1320,22 +1321,32 @@ void detectEmptyGroup(Detection& detection)
 					   : listed(counts) + (scan.truncated ? " in the part of the folder looked at" : "")};
 
 	// The build files found that are not read (yet): why the group is an empty one.
+	// (By the names the folder has: on a case-insensitive file system Makefile is makefile too.)
 	Strings buildFiles;
-	for (const char* name:
-		 {"Makefile", "makefile", "GNUmakefile", "meson.build", "configure.ac", "SConstruct", "BUILD.bazel", "BUILD.gn",
-		  "premake5.lua", "xmake.lua"})
 	{
-		if (isFile(detection.folder / name))
+		static constexpr std::array names{
+			"Makefile", "makefile", "GNUmakefile", "meson.build", "configure.ac", "SConstruct", "BUILD.bazel",
+			"BUILD.gn", "premake5.lua", "xmake.lua"};
+		std::error_code error;
+		for (fs::directory_iterator it{detection.folder, fs::directory_options::skip_permission_denied, error}, end;
+			 !error && it != end;
+			 it.increment(error))
 		{
-			buildFiles.emplace_back(name);
+			const std::string name{it->path().filename().string()};
+			if (std::ranges::contains(names, name))
+			{
+				buildFiles.push_back(name);
+			}
 		}
+		std::ranges::sort(buildFiles);
 	}
 	proposal.reasons.insert(
 		proposal.reasons.begin(),
 		std::format(
 			"{}: an empty {} group on the folder ({})",
 			buildFiles.empty() ? std::string{"No build system found"}
-							   : std::format("Found {}, which is not read", listed(buildFiles)),
+							   : std::format(
+									 "Found {}, which {} not read", listed(buildFiles), buildFiles.size() == 1 ? "is" : "are"),
 			cpp ? "C++" : "C",
 			files));
 	if (cppHeader)
@@ -1401,7 +1412,8 @@ void detectEmptyGroup(Detection& detection)
 		Strings names;
 		for (const std::string& dir: includes)
 		{
-			names.push_back(shown(fs::path{dir}, detection.folder));
+			names.push_back(
+				fs::path{dir} == detection.folder ? std::string{"the folder itself"} : shown(fs::path{dir}, detection.folder));
 		}
 		proposal.reasons.push_back(std::format("Include paths: {}", listed(names)));
 	}
