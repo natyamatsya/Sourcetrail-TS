@@ -28,6 +28,12 @@
 
 #include <fstream>
 
+#if !defined(_WIN32)
+#include <cerrno>
+#include <csignal>
+#include <unistd.h>
+#endif
+
 #include "IntermediateStorage.h"
 
 #include "IndexerCommand.h"
@@ -875,3 +881,52 @@ TEST_CASE("ipc integration: a source file is indexed once, however many chunks i
 	else
 		SUCCEED("C++ language package disabled.");
 }
+
+#if !defined(_WIN32)
+// An indexer waits for commands until the app stops the queue or interrupts it; one whose app
+// was killed waited forever (24 of them were left by killed CLI runs). It ends once its parent
+// is gone: here a shell that starts it and exits a second later.
+TEST_CASE("ipc integration: an indexer ends when the app that started it is gone")
+{
+	if constexpr (language_packages::buildCxxLanguagePackage)
+	{
+		const std::string uuid = "ipc_orphaned_indexer_test";
+		IpcInterprocessIndexerCommandManager commandOwner(uuid, ProcessId::NONE, true);
+		commandOwner.clearIndexerCommands();
+		IpcInterprocessIndexingStatusManager statusOwner(uuid, ProcessId::NONE, true);
+		statusOwner.setIndexingInterrupted(false);
+		statusOwner.setQueueStopped(false);	// the app would still send commands
+		IpcInterprocessIntermediateStorageManager storageOwner(uuid, static_cast<ProcessId>(1), true);
+
+		const FilePath indexerPath = AppPath::getCxxIndexerFilePath();
+		REQUIRE(indexerPath.exists());
+		const utility::ProcessOutput shell = utility::executeProcess(
+			"/bin/sh",
+			{"-c",
+			 R"("$0" 1 "$1" "" "" "" >/dev/null 2>&1 & echo $!; sleep 1; kill -0 $! && echo waiting)",
+			 indexerPath.str(),
+			 uuid},
+			FilePath(),
+			false,
+			std::chrono::seconds(10));
+		REQUIRE(shell.exitCode == 0);
+		const pid_t indexer = static_cast<pid_t>(std::stoi(shell.output));
+		REQUIRE(indexer > 0);
+		REQUIRE(shell.output.find("waiting") != std::string::npos);	// for commands, while the shell ran
+
+		bool ended = false;
+		const auto deadline = std::chrono::steady_clock::now() + std::chrono::seconds(10);
+		while (!ended && std::chrono::steady_clock::now() < deadline)
+		{
+			ended = ::kill(indexer, 0) != 0 && errno == ESRCH;
+			if (!ended)
+				std::this_thread::sleep_for(std::chrono::milliseconds(100));
+		}
+		if (!ended)
+			::kill(indexer, SIGKILL);	// leave no orphan behind a failure
+		REQUIRE(ended);
+	}
+	else
+		SUCCEED("C++ language package disabled.");
+}
+#endif

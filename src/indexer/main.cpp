@@ -34,6 +34,9 @@
 
 #if BOOST_OS_WINDOWS
 	#include <Windows.h>
+	#include <TlHelp32.h>
+#else
+	#include <unistd.h>
 #endif
 
 // Module build: this TU is the Phase 4 "pure importer" milestone -- the modularized layers arrive
@@ -65,6 +68,45 @@ void setupLogging(const FilePath& logFilePath)
 	fileLogger->setLogFilePath(logFilePath.getPath());
 	fileLogger->setLogLevel(Logger::LOG_ALL);
 	logManager->addLogger(fileLogger);
+}
+
+// Whether the app that started this indexer still runs, judged against the parent it has
+// now. POSIX: a process whose parent ends is handed to another one (launchd, init or a
+// subreaper), so getppid() changes; a parent of 1 already is one, the app having ended
+// before this line. Windows: the parent's process handle, opened by its id.
+InterprocessIndexer::ParentAlive watchParent()
+{
+#if BOOST_OS_WINDOWS
+	DWORD parentId = 0;
+	if (const HANDLE snapshot = CreateToolhelp32Snapshot(TH32CS_SNAPPROCESS, 0); snapshot != INVALID_HANDLE_VALUE)
+	{
+		PROCESSENTRY32 entry{};
+		entry.dwSize = sizeof(entry);
+		for (BOOL more = Process32First(snapshot, &entry); more; more = Process32Next(snapshot, &entry))
+		{
+			if (entry.th32ProcessID == GetCurrentProcessId())
+			{
+				parentId = entry.th32ParentProcessID;
+				break;
+			}
+		}
+		CloseHandle(snapshot);
+	}
+	const HANDLE parent = parentId != 0 ? OpenProcess(SYNCHRONIZE, FALSE, parentId) : nullptr;
+	if (parent == nullptr)
+	{
+		return []() { return true; };	// unknown: the app's word ends the work, as before
+	}
+	// Open until the process ends.
+	return [parent]() { return WaitForSingleObject(parent, 0) == WAIT_TIMEOUT; };
+#else
+	const pid_t parent = getppid();
+	if (parent == 1)
+	{
+		return []() { return false; };
+	}
+	return [parent]() { return getppid() == parent; };
+#endif
 }
 
 void suppressCrashMessage()
@@ -114,6 +156,8 @@ struct meta<IndexerOptions>
 
 int main(int argc, char* argv[])
 {
+	// First: the parent this indexer has now is the app that started it.
+	const InterprocessIndexer::ParentAlive parentAlive = watchParent();
 	setupDefaultLocale();
 
 	IndexerOptions options;
@@ -169,7 +213,7 @@ int main(int argc, char* argv[])
 		return CxxPchBuildRunner::run(FilePath(prebuildPchRequest));
 	}
 
-	InterprocessIndexer indexer(instanceUuid, processId, onlyGroupId);
+	InterprocessIndexer indexer(instanceUuid, processId, onlyGroupId, parentAlive);
 	const InterprocessIndexer::WorkResult workResult = indexer.work();
 	if (!workResult)
 	{
