@@ -297,6 +297,7 @@ inline CxxName CxxDeclNameResolver::getDeclName(const clang::NamedDecl* declarat
 
 			CxxTypeNameResolver typeNameResolver(this);
 			typeNameResolver.ignoreContextDecl(functionDecl);
+			typeNameResolver.spellDependentSpecializations();
 			std::unique_ptr<CxxTypeName> returnTypeName = CxxTypeName::makeUnsolvedIfNull(
 				typeNameResolver.getName(functionDecl->getReturnType()));
 

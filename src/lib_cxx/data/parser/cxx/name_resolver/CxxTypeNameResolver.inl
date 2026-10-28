@@ -185,7 +185,7 @@ inline std::unique_ptr<CxxTypeName> CxxTypeNameResolver::getName(const clang::Ty
 												   ->getTemplatedDecl());
 					for (const clang::TemplateArgument &templateArgument : templateSpecializationType->template_arguments())
 					{
-						if (templateArgument.isDependent())
+						if (templateArgument.isDependent() && !spellsDependentSpecializations())
 						{
 							return std::make_unique<CxxTypeName>(
 								declName->getName(),

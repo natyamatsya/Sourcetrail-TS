@@ -2865,6 +2865,27 @@ TEST_CASE("cxx parser names pack and lambda template arguments by what they are"
 	}
 }
 
+TEST_CASE("cxx parser names a dependent specialization in a template's signature as written")
+{
+	// `f(vec<T>)` and `f(vec<T*>)` are two function templates. Their parameters were both named
+	// as the template they specialize, `vec<typename T>`, so they were one node. The type use
+	// still goes to the template.
+	std::shared_ptr<TestStorage> client = parseCode(
+		"template <typename T> struct vec {};\n"
+		"template <typename T> void f(vec<T>) {}\n"
+		"template <typename T> void f(vec<T*>) {}\n"
+		"template <unsigned... I> struct seq {};\n"
+		"struct S { template <unsigned... I> S(seq<I...>) {} };\n");
+
+	CAPTURE(client->functions, client->methods, client->typeUses);
+	REQUIRE(client->errors.empty());
+	REQUIRE(containsElement(client->functions, "void f<typename T>(vec<T>) <2:1 <2:23 <2:28 2:28> 2:36> 2:39>"s));
+	REQUIRE(containsElement(client->functions, "void f<typename T>(vec<T *>) <3:1 <3:23 <3:28 3:28> 3:37> 3:40>"s));
+	REQUIRE(containsElement(client->methods, "public void S::S<unsigned int... I>(seq<I...>) <5:12 <5:37 <5:37 5:37> 5:48> 5:51>"s));
+	REQUIRE(containsElement(client->typeUses, "void f<typename T>(vec<T>) -> vec<typename T> <2:30 2:32>"s));
+	REQUIRE(containsElement(client->typeUses, "void f<typename T>(vec<T *>) -> vec<typename T> <3:30 3:32>"s));
+}
+
 TEST_CASE("cxx parser names a closure type behind an alias template like the lambda")
 {
 	// std::forward's parameter is `remove_reference_t<T>&`, magic_enum tests `std::decay_t<F>`:
