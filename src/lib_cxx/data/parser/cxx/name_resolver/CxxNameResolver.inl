@@ -11,18 +11,23 @@ inline CxxNameResolver::CxxNameResolver(CanonicalFilePathCache* canonicalFilePat
 inline CxxNameResolver::CxxNameResolver(const CxxNameResolver* other)
 	: m_canonicalFilePathCache(other->getCanonicalFilePathCache())
 	, m_ignoredContextDecls(other->getIgnoredContextDecls())
-	, m_spellsDependentSpecializations(other->spellsDependentSpecializations())
+	, m_namedDeclaration(other->getNamedDeclaration())
 {
 }
 
-inline void CxxNameResolver::spellDependentSpecializations()
+inline void CxxNameResolver::nameTypesOf(const clang::Decl* declaration)
 {
-	m_spellsDependentSpecializations = true;
+	m_namedDeclaration = declaration;
+}
+
+inline const clang::Decl* CxxNameResolver::getNamedDeclaration() const
+{
+	return m_namedDeclaration;
 }
 
 inline bool CxxNameResolver::spellsDependentSpecializations() const
 {
-	return m_spellsDependentSpecializations;
+	return m_namedDeclaration != nullptr;
 }
 
 inline void CxxNameResolver::ignoreContextDecl(const clang::Decl* decl)

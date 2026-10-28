@@ -328,7 +328,7 @@ inline CxxName CxxDeclNameResolver::getDeclName(const clang::NamedDecl* declarat
 
 			CxxTypeNameResolver typeNameResolver(this);
 			typeNameResolver.ignoreContextDecl(functionDecl);
-			typeNameResolver.spellDependentSpecializations();
+			typeNameResolver.nameTypesOf(functionDecl);
 			std::unique_ptr<CxxTypeName> returnTypeName = CxxTypeName::makeUnsolvedIfNull(
 				typeNameResolver.getName(functionDecl->getReturnType()));
 
@@ -370,6 +370,7 @@ inline CxxName CxxDeclNameResolver::getDeclName(const clang::NamedDecl* declarat
 		{
 			CxxTypeNameResolver typenNameResolver(this);
 			typenNameResolver.ignoreContextDecl(fieldDecl);
+			typenNameResolver.nameTypesOf(fieldDecl);
 			std::unique_ptr<CxxTypeName> typeName = CxxTypeName::makeUnsolvedIfNull(typenNameResolver.getName(fieldDecl->getType()));
 			return CxxName::make<CxxVariableDeclName>(std::move(declNameString), std::vector<std::string>(), std::move(typeName), false);
 		}
@@ -417,6 +418,7 @@ inline CxxName CxxDeclNameResolver::getDeclName(const clang::NamedDecl* declarat
 
 				CxxTypeNameResolver typenNameResolver(this);
 				typenNameResolver.ignoreContextDecl(varDecl);
+				typenNameResolver.nameTypesOf(varDecl);
 				std::unique_ptr<CxxTypeName> typeName = CxxTypeName::makeUnsolvedIfNull(typenNameResolver.getName(varDecl->getType(), varDecl));
 
 				std::string varName = declNameString;

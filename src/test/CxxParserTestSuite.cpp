@@ -2886,6 +2886,45 @@ TEST_CASE("cxx parser names a dependent specialization in a template's signature
 	REQUIRE(containsElement(client->typeUses, "void f<typename T>(vec<T *>) -> vec<typename T> <3:30 3:32>"s));
 }
 
+TEST_CASE("cxx parser names a class template's non-dependent member typedef as the instantiation's")
+{
+	// `typedef unsigned size_type;` does not depend on T, so an instantiated member's `size_type`
+	// is the class template's own typedef: it was named `arr<class T, unsigned int N>::size_type`
+	// in arr<int, 3>'s signatures (libc++'s `array<class _Tp, size_t _Size>::size_type`), and so
+	// was a variable whose type is deduced from one. An unnamed non-type template parameter
+	// `enable_if_t<...>` was the alias template's own parameters, so SFINAE overloads merged.
+	std::shared_ptr<TestStorage> client = parseCode(
+		"template <class T, unsigned N> struct arr {\n"
+		"	typedef unsigned size_type;\n"
+		"	typedef T& reference;\n"
+		"	reference at(size_type i);\n"
+		"	size_type size() const { return N; }\n"
+		"};\n"
+		"auto n = arr<bool, 2>().size();\n"
+		"int x = arr<int, 3>().at(0);\n"
+		"template <bool B, class T = void> struct enable_if {};\n"
+		"template <class T> struct enable_if<true, T> { using type = T; };\n"
+		"template <bool B, class T> using enable_if_t = typename enable_if<B, T>::type;\n"
+		"template <class V, enable_if_t<sizeof(V) == 4, int> = 0> void g(V) {}\n"
+		"template <class V, enable_if_t<sizeof(V) == 8, int> = 0> void g(V) {}\n");
+
+	CAPTURE(client->methods, client->globalVariables, client->functions);
+	REQUIRE(client->errors.empty());
+	REQUIRE(containsElement(client->methods, "public arr<int, 3>::reference arr<int, 3>::at(arr<int, 3>::size_type) <4:2 <4:12 4:13> 4:26>"s));
+	REQUIRE(containsElement(client->methods, "public arr<bool, 2>::size_type arr<bool, 2>::size() const <5:2 <5:2 <5:12 5:15> 5:23> 5:37>"s));
+	REQUIRE(containsElement(
+		client->methods,
+		"public arr<class T, unsigned int N>::size_type arr<class T, unsigned int N>::size() const <5:2 <5:2 <5:12 5:15> 5:23> 5:37>"s));
+	REQUIRE(containsElement(client->globalVariables, "unsigned int n <7:6 7:6>"s));
+	REQUIRE(containsElement(client->functions, "void g<class V, enable_if_t<sizeof(V) == 4, int>>(V) <12:1 <12:58 <12:63 12:63> 12:66> 12:69>"s));
+	REQUIRE(containsElement(client->functions, "void g<class V, enable_if_t<sizeof(V) == 8, int>>(V) <13:1 <13:58 <13:63 13:63> 13:66> 13:69>"s));
+	for (const std::string& name: utility::concat(client->methods, client->globalVariables))
+	{
+		REQUIRE_FALSE((name.contains("arr<int, 3>") && name.contains("class T")));
+		REQUIRE_FALSE((name.contains("arr<bool, 2>") && name.contains("class T")));
+	}
+}
+
 TEST_CASE("cxx parser names a closure type's destructor as a member of the lambda")
 {
 	// A closure that captures a class with a destructor has one too, and destroying the closure
