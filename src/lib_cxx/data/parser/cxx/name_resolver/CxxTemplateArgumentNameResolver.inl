@@ -5,10 +5,12 @@
 
 #ifndef SRCTRL_MODULE_PURVIEW
 #include "utilityClang.h"
+#include "utilityString.h"
 
 #include <clang/AST/DeclTemplate.h>
 #include <clang/AST/Expr.h>
 #include <clang/AST/PrettyPrinter.h>
+#include <clang/AST/TemplateBase.h>
 #endif
 
 
@@ -58,9 +60,31 @@ inline std::string CxxTemplateArgumentNameResolver::getTemplateArgumentName(
 	}
 	case clang::TemplateArgument::Pack:
 	{
-		return "<...>";
+		// A pack is named by its elements: overloaded<A, B> and overloaded<C> are two
+		// instantiations, not one `overloaded<<...>>`.
+		std::vector<std::string> elementNames;
+		for (const clang::TemplateArgument& element: argument.pack_elements())
+		{
+			if (std::string elementName = getTemplateArgumentName(element); !elementName.empty())
+			{
+				elementNames.push_back(std::move(elementName));
+			}
+		}
+		return utility::join(elementNames, ", ");
 	}
 	}
 
 	return "";
+}
+
+inline std::string CxxTemplateArgumentNameResolver::getWrittenTemplateArgumentName(
+	const clang::TemplateArgumentLoc& argument)
+{
+	clang::PrintingPolicy pp = utility::makePrintingPolicyForCPlusPlus();
+
+	constexpr bool includeType = false;
+	std::string buf;
+	llvm::raw_string_ostream os(buf);
+	argument.getArgument().print(pp, os, includeType);
+	return os.str();
 }

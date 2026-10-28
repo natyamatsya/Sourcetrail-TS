@@ -6,6 +6,7 @@
 #include "utilityString.h"
 #endif
 
+#include <algorithm>
 #include <filesystem>
 #include <format>
 #include <fstream>
@@ -61,6 +62,27 @@ std::shared_ptr<TestStorage> parseCode(const std::string &code, const std::vecto
 		utility::concat(compilerFlags, 	ClangCompiler::stdOption(ClangCompiler::getLatestCppStandard())));
 
 	return TestStorage::create(storage);
+}
+
+// Like parseCode, but the translation unit is `fileName`, compiled with `compilerFlags` alone.
+std::shared_ptr<TestStorage> parseTranslationUnit(
+	const std::string& fileName, const std::string& code, const std::vector<std::string>& compilerFlags)
+{
+	std::shared_ptr<IntermediateStorage> storage = std::make_shared<IntermediateStorage>();
+	const std::shared_ptr<ParserClientImpl> parserClient = std::make_shared<ParserClientImpl>(storage);
+	CxxParser parser(
+		*parserClient,
+		std::make_shared<TestFileRegister>(),
+		std::make_shared<IndexerStateInfo>());
+	parser.buildIndex(fileName, TextAccess::createFromString(code), compilerFlags);
+
+	return TestStorage::create(storage);
+}
+
+// Like parseCode, but in the given language standard (e.g. "c++17") instead of the latest one.
+std::shared_ptr<TestStorage> parseCodeInStandard(const std::string& code, const std::string& languageStandard)
+{
+	return parseTranslationUnit("input.cc", code, {ClangCompiler::stdOption(languageStandard)});
 }
 
 // Like parseCode, but hands back the raw IntermediateStorage so a test can
@@ -265,6 +287,39 @@ TEST_CASE("cxx parser finds static function declaration")
 		client->functions, "static int ceil(float) (input.cc) <1:1 <1:1 <1:12 1:15> 1:24> 4:1>"));
 }
 
+TEST_CASE("cxx parser names a static function and variable by the file that declares them")
+{
+	// A header's static (inline) function is one node for every TU that includes it -- named by
+	// the header, not by the TU -- while the same-named statics of two source files stay two.
+	const std::filesystem::path directory =
+		std::filesystem::temp_directory_path() / "sourcetrail-cxx-parser-tests" / "static-by-declaring-file";
+	std::filesystem::create_directories(directory);
+	std::ofstream(directory / "shapes.h") << "static inline int twice(int x) { return 2 * x; }\n"
+											 "static int s_count = 0;\n";
+
+	const std::vector<std::string> flags = {"-I" + directory.string(), "-std=c11"};
+	const std::string code =
+		"#include \"shapes.h\"\n"
+		"static int helper(int v) { return twice(v) + s_count; }\n"
+		"static int s_local = 0;\n"
+		"int use(void) { return helper(1) + s_local; }\n";
+	std::shared_ptr<TestStorage> a = parseTranslationUnit("a.c", code, flags);
+	std::shared_ptr<TestStorage> b = parseTranslationUnit("b.c", code, flags);
+
+	CAPTURE(a->functions, a->globalVariables, b->functions, b->globalVariables);
+	REQUIRE(a->errors.empty());
+	REQUIRE(b->errors.empty());
+	for (const std::shared_ptr<TestStorage>& client: {a, b})
+	{
+		REQUIRE(containsElement(client->functions, "static int twice(int) (shapes.h) <1:1 <1:1 <1:19 1:23> 1:30> 1:48>"s));
+		REQUIRE(containsElement(client->globalVariables, "int s_count (shapes.h) <2:12 2:18>"s));
+	}
+	REQUIRE(containsElement(a->functions, "static int helper(int) (a.c) <2:1 <2:1 <2:12 2:17> 2:24> 2:55>"s));
+	REQUIRE(containsElement(b->functions, "static int helper(int) (b.c) <2:1 <2:1 <2:12 2:17> 2:24> 2:55>"s));
+	REQUIRE(containsElement(a->globalVariables, "int s_local (a.c) <3:12 3:18>"s));
+	REQUIRE(containsElement(b->globalVariables, "int s_local (b.c) <3:12 3:18>"s));
+}
+
 TEST_CASE("cxx parser finds method declaration")
 {
 	std::shared_ptr<TestStorage> client = parseCode(
@@ -314,6 +369,62 @@ TEST_CASE("cxx parser finds explicit bool conversion operator")
 	// Find usage:
 	INFO(join(client->calls, "\n"s));
 	REQUIRE(containsElement(client->calls, "void f() -> bool B::operator bool() const <9:8 9:8>"s));
+}
+
+TEST_CASE("cxx parser tells cv- and ref-qualified method overloads apart")
+{
+	// Each pair is two overloads, so two nodes; a call goes to the one it resolves to.
+	std::shared_ptr<TestStorage> client = parseCode(
+		"struct S {\n"
+		"	constexpr int get() const { return 1; }\n"
+		"	constexpr int get() { return 2; }\n"
+		"	void r() & {}\n"
+		"	void r() && {}\n"
+		"	void r() const && {}\n"
+		"	void v() volatile {}\n"
+		"	void v() {}\n"
+		"};\n"
+		"void use() {\n"
+		"	S s; const S cs;\n"
+		"	s.get(); cs.get();\n"
+		"	s.r(); S{}.r();\n"
+		"}\n");
+
+	CAPTURE(client->methods, client->calls);
+	REQUIRE(client->errors.empty());
+	REQUIRE(containsElement(client->methods, "public int S::get() const <2:2 <2:2 <2:16 2:18> 2:26> 2:40>"s));
+	REQUIRE(containsElement(client->methods, "public int S::get() <3:2 <3:2 <3:16 3:18> 3:20> 3:34>"s));
+	REQUIRE(containsElement(client->methods, "public void S::r() & <4:2 <4:2 <4:7 4:7> 4:11> 4:14>"s));
+	REQUIRE(containsElement(client->methods, "public void S::r() && <5:2 <5:2 <5:7 5:7> 5:12> 5:15>"s));
+	REQUIRE(containsElement(client->methods, "public void S::r() const && <6:2 <6:2 <6:7 6:7> 6:18> 6:21>"s));
+	REQUIRE(containsElement(client->methods, "public void S::v() volatile <7:2 <7:2 <7:7 7:7> 7:18> 7:21>"s));
+	REQUIRE(containsElement(client->methods, "public void S::v() <8:2 <8:2 <8:7 8:7> 8:9> 8:12>"s));
+
+	REQUIRE(containsElement(client->calls, "void use() -> int S::get() <12:4 12:6>"s));
+	REQUIRE(containsElement(client->calls, "void use() -> int S::get() const <12:14 12:16>"s));
+	REQUIRE(containsElement(client->calls, "void use() -> void S::r() & <13:4 13:4>"s));
+	REQUIRE(containsElement(client->calls, "void use() -> void S::r() && <13:13 13:13>"s));
+}
+
+TEST_CASE("cxx parser names a member the same in every language standard")
+{
+	// A defaulted destructor and the implicit members are constexpr in C++20 and not in C++17.
+	// constexpr is not part of a function's signature, so it is not part of its name either:
+	// TUs of different standards that share a header must agree on that header's members.
+	const std::string code =
+		"struct Base { virtual ~Base() = default; };\n"
+		"struct Widget { int w = 0; };\n"
+		"void use() { Base b; Widget w; Widget w2 = w; }\n";
+
+	std::shared_ptr<TestStorage> cpp17 = parseCodeInStandard(code, "c++17");
+	std::shared_ptr<TestStorage> cpp20 = parseCodeInStandard(code, "c++20");
+
+	CAPTURE(cpp17->methods, cpp20->methods);
+	REQUIRE(cpp17->errors.empty());
+	REQUIRE(cpp20->errors.empty());
+	REQUIRE(containsElement(cpp17->methods, "public void Base::~Base() <1:15 <1:23 1:27> 1:39>"s));
+	REQUIRE(cpp17->methods == cpp20->methods);
+	REQUIRE(cpp17->calls == cpp20->calls);
 }
 
 TEST_CASE("cxx parser finds method declaration and definition")
@@ -1349,7 +1460,7 @@ TEST_CASE("cxx parser finds lambda definition and call in function")
 		"}\n");
 
 	REQUIRE(containsElement(client->functions, "void lambdaCaller() <1:1 <1:1 <1:6 1:17> 1:19> 4:1>"s));
-	REQUIRE(containsElement(client->calls, "void lambdaCaller() -> void lambdaCaller::lambda at 3:2() constexpr <3:8 3:8>"s));
+	REQUIRE(containsElement(client->calls, "void lambdaCaller() -> void lambdaCaller::lambda at 3:2() const <3:8 3:8>"s));
 }
 
 TEST_CASE("cxx parser finds mutable lambda definition")
@@ -1716,9 +1827,9 @@ TEST_CASE("cxx parser finds implicit copy constructor")
 		"	TestClass b(a);\n"
 		"}\n");
 
-	REQUIRE(containsElement(client->methods, "public void TestClass::TestClass() constexpr <1:7 <1:7 1:15> 1:15>"s));
-	REQUIRE(containsElement(client->methods, "public void TestClass::TestClass(const TestClass &) constexpr <1:7 <1:7 1:15> 1:15>"s));
-	REQUIRE(containsElement(client->methods, "public void TestClass::TestClass(TestClass &&) constexpr <1:7 <1:7 1:15> 1:15>"s));
+	REQUIRE(containsElement(client->methods, "public void TestClass::TestClass() <1:7 <1:7 1:15> 1:15>"s));
+	REQUIRE(containsElement(client->methods, "public void TestClass::TestClass(const TestClass &) <1:7 <1:7 1:15> 1:15>"s));
+	REQUIRE(containsElement(client->methods, "public void TestClass::TestClass(TestClass &&) <1:7 <1:7 1:15> 1:15>"s));
 }
 
 ///////////////////////////////////////////////////////////////////////////////
@@ -2100,8 +2211,8 @@ TEST_CASE("cxx parser finds concept in single type constraints")
 	REQUIRE(client->usages[6] == "auto add5<Plusable x:auto, Plusable y:auto>(x:auto, y:auto) -> Plusable<typename T> <21:22 21:29>"s);
 	REQUIRE(client->usages[7] == "auto add5<Plusable x:auto, Plusable y:auto>(x:auto, y:auto) -> Plusable<typename T> <21:39 21:46>"s);
 
-	REQUIRE(client->usages[8] == "auto lambda at 23:15(a:auto, b:auto) constexpr -> Plusable<typename T> <23:18 23:25>"s);
-	REQUIRE(client->usages[9] == "auto lambda at 23:15(a:auto, b:auto) constexpr -> Plusable<typename T> <23:35 23:42>"s);
+	REQUIRE(client->usages[8] == "auto lambda at 23:15(a:auto, b:auto) const -> Plusable<typename T> <23:18 23:25>"s);
+	REQUIRE(client->usages[9] == "auto lambda at 23:15(a:auto, b:auto) const -> Plusable<typename T> <23:35 23:42>"s);
 
 	REQUIRE(client->usages[10] == "Adder0<Plusable T> -> Plusable<typename T> <28:12 28:19>"s);
 	REQUIRE(client->usages[11] == "T Adder1::add1<typename T>(T, T) -> Plusable<typename T> <37:13 37:20>"s);
@@ -2216,8 +2327,8 @@ TEST_CASE("cxx parser finds concept in multiple type constraints")
 	REQUIRE(client->usages[9] == "auto add50<Plusable x:auto, Minusable y:auto>(x:auto, y:auto) -> Minusable<typename T> <27:3 27:11>"s);
 	REQUIRE(client->usages[10] == "auto add50<Plusable x:auto, Minusable y:auto>(x:auto, y:auto) -> Minusable<typename T> <27:41 27:49>"s);
 
-	REQUIRE(client->usages[11] == "auto lambda at 29:16(a:auto, b:auto) constexpr -> Plusable<typename T> <29:19 29:26>"s);
-	REQUIRE(client->usages[12] == "auto lambda at 29:16(a:auto, b:auto) constexpr -> Minusable<typename T> <29:36 29:44>"s);
+	REQUIRE(client->usages[11] == "auto lambda at 29:16(a:auto, b:auto) const -> Plusable<typename T> <29:19 29:26>"s);
+	REQUIRE(client->usages[12] == "auto lambda at 29:16(a:auto, b:auto) const -> Minusable<typename T> <29:36 29:44>"s);
 
 	REQUIRE(client->usages[13] == "Adder00<Plusable T, Minusable U> -> Plusable<typename T> <34:12 34:19>"s);
 	REQUIRE(client->usages[14] == "Adder00<Plusable T, Minusable U> -> Minusable<typename T> <34:24 34:32>"s);
@@ -2526,7 +2637,7 @@ TEST_CASE("cxx parser finds using decl in function context")
 		"}\n");
 
 	REQUIRE(utility::containsElement<std::string>(
-		client->usages, "void bar() -> foo::a <7:13 7:13>"));
+		client->usages, "void bar() -> int foo::a <7:13 7:13>"));
 }
 
 TEST_CASE("cxx parser finds using decl in file context")
@@ -2539,7 +2650,150 @@ TEST_CASE("cxx parser finds using decl in file context")
 		"using foo::a;\n");
 
 	REQUIRE(
-		utility::containsElement<std::string>(client->usages, "input.cc -> foo::a <5:12 5:12>"));
+		utility::containsElement<std::string>(client->usages, "input.cc -> int foo::a <5:12 5:12>"));
+}
+
+TEST_CASE("cxx parser finds type uses through a using-declaration")
+{
+	// `using ns::Type;` makes `Type` name ns::Type: the parameter's type and the functional cast
+	// use ns::Type, and the using-declaration itself is a use of it, not of a `lib::Type` or
+	// `ns::Type` of its own.
+	std::shared_ptr<TestStorage> client = parseCode(
+		"namespace ns { struct Type {}; }\n"
+		"namespace lib {\n"
+		"using ns::Type;\n"
+		"inline int take(Type) { return 0; }\n"
+		"}\n"
+		"int use() { return lib::take(lib::Type{}); }\n");
+
+	CAPTURE(client->functions, client->typeUses, client->usages);
+	REQUIRE(client->errors.empty());
+	REQUIRE(containsElement(client->functions, "int lib::take(ns::Type) <4:1 <4:1 <4:12 4:15> 4:21> 4:35>"s));
+	REQUIRE(containsElement(client->typeUses, "int lib::take(ns::Type) -> ns::Type <4:17 4:20>"s));
+	REQUIRE(containsElement(client->typeUses, "int use() -> ns::Type <6:35 6:38>"s));
+	REQUIRE(containsElement(client->usages, "input.cc -> ns::Type <3:11 3:14>"s));
+}
+
+TEST_CASE("cxx parser names an inherited constructor after the class that inherits it")
+{
+	// Clang names the constructors that `using Base::Base;` inherits after the base class; they
+	// are the derived class's, and the using-declaration uses the base class.
+	std::shared_ptr<TestStorage> client = parseCode(
+		"template <class T> struct Base { Base(T*) {} };\n"
+		"template <class T> struct Derived : Base<T> { using Base<T>::Base; };\n"
+		"int i = 0;\n"
+		"Derived<int> d(&i);\n");
+
+	CAPTURE(client->methods, client->calls, client->usages);
+	REQUIRE(client->errors.empty());
+	REQUIRE(containsElement(client->methods, "public void Derived<int>::Derived(int *) <2:62 <2:62 2:65> 2:65>"s));
+	REQUIRE(containsElement(client->usages, "Derived<int> -> Base<int> <2:62 2:65>"s));
+	for (const std::string& name: utility::concat(client->methods, client->usages))
+	{
+		REQUIRE_FALSE(name.contains("Derived<int>::Base"));
+		REQUIRE_FALSE(name.contains("Base<int>::Derived"));
+	}
+}
+
+TEST_CASE("cxx parser finds the members a pack using-declaration brings in")
+{
+	std::shared_ptr<TestStorage> client = parseCode(
+		"template <class... Ts> struct overloaded : Ts... { using Ts::operator()...; };\n"
+		"struct A { int operator()(int) { return 1; } };\n"
+		"struct B { int operator()(char) { return 2; } };\n"
+		"overloaded<A, B> o;\n");
+
+	CAPTURE(client->usages);
+	REQUIRE(client->errors.empty());
+	// one usage per member: the operator() of A and that of B
+	const auto usesMember = [&](const std::string& member)
+	{
+		return std::ranges::any_of(
+			client->usages, [&](const std::string& usage) { return usage.ends_with(" -> " + member); });
+	};
+	REQUIRE(usesMember("int A::operator()(int) <1:62 1:69>"));
+	REQUIRE(usesMember("int B::operator()(char) <1:62 1:69>"));
+	for (const std::string& usage: client->usages)
+	{
+		REQUIRE_FALSE(usage.contains("unsolved-type"));
+	}
+}
+
+TEST_CASE("cxx parser names pack and lambda template arguments by what they are")
+{
+	// A pack is named by its elements and a lambda's closure type like the lambda, so different
+	// instantiations are different nodes, and a use of a closure type is a use of the lambda.
+	// They used to be `overloaded<<...>>` for every instantiation, `call<unsolved-type>`, and a
+	// `global` node for every closure type use.
+	std::shared_ptr<TestStorage> client = parseCode(
+		"template <class... Ts> struct overloaded : Ts... { using Ts::operator()...; };\n"
+		"template <class... Ts> overloaded(Ts...) -> overloaded<Ts...>;\n"
+		"template <class F> int call(F f) { return f(1); }\n"
+		"int main() {\n"
+		"	auto ov = overloaded{ [](int) { return 1; }, [](char) { return 2; } };\n"
+		"	auto one = overloaded{ [](double) { return 3; } };\n"
+		"	auto gen = [](int i) { return i; };\n"
+		"	return ov(1) + one(1.0) + call(gen) + call([](int i) { return -i; });\n"
+		"}\n");
+
+	CAPTURE(client->structs, client->functions, client->typeUses);
+	REQUIRE(client->errors.empty());
+	REQUIRE(containsElement(client->structs, "overloaded<main::lambda at 5:24, main::lambda at 5:47> <1:1 <1:31 1:40> 1:77>"s));
+	REQUIRE(containsElement(client->structs, "overloaded<main::lambda at 6:25> <1:1 <1:31 1:40> 1:77>"s));
+	REQUIRE(containsElement(
+		client->functions,
+		"int call<main::lambda at 7:13>(main::lambda at 7:13) <3:20 <3:20 <3:24 3:27> 3:32> 3:49>"s));
+	REQUIRE(containsElement(
+		client->functions,
+		"int call<main::lambda at 8:45>(main::lambda at 8:45) <3:20 <3:20 <3:24 3:27> 3:32> 3:49>"s));
+	const auto usesType = [&](const std::string& typeUse)
+	{
+		return std::ranges::any_of(
+			client->typeUses, [&](const std::string& use) { return use.starts_with(typeUse + " <"); });
+	};
+	REQUIRE(usesType("int main() -> overloaded<main::lambda at 6:25>"));
+	REQUIRE(usesType("int main() -> int main::lambda at 7:13(int) const"));
+	REQUIRE(usesType("overloaded<main::lambda at 6:25> -> int main::lambda at 6:25(double) const"));
+	for (const std::string& name: utility::concat(utility::concat(client->structs, client->functions), client->typeUses))
+	{
+		REQUIRE_FALSE(name.contains("<...>"));
+		REQUIRE_FALSE(name.contains("unsolved-type"));
+		REQUIRE_FALSE(name.contains("-> global"));
+		REQUIRE_FALSE(name.contains("(lambda at "));
+	}
+}
+
+TEST_CASE("cxx parser names a closure type behind an alias template like the lambda")
+{
+	// std::forward's parameter is `remove_reference_t<T>&`, magic_enum tests `std::decay_t<F>`:
+	// alias templates whose type is a closure type. They were named `unsolved-type` (forward's
+	// parameter) and their type uses went to `global`.
+	std::shared_ptr<TestStorage> client = parseCode(
+		"template <class T> struct remove_reference { using type = T; };\n"
+		"template <class T> struct remove_reference<T&> { using type = T; };\n"
+		"template <class T> using remove_reference_t = typename remove_reference<T>::type;\n"
+		"template <class T> T&& forward(remove_reference_t<T>& t) { return static_cast<T&&>(t); }\n"
+		"template <class T> using decay_t = typename remove_reference<T>::type;\n"
+		"template <class T> constexpr bool is_small_v = sizeof(decay_t<T>) < 64;\n"
+		"template <class F> int call(F&& f) { return forward<F>(f)(1) + is_small_v<F>; }\n"
+		"int main() { auto l = [](int i) { return i; }; return call(l); }\n");
+
+	CAPTURE(client->functions, client->globalVariables, client->typeUses);
+	REQUIRE(client->errors.empty());
+	REQUIRE(containsElement(
+		client->functions,
+		"main::lambda at 8:23 & forward<main::lambda at 8:23 &>(main::lambda at 8:23 &) "
+		"<4:20 <4:20 <4:24 4:30> 4:56> 4:88>"s));
+	REQUIRE(std::ranges::any_of(client->typeUses, [](const std::string& typeUse) {
+		return typeUse.starts_with(
+			"constexpr bool is_small_v<main::lambda at 8:23 &> -> int main::lambda at 8:23(int) const <");
+	}));
+	for (const std::string& name:
+		 utility::concat(utility::concat(client->functions, client->globalVariables), client->typeUses))
+	{
+		REQUIRE_FALSE(name.contains("unsolved-type"));
+		REQUIRE_FALSE(name.contains("-> global"));
+	}
 }
 
 TEST_CASE("cxx parser finds call in function")
@@ -2646,7 +2900,7 @@ TEST_CASE("cxx parser finds implicit constructor without definition call")
 		"	App app;\n"
 		"}\n");
 
-	REQUIRE(containsElement(client->calls, "int main() -> void App::App() constexpr <6:6 6:8>"s));
+	REQUIRE(containsElement(client->calls, "int main() -> void App::App() <6:6 6:8>"s));
 }
 
 TEST_CASE("cxx parser finds explicit constructor call")
@@ -2721,7 +2975,7 @@ TEST_CASE("cxx parser finds call of implicitly defined destructor at delete keyw
 		"	delete f; \n"
 		"}\n");
 
-	REQUIRE(containsElement(client->calls, "void foo() -> void Foo::~Foo() constexpr <8:2 8:7>"s));
+	REQUIRE(containsElement(client->calls, "void foo() -> void Foo::~Foo() <8:2 8:7>"s));
 }
 
 TEST_CASE("cxx parser finds explicit constructor call of field")
@@ -2737,7 +2991,7 @@ TEST_CASE("cxx parser finds explicit constructor call of field")
 		"	Item item;\n"
 		"};\n");
 
-	REQUIRE(containsElement(client->calls, "void App::App() -> void Item::Item() constexpr <7:10 7:13>"s));
+	REQUIRE(containsElement(client->calls, "void App::App() -> void Item::Item() <7:10 7:13>"s));
 }
 
 TEST_CASE("cxx parser finds function call in member initialization")
@@ -3408,9 +3662,7 @@ TEST_CASE("cxx parser finds use of dependent template specialization type")
 		client->typeUses, "B<bool>::type f -> B<bool>::type <14:10 14:13>"));
 }
 
-TEST_CASE(
-	"cxx parser creates single node for all possible parameter pack expansions of template "
-	"function")
+TEST_CASE("cxx parser creates a node for each parameter pack expansion of template function")
 {
 	std::shared_ptr<TestStorage> client = parseCode(
 		"template<typename T>\n"
@@ -3421,11 +3673,20 @@ TEST_CASE(
 		"\n"
 		"void foo() { long sum = adder(1, 2, 3, 8, 7); }\n");
 
+	// Each expansion is a function of its own, calling the next: they used to be one node
+	// `adder<int, <...>>(int, ...)` that called itself.
+	CAPTURE(client->functions, client->calls);
 	REQUIRE(utility::containsElement<std::string>(
-		client->functions, "int adder<int, <...>>(int, ...) <5:1 <5:1 <5:3 5:7> 5:30> 5:65>"));
+		client->functions,
+		"int adder<int, int, int, int, int>(int, int, int, int, int) <5:1 <5:1 <5:3 5:7> 5:30> 5:65>"));
+	REQUIRE(utility::containsElement<std::string>(
+		client->functions, "int adder<int, int>(int, int) <5:1 <5:1 <5:3 5:7> 5:30> 5:65>"));
 	REQUIRE(utility::containsElement<std::string>(
 		client->calls,
-		"int adder<int, <...>>(int, ...) -> int adder<int, <...>>(int, ...) <5:49 5:53>"));
+		"int adder<int, int, int, int, int>(int, int, int, int, int) -> "
+		"int adder<int, int, int, int>(int, int, int, int) <5:49 5:53>"));
+	REQUIRE(utility::containsElement<std::string>(
+		client->calls, "int adder<int, int>(int, int) -> int adder<int>(int) <5:49 5:53>"));
 }
 
 TEST_CASE("cxx parser finds type template argument of explicit template instantiation")
@@ -3480,9 +3741,9 @@ TEST_CASE(
 		"   A<int, float>();\n"
 		"}\n");
 
-	REQUIRE(utility::containsElement<std::string>(client->typeUses, "A<<...>> -> int <7:6 7:8>"));
-	REQUIRE(
-		utility::containsElement<std::string>(client->typeUses, "A<<...>> -> float <7:11 7:15>"));
+	REQUIRE(utility::containsElement<std::string>(client->typeUses, "A<int, float> -> int <7:6 7:8>"));
+	REQUIRE(utility::containsElement<std::string>(
+		client->typeUses, "A<int, float> -> float <7:11 7:15>"));
 	REQUIRE(
 		utility::containsElement<std::string>(client->typeUses, "int main() -> int <7:6 7:8>"));
 	REQUIRE(utility::containsElement<std::string>(
@@ -3690,9 +3951,9 @@ TEST_CASE(
 		"}\n");
 
 	REQUIRE(utility::containsElement<std::string>(
-		client->typeUses, "B<<...>> -> A<typename T> <11:4 11:4>"));
+		client->typeUses, "B<A, A> -> A<typename T> <11:4 11:4>"));
 	REQUIRE(utility::containsElement<std::string>(
-		client->typeUses, "B<<...>> -> A<typename T> <11:7 11:7>"));
+		client->typeUses, "B<A, A> -> A<typename T> <11:7 11:7>"));
 	REQUIRE(utility::containsElement<std::string>(
 		client->typeUses, "int main() -> A<typename T> <11:4 11:4>"));
 	REQUIRE(utility::containsElement<std::string>(
@@ -4167,8 +4428,8 @@ TEST_CASE(
 }
 
 TEST_CASE(
-	"cxx parser replaces dependent template arguments of explicit template specialization with "
-	"name of base template")
+	"cxx parser names dependent template arguments of explicit template specialization as "
+	"written")
 {
 	std::shared_ptr<TestStorage> client = parseCode(
 		"template <typename T>\n"
@@ -4179,7 +4440,41 @@ TEST_CASE(
 		"class vector<Foo1, A<Foo1>> { };\n");
 
 	REQUIRE(utility::containsElement<std::string>(
-		client->classes, "vector<class Foo1, A<typename T>> <5:1 <6:7 6:12> 6:31>"));
+		client->classes, "vector<class Foo1, A<Foo1>> <5:1 <6:7 6:12> 6:31>"));
+}
+
+TEST_CASE("cxx parser tells partial class template specializations apart by their arguments")
+{
+	// Each partial specialization is its own node, and an instantiation is specialized from the
+	// one it was instantiated from. Converted, the arguments are canonical -- `T` in `T *` has no
+	// name -- so they used to be `unsolved-type` (T * and T & merged), `class T` (const T merged
+	// with the primary), the primary's own parameters (`A<typename T>`) or canonical spellings.
+	std::shared_ptr<TestStorage> client = parseCode(
+		"template <typename T> struct A {};\n"
+		"template <typename T> struct Trait {};\n"
+		"template <typename T> struct Trait<T*> {};\n"
+		"template <typename T> struct Trait<T&> {};\n"
+		"template <typename T> struct Trait<A<T>> {};\n"
+		"template <typename T> struct Trait<const T> {};\n"
+		"template <typename T, typename = void> struct has {};\n"
+		"template <typename T> struct has<T, decltype(void(T::x))> {};\n"
+		"Trait<int*> p; Trait<int&> r; Trait<A<int>> a; Trait<const int> c;\n");
+
+	CAPTURE(client->structs, client->templateSpecializations);
+	REQUIRE(client->errors.empty());
+	REQUIRE(containsElement(client->structs, "Trait<typename T> <2:1 <2:30 2:34> 2:37>"s));
+	REQUIRE(containsElement(client->structs, "Trait<T *> <3:1 <3:30 3:34> 3:41>"s));
+	REQUIRE(containsElement(client->structs, "Trait<T &> <4:1 <4:30 4:34> 4:41>"s));
+	REQUIRE(containsElement(client->structs, "Trait<A<T>> <5:1 <5:30 5:34> 5:43>"s));
+	REQUIRE(containsElement(client->structs, "Trait<const T> <6:1 <6:30 6:34> 6:46>"s));
+	// not the canonical `decltype(void(type-parameter-0-0::x))`
+	REQUIRE(containsElement(client->structs, "has<typename T, decltype(void(T::x))> <8:1 <8:30 8:32> 8:60>"s));
+
+	REQUIRE(containsElement(client->templateSpecializations, "Trait<int *> -> Trait<T *> <3:30 3:34>"s));
+	REQUIRE(containsElement(client->templateSpecializations, "Trait<int &> -> Trait<T &> <4:30 4:34>"s));
+	REQUIRE(containsElement(client->templateSpecializations, "Trait<A<int>> -> Trait<A<T>> <5:30 5:34>"s));
+	REQUIRE(containsElement(client->templateSpecializations, "Trait<const int> -> Trait<const T> <6:30 6:34>"s));
+	REQUIRE(containsElement(client->templateSpecializations, "Trait<const T> -> Trait<typename T> <6:30 6:34>"s));
 }
 
 TEST_CASE(
@@ -4475,7 +4770,7 @@ TEST_CASE("cxx parser finds lambda calling a function")
 		"	}();\n"
 		"}\n");
 
-	REQUIRE(containsElement(client->calls, "void lambdaCaller::lambda at 4:2() constexpr -> void func() <6:3 6:6>"s));
+	REQUIRE(containsElement(client->calls, "void lambdaCaller::lambda at 4:2() const -> void func() <6:3 6:6>"s));
 }
 
 TEST_CASE("cxx parser finds local variable in lambda capture")
@@ -4636,7 +4931,7 @@ TEST_CASE("cxx parser finds implicit constructor call in initialization")
 		"	A m_a;\n"
 		"};\n");
 
-	REQUIRE(containsElement(client->calls, "void B::B() -> void A::A() constexpr <6:2 6:2>"s));
+	REQUIRE(containsElement(client->calls, "void B::B() -> void A::A() <6:2 6:2>"s));
 }
 
 TEST_CASE("cxx parser parses multiple files")

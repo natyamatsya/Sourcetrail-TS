@@ -3,6 +3,9 @@
 #pragma once
 
 #ifndef SRCTRL_MODULE_PURVIEW
+#include <algorithm>
+#include <iterator>
+
 #include "utilityString.h"
 #endif
 
@@ -10,7 +13,13 @@ inline std::string CxxNameParent::getTemplateSuffix(const std::vector<std::strin
 {
 	if (elements.size())
 	{
-		return '<' + utility::join(elements, ", ") + '>';
+		// An empty pack is an empty element: `tuple<>`, and `f<int>` for f<int, Ts...> with no Ts.
+		std::vector<std::string> nonEmptyElements;
+		std::ranges::copy_if(
+			elements, std::back_inserter(nonEmptyElements), [](const std::string& element) {
+				return !element.empty();
+			});
+		return '<' + utility::join(nonEmptyElements, ", ") + '>';
 	}
 
 	return "";

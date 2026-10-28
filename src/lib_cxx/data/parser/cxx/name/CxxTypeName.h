@@ -41,6 +41,10 @@ public:
 	void addQualifier(const CxxQualifierFlags::QualifierType qualifier);
 	void addModifier(Modifier modifier);
 
+	// The signature of the symbol this type is, for a type whose symbol is a function: a lambda's
+	// closure type is the node of the lambda's call operator.
+	void setSignature(NameElement::Signature signature);
+
 	std::string toString() const;
 
 private:
@@ -49,6 +53,7 @@ private:
 
 	CxxQualifierFlags m_qualifierFlags;
 	std::vector<Modifier> m_modifiers;
+	NameElement::Signature m_signature;
 };
 
 #include "CxxTypeName.inl"

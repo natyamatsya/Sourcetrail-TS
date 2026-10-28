@@ -17,6 +17,11 @@ public:
 	CxxTemplateArgumentNameResolver(const CxxNameResolver* other);
 
 	std::string getTemplateArgumentName(const clang::TemplateArgument& argument);
+
+	// The argument as the source spells it, e.g. `T *` or `std::vector<T>` of a partial
+	// specialization `Trait<T *>`. Its converted argument is canonical: the template parameters in
+	// it have no declaration, so they have no name.
+	std::string getWrittenTemplateArgumentName(const clang::TemplateArgumentLoc& argument);
 };
 
 // Classic build: converge on the family apex, whose bottom includes all resolver bodies once

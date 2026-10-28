@@ -28,6 +28,31 @@ inline CxxName CxxDeclNameResolver::getName(const clang::NamedDecl* declaration)
 {
 	declaration = utility::getFirstDecl(declaration);
 
+	// A using-declaration is a use of what it brings into scope, so it is named by that: by the
+	// name it is spelled with (`std::string_view` for std::__1::string_view, `Ts::operator()`) it
+	// would be a node of its own that no declaration has.
+	if (const clang::UsingDecl* usingDecl = clang::dyn_cast_or_null<clang::UsingDecl>(declaration))
+	{
+		if (usingDecl->shadow_size() > 0)
+		{
+			const clang::UsingShadowDecl* shadowDecl = *usingDecl->shadow_begin();
+			// `using Base::Base;` inherits all of Base's constructors: it uses the base class.
+			if (const clang::ConstructorUsingShadowDecl* constructorShadowDecl =
+					clang::dyn_cast<clang::ConstructorUsingShadowDecl>(shadowDecl))
+			{
+				if (const clang::CXXRecordDecl* baseDecl = constructorShadowDecl->getNominatedBaseClass())
+				{
+					return getName(baseDecl);
+				}
+			}
+			// An overload set has no node of its own; it keeps the name as spelled.
+			else if (usingDecl->shadow_size() == 1)
+			{
+				return getName(shadowDecl->getTargetDecl()->getUnderlyingDecl());
+			}
+		}
+	}
+
 	if ((declaration) && (clang::isa<clang::CXXRecordDecl>(declaration)) &&
 		(clang::dyn_cast<clang::CXXRecordDecl>(declaration)->isLambda()))
 	{
@@ -208,6 +233,14 @@ inline CxxName CxxDeclNameResolver::getDeclName(const clang::NamedDecl* declarat
 				functionName = "lambda at " + std::to_string(presumedBegin.getLine()) + ":" +
 					std::to_string(presumedBegin.getColumn());
 			}
+			else if (const clang::CXXConstructorDecl* constructorDecl =
+						 clang::dyn_cast<clang::CXXConstructorDecl>(functionDecl);
+					 constructorDecl && constructorDecl->isInheritingConstructor())
+			{
+				// Clang names a constructor inherited by `using Base::Base;` after the base class;
+				// it is a constructor of the derived class, named like that class's others.
+				functionName = constructorDecl->getParent()->getNameAsString();
+			}
 			else if (clang::FunctionTemplateDecl* templateFunctionDeclaration = functionDecl->getDescribedFunctionTemplate())
 			{
 				templateArguments = getTemplateParameterStrings(templateFunctionDeclaration);
@@ -234,15 +267,30 @@ inline CxxName CxxDeclNameResolver::getDeclName(const clang::NamedDecl* declarat
 			}
 
 			bool isStatic = false;
-			CxxQualifierFlags constQualifier;
+			CxxQualifierFlags methodQualifiers;
 
+			// The name is the method's identity, so it carries what tells overloads apart -- the
+			// cv- and ref-qualifiers -- and nothing else. constexpr is not part of the signature,
+			// and a defaulted or implicit member is constexpr in one -std and not in another, so
+			// with it the same member would become one node per language standard.
 			if (const clang::CXXMethodDecl* methodDecl = clang::dyn_cast<const clang::CXXMethodDecl>(declaration))
 			{
 				isStatic = methodDecl->isStatic();
-				if (methodDecl->isConstexpr())
-					constQualifier.addQualifier(CxxQualifierFlags::QualifierType::CONSTEXPR);
-				else if (methodDecl->isConst())
-					constQualifier.addQualifier(CxxQualifierFlags::QualifierType::CONST);
+				if (methodDecl->isConst())
+					methodQualifiers.addQualifier(CxxQualifierFlags::QualifierType::CONST);
+				if (methodDecl->isVolatile())
+					methodQualifiers.addQualifier(CxxQualifierFlags::QualifierType::VOLATILE);
+				switch (methodDecl->getRefQualifier())
+				{
+				case clang::RQ_LValue:
+					methodQualifiers.addQualifier(CxxQualifierFlags::QualifierType::LVALUE_REFERENCE);
+					break;
+				case clang::RQ_RValue:
+					methodQualifiers.addQualifier(CxxQualifierFlags::QualifierType::RVALUE_REFERENCE);
+					break;
+				case clang::RQ_None:
+					break;
+				}
 			}
 			else
 				isStatic = functionDecl->getStorageClass() == clang::SC_Static;
@@ -252,27 +300,18 @@ inline CxxName CxxDeclNameResolver::getDeclName(const clang::NamedDecl* declarat
 			std::unique_ptr<CxxTypeName> returnTypeName = CxxTypeName::makeUnsolvedIfNull(
 				typeNameResolver.getName(functionDecl->getReturnType()));
 
+			// An instantiation's function parameter pack is one parameter per element, named like
+			// its template arguments: f<int, char>(int, char).
 			std::vector<std::unique_ptr<CxxTypeName>> parameterTypeNames;
 			for (unsigned int i = 0; i < functionDecl->param_size(); i++)
 			{
-				if (const clang::SubstTemplateTypeParmType* substType =
-						clang::dyn_cast_or_null<clang::SubstTemplateTypeParmType>(
-							functionDecl->parameters()[i]->getType().getTypePtr()))
-				{
-					if (const clang::TemplateTypeParmDecl* templateParamType =
-							substType->getReplacedParameter())
-					{
-						if (templateParamType->isParameterPack())
-						{
-							parameterTypeNames.push_back(std::make_unique<CxxTypeName>("..."));
-							break;
-						}
-					}
-				}
 				parameterTypeNames.push_back(CxxTypeName::makeUnsolvedIfNull(
 					typeNameResolver.getName(functionDecl->parameters()[i]->getType())));
 			}
 
+			// A static function is one per file that defines it: named by that file, a header's
+			// static (inline) function is one node however many TUs include it, while same-named
+			// statics of two .c files stay apart.
 			if (!clang::isa<clang::CXXMethodDecl>(declaration) && isStatic)
 			{
 				return CxxName::make<CxxStaticFunctionDeclName>(
@@ -280,7 +319,7 @@ inline CxxName CxxDeclNameResolver::getDeclName(const clang::NamedDecl* declarat
 					std::move(templateArguments),
 					std::move(returnTypeName),
 					std::move(parameterTypeNames),
-					getTranslationUnitMainFileName(declaration));
+					getCanonicalFilePathCache()->getDeclarationFileName(declaration));
 			}
 
 			return CxxName::make<CxxFunctionDeclName>(
@@ -288,7 +327,7 @@ inline CxxName CxxDeclNameResolver::getDeclName(const clang::NamedDecl* declarat
 				std::move(templateArguments),
 				std::move(returnTypeName),
 				std::move(parameterTypeNames),
-				constQualifier,
+				methodQualifiers,
 				isStatic);
 		}
 		else if (const clang::FunctionTemplateDecl *functionTemplateDecl = clang::dyn_cast<clang::FunctionTemplateDecl>(declaration))
@@ -351,22 +390,13 @@ inline CxxName CxxDeclNameResolver::getDeclName(const clang::NamedDecl* declarat
 				std::string varName = declNameString;
 				if (utility::getSymbolKind(varDecl) == SymbolKind::GLOBAL_VARIABLE && varDecl->getStorageClass() == clang::SC_Static)
 				{
-					// if a global variable is static it is only visible in the current translation
-					// unit. Therefore if multiple instances of that global variable may be
-					// generated (one for each translation unit) we add the name of the translation
-					// unit's source file. If that global variable definition is const, we add the
-					// name of the (maybe header) file that variable is defined in instead. This
-					// causes different instances of the variable that all MUST contain the same
-					// value to be merged into a single node in Sourcetrail.
-					std::string scopeFileName;
-					if (varDecl->isConstexpr() || varDecl->getType().isConstQualified())
-					{
-						scopeFileName = getCanonicalFilePathCache()->getDeclarationFileName(declaration);
-					}
-					else
-					{
-						scopeFileName = getTranslationUnitMainFileName(declaration);
-					}
+					// A static global variable is only visible in its translation unit, so
+					// same-named ones of different files are different variables: we add the name
+					// of the (maybe header) file that declares it. A header's static variable is one
+					// node for all TUs that include it -- one declaration in the source -- as is a
+					// header's static function.
+					const std::string scopeFileName =
+						getCanonicalFilePathCache()->getDeclarationFileName(declaration);
 
 					if (!scopeFileName.empty())
 					{
@@ -444,14 +474,6 @@ inline CxxName CxxDeclNameResolver::getDeclName(const clang::NamedDecl* declarat
 	return CxxName::make<CxxDeclName>(getNameForAnonymousSymbol("symbol", declaration));
 }
 
-inline std::string CxxDeclNameResolver::getTranslationUnitMainFileName(const clang::Decl* declaration)
-{
-	const clang::SourceManager& sourceManager = declaration->getASTContext().getSourceManager();
-	return getCanonicalFilePathCache()
-		->getCanonicalFilePath(sourceManager.getMainFileID(), sourceManager)
-		.fileName();
-}
-
 inline std::string CxxDeclNameResolver::getNameForAnonymousSymbol(
 	const std::string& symbolKindName, const clang::Decl* declaration)
 {
@@ -501,4 +523,10 @@ inline std::string CxxDeclNameResolver::getTemplateParameterString(const clang::
 inline std::string CxxDeclNameResolver::getTemplateArgumentName(const clang::TemplateArgument& argument)
 {
 	return CxxTemplateArgumentNameResolver(this).getTemplateArgumentName(argument);
+}
+
+inline std::string CxxDeclNameResolver::getWrittenTemplateArgumentName(
+	const clang::TemplateArgumentLoc& argument)
+{
+	return CxxTemplateArgumentNameResolver(this).getWrittenTemplateArgumentName(argument);
 }

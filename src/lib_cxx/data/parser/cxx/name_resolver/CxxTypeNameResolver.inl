@@ -8,6 +8,7 @@
 #include <clang/AST/DeclTemplate.h>
 #include <clang/AST/PrettyPrinter.h>
 
+#include "CxxFunctionDeclName.h"
 #include "logging.h"
 #include "utilityClang.h"
 #endif
@@ -73,6 +74,12 @@ inline std::unique_ptr<CxxTypeName> CxxTypeNameResolver::getName(const clang::Ty
 			}
 			break;
 		}
+		case clang::Type::Using:
+		{
+			// `using std::string_view;` makes `string_view` name std::string_view: it is a use of
+			// that type, not of a type of the using-declaration's scope.
+			return getName(clang::dyn_cast<clang::UsingType>(type)->desugar());
+		}
 		case clang::Type::MemberPointer:
 		case clang::Type::Pointer:
 		{
@@ -121,15 +128,23 @@ inline std::unique_ptr<CxxTypeName> CxxTypeNameResolver::getName(const clang::Ty
 		case clang::Type::Enum:
 		case clang::Type::Record:
 		{
-			CxxName declNameErased = resolveDeclName(
-				type->getAs<clang::TagType>()->getDecl());
+			return getTagName(type->getAs<clang::TagType>()->getDecl());
+		}
+		case clang::Type::DeducedTemplateSpecialization:
+		{
+			// `overloaded{f, g}`: the class template argument deduction gives overloaded<F, G>.
+			const clang::DeducedTemplateSpecializationType* deducedType =
+				clang::dyn_cast<clang::DeducedTemplateSpecializationType>(type);
+			if (const clang::QualType deduced = deducedType->getDeducedType(); !deduced.isNull())
+			{
+				return getName(deduced);
+			}
+			CxxName declNameErased =
+				resolveDeclName(deducedType->getTemplateName().getAsTemplateDecl());
 			if (const auto declName = declNameErased.target<CxxDeclName>())
 			{
 				return std::make_unique<CxxTypeName>(
-					declName->getName(),
-					declName->getTemplateParameterNames(),	  // contains template arguments if decl
-															  // is a template specialization
-					declName->getParent());
+					declName->getName(), declName->getTemplateParameterNames(), declName->getParent());
 			}
 			break;
 		}
@@ -148,15 +163,8 @@ inline std::unique_ptr<CxxTypeName> CxxTypeNameResolver::getName(const clang::Ty
 												  // into namepart and parameter part
 			if (tagType)
 			{
-				CxxName declNameErased = resolveDeclName(
-					tagType->getDecl());
-				if (const auto declName = declNameErased.target<CxxDeclName>())
-				{
-					return std::make_unique<CxxTypeName>(
-						declName->getName(),
-						declName->getTemplateParameterNames(),
-						declName->getParent());
-				}
+				// also an alias template that names a class, e.g. std::decay_t<F> of a closure type
+				return getTagName(tagType->getDecl());
 			}
 			else	// specialization of a template template parameter (no concrete class)
 					// important, may help: has no underlying decl!
@@ -355,6 +363,29 @@ inline std::unique_ptr<CxxTypeName> CxxTypeNameResolver::getName(const clang::Ty
 			return std::make_unique<CxxTypeName>(std::move(nameString));
 		}
 		}
+	}
+	return nullptr;
+}
+
+inline std::unique_ptr<CxxTypeName> CxxTypeNameResolver::getTagName(const clang::TagDecl* tagDecl)
+{
+	CxxName declNameErased = CxxDeclNameResolver(this).getName(tagDecl);
+	if (const auto declName = declNameErased.target<CxxDeclName>())
+	{
+		return std::make_unique<CxxTypeName>(
+			declName->getName(),
+			declName->getTemplateParameterNames(),	  // contains template arguments if decl is a
+													  // template specialization
+			declName->getParent());
+	}
+	// A lambda's closure type is named by its call operator, `main::lambda at 3:12`, with the
+	// operator's signature: a use of the type is a use of the lambda's node.
+	if (const auto lambdaName = declNameErased.target<CxxFunctionDeclName>())
+	{
+		std::unique_ptr<CxxTypeName> typeName = std::make_unique<CxxTypeName>(
+			lambdaName->getName(), lambdaName->getTemplateParameterNames(), lambdaName->getParent());
+		typeName->setSignature(declNameErased.toNameHierarchy().back().getSignature());
+		return typeName;
 	}
 	return nullptr;
 }

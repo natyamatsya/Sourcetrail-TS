@@ -98,6 +98,7 @@ inline bool CxxAstVisitor::shouldHandleTypeLoc(const clang::TypeLoc& tl)
 {
 	return tl.getAs<clang::TagTypeLoc>() ||
 		tl.getAs<clang::TypedefTypeLoc>() ||
+		tl.getAs<clang::UsingTypeLoc>() ||	  // a type named through a using-declaration
 		tl.getAs<clang::TemplateTypeParmTypeLoc>() ||
 		tl.getAs<clang::TemplateSpecializationTypeLoc>() ||
 		tl.getAs<clang::InjectedClassNameTypeLoc>() ||
