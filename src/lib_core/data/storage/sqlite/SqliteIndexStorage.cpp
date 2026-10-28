@@ -537,19 +537,32 @@ bool SqliteIndexStorage::addSymbol(const StorageSymbol& data)
 
 bool SqliteIndexStorage::addSymbols(const std::vector<StorageSymbol>& symbols)
 {
-	using namespace sqlpp;
-	return insertInChunks(
-		db(),
-		symbols,
-		[] {
-			return ::sqlpp::sqlite3::insert_or_ignore().into(symbolTable).columns(
-				symbolTable.id, symbolTable.definitionKind);
-		},
-		[](auto& insert, const StorageSymbol& symbol) {
-			insert.add_values(
-				symbolTable.id = static_cast<Id::type>(symbol.id),
-				symbolTable.definitionKind = static_cast<int>(symbol.definitionKind));
-		});
+	// A symbol is recorded by every TU that sees it, and the TUs can disagree: one defines
+	// `template<> struct Box<int>` explicitly, another instantiates Box<int> implicitly. The
+	// stronger kind wins (NONE < IMPLICIT < EXPLICIT), whichever TU is stored first; an
+	// insert-or-ignore let the first one decide. sqlpp23 has no upsert for sqlite3, so this
+	// stays on the raw view of the shared handle (the values are internal ids and enum values).
+	bool success = true;
+	size_t i = 0;
+	while (i < symbols.size())
+	{
+		std::string statement = "INSERT INTO symbol(id, definition_kind) VALUES ";
+		const size_t end = std::min(symbols.size(), i + kInsertChunkRows);
+		for (const size_t first = i; i < end; i++)
+		{
+			if (i != first)
+			{
+				statement += ',';
+			}
+			statement += '(' + std::to_string(static_cast<Id::type>(symbols[i].id)) + ',' +
+				std::to_string(static_cast<int>(symbols[i].definitionKind)) + ')';
+		}
+		statement +=
+			" ON CONFLICT(id) DO UPDATE SET definition_kind = "
+			"MAX(definition_kind, excluded.definition_kind);";
+		success = executeStatement(statement) && success;
+	}
+	return success;
 }
 
 bool SqliteIndexStorage::addFile(const StorageFile& data)

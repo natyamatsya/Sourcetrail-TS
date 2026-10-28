@@ -199,3 +199,50 @@ TEST_CASE("storage removes edge successfully")
 
 	REQUIRE(0 == edgeCount);
 }
+
+TEST_CASE("storage keeps the stronger definition kind across duplicate inserts")
+{
+	// `template<> struct Box<int>` is defined explicitly in one TU and instantiated implicitly
+	// in another; both record the same node. Explicit must win in both insert orders, also
+	// when both arrive in one batch.
+	const TestTempDirectory tempDirectory{"SqliteIndexStorageTestSuite"};
+	const FilePath databasePath(tempDirectory.getFilePath("test.sqlite"));
+	DefinitionKind explicitFirst = DefinitionKind::NONE;
+	DefinitionKind explicitSecond = DefinitionKind::NONE;
+	DefinitionKind sameBatch = DefinitionKind::NONE;
+	DefinitionKind implicitOnly = DefinitionKind::NONE;
+	{
+		StorageConnection connection(databasePath);
+		SqliteIndexStorage storage(connection);
+		storage.setup();
+		storage.beginTransaction();
+
+		const Id explicitFirstId = storage.addNode(StorageNodeData(NODE_STRUCT, "ExplicitFirst"));
+		storage.addSymbol(StorageSymbol(explicitFirstId, DefinitionKind::EXPLICIT));
+		storage.addSymbol(StorageSymbol(explicitFirstId, DefinitionKind::IMPLICIT));
+
+		const Id explicitSecondId = storage.addNode(StorageNodeData(NODE_STRUCT, "ExplicitSecond"));
+		storage.addSymbol(StorageSymbol(explicitSecondId, DefinitionKind::IMPLICIT));
+		storage.addSymbol(StorageSymbol(explicitSecondId, DefinitionKind::EXPLICIT));
+
+		const Id sameBatchId = storage.addNode(StorageNodeData(NODE_STRUCT, "SameBatch"));
+		const Id implicitOnlyId = storage.addNode(StorageNodeData(NODE_STRUCT, "ImplicitOnly"));
+		storage.addSymbols(
+			{StorageSymbol(sameBatchId, DefinitionKind::IMPLICIT),
+			 StorageSymbol(implicitOnlyId, DefinitionKind::IMPLICIT),
+			 StorageSymbol(sameBatchId, DefinitionKind::EXPLICIT),
+			 StorageSymbol(sameBatchId, DefinitionKind::IMPLICIT)});
+
+		storage.commitTransaction();
+		explicitFirst = storage.getFirstById<StorageSymbol>(explicitFirstId).definitionKind;
+		explicitSecond = storage.getFirstById<StorageSymbol>(explicitSecondId).definitionKind;
+		sameBatch = storage.getFirstById<StorageSymbol>(sameBatchId).definitionKind;
+		implicitOnly = storage.getFirstById<StorageSymbol>(implicitOnlyId).definitionKind;
+	}
+	FileSystem::remove(databasePath);
+
+	REQUIRE(DefinitionKind::EXPLICIT == explicitFirst);
+	REQUIRE(DefinitionKind::EXPLICIT == explicitSecond);
+	REQUIRE(DefinitionKind::EXPLICIT == sameBatch);
+	REQUIRE(DefinitionKind::IMPLICIT == implicitOnly);
+}
