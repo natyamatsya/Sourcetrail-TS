@@ -851,11 +851,7 @@ void QtMainWindow::showStartScreen()
 	QtStartScreen* startScreen = createWindow<QtStartScreen>();
 	connect(startScreen, &QtStartScreen::openOpenProjectDialog, this, &QtMainWindow::openProject);
 	connect(startScreen, &QtStartScreen::openNewProjectDialog, this, &QtMainWindow::newProject);
-	connect(
-		startScreen,
-		&QtStartScreen::openNewProjectFromFolderDialog,
-		this,
-		qOverload<>(&QtMainWindow::newProjectFromFolder));
+	connect(startScreen, &QtStartScreen::openNewEmptyProjectDialog, this, &QtMainWindow::newEmptyProject);
 }
 
 void QtMainWindow::hideStartScreen()
@@ -863,7 +859,7 @@ void QtMainWindow::hideStartScreen()
 	m_windowStack.clearWindows();
 }
 
-void QtMainWindow::newProject()
+void QtMainWindow::newEmptyProject()
 {
 	QtProjectWizard* wizard = createWindow<QtProjectWizard>();
 	m_projectWizard = wizard;
@@ -882,9 +878,9 @@ void QtMainWindow::newProjectFromCDB(const FilePath& filePath)
 	wizard->newProjectFromCDB(filePath);
 }
 
-void QtMainWindow::newProjectFromFolder()
+void QtMainWindow::newProject()
 {
-	const QString folder = QtFileDialog::getExistingDirectory(this, tr("New Project from Folder"), FilePath());
+	const QString folder = QtFileDialog::getExistingDirectory(this, tr("New Project: the Folder with the Sources"), FilePath());
 	if (!folder.isEmpty())
 	{
 		newProjectFromFolder(folder.toStdString(), {});
@@ -949,7 +945,7 @@ void QtMainWindow::applyToProjectWizard(const ProjectWizardRequest& request)
 		const std::shared_ptr<ProjectWizardStateMachine> machine = ProjectWizardStateMachine::instance();
 		if (request.kind == Kind::New)
 		{
-			newProject();	// opened
+			newEmptyProject();	// opened
 		}
 		else if (request.kind == Kind::NewFromFolder)
 		{
@@ -1321,10 +1317,7 @@ void QtMainWindow::setupProjectMenu()
 
 	menu->addAction(QtActions::newProject().text(), QtActions::newProject().shortcut(), this, &QtMainWindow::newProject);
 	menu->addAction(
-		QtActions::newProjectFromFolder().text(),
-		QtActions::newProjectFromFolder().shortcut(),
-		this,
-		qOverload<>(&QtMainWindow::newProjectFromFolder));
+		QtActions::newEmptyProject().text(), QtActions::newEmptyProject().shortcut(), this, &QtMainWindow::newEmptyProject);
 	menu->addAction(QtActions::openProject().text(), QtActions::openProject().shortcut(), this, &QtMainWindow::openProject);
 
 	m_recentProjectsMenu = new QMenu(tr("Recent Projects"));

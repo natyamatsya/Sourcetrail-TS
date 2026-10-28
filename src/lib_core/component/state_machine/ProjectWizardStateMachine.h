@@ -68,7 +68,7 @@ struct ProjectWizardView
 	std::map<std::string, std::string> notes;	// what the page tells about a field beside its value
 	std::vector<std::string> types;	// what can be added (the type selection)
 
-	// What New Project from Folder found (ProjectDetector): why the project is as proposed,
+	// What New Project found in the folder (ProjectDetector): why the project is as proposed,
 	// and what else it noticed (the git repository, its submodules...).
 	struct Detection
 	{

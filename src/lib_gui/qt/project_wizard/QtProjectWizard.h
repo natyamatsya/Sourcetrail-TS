@@ -76,7 +76,7 @@ private:
 	ApplicationSettings m_appSettings;
 
 	bool m_editing = false;
-	// What New Project from Folder found, and the source group it proposed.
+	// What New Project found in the folder, and the source group it proposed.
 	std::optional<ProjectWizardView::Detection> m_detection;
 	std::shared_ptr<SourceGroupSettings> m_detectedGroup;
 	int m_previouslySelectedIndex = -1;

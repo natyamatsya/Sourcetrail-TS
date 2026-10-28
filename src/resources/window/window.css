@@ -239,7 +239,7 @@
 	padding: 1px;
 }
 
-/* What New Project from Folder found (QtProjectWizardContentDetected): a quiet card above the
+/* What New Project found in the folder (QtProjectWizardContentDetected): a quiet card above the
    fields it filled in. */
 #detectedNote {
 	background: #F4F5F8;

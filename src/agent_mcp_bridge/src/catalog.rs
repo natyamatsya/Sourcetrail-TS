@@ -576,9 +576,10 @@ A failed request is back at editing with context.error. A check on the way (a mi
 an invalid name) asks a question first (see question): answer it, the request then fails \
 with that text. A person's steps move the machine too: opening the wizard, the type \
 selection, creating, closing; the context follows their page changes once they leave a page.
-  new                              closed: opens the wizard on a new project.
+  new                              closed: opens the wizard on an empty new project, as Project > \
+New Empty Project does.
   new_from_folder { folder, project_location? }   closed: opens it on the project detected \
-in folder, as Project > New Project from Folder does: the name (the folder's), the location \
+in folder, as Project > New Project (and the start screen's New Project) does: the name (the folder's), the location \
 (project_location, default the folder) and one source group with its fields filled in, shown \
 on the general page; nothing is created until create. C/C++, in this order: a cmake group with \
 a usable configure preset (a configured one first, then one made for this computer), a cmake \

@@ -4,7 +4,7 @@
 #include "ProjectWizardStateMachine.h"
 #include "QtProjectWizardContent.h"
 
-// What New Project from Folder found, above the fields it filled in: why the project is as
+// What New Project found in the folder, above the fields it filled in: why the project is as
 // proposed (the first reason sums it up), and, quieter, what it noticed besides (the git
 // repository, its submodules, build systems it does not read yet). Nothing to confirm: the
 // fields below are the person's to change.

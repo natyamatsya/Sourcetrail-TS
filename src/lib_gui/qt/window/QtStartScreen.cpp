@@ -136,6 +136,7 @@ QtStartScreen::QtStartScreen(QWidget *parent)
 		col->addSpacing(35);
 		col->addStretch();
 
+		// The wizard filled in from what the folder holds (ProjectDetector).
 		QPushButton *newProjectButton = new QPushButton(tr("New Project"), this);
 		newProjectButton->setAttribute(Qt::WA_LayoutUsesWidgetRect); // fixes layouting on Mac
 		newProjectButton->setObjectName(QStringLiteral("projectButton"));
@@ -145,14 +146,13 @@ QtStartScreen::QtStartScreen(QWidget *parent)
 		col->addWidget(newProjectButton);
 		col->addSpacing(8);
 
-		// The wizard filled in from what the folder holds (ProjectDetector).
-		QPushButton *fromFolderButton = new QPushButton(tr("New Project from Folder"), this);
-		fromFolderButton->setAttribute(Qt::WA_LayoutUsesWidgetRect); // fixes layouting on Mac
-		fromFolderButton->setObjectName(QStringLiteral("projectButton"));
-		fromFolderButton->setSizePolicy(QSizePolicy::Fixed, QSizePolicy::Fixed);
-		connect(fromFolderButton, &QPushButton::clicked, this, &QtStartScreen::openNewProjectFromFolderDialog);
+		QPushButton *emptyProjectButton = new QPushButton(tr("New Empty Project"), this);
+		emptyProjectButton->setAttribute(Qt::WA_LayoutUsesWidgetRect); // fixes layouting on Mac
+		emptyProjectButton->setObjectName(QStringLiteral("projectButton"));
+		emptyProjectButton->setSizePolicy(QSizePolicy::Fixed, QSizePolicy::Fixed);
+		connect(emptyProjectButton, &QPushButton::clicked, this, &QtStartScreen::openNewEmptyProjectDialog);
 
-		col->addWidget(fromFolderButton);
+		col->addWidget(emptyProjectButton);
 		col->addSpacing(8);
 
 		QPushButton *openProjectButton = new QPushButton(tr("Open Project"), this);

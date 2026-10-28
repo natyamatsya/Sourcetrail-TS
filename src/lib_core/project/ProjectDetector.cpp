@@ -799,7 +799,7 @@ void noteUndetectedBuildSystems(Detection& detection)
 		BuildSystem{
 			{"meson.build"},
 			"Meson (meson.build) is not detected yet: 'meson setup builddir' writes "
-			"builddir/compile_commands.json, which New Project from Folder then uses"},
+			"builddir/compile_commands.json, which New Project then uses"},
 		BuildSystem{
 			{"MODULE.bazel", "WORKSPACE", "WORKSPACE.bazel"},
 			"Bazel is not detected yet: a compile_commands.json from a Bazel compile commands "

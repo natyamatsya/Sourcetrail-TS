@@ -73,8 +73,8 @@ public:
 	};
 	// Project keys:
 
-	static Info newProject();
-	static Info newProjectFromFolder();
+	static Info newProject();	// from a folder: the wizard filled in from what it holds
+	static Info newEmptyProject();
 	static Info openProject();
 	static Info exit();
 

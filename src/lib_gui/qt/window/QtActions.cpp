@@ -172,7 +172,7 @@ constexpr Qt::Key KEY_GAME_RIGHT = Qt::Key_D;
 // General:
 
 constexpr QtStandardKeyCombination MENU_NEW_PROJECT(QKeySequence::New);
-constexpr QtStandardKeyCombination MENU_NEW_PROJECT_FROM_FOLDER(QKeySequence::New, Ctrl | Shift);
+constexpr QtStandardKeyCombination MENU_NEW_EMPTY_PROJECT(QKeySequence::New, Ctrl | Shift);
 constexpr QtStandardKeyCombination MENU_OPEN_PROJECT(QKeySequence::Open);
 constexpr QtStandardKeyCombination MENU_SAVE_AS(QKeySequence::SaveAs);
 constexpr QtStandardKeyCombination MENU_EXIT(QKeySequence::Quit);
@@ -524,9 +524,9 @@ QtActions::Info QtActions::newProject()
 	return Info(tr("&New Project..."), MENU_NEW_PROJECT);
 }
 
-QtActions::Info QtActions::newProjectFromFolder()
+QtActions::Info QtActions::newEmptyProject()
 {
-	return Info(tr("New Project from &Folder..."), MENU_NEW_PROJECT_FROM_FOLDER);
+	return Info(tr("New &Empty Project..."), MENU_NEW_EMPTY_PROJECT);
 }
 
 QtActions::Info QtActions::openProject()

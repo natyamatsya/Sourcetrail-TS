@@ -39,8 +39,8 @@ public:
 
 signals:
 	void openOpenProjectDialog();
-	void openNewProjectDialog();
-	void openNewProjectFromFolderDialog();
+	void openNewProjectDialog();	// from a folder (ProjectDetector)
+	void openNewEmptyProjectDialog();
 
 private slots:
 	void handleButtonClicked();

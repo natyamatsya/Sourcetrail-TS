@@ -164,10 +164,12 @@ public slots:
 	void showStartScreen();
 	void hideStartScreen();
 
+	// Asks for a folder, and opens the wizard on the project detected there: what New
+	// Project does.
 	void newProject();
+	// The wizard on a new project with nothing filled in.
+	void newEmptyProject();
 	void newProjectFromCDB(const FilePath& filePath);
-	// Asks for a folder, and opens the wizard on the project detected there.
-	void newProjectFromFolder();
 	// The wizard on the project detected in `folder` (ProjectDetector), its file in
 	// `projectLocation` (empty: the folder); the project wizard machine is told when there
 	// is none.
