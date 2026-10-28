@@ -42,6 +42,8 @@ public:
 	void visitConceptDecl(clang::ConceptDecl* d);
 
 private:
+	SymbolKind getTypedefSymbolKind(const clang::TypedefNameDecl& d);
+
 	// The mid-level indexing API: symbol identity, locations, the storage client, and the current
 	// context, plus the recordDeclaration / recordReference idioms. Owned by CxxAstVisitor.
 	CxxIndexingContext& m_index;

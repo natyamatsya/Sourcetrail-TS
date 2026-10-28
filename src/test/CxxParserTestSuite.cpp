@@ -692,6 +692,59 @@ TEST_CASE("cxx parser finds name of anonymous union declared inside typedef")
 	REQUIRE(utility::containsElement<std::string>(client->unions, "Foo <5:3 5:5>"));
 }
 
+TEST_CASE("cxx parser records no access for the members of a C struct")
+{
+	// C has no access; the graph shows members without one in a section without a heading.
+	std::shared_ptr<TestStorage> client = parseCCode("struct ops { int area; };\n");
+	REQUIRE(client->fields == std::vector<std::string>{"int ops::area <1:18 1:21>"});
+
+	std::shared_ptr<TestStorage> cxxClient = parseCode("struct ops { int area; };\n");
+	REQUIRE(cxxClient->fields == std::vector<std::string>{"public int ops::area <1:18 1:21>"});
+}
+
+TEST_CASE("cxx parser finds a typedef naming its own tag as that tag")
+{
+	// C's way to name a struct without "struct": the typedef and the tag are one node, the tag's.
+	std::shared_ptr<TestStorage> client = parseCCode(
+		"typedef struct ops { int area; } ops;\n"
+		"typedef enum color { RED } color;\n"
+		"typedef union value { int i; } value;\n"
+		"typedef struct ops ops_t;\n");
+
+	REQUIRE(containsElement(client->structs, "ops <1:34 1:36>"s));
+	REQUIRE(containsElement(client->enums, "color <2:28 2:32>"s));
+	REQUIRE(containsElement(client->unions, "value <3:32 3:36>"s));
+	REQUIRE(client->typedefs == std::vector<std::string>{"ops_t <4:20 4:24>"});
+
+	std::shared_ptr<TestStorage> cxxClient = parseCode(
+		"struct S;\n"
+		"typedef struct S S;\n"
+		"struct S { int i; };\n");
+	REQUIRE(containsElement(cxxClient->structs, "S <2:18 2:18>"s));
+	REQUIRE(cxxClient->typedefs.empty());
+}
+
+TEST_CASE("cxx parser records no type use or inheritance of a type by itself")
+{
+	std::shared_ptr<TestStorage> cClient = parseCCode("typedef struct ops { int area; } ops;\n");
+	REQUIRE_FALSE(containsElement(cClient->typeUses, "ops -> ops <1:16 1:18>"s));
+
+	std::shared_ptr<TestStorage> client = parseCode(
+		"template <typename T> struct Base {};\n"
+		"struct Value: Base<Value> {};\n"
+		"template <typename L> struct Traits: Traits<decltype(&L::operator())> {};\n");
+
+	// The class as its base's template argument is a use by the base.
+	REQUIRE(containsElement(client->typeUses, "Base<Value> -> Value <2:20 2:24>"s));
+	REQUIRE(containsElement(client->inheritances, "Value -> Base<Value> <2:15 2:18>"s));
+	for (const std::string& edge: utility::concat(client->typeUses, client->inheritances))
+	{
+		INFO(edge);
+		REQUIRE_FALSE(edge.starts_with("Value -> Value "));
+		REQUIRE_FALSE(edge.starts_with("Traits<typename L> -> Traits<typename L> "));
+	}
+}
+
 TEST_CASE("cxx parser finds name of anonymous struct declared inside type alias")
 {
 	std::shared_ptr<TestStorage> client = parseCode(
@@ -1464,6 +1517,80 @@ TEST_CASE(
 	REQUIRE(utility::containsElement<std::string>(
 		client->templateSpecializations,
 		"void A<int>::foo<float>() -> void A<typename T>::foo<typename U>() <6:7 6:9>"));
+}
+
+TEST_CASE("cxx parser records a called method of a file that is not indexed as a method")
+{
+	// Only input.cc is indexed: the methods are known from the calls alone.
+	class InputOnlyFileRegister: public FileRegister
+	{
+	public:
+		InputOnlyFileRegister(): FileRegister(FilePath(), std::set<FilePath>(), {FilePathFilter("")}) {}
+		bool hasFilePath(const FilePath& filePath) const override
+		{
+			return filePath.fileName() == "input.cc";
+		}
+	};
+
+	const std::filesystem::path headerDirectory =
+		std::filesystem::temp_directory_path() / "sourcetrail-test-not-indexed";
+	std::filesystem::create_directories(headerDirectory);
+	std::ofstream(headerDirectory / "comparator.h")
+		<< "struct Comparator\n"
+		   "{\n"
+		   "	Comparator() {}\n"
+		   "	int compare(int a, int b) const { return a - b; }\n"
+		   "	static int make() { return 0; }\n"
+		   "	int operator()(int a) const { return a; }\n"
+		   "};\n";
+
+	std::shared_ptr<IntermediateStorage> storage = std::make_shared<IntermediateStorage>();
+	const std::shared_ptr<ParserClientImpl> parserClient = std::make_shared<ParserClientImpl>(storage);
+	CxxParser parser(
+		*parserClient, std::make_shared<InputOnlyFileRegister>(), std::make_shared<IndexerStateInfo>());
+	parser.buildIndex(
+		"input.cc",
+		TextAccess::createFromString(
+			"#include \"comparator.h\"\n"
+			"int f() { Comparator c; return c.compare(1, 2) + Comparator::make() + c(3); }\n"),
+		{"-I" + headerDirectory.string(), ClangCompiler::stdOption(ClangCompiler::getLatestCppStandard())});
+
+	std::map<std::string, NodeKind> kinds;
+	for (const StorageNode& node: storage->getStorageNodes())
+	{
+		kinds.emplace(
+			NameHierarchy::deserialize(node.serializedName).getQualifiedName(), intToEnum<NodeKind>(node.type));
+	}
+	REQUIRE(kinds["Comparator::compare"] == NODE_METHOD);
+	REQUIRE(kinds["Comparator::make"] == NODE_METHOD);
+	REQUIRE(kinds["Comparator::operator()"] == NODE_METHOD);
+	REQUIRE(kinds["Comparator::Comparator"] == NODE_METHOD);
+	REQUIRE(kinds["f"] == NODE_FUNCTION);
+}
+
+TEST_CASE("cxx parser records written deduction guides only")
+{
+	// Class template argument deduction makes a guide of each constructor; they are not written.
+	std::shared_ptr<TestStorage> client = parseCode(
+		"template <typename T> struct Box { Box(T) {} };\n"
+		"Box b{1};\n"
+		"template <typename T> struct Pair { Pair(T, T) {} };\n"
+		"template <typename T> Pair(T, T) -> Pair<T>;\n"
+		"Pair p{1, 2};\n");
+
+	std::vector<std::string> deductionGuides;
+	for (const std::string& function: client->functions)
+	{
+		if (function.find("deduction guide") != std::string::npos)
+		{
+			deductionGuides.push_back(function);
+		}
+	}
+	REQUIRE(
+		deductionGuides ==
+		std::vector<std::string>{
+			"Pair<T> <deduction guide for Pair><typename T>(T, T) <4:23 <4:23 4:26> 4:43>",
+			"Pair<int> <deduction guide for Pair><int>(int, int) <4:23 <4:23 4:26> 4:43>"});
 }
 
 TEST_CASE("cxx parser finds lambda definition and call in function")
@@ -2726,6 +2853,21 @@ TEST_CASE("cxx parser finds using directive decl in file context")
 	REQUIRE(utility::containsElement<std::string>(client->usages, "input.cc -> std <1:17 1:19>"));
 }
 
+TEST_CASE("cxx parser finds using declaration of an overload set as usage of each overload")
+{
+	std::shared_ptr<TestStorage> client = parseCode(
+		"namespace ns { struct A {}; struct B {}; int operator<<(A, int); int operator<<(B, int);\n"
+		"template <typename T> int f(T); int f(); }\n"
+		"using ns::operator<<;\n"
+		"using ns::f;\n");
+
+	REQUIRE(containsElement(client->usages, "input.cc -> int ns::operator<<(ns::A, int) <3:11 3:18>"s));
+	REQUIRE(containsElement(client->usages, "input.cc -> int ns::operator<<(ns::B, int) <3:11 3:18>"s));
+	REQUIRE(containsElement(client->usages, "input.cc -> int ns::f<typename T>(T) <4:11 4:11>"s));
+	REQUIRE(containsElement(client->usages, "input.cc -> int ns::f() <4:11 4:11>"s));
+	REQUIRE(client->usages.size() == 4);	// no placeholder ns::operator<< or ns::f
+}
+
 TEST_CASE("cxx parser finds using decl in function context")
 {
 	std::shared_ptr<TestStorage> client = parseCode(
@@ -3384,6 +3526,19 @@ TEST_CASE("cxx parser finds usage of field in initialization list")
 
 	REQUIRE(utility::containsElement<std::string>(
 		client->usages, "void App::App() -> int App::bar <4:5 4:7>"));
+}
+
+TEST_CASE("cxx parser records no type use spelled in a system header's macro")
+{
+	// Every NULL is ((void*)0) from stddef.h: not a use of void by the code.
+	std::shared_ptr<TestStorage> client = parseCCode(
+		"#include <stddef.h>\n"
+		"#define MY_NULL ((void*)0)\n"
+		"void f(void) { void* p = NULL; void* q = MY_NULL; (void)p; (void)q; }\n");
+
+	REQUIRE(client->errors.empty());
+	REQUIRE_FALSE(containsElement(client->typeUses, "void f() -> void <3:26 3:29>"s));
+	REQUIRE(containsElement(client->typeUses, "void f() -> void <3:42 3:48>"s));
 }
 
 TEST_CASE("cxx parser finds usage of fields in designated initializers")

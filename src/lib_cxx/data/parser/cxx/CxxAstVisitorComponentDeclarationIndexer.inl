@@ -294,7 +294,7 @@ inline void CxxAstVisitorComponentDeclarationIndexer::visitFunctionDecl(clang::F
 	if (getAstVisitor()->shouldVisitDecl(d))
 	{
 		Id symbolId = m_index.getOrCreateSymbolId(d);
-		m_index.recordSymbolKind(symbolId, clang::isa<clang::CXXMethodDecl>(d) ? SymbolKind::METHOD : SymbolKind::FUNCTION);
+		m_index.recordSymbolKind(symbolId, utility::getFunctionKind(d));
 		m_index.recordLocation(symbolId, m_index.getParseLocation(d->getNameInfo().getSourceRange()), ParseLocationType::TOKEN);
 		m_index.recordLocation(symbolId, m_index.getParseLocationOfFunctionBody(d), ParseLocationType::SCOPE);
 		m_index.recordAccessKind(symbolId, utility::convertAccessSpecifier(d->getAccess()));
@@ -346,7 +346,7 @@ inline void CxxAstVisitorComponentDeclarationIndexer::visitFunctionDecl(clang::F
 				if (clang::FunctionTemplateDecl *primaryTemplate = d->getPrimaryTemplate())
 				{
 					Id templateId = m_index.getOrCreateSymbolId(primaryTemplate->getTemplatedDecl());
-					m_index.recordSymbolKind(templateId, SymbolKind::FUNCTION);
+					m_index.recordSymbolKind(templateId, utility::getFunctionKind(primaryTemplate->getTemplatedDecl()));
 					m_index.recordReference(ReferenceKind::TEMPLATE_SPECIALIZATION, templateId, symbolId, m_index.getParseLocation(d->getLocation()));
 				}
 			}
@@ -407,12 +407,12 @@ inline void CxxAstVisitorComponentDeclarationIndexer::visitCXXMethodDecl(clang::
 		for (clang::CXXMethodDecl::method_iterator it = d->begin_overridden_methods(); it != d->end_overridden_methods(); it++)
 		{
 			Id overrideId = m_index.getOrCreateSymbolId(*it);
-			m_index.recordSymbolKind(overrideId, SymbolKind::FUNCTION);
+			m_index.recordSymbolKind(overrideId, SymbolKind::METHOD);
 			m_index.recordReference(ReferenceKind::OVERRIDE, overrideId, symbolId, location);
 		}
 
 		// record edge from Foo::bar<int>() to Foo::bar<T>()
-		m_index.recordTemplateMemberSpecialization(d->getMemberSpecializationInfo(), symbolId, location, SymbolKind::FUNCTION);
+		m_index.recordTemplateMemberSpecialization(d->getMemberSpecializationInfo(), symbolId, location, SymbolKind::METHOD);
 	}
 }
 
@@ -462,14 +462,29 @@ inline void CxxAstVisitorComponentDeclarationIndexer::visitNamespaceAliasDecl(cl
 	}
 }
 
+// A typedef or alias is a TYPEDEF, unless it is the name of a tag: of one without a name of its own
+// (typedef struct { ... } X;), or of one with its own name (typedef struct X { ... } X;, C's way to
+// name a struct without "struct"), which is the same node. Then it is the tag's kind.
+inline SymbolKind CxxAstVisitorComponentDeclarationIndexer::getTypedefSymbolKind(
+	const clang::TypedefNameDecl& d)
+{
+	if (const clang::TagDecl* anonymousTagDecl = d.getAnonDeclWithTypedefName())
+	{
+		return utility::convertTagKind(anonymousTagDecl->getTagKind());
+	}
+	if (const clang::TagDecl* tagDecl = d.getUnderlyingType()->getAsTagDecl();
+		tagDecl && m_index.getOrCreateSymbolId(tagDecl) == m_index.getOrCreateSymbolId(&d))
+	{
+		return utility::convertTagKind(tagDecl->getTagKind());
+	}
+	return SymbolKind::TYPEDEF;
+}
+
 inline void CxxAstVisitorComponentDeclarationIndexer::visitTypedefDecl(clang::TypedefDecl* d)
 {
 	if (getAstVisitor()->shouldVisitDecl(d))
 	{
-		const SymbolKind symbolKind = d->getAnonDeclWithTypedefName() == nullptr
-			? SymbolKind::TYPEDEF
-			: utility::convertTagKind(d->getAnonDeclWithTypedefName()->getTagKind());
-		m_index.recordDeclaration(d, symbolKind);
+		m_index.recordDeclaration(d, getTypedefSymbolKind(*d));
 	}
 }
 
@@ -477,10 +492,7 @@ inline void CxxAstVisitorComponentDeclarationIndexer::visitTypeAliasDecl(clang::
 {
 	if (getAstVisitor()->shouldVisitDecl(d))
 	{
-		const SymbolKind symbolKind = d->getAnonDeclWithTypedefName() == nullptr
-			? SymbolKind::TYPEDEF
-			: utility::convertTagKind(d->getAnonDeclWithTypedefName()->getTagKind());
-		m_index.recordDeclaration(d, symbolKind);
+		m_index.recordDeclaration(d, getTypedefSymbolKind(*d));
 	}
 }
 
@@ -513,19 +525,33 @@ inline void CxxAstVisitorComponentDeclarationIndexer::visitUsingDecl(clang::Usin
 	if (getAstVisitor()->shouldVisitDecl(d))
 	{
 		const ParseLocation location = m_index.getParseLocation(d->getLocation());
+		const Id contextSymbolId = m_index.getOrCreateSymbolId(
+			m_index.getContext(),
+			NameHierarchy(
+				getAstVisitor()->getCanonicalFilePathCache()->getCanonicalFilePath(location.fileId).str(),
+				NameDelimiterType::FILE));
 
-		m_index.recordReference(
-			ReferenceKind::USAGE,
-			m_index.getOrCreateSymbolId(d),
-			m_index.getOrCreateSymbolId(
-				m_index.getContext(),
-				NameHierarchy(
-					getAstVisitor()
-						->getCanonicalFilePathCache()
-						->getCanonicalFilePath(location.fileId)
-						.str(),
-					NameDelimiterType::FILE)),
-			location);
+		// A using-declaration is named by what it brings into scope. An overload set
+		// (`using ns::operator<<;`) has no node of its own: it uses each function it names. (Inherited
+		// constructors, `using Base::Base;`, are named by the base class.)
+		const bool isOverloadSet = d->shadow_size() > 1 &&
+			!clang::isa<clang::ConstructorUsingShadowDecl>(*d->shadow_begin());
+		if (isOverloadSet)
+		{
+			for (const clang::UsingShadowDecl* shadowDecl: d->shadows())
+			{
+				m_index.recordReference(
+					ReferenceKind::USAGE,
+					m_index.getOrCreateSymbolId(shadowDecl->getTargetDecl()->getUnderlyingDecl()),
+					contextSymbolId,
+					location);
+			}
+		}
+		else
+		{
+			m_index.recordReference(
+				ReferenceKind::USAGE, m_index.getOrCreateSymbolId(d), contextSymbolId, location);
+		}
 	}
 }
 

@@ -111,8 +111,37 @@ inline bool CxxAstVisitor::shouldHandleTypeLoc(const clang::TypeLoc& tl)
 		;
 }
 
+namespace cxx_ast_visitor_detail
+{
+// Whether `decl` is a deduction guide clang made from a constructor (class template argument
+// deduction) -- or its template, or an instantiation of it: not written, and as many as there are
+// constructors. A deduction guide that is written is indexed.
+inline bool isImplicitDeductionGuide(const clang::Decl* decl)
+{
+	if (const auto* functionTemplate = clang::dyn_cast_or_null<clang::FunctionTemplateDecl>(decl))
+	{
+		decl = functionTemplate->getTemplatedDecl();
+	}
+	const auto* deductionGuide = clang::dyn_cast_or_null<clang::CXXDeductionGuideDecl>(decl);
+	if (!deductionGuide)
+	{
+		return false;
+	}
+	if (const clang::FunctionTemplateDecl* primaryTemplate = deductionGuide->getPrimaryTemplate())
+	{
+		return primaryTemplate->getTemplatedDecl()->isImplicit();
+	}
+	return deductionGuide->isImplicit();
+}
+}	 // namespace cxx_ast_visitor_detail
+
 inline bool CxxAstVisitor::TraverseDecl(clang::Decl* decl)
 {
+	if (cxx_ast_visitor_detail::isImplicitDeductionGuide(decl))
+	{
+		return true;
+	}
+
 	if (m_isVerbose)
 	{
 		logVerboseDecl(decl);
@@ -909,6 +938,13 @@ inline bool CxxAstVisitor::shouldVisitReference(const clang::SourceLocation& ref
 	}
 
 	return false;
+}
+
+// Whether `location` is in the body of a macro defined in a system header (NULL's ((void*)0)):
+// what is spelled there is not the project's, though it is expanded in a project file.
+inline bool CxxAstVisitor::isSpelledInSystemMacro(const clang::SourceLocation& location) const
+{
+	return location.isMacroID() && m_astContext->getSourceManager().isInSystemMacro(location);
 }
 
 inline bool CxxAstVisitor::isLocatedInProjectFile(clang::SourceLocation loc) const
