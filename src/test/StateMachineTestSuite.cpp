@@ -566,6 +566,24 @@ TEST_CASE("indexing report nobody can answer keeps the data")
 	REQUIRE(contains(machine.snapshot().context, R"("outcome":"kept")"));
 }
 
+// Interrupted while preparing, offscreen: the empty run was kept, and the complete
+// index of 96,108 nodes was swapped for one with none.
+TEST_CASE("indexing report nobody can answer discards an interrupted run's data")
+{
+	IndexingStateMachine machine;
+	FakeIndexingPresenter presenter;
+	presenter.answersReports = false;
+	IndexingReport report;
+	report.interrupted = true;
+
+	machine.requested();
+	machine.preparing();
+	machine.indexingStarted();
+	REQUIRE(machine.report(report, presenter) == DatabasePolicy::DATABASE_POLICY_DISCARD);
+	machine.ended("");
+	REQUIRE(contains(machine.snapshot().context, R"("outcome":"discarded")"));
+}
+
 TEST_CASE("indexing report holds no thread while it waits")
 {
 	IndexingStateMachine machine;
@@ -1780,4 +1798,26 @@ TEST_CASE("project close and load are refused up front while indexing")
 	indexing->ended("");
 	REQUIRE(project->fire("close", "", EventSource::Agent).ok);
 	REQUIRE(project->snapshot().state == "unloading");
+}
+
+// "interrupt" right after a refresh was acknowledged in preparing, but the run, whose
+// steps did not listen yet, indexed every file and reported interrupted:false.
+TEST_CASE("indexing interrupted while preparing stays interrupted for the run")
+{
+	const std::shared_ptr<IndexingStateMachine> indexing = IndexingStateMachine::instance();
+	indexing->requested();
+	indexing->preparing();
+	REQUIRE_FALSE(indexing->interruptRequested());
+
+	REQUIRE(indexing->fire("interrupt", "", EventSource::Agent).ok);
+	REQUIRE(indexing->snapshot().state == "finishing");
+	indexing->indexingStarted();	// the run, set up, begins: it is still interrupted
+	REQUIRE(indexing->snapshot().state == "finishing");
+	REQUIRE(indexing->interruptRequested());
+
+	indexing->ended("");
+	indexing->requested();
+	indexing->preparing();	// the next run starts uninterrupted
+	REQUIRE_FALSE(indexing->interruptRequested());
+	indexing->ended("");
 }

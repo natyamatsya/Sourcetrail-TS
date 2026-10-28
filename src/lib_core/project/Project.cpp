@@ -1307,7 +1307,15 @@ void Project::startIndexing(std::shared_ptr<IndexingRun> run)
 		}
 		state.sourceFileCount = run->sourceFileCount;
 
-		if (run->indexing)
+		// An interrupt while the run was set up (preparing) came before its steps
+		// listened for it: nothing is indexed, and the report says it was interrupted.
+		if (IndexingStateMachine::instance()->interruptRequested())
+		{
+			LOG_INFO("Indexing was interrupted while it was prepared.");
+			state.interrupted = true;
+		}
+
+		if (run->indexing && !state.interrupted)
 		{
 			for (const std::function<void()>& work: run->preIndexWork)
 			{
@@ -1344,7 +1352,7 @@ void Project::startIndexing(std::shared_ptr<IndexingRun> run)
 			run->dialogView->hideUnknownProgressDialog();
 		}
 
-		if (run->customCommands)
+		if (run->customCommands && !state.interrupted)
 		{
 			run->customCommands->run(state);
 		}

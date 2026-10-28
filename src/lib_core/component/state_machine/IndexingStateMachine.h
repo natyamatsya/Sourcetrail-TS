@@ -47,7 +47,8 @@ struct IndexingReport
 //   dismissModeChoice(started): someone else (an agent) chose, close the choice
 //   (`started`: indexing goes on).
 // - presentReport(report) shows the report, or returns false when nobody could
-//   answer it (no GUI, or offscreen): the run then keeps its data.
+//   answer it (no GUI, or offscreen): the run then keeps its data, unless it was
+//   interrupted.
 //   dismissReport(): someone else decided, close the report.
 template <typename T>
 concept PresentsIndexing = requires(
@@ -329,6 +330,12 @@ public:
 	State state() const
 	{
 		return m_machine.state();
+	}
+	//! Whether the run was interrupted (`interrupt`), which can come while it is set up,
+	//! before its steps listen for MessageIndexingInterrupted.
+	bool interruptRequested() const
+	{
+		return m_machine.read([](const Data& data, State) { return data.interrupted; });
 	}
 	//! The run's files: started, finished and of how many (while indexing or finishing).
 	IndexingMachine::Progress progress() const
