@@ -291,7 +291,9 @@ void CodeController::handleMessage(MessageActivateTokens* message)
 			status += (fileCount == 1 ? "file" : "files");
 		}
 
-		MessageStatus(status).dispatch();
+		// A replay (the views reloading after a run, Back) is logged, but leaves the status
+		// bar's text: there the finished run's summary stays.
+		MessageStatus(status, false, false, !message->isReplayed()).dispatch();
 	}
 }
 
