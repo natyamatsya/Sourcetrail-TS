@@ -331,7 +331,7 @@ inline bool CxxAstVisitor::TraverseCXXRecordDecl(clang::CXXRecordDecl* d)
 	{
 		for (const auto& base: d->bases())
 		{
-			if (!traverseCXXBaseSpecifier(base))
+			if (!TraverseCXXBaseSpecifier(base))
 			{
 				return false;
 			}
@@ -342,7 +342,9 @@ inline bool CxxAstVisitor::TraverseCXXRecordDecl(clang::CXXRecordDecl* d)
 	return true;
 }
 
-inline bool CxxAstVisitor::traverseCXXBaseSpecifier(const clang::CXXBaseSpecifier& d)
+// Overrides the base visitor's hook, so the bases of a partial specialization, which the base
+// visitor traverses, are inheritance too.
+inline bool CxxAstVisitor::TraverseCXXBaseSpecifier(const clang::CXXBaseSpecifier& d)
 {
 	forEachComponent([&](auto& component) { component.beginTraverseCXXBaseSpecifier(); });
 	bool ret = TraverseTypeLoc(d.getTypeSourceInfo()->getTypeLoc());
@@ -589,6 +591,19 @@ inline bool CxxAstVisitor::TraverseClassTemplateSpecializationDecl(clang::ClassT
 		if (!TraverseNestedNameSpecifierLoc(D->getQualifierLoc()))
 		{
 			ReturnValue = false;
+		}
+	}
+
+	// The bases as written. An instantiation's bases are written in its template: the declaration
+	// indexer records them there (visitClassTemplateSpecializationDecl).
+	if (ReturnValue && D->isExplicitSpecialization() && D->isCompleteDefinition())
+	{
+		for (const clang::CXXBaseSpecifier& base: D->bases())
+		{
+			if (!TraverseCXXBaseSpecifier(base))
+			{
+				ReturnValue = false;
+			}
 		}
 	}
 

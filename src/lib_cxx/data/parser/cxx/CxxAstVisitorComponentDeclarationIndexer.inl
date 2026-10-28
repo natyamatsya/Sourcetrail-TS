@@ -14,6 +14,26 @@
 #include <clang/AST/DeclTemplate.h>
 #endif
 
+// ODR-safe home for the indexer's helpers (see utilityMainFunction.inl).
+namespace cxx_declaration_indexer_detail
+{
+// The name of a base as written, where the type indexer records a written base: the first type of
+// its TypeLoc it handles (before LLVM 22 an elaborated "ns::Base" wraps the Base), at its name. An
+// instantiation's base keeps the locations of the template's.
+inline clang::SourceLocation getBaseNameLocation(const clang::CXXBaseSpecifier& base)
+{
+	for (clang::TypeLoc typeLoc = base.getTypeSourceInfo()->getTypeLoc(); typeLoc;
+		 typeLoc = typeLoc.getNextTypeLoc())
+	{
+		if (CxxAstVisitor::shouldHandleTypeLoc(typeLoc))
+		{
+			return clang_compat::getTypeLocNameLocation(typeLoc);
+		}
+	}
+	return base.getBaseTypeLoc();
+}
+}	 // namespace cxx_declaration_indexer_detail
+
 inline CxxAstVisitorComponentDeclarationIndexer::CxxAstVisitorComponentDeclarationIndexer(
 	CxxAstVisitor* astVisitor, CxxIndexingContext& index)
 	: CxxAstVisitorComponent(astVisitor)
@@ -90,6 +110,31 @@ inline void CxxAstVisitorComponentDeclarationIndexer::visitClassTemplateSpeciali
 			m_index.getOrCreateSymbolId(specializedFromDecl),
 			m_index.getOrCreateSymbolId(d),
 			m_index.getParseLocation(d->getLocation()));
+
+		// An instantiation inherits from its instantiated bases (Foo<int> from Base<int>). They are
+		// written in the template it is instantiated from, the primary template or a partial
+		// specialization, and the edges are recorded there, as its other members are. (Bases
+		// written at an explicit or partial specialization are traversed as inheritance,
+		// CxxAstVisitor::TraverseCXXBaseSpecifier.)
+		if (!d->isExplicitSpecialization() && d->isCompleteDefinition())
+		{
+			const Id symbolId = m_index.getOrCreateSymbolId(d);
+			for (const clang::CXXBaseSpecifier& base: d->bases())
+			{
+				// A closure type has no type name (overloaded<Ts...>: Ts... with lambdas); its
+				// symbol is the lambda's.
+				const clang::CXXRecordDecl* baseDecl = base.getType()->getAsCXXRecordDecl();
+				const Id baseSymbolId = (baseDecl && baseDecl->isLambda())
+					? m_index.getOrCreateSymbolId(baseDecl)
+					: m_index.getOrCreateSymbolId(base.getType().getTypePtr());
+				m_index.recordReference(
+					ReferenceKind::INHERITANCE,
+					baseSymbolId,
+					symbolId,
+					m_index.getParseLocation(
+						cxx_declaration_indexer_detail::getBaseNameLocation(base)));
+			}
+		}
 	}
 }
 

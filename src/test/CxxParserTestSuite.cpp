@@ -4131,6 +4131,61 @@ TEST_CASE("record base class of implicit template class specialization")
 		client->inheritances, "Vector2<class T> -> VectorBase<class T, unsigned int N> <5:24 5:33>"));
 }
 
+TEST_CASE("cxx parser finds inheritance of explicit class template specialization")
+{
+	std::shared_ptr<TestStorage> client = parseCode(
+		"template <typename T> class A {};\n"
+		"template <typename T> class B {};\n"
+		"template <> class B<bool>: public A<bool> {};\n");
+
+	REQUIRE(containsElement(client->inheritances, "B<bool> -> A<bool> <3:35 3:35>"s));
+}
+
+TEST_CASE("cxx parser finds inheritance of partial class template specialization")
+{
+	std::shared_ptr<TestStorage> client = parseCode(
+		"template <typename T> class A {};\n"
+		"template <typename T> class B {};\n"
+		"template <typename T> class B<T*>: public A<T> {};\n");
+
+	REQUIRE(client->inheritances.size() == 1);
+	REQUIRE(client->inheritances.front().ends_with(" -> A<typename T> <3:43 3:43>"));
+	REQUIRE(client->typeUses.empty());
+}
+
+TEST_CASE("cxx parser finds inheritance of class template instantiations at the template's base")
+{
+	// An instantiation's bases are written in the template it is instantiated from: the primary
+	// template, or a partial specialization.
+	std::shared_ptr<TestStorage> client = parseCode(
+		"class Base {};\n"
+		"template <typename T> class A: public Base {};\n"
+		"template <typename T> class B: public A<T> {};\n"
+		"template <typename T> class B<T*>: public A<T*> {};\n"
+		"B<int> b;\n"
+		"B<int*> c;\n"
+		"template class B<char>;\n");
+
+	REQUIRE(containsElement(client->inheritances, "B<int> -> A<int> <3:39 3:39>"s));
+	REQUIRE(containsElement(client->inheritances, "A<int> -> Base <2:39 2:42>"s));
+	REQUIRE(containsElement(client->inheritances, "B<int *> -> A<int *> <4:43 4:43>"s));
+	REQUIRE(containsElement(client->inheritances, "A<int *> -> Base <2:39 2:42>"s));
+	REQUIRE(containsElement(client->inheritances, "B<char> -> A<char> <3:39 3:39>"s));
+	REQUIRE(containsElement(client->inheritances, "A<char> -> Base <2:39 2:42>"s));
+	REQUIRE(client->inheritances.size() == 9);
+}
+
+TEST_CASE("cxx parser finds inheritance of implicit class template instantiation from a lambda")
+{
+	std::shared_ptr<TestStorage> client = parseCode(
+		"template <typename... Ts> struct overloaded: Ts... { using Ts::operator()...; };\n"
+		"void f() { auto o = overloaded{[](int) {}}; }\n");
+
+	// The closure type is named by its lambda, not left unnamed ("global").
+	REQUIRE(client->inheritances.size() == 1);
+	REQUIRE(client->inheritances.front().ends_with(" -> void f::lambda at 2:32(int) constexpr <1:46 1:47>"));
+}
+
 TEST_CASE("cxx parser finds template class specialization with template argument")
 {
 	std::shared_ptr<TestStorage> client = parseCode(

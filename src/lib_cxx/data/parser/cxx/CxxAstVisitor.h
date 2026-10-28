@@ -99,7 +99,7 @@ public:
 	bool TraverseStmt(clang::Stmt* stmt);
 
 	bool TraverseCXXRecordDecl(clang::CXXRecordDecl* d);
-	bool traverseCXXBaseSpecifier(const clang::CXXBaseSpecifier& d);
+	bool TraverseCXXBaseSpecifier(const clang::CXXBaseSpecifier& d);
 	bool TraverseCXXMethodDecl(clang::CXXMethodDecl* d);
 	bool TraverseTemplateTypeParmDecl(clang::TemplateTypeParmDecl* d);
 	bool TraverseTemplateTemplateParmDecl(clang::TemplateTemplateParmDecl* d);
