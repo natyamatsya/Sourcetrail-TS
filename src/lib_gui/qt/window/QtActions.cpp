@@ -541,7 +541,7 @@ QtActions::Info QtActions::exit()
 
 QtActions::Info QtActions::refresh()
 {
-	return Info(tr("&Refresh..."), MENU_REFRESH);
+	return Info(tr("&Refresh"), MENU_REFRESH);
 }
 
 QtActions::Info QtActions::fullRefresh()

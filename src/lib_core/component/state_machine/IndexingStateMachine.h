@@ -41,7 +41,8 @@ struct IndexingReport
 // Indexing") and the report. Whatever the presenter shows, its buttons go to the
 // IndexingStateMachine, which an agent drives the same way.
 //
-// - presentModeChoice(modes, mode); presentCounting(): the files the selected mode
+// - presentModeChoice(modes, mode, reason) (`reason`: why the choice opens, when
+//   not for a plain refresh); presentCounting(): the files the selected mode
 //   would index are being counted, presentRefreshInfo(info): and are known;
 //   dismissModeChoice(started): someone else (an agent) chose, close the choice
 //   (`started`: indexing goes on).
@@ -53,10 +54,11 @@ concept PresentsIndexing = requires(
 	T& presenter,
 	const std::vector<RefreshMode>& modes,
 	RefreshMode mode,
+	const std::string& reason,
 	const RefreshInfo& info,
 	bool started,
 	const IndexingReport& report) {
-	presenter.presentModeChoice(modes, mode);
+	presenter.presentModeChoice(modes, mode, reason);
 	presenter.presentCounting();
 	presenter.presentRefreshInfo(info);
 	presenter.dismissModeChoice(started);
@@ -66,7 +68,8 @@ concept PresentsIndexing = requires(
 
 struct IndexingPresenterOperations
 {
-	void (*presentModeChoice)(void* presenter, const std::vector<RefreshMode>& modes, RefreshMode mode);
+	void (*presentModeChoice)(
+		void* presenter, const std::vector<RefreshMode>& modes, RefreshMode mode, const std::string& reason);
 	void (*presentCounting)(void* presenter);
 	void (*presentRefreshInfo)(void* presenter, const RefreshInfo& info);
 	void (*dismissModeChoice)(void* presenter, bool started);
@@ -86,9 +89,9 @@ public:
 	{
 	}
 
-	void presentModeChoice(const std::vector<RefreshMode>& modes, RefreshMode mode) const
+	void presentModeChoice(const std::vector<RefreshMode>& modes, RefreshMode mode, const std::string& reason) const
 	{
-		m_operations->presentModeChoice(m_presenter, modes, mode);
+		m_operations->presentModeChoice(m_presenter, modes, mode, reason);
 	}
 	void presentCounting() const
 	{
@@ -114,8 +117,8 @@ public:
 private:
 	template <PresentsIndexing T>
 	static constexpr IndexingPresenterOperations operations {
-		[](void* presenter, const std::vector<RefreshMode>& modes, RefreshMode mode) {
-			static_cast<T*>(presenter)->presentModeChoice(modes, mode);
+		[](void* presenter, const std::vector<RefreshMode>& modes, RefreshMode mode, const std::string& reason) {
+			static_cast<T*>(presenter)->presentModeChoice(modes, mode, reason);
 		},
 		[](void* presenter) { static_cast<T*>(presenter)->presentCounting(); },
 		[](void* presenter, const RefreshInfo& info) { static_cast<T*>(presenter)->presentRefreshInfo(info); },
@@ -185,6 +188,7 @@ struct IndexingMachine
 		std::function<RefreshInfo(RefreshMode)> countFiles;
 		std::vector<RefreshMode> modes;
 		RefreshMode mode = RefreshMode::NONE;
+		std::string reason;	// why the choice opened, when not for a plain refresh
 		std::map<RefreshMode, RefreshInfo> infos;
 		std::set<RefreshMode> counting;
 		std::function<void(const RefreshInfo&)> onStart;
@@ -288,7 +292,8 @@ public:
 		RefreshMode initialMode,
 		std::function<void(const RefreshInfo&)> onStart,
 		std::function<void()> onCancel,
-		IndexingPresenter presenter);
+		IndexingPresenter presenter,
+		const std::string& reason = {});
 	void preparing();
 	void indexingStarted();
 	void progress(std::size_t started, std::size_t finished, std::size_t total, const std::string& file);
@@ -305,7 +310,9 @@ public:
 
 	// The controls: what the dialogs' buttons and agents send.
 
-	MachineFireResult refresh(RefreshMode mode, EventSource source);
+	// `direct`: as a person's Refresh (MessageRefresh::direct), without the mode
+	// choice where one mode does.
+	MachineFireResult refresh(RefreshMode mode, EventSource source, bool direct = false);
 	MachineFireResult selectMode(RefreshMode mode, EventSource source);
 	MachineFireResult start(std::optional<RefreshMode> mode, EventSource source);
 	MachineFireResult cancel(EventSource source);

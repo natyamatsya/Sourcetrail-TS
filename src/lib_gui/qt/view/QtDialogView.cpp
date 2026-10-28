@@ -56,6 +56,12 @@ bool QtDialogView::dialogsHidden() const
 	return !m_dialogsVisible;
 }
 
+void QtDialogView::setDialogsVisible(bool visible)
+{
+	// In order with the dialogs that follow, which are posted the same way.
+	execution::qt::onUi(m_mainWindow, [=, this]() { m_dialogsVisible = visible; });
+}
+
 void QtDialogView::clearDialogs()
 {
 	execution::qt::onUi(m_mainWindow, [=, this]() {
@@ -140,13 +146,13 @@ bool QtDialogView::presentsQuestions() const
 	return true;
 }
 
-void QtDialogView::presentModeChoice(const std::vector<RefreshMode>& modes, RefreshMode mode)
+void QtDialogView::presentModeChoice(const std::vector<RefreshMode>& modes, RefreshMode mode, const std::string& reason)
 {
 	execution::qt::onUi(m_mainWindow, [=, this]() {
 		m_dialogsVisible = true;
 		m_windowStack.clearWindows();
 
-		QtIndexingStartDialog* window = createWindow<QtIndexingStartDialog>(modes, mode);
+		QtIndexingStartDialog* window = createWindow<QtIndexingStartDialog>(modes, mode, QString::fromStdString(reason));
 		m_startDialog = window;
 
 		// The buttons send the indexing machine's events, as an agent does; the
@@ -293,6 +299,20 @@ bool QtDialogView::presentReport(const IndexingReport& report)
 	// keeps its data instead.
 	if (QGuiApplication::platformName() == QLatin1String("offscreen"))
 	{
+		return false;
+	}
+
+	// A run that finished has nothing to decide: its summary is in the status bar
+	// (TaskFinishParsing), and the run keeps its data without holding the window.
+	// Only an interrupted run asks whether to keep what it indexed.
+	if (!report.interrupted)
+	{
+		execution::qt::onUi(m_mainWindow, [this]() {
+			m_windowStack.clearWindows();
+			m_mainWindow->hideWindowTitleProgress();
+			m_mainWindow->alert();
+			setUIBlocked(false);
+		});
 		return false;
 	}
 

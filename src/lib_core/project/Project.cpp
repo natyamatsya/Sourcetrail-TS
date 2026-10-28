@@ -286,7 +286,7 @@ void Project::openIndex()
 	}
 }
 
-void Project::finishLoad()
+void Project::finishLoad(bool directRefresh)
 {
 	if (hasIndex())
 	{
@@ -330,17 +330,24 @@ void Project::finishLoad()
 		// Pending from here, not from when the refresh is handled: the load is over
 		// once the project is open, and the request it leaves must already show.
 		IndexingStateMachine::instance()->requested();
-		MessageRefresh().dispatch();
+		// A person's load indexes at once where one mode does; an agent's opens the
+		// mode choice it waits for.
+		MessageRefresh refresh;
+		if (directRefresh)
+		{
+			refresh.direct();
+		}
+		refresh.dispatch();
 	}
 }
 
-void Project::refresh(std::shared_ptr<DialogView> dialogView, RefreshMode refreshMode)
+void Project::refresh(std::shared_ptr<DialogView> dialogView, RefreshMode refreshMode, bool direct)
 {
 	// std::expected exception boundary (ADR-0004): refresh runs inside a generic scheduled task
 	// whose runner would swallow an escaping exception with a single log line -- and without a
 	// terminal MessageIndexingFinished a headless run waits forever. Convert any escape into a
 	// failed outcome and dispatch the terminal event ourselves.
-	refreshGuarded([&]() { refreshImpl(dialogView, refreshMode); });
+	refreshGuarded([&]() { refreshImpl(dialogView, refreshMode, direct); });
 }
 
 void Project::refreshPlanned(std::shared_ptr<DialogView> dialogView, const RefreshPlan& plan)
@@ -364,9 +371,9 @@ void Project::refreshGuarded(const std::function<void()>& refresh)
 	}
 }
 
-void Project::refreshImpl(std::shared_ptr<DialogView> dialogView, RefreshMode refreshMode)
+void Project::refreshImpl(std::shared_ptr<DialogView> dialogView, RefreshMode refreshMode, bool direct)
 {
-	const std::optional<RefreshPlan> plan = planRefresh(refreshMode);
+	const std::optional<RefreshPlan> plan = planRefresh(refreshMode, direct);
 	if (!plan)
 	{
 		return;
@@ -381,7 +388,7 @@ void Project::refreshImpl(std::shared_ptr<DialogView> dialogView, RefreshMode re
 	refreshPlannedImpl(dialogView, *plan);
 }
 
-std::optional<Project::RefreshPlan> Project::planRefresh(RefreshMode refreshMode) const
+std::optional<Project::RefreshPlan> Project::planRefresh(RefreshMode refreshMode, bool direct) const
 {
 	if (m_refreshStage != RefreshStageType::NONE)
 	{
@@ -395,6 +402,7 @@ std::optional<Project::RefreshPlan> Project::planRefresh(RefreshMode refreshMode
 
 	RefreshPlan plan;
 	plan.mode = refreshMode;
+	plan.direct = direct;
 	std::string question;
 
 	switch (m_state)
@@ -407,6 +415,16 @@ std::optional<Project::RefreshPlan> Project::planRefresh(RefreshMode refreshMode
 		break;
 
 	case ProjectStateType::PROJECT_STATE_OUTDATED:
+		if (direct)
+		{
+			// Asked in the mode choice, which preselects all files: one dialog, not a
+			// question and the choice after it.
+			plan.reason =
+				"The project's settings changed since the last indexing. Reindex all files to "
+				"apply them, or only the updated files.";
+			plan.fullRefresh = true;
+			break;
+		}
 		question =
 			"The project file was changed after the last indexing. The project needs to get fully "
 			"reindexed to "
@@ -489,7 +507,7 @@ void Project::refreshPlannedImpl(std::shared_ptr<DialogView> dialogView, const R
 		refreshMode = RefreshMode::UPDATED_FILES;
 	}
 
-	if (m_hasGUI)
+	if (m_hasGUI && plan.choosesMode())
 	{
 		std::vector<RefreshMode> enabledModes = {RefreshMode::ALL_FILES};
 		if (!needsFullRefresh)
@@ -503,7 +521,21 @@ void Project::refreshPlannedImpl(std::shared_ptr<DialogView> dialogView, const R
 			enabledModes,
 			refreshMode,
 			[this, dialogView](const RefreshInfo& info) { buildIndex(info, dialogView); },
-			[this]() { m_refreshStage = RefreshStageType::NONE; });
+			[this]() { m_refreshStage = RefreshStageType::NONE; },
+			plan.reason);
+	}
+	else if (m_hasGUI)
+	{
+		// A person's refresh with one mode to it: counted and started at once. An
+		// update runs behind the status bar's progress (its dialog comes back from
+		// there); a full index shows its progress dialog, as after the choice.
+		const bool update = refreshMode != RefreshMode::ALL_FILES;
+		if (update)
+		{
+			MessageStatus("Looking for changed files", false, true).dispatch();
+		}
+		dialogView->setDialogsVisible(!update);
+		buildIndex(getRefreshInfo(refreshMode), dialogView);
 	}
 	else
 	{

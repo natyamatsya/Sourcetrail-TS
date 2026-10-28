@@ -37,6 +37,7 @@ struct IndexingContext
 {
 	std::optional<std::vector<std::string>> modes;
 	std::optional<std::string> mode;
+	std::optional<std::string> reason;
 	std::optional<bool> counting;
 	std::optional<std::size_t> files_to_index;
 	std::optional<std::size_t> files_to_clear;
@@ -49,6 +50,7 @@ struct IndexingContext
 struct ModeArgs
 {
 	std::optional<std::string> mode;
+	std::optional<bool> direct;	// refresh: as a person's Refresh does
 };
 }	 // namespace indexing_machine_json
 
@@ -58,6 +60,7 @@ void resetChoice(IndexingMachine::Data& data)
 {
 	data.countFiles = nullptr;
 	data.modes.clear();
+	data.reason.clear();
 	data.infos.clear();
 	data.counting.clear();
 	data.onStart = nullptr;
@@ -110,7 +113,8 @@ void IndexingStateMachine::chooseMode(
 	RefreshMode initialMode,
 	std::function<void(const RefreshInfo&)> onStart,
 	std::function<void()> onCancel,
-	IndexingPresenter presenter)
+	IndexingPresenter presenter,
+	const std::string& reason)
 {
 	{
 		auto transaction = m_machine.transaction();
@@ -119,6 +123,7 @@ void IndexingStateMachine::chooseMode(
 		data.countFiles = std::move(countFiles);
 		data.modes = modes;
 		data.mode = initialMode;
+		data.reason = reason;
 		data.onStart = std::move(onStart);
 		data.onCancel = std::move(onCancel);
 		data.choicePresenter = presenter;
@@ -137,7 +142,7 @@ void IndexingStateMachine::chooseMode(
 		}
 	}
 
-	presenter.presentModeChoice(modes, initialMode);
+	presenter.presentModeChoice(modes, initialMode, reason);
 	presenter.presentCounting();
 	count(initialMode);
 }
@@ -260,7 +265,7 @@ void IndexingStateMachine::detach(IndexingPresenter presenter)
 	}
 }
 
-MachineFireResult IndexingStateMachine::refresh(RefreshMode mode, EventSource source)
+MachineFireResult IndexingStateMachine::refresh(RefreshMode mode, EventSource source, bool direct)
 {
 	{
 		auto transaction = m_machine.transaction();
@@ -277,8 +282,12 @@ MachineFireResult IndexingStateMachine::refresh(RefreshMode mode, EventSource so
 	{
 		message.refreshAll();
 	}
+	if (direct)
+	{
+		message.direct();
+	}
 	message.dispatch();
-	return {true, "refresh requested"};
+	return {true, direct ? "refresh requested, without the mode choice where one mode does" : "refresh requested"};
 }
 
 MachineFireResult IndexingStateMachine::selectMode(RefreshMode mode, EventSource source)
@@ -470,11 +479,15 @@ MachineFireResult IndexingStateMachine::decide(DatabasePolicy policy, EventSourc
 
 MachineFireResult IndexingStateMachine::fire(const std::string& event, const std::string& args, EventSource source)
 {
-	// {"mode": "..."}, which select_mode needs and refresh and start may have.
+	// {"mode": "..."}, which select_mode needs and refresh and start may have; refresh
+	// also takes {"direct": true}.
+	bool direct = false;
 	const auto parseMode = [&](bool required) -> std::expected<std::optional<RefreshMode>, std::string> {
-		return parseArgs<indexing_machine_json::ModeArgs>(event, args, R"({"mode": "updated" | "incomplete" | "all"})")
+		return parseArgs<indexing_machine_json::ModeArgs>(
+				   event, args, R"({"mode": "updated" | "incomplete" | "all", "direct"?: bool})")
 			.and_then([&](const indexing_machine_json::ModeArgs& parsed)
 						  -> std::expected<std::optional<RefreshMode>, std::string> {
+				direct = parsed.direct.value_or(false);
 				if (!parsed.mode)
 				{
 					if (required)
@@ -509,7 +522,7 @@ MachineFireResult IndexingStateMachine::fire(const std::string& event, const std
 		}
 		if (*control == Event::Refresh)
 		{
-			return refresh(mode->value_or(RefreshMode::UPDATED_FILES), source);
+			return refresh(mode->value_or(RefreshMode::UPDATED_FILES), source, direct);
 		}
 		return *control == Event::SelectMode ? selectMode(**mode, source) : start(*mode, source);
 	}
@@ -620,6 +633,10 @@ std::string IndexingMachine::context(State state, const Data& data)
 			context.modes = std::vector<std::string>(modes.begin(), modes.end());
 		}
 		context.mode = IndexingStateMachine::modeName(data.mode);
+		if (!data.reason.empty())
+		{
+			context.reason = data.reason;
+		}
 		context.counting = data.counting.contains(data.mode);
 		if (const auto it = data.infos.find(data.mode); it != data.infos.end())
 		{

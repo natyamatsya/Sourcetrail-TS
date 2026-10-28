@@ -1039,7 +1039,7 @@ void QtMainWindow::closeWindow()
 void QtMainWindow::refresh()
 {
 	MessageIndexingShowDialog().dispatch();
-	MessageRefresh().dispatch();
+	MessageRefresh().direct().dispatch();
 }
 
 void QtMainWindow::forceRefresh()

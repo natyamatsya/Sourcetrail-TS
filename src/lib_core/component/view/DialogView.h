@@ -40,6 +40,9 @@ public:
 	void setDialogsHideable(bool hideable);
 
 	virtual bool dialogsHidden() const;
+	// Whether the next dialogs show (a run behind the status bar's progress shows none
+	// until it is asked for).
+	virtual void setDialogsVisible(bool visible);
 	virtual void clearDialogs();
 
 	virtual void showUnknownProgressDialog(const std::string& title, const std::string& message);
@@ -54,7 +57,8 @@ public:
 		const std::vector<RefreshMode>& enabledModes,
 		const RefreshMode initialMode,
 		std::function<void(const RefreshInfo& info)> onStartIndexing,
-		std::function<void()> onCancelIndexing);
+		std::function<void()> onCancelIndexing,
+		const std::string& reason = {});
 	void updateIndexingDialog(
 		size_t startedFileCount,
 		size_t finishedFileCount,
@@ -90,7 +94,7 @@ public:
 	virtual void presentQuestion(std::uint64_t id, const std::string& text, const std::vector<std::string>& options);
 	virtual void dismissQuestion(std::uint64_t id);
 
-	virtual void presentModeChoice(const std::vector<RefreshMode>& modes, RefreshMode mode);
+	virtual void presentModeChoice(const std::vector<RefreshMode>& modes, RefreshMode mode, const std::string& reason);
 	virtual void presentCounting();
 	virtual void presentRefreshInfo(const RefreshInfo& info);
 	virtual void dismissModeChoice(bool started);

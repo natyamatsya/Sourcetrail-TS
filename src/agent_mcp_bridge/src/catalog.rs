@@ -488,18 +488,29 @@ among the transitions.
 
 indexing: idle -> pending -> choosing_mode -> pending -> preparing -> indexing -> finishing \
 -> reporting -> finishing -> idle
-  refresh { mode?: updated|all }   idle: asks for a refresh, as the menu's Refresh does. The \
-mode choice opens (choosing_mode), or the app asks a question first (the index is outdated: \
-see question), or finds nothing to do and returns to idle with context.outcome saying why.
+  refresh { mode?: updated|all, direct?: bool }   idle: asks for a refresh. The mode choice \
+opens (choosing_mode), or the app asks a question first (the index is outdated: see \
+question), or finds nothing to do and returns to idle with context.outcome saying why. \
+direct: true refreshes as a person's Refresh (the menu, Cmd+R, the search bar's button) \
+does: no mode choice where one mode does (an update, or only \"all\" for an empty, \
+out-of-version or corrupted index), so idle -> pending -> preparing at once, or back to idle \
+with outcome \"Nothing to refresh, all files are up-to-date.\"; an update runs behind the \
+status bar's progress. When the project's settings changed, the choice opens with \
+context.reason saying so (all files preselected) instead of a question before it. A \
+person's project load (the start screen, Recent Projects) leaves the same direct refresh; \
+project_open (an agent's load) keeps the mode choice.
   select_mode { mode }             choosing_mode: updated | incomplete | all, among \
 context.modes; context.files_to_index follows once counted (context.counting meanwhile).
   start { mode? }                  choosing_mode: indexes (with the selected mode by default).
   cancel                           choosing_mode: closes the choice.
   interrupt                        preparing/indexing: stops; what is indexed so far is kept \
 for the report.
-  keep | discard | reindex         reporting: the decision on the run's data. Offscreen \
-(headless) the report is kept without asking, so reporting passes straight on.
-  context: modes, mode, counting, files_to_index, files_to_clear (choosing_mode); progress \
+  keep | discard | reindex         reporting: the decision on the run's data, asked only of \
+an interrupted run (its Keep/Discard dialog). A run that finished is kept without asking: \
+reporting passes straight on (source app), and its summary is the status bar's text \
+(\"Finished indexing: N source files indexed; time; errors\"). Offscreen (headless) an \
+interrupted run is kept too.
+  context: modes, mode, reason?, counting, files_to_index, files_to_clear (choosing_mode); progress \
 { started, finished, total, file }, interrupted (preparing..finishing); report { indexed, \
 total_indexed, completed, total, seconds, errors, fatal, interrupted } (reporting); outcome \
 (how the last request or run ended: kept, discarded, canceled, nothing to refresh...).

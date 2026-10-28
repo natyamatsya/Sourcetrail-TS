@@ -135,7 +135,8 @@ private:
 	// opens on the I/O pool, a question holds no thread, and the project becomes the
 	// app's back on the app strand; without them in a row on this thread.
 	struct ProjectLoad;
-	void loadProject(const FilePath& path, const ShardConfig& shardConfig, RefreshMode refreshMode);
+	// `directRefresh`: a person's load (MessageLoadProject::byAgent is not set).
+	void loadProject(const FilePath& path, const ShardConfig& shardConfig, RefreshMode refreshMode, bool directRefresh);
 	// What the load asks, as a sender: the question, or -1 at once when there is none.
 	QuestionSender askFor(const ProjectLoad& load, const std::optional<Project::Question>& question);
 	// On the app's thread: the project becomes the app's, unless a load asked for
@@ -159,7 +160,8 @@ private:
 	// The app strand's scheduler, where pipelines come back to the app's tasks.
 	execution::SerialQueue::Scheduler appScheduler() const;
 
-	void refreshProject(RefreshMode refreshMode);
+	// `direct`: a person's refresh (MessageRefresh::direct).
+	void refreshProject(RefreshMode refreshMode, bool direct = false);
 	void updateRecentProjects(const FilePath& projectSettingsFilePath);
 
 	void logStorageStats() const;

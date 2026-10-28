@@ -370,6 +370,7 @@ struct Application::ProjectLoad
 	FilePath path;
 	std::uint64_t cause = 0;	// what asked for the load: all its steps are on its behalf
 	RefreshMode refreshMode = RefreshMode::NONE;
+	bool directRefresh = false;	// a person's load: the refresh it leaves is MessageRefresh::direct
 	std::shared_ptr<Project> project;
 	bool ended = false;	// a step ended the load before its index opened
 	bool opened = false;	// the pipeline opened the index (finishLoad is left to do)
@@ -563,7 +564,8 @@ void Application::handleMessage(MessageLoadProject* message)
 		if (message->settingsChanged && m_hasGUI)
 		{
 			m_project->setStateOutdated();
-			refreshProject(RefreshMode::ALL_FILES);
+			// The edit's question is asked in the mode choice: one dialog.
+			refreshProject(RefreshMode::ALL_FILES, true);
 		}
 	}
 	else
@@ -578,14 +580,16 @@ void Application::handleMessage(MessageLoadProject* message)
 			m_mainView->clear();
 		}
 
-		loadProject(projectSettingsFilePath, message->shardConfig, message->refreshMode);
+		loadProject(projectSettingsFilePath, message->shardConfig, message->refreshMode, !message->byAgent);
 	}
 }
 
-void Application::loadProject(const FilePath& path, const ShardConfig& shardConfig, RefreshMode refreshMode)
+void Application::loadProject(
+	const FilePath& path, const ShardConfig& shardConfig, RefreshMode refreshMode, bool directRefresh)
 {
 	const auto load = std::make_shared<ProjectLoad>();
 	load->path = path;
+	load->directRefresh = directRefresh;
 	load->cause = currentCause();
 	load->work.emplace(load->cause);
 	load->refreshMode = refreshMode;
@@ -687,7 +691,7 @@ void Application::endLoad(const std::shared_ptr<ProjectLoad>& load)
 	m_project = load->project;
 	if (load->opened)
 	{
-		load->step([&]() { load->project->finishLoad(); });
+		load->step([&]() { load->project->finishLoad(load->directRefresh); });
 		if (!load->failure.empty())
 		{
 			LOG_ERROR(load->failure);
@@ -719,7 +723,7 @@ void Application::handleMessage(MessageRefresh* message)
 {
 	TRACE("app refresh");
 
-	refreshProject(message->all ? RefreshMode::ALL_FILES : RefreshMode::UPDATED_FILES);
+	refreshProject(message->all ? RefreshMode::ALL_FILES : RefreshMode::UPDATED_FILES, message->isDirect);
 }
 
 void Application::handleMessage(MessageRefreshUI* message)
@@ -797,7 +801,7 @@ void Application::loadWindow(bool showStartWindow)
 	}
 }
 
-void Application::refreshProject(RefreshMode refreshMode)
+void Application::refreshProject(RefreshMode refreshMode, bool direct)
 {
 	// The indexing machine follows the request from here: what the project does
 	// with it moves it on, and a request nothing came of returns it to idle.
@@ -808,7 +812,7 @@ void Application::refreshProject(RefreshMode refreshMode)
 		// With questions to ask, their answers decide, and the request ends there.
 		if (m_appStrand != nullptr)
 		{
-			if (std::optional<Project::RefreshPlan> plan = m_project->planRefresh(refreshMode);
+			if (std::optional<Project::RefreshPlan> plan = m_project->planRefresh(refreshMode, direct);
 				plan && !plan->questions.empty())
 			{
 				askThenRefresh({m_project, std::move(*plan), 0, currentCause(), CauseWork::Held()});
@@ -816,7 +820,7 @@ void Application::refreshProject(RefreshMode refreshMode)
 			}
 		}
 
-		m_project->refresh(getDialogView(DialogView::UseCase::INDEXING), refreshMode);
+		m_project->refresh(getDialogView(DialogView::UseCase::INDEXING), refreshMode, direct);
 
 		if (!m_hasGUI && !m_project->isIndexing())
 		{

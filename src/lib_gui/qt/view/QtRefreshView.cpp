@@ -12,6 +12,7 @@
 #include "utilityQt.h"
 
 #include <QFrame>
+#include <QGuiApplication>
 #include <QHBoxLayout>
 
 // Imports come AFTER all textual #includes (include-before-import rule: textual libc++
@@ -36,10 +37,19 @@ QtRefreshView::QtRefreshView(ViewLayout* viewLayout): RefreshView(viewLayout)
 	refreshButton->setObjectName(QStringLiteral("refresh_button"));
 	refreshButton->setToolTip(QtActions::refresh().tooltip());
 	refreshButton->setAccessibleName(QtActions::refresh().name());
+	// As the menu's Refresh; with Alt (Option) held, the mode choice opens, as Full
+	// Refresh's does.
 	QWidget::connect(refreshButton, &QPushButton::clicked, []()
 	{
 		MessageIndexingShowDialog().dispatch();
-		MessageRefresh().dispatch();
+		if (QGuiApplication::keyboardModifiers().testFlag(Qt::AltModifier))
+		{
+			MessageRefresh().dispatch();
+		}
+		else
+		{
+			MessageRefresh().direct().dispatch();
+		}
 	});
 
 	layout->addWidget(refreshButton);

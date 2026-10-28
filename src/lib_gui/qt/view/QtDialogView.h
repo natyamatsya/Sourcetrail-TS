@@ -35,6 +35,7 @@ public:
 	~QtDialogView() override;
 
 	bool dialogsHidden() const override;
+	void setDialogsVisible(bool visible) override;
 	void clearDialogs() override;
 
 	void showUnknownProgressDialog(const std::string& title, const std::string& message) override;
@@ -50,7 +51,7 @@ public:
 		std::uint64_t id, const std::string& text, const std::vector<std::string>& options) override;
 	void dismissQuestion(std::uint64_t id) override;
 
-	void presentModeChoice(const std::vector<RefreshMode>& modes, RefreshMode mode) override;
+	void presentModeChoice(const std::vector<RefreshMode>& modes, RefreshMode mode, const std::string& reason) override;
 	void presentCounting() override;
 	void presentRefreshInfo(const RefreshInfo& info) override;
 	void dismissModeChoice(bool started) override;
