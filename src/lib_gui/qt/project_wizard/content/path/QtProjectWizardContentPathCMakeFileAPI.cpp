@@ -410,8 +410,8 @@ void QtProjectWizardContentPathCMakeFileAPI::describe(ProjectWizardView& view) c
 	if (!m_hasReply)
 	{
 		view.notes["cmake_target_glob"] =
-			"the targets and configurations are listed once the build directory is configured: "
-			"the wizard's \"Run CMake\" button, or indexing";
+			"the targets and configurations are listed once CMake has answered Sourcetrail's File API "
+			"query in the build directory: the wizard's \"Run CMake\" button, or indexing";
 		return;
 	}
 
@@ -585,6 +585,7 @@ void QtProjectWizardContentPathCMakeFileAPI::repopulatePresets(
 		m_presetStatusLabel->setText(QLatin1String(""));
 		m_buildDir = FilePath{};
 		m_hasReply = false;
+		m_hasCache = false;
 		m_configurations.clear();
 		m_targets.clear();
 		readBuildDirectory();
@@ -622,6 +623,7 @@ void QtProjectWizardContentPathCMakeFileAPI::readBuildDirectory()
 	}
 	m_buildDirPicker->setVisible(noPresetSelected());
 	m_hasReply = !m_buildDir.empty() && CMakeFileAPIReader{m_buildDir}.hasReply();
+	m_hasCache = !m_buildDir.empty() && m_buildDir.getConcatenated("CMakeCache.txt").exists();
 
 	m_buildDirLabel->setText(buildDirectoryNote().toHtmlEscaped());
 	m_runCMakeButton->setEnabled(!m_buildDir.empty() && !m_runningCMake);
@@ -715,8 +717,8 @@ QString QtProjectWizardContentPathCMakeFileAPI::targetSummary() const
 		return m_buildDir.empty()
 			? QString{}
 			: QStringLiteral(
-				  "The targets are listed once the build directory is configured: Run CMake, "
-				  "or index the project.");
+				  "The targets are listed once CMake has answered Sourcetrail's query in the build "
+				  "directory: Run CMake, or index the project.");
 	}
 	const std::string filter{m_targetFilterEdit->text().trimmed().toStdString()};
 	std::size_t matched{0};
@@ -748,6 +750,7 @@ QString QtProjectWizardContentPathCMakeFileAPI::buildDirectoryNote() const
 		}
 		return m_runningCMake ? QStringLiteral("Running CMake...")
 			: m_hasReply      ? QStringLiteral("Configured.")
+			: m_hasCache      ? QStringLiteral("Configured by CMake; Sourcetrail asks it for the targets when indexing.")
 							  : QStringLiteral("Not configured yet: Sourcetrail runs CMake when indexing.");
 	}
 	if (!std::ranges::contains(m_presets, presetName, &CMakeFileAPIReader::PresetInfo::name))
@@ -761,6 +764,7 @@ QString QtProjectWizardContentPathCMakeFileAPI::buildDirectoryNote() const
 	std::string state{
 		m_runningCMake ? "running CMake..."
 		: m_hasReply   ? "configured"
+		: m_hasCache   ? "configured by CMake; Sourcetrail asks it for the targets when indexing"
 					   : "not configured yet; Sourcetrail runs CMake when indexing"};
 	return QString::fromStdString(std::format("{} ({})", m_buildDir.str(), state));
 }

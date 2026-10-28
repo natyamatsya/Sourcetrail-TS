@@ -11,6 +11,7 @@
 #include <regex>
 #include <set>
 #include <system_error>
+#include <tuple>
 
 #include <QStandardPaths>
 #include <QString>
@@ -451,7 +452,7 @@ struct BuildDirectory
 	fs::path path;
 	bool hasReply = false;
 	std::string generator;
-	fs::file_time_type time;
+	fs::file_time_type time;	// when it was last configured or built
 };
 
 // `dir` as CMake configured it for `sourceDir`: its CMakeCache.txt names that source
@@ -481,7 +482,13 @@ std::optional<BuildDirectory> configuredFor(const fs::path& dir, const fs::path&
 			build.generator = match[1].str();
 		}
 	}
-	build.time = modified(hasCache ? cache : dir).value_or(fs::file_time_type{});
+	// A build touches .ninja_log (Ninja) or the generated build files: the newest of them
+	// tells which build directory is in use.
+	build.time = modified(dir).value_or(fs::file_time_type{});
+	for (const char* file: {"CMakeCache.txt", "build.ninja", ".ninja_log", ".ninja_deps", "Makefile", "compile_commands.json"})
+	{
+		build.time = std::max(build.time, modified(dir / file).value_or(fs::file_time_type{}));
+	}
 	return build;
 }
 
@@ -1012,9 +1019,16 @@ bool detectCMakePreset(Detection& detection)
 		return false;
 	}
 
-	// A configured one first, then the one that fits this computer best, then the first.
-	const auto rank = [](const Usable& u) { return std::pair{u.configured ? 0 : 1, platformFit(*u.preset)}; };
+	// A configured one first, the one built last among them; then the one that fits this
+	// computer best; then the first.
+	const auto rank = [](const Usable& u) {
+		return std::tuple{
+			u.configured ? 0 : 1,
+			u.configured ? fs::file_time_type::max() - u.configured->time : fs::file_time_type::duration{},
+			platformFit(*u.preset)};
+	};
 	const Usable& chosen{*std::ranges::min_element(usable, {}, rank)};
+	const auto configuredCount{std::ranges::count_if(usable, [](const Usable& u) { return u.configured.has_value(); })};
 	const CMakeFileAPIReader::PresetInfo& preset{*chosen.preset};
 	for (const Usable& other: usable)
 	{
@@ -1043,10 +1057,20 @@ bool detectCMakePreset(Detection& detection)
 			"Found CMakePresets.json: using configure preset '{}'{}{}", preset.name, label, generator));
 	if (chosen.configured)
 	{
-		proposal.reasons.push_back(std::format(
-			"Its build directory ({}) is configured already{}",
-			shown(chosen.binaryDir, detection.folder),
-			chosen.configured->hasReply ? ", with a CMake File API reply" : ""));
+		const std::string which{
+			configuredCount > 1 ? std::format(", built last of the {} configured", configuredCount) : std::string{}};
+		proposal.reasons.push_back(
+			chosen.configured->hasReply
+				? std::format(
+					  "Its build directory ({}{}) has a CMake File API reply: the source group's page lists its "
+					  "targets",
+					  shown(chosen.binaryDir, detection.folder),
+					  which)
+				: std::format(
+					  "Its build directory ({}{}) is configured by CMake already: Sourcetrail asks CMake for its "
+					  "targets when indexing, or with Run CMake on the source group's page",
+					  shown(chosen.binaryDir, detection.folder),
+					  which));
 	}
 	else
 	{

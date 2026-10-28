@@ -1,6 +1,7 @@
 #include "Catch2.hpp"
 
 #include <algorithm>
+#include <chrono>
 #include <filesystem>
 #include <fstream>
 #include <string>
@@ -141,7 +142,37 @@ TEST_CASE("ProjectDetector prefers a configure preset whose build directory is c
 	const ProjectProposal proposal{detect(folder)};
 
 	CHECK(text(proposal, "cmake_preset") == "release");
-	CHECK(mentions(proposal.reasons, "(out/release) is configured already"));
+	CHECK(mentions(proposal.reasons, "(out/release) is configured by CMake already: Sourcetrail asks CMake for its targets"));
+}
+
+TEST_CASE("ProjectDetector prefers the configured preset built last")
+{
+	const TestTempDirectory temp{"detectBuiltLastPreset"};
+	const fs::path folder{temp.getPath() / "app"};
+	write(folder / "CMakeLists.txt", "project(app)\n");
+	write(folder / "CMakePresets.json", R"({"version": 3, "configurePresets": [
+		{"name": "old", "binaryDir": "${sourceDir}/out/old"},
+		{"name": "current", "binaryDir": "${sourceDir}/out/current"}
+	]})");
+	// Both configured, "old" even after "current"; "current" was built since.
+	const auto now{fs::file_time_type::clock::now()};
+	for (const char* preset: {"old", "current"})
+	{
+		const fs::path buildDir{folder / "out" / preset};
+		writeCache(buildDir, folder);
+		write(buildDir / ".ninja_log");
+		for (const fs::path& file: {buildDir, buildDir / "CMakeCache.txt", buildDir / ".ninja_log"})
+		{
+			fs::last_write_time(file, now - std::chrono::hours{48});
+		}
+	}
+	fs::last_write_time(folder / "out" / "old" / "CMakeCache.txt", now - std::chrono::hours{24});
+	fs::last_write_time(folder / "out" / "current" / ".ninja_log", now - std::chrono::hours{1});
+
+	const ProjectProposal proposal{detect(folder)};
+
+	CHECK(text(proposal, "cmake_preset") == "current");
+	CHECK(mentions(proposal.reasons, "(out/current, built last of the 2 configured) is configured by CMake already"));
 }
 
 TEST_CASE("ProjectDetector prefers the configure preset made for this computer")

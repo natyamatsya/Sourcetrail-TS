@@ -87,6 +87,7 @@ private:
 	std::vector<CMakeFileAPIReader::PresetInfo> m_presets;
 	FilePath m_buildDir;	// of the selected preset; empty if it has none
 	bool m_hasReply = false;
+	bool m_hasCache = false;	// CMake configured the build directory (CMakeCache.txt), reply or not
 	bool m_runningCMake = false;
 	std::vector<std::string> m_configurations;
 	std::vector<Target> m_targets;
