@@ -7,6 +7,9 @@
 #include "LanguageType.h"
 
 #ifndef SRCTRL_MODULE_PURVIEW
+#include <cstddef>
+#include <cstdint>
+#include <expected>
 #include <memory>
 #include <string>
 #include <vector>
@@ -17,6 +20,20 @@
 #ifndef SRCTRL_MODULE_PURVIEW
 SRCTRL_EXPORT class SourceGroupSettings;
 #endif
+
+//! Why this Sourcetrail does not open a project file, by its "version". `message` names the file and
+//! the version for a person.
+SRCTRL_EXPORT struct ProjectVersionError
+{
+	enum class Code : std::uint8_t
+	{
+		Missing,	  // the file has no version: not a Sourcetrail project file, or damaged
+		NotAVersion,  // the version is not a whole number from 1 up ("banana", -1)
+		Newer,		  // a newer Sourcetrail wrote it: its settings may mean something else here
+	};
+	Code code{};
+	std::string message;
+};
 
 SRCTRL_EXPORT class ProjectSettings: public Settings
 {
@@ -36,6 +53,10 @@ public:
 	~ProjectSettings() override;
 
 	bool equalsExceptNameAndLocation(const ProjectSettings& other) const;
+
+	//! The project file's version, when this Sourcetrail can open the file: a whole number from 1 up
+	//! to VERSION. Older ones open as before.
+	std::expected<std::size_t, ProjectVersionError> checkVersion() const;
 
 	bool reload();
 

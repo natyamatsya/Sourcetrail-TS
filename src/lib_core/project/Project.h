@@ -42,6 +42,9 @@ public:
 	//! The last refresh stopped before indexing: a source group could not be prepared (it told
 	//! why). A headless run ends with a failure then.
 	bool refreshFailedToPrepare() const;
+	//! Why the load ended before the index opened, when the project file was refused (a newer
+	//! Sourcetrail's, or one without a valid version); empty otherwise.
+	const std::string& getLoadFailure() const;
 
 	bool settingsEqualExceptNameAndLocation(const ProjectSettings& otherSettings) const;
 	void setStateOutdated();
@@ -177,6 +180,7 @@ private:
 	ProjectStateType m_state = ProjectStateType::PROJECT_STATE_NOT_LOADED;
 	RefreshStageType m_refreshStage = RefreshStageType::NONE;
 	bool m_refreshFailedToPrepare = false;
+	std::string m_loadFailure;
 
 	std::shared_ptr<PersistentStorage> m_storage;
 	std::vector<std::shared_ptr<SourceGroup>> m_sourceGroups;

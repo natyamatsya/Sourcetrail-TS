@@ -1033,6 +1033,16 @@ bool QtProjectWizard::createProject()
 {
 	FilePath path = m_projectSettings->getFilePath();
 
+	// Saving writes this Sourcetrail's version: a project file a newer Sourcetrail wrote, or one
+	// without a valid version, is not rewritten as one of this version.
+	if (m_editing)
+	{
+		if (const auto version = m_projectSettings->checkVersion(); !version)
+		{
+			tell(QString::fromStdString(version.error().message));
+			return false;
+		}
+	}
 	m_projectSettings->setVersion(ProjectSettings::VERSION);
 	m_projectSettings->setAllSourceGroupSettings(m_allSourceGroupSettings);
 	if (!m_projectSettings->save(path))

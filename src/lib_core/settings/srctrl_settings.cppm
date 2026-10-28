@@ -9,8 +9,12 @@
 module;
 
 #ifndef SRCTRL_IMPORT_STD
+#include <charconv>
 #include <cmath>
 #include <cstddef>
+#include <cstdint>
+#include <expected>
+#include <format>
 #include <fstream>
 #include <map>
 #include <memory>

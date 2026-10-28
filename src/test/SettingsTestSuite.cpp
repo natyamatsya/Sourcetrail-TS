@@ -198,3 +198,32 @@ TEST_CASE("load source path from file")
 	REQUIRE(paths[0].str() == "src");
 	REQUIRE(paths[1].str() == "test");
 }
+
+TEST_CASE("project settings refuse a project file without a version this Sourcetrail reads")
+{
+	// version = '999', 'banana', -1 or none loaded without a word, and the wizard's Save rewrote
+	// the file as version 8.
+	const auto check = [](const std::string& text) {
+		ProjectSettings settings;
+		settings.loadFromString(text);
+		return settings.checkVersion();
+	};
+	using enum ProjectVersionError::Code;
+
+	REQUIRE(check("version = '8'\n").value() == ProjectSettings::VERSION);
+	REQUIRE(check("version = 8\n").value() == ProjectSettings::VERSION);
+	REQUIRE(check("version = '3'\n").value() == 3);	// older ones open as before
+
+	const auto newer = check("version = '999'\n");
+	REQUIRE(newer.error().code == Newer);
+	REQUIRE(newer.error().message.find("newer Sourcetrail") != std::string::npos);
+	REQUIRE(newer.error().message.find("999") != std::string::npos);
+
+	REQUIRE(check("version = '99999999999999999999999'\n").error().code == Newer);
+	REQUIRE(check("version = 'banana'\n").error().code == NotAVersion);
+	REQUIRE(check("version = -1\n").error().code == NotAVersion);
+	REQUIRE(check("version = '-1'\n").error().code == NotAVersion);
+	REQUIRE(check("version = '0'\n").error().code == NotAVersion);
+	REQUIRE(check("version = '8x'\n").error().code == NotAVersion);
+	REQUIRE(check("[[source_groups]]\nid = 'a'\n").error().code == Missing);
+}

@@ -742,6 +742,14 @@ void Application::endLoad(const std::shared_ptr<ProjectLoad>& load)
 	m_loading.reset();
 	const CauseScope cause(load->cause);
 
+	if (load->failure.empty() && load->project && !load->project->getLoadFailure().empty())
+	{
+		load->failure = "Failed to load project at \"" + load->path.str() + "\": " + load->project->getLoadFailure();
+		if (m_hasGUI)
+		{
+			showNotice(load->project->getLoadFailure(), {"OK"});	// refused, not broken: say so
+		}
+	}
 	if (!load->failure.empty())
 	{
 		LOG_ERROR(load->failure);
