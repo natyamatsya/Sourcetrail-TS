@@ -674,11 +674,17 @@ void QtCodeNavigator::scrollTo(const CodeScrollParams& params, bool animated, bo
 
 	if (m_mode == MODE_LIST)
 	{
-		// `this` as the context: the scroll is cancelled with the navigator. Without
-		// it, a navigator destroyed within these 100 ms (opening another project
-		// closes the tabs) left the timer to call into a dead m_current (_purecall).
-		// The code view has not drawn the activation until this scroll is done.
-		QTimer::singleShot(100, this, [func, drawing = ActivationStateMachine::instance()->drawing("code")]() { func(); });
+		// The list's snippets are laid out first: the scroll targets their positions. One
+		// turn of the event loop, then what layout is still pending, in place of the 100 ms
+		// this waited (every navigation's floor). `this` as the context: the scroll is
+		// cancelled with the navigator. Without it, a navigator destroyed meanwhile
+		// (opening another project closes the tabs) left the timer to call into a dead
+		// m_current (_purecall). The code view has not drawn the activation until this
+		// scroll is done.
+		QTimer::singleShot(0, this, [func, drawing = ActivationStateMachine::instance()->drawing("code")]() {
+			QCoreApplication::sendPostedEvents(nullptr, QEvent::LayoutRequest);
+			func();
+		});
 	}
 	else
 	{
