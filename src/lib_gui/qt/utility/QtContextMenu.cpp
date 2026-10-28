@@ -35,14 +35,22 @@ std::size_t QtContextMenu::s_column = 1;
 FilePath QtContextMenu::s_filePath;
 
 QtContextMenu::QtContextMenu(QContextMenuEvent* event, QWidget* origin)
-	: m_menu(origin), m_point(event->globalPos())
+	: m_menu(new QMenu(origin)), m_point(event->globalPos())
 {
 	getInstance();
 }
 
+QtContextMenu::~QtContextMenu()
+{
+	delete m_menu.data();	 // null when its origin took it along
+}
+
 void QtContextMenu::addAction(QAction* action)
 {
-	m_menu.addAction(action);
+	if (m_menu)
+	{
+		m_menu->addAction(action);
+	}
 }
 
 void QtContextMenu::enableUndo(bool enabled)
@@ -121,12 +129,18 @@ QtContextMenu* QtContextMenu::getInstance()
 
 void QtContextMenu::addSeparator()
 {
-	m_menu.addSeparator();
+	if (m_menu)
+	{
+		m_menu->addSeparator();
+	}
 }
 
 void QtContextMenu::show()
 {
-	m_menu.exec(m_point);
+	if (m_menu)
+	{
+		m_menu->exec(m_point);
+	}
 }
 
 void QtContextMenu::undoActionTriggered()

@@ -4,6 +4,7 @@
 #include <QAction>
 #include <QMenu>
 #include <QObject>
+#include <QPointer>
 #include <memory>
 
 #include "FilePath.h"
@@ -14,6 +15,7 @@ class QtContextMenu: public QObject
 
 public:
 	QtContextMenu(QContextMenuEvent* event, QWidget* origin);
+	~QtContextMenu() override;
 
 	void addAction(QAction* action);
 	void addUndoActions();
@@ -54,7 +56,11 @@ private:
 
 	static FilePath s_filePath;
 
-	QMenu m_menu;
+	// On the heap and watched: the menu is `origin`'s child (for its style), and what runs
+	// while it is open (an activation rebuilding the code view) can delete `origin`, and with
+	// it its children. A menu member of this object, on the caller's stack, was then freed by
+	// its parent as well.
+	QPointer<QMenu> m_menu;
 	QPoint m_point;
 };
 

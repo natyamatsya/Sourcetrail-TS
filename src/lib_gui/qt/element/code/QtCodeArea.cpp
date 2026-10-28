@@ -870,6 +870,14 @@ void QtCodeArea::mousePressEvent(QMouseEvent* event)
 
 void QtCodeArea::mouseReleaseEvent(QMouseEvent* event)
 {
+	// The right button opens the context menu (on release, where the platform sends it then,
+	// as Windows does): it activates nothing. Activating the token under it rebuilt the code view
+	// while the menu was open, and deleted this area under the menu.
+	if (event->button() == Qt::RightButton)
+	{
+		return;
+	}
+
 	if (event->button() == Qt::MiddleButton ||
 		(event->button() == Qt::LeftButton && event->modifiers() & Qt::ControlModifier &&
 		 event->modifiers() & Qt::ShiftModifier))
