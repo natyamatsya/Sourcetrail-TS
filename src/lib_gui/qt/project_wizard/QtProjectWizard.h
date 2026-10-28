@@ -2,6 +2,7 @@
 #define QT_PROJECT_WIZARD_H
 
 #include <functional>
+#include <optional>
 
 #include <QWidget>
 
@@ -17,6 +18,7 @@ class QPushButton;
 class QtProjectWizardContent;
 class QtProjectWizardContentGroup;
 class QtProjectWizardWindow;
+struct ProjectProposal;
 
 class QtProjectWizard: public QtProjectWizardWindow
 {
@@ -37,6 +39,8 @@ public slots:
 	void newProject();
 
 	void newProjectFromCDB(const FilePath& filePath);
+	// A new project as detectProject() proposes it for a folder, shown with why.
+	void newProjectFromFolder(const ProjectProposal& proposal);
 
 	void editProject(const FilePath& settingsPath);
 	void editProject(std::shared_ptr<ProjectSettings> settings);
@@ -50,6 +54,9 @@ protected:
 private:
 	QtProjectWizardWindow* createWindowWithContent(
 		std::function<QtProjectWizardContent*(QtProjectWizardWindow*)> func);
+
+	// A new source group of `type`; none when this build lacks the type's language.
+	std::shared_ptr<SourceGroupSettings> createSourceGroupSettings(SourceGroupType type) const;
 
 	void updateSourceGroupList();
 	bool canExitContent();
@@ -69,6 +76,9 @@ private:
 	ApplicationSettings m_appSettings;
 
 	bool m_editing = false;
+	// What New Project from Folder found, and the source group it proposed.
+	std::optional<ProjectWizardView::Detection> m_detection;
+	std::shared_ptr<SourceGroupSettings> m_detectedGroup;
 	int m_previouslySelectedIndex = -1;
 
 	bool m_applying = false;	// an agent's request is carried out: it reports itself

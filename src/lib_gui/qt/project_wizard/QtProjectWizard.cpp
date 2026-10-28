@@ -8,7 +8,9 @@
 #include "Platform.h"
 #include "QtMessageBox.h"
 #include "QtProjectWizardContent.h"
+#include "ProjectDetector.h"
 #include "QtProjectWizardContentCustomCommand.h"
+#include "QtProjectWizardContentDetected.h"
 #include "QtProjectWizardContentCargoOptions.h"
 #include "QtProjectWizardContentSwiftOptions.h"
 #include "QtProjectWizardContentExtensions.h"
@@ -34,6 +36,8 @@
 #endif
 #include "utilityPathDetection.h"
 #include "utilityUuid.h"
+
+#include <format>
 
 #include <QFileDialog>
 #include <QListWidget>
@@ -361,6 +365,38 @@ void QtProjectWizard::newProjectFromCDB(const FilePath& filePath)
 	createSourceGroup(sourceGroupSettings);
 }
 
+void QtProjectWizard::newProjectFromFolder(const ProjectProposal& proposal)
+{
+	m_projectSettings = std::make_shared<ProjectSettings>();
+	m_projectSettings->setProjectFilePath(proposal.projectName, FilePath(proposal.projectLocation));
+
+	m_detection = ProjectWizardView::Detection {
+		.folder = proposal.folder,
+		.sourceGroupType = std::string(sourceGroupTypeId(proposal.sourceGroupType)),
+		.reasons = proposal.reasons,
+		.notices = proposal.notices};
+
+	if (std::shared_ptr<SourceGroupSettings> settings = createSourceGroupSettings(proposal.sourceGroupType))
+	{
+		for (const auto& [name, value]: proposal.fields)
+		{
+			if (const auto written = writeSourceGroupField(*settings, name, value); !written)
+			{
+				m_detection->reasons.push_back(std::format("Not filled in: {}", written.error()));
+			}
+		}
+		m_allSourceGroupSettings.push_back(settings);
+		m_detectedGroup = settings;
+	}
+	else
+	{
+		m_detection->reasons.emplace_back(
+			"This build of Sourcetrail has no source groups of that type: add one by hand");
+	}
+
+	setup();	// the general page: the name, the location and what was detected
+}
+
 void QtProjectWizard::editProject(const FilePath& settingsPath)
 {
 	std::shared_ptr<ProjectSettings> settings = std::make_shared<ProjectSettings>(settingsPath);
@@ -502,7 +538,13 @@ void QtProjectWizard::windowReady()
 
 	updateSourceGroupList();
 
-	if (!m_allSourceGroupSettings.empty())
+	if (m_detection)
+	{
+		// The name, the location and why the source group is as it is, first.
+		setNextEnabled(!m_allSourceGroupSettings.empty());
+		generalButtonClicked();
+	}
+	else if (!m_allSourceGroupSettings.empty())
 	{
 		m_sourceGroupList->setCurrentRow(0);
 	}
@@ -587,7 +629,12 @@ void QtProjectWizard::generalButtonClicked()
 	contentGroup->addSpace();
 	contentGroup->addContent(new QtProjectWizardContentRequiredLabel(this));
 
-	if (m_allSourceGroupSettings.empty())
+	if (m_detection && !m_editing)
+	{
+		contentGroup->addSpace();
+		contentGroup->addContent(new QtProjectWizardContentDetected(*m_detection, this));
+	}
+	else if (m_allSourceGroupSettings.empty())
 	{
 		contentGroup->addSpace();
 		contentGroup->addContent(new QtProjectWizardContentSourceGroupInfoText(this));
@@ -636,6 +683,12 @@ void QtProjectWizard::selectedSourceGroupChanged(int index)
 	std::shared_ptr<SourceGroupSettings> group = m_allSourceGroupSettings[index];
 
 	QtProjectWizardContentGroup* summary = new QtProjectWizardContentGroup(this);
+
+	if (m_detection && group == m_detectedGroup)
+	{
+		summary->addContent(new QtProjectWizardContentDetected(*m_detection, this));
+		summary->addSpace();
+	}
 
 	QtProjectWizardContentSourceGroupData* content = new QtProjectWizardContentSourceGroupData(
 		group, this);
@@ -888,13 +941,12 @@ void QtProjectWizard::newSourceGroup()
 }
 
 
-void QtProjectWizard::selectedProjectType(SourceGroupType sourceGroupType)
+std::shared_ptr<SourceGroupSettings> QtProjectWizard::createSourceGroupSettings(SourceGroupType type) const
 {
-	m_typeSelected = true;
 	const std::string sourceGroupId = utility::getUuidString();
 	std::shared_ptr<SourceGroupSettings> settings;
 
-	switch (sourceGroupType)
+	switch (type)
 	{
 	case SourceGroupType::C_EMPTY:
 		if constexpr (language_packages::buildCxxLanguagePackage)
@@ -940,11 +992,17 @@ void QtProjectWizard::selectedProjectType(SourceGroupType sourceGroupType)
 		settings = std::make_shared<SourceGroupSettingsCustomCommand>(
 			sourceGroupId, m_projectSettings.get());
 		break;
+	case SourceGroupType::ZIG_EMPTY:
 	case SourceGroupType::UNKNOWN:
 		break;
 	}
+	return settings;
+}
 
-	if (settings)
+void QtProjectWizard::selectedProjectType(SourceGroupType sourceGroupType)
+{
+	m_typeSelected = true;
+	if (std::shared_ptr<SourceGroupSettings> settings = createSourceGroupSettings(sourceGroupType))
 	{
 		createSourceGroup(settings);
 	}
@@ -1016,6 +1074,7 @@ ProjectWizardView QtProjectWizard::view() const
 {
 	ProjectWizardView view;
 	view.editing = m_editing;
+	view.detected = m_detection;
 	view.projectName = m_projectSettings->getProjectName();
 	view.projectLocation = m_projectSettings->getProjectDirectoryPath().str();
 	for (const std::shared_ptr<SourceGroupSettings>& group: m_allSourceGroupSettings)
@@ -1246,6 +1305,7 @@ void QtProjectWizard::apply(const ProjectWizardRequest& request)
 		return;
 	}
 	case Kind::New:
+	case Kind::NewFromFolder:
 	case Kind::Edit:
 		break;
 	}

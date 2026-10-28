@@ -166,6 +166,12 @@ public slots:
 
 	void newProject();
 	void newProjectFromCDB(const FilePath& filePath);
+	// Asks for a folder, and opens the wizard on the project detected there.
+	void newProjectFromFolder();
+	// The wizard on the project detected in `folder` (ProjectDetector), its file in
+	// `projectLocation` (empty: the folder); the project wizard machine is told when there
+	// is none.
+	void newProjectFromFolder(const std::string& folder, const std::string& projectLocation);
 	void openProject();
 	void editProject();
 	void closeProject();

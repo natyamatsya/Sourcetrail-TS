@@ -238,3 +238,36 @@
 	margin: 5px 5px 3px;
 	padding: 1px;
 }
+
+/* What New Project from Folder found (QtProjectWizardContentDetected): a quiet card above the
+   fields it filled in. */
+#detectedNote {
+	background: #F4F5F8;
+	border: 1px solid #DCDEE4;
+	border-radius: 10px;
+}
+
+#detectedNote QLabel {
+	background: transparent;
+	color: #2B2D31;
+	font-size: 12px;
+}
+
+#detectedNote #detectedTitle {
+	color: #5F636B;
+	font-weight: bold;
+}
+
+#detectedNote #detectedSummary {
+	font-weight: bold;
+}
+
+#detectedNote #detectedNotice {
+	color: #5F636B;
+	font-size: 11px;
+}
+
+#detectedNote #detectedLine {
+	background: #DCDEE4;
+	border: none;
+}

@@ -48,6 +48,7 @@
 #include "QtKeyboardShortcuts.h"
 #include "QtLicenseWindow.h"
 #include "QtPreferencesWindow.h"
+#include "ProjectDetector.h"
 #include "QtProjectWizard.h"
 #include "QtResources.h"
 #include "QtStartScreen.h"
@@ -60,6 +61,7 @@
 #include "UserPaths.h"
 #endif
 #include "View.h"
+#include "WorkPools.h"
 #include "logging.h"
 #include "tracing.h"
 #ifndef SRCTRL_MODULE_BUILD
@@ -849,6 +851,11 @@ void QtMainWindow::showStartScreen()
 	QtStartScreen* startScreen = createWindow<QtStartScreen>();
 	connect(startScreen, &QtStartScreen::openOpenProjectDialog, this, &QtMainWindow::openProject);
 	connect(startScreen, &QtStartScreen::openNewProjectDialog, this, &QtMainWindow::newProject);
+	connect(
+		startScreen,
+		&QtStartScreen::openNewProjectFromFolderDialog,
+		this,
+		qOverload<>(&QtMainWindow::newProjectFromFolder));
 }
 
 void QtMainWindow::hideStartScreen()
@@ -873,6 +880,42 @@ void QtMainWindow::newProjectFromCDB(const FilePath& filePath)
 	m_projectWizard = wizard;
 
 	wizard->newProjectFromCDB(filePath);
+}
+
+void QtMainWindow::newProjectFromFolder()
+{
+	const QString folder = QtFileDialog::getExistingDirectory(this, tr("New Project from Folder"), FilePath());
+	if (!folder.isEmpty())
+	{
+		newProjectFromFolder(folder.toStdString(), {});
+	}
+}
+
+void QtMainWindow::newProjectFromFolder(const std::string& folder, const std::string& projectLocation)
+{
+	MessageStatus(std::format("Detecting the project in {}...", folder), false, true).dispatch();
+
+	// Off the GUI thread: a large folder takes a moment to look through.
+	execution::runOnWorkPool([this, folder, projectLocation]() {
+		auto proposal = detectProject(folder, {.projectLocation = projectLocation, .hasExecutable = {}});
+		execution::qt::onUi(this, [this, folder, proposal = std::move(proposal)]() {
+			if (!proposal)
+			{
+				const std::string why = std::format("{}: {}", folder, to_std_sv(proposal.error()));
+				MessageStatus("No project detected in " + why, true).dispatch();
+				ProjectWizardStateMachine::instance()->notOpened(why);
+				return;
+			}
+			MessageStatus(
+				std::format(
+					"Detected in {}: {}", folder, proposal->reasons.empty() ? std::string {} : proposal->reasons.front()))
+				.dispatch();
+
+			QtProjectWizard* wizard = createWindow<QtProjectWizard>();
+			m_projectWizard = wizard;
+			wizard->newProjectFromFolder(*proposal);	// opened
+		});
+	});
 }
 
 void QtMainWindow::openProject()
@@ -907,6 +950,10 @@ void QtMainWindow::applyToProjectWizard(const ProjectWizardRequest& request)
 		if (request.kind == Kind::New)
 		{
 			newProject();	// opened
+		}
+		else if (request.kind == Kind::NewFromFolder)
+		{
+			newProjectFromFolder(request.folder, request.projectLocation.value_or(std::string {}));
 		}
 		else if (request.kind == Kind::Edit)
 		{
@@ -1273,6 +1320,11 @@ void QtMainWindow::setupProjectMenu()
 	menuBar()->addMenu(menu);
 
 	menu->addAction(QtActions::newProject().text(), QtActions::newProject().shortcut(), this, &QtMainWindow::newProject);
+	menu->addAction(
+		QtActions::newProjectFromFolder().text(),
+		QtActions::newProjectFromFolder().shortcut(),
+		this,
+		qOverload<>(&QtMainWindow::newProjectFromFolder));
 	menu->addAction(QtActions::openProject().text(), QtActions::openProject().shortcut(), this, &QtMainWindow::openProject);
 
 	m_recentProjectsMenu = new QMenu(tr("Recent Projects"));

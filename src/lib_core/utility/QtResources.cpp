@@ -87,6 +87,7 @@ const char QtResources::GLYPH_CLOSE[]           = ":/glyphs/close.svg";
 const char QtResources::GLYPH_EDIT[]            = ":/glyphs/edit.svg";
 const char QtResources::GLYPH_FILE_INCOMPLETE[] = ":/glyphs/file_incomplete.svg";
 const char QtResources::GLYPH_FLOAT[]           = ":/glyphs/float.svg";
+const char QtResources::GLYPH_FOLDER_DETECT[]   = ":/glyphs/folder_detect.svg";
 const char QtResources::GLYPH_MAXIMIZE[]        = ":/glyphs/maximize.svg";
 const char QtResources::GLYPH_MINIMIZE[]        = ":/glyphs/minimize.svg";
 const char QtResources::GLYPH_SNIPPETS[]        = ":/glyphs/snippets.svg";
