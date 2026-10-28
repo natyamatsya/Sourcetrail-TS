@@ -18,6 +18,7 @@ SRCTRL_EXPORT enum class IndexingErrorCode
 {
 	PipelineFailed,		 // a refresh/indexing stage failed or threw (converted at the boundary)
 	PipelineTerminated,	 // the pipeline was terminated before completion (interrupt/shutdown)
+	IndexNotReplaced,	 // the run's database did not become the index (the previous one is kept)
 };
 
 using IndexingError = utility::ExpectedError<IndexingErrorCode>;

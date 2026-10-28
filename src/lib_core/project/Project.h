@@ -1,6 +1,7 @@
 #ifndef PROJECT_H
 #define PROJECT_H
 
+#include <expected>
 #include <functional>
 #include <memory>
 #include <optional>
@@ -8,6 +9,8 @@
 #include <string>
 #include <vector>
 
+#include "IndexDatabaseFiles.h"
+#include "IndexingOutcome.h"
 #include "RefreshInfo.h"
 #include "SourceGroup.h"
 #include "ShardConfig.h"
@@ -158,12 +161,11 @@ private:
 	void askToReindexAll(SourceGroupType type, std::shared_ptr<DialogView> dialogView);
 	void reindexAllAnswered(int option, std::shared_ptr<DialogView> dialogView);
 
-	void swapToTempStorage(std::shared_ptr<DialogView> dialogView);
-	bool swapToTempStorageFile(
-		const FilePath& indexDbFilePath,
-		const FilePath& tempIndexDbFilePath,
-		std::shared_ptr<DialogView> dialogView);
-	static bool moveTempStorageFile(const FilePath& indexDbFilePath, const FilePath& tempIndexDbFilePath);
+	// The run's database becomes the index; on failure the index stays as it was,
+	// open again.
+	IndexingOutcome swapToTempStorage();
+	static std::expected<void, IndexSwapError> moveTempStorageFile(
+		const FilePath& indexDbFilePath, const FilePath& tempIndexDbFilePath);
 	void discardTempStorage();
 
 	bool hasCxxSourceGroup() const;
