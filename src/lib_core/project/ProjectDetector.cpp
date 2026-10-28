@@ -902,14 +902,16 @@ void noteGit(Detection& detection)
 	else if (missing.size() == paths.size())
 	{
 		text += std::format(
-			"; {} not checked out (their sources and headers are missing: 'git submodule update --init')",
-			paths.size() == 1 ? "it is" : "none is");
+			"; {} not checked out ({} sources and headers are missing: 'git submodule update --init')",
+			paths.size() == 1 ? "it is" : "none is",
+			paths.size() == 1 ? "its" : "their");
 	}
 	else
 	{
 		text += std::format(
-			"; not checked out: {} (their sources and headers are missing: 'git submodule update --init')",
-			listed(missing));
+			"; not checked out: {} ({} sources and headers are missing: 'git submodule update --init')",
+			listed(missing),
+			missing.size() == 1 ? "its" : "their");
 	}
 	detection.proposal.notices.push_back(text);
 }
