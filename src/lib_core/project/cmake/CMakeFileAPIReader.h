@@ -227,6 +227,16 @@ public:
 	// CMAKE_CONFIGURATION_TYPES for multi-config ones). Empty without a reply.
 	std::vector<std::string> getConfigurations() const;
 
+	// The top-level source and build directories CMake wrote the reply for (the codemodel's
+	// `paths`), absolute. A build directory copied or moved with its project keeps them: they name
+	// the old location, and every path in the reply is under them.
+	struct ReplyPaths
+	{
+		FilePath source;
+		FilePath build;
+	};
+	std::optional<ReplyPaths> getReplyPaths() const;
+
 	// Of `configurations` (a multi-config generator's), the one built last: the newest
 	// output in .ninja_log under its directory, else the newest of the directories its
 	// outputs go to (<build>/<config>, CMakeFiles/<target>.dir/<config>). Empty when none

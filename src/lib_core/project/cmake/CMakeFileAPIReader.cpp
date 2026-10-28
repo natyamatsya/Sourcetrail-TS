@@ -926,6 +926,36 @@ std::vector<std::string> CMakeFileAPIReader::getConfigurations() const
 	return result;
 }
 
+std::optional<CMakeFileAPIReader::ReplyPaths> CMakeFileAPIReader::getReplyPaths() const
+{
+	for (const JsonEntryPoint& entryPoint : getJsonEntryPoints())
+	{
+		if (entryPoint.kind != "codemodel")
+			continue;
+		QFile file{QString::fromStdString(entryPoint.path.str())};
+		if (!file.open(QIODevice::ReadOnly))
+			return std::nullopt;
+		try
+		{
+			const QByteArray bytes{file.readAll()};
+			const auto codemodel = nlohmann::json::parse(
+				std::string{bytes.constData(), static_cast<std::size_t>(bytes.size())});
+			// `=`, not braces: a braced nlohmann::json is an array holding the value.
+			const nlohmann::json paths = codemodel.value("paths", nlohmann::json::object());
+			if (!paths.is_object())
+				return std::nullopt;
+			return ReplyPaths{
+				FilePath{paths.value("source", std::string{})}, FilePath{paths.value("build", std::string{})}};
+		}
+		catch (const nlohmann::json::exception& e)
+		{
+			LOG_WARNING(std::format("CMakeFileAPIReader: codemodel parse error: {}", e.what()));
+		}
+		return std::nullopt;
+	}
+	return std::nullopt;
+}
+
 std::vector<std::string> CMakeFileAPIReader::splitCompileFragment(const std::string& fragment)
 {
 	std::vector<std::string> tokens{};

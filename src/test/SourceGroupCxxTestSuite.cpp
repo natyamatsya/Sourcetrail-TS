@@ -18,6 +18,8 @@
 #ifndef SRCTRL_MODULE_BUILD
 #include "ProjectSettings.h"
 #endif
+#include "CMakeFileAPIReader.h"
+#include "SourceGroupCxxCMakeFileAPI.h"
 #include "SourceGroupCxxCdb.h"
 #include "SourceGroupCxxEmpty.h"
 #include "SourceGroupFactory.h"
@@ -25,6 +27,7 @@
 #ifndef SRCTRL_MODULE_BUILD
 #include "SourceGroupSettingsCEmpty.h"
 #include "SourceGroupSettingsCppEmpty.h"
+#include "SourceGroupSettingsCxxCMakeFileAPI.h"
 #include "SourceGroupSettingsCxxCdb.h"
 #include "TextAccess.h"
 #endif
@@ -595,4 +598,45 @@ TEST_CASE("source group factory creates a source group configured twice once")
 	REQUIRE(groups.size() == 2);
 	REQUIRE(groups[0]->getSourceGroupId() == "g0");
 	REQUIRE(groups[1]->getSourceGroupId() == "g2");
+}
+
+TEST_CASE("source group cxx cmake configures afresh a build directory copied with its project")
+{
+	// A project copied with its *.srctrl-build directory and its .srctrl.toml pointed at the copy
+	// indexed the old checkout's files: the File API reply holds absolute paths. Now the reply's
+	// source directory is checked, and a reply written for another location is configured afresh.
+	if (std::system("cmake --version > /dev/null 2>&1") != 0)
+		SKIP("cmake is not on PATH");
+#if defined(_WIN32)
+	SKIP("POSIX shell redirection above");
+#endif
+
+	ScopedApplicationInstance scopedApplicationInstance;
+	const TestTempDirectory tempDirectory{"SourceGroupCxxCMakeMoved"};
+	const std::filesystem::path original = tempDirectory.getPath() / "original";
+	std::filesystem::create_directories(original / "source");
+	std::ofstream(original / "source" / "CMakeLists.txt")
+		<< "cmake_minimum_required(VERSION 3.21)\nproject(probe NONE)\nadd_custom_target(only)\n";
+	CMakeFileAPIReader originalReader{FilePath((original / "build").string())};
+	REQUIRE(originalReader.ensureReply({}, FilePath((original / "source").string())).has_value());
+
+	const std::filesystem::path copy = tempDirectory.getPath() / "copy";
+	std::filesystem::copy(original, copy, std::filesystem::copy_options::recursive);
+	const FilePath copySource((copy / "source").string());
+	const FilePath copyBuild((copy / "build").string());
+	REQUIRE(CMakeFileAPIReader{copyBuild}.getReplyPaths()->source == FilePath((original / "source").string()));
+
+	ProjectSettings projectSettings;
+	projectSettings.setProjectFilePath("copy", FilePath(copy.string()));
+	std::shared_ptr<SourceGroupSettingsCxxCMakeFileAPI> settings =
+		std::make_shared<SourceGroupSettingsCxxCMakeFileAPI>("fake_id", &projectSettings);
+	settings->setSourceDirectory(copySource);
+	settings->setBuildDirectory(copyBuild);
+	SourceGroupCxxCMakeFileAPI sourceGroup(settings);
+
+	REQUIRE(sourceGroup.prepareIndexing().has_value());
+	const auto paths = CMakeFileAPIReader{copyBuild}.getReplyPaths();
+	REQUIRE(paths.has_value());
+	REQUIRE(paths->source == copySource);
+	REQUIRE(paths->build == copyBuild);
 }

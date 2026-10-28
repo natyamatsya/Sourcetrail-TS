@@ -397,6 +397,34 @@ std::vector<std::string> getModuleFlags(
 }
 }
 
+namespace
+{
+// Why the reply in `reader` is not this source group's: the source or build directory CMake wrote
+// it for is another than `sourceDir` / `buildDir`. Empty when it is (or there is no reply).
+std::string replyLocationMismatch(
+	const CMakeFileAPIReader& reader, const FilePath& sourceDir, const FilePath& buildDir)
+{
+	if (!reader.hasReply())
+		return {};
+	const std::optional<CMakeFileAPIReader::ReplyPaths> paths{reader.getReplyPaths()};
+	if (!paths)
+		return {};
+	if (!paths->source.empty() && paths->source != sourceDir)
+		return std::format(
+			"The CMake build directory \"{}\" was configured for the source directory \"{}\", not "
+			"this source group's \"{}\".",
+			buildDir.str(),
+			paths->source.str(),
+			sourceDir.str());
+	if (!paths->build.empty() && paths->build != buildDir)
+		return std::format(
+			"The CMake File API reply in \"{}\" was written for the build directory \"{}\".",
+			buildDir.str(),
+			paths->build.str());
+	return {};
+}
+}	 // namespace
+
 SourceGroupCxxCMakeFileAPI::SourceGroupCxxCMakeFileAPI(
 	std::shared_ptr<SourceGroupSettingsCxxCMakeFileAPI> settings)
 	: m_settings{settings}
@@ -444,23 +472,51 @@ std::expected<void, PrepareIndexingError> SourceGroupCxxCMakeFileAPI::prepareInd
 	}
 
 	CMakeFileAPIReader reader{buildDir};
-	const bool stale{reader.isReplyStale(sourceDir)};
+
+	// A reply CMake wrote for another location -- the project copied or moved with its build
+	// directory -- names that location's files: indexing it indexed the old checkout and dropped
+	// the copy's own headers, without a word. The build directory is configured afresh for this
+	// one (a person is asked first), and never indexed as it is.
+	const std::string elsewhere{replyLocationMismatch(reader, sourceDir, buildDir)};
+	if (!elsewhere.empty())
+	{
+		LOG_WARNING("SourceGroupCxxCMakeFileAPI: " + elsewhere);
+		const auto application{Application::getInstance()};
+		if (application->hasGUI() &&
+			application->handleDialog(
+				std::format(
+					"{}\n\nWas the project copied or moved? Configure the build directory afresh for "
+					"this location (its CMake cache is discarded)?",
+					elsewhere),
+				{"Configure Afresh", "Cancel"}) != 0)
+		{
+			MessageStatus(std::format("Can't refresh project. {}", elsewhere), true).dispatch();
+			return std::unexpected(PrepareIndexingError::ConfigurationIncomplete);
+		}
+	}
+
+	const bool stale{!elsewhere.empty() || reader.isReplyStale(sourceDir)};
 	if (reader.hasReply() && !stale)
 		return checkReplyMatchesSettings(reader);
 
 	MessageStatus(
-		stale ? "CMake project has changed — regenerating File API reply..."
-			  : "Writing CMake File API query and running cmake...",
+		!elsewhere.empty() ? "The CMake build directory was configured elsewhere — configuring it afresh..."
+			: stale        ? "CMake project has changed — regenerating File API reply..."
+						   : "Writing CMake File API query and running cmake...",
 		false,
 		true)
 		.dispatch();
 
+	std::vector<std::string> cmakeArguments{
+		presetName.empty() ? m_settings->getCMakeArguments() : std::vector<std::string>{}};
+	if (!elsewhere.empty())
+		cmakeArguments.push_back("--fresh");	// the cache names the old source directory
 	const auto configured{reader.ensureReply(
 		[](const std::string& msg) { MessageStatus(msg, false, true).dispatch(); },
 		sourceDir,
 		presetName,
 		stale,
-		presetName.empty() ? m_settings->getCMakeArguments() : std::vector<std::string>{})};
+		cmakeArguments)};
 	if (!configured)
 	{
 		const auto& [code, cmakeError, exceptionType]{configured.error()};
@@ -477,6 +533,15 @@ std::expected<void, PrepareIndexingError> SourceGroupCxxCMakeFileAPI::prepareInd
 		std::string cmakeSays{std::format("{} with {}.", to_std_sv(code), configuredBy)};
 		if (!cmakeError.empty())
 			cmakeSays += std::format("\n\n{}", cmakeError);
+
+		// The reply of another location is never one to index.
+		if (!elsewhere.empty())
+		{
+			Application::getInstance()->showNotice(
+				std::format("Can't refresh project. {}\n\nConfiguring it afresh failed: {}", elsewhere, cmakeSays),
+				{"OK"});
+			return failed();
+		}
 
 		// A changed project CMake cannot configure here (it may need the build
 		// environment it was configured in): the reply CMake wrote last can still do.
@@ -505,6 +570,14 @@ std::expected<void, PrepareIndexingError> SourceGroupCxxCMakeFileAPI::prepareInd
 		Application::getInstance()->showNotice(
 			std::format("Can't refresh project: {}", cmakeSays), {"OK"});
 		return failed();
+	}
+	if (const std::string stillElsewhere{replyLocationMismatch(reader, sourceDir, buildDir)};
+		!stillElsewhere.empty())
+	{
+		const std::string message{std::format("Can't refresh project. {}", stillElsewhere)};
+		MessageStatus(message, true).dispatch();
+		Application::getInstance()->showNotice(message, {"OK"});
+		return std::unexpected(PrepareIndexingError::ConfigurationIncomplete);
 	}
 	return checkReplyMatchesSettings(reader);
 }
