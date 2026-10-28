@@ -160,45 +160,44 @@ void QtHighlighter::highlightDocument()
 {
 	TRACE();
 
-	QTextDocument* doc = document();
+	// Nothing is formatted here: highlightRange formats the lines that are shown, and finds
+	// what it needs for them then. This went through the whole file before (every line's
+	// ranges, the multi-line ones, the text format on all of it), for a file of 14k lines a
+	// good part of the time it took to show.
+	const int lines{document()->blockCount()};
+	m_highlightedLines.assign(lines, false);
+	m_singleLineRangesByLine.assign(lines, std::nullopt);
 
-	int docStart = 0;
-	int docEnd = 0;
-	for (int i = 0; i < doc->blockCount(); i++)
+	m_singleLineRules.clear();
+	m_multiLineSearches.clear();
+	std::optional<size_t> startRule;
+	for (size_t i = 0; i < m_highlightingRules.size(); i++)
 	{
-		docEnd += doc->findBlockByLineNumber(i).length();
-	}
-
-	if (docEnd > 0)
-	{
-		docEnd -= 1;
-	}
-
-	applyFormat(docStart, docEnd, s_charFormats[HighlightType::TEXT]);
-
-	m_highlightedLines.clear();
-	m_highlightedLines.resize(document()->blockCount(), false);
-
-	if (m_highlightingRules.empty())
-	{
-		return;
-	}
-
-	std::vector<HighlightingRule> singleLineRules;
-	for (const HighlightingRule& rule: m_highlightingRules)
-	{
-		if (rule.priority && !rule.multiLine)
+		const HighlightingRule& rule{m_highlightingRules[i]};
+		if (!rule.priority)
 		{
-			singleLineRules.emplace_back(rule);
+			continue;
+		}
+		if (!rule.multiLine)
+		{
+			m_singleLineRules.push_back(rule);
+		}
+		else if (!startRule)
+		{
+			startRule = i;
+		}
+		else if (rule.type == m_highlightingRules[*startRule].type)
+		{
+			m_multiLineSearches.push_back(MultiLineSearch{.startRule = *startRule, .endRule = i});
+			startRule.reset();
 		}
 	}
-	createRanges(doc, singleLineRules);
 }
 
 void QtHighlighter::highlightRange(int startLine, int endLine)
 {
 	if (startLine < 0 || endLine < 0 || startLine > endLine ||
-		endLine > int(m_highlightedLines.size()))
+		endLine >= int(m_highlightedLines.size()))
 	{
 		return;
 	}
@@ -217,6 +216,8 @@ void QtHighlighter::highlightRange(int startLine, int endLine)
 	{
 		return;
 	}
+
+	findMultiLineRangesUpTo(endLine);
 
 	QTextDocument* doc = document();
 	QTextBlock start = doc->findBlockByLineNumber(startLine);
@@ -247,6 +248,7 @@ void QtHighlighter::highlightRange(int startLine, int endLine)
 			applyFormat(
 				it.position(), it.position() + it.length() - 1, s_charFormats[HighlightType::TEXT]);
 
+			const std::vector<HighlightingRange>& lineRanges{singleLineRanges(it)};
 			for (const HighlightingRule& rule: m_highlightingRules)
 			{
 				if (rule.multiLine)
@@ -256,17 +258,17 @@ void QtHighlighter::highlightRange(int startLine, int endLine)
 
 				if (rule.priority)
 				{
-					formatBlockIfInRange(it, rule.type, m_singleLineRanges);
+					formatBlockIfInRange(it, rule.type, lineRanges);
 				}
 				else
 				{
-					formatBlockForRule(it, rule, m_singleLineRanges);
+					formatBlockForRule(it, rule, lineRanges);
 				}
 			}
 
-			if (m_multiLineRanges.size())
+			for (const MultiLineSearch& search: m_multiLineSearches)
 			{
-				formatBlockIfInRange(it, m_multiLineRanges);
+				formatBlockIfInRange(it, search.ranges);
 			}
 		}
 		index++;
@@ -304,26 +306,26 @@ QTextCharFormat QtHighlighter::getFormat(int  /*startPosition*/, int endPosition
 	return cursor.charFormat();
 }
 
-void QtHighlighter::createRanges(QTextDocument* doc, const std::vector<HighlightingRule>& singleLineRules)
+const std::vector<QtHighlighter::HighlightingRange>& QtHighlighter::singleLineRanges(const QTextBlock& block)
 {
-	m_singleLineRanges.clear();
-	m_multiLineRanges.clear();
-
-	for (QTextBlock it = doc->begin(); it != doc->end(); it = it.next())
+	std::optional<std::vector<HighlightingRange>>& cached{m_singleLineRangesByLine[block.blockNumber()]};
+	if (cached)
 	{
-		for (const HighlightingRule& rule: singleLineRules)
-		{
-			utility::append(m_singleLineRanges, getRangesForRule(it, rule));
-		}
+		return *cached;
+	}
+
+	std::vector<HighlightingRange> ranges;
+	for (const HighlightingRule& rule: m_singleLineRules)
+	{
+		utility::append(ranges, getRangesForRule(block, rule));
 	}
 
 	// remove ranges starting inside others
 	{
 		std::map<std::pair<int, int>, size_t> sortedRangesToIndex;
-		for (size_t i = 0; i < m_singleLineRanges.size(); i++)
+		for (size_t i = 0; i < ranges.size(); i++)
 		{
-			const HighlightingRange& range = m_singleLineRanges[i];
-			sortedRangesToIndex.emplace(pair(range.start, range.end), i);
+			sortedRangesToIndex.emplace(pair(ranges[i].start, ranges[i].end), i);
 		}
 
 		std::set<size_t> indicesToErase;
@@ -342,89 +344,58 @@ void QtHighlighter::createRanges(QTextDocument* doc, const std::vector<Highlight
 
 		for (auto it = indicesToErase.rbegin(); it != indicesToErase.rend(); it++)
 		{
-			m_singleLineRanges.erase(m_singleLineRanges.begin() + *it);
+			ranges.erase(ranges.begin() + *it);
 		}
 	}
 
-	m_multiLineRanges = createMultiLineRanges(doc, m_singleLineRanges);
+	cached = std::move(ranges);
+	return *cached;
 }
 
-std::vector<QtHighlighter::HighlightingRange> QtHighlighter::createMultiLineRanges(
-	QTextDocument* doc, const std::vector<HighlightingRange> &ranges)
+void QtHighlighter::findMultiLineRangesUpTo(int lastLine)
 {
-	std::vector<HighlightingRange> multiLineRanges;
-
-	const HighlightingRule* startRule = nullptr;
-
-	for (const HighlightingRule& rule: m_highlightingRules)
+	QTextDocument* doc = document();
+	const int lines{doc->blockCount()};
+	for (MultiLineSearch& search: m_multiLineSearches)
 	{
-		if (rule.priority && rule.multiLine)
+		const HighlightingRule& startRule{m_highlightingRules[search.startRule]};
+		const HighlightingRule& endRule{m_highlightingRules[search.endRule]};
+		while (search.line < lines && (search.line <= lastLine || search.openStart >= 0))
 		{
-			if (!startRule)
+			const QTextBlock block{doc->findBlockByNumber(search.line)};
+			const QString text{block.text()};
+			if (search.openStart < 0)
 			{
-				startRule = &rule;
+				// A start that is not in a string or a line comment.
+				QRegularExpressionMatch start{startRule.pattern.match(text, search.offset)};
+				while (start.hasMatch() &&
+					   isInRange(block.position() + static_cast<int>(start.capturedEnd()) - 1, singleLineRanges(block)))
+				{
+					start = startRule.pattern.match(text, start.capturedEnd() + 1);
+				}
+				if (!start.hasMatch())
+				{
+					search.line++;
+					search.offset = 0;
+					continue;
+				}
+				search.openStart = block.position() + static_cast<int>(start.capturedStart());
+				search.offset = static_cast<int>(start.capturedEnd());
 			}
-			else if (rule.type == startRule->type)
+
+			const QRegularExpressionMatch end{endRule.pattern.match(text, search.offset)};
+			if (!end.hasMatch())
 			{
-				utility::append(
-					multiLineRanges, createMultiLineRangesForRules(doc, ranges, startRule, &rule));
-				startRule = nullptr;
+				search.line++;
+				search.offset = 0;
+				continue;
 			}
+			search.ranges.push_back(HighlightingRange(
+				startRule.type, search.openStart, block.position() + static_cast<int>(end.capturedEnd())));
+			search.openStart = -1;
+			search.offset = static_cast<int>(end.capturedEnd());
 		}
 	}
-
-	return multiLineRanges;
-}
-
-std::vector<QtHighlighter::HighlightingRange> QtHighlighter::createMultiLineRangesForRules(
-	QTextDocument* doc,
-	const std::vector<HighlightingRange> &ranges,
-	const HighlightingRule* startRule,
-	const HighlightingRule* endRule)
-{
-	std::vector<HighlightingRange> multiLineRanges;
-
-	QTextCursor cursorStart(doc);
-	QTextCursor cursorEnd(doc);
-
-	while (true)
-	{
-		while (true)
-		{
-			cursorStart = document()->find(startRule->pattern, cursorStart);
-			if (cursorStart.isNull())
-			{
-				break;
-			}
-
-			if (!isInRange(cursorStart.selectionEnd() - 1, ranges))
-			{
-				break;
-			}
-			else
-			{
-				cursorStart.setPosition(cursorStart.selectionEnd() + 1);
-			}
-		}
-
-		if (cursorStart.isNull())
-		{
-			break;
-		}
-
-		cursorEnd = document()->find(endRule->pattern, cursorStart);
-		if (cursorEnd.isNull())
-		{
-			break;
-		}
-
-		multiLineRanges.emplace_back(
-			HighlightingRange(startRule->type, cursorStart.selectionStart(), cursorEnd.position()));
-
-		cursorStart = cursorEnd;
-	}
-
-	return multiLineRanges;
 }
 
 QtHighlighter::HighlightingRule::HighlightingRule(

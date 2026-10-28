@@ -1,6 +1,9 @@
 #ifndef QT_HIGHLIGHTER_H
 #define QT_HIGHLIGHTER_H
 
+#include <optional>
+#include <vector>
+
 #include <QRegularExpression>
 #include <QTextCharFormat>
 
@@ -63,14 +66,13 @@ private:
 		int end = 0;
 	};
 
-	void createRanges(QTextDocument* doc, const std::vector<HighlightingRule>& quotationRules);
-	std::vector<HighlightingRange> createMultiLineRanges(
-		QTextDocument* doc, const std::vector<HighlightingRange> &ranges);
-	std::vector<HighlightingRange> createMultiLineRangesForRules(
-		QTextDocument* doc,
-		const std::vector<HighlightingRange> &ranges,
-		const HighlightingRule* startRule,
-		const HighlightingRule* endRule);
+	// The single-line ranges of a line (strings, line comments, not starting inside another
+	// one), found when the line is first highlighted.
+	const std::vector<HighlightingRange>& singleLineRanges(const QTextBlock& block);
+	// Finds the multi-line ranges (block comments, raw strings) as far as line `lastLine`, on
+	// from where the last search stopped, and a range open there to its end: a file is searched
+	// only as far as it was shown.
+	void findMultiLineRangesUpTo(int lastLine);
 
 	static bool isInRange(int index, const std::vector<HighlightingRange>& ranges);
 	static std::vector<HighlightingRange> getRangesForRule(
@@ -94,9 +96,21 @@ private:
 
 	QTextDocument* m_document;
 
+	// The search for one kind of multi-line range (a start and an end rule), and its ranges.
+	struct MultiLineSearch
+	{
+		size_t startRule = 0;
+		size_t endRule = 0;
+		int line = 0;	 // where the search goes on
+		int offset = 0;
+		int openStart = -1;	   // a range found to start here, its end not found yet
+		std::vector<HighlightingRange> ranges;
+	};
+
 	std::vector<HighlightingRule> m_highlightingRules;
-	std::vector<HighlightingRange> m_singleLineRanges;
-	std::vector<HighlightingRange> m_multiLineRanges;
+	std::vector<HighlightingRule> m_singleLineRules;
+	std::vector<std::optional<std::vector<HighlightingRange>>> m_singleLineRangesByLine;
+	std::vector<MultiLineSearch> m_multiLineSearches;
 	std::vector<bool> m_highlightedLines;
 };
 
