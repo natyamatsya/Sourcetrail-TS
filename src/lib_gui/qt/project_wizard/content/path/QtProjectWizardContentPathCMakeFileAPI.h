@@ -15,7 +15,9 @@ class QLabel;
 class QLineEdit;
 class QListWidget;
 class QPushButton;
+class QTimer;
 class QtLocationPicker;
+struct ProjectProposal;
 class SourceGroupSettingsCxxCMakeFileAPI;
 
 // The CMake File API source group's own rows: the source directory, the configure
@@ -48,6 +50,7 @@ private slots:
 	void onTargetListFilterEdited();
 	void onRunCMake();
 	void onShowCMakeLog();
+	void onDetect();
 
 private:
 	// A target of the reply, with the source files it has in the configuration shown.
@@ -96,6 +99,10 @@ private:
 	void showConfigureError();
 	// The CMake Arguments field's words; the reason when they cannot be split.
 	std::expected<std::vector<std::string>, std::string> cmakeArguments() const;
+	// What New Project from Folder would propose for the source directory, filled into
+	// what is still empty here (the build directory, the headers to index, the group's
+	// default name), and the preset it would use.
+	void applyDetection(const ProjectProposal& proposal);
 	// Shows why the check failed; always false.
 	bool fail(const QString& message);
 
@@ -114,6 +121,9 @@ private:
 	QWidget* m_cmakeArgumentsHelp = nullptr;
 	QWidget* m_configureErrorRow = nullptr;
 	QLabel* m_configureErrorLabel = nullptr;
+	QLabel* m_detectedLabel = nullptr;
+	QTimer* m_detectTimer = nullptr;	// a typed source directory is looked at once typing stops
+	bool m_detecting = false;
 	QComboBox* m_configurationCombo = nullptr;
 	QLineEdit* m_targetFilterEdit = nullptr;
 	QListWidget* m_targetList = nullptr;

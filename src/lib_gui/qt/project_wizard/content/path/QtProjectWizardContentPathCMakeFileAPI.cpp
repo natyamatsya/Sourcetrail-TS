@@ -13,6 +13,7 @@
 #include <QDialogButtonBox>
 #include <QHBoxLayout>
 #include <QPlainTextEdit>
+#include <QTimer>
 #include <QLabel>
 #include <QLineEdit>
 #include <QListWidget>
@@ -20,7 +21,9 @@
 
 #include "CMakeFileAPIReader.h"
 #include "EditorCommand.h"
+#include "ProjectDetector.h"
 #include "ProjectWizardStateMachine.h"
+#include "SourceGroupType.h"
 #include "QtLocationPicker.h"
 #ifndef SRCTRL_MODULE_BUILD
 #include "SourceGroupSettingsCxxCMakeFileAPI.h"
@@ -153,6 +156,20 @@ void QtProjectWizardContentPathCMakeFileAPI::populate(QGridLayout* layout, int& 
 			&QtLocationPicker::textChanged,
 			this,
 			&QtProjectWizardContentPathCMakeFileAPI::onSourceDirChanged);
+
+		// What was proposed from the source directory, as New Project from Folder does.
+		m_detectedLabel = new QLabel(QLatin1String(""), this);
+		m_detectedLabel->setObjectName(QStringLiteral("description"));
+		m_detectedLabel->setAccessibleName(QStringLiteral("Detected"));
+		m_detectedLabel->setWordWrap(true);
+		m_detectedLabel->hide();
+		layout->addWidget(m_detectedLabel, row, QtProjectWizardWindow::BACK_COL);
+		row++;
+
+		m_detectTimer = new QTimer(this);
+		m_detectTimer->setSingleShot(true);
+		m_detectTimer->setInterval(400);
+		connect(m_detectTimer, &QTimer::timeout, this, &QtProjectWizardContentPathCMakeFileAPI::onDetect);
 	}
 
 	// --- Preset combo ---
@@ -627,6 +644,90 @@ void QtProjectWizardContentPathCMakeFileAPI::describe(ProjectWizardView& view) c
 void QtProjectWizardContentPathCMakeFileAPI::onSourceDirChanged(const QString& text)
 {
 	repopulatePresets(text, selectedPreset(), noPresetSelected());
+	// A source directory picked (not loaded): propose the rest from it.
+	m_detectTimer->start();
+}
+
+void QtProjectWizardContentPathCMakeFileAPI::onDetect()
+{
+	if (m_sourceDir.empty() || !m_sourceDir.exists() || m_detecting)
+	{
+		return;
+	}
+	m_detecting = true;
+	const std::string folder{m_sourceDir.str()};
+	const std::string projectLocation{m_settings->getProjectDirectoryPath().str()};
+	execution::runOnWorkPool([this, folder, projectLocation]() {
+		const auto proposal{detectProject(folder, {.projectLocation = projectLocation, .hasExecutable = {}})};
+		execution::qt::onUi(this, [this, folder, proposal]() {
+			m_detecting = false;
+			// Picked another meanwhile: that one's detection follows.
+			if (proposal && m_sourceDir.str() == folder)
+			{
+				applyDetection(*proposal);
+			}
+		});
+	});
+}
+
+void QtProjectWizardContentPathCMakeFileAPI::applyDetection(const ProjectProposal& proposal)
+{
+	if (proposal.sourceGroupType != SourceGroupType::CXX_CMAKE_FILE_API)
+	{
+		m_detectedLabel->hide();
+		return;
+	}
+	const auto text = [&](const std::string& field) -> std::string {
+		const auto it{proposal.fields.find(field)};
+		return it != proposal.fields.end() && std::holds_alternative<std::string>(it->second)
+			? std::get<std::string>(it->second)
+			: std::string{};
+	};
+	const auto list = [&](const std::string& field) -> std::vector<std::string> {
+		const auto it{proposal.fields.find(field)};
+		return it != proposal.fields.end() && std::holds_alternative<std::vector<std::string>>(it->second)
+			? std::get<std::vector<std::string>>(it->second)
+			: std::vector<std::string>{};
+	};
+
+	// What is on the page so far, then what the folder suggests where nothing is set.
+	m_window->saveContent();
+	std::vector<std::string> filled;
+	m_settings->setPresetName(text("cmake_preset"));
+	if (const std::string buildDir{text("cmake_build_directory")};
+		!buildDir.empty() && m_settings->getBuildDirectory().empty())
+	{
+		m_settings->setBuildDirectory(FilePath(buildDir));
+		filled.push_back("the build directory");
+	}
+	if (const std::vector<std::string> headers{list("indexed_header_paths")};
+		!headers.empty() && m_settings->getIndexedHeaderPaths().empty())
+	{
+		std::vector<FilePath> paths;
+		for (const std::string& header: headers)
+		{
+			paths.emplace_back(header);
+		}
+		m_settings->setIndexedHeaderPaths(paths);
+		filled.push_back("the headers to index");
+	}
+	if (const std::string name{m_settings->getName()};
+		!proposal.projectName.empty() &&
+		(name.empty() || name == sourceGroupTypeToString(SourceGroupType::CXX_CMAKE_FILE_API)))
+	{
+		m_settings->setName(proposal.projectName);
+		filled.push_back("the name");
+	}
+	m_window->loadContent();
+
+	std::string detected{proposal.reasons.empty() ? std::string{} : proposal.reasons.front()};
+	if (!filled.empty())
+	{
+		detected += std::format(" (filled in: {})", utility::join(filled, std::string{", "}));
+	}
+	m_detectedLabel->setText(toHtml(detected));
+	m_detectedLabel->setVisible(!detected.empty());
+	m_window->contentChanged();
 }
 
 void QtProjectWizardContentPathCMakeFileAPI::onRefreshPresets()

@@ -185,14 +185,40 @@ bool QtProjectWizardContentPathsIndexedHeaders::check()
 {
 	if (m_list->getPathsAsDisplayed().empty())
 	{
-		if (m_window->ask(
-				QString::fromStdString(
-					"You didn't specify any Header Files & Directories to Index. Sourcetrail will only "
-					"index the source files the " +
-					m_projectKindName + " lists and none of the included header files."),
-				{"Continue", "Cancel"}) != 0)
+		// A CMake group has the directory to offer: its source directory, where its own
+		// headers are.
+		FilePath sourceDirectory;
+		if (const auto cmakeSettings =
+				std::dynamic_pointer_cast<SourceGroupSettingsWithCxxCMakeBuildDirectory>(m_settings))
 		{
-			return false;
+			sourceDirectory = cmakeSettings->getSourceDirectory().empty() ? FilePath{} : cmakeSettings->getSourceDirectoryExpandedAndAbsolute();
+		}
+		const std::string question{
+			"You didn't specify any Header Files & Directories to Index. Sourcetrail will only "
+			"index the source files the " +
+			m_projectKindName + " lists and none of the included header files."};
+		if (sourceDirectory.empty())
+		{
+			if (m_window->ask(QString::fromStdString(question), {"Continue", "Cancel"}) != 0)
+			{
+				return false;
+			}
+		}
+		else
+		{
+			const int answer{m_window->ask(
+				QString::fromStdString(
+					question + " Index the headers in the source directory " + sourceDirectory.str() + "?"),
+				{"Add Source Directory", "Continue", "Cancel"})};
+			if (answer == 2 || answer < 0)
+			{
+				return false;
+			}
+			if (answer == 0)
+			{
+				m_list->setPaths({sourceDirectory});
+				save();
+			}
 		}
 	}
 
