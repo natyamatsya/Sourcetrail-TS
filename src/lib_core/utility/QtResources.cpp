@@ -39,23 +39,12 @@ const char QtResources::BOOKMARK_VIEW_BOOKMARK_LIST_ICON[]          = ":/bookmar
 const char QtResources::BOOKMARK_VIEW_BOOKMARK_EDIT_BOOKMARK_ICON[] = ":/bookmark_view/images/edit_bookmark_icon.svg";
 
 const char QtResources::CODE_VIEW_CSS[]                 = ":/code_view/code_view.css";
-const char QtResources::CODE_VIEW_ARROW_DOWN[]          = ":/code_view/images/arrow_down.png";
 const char QtResources::CODE_VIEW_ARROW_LEFT[]          = ":/code_view/images/arrow_left.png";
 const char QtResources::CODE_VIEW_ARROW_RIGHT[]         = ":/code_view/images/arrow_right.png";
-const char QtResources::CODE_VIEW_ARROW_UP[]            = ":/code_view/images/arrow_up.png";
-const char QtResources::CODE_VIEW_BUTTON_BACKGROUND[]   = ":/code_view/images/button_background.png";
 const char QtResources::CODE_VIEW_EDIT[]                = ":/code_view/images/edit.png";
-const char QtResources::CODE_VIEW_FILE[]                = ":/code_view/images/file.png";
-const char QtResources::CODE_VIEW_LIST[]                = ":/code_view/images/list.png";
-const char QtResources::CODE_VIEW_MAXIMIZE_ACTIVE[]     = ":/code_view/images/maximize_active.png";
-const char QtResources::CODE_VIEW_MAXIMIZE_INACTIVE[]   = ":/code_view/images/maximize_inactive.png";
 const char QtResources::CODE_VIEW_PATTERN_BRIGHT[]      = ":/code_view/images/pattern_bright.png";
 const char QtResources::CODE_VIEW_PATTERN_DARK[]        = ":/code_view/images/pattern_dark.png";
 const char QtResources::CODE_VIEW_PATTERN_GREY[]        = ":/code_view/images/pattern_grey.png";
-const char QtResources::CODE_VIEW_SNIPPET_ACTIVE[]      = ":/code_view/images/snippet_active.png";
-const char QtResources::CODE_VIEW_SNIPPET_ARROW_DOWN[]  = ":/code_view/images/snippet_arrow_down.png";
-const char QtResources::CODE_VIEW_SNIPPET_ARROW_RIGHT[] = ":/code_view/images/snippet_arrow_right.png";
-const char QtResources::CODE_VIEW_SNIPPET_INACTIVE[]    = ":/code_view/images/snippet_inactive.png";
 
 const char QtResources::CUSTOM_TRAIL_VIEW_CSS[]    = ":/custom_trail_view/custom_trail_view.css";
 const char QtResources::CUSTOM_TRAIL_VIEW_CIRCLE[] = ":/custom_trail_view/images/circle.png";
@@ -123,12 +112,6 @@ const char QtResources::INDEXING_DIALOG_PROGRESS_BAR_ELEMENT[] = ":/indexing_dia
 
 const char QtResources::KEYBOARD_SHORTCUTS_CSS[] = ":/keyboard_shortcuts/keyboard_shortcuts.css";
 
-const char QtResources::MAIN_CLOSE_BLACK[]   = ":/main/images/close_black.png";
-const char QtResources::MAIN_CLOSE_GREY[]    = ":/main/images/close_grey.png";
-const char QtResources::MAIN_CLOSE_WHITE[]   = ":/main/images/close_white.png";
-const char QtResources::MAIN_FLOAT_BLACK[]   = ":/main/images/float_black.png";
-const char QtResources::MAIN_FLOAT_GREY[]    = ":/main/images/float_grey.png";
-const char QtResources::MAIN_FLOAT_WHITE[]   = ":/main/images/float_white.png";
 const char QtResources::MAIN_CSS[]           = ":/main/main.css";
 const char QtResources::MAIN_SCROLLBAR_CSS[] = ":/main/scrollbar.css";
 
@@ -154,8 +137,6 @@ const char QtResources::TABBED_VIEW_ARROW_DOWN[] = ":/tabbed_view/arrow_down.png
 const char QtResources::TABBED_VIEW_ARROW_UP[]   = ":/tabbed_view/arrow_up.png";
 const char QtResources::TABBED_VIEW_CSS[]        = ":/tabbed_view/tabbed_view.css";
 
-const char QtResources::TABS_VIEW_ADD[]   = ":/tabs_view/images/add.png";
-const char QtResources::TABS_VIEW_CLOSE[] = ":/tabs_view/images/close.png";
 const char QtResources::TABS_VIEW_CSS[]   = ":/tabs_view/tabs_view.css";
 
 const char QtResources::TOOLTIP_VIEW_CSS[] = ":/tooltip_view/tooltip_view.css";

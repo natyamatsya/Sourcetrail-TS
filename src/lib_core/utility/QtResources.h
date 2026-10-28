@@ -21,23 +21,12 @@ public:
 	static const char BOOKMARK_VIEW_BOOKMARK_EDIT_BOOKMARK_ICON[];
 
 	static const char CODE_VIEW_CSS[];
-	static const char CODE_VIEW_ARROW_DOWN[];
 	static const char CODE_VIEW_ARROW_LEFT[];
 	static const char CODE_VIEW_ARROW_RIGHT[];
-	static const char CODE_VIEW_ARROW_UP[];
-	static const char CODE_VIEW_BUTTON_BACKGROUND[];
 	static const char CODE_VIEW_EDIT[];
-	static const char CODE_VIEW_FILE[];
-	static const char CODE_VIEW_LIST[];
-	static const char CODE_VIEW_MAXIMIZE_ACTIVE[];
-	static const char CODE_VIEW_MAXIMIZE_INACTIVE[];
 	static const char CODE_VIEW_PATTERN_BRIGHT[];
 	static const char CODE_VIEW_PATTERN_DARK[];
 	static const char CODE_VIEW_PATTERN_GREY[];
-	static const char CODE_VIEW_SNIPPET_ACTIVE[];
-	static const char CODE_VIEW_SNIPPET_ARROW_DOWN[];
-	static const char CODE_VIEW_SNIPPET_ARROW_RIGHT[];
-	static const char CODE_VIEW_SNIPPET_INACTIVE[];
 
 	static const char CUSTOM_TRAIL_VIEW_CSS[];
 	static const char CUSTOM_TRAIL_VIEW_CIRCLE[];
@@ -105,12 +94,6 @@ public:
 
 	static const char KEYBOARD_SHORTCUTS_CSS[];
 
-	static const char MAIN_CLOSE_BLACK[];
-	static const char MAIN_CLOSE_GREY[];
-	static const char MAIN_CLOSE_WHITE[];
-	static const char MAIN_FLOAT_BLACK[];
-	static const char MAIN_FLOAT_GREY[];
-	static const char MAIN_FLOAT_WHITE[];
 	static const char MAIN_CSS[];
 	static const char MAIN_SCROLLBAR_CSS[];
 
@@ -136,8 +119,6 @@ public:
 	static const char TABBED_VIEW_ARROW_UP[];
 	static const char TABBED_VIEW_CSS[];
 
-	static const char TABS_VIEW_ADD[];
-	static const char TABS_VIEW_CLOSE[];
 	static const char TABS_VIEW_CSS[];
 
 	static const char TOOLTIP_VIEW_CSS[];
