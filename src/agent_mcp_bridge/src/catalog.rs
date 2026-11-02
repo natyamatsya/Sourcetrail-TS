@@ -524,7 +524,8 @@ for the report.
 an interrupted run (its Keep/Discard dialog). A run that finished is kept without asking: \
 reporting passes straight on (source app), and its summary is the status bar's text \
 (\"Finished indexing: N source files indexed; time; errors\"). Offscreen (headless) an \
-interrupted run is kept too.
+interrupted run is discarded, and the index stays as it was: nobody is asked, and its part \
+would replace a complete index.
   context: modes, mode, reason?, counting, files_to_index, files_to_clear (choosing_mode); progress \
 { started, finished, total, file }, interrupted (preparing..finishing); report { indexed, \
 total_indexed, completed, total, seconds, errors, fatal, interrupted } (reporting); outcome \
