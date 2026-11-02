@@ -12,6 +12,7 @@
 #include <clang/Tooling/CompilationDatabase.h>
 
 #include "FileSystem.h"
+#include <llvm/ADT/ArrayRef.h>	// the ArrayRef xxh3_64bits, in LLVM 22 and 23
 #include <llvm/Support/VirtualFileSystem.h>
 #include <llvm/Support/xxhash.h>
 #endif
@@ -82,7 +83,7 @@ inline std::expected<std::shared_ptr<clang::tooling::CompilationDatabase>, CdbLo
 		}
 	}
 	const std::uint64_t contentHash =
-		llvm::xxh3_64bits(reinterpret_cast<const std::uint8_t*>(content.data()), content.size());
+		llvm::xxh3_64bits(llvm::ArrayRef(reinterpret_cast<const std::uint8_t*>(content.data()), content.size()));
 	{
 		const std::lock_guard<std::mutex> lock(loadedMutex);
 		if (loaded.cdb != nullptr && loaded.path == cdbPath.str() && loaded.contentHash == contentHash)

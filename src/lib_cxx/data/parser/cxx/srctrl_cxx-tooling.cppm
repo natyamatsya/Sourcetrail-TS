@@ -28,6 +28,7 @@ module;
 // merges both BMIs (see tools/modules-migration/repro-gmf-attachment/). Imported below instead.
 #include <clang/Tooling/CompilationDatabase.h>
 #include <clang/Tooling/JSONCompilationDatabase.h>
+#include <llvm/ADT/ArrayRef.h>
 #include <llvm/Support/VirtualFileSystem.h>
 #include <llvm/Support/xxhash.h>
 
