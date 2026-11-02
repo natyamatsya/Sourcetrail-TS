@@ -52,9 +52,13 @@
 #include <csignal>
 #include <iostream>
 
+#ifdef _WIN32
+	#include <Windows.h>
+#endif
+
 void closeConsoleWindow()
 {
-#if BOOST_OS_WINDOWS
+#ifdef _WIN32
 	// Hide the console which Windows creates if Sourcetrail was not started from one:
 	if (HWND consoleWnd = GetConsoleWindow(); consoleWnd != nullptr) {
 		DWORD consoleOwnerProcessId;
