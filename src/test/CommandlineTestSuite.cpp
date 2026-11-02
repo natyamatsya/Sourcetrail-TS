@@ -83,6 +83,33 @@ TEST_CASE("command line")
 		REQUIRE(parser.getError().find("No project file given") != std::string::npos);
 	}
 
+	SECTION("a command accepts --user-data-dir after it, as before it")
+	{
+		// `index --user-data-dir <dir>` was an unknown option; only SOURCETRAIL_USER_DATA_DIR (or the
+		// option before the command) worked. main.cpp reads it before any command is parsed.
+		for (const std::vector<std::string>& args:
+			 {std::vector<std::string>{"index", "--user-data-dir", "/tmp/profile", "--full"},
+			  std::vector<std::string>{"index", "--full", "--user-data-dir=/tmp/profile"},
+			  std::vector<std::string>{"merge", "--user-data-dir", "/tmp/profile"}})
+		{
+			std::stringstream redStream;
+			auto* oldErr = std::cerr.rdbuf(redStream.rdbuf());
+			commandline::CommandLineParser parser("2");
+			std::vector<std::string> mutableArgs = args;
+			parser.preparse(mutableArgs);
+			parser.parse();
+			std::cerr.rdbuf(oldErr);
+
+			INFO(args.front() << ": " << redStream.str() << parser.getError());
+			REQUIRE(redStream.str().find("user-data-dir") == std::string::npos);
+			if (args.front() == "index")
+			{
+				REQUIRE_FALSE(parser.exitApplication());
+				REQUIRE(parser.getError().find("No project file given") != std::string::npos);
+			}
+		}
+	}
+
 	SECTION("a command's failure is the process's exit code, its help is not")
 	{
 		std::stringstream redStream;

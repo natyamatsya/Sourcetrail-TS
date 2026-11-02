@@ -17,6 +17,9 @@ struct IndexOpts
 	std::string shard;
 	std::string shard_output;
 	std::string project_file;
+	// Read before any command is parsed (main.cpp, setupAppDirectories); accepted here so it may
+	// follow the command as well as precede it.
+	std::string user_data_dir;
 
 	static constexpr std::array shorts = {
 		std::pair{'i', std::string_view{"incomplete"}}, std::pair{'f', std::string_view{"full"}}};
@@ -26,7 +29,9 @@ struct IndexOpts
 		std::pair{std::string_view{"full"}, std::string_view{"Index full project (omit to only index new/changed files)"}},
 		std::pair{std::string_view{"shard"}, std::string_view{"Distributed indexing: index only the i-th of N stripes (i/N, 1-based; requires --full). Merge with the 'merge' command"}},
 		std::pair{std::string_view{"shard-output"}, std::string_view{"Output path for the shard DB (default: <project>.shard<i>of<N>.srctrl.db)"}},
-		std::pair{std::string_view{"project-file"}, std::string_view{"Project file to index (.srctrl.toml)"}}};
+		std::pair{std::string_view{"project-file"}, std::string_view{"Project file to index (.srctrl.toml)"}},
+		std::pair{std::string_view{"user-data-dir"},
+			std::string_view{"Keep settings and logs in this directory instead of the per-user one (as before the command)"}}};
 };
 
 class CommandlineCommandIndex: public CommandlineCommand

@@ -17,6 +17,7 @@ struct MergeOpts
 	std::vector<std::string> shard_dbs;
 	std::string output;
 	bool allow_partial = false;
+	std::string user_data_dir;	// read before parsing (main.cpp); accepted after the command too
 
 	static constexpr std::array shorts = {std::pair{'o', std::string_view{"output"}}};
 	static constexpr std::array<std::string_view, 2> positionals = {"project-file", "shard-dbs"};
@@ -26,7 +27,9 @@ struct MergeOpts
 		std::pair{std::string_view{"shard-dbs"}, std::string_view{"Shard DB files to merge (2 or more)"}},
 		std::pair{std::string_view{"output"}, std::string_view{"Output DB path (default: the project's DB)"}},
 		std::pair{std::string_view{"allow-partial"},
-			std::string_view{"Merge even if the shard set is incomplete/inconsistent"}}};
+			std::string_view{"Merge even if the shard set is incomplete/inconsistent"}},
+		std::pair{std::string_view{"user-data-dir"},
+			std::string_view{"Keep settings and logs in this directory instead of the per-user one (as before the command)"}}};
 };
 
 //! Combines shard DBs produced by `index --full --shard i/N` into one project DB.

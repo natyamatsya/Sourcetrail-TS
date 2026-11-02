@@ -23,7 +23,8 @@ struct meta<commandline::IndexOpts>
 {
 	using T = commandline::IndexOpts;
 	static constexpr auto value = object("incomplete", &T::incomplete, "full", &T::full, "shard",
-		&T::shard, "shard-output", &T::shard_output, "project-file", &T::project_file);
+		&T::shard, "shard-output", &T::shard_output, "project-file", &T::project_file,
+		"user-data-dir", &T::user_data_dir);
 };
 }	 // namespace glz
 

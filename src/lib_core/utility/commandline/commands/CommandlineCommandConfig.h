@@ -20,6 +20,7 @@ struct ConfigOpts
 	std::vector<std::string> global_header_search_paths;
 	std::vector<std::string> global_framework_search_paths;
 	bool show = false;
+	std::string user_data_dir;	// read before parsing (main.cpp); accepted after the command too
 
 	static constexpr std::array shorts = {std::pair{'t', std::string_view{"indexer-threads"}},
 		std::pair{'l', std::string_view{"logging-enabled"}},
@@ -32,7 +33,9 @@ struct ConfigOpts
 		std::pair{std::string_view{"verbose-indexer-logging-enabled"}, std::string_view{"Log the AST during indexing <true/false> (slow)"}},
 		std::pair{std::string_view{"global-header-search-paths"}, std::string_view{"Global include paths (repeat or comma-separated)"}},
 		std::pair{std::string_view{"global-framework-search-paths"}, std::string_view{"Global framework paths (repeat or comma-separated)"}},
-		std::pair{std::string_view{"show"}, std::string_view{"Display all settings"}}};
+		std::pair{std::string_view{"show"}, std::string_view{"Display all settings"}},
+		std::pair{std::string_view{"user-data-dir"},
+			std::string_view{"Keep settings and logs in this directory instead of the per-user one (as before the command)"}}};
 };
 
 class CommandlineCommandConfig: public CommandlineCommand
