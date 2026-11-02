@@ -3,6 +3,7 @@
 #include <algorithm>
 #include <chrono>
 #include <cstring>
+#include <future>
 #include <memory>
 #include <random>
 #include <string>
@@ -218,14 +219,25 @@ TEST_CASE("ipc garbage collector outlives a holder of its lock")
 		IpcSharedMemory holder(memName, 65536, OPEN_OR_CREATE);
 		IpcSharedMemoryGarbageCollector collector(memName);
 		{
-			const IpcSharedMemory::ScopedAccess held(&holder);
+			// Held on a thread of its own, as by another process: a Windows mutex lets the
+			// thread that owns it lock it again, so held here the collector would get it.
+			std::promise<void> held;
+			std::promise<void> release;
+			std::thread holdingThread([&holder, &held, releasing = release.get_future()]() {
+				const IpcSharedMemory::ScopedAccess access(&holder);
+				held.set_value();
+				releasing.wait();
+			});
+			held.get_future().wait();
 
 			const IpcSharedMemoryGarbageCollector::UpdateResult updated = collector.update();
-			REQUIRE_FALSE(updated);
-			REQUIRE(updated.error().code == IpcGarbageCollectorErrorCode::SharedMemoryUnavailable);
-
 			collector.run(uuid);	// its first updates fail: the process lives on
 			std::this_thread::sleep_for(std::chrono::milliseconds(1500));
+			release.set_value();
+			holdingThread.join();
+
+			REQUIRE_FALSE(updated);
+			REQUIRE(updated.error().code == IpcGarbageCollectorErrorCode::SharedMemoryUnavailable);
 		}
 
 		// The lock is free: a later update gets through.
