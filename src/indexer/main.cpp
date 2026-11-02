@@ -32,7 +32,7 @@
 	#endif
 #endif
 
-#if BOOST_OS_WINDOWS
+#ifdef _WIN32
 	#include <Windows.h>
 	#include <TlHelp32.h>
 #else
@@ -76,7 +76,7 @@ void setupLogging(const FilePath& logFilePath)
 // before this line. Windows: the parent's process handle, opened by its id.
 InterprocessIndexer::ParentAlive watchParent()
 {
-#if BOOST_OS_WINDOWS
+#ifdef _WIN32
 	DWORD parentId = 0;
 	if (const HANDLE snapshot = CreateToolhelp32Snapshot(TH32CS_SNAPPROCESS, 0); snapshot != INVALID_HANDLE_VALUE)
 	{
@@ -111,7 +111,7 @@ InterprocessIndexer::ParentAlive watchParent()
 
 void suppressCrashMessage()
 {
-#if BOOST_OS_WINDOWS
+#ifdef _WIN32
 	SetErrorMode(SEM_FAILCRITICALERRORS | SEM_NOGPFAULTERRORBOX);
 #endif
 }
