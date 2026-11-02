@@ -4,11 +4,10 @@
 #include <chrono>
 #include <cstring>
 #include <memory>
+#include <random>
 #include <string>
 #include <thread>
 #include <vector>
-
-#include <unistd.h>
 
 #include <flatbuffers/flatbuffers.h>
 
@@ -211,7 +210,8 @@ bool listsInstance(IpcSharedMemory& memory, const std::string& uuid)
 TEST_CASE("ipc garbage collector outlives a holder of its lock")
 {
 	using enum IpcSharedMemory::AccessMode;
-	const std::string memName = "gc_ipc_test_" + std::to_string(::getpid());
+	// Its own name: test runs in parallel share the machine's shared memory.
+	const std::string memName = "gc_ipc_test_" + std::to_string(std::random_device {}());
 	const std::string uuid = "gc-test-instance";
 	IpcSharedMemory::deleteSharedMemory(memName);
 	{
