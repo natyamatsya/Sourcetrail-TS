@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<!-- Opts an executable into paths longer than MAX_PATH (260 characters). Windows honours it only
+     where the machine allows long paths too (LongPathsEnabled, Windows 10 1607 and later). -->
+<assembly xmlns="urn:schemas-microsoft-com:asm.v1" manifestVersion="1.0">
+  <application xmlns="urn:schemas-microsoft-com:asm.v3">
+    <windowsSettings xmlns:ws2="http://schemas.microsoft.com/SMI/2016/WindowsSettings">
+      <ws2:longPathAware>true</ws2:longPathAware>
+    </windowsSettings>
+  </application>
+</assembly>

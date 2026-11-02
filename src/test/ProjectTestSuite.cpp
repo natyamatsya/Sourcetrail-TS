@@ -14,6 +14,10 @@
 #include "StorageConnection.h"
 #include "TestTempDirectory.h"
 
+#ifdef _WIN32
+#include <windows.h>
+#endif
+
 namespace
 {
 // A project with an index and what an indexing run left behind.
@@ -166,11 +170,34 @@ public:
 };
 }	 // namespace
 
+namespace
+{
+// Whether this process may open paths longer than MAX_PATH: on Windows only where both its
+// manifest (setLongPathAware) and the machine (LongPathsEnabled) allow them.
+bool longPathsEnabled()
+{
+#ifdef _WIN32
+	using RtlAreLongPathsEnabled = BOOLEAN(WINAPI*)();
+	const HMODULE ntdll = GetModuleHandleW(L"ntdll.dll");
+	const auto enabled = ntdll != nullptr
+		? reinterpret_cast<RtlAreLongPathsEnabled>(GetProcAddress(ntdll, "RtlAreLongPathsEnabled"))
+		: nullptr;
+	return enabled != nullptr && enabled() != FALSE;
+#else
+	return true;
+#endif
+}
+}	 // namespace
+
 // A project whose index files cannot be made (a 240-character name): the reindex
 // failed with "std::exception" behind a progress dialog that stayed up, and asked for
 // a reindex again.
 TEST_CASE("a refresh no reindex can help ends at once, with the dialogs gone and the reason")
 {
+	if (!longPathsEnabled())
+	{
+		SKIP("the project file's path is longer than MAX_PATH, and long paths are not enabled here");
+	}
 	const TestTempDirectory directory {"ProjectTestSuite"};
 	const FilePath settingsPath(directory.getFilePath(std::string(240, 'p') + ".srctrl.toml"));
 	std::ofstream {settingsPath.str()} << "version = '8'\n";

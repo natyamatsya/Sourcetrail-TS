@@ -33,6 +33,7 @@ if (BUILD_CXX_LANGUAGE_PACKAGE)
 endif()
 
 setDefaultTargetOptions(Sourcetrail_test)
+setLongPathAware(Sourcetrail_test)
 
 # SOURCETRAIL_TURSO_CONCURRENT is now a global define; no per-file scoping needed.
 

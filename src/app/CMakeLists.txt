@@ -7,6 +7,7 @@ add_executable(Sourcetrail
 	Sourcetrail.rc
 )
 setDefaultTargetOptions(Sourcetrail)
+setLongPathAware(Sourcetrail)
 
 # main.cpp includes the now self-contained lib_cxx package headers (LanguagePackageCxx, the prebuild
 # runners), which reach clang's Sema.h -- and Qt's `emit` macro breaks its `emit` member. The app

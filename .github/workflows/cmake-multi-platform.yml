@@ -367,6 +367,15 @@ jobs:
       - name: Install build tools
         run: choco install ninja --no-progress
 
+      # The executables are long-path aware (cmake/windows/longPathAware.manifest),
+      # which Windows honours only where the machine enables long paths too: the
+      # tests with paths over MAX_PATH then run instead of skipping.
+      - name: Enable long paths
+        shell: pwsh
+        run: |
+          Set-ItemProperty -Path 'HKLM:\SYSTEM\CurrentControlSet\Control\FileSystem' -Name LongPathsEnabled -Value 1 -Type DWord
+          (Get-ItemProperty 'HKLM:\SYSTEM\CurrentControlSet\Control\FileSystem').LongPathsEnabled
+
       - name: Set up MSVC
         uses: ilammy/msvc-dev-cmd@v1
 

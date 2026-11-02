@@ -211,3 +211,12 @@ function(setDefaultTargetOptions targetName)
 		setMsvcTargetOptions(${targetName})
 	endif()
 endfunction()
+
+# Windows: lets an executable open paths longer than MAX_PATH (a project deep in a checkout, a
+# generated file's long name). The manifest only opts in: the machine must allow long paths too
+# (LongPathsEnabled). MSVC's linker merges a .manifest source into the one it embeds.
+function(setLongPathAware targetName)
+	if (MSVC)
+		target_sources(${targetName} PRIVATE "${CMAKE_SOURCE_DIR}/cmake/windows/longPathAware.manifest")
+	endif()
+endfunction()
