@@ -420,11 +420,20 @@ TEST_CASE("source group cxx cdb hashes a file compiled twice once, the same each
 	writeDatabase("-DSTATIC", "-fPIC");
 	const auto hashes = SourceGroupCxxCdb(sourceGroupSettings).getAllSourceFileCommandHashes();
 	REQUIRE(hashes.size() == 1);
+	// Each rewrite below keeps the size, and gets the first one's modification time back, as a
+	// rewrite within one timestamp tick does (on Windows it did): the loaded database's cache
+	// kept the old commands for it.
+	const std::filesystem::file_time_type firstWritten =
+		std::filesystem::last_write_time(directory / "compile_commands.json");
+	const auto rewriteDatabase = [&](const std::string& firstFlag, const std::string& secondFlag) {
+		writeDatabase(firstFlag, secondFlag);
+		std::filesystem::last_write_time(directory / "compile_commands.json", firstWritten);
+	};
 
 	// The commands' order does not matter; a changed command does.
-	writeDatabase("-fPIC", "-DSTATIC");
+	rewriteDatabase("-fPIC", "-DSTATIC");
 	REQUIRE(SourceGroupCxxCdb(sourceGroupSettings).getAllSourceFileCommandHashes() == hashes);
-	writeDatabase("-fPIC", "-DSHARED");
+	rewriteDatabase("-fPIC", "-DSHARED");
 	const auto changed = SourceGroupCxxCdb(sourceGroupSettings).getAllSourceFileCommandHashes();
 	REQUIRE(changed.size() == 1);
 	REQUIRE(changed.front().second != hashes.front().second);

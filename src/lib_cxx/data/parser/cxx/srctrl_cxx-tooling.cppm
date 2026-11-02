@@ -12,6 +12,7 @@ module;
 #include <cstddef>
 #include <expected>
 #include <cstdint>
+#include <fstream>
 #include <memory>
 #include <mutex>
 #include <set>
@@ -28,6 +29,7 @@ module;
 #include <clang/Tooling/CompilationDatabase.h>
 #include <clang/Tooling/JSONCompilationDatabase.h>
 #include <llvm/Support/VirtualFileSystem.h>
+#include <llvm/Support/xxhash.h>
 
 #include "Platform.h"
 #include "ToolChain.h"

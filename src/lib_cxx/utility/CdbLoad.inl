@@ -5,6 +5,7 @@
 #ifndef SRCTRL_MODULE_PURVIEW
 #include <filesystem>
 #include <format>
+#include <fstream>
 #include <mutex>
 #include <system_error>
 
@@ -12,6 +13,7 @@
 
 #include "FileSystem.h"
 #include <llvm/Support/VirtualFileSystem.h>
+#include <llvm/Support/xxhash.h>
 #endif
 
 namespace utility
@@ -50,33 +52,49 @@ inline std::expected<std::shared_ptr<clang::tooling::CompilationDatabase>, CdbLo
 
 	// One refresh loads the database several times (the check, the files to index, the commands, the
 	// command hashes), and parsing a large one takes seconds each time: the last database loaded is
-	// kept while its file is unchanged (same size and modification time).
+	// kept while its content is unchanged. Its size and modification time could not tell: a rewrite
+	// of the same size within one timestamp tick (a flag swapped for another of its length) kept the
+	// old commands. Hashing the file costs a fraction of parsing it.
 	struct Loaded
 	{
 		std::string path;
-		std::uintmax_t size = 0;
-		std::filesystem::file_time_type modified;
+		std::uint64_t contentHash = 0;
 		std::shared_ptr<clang::tooling::CompilationDatabase> cdb;
 	};
 	static std::mutex loadedMutex;
 	static Loaded loaded;
-	std::error_code ec;
-	const std::uintmax_t size = std::filesystem::file_size(cdbPath.getPath(), ec);
-	const std::filesystem::file_time_type modified =
-		ec ? std::filesystem::file_time_type() : std::filesystem::last_write_time(cdbPath.getPath(), ec);
-	if (!ec)
+
+	std::string content;
+	{
+		std::ifstream file(cdbPath.getPath(), std::ios::binary | std::ios::ate);
+		const std::streamoff length = file ? static_cast<std::streamoff>(file.tellg()) : -1;
+		if (length < 0)
+		{
+			return std::unexpected(CdbLoadError{
+				ParseFailed, std::format("The compilation database \"{}\" cannot be opened.", cdbPath.str())});
+		}
+		content.resize(static_cast<std::size_t>(length));
+		file.seekg(0);
+		if (!file.read(content.data(), length))
+		{
+			return std::unexpected(CdbLoadError{
+				ParseFailed, std::format("The compilation database \"{}\" cannot be read.", cdbPath.str())});
+		}
+	}
+	const std::uint64_t contentHash =
+		llvm::xxh3_64bits(reinterpret_cast<const std::uint8_t*>(content.data()), content.size());
 	{
 		const std::lock_guard<std::mutex> lock(loadedMutex);
-		if (loaded.cdb != nullptr && loaded.path == cdbPath.str() && loaded.size == size &&
-			loaded.modified == modified)
+		if (loaded.cdb != nullptr && loaded.path == cdbPath.str() && loaded.contentHash == contentHash)
 		{
 			return loaded.cdb;
 		}
 	}
 
 	std::string errorString;
-	std::unique_ptr<clang::tooling::CompilationDatabase> cdb = clang::tooling::JSONCompilationDatabase::loadFromFile(
-		cdbPath.str(), errorString, clang::tooling::JSONCommandLineSyntax::AutoDetect);
+	std::unique_ptr<clang::tooling::CompilationDatabase> cdb = clang::tooling::JSONCompilationDatabase::loadFromBuffer(
+		content, errorString, clang::tooling::JSONCommandLineSyntax::AutoDetect);
+	content = std::string();	// the database keeps its own copy
 	if (cdb == nullptr)
 	{
 		return std::unexpected(CdbLoadError{
@@ -93,10 +111,9 @@ inline std::expected<std::shared_ptr<clang::tooling::CompilationDatabase>, CdbLo
 
 	std::shared_ptr<clang::tooling::CompilationDatabase> expanded(
 		expandResponseFiles(std::move(cdb), llvm::vfs::getRealFileSystem()));
-	if (!ec)
 	{
 		const std::lock_guard<std::mutex> lock(loadedMutex);
-		loaded = Loaded{cdbPath.str(), size, modified, expanded};
+		loaded = Loaded{cdbPath.str(), contentHash, expanded};
 	}
 	return expanded;
 }
