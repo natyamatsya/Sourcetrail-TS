@@ -20,6 +20,7 @@ public:
 	void load() override;
 	void save() override;
 	void refresh() override;
+	bool check() override;
 
 	std::vector<FilePath> getFilePaths() const override;
 	QString getFileNamesTitle() const override;

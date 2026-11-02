@@ -35,6 +35,22 @@ inline void CxxDestructorCallRecorder::record(const clang::FunctionDecl* functio
 	// "How to get information about call to destructors in Clang LibTooling?"
 	// https://stackoverflow.com/questions/59610156/how-to-get-information-about-call-to-destructors-in-clang-libtooling
 
+	// Clang runs no CFG analysis over code it reported errors in, and a CFG built from what Sema
+	// gave up on reads definitions that are not there: the implicit destructor of a class with a
+	// member of incomplete type (a header missing, a template Sema stopped instantiating after a
+	// fatal error) dereferenced the member's absent definition and crashed the indexer. Such a
+	// function -- invalid itself, or a member of an invalid class -- records no destructor calls;
+	// valid code beside it still does.
+	if (functionDecl->isInvalidDecl() || functionDecl->getBody() == nullptr)
+	{
+		return;
+	}
+	if (const auto* method = clang::dyn_cast<clang::CXXMethodDecl>(functionDecl);
+		method != nullptr && method->getParent()->isInvalidDecl())
+	{
+		return;
+	}
+
 	if (functionDecl->isThisDeclarationADefinition())
 	{
 		clang::CFG::BuildOptions buildOptions;

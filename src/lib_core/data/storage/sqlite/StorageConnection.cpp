@@ -1,6 +1,9 @@
 #include "StorageConnection.h"
 
+#include <filesystem>
 #include <format>
+#include <string>
+#include <system_error>
 
 #include "BorrowedSqliteConnection.h"
 #ifndef SRCTRL_MODULE_BUILD
@@ -14,9 +17,38 @@
 import srctrl.file;
 #endif
 
+namespace
+{
+// Why the database file cannot be a database, as the file system says it: SQLite's
+// SQLITE_CANTOPEN names no reason. Empty when the path itself is no obstacle -- a missing file is
+// created, and whatever else SQLite has to say about the file it says itself.
+std::string unopenableReason(const FilePath& dbFilePath)
+{
+	std::error_code ec;
+	const std::filesystem::file_status status = std::filesystem::status(dbFilePath.getPath(), ec);
+	if (ec && ec != std::errc::no_such_file_or_directory)
+	{
+		return ec.message();	// a symlink loop, a name too long, a parent without permission
+	}
+	if (std::filesystem::is_directory(status))
+	{
+		return "it is a directory";
+	}
+	return {};
+}
+}	 // namespace
+
 StorageConnection::StorageConnection(const FilePath& dbFilePath)
 	: m_dbFilePath(dbFilePath.getCanonical())
 {
+	if (const std::string reason = unopenableReason(m_dbFilePath); !reason.empty())
+	{
+		const std::string message =
+			std::format("Cannot open the database file \"{}\": {}", m_dbFilePath.str(), reason);
+		LOG_ERROR(message);
+		throw CppSQLite3Exception(SQLITE_CANTOPEN, message);
+	}
+
 	if (!m_dbFilePath.getParentDirectory().empty() && !m_dbFilePath.getParentDirectory().exists())
 	{
 		if (const auto created = FileSystem::createDirectories(m_dbFilePath.getParentDirectory()); !created)

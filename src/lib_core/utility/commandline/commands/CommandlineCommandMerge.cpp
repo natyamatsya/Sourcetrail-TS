@@ -34,7 +34,8 @@ struct meta<commandline::MergeOpts>
 {
 	using T = commandline::MergeOpts;
 	static constexpr auto value = object("project-file", &T::project_file, "shard-dbs",
-		&T::shard_dbs, "output", &T::output, "allow-partial", &T::allow_partial);
+		&T::shard_dbs, "output", &T::output, "allow-partial", &T::allow_partial,
+		"user-data-dir", &T::user_data_dir);
 };
 }	 // namespace glz
 

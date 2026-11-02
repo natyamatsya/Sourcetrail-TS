@@ -92,6 +92,34 @@ TEST_CASE("ProjectDetector refuses a folder that does not exist, and a file")
 	CHECK(file.error() == ProjectDetectionError::NotAFolder);
 }
 
+#if !defined(_WIN32)
+TEST_CASE("ProjectDetector says a folder it may not read is unreadable, not missing")
+{
+	// New Project on an unreadable folder said "the folder does not exist".
+	const TestTempDirectory temp{"detectUnreadable"};
+	fs::create_directories(temp.getPath() / "locked" / "inner");
+	fs::permissions(temp.getPath() / "locked", fs::perms::none);
+	struct RestorePermissions	// so the temp directory can be removed
+	{
+		fs::path path;
+		~RestorePermissions()
+		{
+			std::error_code error;
+			fs::permissions(path, fs::perms::owner_all, error);
+		}
+	} restore{temp.getPath() / "locked"};
+
+	const auto locked{detectProject(generic(temp.getPath() / "locked"))};
+	REQUIRE(!locked.has_value());
+	CHECK(locked.error() == ProjectDetectionError::FolderUnreadable);
+
+	const auto under{detectProject(generic(temp.getPath() / "locked" / "inner"))};
+	REQUIRE(!under.has_value());
+	CHECK(under.error() == ProjectDetectionError::FolderUnreadable);
+	CHECK(to_std_sv(under.error()).find("permission denied") != std::string_view::npos);
+}
+#endif
+
 TEST_CASE("ProjectDetector names the project after the folder, as a valid project name")
 {
 	const TestTempDirectory temp{"detectName"};

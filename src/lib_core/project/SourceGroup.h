@@ -34,6 +34,7 @@ enum class PrepareIndexingError : std::uint8_t
 {
 	SourcePathMissing,		  // a required source/build input no longer exists
 	ConfigurationIncomplete,  // required configuration is missing or could not be resolved
+	InputUnusable,			  // a required input exists but cannot be read, or holds nothing to index
 };
 
 constexpr std::string_view to_std_sv(PrepareIndexingError error) noexcept
@@ -45,6 +46,8 @@ constexpr std::string_view to_std_sv(PrepareIndexingError error) noexcept
 		return "a required source or build path does not exist";
 	case ConfigurationIncomplete:
 		return "the source group configuration is incomplete";
+	case InputUnusable:
+		return "a source group input cannot be read or holds nothing to index";
 	}
 	return "unknown error";
 }

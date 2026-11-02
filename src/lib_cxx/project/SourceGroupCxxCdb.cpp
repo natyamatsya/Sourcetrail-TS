@@ -20,10 +20,17 @@
 #ifndef SRCTRL_MODULE_BUILD
 #include "utility.h"
 #endif
+#include "logging.h"
 #include "utilitySourceGroupCxx.h"
 #ifndef SRCTRL_MODULE_BUILD
 #include "utilityString.h"
 #endif
+
+#include <filesystem>
+#include <format>
+#include <string>
+#include <unordered_map>
+#include <unordered_set>
 
 #include <clang/Tooling/JSONCompilationDatabase.h>
 #include <clang/Tooling/Tooling.h>
@@ -38,23 +45,146 @@ import srctrl.settings;
 import srctrl.utility;
 #endif
 
+namespace
+{
+// The file a compile command compiles, as IndexerCommandCxx::getSourceFilesFromCDB names it: its
+// file against its directory (and that against the database's), normalized lexically as clang
+// normalizes the database's files, then canonical. Resolved through the file system instead, a
+// command whose directory is gone ("nodir/../main.cpp") named no file, and the file was dropped
+// without a word instead of failing with its missing working directory.
+//
+// Each distinct path is made canonical once: a large database names its files over and over, and a
+// realpath per command took seconds.
+class CommandSourcePaths
+{
+public:
+	explicit CommandSourcePaths(const FilePath& cdbPath)
+		: m_cdbDirectory(cdbPath.getParentDirectory().getPath())
+	{
+	}
+
+	const FilePath& operator()(const clang::tooling::CompileCommand& command)
+	{
+		std::filesystem::path path(command.Filename);
+		if (!path.is_absolute())
+		{
+			path = std::filesystem::path(command.Directory) / path;
+		}
+		if (!path.is_absolute())
+		{
+			path = m_cdbDirectory / path;
+		}
+		const auto [it, inserted] = m_canonicalPaths.try_emplace(path.lexically_normal().string());
+		if (inserted)
+		{
+			it->second = FilePath(it->first).makeCanonical();
+		}
+		return it->second;
+	}
+
+private:
+	const std::filesystem::path m_cdbDirectory;
+	std::unordered_map<std::string, FilePath> m_canonicalPaths;
+};
+
+// The directory a compile command runs in. The format wants it absolute; a relative one (".") is
+// taken against the database's directory, as its files are, not the indexer's working directory.
+FilePath commandDirectory(const clang::tooling::CompileCommand& command, const FilePath& cdbPath)
+{
+	const std::filesystem::path directory(command.Directory);
+	if (directory.empty() || directory.is_absolute())
+	{
+		return FilePath(command.Directory);
+	}
+	std::filesystem::path normal = (cdbPath.getParentDirectory().getPath() / directory).lexically_normal();
+	if (!normal.has_filename())
+	{
+		normal = normal.parent_path();	// "dir/." normalizes to "dir/"
+	}
+	return FilePath(normal.string());
+}
+}	 // namespace
+
 SourceGroupCxxCdb::SourceGroupCxxCdb(std::shared_ptr<SourceGroupSettingsCxxCdb> settings)
 	: m_settings(settings)
 {
 }
 
+std::expected<void, utility::CdbLoadError> SourceGroupCxxCdb::checkCompilationDatabase(const FilePath& cdbPath)
+{
+	const auto cdb = utility::loadCDB(cdbPath);
+	if (!cdb)
+	{
+		return std::unexpected(cdb.error());
+	}
+
+	std::vector<FilePath> missingFiles;
+	std::size_t fileCount = 0;
+	for (const FilePath& path: IndexerCommandCxx::getSourceFilesFromCDB(cdb.value(), cdbPath))
+	{
+		++fileCount;
+		if (!path.exists())
+		{
+			missingFiles.push_back(path);
+		}
+	}
+	if (missingFiles.size() < fileCount)
+	{
+		if (!missingFiles.empty())
+		{
+			LOG_WARNING(std::format(
+				"{} of the {} source files in the compilation database \"{}\" do not exist, e.g. \"{}\".",
+				missingFiles.size(),
+				fileCount,
+				cdbPath.str(),
+				missingFiles.front().str()));
+		}
+		return {};
+	}
+
+	// Nothing to index. Name a few of the files, and a working directory that is gone (a stale
+	// database's build directory): the reason its relative files resolve to nothing.
+	std::string files;
+	for (std::size_t i = 0; i < missingFiles.size() && i < 3; ++i)
+	{
+		files += std::format("\n  {}", missingFiles[i].str());
+	}
+	if (missingFiles.size() > 3)
+	{
+		files += std::format("\n  ... and {} more", missingFiles.size() - 3);
+	}
+	std::string directories;
+	for (const clang::tooling::CompileCommand& command: cdb.value()->getAllCompileCommands())
+	{
+		if (const FilePath directory(command.Directory); !directory.empty() && !directory.exists())
+		{
+			directories = std::format(
+				"\nThe working directory of its commands does not exist: {}", directory.str());
+			break;
+		}
+	}
+	return std::unexpected(utility::CdbLoadError{
+		utility::CdbLoadError::Code::NoSourceFiles,
+		std::format(
+			"None of the source files in the compilation database \"{}\" exists:{}{}",
+			cdbPath.str(),
+			files,
+			directories)});
+}
+
 std::expected<void, PrepareIndexingError> SourceGroupCxxCdb::prepareIndexing()
 {
-	FilePath cdbPath = m_settings->getCompilationDatabasePathExpandedAndAbsolute();
-	if (!cdbPath.empty() && !cdbPath.exists())
+	const FilePath cdbPath = m_settings->getCompilationDatabasePathExpandedAndAbsolute();
+	if (const auto checked = checkCompilationDatabase(cdbPath); !checked)
 	{
-		std::string error =
-			"Can't refresh project. The compilation database of the project does not exist "
-			"anymore: " +
-			cdbPath.str();
+		const std::string error = "Can't refresh project. " + utility::describe(checked.error());
+		LOG_ERROR(error);
 		MessageStatus(error, true).dispatch();
 		Application::getInstance()->showNotice(error, {"Ok"});
-		return std::unexpected(PrepareIndexingError::SourcePathMissing);
+		return std::unexpected(
+			checked.error().code == utility::CdbLoadError::Code::PathMissing
+				? PrepareIndexingError::SourcePathMissing
+				: PrepareIndexingError::InputUnusable);
 	}
 	return {};
 }
@@ -129,18 +259,18 @@ std::shared_ptr<IndexerCommandProvider> SourceGroupCxxCdb::getIndexerCommandProv
 		bool toIndex = false;
 	};
 	std::vector<PreparedCommand> prepared;
+	// A database can list a command more than once (a build run twice into it, concatenated
+	// fragments): 100 copies of one command indexed the file 100 times. Identical commands -- same
+	// file, directory and flags -- are indexed once. Different commands for one file (a library
+	// compiled for its static and its shared target) stay: the indexer indexes each configuration,
+	// and the file's command hash covers them all.
+	std::unordered_set<std::string> preparedKeys;
+	std::size_t duplicateCount = 0;
 
+	CommandSourcePaths commandSourcePath(cdbPath);
 	for (const clang::tooling::CompileCommand &command : cdb->getAllCompileCommands())
 	{
-		FilePath sourcePath = FilePath(command.Filename).makeCanonical();
-		if (!sourcePath.isAbsolute())
-		{
-			sourcePath = FilePath(command.Directory + '/' + command.Filename).makeCanonical();
-			if (!sourcePath.isAbsolute())
-			{
-				sourcePath = cdbPath.getParentDirectory().getConcatenated(sourcePath).makeCanonical();
-			}
-		}
+		const FilePath& sourcePath = commandSourcePath(command);
 
 		if (sourceFilePaths.contains(sourcePath))
 		{
@@ -160,12 +290,31 @@ std::shared_ptr<IndexerCommandProvider> SourceGroupCxxCdb::getIndexerCommandProv
 			// must be passed explicitly -- without it <filesystem>/<map>/etc. fail.
 			utility::append(commandLine, IndexerCommandCxx::getCompilerFlagsForSysroot(command.CommandLine));
 
-			prepared.push_back(
-				{sourcePath,
-				 FilePath(command.Directory),
-				 utility::concat(commandLine, compilerFlags),
-				 info.filesToIndex.contains(sourcePath)});
+			PreparedCommand preparedCommand{
+				sourcePath,
+				commandDirectory(command, cdbPath),
+				utility::concat(commandLine, compilerFlags),
+				info.filesToIndex.contains(sourcePath)};
+
+			std::string key = preparedCommand.sourcePath.str() + '\0' + preparedCommand.directory.str();
+			for (const std::string& flag: preparedCommand.flags)
+			{
+				key += '\0' + flag;
+			}
+			if (!preparedKeys.insert(std::move(key)).second)
+			{
+				++duplicateCount;
+				continue;
+			}
+			prepared.push_back(std::move(preparedCommand));
 		}
+	}
+	if (duplicateCount > 0)
+	{
+		LOG_WARNING(std::format(
+			"The compilation database \"{}\" lists {} duplicate compile commands; each is indexed once.",
+			cdbPath.str(),
+			duplicateCount));
 	}
 
 	// C++20 modules: build BMIs for the source group's module-interface units (crash-isolated in a
@@ -251,18 +400,10 @@ std::function<void()> SourceGroupCxxCdb::getPreIndexWork(
 		{
 			const std::shared_ptr<clang::tooling::CompilationDatabase> cdb = loadedCdb.value();
 			const std::set<FilePath> sourceFilePaths = getAllSourceFilePaths(cdb);
+			CommandSourcePaths commandSourcePath(cdbPath);
 			for (const clang::tooling::CompileCommand& command: cdb->getAllCompileCommands())
 			{
-				FilePath sourcePath = FilePath(command.Filename).makeCanonical();
-				if (!sourcePath.isAbsolute())
-				{
-					sourcePath = FilePath(command.Directory + '/' + command.Filename).makeCanonical();
-					if (!sourcePath.isAbsolute())
-					{
-						sourcePath =
-							cdbPath.getParentDirectory().getConcatenated(sourcePath).makeCanonical();
-					}
-				}
+				const FilePath& sourcePath = commandSourcePath(command);
 
 				if (sourceFilePaths.find(sourcePath) != sourceFilePaths.end() &&
 					utility::containsIncludePchFlag(command.CommandLine))

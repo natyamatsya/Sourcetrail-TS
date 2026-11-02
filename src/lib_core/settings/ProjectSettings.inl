@@ -20,7 +20,9 @@
 #include "utilityFile.h"
 #include "utilityString.h"
 #include "utilityUuid.h"
+#include <charconv>
 #include <filesystem>
+#include <format>
 #endif
 
 // ODR-safe home for the helper (anonymous namespaces are an ODR trap in headers/inls).
@@ -124,6 +126,40 @@ inline bool ProjectSettings::equalsExceptNameAndLocation(const ProjectSettings& 
 	return true;
 }
 
+inline std::expected<std::size_t, ProjectVersionError> ProjectSettings::checkVersion() const
+{
+	using enum ProjectVersionError::Code;
+	const std::string file = getFilePath().empty() ? std::string("The project") : "The project file \"" + getFilePath().str() + "\"";
+	if (!isValueDefined("version"))
+	{
+		return std::unexpected(ProjectVersionError{
+			Missing, std::format("{} has no version: it is not a Sourcetrail project file, or it is damaged.", file)});
+	}
+
+	const std::string text = utility::trim(getValue<std::string>("version", ""));
+	std::size_t version = 0;
+	const auto [end, error] = std::from_chars(text.data(), text.data() + text.size(), version);
+	const bool digits = end == text.data() + text.size();
+	const bool tooLarge = error == std::errc::result_out_of_range && digits;	// newer still
+	if (!tooLarge && (error != std::errc() || !digits || version == 0))
+	{
+		return std::unexpected(ProjectVersionError{
+			NotAVersion, std::format("{} has no valid version: \"{}\" is not one.", file, text)});
+	}
+	if (tooLarge || version > VERSION)
+	{
+		return std::unexpected(ProjectVersionError{
+			Newer,
+			std::format(
+				"{} was made by a newer Sourcetrail (project file version {}; this one reads versions up "
+				"to {}). Open it with that Sourcetrail.",
+				file,
+				text,
+				VERSION)});
+	}
+	return version;
+}
+
 inline bool ProjectSettings::reload()
 {
 	return Settings::load(getFilePath());
@@ -172,6 +208,12 @@ inline FilePath ProjectSettings::getBookmarkDBFilePath() const
 
 inline std::string ProjectSettings::getProjectName() const
 {
+	// "<name>.srctrl.toml": the name is what precedes the extension. Without a name the file is
+	// ".srctrl.toml", whose stem a path calls ".srctrl" (a dot file has no extension) -- taken for the
+	// name, an emptied name came back as ".srctrl".
+	const std::string fileName = getFilePath().fileName();
+	if (fileName.ends_with(PROJECT_FILE_EXTENSION))
+		return fileName.substr(0, fileName.size() - PROJECT_FILE_EXTENSION.size());
 	FilePath p = getFilePath().withoutExtension();
 	if (p.extension() == ".srctrl")
 		p = p.withoutExtension();

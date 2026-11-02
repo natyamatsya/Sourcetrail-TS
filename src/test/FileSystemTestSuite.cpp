@@ -1,5 +1,7 @@
 #include "Catch2.hpp"
 
+#include <filesystem>
+#include <fstream>
 #include <string>
 #include <vector>
 
@@ -8,6 +10,7 @@
 #include "utility.h"
 #endif
 #include "Platform.h"
+#include "TestTempDirectory.h"
 
 // Imports come AFTER all textual #includes (include-before-import rule: textual libc++
 // following BMI-merged declarations trips "cannot add 'abi_tag' in a redeclaration").
@@ -157,3 +160,67 @@ TEST_CASE("find symlinked directories")
 
 	REQUIRE(dirs.size() == 2);
 }
+
+#if !defined(_WIN32)
+TEST_CASE("file system answers for a symlink loop instead of throwing")
+{
+	const TestTempDirectory tempDirectory{"FileSystemTestSuite"};
+	const std::filesystem::path loop = tempDirectory.getPath() / "loop";
+	std::filesystem::create_symlink(loop.filename(), loop);
+	const FilePath path(loop.string());
+
+	REQUIRE(FileSystem::getFileByteSize(path) == 0);
+	REQUIRE_FALSE(FileSystem::getLastWriteTime(path).isValid());
+	REQUIRE_FALSE(FileSystem::getFileInfoForPath(path).path.exists());
+	REQUIRE(FileSystem::getDirectSubDirectories(FilePath(tempDirectory.getPath().string())).empty());
+}
+
+TEST_CASE("file system reports a failed rename or copy instead of throwing")
+{
+	const TestTempDirectory tempDirectory{"FileSystemTestSuite"};
+	const FilePath from(tempDirectory.getFilePath("from.txt"));
+	std::ofstream(from.str()) << "x";
+	// Into a directory that does not exist: the call fails, it does not throw.
+	const FilePath to(tempDirectory.getFilePath("missing/to.txt"));
+
+	REQUIRE_FALSE(FileSystem::rename(from, to));
+	REQUIRE_FALSE(FileSystem::copyFile(from, to));
+	REQUIRE(from.recheckExists());
+}
+#endif
+
+#if !defined(_WIN32)
+TEST_CASE("file system lists the files beside a directory it cannot read")
+{
+	// One `chmod 000` subfolder under a source path made the whole source group find 0 files: the
+	// walk's failed step into it ended the walk. Whatever the listing order, the files of the other
+	// directories are found now.
+	const TestTempDirectory tempDirectory{"FileSystemTestSuite"};
+	const std::filesystem::path root = tempDirectory.getPath();
+	std::filesystem::create_directories(root / "unreadable" / "inner");
+	std::ofstream(root / "unreadable" / "inner" / "hidden.cpp") << "";
+	for (int i = 0; i < 20; ++i)
+	{
+		std::filesystem::create_directories(root / std::to_string(i));
+		std::ofstream(root / std::to_string(i) / "file.cpp") << "";
+	}
+	std::filesystem::permissions(root / "unreadable", std::filesystem::perms::none);
+	struct RestorePermissions	// so the temp directory can be removed
+	{
+		std::filesystem::path path;
+		~RestorePermissions()
+		{
+			std::error_code ec;
+			std::filesystem::permissions(path, std::filesystem::perms::owner_all, ec);
+		}
+	} restore{root / "unreadable"};
+
+	const std::vector<FileInfo> infos =
+		FileSystem::getFileInfosFromPaths({FilePath(root.string())}, {".cpp"});
+	REQUIRE(infos.size() == 20);
+	REQUIRE(isInFileInfos(infos, (root / "0" / "file.cpp").string()));
+	REQUIRE(isInFileInfos(infos, (root / "19" / "file.cpp").string()));
+
+	REQUIRE(FileSystem::getFilePathsFromDirectory(FilePath(root.string()), {".cpp"}).size() == 20);
+}
+#endif

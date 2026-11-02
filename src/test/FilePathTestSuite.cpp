@@ -4,6 +4,10 @@
 #include "FilePath.h"
 #endif
 #include "Platform.h"
+#include "TestTempDirectory.h"
+
+#include <filesystem>
+#include <string>
 
 // Imports come AFTER all textual #includes (include-before-import rule: textual libc++
 // following BMI-merged declarations trips "cannot add 'abi_tag' in a redeclaration").
@@ -256,3 +260,32 @@ TEST_CASE("file path is invalid for absolute and relative paths with invalid cha
 	REQUIRE(!FilePath("data/FilePathTestSuite/container:app").isValid());
 	REQUIRE(!FilePath("data/FilePathTestSuite/container:app").makeAbsolute().isValid());
 }
+
+#if !defined(_WIN32)
+TEST_CASE("file path answers for a symlink loop instead of throwing")
+{
+	// `ln -s x x`: every lookup through it fails with ELOOP. The throwing std::filesystem overloads
+	// under exists() (noexcept) and makeCanonical() terminated the app on a database path like it.
+	const TestTempDirectory tempDirectory{"FilePathTestSuite"};
+	const std::filesystem::path loop = tempDirectory.getPath() / "loop.srctrl.db";
+	std::filesystem::create_symlink(loop.filename(), loop);
+
+	const FilePath path(loop.string());
+
+	REQUIRE_FALSE(path.exists());
+	REQUIRE_FALSE(path.isDirectory());
+	REQUIRE(path.getCanonical().str() == path.str());
+	REQUIRE(path == FilePath(loop.string()));
+	REQUIRE(FilePath(loop.string()).getRelativeTo(FilePath(tempDirectory.getPath().string())).str() ==
+			"loop.srctrl.db");
+}
+
+TEST_CASE("file path answers for a name too long instead of throwing")
+{
+	const FilePath path("/" + std::string(5000, 'a'));
+
+	REQUIRE_FALSE(path.exists());
+	REQUIRE_FALSE(path.isDirectory());
+	REQUIRE(path.getCanonical().str() == path.str());
+}
+#endif

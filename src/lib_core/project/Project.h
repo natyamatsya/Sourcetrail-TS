@@ -43,6 +43,9 @@ public:
 	bool isOpen() const;
 	//! The index loaded and browsable (it may be outdated).
 	bool hasIndex() const;
+	//! Why the load ended before the index opened, when the project file was refused (a newer
+	//! Sourcetrail's, or one without a valid version); empty otherwise.
+	const std::string& getLoadFailure() const;
 
 	bool settingsEqualExceptNameAndLocation(const ProjectSettings& otherSettings) const;
 	void setStateOutdated();
@@ -190,6 +193,7 @@ private:
 	// The load kept the data of a run that did not finish: finishLoad indexes the rest.
 	bool m_continueIndexing = false;
 	RefreshStageType m_refreshStage = RefreshStageType::NONE;
+	std::string m_loadFailure;
 
 	std::shared_ptr<PersistentStorage> m_storage;
 	std::vector<std::shared_ptr<SourceGroup>> m_sourceGroups;

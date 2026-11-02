@@ -18,14 +18,20 @@
 #ifndef SRCTRL_MODULE_BUILD
 #include "ProjectSettings.h"
 #endif
+#include "CMakeFileAPIReader.h"
+#include "SourceGroupCxxCMakeFileAPI.h"
 #include "SourceGroupCxxCdb.h"
 #include "SourceGroupCxxEmpty.h"
+#include "SourceGroupFactory.h"
+#include "SourceGroupFactoryModuleCxx.h"
 #ifndef SRCTRL_MODULE_BUILD
 #include "SourceGroupSettingsCEmpty.h"
 #include "SourceGroupSettingsCppEmpty.h"
+#include "SourceGroupSettingsCxxCMakeFileAPI.h"
 #include "SourceGroupSettingsCxxCdb.h"
 #include "TextAccess.h"
 #endif
+#include "TestTempDirectory.h"
 #include "Version.h"
 
 #include <llvm/Config/llvm-config.h>
@@ -422,4 +428,215 @@ TEST_CASE("source group cxx cdb hashes a file compiled twice once, the same each
 	const auto changed = SourceGroupCxxCdb(sourceGroupSettings).getAllSourceFileCommandHashes();
 	REQUIRE(changed.size() == 1);
 	REQUIRE(changed.front().second != hashes.front().second);
+}
+
+namespace
+{
+// Writes `content` as the compile_commands.json of `directory` and checks it as the source group does.
+std::expected<void, CdbLoadError> checkDatabase(const TestTempDirectory& directory, const std::string& content)
+{
+	std::ofstream(directory.getPath() / "compile_commands.json") << content;
+	return SourceGroupCxxCdb::checkCompilationDatabase(FilePath(directory.getFilePath("compile_commands.json")));
+}
+}	 // namespace
+
+TEST_CASE("source group cxx cdb refuses a compilation database it cannot index, naming the problem")
+{
+	// Each was accepted without a word: "0 source files indexed", exit code 0.
+	const TestTempDirectory directory{"SourceGroupCxxTestSuite"};
+	const std::string dir = directory.getPath().generic_string();
+	std::ofstream(directory.getPath() / "main.cpp") << "int main() {}\n";
+
+	const auto requireError = [&](const std::string& content, CdbLoadError::Code code, const std::string& says) {
+		const auto checked = checkDatabase(directory, content);
+		INFO(content);
+		REQUIRE_FALSE(checked.has_value());
+		INFO(describe(checked.error()));
+		REQUIRE(checked.error().code == code);
+		REQUIRE(describe(checked.error()).find(says) != std::string::npos);
+	};
+
+	using enum CdbLoadError::Code;
+	requireError("", ParseFailed, "is empty");
+	requireError("[{\"directory\": ", ParseFailed, "cannot be read");
+	requireError("{}", ParseFailed, "Expected array");
+	requireError("[]", NoCompileCommands, "has no compile commands");
+	requireError("[1,2,3]", ParseFailed, "Expected object");
+	requireError("[null, {}, \"str\"]", ParseFailed, "Expected object");
+	requireError(R"([{"directory": ["x"], "file": {"a":1}, "arguments": [1, null, true]}])", ParseFailed, "Expected");
+	requireError(
+		std::format(R"([{{"directory": "{}", "arguments": ["clang++", "-c", "main.cpp"]}}])", dir),
+		ParseFailed,
+		"Missing key: \"file\"");
+	requireError(
+		std::format(R"([{{"file": "{}/main.cpp", "arguments": ["clang++", "-c", "main.cpp"]}}])", dir),
+		ParseFailed,
+		"Missing key: \"directory\"");
+	requireError(
+		std::format(R"([{{"directory": "{0}", "file": "{0}/main.cpp", "arguments": "clang++ -c main.cpp"}}])", dir),
+		ParseFailed,
+		"Expected sequence");
+	requireError(
+		std::format(R"([{{"directory": "{0}", "file": "{0}/nope.cpp", "arguments": ["clang++", "-c", "nope.cpp"]}}])", dir),
+		NoSourceFiles,
+		"nope.cpp");
+
+	std::filesystem::create_directory(directory.getPath() / "is_a_directory.json");
+	const auto directoryChecked =
+		SourceGroupCxxCdb::checkCompilationDatabase(FilePath(directory.getFilePath("is_a_directory.json")));
+	REQUIRE_FALSE(directoryChecked.has_value());
+	REQUIRE(directoryChecked.error().code == NotAFile);
+
+	const auto missingChecked =
+		SourceGroupCxxCdb::checkCompilationDatabase(FilePath(directory.getFilePath("missing.json")));
+	REQUIRE_FALSE(missingChecked.has_value());
+	REQUIRE(missingChecked.error().code == PathMissing);
+
+	// One file there among missing ones is a database to index (the missing ones are logged).
+	REQUIRE(checkDatabase(
+		directory,
+		std::format(
+			R"([{{"directory": "{0}", "file": "nope.cpp", "arguments": ["clang++", "-c", "nope.cpp"]}},
+			    {{"directory": "{0}", "file": "main.cpp", "arguments": ["clang++", "-c", "main.cpp"]}}])",
+			dir)));
+}
+
+TEST_CASE("source group cxx cdb indexes a file whose command's directory is gone, or relative")
+{
+	// "nodir/../main.cpp" named no file once its directory was gone: the file was dropped without a
+	// word. Now it is indexed, and the indexer reports the missing working directory as its error.
+	ScopedApplicationInstance scopedApplicationInstance;
+	const TestTempDirectory directory{"SourceGroupCxxTestSuite"};
+	std::ofstream(directory.getPath() / "main.cpp") << "int main() {}\n";
+	const std::string dir = directory.getPath().generic_string();
+
+	ProjectSettings projectSettings;
+	projectSettings.setProjectFilePath("gone", FilePath(directory.getPath().string()));
+	std::shared_ptr<SourceGroupSettingsCxxCdb> sourceGroupSettings =
+		std::make_shared<SourceGroupSettingsCxxCdb>("fake_id", &projectSettings);
+	sourceGroupSettings->setCompilationDatabasePath(FilePath(directory.getFilePath("compile_commands.json")));
+	const FilePath mainFile = FilePath(directory.getFilePath("main.cpp")).makeCanonical();
+
+	const auto commandFor = [&](const std::string& content) {
+		std::ofstream(directory.getPath() / "compile_commands.json") << content;
+		const SourceGroupCxxCdb sourceGroup(sourceGroupSettings);
+		RefreshInfo info;
+		info.filesToIndex = sourceGroup.getAllSourceFilePaths();
+		const std::vector<std::shared_ptr<IndexerCommand>> commands = sourceGroup.getIndexerCommands(info);
+		REQUIRE(commands.size() == 1);
+		REQUIRE(commands.front()->getSourceFilePath() == mainFile);
+		return commands.front()->target<IndexerCommandCxx>().value();
+	};
+
+	SECTION("a directory that is gone is kept, for the indexer to report")
+	{
+		const IndexerCommandCxx command = commandFor(std::format(
+			R"([{{"directory": "{}/nodir", "file": "../main.cpp", "arguments": ["clang++", "-c", "../main.cpp"]}}])",
+			dir));
+		REQUIRE(command.getWorkingDirectory().str() == dir + "/nodir");
+	}
+
+	SECTION("a relative directory is the database's")
+	{
+		const IndexerCommandCxx command = commandFor(
+			R"([{"directory": ".", "file": "main.cpp", "arguments": ["clang++", "-c", "main.cpp"]}])");
+		REQUIRE(command.getWorkingDirectory().str() == FilePath(dir).str());
+	}
+}
+
+TEST_CASE("source group cxx cdb indexes identical compile commands once, distinct ones each")
+{
+	// 100 copies of one command indexed the file 100 times, and 200,000 effectively hung.
+	ScopedApplicationInstance scopedApplicationInstance;
+	const TestTempDirectory directory{"SourceGroupCxxTestSuite"};
+	std::ofstream(directory.getPath() / "main.cpp") << "int main() {}\n";
+	const std::string command = std::format(
+		R"({{"directory": "{}", "file": "main.cpp", "arguments": ["clang++", "-c", "main.cpp"]}})",
+		directory.getPath().generic_string());
+	const std::string otherConfiguration = std::format(
+		R"({{"directory": "{}", "file": "main.cpp", "arguments": ["clang++", "-DOTHER", "-c", "main.cpp"]}})",
+		directory.getPath().generic_string());
+	std::ofstream(directory.getPath() / "compile_commands.json")
+		<< "[" << command << "," << command << "," << otherConfiguration << "," << command << "]";
+
+	ProjectSettings projectSettings;
+	projectSettings.setProjectFilePath("dups", FilePath(directory.getPath().string()));
+	std::shared_ptr<SourceGroupSettingsCxxCdb> sourceGroupSettings =
+		std::make_shared<SourceGroupSettingsCxxCdb>("fake_id", &projectSettings);
+	sourceGroupSettings->setCompilationDatabasePath(FilePath(directory.getFilePath("compile_commands.json")));
+	const SourceGroupCxxCdb sourceGroup(sourceGroupSettings);
+
+	RefreshInfo info;
+	info.filesToIndex = sourceGroup.getAllSourceFilePaths();
+	const std::vector<std::shared_ptr<IndexerCommand>> commands = sourceGroup.getIndexerCommands(info);
+
+	REQUIRE(commands.size() == 2);
+	const auto flagsOf = [&](std::size_t i) { return commands[i]->target<IndexerCommandCxx>()->getCompilerFlags(); };
+	REQUIRE(std::ranges::contains(flagsOf(0), "-DOTHER") != std::ranges::contains(flagsOf(1), "-DOTHER"));
+}
+
+TEST_CASE("source group factory creates a source group configured twice once")
+{
+	// 100 identical source groups indexed every file 100 times.
+	SourceGroupFactory::getInstance()->addModule(std::make_shared<SourceGroupFactoryModuleCxx>());
+	ProjectSettings projectSettings;
+	projectSettings.setProjectFilePath("twice", FilePath("/tmp"));
+	const auto cdbGroup = [&](const std::string& id, const std::string& name, const std::string& cdbPath) {
+		std::shared_ptr<SourceGroupSettingsCxxCdb> settings =
+			std::make_shared<SourceGroupSettingsCxxCdb>(id, &projectSettings);
+		settings->setName(name);
+		settings->setCompilationDatabasePath(FilePath(cdbPath));
+		return std::shared_ptr<SourceGroupSettings>(settings);
+	};
+
+	const std::vector<std::shared_ptr<SourceGroup>> groups = SourceGroupFactory::getInstance()->createSourceGroups(
+		{cdbGroup("g0", "cdb", "/tmp/a/compile_commands.json"),
+		 cdbGroup("g1", "cdb copy", "/tmp/a/compile_commands.json"),
+		 cdbGroup("g2", "cdb", "/tmp/b/compile_commands.json"),
+		 cdbGroup("g3", "cdb", "/tmp/a/compile_commands.json")});
+
+	REQUIRE(groups.size() == 2);
+	REQUIRE(groups[0]->getSourceGroupId() == "g0");
+	REQUIRE(groups[1]->getSourceGroupId() == "g2");
+}
+
+TEST_CASE("source group cxx cmake configures afresh a build directory copied with its project")
+{
+	// A project copied with its *.srctrl-build directory and its .srctrl.toml pointed at the copy
+	// indexed the old checkout's files: the File API reply holds absolute paths. Now the reply's
+	// source directory is checked, and a reply written for another location is configured afresh.
+	if (std::system("cmake --version > /dev/null 2>&1") != 0)
+		SKIP("cmake is not on PATH");
+#if defined(_WIN32)
+	SKIP("POSIX shell redirection above");
+#endif
+
+	ScopedApplicationInstance scopedApplicationInstance;
+	const TestTempDirectory tempDirectory{"SourceGroupCxxCMakeMoved"};
+	const std::filesystem::path original = tempDirectory.getPath() / "original";
+	std::filesystem::create_directories(original / "source");
+	std::ofstream(original / "source" / "CMakeLists.txt")
+		<< "cmake_minimum_required(VERSION 3.21)\nproject(probe NONE)\nadd_custom_target(only)\n";
+	CMakeFileAPIReader originalReader{FilePath((original / "build").string())};
+	REQUIRE(originalReader.ensureReply({}, FilePath((original / "source").string())).has_value());
+
+	const std::filesystem::path copy = tempDirectory.getPath() / "copy";
+	std::filesystem::copy(original, copy, std::filesystem::copy_options::recursive);
+	const FilePath copySource((copy / "source").string());
+	const FilePath copyBuild((copy / "build").string());
+	REQUIRE(CMakeFileAPIReader{copyBuild}.getReplyPaths()->source == FilePath((original / "source").string()));
+
+	ProjectSettings projectSettings;
+	projectSettings.setProjectFilePath("copy", FilePath(copy.string()));
+	std::shared_ptr<SourceGroupSettingsCxxCMakeFileAPI> settings =
+		std::make_shared<SourceGroupSettingsCxxCMakeFileAPI>("fake_id", &projectSettings);
+	settings->setSourceDirectory(copySource);
+	settings->setBuildDirectory(copyBuild);
+	SourceGroupCxxCMakeFileAPI sourceGroup(settings);
+
+	REQUIRE(sourceGroup.prepareIndexing().has_value());
+	const auto paths = CMakeFileAPIReader{copyBuild}.getReplyPaths();
+	REQUIRE(paths.has_value());
+	REQUIRE(paths->source == copySource);
+	REQUIRE(paths->build == copyBuild);
 }

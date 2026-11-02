@@ -30,7 +30,8 @@ struct meta<commandline::ConfigOpts>
 	static constexpr auto value = object("indexer-threads", &T::indexer_threads, "logging-enabled",
 		&T::logging_enabled, "verbose-indexer-logging-enabled", &T::verbose_indexer_logging_enabled,
 		"global-header-search-paths", &T::global_header_search_paths, "global-framework-search-paths",
-		&T::global_framework_search_paths, "show", &T::show);
+		&T::global_framework_search_paths, "show", &T::show,
+		"user-data-dir", &T::user_data_dir);
 };
 }	 // namespace glz
 

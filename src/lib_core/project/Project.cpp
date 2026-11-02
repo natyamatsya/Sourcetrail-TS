@@ -123,6 +123,11 @@ bool Project::isIndexing() const
 	return m_refreshStage == RefreshStageType::INDEXING;
 }
 
+const std::string& Project::getLoadFailure() const
+{
+	return m_loadFailure;
+}
+
 bool Project::settingsEqualExceptNameAndLocation(const ProjectSettings& otherSettings) const
 {
 	return m_settings->equalsExceptNameAndLocation(otherSettings);
@@ -177,7 +182,21 @@ bool Project::beginLoad()
 
 bool Project::readSettings()
 {
-	return m_settings->reload();
+	m_loadFailure.clear();
+	if (!m_settings->reload())
+	{
+		return false;
+	}
+	// A project file this Sourcetrail cannot read is refused before anything opens: a newer
+	// Sourcetrail's (its settings may mean something else here, and saving it would write it back
+	// as this version), or one whose version is not one. Each loaded without a word.
+	if (const auto version = m_settings->checkVersion(); !version)
+	{
+		m_loadFailure = version.error().message;
+		LOG_ERROR(m_loadFailure);
+		return false;
+	}
+	return true;
 }
 
 namespace
