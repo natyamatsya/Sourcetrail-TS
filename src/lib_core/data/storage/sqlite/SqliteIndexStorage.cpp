@@ -9,6 +9,7 @@ import sqlpp23.sqlite3;
 
 #include "SqliteIndexStorage.h"
 
+#include <stdexcept>
 #include <utility>
 
 #ifndef SRCTRL_SQLPP23_MODULE
@@ -281,7 +282,8 @@ void forEachRowWhere(
 
 // Multi-row typed INSERTs execute directly (values are inlined and escaped by
 // sqlpp23), so the old 999-bound-parameter batching is moot; chunking merely
-// bounds the length of a single serialized statement.
+// bounds the length of a single serialized statement. Only for numbers: inlined
+// text is cut short at a NUL (insertEach binds it).
 constexpr size_t kInsertChunkRows = 500;
 
 template <typename Item, typename MakeInsert, typename AddRow>
@@ -302,6 +304,33 @@ bool insertInChunks(
 			{
 				addRow(insert, items[i]);
 			}
+			db(insert);
+		}
+		return true;
+	}
+	catch (const std::exception& e)
+	{
+		LOG_ERROR(e.what());
+		return false;
+	}
+}
+
+// Inserts `items` a row at a time with one prepared statement, `bindRow` setting its
+// parameters: for rows with text, which inlined into the SQL (insertInChunks) was cut
+// short at a NUL in it.
+template <typename Item, typename MakeInsert, typename BindRow>
+bool insertEach(
+	sourcetrail::storage::BorrowedSqliteConnection& db,
+	const std::vector<Item>& items,
+	const MakeInsert& makeInsert,
+	const BindRow& bindRow)
+{
+	try
+	{
+		auto insert = db.prepare(makeInsert());
+		for (const Item& item: items)
+		{
+			bindRow(insert.parameters, item);
 			db(insert);
 		}
 		return true;
@@ -514,17 +543,23 @@ std::vector<Id> SqliteIndexStorage::addNodes(const std::vector<StorageNode>& nod
 	if (nodesToInsert.size())
 	{
 		using namespace sqlpp;
-		insertInChunks(
+		insertEach(
 			db(),
 			nodesToInsert,
-			[] { return insert_into(nodeTable).columns(nodeTable.id, nodeTable.type, nodeTable.serializedName, nodeTable.modifiers, nodeTable.languages); },
-			[](auto& insert, const StorageNode& node) {
-				insert.add_values(
-					nodeTable.id = static_cast<Id::type>(node.id),
-					nodeTable.type = static_cast<int>(node.type),
-					nodeTable.serializedName = node.serializedName,
-					nodeTable.modifiers = static_cast<int>(node.modifiers),
-					nodeTable.languages = static_cast<int>(node.languages));
+			[] {
+				return insert_into(nodeTable).set(
+					nodeTable.id = parameter(nodeTable.id),
+					nodeTable.type = parameter(nodeTable.type),
+					nodeTable.serializedName = parameter(nodeTable.serializedName),
+					nodeTable.modifiers = parameter(nodeTable.modifiers),
+					nodeTable.languages = parameter(nodeTable.languages));
+			},
+			[](auto& parameters, const StorageNode& node) {
+				parameters.id = static_cast<Id::type>(node.id);
+				parameters.type = static_cast<int>(node.type);
+				parameters.serializedName = node.serializedName;
+				parameters.modifiers = static_cast<int>(node.modifiers);
+				parameters.languages = static_cast<int>(node.languages);
 			});
 	}
 
@@ -617,14 +652,20 @@ bool SqliteIndexStorage::addFile(const StorageFile& data)
 	bool success = false;
 	try
 	{
-		db()(insert_into(fileTable).set(
+		// The text is bound, not inlined into the SQL: a NUL in a file's content cut the
+		// statement short, and the content was lost.
+		auto insert = db().prepare(insert_into(fileTable).set(
 			fileTable.id = static_cast<Id::type>(data.id),
-			fileTable.path = data.filePath,
-			fileTable.language = data.languageIdentifier,
-			fileTable.modificationTime = modificationTime,
+			fileTable.path = parameter(fileTable.path),
+			fileTable.language = parameter(fileTable.language),
+			fileTable.modificationTime = parameter(fileTable.modificationTime),
 			fileTable.indexed = static_cast<int>(data.indexed),
 			fileTable.complete = static_cast<int>(data.complete),
 			fileTable.lineCount = lineCount));
+		insert.parameters.path = data.filePath;
+		insert.parameters.language = data.languageIdentifier;
+		insert.parameters.modificationTime = modificationTime;
+		db()(insert);
 		success = true;
 	}
 	catch (const std::exception& e)
@@ -636,9 +677,11 @@ bool SqliteIndexStorage::addFile(const StorageFile& data)
 	{
 		try
 		{
-			db()(insert_into(filecontentTable).set(
+			auto insert = db().prepare(insert_into(filecontentTable).set(
 				filecontentTable.id = static_cast<Id::type>(data.id),
-				filecontentTable.content = content->getText()));
+				filecontentTable.content = parameter(filecontentTable.content)));
+			insert.parameters.content = content->getText();
+			db()(insert);
 		}
 		catch (const std::exception& e)
 		{
@@ -768,14 +811,16 @@ std::vector<Id> SqliteIndexStorage::addLocalSymbols(const std::set<StorageLocalS
 	if (symbolsToInsert.size())
 	{
 		using namespace sqlpp;
-		insertInChunks(
+		insertEach(
 			db(),
 			symbolsToInsert,
-			[] { return insert_into(localSymbolTable).columns(localSymbolTable.id, localSymbolTable.name); },
-			[](auto& insert, const StorageLocalSymbol& symbol) {
-				insert.add_values(
-					localSymbolTable.id = static_cast<Id::type>(symbol.id),
-					localSymbolTable.name = symbol.name);
+			[] {
+				return insert_into(localSymbolTable)
+					.set(localSymbolTable.id = parameter(localSymbolTable.id), localSymbolTable.name = parameter(localSymbolTable.name));
+			},
+			[](auto& parameters, const StorageLocalSymbol& symbol) {
+				parameters.id = static_cast<Id::type>(symbol.id);
+				parameters.name = symbol.name;
 			});
 	}
 
@@ -953,19 +998,27 @@ bool SqliteIndexStorage::addNodeAttribute(const StorageNodeAttribute& nodeAttrib
 bool SqliteIndexStorage::addNodeAttributes(const std::vector<StorageNodeAttribute>& nodeAttributes)
 {
 	using namespace sqlpp;
-	return insertInChunks(
-		db(),
-		nodeAttributes,
-		[] {
-			return ::sqlpp::sqlite3::insert_or_ignore().into(nodeAttributeTable).columns(
-				nodeAttributeTable.nodeId, nodeAttributeTable.key, nodeAttributeTable.value);
-		},
-		[](auto& insert, const StorageNodeAttribute& nodeAttribute) {
-			insert.add_values(
-				nodeAttributeTable.nodeId = static_cast<Id::type>(nodeAttribute.nodeId),
-				nodeAttributeTable.key = static_cast<int>(nodeAttribute.key),
-				nodeAttributeTable.value = nodeAttribute.value);
-		});
+	// On the raw view, with the value bound: sqlpp23 cannot prepare an INSERT OR IGNORE,
+	// and inlined, a NUL in the value cut the statement short.
+	try
+	{
+		StorageStmt insert = m_database.compileStatement(
+			"INSERT OR IGNORE INTO node_attribute(node_id, key, value) VALUES(?, ?, ?);");
+		bool success = true;
+		for (const StorageNodeAttribute& nodeAttribute: nodeAttributes)
+		{
+			insert.bind(1, static_cast<long long>(static_cast<Id::type>(nodeAttribute.nodeId)));
+			insert.bind(2, static_cast<long long>(nodeAttribute.key));
+			insert.bind(3, nodeAttribute.value);
+			success = executeStatement(insert) && success;
+		}
+		return success;
+	}
+	catch (CppSQLite3Exception& e)
+	{
+		LOG_ERROR(std::to_string(e.errorCode()) + ": " + e.errorMessage());
+	}
+	return false;
 }
 
 void SqliteIndexStorage::addElementComponent(const StorageElementComponent& component)
@@ -974,10 +1027,12 @@ void SqliteIndexStorage::addElementComponent(const StorageElementComponent& comp
 	try
 	{
 		// id is omitted -> SQLite assigns the rowid.
-		db()(insert_into(elementComponentTable).set(
+		auto insert = db().prepare(insert_into(elementComponentTable).set(
 			elementComponentTable.elementId = static_cast<Id::type>(component.elementId),
 			elementComponentTable.type = static_cast<int>(component.type),
-			elementComponentTable.data = component.data));
+			elementComponentTable.data = parameter(elementComponentTable.data)));
+		insert.parameters.data = component.data;
+		db()(insert);
 	}
 	catch (const std::exception& e)
 	{
@@ -1029,11 +1084,13 @@ StorageError SqliteIndexStorage::addError(const StorageErrorData& data)
 #else
 	try
 	{
-		for (const auto& row: db()(select(errorTable.id)
-									   .from(errorTable)
-									   .where(errorTable.message == message &&
-											  errorTable.fatal == static_cast<int>(data.fatal))
-									   .limit(1u)))
+		auto query = db().prepare(select(errorTable.id)
+									  .from(errorTable)
+									  .where(errorTable.message == parameter(errorTable.message) &&
+											 errorTable.fatal == static_cast<int>(data.fatal))
+									  .limit(1u));
+		query.parameters.message = message;
+		for (const auto& row: db()(query))
 		{
 			id = Id(row.id);
 		}
@@ -1050,12 +1107,15 @@ StorageError SqliteIndexStorage::addError(const StorageErrorData& data)
 
 		try
 		{
-			db()(insert_into(errorTable).set(
+			auto insert = db().prepare(insert_into(errorTable).set(
 				errorTable.id = static_cast<Id::type>(id),
-				errorTable.message = message,
+				errorTable.message = parameter(errorTable.message),
 				errorTable.fatal = static_cast<int>(data.fatal),
 				errorTable.indexed = static_cast<int>(data.indexed),
-				errorTable.translationUnit = data.translationUnit));
+				errorTable.translationUnit = parameter(errorTable.translationUnit)));
+			insert.parameters.message = message;
+			insert.parameters.translationUnit = data.translationUnit;
+			db()(insert);
 		}
 		catch (const std::exception& e)
 		{
@@ -1661,10 +1721,12 @@ StorageNode SqliteIndexStorage::getNodeBySerializedName(const std::string& seria
 	using namespace sqlpp;
 	try
 	{
-		for (const auto& row: db()(select(all_of(nodeTable))
-									   .from(nodeTable)
-									   .where(nodeTable.serializedName == serializedName)
-									   .limit(1u)))
+		auto query = db().prepare(select(all_of(nodeTable))
+									  .from(nodeTable)
+									  .where(nodeTable.serializedName == parameter(nodeTable.serializedName))
+									  .limit(1u));
+		query.parameters.serializedName = serializedName;
+		for (const auto& row: db()(query))
 		{
 			if (auto node = nodeFromRow(row))
 			{
@@ -1720,10 +1782,10 @@ StorageFile SqliteIndexStorage::getFileByPath(const std::string& filePath) const
 	using namespace sqlpp;
 	try
 	{
-		for (const auto& row: db()(select(all_of(fileTable))
-									   .from(fileTable)
-									   .where(fileTable.path == filePath)
-									   .limit(1u)))
+		auto query = db().prepare(
+			select(all_of(fileTable)).from(fileTable).where(fileTable.path == parameter(fileTable.path)).limit(1u));
+		query.parameters.path = filePath;
+		for (const auto& row: db()(query))
 		{
 			if (auto file = fileFromRow(row))
 			{
@@ -1777,10 +1839,11 @@ std::shared_ptr<TextAccess> SqliteIndexStorage::getFileContentByPath(const std::
 	using namespace sqlpp;
 	try
 	{
-		for (const auto& row:
-			 db()(select(filecontentTable.content)
-					  .from(filecontentTable.join(fileTable).on(filecontentTable.id == fileTable.id))
-					  .where(fileTable.path == filePath)))
+		auto query = db().prepare(select(filecontentTable.content)
+									  .from(filecontentTable.join(fileTable).on(filecontentTable.id == fileTable.id))
+									  .where(fileTable.path == parameter(fileTable.path)));
+		query.parameters.path = filePath;
+		for (const auto& row: db()(query))
 		{
 			return TextAccess::createFromString(fieldText(row.content));
 		}
@@ -1809,15 +1872,18 @@ void SqliteIndexStorage::setFileIndexed(Id fileId, bool indexed)
 
 void SqliteIndexStorage::setFileCommandHash(const std::string& filePath, const std::string& hash)
 {
-	using namespace sqlpp;
 	try
 	{
-		db()(::sqlpp::sqlite3::insert_or_replace().into(fileCommandHashTable).set(
-			fileCommandHashTable.path = filePath, fileCommandHashTable.hash = hash));
+		// On the raw view, with the text bound: sqlpp23 cannot prepare an INSERT OR REPLACE.
+		StorageStmt insert =
+			m_database.compileStatement("INSERT OR REPLACE INTO file_command_hash(path, hash) VALUES(?, ?);");
+		insert.bind(1, filePath);
+		insert.bind(2, hash);
+		executeStatement(insert);
 	}
-	catch (const std::exception& e)
+	catch (CppSQLite3Exception& e)
 	{
-		LOG_ERROR(e.what());
+		LOG_ERROR(std::to_string(e.errorCode()) + ": " + e.errorMessage());
 	}
 }
 
@@ -1826,7 +1892,10 @@ void SqliteIndexStorage::removeFileCommandHash(const std::string& filePath)
 	using namespace sqlpp;
 	try
 	{
-		db()(delete_from(fileCommandHashTable).where(fileCommandHashTable.path == filePath));
+		auto statement =
+			db().prepare(delete_from(fileCommandHashTable).where(fileCommandHashTable.path == parameter(fileCommandHashTable.path)));
+		statement.parameters.path = filePath;
+		db()(statement);
 	}
 	catch (const std::exception& e)
 	{
@@ -2620,7 +2689,9 @@ void SqliteIndexStorage::setupTables()
 	{
 		LOG_ERROR(std::to_string(e.errorCode()) + ": " + e.errorMessage());
 
-		throw(std::exception());
+		throw std::runtime_error(
+			"cannot create the index tables of " + m_dbFilePath.str() + ": SQLite error " + std::to_string(e.errorCode()) + ": " +
+			e.errorMessage());
 	}
 }
 

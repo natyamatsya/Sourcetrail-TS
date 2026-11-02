@@ -482,7 +482,7 @@ void Application::handleMessage(MessageCloseProject*  /*message*/)
 		return;
 	}
 
-	m_project.reset();
+	unloadProject();
 	if (m_loading)
 	{
 		m_loading->stop.request_stop();	// a load in flight withdraws its question and ends
@@ -633,7 +633,7 @@ void Application::handleMessage(MessageLoadProject* message)
 		projectMachine->requested(projectSettingsFilePath.str());
 		MessageStatus("Loading Project: " + projectSettingsFilePath.str(), false, true).dispatch();
 
-		m_project.reset();
+		unloadProject();
 
 		if (m_hasGUI)
 		{
@@ -642,6 +642,17 @@ void Application::handleMessage(MessageLoadProject* message)
 
 		loadProject(projectSettingsFilePath, message->shardConfig, message->refreshMode, !message->byAgent);
 	}
+}
+
+void Application::unloadProject()
+{
+	// A mode choice open for the project goes with it: started, it indexed a project
+	// that was gone.
+	if (IndexingStateMachine::instance()->state() == IndexingStateMachine::State::ChoosingMode)
+	{
+		IndexingStateMachine::instance()->cancel(EventSource::App);
+	}
+	m_project.reset();
 }
 
 void Application::loadProject(
@@ -883,9 +894,12 @@ void Application::refreshProject(RefreshMode refreshMode, bool direct)
 
 		m_project->refresh(getDialogView(DialogView::UseCase::INDEXING), refreshMode, direct);
 
-		if (!m_hasGUI && !m_project->isIndexing())
+		// Headless, a refresh of an open project ends with MessageIndexingFinished, whose
+		// outcome is the exit code (a quit of its own here could exit 0 first). One that
+		// did not load has nothing to index: a failure.
+		if (!m_hasGUI && !m_project->isIndexing() && !m_project->isOpen())
 		{
-			MessageQuitApplication().dispatch();
+			MessageQuitApplication(1).dispatch();
 		}
 	}
 

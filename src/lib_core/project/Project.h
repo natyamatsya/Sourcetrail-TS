@@ -1,6 +1,7 @@
 #ifndef PROJECT_H
 #define PROJECT_H
 
+#include <expected>
 #include <functional>
 #include <memory>
 #include <optional>
@@ -8,6 +9,9 @@
 #include <string>
 #include <vector>
 
+#include "IndexDatabaseFiles.h"
+#include "IndexingLock.h"
+#include "IndexingOutcome.h"
 #include "RefreshInfo.h"
 #include "SourceGroup.h"
 #include "ShardConfig.h"
@@ -58,11 +62,14 @@ public:
 	};
 	bool beginLoad();
 	bool readSettings();
-	//! The question an interrupted indexing run leaves (keep its data or discard it).
+	//! The question an indexing run left behind asks (keep its data or discard it), as
+	//! its data says how it ended: a run that finished offers its index first, one
+	//! that did not (a crash, the app closed while indexing) the complete one from before.
 	std::optional<Question> interruptedRunQuestion() const;
-	//! Keeps the interrupted run's data on option 0, else discards it; takes it when
-	//! there is no other index. False when the index is in use by another process:
-	//! indexInUse() says so.
+	//! Keeps the run's data on the question's keep option, else discards it (also on
+	//! -1, no answer); takes it when there is no other index. Kept data of a run that
+	//! did not finish has the load index the rest. False when the index is in use by
+	//! another process: indexInUse() says so.
 	bool resolveInterruptedRun(int option);
 	static Question indexInUse();
 	void openIndex();
@@ -129,7 +136,12 @@ private:
 	// throw (the generic task runner would otherwise just log and drop it).
 	void refreshImpl(std::shared_ptr<DialogView> dialogView, RefreshMode refreshMode, bool direct);
 	void refreshPlannedImpl(std::shared_ptr<DialogView> dialogView, const RefreshPlan& plan);
-	void refreshGuarded(const std::function<void()>& refresh);
+	// Runs `step`, ending the refresh with what it throws (`context`: what failed).
+	void guarded(
+		const std::string& context, const std::shared_ptr<DialogView>& dialogView, const std::function<void()>& step);
+	// Ends a refresh or run that does not go on: its dialogs go, the person (`notify`) and
+	// the machine are told why, and MessageIndexingFinished carries the error.
+	void endRefused(const IndexingError& error, const std::shared_ptr<DialogView>& dialogView, bool notify = true);
 	void buildIndexImpl(RefreshInfo info, std::shared_ptr<DialogView> dialogView);
 
 	ShardConfig m_shardConfig;
@@ -158,12 +170,11 @@ private:
 	void askToReindexAll(SourceGroupType type, std::shared_ptr<DialogView> dialogView);
 	void reindexAllAnswered(int option, std::shared_ptr<DialogView> dialogView);
 
-	void swapToTempStorage(std::shared_ptr<DialogView> dialogView);
-	bool swapToTempStorageFile(
-		const FilePath& indexDbFilePath,
-		const FilePath& tempIndexDbFilePath,
-		std::shared_ptr<DialogView> dialogView);
-	static bool moveTempStorageFile(const FilePath& indexDbFilePath, const FilePath& tempIndexDbFilePath);
+	// The run's database becomes the index; on failure the index stays as it was,
+	// open again.
+	IndexingOutcome swapToTempStorage();
+	static std::expected<void, IndexSwapError> moveTempStorageFile(
+		const FilePath& indexDbFilePath, const FilePath& tempIndexDbFilePath);
 	void discardTempStorage();
 
 	bool hasCxxSourceGroup() const;
@@ -172,6 +183,12 @@ private:
 	StorageCache* const m_storageCache;
 
 	ProjectStateType m_state = ProjectStateType::PROJECT_STATE_NOT_LOADED;
+	// Why the index could not be used (PROJECT_STATE_DB_CORRUPTED), when it is known.
+	std::string m_loadProblem;
+	// Why SQLite cannot make the index's files where the project is: no reindex helps.
+	std::optional<std::string> m_indexFilesProblem;
+	// The load kept the data of a run that did not finish: finishLoad indexes the rest.
+	bool m_continueIndexing = false;
 	RefreshStageType m_refreshStage = RefreshStageType::NONE;
 
 	std::shared_ptr<PersistentStorage> m_storage;
@@ -183,6 +200,8 @@ private:
 	// The indexing run, while one runs; the scope waits for it.
 	exec::async_scope m_indexing;
 	std::weak_ptr<IndexingRun> m_indexingRun;
+	// Held from the run's start until its data is swapped in or discarded.
+	std::optional<IndexingLock> m_indexingLock;
 };
 
 #endif	  // PROJECT_H

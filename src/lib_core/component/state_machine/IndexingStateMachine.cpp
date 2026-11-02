@@ -205,7 +205,12 @@ void IndexingStateMachine::report(
 
 	if (!presenter.presentReport(report))
 	{
-		decide(DatabasePolicy::DATABASE_POLICY_KEEP, EventSource::App);
+		// Nobody to ask: a run that finished is kept; an interrupted one's part does not
+		// replace the index unasked (a full run interrupted early swapped a complete
+		// index for an empty one).
+		decide(
+			report.interrupted ? DatabasePolicy::DATABASE_POLICY_DISCARD : DatabasePolicy::DATABASE_POLICY_KEEP,
+			EventSource::App);
 	}
 }
 

@@ -9,6 +9,8 @@ import sqlpp23.sqlite3;
 
 #include "SqliteStorage.h"
 
+#include <stdexcept>
+
 #ifndef SRCTRL_SQLPP23_MODULE
 #include <sqlpp23/sqlpp23.h>
 #endif
@@ -188,6 +190,20 @@ bool SqliteStorage::isIncompatible() const
 	return isEmpty() || storageVersion != getStaticVersion();
 }
 
+bool SqliteStorage::isWellFormed() const
+{
+	try
+	{
+		StorageQuery result = m_database.execQuery("PRAGMA quick_check(1);");
+		return !result.eof() && result.getStringField(0) == "ok";
+	}
+	catch (CppSQLite3Exception& e)
+	{
+		LOG_ERROR(std::to_string(e.errorCode()) + ": " + e.errorMessage());
+	}
+	return false;
+}
+
 void SqliteStorage::setTime()
 {
 	insertOrUpdateMetaValue("timestamp", TimeStamp::now().toString());
@@ -214,7 +230,9 @@ void SqliteStorage::setupMetaTable()
 	{
 		LOG_ERROR(std::to_string(e.errorCode()) + ": " + e.errorMessage());
 
-		throw(std::exception());
+		throw std::runtime_error(
+			"cannot create the meta table of " + m_dbFilePath.str() + ": SQLite error " + std::to_string(e.errorCode()) + ": " +
+			e.errorMessage());
 	}
 }
 
@@ -327,9 +345,11 @@ bool SqliteStorage::hasTable(const std::string& tableName) const
 	using namespace sqlpp;
 	try
 	{
-		for (const auto& row: db()(select(sqliteMaster.name)
-									   .from(sqliteMaster)
-									   .where(sqliteMaster.type == "table" and sqliteMaster.name == tableName)))
+		auto query = db().prepare(select(sqliteMaster.name)
+									  .from(sqliteMaster)
+									  .where(sqliteMaster.type == "table" and sqliteMaster.name == parameter(sqliteMaster.name)));
+		query.parameters.name = tableName;
+		for (const auto& row: db()(query))
 		{
 			if (fieldText(row.name) == tableName)
 			{
@@ -351,7 +371,9 @@ std::string SqliteStorage::getMetaValue(const std::string& key) const
 	{
 		try
 		{
-			for (const auto& row: db()(select(metaTable.value).from(metaTable).where(metaTable.key == key)))
+			auto query = db().prepare(select(metaTable.value).from(metaTable).where(metaTable.key == parameter(metaTable.key)));
+			query.parameters.key = key;
+			for (const auto& row: db()(query))
 			{
 				return fieldText(row.value);
 			}
@@ -372,8 +394,11 @@ void SqliteStorage::insertOrUpdateMetaValue(const std::string& key, const std::s
 	// read-then-update-or-insert.
 	try
 	{
+		// The text is bound, not inlined into the SQL (a NUL in it cut the statement short).
 		bool exists = false;
-		for (const auto& row: db()(select(metaTable.id).from(metaTable).where(metaTable.key == key)))
+		auto query = db().prepare(select(metaTable.id).from(metaTable).where(metaTable.key == parameter(metaTable.key)));
+		query.parameters.key = key;
+		for (const auto& row: db()(query))
 		{
 			static_cast<void>(row);
 			exists = true;
@@ -381,11 +406,19 @@ void SqliteStorage::insertOrUpdateMetaValue(const std::string& key, const std::s
 		}
 		if (exists)
 		{
-			db()(update(metaTable).set(metaTable.value = value).where(metaTable.key == key));
+			auto statement = db().prepare(
+				update(metaTable).set(metaTable.value = parameter(metaTable.value)).where(metaTable.key == parameter(metaTable.key)));
+			statement.parameters.key = key;
+			statement.parameters.value = value;
+			db()(statement);
 		}
 		else
 		{
-			db()(insert_into(metaTable).set(metaTable.key = key, metaTable.value = value));
+			auto statement = db().prepare(
+				insert_into(metaTable).set(metaTable.key = parameter(metaTable.key), metaTable.value = parameter(metaTable.value)));
+			statement.parameters.key = key;
+			statement.parameters.value = value;
+			db()(statement);
 		}
 	}
 	catch (const std::exception& e)

@@ -45,7 +45,7 @@ void DialogView::showProgressDialog(const std::string&  /*title*/, const std::st
 void DialogView::hideProgressDialog() {}
 
 void DialogView::startIndexingDialog(
-	Project* project,
+	std::function<RefreshInfo(RefreshMode)> countFiles,
 	const std::vector<RefreshMode>& enabledModes,
 	const RefreshMode initialMode,
 	std::function<void(const RefreshInfo& info)> onStartIndexing,
@@ -53,7 +53,7 @@ void DialogView::startIndexingDialog(
 	const std::string& reason)
 {
 	IndexingStateMachine::instance()->chooseMode(
-		[project](RefreshMode mode) { return project->getRefreshInfo(mode); },
+		std::move(countFiles),
 		enabledModes,
 		initialMode,
 		std::move(onStartIndexing),

@@ -27,7 +27,8 @@ public:
 	std::vector<StorageBookmarkedNode> getAllBookmarkedNodes() const;
 	std::vector<StorageBookmarkedEdge> getAllBookmarkedEdges() const;
 	
-	void updateBookmark(
+	// False when it was not saved (logged).
+	bool updateBookmark(
 		const BookmarkId bookmarkId, const std::string& name, const std::string& comment, const Id categoryId);
 
 	std::vector<StorageBookmarkCategory> getAllBookmarkCategories() const;

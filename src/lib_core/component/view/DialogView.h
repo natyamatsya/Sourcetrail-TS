@@ -52,8 +52,10 @@ public:
 		const std::string& title, const std::string& message, size_t progress);
 	virtual void hideProgressDialog();
 
+	// The mode choice: `countFiles` says what a mode would index. The callbacks may
+	// outlive the project they are about: they must not reach a project that is gone.
 	void startIndexingDialog(
-		Project* project,
+		std::function<RefreshInfo(RefreshMode)> countFiles,
 		const std::vector<RefreshMode>& enabledModes,
 		const RefreshMode initialMode,
 		std::function<void(const RefreshInfo& info)> onStartIndexing,

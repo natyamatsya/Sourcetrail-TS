@@ -152,6 +152,8 @@ private:
 	// app's back on the app strand; without them in a row on this thread.
 	struct ProjectLoad;
 	// `directRefresh`: a person's load (MessageLoadProject::byAgent is not set).
+	// Lets go of the open project, and of what is open for it (the mode choice).
+	void unloadProject();
 	void loadProject(const FilePath& path, const ShardConfig& shardConfig, RefreshMode refreshMode, bool directRefresh);
 	// What the load asks, as a sender: the question, or -1 at once when there is none.
 	QuestionSender askFor(const ProjectLoad& load, const std::optional<Project::Question>& question);

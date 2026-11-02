@@ -48,8 +48,11 @@ StorageBookmarkCategory SqliteBookmarkStorage::addBookmarkCategory(const Storage
 	using namespace sqlpp;
 	try
 	{
-		// id is omitted -> SQLite assigns the rowid; last_insert_id gives it back.
-		const auto result = db()(insert_into(categoryTable).set(categoryTable.name = data.name));
+		// id is omitted -> SQLite assigns the rowid; last_insert_id gives it back. The text
+		// is bound, not inlined into the SQL: a NUL in it cut the statement short.
+		auto insert = db().prepare(insert_into(categoryTable).set(categoryTable.name = parameter(categoryTable.name)));
+		insert.parameters.name = data.name;
+		const auto result = db()(insert);
 		return StorageBookmarkCategory(static_cast<Id>(result.last_insert_id), data);
 	}
 	catch (const std::exception& e)
@@ -64,11 +67,15 @@ StorageBookmark SqliteBookmarkStorage::addBookmark(const StorageBookmarkData& da
 	using namespace sqlpp;
 	try
 	{
-		const auto result = db()(insert_into(bookmarkTable)
-									 .set(bookmarkTable.name = data.name,
-										  bookmarkTable.comment = data.comment,
-										  bookmarkTable.timestamp = data.timestamp,
-										  bookmarkTable.categoryId = static_cast<int64_t>(data.categoryId)));
+		auto insert = db().prepare(insert_into(bookmarkTable)
+									   .set(bookmarkTable.name = parameter(bookmarkTable.name),
+											bookmarkTable.comment = parameter(bookmarkTable.comment),
+											bookmarkTable.timestamp = parameter(bookmarkTable.timestamp),
+											bookmarkTable.categoryId = static_cast<int64_t>(data.categoryId)));
+		insert.parameters.name = data.name;
+		insert.parameters.comment = data.comment;
+		insert.parameters.timestamp = data.timestamp;
+		const auto result = db()(insert);
 		return StorageBookmark(BookmarkId(result.last_insert_id), data);
 	}
 	catch (const std::exception& e)
@@ -87,9 +94,11 @@ StorageBookmarkedNode SqliteBookmarkStorage::addBookmarkedNode(const StorageBook
 			elementTable.bookmarkId = static_cast<int64_t>(data.bookmarkId)));
 		const Id id = static_cast<Id>(elementResult.last_insert_id);
 
-		db()(insert_into(nodeTable).set(
+		auto insert = db().prepare(insert_into(nodeTable).set(
 			nodeTable.id = static_cast<int64_t>(id),
-			nodeTable.serializedNodeName = data.serializedNodeName));
+			nodeTable.serializedNodeName = parameter(nodeTable.serializedNodeName)));
+		insert.parameters.serializedNodeName = data.serializedNodeName;
+		db()(insert);
 
 		return StorageBookmarkedNode(id, data);
 	}
@@ -109,12 +118,15 @@ StorageBookmarkedEdge SqliteBookmarkStorage::addBookmarkedEdge(const StorageBook
 			elementTable.bookmarkId = static_cast<int64_t>(data.bookmarkId)));
 		const Id id = static_cast<Id>(elementResult.last_insert_id);
 
-		db()(insert_into(edgeTable).set(
+		auto insert = db().prepare(insert_into(edgeTable).set(
 			edgeTable.id = static_cast<int64_t>(id),
-			edgeTable.serializedSourceNodeName = data.serializedSourceNodeName,
-			edgeTable.serializedTargetNodeName = data.serializedTargetNodeName,
+			edgeTable.serializedSourceNodeName = parameter(edgeTable.serializedSourceNodeName),
+			edgeTable.serializedTargetNodeName = parameter(edgeTable.serializedTargetNodeName),
 			edgeTable.edgeType = data.edgeType,
 			edgeTable.sourceNodeActive = data.sourceNodeActive ? 1 : 0));
+		insert.parameters.serializedSourceNodeName = data.serializedSourceNodeName;
+		insert.parameters.serializedTargetNodeName = data.serializedTargetNodeName;
+		db()(insert);
 
 		return StorageBookmarkedEdge(id, data);
 	}
@@ -236,25 +248,30 @@ std::vector<StorageBookmarkedEdge> SqliteBookmarkStorage::getAllBookmarkedEdges(
 	return bookmarkedEdges;
 }
 
-void SqliteBookmarkStorage::updateBookmark(
+bool SqliteBookmarkStorage::updateBookmark(
 	const BookmarkId bookmarkId, const std::string& name, const std::string& comment, const Id categoryId)
 {
 	using namespace sqlpp;
 	// The raw path issued three separate UPDATEs built by string concatenation
-	// (an injection hazard on name/comment). One typed, escaped statement
+	// (an injection hazard on name/comment). One typed statement with the text bound
 	// replaces all three.
 	try
 	{
-		db()(update(bookmarkTable)
-				 .set(bookmarkTable.name = name,
-					  bookmarkTable.comment = comment,
-					  bookmarkTable.categoryId = static_cast<int64_t>(categoryId))
-				 .where(bookmarkTable.id == static_cast<int64_t>(bookmarkId)));
+		auto statement = db().prepare(update(bookmarkTable)
+										  .set(bookmarkTable.name = parameter(bookmarkTable.name),
+											   bookmarkTable.comment = parameter(bookmarkTable.comment),
+											   bookmarkTable.categoryId = static_cast<int64_t>(categoryId))
+										  .where(bookmarkTable.id == static_cast<int64_t>(bookmarkId)));
+		statement.parameters.name = name;
+		statement.parameters.comment = comment;
+		db()(statement);
+		return true;
 	}
 	catch (const std::exception& e)
 	{
 		LOG_ERROR(e.what());
 	}
+	return false;
 }
 
 std::vector<StorageBookmarkCategory> SqliteBookmarkStorage::getAllBookmarkCategories() const
@@ -286,8 +303,10 @@ StorageBookmarkCategory SqliteBookmarkStorage::getBookmarkCategoryByName(const s
 	using namespace sqlpp;
 	try
 	{
-		for (const auto& row:
-			 db()(select(all_of(categoryTable)).from(categoryTable).where(categoryTable.name == name)))
+		auto query = db().prepare(
+			select(all_of(categoryTable)).from(categoryTable).where(categoryTable.name == parameter(categoryTable.name)));
+		query.parameters.name = name;
+		for (const auto& row: db()(query))
 		{
 			return StorageBookmarkCategory(static_cast<Id>(row.id), fieldText(row.name));
 		}

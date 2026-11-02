@@ -46,6 +46,9 @@ public:
 
 	bool isEmpty() const;
 	bool isIncompatible() const;
+	//! SQLite's quick_check: whether the file's structure is sound. It reads the whole
+	//! database, so the caller decides when that is worth it.
+	bool isWellFormed() const;
 
 	void setTime();
 	TimeStamp getTime() const;

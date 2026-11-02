@@ -23,6 +23,7 @@
 #include <string>
 #include <thread>
 #include <unordered_map>
+#include <variant>
 #include <vector>
 
 namespace ex = stdexec;
@@ -31,23 +32,15 @@ using storage::ElementId;
 
 namespace
 {
-std::string esc(const std::string& s)
+// One row of a batch: its INSERT, with every value bound (text inlined into the SQL
+// was cut short at a NUL in it, and escaping only quotes was the one defense).
+struct Row
 {
-	std::string out;
-	out.reserve(s.size() + 8);
-	for (char c: s)
-	{
-		if (c == '\'')
-		{
-			out += "''";
-		}
-		else
-		{
-			out += c;
-		}
-	}
-	return out;
-}
+	using Value = std::variant<long long, std::string>;
+
+	const char* sql;
+	std::vector<Value> values;
+};
 
 //! Bounded-work-free MPSC-ish queue with an end-of-stream flag; the writers'
 //! stand-in for StorageProvider. pop() blocks until an item is available or the
@@ -122,8 +115,10 @@ struct ConcurrentTursoWriter::Impl
 		std::unordered_map<Id::type, ElementId> sloc;
 		elem.reserve(batch.nodes.size() + batch.edges.size());
 
-		std::string sql;
-		auto s = [](long long v) { return std::to_string(v); };
+		std::vector<Row> rows;
+		const auto element = [&rows](long long id) {
+			rows.push_back({"INSERT OR IGNORE INTO element(id) VALUES(?1)", {id}});
+		};
 
 		// errors (element-minting; dedup by message+fatal)
 		for (const StorageError& e: batch.errors)
@@ -132,10 +127,10 @@ struct ConcurrentTursoWriter::Impl
 			elem[static_cast<Id::type>(e.id)] = r.id;
 			if (r.created)
 			{
-				sql += "INSERT OR IGNORE INTO element(id) VALUES(" + s(r.id) + ");";
-				sql += "INSERT OR IGNORE INTO error(id,message,fatal,indexed,translation_unit) VALUES(" + s(r.id) +
-					",'" + esc(e.message) + "'," + s(e.fatal ? 1 : 0) + "," + s(e.indexed ? 1 : 0) + ",'" +
-					esc(e.translationUnit) + "');";
+				element(r.id);
+				rows.push_back(
+					{"INSERT OR IGNORE INTO error(id,message,fatal,indexed,translation_unit) VALUES(?1,?2,?3,?4,?5)",
+					 {static_cast<long long>(r.id), e.message, e.fatal ? 1LL : 0LL, e.indexed ? 1LL : 0LL, e.translationUnit}});
 			}
 		}
 
@@ -146,9 +141,10 @@ struct ConcurrentTursoWriter::Impl
 			elem[static_cast<Id::type>(n.id)] = r.id;
 			if (r.created)
 			{
-				sql += "INSERT OR IGNORE INTO element(id) VALUES(" + s(r.id) + ");";
-				sql += "INSERT OR IGNORE INTO node(id,type,serialized_name) VALUES(" + s(r.id) + "," +
-					s(static_cast<int>(n.type)) + ",'" + esc(n.serializedName) + "');";
+				element(r.id);
+				rows.push_back(
+					{"INSERT OR IGNORE INTO node(id,type,serialized_name) VALUES(?1,?2,?3)",
+					 {static_cast<long long>(r.id), static_cast<long long>(n.type), n.serializedName}});
 			}
 		}
 
@@ -169,10 +165,16 @@ struct ConcurrentTursoWriter::Impl
 				lineCount = content->getLineCount();
 				fileContents.emplace_back(it->second, content->getText());
 			}
-			sql += "INSERT OR IGNORE INTO file(id,path,language,modification_time,indexed,complete,line_count) VALUES(" +
-				s(it->second) + ",'" + esc(f.filePath) + "','" + esc(f.languageIdentifier) + "','" +
-				esc(f.modificationTime) + "'," + s(f.indexed ? 1 : 0) + "," + s(f.complete ? 1 : 0) + "," +
-				s(lineCount) + ");";
+			rows.push_back(
+				{"INSERT OR IGNORE INTO file(id,path,language,modification_time,indexed,complete,line_count) "
+				 "VALUES(?1,?2,?3,?4,?5,?6,?7)",
+				 {static_cast<long long>(it->second),
+				  f.filePath,
+				  f.languageIdentifier,
+				  f.modificationTime,
+				  f.indexed ? 1LL : 0LL,
+				  f.complete ? 1LL : 0LL,
+				  static_cast<long long>(lineCount)}});
 		}
 
 		// symbols (id = node id; dedup by node id)
@@ -181,8 +183,9 @@ struct ConcurrentTursoWriter::Impl
 			const auto it = elem.find(static_cast<Id::type>(sym.id));
 			if (it != elem.end() && index.markSymbol(it->second))
 			{
-				sql += "INSERT OR IGNORE INTO symbol(id,definition_kind) VALUES(" + s(it->second) + "," +
-					s(static_cast<int>(sym.definitionKind)) + ");";
+				rows.push_back(
+					{"INSERT OR IGNORE INTO symbol(id,definition_kind) VALUES(?1,?2)",
+					 {static_cast<long long>(it->second), static_cast<long long>(sym.definitionKind)}});
 			}
 		}
 
@@ -199,9 +202,13 @@ struct ConcurrentTursoWriter::Impl
 			elem[static_cast<Id::type>(e.id)] = r.id;
 			if (r.created)
 			{
-				sql += "INSERT OR IGNORE INTO element(id) VALUES(" + s(r.id) + ");";
-				sql += "INSERT OR IGNORE INTO edge(id,type,source_node_id,target_node_id) VALUES(" + s(r.id) + "," +
-					s(static_cast<int>(e.type)) + "," + s(sIt->second) + "," + s(tIt->second) + ");";
+				element(r.id);
+				rows.push_back(
+					{"INSERT OR IGNORE INTO edge(id,type,source_node_id,target_node_id) VALUES(?1,?2,?3,?4)",
+					 {static_cast<long long>(r.id),
+					  static_cast<long long>(e.type),
+					  static_cast<long long>(sIt->second),
+					  static_cast<long long>(tIt->second)}});
 			}
 		}
 
@@ -212,8 +219,9 @@ struct ConcurrentTursoWriter::Impl
 			elem[static_cast<Id::type>(ls.id)] = r.id;
 			if (r.created)
 			{
-				sql += "INSERT OR IGNORE INTO element(id) VALUES(" + s(r.id) + ");";
-				sql += "INSERT OR IGNORE INTO local_symbol(id,name) VALUES(" + s(r.id) + ",'" + esc(ls.name) + "');";
+				element(r.id);
+				rows.push_back(
+					{"INSERT OR IGNORE INTO local_symbol(id,name) VALUES(?1,?2)", {static_cast<long long>(r.id), ls.name}});
 			}
 		}
 
@@ -229,11 +237,17 @@ struct ConcurrentTursoWriter::Impl
 			sloc[static_cast<Id::type>(l.id)] = r.id;
 			if (r.created)
 			{
-				sql += "INSERT OR IGNORE INTO element(id) VALUES(" + s(r.id) + ");";
-				sql += "INSERT OR IGNORE INTO source_location(id,file_node_id,start_line,start_column,end_line,end_column,type) VALUES(" +
-					s(r.id) + "," + s(fileDbId) + "," + s(static_cast<long long>(l.startLine)) + "," +
-					s(static_cast<long long>(l.startCol)) + "," + s(static_cast<long long>(l.endLine)) + "," +
-					s(static_cast<long long>(l.endCol)) + "," + s(static_cast<int>(l.type)) + ");";
+				element(r.id);
+				rows.push_back(
+					{"INSERT OR IGNORE INTO source_location(id,file_node_id,start_line,start_column,end_line,end_column,type) "
+					 "VALUES(?1,?2,?3,?4,?5,?6,?7)",
+					 {static_cast<long long>(r.id),
+					  static_cast<long long>(fileDbId),
+					  static_cast<long long>(l.startLine),
+					  static_cast<long long>(l.startCol),
+					  static_cast<long long>(l.endLine),
+					  static_cast<long long>(l.endCol),
+					  static_cast<long long>(l.type)}});
 			}
 		}
 
@@ -244,8 +258,9 @@ struct ConcurrentTursoWriter::Impl
 			const auto lIt = sloc.find(static_cast<Id::type>(o.sourceLocationId));
 			if (eIt != elem.end() && lIt != sloc.end() && index.markOccurrence(eIt->second, lIt->second))
 			{
-				sql += "INSERT OR IGNORE INTO occurrence(element_id,source_location_id) VALUES(" + s(eIt->second) +
-					"," + s(lIt->second) + ");";
+				rows.push_back(
+					{"INSERT OR IGNORE INTO occurrence(element_id,source_location_id) VALUES(?1,?2)",
+					 {static_cast<long long>(eIt->second), static_cast<long long>(lIt->second)}});
 			}
 		}
 
@@ -255,8 +270,9 @@ struct ConcurrentTursoWriter::Impl
 			const auto it = elem.find(static_cast<Id::type>(c.nodeId));
 			if (it != elem.end() && index.markComponentAccess(it->second))
 			{
-				sql += "INSERT OR IGNORE INTO component_access(node_id,type) VALUES(" + s(it->second) + "," +
-					s(static_cast<int>(c.type)) + ");";
+				rows.push_back(
+					{"INSERT OR IGNORE INTO component_access(node_id,type) VALUES(?1,?2)",
+					 {static_cast<long long>(it->second), static_cast<long long>(c.type)}});
 			}
 		}
 
@@ -267,8 +283,9 @@ struct ConcurrentTursoWriter::Impl
 			if (it != elem.end() &&
 				index.markNodeAttribute(it->second, static_cast<int>(a.key), a.value))
 			{
-				sql += "INSERT OR IGNORE INTO node_attribute(node_id,key,value) VALUES(" +
-					s(it->second) + "," + s(static_cast<int>(a.key)) + ",'" + esc(a.value) + "');";
+				rows.push_back(
+					{"INSERT OR IGNORE INTO node_attribute(node_id,key,value) VALUES(?1,?2,?3)",
+					 {static_cast<long long>(it->second), static_cast<long long>(a.key), a.value}});
 			}
 		}
 
@@ -284,12 +301,16 @@ struct ConcurrentTursoWriter::Impl
 			const auto r = index.internElementComponent(key);
 			if (r.created)
 			{
-				sql += "INSERT OR IGNORE INTO element_component(id,element_id,type,data) VALUES(" + s(r.id) + "," +
-					s(it->second) + "," + s(static_cast<int>(c.type)) + ",'" + esc(c.data) + "');";
+				rows.push_back(
+					{"INSERT OR IGNORE INTO element_component(id,element_id,type,data) VALUES(?1,?2,?3,?4)",
+					 {static_cast<long long>(r.id),
+					  static_cast<long long>(it->second),
+					  static_cast<long long>(c.type),
+					  c.data}});
 			}
 		}
 
-		commitWithRetry(conn, sql, fileContents);
+		commitWithRetry(conn, rows, fileContents);
 	}
 
 	struct CommitError
@@ -298,10 +319,10 @@ struct ConcurrentTursoWriter::Impl
 		std::string message;
 	};
 
-	// One transaction attempt: BEGIN CONCURRENT, the batch SQL, the bound
-	// filecontent inserts, COMMIT. On failure, captures (code, message) before
+	// One transaction attempt: BEGIN CONCURRENT, the batch's rows and the
+	// filecontent inserts, all bound, COMMIT. On failure, captures (code, message) before
 	// the best-effort ROLLBACK (which would overwrite the thread-local error).
-	std::optional<CommitError> tryCommit(TsqConn* conn, const std::string& sql,
+	std::optional<CommitError> tryCommit(TsqConn* conn, const std::vector<Row>& rows,
 		const std::vector<std::pair<ElementId, std::string>>& fileContents)
 	{
 		auto fail = [conn](const char* stage) -> CommitError
@@ -316,10 +337,51 @@ struct ConcurrentTursoWriter::Impl
 			return CommitError{
 				tsq_last_error_code(), std::string("BEGIN failed: ") + tsq_last_error()};
 		}
-		if (!sql.empty() && tsq_conn_exec(conn, sql.c_str()) != TSQ_OK)
+		// Each kind of row's INSERT prepared once per attempt, its values bound.
+		std::unordered_map<const char*, TsqStmt*> statements;
+		const auto finalizeAll = [&statements]() {
+			for (const auto& [sql, statement]: statements)
+			{
+				tsq_finalize(statement);
+			}
+			statements.clear();
+		};
+		// The error first: finalizing and the ROLLBACK overwrite the thread-local one.
+		const auto failRows = [&](const char* stage) -> CommitError
 		{
-			return fail("INSERT");
+			CommitError e{tsq_last_error_code(), std::string(stage) + " failed: " + tsq_last_error()};
+			finalizeAll();
+			tsq_conn_exec(conn, "ROLLBACK");
+			return e;
+		};
+		for (const Row& row: rows)
+		{
+			TsqStmt*& statement = statements[row.sql];
+			if (statement == nullptr && (statement = tsq_conn_prepare(conn, row.sql)) == nullptr)
+			{
+				statements.erase(row.sql);
+				return failRows("prepare INSERT");
+			}
+			for (std::size_t i = 0; i < row.values.size(); i++)
+			{
+				const int index = static_cast<int>(i + 1);
+				if (const long long* number = std::get_if<long long>(&row.values[i]))
+				{
+					tsq_bind_int(statement, index, *number);
+				}
+				else
+				{
+					const std::string& text = std::get<std::string>(row.values[i]);
+					tsq_bind_text(statement, index, text.data(), static_cast<int>(text.size()));
+				}
+			}
+			if (tsq_step(statement) != TSQ_DONE)
+			{
+				return failRows("INSERT");
+			}
+			tsq_reset(statement);
 		}
+		finalizeAll();
 		// filecontent: bound inserts (arbitrary/large text) in the same transaction.
 		if (!fileContents.empty())
 		{
@@ -353,12 +415,12 @@ struct ConcurrentTursoWriter::Impl
 	// rows, ids were pre-assigned by the in-process index (never read from the
 	// DB), and every INSERT is OR IGNORE, so even a partially applied attempt
 	// cannot duplicate rows or drift ids.
-	void commitWithRetry(TsqConn* conn, const std::string& sql,
+	void commitWithRetry(TsqConn* conn, const std::vector<Row>& rows,
 		const std::vector<std::pair<ElementId, std::string>>& fileContents)
 	{
 		for (int tries = 1;; ++tries)
 		{
-			const std::optional<CommitError> err = tryCommit(conn, sql, fileContents);
+			const std::optional<CommitError> err = tryCommit(conn, rows, fileContents);
 			if (!err)
 			{
 				if (tries > 1)

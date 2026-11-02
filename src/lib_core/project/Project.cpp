@@ -2,6 +2,7 @@
 
 #include <algorithm>
 #include <chrono>
+#include <filesystem>
 
 #include <exec/task.hpp>
 
@@ -10,6 +11,7 @@
 #include "CombinedIndexerCommandProvider.h"
 #include "DialogView.h"
 #include "IndexerClusterPlan.h"
+#include "IndexDatabaseFiles.h"
 #include "IndexerCommand.h"
 #include "IndexerCommandCustom.h"
 #include "IndexerCommandRust.h"
@@ -18,6 +20,7 @@
 #include "ProjectStateMachine.h"
 #include "MemoryIndexerCommandProvider.h"
 #include "PersistentStorage.h"
+#include "CppSQLite3.h"
 #include "ProjectSettings.h"
 #include "RefreshInfoGenerator.h"
 #include "SourceGroup.h"
@@ -177,19 +180,41 @@ bool Project::readSettings()
 	return m_settings->reload();
 }
 
+namespace
+{
+// A run left behind that finished offers its index first; one that indexed only some
+// of the files offers the complete index from before first.
+bool offersItsIndexFirst(std::optional<IndexingRunMark> mark)
+{
+	return mark == IndexingRunMark::Finished;
+}
+}	 // namespace
+
 std::optional<Project::Question> Project::interruptedRunQuestion() const
 {
-	if (!m_settings->getTempDBFilePath().exists() || !m_settings->getDBFilePath().exists())
+	if (!m_settings->getTempDBFilePath().exists() || !m_settings->getDBFilePath().exists() ||
+		IndexingLock::isHeld(m_settings->getDBFilePath()))
 	{
-		return std::nullopt;
+		return std::nullopt;	// nothing left, or the run of a process indexing now
 	}
+	const std::optional<IndexingRunMark> mark = index_database::runMark(m_settings->getTempDBFilePath());
+	if (offersItsIndexFirst(mark))
+	{
+		return Question {
+			"The last indexing of this project finished, but its index did not replace the previous one "
+			"(Sourcetrail was closed first, or the index was in use). Do you want to use the new index, or "
+			"keep the previous one?",
+			{"Use the New Index", "Keep the Previous Index"}};
+	}
+	const std::string what = mark == IndexingRunMark::Stopped
+		? "Sourcetrail was closed while indexing this project, before the indexing finished."
+		: "Sourcetrail has been closed unexpectedly while indexing this project.";
 	return Question {
-		"Sourcetrail has been closed unexpectedly while indexing this project. "
-		"You can either choose to keep "
-		"the data that has already been indexed or discard that data and restore "
-		"the state of your project "
-		"before indexing?",
-		{"Keep and Continue", "Discard and Restore"}};
+		what +
+			" The previous index is complete; the interrupted indexing covers only part of the files. "
+			"Do you want to discard its data and restore the previous index, or keep its data and index "
+			"the remaining files?",
+		{"Discard and Restore", "Keep and Continue"}};
 }
 
 bool Project::resolveInterruptedRun(int option)
@@ -201,27 +226,42 @@ bool Project::resolveInterruptedRun(int option)
 	{
 		return true;
 	}
-	if (!dbPath.exists())
+	if (IndexingLock::isHeld(dbPath))
 	{
-		LOG_INFO(
-			"Switching to temporary indexing data because no other persistent data was "
-			"found");
-		FileSystem::rename(tempDbPath, dbPath);
+		LOG_INFO("Another process is indexing this project: its temporary indexing data stays");
 		return true;
 	}
-	if (option == 0)
+	const std::optional<IndexingRunMark> mark = index_database::runMark(tempDbPath);
+	const bool keep = offersItsIndexFirst(mark) ? option == 0 : option == 1;
+	if (!dbPath.exists() || keep)
 	{
-		LOG_INFO("Switching to temporary indexing data on user's decision");
-		if (!moveTempStorageFile(dbPath, tempDbPath))
+		LOG_INFO(
+			dbPath.exists() ? "Switching to temporary indexing data on user's decision"
+							: "Switching to temporary indexing data because no other persistent data was "
+							  "found");
+		const std::expected<void, IndexSwapError> moved = moveTempStorageFile(dbPath, tempDbPath);
+		if (!moved && (moved.error() == IndexSwapError::IndexInUse || moved.error() == IndexSwapError::TempIndexInUse))
 		{
+			LOG_ERROR("Cannot switch to the temporary indexing data: " + std::string(to_std_sv(moved.error())));
 			m_state = ProjectStateType::PROJECT_STATE_NOT_LOADED;
 			MessageStatus("Unable to load project", true, false).dispatch();
 			return false;
 		}
+		if (!moved)
+		{
+			// Nothing to keep: what is left is no index.
+			const std::string message = "The data of the interrupted indexing is discarded: " +
+				std::string(to_std_sv(moved.error())) + ".";
+			LOG_WARNING(message);
+			MessageStatus(message, true, false).dispatch();
+			index_database::remove(tempDbPath);
+		}
+		// Kept data of a run that did not finish: the load goes on to index the rest.
+		m_continueIndexing = moved && !offersItsIndexFirst(mark);
 		return true;
 	}
 	LOG_INFO("Discarding temporary indexing data on user's decision");
-	FileSystem::remove(tempDbPath);
+	index_database::remove(tempDbPath);
 	return true;
 }
 
@@ -238,8 +278,10 @@ Project::Question Project::indexInUse()
 
 void Project::openIndex()
 {
+	m_loadProblem.clear();
 	const FilePath dbPath = m_settings->getDBFilePath();
 	const FilePath bookmarkDbPath = m_settings->getBookmarkDBFilePath();
+	m_indexFilesProblem = index_database::nameProblem(dbPath, m_settings->getTempDBFilePath());
 
 	m_storage = std::make_shared<PersistentStorage>(dbPath, bookmarkDbPath);
 
@@ -265,6 +307,22 @@ void Project::openIndex()
 		}
 	}
 
+	// The index's structure, which a crash or another process can have broken: SQLite's
+	// quick_check reads all of it (half a second for 100 MB), so a bigger index opens
+	// unchecked.
+	if (hasIndex())
+	{
+		constexpr std::uintmax_t wellFormedCheckLimit = 256 * 1024 * 1024;
+		std::error_code error;
+		const std::uintmax_t size = std::filesystem::file_size(dbPath.getPath(), error);
+		if (!error && size <= wellFormedCheckLimit && !m_storage->isWellFormed())
+		{
+			LOG_ERROR("The index database is malformed: " + dbPath.str());
+			m_state = ProjectStateType::PROJECT_STATE_DB_CORRUPTED;
+			m_loadProblem = "Its database is malformed.";
+		}
+	}
+
 	try
 	{
 		m_storage->setup();
@@ -274,6 +332,13 @@ void Project::openIndex()
 		LOG_ERROR("Exception has been encountered while loading the project.");
 
 		m_state = ProjectStateType::PROJECT_STATE_DB_CORRUPTED;
+	}
+
+	if (m_indexFilesProblem)
+	{
+		LOG_ERROR(*m_indexFilesProblem);
+		m_state = ProjectStateType::PROJECT_STATE_DB_CORRUPTED;
+		m_loadProblem = *m_indexFilesProblem;
 	}
 
 	m_sourceGroups = SourceGroupFactory::getInstance()->createSourceGroups(
@@ -321,11 +386,17 @@ void Project::finishLoad(bool directRefresh)
 				.dispatch();
 			break;
 		default:
-			MessageStatus("Project could not be loaded.", false, false).dispatch();
+			MessageStatus(
+				m_loadProblem.empty() ? "Project could not be loaded." : "Project could not be loaded. " + m_loadProblem,
+				!m_loadProblem.empty(),
+				false)
+				.dispatch();
 		}
 	}
 
-	if (m_state != ProjectStateType::PROJECT_STATE_LOADED && m_hasGUI)
+	// Kept data of an interrupted run: what it did not index is indexed now, as asked.
+	const bool continueIndexing = std::exchange(m_continueIndexing, false);
+	if ((m_state != ProjectStateType::PROJECT_STATE_LOADED || continueIndexing) && m_hasGUI)
 	{
 		// Pending from here, not from when the refresh is handled: the load is over
 		// once the project is open, and the request it leaves must already show.
@@ -333,7 +404,7 @@ void Project::finishLoad(bool directRefresh)
 		// A person's load indexes at once where one mode does; an agent's opens the
 		// mode choice it waits for.
 		MessageRefresh refresh;
-		if (directRefresh)
+		if (directRefresh || continueIndexing)
 		{
 			refresh.direct();
 		}
@@ -347,32 +418,66 @@ void Project::refresh(std::shared_ptr<DialogView> dialogView, RefreshMode refres
 	// whose runner would swallow an escaping exception with a single log line -- and without a
 	// terminal MessageIndexingFinished a headless run waits forever. Convert any escape into a
 	// failed outcome and dispatch the terminal event ourselves.
-	refreshGuarded([&]() { refreshImpl(dialogView, refreshMode, direct); });
+	guarded("refreshing the project failed", dialogView, [&]() { refreshImpl(dialogView, refreshMode, direct); });
 }
 
 void Project::refreshPlanned(std::shared_ptr<DialogView> dialogView, const RefreshPlan& plan)
 {
-	refreshGuarded([&]() { refreshPlannedImpl(dialogView, plan); });
+	guarded("refreshing the project failed", dialogView, [&]() { refreshPlannedImpl(dialogView, plan); });
 }
 
-void Project::refreshGuarded(const std::function<void()>& refresh)
+void Project::guarded(
+	const std::string& context, const std::shared_ptr<DialogView>& dialogView, const std::function<void()>& step)
 {
 	const IndexingOutcome outcome = utility::expectedFromExceptions<void>(
 		IndexingErrorCode::PipelineFailed,
 		IndexingErrorCode::PipelineFailed,
-		"project refresh failed",
-		refresh);
+		context,
+		[&]() {
+			try
+			{
+				step();
+			}
+			catch (CppSQLite3Exception& e)	// no std::exception: it would be "[unknown exception type]"
+			{
+				throw std::runtime_error(e.errorMessage());
+			}
+		});
 	if (!outcome)
 	{
-		LOG_ERROR(utility::expectedErrorToString(outcome.error()));
-		m_refreshStage = RefreshStageType::NONE;
-		IndexingStateMachine::instance()->ended(utility::expectedErrorToString(outcome.error()));
-		MessageIndexingFinished(outcome).dispatch();
+		endRefused(outcome.error(), dialogView);
 	}
+}
+
+void Project::endRefused(const IndexingError& error, const std::shared_ptr<DialogView>& dialogView, bool notify)
+{
+	const std::string message = utility::expectedErrorToString(error);
+	LOG_ERROR(message);
+	// Whatever was showing (the progress of preparing, a choice) goes: a dialog left
+	// up holds the window.
+	if (dialogView)
+	{
+		dialogView->clearDialogs();
+		if (m_hasGUI && notify)
+		{
+			dialogView->notify(message);
+		}
+	}
+	MessageStatus(message, true, false).dispatch();
+	m_refreshStage = RefreshStageType::NONE;
+	m_indexingLock.reset();
+	IndexingStateMachine::instance()->ended(message);
+	MessageIndexingFinished(std::unexpected(error)).dispatch();
 }
 
 void Project::refreshImpl(std::shared_ptr<DialogView> dialogView, RefreshMode refreshMode, bool direct)
 {
+	if (m_indexFilesProblem)
+	{
+		// No reindex can help: asking for one only asked again.
+		endRefused(utility::makeExpectedError(IndexingErrorCode::PipelineFailed, *m_indexFilesProblem), dialogView);
+		return;
+	}
 	const std::optional<RefreshPlan> plan = planRefresh(refreshMode, direct);
 	if (!plan)
 	{
@@ -395,9 +500,9 @@ std::optional<Project::RefreshPlan> Project::planRefresh(RefreshMode refreshMode
 		return std::nullopt;
 	}
 
-	if (m_state == ProjectStateType::PROJECT_STATE_NOT_LOADED)
+	if (m_state == ProjectStateType::PROJECT_STATE_NOT_LOADED || m_indexFilesProblem)
 	{
-		return std::nullopt;
+		return std::nullopt;	// the refresh says why (refreshImpl)
 	}
 
 	RefreshPlan plan;
@@ -443,10 +548,9 @@ std::optional<Project::RefreshPlan> Project::planRefresh(RefreshMode refreshMode
 		break;
 
 	case ProjectStateType::PROJECT_STATE_DB_CORRUPTED:
-		question =
-			"There was a problem loading the index of this project. The project needs to get "
-			"fully reindexed. "
-			"Do you want to reindex the project?";
+		question = "There was a problem loading the index of this project. " +
+			(m_loadProblem.empty() ? std::string() : m_loadProblem + " ") +
+			"The project needs to get fully reindexed. Do you want to reindex the project?";
 		plan.needsFullRefresh = true;
 		break;
 
@@ -491,9 +595,20 @@ void Project::refreshPlannedImpl(std::shared_ptr<DialogView> dialogView, const R
 		m_settings->getAllSourceGroupSettings());
 	for (const std::shared_ptr<SourceGroup>& sourceGroup: m_sourceGroups)
 	{
-		if (sourceGroup->getStatus() == SourceGroupStatusType::ENABLED && !sourceGroup->prepareIndexing())
+		if (sourceGroup->getStatus() != SourceGroupStatusType::ENABLED)
 		{
-			m_refreshStage = RefreshStageType::NONE;
+			continue;
+		}
+		if (const std::expected<void, PrepareIndexingError> prepared = sourceGroup->prepareIndexing(); !prepared)
+		{
+			// The source group showed its reason; the run ends with it (a headless run
+			// exits 1, it exited 0).
+			endRefused(
+				utility::makeExpectedError(
+					IndexingErrorCode::PipelineFailed,
+					"Cannot index the project: " + std::string(to_std_sv(prepared.error())) + "."),
+				dialogView,
+				false);
 			return;
 		}
 	}
@@ -516,12 +631,28 @@ void Project::refreshPlannedImpl(std::shared_ptr<DialogView> dialogView, const R
 				enabledModes.end(), {RefreshMode::UPDATED_FILES, RefreshMode::UPDATED_AND_INCOMPLETE_FILES});
 		}
 
+		// The choice can outlive the project (closed, or replaced, while it is open):
+		// its answers reach the project only while it is there.
+		const std::weak_ptr<Project> weakProject = weak_from_this();
 		dialogView->startIndexingDialog(
-			this,
+			[weakProject](RefreshMode mode) {
+				const std::shared_ptr<Project> project = weakProject.lock();
+				return project ? project->getRefreshInfo(mode) : RefreshInfo();
+			},
 			enabledModes,
 			refreshMode,
-			[this, dialogView](const RefreshInfo& info) { buildIndex(info, dialogView); },
-			[this]() { m_refreshStage = RefreshStageType::NONE; },
+			[weakProject, dialogView](const RefreshInfo& info) {
+				if (const std::shared_ptr<Project> project = weakProject.lock())
+				{
+					project->buildIndex(info, dialogView);
+				}
+			},
+			[weakProject]() {
+				if (const std::shared_ptr<Project> project = weakProject.lock())
+				{
+					project->m_refreshStage = RefreshStageType::NONE;
+				}
+			},
 			plan.reason);
 	}
 	else if (m_hasGUI)
@@ -706,18 +837,7 @@ void Project::buildIndex(RefreshInfo info, std::shared_ptr<DialogView> dialogVie
 {
 	// Same std::expected boundary as refresh(): buildIndex is also entered directly by the GUI
 	// indexing dialog's callback.
-	const IndexingOutcome outcome = utility::expectedFromExceptions<void>(
-		IndexingErrorCode::PipelineFailed,
-		IndexingErrorCode::PipelineFailed,
-		"assembling the indexing pipeline failed",
-		[&]() { buildIndexImpl(std::move(info), dialogView); });
-	if (!outcome)
-	{
-		LOG_ERROR(utility::expectedErrorToString(outcome.error()));
-		m_refreshStage = RefreshStageType::NONE;
-		IndexingStateMachine::instance()->ended(utility::expectedErrorToString(outcome.error()));
-		MessageIndexingFinished(outcome).dispatch();
-	}
+	guarded("setting up the indexing failed", dialogView, [&]() { buildIndexImpl(std::move(info), dialogView); });
 }
 
 void Project::buildIndexImpl(RefreshInfo info, std::shared_ptr<DialogView> dialogView)
@@ -791,6 +911,23 @@ void Project::buildIndexImpl(RefreshInfo info, std::shared_ptr<DialogView> dialo
 		}
 	}
 
+	// One run per project, across processes: two write the same temporary database
+	// and swap it over the index twice. A shard run writes a database of its own.
+	if (!m_shardConfig.isActive())
+	{
+		std::expected<IndexingLock, IndexingLockError> lock = IndexingLock::acquire(m_settings->getDBFilePath());
+		if (!lock)
+		{
+			endRefused(
+				utility::makeExpectedError(
+					IndexingErrorCode::IndexingLocked,
+					"Cannot index the project: " + std::string(to_std_sv(lock.error())) + "."),
+				dialogView);
+			return;
+		}
+		m_indexingLock.emplace(std::move(*lock));
+	}
+
 	IndexingStateMachine::instance()->preparing();
 	MessageStatus("Preparing Indexing", false, true).dispatch();
 	MessageErrorCountClear().dispatch();
@@ -822,16 +959,29 @@ void Project::buildIndexImpl(RefreshInfo info, std::shared_ptr<DialogView> dialo
 			FileSystem::remove(tempIndexDbFilePath);
 		}
 	}
-	else if (info.mode != RefreshMode::ALL_FILES)
+	else
 	{
-		// store the indexed data into the temp db but keep the current state to allow browsing
-		// while indexing
-		FileSystem::copyFile(indexDbFilePath, tempIndexDbFilePath);
+		// What an earlier run left (one whose index could not replace the project's)
+		// is not this run's start.
+		index_database::remove(tempIndexDbFilePath);
+		if (info.mode != RefreshMode::ALL_FILES)
+		{
+			// store the indexed data into the temp db but keep the current state to allow browsing
+			// while indexing
+			FileSystem::copyFile(indexDbFilePath, tempIndexDbFilePath);
+		}
 	}
 
-	std::shared_ptr<PersistentStorage> tempStorage = std::make_shared<PersistentStorage>(
-		tempIndexDbFilePath, bookmarkDbFilePath);
-	tempStorage->setup();
+	std::shared_ptr<PersistentStorage> tempStorage;
+	try
+	{
+		tempStorage = std::make_shared<PersistentStorage>(tempIndexDbFilePath, bookmarkDbFilePath);
+		tempStorage->setup();
+	}
+	catch (CppSQLite3Exception& e)
+	{
+		throw std::runtime_error("cannot create " + tempIndexDbFilePath.str() + ": " + e.errorMessage());
+	}
 	// Indexing target is throwaway until the final swap: skip fsync per commit.
 	// Restored to NORMAL in TaskFinishParsing before optimize/swap.
 	tempStorage->setBulkWritePragmas(true);
@@ -854,6 +1004,11 @@ void Project::buildIndexImpl(RefreshInfo info, std::shared_ptr<DialogView> dialo
 	tempStorage->setProjectSettingsText(
 		TextAccess::createFromFile(getProjectSettingsFilePath())->getText());
 	tempStorage->updateVersion();
+	if (!m_shardConfig.isActive())
+	{
+		// Until the run says how it ended: what a crash leaves.
+		tempStorage->setMetaValue(index_database::runMarkKey, std::string(to_std_sv(IndexingRunMark::Running)));
+	}
 
 	std::unique_ptr<CombinedIndexerCommandProvider> indexerCommandProvider =
 		std::make_unique<CombinedIndexerCommandProvider>();
@@ -1152,7 +1307,15 @@ void Project::startIndexing(std::shared_ptr<IndexingRun> run)
 		}
 		state.sourceFileCount = run->sourceFileCount;
 
-		if (run->indexing)
+		// An interrupt while the run was set up (preparing) came before its steps
+		// listened for it: nothing is indexed, and the report says it was interrupted.
+		if (IndexingStateMachine::instance()->interruptRequested())
+		{
+			LOG_INFO("Indexing was interrupted while it was prepared.");
+			state.interrupted = true;
+		}
+
+		if (run->indexing && !state.interrupted)
 		{
 			for (const std::function<void()>& work: run->preIndexWork)
 			{
@@ -1189,7 +1352,7 @@ void Project::startIndexing(std::shared_ptr<IndexingRun> run)
 			run->dialogView->hideUnknownProgressDialog();
 		}
 
-		if (run->customCommands)
+		if (run->customCommands && !state.interrupted)
 		{
 			run->customCommands->run(state);
 		}
@@ -1213,6 +1376,10 @@ void Project::startIndexing(std::shared_ptr<IndexingRun> run)
 		{
 			end.data = RunEnd::Data::Keep;
 			end.refreshAgain = policy == DatabasePolicy::DATABASE_POLICY_REFRESH;
+			// Should the swap not happen (the app closes first, or it fails), the
+			// next load offers this index.
+			run->tempStorage->setMetaValue(
+				index_database::runMarkKey, std::string(to_std_sv(IndexingRunMark::Finished)));
 		}
 		else if (policy == DatabasePolicy::DATABASE_POLICY_DISCARD)
 		{
@@ -1236,6 +1403,7 @@ void Project::startIndexing(std::shared_ptr<IndexingRun> run)
 			if (const std::shared_ptr<Project> project = weakProject.lock())
 			{
 				project->m_refreshStage = RefreshStageType::NONE;
+				project->m_indexingLock.reset();
 			}
 			dialogView->clearDialogs();
 			if (!terminated)
@@ -1267,17 +1435,40 @@ void Project::startIndexing(std::shared_ptr<IndexingRun> run)
 				// On the app's queue, where the project's state is.
 				const CauseScope scope(cause);
 				execution::post(TabIds::app(), [weakProject, dialogView, end]() {
+					IndexingOutcome outcome;
 					if (const std::shared_ptr<Project> project = weakProject.lock())
 					{
 						if (end.data == RunEnd::Data::Keep)
 						{
-							project->swapToTempStorage(dialogView);
+							// However the swap fails (it can throw opening the new index), the
+							// run ends: with the error, and the index as it is.
+							const IndexingOutcome swapped = utility::expectedFromExceptions<void>(
+								IndexingErrorCode::IndexNotReplaced,
+								IndexingErrorCode::IndexNotReplaced,
+								"opening the new index failed",
+								[&]() { outcome = project->swapToTempStorage(); });
+							if (!swapped)
+							{
+								outcome = swapped;
+							}
 						}
 						else if (end.data == RunEnd::Data::Discard)
 						{
 							project->discardTempStorage();
 						}
 						project->m_refreshStage = RefreshStageType::NONE;
+						project->m_indexingLock.reset();
+					}
+					if (!outcome)
+					{
+						const std::string message = utility::expectedErrorToString(outcome.error());
+						dialogView->clearDialogs();
+						MessageStatus(message, true, false).dispatch();
+						dialogView->notify(message);
+						ProjectStateMachine::instance()->reloading();
+						IndexingStateMachine::instance()->ended(message);
+						MessageIndexingFinished(outcome).dispatch();
+						return;
 					}
 					// The reload first: whoever sees the run end (an agent waiting for
 					// idle) sees the project already reopening on the new index.
@@ -1301,14 +1492,25 @@ void Project::startIndexing(std::shared_ptr<IndexingRun> run)
 
 void Project::stopIndexing()
 {
+	std::optional<FilePath> stoppedRunDb;
 	if (const std::shared_ptr<IndexingRun> run = m_indexingRun.lock())
 	{
 		run->stop.request_stop();
+		if (!run->shard)
+		{
+			stoppedRunDb = run->tempIndexDbFilePath;
+		}
 	}
 	stdexec::sync_wait(m_indexing.on_empty());
+	// A run stopped before it finished (the app closing): its data says so, not what
+	// a crash leaves, for the question its project's next load asks.
+	if (stoppedRunDb)
+	{
+		index_database::markStopped(*stoppedRunDb);
+	}
 }
 
-void Project::swapToTempStorage(std::shared_ptr<DialogView> dialogView)
+IndexingOutcome Project::swapToTempStorage()
 {
 	LOG_INFO("Switching to temporary indexing data");
 
@@ -1316,12 +1518,20 @@ void Project::swapToTempStorage(std::shared_ptr<DialogView> dialogView)
 	const FilePath tempIndexDbFilePath = m_settings->getTempDBFilePath();
 	const FilePath bookmarkDbFilePath = m_settings->getBookmarkDBFilePath();
 
-	m_storage.reset();
+	m_storage.reset();	// the index's connection: the swap needs it closed
 
-	if (!swapToTempStorageFile(indexDbFilePath, tempIndexDbFilePath, dialogView))
+	if (const std::expected<void, IndexSwapError> moved = moveTempStorageFile(indexDbFilePath, tempIndexDbFilePath);
+		!moved)
 	{
-		m_state = ProjectStateType::PROJECT_STATE_NOT_LOADED;
-		return;
+		const std::string message = "The new index did not replace the previous one, which is kept: " +
+			std::string(to_std_sv(moved.error())) + ".";
+		LOG_ERROR(message + " (" + tempIndexDbFilePath.str() + ")");
+		openIndex();
+		if (hasIndex())
+		{
+			m_storageCache->setSubject(m_storage);
+		}
+		return std::unexpected(utility::makeExpectedError(IndexingErrorCode::IndexNotReplaced, message));
 	}
 
 	m_storage = std::make_shared<PersistentStorage>(indexDbFilePath, bookmarkDbFilePath);
@@ -1357,6 +1567,7 @@ void Project::swapToTempStorage(std::shared_ptr<DialogView> dialogView)
 
 	m_storageCache->setSubject(m_storage);
 	m_state = ProjectStateType::PROJECT_STATE_LOADED;
+	return {};
 }
 
 void Project::askToReindexAll(SourceGroupType type, std::shared_ptr<DialogView> dialogView)
@@ -1393,34 +1604,10 @@ void Project::reindexAllAnswered(int option, std::shared_ptr<DialogView> dialogV
 	buildIndex(getRefreshInfo(RefreshMode::ALL_FILES), dialogView);
 }
 
-bool Project::swapToTempStorageFile(
-	const FilePath& indexDbFilePath,
-	const FilePath& tempIndexDbFilePath,
-	std::shared_ptr<DialogView> dialogView)
+std::expected<void, IndexSwapError> Project::moveTempStorageFile(
+	const FilePath& indexDbFilePath, const FilePath& tempIndexDbFilePath)
 {
-	if (moveTempStorageFile(indexDbFilePath, tempIndexDbFilePath))
-	{
-		return true;
-	}
-	if (m_hasGUI)
-	{
-		dialogView->notify(indexInUse().text);
-	}
-	return false;
-}
-
-bool Project::moveTempStorageFile(const FilePath& indexDbFilePath, const FilePath& tempIndexDbFilePath)
-{
-	try
-	{
-		FileSystem::remove(indexDbFilePath);
-		FileSystem::rename(tempIndexDbFilePath, indexDbFilePath);
-	}
-	catch (std::exception& /*e*/)
-	{
-		return false;
-	}
-	return true;
+	return index_database::replace(indexDbFilePath, tempIndexDbFilePath, SqliteIndexStorage::getStorageVersion());
 }
 
 void Project::discardTempStorage()
@@ -1429,8 +1616,8 @@ void Project::discardTempStorage()
 	if (tempIndexDbPath.exists())
 	{
 		LOG_INFO("Discarding temporary indexing data");
-		FileSystem::remove(tempIndexDbPath);
 	}
+	index_database::remove(tempIndexDbPath);
 }
 
 bool Project::hasCxxSourceGroup() const
