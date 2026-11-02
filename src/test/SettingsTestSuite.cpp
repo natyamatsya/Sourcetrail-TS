@@ -227,3 +227,17 @@ TEST_CASE("project settings refuse a project file without a version this Sourcet
 	REQUIRE(check("version = '8x'\n").error().code == NotAVersion);
 	REQUIRE(check("[[source_groups]]\nid = 'a'\n").error().code == Missing);
 }
+
+TEST_CASE("project settings without a project name name no project")
+{
+	// An emptied name made the project file ".srctrl.toml", whose name read back as ".srctrl": the
+	// wizard then created ".srctrl.srctrl.toml".
+	ProjectSettings settings;
+	settings.setProjectFilePath("", FilePath("/tmp/location"));
+	REQUIRE(settings.getProjectName().empty());
+
+	settings.setProjectFilePath("fmt", FilePath("/tmp/location"));
+	REQUIRE(settings.getProjectName() == "fmt");
+	settings.setProjectFilePath("fmt.v2", FilePath("/tmp/location"));
+	REQUIRE(settings.getProjectName() == "fmt.v2");
+}

@@ -1033,6 +1033,14 @@ bool QtProjectWizard::createProject()
 {
 	FilePath path = m_projectSettings->getFilePath();
 
+	// The project's name is its file's: an empty one made the project file ".srctrl.toml" (named
+	// ".srctrl") without a word, whichever page the Create came from.
+	if (path.fileName().size() <= ProjectSettings::PROJECT_FILE_EXTENSION.size())
+	{
+		tell(QStringLiteral("Please enter a project name."));
+		return false;
+	}
+
 	// Saving writes this Sourcetrail's version: a project file a newer Sourcetrail wrote, or one
 	// without a valid version, is not rewritten as one of this version.
 	if (m_editing)

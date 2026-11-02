@@ -208,6 +208,12 @@ inline FilePath ProjectSettings::getBookmarkDBFilePath() const
 
 inline std::string ProjectSettings::getProjectName() const
 {
+	// "<name>.srctrl.toml": the name is what precedes the extension. Without a name the file is
+	// ".srctrl.toml", whose stem a path calls ".srctrl" (a dot file has no extension) -- taken for the
+	// name, an emptied name came back as ".srctrl".
+	const std::string fileName = getFilePath().fileName();
+	if (fileName.ends_with(PROJECT_FILE_EXTENSION))
+		return fileName.substr(0, fileName.size() - PROJECT_FILE_EXTENSION.size());
 	FilePath p = getFilePath().withoutExtension();
 	if (p.extension() == ".srctrl")
 		p = p.withoutExtension();
