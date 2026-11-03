@@ -2,6 +2,7 @@
 #define BUCKET_LAYOUTER_H
 
 #include <map>
+#include <unordered_map>
 
 #include "Vector2.h"
 #include "types.h"
@@ -54,11 +55,16 @@ public:
 	std::vector<std::shared_ptr<DummyNode>> getSortedNodes();
 
 private:
-	std::shared_ptr<DummyNode> findTopMostDummyNodeRecursive(
-		std::vector<std::shared_ptr<DummyNode>>& nodes, Id tokenId, std::shared_ptr<DummyNode> top);
+	// Maps each visible node's token id to the top-level node it is drawn in; the first one in
+	// depth-first order wins when several nodes share a token id.
+	static void addTopMostDummyNodesRecursive(
+		const std::vector<std::shared_ptr<DummyNode>>& nodes,
+		const std::shared_ptr<DummyNode>& top,
+		std::unordered_map<Id, std::shared_ptr<DummyNode>>& topMostNodes);
 
 	Bucket* getBucket(int i, int j);
-	Bucket* getBucket(std::shared_ptr<DummyNode> node);
+	Bucket* getBucket(const std::shared_ptr<DummyNode>& node) const;
+	void addNode(Bucket& bucket, const std::shared_ptr<DummyNode>& node);
 
 	Vec2i m_viewSize;
 	std::map<int, std::map<int, Bucket>> m_buckets;
@@ -69,6 +75,9 @@ private:
 	int m_j2 = 0;
 
 	DummyNode* m_activeParentNode = nullptr;
+
+	// The bucket each node was added to (a node goes into one bucket only).
+	std::unordered_map<const DummyNode*, Bucket*> m_nodeBuckets;
 };
 
 #endif	  // BUCKET_LAYOUTER_H
