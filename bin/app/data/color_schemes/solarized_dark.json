@@ -163,6 +163,7 @@
          "call": "#9C8528",
          "call_trail_focus": "#F7F7F7",
          "default": "#797979",
+         "dispatch": "#9C8528",
          "import": "#247368",
          "include": "#247368",
          "inheritance": "#797979",

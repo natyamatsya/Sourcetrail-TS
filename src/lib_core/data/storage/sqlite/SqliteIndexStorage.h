@@ -1,8 +1,12 @@
 #ifndef SQLITE_INDEX_STORAGE_H
 #define SQLITE_INDEX_STORAGE_H
 
+#include <cstddef>
+#include <cstdint>
+#include <expected>
 #include <memory>
 #include <string>
+#include <string_view>
 #include <map>
 #include <unordered_map>
 #include <unordered_set>
@@ -31,6 +35,30 @@ class TextAccess;
 class Version;
 class SourceLocationCollection;
 class SourceLocationFile;
+
+// Why the pass that derives edges from the stored ones (SqliteIndexStorage::deriveDispatchEdges)
+// failed. In every case the transaction is rolled back: the index keeps the derived edges it had.
+enum class DerivedEdgeError : std::uint8_t
+{
+	RemoveFailed,
+	DeriveFailed,
+	InsertFailed
+};
+
+constexpr std::string_view to_std_sv(DerivedEdgeError error) noexcept
+{
+	using enum DerivedEdgeError;
+	switch (error)
+	{
+	case RemoveFailed:
+		return "the derived edges of the last run could not be removed";
+	case DeriveFailed:
+		return "the derived edges could not be computed";
+	case InsertFailed:
+		return "the derived edges could not be written";
+	}
+	return "unknown error";
+}
 
 class SqliteIndexStorage: public SqliteStorage
 {
@@ -84,6 +112,14 @@ public:
 		const std::vector<Id>& fileIds, std::function<void(int)> updateStatusCallback);
 
 	void removeAllErrors();
+
+	// The derived edges (Edge::EDGE_DISPATCH): a call to a method that is overridden may reach
+	// each of its overrides. deriveDispatchEdges replaces all of them with what the stored CALL
+	// and OVERRIDE edges give now, in one transaction, and returns how many there are; run it
+	// once the index is complete. removeDispatchEdges drops them, so that clearing files does not
+	// see derived edges as reasons to keep nodes. See context/DESIGN_DISPATCH_EDGES.md.
+	std::expected<std::size_t, DerivedEdgeError> deriveDispatchEdges();
+	std::expected<void, DerivedEdgeError> removeDispatchEdges();
 
 	bool isEdge(Id elementId) const;
 	bool isNode(Id elementId) const;

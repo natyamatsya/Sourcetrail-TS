@@ -37,6 +37,8 @@ inline Edge::EdgeType intToEnum(int value)
 			return Edge::EDGE_ANNOTATION_USAGE;
 		case Edge::EDGE_BINDS:
 			return Edge::EDGE_BINDS;
+		case Edge::EDGE_DISPATCH:
+			return Edge::EDGE_DISPATCH;
 	}
 	return Edge::EDGE_UNDEFINED;
 }
@@ -141,6 +143,8 @@ inline std::string Edge::getReadableTypeString(EdgeType type)
 		return "annotation use";
 	case EDGE_BINDS:
 		return "binds";
+	case EDGE_DISPATCH:
+		return "dispatch";
 	}
 
 	return "";

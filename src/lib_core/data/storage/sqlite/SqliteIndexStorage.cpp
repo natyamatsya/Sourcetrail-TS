@@ -1483,6 +1483,146 @@ void SqliteIndexStorage::removeElementsWithLocationInFiles(
 	}
 }
 
+std::expected<void, DerivedEdgeError> SqliteIndexStorage::removeDispatchEdges()
+{
+	// The element row is the edge's identity: deleting it cascades to the edge and its occurrences.
+	if (!executeStatement(
+			"DELETE FROM element WHERE id IN (SELECT id FROM edge WHERE type = " +
+			std::to_string(static_cast<int>(Edge::EDGE_DISPATCH)) + ");"))
+	{
+		return std::unexpected(DerivedEdgeError::RemoveFailed);
+	}
+	return {};
+}
+
+std::expected<std::size_t, DerivedEdgeError> SqliteIndexStorage::deriveDispatchEdges()
+{
+	// Class-hierarchy analysis over the stored edges, from scratch: the edges it wrote last time go
+	// first, so running it again gives the same edges, whatever was cleared and indexed in between.
+	// See context/DESIGN_DISPATCH_EDGES.md for why each rule is what it is.
+	//
+	// Raw statements on the shared handle, as the clear path does: recursive CTEs and work tables
+	// have no typed equivalent. The values interpolated are edge types and ids.
+	const std::string callType = std::to_string(static_cast<int>(Edge::EDGE_CALL));
+	const std::string overrideType = std::to_string(static_cast<int>(Edge::EDGE_OVERRIDE));
+	const std::string dispatchType = std::to_string(static_cast<int>(Edge::EDGE_DISPATCH));
+
+	const auto dropWorkTables = [this]() {
+		executeStatement("DROP TABLE IF EXISTS main.dispatch_call;");
+		executeStatement("DROP TABLE IF EXISTS main.dispatch_edge;");
+	};
+	const auto fail = [this, &dropWorkTables](const DerivedEdgeError error) {
+		rollbackTransaction();
+		dropWorkTables();
+		return std::unexpected(error);
+	};
+
+	beginTransaction();
+
+	if (!removeDispatchEdges())
+	{
+		return fail(DerivedEdgeError::RemoveFailed);
+	}
+
+	dropWorkTables();
+	// One row per call edge and override it may reach; then one per edge to write, numbered in a
+	// fixed order so the ids they get do not depend on how SQLite walked the recursion.
+	const bool tablesCreated =
+		executeStatement(
+			"CREATE TABLE main.dispatch_call("
+			"call_edge_id INTEGER NOT NULL, "
+			"source_node_id INTEGER NOT NULL, "
+			"target_node_id INTEGER NOT NULL);") &&
+		executeStatement(
+			"CREATE TABLE main.dispatch_edge("
+			"ordinal INTEGER PRIMARY KEY, "
+			"source_node_id INTEGER NOT NULL, "
+			"target_node_id INTEGER NOT NULL, "
+			"UNIQUE(source_node_id, target_node_id));");
+	if (!tablesCreated)
+	{
+		return fail(DerivedEdgeError::DeriveFailed);
+	}
+
+	// overrider(base, impl): impl overrides base, directly or through any number of overrides in
+	// between (an OVERRIDE edge points overriding -> overridden, one level). UNION, not UNION ALL:
+	// a diamond reaches an override twice, and a cycle (only a name collision can make one) ends.
+	// Seeded with the called methods only, which is all the calls below ask about.
+	//
+	// A call from an override to a method it overrides is a call to the base implementation --
+	// Base::f(), super.f(), the implicit call of the base destructor -- which does not dispatch,
+	// so it derives nothing. And a caller already calling an override directly needs no edge to it.
+	const bool derived =
+		executeStatement(
+			"WITH RECURSIVE overrider(base_id, impl_id) AS ("
+			"	SELECT overriding.target_node_id, overriding.source_node_id FROM edge AS overriding "
+			"	WHERE overriding.type = " + overrideType + " AND EXISTS ("
+			"		SELECT * FROM edge AS called WHERE called.type = " + callType + " AND "
+			"			called.target_node_id = overriding.target_node_id) "
+			"	UNION "
+			"	SELECT overrider.base_id, overriding.source_node_id FROM overrider "
+			"	INNER JOIN edge AS overriding ON overriding.target_node_id = overrider.impl_id "
+			"	WHERE overriding.type = " + overrideType +
+			") "
+			"INSERT INTO main.dispatch_call "
+			"	SELECT call_edge.id, call_edge.source_node_id, overrider.impl_id FROM edge AS call_edge "
+			"	INNER JOIN overrider ON overrider.base_id = call_edge.target_node_id "
+			"	WHERE call_edge.type = " + callType + " AND NOT EXISTS ("
+			"		SELECT * FROM overrider AS super_call WHERE "
+			"			super_call.base_id = call_edge.target_node_id AND "
+			"			super_call.impl_id = call_edge.source_node_id"
+			"	) AND NOT EXISTS ("
+			"		SELECT * FROM edge AS direct WHERE direct.type = " + callType + " AND "
+			"			direct.source_node_id = call_edge.source_node_id AND "
+			"			direct.target_node_id = overrider.impl_id"
+			"	);") &&
+		executeStatement(
+			"INSERT INTO main.dispatch_edge(source_node_id, target_node_id) "
+			"	SELECT DISTINCT source_node_id, target_node_id FROM main.dispatch_call "
+			"	ORDER BY source_node_id, target_node_id;");
+	if (!derived)
+	{
+		return fail(DerivedEdgeError::DeriveFailed);
+	}
+
+	// Each edge is an element first. The ids continue after the highest one in use, as an
+	// insertion would number them; the client-side id counter is reseeded below.
+	const std::string firstId =
+		std::to_string(executeStatementScalar("SELECT COALESCE(MAX(id), 0) FROM element;"));
+	const auto edgeCount =
+		static_cast<std::size_t>(executeStatementScalar("SELECT COUNT(*) FROM main.dispatch_edge;"));
+
+	// The derived edge occurs where the calls it was derived from do: activating it shows the
+	// call sites, and an override's references list the calls that may reach it.
+	const bool inserted =
+		executeStatement(
+			"INSERT INTO element(id) SELECT " + firstId + " + ordinal FROM main.dispatch_edge;") &&
+		executeStatement(
+			"INSERT INTO edge(id, type, source_node_id, target_node_id) "
+			"	SELECT " + firstId + " + ordinal, " + dispatchType +
+			", source_node_id, target_node_id FROM main.dispatch_edge;") &&
+		executeStatement(
+			"INSERT OR IGNORE INTO occurrence(element_id, source_location_id) "
+			"	SELECT " + firstId + " + dispatch_edge.ordinal, occurrence.source_location_id "
+			"	FROM main.dispatch_call "
+			"	INNER JOIN main.dispatch_edge ON "
+			"		dispatch_edge.source_node_id = dispatch_call.source_node_id AND "
+			"		dispatch_edge.target_node_id = dispatch_call.target_node_id "
+			"	INNER JOIN occurrence ON occurrence.element_id = dispatch_call.call_edge_id;");
+	if (!inserted)
+	{
+		return fail(DerivedEdgeError::InsertFailed);
+	}
+
+	dropWorkTables();
+	commitTransaction();
+
+	// The ids were taken by SQL: the next element allocated in-process starts after them.
+	m_nextElementId = 0;
+
+	return edgeCount;
+}
+
 void SqliteIndexStorage::removeAllErrors()
 {
 	using namespace sqlpp;

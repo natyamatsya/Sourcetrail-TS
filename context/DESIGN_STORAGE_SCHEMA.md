@@ -155,6 +155,14 @@ retirement path is to keep the entry with a mode mask of `0`, which never matche
 `setMode()` always takes its drop branch; the lines can be deleted once no database in
 circulation predates the change.
 
+## Derived edges
+
+Not every edge is indexed. `EDGE_DISPATCH` edges are written by a pass over the
+finished index (`SqliteIndexStorage::deriveDispatchEdges`), with element ids continuing
+after `MAX(element.id)` and occurrences copied from the CALL edges they come from; they
+are deleted and derived again on every run, and deleted before a file clear so that they
+never keep a node alive. See [DESIGN_DISPATCH_EDGES.md](DESIGN_DISPATCH_EDGES.md).
+
 ## Versioning
 
 `SqliteIndexStorage::s_storageVersion` (currently 28) is compared against the value in

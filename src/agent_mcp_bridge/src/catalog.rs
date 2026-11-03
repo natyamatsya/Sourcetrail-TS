@@ -186,6 +186,13 @@ most that many items in each list (graph.nodes, graph.edges, view_graph, search_
 and adds truncated: { \"graph.nodes\": 11719, ... } with the lengths of the lists it cut. For \
 a big graph the whole state runs to megabytes.
 
+edge_type is the Edge::EdgeType bit: 1 member, 2 type use, 4 use, 8 call, 16 inheritance, \
+32 override, 64 type argument, 128 template specialization, 256 include, 512 import, \
+1024 bundled edges, 2048 macro use, 4096 annotation use, 8192 binds, 16384 dispatch. A \
+dispatch edge is derived after indexing, not indexed: its source calls a method, and at run \
+time that call may run its target, an override of the method (class-hierarchy analysis over \
+the call and override edges). Its occurrences are the call sites.
+
 app_state is the FSM to key off. NoProject -> Loading (a load was requested, by \
 project_open or in the app, until the project is open and its first tab has shown the \
 overview) -> Ready; Indexing while indexing, then Loading again while the new index loads and \
@@ -333,7 +340,7 @@ graph_trail { node_id, direction=\"outgoing\" | \"incoming\", target_id?, edge_k
 node_kinds?, depth=0, layout?, include_non_indexed=false, state?, instance? } -> { ok, settled, state, changes }
   The trail buttons and the custom trail dialog. outgoing shows what a function calls, the \
 classes derived from a class, what a file includes; incoming a function's callers, a class's \
-bases, a file's includers. edge_kinds default by the node's kind (functions: call, override; \
+bases, a file's includers. edge_kinds default by the node's kind (functions: call, dispatch, override; \
 classes: inheritance, template specialization; files: include); name them for other nodes. \
 target_id: the paths from node_id to it instead. depth 0 is as deep as it goes. A wrong kind \
 name is refused with the list of valid ones.",

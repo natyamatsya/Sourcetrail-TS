@@ -22,7 +22,9 @@ std::optional<TrailDefaults> trailDefaultsFor(const NodeType& type)
 	}
 	if (type.isCallable())
 	{
-		return TrailDefaults {Edge::EDGE_CALL | Edge::EDGE_OVERRIDE, true};
+		// The dispatch edges let a callee trail go on from a virtual call into the overrides
+		// it may reach, and a caller trail from an override back to the calls through its base.
+		return TrailDefaults {Edge::EDGE_CALL | Edge::EDGE_DISPATCH | Edge::EDGE_OVERRIDE, true};
 	}
 	if (type.isFile())
 	{

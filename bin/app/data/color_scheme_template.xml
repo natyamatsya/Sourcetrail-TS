@@ -223,6 +223,7 @@
 			<override></override>
 
 			<call></call>
+			<dispatch></dispatch>
 
 			<use></use>
 

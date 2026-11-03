@@ -160,6 +160,7 @@
          "call": "#F4BC3D",
          "call_trail_focus": "#F56B3D",
          "default": "#878787",
+         "dispatch": "#F4BC3D",
          "import": "#719660",
          "include": "#719660",
          "inheritance": "#878787",

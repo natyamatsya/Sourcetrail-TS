@@ -25,7 +25,7 @@ TEST_CASE("trail buttons follow the edges of the node's kind")
 {
 	const std::optional<TrailDefaults> calls = trailDefaultsFor(NodeType(NODE_FUNCTION));
 	REQUIRE(calls);
-	REQUIRE(calls->edgeTypes == (Edge::EDGE_CALL | Edge::EDGE_OVERRIDE));
+	REQUIRE(calls->edgeTypes == (Edge::EDGE_CALL | Edge::EDGE_DISPATCH | Edge::EDGE_OVERRIDE));
 	REQUIRE(calls->horizontal);
 
 	const std::optional<TrailDefaults> inheritance = trailDefaultsFor(NodeType(NODE_CLASS));

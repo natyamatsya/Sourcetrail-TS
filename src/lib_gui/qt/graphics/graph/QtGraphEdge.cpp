@@ -428,6 +428,12 @@ void QtGraphEdge::coFocusIn()
 			TooltipInfo info;
 			info.title = Edge::getReadableTypeString(type);
 
+			// Not a call written in the source: one the class hierarchy says may happen.
+			if (type == Edge::EDGE_DISPATCH)
+			{
+				info.title = "possible dispatch to an override";
+			}
+
 			if (isAmbiguous())
 			{
 				info.title = "ambiguous " + info.title;

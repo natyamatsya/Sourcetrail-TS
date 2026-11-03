@@ -503,7 +503,7 @@ struct TrailArgs {
     /// A trail from node_id to this node instead.
     #[serde(default)]
     target_id: Option<u64>,
-    /// Edge kinds by name ("call", "override", "inheritance", "include", "use", ...);
+    /// Edge kinds by name ("call", "dispatch", "override", "inheritance", "include", "use", ...);
     /// default: by the node's kind, as the graph's trail buttons choose.
     #[serde(default)]
     edge_kinds: Vec<String>,
