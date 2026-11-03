@@ -17,6 +17,8 @@ CMakeLists.txt.user
 *.srctrl.db.tmp
 *.srctrl.db.tmp-*
 *.srctrl.db.tmp.*
+# The lock an indexing run holds on its index
+*.srctrl.db.lock
 # Legacy artifacts (no runtime compatibility, ignore only for local cleanliness)
 *.srctrl.db_tmp
 *.srctrl.db_tmp-*
