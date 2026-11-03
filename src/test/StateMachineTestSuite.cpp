@@ -1,5 +1,6 @@
 #include "Catch2.hpp"
 
+#include <algorithm>
 #include <atomic>
 #include <array>
 #include <chrono>
@@ -46,7 +47,8 @@ enum class Switch
 	Hit
 };
 
-// The transitions one machine published, as "from>to:event(source)".
+// The transitions one machine published, as "from>to:event(source)", in the order
+// the machine made them: two threads that move it can publish in the other order.
 class Recorder
 {
 public:
@@ -56,9 +58,10 @@ public:
 			if (transition.machine == m_machine)
 			{
 				const std::lock_guard<std::mutex> lock(m_mutex);
-				m_path.push_back(
+				m_path.emplace_back(
+					transition.revision,
 					transition.from + ">" + transition.to + ":" + transition.event + "(" +
-					eventSourceName(transition.source) + ")");
+						eventSourceName(transition.source) + ")");
 			}
 		});
 	}
@@ -70,15 +73,26 @@ public:
 
 	std::vector<std::string> path() const
 	{
-		const std::lock_guard<std::mutex> lock(m_mutex);
-		return m_path;
+		std::vector<std::pair<std::uint64_t, std::string>> moves;
+		{
+			const std::lock_guard<std::mutex> lock(m_mutex);
+			moves = m_path;
+		}
+		std::ranges::stable_sort(moves, {}, &std::pair<std::uint64_t, std::string>::first);
+		std::vector<std::string> path;
+		path.reserve(moves.size());
+		for (auto& move: moves)
+		{
+			path.push_back(std::move(move.second));
+		}
+		return path;
 	}
 
 private:
 	std::string m_machine;
 	std::size_t m_id = 0;
 	mutable std::mutex m_mutex;
-	std::vector<std::string> m_path;
+	std::vector<std::pair<std::uint64_t, std::string>> m_path;	// with each move's revision
 };
 
 class FakeQuestionPresenter

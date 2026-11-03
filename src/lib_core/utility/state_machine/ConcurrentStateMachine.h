@@ -154,7 +154,9 @@ consteval bool isWellFormed()
 //
 // The moves made in a Transaction are published once it ends, after the lock is
 // released (an observer may read the machine back), in the order made; then the
-// work it deferred runs.
+// work it deferred runs. Transactions on two threads can publish in the other
+// order than they moved: a transition's revision is the machine's order (the
+// bridge's machine view keeps the latest).
 //
 // One timeout at a time: armed in a Transaction, it lasts until the machine moves,
 // and its handler runs in a Transaction of its own on the work pool, when the shared
