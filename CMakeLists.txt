@@ -496,7 +496,8 @@ target_link_libraries(External_lib_glaze INTERFACE glaze::glaze)
 # indexer crate is imported later in its own section; only the shared Corrosion
 # fetch and the turso_shim import need to happen this early.
 
-if (BUILD_RUST_LANGUAGE_PACKAGE OR SOURCETRAIL_TURSO_COMPARE)
+# Either Turso mode builds turso_shim (SOURCETRAIL_USE_TURSO), with or without the Rust package.
+if (BUILD_RUST_LANGUAGE_PACKAGE OR SOURCETRAIL_USE_TURSO)
 	FetchContent_Declare(
 		corrosion
 		GIT_REPOSITORY https://github.com/corrosion-rs/corrosion.git
