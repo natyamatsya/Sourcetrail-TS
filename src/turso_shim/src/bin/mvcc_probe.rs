@@ -13,7 +13,7 @@
 use std::sync::Arc;
 use std::thread;
 
-use turso_core::{Connection, Database, StepResult, PlatformIO, IO};
+use turso_core::{Connection, Database, PlatformIO, SqliteDialect, StepResult, IO};
 
 fn exec(conn: &Arc<Connection>, io: &Arc<dyn IO>, sql: &str) -> Result<(), String> {
     // Drive one statement to completion on this thread, pumping shared IO.
@@ -21,6 +21,11 @@ fn exec(conn: &Arc<Connection>, io: &Arc<dyn IO>, sql: &str) -> Result<(), Strin
     loop {
         match stmt.step().map_err(|e| format!("step `{sql}`: {e}"))? {
             StepResult::Row | StepResult::Done => return Ok(()),
+            // A busy handler's delay: wait it out, then as for IO.
+            StepResult::Sleep { duration } => {
+                std::thread::sleep(duration);
+                io.step().map_err(|e| format!("io.step `{sql}`: {e}"))?;
+            }
             StepResult::IO | StepResult::Yield | StepResult::Busy => {
                 io.step().map_err(|e| format!("io.step `{sql}`: {e}"))?;
             }
@@ -38,6 +43,11 @@ fn scalar(conn: &Arc<Connection>, io: &Arc<dyn IO>, sql: &str) -> Result<i64, St
                 return Ok(v);
             }
             StepResult::Done => return Ok(-1),
+            // A busy handler's delay: wait it out, then as for IO.
+            StepResult::Sleep { duration } => {
+                std::thread::sleep(duration);
+                io.step().map_err(|e| e.to_string())?;
+            }
             StepResult::IO | StepResult::Yield | StepResult::Busy => {
                 io.step().map_err(|e| e.to_string())?;
             }
@@ -48,7 +58,7 @@ fn scalar(conn: &Arc<Connection>, io: &Arc<dyn IO>, sql: &str) -> Result<i64, St
 
 fn open_ro(path: &str) -> Result<(Arc<dyn IO>, Arc<Connection>), String> {
     let io: Arc<dyn IO> = Arc::new(PlatformIO::new().map_err(|e| e.to_string())?);
-    let db = Database::open_file(io.clone(), path).map_err(|e| e.to_string())?;
+    let db = Database::open_file(io.clone(), path, Arc::new(SqliteDialect)).map_err(|e| e.to_string())?;
     let conn = db.connect().map_err(|e| e.to_string())?;
     Ok((io, conn))
 }
@@ -66,6 +76,11 @@ fn pair_rows(conn: &Arc<Connection>, io: &Arc<dyn IO>, sql: &str) -> Result<Vec<
                 out.push((a, b));
             }
             StepResult::Done => return Ok(out),
+            // A busy handler's delay: wait it out, then as for IO.
+            StepResult::Sleep { duration } => {
+                std::thread::sleep(duration);
+                io.step().map_err(|e| e.to_string())?
+            }
             StepResult::IO | StepResult::Yield | StepResult::Busy => {
                 io.step().map_err(|e| e.to_string())?
             }
@@ -163,7 +178,7 @@ fn main() {
         let path = raw.get(1).cloned().unwrap_or_default();
         let table = raw.get(2).cloned().unwrap_or_else(|| "node".to_string());
         let io: Arc<dyn IO> = Arc::new(PlatformIO::new().unwrap());
-        let db = Database::open_file(io.clone(), &path).unwrap();
+        let db = Database::open_file(io.clone(), &path, Arc::new(SqliteDialect)).unwrap();
         let conn = db.connect().unwrap();
         let n = scalar(&conn, &io, &format!("SELECT COUNT(*) FROM {table}")).unwrap_or(-1);
         println!("verify {path}: {table} count = {n}");
@@ -193,7 +208,7 @@ fn main() {
     }
 
     let io: Arc<dyn IO> = Arc::new(PlatformIO::new().unwrap());
-    let db = Database::open_file(io.clone(), path).unwrap();
+    let db = Database::open_file(io.clone(), path, Arc::new(SqliteDialect)).unwrap();
 
     let setup = db.connect().unwrap();
     exec(&setup, &io, "PRAGMA journal_mode = 'mvcc'").expect("enable mvcc");

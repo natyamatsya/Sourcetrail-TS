@@ -17,7 +17,7 @@ use std::ptr;
 use std::sync::Arc;
 
 use turso_core::types::{Value, ValueType};
-use turso_core::{Connection, Database, LimboError, PlatformIO, Statement, StepResult, IO};
+use turso_core::{Connection, Database, LimboError, PlatformIO, SqliteDialect, Statement, StepResult, IO};
 
 // ---- Result codes (mirror sqlite3.h) --------------------------------------
 pub const TSQ_OK: c_int = 0;
@@ -189,7 +189,7 @@ pub extern "C" fn tsq_open(path: *const c_char) -> *mut TsqDb {
             .to_str()
             .map_err(|e| e.to_string())?;
         let io: Arc<dyn IO> = Arc::new(PlatformIO::new().map_err(|e| e.to_string())?);
-        let db = Database::open_file(io.clone(), path).map_err(|e| e.to_string())?;
+        let db = Database::open_file(io.clone(), path, Arc::new(SqliteDialect)).map_err(|e| e.to_string())?;
         let conn = db.connect().map_err(|e| e.to_string())?;
         Ok::<Box<TsqDb>, String>(Box::new(TsqDb { conn, db, io }))
     }));
@@ -350,6 +350,11 @@ pub extern "C" fn tsq_step(stmt: *mut TsqStmt) -> c_int {
                 }
                 // Drive IO and retry. Busy is treated the same in this
                 // single-connection comparison harness.
+                // A busy handler's delay: wait it out, then as for IO.
+                StepResult::Sleep { duration } => {
+                    std::thread::sleep(duration);
+                    s.io.step().map_err(classify)?;
+                }
                 StepResult::IO | StepResult::Yield | StepResult::Busy => {
                     s.io.step().map_err(classify)?;
                 }
