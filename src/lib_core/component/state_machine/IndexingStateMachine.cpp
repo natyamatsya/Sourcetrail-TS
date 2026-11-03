@@ -1,6 +1,7 @@
 #include "IndexingStateMachine.h"
 
 #include <algorithm>
+#include <memory>
 
 #include "MachineArgs.h"
 #include "MessageIndexingInterrupted.h"
@@ -216,19 +217,26 @@ void IndexingStateMachine::report(
 
 DatabasePolicy IndexingStateMachine::report(const IndexingReport& report, IndexingPresenter presenter)
 {
-	std::mutex mutex;
-	std::condition_variable decidedNow;
-	std::optional<DatabasePolicy> decision;
-	this->report(report, presenter, [&](DatabasePolicy policy) {
+	// Shared with the callback, which may still be in notify_all() when this has
+	// returned: the wait can end as soon as the decision is stored. On this frame,
+	// the notify then touched a destroyed condition variable.
+	struct Shared
+	{
+		std::mutex mutex;
+		std::condition_variable decidedNow;
+		std::optional<DatabasePolicy> decision;
+	};
+	const auto shared = std::make_shared<Shared>();
+	this->report(report, presenter, [shared](DatabasePolicy policy) {
 		{
-			const std::lock_guard<std::mutex> lock(mutex);
-			decision = policy;
+			const std::lock_guard<std::mutex> lock(shared->mutex);
+			shared->decision = policy;
 		}
-		decidedNow.notify_all();
+		shared->decidedNow.notify_all();
 	});
-	std::unique_lock<std::mutex> lock(mutex);
-	decidedNow.wait(lock, [&]() { return decision.has_value(); });
-	return *decision;
+	std::unique_lock<std::mutex> lock(shared->mutex);
+	shared->decidedNow.wait(lock, [&]() { return shared->decision.has_value(); });
+	return *shared->decision;
 }
 
 void IndexingStateMachine::ended(const std::string& outcome)
