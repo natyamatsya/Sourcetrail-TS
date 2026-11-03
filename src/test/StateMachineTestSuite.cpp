@@ -551,6 +551,31 @@ TEST_CASE("indexing run waits for the decision on its report")
 			"finishing>idle:end(app)"});
 }
 
+TEST_CASE("indexing report an agent decided before it showed awaits no decision")
+{
+	IndexingStateMachine machine;
+	FakeIndexingPresenter presenter;
+
+	REQUIRE_FALSE(machine.awaitsDecision());
+	machine.requested();
+	machine.preparing();
+	machine.indexingStarted();
+	machine.wrappingUp();
+	IndexingReport report;
+	report.interrupted = true;
+	std::optional<DatabasePolicy> decided;
+	machine.report(report, presenter, [&](DatabasePolicy policy) { decided = policy; });
+	REQUIRE(machine.awaitsDecision());
+
+	// The report dialog checks this when it comes up: after the decision there is
+	// nothing to show.
+	REQUIRE(machine.fire("keep", "", EventSource::Agent).ok);
+	REQUIRE(decided == DatabasePolicy::DATABASE_POLICY_KEEP);
+	REQUIRE_FALSE(machine.awaitsDecision());
+	machine.ended("");
+	REQUIRE_FALSE(machine.awaitsDecision());
+}
+
 TEST_CASE("indexing report nobody can answer keeps the data")
 {
 	IndexingStateMachine machine;

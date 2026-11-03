@@ -337,6 +337,12 @@ public:
 	{
 		return m_machine.read([](const Data& data, State) { return data.interrupted; });
 	}
+	//! Whether a report still waits for its decision: one an agent decided before its
+	//! dialog came up has nothing left to show.
+	bool awaitsDecision() const
+	{
+		return m_machine.read([](const Data& data, State) { return data.report.has_value(); });
+	}
 	//! The run's files: started, finished and of how many (while indexing or finishing).
 	IndexingMachine::Progress progress() const
 	{

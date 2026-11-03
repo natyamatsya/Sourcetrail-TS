@@ -327,6 +327,16 @@ bool QtDialogView::presentReport(const IndexingReport& report)
 	}
 
 	execution::qt::onUi(m_mainWindow, [=, this]() {
+		// An agent decided before the dialog came up: nothing to show, only the
+		// run's windows to close, as for a run that finished. (A decision after this
+		// check queues its dismissal behind this, which closes the dialog.)
+		if (!IndexingStateMachine::instance()->awaitsDecision())
+		{
+			m_windowStack.clearWindows();
+			m_mainWindow->hideWindowTitleProgress();
+			setUIBlocked(false);
+			return;
+		}
 		m_dialogsVisible = true;
 		m_windowStack.clearWindows();
 
