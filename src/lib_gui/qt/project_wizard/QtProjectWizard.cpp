@@ -416,6 +416,8 @@ void QtProjectWizard::newProjectFromFolder(const ProjectProposal& proposal)
 		}
 		m_allSourceGroupSettings.push_back(settings);
 		m_detectedGroup = settings;
+		m_detectedType = proposal.sourceGroupType;
+		m_detectedFields = proposal.fields;
 	}
 	else
 	{
@@ -1045,11 +1047,37 @@ void QtProjectWizard::selectedProjectType(SourceGroupType sourceGroupType)
 	m_typeSelected = true;
 	if (std::shared_ptr<SourceGroupSettings> settings = createSourceGroupSettings(sourceGroupType))
 	{
+		prefillSourceGroup(*settings);
 		createSourceGroup(settings);
 	}
 	if (!m_applying)
 	{
 		ProjectWizardStateMachine::instance()->selected(view());
+	}
+}
+
+void QtProjectWizard::prefillSourceGroup(SourceGroupSettings& settings) const
+{
+	if (m_detection && settings.getType() == m_detectedType)
+	{
+		for (const auto& [name, value]: m_detectedFields)
+		{
+			[[maybe_unused]] const auto written = writeSourceGroupField(settings, name, value);
+		}
+		return;
+	}
+	if (settings.getType() == SourceGroupType::CXX_MAKE)
+	{
+		const std::string folder = m_detection ? m_detection->folder
+			: m_projectSettings							? m_projectSettings->getProjectDirectoryPath().str()
+														: std::string {};
+		if (!folder.empty() && !make::findMakefile(folder).empty())
+		{
+			// Its page then lists the makefile's goals and takes the first that compiles.
+			[[maybe_unused]] const auto directory = writeSourceGroupField(settings, "make_directory", folder);
+			[[maybe_unused]] const auto headers =
+				writeSourceGroupField(settings, "indexed_header_paths", std::vector<std::string> {folder});
+		}
 	}
 }
 

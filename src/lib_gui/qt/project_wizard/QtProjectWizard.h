@@ -8,6 +8,7 @@
 
 #include "ApplicationSettings.h"
 #include "ProjectSettings.h"
+#include "ProjectDetector.h"
 #include "ProjectWizardStateMachine.h"
 #include "QtProjectWizardWindow.h"
 #include "QtWindow.h"
@@ -66,6 +67,10 @@ private:
 	// A person changed the page: the machine's context follows.
 	void reportChanged() const;
 	void removeSourceGroup(int row);
+	// A group added by hand starts on the project's folder: the detected group's fields when it is
+	// of the type detected, the folder (or the project's directory) with its makefile for a
+	// Makefile group. Otherwise its page was empty, and the folder had to be found again.
+	void prefillSourceGroup(SourceGroupSettings& settings) const;
 	// What keeps an agent's request from going through: what was told last, or `otherwise`.
 	std::string failure(const std::string& otherwise) const;
 
@@ -79,6 +84,8 @@ private:
 	// What New Project found in the folder, and the source group it proposed.
 	std::optional<ProjectWizardView::Detection> m_detection;
 	std::shared_ptr<SourceGroupSettings> m_detectedGroup;
+	SourceGroupType m_detectedType = SourceGroupType::UNKNOWN;
+	std::map<std::string, SourceGroupField> m_detectedFields;
 	int m_previouslySelectedIndex = -1;
 
 	bool m_applying = false;	// an agent's request is carried out: it reports itself
