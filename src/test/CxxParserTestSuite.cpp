@@ -5467,6 +5467,49 @@ TEST_CASE("cxx parser parses multiple files")
 	REQUIRE(testStorage->includes.size() == 1);
 }
 
+TEST_CASE("cxx parser writes no dependency file of the build's")
+{
+	// A compile command names the build's dependency file (-MMD, -MF obj/x.d). Indexing wrote it
+	// too: a database from a dry run, whose obj/ does not exist, failed every file, and a build's
+	// own .d files were overwritten.
+	const std::set<FilePath> indexedPaths = {FilePath("data/CxxParserTestSuite/")};
+	const FilePath sourceFilePath("data/CxxParserTestSuite/code.cpp");
+	const std::string dependencyFile = "nosuchdir_sourcetrail_test/code.d";
+
+	std::shared_ptr<IndexerCommandCxx> indexerCommand = std::make_shared<IndexerCommandCxx>(
+		sourceFilePath,
+		indexedPaths,
+		std::set<FilePathFilter> {},
+		std::set<FilePathFilter> {},
+		FilePath("."),
+		std::vector<std::string> {
+			"clang++",
+			ClangCompiler::targetOption("x86_64-pc-windows-msvc"),
+			ClangCompiler::stdOption(ClangCompiler::getLatestCppStandard()),
+			"-MMD",
+			"-MP",
+			"-MF",
+			dependencyFile,
+			"-MT",
+			"nosuchdir_sourcetrail_test/code.o",
+			"-o",
+			"nosuchdir_sourcetrail_test/code.o",
+			"-c",
+			sourceFilePath.str()},
+		std::string {});
+
+	std::shared_ptr<IntermediateStorage> storage = std::make_shared<IntermediateStorage>();
+	const std::shared_ptr<ParserClientImpl> parserClient = std::make_shared<ParserClientImpl>(storage);
+	CxxParser parser(*parserClient, std::make_shared<TestFileRegister>(), std::make_shared<IndexerStateInfo>());
+
+	parser.buildIndex(indexerCommand);
+
+	std::shared_ptr<TestStorage> testStorage = TestStorage::create(storage);
+	REQUIRE(testStorage->errors.size() == 0);
+	REQUIRE(testStorage->classes.size() == 4);
+	REQUIRE_FALSE(std::filesystem::exists(dependencyFile));
+}
+
 TEST_CASE("cxx parser indexes a compile command without a working directory")
 {
 	// An empty C/C++ source group gives no working directory: that is no missing one.

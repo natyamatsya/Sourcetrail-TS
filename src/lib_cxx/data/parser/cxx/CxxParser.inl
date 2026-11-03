@@ -218,6 +218,10 @@ inline void CxxParser::buildIndex(std::shared_ptr<const IndexerCommandCxx> index
 		// API commands already push the file themselves; the find() guards them.)
 		args.push_back(sourcePath);
 	}
+	// Without the build's dependency files (-MMD, -MF x.d ...): a syntax-only run writes them too,
+	// into the build tree (where its directories may not exist yet, as for a database from a dry
+	// run, and where the build's own would be overwritten).
+	args = clang::tooling::getClangStripDependencyFileAdjuster()(args, compileCommand.Filename);
 	compileCommand.CommandLine = getCommandlineArgumentsEssential(indexerCommand->getCompilerPath(), args);
 	compileCommand.CommandLine = cxx_parser_detail::prependSyntaxOnlyToolArgs(indexerCommand->getCompilerPath(), compileCommand.CommandLine);
 
