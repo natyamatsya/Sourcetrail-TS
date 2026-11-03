@@ -1,6 +1,11 @@
 #ifndef QT_CODE_FILE_LIST
 #define QT_CODE_FILE_LIST
 
+#include <cstdint>
+#include <filesystem>
+#include <map>
+#include <unordered_map>
+#include <utility>
 #include <vector>
 
 #include <QFrame>
@@ -93,6 +98,13 @@ private:
 	QFrame* m_filesArea;
 
 	std::vector<QtCodeFile*> m_files;
+
+	// getFile's lookups, by the path's text and by the file on disk. They stand in for comparing
+	// the path with every listed file's (FilePath's == stats both files), which made listing many
+	// files quadratic in stat calls.
+	using FileIdentity = std::pair<std::uint64_t, std::uint64_t>;
+	std::unordered_map<std::filesystem::path::string_type, QtCodeFile*> m_filesByPath;
+	std::map<FileIdentity, QtCodeFile*> m_filesByIdentity;
 
 	QtCodeFileTitleBar* m_firstSnippetTitleBar;
 	const QtCodeFile* m_firstSnippetFile = nullptr;
