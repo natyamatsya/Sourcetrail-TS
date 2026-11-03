@@ -61,6 +61,7 @@
 	// C/C++ language package is enabled:
 	#include "QtProjectWizardContentPathCDB.h"
 	#include "QtProjectWizardContentPathCxxPch.h"
+	#include "QtProjectWizardContentPathMakefile.h"
 	#include "QtProjectWizardContentPathsHeaderSearch.h"
 	#include "QtProjectWizardContentPathsIndexedHeaders.h"
 #endif
@@ -68,6 +69,7 @@
 #include "SourceGroupSettingsCEmpty.h"
 #include "SourceGroupSettingsCppEmpty.h"
 #include "SourceGroupSettingsCxxCdb.h"
+#include "SourceGroupSettingsCxxMake.h"
 #include "SourceGroupSettingsCxxCMakeFileAPI.h"
 #endif
 
@@ -233,6 +235,33 @@ void addSourceGroupContents<SourceGroupSettingsCxxCdb>(
 	group->addContent(new QtProjectWizardContentPathCDB(settings, window));
 	group->addContent(
 		new QtProjectWizardContentPathsIndexedHeaders(settings, window, "Compilation Database"));
+	group->addContent(new QtProjectWizardContentPathsExclude(settings, window));
+	group->addSpace();
+
+	group->addContent(new QtProjectWizardContentPathsHeaderSearch(settings, window, true));
+	group->addContent(new QtProjectWizardContentPathsHeaderSearchGlobal(window));
+	group->addSpace();
+
+	if constexpr (utility::Platform::isMac())
+	{
+		group->addContent(new QtProjectWizardContentPathsFrameworkSearch(settings, window, true));
+		group->addContent(new QtProjectWizardContentPathsFrameworkSearchGlobal(window));
+		group->addSpace();
+	}
+
+	group->addContent(new QtProjectWizardContentFlags(settings, window, true));
+	group->addContent(new QtProjectWizardContentPathCxxPch(settings, settings, window));
+	group->addContent(new QtProjectWizardContentCxxPchFlags(settings, window, true));
+}
+
+template <>
+void addSourceGroupContents<SourceGroupSettingsCxxMake>(
+	QtProjectWizardContentGroup* group,
+	std::shared_ptr<SourceGroupSettingsCxxMake> settings,
+	QtProjectWizardWindow* window)
+{
+	group->addContent(new QtProjectWizardContentPathMakefile(settings, window));
+	group->addContent(new QtProjectWizardContentPathsIndexedHeaders(settings, window, "Makefile"));
 	group->addContent(new QtProjectWizardContentPathsExclude(settings, window));
 	group->addSpace();
 
@@ -725,6 +754,13 @@ void QtProjectWizard::selectedSourceGroupChanged(int index)
 	{
 		addSourceGroupContents(summary, settings, this);
 	}
+	// Before the compilation database's: a Makefile group is one.
+	else if (
+		std::shared_ptr<SourceGroupSettingsCxxMake> settings =
+			std::dynamic_pointer_cast<SourceGroupSettingsCxxMake>(group))
+	{
+		addSourceGroupContents(summary, settings, this);
+	}
 	else if (
 		std::shared_ptr<SourceGroupSettingsCxxCdb> settings =
 			std::dynamic_pointer_cast<SourceGroupSettingsCxxCdb>(group))
@@ -974,6 +1010,11 @@ std::shared_ptr<SourceGroupSettings> QtProjectWizard::createSourceGroupSettings(
 	case SourceGroupType::CXX_CMAKE_FILE_API:
 		if constexpr (language_packages::buildCxxLanguagePackage)
 			settings = std::make_shared<SourceGroupSettingsCxxCMakeFileAPI>(
+				sourceGroupId, m_projectSettings.get());
+		break;
+	case SourceGroupType::CXX_MAKE:
+		if constexpr (language_packages::buildCxxLanguagePackage)
+			settings = std::make_shared<SourceGroupSettingsCxxMake>(
 				sourceGroupId, m_projectSettings.get());
 		break;
 

@@ -718,9 +718,11 @@ struct Detection
 	const fs::path location;
 	const std::string name;
 	const std::function<bool(const std::string&)>& hasExecutable;
+	const make::Runner& runMake;
 	const std::optional<GitRepositoryInfo> git;
 	const std::vector<GitSubmodule> submodules;	// the folder's, relative to it
 	ProjectProposal proposal;
+	bool makefileCompilesNothing = false;	 // its dry run ran, and would compile no file
 };
 
 bool isSubmodule(const Detection& detection, const fs::path& dir)
@@ -817,12 +819,8 @@ void noteUndetectedBuildSystems(Detection& detection)
 			"extractor would be used"},
 		BuildSystem{
 			{"configure.ac", "configure.in"},
-			"Autotools (configure.ac) is not detected yet: configure, then 'bear -- make' writes a "
-			"compile_commands.json with the exact flags"},
-		BuildSystem{
-			{"Makefile", "makefile", "GNUmakefile"},
-			"Makefile: its flags are not read; 'bear -- make' (or compiledb) writes a "
-			"compile_commands.json with the exact ones"},
+			"Autotools (configure.ac) is not detected yet: run configure, then New Project reads the "
+			"Makefile it writes"},
 		BuildSystem{{"SConstruct"}, "SCons (SConstruct) is not detected yet"},
 		BuildSystem{{"premake5.lua"}, "Premake (premake5.lua) is not detected yet"},
 		BuildSystem{
@@ -1232,6 +1230,72 @@ bool detectCompilationDatabase(Detection& detection)
 	return true;
 }
 
+// A makefile at the top: a Makefile group on the first goal whose dry run compiles anything.
+bool detectMakefile(Detection& detection)
+{
+	const std::string makefile{make::findMakefile(generic(detection.folder))};
+	if (makefile.empty())
+	{
+		return false;
+	}
+	ProjectProposal& proposal{detection.proposal};
+	const std::string program{make::makeProgram({})};
+	if (!detection.hasExecutable(program))
+	{
+		proposal.notices.push_back(std::format(
+			"{}: {} is not on PATH, which a 'C/C++ from Makefile' source group runs for the compile commands",
+			makefile,
+			program));
+		return false;
+	}
+
+	const make::Invocation invocation{.directory = generic(detection.folder)};
+	const std::optional<make::Suggestion> suggestion{make::suggestTarget(invocation, 6, detection.runMake)};
+	if (!suggestion)
+	{
+		Strings tried;
+		for (const std::string& goal:
+			 make::rankTargets(make::listTargets(invocation, detection.runMake)) | std::views::take(6))
+		{
+			tried.push_back("'" + goal + "'");
+		}
+		proposal.notices.push_back(std::format(
+			"{}: {} in a dry run (make -n); a 'C/C++ from Makefile' source group takes the goal and "
+			"variables that build the project",
+			makefile,
+			tried.empty() ? std::string{"its default goal compiles no C or C++ file"}
+						  : "none of its goals " + listed(tried) + " compiles a C or C++ file"));
+		detection.makefileCompilesNothing = true;
+		return false;
+	}
+
+	std::set<std::string> files;
+	for (const make::CompileCommand& command: suggestion->dryRun.commands)
+	{
+		files.insert(generic((fs::path{command.directory} / command.file).lexically_normal()));
+	}
+	proposal.sourceGroupType = SourceGroupType::CXX_MAKE;
+	proposal.fields["make_directory"] = generic(detection.folder);
+	proposal.fields["make_arguments"] = suggestion->target;
+	proposal.fields["indexed_header_paths"] = Strings{generic(detection.folder)};
+	proposal.reasons.insert(
+		proposal.reasons.begin(),
+		std::format(
+			"Found the {}: {} compiles {} {} (from what 'make -n{}' prints, building nothing)",
+			makefile,
+			suggestion->target.empty() ? std::string{"its default goal"} : "its goal '" + suggestion->target + "'",
+			files.size(),
+			files.size() == 1 ? "file" : "files",
+			suggestion->target.empty() ? std::string{} : " " + suggestion->target));
+	proposal.reasons.emplace_back("Headers under the folder are indexed along with the files it compiles");
+
+	addExclusions(detection, vendoredExclusions(detection, [&](const fs::path& dir) {
+		const std::string prefix{generic(dir) + "/"};
+		return std::ranges::any_of(files, [&](const std::string& file) { return file.starts_with(prefix); });
+	}));
+	return true;
+}
+
 // Include directories: include/ (and inc/) up to three levels down, and what the Makefile
 // passes with -I.
 Strings includeDirectories(const fs::path& folder)
@@ -1411,8 +1475,9 @@ void detectEmptyGroup(Detection& detection)
 		std::format(
 			"{}: an empty {} group on the folder ({})",
 			buildFiles.empty() ? std::string{"No build system found"}
-							   : std::format(
-									 "Found {}, which {} not read", listed(buildFiles), buildFiles.size() == 1 ? "is" : "are"),
+				: detection.makefileCompilesNothing && buildFiles.size() == 1
+				? std::format("Found {}, whose dry run compiles nothing", buildFiles.front())
+				: std::format("Found {}, which {} not read", listed(buildFiles), buildFiles.size() == 1 ? "is" : "are"),
 			cpp ? "C++" : "C",
 			files));
 	if (cppHeader)
@@ -1542,6 +1607,7 @@ std::expected<ProjectProposal, ProjectDetectionError> detectProject(
 		.location = location,
 		.name = projectNameFor(dir),
 		.hasExecutable = hasExecutable,
+		.runMake = options.runMake,
 		.git = git,
 		.submodules = submodules,
 		.proposal = {}};
@@ -1549,7 +1615,7 @@ std::expected<ProjectProposal, ProjectDetectionError> detectProject(
 	detection.proposal.projectName = detection.name;
 	detection.proposal.projectLocation = generic(location);
 
-	if (!detectCMake(detection) && !detectCompilationDatabase(detection))
+	if (!detectCMake(detection) && !detectCompilationDatabase(detection) && !detectMakefile(detection))
 	{
 		detectEmptyGroup(detection);
 	}

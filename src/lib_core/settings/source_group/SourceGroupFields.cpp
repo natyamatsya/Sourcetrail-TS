@@ -14,6 +14,7 @@
 #include "SourceGroupSettingsWithCustomCommand.h"
 #include "SourceGroupSettingsWithCxxCMakeBuildDirectory.h"
 #include "SourceGroupSettingsWithCxxCdbPath.h"
+#include "SourceGroupSettingsWithCxxMakefile.h"
 #include "SourceGroupSettingsWithCxxPathsAndFlags.h"
 #include "SourceGroupSettingsWithExcludeFilters.h"
 #include "SourceGroupSettingsWithIndexedHeaderPaths.h"
@@ -94,6 +95,15 @@ Field pathField(std::string_view name, Get get, Set set)
 		[set](Component& component, const std::string& value) { set(component, FilePath(value)); });
 }
 
+// `field`, but not of a group of `type`.
+Field exceptFor(Field field, SourceGroupType type)
+{
+	field.has = [has = std::move(field.has), type](const SourceGroupSettings& settings) {
+		return settings.getType() != type && has(settings);
+	};
+	return field;
+}
+
 const std::vector<Field>& fields()
 {
 	using G = SourceGroupSettings;
@@ -106,6 +116,7 @@ const std::vector<Field>& fields()
 	using Cpp = SourceGroupSettingsWithCppStandard;
 	using C = SourceGroupSettingsWithCStandard;
 	using CMake = SourceGroupSettingsWithCxxCMakeBuildDirectory;
+	using Make = SourceGroupSettingsWithCxxMakefile;
 	using Command = SourceGroupSettingsWithCustomCommand;
 	using Cargo = SourceGroupSettingsWithCargoOptions;
 	using Swift = SourceGroupSettingsWithSwiftOptions;
@@ -127,10 +138,25 @@ const std::vector<Field>& fields()
 			"extensions",
 			[](const Extensions& c) { return c.getSourceExtensions(); },
 			[](Extensions& c, const Strings& v) { c.setSourceExtensions(v); }),
-		pathField<Cdb>(
-			"compilation_database",
-			[](const Cdb& c) { return c.getCompilationDatabasePath(); },
-			[](Cdb& c, const FilePath& v) { c.setCompilationDatabasePath(v); }),
+		// A Makefile group writes its own.
+		exceptFor(
+			pathField<Cdb>(
+				"compilation_database",
+				[](const Cdb& c) { return c.getCompilationDatabasePath(); },
+				[](Cdb& c, const FilePath& v) { c.setCompilationDatabasePath(v); }),
+			SourceGroupType::CXX_MAKE),
+		pathField<Make>(
+			"make_directory",
+			[](const Make& c) { return c.getMakefileDirectory(); },
+			[](Make& c, const FilePath& v) { c.setMakefileDirectory(v); }),
+		field<Make, std::string>(
+			"make_arguments",
+			[](const Make& c) { return c.getMakeArguments(); },
+			[](Make& c, const std::string& v) { c.setMakeArguments(v); }),
+		field<Make, std::string>(
+			"make_program",
+			[](const Make& c) { return c.getMakeProgram(); },
+			[](Make& c, const std::string& v) { c.setMakeProgram(v); }),
 		pathField<CMake>(
 			"cmake_source_directory",
 			[](const CMake& c) { return c.getSourceDirectory(); },
@@ -236,6 +262,7 @@ constexpr std::array typeIds {
 	std::pair {SourceGroupType::CXX_EMPTY, std::string_view("cpp")},
 	std::pair {SourceGroupType::CXX_CDB, std::string_view("cdb")},
 	std::pair {SourceGroupType::CXX_CMAKE_FILE_API, std::string_view("cmake")},
+	std::pair {SourceGroupType::CXX_MAKE, std::string_view("make")},
 	std::pair {SourceGroupType::RUST_EMPTY, std::string_view("rust")},
 	std::pair {SourceGroupType::SWIFT_EMPTY, std::string_view("swift")},
 	std::pair {SourceGroupType::ZIG_EMPTY, std::string_view("zig")},

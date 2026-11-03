@@ -87,7 +87,7 @@ If you are using [CMake](https://cmake.org/) or [Make](https://www.gnu.org/softw
 Exporting a Compilation Database:
 
 * From **CMake** by defining the `CMAKE_EXPORT_COMPILE_COMMANDS` flag. (not supported on for Visual Studio CMake generators)
-* For **Make** projects use [Bear](https://github.com/rizsotto/Bear). Bear generates a `compile_commands.json` file during a simulated build process. Bear has been tested on FreeBSD, GNU/Linux and OS X.
+* For **Make** projects you need none: a [C/C++ Source Group from Makefile](#cc-source-group-from-makefile) reads the compile commands from the Makefile itself. (A `compile_commands.json` written by [Bear](https://github.com/rizsotto/Bear) during a build works too.)
 * From **Qt Creator since version 4.8** by selecting the "Generate Compilation Database" from the "Build" menu.
 
 If you managed to export a `compile_commands.json` file, then please continue at [Create a Source Group from Compilation Database](#create-a-project-from-compilation-database) and come back after you finished creating the project.
@@ -1208,6 +1208,25 @@ C/C++ Source Groups from Compilation Database offer the following configuration 
 | Additional Compiler Flags | Define additional compiler flags used during indexing including the dash (e.g. use `-DRELEASE` to add a `#define` for `RELEASE`).<br /><br />For instructions on how to add paths see [Path List Box](#path-list-box).
 | Precompiled Header File | Select the path to the header file that should be used to generate a Precompiled Header File. The Precompiled Header File will be generated as pre-indexing step. If no path is supplied, no Precompiled Header File will be generated.
 | Precompiled Header Flags | Define if the already supplied compiler flags should be used for Precompiled Header File generation and define additional flags for Precompiled Header File generation only.<br /><br />For instructions on how to add paths see [Path List Box](#path-list-box).
+
+## C/C++ Source Group from Makefile
+
+For projects built with [Make](https://www.gnu.org/software/make/) (GNU make). Sourcetrail runs a dry run of the Makefile, `make -n -B -w -k <goal and variables>`, which prints every command a build from scratch would run without running any, and takes the commands that compile C, C++ or Objective-C files as a compilation database of its own (in the project's `sourcetrail_dependencies` directory). It runs the dry run again on every refresh, so the project follows the Makefile. No `compile_commands.json`, Bear or compiledb is needed, and nothing is built.
+
+**New Project** on a folder with a Makefile (and no CMake project or `compile_commands.json`) proposes this Source Group by itself: it lists the Makefile's goals and takes the first whose dry run compiles anything — the default goal, `all`, then the goals named for this platform, a debug build first (e.g. `osx-arm64-debug` on an Apple silicon Mac). Goals that clean, install, test or print help are not tried.
+
+C/C++ Source Groups from Makefile offer the settings of a [Source Group from Compilation Database](#cc-source-group-from-compilation-database), with these in place of the database:
+
+| Setting | Description
+| --- | ---
+| Makefile Directory | The directory make runs in: the one with the project's `GNUmakefile`, `makefile` or `Makefile`. Picking it lists the Makefile's goals and, when none is set yet, sets the first whose dry run compiles anything. You can make use of environment variables with `${ENV_VAR}`.
+| Goal and Variables | What make is given after its options, as you would type it: the goal that builds the project (`all`, or one per platform and configuration such as `osx-arm64-debug`) and variables that choose its flags (`config=debug`). The list holds the Makefile's goals, the likeliest first; empty means the default goal. Below it the page shows how many source files the dry run compiles, or why it compiles none and what make said.
+
+What a dry run cannot see:
+
+* Commands a recipe builds while it runs (a shell loop or a script that calls the compiler) are not printed, so their files are missing.
+* Makefiles a generator writes first (premake, GENie, `configure`) have to exist: run the generator (or `configure`) once, or pick the directory with the makefiles it wrote. bgfx's top-level makefile, for example, works once its `.build/projects/gmake-*` makefiles are there.
+* make still reads the Makefiles, so `$(shell ...)` in them runs, as for any make invocation.
 
 ## C/C++ Source Group from Visual Studio
 

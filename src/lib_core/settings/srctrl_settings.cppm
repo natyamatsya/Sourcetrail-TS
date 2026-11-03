@@ -82,6 +82,7 @@ extern "C++" {
 #include "SourceGroupSettingsCustomCommand.h"
 #include "SourceGroupSettingsCxxCdb.h"
 #include "SourceGroupSettingsCxxCMakeFileAPI.h"
+#include "SourceGroupSettingsCxxMake.h"
 #include "SourceGroupSettingsRustEmpty.h"
 #include "SourceGroupSettingsSwiftEmpty.h"
 #include "SourceGroupSettingsUnloadable.h"

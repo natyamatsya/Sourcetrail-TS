@@ -36,6 +36,7 @@ inline LanguageType getLanguageTypeForSourceGroupType(SourceGroupType t)
 		return LanguageType::CXX;
 	case SourceGroupType::CXX_CDB:
 	case SourceGroupType::CXX_CMAKE_FILE_API:
+	case SourceGroupType::CXX_MAKE:
 		return LanguageType::CXX;
 	case SourceGroupType::RUST_EMPTY:
 		return LanguageType::RUST;

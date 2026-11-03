@@ -29,6 +29,13 @@ public:
 	{
 		return std::make_shared<SourceGroupSettingsCxxCdb>(*this);
 	}
+
+protected:
+	// For a group whose compilation database Sourcetrail writes (from a Makefile).
+	SourceGroupSettingsCxxCdb(SourceGroupType type, const std::string& id, const ProjectSettings* projectSettings)
+		: SourceGroupSettingsWithComponents(type, id, projectSettings)
+	{
+	}
 };
 
 #endif	  // SOURCE_GROUP_SETTINGS_CXX_CDB_H

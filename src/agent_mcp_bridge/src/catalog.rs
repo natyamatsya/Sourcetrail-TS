@@ -622,8 +622,9 @@ in folder, as Project > New Project (and the start screen's New Project) does: t
 on the general page; nothing is created until create. C/C++, in this order: a cmake group with \
 a usable configure preset (a configured one first, then one made for this computer), a cmake \
 group on a configured build directory or one beside the project file, a cdb group on a \
-compile_commands.json, an empty cpp/c group on the folder (extensions, standard, include \
-paths). Ends at editing, or at closed with context.outcome (no such folder).
+compile_commands.json, a make group on a Makefile (on the first goal whose dry run, make -n, \
+compiles anything: the default goal, all, then this platform's, e.g. osx-arm64-debug), an \
+empty cpp/c group on the folder (extensions, standard, include paths). Ends at editing, or at closed with context.outcome (no such folder).
   edit                             closed: opens it on the project loaded.
   set { project_name?, project_location?, fields?: { ... } }   editing: the general page's \
 name and location (a new project's only), and the shown source group's fields: \
@@ -631,12 +632,15 @@ context.fields lists them with their values (strings, lists of strings, true/fal
 source_paths, extensions, exclude_filters, compilation_database, cmake_source_directory, \
 cmake_preset, cmake_arguments (without a preset: what the configure adds to cmake -S -B, one \
 argument each, e.g. [\"-DBUILD_TESTS=OFF\"]), cmake_index_linked_targets (true: also index \
-the targets the filtered ones link to, transitively), header_search_paths, compiler_flags, \
-cpp_standard, custom_command.
+the targets the filtered ones link to, transitively), make_directory, make_arguments (a make \
+group: the goal and variables make is given, as typed after make, e.g. \"osx-arm64-debug\" or \
+\"all config=debug\"; choices lists the makefile's goals, the likeliest first, and its note what \
+the dry run compiles or why nothing), make_program (empty: make), header_search_paths, \
+compiler_flags, cpp_standard, custom_command.
   show { source_group? }           editing: that source group's page, by its index in \
 context.source_groups (0 is the first), or the general one without it.
-  add_source_group { type? }       editing: adds a source group of type cdb | cmake | cpp | c \
-| rust | swift | custom and shows it; without a type the type selection opens \
+  add_source_group { type? }       editing: adds a source group of type cdb | cmake | make | cpp \
+| c | rust | swift | custom and shows it; without a type the type selection opens \
 (choosing_type, context.types).
   select_type { type }             choosing_type: picks the type there.
   remove_source_group { source_group? }   editing: removes it (default: the one shown).
@@ -659,7 +663,7 @@ adds are missing in a git checkout, the git submodule command). detected { folde
 source_group_type, reasons, notices? } (a project from a folder): why it is as proposed, the \
 first reason the summary; notices what was found besides and decides nothing (the git \
 repository and branch, its submodules and which are not checked out, build systems not read \
-yet such as Meson or Makefiles).
+yet such as Meson or Bazel).
   Recipe, a project from a folder: new_from_folder { folder: \"C:/src/fmt\", \
 project_location: \"C:/projects/fmt\" }; read context.detected and the group's fields (show \
 { source_group: 0 }), set what should differ; create; then index (indexing start).

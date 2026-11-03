@@ -10,6 +10,7 @@
 #include <string_view>
 #include <vector>
 
+#include "MakeCompileCommands.h"
 #include "SourceGroupFields.h"
 #include "SourceGroupType.h"
 
@@ -27,7 +28,10 @@
 //      (<project location>/<name>.srctrl-build) when indexing.
 //   3. A compile_commands.json (the folder, build*/, cmake-build-*/, out/ ...): a
 //      compilation database group.
-//   4. Otherwise an empty C or C++ group on the folder: the source extensions found, a
+//   4. A GNUmakefile, makefile or Makefile: a Makefile group on the first goal whose dry run
+//      (make -n) compiles anything: the default goal, all, then those named for this
+//      platform (make::rankTargets).
+//   5. Otherwise an empty C or C++ group on the folder: the source extensions found, a
 //      language standard from the build files or the code, the include/ directories.
 // Build directories (for an empty group) and vendored dependencies (third_party/,
 // external/, vendor/ ... holding other projects, unless the build uses them) are
@@ -54,6 +58,8 @@ struct ProjectDetectorOptions
 	std::string projectLocation;
 	// Whether a program is on PATH (cmake, ninja, make...); empty: looks there.
 	std::function<bool(const std::string&)> hasExecutable;
+	// How make runs for a Makefile's dry runs; empty: it runs.
+	make::Runner runMake;
 };
 
 enum class ProjectDetectionError : std::uint8_t

@@ -83,6 +83,7 @@ std::string typeIds()
 	for (SourceGroupType type:
 		 {SourceGroupType::CXX_CDB,
 		  SourceGroupType::CXX_CMAKE_FILE_API,
+		  SourceGroupType::CXX_MAKE,
 		  SourceGroupType::CXX_EMPTY,
 		  SourceGroupType::C_EMPTY,
 		  SourceGroupType::RUST_EMPTY,

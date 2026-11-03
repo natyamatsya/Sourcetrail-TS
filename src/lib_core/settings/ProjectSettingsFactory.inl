@@ -13,6 +13,7 @@
 #include "SourceGroupSettingsCppEmpty.h"
 #include "SourceGroupSettingsCxxCdb.h"
 #include "SourceGroupSettingsCxxCMakeFileAPI.h"
+#include "SourceGroupSettingsCxxMake.h"
 #include "SourceGroupSettingsRustEmpty.h"
 #include "SourceGroupSettingsSwiftEmpty.h"
 #include "SourceGroupSettingsZigEmpty.h"
@@ -58,6 +59,9 @@ inline std::vector<std::shared_ptr<SourceGroupSettings>> ProjectSettings::getAll
 			break;
 		case SourceGroupType::CXX_CMAKE_FILE_API:
 			settings = project_settings_detail::makeIfEnabled<language_packages::buildCxxLanguagePackage, SourceGroupSettingsCxxCMakeFileAPI>(id, this);
+			break;
+		case SourceGroupType::CXX_MAKE:
+			settings = project_settings_detail::makeIfEnabled<language_packages::buildCxxLanguagePackage, SourceGroupSettingsCxxMake>(id, this);
 			break;
 		case SourceGroupType::RUST_EMPTY:
 			settings = project_settings_detail::makeIfEnabled<language_packages::buildRustLanguagePackage, SourceGroupSettingsRustEmpty>(id, this);

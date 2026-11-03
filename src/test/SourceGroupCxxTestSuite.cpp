@@ -22,6 +22,7 @@
 #include "SourceGroupCxxCMakeFileAPI.h"
 #include "SourceGroupCxxCdb.h"
 #include "SourceGroupCxxEmpty.h"
+#include "SourceGroupCxxMake.h"
 #include "SourceGroupFactory.h"
 #include "SourceGroupFactoryModuleCxx.h"
 #ifndef SRCTRL_MODULE_BUILD
@@ -29,6 +30,7 @@
 #include "SourceGroupSettingsCppEmpty.h"
 #include "SourceGroupSettingsCxxCMakeFileAPI.h"
 #include "SourceGroupSettingsCxxCdb.h"
+#include "SourceGroupSettingsCxxMake.h"
 #include "TextAccess.h"
 #endif
 #include "TestTempDirectory.h"
@@ -648,4 +650,72 @@ TEST_CASE("source group cxx cmake configures afresh a build directory copied wit
 	REQUIRE(paths.has_value());
 	REQUIRE(paths->source == copySource);
 	REQUIRE(paths->build == copyBuild);
+}
+
+TEST_CASE("a Makefile group's settings read back without a project file are the same")
+{
+	// The index stores the project's settings and reads them back without a project file to tell
+	// whether they changed: the database a Makefile group writes is where the project is, so it
+	// differed, and every load asked to reindex.
+	const std::string text =
+		"version = '8'\n\n[[source_groups]]\nid = 'make'\nname = 'Make'\nstatus = 'enabled'\n"
+		"type = 'C/C++ from Makefile'\n\n    [source_groups.make]\n    arguments = 'all'\n"
+		"    directory = '/src/game'\n    program = ''\n";
+	const TestTempDirectory directory{"SourceGroupCxxMakeEquals"};
+	std::ofstream(directory.getPath() / "game.srctrl.toml") << text;
+
+	ProjectSettings project;
+	REQUIRE(project.load(FilePath((directory.getPath() / "game.srctrl.toml").string())));
+	ProjectSettings stored;
+	REQUIRE(stored.loadFromString(text));
+
+	REQUIRE(project.equalsExceptNameAndLocation(stored));
+
+	std::shared_ptr<SourceGroupSettingsCxxMake> make =
+		std::dynamic_pointer_cast<SourceGroupSettingsCxxMake>(project.getAllSourceGroupSettings().front());
+	REQUIRE(make);
+	make->setMakeArguments("all config=debug");
+	project.setAllSourceGroupSettings({make});
+	REQUIRE_FALSE(project.equalsExceptNameAndLocation(stored));
+}
+
+TEST_CASE("a Makefile group indexes the files its dry run compiles")
+{
+	ScopedApplicationInstance scopedApplicationInstance;
+	const TestTempDirectory directory{"SourceGroupCxxMake"};
+	const std::filesystem::path source = directory.getPath() / "game";
+	std::filesystem::create_directories(source / "src");
+	std::ofstream(source / "src" / "main.c") << "int main(void) { return 0; }\n";
+	std::ofstream(source / "src" / "util.c") << "int util(void) { return 1; }\n";
+	std::ofstream(source / "Makefile")
+		<< "all: obj/main.o obj/util.o\n"
+		   "obj/%.o: src/%.c\n\tmkdir -p obj\n\tcc -MMD -MP -Isrc -o $@ -c $<\n";
+
+	ProjectSettings projectSettings;
+	projectSettings.setProjectFilePath("game", FilePath((directory.getPath() / "project").string()));
+	std::shared_ptr<SourceGroupSettingsCxxMake> settings =
+		std::make_shared<SourceGroupSettingsCxxMake>("make_id", &projectSettings);
+	settings->setMakefileDirectory(FilePath(source.string()));
+	settings->setMakeArguments("all");
+
+	const auto written = SourceGroupCxxMake::writeCompilationDatabase(*settings);
+	if (!written && written.error().code == make::Error::Code::MakeNotFound)
+	{
+		SKIP("make is not installed");
+	}
+	REQUIRE(written.has_value());
+	REQUIRE(written->commands.size() == 2);
+	REQUIRE(settings->getCompilationDatabasePath() == settings->getGeneratedCompilationDatabasePath());
+
+	const SourceGroupCxxMake sourceGroup(settings);
+	const std::set<FilePath> files = sourceGroup.getAllSourceFilePaths();
+	REQUIRE(files.size() == 2);
+	REQUIRE(files.contains(FilePath((source / "src" / "main.c").string()).makeCanonical()));
+
+	// Nothing to compile: why, and what make was given.
+	settings->setMakeArguments("nosuchgoal");
+	const auto nothing = SourceGroupCxxMake::writeCompilationDatabase(*settings);
+	REQUIRE_FALSE(nothing.has_value());
+	REQUIRE(nothing.error().code == make::Error::Code::NoCompileCommands);
+	REQUIRE(nothing.error().message.contains("nosuchgoal"));
 }

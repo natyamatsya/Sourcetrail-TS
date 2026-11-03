@@ -59,9 +59,11 @@ void QtProjectWizardContentSelect::populate(QGridLayout* layout, int&  /*row*/)
 	{
 		sourceGroupInfos[LanguageType::C].push_back(SourceGroupInfo(SourceGroupType::CXX_CDB, true));
 		sourceGroupInfos[LanguageType::C].push_back(SourceGroupInfo(SourceGroupType::CXX_CMAKE_FILE_API));
+		sourceGroupInfos[LanguageType::C].push_back(SourceGroupInfo(SourceGroupType::CXX_MAKE));
 		sourceGroupInfos[LanguageType::C].push_back(SourceGroupInfo(SourceGroupType::C_EMPTY));
 		sourceGroupInfos[LanguageType::CXX].push_back(SourceGroupInfo(SourceGroupType::CXX_CDB, true));
 		sourceGroupInfos[LanguageType::CXX].push_back(SourceGroupInfo(SourceGroupType::CXX_CMAKE_FILE_API));
+		sourceGroupInfos[LanguageType::CXX].push_back(SourceGroupInfo(SourceGroupType::CXX_MAKE));
 		sourceGroupInfos[LanguageType::CXX].push_back(SourceGroupInfo(SourceGroupType::CXX_EMPTY));
 	}
 	if constexpr (language_packages::buildRustLanguagePackage)
@@ -78,6 +80,7 @@ void QtProjectWizardContentSelect::populate(QGridLayout* layout, int&  /*row*/)
 		m_sourceGroupTypeIconName[SourceGroupType::CXX_EMPTY]          = QtResources::ICON_EMPTY_ICON;
 		m_sourceGroupTypeIconName[SourceGroupType::CXX_CDB]            = QtResources::ICON_CDB_ICON;
 		m_sourceGroupTypeIconName[SourceGroupType::CXX_CMAKE_FILE_API] = QtResources::ICON_CMAKE_ICON;
+		m_sourceGroupTypeIconName[SourceGroupType::CXX_MAKE]           = QtResources::ICON_CDB_ICON;
 	}
 	if constexpr (language_packages::buildRustLanguagePackage)
 		m_sourceGroupTypeIconName[SourceGroupType::RUST_EMPTY] = QtResources::ICON_EMPTY_ICON;
@@ -105,6 +108,11 @@ void QtProjectWizardContentSelect::populate(QGridLayout* layout, int&  /*row*/)
 			"automatically and obtain per-file compile commands (include paths, defines, flags) "
 			"directly from CMake. The project is re-configured automatically when CMakeLists.txt "
 			"or .cmake files change on refresh.";
+		m_sourceGroupTypeDescriptions[SourceGroupType::CXX_MAKE] =
+			"Create a Source Group from a Makefile. Select the directory with the Makefile and the goal "
+			"that builds the project — Sourcetrail reads the compile commands from what make prints "
+			"for a dry run (make -n), which builds nothing, and reads them again on every refresh. "
+			"No compile_commands.json, bear or compiledb needed.";
 	}
 	if constexpr (language_packages::buildRustLanguagePackage)
 		m_sourceGroupTypeDescriptions[SourceGroupType::RUST_EMPTY] =

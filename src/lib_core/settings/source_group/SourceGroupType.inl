@@ -16,6 +16,8 @@ inline std::string sourceGroupTypeToString(SourceGroupType v)
 		return "C/C++ from Compilation Database";
 	case SourceGroupType::CXX_CMAKE_FILE_API:
 		return "C/C++ from CMake File API";
+	case SourceGroupType::CXX_MAKE:
+		return "C/C++ from Makefile";
 	case SourceGroupType::RUST_EMPTY:
 		return "Rust Empty";
 	case SourceGroupType::SWIFT_EMPTY:
@@ -45,6 +47,8 @@ inline std::string sourceGroupTypeToProjectSetupString(SourceGroupType v)
 		return "C/C++ from Compilation Database";
 	case SourceGroupType::CXX_CMAKE_FILE_API:
 		return "C/C++ from CMake File API";
+	case SourceGroupType::CXX_MAKE:
+		return "C/C++ from Makefile";
 	case SourceGroupType::RUST_EMPTY:
 		return "Empty Rust Source Group";
 	case SourceGroupType::SWIFT_EMPTY:
@@ -75,6 +79,7 @@ inline std::string sourceGroupTypeToDefaultName(SourceGroupType v)
 	case SourceGroupType::CXX_EMPTY:
 	case SourceGroupType::CXX_CDB:
 	case SourceGroupType::CXX_CMAKE_FILE_API:
+	case SourceGroupType::CXX_MAKE:
 	case SourceGroupType::CUSTOM_COMMAND:
 	case SourceGroupType::UNKNOWN:
 		break;
@@ -92,6 +97,8 @@ inline SourceGroupType stringToSourceGroupType(const std::string& v)
 		return SourceGroupType::CXX_CDB;
 	if (v == sourceGroupTypeToString(SourceGroupType::CXX_CMAKE_FILE_API))
 		return SourceGroupType::CXX_CMAKE_FILE_API;
+	if (v == sourceGroupTypeToString(SourceGroupType::CXX_MAKE))
+		return SourceGroupType::CXX_MAKE;
 	if (v == sourceGroupTypeToString(SourceGroupType::RUST_EMPTY))
 		return SourceGroupType::RUST_EMPTY;
 	if (v == sourceGroupTypeToString(SourceGroupType::SWIFT_EMPTY))

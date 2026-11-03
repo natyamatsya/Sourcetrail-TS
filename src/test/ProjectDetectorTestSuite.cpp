@@ -24,14 +24,15 @@ void write(const fs::path& path, const std::string& content = {})
 	std::ofstream{path, std::ios::binary} << content;
 }
 
-// Every program is on PATH but those named.
+// Every program is on PATH but those named; make's dry runs compile nothing.
 ProjectDetectorOptions without(Strings missing = {}, std::string location = {})
 {
 	return {
 		.projectLocation = std::move(location),
 		.hasExecutable = [missing = std::move(missing)](const std::string& name) {
 			return !std::ranges::contains(missing, name);
-		}};
+		},
+		.runMake = [](const std::string&, const Strings&, const std::string&) { return make::Output{}; }};
 }
 
 ProjectProposal detect(const fs::path& folder, const ProjectDetectorOptions& options = without())
@@ -417,7 +418,57 @@ TEST_CASE("ProjectDetector proposes an empty C++ group for plain sources")
 	}
 	CHECK(mentions(proposal.reasons, "The 1 .c file is not in this C++ group"));
 	CHECK(mentions(proposal.reasons, "third_party/ holds vendored dependencies: excluded"));
-	CHECK(mentions(proposal.notices, "Makefile: its flags are not read"));
+	CHECK(mentions(proposal.notices, "Makefile: its default goal compiles no C or C++ file in a dry run (make -n)"));
+}
+
+TEST_CASE("ProjectDetector proposes a Makefile group on the goal whose dry run compiles")
+{
+	const TestTempDirectory temp{"detectMakefile"};
+	const fs::path folder{temp.getPath() / "engine"};
+	write(folder / "src" / "engine.cpp", "int engine() { return 0; }\n");
+	write(folder / "vendor" / "lib" / "LICENSE", "MIT\n");	// vendored, and compiled
+	write(folder / "vendor" / "lib" / "lib.c", "int lib(void) { return 0; }\n");
+	write(folder / "third_party" / "unused" / "LICENSE", "MIT\n");	 // vendored, not compiled
+	write(folder / "makefile", "help:\n\t@echo targets\nall:\n");
+
+	ProjectDetectorOptions options{without()};
+	Strings goals;
+	options.runMake = [&](const std::string& program, const Strings& arguments, const std::string& directory) {
+		CHECK(program == make::makeProgram({}));
+		CHECK(directory == generic(folder));
+		if (std::ranges::contains(arguments, "-p"))
+		{
+			return make::Output{.output = ".DEFAULT_GOAL := help\n# Files\nhelp:\nall:\n"};
+		}
+		goals.push_back(arguments.back());
+		return arguments.back() == "all"
+			? make::Output{.output = "c++ -Isrc -c src/engine.cpp -o engine.o\ncc -c vendor/lib/lib.c\n"}
+			: make::Output{.output = "echo targets\n"};
+	};
+	const ProjectProposal proposal{detect(folder, options)};
+
+	CHECK(goals == Strings{"all"});	   // help prints help: it is not tried
+	CHECK(proposal.sourceGroupType == SourceGroupType::CXX_MAKE);
+	CHECK(text(proposal, "make_directory") == generic(folder));
+	CHECK(text(proposal, "make_arguments") == "all");
+	CHECK(strings(proposal, "indexed_header_paths") == Strings{generic(folder)});
+	CHECK(strings(proposal, "exclude_filters") == Strings{generic(folder / "third_party")});
+	CHECK(
+		proposal.reasons.front() ==
+		"Found the makefile: its goal 'all' compiles 2 files (from what 'make -n all' prints, building nothing)");
+}
+
+TEST_CASE("ProjectDetector says why a Makefile needs make")
+{
+	const TestTempDirectory temp{"detectMakefileNoMake"};
+	const fs::path folder{temp.getPath() / "tool"};
+	write(folder / "main.c", "int main(void) { return 0; }\n");
+	write(folder / "Makefile", "all:\n\tcc -c main.c\n");
+
+	const ProjectProposal proposal{detect(folder, without({make::makeProgram({})}))};
+
+	CHECK(proposal.sourceGroupType == SourceGroupType::C_EMPTY);
+	CHECK(mentions(proposal.notices, "is not on PATH, which a 'C/C++ from Makefile' source group runs"));
 }
 
 TEST_CASE("ProjectDetector indexes the headers of a header-only C++ library")
@@ -445,7 +496,7 @@ TEST_CASE("ProjectDetector proposes an empty C group with the Makefile's standar
 	const ProjectProposal proposal{detect(folder)};
 
 	CHECK(proposal.sourceGroupType == SourceGroupType::C_EMPTY);
-	CHECK(proposal.reasons.front() == "Found Makefile, which is not read: an empty C group on the folder (1 .c file and 1 .h file)");
+	CHECK(proposal.reasons.front() == "Found Makefile, whose dry run compiles nothing: an empty C group on the folder (1 .c file and 1 .h file)");
 	CHECK(strings(proposal, "extensions") == Strings{".c"});
 	CHECK(strings(proposal, "header_search_paths") == Strings{generic(folder / "inc")});
 	if (std::ranges::contains(ClangCompiler::getAvailableCStandards(), "c99"))
