@@ -3,6 +3,8 @@
 #include <algorithm>
 #include <chrono>
 #include <filesystem>
+#include <format>
+#include <optional>
 
 #include <exec/task.hpp>
 
@@ -818,6 +820,9 @@ struct RunEnd
 	bool decided = false;	// false: the run ended without a decision on its data
 	Data data = Data::None;
 	bool refreshAgain = false;
+	// The run's data is missing or incomplete though it finished: the run ends with this
+	// error once the decision is carried out (the headless exit code is then 1).
+	std::optional<IndexingError> failure;
 };
 
 // Runs `stream` once the run reached `stage`.
@@ -1408,6 +1413,32 @@ void Project::startIndexing(std::shared_ptr<IndexingRun> run)
 		{
 			co_return RunEnd {};	// no decision on the data
 		}
+#ifdef SOURCETRAIL_TURSO_CONCURRENT
+		// The concurrent ingest (the sole writer) wrote the run's data: an export that
+		// failed left the run's database without it, so it must not replace the index; batches
+		// it lost leave the index incomplete. Either way the run did not succeed.
+		if (run->tempStorage->concurrentTursoExportFailed())
+		{
+			if (end.data == RunEnd::Data::Keep)
+			{
+				end.data = RunEnd::Data::Discard;
+				end.refreshAgain = false;
+			}
+			end.failure = utility::makeExpectedError(
+				IndexingErrorCode::IndexNotReplaced,
+				"the concurrent Turso ingest could not be exported into the index, which is kept "
+				"as it was; re-index with \"indexing/multi_group_fan_out\": \"off\"");
+		}
+		else if (const long long lost = run->tempStorage->concurrentTursoLostBatches(); lost > 0)
+		{
+			end.failure = utility::makeExpectedError(
+				IndexingErrorCode::IndexIncomplete,
+				std::format(
+					"the concurrent Turso ingest lost {} batch(es): the index is missing data; re-index "
+					"with \"indexing/multi_group_fan_out\": \"off\"",
+					lost));
+		}
+#endif
 		run->releaseSteps();
 		co_return end;
 	};
@@ -1477,6 +1508,10 @@ void Project::startIndexing(std::shared_ptr<IndexingRun> run)
 						}
 						project->m_refreshStage = RefreshStageType::NONE;
 						project->m_indexingLock.reset();
+					}
+					if (outcome && end.failure)
+					{
+						outcome = std::unexpected(*end.failure);
 					}
 					if (!outcome)
 					{

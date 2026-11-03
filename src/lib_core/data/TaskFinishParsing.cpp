@@ -114,12 +114,15 @@ void TaskFinishParsing::report(const IndexingRunState& state)
 	// ("indexing/multi_group_fan_out": "off") to recover serially.
 	if (m_storage->concurrentTursoLostBatches() > 0 || m_storage->concurrentTursoExportFailed())
 	{
+		// A failed export keeps the previous index (Project::startIndexing discards this run's).
 		const std::string degraded =
 			"Indexing health: the concurrent ingest DEGRADED this run (" +
 			std::to_string(m_storage->concurrentTursoLostBatches()) + " lost batch(es)" +
-			(m_storage->concurrentTursoExportFailed() ? ", export FAILED" : "") +
-			"). The index is missing data — re-run with the fan-out disabled "
-			"(\"indexing/multi_group_fan_out\": \"off\") for a serial re-index.";
+			(m_storage->concurrentTursoExportFailed() ? ", export FAILED" : "") + "). " +
+			(m_storage->concurrentTursoExportFailed() ? "Nothing of it was saved; the index stays as it was"
+													  : "The index is missing data") +
+			" — re-run with the fan-out disabled (\"indexing/multi_group_fan_out\": \"off\") for a "
+			"serial re-index.";
 		LOG_WARNING(degraded);
 		MessageStatus(degraded, true, false).dispatch();
 	}
