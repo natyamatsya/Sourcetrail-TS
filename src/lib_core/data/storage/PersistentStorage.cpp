@@ -2083,18 +2083,37 @@ std::shared_ptr<SourceLocationCollection> PersistentStorage::getSourceLocationsF
 	std::map<Id, FilePath> filePaths;
 	std::vector<Id> nonFileIds;
 
+	// Ids that may be non-indexed files, looked up together: a symbol's token ids include every
+	// edge to it (tens of thousands for a builtin type), and one query each was most of the time.
+	std::vector<Id> unknownIds;
+	for (const Id tokenId: tokenIds)
+	{
+		if (getFileNodePath(tokenId).empty() &&
+			m_symbolDefinitionKinds.find(tokenId) == m_symbolDefinitionKinds.end())
+		{
+			unknownIds.push_back(tokenId);
+		}
+	}
+	std::unordered_map<Id, FilePath> nonIndexedFilePaths;
+	for (const StorageNode& node: m_sqliteIndexStorage.getAllByIds<StorageNode>(unknownIds))
+	{
+		if (NodeType(node.type).isFile())
+		{
+			nonIndexedFilePaths.emplace(
+				node.id, FilePath(NameHierarchy::deserialize(node.serializedName).getQualifiedName()));
+		}
+	}
+
 	for (const Id tokenId: tokenIds)
 	{
 		FilePath path = getFileNodePath(tokenId);
 
 		// check for non-indexed file
-		if (path.empty() && m_symbolDefinitionKinds.find(tokenId) == m_symbolDefinitionKinds.end())
+		if (path.empty())
 		{
-			const StorageNode fileNode = m_sqliteIndexStorage.getNodeById(tokenId);
-			if (NodeType(fileNode.type).isFile())
+			if (const auto it = nonIndexedFilePaths.find(tokenId); it != nonIndexedFilePaths.end())
 			{
-				path = FilePath(
-					NameHierarchy::deserialize(fileNode.serializedName).getQualifiedName());
+				path = it->second;
 			}
 		}
 
