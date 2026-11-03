@@ -141,12 +141,17 @@ jobs:
   # using a system LLVM, which needs a different caching and environment setup.
   # ---------------------------------------------------------------------------
   cpp-build:
-    name: C++ build + tests (${{ matrix.os }})
+    name: C++ build + tests (${{ matrix.os }}${{ matrix.turso == 'concurrent' && ', Turso concurrent' || '' }})
     runs-on: ${{ matrix.os }}
     strategy:
       fail-fast: false
       matrix:
         os: [ubuntu-latest, macos-latest]
+        # compare: Turso runs beside SQLite and every write is diffed
+        # (TursoCompareTestSuite). concurrent: the Turso-only concurrent-writer
+        # ingest path (ConcurrentTursoWriterTestSuite, and the Rust smoke test
+        # through it). See context/DESIGN_TURSO_BACKEND.md.
+        turso: [compare, concurrent]
 
     steps:
       - uses: actions/checkout@v7
@@ -253,7 +258,7 @@ jobs:
         uses: actions/cache/restore@v6
         with:
           path: ${{ runner.temp }}/sccion-tools
-          key: ${{ runner.os }}-sccion-tools-${{ github.run_id }}
+          key: ${{ runner.os }}-sccion-tools-${{ matrix.turso }}-${{ github.run_id }}
           restore-keys: ${{ runner.os }}-sccion-tools-
 
       - name: Point the build at the tool cache
@@ -282,14 +287,15 @@ jobs:
           # SOURCETRAIL_COMPILER_CACHE=ON when sccion came up, so a launcher
           # that silently went missing fails configure instead of building
           # uncached; AUTO when the action stood down (a fork's pull request).
-          # SOURCETRAIL_TURSO_COMPARE is off by default and on in CI, which
-          # builds the Turso shim and runs TursoCompareTestSuite.
+          # The Turso modes are off by default; CI builds each (matrix.turso),
+          # which builds the Turso shim and runs its suites.
           cmake -S . -B build -G Ninja \
             -DCMAKE_BUILD_TYPE=Release \
             -DCMAKE_TOOLCHAIN_FILE="$PWD/vcpkg/scripts/buildsystems/vcpkg.cmake" \
             -DVCPKG_TARGET_TRIPLET=x64-arm64-linux-windows-osx-static-md \
             -DSOURCETRAIL_COMPILER_CACHE=${{ steps.sccion.outputs.installed == 'true' && 'ON' || 'AUTO' }} \
-            -DSOURCETRAIL_TURSO_COMPARE=ON \
+            -DSOURCETRAIL_TURSO_COMPARE=${{ matrix.turso == 'compare' && 'ON' || 'OFF' }} \
+            -DSOURCETRAIL_TURSO_CONCURRENT=${{ matrix.turso == 'concurrent' && 'ON' || 'OFF' }} \
             -DBUILD_CXX_LANGUAGE_PACKAGE=ON \
             -DBUILD_RUST_LANGUAGE_PACKAGE=ON \
             -DBUILD_UNIT_TESTS_PACKAGE=ON \
@@ -317,7 +323,7 @@ jobs:
         uses: actions/cache/save@v6
         with:
           path: ${{ runner.temp }}/sccion-tools
-          key: ${{ runner.os }}-sccion-tools-${{ github.run_id }}
+          key: ${{ runner.os }}-sccion-tools-${{ matrix.turso }}-${{ github.run_id }}
 
       - name: Test
         working-directory: build
@@ -349,9 +355,13 @@ jobs:
   # the triplet, or the runner's MSVC change.
   # ---------------------------------------------------------------------------
   cpp-build-windows:
-    name: C++ build + tests (windows-latest)
+    name: C++ build + tests (windows-latest${{ matrix.turso == 'concurrent' && ', Turso concurrent' || '' }})
     runs-on: windows-latest
     timeout-minutes: 330 # headroom for a cold vcpkg LLVM build
+    strategy:
+      fail-fast: false
+      matrix:
+        turso: [compare, concurrent] # as in cpp-build
 
     steps:
       - uses: actions/checkout@v7
@@ -423,7 +433,8 @@ jobs:
             -DVCPKG_TARGET_TRIPLET=x64-arm64-linux-windows-osx-static-md \
             -DVCPKG_MANIFEST_FEATURES=cxx-indexer \
             -DSOURCETRAIL_COMPILER_CACHE=${{ steps.sccion.outputs.installed == 'true' && 'ON' || 'AUTO' }} \
-            -DSOURCETRAIL_TURSO_COMPARE=ON \
+            -DSOURCETRAIL_TURSO_COMPARE=${{ matrix.turso == 'compare' && 'ON' || 'OFF' }} \
+            -DSOURCETRAIL_TURSO_CONCURRENT=${{ matrix.turso == 'concurrent' && 'ON' || 'OFF' }} \
             -DBUILD_CXX_LANGUAGE_PACKAGE=ON \
             -DBUILD_RUST_LANGUAGE_PACKAGE=OFF \
             -DBUILD_UNIT_TESTS_PACKAGE=ON
@@ -437,7 +448,8 @@ jobs:
       # under the real key, and every later run took that exact-key "hit",
       # skipped its own save and built LLVM from scratch again.
       - name: Save vcpkg binary cache
-        if: always() && steps.configure.outcome == 'success' && steps.vcpkg-binary-cache.outputs.cache-hit != 'true'
+        # One job saves it: both Turso variants build the same ports.
+        if: always() && matrix.turso == 'compare' && steps.configure.outcome == 'success' && steps.vcpkg-binary-cache.outputs.cache-hit != 'true'
         uses: actions/cache/save@v6
         with:
           path: ~/AppData/Local/vcpkg/archives

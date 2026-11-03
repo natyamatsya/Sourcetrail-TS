@@ -7,8 +7,12 @@ importantly — the **subtle, easy-to-forget ways the Turso result deviates from
 the SQLite result**. Read the deviations section before trusting a Turso graph
 as byte-equivalent to SQLite.
 
-Pinned engine: `turso_core = "=0.7.0-pre.18"`. Several notes below are specific
-to that pre-release.
+Pinned engine: `turso_core = "=0.8.3"` (2026-11: from `0.7.0-pre.18`; 0.8 added a
+`Dialect` argument to `Database::open_file`, the shim passes `SqliteDialect`, and a
+`StepResult::Sleep { duration }` the step loops wait out before driving IO). The notes
+below were found under `0.7.0-pre.18`; those not re-checked on 0.8.3 say so. CI builds
+both the compare and the concurrent mode on Linux, macOS and Windows (`matrix.turso` in
+`cmake-multi-platform.yml`).
 
 ## Modes (all opt-in, off by default)
 
@@ -59,7 +63,8 @@ stub — the data is lost unless you flush it.
   rust-analyzer's file then grows to ~54 MB and survives a fresh reopen.
 - **GOTCHA:** the checkpoint must be driven via **prepare+step** (`tsq_prepare` +
   `tsq_step` loop). Routing it through `tsq_exec` (which uses
-  `prepare_execute_batch`) **SIGBUS-crashes** turso 0.7.0-pre.18. (`catch_unwind`
+  `prepare_execute_batch`) **SIGBUS-crashes** turso 0.7.0-pre.18 (not re-checked on
+  0.8.3: the shim still steps it). (`catch_unwind`
   does not catch a hardware signal, so it takes the whole process down.)
 - MVCC keeps a `<db>-log` sidecar; clean it up between runs or a stale log +
   WAL-mode header reads as "database is corrupt".
