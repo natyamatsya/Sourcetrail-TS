@@ -1225,7 +1225,7 @@ C/C++ Source Groups from Makefile offer the settings of a [Source Group from Com
 What a dry run cannot see:
 
 * Commands a recipe builds while it runs (a shell loop or a script that calls the compiler) are not printed, so their files are missing.
-* Makefiles a generator writes first (premake, GENie, `configure`) have to exist: run the generator (or `configure`) once, or pick the directory with the makefiles it wrote. bgfx's top-level makefile, for example, works once its `.build/projects/gmake-*` makefiles are there.
+* Makefiles a generator writes first (premake, GENie, `configure`) have to exist: run the generator (or `configure`) once, or pick the directory with the makefiles it wrote. bgfx's top-level makefile, for example, works once its `.build/projects/gmake-*` makefiles are there. For a GENie or premake project without such a makefile, **New Project** looks for the makefiles generated for this platform in the folder and beside it, and takes the one with a goal named for the folder: bx, which bgfx builds, gets bgfx's `.build/projects/gmake-osx-arm64` with the goal `bx`.
 * make still reads the Makefiles, so `$(shell ...)` in them runs, as for any make invocation.
 
 ## C/C++ Source Group from Visual Studio

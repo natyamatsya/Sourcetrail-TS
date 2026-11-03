@@ -458,6 +458,78 @@ TEST_CASE("ProjectDetector proposes a Makefile group on the goal whose dry run c
 		"Found the makefile: its goal 'all' compiles 2 files (from what 'make -n all' prints, building nothing)");
 }
 
+namespace
+{
+// What GENie names this platform's makefile directory.
+std::string gmakeDirectory()
+{
+#if defined(__APPLE__)
+#if defined(__aarch64__)
+	return "gmake-osx-arm64";
+#else
+	return "gmake-osx-x64";
+#endif
+#elif defined(_WIN32)
+	return "gmake-mingw-gcc";
+#else
+	return "gmake-linux-gcc";
+#endif
+}
+}	 // namespace
+
+TEST_CASE("ProjectDetector proposes the makefile GENie generated beside a folder that has none")
+{
+	// bx has GENie scripts and no makefile: bgfx's generated makefiles build it, as goal bx.
+	const TestTempDirectory temp{"detectGenieSibling"};
+	const fs::path folder{temp.getPath() / "bx"};
+	write(folder / "scripts" / "genie.lua", "project \"bx\"\n");
+	write(folder / "src" / "bx.cpp", "int bx() { return 0; }\n");
+	const fs::path projects{temp.getPath() / "bgfx" / ".build" / "projects"};
+	const fs::path generated{projects / gmakeDirectory()};
+	write(generated / "Makefile", "bx:\n");
+	write(projects / "gmake-android-arm" / "Makefile", "bx:\n");	 // another platform's: not tried
+
+	ProjectDetectorOptions options{without()};
+	Strings tried;
+	options.runMake = [&](const std::string&, const Strings& arguments, const std::string& directory) {
+		tried.push_back(directory);
+		if (std::ranges::contains(arguments, "-p"))
+		{
+			return make::Output{.output = "# Files\nbx:\nbgfx:\n"};
+		}
+		return make::Output{
+			.output = "make: Entering directory '" + directory + "'\nclang++ -std=c++20 -c ../../../../bx/src/bx.cpp\n"};
+	};
+	const ProjectProposal proposal{detect(folder, options)};
+
+	CHECK(proposal.sourceGroupType == SourceGroupType::CXX_MAKE);
+	CHECK(text(proposal, "make_directory") == generic(generated));
+	CHECK(text(proposal, "make_arguments") == "bx");
+	CHECK(strings(proposal, "indexed_header_paths") == Strings{generic(folder)});
+	CHECK(std::ranges::all_of(tried, [&](const std::string& directory) { return directory == generic(generated); }));
+	CHECK(mentions(proposal.reasons, "No makefile here, but the one scripts/genie.lua generated in"));
+	CHECK(mentions(proposal.reasons, "its goal 'bx' compiles 1 file of the folder"));
+}
+
+TEST_CASE("ProjectDetector says how to generate a GENie project's makefiles, and reads its standard")
+{
+	const TestTempDirectory temp{"detectGenieNone"};
+	const fs::path folder{temp.getPath() / "bimg"};
+	write(folder / "scripts" / "genie.lua", "dofile \"toolchain.lua\"\n");
+	write(folder / "scripts" / "toolchain.lua", "flags {\n\t\"Cpp20\",\n}\n");
+	write(folder / "src" / "image.cpp", "int image() { return 0; }\n");
+
+	const ProjectProposal proposal{detect(folder)};
+
+	CHECK(proposal.sourceGroupType == SourceGroupType::CXX_EMPTY);
+	CHECK(mentions(proposal.notices, "scripts/genie.lua: the makefiles it generates are not there"));
+	if (std::ranges::contains(ClangCompiler::getAvailableCppStandards(), "c++20"))
+	{
+		CHECK(text(proposal, "cpp_standard") == "c++20");
+		CHECK(mentions(proposal.reasons, "toolchain.lua asks for it"));
+	}
+}
+
 TEST_CASE("ProjectDetector says why a Makefile needs make")
 {
 	const TestTempDirectory temp{"detectMakefileNoMake"};

@@ -6,6 +6,7 @@
 #include <chrono>
 #include <filesystem>
 #include <format>
+#include <iterator>
 #include <fstream>
 #include <ranges>
 #include <regex>
@@ -315,8 +316,41 @@ std::vector<fs::path> buildFiles(const fs::path& folder)
 			files.push_back(it->path());
 		}
 	}
+	// GENie and premake projects keep their scripts in scripts/ (genie.lua, toolchain.lua): all of
+	// them, where the flags may be.
+	for (const fs::path& dir: {folder, folder / "scripts"})
+	{
+		if (isFile(dir / "genie.lua") || isFile(dir / "premake5.lua") || isFile(dir / "premake4.lua"))
+		{
+			for (fs::directory_iterator it{dir, fs::directory_options::skip_permission_denied, error}, end;
+				 !error && it != end;
+				 it.increment(error))
+			{
+				if (lower(it->path().extension().string()) == ".lua" && !std::ranges::contains(files, it->path()))
+				{
+					files.push_back(it->path());
+				}
+			}
+		}
+	}
 	std::ranges::sort(files);
 	return files;
+}
+
+// The GENie or premake script of a folder (genie.lua, premake5.lua; at the top or in scripts/).
+std::optional<fs::path> projectGeneratorScript(const fs::path& folder)
+{
+	for (const fs::path& dir: {folder, folder / "scripts"})
+	{
+		for (const char* name: {"genie.lua", "premake5.lua", "premake4.lua"})
+		{
+			if (isFile(dir / name))
+			{
+				return dir / name;
+			}
+		}
+	}
+	return std::nullopt;
 }
 
 std::string cppStandardFromSuffix(const std::string& prefix, std::string suffix)
@@ -348,11 +382,13 @@ struct Standard
 };
 
 // The C++ standard the build files ask for: -std=c++17, cpp_std=c++17,
-// CMAKE_CXX_STANDARD 17, cxx_std_17, CONFIG += c++17.
+// CMAKE_CXX_STANDARD 17, cxx_std_17, CONFIG += c++17, GENie's flags { "Cpp17" }, premake's
+// cppdialect "C++17".
 std::optional<Standard> cppStandardFromBuildFiles(const fs::path& folder)
 {
 	static const std::regex flag{R"((?:std=|std\s*[:=]\s*['"]?)(c|gnu)\+\+(\d[0-9a-z]))"};
-	static const std::regex cmake{R"((?:CMAKE_CXX_STANDARD\s+|cxx_std_)(\d\d))"};
+	static const std::regex cmake{
+		R"((?:CMAKE_CXX_STANDARD\s+|cxx_std_|["']Cpp|cppdialect\s*\(?\s*["'](?:C|gnu)\+\+)(\d\d)\b)"};
 	static const std::regex qmake{R"(CONFIG\s*\+?=.*\bc\+\+(\d[0-9a-z]))"};
 	const Strings available{ClangCompiler::getAvailableCppStandards()};
 	for (const fs::path& file: buildFiles(folder))
@@ -822,7 +858,6 @@ void noteUndetectedBuildSystems(Detection& detection)
 			"Autotools (configure.ac) is not detected yet: run configure, then New Project reads the "
 			"Makefile it writes"},
 		BuildSystem{{"SConstruct"}, "SCons (SConstruct) is not detected yet"},
-		BuildSystem{{"premake5.lua"}, "Premake (premake5.lua) is not detected yet"},
 		BuildSystem{
 			{"xmake.lua"},
 			"xmake (xmake.lua) is not detected yet: 'xmake project -k compile_commands' writes a "
@@ -1230,13 +1265,112 @@ bool detectCompilationDatabase(Detection& detection)
 	return true;
 }
 
+// The makefile a GENie or premake project's generator wrote, in the folder or in one beside it that
+// builds it too (bgfx's .build/projects/gmake-osx-arm64 builds bx, its sibling): a Makefile group on
+// that makefile's goal named for the folder, when its dry run compiles the folder's files.
+// `makefile` is the folder's own (empty: it has none).
+bool detectGeneratedMakefile(Detection& detection, const fs::path& script, const std::string& makefile)
+{
+	ProjectProposal& proposal{detection.proposal};
+	const std::string name{detection.folder.filename().string()};
+	const std::string scriptName{shown(script, detection.folder)};
+
+	// Where GENie writes them: .build/projects/gmake-<platform>, this platform's first (ranked by
+	// their names as goals are: gmake-osx-arm64 here, gmake-android-arm never).
+	std::map<std::string, Strings> byName;
+	std::vector<fs::path> roots{detection.folder};
+	for (const fs::path& sibling: subdirectories(detection.folder.parent_path()))
+	{
+		if (sibling != detection.folder)
+		{
+			roots.push_back(sibling);
+		}
+	}
+	for (const fs::path& root: roots)
+	{
+		for (const fs::path& dir: subdirectories(root / ".build" / "projects"))
+		{
+			if (dir.filename().string().starts_with("gmake") && !make::findMakefile(generic(dir)).empty())
+			{
+				byName[dir.filename().string()].push_back(generic(dir));
+			}
+		}
+	}
+	make::Targets names;
+	for (const auto& [dirName, dirs]: byName)
+	{
+		names.targets.push_back(dirName);
+	}
+	Strings ranked;
+	for (const std::string& dirName: make::rankTargets(names))
+	{
+		std::ranges::copy(byName[dirName], std::back_inserter(ranked));
+	}
+
+	const std::string folder{generic(detection.folder) + "/"};
+	for (const std::string& dir: ranked | std::views::take(3))
+	{
+		const make::Invocation invocation{.directory = dir};
+		if (!std::ranges::contains(make::listTargets(invocation, detection.runMake).targets, name))
+		{
+			continue;
+		}
+		const make::Invocation goal{.directory = dir, .arguments = {name}};
+		const auto dryRun{make::runDryRun(goal, detection.runMake)};
+		if (!dryRun)
+		{
+			continue;
+		}
+		std::set<std::string> files;
+		for (const make::CompileCommand& command: dryRun->commands)
+		{
+			const std::string file{generic((fs::path{command.directory} / command.file).lexically_normal())};
+			if (file.starts_with(folder))
+			{
+				files.insert(file);
+			}
+		}
+		if (files.empty())
+		{
+			continue;
+		}
+		proposal.sourceGroupType = SourceGroupType::CXX_MAKE;
+		proposal.fields["make_directory"] = dir;
+		proposal.fields["make_arguments"] = name;
+		proposal.fields["indexed_header_paths"] = Strings{generic(detection.folder)};
+		proposal.reasons.insert(
+			proposal.reasons.begin(),
+			std::format(
+				"{}, but the one {} generated in {} builds it: its goal '{}' compiles {} {} of the folder (from "
+				"what 'make -n {}' prints, building nothing)",
+				makefile.empty() ? std::string{"No makefile here"}
+								 : std::format("The {} compiles nothing without the makefiles {} generates", makefile, scriptName),
+				scriptName,
+				dir,
+				name,
+				files.size(),
+				files.size() == 1 ? "file" : "files",
+				name));
+		proposal.reasons.emplace_back("Headers under the folder are indexed along with the files it compiles");
+		return true;
+	}
+
+	proposal.notices.push_back(std::format(
+		"{}: the makefiles it generates are not there; generate them (genie gmake, premake5 gmake2: e.g. "
+		"'genie --gcc=osx-arm64 gmake'), then New Project on the folder they are written to reads them",
+		scriptName));
+	return false;
+}
+
 // A makefile at the top: a Makefile group on the first goal whose dry run compiles anything.
 bool detectMakefile(Detection& detection)
 {
 	const std::string makefile{make::findMakefile(generic(detection.folder))};
 	if (makefile.empty())
 	{
-		return false;
+		const std::optional<fs::path> script{projectGeneratorScript(detection.folder)};
+		return script && detection.hasExecutable(make::makeProgram({})) &&
+			detectGeneratedMakefile(detection, *script, makefile);
 	}
 	ProjectProposal& proposal{detection.proposal};
 	const std::string program{make::makeProgram({})};
@@ -1251,6 +1385,13 @@ bool detectMakefile(Detection& detection)
 
 	const make::Invocation invocation{.directory = generic(detection.folder)};
 	const std::optional<make::Suggestion> suggestion{make::suggestTarget(invocation, 6, detection.runMake)};
+	// A GENie project's own makefile only runs the makefiles GENie generates: without them, those
+	// generated beside it may build it (bgfx's build bimg).
+	if (const std::optional<fs::path> script{projectGeneratorScript(detection.folder)};
+		!suggestion && script && detectGeneratedMakefile(detection, *script, makefile))
+	{
+		return true;
+	}
 	if (!suggestion)
 	{
 		Strings tried;

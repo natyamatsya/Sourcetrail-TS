@@ -30,7 +30,9 @@
 //      compilation database group.
 //   4. A GNUmakefile, makefile or Makefile: a Makefile group on the first goal whose dry run
 //      (make -n) compiles anything: the default goal, all, then those named for this
-//      platform (make::rankTargets).
+//      platform (make::rankTargets). A GENie or premake project (scripts/genie.lua) without
+//      a makefile that compiles: the makefiles generated for this platform in it or beside it
+//      (../bgfx/.build/projects/gmake-osx-arm64 for bx), on their goal named for the folder.
 //   5. Otherwise an empty C or C++ group on the folder: the source extensions found, a
 //      language standard from the build files or the code, the include/ directories.
 // Build directories (for an empty group) and vendored dependencies (third_party/,

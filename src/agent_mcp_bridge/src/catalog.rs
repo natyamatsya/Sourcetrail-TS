@@ -623,8 +623,10 @@ on the general page; nothing is created until create. C/C++, in this order: a cm
 a usable configure preset (a configured one first, then one made for this computer), a cmake \
 group on a configured build directory or one beside the project file, a cdb group on a \
 compile_commands.json, a make group on a Makefile (on the first goal whose dry run, make -n, \
-compiles anything: the default goal, all, then this platform's, e.g. osx-arm64-debug), an \
-empty cpp/c group on the folder (extensions, standard, include paths). Ends at editing, or at closed with context.outcome (no such folder).
+compiles anything: the default goal, all, then this platform's, e.g. osx-arm64-debug; for a \
+GENie/premake project without one, the makefiles generated for this platform in or beside the \
+folder, on the goal named for it), an empty cpp/c group on the folder (extensions, standard, \
+include paths). Ends at editing, or at closed with context.outcome (no such folder).
   edit                             closed: opens it on the project loaded.
   set { project_name?, project_location?, fields?: { ... } }   editing: the general page's \
 name and location (a new project's only), and the shown source group's fields: \
