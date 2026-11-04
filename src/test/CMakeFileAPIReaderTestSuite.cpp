@@ -40,14 +40,9 @@ namespace
 
 FilePath fixtureRootDir()
 {
-	return FilePath{__FILE__}
-		.makeAbsolute()
-		.makeCanonical()
-		.getParentDirectory()
-		.getParentDirectory()
-		.getParentDirectory()
-		.getConcatenated("/bin/test/data/CMakeFileAPIReaderTestSuite")
-		.makeCanonical();
+	// Relative to the working directory, as every suite finds its data: `__FILE__` may name the
+	// source relatively (-fmacro-prefix-map) or name a checkout that is not this one.
+	return FilePath{"data/CMakeFileAPIReaderTestSuite"}.makeAbsolute().makeCanonical();
 }
 
 // Returns the absolute path to the fixture build directory.
