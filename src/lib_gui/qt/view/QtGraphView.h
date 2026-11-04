@@ -11,6 +11,7 @@
 
 #include <optional>
 #include <set>
+#include <unordered_map>
 
 struct DummyEdge;
 struct DummyNode;
@@ -143,6 +144,9 @@ private:
 	std::list<QtGraphEdge *> m_oldEdges;
 
 	std::list<QtGraphNode *> m_nodes;
+	// m_nodes and their sub nodes by token id, the first in depth-first order (as
+	// QtGraphNode::findNodeRecursive finds them): where createEdge looks an edge's ends up.
+	std::unordered_map<Id, QtGraphNode *> m_nodesByTokenId;
 	std::list<QtGraphNode *> m_oldNodes;
 
 	std::vector<QtGraphNode *> m_activeNodes;

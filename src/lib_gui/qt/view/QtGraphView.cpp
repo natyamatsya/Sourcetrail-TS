@@ -66,6 +66,16 @@ constexpr int toolbarMargin = 8;
 // The trail depth slider's length, and how short it may get in a short view.
 constexpr int trailDepthSliderLength = 64;
 constexpr int trailDepthSliderMinimumLength = 32;
+
+// Adds the nodes and their sub nodes, depth first; a token id keeps the first node that has it.
+void indexNodesRecursive(const std::list<QtGraphNode *> &nodes, std::unordered_map<Id, QtGraphNode *> &index)
+{
+	for (QtGraphNode *node : nodes)
+	{
+		index.emplace(node->getTokenId(), node);
+		indexNodesRecursive(node->getSubNodes(), index);
+	}
+}
 }	 // namespace
 
 QtGraphView::QtGraphView(ViewLayout *viewLayout)
@@ -417,6 +427,10 @@ void QtGraphView::rebuildGraph(std::shared_ptr<Graph> graph, const std::vector<s
 			node->setPos(node->pos() - offset);
 		}
 
+		// Searching the node trees for both ends of every edge was O(edges * nodes).
+		m_nodesByTokenId.clear();
+		indexNodesRecursive(m_nodes, m_nodesByTokenId);
+
 		m_edges.clear();
 		QtGraphEdge::clearFocusedEdges();
 
@@ -491,6 +505,7 @@ void QtGraphView::clear()
 		}
 
 		m_nodes.clear();
+		m_nodesByTokenId.clear();
 		m_edges.clear();
 
 		m_oldNodes.clear();
@@ -995,6 +1010,7 @@ void QtGraphView::switchToNewGraphData()
 	m_oldEdges = m_edges;
 
 	m_nodes.clear();
+	m_nodesByTokenId.clear();
 	m_edges.clear();
 
 	doResize();
@@ -1182,8 +1198,12 @@ QtGraphEdge *QtGraphView::createEdge(QGraphicsView *view, const DummyEdge *edge,
 		return nullptr;
 	}
 
-	QtGraphNode *owner = QtGraphNode::findNodeRecursive(m_nodes, edge->ownerId);
-	QtGraphNode *target = QtGraphNode::findNodeRecursive(m_nodes, edge->targetId);
+	const auto findNode = [this](Id tokenId) -> QtGraphNode * {
+		const auto it = m_nodesByTokenId.find(tokenId);
+		return it != m_nodesByTokenId.end() ? it->second : nullptr;
+	};
+	QtGraphNode *owner = findNode(edge->ownerId);
+	QtGraphNode *target = findNode(edge->targetId);
 
 	if (owner != nullptr && target != nullptr)
 	{
