@@ -2,6 +2,7 @@
 
 #include <limits>
 #include <set>
+#include <unordered_map>
 
 #ifndef SRCTRL_MODULE_BUILD
 #include "AccessKind.h"
@@ -1443,8 +1444,22 @@ void GraphController::bundleNodesAndEdgesMatching(
 
 		bundleNode->bundledNodes.insert(node);
 		bundleNode->bundledNodeCount += node->getBundledNodeCount();
+	}
 
-		m_dummyNodes.erase(m_dummyNodes.begin() + matchedNodeIndices[i]);
+	// The bundled nodes leave in one pass (erasing each was O(nodes) apiece).
+	{
+		size_t kept = 0;
+		size_t nextMatched = 0;
+		for (size_t i = 0; i < m_dummyNodes.size(); i++)
+		{
+			if (nextMatched < matchedNodeIndices.size() && matchedNodeIndices[nextMatched] == i)
+			{
+				nextMatched++;
+				continue;
+			}
+			m_dummyNodes[kept++] = std::move(m_dummyNodes[i]);
+		}
+		m_dummyNodes.resize(kept);
 	}
 
 	if (countConnectedNodes)
@@ -1466,36 +1481,42 @@ void GraphController::bundleNodesAndEdgesMatching(
 		return;
 	}
 
+	// Each node's edges in m_dummyEdges' order, and the bundle edge for each node at the other end:
+	// scanning all edges for each bundled node, and all bundle edges for each edge, made this
+	// O(bundled nodes * edges) on a big graph.
+	std::unordered_map<Id, std::vector<DummyEdge*>> edgesByNodeId;
+	for (const std::shared_ptr<DummyEdge>& edge: m_dummyEdges)
+	{
+		edgesByNodeId[edge->ownerId].push_back(edge.get());
+		if (edge->targetId != edge->ownerId)
+		{
+			edgesByNodeId[edge->targetId].push_back(edge.get());
+		}
+	}
+
 	std::vector<std::shared_ptr<DummyEdge>> bundleEdges;
+	std::unordered_map<Id, DummyEdge*> bundleEdgesByOwnerId;
 	std::vector<const DummyNode*> bundledNodes = bundleNode->getAllBundledNodes();
 	for (const DummyNode* node: bundledNodes)
 	{
-		for (const std::shared_ptr<DummyEdge>& edge: m_dummyEdges)
+		const auto nodeEdges = edgesByNodeId.find(node->data->getId());
+		if (nodeEdges == edgesByNodeId.end())
 		{
-			bool owner = (edge->ownerId == node->data->getId());
-			bool target = (edge->targetId == node->data->getId());
+			continue;
+		}
 
-			if (!owner && !target)
-			{
-				continue;
-			}
+		for (DummyEdge* edge: nodeEdges->second)
+		{
+			const bool owner = (edge->ownerId == node->data->getId());
 
-			DummyEdge* bundleEdgePtr = nullptr;
-			for (const std::shared_ptr<DummyEdge>& bundleEdge: bundleEdges)
-			{
-				if ((owner && bundleEdge->ownerId == edge->targetId) ||
-					(target && bundleEdge->ownerId == edge->ownerId))
-				{
-					bundleEdgePtr = bundleEdge.get();
-					break;
-				}
-			}
-
+			// the node at the other end (the node itself for an edge to itself)
+			const Id otherId = owner ? edge->targetId : edge->ownerId;
+			DummyEdge*& bundleEdgePtr = bundleEdgesByOwnerId[otherId];
 			if (!bundleEdgePtr)
 			{
 				std::shared_ptr<DummyEdge> bundleEdge = std::make_shared<DummyEdge>();
 				bundleEdge->visible = true;
-				bundleEdge->ownerId = (owner ? edge->targetId : edge->ownerId);
+				bundleEdge->ownerId = otherId;
 				bundleEdge->targetId = bundleNode->tokenId;
 				bundleEdges.push_back(bundleEdge);
 				bundleEdgePtr = bundleEdges.back().get();
