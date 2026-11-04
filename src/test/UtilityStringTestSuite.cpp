@@ -396,3 +396,20 @@ TEST_CASE("trim blank spaces of string")
 {
 	REQUIRE(utility::trim(" foo  ") == "foo");
 }
+
+TEST_CASE("case insensitive less orders as the lower-cased strings do")
+{
+	const std::vector<std::string> names{
+		"", "a", "A", "b", "B", "ab", "aB", "Ab", "a_b", "a[b", "a`b", "Z", "z", "_", "[", "`", "~",
+		"abc", "abd", "ABCD", "getName", "GetName", "getname", "get", "Gef", "x1", "X10", "x9",
+		"\xc3\x84rger", "\xc3\xa4rger", "arger", "Arger", "\xc3\x9f", "ss", "a\xc3\xa9", "A\xc3\x89",
+		"ab\xc3\xa9", "AB", "\xe2\x82\xac", "\xff", "a\xff", "A\xfe"};
+	for (const std::string& a: names)
+	{
+		for (const std::string& b: names)
+		{
+			INFO(a << " < " << b);
+			REQUIRE(utility::isCaseInsensitiveLess(a, b) == (utility::toLowerCase(a) < utility::toLowerCase(b)));
+		}
+	}
+}

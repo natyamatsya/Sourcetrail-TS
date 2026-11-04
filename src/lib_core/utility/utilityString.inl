@@ -558,7 +558,30 @@ inline bool isCaseInsensitiveEqual(const std::string& a, const std::string& b)
 
 inline bool isCaseInsensitiveLess(const std::string& s1, const std::string& s2)
 {
-	return toLowerCase(s1) < toLowerCase(s2);
+	// Graph nodes are sorted with this, so it runs millions of times on a big graph. While both
+	// strings are ASCII it compares them in place: lower-casing ASCII changes A-Z only and keeps
+	// every byte where it is, so the order is toLowerCase's without its four allocations. A
+	// non-ASCII byte before the first difference falls back to toLowerCase.
+	const auto lower = [](unsigned char c) {
+		return (c >= 'A' && c <= 'Z') ? static_cast<unsigned char>(c - 'A' + 'a') : c;
+	};
+	const std::size_t common = std::min(s1.size(), s2.size());
+	for (std::size_t i = 0; i < common; i++)
+	{
+		const auto c1 = static_cast<unsigned char>(s1[i]);
+		const auto c2 = static_cast<unsigned char>(s2[i]);
+		if (c1 >= 0x80 || c2 >= 0x80)
+		{
+			return toLowerCase(s1) < toLowerCase(s2);
+		}
+		if (lower(c1) != lower(c2))
+		{
+			return lower(c1) < lower(c2);
+		}
+	}
+	// An ASCII prefix lower-cases to itself, and the rest of the longer string to something
+	// non-empty: the shorter string is the lesser.
+	return s1.size() < s2.size();
 }
 
 inline std::u32string convertToUtf32(const std::string& utf8chars)
