@@ -16,6 +16,18 @@
 #include <QTimer>
 #include <QVBoxLayout>
 
+#include <filesystem>
+#include <optional>
+
+#ifdef _WIN32
+#ifndef NOMINMAX
+#define NOMINMAX	// std::max and std::min below
+#endif
+#include <windows.h>
+#else
+#include <sys/stat.h>
+#endif
+
 // Imports come AFTER all textual #includes (include-before-import rule: textual libc++
 // following BMI-merged declarations trips "cannot add 'abi_tag' in a redeclaration").
 #ifdef SRCTRL_MODULE_BUILD
@@ -23,6 +35,59 @@ import srctrl.file;
 #endif
 
 using namespace utility;
+
+namespace
+{
+// The file on disk a path names, as std::filesystem::equivalent (and so FilePath's ==) tells two
+// paths apart: the device and the file's number on it. Nothing for a path that names no file.
+std::optional<std::pair<std::uint64_t, std::uint64_t>> fileIdentity(const FilePath& filePath)
+{
+#ifdef _WIN32
+	const HANDLE handle = CreateFileW(
+		filePath.getPath().c_str(),
+		0,
+		FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE,
+		nullptr,
+		OPEN_EXISTING,
+		FILE_FLAG_BACKUP_SEMANTICS,
+		nullptr);
+	if (handle == INVALID_HANDLE_VALUE)
+	{
+		return std::nullopt;
+	}
+	BY_HANDLE_FILE_INFORMATION info{};
+	const bool ok = GetFileInformationByHandle(handle, &info) != 0;
+	CloseHandle(handle);
+	if (!ok)
+	{
+		return std::nullopt;
+	}
+	return std::pair{
+		std::uint64_t{info.dwVolumeSerialNumber},
+		(std::uint64_t{info.nFileIndexHigh} << 32) | info.nFileIndexLow};
+#else
+	struct stat info{};
+	if (::stat(filePath.getPath().c_str(), &info) != 0)
+	{
+		return std::nullopt;
+	}
+	return std::pair{static_cast<std::uint64_t>(info.st_dev), static_cast<std::uint64_t>(info.st_ino)};
+#endif
+}
+
+// The path's elements, as std::filesystem::path::compare (FilePath's == for paths that name no
+// file) compares them: "a//b" is "a/b".
+std::filesystem::path::string_type pathKey(const FilePath& filePath)
+{
+	std::filesystem::path::string_type key;
+	for (const std::filesystem::path& element: filePath.getPath())
+	{
+		key += element.native();
+		key += std::filesystem::path::value_type{0};
+	}
+	return key;
+}
+}	 // namespace
 
 void QtCodeFileListScrollArea::keyPressEvent(QKeyEvent* event)
 {
@@ -90,6 +155,8 @@ void QtCodeFileList::clear()
 	}
 
 	m_files.clear();
+	m_filesByPath.clear();
+	m_filesByIdentity.clear();
 	m_scrollArea->verticalScrollBar()->setValue(0);
 
 	clearSnippetTitleAndScrollBar();
@@ -103,25 +170,33 @@ void QtCodeFileList::clearSnippetTitleAndScrollBar()
 
 QtCodeFile* QtCodeFileList::getFile(const FilePath& filePath)
 {
-	QtCodeFile* file = nullptr;
-
-	for (QtCodeFile* filePtr: m_files)
+	// The file whose path FilePath's == calls equal: the same file on disk when both exist, else
+	// the same path text. Looked up instead of compared with every file listed.
+	std::filesystem::path::string_type path{pathKey(filePath)};
+	if (const auto it = m_filesByPath.find(path); it != m_filesByPath.end())
 	{
-		if (filePtr->getFilePath() == filePath)
+		return it->second;
+	}
+
+	const std::optional<FileIdentity> identity = filePath.exists() ? fileIdentity(filePath) : std::nullopt;
+	if (identity)
+	{
+		if (const auto it = m_filesByIdentity.find(*identity); it != m_filesByIdentity.end())
 		{
-			file = filePtr;
-			break;
+			return it->second;
 		}
 	}
 
-	if (!file)
+	QtCodeFile* file = new QtCodeFile(filePath, m_navigator, !m_files.size());
+	m_files.push_back(file);
+	m_filesByPath.emplace(std::move(path), file);
+	if (identity)
 	{
-		file = new QtCodeFile(filePath, m_navigator, !m_files.size());
-		m_files.push_back(file);
-
-		m_filesArea->layout()->addWidget(file);
-		file->hide();
+		m_filesByIdentity.emplace(*identity, file);
 	}
+
+	m_filesArea->layout()->addWidget(file);
+	file->hide();
 
 	return file;
 }

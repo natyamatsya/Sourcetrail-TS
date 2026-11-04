@@ -266,7 +266,7 @@ void BucketLayouter::createBuckets(
 	{
 		if (node->hasActiveSubNode() || !edges.size())
 		{
-			getBucket(0, 0)->addNode(node);
+			addNode(*getBucket(0, 0), node);
 
 			node->bundleInfo.layoutVertical = false;
 			activeNodeAdded = true;
@@ -281,8 +281,16 @@ void BucketLayouter::createBuckets(
 
 	if (!activeNodeAdded)
 	{
-		getBucket(0, 0)->addNode(nodes[0]);
+		addNode(*getBucket(0, 0), nodes[0]);
 	}
+
+	// Looked up per edge end below; searching the node trees there made this O(edges * nodes).
+	std::unordered_map<Id, std::shared_ptr<DummyNode>> topMostNodes;
+	addTopMostDummyNodesRecursive(nodes, nullptr, topMostNodes);
+	const auto findTopMost = [&topMostNodes](Id tokenId) -> std::shared_ptr<DummyNode> {
+		const auto it = topMostNodes.find(tokenId);
+		return it != topMostNodes.end() ? it->second : nullptr;
+	};
 
 	std::deque<std::shared_ptr<DummyEdge>> remainingEdges(edges.begin(), edges.end());
 	size_t skipCount = 0;
@@ -298,10 +306,8 @@ void BucketLayouter::createBuckets(
 		std::shared_ptr<DummyEdge> edge = remainingEdges.front();
 		remainingEdges.pop_front();
 
-		std::shared_ptr<DummyNode> owner = findTopMostDummyNodeRecursive(
-			nodes, edge->ownerId, nullptr);
-		std::shared_ptr<DummyNode> target = findTopMostDummyNodeRecursive(
-			nodes, edge->targetId, nullptr);
+		std::shared_ptr<DummyNode> owner = findTopMost(edge->ownerId);
+		std::shared_ptr<DummyNode> target = findTopMost(edge->targetId);
 
 		bool horizontal = true;
 
@@ -334,7 +340,7 @@ void BucketLayouter::createBuckets(
 				if (force)
 				{
 					ownerBucket = getBucket(0, 0);
-					ownerBucket->addNode(owner);
+					addNode(*ownerBucket, owner);
 				}
 				else
 				{
@@ -353,14 +359,14 @@ void BucketLayouter::createBuckets(
 				int i = horizontal ? ownerBucket->i + 1 : ownerBucket->i;
 				int j = horizontal ? ownerBucket->j : ownerBucket->j - 1;
 
-				getBucket(i, j)->addNode(target);
+				addNode(*getBucket(i, j), target);
 			}
 			else
 			{
 				int i = horizontal ? targetBucket->i - 1 : targetBucket->i;
 				int j = horizontal ? targetBucket->j : targetBucket->j + 1;
 
-				getBucket(i, j)->addNode(owner);
+				addNode(*getBucket(i, j), owner);
 			}
 
 			skipCount = 0;
@@ -505,26 +511,22 @@ std::vector<std::shared_ptr<DummyNode>> BucketLayouter::getSortedNodes()
 	return sortedNodes;
 }
 
-std::shared_ptr<DummyNode> BucketLayouter::findTopMostDummyNodeRecursive(
-	std::vector<std::shared_ptr<DummyNode>>& nodes, Id tokenId, std::shared_ptr<DummyNode> top)
+void BucketLayouter::addTopMostDummyNodesRecursive(
+	const std::vector<std::shared_ptr<DummyNode>>& nodes,
+	const std::shared_ptr<DummyNode>& top,
+	std::unordered_map<Id, std::shared_ptr<DummyNode>>& topMostNodes)
 {
 	for (const std::shared_ptr<DummyNode>& node: nodes)
 	{
-		std::shared_ptr<DummyNode> t = (top ? top : node);
+		const std::shared_ptr<DummyNode>& t = (top ? top : node);
 
-		if (node->visible && node->tokenId == tokenId)
+		if (node->visible)
 		{
-			return t;
+			topMostNodes.emplace(node->tokenId, t);
 		}
 
-		std::shared_ptr<DummyNode> result = findTopMostDummyNodeRecursive(node->subNodes, tokenId, t);
-		if (result != nullptr)
-		{
-			return result;
-		}
+		addTopMostDummyNodesRecursive(node->subNodes, t, topMostNodes);
 	}
-
-	return nullptr;
 }
 
 Bucket* BucketLayouter::getBucket(int i, int j)
@@ -578,20 +580,14 @@ Bucket* BucketLayouter::getBucket(int i, int j)
 	return nullptr;
 }
 
-Bucket* BucketLayouter::getBucket(std::shared_ptr<DummyNode> node)
+Bucket* BucketLayouter::getBucket(const std::shared_ptr<DummyNode>& node) const
 {
-	for (int j = m_j1; j <= m_j2; j++)
-	{
-		for (int i = m_i1; i <= m_i2; i++)
-		{
-			Bucket* bucket = &m_buckets[j][i];
+	const auto it = m_nodeBuckets.find(node.get());
+	return it != m_nodeBuckets.end() ? it->second : nullptr;
+}
 
-			if (bucket->hasNode(node))
-			{
-				return bucket;
-			}
-		}
-	}
-
-	return nullptr;
+void BucketLayouter::addNode(Bucket& bucket, const std::shared_ptr<DummyNode>& node)
+{
+	bucket.addNode(node);
+	m_nodeBuckets.emplace(node.get(), &bucket);
 }
