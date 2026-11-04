@@ -225,6 +225,7 @@
 
 			<call></call>
 			<dispatch></dispatch>
+			<static_dispatch></static_dispatch>
 
 			<use></use>
 

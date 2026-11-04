@@ -59,6 +59,7 @@ constexpr EdgeTable kEdgeTables[] = {
 	{Edge::EDGE_BINDS, "Binds"},
 	{Edge::EDGE_DISPATCH, "Dispatch"},
 	{Edge::EDGE_SATISFIES, "Satisfies"},
+	{Edge::EDGE_STATIC_DISPATCH, "StaticDispatch"},
 };
 
 // Anything the table above does not name -- a type added to Edge::EdgeType without a

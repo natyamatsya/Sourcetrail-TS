@@ -121,6 +121,14 @@ public:
 	std::expected<std::size_t, DerivedEdgeError> deriveDispatchEdges();
 	std::expected<void, DerivedEdgeError> removeDispatchEdges();
 
+	// The other derived edges (Edge::EDGE_STATIC_DISPATCH): what a template's implicit
+	// instantiations call that the template does not, directly or through the helper templates
+	// they instantiate, from the template to the callee. The same contract as the dispatch pair:
+	// replaced all at once from the stored CALL and TEMPLATE_SPECIALIZATION edges, removed before
+	// a clear. See context/DESIGN_STATIC_DISPATCH_EDGES.md.
+	std::expected<std::size_t, DerivedEdgeError> deriveStaticDispatchEdges();
+	std::expected<void, DerivedEdgeError> removeStaticDispatchEdges();
+
 	bool isEdge(Id elementId) const;
 	bool isNode(Id elementId) const;
 	bool isFile(Id elementId) const;

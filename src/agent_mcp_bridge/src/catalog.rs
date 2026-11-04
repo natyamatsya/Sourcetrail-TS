@@ -189,10 +189,16 @@ a big graph the whole state runs to megabytes.
 edge_type is the Edge::EdgeType bit: 1 member, 2 type use, 4 use, 8 call, 16 inheritance, \
 32 override, 64 type argument, 128 template specialization, 256 include, 512 import, \
 1024 bundled edges, 2048 macro use, 4096 annotation use, 8192 binds, 16384 dispatch, \
-32768 satisfies (a type -> a C++ concept it is proven to satisfy). A \
+32768 satisfies (a type -> a C++ concept it is proven to satisfy), 65536 static dispatch. A \
 dispatch edge is derived after indexing, not indexed: its source calls a method, and at run \
 time that call may run its target, an override of the method (class-hierarchy analysis over \
-the call and override edges). Its occurrences are the call sites.
+the call and override edges). Its occurrences are the call sites. A static dispatch edge is \
+derived too, its compile-time counterpart: its source is a template (function template, \
+member of a class template), and an implicit instantiation of it calls the target through a \
+template argument -- render<T>'s t.draw() is Circle::draw in render<Circle> -- directly or \
+through helper templates it instantiates; only explicitly defined targets, never what the \
+template calls itself. Its occurrences are the calls in the template's body that lead there; \
+the edge's tooltip names the instantiations.
 
 app_state is the FSM to key off. NoProject -> Loading (a load was requested, by \
 project_open or in the app, until the project is open and its first tab has shown the \
@@ -342,7 +348,7 @@ node_kinds?, depth=0, layout?, include_non_indexed=false, state?, instance? } ->
   The trail buttons and the custom trail dialog. outgoing shows what a function calls, the \
 classes derived from a class, what a file includes; incoming a function's callers, a class's \
 bases, a file's includers. edge_kinds default by the node's kind (functions: call, dispatch, \
-override; classes: inheritance, satisfies, template specialization; concepts: satisfies, \
+static dispatch, override; classes: inheritance, satisfies, template specialization; concepts: satisfies, \
 outgoing being the types that satisfy it; files: include); name them for other nodes. \
 target_id: the paths from node_id to it instead. depth 0 is as deep as it goes. A wrong kind \
 name is refused with the list of valid ones.",

@@ -20,7 +20,11 @@ SRCTRL_EXPORT enum class ElementComponentKind
 	// when the indexer saw only calls bound at compile time. An edge with neither was recorded
 	// by an indexer that does not tell. See context/DESIGN_DISPATCH_EDGES.md.
 	ELEMENT_COMPONENT_CALL_DISPATCHES = 2,
-	ELEMENT_COMPONENT_CALL_STATIC = 3
+	ELEMENT_COMPONENT_CALL_STATIC = 3,
+	// On a STATIC_DISPATCH edge, one per instantiation it was derived from: data is the node id
+	// of the implicit specialization (render<Circle> for render -> Circle::draw). Written by the
+	// derivation, never by an indexer. See context/DESIGN_STATIC_DISPATCH_EDGES.md.
+	ELEMENT_COMPONENT_STATIC_DISPATCH_VIA = 4
 };
 
 // An explicit specialization of the imported `intToEnum` template (declared+defined inline in the

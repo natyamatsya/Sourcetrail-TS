@@ -10,7 +10,9 @@
   command; what a C++ call does, `utility::callDispatches` (`src/lib_cxx/data/parser/cxx/
   utilityClang.inl`). Tests: `StorageTestSuite.cpp` ("storage derives ...", "storage refresh
   ...", "cxx indexer records whether a call dispatches ..."), `IpcSerializerTestSuite.cpp`.
-- **Related:** [DESIGN_STORAGE_SCHEMA.md](DESIGN_STORAGE_SCHEMA.md) (the tables and the
+- **Related:** [DESIGN_STATIC_DISPATCH_EDGES.md](DESIGN_STATIC_DISPATCH_EDGES.md) (the
+  compile-time counterpart, a second pass run right after this one);
+  [DESIGN_STORAGE_SCHEMA.md](DESIGN_STORAGE_SCHEMA.md) (the tables and the
   clear path this has to stay out of the way of).
 
 ## What it adds

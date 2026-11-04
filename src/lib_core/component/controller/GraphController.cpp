@@ -3107,6 +3107,27 @@ void GraphController::createLegendGraph()
 			i += 2;
 		}
 
+		// A template, its instantiation and what the instantiation calls through the template's
+		// argument: derived after indexing, from the template to the callee, and drawn dashed.
+		// See DESIGN_STATIC_DISPATCH_EDGES.md.
+		{
+			addText("static dispatch", 0, Vec2i(x, y + dy * ++i));
+			Node* templateFunction =
+				addNode(NODE_FUNCTION, "template_function<typename T>", Vec2i(x, y + dy * ++i));
+			Node* argument = addNode(NODE_CLASS, "ArgumentType", Vec2i(x + dx + dx, y + dy * i));
+			Node* method = addNode(NODE_METHOD, "method", Vec2i());
+			addMember(argument, method, AccessKind::PUBLIC);
+			Node* instantiation = addNode(
+				NODE_FUNCTION,
+				"template_function<ArgumentType>",
+				Vec2i(x, y + dy * (i + 2)),
+				DefinitionKind::IMPLICIT);
+			addEdge(Edge::EDGE_TEMPLATE_SPECIALIZATION, instantiation, templateFunction);
+			addEdge(Edge::EDGE_CALL, instantiation, method);
+			addEdge(Edge::EDGE_STATIC_DISPATCH, templateFunction, method);
+			i += 3;
+		}
+
 		{
 			addText("template specialization", 0, Vec2i(x, y + dy * ++i));
 			Node* templateFunctionNode = addNode(

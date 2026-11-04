@@ -25,6 +25,7 @@
 #include "QtLineItemStraight.h"
 #ifndef SRCTRL_MODULE_BUILD
 #include "TokenComponentInheritanceChain.h"
+#include "TokenComponentInstantiations.h"
 #include "TokenComponentIsAmbiguous.h"
 #include "utility.h"
 #endif
@@ -439,6 +440,32 @@ void QtGraphEdge::coFocusIn()
 			else if (type == Edge::EDGE_SATISFIES)
 			{
 				info.title = "satisfies concept";
+			}
+			// A call the template makes through its arguments: which instantiations made it.
+			else if (type == Edge::EDGE_STATIC_DISPATCH)
+			{
+				info.title = "static dispatch through a template argument";
+				if (const TokenComponentInstantiations* instantiations = getData()
+						? getData()->getComponent<TokenComponentInstantiations>()
+						: nullptr;
+					instantiations && !instantiations->names.empty())
+				{
+					// Names can be long (tint::Vector<tint::HashmapBase<...>, 4>::Push): a few, cut.
+					constexpr std::size_t shownNames = 4;
+					constexpr std::size_t nameLength = 100;
+					const std::vector<std::string>& names = instantiations->names;
+					for (std::size_t i = 0; i < std::min(names.size(), shownNames); ++i)
+					{
+						info.title += "\nvia " +
+							(names[i].size() > nameLength ? names[i].substr(0, nameLength) + "..." : names[i]);
+					}
+					if (names.size() > shownNames)
+					{
+						info.title += "\nand " + std::to_string(names.size() - shownNames) + " more";
+					}
+					info.count = static_cast<int>(names.size());
+					info.countText = "instantiation";
+				}
 			}
 
 			if (isAmbiguous())

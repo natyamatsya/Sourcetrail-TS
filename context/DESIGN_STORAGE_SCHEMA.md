@@ -84,9 +84,9 @@ deletes indices that do not belong to the new one.
 
 | Mode | Entered by | Indices |
 |---|---|---|
-| `READ` | `Project.cpp:223` on load, `TaskFinishParsing.cpp:47` after a run | `edge(source_node_id)`, `edge(target_node_id)`, `node(serialized_name)`, `source_location(file_node_id)`, `occurrence(element_id)`, `occurrence(source_location_id)` |
+| `READ` | `Project.cpp:223` on load, `TaskFinishParsing.cpp:47` after a run | `edge(source_node_id)`, `edge(target_node_id)`, `node(serialized_name)`, `source_location(file_node_id)`, `occurrence(element_id)`, `occurrence(source_location_id)`, `element_component(element_id)` |
 | `WRITE` | `TaskParseWrapper.cpp:28`, `Project.cpp:1042` | `error(message, fatal)`, `file(path)` |
-| `CLEAR` | `TaskCleanStorage.cpp:41` | everything in `READ`, plus `element_component(element_id)` |
+| `CLEAR` | `TaskCleanStorage.cpp:41` | the same as `READ` |
 
 The asymmetry is the point. Indexing runs in `WRITE` **without** the edge and occurrence
 indices, so bulk inserts do not pay to maintain them; they are built once when the run
@@ -117,9 +117,12 @@ The cost sits on the **child** side, and this is the part that is easy to get wr
   scan of `edge` **per deleted node**.
 
 Hence the familiar advice to *index your foreign keys*, meaning the referencing column,
-and hence `element_component_foreign_key_index` on `element_component(element_id)` —
-nothing queries that column, only the cascade walks it, so the index exists purely to
-make deletion cheap.
+and hence `element_component_foreign_key_index` on `element_component(element_id)`, which
+exists mostly to make deletion cheap. Until 2026-11 it was registered for `CLEAR` only;
+the derived-edge passes delete their edges in `READ` mode, and without it each deleted
+element's cascade scanned the whole table (30 s to remove bgfx's 19k dispatch edges once the
+static dispatch edges' components were there, 0.26 s with it). The graph's lookup of an
+edge's components by element id uses it as well.
 
 ### The duplicate trap that pattern creates
 
@@ -162,6 +165,10 @@ finished index (`SqliteIndexStorage::deriveDispatchEdges`), with element ids con
 after `MAX(element.id)` and occurrences copied from the CALL edges they come from; they
 are deleted and derived again on every run, and deleted before a file clear so that they
 never keep a node alive. See [DESIGN_DISPATCH_EDGES.md](DESIGN_DISPATCH_EDGES.md).
+`EDGE_STATIC_DISPATCH` edges (`deriveStaticDispatchEdges`) follow the same contract, and also
+write `element_component` rows (`ELEMENT_COMPONENT_STATIC_DISPATCH_VIA`, the instantiation's
+node id as `data`), which go with their edge by the foreign key's cascade. See
+[DESIGN_STATIC_DISPATCH_EDGES.md](DESIGN_STATIC_DISPATCH_EDGES.md).
 
 ## Versioning
 

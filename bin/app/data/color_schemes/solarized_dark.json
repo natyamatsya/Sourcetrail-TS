@@ -170,6 +170,7 @@
          "macro_use": "#247368",
          "override": "#8A5A94",
          "satisfies": "#C14057",
+         "static_dispatch": "#C14057",
          "template_specialization": "#C14057",
          "type_argument": "#C14057",
          "type_use": "#797979",

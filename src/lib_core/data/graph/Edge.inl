@@ -41,6 +41,8 @@ inline Edge::EdgeType intToEnum(int value)
 			return Edge::EDGE_DISPATCH;
 		case Edge::EDGE_SATISFIES:
 			return Edge::EDGE_SATISFIES;
+		case Edge::EDGE_STATIC_DISPATCH:
+			return Edge::EDGE_STATIC_DISPATCH;
 	}
 	return Edge::EDGE_UNDEFINED;
 }
@@ -149,6 +151,8 @@ inline std::string Edge::getReadableTypeString(EdgeType type)
 		return "dispatch";
 	case EDGE_SATISFIES:
 		return "satisfies";
+	case EDGE_STATIC_DISPATCH:
+		return "static dispatch";
 	}
 
 	return "";

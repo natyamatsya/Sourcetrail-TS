@@ -2,6 +2,7 @@
 
 #include "WorkPools.h"
 
+#include <charconv>
 #include <queue>
 
 #ifndef SRCTRL_MODULE_BUILD
@@ -26,6 +27,7 @@
 #include "TokenComponentBundledEdges.h"
 #include "TokenComponentFilePath.h"
 #include "TokenComponentInheritanceChain.h"
+#include "TokenComponentInstantiations.h"
 #include "TokenComponentIsAmbiguous.h"
 #include "UnorderedCache.h"
 #endif
@@ -773,6 +775,12 @@ void PersistentStorage::clearFileElements(
 		{
 			LOG_ERROR(std::string(to_std_sv(removed.error())));
 		}
+		if (const std::expected<void, DerivedEdgeError> removed =
+				m_sqliteIndexStorage.removeStaticDispatchEdges();
+			!removed)
+		{
+			LOG_ERROR(std::string(to_std_sv(removed.error())));
+		}
 		m_sqliteIndexStorage.removeElementsWithLocationInFiles(fileNodeIds, updateStatusCallback);
 		m_sqliteIndexStorage.removeElements(fileNodeIds);
 		m_sqliteIndexStorage.commitTransaction();
@@ -863,6 +871,26 @@ std::expected<std::size_t, DerivedEdgeError> PersistentStorage::deriveDispatchEd
 	else
 	{
 		LOG_ERROR("Deriving dispatch edges failed: " + std::string(to_std_sv(derived.error())));
+	}
+	return derived;
+}
+
+std::expected<std::size_t, DerivedEdgeError> PersistentStorage::deriveStaticDispatchEdges()
+{
+	TRACE();
+
+	const TimeStamp start = TimeStamp::now();
+	const std::expected<std::size_t, DerivedEdgeError> derived =
+		m_sqliteIndexStorage.deriveStaticDispatchEdges();
+	if (derived)
+	{
+		LOG_INFO(
+			"Derived " + std::to_string(*derived) + " static dispatch edge(s) in " +
+			std::to_string(TimeStamp::now().deltaMS(start)) + " ms");
+	}
+	else
+	{
+		LOG_ERROR("Deriving static dispatch edges failed: " + std::string(to_std_sv(derived.error())));
 	}
 	return derived;
 }
@@ -1733,7 +1761,7 @@ std::shared_ptr<Graph> PersistentStorage::getGraphForActiveTokenIds(
 	}
 
 	addComponentAccessToGraph(graph);
-	addComponentIsAmbiguousToGraph(graph);
+	addEdgeComponentsToGraph(graph);
 
 	if (isActiveNamespace)
 	{
@@ -1985,7 +2013,7 @@ std::shared_ptr<Graph> PersistentStorage::getGraphForTrail(
 	addNodesWithParentsAndEdgesToGraph(
 		utility::toVector(nodeIds), utility::toVector(edgeIds), graph.get(), false);
 	addComponentAccessToGraph(graph.get());
-	addComponentIsAmbiguousToGraph(graph.get());
+	addEdgeComponentsToGraph(graph.get());
 
 	return graph;
 }
@@ -2073,6 +2101,13 @@ std::vector<Id> PersistentStorage::getNodeIdsForLocationIds(const std::vector<Id
 		Id elementId = occurrence.elementId;
 
 		const StorageEdge edge = m_sqliteIndexStorage.getFirstById<StorageEdge>(elementId);
+		// A static dispatch edge shares its location with the instantiations' calls, which lead
+		// there already: t.draw() to Circle::draw and Square::draw, helper(t) to helper<Circle>.
+		// Not even as a fallback, where it would mix the helper's callees into that list.
+		if (edge.id != 0 && edge.type == Edge::EDGE_STATIC_DISPATCH)
+		{
+			continue;
+		}
 		if (edge.id != 0)
 		{
 			elementId = edge.targetNodeId;
@@ -3851,7 +3886,7 @@ void PersistentStorage::addComponentAccessToGraph(Graph* graph) const
 	}
 }
 
-void PersistentStorage::addComponentIsAmbiguousToGraph(Graph* graph) const
+void PersistentStorage::addEdgeComponentsToGraph(Graph* graph) const
 {
 	using enum SearchMatch::CommandType;
 	using enum SearchMatch::SearchType;
@@ -3862,15 +3897,54 @@ void PersistentStorage::addComponentIsAmbiguousToGraph(Graph* graph) const
 	std::vector<Id> edgeIds;
 	graph->forEachEdge([&edgeIds](Edge* edge) { edgeIds.push_back(edge->getId()); });
 
-	ElementComponentKind componentKind = ELEMENT_COMPONENT_IS_AMBIGUOUS;
+	// A static dispatch edge names the instantiations it was derived from by node id.
+	std::map<Id, std::vector<Id>> instantiationIds;
 	for (const StorageElementComponent& component:
 		 m_sqliteIndexStorage.getElementComponentsByElementIds(edgeIds))
 	{
-		if (component.type == componentKind)
+		if (component.type == ELEMENT_COMPONENT_IS_AMBIGUOUS)
 		{
 			graph->getEdgeById(component.elementId)
 				->addComponent(std::make_shared<TokenComponentIsAmbiguous>());
 		}
+		else if (component.type == ELEMENT_COMPONENT_STATIC_DISPATCH_VIA)
+		{
+			Id::type nodeId {0};
+			const char* const end = component.data.data() + component.data.size();
+			if (const auto [ptr, error] = std::from_chars(component.data.data(), end, nodeId);
+				error == std::errc {} && ptr == end)
+			{
+				instantiationIds[component.elementId].push_back(Id(nodeId));
+			}
+		}
+	}
+	if (instantiationIds.empty())
+	{
+		return;
+	}
+
+	std::vector<Id> nodeIds;
+	for (const auto& [edgeId, ids]: instantiationIds)
+	{
+		nodeIds.insert(nodeIds.end(), ids.begin(), ids.end());
+	}
+	std::map<Id, std::string> names;
+	for (const StorageNode& node: m_sqliteIndexStorage.getAllByIds<StorageNode>(nodeIds))
+	{
+		names.emplace(node.id, NameHierarchy::deserialize(node.serializedName).getQualifiedName());
+	}
+	for (const auto& [edgeId, ids]: instantiationIds)
+	{
+		std::set<std::string> edgeNames;
+		for (const Id id: ids)
+		{
+			if (const auto it = names.find(id); it != names.end())
+			{
+				edgeNames.insert(it->second);
+			}
+		}
+		graph->getEdgeById(edgeId)->addComponent(
+			std::make_shared<TokenComponentInstantiations>(utility::toVector(edgeNames)));
 	}
 }
 

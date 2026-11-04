@@ -1,7 +1,8 @@
 # Design: concept satisfaction edges — compile-time polymorphism in the graph
 
 - **Status:** Part 1 shipped (2026-11): `EDGE_SATISFIES`, type -> concept, recorded by the C++
-  indexer. Part 2 (static dispatch through template instantiations) investigated, not built.
+  indexer. Part 2 (static dispatch through template instantiations) investigated here, then built
+  as `EDGE_STATIC_DISPATCH`: see [DESIGN_STATIC_DISPATCH_EDGES.md](DESIGN_STATIC_DISPATCH_EDGES.md).
 - **Code:** `CxxConceptReferenceRecorder::recordSatisfiedConstraints` /
   `recordSatisfiedConceptSpecialization` (`src/lib_cxx/data/parser/cxx/
   CxxConceptReferenceRecorder.inl`), called from the reference indexer (calls, variable
@@ -122,6 +123,13 @@ the project's own code calls or names is seen.
 - A trail is drawn with curves, which do not draw dashes (the same for every dashed kind).
 
 ## Part 2 — static dispatch through template instantiations (investigated)
+
+> **Built** (2026-11) as [DESIGN_STATIC_DISPATCH_EDGES.md](DESIGN_STATIC_DISPATCH_EDGES.md), which
+> answers the open points below: the instantiations are kept with the edge as element components
+> and named in its tooltip; targets are restricted to explicitly defined code (stricter than "not
+> an implicit specialization": library instantiations have no symbol row and would pass); chains
+> through helper templates are collapsed; 4,420 edges on bgfx in 0.67 s. The sketch below is what
+> it started from.
 
 **Question:** does the C++ indexer record what an instantiated template calls, e.g. `render<
 Circle>`'s `t.draw()` -> `Circle::draw`, and from where to where?

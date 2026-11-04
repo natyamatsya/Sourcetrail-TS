@@ -21,6 +21,7 @@
 #include "PersistentStorage.h"
 #ifndef SRCTRL_MODULE_BUILD
 #include "StorageNodeAttribute.h"
+#include "TokenComponentInstantiations.h"
 #endif
 #include "TestTempDirectory.h"
 
@@ -100,6 +101,8 @@ struct RecordedSymbol
 	std::string name;
 	SymbolKind kind;
 	size_t line;
+	// IMPLICIT for an implicit template instantiation
+	DefinitionKind definitionKind = DefinitionKind::EXPLICIT;
 };
 
 struct RecordedReference
@@ -127,7 +130,7 @@ std::shared_ptr<IntermediateStorage> recordTranslationUnit(
 	{
 		const Id symbolId = client.recordSymbol(createNameHierarchy(symbol.name));
 		client.recordSymbolKind(symbolId, symbol.kind);
-		client.recordDefinitionKind(symbolId, DefinitionKind::EXPLICIT);
+		client.recordDefinitionKind(symbolId, symbol.definitionKind);
 		client.recordLocation(
 			symbolId, ParseLocation(fileId, symbol.line, 1, symbol.line, 10), ParseLocationType::TOKEN);
 	}
@@ -1496,5 +1499,317 @@ TEST_CASE("storage derives dispatch edges only from the C++ calls that dispatch"
 			dispatchEdge("Group::traverse", "Leaf::traverse"),
 			dispatchEdge("Group::traverse", "Group::traverse"),
 			dispatchEdge("Group::traverse", "Logged::traverse")});
+}
+#endif
+
+
+namespace
+{
+// Nodes by qualified name, without signature: a template's node is "render<Shape T>".
+std::map<Id, std::string> qualifiedNames(const PersistentStorage& storage)
+{
+	std::map<Id, std::string> names;
+	for (const StorageNode& node: storage.getStorageNodes())
+	{
+		names.emplace(node.id, NameHierarchy::deserialize(node.serializedName).getQualifiedName());
+	}
+	return names;
+}
+
+// The static dispatch edges of `storage`, as "template -> callee".
+std::set<std::string> staticDispatchEdges(const PersistentStorage& storage)
+{
+	const std::map<Id, std::string> names = qualifiedNames(storage);
+	std::set<std::string> edges;
+	for (const StorageEdge& edge: storage.getStorageEdges())
+	{
+		if (edge.type == Edge::EDGE_STATIC_DISPATCH)
+		{
+			edges.insert(names.at(edge.sourceNodeId) + " -> " + names.at(edge.targetNodeId));
+		}
+	}
+	return edges;
+}
+
+std::optional<StorageEdge> findStaticDispatchEdge(
+	const PersistentStorage& storage, const std::string& source, const std::string& target)
+{
+	const std::map<Id, std::string> names = qualifiedNames(storage);
+	for (const StorageEdge& edge: storage.getStorageEdges())
+	{
+		if (edge.type == Edge::EDGE_STATIC_DISPATCH && names.at(edge.sourceNodeId) == source &&
+			names.at(edge.targetNodeId) == target)
+		{
+			return edge;
+		}
+	}
+	return std::nullopt;
+}
+
+// The instantiations a static dispatch edge was derived from, by name.
+std::set<std::string> staticDispatchInstantiations(
+	const PersistentStorage& storage, const std::string& source, const std::string& target)
+{
+	const std::optional<StorageEdge> edge = findStaticDispatchEdge(storage, source, target);
+	REQUIRE(edge);
+	std::map<std::string, std::string> namesById;
+	for (const auto& [id, name]: qualifiedNames(storage))
+	{
+		namesById.emplace(std::to_string(static_cast<Id::type>(id)), name);
+	}
+	std::set<std::string> result;
+	for (const StorageElementComponent& component: storage.getElementComponents())
+	{
+		if (component.elementId == edge->id &&
+			component.type == ElementComponentKind::ELEMENT_COMPONENT_STATIC_DISPATCH_VIA)
+		{
+			result.insert(namesById.at(component.data));
+		}
+	}
+	return result;
+}
+
+// Where a static dispatch edge occurs, as "line:column".
+std::set<std::string> staticDispatchLocations(
+	const PersistentStorage& storage, const std::string& source, const std::string& target)
+{
+	const std::optional<StorageEdge> edge = findStaticDispatchEdge(storage, source, target);
+	REQUIRE(edge);
+	std::map<Id, StorageSourceLocation> locations;
+	for (const StorageSourceLocation& location: storage.getStorageSourceLocations())
+	{
+		locations.emplace(location.id, location);
+	}
+	std::set<std::string> result;
+	for (const StorageOccurrence& occurrence: storage.getStorageOccurrences())
+	{
+		if (occurrence.elementId == edge->id)
+		{
+			const StorageSourceLocation& location = locations.at(occurrence.sourceLocationId);
+			result.insert(std::format("{}:{}", location.startLine, location.startCol));
+		}
+	}
+	return result;
+}
+
+std::size_t countStaticDispatchComponents(const PersistentStorage& storage)
+{
+	return static_cast<std::size_t>(std::ranges::count_if(
+		storage.getElementComponents(), [](const StorageElementComponent& component) {
+			return component.type == ElementComponentKind::ELEMENT_COMPONENT_STATIC_DISPATCH_VIA;
+		}));
+}
+
+// render.h's template, as one translation unit records it; use.cc instantiates it with each of
+// `arguments` (render<Circle> calling Circle::draw at render's t.draw(), line 1).
+std::shared_ptr<IntermediateStorage> recordRenderUse(const std::vector<std::string>& arguments)
+{
+	std::vector<RecordedSymbol> symbols {{"use", SymbolKind::FUNCTION, 1}};
+	std::vector<RecordedReference> references;
+	for (const std::string& argument: arguments)
+	{
+		symbols.push_back({"render<" + argument + ">", SymbolKind::FUNCTION, 1, DefinitionKind::IMPLICIT});
+		references.push_back({ReferenceKind::TEMPLATE_SPECIALIZATION, "render<" + argument + ">", "render", 1});
+		references.push_back({ReferenceKind::CALL, "render<" + argument + ">", argument + "::draw", 1});
+		references.push_back({ReferenceKind::CALL, "use", "render<" + argument + ">", 2});
+	}
+	return recordTranslationUnit("use.cc", symbols, references);
+}
+}	 // namespace
+
+TEST_CASE("storage refresh derives the static dispatch edges a full index would have")
+{
+	// shape.h declares the types, render.h the template, use.cc instantiates it: with Circle and
+	// Square before the change, with Square only after.
+	const std::shared_ptr<IntermediateStorage> shape = recordTranslationUnit(
+		"shape.h",
+		{{"Circle", SymbolKind::STRUCT, 1},
+		 {"Circle::draw", SymbolKind::METHOD, 2},
+		 {"Square", SymbolKind::STRUCT, 3},
+		 {"Square::draw", SymbolKind::METHOD, 4}},
+		{});
+	const std::shared_ptr<IntermediateStorage> render =
+		recordTranslationUnit("render.h", {{"render", SymbolKind::FUNCTION, 1}}, {});
+
+	TestStorage full;
+	full.inject(shape.get());
+	full.inject(render.get());
+	full.inject(recordRenderUse({"Square"}).get());
+	full.setMode(SqliteIndexStorage::StorageModeType::STORAGE_MODE_READ);
+	REQUIRE(full.deriveStaticDispatchEdges());
+	REQUIRE(staticDispatchEdges(full) == std::set<std::string> {"render -> Square::draw"});
+
+	TestStorage refreshed;
+	refreshed.inject(shape.get());
+	refreshed.inject(render.get());
+	refreshed.inject(recordRenderUse({"Circle", "Square"}).get());
+	refreshed.setMode(SqliteIndexStorage::StorageModeType::STORAGE_MODE_READ);
+	const std::expected<std::size_t, DerivedEdgeError> before = refreshed.deriveStaticDispatchEdges();
+	REQUIRE(before);
+	REQUIRE(*before == 2);
+	REQUIRE(
+		staticDispatchEdges(refreshed) ==
+		std::set<std::string> {"render -> Circle::draw", "render -> Square::draw"});
+
+	// Deriving again changes nothing: the edges, their ids and their instantiations.
+	const std::set<std::string> once = describeIndex(refreshed);
+	const std::size_t components = countStaticDispatchComponents(refreshed);
+	REQUIRE(refreshed.deriveStaticDispatchEdges());
+	REQUIRE(describeIndex(refreshed) == once);
+	REQUIRE(countStaticDispatchComponents(refreshed) == components);
+	REQUIRE(components == 2);
+
+	// as a refresh does: clear, inject the files indexed again, then derive over everything
+	refreshed.setMode(SqliteIndexStorage::StorageModeType::STORAGE_MODE_CLEAR);
+	refreshed.clearFileElements({FilePath("use.cc")}, [](int) {});
+	REQUIRE(staticDispatchEdges(refreshed).empty());
+	REQUIRE(countStaticDispatchComponents(refreshed) == 0);
+
+	refreshed.setMode(SqliteIndexStorage::StorageModeType::STORAGE_MODE_WRITE);
+	refreshed.inject(recordRenderUse({"Square"}).get());
+	refreshed.setMode(SqliteIndexStorage::StorageModeType::STORAGE_MODE_READ);
+	REQUIRE(refreshed.deriveStaticDispatchEdges());
+
+	REQUIRE(describeIndex(refreshed) == describeIndex(full));
+	REQUIRE(
+		staticDispatchInstantiations(refreshed, "render", "Square::draw") ==
+		std::set<std::string> {"render<Square>"});
+}
+
+#if BUILD_CXX_LANGUAGE_PACKAGE
+namespace
+{
+const std::string staticDispatchCode =
+	"template <typename T> concept Shape = requires(T& t) { t.draw(); };\n"
+	"struct Circle { void draw() {} };\n"
+	"struct Square { void draw() {} };\n"
+	"void log() {}\n"
+	"template <typename T> void helper(T& t) { t.draw(); log(); }\n"
+	"template <Shape T> void render(T& t) { t.draw(); helper(t); log(); }\n"
+	"template <typename T> void outer(T& t) { helper(t); }\n"
+	"template <typename T> struct Painter { T shape; void paint() { shape.draw(); }\n"
+	"  template <typename U> void with(U& u) { u.draw(); shape.draw(); } };\n"
+	"struct Canvas { template <typename T> void show(T& t) { t.draw(); } };\n"
+	"template <typename T> void both(T& t, Circle& c) { t.draw(); c.draw(); }\n"
+	"template <typename T> void pong(T& t, int n);\n"
+	"template <typename T> void ping(T& t, int n) { if (n) pong(t, n - 1); }\n"
+	"template <typename T> void pong(T& t, int n) { t.draw(); if (n) ping(t, n - 1); }\n"
+	"template <typename T, typename U> void pair(T& t, U) { t.draw(); }\n"
+	"void use() { Circle c; Square s; render(c); render(s); outer(c);\n"
+	"  Painter<Circle> p; p.paint(); p.with(s); Canvas k; k.show(c);\n"
+	"  both(s, c); both(c, c); ping(c, 2); pair(c, 1); pair(c, 'x'); }\n";
+}	 // namespace
+
+TEST_CASE("storage derives static dispatch edges from what the C++ indexer records of instantiations")
+{
+	TestStorage storage;
+	storage.inject(parseFile("render.cc", staticDispatchCode).get());
+	storage.setMode(SqliteIndexStorage::StorageModeType::STORAGE_MODE_READ);
+	const std::expected<std::size_t, DerivedEdgeError> derived = storage.deriveStaticDispatchEdges();
+	REQUIRE(derived);
+
+	const std::set<std::string> expected {
+		// a function template's dependent calls, for each argument it is instantiated with
+		"helper<typename T> -> Circle::draw",
+		"helper<typename T> -> Square::draw",
+		"render<Shape T> -> Circle::draw",
+		"render<Shape T> -> Square::draw",
+		// outer calls draw only through helper<Circle>: the chain is collapsed
+		"outer<typename T> -> Circle::draw",
+		// a member of a class template, dependent on the class's argument; a member template of
+		// it, on both; a member template of a plain class
+		"Painter<typename T>::paint -> Circle::draw",
+		"Painter<typename T>::with<typename U> -> Square::draw",
+		"Painter<typename T>::with<typename U> -> Circle::draw",
+		"Canvas::show<typename T> -> Circle::draw",
+		// both calls Circle::draw itself (c.draw()): only its argument's draw is derived
+		"both<typename T> -> Square::draw",
+		// mutually recursive templates: a cycle, which ends
+		"ping<typename T> -> Circle::draw",
+		"pong<typename T> -> Circle::draw",
+		"pair<typename T, typename U> -> Circle::draw",
+		// nothing to log (every template calls it itself), nothing to helper<Circle> or any other
+		// instantiation
+	};
+	REQUIRE(staticDispatchEdges(storage) == expected);
+	REQUIRE(*derived == expected.size());
+
+	// Which instantiation: kept with the edge.
+	REQUIRE(
+		staticDispatchInstantiations(storage, "render<Shape T>", "Circle::draw") ==
+		std::set<std::string> {"render<Circle>"});
+	REQUIRE(
+		staticDispatchInstantiations(storage, "pair<typename T, typename U>", "Circle::draw") ==
+		std::set<std::string> {"pair<Circle, int>", "pair<Circle, char>"});
+	REQUIRE(
+		staticDispatchInstantiations(storage, "Painter<typename T>::paint", "Circle::draw") ==
+		std::set<std::string> {"Painter<Circle>::paint"});
+
+	// Located in the template's own body: at the dependent call, and at the call of the helper
+	// template that leads on to the callee.
+	REQUIRE(staticDispatchLocations(storage, "helper<typename T>", "Circle::draw") == std::set<std::string> {"5:45"});
+	REQUIRE(
+		staticDispatchLocations(storage, "render<Shape T>", "Circle::draw") ==
+		std::set<std::string> {"6:42", "6:50"});
+	REQUIRE(staticDispatchLocations(storage, "outer<typename T>", "Circle::draw") == std::set<std::string> {"7:42"});
+
+	// The calls themselves are as they were: the template calls only what does not depend on T.
+	REQUIRE(!hasEdge(storage, Edge::EDGE_CALL, "render", "Circle::draw"));
+}
+
+TEST_CASE("storage derives the same static dispatch edges when it derives them again")
+{
+	TestStorage storage;
+	storage.inject(parseFile("render.cc", staticDispatchCode).get());
+	storage.setMode(SqliteIndexStorage::StorageModeType::STORAGE_MODE_READ);
+	REQUIRE(storage.deriveDispatchEdges());
+	REQUIRE(storage.deriveStaticDispatchEdges());
+	const std::set<std::string> once = describeIndex(storage);
+	const std::size_t components = countStaticDispatchComponents(storage);
+
+	REQUIRE(storage.deriveStaticDispatchEdges());
+	REQUIRE(storage.deriveDispatchEdges());
+	REQUIRE(describeIndex(storage) == once);
+	REQUIRE(countStaticDispatchComponents(storage) == components);
+
+	// Clearing the file takes everything, the derived edges and their components included.
+	storage.setMode(SqliteIndexStorage::StorageModeType::STORAGE_MODE_CLEAR);
+	storage.clearFileElements({FilePath("render.cc")}, [](int) {});
+	REQUIRE(staticDispatchEdges(storage).empty());
+	REQUIRE(countStaticDispatchComponents(storage) == 0);
+	REQUIRE(storage.getStorageNodes().empty());
+}
+
+TEST_CASE("graph of a template names the instantiations of its static dispatch edges")
+{
+	TestStorage storage;
+	storage.inject(parseFile("render.cc", staticDispatchCode).get());
+	storage.setMode(SqliteIndexStorage::StorageModeType::STORAGE_MODE_READ);
+	REQUIRE(storage.deriveStaticDispatchEdges());
+	storage.buildCaches();
+
+	Id pairId;
+	for (const auto& [id, name]: qualifiedNames(storage))
+	{
+		if (name == "pair<typename T, typename U>")
+		{
+			pairId = id;
+		}
+	}
+	REQUIRE(pairId);
+
+	const std::shared_ptr<Graph> graph = storage.getGraphForActiveTokenIds({pairId}, {});
+	std::vector<std::string> instantiations;
+	graph->forEachEdge([&instantiations](Edge* edge) {
+		if (edge->getType() == Edge::EDGE_STATIC_DISPATCH)
+		{
+			if (const TokenComponentInstantiations* component =
+					edge->getComponent<TokenComponentInstantiations>())
+			{
+				instantiations = component->names;
+			}
+		}
+	});
+	REQUIRE(instantiations == std::vector<std::string> {"pair<Circle, char>", "pair<Circle, int>"});
 }
 #endif

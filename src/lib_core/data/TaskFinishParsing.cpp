@@ -58,6 +58,8 @@ void TaskFinishParsing::report(const IndexingRunState& state)
 	// which is still a usable index.
 	m_dialogView->showUnknownProgressDialog("Finish Indexing", "Resolving virtual calls");
 	static_cast<void>(m_storage->deriveDispatchEdges());
+	m_dialogView->showUnknownProgressDialog("Finish Indexing", "Resolving calls in template instantiations");
+	static_cast<void>(m_storage->deriveStaticDispatchEdges());
 
 	m_dialogView->showUnknownProgressDialog("Finish Indexing", "Optimizing database");
 	m_storage->setBulkWritePragmas(false);	  // restore SYNCHRONOUS=NORMAL before the DB goes live

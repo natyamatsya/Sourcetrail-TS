@@ -256,6 +256,7 @@ QtCustomTrailView::QtCustomTrailView(ViewLayout* viewLayout)
 			Edge::EDGE_USAGE,
 			Edge::EDGE_CALL,
 			Edge::EDGE_DISPATCH,
+			Edge::EDGE_STATIC_DISPATCH,
 			Edge::EDGE_OVERRIDE,
 			// Edge::EDGE_TEMPLATE_ARGUMENT, // merged with type use
 			// Edge::EDGE_TEMPLATE_DEFAULT_ARGUMENT, // merged with type use

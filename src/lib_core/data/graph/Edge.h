@@ -59,8 +59,17 @@ public:
 		// inheritance points derived -> base: compile-time polymorphism, drawn like the
 		// run-time kind. See context/DESIGN_CONCEPT_SATISFACTION.md.
 		EDGE_SATISFIES = 1 << 15,
+		// A derived edge, not an indexed one: a template's implicit instantiation calls this
+		// function, and the template itself does not -- the call depends on a template
+		// argument (render<T>'s t.draw() is Circle::draw in render<Circle>). Computed after
+		// indexing from CALL and TEMPLATE_SPECIALIZATION edges, through helper templates the
+		// instantiation calls (SqliteIndexStorage::deriveStaticDispatchEdges), and only ever
+		// written by that pass. Points template -> callee, carries the occurrences of the calls
+		// in the template's body it comes from and, as element components, the instantiations.
+		// See context/DESIGN_STATIC_DISPATCH_EDGES.md.
+		EDGE_STATIC_DISPATCH = 1 << 16,
 	};
-	static constexpr EdgeType EDGE_TYPE_MAX_VALUE = EDGE_SATISFIES;
+	static constexpr EdgeType EDGE_TYPE_MAX_VALUE = EDGE_STATIC_DISPATCH;
 
 
 	static const TypeMask LAYOUT_VERTICAL = EDGE_INHERITANCE | EDGE_OVERRIDE |

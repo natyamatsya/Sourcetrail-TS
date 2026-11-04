@@ -146,6 +146,8 @@ public:
 	// Recomputes the derived dispatch edges over the whole index (SqliteIndexStorage::
 	// deriveDispatchEdges), logging how many and how long; once all files of a run are in.
 	std::expected<std::size_t, DerivedEdgeError> deriveDispatchEdges();
+	// The same for the static dispatch edges (SqliteIndexStorage::deriveStaticDispatchEdges).
+	std::expected<std::size_t, DerivedEdgeError> deriveStaticDispatchEdges();
 
 	void optimizeMemory();
 
@@ -310,7 +312,7 @@ private:
 		Id nodeId, const std::vector<StorageEdge>& edgesToBundle, Graph* graph) const;
 	void addFileContentsToGraph(Id fileId, Graph* graph) const;
 	void addComponentAccessToGraph(Graph* graph) const;
-	void addComponentIsAmbiguousToGraph(Graph* graph) const;
+	void addEdgeComponentsToGraph(Graph* graph) const;
 
 	void addCompleteFlagsToSourceLocationCollection(SourceLocationCollection* collection) const;
 	void addInheritanceChainsToGraph(const std::vector<Id>& nodeIds, Graph* graph) const;

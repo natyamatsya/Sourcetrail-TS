@@ -209,9 +209,11 @@ CommandlineCommand::ReturnStatus CommandlineCommandMerge::merge() const
 	target.updateVersion();
 	// Each shard derived its dispatch edges from its own stripe of files, which misses the calls
 	// and overrides that meet across stripes: derive them again over the merged index, with the
-	// edge indices read mode builds.
+	// edge indices read mode builds. The static dispatch edges the same (and their instantiation
+	// components name node ids of the shard they came from).
 	target.setMode(SqliteIndexStorage::StorageModeType::STORAGE_MODE_READ);
 	static_cast<void>(target.deriveDispatchEdges());
+	static_cast<void>(target.deriveStaticDispatchEdges());
 	target.setBulkWritePragmas(false);
 	target.buildCaches();
 	target.optimizeMemory();

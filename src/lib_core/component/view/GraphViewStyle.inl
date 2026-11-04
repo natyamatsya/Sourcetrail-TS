@@ -721,6 +721,22 @@ inline GraphViewStyle::EdgeStyle GraphViewStyle::getStyleForEdgeType(
 		}
 		break;
 
+	// Drawn as a call, dashed, in the color of template specializations: a call the template
+	// makes through its argument, the compile-time counterpart of the dispatch edge.
+	case Edge::EDGE_STATIC_DISPATCH:
+		style.originOffset.y = 3;
+		style.targetOffset.y = -3;
+		style.verticalOffset = 4;
+		style.dashed = true;
+
+		if (isTrailEdge && isActive)
+		{
+			style.width = 3;
+			style.color = ColorScheme::getInstance()->getColor(
+				"graph/edge/call_trail_focus", style.color);
+		}
+		break;
+
 	case Edge::EDGE_USAGE:
 	case Edge::EDGE_OVERRIDE:
 		style.originOffset.y = 1;

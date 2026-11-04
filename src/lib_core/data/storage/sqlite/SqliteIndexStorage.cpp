@@ -1683,6 +1683,259 @@ std::expected<std::size_t, DerivedEdgeError> SqliteIndexStorage::deriveDispatchE
 	return edgeCount;
 }
 
+std::expected<void, DerivedEdgeError> SqliteIndexStorage::removeStaticDispatchEdges()
+{
+	// Deleting the element cascades to the edge, its occurrences and its instantiation components.
+	if (!executeStatement(
+			"DELETE FROM element WHERE id IN (SELECT id FROM edge WHERE type = " +
+			std::to_string(static_cast<int>(Edge::EDGE_STATIC_DISPATCH)) + ");"))
+	{
+		return std::unexpected(DerivedEdgeError::RemoveFailed);
+	}
+	return {};
+}
+
+std::expected<std::size_t, DerivedEdgeError> SqliteIndexStorage::deriveStaticDispatchEdges()
+{
+	// What a template's implicit instantiations call and the template does not: the calls that
+	// depend on a template argument, which the C++ indexer records only on the instantiation
+	// (render<Circle> -> Circle::draw), never on the template (render). From scratch, as the
+	// dispatch pass. See context/DESIGN_STATIC_DISPATCH_EDGES.md for why each rule is what it is.
+	const std::string callType = std::to_string(static_cast<int>(Edge::EDGE_CALL));
+	const std::string specializationType =
+		std::to_string(static_cast<int>(Edge::EDGE_TEMPLATE_SPECIALIZATION));
+	const std::string staticDispatchType = std::to_string(static_cast<int>(Edge::EDGE_STATIC_DISPATCH));
+	const std::string implicitKind = std::to_string(static_cast<int>(DefinitionKind::IMPLICIT));
+	const std::string explicitKind = std::to_string(static_cast<int>(DefinitionKind::EXPLICIT));
+	const std::string viaKind =
+		std::to_string(static_cast<int>(ElementComponentKind::ELEMENT_COMPONENT_STATIC_DISPATCH_VIA));
+
+	const auto dropWorkTables = [this]() {
+		for (const char* table: {"static_dispatch_implicit_out", "static_dispatch_spec",
+				 "static_dispatch_template_call", "static_dispatch_spec_call", "static_dispatch_leaf",
+				 "static_dispatch_hop", "static_dispatch_reaches",
+				 "static_dispatch_call", "static_dispatch_edge"})
+		{
+			executeStatement(std::string {"DROP TABLE IF EXISTS main."} + table + ";");
+		}
+	};
+	const auto fail = [this, &dropWorkTables](const DerivedEdgeError error) {
+		rollbackTransaction();
+		dropWorkTables();
+		return std::unexpected(error);
+	};
+
+	beginTransaction();
+
+	if (!removeStaticDispatchEdges())
+	{
+		return fail(DerivedEdgeError::RemoveFailed);
+	}
+
+	dropWorkTables();
+	// - implicit_out: the calls and specialization edges of implicit symbols, in one scan of the
+	//   edges (there is no index on the type);
+	// - spec: each implicit specialization with its template. Classes and variables come along
+	//   and are harmless: they call nothing, and nothing calls them;
+	// - template_call: what the templates call themselves, their non-dependent calls;
+	// - spec_call: the calls of an instantiation its template does not make, to explicitly
+	//   defined code (a leaf) or to another instantiation (a hop). A call to an instantiation of
+	//   a template the template calls itself is non-dependent too, and not followed (in a class
+	//   template, FrameArenaT<T>::operator[] calling allocBlock): what it reaches is the callee
+	//   template's own static dispatch. Then split into leaf and
+	//   hop, each with its own indices: on one table SQLite, which has no statistics here,
+	//   joined the leaves through an automatic index on is_hop (5 s on bgfx instead of 0.1 s);
+	// - reaches: an instantiation runs another one that has leaves, through hops, any number. A
+	//   plain table: inserting the recursion into a WITHOUT ROWID one took 37 s on bgfx, not 30 ms;
+	// - call: one row per derivation, (template, callee, instantiation, located call);
+	// - edge: one per edge to write, numbered in a fixed order so the ids do not depend on how
+	//   SQLite walked the recursion.
+	const bool tablesCreated =
+		executeStatement(
+			"CREATE TABLE main.static_dispatch_implicit_out("
+			"id INTEGER NOT NULL, type INTEGER NOT NULL, "
+			"source_node_id INTEGER NOT NULL, target_node_id INTEGER NOT NULL);") &&
+		executeStatement(
+			"CREATE TABLE main.static_dispatch_spec("
+			"spec_id INTEGER NOT NULL, template_id INTEGER NOT NULL, "
+			"PRIMARY KEY(spec_id, template_id)) WITHOUT ROWID;") &&
+		executeStatement(
+			"CREATE TABLE main.static_dispatch_template_call("
+			"source_node_id INTEGER NOT NULL, target_node_id INTEGER NOT NULL, "
+			"PRIMARY KEY(source_node_id, target_node_id)) WITHOUT ROWID;") &&
+		executeStatement(
+			"CREATE TABLE main.static_dispatch_spec_call("
+			"call_edge_id INTEGER NOT NULL, spec_id INTEGER NOT NULL, "
+			"target_node_id INTEGER NOT NULL, is_hop INTEGER NOT NULL);") &&
+		executeStatement(
+			"CREATE TABLE main.static_dispatch_leaf("
+			"call_edge_id INTEGER NOT NULL, spec_id INTEGER NOT NULL, target_node_id INTEGER NOT NULL);") &&
+		executeStatement(
+			"CREATE TABLE main.static_dispatch_hop("
+			"call_edge_id INTEGER NOT NULL, spec_id INTEGER NOT NULL, target_node_id INTEGER NOT NULL);") &&
+		executeStatement(
+			"CREATE TABLE main.static_dispatch_reaches("
+			"spec_id INTEGER NOT NULL, leaf_spec_id INTEGER NOT NULL);") &&
+		executeStatement(
+			"CREATE TABLE main.static_dispatch_call("
+			"source_node_id INTEGER NOT NULL, target_node_id INTEGER NOT NULL, "
+			"spec_id INTEGER NOT NULL, call_edge_id INTEGER NOT NULL, "
+			"UNIQUE(source_node_id, target_node_id, spec_id, call_edge_id));") &&
+		executeStatement(
+			"CREATE TABLE main.static_dispatch_edge("
+			"ordinal INTEGER PRIMARY KEY, "
+			"source_node_id INTEGER NOT NULL, "
+			"target_node_id INTEGER NOT NULL, "
+			"UNIQUE(source_node_id, target_node_id));");
+	if (!tablesCreated)
+	{
+		return fail(DerivedEdgeError::DeriveFailed);
+	}
+
+	const bool collected =
+		executeStatement(
+			"INSERT INTO main.static_dispatch_implicit_out "
+			"	SELECT edge.id, edge.type, edge.source_node_id, edge.target_node_id FROM edge "
+			"	INNER JOIN symbol ON symbol.id = edge.source_node_id AND "
+			"		symbol.definition_kind = " + implicitKind +
+			"	WHERE edge.type IN (" + callType + ", " + specializationType + ");") &&
+		executeStatement(
+			"INSERT OR IGNORE INTO main.static_dispatch_spec "
+			"	SELECT source_node_id, target_node_id FROM main.static_dispatch_implicit_out "
+			"	WHERE type = " + specializationType + ";") &&
+		executeStatement(
+			"INSERT OR IGNORE INTO main.static_dispatch_template_call "
+			"	SELECT own.source_node_id, own.target_node_id "
+			"	FROM (SELECT DISTINCT template_id FROM main.static_dispatch_spec) AS templates "
+			"	INNER JOIN edge AS own ON own.source_node_id = templates.template_id "
+			"	WHERE own.type = " + callType + ";") &&
+		executeStatement(
+			"INSERT INTO main.static_dispatch_spec_call "
+			"	SELECT DISTINCT call_edge.id, call_edge.source_node_id, call_edge.target_node_id, "
+			"		callee.spec_id IS NOT NULL "
+			"	FROM main.static_dispatch_implicit_out AS call_edge "
+			"	INNER JOIN main.static_dispatch_spec AS spec ON spec.spec_id = call_edge.source_node_id "
+			"	LEFT JOIN main.static_dispatch_spec AS callee ON callee.spec_id = call_edge.target_node_id "
+			"	WHERE call_edge.type = " + callType + " AND ("
+			"		callee.spec_id IS NOT NULL OR EXISTS ("
+			"			SELECT * FROM symbol WHERE symbol.id = call_edge.target_node_id AND "
+			"				symbol.definition_kind = " + explicitKind +
+			"		)"
+			"	) AND NOT EXISTS ("
+			"		SELECT * FROM main.static_dispatch_template_call AS own WHERE "
+			"			own.source_node_id = spec.template_id AND "
+			"			own.target_node_id IN (call_edge.target_node_id, callee.template_id)"
+			"	);") &&
+		executeStatement(
+			"INSERT INTO main.static_dispatch_leaf "
+			"	SELECT call_edge_id, spec_id, target_node_id FROM main.static_dispatch_spec_call "
+			"	WHERE is_hop = 0;") &&
+		executeStatement(
+			"INSERT INTO main.static_dispatch_hop "
+			"	SELECT call_edge_id, spec_id, target_node_id FROM main.static_dispatch_spec_call "
+			"	WHERE is_hop = 1;") &&
+		executeStatement("CREATE INDEX main.static_dispatch_leaf_spec ON static_dispatch_leaf(spec_id);") &&
+		executeStatement("CREATE INDEX main.static_dispatch_hop_spec ON static_dispatch_hop(spec_id);") &&
+		executeStatement(
+			"CREATE INDEX main.static_dispatch_hop_target ON static_dispatch_hop(target_node_id);");
+	if (!collected)
+	{
+		return fail(DerivedEdgeError::DeriveFailed);
+	}
+
+	// Walked backwards from the instantiations with leaves, so that only what leads to one is
+	// visited. UNION, not UNION ALL: recursive templates (f<N> calling f<N-1>) and mutually
+	// recursive ones make cycles, and a cycle ends.
+	//
+	// An edge goes from the template (explicitly defined: a member template of a class template
+	// specialization is implicit itself, and nobody looks at it) to each leaf of its instantiations
+	// and of what they reach, located at the call in the template's own body that leads there: the
+	// dependent call itself, or the call of the helper template. Not to the template itself, and
+	// not to what the template calls directly.
+	const bool derived =
+		executeStatement(
+			"WITH RECURSIVE reaches(spec_id, leaf_spec_id) AS ("
+			"	SELECT DISTINCT spec_id, spec_id FROM main.static_dispatch_leaf "
+			"	UNION "
+			"	SELECT hop.spec_id, reaches.leaf_spec_id FROM reaches "
+			"	INNER JOIN main.static_dispatch_hop AS hop ON hop.target_node_id = reaches.spec_id"
+			") "
+			"INSERT INTO main.static_dispatch_reaches SELECT spec_id, leaf_spec_id FROM reaches;") &&
+		executeStatement(
+			"CREATE INDEX main.static_dispatch_reaches_spec ON static_dispatch_reaches(spec_id);") &&
+		executeStatement(
+			"INSERT OR IGNORE INTO main.static_dispatch_call "
+			"	SELECT spec.template_id, leaf.target_node_id, spec.spec_id, leaf.call_edge_id "
+			"	FROM main.static_dispatch_spec AS spec "
+			"	INNER JOIN symbol AS template_symbol ON template_symbol.id = spec.template_id AND "
+			"		template_symbol.definition_kind = " + explicitKind +
+			"	INNER JOIN main.static_dispatch_leaf AS leaf ON leaf.spec_id = spec.spec_id "
+			"	UNION ALL "
+			"	SELECT spec.template_id, leaf.target_node_id, spec.spec_id, hop.call_edge_id "
+			"	FROM main.static_dispatch_spec AS spec "
+			"	INNER JOIN symbol AS template_symbol ON template_symbol.id = spec.template_id AND "
+			"		template_symbol.definition_kind = " + explicitKind +
+			"	INNER JOIN main.static_dispatch_hop AS hop ON hop.spec_id = spec.spec_id "
+			"	INNER JOIN main.static_dispatch_reaches AS reaches ON reaches.spec_id = hop.target_node_id "
+			"	INNER JOIN main.static_dispatch_leaf AS leaf ON leaf.spec_id = reaches.leaf_spec_id;") &&
+		executeStatement(
+			"DELETE FROM main.static_dispatch_call WHERE "
+			"	target_node_id = source_node_id OR EXISTS ("
+			"		SELECT * FROM main.static_dispatch_template_call AS own WHERE "
+			"			own.source_node_id = static_dispatch_call.source_node_id AND "
+			"			own.target_node_id = static_dispatch_call.target_node_id"
+			"	);") &&
+		executeStatement(
+			"INSERT INTO main.static_dispatch_edge(source_node_id, target_node_id) "
+			"	SELECT DISTINCT source_node_id, target_node_id FROM main.static_dispatch_call "
+			"	ORDER BY source_node_id, target_node_id;");
+	if (!derived)
+	{
+		return fail(DerivedEdgeError::DeriveFailed);
+	}
+
+	const std::string firstId =
+		std::to_string(executeStatementScalar("SELECT COALESCE(MAX(id), 0) FROM element;"));
+	const auto edgeCount = static_cast<std::size_t>(
+		executeStatementScalar("SELECT COUNT(*) FROM main.static_dispatch_edge;"));
+
+	// The edge occurs where the calls in the template's body that lead to the callee do, and keeps
+	// the instantiations it comes from: which one is what the tooltip names.
+	const std::string joinEdge =
+		"	INNER JOIN main.static_dispatch_edge AS derived_edge ON "
+		"		derived_edge.source_node_id = static_dispatch_call.source_node_id AND "
+		"		derived_edge.target_node_id = static_dispatch_call.target_node_id ";
+	const bool inserted =
+		executeStatement(
+			"INSERT INTO element(id) SELECT " + firstId + " + ordinal FROM main.static_dispatch_edge;") &&
+		executeStatement(
+			"INSERT INTO edge(id, type, source_node_id, target_node_id) "
+			"	SELECT " + firstId + " + ordinal, " + staticDispatchType +
+			", source_node_id, target_node_id FROM main.static_dispatch_edge;") &&
+		executeStatement(
+			"INSERT OR IGNORE INTO occurrence(element_id, source_location_id) "
+			"	SELECT DISTINCT " + firstId + " + derived_edge.ordinal, occurrence.source_location_id "
+			"	FROM main.static_dispatch_call " + joinEdge +
+			"	INNER JOIN occurrence ON occurrence.element_id = static_dispatch_call.call_edge_id;") &&
+		executeStatement(
+			"INSERT INTO element_component(element_id, type, data) "
+			"	SELECT DISTINCT " + firstId + " + derived_edge.ordinal, " + viaKind +
+			", CAST(static_dispatch_call.spec_id AS TEXT) "
+			"	FROM main.static_dispatch_call " + joinEdge +
+			"	ORDER BY 1, 3;");
+	if (!inserted)
+	{
+		return fail(DerivedEdgeError::InsertFailed);
+	}
+
+	dropWorkTables();
+	commitTransaction();
+
+	m_nextElementId = 0;
+
+	return edgeCount;
+}
+
 void SqliteIndexStorage::removeAllErrors()
 {
 	using namespace sqlpp;
@@ -2687,7 +2940,10 @@ std::vector<std::pair<int, SqliteDatabaseIndex>> SqliteIndexStorage::getIndices(
 	indices.push_back({std::to_underlying(StorageModeType::STORAGE_MODE_WRITE), SqliteDatabaseIndex("file_path_index", "file(path)")});
 	indices.push_back({std::to_underlying(StorageModeType::STORAGE_MODE_READ) | std::to_underlying(StorageModeType::STORAGE_MODE_CLEAR), SqliteDatabaseIndex("occurrence_element_id_index", "occurrence(element_id)")});
 	indices.push_back({std::to_underlying(StorageModeType::STORAGE_MODE_READ) | std::to_underlying(StorageModeType::STORAGE_MODE_CLEAR), SqliteDatabaseIndex( "occurrence_source_location_id_index", "occurrence(source_location_id)")});
-	indices.push_back({std::to_underlying(StorageModeType::STORAGE_MODE_CLEAR), SqliteDatabaseIndex( "element_component_foreign_key_index", "element_component(element_id)")});
+	// In read mode too: the derived-edge passes delete their edges there (each deleted element's
+	// cascade searches element_component: 30 s for bgfx's 19k dispatch edges without it), and the
+	// graph reads an edge's components by element id.
+	indices.push_back({std::to_underlying(StorageModeType::STORAGE_MODE_READ) | std::to_underlying(StorageModeType::STORAGE_MODE_CLEAR), SqliteDatabaseIndex( "element_component_foreign_key_index", "element_component(element_id)")});
 	// Legacy duplicates, kept listed only so they get dropped. Each indexed exactly
 	// the same columns as one of the indices above, which already cover clear mode,
 	// so SQLite was building and maintaining two identical b-trees per column set --

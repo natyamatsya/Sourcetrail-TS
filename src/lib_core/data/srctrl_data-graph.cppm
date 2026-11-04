@@ -55,6 +55,7 @@ extern "C++" {
 #include "TokenComponentStatic.h"
 #include "TokenComponentInheritanceChain.h"
 #include "TokenComponentIsAmbiguous.h"
+#include "TokenComponentInstantiations.h"
 
 // ---- Core: all class DEFINITIONS first, then all .inl bodies (every type complete before any inline
 // member is parsed -- the Edge<->Node cycle needs this). NodeType is an independent value type Node

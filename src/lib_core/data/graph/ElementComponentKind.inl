@@ -16,6 +16,8 @@ inline ElementComponentKind intToEnum(int value)
 			return ELEMENT_COMPONENT_CALL_DISPATCHES;
 		case ELEMENT_COMPONENT_CALL_STATIC:
 			return ELEMENT_COMPONENT_CALL_STATIC;
+		case ELEMENT_COMPONENT_STATIC_DISPATCH_VIA:
+			return ELEMENT_COMPONENT_STATIC_DISPATCH_VIA;
 		default:
 			break;
 	}
