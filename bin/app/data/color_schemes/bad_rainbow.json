@@ -162,6 +162,7 @@
          "call": "#DEA400",
          "call_trail_focus": "#FFFFFF",
          "default": "#797979",
+         "dispatch": "#DEA400",
          "import": "#4E82F6",
          "include": "#4E82F6",
          "inheritance": "#797979",

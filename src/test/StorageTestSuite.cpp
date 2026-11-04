@@ -5,8 +5,10 @@
 #endif
 
 #include <algorithm>
+#include <expected>
 #include <format>
 #include <map>
+#include <optional>
 #include <set>
 #include <string>
 #include <vector>
@@ -108,6 +110,9 @@ struct RecordedReference
 	size_t line;
 	// false: a use in implicit code or in a macro, which the indexer records without a location
 	bool located = true;
+	// of a call: whether it dispatches, as the C++ indexer records it; unset for an indexer that
+	// does not tell
+	std::optional<bool> dispatches = std::nullopt;
 };
 
 std::shared_ptr<IntermediateStorage> recordTranslationUnit(
@@ -128,11 +133,15 @@ std::shared_ptr<IntermediateStorage> recordTranslationUnit(
 	}
 	for (const RecordedReference& reference: references)
 	{
-		client.recordReference(
+		const Id edgeId = client.recordReference(
 			reference.kind,
 			client.recordSymbol(createNameHierarchy(reference.referenced)),
 			client.recordSymbol(createNameHierarchy(reference.context)),
 			reference.located ? ParseLocation(fileId, reference.line, 12, reference.line, 20) : ParseLocation());
+		if (reference.dispatches)
+		{
+			client.recordCallDispatch(edgeId, *reference.dispatches);
+		}
 	}
 	return intermediateStorage;
 }
@@ -702,6 +711,410 @@ TEST_CASE("storage refresh of every file but one leaves the index a full index w
 	REQUIRE(describeIndex(refreshed) == describeIndex(full));
 }
 
+namespace
+{
+// The dispatch edges of `storage`, as "caller -> override".
+std::set<std::string> dispatchEdges(const PersistentStorage& storage)
+{
+	std::map<Id, std::string> names;
+	for (const StorageNode& node: storage.getStorageNodes())
+	{
+		names.emplace(node.id, NameHierarchy::deserialize(node.serializedName).getQualifiedName());
+	}
+	std::set<std::string> edges;
+	for (const StorageEdge& edge: storage.getStorageEdges())
+	{
+		if (edge.type == Edge::EDGE_DISPATCH)
+		{
+			edges.insert(names[edge.sourceNodeId] + " -> " + names[edge.targetNodeId]);
+		}
+	}
+	return edges;
+}
+
+std::string dispatchEdge(const std::string& caller, const std::string& override)
+{
+	return caller + " -> " + override;
+}
+
+// The lines the occurrences of the dispatch edge from `caller` to `override` are on.
+std::set<size_t> dispatchEdgeLines(
+	const PersistentStorage& storage, const std::string& caller, const std::string& override)
+{
+	std::map<Id, std::string> names;
+	for (const StorageNode& node: storage.getStorageNodes())
+	{
+		names.emplace(node.id, NameHierarchy::deserialize(node.serializedName).getQualifiedName());
+	}
+	std::set<Id> edgeIds;
+	for (const StorageEdge& edge: storage.getStorageEdges())
+	{
+		if (edge.type == Edge::EDGE_DISPATCH && names[edge.sourceNodeId] == caller &&
+			names[edge.targetNodeId] == override)
+		{
+			edgeIds.insert(edge.id);
+		}
+	}
+	std::map<Id, size_t> lines;
+	for (const StorageSourceLocation& location: storage.getStorageSourceLocations())
+	{
+		lines.emplace(location.id, location.startLine);
+	}
+	std::set<size_t> result;
+	for (const StorageOccurrence& occurrence: storage.getStorageOccurrences())
+	{
+		if (edgeIds.contains(occurrence.elementId))
+		{
+			result.insert(lines[occurrence.sourceLocationId]);
+		}
+	}
+	return result;
+}
+
+// A hierarchy with overrides two levels deep, a class that inherits a method without overriding
+// it, and a diamond, as one translation unit records it; and callers through each level.
+std::shared_ptr<IntermediateStorage> recordShapes()
+{
+	return recordTranslationUnit(
+		"shapes.cc",
+		{{"Shape", SymbolKind::CLASS, 1},
+		 {"Shape::draw", SymbolKind::METHOD, 2},
+		 {"Circle", SymbolKind::CLASS, 3},
+		 {"Circle::draw", SymbolKind::METHOD, 4},
+		 {"Wheel", SymbolKind::CLASS, 5},
+		 {"Wheel::draw", SymbolKind::METHOD, 6},
+		 {"Square", SymbolKind::CLASS, 7},
+		 {"A", SymbolKind::CLASS, 10},
+		 {"A::f", SymbolKind::METHOD, 11},
+		 {"B", SymbolKind::CLASS, 12},
+		 {"B::f", SymbolKind::METHOD, 13},
+		 {"C", SymbolKind::CLASS, 14},
+		 {"C::f", SymbolKind::METHOD, 15},
+		 {"D", SymbolKind::CLASS, 16},
+		 {"D::f", SymbolKind::METHOD, 17},
+		 {"render", SymbolKind::FUNCTION, 20},
+		 {"renderCircle", SymbolKind::FUNCTION, 22},
+		 {"renderBoth", SymbolKind::FUNCTION, 24},
+		 {"useA", SymbolKind::FUNCTION, 27}},
+		{{ReferenceKind::INHERITANCE, "Circle", "Shape", 3},
+		 {ReferenceKind::INHERITANCE, "Wheel", "Circle", 5},
+		 {ReferenceKind::INHERITANCE, "Square", "Shape", 7},
+		 {ReferenceKind::OVERRIDE, "Circle::draw", "Shape::draw", 4},
+		 {ReferenceKind::OVERRIDE, "Wheel::draw", "Circle::draw", 6},
+		 // Wheel::draw calls Circle::draw, the implementation it overrides: Circle::draw().
+		 {ReferenceKind::CALL, "Wheel::draw", "Circle::draw", 6},
+		 {ReferenceKind::INHERITANCE, "B", "A", 12},
+		 {ReferenceKind::INHERITANCE, "C", "A", 14},
+		 {ReferenceKind::INHERITANCE, "D", "B", 16},
+		 {ReferenceKind::INHERITANCE, "D", "C", 16},
+		 {ReferenceKind::OVERRIDE, "B::f", "A::f", 13},
+		 {ReferenceKind::OVERRIDE, "C::f", "A::f", 15},
+		 {ReferenceKind::OVERRIDE, "D::f", "B::f", 17},
+		 {ReferenceKind::OVERRIDE, "D::f", "C::f", 17},
+		 {ReferenceKind::CALL, "render", "Shape::draw", 21},
+		 {ReferenceKind::CALL, "renderCircle", "Circle::draw", 23},
+		 {ReferenceKind::CALL, "renderBoth", "Shape::draw", 25},
+		 {ReferenceKind::CALL, "renderBoth", "Circle::draw", 26},
+		 {ReferenceKind::CALL, "useA", "A::f", 28}});
+}
+}	 // namespace
+
+TEST_CASE("storage derives the overrides a call through a base method may reach")
+{
+	TestStorage storage;
+	storage.inject(recordShapes().get());
+	storage.setMode(SqliteIndexStorage::StorageModeType::STORAGE_MODE_READ);
+
+	const std::expected<std::size_t, DerivedEdgeError> derived = storage.deriveDispatchEdges();
+	REQUIRE(derived);
+
+	const std::set<std::string> expected {
+		// every override below the called method, at any depth; not the method called, and not
+		// Square, which overrides nothing
+		dispatchEdge("render", "Circle::draw"),
+		dispatchEdge("render", "Wheel::draw"),
+		// a call through the middle of the hierarchy reaches only what is below it
+		dispatchEdge("renderCircle", "Wheel::draw"),
+		// renderBoth calls Circle::draw itself: only Wheel::draw is derived, once for both calls
+		dispatchEdge("renderBoth", "Wheel::draw"),
+		// D::f overrides A::f twice over, through B and through C: one edge
+		dispatchEdge("useA", "B::f"),
+		dispatchEdge("useA", "C::f"),
+		dispatchEdge("useA", "D::f"),
+		// Wheel::draw calling Circle::draw, which it overrides, is a call of the base
+		// implementation: nothing is derived from it
+	};
+	REQUIRE(dispatchEdges(storage) == expected);
+	REQUIRE(*derived == expected.size());
+
+	// A derived edge occurs where the calls it comes from do: renderBoth reaches Wheel::draw
+	// through both of its calls.
+	REQUIRE(dispatchEdgeLines(storage, "render", "Wheel::draw") == std::set<size_t> {21});
+	REQUIRE(dispatchEdgeLines(storage, "renderBoth", "Wheel::draw") == std::set<size_t> {25, 26});
+
+	// The calls themselves are as they were.
+	REQUIRE(hasEdge(storage, Edge::EDGE_CALL, "render", "Shape::draw"));
+	REQUIRE(!hasEdge(storage, Edge::EDGE_CALL, "render", "Circle::draw"));
+}
+
+TEST_CASE("storage derives the same dispatch edges when it derives them again")
+{
+	TestStorage storage;
+	storage.inject(recordShapes().get());
+	storage.setMode(SqliteIndexStorage::StorageModeType::STORAGE_MODE_READ);
+
+	REQUIRE(storage.deriveDispatchEdges());
+	const std::set<std::string> once = describeIndex(storage);
+	const std::size_t edgeCount = storage.getStorageEdges().size();
+
+	const std::expected<std::size_t, DerivedEdgeError> again = storage.deriveDispatchEdges();
+	REQUIRE(again);
+	REQUIRE(*again == dispatchEdges(storage).size());
+	REQUIRE(describeIndex(storage) == once);
+	REQUIRE(storage.getStorageEdges().size() == edgeCount);
+}
+
+TEST_CASE("storage derivation ends on an override cycle")
+{
+	// Only a name collision makes one (two classes of the same name in two programs), but the
+	// recursion has to end all the same.
+	TestStorage storage;
+	storage.inject(recordTranslationUnit(
+					   "cycle.cc",
+					   {{"X", SymbolKind::CLASS, 1},
+						{"X::g", SymbolKind::METHOD, 2},
+						{"Y", SymbolKind::CLASS, 3},
+						{"Y::g", SymbolKind::METHOD, 4},
+						{"call", SymbolKind::FUNCTION, 5}},
+					   {{ReferenceKind::OVERRIDE, "Y::g", "X::g", 4},
+						{ReferenceKind::OVERRIDE, "X::g", "Y::g", 2},
+						{ReferenceKind::CALL, "call", "X::g", 6}})
+					   .get());
+	storage.setMode(SqliteIndexStorage::StorageModeType::STORAGE_MODE_READ);
+
+	REQUIRE(storage.deriveDispatchEdges());
+	REQUIRE(dispatchEdges(storage) == std::set<std::string> {dispatchEdge("call", "Y::g")});
+}
+
+TEST_CASE("storage refresh derives the dispatch edges a full index would have")
+{
+	// shape.h declares the base, render.cc calls through it, circle.cc overrides it. After the
+	// change circle.cc no longer overrides Shape::draw, and oval.cc, new, does.
+	const std::shared_ptr<IntermediateStorage> shape = recordTranslationUnit(
+		"shape.h", {{"Shape", SymbolKind::CLASS, 1}, {"Shape::draw", SymbolKind::METHOD, 2}}, {});
+	const std::shared_ptr<IntermediateStorage> render = recordTranslationUnit(
+		"render.cc",
+		{{"render", SymbolKind::FUNCTION, 1}},
+		{{ReferenceKind::CALL, "render", "Shape::draw", 2}});
+	const std::shared_ptr<IntermediateStorage> circleBefore = recordTranslationUnit(
+		"circle.cc",
+		{{"Circle", SymbolKind::CLASS, 1}, {"Circle::draw", SymbolKind::METHOD, 2}},
+		{{ReferenceKind::INHERITANCE, "Circle", "Shape", 1},
+		 {ReferenceKind::OVERRIDE, "Circle::draw", "Shape::draw", 2}});
+	const std::shared_ptr<IntermediateStorage> circleAfter = recordTranslationUnit(
+		"circle.cc", {{"Circle", SymbolKind::CLASS, 1}, {"Circle::area", SymbolKind::METHOD, 2}}, {});
+	const std::shared_ptr<IntermediateStorage> oval = recordTranslationUnit(
+		"oval.cc",
+		{{"Oval", SymbolKind::CLASS, 1}, {"Oval::draw", SymbolKind::METHOD, 2}},
+		{{ReferenceKind::INHERITANCE, "Oval", "Shape", 1},
+		 {ReferenceKind::OVERRIDE, "Oval::draw", "Shape::draw", 2}});
+
+	TestStorage full;
+	full.inject(shape.get());
+	full.inject(render.get());
+	full.inject(circleAfter.get());
+	full.inject(oval.get());
+	full.setMode(SqliteIndexStorage::StorageModeType::STORAGE_MODE_READ);
+	REQUIRE(full.deriveDispatchEdges());
+	REQUIRE(dispatchEdges(full) == std::set<std::string> {dispatchEdge("render", "Oval::draw")});
+
+	TestStorage refreshed;
+	refreshed.inject(shape.get());
+	refreshed.inject(render.get());
+	refreshed.inject(circleBefore.get());
+	refreshed.setMode(SqliteIndexStorage::StorageModeType::STORAGE_MODE_READ);
+	REQUIRE(refreshed.deriveDispatchEdges());
+	REQUIRE(dispatchEdges(refreshed) == std::set<std::string> {dispatchEdge("render", "Circle::draw")});
+
+	// as a refresh does: clear, inject the files indexed again, then derive over everything
+	refreshed.setMode(SqliteIndexStorage::StorageModeType::STORAGE_MODE_CLEAR);
+	refreshed.clearFileElements({FilePath("circle.cc")}, [](int) {});
+	REQUIRE(dispatchEdges(refreshed).empty());
+	// Circle::draw only had the derived edge besides what circle.cc recorded: it goes.
+	REQUIRE(refreshed.getNodeIdForNameHierarchy(createNameHierarchy("Circle::draw")) == 0);
+
+	refreshed.setMode(SqliteIndexStorage::StorageModeType::STORAGE_MODE_WRITE);
+	refreshed.inject(circleAfter.get());
+	refreshed.inject(oval.get());
+	refreshed.setMode(SqliteIndexStorage::StorageModeType::STORAGE_MODE_READ);
+	REQUIRE(refreshed.deriveDispatchEdges());
+
+	REQUIRE(describeIndex(refreshed) == describeIndex(full));
+}
+
+namespace
+{
+// A composite: Node::visit is overridden by Leaf and Group, and Group::visit forwards to its
+// children through Node::visit -- a call from an override to the method it overrides that does
+// dispatch. render calls through Node; `dispatches` is what the indexer said of each, if anything.
+std::shared_ptr<IntermediateStorage> recordComposite(
+	const std::string& filePath,
+	std::optional<bool> groupDispatches,
+	std::optional<bool> renderDispatches)
+{
+	return recordTranslationUnit(
+		filePath,
+		{{"Node", SymbolKind::CLASS, 1},
+		 {"Node::visit", SymbolKind::METHOD, 2},
+		 {"Leaf", SymbolKind::CLASS, 3},
+		 {"Leaf::visit", SymbolKind::METHOD, 4},
+		 {"Group", SymbolKind::CLASS, 5},
+		 {"Group::visit", SymbolKind::METHOD, 6},
+		 {"render", SymbolKind::FUNCTION, 8}},
+		{{ReferenceKind::INHERITANCE, "Leaf", "Node", 3},
+		 {ReferenceKind::INHERITANCE, "Group", "Node", 5},
+		 {ReferenceKind::OVERRIDE, "Leaf::visit", "Node::visit", 4},
+		 {ReferenceKind::OVERRIDE, "Group::visit", "Node::visit", 6},
+		 {ReferenceKind::CALL, "Group::visit", "Node::visit", 7, true, groupDispatches},
+		 {ReferenceKind::CALL, "render", "Node::visit", 9, true, renderDispatches}});
+}
+
+std::size_t countCallDispatchComponents(const PersistentStorage& storage)
+{
+	return static_cast<std::size_t>(std::ranges::count_if(
+		storage.getElementComponents(), [](const StorageElementComponent& component) {
+			return component.type == ElementComponentKind::ELEMENT_COMPONENT_CALL_DISPATCHES ||
+				component.type == ElementComponentKind::ELEMENT_COMPONENT_CALL_STATIC;
+		}));
+}
+}	 // namespace
+
+TEST_CASE("storage derives from what the indexer says a call does, and guesses only when it does not say")
+{
+	SECTION("not said: a call from an override to the method it overrides is taken for a super call")
+	{
+		TestStorage storage;
+		storage.inject(recordComposite("a.cc", std::nullopt, std::nullopt).get());
+		storage.setMode(SqliteIndexStorage::StorageModeType::STORAGE_MODE_READ);
+		REQUIRE(storage.deriveDispatchEdges());
+		REQUIRE(
+			dispatchEdges(storage) ==
+			std::set<std::string> {dispatchEdge("render", "Leaf::visit"), dispatchEdge("render", "Group::visit")});
+	}
+
+	SECTION("said to dispatch: the forwarding override gets its edges, to itself included")
+	{
+		TestStorage storage;
+		storage.inject(recordComposite("a.cc", true, true).get());
+		storage.setMode(SqliteIndexStorage::StorageModeType::STORAGE_MODE_READ);
+		REQUIRE(storage.deriveDispatchEdges());
+		REQUIRE(
+			dispatchEdges(storage) ==
+			std::set<std::string> {
+				dispatchEdge("render", "Leaf::visit"),
+				dispatchEdge("render", "Group::visit"),
+				dispatchEdge("Group::visit", "Leaf::visit"),
+				dispatchEdge("Group::visit", "Group::visit")});
+	}
+
+	SECTION("said not to dispatch: nothing, whoever calls")
+	{
+		TestStorage storage;
+		storage.inject(recordComposite("a.cc", false, false).get());
+		storage.setMode(SqliteIndexStorage::StorageModeType::STORAGE_MODE_READ);
+		REQUIRE(storage.deriveDispatchEdges());
+		REQUIRE(dispatchEdges(storage).empty());
+	}
+}
+
+TEST_CASE("storage ors what the translation units say of a call")
+{
+	// A header's inline function is indexed by every translation unit that includes it, and one
+	// edge holds all of a caller's calls of a method: it dispatches if any of them does.
+	for (const bool dispatchingFirst: {true, false})
+	{
+		TestStorage storage;
+		const std::shared_ptr<IntermediateStorage> dispatching = recordComposite("a.cc", true, true);
+		const std::shared_ptr<IntermediateStorage> bound = recordComposite("b.cc", false, false);
+		storage.inject((dispatchingFirst ? dispatching : bound).get());
+		storage.inject((dispatchingFirst ? bound : dispatching).get());
+		// and once more, as another translation unit would: kept once per edge and kind
+		storage.inject(bound.get());
+		storage.setMode(SqliteIndexStorage::StorageModeType::STORAGE_MODE_READ);
+		REQUIRE(storage.deriveDispatchEdges());
+
+		REQUIRE(dispatchEdges(storage).contains(dispatchEdge("Group::visit", "Leaf::visit")));
+		REQUIRE(dispatchEdges(storage).contains(dispatchEdge("render", "Leaf::visit")));
+		// two call edges, each said to dispatch and said not to
+		REQUIRE(countCallDispatchComponents(storage) == 4);
+	}
+
+	SECTION("and so does merging indexes, as the merge command does")
+	{
+		TestStorage shardA;
+		shardA.inject(recordComposite("a.cc", false, false).get());
+		TestStorage shardB;
+		shardB.inject(recordComposite("b.cc", true, false).get());
+
+		TestStorage merged;
+		merged.inject(&shardA);
+		merged.inject(&shardB);
+		merged.setMode(SqliteIndexStorage::StorageModeType::STORAGE_MODE_READ);
+		REQUIRE(merged.deriveDispatchEdges());
+		REQUIRE(
+			dispatchEdges(merged) ==
+			std::set<std::string> {
+				dispatchEdge("Group::visit", "Leaf::visit"), dispatchEdge("Group::visit", "Group::visit")});
+	}
+}
+
+TEST_CASE("storage refresh forgets what the cleared file said of its calls")
+{
+	// a.cc's render called through Node::visit on a pointer; after the change it calls it on an
+	// object. node.h declares the hierarchy and is not cleared.
+	const std::shared_ptr<IntermediateStorage> header = recordTranslationUnit(
+		"node.h",
+		{{"Node", SymbolKind::CLASS, 1},
+		 {"Node::visit", SymbolKind::METHOD, 2},
+		 {"Leaf", SymbolKind::CLASS, 3},
+		 {"Leaf::visit", SymbolKind::METHOD, 4}},
+		{{ReferenceKind::INHERITANCE, "Leaf", "Node", 3},
+		 {ReferenceKind::OVERRIDE, "Leaf::visit", "Node::visit", 4}});
+	const auto render = [](const bool dispatches) {
+		return recordTranslationUnit(
+			"a.cc",
+			{{"render", SymbolKind::FUNCTION, 1}},
+			{{ReferenceKind::CALL, "render", "Node::visit", 2, true, dispatches}});
+	};
+
+	TestStorage full;
+	full.inject(header.get());
+	full.inject(render(false).get());
+	full.setMode(SqliteIndexStorage::StorageModeType::STORAGE_MODE_READ);
+	REQUIRE(full.deriveDispatchEdges());
+	REQUIRE(dispatchEdges(full).empty());
+
+	TestStorage refreshed;
+	refreshed.inject(header.get());
+	refreshed.inject(render(true).get());
+	refreshed.setMode(SqliteIndexStorage::StorageModeType::STORAGE_MODE_READ);
+	REQUIRE(refreshed.deriveDispatchEdges());
+	REQUIRE(dispatchEdges(refreshed) == std::set<std::string> {dispatchEdge("render", "Leaf::visit")});
+
+	refreshed.setMode(SqliteIndexStorage::StorageModeType::STORAGE_MODE_CLEAR);
+	refreshed.clearFileElements({FilePath("a.cc")}, [](int) {});
+	REQUIRE(countCallDispatchComponents(refreshed) == 0);
+
+	refreshed.setMode(SqliteIndexStorage::StorageModeType::STORAGE_MODE_WRITE);
+	refreshed.inject(render(false).get());
+	refreshed.setMode(SqliteIndexStorage::StorageModeType::STORAGE_MODE_READ);
+	REQUIRE(refreshed.deriveDispatchEdges());
+
+	REQUIRE(dispatchEdges(refreshed).empty());
+	REQUIRE(describeIndex(refreshed) == describeIndex(full));
+	REQUIRE(countCallDispatchComponents(refreshed) == countCallDispatchComponents(full));
+}
+
 #if BUILD_CXX_LANGUAGE_PACKAGE
 namespace
 {
@@ -787,5 +1200,199 @@ TEST_CASE("storage refresh of one parsed file leaves the index a full index woul
 	refreshed.inject(filenameAfter.get());
 
 	REQUIRE(describeIndex(refreshed) == describeIndex(full));
+}
+#endif
+
+#if BUILD_CXX_LANGUAGE_PACKAGE
+TEST_CASE("storage derives dispatch edges from what the C++ indexer records")
+{
+	const std::shared_ptr<IntermediateStorage> shapes = parseFile(
+		"shapes.cc",
+		"struct Shape { virtual ~Shape() {} virtual void draw() = 0; };\n"
+		"struct Circle : Shape { void draw() override {} };\n"
+		"struct Wheel : Circle {\n"
+		"  ~Wheel() override {}\n"
+		"  void draw() override { Circle::draw(); }\n"
+		"};\n"
+		"struct Square : Shape { void draw() override {} };\n"
+		"void render(Shape* shape) { shape->draw(); }\n"
+		"void destroy(Shape* shape) { delete shape; }\n");
+
+	TestStorage storage;
+	storage.inject(shapes.get());
+	storage.setMode(SqliteIndexStorage::StorageModeType::STORAGE_MODE_READ);
+	REQUIRE(storage.deriveDispatchEdges());
+
+	// The call of the pure virtual Shape::draw reaches every override of it, and delete every
+	// destructor, the implicit ones included. Wheel's Circle::draw() and the implicit call of
+	// Circle's destructor from Wheel's are calls of the base implementation: they derive nothing.
+	REQUIRE(
+		dispatchEdges(storage) ==
+		std::set<std::string> {
+			dispatchEdge("render", "Circle::draw"),
+			dispatchEdge("render", "Wheel::draw"),
+			dispatchEdge("render", "Square::draw"),
+			dispatchEdge("destroy", "Circle::~Circle"),
+			dispatchEdge("destroy", "Wheel::~Wheel"),
+			dispatchEdge("destroy", "Square::~Square")});
+	REQUIRE(dispatchEdgeLines(storage, "render", "Wheel::draw") == std::set<size_t> {8});
+}
+#endif
+
+#if BUILD_CXX_LANGUAGE_PACKAGE
+namespace
+{
+// What the C++ indexer said of the calls from `caller` to `callee` in `storage`: true if they
+// dispatch, false if they are bound at compile time, nothing if it said nothing.
+std::optional<bool> callDispatch(
+	const IntermediateStorage& storage, const std::string& caller, const std::string& callee)
+{
+	std::map<Id, std::string> names;
+	for (const StorageNode& node: storage.getStorageNodes())
+	{
+		names.emplace(node.id, NameHierarchy::deserialize(node.serializedName).getQualifiedName());
+	}
+	std::optional<bool> result;
+	for (const StorageEdge& edge: storage.getStorageEdges())
+	{
+		if (edge.type != Edge::EDGE_CALL || names[edge.sourceNodeId] != caller ||
+			names[edge.targetNodeId] != callee)
+		{
+			continue;
+		}
+		for (const StorageElementComponent& component: storage.getElementComponents())
+		{
+			if (component.elementId != edge.id)
+			{
+				continue;
+			}
+			if (component.type == ElementComponentKind::ELEMENT_COMPONENT_CALL_DISPATCHES)
+			{
+				result = true;
+			}
+			else if (component.type == ElementComponentKind::ELEMENT_COMPONENT_CALL_STATIC && !result)
+			{
+				result = false;
+			}
+		}
+	}
+	return result;
+}
+
+bool hasCall(const IntermediateStorage& storage, const std::string& caller, const std::string& callee)
+{
+	std::map<Id, std::string> names;
+	for (const StorageNode& node: storage.getStorageNodes())
+	{
+		names.emplace(node.id, NameHierarchy::deserialize(node.serializedName).getQualifiedName());
+	}
+	return std::ranges::any_of(storage.getStorageEdges(), [&](const StorageEdge& edge) {
+		return edge.type == Edge::EDGE_CALL && names[edge.sourceNodeId] == caller &&
+			names[edge.targetNodeId] == callee;
+	});
+}
+}	 // namespace
+
+TEST_CASE("cxx indexer records whether a call dispatches, as clang decides it")
+{
+	const std::shared_ptr<IntermediateStorage> storage = parseFile(
+		"calls.cc",
+		"struct Base { virtual ~Base() {} virtual void f() {} };\n"
+		"struct Derived : Base {\n"
+		"  Derived() { f(); }\n"
+		"  ~Derived() override { f(); }\n"
+		"  void f() override { Base::f(); }\n"
+		"  void g() { f(); }\n"
+		"  int n = (f(), 0);\n"
+		"};\n"
+		"struct Sealed final : Base { void f() override {} };\n"
+		"struct Plain { ~Plain() {} };\n"
+		"struct Node { virtual ~Node() {} virtual void traverse() {} };\n"
+		"struct Group : Node { Node* child; void traverse() override { child->traverse(); } };\n"
+		"struct Eq { virtual bool operator==(const Eq&) const { return true; } };\n"
+		"void onPointer(Base* b) { b->f(); }\n"
+		"void onReference(Base& b) { b.f(); }\n"
+		"void onObject() { Derived d; d.f(); }\n"
+		"void onMember(Group& g) { g.child->traverse(); }\n"
+		"void onSealed(Sealed* s) { s->f(); }\n"
+		"void qualified(Derived* d) { d->Base::f(); }\n"
+		"void deleteVirtual(Base* b) { delete b; }\n"
+		"void deletePlain(Plain* p) { delete p; }\n"
+		"void plainObject() { Plain p; }\n"
+		"bool compare(const Eq& a, const Eq& b) { return a == b; }\n"
+		"bool compareObjects() { Eq a; Eq b; return a == b; }\n"
+		"template <class T> void generic(T* t) { t->f(); }\n"
+		"void instantiate(Base* b) { generic(b); }\n");
+
+	// through a pointer or a reference: dispatches, from a method on `this` too
+	REQUIRE(callDispatch(*storage, "onPointer", "Base::f") == true);
+	REQUIRE(callDispatch(*storage, "onReference", "Base::f") == true);
+	REQUIRE(callDispatch(*storage, "Derived::g", "Derived::f") == true);
+	REQUIRE(callDispatch(*storage, "onMember", "Node::traverse") == true);
+	// the forwarding override: a call from Group::traverse to the method it overrides that does
+	// dispatch, which the derivation's guess got wrong
+	REQUIRE(callDispatch(*storage, "Group::traverse", "Node::traverse") == true);
+
+	// qualified: Base::f() in the override, d->Base::f() outside
+	REQUIRE(callDispatch(*storage, "Derived::f", "Base::f") == false);
+	REQUIRE(callDispatch(*storage, "qualified", "Base::f") == false);
+	// on an object, not through a pointer or a reference
+	REQUIRE(callDispatch(*storage, "onObject", "Derived::f") == false);
+	// a final class has no overrides to reach
+	REQUIRE(callDispatch(*storage, "onSealed", "Sealed::f") == false);
+	// on `this` while the object is built or torn down, member initializers included
+	REQUIRE(callDispatch(*storage, "Derived::Derived", "Derived::f") == false);
+	REQUIRE(callDispatch(*storage, "Derived::~Derived", "Derived::f") == false);
+	REQUIRE(callDispatch(*storage, "Derived::n", "Derived::f") == false);
+
+	// destructors: the implicit ones never dispatch -- the base's from the derived one, the
+	// local object's at the end of its scope -- delete does when the destructor is virtual
+	REQUIRE(callDispatch(*storage, "Derived::~Derived", "Base::~Base") == false);
+	REQUIRE(callDispatch(*storage, "onObject", "Derived::~Derived") == false);
+	REQUIRE(callDispatch(*storage, "deleteVirtual", "Base::~Base") == true);
+	// a destructor that is not virtual has no overrides: nothing to say, and nothing said
+	REQUIRE(hasCall(*storage, "deletePlain", "Plain::~Plain"));
+	REQUIRE(callDispatch(*storage, "deletePlain", "Plain::~Plain") == std::nullopt);
+	REQUIRE(hasCall(*storage, "plainObject", "Plain::~Plain"));
+	REQUIRE(callDispatch(*storage, "plainObject", "Plain::~Plain") == std::nullopt);
+
+	// a member operator, its object the first operand
+	REQUIRE(callDispatch(*storage, "compare", "Eq::operator==") == true);
+	REQUIRE(callDispatch(*storage, "compareObjects", "Eq::operator==") == false);
+}
+
+TEST_CASE("storage derives dispatch edges only from the C++ calls that dispatch")
+{
+	const std::shared_ptr<IntermediateStorage> nodes = parseFile(
+		"nodes.cc",
+		"struct Node { virtual ~Node() {} virtual void traverse() {} };\n"
+		"struct Leaf : Node { void traverse() override {} };\n"
+		"struct Group : Node {\n"
+		"  Node* child;\n"
+		"  ~Group() override {}\n"
+		"  void traverse() override { child->traverse(); Node::traverse(); }\n"
+		"};\n"
+		"struct Logged : Leaf { void traverse() override { Leaf::traverse(); } };\n"
+		"void walk(Node* node) { node->traverse(); }\n"
+		"void walkLeaf() { Leaf leaf; leaf.traverse(); }\n");
+
+	TestStorage storage;
+	storage.inject(nodes.get());
+	storage.setMode(SqliteIndexStorage::StorageModeType::STORAGE_MODE_READ);
+	REQUIRE(storage.deriveDispatchEdges());
+
+	// Group::traverse forwards to its child and calls Node::traverse() too: one edge to
+	// Node::traverse, which dispatches, so Group's edges come back. Logged's Leaf::traverse() and
+	// the destructors' implicit calls of their bases', bound at compile time, derive nothing;
+	// neither does a call on a local Leaf.
+	REQUIRE(
+		dispatchEdges(storage) ==
+		std::set<std::string> {
+			dispatchEdge("walk", "Leaf::traverse"),
+			dispatchEdge("walk", "Group::traverse"),
+			dispatchEdge("walk", "Logged::traverse"),
+			dispatchEdge("Group::traverse", "Leaf::traverse"),
+			dispatchEdge("Group::traverse", "Group::traverse"),
+			dispatchEdge("Group::traverse", "Logged::traverse")});
 }
 #endif

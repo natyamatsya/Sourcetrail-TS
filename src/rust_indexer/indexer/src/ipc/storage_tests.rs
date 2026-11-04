@@ -28,6 +28,7 @@ mod tests {
             component_accesses: Some(original.component_accesses.clone()),
             node_attributes: Some(original.node_attributes.clone()),
             errors: Some(original.errors.clone()),
+            ..Default::default()
         };
         let queue = IntermediateStorageQueueT {
             storages: Some(vec![storage]),

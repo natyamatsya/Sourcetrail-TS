@@ -4,6 +4,8 @@
 #include "SrctrlModule.h"
 
 #ifndef SRCTRL_MODULE_PURVIEW
+#include <vector>
+
 #include "CxxAstVisitorComponent.h"
 #include "ReferenceKind.h"
 #endif
@@ -37,7 +39,13 @@ public:
 	void visitLambdaExpr(clang::LambdaExpr* s);
 	void visitConstructorInitializer(clang::CXXCtorInitializer* init);
 
+	void beginTraverseCXXOperatorCall(clang::CXXOperatorCallExpr* s);
+	void endTraverseCXXOperatorCall(clang::CXXOperatorCallExpr* s);
+
 private:
+	// The declaration the reference being visited is in, when the context is one.
+	const clang::Decl* contextDecl() const;
+
 	// Classify the reference kind for the decl-reference currently being visited, from the
 	// traversal-state siblings (inheritance / template argument / plain decl-ref).
 	ReferenceKind consumeDeclRefContextKind();
@@ -52,6 +60,10 @@ private:
 	// once the component tuple is fully constructed.
 	CxxAstVisitorComponentTypeRefKind* m_typeRefKind = nullptr;
 	CxxAstVisitorComponentDeclRefKind* m_declRefKind = nullptr;
+
+	// The operator calls being traversed, innermost last: a member operator's callee is a
+	// DeclRefExpr, and its object the call's first argument.
+	std::vector<const clang::CXXOperatorCallExpr*> m_operatorCalls;
 };
 
 

@@ -5,6 +5,8 @@
 #ifndef SRCTRL_MODULE_PURVIEW
 #include <clang/AST/DeclCXX.h>
 #include <clang/AST/DeclTemplate.h>
+#include <clang/AST/Expr.h>
+#include <clang/AST/ExprCXX.h>
 #include <clang/Basic/FileManager.h>
 #include <clang/Lex/Preprocessor.h>
 
@@ -128,6 +130,56 @@ inline bool utility::isParameter(const clang::ValueDecl *d)
 inline SymbolKind utility::getFunctionKind(const clang::Decl* d)
 {
 	return clang::isa_and_nonnull<clang::CXXMethodDecl>(d) ? SymbolKind::METHOD : SymbolKind::FUNCTION;
+}
+
+// The same decisions clang's code generation makes when it emits the call
+// (CodeGenFunction::EmitCXXMemberOrOperatorMemberCallExpr and EmitObjectDelete, CGExprCXX.cpp),
+// taken from the AST it makes them from, plus the one rule code generation leaves to the vtable
+// pointer: the construction and destruction of an object.
+inline std::optional<bool> utility::callDispatches(
+	const clang::CXXMethodDecl* method,
+	const clang::Expr* object,
+	const bool suppressed,
+	const clang::LangOptions& langOptions,
+	const clang::Decl* caller)
+{
+	if (method == nullptr || !method->isVirtual() || object == nullptr)
+	{
+		return std::nullopt;
+	}
+	if (object->isTypeDependent() || object->isValueDependent() ||
+		method->getParent()->isDependentContext())
+	{
+		return std::nullopt;
+	}
+
+	// Base::f(): a qualified name suppresses the virtual call ([class.virtual]/16,
+	// MemberExpr::performsVirtualDispatch).
+	if (suppressed)
+	{
+		return false;
+	}
+
+	// What clang devirtualizes (CXXMethodDecl::getDevirtualizedMethod): a final method or class,
+	// a call on an object rather than through a pointer or reference -- a variable, a member, a
+	// prvalue of class type -- whose dynamic type is its static one.
+	if (method->getDevirtualizedMethod(object, langOptions.AppleKext) != nullptr)
+	{
+		return false;
+	}
+
+	// While a constructor or destructor runs, and while a member initializer does, the object is
+	// of the class being built or torn down ([class.cdtor]/4): a call on `this` does not reach an
+	// override in a class derived from it.
+	if ((clang::isa_and_nonnull<clang::CXXConstructorDecl>(caller) ||
+		 clang::isa_and_nonnull<clang::CXXDestructorDecl>(caller) ||
+		 clang::isa_and_nonnull<clang::FieldDecl>(caller)) &&
+		clang::isa<clang::CXXThisExpr>(object->getBestDynamicClassTypeExpr()))
+	{
+		return false;
+	}
+
+	return true;
 }
 
 inline SymbolKind utility::getSymbolKind(const clang::VarDecl* d)

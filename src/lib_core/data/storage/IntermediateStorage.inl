@@ -29,6 +29,7 @@ inline void IntermediateStorage::clear()
 	m_occurrences.clear();
 	m_componentAccesses.clear();
 	m_nodeAttributes.clear();
+	m_elementComponents.clear();
 
 	m_errorsIndex.clear();
 	m_errors.clear();
@@ -72,6 +73,11 @@ inline size_t IntermediateStorage::getByteSize(size_t stringSize) const
 	{
 		byteSize += sizeof(StorageNodeAttribute);
 		byteSize += stringSize + storageNodeAttribute.value.size();
+	}
+	for (const StorageElementComponent& elementComponent: getElementComponents())
+	{
+		byteSize += sizeof(StorageElementComponent);
+		byteSize += stringSize + elementComponent.data.size();
 	}
 	byteSize += sizeof(StorageOccurrence) * getStorageOccurrences().size();
 	byteSize += sizeof(StorageSymbol) * getStorageSymbols().size();

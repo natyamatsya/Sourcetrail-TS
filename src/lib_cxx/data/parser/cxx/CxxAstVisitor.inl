@@ -517,7 +517,12 @@ inline bool CxxAstVisitor::TraverseCXXMemberCallExpr(clang::CXXMemberCallExpr* s
 
 inline bool CxxAstVisitor::TraverseCXXOperatorCallExpr(clang::CXXOperatorCallExpr* s)
 {
-	return TraverseCallCommon(s);
+	// The object of a member operator is the call's first argument, not part of its callee: the
+	// components that need it to judge the call see the whole expression around its traversal.
+	forEachComponent([&](auto& component) { component.beginTraverseCXXOperatorCall(s); });
+	const bool ret = TraverseCallCommon(s);
+	forEachComponent([&](auto& component) { component.endTraverseCXXOperatorCall(s); });
+	return ret;
 }
 
 inline bool CxxAstVisitor::TraverseCXXConstructExpr(clang::CXXConstructExpr* s)

@@ -21,6 +21,9 @@ class FilePath;
 
 namespace clang
 {
+class CXXMethodDecl;
+class Expr;
+class LangOptions;
 class SourceRange;
 class Preprocessor;
 class SourceManager;
@@ -43,6 +46,17 @@ bool isParameter(const clang::ValueDecl* d);
 SymbolKind getSymbolKind(const clang::VarDecl* d);
 // METHOD for a member function (a constructor, an operator, a lambda's call operator), else FUNCTION.
 SymbolKind getFunctionKind(const clang::Decl* d);
+// Whether a call of `method` on `object` dispatches at run time: true for a virtual call that
+// can reach an override in a derived class, false for one bound at compile time. `suppressed`
+// is a call whose spelling already rules dispatch out (a qualified Base::f()); `caller` is the
+// declaration the call is in. Nothing for a method that is not virtual, or an object whose type
+// depends on a template parameter, where clang cannot tell either.
+std::optional<bool> callDispatches(
+	const clang::CXXMethodDecl* method,
+	const clang::Expr* object,
+	bool suppressed,
+	const clang::LangOptions& langOptions,
+	const clang::Decl* caller);
 std::string getFileNameOfFileEntry(const clang::FileEntryRef &entry);
 
 ParseLocation getParseLocation(

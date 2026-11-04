@@ -67,6 +67,9 @@ public:
 	void beginTraverseCallCommonArgument() {}
 	void endTraverseCallCommonArgument() {}
 
+	void beginTraverseCXXOperatorCall(clang::CXXOperatorCallExpr*  /*s*/) {}
+	void endTraverseCXXOperatorCall(clang::CXXOperatorCallExpr*  /*s*/) {}
+
 	void beginTraverseBinCommaLhs() {}
 	void endTraverseBinCommaLhs() {}
 

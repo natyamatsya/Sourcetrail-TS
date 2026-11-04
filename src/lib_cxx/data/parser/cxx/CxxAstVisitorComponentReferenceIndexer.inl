@@ -110,7 +110,26 @@ inline void CxxAstVisitorComponentReferenceIndexer::visitDeclRefExpr(clang::Decl
 				m_index.recordSymbolKind(symbolId, utility::getFunctionKind(decl));
 			}
 			const Id contextSymbolId = m_index.getOrCreateSymbolId(m_index.getContext());
-			m_index.recordReference(refKind, symbolId, contextSymbolId, m_index.getParseLocation(s->getLocation()));
+			const Id edgeId = m_index.recordReference(
+				refKind, symbolId, contextSymbolId, m_index.getParseLocation(s->getLocation()));
+
+			// A member operator called with operator syntax (*a == *b): its object is the
+			// call's first argument.
+			if (refKind == ReferenceKind::CALL && !m_operatorCalls.empty())
+			{
+				const clang::CXXOperatorCallExpr* call = m_operatorCalls.back();
+				if (call->getCallee()->IgnoreImplicit() == s && call->getNumArgs() > 0)
+				{
+					m_index.recordCallDispatch(
+						edgeId,
+						utility::callDispatches(
+							clang::dyn_cast<clang::CXXMethodDecl>(decl),
+							call->getArg(0),
+							false,
+							m_astContext->getLangOpts(),
+							contextDecl()));
+				}
+			}
 		}
 	}
 }
@@ -126,7 +145,21 @@ inline void CxxAstVisitorComponentReferenceIndexer::visitMemberExpr(clang::Membe
 			m_index.recordSymbolKind(
 				m_index.getOrCreateSymbolId(s->getMemberDecl()), utility::getFunctionKind(s->getMemberDecl()));
 		}
-		m_index.recordReference(s->getMemberDecl(), refKind, s->getMemberLoc());
+		const Id edgeId = m_index.recordReference(s->getMemberDecl(), refKind, s->getMemberLoc());
+
+		// p->f(), r.f(), Base::f(), o.f(): whether the call dispatches is a property of the
+		// member expression, its qualifier and its object.
+		if (refKind == ReferenceKind::CALL)
+		{
+			m_index.recordCallDispatch(
+				edgeId,
+				utility::callDispatches(
+					clang::dyn_cast<clang::CXXMethodDecl>(s->getMemberDecl()),
+					s->getBase(),
+					!s->performsVirtualDispatch(m_astContext->getLangOpts()),
+					m_astContext->getLangOpts(),
+					contextDecl()));
+		}
 	}
 }
 
@@ -230,12 +263,19 @@ inline void CxxAstVisitorComponentReferenceIndexer::visitCXXDeleteExpr(clang::CX
 				{
 					const Id symbolId = m_index.getOrCreateSymbolId(destructorDecl);
 
-					m_index.recordReference(
+					const Id edgeId = m_index.recordReference(
 						ReferenceKind::CALL,
 						symbolId,
 						m_index.getOrCreateSymbolId(
 							m_index.getContext()),
 						m_index.getParseLocation(s->getBeginLoc()));
+
+					// delete p runs the destructor of the object's dynamic type when the
+					// destructor is virtual, as a virtual call through p would (EmitObjectDelete).
+					m_index.recordCallDispatch(
+						edgeId,
+						utility::callDispatches(
+							destructorDecl, s->getArgument(), false, m_astContext->getLangOpts(), contextDecl()));
 				}
 			}
 		}
@@ -288,6 +328,26 @@ inline void CxxAstVisitorComponentReferenceIndexer::visitConstructorInitializer(
 				m_index.getParseLocation(init->getMemberLocation()));
 		}
 	}
+}
+
+inline void CxxAstVisitorComponentReferenceIndexer::beginTraverseCXXOperatorCall(clang::CXXOperatorCallExpr* s)
+{
+	m_operatorCalls.push_back(s);
+}
+
+inline void CxxAstVisitorComponentReferenceIndexer::endTraverseCXXOperatorCall(clang::CXXOperatorCallExpr*  /*s*/)
+{
+	m_operatorCalls.pop_back();
+}
+
+inline const clang::Decl* CxxAstVisitorComponentReferenceIndexer::contextDecl() const
+{
+	const CxxContext context = m_index.getContext();
+	if (!context)
+	{
+		return nullptr;
+	}
+	return clang::dyn_cast<const clang::NamedDecl*>(context);
 }
 
 inline ReferenceKind CxxAstVisitorComponentReferenceIndexer::consumeDeclRefContextKind()

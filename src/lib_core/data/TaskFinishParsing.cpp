@@ -52,6 +52,13 @@ void TaskFinishParsing::report(const IndexingRunState& state)
 {
 	TimeStamp start = TimeStamp::now();
 
+	// Every file of the run is in, and read mode has put the edge indices back: the edges the
+	// index derives from its own are recomputed over all of it, the files this run did not index
+	// included. A failure is logged (by the storage) and leaves the index without derived edges,
+	// which is still a usable index.
+	m_dialogView->showUnknownProgressDialog("Finish Indexing", "Resolving virtual calls");
+	static_cast<void>(m_storage->deriveDispatchEdges());
+
 	m_dialogView->showUnknownProgressDialog("Finish Indexing", "Optimizing database");
 	m_storage->setBulkWritePragmas(false);	  // restore SYNCHRONOUS=NORMAL before the DB goes live
 	m_storage->optimizeMemory();

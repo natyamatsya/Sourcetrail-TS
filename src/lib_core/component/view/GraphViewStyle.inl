@@ -706,6 +706,21 @@ inline GraphViewStyle::EdgeStyle GraphViewStyle::getStyleForEdgeType(
 		}
 		break;
 
+	// Drawn as a call, dashed: a call that may happen at run time, not one the source names.
+	case Edge::EDGE_DISPATCH:
+		style.originOffset.y = 3;
+		style.targetOffset.y = -3;
+		style.verticalOffset = 4;
+		style.dashed = true;
+
+		if (isTrailEdge && isActive)
+		{
+			style.width = 3;
+			style.color = ColorScheme::getInstance()->getColor(
+				"graph/edge/call_trail_focus", style.color);
+		}
+		break;
+
 	case Edge::EDGE_USAGE:
 	case Edge::EDGE_OVERRIDE:
 		style.originOffset.y = 1;

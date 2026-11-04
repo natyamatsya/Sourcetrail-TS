@@ -216,6 +216,14 @@ produce, computed from inputs Sourcetrail already has. It is the cleanest possib
 demonstration of the thesis and has near-zero blast radius (emit `reaches` as a
 new derived edge kind into the existing store).
 
+**Status (2026-11): a first cut shipped without an engine** — one SQL pass
+(`WITH RECURSIVE` over the OVERRIDE edges) after every indexing run writes
+`EDGE_DISPATCH` edges, recomputed from scratch each time. It answers two of the open
+questions below (where derived relations live and how they are invalidated: a new
+edge kind, deleted and re-derived per run) and part of a third (the base edges are
+*not* enough for C++: a CALL does not say whether it dispatched). See
+[DESIGN_DISPATCH_EDGES.md](DESIGN_DISPATCH_EDGES.md).
+
 ### What the same engine then unlocks
 - **Transitive reachability** → dead-code hints, "is X reachable from an entry
   point."

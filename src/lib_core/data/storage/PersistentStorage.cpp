@@ -766,6 +766,13 @@ void PersistentStorage::clearFileElements(
 	if (!fileNodeIds.empty())
 	{
 		m_sqliteIndexStorage.beginTransaction();
+		// The derived edges go first: they are recomputed once the run is in, and to the clear
+		// they would look like edges that keep the nodes at their ends.
+		if (const std::expected<void, DerivedEdgeError> removed = m_sqliteIndexStorage.removeDispatchEdges();
+			!removed)
+		{
+			LOG_ERROR(std::string(to_std_sv(removed.error())));
+		}
 		m_sqliteIndexStorage.removeElementsWithLocationInFiles(fileNodeIds, updateStatusCallback);
 		m_sqliteIndexStorage.removeElements(fileNodeIds);
 		m_sqliteIndexStorage.commitTransaction();
@@ -838,6 +845,26 @@ void PersistentStorage::buildCaches()
 	buildFilePathMaps();
 	buildSearchIndex();
 	buildHierarchyCache();
+}
+
+std::expected<std::size_t, DerivedEdgeError> PersistentStorage::deriveDispatchEdges()
+{
+	TRACE();
+
+	const TimeStamp start = TimeStamp::now();
+	const std::expected<std::size_t, DerivedEdgeError> derived =
+		m_sqliteIndexStorage.deriveDispatchEdges();
+	if (derived)
+	{
+		LOG_INFO(
+			"Derived " + std::to_string(*derived) + " dispatch edge(s) in " +
+			std::to_string(TimeStamp::now().deltaMS(start)) + " ms");
+	}
+	else
+	{
+		LOG_ERROR("Deriving dispatch edges failed: " + std::string(to_std_sv(derived.error())));
+	}
+	return derived;
 }
 
 void PersistentStorage::optimizeMemory()
@@ -2051,9 +2078,11 @@ std::vector<Id> PersistentStorage::getNodeIdsForLocationIds(const std::vector<Id
 			elementId = edge.targetNodeId;
 		}
 
+		// A dispatch edge shares its location with the call it was derived from: clicking the
+		// call goes to the method it names, not to every override it may reach.
 		auto it = m_symbolDefinitionKinds.find(elementId);
 		if ((it != m_symbolDefinitionKinds.end() && it->second == DefinitionKind::IMPLICIT) ||
-			edge.type == Edge::EDGE_OVERRIDE)
+			edge.type == Edge::EDGE_OVERRIDE || edge.type == Edge::EDGE_DISPATCH)
 		{
 			implicitNodeIds.insert(elementId);
 		}

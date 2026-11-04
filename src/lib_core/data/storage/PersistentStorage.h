@@ -143,6 +143,10 @@ public:
 
 	void buildCaches();
 
+	// Recomputes the derived dispatch edges over the whole index (SqliteIndexStorage::
+	// deriveDispatchEdges), logging how many and how long; once all files of a run are in.
+	std::expected<std::size_t, DerivedEdgeError> deriveDispatchEdges();
+
 	void optimizeMemory();
 
 	// StorageAccess implementation

@@ -45,8 +45,16 @@ public:
 		// so that "who implements this" is the atom's incoming edges. See
 		// context/DESIGN_XLANG_BOUNDARIES.md.
 		EDGE_BINDS = 1 << 13,
+		// A derived edge, not an indexed one: the caller of a virtual / trait /
+		// protocol method may reach this override of it at run time. Computed
+		// after indexing from CALL, OVERRIDE, INHERITANCE and MEMBER edges by
+		// class-hierarchy analysis (SqliteIndexStorage::deriveDispatchEdges),
+		// and only ever written by that pass. Points caller -> override, and
+		// carries the occurrences of the call it was derived from. See
+		// context/DESIGN_DISPATCH_EDGES.md.
+		EDGE_DISPATCH = 1 << 14,
 	};
-	static constexpr EdgeType EDGE_TYPE_MAX_VALUE = EDGE_BINDS;
+	static constexpr EdgeType EDGE_TYPE_MAX_VALUE = EDGE_DISPATCH;
 
 
 	static const TypeMask LAYOUT_VERTICAL = EDGE_INHERITANCE | EDGE_OVERRIDE |

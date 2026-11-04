@@ -3061,6 +3061,24 @@ void GraphController::createLegendGraph()
 			i += 2;
 		}
 
+		// A call of a base method, and the override it may reach at run time: derived after
+		// indexing from the call and the override, and drawn dashed. See DESIGN_DISPATCH_EDGES.md.
+		{
+			addText("possible dispatch", 0, Vec2i(x, y + dy * ++i));
+			Node* caller = addNode(NODE_FUNCTION, "function", Vec2i(x, y + dy * (i + 3)));
+			Node* base = addNode(NODE_CLASS, "Base Class", Vec2i(x + dx, y + dy * ++i));
+			i += 3;
+			Node* derived = addNode(NODE_CLASS, "Derived Class", Vec2i(x + dx, y + dy * i));
+			Node* baseMethod = addNode(NODE_METHOD, "method", Vec2i());
+			Node* derivedMethod = addNode(NODE_METHOD, "method", Vec2i());
+			addMember(base, baseMethod, AccessKind::PUBLIC);
+			addMember(derived, derivedMethod, AccessKind::PUBLIC);
+			addEdge(Edge::EDGE_OVERRIDE, derivedMethod, baseMethod);
+			addEdge(Edge::EDGE_CALL, caller, baseMethod);
+			addEdge(Edge::EDGE_DISPATCH, caller, derivedMethod);
+			i += 2;
+		}
+
 		{
 			addText("template specialization", 0, Vec2i(x, y + dy * ++i));
 			Node* templateFunctionNode = addNode(
