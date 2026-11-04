@@ -43,6 +43,7 @@ public:
 		Id referencedSymbolId,
 		Id contextSymbolId,
 		const ParseLocation& location) override;
+	void recordCallDispatch(Id callEdgeId, bool dispatches) override;
 
 	void recordLocalSymbol(const std::string& name, const ParseLocation& location) override;
 	void recordLocation(Id elementId, const ParseLocation& location, ParseLocationType type) override;

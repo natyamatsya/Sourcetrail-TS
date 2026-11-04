@@ -89,6 +89,13 @@ inline flatbuffers::DetachedBuffer serializeIntermediateStorage(const Intermedia
 			builder.CreateString(err.translationUnit),
 			err.fatal, err.indexed));
 
+	// ElementComponents
+	std::vector<flatbuffers::Offset<Sourcetrail::Ipc::StorageElementComponent>> fbComponents;
+	for (const auto& component : storage.getElementComponents())
+		fbComponents.push_back(Sourcetrail::Ipc::CreateStorageElementComponent(
+			builder, static_cast<int64_t>(component.elementId), static_cast<int32_t>(component.type),
+			builder.CreateString(component.data)));
+
 	auto fbStorage = Sourcetrail::Ipc::CreateIntermediateStorage(
 		builder,
 		static_cast<int64_t>(storage.getNextId()),
@@ -101,7 +108,8 @@ inline flatbuffers::DetachedBuffer serializeIntermediateStorage(const Intermedia
 		builder.CreateVector(fbOccs),
 		builder.CreateVector(fbAccesses),
 		builder.CreateVector(fbNodeAttributes),
-		builder.CreateVector(fbErrors));
+		builder.CreateVector(fbErrors),
+		builder.CreateVector(fbComponents));
 
 	auto queue = Sourcetrail::Ipc::CreateIntermediateStorageQueue(
 		builder, builder.CreateVector(
@@ -226,6 +234,17 @@ inline std::shared_ptr<IntermediateStorage> deserializeIntermediateStorage(
 				err->translation_unit() ? err->translation_unit()->str() : "",
 				err->fatal(), err->indexed());
 		storage->setErrors(std::move(errors));
+	}
+
+	// ElementComponents (absent from producers that write none: Rust, Swift, Zig)
+	if (fb->element_components())
+	{
+		std::set<StorageElementComponent> components;
+		for (const auto* component : *fb->element_components())
+			components.emplace(Id(component->element_id()),
+				intToEnum<ElementComponentKind>(component->type()),
+				component->data() ? component->data()->str() : "");
+		storage->setElementComponents(std::move(components));
 	}
 
 	return storage;

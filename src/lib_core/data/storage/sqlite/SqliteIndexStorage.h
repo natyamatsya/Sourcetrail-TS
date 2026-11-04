@@ -323,6 +323,10 @@ private:
 	bool m_fileDedupSeeded = false;
 	std::map<std::pair<std::string, int>, Id> m_errorDedup;
 	bool m_errorDedupSeeded = false;
+	// The (edge, kind) pairs of the call-dispatch components stored (addElementComponent),
+	// seeded lazily and dropped whenever elements are removed.
+	std::set<std::pair<Id, int>> m_callDispatchComponents;
+	bool m_callDispatchSeeded = false;
 };
 
 // Full-table scans — one per persisted storage type.

@@ -36,6 +36,11 @@ public:
 	// Axis-3a sparse metadata: a display-only key->value fact on the node.
 	virtual void recordNodeAttribute(Id symbolId, NodeAttributeKind key, const std::string& value) = 0;
 	virtual Id recordReference(ReferenceKind referenceKind, Id referencedSymbolId, Id contextSymbolId, const ParseLocation& location) = 0;
+	// Of a CALL edge recordReference returned: whether this call dispatches at run time (a
+	// virtual call through a pointer or reference), or is bound at compile time (a qualified
+	// Base::f(), a call on an object, an implicit destructor). For an indexer that knows; the
+	// edge's calls are OR-ed. Leaving it out means "not known", not "static".
+	virtual void recordCallDispatch(Id callEdgeId, bool dispatches) = 0;
 	virtual void recordLocalSymbol(const std::string& name, const ParseLocation& location) = 0;
 	virtual void recordLocation(Id elementId, const ParseLocation& location, ParseLocationType type) = 0;
 	virtual void recordComment(const ParseLocation& location) = 0;

@@ -191,6 +191,18 @@ inline Id ParserClientImpl::recordReference(
 	return edgeId;
 }
 
+inline void ParserClientImpl::recordCallDispatch(Id callEdgeId, bool dispatches)
+{
+	if (callEdgeId)
+	{
+		m_storage->addElementComponent(StorageElementComponent(
+			callEdgeId,
+			dispatches ? ElementComponentKind::ELEMENT_COMPONENT_CALL_DISPATCHES
+					   : ElementComponentKind::ELEMENT_COMPONENT_CALL_STATIC,
+			""));
+	}
+}
+
 inline void ParserClientImpl::recordLocalSymbol(const std::string& name, const ParseLocation& location)
 {
 	const Id localSymbolId = m_storage->addLocalSymbol(name);

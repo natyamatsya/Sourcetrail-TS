@@ -21,14 +21,25 @@
 
 inline void CxxDestructorCallRecorder::record(const clang::FunctionDecl* functionDecl)
 {
-	auto recordDestructorCall =
-		[this](const clang::FunctionDecl* functionDecl, const clang::CXXDestructorDecl* destructorDecl)
+	// An implicit destructor call -- of a base or member subobject, an automatic object, a
+	// temporary -- is bound at compile time: the object's type is the one destroyed. Only a
+	// delete's destructor dispatches, and the delete expression records that call, with its
+	// dispatch, itself (CxxAstVisitorComponentReferenceIndexer::visitCXXDeleteExpr).
+	auto recordDestructorCall = [this](
+									const clang::FunctionDecl* functionDecl,
+									const clang::CXXDestructorDecl* destructorDecl,
+									const bool deleteDestructor)
 	{
 		Id referencedSymbolId = m_symbols.getOrCreateSymbolId(destructorDecl);
 		Id contextSymbolId = m_symbols.getOrCreateSymbolId(m_context.getContext());
 		// functionDecl->getEndLoc: the closing brace, where the implicit destructors run.
 		ParseLocation parseLocation = m_locations.getParseLocation(functionDecl->getEndLoc());
-		m_client.recordReference(ReferenceKind::CALL, referencedSymbolId, contextSymbolId, parseLocation);
+		const Id edgeId =
+			m_client.recordReference(ReferenceKind::CALL, referencedSymbolId, contextSymbolId, parseLocation);
+		if (!deleteDestructor && destructorDecl->isVirtual())
+		{
+			m_client.recordCallDispatch(edgeId, false);
+		}
 	};
 
 	// Adapted from:
@@ -79,7 +90,7 @@ inline void CxxDestructorCallRecorder::record(const clang::FunctionDecl* functio
 							{
 								if (const clang::CXXDestructorDecl* dtorDecl = recordDecl->getDestructor())
 								{
-									recordDestructorCall(functionDecl, dtorDecl);
+									recordDestructorCall(functionDecl, dtorDecl, false);
 								}
 							}
 						}
@@ -92,7 +103,8 @@ inline void CxxDestructorCallRecorder::record(const clang::FunctionDecl* functio
 						if (const clang::CXXDestructorDecl* dtorDecl =
 								implicitDtor->getDestructorDecl(m_astContext))
 						{
-							recordDestructorCall(functionDecl, dtorDecl);
+							recordDestructorCall(
+								functionDecl, dtorDecl, ref->getAs<clang::CFGDeleteDtor>().has_value());
 						}
 					}
 				}

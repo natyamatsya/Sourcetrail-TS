@@ -1024,6 +1024,40 @@ bool SqliteIndexStorage::addNodeAttributes(const std::vector<StorageNodeAttribut
 void SqliteIndexStorage::addElementComponent(const StorageElementComponent& component)
 {
 	using namespace sqlpp;
+
+	// A call edge is recorded by every translation unit that sees the call: its dispatch fact
+	// is kept once per edge and kind, which is the OR of what they recorded (dispatching wins
+	// over static in the derivation). Seeded from the database on first use, so a refresh
+	// knows what the files it keeps recorded.
+	if (component.type == ElementComponentKind::ELEMENT_COMPONENT_CALL_DISPATCHES ||
+		component.type == ElementComponentKind::ELEMENT_COMPONENT_CALL_STATIC)
+	{
+		if (!m_callDispatchSeeded)
+		{
+			m_callDispatchComponents.clear();
+			try
+			{
+				for (const auto& row: db()(select(elementComponentTable.elementId, elementComponentTable.type)
+											   .from(elementComponentTable)
+											   .where(elementComponentTable.type.in(std::vector<int> {
+												   static_cast<int>(ElementComponentKind::ELEMENT_COMPONENT_CALL_DISPATCHES),
+												   static_cast<int>(ElementComponentKind::ELEMENT_COMPONENT_CALL_STATIC)}))))
+				{
+					m_callDispatchComponents.emplace(Id(row.elementId.value_or(0)), static_cast<int>(row.type.value_or(0)));
+				}
+			}
+			catch (const std::exception& e)
+			{
+				LOG_ERROR(e.what());
+			}
+			m_callDispatchSeeded = true;
+		}
+		if (!m_callDispatchComponents.emplace(component.elementId, static_cast<int>(component.type)).second)
+		{
+			return;
+		}
+	}
+
 	try
 	{
 		// id is omitted -> SQLite assigns the rowid.
@@ -1139,6 +1173,8 @@ void SqliteIndexStorage::removeElement(Id id)
 void SqliteIndexStorage::removeElements(const std::vector<Id>& ids)
 {
 	using namespace sqlpp;
+	// ids can be taken again once their elements are gone
+	m_callDispatchSeeded = false;
 	if (ids.empty())
 	{
 		return;
@@ -1180,6 +1216,8 @@ void SqliteIndexStorage::removeOccurrences(const std::vector<StorageOccurrence>&
 void SqliteIndexStorage::removeElementsWithoutOccurrences(const std::vector<Id>& elementIds)
 {
 	using namespace sqlpp;
+	// ids can be taken again once their elements are gone
+	m_callDispatchSeeded = false;
 	if (elementIds.empty())
 	{
 		return;
@@ -1203,6 +1241,7 @@ void SqliteIndexStorage::removeElementsWithLocationInFiles(
 	// Bulk maintenance around a temporary work table; stays on the raw view of the
 	// shared handle (the interpolated values are internal ids, and CREATE/DROP has
 	// no typed equivalent).
+	m_callDispatchSeeded = false;
 	if (updateStatusCallback != nullptr)
 	{
 		updateStatusCallback(1);
@@ -1506,10 +1545,15 @@ std::expected<std::size_t, DerivedEdgeError> SqliteIndexStorage::deriveDispatchE
 	const std::string callType = std::to_string(static_cast<int>(Edge::EDGE_CALL));
 	const std::string overrideType = std::to_string(static_cast<int>(Edge::EDGE_OVERRIDE));
 	const std::string dispatchType = std::to_string(static_cast<int>(Edge::EDGE_DISPATCH));
+	const std::string dispatchesKind =
+		std::to_string(static_cast<int>(ElementComponentKind::ELEMENT_COMPONENT_CALL_DISPATCHES));
+	const std::string staticKind =
+		std::to_string(static_cast<int>(ElementComponentKind::ELEMENT_COMPONENT_CALL_STATIC));
 
 	const auto dropWorkTables = [this]() {
 		executeStatement("DROP TABLE IF EXISTS main.dispatch_call;");
 		executeStatement("DROP TABLE IF EXISTS main.dispatch_edge;");
+		executeStatement("DROP TABLE IF EXISTS main.dispatch_known;");
 	};
 	const auto fail = [this, &dropWorkTables](const DerivedEdgeError error) {
 		rollbackTransaction();
@@ -1526,7 +1570,9 @@ std::expected<std::size_t, DerivedEdgeError> SqliteIndexStorage::deriveDispatchE
 
 	dropWorkTables();
 	// One row per call edge and override it may reach; then one per edge to write, numbered in a
-	// fixed order so the ids they get do not depend on how SQLite walked the recursion.
+	// fixed order so the ids they get do not depend on how SQLite walked the recursion. And the
+	// call edges whose indexer said whether they dispatch: 1 if any of their calls does, the OR
+	// over every translation unit that recorded the edge.
 	const bool tablesCreated =
 		executeStatement(
 			"CREATE TABLE main.dispatch_call("
@@ -1538,7 +1584,15 @@ std::expected<std::size_t, DerivedEdgeError> SqliteIndexStorage::deriveDispatchE
 			"ordinal INTEGER PRIMARY KEY, "
 			"source_node_id INTEGER NOT NULL, "
 			"target_node_id INTEGER NOT NULL, "
-			"UNIQUE(source_node_id, target_node_id));");
+			"UNIQUE(source_node_id, target_node_id));") &&
+		executeStatement(
+			"CREATE TABLE main.dispatch_known("
+			"call_edge_id INTEGER PRIMARY KEY, "
+			"dispatches INTEGER NOT NULL);") &&
+		executeStatement(
+			"INSERT INTO main.dispatch_known "
+			"	SELECT element_id, MAX(type = " + dispatchesKind + ") FROM element_component "
+			"	WHERE type IN (" + dispatchesKind + ", " + staticKind + ") GROUP BY element_id;");
 	if (!tablesCreated)
 	{
 		return fail(DerivedEdgeError::DeriveFailed);
@@ -1549,9 +1603,12 @@ std::expected<std::size_t, DerivedEdgeError> SqliteIndexStorage::deriveDispatchE
 	// a diamond reaches an override twice, and a cycle (only a name collision can make one) ends.
 	// Seeded with the called methods only, which is all the calls below ask about.
 	//
-	// A call from an override to a method it overrides is a call to the base implementation --
-	// Base::f(), super.f(), the implicit call of the base destructor -- which does not dispatch,
-	// so it derives nothing. And a caller already calling an override directly needs no edge to it.
+	// A call the indexer knows the dispatch of derives edges exactly when it dispatches. For a
+	// call it does not know (an indexer that does not tell, an index written before it did), a
+	// call from an override to a method it overrides is taken for a call of the base
+	// implementation -- Base::f(), super.f(), the implicit call of the base destructor -- which
+	// does not dispatch, and derives nothing. And a caller already calling an override directly
+	// needs no edge to it.
 	const bool derived =
 		executeStatement(
 			"WITH RECURSIVE overrider(base_id, impl_id) AS ("
@@ -1567,10 +1624,13 @@ std::expected<std::size_t, DerivedEdgeError> SqliteIndexStorage::deriveDispatchE
 			"INSERT INTO main.dispatch_call "
 			"	SELECT call_edge.id, call_edge.source_node_id, overrider.impl_id FROM edge AS call_edge "
 			"	INNER JOIN overrider ON overrider.base_id = call_edge.target_node_id "
-			"	WHERE call_edge.type = " + callType + " AND NOT EXISTS ("
-			"		SELECT * FROM overrider AS super_call WHERE "
-			"			super_call.base_id = call_edge.target_node_id AND "
-			"			super_call.impl_id = call_edge.source_node_id"
+			"	LEFT JOIN main.dispatch_known AS known ON known.call_edge_id = call_edge.id "
+			"	WHERE call_edge.type = " + callType + " AND ("
+			"		known.dispatches = 1 OR (known.call_edge_id IS NULL AND NOT EXISTS ("
+			"			SELECT * FROM overrider AS super_call WHERE "
+			"				super_call.base_id = call_edge.target_node_id AND "
+			"				super_call.impl_id = call_edge.source_node_id"
+			"		))"
 			"	) AND NOT EXISTS ("
 			"		SELECT * FROM edge AS direct WHERE direct.type = " + callType + " AND "
 			"			direct.source_node_id = call_edge.source_node_id AND "
@@ -2673,6 +2733,8 @@ void SqliteIndexStorage::clearTables()
 		m_fileDedupSeeded = false;
 		m_errorDedup.clear();
 		m_errorDedupSeeded = false;
+		m_callDispatchComponents.clear();
+		m_callDispatchSeeded = false;
 	}
 	catch (CppSQLite3Exception& e)
 	{

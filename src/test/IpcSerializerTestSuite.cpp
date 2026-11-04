@@ -130,6 +130,9 @@ TEST_CASE("ipc serializer round-trips")
 		original.addNodeAttribute(
 			StorageNodeAttribute(Id(2), NodeAttributeKind::DEPRECATED, "use doSomethingElse"));
 		original.addError(StorageErrorData("undefined reference", "main.cpp", true, false));
+		// the C++ indexer's dispatch fact on the call edge (id 3: after the two nodes)
+		original.addElementComponent(
+			StorageElementComponent(Id(3), ElementComponentKind::ELEMENT_COMPONENT_CALL_DISPATCHES, ""));
 
 		Id expectedNextId = original.getNextId();
 
@@ -148,6 +151,11 @@ TEST_CASE("ipc serializer round-trips")
 		REQUIRE(result->getComponentAccesses().size() == 1);
 		REQUIRE(result->getNodeAttributes().size() == 2);
 		REQUIRE(result->getErrors().size() == 1);
+		REQUIRE(result->getElementComponents().size() == 1);
+		REQUIRE(result->getElementComponents().begin()->elementId == Id(3));
+		REQUIRE(
+			result->getElementComponents().begin()->type ==
+			ElementComponentKind::ELEMENT_COMPONENT_CALL_DISPATCHES);
 
 		const auto& nodes = result->getStorageNodes();
 		REQUIRE(nodes[0].type == NODE_CLASS);

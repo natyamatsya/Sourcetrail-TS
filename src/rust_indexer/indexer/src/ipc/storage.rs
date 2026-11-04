@@ -618,6 +618,10 @@ fn serialize_one_storage(s: &OwnedIntermediateStorage) -> Vec<u8> {
         component_accesses: Some(s.component_accesses.clone()),
         node_attributes: Some(s.node_attributes.clone()),
         errors: Some(s.errors.clone()),
+        // Fields this indexer does not write (element_components: only the C++ indexer
+        // records call dispatch) stay at their defaults, so a field appended to the schema
+        // still needs no edit here.
+        ..Default::default()
     };
     let queue = IntermediateStorageQueueT {
         storages: Some(vec![storage]),

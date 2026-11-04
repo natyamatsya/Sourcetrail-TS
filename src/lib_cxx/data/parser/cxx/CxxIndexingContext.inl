@@ -199,6 +199,14 @@ inline Id CxxIndexingContext::recordReference(
 	return m_client.recordReference(kind, referencedSymbolId, contextSymbolId, location);
 }
 
+inline void CxxIndexingContext::recordCallDispatch(Id callEdgeId, std::optional<bool> dispatches)
+{
+	if (dispatches)
+	{
+		m_client.recordCallDispatch(callEdgeId, *dispatches);
+	}
+}
+
 inline void CxxIndexingContext::recordLocalSymbol(const std::string& name, const ParseLocation& location)
 {
 	m_client.recordLocalSymbol(name, location);

@@ -73,6 +73,15 @@ table StorageNodeAttribute {
     value:   string;  // display-only payload (e.g. "@available(macOS 14, *)")
 }
 
+// A typed fact on an element (ElementComponentKind): on a CALL edge, whether its calls dispatch
+// at run time (2) or are bound at compile time (3). Only the C++ indexer writes them; the field
+// is appended and optional, so a producer that leaves it out sends none.
+table StorageElementComponent {
+    element_id: int64;
+    type:       int32;   // ElementComponentKind
+    data:       string;
+}
+
 table StorageError {
     id:               int64;
     message:          string;
@@ -93,6 +102,7 @@ table IntermediateStorage {
     component_accesses: [StorageComponentAccess];
     node_attributes:    [StorageNodeAttribute];
     errors:             [StorageError];
+    element_components: [StorageElementComponent];
 }
 
 table IntermediateStorageQueue {

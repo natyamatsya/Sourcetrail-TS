@@ -4,6 +4,7 @@
 #include "SrctrlModule.h"
 
 #ifndef SRCTRL_MODULE_PURVIEW
+#include <optional>
 #include <string>
 
 #include "AccessKind.h"
@@ -99,6 +100,9 @@ public:
 	void recordNodeModifier(Id symbolId, NodeModifierMask modifier);
 	void recordNodeAttribute(Id symbolId, NodeAttributeKind key, const std::string& value);
 	Id recordReference(ReferenceKind kind, Id referencedSymbolId, Id contextSymbolId, const ParseLocation& location);
+	// Whether the call a CALL edge was just recorded for dispatches (utility::callDispatches);
+	// nothing is recorded when that is not known.
+	void recordCallDispatch(Id callEdgeId, std::optional<bool> dispatches);
 	void recordLocalSymbol(const std::string& name, const ParseLocation& location);
 	void recordLocation(Id elementId, const ParseLocation& location, ParseLocationType type);
 
