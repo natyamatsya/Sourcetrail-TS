@@ -449,7 +449,7 @@ inline void CxxIndexingContext::recordTemplateMemberSpecialization(
 
 inline CxxConceptReferenceRecorder CxxIndexingContext::concepts()
 {
-	return {m_client, m_symbols, m_locations, *m_context};
+	return {m_astContext, m_client, m_canonicalFilePathCache, m_symbols, m_locations, *m_context};
 }
 
 inline CxxDestructorCallRecorder CxxIndexingContext::destructorCalls()

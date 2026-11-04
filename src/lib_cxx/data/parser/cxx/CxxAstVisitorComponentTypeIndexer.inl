@@ -228,6 +228,17 @@ inline void CxxAstVisitorComponentTypeIndexer::visitTypeLoc(clang::TypeLoc tl)
 							m_index.getParseLocation(tl.getBeginLoc()));
 						return;
 					}
+
+					// Box<Circle>, Boxed<Circle> (an alias template): the specialization's
+					// arguments satisfy the template's concepts.
+					if (!tst->isDependentType())
+					{
+						m_index.concepts().recordSatisfiedConstraints(
+							clang::dyn_cast_or_null<clang::ClassTemplateSpecializationDecl>(
+								tst->getAsCXXRecordDecl()),
+							tl.getBeginLoc());
+						m_index.concepts().recordSatisfiedConstraints(tst, tl.getBeginLoc());
+					}
 				}
 			}
 

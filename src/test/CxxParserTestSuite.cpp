@@ -6164,3 +6164,161 @@ TEST_CASE("cxx parser records no channel atoms without declared prefixes")
 	REQUIRE(channelAtomNames(storage).empty());
 }
 
+
+TEST_CASE("cxx parser records the types that satisfy a concept")
+{
+	auto client = parseCode(
+		"template <typename T> concept Shape = requires(T t) { t.draw(); };\n"
+		"template <typename T> concept Printable = requires(T t) { t.print(); };\n"
+		"template <typename T, typename U> concept SameAs = __is_same(T, U);\n"
+		"struct Circle { void draw(); void print(); };\n"
+		"struct Square { void draw(); };\n"
+		"struct Unused { void draw(); };\n"
+		"struct Never { void draw(); };\n"
+		"template <Shape T> struct Box { T t; };\n"
+		"template <Shape T> void render(T& t) { t.draw(); }\n"
+		"void paint(Shape auto& s) { s.draw(); }\n"
+		"template <typename T> requires Shape<T> && Printable<T> void show(const T&) {}\n"
+		"template <SameAs<Square> T> void exact(T) {}\n"
+		"template <Shape... Ts> void all(Ts&...) {}\n"
+		"template <Shape T> using Boxed = Box<T>;\n"
+		"static_assert(Shape<Unused>);\n"
+		"static_assert(!Shape<int>);\n"
+		"void use() {\n"
+		"  Circle c; Square s;\n"
+		"  Box<Circle> box;\n"
+		"  render(s);\n"
+		"  paint(c);\n"
+		"  show(c);\n"
+		"  exact(s);\n"
+		"  all(c, s);\n"
+		"  Boxed<Square> boxed;\n"
+		"}\n"
+		"template <typename T> requires Shape<T> || Printable<T> void either(T) {}\n"
+		"void useEither() { either(Circle{}); }\n");
+
+	CAPTURE(client->satisfactions);
+	REQUIRE(client->errors.empty());
+	const auto satisfies = [&](const std::string& edge) {
+		return containsElement(client->satisfactions, edge);
+	};
+
+	// a class template, at the variable that needed Box<Circle>
+	REQUIRE(satisfies("Circle -> Shape<typename T> <19:15 19:17>"));
+	// a function template, deduced, at the call
+	REQUIRE(satisfies("Square -> Shape<typename T> <20:3 20:8>"));
+	// an abbreviated template: Shape auto
+	REQUIRE(satisfies("Circle -> Shape<typename T> <21:3 21:7>"));
+	// a requires-clause conjunction: both concepts hold
+	REQUIRE(satisfies("Circle -> Shape<typename T> <22:3 22:6>"));
+	REQUIRE(satisfies("Circle -> Printable<typename T> <22:3 22:6>"));
+	// a multi-parameter concept: the first argument satisfies it, the second is its argument
+	REQUIRE(satisfies("Square -> SameAs<typename T, typename U> <23:3 23:7>"));
+	// a constrained pack: every element
+	REQUIRE(satisfies("Circle -> Shape<typename T> <24:3 24:5>"));
+	REQUIRE(satisfies("Square -> Shape<typename T> <24:3 24:5>"));
+	// an alias template
+	REQUIRE(satisfies("Square -> Shape<typename T> <25:3 25:7>"));
+	// a concept-id clang evaluated to true; the false one records nothing
+	REQUIRE(satisfies("Unused -> Shape<typename T> <15:15 15:19>"));
+	for (const std::string& edge: client->satisfactions)
+	{
+		// never named with the concept, or only negated, or through a disjunction that does not
+		// say which side holds
+		REQUIRE(edge.find("Never ->") == std::string::npos);
+		REQUIRE(edge.find("int ->") == std::string::npos);
+		REQUIRE(edge.find("<28:") == std::string::npos);
+	}
+}
+
+TEST_CASE("cxx parser records concept satisfaction by member, constructor and deduced class templates")
+{
+	auto client = parseCode(
+		"template <typename T> concept Shape = requires(T t) { t.draw(); };\n"
+		"struct Circle { void draw(); };\n"
+		"struct Canvas { template <Shape T> void add(T&) {} };\n"
+		"template <Shape T> struct Holder { Holder(T) {} };\n"
+		"struct Frame { template <Shape T> Frame(T) {} };\n"
+		"template <typename T> void maybe(T) { if constexpr (Shape<T>) {} }\n"
+		"void use() {\n"
+		"  Circle c; Canvas canvas;\n"
+		"  canvas.add(c);\n"
+		"  Holder h{c};\n"
+		"  Frame f{c};\n"
+		"  maybe(c);\n"
+		"}\n");
+
+	CAPTURE(client->satisfactions);
+	REQUIRE(client->errors.empty());
+	// a member function template
+	REQUIRE(containsElement(client->satisfactions, "Circle -> Shape<typename T> <9:10 9:12>"s));
+	// class template argument deduction: no type names Holder<Circle>
+	REQUIRE(containsElement(client->satisfactions, "Circle -> Shape<typename T> <10:10 10:10>"s));
+	// a constrained constructor template
+	REQUIRE(containsElement(client->satisfactions, "Circle -> Shape<typename T> <11:9 11:9>"s));
+	// if constexpr in the instantiation maybe<Circle>: the concept-id there was evaluated
+	REQUIRE(containsElement(client->satisfactions, "Circle -> Shape<typename T> <6:53 6:57>"s));
+}
+
+TEST_CASE("cxx parser records concept satisfaction only where the project is involved")
+{
+	// lib.h is not indexed, as the standard library's headers are not: its concept met by its
+	// own type or a built-in type is its business, its concept met by the project's type and the
+	// project's concept met by any type are the project's -- but not its implementation details
+	// (a reserved name) nor a lambda handed to it.
+	class InputOnlyFileRegister: public FileRegister
+	{
+	public:
+		InputOnlyFileRegister(): FileRegister(FilePath(), std::set<FilePath>(), {FilePathFilter("")}) {}
+		bool hasFilePath(const FilePath& filePath) const override
+		{
+			return filePath.fileName() == "input.cc";
+		}
+	};
+
+	const std::filesystem::path headerDirectory =
+		std::filesystem::temp_directory_path() / "sourcetrail-test-concepts-not-indexed";
+	std::filesystem::create_directories(headerDirectory);
+	std::ofstream(headerDirectory / "lib.h")
+		<< "namespace lib {\n"
+		   "template <typename T> concept integral = __is_integral(T);\n"
+		   "template <typename T> concept copyable = __is_trivially_copyable(T);\n"
+		   "struct Buffer {};\n"
+		   "template <integral T> void take(T) {}\n"
+		   "template <copyable T> void copy(T) {}\n"
+		   "template <typename T> concept __movable = true;\n"
+		   "template <__movable T> void move(T) {}\n"
+		   "template <typename F> concept predicate = requires(F f) { f(); };\n"
+		   "template <predicate F> void test(F) {}\n"
+		   "}\n";
+
+	std::shared_ptr<IntermediateStorage> storage = std::make_shared<IntermediateStorage>();
+	const std::shared_ptr<ParserClientImpl> parserClient = std::make_shared<ParserClientImpl>(storage);
+	CxxParser parser(
+		*parserClient, std::make_shared<InputOnlyFileRegister>(), std::make_shared<IndexerStateInfo>());
+	parser.buildIndex(
+		"input.cc",
+		TextAccess::createFromString(
+			"#include \"lib.h\"\n"
+			"struct Mine {};\n"
+			"template <typename T> concept Small = sizeof(T) <= 8;\n"
+			"template <Small T> void keep(T) {}\n"
+			"void use() {\n"
+			"  lib::take(1);\n"
+			"  lib::copy(lib::Buffer{});\n"
+			"  lib::copy(Mine{});\n"
+			"  keep(1);\n"
+			"  keep(lib::Buffer{});\n"
+			"  lib::move(Mine{});\n"
+			"  lib::test([] { return true; });\n"
+			"}\n"),
+		{"-I" + headerDirectory.string(), ClangCompiler::stdOption(ClangCompiler::getLatestCppStandard())});
+	std::shared_ptr<TestStorage> client = TestStorage::create(storage);
+
+	CAPTURE(client->satisfactions);
+	REQUIRE(client->errors.empty());
+	REQUIRE(client->satisfactions.size() == 3);
+	REQUIRE(containsElement(client->satisfactions, "Mine -> lib::copyable<typename T> <8:8 8:11>"s));
+	REQUIRE(containsElement(client->satisfactions, "int -> Small<typename T> <9:3 9:6>"s));
+	REQUIRE(containsElement(client->satisfactions, "lib::Buffer -> Small<typename T> <10:3 10:6>"s));
+}

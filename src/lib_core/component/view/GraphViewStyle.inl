@@ -747,6 +747,28 @@ inline GraphViewStyle::EdgeStyle GraphViewStyle::getStyleForEdgeType(
 		}
 		break;
 
+	// UML's realization: inheritance's hollow triangle on a dashed line -- the type meets the
+	// concept's requirements, as a class implements an interface, without deriving from it.
+	case Edge::EDGE_SATISFIES:
+		style.arrowLength = 17;
+		style.arrowWidth = 14;
+		style.arrowClosed = true;
+		style.originOffset.x = 7;
+		style.targetOffset.x = 34;
+		style.originOffset.y = 10;
+		style.targetOffset.y = -10;
+		style.verticalOffset = 0;
+		style.cornerRadius = 7;
+		style.zValue = active ? 2 : -3;
+		style.width = active ? 3.0f : 2.0f;
+		style.dashed = true;
+
+		if (isTrailEdge)
+		{
+			style.zValue = active ? 2 : -20;
+		}
+		break;
+
 	case Edge::EDGE_TEMPLATE_SPECIALIZATION:
 		style.zValue = active ? 2 : -3;
 		style.arrowLength = 10;

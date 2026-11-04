@@ -168,6 +168,7 @@
          "inheritance": "#797979",
          "macro_use": "#4E82F6",
          "override": "#BA5ECC",
+         "satisfies": "#D93D5F",
          "template_specialization": "#D93D5F",
          "type_argument": "#D93D5F",
          "type_use": "#797979",

@@ -53,12 +53,18 @@ public:
 		// carries the occurrences of the call it was derived from. See
 		// context/DESIGN_DISPATCH_EDGES.md.
 		EDGE_DISPATCH = 1 << 14,
+		// A type satisfies a C++20 concept, as the code proves it: a specialization of a
+		// constrained template with the type as the constrained argument, or a concept-id
+		// clang evaluated to true (static_assert(Shape<Circle>)). Points type -> concept, as
+		// inheritance points derived -> base: compile-time polymorphism, drawn like the
+		// run-time kind. See context/DESIGN_CONCEPT_SATISFACTION.md.
+		EDGE_SATISFIES = 1 << 15,
 	};
-	static constexpr EdgeType EDGE_TYPE_MAX_VALUE = EDGE_DISPATCH;
+	static constexpr EdgeType EDGE_TYPE_MAX_VALUE = EDGE_SATISFIES;
 
 
 	static const TypeMask LAYOUT_VERTICAL = EDGE_INHERITANCE | EDGE_OVERRIDE |
-		EDGE_TEMPLATE_SPECIALIZATION;
+		EDGE_TEMPLATE_SPECIALIZATION | EDGE_SATISFIES;
 
 	Edge(Id id, EdgeType type, Node* from, Node* to);
 	Edge(const Edge& other, Node* from, Node* to);

@@ -16,9 +16,16 @@ BundleSplit bundleSplitFor(const NodeType& bundledType, const std::string& name)
 
 std::optional<TrailDefaults> trailDefaultsFor(const NodeType& type)
 {
+	// A concept's derived hierarchy is the types that satisfy it, a type's base hierarchy
+	// includes the concepts it satisfies: compile-time polymorphism next to the run-time kind.
 	if (type.isInheritable())
 	{
-		return TrailDefaults {Edge::EDGE_INHERITANCE | Edge::EDGE_TEMPLATE_SPECIALIZATION, false};
+		return TrailDefaults {
+			Edge::EDGE_INHERITANCE | Edge::EDGE_SATISFIES | Edge::EDGE_TEMPLATE_SPECIALIZATION, false};
+	}
+	if (type.getKind() == NODE_CONCEPT)
+	{
+		return TrailDefaults {Edge::EDGE_SATISFIES, false};
 	}
 	if (type.isCallable())
 	{

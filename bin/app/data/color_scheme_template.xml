@@ -218,6 +218,7 @@
 
 			<type_use></type_use>
 			<inheritance></inheritance>
+			<satisfies></satisfies>
 			<typedef></typedef>
 
 			<override></override>

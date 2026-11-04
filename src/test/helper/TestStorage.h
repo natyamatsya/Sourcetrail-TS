@@ -48,6 +48,7 @@ public:
 	std::vector<std::string> typeUses;	   // for types
 	std::vector<std::string> macroUses;
 	std::vector<std::string> annotationUses;
+	std::vector<std::string> satisfactions;
 	std::vector<std::string> typeArguments;
 	std::vector<std::string> templateSpecializations;
 	std::vector<std::string> includes;

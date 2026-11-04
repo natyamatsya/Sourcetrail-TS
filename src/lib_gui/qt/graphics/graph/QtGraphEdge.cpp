@@ -260,7 +260,8 @@ void QtGraphEdge::updateLine()
 		}
 
 		// increase z-value for inheritance and specialization edges between members
-		if ((type == Edge::EDGE_INHERITANCE || type == Edge::EDGE_TEMPLATE_SPECIALIZATION) &&
+		if ((type == Edge::EDGE_INHERITANCE || type == Edge::EDGE_SATISFIES ||
+			 type == Edge::EDGE_TEMPLATE_SPECIALIZATION) &&
 			(owner != ownerNonGroupParent || target != targetNonGroupParent))
 		{
 			if (style.zValue < 0)
@@ -269,7 +270,7 @@ void QtGraphEdge::updateLine()
 			}
 		}
 		else if (
-			type == Edge::EDGE_INHERITANCE ||
+			type == Edge::EDGE_INHERITANCE || type == Edge::EDGE_SATISFIES ||
 			(type == Edge::EDGE_TEMPLATE_SPECIALIZATION && owner == ownerNonGroupParent &&
 			 target == targetNonGroupParent))
 		{
@@ -432,6 +433,12 @@ void QtGraphEdge::coFocusIn()
 			if (type == Edge::EDGE_DISPATCH)
 			{
 				info.title = "possible dispatch to an override";
+			}
+			// Proven by the code, at the edge's locations: a constrained template specialized
+			// with the type, or a concept-id that holds.
+			else if (type == Edge::EDGE_SATISFIES)
+			{
+				info.title = "satisfies concept";
 			}
 
 			if (isAmbiguous())

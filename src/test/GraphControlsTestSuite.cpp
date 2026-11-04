@@ -30,8 +30,16 @@ TEST_CASE("trail buttons follow the edges of the node's kind")
 
 	const std::optional<TrailDefaults> inheritance = trailDefaultsFor(NodeType(NODE_CLASS));
 	REQUIRE(inheritance);
-	REQUIRE(inheritance->edgeTypes == (Edge::EDGE_INHERITANCE | Edge::EDGE_TEMPLATE_SPECIALIZATION));
+	REQUIRE(
+		inheritance->edgeTypes ==
+		(Edge::EDGE_INHERITANCE | Edge::EDGE_SATISFIES | Edge::EDGE_TEMPLATE_SPECIALIZATION));
 	REQUIRE_FALSE(inheritance->horizontal);	// top down
+
+	// a concept's trail: the types that satisfy it, top down like a class hierarchy
+	const std::optional<TrailDefaults> satisfaction = trailDefaultsFor(NodeType(NODE_CONCEPT));
+	REQUIRE(satisfaction);
+	REQUIRE(satisfaction->edgeTypes == Edge::EDGE_SATISFIES);
+	REQUIRE_FALSE(satisfaction->horizontal);
 
 	const std::optional<TrailDefaults> includes = trailDefaultsFor(NodeType(NODE_FILE));
 	REQUIRE(includes);

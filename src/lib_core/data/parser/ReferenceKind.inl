@@ -19,7 +19,9 @@ inline ReferenceKind intToEnum(int value)
 		ReferenceKind::INCLUDE,
 		ReferenceKind::IMPORT,
 		ReferenceKind::MACRO_USAGE,
-		ReferenceKind::ANNOTATION_USAGE
+		ReferenceKind::ANNOTATION_USAGE,
+		ReferenceKind::BINDS,
+		ReferenceKind::SATISFIES
 	};
 
 	return lookupEnum(value, REFERENCE_KINDS, ReferenceKind::UNDEFINED);

@@ -188,7 +188,8 @@ a big graph the whole state runs to megabytes.
 
 edge_type is the Edge::EdgeType bit: 1 member, 2 type use, 4 use, 8 call, 16 inheritance, \
 32 override, 64 type argument, 128 template specialization, 256 include, 512 import, \
-1024 bundled edges, 2048 macro use, 4096 annotation use, 8192 binds, 16384 dispatch. A \
+1024 bundled edges, 2048 macro use, 4096 annotation use, 8192 binds, 16384 dispatch, \
+32768 satisfies (a type -> a C++ concept it is proven to satisfy). A \
 dispatch edge is derived after indexing, not indexed: its source calls a method, and at run \
 time that call may run its target, an override of the method (class-hierarchy analysis over \
 the call and override edges). Its occurrences are the call sites.
@@ -340,8 +341,9 @@ graph_trail { node_id, direction=\"outgoing\" | \"incoming\", target_id?, edge_k
 node_kinds?, depth=0, layout?, include_non_indexed=false, state?, instance? } -> { ok, settled, state, changes }
   The trail buttons and the custom trail dialog. outgoing shows what a function calls, the \
 classes derived from a class, what a file includes; incoming a function's callers, a class's \
-bases, a file's includers. edge_kinds default by the node's kind (functions: call, dispatch, override; \
-classes: inheritance, template specialization; files: include); name them for other nodes. \
+bases, a file's includers. edge_kinds default by the node's kind (functions: call, dispatch, \
+override; classes: inheritance, satisfies, template specialization; concepts: satisfies, \
+outgoing being the types that satisfy it; files: include); name them for other nodes. \
 target_id: the paths from node_id to it instead. depth 0 is as deep as it goes. A wrong kind \
 name is refused with the list of valid ones.",
     },

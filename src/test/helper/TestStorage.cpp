@@ -384,6 +384,8 @@ std::string TestStorage::edgeTypeToString(Edge::EdgeType edgeType)
 		return "ReferenceKind::MACRO_USAGE";
 	case Edge::EDGE_ANNOTATION_USAGE:
 		return "ReferenceKind::ANNOTATION_USAGE";
+	case Edge::EDGE_SATISFIES:
+		return "ReferenceKind::SATISFIES";
 	default:
 		break;
 	}
@@ -466,6 +468,8 @@ std::vector<std::string> *TestStorage::getBinForEdgeType(Edge::EdgeType edgeType
 		return &macroUses;
 	case Edge::EDGE_ANNOTATION_USAGE:
 		return &annotationUses;
+	case Edge::EDGE_SATISFIES:
+		return &satisfactions;
 	default:
 		break;
 	}

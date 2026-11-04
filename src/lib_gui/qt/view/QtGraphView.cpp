@@ -970,6 +970,14 @@ void QtGraphView::updateTrailButtons()
 		backwardImagePath = QtResources::GRAPH_VIEW_GRAPH_UP;
 		forwardImagePath = QtResources::GRAPH_VIEW_GRAPH_DOWN;
 	}
+	else if (message.edgeTypes & Edge::EDGE_SATISFIES)
+	{
+		m_backwardTrailButton->setToolTip(tr("show satisfied concepts"));
+		m_forwardTrailButton->setToolTip(tr("show satisfying types"));
+
+		backwardImagePath = QtResources::GRAPH_VIEW_GRAPH_UP;
+		forwardImagePath = QtResources::GRAPH_VIEW_GRAPH_DOWN;
+	}
 	else if (message.edgeTypes & Edge::EDGE_INCLUDE)
 	{
 		m_backwardTrailButton->setToolTip(tr("show including files hierarchy"));

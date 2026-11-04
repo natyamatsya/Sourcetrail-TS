@@ -58,6 +58,7 @@ constexpr EdgeTable kEdgeTables[] = {
 	{Edge::EDGE_ANNOTATION_USAGE, "AnnotationUsage"},
 	{Edge::EDGE_BINDS, "Binds"},
 	{Edge::EDGE_DISPATCH, "Dispatch"},
+	{Edge::EDGE_SATISFIES, "Satisfies"},
 };
 
 // Anything the table above does not name -- a type added to Edge::EdgeType without a

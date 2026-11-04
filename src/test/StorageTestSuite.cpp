@@ -1115,6 +1115,108 @@ TEST_CASE("storage refresh forgets what the cleared file said of its calls")
 	REQUIRE(countCallDispatchComponents(refreshed) == countCallDispatchComponents(full));
 }
 
+TEST_CASE("storage refresh keeps a satisfies edge with the file that proves it")
+{
+	// shape.h declares the concept, circle.h the type, render.cc proves Circle satisfies Shape
+	// (render(circle) with render constrained by Shape): the edge is located there, in a file
+	// that is neither the type's nor the concept's.
+	const std::shared_ptr<IntermediateStorage> shape = recordTranslationUnit(
+		"shape.h", {{"Shape", SymbolKind::CONCEPT, 1}}, {});
+	const std::shared_ptr<IntermediateStorage> circle = recordTranslationUnit(
+		"circle.h", {{"Circle", SymbolKind::STRUCT, 1}}, {});
+	const auto render = [](const bool proves) {
+		std::vector<RecordedReference> references {{ReferenceKind::CALL, "use", "render", 3}};
+		if (proves)
+		{
+			references.push_back({ReferenceKind::SATISFIES, "Circle", "Shape", 3});
+		}
+		return recordTranslationUnit(
+			"render.cc", {{"use", SymbolKind::FUNCTION, 2}, {"render", SymbolKind::FUNCTION, 1}}, references);
+	};
+
+	TestStorage full;
+	full.inject(shape.get());
+	full.inject(circle.get());
+	full.inject(render(true).get());
+	REQUIRE(hasEdge(full, Edge::EDGE_SATISFIES, "Circle", "Shape"));
+
+	SECTION("the proving file is reindexed: the edge goes with it and comes back")
+	{
+		TestStorage refreshed;
+		refreshed.inject(shape.get());
+		refreshed.inject(circle.get());
+		refreshed.inject(render(true).get());
+		refreshed.setMode(SqliteIndexStorage::StorageModeType::STORAGE_MODE_CLEAR);
+		refreshed.clearFileElements({FilePath("render.cc")}, [](int) {});
+		REQUIRE(!hasEdge(refreshed, Edge::EDGE_SATISFIES, "Circle", "Shape"));
+		REQUIRE(refreshed.getNodeIdForNameHierarchy(createNameHierarchy("Circle")) != 0);
+
+		refreshed.setMode(SqliteIndexStorage::StorageModeType::STORAGE_MODE_WRITE);
+		refreshed.inject(render(true).get());
+		REQUIRE(describeIndex(refreshed) == describeIndex(full));
+	}
+
+	SECTION("the proof is gone from the reindexed file: so is the edge")
+	{
+		TestStorage noProof;
+		noProof.inject(shape.get());
+		noProof.inject(circle.get());
+		noProof.inject(render(false).get());
+
+		TestStorage refreshed;
+		refreshed.inject(shape.get());
+		refreshed.inject(circle.get());
+		refreshed.inject(render(true).get());
+		refreshed.setMode(SqliteIndexStorage::StorageModeType::STORAGE_MODE_CLEAR);
+		refreshed.clearFileElements({FilePath("render.cc")}, [](int) {});
+		refreshed.setMode(SqliteIndexStorage::StorageModeType::STORAGE_MODE_WRITE);
+		refreshed.inject(render(false).get());
+		REQUIRE(describeIndex(refreshed) == describeIndex(noProof));
+	}
+
+	SECTION("the type's header changes: a refresh reindexes it and the file including it")
+	{
+		TestStorage refreshed;
+		refreshed.inject(shape.get());
+		refreshed.inject(circle.get());
+		refreshed.inject(render(true).get());
+		refreshed.setMode(SqliteIndexStorage::StorageModeType::STORAGE_MODE_CLEAR);
+		refreshed.clearFileElements({FilePath("circle.h"), FilePath("render.cc")}, [](int) {});
+		REQUIRE(!hasEdge(refreshed, Edge::EDGE_SATISFIES, "Circle", "Shape"));
+		refreshed.setMode(SqliteIndexStorage::StorageModeType::STORAGE_MODE_WRITE);
+		refreshed.inject(circle.get());
+		refreshed.inject(render(true).get());
+		REQUIRE(describeIndex(refreshed) == describeIndex(full));
+	}
+
+	SECTION("as many proofs as files, one edge; merging shards is the same inject")
+	{
+		const std::shared_ptr<IntermediateStorage> other = recordTranslationUnit(
+			"other.cc",
+			{{"other", SymbolKind::FUNCTION, 1}},
+			{{ReferenceKind::SATISFIES, "Circle", "Shape", 2}});
+		TestStorage shardA;
+		shardA.inject(shape.get());
+		shardA.inject(circle.get());
+		shardA.inject(render(true).get());
+		TestStorage shardB;
+		shardB.inject(shape.get());
+		shardB.inject(circle.get());
+		shardB.inject(other.get());
+
+		TestStorage merged;
+		merged.inject(&shardA);
+		merged.inject(&shardB);
+		std::size_t satisfiesEdges = 0;
+		for (const StorageEdge& edge: merged.getStorageEdges())
+		{
+			satisfiesEdges += edge.type == Edge::EDGE_SATISFIES ? 1 : 0;
+		}
+		REQUIRE(satisfiesEdges == 1);
+		REQUIRE(hasEdge(merged, Edge::EDGE_SATISFIES, "Circle", "Shape"));
+	}
+}
+
 #if BUILD_CXX_LANGUAGE_PACKAGE
 namespace
 {

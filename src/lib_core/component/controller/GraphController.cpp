@@ -1393,6 +1393,24 @@ void GraphController::bundleNodes()
 		5,
 		false,
 		"Base Symbols");
+
+	bundleNodesAndEdgesMatching(
+		[](const DummyNode::BundleInfo& info, const Node* data) {
+			return info.isReferencing && info.layoutVertical &&
+				data->findEdgeOfType(Edge::EDGE_SATISFIES);
+		},
+		5,
+		false,
+		"Satisfying Types");
+
+	bundleNodesAndEdgesMatching(
+		[](const DummyNode::BundleInfo& info, const Node* data) {
+			return info.isReferenced && info.layoutVertical &&
+				data->findEdgeOfType(Edge::EDGE_SATISFIES);
+		},
+		5,
+		false,
+		"Satisfied Concepts");
 }
 
 void GraphController::bundleNodesAndEdgesMatching(
@@ -3059,6 +3077,16 @@ void GraphController::createLegendGraph()
 			addMember(derived, derivedMethod, AccessKind::PUBLIC);
 			addEdge(Edge::EDGE_OVERRIDE, derivedMethod, baseMethod);
 			i += 2;
+		}
+
+		// A type and a concept it satisfies, drawn as a class and its base are, dashed like UML's
+		// realization. See DESIGN_CONCEPT_SATISFACTION.md.
+		{
+			addText("concept satisfaction", 0, Vec2i(x, y + dy * ++i));
+			Node* conceptNode = addNode(NODE_CONCEPT, "Concept", Vec2i(x, y + dy * (i + 1)));
+			Node* type = addNode(NODE_CLASS, "Satisfying Class", Vec2i(x, y + dy * (i + 3)));
+			addEdge(Edge::EDGE_SATISFIES, type, conceptNode);
+			i += 3;
 		}
 
 		// A call of a base method, and the override it may reach at run time: derived after

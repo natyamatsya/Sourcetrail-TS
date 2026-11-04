@@ -2079,10 +2079,12 @@ std::vector<Id> PersistentStorage::getNodeIdsForLocationIds(const std::vector<Id
 		}
 
 		// A dispatch edge shares its location with the call it was derived from: clicking the
-		// call goes to the method it names, not to every override it may reach.
+		// call goes to the method it names, not to every override it may reach. A satisfies edge
+		// is located where a specialization was needed (render(circle)): that is the function.
 		auto it = m_symbolDefinitionKinds.find(elementId);
 		if ((it != m_symbolDefinitionKinds.end() && it->second == DefinitionKind::IMPLICIT) ||
-			edge.type == Edge::EDGE_OVERRIDE || edge.type == Edge::EDGE_DISPATCH)
+			edge.type == Edge::EDGE_OVERRIDE || edge.type == Edge::EDGE_DISPATCH ||
+			edge.type == Edge::EDGE_SATISFIES)
 		{
 			implicitNodeIds.insert(elementId);
 		}

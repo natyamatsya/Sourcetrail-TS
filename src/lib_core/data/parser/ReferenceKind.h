@@ -26,7 +26,9 @@ SRCTRL_EXPORT enum class ReferenceKind
 	MACRO_USAGE = 10,
 	ANNOTATION_USAGE = 11,
 	// A declaration binding to a contract atom (EDGE_BINDS).
-	BINDS = 12
+	BINDS = 12,
+	// A type satisfying a concept (EDGE_SATISFIES): context = the type, referenced = the concept.
+	SATISFIES = 13
 };
 
 // An explicit specialization of the imported `intToEnum` template (declared+defined inline in the

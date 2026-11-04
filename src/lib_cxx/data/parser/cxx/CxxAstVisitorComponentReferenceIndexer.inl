@@ -63,6 +63,7 @@ inline void CxxAstVisitorComponentReferenceIndexer::visitConceptSpecializationEx
 	if (getAstVisitor()->shouldVisitStmt(d))
 	{
 		m_index.concepts().recordConceptReference(d);
+		m_index.concepts().recordSatisfiedConceptSpecialization(d);
 	}
 }
 
@@ -113,6 +114,17 @@ inline void CxxAstVisitorComponentReferenceIndexer::visitDeclRefExpr(clang::Decl
 			const Id edgeId = m_index.recordReference(
 				refKind, symbolId, contextSymbolId, m_index.getParseLocation(s->getLocation()));
 
+			// A specialization of a constrained function or variable template: its arguments
+			// satisfy the template's concepts.
+			if (const auto* function = clang::dyn_cast<clang::FunctionDecl>(decl))
+			{
+				m_index.concepts().recordSatisfiedConstraints(function, s->getLocation());
+			}
+			else if (const auto* variable = clang::dyn_cast<clang::VarTemplateSpecializationDecl>(decl))
+			{
+				m_index.concepts().recordSatisfiedConstraints(variable, s->getLocation());
+			}
+
 			// A member operator called with operator syntax (*a == *b): its object is the
 			// call's first argument.
 			if (refKind == ReferenceKind::CALL && !m_operatorCalls.empty())
@@ -146,6 +158,12 @@ inline void CxxAstVisitorComponentReferenceIndexer::visitMemberExpr(clang::Membe
 				m_index.getOrCreateSymbolId(s->getMemberDecl()), utility::getFunctionKind(s->getMemberDecl()));
 		}
 		const Id edgeId = m_index.recordReference(s->getMemberDecl(), refKind, s->getMemberLoc());
+
+		// a specialization of a constrained member function template
+		if (const auto* function = clang::dyn_cast<clang::FunctionDecl>(s->getMemberDecl()))
+		{
+			m_index.concepts().recordSatisfiedConstraints(function, s->getMemberLoc());
+		}
 
 		// p->f(), r.f(), Base::f(), o.f(): whether the call dispatches is a property of the
 		// member expression, its qualifier and its object.
@@ -231,6 +249,12 @@ inline void CxxAstVisitorComponentReferenceIndexer::visitCXXConstructExpr(clang:
 			loc, m_astContext->getSourceManager(), m_astContext->getLangOpts());
 
 		const Id symbolId = m_index.getOrCreateSymbolId(s->getConstructor());
+
+		// Box b{circle} (the class template's arguments deduced, so no type names them) and a
+		// constrained constructor template: the specializations' arguments satisfy their concepts.
+		m_index.concepts().recordSatisfiedConstraints(
+			clang::dyn_cast<clang::ClassTemplateSpecializationDecl>(constructorDecl->getParent()), loc);
+		m_index.concepts().recordSatisfiedConstraints(s->getConstructor(), loc);
 
 		const ReferenceKind refKind = consumeDeclRefContextKind();
 		if (refKind == ReferenceKind::CALL)

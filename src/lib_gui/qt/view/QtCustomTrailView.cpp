@@ -252,6 +252,7 @@ QtCustomTrailView::QtCustomTrailView(ViewLayout* viewLayout)
 			// Edge::EDGE_UNDEFINED,
 			Edge::EDGE_TYPE_USAGE,
 			Edge::EDGE_INHERITANCE,
+			Edge::EDGE_SATISFIES,
 			Edge::EDGE_USAGE,
 			Edge::EDGE_CALL,
 			Edge::EDGE_DISPATCH,
@@ -276,7 +277,7 @@ QtCustomTrailView::QtCustomTrailView(ViewLayout* viewLayout)
 		}
 
 		QVBoxLayout* filterLayout = addFilters(
-			tr("Edges:"), edgeFilters, edgeColors, &m_edgeFilters, 6);
+			tr("Edges:"), edgeFilters, edgeColors, &m_edgeFilters, 7);
 		filterLayout->setContentsMargins(10, 10, 25, 10);
 		panelC2->setLayout(filterLayout);
 	}
